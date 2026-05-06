@@ -130,6 +130,7 @@ php artisan migrate && php artisan db:seed
 npm run build
 php artisan serve --port=8001
 # 다른 PC 접속: --host=0.0.0.0
+# 테스트 계정: admin@car-erp.test / password (시스템관리자, permission=super)
 ```
 
 ## 자주 쓰는 명령어
