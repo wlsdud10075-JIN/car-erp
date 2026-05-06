@@ -459,3 +459,211 @@ EARNED / REFUND       → balance += savings
 USED                  → balance -= savings  (음수 검증 — DB CHECK)
 ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 ```
+
+## 14. 외부 연동 패턴 (NEW_ERP.md §12)
+
+### NICE API — 차량정보 자동조회 ★ (필수)
+
+차량번호 입력 시 NICE 자동차정보 서비스 API 호출 → 24개 필드 자동 채움 (Registration 12 + Detail Spec 12).
+
+**Service 클래스 골격**:
+```php
+namespace App\Services;
+
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+class NiceApiService
+{
+    public function __construct(
+        private string $apiKey,
+        private string $apiSecret,
+    ) {}
+
+    public static function fromConfig(): self
+    {
+        return new self(
+            apiKey: config('services.nice.key', ''),
+            apiSecret: config('services.nice.secret', ''),
+        );
+    }
+
+    /**
+     * @return array{registration: array<string, mixed>, spec: array<string, mixed>}|null
+     */
+    public function lookupVehicle(string $vehicleNumber): ?array
+    {
+        return Cache::remember(
+            "nice_vehicle_{$vehicleNumber}",
+            300,  // 5분 캐시 — 동일 차량번호 반복 호출 방지
+            fn () => $this->fetch($vehicleNumber),
+        );
+    }
+
+    private function fetch(string $vehicleNumber): ?array
+    {
+        try {
+            $reg = Http::timeout(5)->post('...registration endpoint...', [...])->json();
+            $spec = Http::timeout(5)->post('...spec endpoint...', [...])->json();
+
+            return [
+                'registration' => $this->mapRegistration($reg),
+                'spec' => $this->mapSpec($spec),
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('NICE API failed', ['vehicle' => $vehicleNumber, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function mapRegistration(array $raw): array { /* res_* 12개 필드 매핑 */ }
+    private function mapSpec(array $raw): array { /* cbd_lt 등 12개 필드 매핑 */ }
+}
+```
+
+**`config/services.php`**:
+```php
+'nice' => [
+    'key' => env('NICE_API_KEY'),
+    'secret' => env('NICE_API_SECRET'),
+],
+```
+
+**Livewire 차량 등록 폼에서 호출**:
+```php
+public function lookupNiceApi(): void
+{
+    if (empty($this->vehicle_number)) {
+        return;
+    }
+
+    $result = NiceApiService::fromConfig()->lookupVehicle($this->vehicle_number);
+
+    if ($result === null) {
+        $this->dispatch('notify', message: 'NICE API 조회 실패 — 수동 입력 가능', type: 'warning');
+
+        return;
+    }
+
+    foreach ([...$result['registration'], ...$result['spec']] as $key => $value) {
+        if (property_exists($this, $key)) {
+            $this->{$key} = $value;
+        }
+    }
+}
+```
+
+**필수 fallback 규칙**:
+- API 실패해도 모든 NICE 필드는 **수동 입력 가능**해야 함 (폼 disable 금지)
+- API 키 미설정 환경(local 초기)에선 조용히 빈 결과 반환 → 수동 입력 흐름 유지
+- 호출은 **명시적 트리거**(버튼 클릭 또는 `vehicle_number` blur)만 — `wire:model.live`로 매 keystroke 호출 금지
+
+### 포워딩사 이메일 자동 발송
+
+수출통관 완료 시 포워딩사 담당자에게 차량정보 + 수출신고서 자동 메일.
+
+**Mailable 클래스**:
+```php
+namespace App\Mail;
+
+use App\Models\Vehicle;
+use Illuminate\Bus\Queueable;
+use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\{Attachment, Content, Envelope};
+use Illuminate\Queue\SerializesModels;
+
+class ForwardingNoticeMail extends Mailable
+{
+    use Queueable, SerializesModels;
+
+    public function __construct(public Vehicle $vehicle) {}
+
+    public function envelope(): Envelope
+    {
+        return new Envelope(
+            subject: "[수출통관] 차량 {$this->vehicle->vehicle_number} 발송 안내",
+        );
+    }
+
+    public function content(): Content
+    {
+        return new Content(view: 'emails.forwarding-notice', with: ['vehicle' => $this->vehicle]);
+    }
+
+    public function attachments(): array
+    {
+        if (! $this->vehicle->export_declaration_document) {
+            return [];
+        }
+
+        return [Attachment::fromPath(storage_path('app/'.$this->vehicle->export_declaration_document))];
+    }
+}
+```
+
+**트리거 — Vehicle 모델 saving 이벤트**:
+```php
+// app/Models/Vehicle.php
+protected static function booted(): void
+{
+    static::saving(function (Vehicle $vehicle) {
+        $becameCleared = $vehicle->is_export_cleared
+            && ! $vehicle->getOriginal('is_export_cleared');  // 이번에 막 true로 전환
+
+        if (! $becameCleared) {
+            return;
+        }
+        if ($vehicle->forwarding_email_sent || ! $vehicle->forwarding_company_id) {
+            return;
+        }
+
+        $email = $vehicle->forwardingCompany?->email;
+        if (! $email) {
+            return;
+        }
+
+        Mail::to($email)->queue(new ForwardingNoticeMail($vehicle));
+        $vehicle->forwarding_email_sent = true;  // 재발송 방지
+    });
+}
+```
+
+**`.env` SMTP 설정**:
+```
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=...
+MAIL_PASSWORD=...
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS="erp@ssancar.com"
+MAIL_FROM_NAME="${APP_NAME}"
+```
+
+**중요 규칙**:
+- `Mail::to()->queue()` 사용 — 발송 실패가 저장 트랜잭션을 깨지 않음 (DB job table 활용 → `php artisan queue:work` 별도 실행 필요)
+- `forwarding_email_sent` 한 번 true → **재발송 차단**. 의도된 재발송은 별도 액션(예: 관리자 "재전송" 버튼)에서 명시적으로 false 후 재저장
+- 첨부 누락 시에도 메일은 발송 (본문에 "수출신고서 별도 송부" 표기)
+- `getOriginal()` 비교로 "막 true로 전환된 건"만 트리거 — 이미 cleared 상태에서 다른 필드만 수정해도 재발송되지 않음
+
+### DHL — 현재 수동 입력만
+
+Python ERP/엑셀 모두 DHL 필드는 **수동 입력 + `dhl_request` 체크** 방식. DHL API 직접 연동 코드는 확인되지 않았음. 1단계 스코프 외 — 차후 도입 시 `app/Services/DhlApiService.php` 추가 예정.
+
+### 배포 (AWS Lightsail)
+
+XAMPP는 로컬 개발 한정. 운영은 AWS Lightsail 권장 (Python ERP와 동일 환경, 인스턴스 추가만으로 병행 운영 가능).
+
+```
+로컬 개발                      AWS 배포
+─────────────────────────────────────────────────
+XAMPP (Apache+PHP+MySQL)  →  Nginx + PHP-FPM + MySQL
+git push                  →  git pull + composer install
+npm run dev               →  npm run build
+.env (local)              →  .env (server, secrets)
+                             php artisan queue:work --daemon (포워딩 메일용)
+```
+
+**전환 흐름**: Python ERP(기존 인스턴스 유지) + Laravel ERP(신규 인스턴스) 병행 운영 → 데이터 마이그레이션 완료 후 Python 인스턴스 종료.
