@@ -161,6 +161,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dateTo   = $this->dateTo   ?: now()->format('Y-m-d');
     }
 
+    public function search(): void
+    {
+        $this->resetPage();
+    }
+
     #[Computed]
     public function vehicles()
     {
@@ -677,22 +682,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 {{-- ── 필터 바 ─────────────────────────────────────────────────── --}}
-<div class="card-tight space-y-2">
-    <div class="flex flex-wrap gap-2">
-        <input wire:model.live.debounce.400ms="search" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자"
-               class="input-base w-full sm:w-64" />
-        <select wire:model.live="dateType" class="input-base w-full sm:w-auto">
+<div class="space-y-2">
+    {{-- 검색 + 날짜 + 조회 --}}
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+        <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자"
+               class="input-filter w-52" />
+        <select wire:model="dateType" class="input-filter">
             <option value="purchase">매입일</option>
             <option value="sale">판매일</option>
             <option value="shipping">선적일</option>
             <option value="bl">B/L발행일</option>
         </select>
-        <input wire:model.live="dateFrom" type="date" class="input-base w-full sm:w-auto" />
-        <span class="self-center text-gray-400 hidden sm:inline">~</span>
-        <input wire:model.live="dateTo" type="date" class="input-base w-full sm:w-auto" />
+        <input wire:model="dateFrom" type="date" class="input-filter" />
+        <span class="text-gray-400 text-sm">~</span>
+        <input wire:model="dateTo" type="date" class="input-filter" />
+        <button wire:click="search" class="btn-search">조회</button>
     </div>
-    <div class="flex flex-wrap gap-2">
-        {{-- 채널 탭 --}}
+    {{-- 빠른 탭 필터 --}}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <div class="flex gap-1">
             @foreach(['' => '전체', 'export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $val => $label)
             <button wire:click="$set('channelFilter', '{{ $val }}')"
@@ -702,7 +709,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
             @endforeach
         </div>
-        {{-- 진행상태 탭 --}}
+        <div class="h-4 w-px bg-gray-200 hidden sm:block"></div>
         <div class="flex flex-wrap gap-1">
             @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '선적중' => '선적중', '선적완료' => '선적완료', '거래완료' => '거래완료', '폐기' => '폐기'] as $val => $label)
             <button wire:click="$set('progressFilter', '{{ $val }}')"

@@ -93,4 +93,14 @@ select:focus[data-flux-control] {
     @apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900
            focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500;
 }
+/* 필터 바 전용 — w-full 없음, inline 크기 */
+.input-filter {
+    @apply rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900
+           focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500;
+}
 .label-base { @apply block text-xs font-medium text-gray-600 mb-1; }
+
+/* ── 버튼 (조회 전용) ──────────────────────────── */
+.btn-search {
+    @apply inline-flex items-center rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-white whitespace-nowrap hover:bg-gray-600 focus:outline-none;
+}

@@ -52,6 +52,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ─────────────────────────────────────────────────────────────
 
+    public function search(): void
+    {
+        $this->resetPage();
+    }
+
     #[Computed]
     public function buyers()
     {
@@ -370,9 +375,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 {{-- 검색 --}}
-<div class="card-tight">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="이름 · 이메일 · 담당자"
-           class="input-base w-full sm:w-72" />
+<div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일 · 담당자"
+           class="input-filter w-64" />
+    <button wire:click="search" class="btn-search">조회</button>
 </div>
 
 {{-- 테이블 --}}

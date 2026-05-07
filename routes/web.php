@@ -28,6 +28,11 @@ Route::middleware(['auth', 'verified'])->prefix('erp')->name('erp.')->group(func
     Volt::route('salesmen/{id}/cashflow', 'erp.salesmen.cashflow')->name('salesmen.cashflow');
 });
 
+// 정산 — settlement role 이상
+Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.')->group(function () {
+    Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
+});
+
 // 관리자 — super/admin만
 Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');

@@ -99,6 +99,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('success', '영업담당자가 삭제됐습니다.');
     }
 
+    public function search(): void
+    {
+        $this->resetPage();
+    }
+
     private function resetForm(): void
     {
         $this->name = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
@@ -129,9 +134,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 {{-- 검색 --}}
-<div class="card-tight">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="이름 · 이메일 · 전화"
-           class="input-base w-full sm:w-72" />
+<div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일 · 전화"
+           class="input-filter w-64" />
+    <button wire:click="search" class="btn-search">조회</button>
 </div>
 
 {{-- 테이블 (데스크탑) --}}

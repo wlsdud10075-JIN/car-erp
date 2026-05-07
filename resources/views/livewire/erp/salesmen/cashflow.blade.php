@@ -34,6 +34,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dateTo   = now()->format('Y-m-d');
     }
 
+    public function search(): void {}
+
     #[Computed]
     public function vehicles()
     {
@@ -85,15 +87,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 {{-- 날짜 필터 --}}
-<div class="card-tight flex flex-wrap items-end gap-3">
+<div class="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <div>
         <label class="label-base">매입일 시작</label>
-        <input wire:model.live="dateFrom" type="date" class="input-base" />
+        <input wire:model="dateFrom" type="date" class="input-filter" />
     </div>
     <div>
         <label class="label-base">매입일 종료</label>
-        <input wire:model.live="dateTo" type="date" class="input-base" />
+        <input wire:model="dateTo" type="date" class="input-filter" />
     </div>
+    <button wire:click="search" class="btn-search">조회</button>
 </div>
 
 {{-- KPI 카드 --}}

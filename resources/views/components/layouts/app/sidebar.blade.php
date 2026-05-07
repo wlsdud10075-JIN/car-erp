@@ -17,6 +17,9 @@
                     <flux:navlist.item icon="truck" :href="route('erp.vehicles.index')" :current="request()->routeIs('erp.vehicles.index')" wire:navigate>차량 관리</flux:navlist.item>
                     <flux:navlist.item icon="users" :href="route('erp.buyers.index')" :current="request()->routeIs('erp.buyers.index')" wire:navigate>바이어</flux:navlist.item>
                     <flux:navlist.item icon="identification" :href="route('erp.consignees.index')" :current="request()->routeIs('erp.consignees.index')" wire:navigate>컨사이니</flux:navlist.item>
+                    @if(auth()->user()?->canAccessSettlement())
+                    <flux:navlist.item icon="calculator" :href="route('erp.settlements.index')" :current="request()->routeIs('erp.settlements.index')" wire:navigate>정산</flux:navlist.item>
+                    @endif
                     @if(auth()->user()?->canAccessAdmin())
                     <flux:navlist.item icon="building-office-2" :href="route('erp.forwarding-companies.index')" :current="request()->routeIs('erp.forwarding-companies.index')" wire:navigate>포워딩사</flux:navlist.item>
                     <flux:navlist.item icon="briefcase" :href="route('erp.salesmen.index')" :current="request()->routeIs('erp.salesmen.index')" wire:navigate>영업담당자</flux:navlist.item>

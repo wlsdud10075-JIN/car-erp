@@ -53,6 +53,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Country::orderBy('name')->get();
     }
 
+    public function search(): void
+    {
+        $this->resetPage();
+    }
+
     public function openCreate(): void
     {
         $this->resetValidation();
@@ -147,15 +152,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     </button>
 </div>
 
-<div class="card-tight flex flex-wrap gap-2">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="이름 · 이메일"
-           class="input-base w-full sm:w-56" />
-    <select wire:model.live="buyerFilter" class="input-base w-full sm:w-auto">
+<div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일"
+           class="input-filter w-52" />
+    <select wire:model="buyerFilter" class="input-filter">
         <option value="">전체 바이어</option>
         @foreach($this->buyers as $b)
         <option value="{{ $b->id }}">{{ $b->name }}</option>
         @endforeach
     </select>
+    <button wire:click="search" class="btn-search">조회</button>
 </div>
 
 <div class="hidden sm:block overflow-x-auto">
