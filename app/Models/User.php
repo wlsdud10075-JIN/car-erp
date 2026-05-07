@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
@@ -58,6 +59,15 @@ class User extends Authenticatable
         return $this->isAdmin();
     }
 
+    public function canAccessErp(): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return $this->permission === 'user' && in_array($this->role, ['전체', '영업', '통관', '정산', '관리'], true);
+    }
+
     public function canAccessSales(): bool
     {
         if ($this->isAdmin()) {
@@ -88,6 +98,11 @@ class User extends Authenticatable
     public function canToggleFeatures(): bool
     {
         return $this->isSuperAdmin();
+    }
+
+    public function salesman(): HasOne
+    {
+        return $this->hasOne(Salesman::class);
     }
 
     public function initials(): string

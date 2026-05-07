@@ -177,11 +177,11 @@ vendor/bin/pint --dirty             # 커밋 전 포매팅
 |---|---|---|
 | 0 | Laravel 12 + Livewire/Volt/Flux/Tailwind 셋업 | ✅ 완료 |
 | 1 | 인증 + 권한 구조 (User permission/role + 미들웨어 5종 + 사이드바 골격) | ✅ 완료 |
-| 2 | DB 마이그레이션 11개 (countries → vehicles → settlements) | ⏳ **다음 작업** |
-| 3 | Seeder (테스트 더미) | ⏳ |
+| 2 | DB 마이그레이션 11개 (countries → vehicles → settlements) | ✅ 완료 |
+| 3 | Seeder (테스트 더미) | ✅ 완료 |
 | 4 | 차량 목록 + 등록/수정 (탭형 슬라이드 패널 + NICE API 연동) | ⏳ |
-| 5 | 바이어 / 컨사이니 / 적립금 | ⏳ |
-| 6 | 포워딩사 / 영업담당자 / 캐시플로우 | ⏳ |
+| 5 | 바이어 / 컨사이니 / 적립금 | ✅ 완료 |
+| 6 | 포워딩사 / 영업담당자 / 캐시플로우 | ✅ 완료 |
 | 7 | 정산 | ⏳ |
 | 8 | ERP 대시보드 KPI | ⏳ |
 | 9 | 관리자 대시보드 / 사용자 관리 | ⏳ |

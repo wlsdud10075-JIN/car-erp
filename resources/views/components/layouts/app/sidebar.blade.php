@@ -14,22 +14,29 @@
             <flux:navlist variant="outline">
                 <flux:navlist.group heading="ERP" class="grid">
                     <flux:navlist.item icon="home" :href="route('erp.dashboard')" :current="request()->routeIs('erp.dashboard')" wire:navigate>대시보드</flux:navlist.item>
+                    <flux:navlist.item icon="truck" :href="route('erp.vehicles.index')" :current="request()->routeIs('erp.vehicles.index')" wire:navigate>차량 관리</flux:navlist.item>
+                    <flux:navlist.item icon="users" :href="route('erp.buyers.index')" :current="request()->routeIs('erp.buyers.index')" wire:navigate>바이어</flux:navlist.item>
+                    <flux:navlist.item icon="identification" :href="route('erp.consignees.index')" :current="request()->routeIs('erp.consignees.index')" wire:navigate>컨사이니</flux:navlist.item>
+                    @if(auth()->user()?->canAccessAdmin())
+                    <flux:navlist.item icon="building-office-2" :href="route('erp.forwarding-companies.index')" :current="request()->routeIs('erp.forwarding-companies.index')" wire:navigate>포워딩사</flux:navlist.item>
+                    <flux:navlist.item icon="briefcase" :href="route('erp.salesmen.index')" :current="request()->routeIs('erp.salesmen.index')" wire:navigate>영업담당자</flux:navlist.item>
+                    @elseif(auth()->user()?->canAccessSales())
+                    @php $mySalesman = auth()->user()?->salesman; @endphp
+                    @if($mySalesman)
+                    <flux:navlist.item icon="chart-bar" :href="route('erp.salesmen.cashflow', $mySalesman->id)" :current="request()->routeIs('erp.salesmen.cashflow')" wire:navigate>내 캐시플로우</flux:navlist.item>
+                    @endif
+                    @endif
                 </flux:navlist.group>
 
                 @if(auth()->user()?->canAccessAdmin())
-                <flux:navlist.group heading="관리" class="grid">
+                <flux:navlist.group heading="기타관리" class="grid">
                     <flux:navlist.item icon="chart-bar" :href="route('admin.dashboard')" :current="request()->routeIs('admin.dashboard')" wire:navigate>관리자 대시보드</flux:navlist.item>
+                    <flux:navlist.item icon="user-group" :href="route('admin.users.index')" :current="request()->routeIs('admin.users.index')" wire:navigate>사용자 관리</flux:navlist.item>
                 </flux:navlist.group>
                 @endif
             </flux:navlist>
 
             <flux:spacer />
-
-            <flux:navlist variant="outline">
-                <flux:navlist.item icon="folder-git-2" href="https://github.com/wlsdud10075-JIN/car-erp" target="_blank">
-                    Repository
-                </flux:navlist.item>
-            </flux:navlist>
 
             <!-- Desktop User Menu -->
             <flux:dropdown position="bottom" align="start">
