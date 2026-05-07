@@ -13,7 +13,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        // 일반 사용자는 본인 salesman 레코드로 자동 고정
         if (! auth()->user()->isAdmin()) {
             $salesman = auth()->user()->salesman;
             if ($salesman) {
@@ -40,11 +39,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $total         = (clone $base)->count();
         $thisMonthBuy  = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
-        $thisMonthSale = (clone $base)->where('sale_price', '>', 0)
-            ->whereBetween('sale_date', [$ms, $me])->count();
-        $totalDone = (clone $base)->where('dhl_request', true)->where('is_disposed', false)->count();
+        $thisMonthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
+        $totalDone     = (clone $base)->where('dhl_request', true)->where('is_disposed', false)->count();
 
-        // 진행단계 6그룹 (SQL 근사)
+        $thisMonthPurchaseAmt = (clone $base)->whereBetween('purchase_date', [$ms, $me])->sum('purchase_price');
+        $thisMonthSaleAmt     = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->sum('sale_price');
+
         $disposed  = (clone $base)->where('is_disposed', true)->count();
         $done      = (clone $base)->where('dhl_request', true)->where('is_disposed', false)->count();
         $shipping  = (clone $base)->whereNotNull('bl_document')
@@ -66,9 +66,58 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return compact(
             'total', 'thisMonthBuy', 'thisMonthSale', 'totalDone',
+            'thisMonthPurchaseAmt', 'thisMonthSaleAmt',
             'buying', 'selling', 'clearance', 'shipping', 'done', 'disposed',
             'settlementCounts'
         );
+    }
+
+    #[Computed]
+    public function channelCounts(): array
+    {
+        $sid = $this->selectedSalesmanId ?: null;
+
+        return Vehicle::query()
+            ->whereNull('deleted_at')
+            ->where('is_disposed', false)
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->whereNotNull('sales_channel')
+            ->selectRaw('sales_channel, COUNT(*) as cnt')
+            ->groupBy('sales_channel')
+            ->pluck('cnt', 'sales_channel')
+            ->toArray();
+    }
+
+    #[Computed]
+    public function monthlyTrend(): array
+    {
+        $sid       = $this->selectedSalesmanId ?: null;
+        $startDate = now()->subMonths(5)->startOfMonth()->toDateString();
+        $months    = collect(range(5, 0))->map(fn ($i) => now()->subMonths($i)->format('Y-m'))->all();
+
+        $buys = Vehicle::query()->whereNull('deleted_at')
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->whereNotNull('purchase_date')
+            ->where('purchase_date', '>=', $startDate)
+            ->selectRaw("DATE_FORMAT(purchase_date, '%Y-%m') as ym, COUNT(*) as cnt")
+            ->groupBy('ym')
+            ->pluck('cnt', 'ym');
+
+        $sales = Vehicle::query()->whereNull('deleted_at')
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->where('sale_price', '>', 0)
+            ->whereNotNull('sale_date')
+            ->where('sale_date', '>=', $startDate)
+            ->selectRaw("DATE_FORMAT(sale_date, '%Y-%m') as ym, COUNT(*) as cnt")
+            ->groupBy('ym')
+            ->pluck('cnt', 'ym');
+
+        return collect($months)->map(fn ($m) => [
+            'month' => $m,
+            'label' => ltrim(substr($m, 5), '0') . '월',
+            'buy'   => (int) ($buys[$m] ?? 0),
+            'sale'  => (int) ($sales[$m] ?? 0),
+        ])->all();
     }
 
     #[Computed]
@@ -141,7 +190,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 </div>
 
-{{-- Row 1: 요약 카드 --}}
+{{-- Row 1: 요약 KPI 카드 --}}
 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
     <div class="card">
         <p class="text-xs text-gray-500">전체 차량</p>
@@ -150,41 +199,118 @@ new #[Layout('components.layouts.app')] class extends Component {
         </p>
     </div>
     <div class="card">
+        <p class="text-xs text-gray-500">이달 거래완료</p>
+        <p class="mt-1 text-2xl font-bold text-gray-800">
+            {{ $this->kpi['totalDone'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
+        </p>
+    </div>
+    <div class="card">
         <p class="text-xs text-gray-500">이달 매입</p>
         <p class="mt-1 text-2xl font-bold text-gray-800">
             {{ $this->kpi['thisMonthBuy'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
         </p>
+        @if($this->kpi['thisMonthPurchaseAmt'] > 0)
+        <p class="mt-1 text-xs text-gray-400">₩{{ number_format($this->kpi['thisMonthPurchaseAmt']) }}</p>
+        @endif
     </div>
     <div class="card">
         <p class="text-xs text-gray-500">이달 판매</p>
         <p class="mt-1 text-2xl font-bold text-gray-800">
             {{ $this->kpi['thisMonthSale'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
         </p>
-    </div>
-    <div class="card">
-        <p class="text-xs text-gray-500">전체 거래완료</p>
-        <p class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->kpi['totalDone'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
-        </p>
+        @if($this->kpi['thisMonthSaleAmt'] > 0)
+        <p class="mt-1 text-xs text-gray-400">₩{{ number_format($this->kpi['thisMonthSaleAmt']) }}</p>
+        @endif
     </div>
 </div>
 
-{{-- Row 2: 진행단계 현황 --}}
+{{-- Row 2: 채널별 현황 + 월별 추이 --}}
+<div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+
+    {{-- 채널별 현황 --}}
+    <div class="card">
+        <h2 class="mb-3 text-sm font-semibold text-gray-700">
+            채널별 현황
+            <span class="ml-1 text-xs font-normal text-gray-400">진행중 차량</span>
+        </h2>
+        @php
+        $channels = [
+            ['key' => 'export',  'label' => '수출',   'badge' => 'badge-blue'],
+            ['key' => 'heyman',  'label' => '헤이맨', 'badge' => 'badge-teal'],
+            ['key' => 'carpul',  'label' => '카풀',   'badge' => 'badge-purple'],
+        ];
+        $cc = $this->channelCounts;
+        @endphp
+        <div class="grid grid-cols-3 gap-2">
+            @foreach($channels as $ch)
+            <a href="{{ route('erp.vehicles.index') }}?channelFilter={{ $ch['key'] }}" wire:navigate
+               class="flex flex-col items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-4 text-center transition hover:bg-gray-100">
+                <span class="badge {{ $ch['badge'] }} mb-2">{{ $ch['label'] }}</span>
+                <span class="text-2xl font-bold text-gray-800">{{ $cc[$ch['key']] ?? 0 }}</span>
+                <span class="text-xs text-gray-400">대</span>
+            </a>
+            @endforeach
+        </div>
+    </div>
+
+    {{-- 월별 매입/판매 추이 --}}
+    <div class="card">
+        <h2 class="mb-3 text-sm font-semibold text-gray-700">월별 매입 / 판매 추이</h2>
+        @php
+        $trend    = $this->monthlyTrend;
+        $maxVal   = max(1, collect($trend)->max(fn ($m) => max($m['buy'], $m['sale'])));
+        @endphp
+        <div class="flex items-end gap-2" style="height: 100px;">
+            @foreach($trend as $m)
+            @php
+                $buyPct  = round($m['buy']  / $maxVal * 100);
+                $salePct = round($m['sale'] / $maxVal * 100);
+            @endphp
+            <div class="flex flex-1 flex-col items-center gap-0.5">
+                <div class="flex w-full items-end justify-center gap-0.5" style="height: 72px;">
+                    <div class="flex-1 rounded-sm bg-blue-300 transition-all"
+                         style="height: {{ max(2, $buyPct) }}%"
+                         title="매입 {{ $m['buy'] }}대"></div>
+                    <div class="flex-1 rounded-sm bg-violet-400 transition-all"
+                         style="height: {{ max(2, $salePct) }}%"
+                         title="판매 {{ $m['sale'] }}대"></div>
+                </div>
+                <span class="text-[9px] text-gray-400">{{ $m['label'] }}</span>
+                <div class="flex gap-1 text-[9px] font-medium">
+                    <span class="text-blue-500">{{ $m['buy'] }}</span>
+                    <span class="text-gray-300">/</span>
+                    <span class="text-violet-500">{{ $m['sale'] }}</span>
+                </div>
+            </div>
+            @endforeach
+        </div>
+        <div class="mt-2 flex items-center gap-3 text-[10px] text-gray-400">
+            <span class="flex items-center gap-1">
+                <span class="inline-block h-2 w-3 rounded-sm bg-blue-300"></span> 매입
+            </span>
+            <span class="flex items-center gap-1">
+                <span class="inline-block h-2 w-3 rounded-sm bg-violet-400"></span> 판매
+            </span>
+        </div>
+    </div>
+</div>
+
+{{-- Row 3: 진행단계 현황 --}}
 <div class="card">
     <h2 class="mb-3 text-sm font-semibold text-gray-700">진행단계 현황</h2>
     @php
     $stages = [
-        ['label' => '매입단계', 'count' => $this->kpi['buying'],    'badge' => 'badge-blue'],
-        ['label' => '판매단계', 'count' => $this->kpi['selling'],   'badge' => 'badge-purple'],
-        ['label' => '통관단계', 'count' => $this->kpi['clearance'], 'badge' => 'badge-amber'],
-        ['label' => '선적단계', 'count' => $this->kpi['shipping'],  'badge' => 'badge-green'],
-        ['label' => '거래완료', 'count' => $this->kpi['done'],      'badge' => 'badge-gray'],
-        ['label' => '폐기',     'count' => $this->kpi['disposed'],  'badge' => 'badge-red'],
+        ['label' => '매입단계', 'count' => $this->kpi['buying'],    'badge' => 'badge-blue',   'filter' => '매입중'],
+        ['label' => '판매단계', 'count' => $this->kpi['selling'],   'badge' => 'badge-purple', 'filter' => '판매중'],
+        ['label' => '통관단계', 'count' => $this->kpi['clearance'], 'badge' => 'badge-amber',  'filter' => '수출통관중'],
+        ['label' => '선적단계', 'count' => $this->kpi['shipping'],  'badge' => 'badge-green',  'filter' => '선적중'],
+        ['label' => '거래완료', 'count' => $this->kpi['done'],      'badge' => 'badge-gray',   'filter' => '거래완료'],
+        ['label' => '폐기',     'count' => $this->kpi['disposed'],  'badge' => 'badge-red',    'filter' => '폐기'],
     ];
     @endphp
-    <div class="grid grid-cols-3 gap-2">
+    <div class="grid grid-cols-3 gap-2 sm:grid-cols-6">
         @foreach($stages as $stage)
-        <a href="{{ route('erp.vehicles.index') }}" wire:navigate
+        <a href="{{ route('erp.vehicles.index') }}?progressFilter={{ urlencode($stage['filter']) }}" wire:navigate
            class="flex flex-col items-center rounded-lg border border-gray-100 bg-gray-50 px-2 py-3 text-center transition hover:bg-gray-100">
             <span class="badge {{ $stage['badge'] }} mb-2">{{ $stage['label'] }}</span>
             <span class="text-xl font-bold text-gray-800">{{ $stage['count'] }}</span>
@@ -194,7 +320,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- Row 3: 미지급/미입금 + 정산 현황 --}}
+{{-- Row 4: 미지급/미입금 + 정산 현황 --}}
 <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
 
     {{-- 미지급/미입금 --}}
@@ -256,7 +382,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- Row 4: 최근 차량 --}}
+{{-- Row 5: 최근 차량 --}}
 <div class="card">
     <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-700">최근 등록 차량</h2>
@@ -264,7 +390,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 데스크탑 테이블 --}}
-    <div class="hidden sm:block overflow-x-auto">
+    <div class="hidden overflow-x-auto sm:block">
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-100 text-left text-xs text-gray-400">
@@ -273,7 +399,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="pb-2 pr-4 font-medium">진행상태</th>
                     <th class="pb-2 pr-4 font-medium">채널</th>
                     <th class="pb-2 pr-4 font-medium">매입일</th>
-                    <th class="pb-2 font-medium text-right">매입가</th>
+                    <th class="pb-2 text-right font-medium">매입가</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -321,7 +447,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 모바일 카드 --}}
-    <div class="block sm:hidden space-y-2">
+    <div class="block space-y-2 sm:hidden">
         @forelse($this->recentVehicles as $v)
         @php
             $pb = match(true) {
