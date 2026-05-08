@@ -21,6 +21,8 @@
                     <flux:navlist.item icon="calculator" :href="route('erp.settlements.index')" :current="request()->routeIs('erp.settlements.index')" wire:navigate>정산</flux:navlist.item>
                     @endif
                     @if(auth()->user()?->canAccessAdmin())
+                    {{-- TODO: receivable role 신설 시 canAccessReceivable() 분기로 전환 --}}
+                    <flux:navlist.item icon="banknotes" :href="route('erp.receivables.index')" :current="request()->routeIs('erp.receivables.index')" wire:navigate>채권관리</flux:navlist.item>
                     <flux:navlist.item icon="building-office-2" :href="route('erp.forwarding-companies.index')" :current="request()->routeIs('erp.forwarding-companies.index')" wire:navigate>포워딩사</flux:navlist.item>
                     <flux:navlist.item icon="briefcase" :href="route('erp.salesmen.index')" :current="request()->routeIs('erp.salesmen.index')" wire:navigate>영업담당자</flux:navlist.item>
                     @elseif(auth()->user()?->canAccessSales())

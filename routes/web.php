@@ -37,9 +37,12 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
 });
 
 // 관리자 — super/admin만
+// TODO: 추후 receivable role 신설 시 'receivables'는 별도 그룹으로 분리하고
+//       'receivable' 미들웨어를 적용 (현재는 admin 권한으로만 운영)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');
     Volt::route('salesmen', 'erp.salesmen.index')->name('salesmen.index');
+    Volt::route('receivables', 'erp.receivables.index')->name('receivables.index');
 });
 
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
