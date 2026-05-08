@@ -4,12 +4,15 @@
         @include('partials.head')
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800">
-        <flux:sidebar sticky stashable class="border-r border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
-            <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
-
-            <a href="{{ route('dashboard') }}" class="mr-5 flex items-center space-x-2" wire:navigate>
-                <x-app-logo class="size-8" href="#"></x-app-logo>
-            </a>
+        <flux:sidebar sticky collapsible class="border-r border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:sidebar.header class="lg:gap-1">
+                <a href="{{ route('dashboard') }}" class="flex items-center gap-2 in-data-flux-sidebar-collapsed-desktop:hidden" wire:navigate>
+                    <x-app-logo class="size-8" href="#"></x-app-logo>
+                </a>
+                <flux:spacer class="in-data-flux-sidebar-collapsed-desktop:hidden" />
+                <flux:sidebar.collapse class="hidden lg:flex" />
+                <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
+            </flux:sidebar.header>
 
             <flux:navlist variant="outline">
                 <flux:navlist.group heading="ERP" class="grid">
