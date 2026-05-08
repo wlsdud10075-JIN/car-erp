@@ -3,6 +3,7 @@
 use App\Models\User;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\Hash;
@@ -12,6 +13,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $search      = '';
     public string $permFilter  = '';
+    #[Url] public int $perPage = 10;
+
+    public function updatedPerPage(): void
+    {
+        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
+            $this->perPage = 10;
+        }
+        $this->resetPage();
+    }
 
     public bool   $showPanel   = false;
     public ?int   $editingId   = null;
@@ -35,7 +45,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ))
             ->when($this->permFilter, fn($q) => $q->where('permission', $this->permFilter))
             ->orderBy('name')
-            ->paginate(20);
+            ->paginate($this->perPage);
     }
 
     public function openCreate(): void
@@ -165,10 +175,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-bold text-gray-800">사용자 관리</h1>
         <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->users->total() }}명</p>
     </div>
-    <button wire:click="openCreate" class="btn-primary">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        사용자 추가
-    </button>
+    <div class="flex items-center gap-2">
+        <select wire:model.live="perPage" class="input-filter">
+            <option value="10">10개씩</option>
+            <option value="30">30개씩</option>
+            <option value="50">50개씩</option>
+            <option value="100">100개씩</option>
+        </select>
+        <button wire:click="openCreate" class="btn-primary">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            사용자 추가
+        </button>
+    </div>
 </div>
 
 {{-- 필터 --}}

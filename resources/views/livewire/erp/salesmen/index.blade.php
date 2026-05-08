@@ -4,6 +4,7 @@ use App\Models\Salesman;
 use App\Models\User;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
@@ -11,8 +12,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     public string $search    = '';
+    #[Url] public int $perPage = 10;
     public bool   $showPanel = false;
     public ?int   $editingId = null;
+
+    public function updatedPerPage(): void
+    {
+        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
+            $this->perPage = 10;
+        }
+        $this->resetPage();
+    }
 
     public string $name        = '';
     public string $user_id_str = '';
@@ -32,7 +42,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                    ->orWhere('phone', 'like', "%{$this->search}%")
             ))
             ->orderBy('name')
-            ->paginate(20);
+            ->paginate($this->perPage);
     }
 
     #[Computed]
@@ -127,10 +137,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h1 class="text-xl font-bold text-gray-800">영업담당자 관리</h1>
         <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->salesmen->total() }}명</p>
     </div>
-    <button wire:click="openCreate" class="btn-primary">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        담당자 등록
-    </button>
+    <div class="flex items-center gap-2">
+        <select wire:model.live="perPage" class="input-filter">
+            <option value="10">10개씩</option>
+            <option value="30">30개씩</option>
+            <option value="50">50개씩</option>
+            <option value="100">100개씩</option>
+        </select>
+        <button wire:click="openCreate" class="btn-primary">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            담당자 등록
+        </button>
+    </div>
 </div>
 
 {{-- 검색 --}}

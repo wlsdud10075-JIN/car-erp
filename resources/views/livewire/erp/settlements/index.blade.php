@@ -5,6 +5,7 @@ use App\Models\Settlement;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
 
@@ -22,6 +23,8 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $dateFrom = '';
 
     public string $dateTo = '';
+
+    #[Url] public int $perPage = 10;
 
     // ── 슬라이드 패널 ─────────────────────────────────────────────
     public bool $showPanel = false;
@@ -52,6 +55,14 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
+    public function updatedPerPage(): void
+    {
+        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
+            $this->perPage = 10;
+        }
+        $this->resetPage();
+    }
+
     // ── 목록 ──────────────────────────────────────────────────────
 
     #[Computed]
@@ -68,7 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
             ))
             ->latest()
-            ->paginate(20);
+            ->paginate($this->perPage);
     }
 
     #[Computed]
@@ -273,10 +284,18 @@ new #[Layout('components.layouts.app')] class extends Component
         <h1 class="text-xl font-bold text-gray-800">정산 관리</h1>
         <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->settlements->total() }}건</p>
     </div>
-    <button wire:click="openCreate" class="btn-primary">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        정산 추가
-    </button>
+    <div class="flex items-center gap-2">
+        <select wire:model.live="perPage" class="input-filter">
+            <option value="10">10개씩</option>
+            <option value="30">30개씩</option>
+            <option value="50">50개씩</option>
+            <option value="100">100개씩</option>
+        </select>
+        <button wire:click="openCreate" class="btn-primary">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            정산 추가
+        </button>
+    </div>
 </div>
 
 {{-- 필터 바 --}}

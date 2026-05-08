@@ -25,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $riskFilter = '';        // safe/caution/danger/critical
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
 
-    public int $perPage = 30;
+    #[Url] public int $perPage = 10;
 
     // ── 슬라이드 패널 (회수 이력) ──────────────────────────
     public bool $showPanel = false;
@@ -56,6 +56,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function search(): void
     {
+        $this->resetPage();
+    }
+
+    public function updatedPerPage(): void
+    {
+        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
+            $this->perPage = 10;
+        }
         $this->resetPage();
     }
 
@@ -286,7 +294,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h2 class="text-xl font-bold text-gray-800">채권관리</h2>
             <p class="text-xs text-gray-500 mt-1">미수금 현황 · 회수 이력 · 위험도 모니터링</p>
         </div>
-        <div class="text-xs text-gray-400">권한: 관리자 전용</div>
+        <div class="flex items-center gap-3">
+            <select wire:model.live="perPage" class="input-filter">
+                <option value="10">10개씩</option>
+                <option value="30">30개씩</option>
+                <option value="50">50개씩</option>
+                <option value="100">100개씩</option>
+            </select>
+            <div class="text-xs text-gray-400">권한: 관리자 전용</div>
+        </div>
     </div>
 
     {{-- 채널 탭 --}}
