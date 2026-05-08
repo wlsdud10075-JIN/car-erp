@@ -25,6 +25,8 @@ class VehicleDocumentController extends Controller
             'deregistration' => $this->renderPdf($vehicle, 'documents.deregistration', '말소신청서'),
             'registration_application' => $this->renderPdf($vehicle, 'documents.registration-application', '등록증재발급신청서'),
             'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
+            'invoice' => $this->renderPdf($vehicle, 'documents.invoice', 'Invoice'),
+            'sales_contract' => $this->renderPdf($vehicle, 'documents.sales-contract', 'SalesContract'),
             default => abort(404, '지원하지 않는 서류 종류입니다: '.$type),
         };
     }
