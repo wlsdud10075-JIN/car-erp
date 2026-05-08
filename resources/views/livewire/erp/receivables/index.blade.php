@@ -288,8 +288,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div>
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
-    {{-- 헤더 --}}
-    <div class="flex items-end justify-between">
+    {{-- 헤더 — 모바일 세로 스택, 데스크탑 좌우 분리 --}}
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
             <h2 class="text-xl font-bold text-gray-800">채권관리</h2>
             <p class="text-xs text-gray-500 mt-1">미수금 현황 · 회수 이력 · 위험도 모니터링</p>
@@ -301,7 +301,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <option value="50">50개씩</option>
                 <option value="100">100개씩</option>
             </select>
-            <div class="text-xs text-gray-400">권한: 관리자 전용</div>
+            <div class="hidden whitespace-nowrap text-xs text-gray-400 sm:block">권한: 관리자 전용</div>
         </div>
     </div>
 

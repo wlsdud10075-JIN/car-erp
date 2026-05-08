@@ -80,18 +80,18 @@ new #[Layout('components.layouts.app')] class extends Component
 }; ?>
 
 <div x-data="adminDashboard()" class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
-    {{-- 헤더 --}}
-    <div class="flex items-end justify-between">
+    {{-- 헤더 — 모바일 세로 스택, 데스크탑 좌우 분리 --}}
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
             <h1 class="text-2xl font-bold text-gray-800">관리자 대시보드</h1>
             <p class="mt-1 text-sm text-gray-500">매출 / 차량 진행 KPI · 기간별 비즈니스 지표</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
             <input type="date" wire:model.live="dateFrom" class="input-filter" />
             <span class="text-xs text-gray-400">~</span>
             <input type="date" wire:model.live="dateTo" class="input-filter" />
             <button @click="settingsOpen = true" type="button"
-                class="ml-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
                 <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 위젯 설정
             </button>
