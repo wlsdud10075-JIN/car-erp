@@ -369,8 +369,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </select>
     </div>
 
-    {{-- 테이블 --}}
-    <div class="card overflow-x-auto">
+    {{-- 테이블 (데스크탑) --}}
+    <div class="card overflow-x-auto hidden sm:block">
         <table class="w-full text-sm">
             <thead class="border-b border-gray-200 text-xs uppercase text-gray-500">
                 <tr>
@@ -439,6 +439,57 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforelse
             </tbody>
         </table>
+    </div>
+
+    {{-- 카드 리스트 (모바일) --}}
+    <div class="block sm:hidden space-y-2">
+        @forelse ($this->vehicles as $v)
+        @php
+            $rowBg = match($v->receivable_risk) {
+                'critical' => 'bg-red-50 border-red-200',
+                'danger'   => 'bg-orange-50 border-orange-200',
+                'caution'  => 'bg-yellow-50 border-yellow-200',
+                'safe'     => 'bg-blue-50 border-blue-200',
+                default    => 'bg-white border-gray-200',
+            };
+            $riskBadge = match($v->receivable_risk) {
+                'safe'     => 'badge-blue',
+                'caution'  => 'badge-amber',
+                'danger'   => 'badge-amber',
+                'critical' => 'badge-red',
+                default    => 'badge-gray',
+            };
+            $unpaidRatio = $v->sale_total_amount > 0
+                ? round(($v->sale_unpaid_amount / $v->sale_total_amount) * 100, 1)
+                : 0;
+            $primaryBuyer = $channel === 'export' ? ($v->exportBuyer ?? $v->buyer) : $v->buyer;
+        @endphp
+        <div wire:click="openPanel({{ $v->id }})"
+             class="cursor-pointer rounded-lg border px-3 py-3 transition hover:bg-violet-50 {{ $rowBg }}">
+            {{-- 상단: 차량번호 + 위험도 --}}
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-400">#{{ $v->id }}</span>
+                    <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span>
+                </div>
+                <span class="badge {{ $riskBadge }}">{{ $v->receivable_risk_label }}</span>
+            </div>
+            {{-- 중간: 바이어 + 담당자 --}}
+            <div class="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
+                <span class="truncate">{{ $primaryBuyer?->name ?? '바이어 미지정' }}</span>
+                <span>{{ $v->salesman?->name ?? '-' }}</span>
+            </div>
+            {{-- 하단: 미납금 + 미납률 --}}
+            <div class="mt-2 flex items-end justify-between gap-2">
+                <div class="text-xs text-gray-500">
+                    미납 <span class="font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, $v->currency === 'KRW' ? 0 : 2) }}</span>
+                </div>
+                <div class="text-xs text-gray-700">{{ $unpaidRatio }}%</div>
+            </div>
+        </div>
+        @empty
+        <div class="rounded-lg border border-dashed border-gray-200 px-3 py-8 text-center text-sm text-gray-400">조회된 차량이 없습니다.</div>
+        @endforelse
     </div>
 
     {{-- 페이지네이션 --}}
