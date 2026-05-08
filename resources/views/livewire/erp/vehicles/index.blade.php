@@ -27,6 +27,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $dateTo = '';
     #[Url] public string $channelFilter = '';
     #[Url] public string $progressFilter = '';
+    // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
+    // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
+    #[Url] public string $action = '';
+    #[Url] public string $salesmanId = '';
     public int $perPage = 20;
 
     // ── 슬라이드 패널 상태 ────────────────────────────────────────
@@ -170,8 +174,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        // 대시보드 액션 카드에서 진입한 경우(action 파라미터 존재):
+        // - 날짜·진행상태 기본 필터를 적용하지 않음 (액션 산정 로직과 충돌 방지)
+        if ($this->action !== '') {
+            // dateFrom/dateTo는 명시적으로 들어온 경우만 유지
+            return;
+        }
+
         $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
-        $this->dateTo   = $this->dateTo   ?: now()->format('Y-m-d');
+        $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
     }
 
     public function search(): void
@@ -191,18 +202,53 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return Vehicle::query()
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments'])
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('vehicle_number', 'like', "%{$this->search}%")
-                   ->orWhere('brand', 'like', "%{$this->search}%")
-                   ->orWhere('model_type', 'like', "%{$this->search}%")
-                   ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
+            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('vehicle_number', 'like', "%{$this->search}%")
+                ->orWhere('brand', 'like', "%{$this->search}%")
+                ->orWhere('model_type', 'like', "%{$this->search}%")
+                ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
             ))
-            ->when($this->channelFilter, fn($q) => $q->where('sales_channel', $this->channelFilter))
-            ->when($this->progressFilter, fn($q) => $q->where('progress_status_cache', $this->progressFilter))
-            ->when($this->dateFrom, fn($q) => $q->where($dateColumn, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn($q) => $q->where($dateColumn, '<=', $this->dateTo))
+            ->when($this->channelFilter, fn ($q) => $q->where('sales_channel', $this->channelFilter))
+            ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
+            ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
+            ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
+            ->when($this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
             ->latest()
             ->paginate($this->perPage);
+    }
+
+    /**
+     * 대시보드 처리 필요 카드와 동일한 산정 로직을 SQL where로 표현.
+     * collection 필터(accessor 기반)와 100% 일치하도록 컬럼 캐시·raw SQL 사용.
+     */
+    private function applyActionFilter($q)
+    {
+        // 모든 액션은 active 차량 기준 (is_disposed=false AND dhl_request=false).
+        // 대시보드 actionCounts와 100% 일치시키기 위함.
+        $q = $q->where('is_disposed', false)->where('dhl_request', false);
+
+        return match ($this->action) {
+            'purchase_unpaid' => $q
+                ->where('purchase_price', '>', 0)
+                ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
+                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                          WHERE vehicle_id = vehicles.id
+                                          AND (payment_date IS NULL OR payment_date <= CURDATE())), 0)) > 0'),
+            'sale_unpaid' => $q
+                ->where('sale_price', '>', 0)
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+            'clearance_needed' => $q
+                ->where('sale_price', '>', 0)
+                ->where('sale_unpaid_amount_krw_cache', '<=', 0)
+                ->whereNull('export_declaration_document'),
+            'shipping_needed' => $q
+                ->whereNotNull('export_declaration_document')
+                ->whereNull('bl_document'),
+            'dhl_needed' => $q
+                ->whereNotNull('bl_document'),
+            default => $q,
+        };
     }
 
     #[Computed]

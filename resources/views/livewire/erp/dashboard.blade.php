@@ -158,13 +158,20 @@ new #[Layout('components.layouts.app')] class extends Component {
     <h2 class="mb-4 text-sm font-semibold text-gray-700">처리 필요 항목</h2>
     @php
     $ac = $this->actionCounts;
+    $vehiclesUrl = function (string $action) use ($selectedSalesmanId) {
+        $url = route('erp.vehicles.index').'?action='.$action;
+        if ($selectedSalesmanId) {
+            $url .= '&salesmanId='.$selectedSalesmanId;
+        }
+        return $url;
+    };
     $actions = [
         [
             'label'  => '매입 미지급',
             'desc'   => '매입가 입력 후 잔금 미지급',
             'count'  => $ac['purchaseUnpaid'],
             'dot'    => 'bg-red-500',
-            'href'   => route('erp.vehicles.index'),
+            'href'   => $vehiclesUrl('purchase_unpaid'),
             'urgent' => true,
         ],
         [
@@ -172,7 +179,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'desc'   => '판매 후 미회수 금액 존재',
             'count'  => $ac['saleUnpaid'],
             'dot'    => 'bg-amber-500',
-            'href'   => route('erp.vehicles.index'),
+            'href'   => $vehiclesUrl('sale_unpaid'),
             'urgent' => true,
         ],
         [
@@ -180,7 +187,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'desc'   => '판매 완납 → 면장서류 미업로드',
             'count'  => $ac['clearanceNeeded'],
             'dot'    => 'bg-blue-500',
-            'href'   => route('erp.vehicles.index').'?progressFilter='.urlencode('판매완료'),
+            'href'   => $vehiclesUrl('clearance_needed'),
             'urgent' => false,
         ],
         [
@@ -188,7 +195,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'desc'   => '수출통관 완료 → B/L 미처리',
             'count'  => $ac['shippingNeeded'],
             'dot'    => 'bg-green-500',
-            'href'   => route('erp.vehicles.index').'?progressFilter='.urlencode('수출통관완료'),
+            'href'   => $vehiclesUrl('shipping_needed'),
             'urgent' => false,
         ],
         [
@@ -196,7 +203,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'desc'   => '선적 완료 → DHL 미신청',
             'count'  => $ac['dhlNeeded'],
             'dot'    => 'bg-teal-500',
-            'href'   => route('erp.vehicles.index').'?progressFilter='.urlencode('선적완료'),
+            'href'   => $vehiclesUrl('dhl_needed'),
             'urgent' => false,
         ],
         [
