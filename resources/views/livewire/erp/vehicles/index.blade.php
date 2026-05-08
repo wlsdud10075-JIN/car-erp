@@ -1566,8 +1566,116 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         {{-- ─── 서류 탭 ───────────────────────────────────── --}}
         <div x-show="tab === 'docs'" x-cloak>
-            <div class="flex h-40 items-center justify-center rounded-xl border border-dashed border-gray-300 text-sm text-gray-400">
-                서류 자동생성은 추후 구현 예정입니다.
+            @php
+                $isExport = $this->sales_channel === 'export';
+                $hasId = $editingId !== null;
+                $url = fn (string $type) => $hasId
+                    ? route('erp.vehicles.documents.show', ['id' => $editingId, 'type' => $type])
+                    : '#';
+            @endphp
+
+            @unless ($hasId)
+                <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">
+                    차량을 먼저 저장한 뒤 서류를 생성할 수 있습니다.
+                </div>
+            @endunless
+
+            {{-- 국문 서류 (모든 채널 노출) ──────────────────── --}}
+            <div class="section-header">
+                <span class="section-dot bg-blue-500"></span>
+                <span class="section-title">국문 서류 (3종)</span>
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <a href="{{ $url('deregistration') }}"
+                   target="_blank"
+                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">자동차말소등록신청서</div>
+                        <div class="text-xs text-gray-500">별지 제17호 · PDF</div>
+                    </div>
+                    <span class="text-xs text-violet-600">↓</span>
+                </a>
+                <a href="{{ $url('registration_application') }}"
+                   target="_blank"
+                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">등록증 재발급 신청서</div>
+                        <div class="text-xs text-gray-500">시흥시장 · PDF</div>
+                    </div>
+                    <span class="text-xs text-violet-600">↓</span>
+                </a>
+                <a href="{{ $url('transfer_certificate') }}"
+                   target="_blank"
+                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">자동차양도증명서</div>
+                        <div class="text-xs text-gray-500">별지 제16호 · PDF</div>
+                    </div>
+                    <span class="text-xs text-violet-600">↓</span>
+                </a>
+            </div>
+
+            {{-- 영문 서류 (수출 채널만) ─────────────────────── --}}
+            <hr class="section-divider mt-5">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">영문 서류 (수출 채널)</span>
+            </div>
+
+            @if (! $isExport)
+                <div class="card-tight border-gray-200 bg-gray-50 text-sm text-gray-500">
+                    수출(export) 채널 차량만 영문 서류 생성이 가능합니다. 현재 채널: <strong>{{ $this->sales_channel }}</strong>
+                </div>
+            @else
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <a href="{{ $url('invoice') }}"
+                       target="_blank"
+                       class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">Proforma Invoice</div>
+                            <div class="text-xs text-gray-500">SSANCAR · PDF</div>
+                        </div>
+                        <span class="text-xs text-emerald-600">↓</span>
+                    </a>
+                    <a href="{{ $url('sales_contract') }}"
+                       target="_blank"
+                       class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">Sales Contract</div>
+                            <div class="text-xs text-gray-500">EXPORT · PDF</div>
+                        </div>
+                        <span class="text-xs text-emerald-600">↓</span>
+                    </a>
+                </div>
+
+                {{-- Excel CIPL — 선적방식 분기 가이드 표시 --}}
+                <div class="section-header mt-5">
+                    <span class="section-dot bg-amber-500"></span>
+                    <span class="section-title">Excel CIPL (선적용)</span>
+                </div>
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <a href="{{ $url('ro_cipl') }}"
+                       class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">RO_CIPL</div>
+                            <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
+                        </div>
+                        <span class="text-xs text-amber-600">↓</span>
+                    </a>
+                    <a href="{{ $url('con_cipl') }}"
+                       class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-800">con_CIPL</div>
+                            <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                        </div>
+                        <span class="text-xs text-amber-600">↓</span>
+                    </a>
+                </div>
+            @endif
+
+            <div class="mt-5 text-xs text-gray-500 leading-relaxed">
+                ※ PDF는 새 탭에서 열리며 자동 다운로드됩니다. Excel은 즉시 다운로드.<br>
+                ※ 양식이 비어있는 항목은 차량 등록 정보를 채운 후 다시 생성하세요.
             </div>
         </div>
 

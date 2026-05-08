@@ -126,6 +126,11 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 
 ## 새 PC 세팅
 ```bash
+# 1. PHP 확장 활성화 — XAMPP php.ini (C:\xampp\php\php.ini)에서 주석 제거 필수
+#    extension=gd        # PhpSpreadsheet (Excel CIPL) 의존성
+#    extension=zip       # PhpSpreadsheet · barryvdh/laravel-dompdf 의존성
+#    (Apache 사용 시 Apache 재시작)
+
 git clone https://github.com/wlsdud10075-JIN/car-erp.git
 cd car-erp
 composer install && npm install
@@ -198,8 +203,8 @@ vendor/bin/pint --dirty             # 커밋 전 포매팅
 | 9.5 | 대시보드 카운트 ↔ vehicles 목록 정합성 (action 파라미터 패턴 — `SKILLS.md §9` 참조) | ✅ 완료 |
 | 9.6 | 공용 UI 패턴 1차 — my-crm 기능 이식 (브랜드 텍스트 설정·관리자 대시보드 위젯 토글 패널·perPage 드롭다운 8개 페이지·Flux 사이드바 collapse 토글) | ✅ 완료 |
 | 10 | **모바일 반응형 + my-crm UI 풀-이식** — 10-A 사이드바 자체 Alpine 교체(220↔48 + drawer 3-state) / 10-B 디자인 시스템 풀-이식 / 10-C 페어 렌더 (8개 페이지 중 receivables만 신규 추가, 7개는 기 적용) / 10-D 슬라이드 패널 모바일 분기 (8개 모두 기 적용 — 무변경 검증) | ✅ 완료 |
-| 11 | 서류 자동 생성 (말소신청서/계약서/Invoice/CIPL) | ⏳ **다음 작업** |
-| 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | 🟡 보류 (외부 연동 표 참조) |
+| 11 | **서류 자동 생성 5종 PDF + 2종 Excel** — 11-A dompdf 셋업 / 11-B 한국어 PDF 3종 (말소·등록증재발급·양도증명서) + Noto Sans KR 서브셋 / 11-C 영문 PDF 2종 (Proforma Invoice·Sales Contract) / 11-D Excel CIPL 2종 (RO/con) maatwebsite/excel + 템플릿 추출 / 11-E 차량 편집 패널 "서류" 탭 + 채널 분기 (수출만 영문서류 노출) | ✅ 완료 |
+| 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | ⏳ **다음 작업** (혹은 외부 연동 표대로 보류) |
 | - | NICE API 실연동 (현재 스텁) | 🟡 보류 (외부 연동 표 참조) |
 | 13 | AWS Lightsail 배포 (Python ERP와 병행 운영 후 전환) | ⏳ |
 
