@@ -1,7 +1,9 @@
 <?php
 
 use App\Models\Buyer;
+use App\Models\ReceivableHistory;
 use App\Models\Salesman;
+use App\Models\User;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -24,6 +26,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
 
     public int $perPage = 30;
+
+    // ── 슬라이드 패널 (회수 이력) ──────────────────────────
+    public bool $showPanel = false;
+    public ?int $selectedVehicleId = null;
+
+    // 채권담당자 지정
+    public string $managerIdInput = '';
+
+    // 회수 이력 입력 폼
+    public ?int $historyEditId = null;
+    public string $hCollectedAt = '';
+    public string $hCollectorId = '';
+    public string $hMethod = 'deposit';
+    public string $hAmount = '';
+    public string $hNote = '';
 
     public function mount(): void
     {
@@ -93,6 +110,141 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function salesmen()
     {
         return Salesman::where('is_active', true)->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function staff()
+    {
+        // 회수 담당자 / 채권담당자 셀렉트용 — 모든 활성 사용자
+        return User::orderBy('name')->get(['id', 'name', 'permission']);
+    }
+
+    #[Computed]
+    public function selectedVehicle(): ?Vehicle
+    {
+        if (! $this->selectedVehicleId) {
+            return null;
+        }
+
+        return Vehicle::with(['receivableHistories.collector', 'receivableManager', 'salesman', 'buyer', 'exportBuyer'])
+            ->find($this->selectedVehicleId);
+    }
+
+    public function openPanel(int $vehicleId): void
+    {
+        $vehicle = Vehicle::find($vehicleId);
+        if (! $vehicle) {
+            return;
+        }
+
+        $this->selectedVehicleId = $vehicleId;
+        $this->managerIdInput = $vehicle->receivable_manager_id ? (string) $vehicle->receivable_manager_id : '';
+
+        $this->resetHistoryForm();
+        $this->showPanel = true;
+    }
+
+    public function closePanel(): void
+    {
+        $this->showPanel = false;
+        $this->selectedVehicleId = null;
+        $this->resetHistoryForm();
+        unset($this->selectedVehicle);
+    }
+
+    public function assignManager(): void
+    {
+        $vehicle = $this->selectedVehicle;
+        if (! $vehicle) {
+            return;
+        }
+
+        $vehicle->update([
+            'receivable_manager_id' => $this->managerIdInput !== '' ? (int) $this->managerIdInput : null,
+        ]);
+
+        unset($this->selectedVehicle, $this->vehicles, $this->summary);
+        session()->flash('panel_success', '채권담당자가 지정됐습니다.');
+    }
+
+    public function editHistory(int $historyId): void
+    {
+        $h = ReceivableHistory::find($historyId);
+        if (! $h || $h->vehicle_id !== $this->selectedVehicleId) {
+            return;
+        }
+
+        $this->historyEditId = $h->id;
+        $this->hCollectedAt = $h->collected_at?->format('Y-m-d') ?? '';
+        $this->hCollectorId = (string) $h->collector_id;
+        $this->hMethod = $h->method;
+        $this->hAmount = (string) $h->amount;
+        $this->hNote = $h->note ?? '';
+    }
+
+    public function saveHistory(): void
+    {
+        $this->validate([
+            'hCollectedAt' => ['required', 'date'],
+            'hCollectorId' => ['required', 'exists:users,id'],
+            'hMethod' => ['required', 'in:deposit,cash,offset,other'],
+            'hAmount' => ['required', 'numeric', 'min:0'],
+            'hNote' => ['nullable', 'string', 'max:500'],
+        ], [], [
+            'hCollectedAt' => '회수일자',
+            'hCollectorId' => '회수 담당자',
+            'hMethod' => '회수 방법',
+            'hAmount' => '회수 금액',
+            'hNote' => '메모',
+        ]);
+
+        $vehicle = $this->selectedVehicle;
+        if (! $vehicle) {
+            return;
+        }
+
+        $payload = [
+            'vehicle_id' => $vehicle->id,
+            'collected_at' => $this->hCollectedAt,
+            'collector_id' => (int) $this->hCollectorId,
+            'method' => $this->hMethod,
+            'amount' => (float) $this->hAmount,
+            'note' => $this->hNote ?: null,
+        ];
+
+        if ($this->historyEditId) {
+            ReceivableHistory::find($this->historyEditId)?->update($payload);
+            session()->flash('panel_success', '회수 이력이 수정됐습니다.');
+        } else {
+            ReceivableHistory::create($payload);
+            session()->flash('panel_success', '회수 이력이 추가됐습니다.');
+        }
+
+        $this->resetHistoryForm();
+        unset($this->selectedVehicle, $this->vehicles, $this->summary);
+    }
+
+    public function deleteHistory(int $historyId): void
+    {
+        $h = ReceivableHistory::find($historyId);
+        if (! $h || $h->vehicle_id !== $this->selectedVehicleId) {
+            return;
+        }
+
+        $h->delete();   // saved/deleted 이벤트가 final_payment 미러링 + 캐시 갱신 처리
+        unset($this->selectedVehicle, $this->vehicles, $this->summary);
+        session()->flash('panel_success', '회수 이력이 삭제됐습니다.');
+    }
+
+    private function resetHistoryForm(): void
+    {
+        $this->historyEditId = null;
+        $this->hCollectedAt = now()->format('Y-m-d');
+        $this->hCollectorId = (string) (auth()->id() ?? '');
+        $this->hMethod = 'deposit';
+        $this->hAmount = '';
+        $this->hNote = '';
+        $this->resetValidation();
     }
 
     /**
@@ -245,7 +397,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         : 0;
                     $primaryBuyer = $channel === 'export' ? ($v->exportBuyer ?? $v->buyer) : $v->buyer;
                 @endphp
-                <tr class="border-b border-gray-100 {{ $rowBg }}">
+                <tr class="cursor-pointer border-b border-gray-100 {{ $rowBg }} hover:bg-violet-50"
+                    wire:click="openPanel({{ $v->id }})">
                     <td class="py-2 pr-3 text-gray-500">{{ $v->id }}</td>
                     <td class="py-2 pr-3 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
@@ -275,4 +428,184 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 페이지네이션 --}}
     <div class="mt-2">{{ $this->vehicles->links() }}</div>
 </div>
+
+{{-- ── 슬라이드 패널: 회수 이력 ────────────────────────── --}}
+@if ($showPanel && $this->selectedVehicle)
+@php $sv = $this->selectedVehicle; @endphp
+<div class="fixed inset-0 z-50 flex justify-end" wire:keydown.escape="closePanel">
+    {{-- backdrop --}}
+    <div class="absolute inset-0 bg-black/40" wire:click="closePanel"></div>
+
+    {{-- panel --}}
+    <div class="relative ml-auto flex h-full w-full max-w-[640px] flex-col overflow-y-auto bg-white shadow-xl">
+        {{-- 헤더 --}}
+        <div class="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4">
+            <div class="flex items-start justify-between">
+                <div>
+                    <div class="text-xs uppercase tracking-wide text-gray-400">회수 이력</div>
+                    <div class="mt-0.5 text-lg font-bold text-gray-800">{{ $sv->vehicle_number }}</div>
+                    <div class="mt-0.5 text-xs text-gray-500">
+                        {{ $sv->brand }} {{ $sv->model_type }} · 담당자 {{ $sv->salesman?->name ?? '-' }}
+                    </div>
+                </div>
+                <button type="button" wire:click="closePanel" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            {{-- 미납 요약 --}}
+            @php
+                $rb = match($sv->receivable_risk) {
+                    'safe'     => 'badge-blue',
+                    'caution'  => 'badge-amber',
+                    'danger'   => 'badge-amber',
+                    'critical' => 'badge-red',
+                    default    => 'badge-gray',
+                };
+            @endphp
+            <div class="mt-3 grid grid-cols-3 gap-2">
+                <div class="card-sm">
+                    <div class="text-xs text-gray-500">판매합계</div>
+                    <div class="mt-0.5 text-sm font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($sv->sale_total_amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                </div>
+                <div class="card-sm">
+                    <div class="text-xs text-gray-500">미납금</div>
+                    <div class="mt-0.5 text-sm font-semibold text-red-600">{{ $sv->currency }} {{ number_format($sv->sale_unpaid_amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                </div>
+                <div class="card-sm">
+                    <div class="text-xs text-gray-500">위험도</div>
+                    <div class="mt-0.5"><span class="badge {{ $rb }}">{{ $sv->receivable_risk_label }}</span></div>
+                </div>
+            </div>
+        </div>
+
+        @if (session('panel_success'))
+        <div class="mx-5 mt-3 rounded border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{{ session('panel_success') }}</div>
+        @endif
+
+        {{-- 채권담당자 지정 --}}
+        <div class="px-5 py-4">
+            <div class="section-header">
+                <span class="section-dot bg-violet-500"></span>
+                <span class="section-title">채권담당자</span>
+            </div>
+            <div class="mt-2 flex items-center gap-2">
+                <select wire:model="managerIdInput" class="input-base flex-1">
+                    <option value="">미지정</option>
+                    @foreach ($this->staff as $u)<option value="{{ $u->id }}">{{ $u->name }} ({{ $u->permission }})</option>@endforeach
+                </select>
+                <button type="button" wire:click="assignManager" class="btn-primary px-3 py-1.5 text-sm">지정</button>
+            </div>
+        </div>
+
+        <hr class="section-divider mx-5">
+
+        {{-- 회수 이력 추가/수정 폼 --}}
+        <div class="px-5 py-4">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ $historyEditId ? '회수 이력 수정' : '회수 이력 추가' }}</span>
+            </div>
+
+            <div class="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                    <label class="label-base">회수일자 *</label>
+                    <input type="date" wire:model="hCollectedAt" class="input-base" />
+                    @error('hCollectedAt')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                    <label class="label-base">회수 담당자 *</label>
+                    <select wire:model="hCollectorId" class="input-base">
+                        <option value="">선택</option>
+                        @foreach ($this->staff as $u)<option value="{{ $u->id }}">{{ $u->name }}</option>@endforeach
+                    </select>
+                    @error('hCollectorId')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                    <label class="label-base">회수 방법 *</label>
+                    <select wire:model="hMethod" class="input-base">
+                        <option value="deposit">입금 (final_payment 자동 생성)</option>
+                        <option value="cash">현금</option>
+                        <option value="offset">상계</option>
+                        <option value="other">기타</option>
+                    </select>
+                    @error('hMethod')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                <div>
+                    <label class="label-base">금액 ({{ $sv->currency }}) *</label>
+                    <input type="number" step="0.01" wire:model="hAmount" class="input-base" placeholder="0" />
+                    @error('hAmount')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                <div class="col-span-2">
+                    <label class="label-base">메모</label>
+                    <textarea wire:model="hNote" rows="2" class="input-base" placeholder="회수 경위·연락 이력 등"></textarea>
+                </div>
+            </div>
+
+            <div class="mt-3 flex items-center justify-end gap-2">
+                @if ($historyEditId)
+                <button type="button" wire:click="resetHistoryForm" class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                @endif
+                <button type="button" wire:click="saveHistory" class="btn-primary px-4 py-1.5 text-sm">{{ $historyEditId ? '수정 저장' : '추가' }}</button>
+            </div>
+        </div>
+
+        <hr class="section-divider mx-5">
+
+        {{-- 회수 이력 목록 --}}
+        <div class="px-5 py-4 pb-8">
+            <div class="section-header">
+                <span class="section-dot bg-blue-500"></span>
+                <span class="section-title">회수 이력 목록 (최신순)</span>
+            </div>
+
+            @php $histories = $sv->receivableHistories->sortByDesc('collected_at'); @endphp
+
+            @if ($histories->isEmpty())
+            <div class="mt-3 rounded border border-dashed border-gray-200 px-3 py-6 text-center text-xs text-gray-400">
+                회수 이력이 없습니다.
+            </div>
+            @else
+            <div class="mt-2 space-y-2">
+                @foreach ($histories as $h)
+                @php
+                    $methodLabel = match($h->method) {
+                        'deposit' => '입금',
+                        'cash'    => '현금',
+                        'offset'  => '상계',
+                        'other'   => '기타',
+                    };
+                    $methodBadge = $h->method === 'deposit' ? 'badge-blue' : 'badge-gray';
+                @endphp
+                <div class="rounded border border-gray-200 px-3 py-2">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 text-sm">
+                                <span class="font-medium text-gray-800">{{ $h->collected_at->format('Y-m-d') }}</span>
+                                <span class="badge {{ $methodBadge }}">{{ $methodLabel }}</span>
+                                <span class="text-xs text-gray-500">{{ $h->collector?->name ?? '-' }}</span>
+                                @if ($h->final_payment_id)
+                                <span class="text-xs text-blue-500" title="final_payments와 미러링됨">↔ #{{ $h->final_payment_id }}</span>
+                                @endif
+                            </div>
+                            <div class="mt-1 text-base font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($h->amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                            @if ($h->note)
+                            <div class="mt-0.5 text-xs text-gray-500">{{ $h->note }}</div>
+                            @endif
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button type="button" wire:click="editHistory({{ $h->id }})" class="text-xs text-violet-600 hover:underline">수정</button>
+                            <button type="button" wire:click="deleteHistory({{ $h->id }})" wire:confirm="이 회수 이력을 삭제하시겠습니까? 미러링된 입금 기록도 함께 삭제됩니다." class="text-xs text-red-500 hover:underline">삭제</button>
+                        </div>
+                    </div>
+                </div>
+                @endforeach
+            </div>
+            @endif
+        </div>
+    </div>
+</div>
+@endif
 </div>
