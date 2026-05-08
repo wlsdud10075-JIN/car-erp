@@ -6,13 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class Vehicle extends Model
 {
     use SoftDeletes;
 
     protected $fillable = [
-        'vehicle_number', 'sales_channel', 'is_disposed',
+        'vehicle_number', 'sales_channel', 'is_disposed', 'progress_status_cache',
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
         'nice_reg_vehicle_form', 'nice_reg_first_date', 'nice_reg_date',
@@ -56,6 +58,31 @@ class Vehicle extends Model
         'eta_date' => 'date',
         'bl_issue_date' => 'date',
     ];
+
+    // ── Boot: 진행상태 캐시 자동 갱신 ──────────────────────────────
+    protected static function booted(): void
+    {
+        static::saving(function (Vehicle $vehicle) {
+            $vehicle->progress_status_cache = $vehicle->progress_status;
+        });
+
+        // hard delete (forceDelete) 시에만 첨부 디렉토리 정리.
+        // soft delete는 첨부 유지 — 복구 가능성 보호.
+        static::forceDeleted(function (Vehicle $vehicle) {
+            Storage::disk('public')->deleteDirectory("vehicles/{$vehicle->id}");
+        });
+    }
+
+    /**
+     * 잔금 변경 등으로 잔액 의존 진행상태가 바뀌었을 때 호출.
+     * Eloquent saving 이벤트를 우회하고 컬럼만 직접 갱신해 무한 루프 방지.
+     */
+    public function refreshProgressCache(): void
+    {
+        $this->refresh();
+        DB::table('vehicles')->where('id', $this->id)
+            ->update(['progress_status_cache' => $this->progress_status]);
+    }
 
     // ── Relations ──────────────────────────────────────────────────
     public function salesman(): BelongsTo

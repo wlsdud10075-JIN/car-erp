@@ -156,6 +156,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $export_declaration_document_path = '';
     public string $bl_document_path                 = '';
 
+    // "기존 파일 삭제" 액션 플래그 (UI 버튼 → save 시 컬럼 null + 디스크 삭제)
+    public bool $clearDeregistrationDoc    = false;
+    public bool $clearExportDeclarationDoc = false;
+    public bool $clearBlDoc                = false;
+
     public function mount(): void
     {
         $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
@@ -177,7 +182,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             default    => 'purchase_date',
         };
 
-        $query = Vehicle::query()
+        return Vehicle::query()
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments'])
             ->when($this->search, fn($q) => $q->where(fn($q2) =>
                 $q2->where('vehicle_number', 'like', "%{$this->search}%")
@@ -186,25 +191,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                    ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
             ))
             ->when($this->channelFilter, fn($q) => $q->where('sales_channel', $this->channelFilter))
+            ->when($this->progressFilter, fn($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->dateFrom, fn($q) => $q->where($dateColumn, '>=', $this->dateFrom))
             ->when($this->dateTo, fn($q) => $q->where($dateColumn, '<=', $this->dateTo))
-            ->latest();
-
-        $paginated = $query->paginate($this->perPage);
-
-        // 진행상태 필터 (computed라 collection 필터)
-        if ($this->progressFilter) {
-            $all = $query->get();
-            $filtered = $all->filter(fn($v) => $v->progress_status === $this->progressFilter);
-            return new \Illuminate\Pagination\LengthAwarePaginator(
-                $filtered->forPage($this->getPage(), $this->perPage),
-                $filtered->count(),
-                $this->perPage,
-                $this->getPage(),
-            );
-        }
-
-        return $paginated;
+            ->latest()
+            ->paginate($this->perPage);
     }
 
     #[Computed]
@@ -377,6 +368,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
         $this->bl_document_path                 = $v->bl_document                 ?? '';
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
+        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
         $this->showPanel = true;
     }
@@ -386,6 +378,27 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetValidation();
         $this->showPanel = false;
         $this->editingId = null;
+    }
+
+    public function removeDeregistrationDoc(): void
+    {
+        $this->clearDeregistrationDoc = true;
+        $this->deregistrationDocFile = null;
+        $this->deregistration_document_path = '';
+    }
+
+    public function removeExportDeclarationDoc(): void
+    {
+        $this->clearExportDeclarationDoc = true;
+        $this->exportDeclarationDocFile = null;
+        $this->export_declaration_document_path = '';
+    }
+
+    public function removeBlDoc(): void
+    {
+        $this->clearBlDoc = true;
+        $this->blDocFile = null;
+        $this->bl_document_path = '';
     }
 
     private function validateVehicleForm(): void
@@ -606,31 +619,44 @@ new #[Layout('components.layouts.app')] class extends Component {
             'memo' => $this->memo ?: null,
         ];
 
-        \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate) {
-            if ($this->editingId) {
-                $vehicle = Vehicle::findOrFail($this->editingId);
-                $vehicle->update($data);
-            } else {
-                $vehicle = Vehicle::create($data);
-            }
+        // 파일 정리 추적용 (트랜잭션 성공·실패 분기)
+        $newlyStoredPaths = [];   // 트랜잭션 실패 시 디스크에서 제거
+        $pathsToDelete    = [];   // 트랜잭션 성공 시 디스크에서 제거 (옛 파일 / 사용자가 삭제 클릭)
 
-            // 파일 저장 (업로드된 경우만)
-            $fileUpdates = [];
-            if ($this->deregistrationDocFile) {
-                $fileUpdates['deregistration_document'] =
-                    $this->deregistrationDocFile->store("vehicles/{$vehicle->id}", 'public');
-            }
-            if ($this->exportDeclarationDocFile) {
-                $fileUpdates['export_declaration_document'] =
-                    $this->exportDeclarationDocFile->store("vehicles/{$vehicle->id}", 'public');
-            }
-            if ($this->blDocFile) {
-                $fileUpdates['bl_document'] =
-                    $this->blDocFile->store("vehicles/{$vehicle->id}", 'public');
-            }
-            if ($fileUpdates) {
-                $vehicle->update($fileUpdates);
-            }
+        $fileFields = [
+            ['col' => 'deregistration_document',     'fileProp' => 'deregistrationDocFile',    'clearProp' => 'clearDeregistrationDoc'],
+            ['col' => 'export_declaration_document', 'fileProp' => 'exportDeclarationDocFile', 'clearProp' => 'clearExportDeclarationDoc'],
+            ['col' => 'bl_document',                 'fileProp' => 'blDocFile',                'clearProp' => 'clearBlDoc'],
+        ];
+
+        try {
+            \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, &$newlyStoredPaths, &$pathsToDelete) {
+                if ($this->editingId) {
+                    $vehicle = Vehicle::findOrFail($this->editingId);
+                    $vehicle->update($data);
+                } else {
+                    $vehicle = Vehicle::create($data);
+                }
+
+                // 파일: 업로드 / 삭제 / 교체 통합 처리
+                $fileUpdates = [];
+                foreach ($fileFields as $f) {
+                    $oldPath = $vehicle->{$f['col']};
+                    if ($this->{$f['fileProp']}) {
+                        $newPath = $this->{$f['fileProp']}->store("vehicles/{$vehicle->id}", 'public');
+                        $newlyStoredPaths[] = $newPath;
+                        $fileUpdates[$f['col']] = $newPath;
+                        if ($oldPath && $oldPath !== $newPath) {
+                            $pathsToDelete[] = $oldPath;
+                        }
+                    } elseif ($this->{$f['clearProp']} && $oldPath) {
+                        $fileUpdates[$f['col']] = null;
+                        $pathsToDelete[] = $oldPath;
+                    }
+                }
+                if ($fileUpdates) {
+                    $vehicle->update($fileUpdates);
+                }
 
             // 판매 잔금 동기화 (id-diff)
             $existingFinalIds = $vehicle->finalPayments->pluck('id')->toArray();
@@ -661,7 +687,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $vehicle->purchaseBalancePayments()->create(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
                 }
             }
-        });
+
+            // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
+            $vehicle->refreshProgressCache();
+            });
+        } catch (\Throwable $e) {
+            // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외
+            foreach ($newlyStoredPaths as $p) {
+                Storage::disk('public')->delete($p);
+            }
+            throw $e;
+        }
+
+        // 트랜잭션 성공: 옛 파일(교체·삭제 대상) 디스크에서 제거
+        foreach ($pathsToDelete as $p) {
+            Storage::disk('public')->delete($p);
+        }
+
+        $this->clearDeregistrationDoc = false;
+        $this->clearExportDeclarationDoc = false;
+        $this->clearBlDoc = false;
 
         $this->unsetComputedProperties();
         $this->close();
@@ -750,6 +795,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
         $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = '';
+        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
     }
 
     private function unsetComputedProperties(): void
@@ -1170,8 +1216,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input wire:model="deregistrationDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
                     @if($deregistration_document_path)
-                    <a href="{{ Storage::url($deregistration_document_path) }}" target="_blank"
-                       class="mt-1 block text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                    <div class="mt-1 flex items-center gap-3">
+                        <a href="{{ Storage::url($deregistration_document_path) }}" target="_blank"
+                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                        <button type="button" wire:click="removeDeregistrationDoc"
+                                class="text-xs text-red-500 hover:underline">삭제</button>
+                    </div>
                     @endif
                 </div>
                 <div class="col-span-2">
@@ -1312,8 +1362,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input wire:model="exportDeclarationDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
                     @if($export_declaration_document_path)
-                    <a href="{{ Storage::url($export_declaration_document_path) }}" target="_blank"
-                       class="mt-1 block text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                    <div class="mt-1 flex items-center gap-3">
+                        <a href="{{ Storage::url($export_declaration_document_path) }}" target="_blank"
+                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                        <button type="button" wire:click="removeExportDeclarationDoc"
+                                class="text-xs text-red-500 hover:underline">삭제</button>
+                    </div>
                     @endif
                 </div>
             </div>
@@ -1355,8 +1409,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input wire:model="blDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
                     @if($bl_document_path)
-                    <a href="{{ Storage::url($bl_document_path) }}" target="_blank"
-                       class="mt-1 block text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                    <div class="mt-1 flex items-center gap-3">
+                        <a href="{{ Storage::url($bl_document_path) }}" target="_blank"
+                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                        <button type="button" wire:click="removeBlDoc"
+                                class="text-xs text-red-500 hover:underline">삭제</button>
+                    </div>
                     @endif
                 </div>
             </div>

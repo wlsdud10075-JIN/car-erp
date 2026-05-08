@@ -158,8 +158,8 @@ vendor/bin/pint --dirty             # 커밋 전 포매팅
 
 | 연동 | 용도 | 구현 위치 | 우선순위 |
 |---|---|---|---|
-| **NICE API** | 차량번호 → 차량정보 24개 필드 자동조회 (Registration 12 + Spec 12) | `app/Services/NiceApiService.php` | ★ 필수 |
-| **포워딩사 메일** | 수출통관 완료 시 자동 발송 (차량정보 + 수출신고서) | `app/Mail/ForwardingNoticeMail.php` + Listener | 중 |
+| **NICE API** | 차량번호 → 차량정보 24개 필드 자동조회 (Registration 12 + Spec 12) | `app/Services/NiceApiService.php` | 🟡 **보류** — API 키 발급 후 진행 (현재 스텁만, 수동 입력 가능) |
+| **포워딩사 메일** | 수출통관 완료 시 자동 발송 (차량정보 + 수출신고서) | `app/Mail/ForwardingNoticeMail.php` + Listener | 🟡 **보류** — 운영 SMTP 확정 시 NICE와 함께 진행 |
 | DHL API | 운송장 자동 생성 | (1단계 스코프 외 — 차후 검토) | - |
 
 **NICE API 핵심 규칙**:
@@ -190,10 +190,14 @@ vendor/bin/pint --dirty             # 커밋 전 포매팅
 | 사용자관리 | /admin/users (9단계 선행) | ✅ 완료 |
 | 7 | 정산 | ✅ 완료 |
 | 8 | ERP 대시보드 KPI | ✅ 완료 |
+| 8.5 | 운영 안정성 1차: 설정 Layout / 차량 validation / 라우트 권한 (PR #2) | ✅ 완료 |
+| 8.6 | 진행상태 캐시 컬럼 + 잔금 트리거 (성능) | ✅ 완료 |
+| 8.7 | 파일 교체/삭제 정리 (orphan 방지 + UI 삭제 버튼) | ✅ 완료 |
 | 9 | 관리자 대시보드 (사용자관리는 완료) | ⏳ **다음 작업** |
 | 10 | 모바일 반응형 | ⏳ |
 | 11 | 서류 자동 생성 (말소신청서/계약서/Invoice/CIPL) | ⏳ |
-| 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | ⏳ |
+| 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | 🟡 보류 (외부 연동 표 참조) |
+| - | NICE API 실연동 (현재 스텁) | 🟡 보류 (외부 연동 표 참조) |
 | 13 | AWS Lightsail 배포 (Python ERP와 병행 운영 후 전환) | ⏳ |
 
 ## 대시보드 설계 원칙 (확정)

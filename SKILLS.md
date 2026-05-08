@@ -46,11 +46,13 @@ public function getProgressStatusAttribute(): string
 }
 ```
 
-**목록 필터링 주의**:
-- 진행상태는 SQL where 직접 사용 불가 (computed). 두 가지 방법 중 택1:
-  - **메모리 필터**: 페이지당 결과셋만 collection filter (소량 데이터)
-  - **상태 캐시 컬럼** `progress_status_cache`: 모델 saving 시 갱신 + 인덱스 (대량 데이터 / 통계 쿼리 빈번 시)
-- 11단계 → 단계별 그룹 6종(매입/판매/통관/선적/완료/폐기)으로 탭 필터 권장
+**목록 필터링 — `progress_status_cache` 사용 (✅ 도입 완료)**:
+- DB 컬럼 `progress_status_cache` (varchar 20, indexed) 자동 갱신
+- `Vehicle::saving` 이벤트가 매번 `progress_status` 재계산 후 컬럼에 기록
+- 잔금 변경 → `FinalPayment` / `PurchaseBalancePayment`의 `saved` / `deleted` 이벤트가 부모 차량의 `refreshProgressCache()` 호출
+- 단, **bulk delete/update**(`whereIn->delete()`, `where->update()`)는 모델 이벤트가 안 뜸 → 그런 코드 직후 `$vehicle->refreshProgressCache()` **명시 호출 필수**
+- 목록 SQL: `->when($filter, fn($q) => $q->where('progress_status_cache', $filter))`
+- 일괄 재계산: `php artisan vehicles:rebuild-progress-cache`
 
 **미입금/미지급 보조 accessor**:
 ```php

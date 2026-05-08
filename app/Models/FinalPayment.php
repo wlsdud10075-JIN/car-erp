@@ -11,6 +11,12 @@ class FinalPayment extends Model
 
     protected $casts = ['payment_date' => 'date'];
 
+    protected static function booted(): void
+    {
+        static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshProgressCache());
+        static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshProgressCache());
+    }
+
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
