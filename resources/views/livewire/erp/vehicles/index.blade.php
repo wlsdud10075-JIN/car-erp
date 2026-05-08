@@ -8,13 +8,14 @@ use App\Models\Vehicle;
 use App\Models\FinalPayment;
 use App\Models\PurchaseBalancePayment;
 use App\Services\NiceApiService;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
-use Illuminate\Support\Facades\Storage;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination, WithFileUploads;
@@ -387,9 +388,114 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editingId = null;
     }
 
+    private function validateVehicleForm(): void
+    {
+        $nonNegativeNumeric = function (string $attribute, mixed $value, \Closure $fail) {
+            if ($value === '' || $value === null) {
+                return;
+            }
+            $cleaned = str_replace(',', '', (string) $value);
+            if (! is_numeric($cleaned) || (float) $cleaned < 0) {
+                $fail(':attribute은(는) 0 이상의 숫자여야 합니다.');
+            }
+        };
+
+        $numericFields = [
+            'year_str', 'cc_str', 'weight_kg_str', 'mileage_str',
+            'nice_reg_max_load_str', 'nice_reg_passengers_str',
+            'nice_spec_displacement_str', 'nice_spec_length_str',
+            'nice_spec_width_str', 'nice_spec_height_str',
+            'nice_spec_wheelbase_str', 'nice_spec_curb_weight_str',
+            'purchase_price_str', 'selling_fee_str',
+            'cost_deregistration_str', 'cost_license_str', 'cost_towing_str',
+            'cost_carry_str', 'cost_shoring_str', 'cost_insurance_str',
+            'cost_transfer_str', 'cost_extra1_str', 'cost_extra2_str',
+            'down_payment_str', 'selling_fee_payment_str',
+            'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
+            'commission_str', 'transport_fee_str', 'auto_loading_str',
+            'sale_other_costs_str', 'deposit_down_payment_str',
+            'interim_payment_str', 'advance_payment1_str',
+            'advance_payment2_str', 'savings_used_str',
+            'export_declaration_amount_str', 'dhl_weight_str',
+        ];
+
+        $rules = [
+            'vehicle_number' => [
+                'required', 'string', 'max:20',
+                Rule::unique('vehicles', 'vehicle_number')->ignore($this->editingId),
+            ],
+            'sales_channel'   => ['required', 'in:export,heyman,carpul'],
+            'currency'        => ['required', 'in:USD,JPY,EUR,GBP,CNY,KRW'],
+            'shipping_method' => ['nullable', 'in:RORO,CONTAINER'],
+
+            'purchase_date'       => ['nullable', 'date'],
+            'sale_date'           => ['nullable', 'date'],
+            'shipping_date'       => ['nullable', 'date'],
+            'eta_date'            => ['nullable', 'date'],
+            'bl_issue_date'       => ['nullable', 'date'],
+            'nice_reg_first_date' => ['nullable', 'date'],
+            'nice_reg_date'       => ['nullable', 'date'],
+
+            'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
+            'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
+            'consignee_id_str'          => [Rule::when($this->consignee_id_str !== '', ['exists:consignees,id'])],
+            'export_buyer_id_str'       => [Rule::when($this->export_buyer_id_str !== '', ['exists:buyers,id'])],
+            'export_consignee_id_str'   => [Rule::when($this->export_consignee_id_str !== '', ['exists:consignees,id'])],
+            'forwarding_company_id_str' => [Rule::when($this->forwarding_company_id_str !== '', ['exists:forwarding_companies,id'])],
+            'bl_buyer_id_str'           => [Rule::when($this->bl_buyer_id_str !== '', ['exists:buyers,id'])],
+            'bl_consignee_id_str'       => [Rule::when($this->bl_consignee_id_str !== '', ['exists:consignees,id'])],
+
+            'deregistrationDocFile'    => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'blDocFile'                => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+
+            'finalPayments.*.amount'           => [$nonNegativeNumeric],
+            'finalPayments.*.payment_date'     => ['nullable', 'date'],
+            'purchaseBalancePayments.*.amount' => [$nonNegativeNumeric],
+            'purchaseBalancePayments.*.payment_date' => ['nullable', 'date'],
+        ];
+
+        foreach ($numericFields as $field) {
+            $rules[$field] = [$nonNegativeNumeric];
+        }
+
+        $attributes = [
+            'vehicle_number' => '차량번호',
+            'sales_channel'  => '판매채널',
+            'currency'       => '통화',
+            'shipping_method' => '선적방식',
+            'purchase_date'  => '매입일',
+            'sale_date'      => '판매일',
+            'shipping_date'  => '선적일',
+            'eta_date'       => 'ETA',
+            'bl_issue_date'  => 'B/L 발행일',
+            'nice_reg_first_date' => '최초등록일',
+            'nice_reg_date'  => '등록일',
+            'salesman_id_str' => '영업담당자',
+            'buyer_id_str'    => '판매 바이어',
+            'consignee_id_str' => '판매 컨사이니',
+            'export_buyer_id_str'     => '수출 바이어',
+            'export_consignee_id_str' => '수출 컨사이니',
+            'forwarding_company_id_str' => '포워딩사',
+            'bl_buyer_id_str'    => 'B/L 바이어',
+            'bl_consignee_id_str' => 'B/L 컨사이니',
+            'deregistrationDocFile'    => '말소서류',
+            'exportDeclarationDocFile' => '수출신고서',
+            'blDocFile'                => 'B/L 문서',
+            'year_str' => '연식', 'cc_str' => '배기량',
+            'weight_kg_str' => '중량', 'mileage_str' => '주행거리',
+            'purchase_price_str' => '매입가', 'selling_fee_str' => '매도비',
+            'sale_price_str' => '판매가', 'exchange_rate_str' => '환율',
+            'export_declaration_amount_str' => '면장금액',
+            'dhl_weight_str' => 'DHL 중량',
+        ];
+
+        $this->validate($rules, [], $attributes);
+    }
+
     public function save(): void
     {
-        $this->validate(['vehicle_number' => 'required|string|max:20']);
+        $this->validateVehicleForm();
 
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');

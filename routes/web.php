@@ -18,13 +18,16 @@ Route::get('dashboard', function () {
     return redirect()->route('erp.dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-// ERP — 모든 인증 사용자 접근
-Route::middleware(['auth', 'verified'])->prefix('erp')->name('erp.')->group(function () {
+// ERP — canAccessErp() (super/admin ∪ role 전체/영업/통관/정산/관리)
+Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('dashboard', 'erp.dashboard')->name('dashboard');
     Volt::route('vehicles', 'erp.vehicles.index')->name('vehicles.index');
     Volt::route('buyers', 'erp.buyers.index')->name('buyers.index');
     Volt::route('consignees', 'erp.consignees.index')->name('consignees.index');
-    // 캐시플로우: 인증 후 컴포넌트 내부에서 본인 여부 검증
+});
+
+// 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증
+Route::middleware(['auth', 'verified', 'sales'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('salesmen/{id}/cashflow', 'erp.salesmen.cashflow')->name('salesmen.cashflow');
 });
 
