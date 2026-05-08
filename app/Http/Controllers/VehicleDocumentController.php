@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Vehicle;
+use App\Services\VehicleCiplGenerator;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VehicleDocumentController extends Controller
 {
@@ -17,7 +19,7 @@ class VehicleDocumentController extends Controller
      * 지원 type:
      * - deregistration: 차량말소신청서 (PDF)
      */
-    public function show(int $id, string $type): Response|HttpResponse
+    public function show(int $id, string $type): Response|HttpResponse|StreamedResponse
     {
         $vehicle = Vehicle::findOrFail($id);
 
@@ -27,6 +29,8 @@ class VehicleDocumentController extends Controller
             'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
             'invoice' => $this->renderPdf($vehicle, 'documents.invoice', 'Invoice'),
             'sales_contract' => $this->renderPdf($vehicle, 'documents.sales-contract', 'SalesContract'),
+            'ro_cipl' => (new VehicleCiplGenerator($vehicle))->downloadRoCipl(),
+            'con_cipl' => (new VehicleCiplGenerator($vehicle))->downloadConCipl(),
             default => abort(404, '지원하지 않는 서류 종류입니다: '.$type),
         };
     }
