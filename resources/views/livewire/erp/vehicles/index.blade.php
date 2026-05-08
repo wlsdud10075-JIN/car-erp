@@ -113,6 +113,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $savings_used_str     = '';
     public array  $finalPayments = [];
 
+    // ── 카풀/헤이맨 계산서 (sales_channel에 따라 조건부 노출) ────
+    public string $tax_invoice_1_date      = '';
+    public string $tax_invoice_1_amount_str = '';
+    public string $tax_invoice_2_date      = '';
+    public string $tax_invoice_2_amount_str = '';
+    public string $agency_fee_str          = '';
+
     // ── 수출통관 ──────────────────────────────────────────────────
     public string $export_buyer_id_str     = '';
     public string $export_consignee_id_str = '';
@@ -331,6 +338,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
         ])->toArray();
 
+        // 카풀/헤이맨 계산서
+        $this->tax_invoice_1_date = $v->tax_invoice_1_date ? $v->tax_invoice_1_date->format('Y-m-d') : '';
+        $this->tax_invoice_1_amount_str = $v->tax_invoice_1_amount ? (string) $v->tax_invoice_1_amount : '';
+        $this->tax_invoice_2_date = $v->tax_invoice_2_date ? $v->tax_invoice_2_date->format('Y-m-d') : '';
+        $this->tax_invoice_2_amount_str = $v->tax_invoice_2_amount ? (string) $v->tax_invoice_2_amount : '';
+        $this->agency_fee_str = $v->agency_fee ? (string) $v->agency_fee : '';
+
         // 수출통관
         $this->export_buyer_id_str       = $v->export_buyer_id       ? (string)$v->export_buyer_id       : '';
         $this->export_consignee_id_str   = $v->export_consignee_id   ? (string)$v->export_consignee_id   : '';
@@ -430,6 +444,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'interim_payment_str', 'advance_payment1_str',
             'advance_payment2_str', 'savings_used_str',
             'export_declaration_amount_str', 'dhl_weight_str',
+            'tax_invoice_1_amount_str', 'tax_invoice_2_amount_str', 'agency_fee_str',
         ];
 
         $rules = [
@@ -448,6 +463,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_issue_date'       => ['nullable', 'date'],
             'nice_reg_first_date' => ['nullable', 'date'],
             'nice_reg_date'       => ['nullable', 'date'],
+            'tax_invoice_1_date'  => ['nullable', 'date'],
+            'tax_invoice_2_date'  => ['nullable', 'date'],
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
@@ -617,6 +634,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             'dhl_dimensions' => $this->dhl_dimensions ?: null,
             'dhl_request'    => $this->dhl_request,
             'memo' => $this->memo ?: null,
+            // 카풀/헤이맨 계산서 (channel != carpul/heyman 이어도 컬럼은 nullable이라 OK)
+            'tax_invoice_1_date'   => $toDate($this->tax_invoice_1_date),
+            'tax_invoice_1_amount' => $this->tax_invoice_1_amount_str !== '' ? $toInt($this->tax_invoice_1_amount_str) : null,
+            'tax_invoice_2_date'   => $toDate($this->tax_invoice_2_date),
+            'tax_invoice_2_amount' => $this->tax_invoice_2_amount_str !== '' ? $toInt($this->tax_invoice_2_amount_str) : null,
+            'agency_fee'           => $this->agency_fee_str !== '' ? $toInt($this->agency_fee_str) : null,
         ];
 
         // 파일 정리 추적용 (트랜잭션 성공·실패 분기)
@@ -785,6 +808,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_loading_location','vessel_name','bl_issue_date',
             'dhl_recipient_name','dhl_recipient_address','dhl_recipient_phone',
             'dhl_sender_name','dhl_sender_address','dhl_weight_str','dhl_dimensions','memo',
+            'tax_invoice_1_date','tax_invoice_1_amount_str','tax_invoice_2_date','tax_invoice_2_amount_str','agency_fee_str',
         ];
         foreach ($defaults as $prop) $this->$prop = '';
 
@@ -1302,6 +1326,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 @endforeach
             </div>
+
+            {{-- 카풀/헤이맨 채널 — 계산서 섹션 (다른 채널은 미노출) --}}
+            @if (in_array($sales_channel, ['carpul', 'heyman']))
+            <hr class="section-divider my-4">
+            <div class="section-header">
+                <span class="section-dot bg-teal-500"></span>
+                <span class="section-title">계산서 ({{ $sales_channel === 'carpul' ? '카풀' : '헤이맨' }})</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div><label class="label-base">1차 발행일</label><input wire:model="tax_invoice_1_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">1차 금액</label><input wire:model="tax_invoice_1_amount_str" type="text" class="input-base" placeholder="0" /></div>
+                <div></div>
+                <div><label class="label-base">2차 발행일</label><input wire:model="tax_invoice_2_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">2차 금액</label><input wire:model="tax_invoice_2_amount_str" type="text" class="input-base" placeholder="0" /></div>
+                @if ($sales_channel === 'carpul')
+                <div><label class="label-base">대행수수료</label><input wire:model="agency_fee_str" type="text" class="input-base" placeholder="0" /></div>
+                @endif
+            </div>
+            @endif
         </div>
 
         {{-- ─── 수출통관 탭 ───────────────────────────────── --}}
