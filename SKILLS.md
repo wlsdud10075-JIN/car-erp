@@ -286,14 +286,75 @@ $dateColumn = match ($this->dateType) {
 ```
 탭 클릭 시 `dateColumn`만 바뀌고 동일 검색 필드 재사용.
 
-### 대시보드 → 차량목록 연동 (쿼리 파라미터)
-대시보드 위젯 클릭 시 URL 쿼리로 필터 전달:
+### 대시보드 → 차량목록 정합성 (action 파라미터 패턴)
+
+**핵심 원칙**: 대시보드 카드의 카운트 산정 로직과 클릭 후 vehicles 목록의 SQL where가 **100% 일치**해야 한다. 단순히 `progressFilter` 같은 단일 컬럼 필터로 표현 안 되는 액션(예: "선적 처리 필요" = 수출통관완료 + 선적중 두 진행상태에 분포)을 전달하기 위해 `action` 파라미터를 사용한다.
+
+**vehicles/index 라우트 #[Url] 파라미터**:
 ```php
-// vehicles/index.blade.php mount()
-$this->dateFrom = request()->query('dateFrom', now()->subMonths(2)->format('Y-m-d'));
-$this->channel = request()->query('channel', '');
-$this->progress = request()->query('progress', '');
-$this->salesmanId = (int) request()->query('salesmanId', 0);
+#[Url] public string $action = '';        // 대시보드 액션 키
+#[Url] public string $salesmanId = '';    // 담당자 컨텍스트
+#[Url] public string $dateFrom = '';
+#[Url] public string $dateTo = '';
+#[Url] public string $channelFilter = '';
+#[Url] public string $progressFilter = '';
+```
+
+**mount() 처리 — 액션 모드면 기본 날짜 필터 비움**:
+```php
+public function mount(): void
+{
+    if ($this->action !== '') {
+        return;   // 액션 산정 로직과 충돌 방지
+    }
+    $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
+    $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+}
+```
+
+**applyActionFilter() — 액션별 SQL where 매핑**:
+```php
+private function applyActionFilter($q)
+{
+    // ERP 대시보드 액션 5종은 active 차량 한정 (is_disposed=false + dhl_request=false)
+    $userDashActions = ['purchase_unpaid','sale_unpaid','clearance_needed','shipping_needed','dhl_needed'];
+    if (in_array($this->action, $userDashActions, true)) {
+        $q = $q->where('is_disposed', false)->where('dhl_request', false);
+    }
+    return match ($this->action) {
+        'purchase_unpaid'  => $q->where('purchase_price','>',0)->whereRaw('(매입 미지급 식) > 0'),
+        'sale_unpaid'      => $q->where('sale_price','>',0)->where('sale_unpaid_amount_krw_cache','>',0),
+        'clearance_needed' => $q->where('sale_price','>',0)->where('sale_unpaid_amount_krw_cache','<=',0)->whereNull('export_declaration_document'),
+        'shipping_needed'  => $q->whereNotNull('export_declaration_document')->whereNull('bl_document'),
+        'dhl_needed'       => $q->whereNotNull('bl_document'),
+        // 관리자 대시보드 액션 — active 제한 없이 전체 차량
+        'has_sale'         => $q->where('sale_price','>',0),
+        'has_purchase'     => $q->where('purchase_price','>',0),
+        default            => $q,
+    };
+}
+```
+
+**대시보드 href 빌더**:
+```php
+$vehiclesUrl = function (string $action) use ($selectedSalesmanId) {
+    $url = route('erp.vehicles.index').'?action='.$action;
+    if ($selectedSalesmanId) $url .= '&salesmanId='.$selectedSalesmanId;
+    return $url;
+};
+```
+
+**검증 (필수)**: 대시보드 collection 카운트 = vehicles SQL count. tinker로 카드별 비교.
+- ERP 대시보드: 김영업/최매입/정수출 × 5액션 = 15케이스 정합성 확인 (커밋 b3a37e4)
+- 관리자 대시보드: KPI 4 + 채널 3 + 진행 11 = 18카드 정합성 확인 (커밋 11d9a69)
+
+### 대시보드 → 차량목록 연동 (쿼리 파라미터, 일반)
+단순 필터 전달이면 #[Url] 그대로 활용:
+```php
+// vehicles/index.blade.php
+#[Url] public string $dateFrom = '';
+#[Url] public string $channelFilter = '';
+#[Url] public string $progressFilter = '';
 ```
 
 ### wire:model 선택 기준
