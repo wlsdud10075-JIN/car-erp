@@ -197,8 +197,8 @@ vendor/bin/pint --dirty             # 커밋 전 포매팅
 | 9 | **채권관리 대시보드 + 관리자 대시보드 분리** (상세는 아래) | ✅ 완료 |
 | 9.5 | 대시보드 카운트 ↔ vehicles 목록 정합성 (action 파라미터 패턴 — `SKILLS.md §9` 참조) | ✅ 완료 |
 | 9.6 | 공용 UI 패턴 1차 — my-crm 기능 이식 (브랜드 텍스트 설정·관리자 대시보드 위젯 토글 패널·perPage 드롭다운 8개 페이지·Flux 사이드바 collapse 토글) | ✅ 완료 |
-| 10 | **모바일 반응형 + my-crm UI 풀-이식** — Flux 사이드바를 my-crm 스타일 자체 Alpine 사이드바로 교체(220↔48 데스크탑 + drawer 모바일 3-state, `SKILLS.md §7`), 디자인 시스템 통일(`.summary-card` / `.row` / `.tab-pill` 등 `SKILLS.md §10` 미정의 유틸 도입), 테이블↔카드 페어 렌더(`SKILLS.md §11`), 슬라이드 패널 풀화면 모바일 분기 | ⏳ **다음 작업** |
-| 11 | 서류 자동 생성 (말소신청서/계약서/Invoice/CIPL) | ⏳ |
+| 10 | **모바일 반응형 + my-crm UI 풀-이식** — 10-A 사이드바 자체 Alpine 교체(220↔48 + drawer 3-state) / 10-B 디자인 시스템 풀-이식 / 10-C 페어 렌더 (8개 페이지 중 receivables만 신규 추가, 7개는 기 적용) / 10-D 슬라이드 패널 모바일 분기 (8개 모두 기 적용 — 무변경 검증) | ✅ 완료 |
+| 11 | 서류 자동 생성 (말소신청서/계약서/Invoice/CIPL) | ⏳ **다음 작업** |
 | 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | 🟡 보류 (외부 연동 표 참조) |
 | - | NICE API 실연동 (현재 스텁) | 🟡 보류 (외부 연동 표 참조) |
 | 13 | AWS Lightsail 배포 (Python ERP와 병행 운영 후 전환) | ⏳ |
