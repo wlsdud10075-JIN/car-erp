@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\ClearanceMiddleware;
+use App\Http\Middleware\ErpMiddleware;
 use App\Http\Middleware\SalesMiddleware;
 use App\Http\Middleware\SettlementMiddleware;
 use App\Http\Middleware\SuperAdminMiddleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'super-admin' => SuperAdminMiddleware::class,
+            'erp' => ErpMiddleware::class,
             'sales' => SalesMiddleware::class,
             'clearance' => ClearanceMiddleware::class,
             'settlement' => SettlementMiddleware::class,
