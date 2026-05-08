@@ -15,6 +15,9 @@ class Vehicle extends Model
 
     protected $fillable = [
         'vehicle_number', 'sales_channel', 'is_disposed', 'progress_status_cache',
+        'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
+        'tax_invoice_1_date', 'tax_invoice_1_amount',
+        'tax_invoice_2_date', 'tax_invoice_2_amount', 'agency_fee',
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
         'nice_reg_vehicle_form', 'nice_reg_first_date', 'nice_reg_date',
@@ -57,13 +60,17 @@ class Vehicle extends Model
         'shipping_date' => 'date',
         'eta_date' => 'date',
         'bl_issue_date' => 'date',
+        'tax_invoice_1_date' => 'date',
+        'tax_invoice_2_date' => 'date',
     ];
 
-    // ── Boot: 진행상태 캐시 자동 갱신 ──────────────────────────────
+    // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
             $vehicle->progress_status_cache = $vehicle->progress_status;
+            $vehicle->receivable_risk = $vehicle->receivable_risk_computed;
+            $vehicle->sale_unpaid_amount_krw_cache = (int) round($vehicle->sale_unpaid_amount_krw);
         });
 
         // hard delete (forceDelete) 시에만 첨부 디렉토리 정리.
@@ -74,14 +81,25 @@ class Vehicle extends Model
     }
 
     /**
-     * 잔금 변경 등으로 잔액 의존 진행상태가 바뀌었을 때 호출.
+     * 잔금 / 회수 이력 변경으로 잔액 의존 캐시가 바뀌었을 때 호출.
      * Eloquent saving 이벤트를 우회하고 컬럼만 직접 갱신해 무한 루프 방지.
+     */
+    public function refreshCaches(): void
+    {
+        $this->refresh();
+        DB::table('vehicles')->where('id', $this->id)->update([
+            'progress_status_cache' => $this->progress_status,
+            'receivable_risk' => $this->receivable_risk_computed,
+            'sale_unpaid_amount_krw_cache' => (int) round($this->sale_unpaid_amount_krw),
+        ]);
+    }
+
+    /**
+     * @deprecated refreshCaches() 사용. 외부 호출자 호환성을 위해 alias로 유지.
      */
     public function refreshProgressCache(): void
     {
-        $this->refresh();
-        DB::table('vehicles')->where('id', $this->id)
-            ->update(['progress_status_cache' => $this->progress_status]);
+        $this->refreshCaches();
     }
 
     // ── Relations ──────────────────────────────────────────────────
@@ -143,6 +161,16 @@ class Vehicle extends Model
     public function savingsStatuses(): HasMany
     {
         return $this->hasMany(SavingsStatus::class);
+    }
+
+    public function receivableHistories(): HasMany
+    {
+        return $this->hasMany(ReceivableHistory::class);
+    }
+
+    public function receivableManager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'receivable_manager_id');
     }
 
     // ── Computed: 진행상태 11단계 ───────────────────────────────────
@@ -215,5 +243,72 @@ class Vehicle extends Model
                 ->sum('amount');
 
         return (int) ($totalPurchase - $totalPaid);
+    }
+
+    // ── Computed: 채권기준금액 (판매합계 — 통화 단위) ───────────────
+    public function getSaleTotalAmountAttribute(): float
+    {
+        return (float) (
+            $this->sale_price + $this->transport_fee + $this->sale_other_costs
+            + $this->commission + $this->auto_loading - $this->tax_dc
+        );
+    }
+
+    // ── Computed: 미납액 원화 환산 (KPI 합산용) ─────────────────────
+    public function getSaleUnpaidAmountKrwAttribute(): float
+    {
+        $unpaid = $this->sale_unpaid_amount;
+        if ($this->currency === 'KRW') {
+            return (float) $unpaid;
+        }
+
+        return (float) ($unpaid * ($this->exchange_rate ?: 0));
+    }
+
+    /**
+     * Computed 채권 위험도. DB 컬럼 receivable_risk와는 다른 이름으로
+     * 구분 — 컬럼은 캐시(SQL 필터용), 이건 실시간 계산값.
+     *
+     * 코드: safe / caution / danger / critical / none
+     */
+    public function getReceivableRiskComputedAttribute(): string
+    {
+        $total = $this->sale_total_amount;
+        if ($total <= 0) {
+            return 'none';
+        }
+
+        $unpaid = $this->sale_unpaid_amount;
+
+        // BL 발행 + 미납 잔존 → 즉시 critical (계산식codex.txt 잠정 규칙)
+        if ($this->bl_document && $unpaid > 0) {
+            return 'critical';
+        }
+
+        if ($unpaid <= 0) {
+            return 'safe';
+        }
+
+        $ratio = ($unpaid / $total) * 100;
+
+        return match (true) {
+            $ratio <= 50 => 'caution',
+            $ratio <= 70 => 'danger',
+            default => 'critical',
+        };
+    }
+
+    /**
+     * UI 라벨 (한국어). 캐시된 receivable_risk 컬럼을 사용.
+     */
+    public function getReceivableRiskLabelAttribute(): string
+    {
+        return match ($this->receivable_risk) {
+            'safe' => '안전',
+            'caution' => '주의',
+            'danger' => '위험',
+            'critical' => '심각',
+            default => '-',
+        };
     }
 }

@@ -689,7 +689,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
-            $vehicle->refreshProgressCache();
+            $vehicle->refreshCaches();
             });
         } catch (\Throwable $e) {
             // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외

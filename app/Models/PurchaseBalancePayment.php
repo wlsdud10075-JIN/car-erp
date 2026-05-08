@@ -13,8 +13,8 @@ class PurchaseBalancePayment extends Model
 
     protected static function booted(): void
     {
-        static::saved(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshProgressCache());
-        static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshProgressCache());
+        static::saved(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
+        static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
     }
 
     public function vehicle(): BelongsTo

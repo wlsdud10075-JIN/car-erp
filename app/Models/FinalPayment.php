@@ -13,8 +13,8 @@ class FinalPayment extends Model
 
     protected static function booted(): void
     {
-        static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshProgressCache());
-        static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshProgressCache());
+        static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
+        static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
     }
 
     public function vehicle(): BelongsTo
