@@ -79,7 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
+<div x-data="adminDashboard()" class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
     {{-- 헤더 --}}
     <div class="flex items-end justify-between">
         <div>
@@ -90,11 +90,16 @@ new #[Layout('components.layouts.app')] class extends Component
             <input type="date" wire:model.live="dateFrom" class="input-base" />
             <span class="text-xs text-gray-400">~</span>
             <input type="date" wire:model.live="dateTo" class="input-base" />
+            <button @click="settingsOpen = true" type="button"
+                class="ml-2 inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                위젯 설정
+            </button>
         </div>
     </div>
 
     {{-- 매출 KPI 카드 4개 (모두 클릭 가능) --}}
-    <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div id="w-kpi" x-show="widgets['w-kpi']" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
             <div class="flex items-center justify-between">
                 <span class="text-xs text-gray-500">기간 차량 수</span>
@@ -127,7 +132,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 채널별 분포 --}}
-    <div class="card">
+    <div id="w-channel" x-show="widgets['w-channel']" class="card">
         <div class="section-header">
             <span class="section-dot bg-violet-500"></span>
             <span class="section-title">채널별 차량 수 (클릭 시 해당 채널 목록)</span>
@@ -145,7 +150,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 진행 단계별 분포 --}}
-    <div class="card">
+    <div id="w-progress" x-show="widgets['w-progress']" class="card">
         <div class="section-header">
             <span class="section-dot bg-blue-500"></span>
             <span class="section-title">진행 단계별 차량 수 (클릭 시 해당 단계 목록)</span>
@@ -165,4 +170,67 @@ new #[Layout('components.layouts.app')] class extends Component
     <p class="text-xs text-gray-400">
         ⓘ 미수금·회수 이력·채권 위험도는 <a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-violet-600 hover:underline">채권관리 화면</a>에서 확인하세요.
     </p>
+
+    {{-- 위젯 설정 슬라이드 패널 --}}
+    <div x-show="settingsOpen" x-cloak class="fixed inset-0 z-50 flex justify-end">
+        <div class="absolute inset-0 bg-black/30" @click="settingsOpen = false"></div>
+        <div
+            x-show="settingsOpen"
+            x-transition:enter="transition ease-out duration-300"
+            x-transition:enter-start="translate-x-full"
+            x-transition:enter-end="translate-x-0"
+            x-transition:leave="transition ease-in duration-200"
+            x-transition:leave-start="translate-x-0"
+            x-transition:leave-end="translate-x-full"
+            class="relative z-10 h-full w-80 overflow-y-auto bg-white p-6 shadow-xl">
+
+            <div class="mb-6 flex items-center justify-between">
+                <h3 class="font-bold text-gray-800">위젯 설정</h3>
+                <button @click="settingsOpen = false" class="text-gray-400 hover:text-gray-600" type="button">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <p class="mb-4 text-xs text-gray-500">표시할 위젯을 선택하세요. 설정은 이 브라우저에 저장됩니다.</p>
+
+            <div class="space-y-4">
+                <template x-for="w in widgetList" :key="w.key">
+                    <label class="flex items-center justify-between">
+                        <span class="text-sm text-gray-700" x-text="w.label"></span>
+                        <button @click="toggleWidget(w.key)" type="button"
+                            :class="widgets[w.key] ? 'bg-[var(--color-primary)]' : 'bg-gray-300'"
+                            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors">
+                            <span :class="widgets[w.key] ? 'translate-x-5' : 'translate-x-1'"
+                                class="inline-block h-3 w-3 transform rounded-full bg-white transition-transform"></span>
+                        </button>
+                    </label>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function adminDashboard() {
+            return {
+                settingsOpen: false,
+                widgets: {},
+                widgetList: [
+                    { key: 'w-kpi',      label: 'KPI 카드 (4개)' },
+                    { key: 'w-channel',  label: '채널별 차량 수' },
+                    { key: 'w-progress', label: '진행 단계별 차량 수' },
+                ],
+                init() {
+                    const saved = localStorage.getItem('car_erp_admin_dashboard_widgets');
+                    const parsed = saved ? JSON.parse(saved) : {};
+                    this.widgetList.forEach(w => {
+                        this.widgets[w.key] = parsed[w.key] !== undefined ? parsed[w.key] : true;
+                    });
+                },
+                toggleWidget(key) {
+                    this.widgets[key] = !this.widgets[key];
+                    localStorage.setItem('car_erp_admin_dashboard_widgets', JSON.stringify(this.widgets));
+                },
+            };
+        }
+    </script>
 </div>

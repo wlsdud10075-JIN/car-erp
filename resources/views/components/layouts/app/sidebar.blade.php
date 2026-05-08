@@ -37,6 +37,9 @@
                 <flux:navlist.group heading="기타관리" class="grid">
                     <flux:navlist.item icon="chart-bar" :href="route('admin.dashboard')" :current="request()->routeIs('admin.dashboard')" wire:navigate>관리자 대시보드</flux:navlist.item>
                     <flux:navlist.item icon="user-group" :href="route('admin.users.index')" :current="request()->routeIs('admin.users.index')" wire:navigate>사용자 관리</flux:navlist.item>
+                    @if(auth()->user()?->isSuperAdmin())
+                    <flux:navlist.item icon="cog-6-tooth" :href="route('admin.settings')" :current="request()->routeIs('admin.settings')" wire:navigate>기능 설정</flux:navlist.item>
+                    @endif
                 </flux:navlist.group>
                 @endif
             </flux:navlist>

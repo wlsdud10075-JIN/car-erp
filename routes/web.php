@@ -50,6 +50,11 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Volt::route('users', 'admin.users.index')->name('users.index');
 });
 
+// 기능 설정 — super만
+Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('admin.')->group(function () {
+    Volt::route('settings', 'admin.settings')->name('settings');
+});
+
 Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', 'settings/profile');
 
