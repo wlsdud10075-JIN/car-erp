@@ -59,6 +59,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $nice_reg_date         = '';
     public string $nice_reg_owner_name   = '';
     public string $nice_reg_owner_addr   = '';
+    public string $nice_reg_owner_rrn    = '';
     public string $nice_reg_max_load_str = '';
     public string $nice_reg_passengers_str = '';
     public string $nice_reg_color        = '';
@@ -334,6 +335,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->nice_reg_date         = $v->nice_reg_date         ? $v->nice_reg_date->format('Y-m-d') : '';
         $this->nice_reg_owner_name   = $v->nice_reg_owner_name   ?? '';
         $this->nice_reg_owner_addr   = $v->nice_reg_owner_addr   ?? '';
+        $this->nice_reg_owner_rrn    = $v->nice_reg_owner_rrn    ?? '';
         $this->nice_reg_max_load_str    = $v->nice_reg_max_load    ? (string)$v->nice_reg_max_load    : '';
         $this->nice_reg_passengers_str  = $v->nice_reg_passengers  ? (string)$v->nice_reg_passengers  : '';
         $this->nice_reg_color           = $v->nice_reg_color        ?? '';
@@ -613,6 +615,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_date'         => $toDate($this->nice_reg_date),
             'nice_reg_owner_name'   => $this->nice_reg_owner_name   ?: null,
             'nice_reg_owner_addr'   => $this->nice_reg_owner_addr   ?: null,
+            'nice_reg_owner_rrn'    => $this->nice_reg_owner_rrn    ?: null,
             'nice_reg_max_load'     => $this->nice_reg_max_load_str   !== '' ? (int)$this->nice_reg_max_load_str   : null,
             'nice_reg_passengers'   => $this->nice_reg_passengers_str !== '' ? (int)$this->nice_reg_passengers_str : null,
             'nice_reg_color'        => $this->nice_reg_color ?: null,
@@ -849,7 +852,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $defaults = [
             'vehicle_number','brand','model_type','color','year_str','cc_str','weight_kg_str','mileage_str',
             'nice_reg_vin','nice_reg_engine_no','nice_reg_fuel_type','nice_reg_use_type','nice_reg_vehicle_form',
-            'nice_reg_first_date','nice_reg_date','nice_reg_owner_name','nice_reg_owner_addr',
+            'nice_reg_first_date','nice_reg_date','nice_reg_owner_name','nice_reg_owner_addr','nice_reg_owner_rrn',
             'nice_reg_max_load_str','nice_reg_passengers_str','nice_reg_color',
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
@@ -1201,6 +1204,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><label class="label-base">최초등록일</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">등록일</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">소유자명</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">소유자 주민(법인)등록번호</label><input wire:model="nice_reg_owner_rrn" type="text" class="input-base" placeholder="000000-0000000" /></div>
                 <div><label class="label-base">최대적재량 (kg)</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">승차인원</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">차량 색상</label><input wire:model="nice_reg_color" type="text" class="input-base" /></div>

@@ -10,27 +10,27 @@
             font-family: 'NotoSansKR', sans-serif;
         }
         @page {
-            margin: 14mm 12mm;
+            margin: 10mm 10mm;
         }
         body {
-            font-size: 9pt;
-            line-height: 1.4;
+            font-size: 8pt;
+            line-height: 1.3;
             color: #000;
             margin: 0;
         }
         .form-meta {
-            font-size: 8pt;
-            margin-bottom: 4px;
+            font-size: 7pt;
+            margin-bottom: 3px;
         }
         .form-meta .right {
             float: right;
         }
         h1.title {
-            font-size: 18pt;
+            font-size: 15pt;
             font-weight: bold;
             text-align: center;
-            margin: 6px 0 10px 0;
-            letter-spacing: 4px;
+            margin: 4px 0 6px 0;
+            letter-spacing: 3px;
         }
         table {
             border-collapse: collapse;
@@ -40,9 +40,9 @@
         table.form td,
         table.form th {
             border: 1px solid #000;
-            padding: 4px 6px;
+            padding: 2px 4px;
             vertical-align: middle;
-            font-size: 9pt;
+            font-size: 8pt;
             word-wrap: break-word;
         }
         table.form th {
@@ -59,62 +59,60 @@
             background: #f3f3f3;
             text-align: center;
             font-weight: normal;
-            font-size: 8.5pt;
+            font-size: 8pt;
         }
         .reasons td {
-            font-size: 8.5pt;
-            padding: 3px 6px;
-        }
-        .checkbox {
-            font-family: 'NotoSansKR', sans-serif;
+            font-size: 7.5pt;
+            padding: 2px 4px;
         }
         .applicant-section {
-            margin-top: 14px;
-            font-size: 9.5pt;
+            margin-top: 8px;
+            font-size: 8.5pt;
         }
         .applicant-section p {
-            margin: 0 0 6px 0;
+            margin: 0 0 4px 0;
         }
         .date-line {
             text-align: center;
-            margin: 18px 0 14px 0;
-            font-size: 10pt;
+            margin: 10px 0 8px 0;
+            font-size: 9.5pt;
         }
         .signer-block {
-            margin-top: 8px;
+            margin-top: 4px;
             text-align: right;
-            line-height: 1.8;
+            line-height: 1.6;
+            font-size: 8.5pt;
         }
         .signer-block .row {
             display: block;
         }
         .receiver {
-            margin-top: 14px;
+            margin-top: 8px;
             text-align: center;
-            font-size: 10pt;
+            font-size: 9pt;
             font-weight: bold;
+        }
+        .poa-section {
+            page-break-inside: avoid;
+            margin-top: 14px;
         }
         .poa-title {
             text-align: center;
-            font-size: 16pt;
+            font-size: 14pt;
             font-weight: bold;
-            margin: 26px 0 6px 0;
-            letter-spacing: 12px;
+            margin: 0 0 4px 0;
+            letter-spacing: 10px;
         }
         .poa-body {
             text-align: center;
-            margin: 0 0 10px 0;
-            font-size: 9pt;
+            margin: 0 0 6px 0;
+            font-size: 8.5pt;
         }
         .stamp-cell {
             text-align: center;
-            font-size: 8.5pt;
+            font-size: 8pt;
             color: #555;
         }
-        .small {
-            font-size: 8pt;
-        }
-        .nowrap { white-space: nowrap; }
     </style>
 </head>
 <body>
@@ -149,7 +147,7 @@
     </tr>
     <tr>
         <td class="label">주민(법인)등록번호</td>
-        <td style="width:38%;">&nbsp;</td>
+        <td style="width:38%;">{{ $vehicle->nice_reg_owner_rrn ?: '' }}</td>
         <td class="label" style="width:14%;">전화번호</td>
         <td>&nbsp;</td>
     </tr>
@@ -226,40 +224,42 @@
     특별시장ㆍ광역시장ㆍ도지사ㆍ특별자치도지사 또는 시장ㆍ군수ㆍ구청장 귀하
 </div>
 
-{{-- 위임장 --}}
-<div class="poa-title">위 임 장</div>
-<div class="poa-body">위 자동차의 말소등록에 따른 모든 행위를 수임자(신청인)에게 위임한다</div>
+{{-- 위임장 — 한 페이지에 수렴 --}}
+<div class="poa-section">
+    <div class="poa-title">위 임 장</div>
+    <div class="poa-body">위 자동차의 말소등록에 따른 모든 행위를 수임자(신청인)에게 위임한다</div>
 
-<table class="form">
-    <tr>
-        <td class="label-vert" rowspan="3" style="width:8%;">위임자</td>
-        <td class="label" style="width:14%;">주소</td>
-        <td>경기도 시흥시 산기대학로 163, 328호(정왕동)</td>
-        <td class="stamp-cell" rowspan="3" style="width:14%;">인감날인</td>
-    </tr>
-    <tr>
-        <td class="label">성명</td>
-        <td>주식회사 싼카</td>
-    </tr>
-    <tr>
-        <td class="label">사업자번호</td>
-        <td>662-81-00898</td>
-    </tr>
-    <tr>
-        <td class="label-vert" rowspan="3" style="width:8%;">수임자</td>
-        <td class="label">주소</td>
-        <td>&nbsp;</td>
-        <td class="stamp-cell" rowspan="3">&nbsp;</td>
-    </tr>
-    <tr>
-        <td class="label">성명</td>
-        <td>&nbsp;</td>
-    </tr>
-    <tr>
-        <td class="label">사업자번호</td>
-        <td>&nbsp;</td>
-    </tr>
-</table>
+    <table class="form">
+        <tr>
+            <td class="label-vert" rowspan="3" style="width:8%;">위임자</td>
+            <td class="label" style="width:14%;">주소</td>
+            <td>경기도 시흥시 산기대학로 163, 328호(정왕동)</td>
+            <td class="stamp-cell" rowspan="3" style="width:14%;">인감날인</td>
+        </tr>
+        <tr>
+            <td class="label">성명</td>
+            <td>주식회사 싼카</td>
+        </tr>
+        <tr>
+            <td class="label">사업자번호</td>
+            <td>662-81-00898</td>
+        </tr>
+        <tr>
+            <td class="label-vert" rowspan="3" style="width:8%;">수임자</td>
+            <td class="label">주소</td>
+            <td>&nbsp;</td>
+            <td class="stamp-cell" rowspan="3">&nbsp;</td>
+        </tr>
+        <tr>
+            <td class="label">성명</td>
+            <td>&nbsp;</td>
+        </tr>
+        <tr>
+            <td class="label">사업자번호</td>
+            <td>&nbsp;</td>
+        </tr>
+    </table>
+</div>
 
 </body>
 </html>

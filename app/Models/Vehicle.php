@@ -21,7 +21,7 @@ class Vehicle extends Model
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
         'nice_reg_vehicle_form', 'nice_reg_first_date', 'nice_reg_date',
-        'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_max_load',
+        'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_owner_rrn', 'nice_reg_max_load',
         'nice_reg_passengers', 'nice_reg_color',
         'nice_spec_maker', 'nice_spec_model', 'nice_spec_year', 'nice_spec_displacement',
         'nice_spec_transmission', 'nice_spec_drive_type', 'nice_spec_length',

@@ -22,20 +22,23 @@ class VehicleDocumentController extends Controller
         $vehicle = Vehicle::findOrFail($id);
 
         return match ($type) {
-            'deregistration' => $this->deregistration($vehicle),
+            'deregistration' => $this->renderPdf($vehicle, 'documents.deregistration', '말소신청서'),
+            'registration_application' => $this->renderPdf($vehicle, 'documents.registration-application', '등록증재발급신청서'),
+            'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
             default => abort(404, '지원하지 않는 서류 종류입니다: '.$type),
         };
     }
 
-    private function deregistration(Vehicle $vehicle): Response
+    private function renderPdf(Vehicle $vehicle, string $view, string $kindLabel): Response
     {
-        $pdf = Pdf::loadView('documents.deregistration', [
+        $pdf = Pdf::loadView($view, [
             'vehicle' => $vehicle,
             'today' => now()->format('Y년 m월 d일'),
         ])->setPaper('a4', 'portrait');
 
         $filename = sprintf(
-            '말소신청서_%s_%s.pdf',
+            '%s_%s_%s.pdf',
+            $kindLabel,
             $vehicle->vehicle_number ?: $vehicle->id,
             now()->format('Ymd'),
         );
