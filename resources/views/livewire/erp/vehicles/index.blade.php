@@ -224,9 +224,12 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     private function applyActionFilter($q)
     {
-        // 모든 액션은 active 차량 기준 (is_disposed=false AND dhl_request=false).
-        // 대시보드 actionCounts와 100% 일치시키기 위함.
-        $q = $q->where('is_disposed', false)->where('dhl_request', false);
+        // ERP 대시보드 처리 필요 카드 5종은 active 차량 기준
+        // (is_disposed=false AND dhl_request=false). 관리자 대시보드 액션은 전체 차량 대상.
+        $userDashActions = ['purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed'];
+        if (in_array($this->action, $userDashActions, true)) {
+            $q = $q->where('is_disposed', false)->where('dhl_request', false);
+        }
 
         return match ($this->action) {
             'purchase_unpaid' => $q
@@ -247,6 +250,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereNull('bl_document'),
             'dhl_needed' => $q
                 ->whereNotNull('bl_document'),
+            // 관리자 대시보드 액션 — active 제한 없이 전체에서 필터
+            'has_sale' => $q->where('sale_price', '>', 0),
+            'has_purchase' => $q->where('purchase_price', '>', 0),
             default => $q,
         };
     }
