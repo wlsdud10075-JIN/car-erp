@@ -8,14 +8,8 @@ Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
-// 로그인 후 진입점 — 권한별 분기
+// 로그인 후 진입점 — 모두 ERP 대시보드로 (관리자 대시보드는 사이드바 기타관리에서 접근)
 Route::get('dashboard', function () {
-    $user = auth()->user();
-
-    if ($user->isAdmin()) {
-        return redirect()->route('admin.dashboard');
-    }
-
     return redirect()->route('erp.dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 

@@ -186,8 +186,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
     }
 
-    public function search(): void
+    public function applyFilters(): void
     {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    public function updatedChannelFilter(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    public function updatedProgressFilter(): void
+    {
+        unset($this->vehicles);
         $this->resetPage();
     }
 
@@ -196,6 +209,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
             $this->perPage = 10;
         }
+        unset($this->vehicles);
         $this->resetPage();
     }
 
@@ -932,7 +946,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="space-y-2">
     {{-- 검색 + 날짜 + 조회 --}}
     <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-        <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자"
+        <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자"
                class="input-filter w-52" />
         <select wire:model="dateType" class="input-filter">
             <option value="purchase">매입일</option>
@@ -943,7 +957,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input wire:model="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="date" class="input-filter" />
-        <button wire:click="search" class="btn-search">조회</button>
+        <button wire:click="applyFilters" class="btn-search">조회</button>
     </div>
     {{-- 빠른 탭 필터 --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">

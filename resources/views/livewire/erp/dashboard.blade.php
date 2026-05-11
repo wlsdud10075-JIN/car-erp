@@ -10,6 +10,7 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component {
 
     public int $selectedSalesmanId = 0;
+    public int $perPage = 10;
 
     public function mount(): void
     {
@@ -87,7 +88,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
             ->with(['salesman', 'finalPayments', 'purchaseBalancePayments'])
             ->orderBy('purchase_date', 'desc')
-            ->limit(12)
+            ->limit($this->perPage)
             ->get();
     }
 }; ?>
@@ -256,11 +257,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- Row 3: 진행중 차량 목록 --}}
 <div class="card">
     <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700">
-            진행중 차량
-            <span class="ml-1 text-xs font-normal text-gray-400">최근 12대</span>
-        </h2>
-        <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">전체 보기 →</a>
+        <h2 class="text-sm font-semibold text-gray-700">진행중 차량</h2>
+        <div class="flex items-center gap-3">
+            <select wire:model.live="perPage" class="input-filter">
+                <option value="10">10대</option>
+                <option value="30">30대</option>
+                <option value="50">50대</option>
+                <option value="100">100대</option>
+            </select>
+            <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">전체 보기 →</a>
+        </div>
     </div>
 
     {{-- 데스크탑 테이블 --}}
