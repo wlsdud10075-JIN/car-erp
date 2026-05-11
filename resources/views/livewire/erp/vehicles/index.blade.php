@@ -332,6 +332,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
         $this->editingId = $id;
 
+        $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $id)
+            ->whereNotNull('final_payment_id')
+            ->pluck('final_payment_id')
+            ->toArray();
+
         $this->vehicle_number = $v->vehicle_number;
         $this->sales_channel  = $v->sales_channel;
         $this->is_disposed    = $v->is_disposed;
@@ -416,6 +421,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->finalPayments = $v->finalPayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
             'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
+            'locked' => in_array($p->id, $lockedFinalIds),
         ])->toArray();
 
         // 카풀/헤이맨 계산서
@@ -763,14 +769,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
 
             // 판매 잔금 동기화 (id-diff)
+            // 채권 화면에서 생성된 잔금(locked)은 이 패널에서 수정/삭제 불가 — 채권관리가 원천
+            $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $vehicle->id)
+                ->whereNotNull('final_payment_id')->pluck('final_payment_id')->toArray();
             $existingFinalIds = $vehicle->finalPayments->pluck('id')->toArray();
             $submittedFinalIds = collect($this->finalPayments)->pluck('id')->filter()->toArray();
-            FinalPayment::whereIn('id', array_diff($existingFinalIds, $submittedFinalIds))->delete();
+            $toDeleteIds = array_diff($existingFinalIds, $submittedFinalIds);
+            FinalPayment::whereIn('id', array_diff($toDeleteIds, $lockedFinalIds))->delete();
             foreach ($this->finalPayments as $row) {
+                if (!empty($row['locked'])) continue;
                 if ($row['amount'] === '' && $row['payment_date'] === '') continue;
                 $amt = $toFloat($row['amount'] ?? '');
                 $dt  = $toDate($row['payment_date'] ?? '');
                 if (isset($row['id']) && $row['id']) {
+                    if (in_array($row['id'], $lockedFinalIds)) continue;
                     FinalPayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
                 } else {
                     $vehicle->finalPayments()->create(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
@@ -1408,12 +1420,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
                 </div>
                 @foreach($finalPayments as $idx => $row)
+                @if(!empty($row['locked']))
+                <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                    <span class="text-xs text-gray-400">🔒</span>
+                    <span class="w-32 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
+                    <span class="flex-1 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
+                    <span class="flex-1 text-xs text-gray-400">{{ $row['note'] ?: '' }}</span>
+                    <a href="{{ route('erp.receivables.index') }}" wire:navigate
+                       class="text-xs text-violet-500 hover:underline whitespace-nowrap">채권관리에서 수정</a>
+                </div>
+                @else
                 <div class="flex gap-2 items-center">
                     <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액" />
                     <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
                     <button type="button" wire:click="removeFinalPayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
                 </div>
+                @endif
                 @endforeach
             </div>
 
