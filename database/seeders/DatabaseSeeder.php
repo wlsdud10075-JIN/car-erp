@@ -25,7 +25,7 @@ class DatabaseSeeder extends Seeder
         $this->seedBuyersAndConsignees();
         $this->seedForwardingCompanies();
         $this->seedSalesmen();
-        $this->seedVehicles();
+        $this->call(VehicleSeeder::class);
     }
 
     private function seedUsers(): void
