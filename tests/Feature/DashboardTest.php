@@ -25,12 +25,12 @@ class DashboardTest extends TestCase
         $response->assertRedirect(route('erp.dashboard'));
     }
 
-    public function test_admin_users_are_redirected_to_admin_dashboard(): void
+    public function test_admin_users_are_redirected_to_erp_dashboard(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         $this->actingAs($admin);
 
         $response = $this->get('/dashboard');
-        $response->assertRedirect(route('admin.dashboard'));
+        $response->assertRedirect(route('erp.dashboard'));
     }
 }

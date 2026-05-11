@@ -260,7 +260,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                           WHERE vehicle_id = vehicles.id
-                                          AND (payment_date IS NULL OR payment_date <= CURDATE())), 0)) > 0'),
+                                          AND payment_date IS NOT NULL AND payment_date <= CURDATE()), 0)) > 0'),
             'sale_unpaid' => $q
                 ->where('sale_price', '>', 0)
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
