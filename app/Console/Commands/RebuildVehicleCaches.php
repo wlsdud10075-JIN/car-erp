@@ -18,13 +18,14 @@ class RebuildVehicleCaches extends Command
     public function handle(): int
     {
         $count = 0;
-        Vehicle::with(['finalPayments', 'purchaseBalancePayments'])
+        Vehicle::with(['finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->chunk(200, function ($vehicles) use (&$count) {
                 foreach ($vehicles as $vehicle) {
+                    $krw = $vehicle->sale_unpaid_amount_krw;
                     DB::table('vehicles')->where('id', $vehicle->id)->update([
                         'progress_status_cache' => $vehicle->progress_status,
                         'receivable_risk' => $vehicle->receivable_risk_computed,
-                        'sale_unpaid_amount_krw_cache' => (int) round($vehicle->sale_unpaid_amount_krw),
+                        'sale_unpaid_amount_krw_cache' => $krw !== null ? (int) round($krw) : null,
                     ]);
                     $count++;
                 }

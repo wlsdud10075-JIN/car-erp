@@ -263,9 +263,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                           AND payment_date IS NOT NULL AND payment_date <= CURDATE()), 0)) > 0'),
             'sale_unpaid' => $q
                 ->where('sale_price', '>', 0)
-                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+                ->where(fn ($q2) => $q2
+                    ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                    ->orWhereNull('sale_unpaid_amount_krw_cache')
+                ),
             'clearance_needed' => $q
                 ->where('sale_price', '>', 0)
+                ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
                 ->whereNull('export_declaration_document'),
             'shipping_needed' => $q

@@ -70,7 +70,8 @@ class Vehicle extends Model
         static::saving(function (Vehicle $vehicle) {
             $vehicle->progress_status_cache = $vehicle->progress_status;
             $vehicle->receivable_risk = $vehicle->receivable_risk_computed;
-            $vehicle->sale_unpaid_amount_krw_cache = (int) round($vehicle->sale_unpaid_amount_krw);
+            $krw = $vehicle->sale_unpaid_amount_krw;
+            $vehicle->sale_unpaid_amount_krw_cache = $krw !== null ? (int) round($krw) : null;
         });
 
         // hard delete (forceDelete) 시에만 첨부 디렉토리 정리.
@@ -90,7 +91,7 @@ class Vehicle extends Model
         DB::table('vehicles')->where('id', $this->id)->update([
             'progress_status_cache' => $this->progress_status,
             'receivable_risk' => $this->receivable_risk_computed,
-            'sale_unpaid_amount_krw_cache' => (int) round($this->sale_unpaid_amount_krw),
+            'sale_unpaid_amount_krw_cache' => ($krw = $this->sale_unpaid_amount_krw) !== null ? (int) round($krw) : null,
         ]);
     }
 
@@ -228,7 +229,8 @@ class Vehicle extends Model
 
         $totalReceived = $this->deposit_down_payment + $this->interim_payment
             + $this->advance_payment1 + $this->advance_payment2 + $this->savings_used
-            + $this->finalPayments->sum('amount');
+            + $this->finalPayments->sum('amount')
+            + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
 
         return $totalSale - $totalReceived;
     }
@@ -255,14 +257,17 @@ class Vehicle extends Model
     }
 
     // ── Computed: 미납액 원화 환산 (KPI 합산용) ─────────────────────
-    public function getSaleUnpaidAmountKrwAttribute(): float
+    public function getSaleUnpaidAmountKrwAttribute(): ?float
     {
         $unpaid = $this->sale_unpaid_amount;
         if ($this->currency === 'KRW') {
             return (float) $unpaid;
         }
+        if (! $this->exchange_rate) {
+            return null;
+        }
 
-        return (float) ($unpaid * ($this->exchange_rate ?: 0));
+        return (float) ($unpaid * $this->exchange_rate);
     }
 
     /**
