@@ -157,6 +157,38 @@ php artisan view:clear              # 뷰 캐시 클리어
 vendor/bin/pint --dirty             # 커밋 전 포매팅
 ```
 
+## AI 크로스 체크 (/cross-verify 스킬)
+
+Codex + Gemini + Claude 3-model 비교 시 각 CLI 호출 방법.
+
+### 가용성 확인
+```powershell
+Get-Command codex -ErrorAction SilentlyContinue   # C:\Users\User\AppData\Roaming\npm\codex.ps1
+Get-Command gemini -ErrorAction SilentlyContinue  # C:\Users\User\AppData\Roaming\npm\gemini.ps1
+```
+
+### Codex 호출
+```powershell
+# auth.json 에 ChatGPT 계정 인증 저장됨 (C:\Users\User\.codex\auth.json)
+# config: model = "gpt-5.5" (C:\Users\User\.codex\config.toml)
+# ⚠️ gpt-4o-mini 등 일반 OpenAI 모델은 ChatGPT 계정으로 지원 안 됨 → 반드시 기본 모델(gpt-5.5) 사용
+cmd /c 'echo. | codex exec "프롬프트" 2>&1'
+```
+
+### Gemini 호출
+```powershell
+# GEMINI_API_KEY + GEMINI_CLI_TRUST_WORKSPACE=true → ~/.claude/settings.json env 블록에 등록됨
+# 세션 시작 시 자동 주입 → WSL 경유 불필요
+gemini -p "프롬프트" --approval-mode yolo 2>&1
+```
+
+### 크로스 체크 실행 패턴
+```powershell
+# Codex + Gemini 병렬 호출 후 Claude가 종합
+$codexResult = cmd /c 'echo. | codex exec "질문" 2>&1'
+$geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
+```
+
 ## 기능 토글 (Setting 모델 — 구현 예정)
 - `heyman_channel_enabled` — 헤이맨 채널 on/off
 - `carpul_channel_enabled` — 카풀 채널 on/off
