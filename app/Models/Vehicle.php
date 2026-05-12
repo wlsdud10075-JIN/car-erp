@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -21,7 +22,7 @@ class Vehicle extends Model
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
         'nice_reg_vehicle_form', 'nice_reg_first_date', 'nice_reg_date',
-        'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_owner_rrn', 'nice_reg_max_load',
+        'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_owner_rrn', 'nice_reg_owner_rrn_encrypted_at', 'nice_reg_max_load',
         'nice_reg_passengers', 'nice_reg_color',
         'nice_spec_maker', 'nice_spec_model', 'nice_spec_year', 'nice_spec_displacement',
         'nice_spec_transmission', 'nice_spec_drive_type', 'nice_spec_length',
@@ -62,7 +63,41 @@ class Vehicle extends Model
         'bl_issue_date' => 'date',
         'tax_invoice_1_date' => 'date',
         'tax_invoice_2_date' => 'date',
+        'nice_reg_owner_rrn_encrypted_at' => 'datetime',
     ];
+
+    // ── RRN 암호화 (개인정보보호법 §29) ─────────────────────────────
+    // 표식 컬럼 nice_reg_owner_rrn_encrypted_at 기반 점진 전환:
+    // - NULL: 평문 row (마이그레이션 전 또는 신규 마이그레이션 도중 부분 상태)
+    // - NOT NULL: 암호화 row (Laravel Crypt — AES-256-CBC + base64 + MAC)
+    // accessor는 표식에 따라 분기, mutator는 자동 암호화.
+    public function getNiceRegOwnerRrnAttribute(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return $value;
+        }
+        if (($this->attributes['nice_reg_owner_rrn_encrypted_at'] ?? null) === null) {
+            return $value;
+        }
+        try {
+            return Crypt::decryptString($value);
+        } catch (\Throwable $e) {
+            // APP_KEY 변경·데이터 손상 시 — 화면에는 빈 값으로 표시
+            return null;
+        }
+    }
+
+    public function setNiceRegOwnerRrnAttribute(?string $value): void
+    {
+        if ($value === null || $value === '') {
+            $this->attributes['nice_reg_owner_rrn'] = $value;
+            $this->attributes['nice_reg_owner_rrn_encrypted_at'] = null;
+
+            return;
+        }
+        $this->attributes['nice_reg_owner_rrn'] = Crypt::encryptString($value);
+        $this->attributes['nice_reg_owner_rrn_encrypted_at'] = now();
+    }
 
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
