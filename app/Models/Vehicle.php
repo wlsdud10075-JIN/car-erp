@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 class Vehicle extends Model
 {
@@ -104,6 +105,10 @@ class Vehicle extends Model
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
+            // 캐시 자동 갱신 — 시드·UI 저장 모두 발동.
+            // C4·C5 단계 의존성 검증은 saving 이벤트가 아닌 UI save() 흐름에서만
+            // (Vehicle::guardStageOrderForExport()를 vehicles/index::save()가 명시 호출)
+            // 시드는 도메인 시뮬레이션이라 검증 우회. UI 사용자 입력만 차단 대상.
             $vehicle->progress_status_cache = $vehicle->progress_status;
             $vehicle->receivable_risk = $vehicle->receivable_risk_computed;
             $krw = $vehicle->sale_unpaid_amount_krw;
@@ -115,6 +120,51 @@ class Vehicle extends Model
         static::forceDeleted(function (Vehicle $vehicle) {
             Storage::disk('public')->deleteDirectory("vehicles/{$vehicle->id}");
         });
+    }
+
+    /**
+     * C4·C5 — 단계 의존성 검증. 수출 정보 입력 시점에 선행 단계 강제.
+     * - C4: 말소(is_deregistered + deregistration_document)가 완료돼야 통관 진입 가능
+     * - C5: 판매 미입금 잔존(sale_unpaid_amount_krw_cache > 0)인 상태에서 통관 진입 불가
+     *
+     * `is_disposed=true`(폐기)는 검증 우회.
+     * 캐시 컬럼(`sale_unpaid_amount_krw_cache`) 직접 사용 — accessor의 relations 의존성 회피.
+     * 신규 차량(cache=null)은 미입금 자체가 없어 C5 skip.
+     */
+    public function guardStageOrderForExport(): void
+    {
+        if ($this->is_disposed) {
+            return;
+        }
+        if ($this->sales_channel !== 'export') {
+            return;
+        }
+
+        $hasExportInput = $this->export_buyer_id
+            || $this->shipping_date
+            || $this->export_declaration_document
+            || $this->bl_loading_location
+            || $this->bl_document
+            || $this->dhl_request;
+
+        if (! $hasExportInput) {
+            return;
+        }
+
+        // C4 — 말소 완료 강제
+        if (! $this->is_deregistered || ! $this->deregistration_document) {
+            throw ValidationException::withMessages([
+                'export_buyer_id' => '말소 처리(체크 + 서류 업로드)를 완료한 후 통관 진입이 가능합니다.',
+            ]);
+        }
+
+        // C5 — 판매 미입금 잔존 차단. cache 컬럼 우선 사용 (accessor 회피).
+        $unpaidCache = $this->sale_unpaid_amount_krw_cache;
+        if ($this->sale_price > 0 && $unpaidCache !== null && $unpaidCache > 0) {
+            throw ValidationException::withMessages([
+                'export_buyer_id' => '판매 미입금이 남은 차량은 통관 진입이 불가합니다. 입금 완료 후 진행하세요.',
+            ]);
+        }
     }
 
     /**
@@ -211,26 +261,35 @@ class Vehicle extends Model
     }
 
     // ── Computed: 진행상태 11단계 ───────────────────────────────────
+    // C3 — 통관·선적·DHL 단계는 sales_channel='export' 차량만 평가.
+    //      헤이맨/카풀에 export 컬럼 잔존 시 잘못된 단계로 분류되던 버그 차단.
     public function getProgressStatusAttribute(): string
     {
         if ($this->is_disposed) {
             return '폐기';
         }
-        if ($this->dhl_request) {
-            return '거래완료';
+
+        $isExport = $this->sales_channel === 'export';
+
+        // 거래완료(dhl_request) / 선적 / 통관 단계 — export 채널만 진입 가능
+        if ($isExport) {
+            if ($this->dhl_request) {
+                return '거래완료';
+            }
+            if ($this->bl_document) {
+                return '선적완료';
+            }
+            if ($this->bl_loading_location) {
+                return '선적중';
+            }
+            if ($this->export_declaration_document) {
+                return '수출통관완료';
+            }
+            if ($this->export_buyer_id && $this->shipping_date) {
+                return '수출통관중';
+            }
         }
-        if ($this->bl_document) {
-            return '선적완료';
-        }
-        if ($this->bl_loading_location) {
-            return '선적중';
-        }
-        if ($this->export_declaration_document) {
-            return '수출통관완료';
-        }
-        if ($this->export_buyer_id && $this->shipping_date) {
-            return '수출통관중';
-        }
+
         if ($this->sale_price > 0 && $this->sale_unpaid_amount <= 0) {
             return '판매완료';
         }

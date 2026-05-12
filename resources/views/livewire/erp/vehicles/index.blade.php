@@ -357,6 +357,57 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
 
+    // C1 — 통화가 KRW로 변경되면 환율 reset (KRW 차량에 환율값 dirty 방지).
+    public function updatedCurrency(): void
+    {
+        if ($this->currency === 'KRW') {
+            $this->exchange_rate_str = '';
+        }
+    }
+
+    // C3 — 채널이 export 아닌 값으로 변경되면 수출 전용 필드 일괄 reset.
+    // orphan 데이터로 progress_status 잘못 분류되던 버그 방지.
+    public function updatedSalesChannel(): void
+    {
+        if ($this->sales_channel === 'export') {
+            return;
+        }
+        // 통관
+        $this->export_buyer_id_str = '';
+        $this->export_consignee_id_str = '';
+        $this->forwarding_company_id_str = '';
+        $this->export_declaration_amount_str = '';
+        $this->shipping_date = '';
+        $this->eta_date = '';
+        $this->shipping_method = '';
+        $this->port_of_loading = '';
+        $this->export_declaration_document_path = '';
+        $this->exportDeclarationDocFile = null;
+        $this->export_declaration_number = '';
+        $this->is_export_cleared = false;
+        // 선적(B/L)
+        $this->bl_buyer_id_str = '';
+        $this->bl_consignee_id_str = '';
+        $this->bl_number = '';
+        $this->container_number = '';
+        $this->bl_loading_location = '';
+        $this->vessel_name = '';
+        $this->bl_document_path = '';
+        $this->blDocFile = null;
+        $this->bl_issue_date = '';
+        // DHL
+        $this->dhl_recipient_name = '';
+        $this->dhl_recipient_address = '';
+        $this->dhl_recipient_phone = '';
+        $this->dhl_sender_name = '';
+        $this->dhl_sender_address = '';
+        $this->dhl_weight = '';
+        $this->dhl_dimensions = '';
+        $this->dhl_request = false;
+
+        $this->dispatch('notify', message: '수출 전용 필드(통관·선적·DHL)가 초기화되었습니다.', type: 'info');
+    }
+
     // ── 패널 열기/닫기 ────────────────────────────────────────────
     public function openCreate(): void
     {
@@ -369,6 +420,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openEdit(int $id): void
     {
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
+
+        // C7-b — 영업 role은 본인 담당 차량만 편집 가능.
+        // admin/super, 또는 영업 외 role(통관/정산/관리)은 우회.
+        $user = auth()->user();
+        if (! $user->isAdmin() && $user->role === '영업') {
+            abort_unless($v->salesman_id === $user->salesman?->id, 403, '본인 담당 차량만 편집 가능합니다.');
+        }
+
         $this->editingId = $id;
 
         $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $id)
@@ -575,7 +634,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $rules = [
             'vehicle_number' => [
                 'required', 'string', 'max:20',
-                Rule::unique('vehicles', 'vehicle_number')->ignore($this->editingId),
+                // C6 — soft-delete된 row 제외 (DB 인덱스도 (vehicle_number, deleted_at) 복합).
+                Rule::unique('vehicles', 'vehicle_number')
+                    ->ignore($this->editingId)
+                    ->whereNull('deleted_at'),
             ],
             'sales_channel'   => ['required', 'in:export,heyman,carpul'],
             'currency'        => ['required', 'in:USD,JPY,EUR,GBP,CNY,KRW'],
@@ -607,11 +669,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             'finalPayments.*.amount'           => [$nonNegativeNumeric],
             'finalPayments.*.payment_date'     => ['nullable', 'date'],
             'purchaseBalancePayments.*.amount' => [$nonNegativeNumeric],
-            'purchaseBalancePayments.*.payment_date' => ['nullable', 'date'],
+            // C2 — 매입 잔금 payment_date 필수 (NULL이면 미지급 계산에서 제외되어 매입완료 오인)
+            'purchaseBalancePayments.*.payment_date' => ['required', 'date'],
         ];
 
         foreach ($numericFields as $field) {
             $rules[$field] = [$nonNegativeNumeric];
+        }
+
+        // C1 — 외화 판매(currency != KRW + sale_price > 0)면 환율 필수 + > 0.
+        // 환율 0/NULL이면 sale_unpaid_amount_krw_cache가 NULL이 되어 KPI/채권에서 침묵 누락.
+        $salePrice = (float) str_replace(',', '', $this->sale_price_str ?: '0');
+        if ($this->currency !== 'KRW' && $salePrice > 0) {
+            $rules['exchange_rate_str'] = ['required', 'numeric', 'gt:0'];
         }
 
         $attributes = [
@@ -650,7 +720,47 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
+        // C7-b — 신규 등록 권한: 영업·전체 role 또는 admin/super만 가능.
+        // 통관/정산/관리 role은 신규 차량 등록 차단 (admin이 만든 차량의 자기 영역만 편집).
+        // TODO(큐 7번 권한 세분화): 기존 차량 편집 시 role별 컬럼 단위 화이트리스트 (C7-a).
+        $user = auth()->user();
+        if ($this->editingId === null && ! $user->isAdmin()
+            && ! in_array($user->role, ['영업', '전체'], true)) {
+            abort(403, '차량 신규 등록은 영업/전체 권한자 또는 관리자만 가능합니다.');
+        }
+
         $this->validateVehicleForm();
+
+        // C4·C5 — UI 저장 시점에 단계 의존성 검증 (시드/raw create는 우회).
+        // 임시 Vehicle 인스턴스에 현재 form 값을 채워 guardStageOrderForExport 호출.
+        $previewVehicle = $this->editingId
+            ? \App\Models\Vehicle::find($this->editingId)?->replicate() ?? new \App\Models\Vehicle
+            : new \App\Models\Vehicle;
+        $previewVehicle->sales_channel = $this->sales_channel;
+        $previewVehicle->is_disposed = $this->is_disposed;
+        $previewVehicle->is_deregistered = $this->is_deregistered;
+        $previewVehicle->deregistration_document = $this->deregistration_document_path ?: ($this->deregistrationDocFile ? 'pending' : null);
+        $previewVehicle->sale_price = (float) str_replace(',', '', $this->sale_price_str ?: '0');
+        $previewVehicle->export_buyer_id = $this->export_buyer_id_str !== '' ? (int) $this->export_buyer_id_str : null;
+        $previewVehicle->shipping_date = $this->shipping_date ?: null;
+        $previewVehicle->export_declaration_document = $this->export_declaration_document_path ?: ($this->exportDeclarationDocFile ? 'pending' : null);
+        $previewVehicle->bl_loading_location = $this->bl_loading_location ?: null;
+        $previewVehicle->bl_document = $this->bl_document_path ?: ($this->blDocFile ? 'pending' : null);
+        $previewVehicle->dhl_request = $this->dhl_request;
+        // sale_unpaid_amount accessor는 finalPayments/receivableHistories를 보지만, save 단계에선
+        // 현재 form의 deposit/잔금 입력값으로 임시 계산. 단순화 — 미입금 잔존은 DB 저장 후 정확.
+        // 여기선 ID 있는 차량의 기존 sale_unpaid 캐시를 활용해 1차 검증만.
+        if ($this->editingId) {
+            $existing = \App\Models\Vehicle::find($this->editingId);
+            if ($existing && $existing->sale_unpaid_amount_krw_cache !== null) {
+                // 기존 차량의 미입금 캐시로 C5 평가
+                $previewVehicle->setRawAttributes(array_merge(
+                    $previewVehicle->getAttributes(),
+                    ['sale_unpaid_amount_krw_cache' => $existing->sale_unpaid_amount_krw_cache]
+                ));
+            }
+        }
+        $previewVehicle->guardStageOrderForExport();
 
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');
@@ -1246,7 +1356,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">판매채널</label>
-                    <select wire:model="sales_channel" class="input-base">
+                    <select wire:model.live="sales_channel"
+                        x-on:change="
+                            if ($event.target.value !== 'export' && '{{ $editingId ?? '' }}' && @js($sales_channel) === 'export') {
+                                if (! confirm('수출 채널 정보(통관·선적·DHL)가 모두 초기화됩니다. 계속하시겠습니까?')) {
+                                    $event.target.value = 'export';
+                                    $event.preventDefault();
+                                    return;
+                                }
+                            }"
+                        class="input-base">
                         <option value="export">수출</option>
                         <option value="heyman">헤이맨</option>
                         <option value="carpul">카풀</option>
@@ -1435,7 +1554,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><label class="label-base">판매일</label><input wire:model="sale_date" type="date" class="input-base" /></div>
                 <div>
                     <label class="label-base">통화</label>
-                    <select wire:model="currency" class="input-base">
+                    <select wire:model.live="currency" class="input-base">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach

@@ -130,6 +130,16 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 - PR 만들지 않음 (사용자가 명시적으로 "PR 만들어줘"라고 한 경우만 예외)
 - 커밋 단위로 변경을 정리해서 추적성 확보 (한 커밋 = 한 논리적 변경)
 
+## ⚠️ APP_KEY 영구 손실 경고 (큐 2.5번 C8)
+
+**`php artisan key:generate` 사용 시 RRN(주민등록번호) 전체 영구 손실 위험**
+
+- `nice_reg_owner_rrn` 컬럼은 `APP_KEY`로 암호화 저장(큐 7번 완료). 키가 바뀌면 **모든 RRN 데이터 복호화 불가**, DB 백업으로도 복구 안 됨.
+- **집/회사 양쪽 PC**: 한 PC에서 발급한 APP_KEY 값을 1Password 등에 백업 → 다른 PC `.env`에 동일 값 직접 입력. `key:generate` 절대 실행 금지.
+- **운영 배포 시**: 최초 1회만 `key:generate` → 즉시 백업 → 재배포 시 동일 키 유지.
+- **DB 백업 시**: APP_KEY도 별도 위치에 함께 백업 (분리 보관, 한쪽 유실해도 다른 쪽 보존).
+- 상세 가이드 + 사고 복구 절차: `docs/operations/key-rotation.md`
+
 ## 새 PC 세팅
 ```bash
 # 1. PHP 확장 활성화 — XAMPP php.ini (C:\xampp\php\php.ini)에서 주석 제거 필수
