@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->g
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('dashboard', 'admin.dashboard')->name('dashboard');
     Volt::route('users', 'admin.users.index')->name('users.index');
+    Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
 });
 
 // 기능 설정 — super만
