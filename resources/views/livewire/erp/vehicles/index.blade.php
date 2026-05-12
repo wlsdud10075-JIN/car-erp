@@ -175,10 +175,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        // 대시보드 액션 카드에서 진입한 경우(action 파라미터 존재):
-        // - 날짜·진행상태 기본 필터를 적용하지 않음 (액션 산정 로직과 충돌 방지)
-        if ($this->action !== '') {
-            // dateFrom/dateTo는 명시적으로 들어온 경우만 유지
+        // 대시보드에서 진입한 경우 — action(처리 필요 카드) 또는 progressFilter(파이프라인 스트립):
+        // 날짜 기본 필터를 적용하지 않는다. 카드 카운트와 목록 카운트의 정합성을 위해
+        // 산정 로직(전체 기간)과 동일 범위에서 목록을 보여줘야 함.
+        if ($this->action !== '' || $this->progressFilter !== '') {
             return;
         }
 
@@ -280,6 +280,78 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Computed]
     public function salesmen() { return Salesman::where('is_active', true)->orderBy('name')->get(); }
+
+    /**
+     * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
+     * 매입 / 말소 / 판매 / 입금 / 통관 / 선적 / DHL.
+     * 상태: done(✓) / warn(!) / progress(진행중) / pending(-) / disabled(채널·폐기).
+     */
+    #[Computed]
+    public function progressFlow(): ?array
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+        $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+            ->find($this->editingId);
+        if (! $v) {
+            return null;
+        }
+        $isExport = $v->sales_channel === 'export';
+        $disposed = $v->is_disposed;
+        $disabledForChannel = fn () => ! $isExport;
+
+        return [
+            [
+                'key' => 'purchase', 'label' => '매입', 'tab' => 'purchase',
+                'status' => $disposed ? 'disabled' : ($v->purchase_price > 0
+                    ? ($v->purchase_unpaid_amount <= 0 ? 'done' : 'warn')
+                    : 'pending'),
+            ],
+            [
+                'key' => 'deregistration', 'label' => '말소', 'tab' => 'purchase',
+                'status' => $disposed ? 'disabled' : (
+                    $v->is_deregistered && $v->deregistration_document
+                        ? 'done'
+                        : ($v->is_deregistered ? 'warn' : 'pending')
+                ),
+            ],
+            [
+                'key' => 'sale', 'label' => '판매', 'tab' => 'sale',
+                'status' => $disposed ? 'disabled' : (
+                    $v->sale_price > 0 ? 'done' : 'pending'
+                ),
+            ],
+            [
+                'key' => 'payment', 'label' => '입금', 'tab' => 'sale',
+                'status' => $disposed ? 'disabled' : (
+                    $v->sale_price > 0
+                        ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
+                        : 'pending'
+                ),
+            ],
+            [
+                'key' => 'clearance', 'label' => '통관', 'tab' => 'clearance',
+                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
+                    $v->export_declaration_document ? 'done'
+                        : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending')
+                ),
+            ],
+            [
+                'key' => 'bl', 'label' => '선적', 'tab' => 'bl',
+                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
+                    $v->bl_document ? 'done'
+                        : ($v->bl_loading_location ? 'progress' : 'pending')
+                ),
+            ],
+            [
+                'key' => 'dhl', 'label' => 'DHL', 'tab' => 'dhl',
+                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
+                    $v->dhl_request ? 'done' : 'pending'
+                ),
+            ],
+        ];
+    }
 
     public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; unset($this->consigneesForSale); }
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
@@ -1100,6 +1172,35 @@ new #[Layout('components.layouts.app')] class extends Component {
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
+
+    {{-- 큐 2번 — 1대 흐름도 스트립 (편집 모드에서만) --}}
+    @if($this->progressFlow)
+    <div class="border-b border-gray-100 bg-gray-50/50 px-5 py-3">
+        <div class="overflow-x-auto">
+            <div class="flex min-w-max items-center gap-1">
+                @foreach($this->progressFlow as $i => $node)
+                @php
+                    $statusBadge = match($node['status']) {
+                        'done'     => ['icon' => '✓', 'cls' => 'bg-green-100 text-green-700 border-green-300'],
+                        'warn'     => ['icon' => '!', 'cls' => 'bg-amber-100 text-amber-700 border-amber-300'],
+                        'progress' => ['icon' => '⋯', 'cls' => 'bg-blue-100 text-blue-700 border-blue-300'],
+                        'pending'  => ['icon' => '-', 'cls' => 'bg-gray-100 text-gray-500 border-gray-200'],
+                        'disabled' => ['icon' => '×', 'cls' => 'bg-gray-50 text-gray-300 border-gray-100'],
+                    };
+                @endphp
+                <button type="button" @click="tab = '{{ $node['tab'] }}'"
+                    class="flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition hover:brightness-95 {{ $statusBadge['cls'] }}">
+                    <span class="font-bold">{{ $statusBadge['icon'] }}</span>
+                    <span class="font-medium">{{ $node['label'] }}</span>
+                </button>
+                @if($i < count($this->progressFlow) - 1)
+                <span class="flex-shrink-0 text-gray-300" aria-hidden="true">›</span>
+                @endif
+                @endforeach
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- Tab Nav --}}
     <div class="flex overflow-x-auto border-b border-gray-200 px-5">

@@ -110,6 +110,33 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->get();
     }
 
+    // 큐 2번 — 파이프라인 카운트 스트립 (11단계).
+    // 영업 뷰면 본인 salesman 한정, 통관/정산/admin은 전체.
+    #[Computed]
+    public function pipelineCounts(): array
+    {
+        $sid = $this->effectiveSalesmanId();
+
+        return Vehicle::query()
+            ->whereNull('deleted_at')
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->selectRaw('progress_status_cache, COUNT(*) as cnt')
+            ->groupBy('progress_status_cache')
+            ->pluck('cnt', 'progress_status_cache')
+            ->toArray();
+    }
+
+    public function pipelineUrl(string $status): string
+    {
+        $params = ['progressFilter' => $status];
+        $sid = $this->effectiveSalesmanId();
+        if ($sid) {
+            $params['salesmanId'] = $sid;
+        }
+
+        return route('erp.vehicles.index').'?'.http_build_query($params);
+    }
+
     // ── 영업 role 빌더 ───────────────────────────────────
     private function buildSalesKpis(): array
     {
@@ -360,6 +387,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     <p class="mt-1 text-sm text-gray-500">관리자에게 본 계정의 salesman 연결을 요청하세요.</p>
 </div>
 @else
+
+{{-- 큐 2번 — 11단계 파이프라인 카운트 스트립 --}}
+@php
+    $stripSubtitle = match(true) {
+        $user->isAdmin() && $this->selectedSalesmanId && $roleView === '영업'
+            => ($this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? '담당자').' 한정',
+        $roleView === '영업' && ! $user->isAdmin()
+            => $user->salesman?->name ? $user->salesman->name.' 한정' : null,
+        default => '전체 차량',
+    };
+@endphp
+<x-erp.pipeline-strip
+    :counts="$this->pipelineCounts"
+    :url-builder="fn (string $s) => $this->pipelineUrl($s)"
+    :subtitle="$stripSubtitle" />
 
 {{-- KPI 4카드 (S2 통일 — .card + text-xl md:text-2xl + truncate) --}}
 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">

@@ -64,6 +64,16 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 조회 버튼 — deferred wire:model로 받은 dateFrom/dateTo를 적용해
+     * Computed `kpis` 캐시를 무효화. wire:model.live였을 때 매 keystroke마다
+     * Vehicle 풀스캔 + KRW 환산 SUM이 돌던 부담 제거.
+     */
+    public function applyFilters(): void
+    {
+        unset($this->kpis);
+    }
+
+    /**
      * 카드/뱃지 클릭 시 vehicles 목록으로 이동할 URL 빌더.
      * 모든 링크가 같은 dateFrom/dateTo + dateType=purchase 컨텍스트를 공유.
      */
@@ -87,9 +97,14 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="mt-1 text-sm text-gray-500">매출 / 차량 진행 KPI · 기간별 비즈니스 지표</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            <input type="date" wire:model.live="dateFrom" class="input-filter" />
+            <input type="date" wire:model="dateFrom" class="input-filter" />
             <span class="text-xs text-gray-400">~</span>
-            <input type="date" wire:model.live="dateTo" class="input-filter" />
+            <input type="date" wire:model="dateTo" class="input-filter" />
+            <button wire:click="applyFilters" type="button"
+                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-violet-700">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                조회
+            </button>
             <button @click="settingsOpen = true" type="button"
                 class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
                 <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -149,22 +164,13 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
-    {{-- 진행 단계별 분포 --}}
-    <div id="w-progress" x-show="widgets['w-progress']" class="card">
-        <div class="section-header">
-            <span class="section-dot bg-blue-500"></span>
-            <span class="section-title">진행 단계별 차량 수 (클릭 시 해당 단계 목록)</span>
-        </div>
-        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-6">
-            @foreach (['매입중','매입완료','말소완료','판매중','판매완료','수출통관중','수출통관완료','선적중','선적완료','거래완료','폐기'] as $status)
-            @php $cnt = $this->kpis['by_progress'][$status] ?? 0; @endphp
-            <a href="{{ $this->vehiclesUrl(['progressFilter' => $status]) }}" wire:navigate
-               class="card-sm flex items-center justify-between transition hover:bg-violet-50 {{ $cnt === 0 ? 'opacity-40' : '' }}">
-                <span class="text-xs text-gray-600">{{ $status }}</span>
-                <span class="text-base font-bold text-gray-800">{{ number_format($cnt) }}</span>
-            </a>
-            @endforeach
-        </div>
+    {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (기간 내 매입 차량 기준) --}}
+    <div id="w-progress" x-show="widgets['w-progress']">
+        <x-erp.pipeline-strip
+            :counts="$this->kpis['by_progress']"
+            :url-builder="fn (string $s) => $this->vehiclesUrl(['progressFilter' => $s])"
+            title="진행 단계별 차량 수"
+            :subtitle="'매입일 '.$dateFrom.' ~ '.$dateTo.' 한정'" />
     </div>
 
     <p class="text-xs text-gray-400">

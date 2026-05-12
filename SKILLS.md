@@ -401,6 +401,24 @@ $vehiclesUrl = function (string $action) use ($selectedSalesmanId) {
 - 계층 드롭다운 (바이어→컨사이니): `wire:model.live`
 - 통화/환율: `wire:model.live` (KRW 환산값 즉시 반영)
 
+### 파이프라인 카운트 스트립 (2종)
+
+큐 2번 (2026-05-12) 회의 결과로 도입한 2가지 스트립 패턴. 두 스트립 모두 `progress_status_cache` 컬럼을 활용해 N+1 없이 1 SQL로 카운트.
+
+**① 대시보드용 11단계 카운트** (`<x-erp.pipeline-strip>` 익명 컴포넌트):
+- 11단계(매입중/매입완료/말소완료/판매중/판매완료/수출통관중/수출통관완료/선적중/선적완료/거래완료/폐기) 카운트 가로 스트립
+- 모바일 `overflow-x-auto` 가로 스크롤
+- props: `counts` (배열), `urlBuilder` (callable, status→URL), `title`, `subtitle`, `showDisposed`
+- 클릭 → `vehicles?progressFilter=N`. 영업 뷰는 본인 salesman 한정 / 통관·정산·admin은 전체
+- 사용처: `erp/dashboard`(헤더 아래) + `admin/dashboard`(`w-progress` 위젯 교체)
+- SQL 패턴: `Vehicle::selectRaw('progress_status_cache, COUNT(*) as cnt')->groupBy('progress_status_cache')->pluck('cnt','progress_status_cache')`
+
+**② 차량 편집 패널 1대 흐름도 7노드** (vehicles/index 인라인):
+- 매입 / 말소 / 판매 / 입금 / 통관 / 선적 / DHL — 7노드
+- 상태: `done`(✓ green) / `warn`(! amber) / `progress`(⋯ blue) / `pending`(- gray) / `disabled`(× 옅음, 헤이맨/카풀에서 통관·선적·DHL은 자동 disabled, `is_disposed=true`면 전체 disabled)
+- 노드 클릭 → Alpine `tab` 변경 (`@click="tab = '{{ $node['tab'] }}'"`). 패널 헤더 ↔ Tab Nav 사이 위치
+- `vehicles/index::progressFlow()` computed에서 상태 계산. `editingId=null`이면 null 반환 → 신규 등록 모드엔 비노출
+
 ### JSON 컬럼 활용
 - `vehicles.dhl_dimensions` 같은 단순 문자열은 string. 진짜 구조화 데이터(예: `bl_meta`)가 생기면 JSON cast 도입
 
