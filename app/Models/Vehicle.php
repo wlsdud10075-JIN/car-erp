@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -349,6 +350,119 @@ class Vehicle extends Model
             'danger' => '위험',
             'critical' => '심각',
             default => '-',
+        };
+    }
+
+    /**
+     * 대시보드 카드 카운트와 vehicles 목록 SQL where를 동일 헬퍼로 통일.
+     * SKILLS.md §9 100% 일치 원칙. Laravel local scope — `Vehicle::action('foo')` 또는
+     * `$query->action('foo')`로 체이닝. 호출자에서 salesman_id·채널·날짜 등 추가 필터 자유 chain.
+     *
+     * 14 액션 (영업 5 / 통관 7 / 정산 5) + 관리자 2 = 16 케이스.
+     * 통관·선적·DHL 액션은 sales_channel='export' 격리.
+     *
+     * 주의: `clearance_needed`(영업 라벨) ≡ `clearance_request_needed`(통관 라벨),
+     *      `dhl_needed`(영업) ≡ `dhl_dispatch_needed`(통관)는 동일 SQL이고 라벨만 다름.
+     *      role별 화면에서 맥락에 맞는 라벨 노출을 위해 의도적으로 별도 키 유지 — 통합 금지.
+     */
+    public function scopeAction(Builder $q, string $action): Builder
+    {
+        // active 한정 액션: is_disposed=false AND dhl_request=false
+        // 정산 액션 중 settlement_*·receivable_risk는 거래완료·잔여 미수금 대상이라 active 제외
+        $activeOnly = [
+            'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
+            'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
+            'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
+            'exchange_rate_missing',
+        ];
+        if (in_array($action, $activeOnly, true)) {
+            $q->where('is_disposed', false)->where('dhl_request', false);
+        }
+
+        return match ($action) {
+            // ── 영업 role (5) ──
+            'purchase_unpaid' => $q
+                ->where('purchase_price', '>', 0)
+                ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
+                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                          WHERE vehicle_id = vehicles.id
+                                          AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [now()->toDateString()]),
+            'sale_unpaid' => $q
+                ->where('sale_price', '>', 0)
+                ->where(fn ($q2) => $q2
+                    ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                    ->orWhereNull('sale_unpaid_amount_krw_cache')),
+            'clearance_needed' => $q
+                ->where('sales_channel', 'export')
+                ->where('sale_price', '>', 0)
+                ->whereNotNull('sale_unpaid_amount_krw_cache')
+                ->where('sale_unpaid_amount_krw_cache', '<=', 0)
+                ->whereNull('export_declaration_document'),
+            'shipping_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('export_declaration_document')
+                ->whereNull('bl_document'),
+            'dhl_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('bl_document'),
+
+            // ── 통관 role (7) — 모두 export 채널 ──
+            'clearance_request_needed' => $q
+                ->where('sales_channel', 'export')
+                ->where('sale_price', '>', 0)
+                ->whereNotNull('sale_unpaid_amount_krw_cache')
+                ->where('sale_unpaid_amount_krw_cache', '<=', 0)
+                ->whereNull('export_declaration_document'),
+            'clearance_info_missing' => $q
+                ->where('sales_channel', 'export')
+                ->where('sale_price', '>', 0)
+                ->where(fn ($q2) => $q2
+                    ->whereNull('export_buyer_id')
+                    ->orWhereNull('shipping_date')),
+            'forwarding_missing' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('export_buyer_id')
+                ->whereNotNull('shipping_date')
+                ->whereNull('forwarding_company_id'),
+            'export_declaration_upload_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('export_buyer_id')
+                ->whereNotNull('shipping_date')
+                ->whereNull('export_declaration_document'),
+            'shipping_process_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('export_declaration_document')
+                ->whereNull('bl_loading_location'),
+            'bl_upload_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('bl_loading_location')
+                ->whereNull('bl_document'),
+            'dhl_dispatch_needed' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('bl_document'),
+
+            // ── 정산 role (5) ──
+            'exchange_rate_missing' => $q
+                ->where('currency', '!=', 'KRW')
+                ->where('sale_price', '>', 0)
+                ->where(fn ($q2) => $q2
+                    ->whereNull('exchange_rate')
+                    ->orWhere('exchange_rate', 0)),
+            'settlement_create_needed' => $q
+                ->where('dhl_request', true)
+                ->whereDoesntHave('settlements'),
+            'settlement_confirm_needed' => $q
+                ->whereHas('settlements', fn ($q2) => $q2->where('settlement_status', 'pending')),
+            'settlement_pay_needed' => $q
+                ->whereHas('settlements', fn ($q2) => $q2->where('settlement_status', 'confirmed')),
+            'receivable_risk' => $q
+                ->whereIn('receivable_risk', ['danger', 'critical']),
+
+            // ── 관리자 액션 ──
+            'has_sale' => $q->where('sale_price', '>', 0),
+            'has_purchase' => $q->where('purchase_price', '>', 0),
+
+            default => $q,
         };
     }
 }

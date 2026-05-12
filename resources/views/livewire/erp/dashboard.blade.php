@@ -3,6 +3,7 @@
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -11,15 +12,60 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public int $selectedSalesmanId = 0;
     public int $perPage = 10;
+    // role=전체/관리/admin 사용자의 뷰 토글 — localStorage 연동
+    public string $roleView = '영업';
 
     public function mount(): void
     {
-        if (! auth()->user()->isAdmin()) {
-            $salesman = auth()->user()->salesman;
+        $user = auth()->user();
+        if (! $user->isAdmin()) {
+            $salesman = $user->salesman;
             if ($salesman) {
                 $this->selectedSalesmanId = $salesman->id;
             }
+            // 본인 role이 영업/통관/정산이면 그것을 초기 뷰로 (토글 노출 안 됨)
+            if (in_array($user->role, ['영업', '통관', '정산'], true)) {
+                $this->roleView = $user->role;
+            }
         }
+    }
+
+    // M2 보안: 비-admin이 selectedSalesmanId 변경 시 본인 ID로 즉시 복귀.
+    public function updatedSelectedSalesmanId(): void
+    {
+        if (! auth()->user()->isAdmin()) {
+            $this->selectedSalesmanId = auth()->user()->salesman?->id ?? 0;
+        }
+    }
+
+    // M3 가드: 토글 권한 없는 user가 roleView 변경 시도 → 본인 role로 강제 복귀.
+    public function updatedRoleView(): void
+    {
+        $user = auth()->user();
+        $canToggle = $user->isAdmin() || in_array($user->role, ['전체', '관리'], true);
+        if (! $canToggle) {
+            $this->roleView = in_array($user->role, ['영업', '통관', '정산'], true) ? $user->role : '영업';
+
+            return;
+        }
+        if (! in_array($this->roleView, ['영업', '통관', '정산'], true)) {
+            $this->roleView = '영업';
+        }
+    }
+
+    // M2 SQL 강제: 담당자 필터는 영업 뷰에서만 의미 있음.
+    // admin이 영업 뷰에서 담당자 N 선택 → 통관/정산 뷰로 전환 시 N 무시 (KPI/목록 정합성).
+    private function effectiveSalesmanId(): ?int
+    {
+        if ($this->roleView !== '영업') {
+            return null;
+        }
+        $user = auth()->user();
+        if ($user->isAdmin()) {
+            return $this->selectedSalesmanId ?: null;
+        }
+
+        return $user->salesman?->id;
     }
 
     #[Computed]
@@ -29,37 +75,70 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     #[Computed]
-    public function summary(): array
+    public function kpis(): array
     {
-        $sid = $this->selectedSalesmanId ?: null;
-        $ms  = now()->startOfMonth()->toDateString();
-        $me  = now()->endOfMonth()->toDateString();
+        return match ($this->roleView) {
+            '통관' => $this->buildClearanceKpis(),
+            '정산' => $this->buildSettlementKpis(),
+            default => $this->buildSalesKpis(),
+        };
+    }
+
+    #[Computed]
+    public function actions(): array
+    {
+        return match ($this->roleView) {
+            '통관' => $this->buildClearanceActions(),
+            '정산' => $this->buildSettlementActions(),
+            default => $this->buildSalesActions(),
+        };
+    }
+
+    #[Computed]
+    public function activeVehicles()
+    {
+        $sid = $this->effectiveSalesmanId();
+
+        return Vehicle::query()
+            ->whereNull('deleted_at')
+            ->where('is_disposed', false)
+            ->where('dhl_request', false)
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->with(['salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+            ->orderBy('purchase_date', 'desc')
+            ->limit($this->perPage)
+            ->get();
+    }
+
+    // ── 영업 role 빌더 ───────────────────────────────────
+    private function buildSalesKpis(): array
+    {
+        $sid = $this->effectiveSalesmanId();
+        $ms = now()->startOfMonth()->toDateString();
+        $me = now()->endOfMonth()->toDateString();
 
         $base = Vehicle::query()->whereNull('deleted_at')
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid));
 
-        $active        = (clone $base)->where('is_disposed', false)->where('dhl_request', false)->count();
-        $thisMonthBuy  = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
-        $thisMonthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
-        $thisMonthDone = (clone $base)->where('dhl_request', true)->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
+        $active = (clone $base)->where('is_disposed', false)->where('dhl_request', false)->count();
+        $monthBuy = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
+        $monthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
+        $monthDone = (clone $base)->where('dhl_request', true)->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
+        $monthLabel = now()->format('m').'월';
 
-        return compact('active', 'thisMonthBuy', 'thisMonthSale', 'thisMonthDone');
+        return [
+            ['label' => '현재 진행중',  'value' => $active,    'suffix' => '대', 'hint' => '거래완료·폐기 제외'],
+            ['label' => '이달 매입',    'value' => $monthBuy,  'suffix' => '대', 'hint' => $monthLabel.' 매입 기준'],
+            ['label' => '이달 판매',    'value' => $monthSale, 'suffix' => '대', 'hint' => $monthLabel.' 판매 기준'],
+            ['label' => '이달 거래완료','value' => $monthDone, 'suffix' => '대', 'hint' => $monthLabel.' 완료 기준'],
+        ];
     }
 
-    // 미지급/미입금/통관/선적/DHL/정산 액션 건수 — 차량 한 번 로드 후 collection 필터
-    #[Computed]
-    public function actionCounts(): array
+    private function buildSalesActions(): array
     {
-        $sid = $this->selectedSalesmanId ?: null;
-
-        $vehicles = Vehicle::query()
-            ->whereNull('deleted_at')
-            ->where('is_disposed', false)
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
-            ->with(['finalPayments', 'purchaseBalancePayments'])
-            ->get();
-
-        $active = $vehicles->where('dhl_request', false);
+        $sid = $this->effectiveSalesmanId();
+        $base = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid));
 
         $pendingSettlements = Settlement::query()
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
@@ -67,158 +146,245 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->count();
 
         return [
-            'purchaseUnpaid'     => $active->filter(fn ($v) => $v->purchase_price > 0 && $v->purchase_unpaid_amount > 0)->count(),
-            'saleUnpaid'         => $active->filter(fn ($v) => $v->sale_price > 0 && $v->sale_unpaid_amount > 0)->count(),
-            'clearanceNeeded'    => $active->filter(fn ($v) => $v->sale_price > 0 && $v->sale_unpaid_amount <= 0 && ! $v->export_declaration_document)->count(),
-            'shippingNeeded'     => $active->filter(fn ($v) => $v->export_declaration_document && ! $v->bl_document)->count(),
-            'dhlNeeded'          => $active->filter(fn ($v) => (bool) $v->bl_document)->count(),
-            'pendingSettlements' => $pendingSettlements,
+            $this->row('매입 미지급',         '매입가 입력 후 잔금 미지급',    $base('purchase_unpaid')->count(),   'bg-red-500',    'purchase_unpaid',   true),
+            $this->row('판매 미입금',         '판매 후 미회수 금액 존재',     $base('sale_unpaid')->count(),       'bg-amber-500',  'sale_unpaid',       true),
+            $this->row('수출통관 신청 필요',  '판매 완납 → 면장서류 미업로드',$base('clearance_needed')->count(),  'bg-blue-500',   'clearance_needed'),
+            $this->row('선적 처리 필요',      '수출통관 완료 → B/L 미처리',   $base('shipping_needed')->count(),   'bg-green-500',  'shipping_needed'),
+            $this->row('DHL 발송 필요',       '선적 완료 → DHL 미신청',       $base('dhl_needed')->count(),        'bg-teal-500',   'dhl_needed'),
+            // 정산 대기는 settlements 라우트로 직접 이동
+            ['label' => '정산 대기', 'desc' => '정산 방식 미입력 또는 확인 필요',
+             'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
+             'href' => route('erp.settlements.index')],
         ];
     }
 
-    #[Computed]
-    public function activeVehicles()
+    // ── 통관 role 빌더 ───────────────────────────────────
+    private function buildClearanceKpis(): array
     {
-        $sid = $this->selectedSalesmanId ?: null;
+        $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
-        return Vehicle::query()
-            ->whereNull('deleted_at')
-            ->where('is_disposed', false)
-            ->where('dhl_request', false)
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
-            ->with(['salesman', 'finalPayments', 'purchaseBalancePayments'])
-            ->orderBy('purchase_date', 'desc')
-            ->limit($this->perPage)
-            ->get();
+        return [
+            ['label' => '통관 신청 대기',          'value' => $c('clearance_request_needed'),         'suffix' => '대', 'hint' => '판매 완납 → 면장 미업로드'],
+            ['label' => '수출신고서 업로드 대기',  'value' => $c('export_declaration_upload_needed'), 'suffix' => '대', 'hint' => '수출통관중'],
+            ['label' => '선적 처리 대기',          'value' => $c('shipping_process_needed'),          'suffix' => '대', 'hint' => '면장 완료 → 반입지 미입력'],
+            ['label' => 'DHL 발송 대기',           'value' => $c('dhl_dispatch_needed'),              'suffix' => '대', 'hint' => 'B/L 발행 → 미신청'],
+        ];
+    }
+
+    private function buildClearanceActions(): array
+    {
+        $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
+
+        return [
+            $this->row('수출통관 신청 필요',  '판매 완납 → 면장 미업로드',                 $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
+            $this->row('통관 바이어/일자 누락','판매 진입 → export_buyer 또는 shipping_date 없음', $c('clearance_info_missing'),     'bg-amber-500', 'clearance_info_missing',         true),
+            $this->row('포워딩사 미지정',     '통관 진입 → forwarding 없음',                $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing',             true),
+            $this->row('수출신고서 업로드',   '수출통관중 → 신고서 없음',                  $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
+            $this->row('선적 처리 필요',      '면장 완료 → 반입지 미입력',                 $c('shipping_process_needed'),          'bg-green-500', 'shipping_process_needed'),
+            $this->row('B/L 업로드 필요',     '선적중 → B/L 미업로드',                     $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
+            $this->row('DHL 발송 필요',       '선적완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
+        ];
+    }
+
+    // ── 정산 role 빌더 ───────────────────────────────────
+    private function buildSettlementKpis(): array
+    {
+        // M4 — "판매 미입금 총액"은 환율 입력 차량만 합산 (KRW 캐시 NOT NULL).
+        //       환율 미입력 외화 차량은 별도 KPI "환율 미입력 외화"에서만 카운트.
+        $totalSaleUnpaid = (int) (Vehicle::query()
+            ->whereNull('deleted_at')->where('is_disposed', false)->where('dhl_request', false)
+            ->where('sale_price', '>', 0)
+            ->whereNotNull('sale_unpaid_amount_krw_cache')
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->sum('sale_unpaid_amount_krw_cache') ?? 0);
+
+        $today = now()->toDateString();
+        $totalPurchaseUnpaid = (int) (Vehicle::query()
+            ->whereNull('deleted_at')->where('is_disposed', false)
+            ->where('purchase_price', '>', 0)
+            ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
+                         - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                      WHERE vehicle_id = vehicles.id
+                                      AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [$today])
+            ->selectRaw('SUM(purchase_price + selling_fee - down_payment - selling_fee_payment
+                         - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                      WHERE vehicle_id = vehicles.id
+                                      AND payment_date IS NOT NULL AND payment_date <= ?), 0)) as total', [$today])
+            ->value('total') ?? 0);
+
+        $pendingSettlements = Settlement::query()->where('settlement_status', 'pending')->count();
+        $exchangeMissing = Vehicle::query()->whereNull('deleted_at')->action('exchange_rate_missing')->count();
+
+        return [
+            ['label' => '매입 미지급 총액', 'value' => $this->formatKrw($totalPurchaseUnpaid), 'suffix' => '', 'hint' => '진행중 매입 잔금 합계'],
+            ['label' => '판매 미입금 총액', 'value' => $this->formatKrw($totalSaleUnpaid),     'suffix' => '', 'hint' => '환율 입력 차량만 합산'],
+            ['label' => '정산 대기',        'value' => $pendingSettlements,                    'suffix' => '건','hint' => 'pending 상태'],
+            ['label' => '환율 미입력 외화', 'value' => $exchangeMissing,                       'suffix' => '대','hint' => '외화 판매 → 환율 없음'],
+        ];
+    }
+
+    private function buildSettlementActions(): array
+    {
+        $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
+
+        return [
+            $this->row('매입 미지급',     '매입가 입력 → 잔금 미지급',     $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
+            $this->row('판매 미입금',     '판매 → 미회수 잔존',           $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
+            $this->row('환율 입력 필요',  '외화 판매 → 환율 미입력',      $c('exchange_rate_missing'),     'bg-red-500',    'exchange_rate_missing',     true),
+            $this->row('정산 생성 필요',  '거래완료 → settlement 없음',   $c('settlement_create_needed'),  'bg-blue-500',   'settlement_create_needed'),
+            $this->row('정산 확정 필요',  'settlement = pending',         $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
+            $this->row('정산 지급 필요',  'settlement = confirmed',       $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
+            $this->row('채권 위험',       '회수 위험·심각 등급',          $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
+        ];
+    }
+
+    private function row(string $label, string $desc, int $count, string $dot, string $action, bool $urgent = false): array
+    {
+        return [
+            'label' => $label, 'desc' => $desc, 'count' => $count,
+            'dot' => $dot, 'urgent' => $urgent,
+            'href' => $this->vehiclesUrl($action),
+        ];
+    }
+
+    private function vehiclesUrl(string $action): string
+    {
+        $url = route('erp.vehicles.index').'?action='.$action;
+        $sid = $this->effectiveSalesmanId();
+        if ($sid) {
+            $url .= '&salesmanId='.$sid;
+        }
+
+        return $url;
+    }
+
+    private function formatKrw(int $amount): string
+    {
+        if ($amount === 0) {
+            return '₩0';
+        }
+        if ($amount >= 100000000) {
+            return '₩'.number_format($amount / 100000000, 1).'억';
+        }
+        if ($amount >= 10000) {
+            return '₩'.number_format($amount / 10000, 0).'만';
+        }
+
+        return '₩'.number_format($amount);
     }
 }; ?>
 
 <div>
-<div class="flex h-full flex-col gap-5 p-3 md:p-6">
+<div class="flex h-full flex-col gap-5 p-3 md:p-6" x-data="{
+    roleView: @entangle('roleView').live,
+    initView() {
+        @if(auth()->user()->isAdmin() || in_array(auth()->user()->role, ['전체','관리'], true))
+        const saved = localStorage.getItem('erp_dashboard_role_view');
+        if (saved && ['영업','통관','정산'].includes(saved)) {
+            this.roleView = saved;
+        }
+        @endif
+    },
+    setView(v) {
+        this.roleView = v;
+        localStorage.setItem('erp_dashboard_role_view', v);
+    }
+}" x-init="initView()">
+
+@php
+    $user = auth()->user();
+    $canToggleView = $user->isAdmin() || in_array($user->role, ['전체','관리'], true);
+    $viewLabel = match($roleView) {
+        '통관' => '내 통관 업무',
+        '정산' => '내 정산 업무',
+        default => '내 영업 업무',
+    };
+    $viewBadge = match($roleView) {
+        '통관' => 'badge-amber',
+        '정산' => 'badge-green',
+        default => 'badge-purple',
+    };
+    $salesmanMissing = $user->role === '영업' && ! $user->isAdmin() && ! $user->salesman;
+@endphp
 
 {{-- 헤더 --}}
 <div class="flex flex-wrap items-center justify-between gap-3">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">내 업무 현황</h1>
-        @php
-            $smName = $selectedSalesmanId
-                ? $this->salesmen->firstWhere('id', $selectedSalesmanId)?->name
-                : null;
-        @endphp
+        <h1 class="text-xl font-bold text-gray-800">{{ $viewLabel }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">
-            {{ $smName ? $smName.' 담당' : '전체' }} · {{ now()->format('Y년 m월 d일') }}
+            <span class="badge {{ $viewBadge }}">{{ $roleView }}</span>
+            · {{ now()->format('Y년 m월 d일') }}
+            @if($user->role === '관리' && ! $user->isAdmin())
+                <span class="badge badge-amber ml-1">관리 role 전용 화면 준비 중</span>
+            @endif
         </p>
     </div>
-    @if(auth()->user()->isAdmin())
-    <div class="flex items-center gap-2">
-        <span class="text-xs text-gray-500">담당자</span>
-        <select wire:model.live="selectedSalesmanId" class="input-filter">
-            <option value="0">전체</option>
-            @foreach($this->salesmen as $sm)
-            <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+
+    <div class="flex items-center gap-3">
+        {{-- M7 토글 pill — role=전체/관리/admin만 노출 --}}
+        @if($canToggleView)
+        <div class="flex items-center gap-1">
+            @foreach(['영업','통관','정산'] as $v)
+            <button type="button"
+                @click="setView('{{ $v }}')"
+                :class="roleView === '{{ $v }}' ? 'tab-pill is-active' : 'tab-pill'"
+                class="px-3 py-1 text-xs">{{ $v }}</button>
             @endforeach
-        </select>
+        </div>
+        @endif
+
+        {{-- admin 담당자 드롭다운 — 영업 뷰일 때만 의미 있음 --}}
+        @if($user->isAdmin() && $roleView === '영업')
+        <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">담당자</span>
+            <select wire:model.live="selectedSalesmanId" class="input-filter">
+                <option value="0">전체</option>
+                @foreach($this->salesmen as $sm)
+                <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+                @endforeach
+            </select>
+        </div>
+        @endif
     </div>
-    @endif
 </div>
 
-{{-- Row 1: 요약 카드 --}}
+@if($salesmanMissing)
+{{-- S4 영업 user salesman 미연결 empty state --}}
+<div class="card flex flex-col items-center justify-center py-12 text-center">
+    <div class="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+        <svg class="h-7 w-7 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+    </div>
+    <p class="text-base font-semibold text-gray-800">담당자 정보가 연결되지 않았습니다</p>
+    <p class="mt-1 text-sm text-gray-500">관리자에게 본 계정의 salesman 연결을 요청하세요.</p>
+</div>
+@else
+
+{{-- KPI 4카드 (S2 통일 — .card + text-xl md:text-2xl + truncate) --}}
 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    @foreach($this->kpis as $kpi)
     <div class="card">
-        <p class="text-xs text-gray-500">현재 진행중</p>
-        <p class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->summary['active'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
+        <p class="text-xs text-gray-500">{{ $kpi['label'] }}</p>
+        <p class="mt-1 truncate text-xl md:text-2xl font-bold text-gray-800" title="{{ $kpi['value'] }}{{ $kpi['suffix'] }}">
+            {{ $kpi['value'] }}@if($kpi['suffix'] !== '')<span class="ml-0.5 text-sm font-normal text-gray-400">{{ $kpi['suffix'] }}</span>@endif
         </p>
-        <p class="mt-1 text-xs text-gray-400">거래완료·폐기 제외</p>
+        <p class="mt-1 text-xs text-gray-400">{{ $kpi['hint'] }}</p>
     </div>
-    <div class="card">
-        <p class="text-xs text-gray-500">이달 매입</p>
-        <p class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->summary['thisMonthBuy'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
-        </p>
-        <p class="mt-1 text-xs text-gray-400">{{ now()->format('m') }}월 매입 기준</p>
-    </div>
-    <div class="card">
-        <p class="text-xs text-gray-500">이달 판매</p>
-        <p class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->summary['thisMonthSale'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
-        </p>
-        <p class="mt-1 text-xs text-gray-400">{{ now()->format('m') }}월 판매 기준</p>
-    </div>
-    <div class="card">
-        <p class="text-xs text-gray-500">이달 거래완료</p>
-        <p class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->summary['thisMonthDone'] }}<span class="ml-0.5 text-sm font-normal text-gray-400">대</span>
-        </p>
-        <p class="mt-1 text-xs text-gray-400">{{ now()->format('m') }}월 완료 기준</p>
-    </div>
+    @endforeach
 </div>
 
-{{-- Row 2: 할일 목록 --}}
+{{-- 할일 목록 --}}
 <div class="card">
     <h2 class="mb-4 text-sm font-semibold text-gray-700">처리 필요 항목</h2>
     @php
-    $ac = $this->actionCounts;
-    $vehiclesUrl = function (string $action) use ($selectedSalesmanId) {
-        $url = route('erp.vehicles.index').'?action='.$action;
-        if ($selectedSalesmanId) {
-            $url .= '&salesmanId='.$selectedSalesmanId;
-        }
-        return $url;
-    };
-    $actions = [
-        [
-            'label'  => '매입 미지급',
-            'desc'   => '매입가 입력 후 잔금 미지급',
-            'count'  => $ac['purchaseUnpaid'],
-            'dot'    => 'bg-red-500',
-            'href'   => $vehiclesUrl('purchase_unpaid'),
-            'urgent' => true,
-        ],
-        [
-            'label'  => '판매 미입금',
-            'desc'   => '판매 후 미회수 금액 존재',
-            'count'  => $ac['saleUnpaid'],
-            'dot'    => 'bg-amber-500',
-            'href'   => $vehiclesUrl('sale_unpaid'),
-            'urgent' => true,
-        ],
-        [
-            'label'  => '수출통관 신청 필요',
-            'desc'   => '판매 완납 → 면장서류 미업로드',
-            'count'  => $ac['clearanceNeeded'],
-            'dot'    => 'bg-blue-500',
-            'href'   => $vehiclesUrl('clearance_needed'),
-            'urgent' => false,
-        ],
-        [
-            'label'  => '선적 처리 필요',
-            'desc'   => '수출통관 완료 → B/L 미처리',
-            'count'  => $ac['shippingNeeded'],
-            'dot'    => 'bg-green-500',
-            'href'   => $vehiclesUrl('shipping_needed'),
-            'urgent' => false,
-        ],
-        [
-            'label'  => 'DHL 발송 필요',
-            'desc'   => '선적 완료 → DHL 미신청',
-            'count'  => $ac['dhlNeeded'],
-            'dot'    => 'bg-teal-500',
-            'href'   => $vehiclesUrl('dhl_needed'),
-            'urgent' => false,
-        ],
-        [
-            'label'  => '정산 대기',
-            'desc'   => '정산 방식 미입력 또는 확인 필요',
-            'count'  => $ac['pendingSettlements'],
-            'dot'    => 'bg-violet-500',
-            'href'   => route('erp.settlements.index'),
-            'urgent' => false,
-        ],
-    ];
-    $totalActions = collect($actions)->sum('count');
+        $totalActions = collect($this->actions)->sum('count');
+        $emptyMessage = match($roleView) {
+            '통관' => ['title' => '처리 대기 항목 없음', 'sub' => '통관/선적/DHL 흐름 정상'],
+            '정산' => ['title' => '회수·정산 대기 없음', 'sub' => '모든 채권/정산 정상'],
+            default => ['title' => '처리할 항목이 없습니다', 'sub' => '모든 작업이 최신 상태입니다'],
+        };
     @endphp
-
     @if($totalActions === 0)
     <div class="flex flex-col items-center justify-center py-8 text-center">
         <div class="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
@@ -226,22 +392,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
             </svg>
         </div>
-        <p class="text-sm font-medium text-green-700">처리할 항목이 없습니다</p>
-        <p class="mt-0.5 text-xs text-gray-400">모든 작업이 최신 상태입니다</p>
+        <p class="text-sm font-medium text-green-700">{{ $emptyMessage['title'] }}</p>
+        <p class="mt-0.5 text-xs text-gray-400">{{ $emptyMessage['sub'] }}</p>
     </div>
     @else
     <div class="divide-y divide-gray-100">
-        @foreach($actions as $action)
+        @foreach($this->actions as $action)
         @if($action['count'] > 0)
         <a href="{{ $action['href'] }}" wire:navigate
-           class="flex items-center gap-3 py-3 transition hover:bg-gray-50 -mx-4 px-4 first:-mt-1 last:-mb-1">
+           class="-mx-4 flex items-center gap-3 px-4 py-3 transition first:-mt-1 last:-mb-1 hover:bg-gray-50">
             <span class="h-2.5 w-2.5 flex-shrink-0 rounded-full {{ $action['dot'] }}"></span>
-            <div class="flex-1 min-w-0">
+            <div class="min-w-0 flex-1">
                 <span class="text-sm font-medium text-gray-800">{{ $action['label'] }}</span>
-                <span class="ml-2 text-xs text-gray-400 hidden sm:inline">{{ $action['desc'] }}</span>
+                <span class="ml-2 hidden text-xs text-gray-400 sm:inline">{{ $action['desc'] }}</span>
             </div>
             <span class="flex-shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold
-                         {{ $action['urgent'] && $action['count'] > 0 ? 'bg-red-100 text-red-700' : 'text-gray-700' }}">
+                         {{ $action['urgent'] ? 'bg-red-100 text-red-700' : 'text-gray-700' }}">
                 {{ $action['count'] }}건
             </span>
             <svg class="h-4 w-4 flex-shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -254,7 +420,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 </div>
 
-{{-- Row 3: 진행중 차량 목록 --}}
+{{-- 진행중 차량 목록 (모든 role 공통 페어 렌더) --}}
 <div class="card">
     <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-700">진행중 차량</h2>
@@ -372,6 +538,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforelse
     </div>
 </div>
+
+@endif
 
 </div>
 </div>

@@ -31,11 +31,12 @@ class DatabaseSeeder extends Seeder
     private function seedUsers(): void
     {
         $users = [
-            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test', 'permission' => 'super',  'role' => '전체'],
-            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',  'permission' => 'admin',  'role' => '전체'],
-            ['name' => '김영업',       'email' => 'sales@car-erp.test', 'permission' => 'user',   'role' => '영업'],
-            ['name' => '이통관',       'email' => 'clear@car-erp.test', 'permission' => 'user',   'role' => '통관'],
-            ['name' => '박전체',       'email' => 'all@car-erp.test',   'permission' => 'user',   'role' => '전체'],
+            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'permission' => 'super',  'role' => '전체'],
+            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'permission' => 'admin',  'role' => '전체'],
+            ['name' => '김영업',       'email' => 'sales@car-erp.test',    'permission' => 'user',   'role' => '영업'],
+            ['name' => '이통관',       'email' => 'clear@car-erp.test',    'permission' => 'user',   'role' => '통관'],
+            ['name' => '김진영',       'email' => 'settle@car-erp.test',   'permission' => 'user',   'role' => '정산'],
+            ['name' => '박전체',       'email' => 'all@car-erp.test',      'permission' => 'user',   'role' => '전체'],
         ];
 
         foreach ($users as $data) {

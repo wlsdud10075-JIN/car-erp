@@ -8,6 +8,7 @@
 ## 회의 로그
 
 - 2026-05-12 [DONE] 문서 다운로드 권한 + RRN 암호화 — 1·2단계 PR 모두 머지 완료. 정책 D(모든 user + 감사 로그) / encrypted cast(accessor·mutator + encrypted_at 표식) / Unit Test 10/10 통과. 사후 Python ERP 미실재 확인 → CLAUDE/SKILLS 운영 가정 제거 + 부서 프롬프트 v1.1 사전 검증 의무 추가 ([2026-05-12-rrn-encryption-document-permission.md](2026-05-12-rrn-encryption-document-permission.md))
+- 2026-05-12 [조건부 GO] 큐 1번 일반사용자 대시보드 role 분기 — Ops 단독 GO, 나머지 5역할 조건부 GO. MUST 10개(M1~6 채널·보안·정합성 + M7~8 토글 pill·관리 안내 + M9~10 정산 user 시드·dogfooding) + SHOULD 5개. 사용자 결정 3건: ①role=전체 토글 pill ②role=관리 동일+안내 배지 ③정산 user 시드 추가해 dogfooding. 공수 4~5h, 마이그레이션·캐시 rebuild 없음. 구현은 다음 세션 ([2026-05-12-user-dashboard-role-branching.md](2026-05-12-user-dashboard-role-branching.md))
 
 ---
 

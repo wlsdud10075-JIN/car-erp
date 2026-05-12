@@ -242,46 +242,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 대시보드 처리 필요 카드와 동일한 산정 로직을 SQL where로 표현.
-     * collection 필터(accessor 기반)와 100% 일치하도록 컬럼 캐시·raw SQL 사용.
+     * 대시보드 카드 카운트와 vehicles 목록 SQL where 100% 일치.
+     * 14 액션(영업 5 / 통관 7 / 정산 5) + 관리자 2 = 16 케이스를
+     * Vehicle::scopeAction()에서 통합 정의. SKILLS.md §9 action 파라미터 패턴.
      */
     private function applyActionFilter($q)
     {
-        // ERP 대시보드 처리 필요 카드 5종은 active 차량 기준
-        // (is_disposed=false AND dhl_request=false). 관리자 대시보드 액션은 전체 차량 대상.
-        $userDashActions = ['purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed'];
-        if (in_array($this->action, $userDashActions, true)) {
-            $q = $q->where('is_disposed', false)->where('dhl_request', false);
-        }
-
-        return match ($this->action) {
-            'purchase_unpaid' => $q
-                ->where('purchase_price', '>', 0)
-                ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
-                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
-                                          WHERE vehicle_id = vehicles.id
-                                          AND payment_date IS NOT NULL AND payment_date <= CURDATE()), 0)) > 0'),
-            'sale_unpaid' => $q
-                ->where('sale_price', '>', 0)
-                ->where(fn ($q2) => $q2
-                    ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                    ->orWhereNull('sale_unpaid_amount_krw_cache')
-                ),
-            'clearance_needed' => $q
-                ->where('sale_price', '>', 0)
-                ->whereNotNull('sale_unpaid_amount_krw_cache')
-                ->where('sale_unpaid_amount_krw_cache', '<=', 0)
-                ->whereNull('export_declaration_document'),
-            'shipping_needed' => $q
-                ->whereNotNull('export_declaration_document')
-                ->whereNull('bl_document'),
-            'dhl_needed' => $q
-                ->whereNotNull('bl_document'),
-            // 관리자 대시보드 액션 — active 제한 없이 전체에서 필터
-            'has_sale' => $q->where('sale_price', '>', 0),
-            'has_purchase' => $q->where('purchase_price', '>', 0),
-            default => $q,
-        };
+        return $q->action($this->action);
     }
 
     #[Computed]
