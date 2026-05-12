@@ -591,7 +591,7 @@ USED                  → balance -= savings  (음수 검증 — DB CHECK)
 ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 ```
 
-## 14. 외부 연동 패턴 (NEW_ERP.md §12)
+## 14. 외부 연동 패턴
 
 ### NICE API — 차량정보 자동조회 ★ (필수)
 
@@ -785,7 +785,7 @@ Python ERP/엑셀 모두 DHL 필드는 **수동 입력 + `dhl_request` 체크** 
 
 ### 배포 (AWS Lightsail)
 
-XAMPP는 로컬 개발 한정. 운영은 AWS Lightsail 권장 (Python ERP와 동일 환경, 인스턴스 추가만으로 병행 운영 가능).
+XAMPP는 로컬 개발 한정. 운영은 AWS Lightsail 권장.
 
 ```
 로컬 개발                      AWS 배포
@@ -796,5 +796,3 @@ npm run dev               →  npm run build
 .env (local)              →  .env (server, secrets)
                              php artisan queue:work --daemon (포워딩 메일용)
 ```
-
-**전환 흐름**: Python ERP(기존 인스턴스 유지) + Laravel ERP(신규 인스턴스) 병행 운영 → 데이터 마이그레이션 완료 후 Python 인스턴스 종료.

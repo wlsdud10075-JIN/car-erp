@@ -12,9 +12,13 @@
 > @SKILLS.md
 > @role기획보안_수정.md
 
-SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
+> 📋 **라운드테이블 회의** (의사결정 무게가 큰 안건 발생 시):
+> - 프로토콜: `decision_protocol.md` 참조 (자동 로드 안 함 — 회의 가이드라인이라 코드 컨텍스트와 분리)
+> - 부서별 프롬프트: `docs/meetings/departments/{po,engineer,qa,security,ops,specialist}.md`
+> - 과거 결정 검색: `docs/meetings/INDEX.md`
+> - 트리거 키워드: "회의 돌려줘" / "라운드테이블" / "/회의" / "부서별로 검토해줘". 마이그레이션·VAT 공식·RRN·`config/auth.php` 변경 등 무거운 안건은 자동 풀회의 제안.
 
-> 신규 설계 배경·엑셀 분석은 `Desktop/CAR_ERP/NEW_ERP.md` 참조.
+SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
 
 ## 환경설정
 - **프레임워크**: Laravel 12 + Livewire 4 (Volt) + Flux UI Free
@@ -194,7 +198,7 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 - `carpul_channel_enabled` — 카풀 채널 on/off
 - 변경 권한: `super`만 (`canToggleFeatures()`)
 
-## 외부 연동 (NEW_ERP.md §12)
+## 외부 연동
 
 | 연동 | 용도 | 구현 위치 | 우선순위 |
 |---|---|---|---|
@@ -212,7 +216,7 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 - queue 사용 (DB job table) — 발송 실패가 저장 트랜잭션 영향 X
 - 발송 후 `forwarding_email_sent = true` 자동 갱신 (재발송 방지)
 
-**배포**: AWS Lightsail 권장 — Python ERP와 동일 환경, 인스턴스 병행 운영 가능. 마이그레이션 완료 후 Python ERP 인스턴스 종료.
+**배포**: AWS Lightsail 권장. 상세 패턴은 `SKILLS.md §14` 참조.
 
 상세 구현 패턴은 `SKILLS.md §14` 참조.
 
@@ -240,7 +244,7 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | 11 | **서류 자동 생성 5종 PDF + 2종 Excel** — 11-A dompdf 셋업 / 11-B 한국어 PDF 3종 (말소·등록증재발급·양도증명서) + Noto Sans KR 서브셋 / 11-C 영문 PDF 2종 (Proforma Invoice·Sales Contract) / 11-D Excel CIPL 2종 (RO/con) maatwebsite/excel + 템플릿 추출 / 11-E 차량 편집 패널 "서류" 탭 + 채널 분기 (수출만 영문서류 노출) | ✅ 완료 |
 | 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | 🟡 보류 (SMTP 확정 후) |
 | - | NICE API 실연동 (현재 스텁) | 🟡 보류 (role/대시보드 완성 후) |
-| 13 | AWS Lightsail 배포 (Python ERP와 병행 운영 후 전환) | ⏳ |
+| 13 | AWS Lightsail 배포 | ⏳ |
 
 ## ⏭️ 다음 세션 작업 순서 (2026-05-11 기준)
 
@@ -308,5 +312,3 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
   - 통관: 수출통관·선적 관련 처리 필요 항목
   - 정산: 입금·출금·정산 관련 처리 필요 항목
   - 관리: 보류
-
-> 상세 설계 / 도메인 분석은 `Desktop/CAR_ERP/NEW_ERP.md` 참조.
