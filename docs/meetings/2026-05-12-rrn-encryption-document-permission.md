@@ -241,3 +241,31 @@
 5. `tests/Unit/VehicleRrnEncryptionTest.php` — 평문 저장→DB raw 조회 시 암호문 / 모델 조회 시 복호 일치 / NULL safe
 6. `tests/Feature/VehicleDocumentControllerTest.php` — admin/user 각각 7종 권한 회귀
 7. 수동: 풀백업(`mysqldump` + APP_KEY .env 복사 + `git tag pre-rrn-encryption`) → 마이그레이션 실행 → 변환 row 수 검증
+
+---
+
+## [2026-05-12 작업 완료 — DONE]
+
+### 1단계 PR (커밋 `2f05f89`)
+- `document_access_logs` 테이블 + `DocumentAccessLog` 모델
+- `VehicleDocumentController` 채널 격리(영문 4종 `sales_channel='export'`) + 다운로드 로깅
+- `/admin/document-access-logs` Volt 조회 화면
+- 수동 회귀 3종(로깅·채널 격리·권한) 사용자 확인 완료
+
+### 2단계 PR (커밋 `dc98ed2`)
+- 마이그레이션 A·B 실행 완료 (각 32ms / 7ms — 기존 row 없어 백필 즉시 통과)
+- Vehicle 모델 accessor/mutator: `encrypted_at` 표식 기반 분기 (`$casts['encrypted']` 대신 직접 — 점진 전환 안전성)
+- APP_KEY 백업 절차 문서: `docs/deploy/app_key_backup.md`
+- Unit Test 5건 + Feature Test 5건 = **10/10 통과** (5.68s)
+- 사전 백업: `storage/backups/pre_rrn_encrypt_20260512_133318.sql` (80KB) + `.env` 사본 + `git tag pre-rrn-encryption`
+
+### 검증 결과
+- ✅ DB 평문 저장 차단 (raw 조회 시 base64 암호문)
+- ✅ 모델 조회 시 복호 정상 (`Vehicle::find()->nice_reg_owner_rrn` = 평문)
+- ✅ NULL·빈 문자열 safe (`encrypted_at` NULL 유지)
+- ✅ 레거시 평문 row 호환 (마이그레이션 전 상태 시뮬레이션 통과)
+- ✅ 카풀 차량 영문 4종 → 403 차단 (실패한 요청은 access log 미기록)
+- ✅ 모든 채널 국문 3종 정상 + 다운로드 후 access log 1행 추가
+- ✅ 일반 user(role=영업)도 D 옵션대로 다운로드 가능 + 로깅
+
+**판정**: GO → **DONE**. 망법·개인정보보호법 §24·§29 (고유식별정보 + 안전조치) 충족. 큐 7번(권한 세분화) 완료, 큐 1번(일반사용자 대시보드 role 분기)으로 이동 가능 상태.

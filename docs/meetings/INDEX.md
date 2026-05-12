@@ -7,7 +7,7 @@
 
 ## 회의 로그
 
-- 2026-05-12 [GO] 문서 다운로드 권한 + RRN 암호화 — 3건 결정 후 NO-GO 풀림. 정책: D(모든 user + 감사 로그) / 암호화: encrypted cast / 작업: 2단계 hot-patch (1단계 ~60분 즉시 + 2단계 ~90분 48h 내). 사후 Python ERP 미실재 확인 → CLAUDE/SKILLS 운영 가정 제거 + 부서 프롬프트 v1.1 사전 검증 의무 추가 ([2026-05-12-rrn-encryption-document-permission.md](2026-05-12-rrn-encryption-document-permission.md))
+- 2026-05-12 [DONE] 문서 다운로드 권한 + RRN 암호화 — 1·2단계 PR 모두 머지 완료. 정책 D(모든 user + 감사 로그) / encrypted cast(accessor·mutator + encrypted_at 표식) / Unit Test 10/10 통과. 사후 Python ERP 미실재 확인 → CLAUDE/SKILLS 운영 가정 제거 + 부서 프롬프트 v1.1 사전 검증 의무 추가 ([2026-05-12-rrn-encryption-document-permission.md](2026-05-12-rrn-encryption-document-permission.md))
 
 ---
 
