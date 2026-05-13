@@ -336,32 +336,32 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 필터 바 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <input type="text" wire:model.live.debounce.500ms="search" placeholder="차량번호·브랜드 검색"
-               class="input-base w-52" />
-        <input type="date" wire:model.live="dateFrom" class="input-base" />
+               class="input-filter w-52" />
+        <input type="date" wire:model.live="dateFrom" class="input-filter" />
         <span class="text-xs text-gray-400">~</span>
-        <input type="date" wire:model.live="dateTo" class="input-base" />
-        <select wire:model.live="salesmanFilter" class="input-base">
+        <input type="date" wire:model.live="dateTo" class="input-filter" />
+        <select wire:model.live="salesmanFilter" class="input-filter">
             <option value="">담당자 전체</option>
             @foreach ($this->salesmen as $s)<option value="{{ $s->id }}">{{ $s->name }}</option>@endforeach
         </select>
-        <select wire:model.live="buyerFilter" class="input-base">
+        <select wire:model.live="buyerFilter" class="input-filter">
             <option value="">바이어 전체</option>
             @foreach ($this->buyers as $b)<option value="{{ $b->id }}">{{ $b->name }}</option>@endforeach
         </select>
-        <select wire:model.live="progressFilter" class="input-base">
+        <select wire:model.live="progressFilter" class="input-filter">
             <option value="">진행상태 전체</option>
             @foreach (['판매중','판매완료','수출통관중','수출통관완료','선적중','선적완료','거래완료'] as $s)
             <option value="{{ $s }}">{{ $s }}</option>
             @endforeach
         </select>
-        <select wire:model.live="riskFilter" class="input-base">
+        <select wire:model.live="riskFilter" class="input-filter">
             <option value="">위험도 전체</option>
             <option value="safe">안전</option>
             <option value="caution">주의</option>
             <option value="danger">위험</option>
             <option value="critical">심각</option>
         </select>
-        <select wire:model.live="unpaidRatioMin" class="input-base">
+        <select wire:model.live="unpaidRatioMin" class="input-filter">
             <option value="">미납률 ALL</option>
             <option value="30">30%↑</option>
             <option value="50">50%↑</option>
