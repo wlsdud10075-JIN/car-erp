@@ -304,8 +304,27 @@ new #[Layout('components.layouts.app')] class extends Component
         <span class="ml-2 text-gray-400">→ 조회 버튼을 눌러 적용</span>
     </div>
 
+    {{-- 큐 4 8-4 — role 탭. 위젯 필터만 적용 (신규 집계 없음). --}}
+    <div class="flex flex-wrap gap-1 border-b border-gray-200">
+        @foreach ([
+            'all'        => '전체',
+            'sales'      => '영업',
+            'clearance'  => '통관',
+            'settlement' => '정산',
+            'receivable' => '채권',
+        ] as $key => $label)
+        <button type="button" @click="setActiveTab('{{ $key }}')"
+            :class="activeTab === '{{ $key }}'
+                ? 'border-violet-500 text-violet-700 bg-violet-50/50'
+                : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'"
+            class="border-b-2 px-3 py-2 text-sm font-medium transition">
+            {{ $label }}
+        </button>
+        @endforeach
+    </div>
+
     {{-- 매출 KPI 카드 4개 (모두 클릭 가능) --}}
-    <div id="w-kpi" x-show="widgets['w-kpi']" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
             <div class="flex items-center justify-between">
                 <span class="text-xs text-gray-500">기간 차량 수</span>
@@ -338,7 +357,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 채널별 분포 --}}
-    <div id="w-channel" x-show="widgets['w-channel']" class="card">
+    <div id="w-channel" x-show="isWidgetVisible('w-channel')" class="card">
         <div class="section-header">
             <span class="section-dot bg-violet-500"></span>
             <span class="section-title">채널별 차량 수 (클릭 시 해당 채널 목록)</span>
@@ -359,7 +378,7 @@ new #[Layout('components.layouts.app')] class extends Component
     @php
         $dateTypeLabel = ['purchase' => '매입일', 'sale' => '판매일', 'shipping' => '선적일', 'completed' => '거래완료일'][$dateType] ?? '매입일';
     @endphp
-    <div id="w-progress" x-show="widgets['w-progress']">
+    <div id="w-progress" x-show="isWidgetVisible('w-progress')">
         <x-erp.pipeline-strip
             :counts="$this->kpis['by_progress']"
             :url-builder="fn (string $s) => $this->vehiclesUrl(['progressFilter' => $s])"
@@ -368,7 +387,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 큐 4 8-3 — 담당자별 성과 차트 (상위 10명, dateType 기준) --}}
-    <div id="w-salesman" x-show="widgets['w-salesman']" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    <div id="w-salesman" x-show="isWidgetVisible('w-salesman')" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-purple-500"></span>
@@ -392,7 +411,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 큐 4 8-2 — 연간 월별 차트 2개 (X축: 1~12월, 기준 연도: dateFrom의 year) --}}
-    <div id="w-monthly" x-show="widgets['w-monthly']" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+    <div id="w-monthly" x-show="isWidgetVisible('w-monthly')" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-violet-500"></span>
@@ -415,7 +434,20 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
-    <p class="text-xs text-gray-400">
+    {{-- 채권 탭 — receivables 화면 강조 카드 --}}
+    <div x-show="activeTab === 'receivable'" class="card border-violet-200 bg-violet-50/30">
+        <div class="section-header">
+            <span class="section-dot bg-violet-500"></span>
+            <span class="section-title">채권 관리</span>
+        </div>
+        <p class="mt-2 text-sm text-gray-700">미수금·회수 이력·위험도·바이어별 TOP은 별도 화면에서 관리됩니다.</p>
+        <a href="{{ route('erp.receivables.index') }}" wire:navigate
+           class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700">
+            채권관리 화면으로 이동 →
+        </a>
+    </div>
+
+    <p class="text-xs text-gray-400" x-show="activeTab !== 'receivable'">
         ⓘ 미수금·회수 이력·채권 위험도는 <a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-violet-600 hover:underline">채권관리 화면</a>에서 확인하세요.
     </p>
 
@@ -471,6 +503,15 @@ new #[Layout('components.layouts.app')] class extends Component
                     { key: 'w-monthly',  label: '월별 차트 (대수·판매가)' },
                     { key: 'w-salesman', label: '담당자별 성과 차트' },
                 ],
+                // 큐 4 8-4 — role 탭. 탭별 노출 가능 위젯 목록 (위젯 토글과 AND 결합)
+                activeTab: 'all',
+                tabWidgets: {
+                    all:        ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
+                    sales:      ['w-kpi', 'w-channel', 'w-monthly', 'w-salesman'],
+                    clearance:  ['w-kpi', 'w-channel', 'w-progress'],
+                    settlement: ['w-kpi', 'w-monthly'],
+                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만
+                },
                 chartData: {
                     monthly: @js($this->monthlyChartData),
                     salesman: @js($this->salesmanPerformance),
@@ -483,6 +524,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         this.widgets[w.key] = parsed[w.key] !== undefined ? parsed[w.key] : true;
                     });
 
+                    const savedTab = localStorage.getItem('car_erp_admin_dashboard_tab');
+                    if (savedTab && this.tabWidgets[savedTab]) {
+                        this.activeTab = savedTab;
+                    }
+
                     // 초기 차트 렌더 — DOM 안착 후 (월별 차트 위젯이 꺼져 있어도 ref는 존재)
                     this.$nextTick(() => this.renderCharts());
 
@@ -491,6 +537,15 @@ new #[Layout('components.layouts.app')] class extends Component
                         this.chartData = event.data;
                         this.$nextTick(() => this.renderCharts());
                     });
+                },
+                isWidgetVisible(key) {
+                    return (this.widgets[key] ?? true) && (this.tabWidgets[this.activeTab] || []).includes(key);
+                },
+                setActiveTab(tab) {
+                    this.activeTab = tab;
+                    localStorage.setItem('car_erp_admin_dashboard_tab', tab);
+                    // 탭 전환으로 새로 visible 된 canvas의 0x0 → 재렌더링
+                    this.$nextTick(() => this.renderCharts());
                 },
                 toggleWidget(key) {
                     this.widgets[key] = !this.widgets[key];
