@@ -639,4 +639,86 @@ class WorkflowGapTest extends TestCase
         $this->expectExceptionMessage('삭제할 수 없습니다');
         $override->delete();
     }
+
+    // ── 큐 7 확장 — C7-a 컬럼 권한 + H9 RRN 형식 + H10 말소 RRN 강제 ───
+
+    public function test_q7_c7a_settlement_role_cannot_change_financial_fields(): void
+    {
+        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $v = $this->makeVehicle([
+            'purchase_price' => 1000000,
+            'exchange_rate' => 1300,
+        ]);
+
+        $this->actingAs($settlementUser);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('purchase_price_str', '9999999')
+            ->set('exchange_rate_str', '5000')
+            ->call('save')
+            ->assertSet('purchase_price_str', '1000000')
+            ->assertSet('exchange_rate_str', '1300');
+    }
+
+    public function test_q7_c7a_admin_can_change_financial_fields(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle([
+            'purchase_price' => 1000000,
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('purchase_price_str', '2000000')
+            ->call('save');
+
+        $v->refresh();
+        $this->assertSame(2000000, (int) $v->purchase_price);
+    }
+
+    public function test_q7_h9_rrn_format_invalid_blocked(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('nice_reg_owner_rrn', '123456-789')
+            ->call('save')
+            ->assertHasErrors(['nice_reg_owner_rrn']);
+    }
+
+    public function test_q7_h9_rrn_format_valid_passes(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('nice_reg_owner_rrn', '900101-1234567')
+            ->call('save')
+            ->assertHasNoErrors(['nice_reg_owner_rrn']);
+    }
+
+    public function test_q7_h10_rrn_required_when_deregistration_checked(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('is_deregistered', true)
+            ->set('nice_reg_owner_rrn', '')
+            ->call('save')
+            ->assertHasErrors(['nice_reg_owner_rrn']);
+    }
 }

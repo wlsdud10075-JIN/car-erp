@@ -423,6 +423,47 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showPanel = true;
     }
 
+    // ── 큐 7 확장 C7-a — 회계 민감 컬럼 silent restore ─────────────────
+    private const FINANCIAL_FIELD_MAP = [
+        'purchase_price_str' => 'purchase_price',
+        'sale_price_str' => 'sale_price',
+        'exchange_rate_str' => 'exchange_rate',
+        'export_declaration_amount_str' => 'export_declaration_amount',
+        'cost_deregistration_str' => 'cost_deregistration',
+        'cost_license_str' => 'cost_license',
+        'cost_towing_str' => 'cost_towing',
+        'cost_carry_str' => 'cost_carry',
+        'cost_shoring_str' => 'cost_shoring',
+        'cost_insurance_str' => 'cost_insurance',
+        'cost_transfer_str' => 'cost_transfer',
+        'cost_extra1_str' => 'cost_extra1',
+        'cost_extra2_str' => 'cost_extra2',
+    ];
+
+    private function restoreFinancialFieldsFromOriginal(): void
+    {
+        $original = Vehicle::find($this->editingId);
+        if (! $original) {
+            return;
+        }
+        $restored = 0;
+        foreach (self::FINANCIAL_FIELD_MAP as $formField => $dbField) {
+            $current = (float) str_replace(',', '', (string) ($this->{$formField} ?? '0'));
+            $originalValue = (float) ($original->{$dbField} ?? 0);
+            if (abs($current - $originalValue) > 0.001) {
+                $this->{$formField} = (string) $originalValue;
+                $restored++;
+            }
+        }
+        if ($restored > 0) {
+            $this->dispatch(
+                'notify',
+                message: "회계 민감 필드 {$restored}건은 변경 권한이 없어 원값으로 복원됨 (admin/영업만 변경 가능)",
+                type: 'warning'
+            );
+        }
+    }
+
     // ── 큐 2.6 — admin 미입금 우회 승인 (per-stage append-only) ────────
     public string $overrideStage = '';
     public string $overrideReason = '';
@@ -708,6 +749,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'blDocFile'                => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
 
+            // H9 — RRN(주민/법인등록번호) 형식 검증. 000000-0000000 패턴 강제.
+            // 말소신청서·등록증재발급·양도증명서 PDF에 RRN 정확한 입력 필수.
+            'nice_reg_owner_rrn' => ['nullable', 'string', 'regex:/^\d{6}-\d{7}$/'],
+
             'finalPayments.*.amount'           => [$nonNegativeNumeric],
             'finalPayments.*.payment_date'     => ['nullable', 'date'],
             'purchaseBalancePayments.*.amount' => [$nonNegativeNumeric],
@@ -755,20 +800,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             'sale_price_str' => '판매가', 'exchange_rate_str' => '환율',
             'export_declaration_amount_str' => '면장금액',
             'dhl_weight_str' => 'DHL 중량',
+            'nice_reg_owner_rrn' => '소유자 주민(법인)등록번호',
         ];
 
-        $this->validate($rules, [], $attributes);
+        $messages = [
+            'nice_reg_owner_rrn.regex' => '주민(법인)등록번호는 000000-0000000 형식이어야 합니다.',
+        ];
+
+        $this->validate($rules, $messages, $attributes);
     }
 
     public function save(): void
     {
         // C7-b — 신규 등록 권한: 영업·전체 role 또는 admin/super만 가능.
         // 통관/정산/관리 role은 신규 차량 등록 차단 (admin이 만든 차량의 자기 영역만 편집).
-        // TODO(큐 7번 권한 세분화): 기존 차량 편집 시 role별 컬럼 단위 화이트리스트 (C7-a).
         $user = auth()->user();
         if ($this->editingId === null && ! $user->isAdmin()
             && ! in_array($user->role, ['영업', '전체'], true)) {
             abort(403, '차량 신규 등록은 영업/전체 권한자 또는 관리자만 가능합니다.');
+        }
+
+        // C7-a — 회계 민감 컬럼 (매입가·판매가·환율·면장금액·비용9개) 변경 권한.
+        // 정산/통관/관리 role이 변경 시도하면 silent restore + 토스트 안내.
+        if ($this->editingId && ! $user->canEditVehicleFinancialFields()) {
+            $this->restoreFinancialFieldsFromOriginal();
         }
 
         $this->validateVehicleForm();
@@ -805,6 +860,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $previewVehicle->guardStageOrderForExport();
         $previewVehicle->guardAttachmentDeps();
+
+        // H10 — 말소 처리(is_deregistered=true) 시 RRN 필수.
+        // 말소신청서·등록증재발급·양도증명서 PDF가 RRN 필드 사용. 빈칸 발급 차단.
+        if ($this->is_deregistered && empty($this->nice_reg_owner_rrn)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'nice_reg_owner_rrn' => '말소 처리에는 소유자 주민(법인)등록번호 입력이 필수입니다.',
+            ]);
+        }
 
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');
@@ -1488,7 +1551,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><label class="label-base">최초등록일</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">등록일</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">소유자명</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" /></div>
-                <div><label class="label-base">소유자 주민(법인)등록번호</label><input wire:model="nice_reg_owner_rrn" type="text" class="input-base" placeholder="000000-0000000" /></div>
+                <div x-data="{ show: false }">
+                    <label class="label-base">소유자 주민(법인)등록번호</label>
+                    <div class="relative">
+                        <input wire:model="nice_reg_owner_rrn" :type="show ? 'text' : 'password'"
+                               class="input-base pr-10 font-mono" placeholder="000000-0000000" autocomplete="off" />
+                        <button type="button" @click="show = !show"
+                                class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-gray-400 hover:text-gray-600"
+                                :title="show ? '숨기기' : '표시'">
+                            <svg x-show="!show" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                            <svg x-show="show" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                        </button>
+                    </div>
+                </div>
                 <div><label class="label-base">최대적재량 (kg)</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">승차인원</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">차량 색상</label><input wire:model="nice_reg_color" type="text" class="input-base" /></div>
