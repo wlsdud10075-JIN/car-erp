@@ -229,11 +229,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $totalPurchaseUnpaid = (int) (Vehicle::query()
             ->whereNull('deleted_at')->where('is_disposed', false)
             ->where('purchase_price', '>', 0)
-            ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
+            // CAST AS SIGNED — BIGINT UNSIGNED 빼기 결과가 음수면 underflow. WHERE/SELECT 양쪽 적용.
+            ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                         - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
                                       AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [$today])
-            ->selectRaw('SUM(purchase_price + selling_fee - down_payment - selling_fee_payment
+            ->selectRaw('SUM(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                         - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
                                       AND payment_date IS NOT NULL AND payment_date <= ?), 0)) as total', [$today])

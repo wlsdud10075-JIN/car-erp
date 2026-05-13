@@ -597,7 +597,10 @@ class Vehicle extends Model
             // ── 영업 role (5) ──
             'purchase_unpaid' => $q
                 ->where('purchase_price', '>', 0)
-                ->whereRaw('(purchase_price + selling_fee - down_payment - selling_fee_payment
+                // CAST AS SIGNED — BIGINT UNSIGNED 컬럼의 빼기 결과가 음수면 underflow.
+                // 매입가/매도비 < 지급 합계가 가능 (선지급·환불 케이스) → SIGNED로 평가.
+                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                             - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                           WHERE vehicle_id = vehicles.id
                                           AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [now()->toDateString()]),
