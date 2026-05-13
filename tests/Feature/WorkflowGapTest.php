@@ -70,10 +70,12 @@ class WorkflowGapTest extends TestCase
 
     public function test_c3_export_channel_still_evaluates_export_stages(): void
     {
+        // 큐 2.6 — 수출통관완료는 v2부터 is_export_cleared && export_declaration_document 둘 다 필요.
         $v = $this->makeVehicle([
             'sales_channel' => 'export',
             'sale_price' => 1000, 'deposit_down_payment' => 1000,
             'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'is_export_cleared' => true,
             'export_declaration_document' => 'edoc.pdf',
         ]);
 

@@ -45,8 +45,8 @@ class PipelineStripTest extends TestCase
         $this->makeVehicle();
         // 매입완료 × 1
         $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 1000]);
-        // 거래완료 × 1
-        $this->makeVehicle(['dhl_request' => true]);
+        // 거래완료 × 1 (큐 2.6 v2 — dhl_request + bl_document 둘 다 필요)
+        $this->makeVehicle(['dhl_request' => true, 'bl_document' => 'bl.pdf']);
         // 폐기 × 1
         $this->makeVehicle(['is_disposed' => true]);
 
