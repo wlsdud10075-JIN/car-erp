@@ -11,10 +11,47 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
 
+    // 큐 4 8-1 — 기준일 컬럼 전환. UI 라벨: 매입일/판매일/선적일/거래완료일.
+    // 'completed'는 정식 거래완료일 컬럼이 없어 B/L 발행일(bl_issue_date)로 임시 매핑.
+    // TODO: 추후 transaction_completed_at 컬럼 도입 시 매핑 변경.
+    #[Url] public string $dateType = 'purchase';
+
+    /** 기준일 코드 → DB 컬럼 매핑 (kpis·차트 공용) */
+    private const DATE_COLUMN_MAP = [
+        'purchase'  => 'purchase_date',
+        'sale'      => 'sale_date',
+        'shipping'  => 'shipping_date',
+        'completed' => 'bl_issue_date',  // 임시 매핑
+    ];
+
     public function mount(): void
     {
         $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+    }
+
+    private function dateColumn(): string
+    {
+        return self::DATE_COLUMN_MAP[$this->dateType] ?? 'purchase_date';
+    }
+
+    /**
+     * 큐 4 8-1 — 빠른 범위 선택 (이번달/전월/올해/전년도).
+     * 조회 버튼 패턴과 분리 — 빠른 선택 클릭 시 dateFrom/dateTo만 갱신하고,
+     * 사용자가 다시 조회 버튼을 눌러야 kpis 재계산. (자동 fetch 시 풀스캔 부담 회피)
+     */
+    public function setQuickRange(string $range): void
+    {
+        $now = now();
+        [$from, $to] = match ($range) {
+            'this_month'  => [$now->copy()->startOfMonth(), $now->copy()->endOfMonth()],
+            'last_month'  => [$now->copy()->subMonth()->startOfMonth(), $now->copy()->subMonth()->endOfMonth()],
+            'this_year'   => [$now->copy()->startOfYear(), $now->copy()->endOfYear()],
+            'last_year'   => [$now->copy()->subYear()->startOfYear(), $now->copy()->subYear()->endOfYear()],
+            default       => [$now->copy()->subMonths(2), $now->copy()],
+        };
+        $this->dateFrom = $from->format('Y-m-d');
+        $this->dateTo = $to->format('Y-m-d');
     }
 
     /**
@@ -24,9 +61,10 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function kpis(): array
     {
+        $col = $this->dateColumn();
         $base = Vehicle::query()
-            ->when($this->dateFrom, fn ($q) => $q->where('purchase_date', '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where('purchase_date', '<=', $this->dateTo));
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo));
 
         $vehiclesInRange = (clone $base)->count();
         $purchaseTotal = (int) (clone $base)->sum('purchase_price');
@@ -75,12 +113,14 @@ new #[Layout('components.layouts.app')] class extends Component
 
     /**
      * 카드/뱃지 클릭 시 vehicles 목록으로 이동할 URL 빌더.
-     * 모든 링크가 같은 dateFrom/dateTo + dateType=purchase 컨텍스트를 공유.
+     * 모든 링크가 같은 dateFrom/dateTo + dateType 컨텍스트를 공유.
+     * admin 'completed'는 vehicles에 존재 안 함 → 'bl'로 매핑 (B/L 발행일).
      */
     public function vehiclesUrl(array $extra = []): string
     {
+        $vehiclesDateType = $this->dateType === 'completed' ? 'bl' : $this->dateType;
         $params = array_merge([
-            'dateType' => 'purchase',
+            'dateType' => $vehiclesDateType,
             'dateFrom' => $this->dateFrom,
             'dateTo' => $this->dateTo,
         ], $extra);
@@ -97,6 +137,13 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="mt-1 text-sm text-gray-500">매출 / 차량 진행 KPI · 기간별 비즈니스 지표</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+            {{-- 큐 4 8-1 — 기준일 컬럼 전환 (조회 버튼 클릭 시에만 반영) --}}
+            <select wire:model="dateType" class="input-filter">
+                <option value="purchase">매입일 기준</option>
+                <option value="sale">판매일 기준</option>
+                <option value="shipping">선적일 기준</option>
+                <option value="completed">거래완료일 기준</option>
+            </select>
             <input type="date" wire:model="dateFrom" class="input-filter" />
             <span class="text-xs text-gray-400">~</span>
             <input type="date" wire:model="dateTo" class="input-filter" />
@@ -111,6 +158,23 @@ new #[Layout('components.layouts.app')] class extends Component
                 위젯 설정
             </button>
         </div>
+    </div>
+
+    {{-- 큐 4 8-1 — 빠른 범위 선택 (클릭 시 dateFrom/dateTo만 갱신, 조회 버튼으로 재계산) --}}
+    <div class="flex flex-wrap items-center gap-1.5 text-xs">
+        <span class="mr-1 text-gray-400">빠른 선택:</span>
+        @foreach ([
+            'this_month' => '이번달',
+            'last_month' => '전월',
+            'this_year'  => '올해',
+            'last_year'  => '전년도',
+        ] as $key => $label)
+        <button type="button" wire:click="setQuickRange('{{ $key }}')"
+            class="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-gray-600 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">
+            {{ $label }}
+        </button>
+        @endforeach
+        <span class="ml-2 text-gray-400">→ 조회 버튼을 눌러 적용</span>
     </div>
 
     {{-- 매출 KPI 카드 4개 (모두 클릭 가능) --}}
@@ -164,13 +228,16 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
-    {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (기간 내 매입 차량 기준) --}}
+    {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (선택 기준일 기준) --}}
+    @php
+        $dateTypeLabel = ['purchase' => '매입일', 'sale' => '판매일', 'shipping' => '선적일', 'completed' => '거래완료일'][$dateType] ?? '매입일';
+    @endphp
     <div id="w-progress" x-show="widgets['w-progress']">
         <x-erp.pipeline-strip
             :counts="$this->kpis['by_progress']"
             :url-builder="fn (string $s) => $this->vehiclesUrl(['progressFilter' => $s])"
             title="진행 단계별 차량 수"
-            :subtitle="'매입일 '.$dateFrom.' ~ '.$dateTo.' 한정'" />
+            :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
     </div>
 
     <p class="text-xs text-gray-400">
