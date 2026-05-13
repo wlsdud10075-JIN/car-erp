@@ -11,6 +11,7 @@
 - 2026-05-12 [DONE] 큐 1번 일반사용자 대시보드 role 분기 — MUST 10 + SHOULD 5 + advisor 발견 effectiveSalesmanId 누수 버그 수정 모두 반영. Vehicle::scopeAction(14액션 + 채널 격리) / 토글 pill + localStorage / 정산 user 김진영 시드 / DashboardActionCountsTest 18 통과 / 전체 54 통과. 커밋 8bd7c9e ([2026-05-12-user-dashboard-role-branching.md](2026-05-12-user-dashboard-role-branching.md))
 - 2026-05-12 [분석완료] 워크플로우 누락 시나리오 종합 — 6부서 풀회의. Critical 8건(환율 미입력 / 매입잔금 payment_date / 채널 모순 / 단계 건너뛰기 2종 / vehicle_number+soft-delete 충돌 / 컬럼 권한·본인 격리 0 / APP_KEY 재생성 위험) + High 15 + Medium/Low 30+. 큐 2.5(Critical 1차 패치) / 큐 7 확장 / 정산·채권 무결성 / 운영 안전 가드 4개 새 큐 제안. 사용자 결정 대기 ([2026-05-12-workflow-gap-analysis.md](2026-05-12-workflow-gap-analysis.md))
 - 2026-05-12 [DONE] 큐 2.5번 Critical 8건 1차 패치 — C1·C2 validation (환율·payment_date) / C3 progress_status 채널 분기 + 채널 변경 confirm / C4·C5 saving validator (말소·미입금 단계 건너뛰기 차단) / C6 vehicle_number unique + soft-delete fix / C7-b 영업 본인 차량 격리 (C7-a 컬럼 권한은 큐 7 확장으로 분리) / C8 APP_KEY 영구 손실 가드 문서 (`docs/operations/key-rotation.md` 신설). WorkflowGapTest 15 신규 / 전체 83/83 통과. 커밋 c38c0a6.
+- 2026-05-13 [조건부 GO] 11단계 무결성 정책 재수립 + admin 미입금 우회 통합 — 풀회의 6역할 + Codex/Gemini 크로스체크. 누수 4건(거래완료·선적완료·선적중·수출통관완료) 이중 트리거화 / `unpaid_export_overrides` append-only per-stage / `progress_status_rule_version` + `is_override_active` Flag / 3-tier 이관 (paid·dhl=grandfather, 미마감=수동, 매입=자동) / dry-run 명령 / UI 차단+Helper Text. `stage_transition_logs`는 큐 10 H4 통합 시 재검토. 큐 2.6 신설로 별도 PR 진행 ([2026-05-13-progress-status-integrity.md](2026-05-13-progress-status-integrity.md))
 
 ---
 

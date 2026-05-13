@@ -18,6 +18,7 @@ class Vehicle extends Model
 
     protected $fillable = [
         'vehicle_number', 'sales_channel', 'is_disposed', 'progress_status_cache',
+        'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
         'tax_invoice_1_date', 'tax_invoice_1_amount',
         'tax_invoice_2_date', 'tax_invoice_2_amount', 'agency_fee',
@@ -56,6 +57,8 @@ class Vehicle extends Model
         'is_export_cleared' => 'boolean',
         'forwarding_email_sent' => 'boolean',
         'dhl_request' => 'boolean',
+        'is_override_active' => 'boolean',
+        'progress_status_rule_version' => 'integer',
         'nice_reg_first_date' => 'date',
         'nice_reg_date' => 'date',
         'purchase_date' => 'date',
@@ -295,6 +298,22 @@ class Vehicle extends Model
     public function receivableManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'receivable_manager_id');
+    }
+
+    public function unpaidExportOverrides(): HasMany
+    {
+        return $this->hasMany(UnpaidExportOverride::class);
+    }
+
+    /**
+     * 큐 2.6 — 특정 단계에 대한 admin 미입금 우회 승인 여부.
+     * unpaid_export_overrides에 해당 stage 레코드가 1건 이상 있으면 true.
+     */
+    public function hasUnpaidOverride(string $stage): bool
+    {
+        return $this->unpaidExportOverrides()
+            ->where('stage', $stage)
+            ->exists();
     }
 
     // ── Computed: 진행상태 11단계 ───────────────────────────────────

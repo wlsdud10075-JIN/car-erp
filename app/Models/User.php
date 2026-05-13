@@ -100,6 +100,25 @@ class User extends Authenticatable
         return $this->isSuperAdmin();
     }
 
+    /**
+     * 큐 2.6 — admin 미입금 우회 승인 권한.
+     * admin/super만 가능. 영업/통관/정산 role은 차단.
+     */
+    public function canApproveUnpaidExport(): bool
+    {
+        return $this->isAdmin();
+    }
+
+    /**
+     * 큐 2.6 — 단계 역행/skip 강제 진행 권한 (Security 제안).
+     * 단계 의존성(C4·C5·H1·H2) 자체를 우회 — super 전용.
+     * admin은 미입금 우회만 가능, 단계 자체 skip은 불가.
+     */
+    public function canForceStageJump(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
     public function salesman(): HasOne
     {
         return $this->hasOne(Salesman::class);
