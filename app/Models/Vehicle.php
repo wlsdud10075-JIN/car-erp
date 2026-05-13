@@ -588,6 +588,7 @@ class Vehicle extends Model
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
             'exchange_rate_missing', 'clearance_stuck',
+            // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
         ];
         if (in_array($action, $activeOnly, true)) {
             $q->where('is_disposed', false)->where('dhl_request', false);
@@ -686,6 +687,12 @@ class Vehicle extends Model
                 ->whereHas('settlements', fn ($q2) => $q2->where('settlement_status', 'confirmed')),
             'receivable_risk' => $q
                 ->whereIn('receivable_risk', ['danger', 'critical']),
+
+            // 큐 4 8-6 — 채권 위험도 카드별 vehicles 라우팅 (admin 대시보드 receivableKpis와 SQL 100% 일치).
+            // 미수금 캐시 NULL은 환율 미입력 외화 → 통계 제외 (카운트 정책과 동일).
+            'receivable_safe', 'receivable_caution', 'receivable_danger', 'receivable_critical' => $q
+                ->where('receivable_risk', str_replace('receivable_', '', $action))
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
             // ── 관리자 액션 ──
             'has_sale' => $q->where('sale_price', '>', 0),

@@ -357,19 +357,26 @@ new #[Layout('components.layouts.app')] class extends Component
      * - 미납률 = SUM(미수금 KRW) / SUM(총판매액 KRW). 환율 0 외화는 둘 다 제외.
      * - 담당자/바이어 TOP 10 테이블.
      * - 위험도(receivable_risk) 4단 카운트.
+     *
+     * 큐 4 점검 — dateColumn 기준 dateFrom/dateTo 적용 (vehicles/index action 진입 시 동일 기간 적용).
+     * 위험도 카운트는 receivable_safe/caution/danger/critical scopeAction과 SQL 100% 일치.
      */
     #[Computed]
     public function receivableKpis(): array
     {
+        $col = $this->dateColumn();
+
         // 미수금 차량 — sale_unpaid_amount_krw_cache > 0 (NULL은 환율 미입력 외화 → 제외)
-        $bySalesman = [];  // salesman_id => ['unpaid' => N, 'sale_total' => N, 'vehicle_count' => N]
-        $byBuyer = [];     // buyer_id => 동일
+        $bySalesman = [];
+        $byBuyer = [];
         $riskCounts = ['safe' => 0, 'caution' => 0, 'danger' => 0, 'critical' => 0, 'none' => 0];
 
         Vehicle::query()
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'currency', 'exchange_rate',
-                     'sale_unpaid_amount_krw_cache', 'receivable_risk')
+                'sale_unpaid_amount_krw_cache', 'receivable_risk')
             ->chunk(1000, function ($rows) use (&$bySalesman, &$byBuyer, &$riskCounts) {
                 foreach ($rows as $r) {
                     $saleKrw = $r->currency === 'KRW'
@@ -442,37 +449,49 @@ new #[Layout('components.layouts.app')] class extends Component
      *    수출신고서 NULL + sale_date 30일 경과
      * 2) 수출신고서 미업로드 차량 수 — 수출통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
+     *
+     * SQL 100% 일치 원칙 (SKILLS.md §9):
+     * - Vehicle::scopeAction의 activeOnly(is_disposed=false AND dhl_request=false)와 동일
+     * - dateColumn() 기준 dateFrom/dateTo 동일 적용 (vehicles/index와 동일 컨텍스트)
      */
     #[Computed]
     public function clearanceKpis(): array
     {
         $stuckThresholdDays = 30;
         $stuckDate = now()->subDays($stuckThresholdDays)->format('Y-m-d');
+        $col = $this->dateColumn();
 
-        // 1) 통관 정체 — 판매완료(unpaid=0)인데 수출신고서 NULL이고 sale_date 30일 경과
-        $stuckCount = Vehicle::query()
+        // 공통: active 한정 + dateColumn 범위 (scopeAction과 일치)
+        $applyCommonFilters = fn ($q) => $q
+            ->where('is_disposed', false)
+            ->where('dhl_request', false)
+            ->when($this->dateFrom, fn ($q2) => $q2->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q2) => $q2->where($col, '<=', $this->dateTo));
+
+        // 1) 통관 정체 — clearance_stuck action과 동일
+        $stuckCount = $applyCommonFilters(Vehicle::query())
             ->where('sales_channel', 'export')
             ->where('sale_price', '>', 0)
             ->where(function ($q) {
                 $q->whereNull('sale_unpaid_amount_krw_cache')
-                  ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0);
+                    ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0);
             })
             ->whereNull('export_declaration_document')
             ->whereNotNull('sale_date')
             ->where('sale_date', '<=', $stuckDate)
             ->count();
 
-        // 2) 수출신고서 미업로드 — 수출통관중 단계 (CLAUDE.md 11단계 #6 정의)
-        $unfiledCount = Vehicle::query()
+        // 2) 수출신고서 미업로드 — export_declaration_upload_needed action과 동일
+        $unfiledCount = $applyCommonFilters(Vehicle::query())
             ->where('sales_channel', 'export')
             ->whereNotNull('export_buyer_id')
             ->whereNotNull('shipping_date')
             ->whereNull('export_declaration_document')
             ->count();
 
-        // 3) 포워딩사별 진행 차량 — 통관/선적 단계 (4종 progress_status_cache)
+        // 3) 포워딩사별 진행 차량 — 통관/선적 단계
         $clearanceStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
-        $byForwarder = Vehicle::query()
+        $byForwarder = $applyCommonFilters(Vehicle::query())
             ->where('sales_channel', 'export')
             ->whereNotNull('forwarding_company_id')
             ->whereIn('progress_status_cache', $clearanceStages)
@@ -564,9 +583,9 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 큐 4 8-4 — role 탭. 위젯 필터만 적용 (신규 집계 없음). --}}
+    {{-- 큐 4 점검 — '전체' 탭과 '영업' 탭이 거의 같아 통합: '영업' 1개로 단일화 --}}
     <div class="flex flex-wrap gap-1 border-b border-gray-200">
         @foreach ([
-            'all'        => '전체',
             'sales'      => '영업',
             'clearance'  => '통관',
             'settlement' => '정산',
@@ -805,8 +824,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">환율 미입력 외화 제외</p>
             </div>
+            {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅 --}}
             @foreach (['safe' => ['안전', 'green'], 'caution' => ['주의', 'amber'], 'danger' => ['위험', 'amber'], 'critical' => ['심각', 'red']] as $key => [$label, $badge])
-            <a href="{{ route('erp.receivables.index') }}?riskFilter={{ $key }}" wire:navigate
+            <a href="{{ $this->vehiclesUrl(['action' => 'receivable_'.$key]) }}" wire:navigate
                class="card min-w-[160px] flex-1 transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">{{ $label }}</span>
@@ -950,10 +970,10 @@ new #[Layout('components.layouts.app')] class extends Component
                     { key: 'w-clearance',  label: '통관 KPI (정체·미업로드·포워딩사)' },
                 ],
                 // 큐 4 8-4·8-5·8-7·8-8 — 탭별 노출 위젯 매핑
-                activeTab: 'all',
+                // 점검 — 전체↔영업 통합 (영업이 회사 전체 흐름을 다 포함). 활성 탭 기본=영업.
+                activeTab: 'sales',
                 tabWidgets: {
-                    all:        ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
-                    sales:      ['w-kpi', 'w-channel', 'w-monthly', 'w-salesman'],
+                    sales:      ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
                     clearance:  ['w-kpi', 'w-progress', 'w-clearance'],
                     settlement: ['w-kpi', 'w-settlement'],
                     receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6 완료)
@@ -972,7 +992,11 @@ new #[Layout('components.layouts.app')] class extends Component
                     });
 
                     const savedTab = localStorage.getItem('car_erp_admin_dashboard_tab');
-                    if (savedTab && this.tabWidgets[savedTab]) {
+                    // 'all' 탭 폐기 (전체↔영업 통합) — 옛 사용자는 sales로 마이그레이션
+                    if (savedTab === 'all') {
+                        this.activeTab = 'sales';
+                        localStorage.setItem('car_erp_admin_dashboard_tab', 'sales');
+                    } else if (savedTab && this.tabWidgets[savedTab]) {
                         this.activeTab = savedTab;
                     }
 

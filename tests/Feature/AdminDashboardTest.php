@@ -526,7 +526,8 @@ class AdminDashboardTest extends TestCase
         $v3 = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 5000]);
         $this->setReceivableCache($v3, 0, 'safe');
 
-        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL이라 default 2개월 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('receivableKpis');
 
         // 미수금 내림차순 → 김영업 1위
         $this->assertSame('김영업', $data['salesman_top'][0]['name']);
@@ -548,7 +549,8 @@ class AdminDashboardTest extends TestCase
         $v2 = $this->makeVehicle(['buyer_id' => $b2->id, 'sale_price' => 10000]);
         $this->setReceivableCache($v2, 2000, 'caution');
 
-        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL이라 default 2개월 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('receivableKpis');
 
         $this->assertSame('ABC Trading', $data['buyer_top'][0]['name']);
         $this->assertSame(10000, $data['buyer_top'][0]['unpaid']);
@@ -567,7 +569,8 @@ class AdminDashboardTest extends TestCase
         $v = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 5000]);
         $this->setReceivableCache($v, 2000, 'caution');
 
-        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL이라 default 2개월 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('receivableKpis');
 
         // NULL 캐시 1대 제외 → vehicle_count 1
         $this->assertSame(1, $data['salesman_top'][0]['vehicle_count']);
@@ -587,12 +590,39 @@ class AdminDashboardTest extends TestCase
             }
         }
 
-        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL이라 default 2개월 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('receivableKpis');
 
         $this->assertSame(1, $data['risk_counts']['safe']);
         $this->assertSame(2, $data['risk_counts']['caution']);
         $this->assertSame(0, $data['risk_counts']['danger']);
         $this->assertSame(1, $data['risk_counts']['critical']);
+    }
+
+    public function test_receivable_scope_action_matches_dashboard_count(): void
+    {
+        // 점검 — 채권 카드 클릭 시 vehicles 목록과 카운트 100% 일치.
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+
+        // caution × 3
+        for ($i = 0; $i < 3; $i++) {
+            $v = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 1000]);
+            $this->setReceivableCache($v, 500, 'caution');
+        }
+        // safe × 1 (sale_unpaid_amount_krw_cache > 0)
+        $v1 = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 1000]);
+        $this->setReceivableCache($v1, 100, 'safe');
+        // caution이지만 미수금 0 → 카운트·action 모두 제외
+        $v2 = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 1000]);
+        $this->setReceivableCache($v2, 0, 'caution');
+
+        $cautionCount = Vehicle::action('receivable_caution')->count();
+        $safeCount = Vehicle::action('receivable_safe')->count();
+
+        $this->assertSame(3, $cautionCount);
+        $this->assertSame(1, $safeCount);
     }
 
     // ── 8-7: 통관 탭 KPI ──────────────────────────────────────────────
@@ -635,7 +665,8 @@ class AdminDashboardTest extends TestCase
         ]);
         $this->setReceivableCache($v5, 0, 'safe');
 
-        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL/과거라 default 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('clearanceKpis');
 
         $this->assertSame(1, $data['stuck_count']);
         $this->assertSame(30, $data['stuck_threshold_days']);
@@ -668,7 +699,8 @@ class AdminDashboardTest extends TestCase
             'shipping_date' => null,
         ]);
 
-        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL/과거라 default 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('clearanceKpis');
 
         $this->assertSame(1, $data['unfiled_count']);
     }
@@ -710,7 +742,8 @@ class AdminDashboardTest extends TestCase
             'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+        // dateFrom 비움 — 시드 차량 purchase_date NULL/과거라 default 필터에서 제외되는 회귀 방지
+        $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('clearanceKpis');
 
         $this->assertSame('A포워딩', $data['forwarder_top'][0]['name']);
         $this->assertSame(3, $data['forwarder_top'][0]['count']);
