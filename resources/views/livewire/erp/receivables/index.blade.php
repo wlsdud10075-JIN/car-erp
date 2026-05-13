@@ -336,7 +336,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 필터 바 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <input type="text" wire:model.live.debounce.500ms="search" placeholder="차량번호·브랜드 검색"
-               class="input-base min-w-[180px] flex-1" />
+               class="input-base w-52" />
         <input type="date" wire:model.live="dateFrom" class="input-base" />
         <span class="text-xs text-gray-400">~</span>
         <input type="date" wire:model.live="dateTo" class="input-base" />

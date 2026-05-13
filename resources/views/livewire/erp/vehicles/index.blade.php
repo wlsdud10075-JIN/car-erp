@@ -204,6 +204,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedSalesmanId(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
@@ -1122,6 +1128,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input wire:model="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="date" class="input-filter" />
+        <select wire:model.live="salesmanId" class="input-filter">
+            <option value="">담당자 전체</option>
+            @foreach($this->salesmen as $s)
+                <option value="{{ $s->id }}">{{ $s->name }}</option>
+            @endforeach
+        </select>
         <button wire:click="applyFilters" class="btn-search">조회</button>
     </div>
     {{-- 빠른 탭 필터 --}}
