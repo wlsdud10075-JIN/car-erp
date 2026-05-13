@@ -424,9 +424,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     // ── 큐 7 확장 C7-a — 회계 민감 컬럼 silent restore ─────────────────
+    // 정산/통관/관리 role은 아래 컬럼 변경 시 원값 자동 복원.
+    // 입금/지급 컬럼(down_payment, deposit_down_payment, final_payments, purchase_balance_payments)은
+    // 정산 role의 정상 업무라 제외.
     private const FINANCIAL_FIELD_MAP = [
         'purchase_price_str' => 'purchase_price',
+        'selling_fee_str' => 'selling_fee',
         'sale_price_str' => 'sale_price',
+        'tax_dc_str' => 'tax_dc',
+        'commission_str' => 'commission',
+        'transport_fee_str' => 'transport_fee',
+        'auto_loading_str' => 'auto_loading',
+        'sale_other_costs_str' => 'sale_other_costs',
         'exchange_rate_str' => 'exchange_rate',
         'export_declaration_amount_str' => 'export_declaration_amount',
         'cost_deregistration_str' => 'cost_deregistration',
@@ -1191,6 +1200,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{ session('notice') }}
     </div>
 @endif
+
+{{-- Livewire dispatch('notify') 글로벌 토스트 listener (C7-a silent restore 안내 등) --}}
+<div x-data="{ items: [] }"
+     @notify.window="
+        let id = Date.now() + Math.random();
+        items.push({ id, msg: $event.detail.message, type: $event.detail.type || 'info' });
+        setTimeout(() => items = items.filter(i => i.id !== id), 4500);
+     "
+     class="fixed top-4 right-4 z-50 flex flex-col gap-2">
+    <template x-for="item in items" :key="item.id">
+        <div x-transition.opacity
+             :class="{
+                'bg-green-600': item.type === 'success',
+                'bg-amber-500': item.type === 'warning',
+                'bg-red-600': item.type === 'error',
+                'bg-blue-600': item.type === 'info'
+             }"
+             class="rounded-lg px-4 py-3 text-sm text-white shadow-lg max-w-md">
+            <span x-text="item.msg"></span>
+        </div>
+    </template>
+</div>
 
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 

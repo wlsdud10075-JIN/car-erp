@@ -647,7 +647,9 @@ class WorkflowGapTest extends TestCase
         $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '정산']);
         $v = $this->makeVehicle([
             'purchase_price' => 1000000,
+            'selling_fee' => 700000,
             'exchange_rate' => 1300,
+            'sale_price' => 2000000,
         ]);
 
         $this->actingAs($settlementUser);
@@ -655,10 +657,14 @@ class WorkflowGapTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
             ->set('purchase_price_str', '9999999')
+            ->set('selling_fee_str', '888888')
             ->set('exchange_rate_str', '5000')
+            ->set('sale_price_str', '7777777')
             ->call('save')
             ->assertSet('purchase_price_str', '1000000')
-            ->assertSet('exchange_rate_str', '1300');
+            ->assertSet('selling_fee_str', '700000')
+            ->assertSet('exchange_rate_str', '1300')
+            ->assertSet('sale_price_str', '2000000');
     }
 
     public function test_q7_c7a_admin_can_change_financial_fields(): void
