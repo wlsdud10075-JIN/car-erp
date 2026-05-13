@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -338,5 +339,157 @@ class AdminDashboardTest extends TestCase
 
         $this->assertSame(['김영업'], $dataPurchase['labels']);
         $this->assertSame([], $dataSale['labels']);
+    }
+
+    // ── 8-5: 정산 탭 KPI ──────────────────────────────────────────────
+
+    private function makeVehicle(array $overrides = []): Vehicle
+    {
+        static $i = 0;
+        $i++;
+
+        return Vehicle::create(array_merge([
+            'vehicle_number' => 'SK-'.$i, 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+        ], $overrides));
+    }
+
+    public function test_settlement_kpis_monthly_aggregates_paid_by_salesman_and_month(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $v = $this->makeVehicle();
+
+        // 2026년 5월 김영업 paid 정산 actual_payout=500
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 500,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'confirmed_at' => '2026-05-10 10:00:00', 'paid_at' => '2026-05-10 11:00:00',
+            'confirmed_snapshot' => ['actual_payout' => 500, 'total_margin' => 1000, 'sales_amount_krw' => 5000],
+        ]);
+        // 2026년 7월 김영업 paid 정산 actual_payout=300
+        $v2 = $this->makeVehicle();
+        Settlement::create([
+            'vehicle_id' => $v2->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 300,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'confirmed_at' => '2026-07-15 10:00:00', 'paid_at' => '2026-07-15 11:00:00',
+            'confirmed_snapshot' => ['actual_payout' => 300, 'total_margin' => 600, 'sales_amount_krw' => 3000],
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-01-01')
+            ->set('dateTo', '2026-12-31')
+            ->call('applyFilters')
+            ->get('settlementKpis');
+
+        $this->assertSame(2026, $data['year']);
+        $this->assertCount(1, $data['monthly']['datasets']);
+        $this->assertSame('김영업', $data['monthly']['datasets'][0]['label']);
+        $this->assertSame(500, $data['monthly']['datasets'][0]['data'][4]);  // 5월
+        $this->assertSame(300, $data['monthly']['datasets'][0]['data'][6]);  // 7월
+        $this->assertSame(0, $data['monthly']['datasets'][0]['data'][0]);     // 1월 0
+    }
+
+    public function test_settlement_kpis_payout_pending_sums_confirmed_only(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $v1 = $this->makeVehicle();
+        $v2 = $this->makeVehicle();
+
+        // confirmed → 대기 합계 포함
+        Settlement::create([
+            'vehicle_id' => $v1->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 1000,
+            'other_deduction' => 0, 'settlement_status' => 'confirmed',
+            'confirmed_at' => '2026-05-10 10:00:00',
+        ]);
+        // paid → 대기 합계 제외
+        Settlement::create([
+            'vehicle_id' => $v2->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 9999,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'confirmed_at' => '2026-05-10 10:00:00', 'paid_at' => '2026-05-10 11:00:00',
+            'confirmed_snapshot' => ['actual_payout' => 9999],
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-05-01')
+            ->set('dateTo', '2026-05-31')
+            ->call('applyFilters')
+            ->get('settlementKpis');
+
+        $this->assertSame(1000, $data['payout_pending']);
+    }
+
+    public function test_settlement_kpis_avg_margin_rate_from_paid_snapshots(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $v1 = $this->makeVehicle();
+        $v2 = $this->makeVehicle();
+
+        // 마진율 20% + 마진율 10% = 평균 15%
+        Settlement::create([
+            'vehicle_id' => $v1->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'paid_at' => '2026-05-10', 'confirmed_at' => '2026-05-10',
+            'confirmed_snapshot' => ['total_margin' => 2000, 'sales_amount_krw' => 10000],
+        ]);
+        Settlement::create([
+            'vehicle_id' => $v2->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'paid_at' => '2026-05-15', 'confirmed_at' => '2026-05-15',
+            'confirmed_snapshot' => ['total_margin' => 1000, 'sales_amount_krw' => 10000],
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-05-01')
+            ->set('dateTo', '2026-05-31')
+            ->call('applyFilters')
+            ->get('settlementKpis');
+
+        $this->assertEqualsWithDelta(0.15, $data['avg_margin_rate'], 0.001);
+    }
+
+    public function test_settlement_kpis_channel_avg_margin_groups_by_vehicle_channel(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $vExport = $this->makeVehicle(['sales_channel' => 'export']);
+        $vHeyman = $this->makeVehicle(['sales_channel' => 'heyman']);
+
+        Settlement::create([
+            'vehicle_id' => $vExport->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'paid_at' => '2026-05-10', 'confirmed_at' => '2026-05-10',
+            'confirmed_snapshot' => ['total_margin' => 5000000, 'sales_amount_krw' => 20000000],
+        ]);
+        Settlement::create([
+            'vehicle_id' => $vHeyman->id, 'salesman_id' => $a->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
+            'other_deduction' => 0, 'settlement_status' => 'paid',
+            'paid_at' => '2026-05-12', 'confirmed_at' => '2026-05-12',
+            'confirmed_snapshot' => ['total_margin' => 1000000, 'sales_amount_krw' => 8000000],
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-05-01')
+            ->set('dateTo', '2026-05-31')
+            ->call('applyFilters')
+            ->get('settlementKpis');
+
+        $this->assertSame(5000000, $data['channel_avg_margin']['export']);
+        $this->assertSame(1000000, $data['channel_avg_margin']['heyman']);
+        $this->assertSame(0, $data['channel_avg_margin']['carpul']);
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -109,11 +110,17 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function applyFilters(): void
     {
-        unset($this->kpis, $this->monthlyChartData, $this->salesmanPerformance);
+        unset(
+            $this->kpis,
+            $this->monthlyChartData,
+            $this->salesmanPerformance,
+            $this->settlementKpis,
+        );
         // 차트는 Alpine 인스턴스라 Livewire reactivity로 자동 갱신 안 됨 — 이벤트로 데이터 푸시.
         $this->dispatch('charts-refresh', data: [
             'monthly' => $this->monthlyChartData,
             'salesman' => $this->salesmanPerformance,
+            'settlement' => $this->settlementKpis,
         ]);
     }
 
@@ -235,6 +242,108 @@ new #[Layout('components.layouts.app')] class extends Component
             'sale_count' => $saleCount,
             'sale_total_krw' => $saleTotalKrw,
             'avg_per_vehicle' => $avgPerVehicle,
+        ];
+    }
+
+    /**
+     * 큐 4 8-5 — 정산 탭 대표급 KPI.
+     * 회의록 2026-05-13-admin-dashboard-kpi.md 4종:
+     * 1) 인원별 정산지급액 월별 stacked bar (paid_at MONTH × salesman, dateFrom의 year)
+     * 2) 정산 지급 대기 총액 (confirmed-not-paid actual_payout SUM, dateFrom~dateTo 기간)
+     * 3) 정산 마진율 평균 (paid settlements의 total_margin / sales_amount_krw)
+     * 4) 채널별 평균 마진 (paid settlements를 vehicle.sales_channel로 group)
+     */
+    #[Computed]
+    public function settlementKpis(): array
+    {
+        $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
+
+        // 1) 인원별 정산지급액 월별 stacked bar
+        $monthlyBySalesman = [];
+        Settlement::query()
+            ->where('settlement_status', 'paid')
+            ->whereNotNull('paid_at')
+            ->whereYear('paid_at', $year)
+            ->whereNotNull('salesman_id')
+            ->with('vehicle')
+            ->chunk(500, function ($rows) use (&$monthlyBySalesman) {
+                foreach ($rows as $s) {
+                    $id = $s->salesman_id;
+                    if (! isset($monthlyBySalesman[$id])) {
+                        $monthlyBySalesman[$id] = array_fill(0, 12, 0);
+                    }
+                    $month = (int) $s->paid_at->format('n');
+                    // paid는 confirmed_snapshot 우선 (큐 10 H4 — retroactive drift 방지)
+                    $payout = $s->confirmed_snapshot['actual_payout']
+                        ?? $s->actual_payout
+                        ?? 0;
+                    $monthlyBySalesman[$id][$month - 1] += (int) $payout;
+                }
+            });
+        $totals = array_map('array_sum', $monthlyBySalesman);
+        arsort($totals);
+        $topIds = array_slice(array_keys($totals), 0, 8);
+        $names = Salesman::whereIn('id', $topIds)->pluck('name', 'id')->toArray();
+        $colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16', '#f43f5e'];
+        $datasets = [];
+        foreach ($topIds as $idx => $id) {
+            $datasets[] = [
+                'label' => $names[$id] ?? '담당자 #'.$id,
+                'data' => $monthlyBySalesman[$id],
+                'backgroundColor' => $colors[$idx % count($colors)],
+            ];
+        }
+
+        // 2) 정산 지급 대기 총액
+        $payoutPending = 0;
+        Settlement::query()
+            ->where('settlement_status', 'confirmed')
+            ->when($this->dateFrom, fn ($q) => $q->where('confirmed_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where('confirmed_at', '<=', $this->dateTo.' 23:59:59'))
+            ->with('vehicle')
+            ->chunk(500, function ($rows) use (&$payoutPending) {
+                foreach ($rows as $s) {
+                    $payoutPending += (int) ($s->actual_payout ?? 0);
+                }
+            });
+
+        // 3) 정산 마진율 평균 + 4) 채널별 평균 마진 (paid 한정, dateFrom~dateTo 기간 paid_at)
+        $marginRates = [];
+        $channelMargins = ['export' => [], 'heyman' => [], 'carpul' => []];
+        Settlement::query()
+            ->where('settlement_status', 'paid')
+            ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
+            ->with('vehicle')
+            ->chunk(500, function ($rows) use (&$marginRates, &$channelMargins) {
+                foreach ($rows as $s) {
+                    $snap = $s->confirmed_snapshot;
+                    $totalMargin = (int) ($snap['total_margin'] ?? $s->total_margin ?? 0);
+                    $salesKrw = (int) ($snap['sales_amount_krw'] ?? $s->sales_amount_krw ?? 0);
+                    if ($salesKrw > 0) {
+                        $marginRates[] = $totalMargin / $salesKrw;
+                    }
+                    $channel = $s->vehicle?->sales_channel;
+                    if (isset($channelMargins[$channel])) {
+                        $channelMargins[$channel][] = $totalMargin;
+                    }
+                }
+            });
+        $avgMarginRate = $marginRates ? array_sum($marginRates) / count($marginRates) : 0;
+        $channelAvg = [];
+        foreach ($channelMargins as $ch => $list) {
+            $channelAvg[$ch] = $list ? (int) (array_sum($list) / count($list)) : 0;
+        }
+
+        return [
+            'year' => $year,
+            'monthly' => [
+                'labels' => array_map(fn ($m) => $m.'월', range(1, 12)),
+                'datasets' => $datasets,
+            ],
+            'payout_pending' => $payoutPending,
+            'avg_margin_rate' => $avgMarginRate,
+            'channel_avg_margin' => $channelAvg,
         ];
     }
 
@@ -386,6 +495,59 @@ new #[Layout('components.layouts.app')] class extends Component
             :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
     </div>
 
+    {{-- 큐 4 8-5 — 정산 탭 KPI (settlement 탭에서만 노출) --}}
+    <div id="w-settlement" x-show="isWidgetVisible('w-settlement')" class="space-y-4">
+        {{-- 정산 KPI 카드 3종 --}}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div class="card">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">정산 지급 대기 총액</span>
+                    <span class="text-xs text-amber-500">confirmed</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-amber-600">
+                    {{ number_format($this->settlementKpis['payout_pending']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">확정·미지급 정산 actual_payout 합계</p>
+            </div>
+            <div class="card">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">정산 마진율 평균</span>
+                    <span class="text-xs text-violet-500">paid 한정</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-violet-600">
+                    {{ number_format($this->settlementKpis['avg_margin_rate'] * 100, 1) }}<span class="ml-1 text-sm font-normal text-gray-500">%</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">총마진 / 판매금원화 평균</p>
+            </div>
+            <div class="card">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">채널별 평균 마진</span>
+                    <span class="text-xs text-emerald-500">paid 한정</span>
+                </div>
+                <div class="mt-2 grid grid-cols-3 gap-1 text-center">
+                    @foreach (['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $code => $label)
+                    <div>
+                        <div class="text-[10px] text-gray-400">{{ $label }}</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ number_format($this->settlementKpis['channel_avg_margin'][$code] / 10000, 0) }}<span class="text-[10px] text-gray-400">만</span></div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+
+        {{-- 인원별 정산지급액 월별 stacked bar --}}
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">인원별 정산지급액 월별 (<span x-text="chartData.settlement.year"></span>년)</span>
+            </div>
+            <div class="mt-3 h-72">
+                <canvas x-ref="settlementMonthlyCanvas"></canvas>
+            </div>
+            <p class="mt-2 text-[11px] text-gray-400">paid 상태 정산만 집계. 상위 8명 stacked. snapshot 우선 (retroactive 보정).</p>
+        </div>
+    </div>
+
     {{-- 큐 4 8-3 — 담당자별 성과 차트 (상위 10명, dateType 기준) --}}
     <div id="w-salesman" x-show="isWidgetVisible('w-salesman')" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div class="card">
@@ -497,26 +659,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 settingsOpen: false,
                 widgets: {},
                 widgetList: [
-                    { key: 'w-kpi',      label: 'KPI 카드 (4개)' },
-                    { key: 'w-channel',  label: '채널별 차량 수' },
-                    { key: 'w-progress', label: '진행 단계별 차량 수' },
-                    { key: 'w-monthly',  label: '월별 차트 (대수·판매가)' },
-                    { key: 'w-salesman', label: '담당자별 성과 차트' },
+                    { key: 'w-kpi',        label: 'KPI 카드 (4개)' },
+                    { key: 'w-channel',    label: '채널별 차량 수' },
+                    { key: 'w-progress',   label: '진행 단계별 차량 수' },
+                    { key: 'w-monthly',    label: '월별 차트 (대수·판매가)' },
+                    { key: 'w-salesman',   label: '담당자별 성과 차트' },
+                    { key: 'w-settlement', label: '정산 KPI (지급액·마진)' },
                 ],
                 // 큐 4 8-4 — role 탭. 탭별 노출 가능 위젯 목록 (위젯 토글과 AND 결합)
+                // 큐 4 8-5·8-8 — w-monthly는 영업/전체 한정, w-settlement는 정산 탭 전용
                 activeTab: 'all',
                 tabWidgets: {
                     all:        ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
                     sales:      ['w-kpi', 'w-channel', 'w-monthly', 'w-salesman'],
                     clearance:  ['w-kpi', 'w-channel', 'w-progress'],
-                    settlement: ['w-kpi', 'w-monthly'],
-                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만
+                    settlement: ['w-kpi', 'w-settlement'],
+                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6에서 보강)
                 },
                 chartData: {
                     monthly: @js($this->monthlyChartData),
                     salesman: @js($this->salesmanPerformance),
+                    settlement: @js($this->settlementKpis),
                 },
-                charts: { monthlyCounts: null, monthlySales: null, salesmanCount: null, salesmanKrw: null },
+                charts: { monthlyCounts: null, monthlySales: null, salesmanCount: null, salesmanKrw: null, settlementMonthly: null },
                 init() {
                     const saved = localStorage.getItem('car_erp_admin_dashboard_widgets');
                     const parsed = saved ? JSON.parse(saved) : {};
@@ -551,7 +716,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     this.widgets[key] = !this.widgets[key];
                     localStorage.setItem('car_erp_admin_dashboard_widgets', JSON.stringify(this.widgets));
                     // 차트 위젯이 켜질 때 canvas가 0x0이었던 경우 재렌더링
-                    if ((key === 'w-monthly' || key === 'w-salesman') && this.widgets[key]) {
+                    if (['w-monthly', 'w-salesman', 'w-settlement'].includes(key) && this.widgets[key]) {
                         this.$nextTick(() => this.renderCharts());
                     }
                 },
@@ -559,6 +724,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     if (typeof Chart === 'undefined') return;
                     this.renderMonthlyCharts();
                     this.renderSalesmanCharts();
+                    this.renderSettlementChart();
                 },
                 renderMonthlyCharts() {
                     const m = this.chartData.monthly;
@@ -614,6 +780,29 @@ new #[Layout('components.layouts.app')] class extends Component
                             },
                         });
                     }
+                },
+                renderSettlementChart() {
+                    const s = this.chartData.settlement;
+                    if (!s || !s.monthly) return;
+
+                    const c = this.$refs.settlementMonthlyCanvas;
+                    if (!c) return;
+                    if (this.charts.settlementMonthly) this.charts.settlementMonthly.destroy();
+                    this.charts.settlementMonthly = new Chart(c, {
+                        type: 'bar',
+                        data: { labels: s.monthly.labels, datasets: s.monthly.datasets },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } },
+                                tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ₩ ${ctx.parsed.y.toLocaleString()}` } },
+                            },
+                            scales: {
+                                x: { stacked: true },
+                                y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } },
+                            },
+                        },
+                    });
                 },
                 renderSalesmanCharts() {
                     const s = this.chartData.salesman;
