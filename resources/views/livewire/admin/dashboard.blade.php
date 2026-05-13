@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Salesman;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -108,9 +109,12 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function applyFilters(): void
     {
-        unset($this->kpis, $this->monthlyChartData);
+        unset($this->kpis, $this->monthlyChartData, $this->salesmanPerformance);
         // 차트는 Alpine 인스턴스라 Livewire reactivity로 자동 갱신 안 됨 — 이벤트로 데이터 푸시.
-        $this->dispatch('charts-refresh', data: $this->monthlyChartData);
+        $this->dispatch('charts-refresh', data: [
+            'monthly' => $this->monthlyChartData,
+            'salesman' => $this->salesmanPerformance,
+        ]);
     }
 
     /**
@@ -174,6 +178,63 @@ new #[Layout('components.layouts.app')] class extends Component
                 'completed' => $countByMonth('bl_issue_date'),  // TODO: 정식 거래완료일 컬럼 도입 시 교체
             ],
             'sales_krw' => array_values($salesBuckets),
+        ];
+    }
+
+    /**
+     * 큐 4 8-3 — 담당자별 판매 성과 (상위 10명).
+     * dateType 컬럼 기준 in-range + sale_price > 0인 차량을 salesman_id로 집계.
+     * salesman_id NULL은 제외 (담당자 미지정은 통계 노이즈).
+     */
+    #[Computed]
+    public function salesmanPerformance(): array
+    {
+        $col = $this->dateColumn();
+        $aggregates = [];  // salesman_id => ['count' => N, 'total_krw' => N]
+
+        Vehicle::query()
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            ->whereNotNull('salesman_id')
+            ->where('sale_price', '>', 0)
+            ->select('salesman_id', 'sale_price', 'currency', 'exchange_rate')
+            ->chunk(1000, function ($rows) use (&$aggregates) {
+                foreach ($rows as $r) {
+                    $krw = $r->currency === 'KRW'
+                        ? (int) $r->sale_price
+                        : ($r->exchange_rate > 0 ? (int) ($r->sale_price * $r->exchange_rate) : 0);
+                    $id = $r->salesman_id;
+                    if (! isset($aggregates[$id])) {
+                        $aggregates[$id] = ['count' => 0, 'total_krw' => 0];
+                    }
+                    $aggregates[$id]['count']++;
+                    $aggregates[$id]['total_krw'] += $krw;
+                }
+            });
+
+        // 판매금액 기준 상위 10명
+        uasort($aggregates, fn ($a, $b) => $b['total_krw'] <=> $a['total_krw']);
+        $topIds = array_slice(array_keys($aggregates), 0, 10);
+        $names = Salesman::whereIn('id', $topIds)->pluck('name', 'id')->toArray();
+
+        $labels = [];
+        $saleCount = [];
+        $saleTotalKrw = [];
+        $avgPerVehicle = [];
+        foreach ($topIds as $id) {
+            $labels[] = $names[$id] ?? '담당자 #'.$id;
+            $saleCount[] = $aggregates[$id]['count'];
+            $saleTotalKrw[] = $aggregates[$id]['total_krw'];
+            $avgPerVehicle[] = $aggregates[$id]['count'] > 0
+                ? (int) ($aggregates[$id]['total_krw'] / $aggregates[$id]['count'])
+                : 0;
+        }
+
+        return [
+            'labels' => $labels,
+            'sale_count' => $saleCount,
+            'sale_total_krw' => $saleTotalKrw,
+            'avg_per_vehicle' => $avgPerVehicle,
         ];
     }
 
@@ -306,6 +367,30 @@ new #[Layout('components.layouts.app')] class extends Component
             :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
     </div>
 
+    {{-- 큐 4 8-3 — 담당자별 성과 차트 (상위 10명, dateType 기준) --}}
+    <div id="w-salesman" x-show="widgets['w-salesman']" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-purple-500"></span>
+                <span class="section-title">담당자별 판매 대수 (상위 10명)</span>
+            </div>
+            <div class="mt-3 h-64">
+                <canvas x-ref="salesmanCountCanvas"></canvas>
+            </div>
+            <p class="mt-2 text-[11px] text-gray-400">{{ $dateTypeLabel }} {{ $dateFrom }} ~ {{ $dateTo }} 기준</p>
+        </div>
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">담당자별 판매 금액 KRW (상위 10명)</span>
+            </div>
+            <div class="mt-3 h-64">
+                <canvas x-ref="salesmanKrwCanvas"></canvas>
+            </div>
+            <p class="mt-2 text-[11px] text-gray-400">tooltip에 평균 판매가 표시</p>
+        </div>
+    </div>
+
     {{-- 큐 4 8-2 — 연간 월별 차트 2개 (X축: 1~12월, 기준 연도: dateFrom의 year) --}}
     <div id="w-monthly" x-show="widgets['w-monthly']" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div class="card">
@@ -384,9 +469,13 @@ new #[Layout('components.layouts.app')] class extends Component
                     { key: 'w-channel',  label: '채널별 차량 수' },
                     { key: 'w-progress', label: '진행 단계별 차량 수' },
                     { key: 'w-monthly',  label: '월별 차트 (대수·판매가)' },
+                    { key: 'w-salesman', label: '담당자별 성과 차트' },
                 ],
-                chartData: @js($this->monthlyChartData),
-                charts: { monthlyCounts: null, monthlySales: null },
+                chartData: {
+                    monthly: @js($this->monthlyChartData),
+                    salesman: @js($this->salesmanPerformance),
+                },
+                charts: { monthlyCounts: null, monthlySales: null, salesmanCount: null, salesmanKrw: null },
                 init() {
                     const saved = localStorage.getItem('car_erp_admin_dashboard_widgets');
                     const parsed = saved ? JSON.parse(saved) : {};
@@ -406,13 +495,18 @@ new #[Layout('components.layouts.app')] class extends Component
                 toggleWidget(key) {
                     this.widgets[key] = !this.widgets[key];
                     localStorage.setItem('car_erp_admin_dashboard_widgets', JSON.stringify(this.widgets));
-                    // 월별 차트가 켜질 때 canvas가 0x0이었던 경우 재렌더링
-                    if (key === 'w-monthly' && this.widgets[key]) {
+                    // 차트 위젯이 켜질 때 canvas가 0x0이었던 경우 재렌더링
+                    if ((key === 'w-monthly' || key === 'w-salesman') && this.widgets[key]) {
                         this.$nextTick(() => this.renderCharts());
                     }
                 },
                 renderCharts() {
                     if (typeof Chart === 'undefined') return;
+                    this.renderMonthlyCharts();
+                    this.renderSalesmanCharts();
+                },
+                renderMonthlyCharts() {
+                    const m = this.chartData.monthly;
 
                     // 월별 차량 대수 — bar 3색
                     const c1 = this.$refs.monthlyCountsCanvas;
@@ -421,11 +515,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         this.charts.monthlyCounts = new Chart(c1, {
                             type: 'bar',
                             data: {
-                                labels: this.chartData.labels,
+                                labels: m.labels,
                                 datasets: [
-                                    { label: '매입',    data: this.chartData.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                                    { label: '판매',    data: this.chartData.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)' },
-                                    { label: '거래완료', data: this.chartData.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)' },
+                                    { label: '매입',    data: m.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                                    { label: '판매',    data: m.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)' },
+                                    { label: '거래완료', data: m.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)' },
                                 ],
                             },
                             options: {
@@ -443,10 +537,10 @@ new #[Layout('components.layouts.app')] class extends Component
                         this.charts.monthlySales = new Chart(c2, {
                             type: 'line',
                             data: {
-                                labels: this.chartData.labels,
+                                labels: m.labels,
                                 datasets: [{
                                     label: '판매가 KRW',
-                                    data: this.chartData.sales_krw,
+                                    data: m.sales_krw,
                                     borderColor: 'rgba(59, 130, 246, 1)',
                                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                                     fill: true,
@@ -462,6 +556,67 @@ new #[Layout('components.layouts.app')] class extends Component
                                 scales: {
                                     y: { beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } },
                                 },
+                            },
+                        });
+                    }
+                },
+                renderSalesmanCharts() {
+                    const s = this.chartData.salesman;
+                    if (!s || !s.labels || s.labels.length === 0) return;
+
+                    // 담당자별 판매 대수 — horizontal bar
+                    const c1 = this.$refs.salesmanCountCanvas;
+                    if (c1) {
+                        if (this.charts.salesmanCount) this.charts.salesmanCount.destroy();
+                        this.charts.salesmanCount = new Chart(c1, {
+                            type: 'bar',
+                            data: {
+                                labels: s.labels,
+                                datasets: [{
+                                    label: '판매 대수',
+                                    data: s.sale_count,
+                                    backgroundColor: 'rgba(139, 92, 246, 0.7)',
+                                }],
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: { legend: { display: false } },
+                                scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+                            },
+                        });
+                    }
+
+                    // 담당자별 판매 금액 KRW — horizontal bar + 평균 tooltip
+                    const c2 = this.$refs.salesmanKrwCanvas;
+                    if (c2) {
+                        if (this.charts.salesmanKrw) this.charts.salesmanKrw.destroy();
+                        this.charts.salesmanKrw = new Chart(c2, {
+                            type: 'bar',
+                            data: {
+                                labels: s.labels,
+                                datasets: [{
+                                    label: '판매 금액 KRW',
+                                    data: s.sale_total_krw,
+                                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                                }],
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: (ctx) => '합계 ₩ ' + ctx.parsed.x.toLocaleString(),
+                                            afterLabel: (ctx) => {
+                                                const avg = s.avg_per_vehicle[ctx.dataIndex] || 0;
+                                                return '평균 ₩ ' + avg.toLocaleString();
+                                            },
+                                        },
+                                    },
+                                },
+                                scales: { x: { beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } } },
                             },
                         });
                     }

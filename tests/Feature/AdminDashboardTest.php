@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -233,5 +234,109 @@ class AdminDashboardTest extends TestCase
             ->get('monthlyChartData');
 
         $this->assertSame(2024, $data['year']);
+    }
+
+    // ── 8-3: 담당자별 성과 차트 ──────────────────────────────────────
+
+    public function test_salesman_performance_aggregates_by_salesman(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $b = Salesman::create(['name' => '최매입', 'is_active' => true]);
+
+        // 김영업: 2건, 합계 KRW 3000
+        Vehicle::create([
+            'vehicle_number' => 'P-A1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-10', 'salesman_id' => $a->id,
+            'sale_date' => '2026-05-10', 'sale_price' => 1000,
+        ]);
+        Vehicle::create([
+            'vehicle_number' => 'P-A2', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-15', 'salesman_id' => $a->id,
+            'sale_date' => '2026-05-15', 'sale_price' => 2000,
+        ]);
+        // 최매입: 1건, 합계 KRW 5000 → 상위 1위
+        Vehicle::create([
+            'vehicle_number' => 'P-B1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-20', 'salesman_id' => $b->id,
+            'sale_date' => '2026-05-20', 'sale_price' => 5000,
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-01-01')
+            ->set('dateTo', '2026-12-31')
+            ->call('applyFilters')
+            ->get('salesmanPerformance');
+
+        // 판매 금액 기준 내림차순 → 최매입 1위, 김영업 2위
+        $this->assertSame(['최매입', '김영업'], $data['labels']);
+        $this->assertSame([1, 2], $data['sale_count']);
+        $this->assertSame([5000, 3000], $data['sale_total_krw']);
+        $this->assertSame([5000, 1500], $data['avg_per_vehicle']);
+    }
+
+    public function test_salesman_performance_excludes_null_salesman(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        Vehicle::create([
+            'vehicle_number' => 'NS-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-10', 'salesman_id' => null,
+            'sale_date' => '2026-05-10', 'sale_price' => 9999,
+        ]);
+        Vehicle::create([
+            'vehicle_number' => 'NS-2', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-10', 'salesman_id' => $a->id,
+            'sale_date' => '2026-05-10', 'sale_price' => 1000,
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-01-01')
+            ->call('applyFilters')
+            ->get('salesmanPerformance');
+
+        // salesman_id null인 차량은 제외 → 김영업만
+        $this->assertSame(['김영업'], $data['labels']);
+        $this->assertSame([1000], $data['sale_total_krw']);
+    }
+
+    public function test_salesman_performance_respects_date_type(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+
+        // dateType=purchase에선 매입일 in-range만, dateType=sale에선 판매일 in-range만
+        Vehicle::create([
+            'vehicle_number' => 'DT-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'purchase_date' => '2026-05-10',   // in for purchase
+            'sale_date' => '2025-01-01',        // out for sale
+            'salesman_id' => $a->id, 'sale_price' => 1000,
+        ]);
+
+        $dataPurchase = Volt::test('admin.dashboard')
+            ->set('dateType', 'purchase')
+            ->set('dateFrom', '2026-05-01')
+            ->set('dateTo', '2026-05-31')
+            ->call('applyFilters')
+            ->get('salesmanPerformance');
+
+        $dataSale = Volt::test('admin.dashboard')
+            ->set('dateType', 'sale')
+            ->set('dateFrom', '2026-05-01')
+            ->set('dateTo', '2026-05-31')
+            ->call('applyFilters')
+            ->get('salesmanPerformance');
+
+        $this->assertSame(['김영업'], $dataPurchase['labels']);
+        $this->assertSame([], $dataSale['labels']);
     }
 }
