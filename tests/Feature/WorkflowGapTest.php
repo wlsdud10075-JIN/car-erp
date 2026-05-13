@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\FinalPayment;
 use App\Models\Salesman;
+use App\Models\UnpaidExportOverride;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -416,5 +417,226 @@ class WorkflowGapTest extends TestCase
 
         // 잔금 삭제 → 미입금 500 다시 발생 → 캐시 재계산
         $this->assertSame(500, (int) $v->sale_unpaid_amount_krw_cache);
+    }
+
+    // ── 큐 2.6 — v2 이중 트리거 분류 (4건 누수 차단) ───────────────────
+
+    /**
+     * v2 분류 검증용 in-memory Vehicle 빌더 — DB 저장 우회 (FK 회피).
+     */
+    private function v2Vehicle(array $attrs): Vehicle
+    {
+        $v = new Vehicle(array_merge([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'dhl_request' => false,
+            'is_deregistered' => false,
+            'is_export_cleared' => false,
+        ], $attrs));
+        $v->setRawAttributes(array_merge($v->getAttributes(), [
+            'progress_status_rule_version' => $attrs['progress_status_rule_version'] ?? 2,
+            'export_buyer_id' => $attrs['export_buyer_id'] ?? null,
+            'sale_unpaid_amount_krw_cache' => $attrs['sale_unpaid_amount_krw_cache'] ?? 0,
+        ]));
+
+        return $v;
+    }
+
+    public function test_q26_v2_blocks_export_cleared_without_checkbox(): void
+    {
+        // #5 누수 — 사용자 발견 케이스. is_export_cleared 체크 없이 문서만 업로드.
+        $v = $this->v2Vehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'export_buyer_id' => 1, 'shipping_date' => '2026-05-01',
+            'is_export_cleared' => false,
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+
+        // 체크박스 없으니 수출통관완료 미진입, 수출통관중으로 분류.
+        $this->assertSame('수출통관중', $v->progress_status);
+    }
+
+    public function test_q26_v2_blocks_shipping_without_export_cleared(): void
+    {
+        // #4 누수 — 반입지만 있고 통관완료 체크 미설정.
+        $v = $this->v2Vehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'export_buyer_id' => 1, 'shipping_date' => '2026-05-01',
+            'is_export_cleared' => false,
+            'bl_loading_location' => '부산항',
+        ]);
+
+        $this->assertSame('수출통관중', $v->progress_status);
+    }
+
+    public function test_q26_v2_blocks_shipping_done_without_loading_location(): void
+    {
+        // #3 누수 — bl_document만 있고 반입지 미입력.
+        $v = $this->v2Vehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'is_export_cleared' => true, 'export_declaration_document' => 'edoc.pdf',
+            'export_buyer_id' => 1, 'shipping_date' => '2026-05-01',
+            'bl_document' => 'bl.pdf',
+        ]);
+
+        $this->assertSame('수출통관완료', $v->progress_status);
+    }
+
+    public function test_q26_v2_blocks_dhl_done_without_bl_document(): void
+    {
+        // #2 누수 — dhl_request만 있고 bl_document 미입력.
+        $v = $this->v2Vehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'is_export_cleared' => true, 'export_declaration_document' => 'edoc.pdf',
+            'bl_loading_location' => '부산항',
+            'dhl_request' => true,
+        ]);
+
+        $this->assertSame('선적중', $v->progress_status);
+    }
+
+    public function test_q26_v2_allows_full_cascade(): void
+    {
+        // 4건 누수 트리거 모두 충족 시 정상 거래완료까지 진입.
+        $v = $this->v2Vehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'is_export_cleared' => true, 'export_declaration_document' => 'edoc.pdf',
+            'export_buyer_id' => 1, 'shipping_date' => '2026-05-01',
+            'bl_loading_location' => '부산항', 'bl_document' => 'bl.pdf',
+            'dhl_request' => true,
+        ]);
+
+        $this->assertSame('거래완료', $v->progress_status);
+    }
+
+    public function test_q26_v1_grandfather_preserves_legacy_single_trigger(): void
+    {
+        // 큐 2.6 이전 row(v1)는 단일 트리거 그대로 평가 — retroactive drift 차단.
+        $v = $this->v2Vehicle([
+            'progress_status_rule_version' => 1,
+            'sale_price' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+            'is_export_cleared' => false, // v2면 차단되지만 v1이라 단일 트리거 적용
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+
+        $this->assertSame('수출통관완료', $v->progress_status);
+    }
+
+    public function test_q26_h3_cascade_blocks_bl_document_without_loading_location(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'is_export_cleared' => true,
+            'export_declaration_document' => 'edoc.pdf',
+            'bl_document' => 'bl.pdf',
+            // bl_loading_location 비어있음
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('선적 반입지');
+        $v->guardAttachmentDeps();
+    }
+
+    public function test_q26_h4_cascade_blocks_loading_location_without_export_cleared(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'is_export_cleared' => false,
+            'bl_loading_location' => '부산항',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('수출통관 완료 처리');
+        $v->guardAttachmentDeps();
+    }
+
+    public function test_q26_v2_skipped_for_heyman_channel(): void
+    {
+        // 헤이맨은 v2 규칙도 export 단계 평가 안 함 — 채널 격리 유지.
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 2,
+            'sales_channel' => 'heyman',
+            'sale_price' => 1000, 'deposit_down_payment' => 1000,
+            'export_declaration_document' => 'edoc.pdf',
+            'is_export_cleared' => true,
+        ]);
+
+        $this->assertSame('판매완료', $v->progress_status);
+    }
+
+    public function test_q26_unpaid_override_allows_export_entry_for_admin(): void
+    {
+        // admin 승인 시 미입금 잔존이어도 통관 진입 가능.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'deposit_down_payment' => 500, // 미입금 500 남음
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+        ]);
+        $v->refresh();
+        $this->assertGreaterThan(0, (int) $v->sale_unpaid_amount_krw_cache);
+
+        UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'clearance',
+            'approved_by' => $admin->id,
+            'reason' => '컨테이너 출항 일정상 강행 — 잔금 확정 입금 확인',
+            'approved_at' => now(),
+            'ip_address' => '127.0.0.1',
+            'sale_unpaid_amount_snapshot' => 500,
+        ]);
+        $v->refresh();
+
+        $v->export_buyer_id = 1;
+        $v->shipping_date = '2026-05-01';
+        // override 있으니 C5 차단 안 되어야 함
+        $v->guardStageOrderForExport();
+        $this->assertTrue(true);
+
+        // is_override_active flag 자동 갱신 검증
+        $this->assertTrue($v->fresh()->is_override_active);
+    }
+
+    public function test_q26_unpaid_override_is_append_only(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+        $override = UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'clearance',
+            'approved_by' => $admin->id,
+            'reason' => '20글자 이상의 사유 텍스트 예시 — 검증용',
+            'approved_at' => now(),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('append-only');
+        $override->reason = '수정 시도';
+        $override->save();
+    }
+
+    public function test_q26_unpaid_override_delete_blocked(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+        $override = UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'dhl',
+            'approved_by' => $admin->id,
+            'reason' => '20글자 이상의 사유 텍스트 예시 — 검증용',
+            'approved_at' => now(),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('삭제할 수 없습니다');
+        $override->delete();
     }
 }
