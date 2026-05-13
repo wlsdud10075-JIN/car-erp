@@ -56,7 +56,13 @@ class ReceivableHistory extends Model
                 FinalPayment::where('id', $this->final_payment_id)->update($payload);
                 // query builder update — 모델 이벤트 미발생. 캐시는 saved 핸들러에서 별도 refresh.
             } else {
-                $fp = FinalPayment::create(array_merge($payload, ['vehicle_id' => $this->vehicle_id]));
+                // 큐 10 H5 — FinalPayment::created가 또 ReceivableHistory를 만들지 못하게 flag.
+                FinalPayment::$skipReceivableSync = true;
+                try {
+                    $fp = FinalPayment::create(array_merge($payload, ['vehicle_id' => $this->vehicle_id]));
+                } finally {
+                    FinalPayment::$skipReceivableSync = false;
+                }
                 // self-update를 query builder로 처리해서 saved 재진입 방지
                 static::query()->where('id', $this->id)->update(['final_payment_id' => $fp->id]);
                 $this->final_payment_id = $fp->id;

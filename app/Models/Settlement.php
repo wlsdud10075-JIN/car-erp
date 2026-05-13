@@ -4,19 +4,62 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class Settlement extends Model
 {
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status',
-        'confirmed_at', 'paid_at', 'note',
+        'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
     ];
 
     protected $casts = [
         'confirmed_at' => 'datetime',
         'paid_at' => 'datetime',
+        'confirmed_snapshot' => 'array',
     ];
+
+    /**
+     * 큐 10 H3·H4 — 정산 saving 시 검증 + snapshot 캡처.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Settlement $s) {
+            // H3 — status ∈ {confirmed, paid}이면 settlement_type별 값 > 0 강제.
+            if (in_array($s->settlement_status, ['confirmed', 'paid'], true)) {
+                $hasRatio = $s->settlement_type === 'ratio' && (float) ($s->settlement_ratio ?? 0) > 0;
+                $hasPerUnit = $s->settlement_type === 'per_unit' && (float) ($s->per_unit_amount ?? 0) > 0;
+                if (! $hasRatio && ! $hasPerUnit) {
+                    throw ValidationException::withMessages([
+                        'settlement_ratio' => '정산 확정·지급 시 정산비율(ratio) 또는 건당 정산액(per_unit) 중 하나가 0보다 커야 합니다.',
+                    ]);
+                }
+            }
+
+            // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
+            $becamePaid = $s->settlement_status === 'paid'
+                && $s->getOriginal('settlement_status') !== 'paid';
+            if ($becamePaid && empty($s->confirmed_snapshot)) {
+                $v = $s->vehicle;
+                $s->confirmed_snapshot = [
+                    'captured_at' => now()->toIso8601String(),
+                    'exchange_rate' => $v?->exchange_rate,
+                    'export_declaration_amount' => $v?->export_declaration_amount,
+                    'transport_fee' => $v?->transport_fee,
+                    'purchase_price' => $v?->purchase_price,
+                    'cost_total' => $v?->cost_total,
+                    'sales_amount_krw' => $s->sales_amount_krw,
+                    'settlement_sales_krw' => $s->settlement_sales_krw,
+                    'sales_margin' => $s->sales_margin,
+                    'vat_margin' => $s->vat_margin,
+                    'total_margin' => $s->total_margin,
+                    'settlement_amount' => $s->settlement_amount,
+                    'actual_payout' => $s->actual_payout,
+                ];
+            }
+        });
+    }
 
     public function vehicle(): BelongsTo
     {

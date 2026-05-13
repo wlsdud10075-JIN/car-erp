@@ -2,8 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\FinalPayment;
+use App\Models\ReceivableHistory;
 use App\Models\Salesman;
+use App\Models\SavingsStatus;
+use App\Models\Settlement;
 use App\Models\UnpaidExportOverride;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -726,5 +730,195 @@ class WorkflowGapTest extends TestCase
             ->set('nice_reg_owner_rrn', '')
             ->call('save')
             ->assertHasErrors(['nice_reg_owner_rrn']);
+    }
+
+    // ── 큐 10 — 정산·채권 무결성 (H3·H4·H5·H6) ────────────────────────
+
+    public function test_q10_h3_blocks_confirmed_settlement_without_amount(): void
+    {
+        // ratio + status=confirmed + ratio=0 → throw
+        $v = $this->makeVehicle();
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('정산 확정·지급');
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 0,
+            'settlement_status' => 'confirmed',
+            'confirmed_at' => now(),
+        ]);
+    }
+
+    public function test_q10_h3_allows_pending_settlement_with_zero_amount(): void
+    {
+        // pending 상태는 작성 중이라 0 허용
+        $v = $this->makeVehicle();
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 0,
+            'settlement_status' => 'pending',
+        ]);
+        $this->assertNotNull($s->id);
+    }
+
+    public function test_q10_h4_snapshot_captured_on_paid(): void
+    {
+        $v = $this->makeVehicle([
+            'purchase_price' => 1000000,
+            'exchange_rate' => 1300,
+            'export_declaration_amount' => 5000,
+            'transport_fee' => 200,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed',
+            'confirmed_at' => now(),
+        ]);
+        $this->assertNull($s->confirmed_snapshot);
+
+        $s->update([
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+        $s->refresh();
+
+        $this->assertNotNull($s->confirmed_snapshot);
+        $this->assertSame(1000000, (int) ($s->confirmed_snapshot['purchase_price'] ?? 0));
+        $this->assertSame(1300, (int) ($s->confirmed_snapshot['exchange_rate'] ?? 0));
+        $this->assertArrayHasKey('total_margin', $s->confirmed_snapshot);
+    }
+
+    public function test_q10_h4_blocks_vehicle_financial_change_after_paid(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['purchase_price' => 1000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'confirmed_at' => now(),
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('purchase_price_str', '2000000')
+            ->call('save')
+            ->assertHasErrors(['purchase_price_str']);
+
+        $v->refresh();
+        $this->assertSame(1000000, (int) $v->purchase_price);
+    }
+
+    public function test_q10_h4_allows_non_financial_change_after_paid(): void
+    {
+        // paid 후에도 회계 외 컬럼(메모 등)은 변경 가능
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['purchase_price' => 1000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('memo', '메모 수정')
+            ->call('save')
+            ->assertHasNoErrors();
+    }
+
+    public function test_q10_h5_final_payment_creates_receivable_history(): void
+    {
+        // 신규 FinalPayment → ReceivableHistory(method=deposit) 자동 생성
+        $v = $this->makeVehicle(['sale_price' => 1000, 'currency' => 'KRW', 'exchange_rate' => 1]);
+        $fp = FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 500,
+            'payment_date' => '2026-05-01',
+        ]);
+
+        $rh = ReceivableHistory::where('final_payment_id', $fp->id)->first();
+        $this->assertNotNull($rh);
+        $this->assertSame('deposit', $rh->method);
+        $this->assertSame(500.0, (float) $rh->amount);
+    }
+
+    public function test_q10_h5_receivable_creating_final_does_not_duplicate(): void
+    {
+        // ReceivableHistory(method=deposit) → FinalPayment 자동 생성 (기존 단방향).
+        // 이때 역방향(FinalPayment::created → ReceivableHistory)가 또 만들어지면 중복 → skip 검증.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 1000, 'currency' => 'KRW', 'exchange_rate' => 1]);
+
+        $rh = ReceivableHistory::create([
+            'vehicle_id' => $v->id,
+            'collected_at' => '2026-05-01',
+            'collector_id' => $admin->id,
+            'method' => 'deposit',
+            'amount' => 300,
+        ]);
+        $rh->refresh();
+
+        // FinalPayment 1개 생성됨
+        $this->assertNotNull($rh->final_payment_id);
+        $fpCount = FinalPayment::where('vehicle_id', $v->id)->count();
+        $this->assertSame(1, $fpCount);
+
+        // ReceivableHistory도 1개만 (중복 없음)
+        $rhCount = ReceivableHistory::where('vehicle_id', $v->id)->count();
+        $this->assertSame(1, $rhCount);
+    }
+
+    public function test_q10_h6_savings_used_creates_status_transaction(): void
+    {
+        // savings_used 변경 → SavingsStatus(USED) 자동 생성
+        $buyer = Buyer::create(['name' => '바이어A', 'is_active' => true]);
+        // 초기 잔액 500 적립
+        SavingsStatus::create([
+            'buyer_id' => $buyer->id,
+            'currency' => 'USD',
+            'transaction_type' => 'EARNED',
+            'savings' => 500,
+            'balance' => 500,
+        ]);
+
+        $v = $this->makeVehicle([
+            'buyer_id' => $buyer->id,
+            'currency' => 'USD',
+            'savings_used' => 0,
+        ]);
+
+        $v->savings_used = 100;
+        $v->save();
+
+        $txn = SavingsStatus::where('vehicle_id', $v->id)->first();
+        $this->assertNotNull($txn);
+        $this->assertSame('USED', $txn->transaction_type);
+        $this->assertSame(-100.0, (float) $txn->savings);
+        $this->assertSame(400.0, (float) $txn->balance);
+    }
+
+    public function test_q10_h6_savings_used_unchanged_no_transaction(): void
+    {
+        // savings_used 변경 없으면 SavingsStatus 거래 미생성
+        $buyer = Buyer::create(['name' => '바이어B', 'is_active' => true]);
+        $v = $this->makeVehicle(['buyer_id' => $buyer->id, 'currency' => 'USD', 'savings_used' => 0]);
+
+        $v->memo = '메모만 변경';
+        $v->save();
+
+        $count = SavingsStatus::where('vehicle_id', $v->id)->count();
+        $this->assertSame(0, $count);
     }
 }

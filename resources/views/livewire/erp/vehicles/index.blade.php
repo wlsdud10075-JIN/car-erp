@@ -473,6 +473,35 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    /**
+     * 큐 10 H4 — paid 정산이 있는 차량의 회계 민감 컬럼 변경 차단.
+     * 회계 마감된 정산의 표시값(snapshot 기반)과 vehicle 컬럼 사이 drift 방지.
+     */
+    private function guardFinancialDriftAfterPaid(): void
+    {
+        $existing = Vehicle::find($this->editingId);
+        if (! $existing) {
+            return;
+        }
+        $hasPaid = $existing->settlements()->where('settlement_status', 'paid')->exists();
+        if (! $hasPaid) {
+            return;
+        }
+        $changed = [];
+        foreach (self::FINANCIAL_FIELD_MAP as $formField => $dbField) {
+            $newVal = (float) str_replace(',', '', (string) ($this->{$formField} ?? '0'));
+            $oldVal = (float) ($existing->{$dbField} ?? 0);
+            if (abs($newVal - $oldVal) > 0.001) {
+                $changed[] = $dbField;
+            }
+        }
+        if (! empty($changed)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'purchase_price_str' => "정산이 'paid' 상태인 차량의 회계 컬럼은 변경할 수 없습니다 (시도: ".implode(', ', $changed).'). 정산 취소 후 재시도하세요.',
+            ]);
+        }
+    }
+
     // ── 큐 2.6 — admin 미입금 우회 승인 (per-stage append-only) ────────
     public string $overrideStage = '';
     public string $overrideReason = '';
@@ -833,6 +862,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 정산/통관/관리 role이 변경 시도하면 silent restore + 토스트 안내.
         if ($this->editingId && ! $user->canEditVehicleFinancialFields()) {
             $this->restoreFinancialFieldsFromOriginal();
+        }
+
+        // H4 — paid 정산이 있는 차량의 회계 민감 컬럼 변경 차단 (retroactive drift 잠금).
+        // admin도 변경 불가. 회계 마감된 정산의 표시값 보호.
+        if ($this->editingId) {
+            $this->guardFinancialDriftAfterPaid();
         }
 
         $this->validateVehicleForm();

@@ -128,6 +128,54 @@ class Vehicle extends Model
         static::restored(function (Vehicle $vehicle) {
             $vehicle->refreshCaches();
         });
+
+        // H6 — savings_used delta 감지 → SavingsStatus(USED/REFUND) 자동 생성.
+        // 이중 사용 방지 (Vehicle만 차감 표시 + buyer 잔액 미감소 → 다른 차량서 또 사용 가능).
+        static::saved(function (Vehicle $vehicle) {
+            if (! $vehicle->wasChanged('savings_used')) {
+                return;
+            }
+            if (! $vehicle->buyer_id || ! $vehicle->currency) {
+                return;
+            }
+            $original = (float) ($vehicle->getOriginal('savings_used') ?? 0);
+            $current = (float) ($vehicle->savings_used ?? 0);
+            $delta = $current - $original;
+            if (abs($delta) < 0.01) {
+                return;
+            }
+            $vehicle->syncSavingsUsage($delta);
+        });
+    }
+
+    /**
+     * H6 — savings_used 변화량을 SavingsStatus 거래로 자동 기록.
+     * delta > 0 → USED (잔액 차감 / savings 음수)
+     * delta < 0 → REFUND (잔액 환원 / savings 양수)
+     * 동시성 대비 buyer×currency 잔액에 lockForUpdate.
+     */
+    public function syncSavingsUsage(float $delta): void
+    {
+        DB::transaction(function () use ($delta) {
+            $latest = SavingsStatus::where('buyer_id', $this->buyer_id)
+                ->where('currency', $this->currency)
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->first();
+            $currentBalance = (float) ($latest?->balance ?? 0);
+            $savings = -$delta;
+            $newBalance = $currentBalance + $savings;
+
+            SavingsStatus::create([
+                'buyer_id' => $this->buyer_id,
+                'vehicle_id' => $this->id,
+                'currency' => $this->currency,
+                'transaction_type' => $delta > 0 ? 'USED' : 'REFUND',
+                'savings' => $savings,
+                'balance' => $newBalance,
+                'note' => "차량 {$this->vehicle_number} savings_used 자동 동기화 (delta {$delta})",
+            ]);
+        });
     }
 
     /**
