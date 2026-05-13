@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
@@ -115,6 +116,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->monthlyChartData,
             $this->salesmanPerformance,
             $this->settlementKpis,
+            $this->receivableKpis,
         );
         // 차트는 Alpine 인스턴스라 Livewire reactivity로 자동 갱신 안 됨 — 이벤트로 데이터 푸시.
         $this->dispatch('charts-refresh', data: [
@@ -344,6 +346,90 @@ new #[Layout('components.layouts.app')] class extends Component
             'payout_pending' => $payoutPending,
             'avg_margin_rate' => $avgMarginRate,
             'channel_avg_margin' => $channelAvg,
+        ];
+    }
+
+    /**
+     * 큐 4 8-6 — 채권 탭 KPI.
+     * 회의록 결정:
+     * - 미납률 = SUM(미수금 KRW) / SUM(총판매액 KRW). 환율 0 외화는 둘 다 제외.
+     * - 담당자/바이어 TOP 10 테이블.
+     * - 위험도(receivable_risk) 4단 카운트.
+     */
+    #[Computed]
+    public function receivableKpis(): array
+    {
+        // 미수금 차량 — sale_unpaid_amount_krw_cache > 0 (NULL은 환율 미입력 외화 → 제외)
+        $bySalesman = [];  // salesman_id => ['unpaid' => N, 'sale_total' => N, 'vehicle_count' => N]
+        $byBuyer = [];     // buyer_id => 동일
+        $riskCounts = ['safe' => 0, 'caution' => 0, 'danger' => 0, 'critical' => 0, 'none' => 0];
+
+        Vehicle::query()
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'currency', 'exchange_rate',
+                     'sale_unpaid_amount_krw_cache', 'receivable_risk')
+            ->chunk(1000, function ($rows) use (&$bySalesman, &$byBuyer, &$riskCounts) {
+                foreach ($rows as $r) {
+                    $saleKrw = $r->currency === 'KRW'
+                        ? (int) $r->sale_price
+                        : ($r->exchange_rate > 0 ? (int) ($r->sale_price * $r->exchange_rate) : 0);
+                    if ($saleKrw === 0) {
+                        continue;  // 환율 0/외화 KRW 환산 불가 — 분모 측정 불가
+                    }
+                    $unpaid = (int) $r->sale_unpaid_amount_krw_cache;
+
+                    if ($r->salesman_id) {
+                        if (! isset($bySalesman[$r->salesman_id])) {
+                            $bySalesman[$r->salesman_id] = ['unpaid' => 0, 'sale_total' => 0, 'vehicle_count' => 0];
+                        }
+                        $bySalesman[$r->salesman_id]['unpaid'] += $unpaid;
+                        $bySalesman[$r->salesman_id]['sale_total'] += $saleKrw;
+                        $bySalesman[$r->salesman_id]['vehicle_count']++;
+                    }
+                    if ($r->buyer_id) {
+                        if (! isset($byBuyer[$r->buyer_id])) {
+                            $byBuyer[$r->buyer_id] = ['unpaid' => 0, 'sale_total' => 0, 'vehicle_count' => 0];
+                        }
+                        $byBuyer[$r->buyer_id]['unpaid'] += $unpaid;
+                        $byBuyer[$r->buyer_id]['sale_total'] += $saleKrw;
+                        $byBuyer[$r->buyer_id]['vehicle_count']++;
+                    }
+                    $risk = $r->receivable_risk ?? 'none';
+                    $riskCounts[$risk] = ($riskCounts[$risk] ?? 0) + 1;
+                }
+            });
+
+        // 담당자/바이어 미수금 내림차순 TOP 10 + 이름 매핑
+        $sortFn = fn ($a, $b) => $b['unpaid'] <=> $a['unpaid'];
+        uasort($bySalesman, $sortFn);
+        uasort($byBuyer, $sortFn);
+        $topSalesmanIds = array_slice(array_keys($bySalesman), 0, 10);
+        $topBuyerIds = array_slice(array_keys($byBuyer), 0, 10);
+        $salesmanNames = Salesman::whereIn('id', $topSalesmanIds)->pluck('name', 'id')->toArray();
+        $buyerNames = Buyer::whereIn('id', $topBuyerIds)->pluck('name', 'id')->toArray();
+
+        $buildRows = function (array $ids, array $data, array $names): array {
+            $rows = [];
+            foreach ($ids as $id) {
+                $unpaid = $data[$id]['unpaid'];
+                $total = $data[$id]['sale_total'];
+                $rows[] = [
+                    'id' => $id,
+                    'name' => $names[$id] ?? '#'.$id,
+                    'unpaid' => $unpaid,
+                    'sale_total' => $total,
+                    'unpaid_rate' => $total > 0 ? round($unpaid / $total * 100, 1) : 0,
+                    'vehicle_count' => $data[$id]['vehicle_count'],
+                ];
+            }
+            return $rows;
+        };
+
+        return [
+            'salesman_top' => $buildRows($topSalesmanIds, $bySalesman, $salesmanNames),
+            'buyer_top' => $buildRows($topBuyerIds, $byBuyer, $buyerNames),
+            'risk_counts' => $riskCounts,
+            'total_unpaid' => array_sum(array_column($bySalesman, 'unpaid')),
         ];
     }
 
@@ -596,17 +682,101 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
-    {{-- 채권 탭 — receivables 화면 강조 카드 --}}
-    <div x-show="activeTab === 'receivable'" class="card border-violet-200 bg-violet-50/30">
-        <div class="section-header">
-            <span class="section-dot bg-violet-500"></span>
-            <span class="section-title">채권 관리</span>
+    {{-- 큐 4 8-6 — 채권 탭. 위험도 카운트 + 담당자/바이어 TOP 10 + receivables 화면 링크 --}}
+    <div x-show="activeTab === 'receivable'" class="space-y-4">
+        {{-- 총 미수금 + 위험도 카운트 --}}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-5">
+            <div class="card border-red-200 bg-red-50/30">
+                <div class="text-xs text-gray-500">총 미수금</div>
+                <div class="mt-1 text-2xl font-bold text-red-600">
+                    {{ number_format($this->receivableKpis['total_unpaid']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">환율 미입력 외화 제외</p>
+            </div>
+            @foreach (['safe' => ['안전', 'emerald'], 'caution' => ['주의', 'amber'], 'danger' => ['위험', 'orange'], 'critical' => ['심각', 'red']] as $key => [$label, $color])
+            <a href="{{ route('erp.receivables.index') }}?riskFilter={{ $key }}" wire:navigate
+               class="card transition hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">{{ $label }}</span>
+                    <span class="badge badge-{{ $color === 'emerald' ? 'green' : ($color === 'orange' ? 'amber' : $color) }}">{{ $key }}</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
+            </a>
+            @endforeach
         </div>
-        <p class="mt-2 text-sm text-gray-700">미수금·회수 이력·위험도·바이어별 TOP은 별도 화면에서 관리됩니다.</p>
-        <a href="{{ route('erp.receivables.index') }}" wire:navigate
-           class="mt-3 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700">
-            채권관리 화면으로 이동 →
-        </a>
+
+        {{-- 담당자 TOP 10 / 바이어 TOP 10 테이블 2개 --}}
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div class="card">
+                <div class="section-header">
+                    <span class="section-dot bg-violet-500"></span>
+                    <span class="section-title">미수금 상위 담당자 TOP 10</span>
+                </div>
+                @if (empty($this->receivableKpis['salesman_top']))
+                <p class="mt-3 text-sm text-gray-400">미수금 차량 없음</p>
+                @else
+                <table class="mt-3 w-full text-xs">
+                    <thead>
+                        <tr class="border-b border-gray-200 text-gray-500">
+                            <th class="py-1.5 text-left">담당자</th>
+                            <th class="py-1.5 text-right">미수금</th>
+                            <th class="py-1.5 text-right">미납률</th>
+                            <th class="py-1.5 text-right">차량</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($this->receivableKpis['salesman_top'] as $row)
+                        <tr class="{{ $row['unpaid_rate'] >= 50 ? 'bg-amber-50' : '' }}">
+                            <td class="py-1.5">{{ $row['name'] }}</td>
+                            <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
+                            <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
+                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}대</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+                @endif
+            </div>
+            <div class="card">
+                <div class="section-header">
+                    <span class="section-dot bg-blue-500"></span>
+                    <span class="section-title">미수금 상위 바이어 TOP 10</span>
+                </div>
+                @if (empty($this->receivableKpis['buyer_top']))
+                <p class="mt-3 text-sm text-gray-400">미수금 차량 없음</p>
+                @else
+                <table class="mt-3 w-full text-xs">
+                    <thead>
+                        <tr class="border-b border-gray-200 text-gray-500">
+                            <th class="py-1.5 text-left">바이어</th>
+                            <th class="py-1.5 text-right">미수금</th>
+                            <th class="py-1.5 text-right">미납률</th>
+                            <th class="py-1.5 text-right">차량</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($this->receivableKpis['buyer_top'] as $row)
+                        <tr class="{{ $row['unpaid_rate'] >= 50 ? 'bg-amber-50' : '' }}">
+                            <td class="py-1.5">{{ $row['name'] }}</td>
+                            <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
+                            <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
+                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}대</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+                @endif
+            </div>
+        </div>
+
+        {{-- 채권관리 상세 링크 --}}
+        <div class="card border-violet-200 bg-violet-50/30">
+            <p class="text-sm text-gray-700">회수 이력·세부 차량별 정보는 채권관리 화면에서 관리됩니다.</p>
+            <a href="{{ route('erp.receivables.index') }}" wire:navigate
+               class="mt-2 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700">
+                채권관리 화면으로 이동 →
+            </a>
+        </div>
     </div>
 
     <p class="text-xs text-gray-400" x-show="activeTab !== 'receivable'">

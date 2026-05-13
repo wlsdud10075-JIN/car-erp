@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
@@ -491,5 +492,105 @@ class AdminDashboardTest extends TestCase
         $this->assertSame(5000000, $data['channel_avg_margin']['export']);
         $this->assertSame(1000000, $data['channel_avg_margin']['heyman']);
         $this->assertSame(0, $data['channel_avg_margin']['carpul']);
+    }
+
+    // ── 8-6: 채권 탭 미수금 TOP ───────────────────────────────────────
+
+    /**
+     * Vehicle::saving 이벤트가 receivable_risk·sale_unpaid_amount_krw_cache를
+     * 자동 재계산 → 테스트 fixture는 raw DB update로 캐시 컬럼 직접 set.
+     */
+    private function setReceivableCache(Vehicle $v, ?int $unpaid, ?string $risk): void
+    {
+        DB::table('vehicles')->where('id', $v->id)->update([
+            'sale_unpaid_amount_krw_cache' => $unpaid,
+            'receivable_risk' => $risk,
+        ]);
+    }
+
+    public function test_receivable_kpis_aggregates_top_salesman_by_unpaid(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+        $b = Salesman::create(['name' => '최매입', 'is_active' => true]);
+
+        // 김영업 미수금 5000 (sale 10000 → 미납률 50%)
+        $v1 = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 10000]);
+        $this->setReceivableCache($v1, 5000, 'danger');
+        // 최매입 미수금 1000 (sale 10000 → 미납률 10%)
+        $v2 = $this->makeVehicle(['salesman_id' => $b->id, 'sale_price' => 10000]);
+        $this->setReceivableCache($v2, 1000, 'caution');
+        // 미수금 0 차량 — 제외
+        $v3 = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 5000]);
+        $this->setReceivableCache($v3, 0, 'safe');
+
+        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+
+        // 미수금 내림차순 → 김영업 1위
+        $this->assertSame('김영업', $data['salesman_top'][0]['name']);
+        $this->assertSame(5000, $data['salesman_top'][0]['unpaid']);
+        $this->assertSame(50.0, $data['salesman_top'][0]['unpaid_rate']);
+        $this->assertSame('최매입', $data['salesman_top'][1]['name']);
+        $this->assertSame(10.0, $data['salesman_top'][1]['unpaid_rate']);
+    }
+
+    public function test_receivable_kpis_aggregates_top_buyer_by_unpaid(): void
+    {
+        $this->actingAs($this->admin());
+
+        $b1 = Buyer::create(['name' => 'ABC Trading', 'is_active' => true, 'country_id' => null]);
+        $b2 = Buyer::create(['name' => 'XYZ Auto', 'is_active' => true, 'country_id' => null]);
+
+        $v1 = $this->makeVehicle(['buyer_id' => $b1->id, 'sale_price' => 20000]);
+        $this->setReceivableCache($v1, 10000, 'critical');
+        $v2 = $this->makeVehicle(['buyer_id' => $b2->id, 'sale_price' => 10000]);
+        $this->setReceivableCache($v2, 2000, 'caution');
+
+        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+
+        $this->assertSame('ABC Trading', $data['buyer_top'][0]['name']);
+        $this->assertSame(10000, $data['buyer_top'][0]['unpaid']);
+        $this->assertSame(50.0, $data['buyer_top'][0]['unpaid_rate']);
+    }
+
+    public function test_receivable_kpis_excludes_null_unpaid_cache(): void
+    {
+        // 환율 미입력 외화 차량은 sale_unpaid_amount_krw_cache=NULL → 통계 제외
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+
+        $vNull = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 1000, 'currency' => 'USD']);
+        $this->setReceivableCache($vNull, null, null);  // 환율 0 → 캐시 NULL
+        $v = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 5000]);
+        $this->setReceivableCache($v, 2000, 'caution');
+
+        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+
+        // NULL 캐시 1대 제외 → vehicle_count 1
+        $this->assertSame(1, $data['salesman_top'][0]['vehicle_count']);
+        $this->assertSame(2000, $data['salesman_top'][0]['unpaid']);
+    }
+
+    public function test_receivable_kpis_risk_counts_groups_by_receivable_risk(): void
+    {
+        $this->actingAs($this->admin());
+
+        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
+
+        foreach ([['safe', 1], ['caution', 2], ['critical', 1]] as [$risk, $count]) {
+            for ($i = 0; $i < $count; $i++) {
+                $v = $this->makeVehicle(['salesman_id' => $a->id, 'sale_price' => 1000]);
+                $this->setReceivableCache($v, 500, $risk);
+            }
+        }
+
+        $data = Volt::test('admin.dashboard')->get('receivableKpis');
+
+        $this->assertSame(1, $data['risk_counts']['safe']);
+        $this->assertSame(2, $data['risk_counts']['caution']);
+        $this->assertSame(0, $data['risk_counts']['danger']);
+        $this->assertSame(1, $data['risk_counts']['critical']);
     }
 }
