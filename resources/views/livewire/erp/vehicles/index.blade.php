@@ -291,6 +291,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
      * 매입 / 말소 / 판매 / 입금 / 통관 / 선적 / DHL.
      * 상태: done(✓) / warn(!) / progress(진행중) / pending(-) / disabled(채널·폐기).
+     * 큐 6 잔여 H13 — warn/pending/progress 노드에 reason 텍스트 부착 (tooltip 안내).
      */
     #[Computed]
     public function progressFlow(): ?array
@@ -307,55 +308,80 @@ new #[Layout('components.layouts.app')] class extends Component {
         $disposed = $v->is_disposed;
         $disabledForChannel = fn () => ! $isExport;
 
+        // 매입
+        $purchaseStatus = $disposed ? 'disabled' : ($v->purchase_price > 0
+            ? ($v->purchase_unpaid_amount <= 0 ? 'done' : 'warn')
+            : 'pending');
+        $purchaseReason = match (true) {
+            $purchaseStatus === 'warn' => '매입 미지급 잔액 '.number_format($v->purchase_unpaid_amount).'원 존재',
+            $purchaseStatus === 'pending' => '매입가 미입력',
+            default => null,
+        };
+
+        // 말소
+        $deregStatus = $disposed ? 'disabled' : (
+            $v->is_deregistered && $v->deregistration_document
+                ? 'done'
+                : ($v->is_deregistered ? 'warn' : 'pending')
+        );
+        $deregReason = match (true) {
+            $deregStatus === 'warn' => '말소 체크는 됐지만 말소등록증 미업로드',
+            $deregStatus === 'pending' => '말소 미처리 — is_deregistered 체크 + 말소등록증 업로드 필요',
+            default => null,
+        };
+
+        // 판매
+        $saleStatus = $disposed ? 'disabled' : ($v->sale_price > 0 ? 'done' : 'pending');
+        $saleReason = $saleStatus === 'pending' ? '판매가 미입력' : null;
+
+        // 입금
+        $paymentStatus = $disposed ? 'disabled' : (
+            $v->sale_price > 0
+                ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
+                : 'pending'
+        );
+        $paymentReason = match (true) {
+            $paymentStatus === 'warn' => '판매 미입금 '.number_format($v->sale_unpaid_amount).'원 존재',
+            $paymentStatus === 'pending' => '판매가 미입력 — 입금 추적 불가',
+            default => null,
+        };
+
+        // 통관 — 큐 2.6 잔여 통합: 체크박스 + 문서 둘 다 누락 시 명시 안내
+        $clearanceStatus = $disabledForChannel() || $disposed ? 'disabled' : (
+            $v->export_declaration_document ? 'done'
+                : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending')
+        );
+        $clearanceReason = match (true) {
+            $clearanceStatus === 'progress' => '수출신고서 업로드 필요 (체크박스만으론 단계 진행 안 됨)',
+            $clearanceStatus === 'pending' => '수출통관 정보 미입력 — 통관 바이어/선적일·포워딩사 입력 후 수출신고서 업로드',
+            default => null,
+        };
+
+        // 선적
+        $blStatus = $disabledForChannel() || $disposed ? 'disabled' : (
+            $v->bl_document ? 'done'
+                : ($v->bl_loading_location ? 'progress' : 'pending')
+        );
+        $blReason = match (true) {
+            $blStatus === 'progress' => 'B/L 문서 업로드 필요 (반입지 입력 완료)',
+            $blStatus === 'pending' => '선적 미진행 — B/L 반입지 입력 후 문서 업로드',
+            default => null,
+        };
+
+        // DHL
+        $dhlStatus = $disabledForChannel() || $disposed ? 'disabled' : (
+            $v->dhl_request ? 'done' : 'pending'
+        );
+        $dhlReason = $dhlStatus === 'pending' ? 'DHL 발송신청 미체크' : null;
+
         return [
-            [
-                'key' => 'purchase', 'label' => '매입', 'tab' => 'purchase',
-                'status' => $disposed ? 'disabled' : ($v->purchase_price > 0
-                    ? ($v->purchase_unpaid_amount <= 0 ? 'done' : 'warn')
-                    : 'pending'),
-            ],
-            [
-                'key' => 'deregistration', 'label' => '말소', 'tab' => 'purchase',
-                'status' => $disposed ? 'disabled' : (
-                    $v->is_deregistered && $v->deregistration_document
-                        ? 'done'
-                        : ($v->is_deregistered ? 'warn' : 'pending')
-                ),
-            ],
-            [
-                'key' => 'sale', 'label' => '판매', 'tab' => 'sale',
-                'status' => $disposed ? 'disabled' : (
-                    $v->sale_price > 0 ? 'done' : 'pending'
-                ),
-            ],
-            [
-                'key' => 'payment', 'label' => '입금', 'tab' => 'sale',
-                'status' => $disposed ? 'disabled' : (
-                    $v->sale_price > 0
-                        ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
-                        : 'pending'
-                ),
-            ],
-            [
-                'key' => 'clearance', 'label' => '통관', 'tab' => 'clearance',
-                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
-                    $v->export_declaration_document ? 'done'
-                        : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending')
-                ),
-            ],
-            [
-                'key' => 'bl', 'label' => '선적', 'tab' => 'bl',
-                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
-                    $v->bl_document ? 'done'
-                        : ($v->bl_loading_location ? 'progress' : 'pending')
-                ),
-            ],
-            [
-                'key' => 'dhl', 'label' => 'DHL', 'tab' => 'dhl',
-                'status' => $disabledForChannel() || $disposed ? 'disabled' : (
-                    $v->dhl_request ? 'done' : 'pending'
-                ),
-            ],
+            ['key' => 'purchase',       'label' => '매입',   'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
+            ['key' => 'deregistration', 'label' => '말소',   'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
+            ['key' => 'sale',           'label' => '판매',   'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
+            ['key' => 'payment',        'label' => '입금',   'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
+            ['key' => 'clearance',      'label' => '통관',   'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
+            ['key' => 'bl',             'label' => '선적',   'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
+            ['key' => 'dhl',            'label' => 'DHL',    'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],
         ];
     }
 
@@ -1039,8 +1065,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['col' => 'bl_document',                 'fileProp' => 'blDocFile',                'clearProp' => 'clearBlDoc'],
         ];
 
+        $wasCreating = $this->editingId === null;
+        $vehicle = null;
         try {
-            \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, &$newlyStoredPaths, &$pathsToDelete) {
+            \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, &$newlyStoredPaths, &$pathsToDelete, &$vehicle) {
                 if ($this->editingId) {
                     $vehicle = Vehicle::findOrFail($this->editingId);
                     $vehicle->update($data);
@@ -1125,8 +1153,52 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearBlDoc = false;
 
         $this->unsetComputedProperties();
+
+        // 큐 6 H14 — 신규 차량 등록 시 다음 단계로 동선 안내.
+        // 패널을 닫지 않고 방금 만든 차량을 다시 로드(openEdit)한 뒤,
+        // 흐름도에서 첫 warn/pending/progress 노드의 탭으로 자동 전환 + 토스트로 사유 안내.
+        // 수정 저장은 기존 close() 흐름 유지 (탭 자동 전환은 편집 중 사용자 흐름을 끊음).
+        $nextStep = $wasCreating && $vehicle ? $this->resolveNextStep($vehicle->id) : null;
+
+        if ($wasCreating && $nextStep) {
+            $newId = $vehicle->id;
+            $this->openEdit($newId);
+            $this->dispatch('switch-tab', tab: $nextStep['tab']);
+            $this->dispatch(
+                'notify',
+                message: "차량이 등록됐습니다. 다음 단계: {$nextStep['label']} — {$nextStep['reason']}",
+                type: 'success',
+            );
+            return;
+        }
+
         $this->close();
-        session()->flash('success', $this->editingId ? '차량 정보가 수정됐습니다.' : '차량이 등록됐습니다.');
+        session()->flash('success', $wasCreating ? '차량이 등록됐습니다.' : '차량 정보가 수정됐습니다.');
+    }
+
+    /**
+     * 큐 6 H14 — 신규 차량 등록 후 다음 단계 노드 산정.
+     * progressFlow 순서대로 첫 번째 warn/pending/progress 노드 반환. disabled/done은 스킵.
+     * 모든 비-done 노드가 disabled면 (헤이맨/카풀 채널 + 매입·말소·판매·입금 모두 done 등) null 반환.
+     */
+    private function resolveNextStep(int $vehicleId): ?array
+    {
+        $savedEditingId = $this->editingId;
+        $this->editingId = $vehicleId;
+        unset($this->progressFlow);
+        $flow = $this->progressFlow;
+        $this->editingId = $savedEditingId;
+        unset($this->progressFlow);
+
+        if (! $flow) {
+            return null;
+        }
+        foreach ($flow as $node) {
+            if (in_array($node['status'], ['warn', 'pending', 'progress'], true)) {
+                return $node;
+            }
+        }
+        return null;
     }
 
     public function delete(int $id): void
@@ -1440,7 +1512,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 슬라이드 패널                                                  --}}
 {{-- ══════════════════════════════════════════════════════════════ --}}
 @if($showPanel)
-<div x-data="{ tab: 'basic' }">
+<div x-data="{ tab: 'basic' }" x-on:switch-tab.window="tab = $event.detail.tab">
 {{-- Backdrop --}}
 <div class="fixed inset-0 z-40 bg-black/40" wire:click="close"></div>
 
@@ -1462,7 +1534,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
-    {{-- 큐 2번 — 1대 흐름도 스트립 (편집 모드에서만) --}}
+    {{-- 큐 2번 — 1대 흐름도 스트립 (편집 모드에서만). 큐 6 H13 — warn/pending/progress에 reason tooltip. --}}
     @if($this->progressFlow)
     <div class="border-b border-gray-100 bg-gray-50/50 px-5 py-3">
         <div class="overflow-x-auto">
@@ -1477,7 +1549,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'disabled' => ['icon' => '×', 'cls' => 'bg-gray-50 text-gray-300 border-gray-100'],
                     };
                 @endphp
+                {{-- tooltip은 native title만 사용 — 부모 overflow-x-auto가 absolute 자식 y-axis 클리핑 발동 --}}
                 <button type="button" @click="tab = '{{ $node['tab'] }}'"
+                    @if(!empty($node['reason'])) title="{{ $node['reason'] }}" @endif
                     class="flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition hover:brightness-95 {{ $statusBadge['cls'] }}">
                     <span class="font-bold">{{ $statusBadge['icon'] }}</span>
                     <span class="font-medium">{{ $node['label'] }}</span>

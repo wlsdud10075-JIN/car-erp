@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -202,6 +203,74 @@ class PipelineStripTest extends TestCase
         $this->assertSame('warn', $flow[3]['status']);  // 입금 미완납 → warn
     }
 
+    // ── 큐 6 H13 — reason 키 ───────────────────────────────────────────
+
+    public function test_progress_flow_reason_is_null_for_done_and_disabled(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $this->actingAs($admin);
+
+        // 매입 done + 헤이맨 채널 (통관/선적/DHL = disabled)
+        $v = $this->makeVehicle([
+            'sales_channel' => 'heyman',
+            'purchase_price' => 1000, 'down_payment' => 1000,
+        ]);
+
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
+        $flow = $component->get('progressFlow');
+
+        $this->assertNull($flow[0]['reason']);  // 매입 done
+        $this->assertNull($flow[4]['reason']);  // 통관 disabled (heyman)
+        $this->assertNull($flow[5]['reason']);  // 선적 disabled
+        $this->assertNull($flow[6]['reason']);  // DHL disabled
+    }
+
+    public function test_progress_flow_reason_explains_warn_and_pending(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $this->actingAs($admin);
+
+        // 매입가 입력 + 미지급 잔존 → 매입 warn
+        $v = $this->makeVehicle([
+            'purchase_price' => 1000, 'down_payment' => 300,
+        ]);
+
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
+        $flow = $component->get('progressFlow');
+
+        $this->assertSame('warn', $flow[0]['status']);
+        $this->assertStringContainsString('미지급', $flow[0]['reason']);
+        $this->assertSame('pending', $flow[2]['status']);
+        $this->assertStringContainsString('판매가 미입력', $flow[2]['reason']);
+    }
+
+    public function test_progress_flow_clearance_reason_distinguishes_progress_vs_pending(): void
+    {
+        // 큐 2.6 잔여 통합 — 통관 단계에서 정보 누락 시 명시 안내
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $this->actingAs($admin);
+
+        // 판매 완료 + 통관 정보 0 → 통관 pending + reason에 "수출통관 정보 미입력"
+        $v1 = $this->makeVehicle([
+            'sale_price' => 1000, 'deposit_down_payment' => 1000,
+        ]);
+        $flow1 = Volt::test('erp.vehicles.index')->call('openEdit', $v1->id)->get('progressFlow');
+        $this->assertSame('pending', $flow1[4]['status']);
+        $this->assertStringContainsString('수출통관 정보 미입력', $flow1[4]['reason']);
+
+        // 통관 바이어 + 선적일 입력 (체크박스만) + 문서 0 → progress + reason에 "수출신고서 업로드 필요"
+        $buyer = Buyer::create([
+            'name' => '테스트 바이어', 'is_active' => true, 'country_id' => null,
+        ]);
+        $v2 = $this->makeVehicle([
+            'sale_price' => 1000, 'deposit_down_payment' => 1000,
+            'export_buyer_id' => $buyer->id, 'shipping_date' => '2026-05-20',
+        ]);
+        $flow2 = Volt::test('erp.vehicles.index')->call('openEdit', $v2->id)->get('progressFlow');
+        $this->assertSame('progress', $flow2[4]['status']);
+        $this->assertStringContainsString('수출신고서 업로드 필요', $flow2[4]['reason']);
+    }
+
     // ── vehicles/index mount() — progressFilter 진입 시 날짜 필터 비움 ───
 
     public function test_vehicles_index_skips_default_date_when_progress_filter_set(): void
@@ -227,6 +296,36 @@ class PipelineStripTest extends TestCase
         // action·progressFilter 모두 없으면 기본 2개월 필터 적용
         $this->assertNotEmpty($component->get('dateFrom'));
         $this->assertNotEmpty($component->get('dateTo'));
+    }
+
+    // ── 큐 6 H14 — 신규 등록 후 next-step 동선 ────────────────────────
+
+    public function test_h14_new_vehicle_save_dispatches_switch_tab_to_first_pending_node(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCreate')
+            ->set('vehicle_number', 'NEW-H14-1')
+            ->call('save')
+            ->assertDispatched('switch-tab', tab: 'purchase')
+            ->assertDispatched('notify');
+    }
+
+    public function test_h14_edit_save_does_not_dispatch_switch_tab(): void
+    {
+        // 수정 저장은 close() 흐름 유지 — switch-tab 미발사
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle();
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('memo', '수정')
+            ->call('save')
+            ->assertNotDispatched('switch-tab');
     }
 
     public function test_progress_flow_disables_all_when_disposed(): void
