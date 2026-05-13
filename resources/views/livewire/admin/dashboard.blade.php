@@ -108,7 +108,73 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function applyFilters(): void
     {
-        unset($this->kpis);
+        unset($this->kpis, $this->monthlyChartData);
+        // 차트는 Alpine 인스턴스라 Livewire reactivity로 자동 갱신 안 됨 — 이벤트로 데이터 푸시.
+        $this->dispatch('charts-refresh', data: $this->monthlyChartData);
+    }
+
+    /**
+     * 큐 4 8-2 — 연간 월별 차트 데이터.
+     * X축: 1~12월 (dateFrom의 year 기준 — 사용자가 다른 해를 보려면 dateFrom 변경).
+     * dateType 무관 — 매입/판매/거래완료(B/L 발행) 각 컬럼별로 월 분포 + 판매가 KRW 합계.
+     *
+     * SQLite/MySQL 양쪽에서 동작하도록 PHP-side 그룹핑 사용 (whereYear는 grammar
+     * 자동 변환되지만 selectRaw MONTH()는 dialect 종속).
+     */
+    #[Computed]
+    public function monthlyChartData(): array
+    {
+        $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
+
+        $countByMonth = function (string $column) use ($year): array {
+            $buckets = array_fill(1, 12, 0);
+            Vehicle::query()
+                ->whereYear($column, $year)
+                ->whereNotNull($column)
+                ->select($column)
+                ->orderBy($column)
+                ->chunk(1000, function ($rows) use (&$buckets, $column) {
+                    foreach ($rows as $r) {
+                        $d = $r->{$column};
+                        if ($d) {
+                            $buckets[(int) $d->format('n')]++;
+                        }
+                    }
+                });
+            return array_values($buckets);
+        };
+
+        // 판매가 KRW 환산 합계 — currency=KRW면 sale_price, 외화면 sale_price * exchange_rate.
+        // 환율 NULL/0이면 KRW 환산 불가 → 합계에서 제외 (큐 2.5 C1과 동일 정책).
+        $salesBuckets = array_fill(1, 12, 0);
+        Vehicle::query()
+            ->whereYear('sale_date', $year)
+            ->whereNotNull('sale_date')
+            ->where('sale_price', '>', 0)
+            ->select('sale_date', 'sale_price', 'currency', 'exchange_rate')
+            ->orderBy('sale_date')
+            ->chunk(1000, function ($rows) use (&$salesBuckets) {
+                foreach ($rows as $r) {
+                    if (! $r->sale_date) {
+                        continue;
+                    }
+                    $krw = $r->currency === 'KRW'
+                        ? (int) $r->sale_price
+                        : ($r->exchange_rate > 0 ? (int) ($r->sale_price * $r->exchange_rate) : 0);
+                    $salesBuckets[(int) $r->sale_date->format('n')] += $krw;
+                }
+            });
+
+        return [
+            'year' => $year,
+            'labels' => array_map(fn ($m) => $m.'월', range(1, 12)),
+            'counts' => [
+                'purchase'  => $countByMonth('purchase_date'),
+                'sale'      => $countByMonth('sale_date'),
+                'completed' => $countByMonth('bl_issue_date'),  // TODO: 정식 거래완료일 컬럼 도입 시 교체
+            ],
+            'sales_krw' => array_values($salesBuckets),
+        ];
     }
 
     /**
@@ -240,6 +306,30 @@ new #[Layout('components.layouts.app')] class extends Component
             :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
     </div>
 
+    {{-- 큐 4 8-2 — 연간 월별 차트 2개 (X축: 1~12월, 기준 연도: dateFrom의 year) --}}
+    <div id="w-monthly" x-show="widgets['w-monthly']" class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-violet-500"></span>
+                <span class="section-title">월별 차량 대수 (<span x-text="chartData.year"></span>년)</span>
+            </div>
+            <div class="mt-3 h-64">
+                <canvas x-ref="monthlyCountsCanvas"></canvas>
+            </div>
+            <p class="mt-2 text-[11px] text-gray-400">매입·판매·거래완료(B/L 발행) 컬럼별 월 분포</p>
+        </div>
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-blue-500"></span>
+                <span class="section-title">월별 판매가 합계 KRW (<span x-text="chartData.year"></span>년)</span>
+            </div>
+            <div class="mt-3 h-64">
+                <canvas x-ref="monthlySalesCanvas"></canvas>
+            </div>
+            <p class="mt-2 text-[11px] text-gray-400">sale_date 기준. 외화는 sale_price × exchange_rate (환율 0/NULL 제외)</p>
+        </div>
+    </div>
+
     <p class="text-xs text-gray-400">
         ⓘ 미수금·회수 이력·채권 위험도는 <a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-violet-600 hover:underline">채권관리 화면</a>에서 확인하세요.
     </p>
@@ -282,6 +372,8 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
+    {{-- Chart.js v4 (my-crm 패턴과 동일 CDN) --}}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
         function adminDashboard() {
             return {
@@ -291,17 +383,88 @@ new #[Layout('components.layouts.app')] class extends Component
                     { key: 'w-kpi',      label: 'KPI 카드 (4개)' },
                     { key: 'w-channel',  label: '채널별 차량 수' },
                     { key: 'w-progress', label: '진행 단계별 차량 수' },
+                    { key: 'w-monthly',  label: '월별 차트 (대수·판매가)' },
                 ],
+                chartData: @js($this->monthlyChartData),
+                charts: { monthlyCounts: null, monthlySales: null },
                 init() {
                     const saved = localStorage.getItem('car_erp_admin_dashboard_widgets');
                     const parsed = saved ? JSON.parse(saved) : {};
                     this.widgetList.forEach(w => {
                         this.widgets[w.key] = parsed[w.key] !== undefined ? parsed[w.key] : true;
                     });
+
+                    // 초기 차트 렌더 — DOM 안착 후 (월별 차트 위젯이 꺼져 있어도 ref는 존재)
+                    this.$nextTick(() => this.renderCharts());
+
+                    // 큐 4 8-2 — 조회 버튼 적용 시 charts-refresh 이벤트로 데이터 푸시
+                    Livewire.on('charts-refresh', (event) => {
+                        this.chartData = event.data;
+                        this.$nextTick(() => this.renderCharts());
+                    });
                 },
                 toggleWidget(key) {
                     this.widgets[key] = !this.widgets[key];
                     localStorage.setItem('car_erp_admin_dashboard_widgets', JSON.stringify(this.widgets));
+                    // 월별 차트가 켜질 때 canvas가 0x0이었던 경우 재렌더링
+                    if (key === 'w-monthly' && this.widgets[key]) {
+                        this.$nextTick(() => this.renderCharts());
+                    }
+                },
+                renderCharts() {
+                    if (typeof Chart === 'undefined') return;
+
+                    // 월별 차량 대수 — bar 3색
+                    const c1 = this.$refs.monthlyCountsCanvas;
+                    if (c1) {
+                        if (this.charts.monthlyCounts) this.charts.monthlyCounts.destroy();
+                        this.charts.monthlyCounts = new Chart(c1, {
+                            type: 'bar',
+                            data: {
+                                labels: this.chartData.labels,
+                                datasets: [
+                                    { label: '매입',    data: this.chartData.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                                    { label: '판매',    data: this.chartData.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)' },
+                                    { label: '거래완료', data: this.chartData.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)' },
+                                ],
+                            },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+                                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                            },
+                        });
+                    }
+
+                    // 월별 판매가 KRW — line
+                    const c2 = this.$refs.monthlySalesCanvas;
+                    if (c2) {
+                        if (this.charts.monthlySales) this.charts.monthlySales.destroy();
+                        this.charts.monthlySales = new Chart(c2, {
+                            type: 'line',
+                            data: {
+                                labels: this.chartData.labels,
+                                datasets: [{
+                                    label: '판매가 KRW',
+                                    data: this.chartData.sales_krw,
+                                    borderColor: 'rgba(59, 130, 246, 1)',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    fill: true,
+                                    tension: 0.3,
+                                }],
+                            },
+                            options: {
+                                responsive: true, maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: (ctx) => '₩ ' + ctx.parsed.y.toLocaleString() } },
+                                },
+                                scales: {
+                                    y: { beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } },
+                                },
+                            },
+                        });
+                    }
                 },
             };
         }

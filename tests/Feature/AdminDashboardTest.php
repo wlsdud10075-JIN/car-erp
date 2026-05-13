@@ -149,4 +149,89 @@ class AdminDashboardTest extends TestCase
 
         $this->assertStringContainsString('dateType=bl', $url);
     }
+
+    // ── 8-2: 월별 차트 데이터 ──────────────────────────────────────────
+
+    public function test_monthly_chart_data_buckets_purchase_count_by_month(): void
+    {
+        $this->actingAs($this->admin());
+
+        // 2026년 3월 × 2, 5월 × 1
+        Vehicle::create([
+            'vehicle_number' => 'M-1', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false,
+            'purchase_date' => '2026-03-10', 'purchase_price' => 1000,
+        ]);
+        Vehicle::create([
+            'vehicle_number' => 'M-2', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false,
+            'purchase_date' => '2026-03-25', 'purchase_price' => 1000,
+        ]);
+        Vehicle::create([
+            'vehicle_number' => 'M-3', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false,
+            'purchase_date' => '2026-05-15', 'purchase_price' => 1000,
+        ]);
+        // 2025년 — 다른 해
+        Vehicle::create([
+            'vehicle_number' => 'M-PREV', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false,
+            'purchase_date' => '2025-03-10', 'purchase_price' => 1000,
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-01-01')
+            ->set('dateTo', '2026-12-31')
+            ->call('applyFilters')
+            ->get('monthlyChartData');
+
+        $this->assertSame(2026, $data['year']);
+        $this->assertCount(12, $data['counts']['purchase']);
+        $this->assertSame(2, $data['counts']['purchase'][2]);  // 3월 (0-indexed = 2)
+        $this->assertSame(1, $data['counts']['purchase'][4]);  // 5월
+        $this->assertSame(0, $data['counts']['purchase'][0]);  // 1월
+    }
+
+    public function test_monthly_chart_data_sums_sales_krw_with_exchange_rate(): void
+    {
+        $this->actingAs($this->admin());
+
+        // 5월 — KRW 1000원 + USD 100 × 1300 = 130000원 → 131000원
+        Vehicle::create([
+            'vehicle_number' => 'S-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
+            'is_disposed' => false, 'dhl_request' => false,
+            'sale_date' => '2026-05-10', 'sale_price' => 1000, 'exchange_rate' => 1,
+        ]);
+        Vehicle::create([
+            'vehicle_number' => 'S-2', 'sales_channel' => 'export', 'currency' => 'USD',
+            'is_disposed' => false, 'dhl_request' => false,
+            'sale_date' => '2026-05-20', 'sale_price' => 100, 'exchange_rate' => 1300,
+        ]);
+        // 환율 0 — KRW 환산 불가 → 제외
+        Vehicle::create([
+            'vehicle_number' => 'S-EX', 'sales_channel' => 'export', 'currency' => 'USD',
+            'is_disposed' => false, 'dhl_request' => false,
+            'sale_date' => '2026-05-25', 'sale_price' => 999, 'exchange_rate' => 0,
+        ]);
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2026-01-01')
+            ->call('applyFilters')
+            ->get('monthlyChartData');
+
+        $this->assertSame(131000, $data['sales_krw'][4]);  // 5월
+        $this->assertSame(0, $data['sales_krw'][0]);
+    }
+
+    public function test_monthly_chart_data_year_derives_from_date_from(): void
+    {
+        $this->actingAs($this->admin());
+
+        $data = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2024-07-01')
+            ->call('applyFilters')
+            ->get('monthlyChartData');
+
+        $this->assertSame(2024, $data['year']);
+    }
 }
