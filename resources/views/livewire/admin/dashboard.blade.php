@@ -648,7 +648,8 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 큐 4 8-7 — 통관 탭 KPI (clearance 탭에서만 노출) --}}
     <div id="w-clearance" x-show="isWidgetVisible('w-clearance')" class="space-y-4">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <a href="{{ $this->vehiclesUrl(['action' => 'clearance_needed']) }}" wire:navigate
+            {{-- 카운트 SQL과 action SQL 100% 일치 (Vehicle::scopeAction clearance_stuck) --}}
+            <a href="{{ $this->vehiclesUrl(['action' => 'clearance_stuck']) }}" wire:navigate
                class="card border-red-200 bg-red-50/30 transition hover:bg-red-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">통관 정체 차량</span>
@@ -659,7 +660,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">판매완료·완납인데 수출신고서 미발급</p>
             </a>
-            <a href="{{ $this->vehiclesUrl(['progressFilter' => '수출통관중']) }}" wire:navigate
+            {{-- 카운트 SQL = Vehicle::scopeAction export_declaration_upload_needed --}}
+            <a href="{{ $this->vehiclesUrl(['action' => 'export_declaration_upload_needed']) }}" wire:navigate
                class="card transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">수출신고서 미업로드</span>
@@ -693,32 +695,32 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 큐 4 8-5 — 정산 탭 KPI (settlement 탭에서만 노출) --}}
     <div id="w-settlement" x-show="isWidgetVisible('w-settlement')" class="space-y-4">
-        {{-- 정산 KPI 카드 3종 --}}
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="card">
+        {{-- 정산 KPI 카드 3종 — flex-wrap으로 가로 배치 --}}
+        <div class="flex flex-wrap gap-3">
+            <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">정산 지급 대기 총액</span>
-                    <span class="text-xs text-amber-500">confirmed</span>
+                    <span class="text-xs text-amber-500">확정·미지급</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">
                     {{ number_format($this->settlementKpis['payout_pending']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">확정·미지급 정산 actual_payout 합계</p>
+                <p class="mt-1 text-[11px] text-gray-400">확정 상태 정산의 실지급액 합계</p>
             </div>
-            <div class="card">
+            <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">정산 마진율 평균</span>
-                    <span class="text-xs text-violet-500">paid 한정</span>
+                    <span class="text-xs text-violet-500">지급완료 한정</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-violet-600">
                     {{ number_format($this->settlementKpis['avg_margin_rate'] * 100, 1) }}<span class="ml-1 text-sm font-normal text-gray-500">%</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">총마진 / 판매금원화 평균</p>
             </div>
-            <div class="card">
+            <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">채널별 평균 마진</span>
-                    <span class="text-xs text-emerald-500">paid 한정</span>
+                    <span class="text-xs text-emerald-500">지급완료 한정</span>
                 </div>
                 <div class="mt-2 grid grid-cols-3 gap-1 text-center">
                     @foreach (['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $code => $label)
@@ -740,7 +742,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-3 h-72">
                 <canvas x-ref="settlementMonthlyCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">paid 상태 정산만 집계. 상위 8명 stacked. snapshot 우선 (retroactive 보정).</p>
+            <p class="mt-2 text-[11px] text-gray-400">지급완료 정산만 집계. 상위 8명 누적. 스냅샷 우선 (소급 보정 방지).</p>
         </div>
     </div>
 
@@ -794,21 +796,21 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 큐 4 8-6 — 채권 탭. 위험도 카운트 + 담당자/바이어 TOP 10 + receivables 화면 링크 --}}
     <div x-show="activeTab === 'receivable'" class="space-y-4">
-        {{-- 총 미수금 + 위험도 카운트 --}}
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-5">
-            <div class="card border-red-200 bg-red-50/30">
+        {{-- 총 미수금 + 위험도 카운트 5개 — flex-wrap (Tailwind 빌드 누락 대비) --}}
+        <div class="flex flex-wrap gap-3">
+            <div class="card min-w-[180px] flex-1 border-red-200 bg-red-50/30">
                 <div class="text-xs text-gray-500">총 미수금</div>
                 <div class="mt-1 text-2xl font-bold text-red-600">
                     {{ number_format($this->receivableKpis['total_unpaid']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">환율 미입력 외화 제외</p>
             </div>
-            @foreach (['safe' => ['안전', 'emerald'], 'caution' => ['주의', 'amber'], 'danger' => ['위험', 'orange'], 'critical' => ['심각', 'red']] as $key => [$label, $color])
+            @foreach (['safe' => ['안전', 'green'], 'caution' => ['주의', 'amber'], 'danger' => ['위험', 'amber'], 'critical' => ['심각', 'red']] as $key => [$label, $badge])
             <a href="{{ route('erp.receivables.index') }}?riskFilter={{ $key }}" wire:navigate
-               class="card transition hover:bg-gray-50">
+               class="card min-w-[160px] flex-1 transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">{{ $label }}</span>
-                    <span class="badge badge-{{ $color === 'emerald' ? 'green' : ($color === 'orange' ? 'amber' : $color) }}">{{ $key }}</span>
+                    <span class="badge badge-{{ $badge }}">{{ $label }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
             </a>
@@ -1018,9 +1020,9 @@ new #[Layout('components.layouts.app')] class extends Component
                             data: {
                                 labels: m.labels,
                                 datasets: [
-                                    { label: '매입',    data: m.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                                    { label: '판매',    data: m.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)' },
-                                    { label: '거래완료', data: m.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)' },
+                                    { label: '매입',    data: m.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)',  maxBarThickness: 20 },
+                                    { label: '판매',    data: m.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)',  maxBarThickness: 20 },
+                                    { label: '거래완료', data: m.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)',  maxBarThickness: 20 },
                                 ],
                             },
                             options: {
@@ -1068,9 +1070,11 @@ new #[Layout('components.layouts.app')] class extends Component
                     const c = this.$refs.settlementMonthlyCanvas;
                     if (!c) return;
                     if (this.charts.settlementMonthly) this.charts.settlementMonthly.destroy();
+                    // stacked bar의 각 dataset에 maxBarThickness 주입 (서버에서 못 보내므로 client에서)
+                    const stackedDatasets = s.monthly.datasets.map(d => ({ ...d, maxBarThickness: 32 }));
                     this.charts.settlementMonthly = new Chart(c, {
                         type: 'bar',
-                        data: { labels: s.monthly.labels, datasets: s.monthly.datasets },
+                        data: { labels: s.monthly.labels, datasets: stackedDatasets },
                         options: {
                             responsive: true, maintainAspectRatio: false,
                             plugins: {
@@ -1088,7 +1092,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     const s = this.chartData.salesman;
                     if (!s || !s.labels || s.labels.length === 0) return;
 
-                    // 담당자별 판매 대수 — horizontal bar
+                    // 담당자별 판매 대수 — horizontal bar (maxBarThickness로 두께 제한)
                     const c1 = this.$refs.salesmanCountCanvas;
                     if (c1) {
                         if (this.charts.salesmanCount) this.charts.salesmanCount.destroy();
@@ -1100,6 +1104,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     label: '판매 대수',
                                     data: s.sale_count,
                                     backgroundColor: 'rgba(139, 92, 246, 0.7)',
+                                    maxBarThickness: 28,
                                 }],
                             },
                             options: {
@@ -1123,6 +1128,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     label: '판매 금액 KRW',
                                     data: s.sale_total_krw,
                                     backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                                    maxBarThickness: 28,
                                 }],
                             },
                             options: {

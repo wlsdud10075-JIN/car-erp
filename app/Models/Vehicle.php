@@ -587,7 +587,7 @@ class Vehicle extends Model
             'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
-            'exchange_rate_missing',
+            'exchange_rate_missing', 'clearance_stuck',
         ];
         if (in_array($action, $activeOnly, true)) {
             $q->where('is_disposed', false)->where('dhl_request', false);
@@ -657,6 +657,18 @@ class Vehicle extends Model
             'dhl_dispatch_needed' => $q
                 ->where('sales_channel', 'export')
                 ->whereNotNull('bl_document'),
+
+            // 큐 4 8-7 — 통관 정체 (admin 대시보드 stuck_count와 SQL 100% 일치).
+            // 판매완료(unpaid<=0 OR NULL) + 수출신고서 NULL + sale_date 30일 경과.
+            'clearance_stuck' => $q
+                ->where('sales_channel', 'export')
+                ->where('sale_price', '>', 0)
+                ->where(fn ($q2) => $q2
+                    ->whereNull('sale_unpaid_amount_krw_cache')
+                    ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0))
+                ->whereNull('export_declaration_document')
+                ->whereNotNull('sale_date')
+                ->where('sale_date', '<=', now()->subDays(30)->toDateString()),
 
             // ── 정산 role (5) ──
             'exchange_rate_missing' => $q
