@@ -753,6 +753,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $previewVehicle->bl_loading_location = $this->bl_loading_location ?: null;
         $previewVehicle->bl_document = $this->bl_document_path ?: ($this->blDocFile ? 'pending' : null);
         $previewVehicle->dhl_request = $this->dhl_request;
+        $previewVehicle->is_export_cleared = $this->is_export_cleared;
         // sale_unpaid_amount accessor는 finalPayments/receivableHistories를 보지만, save 단계에선
         // 현재 form의 deposit/잔금 입력값으로 임시 계산. 단순화 — 미입금 잔존은 DB 저장 후 정확.
         // 여기선 ID 있는 차량의 기존 sale_unpaid 캐시를 활용해 1차 검증만.
@@ -767,6 +768,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
         $previewVehicle->guardStageOrderForExport();
+        $previewVehicle->guardAttachmentDeps();
 
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');

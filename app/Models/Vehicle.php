@@ -120,6 +120,43 @@ class Vehicle extends Model
         static::forceDeleted(function (Vehicle $vehicle) {
             Storage::disk('public')->deleteDirectory("vehicles/{$vehicle->id}");
         });
+
+        // H7 — soft-delete 후 restore 시 캐시 stale 가능. 복구 직후 재계산.
+        static::restored(function (Vehicle $vehicle) {
+            $vehicle->refreshCaches();
+        });
+    }
+
+    /**
+     * H1·H2 — 첨부/전제 조건 검증. 거래완료·통관완료로의 점프 차단.
+     * - H1: dhl_request=true 전환 시 bl_document 비어있으면 차단
+     * - H2: is_export_cleared=true 전환 시 export_declaration_document 비어있으면 차단
+     *
+     * 시드는 도메인 시뮬레이션이라 검증 우회 — vehicles/index::save()에서만 명시 호출.
+     * `is_disposed=true`(폐기) / 비-export 채널은 검증 우회.
+     */
+    public function guardAttachmentDeps(): void
+    {
+        if ($this->is_disposed) {
+            return;
+        }
+        if ($this->sales_channel !== 'export') {
+            return;
+        }
+
+        // H1 — DHL 발송 신청 시 B/L 문서 강제
+        if ($this->dhl_request && empty($this->bl_document)) {
+            throw ValidationException::withMessages([
+                'dhl_request' => 'B/L 문서 업로드 후에 DHL 발송 신청이 가능합니다.',
+            ]);
+        }
+
+        // H2 — 수출통관 완료 체크 시 수출신고서 강제
+        if ($this->is_export_cleared && empty($this->export_declaration_document)) {
+            throw ValidationException::withMessages([
+                'is_export_cleared' => '수출신고서 업로드 후에 통관 완료 처리가 가능합니다.',
+            ]);
+        }
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\FinalPayment;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -278,5 +279,136 @@ class WorkflowGapTest extends TestCase
             ['vehicle_number' => ['required', $rule]]
         );
         $this->assertTrue($validator->fails(), '활성 차량과 동일 번호 신규 등록은 Rule::unique로 차단돼야 함');
+    }
+
+    // ── H1 — DHL 발송 체크 시 B/L 첨부 강제 ────────────────────────────
+
+    public function test_h1_blocks_dhl_request_without_bl_document(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'dhl_request' => true,
+            // bl_document 비어있음
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('B/L 문서 업로드');
+        $v->guardAttachmentDeps();
+    }
+
+    public function test_h1_allows_dhl_request_with_bl_document(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'dhl_request' => true,
+            'bl_document' => 'bl.pdf',
+        ]);
+
+        $v->guardAttachmentDeps();
+        $this->assertTrue(true);
+    }
+
+    public function test_h1_skipped_for_non_export_channel(): void
+    {
+        // 헤이맨/카풀은 dhl 컬럼 사용 안 함. 검증 skip.
+        $v = new Vehicle([
+            'sales_channel' => 'heyman',
+            'dhl_request' => true,
+        ]);
+
+        $v->guardAttachmentDeps();
+        $this->assertTrue(true);
+    }
+
+    public function test_h1_h2_skipped_when_disposed(): void
+    {
+        $v = new Vehicle([
+            'is_disposed' => true,
+            'sales_channel' => 'export',
+            'dhl_request' => true,
+            'is_export_cleared' => true,
+        ]);
+
+        $v->guardAttachmentDeps();
+        $this->assertTrue(true);
+    }
+
+    // ── H2 — 수출통관 완료 체크 시 수출신고서 첨부 강제 ────────────────
+
+    public function test_h2_blocks_export_cleared_without_declaration_document(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'is_export_cleared' => true,
+            // export_declaration_document 비어있음
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('수출신고서 업로드');
+        $v->guardAttachmentDeps();
+    }
+
+    public function test_h2_allows_export_cleared_with_declaration_document(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_disposed' => false,
+            'is_export_cleared' => true,
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+
+        $v->guardAttachmentDeps();
+        $this->assertTrue(true);
+    }
+
+    // ── H7 — soft-delete 후 restore 시 캐시 재계산 ─────────────────────
+
+    public function test_h7_restore_refreshes_progress_cache(): void
+    {
+        $v = $this->makeVehicle([
+            'purchase_price' => 1000,
+            'down_payment' => 1000,
+        ]);
+        $expected = $v->progress_status_cache;
+
+        $v->delete(); // soft-delete
+
+        // 휴면 중 캐시 컬럼을 stale 값으로 변조 (외부 작업으로 stale 가능 시뮬레이션)
+        DB::table('vehicles')->where('id', $v->id)->update([
+            'progress_status_cache' => 'STALE',
+        ]);
+
+        $v->restore();
+        $v->refresh();
+
+        $this->assertSame($expected, $v->progress_status_cache);
+        $this->assertNotSame('STALE', $v->progress_status_cache);
+    }
+
+    public function test_h7_child_delete_refreshes_parent_cache(): void
+    {
+        // FinalPayment::deleted 핸들러는 기존 코드에 존재. 회귀 보호용 케이스.
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'deposit_down_payment' => 500,
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+        ]);
+        $fp = FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 500,
+            'payment_date' => '2026-05-01',
+        ]);
+        $v->refresh();
+        $this->assertSame(0, (int) $v->sale_unpaid_amount_krw_cache);
+
+        $fp->delete();
+        $v->refresh();
+
+        // 잔금 삭제 → 미입금 500 다시 발생 → 캐시 재계산
+        $this->assertSame(500, (int) $v->sale_unpaid_amount_krw_cache);
     }
 }
