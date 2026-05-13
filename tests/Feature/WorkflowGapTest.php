@@ -301,11 +301,15 @@ class WorkflowGapTest extends TestCase
 
     public function test_h1_allows_dhl_request_with_bl_document(): void
     {
+        // 큐 2.6 — H3·H4 캐스케이드 추가됨. 정상 경로는 모든 선행 단계 충족.
         $v = new Vehicle([
             'sales_channel' => 'export',
             'is_disposed' => false,
-            'dhl_request' => true,
+            'is_export_cleared' => true,
+            'export_declaration_document' => 'edoc.pdf',
+            'bl_loading_location' => '부산항',
             'bl_document' => 'bl.pdf',
+            'dhl_request' => true,
         ]);
 
         $v->guardAttachmentDeps();

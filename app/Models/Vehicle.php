@@ -131,9 +131,13 @@ class Vehicle extends Model
     }
 
     /**
-     * H1·H2 — 첨부/전제 조건 검증. 거래완료·통관완료로의 점프 차단.
+     * H1·H2 + 큐 2.6 — 첨부/전제 조건 + 단계 캐스케이드 검증.
+     * 11단계 v2 분류 규칙과 일치하는 UI save 게이트.
+     *
      * - H1: dhl_request=true 전환 시 bl_document 비어있으면 차단
      * - H2: is_export_cleared=true 전환 시 export_declaration_document 비어있으면 차단
+     * - 큐 2.6 H3: bl_document 업로드 시 bl_loading_location(반입지) 비어있으면 차단
+     * - 큐 2.6 H4: bl_loading_location 입력 시 is_export_cleared=false면 차단
      *
      * 시드는 도메인 시뮬레이션이라 검증 우회 — vehicles/index::save()에서만 명시 호출.
      * `is_disposed=true`(폐기) / 비-export 채널은 검증 우회.
@@ -147,17 +151,31 @@ class Vehicle extends Model
             return;
         }
 
+        // 큐 2.6 H4 — 선적 반입지 입력은 통관 완료 처리(체크박스) 후 (캐스케이드 가장 깊은 곳부터 검증)
+        if ($this->bl_loading_location && ! $this->is_export_cleared) {
+            throw ValidationException::withMessages([
+                'bl_loading_location' => '선적 반입지를 입력하려면 수출통관 완료 처리(체크박스)가 먼저 필요합니다.',
+            ]);
+        }
+
+        // 큐 2.6 H3 — B/L 문서는 반입지 입력 후
+        if ($this->bl_document && empty($this->bl_loading_location)) {
+            throw ValidationException::withMessages([
+                'bl_document' => 'B/L 문서를 업로드하려면 선적 반입지 입력이 먼저 필요합니다.',
+            ]);
+        }
+
         // H1 — DHL 발송 신청 시 B/L 문서 강제
         if ($this->dhl_request && empty($this->bl_document)) {
             throw ValidationException::withMessages([
-                'dhl_request' => 'B/L 문서 업로드 후에 DHL 발송 신청이 가능합니다.',
+                'dhl_request' => 'DHL 발송 신청을 하려면 B/L 문서 업로드가 먼저 필요합니다.',
             ]);
         }
 
         // H2 — 수출통관 완료 체크 시 수출신고서 강제
         if ($this->is_export_cleared && empty($this->export_declaration_document)) {
             throw ValidationException::withMessages([
-                'is_export_cleared' => '수출신고서 업로드 후에 통관 완료 처리가 가능합니다.',
+                'is_export_cleared' => '수출통관 완료 처리를 하려면 수출신고서 업로드가 먼저 필요합니다.',
             ]);
         }
     }
@@ -199,11 +217,19 @@ class Vehicle extends Model
         }
 
         // C5 — 판매 미입금 잔존 차단. cache 컬럼 우선 사용 (accessor 회피).
+        // 큐 2.6 — admin이 unpaid_export_overrides에 해당 stage 승인 레코드를 만들었으면 skip.
         $unpaidCache = $this->sale_unpaid_amount_krw_cache;
         if ($this->sale_price > 0 && $unpaidCache !== null && $unpaidCache > 0) {
-            throw ValidationException::withMessages([
-                'export_buyer_id' => '판매 미입금이 남은 차량은 통관 진입이 불가합니다. 입금 완료 후 진행하세요.',
-            ]);
+            $stage = $this->dhl_request
+                ? 'dhl'
+                : (($this->bl_loading_location || $this->bl_document) ? 'shipping' : 'clearance');
+
+            $hasOverride = $this->exists && $this->hasUnpaidOverride($stage);
+            if (! $hasOverride) {
+                throw ValidationException::withMessages([
+                    'export_buyer_id' => "판매 미입금이 남은 차량은 {$stage} 단계 진입이 불가합니다. 입금 완료 또는 관리자 승인(미입금 우회) 후 진행하세요.",
+                ]);
+            }
         }
     }
 

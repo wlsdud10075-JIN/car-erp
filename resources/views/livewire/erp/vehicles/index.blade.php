@@ -423,6 +423,42 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showPanel = true;
     }
 
+    // ── 큐 2.6 — admin 미입금 우회 승인 (per-stage append-only) ────────
+    public string $overrideStage = '';
+    public string $overrideReason = '';
+
+    public function approveUnpaidOverride(): void
+    {
+        abort_unless(auth()->user()?->canApproveUnpaidExport(), 403, '미입금 우회 승인 권한이 없습니다.');
+        abort_unless($this->editingId, 422, '차량을 먼저 저장한 뒤 승인할 수 있습니다.');
+
+        $this->validate(
+            [
+                'overrideStage' => ['required', Rule::in(['clearance', 'shipping', 'dhl'])],
+                'overrideReason' => ['required', 'string', 'min:20'],
+            ],
+            [],
+            ['overrideStage' => '단계', 'overrideReason' => '사유']
+        );
+
+        $v = Vehicle::findOrFail($this->editingId);
+
+        \App\Models\UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => $this->overrideStage,
+            'approved_by' => auth()->id(),
+            'reason' => $this->overrideReason,
+            'approved_at' => now(),
+            'ip_address' => request()->ip(),
+            'sale_unpaid_amount_snapshot' => $v->sale_unpaid_amount_krw_cache,
+        ]);
+
+        $this->overrideStage = '';
+        $this->overrideReason = '';
+
+        $this->dispatch('notify', message: '미입금 우회 승인 완료 — 해당 단계 진입 가능', type: 'success');
+    }
+
     public function openEdit(int $id): void
     {
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
@@ -1946,6 +1982,49 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         </div>
     </div>
+
+    {{-- 큐 2.6 — admin 미입금 우회 승인 (편집 모드 + 권한자 + 수출 채널) --}}
+    @if($editingId && auth()->user()?->canApproveUnpaidExport() && $sales_channel === 'export')
+    @php
+        $editingVehicle = \App\Models\Vehicle::with('unpaidExportOverrides')->find($editingId);
+        $existingOverrides = $editingVehicle?->unpaidExportOverrides ?? collect();
+        $unpaidKrw = $editingVehicle?->sale_unpaid_amount_krw_cache;
+    @endphp
+    <div class="border-t border-amber-200 bg-amber-50 px-5 py-3">
+        <div class="flex items-start gap-2">
+            <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
+            <div class="flex-1">
+                <p class="text-xs font-semibold text-amber-800">관리자 — 미입금 우회 승인</p>
+                <p class="mt-0.5 text-[11px] text-amber-700">
+                    미입금 잔존: {{ $unpaidKrw !== null ? number_format($unpaidKrw).' 원' : '없음' }}
+                    @if($existingOverrides->count() > 0)
+                    · 기존 승인 {{ $existingOverrides->count() }}건: {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
+                    @endif
+                </p>
+                <div class="mt-2 flex flex-wrap items-end gap-2">
+                    <div>
+                        <label class="block text-[10px] text-amber-700">단계</label>
+                        <select wire:model="overrideStage" class="input-filter">
+                            <option value="">선택</option>
+                            <option value="clearance">수출통관</option>
+                            <option value="shipping">선적</option>
+                            <option value="dhl">DHL</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="block text-[10px] text-amber-700">사유 (20자 이상)</label>
+                        <input wire:model="overrideReason" type="text" class="input-filter w-full"
+                               placeholder="예: 컨테이너 출항 일정상 강행. 잔금 5/20 입금 예정 확인됨." />
+                    </div>
+                    <button wire:click="approveUnpaidOverride" type="button"
+                            class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                        승인 기록
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- Panel Footer --}}
     <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
