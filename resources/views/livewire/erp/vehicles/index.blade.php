@@ -1326,6 +1326,23 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
     @endif
 
+    {{-- Validation 에러 박스 (guard 메서드 throw + Livewire validate 모두 표시) --}}
+    @if($errors->any())
+    <div class="border-b border-red-200 bg-red-50 px-5 py-3">
+        <div class="flex items-start gap-2">
+            <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="flex-1">
+                <p class="text-xs font-semibold text-red-700">저장할 수 없습니다 — 아래 항목을 확인하세요</p>
+                <ul class="mt-1 space-y-0.5 text-xs text-red-600">
+                    @foreach($errors->all() as $msg)
+                    <li>· {{ $msg }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        </div>
+    </div>
+    @endif
+
     {{-- Tab Nav --}}
     <div class="flex overflow-x-auto border-b border-gray-200 px-5">
         @foreach([
