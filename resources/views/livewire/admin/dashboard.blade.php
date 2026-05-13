@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Buyer;
+use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
@@ -117,6 +118,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->salesmanPerformance,
             $this->settlementKpis,
             $this->receivableKpis,
+            $this->clearanceKpis,
         );
         // 차트는 Alpine 인스턴스라 Livewire reactivity로 자동 갱신 안 됨 — 이벤트로 데이터 푸시.
         $this->dispatch('charts-refresh', data: [
@@ -434,6 +436,68 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 큐 4 8-7 — 통관 탭 대표급 KPI.
+     * 회의록 결정 3종 (평균 통관일수는 export_cleared_at 부재로 보류):
+     * 1) 통관 정체 차량 수 — 판매완료(sale_price>0 AND unpaid<=0) + sales_channel=export +
+     *    수출신고서 NULL + sale_date 30일 경과
+     * 2) 수출신고서 미업로드 차량 수 — 수출통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
+     * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
+     */
+    #[Computed]
+    public function clearanceKpis(): array
+    {
+        $stuckThresholdDays = 30;
+        $stuckDate = now()->subDays($stuckThresholdDays)->format('Y-m-d');
+
+        // 1) 통관 정체 — 판매완료(unpaid=0)인데 수출신고서 NULL이고 sale_date 30일 경과
+        $stuckCount = Vehicle::query()
+            ->where('sales_channel', 'export')
+            ->where('sale_price', '>', 0)
+            ->where(function ($q) {
+                $q->whereNull('sale_unpaid_amount_krw_cache')
+                  ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0);
+            })
+            ->whereNull('export_declaration_document')
+            ->whereNotNull('sale_date')
+            ->where('sale_date', '<=', $stuckDate)
+            ->count();
+
+        // 2) 수출신고서 미업로드 — 수출통관중 단계 (CLAUDE.md 11단계 #6 정의)
+        $unfiledCount = Vehicle::query()
+            ->where('sales_channel', 'export')
+            ->whereNotNull('export_buyer_id')
+            ->whereNotNull('shipping_date')
+            ->whereNull('export_declaration_document')
+            ->count();
+
+        // 3) 포워딩사별 진행 차량 — 통관/선적 단계 (4종 progress_status_cache)
+        $clearanceStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
+        $byForwarder = Vehicle::query()
+            ->where('sales_channel', 'export')
+            ->whereNotNull('forwarding_company_id')
+            ->whereIn('progress_status_cache', $clearanceStages)
+            ->selectRaw('forwarding_company_id, COUNT(*) as cnt')
+            ->groupBy('forwarding_company_id')
+            ->orderByDesc('cnt')
+            ->limit(5)
+            ->pluck('cnt', 'forwarding_company_id')
+            ->toArray();
+        $forwarderNames = ForwardingCompany::whereIn('id', array_keys($byForwarder))
+            ->pluck('name', 'id')->toArray();
+        $forwarderTop = [];
+        foreach ($byForwarder as $id => $cnt) {
+            $forwarderTop[] = ['name' => $forwarderNames[$id] ?? '#'.$id, 'count' => $cnt];
+        }
+
+        return [
+            'stuck_count' => $stuckCount,
+            'stuck_threshold_days' => $stuckThresholdDays,
+            'unfiled_count' => $unfiledCount,
+            'forwarder_top' => $forwarderTop,
+        ];
+    }
+
+    /**
      * 카드/뱃지 클릭 시 vehicles 목록으로 이동할 URL 빌더.
      * 모든 링크가 같은 dateFrom/dateTo + dateType 컨텍스트를 공유.
      * admin 'completed'는 vehicles에 존재 안 함 → 'bl'로 매핑 (B/L 발행일).
@@ -579,6 +643,52 @@ new #[Layout('components.layouts.app')] class extends Component
             :url-builder="fn (string $s) => $this->vehiclesUrl(['progressFilter' => $s])"
             title="진행 단계별 차량 수"
             :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
+    </div>
+
+    {{-- 큐 4 8-7 — 통관 탭 KPI (clearance 탭에서만 노출) --}}
+    <div id="w-clearance" x-show="isWidgetVisible('w-clearance')" class="space-y-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <a href="{{ $this->vehiclesUrl(['action' => 'clearance_needed']) }}" wire:navigate
+               class="card border-red-200 bg-red-50/30 transition hover:bg-red-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">통관 정체 차량</span>
+                    <span class="text-xs text-red-600">{{ $this->clearanceKpis['stuck_threshold_days'] }}일 경과</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-red-600">
+                    {{ number_format($this->clearanceKpis['stuck_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">판매완료·완납인데 수출신고서 미발급</p>
+            </a>
+            <a href="{{ $this->vehiclesUrl(['progressFilter' => '수출통관중']) }}" wire:navigate
+               class="card transition hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">수출신고서 미업로드</span>
+                    <span class="text-xs text-amber-500">수출통관중 단계</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-amber-600">
+                    {{ number_format($this->clearanceKpis['unfiled_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">통관 바이어·선적일 있지만 문서 NULL</p>
+            </a>
+            <div class="card">
+                <div class="section-header">
+                    <span class="section-dot bg-blue-500"></span>
+                    <span class="section-title">포워딩사 TOP 5 (통관·선적 진행)</span>
+                </div>
+                @if (empty($this->clearanceKpis['forwarder_top']))
+                <p class="mt-3 text-sm text-gray-400">진행 차량 없음</p>
+                @else
+                <ul class="mt-2 space-y-1 text-xs">
+                @foreach ($this->clearanceKpis['forwarder_top'] as $row)
+                    <li class="flex items-center justify-between">
+                        <span class="text-gray-700">{{ $row['name'] }}</span>
+                        <span class="font-mono font-semibold text-blue-600">{{ $row['count'] }}대</span>
+                    </li>
+                @endforeach
+                </ul>
+                @endif
+            </div>
+        </div>
     </div>
 
     {{-- 큐 4 8-5 — 정산 탭 KPI (settlement 탭에서만 노출) --}}
@@ -835,16 +945,16 @@ new #[Layout('components.layouts.app')] class extends Component
                     { key: 'w-monthly',    label: '월별 차트 (대수·판매가)' },
                     { key: 'w-salesman',   label: '담당자별 성과 차트' },
                     { key: 'w-settlement', label: '정산 KPI (지급액·마진)' },
+                    { key: 'w-clearance',  label: '통관 KPI (정체·미업로드·포워딩사)' },
                 ],
-                // 큐 4 8-4 — role 탭. 탭별 노출 가능 위젯 목록 (위젯 토글과 AND 결합)
-                // 큐 4 8-5·8-8 — w-monthly는 영업/전체 한정, w-settlement는 정산 탭 전용
+                // 큐 4 8-4·8-5·8-7·8-8 — 탭별 노출 위젯 매핑
                 activeTab: 'all',
                 tabWidgets: {
                     all:        ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
                     sales:      ['w-kpi', 'w-channel', 'w-monthly', 'w-salesman'],
-                    clearance:  ['w-kpi', 'w-channel', 'w-progress'],
+                    clearance:  ['w-kpi', 'w-progress', 'w-clearance'],
                     settlement: ['w-kpi', 'w-settlement'],
-                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6에서 보강)
+                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6 완료)
                 },
                 chartData: {
                     monthly: @js($this->monthlyChartData),

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
@@ -592,5 +593,128 @@ class AdminDashboardTest extends TestCase
         $this->assertSame(2, $data['risk_counts']['caution']);
         $this->assertSame(0, $data['risk_counts']['danger']);
         $this->assertSame(1, $data['risk_counts']['critical']);
+    }
+
+    // ── 8-7: 통관 탭 KPI ──────────────────────────────────────────────
+
+    public function test_clearance_kpis_counts_stuck_vehicles_after_30_days(): void
+    {
+        $this->actingAs($this->admin());
+
+        $oldSaleDate = now()->subDays(35)->format('Y-m-d');
+        $recentSaleDate = now()->subDays(10)->format('Y-m-d');
+
+        // 정체 — 30일 경과 + 수출신고서 NULL + 완납
+        $v1 = $this->makeVehicle([
+            'sales_channel' => 'export', 'sale_price' => 1000,
+            'sale_date' => $oldSaleDate, 'export_declaration_document' => null,
+        ]);
+        $this->setReceivableCache($v1, 0, 'safe');
+        // 정체 아님 — 10일밖에 안 됐음
+        $v2 = $this->makeVehicle([
+            'sales_channel' => 'export', 'sale_price' => 1000,
+            'sale_date' => $recentSaleDate, 'export_declaration_document' => null,
+        ]);
+        $this->setReceivableCache($v2, 0, 'safe');
+        // 정체 아님 — 수출신고서 이미 있음
+        $v3 = $this->makeVehicle([
+            'sales_channel' => 'export', 'sale_price' => 1000,
+            'sale_date' => $oldSaleDate, 'export_declaration_document' => 'edoc.pdf',
+        ]);
+        $this->setReceivableCache($v3, 0, 'safe');
+        // 정체 아님 — 미입금
+        $v4 = $this->makeVehicle([
+            'sales_channel' => 'export', 'sale_price' => 1000,
+            'sale_date' => $oldSaleDate, 'export_declaration_document' => null,
+        ]);
+        $this->setReceivableCache($v4, 500, 'caution');
+        // 정체 아님 — 헤이맨 채널 (수출 아님)
+        $v5 = $this->makeVehicle([
+            'sales_channel' => 'heyman', 'sale_price' => 1000,
+            'sale_date' => $oldSaleDate,
+        ]);
+        $this->setReceivableCache($v5, 0, 'safe');
+
+        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+
+        $this->assertSame(1, $data['stuck_count']);
+        $this->assertSame(30, $data['stuck_threshold_days']);
+    }
+
+    public function test_clearance_kpis_counts_unfiled_in_clearance_stage(): void
+    {
+        $this->actingAs($this->admin());
+
+        $buyer = Buyer::create(['name' => '바이어', 'is_active' => true, 'country_id' => null]);
+
+        // 수출통관중 단계 — buyer + shipping_date + doc NULL
+        $this->makeVehicle([
+            'sales_channel' => 'export',
+            'export_buyer_id' => $buyer->id,
+            'shipping_date' => '2026-05-20',
+            'export_declaration_document' => null,
+        ]);
+        // 미카운트 — 문서 이미 있음
+        $this->makeVehicle([
+            'sales_channel' => 'export',
+            'export_buyer_id' => $buyer->id,
+            'shipping_date' => '2026-05-20',
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+        // 미카운트 — shipping_date NULL
+        $this->makeVehicle([
+            'sales_channel' => 'export',
+            'export_buyer_id' => $buyer->id,
+            'shipping_date' => null,
+        ]);
+
+        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+
+        $this->assertSame(1, $data['unfiled_count']);
+    }
+
+    public function test_clearance_kpis_forwarder_top_groups_by_progress_stage(): void
+    {
+        $this->actingAs($this->admin());
+
+        $f1 = ForwardingCompany::create(['name' => 'A포워딩', 'is_active' => true]);
+        $f2 = ForwardingCompany::create(['name' => 'B포워딩', 'is_active' => true]);
+
+        // A포워딩 — 수출통관중 2 + 선적완료 1 = 3
+        for ($i = 0; $i < 2; $i++) {
+            DB::table('vehicles')->insert([
+                'vehicle_number' => 'AF-'.$i, 'sales_channel' => 'export', 'currency' => 'KRW',
+                'is_disposed' => 0, 'dhl_request' => 0,
+                'forwarding_company_id' => $f1->id, 'progress_status_cache' => '수출통관중',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+        DB::table('vehicles')->insert([
+            'vehicle_number' => 'AF-S', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => 0, 'dhl_request' => 0,
+            'forwarding_company_id' => $f1->id, 'progress_status_cache' => '선적완료',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        // B포워딩 — 선적중 1
+        DB::table('vehicles')->insert([
+            'vehicle_number' => 'BF-1', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => 0, 'dhl_request' => 0,
+            'forwarding_company_id' => $f2->id, 'progress_status_cache' => '선적중',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        // 미카운트 — 매입중 단계 (통관·선적 아님)
+        DB::table('vehicles')->insert([
+            'vehicle_number' => 'BF-X', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'is_disposed' => 0, 'dhl_request' => 0,
+            'forwarding_company_id' => $f2->id, 'progress_status_cache' => '매입중',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $data = Volt::test('admin.dashboard')->get('clearanceKpis');
+
+        $this->assertSame('A포워딩', $data['forwarder_top'][0]['name']);
+        $this->assertSame(3, $data['forwarder_top'][0]['count']);
+        $this->assertSame('B포워딩', $data['forwarder_top'][1]['name']);
+        $this->assertSame(1, $data['forwarder_top'][1]['count']);
     }
 }
