@@ -37,14 +37,19 @@ return new class extends Migration
             ]);
         });
 
-        // (3) enum 축소. MySQL/MariaDB 양쪽 호환되는 raw SQL.
-        DB::statement("ALTER TABLE vehicles MODIFY COLUMN sales_channel ENUM('export') NOT NULL DEFAULT 'export'");
+        // (3) enum 축소. MySQL/MariaDB는 ALTER MODIFY, SQLite는 ENUM 미지원이라 skip.
+        // (SQLite는 컬럼이 TEXT로 생성됐고 CHECK 제약도 없어 enum 축소 의미 없음)
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE vehicles MODIFY COLUMN sales_channel ENUM('export') NOT NULL DEFAULT 'export'");
+        }
     }
 
     public function down(): void
     {
-        // enum 복원 (heyman/carpul 추가)
-        DB::statement("ALTER TABLE vehicles MODIFY COLUMN sales_channel ENUM('export','heyman','carpul') NOT NULL DEFAULT 'export'");
+        // enum 복원 (heyman/carpul 추가) — MySQL에서만
+        if (DB::connection()->getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE vehicles MODIFY COLUMN sales_channel ENUM('export','heyman','carpul') NOT NULL DEFAULT 'export'");
+        }
 
         // 컬럼 복원 (데이터는 NULL — 복구 불가)
         Schema::table('vehicles', function (Blueprint $table) {

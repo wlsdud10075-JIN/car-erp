@@ -44,9 +44,8 @@ class SettlementDemoSeeder extends Seeder
                 'transport_fee' => $v->transport_fee,
                 'purchase_price' => $v->purchase_price,
                 'cost_total' => $v->cost_total ?? 0,
-                'sales_amount_krw' => $v->sales_channel === 'export'
-                    ? (int) (($v->export_declaration_amount - ($v->transport_fee ?? 0)) * ($v->exchange_rate ?? 0))
-                    : (int) (($v->sale_price ?? 0) * ($v->exchange_rate ?: 1)),
+                // 큐 16 — sales_channel 단일화 → 면장금액 기반 공식만 사용
+                'sales_amount_krw' => (int) (($v->export_declaration_amount - ($v->transport_fee ?? 0)) * ($v->exchange_rate ?? 0)),
                 'settlement_sales_krw' => 0,  // 아래서 채움
                 'sales_margin' => 0,
                 'vat_margin' => (int) (($v->purchase_price ?? 0) * 0.09),

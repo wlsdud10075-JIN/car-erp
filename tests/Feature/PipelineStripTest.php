@@ -168,24 +168,8 @@ class PipelineStripTest extends TestCase
         $this->assertSame('pending', $flow[6]['status']); // DHL
     }
 
-    public function test_progress_flow_disables_export_only_nodes_for_heyman_channel(): void
-    {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
-        $this->actingAs($admin);
-
-        $v = $this->makeVehicle([
-            'sales_channel' => 'heyman',
-            'purchase_price' => 1000, 'down_payment' => 1000,
-            'sale_price' => 1000, 'deposit_down_payment' => 1000,
-        ]);
-
-        $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
-        $flow = $component->get('progressFlow');
-
-        $this->assertSame('disabled', $flow[4]['status']); // 통관
-        $this->assertSame('disabled', $flow[5]['status']); // 선적
-        $this->assertSame('disabled', $flow[6]['status']); // DHL
-    }
+    // 큐 16 — test_progress_flow_disables_export_only_nodes_for_heyman_channel 삭제
+    // (단일 채널화로 채널 disabled 분기 자체 제거)
 
     public function test_progress_flow_warns_on_unpaid_sale(): void
     {
@@ -205,22 +189,23 @@ class PipelineStripTest extends TestCase
 
     // ── 큐 6 H13 — reason 키 ───────────────────────────────────────────
 
-    public function test_progress_flow_reason_is_null_for_done_and_disabled(): void
+    public function test_progress_flow_reason_is_null_for_done_and_disposed(): void
     {
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
         $this->actingAs($admin);
 
-        // 매입 done + 헤이맨 채널 (통관/선적/DHL = disabled)
+        // 큐 16 — 채널 disabled 분기 사라짐 → disposed로 disabled 검증.
+        // 매입 done + is_disposed=true (전 단계 disabled)
         $v = $this->makeVehicle([
-            'sales_channel' => 'heyman',
             'purchase_price' => 1000, 'down_payment' => 1000,
+            'is_disposed' => true,
         ]);
 
         $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
         $flow = $component->get('progressFlow');
 
-        $this->assertNull($flow[0]['reason']);  // 매입 done
-        $this->assertNull($flow[4]['reason']);  // 통관 disabled (heyman)
+        $this->assertSame('disabled', $flow[4]['status']);
+        $this->assertNull($flow[4]['reason']);  // 통관 disabled
         $this->assertNull($flow[5]['reason']);  // 선적 disabled
         $this->assertNull($flow[6]['reason']);  // DHL disabled
     }

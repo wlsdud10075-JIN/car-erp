@@ -444,12 +444,12 @@ class DatabaseSeeder extends Seeder
                 'dhl_weight' => 1.5,
                 'dhl_dimensions' => '30x20x10',
             ],
-            // 11. 헤이맨 채널 (국내)
+            // 11. 큐 16 — 헤이맨 채널 → export 단일화
             [
                 'vehicle_number' => '66카1011',
                 'brand' => '현대', 'model_type' => '아반떼', 'year' => 2020,
                 'cc' => 1591, 'weight_kg' => 1270, 'mileage' => 42000, 'color' => '흰색',
-                'sales_channel' => 'heyman',
+                'sales_channel' => 'export',
                 'purchase_date' => '2026-04-01', 'salesman_id' => $sm2?->id,
                 'purchase_from' => '경매 낙찰',
                 'purchase_price' => 11000000, 'selling_fee' => 300000,

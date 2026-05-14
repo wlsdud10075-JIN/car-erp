@@ -61,13 +61,8 @@ class DashboardActionCountsTest extends TestCase
         $this->assertSame(2, Vehicle::action('sale_unpaid')->count());
     }
 
-    public function test_clearance_needed_isolates_export_channel_only(): void
-    {
-        $this->makeVehicle(['sales_channel' => 'heyman', 'sale_price' => 1000, 'deposit_down_payment' => 1000]);
-        $this->makeVehicle(['sales_channel' => 'export', 'sale_price' => 1000, 'deposit_down_payment' => 1000]);
-
-        $this->assertSame(1, Vehicle::action('clearance_needed')->count());
-    }
+    // 큐 16 — test_clearance_needed_isolates_export_channel_only 삭제
+    // (채널 단일화로 isolation 자동 보장)
 
     public function test_shipping_needed_requires_export_declaration_without_bl(): void
     {

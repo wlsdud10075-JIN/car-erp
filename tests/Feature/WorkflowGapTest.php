@@ -50,28 +50,8 @@ class WorkflowGapTest extends TestCase
         ], $overrides));
     }
 
-    // ── C3 — progress_status 채널 분기 ──────────────────────────────
-
-    public function test_c3_export_only_stages_skipped_for_heyman_channel(): void
-    {
-        // 헤이맨 차량에 export·bl·dhl 컬럼이 잔존해도 통관·선적·DHL 단계로 점프 안 함.
-        // 새 Vehicle 인스턴스에 in-memory 속성 set → progress_status accessor만 평가 (DB 저장 X).
-        $v = new Vehicle([
-            'sales_channel' => 'heyman',
-            'is_disposed' => false, 'dhl_request' => false,
-            'sale_price' => 1000, 'deposit_down_payment' => 1000,
-            'shipping_date' => '2026-05-01',
-            'export_declaration_document' => 'edoc.pdf',
-            'bl_loading_location' => '부산항', 'bl_document' => 'bl.pdf',
-        ]);
-        // export_buyer_id는 fillable이 아닐 수도 — 별도 set
-        $v->setRawAttributes(array_merge($v->getAttributes(), [
-            'export_buyer_id' => 1,
-            'sale_unpaid_amount_krw_cache' => 0,
-        ]));
-
-        $this->assertSame('판매완료', $v->progress_status);
-    }
+    // 큐 16 — test_c3_export_only_stages_skipped_for_heyman_channel 삭제
+    // (채널 단일화로 채널별 progress_status 분기 자체 제거)
 
     public function test_c3_export_channel_still_evaluates_export_stages(): void
     {
@@ -157,18 +137,7 @@ class WorkflowGapTest extends TestCase
         $this->assertTrue(true);
     }
 
-    public function test_c4_c5_skipped_for_non_export_channel(): void
-    {
-        $v = new Vehicle([
-            'sales_channel' => 'heyman',
-            'is_deregistered' => false,
-            'sale_price' => 1000,
-            'export_buyer_id' => 1,
-        ]);
-
-        $v->guardStageOrderForExport();
-        $this->assertTrue(true);
-    }
+    // 큐 16 — test_c4_c5_skipped_for_non_export_channel 삭제 (단일 채널화)
 
     public function test_c4_c5_skipped_when_disposed(): void
     {
@@ -321,17 +290,7 @@ class WorkflowGapTest extends TestCase
         $this->assertTrue(true);
     }
 
-    public function test_h1_skipped_for_non_export_channel(): void
-    {
-        // 헤이맨/카풀은 dhl 컬럼 사용 안 함. 검증 skip.
-        $v = new Vehicle([
-            'sales_channel' => 'heyman',
-            'dhl_request' => true,
-        ]);
-
-        $v->guardAttachmentDeps();
-        $this->assertTrue(true);
-    }
+    // 큐 16 — test_h1_skipped_for_non_export_channel 삭제 (단일 채널화)
 
     public function test_h1_h2_skipped_when_disposed(): void
     {
@@ -562,19 +521,7 @@ class WorkflowGapTest extends TestCase
         $v->guardAttachmentDeps();
     }
 
-    public function test_q26_v2_skipped_for_heyman_channel(): void
-    {
-        // 헤이맨은 v2 규칙도 export 단계 평가 안 함 — 채널 격리 유지.
-        $v = $this->makeVehicle([
-            'progress_status_rule_version' => 2,
-            'sales_channel' => 'heyman',
-            'sale_price' => 1000, 'deposit_down_payment' => 1000,
-            'export_declaration_document' => 'edoc.pdf',
-            'is_export_cleared' => true,
-        ]);
-
-        $this->assertSame('판매완료', $v->progress_status);
-    }
+    // 큐 16 — test_q26_v2_skipped_for_heyman_channel 삭제 (단일 채널화)
 
     public function test_q26_unpaid_override_allows_export_entry_for_admin(): void
     {

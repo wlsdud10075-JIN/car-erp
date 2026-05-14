@@ -123,7 +123,7 @@ class VehicleSeeder extends Seeder
         $this->upsert([
             'vehicle_number' => '10라1004', 'brand' => '현대', 'model_type' => '싼타페',
             'year' => 2021, 'cc' => 2199, 'weight_kg' => 1910, 'mileage' => 31000, 'color' => '파랑',
-            'sales_channel' => 'heyman', 'purchase_date' => '2026-05-06', 'salesman_id' => $sm3?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-05-06', 'salesman_id' => $sm3?->id,
             'purchase_from' => '법인 매입',
         ]);
         $this->upsert([
@@ -163,7 +163,7 @@ class VehicleSeeder extends Seeder
         $this->upsert([
             'vehicle_number' => '20라2004', 'brand' => '르노', 'model_type' => 'QM6',
             'year' => 2020, 'cc' => 1999, 'weight_kg' => 1670, 'mileage' => 55000, 'color' => '흰색',
-            'sales_channel' => 'heyman', 'purchase_date' => '2026-04-22', 'salesman_id' => $sm1?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-04-22', 'salesman_id' => $sm1?->id,
             'purchase_from' => '개인 매입',
             'purchase_price' => 14500000, 'selling_fee' => 400000,
             'down_payment' => 14500000, 'selling_fee_payment' => 400000,
@@ -171,7 +171,7 @@ class VehicleSeeder extends Seeder
         $this->upsert([
             'vehicle_number' => '20마2005', 'brand' => '기아', 'model_type' => '셀토스',
             'year' => 2022, 'cc' => 1598, 'weight_kg' => 1430, 'mileage' => 22000, 'color' => '빨강',
-            'sales_channel' => 'carpul', 'purchase_date' => '2026-04-25', 'salesman_id' => $sm2?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-04-25', 'salesman_id' => $sm2?->id,
             'purchase_from' => '경매 낙찰',
             'purchase_price' => 19000000, 'selling_fee' => 500000,
             'down_payment' => 19000000, 'selling_fee_payment' => 500000,
@@ -184,7 +184,7 @@ class VehicleSeeder extends Seeder
             ['30가3001', '현대', '팰리세이드', 2021, 2199, 2060, 48000, '검정', 'export', '2026-04-05', $sm1, 21000000, 600000],
             ['30나3002', '기아', '스포티지',   2020, 1591, 1545, 61000, '회색', 'export', '2026-04-02', $sm2, 15000000, 420000],
             ['30다3003', '쌍용', '티볼리',     2021, 1497, 1290, 37000, '흰색', 'export', '2026-04-08', $sm3, 13500000, 380000],
-            ['30라3004', '현대', '아반떼',     2021, 1591, 1270, 29000, '파랑', 'carpul', '2026-04-10', $sm1, 16000000, 450000],
+            ['30라3004', '현대', '아반떼',     2021, 1591, 1270, 29000, '파랑', 'export', '2026-04-10', $sm1, 16000000, 450000],
         ] as [$no, $brand, $model, $year, $cc, $kg, $km, $color, $ch, $pdate, $sm, $pp, $sf]) {
             $this->upsert([
                 'vehicle_number' => $no, 'brand' => $brand, 'model_type' => $model,
@@ -270,7 +270,7 @@ class VehicleSeeder extends Seeder
         $v18 = $this->upsert([
             'vehicle_number' => '40라4004', 'brand' => '기아', 'model_type' => 'K5',
             'year' => 2021, 'cc' => 1591, 'weight_kg' => 1380, 'mileage' => 38000, 'color' => '흰색',
-            'sales_channel' => 'heyman', 'purchase_date' => '2026-03-25', 'salesman_id' => $sm1?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-03-25', 'salesman_id' => $sm1?->id,
             'purchase_from' => '경매 낙찰',
             'purchase_price' => 16000000, 'selling_fee' => 400000,
             'down_payment' => 16000000, 'selling_fee_payment' => 400000,
@@ -291,7 +291,7 @@ class VehicleSeeder extends Seeder
         $v19 = $this->upsert([
             'vehicle_number' => '40마4005', 'brand' => '현대', 'model_type' => '아반떼',
             'year' => 2022, 'cc' => 1591, 'weight_kg' => 1270, 'mileage' => 18000, 'color' => '파랑',
-            'sales_channel' => 'carpul', 'purchase_date' => '2026-03-28', 'salesman_id' => $sm2?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-03-28', 'salesman_id' => $sm2?->id,
             'purchase_from' => '개인 매입',
             'purchase_price' => 18500000, 'selling_fee' => 500000,
             'down_payment' => 18500000, 'selling_fee_payment' => 500000,
@@ -299,7 +299,7 @@ class VehicleSeeder extends Seeder
             'sale_date' => '2026-04-08',
             'currency' => 'KRW', 'exchange_rate' => 1,
             'buyer_id' => $carpul?->id,
-            'sale_price' => 22500000, 'agency_fee' => 500000,
+            'sale_price' => 22500000,
             'deposit_down_payment' => 7000000,
         ]);
         FinalPayment::updateOrCreate(
@@ -345,7 +345,7 @@ class VehicleSeeder extends Seeder
         $this->upsert([
             'vehicle_number' => '40아4008', 'brand' => '기아', 'model_type' => 'K7',
             'year' => 2020, 'cc' => 2497, 'weight_kg' => 1620, 'mileage' => 62000, 'color' => '검정',
-            'sales_channel' => 'heyman', 'purchase_date' => '2026-03-12', 'salesman_id' => $sm2?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-03-12', 'salesman_id' => $sm2?->id,
             'purchase_from' => '법인 매입',
             'purchase_price' => 15000000, 'selling_fee' => 420000,
             'down_payment' => 15000000, 'selling_fee_payment' => 420000,
@@ -390,7 +390,7 @@ class VehicleSeeder extends Seeder
         $v24 = $this->upsert([
             'vehicle_number' => '50나5002', 'brand' => '기아', 'model_type' => '스포티지',
             'year' => 2022, 'cc' => 1598, 'weight_kg' => 1545, 'mileage' => 22000, 'color' => '빨강',
-            'sales_channel' => 'heyman', 'purchase_date' => '2026-02-05', 'salesman_id' => $sm2?->id,
+            'sales_channel' => 'export', 'purchase_date' => '2026-02-05', 'salesman_id' => $sm2?->id,
             'purchase_from' => '기아직영',
             'purchase_price' => 21000000, 'selling_fee' => 580000,
             'down_payment' => 21000000, 'selling_fee_payment' => 580000,

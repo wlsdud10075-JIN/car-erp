@@ -461,39 +461,8 @@ class AdminDashboardTest extends TestCase
         $this->assertEqualsWithDelta(0.15, $data['avg_margin_rate'], 0.001);
     }
 
-    public function test_settlement_kpis_channel_avg_margin_groups_by_vehicle_channel(): void
-    {
-        $this->actingAs($this->admin());
-
-        $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
-        $vExport = $this->makeVehicle(['sales_channel' => 'export']);
-        $vHeyman = $this->makeVehicle(['sales_channel' => 'heyman']);
-
-        Settlement::create([
-            'vehicle_id' => $vExport->id, 'salesman_id' => $a->id,
-            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
-            'other_deduction' => 0, 'settlement_status' => 'paid',
-            'paid_at' => '2026-05-10', 'confirmed_at' => '2026-05-10',
-            'confirmed_snapshot' => ['total_margin' => 5000000, 'sales_amount_krw' => 20000000],
-        ]);
-        Settlement::create([
-            'vehicle_id' => $vHeyman->id, 'salesman_id' => $a->id,
-            'settlement_type' => 'per_unit', 'per_unit_amount' => 1,
-            'other_deduction' => 0, 'settlement_status' => 'paid',
-            'paid_at' => '2026-05-12', 'confirmed_at' => '2026-05-12',
-            'confirmed_snapshot' => ['total_margin' => 1000000, 'sales_amount_krw' => 8000000],
-        ]);
-
-        $data = Volt::test('admin.dashboard')
-            ->set('dateFrom', '2026-05-01')
-            ->set('dateTo', '2026-05-31')
-            ->call('applyFilters')
-            ->get('settlementKpis');
-
-        $this->assertSame(5000000, $data['channel_avg_margin']['export']);
-        $this->assertSame(1000000, $data['channel_avg_margin']['heyman']);
-        $this->assertSame(0, $data['channel_avg_margin']['carpul']);
-    }
+    // 큐 16 — test_settlement_kpis_channel_avg_margin_groups_by_vehicle_channel 삭제
+    // (채널 단일화로 channel_avg_margin 기능 자체 제거)
 
     // ── 8-6: 채권 탭 미수금 TOP ───────────────────────────────────────
 
@@ -658,12 +627,7 @@ class AdminDashboardTest extends TestCase
             'sale_date' => $oldSaleDate, 'export_declaration_document' => null,
         ]);
         $this->setReceivableCache($v4, 500, 'caution');
-        // 정체 아님 — 헤이맨 채널 (수출 아님)
-        $v5 = $this->makeVehicle([
-            'sales_channel' => 'heyman', 'sale_price' => 1000,
-            'sale_date' => $oldSaleDate,
-        ]);
-        $this->setReceivableCache($v5, 0, 'safe');
+        // 큐 16 — v5 (heyman 채널) 픽스처 제거 (단일 채널화).
 
         // dateFrom 비움 — 시드 차량 purchase_date NULL/과거라 default 필터에서 제외되는 회귀 방지
         $data = Volt::test('admin.dashboard')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->get('clearanceKpis');

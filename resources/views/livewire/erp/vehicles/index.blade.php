@@ -1368,7 +1368,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $status === '폐기'                                 => 'badge-red',
                     default                                            => 'badge-gray',
                 };
-                {{-- 큐 16 — channelBadge/Label match 제거 (단일 채널) --}}
+                // 큐 16 — channelBadge/Label match 제거 (단일 채널)
             @endphp
             @php $unpaidRatio = $v->unpaid_ratio; @endphp
             <tr class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
