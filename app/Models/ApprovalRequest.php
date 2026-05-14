@@ -14,11 +14,13 @@ class ApprovalRequest extends Model
         'target_type', 'target_id',
         'action_type', 'payload',
         'status', 'reason', 'decision_note', 'decided_at',
+        'used_at',
     ];
 
     protected $casts = [
         'payload' => 'array',
         'decided_at' => 'datetime',
+        'used_at' => 'datetime',
     ];
 
     // 4 액션 타입 (회의록 v5.1 §9-2)
@@ -98,11 +100,21 @@ class ApprovalRequest extends Model
             AuditLog::withApprovalRequest($this->id, function () {
                 match ($this->action_type) {
                     self::TYPE_SETTLEMENT_PAY => $this->executeSettlementPay(),
-                    // 큐 14-4-3 sensitive_action / 14-4-4 inter_buyer_overlap 케이스는 후속 단계에 추가.
+                    self::TYPE_INTER_BUYER_OVERLAP => $this->executeInterBuyerOverlap(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
                 };
             });
         });
+    }
+
+    /**
+     * 큐 14-4-4 — inter_buyer_overlap 승인은 no-op.
+     * 실제 액션은 영업이 다음 차량 등록 시도 시 Vehicle::guardSameBuyerOverlap()에서
+     * 이 승인을 발견 → used_at 마킹 + 통과. execute()는 호출만 안전.
+     */
+    private function executeInterBuyerOverlap(): void
+    {
+        // approve 자체가 영업의 다음 차량 등록을 허용하는 신호. 추가 액션 없음.
     }
 
     private function executeSettlementPay(): void

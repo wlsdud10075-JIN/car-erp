@@ -41,12 +41,14 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
 });
 
-// 관리자 — super/admin만
-// TODO: 추후 receivable role 신설 시 'receivables'는 별도 그룹으로 분리하고
-//       'receivable' 미들웨어를 적용 (현재는 admin 권한으로만 운영)
+// 관리자 — super/admin만 (포워딩사·영업담당자)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');
     Volt::route('salesmen', 'erp.salesmen.index')->name('salesmen.index');
+});
+
+// 채권관리 — admin + 정산/관리 role (큐 14-2 보강: 채권 위험 모니터링 광범위 허용)
+Route::middleware(['auth', 'verified', 'receivable'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('receivables', 'erp.receivables.index')->name('receivables.index');
 });
 

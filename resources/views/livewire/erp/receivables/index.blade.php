@@ -44,9 +44,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        // TODO: receivable role 신설 시 canAccessReceivable() 검증으로 전환.
-        //       현재는 admin 단독 접근 정책 (CLAUDE.md 9단계 결정사항 #5).
-        if (! auth()->user()?->canAccessAdmin()) {
+        // 큐 14-2 보강 — admin + 정산/관리 role 접근 허용 (모니터링 광범위 + 회수 책임자).
+        if (! auth()->user()?->canViewReceivables()) {
             abort(403, '채권관리에 접근할 권한이 없습니다.');
         }
 
@@ -398,8 +397,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     // 큐 16 — sales_channel 단일 (export) → exportBuyer 우선, fallback buyer.
                     $primaryBuyer = $v->exportBuyer ?? $v->buyer;
                 @endphp
-                <tr class="cursor-pointer border-b border-gray-100 {{ $rowBg }} hover:bg-violet-50"
-                    wire:click="openPanel({{ $v->id }})">
+                {{-- 큐 14-2 보강 — vehicles와 동일한 미납 게이지 + 호버 툴팁 (data-* 속성으로 JS 자동 처리) --}}
+                @php $gaugeRatio = $v->unpaid_ratio; @endphp
+                <tr class="cursor-pointer border-b border-gray-100 {{ $gaugeRatio === null ? $rowBg : '' }} hover:bg-violet-50"
+                    wire:click="openPanel({{ $v->id }})"
+                    @if($gaugeRatio !== null)
+                        data-ratio="{{ number_format($gaugeRatio, 6, '.', '') }}"
+                        data-unpaid="{{ (int) round($v->sale_unpaid_amount) }}"
+                        data-total="{{ (int) round($v->sale_total_amount) }}"
+                        data-currency="{{ $v->currency }}"
+                    @endif>
                     <td class="py-2 pr-3 text-gray-500">{{ $v->id }}</td>
                     <td class="py-2 pr-3 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
@@ -443,7 +450,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $unpaidRatio = $v->sale_total_amount > 0
                 ? round(($v->sale_unpaid_amount / $v->sale_total_amount) * 100, 1)
                 : 0;
-            $primaryBuyer = $channel === 'export' ? ($v->exportBuyer ?? $v->buyer) : $v->buyer;
+            // 큐 16 — sales_channel 단일 (export) → exportBuyer 우선, fallback buyer.
+            $primaryBuyer = $v->exportBuyer ?? $v->buyer;
         @endphp
         <div wire:click="openPanel({{ $v->id }})"
              class="cursor-pointer rounded-lg border px-3 py-3 transition hover:bg-violet-50 {{ $rowBg }}">

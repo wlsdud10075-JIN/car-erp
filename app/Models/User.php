@@ -129,6 +129,16 @@ class User extends Authenticatable
     }
 
     /**
+     * 큐 14-2 보강 — 채권관리(/erp/receivables) 접근 권한.
+     * 회의록 14 §누락 보강: 정산 user(미수금 회수 책임)와 관리 user(채권 위험 모니터링)도
+     * 접근 가능해야 함. 회의록 §6 결정 #6과 동일 원칙 — 모니터링은 광범위 허용, 편집 권한은 분리.
+     */
+    public function canViewReceivables(): bool
+    {
+        return $this->isAdmin() || in_array($this->role, ['정산', '관리'], true);
+    }
+
+    /**
      * 큐 2.6 — admin 미입금 우회 승인 권한.
      * admin/super만 가능. 영업/통관/정산 role은 차단.
      */

@@ -1161,6 +1161,102 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('success', '차량이 삭제됐습니다.');
     }
 
+    /**
+     * 큐 14-4-4 — 같은 바이어 미수 + 신규 거래 승인 요청 (G2).
+     * 영업이 buyer 선택 후 미수 잔존 배너에서 클릭 → ApprovalRequest 생성.
+     * 관리 승인 후 영업이 다시 등록 시도하면 Vehicle::guardSameBuyerOverlap이 통과시킴.
+     */
+    public function requestSameBuyerOverlapApproval(): void
+    {
+        if ($this->buyer_id_str === '') {
+            $this->dispatch('notify', message: '먼저 바이어를 선택하세요.', type: 'warning');
+
+            return;
+        }
+        $buyerId = (int) $this->buyer_id_str;
+        $buyer = Buyer::find($buyerId);
+        if (! $buyer) {
+            return;
+        }
+
+        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+            ->where('target_type', Buyer::class)
+            ->where('target_id', $buyerId)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->exists();
+        if ($existing) {
+            $this->dispatch('notify', message: '이미 대기중인 요청이 있습니다.', type: 'warning');
+
+            return;
+        }
+
+        $overlap = Vehicle::where('buyer_id', $buyerId)
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->whereNull('deleted_at')
+            ->get(['id', 'vehicle_number', 'sale_unpaid_amount_krw_cache']);
+
+        ApprovalRequest::create([
+            'requester_id' => auth()->id(),
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyerId,
+            'payload' => [
+                'buyer_name' => $buyer->name,
+                'new_vehicle_number' => $this->vehicle_number ?: null,
+                'overlap_count' => $overlap->count(),
+                'overlap_amount_krw' => (int) $overlap->sum('sale_unpaid_amount_krw_cache'),
+            ],
+            'reason' => '바이어 '.$buyer->name.' 미수 잔존 상태에서 신규 거래',
+            'status' => ApprovalRequest::STATUS_PENDING,
+        ]);
+
+        $this->dispatch('notify', message: '신규 거래 승인 요청을 보냈습니다.', type: 'success');
+    }
+
+    /**
+     * 큐 14-4-4 — buyer 선택 + editingId=null + 비-canApprove user일 때
+     * 미수 잔존 감지. 신규 등록 폼 상단 배너 분기 데이터.
+     */
+    #[Computed]
+    public function sameBuyerOverlap(): ?array
+    {
+        if ($this->editingId !== null || $this->buyer_id_str === '') {
+            return null;
+        }
+        $user = auth()->user();
+        if (! $user || $user->canApprove()) {
+            return null;
+        }
+        $buyerId = (int) $this->buyer_id_str;
+        $overlap = Vehicle::where('buyer_id', $buyerId)
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->whereNull('deleted_at')
+            ->get(['vehicle_number', 'sale_unpaid_amount_krw_cache']);
+        if ($overlap->isEmpty()) {
+            return null;
+        }
+
+        $hasActive = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+            ->where('target_type', Buyer::class)
+            ->where('target_id', $buyerId)
+            ->where('status', ApprovalRequest::STATUS_APPROVED)
+            ->whereNull('used_at')
+            ->exists();
+        $hasPending = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+            ->where('target_type', Buyer::class)
+            ->where('target_id', $buyerId)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->exists();
+
+        return [
+            'count' => $overlap->count(),
+            'amount_krw' => (int) $overlap->sum('sale_unpaid_amount_krw_cache'),
+            'vehicle_numbers' => $overlap->pluck('vehicle_number')->take(5)->all(),
+            'has_active_approval' => $hasActive,
+            'has_pending' => $hasPending,
+        ];
+    }
+
     public function lookupNiceApi(): void
     {
         if (empty(trim($this->vehicle_number))) return;
@@ -1768,6 +1864,37 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-purple-500"></span>
                 <span class="section-title">판매 기본</span>
             </div>
+
+            {{-- 큐 14-4-4 — 같은 바이어 미수 잔존 안내 배너 (신규 등록 + 비-canApprove user만) --}}
+            @php $overlap = $this->sameBuyerOverlap; @endphp
+            @if($overlap)
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs">
+                <div class="flex items-start gap-2">
+                    <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    <div class="flex-1">
+                        <p class="font-semibold text-amber-800">
+                            이 바이어 미수 차량 {{ $overlap['count'] }}대 (₩{{ number_format($overlap['amount_krw']) }})
+                            @if(! empty($overlap['vehicle_numbers']))
+                            <span class="font-normal text-amber-700"> · {{ implode(', ', $overlap['vehicle_numbers']) }}</span>
+                            @endif
+                        </p>
+                        @if($overlap['has_active_approval'])
+                        <p class="mt-1 text-emerald-700">✓ 관리자 승인 받음. 저장하면 신규 차량 등록됩니다 (이번 1회 한정).</p>
+                        @elseif($overlap['has_pending'])
+                        <p class="mt-1 text-amber-700">⏳ 관리자 승인 대기중. 승인 후 다시 시도하세요.</p>
+                        @else
+                        <p class="mt-1 text-amber-700">신규 거래는 관리자 승인이 필요합니다.</p>
+                        <button type="button" wire:click="requestSameBuyerOverlapApproval"
+                                wire:confirm="신규 거래 승인 요청을 보내시겠습니까?"
+                                class="mt-2 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600">
+                            신규 거래 승인 요청
+                        </button>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            @endif
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">판매일</label><input wire:model="sale_date" type="date" class="input-base" /></div>
                 <div>

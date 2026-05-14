@@ -95,10 +95,10 @@
                 ],
                 [
                     'label' => '채권관리',
-                    'href' => $user->canAccessAdmin() ? route('erp.receivables.index') : '#',
+                    'href' => $user->canViewReceivables() ? route('erp.receivables.index') : '#',
                     'icon' => 'banknotes',
                     'active' => request()->routeIs('erp.receivables.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canViewReceivables(),
                 ],
                 [
                     'label' => '승인 큐',

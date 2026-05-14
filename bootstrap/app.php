@@ -5,6 +5,7 @@ use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\ApproveMiddleware;
 use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\ErpMiddleware;
+use App\Http\Middleware\ReceivableMiddleware;
 use App\Http\Middleware\SalesMiddleware;
 use App\Http\Middleware\SettlementMiddleware;
 use App\Http\Middleware\SuperAdminMiddleware;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => AdminMiddleware::class,
             'admin-dashboard' => AdminDashboardMiddleware::class,
             'approve' => ApproveMiddleware::class,
+            'receivable' => ReceivableMiddleware::class,
             'super-admin' => SuperAdminMiddleware::class,
             'erp' => ErpMiddleware::class,
             'sales' => SalesMiddleware::class,

@@ -114,6 +114,54 @@ class Vehicle extends Model
     }
 
     /**
+     * 큐 14-4-4 — 같은 바이어 미수 + 신규 거래 검사 (G2).
+     *
+     * buyer_id 동일 + 미수 잔존(sale_unpaid_amount_krw_cache > 0) 차량 있는 상태에서
+     * 신규 차량 등록 시 차단. 영업은 [신규 거래 승인 요청] → 관리 승인 후 등록 재시도.
+     *
+     * 호출 위치: Vehicle::saving 가드. 시드·artisan은 auth()->check() false로 우회.
+     */
+    public function guardSameBuyerOverlap(): void
+    {
+        if (! auth()->check() || auth()->user()->canApprove()) {
+            return;   // 시드/canApprove는 우회
+        }
+        if (! $this->buyer_id) {
+            return;   // buyer 미지정 — 일반 신규 등록 흐름
+        }
+        if ($this->exists) {
+            return;   // 기존 차량 수정 — 신규 등록만 검사
+        }
+
+        $hasOverlap = self::where('buyer_id', $this->buyer_id)
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->whereNull('deleted_at')
+            ->exists();
+
+        if (! $hasOverlap) {
+            return;
+        }
+
+        // 동일 buyer에 대해 활성(approved + unused) inter_buyer_overlap 승인 있는지 확인
+        $activeApproval = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+            ->where('target_type', Buyer::class)
+            ->where('target_id', $this->buyer_id)
+            ->where('status', ApprovalRequest::STATUS_APPROVED)
+            ->whereNull('used_at')
+            ->latest('id')
+            ->first();
+
+        if (! $activeApproval) {
+            throw ValidationException::withMessages([
+                'buyer_id' => '이 바이어는 미수 잔존 차량이 있습니다. 신규 거래는 관리자 승인이 필요합니다. [신규 거래 승인 요청] 버튼을 사용하세요.',
+            ]);
+        }
+
+        // 승인 소진 — 차량 saving 직전에 used_at 마킹 (saved 훅에서 처리하면 트랜잭션 분리됨)
+        $activeApproval->update(['used_at' => now()]);
+    }
+
+    /**
      * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Vehicle 기준).
      * settlement_status / paid_at는 Settlement 모델에서 별도 추적.
      */
@@ -132,6 +180,10 @@ class Vehicle extends Model
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
+            // 큐 14-4-4 — G2 같은 바이어 미수 + 신규 거래 가드.
+            // 신규 등록 시 같은 buyer + 미수 잔존 차량 있으면 ApprovalRequest 필요.
+            $vehicle->guardSameBuyerOverlap();
+
             // 캐시 자동 갱신 — 시드·UI 저장 모두 발동.
             // C4·C5 단계 의존성 검증은 saving 이벤트가 아닌 UI save() 흐름에서만
             // (Vehicle::guardStageOrderForExport()를 vehicles/index::save()가 명시 호출)

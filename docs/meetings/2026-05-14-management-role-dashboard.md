@@ -151,12 +151,37 @@
 - `approve` 미들웨어 신규 alias (`canApprove()` 게이트)
 - Laravel Notifications DB driver (동기 발송)
 
-### 14-4: 4 액션 게이트 + audit 2-actor (~5h)
+### 14-4: 4 액션 게이트 + audit 2-actor (~5h, 실제 분할 진행)
 - 4 액션 (G2 같은 바이어 / 정산 confirmed→paid / 차량 폐기·RRN 수정·B/L 수동 발행 / 50% 룰 예외)을 `approval_requests` 흐름으로 게이트
-- audit_logs 마이그레이션 — `requester_id` 컬럼 추가 (기존 `user_id` → `approver_id` 의미 보존, 일반 변경은 `requester_id`만)
+- audit_logs 마이그레이션 — `approval_request_id` 컬럼 추가 (FK to approval_requests, nullable)
 - 정산 H4 snapshot 캡처가 승인 트랜잭션 내에서 발동 보장
 - RRN 즉시 암호화 (승인 대기 중 평문 시간창 0초)
 - **큐 19 (자금 이체)와 의존** — payload 스키마 결정 후 진행
+
+**14-4 실제 진행 결과 (사용자 정정 반영)**:
+- ✅ 14-4-1 audit 2-actor 링크 (commit `13dc823`)
+- ✅ 14-4-2 settlement_pay 게이트 (commit `13dc823`)
+- ⛔ 14-4-3 차량 폐기 게이트 — **롤백** (사용자 정정: 폐기는 SSANCAR 워크플로우상 없음. 폐기 컨셉 자체를 큐 17로 전체 제거 예정)
+- ⛔ RRN 수정 / B/L 수동 발행 게이트 — 명세 모호로 미구현. 운영 발생 시 재검토
+- 🔄 14-4-4 inter_buyer_overlap (G2 같은 바이어 미수 + 신규 거래) — **A안 채택 (사전 차단 + 관리 승인)**
+- ⏭️ 50% 룰 예외 (unpaid_export_override) — 기존 큐 2.6 `unpaid_export_overrides` 테이블 시스템 유지. 별건
+
+### 14-4-4 추가 — 같은 바이어 미수 + 신규 거래 흐름 결정
+
+**채택 A안 (사전 차단 + 관리 승인)**:
+1. 영업이 같은 buyer로 신규 차량 등록 시도 → 같은 buyer 미수 차량 있으면 ValidationException 차단
+2. 영업이 [신규 거래 승인 요청] 버튼 → ApprovalRequest(target=Buyer, action=inter_buyer_overlap) 생성
+3. 관리 /erp/approvals에서 승인 → ApprovalRequest.status='approved' + used_at NULL
+4. 영업이 차량 등록 재시도 → 시스템이 active(approved + unused) ApprovalRequest 확인 → 통과
+5. 등록 완료 시 ApprovalRequest의 used_at = now() 마킹 (1 승인 = 1 차량)
+
+**미래 가능성 — D안 (A+B 혼합)** (회의록 §13 안건 3 결합):
+- A안 흐름 유지하되 시스템 자동 룰 추가: `deposit_down_payment ≥ sale_price × 10%`이면 사전 차단 우회 (자동 룰 통과)
+- 10% 미달이면 A안처럼 관리 승인 흐름 진입
+- 채택 조건: 운영 중 "10% 충분히 받은 케이스도 매번 승인 요청 보내는 게 번거롭다" 피드백 누적 시 도입
+- 구현 위치: Vehicle::saving 가드에 `deposit ≥ 10% ? skip approval check : require approval`
+- 추정 추가 공수: ~1-2h
+- 진행 시점: 큐 19 자금 이체와 함께 또는 별건
 
 ---
 
