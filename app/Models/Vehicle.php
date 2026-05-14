@@ -21,8 +21,7 @@ class Vehicle extends Model
         'vehicle_number', 'sales_channel', 'is_disposed', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
-        'tax_invoice_1_date', 'tax_invoice_1_amount',
-        'tax_invoice_2_date', 'tax_invoice_2_amount', 'agency_fee',
+        // 큐 16 — 헤이맨/카풀 5컬럼 drop (tax_invoice_1·2_date·amount, agency_fee).
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
         'nice_reg_vehicle_form', 'nice_reg_first_date', 'nice_reg_date',
@@ -67,8 +66,6 @@ class Vehicle extends Model
         'shipping_date' => 'date',
         'eta_date' => 'date',
         'bl_issue_date' => 'date',
-        'tax_invoice_1_date' => 'date',
-        'tax_invoice_2_date' => 'date',
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
     ];
 
@@ -253,9 +250,6 @@ class Vehicle extends Model
         if ($this->is_disposed) {
             return;
         }
-        if ($this->sales_channel !== 'export') {
-            return;
-        }
 
         // 큐 2.6 H4 — 선적 반입지 입력은 통관 완료 처리(체크박스) 후 (캐스케이드 가장 깊은 곳부터 검증)
         if ($this->bl_loading_location && ! $this->is_export_cleared) {
@@ -298,9 +292,6 @@ class Vehicle extends Model
     public function guardStageOrderForExport(): void
     {
         if ($this->is_disposed) {
-            return;
-        }
-        if ($this->sales_channel !== 'export') {
             return;
         }
 
@@ -449,7 +440,7 @@ class Vehicle extends Model
     }
 
     // ── Computed: 진행상태 11단계 ───────────────────────────────────
-    // C3 — 통관·선적·DHL 단계는 sales_channel='export' 차량만 평가.
+    // 큐 16 — 채널 단순화 (export 단일). 채널 분기 제거.
     // 큐 2.6 — rule_version 분기. v1=단일 트리거(grandfather) / v2=이중 트리거 강화.
     //   v2 이중 트리거 (캐스케이드 — 다음 단계 진입 = 이전 단계 트리거 + 현재 단계 트리거):
     //     #5 수출통관완료 = is_export_cleared && export_declaration_document
@@ -462,44 +453,40 @@ class Vehicle extends Model
             return '폐기';
         }
 
-        $isExport = $this->sales_channel === 'export';
         $v2 = ((int) ($this->progress_status_rule_version ?? 2)) >= 2;
 
-        // 거래완료(dhl_request) / 선적 / 통관 단계 — export 채널만 진입 가능
-        if ($isExport) {
-            if ($v2) {
-                if ($this->dhl_request && $this->bl_document) {
-                    return '거래완료';
-                }
-                if ($this->bl_document && $this->bl_loading_location) {
-                    return '선적완료';
-                }
-                if ($this->bl_loading_location && $this->is_export_cleared) {
-                    return '선적중';
-                }
-                if ($this->is_export_cleared && $this->export_declaration_document) {
-                    return '수출통관완료';
-                }
-                if ($this->export_buyer_id && $this->shipping_date) {
-                    return '수출통관중';
-                }
-            } else {
-                // v1 grandfather — 큐 2.6 마이그 이전 row. 단일 트리거 그대로 평가.
-                if ($this->dhl_request) {
-                    return '거래완료';
-                }
-                if ($this->bl_document) {
-                    return '선적완료';
-                }
-                if ($this->bl_loading_location) {
-                    return '선적중';
-                }
-                if ($this->export_declaration_document) {
-                    return '수출통관완료';
-                }
-                if ($this->export_buyer_id && $this->shipping_date) {
-                    return '수출통관중';
-                }
+        if ($v2) {
+            if ($this->dhl_request && $this->bl_document) {
+                return '거래완료';
+            }
+            if ($this->bl_document && $this->bl_loading_location) {
+                return '선적완료';
+            }
+            if ($this->bl_loading_location && $this->is_export_cleared) {
+                return '선적중';
+            }
+            if ($this->is_export_cleared && $this->export_declaration_document) {
+                return '수출통관완료';
+            }
+            if ($this->export_buyer_id && $this->shipping_date) {
+                return '수출통관중';
+            }
+        } else {
+            // v1 grandfather — 큐 2.6 마이그 이전 row. 단일 트리거 그대로 평가.
+            if ($this->dhl_request) {
+                return '거래완료';
+            }
+            if ($this->bl_document) {
+                return '선적완료';
+            }
+            if ($this->bl_loading_location) {
+                return '선적중';
+            }
+            if ($this->export_declaration_document) {
+                return '수출통관완료';
+            }
+            if ($this->export_buyer_id && $this->shipping_date) {
+                return '수출통관중';
             }
         }
 
@@ -651,7 +638,7 @@ class Vehicle extends Model
      * `$query->action('foo')`로 체이닝. 호출자에서 salesman_id·채널·날짜 등 추가 필터 자유 chain.
      *
      * 14 액션 (영업 5 / 통관 7 / 정산 5) + 관리자 2 = 16 케이스.
-     * 통관·선적·DHL 액션은 sales_channel='export' 격리.
+     * 큐 16 — 채널 단순화 후 sales_channel='export' 격리는 enum 단일값으로 자동 보장 (where 불필요).
      *
      * 주의: `clearance_needed`(영업 라벨) ≡ `clearance_request_needed`(통관 라벨),
      *      `dhl_needed`(영업) ≡ `dhl_dispatch_needed`(통관)는 동일 SQL이고 라벨만 다름.
@@ -688,60 +675,38 @@ class Vehicle extends Model
                 ->where(fn ($q2) => $q2
                     ->where('sale_unpaid_amount_krw_cache', '>', 0)
                     ->orWhereNull('sale_unpaid_amount_krw_cache')),
-            'clearance_needed' => $q
-                ->where('sales_channel', 'export')
-                ->where('sale_price', '>', 0)
+            'clearance_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
                 ->whereNull('export_declaration_document'),
-            'shipping_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('export_declaration_document')
+            'shipping_needed' => $q->whereNotNull('export_declaration_document')
                 ->whereNull('bl_document'),
-            'dhl_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('bl_document'),
+            'dhl_needed' => $q->whereNotNull('bl_document'),
 
-            // ── 통관 role (7) — 모두 export 채널 ──
-            'clearance_request_needed' => $q
-                ->where('sales_channel', 'export')
-                ->where('sale_price', '>', 0)
+            // ── 통관 role (7) ──
+            'clearance_request_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
                 ->whereNull('export_declaration_document'),
-            'clearance_info_missing' => $q
-                ->where('sales_channel', 'export')
-                ->where('sale_price', '>', 0)
+            'clearance_info_missing' => $q->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2
                     ->whereNull('export_buyer_id')
                     ->orWhereNull('shipping_date')),
-            'forwarding_missing' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('export_buyer_id')
+            'forwarding_missing' => $q->whereNotNull('export_buyer_id')
                 ->whereNotNull('shipping_date')
                 ->whereNull('forwarding_company_id'),
-            'export_declaration_upload_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('export_buyer_id')
+            'export_declaration_upload_needed' => $q->whereNotNull('export_buyer_id')
                 ->whereNotNull('shipping_date')
                 ->whereNull('export_declaration_document'),
-            'shipping_process_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('export_declaration_document')
+            'shipping_process_needed' => $q->whereNotNull('export_declaration_document')
                 ->whereNull('bl_loading_location'),
-            'bl_upload_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('bl_loading_location')
+            'bl_upload_needed' => $q->whereNotNull('bl_loading_location')
                 ->whereNull('bl_document'),
-            'dhl_dispatch_needed' => $q
-                ->where('sales_channel', 'export')
-                ->whereNotNull('bl_document'),
+            'dhl_dispatch_needed' => $q->whereNotNull('bl_document'),
 
             // 큐 4 8-7 — 통관 정체 (admin 대시보드 stuck_count와 SQL 100% 일치).
             // 판매완료(unpaid<=0 OR NULL) + 수출신고서 NULL + sale_date 30일 경과.
-            'clearance_stuck' => $q
-                ->where('sales_channel', 'export')
-                ->where('sale_price', '>', 0)
+            'clearance_stuck' => $q->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2
                     ->whereNull('sale_unpaid_amount_krw_cache')
                     ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0))
