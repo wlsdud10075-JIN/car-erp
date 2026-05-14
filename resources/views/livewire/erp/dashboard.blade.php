@@ -14,6 +14,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public int $perPage = 10;
     // role=전체/관리/admin 사용자의 뷰 토글 — localStorage 연동
     public string $roleView = '영업';
+    // 큐 5 — 업무 대시보드 모드 토글 (admin/role∈{전체,관리}만 의미).
+    //   'salesman' = 담당자별 보기 (담당자 드롭다운 + 영업 시각 고정)
+    //   'role'     = 역할별 보기 (역할 탭 영업/통관/정산 + 전체 차량)
+    public string $viewMode = 'salesman';
 
     public function mount(): void
     {
@@ -26,6 +30,33 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 본인 role이 영업/통관/정산이면 그것을 초기 뷰로 (토글 노출 안 됨)
             if (in_array($user->role, ['영업', '통관', '정산'], true)) {
                 $this->roleView = $user->role;
+            }
+            // 비-admin: viewMode는 본인 role로 자연 결정 (영업이면 salesman, 그 외엔 role)
+            $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
+        }
+    }
+
+    // 큐 5 — viewMode 변경 시 동기화.
+    //   'salesman'으로 전환: roleView='영업' 강제 (담당자별 = 영업 시각 고정 정책)
+    //   'role'로 전환: selectedSalesmanId 비움 (전체 차량 시각)
+    public function updatedViewMode(): void
+    {
+        $user = auth()->user();
+        $canToggle = $user->isAdmin() || in_array($user->role, ['전체', '관리'], true);
+        if (! $canToggle) {
+            $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
+
+            return;
+        }
+        if (! in_array($this->viewMode, ['salesman', 'role'], true)) {
+            $this->viewMode = 'salesman';
+        }
+        if ($this->viewMode === 'salesman') {
+            $this->roleView = '영업';
+        } else {
+            // 'role' 모드 — admin은 selectedSalesmanId 비움 (전체 차량 시각)
+            if ($user->isAdmin()) {
+                $this->selectedSalesmanId = 0;
             }
         }
     }
@@ -307,17 +338,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div>
 <div class="flex h-full flex-col gap-5 p-3 md:p-6" x-data="{
     roleView: @entangle('roleView').live,
+    viewMode: @entangle('viewMode').live,
     initView() {
         @if(auth()->user()->isAdmin() || in_array(auth()->user()->role, ['전체','관리'], true))
-        const saved = localStorage.getItem('erp_dashboard_role_view');
-        if (saved && ['영업','통관','정산'].includes(saved)) {
-            this.roleView = saved;
+        const savedRole = localStorage.getItem('erp_dashboard_role_view');
+        if (savedRole && ['영업','통관','정산'].includes(savedRole)) {
+            this.roleView = savedRole;
+        }
+        const savedMode = localStorage.getItem('erp_dashboard_view_mode');
+        if (savedMode && ['salesman','role'].includes(savedMode)) {
+            this.viewMode = savedMode;
         }
         @endif
     },
     setView(v) {
         this.roleView = v;
         localStorage.setItem('erp_dashboard_role_view', v);
+    },
+    setMode(m) {
+        this.viewMode = m;
+        localStorage.setItem('erp_dashboard_view_mode', m);
     }
 }" x-init="initView()">
 
@@ -350,10 +390,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         </p>
     </div>
 
-    <div class="flex items-center gap-3">
-        {{-- M7 토글 pill — role=전체/관리/admin만 노출 --}}
+    <div class="flex flex-wrap items-center gap-3">
+        {{-- 큐 5 — 모드 토글 [담당자별]↔[역할별] (canToggleView만 노출) --}}
         @if($canToggleView)
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-1 rounded-lg bg-gray-100 p-0.5">
+            <button type="button"
+                @click="setMode('salesman')"
+                :class="viewMode === 'salesman' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+                class="rounded px-3 py-1 text-xs font-medium transition">담당자별</button>
+            <button type="button"
+                @click="setMode('role')"
+                :class="viewMode === 'role' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+                class="rounded px-3 py-1 text-xs font-medium transition">역할별</button>
+        </div>
+        @endif
+
+        {{-- M7 역할 탭 pill — 역할별 모드에서만 노출 (담당자별 모드는 영업 시각 고정) --}}
+        @if($canToggleView)
+        <div class="flex items-center gap-1" x-show="viewMode === 'role'" x-cloak>
             @foreach(['영업','통관','정산'] as $v)
             <button type="button"
                 @click="setView('{{ $v }}')"
@@ -363,9 +417,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
 
-        {{-- admin 담당자 드롭다운 — 영업 뷰일 때만 의미 있음 --}}
-        @if($user->isAdmin() && $roleView === '영업')
-        <div class="flex items-center gap-2">
+        {{-- admin 담당자 드롭다운 — 담당자별 모드에서만 노출 (영업 시각 고정) --}}
+        @if($user->isAdmin())
+        <div class="flex items-center gap-2" x-show="viewMode === 'salesman'" x-cloak>
             <span class="text-xs text-gray-500">담당자</span>
             <select wire:model.live="selectedSalesmanId" class="input-filter">
                 <option value="0">전체</option>
