@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\ForwardingCompany;
