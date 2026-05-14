@@ -472,13 +472,15 @@ class Vehicle extends Model
     }
 
     // ── Computed: 판매 미입금액 ─────────────────────────────────────
+    // 적립금 사용(savings_used)은 미납 차감에 포함하지 않는다.
+    // 적립금은 별도 관리 항목 (Buyer×currency 잔액 추적은 Vehicle::saved 훅에서 유지).
     public function getSaleUnpaidAmountAttribute(): float
     {
         $totalSale = $this->sale_price + $this->transport_fee + $this->sale_other_costs
             + $this->commission + $this->auto_loading - $this->tax_dc;
 
         $totalReceived = $this->deposit_down_payment + $this->interim_payment
-            + $this->advance_payment1 + $this->advance_payment2 + $this->savings_used
+            + $this->advance_payment1 + $this->advance_payment2
             + $this->finalPayments->sum('amount')
             + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
 
@@ -504,6 +506,24 @@ class Vehicle extends Model
             $this->sale_price + $this->transport_fee + $this->sale_other_costs
             + $this->commission + $this->auto_loading - $this->tax_dc
         );
+    }
+
+    // ── Computed: 미납 비율 (게이지·판매탭 % 표시용, 0~1 또는 null) ──
+    // 분자 = sale_unpaid_amount (KPI·채권관리와 동일 출처)
+    // 분모 = sale_total_amount
+    // sale_total_amount <= 0 (매입중·말소완료 등 판매 전) → null = 게이지 미표시
+    public function getUnpaidRatioAttribute(): ?float
+    {
+        $total = (float) $this->sale_total_amount;
+        if ($total <= 0) {
+            return null;
+        }
+        $unpaid = (float) $this->sale_unpaid_amount;
+        if ($unpaid <= 0) {
+            return 0.0;
+        }
+
+        return max(0.0, min(1.0, $unpaid / $total));
     }
 
     // ── Computed: 미납액 원화 환산 (KPI 합산용) ─────────────────────

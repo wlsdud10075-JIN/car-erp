@@ -118,6 +118,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $savings_used_str     = '';
     public array  $finalPayments = [];
 
+    // 판매탭 미납률 표시 (수정 불가, openEdit 시 갱신)
+    //   null  = 판매 전 (sale_total_amount=0) → "—"
+    //   0     = 완납
+    //   > 0   = 미납 (0~1)
+    public ?float $panelUnpaidRatio = null;
+
     // ── 카풀/헤이맨 계산서 (sales_channel에 따라 조건부 노출) ────
     public string $tax_invoice_1_date      = '';
     public string $tax_invoice_1_amount_str = '';
@@ -715,6 +721,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
+        $this->panelUnpaidRatio = $v->unpaid_ratio;
+
         $this->showPanel = true;
     }
 
@@ -723,6 +731,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetValidation();
         $this->showPanel = false;
         $this->editingId = null;
+        $this->panelUnpaidRatio = null;
     }
 
     public function removeDeregistrationDoc(): void
@@ -1401,7 +1410,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- ── 데스크탑 테이블 ─────────────────────────────────────────── --}}
 <div class="hidden sm:block overflow-x-auto">
-    <table class="w-full text-sm">
+    <table class="w-full text-sm border-separate border-spacing-0">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                 <th class="pb-2 pr-4 font-medium">차량번호</th>
@@ -1438,7 +1447,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     default  => '수출',
                 };
             @endphp
-            <tr class="cursor-pointer hover:bg-gray-50 transition" wire:click="openEdit({{ $v->id }})">
+            @php $unpaidRatio = $v->unpaid_ratio; @endphp
+            <tr class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
+                wire:click="openEdit({{ $v->id }})"
+                @if($unpaidRatio !== null)
+                    data-ratio="{{ number_format($unpaidRatio, 6, '.', '') }}"
+                    data-unpaid="{{ (int) round($v->sale_unpaid_amount) }}"
+                    data-total="{{ (int) round($v->sale_total_amount) }}"
+                    data-currency="{{ $v->currency }}"
+                @endif
+            >
                 <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                 <td class="py-3 pr-4 text-gray-700">
                     {{ $v->brand }} {{ $v->model_type }}
@@ -1881,6 +1899,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><label class="label-base">선수금1</label><input wire:model="advance_payment1_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">선수금2</label><input wire:model="advance_payment2_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">적립금 사용</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
+                <div>
+                    <label class="label-base">미납률 <span class="text-[10px] text-gray-400">(저장 후 갱신)</span></label>
+                    @if($panelUnpaidRatio === null)
+                        <div class="input-base bg-gray-50 text-gray-400">—</div>
+                    @elseif($panelUnpaidRatio <= 0)
+                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">✓ 완납</div>
+                    @else
+                        <div class="input-base bg-gray-50 font-medium text-gray-800">{{ number_format($panelUnpaidRatio * 100, 1) }}%</div>
+                    @endif
+                </div>
             </div>
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
