@@ -30,13 +30,15 @@ class DatabaseSeeder extends Seeder
 
     private function seedUsers(): void
     {
+        // 큐 14-1 — '전체' role 삭제. admin/super는 role 무관이라 '관리'로 통일.
+        // 박전체 → 박관리 (서브관리자) 교체.
         $users = [
-            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'permission' => 'super',  'role' => '전체'],
-            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'permission' => 'admin',  'role' => '전체'],
+            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'permission' => 'super',  'role' => '관리'],
+            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'permission' => 'admin',  'role' => '관리'],
             ['name' => '김영업',       'email' => 'sales@car-erp.test',    'permission' => 'user',   'role' => '영업'],
             ['name' => '이통관',       'email' => 'clear@car-erp.test',    'permission' => 'user',   'role' => '통관'],
             ['name' => '김진영',       'email' => 'settle@car-erp.test',   'permission' => 'user',   'role' => '정산'],
-            ['name' => '박전체',       'email' => 'all@car-erp.test',      'permission' => 'user',   'role' => '전체'],
+            ['name' => '박관리',       'email' => 'manage@car-erp.test',   'permission' => 'user',   'role' => '관리'],
         ];
 
         foreach ($users as $data) {

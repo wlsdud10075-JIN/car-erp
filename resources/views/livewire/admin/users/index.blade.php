@@ -30,7 +30,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $email       = '';
     public string $password    = '';
     public string $permission  = 'user';
-    public string $role        = '전체';
+    public string $role        = '영업';
 
     #[Computed]
     public function users()
@@ -70,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->email      = $user->email;
         $this->password   = '';
         $this->permission = $user->permission ?? 'user';
-        $this->role       = $user->role       ?? '전체';
+        $this->role       = $user->role       ?? '영업';
         $this->showPanel  = true;
     }
 
@@ -149,7 +149,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->email = $this->password = '';
         $this->permission = 'user';
-        $this->role = '전체';
+        $this->role = '영업';
     }
 }; ?>
 

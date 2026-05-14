@@ -42,7 +42,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedViewMode(): void
     {
         $user = auth()->user();
-        $canToggle = $user->isAdmin() || in_array($user->role, ['전체', '관리'], true);
+        $canToggle = $user->isAdmin() || $user->role === '관리';
         if (! $canToggle) {
             $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
 
@@ -73,7 +73,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedRoleView(): void
     {
         $user = auth()->user();
-        $canToggle = $user->isAdmin() || in_array($user->role, ['전체', '관리'], true);
+        $canToggle = $user->isAdmin() || $user->role === '관리';
         if (! $canToggle) {
             $this->roleView = in_array($user->role, ['영업', '통관', '정산'], true) ? $user->role : '영업';
 
@@ -340,7 +340,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     roleView: @entangle('roleView').live,
     viewMode: @entangle('viewMode').live,
     initView() {
-        @if(auth()->user()->isAdmin() || in_array(auth()->user()->role, ['전체','관리'], true))
+        @if(auth()->user()->isAdmin() || auth()->user()->role === '관리')
         const savedRole = localStorage.getItem('erp_dashboard_role_view');
         if (savedRole && ['영업','통관','정산'].includes(savedRole)) {
             this.roleView = savedRole;
@@ -363,7 +363,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 @php
     $user = auth()->user();
-    $canToggleView = $user->isAdmin() || in_array($user->role, ['전체','관리'], true);
+    $canToggleView = $user->isAdmin() || $user->role === '관리';
     $viewLabel = match($roleView) {
         '통관' => '내 통관 업무',
         '정산' => '내 정산 업무',

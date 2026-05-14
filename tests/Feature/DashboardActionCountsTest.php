@@ -151,7 +151,7 @@ class DashboardActionCountsTest extends TestCase
 
     public function test_admin_can_change_selected_salesman_id_freely(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         Volt::test('erp.dashboard')
@@ -174,7 +174,7 @@ class DashboardActionCountsTest extends TestCase
 
     public function test_admin_salesman_filter_ignored_in_clearance_view(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $salesman = Salesman::create(['name' => 'TEST 영업', 'is_active' => true]);
         $this->actingAs($admin);
 
@@ -204,7 +204,7 @@ class DashboardActionCountsTest extends TestCase
 
     public function test_role_jeonche_user_can_toggle_role_view_freely(): void
     {
-        $user = User::factory()->create(['permission' => 'user', 'role' => '전체']);
+        $user = User::factory()->create(['permission' => 'user', 'role' => '관리']);
         $this->actingAs($user);
 
         Volt::test('erp.dashboard')
@@ -214,7 +214,7 @@ class DashboardActionCountsTest extends TestCase
 
     public function test_admin_can_toggle_role_view_freely(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         Volt::test('erp.dashboard')

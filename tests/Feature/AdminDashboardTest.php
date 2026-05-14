@@ -29,7 +29,7 @@ class AdminDashboardTest extends TestCase
 
     private function admin(): User
     {
-        return User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        return User::factory()->create(['permission' => 'admin', 'role' => '관리']);
     }
 
     // ── 8-1: 기준일 컬럼 전환 ──────────────────────────────────────────

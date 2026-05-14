@@ -51,7 +51,7 @@ class PipelineStripTest extends TestCase
         // 폐기 × 1
         $this->makeVehicle(['is_disposed' => true]);
 
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $component = Volt::test('erp.dashboard');
@@ -83,7 +83,7 @@ class PipelineStripTest extends TestCase
 
     public function test_pipeline_counts_show_all_in_clearance_view(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $salesman = Salesman::create(['name' => 'TEST 영업', 'is_active' => true]);
         $this->actingAs($admin);
 
@@ -116,7 +116,7 @@ class PipelineStripTest extends TestCase
 
     public function test_pipeline_url_omits_salesman_in_clearance_view(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $url = Volt::test('erp.dashboard')
@@ -133,7 +133,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_returns_null_for_new_vehicle(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $flow = Volt::test('erp.vehicles.index')->get('progressFlow');
@@ -142,7 +142,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_export_channel_done_states(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         // 매입 완료 + 말소 완료 + 판매 + 완납 + 통관 완료
@@ -173,7 +173,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_warns_on_unpaid_sale(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $v = $this->makeVehicle([
@@ -191,7 +191,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_reason_is_null_for_done_and_disposed(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         // 큐 16 — 채널 disabled 분기 사라짐 → disposed로 disabled 검증.
@@ -212,7 +212,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_reason_explains_warn_and_pending(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         // 매입가 입력 + 미지급 잔존 → 매입 warn
@@ -232,7 +232,7 @@ class PipelineStripTest extends TestCase
     public function test_progress_flow_clearance_reason_distinguishes_progress_vs_pending(): void
     {
         // 큐 2.6 잔여 통합 — 통관 단계에서 정보 누락 시 명시 안내
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         // 판매 완료 + 통관 정보 0 → 통관 pending + reason에 "수출통관 정보 미입력"
@@ -260,7 +260,7 @@ class PipelineStripTest extends TestCase
 
     public function test_vehicles_index_skips_default_date_when_progress_filter_set(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $component = Volt::test('erp.vehicles.index', ['progressFilter' => '매입중']);
@@ -273,7 +273,7 @@ class PipelineStripTest extends TestCase
 
     public function test_vehicles_index_applies_default_date_when_no_action_or_progress(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $component = Volt::test('erp.vehicles.index');
@@ -287,7 +287,7 @@ class PipelineStripTest extends TestCase
 
     public function test_h14_new_vehicle_save_dispatches_switch_tab_to_first_pending_node(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         Volt::test('erp.vehicles.index')
@@ -301,7 +301,7 @@ class PipelineStripTest extends TestCase
     public function test_h14_edit_save_does_not_dispatch_switch_tab(): void
     {
         // 수정 저장은 close() 흐름 유지 — switch-tab 미발사
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $v = $this->makeVehicle();
@@ -315,7 +315,7 @@ class PipelineStripTest extends TestCase
 
     public function test_progress_flow_disables_all_when_disposed(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
         $v = $this->makeVehicle([

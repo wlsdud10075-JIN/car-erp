@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "Bash(pip install *)",
+      "Bash(python -c \"import sys; sys.stdout.buffer.write\\(sys.stdin.buffer.read\\(\\)\\)\")",
+      "Bash(iconv -f cp949 -t utf8)",
+      "Bash(npm run *)",
+      "Bash(php artisan *)",
+      "Bash(composer show *)",
+      "Bash(composer install *)",
+      "Bash(vendor/bin/pint --dirty)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(codex --version)",
+      "Bash(gemini --version)",
+      "Bash(gemini *)",
+      "PowerShell(codex exec *)",
+      "PowerShell(gemini *)",
+      "Read(//c/Users/User/Desktop/**)",
+      "Read(//c/Users/User/Desktop//**)",
+      "Bash(awk *)",
+      "PowerShell(Copy-Item *)",
+      "Bash(where codex *)",
+      "Bash(where gemini *)",
+      "Bash(cmd *)",
+      "Bash(vendor/bin/pest tests/Feature/DashboardActionCountsTest.php)",
+      "Bash(git -C C:/xampp/htdocs/car-erp add docs/meetings/INDEX.md)",
+      "Bash(git -C C:/xampp/htdocs/car-erp commit -m ' *)",
+      "Bash(git -C C:/xampp/htdocs/car-erp push origin dev)",
+      "Skill(deep-interview)",
+      "Bash(xargs -I {} wc -l {})",
+      "Bash(git push *)"
+    ]
+  }
+}

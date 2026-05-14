@@ -14,7 +14,9 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['전체', '영업', '통관', '정산', '관리'];
+    // 큐 14-1 — '전체' role 삭제. '관리' 신설 (서브관리자 — 승인 권한).
+    // admin/super는 role 무관 (permission 기반)이라 임의 값 가능 — 시더에서 '관리'로 통일.
+    public const ROLES = ['영업', '통관', '정산', '관리'];
 
     protected $fillable = [
         'name',
@@ -65,7 +67,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->permission === 'user' && in_array($this->role, ['전체', '영업', '통관', '정산', '관리'], true);
+        return $this->permission === 'user' && in_array($this->role, self::ROLES, true);
     }
 
     public function canAccessSales(): bool
@@ -74,7 +76,8 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['전체', '영업'], true);
+        // 큐 14-1 — '전체' 분기 제거. '관리'도 영업 화면 조회 가능 (업무 파악 의도).
+        return in_array($this->role, ['영업', '관리'], true);
     }
 
     public function canAccessClearance(): bool
@@ -83,7 +86,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['전체', '통관'], true);
+        return in_array($this->role, ['통관', '관리'], true);
     }
 
     public function canAccessSettlement(): bool
@@ -92,7 +95,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['전체', '정산'], true);
+        return in_array($this->role, ['정산', '관리'], true);
     }
 
     public function canToggleFeatures(): bool
@@ -113,14 +116,14 @@ class User extends Authenticatable
      * 큐 7 확장 C7-a — 차량 회계 민감 컬럼 편집 권한.
      * 매입가·판매가·환율·면장금액·비용9개를 변경할 수 있는 role.
      *
-     * 차단 대상: 정산/통관/관리 role — 회계 조작 위험.
-     * 허용: admin/super, 영업, 전체.
+     * 차단 대상: 정산/통관/관리 role — 회계 조작 위험 + SoD(Segregation of Duties).
+     * 허용: admin/super, 영업만.
      *
-     * (큐 2.5 회의록 §4 C7 — "정산 role이 매입가/환율 변경 가능 → 회계 조작")
+     * (큐 2.5 회의록 §4 C7 + 큐 14 회의록 Security §SoD — "관리가 승인자인데 편집까지 허용하면 본인 등록을 본인 승인 가능")
      */
     public function canEditVehicleFinancialFields(): bool
     {
-        return $this->isAdmin() || in_array($this->role, ['영업', '전체'], true);
+        return $this->isAdmin() || $this->role === '영업';
     }
 
     /**

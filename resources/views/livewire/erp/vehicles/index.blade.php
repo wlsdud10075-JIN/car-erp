@@ -837,7 +837,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 통관/정산/관리 role은 신규 차량 등록 차단 (admin이 만든 차량의 자기 영역만 편집).
         $user = auth()->user();
         if ($this->editingId === null && ! $user->isAdmin()
-            && ! in_array($user->role, ['영업', '전체'], true)) {
+            && $user->role !== '영업') {
             abort(403, '차량 신규 등록은 영업/전체 권한자 또는 관리자만 가능합니다.');
         }
 

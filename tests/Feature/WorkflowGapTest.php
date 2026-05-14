@@ -198,7 +198,7 @@ class WorkflowGapTest extends TestCase
 
     public function test_c7_admin_can_open_any_vehicle(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '전체']);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $otherSalesman = Salesman::create(['name' => '타인', 'is_active' => true]);
         $vehicle = $this->makeVehicle(['salesman_id' => $otherSalesman->id]);
 
