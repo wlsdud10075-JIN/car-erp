@@ -31,6 +31,11 @@ Route::middleware(['auth', 'verified', 'sales'])->prefix('erp')->name('erp.')->g
     Volt::route('salesmen/{id}/cashflow', 'erp.salesmen.cashflow')->name('salesmen.cashflow');
 });
 
+// 승인 큐 — canApprove() (super/admin/관리)
+Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')->group(function () {
+    Volt::route('approvals', 'erp.approvals.index')->name('approvals.index');
+});
+
 // 정산 — settlement role 이상
 Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');

@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AdminDashboardMiddleware;
 use App\Http\Middleware\AdminMiddleware;
+use App\Http\Middleware\ApproveMiddleware;
 use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\ErpMiddleware;
 use App\Http\Middleware\SalesMiddleware;
@@ -21,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'admin-dashboard' => AdminDashboardMiddleware::class,
+            'approve' => ApproveMiddleware::class,
             'super-admin' => SuperAdminMiddleware::class,
             'erp' => ErpMiddleware::class,
             'sales' => SalesMiddleware::class,

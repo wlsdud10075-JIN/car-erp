@@ -32,6 +32,7 @@
         $routeName === 'erp.salesmen.cashflow' => '내 캐시플로우',
         $routeName === 'erp.settlements.index' => '정산 관리',
         $routeName === 'erp.receivables.index' => '채권관리',
+        $routeName === 'erp.approvals.index' => '승인 큐',
         $routeName === 'settings.profile' => '프로필 설정',
         $routeName === 'settings.password' => '비밀번호 변경',
         $routeName === 'settings.appearance' => '테마 설정',
@@ -40,6 +41,11 @@
 
     $mySalesman = $user->salesman ?? null;
     $isSalesUser = ! $user->canAccessAdmin() && $user->canAccessSales() && $mySalesman;
+
+    // 큐 14-3 — 승인 대기 건수 (canApprove user만 계산)
+    $pendingApprovals = $user->canApprove()
+        ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
+        : 0;
 
     $menuGroups = [
         [
@@ -93,6 +99,14 @@
                     'icon' => 'banknotes',
                     'active' => request()->routeIs('erp.receivables.*'),
                     'show' => $user->canAccessAdmin(),
+                ],
+                [
+                    'label' => '승인 큐',
+                    'href' => $user->canApprove() ? route('erp.approvals.index') : '#',
+                    'icon' => 'check-circle',
+                    'active' => request()->routeIs('erp.approvals.*'),
+                    'show' => $user->canApprove(),
+                    'badge' => $pendingApprovals > 0 ? $pendingApprovals : null,
                 ],
                 [
                     'label' => '포워딩사',
@@ -160,6 +174,7 @@
         'cog'            => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>',
         'logout'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>',
         'menu'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/>',
+        'check-circle'   => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>',
     ];
 @endphp
 
@@ -247,6 +262,12 @@
                                    :class="{ 'sidebar-item-collapsed': !isMobile && !open }">
                                     <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">{!! $icons[$item['icon']] !!}</svg>
                                     <span x-show="isMobile || open" class="flex-1 truncate">{{ $item['label'] }}</span>
+                                    @if(! empty($item['badge']))
+                                    <span x-show="isMobile || open"
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        {{ $item['badge'] }}
+                                    </span>
+                                    @endif
                                 </a>
                             @endif
                         @endforeach
