@@ -27,8 +27,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($salesman) {
                 $this->selectedSalesmanId = $salesman->id;
             }
-            // 본인 role이 영업/통관/정산이면 그것을 초기 뷰로 (토글 노출 안 됨)
-            if (in_array($user->role, ['영업', '통관', '정산'], true)) {
+            // 본인 role이 영업/통관/정산/관리면 그것을 초기 뷰로 (큐 14-2: '관리' 추가)
+            if (in_array($user->role, ['영업', '통관', '정산', '관리'], true)) {
                 $this->roleView = $user->role;
             }
             // 비-admin: viewMode는 본인 role로 자연 결정 (영업이면 salesman, 그 외엔 role)
@@ -54,18 +54,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->viewMode === 'salesman') {
             $this->roleView = '영업';
         } else {
-            // 'role' 모드 — admin은 selectedSalesmanId 비움 (전체 차량 시각)
-            if ($user->isAdmin()) {
+            // 'role' 모드 — admin/관리는 selectedSalesmanId 비움 (전체 차량 시각)
+            if ($user->isAdmin() || $user->role === '관리') {
                 $this->selectedSalesmanId = 0;
             }
         }
     }
 
-    // M2 보안: 비-admin이 selectedSalesmanId 변경 시 본인 ID로 즉시 복귀.
+    // M2 보안: 비-admin·비-관리가 selectedSalesmanId 변경 시 본인 ID로 즉시 복귀.
+    // 큐 14-2 — '관리' role도 서브관리자라 다른 담당자 시각 조회 허용 (업무 파악 의도).
     public function updatedSelectedSalesmanId(): void
     {
-        if (! auth()->user()->isAdmin()) {
-            $this->selectedSalesmanId = auth()->user()->salesman?->id ?? 0;
+        $user = auth()->user();
+        if (! $user->isAdmin() && $user->role !== '관리') {
+            $this->selectedSalesmanId = $user->salesman?->id ?? 0;
         }
     }
 
@@ -75,11 +77,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         $canToggle = $user->isAdmin() || $user->role === '관리';
         if (! $canToggle) {
-            $this->roleView = in_array($user->role, ['영업', '통관', '정산'], true) ? $user->role : '영업';
+            $this->roleView = in_array($user->role, ['영업', '통관', '정산', '관리'], true) ? $user->role : '영업';
 
             return;
         }
-        if (! in_array($this->roleView, ['영업', '통관', '정산'], true)) {
+        // 큐 14-2 — '관리' 4번째 탭 허용
+        if (! in_array($this->roleView, ['영업', '통관', '정산', '관리'], true)) {
             $this->roleView = '영업';
         }
     }
@@ -92,7 +95,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
         $user = auth()->user();
-        if ($user->isAdmin()) {
+        // 큐 14-2 — admin + 관리는 selectedSalesmanId 자유 선택 가능
+        if ($user->isAdmin() || $user->role === '관리') {
             return $this->selectedSalesmanId ?: null;
         }
 
@@ -111,6 +115,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return match ($this->roleView) {
             '통관' => $this->buildClearanceKpis(),
             '정산' => $this->buildSettlementKpis(),
+            '관리' => $this->buildManagementKpis(),
             default => $this->buildSalesKpis(),
         };
     }
@@ -121,6 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return match ($this->roleView) {
             '통관' => $this->buildClearanceActions(),
             '정산' => $this->buildSettlementActions(),
+            '관리' => $this->buildManagementActions(),
             default => $this->buildSalesActions(),
         };
     }
@@ -299,6 +305,58 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    // ── 관리 role 빌더 (큐 14-2) ─────────────────────────
+    // 서브관리자 시각 — 승인 대기·정산 대기·채권 위험·정체 차량 모니터링.
+    // 회의록 2026-05-14-management-role-dashboard.md §2 4 KPI 합의안.
+    private function buildManagementKpis(): array
+    {
+        // approval_requests는 큐 14-3에서 신설 — 14-2 시점엔 카운트 0으로 표시.
+        // 14-3 완료 후 ApprovalRequest::where('status','pending')->count()로 교체.
+        $pendingApprovals = 0;
+
+        $pendingSettlements = Settlement::query()
+            ->whereIn('settlement_status', ['pending', 'confirmed'])
+            ->count();
+
+        $riskCount = Vehicle::query()->whereNull('deleted_at')
+            ->whereIn('receivable_risk', ['danger', 'critical'])
+            ->count();
+
+        $stuckDate = now()->subDays(30)->toDateString();
+        $stuckCount = Vehicle::query()->whereNull('deleted_at')
+            ->where('is_disposed', false)->where('dhl_request', false)
+            ->where('sale_price', '>', 0)
+            ->where(fn ($q) => $q->whereNull('sale_unpaid_amount_krw_cache')
+                ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0))
+            ->whereNull('export_declaration_document')
+            ->whereNotNull('sale_date')
+            ->where('sale_date', '<=', $stuckDate)
+            ->count();
+
+        return [
+            ['label' => '승인 대기',     'value' => $pendingApprovals,    'suffix' => '건', 'hint' => '4 액션 통합 (큐 14-3에서 활성화)'],
+            ['label' => '정산 대기',     'value' => $pendingSettlements,  'suffix' => '건', 'hint' => 'pending + confirmed'],
+            ['label' => '채권 위험',     'value' => $riskCount,           'suffix' => '대', 'hint' => '위험·심각 등급'],
+            ['label' => '통관 정체',     'value' => $stuckCount,          'suffix' => '대', 'hint' => '판매완료 30일+ → 면장 미업로드'],
+        ];
+    }
+
+    private function buildManagementActions(): array
+    {
+        $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
+
+        return [
+            // 승인 대기는 별도 화면 /erp/approvals — 큐 14-3에서 활성화 (현재 카운트만 표시)
+            ['label' => '승인 대기 항목', 'desc' => '큐 14-3 활성화 예정', 'count' => 0,
+             'dot' => 'bg-violet-500', 'urgent' => false,
+             'href' => '#'],
+            $this->row('정산 확정 필요',  'settlement = pending → 승인 후 paid',  $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
+            $this->row('정산 지급 필요',  'settlement = confirmed → 승인 후 paid', $c('settlement_pay_needed'),    'bg-violet-500', 'settlement_pay_needed'),
+            $this->row('채권 위험',       '회수 위험·심각 → 추가 한도 승인 검토',  $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
+            $this->row('통관 정체',       '판매완료 30일+ → 진행 점검',           $c('clearance_stuck'),           'bg-amber-500',  'clearance_stuck',           true),
+        ];
+    }
+
     private function row(string $label, string $desc, int $count, string $dot, string $action, bool $urgent = false): array
     {
         return [
@@ -342,7 +400,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     initView() {
         @if(auth()->user()->isAdmin() || auth()->user()->role === '관리')
         const savedRole = localStorage.getItem('erp_dashboard_role_view');
-        if (savedRole && ['영업','통관','정산'].includes(savedRole)) {
+        if (savedRole && ['영업','통관','정산','관리'].includes(savedRole)) {
             this.roleView = savedRole;
         }
         const savedMode = localStorage.getItem('erp_dashboard_view_mode');
@@ -367,11 +425,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     $viewLabel = match($roleView) {
         '통관' => '내 통관 업무',
         '정산' => '내 정산 업무',
+        '관리' => '내 관리 업무',
         default => '내 영업 업무',
     };
     $viewBadge = match($roleView) {
         '통관' => 'badge-amber',
         '정산' => 'badge-green',
+        '관리' => 'badge-purple',
         default => 'badge-purple',
     };
     $salesmanMissing = $user->role === '영업' && ! $user->isAdmin() && ! $user->salesman;
@@ -384,9 +444,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         <p class="mt-0.5 text-xs text-gray-500">
             <span class="badge {{ $viewBadge }}">{{ $roleView }}</span>
             · {{ now()->format('Y년 m월 d일') }}
-            @if($user->role === '관리' && ! $user->isAdmin())
-                <span class="badge badge-amber ml-1">관리 role 전용 화면 준비 중</span>
-            @endif
         </p>
     </div>
 
@@ -408,7 +465,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- M7 역할 탭 pill — 역할별 모드에서만 노출 (담당자별 모드는 영업 시각 고정) --}}
         @if($canToggleView)
         <div class="flex items-center gap-1" x-show="viewMode === 'role'" x-cloak>
-            @foreach(['영업','통관','정산'] as $v)
+            @foreach(['영업','통관','정산','관리'] as $v)
             <button type="button"
                 @click="setView('{{ $v }}')"
                 :class="roleView === '{{ $v }}' ? 'tab-pill is-active' : 'tab-pill'"
@@ -417,8 +474,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
 
-        {{-- admin 담당자 드롭다운 — 담당자별 모드에서만 노출 (영업 시각 고정) --}}
-        @if($user->isAdmin())
+        {{-- 담당자 드롭다운 — 담당자별 모드 + admin/관리만 노출 (영업 시각 고정) --}}
+        @if($user->isAdmin() || $user->role === '관리')
         <div class="flex items-center gap-2" x-show="viewMode === 'salesman'" x-cloak>
             <span class="text-xs text-gray-500">담당자</span>
             <select wire:model.live="selectedSalesmanId" class="input-filter">

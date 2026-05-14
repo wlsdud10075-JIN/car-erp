@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AdminDashboardMiddleware;
 use App\Http\Middleware\AdminMiddleware;
 use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\ErpMiddleware;
@@ -19,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'admin' => AdminMiddleware::class,
+            'admin-dashboard' => AdminDashboardMiddleware::class,
             'super-admin' => SuperAdminMiddleware::class,
             'erp' => ErpMiddleware::class,
             'sales' => SalesMiddleware::class,

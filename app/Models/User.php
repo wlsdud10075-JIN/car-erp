@@ -104,6 +104,31 @@ class User extends Authenticatable
     }
 
     /**
+     * 큐 14-2 — 4 승인 액션 권한 (회의록 v5.1 §9-2 + 2026-05-14 회의 합의안).
+     *
+     * 대상 4 액션:
+     *   1. G2 같은 바이어 미수 + 신규 거래
+     *   2. 정산 confirmed → paid 전환
+     *   3. 민감 액션 (차량 폐기 / RRN 수정 / B/L 수동 발행)
+     *   4. 50% 룰 예외 진행 (선수금 50% 미달 통관 진입)
+     *
+     * 허용: super / admin / role='관리'.
+     */
+    public function canApprove(): bool
+    {
+        return $this->isAdmin() || $this->role === '관리';
+    }
+
+    /**
+     * 큐 14-2 — '관리' role의 /admin/dashboard read-only 조회 권한.
+     * Security 권고: settings·users·기능 토글은 차단, dashboard KPI만 허용.
+     */
+    public function canViewAdminDashboard(): bool
+    {
+        return $this->isAdmin() || $this->role === '관리';
+    }
+
+    /**
      * 큐 2.6 — admin 미입금 우회 승인 권한.
      * admin/super만 가능. 영업/통관/정산 role은 차단.
      */

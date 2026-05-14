@@ -45,8 +45,13 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->g
     Volt::route('receivables', 'erp.receivables.index')->name('receivables.index');
 });
 
-Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+// 관리자 대시보드 — '관리' role 포함 read-only 접근 (큐 14-2)
+Route::middleware(['auth', 'verified', 'admin-dashboard'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('dashboard', 'admin.dashboard')->name('dashboard');
+});
+
+// /admin 그 외 — super/admin만 (users, document-access-logs)
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('users', 'admin.users.index')->name('users.index');
     Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
 });
