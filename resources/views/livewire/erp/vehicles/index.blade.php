@@ -1530,12 +1530,23 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 슬라이드 패널                                                  --}}
 {{-- ══════════════════════════════════════════════════════════════ --}}
 @if($showPanel)
-<div x-data="{ tab: 'basic' }" x-on:switch-tab.window="tab = $event.detail.tab">
+{{-- 큐 18: close confirm — 기존 tab/switch-tab Alpine과 dirty 추적 병합 --}}
+<div x-data="{
+    tab: 'basic',
+    dirty: false,
+    confirmOpen: false,
+    attemptClose() {
+        if (this.confirmOpen) { this.confirmOpen = false; return; }
+        if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
+    },
+    confirmDiscard() { this.confirmOpen = false; $wire.close(); },
+}" x-on:switch-tab.window="tab = $event.detail.tab" @keyup.escape.window="attemptClose()">
 {{-- Backdrop --}}
-<div class="fixed inset-0 z-40 bg-black/40" wire:click="close"></div>
+<div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
 
 {{-- Panel --}}
-<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]">
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]"
+     @input="dirty = true" @change="dirty = true">
 
     {{-- Panel Header --}}
     <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
@@ -1547,7 +1558,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-xs text-gray-400 font-mono mt-0.5">{{ $vehicle_number }}</p>
             @endif
         </div>
-        <button wire:click="close" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+        <button @click="attemptClose()" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
@@ -2271,7 +2282,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- Panel Footer --}}
     <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
-        <button wire:click="close" type="button"
+        <button @click="attemptClose()" type="button"
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
             취소
         </button>
@@ -2282,6 +2293,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
 </div>{{-- /panel --}}
+
+{{-- 큐 18: close confirm 모달 (.card) --}}
+<div x-show="confirmOpen" x-cloak x-transition.opacity
+     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+     @click.self="confirmOpen = false">
+    <div class="card max-w-sm mx-4 shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-900">변경 사항이 있습니다</h3>
+        <p class="mt-2 text-sm text-gray-600">저장하지 않고 닫으면 변경 내용이 사라집니다.</p>
+        <div class="mt-5 flex justify-end gap-2">
+            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">닫기</button>
+        </div>
+    </div>
+</div>
+
 </div>{{-- /x-data --}}
 @endif
 
