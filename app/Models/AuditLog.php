@@ -12,7 +12,8 @@ class AuditLog extends Model
     public const UPDATED_AT = null;
 
     protected $fillable = [
-        'user_id', 'auditable_type', 'auditable_id', 'action',
+        'user_id', 'approval_request_id',
+        'auditable_type', 'auditable_id', 'action',
         'column_name', 'old_value', 'new_value', 'ip_address',
     ];
 
@@ -26,9 +27,31 @@ class AuditLog extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function approvalRequest(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalRequest::class);
+    }
+
     public function auditable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * 큐 14-4-1 — 승인 흐름 변경에 ApprovalRequest 링크 부착.
+     * 일반 변경 시 null, 승인 commit 시 해당 ApprovalRequest.id.
+     */
+    protected static ?int $currentApprovalRequestId = null;
+
+    public static function withApprovalRequest(?int $approvalRequestId, callable $callback): mixed
+    {
+        $previous = self::$currentApprovalRequestId;
+        self::$currentApprovalRequestId = $approvalRequestId;
+        try {
+            return $callback();
+        } finally {
+            self::$currentApprovalRequestId = $previous;
+        }
     }
 
     /**
@@ -48,6 +71,7 @@ class AuditLog extends Model
 
         return self::create([
             'user_id' => auth()->id(),
+            'approval_request_id' => self::$currentApprovalRequestId,
             'auditable_type' => $model::class,
             'auditable_id' => $model->getKey(),
             'action' => 'updated',
@@ -65,6 +89,7 @@ class AuditLog extends Model
     {
         return self::create([
             'user_id' => auth()->id(),
+            'approval_request_id' => self::$currentApprovalRequestId,
             'auditable_type' => $model::class,
             'auditable_id' => $model->getKey(),
             'action' => $action,

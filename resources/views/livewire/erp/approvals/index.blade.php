@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ApprovalRequest;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -92,17 +93,27 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ['decisionNote.required' => '거부 사유를 5자 이상 입력하세요.']);
         }
 
-        // 14-4에서 실제 액션 dispatch (settlement paid 전환 등) 추가 예정.
-        // 14-3 인프라 단계 — 상태 변경 + 결정자 기록만.
-        $req->update([
-            'status' => $this->decisionMode === 'approve' ? 'approved' : 'rejected',
-            'approver_id' => auth()->id(),
-            'decision_note' => $this->decisionNote ?: null,
-            'decided_at' => now(),
-        ]);
+        try {
+            DB::transaction(function () use ($req) {
+                $req->update([
+                    'status' => $this->decisionMode === 'approve' ? 'approved' : 'rejected',
+                    'approver_id' => auth()->id(),
+                    'decision_note' => $this->decisionNote ?: null,
+                    'decided_at' => now(),
+                ]);
+                // 큐 14-4-2 — approve 시 실제 액션 실행 (settlement paid 전환 등).
+                if ($this->decisionMode === 'approve') {
+                    $req->execute();
+                }
+            });
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: '처리 실패: '.$e->getMessage(), type: 'error');
+
+            return;
+        }
 
         $this->dispatch('notify',
-            message: ($this->decisionMode === 'approve' ? '승인' : '거부').'되었습니다.',
+            message: ($this->decisionMode === 'approve' ? '승인 + 액션 실행' : '거부').' 완료.',
             type: 'success');
         $this->closeDecisionModal();
     }

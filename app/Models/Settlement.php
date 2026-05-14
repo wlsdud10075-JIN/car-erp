@@ -45,6 +45,17 @@ class Settlement extends Model
         });
 
         static::saving(function (Settlement $s) {
+            // 큐 14-4-2 — paid 전환은 canApprove user(관리/admin/super)만 직접 가능.
+            // 비-canApprove는 ApprovalRequest 흐름(인라인 [승인 요청] 버튼)으로 진행.
+            // auth 미존재 시(시드·artisan)는 우회.
+            $becamePaid = $s->settlement_status === 'paid'
+                && $s->getOriginal('settlement_status') !== 'paid';
+            if ($becamePaid && auth()->check() && ! auth()->user()->canApprove()) {
+                throw ValidationException::withMessages([
+                    'settlement_status' => '정산 지급(paid) 전환은 승인 권한자만 직접 가능합니다. 정산 목록의 [지급 승인 요청] 버튼을 사용하세요.',
+                ]);
+            }
+
             // H3 — status ∈ {confirmed, paid}이면 settlement_type별 값 > 0 강제.
             if (in_array($s->settlement_status, ['confirmed', 'paid'], true)) {
                 $hasRatio = $s->settlement_type === 'ratio' && (float) ($s->settlement_ratio ?? 0) > 0;
@@ -88,6 +99,18 @@ class Settlement extends Model
     public function salesman(): BelongsTo
     {
         return $this->belongsTo(Salesman::class);
+    }
+
+    /**
+     * 큐 14-4-2 — 이 정산에 대한 지급 승인 요청 (가장 최근).
+     * 정산 목록 행에 "승인 대기" / "거부됨" 인라인 표시 + 요청자가 거부 사유 확인용.
+     * morphOne + latestOfMany로 settlements/index에서 eager load 가능.
+     */
+    public function latestPayApproval()
+    {
+        return $this->morphOne(ApprovalRequest::class, 'target')
+            ->where('action_type', ApprovalRequest::TYPE_SETTLEMENT_PAY)
+            ->latestOfMany();
     }
 
     // ── 마진 computed (CLAUDE.md §정산마진공식) ─────────────────────

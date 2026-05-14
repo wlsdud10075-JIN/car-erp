@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ApprovalRequest;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
@@ -69,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function settlements()
     {
         return Settlement::query()
-            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'salesman'])
+            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'salesman', 'latestPayApproval.approver'])
             ->when($this->search, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('vehicle_number', 'like', "%{$this->search}%")
             ))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
@@ -253,6 +254,48 @@ new #[Layout('components.layouts.app')] class extends Component
         session()->flash('success', '정산이 삭제됐습니다.');
     }
 
+    /**
+     * 큐 14-4-2 — confirmed 정산을 paid로 전환 요청.
+     * canApprove user는 직접 paid 변경 가능 (Settlement::saving 가드 통과).
+     * 그 외 user는 이 메서드로 ApprovalRequest 생성 → /erp/approvals 큐로 진입.
+     */
+    public function requestPayApproval(int $id): void
+    {
+        $settlement = Settlement::findOrFail($id);
+        if ($settlement->settlement_status !== 'confirmed') {
+            $this->dispatch('notify', message: 'confirmed 상태에서만 지급 승인 요청 가능합니다.', type: 'warning');
+
+            return;
+        }
+
+        // 동일 정산에 대기중 요청 있으면 중복 차단
+        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_SETTLEMENT_PAY)
+            ->where('target_type', Settlement::class)
+            ->where('target_id', $settlement->id)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->exists();
+        if ($existing) {
+            $this->dispatch('notify', message: '이미 대기중인 승인 요청이 있습니다.', type: 'warning');
+
+            return;
+        }
+
+        ApprovalRequest::create([
+            'requester_id' => auth()->id(),
+            'action_type' => ApprovalRequest::TYPE_SETTLEMENT_PAY,
+            'target_type' => Settlement::class,
+            'target_id' => $settlement->id,
+            'payload' => [
+                'vehicle_number' => $settlement->vehicle?->vehicle_number,
+                'actual_payout' => $settlement->actual_payout,
+            ],
+            'reason' => '정산 #'.$settlement->id.' ('.($settlement->vehicle?->vehicle_number ?? '?').') 지급 처리',
+            'status' => ApprovalRequest::STATUS_PENDING,
+        ]);
+
+        $this->dispatch('notify', message: '지급 승인 요청을 보냈습니다.', type: 'success');
+    }
+
     private function resetForm(): void
     {
         $this->vehicle_id = null;
@@ -392,11 +435,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
+                    {{-- 큐 14-4-2 — 지급 승인 요청 상태 인라인 표시 --}}
+                    @php $pa = $s->latestPayApproval; @endphp
+                    @if($pa && $pa->status === 'pending')
+                    <span class="badge badge-amber ml-1" title="승인 대기중 — 관리자 결정 대기">승인 대기중</span>
+                    @elseif($pa && $pa->status === 'rejected')
+                    <span class="badge badge-red ml-1" title="{{ $pa->approver?->name ?? '?' }} 거부 사유: {{ $pa->decision_note ?? '(사유 없음)' }}">
+                        거부됨
+                    </span>
+                    @endif
                 </td>
                 <td class="py-3 text-right">
-                    <button wire:click.stop="delete({{ $s->id }})"
-                            wire:confirm="정산을 삭제하시겠습니까?"
-                            class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                    <div class="flex justify-end gap-2">
+                        {{-- 큐 14-4-2 — confirmed + 대기중 요청 없음 + 비-canApprove user만 버튼 노출 --}}
+                        @if($s->settlement_status === 'confirmed' && ! auth()->user()->canApprove()
+                            && (! $pa || $pa->status !== 'pending'))
+                        <button wire:click.stop="requestPayApproval({{ $s->id }})"
+                                wire:confirm="지급 승인 요청을 보내시겠습니까?"
+                                class="text-xs text-violet-600 hover:text-violet-800">지급 승인 요청</button>
+                        @endif
+                        <button wire:click.stop="delete({{ $s->id }})"
+                                wire:confirm="정산을 삭제하시겠습니까?"
+                                class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                    </div>
                 </td>
             </tr>
             @empty
@@ -454,6 +515,23 @@ new #[Layout('components.layouts.app')] class extends Component
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
+
+    {{-- Validation 에러 박스 (큐 14-4-2 — Settlement::saving 가드 throw 잡힘) --}}
+    @if($errors->any())
+    <div class="border-b border-red-200 bg-red-50 px-5 py-3">
+        <div class="flex items-start gap-2">
+            <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <div class="flex-1">
+                <p class="text-xs font-semibold text-red-700">저장할 수 없습니다 — 아래 항목을 확인하세요</p>
+                <ul class="mt-1 space-y-0.5 text-xs text-red-600">
+                    @foreach($errors->all() as $msg)
+                    <li>· {{ $msg }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- 폼 본문 --}}
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-5">

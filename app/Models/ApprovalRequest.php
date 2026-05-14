@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\DB;
 
 class ApprovalRequest extends Model
 {
@@ -84,5 +85,34 @@ class ApprovalRequest extends Model
             self::STATUS_CANCELLED => 'badge-gray',
             default => 'badge-gray',
         };
+    }
+
+    /**
+     * 큐 14-4-2 — 승인 후 실제 액션 실행.
+     * /erp/approvals decide() 메서드의 approve 분기에서 호출.
+     * AuditLog는 자동으로 approval_request_id 링크 (withApprovalRequest 컨텍스트).
+     */
+    public function execute(): void
+    {
+        DB::transaction(function () {
+            AuditLog::withApprovalRequest($this->id, function () {
+                match ($this->action_type) {
+                    self::TYPE_SETTLEMENT_PAY => $this->executeSettlementPay(),
+                    // 큐 14-4-3 sensitive_action / 14-4-4 inter_buyer_overlap 케이스는 후속 단계에 추가.
+                    default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
+                };
+            });
+        });
+    }
+
+    private function executeSettlementPay(): void
+    {
+        $settlement = Settlement::findOrFail($this->target_id);
+        if ($settlement->settlement_status !== 'confirmed') {
+            throw new \DomainException('정산 상태가 confirmed가 아닙니다 (현재: '.$settlement->settlement_status.').');
+        }
+        $settlement->settlement_status = 'paid';
+        $settlement->paid_at = now();
+        $settlement->save();
     }
 }
