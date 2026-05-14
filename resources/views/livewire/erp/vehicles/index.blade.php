@@ -236,7 +236,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
 
         return Vehicle::query()
-            ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments'])
+            ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
