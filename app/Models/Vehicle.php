@@ -95,8 +95,19 @@ class Vehicle extends Model
 
     public function setNiceRegOwnerRrnAttribute(?string $value): void
     {
-        if ($value === null || $value === '') {
-            $this->attributes['nice_reg_owner_rrn'] = $value;
+        // 빈 값 정규화
+        $value = ($value === null || $value === '') ? null : $value;
+
+        // 큐 11-4: 동일 평문 재할당 시 재암호화 skip.
+        // - 매 save마다 random IV로 ciphertext가 달라져 wasChanged()가 false-positive
+        // - audit_logs에서 RRN 변경을 정확히 감지하려면 무변동 케이스를 거른다
+        $current = $this->getAttribute('nice_reg_owner_rrn');
+        if ($value === $current) {
+            return;
+        }
+
+        if ($value === null) {
+            $this->attributes['nice_reg_owner_rrn'] = null;
             $this->attributes['nice_reg_owner_rrn_encrypted_at'] = null;
 
             return;
@@ -104,6 +115,21 @@ class Vehicle extends Model
         $this->attributes['nice_reg_owner_rrn'] = Crypt::encryptString($value);
         $this->attributes['nice_reg_owner_rrn_encrypted_at'] = now();
     }
+
+    /**
+     * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Vehicle 기준).
+     * settlement_status / paid_at는 Settlement 모델에서 별도 추적.
+     */
+    public const AUDITED_COLUMNS = [
+        'sale_price',
+        'is_disposed',
+        'progress_status_cache',
+        'nice_reg_owner_rrn',                  // 마스킹 — value 미저장
+        'deposit_down_payment', 'interim_payment',
+        'advance_payment1', 'advance_payment2',
+        'down_payment', 'selling_fee_payment',
+        'savings_used',
+    ];
 
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
@@ -125,18 +151,40 @@ class Vehicle extends Model
         // 운영 사고 시 storage/backups/deleted/ 에서 수동 복구 가능.
         static::forceDeleted(function (Vehicle $vehicle) {
             $publicSource = storage_path("app/public/vehicles/{$vehicle->id}");
-            if (! is_dir($publicSource)) {
-                return;
+            if (is_dir($publicSource)) {
+                $timestamp = now()->format('Ymd_His');
+                $backupDir = storage_path("backups/deleted/{$vehicle->id}-{$timestamp}");
+                File::ensureDirectoryExists(dirname($backupDir));
+                File::moveDirectory($publicSource, $backupDir);
             }
-            $timestamp = now()->format('Ymd_His');
-            $backupDir = storage_path("backups/deleted/{$vehicle->id}-{$timestamp}");
-            File::ensureDirectoryExists(dirname($backupDir));
-            File::moveDirectory($publicSource, $backupDir);
+            AuditLog::recordEvent($vehicle, 'force_deleted');
         });
 
         // H7 — soft-delete 후 restore 시 캐시 stale 가능. 복구 직후 재계산.
         static::restored(function (Vehicle $vehicle) {
             $vehicle->refreshCaches();
+            AuditLog::recordEvent($vehicle, 'restored');
+        });
+
+        // 큐 11-4 — 라이프사이클 + 컬럼 변경 감사 로그.
+        static::created(fn (Vehicle $vehicle) => AuditLog::recordEvent($vehicle, 'created'));
+        static::deleted(function (Vehicle $vehicle) {
+            // SoftDeletes에서 소프트 삭제·강제 삭제 모두 deleted 발동 → forceDeleting과 분리.
+            if (! $vehicle->isForceDeleting()) {
+                AuditLog::recordEvent($vehicle, 'deleted');
+            }
+        });
+        static::updated(function (Vehicle $vehicle) {
+            foreach (self::AUDITED_COLUMNS as $col) {
+                if ($vehicle->wasChanged($col)) {
+                    AuditLog::recordChange(
+                        $vehicle,
+                        $col,
+                        $vehicle->getOriginal($col),
+                        $vehicle->getAttribute($col),
+                    );
+                }
+            }
         });
 
         // H6 — savings_used delta 감지 → SavingsStatus(USED/REFUND) 자동 생성.

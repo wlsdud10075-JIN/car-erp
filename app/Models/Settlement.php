@@ -21,10 +21,29 @@ class Settlement extends Model
     ];
 
     /**
+     * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Settlement 기준).
+     */
+    public const AUDITED_COLUMNS = ['settlement_status', 'paid_at'];
+
+    /**
      * 큐 10 H3·H4 — 정산 saving 시 검증 + snapshot 캡처.
+     * 큐 11-4 — settlement_status / paid_at 변경 audit_logs 기록.
      */
     protected static function booted(): void
     {
+        static::updated(function (Settlement $s) {
+            foreach (self::AUDITED_COLUMNS as $col) {
+                if ($s->wasChanged($col)) {
+                    AuditLog::recordChange(
+                        $s,
+                        $col,
+                        $s->getOriginal($col),
+                        $s->getAttribute($col),
+                    );
+                }
+            }
+        });
+
         static::saving(function (Settlement $s) {
             // H3 — status ∈ {confirmed, paid}이면 settlement_type별 값 > 0 강제.
             if (in_array($s->settlement_status, ['confirmed', 'paid'], true)) {
