@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -118,10 +119,19 @@ class Vehicle extends Model
             $vehicle->sale_unpaid_amount_krw_cache = $krw !== null ? (int) round($krw) : null;
         });
 
-        // hard delete (forceDelete) 시에만 첨부 디렉토리 정리.
+        // hard delete (forceDelete) 시 첨부 디렉토리를 즉시 삭제하지 않고
+        // storage/backups/deleted/{id}-{timestamp}/ 로 이동 (큐 11-2).
         // soft delete는 첨부 유지 — 복구 가능성 보호.
+        // 운영 사고 시 storage/backups/deleted/ 에서 수동 복구 가능.
         static::forceDeleted(function (Vehicle $vehicle) {
-            Storage::disk('public')->deleteDirectory("vehicles/{$vehicle->id}");
+            $publicSource = storage_path("app/public/vehicles/{$vehicle->id}");
+            if (! is_dir($publicSource)) {
+                return;
+            }
+            $timestamp = now()->format('Ymd_His');
+            $backupDir = storage_path("backups/deleted/{$vehicle->id}-{$timestamp}");
+            File::ensureDirectoryExists(dirname($backupDir));
+            File::moveDirectory($publicSource, $backupDir);
         });
 
         // H7 — soft-delete 후 restore 시 캐시 stale 가능. 복구 직후 재계산.

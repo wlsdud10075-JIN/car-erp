@@ -5,6 +5,8 @@
 /public/storage
 /storage/*.key
 /storage/pail
+# 큐 11-2: forceDelete 시 첨부 백업 / 큐 11-3 mysqldump 백업 디렉토리 (운영 데이터)
+/storage/backups
 /vendor
 
 # dompdf font cache (regenerated on first render). Keep only source OTF/TTF.
