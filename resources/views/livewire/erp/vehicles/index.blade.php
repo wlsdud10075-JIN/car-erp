@@ -25,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $dateType = 'purchase';
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
-    #[Url] public string $channelFilter = '';
+    // 큐 16 — channelFilter Url 파라미터 제거 (채널 단일).
     #[Url] public string $progressFilter = '';
     // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
@@ -124,12 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   > 0   = 미납 (0~1)
     public ?float $panelUnpaidRatio = null;
 
-    // ── 카풀/헤이맨 계산서 (sales_channel에 따라 조건부 노출) ────
-    public string $tax_invoice_1_date      = '';
-    public string $tax_invoice_1_amount_str = '';
-    public string $tax_invoice_2_date      = '';
-    public string $tax_invoice_2_amount_str = '';
-    public string $agency_fee_str          = '';
+    // 큐 16 — 카풀/헤이맨 계산서 5 properties 제거 (DB 5컬럼 drop과 동기).
 
     // ── 수출통관 ──────────────────────────────────────────────────
     public string $export_buyer_id_str     = '';
@@ -243,7 +238,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('model_type', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
             ))
-            ->when($this->channelFilter, fn ($q) => $q->where('sales_channel', $this->channelFilter))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -310,9 +304,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $v) {
             return null;
         }
-        $isExport = $v->sales_channel === 'export';
+        // 큐 16 — sales_channel 단일화로 $isExport/$disabledForChannel 분기 제거.
+        // 채널 기반 disabled는 폐기(is_disposed)만 남음.
         $disposed = $v->is_disposed;
-        $disabledForChannel = fn () => ! $isExport;
+        $disabledForChannel = fn () => false;
 
         // 매입
         $purchaseStatus = $disposed ? 'disabled' : ($v->purchase_price > 0
@@ -403,48 +398,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    // C3 — 채널이 export 아닌 값으로 변경되면 수출 전용 필드 일괄 reset.
-    // orphan 데이터로 progress_status 잘못 분류되던 버그 방지.
-    public function updatedSalesChannel(): void
-    {
-        if ($this->sales_channel === 'export') {
-            return;
-        }
-        // 통관
-        $this->export_buyer_id_str = '';
-        $this->export_consignee_id_str = '';
-        $this->forwarding_company_id_str = '';
-        $this->export_declaration_amount_str = '';
-        $this->shipping_date = '';
-        $this->eta_date = '';
-        $this->shipping_method = '';
-        $this->port_of_loading = '';
-        $this->export_declaration_document_path = '';
-        $this->exportDeclarationDocFile = null;
-        $this->export_declaration_number = '';
-        $this->is_export_cleared = false;
-        // 선적(B/L)
-        $this->bl_buyer_id_str = '';
-        $this->bl_consignee_id_str = '';
-        $this->bl_number = '';
-        $this->container_number = '';
-        $this->bl_loading_location = '';
-        $this->vessel_name = '';
-        $this->bl_document_path = '';
-        $this->blDocFile = null;
-        $this->bl_issue_date = '';
-        // DHL
-        $this->dhl_recipient_name = '';
-        $this->dhl_recipient_address = '';
-        $this->dhl_recipient_phone = '';
-        $this->dhl_sender_name = '';
-        $this->dhl_sender_address = '';
-        $this->dhl_weight = '';
-        $this->dhl_dimensions = '';
-        $this->dhl_request = false;
-
-        $this->dispatch('notify', message: '수출 전용 필드(통관·선적·DHL)가 초기화되었습니다.', type: 'info');
-    }
+    // 큐 16 — updatedSalesChannel hook 제거 (sales_channel은 enum 'export' 단일값으로 변경 불가).
 
     // ── 패널 열기/닫기 ────────────────────────────────────────────
     public function openCreate(): void
@@ -676,11 +630,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ])->toArray();
 
         // 카풀/헤이맨 계산서
-        $this->tax_invoice_1_date = $v->tax_invoice_1_date ? $v->tax_invoice_1_date->format('Y-m-d') : '';
-        $this->tax_invoice_1_amount_str = $v->tax_invoice_1_amount ? (string) $v->tax_invoice_1_amount : '';
-        $this->tax_invoice_2_date = $v->tax_invoice_2_date ? $v->tax_invoice_2_date->format('Y-m-d') : '';
-        $this->tax_invoice_2_amount_str = $v->tax_invoice_2_amount ? (string) $v->tax_invoice_2_amount : '';
-        $this->agency_fee_str = $v->agency_fee ? (string) $v->agency_fee : '';
+        // 큐 16 — tax_invoice_*·agency_fee 로드 제거 (DB drop됨).
 
         // 수출통관
         $this->export_buyer_id_str       = $v->export_buyer_id       ? (string)$v->export_buyer_id       : '';
@@ -784,7 +734,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             'interim_payment_str', 'advance_payment1_str',
             'advance_payment2_str', 'savings_used_str',
             'export_declaration_amount_str', 'dhl_weight_str',
-            'tax_invoice_1_amount_str', 'tax_invoice_2_amount_str', 'agency_fee_str',
         ];
 
         $rules = [
@@ -795,7 +744,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->ignore($this->editingId)
                     ->whereNull('deleted_at'),
             ],
-            'sales_channel'   => ['required', 'in:export,heyman,carpul'],
+            // 큐 16 — sales_channel은 enum 'export' 단일값. DB 레벨 강제 + 폼은 hidden 유지.
+            'sales_channel'   => ['required', 'in:export'],
             'currency'        => ['required', 'in:USD,JPY,EUR,GBP,CNY,KRW'],
             'shipping_method' => ['nullable', 'in:RORO,CONTAINER'],
 
@@ -806,8 +756,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_issue_date'       => ['nullable', 'date'],
             'nice_reg_first_date' => ['nullable', 'date'],
             'nice_reg_date'       => ['nullable', 'date'],
-            'tax_invoice_1_date'  => ['nullable', 'date'],
-            'tax_invoice_2_date'  => ['nullable', 'date'],
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
@@ -1057,11 +1005,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'dhl_request'    => $this->dhl_request,
             'memo' => $this->memo ?: null,
             // 카풀/헤이맨 계산서 (channel != carpul/heyman 이어도 컬럼은 nullable이라 OK)
-            'tax_invoice_1_date'   => $toDate($this->tax_invoice_1_date),
-            'tax_invoice_1_amount' => $this->tax_invoice_1_amount_str !== '' ? $toInt($this->tax_invoice_1_amount_str) : null,
-            'tax_invoice_2_date'   => $toDate($this->tax_invoice_2_date),
-            'tax_invoice_2_amount' => $this->tax_invoice_2_amount_str !== '' ? $toInt($this->tax_invoice_2_amount_str) : null,
-            'agency_fee'           => $this->agency_fee_str !== '' ? $toInt($this->agency_fee_str) : null,
+            // 큐 16 — tax_invoice_*·agency_fee persist 제거.
         ];
 
         // 파일 정리 추적용 (트랜잭션 성공·실패 분기)
@@ -1282,7 +1226,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_loading_location','vessel_name','bl_issue_date',
             'dhl_recipient_name','dhl_recipient_address','dhl_recipient_phone',
             'dhl_sender_name','dhl_sender_address','dhl_weight_str','dhl_dimensions','memo',
-            'tax_invoice_1_date','tax_invoice_1_amount_str','tax_invoice_2_date','tax_invoice_2_amount_str','agency_fee_str',
         ];
         foreach ($defaults as $prop) $this->$prop = '';
 
@@ -1384,18 +1327,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </select>
         <button wire:click="applyFilters" class="btn-search">조회</button>
     </div>
-    {{-- 빠른 탭 필터 --}}
+    {{-- 빠른 탭 필터 — 큐 16: 채널 pill 제거 (단일 채널) --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        <div class="flex gap-1">
-            @foreach(['' => '전체', 'export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $val => $label)
-            <button wire:click="$set('channelFilter', '{{ $val }}')"
-                    class="rounded-full px-3 py-1 text-xs font-medium transition
-                           {{ $channelFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
-                {{ $label }}
-            </button>
-            @endforeach
-        </div>
-        <div class="h-4 w-px bg-gray-200 hidden sm:block"></div>
         <div class="flex flex-wrap gap-1">
             @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '선적중' => '선적중', '선적완료' => '선적완료', '거래완료' => '거래완료', '폐기' => '폐기'] as $val => $label)
             <button wire:click="$set('progressFilter', '{{ $val }}')"
@@ -1416,7 +1349,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">차량번호</th>
                 <th class="pb-2 pr-4 font-medium">브랜드/차종</th>
                 <th class="pb-2 pr-4 font-medium">진행상태</th>
-                <th class="pb-2 pr-4 font-medium">채널</th>
                 <th class="pb-2 pr-4 font-medium">매입일</th>
                 <th class="pb-2 pr-4 font-medium">담당자</th>
                 <th class="pb-2 pr-4 font-medium text-right">판매가</th>
@@ -1436,16 +1368,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $status === '폐기'                                 => 'badge-red',
                     default                                            => 'badge-gray',
                 };
-                $channelBadge = match($v->sales_channel) {
-                    'heyman' => 'badge-teal',
-                    'carpul' => 'badge-purple',
-                    default  => 'badge-blue',
-                };
-                $channelLabel = match($v->sales_channel) {
-                    'heyman' => '헤이맨',
-                    'carpul' => '카풀',
-                    default  => '수출',
-                };
+                {{-- 큐 16 — channelBadge/Label match 제거 (단일 채널) --}}
             @endphp
             @php $unpaidRatio = $v->unpaid_ratio; @endphp
             <tr class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
@@ -1463,7 +1386,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                 </td>
                 <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ $status }}</span></td>
-                <td class="py-3 pr-4"><span class="badge {{ $channelBadge }}">{{ $channelLabel }}</span></td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-right font-medium text-gray-800">
@@ -1479,7 +1401,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
+            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -1653,23 +1575,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
-                <div>
-                    <label class="label-base">판매채널</label>
-                    <select wire:model.live="sales_channel"
-                        x-on:change="
-                            if ($event.target.value !== 'export' && '{{ $editingId ?? '' }}' && @js($sales_channel) === 'export') {
-                                if (! confirm('수출 채널 정보(통관·선적·DHL)가 모두 초기화됩니다. 계속하시겠습니까?')) {
-                                    $event.target.value = 'export';
-                                    $event.preventDefault();
-                                    return;
-                                }
-                            }"
-                        class="input-base">
-                        <option value="export">수출</option>
-                        <option value="heyman">헤이맨</option>
-                        <option value="carpul">카풀</option>
-                    </select>
-                </div>
+                {{-- 큐 16 — 판매채널 select 제거. sales_channel은 hidden 'export' 고정. --}}
+                <input type="hidden" wire:model="sales_channel" />
                 <div class="flex items-end">
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                         <input wire:model="is_disposed" type="checkbox" class="rounded" />
@@ -1948,24 +1855,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </div>
 
-            {{-- 카풀/헤이맨 채널 — 계산서 섹션 (다른 채널은 미노출) --}}
-            @if (in_array($sales_channel, ['carpul', 'heyman']))
-            <hr class="section-divider my-4">
-            <div class="section-header">
-                <span class="section-dot bg-teal-500"></span>
-                <span class="section-title">계산서 ({{ $sales_channel === 'carpul' ? '카풀' : '헤이맨' }})</span>
-            </div>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">1차 발행일</label><input wire:model="tax_invoice_1_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">1차 금액</label><input wire:model="tax_invoice_1_amount_str" type="text" class="input-base" placeholder="0" /></div>
-                <div></div>
-                <div><label class="label-base">2차 발행일</label><input wire:model="tax_invoice_2_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">2차 금액</label><input wire:model="tax_invoice_2_amount_str" type="text" class="input-base" placeholder="0" /></div>
-                @if ($sales_channel === 'carpul')
-                <div><label class="label-base">대행수수료</label><input wire:model="agency_fee_str" type="text" class="input-base" placeholder="0" /></div>
-                @endif
-            </div>
-            @endif
+            {{-- 큐 16 — 카풀/헤이맨 계산서 섹션 제거 (5컬럼 drop과 동기). --}}
         </div>
 
         {{-- ─── 수출통관 탭 ───────────────────────────────── --}}
@@ -2116,7 +2006,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- ─── 서류 탭 ───────────────────────────────────── --}}
         <div x-show="tab === 'docs'" x-cloak>
             @php
-                $isExport = $this->sales_channel === 'export';
+                // 큐 16 — sales_channel 단일화로 isExport 분기 제거 (영문 서류 항상 노출).
                 $hasId = $editingId !== null;
                 $url = fn (string $type) => $hasId
                     ? route('erp.vehicles.documents.show', ['id' => $editingId, 'type' => $type])
@@ -2164,63 +2054,57 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </a>
             </div>
 
-            {{-- 영문 서류 (수출 채널만) ─────────────────────── --}}
+            {{-- 영문 서류 (수출 단일 채널) ─────────────────── --}}
             <hr class="section-divider mt-5">
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">영문 서류 (수출 채널)</span>
+                <span class="section-title">영문 서류</span>
             </div>
 
-            @if (! $isExport)
-                <div class="card-tight border-gray-200 bg-gray-50 text-sm text-gray-500">
-                    수출(export) 채널 차량만 영문 서류 생성이 가능합니다. 현재 채널: <strong>{{ $this->sales_channel }}</strong>
-                </div>
-            @else
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <a href="{{ $url('invoice') }}"
-                       target="_blank"
-                       class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-800">Proforma Invoice</div>
-                            <div class="text-xs text-gray-500">SSANCAR · PDF</div>
-                        </div>
-                        <span class="text-xs text-emerald-600">↓</span>
-                    </a>
-                    <a href="{{ $url('sales_contract') }}"
-                       target="_blank"
-                       class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-800">Sales Contract</div>
-                            <div class="text-xs text-gray-500">EXPORT · PDF</div>
-                        </div>
-                        <span class="text-xs text-emerald-600">↓</span>
-                    </a>
-                </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <a href="{{ $url('invoice') }}"
+                   target="_blank"
+                   class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">Proforma Invoice</div>
+                        <div class="text-xs text-gray-500">SSANCAR · PDF</div>
+                    </div>
+                    <span class="text-xs text-emerald-600">↓</span>
+                </a>
+                <a href="{{ $url('sales_contract') }}"
+                   target="_blank"
+                   class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">Sales Contract</div>
+                        <div class="text-xs text-gray-500">EXPORT · PDF</div>
+                    </div>
+                    <span class="text-xs text-emerald-600">↓</span>
+                </a>
+            </div>
 
-                {{-- Excel CIPL — 선적방식 분기 가이드 표시 --}}
-                <div class="section-header mt-5">
-                    <span class="section-dot bg-amber-500"></span>
-                    <span class="section-title">Excel CIPL (선적용)</span>
-                </div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <a href="{{ $url('ro_cipl') }}"
-                       class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-800">RO_CIPL</div>
-                            <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
-                        </div>
-                        <span class="text-xs text-amber-600">↓</span>
-                    </a>
-                    <a href="{{ $url('con_cipl') }}"
-                       class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-800">con_CIPL</div>
-                            <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
-                        </div>
-                        <span class="text-xs text-amber-600">↓</span>
-                    </a>
-                </div>
-            @endif
+            {{-- Excel CIPL --}}
+            <div class="section-header mt-5">
+                <span class="section-dot bg-amber-500"></span>
+                <span class="section-title">Excel CIPL (선적용)</span>
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <a href="{{ $url('ro_cipl') }}"
+                   class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">RO_CIPL</div>
+                        <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
+                    </div>
+                    <span class="text-xs text-amber-600">↓</span>
+                </a>
+                <a href="{{ $url('con_cipl') }}"
+                   class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">con_CIPL</div>
+                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                    </div>
+                    <span class="text-xs text-amber-600">↓</span>
+                </a>
+            </div>
 
             <div class="mt-5 text-xs text-gray-500 leading-relaxed">
                 ※ PDF는 새 탭에서 열리며 자동 다운로드됩니다. Excel은 즉시 다운로드.<br>
@@ -2238,7 +2122,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 큐 2.6 — admin 미입금 우회 승인 (편집 모드 + 권한자 + 수출 채널) --}}
-    @if($editingId && auth()->user()?->canApproveUnpaidExport() && $sales_channel === 'export')
+    @if($editingId && auth()->user()?->canApproveUnpaidExport())
     @php
         $editingVehicle = \App\Models\Vehicle::with('unpaidExportOverrides')->find($editingId);
         $existingOverrides = $editingVehicle?->unpaidExportOverrides ?? collect();

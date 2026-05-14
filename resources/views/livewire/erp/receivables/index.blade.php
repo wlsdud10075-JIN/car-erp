@@ -15,7 +15,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     // ── URL 파라미터 ───────────────────────────────────────
-    #[Url] public string $channel = 'export';   // export / heyman / carpul
+    // 큐 16 — channel 파라미터 제거 (sales_channel 단일화 후 채널 탭 무의미).
     #[Url] public string $search = '';
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
@@ -67,14 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
-    public function setChannel(string $channel): void
-    {
-        if (! in_array($channel, ['export', 'heyman', 'carpul'], true)) {
-            return;
-        }
-        $this->channel = $channel;
-        $this->resetPage();
-    }
+    // 큐 16 — setChannel() 제거 (채널 단일화).
 
     #[Computed]
     public function vehicles()
@@ -261,7 +254,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function buildQuery()
     {
         return Vehicle::query()
-            ->where('sales_channel', $this->channel)
+            // 큐 16 — sales_channel 단일화로 채널 필터 제거.
             // 채권관리는 판매단계 이후 차량만 (sale_price > 0)
             ->where('sale_price', '>', 0)
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
@@ -305,13 +298,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    {{-- 채널 탭 --}}
-    <div class="flex items-center gap-2">
-        @foreach (['export' => '수출', 'carpul' => '카풀', 'heyman' => '헤이맨'] as $code => $label)
-        <button type="button" wire:click="setChannel('{{ $code }}')"
-                class="tab-pill {{ $channel === $code ? 'is-active' : '' }}">{{ $label }}</button>
-        @endforeach
-    </div>
+    {{-- 큐 16 — 채널 탭 제거 (단일 채널). --}}
 
     {{-- KPI 4개 --}}
     <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -385,10 +372,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="py-2 pr-3 text-left">BL</th>
                     <th class="py-2 pr-3 text-left">위험도</th>
                     <th class="py-2 pr-3 text-left">채권담당</th>
-                    @if (in_array($channel, ['carpul','heyman']))
-                    <th class="py-2 pr-3 text-right">계산서1</th>
-                    <th class="py-2 pr-3 text-right">계산서2</th>
-                    @endif
+                    {{-- 큐 16 — 계산서1/2 컬럼 제거 (헤이맨/카풀 폐기). --}}
                 </tr>
             </thead>
             <tbody>
@@ -411,7 +395,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $unpaidRatio = $v->sale_total_amount > 0
                         ? round(($v->sale_unpaid_amount / $v->sale_total_amount) * 100, 1)
                         : 0;
-                    $primaryBuyer = $channel === 'export' ? ($v->exportBuyer ?? $v->buyer) : $v->buyer;
+                    // 큐 16 — sales_channel 단일 (export) → exportBuyer 우선, fallback buyer.
+                    $primaryBuyer = $v->exportBuyer ?? $v->buyer;
                 @endphp
                 <tr class="cursor-pointer border-b border-gray-100 {{ $rowBg }} hover:bg-violet-50"
                     wire:click="openPanel({{ $v->id }})">
@@ -426,15 +411,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-2 pr-3 text-center text-xs">{{ $v->bl_document ? '✓' : '-' }}</td>
                     <td class="py-2 pr-3"><span class="badge {{ $riskBadge }}">{{ $v->receivable_risk_label }}</span></td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->receivableManager?->name ?? '-' }}</td>
-                    @if (in_array($channel, ['carpul','heyman']))
-                    <td class="py-2 pr-3 text-right text-gray-600">{{ $v->tax_invoice_1_amount ? number_format($v->tax_invoice_1_amount) : '-' }}</td>
-                    <td class="py-2 pr-3 text-right text-gray-600">{{ $v->tax_invoice_2_amount ? number_format($v->tax_invoice_2_amount) : '-' }}</td>
-                    @endif
+                    {{-- 큐 16 — tax_invoice 컬럼 제거 --}}
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="{{ in_array($channel, ['carpul','heyman']) ? 13 : 11 }}"
-                        class="py-8 text-center text-gray-400">조회된 차량이 없습니다.</td>
+                    <td colspan="11" class="py-8 text-center text-gray-400">조회된 차량이 없습니다.</td>
                 </tr>
                 @endforelse
             </tbody>

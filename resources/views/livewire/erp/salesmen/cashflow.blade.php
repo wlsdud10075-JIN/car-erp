@@ -138,7 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                 <th class="pb-2 pr-4 font-medium">차량번호</th>
                 <th class="pb-2 pr-4 font-medium">상태</th>
-                <th class="pb-2 pr-4 font-medium">채널</th>
+                {{-- 큐 16 — 채널 컬럼 제거 (단일 채널). --}}
                 <th class="pb-2 pr-4 font-medium">매입일</th>
                 <th class="pb-2 pr-4 font-medium text-right">매입가</th>
                 <th class="pb-2 pr-4 font-medium text-right">미지급</th>
@@ -158,12 +158,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $v->progress_status === '폐기'                                 => 'badge-red',
                     default => 'badge-gray',
                 };
-                $channelLabel = match($v->sales_channel ?? '') {
-                    'export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀', default => '-',
-                };
-                $channelBadge = match($v->sales_channel ?? '') {
-                    'export' => 'badge-blue', 'heyman' => 'badge-teal', 'carpul' => 'badge-purple', default => 'badge-gray',
-                };
+                // 큐 16 — channelLabel/Badge 제거 (단일 채널).
                 $purchaseUnpaid = $v->purchase_unpaid_amount;
                 $saleUnpaid     = $v->sale_unpaid_amount;
             @endphp
@@ -172,13 +167,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $v->progress_status }}</span>
                 </td>
-                <td class="py-3 pr-4">
-                    @if($v->sales_channel)
-                    <span class="badge {{ $channelBadge }}">{{ $channelLabel }}</span>
-                    @else
-                    <span class="text-gray-300">-</span>
-                    @endif
-                </td>
+                {{-- 큐 16 — 채널 td 제거 --}}
                 <td class="py-3 pr-4 text-gray-500">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-right text-gray-700">
                     {{ $v->purchase_price > 0 ? '₩'.number_format($v->purchase_price) : '-' }}

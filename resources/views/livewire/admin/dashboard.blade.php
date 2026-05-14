@@ -79,12 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component
         });
         $saleCount = (clone $base)->where('sale_price', '>', 0)->count();
 
-        $byChannel = (clone $base)
-            ->selectRaw('sales_channel, COUNT(*) as cnt')
-            ->groupBy('sales_channel')
-            ->pluck('cnt', 'sales_channel')
-            ->toArray();
-
+        // 큐 16 — by_channel 집계 제거 (채널 단일).
         $byProgress = (clone $base)
             ->selectRaw('progress_status_cache, COUNT(*) as cnt')
             ->groupBy('progress_status_cache')
@@ -96,11 +91,6 @@ new #[Layout('components.layouts.app')] class extends Component
             'purchase_total' => $purchaseTotal,
             'sale_total_krw' => (int) $saleKrw,
             'sale_count' => $saleCount,
-            'by_channel' => [
-                'export' => $byChannel['export'] ?? 0,
-                'heyman' => $byChannel['heyman'] ?? 0,
-                'carpul' => $byChannel['carpul'] ?? 0,
-            ],
             'by_progress' => $byProgress,
         ];
     }
@@ -255,7 +245,7 @@ new #[Layout('components.layouts.app')] class extends Component
      * 1) 인원별 정산지급액 월별 stacked bar (paid_at MONTH × salesman, dateFrom의 year)
      * 2) 정산 지급 대기 총액 (confirmed-not-paid actual_payout SUM, dateFrom~dateTo 기간)
      * 3) 정산 마진율 평균 (paid settlements의 total_margin / sales_amount_krw)
-     * 4) 채널별 평균 마진 (paid settlements를 vehicle.sales_channel로 group)
+     * 4) [큐 16 제거] 채널별 평균 마진 (단일 채널로 의미 없음)
      */
     #[Computed]
     public function settlementKpis(): array
@@ -311,15 +301,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 }
             });
 
-        // 3) 정산 마진율 평균 + 4) 채널별 평균 마진 (paid 한정, dateFrom~dateTo 기간 paid_at)
+        // 3) 정산 마진율 평균 — 큐 16: 채널별 평균 마진 제거 (단일 채널).
         $marginRates = [];
-        $channelMargins = ['export' => [], 'heyman' => [], 'carpul' => []];
         Settlement::query()
             ->where('settlement_status', 'paid')
             ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
-            ->with('vehicle')
-            ->chunk(500, function ($rows) use (&$marginRates, &$channelMargins) {
+            ->chunk(500, function ($rows) use (&$marginRates) {
                 foreach ($rows as $s) {
                     $snap = $s->confirmed_snapshot;
                     $totalMargin = (int) ($snap['total_margin'] ?? $s->total_margin ?? 0);
@@ -327,17 +315,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     if ($salesKrw > 0) {
                         $marginRates[] = $totalMargin / $salesKrw;
                     }
-                    $channel = $s->vehicle?->sales_channel;
-                    if (isset($channelMargins[$channel])) {
-                        $channelMargins[$channel][] = $totalMargin;
-                    }
                 }
             });
         $avgMarginRate = $marginRates ? array_sum($marginRates) / count($marginRates) : 0;
-        $channelAvg = [];
-        foreach ($channelMargins as $ch => $list) {
-            $channelAvg[$ch] = $list ? (int) (array_sum($list) / count($list)) : 0;
-        }
 
         return [
             'year' => $year,
@@ -347,7 +327,6 @@ new #[Layout('components.layouts.app')] class extends Component
             ],
             'payout_pending' => $payoutPending,
             'avg_margin_rate' => $avgMarginRate,
-            'channel_avg_margin' => $channelAvg,
         ];
     }
 
@@ -445,7 +424,7 @@ new #[Layout('components.layouts.app')] class extends Component
     /**
      * 큐 4 8-7 — 통관 탭 대표급 KPI.
      * 회의록 결정 3종 (평균 통관일수는 export_cleared_at 부재로 보류):
-     * 1) 통관 정체 차량 수 — 판매완료(sale_price>0 AND unpaid<=0) + sales_channel=export +
+     * 1) 통관 정체 차량 수 — 판매완료(sale_price>0 AND unpaid<=0) +
      *    수출신고서 NULL + sale_date 30일 경과
      * 2) 수출신고서 미업로드 차량 수 — 수출통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
@@ -468,9 +447,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateFrom, fn ($q2) => $q2->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q2) => $q2->where($col, '<=', $this->dateTo));
 
-        // 1) 통관 정체 — clearance_stuck action과 동일
+        // 1) 통관 정체 — clearance_stuck action과 동일. 큐 16: sales_channel 단일.
         $stuckCount = $applyCommonFilters(Vehicle::query())
-            ->where('sales_channel', 'export')
             ->where('sale_price', '>', 0)
             ->where(function ($q) {
                 $q->whereNull('sale_unpaid_amount_krw_cache')
@@ -481,9 +459,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('sale_date', '<=', $stuckDate)
             ->count();
 
-        // 2) 수출신고서 미업로드 — export_declaration_upload_needed action과 동일
+        // 2) 수출신고서 미업로드 — export_declaration_upload_needed action과 동일.
         $unfiledCount = $applyCommonFilters(Vehicle::query())
-            ->where('sales_channel', 'export')
             ->whereNotNull('export_buyer_id')
             ->whereNotNull('shipping_date')
             ->whereNull('export_declaration_document')
@@ -492,7 +469,6 @@ new #[Layout('components.layouts.app')] class extends Component
         // 3) 포워딩사별 진행 차량 — 통관/선적 단계
         $clearanceStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
         $byForwarder = $applyCommonFilters(Vehicle::query())
-            ->where('sales_channel', 'export')
             ->whereNotNull('forwarding_company_id')
             ->whereIn('progress_status_cache', $clearanceStages)
             ->selectRaw('forwarding_company_id, COUNT(*) as cnt')
@@ -635,22 +611,7 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     {{-- 채널별 분포 --}}
-    <div id="w-channel" x-show="isWidgetVisible('w-channel')" class="card">
-        <div class="section-header">
-            <span class="section-dot bg-violet-500"></span>
-            <span class="section-title">채널별 차량 수 (클릭 시 해당 채널 목록)</span>
-        </div>
-        <div class="mt-3 grid grid-cols-3 gap-3">
-            @foreach (['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $code => $label)
-            @php $cnt = $this->kpis['by_channel'][$code]; @endphp
-            <a href="{{ $this->vehiclesUrl(['channelFilter' => $code]) }}" wire:navigate
-               class="card-sm flex items-center justify-between transition hover:bg-violet-50 {{ $cnt === 0 ? 'opacity-50' : '' }}">
-                <span class="text-sm text-gray-700">{{ $label }}</span>
-                <span class="text-lg font-bold text-gray-800">{{ number_format($cnt) }}</span>
-            </a>
-            @endforeach
-        </div>
-    </div>
+    {{-- 큐 16 — w-channel 위젯 제거 (채널 단일화). --}}
 
     {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (선택 기준일 기준) --}}
     @php
@@ -736,20 +697,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">총마진 / 판매금원화 평균</p>
             </div>
-            <div class="card min-w-[260px] flex-1">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">채널별 평균 마진</span>
-                    <span class="text-xs text-emerald-500">지급완료 한정</span>
-                </div>
-                <div class="mt-2 grid grid-cols-3 gap-1 text-center">
-                    @foreach (['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'] as $code => $label)
-                    <div>
-                        <div class="text-[10px] text-gray-400">{{ $label }}</div>
-                        <div class="text-sm font-semibold text-gray-800">{{ number_format($this->settlementKpis['channel_avg_margin'][$code] / 10000, 0) }}<span class="text-[10px] text-gray-400">만</span></div>
-                    </div>
-                    @endforeach
-                </div>
-            </div>
+            {{-- 큐 16 — '채널별 평균 마진' 카드 제거 (채널 단일화). --}}
         </div>
 
         {{-- 인원별 정산지급액 월별 stacked bar --}}
@@ -962,7 +910,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 widgets: {},
                 widgetList: [
                     { key: 'w-kpi',        label: 'KPI 카드 (4개)' },
-                    { key: 'w-channel',    label: '채널별 차량 수' },
+                    // 큐 16 — w-channel 제거
                     { key: 'w-progress',   label: '진행 단계별 차량 수' },
                     { key: 'w-monthly',    label: '월별 차트 (대수·판매가)' },
                     { key: 'w-salesman',   label: '담당자별 성과 차트' },
@@ -973,7 +921,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 // 점검 — 전체↔영업 통합 (영업이 회사 전체 흐름을 다 포함). 활성 탭 기본=영업.
                 activeTab: 'sales',
                 tabWidgets: {
-                    sales:      ['w-kpi', 'w-channel', 'w-progress', 'w-monthly', 'w-salesman'],
+                    sales:      ['w-kpi', 'w-progress', 'w-monthly', 'w-salesman'],
                     clearance:  ['w-kpi', 'w-progress', 'w-clearance'],
                     settlement: ['w-kpi', 'w-settlement'],
                     receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6 완료)
