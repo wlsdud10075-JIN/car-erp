@@ -17,10 +17,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *   두 FinalPayment는 transfer_id로 묶여 추적.
  *
  * 큐 19-F — 5상태 머신 (관리 ≠ 재무 분리, 회의록 2026-05-16):
- *   pending                       — 영업 요청, ApprovalRequest 대기
- *   approved_awaiting_finance     — 관리 승인 (의사결정 통과, final_payment 미생성)
- *   executed                      — 재무 확정 (final_payment 페어 생성, ledger 기록)
- *   voided                        — 별도 voided 거래로 취소 (반대 부호 final_payment 추가)
+ *   pending                        — 영업 요청, ApprovalRequest 대기
+ *   approved_awaiting_finance      — 관리 승인 (의사결정 통과, final_payment 미생성)
+ *   executed                       — 재무 확정 (final_payment 페어 생성, ledger 기록)
+ *   voided_awaiting_finance        — 영업 void 요청 + 관리 승인 (의사결정 통과, 반대 부호 final_payment 미생성)
+ *   voided                         — 재무 void 확정 (반대 부호 final_payment 페어 생성)
  *
  * STATUS_APPROVED 는 deprecated — 19-F-A 마이그레이션이 backfill로 approved_awaiting_finance 로 전환.
  * 신규 흐름에선 사용 금지. 19-F-B Service 에서 approve() 가 approved_awaiting_finance 로 직접 set.
@@ -54,6 +55,8 @@ class InterVehicleTransfer extends Model
 
     public const STATUS_EXECUTED = 'executed';
 
+    public const STATUS_VOIDED_AWAITING_FINANCE = 'voided_awaiting_finance';
+
     public const STATUS_VOIDED = 'voided';
 
     public const STATUSES = [
@@ -61,6 +64,7 @@ class InterVehicleTransfer extends Model
         self::STATUS_APPROVED => '승인',  // legacy
         self::STATUS_APPROVED_AWAITING_FINANCE => '관리 승인 (재무 처리 대기)',
         self::STATUS_EXECUTED => '실행 완료',
+        self::STATUS_VOIDED_AWAITING_FINANCE => '취소 승인 (재무 처리 대기)',
         self::STATUS_VOIDED => '취소',
     ];
 
@@ -115,6 +119,7 @@ class InterVehicleTransfer extends Model
             self::STATUS_PENDING => 'badge-amber',
             self::STATUS_APPROVED, self::STATUS_APPROVED_AWAITING_FINANCE => 'badge-blue',
             self::STATUS_EXECUTED => 'badge-green',
+            self::STATUS_VOIDED_AWAITING_FINANCE => 'badge-amber',
             self::STATUS_VOIDED => 'badge-gray',
             default => 'badge-gray',
         };

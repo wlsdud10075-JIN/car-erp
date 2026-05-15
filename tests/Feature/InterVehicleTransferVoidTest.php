@@ -28,6 +28,7 @@ class InterVehicleTransferVoidTest extends TestCase
         $buyer = Buyer::create(['name' => 'TOKYO AUTO', 'is_active' => true]);
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '정산']);
 
         $source = Vehicle::create([
             'vehicle_number' => '99가0001',
@@ -49,9 +50,11 @@ class InterVehicleTransferVoidTest extends TestCase
         $this->actingAs($sales);
         $transfer = $service->request($source, $target, 25_000_000, $sales, reason: '이체 요청');
         $this->actingAs($manager);
-        $service->execute($transfer, $manager);
+        $service->approve($transfer, $manager);
+        $service->confirmByFinance($transfer, $finance);
+        $transfer->refresh();
 
-        return compact('buyer', 'sales', 'manager', 'source', 'target', 'service', 'transfer');
+        return compact('buyer', 'sales', 'manager', 'finance', 'source', 'target', 'service', 'transfer');
     }
 
     public function test_void_request_creates_approval_request_pending(): void
@@ -89,19 +92,42 @@ class InterVehicleTransferVoidTest extends TestCase
     }
 
     /**
-     * 회의록 §13 — void 실행은 양 차량에 반대 부호 final_payment 추가 (append-only).
+     * 큐 19-F — void 5단계: approveVoid (의사결정) → confirmVoidByFinance (실물 처리).
+     * approveVoid 만 호출하면 final_payment 페어 미생성 — 이체 페어 2건만 잔존.
      */
-    public function test_void_execution_creates_reverse_final_payments_and_marks_voided(): void
+    public function test_approve_void_does_not_create_reverse_final_payments(): void
     {
         $c = $this->executeTransferScenario();
-        $c['service']->void($c['transfer']->fresh(), $c['manager'], '바이어 2번 차 거래 무산');
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], '바이어 2번 차 거래 무산');
+
+        $transfer = $c['transfer']->fresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE, $transfer->status);
+        $this->assertNull($transfer->voided_at);
+        $this->assertEquals('바이어 2번 차 거래 무산', $transfer->void_reason);
+
+        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
+
+        // 미수 캐시는 이체 후 상태 그대로 (1번 차 7500만 / 2번 차 5500만)
+        $this->assertEquals(75_000_000, (int) $c['source']->fresh()->sale_unpaid_amount);
+        $this->assertEquals(55_000_000, (int) $c['target']->fresh()->sale_unpaid_amount);
+    }
+
+    /**
+     * 회의록 §13 — confirmVoidByFinance 가 양 차량에 반대 부호 final_payment 페어 생성 (append-only).
+     */
+    public function test_confirm_void_by_finance_creates_reverse_final_payments_and_marks_voided(): void
+    {
+        $c = $this->executeTransferScenario();
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], '바이어 2번 차 거래 무산');
+        $c['service']->confirmVoidByFinance($c['transfer']->fresh(), $c['finance'], '환불 거래번호 RV456');
 
         $transfer = $c['transfer']->fresh();
         $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED, $transfer->status);
         $this->assertNotNull($transfer->voided_at);
         $this->assertNotEmpty($transfer->void_reason);
+        $this->assertEquals($c['finance']->id, $transfer->confirmed_by_user_id);
+        $this->assertEquals('환불 거래번호 RV456', $transfer->finance_note);
 
-        // FinalPayment 4건 (실행 페어 2 + void 페어 2). 양 차량 잔금 합은 0
         $payments = FinalPayment::where('transfer_id', $transfer->id)->get();
         $this->assertCount(4, $payments);
 
@@ -110,14 +136,13 @@ class InterVehicleTransferVoidTest extends TestCase
         $this->assertEquals(0.0, $sourceSum);
         $this->assertEquals(0.0, $targetSum);
 
-        // 미수 캐시 원상복구 — 1번 차 5000만(50%) / 2번 차 8000만(0)
         $source = $c['source']->fresh();
         $target = $c['target']->fresh();
         $this->assertEquals(50_000_000, (int) $source->sale_unpaid_amount);
         $this->assertEquals(80_000_000, (int) $target->sale_unpaid_amount);
     }
 
-    public function test_void_blocked_when_source_has_paid_settlement(): void
+    public function test_approve_void_blocked_when_source_has_paid_settlement(): void
     {
         $c = $this->executeTransferScenario();
         Settlement::create([
@@ -131,13 +156,27 @@ class InterVehicleTransferVoidTest extends TestCase
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('paid 정산');
-        $c['service']->void($c['transfer']->fresh(), $c['manager'], 'paid 정산 가드 테스트');
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], 'paid 정산 가드 테스트');
     }
 
     /**
-     * 큐 19-E E2E — /erp/approvals 페이지에서 관리 승인 → service.void() 자동 호출.
+     * 큐 19-F — void self-confirm 차단 (SoD).
      */
-    public function test_approval_request_execute_triggers_void(): void
+    public function test_void_self_confirm_blocked(): void
+    {
+        $c = $this->executeTransferScenario();
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], 'SoD 테스트');
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('SoD');
+        $c['service']->confirmVoidByFinance($c['transfer']->fresh(), $c['manager']);
+    }
+
+    /**
+     * 큐 19-E / 19-F E2E — /erp/approvals 페이지에서 관리 승인 → service.approveVoid() 자동 호출.
+     * 19-F 후엔 관리 승인만 통과: status = voided_awaiting_finance, final_payment 페어 미생성.
+     */
+    public function test_approval_request_execute_triggers_void_approval(): void
     {
         $c = $this->executeTransferScenario();
         $this->actingAs($c['sales']);
@@ -151,8 +190,8 @@ class InterVehicleTransferVoidTest extends TestCase
             ->assertHasNoErrors();
 
         $transfer = $c['transfer']->fresh();
-        $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED, $transfer->status);
-        $this->assertCount(4, FinalPayment::where('transfer_id', $transfer->id)->get());
+        $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE, $transfer->status);
+        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
     }
 
     public function test_void_modal_submit_creates_approval_request(): void

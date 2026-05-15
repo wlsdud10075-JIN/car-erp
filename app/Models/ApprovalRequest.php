@@ -127,19 +127,21 @@ class ApprovalRequest extends Model
     }
 
     /**
-     * 큐 19-B — inter_vehicle_transfer 승인 = InterVehicleTransferService::execute() 호출.
-     * service가 source 음수 + target 양수 final_payment 페어 트랜잭션 처리.
+     * 큐 19-B / 19-F — inter_vehicle_transfer 승인 = 관리 의사결정만 통과.
+     * service->approve() 호출 — transfer.status = approved_awaiting_finance.
+     * final_payment 페어 생성은 재무(settlement role) 의 confirmByFinance() 시점으로 이연.
      */
     private function executeInterVehicleTransfer(): void
     {
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
         $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
-        app(InterVehicleTransferService::class)->execute($transfer, $approver);
+        app(InterVehicleTransferService::class)->approve($transfer, $approver);
     }
 
     /**
-     * 큐 19-E — inter_vehicle_transfer_void 승인 = InterVehicleTransferService::void() 호출.
-     * 대상 transfer는 payload.transfer_id에 저장. 양 차량에 반대 부호 final_payment 추가.
+     * 큐 19-E / 19-F — inter_vehicle_transfer_void 승인 = 관리 의사결정만 통과.
+     * service->approveVoid() 호출 — transfer.status = voided_awaiting_finance.
+     * 반대 부호 final_payment 페어 생성은 재무의 confirmVoidByFinance() 시점으로 이연.
      */
     private function executeInterVehicleTransferVoid(): void
     {
@@ -150,7 +152,7 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::findOrFail($transferId);
         $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
         $reason = $this->decision_note ?: ($this->reason ?: '관리 승인으로 이체 취소');
-        app(InterVehicleTransferService::class)->void($transfer, $approver, $reason);
+        app(InterVehicleTransferService::class)->approveVoid($transfer, $approver, $reason);
     }
 
     private function executeSettlementPay(): void

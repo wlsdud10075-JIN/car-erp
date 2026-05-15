@@ -147,10 +147,20 @@ class InterVehicleTransferModelTest extends TestCase
         $this->assertEquals('대기', $transfer->status_label);
         $this->assertEquals('badge-amber', $transfer->status_badge);
 
+        // 큐 19-F — approved_awaiting_finance
+        $transfer->status = InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE;
+        $this->assertEquals('관리 승인 (재무 처리 대기)', $transfer->status_label);
+        $this->assertEquals('badge-blue', $transfer->status_badge);
+
         // executed
         $transfer->status = InterVehicleTransfer::STATUS_EXECUTED;
         $this->assertEquals('실행 완료', $transfer->status_label);
         $this->assertEquals('badge-green', $transfer->status_badge);
+
+        // 큐 19-F — voided_awaiting_finance
+        $transfer->status = InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE;
+        $this->assertEquals('취소 승인 (재무 처리 대기)', $transfer->status_label);
+        $this->assertEquals('badge-amber', $transfer->status_badge);
 
         // voided
         $transfer->status = InterVehicleTransfer::STATUS_VOIDED;

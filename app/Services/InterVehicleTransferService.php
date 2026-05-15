@@ -11,21 +11,31 @@ use DomainException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * 큐 19-B — 차량 간 자금 이체 Service (회의록 v5 §13).
+ * 큐 19-B / 19-E / 19-F — 차량 간 자금 이체 Service.
  *
- * 책임:
- *   - available()  : 소스 차량의 이체 한도 계산 (받은 금액 × 0.5)
- *   - request()    : 영업 요청 — InterVehicleTransfer(pending) + ApprovalRequest(pending) 동시 생성
- *   - execute()    : 관리 승인 후 실제 자금 이체 — source 음수 + target 양수 final_payment 페어,
- *                    transfer.status = executed (append-only)
+ * 5상태 머신 (큐 19-F, 회의록 2026-05-16 — 관리 ≠ 재무 분리):
+ *   pending                       — 영업 요청, ApprovalRequest 대기
+ *   ↓ approve() — 관리 의사결정 (final_payment 미생성)
+ *   approved_awaiting_finance
+ *   ↓ confirmByFinance() — 재무 실물 확정 (final_payment 페어 생성, ledger)
+ *   executed
+ *   ↓ approveVoid() — 영업 void 요청 + 관리 의사결정 (반대 부호 final_payment 미생성)
+ *   voided_awaiting_finance
+ *   ↓ confirmVoidByFinance() — 재무 실물 확정 (반대 부호 final_payment 페어 생성)
+ *   voided
  *
- * void는 별도 흐름 (19-E): voided 거래용 ApprovalRequest 별도 + voidExecute() 메서드.
+ * 안전 가드 5종 (assertGuards):
+ *   1. source ≠ target / 2. buyer_id 동일 / 3. currency 동일
+ *   4. unpaid_ratio ≤ 0.5 AND amount ≤ available()
+ *   5. 큐 10 H4 — source/target 어느 쪽에도 paid Settlement 없음
  *
- * 안전 가드 4종 (요청 시):
- *   1. 양 차량 buyer_id 동일
- *   2. 양 차량 currency 동일 (정합 — amount의 통화 의미 보존)
- *   3. 소스 unpaid_ratio ≤ 0.5 (= 받은 금액 50%↑)
- *   4. amount > 0 AND amount ≤ available()
+ * 가드 호출 시점:
+ *   - request()           — 안건 1 (요청 단계)
+ *   - approve()           — 안건 2 (관리 승인 — pending → approved_awaiting_finance)
+ *   - confirmByFinance()  — 안건 3 (재무 확정 — approved_awaiting_finance → executed)
+ *   confirm 시점에도 H4 재실행 — approve 후 paid Settlement 발생 케이스 방어 (Specialist F).
+ *
+ * self-confirm 차단 (회의 결정): approver_id === finance_user_id 시 차단.
  */
 class InterVehicleTransferService
 {
@@ -60,7 +70,6 @@ class InterVehicleTransferService
     ): InterVehicleTransfer {
         $this->assertGuards($source, $target, $amount);
 
-        // 같은 source vehicle에 pending 요청이 이미 있으면 차단 (옵션 A — 한 번에 1건)
         $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
             ->where('status', ApprovalRequest::STATUS_PENDING)
             ->where('target_type', Vehicle::class)
@@ -104,38 +113,68 @@ class InterVehicleTransferService
     }
 
     /**
-     * 관리 승인 후 실제 자금 이체 실행.
-     * 트랜잭션:
-     *   1. source 차량에 amount = -X final_payment (transfer_id 연결)
-     *   2. target 차량에 amount = +X final_payment (transfer_id 연결)
-     *   3. transfer.status = executed, executed_at = now, approver_id 기록
+     * 큐 19-F — 관리 승인 (의사결정만, final_payment 미생성).
      *
-     * append-only — 이미 executed/voided인 거래는 재실행 차단.
-     * FinalPayment::created 훅이 양 차량 sale_unpaid_amount_krw_cache 자동 갱신.
+     * pending → approved_awaiting_finance.
+     * 실행 시점 한도 재검증 — 요청과 승인 사이 source가 추가 입금/환불 받았을 수 있음.
+     * approver_id 기록 — confirmByFinance 시 self-confirm 차단 기준.
      *
-     * @throws DomainException 상태가 pending/approved가 아니거나 가드 위반 시
+     * @throws DomainException 상태가 pending 아니거나 가드 위반 시
      */
-    public function execute(InterVehicleTransfer $transfer, User $approver): void
+    public function approve(InterVehicleTransfer $transfer, User $approver): void
     {
         $transfer = $transfer->fresh();
-        if (! in_array($transfer->status, [InterVehicleTransfer::STATUS_PENDING, InterVehicleTransfer::STATUS_APPROVED], true)) {
+        if ($transfer->status !== InterVehicleTransfer::STATUS_PENDING) {
             throw new DomainException("이미 처리된 이체입니다 (현재 상태: {$transfer->status}).");
         }
 
-        // 실행 시점에도 한도 재검증 — 요청과 승인 사이 시간차로 source가 추가 입금/환불 받았을 수 있음
         $this->assertGuards($transfer->sourceVehicle, $transfer->targetVehicle, (float) $transfer->amount);
 
-        DB::transaction(function () use ($transfer, $approver) {
+        $transfer->update([
+            'status' => InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            'approver_id' => $approver->id,
+        ]);
+    }
+
+    /**
+     * 큐 19-F — 재무 확정 (실물 자금 처리 후 시스템 마킹).
+     *
+     * approved_awaiting_finance → executed.
+     * DB::transaction 내부에서:
+     *   1. source 차량에 amount = -X final_payment (transfer_id 연결)
+     *   2. target 차량에 amount = +X final_payment (transfer_id 연결)
+     *   3. transfer.status = executed, executed_at = now, confirmed_by_user_id / confirmed_at / finance_note 기록
+     *
+     * 가드:
+     *   - 상태가 approved_awaiting_finance 아니면 차단
+     *   - approver_id === financeUser->id 면 self-confirm 차단 (SoD)
+     *   - H4 paid Settlement 재검증 — approve 후 paid 발생 케이스 방어
+     *
+     * @throws DomainException 위 가드 위반 시
+     */
+    public function confirmByFinance(InterVehicleTransfer $transfer, User $financeUser, ?string $note = null): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
+            throw new DomainException("관리 승인 대기 상태의 이체만 재무 확정할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
+            throw new DomainException('관리 승인자와 재무 확정자는 다른 사용자여야 합니다 (SoD).');
+        }
+
+        $this->assertPaidSettlementGuard($transfer->sourceVehicle, $transfer->targetVehicle);
+
+        DB::transaction(function () use ($transfer, $financeUser, $note) {
             $today = now()->toDateString();
             $amount = (float) $transfer->amount;
-            $note = "차량 간 자금 이체 #{$transfer->id} (관리자 승인 #{$transfer->approval_request_id})";
+            $marker = "차량 간 자금 이체 #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
 
             FinalPayment::create([
                 'vehicle_id' => $transfer->source_vehicle_id,
                 'transfer_id' => $transfer->id,
                 'amount' => -$amount,
                 'payment_date' => $today,
-                'note' => "→ 차량 #{$transfer->target_vehicle_id} 이체 ({$note})",
+                'note' => "→ 차량 #{$transfer->target_vehicle_id} 이체 ({$marker})",
             ]);
 
             FinalPayment::create([
@@ -143,13 +182,15 @@ class InterVehicleTransferService
                 'transfer_id' => $transfer->id,
                 'amount' => $amount,
                 'payment_date' => $today,
-                'note' => "← 차량 #{$transfer->source_vehicle_id} 에서 이체 ({$note})",
+                'note' => "← 차량 #{$transfer->source_vehicle_id} 에서 이체 ({$marker})",
             ]);
 
             $transfer->update([
                 'status' => InterVehicleTransfer::STATUS_EXECUTED,
                 'executed_at' => now(),
-                'approver_id' => $approver->id,
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => now(),
+                'finance_note' => $note,
             ]);
         });
     }
@@ -164,7 +205,6 @@ class InterVehicleTransferService
         if ($transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
             throw new DomainException("실행 완료된 이체만 취소할 수 있습니다 (현재 상태: {$transfer->status}).");
         }
-        // 이미 대기중인 void 요청 있으면 차단
         $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
             ->where('status', ApprovalRequest::STATUS_PENDING)
             ->whereJsonContains('payload->transfer_id', $transfer->id)
@@ -193,40 +233,66 @@ class InterVehicleTransferService
     }
 
     /**
-     * 큐 19-E — void 실제 실행 (관리 승인 후 ApprovalRequest::executeInterVehicleTransferVoid에서 호출).
+     * 큐 19-F — void 관리 승인 (의사결정만, 반대 부호 final_payment 미생성).
      *
-     * 트랜잭션:
-     *   1. source 차량에 amount = +X final_payment (원본 음수 → 반대 양수, transfer_id 연결)
-     *   2. target 차량에 amount = -X final_payment (원본 양수 → 반대 음수, transfer_id 연결)
-     *   3. transfer.status = voided, voided_at = now, void_reason 기록
+     * executed → voided_awaiting_finance.
+     * void_reason 기록 (영업 요청 사유 또는 관리 결정 사유).
      *
-     * append-only — 기존 final_payment는 절대 삭제·수정 안 함 (회계 흐름 보존).
-     * FinalPayment::$allowTransferLinkedMutation는 신규 INSERT엔 영향 없음 (UPDATE/DELETE만 가드).
-     *
-     * @throws DomainException status가 executed 아니거나 H4 가드 위반 시
+     * @throws DomainException 상태가 executed 아니거나 H4 가드 위반 시
      */
-    public function void(InterVehicleTransfer $transfer, User $approver, string $reason): void
+    public function approveVoid(InterVehicleTransfer $transfer, User $approver, string $reason): void
     {
         $transfer = $transfer->fresh();
         if ($transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
             throw new DomainException("실행 완료된 이체만 취소할 수 있습니다 (현재 상태: {$transfer->status}).");
         }
 
-        // H4 정합 — void도 회계 변동이므로 paid Settlement 있으면 차단
-        foreach (['출처' => $transfer->sourceVehicle, '대상' => $transfer->targetVehicle] as $label => $v) {
-            if ($v && $v->settlements()->where('settlement_status', 'paid')->exists()) {
-                throw new DomainException("{$label} 차량에 paid 정산이 있어 이체 취소할 수 없습니다.");
-            }
+        $this->assertPaidSettlementGuard($transfer->sourceVehicle, $transfer->targetVehicle);
+
+        $transfer->update([
+            'status' => InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            'void_reason' => $reason,
+            'approver_id' => $approver->id,
+        ]);
+    }
+
+    /**
+     * 큐 19-F — void 재무 확정 (반대 부호 final_payment 페어 생성).
+     *
+     * voided_awaiting_finance → voided.
+     * DB::transaction 내부에서:
+     *   1. source 차량에 amount = +X final_payment (원본 -X → 반대 +X, transfer_id 연결)
+     *   2. target 차량에 amount = -X final_payment (원본 +X → 반대 -X, transfer_id 연결)
+     *   3. transfer.status = voided, voided_at = now, confirmed_by_user_id / confirmed_at / finance_note 기록
+     *
+     * 가드:
+     *   - 상태가 voided_awaiting_finance 아니면 차단
+     *   - approver_id === financeUser->id 면 self-confirm 차단
+     *   - H4 paid Settlement 재검증
+     *
+     * append-only — 기존 final_payment 는 절대 삭제·수정 안 함 (회계 흐름 보존).
+     */
+    public function confirmVoidByFinance(InterVehicleTransfer $transfer, User $financeUser, ?string $note = null): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
+            throw new DomainException("취소 승인 대기 상태의 이체만 재무 확정할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
+            throw new DomainException('관리 승인자와 재무 확정자는 다른 사용자여야 합니다 (SoD).');
         }
 
-        DB::transaction(function () use ($transfer, $approver, $reason) {
+        $this->assertPaidSettlementGuard($transfer->sourceVehicle, $transfer->targetVehicle);
+
+        DB::transaction(function () use ($transfer, $financeUser, $note) {
             $today = now()->toDateString();
             $amount = (float) $transfer->amount;
+            $reason = $transfer->void_reason ?? '관리 승인으로 이체 취소';
 
             FinalPayment::create([
                 'vehicle_id' => $transfer->source_vehicle_id,
                 'transfer_id' => $transfer->id,
-                'amount' => $amount,  // 원본 -X → 반대 +X
+                'amount' => $amount,
                 'payment_date' => $today,
                 'note' => "이체 취소 (#{$transfer->id}): {$reason}",
             ]);
@@ -234,7 +300,7 @@ class InterVehicleTransferService
             FinalPayment::create([
                 'vehicle_id' => $transfer->target_vehicle_id,
                 'transfer_id' => $transfer->id,
-                'amount' => -$amount,  // 원본 +X → 반대 -X
+                'amount' => -$amount,
                 'payment_date' => $today,
                 'note' => "이체 취소 (#{$transfer->id}): {$reason}",
             ]);
@@ -242,14 +308,15 @@ class InterVehicleTransferService
             $transfer->update([
                 'status' => InterVehicleTransfer::STATUS_VOIDED,
                 'voided_at' => now(),
-                'void_reason' => $reason,
-                'approver_id' => $approver->id,
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => now(),
+                'finance_note' => $note,
             ]);
         });
     }
 
     /**
-     * 안전 가드 5종 검증. 위반 시 예외.
+     * 안전 가드 5종 검증 (요청·관리 승인 시점). 위반 시 예외.
      *
      * 5번째 가드 (H4 정합) — 큐 10 H4와 연동: source 또는 target에 paid Settlement가 있으면
      * 차단. 마감된 정산의 snapshot과 vehicle 현황 사이 drift 방지.
@@ -279,14 +346,23 @@ class InterVehicleTransferService
         }
 
         $limit = $this->available($source);
-        if ($amount > $limit + 0.005) {  // float 오차 ±0.005
+        if ($amount > $limit + 0.005) {
             throw new DomainException('이체 한도를 초과했습니다 (받은 금액의 50%까지 가능, 한도: '.number_format($limit, 2).').');
         }
 
-        // 큐 10 H4 정합 — 양 차량 중 하나라도 paid Settlement 있으면 차단
+        $this->assertPaidSettlementGuard($source, $target);
+    }
+
+    /**
+     * 큐 19-F — H4 paid Settlement 단독 가드.
+     * confirmByFinance / confirmVoidByFinance / approveVoid 에서 재실행 — approve 이후
+     * paid Settlement 발생 케이스 방어 (Specialist F 지적).
+     */
+    private function assertPaidSettlementGuard(Vehicle $source, Vehicle $target): void
+    {
         foreach (['출처' => $source, '대상' => $target] as $label => $v) {
-            if ($v->settlements()->where('settlement_status', 'paid')->exists()) {
-                throw new DomainException("{$label} 차량에 paid 정산이 있어 자금 이체할 수 없습니다. 정산 취소 후 재시도하세요.");
+            if ($v && $v->settlements()->where('settlement_status', 'paid')->exists()) {
+                throw new DomainException("{$label} 차량에 paid 정산이 있어 자금 이체를 처리할 수 없습니다.");
             }
         }
     }

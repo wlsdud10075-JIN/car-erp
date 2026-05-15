@@ -15,8 +15,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * 큐 19-B — InterVehicleTransferService (회의록 v5 §13).
- * 한도 계산·요청·실행·안전 가드 4종 검증.
+ * 큐 19-B / 19-F — InterVehicleTransferService.
+ * 한도·요청·관리 승인(approve)·재무 확정(confirmByFinance)·안전 가드 5종 검증.
+ *
+ * 5상태 머신:
+ *   pending → approved_awaiting_finance → executed
+ *           → voided_awaiting_finance   → voided
  */
 class InterVehicleTransferServiceTest extends TestCase
 {
@@ -32,12 +36,14 @@ class InterVehicleTransferServiceTest extends TestCase
 
     /**
      * 회의록 §13 T=0 시나리오 — 1번 차 1억 / 5천만 입금 (ratio 50%).
+     * 큐 19-F — finance(정산 role) 사용자 추가 (관리 승인자와 분리해야 SoD 통과).
      */
     private function makeContext(int $sourceReceived = 50_000_000): array
     {
         $buyer = Buyer::create(['name' => 'TOKYO AUTO', 'is_active' => true]);
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '정산']);
 
         $source = Vehicle::create([
             'vehicle_number' => '99가0001',
@@ -55,7 +61,7 @@ class InterVehicleTransferServiceTest extends TestCase
             'currency' => 'KRW',
         ]);
 
-        return compact('buyer', 'sales', 'manager', 'source', 'target');
+        return compact('buyer', 'sales', 'manager', 'finance', 'source', 'target');
     }
 
     public function test_available_returns_received_times_half(): void
@@ -152,22 +158,48 @@ class InterVehicleTransferServiceTest extends TestCase
     }
 
     /**
-     * 회의록 §13 T=2 — 관리 승인 → 1번 차 -2500만 + 2번 차 +2500만 트랜잭션.
+     * 큐 19-F — 관리 승인(approve)만 호출하면 final_payment 미생성, status는 대기 상태.
      */
-    public function test_execute_creates_paired_final_payments_and_updates_caches(): void
+    public function test_approve_does_not_create_final_payments(): void
     {
         $c = $this->makeContext(50_000_000);
 
         $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
 
-        $this->service->execute($transfer, $c['manager']);
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, $transfer->status);
+        $this->assertEquals($c['manager']->id, $transfer->approver_id);
+        $this->assertNull($transfer->executed_at);
+        $this->assertNull($transfer->confirmed_by_user_id);
+        $this->assertNull($transfer->confirmed_at);
+
+        $this->assertCount(0, FinalPayment::where('transfer_id', $transfer->id)->get());
+
+        // 미수 캐시 — 이체 전 그대로 (5천만 입금 → 5천만 미수)
+        $this->assertEquals(50_000_000, (int) $c['source']->fresh()->sale_unpaid_amount);
+        $this->assertEquals(80_000_000, (int) $c['target']->fresh()->sale_unpaid_amount);
+    }
+
+    /**
+     * 회의록 §13 T=2 — 관리 승인 → 재무 확정 → 1번 차 -2500만 + 2번 차 +2500만 트랜잭션.
+     */
+    public function test_confirm_by_finance_creates_paired_final_payments_and_updates_caches(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance'], '시중은행 거래번호 TEST123');
 
         $transfer->refresh();
         $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $transfer->status);
         $this->assertNotNull($transfer->executed_at);
         $this->assertEquals($c['manager']->id, $transfer->approver_id);
+        $this->assertEquals($c['finance']->id, $transfer->confirmed_by_user_id);
+        $this->assertNotNull($transfer->confirmed_at);
+        $this->assertEquals('시중은행 거래번호 TEST123', $transfer->finance_note);
 
-        // FinalPayment 페어 검증
         $payments = FinalPayment::where('transfer_id', $transfer->id)->orderBy('amount')->get();
         $this->assertCount(2, $payments);
         $this->assertEquals(-25_000_000, $payments[0]->amount);
@@ -175,34 +207,29 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->assertEquals(25_000_000, $payments[1]->amount);
         $this->assertEquals($c['target']->id, $payments[1]->vehicle_id);
 
-        // 양 차량 미수 캐시 갱신
         $source = $c['source']->fresh();
         $target = $c['target']->fresh();
-        // 1번 차: 1억 - (5000만 - 2500만) = 7500만 미수
         $this->assertEquals(75_000_000, (int) $source->sale_unpaid_amount);
-        // 2번 차: 8000만 - 2500만 = 5500만 미수
         $this->assertEquals(55_000_000, (int) $target->sale_unpaid_amount);
     }
 
-    public function test_execute_blocks_already_executed_transfer(): void
+    public function test_approve_blocks_already_approved_transfer(): void
     {
         $c = $this->makeContext(50_000_000);
 
         $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
-        $this->service->execute($transfer, $c['manager']);
+        $this->service->approve($transfer, $c['manager']);
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('이미 처리된');
-        $this->service->execute($transfer, $c['manager']);
+        $this->service->approve($transfer, $c['manager']);
     }
 
-    public function test_execute_re_validates_guards_at_execution_time(): void
+    public function test_approve_re_validates_guards_at_approval_time(): void
     {
-        // 요청 시점에는 통과했지만 승인 사이에 source가 환불받아 미수율이 50%↑로 올라간 경우
         $c = $this->makeContext(50_000_000);
         $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
 
-        // 환불 시뮬레이션 — final_payment 음수로 입금 차감 (받은 금액 5000만 → 2000만, ratio 80%)
         FinalPayment::create([
             'vehicle_id' => $c['source']->id,
             'amount' => -30_000_000,
@@ -212,7 +239,47 @@ class InterVehicleTransferServiceTest extends TestCase
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('50% 이상 입금');
-        $this->service->execute($transfer, $c['manager']);
+        $this->service->approve($transfer, $c['manager']);
+    }
+
+    /**
+     * 큐 19-F — 재무 확정 시점에 H4 paid Settlement 재검증.
+     * Specialist F 지적: approve 후 confirmByFinance 사이 paid Settlement 발생 케이스 방어.
+     */
+    public function test_h4_guard_fires_on_confirm_when_settlement_paid_between_approve_and_confirm(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+
+        // approve 후 paid Settlement 발생
+        Settlement::create([
+            'vehicle_id' => $c['source']->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'confirmed_at' => now(),
+            'paid_at' => now(),
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('paid 정산');
+        $this->service->confirmByFinance($transfer, $c['finance']);
+    }
+
+    /**
+     * 큐 19-F — SoD 차단: approver_id === finance_user_id 인 self-confirm 시도 차단.
+     * 사용자 결정 (2026-05-16): 동일 user_id 차단.
+     */
+    public function test_self_confirm_blocked(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('SoD');
+        $this->service->confirmByFinance($transfer, $c['manager']);
     }
 
     /**
@@ -254,10 +321,11 @@ class InterVehicleTransferServiceTest extends TestCase
     }
 
     /**
-     * 큐 19-B 통합 — ApprovalRequest::execute() 호출이 transfer 실행까지 트리거.
+     * 큐 19-B / 19-F 통합 — ApprovalRequest::execute() 호출이 service->approve() 트리거.
+     * 19-F 후엔 의사결정만 통과: status = approved_awaiting_finance, final_payment 미생성.
      * /erp/approvals 페이지 승인 흐름과 동일 경로 검증.
      */
-    public function test_approval_request_execute_triggers_transfer(): void
+    public function test_approval_request_execute_triggers_transfer_approval(): void
     {
         $c = $this->makeContext(50_000_000);
         $this->actingAs($c['manager']);
@@ -265,13 +333,12 @@ class InterVehicleTransferServiceTest extends TestCase
         $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
         $req = ApprovalRequest::findOrFail($transfer->approval_request_id);
 
-        // 사용자가 /erp/approvals 에서 승인 시 호출되는 경로
         $req->execute();
 
         $transfer->refresh();
-        $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $transfer->status);
+        $this->assertEquals(InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, $transfer->status);
         $this->assertEquals($c['manager']->id, $transfer->approver_id);
-        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
+        $this->assertCount(0, FinalPayment::where('transfer_id', $transfer->id)->get());
     }
 
     /**
