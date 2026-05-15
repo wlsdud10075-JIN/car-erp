@@ -12,13 +12,18 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * 같은 바이어가 1번 차에 50%↑ 입금 후 2번 차도 사면, 관리 승인 하에
  * "받은 금액의 50% 한도" 내에서 1→2 차로 자금 이체.
  *
- * 실행은 InterVehicleTransferService (큐 19-B):
+ * 실행은 InterVehicleTransferService:
  *   source 차량에 음수 final_payment + target 차량에 양수 final_payment 트랜잭션,
  *   두 FinalPayment는 transfer_id로 묶여 추적.
  *
- * 상태 머신 (append-only):
- *   pending  → approved → executed → voided (별도 voided 거래로만)
- *   pending  → rejected (ApprovalRequest 측 결정 반영)
+ * 큐 19-F — 5상태 머신 (관리 ≠ 재무 분리, 회의록 2026-05-16):
+ *   pending                       — 영업 요청, ApprovalRequest 대기
+ *   approved_awaiting_finance     — 관리 승인 (의사결정 통과, final_payment 미생성)
+ *   executed                      — 재무 확정 (final_payment 페어 생성, ledger 기록)
+ *   voided                        — 별도 voided 거래로 취소 (반대 부호 final_payment 추가)
+ *
+ * STATUS_APPROVED 는 deprecated — 19-F-A 마이그레이션이 backfill로 approved_awaiting_finance 로 전환.
+ * 신규 흐름에선 사용 금지. 19-F-B Service 에서 approve() 가 approved_awaiting_finance 로 직접 set.
  */
 class InterVehicleTransfer extends Model
 {
@@ -29,6 +34,7 @@ class InterVehicleTransfer extends Model
         'status',
         'executed_at', 'voided_at', 'void_reason',
         'requester_id', 'approver_id',
+        'confirmed_by_user_id', 'confirmed_at', 'finance_note',
         'notes',
     ];
 
@@ -36,11 +42,15 @@ class InterVehicleTransfer extends Model
         'amount' => 'decimal:2',
         'executed_at' => 'datetime',
         'voided_at' => 'datetime',
+        'confirmed_at' => 'datetime',
     ];
 
     public const STATUS_PENDING = 'pending';
 
+    /** @deprecated 큐 19-F — approved_awaiting_finance 로 대체. backfill 후 미사용. */
     public const STATUS_APPROVED = 'approved';
+
+    public const STATUS_APPROVED_AWAITING_FINANCE = 'approved_awaiting_finance';
 
     public const STATUS_EXECUTED = 'executed';
 
@@ -48,7 +58,8 @@ class InterVehicleTransfer extends Model
 
     public const STATUSES = [
         self::STATUS_PENDING => '대기',
-        self::STATUS_APPROVED => '승인',
+        self::STATUS_APPROVED => '승인',  // legacy
+        self::STATUS_APPROVED_AWAITING_FINANCE => '관리 승인 (재무 처리 대기)',
         self::STATUS_EXECUTED => '실행 완료',
         self::STATUS_VOIDED => '취소',
     ];
@@ -83,6 +94,11 @@ class InterVehicleTransfer extends Model
         return $this->belongsTo(User::class, 'approver_id');
     }
 
+    public function financeConfirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by_user_id');
+    }
+
     public function finalPayments(): HasMany
     {
         return $this->hasMany(FinalPayment::class, 'transfer_id');
@@ -97,7 +113,7 @@ class InterVehicleTransfer extends Model
     {
         return match ($this->status) {
             self::STATUS_PENDING => 'badge-amber',
-            self::STATUS_APPROVED => 'badge-blue',
+            self::STATUS_APPROVED, self::STATUS_APPROVED_AWAITING_FINANCE => 'badge-blue',
             self::STATUS_EXECUTED => 'badge-green',
             self::STATUS_VOIDED => 'badge-gray',
             default => 'badge-gray',
