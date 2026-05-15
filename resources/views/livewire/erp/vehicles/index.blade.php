@@ -3,11 +3,13 @@
 use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\FinalPayment;
 use App\Models\ForwardingCompany;
+use App\Models\InterVehicleTransfer;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\Vehicle;
-use App\Models\FinalPayment;
-use App\Models\PurchaseBalancePayment;
+use App\Services\InterVehicleTransferService;
 use App\Services\NiceApiService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -127,6 +129,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   0     = 완납
     //   > 0   = 미납 (0~1)
     public ?float $panelUnpaidRatio = null;
+
+    // 큐 19-C — 차량 간 자금 이체 요청 모달 상태
+    public bool $showTransferRequestModal = false;
+
+    public string $transferTargetVehicleId = '';
+
+    public string $transferAmountStr = '';
+
+    public string $transferReason = '';
+
+    public string $transferNotes = '';
 
     // 큐 16 — 카풀/헤이맨 계산서 5 properties 제거 (DB 5컬럼 drop과 동기).
 
@@ -681,6 +694,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 큐 14-4-4 — 패널 닫힐 때 overlap 모달도 함께 정리 (열린 채 남아 있으면 어색)
         $this->showOverlapRequestModal = false;
         $this->overlapRequestReason = '';
+        // 큐 19-C — 자금 이체 모달도 동일 정리
+        $this->resetTransferRequestForm();
+    }
+
+    private function resetTransferRequestForm(): void
+    {
+        $this->showTransferRequestModal = false;
+        $this->transferTargetVehicleId = '';
+        $this->transferAmountStr = '';
+        $this->transferReason = '';
+        $this->transferNotes = '';
+        $this->resetErrorBag(['transferTargetVehicleId', 'transferAmountStr', 'transferReason']);
     }
 
     public function removeDeregistrationDoc(): void
@@ -1286,6 +1311,149 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dispatch('notify', message: '신규 거래 승인 요청을 보냈습니다.', type: 'success');
         $this->closeOverlapRequestModal();
+    }
+
+    // 큐 19-C — 차량 간 자금 이체 요청 ────────────────────────────────
+
+    /**
+     * 자금 이체 요청 모달 열기. editingId 차량을 source로 가정.
+     */
+    public function openTransferRequestModal(): void
+    {
+        if ($this->editingId === null) {
+            $this->dispatch('notify', message: '차량을 먼저 저장한 뒤 이체 요청할 수 있습니다.', type: 'warning');
+
+            return;
+        }
+        $ctx = $this->transferContext;
+        if (! $ctx['eligible']) {
+            $this->dispatch('notify', message: $ctx['reason'], type: 'warning');
+
+            return;
+        }
+        $this->transferTargetVehicleId = '';
+        $this->transferAmountStr = '';
+        $this->transferReason = '';
+        $this->transferNotes = '';
+        $this->resetErrorBag(['transferTargetVehicleId', 'transferAmountStr', 'transferReason']);
+        $this->showTransferRequestModal = true;
+    }
+
+    public function closeTransferRequestModal(): void
+    {
+        $this->resetTransferRequestForm();
+    }
+
+    /**
+     * 자금 이체 요청 제출 → InterVehicleTransferService::request() 호출.
+     * 안전 가드 5종 (동일 바이어·동일 currency·ratio≤0.5·금액 한도·paid Settlement 없음)은
+     * service 내부에서 재검증. UI는 사용자 입력만 검증.
+     */
+    public function submitTransferRequest(InterVehicleTransferService $service): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $this->validate([
+            'transferTargetVehicleId' => ['required', 'integer'],
+            'transferAmountStr' => ['required', 'string'],
+            'transferReason' => ['required', 'string', 'min:5'],
+        ], [
+            'transferTargetVehicleId.required' => '이체 대상 차량을 선택하세요.',
+            'transferAmountStr.required' => '이체 금액을 입력하세요.',
+            'transferReason.required' => '승인 요청 사유를 입력하세요.',
+            'transferReason.min' => '사유는 최소 5자 이상이어야 합니다.',
+        ]);
+
+        $source = Vehicle::find($this->editingId);
+        $target = Vehicle::find((int) $this->transferTargetVehicleId);
+        $amount = (float) str_replace(',', '', $this->transferAmountStr);
+
+        if (! $source || ! $target) {
+            $this->dispatch('notify', message: '이체 출처 또는 대상 차량을 찾을 수 없습니다.', type: 'warning');
+
+            return;
+        }
+
+        try {
+            $service->request(
+                source: $source,
+                target: $target,
+                amount: $amount,
+                requester: auth()->user(),
+                reason: trim($this->transferReason),
+                notes: trim($this->transferNotes) ?: null,
+            );
+        } catch (\DomainException $e) {
+            $this->addError('transferAmountStr', $e->getMessage());
+
+            return;
+        }
+
+        $this->dispatch('notify', message: '차량 간 자금 이체 승인 요청을 보냈습니다.', type: 'success');
+        $this->resetTransferRequestForm();
+    }
+
+    /**
+     * 자금 이체 가능성·한도·후보 차량 산출.
+     * eligible 조건:
+     *   - editingId 있음 + source 차량 존재
+     *   - source.unpaid_ratio ≤ 0.5 (50% 이상 받음)
+     *   - source.buyer_id 있음
+     *   - source/target에 paid Settlement 없음
+     *   - 후보 차량 ≥ 1 (동일 buyer + 동일 currency + 자신 제외 + paid Settlement 없음)
+     */
+    #[Computed]
+    public function transferContext(): array
+    {
+        $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect()];
+        if ($this->editingId === null) {
+            $base['reason'] = '차량 저장 후 이용 가능합니다.';
+
+            return $base;
+        }
+        $source = Vehicle::find($this->editingId);
+        if (! $source) {
+            return $base;
+        }
+        if ($source->buyer_id === null) {
+            $base['reason'] = '바이어가 지정된 차량만 자금 이체 가능합니다.';
+
+            return $base;
+        }
+        $ratio = $source->unpaid_ratio;
+        if ($ratio === null || $ratio > 0.5) {
+            $pct = $ratio === null ? '—' : round($ratio * 100, 1).'%';
+            $base['reason'] = "출처 차량에 50% 이상 입금되어야 합니다 (현재 미수율 {$pct}).";
+
+            return $base;
+        }
+        if ($source->settlements()->where('settlement_status', 'paid')->exists()) {
+            $base['reason'] = '출처 차량에 paid 정산이 있어 이체할 수 없습니다.';
+
+            return $base;
+        }
+        $received = (float) $source->sale_total_amount - (float) $source->sale_unpaid_amount;
+        $limit = round(max(0.0, $received) * 0.5, 2);
+
+        // 후보 차량 — 동일 buyer, 동일 currency, paid Settlement 없음, 자신 제외
+        $candidates = Vehicle::where('buyer_id', $source->buyer_id)
+            ->where('currency', $source->currency)
+            ->where('id', '!=', $source->id)
+            ->whereNull('deleted_at')
+            ->whereDoesntHave('settlements', fn ($q) => $q->where('settlement_status', 'paid'))
+            ->orderBy('vehicle_number')
+            ->get(['id', 'vehicle_number', 'sale_price', 'sale_unpaid_amount_krw_cache']);
+
+        if ($candidates->isEmpty()) {
+            $base['reason'] = '동일 바이어 + 동일 통화의 다른 차량이 없습니다.';
+            $base['received'] = $received;
+            $base['limit'] = $limit;
+
+            return $base;
+        }
+
+        return ['eligible' => true, 'reason' => '', 'received' => $received, 'limit' => $limit, 'candidates' => $candidates];
     }
 
     /**
@@ -2156,6 +2324,36 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             {{-- 큐 16 — 카풀/헤이맨 계산서 섹션 제거 (5컬럼 drop과 동기). --}}
+
+            {{-- 큐 19-C — 차량 간 자금 이체 (회의록 v5 §13) ──────────────── --}}
+            @php $transferCtx = $this->transferContext; @endphp
+            @if($editingId !== null)
+            <div class="mt-5">
+                <div class="section-header">
+                    <span class="section-dot bg-violet-500"></span>
+                    <span class="section-title">차량 간 자금 이체</span>
+                </div>
+                @if($transferCtx['eligible'])
+                <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="space-y-0.5">
+                            <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
+                            <div>이체 한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} <span class="text-violet-500">(받은 금액 × 50%)</span></div>
+                            <div class="text-violet-700">동일 바이어 차량 {{ $transferCtx['candidates']->count() }}대로 이체 가능</div>
+                        </div>
+                        <button type="button" wire:click="openTransferRequestModal"
+                                class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+                            자금 이체 요청
+                        </button>
+                    </div>
+                </div>
+                @else
+                <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+                    {{ $transferCtx['reason'] ?: '자금 이체 가능 조건을 충족하지 않습니다.' }}
+                </div>
+                @endif
+            </div>
+            @endif
         </div>
 
         {{-- ─── 수출통관 탭 ───────────────────────────────── --}}
@@ -2532,6 +2730,64 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="requestSameBuyerOverlapApproval"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+                요청 보내기
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 큐 19-C — 차량 간 자금 이체 요청 모달 (회의록 v5 §13).
+     슬라이드 패널 stacking context 밖에 배치 (overlap 모달과 동일 패턴). --}}
+@if($showTransferRequestModal)
+@php $transferCtx = $this->transferContext; @endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeTransferRequestModal"
+     wire:key="transfer-request-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">차량 간 자금 이체 요청</h3>
+        <p class="mt-1 text-xs text-gray-500">관리자 승인 후 출처 차량에 음수 잔금 + 대상 차량에 양수 잔금이 자동 생성됩니다.</p>
+
+        <div class="mt-3 rounded-md bg-violet-50 border border-violet-200 p-2.5 text-xs text-violet-900 space-y-0.5">
+            <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
+            <div>한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} (받은 금액 × 50%)</div>
+        </div>
+
+        <div class="mt-3 space-y-2">
+            <div>
+                <label class="label-base">이체 대상 차량 <span class="text-red-500">*</span></label>
+                <select wire:model="transferTargetVehicleId" class="input-base">
+                    <option value="">-- 선택 --</option>
+                    @foreach($transferCtx['candidates'] as $cand)
+                    <option value="{{ $cand->id }}">{{ $cand->vehicle_number }} (판매가 {{ number_format($cand->sale_price) }})</option>
+                    @endforeach
+                </select>
+                @error('transferTargetVehicleId')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">이체 금액 <span class="text-red-500">*</span></label>
+                <input wire:model="transferAmountStr" type="text" class="input-base"
+                       placeholder="최대 {{ number_format($transferCtx['limit']) }} {{ $currency ?: 'KRW' }}" />
+                @error('transferAmountStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">승인 요청 사유 <span class="text-red-500">*</span></label>
+                <textarea wire:model="transferReason" rows="3" class="input-base"
+                          placeholder="예: 출처 차량 50% 입금 받음. 같은 바이어가 대상 차량 계약 — 계약금으로 이체 요청. 최소 5자."></textarea>
+                @error('transferReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">메모 <span class="text-[10px] text-gray-400">(선택)</span></label>
+                <input wire:model="transferNotes" type="text" class="input-base" placeholder="이체 거래에 첨부될 메모" />
+            </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="closeTransferRequestModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button type="button" wire:click="submitTransferRequest"
+                    wire:loading.attr="disabled"
+                    class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
                 요청 보내기
             </button>
         </div>
