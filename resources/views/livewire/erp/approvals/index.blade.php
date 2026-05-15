@@ -182,12 +182,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-3 pr-4 text-gray-500">{{ $r->created_at->format('Y-m-d H:i') }}</td>
                     <td class="py-3 pr-4 font-medium text-gray-800">{{ $r->action_label }}</td>
                     <td class="py-3 pr-4 text-gray-700">{{ $r->requester?->name ?? '-' }}</td>
-                    <td class="py-3 pr-4 text-gray-500 font-mono text-xs">
-                        @if($r->target_type && $r->target_id)
-                            {{ class_basename($r->target_type) }} #{{ $r->target_id }}
+                    <td class="py-3 pr-4 text-gray-600 text-xs">
+                        @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+                            @php $p = $r->payload ?? []; @endphp
+                            <div class="font-semibold text-gray-800">{{ $p['buyer_name'] ?? '바이어 #'.$r->target_id }}</div>
+                            <div class="text-gray-500">
+                                차량 <span class="font-mono text-gray-700">{{ $p['new_vehicle_number'] ?? '(미지정)' }}</span>
+                                @if(isset($p['overlap_count'], $p['overlap_amount_krw']))
+                                · 미수 {{ $p['overlap_count'] }}대 ₩{{ number_format($p['overlap_amount_krw']) }}
+                                @endif
+                            </div>
+                            @if(! empty($p['overlap_vehicle_numbers']))
+                            <div class="text-[10px] text-gray-400 truncate max-w-[260px]">미수 차량: {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
+                            @endif
+                        @elseif($r->target_type && $r->target_id)
+                            <span class="font-mono">{{ class_basename($r->target_type) }} #{{ $r->target_id }}</span>
                         @else - @endif
                     </td>
-                    <td class="py-3 pr-4 text-gray-500 max-w-[200px] truncate">{{ $r->reason ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500 max-w-[200px] truncate" title="{{ $r->reason }}">{{ $r->reason ?? '-' }}</td>
                     <td class="py-3 pr-4">
                         <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
                     </td>
@@ -232,6 +244,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mt-1 text-xs text-gray-500">
                 {{ $r->requester?->name ?? '-' }} · {{ $r->created_at->format('Y-m-d H:i') }}
             </div>
+            @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+                @php $p = $r->payload ?? []; @endphp
+                <div class="mt-1 text-xs text-gray-700">
+                    <span class="font-semibold">{{ $p['buyer_name'] ?? '바이어 #'.$r->target_id }}</span>
+                    · 차량 <span class="font-mono">{{ $p['new_vehicle_number'] ?? '(미지정)' }}</span>
+                </div>
+                @if(isset($p['overlap_count'], $p['overlap_amount_krw']))
+                <div class="text-[11px] text-gray-500">미수 {{ $p['overlap_count'] }}대 · ₩{{ number_format($p['overlap_amount_krw']) }}</div>
+                @endif
+            @endif
             @if($r->reason)
             <div class="mt-1 text-xs text-gray-600">{{ $r->reason }}</div>
             @endif

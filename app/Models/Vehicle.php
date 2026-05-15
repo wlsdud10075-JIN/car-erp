@@ -119,6 +119,9 @@ class Vehicle extends Model
      * buyer_id 동일 + 미수 잔존(sale_unpaid_amount_krw_cache > 0) 차량 있는 상태에서
      * 신규 차량 등록 시 차단. 영업은 [신규 거래 승인 요청] → 관리 승인 후 등록 재시도.
      *
+     * "1 승인 = 1 차량" — 승인은 payload['new_vehicle_number']에 바인딩됨.
+     * 승인받은 차량번호와 다른 번호로 저장 시 차단 (보안 결함 수정).
+     *
      * 호출 위치: Vehicle::saving 가드. 시드·artisan은 auth()->check() false로 우회.
      */
     public function guardSameBuyerOverlap(): void
@@ -142,16 +145,39 @@ class Vehicle extends Model
             return;
         }
 
-        // 동일 buyer에 대해 활성(approved + unused) inter_buyer_overlap 승인 있는지 확인
+        $currentVehicleNumber = trim((string) $this->vehicle_number);
+
+        // 활성(approved + unused) inter_buyer_overlap 승인 — 차량번호까지 매칭되는 것만
         $activeApproval = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
             ->where('target_type', Buyer::class)
             ->where('target_id', $this->buyer_id)
             ->where('status', ApprovalRequest::STATUS_APPROVED)
             ->whereNull('used_at')
             ->latest('id')
-            ->first();
+            ->get()
+            ->first(function (ApprovalRequest $req) use ($currentVehicleNumber) {
+                $boundNumber = trim((string) ($req->payload['new_vehicle_number'] ?? ''));
+
+                return $boundNumber !== '' && $boundNumber === $currentVehicleNumber;
+            });
 
         if (! $activeApproval) {
+            // 같은 buyer로 다른 차량번호에 묶인 승인이 있는지 확인 — 메시지 분기용
+            $mismatchApproval = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+                ->where('target_type', Buyer::class)
+                ->where('target_id', $this->buyer_id)
+                ->where('status', ApprovalRequest::STATUS_APPROVED)
+                ->whereNull('used_at')
+                ->latest('id')
+                ->first();
+
+            if ($mismatchApproval) {
+                $bound = $mismatchApproval->payload['new_vehicle_number'] ?? '(미지정)';
+                throw ValidationException::withMessages([
+                    'buyer_id' => "이 승인은 차량번호 '{$bound}'에 대한 것입니다. 현재 '{$currentVehicleNumber}'로 저장 시도. 차량번호를 일치시키거나 새 승인 요청을 보내세요.",
+                ]);
+            }
+
             throw ValidationException::withMessages([
                 'buyer_id' => '이 바이어는 미수 잔존 차량이 있습니다. 신규 거래는 관리자 승인이 필요합니다. [신규 거래 승인 요청] 버튼을 사용하세요.',
             ]);

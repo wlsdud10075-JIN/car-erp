@@ -73,12 +73,13 @@ class ApprovalRequestInterBuyerOverlapTest extends TestCase
 
         $buyer = $this->makeBuyerWithOutstanding();
 
-        // 관리자 승인 (approved + used_at NULL)
+        // 관리자 승인 — 차량번호 99가0004에 바인딩
         $req = ApprovalRequest::create([
             'requester_id' => $sales->id,
             'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
             'target_type' => Buyer::class,
             'target_id' => $buyer->id,
+            'payload' => ['new_vehicle_number' => '99가0004', 'buyer_name' => $buyer->name],
             'status' => ApprovalRequest::STATUS_APPROVED,
             'approver_id' => $manager->id,
             'decided_at' => now(),
@@ -86,7 +87,7 @@ class ApprovalRequestInterBuyerOverlapTest extends TestCase
 
         $this->actingAs($sales);
 
-        // 1번째 등록 — 통과 + used_at 마킹
+        // 차량번호 일치 — 통과 + used_at 마킹
         $v1 = Vehicle::create([
             'vehicle_number' => '99가0004',
             'sales_channel' => 'export',
@@ -102,6 +103,146 @@ class ApprovalRequestInterBuyerOverlapTest extends TestCase
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
         ]);
+    }
+
+    public function test_approved_request_blocks_different_vehicle_number(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+
+        $buyer = $this->makeBuyerWithOutstanding();
+
+        // 차량번호 A에 묶인 승인
+        ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyer->id,
+            'payload' => ['new_vehicle_number' => '11가1111', 'buyer_name' => $buyer->name],
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $manager->id,
+            'decided_at' => now(),
+        ]);
+
+        $this->actingAs($sales);
+
+        // 다른 차량번호 B로 저장 시도 → 차단 + 메시지에 A 포함
+        try {
+            Vehicle::create([
+                'vehicle_number' => '22가2222',
+                'sales_channel' => 'export',
+                'buyer_id' => $buyer->id,
+            ]);
+            $this->fail('차량번호 불일치인데 통과됨');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('11가1111', $e->getMessage());
+            $this->assertStringContainsString('22가2222', $e->getMessage());
+        }
+    }
+
+    public function test_approval_without_vehicle_number_payload_does_not_bypass(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+
+        $buyer = $this->makeBuyerWithOutstanding();
+
+        // payload['new_vehicle_number'] 없는 승인 (잘못 생성된 요청) — 통과 안 시킴
+        ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyer->id,
+            'payload' => ['buyer_name' => $buyer->name],   // new_vehicle_number 누락
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $manager->id,
+            'decided_at' => now(),
+        ]);
+
+        $this->actingAs($sales);
+
+        $this->expectException(ValidationException::class);
+        Vehicle::create([
+            'vehicle_number' => '99가0888',
+            'sales_channel' => 'export',
+            'buyer_id' => $buyer->id,
+        ]);
+    }
+
+    public function test_rejected_request_does_not_bypass_then_new_request_allowed(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+
+        $buyer = $this->makeBuyerWithOutstanding();
+
+        // 거부된 요청
+        $rejected = ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyer->id,
+            'payload' => ['new_vehicle_number' => '33가3333', 'buyer_name' => $buyer->name],
+            'status' => ApprovalRequest::STATUS_REJECTED,
+            'approver_id' => $manager->id,
+            'decision_note' => '담보금 부족',
+            'decided_at' => now(),
+        ]);
+
+        $this->actingAs($sales);
+
+        // 거부 후 저장 시도 → 차단
+        try {
+            Vehicle::create([
+                'vehicle_number' => '33가3333',
+                'sales_channel' => 'export',
+                'buyer_id' => $buyer->id,
+            ]);
+            $this->fail('거부된 요청인데 통과됨');
+        } catch (ValidationException $e) {
+            $this->assertNotEmpty($e->getMessage());
+        }
+
+        // 동일 buyer + 동일 차량번호로 새 pending 만들 수 있어야 함 (재요청 허용)
+        $newReq = ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyer->id,
+            'payload' => ['new_vehicle_number' => '33가3333', 'buyer_name' => $buyer->name],
+            'status' => ApprovalRequest::STATUS_PENDING,
+        ]);
+        $this->assertSame('pending', $newReq->status);
+    }
+
+    public function test_vehicle_number_trim_matching(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+
+        $buyer = $this->makeBuyerWithOutstanding();
+
+        // 승인에 공백 포함된 차량번호
+        ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
+            'target_type' => Buyer::class,
+            'target_id' => $buyer->id,
+            'payload' => ['new_vehicle_number' => '  44가4444  ', 'buyer_name' => $buyer->name],
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $manager->id,
+            'decided_at' => now(),
+        ]);
+
+        $this->actingAs($sales);
+
+        // 저장 시 공백 없는 차량번호 — trim 후 일치 → 통과
+        $v = Vehicle::create([
+            'vehicle_number' => '44가4444',
+            'sales_channel' => 'export',
+            'buyer_id' => $buyer->id,
+        ]);
+        $this->assertNotNull($v->fresh());
     }
 
     public function test_no_outstanding_passes_freely(): void

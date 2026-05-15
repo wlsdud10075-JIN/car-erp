@@ -31,7 +31,8 @@
       "Bash(git -C C:/xampp/htdocs/car-erp push origin dev)",
       "Skill(deep-interview)",
       "Bash(xargs -I {} wc -l {})",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(vendor/bin/sail test *)"
     ]
   }
 }
