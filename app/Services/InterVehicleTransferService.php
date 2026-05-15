@@ -60,6 +60,16 @@ class InterVehicleTransferService
     ): InterVehicleTransfer {
         $this->assertGuards($source, $target, $amount);
 
+        // 같은 source vehicle에 pending 요청이 이미 있으면 차단 (옵션 A — 한 번에 1건)
+        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->where('target_type', Vehicle::class)
+            ->where('target_id', $source->id)
+            ->exists();
+        if ($existing) {
+            throw new DomainException('이 차량에 대해 이미 대기중인 자금 이체 요청이 있습니다. 관리 승인/거부 후 재시도하세요.');
+        }
+
         return DB::transaction(function () use ($source, $target, $amount, $requester, $reason, $notes) {
             $approvalReq = ApprovalRequest::create([
                 'requester_id' => $requester->id,

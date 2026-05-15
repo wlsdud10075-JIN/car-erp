@@ -1387,6 +1387,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         $ctx = $this->transferContext;
+        if (! empty($ctx['pending'])) {
+            $this->dispatch('notify', message: '이미 대기중인 자금 이체 요청이 있습니다. 관리 승인/거부 후 재시도하세요.', type: 'warning');
+
+            return;
+        }
         if (! $ctx['eligible']) {
             $this->dispatch('notify', message: $ctx['reason'], type: 'warning');
 
@@ -1515,11 +1520,16 @@ new #[Layout('components.layouts.app')] class extends Component {
      *   - source.buyer_id 있음
      *   - source/target에 paid Settlement 없음
      *   - 후보 차량 ≥ 1 (동일 buyer + 동일 currency + 자신 제외 + paid Settlement 없음)
+     *
+     * 추가 메타 (큐 19-C 보강 — 2026-05-15):
+     *   - pending: pending인 InterVehicleTransfer 1건 정보 (있으면 amber 박스 + 버튼 비활성)
+     *   - lastRejected: 최근 rejected ApprovalRequest 정보 (사유 + 다시 요청 분기)
      */
     #[Computed]
     public function transferContext(): array
     {
-        $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect()];
+        $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect(),
+            'pending' => null, 'lastRejected' => null];
         if ($this->editingId === null) {
             $base['reason'] = '차량 저장 후 이용 가능합니다.';
 
@@ -1529,6 +1539,45 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $source) {
             return $base;
         }
+
+        // 최근 ApprovalRequest 조회 (이 차량이 source인 transfer 관련) — pending / rejected 확인
+        $recentRequests = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+            ->where('target_type', Vehicle::class)
+            ->where('target_id', $source->id)
+            ->orderByDesc('created_at')
+            ->take(5)
+            ->get();
+
+        $pendingReq = $recentRequests->firstWhere('status', ApprovalRequest::STATUS_PENDING);
+        if ($pendingReq) {
+            $p = $pendingReq->payload ?? [];
+            $base['pending'] = [
+                'approval_request_id' => $pendingReq->id,
+                'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
+                'amount' => (float) ($p['amount'] ?? 0),
+                'currency' => $p['currency'] ?? $source->currency,
+                'created_at' => $pendingReq->created_at,
+                'reason' => $pendingReq->reason,
+            ];
+        }
+
+        // 마지막 rejected (pending 없을 때만 표시 — 새 요청 가능 신호)
+        if (! $pendingReq) {
+            $rejected = $recentRequests->firstWhere('status', ApprovalRequest::STATUS_REJECTED);
+            if ($rejected) {
+                $p = $rejected->payload ?? [];
+                $base['lastRejected'] = [
+                    'approval_request_id' => $rejected->id,
+                    'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
+                    'amount' => (float) ($p['amount'] ?? 0),
+                    'currency' => $p['currency'] ?? $source->currency,
+                    'decision_note' => $rejected->decision_note,
+                    'decided_at' => $rejected->decided_at,
+                    'approver_name' => $rejected->approver?->name,
+                ];
+            }
+        }
+
         if ($source->buyer_id === null) {
             $base['reason'] = '바이어가 지정된 차량만 자금 이체 가능합니다.';
 
@@ -1566,7 +1615,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             return $base;
         }
 
-        return ['eligible' => true, 'reason' => '', 'received' => $received, 'limit' => $limit, 'candidates' => $candidates];
+        $base['eligible'] = true;
+        $base['received'] = $received;
+        $base['limit'] = $limit;
+        $base['candidates'] = $candidates;
+
+        return $base;
     }
 
     /**
@@ -2489,24 +2543,70 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="section-dot bg-violet-500"></span>
                     <span class="section-title">차량 간 자금 이체</span>
                 </div>
-                @if($transferCtx['eligible'])
-                <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div class="space-y-0.5">
-                            <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
-                            <div>이체 한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} <span class="text-violet-500">(받은 금액 × 50%)</span></div>
-                            <div class="text-violet-700">동일 바이어 차량 {{ $transferCtx['candidates']->count() }}대로 이체 가능</div>
+
+                {{-- pending 자금 이체 요청 — amber 박스 (관리 승인 대기 중) --}}
+                @if(!empty($transferCtx['pending']))
+                <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                    <div class="flex items-center gap-2">
+                        <span>⏳</span>
+                        <strong>이체 요청 승인 대기 중</strong>
+                    </div>
+                    <div class="mt-1 space-y-0.5 text-amber-800">
+                        <div>
+                            대상 차량 <span class="font-mono">{{ $transferCtx['pending']['target_vehicle_number'] }}</span>
+                            · 금액 <strong>{{ number_format($transferCtx['pending']['amount']) }}</strong> {{ $transferCtx['pending']['currency'] }}
                         </div>
-                        <button type="button" wire:click="openTransferRequestModal"
-                                class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
-                            자금 이체 요청
-                        </button>
+                        <div class="text-[11px] text-amber-700">
+                            요청일 {{ $transferCtx['pending']['created_at']?->format('Y-m-d H:i') }}
+                            · 요청 #{{ $transferCtx['pending']['approval_request_id'] }}
+                        </div>
+                        @if($transferCtx['pending']['reason'])
+                        <div class="text-[11px] text-amber-700">사유: "{{ $transferCtx['pending']['reason'] }}"</div>
+                        @endif
                     </div>
                 </div>
                 @else
-                <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
-                    {{ $transferCtx['reason'] ?: '자금 이체 가능 조건을 충족하지 않습니다.' }}
-                </div>
+                    {{-- 최근 거부 사유 표시 (pending 없을 때만) --}}
+                    @if(!empty($transferCtx['lastRejected']))
+                    <div class="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900 mb-2">
+                        <div class="flex items-center gap-2">
+                            <span>❌</span>
+                            <strong>최근 이체 요청 거부됨</strong>
+                        </div>
+                        <div class="mt-1 space-y-0.5 text-red-800">
+                            <div>
+                                대상 <span class="font-mono">{{ $transferCtx['lastRejected']['target_vehicle_number'] }}</span>
+                                · {{ number_format($transferCtx['lastRejected']['amount']) }} {{ $transferCtx['lastRejected']['currency'] }}
+                                · {{ $transferCtx['lastRejected']['approver_name'] ?? '관리자' }}
+                                ({{ $transferCtx['lastRejected']['decided_at']?->format('Y-m-d H:i') }})
+                            </div>
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] text-red-700 border border-red-100">
+                                <span class="font-semibold">거부 사유:</span> {{ $transferCtx['lastRejected']['decision_note'] ?: '(사유 미기재)' }}
+                            </div>
+                        </div>
+                    </div>
+                    @endif
+
+                    {{-- 일반 자금 이체 박스 --}}
+                    @if($transferCtx['eligible'])
+                    <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="space-y-0.5">
+                                <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
+                                <div>이체 한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} <span class="text-violet-500">(받은 금액 × 50%)</span></div>
+                                <div class="text-violet-700">동일 바이어 차량 {{ $transferCtx['candidates']->count() }}대로 이체 가능</div>
+                            </div>
+                            <button type="button" wire:click="openTransferRequestModal"
+                                    class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+                                {{ !empty($transferCtx['lastRejected']) ? '다시 요청' : '자금 이체 요청' }}
+                            </button>
+                        </div>
+                    </div>
+                    @else
+                    <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+                        {{ $transferCtx['reason'] ?: '자금 이체 가능 조건을 충족하지 않습니다.' }}
+                    </div>
+                    @endif
                 @endif
             </div>
             @endif

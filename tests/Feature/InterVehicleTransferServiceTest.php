@@ -273,4 +273,18 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->assertEquals($c['manager']->id, $transfer->approver_id);
         $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
     }
+
+    /**
+     * 큐 19-C 보강 (사용자 피드백 2026-05-15) — 같은 source vehicle에
+     * pending 요청이 이미 있으면 새 요청 차단.
+     */
+    public function test_request_blocks_duplicate_pending_for_same_source(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $this->service->request($c['source'], $c['target'], 10_000_000, $c['sales']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('이미 대기중인');
+        $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
+    }
 }
