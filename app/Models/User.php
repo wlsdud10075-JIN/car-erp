@@ -98,6 +98,24 @@ class User extends Authenticatable
         return in_array($this->role, ['정산', '관리'], true);
     }
 
+    /**
+     * 큐 19-F — 자금 이체 재무 확정 권한 (회의록 2026-05-16).
+     *
+     * SoD 분리: 관리(승인) ≠ 재무(실물 처리·확정).
+     * 허용: super / admin / role='정산'. ⚠️ '관리' role 명시적 차단 (canAccessSettlement 와 분리).
+     *
+     * canAccessSettlement 가 ['정산','관리'] 모두 통과시키는 것과 의도적으로 다름 —
+     * 박관리(관리 role)는 자기 승인을 직접 재무 확정할 수 없어야 함.
+     */
+    public function canConfirmFinanceTransfer(): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return $this->role === '정산';
+    }
+
     public function canToggleFeatures(): bool
     {
         return $this->isSuperAdmin();

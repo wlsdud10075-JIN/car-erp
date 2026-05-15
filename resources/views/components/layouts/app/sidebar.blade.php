@@ -33,6 +33,7 @@
         $routeName === 'erp.settlements.index' => '정산 관리',
         $routeName === 'erp.receivables.index' => '채권관리',
         $routeName === 'erp.approvals.index' => '승인 큐',
+        $routeName === 'erp.transfers.index' => '재무 처리',
         $routeName === 'settings.profile' => '프로필 설정',
         $routeName === 'settings.password' => '비밀번호 변경',
         $routeName === 'settings.appearance' => '테마 설정',
@@ -45,6 +46,14 @@
     // 큐 14-3 — 승인 대기 건수 (canApprove user만 계산)
     $pendingApprovals = $user->canApprove()
         ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
+        : 0;
+
+    // 큐 19-F — 재무 처리 대기 건수 (canConfirmFinanceTransfer user만 계산)
+    $pendingFinanceConfirmations = $user->canConfirmFinanceTransfer()
+        ? \App\Models\InterVehicleTransfer::whereIn('status', [
+            \App\Models\InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+        ])->count()
         : 0;
 
     $menuGroups = [
@@ -107,6 +116,14 @@
                     'active' => request()->routeIs('erp.approvals.*'),
                     'show' => $user->canApprove(),
                     'badge' => $pendingApprovals > 0 ? $pendingApprovals : null,
+                ],
+                [
+                    'label' => '재무 처리',
+                    'href' => $user->canConfirmFinanceTransfer() ? route('erp.transfers.index') : '#',
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.transfers.*'),
+                    'show' => $user->canConfirmFinanceTransfer(),
+                    'badge' => $pendingFinanceConfirmations > 0 ? $pendingFinanceConfirmations : null,
                 ],
                 [
                     'label' => '포워딩사',

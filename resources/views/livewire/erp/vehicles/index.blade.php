@@ -1582,6 +1582,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ], true));
             if ($decided) {
                 $p = $decided->payload ?? [];
+                $relatedTransfer = InterVehicleTransfer::where('approval_request_id', $decided->id)
+                    ->with('financeConfirmer')->first();
                 $base['lastDecided'] = [
                     'approval_request_id' => $decided->id,
                     'status' => $decided->status,
@@ -1591,6 +1593,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'decision_note' => $decided->decision_note,
                     'decided_at' => $decided->decided_at,
                     'approver_name' => $decided->approver?->name,
+                    // 큐 19-F — transfer 5상태 분기를 위한 메타 부착
+                    'transfer_status' => $relatedTransfer?->status,
+                    'finance_confirmer_name' => $relatedTransfer?->financeConfirmer?->name,
+                    'confirmed_at' => $relatedTransfer?->confirmed_at,
+                    'finance_note' => $relatedTransfer?->finance_note,
                 ];
             }
         }
@@ -2583,13 +2590,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
                 @else
-                    {{-- 최근 결정 상태 표시 (pending 없을 때만) — 승인/거부/취소 통합 --}}
+                    {{-- 최근 결정 상태 표시 (pending 없을 때만) — 큐 19-F 5상태 분기.
+                         status=approved 인 경우 transfer.status 에 따라 박스 색·라벨 달라짐:
+                           approved_awaiting_finance → 파랑 (관리 승인 — 재무 처리 대기)
+                           executed                  → 에메랄드 (이체 완료, 재무 확정)
+                           voided_awaiting_finance   → 앰버 (취소 승인 — 재무 처리 대기)
+                           voided                    → 회색 (이체 취소됨) --}}
                     @if(!empty($transferCtx['lastDecided']))
                     @php
                         $ld = $transferCtx['lastDecided'];
-                        // 박스 색상 — approved/rejected/cancelled 분기
-                        $ldClass = match($ld['status']) {
-                            'approved'  => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
+                        $ldKey = $ld['status'];
+                        if ($ld['status'] === 'approved' && ! empty($ld['transfer_status'])) {
+                            $ldKey = 'approved:'.$ld['transfer_status'];
+                        }
+                        $ldClass = match($ldKey) {
+                            'approved:approved_awaiting_finance' => ['border-blue-200', 'bg-blue-50', 'text-blue-900', 'text-blue-800', 'text-blue-700', 'border-blue-100', '⏳', '관리 승인 — 재무 처리 대기 중', '승인 메모'],
+                            'approved:executed' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '이체 완료 (재무 확정)', '승인 메모'],
+                            'approved:voided_awaiting_finance' => ['border-amber-200', 'bg-amber-50', 'text-amber-900', 'text-amber-800', 'text-amber-700', 'border-amber-100', '⏳', '이체 취소 승인 — 재무 처리 대기 중', '승인 메모'],
+                            'approved:voided' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 완료', '승인 메모'],
+                            'approved' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
                             'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '최근 이체 요청 거부됨', '거부 사유'],
                             'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
                             default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '최근 이체 요청', '메모'],
@@ -2610,6 +2629,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
                                 <span class="font-semibold">{{ $ldClass[8] }}:</span> {{ $ld['decision_note'] ?: '(메모 없음)' }}
                             </div>
+                            @if(in_array($ldKey, ['approved:executed', 'approved:voided'], true) && ! empty($ld['finance_confirmer_name']))
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">재무 확정:</span>
+                                {{ $ld['finance_confirmer_name'] }}
+                                ({{ $ld['confirmed_at']?->format('Y-m-d H:i') }})
+                                @if($ld['finance_note'])
+                                · {{ $ld['finance_note'] }}
+                                @endif
+                            </div>
+                            @endif
                         </div>
                     </div>
                     @endif

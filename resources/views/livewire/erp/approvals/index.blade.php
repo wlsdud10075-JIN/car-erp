@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ApprovalRequest;
+use App\Models\InterVehicleTransfer;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -39,7 +40,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function requests()
     {
-        return ApprovalRequest::query()
+        $page = ApprovalRequest::query()
             ->with(['requester', 'approver', 'target'])
             ->when($this->statusFilter !== 'all',
                 fn ($q) => $q->where('status', $this->statusFilter))
@@ -47,6 +48,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                 fn ($q) => $q->where('action_type', $this->actionFilter))
             ->orderByDesc('created_at')
             ->paginate($this->perPage);
+
+        // 큐 19-F — 자금 이체 / 이체 취소 행에 transfer.status 일괄 매핑 (N+1 회피).
+        // approved 상태이지만 transfer 가 approved_awaiting_finance 면 '재무 처리 대기' 라벨 표시.
+        $reqs = $page->getCollection();
+        $transferApprovalIds = $reqs
+            ->filter(fn ($r) => $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+            ->pluck('id');
+        $voidTransferIds = $reqs
+            ->filter(fn ($r) => $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+            ->map(fn ($r) => $r->payload['transfer_id'] ?? null)
+            ->filter();
+
+        $byApprovalReq = $transferApprovalIds->isEmpty()
+            ? collect()
+            : InterVehicleTransfer::whereIn('approval_request_id', $transferApprovalIds)
+                ->pluck('status', 'approval_request_id');
+        $byId = $voidTransferIds->isEmpty()
+            ? collect()
+            : InterVehicleTransfer::whereIn('id', $voidTransferIds)->pluck('status', 'id');
+
+        $reqs->each(function ($r) use ($byApprovalReq, $byId) {
+            if ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
+                $r->setAttribute('related_transfer_status', $byApprovalReq[$r->id] ?? null);
+            } elseif ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
+                $tId = $r->payload['transfer_id'] ?? null;
+                $r->setAttribute('related_transfer_status', $tId ? ($byId[$tId] ?? null) : null);
+            }
+        });
+
+        return $page;
     }
 
     #[Computed]
@@ -231,7 +262,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </td>
                     <td class="py-3 pr-4 text-gray-500 max-w-[200px] truncate" title="{{ $r->reason }}">{{ $r->reason ?? '-' }}</td>
                     <td class="py-3 pr-4">
-                        <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
+                        {{-- 큐 19-F — 자금 이체/이체 취소 행은 transfer.status 컨텍스트 라벨 우선 표시. --}}
+                        @php
+                            $ts = $r->getAttributeValue('related_transfer_status');
+                            $isTransferRow = in_array($r->action_type, [
+                                ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
+                                ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
+                            ], true);
+                        @endphp
+                        @if($isTransferRow && $r->status === 'approved' && $ts === 'approved_awaiting_finance')
+                            <span class="badge badge-blue">관리 승인 (재무 처리 대기)</span>
+                        @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided_awaiting_finance')
+                            <span class="badge badge-amber">취소 승인 (재무 처리 대기)</span>
+                        @elseif($isTransferRow && $r->status === 'approved' && $ts === 'executed')
+                            <span class="badge badge-green">이체 완료</span>
+                        @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided')
+                            <span class="badge badge-gray">이체 취소 완료</span>
+                        @else
+                            <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
+                        @endif
                     </td>
                     <td class="py-3 pr-4 text-gray-500">
                         {{ $r->approver?->name ?? '-' }}
@@ -266,10 +315,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 모바일 카드 --}}
     <div class="block sm:hidden space-y-2">
         @forelse($this->requests as $r)
+        @php
+            $tsMobile = $r->getAttributeValue('related_transfer_status');
+            $isTransferRowMobile = in_array($r->action_type, [
+                ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
+                ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
+            ], true);
+        @endphp
         <div class="card-tight">
             <div class="flex items-center justify-between">
                 <div class="font-medium text-gray-800">{{ $r->action_label }}</div>
-                <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
+                @if($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'approved_awaiting_finance')
+                    <span class="badge badge-blue">관리 승인 (재무 대기)</span>
+                @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided_awaiting_finance')
+                    <span class="badge badge-amber">취소 승인 (재무 대기)</span>
+                @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'executed')
+                    <span class="badge badge-green">이체 완료</span>
+                @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided')
+                    <span class="badge badge-gray">이체 취소 완료</span>
+                @else
+                    <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
+                @endif
             </div>
             <div class="mt-1 text-xs text-gray-500">
                 {{ $r->requester?->name ?? '-' }} · {{ $r->created_at->format('Y-m-d H:i') }}

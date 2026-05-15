@@ -41,6 +41,12 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
 });
 
+// 큐 19-F — 자금 이체 재무 확정 (settlement 미들웨어 통과 후 컴포넌트 mount 에서
+// canConfirmFinanceTransfer() 추가 검증 — 관리 role 제외, 정산 + admin/super 만 허용).
+Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.')->group(function () {
+    Volt::route('transfers', 'erp.transfers.index')->name('transfers.index');
+});
+
 // 관리자 — super/admin만 (포워딩사·영업담당자)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');
