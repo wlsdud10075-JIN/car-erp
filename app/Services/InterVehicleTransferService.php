@@ -145,7 +145,10 @@ class InterVehicleTransferService
     }
 
     /**
-     * 안전 가드 4종 검증. 위반 시 예외.
+     * 안전 가드 5종 검증. 위반 시 예외.
+     *
+     * 5번째 가드 (H4 정합) — 큐 10 H4와 연동: source 또는 target에 paid Settlement가 있으면
+     * 차단. 마감된 정산의 snapshot과 vehicle 현황 사이 drift 방지.
      */
     private function assertGuards(Vehicle $source, Vehicle $target, float $amount): void
     {
@@ -174,6 +177,13 @@ class InterVehicleTransferService
         $limit = $this->available($source);
         if ($amount > $limit + 0.005) {  // float 오차 ±0.005
             throw new DomainException('이체 한도를 초과했습니다 (받은 금액의 50%까지 가능, 한도: '.number_format($limit, 2).').');
+        }
+
+        // 큐 10 H4 정합 — 양 차량 중 하나라도 paid Settlement 있으면 차단
+        foreach (['출처' => $source, '대상' => $target] as $label => $v) {
+            if ($v->settlements()->where('settlement_status', 'paid')->exists()) {
+                throw new DomainException("{$label} 차량에 paid 정산이 있어 자금 이체할 수 없습니다. 정산 취소 후 재시도하세요.");
+            }
         }
     }
 }

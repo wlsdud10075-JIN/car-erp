@@ -6,6 +6,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\InterVehicleTransferService;
@@ -212,5 +213,64 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('50% 이상 입금');
         $this->service->execute($transfer, $c['manager']);
+    }
+
+    /**
+     * 큐 10 H4 정합 — paid Settlement가 있는 차량은 자금 이체 불가.
+     * 사용자 결정 (2026-05-15): 보수적 차단. 정산 마감 후 회계 무결성 보존.
+     */
+    public function test_request_blocks_when_source_has_paid_settlement(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        Settlement::create([
+            'vehicle_id' => $c['source']->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'confirmed_at' => now(),
+            'paid_at' => now(),
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('paid 정산');
+        $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+    }
+
+    public function test_request_blocks_when_target_has_paid_settlement(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        Settlement::create([
+            'vehicle_id' => $c['target']->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'confirmed_at' => now(),
+            'paid_at' => now(),
+        ]);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('paid 정산');
+        $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+    }
+
+    /**
+     * 큐 19-B 통합 — ApprovalRequest::execute() 호출이 transfer 실행까지 트리거.
+     * /erp/approvals 페이지 승인 흐름과 동일 경로 검증.
+     */
+    public function test_approval_request_execute_triggers_transfer(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $this->actingAs($c['manager']);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $req = ApprovalRequest::findOrFail($transfer->approval_request_id);
+
+        // 사용자가 /erp/approvals 에서 승인 시 호출되는 경로
+        $req->execute();
+
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $transfer->status);
+        $this->assertEquals($c['manager']->id, $transfer->approver_id);
+        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
     }
 }

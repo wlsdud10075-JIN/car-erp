@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\InterVehicleTransferService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -104,6 +105,7 @@ class ApprovalRequest extends Model
                 match ($this->action_type) {
                     self::TYPE_SETTLEMENT_PAY => $this->executeSettlementPay(),
                     self::TYPE_INTER_BUYER_OVERLAP => $this->executeInterBuyerOverlap(),
+                    self::TYPE_INTER_VEHICLE_TRANSFER => $this->executeInterVehicleTransfer(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
                 };
             });
@@ -118,6 +120,17 @@ class ApprovalRequest extends Model
     private function executeInterBuyerOverlap(): void
     {
         // approve 자체가 영업의 다음 차량 등록을 허용하는 신호. 추가 액션 없음.
+    }
+
+    /**
+     * 큐 19-B — inter_vehicle_transfer 승인 = InterVehicleTransferService::execute() 호출.
+     * service가 source 음수 + target 양수 final_payment 페어 트랜잭션 처리.
+     */
+    private function executeInterVehicleTransfer(): void
+    {
+        $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
+        $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
+        app(InterVehicleTransferService::class)->execute($transfer, $approver);
     }
 
     private function executeSettlementPay(): void
