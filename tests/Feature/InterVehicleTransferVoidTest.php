@@ -171,4 +171,25 @@ class InterVehicleTransferVoidTest extends TestCase
 
         $this->assertEquals(1, ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)->count());
     }
+
+    /**
+     * 큐 19-E 보강 (사용자 피드백 2026-05-15) — pending void가 있으면 잔금 row 메타에
+     * pending_void=true + can_void=false 반영. UI에서 amber 박스 + "취소 요청 중" 표시.
+     */
+    public function test_finalpayments_meta_shows_pending_void_after_request(): void
+    {
+        $c = $this->executeTransferScenario();
+        $this->actingAs($c['sales']);
+
+        // void 요청 보냄
+        $c['service']->voidRequest($c['transfer']->fresh(), $c['sales'], '취소 요청 — 메타 반영 테스트');
+
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $c['source']->id);
+        $payments = $component->instance()->finalPayments;
+
+        $transferRow = collect($payments)->first(fn ($r) => ! empty($r['transfer']));
+        $this->assertNotNull($transferRow);
+        $this->assertTrue($transferRow['transfer']['pending_void']);
+        $this->assertFalse($transferRow['transfer']['can_void']);
+    }
 }

@@ -566,6 +566,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->keyBy('id');
         $lockedFinalIds = array_unique(array_merge($lockedFinalIds, $transferLinkedPayments->keys()->all()));
 
+        // 큐 19-E — 각 transfer에 pending void ApprovalRequest 있는지 확인 (취소 요청 중 표시용)
+        $transferIds = $transferLinkedPayments->pluck('transfer_id')->unique()->filter()->all();
+        $pendingVoidTransferIds = empty($transferIds) ? [] : ApprovalRequest::query()
+            ->where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->where('target_type', InterVehicleTransfer::class)
+            ->whereIn('target_id', $transferIds)
+            ->pluck('target_id')
+            ->all();
+
         $this->vehicle_number = $v->vehicle_number;
         $this->sales_channel  = $v->sales_channel;
         $this->brand      = $v->brand ?? '';
@@ -646,7 +656,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->advance_payment1_str = $v->advance_payment1 ? (string)$v->advance_payment1 : '';
         $this->advance_payment2_str = $v->advance_payment2 ? (string)$v->advance_payment2 : '';
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
-        $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $id) {
+        $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
             $row = [
                 'id' => $p->id, 'amount' => (string) $p->amount,
                 'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
@@ -656,9 +666,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
                 $isExecuted = $t->status === \App\Models\InterVehicleTransfer::STATUS_EXECUTED;
-                // 큐 19-E — void 가능 조건: status=executed AND 영업/관리/admin 권한
+                $pendingVoid = in_array($t->id, $pendingVoidTransferIds, true);
+                // 큐 19-E — void 가능 조건: status=executed AND 영업/관리/admin 권한 AND pending void 없음
                 $user = auth()->user();
-                $canVoid = $isExecuted && $user && ($user->canApprove() || $user->role === '영업');
+                $canVoid = $isExecuted && ! $pendingVoid && $user && ($user->canApprove() || $user->role === '영업');
                 $row['transfer'] = [
                     'id' => $t->id,
                     'amount' => (float) $t->amount,
@@ -671,6 +682,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ? $t->targetVehicle?->vehicle_number
                         : $t->sourceVehicle?->vehicle_number,
                     'can_void' => $canVoid,
+                    'pending_void' => $pendingVoid,
                 ];
             }
 
@@ -2409,25 +2421,38 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php
                     $tStatus = $row['transfer']['status'] ?? null;
                     $isVoided = $tStatus === \App\Models\InterVehicleTransfer::STATUS_VOIDED;
+                    $pendingVoid = !empty($row['transfer']['pending_void']);
+                    // 박스 배경: voided 회색 / pending_void amber / 일반 violet
+                    $boxClass = $isVoided
+                        ? 'bg-gray-100 border-gray-300'
+                        : ($pendingVoid ? 'bg-amber-50 border-amber-300' : 'bg-violet-50 border-violet-200');
+                    $textMutedClass = $isVoided ? 'text-gray-500' : ($pendingVoid ? 'text-amber-800' : 'text-violet-800');
+                    $textMetaClass = $isVoided ? 'text-gray-400' : ($pendingVoid ? 'text-amber-600' : 'text-violet-600');
                 @endphp
-                <div class="flex gap-2 items-center rounded {{ $isVoided ? 'bg-gray-100 border-gray-300' : 'bg-violet-50 border-violet-200' }} px-2 py-1.5 border">
-                    <span class="text-xs">{{ $isVoided ? '⊘' : '🔁' }}</span>
+                <div class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
+                    <span class="text-xs">{{ $isVoided ? '⊘' : ($pendingVoid ? '⏳' : '🔁') }}</span>
                     <span class="w-32 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
                         {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
                     </span>
-                    <span class="flex-1 text-xs {{ $isVoided ? 'text-gray-500' : 'text-violet-800' }}">
+                    <span class="flex-1 text-xs {{ $textMutedClass }}">
                         @if($row['transfer']['direction'] === 'outgoing')
                             → 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 으로 이체
                         @else
                             ← 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 에서 이체
                         @endif
-                        @if($isVoided) <span class="ml-1 text-[10px] text-gray-500">(취소됨)</span> @endif
+                        @if($isVoided)
+                            <span class="ml-1 text-[10px] text-gray-500">(취소됨)</span>
+                        @elseif($pendingVoid)
+                            <span class="ml-1 text-[10px] font-semibold text-amber-700">(취소 승인 대기중)</span>
+                        @endif
                     </span>
-                    <span class="text-xs {{ $isVoided ? 'text-gray-400' : 'text-violet-600' }} whitespace-nowrap">
+                    <span class="text-xs {{ $textMetaClass }} whitespace-nowrap">
                         {{ $row['payment_date'] ?: '-' }}
                         · 승인 #{{ $row['transfer']['approval_request_id'] }}
                     </span>
-                    @if(!$isVoided && !empty($row['transfer']['can_void']))
+                    @if($pendingVoid)
+                    <span class="text-[11px] text-amber-600 whitespace-nowrap">취소 요청 중</span>
+                    @elseif(!$isVoided && !empty($row['transfer']['can_void']))
                     <button type="button" wire:click="openTransferVoidModal({{ $row['transfer']['id'] }})"
                             class="text-[11px] text-red-500 hover:underline whitespace-nowrap">
                         이체 취소 요청
