@@ -128,7 +128,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h2 class="text-xl font-bold text-gray-800">승인 큐</h2>
             <p class="mt-1 text-xs text-gray-500">
                 대기 <span class="font-semibold text-amber-600">{{ $this->pendingCount }}</span>건
-                · 4 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외)
+                · 5 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외·차량 간 자금 이체)
             </p>
         </div>
         <div class="flex items-center gap-3">
@@ -195,6 +195,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @if(! empty($p['overlap_vehicle_numbers']))
                             <div class="text-[10px] text-gray-400 truncate max-w-[260px]">미수 차량: {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
                             @endif
+                        @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+                            @php $p = $r->payload ?? []; @endphp
+                            <div class="space-y-0.5">
+                                <div>
+                                    <span class="text-gray-400">출처</span>
+                                    <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-400">대상</span>
+                                    <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                                </div>
+                                <div class="font-semibold text-violet-700">
+                                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }}
+                                </div>
+                            </div>
                         @elseif($r->target_type && $r->target_id)
                             <span class="font-mono">{{ class_basename($r->target_type) }} #{{ $r->target_id }}</span>
                         @else - @endif
@@ -253,6 +268,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @if(isset($p['overlap_count'], $p['overlap_amount_krw']))
                 <div class="text-[11px] text-gray-500">미수 {{ $p['overlap_count'] }}대 · ₩{{ number_format($p['overlap_amount_krw']) }}</div>
                 @endif
+            @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+                @php $p = $r->payload ?? []; @endphp
+                <div class="mt-1 text-xs text-gray-700">
+                    <span class="text-gray-400">출처</span> <span class="font-mono">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                    →
+                    <span class="text-gray-400">대상</span> <span class="font-mono">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                </div>
+                <div class="mt-0.5 text-xs font-semibold text-violet-700">
+                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }}
+                </div>
             @endif
             @if($r->reason)
             <div class="mt-1 text-xs text-gray-600">{{ $r->reason }}</div>
