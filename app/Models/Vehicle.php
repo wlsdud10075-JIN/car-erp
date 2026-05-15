@@ -496,6 +496,17 @@ class Vehicle extends Model
         return $this->hasMany(UnpaidExportOverride::class);
     }
 
+    // 큐 19-A — 차량 간 자금 이체 양방향 관계 (회의록 v5 §13)
+    public function transfersAsSource(): HasMany
+    {
+        return $this->hasMany(InterVehicleTransfer::class, 'source_vehicle_id');
+    }
+
+    public function transfersAsTarget(): HasMany
+    {
+        return $this->hasMany(InterVehicleTransfer::class, 'target_vehicle_id');
+    }
+
     /**
      * 큐 2.6 — 특정 단계에 대한 admin 미입금 우회 승인 여부.
      * unpaid_export_overrides에 해당 stage 레코드가 1건 이상 있으면 true.

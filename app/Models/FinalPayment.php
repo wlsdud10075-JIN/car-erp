@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FinalPayment extends Model
 {
-    protected $fillable = ['vehicle_id', 'amount', 'payment_date', 'note'];
+    protected $fillable = ['vehicle_id', 'transfer_id', 'amount', 'payment_date', 'note'];
 
     protected $casts = ['payment_date' => 'date'];
 
@@ -44,5 +44,10 @@ class FinalPayment extends Model
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    public function transfer(): BelongsTo
+    {
+        return $this->belongsTo(InterVehicleTransfer::class, 'transfer_id');
     }
 }

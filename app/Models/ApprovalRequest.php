@@ -23,7 +23,7 @@ class ApprovalRequest extends Model
         'used_at' => 'datetime',
     ];
 
-    // 4 액션 타입 (회의록 v5.1 §9-2)
+    // 액션 타입 (회의록 v5.1 §9-2 + v5 §13 큐 19)
     public const TYPE_INTER_BUYER_OVERLAP = 'inter_buyer_overlap';
 
     public const TYPE_SETTLEMENT_PAY = 'settlement_pay';
@@ -32,11 +32,14 @@ class ApprovalRequest extends Model
 
     public const TYPE_UNPAID_EXPORT_OVERRIDE = 'unpaid_export_override';
 
+    public const TYPE_INTER_VEHICLE_TRANSFER = 'inter_vehicle_transfer';
+
     public const TYPES = [
         self::TYPE_INTER_BUYER_OVERLAP => '같은 바이어 미수+신규 거래',
         self::TYPE_SETTLEMENT_PAY => '정산 지급',
         self::TYPE_SENSITIVE_ACTION => '민감 액션 (폐기/RRN/B/L)',
         self::TYPE_UNPAID_EXPORT_OVERRIDE => '50% 룰 예외',
+        self::TYPE_INTER_VEHICLE_TRANSFER => '차량 간 자금 이체',
     ];
 
     public const STATUS_PENDING = 'pending';
