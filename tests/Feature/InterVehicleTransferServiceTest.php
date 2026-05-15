@@ -354,4 +354,126 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->expectExceptionMessage('이미 대기중인');
         $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
     }
+
+    /**
+     * 큐 19-F-D — 5상태 머신 end-to-end 전이 검증.
+     * pending → approved_awaiting_finance → executed → voided_awaiting_finance → voided.
+     * 각 단계 메타(approver / finance_confirmer / confirmed_at / finance_note) 보존 +
+     * final_payment 4건(정 페어 2 + 역 페어 2) append-only 검증.
+     */
+    public function test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        // 1) pending
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->assertEquals(InterVehicleTransfer::STATUS_PENDING, $transfer->fresh()->status);
+
+        // 2) pending → approved_awaiting_finance
+        $this->service->approve($transfer, $c['manager']);
+        $this->assertEquals(
+            InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            $transfer->fresh()->status
+        );
+        $this->assertCount(0, FinalPayment::where('transfer_id', $transfer->id)->get());
+
+        // 3) approved_awaiting_finance → executed
+        $this->service->confirmByFinance($transfer, $c['finance'], '재무 이체 거래번호 EXEC-001');
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $transfer->status);
+        $this->assertEquals($c['manager']->id, $transfer->approver_id);
+        $this->assertEquals($c['finance']->id, $transfer->confirmed_by_user_id);
+        $this->assertEquals('재무 이체 거래번호 EXEC-001', $transfer->finance_note);
+        $execConfirmedAt = $transfer->confirmed_at;
+        $this->assertNotNull($execConfirmedAt);
+        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
+
+        // 4) executed → voided_awaiting_finance (approveVoid)
+        $this->service->approveVoid($transfer, $c['manager'], '바이어 요청 취소');
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE, $transfer->status);
+        $this->assertEquals('바이어 요청 취소', $transfer->void_reason);
+        // 메타 보존 — 정 페어 final_payment는 그대로(append-only)
+        $this->assertCount(2, FinalPayment::where('transfer_id', $transfer->id)->get());
+
+        // 5) voided_awaiting_finance → voided (confirmVoidByFinance)
+        $this->service->confirmVoidByFinance($transfer, $c['finance'], '재무 환불 거래번호 VOID-001');
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_VOIDED, $transfer->status);
+        $this->assertNotNull($transfer->voided_at);
+        $this->assertEquals('재무 환불 거래번호 VOID-001', $transfer->finance_note);
+        // confirmed_at는 voided 시점으로 갱신 (executed 시점 이후)
+        $this->assertTrue($transfer->confirmed_at >= $execConfirmedAt);
+
+        // final_payment 총 4건: 원본 페어(-/+ 25M) + 역 페어(+/-25M)
+        $payments = FinalPayment::where('transfer_id', $transfer->id)
+            ->orderBy('id')
+            ->get();
+        $this->assertCount(4, $payments);
+        // 원본 (executed 시점) — source -, target +
+        $this->assertEquals(-25_000_000, $payments[0]->amount);
+        $this->assertEquals($c['source']->id, $payments[0]->vehicle_id);
+        $this->assertEquals(25_000_000, $payments[1]->amount);
+        $this->assertEquals($c['target']->id, $payments[1]->vehicle_id);
+        // 역 페어 (voided 시점) — source +, target -
+        $this->assertEquals(25_000_000, $payments[2]->amount);
+        $this->assertEquals($c['source']->id, $payments[2]->vehicle_id);
+        $this->assertEquals(-25_000_000, $payments[3]->amount);
+        $this->assertEquals($c['target']->id, $payments[3]->vehicle_id);
+
+        // 미수 캐시 — 이체 전 상태로 복귀 (정 페어와 역 페어 상쇄)
+        $this->assertEquals(50_000_000, (int) $c['source']->fresh()->sale_unpaid_amount);
+        $this->assertEquals(80_000_000, (int) $c['target']->fresh()->sale_unpaid_amount);
+    }
+
+    /**
+     * 큐 19-F-D — 상태 가드: executed에서 confirmByFinance 재호출 차단 (이중 확정 방지).
+     */
+    public function test_confirm_by_finance_blocks_executed_status(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
+        $this->service->confirmByFinance($transfer, $c['finance']);
+    }
+
+    /**
+     * 큐 19-F-D — 상태 가드: voided_awaiting_finance에서 confirmByFinance 호출 차단.
+     * void 흐름과 execute 흐름 혼선 방지.
+     */
+    public function test_confirm_by_finance_blocks_voided_awaiting_finance_status(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+        $this->service->approveVoid($transfer, $c['manager'], '취소');
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
+        $this->service->confirmByFinance($transfer, $c['finance']);
+    }
+
+    /**
+     * 큐 19-F-D — 상태 가드: executed에서 confirmVoidByFinance 우회 호출 차단.
+     * approveVoid 의사결정 없이 재무가 직접 void 마킹 시도 차단.
+     */
+    public function test_confirm_void_by_finance_blocks_executed_status_without_approve_void(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('취소 승인 대기 상태의 이체만');
+        $this->service->confirmVoidByFinance($transfer, $c['finance']);
+    }
 }
