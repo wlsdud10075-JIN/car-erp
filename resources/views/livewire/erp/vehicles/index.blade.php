@@ -1500,12 +1500,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        $submittedTransferId = $this->voidTransferId;
+
         try {
             $service->voidRequest($transfer, auth()->user(), trim($this->voidReason));
         } catch (\DomainException $e) {
             $this->addError('voidReason', $e->getMessage());
 
             return;
+        }
+
+        // 잔금 row의 transfer 메타를 즉시 갱신 (DB 재쿼리 없이 메모리에서)
+        // → 모달 닫힘과 동시에 amber 박스 + "취소 요청 중" 시각화
+        foreach ($this->finalPayments as $idx => $row) {
+            if (! empty($row['transfer']) && (int) ($row['transfer']['id'] ?? 0) === $submittedTransferId) {
+                $this->finalPayments[$idx]['transfer']['pending_void'] = true;
+                $this->finalPayments[$idx]['transfer']['can_void'] = false;
+            }
         }
 
         $this->dispatch('notify', message: '이체 취소 승인 요청을 보냈습니다.', type: 'success');

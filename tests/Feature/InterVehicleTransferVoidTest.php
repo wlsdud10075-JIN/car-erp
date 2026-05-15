@@ -173,6 +173,30 @@ class InterVehicleTransferVoidTest extends TestCase
     }
 
     /**
+     * 큐 19-E 보강 (2026-05-15) — submit 직후 finalPayments 메타가 즉시 갱신되어
+     * 페이지 새로고침 없이 amber 박스 "취소 요청 중" 시각화.
+     */
+    public function test_void_submit_immediately_updates_finalpayments_meta(): void
+    {
+        $c = $this->executeTransferScenario();
+        $this->actingAs($c['sales']);
+
+        $component = Volt::test('erp.vehicles.index')
+            ->call('openEdit', $c['source']->id)
+            ->call('openTransferVoidModal', $c['transfer']->id)
+            ->set('voidReason', '잔금 row 메타 즉시 갱신 테스트')
+            ->call('submitTransferVoidRequest');
+
+        // openEdit 재호출 없이 같은 인스턴스에서 finalPayments 확인
+        $payments = $component->instance()->finalPayments;
+        $transferRow = collect($payments)->first(fn ($r) => ! empty($r['transfer']));
+
+        $this->assertNotNull($transferRow);
+        $this->assertTrue($transferRow['transfer']['pending_void']);
+        $this->assertFalse($transferRow['transfer']['can_void']);
+    }
+
+    /**
      * 큐 19-E 보강 (사용자 피드백 2026-05-15) — pending void가 있으면 잔금 row 메타에
      * pending_void=true + can_void=false 반영. UI에서 amber 박스 + "취소 요청 중" 표시.
      */
