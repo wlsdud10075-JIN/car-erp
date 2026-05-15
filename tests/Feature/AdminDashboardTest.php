@@ -41,12 +41,12 @@ class AdminDashboardTest extends TestCase
         // 매입일 in-range 1대, sale_date in-range지만 purchase_date out-of-range 1대
         Vehicle::create([
             'vehicle_number' => 'IN-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2026-05-10', 'purchase_price' => 1000,
         ]);
         Vehicle::create([
             'vehicle_number' => 'OUT-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2025-01-01',  // out
             'sale_date' => '2026-05-10',       // in
             'sale_price' => 2000,
@@ -69,14 +69,14 @@ class AdminDashboardTest extends TestCase
 
         Vehicle::create([
             'vehicle_number' => 'IN-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2025-01-01',  // out of purchase range
             'sale_date' => '2026-05-10',       // in of sale range
             'sale_price' => 2000,
         ]);
         Vehicle::create([
             'vehicle_number' => 'OUT-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2026-05-10',  // in purchase
             'sale_date' => '2025-01-01',       // out of sale
             'sale_price' => 1000,
@@ -99,7 +99,7 @@ class AdminDashboardTest extends TestCase
 
         Vehicle::create([
             'vehicle_number' => 'IN-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2025-01-01',
             'bl_issue_date' => '2026-05-10',
         ]);
@@ -163,23 +163,23 @@ class AdminDashboardTest extends TestCase
         // 2026년 3월 × 2, 5월 × 1
         Vehicle::create([
             'vehicle_number' => 'M-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2026-03-10', 'purchase_price' => 1000,
         ]);
         Vehicle::create([
             'vehicle_number' => 'M-2', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2026-03-25', 'purchase_price' => 1000,
         ]);
         Vehicle::create([
             'vehicle_number' => 'M-3', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2026-05-15', 'purchase_price' => 1000,
         ]);
         // 2025년 — 다른 해
         Vehicle::create([
             'vehicle_number' => 'M-PREV', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'purchase_date' => '2025-03-10', 'purchase_price' => 1000,
         ]);
 
@@ -203,18 +203,18 @@ class AdminDashboardTest extends TestCase
         // 5월 — KRW 1000원 + USD 100 × 1300 = 130000원 → 131000원
         Vehicle::create([
             'vehicle_number' => 'S-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'sale_date' => '2026-05-10', 'sale_price' => 1000, 'exchange_rate' => 1,
         ]);
         Vehicle::create([
             'vehicle_number' => 'S-2', 'sales_channel' => 'export', 'currency' => 'USD',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'sale_date' => '2026-05-20', 'sale_price' => 100, 'exchange_rate' => 1300,
         ]);
         // 환율 0 — KRW 환산 불가 → 제외
         Vehicle::create([
             'vehicle_number' => 'S-EX', 'sales_channel' => 'export', 'currency' => 'USD',
-            'is_disposed' => false, 'dhl_request' => false,
+            'dhl_request' => false,
             'sale_date' => '2026-05-25', 'sale_price' => 999, 'exchange_rate' => 0,
         ]);
 
@@ -251,20 +251,20 @@ class AdminDashboardTest extends TestCase
         // 김영업: 2건, 합계 KRW 3000
         Vehicle::create([
             'vehicle_number' => 'P-A1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-10', 'salesman_id' => $a->id,
             'sale_date' => '2026-05-10', 'sale_price' => 1000,
         ]);
         Vehicle::create([
             'vehicle_number' => 'P-A2', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-15', 'salesman_id' => $a->id,
             'sale_date' => '2026-05-15', 'sale_price' => 2000,
         ]);
         // 최매입: 1건, 합계 KRW 5000 → 상위 1위
         Vehicle::create([
             'vehicle_number' => 'P-B1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-20', 'salesman_id' => $b->id,
             'sale_date' => '2026-05-20', 'sale_price' => 5000,
         ]);
@@ -289,13 +289,13 @@ class AdminDashboardTest extends TestCase
         $a = Salesman::create(['name' => '김영업', 'is_active' => true]);
         Vehicle::create([
             'vehicle_number' => 'NS-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-10', 'salesman_id' => null,
             'sale_date' => '2026-05-10', 'sale_price' => 9999,
         ]);
         Vehicle::create([
             'vehicle_number' => 'NS-2', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-10', 'salesman_id' => $a->id,
             'sale_date' => '2026-05-10', 'sale_price' => 1000,
         ]);
@@ -319,7 +319,7 @@ class AdminDashboardTest extends TestCase
         // dateType=purchase에선 매입일 in-range만, dateType=sale에선 판매일 in-range만
         Vehicle::create([
             'vehicle_number' => 'DT-1', 'sales_channel' => 'heyman', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
             'purchase_date' => '2026-05-10',   // in for purchase
             'sale_date' => '2025-01-01',        // out for sale
             'salesman_id' => $a->id, 'sale_price' => 1000,
@@ -352,7 +352,7 @@ class AdminDashboardTest extends TestCase
 
         return Vehicle::create(array_merge([
             'vehicle_number' => 'SK-'.$i, 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => false, 'dhl_request' => false, 'exchange_rate' => 1,
+            'dhl_request' => false, 'exchange_rate' => 1,
         ], $overrides));
     }
 
@@ -680,28 +680,28 @@ class AdminDashboardTest extends TestCase
         for ($i = 0; $i < 2; $i++) {
             DB::table('vehicles')->insert([
                 'vehicle_number' => 'AF-'.$i, 'sales_channel' => 'export', 'currency' => 'KRW',
-                'is_disposed' => 0, 'dhl_request' => 0,
+                'dhl_request' => 0,
                 'forwarding_company_id' => $f1->id, 'progress_status_cache' => '수출통관중',
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         }
         DB::table('vehicles')->insert([
             'vehicle_number' => 'AF-S', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => 0, 'dhl_request' => 0,
+            'dhl_request' => 0,
             'forwarding_company_id' => $f1->id, 'progress_status_cache' => '선적완료',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         // B포워딩 — 선적중 1
         DB::table('vehicles')->insert([
             'vehicle_number' => 'BF-1', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => 0, 'dhl_request' => 0,
+            'dhl_request' => 0,
             'forwarding_company_id' => $f2->id, 'progress_status_cache' => '선적중',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         // 미카운트 — 매입중 단계 (통관·선적 아님)
         DB::table('vehicles')->insert([
             'vehicle_number' => 'BF-X', 'sales_channel' => 'export', 'currency' => 'KRW',
-            'is_disposed' => 0, 'dhl_request' => 0,
+            'dhl_request' => 0,
             'forwarding_company_id' => $f2->id, 'progress_status_cache' => '매입중',
             'created_at' => now(), 'updated_at' => now(),
         ]);

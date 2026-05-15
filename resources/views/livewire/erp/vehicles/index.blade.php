@@ -45,7 +45,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $vehicle_number = '';
     public string $sales_channel = 'export';
-    public bool   $is_disposed   = false;
     public string $brand      = '';
     public string $model_type = '';
     public string $year_str   = '';
@@ -295,7 +294,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
      * 매입 / 말소 / 판매 / 입금 / 통관 / 선적 / DHL.
-     * 상태: done(✓) / warn(!) / progress(진행중) / pending(-) / disabled(채널·폐기).
+     * 상태: done(✓) / warn(!) / progress(진행중) / pending(-).
+     * 큐 17 — 폐기 컨셉 제거. disabled 상태 사용처 없어짐.
      * 큐 6 잔여 H13 — warn/pending/progress 노드에 reason 텍스트 부착 (tooltip 안내).
      */
     #[Computed]
@@ -309,15 +309,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $v) {
             return null;
         }
-        // 큐 16 — sales_channel 단일화로 $isExport/$disabledForChannel 분기 제거.
-        // 채널 기반 disabled는 폐기(is_disposed)만 남음.
-        $disposed = $v->is_disposed;
-        $disabledForChannel = fn () => false;
 
         // 매입
-        $purchaseStatus = $disposed ? 'disabled' : ($v->purchase_price > 0
+        $purchaseStatus = $v->purchase_price > 0
             ? ($v->purchase_unpaid_amount <= 0 ? 'done' : 'warn')
-            : 'pending');
+            : 'pending';
         $purchaseReason = match (true) {
             $purchaseStatus === 'warn' => '매입 미지급 잔액 '.number_format($v->purchase_unpaid_amount).'원 존재',
             $purchaseStatus === 'pending' => '매입가 미입력',
@@ -325,27 +321,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
 
         // 말소
-        $deregStatus = $disposed ? 'disabled' : (
-            $v->is_deregistered && $v->deregistration_document
-                ? 'done'
-                : ($v->is_deregistered ? 'warn' : 'pending')
-        );
+        $deregStatus = $v->is_deregistered && $v->deregistration_document
+            ? 'done'
+            : ($v->is_deregistered ? 'warn' : 'pending');
         $deregReason = match (true) {
             $deregStatus === 'warn' => '말소 체크는 됐지만 말소등록증 미업로드',
-            $deregStatus === 'pending' => '말소 미처리 — is_deregistered 체크 + 말소등록증 업로드 필요',
+            $deregStatus === 'pending' => '말소 미처리 — 말소완료 체크 + 말소등록증 업로드 필요',
             default => null,
         };
 
         // 판매
-        $saleStatus = $disposed ? 'disabled' : ($v->sale_price > 0 ? 'done' : 'pending');
+        $saleStatus = $v->sale_price > 0 ? 'done' : 'pending';
         $saleReason = $saleStatus === 'pending' ? '판매가 미입력' : null;
 
         // 입금
-        $paymentStatus = $disposed ? 'disabled' : (
-            $v->sale_price > 0
-                ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
-                : 'pending'
-        );
+        $paymentStatus = $v->sale_price > 0
+            ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
+            : 'pending';
         $paymentReason = match (true) {
             $paymentStatus === 'warn' => '판매 미입금 '.number_format($v->sale_unpaid_amount).'원 존재',
             $paymentStatus === 'pending' => '판매가 미입력 — 입금 추적 불가',
@@ -353,10 +345,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
 
         // 통관 — 큐 2.6 잔여 통합: 체크박스 + 문서 둘 다 누락 시 명시 안내
-        $clearanceStatus = $disabledForChannel() || $disposed ? 'disabled' : (
-            $v->export_declaration_document ? 'done'
-                : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending')
-        );
+        $clearanceStatus = $v->export_declaration_document ? 'done'
+            : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending');
         $clearanceReason = match (true) {
             $clearanceStatus === 'progress' => '수출신고서 업로드 필요 (체크박스만으론 단계 진행 안 됨)',
             $clearanceStatus === 'pending' => '수출통관 정보 미입력 — 통관 바이어/선적일·포워딩사 입력 후 수출신고서 업로드',
@@ -364,10 +354,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
 
         // 선적
-        $blStatus = $disabledForChannel() || $disposed ? 'disabled' : (
-            $v->bl_document ? 'done'
-                : ($v->bl_loading_location ? 'progress' : 'pending')
-        );
+        $blStatus = $v->bl_document ? 'done'
+            : ($v->bl_loading_location ? 'progress' : 'pending');
         $blReason = match (true) {
             $blStatus === 'progress' => 'B/L 문서 업로드 필요 (반입지 입력 완료)',
             $blStatus === 'pending' => '선적 미진행 — B/L 반입지 입력 후 문서 업로드',
@@ -375,9 +363,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
 
         // DHL
-        $dhlStatus = $disabledForChannel() || $disposed ? 'disabled' : (
-            $v->dhl_request ? 'done' : 'pending'
-        );
+        $dhlStatus = $v->dhl_request ? 'done' : 'pending';
         $dhlReason = $dhlStatus === 'pending' ? 'DHL 발송신청 미체크' : null;
 
         return [
@@ -554,7 +540,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->vehicle_number = $v->vehicle_number;
         $this->sales_channel  = $v->sales_channel;
-        $this->is_disposed    = $v->is_disposed;
         $this->brand      = $v->brand ?? '';
         $this->model_type = $v->model_type ?? '';
         $this->year_str      = $v->year      ? (string)$v->year      : '';
@@ -901,7 +886,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? \App\Models\Vehicle::find($this->editingId)?->replicate() ?? new \App\Models\Vehicle
             : new \App\Models\Vehicle;
         $previewVehicle->sales_channel = $this->sales_channel;
-        $previewVehicle->is_disposed = $this->is_disposed;
         $previewVehicle->is_deregistered = $this->is_deregistered;
         $previewVehicle->deregistration_document = $this->deregistration_document_path ?: ($this->deregistrationDocFile ? 'pending' : null);
         $previewVehicle->sale_price = (float) str_replace(',', '', $this->sale_price_str ?: '0');
@@ -944,7 +928,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $data = [
             'vehicle_number' => $this->vehicle_number,
             'sales_channel'  => $this->sales_channel,
-            'is_disposed'    => $this->is_disposed,
             'brand'      => $this->brand      ?: null,
             'model_type' => $this->model_type ?: null,
             'year'       => $this->year_str      !== '' ? (int)$this->year_str      : null,
@@ -1460,7 +1443,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->sales_channel = 'export';
         $this->currency = 'USD';
-        $this->is_disposed = $this->is_deregistered = $this->is_export_cleared = false;
+        $this->is_deregistered = $this->is_export_cleared = false;
         $this->dhl_request = false;
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
@@ -1559,7 +1542,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 빠른 탭 필터 — 큐 16: 채널 pill 제거 (단일 채널) --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <div class="flex flex-wrap gap-1">
-            @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '선적중' => '선적중', '선적완료' => '선적완료', '거래완료' => '거래완료', '폐기' => '폐기'] as $val => $label)
+            @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '선적중' => '선적중', '선적완료' => '선적완료', '거래완료' => '거래완료'] as $val => $label)
             <button wire:click="$set('progressFilter', '{{ $val }}')"
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            {{ $progressFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
@@ -1594,7 +1577,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                     in_array($status, ['수출통관중','수출통관완료'])    => 'badge-amber',
                     in_array($status, ['선적중','선적완료'])           => 'badge-green',
                     $status === '거래완료'                             => 'badge-gray',
-                    $status === '폐기'                                 => 'badge-red',
                     default                                            => 'badge-gray',
                 };
                 // 큐 16 — channelBadge/Label match 제거 (단일 채널)
@@ -1647,7 +1629,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             in_array($status, ['수출통관중','수출통관완료'])    => 'badge-amber',
             in_array($status, ['선적중','선적완료'])           => 'badge-green',
             $status === '거래완료'                             => 'badge-gray',
-            $status === '폐기'                                 => 'badge-red',
             default                                            => 'badge-gray',
         };
     @endphp
@@ -1831,12 +1812,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 {{-- 큐 16 — 판매채널 select 제거. sales_channel은 hidden 'export' 고정. --}}
                 <input type="hidden" wire:model="sales_channel" />
-                <div class="flex items-end">
-                    <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                        <input wire:model="is_disposed" type="checkbox" class="rounded" />
-                        폐기
-                    </label>
-                </div>
+                {{-- 큐 17 — 폐기 체크박스 제거 (운영상 폐기 없음). --}}
                 <div>
                     <label class="label-base">제조사</label>
                     <input wire:model="brand" type="text" class="input-base" placeholder="현대" />

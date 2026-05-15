@@ -34,7 +34,6 @@ class DashboardActionCountsTest extends TestCase
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
-            'is_disposed' => false,
             'dhl_request' => false,
         ], $overrides));
     }

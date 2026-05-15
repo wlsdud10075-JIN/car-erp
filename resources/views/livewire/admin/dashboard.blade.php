@@ -430,7 +430,7 @@ new #[Layout('components.layouts.app')] class extends Component
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
      *
      * SQL 100% 일치 원칙 (SKILLS.md §9):
-     * - Vehicle::scopeAction의 activeOnly(is_disposed=false AND dhl_request=false)와 동일
+     * - Vehicle::scopeAction의 activeOnly(dhl_request=false)와 동일
      * - dateColumn() 기준 dateFrom/dateTo 동일 적용 (vehicles/index와 동일 컨텍스트)
      */
     #[Computed]
@@ -442,7 +442,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 공통: active 한정 + dateColumn 범위 (scopeAction과 일치)
         $applyCommonFilters = fn ($q) => $q
-            ->where('is_disposed', false)
             ->where('dhl_request', false)
             ->when($this->dateFrom, fn ($q2) => $q2->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q2) => $q2->where($col, '<=', $this->dateTo));

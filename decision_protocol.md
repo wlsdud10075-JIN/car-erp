@@ -47,7 +47,7 @@ car-erp는 **1인 개발자가 SSANCAR 사내 ERP를 운영 중인 Python ERP에
 - 관점: 회귀 / 엣지 / **도메인 정합성**
 - car-erp 의무 점검
   - **대시보드 카운트 ↔ vehicles 목록 SQL where 100% 일치** (`SKILLS.md §9`의 action 파라미터 패턴)
-  - **차량 11단계 분기** — 우선순위 평가 / `progress_status_cache` 동기화 / 판매완료 vs 수출통관중 충돌
+  - **차량 10단계 분기** — 우선순위 평가 / `progress_status_cache` 동기화 / 판매완료 vs 수출통관중 충돌
   - **정산 마진 공식** — VAT = `purchase_price × 0.09` (Python의 ×0.1 아님, 엑셀 실측)
   - **다중통화 / 환율 미입력** — `sale_unpaid_amount_krw_cache` 0이 완납으로 오판될 위험
   - **채권 미수금 / 회수 이력 ↔ final_payments 양방향 미러링**
@@ -57,7 +57,7 @@ car-erp는 **1인 개발자가 SSANCAR 사내 ERP를 운영 중인 Python ERP에
   - "어느 도메인 공식·캐시가 깨질 수 있는가? (`SKILLS.md §13` 공식 영향 분석)"
   - "수동 회귀 테스트 시나리오 몇 분?"
   - "다중통화 / 환율 0 케이스는?"
-  - "정산·11단계·미수금 등 핵심 공식 변경 시 Unit Test 있는가?"
+  - "정산·10단계·미수금 등 핵심 공식 변경 시 Unit Test 있는가?"
 
 #### 🔒 Security & Compliance
 - 관점: 개인정보 / API 키 / 권한 미들웨어 / 망법·개인정보보호법
@@ -107,7 +107,7 @@ car-erp는 **1인 개발자가 SSANCAR 사내 ERP를 운영 중인 Python ERP에
 | 강도 | 대상 안건 | 참여 역할 | 발언 길이 |
 |---|---|---|---|
 | **라이트** | 단일 화면 추가 / 단일 컬럼 추가 / UI 위치 변경 / 단일 API 호출(단방향) / 뱃지 색 매핑 추가 | PO + Engineer + Security (3역할) | 2줄 |
-| **풀** | 마이그레이션 / 정산 공식 변경 / 11단계 우선순위 변경 / NICE API·SMTP 연동 / 권한·role 변경 / Python ERP 데이터 이관 / AWS Lightsail 배포 | 코어 5 + 가변 1 (6역할) | 3~5줄 |
+| **풀** | 마이그레이션 / 정산 공식 변경 / 10단계 우선순위 변경 / NICE API·SMTP 연동 / 권한·role 변경 / Python ERP 데이터 이관 / AWS Lightsail 배포 | 코어 5 + 가변 1 (6역할) | 3~5줄 |
 
 ### 풀회의 강제 키워드 (사용자 메시지·변경 파일에 등장 시 자동 풀로 격상)
 
@@ -172,7 +172,7 @@ car-erp는 **1인 개발자가 SSANCAR 사내 ERP를 운영 중인 Python ERP에
 # 📅 회의록: [안건명]
 - 일시: YYYY-MM-DD
 - 강도: 라이트 / 풀
-- 안건 유형: [migration / 외부API / 권한 / 정산공식 / 11단계 / UI / 기타]
+- 안건 유형: [migration / 외부API / 권한 / 정산공식 / 10단계 / UI / 기타]
 - 자동발동 여부: yes/no (트리거 키워드)
 
 ## 💬 역할별 발언
@@ -192,7 +192,7 @@ car-erp는 **1인 개발자가 SSANCAR 사내 ERP를 운영 중인 Python ERP에
 ### QA & Domain Integrity
 판정: ...
 발언: ...
-도메인 공식 영향: (해당 시 — VAT 9% / 11단계 / 다중통화 / 채권 미수금 등 어느 공식)
+도메인 공식 영향: (해당 시 — VAT 9% / 10단계 / 다중통화 / 채권 미수금 등 어느 공식)
 회귀 시나리오: (수동 테스트 N분)
 Unit Test: (있는지 / 신규 필요 여부)
 
@@ -244,7 +244,7 @@ Unit Test: (있는지 / 신규 필요 여부)
 | 개인정보 컬럼 추가/노출 | Security | `encrypted` cast / 접근 권한 미들웨어 / 로그·에러 마스킹 | **RRN 평문 저장 금지** (`nice_reg_owner_rrn`) / **문서 다운로드 admin 제한** (RRN 포함 PDF) |
 | 권한·role 모델 변경 | Security + Engineer | 기존 사용자 영향 / 마이그레이션 시 default role / 미들웨어 누락 라우트 | 채권관리 admin 유지 |
 | 정산 마진 공식 변경 | QA + 데이터 무결성 | VAT 9% 엑셀 실측 일치 / 기존 paid 건 retroactive / 신규 vs 전수 재계산 | 핵심 공식 Unit Test 필수 (`tests/Unit/`) / **채널별 분기** — `export_declaration_amount × exchange_rate`는 수출 전용, 헤이맨/카풀은 별도 공식 |
-| 진행상태 11단계 변경 | QA + Engineer | `progress_status_cache` 동기화 / 대시보드 SQL where 일치 / 우선순위 평가 | 판매완료 vs 수출통관중 충돌 (수출 채널에서 `export_buyer_id + shipping_date` 입력 시 우선순위 기획 의도 명시) / 거래완료 일자 추적 시 `dhl_requested_at` 별도 컬럼 검토 |
+| 진행상태 10단계 변경 | QA + Engineer | `progress_status_cache` 동기화 / 대시보드 SQL where 일치 / 우선순위 평가 | 판매완료 vs 수출통관중 충돌 (수출 채널에서 `export_buyer_id + shipping_date` 입력 시 우선순위 기획 의도 명시) / 거래완료 일자 추적 시 `dhl_requested_at` 별도 컬럼 검토 |
 | 채널별 분기 로직 (수출/헤이맨/카풀) | QA + Engineer | actionCounts에 `sales_channel='export'` 필터 / 문서 생성 라우트 격리 / 정산 공식 적용 가능 여부 | **export 채널 문서 격리** — Invoice / Sales Contract / RO·con CIPL은 `sales_channel='export'`만 허용 / clearanceNeeded·shippingNeeded·dhlNeeded 채널 미구분 버그 |
 | 대시보드 카운트·필터 변경 | QA | 카드 카운트 ↔ vehicles 목록 SQL where 100% 일치 / SQL ↔ Collection 결과 동일 | 환율 0 외화 차량 NULL 처리 (`sale_unpaid_amount_krw_cache=0`이 완납으로 오판되지 않는지) / Eager Load 누락 (`receivableHistories`·`finalPayments`·`purchaseBalancePayments` with()) |
 | my-crm 패턴 재사용 | PO + Engineer | 출처 검증 / 차이점 명시 / SKILLS.md 등록 | — |
@@ -433,7 +433,7 @@ GO. `admin/dashboard.blade.php`에 SQL 1개 추가 — `where('currency','!=','K
 | NO-GO 시 (a)(b)(c) 의무화 | Gemini 제안 |
 | Infra → Ops & Deploy 재정의 (dothome 제거) | Claude (car-erp 컨텍스트) |
 | QA에 Domain Integrity 통합 | Claude (`SKILLS.md §9` 정합성 패턴 기반) |
-| 자동 발동 키워드 (NICE/SMTP/VAT/11단계 등) | Claude (CLAUDE.md / SKILLS.md 기반) |
+| 자동 발동 키워드 (NICE/SMTP/VAT/10단계 등) | Claude (CLAUDE.md / SKILLS.md 기반) |
 | 안건 타입별 의무 발언 체크리스트 (§6) | Claude (Gemini "형식적 GO 방지 강제력" 지적 반영) |
 | 재발 방지 체크리스트 §7 | 2026-05-11 3-model 크로스 체크 최종결과보고 13개 이슈 패턴화 |
 | 시뮬레이션 안건 (VAT 공식 변경) | Codex 실증 + Claude 재구성 |

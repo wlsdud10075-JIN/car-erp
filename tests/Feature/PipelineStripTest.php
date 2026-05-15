@@ -32,12 +32,11 @@ class PipelineStripTest extends TestCase
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
-            'is_disposed' => false,
             'dhl_request' => false,
         ], $overrides));
     }
 
-    // ── 11단계 카운트 정확성 ─────────────────────────────────────────
+    // ── 10단계 카운트 정확성 (큐 17 — 폐기 컨셉 제거 후 11→10) ─────────
 
     public function test_pipeline_counts_aggregate_by_progress_status_cache(): void
     {
@@ -48,8 +47,6 @@ class PipelineStripTest extends TestCase
         $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 1000]);
         // 거래완료 × 1 (큐 2.6 v2 — dhl_request + bl_document 둘 다 필요)
         $this->makeVehicle(['dhl_request' => true, 'bl_document' => 'bl.pdf']);
-        // 폐기 × 1
-        $this->makeVehicle(['is_disposed' => true]);
 
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
@@ -60,7 +57,6 @@ class PipelineStripTest extends TestCase
         $this->assertSame(2, $counts['매입중'] ?? 0);
         $this->assertSame(1, $counts['매입완료'] ?? 0);
         $this->assertSame(1, $counts['거래완료'] ?? 0);
-        $this->assertSame(1, $counts['폐기'] ?? 0);
     }
 
     public function test_pipeline_counts_filter_by_salesman_for_sales_role(): void
@@ -188,27 +184,7 @@ class PipelineStripTest extends TestCase
     }
 
     // ── 큐 6 H13 — reason 키 ───────────────────────────────────────────
-
-    public function test_progress_flow_reason_is_null_for_done_and_disposed(): void
-    {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
-        $this->actingAs($admin);
-
-        // 큐 16 — 채널 disabled 분기 사라짐 → disposed로 disabled 검증.
-        // 매입 done + is_disposed=true (전 단계 disabled)
-        $v = $this->makeVehicle([
-            'purchase_price' => 1000, 'down_payment' => 1000,
-            'is_disposed' => true,
-        ]);
-
-        $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
-        $flow = $component->get('progressFlow');
-
-        $this->assertSame('disabled', $flow[4]['status']);
-        $this->assertNull($flow[4]['reason']);  // 통관 disabled
-        $this->assertNull($flow[5]['reason']);  // 선적 disabled
-        $this->assertNull($flow[6]['reason']);  // DHL disabled
-    }
+    // 큐 17 — test_progress_flow_reason_is_null_for_done_and_disposed 삭제 (폐기 컨셉 제거)
 
     public function test_progress_flow_reason_explains_warn_and_pending(): void
     {
@@ -313,21 +289,5 @@ class PipelineStripTest extends TestCase
             ->assertNotDispatched('switch-tab');
     }
 
-    public function test_progress_flow_disables_all_when_disposed(): void
-    {
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
-        $this->actingAs($admin);
-
-        $v = $this->makeVehicle([
-            'purchase_price' => 1000, 'down_payment' => 1000,
-            'is_disposed' => true,
-        ]);
-
-        $component = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
-        $flow = $component->get('progressFlow');
-
-        foreach ($flow as $node) {
-            $this->assertSame('disabled', $node['status'], "Node {$node['key']} should be disabled when vehicle is disposed");
-        }
-    }
+    // 큐 17 — test_progress_flow_disables_all_when_disposed 삭제 (폐기 컨셉 제거)
 }

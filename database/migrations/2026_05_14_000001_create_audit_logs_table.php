@@ -11,7 +11,7 @@ return new class extends Migration
      *
      * document_access_logs(읽기 이벤트)와 분리. 무기한 보존 (운영 결정).
      * 1차 추적 범위:
-     *   - Vehicle: sale_price, is_disposed, progress_status_cache,
+     *   - Vehicle: sale_price, progress_status_cache,
      *              nice_reg_owner_rrn(변경 사실만, old/new는 마스킹),
      *              결제 컬럼 7종(deposit_down_payment, interim_payment,
      *              advance_payment1·2, down_payment, selling_fee_payment,

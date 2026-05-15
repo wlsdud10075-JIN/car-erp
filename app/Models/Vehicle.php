@@ -18,7 +18,7 @@ class Vehicle extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'vehicle_number', 'sales_channel', 'is_disposed', 'progress_status_cache',
+        'vehicle_number', 'sales_channel', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
         // 큐 16 — 헤이맨/카풀 5컬럼 drop (tax_invoice_1·2_date·amount, agency_fee).
@@ -52,7 +52,6 @@ class Vehicle extends Model
     ];
 
     protected $casts = [
-        'is_disposed' => 'boolean',
         'is_deregistered' => 'boolean',
         'is_export_cleared' => 'boolean',
         'forwarding_email_sent' => 'boolean',
@@ -193,7 +192,6 @@ class Vehicle extends Model
      */
     public const AUDITED_COLUMNS = [
         'sale_price',
-        'is_disposed',
         'progress_status_cache',
         'nice_reg_owner_rrn',                  // 마스킹 — value 미저장
         'deposit_down_payment', 'interim_payment',
@@ -321,14 +319,10 @@ class Vehicle extends Model
      * - 큐 2.6 H4: bl_loading_location 입력 시 is_export_cleared=false면 차단
      *
      * 시드는 도메인 시뮬레이션이라 검증 우회 — vehicles/index::save()에서만 명시 호출.
-     * `is_disposed=true`(폐기) / 비-export 채널은 검증 우회.
+     * 큐 17 — 폐기 컨셉 제거 (운영상 없음). bypass 제거.
      */
     public function guardAttachmentDeps(): void
     {
-        if ($this->is_disposed) {
-            return;
-        }
-
         // 큐 2.6 H4 — 선적 반입지 입력은 통관 완료 처리(체크박스) 후 (캐스케이드 가장 깊은 곳부터 검증)
         if ($this->bl_loading_location && ! $this->is_export_cleared) {
             throw ValidationException::withMessages([
@@ -363,16 +357,12 @@ class Vehicle extends Model
      * - C4: 말소(is_deregistered + deregistration_document)가 완료돼야 통관 진입 가능
      * - C5: 판매 미입금 잔존(sale_unpaid_amount_krw_cache > 0)인 상태에서 통관 진입 불가
      *
-     * `is_disposed=true`(폐기)는 검증 우회.
+     * 큐 17 — 폐기 컨셉 제거 (운영상 없음). bypass 제거.
      * 캐시 컬럼(`sale_unpaid_amount_krw_cache`) 직접 사용 — accessor의 relations 의존성 회피.
      * 신규 차량(cache=null)은 미입금 자체가 없어 C5 skip.
      */
     public function guardStageOrderForExport(): void
     {
-        if ($this->is_disposed) {
-            return;
-        }
-
         $hasExportInput = $this->export_buyer_id
             || $this->shipping_date
             || $this->export_declaration_document
@@ -517,8 +507,9 @@ class Vehicle extends Model
             ->exists();
     }
 
-    // ── Computed: 진행상태 11단계 ───────────────────────────────────
+    // ── Computed: 진행상태 10단계 ───────────────────────────────────
     // 큐 16 — 채널 단순화 (export 단일). 채널 분기 제거.
+    // 큐 17 — 폐기 컨셉 제거 (운영상 없음). 11단계 → 10단계.
     // 큐 2.6 — rule_version 분기. v1=단일 트리거(grandfather) / v2=이중 트리거 강화.
     //   v2 이중 트리거 (캐스케이드 — 다음 단계 진입 = 이전 단계 트리거 + 현재 단계 트리거):
     //     #5 수출통관완료 = is_export_cleared && export_declaration_document
@@ -527,10 +518,6 @@ class Vehicle extends Model
     //     #2 거래완료     = bl_document && dhl_request
     public function getProgressStatusAttribute(): string
     {
-        if ($this->is_disposed) {
-            return '폐기';
-        }
-
         $v2 = ((int) ($this->progress_status_rule_version ?? 2)) >= 2;
 
         if ($v2) {
@@ -724,7 +711,7 @@ class Vehicle extends Model
      */
     public function scopeAction(Builder $q, string $action): Builder
     {
-        // active 한정 액션: is_disposed=false AND dhl_request=false
+        // active 한정 액션: dhl_request=false (폐기 컨셉 제거 후 active = 거래완료 전)
         // 정산 액션 중 settlement_*·receivable_risk는 거래완료·잔여 미수금 대상이라 active 제외
         $activeOnly = [
             'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
@@ -734,7 +721,7 @@ class Vehicle extends Model
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
         ];
         if (in_array($action, $activeOnly, true)) {
-            $q->where('is_disposed', false)->where('dhl_request', false);
+            $q->where('dhl_request', false);
         }
 
         return match ($action) {

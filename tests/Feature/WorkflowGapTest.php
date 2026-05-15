@@ -45,7 +45,6 @@ class WorkflowGapTest extends TestCase
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
-            'is_disposed' => false,
             'dhl_request' => false,
         ], $overrides));
     }
@@ -67,16 +66,7 @@ class WorkflowGapTest extends TestCase
         $this->assertSame('수출통관완료', $v->progress_status);
     }
 
-    public function test_c3_disposed_overrides_all_stages(): void
-    {
-        $v = $this->makeVehicle([
-            'is_disposed' => true,
-            'sales_channel' => 'export',
-            'export_declaration_document' => 'edoc.pdf',
-        ]);
-
-        $this->assertSame('폐기', $v->progress_status);
-    }
+    // 큐 17 — test_c3_disposed_overrides_all_stages 삭제 (폐기 컨셉 제거)
 
     // ── C4·C5 — guard 메서드 직접 검증 (UI save() 흐름에서 호출되는 동일 로직) ──
 
@@ -84,7 +74,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_deregistered' => false,
             'sale_price' => 1000,
             'export_buyer_id' => 1,
@@ -100,7 +89,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_deregistered' => true,
             'deregistration_document' => 'dereg.pdf',
             'sale_price' => 1000,
@@ -121,7 +109,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_deregistered' => true,
             'deregistration_document' => 'dereg.pdf',
             'sale_price' => 1000,
@@ -138,25 +125,12 @@ class WorkflowGapTest extends TestCase
     }
 
     // 큐 16 — test_c4_c5_skipped_for_non_export_channel 삭제 (단일 채널화)
-
-    public function test_c4_c5_skipped_when_disposed(): void
-    {
-        $v = new Vehicle([
-            'is_disposed' => true,
-            'sales_channel' => 'export',
-            'is_deregistered' => false,
-            'export_buyer_id' => 1, 'shipping_date' => '2026-05-01',
-        ]);
-
-        $v->guardStageOrderForExport();
-        $this->assertTrue(true);
-    }
+    // 큐 17 — test_c4_c5_skipped_when_disposed 삭제 (폐기 컨셉 제거)
 
     public function test_c4_c5_skipped_when_no_export_input(): void
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_deregistered' => false,
             'sale_price' => 1000,
             // export 컬럼 모두 비어있음
@@ -263,7 +237,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'dhl_request' => true,
             // bl_document 비어있음
         ]);
@@ -278,7 +251,6 @@ class WorkflowGapTest extends TestCase
         // 큐 2.6 — H3·H4 캐스케이드 추가됨. 정상 경로는 모든 선행 단계 충족.
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_export_cleared' => true,
             'export_declaration_document' => 'edoc.pdf',
             'bl_loading_location' => '부산항',
@@ -291,19 +263,7 @@ class WorkflowGapTest extends TestCase
     }
 
     // 큐 16 — test_h1_skipped_for_non_export_channel 삭제 (단일 채널화)
-
-    public function test_h1_h2_skipped_when_disposed(): void
-    {
-        $v = new Vehicle([
-            'is_disposed' => true,
-            'sales_channel' => 'export',
-            'dhl_request' => true,
-            'is_export_cleared' => true,
-        ]);
-
-        $v->guardAttachmentDeps();
-        $this->assertTrue(true);
-    }
+    // 큐 17 — test_h1_h2_skipped_when_disposed 삭제 (폐기 컨셉 제거)
 
     // ── H2 — 수출통관 완료 체크 시 수출신고서 첨부 강제 ────────────────
 
@@ -311,7 +271,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_export_cleared' => true,
             // export_declaration_document 비어있음
         ]);
@@ -325,7 +284,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_export_cleared' => true,
             'export_declaration_document' => 'edoc.pdf',
         ]);
@@ -391,7 +349,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle(array_merge([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'dhl_request' => false,
             'is_deregistered' => false,
             'is_export_cleared' => false,
@@ -495,7 +452,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_export_cleared' => true,
             'export_declaration_document' => 'edoc.pdf',
             'bl_document' => 'bl.pdf',
@@ -511,7 +467,6 @@ class WorkflowGapTest extends TestCase
     {
         $v = new Vehicle([
             'sales_channel' => 'export',
-            'is_disposed' => false,
             'is_export_cleared' => false,
             'bl_loading_location' => '부산항',
         ]);

@@ -58,19 +58,20 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 
 ## 도메인 고정 용어
 
-### 차량 진행상태 11단계 (computed property — DB 컬럼 X)
+### 차량 진행상태 10단계 (computed property — DB 컬럼 X)
+> 큐 17 — 폐기 컨셉 제거 (운영상 없음). 11단계 → 10단계.
+
 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환:
-1. `is_disposed = true` → **`폐기`**
-2. `dhl_request = true` → **`거래완료`**
-3. `bl_document` 존재 → **`선적완료`**
-4. `bl_loading_location` 입력 → **`선적중`**
-5. `export_declaration_document` 존재 → **`수출통관완료`**
-6. `export_buyer_id` + `shipping_date` 입력 → **`수출통관중`**
-7. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
-8. `sale_price > 0` → **`판매중`**
-9. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**
-10. `purchase_price > 0` AND 매입미지급 ≤ 0 → **`매입완료`**
-11. 기본값 → **`매입중`**
+1. `dhl_request = true` → **`거래완료`**
+2. `bl_document` 존재 → **`선적완료`**
+3. `bl_loading_location` 입력 → **`선적중`**
+4. `export_declaration_document` 존재 → **`수출통관완료`**
+5. `export_buyer_id` + `shipping_date` 입력 → **`수출통관중`**
+6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
+7. `sale_price > 0` → **`판매중`**
+8. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**
+9. `purchase_price > 0` AND 매입미지급 ≤ 0 → **`매입완료`**
+10. 기본값 → **`매입중`**
 
 ### 판매채널 3종 (`vehicles.sales_channel` enum)
 - `export` 수출 — 다중통화, B/L·면장·DHL 풀 흐름

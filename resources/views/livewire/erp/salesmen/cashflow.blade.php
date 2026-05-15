@@ -155,7 +155,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                     in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
                     in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
                     $v->progress_status === '거래완료'                             => 'badge-gray',
-                    $v->progress_status === '폐기'                                 => 'badge-red',
                     default => 'badge-gray',
                 };
                 // 큐 16 — channelLabel/Badge 제거 (단일 채널).
@@ -207,7 +206,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
             in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
             $v->progress_status === '거래완료'                             => 'badge-gray',
-            $v->progress_status === '폐기'                                 => 'badge-red',
             default => 'badge-gray',
         };
         $purchaseUnpaid = $v->purchase_unpaid_amount;

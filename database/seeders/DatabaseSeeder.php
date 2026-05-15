@@ -463,19 +463,7 @@ class DatabaseSeeder extends Seeder
                 'sale_price' => 13500000,
                 'deposit_down_payment' => 5000000,
             ],
-            // 12. 폐기
-            [
-                'vehicle_number' => '77타1012',
-                'brand' => '기아', 'model_type' => '레이', 'year' => 2015,
-                'cc' => 998, 'weight_kg' => 870, 'mileage' => 180000, 'color' => '노랑',
-                'sales_channel' => 'export',
-                'purchase_date' => '2026-03-01', 'salesman_id' => $sm3?->id,
-                'purchase_from' => '경매 낙찰',
-                'purchase_price' => 2500000, 'selling_fee' => 100000,
-                'down_payment' => 2500000, 'selling_fee_payment' => 100000,
-                'is_disposed' => true,
-                'memo' => '사고차량 — 수리비 초과로 폐기 결정',
-            ],
+            // 큐 17 — 12번 시드(폐기 차량) 제거. 폐기 컨셉 운영상 없음.
         ];
 
         foreach ($vehicles as $data) {

@@ -138,7 +138,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return Vehicle::query()
             ->whereNull('deleted_at')
-            ->where('is_disposed', false)
             ->where('dhl_request', false)
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
             ->with(['salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
@@ -184,14 +183,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $base = Vehicle::query()->whereNull('deleted_at')
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid));
 
-        $active = (clone $base)->where('is_disposed', false)->where('dhl_request', false)->count();
+        $active = (clone $base)->where('dhl_request', false)->count();
         $monthBuy = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
         $monthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
         $monthDone = (clone $base)->where('dhl_request', true)->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
         $monthLabel = now()->format('m').'월';
 
         return [
-            ['label' => '현재 진행중',  'value' => $active,    'suffix' => '대', 'hint' => '거래완료·폐기 제외'],
+            ['label' => '현재 진행중',  'value' => $active,    'suffix' => '대', 'hint' => '거래완료 제외'],
             ['label' => '이달 매입',    'value' => $monthBuy,  'suffix' => '대', 'hint' => $monthLabel.' 매입 기준'],
             ['label' => '이달 판매',    'value' => $monthSale, 'suffix' => '대', 'hint' => $monthLabel.' 판매 기준'],
             ['label' => '이달 거래완료','value' => $monthDone, 'suffix' => '대', 'hint' => $monthLabel.' 완료 기준'],
@@ -256,7 +255,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // M4 — "판매 미입금 총액"은 환율 입력 차량만 합산 (KRW 캐시 NOT NULL).
         //       환율 미입력 외화 차량은 별도 KPI "환율 미입력 외화"에서만 카운트.
         $totalSaleUnpaid = (int) (Vehicle::query()
-            ->whereNull('deleted_at')->where('is_disposed', false)->where('dhl_request', false)
+            ->whereNull('deleted_at')->where('dhl_request', false)
             ->where('sale_price', '>', 0)
             ->whereNotNull('sale_unpaid_amount_krw_cache')
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
@@ -264,7 +263,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $today = now()->toDateString();
         $totalPurchaseUnpaid = (int) (Vehicle::query()
-            ->whereNull('deleted_at')->where('is_disposed', false)
+            ->whereNull('deleted_at')
             ->where('purchase_price', '>', 0)
             // CAST AS SIGNED — BIGINT UNSIGNED 빼기 결과가 음수면 underflow. WHERE/SELECT 양쪽 적용.
             ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
@@ -324,7 +323,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $stuckDate = now()->subDays(30)->toDateString();
         $stuckCount = Vehicle::query()->whereNull('deleted_at')
-            ->where('is_disposed', false)->where('dhl_request', false)
+            ->where('dhl_request', false)
             ->where('sale_price', '>', 0)
             ->where(fn ($q) => $q->whereNull('sale_unpaid_amount_krw_cache')
                 ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0))

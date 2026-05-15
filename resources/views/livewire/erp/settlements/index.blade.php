@@ -403,7 +403,6 @@ new #[Layout('components.layouts.app')] class extends Component
                     in_array($s->vehicle?->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
                     in_array($s->vehicle?->progress_status, ['선적중','선적완료'])           => 'badge-green',
                     $s->vehicle?->progress_status === '거래완료'                             => 'badge-gray',
-                    $s->vehicle?->progress_status === '폐기'                                 => 'badge-red',
                     default => 'badge-gray',
                 };
             @endphp
