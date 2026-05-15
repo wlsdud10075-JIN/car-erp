@@ -185,4 +185,54 @@ class InterVehicleTransferModelTest extends TestCase
         );
         $this->assertEquals('차량 간 자금 이체', ApprovalRequest::TYPES[ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER]);
     }
+
+    /**
+     * 큐 19-C 보강 — transfer로 생성된 final_payment는 append-only.
+     * 직접 수정·삭제 차단 (advisor 지적 #3 — append-only 보호).
+     */
+    public function test_transfer_linked_final_payment_cannot_be_deleted_directly(): void
+    {
+        $c = $this->makeContext();
+        $transfer = InterVehicleTransfer::create([
+            'source_vehicle_id' => $c['source']->id,
+            'target_vehicle_id' => $c['target']->id,
+            'buyer_id' => $c['buyer']->id,
+            'amount' => 1_000_000,
+            'currency' => 'KRW',
+            'requester_id' => $c['sales']->id,
+        ]);
+        $fp = FinalPayment::create([
+            'vehicle_id' => $c['source']->id,
+            'transfer_id' => $transfer->id,
+            'amount' => -1_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('자금 이체로 생성된 잔금은 삭제할 수 없습니다');
+        $fp->delete();
+    }
+
+    public function test_transfer_linked_final_payment_cannot_be_updated_directly(): void
+    {
+        $c = $this->makeContext();
+        $transfer = InterVehicleTransfer::create([
+            'source_vehicle_id' => $c['source']->id,
+            'target_vehicle_id' => $c['target']->id,
+            'buyer_id' => $c['buyer']->id,
+            'amount' => 1_000_000,
+            'currency' => 'KRW',
+            'requester_id' => $c['sales']->id,
+        ]);
+        $fp = FinalPayment::create([
+            'vehicle_id' => $c['source']->id,
+            'transfer_id' => $transfer->id,
+            'amount' => -1_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('자금 이체로 생성된 잔금은 수정할 수 없습니다');
+        $fp->update(['amount' => -500_000]);
+    }
 }

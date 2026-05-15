@@ -18,10 +18,28 @@ class FinalPayment extends Model
      */
     public static bool $skipReceivableSync = false;
 
+    /**
+     * 큐 19-C 보강 — 자금 이체로 생성된 final_payment(transfer_id≠null)는 append-only.
+     * Service의 void 흐름(19-E)에서만 보호 우회 (반대 부호 거래 추가 = 변경 아닌 신규).
+     */
+    public static bool $allowTransferLinkedMutation = false;
+
     protected static function booted(): void
     {
         static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
         static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
+
+        // 큐 19-C — transfer로 만들어진 잔금은 직접 수정·삭제 불가.
+        static::updating(function (FinalPayment $p) {
+            if ($p->getOriginal('transfer_id') !== null && ! self::$allowTransferLinkedMutation) {
+                throw new \DomainException('차량 간 자금 이체로 생성된 잔금은 수정할 수 없습니다. 이체 취소(void)는 별도 승인 흐름을 사용하세요.');
+            }
+        });
+        static::deleting(function (FinalPayment $p) {
+            if ($p->transfer_id !== null && ! self::$allowTransferLinkedMutation) {
+                throw new \DomainException('차량 간 자금 이체로 생성된 잔금은 삭제할 수 없습니다. 이체 취소(void)는 별도 승인 흐름을 사용하세요.');
+            }
+        });
 
         // 큐 10 H5 — FinalPayment 신규 생성 시 ReceivableHistory(method=deposit) 자동 미러링.
         // ReceivableHistory에서 시작된 생성은 skipReceivableSync로 차단 (중복 방지).

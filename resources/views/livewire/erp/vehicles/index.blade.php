@@ -551,6 +551,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->pluck('final_payment_id')
             ->toArray();
 
+        // 큐 19-C 보강 — 자금 이체로 생성된 final_payment는 append-only (locked + transfer 메타)
+        $transferLinkedPayments = FinalPayment::where('vehicle_id', $id)
+            ->whereNotNull('transfer_id')
+            ->with('transfer.sourceVehicle:id,vehicle_number', 'transfer.targetVehicle:id,vehicle_number')
+            ->get()
+            ->keyBy('id');
+        $lockedFinalIds = array_unique(array_merge($lockedFinalIds, $transferLinkedPayments->keys()->all()));
+
         $this->vehicle_number = $v->vehicle_number;
         $this->sales_channel  = $v->sales_channel;
         $this->brand      = $v->brand ?? '';
@@ -631,11 +639,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->advance_payment1_str = $v->advance_payment1 ? (string)$v->advance_payment1 : '';
         $this->advance_payment2_str = $v->advance_payment2 ? (string)$v->advance_payment2 : '';
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
-        $this->finalPayments = $v->finalPayments->map(fn($p) => [
-            'id' => $p->id, 'amount' => (string)$p->amount,
-            'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
-            'locked' => in_array($p->id, $lockedFinalIds),
-        ])->toArray();
+        $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $id) {
+            $row = [
+                'id' => $p->id, 'amount' => (string) $p->amount,
+                'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
+                'locked' => in_array($p->id, $lockedFinalIds),
+                'transfer' => null,
+            ];
+            if ($linked = $transferLinkedPayments->get($p->id)) {
+                $t = $linked->transfer;
+                $row['transfer'] = [
+                    'id' => $t->id,
+                    'amount' => (float) $t->amount,
+                    'currency' => $t->currency,
+                    'approval_request_id' => $t->approval_request_id,
+                    'direction' => $p->amount < 0 ? 'outgoing' : 'incoming',  // 이 차량 기준 출/입
+                    'counterpart_id' => $p->amount < 0 ? $t->target_vehicle_id : $t->source_vehicle_id,
+                    'counterpart_number' => $p->amount < 0
+                        ? $t->targetVehicle?->vehicle_number
+                        : $t->sourceVehicle?->vehicle_number,
+                ];
+            }
+
+            return $row;
+        })->toArray();
 
         // 카풀/헤이맨 계산서
         // 큐 16 — tax_invoice_*·agency_fee 로드 제거 (DB drop됨).
@@ -2303,7 +2330,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
                 </div>
                 @foreach($finalPayments as $idx => $row)
-                @if(!empty($row['locked']))
+                @if(!empty($row['transfer']))
+                {{-- 큐 19-C — 차량 간 자금 이체로 자동 생성된 잔금 (append-only). --}}
+                <div class="flex gap-2 items-center rounded bg-violet-50 px-2 py-1.5 border border-violet-200">
+                    <span class="text-xs">🔁</span>
+                    <span class="w-32 text-sm font-semibold {{ $row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700' }}">
+                        {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
+                    </span>
+                    <span class="flex-1 text-xs text-violet-800">
+                        @if($row['transfer']['direction'] === 'outgoing')
+                            → 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 으로 이체
+                        @else
+                            ← 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 에서 이체
+                        @endif
+                    </span>
+                    <span class="text-xs text-violet-600 whitespace-nowrap">
+                        {{ $row['payment_date'] ?: '-' }}
+                        · 승인 #{{ $row['transfer']['approval_request_id'] }}
+                    </span>
+                </div>
+                @elseif(!empty($row['locked']))
                 <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
                     <span class="text-xs text-gray-400">🔒</span>
                     <span class="w-32 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
