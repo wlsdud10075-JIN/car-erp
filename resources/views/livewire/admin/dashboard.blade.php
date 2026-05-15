@@ -337,6 +337,11 @@ new #[Layout('components.layouts.app')] class extends Component
      * - 담당자/바이어 TOP 10 테이블.
      * - 위험도(receivable_risk) 4단 카운트.
      *
+     * SKILLS §13 단일 출처 정합:
+     * - 분자 = sale_unpaid_amount_krw_cache (Vehicle saving 훅 자동 갱신)
+     * - 분모 = sale_total_amount × exchange_rate (부대비용 포함, accessor 정의와 동일)
+     * - sale_price만 사용하면 분자(부대비용 포함) ↔ 분모(미포함) 비대칭 → 의미 없는 비율 산출됨
+     *
      * 큐 4 점검 — dateColumn 기준 dateFrom/dateTo 적용 (vehicles/index action 진입 시 동일 기간 적용).
      * 위험도 카운트는 receivable_safe/caution/danger/critical scopeAction과 SQL 100% 일치.
      */
@@ -354,13 +359,17 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
             ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
-            ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'currency', 'exchange_rate',
-                'sale_unpaid_amount_krw_cache', 'receivable_risk')
+            ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
+                'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
+                'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache', 'receivable_risk')
             ->chunk(1000, function ($rows) use (&$bySalesman, &$byBuyer, &$riskCounts) {
                 foreach ($rows as $r) {
+                    // SKILLS §13 — sale_total_amount accessor와 동일 공식 (부대비용 포함).
+                    $saleTotal = $r->sale_price + $r->transport_fee + $r->sale_other_costs
+                        + $r->commission + $r->auto_loading - $r->tax_dc;
                     $saleKrw = $r->currency === 'KRW'
-                        ? (int) $r->sale_price
-                        : ($r->exchange_rate > 0 ? (int) ($r->sale_price * $r->exchange_rate) : 0);
+                        ? (int) $saleTotal
+                        : ($r->exchange_rate > 0 ? (int) ($saleTotal * $r->exchange_rate) : 0);
                     if ($saleKrw === 0) {
                         continue;  // 환율 0/외화 KRW 환산 불가 — 분모 측정 불가
                     }

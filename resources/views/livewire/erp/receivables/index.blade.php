@@ -391,9 +391,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'critical' => 'badge-red',
                         default    => 'badge-gray',
                     };
-                    $unpaidRatio = $v->sale_total_amount > 0
-                        ? round(($v->sale_unpaid_amount / $v->sale_total_amount) * 100, 1)
-                        : 0;
+                    // SKILLS §13 단일 출처 — unpaid_ratio accessor 사용 (0~1 또는 null).
+                    $unpaidRatio = $v->unpaid_ratio !== null ? round($v->unpaid_ratio * 100, 1) : 0;
                     // 큐 16 — sales_channel 단일 (export) → exportBuyer 우선, fallback buyer.
                     $primaryBuyer = $v->exportBuyer ?? $v->buyer;
                 @endphp
@@ -447,9 +446,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'critical' => 'badge-red',
                 default    => 'badge-gray',
             };
-            $unpaidRatio = $v->sale_total_amount > 0
-                ? round(($v->sale_unpaid_amount / $v->sale_total_amount) * 100, 1)
-                : 0;
+            // SKILLS §13 단일 출처 — unpaid_ratio accessor 사용 (0~1 또는 null).
+            $unpaidRatio = $v->unpaid_ratio !== null ? round($v->unpaid_ratio * 100, 1) : 0;
             // 큐 16 — sales_channel 단일 (export) → exportBuyer 우선, fallback buyer.
             $primaryBuyer = $v->exportBuyer ?? $v->buyer;
         @endphp
