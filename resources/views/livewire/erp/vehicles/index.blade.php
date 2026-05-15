@@ -1523,13 +1523,14 @@ new #[Layout('components.layouts.app')] class extends Component {
      *
      * 추가 메타 (큐 19-C 보강 — 2026-05-15):
      *   - pending: pending인 InterVehicleTransfer 1건 정보 (있으면 amber 박스 + 버튼 비활성)
-     *   - lastRejected: 최근 rejected ApprovalRequest 정보 (사유 + 다시 요청 분기)
+     *   - lastDecided: 가장 최근 결정된 ApprovalRequest 1건 (status=approved/rejected/cancelled),
+     *     pending이 있으면 노출 안 함. 사용자가 마지막 처리 결과를 한눈에 확인 가능.
      */
     #[Computed]
     public function transferContext(): array
     {
         $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect(),
-            'pending' => null, 'lastRejected' => null];
+            'pending' => null, 'lastDecided' => null];
         if ($this->editingId === null) {
             $base['reason'] = '차량 저장 후 이용 가능합니다.';
 
@@ -1540,7 +1541,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return $base;
         }
 
-        // 최근 ApprovalRequest 조회 (이 차량이 source인 transfer 관련) — pending / rejected 확인
+        // 최근 ApprovalRequest 조회 (이 차량이 source인 transfer 관련)
         $recentRequests = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
             ->where('target_type', Vehicle::class)
             ->where('target_id', $source->id)
@@ -1561,19 +1562,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             ];
         }
 
-        // 마지막 rejected (pending 없을 때만 표시 — 새 요청 가능 신호)
+        // 가장 최근 결정된 요청 (pending 없을 때만 — 마지막 처리 결과 표시)
         if (! $pendingReq) {
-            $rejected = $recentRequests->firstWhere('status', ApprovalRequest::STATUS_REJECTED);
-            if ($rejected) {
-                $p = $rejected->payload ?? [];
-                $base['lastRejected'] = [
-                    'approval_request_id' => $rejected->id,
+            $decided = $recentRequests->first(fn ($r) => in_array($r->status, [
+                ApprovalRequest::STATUS_APPROVED,
+                ApprovalRequest::STATUS_REJECTED,
+                ApprovalRequest::STATUS_CANCELLED,
+            ], true));
+            if ($decided) {
+                $p = $decided->payload ?? [];
+                $base['lastDecided'] = [
+                    'approval_request_id' => $decided->id,
+                    'status' => $decided->status,
                     'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
                     'amount' => (float) ($p['amount'] ?? 0),
                     'currency' => $p['currency'] ?? $source->currency,
-                    'decision_note' => $rejected->decision_note,
-                    'decided_at' => $rejected->decided_at,
-                    'approver_name' => $rejected->approver?->name,
+                    'decision_note' => $decided->decision_note,
+                    'decided_at' => $decided->decided_at,
+                    'approver_name' => $decided->approver?->name,
                 ];
             }
         }
@@ -2566,22 +2572,32 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
                 @else
-                    {{-- 최근 거부 사유 표시 (pending 없을 때만) --}}
-                    @if(!empty($transferCtx['lastRejected']))
-                    <div class="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900 mb-2">
+                    {{-- 최근 결정 상태 표시 (pending 없을 때만) — 승인/거부/취소 통합 --}}
+                    @if(!empty($transferCtx['lastDecided']))
+                    @php
+                        $ld = $transferCtx['lastDecided'];
+                        // 박스 색상 — approved/rejected/cancelled 분기
+                        $ldClass = match($ld['status']) {
+                            'approved'  => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
+                            'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '최근 이체 요청 거부됨', '거부 사유'],
+                            'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
+                            default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '최근 이체 요청', '메모'],
+                        };
+                    @endphp
+                    <div class="rounded-md border {{ $ldClass[0] }} {{ $ldClass[1] }} p-3 text-xs {{ $ldClass[2] }} mb-2">
                         <div class="flex items-center gap-2">
-                            <span>❌</span>
-                            <strong>최근 이체 요청 거부됨</strong>
+                            <span>{{ $ldClass[6] }}</span>
+                            <strong>{{ $ldClass[7] }}</strong>
                         </div>
-                        <div class="mt-1 space-y-0.5 text-red-800">
+                        <div class="mt-1 space-y-0.5 {{ $ldClass[3] }}">
                             <div>
-                                대상 <span class="font-mono">{{ $transferCtx['lastRejected']['target_vehicle_number'] }}</span>
-                                · {{ number_format($transferCtx['lastRejected']['amount']) }} {{ $transferCtx['lastRejected']['currency'] }}
-                                · {{ $transferCtx['lastRejected']['approver_name'] ?? '관리자' }}
-                                ({{ $transferCtx['lastRejected']['decided_at']?->format('Y-m-d H:i') }})
+                                대상 <span class="font-mono">{{ $ld['target_vehicle_number'] }}</span>
+                                · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
+                                · {{ $ld['approver_name'] ?? '관리자' }}
+                                ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
                             </div>
-                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] text-red-700 border border-red-100">
-                                <span class="font-semibold">거부 사유:</span> {{ $transferCtx['lastRejected']['decision_note'] ?: '(사유 미기재)' }}
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">{{ $ldClass[8] }}:</span> {{ $ld['decision_note'] ?: '(메모 없음)' }}
                             </div>
                         </div>
                     </div>
@@ -2589,6 +2605,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                     {{-- 일반 자금 이체 박스 --}}
                     @if($transferCtx['eligible'])
+                    @php
+                        // 마지막 결정이 rejected면 "다시 요청", 그 외(approved 포함)는 일반 라벨
+                        $btnLabel = (!empty($transferCtx['lastDecided']) && $transferCtx['lastDecided']['status'] === 'rejected')
+                            ? '다시 요청' : '자금 이체 요청';
+                    @endphp
                     <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="space-y-0.5">
@@ -2598,7 +2619,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </div>
                             <button type="button" wire:click="openTransferRequestModal"
                                     class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
-                                {{ !empty($transferCtx['lastRejected']) ? '다시 요청' : '자금 이체 요청' }}
+                                {{ $btnLabel }}
                             </button>
                         </div>
                     </div>

@@ -155,12 +155,11 @@ class InterVehicleTransferModalTest extends TestCase
         $this->assertEquals('KRW', $ctx['pending']['currency']);
     }
 
-    public function test_last_rejected_shown_in_context_after_rejection(): void
+    public function test_last_decided_shown_after_rejection(): void
     {
         $c = $this->setup50PctReceivedSource();
         $this->actingAs($c['sales']);
 
-        // 요청 보내고 거부 처리
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $c['source']->id)
             ->call('openTransferRequestModal')
@@ -178,15 +177,54 @@ class InterVehicleTransferModalTest extends TestCase
             'decided_at' => now(),
         ]);
 
-        // 영업이 다시 열어보면 lastRejected에 사유 노출
         $component = Volt::test('erp.vehicles.index')->call('openEdit', $c['source']->id);
         $ctx = $component->instance()->transferContext;
 
         $this->assertNull($ctx['pending']);
-        $this->assertNotNull($ctx['lastRejected']);
-        $this->assertEquals('바이어 신용 미확인 — 거부', $ctx['lastRejected']['decision_note']);
-        $this->assertEquals($manager->name, $ctx['lastRejected']['approver_name']);
-        // eligible 여전히 true (다시 요청 가능)
+        $this->assertNotNull($ctx['lastDecided']);
+        $this->assertEquals('rejected', $ctx['lastDecided']['status']);
+        $this->assertEquals('바이어 신용 미확인 — 거부', $ctx['lastDecided']['decision_note']);
+        $this->assertEquals($manager->name, $ctx['lastDecided']['approver_name']);
         $this->assertTrue($ctx['eligible']);
+    }
+
+    /**
+     * 큐 19-C 보강 (2026-05-15 #2) — 승인된 경우에도 lastDecided에 status=approved 정보 노출.
+     * 사용자 피드백: 거부 박스가 승인 후에도 남으면 헷갈림 → 승인되면 emerald 박스로 교체.
+     */
+    public function test_last_decided_shown_after_approval(): void
+    {
+        $c = $this->setup50PctReceivedSource();
+        $this->actingAs($c['sales']);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $c['source']->id)
+            ->call('openTransferRequestModal')
+            ->set('transferTargetVehicleId', (string) $c['target']->id)
+            ->set('transferAmountStr', '20000000')
+            ->set('transferReason', '승인 시나리오 테스트')
+            ->call('submitTransferRequest');
+
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $this->actingAs($manager);
+
+        // 관리자 승인 (ApprovalRequest::execute()까지 트리거)
+        $req = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)->first();
+        Volt::test('erp.approvals.index')
+            ->call('openApproveModal', $req->id)
+            ->set('decisionNote', '신뢰 거래 — 승인')
+            ->call('decide')
+            ->assertHasNoErrors();
+
+        // 영업이 다시 열어보면 lastDecided.status === approved
+        $this->actingAs($c['sales']);
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $c['source']->id);
+        $ctx = $component->instance()->transferContext;
+
+        $this->assertNull($ctx['pending']);
+        $this->assertNotNull($ctx['lastDecided']);
+        $this->assertEquals('approved', $ctx['lastDecided']['status']);
+        $this->assertEquals('신뢰 거래 — 승인', $ctx['lastDecided']['decision_note']);
+        $this->assertEquals($manager->name, $ctx['lastDecided']['approver_name']);
     }
 }
