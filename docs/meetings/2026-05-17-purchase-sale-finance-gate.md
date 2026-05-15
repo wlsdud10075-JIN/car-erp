@@ -5,7 +5,7 @@
 - 안건 유형: 마이그레이션 + 권한·role 변경 + 도메인 모델 재설계 (복합·대규모)
 - 자동발동 여부: yes (/회의 슬래시)
 - 사외이사: Codex (gpt-5.5) / Gemini — 둘 다 응답 성공
-- 결정 상태: **HOLD — 사용자 결정 4건 보류** (집에서 확인 후 재컨펌 예정)
+- 결정 상태: **GO — 사용자 4건 모두 확정 (2026-05-16 컨펌)**. P2 정석 패키지 채택, 단 19-F-D 선행은 PO 권장 채택.
 
 ---
 
@@ -285,18 +285,24 @@ queue worker 영향: 무관
 
 ---
 
-## 🎯 사용자 결정 — **4 안건 모두 보류 (HOLD)**
+## 🎯 사용자 결정 — **4 안건 모두 확정 (2026-05-16 사용자 컨펌)**
 
-| 결정 | 사용자 답변 |
-|---|---|
-| 분자 정의 (A안 vs B안) | "정확한 내용 파악 후 다시 확인" |
-| 우선순위 (19-F-D vs 큐 20) | "회의록 기록 후 집에서 확인 예정" |
-| 적용 범위 (매입 먼저 vs 전체 통합) | "집에서 자세히 듣고 선택" |
-| 구현 위치 (별도 Service vs 훅) | "집에서 확인 후 컨펌" |
+| 결정 | 채택 | 출처 |
+|---|---|---|
+| 분자 정의 | **A안** — `finance_confirmed_at IS NOT NULL` 필터 | Specialist[F] + Gemini |
+| 우선순위 | **19-F-D 먼저** → 큐 20 | PO |
+| 적용 범위 | **전체 통합** (매입+판매 동시) | Specialist[F] + Gemini |
+| 구현 위치 | **별도 Service** (`PaymentConfirmationService`) | Engineer + Codex + Gemini 3자 공통 |
 
-→ **모든 결정 보류**. 본 회의록을 통해 추후 사용자가 4 안건 재검토 후 결정.
+→ **Gemini 정석 패키지 (P2) 채택, 단 19-F-D 선행은 PO 권장 채택**. 공수 12~18h + 19-F-D ~1h.
 
-### 결정 시 참고할 두 패키지
+### 채택 근거
+- A안: SAP/Odoo Draft/Posted 정석. ledger = `sale_unpaid` 단일 기준. 회계감사 단일 SoT. §13 5곳 분자 변경은 1회 비용, 운영 정합성으로 상쇄.
+- 19-F-D 먼저: 19-F-A/B/C가 코드·자동 테스트만 완성. 실제 영업→관리→재무 브라우저 흐름 미검증 → 큐 20 패턴 확장 전 안전성 확보.
+- 전체 통합: 매입 단계화는 두 번 마이그 + 두 번 정합 검증 비용. 1회에 매입+판매 동시 도입.
+- 별도 Service: 3자 사외이사 + 부서 공통 권고. 부수 효과 추적 가능, 트랜잭션 경계 명시.
+
+### 결정 시 참고한 두 패키지 — **P2 채택 (단 19-F-D 선행은 PO 권장)**
 
 **패키지 P1 — 보수 (Codex 권장)**:
 - B안 (분자 불변)
@@ -320,24 +326,29 @@ queue worker 영향: 무관
 
 ---
 
-## 🏁 최종 권고 (Opus 4.7)
+## 🏁 최종 권고 (Opus 4.7) — **GO**
 
-**판정**: **HOLD**
+**판정**: **GO** (2026-05-16 사용자 4건 확정 후 격하)
 
-**근거**: 6부서 + 사외이사 모두 합의된 GO 조건 10건이 명확하지만, QA HOLD 핵심 안건(분자 정의 A안/B안)에 대해 사용자 결정이 보류됨. 사용자가 추후 결정 시 패키지 P1 또는 P2 채택하여 진행.
+**채택 패키지**: P2 정석 (A안 + 전체 통합 + 별도 Service) + PO 권장 19-F-D 선행.
 
-**보류 사유**:
-- 사용자 4 안건 결정 보류 (집에서 확인 후 컨펌 예정)
-- 핵심 결정(분자 정의)이 §13 단일 출처 5곳 정합·테스트 영향·공수 모두에 종속
+**QA HOLD 해소**: 분자 정의 A안 확정으로 §13 5곳 정합 재설계 필수. 깨질 테스트 4파일 재작성 비용 수용.
 
-**필수 선행 작업** (결정 후):
-1. 분자 정의 결정 (A안 or B안)
-2. 19-F-D 수동 회귀 시뮬 (보류 가능하지만 권장)
-3. 결정된 패키지에 따라 큐 20 구현 분할 (20-A 마이그·모델 / 20-B Service / 20-C UI / 20-D 테스트)
+**Codex NO-GO 트리거 잔여 (c) 해소 경로**: A안 채택 시 `ledger == sale_unpaid_amount` 단일 기준. 합의 #7·#8과 합쳐 (a)(b)(c) 모두 해소.
 
-**진행 가능한 작업** (사용자 결정 대기 중에도 가능):
-- 19-F-D 수동 회귀 시뮬 (사용자가 브라우저에서 영업→관리→재무 흐름 확인)
-- 다른 큐 (큐 5 업무 대시보드 토글 / 큐 11 운영 안전 가드)
+**Gemini 'Lock 부재' 지적 해소 경로**: 큐 20-D에서 `FinalPayment::updating` 훅 + `confirmed_at` SET 후 UPDATE/DELETE 차단 + paid Settlement snapshot lock 동시 도입.
+
+### 구현 큐 분할 (20-A/B/C/D)
+
+| 큐 | 작업 | 의존 |
+|---|---|---|
+| **19-F-D** | 자동 테스트 보강 + 수동 회귀 체크리스트 | 선행 (PO 권장) |
+| **20-A** | 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS | 19-F-D |
+| **20-B** | `PaymentConfirmationService` 신규 + `Vehicle::getSaleUnpaidAmountAttribute` / `getPurchaseUnpaidAmountAttribute` 분자 A안 필터 + `User::canConfirmFinance()` alias | 20-A |
+| **20-C** | UI — `/erp/transfers` 매입·판매 잔금 확정 탭 또는 별도 페이지 + 차량 편집 패널 pending/confirmed row 색 분기 + 매입처 계좌 4컬럼 입력 + 사이드바 배지 합산 | 20-B |
+| **20-D** | §13 5곳 정합 재검증 + 깨진 테스트 4파일 재작성 + paid Settlement snapshot lock + `FinalPayment::updating` 훅 + 신규 테스트(`PaymentConfirmationServiceTest` / `PurchaseAccountTest`) | 20-C |
+
+**예상 공수**: 19-F-D ~1h + 20-A 2h + 20-B 4h + 20-C 4h + 20-D 4~5h = **총 15~16h**
 
 ---
 
@@ -356,26 +367,24 @@ queue worker 영향: 무관
 3. 차량 편집 패널 매입·판매 탭에 pending/confirmed 상태 시각화 (row 색상 분기)
 4. 사이드바 배지 합산 (자금이체 + 매입 잔금 + 판매 잔금 + void)
 
-### 코드 수정 (Code Changes) — 결정 후 확정
+### 코드 수정 (Code Changes) — **P2 (A안) 채택 확정**
 
-**P1 (B안) 채택 시**:
 | 파일 | 변경 |
 |---|---|
-| `app/Models/FinalPayment.php` | `finance_confirmed_at` fillable + saving 가드 |
+| `app/Models/FinalPayment.php` | `confirmed_by_user_id` / `confirmed_at` / `finance_note` fillable + cast + `financeConfirmer()` 관계 + `updating` 훅 (confirmed 후 수정 차단) |
 | `app/Models/PurchaseBalancePayment.php` | 동일 |
-| `app/Models/Vehicle.php` | 매입처 계좌 3컬럼 fillable + encrypted cast |
-| `app/Models/User.php` | `canConfirmFinance()` alias 추가 |
-| `app/Models/AuditLog.php` | `MASKED_COLUMNS` 에 `purchase_seller_account` 추가 |
-| `app/Services/PaymentConfirmationService.php` | 신규 (confirmPayment / confirmPurchasePayment) |
-
-**P2 (A안) 채택 시 추가**:
-| 파일 | 변경 |
-|---|---|
-| `app/Models/Vehicle.php::getSaleUnpaidAmountAttribute()` | confirmed 필터 추가 |
-| `app/Models/Vehicle.php::getPurchaseUnpaidAmountAttribute()` | 동일 |
-| `tests/Feature/DashboardActionCountsTest.php` | 분자 기준 재작성 |
-| `tests/Feature/AdminDashboardTest.php` | sale_unpaid_amount_krw_cache 검증 재작성 |
-| `app/Models/Vehicle.php::refreshCaches()` | confirmed 기반 캐시 재계산 |
+| `app/Models/Vehicle.php` | 매입처 계좌 4컬럼 fillable (`purchase_seller_bank` / `purchase_seller_account` encrypted / `purchase_seller_holder` / `purchase_bank_memo`) |
+| `app/Models/Vehicle.php::getSaleUnpaidAmountAttribute()` | **A안 핵심** — `finalPayments()->whereNotNull('confirmed_at')->sum('amount')` 필터 |
+| `app/Models/Vehicle.php::getPurchaseUnpaidAmountAttribute()` | 동일 — confirmed 필터 |
+| `app/Models/Vehicle.php::refreshCaches()` | confirmed 기반 `sale_unpaid_amount_krw_cache` 재계산 |
+| `app/Models/User.php` | `canConfirmFinance()` 범용 alias 추가 (기존 `canConfirmFinanceTransfer` 유지) |
+| `app/Models/AuditLog.php` | `MASKED_COLUMNS`에 `purchase_seller_account` 추가 + `PurchaseBalancePayment` 확정 시점 `recordEvent` |
+| `app/Services/PaymentConfirmationService.php` | **신규** — `confirmPayment(FinalPayment, financeUser, ?note)` / `confirmPurchasePayment(PBP, financeUser, ?note)` + DB::transaction + self-confirm 차단 + paid Settlement H4 가드 |
+| `app/Models/Settlement.php` | paid 전환 시 confirmed_snapshot에 잔금 confirmed 상태 추가 캡처 (Gemini Lock 지적) |
+| `tests/Feature/DashboardActionCountsTest.php` | 분자 A안 기준 재작성 |
+| `tests/Feature/AdminDashboardTest.php` | `sale_unpaid_amount_krw_cache` 검증 재작성 |
+| `tests/Feature/InterVehicleTransferServiceTest.php` | confirmed 필터 영향 라인 재작성 |
+| `tests/Feature/InterVehicleTransferVoidTest.php` | 동일 |
 
 ### 신규 추가 (New Additions) — 결정 후 확정
 - 마이그레이션 3건 (final_payments / purchase_balance_payments / vehicles 매입처 계좌)
@@ -383,11 +392,11 @@ queue worker 영향: 무관
 - 테스트: PaymentConfirmationServiceTest / PurchaseAccountTest
 - /erp/transfers 페이지 탭 추가 또는 별도 페이지
 
-### 모순·NO-GO 처리 로그
-- QA HOLD: (a)(b)(c) 충족 → 사용자 결정 후 조건부 GO 격하 가능
-- Codex NO-GO 트리거: 합의 #7·#8로 (a)(b) 해소, (c)는 분자 정의 결정에 종속
-- Gemini "Lock 부재" 지적: 합의 #8 saving 훅 + paid 가드로 해소
-- 패키지 선택은 사용자 결정 권한 100%
+### 모순·NO-GO 처리 로그 (2026-05-16 결정 후)
+- QA HOLD: (a)(b)(c) 충족 → A안 채택으로 §13 5곳 재설계 비용 수용, **조건부 GO 격하 완료**
+- Codex NO-GO 트리거: 합의 #7·#8로 (a)(b) 해소, **(c) A안 채택으로 ledger == sale_unpaid 단일 기준 → 해소**
+- Gemini "Lock 부재" 지적: 큐 20-D에서 `FinalPayment::updating` 훅 + paid Settlement snapshot lock 동시 도입 → **구현 시 해소 예정**
+- Codex 보수 권장(B안 / 단계화) vs Gemini 정석 권장(A안 / 통합) → 사용자가 Gemini 정석 P2 채택, 단 우선순위만 PO 권장(19-F-D 선행) 채택
 
 ---
 
@@ -407,3 +416,90 @@ queue worker 영향: 무관
   - `app/Models/Settlement.php` L71~89
   - `app/Models/AuditLog.php` L21~23·L46~55
   - `app/Services/InterVehicleTransferService.php` L160~163·L324~368
+
+---
+
+## 📋 부록 A — 19-F-D 수동 회귀 체크리스트
+
+> 큐 20 착수 전 사용자가 브라우저에서 직접 5상태 머신·SoD·UI 분기를 클릭 흐름으로 검증.
+> 자동 테스트(215 passed)와 별개로 운영 감각 확보용.
+> 작업 환경: `php artisan serve --port=8001` 실행 후 `http://127.0.0.1:8001`.
+
+### A. 사전 준비
+- [ ] 테스트 계정 3개 확인 (DB seed 또는 수동 생성)
+  - 영업: `permission=user`, `role=영업`
+  - 관리: `permission=user`, `role=관리`
+  - 재무: `permission=user`, `role=정산`
+- [ ] 동일 바이어 차량 2대 시드. source는 sale_price 1억 KRW + 5천만 입금된 상태(미수율 50% 정확히), target은 sale_price 8천만 KRW + 입금 없음
+- [ ] source/target 둘 다 paid Settlement 없는지 확인 (`/erp/settlements`)
+
+### B. 5상태 머신 정상 흐름 (영업→관리→재무)
+- [ ] **영업 로그인** → `/erp/vehicles` source 차량 편집 → 판매 탭 → "자금 이체 요청" 모달 → target 차량 선택 + 금액 2500만 입력 + 사유 입력 → 제출 → 토스트 "요청 완료"
+- [ ] source 편집 패널 헤더에 violet 박스 "이체 요청 중" 표시
+- [ ] **관리 로그인** → `/erp/approvals` → 요청 1건 visible → "승인" 클릭 → 모달에서 결정 사유 입력 → 승인
+- [ ] `/erp/approvals` 동일 행 status 컬럼: **"관리 승인 (재무 처리 대기)"** (blue 라벨)
+- [ ] **재무 로그인** → 사이드바에 "재무 처리" 메뉴 + amber 배지 "1" → `/erp/transfers` 진입 → 1건 표시 → "재무 처리 완료" 모달 → finance_note 입력(예: 시중은행 거래번호) → 처리
+- [ ] `/erp/transfers` 행 사라짐(또는 executed 필터에서만 표시)
+- [ ] **영업 다시 로그인** → source 편집 → 잔금 row 2건 추가됨 (-2500만 source / +2500만 target)
+- [ ] source 편집 패널 헤더: 에메랄드 박스 "이체 완료 (재무 확정 정보)" + confirmer 이름 + confirmed_at + finance_note 표시
+- [ ] source 미수율: 50% → 75% (즉 미수금 5천만 → 7500만)
+- [ ] target 미수율: 100% → 68.75% (8천만 → 5500만)
+
+### C. SoD 차단 (관리=재무 같은 user_id)
+- [ ] **관리 계정 1명만** 사용해 새 이체 요청 → 관리 본인이 `/erp/approvals` 승인 → `/erp/transfers` 진입 → 행에 "**SoD 차단**" 라벨, "재무 처리 완료" 버튼 **비활성**
+- [ ] 비활성 버튼 클릭 시도 → 모달 안 열림 + 토스트 안내 "관리 승인자와 재무 확정자는 다른 사용자여야 합니다 (SoD)"
+- [ ] (옵션) 모달 우회 시도 (개발자 도구로 Livewire 직접 호출) → DomainException 토스트
+- [ ] 다른 재무 계정 로그인 → 같은 행 정상 처리 가능
+
+### D. 권한 가드 (페이지 접근)
+- [ ] `/erp/transfers`: 영업 로그인 → 403 또는 리다이렉트
+- [ ] `/erp/transfers`: 관리 로그인 → 403 (canConfirmFinanceTransfer가 명시 차단)
+- [ ] `/erp/transfers`: 재무 로그인 → 200 ✓
+- [ ] `/erp/transfers`: admin 로그인 → 200 ✓
+- [ ] `/erp/transfers`: super 로그인 → 200 ✓
+- [ ] 사이드바 "재무 처리" 메뉴 노출: 재무·admin·super만 보임
+
+### E. void 흐름
+- [ ] executed 상태 transfer 1건 준비 (B 흐름 결과)
+- [ ] **영업 로그인** → source 편집 → 잔금 row에서 해당 transfer 잔금 클릭 → "이체 취소 요청" → 사유 입력 → 제출
+- [ ] **모달 닫힘 즉시** violet 🔁 박스 → amber ⏳ "취소 요청 중" 라벨로 색 전환 (페이지 새로고침 없이) — 큐 19-E 버그 fix 검증
+- [ ] **관리 로그인** → `/erp/approvals` → 이체 취소 요청 1건 → 승인
+- [ ] `/erp/approvals` 동일 행 status: **"취소 승인 (재무 대기)"** (amber 라벨)
+- [ ] **재무 로그인** → `/erp/transfers` 진입 → voided_awaiting_finance 행 표시 → "재무 처리 완료" → 처리
+- [ ] **영업 재로그인** → source 편집 → 잔금 row 추가 2건 더 생성 (+2500만 source / -2500만 target = 역 페어)
+- [ ] source 편집 패널 헤더: 회색 박스 "이체 취소 완료"
+- [ ] 최종 미수율 확인: source 50% / target 100% (이체 전 상태 복귀)
+
+### F. UI 5상태 색 분기 (편집 패널 헤더 lastDecided 박스)
+| 상태 | 색 | 라벨 |
+|---|---|---|
+| pending | violet | "이체 요청 중" |
+| approved_awaiting_finance | blue | "관리 승인 — 재무 대기" |
+| executed | emerald | "이체 완료" (재무 확정 정보 표시) |
+| voided_awaiting_finance | amber | "취소 승인 — 재무 대기" |
+| voided | gray | "이체 취소 완료" |
+| rejected | red | "거부됨" + 거부 사유 |
+| cancelled | gray | "취소됨" |
+
+- [ ] 위 7개 상태 박스 색·라벨이 코드 시나리오 진행하면서 정확히 분기되는지 확인
+
+### G. 사이드바 / 승인 페이지 배지 합산
+- [ ] `/erp/transfers` 대기 건수 = `/erp/approvals` 대기 건수가 아님 — transfers는 재무 대기 = approved_awaiting_finance + voided_awaiting_finance 합산. approvals는 관리 대기 = pending. 헷갈리지 않게 두 페이지 모두 방문.
+- [ ] 재무 로그인 시 사이드바 "재무 처리" 배지: approved_awaiting_finance + voided_awaiting_finance 합산 카운트
+- [ ] 모바일(<768px) drawer에서 "재무 처리" 메뉴도 동일하게 보이는지 (사이드바 모바일 분기)
+
+### H. 추가 회귀 (선택)
+- [ ] `npm run build` 후 production 자산으로 동일 흐름 1회 (`php artisan view:clear`)
+- [ ] AuditLog `recordEvent` 확인: 각 5상태 전이마다 audit_logs row 생성됐는지 (`/admin/audit-logs`)
+- [ ] paid Settlement 있는 차량에서 이체 요청 시도 → 차단 토스트 (H4 가드)
+
+### 통과 기준
+모든 ✅이면 큐 20-A 마이그레이션 착수 가능. 실패 발견 시 회의록 본문 `## 🛠 car-erp 영향 분석`에 발견 항목 기록 후 fix → 재 회귀.
+
+### 자동 테스트 보강 항목 (큐 19-F-D 완료)
+- `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
+- `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
+- `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_voided_awaiting_finance_status`
+- `InterVehicleTransferServiceTest::test_confirm_void_by_finance_blocks_executed_status_without_approve_void`
+
+총 215 passed (211 + 4).
