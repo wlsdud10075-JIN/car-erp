@@ -128,7 +128,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <h2 class="text-xl font-bold text-gray-800">승인 큐</h2>
             <p class="mt-1 text-xs text-gray-500">
                 대기 <span class="font-semibold text-amber-600">{{ $this->pendingCount }}</span>건
-                · 5 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외·차량 간 자금 이체)
+                · 6 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외·자금 이체·이체 취소)
             </p>
         </div>
         <div class="flex items-center gap-3">
@@ -210,6 +210,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }}
                                 </div>
                             </div>
+                        @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+                            @php $p = $r->payload ?? []; @endphp
+                            <div class="space-y-0.5">
+                                <div class="text-red-700 font-semibold text-[11px]">⊘ 이체 #{{ $p['transfer_id'] ?? '?' }} 취소</div>
+                                <div>
+                                    <span class="text-gray-400">출처</span>
+                                    <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                                    →
+                                    <span class="text-gray-400">대상</span>
+                                    <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                                </div>
+                                <div class="font-semibold text-red-600">
+                                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} 원상복구
+                                </div>
+                            </div>
                         @elseif($r->target_type && $r->target_id)
                             <span class="font-mono">{{ class_basename($r->target_type) }} #{{ $r->target_id }}</span>
                         @else - @endif
@@ -277,6 +292,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="mt-0.5 text-xs font-semibold text-violet-700">
                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }}
+                </div>
+            @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+                @php $p = $r->payload ?? []; @endphp
+                <div class="mt-1 text-xs text-red-700 font-semibold">⊘ 이체 #{{ $p['transfer_id'] ?? '?' }} 취소</div>
+                <div class="mt-0.5 text-xs text-gray-700">
+                    <span class="font-mono">{{ $p['source_vehicle_number'] ?? '?' }}</span> →
+                    <span class="font-mono">{{ $p['target_vehicle_number'] ?? '?' }}</span>
+                </div>
+                <div class="mt-0.5 text-xs font-semibold text-red-600">
+                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} 원상복구
                 </div>
             @endif
             @if($r->reason)

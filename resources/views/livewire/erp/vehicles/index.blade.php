@@ -141,6 +141,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $transferNotes = '';
 
+    // 큐 19-E — 이체 취소(void) 요청 모달 상태
+    public bool $showTransferVoidModal = false;
+
+    public ?int $voidTransferId = null;
+
+    public string $voidReason = '';
+
     // 큐 16 — 카풀/헤이맨 계산서 5 properties 제거 (DB 5컬럼 drop과 동기).
 
     // ── 수출통관 ──────────────────────────────────────────────────
@@ -648,16 +655,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             ];
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
+                $isExecuted = $t->status === \App\Models\InterVehicleTransfer::STATUS_EXECUTED;
+                // 큐 19-E — void 가능 조건: status=executed AND 영업/관리/admin 권한
+                $user = auth()->user();
+                $canVoid = $isExecuted && $user && ($user->canApprove() || $user->role === '영업');
                 $row['transfer'] = [
                     'id' => $t->id,
                     'amount' => (float) $t->amount,
                     'currency' => $t->currency,
+                    'status' => $t->status,
                     'approval_request_id' => $t->approval_request_id,
                     'direction' => $p->amount < 0 ? 'outgoing' : 'incoming',  // 이 차량 기준 출/입
                     'counterpart_id' => $p->amount < 0 ? $t->target_vehicle_id : $t->source_vehicle_id,
                     'counterpart_number' => $p->amount < 0
                         ? $t->targetVehicle?->vehicle_number
                         : $t->sourceVehicle?->vehicle_number,
+                    'can_void' => $canVoid,
                 ];
             }
 
@@ -733,6 +746,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->transferReason = '';
         $this->transferNotes = '';
         $this->resetErrorBag(['transferTargetVehicleId', 'transferAmountStr', 'transferReason']);
+        $this->resetTransferVoidForm();
+    }
+
+    private function resetTransferVoidForm(): void
+    {
+        $this->showTransferVoidModal = false;
+        $this->voidTransferId = null;
+        $this->voidReason = '';
+        $this->resetErrorBag('voidReason');
     }
 
     public function removeDeregistrationDoc(): void
@@ -1419,6 +1441,58 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dispatch('notify', message: '차량 간 자금 이체 승인 요청을 보냈습니다.', type: 'success');
         $this->resetTransferRequestForm();
+    }
+
+    // 큐 19-E — 이체 취소(void) 요청 ────────────────────────────────
+
+    public function openTransferVoidModal(int $transferId): void
+    {
+        $transfer = InterVehicleTransfer::find($transferId);
+        if (! $transfer || $transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
+            $this->dispatch('notify', message: '실행 완료된 이체만 취소 요청할 수 있습니다.', type: 'warning');
+
+            return;
+        }
+        $this->voidTransferId = $transferId;
+        $this->voidReason = '';
+        $this->resetErrorBag('voidReason');
+        $this->showTransferVoidModal = true;
+    }
+
+    public function closeTransferVoidModal(): void
+    {
+        $this->resetTransferVoidForm();
+    }
+
+    public function submitTransferVoidRequest(InterVehicleTransferService $service): void
+    {
+        if ($this->voidTransferId === null) {
+            return;
+        }
+        $this->validate([
+            'voidReason' => ['required', 'string', 'min:5'],
+        ], [
+            'voidReason.required' => '이체 취소 사유를 입력하세요.',
+            'voidReason.min' => '사유는 최소 5자 이상이어야 합니다.',
+        ]);
+
+        $transfer = InterVehicleTransfer::find($this->voidTransferId);
+        if (! $transfer) {
+            $this->dispatch('notify', message: '이체 거래를 찾을 수 없습니다.', type: 'warning');
+
+            return;
+        }
+
+        try {
+            $service->voidRequest($transfer, auth()->user(), trim($this->voidReason));
+        } catch (\DomainException $e) {
+            $this->addError('voidReason', $e->getMessage());
+
+            return;
+        }
+
+        $this->dispatch('notify', message: '이체 취소 승인 요청을 보냈습니다.', type: 'success');
+        $this->resetTransferVoidForm();
     }
 
     /**
@@ -2332,22 +2406,33 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @foreach($finalPayments as $idx => $row)
                 @if(!empty($row['transfer']))
                 {{-- 큐 19-C — 차량 간 자금 이체로 자동 생성된 잔금 (append-only). --}}
-                <div class="flex gap-2 items-center rounded bg-violet-50 px-2 py-1.5 border border-violet-200">
-                    <span class="text-xs">🔁</span>
-                    <span class="w-32 text-sm font-semibold {{ $row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700' }}">
+                @php
+                    $tStatus = $row['transfer']['status'] ?? null;
+                    $isVoided = $tStatus === \App\Models\InterVehicleTransfer::STATUS_VOIDED;
+                @endphp
+                <div class="flex gap-2 items-center rounded {{ $isVoided ? 'bg-gray-100 border-gray-300' : 'bg-violet-50 border-violet-200' }} px-2 py-1.5 border">
+                    <span class="text-xs">{{ $isVoided ? '⊘' : '🔁' }}</span>
+                    <span class="w-32 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
                         {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
                     </span>
-                    <span class="flex-1 text-xs text-violet-800">
+                    <span class="flex-1 text-xs {{ $isVoided ? 'text-gray-500' : 'text-violet-800' }}">
                         @if($row['transfer']['direction'] === 'outgoing')
                             → 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 으로 이체
                         @else
                             ← 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 에서 이체
                         @endif
+                        @if($isVoided) <span class="ml-1 text-[10px] text-gray-500">(취소됨)</span> @endif
                     </span>
-                    <span class="text-xs text-violet-600 whitespace-nowrap">
+                    <span class="text-xs {{ $isVoided ? 'text-gray-400' : 'text-violet-600' }} whitespace-nowrap">
                         {{ $row['payment_date'] ?: '-' }}
                         · 승인 #{{ $row['transfer']['approval_request_id'] }}
                     </span>
+                    @if(!$isVoided && !empty($row['transfer']['can_void']))
+                    <button type="button" wire:click="openTransferVoidModal({{ $row['transfer']['id'] }})"
+                            class="text-[11px] text-red-500 hover:underline whitespace-nowrap">
+                        이체 취소 요청
+                    </button>
+                    @endif
                 </div>
                 @elseif(!empty($row['locked']))
                 <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
@@ -2835,6 +2920,46 @@ new #[Layout('components.layouts.app')] class extends Component {
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
                 요청 보내기
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 큐 19-E — 이체 취소(void) 요청 모달. --}}
+@if($showTransferVoidModal && $voidTransferId)
+@php
+    $voidTarget = \App\Models\InterVehicleTransfer::with('sourceVehicle:id,vehicle_number', 'targetVehicle:id,vehicle_number')->find($voidTransferId);
+@endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeTransferVoidModal"
+     wire:key="transfer-void-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-red-700">이체 취소 요청</h3>
+        <p class="mt-1 text-xs text-gray-500">관리자 승인 후 양 차량에 반대 부호 잔금이 추가되어 원래 이체가 회계상 상쇄됩니다. 기존 잔금은 삭제되지 않습니다 (append-only).</p>
+
+        @if($voidTarget)
+        <div class="mt-3 rounded-md bg-red-50 border border-red-200 p-2.5 text-xs text-red-900 space-y-0.5">
+            <div>출처 <span class="font-mono">{{ $voidTarget->sourceVehicle?->vehicle_number ?? '#'.$voidTarget->source_vehicle_id }}</span>
+                 → 대상 <span class="font-mono">{{ $voidTarget->targetVehicle?->vehicle_number ?? '#'.$voidTarget->target_vehicle_id }}</span></div>
+            <div>금액 <strong>{{ number_format((float)$voidTarget->amount) }}</strong> {{ $voidTarget->currency }}</div>
+        </div>
+        @endif
+
+        <div class="mt-3">
+            <label class="label-base">취소 사유 <span class="text-red-500">*</span></label>
+            <textarea wire:model="voidReason" rows="3" class="input-base"
+                      placeholder="예: 바이어가 2번 차 계약을 무산. 자금 1번 차로 원상복구 필요. 최소 5자."></textarea>
+            @error('voidReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="closeTransferVoidModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button type="button" wire:click="submitTransferVoidRequest"
+                    wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                취소 요청 보내기
             </button>
         </div>
     </div>

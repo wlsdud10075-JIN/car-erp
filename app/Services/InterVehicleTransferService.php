@@ -145,6 +145,100 @@ class InterVehicleTransferService
     }
 
     /**
+     * 큐 19-E — 영업이 이체 취소(void) 요청. executed transfer만 대상.
+     * 새 ApprovalRequest (TYPE_INTER_VEHICLE_TRANSFER_VOID) 생성, payload에 transfer_id.
+     */
+    public function voidRequest(InterVehicleTransfer $transfer, User $requester, string $reason): ApprovalRequest
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
+            throw new DomainException("실행 완료된 이체만 취소할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        // 이미 대기중인 void 요청 있으면 차단
+        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+            ->where('status', ApprovalRequest::STATUS_PENDING)
+            ->whereJsonContains('payload->transfer_id', $transfer->id)
+            ->exists();
+        if ($existing) {
+            throw new DomainException('이미 대기중인 이체 취소 요청이 있습니다.');
+        }
+
+        return ApprovalRequest::create([
+            'requester_id' => $requester->id,
+            'action_type' => ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
+            'target_type' => InterVehicleTransfer::class,
+            'target_id' => $transfer->id,
+            'status' => ApprovalRequest::STATUS_PENDING,
+            'reason' => $reason,
+            'payload' => [
+                'transfer_id' => $transfer->id,
+                'source_vehicle_id' => $transfer->source_vehicle_id,
+                'source_vehicle_number' => $transfer->sourceVehicle?->vehicle_number,
+                'target_vehicle_id' => $transfer->target_vehicle_id,
+                'target_vehicle_number' => $transfer->targetVehicle?->vehicle_number,
+                'amount' => (float) $transfer->amount,
+                'currency' => $transfer->currency,
+            ],
+        ]);
+    }
+
+    /**
+     * 큐 19-E — void 실제 실행 (관리 승인 후 ApprovalRequest::executeInterVehicleTransferVoid에서 호출).
+     *
+     * 트랜잭션:
+     *   1. source 차량에 amount = +X final_payment (원본 음수 → 반대 양수, transfer_id 연결)
+     *   2. target 차량에 amount = -X final_payment (원본 양수 → 반대 음수, transfer_id 연결)
+     *   3. transfer.status = voided, voided_at = now, void_reason 기록
+     *
+     * append-only — 기존 final_payment는 절대 삭제·수정 안 함 (회계 흐름 보존).
+     * FinalPayment::$allowTransferLinkedMutation는 신규 INSERT엔 영향 없음 (UPDATE/DELETE만 가드).
+     *
+     * @throws DomainException status가 executed 아니거나 H4 가드 위반 시
+     */
+    public function void(InterVehicleTransfer $transfer, User $approver, string $reason): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
+            throw new DomainException("실행 완료된 이체만 취소할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+
+        // H4 정합 — void도 회계 변동이므로 paid Settlement 있으면 차단
+        foreach (['출처' => $transfer->sourceVehicle, '대상' => $transfer->targetVehicle] as $label => $v) {
+            if ($v && $v->settlements()->where('settlement_status', 'paid')->exists()) {
+                throw new DomainException("{$label} 차량에 paid 정산이 있어 이체 취소할 수 없습니다.");
+            }
+        }
+
+        DB::transaction(function () use ($transfer, $approver, $reason) {
+            $today = now()->toDateString();
+            $amount = (float) $transfer->amount;
+
+            FinalPayment::create([
+                'vehicle_id' => $transfer->source_vehicle_id,
+                'transfer_id' => $transfer->id,
+                'amount' => $amount,  // 원본 -X → 반대 +X
+                'payment_date' => $today,
+                'note' => "이체 취소 (#{$transfer->id}): {$reason}",
+            ]);
+
+            FinalPayment::create([
+                'vehicle_id' => $transfer->target_vehicle_id,
+                'transfer_id' => $transfer->id,
+                'amount' => -$amount,  // 원본 +X → 반대 -X
+                'payment_date' => $today,
+                'note' => "이체 취소 (#{$transfer->id}): {$reason}",
+            ]);
+
+            $transfer->update([
+                'status' => InterVehicleTransfer::STATUS_VOIDED,
+                'voided_at' => now(),
+                'void_reason' => $reason,
+                'approver_id' => $approver->id,
+            ]);
+        });
+    }
+
+    /**
      * 안전 가드 5종 검증. 위반 시 예외.
      *
      * 5번째 가드 (H4 정합) — 큐 10 H4와 연동: source 또는 target에 paid Settlement가 있으면

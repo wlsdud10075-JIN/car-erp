@@ -35,12 +35,15 @@ class ApprovalRequest extends Model
 
     public const TYPE_INTER_VEHICLE_TRANSFER = 'inter_vehicle_transfer';
 
+    public const TYPE_INTER_VEHICLE_TRANSFER_VOID = 'inter_vehicle_transfer_void';
+
     public const TYPES = [
         self::TYPE_INTER_BUYER_OVERLAP => '같은 바이어 미수+신규 거래',
         self::TYPE_SETTLEMENT_PAY => '정산 지급',
         self::TYPE_SENSITIVE_ACTION => '민감 액션 (폐기/RRN/B/L)',
         self::TYPE_UNPAID_EXPORT_OVERRIDE => '50% 룰 예외',
         self::TYPE_INTER_VEHICLE_TRANSFER => '차량 간 자금 이체',
+        self::TYPE_INTER_VEHICLE_TRANSFER_VOID => '자금 이체 취소',
     ];
 
     public const STATUS_PENDING = 'pending';
@@ -106,6 +109,7 @@ class ApprovalRequest extends Model
                     self::TYPE_SETTLEMENT_PAY => $this->executeSettlementPay(),
                     self::TYPE_INTER_BUYER_OVERLAP => $this->executeInterBuyerOverlap(),
                     self::TYPE_INTER_VEHICLE_TRANSFER => $this->executeInterVehicleTransfer(),
+                    self::TYPE_INTER_VEHICLE_TRANSFER_VOID => $this->executeInterVehicleTransferVoid(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
                 };
             });
@@ -131,6 +135,22 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
         $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
         app(InterVehicleTransferService::class)->execute($transfer, $approver);
+    }
+
+    /**
+     * 큐 19-E — inter_vehicle_transfer_void 승인 = InterVehicleTransferService::void() 호출.
+     * 대상 transfer는 payload.transfer_id에 저장. 양 차량에 반대 부호 final_payment 추가.
+     */
+    private function executeInterVehicleTransferVoid(): void
+    {
+        $transferId = $this->payload['transfer_id'] ?? null;
+        if (! $transferId) {
+            throw new \LogicException('void 요청에 transfer_id payload가 없습니다.');
+        }
+        $transfer = InterVehicleTransfer::findOrFail($transferId);
+        $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
+        $reason = $this->decision_note ?: ($this->reason ?: '관리 승인으로 이체 취소');
+        app(InterVehicleTransferService::class)->void($transfer, $approver, $reason);
     }
 
     private function executeSettlementPay(): void
