@@ -1541,7 +1541,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function transferContext(): array
     {
         $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect(),
-            'pending' => null, 'lastDecided' => null];
+            'pending' => null, 'lastDecided' => null, 'voidLastDecided' => null];
         if ($this->editingId === null) {
             $base['reason'] = '차량 저장 후 이용 가능합니다.';
 
@@ -1614,6 +1614,38 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'finance_confirmer_name' => $relatedTransfer?->financeConfirmer?->name,
                     'confirmed_at' => $relatedTransfer?->confirmed_at,
                     'finance_note' => $relatedTransfer?->finance_note,
+                ];
+            }
+        }
+
+        // 큐 19-H — void(이체 취소) ApprovalRequest 거부/취소 정보 별도 표시.
+        // lastDecided 는 TYPE_INTER_VEHICLE_TRANSFER 만 조회하므로 void 거부/취소는
+        // emerald "이체 완료" 박스 위에 별도 빨강/회색 박스로 노출 — 사용자가
+        // 취소 요청 사유를 확인할 수 있게.
+        $transferIds = InterVehicleTransfer::where('source_vehicle_id', $source->id)->pluck('id');
+        if ($transferIds->isNotEmpty()) {
+            $voidDecided = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+                ->where('target_type', InterVehicleTransfer::class)
+                ->whereIn('target_id', $transferIds)
+                ->whereIn('status', [
+                    ApprovalRequest::STATUS_REJECTED,
+                    ApprovalRequest::STATUS_CANCELLED,
+                ])
+                ->orderByDesc('created_at')
+                ->first();
+            if ($voidDecided) {
+                $p = $voidDecided->payload ?? [];
+                $base['voidLastDecided'] = [
+                    'approval_request_id' => $voidDecided->id,
+                    'status' => $voidDecided->status,
+                    'transfer_id' => $p['transfer_id'] ?? $voidDecided->target_id,
+                    'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
+                    'amount' => (float) ($p['amount'] ?? 0),
+                    'currency' => $p['currency'] ?? $source->currency,
+                    'decision_note' => $voidDecided->decision_note,
+                    'reason' => $voidDecided->reason,
+                    'decided_at' => $voidDecided->decided_at,
+                    'approver_name' => $voidDecided->approver?->name,
                 ];
             }
         }
@@ -2665,6 +2697,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </div>
                             @endif
+                        </div>
+                    </div>
+                    @endif
+
+                    {{-- 큐 19-H — void(이체 취소) 요청 거부/취소 박스.
+                         lastDecided emerald "이체 완료" 박스 아래 별도 노출. --}}
+                    @if(!empty($transferCtx['voidLastDecided']))
+                    @php
+                        $vld = $transferCtx['voidLastDecided'];
+                        $vldClass = match($vld['status']) {
+                            'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '이체 취소 요청 거부됨', '거부 사유'],
+                            'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 요청 취소됨', '메모'],
+                            default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '이체 취소 요청', '메모'],
+                        };
+                    @endphp
+                    <div class="rounded-md border {{ $vldClass[0] }} {{ $vldClass[1] }} p-3 text-xs {{ $vldClass[2] }} mb-2">
+                        <div class="flex items-center gap-2">
+                            <span>{{ $vldClass[6] }}</span>
+                            <strong>{{ $vldClass[7] }}</strong>
+                        </div>
+                        <div class="mt-1 space-y-0.5 {{ $vldClass[3] }}">
+                            <div>
+                                이체 #{{ $vld['transfer_id'] }}
+                                · {{ number_format($vld['amount']) }} {{ $vld['currency'] }}
+                                · {{ $vld['approver_name'] ?? '관리자' }}
+                                ({{ $vld['decided_at']?->format('Y-m-d H:i') }})
+                            </div>
+                            @if($vld['reason'])
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $vldClass[4] }} border {{ $vldClass[5] }}">
+                                <span class="font-semibold">취소 요청 사유:</span> {{ $vld['reason'] }}
+                            </div>
+                            @endif
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $vldClass[4] }} border {{ $vldClass[5] }}">
+                                <span class="font-semibold">{{ $vldClass[8] }}:</span> {{ $vld['decision_note'] ?: '(메모 없음)' }}
+                            </div>
                         </div>
                     </div>
                     @endif
