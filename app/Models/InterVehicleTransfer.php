@@ -38,6 +38,7 @@ class InterVehicleTransfer extends Model
         'requester_id', 'approver_id',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
         'finance_rejected_by_user_id', 'finance_rejected_at', 'finance_reject_reason',
+        'void_finance_rejected_by_user_id', 'void_finance_rejected_at', 'void_finance_reject_reason',
         'notes',
     ];
 
@@ -47,6 +48,7 @@ class InterVehicleTransfer extends Model
         'voided_at' => 'datetime',
         'confirmed_at' => 'datetime',
         'finance_rejected_at' => 'datetime',
+        'void_finance_rejected_at' => 'datetime',
     ];
 
     public const STATUS_PENDING = 'pending';
@@ -112,6 +114,11 @@ class InterVehicleTransfer extends Model
     public function financeRejecter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'finance_rejected_by_user_id');
+    }
+
+    public function financeVoidRejecter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'void_finance_rejected_by_user_id');
     }
 
     public function finalPayments(): HasMany

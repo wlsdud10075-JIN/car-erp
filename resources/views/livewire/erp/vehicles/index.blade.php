@@ -1623,11 +1623,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             // transfer.status 가 voided / voided_awaiting_finance 로 변하므로
             // transferDecided 의 'approved:voided*' 5상태 분기로 표시하는 것이 정확.
             // (void approved 메타를 별도로 보여줄 필요 없음 — transfer 5상태가 이미 의미 포함)
+            //
+            // 큐 19-L — 단 void approved + transfer.void_finance_rejected_at IS NOT NULL 인 경우
+            // "재무가 취소 거부" 케이스. transfer.status 는 executed 로 복귀했지만 void 시도가
+            // 거부됐다는 정보가 의미 있음 → fallback 우회, voidDecided 그대로 'void:finance_rejected' 분기.
             if ($mostRecent
                 && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID
                 && $mostRecent->status === ApprovalRequest::STATUS_APPROVED
                 && $transferDecided) {
-                $mostRecent = $transferDecided;
+                $voidTransfer = InterVehicleTransfer::find($mostRecent->target_id);
+                if (! $voidTransfer || $voidTransfer->void_finance_rejected_at === null) {
+                    $mostRecent = $transferDecided;
+                }
             }
 
             if ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
@@ -1656,6 +1663,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ];
             } elseif ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
                 $p = $mostRecent->payload ?? [];
+                $voidTransfer = InterVehicleTransfer::with('financeVoidRejecter')
+                    ->find($p['transfer_id'] ?? $mostRecent->target_id);
                 $base['lastDecided'] = [
                     'type' => 'void',
                     'approval_request_id' => $mostRecent->id,
@@ -1668,6 +1677,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'reason' => $mostRecent->reason,
                     'decided_at' => $mostRecent->decided_at,
                     'approver_name' => $mostRecent->approver?->name,
+                    // 큐 19-L — void 재무 거부 메타
+                    'void_finance_rejecter_name' => $voidTransfer?->financeVoidRejecter?->name,
+                    'void_finance_rejected_at' => $voidTransfer?->void_finance_rejected_at,
+                    'void_finance_reject_reason' => $voidTransfer?->void_finance_reject_reason,
                 ];
             }
         }
@@ -2682,6 +2695,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $isVoid = ($ld['type'] ?? 'transfer') === 'void';
                         if ($isVoid) {
                             $ldKey = 'void:'.$ld['status'];
+                            // 큐 19-L — void approved + finance 거부 케이스
+                            if ($ld['status'] === 'approved' && ! empty($ld['void_finance_rejected_at'])) {
+                                $ldKey = 'void:finance_rejected';
+                            }
                         } else {
                             $ldKey = $ld['status'];
                             if ($ld['status'] === 'approved' && ! empty($ld['transfer_status'])) {
@@ -2700,6 +2717,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
                             'void:rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '이체 취소 요청 거부됨', '거부 사유'],
                             'void:cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 요청 취소됨', '메모'],
+                            // 큐 19-L — void 재무 거부: 관리는 승인했지만 재무가 환불 불가로 거부 → transfer 살아있음
+                            'void:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '재무가 취소 거부 (이체 유지)', '승인 메모'],
                             default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '최근 이체 요청', '메모'],
                         };
                     @endphp
@@ -2752,6 +2771,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @if(! empty($ld['finance_reject_reason']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
                                 <span class="font-semibold">거부 사유:</span> {{ $ld['finance_reject_reason'] }}
+                            </div>
+                            @endif
+                            @endif
+                            {{-- 큐 19-L — void 재무 거부 사유 표시 (void:finance_rejected 한정) --}}
+                            @if($isVoid && $ldKey === 'void:finance_rejected' && ! empty($ld['void_finance_rejecter_name']))
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">재무 취소 거부:</span>
+                                {{ $ld['void_finance_rejecter_name'] }}
+                                ({{ $ld['void_finance_rejected_at']?->format('Y-m-d H:i') }})
+                            </div>
+                            @if(! empty($ld['void_finance_reject_reason']))
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">거부 사유:</span> {{ $ld['void_finance_reject_reason'] }}
                             </div>
                             @endif
                             @endif

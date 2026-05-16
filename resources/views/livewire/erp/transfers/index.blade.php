@@ -102,9 +102,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        // 큐 19-K — 거부 모드는 정방향(approved_awaiting_finance)에서만 가능. void는 별도 큐 19-L.
-        if ($mode === 'reject' && $transfer->status !== InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
-            $this->dispatch('notify', message: '재무 거부는 정방향 이체만 가능합니다 (취소 거부는 별도 안건).', type: 'warning');
+        // 큐 19-K/L — 거부 모드는 awaiting 2종(정방향/void) 모두 가능.
+        if ($mode === 'reject' && ! in_array($transfer->status, [
+            InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+        ], true)) {
+            $this->dispatch('notify', message: '재무 거부는 awaiting 상태에서만 가능합니다.', type: 'warning');
 
             return;
         }
@@ -156,8 +159,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 큐 19-K — 재무 정방향 거부 (송금 불가 사유 시).
-     * approved_awaiting_finance → finance_rejected. final_payment 미생성, 영업이 새 요청 가능.
+     * 큐 19-K / 19-L — 재무 거부 (정방향: finance_rejected / void: executed 복귀).
+     * status에 따라 rejectByFinance vs rejectVoidByFinance 자동 분기.
      */
     public function reject(): void
     {
@@ -175,8 +178,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            app(InterVehicleTransferService::class)->rejectByFinance($transfer, auth()->user(), $this->rejectReason);
-            $this->dispatch('notify', message: '재무 거부 완료 — 영업에게 사유가 노출됩니다.', type: 'success');
+            $service = app(InterVehicleTransferService::class);
+            if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
+                $service->rejectByFinance($transfer, auth()->user(), $this->rejectReason);
+                $msg = '재무 거부 완료 — 영업에게 사유가 노출되며 새 이체 요청이 가능해집니다.';
+            } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
+                $service->rejectVoidByFinance($transfer, auth()->user(), $this->rejectReason);
+                $msg = '취소 거부 완료 — 이체는 살아있고 영업이 다시 취소 요청 가능합니다.';
+            } else {
+                throw new \DomainException('재무 거부 대기 상태가 아닙니다.');
+            }
+
+            $this->dispatch('notify', message: $msg, type: 'success');
             $this->closeModal();
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: '재무 거부 실패: '.$e->getMessage(), type: 'error');
@@ -299,10 +312,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
                                     재무 처리 완료
                                 </button>
-                                {{-- 큐 19-K — 정방향 이체에서만 거부 버튼 (void 거부는 별도 큐) --}}
-                                @if($t->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                                {{-- 큐 19-K/L — awaiting 2종 모두 거부 가능 (정방향: 송금 불가 / void: 환불 불가) --}}
+                                @if(in_array($t->status, [InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE], true))
                                 <button wire:click="openModal({{ $t->id }}, 'reject')"
-                                        title="송금 불가 사유로 거부 (영업이 사유 확인 후 새 요청 가능)"
+                                        title="{{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? '환불 불가 사유로 취소 거부 (이체는 살아있음, 영업이 다시 취소 요청 가능)' : '송금 불가 사유로 거부 (영업이 사유 확인 후 새 요청 가능)' }}"
                                         class="rounded bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
                                     거부
                                 </button>
@@ -370,10 +383,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         class="w-full rounded bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white">
                     재무 처리 완료
                 </button>
-                @if($t->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                @if(in_array($t->status, [InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE], true))
                 <button wire:click="openModal({{ $t->id }}, 'reject')"
                         class="w-full rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white">
-                    거부 (송금 불가)
+                    {{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? '거부 (환불 불가)' : '거부 (송금 불가)' }}
                 </button>
                 @endif
                 @endif
@@ -395,11 +408,21 @@ new #[Layout('components.layouts.app')] class extends Component {
      wire:click.self="closeModal">
     <div class="card max-w-md mx-4 shadow-2xl">
         @if($decisionMode === 'reject')
-        <h3 class="text-base font-semibold text-red-700">재무 거부 확인</h3>
+        @php
+            $modalTransfer = $modalTransferId ? \App\Models\InterVehicleTransfer::find($modalTransferId) : null;
+            $isVoidReject = $modalTransfer?->status === \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE;
+        @endphp
+        <h3 class="text-base font-semibold text-red-700">{{ $isVoidReject ? '취소 거부 확인' : '재무 거부 확인' }}</h3>
         <p class="mt-2 text-sm text-gray-600">
+            @if($isVoidReject)
+            환불 불가·역송금 거부 등 사유로 취소를 거부합니다.
+            <strong>이체 자체는 살아있고 final_payment 페어는 그대로 유지</strong>됩니다.
+            영업이 사유를 확인하고 다시 취소 요청 가능합니다.
+            @else
             통장 잔액 부족·송금 실패·입금자 불일치 등 송금 불가 사유로 거부합니다.
             <strong>final_payment 는 생성되지 않으며 ledger 영향이 없습니다.</strong>
             영업에게 거부 사유가 노출되며 새 이체 요청이 가능해집니다.
+            @endif
         </p>
         <div class="mt-3">
             <label class="block text-xs text-gray-500 mb-1">거부 사유 (필수, 5자 이상)</label>

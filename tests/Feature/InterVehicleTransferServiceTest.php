@@ -622,4 +622,90 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->expectExceptionMessage('5자 이상');
         $this->service->rejectByFinance($transfer, $c['finance'], '부족');
     }
+
+    /**
+     * 큐 19-L — rejectVoidByFinance 정상 흐름.
+     * voided_awaiting_finance → executed 복귀 + 메타 기록 + final_payment 그대로 유지.
+     */
+    public function test_reject_void_by_finance_reverts_to_executed_keeping_final_payments(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+        $this->service->voidRequest($transfer->fresh(), $c['sales'], '거래 무산 — 환불 요청');
+        $this->service->approveVoid($transfer->fresh(), $c['manager'], '관리 승인');
+
+        // 이 시점 final_payment 페어 2건 존재
+        $this->assertEquals(2, FinalPayment::where('transfer_id', $transfer->id)->count());
+
+        $this->service->rejectVoidByFinance($transfer->fresh(), $c['finance'], '환불 거부 — 이미 정상 거래로 확인됨');
+
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $transfer->status);
+        $this->assertEquals($c['finance']->id, $transfer->void_finance_rejected_by_user_id);
+        $this->assertNotNull($transfer->void_finance_rejected_at);
+        $this->assertEquals('환불 거부 — 이미 정상 거래로 확인됨', $transfer->void_finance_reject_reason);
+
+        // final_payment 페어 그대로 (역 페어 미생성, 원본 미삭제)
+        $this->assertEquals(2, FinalPayment::where('transfer_id', $transfer->id)->count());
+    }
+
+    /**
+     * 큐 19-L — pending/approved_awaiting_finance/executed 상태에서 rejectVoidByFinance 차단.
+     */
+    public function test_reject_void_by_finance_blocks_executed_status(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('취소 승인 대기 상태의 이체만');
+        $this->service->rejectVoidByFinance($transfer, $c['finance'], '환불 거부 사유');
+    }
+
+    /**
+     * 큐 19-L — SoD: 관리 승인자(approveVoid 한 사람) == 재무 거부자 차단.
+     */
+    public function test_reject_void_by_finance_self_reject_blocked(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+        $this->service->voidRequest($transfer->fresh(), $c['sales'], '거래 무산');
+        $this->service->approveVoid($transfer->fresh(), $c['manager'], '관리 승인');
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('SoD');
+        $this->service->rejectVoidByFinance($transfer->fresh(), $c['manager'], '환불 거부 사유');
+    }
+
+    /**
+     * 큐 19-L — 영업이 거부 후 다시 void 요청 가능 (재시도 동선 보장).
+     * 실제 운영에선 ApprovalRequest::execute() 가 AR.status='approved' 마킹 + approveVoid 트리거 한 번에.
+     * 본 테스트는 service 만 직접 호출하므로 AR.status 수동 업데이트로 운영 흐름 재현.
+     */
+    public function test_sales_can_retry_void_after_finance_void_reject(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+
+        $firstVoidReq = $this->service->voidRequest($transfer->fresh(), $c['sales'], '1차 취소 시도');
+        $this->service->approveVoid($transfer->fresh(), $c['manager'], '관리 승인');
+        $firstVoidReq->update(['status' => ApprovalRequest::STATUS_APPROVED, 'approver_id' => $c['manager']->id, 'decided_at' => now()]);
+
+        $this->service->rejectVoidByFinance($transfer->fresh(), $c['finance'], '환불 거부 — 영업 확인 필요');
+
+        // 2차 void 요청 가능 — 차단 가드(중복 pending void)에 막히면 안 됨
+        $secondVoidReq = $this->service->voidRequest($transfer->fresh(), $c['sales'], '2차 취소 시도 — 환불 처리 확인됨');
+
+        $this->assertEquals(ApprovalRequest::STATUS_PENDING, $secondVoidReq->status);
+        $this->assertEquals(ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID, $secondVoidReq->action_type);
+    }
 }

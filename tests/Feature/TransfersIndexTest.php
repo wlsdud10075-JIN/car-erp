@@ -230,4 +230,40 @@ class TransfersIndexTest extends TestCase
         // executed 메타는 그대로 비어있어야
         $this->assertNull($c['transfer']->confirmed_by_user_id);
     }
+
+    /**
+     * 큐 19-L — /erp/transfers 모달에서 void 거부 시 transfer.status=executed 복귀 + 메타 기록.
+     * final_payment 페어 그대로 유지.
+     */
+    public function test_finance_void_reject_reverts_to_executed_keeping_final_payments(): void
+    {
+        $c = $this->makeAwaitingTransfer();
+        // 일단 executed 까지 만들고 void 요청 + 관리 승인까지 진행
+        $c['service']->confirmByFinance($c['transfer'], $c['finance']);
+        $this->actingAs($c['sales']);
+        $c['service']->voidRequest($c['transfer']->fresh(), $c['sales'], '거래 무산');
+        $this->actingAs($c['manager']);
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], '관리 승인');
+
+        $this->assertEquals(2, FinalPayment::where('transfer_id', $c['transfer']->id)->count());
+
+        // 재무가 void 거부 (모달 reject 모드)
+        $this->actingAs($c['finance']);
+        Volt::test('erp.transfers.index')
+            ->call('openModal', $c['transfer']->id, 'reject')
+            ->assertSet('decisionMode', 'reject')
+            ->set('rejectReason', '환불 거부 — 영업이 재확인 필요')
+            ->call('reject')
+            ->assertHasNoErrors()
+            ->assertSet('showModal', false);
+
+        $c['transfer']->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_EXECUTED, $c['transfer']->status);
+        $this->assertEquals($c['finance']->id, $c['transfer']->void_finance_rejected_by_user_id);
+        $this->assertEquals('환불 거부 — 영업이 재확인 필요', $c['transfer']->void_finance_reject_reason);
+        $this->assertNotNull($c['transfer']->void_finance_rejected_at);
+
+        // final_payment 페어 그대로 유지 (역 페어 미생성)
+        $this->assertEquals(2, FinalPayment::where('transfer_id', $c['transfer']->id)->count());
+    }
 }

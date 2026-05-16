@@ -64,16 +64,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? collect()
             : InterVehicleTransfer::whereIn('approval_request_id', $transferApprovalIds)
                 ->pluck('status', 'approval_request_id');
-        $byId = $voidTransferIds->isEmpty()
+        // 큐 19-L — void 행은 transfer.status + void_finance_rejected_at 둘 다 필요
+        // (executed 복귀 + 거부 메타 있으면 "취소 거부" 라벨 분기)
+        $voidTransferMap = $voidTransferIds->isEmpty()
             ? collect()
-            : InterVehicleTransfer::whereIn('id', $voidTransferIds)->pluck('status', 'id');
+            : InterVehicleTransfer::whereIn('id', $voidTransferIds)
+                ->get(['id', 'status', 'void_finance_rejected_at'])
+                ->keyBy('id');
 
-        $reqs->each(function ($r) use ($byApprovalReq, $byId) {
+        $reqs->each(function ($r) use ($byApprovalReq, $voidTransferMap) {
             if ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
                 $r->setAttribute('related_transfer_status', $byApprovalReq[$r->id] ?? null);
+                $r->setAttribute('related_transfer_void_rejected', false);
             } elseif ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
                 $tId = $r->payload['transfer_id'] ?? null;
-                $r->setAttribute('related_transfer_status', $tId ? ($byId[$tId] ?? null) : null);
+                $t = $tId ? ($voidTransferMap[$tId] ?? null) : null;
+                $r->setAttribute('related_transfer_status', $t?->status);
+                $r->setAttribute('related_transfer_void_rejected', $t?->void_finance_rejected_at !== null);
             }
         });
 
@@ -270,10 +277,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
                             ], true);
                         @endphp
+                        @php $voidRejected = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
                         @if($isTransferRow && $r->status === 'approved' && $ts === 'approved_awaiting_finance')
                             <span class="badge badge-blue">관리 승인 (재무 처리 대기)</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided_awaiting_finance')
                             <span class="badge badge-amber">취소 승인 (재무 처리 대기)</span>
+                        @elseif($isTransferRow && $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID && $r->status === 'approved' && $ts === 'executed' && $voidRejected)
+                            <span class="badge badge-red">재무 취소 거부</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'executed')
                             <span class="badge badge-green">이체 완료</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided')
@@ -327,10 +337,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="card-tight">
             <div class="flex items-center justify-between">
                 <div class="font-medium text-gray-800">{{ $r->action_label }}</div>
+                @php $voidRejectedMobile = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
                 @if($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'approved_awaiting_finance')
                     <span class="badge badge-blue">관리 승인 (재무 대기)</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided_awaiting_finance')
                     <span class="badge badge-amber">취소 승인 (재무 대기)</span>
+                @elseif($isTransferRowMobile && $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID && $r->status === 'approved' && $tsMobile === 'executed' && $voidRejectedMobile)
+                    <span class="badge badge-red">재무 취소 거부</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'executed')
                     <span class="badge badge-green">이체 완료</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided')

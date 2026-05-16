@@ -28,6 +28,10 @@ use Illuminate\Support\Facades\DB;
  *   ↓ rejectByFinance() — 재무가 송금 불가 사유로 거부 (final_payment 미생성, ledger 영향 0)
  *   finance_rejected (영업이 사유 확인 후 새 transfer 요청 가능)
  *
+ * 큐 19-L — void 흐름 재무 거부 (voided_awaiting_finance 진입):
+ *   ↓ rejectVoidByFinance() — 재무가 환불 불가 사유로 void 거부 (final_payment 그대로 유지)
+ *   executed (이체 살아있음, 영업이 다시 void 요청 가능 — void 시도 무산)
+ *
  * 안전 가드 5종 (assertGuards):
  *   1. source ≠ target / 2. buyer_id 동일 / 3. currency 동일
  *   4. unpaid_ratio ≤ 0.5 AND amount ≤ available()
@@ -366,6 +370,43 @@ class InterVehicleTransferService
                 'finance_note' => $note,
             ]);
         });
+    }
+
+    /**
+     * 큐 19-L — void 재무 거부 (환불·역송금 불가 시).
+     *
+     * voided_awaiting_finance → executed (원래 이체 완료 상태로 복귀).
+     * final_payment 페어는 그대로 유지 — 이체 자체가 살아있음. 영업이 다시 void 요청 가능.
+     * void_finance_rejected_* 컬럼에 거부 메타 기록 (이력 추적).
+     *
+     * 가드:
+     *   - 상태가 voided_awaiting_finance 아니면 차단
+     *   - approver_id === financeUser->id 면 self-reject 차단 (SoD)
+     *   - reason 필수 5자 이상
+     *
+     * @throws DomainException 위 가드 위반 시
+     */
+    public function rejectVoidByFinance(InterVehicleTransfer $transfer, User $financeUser, string $reason): void
+    {
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 5) {
+            throw new DomainException('재무 거부 사유를 5자 이상 입력하세요.');
+        }
+
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
+            throw new DomainException("취소 승인 대기 상태의 이체만 재무 거부할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
+            throw new DomainException('관리 승인자와 재무 거부자는 다른 사용자여야 합니다 (SoD).');
+        }
+
+        $transfer->update([
+            'status' => InterVehicleTransfer::STATUS_EXECUTED,
+            'void_finance_rejected_by_user_id' => $financeUser->id,
+            'void_finance_rejected_at' => now(),
+            'void_finance_reject_reason' => $reason,
+        ]);
     }
 
     /**

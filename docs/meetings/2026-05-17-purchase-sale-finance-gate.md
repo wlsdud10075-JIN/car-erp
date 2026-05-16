@@ -618,6 +618,39 @@ exit
   - **큐 20 영향**: PaymentConfirmationService 도 동일 reject 패턴 (`rejectPayment` /
     `rejectPurchasePayment`) 따라야 함 — pending → confirmed 외에 pending → finance_rejected 분기.
 
+- **2026-05-17 — 큐 19-L: void 흐름 재무 거부 (일관성 보강)**
+  큐 19-K 직후 사용자 발견 — 정방향엔 거부 있고 void 흐름엔 없음(일관성 깨짐). 재무가 환불 불가·역송금 거부
+  사유로 void를 거부할 수 있어야 함.
+  - **사용자 결정 (옵션 1, executed 복귀)**: void 거부 시 transfer.status는 `executed`로 복귀 (이체 자체는
+    살아있음, final_payment 페어 유지). 영업이 새 void 요청 가능. 새 상태(voided_finance_rejected) 안 만들고
+    UI 분기 단순화.
+  - **fix (커밋 별도)**:
+    1. 마이그레이션 `2026_05_17_000002_add_void_finance_rejection_to_inter_vehicle_transfers` —
+       `void_finance_rejected_by_user_id` / `void_finance_rejected_at` / `void_finance_reject_reason` 3컬럼.
+    2. 모델 `InterVehicleTransfer::financeVoidRejecter()` 관계 + fillable + cast. 새 상태 미신설.
+    3. 서비스 `InterVehicleTransferService::rejectVoidByFinance($transfer, $financeUser, string $reason)` —
+       state 가드(voided_awaiting_finance만) + SoD(approver≠finance) + 사유 5자↑ + transfer.status=executed
+       복귀 + final_payment 페어 그대로 유지.
+    4. UI `/erp/transfers` 모달 — openModal reject 가드를 awaiting 2종(정방향+void)으로 확장,
+       reject() 메서드에 status 분기(rejectByFinance vs rejectVoidByFinance), 거부 모달 텍스트도
+       정방향/void 분기 ("취소 거부 확인" 라벨 + 안내문 분리).
+    5. UI 차량 편집 패널 lastDecided — 큐 19-J fallback 우회 조건 추가
+       (void approved + transfer.void_finance_rejected_at IS NOT NULL 이면 voidDecided 그대로 유지),
+       새 ldKey `void:finance_rejected` red ❌ "재무가 취소 거부 (이체 유지)" 분기 + 거부자/사유 노출.
+    6. UI `/erp/approvals` — void 행 + transfer.status=executed + void_finance_rejected_at 있으면
+       red badge "재무 취소 거부" 분기 (데스크탑/모바일 양쪽). related_transfer_void_rejected boolean
+       메타 추가 (N+1 회피 단일 쿼리 유지).
+    7. 자동 테스트 5건:
+       - `InterVehicleTransferServiceTest::test_reject_void_by_finance_reverts_to_executed_keeping_final_payments`
+       - `InterVehicleTransferServiceTest::test_reject_void_by_finance_blocks_executed_status`
+       - `InterVehicleTransferServiceTest::test_reject_void_by_finance_self_reject_blocked`
+       - `InterVehicleTransferServiceTest::test_sales_can_retry_void_after_finance_void_reject`
+       - `TransfersIndexTest::test_finance_void_reject_reverts_to_executed_keeping_final_payments`
+  - **회귀 결과**: 231 passed (226 → 231, +5, 회귀 없음).
+  - **트레이드오프**: void 거부 후 UI에 emerald "이체 완료"가 안 보이고 red "재무 취소 거부" 만 노출됨
+    (voidDecided가 mostRecent 이므로 transferDecided 경로 우회). 이체 자체 정보는 잔금 row + 미수율로
+    확인 가능하므로 정보 손실 없음. 사용자 결정 2026-05-17 컨펌.
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
