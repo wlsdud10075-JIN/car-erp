@@ -532,6 +532,21 @@ queue worker 영향: 무관
     3. 자동 테스트 1건 (`test_transfer_context_void_last_decided_shown_after_rejection`).
   - **회귀 결과**: 219 passed (218 → 219, 회귀 없음).
 
+- **2026-05-16 — lastDecided 박스 1개 통합 (큐 19-I, 사용자 결정 후)**
+  19-H 도입 후 사용자 피드백: 박스 2개로 분리할 필요 없이 가장 최근 결정 1건만 표시해도
+  충분. 큐 19-C 보강 #2 (`e44ec93`) "혼란 없이 최신 상태" 일관성.
+  - **변경**:
+    1. `transferContext()` — `transferDecided` + `voidDecided` 통합. `decided_at` 가장 늦은
+       1건만 `base['lastDecided']` 채움 + `'type'` 필드 (`'transfer'` / `'void'`).
+    2. view — `voidLastDecided` 박스 제거, `lastDecided` 박스에 type 분기:
+       - `type='transfer'` → 기존 5상태 분기
+       - `type='void'` → 빨강 ❌ "이체 취소 요청 거부됨" / 회색 ⊘ "이체 취소 요청 취소됨"
+    3. 자동 테스트 갱신 — `test_transfer_context_void_last_decided_shown_after_rejection`
+       → `test_transfer_context_last_decided_unified_void_rejection` (`type='void'` 검증).
+  - **트레이드오프**: emerald "이체 완료" 박스는 void 거부 후 가려지지만, transfer 상태 자체는
+    잔금 row + 미수율로 확인 가능하므로 정보 손실 없음.
+  - **회귀 결과**: 219 passed (회귀 없음).
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
