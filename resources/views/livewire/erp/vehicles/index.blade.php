@@ -1541,7 +1541,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function transferContext(): array
     {
         $base = ['eligible' => false, 'reason' => '', 'received' => 0.0, 'limit' => 0.0, 'candidates' => collect(),
-            'pending' => null, 'lastDecided' => null, 'voidLastDecided' => null];
+            'pending' => null, 'lastDecided' => null];
         if ($this->editingId === null) {
             $base['reason'] = '차량 저장 후 이용 가능합니다.';
 
@@ -1589,63 +1589,69 @@ new #[Layout('components.layouts.app')] class extends Component {
             ];
         }
 
-        // 가장 최근 결정된 요청 (pending 없을 때만 — 마지막 처리 결과 표시)
+        // 큐 19-I — transfer + void 결정 중 가장 최근(decided_at) 1건만 lastDecided 로 표시.
+        // 19-C 보강 #2 "혼란 없이 최신 상태" 일관성 — 사용자 결정 2026-05-16.
+        // type 필드로 view 분기 ('transfer' 5상태 / 'void' rejected·cancelled).
         if (! $pendingReq) {
-            $decided = $recentRequests->first(fn ($r) => in_array($r->status, [
+            $transferDecided = $recentRequests->first(fn ($r) => in_array($r->status, [
                 ApprovalRequest::STATUS_APPROVED,
                 ApprovalRequest::STATUS_REJECTED,
                 ApprovalRequest::STATUS_CANCELLED,
             ], true));
-            if ($decided) {
-                $p = $decided->payload ?? [];
-                $relatedTransfer = InterVehicleTransfer::where('approval_request_id', $decided->id)
+
+            $transferIds = InterVehicleTransfer::where('source_vehicle_id', $source->id)->pluck('id');
+            $voidDecided = $transferIds->isNotEmpty()
+                ? ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
+                    ->where('target_type', InterVehicleTransfer::class)
+                    ->whereIn('target_id', $transferIds)
+                    ->whereIn('status', [
+                        ApprovalRequest::STATUS_REJECTED,
+                        ApprovalRequest::STATUS_CANCELLED,
+                    ])
+                    ->orderByDesc('decided_at')
+                    ->first()
+                : null;
+
+            // decided_at 가장 늦은 1건 선택
+            $mostRecent = collect([$transferDecided, $voidDecided])
+                ->filter()
+                ->sortByDesc(fn ($r) => $r->decided_at?->timestamp ?? 0)
+                ->first();
+
+            if ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
+                $p = $mostRecent->payload ?? [];
+                $relatedTransfer = InterVehicleTransfer::where('approval_request_id', $mostRecent->id)
                     ->with('financeConfirmer')->first();
                 $base['lastDecided'] = [
-                    'approval_request_id' => $decided->id,
-                    'status' => $decided->status,
+                    'type' => 'transfer',
+                    'approval_request_id' => $mostRecent->id,
+                    'status' => $mostRecent->status,
                     'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
                     'amount' => (float) ($p['amount'] ?? 0),
                     'currency' => $p['currency'] ?? $source->currency,
-                    'decision_note' => $decided->decision_note,
-                    'decided_at' => $decided->decided_at,
-                    'approver_name' => $decided->approver?->name,
+                    'decision_note' => $mostRecent->decision_note,
+                    'decided_at' => $mostRecent->decided_at,
+                    'approver_name' => $mostRecent->approver?->name,
                     // 큐 19-F — transfer 5상태 분기를 위한 메타 부착
                     'transfer_status' => $relatedTransfer?->status,
                     'finance_confirmer_name' => $relatedTransfer?->financeConfirmer?->name,
                     'confirmed_at' => $relatedTransfer?->confirmed_at,
                     'finance_note' => $relatedTransfer?->finance_note,
                 ];
-            }
-        }
-
-        // 큐 19-H — void(이체 취소) ApprovalRequest 거부/취소 정보 별도 표시.
-        // lastDecided 는 TYPE_INTER_VEHICLE_TRANSFER 만 조회하므로 void 거부/취소는
-        // emerald "이체 완료" 박스 위에 별도 빨강/회색 박스로 노출 — 사용자가
-        // 취소 요청 사유를 확인할 수 있게.
-        $transferIds = InterVehicleTransfer::where('source_vehicle_id', $source->id)->pluck('id');
-        if ($transferIds->isNotEmpty()) {
-            $voidDecided = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
-                ->where('target_type', InterVehicleTransfer::class)
-                ->whereIn('target_id', $transferIds)
-                ->whereIn('status', [
-                    ApprovalRequest::STATUS_REJECTED,
-                    ApprovalRequest::STATUS_CANCELLED,
-                ])
-                ->orderByDesc('created_at')
-                ->first();
-            if ($voidDecided) {
-                $p = $voidDecided->payload ?? [];
-                $base['voidLastDecided'] = [
-                    'approval_request_id' => $voidDecided->id,
-                    'status' => $voidDecided->status,
-                    'transfer_id' => $p['transfer_id'] ?? $voidDecided->target_id,
+            } elseif ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
+                $p = $mostRecent->payload ?? [];
+                $base['lastDecided'] = [
+                    'type' => 'void',
+                    'approval_request_id' => $mostRecent->id,
+                    'status' => $mostRecent->status,
+                    'transfer_id' => $p['transfer_id'] ?? $mostRecent->target_id,
                     'target_vehicle_number' => $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?'),
                     'amount' => (float) ($p['amount'] ?? 0),
                     'currency' => $p['currency'] ?? $source->currency,
-                    'decision_note' => $voidDecided->decision_note,
-                    'reason' => $voidDecided->reason,
-                    'decided_at' => $voidDecided->decided_at,
-                    'approver_name' => $voidDecided->approver?->name,
+                    'decision_note' => $mostRecent->decision_note,
+                    'reason' => $mostRecent->reason,
+                    'decided_at' => $mostRecent->decided_at,
+                    'approver_name' => $mostRecent->approver?->name,
                 ];
             }
         }
@@ -2657,9 +2663,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if(!empty($transferCtx['lastDecided']))
                     @php
                         $ld = $transferCtx['lastDecided'];
-                        $ldKey = $ld['status'];
-                        if ($ld['status'] === 'approved' && ! empty($ld['transfer_status'])) {
-                            $ldKey = 'approved:'.$ld['transfer_status'];
+                        $isVoid = ($ld['type'] ?? 'transfer') === 'void';
+                        if ($isVoid) {
+                            $ldKey = 'void:'.$ld['status'];
+                        } else {
+                            $ldKey = $ld['status'];
+                            if ($ld['status'] === 'approved' && ! empty($ld['transfer_status'])) {
+                                $ldKey = 'approved:'.$ld['transfer_status'];
+                            }
                         }
                         $ldClass = match($ldKey) {
                             'approved:approved_awaiting_finance' => ['border-blue-200', 'bg-blue-50', 'text-blue-900', 'text-blue-800', 'text-blue-700', 'border-blue-100', '⏳', '관리 승인 — 재무 처리 대기 중', '승인 메모'],
@@ -2669,6 +2680,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             'approved' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
                             'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '최근 이체 요청 거부됨', '거부 사유'],
                             'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
+                            'void:rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '이체 취소 요청 거부됨', '거부 사유'],
+                            'void:cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 요청 취소됨', '메모'],
                             default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '최근 이체 요청', '메모'],
                         };
                     @endphp
@@ -2678,16 +2691,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <strong>{{ $ldClass[7] }}</strong>
                         </div>
                         <div class="mt-1 space-y-0.5 {{ $ldClass[3] }}">
-                            <div>
-                                대상 <span class="font-mono">{{ $ld['target_vehicle_number'] }}</span>
-                                · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
-                                · {{ $ld['approver_name'] ?? '관리자' }}
-                                ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
-                            </div>
+                            @if($isVoid)
+                                <div>
+                                    이체 #{{ $ld['transfer_id'] }}
+                                    · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
+                                    · {{ $ld['approver_name'] ?? '관리자' }}
+                                    ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
+                                </div>
+                                @if($ld['reason'] ?? null)
+                                <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                    <span class="font-semibold">취소 요청 사유:</span> {{ $ld['reason'] }}
+                                </div>
+                                @endif
+                            @else
+                                <div>
+                                    대상 <span class="font-mono">{{ $ld['target_vehicle_number'] }}</span>
+                                    · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
+                                    · {{ $ld['approver_name'] ?? '관리자' }}
+                                    ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
+                                </div>
+                            @endif
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
                                 <span class="font-semibold">{{ $ldClass[8] }}:</span> {{ $ld['decision_note'] ?: '(메모 없음)' }}
                             </div>
-                            @if(in_array($ldKey, ['approved:executed', 'approved:voided'], true) && ! empty($ld['finance_confirmer_name']))
+                            @if(! $isVoid && in_array($ldKey, ['approved:executed', 'approved:voided'], true) && ! empty($ld['finance_confirmer_name']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
                                 <span class="font-semibold">재무 확정:</span>
                                 {{ $ld['finance_confirmer_name'] }}
@@ -2697,41 +2724,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </div>
                             @endif
-                        </div>
-                    </div>
-                    @endif
-
-                    {{-- 큐 19-H — void(이체 취소) 요청 거부/취소 박스.
-                         lastDecided emerald "이체 완료" 박스 아래 별도 노출. --}}
-                    @if(!empty($transferCtx['voidLastDecided']))
-                    @php
-                        $vld = $transferCtx['voidLastDecided'];
-                        $vldClass = match($vld['status']) {
-                            'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '이체 취소 요청 거부됨', '거부 사유'],
-                            'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 요청 취소됨', '메모'],
-                            default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '이체 취소 요청', '메모'],
-                        };
-                    @endphp
-                    <div class="rounded-md border {{ $vldClass[0] }} {{ $vldClass[1] }} p-3 text-xs {{ $vldClass[2] }} mb-2">
-                        <div class="flex items-center gap-2">
-                            <span>{{ $vldClass[6] }}</span>
-                            <strong>{{ $vldClass[7] }}</strong>
-                        </div>
-                        <div class="mt-1 space-y-0.5 {{ $vldClass[3] }}">
-                            <div>
-                                이체 #{{ $vld['transfer_id'] }}
-                                · {{ number_format($vld['amount']) }} {{ $vld['currency'] }}
-                                · {{ $vld['approver_name'] ?? '관리자' }}
-                                ({{ $vld['decided_at']?->format('Y-m-d H:i') }})
-                            </div>
-                            @if($vld['reason'])
-                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $vldClass[4] }} border {{ $vldClass[5] }}">
-                                <span class="font-semibold">취소 요청 사유:</span> {{ $vld['reason'] }}
-                            </div>
-                            @endif
-                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $vldClass[4] }} border {{ $vldClass[5] }}">
-                                <span class="font-semibold">{{ $vldClass[8] }}:</span> {{ $vld['decision_note'] ?: '(메모 없음)' }}
-                            </div>
                         </div>
                     </div>
                     @endif

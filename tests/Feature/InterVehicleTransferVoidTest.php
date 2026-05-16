@@ -257,27 +257,37 @@ class InterVehicleTransferVoidTest extends TestCase
     }
 
     /**
-     * 큐 19-H (회의록 부록 A Step 7 발견 버그) — void 요청 거부 시 거부 사유가
-     * 차량 편집 패널 자금 이체 섹션에 별도 박스로 표시되어야 함.
+     * 큐 19-H / 19-I (회의록 부록 A Step 7 발견 버그) — void 요청 거부 시 거부 사유가
+     * 차량 편집 패널 자금 이체 섹션에 표시되어야 함.
      *
-     * 19-H 도입 전엔 transferContext 가 TYPE_INTER_VEHICLE_TRANSFER 만 조회해서
-     * void(TYPE_INTER_VEHICLE_TRANSFER_VOID) 거부 정보가 누락 — emerald "이체 완료"
-     * 박스만 보이고 거부 사유 안 보임.
+     * 19-I 통합 (사용자 결정 2026-05-16) — transfer/void 결정 박스 1개 통합.
+     * 가장 최근(decided_at) 결정이 void rejected 이면 lastDecided.type='void' 로 설정 +
+     * emerald "이체 완료" 박스는 가려지고 빨강 "이체 취소 요청 거부됨" 박스만 표시.
      */
-    public function test_transfer_context_void_last_decided_shown_after_rejection(): void
+    public function test_transfer_context_last_decided_unified_void_rejection(): void
     {
         $c = $this->executeTransferScenario();
+
+        // executeTransferScenario 는 service->approve()/confirmByFinance() 만 호출하므로
+        // ApprovalRequest.status 는 pending 그대로. 실제 /erp/approvals decide() 흐름과
+        // 일치시키기 위해 transfer ApprovalRequest 를 approved 로 marking.
+        $c['transfer']->approvalRequest->update([
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $c['manager']->id,
+            'decided_at' => now(),
+        ]);
 
         // 영업이 void 요청
         $this->actingAs($c['sales']);
         $voidReq = $c['service']->voidRequest($c['transfer']->fresh(), $c['sales'], '바이어 신용 문제로 취소 요청');
 
-        // 관리가 거부 (/erp/approvals decide() 와 동일 흐름)
+        // 관리가 거부 (/erp/approvals decide() 와 동일 흐름).
+        // transfer 승인 시점보다 늦은 decided_at → 가장 최근 결정.
         $voidReq->update([
             'status' => ApprovalRequest::STATUS_REJECTED,
             'approver_id' => $c['manager']->id,
             'decision_note' => '회계 확인 필요 — 거부',
-            'decided_at' => now(),
+            'decided_at' => now()->addMinute(),
         ]);
 
         // 영업이 source 차량 편집 패널 열기
@@ -285,11 +295,12 @@ class InterVehicleTransferVoidTest extends TestCase
         $component = Volt::test('erp.vehicles.index')->call('openEdit', $c['source']->id);
         $ctx = $component->instance()->transferContext;
 
-        $this->assertNotNull($ctx['voidLastDecided']);
-        $this->assertEquals('rejected', $ctx['voidLastDecided']['status']);
-        $this->assertEquals($c['transfer']->id, $ctx['voidLastDecided']['transfer_id']);
-        $this->assertEquals('회계 확인 필요 — 거부', $ctx['voidLastDecided']['decision_note']);
-        $this->assertEquals('바이어 신용 문제로 취소 요청', $ctx['voidLastDecided']['reason']);
-        $this->assertEquals($c['manager']->name, $ctx['voidLastDecided']['approver_name']);
+        $this->assertNotNull($ctx['lastDecided']);
+        $this->assertEquals('void', $ctx['lastDecided']['type']);
+        $this->assertEquals('rejected', $ctx['lastDecided']['status']);
+        $this->assertEquals($c['transfer']->id, $ctx['lastDecided']['transfer_id']);
+        $this->assertEquals('회계 확인 필요 — 거부', $ctx['lastDecided']['decision_note']);
+        $this->assertEquals('바이어 신용 문제로 취소 요청', $ctx['lastDecided']['reason']);
+        $this->assertEquals($c['manager']->name, $ctx['lastDecided']['approver_name']);
     }
 }
