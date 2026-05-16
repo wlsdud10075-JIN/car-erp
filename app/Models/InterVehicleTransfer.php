@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  *   executed                       — 재무 확정 (final_payment 페어 생성, ledger 기록)
  *   voided_awaiting_finance        — 영업 void 요청 + 관리 승인 (의사결정 통과, 반대 부호 final_payment 미생성)
  *   voided                         — 재무 void 확정 (반대 부호 final_payment 페어 생성)
+ *   finance_rejected               — 재무 거부 (큐 19-K, approved_awaiting_finance 진입, ledger 미반영)
  *
  * STATUS_APPROVED 는 deprecated — 19-F-A 마이그레이션이 backfill로 approved_awaiting_finance 로 전환.
  * 신규 흐름에선 사용 금지. 19-F-B Service 에서 approve() 가 approved_awaiting_finance 로 직접 set.
@@ -36,6 +37,7 @@ class InterVehicleTransfer extends Model
         'executed_at', 'voided_at', 'void_reason',
         'requester_id', 'approver_id',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
+        'finance_rejected_by_user_id', 'finance_rejected_at', 'finance_reject_reason',
         'notes',
     ];
 
@@ -44,6 +46,7 @@ class InterVehicleTransfer extends Model
         'executed_at' => 'datetime',
         'voided_at' => 'datetime',
         'confirmed_at' => 'datetime',
+        'finance_rejected_at' => 'datetime',
     ];
 
     public const STATUS_PENDING = 'pending';
@@ -59,6 +62,8 @@ class InterVehicleTransfer extends Model
 
     public const STATUS_VOIDED = 'voided';
 
+    public const STATUS_FINANCE_REJECTED = 'finance_rejected';
+
     public const STATUSES = [
         self::STATUS_PENDING => '대기',
         self::STATUS_APPROVED => '승인',  // legacy
@@ -66,6 +71,7 @@ class InterVehicleTransfer extends Model
         self::STATUS_EXECUTED => '실행 완료',
         self::STATUS_VOIDED_AWAITING_FINANCE => '취소 승인 (재무 처리 대기)',
         self::STATUS_VOIDED => '취소',
+        self::STATUS_FINANCE_REJECTED => '재무 거부',
     ];
 
     public function sourceVehicle(): BelongsTo
@@ -103,6 +109,11 @@ class InterVehicleTransfer extends Model
         return $this->belongsTo(User::class, 'confirmed_by_user_id');
     }
 
+    public function financeRejecter(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'finance_rejected_by_user_id');
+    }
+
     public function finalPayments(): HasMany
     {
         return $this->hasMany(FinalPayment::class, 'transfer_id');
@@ -121,6 +132,7 @@ class InterVehicleTransfer extends Model
             self::STATUS_EXECUTED => 'badge-green',
             self::STATUS_VOIDED_AWAITING_FINANCE => 'badge-amber',
             self::STATUS_VOIDED => 'badge-gray',
+            self::STATUS_FINANCE_REJECTED => 'badge-red',
             default => 'badge-gray',
         };
     }

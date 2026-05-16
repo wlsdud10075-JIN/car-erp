@@ -24,6 +24,10 @@ use Illuminate\Support\Facades\DB;
  *   ↓ confirmVoidByFinance() — 재무 실물 확정 (반대 부호 final_payment 페어 생성)
  *   voided
  *
+ * 큐 19-K — 재무 정방향 거부 (approved_awaiting_finance 진입):
+ *   ↓ rejectByFinance() — 재무가 송금 불가 사유로 거부 (final_payment 미생성, ledger 영향 0)
+ *   finance_rejected (영업이 사유 확인 후 새 transfer 요청 가능)
+ *
  * 안전 가드 5종 (assertGuards):
  *   1. source ≠ target / 2. buyer_id 동일 / 3. currency 동일
  *   4. unpaid_ratio ≤ 0.5 AND amount ≤ available()
@@ -206,6 +210,42 @@ class InterVehicleTransferService
                 'finance_note' => $note,
             ]);
         });
+    }
+
+    /**
+     * 큐 19-K — 재무 정방향 거부 (실물 송금 불가 시).
+     *
+     * approved_awaiting_finance → finance_rejected.
+     * final_payment 미생성 — ledger 영향 0. 영업이 사유 확인 후 새 transfer 요청 가능 (한도 그대로).
+     *
+     * 가드:
+     *   - 상태가 approved_awaiting_finance 아니면 차단 (executed/voided 등 거부 불가)
+     *   - approver_id === financeUser->id 면 self-reject 차단 (SoD)
+     *   - reason 필수 5자 이상 — UI 모달에서 1차 검증, Service 레벨 2차 보장
+     *
+     * @throws DomainException 위 가드 위반 시
+     */
+    public function rejectByFinance(InterVehicleTransfer $transfer, User $financeUser, string $reason): void
+    {
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 5) {
+            throw new DomainException('재무 거부 사유를 5자 이상 입력하세요.');
+        }
+
+        $transfer = $transfer->fresh();
+        if ($transfer->status !== InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
+            throw new DomainException("관리 승인 대기 상태의 이체만 재무 거부할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
+            throw new DomainException('관리 승인자와 재무 거부자는 다른 사용자여야 합니다 (SoD).');
+        }
+
+        $transfer->update([
+            'status' => InterVehicleTransfer::STATUS_FINANCE_REJECTED,
+            'finance_rejected_by_user_id' => $financeUser->id,
+            'finance_rejected_at' => now(),
+            'finance_reject_reason' => $reason,
+        ]);
     }
 
     /**

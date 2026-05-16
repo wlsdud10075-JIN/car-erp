@@ -586,6 +586,38 @@ exit
     3. 자동 테스트 1건: `test_transfer_context_last_decided_shows_voided_after_second_void_approved`.
   - **회귀 결과**: 220 passed (219 → 220, 회귀 없음).
 
+- **2026-05-17 — 큐 19-K: 재무 정방향 거부 흐름 (UI 부재 결함)**
+  부록 A B 흐름 검증 중 사용자 발견. `/erp/transfers` 모달에 "재무 처리 완료" 버튼만 있고
+  **거부 버튼 부재**. 재무가 송금 불가 사유(통장 잔액 부족·송금 실패·입금자 불일치)로
+  거부할 UI/Service 자체가 없어 사용자가 finance_note에 "거부"라고 적고 confirm 처리 →
+  ledger에 가짜 자금 이동이 기록되는 위험.
+  - **원인**: 큐 19-F 5상태 머신 설계 시 재무 거부 분기 누락. confirmByFinance / confirmVoidByFinance만 정의.
+  - **fix (커밋 별도)**:
+    1. 마이그레이션 `2026_05_17_000001_add_finance_rejection_to_inter_vehicle_transfers` —
+       `finance_rejected_by_user_id` / `finance_rejected_at` / `finance_reject_reason` 3컬럼.
+    2. 모델 `InterVehicleTransfer::STATUS_FINANCE_REJECTED` 상수 + STATUSES + status_badge red +
+       `financeRejecter()` 관계.
+    3. 서비스 `InterVehicleTransferService::rejectByFinance($transfer, $financeUser, string $reason)` —
+       state 가드(approved_awaiting_finance만) + SoD(approver≠finance) + 사유 5자↑ 검증 +
+       final_payment 미생성. void 흐름 거부는 별도 큐 19-L로 분리.
+    4. UI `/erp/transfers` 모달 — `decisionMode` 'confirm'/'reject' 분기, 정방향(approved_awaiting_finance)에서만
+       red "거부" 버튼 노출, 거부 모달은 사유 textarea(필수 5자↑) + red 컨펌. 데스크탑/모바일 양쪽.
+    5. UI 차량 편집 패널 lastDecided 박스 — `approved:finance_rejected` red ❌ "재무 거부 (송금 불가)"
+       분기 추가, 거부자/시각/사유 노출. "다시 요청" 버튼 자동 활성 (한도 그대로).
+    6. UI `/erp/approvals` 라벨 — transfer.status=finance_rejected 행에 red badge "재무 거부".
+    7. 자동 테스트 6건:
+       - `InterVehicleTransferServiceTest::test_reject_by_finance_marks_finance_rejected_without_creating_payments`
+       - `InterVehicleTransferServiceTest::test_reject_by_finance_blocks_pending_status`
+       - `InterVehicleTransferServiceTest::test_reject_by_finance_blocks_executed_status`
+       - `InterVehicleTransferServiceTest::test_reject_by_finance_self_reject_blocked`
+       - `InterVehicleTransferServiceTest::test_reject_by_finance_requires_reason_min_length`
+       - `TransfersIndexTest::test_finance_reject_marks_status_and_records_reason`
+    8. `inProgressTransfer` 가드(큐 19-G)는 finance_rejected status를 검사 대상에서 제외 (자동) →
+       영업이 거부 사유 확인 후 새 transfer 요청 가능.
+  - **회귀 결과**: 226 passed (220 → 226, +6, 회귀 없음).
+  - **큐 20 영향**: PaymentConfirmationService 도 동일 reject 패턴 (`rejectPayment` /
+    `rejectPurchasePayment`) 따라야 함 — pending → confirmed 외에 pending → finance_rejected 분기.
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`

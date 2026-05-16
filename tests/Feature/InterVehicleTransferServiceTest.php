@@ -539,4 +539,87 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->expectExceptionMessage('취소 승인 대기 상태의 이체만');
         $this->service->confirmVoidByFinance($transfer, $c['finance']);
     }
+
+    /**
+     * 큐 19-K — rejectByFinance 정상 흐름.
+     * approved_awaiting_finance에서 재무 거부 → finance_rejected 전환 + 메타 기록 + final_payment 미생성.
+     */
+    public function test_reject_by_finance_marks_finance_rejected_without_creating_payments(): void
+    {
+        $c = $this->makeContext(50_000_000);
+
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+
+        $this->service->rejectByFinance($transfer, $c['finance'], '통장 잔액 부족 — 재요청 필요');
+
+        $transfer->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_FINANCE_REJECTED, $transfer->status);
+        $this->assertEquals($c['finance']->id, $transfer->finance_rejected_by_user_id);
+        $this->assertNotNull($transfer->finance_rejected_at);
+        $this->assertEquals('통장 잔액 부족 — 재요청 필요', $transfer->finance_reject_reason);
+
+        // ledger 영향 0 — final_payment 미생성
+        $this->assertEquals(0, FinalPayment::where('transfer_id', $transfer->id)->count());
+
+        // executed 메타는 그대로 비어있어야 (confirmedBy / executedAt 미세팅)
+        $this->assertNull($transfer->executed_at);
+        $this->assertNull($transfer->confirmed_by_user_id);
+    }
+
+    /**
+     * 큐 19-K — pending 상태에서 rejectByFinance 차단 (관리 승인 전).
+     */
+    public function test_reject_by_finance_blocks_pending_status(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
+        $this->service->rejectByFinance($transfer, $c['finance'], '통장 잔액 부족');
+    }
+
+    /**
+     * 큐 19-K — executed 상태에서 rejectByFinance 차단 (이미 ledger 기록 후 거부 불가).
+     */
+    public function test_reject_by_finance_blocks_executed_status(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+        $this->service->confirmByFinance($transfer, $c['finance']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
+        $this->service->rejectByFinance($transfer, $c['finance'], '통장 잔액 부족');
+    }
+
+    /**
+     * 큐 19-K — SoD: 관리 승인자 == 재무 거부자 차단.
+     */
+    public function test_reject_by_finance_self_reject_blocked(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('SoD');
+        $this->service->rejectByFinance($transfer, $c['manager'], '통장 잔액 부족');
+    }
+
+    /**
+     * 큐 19-K — 사유 5자 미만 차단 (UI 1차, Service 2차 검증).
+     */
+    public function test_reject_by_finance_requires_reason_min_length(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
+        $this->service->approve($transfer, $c['manager']);
+
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('5자 이상');
+        $this->service->rejectByFinance($transfer, $c['finance'], '부족');
+    }
 }

@@ -278,6 +278,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <span class="badge badge-green">이체 완료</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided')
                             <span class="badge badge-gray">이체 취소 완료</span>
+                        @elseif($isTransferRow && $r->status === 'approved' && $ts === 'finance_rejected')
+                            <span class="badge badge-red">재무 거부</span>
                         @else
                             <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
                         @endif
@@ -333,6 +335,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge badge-green">이체 완료</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided')
                     <span class="badge badge-gray">이체 취소 완료</span>
+                @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'finance_rejected')
+                    <span class="badge badge-red">재무 거부</span>
                 @else
                     <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
                 @endif

@@ -25,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     #[Url]
-    public string $statusFilter = 'awaiting';   // awaiting / all / executed / voided
+    public string $statusFilter = 'awaiting';   // awaiting / all / executed / voided / finance_rejected
 
     #[Url]
     public int $perPage = 10;
@@ -35,6 +35,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $modalTransferId = null;
 
     public string $financeNote = '';
+
+    /** 큐 19-K — 'confirm' (재무 처리 완료) / 'reject' (재무 거부) */
+    public string $decisionMode = 'confirm';
+
+    public string $rejectReason = '';
 
     public function mount(): void
     {
@@ -67,6 +72,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]))
             ->when($this->statusFilter === 'executed', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_EXECUTED))
             ->when($this->statusFilter === 'voided', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_VOIDED))
+            ->when($this->statusFilter === 'finance_rejected', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_FINANCE_REJECTED))
             ->orderByDesc('updated_at')
             ->paginate($this->perPage);
     }
@@ -80,7 +86,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ])->count();
     }
 
-    public function openModal(int $id): void
+    public function openModal(int $id, string $mode = 'confirm'): void
     {
         $transfer = InterVehicleTransfer::find($id);
         if (! $transfer || ! in_array($transfer->status, [
@@ -96,8 +102,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
+        // 큐 19-K — 거부 모드는 정방향(approved_awaiting_finance)에서만 가능. void는 별도 큐 19-L.
+        if ($mode === 'reject' && $transfer->status !== InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
+            $this->dispatch('notify', message: '재무 거부는 정방향 이체만 가능합니다 (취소 거부는 별도 안건).', type: 'warning');
+
+            return;
+        }
         $this->modalTransferId = $id;
+        $this->decisionMode = in_array($mode, ['confirm', 'reject'], true) ? $mode : 'confirm';
         $this->financeNote = '';
+        $this->rejectReason = '';
         $this->showModal = true;
     }
 
@@ -105,7 +119,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->showModal = false;
         $this->modalTransferId = null;
+        $this->decisionMode = 'confirm';
         $this->financeNote = '';
+        $this->rejectReason = '';
     }
 
     public function confirm(): void
@@ -138,6 +154,34 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->dispatch('notify', message: '재무 확정 실패: '.$e->getMessage(), type: 'error');
         }
     }
+
+    /**
+     * 큐 19-K — 재무 정방향 거부 (송금 불가 사유 시).
+     * approved_awaiting_finance → finance_rejected. final_payment 미생성, 영업이 새 요청 가능.
+     */
+    public function reject(): void
+    {
+        $this->validate(
+            ['rejectReason' => ['required', 'string', 'min:5']],
+            ['rejectReason.required' => '거부 사유를 5자 이상 입력하세요.', 'rejectReason.min' => '거부 사유를 5자 이상 입력하세요.'],
+        );
+
+        $transfer = InterVehicleTransfer::find($this->modalTransferId);
+        if (! $transfer) {
+            $this->dispatch('notify', message: '이체 정보를 찾을 수 없습니다.', type: 'error');
+            $this->closeModal();
+
+            return;
+        }
+
+        try {
+            app(InterVehicleTransferService::class)->rejectByFinance($transfer, auth()->user(), $this->rejectReason);
+            $this->dispatch('notify', message: '재무 거부 완료 — 영업에게 사유가 노출됩니다.', type: 'success');
+            $this->closeModal();
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: '재무 거부 실패: '.$e->getMessage(), type: 'error');
+        }
+    }
 }; ?>
 
 <div>
@@ -166,7 +210,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <div class="flex gap-1">
-            @foreach(['awaiting' => '재무 대기', 'executed' => '실행 완료', 'voided' => '취소', 'all' => '전체'] as $val => $label)
+            @foreach(['awaiting' => '재무 대기', 'executed' => '실행 완료', 'voided' => '취소', 'finance_rejected' => '재무 거부', 'all' => '전체'] as $val => $label)
             <button wire:click="$set('statusFilter', '{{ $val }}')"
                     class="rounded-full px-3 py-1 text-xs font-medium transition
                            {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
@@ -250,11 +294,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 SoD 차단
                             </button>
                             @else
-                            <button wire:click="openModal({{ $t->id }})"
-                                    class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
-                                재무 처리 완료
-                            </button>
+                            <div class="flex justify-end gap-1">
+                                <button wire:click="openModal({{ $t->id }}, 'confirm')"
+                                        class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
+                                    재무 처리 완료
+                                </button>
+                                {{-- 큐 19-K — 정방향 이체에서만 거부 버튼 (void 거부는 별도 큐) --}}
+                                @if($t->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                                <button wire:click="openModal({{ $t->id }}, 'reject')"
+                                        title="송금 불가 사유로 거부 (영업이 사유 확인 후 새 요청 가능)"
+                                        class="rounded bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
+                                    거부
+                                </button>
+                                @endif
+                            </div>
                             @endif
+                        @elseif($t->status === InterVehicleTransfer::STATUS_FINANCE_REJECTED)
+                            <span class="text-xs text-red-600">
+                                {{ $t->financeRejecter?->name ?? '재무' }} 거부
+                            </span>
                         @else
                             <span class="text-xs text-gray-400">
                                 @if($t->confirmed_by_user_id)
@@ -302,16 +360,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ number_format($t->amount, 0) }} {{ $t->currency }}
             </div>
             @if($isAwaiting)
-            <div class="mt-2">
+            <div class="mt-2 flex flex-col gap-1">
                 @if($selfConfirm)
                 <button disabled class="w-full rounded bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-400 cursor-not-allowed">
                     SoD 차단 — 본인 승인 건 처리 불가
                 </button>
                 @else
-                <button wire:click="openModal({{ $t->id }})"
+                <button wire:click="openModal({{ $t->id }}, 'confirm')"
                         class="w-full rounded bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white">
                     재무 처리 완료
                 </button>
+                @if($t->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                <button wire:click="openModal({{ $t->id }}, 'reject')"
+                        class="w-full rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white">
+                    거부 (송금 불가)
+                </button>
+                @endif
                 @endif
             </div>
             @endif
@@ -325,11 +389,35 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 </div>
 
-{{-- 재무 확정 모달 --}}
+{{-- 재무 확정 / 거부 모달 (큐 19-K — decisionMode 분기) --}}
 @if($showModal)
 <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
      wire:click.self="closeModal">
     <div class="card max-w-md mx-4 shadow-2xl">
+        @if($decisionMode === 'reject')
+        <h3 class="text-base font-semibold text-red-700">재무 거부 확인</h3>
+        <p class="mt-2 text-sm text-gray-600">
+            통장 잔액 부족·송금 실패·입금자 불일치 등 송금 불가 사유로 거부합니다.
+            <strong>final_payment 는 생성되지 않으며 ledger 영향이 없습니다.</strong>
+            영업에게 거부 사유가 노출되며 새 이체 요청이 가능해집니다.
+        </p>
+        <div class="mt-3">
+            <label class="block text-xs text-gray-500 mb-1">거부 사유 (필수, 5자 이상)</label>
+            <textarea wire:model="rejectReason" rows="3"
+                      class="input-base"
+                      placeholder="예: 통장 잔액 부족 / 입금자명 불일치 / 송금 보류 등"></textarea>
+            @error('rejectReason') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+        </div>
+        <div class="mt-5 flex justify-end gap-2">
+            <button wire:click="closeModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button wire:click="reject"
+                    wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
+                재무 거부
+            </button>
+        </div>
+        @else
         <h3 class="text-base font-semibold text-gray-900">재무 처리 완료 확인</h3>
         <p class="mt-2 text-sm text-gray-600">
             통장 거래가 정상적으로 처리되었는지 확인 후 [재무 처리 완료] 를 클릭하세요.
@@ -350,6 +438,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 재무 처리 완료
             </button>
         </div>
+        @endif
     </div>
 </div>
 @endif

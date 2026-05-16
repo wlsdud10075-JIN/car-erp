@@ -1633,7 +1633,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
                 $p = $mostRecent->payload ?? [];
                 $relatedTransfer = InterVehicleTransfer::where('approval_request_id', $mostRecent->id)
-                    ->with('financeConfirmer')->first();
+                    ->with(['financeConfirmer', 'financeRejecter'])->first();
                 $base['lastDecided'] = [
                     'type' => 'transfer',
                     'approval_request_id' => $mostRecent->id,
@@ -1649,6 +1649,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'finance_confirmer_name' => $relatedTransfer?->financeConfirmer?->name,
                     'confirmed_at' => $relatedTransfer?->confirmed_at,
                     'finance_note' => $relatedTransfer?->finance_note,
+                    // 큐 19-K — finance_rejected 분기 메타
+                    'finance_rejecter_name' => $relatedTransfer?->financeRejecter?->name,
+                    'finance_rejected_at' => $relatedTransfer?->finance_rejected_at,
+                    'finance_reject_reason' => $relatedTransfer?->finance_reject_reason,
                 ];
             } elseif ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
                 $p = $mostRecent->payload ?? [];
@@ -2689,6 +2693,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             'approved:executed' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '이체 완료 (재무 확정)', '승인 메모'],
                             'approved:voided_awaiting_finance' => ['border-amber-200', 'bg-amber-50', 'text-amber-900', 'text-amber-800', 'text-amber-700', 'border-amber-100', '⏳', '이체 취소 승인 — 재무 처리 대기 중', '승인 메모'],
                             'approved:voided' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 완료', '승인 메모'],
+                            // 큐 19-K — 재무 정방향 거부 (관리는 승인했지만 재무가 송금 불가 사유로 거부)
+                            'approved:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '재무 거부 (송금 불가)', '승인 메모'],
                             'approved' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
                             'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '최근 이체 요청 거부됨', '거부 사유'],
                             'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
@@ -2736,6 +2742,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </div>
                             @endif
+                            {{-- 큐 19-K — 재무 거부 사유 표시 (approved:finance_rejected 한정) --}}
+                            @if(! $isVoid && $ldKey === 'approved:finance_rejected' && ! empty($ld['finance_rejecter_name']))
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">재무 거부:</span>
+                                {{ $ld['finance_rejecter_name'] }}
+                                ({{ $ld['finance_rejected_at']?->format('Y-m-d H:i') }})
+                            </div>
+                            @if(! empty($ld['finance_reject_reason']))
+                            <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
+                                <span class="font-semibold">거부 사유:</span> {{ $ld['finance_reject_reason'] }}
+                            </div>
+                            @endif
+                            @endif
                         </div>
                     </div>
                     @endif
@@ -2743,9 +2762,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{-- 일반 자금 이체 박스 --}}
                     @if($transferCtx['eligible'])
                     @php
-                        // 마지막 결정이 rejected면 "다시 요청", 그 외(approved 포함)는 일반 라벨
-                        $btnLabel = (!empty($transferCtx['lastDecided']) && $transferCtx['lastDecided']['status'] === 'rejected')
-                            ? '다시 요청' : '자금 이체 요청';
+                        // 마지막 결정이 rejected이거나 큐 19-K 재무 거부면 "다시 요청"
+                        $ldStatus = $transferCtx['lastDecided']['status'] ?? null;
+                        $ldTransferStatus = $transferCtx['lastDecided']['transfer_status'] ?? null;
+                        $isRetryCase = $ldStatus === 'rejected'
+                            || ($ldStatus === 'approved' && $ldTransferStatus === 'finance_rejected');
+                        $btnLabel = $isRetryCase ? '다시 요청' : '자금 이체 요청';
                     @endphp
                     <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
                         <div class="flex flex-wrap items-center justify-between gap-2">

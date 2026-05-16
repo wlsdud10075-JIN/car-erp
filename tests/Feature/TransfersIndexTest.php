@@ -199,4 +199,35 @@ class TransfersIndexTest extends TestCase
         $this->assertEquals('환불 거래 RV456', $c['transfer']->finance_note);
         $this->assertCount(4, FinalPayment::where('transfer_id', $c['transfer']->id)->get());
     }
+
+    /**
+     * 큐 19-K — /erp/transfers 모달에서 'reject' 모드로 재무 거부.
+     * approved_awaiting_finance → finance_rejected 전환 + 메타 기록 + final_payment 미생성.
+     */
+    public function test_finance_reject_marks_status_and_records_reason(): void
+    {
+        $c = $this->makeAwaitingTransfer();
+        $this->actingAs($c['finance']);
+
+        Volt::test('erp.transfers.index')
+            ->call('openModal', $c['transfer']->id, 'reject')
+            ->assertSet('showModal', true)
+            ->assertSet('decisionMode', 'reject')
+            ->set('rejectReason', '통장 잔액 부족 — 영업 재요청 필요')
+            ->call('reject')
+            ->assertHasNoErrors()
+            ->assertSet('showModal', false);
+
+        $c['transfer']->refresh();
+        $this->assertEquals(InterVehicleTransfer::STATUS_FINANCE_REJECTED, $c['transfer']->status);
+        $this->assertEquals($c['finance']->id, $c['transfer']->finance_rejected_by_user_id);
+        $this->assertEquals('통장 잔액 부족 — 영업 재요청 필요', $c['transfer']->finance_reject_reason);
+        $this->assertNotNull($c['transfer']->finance_rejected_at);
+
+        // ledger 영향 0
+        $this->assertCount(0, FinalPayment::where('transfer_id', $c['transfer']->id)->get());
+
+        // executed 메타는 그대로 비어있어야
+        $this->assertNull($c['transfer']->confirmed_by_user_id);
+    }
 }
