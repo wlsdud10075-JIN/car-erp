@@ -1560,6 +1560,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->take(5)
             ->get();
 
+        // 큐 19-G — InterVehicleTransfer 기준 미처리 상태 차단 (회의록 부록 A Step 4 발견 버그).
+        // pending / approved_awaiting_finance / voided_awaiting_finance 중 연결된 ApprovalRequest가
+        // 활성(pending/approved)인 것만 차단. rejected/cancelled는 stale 처리.
+        $inProgressTransfer = InterVehicleTransfer::where('source_vehicle_id', $source->id)
+            ->whereIn('status', [
+                InterVehicleTransfer::STATUS_PENDING,
+                InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])
+            ->whereHas('approvalRequest', fn ($q) => $q->whereIn('status', [
+                ApprovalRequest::STATUS_PENDING,
+                ApprovalRequest::STATUS_APPROVED,
+            ]))
+            ->latest('id')
+            ->first();
+
         $pendingReq = $recentRequests->firstWhere('status', ApprovalRequest::STATUS_PENDING);
         if ($pendingReq) {
             $p = $pendingReq->payload ?? [];
@@ -1607,6 +1623,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return $base;
         }
+
+        // 큐 19-G — 미처리 transfer 있으면 신규 요청 차단 (한도 이중 부과 방지).
+        // lastDecided 박스가 이미 상태 표시하지만, 일반 이체 박스도 reason으로 한 번 더 안내.
+        if ($inProgressTransfer) {
+            $label = InterVehicleTransfer::STATUSES[$inProgressTransfer->status] ?? $inProgressTransfer->status;
+            $base['reason'] = "미처리 자금 이체가 있습니다 ({$label}). 처리 완료/거부 후 재시도하세요.";
+
+            return $base;
+        }
+
         $ratio = $source->unpaid_ratio;
         if ($ratio === null || $ratio > 0.5) {
             $pct = $ratio === null ? '—' : round($ratio * 100, 1).'%';

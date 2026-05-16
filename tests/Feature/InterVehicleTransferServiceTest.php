@@ -343,15 +343,78 @@ class InterVehicleTransferServiceTest extends TestCase
 
     /**
      * 큐 19-C 보강 (사용자 피드백 2026-05-15) — 같은 source vehicle에
-     * pending 요청이 이미 있으면 새 요청 차단.
+     * pending 상태 transfer가 있으면 새 요청 차단.
+     * 큐 19-G — InterVehicleTransfer 기준 가드로 전환, 메시지 변경.
      */
-    public function test_request_blocks_duplicate_pending_for_same_source(): void
+    public function test_request_blocks_when_source_has_pending_transfer(): void
     {
         $c = $this->makeContext(50_000_000);
         $this->service->request($c['source'], $c['target'], 10_000_000, $c['sales']);
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('이미 대기중인');
+        $this->expectExceptionMessage('미처리 자금 이체');
+        $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
+    }
+
+    /**
+     * 큐 19-G (회의록 부록 A Step 4 발견 버그) — 관리 승인 후
+     * approved_awaiting_finance 상태에서 새 요청 차단. 한도 이중 부과 방지.
+     */
+    public function test_request_blocks_when_source_has_approved_awaiting_finance_transfer(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $t = $this->service->request($c['source'], $c['target'], 10_000_000, $c['sales']);
+        $this->service->approve($t, $c['manager']);
+
+        // approved_awaiting_finance 상태 — pending 아니지만 미처리.
+        // 19-G 가드 도입 전엔 여기서 새 요청 통과해 한도 이중 부과 가능했음.
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('미처리 자금 이체');
+        $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
+    }
+
+    /**
+     * 큐 19-G — 거부된 ApprovalRequest + stale pending transfer 케이스는 차단 X.
+     * /erp/approvals decide() 가 reject 시 ApprovalRequest 만 update 하고 transfer.status 는
+     * pending 그대로 둠. 영업이 거부받은 후 새 요청을 할 수 있어야 함.
+     */
+    public function test_request_allows_new_attempt_after_rejection_with_stale_pending_transfer(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $t1 = $this->service->request($c['source'], $c['target'], 10_000_000, $c['sales']);
+
+        // 관리가 거부 — ApprovalRequest 만 'rejected' 로 update (실제 /erp/approvals decide 흐름과 동일).
+        // transfer.status 는 pending 그대로 stale.
+        $t1->approvalRequest()->update([
+            'status' => ApprovalRequest::STATUS_REJECTED,
+            'approver_id' => $c['manager']->id,
+            'decided_at' => now(),
+        ]);
+        $this->assertEquals(InterVehicleTransfer::STATUS_PENDING, $t1->fresh()->status);
+
+        // 영업이 재요청 — stale pending 차단 안 함, 새 transfer 생성.
+        $t2 = $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
+        $this->assertEquals(InterVehicleTransfer::STATUS_PENDING, $t2->status);
+        $this->assertNotEquals($t1->id, $t2->id);
+    }
+
+    /**
+     * 큐 19-G — void 관리 승인 후 voided_awaiting_finance 상태에서도 새 요청 차단.
+     * 재무가 취소 처리하기 전까지는 회계 상태 미확정.
+     */
+    public function test_request_blocks_when_source_has_voided_awaiting_finance_transfer(): void
+    {
+        $c = $this->makeContext(50_000_000);
+        $t = $this->service->request($c['source'], $c['target'], 10_000_000, $c['sales']);
+        $this->service->approve($t, $c['manager']);
+        $this->service->confirmByFinance($t, $c['finance']);
+        $this->service->approveVoid($t, $c['manager'], '취소');
+
+        // voided_awaiting_finance 상태 — 재무 처리 전 새 요청 차단.
+        // (source unpaid_ratio는 executed로 75% 인데 voided 페어 아직 미생성이라 75% 그대로 —
+        //  미수율 가드보다 19-G 가드가 먼저 발화하여 메시지가 '미처리 자금 이체' 임을 검증)
+        $this->expectException(DomainException::class);
+        $this->expectExceptionMessage('미처리 자금 이체');
         $this->service->request($c['source'], $c['target'], 5_000_000, $c['sales']);
     }
 

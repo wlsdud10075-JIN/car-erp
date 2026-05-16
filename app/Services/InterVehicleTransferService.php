@@ -70,13 +70,26 @@ class InterVehicleTransferService
     ): InterVehicleTransfer {
         $this->assertGuards($source, $target, $amount);
 
-        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
-            ->where('status', ApprovalRequest::STATUS_PENDING)
-            ->where('target_type', Vehicle::class)
-            ->where('target_id', $source->id)
-            ->exists();
-        if ($existing) {
-            throw new DomainException('이 차량에 대해 이미 대기중인 자금 이체 요청이 있습니다. 관리 승인/거부 후 재시도하세요.');
+        // 큐 19-G — InterVehicleTransfer 기준 중복 차단 (회의록 부록 A Step 4 발견 버그).
+        // 기존 ApprovalRequest.status='pending' 검사는 관리 승인 후 통과해 한도 이중 부과 가능.
+        // 미처리 상태 3종(pending / approved_awaiting_finance / voided_awaiting_finance)
+        // 중 연결된 ApprovalRequest가 활성(pending/approved)인 것만 차단.
+        // ApprovalRequest가 rejected/cancelled면 transfer.status가 pending으로 남아도 stale —
+        // 영업이 재요청할 수 있어야 함.
+        $inProgress = InterVehicleTransfer::where('source_vehicle_id', $source->id)
+            ->whereIn('status', [
+                InterVehicleTransfer::STATUS_PENDING,
+                InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])
+            ->whereHas('approvalRequest', fn ($q) => $q->whereIn('status', [
+                ApprovalRequest::STATUS_PENDING,
+                ApprovalRequest::STATUS_APPROVED,
+            ]))
+            ->first();
+        if ($inProgress) {
+            $label = InterVehicleTransfer::STATUSES[$inProgress->status] ?? $inProgress->status;
+            throw new DomainException("이 차량에 미처리 자금 이체가 있습니다 (현재 상태: {$label}). 처리 완료/거부 후 재시도하세요.");
         }
 
         return DB::transaction(function () use ($source, $target, $amount, $requester, $reason, $notes) {
