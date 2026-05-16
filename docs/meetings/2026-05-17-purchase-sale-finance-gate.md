@@ -547,6 +547,19 @@ queue worker 영향: 무관
     잔금 row + 미수율로 확인 가능하므로 정보 손실 없음.
   - **회귀 결과**: 219 passed (회귀 없음).
 
+- **2026-05-16 — 큐 19-J: void approved 누락 fix**
+  19-I 통합 후 사용자 발견 버그. void가 거부됐다가 두 번째 요청에서 승인되어 voided 완료된
+  케이스에서 박스가 빨강 "이체 취소 요청 거부됨"으로 잘못 표시됨.
+  - **원인**: `voidDecided` 검색이 `[rejected, cancelled]`만 잡고 `approved` 제외. 가장 최근
+    결정 산출 시 **이전에 거부된 void**가 살아남아 mostRecent로 잡힘.
+  - **fix**:
+    1. `voidDecided` 검색에 `APPROVED` 포함.
+    2. mostRecent가 void approved이면 → `transferDecided`로 fallback. transfer.status가
+       `voided`/`voided_awaiting_finance`로 변하므로 transferDecided의 `approved:voided*`
+       5상태 분기로 표시(회색 ⊘ "이체 취소 완료" 또는 amber ⏳ "이체 취소 승인 — 재무 처리 대기 중").
+    3. 자동 테스트 1건: `test_transfer_context_last_decided_shows_voided_after_second_void_approved`.
+  - **회귀 결과**: 220 passed (219 → 220, 회귀 없음).
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
