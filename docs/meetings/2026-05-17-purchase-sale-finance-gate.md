@@ -427,10 +427,36 @@ queue worker 영향: 무관
 
 ### A. 사전 준비
 - [ ] 테스트 계정 3개 확인 (DB seed 또는 수동 생성)
-  - 영업: `permission=user`, `role=영업`
-  - 관리: `permission=user`, `role=관리`
-  - 재무: `permission=user`, `role=정산`
-- [ ] 동일 바이어 차량 2대 시드. source는 sale_price 1억 KRW + 5천만 입금된 상태(미수율 50% 정확히), target은 sale_price 8천만 KRW + 입금 없음
+  - 영업: `permission=user`, `role=영업` (시드: `sales@car-erp.test` / 김영업)
+  - 관리: `permission=user`, `role=관리` (시드: `manage@car-erp.test` / 박관리)
+  - 재무: `permission=user`, `role=정산` (시드: `settle@car-erp.test` / 김진영)
+  - admin: `permission=super` (시드: `admin@car-erp.test`) — Step 5 SoD 차단 검증용
+  - 비번 전부 `password`. 시드가 안 됐으면 `php artisan db:seed` (updateOrCreate라 안전).
+
+- [ ] **동일 바이어 차량 4대 tinker 생성** — 시드 차량은 미수율 50% 정확히 안 맞음. tinker 한 줄로 생성:
+
+```powershell
+php artisan tinker
+```
+```php
+// 1세트 (Step 1~5 정상 흐름용) — source 미수율 50% / target 100%
+$buyer = App\Models\Buyer::firstOrCreate(['name' => 'TEST BUYER 19F'], ['is_active' => true]);
+$smId = App\Models\Salesman::where('name','김영업')->first()->id;
+$source = App\Models\Vehicle::firstOrCreate(['vehicle_number' => 'TEST-19F-A'], ['sales_channel' => 'export', 'buyer_id' => $buyer->id, 'sale_price' => 100000000, 'currency' => 'KRW', 'exchange_rate' => 1, 'deposit_down_payment' => 50000000, 'salesman_id' => $smId, 'purchase_date' => now()->toDateString()]);
+$target = App\Models\Vehicle::firstOrCreate(['vehicle_number' => 'TEST-19F-B'], ['sales_channel' => 'export', 'buyer_id' => $buyer->id, 'sale_price' => 80000000, 'currency' => 'KRW', 'exchange_rate' => 1, 'salesman_id' => $smId, 'purchase_date' => now()->toDateString()]);
+
+// 2세트 (Step 5 SoD 차단용) — admin 단독으로 영업+관리+재무 동시 시도
+$src2 = App\Models\Vehicle::firstOrCreate(['vehicle_number' => 'TEST-19F-C'], ['sales_channel' => 'export', 'buyer_id' => $buyer->id, 'sale_price' => 100000000, 'currency' => 'KRW', 'exchange_rate' => 1, 'deposit_down_payment' => 50000000, 'salesman_id' => $smId, 'purchase_date' => now()->toDateString()]);
+$tgt2 = App\Models\Vehicle::firstOrCreate(['vehicle_number' => 'TEST-19F-D'], ['sales_channel' => 'export', 'buyer_id' => $buyer->id, 'sale_price' => 80000000, 'currency' => 'KRW', 'exchange_rate' => 1, 'salesman_id' => $smId, 'purchase_date' => now()->toDateString()]);
+
+echo "source ratio: {$source->fresh()->unpaid_ratio}, target ratio: {$target->fresh()->unpaid_ratio}\n";
+exit
+```
+
+기대 출력: `source ratio: 0.5, target ratio: 1`
+
+⚠️ **차량 목록 필터** — `/erp/vehicles` 기본 필터가 "최근 2개월 매입일"이라 `purchase_date`가 null이면 차량이 안 보임. tinker에서 `'purchase_date' => now()->toDateString()` 포함시켜 둠.
+
 - [ ] source/target 둘 다 paid Settlement 없는지 확인 (`/erp/settlements`)
 
 ### B. 5상태 머신 정상 흐름 (영업→관리→재무)
