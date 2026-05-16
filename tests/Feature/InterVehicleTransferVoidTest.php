@@ -303,4 +303,58 @@ class InterVehicleTransferVoidTest extends TestCase
         $this->assertEquals('바이어 신용 문제로 취소 요청', $ctx['lastDecided']['reason']);
         $this->assertEquals($c['manager']->name, $ctx['lastDecided']['approver_name']);
     }
+
+    /**
+     * 큐 19-J (회의록 부록 A Step 7 후속 발견 버그) — void approved + voided 완료 시
+     * 박스가 빨강 "이체 취소 요청 거부됨" 으로 잘못 표시되는 케이스 fix.
+     *
+     * 시나리오: void 요청 #1 거부 → void 요청 #2 승인 → 재무 처리(voided).
+     * 19-I 코드는 voidDecided 검색이 rejected/cancelled 만 잡아 이전 거부된 void 가
+     * 살아남아 mostRecent 로 잡혔음. 19-J fix 로 approved 도 포함하고 + void approved
+     * 인 경우 transferDecided 로 fallback → 'approved:voided' 회색 박스로 표시.
+     */
+    public function test_transfer_context_last_decided_shows_voided_after_second_void_approved(): void
+    {
+        $c = $this->executeTransferScenario();
+
+        // transfer ApprovalRequest 도 approved 로 marking
+        $c['transfer']->approvalRequest->update([
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $c['manager']->id,
+            'decided_at' => now(),
+        ]);
+
+        // 1) 영업 void 요청 #1 → 관리 거부
+        $this->actingAs($c['sales']);
+        $voidReq1 = $c['service']->voidRequest($c['transfer']->fresh(), $c['sales'], '첫 번째 취소 요청');
+        $voidReq1->update([
+            'status' => ApprovalRequest::STATUS_REJECTED,
+            'approver_id' => $c['manager']->id,
+            'decision_note' => '추가 검토 필요',
+            'decided_at' => now()->addMinute(),
+        ]);
+
+        // 2) 영업 void 요청 #2 → 관리 승인 + 재무 처리
+        $voidReq2 = $c['service']->voidRequest($c['transfer']->fresh(), $c['sales'], '두 번째 취소 요청');
+        $voidReq2->update([
+            'status' => ApprovalRequest::STATUS_APPROVED,
+            'approver_id' => $c['manager']->id,
+            'decision_note' => '재검토 후 승인',
+            'decided_at' => now()->addMinutes(2),
+        ]);
+        $c['service']->approveVoid($c['transfer']->fresh(), $c['manager'], '재검토 후 승인');
+        $c['service']->confirmVoidByFinance($c['transfer']->fresh(), $c['finance']);
+
+        // 영업이 source 차량 편집 패널 열기
+        $this->actingAs($c['sales']);
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $c['source']->id);
+        $ctx = $component->instance()->transferContext;
+
+        // 19-J fix: 가장 최근 결정이 void approved 이므로 transferDecided 로 fallback
+        // → type='transfer' + transfer.status='voided' → 'approved:voided' 회색 박스 분기
+        $this->assertNotNull($ctx['lastDecided']);
+        $this->assertEquals('transfer', $ctx['lastDecided']['type']);
+        $this->assertEquals('approved', $ctx['lastDecided']['status']);
+        $this->assertEquals('voided', $ctx['lastDecided']['transfer_status']);
+    }
 }

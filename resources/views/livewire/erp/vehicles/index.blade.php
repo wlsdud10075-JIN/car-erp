@@ -1605,6 +1605,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->where('target_type', InterVehicleTransfer::class)
                     ->whereIn('target_id', $transferIds)
                     ->whereIn('status', [
+                        ApprovalRequest::STATUS_APPROVED,
                         ApprovalRequest::STATUS_REJECTED,
                         ApprovalRequest::STATUS_CANCELLED,
                     ])
@@ -1617,6 +1618,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->filter()
                 ->sortByDesc(fn ($r) => $r->decided_at?->timestamp ?? 0)
                 ->first();
+
+            // 큐 19-J — void approved 인 경우 transferDecided 로 fallback.
+            // transfer.status 가 voided / voided_awaiting_finance 로 변하므로
+            // transferDecided 의 'approved:voided*' 5상태 분기로 표시하는 것이 정확.
+            // (void approved 메타를 별도로 보여줄 필요 없음 — transfer 5상태가 이미 의미 포함)
+            if ($mostRecent
+                && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID
+                && $mostRecent->status === ApprovalRequest::STATUS_APPROVED
+                && $transferDecided) {
+                $mostRecent = $transferDecided;
+            }
 
             if ($mostRecent && $mostRecent->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
                 $p = $mostRecent->payload ?? [];
