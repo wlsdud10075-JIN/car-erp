@@ -517,6 +517,21 @@ queue worker 영향: 무관
        - `test_request_allows_new_attempt_after_rejection_with_stale_pending_transfer` (신규 — stale 케이스 회귀 방지)
   - **회귀 결과**: 218 passed (215 → 218, 회귀 없음). ModalTest `last_decided_shown_after_rejection` 통과 유지.
 
+- **2026-05-16 Step 7 — void 거부 사유 표시 누락 버그 (큐 19-H fix 완료)**
+  영업이 이체 취소(void) 요청 → 관리 거부했을 때, 영업이 차량 편집 패널을 다시 열어도
+  자금 이체 섹션에 emerald "이체 완료" 박스만 보이고 **거부 사유 박스가 노출되지 않음**.
+  - **원인**: `transferContext()` 가 `TYPE_INTER_VEHICLE_TRANSFER` ApprovalRequest 만 조회
+    하고 `TYPE_INTER_VEHICLE_TRANSFER_VOID` 는 누락. void ApprovalRequest 는 `target_type =
+    InterVehicleTransfer::class` 라 vehicle id 기반 lastDecided 검색에 안 잡힘.
+  - **fix (커밋 별도)**:
+    1. `transferContext()` — `voidLastDecided` 키 추가. source 차량의 모든 transfer ID 로 void
+       ApprovalRequest 조회 후 rejected/cancelled 인 가장 최근 1건의 메타 (approver / decision_note /
+       reason / decided_at) 채움.
+    2. `vehicles/index` view — emerald "이체 완료" 박스 아래 별도 **빨강 ❌ "이체 취소 요청 거부됨"** /
+       **회색 ⊘ "이체 취소 요청 취소됨"** 박스 추가. 영업이 보낸 취소 요청 사유 + 관리 거부/메모 둘 다 노출.
+    3. 자동 테스트 1건 (`test_transfer_context_void_last_decided_shown_after_rejection`).
+  - **회귀 결과**: 219 passed (218 → 219, 회귀 없음).
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
