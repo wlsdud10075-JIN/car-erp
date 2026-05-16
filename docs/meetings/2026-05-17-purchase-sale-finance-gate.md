@@ -496,6 +496,27 @@ queue worker 영향: 무관
 ### 통과 기준
 모든 ✅이면 큐 20-A 마이그레이션 착수 가능. 실패 발견 시 회의록 본문 `## 🛠 car-erp 영향 분석`에 발견 항목 기록 후 fix → 재 회귀.
 
+### 회귀 발견 항목 (사용자 진행 중 보고)
+- **2026-05-16 Step 4 — 한도 이중 부과 버그 (큐 19-G fix 완료)**
+  관리 승인 후 영업이 같은 차량 편집 패널 다시 열면 "자금 이체 요청" 버튼이 다시 활성화되어
+  같은 한도(2500만원)로 2회 요청 가능. 두 번째 요청도 관리가 승인하면 총 5000만원이 한도로
+  부과될 수 있음.
+  - **원인**: `Service::request()` 가 `ApprovalRequest.status='pending'` 만 차단. 관리 승인 후엔
+    `ApprovalRequest.status='approved'` 로 바뀌고 `InterVehicleTransfer.status='approved_awaiting_finance'` 로
+    남는데 이 케이스가 차단 대상에서 누락.
+  - **fix (커밋 별도)**:
+    1. `Service::request()` — `InterVehicleTransfer` 기준 미처리 상태 3종
+       (`pending`/`approved_awaiting_finance`/`voided_awaiting_finance`) 차단 + 연결된
+       `ApprovalRequest` 가 활성(`pending`/`approved`) 인 것만 (rejected/cancelled 는 stale 처리).
+    2. `vehicles/index transferContext()` — 동일 가드 반영, eligible=false + reason 표시
+       ("미처리 자금 이체가 있습니다 ({라벨}). 처리 완료/거부 후 재시도하세요.").
+    3. 자동 테스트 4건 추가:
+       - `test_request_blocks_when_source_has_pending_transfer` (rename + 메시지 변경)
+       - `test_request_blocks_when_source_has_approved_awaiting_finance_transfer` (신규)
+       - `test_request_blocks_when_source_has_voided_awaiting_finance_transfer` (신규)
+       - `test_request_allows_new_attempt_after_rejection_with_stale_pending_transfer` (신규 — stale 케이스 회귀 방지)
+  - **회귀 결과**: 218 passed (215 → 218, 회귀 없음). ModalTest `last_decided_shown_after_rejection` 통과 유지.
+
 ### 자동 테스트 보강 항목 (큐 19-F-D 완료)
 - `InterVehicleTransferServiceTest::test_e2e_5_state_lifecycle_creates_four_final_payments_and_preserves_metadata`
 - `InterVehicleTransferServiceTest::test_confirm_by_finance_blocks_executed_status`
