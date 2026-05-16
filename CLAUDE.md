@@ -256,52 +256,73 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | - | NICE API 실연동 (현재 스텁) | 🟡 보류 (role/대시보드 완성 후) |
 | 13 | AWS Lightsail 배포 | ⏳ |
 
-## ⏭️ 다음 세션 작업 순서 (2026-05-12 종료 시점 갱신)
+## ⏭️ 다음 세션 작업 순서 (2026-05-17 종료 시점 갱신)
 
-> 세션 시작 시: `CLAUDE.md, CLAUDE_1.md, SKILLS.md, role기획보안_수정.md 읽고 project_queue_status 메모리 확인해줘.`
+> 세션 시작 시: `CLAUDE.md, CLAUDE_1.md, SKILLS.md, role기획보안_수정.md 읽고 회의록 docs/meetings/2026-05-17-purchase-sale-finance-gate.md 부록 A 확인해줘.`
 > 기획 기준 문서: `role기획보안_수정.md` (프로젝트 루트)
-> 워크플로우 누락 회의록: `docs/meetings/2026-05-12-workflow-gap-analysis.md`
+> 핵심 회의록:
+> - `docs/meetings/2026-05-14-3way-workflow-policy.md` (v5.1 큐 분할 — Phase 1~6)
+> - `docs/meetings/2026-05-16-finance-gate-roundtable.md` (큐 19-F 자금이체 게이트)
+> - `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` (큐 20 매입·판매 전 흐름 게이트, 부록 A 회귀)
 
-### 완료된 큐 (2026-05-12 기준)
+### 완료된 큐 (2026-05-17 기준)
 
-| 큐 | 작업 | 커밋 |
+| 큐 | 작업 | 완료 커밋 |
 |---|---|---|
-| 1 | 일반사용자 대시보드 role 분기 (영업/통관/정산 KPI + 토글 pill + 정산 user 김진영 시드) | `8bd7c9e` |
-| 2 | 파이프라인 카운트 스트립 (대시보드 11단계 + 차량 7노드 흐름도) | `fb54571` |
-| **2.5** | Critical 8건 워크플로우 누락 차단 (환율·payment_date·채널·단계·unique·격리·APP_KEY) | `c38c0a6` |
-| 7 | 권한 세분화 1단계 (RRN 암호화 + 문서 다운로드 감사 로그) | `2f05f89·dc98ed2` |
+| 1·2·2.5·7 | 일반사용자 대시보드·파이프라인·Critical 8건·RRN 암호화 | (2026-05-12 완료) |
+| **5** | 업무 대시보드 [담당자별]↔[역할별] 토글 | `cdd01e3` |
+| **6 잔여** | 흐름도 reason tooltip + next-step 동선 | `a0bcd76` |
+| **9** | High 도메인 안전 H1·H2·H7 | `b11c700` |
+| **10** | 정산·채권 무결성 H3·H4·H5·H6 | `90d8724` |
+| **11 (1~4)** | N+1 + forceDelete 백업 + db:backup + audit_logs 기록 | `b8b7023·a96f936·d0065fa·9fa6190` |
+| **14 (1~4-4)** | role 재설계 + approval_requests + G2 게이트 + audit 2-actor | `39066e5` ~ `ffbdd66` (8 커밋) |
+| **16 (1~4)** | G6 채널 단순화 — sales_channel enum + 5컬럼 drop + 시드 재생성 | `36b8a28·fc41fb2·b76410f·2f44f4b` |
+| **17** | 폐기 컨셉 제거 (11단계 → 10단계) | `376837d` |
+| **18** | 차량/바이어/컨사이니/포워딩사 close confirm 모달 | `83f6a8c` |
+| **19 (A~L)** | 자금이체 5상태 게이트 + 거부·void 분기 + 정합 보강 (20+ 커밋) | `a5ed674` ~ `8cbaef3` |
+| SKILLS §13 | 분모 단일 출처 박스 + admin 대시보드 미수율 분모 비대칭 fix | `7525219` |
 
-### 다음 추천 순서 — 옵션 C (균형형)
+**자동 테스트 현황**: 231 passed (큐 19-L 완료 시점). RefreshDatabase 트레이트라 마이그 누락에도 통과 — 운영 DB 상태와 별개임 주의.
+
+**큐 19-F 부록 A 수동 회귀**: 노트북 환경에서 B~G 섹션 통과(2026-05-17). 19-K/L 마이그 누락 1건 발견·fix. H 섹션은 큐 20-A 진입 전후 보완 가능.
+
+### 다음 추천 순서 — 회의 v5.1 + 큐 20 GO 반영
 
 | 순서 | 큐 | 작업 | 공수 | 시작 명령어 |
 |---|---|---|---|---|
-| **1** | 큐 3 | 차량관리 담당자 필터 + 채권관리 검색란 축소 | ~1h | `큐 3번 진행 — 차량관리 담당자 필터 추가 + 채권관리 검색란 축소` |
-| **2** | 큐 9 신규 | High 도메인 안전 묶음 (H1·H2 saving validator + H4 retroactive drift + H7 soft-delete 캐시) | 3~4h | `큐 9번 진행 — High 도메인 안전. dhl_request·is_export_cleared 첨부 검증 + 정산 paid 잠금 + soft-delete 시 캐시 정리` |
-| **3** | 큐 7 확장 | 컬럼 단위 권한 + RRN 형식·audit + 마스킹 (C7-a·H9·H10·H11) | 4~5h | `큐 7 확장 — role별 컬럼 권한 + RRN 형식 검증 + 입력 마스킹 + audit log` |
-| **4** | 큐 10 신규 | High 정산·채권 무결성 (H3·H5·H6) | 4~5h | `큐 10번 진행 — 정산 type 검증 + final_payments↔ReceivableHistory 양방향 + savings_used 자동 거래` |
-| **5** | 큐 6 잔여 | 흐름도 노드 reason tooltip (H13) + next-step 동선 (H14) | 1~2h | `큐 6 잔여 — 흐름도 노드에 사유 tooltip + 신규 등록 후 다음 단계 안내` |
-| **6** | 큐 4 | 관리자 대시보드 차트 보강 (Chart.js 월별 매출·담당자 성과) | 4~6h | `큐 4번 진행 — 연간 월별 매출 차트랑 담당자별 성과 차트` |
-| **7** | 큐 5 | 업무 대시보드 역할별 토글 | 3~4h | `큐 5번 진행 — 업무 대시보드 [담당자별]↔[역할별] 토글` |
-| **8** | 큐 11 신규 | 운영 안전 가드 (H8 N+1 통일 + H12 자동 DB 백업 + forceDelete 백업) | 2~3h | `큐 11번 진행 — N+1 eager load 통일 + DB 자동 백업 cron + forceDelete 시 storage 백업` |
-| **9** | 큐 8 / 12 | NICE API / 포워딩 SMTP | - | (외부 API 키 발급 / SMTP 확정 후) |
-| **10** | 큐 13 | AWS Lightsail 배포 | - | (모든 큐 완료 후) |
+| **1** | 큐 20-A | 마이그 3건 (final_payments·purchase_balance_payments·vehicles 매입처 계좌) + 모델 fillable·cast·MASKED_COLUMNS | 2h | `큐 20-A 진행 — final_payments / purchase_balance_payments / vehicles 매입처 계좌 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS` |
+| **2** | 큐 20-B | `PaymentConfirmationService` 신규 + Vehicle 분자 A안 필터 + `canConfirmFinance()` alias | 4h | `큐 20-B 진행 — PaymentConfirmationService + Vehicle 분자 A안 필터` |
+| **3** | 큐 20-C | UI — `/erp/transfers` 매입·판매 잔금 확정 탭 + 차량 편집 패널 row 색 분기 + 매입처 계좌 입력 + 사이드바 배지 합산 | 4h | `큐 20-C 진행 — /erp/transfers 매입·판매 잔금 탭 + 차량 편집 UI` |
+| **4** | 큐 20-D | §13 5곳 정합 재검증 + paid Settlement snapshot lock + `FinalPayment::updating` 훅 + 깨진 테스트 4파일 재작성 + 신규 2종 | 4~5h | `큐 20-D 진행 — §13 정합 재검증 + Lock + 테스트 4파일 재작성` |
+| **5** | 큐 9 확장 | G1 50% 룰 B/L 잠금 + rule_version v3 | 10~14h | `큐 9 확장 진행 — G1 50% 룰 + B/L 잠금` |
+| **6** | 큐 10 확장 | G3 선적전/후/디파짓 미수 분류 | 12~15h | `큐 10 확장 진행 — G3 미수 분류` |
+| **7** | 큐 15 | G5 재고관리 (NICE 후 권장) | 4~6h | (NICE API 확정 후) |
+| **8** | 큐 8 / 12 | NICE API 실연동 / 포워딩 SMTP | - | (외부 키·SMTP 확정 후) |
+| **9** | 별건 1 | G4 알림톡 | - | (워크플로우 완성 후) |
+| **10** | 별건 2 | G7 동시 편집 락 | 16~32h | (인프라 결정 후) |
+| **11** | 별건 3 | 사이드바 재구성 + **로그 화면군 일괄 노출** + audit_logs UI 신설 | 5~7h | `별건 3 진행 — 사이드바 재구성 + 모든 로그 화면 노출` |
+| **12** | 큐 13 | AWS Lightsail 배포 | - | (모든 큐 완료 후 최종) |
 
-**대안**:
-- 옵션 A (속도 우선): 큐 3 → 4 → 5 → 6잔여 → 9 → 7확장 → 10 → 11 → 8/12 → 13
-- 옵션 B (안전 극도): 큐 9 → 7확장 → 10 → 11 → 3 → 4 → 5 → 8/12 → 13
+### 큐 20 핵심 (회의 GO 확정 — P2 정석 패키지)
 
-> 옵션 C는 1시간 워밍업(큐 3) 후 도메인 안전·보안 마무리 → UX 보강 → 운영 안전 → 배포 순.
+2026-05-16 사용자 4건 확정:
+- **분자 정의 A안** — `confirmed_at IS NOT NULL` 필터 (SAP/Odoo Draft/Posted 정석)
+- **19-F-D 선행** → 큐 20 (PO 권장, 19-F-D 완료됨)
+- **전체 통합** — 매입+판매 동시 도입
+- **별도 PaymentConfirmationService** (saving 훅 반대)
 
-### 큐 9·10·11 출처
+회의록 `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` §🛠 영향 분석 + 부록 A 참조. 큐 20 합계 14~16h.
 
-`docs/meetings/2026-05-12-workflow-gap-analysis.md` §4 High 표 + §6 권장 큐. 6부서 풀회의 분석 결과 식별된 High 15건을 안전성·정산·운영 묶음으로 분리.
+### 별건 3 — 로그 화면 사이드바 노출 묶음 처리 (사용자 결정)
 
-### 큐 7 확장 (C7-a 외)
+**원칙**: 로그 화면 사이드바 노출은 개별 화면 완성 시마다 추가하지 않고, 모든 ERP 화면 완성 후 별건 3(사이드바 재구성)에서 한꺼번에 처리. UI 일관성·사용자 메뉴 학습 비용 보존.
 
-- C7-a 컬럼 단위 권한 (TODO 주석 `resources/views/livewire/erp/vehicles/index.blade.php::save()`)
-- H9 RRN 형식 검증 (`regex:/^\d{6}-\d{7}$/`)
-- H10 말소 단계 진입 시 RRN 미입력 차단
-- H11 RRN input `type="password"` 마스킹 + Alpine 토글
+**묶음 대상**:
+- `/admin/document-access-logs` (커밋 `2f05f89`로 화면·라우트 완성, 사이드바만 미노출)
+- `audit_logs` UI 신설 (큐 11-4로 기록은 있음, UI 미구현)
+- 향후 추가될 로그성 화면 전체
+
+**진행 시점**: 큐 14·15·16·18·19·20 + role별 화면 + 별건 1·2 모두 완료 후. admin/super만 노출되는 "로그" 메뉴 그룹으로 묶기.
 
 ### 단계 9 — 채권관리 + 관리자 대시보드 화면 분리
 

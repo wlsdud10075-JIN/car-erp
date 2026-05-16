@@ -658,3 +658,40 @@ exit
 - `InterVehicleTransferServiceTest::test_confirm_void_by_finance_blocks_executed_status_without_approve_void`
 
 총 215 passed (211 + 4).
+
+---
+
+## 2026-05-17 노트북 수동 회귀 진행 결과
+
+### 회귀 진행 상태 — B부터 G까지 통과
+
+- ✅ **B 정상 흐름**: 영업→관리→재무 5상태 머신 정상. source 50%→75%, target 100%→68.75% 미수율 변동 확인. emerald "이체 완료" 박스 + 확정자/시각/finance_note 표시 정상.
+- ✅ **C SoD 차단**: 관리=재무 같은 user_id 차단 동작. "SoD 차단" 라벨 + 버튼 비활성 + Livewire 우회 시도도 DomainException으로 차단됨.
+- ✅ **D 권한 가드**: `/erp/transfers` 접근 영업/관리 403, 재무/admin/super 200.
+- ✅ **E void 흐름**: void 요청 → 관리 승인 → 재무 처리 → 역 페어 잔금 row 자동 생성. 최종 source 50% / target 100% 정확 복귀.
+- ✅ **F UI 색 분기**: 7가지 상태 박스 색·라벨 정상 분기.
+- ✅ **G 사이드바·승인 페이지 배지**: transfers 대기 ≠ approvals 대기 분리 표시. 모바일 drawer 동일.
+- ⏭️ H 추가 회귀(production 빌드·AuditLog row·H4 paid Settlement)는 미진행 — 큐 20-A 진입 전 또는 진입 직후 보완 가능.
+
+### 노트북에서 발견된 누락 (즉시 fix)
+
+- **큐 19-K/L 마이그레이션 누락** — 노트북에 pull 받은 후 `php artisan migrate` 미실행 상태로 `/erp/approvals` 접근 시 `Column not found: void_finance_rejected_at` 500 에러 발생. `2026_05_17_000001`·`2026_05_17_000002` 2건 실행 완료(112ms + 48ms, ADD COLUMN NULL 안전). **재발 방지 기록 — pull 후 작업 재개 시 항상 `php artisan migrate:status` 확인 필수**.
+- **TEST-19F-C/D 차량 미생성** — 부록 A § A 사전 준비 tinker 1세트(A/B)만 실행되고 2세트가 누락된 채로 진행. C 섹션 SoD 검증은 A/B로 진행한 결과 통과해서 검증 목적 달성. 노트북·다른 PC에서 부록 A 재실행 시 tinker 블록 전체를 한 번에 복사해서 실행할 것.
+
+### 사용자 운영 감각 피드백 (소소한 UX, 큐 20 이후 검토)
+
+- **void 완료 시 emerald(초록) 아닌 gray(회색)인 이유 재확인 필요**: "취소 승인됐는데 회색이라 직관적이지 않다"는 사용자 인상. 회의 의도 = "executed(자금 이동 완료)와 voided(취소 완료, 원상 복귀)의 의미가 정반대라 색 분리". 운영 누적 시 별도 UX 안건으로 색 변경(teal·slate 등) 재검토 가능. **지금은 큐 20 우선, 변경 안 함**.
+
+### 로그 화면 사이드바 노출 — 묶음 처리 결정
+
+- `/admin/document-access-logs`는 D안(2026-05-12 결정)으로 화면·라우트 완성됐지만 사이드바 미노출 — URL 직접 진입 가능 상태.
+- 사용자 결정: **로그 화면 사이드바 노출은 모든 화면 완성 후 별건 3(사이드바 재구성 2h)에서 일괄 처리**.
+- `audit_logs`(큐 11-4 기록, UI 미구현) UI 신설도 같은 묶음.
+- 메모리 저장: `feedback_sidebar_log_grouping.md`.
+
+### 큐 20-A 진입 준비 완료
+
+부록 A 회귀 G까지 통과로 큐 19-F 패턴이 운영 감각상 안전함을 확인. **큐 20-A 마이그레이션 3건 착수 가능 상태**. 다음 세션 시작 명령:
+```
+큐 20-A 진행 — final_payments / purchase_balance_payments / vehicles 매입처 계좌 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS
+```
