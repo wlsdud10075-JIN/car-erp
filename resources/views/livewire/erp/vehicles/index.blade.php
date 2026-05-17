@@ -1924,27 +1924,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 @endif
 
-{{-- Livewire dispatch('notify') 글로벌 토스트 listener (C7-a silent restore 안내 등) --}}
-<div x-data="{ items: [] }"
-     @notify.window="
-        let id = Date.now() + Math.random();
-        items.push({ id, msg: $event.detail.message, type: $event.detail.type || 'info' });
-        setTimeout(() => items = items.filter(i => i.id !== id), 4500);
-     "
-     class="fixed top-4 right-4 z-50 flex flex-col gap-2">
-    <template x-for="item in items" :key="item.id">
-        <div x-transition.opacity
-             :class="{
-                'bg-green-600': item.type === 'success',
-                'bg-amber-500': item.type === 'warning',
-                'bg-red-600': item.type === 'error',
-                'bg-blue-600': item.type === 'info'
-             }"
-             class="rounded-lg px-4 py-3 text-sm text-white shadow-lg max-w-md">
-            <span x-text="item.msg"></span>
-        </div>
-    </template>
-</div>
+{{-- 토스트 리스너는 layouts/app/sidebar.blade.php 에 글로벌 추출됨 --}}
 
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 

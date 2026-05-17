@@ -146,6 +146,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             });
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: '처리 실패: '.$e->getMessage(), type: 'error');
+            $this->closeDecisionModal();
 
             return;
         }

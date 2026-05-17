@@ -155,6 +155,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->closeModal();
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: '재무 확정 실패: '.$e->getMessage(), type: 'error');
+            $this->closeModal();
         }
     }
 
@@ -193,6 +194,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->closeModal();
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: '재무 거부 실패: '.$e->getMessage(), type: 'error');
+            $this->closeModal();
         }
     }
 }; ?>

@@ -340,6 +340,28 @@
     </div>
 </div>
 
+{{-- Livewire dispatch('notify') 글로벌 토스트 listener — 모든 ERP 페이지 공통 --}}
+<div x-data="{ items: [] }"
+     @notify.window="
+        let id = Date.now() + Math.random();
+        items.push({ id, msg: $event.detail.message, type: $event.detail.type || 'info' });
+        setTimeout(() => items = items.filter(i => i.id !== id), 4500);
+     "
+     class="fixed top-4 right-4 z-50 flex flex-col gap-2">
+    <template x-for="item in items" :key="item.id">
+        <div x-transition.opacity
+             :class="{
+                'bg-green-600': item.type === 'success',
+                'bg-amber-500': item.type === 'warning',
+                'bg-red-600': item.type === 'error',
+                'bg-blue-600': item.type === 'info'
+             }"
+             class="rounded-lg px-4 py-3 text-sm text-white shadow-lg max-w-md">
+            <span x-text="item.msg"></span>
+        </div>
+    </template>
+</div>
+
 @fluxScripts
 </body>
 </html>

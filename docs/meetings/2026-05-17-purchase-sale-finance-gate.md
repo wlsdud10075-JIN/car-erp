@@ -671,7 +671,11 @@ exit
 - ✅ **E void 흐름**: void 요청 → 관리 승인 → 재무 처리 → 역 페어 잔금 row 자동 생성. 최종 source 50% / target 100% 정확 복귀.
 - ✅ **F UI 색 분기**: 7가지 상태 박스 색·라벨 정상 분기.
 - ✅ **G 사이드바·승인 페이지 배지**: transfers 대기 ≠ approvals 대기 분리 표시. 모바일 drawer 동일.
-- ⏭️ H 추가 회귀(production 빌드·AuditLog row·H4 paid Settlement)는 미진행 — 큐 20-A 진입 전 또는 진입 직후 보완 가능.
+- ❌ **H-2 AuditLog row**: 자금 이체 5상태 전이 audit_logs 기록 **0건** — `recordEvent` 호출이 `InterVehicleTransferService` / `InterVehicleTransfer` / `ApprovalRequest` / `FinalPayment` / `PurchaseBalancePayment` 어디에도 박혀 있지 않음. 큐 19-F 구현 시 audit_logs 연동 누락. **운영 영향**: 5상태 전이 추적 불가 (단, `inter_vehicle_transfers.requested_by_user_id` / `approved_by_user_id` / `executed_by_user_id` 컬럼으로는 추적 가능 — 통합 뷰만 누락). **fix 시점 결정 (2026-05-17 사용자)**: 별건 3(사이드바 재구성 + 로그 화면 일괄)에서 `audit_logs` UI 신설과 함께 `recordEvent` 누락 backfill 동시 처리.
+- ✅ **H-3 paid Settlement 가드 (백엔드)**: TEST-19F-A에 paid Settlement 1건 강제 생성 후 영업 → void 요청 → 관리 승인 시도. **`InterVehicleTransferService::approveVoid` L307 `assertPaidSettlementGuard`가 정상 차단** — transfer.status=executed / ApprovalRequest.status=pending 둘 다 변경 없음으로 확인. 회계 무결성 보호 성공.
+- ❌ → ✅ **H-3 부수 발견 1 (UI catch 모달 닫힘 누락, 즉시 fix)**: `approvals/index.blade.php:147` / `transfers/index.blade.php:156·194` 3곳 catch 블록에서 토스트만 dispatch하고 모달은 안 닫음 → 사용자가 "처리 실패" 토스트(3~5초 자동 소멸)를 놓치면 모달 멈춤으로 인식. **fix**: 3곳 catch 안에 `closeModal()` / `closeDecisionModal()` 한 줄씩 추가.
+- ❌ → ✅ **H-3 부수 발견 2 (notify 토스트 리스너가 vehicles/index 인라인 only, 즉시 fix)**: `dispatch('notify')` 받는 Alpine 컴포넌트가 `vehicles/index.blade.php:1927` 페이지 안에만 박혀 있어서 `/erp/approvals` `/erp/transfers` 등 다른 페이지에서 dispatch해도 받는 곳이 없어 토스트가 아예 표시 안 됨 → 사용자가 paid 가드 차단 메시지를 화면에서 볼 수 없는 근본 원인. **fix**: 토스트 리스너 div를 `components/layouts/app/sidebar.blade.php` 글로벌 layout으로 추출, `vehicles/index.blade.php`의 인라인 중복은 제거. 모든 ERP 페이지에서 dispatch('notify') 작동 보장.
+- ⏭️ H-1 production 빌드는 진행 중 (또는 큐 20-A 진입 직후).
 
 ### 노트북에서 발견된 누락 (즉시 fix)
 
@@ -687,6 +691,7 @@ exit
 - `/admin/document-access-logs`는 D안(2026-05-12 결정)으로 화면·라우트 완성됐지만 사이드바 미노출 — URL 직접 진입 가능 상태.
 - 사용자 결정: **로그 화면 사이드바 노출은 모든 화면 완성 후 별건 3(사이드바 재구성 2h)에서 일괄 처리**.
 - `audit_logs`(큐 11-4 기록, UI 미구현) UI 신설도 같은 묶음.
+- **+ 2026-05-17 추가**: 별건 3 범위에 **자금 이체 5상태 머신 `recordEvent` 누락 backfill** 포함 — `InterVehicleTransferService::request/approve/confirmByFinance/reject/requestVoid/approveVoid/confirmVoidByFinance/rejectVoid` 8개 메서드 + 자동 생성 잔금 row(FinalPayment / PurchaseBalancePayment) 모두. audit_logs UI 신설 직전 또는 직후에 한 번에 박는 게 효율적.
 - 메모리 저장: `feedback_sidebar_log_grouping.md`.
 
 ### 큐 20-A 진입 준비 완료
