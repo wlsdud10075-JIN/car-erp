@@ -722,3 +722,21 @@ exit
   - 테스트 2건 1줄 fix (`InterVehicleTransferServiceTest::test_approve_re_validates_guards` 환불 잔금 + `WorkflowGapTest::test_h7_child_delete_refreshes_parent_cache` 잔금)에 `confirmed_at => now()` 추가. ledger 반영 의도 보존.
 - ✅ **자동 테스트 231 passed (회귀 0)**. 회의록 사전 추정 "4파일 재작성"보다 실측 영향 적음 — 큐 20-D 범위 축소(§13 5곳 정합 + Lock + 신규 2종).
 - ⏭️ **다음 — 큐 20-C**: UI 작업 (/erp/transfers 매입·판매 잔금 확정 탭 + 차량 편집 패널 pending/confirmed row 색 분기 + 매입처 계좌 4컬럼 입력 + 사이드바 배지 합산). 예상 4h.
+
+### 큐 20-C 완료 (2026-05-17)
+
+A·B·C·D 네 변경 한 번에 완료.
+
+- ✅ **A. 사이드바 배지 합산** (`components/layouts/app/sidebar.blade.php`): `pendingFinanceConfirmations` 합산 = 자금 이체 awaiting 2종 + `FinalPayment`(transfer_id IS NULL AND confirmed_at IS NULL) + `PurchaseBalancePayment`(confirmed_at IS NULL). 비-재무 사용자는 0.
+- ✅ **B. 매입처 계좌 4컬럼 입력 UI** (`livewire/erp/vehicles/index.blade.php` 매입 탭): "구입처 / 매도비" 다음 섹션 "매입처 계좌 정보 (송금 대상)" 신설. 은행명·예금주·계좌번호(자동 암호화)·계좌 메모. Volt properties + load() + save() + resetForm() 갱신.
+- ✅ **C. /erp/transfers 3 탭 확장** (`livewire/erp/transfers/index.blade.php`):
+  - `#[Url] string $tabType` (transfer / sale_payment / purchase_payment) 추가
+  - `salePayments` / `purchasePayments` / `*AwaitingCount` computed
+  - `openPaymentModal()` / `confirmPayment()` — PaymentConfirmationService 위임
+  - 페이지 상단에 3 탭 + 각 탭별 awaiting 배지
+  - 잔금 탭 데스크탑 테이블 + 모바일 카드 분기 (차량/바이어 또는 매입처/금액/메모/상태/처리)
+  - 공용 모달 confirm 버튼이 `confirmAction` 동적 분기 (transfer → confirm / 잔금 → confirmPayment)
+- ✅ **D. 잔금 row 색 분기** (vehicles/index 매입·판매 탭): `confirmed_at` 유무로 row 배경 + 우측 라벨 분기. confirmed → emerald + "✓ 확정" + 확정자/시각 tooltip / pending → amber + "⏳ 대기".
+- ✅ **자동 테스트 231 passed (회귀 0)**.
+- ✅ **Production 빌드 완료** (app-DCIQXNgB.css 222.16kB).
+- ⏭️ **다음 — 큐 20-D**: §13 5곳 정합 재검증 + paid Settlement snapshot lock + FinalPayment::updating 훅 + 신규 테스트 2종 (PaymentConfirmationServiceTest / PurchaseAccountTest). 범위 축소됨 (4파일 재작성은 큐 20-B에서 자명 정합으로 해소). 예상 2~3h.

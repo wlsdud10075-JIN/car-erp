@@ -1,7 +1,10 @@
 <?php
 
+use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
+use App\Models\PurchaseBalancePayment;
 use App\Services\InterVehicleTransferService;
+use App\Services\PaymentConfirmationService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -24,6 +27,10 @@ use Livewire\WithPagination;
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
+    /** 큐 20-C — 'transfer' (자금 이체) / 'sale_payment' (판매 잔금) / 'purchase_payment' (매입 잔금) */
+    #[Url]
+    public string $tabType = 'transfer';
+
     #[Url]
     public string $statusFilter = 'awaiting';   // awaiting / all / executed / voided / finance_rejected
 
@@ -33,6 +40,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $showModal = false;
 
     public ?int $modalTransferId = null;
+
+    /** 큐 20-C — 잔금 모달용 (sale_payment / purchase_payment) */
+    public ?int $modalPaymentId = null;
 
     public string $financeNote = '';
 
@@ -46,6 +56,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! auth()->user()?->canConfirmFinanceTransfer()) {
             abort(403, '재무 확정 권한이 없습니다. (관리 role 은 자기 승인을 직접 처리할 수 없음 — SoD)');
         }
+    }
+
+    public function updatedTabType(): void
+    {
+        $this->resetPage();
+        $this->statusFilter = 'awaiting';
     }
 
     public function updatedPerPage(): void
@@ -86,6 +102,103 @@ new #[Layout('components.layouts.app')] class extends Component {
         ])->count();
     }
 
+    /** 큐 20-C — 판매 잔금 (영업 직접 입력 = transfer_id IS NULL). */
+    #[Computed]
+    public function salePayments()
+    {
+        return FinalPayment::query()
+            ->with(['vehicle:id,vehicle_number,buyer_id', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
+            ->whereNull('transfer_id')
+            ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
+            ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
+            ->orderByDesc('created_at')
+            ->paginate($this->perPage);
+    }
+
+    #[Computed]
+    public function salePaymentAwaitingCount(): int
+    {
+        return FinalPayment::whereNull('transfer_id')->whereNull('confirmed_at')->count();
+    }
+
+    /** 큐 20-C — 매입 잔금. */
+    #[Computed]
+    public function purchasePayments()
+    {
+        return PurchaseBalancePayment::query()
+            ->with(['vehicle:id,vehicle_number,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
+            ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
+            ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
+            ->orderByDesc('created_at')
+            ->paginate($this->perPage);
+    }
+
+    #[Computed]
+    public function purchasePaymentAwaitingCount(): int
+    {
+        return PurchaseBalancePayment::whereNull('confirmed_at')->count();
+    }
+
+    /** 큐 20-C — 잔금 모달 열기 (sale_payment / purchase_payment 공용). */
+    public function openPaymentModal(int $id): void
+    {
+        if ($this->tabType === 'sale_payment') {
+            $p = FinalPayment::find($id);
+            if (! $p || $p->confirmed_at !== null || $p->transfer_id !== null) {
+                $this->dispatch('notify', message: '확정 대기 상태의 판매 잔금만 처리할 수 있습니다.', type: 'warning');
+
+                return;
+            }
+        } elseif ($this->tabType === 'purchase_payment') {
+            $p = PurchaseBalancePayment::find($id);
+            if (! $p || $p->confirmed_at !== null) {
+                $this->dispatch('notify', message: '확정 대기 상태의 매입 잔금만 처리할 수 있습니다.', type: 'warning');
+
+                return;
+            }
+        } else {
+            return;
+        }
+
+        $this->modalPaymentId = $id;
+        $this->decisionMode = 'confirm';
+        $this->financeNote = '';
+        $this->showModal = true;
+    }
+
+    /** 큐 20-C — 잔금 재무 확정 실행 (sale_payment / purchase_payment 공용). */
+    public function confirmPayment(): void
+    {
+        try {
+            $service = app(PaymentConfirmationService::class);
+            $note = trim($this->financeNote) !== '' ? trim($this->financeNote) : null;
+
+            if ($this->tabType === 'sale_payment') {
+                $p = FinalPayment::find($this->modalPaymentId);
+                if (! $p) {
+                    throw new \DomainException('판매 잔금을 찾을 수 없습니다.');
+                }
+                $service->confirmPayment($p, auth()->user(), $note);
+                $msg = '판매 잔금 재무 확정 완료 — ledger 반영됨.';
+            } elseif ($this->tabType === 'purchase_payment') {
+                $p = PurchaseBalancePayment::find($this->modalPaymentId);
+                if (! $p) {
+                    throw new \DomainException('매입 잔금을 찾을 수 없습니다.');
+                }
+                $service->confirmPurchasePayment($p, auth()->user(), $note);
+                $msg = '매입 잔금 재무 확정 완료 — ledger 반영됨.';
+            } else {
+                throw new \DomainException('알 수 없는 탭입니다.');
+            }
+
+            $this->dispatch('notify', message: $msg, type: 'success');
+            $this->closeModal();
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: '재무 확정 실패: '.$e->getMessage(), type: 'error');
+            $this->closeModal();
+        }
+    }
+
     public function openModal(int $id, string $mode = 'confirm'): void
     {
         $transfer = InterVehicleTransfer::find($id);
@@ -122,6 +235,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->showModal = false;
         $this->modalTransferId = null;
+        $this->modalPaymentId = null;
         $this->decisionMode = 'confirm';
         $this->financeNote = '';
         $this->rejectReason = '';
@@ -207,9 +321,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <h2 class="text-xl font-bold text-gray-800">재무 처리</h2>
             <p class="mt-1 text-xs text-gray-500">
-                관리 승인 완료 — 실물 자금 처리 대기
-                <span class="ml-1 font-semibold text-amber-600">{{ $this->awaitingCount }}</span>건.
-                재무가 통장 확인 후 [재무 처리 완료] 클릭 시 시스템 ledger 기록 (final_payment 페어).
+                자금 이체 + 매입·판매 잔금 재무 확정 통합 페이지. 재무 확정 시점에 ledger 반영.
             </p>
         </div>
         <div class="flex items-center gap-3">
@@ -222,22 +334,53 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    {{-- 필터 --}}
+    {{-- 큐 20-C — 유형 탭 (자금 이체 / 매입 잔금 / 판매 잔금) --}}
     <div class="card flex flex-wrap items-center gap-2">
-        <div class="flex gap-1">
-            @foreach(['awaiting' => '재무 대기', 'executed' => '실행 완료', 'voided' => '취소', 'finance_rejected' => '재무 거부', 'all' => '전체'] as $val => $label)
-            <button wire:click="$set('statusFilter', '{{ $val }}')"
-                    class="rounded-full px-3 py-1 text-xs font-medium transition
-                           {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
-                {{ $label }}
-                @if($val === 'awaiting' && $this->awaitingCount > 0)
-                <span class="ml-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{{ $this->awaitingCount }}</span>
-                @endif
-            </button>
-            @endforeach
+        @foreach([
+            'transfer' => ['차량 간 자금 이체', $this->awaitingCount],
+            'sale_payment' => ['판매 잔금', $this->salePaymentAwaitingCount],
+            'purchase_payment' => ['매입 잔금', $this->purchasePaymentAwaitingCount],
+        ] as $key => [$label, $cnt])
+        <button wire:click="$set('tabType', '{{ $key }}')"
+                class="rounded-lg px-4 py-2 text-sm font-medium transition
+                       {{ $tabType === $key ? 'bg-violet-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+            {{ $label }}
+            @if($cnt > 0)
+            <span class="ml-1 rounded-full {{ $tabType === $key ? 'bg-white/30' : 'bg-amber-500' }} px-1.5 text-[10px] font-bold {{ $tabType === $key ? 'text-white' : 'text-white' }}">
+                {{ $cnt }}
+            </span>
+            @endif
+        </button>
+        @endforeach
+    </div>
+
+    {{-- 상태 필터 --}}
+    <div class="card flex flex-wrap items-center gap-2">
+        <div class="flex gap-1 flex-wrap">
+            @if($tabType === 'transfer')
+                @foreach(['awaiting' => '재무 대기', 'executed' => '실행 완료', 'voided' => '취소', 'finance_rejected' => '재무 거부', 'all' => '전체'] as $val => $label)
+                <button wire:click="$set('statusFilter', '{{ $val }}')"
+                        class="rounded-full px-3 py-1 text-xs font-medium transition
+                               {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+                    {{ $label }}
+                    @if($val === 'awaiting' && $this->awaitingCount > 0)
+                    <span class="ml-1 rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">{{ $this->awaitingCount }}</span>
+                    @endif
+                </button>
+                @endforeach
+            @else
+                @foreach(['awaiting' => '재무 대기', 'executed' => '확정 완료', 'all' => '전체'] as $val => $label)
+                <button wire:click="$set('statusFilter', '{{ $val }}')"
+                        class="rounded-full px-3 py-1 text-xs font-medium transition
+                               {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+                    {{ $label }}
+                </button>
+                @endforeach
+            @endif
         </div>
     </div>
 
+    @if($tabType === 'transfer')
     {{-- 데스크탑 테이블 --}}
     <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm border-separate border-spacing-0">
@@ -401,6 +544,114 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div>{{ $this->transfers->links() }}</div>
+    @endif
+
+    @if($tabType === 'sale_payment' || $tabType === 'purchase_payment')
+    @php
+        $isSale = $tabType === 'sale_payment';
+        $payments = $isSale ? $this->salePayments : $this->purchasePayments;
+    @endphp
+    {{-- 데스크탑 테이블 (판매·매입 잔금 공용) --}}
+    <div class="hidden sm:block overflow-x-auto">
+        <table class="w-full text-sm border-separate border-spacing-0">
+            <thead>
+                <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th class="pb-2 pr-4 font-medium">차량</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? '바이어' : '매입처/담당' }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">금액</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? '입금일' : '지급일' }}</th>
+                    <th class="pb-2 pr-4 font-medium">메모</th>
+                    <th class="pb-2 pr-4 font-medium">상태</th>
+                    <th class="pb-2 font-medium text-right">처리</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($payments as $p)
+                @php $isAwaiting = $p->confirmed_at === null; @endphp
+                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-800">{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</td>
+                    <td class="py-3 pr-4 text-xs text-gray-700">
+                        @if($isSale)
+                            {{ $p->vehicle?->buyer?->name ?? '-' }}
+                        @else
+                            <div>{{ $p->vehicle?->purchase_from ?? '-' }}</div>
+                            <div class="text-[10px] text-gray-500">{{ $p->vehicle?->salesman?->name ?? '-' }}</div>
+                        @endif
+                    </td>
+                    <td class="py-3 pr-4 text-right font-semibold text-violet-700">
+                        {{ number_format((float)$p->amount, 0) }} <span class="text-[10px] text-gray-500">원</span>
+                    </td>
+                    <td class="py-3 pr-4 text-xs text-gray-600">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-xs text-gray-500 max-w-xs truncate">{{ $p->note ?? '' }}</td>
+                    <td class="py-3 pr-4">
+                        @if($isAwaiting)
+                        <span class="badge badge-amber">대기</span>
+                        @else
+                        <span class="badge badge-green">확정</span>
+                        <div class="mt-0.5 text-[10px] text-gray-500">
+                            {{ $p->financeConfirmer?->name ?? '재무' }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
+                        </div>
+                        @endif
+                    </td>
+                    <td class="py-3 text-right">
+                        @if($isAwaiting)
+                        <button wire:click="openPaymentModal({{ $p->id }})"
+                                class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
+                            재무 처리 완료
+                        </button>
+                        @else
+                        <span class="text-xs text-gray-400">처리됨</span>
+                        @endif
+                    </td>
+                </tr>
+                @empty
+                <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">조건에 맞는 잔금이 없습니다.</td></tr>
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+
+    {{-- 모바일 카드 (판매·매입 잔금 공용) --}}
+    <div class="block sm:hidden space-y-2">
+        @forelse($payments as $p)
+        @php $isAwaiting = $p->confirmed_at === null; @endphp
+        <div class="card-tight">
+            <div class="flex items-center justify-between">
+                <div class="font-mono text-xs text-gray-800">{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</div>
+                <span class="badge {{ $isAwaiting ? 'badge-amber' : 'badge-green' }}">{{ $isAwaiting ? '대기' : '확정' }}</span>
+            </div>
+            <div class="mt-1 text-xs text-gray-600">
+                @if($isSale)
+                    {{ $p->vehicle?->buyer?->name ?? '-' }}
+                @else
+                    {{ $p->vehicle?->purchase_from ?? '-' }} · {{ $p->vehicle?->salesman?->name ?? '-' }}
+                @endif
+            </div>
+            <div class="mt-1 text-sm font-semibold text-violet-700">
+                {{ number_format((float)$p->amount, 0) }} 원
+                <span class="ml-2 text-[10px] text-gray-500">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</span>
+            </div>
+            @if($p->note)
+            <div class="mt-1 text-[11px] text-gray-500">{{ $p->note }}</div>
+            @endif
+            @if($isAwaiting)
+            <button wire:click="openPaymentModal({{ $p->id }})"
+                    class="mt-2 w-full rounded bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white">
+                재무 처리 완료
+            </button>
+            @else
+            <div class="mt-1 text-[10px] text-gray-500">
+                {{ $p->financeConfirmer?->name ?? '재무' }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
+            </div>
+            @endif
+        </div>
+        @empty
+        <div class="py-12 text-center text-sm text-gray-400">조건에 맞는 잔금이 없습니다.</div>
+        @endforelse
+    </div>
+
+    <div>{{ $payments->links() }}</div>
+    @endif
 
 </div>
 
@@ -443,21 +694,32 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
         </div>
         @else
-        <h3 class="text-base font-semibold text-gray-900">재무 처리 완료 확인</h3>
-        <p class="mt-2 text-sm text-gray-600">
-            통장 거래가 정상적으로 처리되었는지 확인 후 [재무 처리 완료] 를 클릭하세요.
-            이 시점에 시스템 ledger (final_payment) 가 기록되고 양 차량 미수 캐시가 갱신됩니다.
-        </p>
+        @php
+            // 큐 20-C — tabType별 confirm 액션 분기
+            $confirmAction = $tabType === 'transfer' ? 'confirm' : 'confirmPayment';
+            $confirmTitle = match($tabType) {
+                'sale_payment' => '판매 잔금 재무 확정',
+                'purchase_payment' => '매입 잔금 재무 확정',
+                default => '재무 처리 완료 확인',
+            };
+            $confirmDesc = match($tabType) {
+                'sale_payment' => '바이어 입금이 통장에 들어왔는지 확인 후 [재무 처리 완료]를 클릭하세요. 이 시점에 confirmed_at SET → ledger 반영 → 미수금 감소.',
+                'purchase_payment' => '매입처 송금이 완료됐는지 확인 후 [재무 처리 완료]를 클릭하세요. 이 시점에 confirmed_at SET → ledger 반영 → 미지급 감소.',
+                default => '통장 거래가 정상적으로 처리되었는지 확인 후 [재무 처리 완료] 를 클릭하세요. 이 시점에 시스템 ledger (final_payment) 가 기록되고 양 차량 미수 캐시가 갱신됩니다.',
+            };
+        @endphp
+        <h3 class="text-base font-semibold text-gray-900">{{ $confirmTitle }}</h3>
+        <p class="mt-2 text-sm text-gray-600">{{ $confirmDesc }}</p>
         <div class="mt-3">
             <label class="block text-xs text-gray-500 mb-1">은행 거래 번호 또는 처리 메모 (선택)</label>
             <textarea wire:model="financeNote" rows="3"
                       class="input-base"
-                      placeholder="예: KB 12345-6789 / 신한 거래번호 등 — 입력 시 audit_logs 에 기록"></textarea>
+                      placeholder="예: KB 12345-6789 / 신한 거래번호 등 — 입력 시 finance_note 에 기록"></textarea>
         </div>
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeModal"
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button wire:click="confirm"
+            <button wire:click="{{ $confirmAction }}"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                 재무 처리 완료

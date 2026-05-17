@@ -48,13 +48,25 @@
         ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
         : 0;
 
-    // 큐 19-F — 재무 처리 대기 건수 (canConfirmFinanceTransfer user만 계산)
-    $pendingFinanceConfirmations = $user->canConfirmFinanceTransfer()
-        ? \App\Models\InterVehicleTransfer::whereIn('status', [
+    // 큐 19-F / 20-C — 재무 처리 대기 건수 합산 (자금 이체 + 매입 잔금 + 판매 잔금)
+    // 단일 사용자(canConfirmFinanceTransfer)만 계산. 비-재무 사용자는 0.
+    if ($user->canConfirmFinanceTransfer()) {
+        $pendingTransferCount = \App\Models\InterVehicleTransfer::whereIn('status', [
             \App\Models\InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
             \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
-        ])->count()
-        : 0;
+        ])->count();
+        // 큐 20-C — 영업 직접 입력 잔금 중 미확정 (transfer_id IS NULL AND confirmed_at IS NULL)
+        $pendingFinalPaymentCount = \App\Models\FinalPayment::query()
+            ->whereNull('transfer_id')
+            ->whereNull('confirmed_at')
+            ->count();
+        $pendingPurchaseBalanceCount = \App\Models\PurchaseBalancePayment::query()
+            ->whereNull('confirmed_at')
+            ->count();
+        $pendingFinanceConfirmations = $pendingTransferCount + $pendingFinalPaymentCount + $pendingPurchaseBalanceCount;
+    } else {
+        $pendingFinanceConfirmations = 0;
+    }
 
     $menuGroups = [
         [

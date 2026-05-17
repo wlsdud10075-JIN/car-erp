@@ -88,6 +88,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_date = '';
     public string $salesman_id_str = '';
     public string $purchase_from  = '';
+    // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 cast로 자동 암호화)
+    public string $purchase_seller_bank    = '';
+    public string $purchase_seller_account = '';
+    public string $purchase_seller_holder  = '';
+    public string $purchase_bank_memo      = '';
     public string $purchase_price_str    = '';
     public string $selling_fee_str       = '';
     public string $cost_deregistration_str = '';
@@ -619,6 +624,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_date       = $v->purchase_date ? $v->purchase_date->format('Y-m-d') : '';
         $this->salesman_id_str     = $v->salesman_id   ? (string)$v->salesman_id : '';
         $this->purchase_from       = $v->purchase_from ?? '';
+        // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
+        $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
+        $this->purchase_seller_account = $v->purchase_seller_account ?? '';
+        $this->purchase_seller_holder  = $v->purchase_seller_holder  ?? '';
+        $this->purchase_bank_memo      = $v->purchase_bank_memo      ?? '';
         $this->purchase_price_str  = $v->purchase_price ? number_format($v->purchase_price) : '';
         $this->selling_fee_str     = $v->selling_fee    ? number_format($v->selling_fee)    : '';
         $this->cost_deregistration_str = $v->cost_deregistration ? number_format($v->cost_deregistration) : '';
@@ -637,6 +647,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
             'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
+            // 큐 20-C — 분자 A안 시각화
+            'confirmed_at' => $p->confirmed_at?->format('Y-m-d H:i'),
+            'finance_confirmer' => $p->financeConfirmer?->name,
         ])->toArray();
 
         // 판매
@@ -662,6 +675,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
                 'locked' => in_array($p->id, $lockedFinalIds),
                 'transfer' => null,
+                // 큐 20-C — 분자 A안 시각화: confirmed_at 유무로 row 색 분기
+                'confirmed_at' => $p->confirmed_at?->format('Y-m-d H:i'),
+                'finance_confirmer' => $p->financeConfirmer?->name,
             ];
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
@@ -1052,6 +1068,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_date'    => $toDate($this->purchase_date),
             'salesman_id'      => $toId($this->salesman_id_str),
             'purchase_from'    => $this->purchase_from ?: null,
+            // 큐 20-A/C — 매입처 계좌 4컬럼
+            'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
+            'purchase_seller_account' => $this->purchase_seller_account ?: null,
+            'purchase_seller_holder'  => $this->purchase_seller_holder  ?: null,
+            'purchase_bank_memo'      => $this->purchase_bank_memo      ?: null,
             'purchase_price'   => $toInt($this->purchase_price_str),
             'selling_fee'      => $toInt($this->selling_fee_str),
             'cost_deregistration' => $toInt($this->cost_deregistration_str),
@@ -1876,7 +1897,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_price_str','selling_fee_str',
+            'purchase_date','salesman_id_str','purchase_from',
+            'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
+            'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo',
@@ -2354,6 +2377,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div><label class="label-base">매도비 (원)</label><input wire:model="selling_fee_str" type="text" class="input-base" placeholder="0" /></div>
             </div>
 
+            {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-blue-400"></span>
+                <span class="section-title">매입처 계좌 정보 (송금 대상)</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="label-base">은행명</label>
+                    <input wire:model="purchase_seller_bank" type="text" class="input-base" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" />
+                </div>
+                <div>
+                    <label class="label-base">예금주</label>
+                    <input wire:model="purchase_seller_holder" type="text" class="input-base" placeholder="개인명 또는 법인명" maxlength="100" />
+                </div>
+                <div class="col-span-2">
+                    <label class="label-base flex items-center gap-1">
+                        계좌번호
+                        <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
+                    </label>
+                    <input wire:model="purchase_seller_account" type="text" class="input-base font-mono" placeholder="123-456-789012" autocomplete="off" />
+                </div>
+                <div class="col-span-2">
+                    <label class="label-base">계좌 메모</label>
+                    <textarea wire:model="purchase_bank_memo" class="input-base" rows="2" placeholder="송금 시 참고할 내용 (선택)"></textarea>
+                </div>
+            </div>
+
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-300"></span>
@@ -2387,10 +2438,28 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button type="button" wire:click="addPurchasePayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
                 </div>
                 @foreach($purchaseBalancePayments as $idx => $row)
-                <div class="flex gap-2 items-center">
+                @php
+                    // 큐 20-C — confirmed_at 유무로 분자 A안 ledger 반영 상태 시각화
+                    $isPbpConfirmed = !empty($row['confirmed_at']);
+                    $pbpRowBg = $isPbpConfirmed ? 'bg-emerald-50/40 border-emerald-200' : (!empty($row['id']) ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
+                @endphp
+                <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액(원)" />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
+                    @if(!empty($row['id']))
+                        @if($isPbpConfirmed)
+                        <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
+                              title="재무 확정: {{ $row['confirmed_at'] }} ({{ $row['finance_confirmer'] ?? '?' }})">
+                            ✓ 확정
+                        </span>
+                        @else
+                        <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
+                              title="재무 확정 대기 — ledger 미반영">
+                            ⏳ 대기
+                        </span>
+                        @endif
+                    @endif
                     <button type="button" wire:click="removePurchasePayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
                 </div>
                 @endforeach
@@ -2620,10 +2689,28 @@ new #[Layout('components.layouts.app')] class extends Component {
                        class="text-xs text-violet-500 hover:underline whitespace-nowrap">채권관리에서 수정</a>
                 </div>
                 @else
-                <div class="flex gap-2 items-center">
+                @php
+                    // 큐 20-C — confirmed_at 유무로 분자 A안 ledger 반영 상태 시각화
+                    $isConfirmed = !empty($row['confirmed_at']);
+                    $rowBg = $isConfirmed ? 'bg-emerald-50/40 border-emerald-200' : ($row['id'] ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
+                @endphp
+                <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액" />
                     <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
+                    @if($row['id'])
+                        @if($isConfirmed)
+                        <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
+                              title="재무 확정: {{ $row['confirmed_at'] }} ({{ $row['finance_confirmer'] ?? '?' }})">
+                            ✓ 확정
+                        </span>
+                        @else
+                        <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
+                              title="재무 확정 대기 — ledger 미반영">
+                            ⏳ 대기
+                        </span>
+                        @endif
+                    @endif
                     <button type="button" wire:click="removeFinalPayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
                 </div>
                 @endif
