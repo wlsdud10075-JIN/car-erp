@@ -740,3 +740,16 @@ A·B·C·D 네 변경 한 번에 완료.
 - ✅ **자동 테스트 231 passed (회귀 0)**.
 - ✅ **Production 빌드 완료** (app-DCIQXNgB.css 222.16kB).
 - ⏭️ **다음 — 큐 20-D**: §13 5곳 정합 재검증 + paid Settlement snapshot lock + FinalPayment::updating 훅 + 신규 테스트 2종 (PaymentConfirmationServiceTest / PurchaseAccountTest). 범위 축소됨 (4파일 재작성은 큐 20-B에서 자명 정합으로 해소). 예상 2~3h.
+
+### 큐 20-D 완료 (2026-05-17) — 큐 20 전체 완료
+
+- ✅ **§13 5곳 정합 재검증**: `sale_unpaid_amount_krw_cache` 갱신 경로 2곳 (Vehicle::saving L222, refreshCaches L415) 모두 `sale_unpaid_amount_krw` accessor 경유 → `sale_unpaid_amount` accessor 경유 → 분자 A안 필터 단일 SoT. 5곳 (차량 목록 게이지 / 편집 미납률 / 채권 KPI / 관리자 대시보드 미수금 KPI / G1 50% 룰[미구현]) 모두 동일 출처. 추가 변경 불필요.
+- ✅ **paid Settlement snapshot lock** (Settlement::saving): `confirmed_snapshot`에 `confirmed_final_payments` / `confirmed_purchase_payments` 추가 캡처. paid 시점 ledger의 무엇이 confirmed였는지 회계감사 추적 가능.
+- ✅ **FinalPayment::updating + deleting lock**: `confirmed_at` SET 후 amount / payment_date / confirmed_at / transfer_id 변경 차단 + DELETE 차단. `$allowConfirmedMutation` flag로 InterVehicleTransfer void 페어 / 테스트 우회.
+- ✅ **PurchaseBalancePayment::updating + deleting lock**: 동일 패턴.
+- ✅ **신규 테스트 2종**:
+  - `PaymentConfirmationServiceTest` (10 cases) — 정상 흐름 / 권한 / 재확정 / transfer 잔금 / paid Settlement / 매입 잔금 정상 / 매입 재확정 / confirmed 잔금 UPDATE 차단 / DELETE 차단 / 매입 confirmed DELETE 차단
+  - `PurchaseAccountTest` (5 cases) — 암호화 저장 / null / MASKED_COLUMNS / recordChange 마스킹 / 다른 필드 영향 없음
+- ✅ **자동 테스트 246 passed** (231 → +15 신규, 회귀 0).
+- ✅ **WorkflowGapTest::h7** 큐 20-D lock 충돌 — `$allowConfirmedMutation` flag 우회로 테스트 의도 보존하면서 호환.
+- ✅ **큐 20 전체 완료** — 회의록 P2 정석 패키지 (A안 + 전체 통합 + 별도 Service + 19-F-D 선행) 4 큐 모두 구현 완료.

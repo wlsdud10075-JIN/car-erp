@@ -72,6 +72,24 @@ class Settlement extends Model
                 && $s->getOriginal('settlement_status') !== 'paid';
             if ($becamePaid && empty($s->confirmed_snapshot)) {
                 $v = $s->vehicle;
+                // 큐 20-D — Gemini Lock 지적 — 잔금 confirmed 상태도 함께 캡처.
+                // paid 시점 ledger 의 무엇이 confirmed였는지 회계감사 추적 가능.
+                $confirmedFinalPayments = $v
+                    ? $v->finalPayments->whereNotNull('confirmed_at')->map(fn ($p) => [
+                        'id' => $p->id,
+                        'amount' => (float) $p->amount,
+                        'confirmed_at' => $p->confirmed_at?->toIso8601String(),
+                        'transfer_id' => $p->transfer_id,
+                    ])->values()->all()
+                    : [];
+                $confirmedPurchasePayments = $v
+                    ? $v->purchaseBalancePayments->whereNotNull('confirmed_at')->map(fn ($p) => [
+                        'id' => $p->id,
+                        'amount' => (float) $p->amount,
+                        'confirmed_at' => $p->confirmed_at?->toIso8601String(),
+                    ])->values()->all()
+                    : [];
+
                 $s->confirmed_snapshot = [
                     'captured_at' => now()->toIso8601String(),
                     'exchange_rate' => $v?->exchange_rate,
@@ -86,6 +104,9 @@ class Settlement extends Model
                     'total_margin' => $s->total_margin,
                     'settlement_amount' => $s->settlement_amount,
                     'actual_payout' => $s->actual_payout,
+                    // 큐 20-D — 잔금 confirmed 스냅샷 (Gemini Lock)
+                    'confirmed_final_payments' => $confirmedFinalPayments,
+                    'confirmed_purchase_payments' => $confirmedPurchasePayments,
                 ];
             }
         });

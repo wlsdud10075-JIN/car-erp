@@ -335,7 +335,13 @@ class WorkflowGapTest extends TestCase
         $v->refresh();
         $this->assertSame(0, (int) $v->sale_unpaid_amount_krw_cache);
 
-        $fp->delete();
+        // 큐 20-D — 확정 잔금은 회계 무결성 lock으로 보호 → 테스트는 flag 우회로 삭제 시뮬.
+        FinalPayment::$allowConfirmedMutation = true;
+        try {
+            $fp->delete();
+        } finally {
+            FinalPayment::$allowConfirmedMutation = false;
+        }
         $v->refresh();
 
         // 잔금 삭제 → 미입금 500 다시 발생 → 캐시 재계산

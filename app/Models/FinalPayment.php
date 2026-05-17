@@ -30,6 +30,13 @@ class FinalPayment extends Model
      */
     public static bool $allowTransferLinkedMutation = false;
 
+    /**
+     * 큐 20-D — confirmed_at SET 후 UPDATE/DELETE 차단 lock 우회 플래그.
+     * 정상 흐름에서는 retroactive 변경 차단(회계 무결성). InterVehicleTransferService 의
+     * void 페어 생성(append-only)은 위 $allowTransferLinkedMutation 플래그로 분기되며 별개.
+     */
+    public static bool $allowConfirmedMutation = false;
+
     protected static function booted(): void
     {
         static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
@@ -40,10 +47,24 @@ class FinalPayment extends Model
             if ($p->getOriginal('transfer_id') !== null && ! self::$allowTransferLinkedMutation) {
                 throw new \DomainException('차량 간 자금 이체로 생성된 잔금은 수정할 수 없습니다. 이체 취소(void)는 별도 승인 흐름을 사용하세요.');
             }
+
+            // 큐 20-D — confirmed_at SET 후 retroactive UPDATE 차단 (회계 무결성).
+            // confirmed_at → confirmed_at 이외 변경은 허용 (예: PaymentConfirmationService에서 SET 자체).
+            $originalConfirmedAt = $p->getOriginal('confirmed_at');
+            if ($originalConfirmedAt !== null && ! self::$allowConfirmedMutation) {
+                // confirmed_at 자체를 변경하는 경우만 차단 (re-confirm 또는 unlock 시도)
+                if ($p->isDirty('confirmed_at') || $p->isDirty('amount') || $p->isDirty('payment_date') || $p->isDirty('transfer_id')) {
+                    throw new \DomainException('재무 확정된 잔금의 amount / payment_date / confirmed_at / transfer_id 는 수정할 수 없습니다 (회계 무결성).');
+                }
+            }
         });
         static::deleting(function (FinalPayment $p) {
             if ($p->transfer_id !== null && ! self::$allowTransferLinkedMutation) {
                 throw new \DomainException('차량 간 자금 이체로 생성된 잔금은 삭제할 수 없습니다. 이체 취소(void)는 별도 승인 흐름을 사용하세요.');
+            }
+            // 큐 20-D — confirmed_at SET 후 DELETE 차단.
+            if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation) {
+                throw new \DomainException('재무 확정된 잔금은 삭제할 수 없습니다 (회계 무결성).');
             }
         });
 
