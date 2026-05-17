@@ -20,6 +20,8 @@ class AuditLog extends Model
     /** RRN 등 마스킹 처리 컬럼 — old/new value를 평문 저장 X. */
     public const MASKED_COLUMNS = [
         'nice_reg_owner_rrn' => '[ENCRYPTED RRN — value not logged]',
+        // 큐 20-A — 매입처 계좌번호 (개인정보)
+        'purchase_seller_account' => '[ENCRYPTED ACCOUNT — value not logged]',
     ];
 
     public function user(): BelongsTo

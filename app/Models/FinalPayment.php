@@ -7,9 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FinalPayment extends Model
 {
-    protected $fillable = ['vehicle_id', 'transfer_id', 'amount', 'payment_date', 'note'];
+    protected $fillable = [
+        'vehicle_id', 'transfer_id', 'amount', 'payment_date', 'note',
+        'confirmed_by_user_id', 'confirmed_at', 'finance_note',
+    ];
 
-    protected $casts = ['payment_date' => 'date'];
+    protected $casts = [
+        'payment_date' => 'date',
+        'confirmed_at' => 'datetime',
+    ];
 
     /**
      * 큐 10 H5 — ReceivableHistory.syncFinalPayment 안에서 FinalPayment를 생성할 때
@@ -67,5 +73,10 @@ class FinalPayment extends Model
     public function transfer(): BelongsTo
     {
         return $this->belongsTo(InterVehicleTransfer::class, 'transfer_id');
+    }
+
+    public function financeConfirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by_user_id');
     }
 }

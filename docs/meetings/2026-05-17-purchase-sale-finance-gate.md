@@ -675,7 +675,7 @@ exit
 - ✅ **H-3 paid Settlement 가드 (백엔드)**: TEST-19F-A에 paid Settlement 1건 강제 생성 후 영업 → void 요청 → 관리 승인 시도. **`InterVehicleTransferService::approveVoid` L307 `assertPaidSettlementGuard`가 정상 차단** — transfer.status=executed / ApprovalRequest.status=pending 둘 다 변경 없음으로 확인. 회계 무결성 보호 성공.
 - ❌ → ✅ **H-3 부수 발견 1 (UI catch 모달 닫힘 누락, 즉시 fix)**: `approvals/index.blade.php:147` / `transfers/index.blade.php:156·194` 3곳 catch 블록에서 토스트만 dispatch하고 모달은 안 닫음 → 사용자가 "처리 실패" 토스트(3~5초 자동 소멸)를 놓치면 모달 멈춤으로 인식. **fix**: 3곳 catch 안에 `closeModal()` / `closeDecisionModal()` 한 줄씩 추가.
 - ❌ → ✅ **H-3 부수 발견 2 (notify 토스트 리스너가 vehicles/index 인라인 only, 즉시 fix)**: `dispatch('notify')` 받는 Alpine 컴포넌트가 `vehicles/index.blade.php:1927` 페이지 안에만 박혀 있어서 `/erp/approvals` `/erp/transfers` 등 다른 페이지에서 dispatch해도 받는 곳이 없어 토스트가 아예 표시 안 됨 → 사용자가 paid 가드 차단 메시지를 화면에서 볼 수 없는 근본 원인. **fix**: 토스트 리스너 div를 `components/layouts/app/sidebar.blade.php` 글로벌 layout으로 추출, `vehicles/index.blade.php`의 인라인 중복은 제거. 모든 ERP 페이지에서 dispatch('notify') 작동 보장.
-- ⏭️ H-1 production 빌드는 진행 중 (또는 큐 20-A 진입 직후).
+- ✅ **H-1 production 빌드**: `npm run build` + `view:clear` + `cache:clear` 후 B 흐름 1회 재돌림. 헤더 박스 색 즉시 전환(violet→blue→emerald) + 토스트 4건 + 모달 자동 닫힘 + 미수율 C 75% / D 68.75% + 콘솔 에러 0건 모두 정상. **부록 A 회귀 완전 통과 → 큐 20-A 착수 가능**.
 
 ### 노트북에서 발견된 누락 (즉시 fix)
 
@@ -700,3 +700,13 @@ exit
 ```
 큐 20-A 진행 — final_payments / purchase_balance_payments / vehicles 매입처 계좌 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS
 ```
+
+### 큐 20-A 완료 (2026-05-17)
+
+- ✅ **마이그 3건 실행 완료**:
+  - `2026_05_17_120001_add_finance_gate_to_final_payments` — confirmed_by_user_id (FK users nullOnDelete) + confirmed_at + finance_note + index. Backfill α: `WHERE transfer_id IS NULL`인 row만 `confirmed_at = created_at`. transfer 행은 InterVehicleTransfer.confirmed_at으로 이미 추적.
+  - `2026_05_17_120002_add_finance_gate_to_purchase_balance_payments` — 동일 3컬럼. 매입 잔금은 transfer_id 없음 → 전체 backfill.
+  - `2026_05_17_120003_add_purchase_account_to_vehicles` — purchase_seller_bank / purchase_seller_account (encrypted string 500) / purchase_seller_holder / purchase_bank_memo 4컬럼.
+- ✅ **모델 변경**: `FinalPayment` / `PurchaseBalancePayment` fillable + cast(`confirmed_at` datetime) + `financeConfirmer()` 관계. `Vehicle` fillable 4컬럼 + cast(`purchase_seller_account` => 'encrypted'). `AuditLog::MASKED_COLUMNS`에 `purchase_seller_account` 등록.
+- ✅ **자동 테스트**: 231 passed (큐 19-L 통과 시점과 동일, 회귀 없음).
+- ⏭️ **다음 — 큐 20-B**: `PaymentConfirmationService` 신규 + Vehicle 분자 A안 필터 (`finalPayments()->whereNotNull('confirmed_at')->sum('amount')`) + `User::canConfirmFinance()` alias. 예상 4h.

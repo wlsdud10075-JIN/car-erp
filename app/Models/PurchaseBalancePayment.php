@@ -7,9 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PurchaseBalancePayment extends Model
 {
-    protected $fillable = ['vehicle_id', 'amount', 'payment_date', 'note'];
+    protected $fillable = [
+        'vehicle_id', 'amount', 'payment_date', 'note',
+        'confirmed_by_user_id', 'confirmed_at', 'finance_note',
+    ];
 
-    protected $casts = ['payment_date' => 'date'];
+    protected $casts = [
+        'payment_date' => 'date',
+        'confirmed_at' => 'datetime',
+    ];
 
     protected static function booted(): void
     {
@@ -20,5 +26,10 @@ class PurchaseBalancePayment extends Model
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
+    }
+
+    public function financeConfirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by_user_id');
     }
 }

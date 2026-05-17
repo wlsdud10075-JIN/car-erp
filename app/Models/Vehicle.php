@@ -32,6 +32,8 @@ class Vehicle extends Model
         'nice_spec_width', 'nice_spec_height', 'nice_spec_wheelbase',
         'nice_spec_curb_weight', 'nice_spec_fuel_efficiency',
         'purchase_date', 'salesman_id', 'purchase_from', 'purchase_price', 'selling_fee',
+        // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
+        'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         'down_payment', 'selling_fee_payment', 'purchase_remittance_memo',
@@ -66,6 +68,8 @@ class Vehicle extends Model
         'eta_date' => 'date',
         'bl_issue_date' => 'date',
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
+        // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
+        'purchase_seller_account' => 'encrypted',
     ];
 
     // ── RRN 암호화 (개인정보보호법 §29) ─────────────────────────────
