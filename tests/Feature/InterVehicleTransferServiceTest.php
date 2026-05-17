@@ -230,11 +230,13 @@ class InterVehicleTransferServiceTest extends TestCase
         $c = $this->makeContext(50_000_000);
         $transfer = $this->service->request($c['source'], $c['target'], 25_000_000, $c['sales']);
 
+        // 큐 20-B — 분자 A안: ledger 반영하려면 confirmed_at SET 필수. 환불도 재무 확정 가정.
         FinalPayment::create([
             'vehicle_id' => $c['source']->id,
             'amount' => -30_000_000,
             'payment_date' => now()->toDateString(),
             'note' => '환불 (테스트)',
+            'confirmed_at' => now(),
         ]);
 
         $this->expectException(DomainException::class);

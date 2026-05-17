@@ -325,10 +325,12 @@ class WorkflowGapTest extends TestCase
             'currency' => 'KRW',
             'exchange_rate' => 1,
         ]);
+        // 큐 20-B — 분자 A안: ledger 반영하려면 confirmed_at SET 필수.
         $fp = FinalPayment::create([
             'vehicle_id' => $v->id,
             'amount' => 500,
             'payment_date' => '2026-05-01',
+            'confirmed_at' => now(),
         ]);
         $v->refresh();
         $this->assertSame(0, (int) $v->sale_unpaid_amount_krw_cache);

@@ -710,3 +710,15 @@ exit
 - ✅ **모델 변경**: `FinalPayment` / `PurchaseBalancePayment` fillable + cast(`confirmed_at` datetime) + `financeConfirmer()` 관계. `Vehicle` fillable 4컬럼 + cast(`purchase_seller_account` => 'encrypted'). `AuditLog::MASKED_COLUMNS`에 `purchase_seller_account` 등록.
 - ✅ **자동 테스트**: 231 passed (큐 19-L 통과 시점과 동일, 회귀 없음).
 - ⏭️ **다음 — 큐 20-B**: `PaymentConfirmationService` 신규 + Vehicle 분자 A안 필터 (`finalPayments()->whereNotNull('confirmed_at')->sum('amount')`) + `User::canConfirmFinance()` alias. 예상 4h.
+
+### 큐 20-B 완료 (2026-05-17)
+
+- ✅ **`app/Services/PaymentConfirmationService.php` 신규**: `confirmPayment()` / `confirmPurchasePayment()` — 권한 가드(`canConfirmFinance`) + 재확정 차단 + transfer 잔금 차단(`transfer_id IS NOT NULL`은 InterVehicleTransfer가 관리) + paid Settlement H4 가드 + DB::transaction.
+- ✅ **`Vehicle::getSaleUnpaidAmountAttribute()` 분자 A안 필터**: `finalPayments->whereNotNull('confirmed_at')->sum('amount')`. receivableHistories는 별도 회수 이력이라 필터 무관.
+- ✅ **`Vehicle::getPurchaseUnpaidAmountAttribute()` 분자 A안 필터**: `payment_date <= today AND confirmed_at !== null` 동시 만족.
+- ✅ **`User::canConfirmFinance()` 범용 alias**: `canConfirmFinanceTransfer` 위임 (super/admin/role='정산').
+- ✅ **자명한 정합성 부수 fix 2건** (회의록 큐 20-D 범위였으나 큐 20-B에서 자연스럽게 해소):
+  - `InterVehicleTransferService::confirmByFinance` / `confirmVoidByFinance` — 생성하는 FinalPayment 페어에 `confirmed_at = $confirmedAt` 동기화. transfer 잔금은 본질적으로 재무 확정된 ledger 페어이므로 confirmed_at SET 자명.
+  - 테스트 2건 1줄 fix (`InterVehicleTransferServiceTest::test_approve_re_validates_guards` 환불 잔금 + `WorkflowGapTest::test_h7_child_delete_refreshes_parent_cache` 잔금)에 `confirmed_at => now()` 추가. ledger 반영 의도 보존.
+- ✅ **자동 테스트 231 passed (회귀 0)**. 회의록 사전 추정 "4파일 재작성"보다 실측 영향 적음 — 큐 20-D 범위 축소(§13 5곳 정합 + Lock + 신규 2종).
+- ⏭️ **다음 — 큐 20-C**: UI 작업 (/erp/transfers 매입·판매 잔금 확정 탭 + 차량 편집 패널 pending/confirmed row 색 분기 + 매입처 계좌 4컬럼 입력 + 사이드바 배지 합산). 예상 4h.

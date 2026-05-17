@@ -189,13 +189,19 @@ class InterVehicleTransferService
             $today = now()->toDateString();
             $amount = (float) $transfer->amount;
             $marker = "차량 간 자금 이체 #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
+            $confirmedAt = now();
 
+            // 큐 20-B — transfer 잔금은 본질적으로 재무 확정된 ledger 페어. 생성 시점에 confirmed_at SET.
+            // (분자 A안 필터 finalPayments()->whereNotNull('confirmed_at') 에 즉시 반영)
             FinalPayment::create([
                 'vehicle_id' => $transfer->source_vehicle_id,
                 'transfer_id' => $transfer->id,
                 'amount' => -$amount,
                 'payment_date' => $today,
                 'note' => "→ 차량 #{$transfer->target_vehicle_id} 이체 ({$marker})",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
             ]);
 
             FinalPayment::create([
@@ -204,13 +210,16 @@ class InterVehicleTransferService
                 'amount' => $amount,
                 'payment_date' => $today,
                 'note' => "← 차량 #{$transfer->source_vehicle_id} 에서 이체 ({$marker})",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
             ]);
 
             $transfer->update([
                 'status' => InterVehicleTransfer::STATUS_EXECUTED,
-                'executed_at' => now(),
+                'executed_at' => $confirmedAt,
                 'confirmed_by_user_id' => $financeUser->id,
-                'confirmed_at' => now(),
+                'confirmed_at' => $confirmedAt,
                 'finance_note' => $note,
             ]);
         });
@@ -345,13 +354,18 @@ class InterVehicleTransferService
             $today = now()->toDateString();
             $amount = (float) $transfer->amount;
             $reason = $transfer->void_reason ?? '관리 승인으로 이체 취소';
+            $confirmedAt = now();
 
+            // 큐 20-B — void 페어 잔금도 confirmed_at SET (정합성 유지)
             FinalPayment::create([
                 'vehicle_id' => $transfer->source_vehicle_id,
                 'transfer_id' => $transfer->id,
                 'amount' => $amount,
                 'payment_date' => $today,
                 'note' => "이체 취소 (#{$transfer->id}): {$reason}",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
             ]);
 
             FinalPayment::create([
@@ -360,13 +374,16 @@ class InterVehicleTransferService
                 'amount' => -$amount,
                 'payment_date' => $today,
                 'note' => "이체 취소 (#{$transfer->id}): {$reason}",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
             ]);
 
             $transfer->update([
                 'status' => InterVehicleTransfer::STATUS_VOIDED,
-                'voided_at' => now(),
+                'voided_at' => $confirmedAt,
                 'confirmed_by_user_id' => $financeUser->id,
-                'confirmed_at' => now(),
+                'confirmed_at' => $confirmedAt,
                 'finance_note' => $note,
             ]);
         });

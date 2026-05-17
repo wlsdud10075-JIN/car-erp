@@ -116,6 +116,16 @@ class User extends Authenticatable
         return $this->role === '정산';
     }
 
+    /**
+     * 큐 20-B — 매입·판매 잔금 재무 확정 범용 alias.
+     * canConfirmFinanceTransfer 와 동일 권한 (super/admin/정산 role).
+     * PaymentConfirmationService 에서 사용 — 자금 이체 외 잔금 확정에도 동일 SoD 적용.
+     */
+    public function canConfirmFinance(): bool
+    {
+        return $this->canConfirmFinanceTransfer();
+    }
+
     public function canToggleFeatures(): bool
     {
         return $this->isSuperAdmin();

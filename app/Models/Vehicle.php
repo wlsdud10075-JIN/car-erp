@@ -599,6 +599,10 @@ class Vehicle extends Model
     // ── Computed: 판매 미입금액 ─────────────────────────────────────
     // 적립금 사용(savings_used)은 미납 차감에 포함하지 않는다.
     // 적립금은 별도 관리 항목 (Buyer×currency 잔액 추적은 Vehicle::saved 훅에서 유지).
+    //
+    // 큐 20-B — 분자 A안 필터: finalPayments 중 confirmed_at IS NOT NULL 행만 합산.
+    // SAP/Odoo Draft/Posted 정석 — 영업 입력 = Draft, 재무 확정(confirmed_at SET) = Posted.
+    // ledger == sale_unpaid 단일 기준으로 회계 무결성 보장.
     public function getSaleUnpaidAmountAttribute(): float
     {
         $totalSale = $this->sale_price + $this->transport_fee + $this->sale_other_costs
@@ -606,19 +610,23 @@ class Vehicle extends Model
 
         $totalReceived = $this->deposit_down_payment + $this->interim_payment
             + $this->advance_payment1 + $this->advance_payment2
-            + $this->finalPayments->sum('amount')
+            + $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
             + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
 
         return $totalSale - $totalReceived;
     }
 
     // ── Computed: 매입 미지급액 ─────────────────────────────────────
+    // 큐 20-B — 분자 A안 필터: purchaseBalancePayments 중 confirmed_at IS NOT NULL 행만 합산.
+    // payment_date <= today AND confirmed_at IS NOT NULL 동시 만족해야 ledger 반영.
     public function getPurchaseUnpaidAmountAttribute(): int
     {
         $totalPurchase = $this->purchase_price + $this->selling_fee;
         $totalPaid = $this->down_payment + $this->selling_fee_payment
             + $this->purchaseBalancePayments
-                ->filter(fn ($p) => $p->payment_date !== null && $p->payment_date->lte(now()))
+                ->filter(fn ($p) => $p->payment_date !== null
+                    && $p->payment_date->lte(now())
+                    && $p->confirmed_at !== null)
                 ->sum('amount');
 
         return (int) ($totalPurchase - $totalPaid);
