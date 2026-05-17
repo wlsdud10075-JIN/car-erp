@@ -256,14 +256,39 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | - | NICE API 실연동 (현재 스텁) | 🟡 보류 (role/대시보드 완성 후) |
 | 13 | AWS Lightsail 배포 | ⏳ |
 
-## ⏭️ 다음 세션 작업 순서 (2026-05-17 종료 시점 갱신)
+## ⏭️ 다음 세션 작업 순서 (2026-05-17 종료 시점 — 큐 20 전체 완료 후 갱신)
 
-> 세션 시작 시: `CLAUDE.md, CLAUDE_1.md, SKILLS.md, role기획보안_수정.md 읽고 회의록 docs/meetings/2026-05-17-purchase-sale-finance-gate.md 부록 A 확인해줘.`
+> 세션 시작 시: `CLAUDE.md, CLAUDE_1.md, SKILLS.md, role기획보안_수정.md 읽고 회의록 docs/meetings/2026-05-17-purchase-sale-finance-gate.md 큐 20 완료 노트 확인해줘.`
 > 기획 기준 문서: `role기획보안_수정.md` (프로젝트 루트)
 > 핵심 회의록:
 > - `docs/meetings/2026-05-14-3way-workflow-policy.md` (v5.1 큐 분할 — Phase 1~6)
 > - `docs/meetings/2026-05-16-finance-gate-roundtable.md` (큐 19-F 자금이체 게이트)
-> - `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` (큐 20 매입·판매 전 흐름 게이트, 부록 A 회귀)
+> - `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` (큐 20 매입·판매 전 흐름 게이트 + 큐 20-A~D 완료 노트)
+
+### 🖥️ 다른 PC에서 작업 재개 절차 (필수)
+
+```powershell
+# 1. dev 브랜치 최신화
+git checkout dev && git pull origin dev
+
+# 2. 마이그 누락 확인 (큐 19-K/L 사고 재발 방지 — 회의록 부록 A § 노트북 발견 누락 참조)
+php artisan migrate:status
+php artisan migrate     # Pending 있으면 실행
+
+# 3. 의존성 + 자산 (composer.lock / package-lock.json 변경 있으면)
+composer install
+npm install
+npm run build
+
+# 4. 캐시 클리어
+php artisan view:clear && php artisan cache:clear
+
+# 5. 자동 테스트 회귀 (현재 기대치: 246 passed)
+php artisan test
+
+# 6. 개발 서버
+php artisan serve --port=8001
+```
 
 ### 완료된 큐 (2026-05-17 기준)
 
@@ -281,37 +306,52 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | **18** | 차량/바이어/컨사이니/포워딩사 close confirm 모달 | `83f6a8c` |
 | **19 (A~L)** | 자금이체 5상태 게이트 + 거부·void 분기 + 정합 보강 (20+ 커밋) | `a5ed674` ~ `8cbaef3` |
 | SKILLS §13 | 분모 단일 출처 박스 + admin 대시보드 미수율 분모 비대칭 fix | `7525219` |
+| 19-F H-3 UI 보강 | approvals/transfers catch 모달 닫힘 + notify 토스트 글로벌 추출 | `078d8f9` |
+| **20-A** | 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS | `ccf4865` |
+| **20-B** | PaymentConfirmationService + Vehicle 분자 A안 필터 + canConfirmFinance alias + InterVehicleTransferService confirmed_at 동기화 | `fccb297` |
+| **20-C** | 재무 처리 UI (3 탭 + 매입처 계좌 입력 + 잔금 row 색 분기 + 사이드바 배지 합산) | `063f23c` |
+| **20-D** | 회계 무결성 lock (FinalPayment/PBP::updating·deleting) + paid Settlement snapshot 보강 + 신규 테스트 15건 | `833095c` |
+| 20 후속 fix | finalPayments validation이 자금 이체 음수 페어 잘못 차단하던 버그 fix | `35beac8` |
 
-**자동 테스트 현황**: 231 passed (큐 19-L 완료 시점). RefreshDatabase 트레이트라 마이그 누락에도 통과 — 운영 DB 상태와 별개임 주의.
+**자동 테스트 현황**: **246 passed** (큐 20-D 완료 시점, +15 신규). RefreshDatabase 트레이트라 마이그 누락에도 통과 — 운영 DB 상태와 별개임 주의.
 
-**큐 19-F 부록 A 수동 회귀**: 노트북 환경에서 B~G 섹션 통과(2026-05-17). 19-K/L 마이그 누락 1건 발견·fix. H 섹션은 큐 20-A 진입 전후 보완 가능.
+**큐 19-F 부록 A 수동 회귀**: 노트북 환경에서 B~G + H-3 통과(2026-05-17). 19-K/L 마이그 누락 1건 발견·fix. H-2 audit_logs row 누락은 별건 3 묶음으로 미룸. H-1 production 빌드 통과.
 
-### 다음 추천 순서 — 회의 v5.1 + 큐 20 GO 반영
+### 다음 추천 순서 — 큐 20 전체 완료 후
 
 | 순서 | 큐 | 작업 | 공수 | 시작 명령어 |
 |---|---|---|---|---|
-| **1** | 큐 20-A | 마이그 3건 (final_payments·purchase_balance_payments·vehicles 매입처 계좌) + 모델 fillable·cast·MASKED_COLUMNS | 2h | `큐 20-A 진행 — final_payments / purchase_balance_payments / vehicles 매입처 계좌 마이그 3건 + 모델 fillable·cast·MASKED_COLUMNS` |
-| **2** | 큐 20-B | `PaymentConfirmationService` 신규 + Vehicle 분자 A안 필터 + `canConfirmFinance()` alias | 4h | `큐 20-B 진행 — PaymentConfirmationService + Vehicle 분자 A안 필터` |
-| **3** | 큐 20-C | UI — `/erp/transfers` 매입·판매 잔금 확정 탭 + 차량 편집 패널 row 색 분기 + 매입처 계좌 입력 + 사이드바 배지 합산 | 4h | `큐 20-C 진행 — /erp/transfers 매입·판매 잔금 탭 + 차량 편집 UI` |
-| **4** | 큐 20-D | §13 5곳 정합 재검증 + paid Settlement snapshot lock + `FinalPayment::updating` 훅 + 깨진 테스트 4파일 재작성 + 신규 2종 | 4~5h | `큐 20-D 진행 — §13 정합 재검증 + Lock + 테스트 4파일 재작성` |
-| **5** | 큐 9 확장 | G1 50% 룰 B/L 잠금 + rule_version v3 | 10~14h | `큐 9 확장 진행 — G1 50% 룰 + B/L 잠금` |
-| **6** | 큐 10 확장 | G3 선적전/후/디파짓 미수 분류 | 12~15h | `큐 10 확장 진행 — G3 미수 분류` |
-| **7** | 큐 15 | G5 재고관리 (NICE 후 권장) | 4~6h | (NICE API 확정 후) |
-| **8** | 큐 8 / 12 | NICE API 실연동 / 포워딩 SMTP | - | (외부 키·SMTP 확정 후) |
-| **9** | 별건 1 | G4 알림톡 | - | (워크플로우 완성 후) |
-| **10** | 별건 2 | G7 동시 편집 락 | 16~32h | (인프라 결정 후) |
-| **11** | 별건 3 | 사이드바 재구성 + **로그 화면군 일괄 노출** + audit_logs UI 신설 | 5~7h | `별건 3 진행 — 사이드바 재구성 + 모든 로그 화면 노출` |
-| **12** | 큐 13 | AWS Lightsail 배포 | - | (모든 큐 완료 후 최종) |
+| **0 (선택)** | 큐 20 통합 브라우저 회귀 | 깨끗한 차량 1대로 Draft→Posted 흐름 한 번 클릭 검증 (영업 잔금 입력 → 재무 확정 → 미수 감소 → emerald ✓ "확정" 표시) | 15분 | `큐 20 통합 브라우저 회귀 진행 — TEST-19F-E 등 새 차량으로 시나리오 ⓑ 핵심 흐름 검증` |
+| **1** | 큐 9 확장 | G1 50% 룰 B/L 잠금 + rule_version v3 | 10~14h | `큐 9 확장 진행 — G1 50% 룰 + B/L 잠금` |
+| **2** | 큐 10 확장 | G3 선적전/후/디파짓 미수 분류 | 12~15h | `큐 10 확장 진행 — G3 미수 분류` |
+| **3** | 큐 15 | G5 재고관리 (NICE 후 권장) | 4~6h | (NICE API 확정 후) |
+| **4** | 큐 8 / 12 | NICE API 실연동 / 포워딩 SMTP | - | (외부 키·SMTP 확정 후) |
+| **5** | 별건 1 | G4 알림톡 | - | (워크플로우 완성 후) |
+| **6** | 별건 2 | G7 동시 편집 락 | 16~32h | (인프라 결정 후) |
+| **7** | 별건 3 | 사이드바 재구성 + **로그 화면군 일괄 노출** + audit_logs UI 신설 (+ 19-F 5상태 머신 recordEvent backfill) | 5~7h | `별건 3 진행 — 사이드바 재구성 + 모든 로그 화면 노출 + audit_logs 누락 backfill` |
+| **8** | 큐 13 | AWS Lightsail 배포 | - | (모든 큐 완료 후 최종) |
 
-### 큐 20 핵심 (회의 GO 확정 — P2 정석 패키지)
+### 큐 20 통합 브라우저 회귀 — 미진행 (다음 세션 첫 작업 권장)
 
-2026-05-16 사용자 4건 확정:
-- **분자 정의 A안** — `confirmed_at IS NOT NULL` 필터 (SAP/Odoo Draft/Posted 정석)
-- **19-F-D 선행** → 큐 20 (PO 권장, 19-F-D 완료됨)
-- **전체 통합** — 매입+판매 동시 도입
-- **별도 PaymentConfirmationService** (saving 훅 반대)
+큐 20-C UI 변경(3 탭, 매입처 계좌 입력, 잔금 row 색 분기)이 production에서 실제 동작하는지 한 번 클릭으로 검증 권장. 핵심 시나리오 ⓑ:
+- TEST-19F-E (새로 생성) 또는 깨끗한 차량 1대 골라서
+- 영업: 판매 잔금 5천만 입력 → 저장 → 미수 변화 없음 (Draft) + amber ⏳ "대기" 표시 확인
+- 재무: `/erp/transfers` 판매 잔금 탭 → 재무 처리 완료
+- 영업: 미수금 감소 확인 + emerald ✓ "확정" 표시 확인
+- 확정 row 금액 변경 시도 → lock 토스트 노출 (회계 무결성)
+- 매입처 계좌 입력 → DB raw 암호화 확인
 
-회의록 `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` §🛠 영향 분석 + 부록 A 참조. 큐 20 합계 14~16h.
+**fix 1건 — 미해결 가능성**: 2026-05-17 마지막 세션에서 `finalPayments validation이 자금 이체 음수 페어 잘못 차단` 버그를 `35beac8`로 fix했지만 브라우저 재시도는 못 함. 통합 회귀에서 동시 검증.
+
+### 큐 20 완료 요약 (회의 GO 확정 — P2 정석 패키지 구현 완료)
+
+2026-05-16 사용자 4건 확정 → 2026-05-17 4 큐 구현 완료:
+- **분자 정의 A안** ✅ — `confirmed_at IS NOT NULL` 필터 (Vehicle::getSale/PurchaseUnpaidAmountAttribute)
+- **19-F-D 선행** ✅ — 부록 A B~G + H-3 통과
+- **전체 통합** ✅ — 매입+판매 동시 도입 (PaymentConfirmationService 단일)
+- **별도 PaymentConfirmationService** ✅ — saving 훅 미사용, DB::transaction + 4 가드
+
+회의록 `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` 큐 20-A~D 완료 노트 참조. 실측 공수 ~4h (회의록 예상 14~16h보다 단축).
 
 ### 별건 3 — 로그 화면 사이드바 노출 묶음 처리 (사용자 결정)
 
