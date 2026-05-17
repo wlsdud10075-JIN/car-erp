@@ -812,6 +812,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($value === '' || $value === null) {
                 return;
             }
+            // 큐 19-F/20-C 보강 — finalPayments.*.amount 의 경우 transfer_id 있는 row는 skip.
+            // 자금 이체 페어(음수 row)는 UI에서 readonly로 노출되고 영업이 입력한 게 아님.
+            if (preg_match('/^finalPayments\.(\d+)\.amount$/', $attribute, $m)) {
+                $idx = (int) $m[1];
+                $row = $this->finalPayments[$idx] ?? null;
+                if (is_array($row) && ! empty($row['transfer'])) {
+                    return;
+                }
+            }
             $cleaned = str_replace(',', '', (string) $value);
             if (! is_numeric($cleaned) || (float) $cleaned < 0) {
                 $fail(':attribute은(는) 0 이상의 숫자여야 합니다.');
