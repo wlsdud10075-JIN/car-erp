@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -191,10 +192,97 @@ class Vehicle extends Model
     }
 
     /**
+     * 큐 21 — Ledger 영향 컬럼 잠금 가드.
+     *
+     * 회의록 2026-05-18 vehicle-ledger-field-lock — 사용자 최종 결정 반영:
+     *   ① 트리거 = confirmed FinalPayment OR PurchaseBalancePayment 1건 이상
+     *   ② 잠금 컬럼 = LEDGER_LOCK_FIELDS (Tier 1·2 통합 21컬럼)
+     *   ③ 잠금 해제 권한 = admin + super (User::canAccessAdmin)
+     *   ④ 사유 10자 이상 + 저장 1회 완료 즉시 재잠금 (cache token pull 패턴)
+     *
+     * 신규 차량 등록(exists=false)은 자유 — 잔금 자체가 없음.
+     * 시드·artisan(auth 없음)은 우회 — 도메인 시뮬레이션.
+     * VehicleLedgerUnlockService::unlock 으로 발급된 cache token이 있으면
+     * 1회 소비 후 통과 + AuditLog 자동 기록 (saving 훅 통합 — updated 훅의 recordChange와 중복 회피).
+     */
+    public function guardLedgerLockOnSaving(): void
+    {
+        if (! $this->exists) {
+            return;   // 신규 차량 — 자유 입력
+        }
+        if (! auth()->check()) {
+            return;   // 시드/artisan
+        }
+
+        $dirtyLocked = [];
+        foreach (self::LEDGER_LOCK_FIELDS as $field) {
+            if ($this->isDirty($field)) {
+                $dirtyLocked[] = $field;
+            }
+        }
+        if (empty($dirtyLocked)) {
+            return;   // 잠금 컬럼 변경 없음
+        }
+
+        if (! $this->hasConfirmedPaymentLock()) {
+            return;   // confirmed 잔금 없음 — 자유 수정
+        }
+
+        // unlock 토큰 1회 소비 시도
+        $token = $this->consumeLedgerUnlockToken();
+        if ($token !== null) {
+            // 통과 — AuditLog는 booted updated 훅의 recordChange가 처리.
+            // unlock 자체 이벤트는 VehicleLedgerUnlockService에서 별도 기록(ledger_field_unlocked).
+            return;
+        }
+
+        // 차단
+        throw ValidationException::withMessages([
+            $dirtyLocked[0] => '재무 확정 잔금이 있는 차량의 회계 영향 필드는 잠금 해제 후 수정 가능합니다. 시도된 필드: '.implode(', ', $dirtyLocked).'. admin/super가 [🔓 잠금 해제] 버튼으로 사유 입력 후 1회 변경할 수 있습니다.',
+        ]);
+    }
+
+    /**
+     * 큐 21 — confirmed 잔금 존재 여부 (잠금 트리거).
+     * finalPayments OR purchaseBalancePayments 중 confirmed_at IS NOT NULL 1건이라도 있으면 true.
+     */
+    public function hasConfirmedPaymentLock(): bool
+    {
+        return $this->finalPayments()->whereNotNull('confirmed_at')->exists()
+            || $this->purchaseBalancePayments()->whereNotNull('confirmed_at')->exists();
+    }
+
+    /**
+     * 큐 21 — Ledger unlock 토큰 1회 소비 (저장 1회 후 즉시 재잠금).
+     * VehicleLedgerUnlockService::unlock 으로 발급된 cache key를 pull (읽기 + 즉시 삭제).
+     * 동일 차량을 추가 수정하려면 다시 잠금 해제 필요.
+     */
+    public function consumeLedgerUnlockToken(): ?array
+    {
+        if (! $this->id) {
+            return null;
+        }
+
+        return Cache::pull(self::ledgerUnlockCacheKey($this->id));
+    }
+
+    /**
+     * 큐 21 — Cache key 단일 출처. Service / Component / Model 모두 동일 키 사용.
+     */
+    public static function ledgerUnlockCacheKey(int $vehicleId): string
+    {
+        return "vehicle_ledger_unlock:{$vehicleId}";
+    }
+
+    /**
      * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Vehicle 기준).
      * settlement_status / paid_at는 Settlement 모델에서 별도 추적.
+     *
+     * 큐 21 — 회계 영향 컬럼(LEDGER_LOCK_FIELDS) 변경 추적 확장.
+     * 잠금 해제 후 변경은 반드시 AuditLog 기록 — Specialist F 권고.
      */
     public const AUDITED_COLUMNS = [
+        // 기존
         'sale_price',
         'progress_status_cache',
         'nice_reg_owner_rrn',                  // 마스킹 — value 미저장
@@ -202,12 +290,42 @@ class Vehicle extends Model
         'advance_payment1', 'advance_payment2',
         'down_payment', 'selling_fee_payment',
         'savings_used',
+        // 큐 21 — 회계 영향 컬럼 (LEDGER_LOCK_FIELDS와 동일)
+        'purchase_price', 'selling_fee', 'tax_dc', 'commission',
+        'transport_fee', 'auto_loading', 'sale_other_costs', 'exchange_rate',
+        'export_declaration_amount',
+        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'buyer_id', 'salesman_id',
+    ];
+
+    /**
+     * 큐 21 — Ledger 영향 잠금 컬럼.
+     * 회의록 2026-05-18 — confirmed FinalPayment OR PurchaseBalancePayment 1건 이상 존재 시
+     * 본 컬럼 변경은 admin/super 잠금 해제 후 1회만 가능 (저장 직후 자동 재잠금).
+     *
+     * Tier 1 (금액 직결) + Tier 2 (관계 식별 buyer_id·salesman_id) 통합 (사용자 결정 2026-05-18).
+     */
+    public const LEDGER_LOCK_FIELDS = [
+        // Tier 1 — 금액 직결 19컬럼
+        'purchase_price', 'selling_fee', 'sale_price', 'tax_dc', 'commission',
+        'transport_fee', 'auto_loading', 'sale_other_costs', 'exchange_rate',
+        'export_declaration_amount',
+        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        // Tier 2 — 관계 식별
+        'buyer_id', 'salesman_id',
     ];
 
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
+            // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).
+            // 재무 확정 잔금 있는 차량의 매입가·판매가·환율·면장금액·비용·바이어·담당자 변경은
+            // admin/super 잠금 해제 후 1회만 통과 (cache token 1회 소비 → 즉시 재잠금).
+            $vehicle->guardLedgerLockOnSaving();
+
             // 큐 14-4-4 — G2 같은 바이어 미수 + 신규 거래 가드.
             // 신규 등록 시 같은 buyer + 미수 잔존 차량 있으면 ApprovalRequest 필요.
             $vehicle->guardSameBuyerOverlap();
@@ -220,6 +338,20 @@ class Vehicle extends Model
             $vehicle->receivable_risk = $vehicle->receivable_risk_computed;
             $krw = $vehicle->sale_unpaid_amount_krw;
             $vehicle->sale_unpaid_amount_krw_cache = $krw !== null ? (int) round($krw) : null;
+        });
+
+        // 큐 21 — confirmed 잔금 있는 차량 삭제는 admin/super 전용 (Specialist E 권고).
+        // soft delete · force delete 둘 다 적용. 시드·artisan(auth 없음)은 우회.
+        static::deleting(function (Vehicle $vehicle) {
+            if (! auth()->check()) {
+                return;   // 시드/artisan 우회
+            }
+            if (auth()->user()->canAccessAdmin()) {
+                return;   // admin/super 우회
+            }
+            if ($vehicle->hasConfirmedPaymentLock()) {
+                throw new \DomainException('재무 확정 잔금이 있는 차량은 admin/super만 삭제할 수 있습니다.');
+            }
         });
 
         // hard delete (forceDelete) 시 첨부 디렉토리를 즉시 삭제하지 않고

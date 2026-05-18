@@ -110,6 +110,8 @@ class ApprovalRequest extends Model
                     self::TYPE_INTER_BUYER_OVERLAP => $this->executeInterBuyerOverlap(),
                     self::TYPE_INTER_VEHICLE_TRANSFER => $this->executeInterVehicleTransfer(),
                     self::TYPE_INTER_VEHICLE_TRANSFER_VOID => $this->executeInterVehicleTransferVoid(),
+                    self::TYPE_SENSITIVE_ACTION => $this->executeSensitiveAction(),
+                    self::TYPE_UNPAID_EXPORT_OVERRIDE => $this->executeUnpaidExportOverride(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
                 };
             });
@@ -164,5 +166,31 @@ class ApprovalRequest extends Model
         $settlement->settlement_status = 'paid';
         $settlement->paid_at = now();
         $settlement->save();
+    }
+
+    /**
+     * 큐 21 부수 fix — TYPE_SENSITIVE_ACTION execute() 분기 (회의록 2026-05-18).
+     *
+     * 민감 액션(폐기·RRN·B/L 수동 발행 등)은 승인 자체가 통과 신호로 작용.
+     * 실제 액션은 영업/관리자가 차후 화면에서 진행 — 이 승인의 used_at을 마킹할 수도 있음.
+     * 현 단계엔 no-op + AuditLog로 "승인 통과" 사실만 기록 (withApprovalRequest 컨텍스트로 자동 링크).
+     *
+     * 향후 구체 민감 액션(예: 폐기 처리)이 추가되면 payload['sub_action']에 분기 추가.
+     */
+    private function executeSensitiveAction(): void
+    {
+        // no-op — 승인 통과 자체가 신호. AuditLog는 호출자(decide)의 withApprovalRequest로 처리됨.
+    }
+
+    /**
+     * 큐 21 부수 fix — TYPE_UNPAID_EXPORT_OVERRIDE execute() 분기 (안전 보강).
+     *
+     * 큐 2.6 — admin 미입금 우회는 실제로 vehicles/index::approveUnpaidOverride()에서
+     * UnpaidExportOverride 레코드를 직접 생성. ApprovalRequest 경로로 들어오는 케이스는
+     * 사실상 미사용이지만 LogicException 회피용 no-op.
+     */
+    private function executeUnpaidExportOverride(): void
+    {
+        // no-op — 큐 2.6 흐름은 vehicles/index::approveUnpaidOverride 직접 생성 경로.
     }
 }

@@ -44,6 +44,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     // close()/openEdit() 진입 시 reset.
     public ?int $justCreatedId = null;
 
+    // ── 큐 21 — Ledger 잠금 상태 (회의록 2026-05-18) ───────────────
+    // confirmed FinalPayment OR PurchaseBalancePayment 1건 이상 → isLedgerLocked = true.
+    // admin/super가 [잠금 해제] 모달에서 사유 입력 → unlock 토큰 발급 → hasLedgerUnlockToken = true.
+    // 저장 1회 후 토큰 소비되어 다시 false로. openEdit / save 후 갱신.
+    public bool $isLedgerLocked = false;
+    public bool $hasLedgerUnlockToken = false;
+    public bool $showLedgerUnlockModal = false;
+    public string $ledgerUnlockReason = '';
+
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $vehicle_number = '';
     public string $sales_channel = 'export';
@@ -749,6 +758,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->panelUnpaidRatio = $v->unpaid_ratio;
 
+        // 큐 21 — Ledger 잠금 상태 갱신
+        $this->refreshLedgerLockState($v);
+
         $this->showPanel = true;
     }
 
@@ -764,6 +776,82 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->overlapRequestReason = '';
         // 큐 19-C — 자금 이체 모달도 동일 정리
         $this->resetTransferRequestForm();
+        // 큐 21 — Ledger 잠금 모달도 정리
+        $this->showLedgerUnlockModal = false;
+        $this->ledgerUnlockReason = '';
+        $this->isLedgerLocked = false;
+        $this->hasLedgerUnlockToken = false;
+    }
+
+    // ── 큐 21 — Ledger 잠금 상태 메서드 (회의록 2026-05-18) ────────────
+    private function refreshLedgerLockState(?Vehicle $vehicle = null): void
+    {
+        if (! $this->editingId) {
+            $this->isLedgerLocked = false;
+            $this->hasLedgerUnlockToken = false;
+
+            return;
+        }
+        $v = $vehicle ?: Vehicle::find($this->editingId);
+        if (! $v) {
+            $this->isLedgerLocked = false;
+            $this->hasLedgerUnlockToken = false;
+
+            return;
+        }
+        $this->isLedgerLocked = $v->hasConfirmedPaymentLock();
+        $this->hasLedgerUnlockToken = \Illuminate\Support\Facades\Cache::has(
+            Vehicle::ledgerUnlockCacheKey($v->id)
+        );
+    }
+
+    public function openLedgerUnlockModal(): void
+    {
+        if (! auth()->user()?->canAccessAdmin()) {
+            $this->dispatch('notify', message: '잠금 해제 권한 없음 (admin/super 전용)', type: 'error');
+
+            return;
+        }
+        if (! $this->editingId) {
+            return;
+        }
+        $this->ledgerUnlockReason = '';
+        $this->showLedgerUnlockModal = true;
+    }
+
+    public function closeLedgerUnlockModal(): void
+    {
+        $this->showLedgerUnlockModal = false;
+        $this->ledgerUnlockReason = '';
+    }
+
+    public function submitLedgerUnlock(): void
+    {
+        $this->validate(
+            ['ledgerUnlockReason' => ['required', 'string', 'min:10']],
+            ['ledgerUnlockReason.required' => '잠금 해제 사유를 10자 이상 입력하세요.',
+                'ledgerUnlockReason.min' => '잠금 해제 사유는 10자 이상 필수입니다.'],
+            ['ledgerUnlockReason' => '잠금 해제 사유']
+        );
+
+        try {
+            $v = Vehicle::findOrFail($this->editingId);
+            app(\App\Services\VehicleLedgerUnlockService::class)->unlock(
+                $v,
+                auth()->user(),
+                $this->ledgerUnlockReason
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: '잠금 해제 실패: '.$e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        $this->refreshLedgerLockState();
+        $this->closeLedgerUnlockModal();
+        $this->dispatch('notify',
+            message: '잠금 해제 완료. 저장 1회 후 자동 재잠금됩니다.',
+            type: 'success');
     }
 
     private function resetTransferRequestForm(): void
@@ -2203,6 +2291,32 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
     @endif
 
+    {{-- 큐 21 — Ledger 잠금 배너 (회의록 2026-05-18). 회계 영향 컬럼 21개(매입가/판매가/환율/면장금액/비용9개/관련 5컬럼/바이어/담당자) 잠금 표시. --}}
+    @if($isLedgerLocked)
+    <div class="border-b {{ $hasLedgerUnlockToken ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50' }} px-5 py-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-start gap-2">
+                <span class="text-base leading-none">{{ $hasLedgerUnlockToken ? '🔓' : '🔒' }}</span>
+                <div class="text-xs">
+                    @if($hasLedgerUnlockToken)
+                    <p class="font-semibold text-amber-800">잠금 해제됨 — 저장 1회 후 자동 재잠금</p>
+                    <p class="mt-0.5 text-amber-700">매입가·판매가·환율·면장금액·비용·바이어·담당자 변경 가능. 저장하면 즉시 잠김.</p>
+                    @else
+                    <p class="font-semibold text-gray-700">재무 확정 잔금 있음 — 회계 영향 컬럼 잠김</p>
+                    <p class="mt-0.5 text-gray-500">매입가·판매가·환율·면장금액·비용9개·바이어·담당자 변경 불가. admin/super가 사유 입력 후 해제 가능.</p>
+                    @endif
+                </div>
+            </div>
+            @if(! $hasLedgerUnlockToken && auth()->user()?->canAccessAdmin())
+            <button type="button" wire:click="openLedgerUnlockModal"
+                    class="flex-shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                🔓 잠금 해제
+            </button>
+            @endif
+        </div>
+    </div>
+    @endif
+
     {{-- Validation 에러 박스 (guard 메서드 throw + Livewire validate 모두 표시) --}}
     @if($errors->any())
     <div class="border-b border-red-200 bg-red-50 px-5 py-3">
@@ -3236,6 +3350,42 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 
 </div>{{-- /x-data --}}
+@endif
+
+{{-- 큐 21 — Ledger 잠금 해제 모달 (회의록 2026-05-18, admin/super 전용).
+     슬라이드 패널 stacking context 밖에 배치. close()에서 정리됨. --}}
+@if($showLedgerUnlockModal)
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeLedgerUnlockModal"
+     wire:key="ledger-unlock-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">🔓 Ledger 잠금 해제</h3>
+        <p class="mt-1 text-xs text-gray-500">매입가·판매가·환율·면장금액·비용9개·바이어·담당자 변경이 1회 허용됩니다. 저장 직후 자동 재잠금.</p>
+
+        <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
+            <p>⚠️ 잠금 해제는 audit_logs에 사용자·시각·사유와 함께 기록됩니다.</p>
+        </div>
+
+        <div class="mt-3">
+            <label class="label-base">잠금 해제 사유 <span class="text-red-500">*</span> <span class="text-gray-400">(10자 이상)</span></label>
+            <textarea wire:model="ledgerUnlockReason" rows="4"
+                      class="input-base"
+                      placeholder="예: 영업 매입가 오기 — 5,000,000 입력했으나 실제 계약 50,000,000. 영업 담당자 확인 완료."></textarea>
+            @error('ledgerUnlockReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button wire:click="closeLedgerUnlockModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button wire:click="submitLedgerUnlock" type="button"
+                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                    wire:loading.attr="disabled" wire:target="submitLedgerUnlock">
+                <span wire:loading.remove wire:target="submitLedgerUnlock">🔓 해제 (1회 변경 허용)</span>
+                <span wire:loading wire:target="submitLedgerUnlock">처리 중...</span>
+            </button>
+        </div>
+    </div>
+</div>
 @endif
 
 {{-- 큐 14-4-4 G2: 같은 바이어 미수+신규 거래 승인 요청 모달

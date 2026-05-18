@@ -126,6 +126,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        // 큐 21 부수 fix — Self-approve 가드 (Security 권고, 회의록 2026-05-18).
+        // SoD(Segregation of Duties) — 본인이 요청한 안건을 본인이 승인할 수 없음.
+        if ($req->requester_id === auth()->id()) {
+            $this->dispatch('notify',
+                message: '본인이 요청한 안건은 본인이 처리할 수 없습니다 (SoD 위반).',
+                type: 'error');
+            $this->closeDecisionModal();
+
+            return;
+        }
+
         if ($this->decisionMode === 'reject') {
             $this->validate(['decisionNote' => ['required', 'string', 'min:5']],
                 ['decisionNote.required' => '거부 사유를 5자 이상 입력하세요.']);
