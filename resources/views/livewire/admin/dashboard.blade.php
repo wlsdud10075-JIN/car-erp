@@ -354,6 +354,15 @@ new #[Layout('components.layouts.app')] class extends Component
         $bySalesman = [];
         $byBuyer = [];
         $riskCounts = ['safe' => 0, 'caution' => 0, 'danger' => 0, 'critical' => 0, 'none' => 0];
+        // 큐 10 확장 — G3 분류별 미수금 합산 (회의록 v5 §G3).
+        // 선적전: 매입중·매입완료·말소완료·판매중·판매완료 + unpaid > 0
+        // 선적후: 수출통관중·수출통관완료·선적중·선적완료 + unpaid > 0
+        $beforeShippingStages = ['매입중', '매입완료', '말소완료', '판매중', '판매완료'];
+        $afterShippingStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
+        $classification = [
+            'before_shipping' => ['unpaid' => 0, 'count' => 0],
+            'after_shipping' => ['unpaid' => 0, 'count' => 0],
+        ];
 
         Vehicle::query()
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
@@ -361,8 +370,12 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
                 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
-                'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache', 'receivable_risk')
-            ->chunk(1000, function ($rows) use (&$bySalesman, &$byBuyer, &$riskCounts) {
+                'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache',
+                'receivable_risk', 'progress_status_cache')
+            ->chunk(1000, function ($rows) use (
+                &$bySalesman, &$byBuyer, &$riskCounts, &$classification,
+                $beforeShippingStages, $afterShippingStages
+            ) {
                 foreach ($rows as $r) {
                     // SKILLS §13 — sale_total_amount accessor와 동일 공식 (부대비용 포함).
                     $saleTotal = $r->sale_price + $r->transport_fee + $r->sale_other_costs
@@ -393,8 +406,29 @@ new #[Layout('components.layouts.app')] class extends Component
                     }
                     $risk = $r->receivable_risk ?? 'none';
                     $riskCounts[$risk] = ($riskCounts[$risk] ?? 0) + 1;
+
+                    // 큐 10 확장 — G3 분류 합산 (회의록 v5 §G3, 사용자 결정 2026-05-18).
+                    if (in_array($r->progress_status_cache, $beforeShippingStages, true)) {
+                        $classification['before_shipping']['unpaid'] += $unpaid;
+                        $classification['before_shipping']['count']++;
+                    } elseif (in_array($r->progress_status_cache, $afterShippingStages, true)) {
+                        $classification['after_shipping']['unpaid'] += $unpaid;
+                        $classification['after_shipping']['count']++;
+                    }
                 }
             });
+
+        // 큐 10 확장 — 디파짓(savings_used > 0)은 별도 query (sale_unpaid 무관, 적립금 사용 차량 모두).
+        $depositStats = Vehicle::query()
+            ->where('savings_used', '>', 0)
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            ->selectRaw('COUNT(*) as cnt, SUM(savings_used) as total_used')
+            ->first();
+        $classification['deposit'] = [
+            'unpaid' => (int) ($depositStats->total_used ?? 0),
+            'count' => (int) ($depositStats->cnt ?? 0),
+        ];
 
         // 담당자/바이어 미수금 내림차순 TOP 10 + 이름 매핑
         $sortFn = fn ($a, $b) => $b['unpaid'] <=> $a['unpaid'];
@@ -427,6 +461,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'buyer_top' => $buildRows($topBuyerIds, $byBuyer, $buyerNames),
             'risk_counts' => $riskCounts,
             'total_unpaid' => array_sum(array_column($bySalesman, 'unpaid')),
+            // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18)
+            'classification' => $classification,
         ];
     }
 
@@ -791,6 +827,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
             </a>
             @endforeach
+        </div>
+
+        {{-- 큐 10 확장 — G3 미수 분류 카드 3개 (회의록 v5 §G3, 사용자 결정 2026-05-18) --}}
+        @php $cls = $this->receivableKpis['classification'] ?? []; @endphp
+        <div class="flex flex-wrap gap-3">
+            <a href="{{ route('erp.receivables.index', ['classification' => 'before_shipping']) }}" wire:navigate
+               class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
+                <div class="text-xs text-gray-500">선적전 미수금</div>
+                <div class="mt-1 text-2xl font-bold text-blue-700">{{ number_format($cls['before_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['before_shipping']['count'] ?? 0 }}대 · 매입~판매완료 단계</p>
+            </a>
+            <a href="{{ route('erp.receivables.index', ['classification' => 'after_shipping']) }}" wire:navigate
+               class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
+                <div class="text-xs text-gray-500">선적후 미수금</div>
+                <div class="mt-1 text-2xl font-bold text-amber-700">{{ number_format($cls['after_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['after_shipping']['count'] ?? 0 }}대 · 통관~선적완료 단계</p>
+            </a>
+            <a href="{{ route('erp.receivables.index', ['classification' => 'deposit']) }}" wire:navigate
+               class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
+                <div class="text-xs text-gray-500">디파짓 (적립금 사용분)</div>
+                <div class="mt-1 text-2xl font-bold text-violet-700">{{ number_format($cls['deposit']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['deposit']['count'] ?? 0 }}대 · savings_used &gt; 0</p>
+            </a>
         </div>
 
         {{-- 담당자 TOP 10 / 바이어 TOP 10 테이블 2개 --}}

@@ -24,6 +24,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $progressFilter = '';
     #[Url] public string $riskFilter = '';        // safe/caution/danger/critical
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
+    // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18).
+    // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
+    #[Url] public string $classification = '';
 
     #[Url] public int $perPage = 10;
 
@@ -273,7 +276,38 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 정확한 ratio 슬라이더 필요 시 raw SQL로 확장 가능 (현재는 카테고리 매핑으로 충분).
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
             ->when($this->unpaidRatioMin === '50', fn ($q) => $q->whereIn('receivable_risk', ['danger', 'critical']))
-            ->when($this->unpaidRatioMin === '70', fn ($q) => $q->where('receivable_risk', 'critical'));
+            ->when($this->unpaidRatioMin === '70', fn ($q) => $q->where('receivable_risk', 'critical'))
+            // 큐 10 확장 — G3 미수 분류 탭 (Vehicle::scopeAction과 동일 SQL 출처).
+            ->when($this->classification === 'before_shipping', fn ($q) => $q
+                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0))
+            ->when($this->classification === 'after_shipping', fn ($q) => $q
+                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0))
+            ->when($this->classification === 'deposit', fn ($q) => $q
+                ->where('savings_used', '>', 0));
+    }
+
+    /**
+     * 큐 10 확장 — G3 분류별 카운트 (탭 라벨 N건 표시).
+     * buildQuery 전 단계의 base (sale_price > 0)에서 분류 SQL만 분기.
+     */
+    public function getClassificationCountsProperty(): array
+    {
+        $base = Vehicle::query()->where('sale_price', '>', 0);
+
+        return [
+            'all' => (clone $base)->count(),
+            'before_shipping' => (clone $base)
+                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                ->count(),
+            'after_shipping' => (clone $base)
+                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                ->count(),
+            'deposit' => (clone $base)->where('savings_used', '>', 0)->count(),
+        ];
     }
 }; ?>
 
@@ -298,6 +332,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 큐 16 — 채널 탭 제거 (단일 채널). --}}
+
+    {{-- 큐 10 확장 — G3 미수 분류 탭 (회의록 v5 §G3, 사용자 결정 2026-05-18) --}}
+    @php $cc = $this->classificationCounts; @endphp
+    <div class="card -mb-1 flex flex-wrap items-center gap-2 overflow-x-auto py-2">
+        <button wire:click="$set('classification', '')"
+                class="tab-pill {{ $classification === '' ? 'is-active' : '' }}">
+            전체 <span class="pill-count">{{ $cc['all'] }}</span>
+        </button>
+        <button wire:click="$set('classification', 'before_shipping')"
+                class="tab-pill {{ $classification === 'before_shipping' ? 'is-active' : '' }}">
+            선적전 미수 <span class="pill-count">{{ $cc['before_shipping'] }}</span>
+        </button>
+        <button wire:click="$set('classification', 'after_shipping')"
+                class="tab-pill {{ $classification === 'after_shipping' ? 'is-active' : '' }}">
+            선적후 미수 <span class="pill-count">{{ $cc['after_shipping'] }}</span>
+        </button>
+        <button wire:click="$set('classification', 'deposit')"
+                class="tab-pill {{ $classification === 'deposit' ? 'is-active' : '' }}">
+            디파짓 (적립금 사용) <span class="pill-count">{{ $cc['deposit'] }}</span>
+        </button>
+    </div>
 
     {{-- KPI 4개 --}}
     <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">

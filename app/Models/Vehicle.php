@@ -1059,6 +1059,22 @@ class Vehicle extends Model
             'has_sale' => $q->where('sale_price', '>', 0),
             'has_purchase' => $q->where('purchase_price', '>', 0),
 
+            // ── 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 2026-05-18 사용자 결정) ──
+            // 선적전 미수: progress_status_cache ∈ {매입중, 매입완료, 말소완료, 판매중, 판매완료}
+            //              AND sale_unpaid_amount > 0
+            'receivable_before_shipping' => $q
+                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+
+            // 선적후 미수: progress_status_cache ∈ {수출통관중, 수출통관완료, 선적중, 선적완료}
+            //              AND sale_unpaid_amount > 0
+            'receivable_after_shipping' => $q
+                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+
+            // 디파짓: savings_used > 0 (적립금 사용분)
+            'deposit_by_buyer' => $q->where('savings_used', '>', 0),
+
             default => $q,
         };
     }
