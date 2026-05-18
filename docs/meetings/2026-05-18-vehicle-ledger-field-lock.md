@@ -280,7 +280,7 @@
 
 **판정**: **조건부 GO**
 
-**근거 (1줄)**: 내부 6부서 + 사외이사 2명 모두 조건부 GO. 옵션 A 트리거 + 2계층 분리 + super-only flag + 사외이사 신규 통찰(1회성 TTL · Reversal 워크플로우 · confirmed→pending 옵션) 통합 패키지 채택.
+**근거 (1줄)**: 내부 6부서 + 사외이사 2명 모두 조건부 GO. 옵션 A 트리거 + 사용자 최종 결정 3건 정정(① Tier 통합·admin+super 동일 권한 ② 사유 10자 ③ 저장 1회 즉시 재잠금) + 사외이사 통찰(Reversal·confirmed→pending 옵션은 별건 보류) 통합 패키지 채택.
 
 ### 필수 선행 작업
 - 부수 fix 4건이 본 안건 GO 조건의 일부이므로 동일 PR 또는 직전 PR에서 함께 머지
@@ -419,13 +419,14 @@ protected function consumeUnlockTokenIfPresent(): bool
 
 ### 보완사항 (Improvements)
 1. 모델 레이어 가드 격상 (`Vehicle::saving` 훅)
-2. AuditLog 사유 입력 모달 (255자 필수)
-3. 1회성 TTL super flag (60초 자동 재잠금 — Codex 신규)
+2. AuditLog 사유 입력 모달 (10자 이상 필수 — 사용자 정정)
+3. 동작 기반 1회성 unlock 토큰 (저장 1회 후 cache pull 소비 → 즉시 재잠금, race window 0 — 사용자 정정)
 4. UI Helper Text 인라인 안내 + 🔒 아이콘
-5. super 잠금 해제 버튼 (모달 + 사유 + Tier 표시)
-6. confirmed 잔금 차량 soft-delete 시 가드
+5. admin/super 잠금 해제 버튼 (모달 + 사유 + Tier 표시 — 사용자 정정으로 admin도 동일 권한)
+6. confirmed 잔금 차량 soft-delete 시 가드 (admin/super 우회 허용)
 7. confirmed→pending 강제 전환 옵션 (Gemini 신규, 향후 별건)
 8. Reversal/Adjustment 패턴 (Codex+Gemini 글로벌 표준, 큐 22 별건 검토)
+9. 입금 컬럼(deposit_down_payment 등)도 confirm 게이트 (시나리오 6번 사용자 발견, 큐 22 별건)
 
 ### 코드 수정 (Code Changes)
 - `app/Models/Vehicle.php` — `$allowLedgerMutation` static flag + `guardLedgerAfterConfirmedPayment()` 메서드 + `saving` 훅 가드 + `deleting` 훅 confirmed 차량 가드
@@ -436,14 +437,14 @@ protected function consumeUnlockTokenIfPresent(): bool
 - `app/Models/Settlement.php::saving` — confirmed_snapshot에 buyer_id·salesman_id·purchase_price·sale_price·exchange_rate 추가 캡처
 
 ### 신규 추가 (New Additions)
-- `app/Services/VehicleLedgerUnlockService.php` — super-only unlock + AuditLog 사유 + 1회성 TTL (60초)
+- `app/Services/VehicleLedgerUnlockService.php` — admin+super unlock + AuditLog 사유(10자) + cache 1회성 토큰 (저장 직후 pull 소비)
 - `tests/Feature/VehicleLedgerLockTest.php` — 8 케이스
   1. confirmed FinalPayment 1건 → sale_price 변경 시도 차단
   2. confirmed PurchaseBalancePayment 1건 → purchase_price 변경 시도 차단
   3. confirmed 잔금 없음 → 자유 수정 가능
   4. 환율 0 USD 차량 + confirmed → 잠금 발동
-  5. super unlock → AuditLog 기록 + 60초 내 변경 허용
-  6. super unlock 후 60초 경과 → 자동 재잠금
+  5. admin/super unlock → AuditLog 기록 + 1회 변경 허용
+  6. unlock 토큰 1회 소비 후 동일 차량 추가 변경 시도 → 다시 잠금 발동
   7. buyer_id admin 우회 → AuditLog 기록 + 변경 허용
   8. salesman_id admin 우회 → 동일
 - `tests/Feature/WorkflowGapTest.php::test_q10_h4_blocks/allows` — 트리거 A 교체 재작성 (2 테스트)

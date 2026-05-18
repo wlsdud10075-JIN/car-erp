@@ -955,6 +955,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bl_document_path = '';
     }
 
+    // 버그 2 fix (2026-05-18) — 새 파일 업로드 시 clear flag reset (safety net).
+    // [삭제] → 새 파일 업로드 흐름에서 clearBlDoc stale 상태로 인한 save 사이클 충돌 방지.
+    public function updatedDeregistrationDocFile(): void
+    {
+        if ($this->deregistrationDocFile !== null) {
+            $this->clearDeregistrationDoc = false;
+        }
+    }
+
+    public function updatedExportDeclarationDocFile(): void
+    {
+        if ($this->exportDeclarationDocFile !== null) {
+            $this->clearExportDeclarationDoc = false;
+        }
+    }
+
+    public function updatedBlDocFile(): void
+    {
+        if ($this->blDocFile !== null) {
+            $this->clearBlDoc = false;
+        }
+    }
+
     private function validateVehicleForm(): void
     {
         $nonNegativeNumeric = function (string $attribute, mixed $value, \Closure $fail) {
