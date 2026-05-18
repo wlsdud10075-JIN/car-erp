@@ -581,12 +581,9 @@ class Vehicle extends Model
             ]);
         }
 
-        // H2 — 수출통관 완료 체크 시 수출신고서 강제
-        if ($this->is_export_cleared && empty($this->export_declaration_document)) {
-            throw ValidationException::withMessages([
-                'is_export_cleared' => '수출통관 완료 처리를 하려면 수출신고서 업로드가 먼저 필요합니다.',
-            ]);
-        }
+        // 큐 21 후속 — H2(수출통관 체크↔서류) 강제 차단 제거.
+        // vehicles/index::detectDocCheckMismatches 모달 패턴으로 격하 (사용자 결정 2026-05-18).
+        // 운영 흐름상 체크/서류 순서가 비순차적이라 강제 차단은 마찰. 모달 confirm으로 인지 강제.
     }
 
     /**

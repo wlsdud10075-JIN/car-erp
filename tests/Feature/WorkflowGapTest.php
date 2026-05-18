@@ -267,17 +267,18 @@ class WorkflowGapTest extends TestCase
 
     // ── H2 — 수출통관 완료 체크 시 수출신고서 첨부 강제 ────────────────
 
-    public function test_h2_blocks_export_cleared_without_declaration_document(): void
+    public function test_h2_export_cleared_without_doc_no_longer_blocks_at_model(): void
     {
+        // 큐 21 후속 (2026-05-18) — H2 강제 차단을 vehicles/index 모달 패턴으로 격하.
+        // 모델 레이어 guardAttachmentDeps는 더 이상 차단 안 함. UI save() 흐름에서 모달 confirm.
         $v = new Vehicle([
             'sales_channel' => 'export',
             'is_export_cleared' => true,
             // export_declaration_document 비어있음
         ]);
 
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('수출신고서 업로드');
-        $v->guardAttachmentDeps();
+        $v->guardAttachmentDeps();   // 예외 없음 — 모델 레이어 통과
+        $this->assertTrue(true);
     }
 
     public function test_h2_allows_export_cleared_with_declaration_document(): void

@@ -53,6 +53,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $showLedgerUnlockModal = false;
     public string $ledgerUnlockReason = '';
 
+    // ── 큐 21 후속 — 말소·수출통관 체크/문서 mismatch 확인 모달 (사용자 결정 2026-05-18) ──
+    // 운영 흐름상 체크와 서류 업로드 순서가 비순차적. 강제 차단 대신 모달로 인지 강제.
+    public bool $showDocCheckModal = false;
+    public bool $userConfirmedDocCheckMismatch = false;
+    public array $docCheckMismatches = [];
+
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $vehicle_number = '';
     public string $sales_channel = 'export';
@@ -781,6 +787,61 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->ledgerUnlockReason = '';
         $this->isLedgerLocked = false;
         $this->hasLedgerUnlockToken = false;
+        // 큐 21 후속 — 말소·수출통관 mismatch 모달 정리
+        $this->showDocCheckModal = false;
+        $this->userConfirmedDocCheckMismatch = false;
+        $this->docCheckMismatches = [];
+    }
+
+    // ── 큐 21 후속 — 말소·수출통관 mismatch 감지 + 모달 (사용자 결정 2026-05-18) ────────
+    private function detectDocCheckMismatches(): array
+    {
+        $mismatches = [];
+
+        // 말소: is_deregistered ↔ deregistration_document
+        $hasDeregDoc = ($this->deregistrationDocFile !== null)
+            || ($this->deregistration_document_path !== '' && ! $this->clearDeregistrationDoc);
+        if ($this->is_deregistered xor $hasDeregDoc) {
+            $mismatches[] = [
+                'stage' => 'deregistration',
+                'label' => '말소',
+                'tab' => 'purchase',
+                'checked' => $this->is_deregistered,
+                'has_doc' => $hasDeregDoc,
+            ];
+        }
+
+        // 수출통관: is_export_cleared ↔ export_declaration_document
+        $hasExportDoc = ($this->exportDeclarationDocFile !== null)
+            || ($this->export_declaration_document_path !== '' && ! $this->clearExportDeclarationDoc);
+        if ($this->is_export_cleared xor $hasExportDoc) {
+            $mismatches[] = [
+                'stage' => 'export_clearance',
+                'label' => '수출통관',
+                'tab' => 'export',
+                'checked' => $this->is_export_cleared,
+                'has_doc' => $hasExportDoc,
+            ];
+        }
+
+        return $mismatches;
+    }
+
+    public function confirmSaveWithDocMismatch(): void
+    {
+        $this->userConfirmedDocCheckMismatch = true;
+        $this->showDocCheckModal = false;
+        $this->save();
+    }
+
+    public function dismissDocCheckModal(string $jumpToTab = ''): void
+    {
+        $this->showDocCheckModal = false;
+        $this->docCheckMismatches = [];
+        $this->userConfirmedDocCheckMismatch = false;
+        if ($jumpToTab !== '') {
+            $this->dispatch('switch-tab', tab: $jumpToTab);
+        }
     }
 
     // ── 큐 21 — Ledger 잠금 상태 메서드 (회의록 2026-05-18) ────────────
@@ -1119,6 +1180,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]);
         }
 
+        // 큐 21 후속 — 말소·수출통관 체크↔서류 mismatch 모달 (사용자 결정 2026-05-18).
+        // 모든 validation 통과 후 마지막 단계 — 한쪽만 있으면 단계 진입 안 되므로 사용자 인지 강제.
+        if (! $this->userConfirmedDocCheckMismatch) {
+            $mismatches = $this->detectDocCheckMismatches();
+            if (! empty($mismatches)) {
+                $this->docCheckMismatches = $mismatches;
+                $this->showDocCheckModal = true;
+
+                return;   // save 보류 — 모달 후 confirmSaveWithDocMismatch에서 재호출
+            }
+        }
+
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');
         $toDate = fn(string $v): ?string => $v !== '' ? $v : null;
@@ -1331,6 +1404,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearDeregistrationDoc = false;
         $this->clearExportDeclarationDoc = false;
         $this->clearBlDoc = false;
+
+        // 큐 21 후속 — mismatch confirm flag 리셋 (다음 save 진입 시 재검사)
+        $this->userConfirmedDocCheckMismatch = false;
 
         $this->unsetComputedProperties();
 
@@ -3381,6 +3457,53 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 
 </div>{{-- /x-data --}}
+@endif
+
+{{-- 큐 21 후속 — 말소·수출통관 체크↔서류 mismatch 확인 모달 (사용자 결정 2026-05-18).
+     운영 흐름상 체크/서류 순서가 비순차적이라 강제 차단 대신 모달로 인지 강제.
+     슬라이드 패널 stacking context 밖에 배치. close()/save() 끝에서 정리됨. --}}
+@if($showDocCheckModal && ! empty($docCheckMismatches))
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:key="doc-check-mismatch-modal">
+    <div class="card max-w-lg mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">⚠ 단계 진입 누락 확인</h3>
+        <p class="mt-1 text-xs text-gray-500">아래 항목은 체크박스와 문서 업로드가 한쪽만 되어있어 해당 단계가 진행되지 않습니다.</p>
+
+        <div class="mt-3 space-y-2">
+            @foreach($docCheckMismatches as $m)
+            <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs">
+                <div class="font-semibold text-amber-800">{{ $m['label'] }}</div>
+                <div class="mt-1 grid grid-cols-2 gap-1 text-amber-700">
+                    <div>{{ $m['checked'] ? '✓ 체크박스: 체크됨' : '☐ 체크박스: 미체크' }}</div>
+                    <div>{{ $m['has_doc'] ? '✓ 문서: 업로드됨' : '☐ 문서: 미업로드' }}</div>
+                </div>
+                <div class="mt-1.5 text-[11px] text-amber-600">
+                    @if($m['checked'] && ! $m['has_doc'])
+                        → 체크는 됐지만 문서가 없어 "{{ $m['label'] }}완료" 단계 진입 안 됨
+                    @elseif(! $m['checked'] && $m['has_doc'])
+                        → 문서는 업로드됐지만 체크 안 되어 "{{ $m['label'] }}완료" 단계 진입 안 됨
+                    @endif
+                </div>
+                <button type="button" wire:click="dismissDocCheckModal('{{ $m['tab'] }}')"
+                        class="mt-2 text-[11px] text-amber-700 hover:underline">→ {{ $m['label'] }} 탭으로 이동해서 수정</button>
+            </div>
+            @endforeach
+        </div>
+
+        <div class="mt-3 rounded-md bg-gray-50 border border-gray-200 p-2.5 text-[11px] text-gray-600">
+            저장 시 위 단계는 진행되지 않고 현재 단계로 유지됩니다. 나중에 체크/문서를 채워서 다시 저장하면 단계 진입.
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button wire:click="dismissDocCheckModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소 (수정하러 가기)</button>
+            <button wire:click="confirmSaveWithDocMismatch" type="button"
+                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                그대로 저장 (단계 미진입 인지함)
+            </button>
+        </div>
+    </div>
+</div>
 @endif
 
 {{-- 큐 21 — Ledger 잠금 해제 모달 (회의록 2026-05-18, admin/super 전용).
