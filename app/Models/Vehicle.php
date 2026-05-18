@@ -275,11 +275,32 @@ class Vehicle extends Model
             return;   // 시드/artisan
         }
 
+        // isDirty()는 Eloquent strcmp 기반이라 numeric 컬럼에서 false-positive 발생.
+        // 예: DB int 1000000 vs 폼 float 1000000.0 → strcmp("1000000","1000000.0") ≠ 0 → dirty=true.
+        // 실제 값 차이만 잡기 위해 정밀 비교 적용 (사용자 검증 2026-05-18 발견).
         $dirtyLocked = [];
         foreach (self::LEDGER_LOCK_FIELDS as $field) {
-            if ($this->isDirty($field)) {
-                $dirtyLocked[] = $field;
+            if (! $this->isDirty($field)) {
+                continue;
             }
+            $original = $this->getOriginal($field);
+            $current = $this->getAttribute($field);
+
+            // null/null 또는 ''/'' 같은 빈 값 동일 처리
+            if (($original === null || $original === '') && ($current === null || $current === '')) {
+                continue;
+            }
+
+            // numeric은 float 절대차 비교
+            if (is_numeric($original) && is_numeric($current)) {
+                if (abs((float) $original - (float) $current) < 0.0001) {
+                    continue;
+                }
+            } elseif ((string) $original === (string) $current) {
+                continue;
+            }
+
+            $dirtyLocked[] = $field;
         }
         if (empty($dirtyLocked)) {
             return;   // 잠금 컬럼 변경 없음
