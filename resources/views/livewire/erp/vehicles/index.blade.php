@@ -3089,6 +3089,37 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">선적 (B/L)</span>
             </div>
+
+            {{-- 큐 9 확장 — G1 50% B/L 잠금 상태 표시. 기존 bl_document가 없는 차량만 검사 (grandfather). --}}
+            @if($editingId)
+            @php
+                $g1Vehicle = \App\Models\Vehicle::with('unpaidExportOverrides')->find($editingId);
+                $g1Ratio = $g1Vehicle?->unpaid_ratio;
+                $g1HasExistingBl = $g1Vehicle && ! empty($g1Vehicle->bl_document);
+                $g1HasShippingOverride = $g1Vehicle?->hasUnpaidOverride('shipping') ?? false;
+            @endphp
+            @if(! $g1HasExistingBl)
+            <div class="mb-3 rounded-md border px-3 py-2 text-xs
+                {{ $g1Ratio === null
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : ($g1Ratio > 0.5
+                        ? ($g1HasShippingOverride ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
+                @if($g1Ratio === null)
+                    <span class="font-semibold">⚠ 환율 미입력</span> — 외화 차량 환율 입력 후 B/L 발행 가능
+                @elseif($g1Ratio > 0.5)
+                    @if($g1HasShippingOverride)
+                        <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
+                    @else
+                        <span class="font-semibold">🔒 B/L 발행 잠김</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (50% 초과). 잔금 50% 이상 입금 후 발행 가능. 또는 관리자 미입금 우회 승인(선적 단계) 필요.
+                    @endif
+                @else
+                    <span class="font-semibold">✓ B/L 발행 가능</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (50% 이하)
+                @endif
+            </div>
+            @endif
+            @endif
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">선적 바이어</label>

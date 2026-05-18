@@ -192,6 +192,67 @@ class Vehicle extends Model
     }
 
     /**
+     * 큐 9 확장 — G1 50% B/L 잠금 (회의록 2026-05-14 §G1, SKILLS §13 단일 게이트).
+     *
+     * 룰: `bl_document` 신규 첨부 시 `unpaid_ratio > 0.5`면 차단.
+     * 잔금 50% 이상 입금 후 B/L 발행 가능.
+     *
+     * 분기:
+     *   ① grandfather — 기존에 bl_document 있던 차량은 모든 변경 통과 (수정·교체·삭제 포함)
+     *      (사용자 결정 2026-05-18: 이미 운영중 차량은 우회)
+     *   ② 환율 미입력 외화 차량(unpaid_ratio = null) → 별도 메시지로 차단
+     *   ③ admin `unpaid_export_override` (stage='shipping') 승인 있으면 우회 (큐 2.6 인프라 재사용)
+     *
+     * 호출 위치: saving 훅 (시드·artisan auth 없으면 우회).
+     */
+    public function guardBlFiftyPercentRuleOnSaving(): void
+    {
+        if (! auth()->check()) {
+            return;   // 시드/artisan
+        }
+        if (! $this->isDirty('bl_document')) {
+            return;   // bl_document 변경 없음
+        }
+
+        $original = $this->getOriginal('bl_document');
+        $current = $this->bl_document;
+
+        // grandfather: 기존에 bl_document가 있었으면 통과 (수정·교체·삭제 모두)
+        if (! empty($original)) {
+            return;
+        }
+
+        // null → null 또는 새로 빈 값 — 검사 대상 외
+        if (empty($current)) {
+            return;
+        }
+
+        // 신규 첨부 (null → not null) — G1 평가
+        $ratio = $this->unpaid_ratio;
+
+        if ($ratio === null) {
+            // 환율 미입력 외화 차량
+            throw ValidationException::withMessages([
+                'bl_document' => 'B/L 발행 전 환율 입력 필수입니다. 외화 차량 환율 미입력으로 미수율 평가 불가.',
+            ]);
+        }
+
+        if ($ratio <= 0.5) {
+            return;
+        }
+
+        // 50% 룰 위반 — admin 미입금 우회 승인 확인 (shipping 단계)
+        if ($this->hasUnpaidOverride('shipping')) {
+            return;
+        }
+
+        $percent = number_format($ratio * 100, 1);
+        throw ValidationException::withMessages([
+            'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (50% 초과). 잔금 50% 이상 입금 후 발행 가능. 또는 관리자 미입금 우회 승인(선적 단계) 필요.",
+        ]);
+    }
+
+    /**
      * 큐 21 — Ledger 영향 컬럼 잠금 가드.
      *
      * 회의록 2026-05-18 vehicle-ledger-field-lock — 사용자 최종 결정 반영:
@@ -325,6 +386,10 @@ class Vehicle extends Model
             // 재무 확정 잔금 있는 차량의 매입가·판매가·환율·면장금액·비용·바이어·담당자 변경은
             // admin/super 잠금 해제 후 1회만 통과 (cache token 1회 소비 → 즉시 재잠금).
             $vehicle->guardLedgerLockOnSaving();
+
+            // 큐 9 확장 — G1 50% B/L 잠금 (SKILLS §13 단일 게이트).
+            // bl_document 신규 첨부 시 unpaid_ratio > 0.5면 차단. grandfather + admin 우회 분기.
+            $vehicle->guardBlFiftyPercentRuleOnSaving();
 
             // 큐 14-4-4 — G2 같은 바이어 미수 + 신규 거래 가드.
             // 신규 등록 시 같은 buyer + 미수 잔존 차량 있으면 ApprovalRequest 필요.
