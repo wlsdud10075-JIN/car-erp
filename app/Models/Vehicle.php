@@ -278,6 +278,12 @@ class Vehicle extends Model
         // isDirty()는 Eloquent strcmp 기반이라 numeric 컬럼에서 false-positive 발생.
         // 예: DB int 1000000 vs 폼 float 1000000.0 → strcmp("1000000","1000000.0") ≠ 0 → dirty=true.
         // 실제 값 차이만 잡기 위해 정밀 비교 적용 (사용자 검증 2026-05-18 발견).
+        //
+        // 또한 운영 흐름상 "빈 값(0/null) → 첫 입력"은 retroactive 변경이 아니라 최초 set이므로 통과.
+        // 예: 매입 잔금 confirm 후 영업이 판매가·바이어 처음 입력하는 정상 흐름 보호.
+        // 일단 값이 set된 이후의 변경은 차단 (회의 의도 = retroactive 보호).
+        $isEmpty = fn ($v) => $v === null || $v === '' || $v === 0 || $v === '0' || $v === 0.0;
+
         $dirtyLocked = [];
         foreach (self::LEDGER_LOCK_FIELDS as $field) {
             if (! $this->isDirty($field)) {
@@ -286,8 +292,13 @@ class Vehicle extends Model
             $original = $this->getOriginal($field);
             $current = $this->getAttribute($field);
 
-            // null/null 또는 ''/'' 같은 빈 값 동일 처리
-            if (($original === null || $original === '') && ($current === null || $current === '')) {
+            // 빈 값 ↔ 빈 값 (PHP 형변환 차이 흡수)
+            if ($isEmpty($original) && $isEmpty($current)) {
+                continue;
+            }
+
+            // 빈 값 → 신규 입력 (최초 set — 운영 정상 흐름 보호)
+            if ($isEmpty($original)) {
                 continue;
             }
 

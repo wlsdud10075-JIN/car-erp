@@ -87,7 +87,8 @@ class VehicleLedgerLockTest extends TestCase
     public function test_confirmed_purchase_balance_payment_also_locks(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
-        $v = $this->makeVehicle();
+        // sale_price 초기값 set — 변경 시도 시 lock 발동 검증 (빈값→첫입력은 통과 정책 회피)
+        $v = $this->makeVehicle(['sale_price' => 1000000]);
         PurchaseBalancePayment::create([
             'vehicle_id' => $v->id,
             'amount' => 300000,
@@ -98,10 +99,32 @@ class VehicleLedgerLockTest extends TestCase
         $this->actingAs($admin);
 
         $v2 = Vehicle::find($v->id);
-        $v2->sale_price = 2000000;
+        $v2->sale_price = 2000000;   // 1000000 → 2000000 변경
 
         $this->expectException(ValidationException::class);
         $v2->save();
+    }
+
+    public function test_empty_to_first_input_passes_even_when_locked(): void
+    {
+        // 운영 정상 흐름: 매입 잔금 confirmed 후 영업이 판매 정보 처음 입력 (sale_price 0 → 1000만, buyer_id null → ID).
+        // 회의 의도(retroactive 변경 차단)와 운영 현실 사이 정정 (사용자 검증 2026-05-18).
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();   // sale_price 미설정 (0/null)
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 300000,
+            'payment_date' => '2026-05-01',
+            'confirmed_at' => now(),
+            'confirmed_by_user_id' => $admin->id,
+        ]);
+        $this->actingAs($admin);
+
+        $v2 = Vehicle::find($v->id);
+        $v2->sale_price = 1000000;   // 0/null → 1000000 (최초 입력)
+        $v2->save();   // 통과 — 빈 값에서 첫 set은 retroactive 변경 아님
+
+        $this->assertSame(1000000, (int) $v2->fresh()->sale_price);
     }
 
     public function test_unconfirmed_payments_do_not_lock(): void
