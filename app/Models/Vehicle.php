@@ -282,7 +282,11 @@ class Vehicle extends Model
         // 또한 운영 흐름상 "빈 값(0/null) → 첫 입력"은 retroactive 변경이 아니라 최초 set이므로 통과.
         // 예: 매입 잔금 confirm 후 영업이 판매가·바이어 처음 입력하는 정상 흐름 보호.
         // 일단 값이 set된 이후의 변경은 차단 (회의 의도 = retroactive 보호).
-        $isEmpty = fn ($v) => $v === null || $v === '' || $v === 0 || $v === '0' || $v === 0.0;
+        //
+        // ⚠️ DB 컬럼이 decimal(15,2)이면 "0.00" string으로 오므로 strict === 비교로는 0 인정 안 됨.
+        // numeric 절대값 비교로 강화 (사용자 검증 2026-05-18 재발견).
+        $isEmpty = fn ($v) => $v === null || $v === ''
+            || (is_numeric($v) && abs((float) $v) < 0.0001);
 
         $dirtyLocked = [];
         foreach (self::LEDGER_LOCK_FIELDS as $field) {
