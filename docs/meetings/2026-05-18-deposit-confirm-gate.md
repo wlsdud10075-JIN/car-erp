@@ -230,48 +230,75 @@
 
 ---
 
-## 🏁 최종 권고 (Opus 4.7 최종 취합)
+## 🏁 최종 권고 (Opus 4.7 최종 취합) — 사용자 정정 후
 
-**판정**: **조건부 GO — 옵션 C (배포 전) + 큐 23 옵션 B 전환 (배포 후 안정화 별건)**
+> ⚠️ **사용자 후속 정정 (2026-05-18)** — 회의 가정 재확인 결과 정정. **원 회의 권고(옵션 C + 큐 23 옵션 B 별건)에서 옵션 B 단계적 채택으로 변경**. 정정 노트는 본 섹션 맨 아래 별도 표시.
 
-**근거 (1줄)**: 내부 6부서 + 사외이사 2명 모두 단기 C + 장기 B 합의. 옵션 D 만장일치 NO. QA "알림 수준" 사외이사 양쪽 기각, "구조 결정 선행"만 수용. Codex/Gemini 신규 통찰(반려·부분승인·unconfirm 정책 + 입력값↔확정값 혼용 차단) 패키지 통합.
+**판정 (정정 후)**: **조건부 GO — 옵션 B 단계적 채택 (큐 22-A/B/C 분할)**
+
+**판정 (원 회의 권고)**: ~~조건부 GO — 옵션 C (배포 전) + 큐 23 옵션 B (배포 후)~~
+
+**근거 (1줄)**: 내부 6부서 + 사외이사 2명 모두 "단기 C + 장기 B" 합의. 옵션 D 만장일치 NO. 사용자 정정 — DB 테스트 자유 + 배포까지 한 달 여유 → **옵션 B 단기 NO-GO 사유(공수·배포 임박) 모두 해소** → 옵션 B 단계적 채택. Codex/Gemini 신규 통찰(반려·부분승인·unconfirm 정책 + 입력값↔확정값 혼용 차단) 패키지 통합.
+
+### 사용자 정정 (2026-05-18 후속)
+
+회의 가정 명확화 — 사용자 확인 결과:
+- **DB**: 테스트 단계 → 마이그·데이터 손실 부담 0
+- **시간**: 배포까지 다음 달까지 여유 (한 달+) → 25~30h 공수 가능
+
+옵션 B 단기 NO-GO 사유 해소 매핑:
+| 회의가 우려한 사유 | 사용자 조건 | 해소 |
+|---|---|---|
+| Engineer "마이그 트랜잭션 위험" | DB 자유 | ✅ 해소 |
+| Ops "AWS 배포 임박 시점" | 다음 달까지 여유 | ✅ 해소 |
+| Specialist B "테스트 단계 한정" | 그대로 충족 | ✅ |
+| 1인 개발 25~30h 공수 | 한 달 여유 | ✅ 해소 |
+| QA "분자 정의 잦은 변경" | 옵션 B는 공식 불변 (단순 type enum 추가) | ✅ 해소 |
+
+→ **단기 NO-GO 사유 모두 해소** → 옵션 B 단계적 채택. 큐 23 분리 불필요 (큐 22가 옵션 B 직접).
 
 ### 필수 선행 작업 (큐 22 진입 전)
 
 1. **`FinalPayment::creating` 훅 추가** — paid Settlement 존재 시 신규 행 차단 (Specialist B 기존 구멍 메우기)
-2. **큐 21 `LEDGER_LOCK_FIELDS` 확장** — `deposit_down_payment` / `interim_payment` / `advance_payment1·2` 추가
+2. **큐 21 `LEDGER_LOCK_FIELDS` 확장 검토** — 옵션 B 채택으로 4컬럼 vehicles에서 drop되므로 이 항목은 불필요화. 단 type 컬럼 추가된 final_payments 행은 큐 20-D updating 잠금 그대로 적용
 3. **테스트 3파일 수정 범위 사전 합의** — DashboardActionCountsTest / G1BlLockTest / PaymentConfirmationServiceTest
 
-### 조건 (조건부 GO 패키지)
+### 조건 (조건부 GO 패키지) — 옵션 B 단계적
 
-**① 옵션 C 채택 + 사외이사 신규 통찰 통합**
+**① 큐 22-A: 판매 입금 4컬럼 → final_payments 통합 (10~15h)**
 
 | 구성 | 내용 |
 |---|---|
-| **마이그** | `vehicles`에 2 컬럼: `sale_deposits_confirmed_at` + `sale_deposits_confirmed_by_user_id` |
-| **분자 변경** | `getSaleUnpaidAmountAttribute` 분자에서 `confirmed_at IS NULL`이면 4컬럼 제외 |
-| **확정 UI** | `/erp/transfers`에 5번째 탭 "입금 확정" — 차량별 [확정] 클릭 |
+| **마이그** | `final_payments.type` ENUM 추가 (`'deposit_down', 'interim', 'advance_1', 'advance_2', 'balance'`). 기존 행은 모두 `balance` 디폴트. 신규 4 type은 vehicles 컬럼 데이터 변환 INSERT 후 vehicles 4컬럼 DROP. **트랜잭션 2단계 분리**: ① 변환 INSERT (검증) → ② 별도 마이그에서 컬럼 DROP |
+| **분자 변경** | `getSaleUnpaidAmountAttribute` 단순화: `$this->finalPayments->whereNotNull('confirmed_at')->sum('amount')` (type 무관). 분자 정의 단일 출처 회복 |
+| **확정 UI** | `/erp/transfers` 판매 잔금 탭 — 기존 그대로 사용 (type 컬럼 표시 추가). 모든 입금 type 한 list |
 | **권한** | `canConfirmFinance` (admin/super/role=정산), self-confirm 차단 |
-| **AuditLog** | confirm 시점 `recordEvent('sale_deposits_confirmed')` |
-| **paid Settlement snapshot** | `confirmed_final_payments` 외에 입금 4종 + `sale_deposits_confirmed_at` 추가 캡처 (Specialist F) |
-| **반려·unconfirm** (Gemini) | `unconfirmSaleDeposits` 메서드 + audit 기록 + SavingsStatus 미연동 (savings_used 별건) |
-| **LEDGER_LOCK_FIELDS** | confirmed 후 4컬럼 직접 수정 시 큐 21 잠금 발동 (PO) |
-| **새 테스트** | 8~10 케이스 — 확정/미확정/G1 강화/snapshot/audit/unconfirm |
+| **paid Settlement snapshot** | `confirmed_final_payments`에 모든 type 행 포함 (이미 그렇게 동작) |
+| **반려·unconfirm** (Gemini) | type 무관 — 큐 20-D 패턴 그대로. `FinalPayment::updating` 잠금이 confirmed_at 후 amount/type 변경 차단 |
+| **`FinalPayment::creating` 훅 추가** | paid Settlement 존재 시 신규 행 차단 (Specialist B 기존 구멍 메우기 — 부수 fix) |
+| **UI 차량 편집** | 판매 탭 입금 영역 통합 — 잔금 N건 row 패턴 확장. type 드롭다운 + 금액 |
+| **새 테스트** | 10~12 케이스 — type별 confirm/미confirm/G1/snapshot/audit/unconfirm/paid creating 차단 |
 
-**② 별건 분리**:
-- **큐 22-별건1**: `savings_used` 게이트 (Security NO-GO 3건 해소 필요 — H6 훅 confirmed 분기, race condition, REFUND 정책)
-- **큐 22-별건2**: 매입 측 (`down_payment` / `selling_fee_payment`) 게이트 — 같은 옵션 C 패턴
-- **큐 23 (별건)**: 옵션 B 전환 — final_payments type enum 통합. 배포 후 운영 안정화 1~2 스프린트 후. Codex/Gemini 양쪽 강하게 권장.
+**② 큐 22-B: savings_used 통합 (6~8h) — 회의 1회 권장**
 
-**③ 부수 fix (큐 21 후속)**:
-- `FinalPayment::creating` 훅 추가 (paid 차량 신규 행 차단)
+Security NO-GO 3건 해소:
+- (a) confirm 전 SavingsStatus 거래 생성 차단 — `Vehicle::saved` H6 훅 → `FinalPayment::saved`로 이전, confirmed 분기
+- (b) confirm 시점 SavingsStatus 잔액 race condition 재검증 (`lockForUpdate`)
+- (c) confirm 후 변경 시 SavingsStatus REFUND 역거래 정책
+
+`vehicles.savings_used` → `final_payments.type='savings_used'` 행. `Vehicle::saved` H6 훅 제거 → `FinalPayment::saved` 훅으로 이전.
+
+**③ 큐 22-C: 매입 측 통합 (5~6h)**
+
+`down_payment` / `selling_fee_payment` → `purchase_balance_payments`에 `type` enum 추가 (`'down', 'selling_fee', 'balance'`). vehicles 2컬럼 DROP. 분자 단순화.
 
 ### 공수 추정
 
-- 큐 22 (옵션 C): **10~12h** (PO 8h + 사외이사 통찰 통합 + paid snapshot + unconfirm 정책 4h)
-- 큐 22-별건1 (savings_used): 별도 5~6h (회의 1회 별도 권장)
-- 큐 22-별건2 (매입 측): 5~6h (같은 패턴)
-- 큐 23 (옵션 B): 25~30h (배포 후)
+- **큐 22-A** (판매 입금 4컬럼): **10~15h**
+- **큐 22-B** (savings_used + SavingsStatus 재설계): 6~8h + 회의 1회
+- **큐 22-C** (매입 측 2컬럼): 5~6h
+- **총 큐 22**: **23~31h** (한 달 안에 단계적 완수 가능)
+- ~~큐 23~~: 불필요 (큐 22가 옵션 B 직접)
 
 ### 모순·NO-GO 처리 로그
 
