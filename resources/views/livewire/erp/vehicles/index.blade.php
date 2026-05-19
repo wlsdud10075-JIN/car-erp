@@ -1183,6 +1183,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 현재 form의 deposit/잔금 입력값으로 임시 계산. 단순화 — 미입금 잔존은 DB 저장 후 정확.
         // 여기선 ID 있는 차량의 기존 sale_unpaid 캐시를 활용해 1차 검증만.
         if ($this->editingId) {
+            // replicate()는 exists=false·id=null로 만들어주는데,
+            // 이 상태에서 hasUnpaidOverride() 쿼리가 빈 결과를 반환해 admin이 발급한
+            // 미입금 우회 승인이 무시되던 버그. 원본 차량 식별자를 복원해서 관계 쿼리 가능하게.
+            $previewVehicle->id = $this->editingId;
+            $previewVehicle->exists = true;
+
             $existing = \App\Models\Vehicle::find($this->editingId);
             if ($existing && $existing->sale_unpaid_amount_krw_cache !== null) {
                 // 기존 차량의 미입금 캐시로 C5 평가

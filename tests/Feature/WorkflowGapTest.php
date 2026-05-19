@@ -555,6 +555,46 @@ class WorkflowGapTest extends TestCase
         $override->delete();
     }
 
+    public function test_q26_unpaid_override_works_through_livewire_save_flow(): void
+    {
+        // UI save() 흐름이 Vehicle::replicate()로 임시 인스턴스를 만들어 guardStageOrderForExport()
+        // 호출 — replicate() 결과는 exists=false·id=null이라 hasUnpaidOverride()가 항상 false였음.
+        // admin이 우회 승인을 발급해도 차단되던 회귀. 원본 차량 식별자 복원 fix 검증.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $buyer = Buyer::create(['name' => 'OVR BUYER', 'is_active' => true]);
+
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'deposit_down_payment' => 500,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+            'nice_reg_owner_rrn' => '950101-1234567',
+        ]);
+        $v->refresh();
+        $this->assertGreaterThan(0, (int) $v->sale_unpaid_amount_krw_cache);
+
+        UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'clearance',
+            'approved_by' => $admin->id,
+            'reason' => '컨테이너 출항 일정상 강행 — 잔금 확정 입금 확인',
+            'approved_at' => now(),
+            'ip_address' => '127.0.0.1',
+            'sale_unpaid_amount_snapshot' => 500,
+        ]);
+
+        // 통관 진입 시도 (export_buyer + shipping_date) — clearance 단계로 평가됨.
+        // 원본 차량 id+exists 복원 fix 적용되었으면 hasUnpaidOverride('clearance')가 true 반환 → 통과.
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('export_buyer_id_str', (string) $buyer->id)
+            ->set('shipping_date', '2026-05-01')
+            ->call('save')
+            ->assertHasNoErrors();
+    }
+
     // ── 큐 7 확장 — C7-a 컬럼 권한 + H9 RRN 형식 + H10 말소 RRN 강제 ───
 
     public function test_q7_c7a_settlement_role_cannot_change_financial_fields(): void
