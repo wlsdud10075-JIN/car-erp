@@ -1824,6 +1824,106 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    // ── 2026-05-20 #2-2+2-4 — 거래완료 자동 정산 생성 + Salesman.type 분기 ──
+
+    private function makeCompletedVehicle(int $salesmanId, ?string $bl = null): Vehicle
+    {
+        // G1 50% B/L 게이트 우회 패턴 — sale_price 1 + FP 1 완납.
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'salesman_id' => $salesmanId,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 1,
+        ]);
+        $v->finalPayments()->create([
+            'amount' => 1,
+            'type' => 'balance',
+            'payment_date' => now()->subDay()->toDateString(),
+            'confirmed_at' => now(),
+        ]);
+        $v->refreshCaches();
+
+        if ($bl !== null) {
+            $v->bl_document = $bl;
+            $v->save();   // → v3 거래완료 진입
+        }
+
+        return $v;
+    }
+
+    public function test_auto_settlement_created_on_completion_with_freelance_ratio(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $sm = Salesman::create(['name' => 'FREE', 'is_active' => true, 'type' => 'freelance']);
+        $this->actingAs($admin);
+
+        $v = $this->makeCompletedVehicle($sm->id, 'bl.pdf');
+
+        $this->assertSame(1, $v->settlements()->count(), '자동 Settlement 1건 생성');
+        $s = $v->settlements()->first();
+        $this->assertSame('ratio', $s->settlement_type, 'freelance → ratio');
+        $this->assertSame('pending', $s->settlement_status);
+        $this->assertSame($sm->id, $s->salesman_id);
+    }
+
+    public function test_auto_settlement_employee_uses_per_unit(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $sm = Salesman::create(['name' => 'EMP', 'is_active' => true, 'type' => 'employee']);
+        $this->actingAs($admin);
+
+        $v = $this->makeCompletedVehicle($sm->id, 'bl.pdf');
+
+        $this->assertSame('per_unit', $v->settlements()->first()->settlement_type);
+    }
+
+    public function test_auto_settlement_skipped_when_already_exists(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $sm = Salesman::create(['name' => 'EMP2', 'is_active' => true, 'type' => 'employee']);
+        $this->actingAs($admin);
+
+        $v = $this->makeCompletedVehicle($sm->id, 'bl.pdf');
+        $this->assertSame(1, $v->settlements()->count(), '첫 자동 생성');
+
+        $v->memo = '다른 변경';
+        $v->save();   // 또 거래완료 cache 유지지만 wasChanged X
+        $this->assertSame(1, $v->settlements()->count(), '두 번째 save 후에도 1건');
+    }
+
+    public function test_auto_settlement_skipped_without_salesman(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'salesman_id' => null,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 1,
+        ]);
+        $v->finalPayments()->create(['amount' => 1, 'type' => 'balance', 'payment_date' => now()->subDay()->toDateString(), 'confirmed_at' => now()]);
+        $v->refreshCaches();
+        $v->bl_document = 'bl.pdf';
+        $v->save();
+
+        $this->assertSame(0, $v->settlements()->count(), 'salesman 없으면 자동 생성 X');
+    }
+
+    public function test_auto_settlement_skipped_without_auth(): void
+    {
+        // auth 없음 (시드/artisan) → 자동 생성 skip. G1 게이트도 auth 우회.
+        $sm = Salesman::create(['name' => 'SEED', 'is_active' => true, 'type' => 'employee']);
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'salesman_id' => $sm->id,
+            'purchase_price' => 5_000_000,
+            'bl_document' => 'bl.pdf',
+        ]);
+
+        $this->assertSame(0, $v->settlements()->count(), '시드 컨텍스트는 자동 생성 X');
+    }
+
     // ── 2026-05-20 #2 피드백 — 정산 차단 (거래완료 미수금) action ──
 
     public function test_settlement_blocked_by_unpaid_filters_completed_with_unpaid(): void

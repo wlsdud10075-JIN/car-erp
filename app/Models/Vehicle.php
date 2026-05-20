@@ -585,6 +585,36 @@ class Vehicle extends Model
                 PurchaseBalancePayment::$skipCreatingGuard = false;
             }
         });
+
+        // 2026-05-20 #2-2+2-4 — 거래완료 진입 시 pending Settlement 자동 생성.
+        // 사용자 피드백: '거래 완료되면 자동으로 정산으로 이동되게 하는게 맞는것 같고'.
+        // 분기 — Salesman.type 보고 settlement_type 자동 결정 (employee → per_unit / freelance → ratio).
+        // ratio·per_unit_amount NULL 로 생성. 재무가 H3 가드(confirmed/paid 시 값 > 0)에서 채움.
+        // Skip: auth 없음(시드/artisan), salesman 미지정, 이미 Settlement 존재.
+        static::saved(function (Vehicle $vehicle) {
+            if (! auth()->check()) {
+                return;
+            }
+            if ($vehicle->progress_status_cache !== '거래완료') {
+                return;
+            }
+            if (! $vehicle->wasChanged('progress_status_cache')) {
+                return;
+            }
+            if ($vehicle->settlements()->exists()) {
+                return;
+            }
+            $salesman = $vehicle->salesman;
+            if (! $salesman) {
+                return;
+            }
+            $vehicle->settlements()->create([
+                'salesman_id' => $salesman->id,
+                'settlement_type' => $salesman->defaultSettlementType(),
+                'settlement_status' => 'pending',
+                'note' => '자동 생성 — 거래완료 진입 시',
+            ]);
+        });
     }
 
     /**

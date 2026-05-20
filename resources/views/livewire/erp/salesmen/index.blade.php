@@ -30,6 +30,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $email       = '';
     public string $memo        = '';
     public bool   $is_active   = true;
+    // 2026-05-20 #2-2+2-4 — Salesman.type 분기 (employee 사내직원 / freelance 프리랜서)
+    public string $type        = 'employee';
 
     #[Computed]
     public function salesmen()
@@ -69,6 +71,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->email       = $sm->email ?? '';
         $this->memo        = $sm->memo  ?? '';
         $this->is_active   = $sm->is_active;
+        $this->type        = $sm->type ?? 'employee';
         $this->showPanel   = true;
     }
 
@@ -81,7 +84,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $this->validate(['name' => 'required|string|max:100']);
+        $this->validate([
+            'name' => 'required|string|max:100',
+            'type' => 'required|in:employee,freelance',
+        ]);
 
         $data = [
             'name'      => $this->name,
@@ -90,6 +96,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'email'     => $this->email ?: null,
             'memo'      => $this->memo  ?: null,
             'is_active' => $this->is_active,
+            'type'      => $this->type,
         ];
 
         if ($this->editingId) {
@@ -118,6 +125,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
         $this->is_active = true;
+        $this->type = 'employee';
     }
 }; ?>
 
@@ -264,6 +272,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <label class="label-base">이메일</label>
                 <input wire:model="email" type="email" class="input-base" />
             </div>
+        </div>
+        {{-- 2026-05-20 #2-2+2-4 — 정산 분기 (사내직원 건당 / 프리랜서 비율) --}}
+        <div>
+            <label class="label-base">정산 분류 <span class="text-red-500">*</span></label>
+            <select wire:model="type" class="input-base">
+                <option value="employee">사내직원 (건당 정산)</option>
+                <option value="freelance">프리랜서 (비율 정산)</option>
+            </select>
+            <p class="mt-1 text-[11px] text-gray-500">거래완료 시 자동 생성되는 정산 방식 결정</p>
         </div>
         <div>
             <label class="label-base">메모</label>
