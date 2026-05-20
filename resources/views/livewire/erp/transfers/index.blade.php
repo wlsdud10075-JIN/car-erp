@@ -67,6 +67,23 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $rejectReason = '';
 
+    /**
+     * 큐 22-C 핵심 (2026-05-20) — 매입 잔금 신규 row 입력 모달 (Spec-E 입력+확정 통합 UI).
+     * 재무가 자동 PBP Draft 외에 별도 row 추가 가능 (분할 지급·추가 비용 등).
+     * 권한: mount() 의 canConfirmFinanceTransfer 가드 + PBP::creating 의 canConfirmFinance 가드 양쪽 보호.
+     */
+    public bool $showNewPbpModal = false;
+
+    public string $newPbpVehicleId = '';
+
+    public string $newPbpAmountStr = '';
+
+    public string $newPbpDate = '';
+
+    public string $newPbpNote = '';
+
+    public bool $newPbpImmediateConfirm = true;
+
     public function mount(): void
     {
         if (! auth()->user()?->canConfirmFinanceTransfer()) {
@@ -283,6 +300,78 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->modalPurchaseAccount = null;
         $this->modalPurchaseHolder = null;
         $this->modalPurchaseBankMemo = null;
+    }
+
+    /**
+     * 큐 22-C 핵심 (2026-05-20) — 매입 잔금 신규 row 입력+확정 통합 모달.
+     */
+    #[Computed]
+    public function purchaseEligibleVehicles()
+    {
+        return \App\Models\Vehicle::query()
+            ->where('purchase_price', '>', 0)
+            ->whereDoesntHave('settlements', fn ($q) => $q->where('settlement_status', 'paid'))
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get(['id', 'vehicle_number', 'purchase_from']);
+    }
+
+    public function openNewPbpModal(): void
+    {
+        $this->showNewPbpModal = true;
+        $this->newPbpVehicleId = '';
+        $this->newPbpAmountStr = '';
+        $this->newPbpDate = now()->toDateString();
+        $this->newPbpNote = '';
+        $this->newPbpImmediateConfirm = true;
+    }
+
+    public function closeNewPbpModal(): void
+    {
+        $this->showNewPbpModal = false;
+        $this->newPbpVehicleId = '';
+        $this->newPbpAmountStr = '';
+        $this->newPbpDate = '';
+        $this->newPbpNote = '';
+        $this->newPbpImmediateConfirm = true;
+    }
+
+    public function createNewPbp(): void
+    {
+        $this->validate([
+            'newPbpVehicleId' => ['required', 'exists:vehicles,id'],
+            'newPbpAmountStr' => ['required', 'numeric', 'gt:0'],
+            'newPbpDate' => ['required', 'date'],
+            'newPbpNote' => ['nullable', 'string', 'max:255'],
+        ], [], [
+            'newPbpVehicleId' => '차량',
+            'newPbpAmountStr' => '금액',
+            'newPbpDate' => '지급일',
+            'newPbpNote' => '메모',
+        ]);
+
+        try {
+            $pbp = PurchaseBalancePayment::create([
+                'vehicle_id' => (int) $this->newPbpVehicleId,
+                'amount' => (float) str_replace(',', '', $this->newPbpAmountStr),
+                'payment_date' => $this->newPbpDate,
+                'note' => $this->newPbpNote ?: null,
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            if ($this->newPbpImmediateConfirm) {
+                app(PaymentConfirmationService::class)
+                    ->confirmPurchasePayment($pbp, auth()->user(), '재무 신규 입력 + 즉시 확정');
+                $msg = '매입 잔금 row 추가 + 재무 확정 완료.';
+            } else {
+                $msg = '매입 잔금 Draft row 추가 — 확정은 별도 처리.';
+            }
+
+            $this->dispatch('notify', message: $msg, type: 'success');
+            $this->closeNewPbpModal();
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: '매입 잔금 추가 실패: '.$e->getMessage(), type: 'error');
+        }
     }
 
     public function confirm(): void
@@ -596,6 +685,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $isSale = $tabType === 'sale_payment';
         $payments = $isSale ? $this->salePayments : $this->purchasePayments;
     @endphp
+
+    {{-- 큐 22-C 핵심 (2026-05-20) — 매입 잔금 탭: 재무가 신규 row 직접 추가 (Spec-E 입력+확정 통합). --}}
+    @if($tabType === 'purchase_payment')
+    <div class="card flex flex-wrap items-center justify-between gap-2">
+        <div class="text-xs text-gray-600">
+            자동 PBP Draft 외 별도 매입 잔금 입력이 필요한 경우 (분할 지급·추가 비용 등)
+        </div>
+        <button wire:click="openNewPbpModal"
+                class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+            + 신규 매입 잔금 추가
+        </button>
+    </div>
+    @endif
+
     {{-- 데스크탑 테이블 (판매·매입 잔금 공용) --}}
     <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm border-separate border-spacing-0">
@@ -788,6 +891,64 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
         </div>
         @endif
+    </div>
+</div>
+@endif
+
+{{-- 큐 22-C 핵심 (2026-05-20) — 매입 잔금 신규 row 입력+확정 통합 모달. --}}
+@if($showNewPbpModal)
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeNewPbpModal"
+     wire:key="new-pbp-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">매입 잔금 신규 추가</h3>
+        <p class="mt-1 text-xs text-gray-500">재무가 자동 PBP Draft 외 별도 매입 잔금 row 입력. 즉시 확정 옵션 선택 가능.</p>
+
+        <div class="mt-3 space-y-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">대상 차량 <span class="text-amber-500">●</span></label>
+                <select wire:model="newPbpVehicleId" class="input-base">
+                    <option value="">-- 차량 선택 --</option>
+                    @foreach($this->purchaseEligibleVehicles as $v)
+                    <option value="{{ $v->id }}">{{ $v->vehicle_number }} ({{ $v->purchase_from ?: '미지정' }})</option>
+                    @endforeach
+                </select>
+                @error('newPbpVehicleId') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">금액 (원) <span class="text-amber-500">●</span></label>
+                <input wire:model="newPbpAmountStr" type="text" class="input-base" placeholder="0" />
+                @error('newPbpAmountStr') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">지급일 <span class="text-amber-500">●</span></label>
+                <input wire:model="newPbpDate" type="date" class="input-base" />
+                @error('newPbpDate') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">메모 (선택)</label>
+                <textarea wire:model="newPbpNote" rows="2" class="input-base"
+                          placeholder="예: 2차 잔금, 탁송비, 수리비 등"></textarea>
+            </div>
+
+            <label class="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                <input wire:model="newPbpImmediateConfirm" type="checkbox" class="rounded" />
+                <span>즉시 재무 확정 (체크 시 ledger 반영 / 미체크 시 Draft 상태로 저장)</span>
+            </label>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button wire:click="closeNewPbpModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button wire:click="createNewPbp" wire:loading.attr="disabled" wire:target="createNewPbp"
+                    class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                <span wire:loading.remove wire:target="createNewPbp">추가</span>
+                <span wire:loading wire:target="createNewPbp">처리 중...</span>
+            </button>
+        </div>
     </div>
 </div>
 @endif

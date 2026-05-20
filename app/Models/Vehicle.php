@@ -554,14 +554,20 @@ class Vehicle extends Model
             if ($unpaid <= 0) {
                 return;
             }
-            PurchaseBalancePayment::create([
-                'vehicle_id' => $vehicle->id,
-                'amount' => $unpaid,
-                'payment_date' => null,
-                'confirmed_at' => null,
-                'created_by_user_id' => auth()->id(),
-                'note' => '자동 생성 — 영업 매입 정보 저장 시',
-            ]);
+            // 큐 22-C 핵심 — canConfirmFinance 가드 우회. 영업이 매입가 입력하면 시스템 자동 생성 (의도된 흐름).
+            PurchaseBalancePayment::$skipCreatingGuard = true;
+            try {
+                PurchaseBalancePayment::create([
+                    'vehicle_id' => $vehicle->id,
+                    'amount' => $unpaid,
+                    'payment_date' => null,
+                    'confirmed_at' => null,
+                    'created_by_user_id' => auth()->id(),
+                    'note' => '자동 생성 — 영업 매입 정보 저장 시',
+                ]);
+            } finally {
+                PurchaseBalancePayment::$skipCreatingGuard = false;
+            }
         });
     }
 

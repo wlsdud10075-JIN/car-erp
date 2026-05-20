@@ -24,6 +24,12 @@ class PurchaseBalancePayment extends Model
      */
     public static bool $allowConfirmedMutation = false;
 
+    /**
+     * 큐 22-C 핵심 (2026-05-20) — Vehicle::saved 자동 PBP Draft 생성 시 canConfirmFinance 가드 우회 flag.
+     * 영업 사용자가 매입가 입력하면 시스템이 자동 PBP Draft 생성 (의도된 흐름). 그때만 가드 skip.
+     */
+    public static bool $skipCreatingGuard = false;
+
     protected static function booted(): void
     {
         static::saved(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
@@ -32,6 +38,10 @@ class PurchaseBalancePayment extends Model
         // 큐 22-C-light (2026-05-20) Spec-F 권고 — paid Settlement 후 신규 PBP 차단.
         // FinalPayment·PBP updating 잠금과 같은 시점에 creating도 동일 잠금.
         // 시드·artisan(auth 없음) 우회 — assertPaidSettlementGuard Service에서 별도 보장.
+        //
+        // 큐 22-C 핵심 (2026-05-20) — Defense-in-depth: canConfirmFinance() 가드 추가.
+        // 영업이 transfers·Livewire 우회로 직접 PBP::create 시도 시 모델 레이어 차단.
+        // Vehicle::saved 자동 PBP Draft 생성 흐름은 $skipCreatingGuard flag 로 우회.
         static::creating(function (PurchaseBalancePayment $p) {
             if (! auth()->check()) {
                 return;
@@ -39,6 +49,11 @@ class PurchaseBalancePayment extends Model
             $vehicle = $p->vehicle;
             if ($vehicle && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
                 throw new \DomainException('정산이 paid 상태인 차량에 신규 매입 잔금을 추가할 수 없습니다 (회계 무결성).');
+            }
+
+            // 큐 22-C 핵심 — canConfirmFinance 가드 (자동 생성 우회 flag)
+            if (! self::$skipCreatingGuard && ! auth()->user()->canConfirmFinance()) {
+                throw new \DomainException('매입 잔금 row 생성 권한이 없습니다. 재무 권한자만 직접 추가할 수 있습니다 (시스템 자동 생성 흐름은 제외).');
             }
         });
 

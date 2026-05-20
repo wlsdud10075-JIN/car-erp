@@ -1244,6 +1244,69 @@ class WorkflowGapTest extends TestCase
         ]);
     }
 
+    // ── 2026-05-20 큐 22-C 핵심 — PBP::creating canConfirmFinance 가드 + flag 우회 ──
+
+    public function test_22c_pbp_creating_blocks_sales_role_direct_create(): void
+    {
+        // 영업이 PBP::create 직접 호출 시 canConfirmFinance 가드 발동 (Defense-in-depth).
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $v = $this->makeVehicle(['purchase_price' => 5_000_000]);
+
+        $this->actingAs($sales);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('재무 권한자만');
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+    }
+
+    public function test_22c_pbp_creating_allows_finance_role(): void
+    {
+        // 재무 role 은 canConfirmFinance 통과 → 직접 PBP 생성 가능.
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $v = $this->makeVehicle(['purchase_price' => 5_000_000]);
+
+        $this->actingAs($finance);
+
+        $pbp = PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1_000_000,
+            'payment_date' => now()->toDateString(),
+            'note' => '재무 직접 추가',
+        ]);
+
+        $this->assertNotNull($pbp->id);
+    }
+
+    public function test_22c_pbp_skip_creating_guard_flag_bypasses_finance_check(): void
+    {
+        // $skipCreatingGuard flag → 영업이라도 PBP 생성 통과 (Vehicle::saved 자동 PBP 흐름).
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $v = $this->makeVehicle(['purchase_price' => 5_000_000]);
+        // 기존 자동 PBP Draft 삭제 (Vehicle::saved 가 이미 생성했을 수 있음)
+        $v->purchaseBalancePayments()->delete();
+
+        $this->actingAs($sales);
+
+        PurchaseBalancePayment::$skipCreatingGuard = true;
+        try {
+            $pbp = PurchaseBalancePayment::create([
+                'vehicle_id' => $v->id,
+                'amount' => 500_000,
+                'payment_date' => null,
+                'confirmed_at' => null,
+                'created_by_user_id' => $sales->id,
+                'note' => '시스템 자동 생성 시뮬레이션',
+            ]);
+            $this->assertNotNull($pbp->id);
+        } finally {
+            PurchaseBalancePayment::$skipCreatingGuard = false;
+        }
+    }
+
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
 
     public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void

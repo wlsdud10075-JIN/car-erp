@@ -2781,15 +2781,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-indigo-400"></span>
                 <span class="section-title">매입 지급</span>
             </div>
+            {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
+            @php $canConfirmFinance = auth()->user()?->canConfirmFinance() ?? false; @endphp
+            @unless($canConfirmFinance)
+            <div class="mb-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
+                <strong>매입 자금 영역</strong>은 재무·관리자(admin)만 입력. 영업은 매입가·계좌 입력 시 자동 매입 잔금 Draft 가 생성되며, 재무가 <code>/erp/transfers</code> 매입 잔금 탭에서 확정합니다.
+            </div>
+            @endunless
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">계약금 지급</label><input wire:model="down_payment_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">매도비 지급</label><input wire:model="selling_fee_payment_str" type="text" class="input-base" placeholder="0" /></div>
+                <div>
+                    <label class="label-base">계약금 지급</label>
+                    <input wire:model="down_payment_str" type="text"
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                </div>
+                <div>
+                    <label class="label-base">매도비 지급</label>
+                    <input wire:model="selling_fee_payment_str" type="text"
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                </div>
             </div>
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
                 <div class="flex items-center justify-between">
                     <span class="text-xs font-medium text-gray-500">잔금</span>
+                    @if($canConfirmFinance)
                     <button type="button" wire:click="addPurchasePayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
+                    @else
+                    <span class="text-[10px] text-gray-400">재무·admin 만 추가 가능</span>
+                    @endif
                 </div>
                 @foreach($purchaseBalancePayments as $idx => $row)
                 @php
@@ -2798,9 +2819,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $pbpRowBg = $isPbpConfirmed ? 'bg-emerald-50/40 border-emerald-200' : (!empty($row['id']) ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액(원)" />
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text"
+                           class="input-base w-32 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="금액(원)" @if(!$canConfirmFinance) disabled @endif />
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date"
+                           class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           @if(!$canConfirmFinance) disabled @endif />
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text"
+                           class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="메모" @if(!$canConfirmFinance) disabled @endif />
                     @if(!empty($row['id']))
                         @if($isPbpConfirmed)
                         <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
@@ -2814,7 +2841,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </span>
                         @endif
                     @endif
+                    @if($canConfirmFinance)
                     <button type="button" wire:click="removePurchasePayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
+                    @endif
                 </div>
                 @endforeach
             </div>
