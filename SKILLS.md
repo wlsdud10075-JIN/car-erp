@@ -29,15 +29,29 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 진행상태는 **DB 컬럼이 아니라 computed property**. `getProgressStatusAttribute()` accessor에서 우선순위 순으로 평가하고 첫 번째 매칭을 반환.
 
+`progress_status_rule_version` 분기 — v1=단일 트리거(grandfather), **v2=이중 트리거** (기본값, 신규 row).
+
 ```php
 public function getProgressStatusAttribute(): string
 {
     // 큐 17 — 폐기 컨셉 제거. 10단계.
-    if ($this->dhl_request) return '거래완료';
-    if ($this->bl_document) return '선적완료';
-    if ($this->bl_loading_location) return '선적중';
-    if ($this->export_declaration_document) return '수출통관완료';
-    if ($this->export_buyer_id && $this->shipping_date) return '수출통관중';
+    // 큐 2.6 — v2 이중 트리거 (캐스케이드 — 다음 단계 = 이전 단계 트리거 AND 현재 단계 트리거).
+    $v2 = ((int) ($this->progress_status_rule_version ?? 2)) >= 2;
+
+    if ($v2) {
+        if ($this->dhl_request && $this->bl_document) return '거래완료';
+        if ($this->bl_document && $this->bl_loading_location) return '선적완료';
+        if ($this->bl_loading_location && $this->is_export_cleared) return '선적중';
+        if ($this->is_export_cleared && $this->export_declaration_document) return '수출통관완료';
+        if ($this->export_buyer_id && $this->shipping_date) return '수출통관중';
+    } else {
+        // v1 grandfather — 큐 2.6 마이그 이전 row. 단일 트리거.
+        if ($this->dhl_request) return '거래완료';
+        if ($this->bl_document) return '선적완료';
+        if ($this->bl_loading_location) return '선적중';
+        if ($this->export_declaration_document) return '수출통관완료';
+        if ($this->export_buyer_id && $this->shipping_date) return '수출통관중';
+    }
     if ($this->sale_price > 0 && $this->sale_unpaid_amount <= 0) return '판매완료';
     if ($this->sale_price > 0) return '판매중';
     if ($this->is_deregistered && $this->deregistration_document) return '말소완료';

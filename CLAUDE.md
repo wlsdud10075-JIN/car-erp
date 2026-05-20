@@ -60,18 +60,22 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 
 ### 차량 진행상태 10단계 (computed property — DB 컬럼 X)
 > 큐 17 — 폐기 컨셉 제거 (운영상 없음). 11단계 → 10단계.
+> 큐 2.6 — `progress_status_rule_version` 분기. v1=단일 트리거(grandfather) / **v2=이중 트리거** (기본값, 신규 row).
 
+**v2 이중 트리거 — 캐스케이드 (다음 단계 = 이전 단계 트리거 AND 현재 단계 트리거)**.
 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환:
-1. `dhl_request = true` → **`거래완료`**
-2. `bl_document` 존재 → **`선적완료`**
-3. `bl_loading_location` 입력 → **`선적중`**
-4. `export_declaration_document` 존재 → **`수출통관완료`**
-5. `export_buyer_id` + `shipping_date` 입력 → **`수출통관중`**
+1. `dhl_request` AND `bl_document` → **`거래완료`**
+2. `bl_document` AND `bl_loading_location` → **`선적완료`**
+3. `bl_loading_location` AND `is_export_cleared` → **`선적중`**
+4. `is_export_cleared` AND `export_declaration_document` → **`수출통관완료`**
+5. `export_buyer_id` AND `shipping_date` → **`수출통관중`**
 6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
 7. `sale_price > 0` → **`판매중`**
 8. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**
 9. `purchase_price > 0` AND 매입미지급 ≤ 0 → **`매입완료`**
 10. 기본값 → **`매입중`**
+
+**v1 grandfather** (`progress_status_rule_version < 2` row): 5단계까지 단일 트리거 — `dhl_request`만으로 거래완료, `bl_document`만으로 선적완료 등. 마이그 이전 row 호환용. 신규 row는 v2.
 
 ### 판매채널 3종 (`vehicles.sales_channel` enum)
 - `export` 수출 — 다중통화, B/L·면장·DHL 풀 흐름

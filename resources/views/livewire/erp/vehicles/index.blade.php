@@ -481,6 +481,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $restored++;
             }
         }
+
+        // 2026-05-19 풀회의 P0-1 — RRN(주민/법인등록번호) silent restore.
+        // string 컬럼이라 FINANCIAL_FIELD_MAP의 float 비교 패턴 불가 → 별도 분기.
+        // accessor가 자동 복호화하므로 평문 비교 가능.
+        $currentRrn = (string) ($this->nice_reg_owner_rrn ?? '');
+        $originalRrn = (string) ($original->nice_reg_owner_rrn ?? '');
+        if ($currentRrn !== $originalRrn) {
+            $this->nice_reg_owner_rrn = $originalRrn;
+            $restored++;
+        }
+
         if ($restored > 0) {
             $this->dispatch(
                 'notify',

@@ -93,6 +93,14 @@
                     'active' => request()->routeIs('erp.vehicles.*'),
                     'show' => true,
                 ],
+                // 2026-05-19 풀회의 안건 H — 통관 role 단축 링크 (차량 목록 수출통관중 필터)
+                [
+                    'label' => '수출통관',
+                    'href' => route('erp.vehicles.index').'?progressFilter=수출통관중',
+                    'icon' => 'identification',
+                    'active' => false,
+                    'show' => $user->canAccessClearance(),
+                ],
                 [
                     'label' => '바이어',
                     'href' => route('erp.buyers.index'),

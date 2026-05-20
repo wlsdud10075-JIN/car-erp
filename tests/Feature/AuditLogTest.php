@@ -112,6 +112,28 @@ class AuditLogTest extends TestCase
         $this->assertNotNull($log);
     }
 
+    // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적.
+    // 4 role 누구나 말소 처리 가능해질 예정 → audit_logs 기록 필수.
+    public function test_vehicle_deregistration_change_logs_audit(): void
+    {
+        $v = Vehicle::create(['vehicle_number' => '12가0009', 'sales_channel' => 'export']);
+        $v->is_deregistered = true;
+        $v->deregistration_document = 'dereg.pdf';
+        $v->save();
+
+        $deregLog = AuditLog::where('auditable_id', $v->id)
+            ->where('column_name', 'is_deregistered')
+            ->first();
+        $docLog = AuditLog::where('auditable_id', $v->id)
+            ->where('column_name', 'deregistration_document')
+            ->first();
+
+        $this->assertNotNull($deregLog, 'is_deregistered 변경이 audit_logs에 기록돼야 함');
+        $this->assertNotNull($docLog, 'deregistration_document 변경이 audit_logs에 기록돼야 함');
+        $this->assertSame('1', (string) $deregLog->new_value);
+        $this->assertSame('dereg.pdf', $docLog->new_value);
+    }
+
     public function test_settlement_status_change_logs(): void
     {
         $v = Vehicle::create(['vehicle_number' => '12가0008', 'sales_channel' => 'export']);

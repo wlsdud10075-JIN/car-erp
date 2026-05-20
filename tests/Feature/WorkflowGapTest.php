@@ -683,6 +683,25 @@ class WorkflowGapTest extends TestCase
             ->assertHasErrors(['nice_reg_owner_rrn']);
     }
 
+    // 2026-05-19 풀회의 P0-1 — RRN silent restore.
+    // 정산 role이 RRN 변경 시도 → restoreFinancialFieldsFromOriginal에서 원값 복원.
+    public function test_p0_rrn_silent_restore_for_settlement_role(): void
+    {
+        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $v = $this->makeVehicle(['nice_reg_owner_rrn' => '900101-1234567']);
+
+        $this->actingAs($settlementUser);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('nice_reg_owner_rrn', '880202-7654321')
+            ->call('save')
+            ->assertSet('nice_reg_owner_rrn', '900101-1234567');
+
+        $v->refresh();
+        $this->assertSame('900101-1234567', $v->nice_reg_owner_rrn);
+    }
+
     // ── 큐 10 — 정산·채권 무결성 (H3·H4·H5·H6) ────────────────────────
 
     public function test_q10_h3_blocks_confirmed_settlement_without_amount(): void

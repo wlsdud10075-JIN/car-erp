@@ -394,6 +394,8 @@ class Vehicle extends Model
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         'buyer_id', 'salesman_id',
+        // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).
+        'is_deregistered', 'deregistration_document',
     ];
 
     /**
@@ -983,11 +985,14 @@ class Vehicle extends Model
                 ->where('purchase_price', '>', 0)
                 // CAST AS SIGNED — BIGINT UNSIGNED 컬럼의 빼기 결과가 음수면 underflow.
                 // 매입가/매도비 < 지급 합계가 가능 (선지급·환불 케이스) → SIGNED로 평가.
+                // 큐 20-B 분자 A안 — confirmed_at IS NOT NULL 가드 (재무 승인 우회 차단).
+                // getPurchaseUnpaidAmountAttribute L852~860과 정합 (SKILLS §13 분모 단일 출처).
                 ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
                              - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                           WHERE vehicle_id = vehicles.id
-                                          AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [now()->toDateString()]),
+                                          AND payment_date IS NOT NULL AND payment_date <= ?
+                                          AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()]),
             'sale_unpaid' => $q
                 ->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2

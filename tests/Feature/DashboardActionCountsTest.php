@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\ForwardingCompany;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -46,6 +47,30 @@ class DashboardActionCountsTest extends TestCase
         $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 1000]);
 
         $this->assertSame(1, Vehicle::action('purchase_unpaid')->count());
+    }
+
+    // 2026-05-19 풀회의 P0-2 — scopeAction SQL이 Draft PBP를 차감하면 재무 승인 우회 가능.
+    // confirmed_at IS NOT NULL 가드로 Draft PBP는 카운트 분자에서 제외돼야 함.
+    // payment_date를 어제로 — SQLite 문자열 비교에서 today datetime("YYYY-MM-DD HH:MM:SS")이
+    // today date("YYYY-MM-DD")보다 길어 `<=` 실패하는 환경 차이 회피 (MariaDB는 date 비교라 무관).
+    public function test_purchase_unpaid_excludes_draft_balance_payments(): void
+    {
+        $yesterday = now()->subDay()->toDateString();
+        $v = $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 0]);
+        // Draft PBP (confirmed_at NULL) — 영업 입력 직후 상태.
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000,
+            'payment_date' => $yesterday,
+            'confirmed_at' => null,
+        ]);
+
+        // Draft만 있으면 미지급 그대로 — 차량 1대 카운트 유지.
+        $this->assertSame(1, Vehicle::action('purchase_unpaid')->count(), 'Draft PBP는 분자에서 제외');
+
+        // 재무 확정 시 비로소 차감 → 카운트 0.
+        $v->purchaseBalancePayments()->first()->update(['confirmed_at' => now()]);
+        $this->assertSame(0, Vehicle::action('purchase_unpaid')->count(), 'Confirmed PBP는 분자에 반영');
     }
 
     public function test_sale_unpaid_includes_null_krw_cache_for_fx_missing(): void
