@@ -513,6 +513,14 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereNull('export_declaration_document')
             ->count();
 
+        // 2026-05-20 #1 피드백 — 말소 대기 건 KPI 카드 (deregistration_needed action 과 동일).
+        // active 한정은 action 내부의 activeOnly 처리됨 (progress_status_cache != '거래완료').
+        $deregNeededCount = Vehicle::query()
+            ->action('deregistration_needed')
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            ->count();
+
         // 3) 포워딩사별 진행 차량 — 통관/선적 단계
         $clearanceStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
         $byForwarder = $applyCommonFilters(Vehicle::query())
@@ -535,6 +543,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'stuck_count' => $stuckCount,
             'stuck_threshold_days' => $stuckThresholdDays,
             'unfiled_count' => $unfiledCount,
+            'dereg_needed_count' => $deregNeededCount,
             'forwarder_top' => $forwarderTop,
         ];
     }
@@ -674,7 +683,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 큐 4 8-7 — 통관 탭 KPI (clearance 탭에서만 노출) --}}
     <div id="w-clearance" x-show="isWidgetVisible('w-clearance')" class="space-y-4">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {{-- 카운트 SQL과 action SQL 100% 일치 (Vehicle::scopeAction clearance_stuck) --}}
             <a href="{{ $this->vehiclesUrl(['action' => 'clearance_stuck']) }}" wire:navigate
                class="card border-red-200 bg-red-50/30 transition hover:bg-red-50">
@@ -698,6 +707,18 @@ new #[Layout('components.layouts.app')] class extends Component
                     {{ number_format($this->clearanceKpis['unfiled_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">통관 바이어·선적일 있지만 문서 NULL</p>
+            </a>
+            {{-- 2026-05-20 #1 피드백 — 말소 대기 카드. Vehicle::scopeAction deregistration_needed 와 동일 --}}
+            <a href="{{ $this->vehiclesUrl(['action' => 'deregistration_needed']) }}" wire:navigate
+               class="card transition hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">말소 대기</span>
+                    <span class="text-xs text-blue-500">매입완료 후</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-blue-600">
+                    {{ number_format($this->clearanceKpis['dereg_needed_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">매입가 입금 완료인데 말소 처리 X</p>
             </a>
             <div class="card">
                 <div class="section-header">

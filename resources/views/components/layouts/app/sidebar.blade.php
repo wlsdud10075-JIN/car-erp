@@ -48,14 +48,10 @@
         ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
         : 0;
 
-    // 2026-05-20 사용자 요청 — 수출통관 사용자의 본인 책임 차량 카운트.
-    // 사이드바 "수출통관" 메뉴 뱃지 = 수출통관중 진행단계 차량 (link와 일치).
-    // 말소 대기 카운트는 erp/dashboard buildClearanceActions에서 별도 row 노출.
+    // 2026-05-20 #1 피드백 — 수출통관 사이드바 카운트는 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
+    // link 도 clearance_candidates 액션 필터로 변경 (link ↔ badge 100% 일치).
     $clearanceBadge = $user->canAccessClearance()
-        ? \App\Models\Vehicle::query()
-            ->whereNull('deleted_at')
-            ->where('progress_status_cache', '수출통관중')
-            ->count()
+        ? \App\Models\Vehicle::query()->whereNull('deleted_at')->action('clearance_candidates')->count()
         : 0;
 
     // 큐 19-F / 20-C — 재무 처리 대기 건수 합산 (자금 이체 + 매입 잔금 + 판매 잔금)
@@ -103,11 +99,11 @@
                     'active' => request()->routeIs('erp.vehicles.*'),
                     'show' => true,
                 ],
-                // 2026-05-19 풀회의 안건 H — 통관 role 단축 링크 (차량 목록 수출통관중 필터)
-                // 2026-05-20 사용자 요청 — 통관중 차량 카운트 뱃지 추가
+                // 2026-05-20 #1 피드백 — 수출통관 사이드바 = 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
+                // 사용자 의도: (a) 매입완료 + 판매 진행 + 말소 안 됨 OR (b) 말소완료 + 판매 진행 + 입금률 ≥ 50%
                 [
                     'label' => '수출통관',
-                    'href' => route('erp.vehicles.index').'?progressFilter=수출통관중',
+                    'href' => route('erp.vehicles.index').'?action=clearance_candidates',
                     'icon' => 'identification',
                     'active' => false,
                     'show' => $user->canAccessClearance(),

@@ -1082,6 +1082,8 @@ class Vehicle extends Model
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
             'exchange_rate_missing', 'clearance_stuck',
+            // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합)
+            'clearance_candidates',
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
         ];
         if (in_array($action, $activeOnly, true)) {
@@ -1129,7 +1131,28 @@ class Vehicle extends Model
                                           AND payment_date IS NOT NULL AND payment_date <= ?
                                           AND confirmed_at IS NOT NULL), 0)) <= 0', [now()->toDateString()]),
 
-            // ── 통관 role (7) ──
+            // ── 통관 role (8) ──
+            // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합).
+            // 사용자 의도 원문: 수출통관 사이드바에 두 그룹 차량 솔팅.
+            //   (a) 매입완료 + 판매 진행 + 말소 안 됨 → 말소 대기 (영업에 푸시 용도)
+            //   (b) 말소완료 + 판매 진행 + 입금률 ≥ 50% → 통관 진행 가능
+            // 공통: 수출통관 시작 전 (export_declaration_document IS NULL)
+            'clearance_candidates' => $q
+                ->where('purchase_price', '>', 0)
+                ->where('sale_price', '>', 0)
+                ->whereNull('export_declaration_document')
+                ->where(fn ($q2) => $q2
+                    // (a) 말소 안 됨
+                    ->where(fn ($qa) => $qa
+                        ->where('is_deregistered', false)
+                        ->orWhereNull('deregistration_document'))
+                    // (b) 또는 말소완료 + 입금률 ≥ 50% (KRW 캐시 ≤ sale_price × 환율 × 0.5)
+                    ->orWhere(fn ($qb) => $qb
+                        ->where('is_deregistered', true)
+                        ->whereNotNull('deregistration_document')
+                        ->whereNotNull('sale_unpaid_amount_krw_cache')
+                        ->whereRaw('sale_unpaid_amount_krw_cache <= (CAST(sale_price AS SIGNED) * CAST(COALESCE(exchange_rate, 1) AS DECIMAL(10,4)) * 0.5)'))),
+
             'clearance_request_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)

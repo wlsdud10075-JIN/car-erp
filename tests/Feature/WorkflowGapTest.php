@@ -1824,6 +1824,84 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    // ── 2026-05-20 #1 피드백 — 수출통관 후보 차량 (clearance_candidates) ──
+
+    public function test_clearance_candidates_includes_undregistered_with_sale(): void
+    {
+        // (a) 매입완료 + 판매 진행 + 말소 안 됨 → 포함
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'sale_price' => 8_000_000,
+            'is_deregistered' => false,
+        ]);
+        $count = Vehicle::query()->action('clearance_candidates')->count();
+        $this->assertSame(1, $count, '말소 안 된 차량은 통관 후보 포함');
+        $this->assertSame($v->id, Vehicle::query()->action('clearance_candidates')->first()->id);
+    }
+
+    public function test_clearance_candidates_includes_deregistered_with_50_percent_paid(): void
+    {
+        // (b) 말소완료 + 판매 진행 + 입금률 ≥ 50% → 포함
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'sale_price' => 10_000_000,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+        ]);
+        // 입금률 50% → unpaid = 5,000,000 (KRW)
+        $v->sale_unpaid_amount_krw_cache = 5_000_000;
+        $v->saveQuietly();
+
+        $count = Vehicle::query()->action('clearance_candidates')->count();
+        $this->assertSame(1, $count, '말소완료 + 입금 50% 차량은 통관 후보 포함');
+    }
+
+    public function test_clearance_candidates_excludes_deregistered_with_under_50_percent(): void
+    {
+        // 말소완료 + 입금률 < 50% → 제외
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'sale_price' => 10_000_000,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+        ]);
+        $v->sale_unpaid_amount_krw_cache = 7_000_000;  // 30% 입금 (70% 미수)
+        $v->saveQuietly();
+
+        $count = Vehicle::query()->action('clearance_candidates')->count();
+        $this->assertSame(0, $count, '입금률 < 50% 말소완료 차량은 통관 후보 제외');
+    }
+
+    public function test_clearance_candidates_excludes_already_clearance_started(): void
+    {
+        // 수출통관 시작된 차량 (export_declaration_document NOT NULL) → 제외
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'sale_price' => 8_000_000,
+            'is_deregistered' => false,
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+
+        $count = Vehicle::query()->action('clearance_candidates')->count();
+        $this->assertSame(0, $count, '이미 통관 시작된 차량 제외');
+    }
+
+    public function test_clearance_candidates_excludes_completed_via_active_only(): void
+    {
+        // 거래완료 차량 → activeOnly 필터로 제외 (progress_status_cache != '거래완료')
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 8_000_000,
+            'is_deregistered' => false,
+            'bl_document' => 'bl.pdf',  // v3 거래완료 trigger
+        ]);
+        $v->refreshCaches();
+
+        $count = Vehicle::query()->action('clearance_candidates')->count();
+        $this->assertSame(0, $count, '거래완료 차량은 activeOnly 로 제외');
+    }
+
     // ── 2026-05-20 22-C-light 후속 fix — 자동 PBP Draft sync 삭제 버그 회귀 ──
 
     public function test_22c_auto_pbp_draft_survives_new_vehicle_save(): void
