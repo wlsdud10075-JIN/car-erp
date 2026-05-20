@@ -1078,6 +1078,32 @@ class WorkflowGapTest extends TestCase
         $this->assertNull($fp->confirmed_at, '영업이 추가한 row 는 Draft (재무 확정 전)');
     }
 
+    // ── 2026-05-20 #1 — vehicles/index save() DomainException → 토스트 (화이트스크린 방지) ──
+
+    public function test_paid_settlement_fp_save_dispatches_notify_not_whitescreen(): void
+    {
+        // paid Settlement 차량에 잔금 N+ 추가 후 save() → DomainException → toast 변환 (화이트스크린 X).
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
+        $v = $this->makeVehicle(['sale_price' => 8_000_000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('finalPayments', [
+                ['id' => null, 'amount' => '1000000', 'payment_date' => now()->format('Y-m-d'), 'note' => ''],
+            ])
+            ->call('save')
+            ->assertDispatched('notify', fn ($name, $params) => ($params['type'] ?? null) === 'error' && str_contains($params['message'] ?? '', 'paid'));
+    }
+
     // ── 2026-05-20 큐 22-A-3b — type별 분자 정합 + 권한 매트릭스 ──
 
     public function test_22a3b_numerator_sums_only_confirmed_fp_across_all_types(): void

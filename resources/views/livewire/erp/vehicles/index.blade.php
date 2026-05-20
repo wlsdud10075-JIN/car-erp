@@ -1528,6 +1528,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
             $vehicle->refreshCaches();
             });
+        } catch (\DomainException $e) {
+            // #1 (2026-05-20) — paid Settlement·SoD·회계 무결성 등 비즈니스 룰 위반.
+            // 화이트스크린 대신 토스트로 사용자에게 사유 노출. 트랜잭션은 이미 rollback됨.
+            foreach ($newlyStoredPaths as $p) {
+                Storage::disk('public')->delete($p);
+            }
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
         } catch (\Throwable $e) {
             // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외
             foreach ($newlyStoredPaths as $p) {
