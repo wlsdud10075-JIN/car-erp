@@ -475,7 +475,8 @@ new #[Layout('components.layouts.app')] class extends Component
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
      *
      * SQL 100% 일치 원칙 (SKILLS.md §9):
-     * - Vehicle::scopeAction의 activeOnly(dhl_request=false)와 동일
+     * - Vehicle::scopeAction의 activeOnly(progress_status_cache != '거래완료')와 동일
+     * - 안건 J 본격 (2026-05-20) — dhl_request 직접 참조 폐기. v2/v3 cascade 호환.
      * - dateColumn() 기준 dateFrom/dateTo 동일 적용 (vehicles/index와 동일 컨텍스트)
      */
     #[Computed]
@@ -487,7 +488,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 공통: active 한정 + dateColumn 범위 (scopeAction과 일치)
         $applyCommonFilters = fn ($q) => $q
-            ->where('dhl_request', false)
+            ->where(fn ($q2) => $q2
+                ->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'))
             ->when($this->dateFrom, fn ($q2) => $q2->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q2) => $q2->where($col, '<=', $this->dateTo));
 

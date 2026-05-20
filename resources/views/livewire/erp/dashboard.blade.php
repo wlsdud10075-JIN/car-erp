@@ -136,9 +136,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $sid = $this->effectiveSalesmanId();
 
+        // 안건 J 본격 (2026-05-20) — v2/v3 호환. progress_status_cache 단일 출처.
         return Vehicle::query()
             ->whereNull('deleted_at')
-            ->where('dhl_request', false)
+            ->where(fn ($q) => $q
+                ->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'))
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
             ->with(['salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->orderBy('purchase_date', 'desc')
@@ -183,10 +186,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $base = Vehicle::query()->whereNull('deleted_at')
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid));
 
-        $active = (clone $base)->where('dhl_request', false)->count();
+        // 안건 J 본격 (2026-05-20) — v2/v3 호환. progress_status_cache 단일 출처.
+        $active = (clone $base)->where(fn ($q) => $q
+            ->where('progress_status_cache', '!=', '거래완료')
+            ->orWhereNull('progress_status_cache'))->count();
         $monthBuy = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
         $monthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
-        $monthDone = (clone $base)->where('dhl_request', true)->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
+        $monthDone = (clone $base)->where('progress_status_cache', '거래완료')->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
         $monthLabel = now()->format('m').'월';
 
         return [
@@ -256,8 +262,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         // M4 — "판매 미입금 총액"은 환율 입력 차량만 합산 (KRW 캐시 NOT NULL).
         //       환율 미입력 외화 차량은 별도 KPI "환율 미입력 외화"에서만 카운트.
+        // 안건 J 본격 (2026-05-20) — v2/v3 호환.
         $totalSaleUnpaid = (int) (Vehicle::query()
-            ->whereNull('deleted_at')->where('dhl_request', false)
+            ->whereNull('deleted_at')
+            ->where(fn ($q) => $q
+                ->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'))
             ->where('sale_price', '>', 0)
             ->whereNotNull('sale_unpaid_amount_krw_cache')
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
@@ -323,8 +333,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->count();
 
         $stuckDate = now()->subDays(30)->toDateString();
+        // 안건 J 본격 (2026-05-20) — v2/v3 호환.
         $stuckCount = Vehicle::query()->whereNull('deleted_at')
-            ->where('dhl_request', false)
+            ->where(fn ($q) => $q
+                ->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'))
             ->where('sale_price', '>', 0)
             ->where(fn ($q) => $q->whereNull('sale_unpaid_amount_krw_cache')
                 ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0))

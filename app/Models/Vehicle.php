@@ -846,11 +846,35 @@ class Vehicle extends Model
     //     #4 선적중       = is_export_cleared && bl_loading_location
     //     #3 선적완료     = bl_loading_location && bl_document
     //     #2 거래완료     = bl_document && dhl_request
+    // 안건 J 본격 (2026-05-20) — v3 거래완료 단순화 (사용자 의도 100% 반영):
+    //   v3 거래완료 = bl_document 단독 (DHL 무관, B/L 발급 시점이 거래완료).
+    //   DHL 발송 신청은 거래완료 이후 별도 액션(dhl_dispatch_needed 액션 큐).
+    //   선적완료·선적중·수출통관완료·수출통관중 = v2 동일 trigger 유지.
+    //   부작용: B/L 발급일 ≈ 반입지 입력일이라 cascade 우선순위로 '선적완료' 단계 매칭 짧음 (운영 현실 반영).
     public function getProgressStatusAttribute(): string
     {
-        $v2 = ((int) ($this->progress_status_rule_version ?? 2)) >= 2;
+        $ruleVersion = (int) ($this->progress_status_rule_version ?? 2);
+        $v3 = $ruleVersion >= 3;
+        $v2 = $ruleVersion >= 2;
 
-        if ($v2) {
+        if ($v3) {
+            // 안건 J 본격 — 거래완료 trigger 만 변경 (bl_document 단독). 나머지 v2 그대로.
+            if ($this->bl_document) {
+                return '거래완료';
+            }
+            if ($this->bl_document && $this->bl_loading_location) {
+                return '선적완료';
+            }
+            if ($this->bl_loading_location && $this->is_export_cleared) {
+                return '선적중';
+            }
+            if ($this->is_export_cleared && $this->export_declaration_document) {
+                return '수출통관완료';
+            }
+            if ($this->export_buyer_id && $this->shipping_date) {
+                return '수출통관중';
+            }
+        } elseif ($v2) {
             if ($this->dhl_request && $this->bl_document) {
                 return '거래완료';
             }
@@ -1049,8 +1073,9 @@ class Vehicle extends Model
      */
     public function scopeAction(Builder $q, string $action): Builder
     {
-        // active 한정 액션: dhl_request=false (폐기 컨셉 제거 후 active = 거래완료 전)
+        // active 한정 액션: progress_status_cache != '거래완료' (v2·v3 호환 단일 출처)
         // 정산 액션 중 settlement_*·receivable_risk는 거래완료·잔여 미수금 대상이라 active 제외
+        // 안건 J 본격 (2026-05-20) — dhl_request=false 직접 참조 폐기. v2/v3 cascade 결과가 progress_status_cache 에 string 저장됨.
         $activeOnly = [
             'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
             'deregistration_needed',
@@ -1060,7 +1085,9 @@ class Vehicle extends Model
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
         ];
         if (in_array($action, $activeOnly, true)) {
-            $q->where('dhl_request', false);
+            $q->where(fn ($q2) => $q2
+                ->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'));
         }
 
         return match ($action) {
@@ -1140,8 +1167,9 @@ class Vehicle extends Model
                 ->where(fn ($q2) => $q2
                     ->whereNull('exchange_rate')
                     ->orWhere('exchange_rate', 0)),
+            // 안건 J 본격 (2026-05-20) — v2/v3 호환. progress_status_cache 단일 출처.
             'settlement_create_needed' => $q
-                ->where('dhl_request', true)
+                ->where('progress_status_cache', '거래완료')
                 ->whereDoesntHave('settlements'),
             'settlement_confirm_needed' => $q
                 ->whereHas('settlements', fn ($q2) => $q2->where('settlement_status', 'pending')),
