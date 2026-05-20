@@ -443,6 +443,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <th class="pb-2 pr-4 font-medium">차량번호</th>
                 <th class="pb-2 pr-4 font-medium">담당자</th>
                 <th class="pb-2 pr-4 font-medium">진행상태</th>
+                {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (거래완료 미완납 시 정산 진행 차단 정보) --}}
+                <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">입금률</th>
                 <th class="pb-2 pr-4 font-medium">정산방식</th>
                 <th class="pb-2 pr-4 font-medium text-right">총마진</th>
                 <th class="pb-2 pr-4 font-medium text-right">정산액</th>
@@ -485,6 +487,32 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="badge {{ $progressBadge }}">{{ $s->vehicle->progress_status }}</span>
                     @else
                     <span class="text-gray-300">-</span>
+                    @endif
+                </td>
+                {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (vehicle.unpaid_ratio 기반, SKILLS §13 단일 출처) --}}
+                <td class="py-3 pr-4">
+                    @php
+                        $ratio = $s->vehicle?->unpaid_ratio;
+                        $unpaidAmount = $s->vehicle?->sale_unpaid_amount ?? 0;
+                    @endphp
+                    @if($ratio === null)
+                        <span class="text-[10px] text-gray-400">환율 미입력</span>
+                    @elseif($ratio <= 0)
+                        <div class="flex items-center gap-1">
+                            <div class="h-2 w-full rounded-full bg-green-100 overflow-hidden">
+                                <div class="h-full bg-green-500" style="width: 100%;"></div>
+                            </div>
+                            <span class="text-[10px] font-medium text-green-700">완납</span>
+                        </div>
+                    @else
+                        @php $paidPct = max(0, min(100, (1 - $ratio) * 100)); @endphp
+                        <div class="flex items-center gap-1">
+                            <div class="h-2 w-full rounded-full bg-amber-100 overflow-hidden">
+                                <div class="h-full bg-amber-500" style="width: {{ $paidPct }}%;"></div>
+                            </div>
+                            <span class="text-[10px] font-medium text-amber-700">{{ number_format($paidPct, 0) }}%</span>
+                        </div>
+                        <div class="mt-0.5 text-[10px] text-amber-700">받을 ₩{{ number_format($unpaidAmount) }}</div>
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-600">

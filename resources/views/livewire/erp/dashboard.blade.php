@@ -294,11 +294,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $pendingSettlements = Settlement::query()->where('settlement_status', 'pending')->count();
         $exchangeMissing = Vehicle::query()->whereNull('deleted_at')->action('exchange_rate_missing')->count();
 
+        // 2026-05-20 #2 피드백 — 거래완료지만 미수금 남은 차량 (정산 진행 차단 상태).
+        $settlementBlockedQuery = Vehicle::query()->whereNull('deleted_at')->action('settlement_blocked_by_unpaid');
+        $settlementBlockedCount = (clone $settlementBlockedQuery)->count();
+        $settlementBlockedAmount = (int) ((clone $settlementBlockedQuery)->sum('sale_unpaid_amount_krw_cache') ?? 0);
+
         return [
             ['label' => '매입 미지급 총액', 'value' => $this->formatKrw($totalPurchaseUnpaid), 'suffix' => '', 'hint' => '진행중 매입 잔금 합계'],
             ['label' => '판매 미입금 총액', 'value' => $this->formatKrw($totalSaleUnpaid),     'suffix' => '', 'hint' => '환율 입력 차량만 합산'],
             ['label' => '정산 대기',        'value' => $pendingSettlements,                    'suffix' => '건','hint' => 'pending 상태'],
             ['label' => '환율 미입력 외화', 'value' => $exchangeMissing,                       'suffix' => '대','hint' => '외화 판매 → 환율 없음'],
+            // 2026-05-20 #2 피드백 — 거래완료 미수금 차량 (정산 진행 차단)
+            ['label' => '정산 차단 (거래완료 미수)', 'value' => $settlementBlockedCount, 'suffix' => '대',
+             'hint' => '거래완료지만 미수금 남음 → '.$this->formatKrw($settlementBlockedAmount).' 받아야 정산 가능'],
         ];
     }
 

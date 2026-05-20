@@ -1824,6 +1824,47 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    // ── 2026-05-20 #2 피드백 — 정산 차단 (거래완료 미수금) action ──
+
+    public function test_settlement_blocked_by_unpaid_filters_completed_with_unpaid(): void
+    {
+        // 거래완료 + 미수금 → action 포함
+        $v1 = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 10_000_000,
+            'bl_document' => 'bl.pdf',
+        ]);
+        $v1->refreshCaches();
+        $v1->sale_unpaid_amount_krw_cache = 2_000_000;
+        $v1->saveQuietly();
+
+        // 거래완료 + 완납 → 제외
+        $v2 = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 10_000_000,
+            'bl_document' => 'bl.pdf',
+        ]);
+        $v2->refreshCaches();
+        $v2->sale_unpaid_amount_krw_cache = 0;
+        $v2->saveQuietly();
+
+        // 거래완료 아님 + 미수금 → 제외
+        $v3 = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'purchase_price' => 5_000_000,
+            'sale_price' => 10_000_000,
+        ]);
+        $v3->refreshCaches();
+        $v3->sale_unpaid_amount_krw_cache = 3_000_000;
+        $v3->saveQuietly();
+
+        $count = Vehicle::query()->action('settlement_blocked_by_unpaid')->count();
+        $this->assertSame(1, $count);
+        $this->assertSame($v1->id, Vehicle::query()->action('settlement_blocked_by_unpaid')->first()->id);
+    }
+
     // ── 2026-05-20 #1 피드백 — 수출통관 후보 차량 (clearance_candidates) ──
 
     public function test_clearance_candidates_includes_undregistered_with_sale(): void

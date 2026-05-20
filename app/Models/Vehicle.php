@@ -1194,6 +1194,11 @@ class Vehicle extends Model
             'settlement_create_needed' => $q
                 ->where('progress_status_cache', '거래완료')
                 ->whereDoesntHave('settlements'),
+            // 2026-05-20 #2 피드백 — 거래완료지만 미수금 남은 차량 (정산 진행 차단 상태).
+            'settlement_blocked_by_unpaid' => $q
+                ->where('progress_status_cache', '거래완료')
+                ->whereNotNull('sale_unpaid_amount_krw_cache')
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
             'settlement_confirm_needed' => $q
                 ->whereHas('settlements', fn ($q2) => $q2->where('settlement_status', 'pending')),
             'settlement_pay_needed' => $q
