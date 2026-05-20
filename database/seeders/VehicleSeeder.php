@@ -775,6 +775,32 @@ class VehicleSeeder extends Seeder
         $number = $data['vehicle_number'];
         unset($data['vehicle_number']);
 
-        return Vehicle::updateOrCreate(['vehicle_number' => $number], $data);
+        // 22-A-3b (2026-05-20) — vehicles 4컬럼 DROP 후 호환. 4 항목 키가 있으면 type별 confirmed FP 자동 생성.
+        $sale4Map = [
+            'deposit_down_payment' => 'deposit_down',
+            'interim_payment' => 'interim',
+            'advance_payment1' => 'advance_1',
+            'advance_payment2' => 'advance_2',
+        ];
+        $fpInserts = [];
+        foreach ($sale4Map as $col => $type) {
+            if (array_key_exists($col, $data)) {
+                if ((float) $data[$col] > 0) {
+                    $fpInserts[] = ['amount' => (float) $data[$col], 'type' => $type];
+                }
+                unset($data[$col]);
+            }
+        }
+
+        $vehicle = Vehicle::updateOrCreate(['vehicle_number' => $number], $data);
+
+        foreach ($fpInserts as $row) {
+            $vehicle->finalPayments()->updateOrCreate(
+                ['type' => $row['type'], 'note' => '시드 — '.$row['type']],
+                ['amount' => $row['amount'], 'confirmed_at' => $vehicle->created_at ?? now()]
+            );
+        }
+
+        return $vehicle;
     }
 }

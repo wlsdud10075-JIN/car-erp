@@ -1003,6 +1003,172 @@ class WorkflowGapTest extends TestCase
         $this->assertNull($fp->confirmed_at, '영업이 추가한 row 는 Draft (재무 확정 전)');
     }
 
+    // ── 2026-05-20 큐 22-A-3b — type별 분자 정합 + 권한 매트릭스 ──
+
+    public function test_22a3b_numerator_sums_only_confirmed_fp_across_all_types(): void
+    {
+        // 분자 A안: type 무관 confirmed_at IS NOT NULL 만 합산. Draft 제외.
+        $v = $this->makeVehicle(['sale_price' => 10_000_000]);
+        $v->finalPayments()->create(['amount' => 2_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => 1_000_000, 'type' => 'interim', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => 500_000, 'type' => 'advance_1', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => 800_000, 'type' => 'balance', 'confirmed_at' => now()]);
+        // Draft 1건 — 분자에 미반영
+        $v->finalPayments()->create(['amount' => 5_000_000, 'type' => 'balance', 'confirmed_at' => null]);
+
+        $v->refresh();
+        // 분자 = 2M + 1M + 0.5M + 0.8M = 4.3M (Draft 5M 제외)
+        $this->assertEquals(4_300_000, (int) ($v->sale_price - $v->sale_unpaid_amount));
+        $this->assertEquals(5_700_000, (int) $v->sale_unpaid_amount);
+    }
+
+    public function test_22a3b_numerator_advance_2_separate_type(): void
+    {
+        // advance_1 과 advance_2 가 다른 type 으로 별도 합산되는지 확인.
+        $v = $this->makeVehicle(['sale_price' => 5_000_000]);
+        $v->finalPayments()->create(['amount' => 1_000_000, 'type' => 'advance_1', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => 2_000_000, 'type' => 'advance_2', 'confirmed_at' => now()]);
+
+        $v->refresh();
+        $this->assertEquals(2_000_000, (int) $v->sale_unpaid_amount);   // 5M - 3M
+    }
+
+    public function test_22a3b_draft_fp_excluded_from_numerator(): void
+    {
+        // 영업이 추가한 Draft FP (confirmed_at NULL) 은 분자에 포함 안 됨.
+        $v = $this->makeVehicle(['sale_price' => 10_000_000]);
+        $v->finalPayments()->create(['amount' => 5_000_000, 'type' => 'balance', 'confirmed_at' => null]);
+
+        $v->refresh();
+        $this->assertEquals(10_000_000, (int) $v->sale_unpaid_amount, 'Draft 추가는 미수 변동 X');
+    }
+
+    public function test_22a3b_can_manage_payment_breakdown_allows_finance_manager_admin(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+
+        $this->assertTrue($admin->canManagePaymentBreakdown());
+        $this->assertTrue($finance->canManagePaymentBreakdown());
+        $this->assertTrue($manager->canManagePaymentBreakdown());
+        $this->assertFalse($sales->canManagePaymentBreakdown(), '영업은 4 항목 입력 차단');
+        $this->assertFalse($clearance->canManagePaymentBreakdown(), '수출통관은 4 항목 입력 차단');
+    }
+
+    public function test_22a3b_vehicles_4cols_dropped(): void
+    {
+        // Mig C — vehicles 테이블에 4컬럼이 실제로 schema 에서 사라졌는지.
+        $columns = \Schema::getColumnListing('vehicles');
+        $this->assertNotContains('deposit_down_payment', $columns);
+        $this->assertNotContains('interim_payment', $columns);
+        $this->assertNotContains('advance_payment1', $columns);
+        $this->assertNotContains('advance_payment2', $columns);
+    }
+
+    public function test_22a3b_4cols_fillable_silent_ignore(): void
+    {
+        // fillable 에서 4컬럼 제거 → Vehicle::create 에 키 넘겨도 silent ignore (예외 X).
+        // makeVehicle 헬퍼는 backward-compat 으로 자동 FP 변환하므로 직접 Vehicle::create 사용.
+        $buyer = Buyer::create(['name' => 'TEST', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'IGN-001',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'sale_date' => '2026-05-01',
+            'buyer_id' => $buyer->id,
+            'sale_price' => 5_000_000,
+            'deposit_down_payment' => 1_000_000,  // silent ignore — 키 자체가 fillable 아님
+        ]);
+
+        $this->assertNotNull($v->id);
+        $this->assertEquals(5_000_000, (int) $v->sale_unpaid_amount, '4컬럼 ignored → FP 없으니 미수 = sale_price');
+    }
+
+    public function test_22a3b_type_per_row_independent_audit(): void
+    {
+        // type별 row 가 독립적으로 confirmed_at 잠금 (FP::updating).
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle(['sale_price' => 10_000_000]);
+        $fp = $v->finalPayments()->create([
+            'amount' => 3_000_000,
+            'type' => 'deposit_down',
+            'confirmed_at' => now(),
+        ]);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('재무 확정된 잔금');
+        $fp->update(['amount' => 4_000_000]);   // confirmed 후 amount 변경 차단
+    }
+
+    public function test_22a3b_allow_confirmed_mutation_flag_unlocks_temporarily(): void
+    {
+        // FP::$allowConfirmedMutation flag 우회 — vehicles/index 4 input save 흐름에서 사용.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle(['sale_price' => 10_000_000]);
+        $v->finalPayments()->create([
+            'amount' => 3_000_000,
+            'type' => 'deposit_down',
+            'confirmed_at' => now(),
+        ]);
+
+        FinalPayment::$allowConfirmedMutation = true;
+        try {
+            $v->finalPayments()->where('type', 'deposit_down')->whereNotNull('confirmed_at')->delete();
+        } finally {
+            FinalPayment::$allowConfirmedMutation = false;
+        }
+
+        $this->assertEquals(0, $v->finalPayments()->where('type', 'deposit_down')->count());
+    }
+
+    public function test_22a3b_balance_type_default_for_draft_fp(): void
+    {
+        // 영업이 vehicles 판매 탭에서 잔금 N+ 추가 시 type='balance' default.
+        // 마이그 22-A-1 (000004) 에서 default 'balance' DB-level 명시.
+        // create() 직후 인스턴스에 default 가 반영 안 되므로 refresh() 필수.
+        $v = $this->makeVehicle(['sale_price' => 10_000_000]);
+        $fp = $v->finalPayments()->create([
+            'amount' => 2_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+        $fp->refresh();
+
+        $this->assertEquals('balance', $fp->type);
+        $this->assertNull($fp->confirmed_at, '영업 입력 = Draft');
+    }
+
+    public function test_22a3b_paid_settlement_blocks_4_types_via_creating_hook(): void
+    {
+        // FP::creating 훅 (22-A-2) — paid Settlement 후 모든 type 의 신규 FP 차단.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 8_000_000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('paid 상태');
+        $v->finalPayments()->create([
+            'amount' => 1_000_000,
+            'type' => 'deposit_down',
+            'confirmed_at' => now(),
+        ]);
+    }
+
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
 
     public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void
