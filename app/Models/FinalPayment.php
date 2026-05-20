@@ -42,6 +42,18 @@ class FinalPayment extends Model
         static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
         static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
 
+        // 큐 22-A-2 — paid Settlement 후 신규 FP 차단 (PBP creating 훅과 대칭).
+        // 시드·artisan(auth 없음) 우회 — assertPaidSettlementGuard Service 별도 보장.
+        static::creating(function (FinalPayment $p) {
+            if (! auth()->check()) {
+                return;
+            }
+            $vehicle = $p->vehicle;
+            if ($vehicle && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
+                throw new \DomainException('정산이 paid 상태인 차량에 신규 판매 잔금을 추가할 수 없습니다 (회계 무결성).');
+            }
+        });
+
         // 큐 19-C — transfer로 만들어진 잔금은 직접 수정·삭제 불가.
         static::updating(function (FinalPayment $p) {
             if ($p->getOriginal('transfer_id') !== null && ! self::$allowTransferLinkedMutation) {

@@ -46,6 +46,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $financeNote = '';
 
+    /**
+     * 22-A-2 — 매입 잔금 모달 자동 표시 (사용자 안건 2).
+     * purchase_payment 모달 열 때 vehicle.purchase_seller_* 4컬럼 + purchase_from 을 한 번에 로드.
+     * 재무가 매번 차량 편집 패널 매입 탭으로 이동하지 않아도 송금 정보 즉시 확인 + finance_note 자동 기입.
+     * purchase_seller_account 는 encrypted cast → accessor 자동 복호화. 권한 가드: canConfirmFinanceTransfer().
+     */
+    public ?string $modalPurchaseFrom = null;
+
+    public ?string $modalPurchaseBank = null;
+
+    public ?string $modalPurchaseAccount = null;
+
+    public ?string $modalPurchaseHolder = null;
+
+    public ?string $modalPurchaseBankMemo = null;
+
     /** 큐 19-K — 'confirm' (재무 처리 완료) / 'reject' (재무 거부) */
     public string $decisionMode = 'confirm';
 
@@ -163,6 +179,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->modalPaymentId = $id;
         $this->decisionMode = 'confirm';
         $this->financeNote = '';
+        $this->modalPurchaseFrom = null;
+        $this->modalPurchaseBank = null;
+        $this->modalPurchaseAccount = null;
+        $this->modalPurchaseHolder = null;
+        $this->modalPurchaseBankMemo = null;
+
+        // 22-A-2 — 매입 잔금 모달일 때 매입처 4컬럼 자동 표시 + finance_note default 자동 기입.
+        if ($this->tabType === 'purchase_payment' && isset($p) && $p->vehicle) {
+            $v = $p->vehicle;
+            $this->modalPurchaseFrom = $v->purchase_from;
+            $this->modalPurchaseBank = $v->purchase_seller_bank;
+            $this->modalPurchaseAccount = $v->purchase_seller_account;
+            $this->modalPurchaseHolder = $v->purchase_seller_holder;
+            $this->modalPurchaseBankMemo = $v->purchase_bank_memo;
+
+            $target = $this->modalPurchaseFrom ?: '매입처';
+            $bank = $this->modalPurchaseBank ?: '';
+            $account = $this->modalPurchaseAccount ?: '';
+            if ($bank !== '' || $account !== '') {
+                $this->financeNote = trim("{$target}/{$bank}/{$account}로 송금", '/');
+            }
+        }
+
         $this->showModal = true;
     }
 
@@ -239,6 +278,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->decisionMode = 'confirm';
         $this->financeNote = '';
         $this->rejectReason = '';
+        $this->modalPurchaseFrom = null;
+        $this->modalPurchaseBank = null;
+        $this->modalPurchaseAccount = null;
+        $this->modalPurchaseHolder = null;
+        $this->modalPurchaseBankMemo = null;
     }
 
     public function confirm(): void
@@ -710,6 +754,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endphp
         <h3 class="text-base font-semibold text-gray-900">{{ $confirmTitle }}</h3>
         <p class="mt-2 text-sm text-gray-600">{{ $confirmDesc }}</p>
+
+        {{-- 22-A-2 — 매입 잔금: 매입처 송금 정보 자동 표시 (사용자 안건 2) --}}
+        @if($tabType === 'purchase_payment' && ($modalPurchaseFrom || $modalPurchaseBank || $modalPurchaseAccount))
+        <div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
+            <div class="mb-1 font-medium text-blue-900">송금 대상 (매입처 정보)</div>
+            <dl class="grid grid-cols-[80px_1fr] gap-y-1 text-gray-700">
+                <dt class="text-gray-500">매입처</dt><dd>{{ $modalPurchaseFrom ?: '-' }}</dd>
+                <dt class="text-gray-500">은행</dt><dd>{{ $modalPurchaseBank ?: '-' }}</dd>
+                <dt class="text-gray-500">계좌번호</dt><dd class="font-mono">{{ $modalPurchaseAccount ?: '-' }}</dd>
+                <dt class="text-gray-500">예금주</dt><dd>{{ $modalPurchaseHolder ?: '-' }}</dd>
+                @if($modalPurchaseBankMemo)
+                <dt class="text-gray-500">송금 메모</dt><dd class="text-gray-600">{{ $modalPurchaseBankMemo }}</dd>
+                @endif
+            </dl>
+        </div>
+        @endif
+
         <div class="mt-3">
             <label class="block text-xs text-gray-500 mb-1">은행 거래 번호 또는 처리 메모 (선택)</label>
             <textarea wire:model="financeNote" rows="3"

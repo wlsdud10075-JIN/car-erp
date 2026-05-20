@@ -2867,11 +2867,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-purple-300"></span>
                 <span class="section-title">입금 현황</span>
             </div>
+            {{-- 22-A-2 — 4컬럼(계약금·중도금·선수금1·2)은 큐 22-A-1 에서 final_payments rows 로 이동됨. 모든 입금은 아래 [잔금] N+ 에서 입력 후 재무가 확정. --}}
+            <div class="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                계약금·중도금·선수금도 모두 <strong>아래 [잔금] N+ 추가</strong>로 입력하세요. 재무가 <code>/erp/transfers</code> 판매 잔금 탭에서 확정 → ledger 반영.
+            </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">계약금 입금</label><input wire:model="deposit_down_payment_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">중도금</label><input wire:model="interim_payment_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">선수금1</label><input wire:model="advance_payment1_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">선수금2</label><input wire:model="advance_payment2_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">계약금 입금</label><input wire:model="deposit_down_payment_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
+                <div><label class="label-base">중도금</label><input wire:model="interim_payment_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
+                <div><label class="label-base">선수금1</label><input wire:model="advance_payment1_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
+                <div><label class="label-base">선수금2</label><input wire:model="advance_payment2_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
                 <div><label class="label-base">적립금 사용</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
                 <div>
                     <label class="label-base">미납률 <span class="text-[10px] text-gray-400">(저장 후 갱신)</span></label>

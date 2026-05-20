@@ -900,6 +900,79 @@ class WorkflowGapTest extends TestCase
         ]);
     }
 
+    // ── 2026-05-20 큐 22-A-2 — FinalPayment::creating 훅 (해석 B 정정 / 매입 22-C-light 대칭) ──
+
+    public function test_22a2_fp_creating_blocks_new_row_after_paid(): void
+    {
+        // FP::creating 훅 — paid Settlement 후 신규 FP 직접 생성 차단 (회계 무결성).
+        // 영업이 잔금 N+ row 추가 시도해도 paid 차량은 막힌다. PBP 패턴과 대칭.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 8000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('paid 상태');
+        FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000000,
+            'payment_date' => null,
+        ]);
+    }
+
+    public function test_22a2_fp_creating_skipped_when_no_auth(): void
+    {
+        // 시드·artisan 환경(auth 없음)에서는 creating 훅 우회 — seed 워크플로우 보존.
+        $v = $this->makeVehicle(['sale_price' => 8000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        // auth() 없는 상태 — 정상 생성되어야 함
+        $fp = FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000000,
+            'payment_date' => now()->subDay()->toDateString(),
+        ]);
+
+        $this->assertNotNull($fp->id);
+    }
+
+    public function test_22a2_fp_creating_allows_when_pending_settlement(): void
+    {
+        // paid 가 아닌 settlement_status (pending / confirmed) 는 차단 X — 분자 A안 정합.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 8000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'pending',
+        ]);
+
+        $this->actingAs($admin);
+
+        $fp = FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000000,
+            'payment_date' => now()->subDay()->toDateString(),
+        ]);
+
+        $this->assertNotNull($fp->id);
+        $this->assertNull($fp->confirmed_at, '영업이 추가한 row 는 Draft (재무 확정 전)');
+    }
+
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
 
     public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void
