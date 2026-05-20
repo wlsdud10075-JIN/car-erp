@@ -7,6 +7,7 @@ use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\FinalPayment;
 use App\Models\ForwardingCompany;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
@@ -474,12 +475,27 @@ class DatabaseSeeder extends Seeder
             'advance_payment2' => 'advance_2',
         ];
 
+        // 22-C-F (2026-05-20) — vehicles 2컬럼 DROP 후 호환. 2 항목 키가 있으면 type별 confirmed PBP 자동 생성.
+        $purchase2Map = [
+            'down_payment' => 'down',
+            'selling_fee_payment' => 'selling_fee',
+        ];
+
         foreach ($vehicles as $data) {
             $fpInserts = [];
             foreach ($sale4Map as $col => $type) {
                 if (array_key_exists($col, $data)) {
                     if ((float) $data[$col] > 0) {
                         $fpInserts[] = ['amount' => (float) $data[$col], 'type' => $type];
+                    }
+                    unset($data[$col]);
+                }
+            }
+            $pbpInserts = [];
+            foreach ($purchase2Map as $col => $type) {
+                if (array_key_exists($col, $data)) {
+                    if ((float) $data[$col] > 0) {
+                        $pbpInserts[] = ['amount' => (float) $data[$col], 'type' => $type];
                     }
                     unset($data[$col]);
                 }
@@ -492,6 +508,23 @@ class DatabaseSeeder extends Seeder
                     ['type' => $row['type'], 'note' => '시드 — '.$row['type']],
                     ['amount' => $row['amount'], 'confirmed_at' => $vehicle->created_at ?? now()]
                 );
+            }
+            if (! empty($pbpInserts)) {
+                PurchaseBalancePayment::$skipCreatingGuard = true;
+                try {
+                    foreach ($pbpInserts as $row) {
+                        $vehicle->purchaseBalancePayments()->updateOrCreate(
+                            ['type' => $row['type'], 'note' => '시드 — '.$row['type']],
+                            [
+                                'amount' => $row['amount'],
+                                'payment_date' => $vehicle->purchase_date ?? now()->subDay()->toDateString(),
+                                'confirmed_at' => $vehicle->created_at ?? now(),
+                            ]
+                        );
+                    }
+                } finally {
+                    PurchaseBalancePayment::$skipCreatingGuard = false;
+                }
             }
         }
 

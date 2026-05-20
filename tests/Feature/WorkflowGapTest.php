@@ -1404,6 +1404,180 @@ class WorkflowGapTest extends TestCase
         $this->assertEquals('2026-05-20', $autoPbp->payment_date->toDateString());
     }
 
+    // ── 2026-05-20 큐 22-C-F — type별 분자 정합 + 권한 매트릭스 + schema 검증 ──
+
+    public function test_22cf_purchase_unpaid_sums_only_confirmed_pbp_across_all_types(): void
+    {
+        // 분자 A안: type 무관 confirmed_at IS NOT NULL 만 합산. Draft 제외.
+        $v = $this->makeVehicle(['purchase_price' => 10_000_000, 'selling_fee' => 500_000]);
+        // 자동 PBP Draft (10.5M, Draft) 가 Vehicle::saved 훅에서 생성됨
+        PurchaseBalancePayment::$skipCreatingGuard = true;
+        try {
+            $v->purchaseBalancePayments()->create(['amount' => 2_000_000, 'type' => 'down', 'payment_date' => now()->subDay()->toDateString(), 'confirmed_at' => now()]);
+            $v->purchaseBalancePayments()->create(['amount' => 500_000, 'type' => 'selling_fee', 'payment_date' => now()->subDay()->toDateString(), 'confirmed_at' => now()]);
+            $v->purchaseBalancePayments()->create(['amount' => 1_000_000, 'type' => 'balance', 'payment_date' => now()->subDay()->toDateString(), 'confirmed_at' => now()]);
+        } finally {
+            PurchaseBalancePayment::$skipCreatingGuard = false;
+        }
+        $v->refresh();
+        // 분자 = 2M + 0.5M + 1M = 3.5M (자동 Draft 10.5M 제외, payment_date NULL 이라 SQL 도 제외)
+        // 미지급 = 10.5M - 3.5M = 7M
+        $this->assertSame(7_000_000, $v->purchase_unpaid_amount);
+    }
+
+    public function test_22cf_purchase_unpaid_excludes_unconfirmed_pbp(): void
+    {
+        // Draft (confirmed_at NULL) PBP 는 분자에서 제외.
+        $v = $this->makeVehicle(['purchase_price' => 10_000_000]);
+        PurchaseBalancePayment::$skipCreatingGuard = true;
+        try {
+            $v->purchaseBalancePayments()->create(['amount' => 3_000_000, 'type' => 'down', 'payment_date' => now()->subDay()->toDateString(), 'confirmed_at' => null]);
+        } finally {
+            PurchaseBalancePayment::$skipCreatingGuard = false;
+        }
+        $v->refresh();
+        $this->assertSame(10_000_000, $v->purchase_unpaid_amount, 'Draft 추가는 매입 미지급 변동 X');
+    }
+
+    public function test_22cf_can_confirm_finance_allows_finance_admin_blocks_others(): void
+    {
+        // PBP 'down'/'selling_fee' 입력 권한 = canConfirmFinance (재무 + admin/super). 영업·통관·관리 차단.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $super = User::factory()->create(['permission' => 'super']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+
+        $this->assertTrue($admin->canConfirmFinance());
+        $this->assertTrue($super->canConfirmFinance());
+        $this->assertTrue($finance->canConfirmFinance());
+        $this->assertFalse($sales->canConfirmFinance(), '영업은 PBP 직접 입력 차단');
+        $this->assertFalse($clearance->canConfirmFinance(), '수출통관은 PBP 직접 입력 차단');
+        $this->assertFalse($manager->canConfirmFinance(), '관리도 매입 자금은 재무 전담 (22-C 핵심)');
+    }
+
+    public function test_22cf_vehicles_2cols_dropped(): void
+    {
+        // Mig C — vehicles 테이블에 2컬럼이 실제로 schema 에서 사라졌는지.
+        $columns = \Schema::getColumnListing('vehicles');
+        $this->assertNotContains('down_payment', $columns);
+        $this->assertNotContains('selling_fee_payment', $columns);
+    }
+
+    public function test_22cf_2cols_fillable_silent_ignore(): void
+    {
+        // fillable 에서 2컬럼 제거 → Vehicle::create 에 키 넘겨도 silent ignore (예외 X).
+        $v = Vehicle::create([
+            'vehicle_number' => 'IGN-22CF',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'dhl_request' => false,
+            'down_payment' => 5_000_000,       // ignored
+            'selling_fee_payment' => 100_000,  // ignored
+        ]);
+        $this->assertNotNull($v->id);
+        // fillable 에서 빠졌으니 row attribute 자체 없음 (silent ignore)
+        $this->assertArrayNotHasKey('down_payment', $v->getAttributes());
+        $this->assertArrayNotHasKey('selling_fee_payment', $v->getAttributes());
+    }
+
+    public function test_22cf_balance_type_default_for_pbp_no_type_passed(): void
+    {
+        // PBP 모델 default type = 'balance' (Mig A enum default).
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $v = $this->makeVehicle(['purchase_price' => 5_000_000]);
+
+        $this->actingAs($finance);
+
+        $pbp = PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+        // SQLite/MySQL — enum default 'balance' 는 DB schema 레벨 적용. fresh() 로 재로드 후 확인.
+        $this->assertSame('balance', $pbp->fresh()->type);
+    }
+
+    public function test_22cf_auto_pbp_draft_type_is_balance(): void
+    {
+        // Vehicle::saved 자동 PBP Draft 의 type = 'balance' default (잔금 의미).
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '22CF-AUTO',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'purchase_price' => 5_000_000,
+            'selling_fee' => 500_000,
+            'dhl_request' => false,
+        ]);
+
+        $pbps = $v->purchaseBalancePayments()->get();
+        $this->assertCount(1, $pbps);
+        $this->assertSame('balance', $pbps->first()->type, '자동 Draft type=balance (잔금)');
+    }
+
+    public function test_22cf_paid_settlement_blocks_2_types_via_creating_hook(): void
+    {
+        // paid Settlement 후 'down'·'selling_fee' type 직접 INSERT 도 차단 (22-A-3b 패턴).
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['purchase_price' => 10_000_000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('paid 상태');
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1_000_000,
+            'type' => 'down',
+        ]);
+    }
+
+    public function test_22cf_allow_confirmed_mutation_flag_unlocks_temporarily(): void
+    {
+        // confirmed_at SET 된 PBP 는 amount/payment_date 변경 차단. flag 로 일시 우회 가능.
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $this->actingAs($finance);
+
+        $v = $this->makeVehicle(['purchase_price' => 5_000_000]);
+        $pbp = PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1_000_000,
+            'type' => 'down',
+            'payment_date' => now()->toDateString(),
+            'confirmed_at' => now(),
+        ]);
+
+        // flag 없이 amount 변경 시도 → 차단
+        try {
+            $pbp->update(['amount' => 2_000_000]);
+            $this->fail('confirmed PBP amount 수정은 차단되어야 함');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('회계 무결성', $e->getMessage());
+        }
+
+        // flag 켜면 우회 가능 — Volt _str sync 흐름에서만 사용
+        PurchaseBalancePayment::$allowConfirmedMutation = true;
+        try {
+            $pbp->update(['amount' => 2_000_000]);
+            $this->assertSame(2_000_000, (int) $pbp->fresh()->amount);
+        } finally {
+            PurchaseBalancePayment::$allowConfirmedMutation = false;
+        }
+    }
+
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
 
     public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void
