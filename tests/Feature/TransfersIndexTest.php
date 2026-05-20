@@ -35,14 +35,19 @@ class TransfersIndexTest extends TestCase
             'vehicle_number' => '99가0001',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 100_000_000,
             'currency' => 'KRW',
-            'deposit_down_payment' => 50_000_000,
         ]);
+        // 큐 22-A-3 — 4컬럼 DROP. 계약금은 confirmed FP 로 표현.
+        $source->finalPayments()->create(['amount' => 50_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $source->refresh();
+
         $target = Vehicle::create([
             'vehicle_number' => '99가0002',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 80_000_000,
             'currency' => 'KRW',
         ]);
@@ -143,14 +148,18 @@ class TransfersIndexTest extends TestCase
             'vehicle_number' => '99가0001',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 100_000_000,
             'currency' => 'KRW',
-            'deposit_down_payment' => 50_000_000,
         ]);
+        $source->finalPayments()->create(['amount' => 50_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $source->refresh();
+
         $target = Vehicle::create([
             'vehicle_number' => '99가0002',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 80_000_000,
             'currency' => 'KRW',
         ]);

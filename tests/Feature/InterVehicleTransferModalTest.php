@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\ApprovalRequest;
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -29,14 +30,19 @@ class InterVehicleTransferModalTest extends TestCase
             'vehicle_number' => '99가0001',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 100_000_000,
             'currency' => 'KRW',
-            'deposit_down_payment' => 50_000_000,
         ]);
+        // 큐 22-A-3 — 4컬럼 DROP. 계약금은 confirmed FP 로 표현.
+        $source->finalPayments()->create(['amount' => 50_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $source->refresh();
+
         $target = Vehicle::create([
             'vehicle_number' => '99가0002',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 80_000_000,
             'currency' => 'KRW',
         ]);
@@ -112,7 +118,14 @@ class InterVehicleTransferModalTest extends TestCase
     {
         // 입금 부족 시나리오 — 4천만(40%)만 받음
         $c = $this->setup50PctReceivedSource();
-        $c['source']->update(['deposit_down_payment' => 40_000_000]);
+        // 큐 22-A-3 — vehicles 4컬럼 DROP. confirmed FP 를 5천만 → 4천만으로 교체.
+        FinalPayment::$allowConfirmedMutation = true;
+        try {
+            $c['source']->finalPayments()->delete();
+        } finally {
+            FinalPayment::$allowConfirmedMutation = false;
+        }
+        $c['source']->finalPayments()->create(['amount' => 40_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
         $c['source']->refresh();
         $this->actingAs($c['sales']);
 

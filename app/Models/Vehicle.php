@@ -41,8 +41,9 @@ class Vehicle extends Model
         'is_deregistered', 'deregistration_document',
         'sale_date', 'currency', 'exchange_rate', 'buyer_id', 'consignee_id',
         'sale_price', 'tax_dc', 'commission', 'transport_fee', 'auto_loading',
-        'sale_other_costs', 'deposit_down_payment', 'interim_payment',
-        'advance_payment1', 'advance_payment2', 'savings_used',
+        // 큐 22-A-3 (2026-05-20) — deposit_down_payment / interim_payment / advance_payment1 / advance_payment2 DROP.
+        // 4컬럼은 final_payments.type enum (deposit_down/interim/advance_1/advance_2) 로 통합.
+        'sale_other_costs', 'savings_used',
         'export_buyer_id', 'export_consignee_id', 'forwarding_company_id',
         'export_declaration_amount', 'shipping_date', 'eta_date', 'shipping_method',
         'port_of_loading', 'export_declaration_document', 'export_declaration_number', 'is_export_cleared',
@@ -383,8 +384,8 @@ class Vehicle extends Model
         'sale_price',
         'progress_status_cache',
         'nice_reg_owner_rrn',                  // 마스킹 — value 미저장
-        'deposit_down_payment', 'interim_payment',
-        'advance_payment1', 'advance_payment2',
+        // 큐 22-A-3 — 4컬럼(deposit_down_payment / interim_payment / advance_payment1 / advance_payment2) DROP.
+        // 변경 추적은 이제 final_payments rows 단위 (FinalPayment 모델 events).
         'down_payment', 'selling_fee_payment',
         'savings_used',
         // 큐 21 — 회계 영향 컬럼 (LEDGER_LOCK_FIELDS와 동일)
@@ -886,9 +887,8 @@ class Vehicle extends Model
         $totalSale = $this->sale_price + $this->transport_fee + $this->sale_other_costs
             + $this->commission + $this->auto_loading - $this->tax_dc;
 
-        $totalReceived = $this->deposit_down_payment + $this->interim_payment
-            + $this->advance_payment1 + $this->advance_payment2
-            + $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
+        // 큐 22-A-3 (2026-05-20) — 4컬럼 합산 제거. 단일 출처 = finalPayments(confirmed_at IS NOT NULL).
+        $totalReceived = $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
             + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
 
         return $totalSale - $totalReceived;

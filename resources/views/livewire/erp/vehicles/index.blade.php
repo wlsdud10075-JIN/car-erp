@@ -137,10 +137,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $transport_fee_str    = '';
     public string $auto_loading_str     = '';
     public string $sale_other_costs_str = '';
-    public string $deposit_down_payment_str = '';
-    public string $interim_payment_str  = '';
-    public string $advance_payment1_str = '';
-    public string $advance_payment2_str = '';
+    // 큐 22-A-3 — deposit_down_payment/interim_payment/advance_payment1/2 _str 제거.
+    // 4컬럼은 vehicles DROP, final_payments.type 으로 통합. 영업은 잔금 N+ Draft 로만 입력.
     public string $savings_used_str     = '';
     public array  $finalPayments = [];
 
@@ -696,10 +694,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->transport_fee_str    = $v->transport_fee    ? (string)$v->transport_fee    : '';
         $this->auto_loading_str     = $v->auto_loading     ? (string)$v->auto_loading     : '';
         $this->sale_other_costs_str = $v->sale_other_costs ? (string)$v->sale_other_costs : '';
-        $this->deposit_down_payment_str = $v->deposit_down_payment ? (string)$v->deposit_down_payment : '';
-        $this->interim_payment_str  = $v->interim_payment  ? (string)$v->interim_payment  : '';
-        $this->advance_payment1_str = $v->advance_payment1 ? (string)$v->advance_payment1 : '';
-        $this->advance_payment2_str = $v->advance_payment2 ? (string)$v->advance_payment2 : '';
+        // 큐 22-A-3 — 4컬럼 _str 채움 제거. final_payments rows 로 통합.
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
         $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
             $row = [
@@ -1029,9 +1024,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
             'commission_str', 'transport_fee_str', 'auto_loading_str',
-            'sale_other_costs_str', 'deposit_down_payment_str',
-            'interim_payment_str', 'advance_payment1_str',
-            'advance_payment2_str', 'savings_used_str',
+            'sale_other_costs_str', 'savings_used_str',
             'export_declaration_amount_str', 'dhl_weight_str',
         ];
 
@@ -1323,10 +1316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'transport_fee'    => $toFloat($this->transport_fee_str),
             'auto_loading'     => $toFloat($this->auto_loading_str),
             'sale_other_costs' => $toFloat($this->sale_other_costs_str),
-            'deposit_down_payment' => $toFloat($this->deposit_down_payment_str),
-            'interim_payment'  => $toFloat($this->interim_payment_str),
-            'advance_payment1' => $toFloat($this->advance_payment1_str),
-            'advance_payment2' => $toFloat($this->advance_payment2_str),
+            // 큐 22-A-3 — 4컬럼 save 라인 제거. final_payments rows 로 통합.
             'savings_used'     => $toFloat($this->savings_used_str),
             // 수출통관
             'export_buyer_id'       => $toId($this->export_buyer_id_str),
@@ -2131,8 +2121,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
-            'sale_other_costs_str','deposit_down_payment_str','interim_payment_str',
-            'advance_payment1_str','advance_payment2_str','savings_used_str',
+            'sale_other_costs_str','savings_used_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
             'bl_buyer_id_str','bl_consignee_id_str','bl_number','container_number',
@@ -2867,15 +2856,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-purple-300"></span>
                 <span class="section-title">입금 현황</span>
             </div>
-            {{-- 22-A-2 — 4컬럼(계약금·중도금·선수금1·2)은 큐 22-A-1 에서 final_payments rows 로 이동됨. 모든 입금은 아래 [잔금] N+ 에서 입력 후 재무가 확정. --}}
+            {{-- 큐 22-A-3 — 4컬럼(계약금·중도금·선수금1·2) DROP 완료. 모든 입금은 아래 [잔금] N+ 에서 입력 후 재무가 확정. --}}
             <div class="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                 계약금·중도금·선수금도 모두 <strong>아래 [잔금] N+ 추가</strong>로 입력하세요. 재무가 <code>/erp/transfers</code> 판매 잔금 탭에서 확정 → ledger 반영.
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">계약금 입금</label><input wire:model="deposit_down_payment_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
-                <div><label class="label-base">중도금</label><input wire:model="interim_payment_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
-                <div><label class="label-base">선수금1</label><input wire:model="advance_payment1_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
-                <div><label class="label-base">선수금2</label><input wire:model="advance_payment2_str" type="text" class="input-base bg-gray-100 text-gray-500" placeholder="0" disabled /></div>
                 <div><label class="label-base">적립금 사용</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
                 <div>
                     <label class="label-base">미납률 <span class="text-[10px] text-gray-400">(저장 후 갱신)</span></label>

@@ -45,7 +45,37 @@ class PipelineStripTest extends TestCase
             }
         }
 
-        return Vehicle::create(array_merge($defaults, $overrides));
+        // 큐 22-A-3 (2026-05-20) — vehicles 4컬럼 DROP. override 키가 있으면 confirmed FP 자동 생성.
+        $sale4Map = [
+            'deposit_down_payment' => 'deposit_down',
+            'interim_payment' => 'interim',
+            'advance_payment1' => 'advance_1',
+            'advance_payment2' => 'advance_2',
+        ];
+        $sale4Inserts = [];
+        foreach ($sale4Map as $col => $type) {
+            if (array_key_exists($col, $overrides)) {
+                if ((float) $overrides[$col] > 0) {
+                    $sale4Inserts[] = ['amount' => (float) $overrides[$col], 'type' => $type];
+                }
+                unset($overrides[$col]);
+            }
+        }
+
+        $v = Vehicle::create(array_merge($defaults, $overrides));
+
+        foreach ($sale4Inserts as $row) {
+            $v->finalPayments()->create([
+                'amount' => $row['amount'],
+                'type' => $row['type'],
+                'confirmed_at' => now(),
+            ]);
+        }
+        if (! empty($sale4Inserts)) {
+            $v->refresh();
+        }
+
+        return $v;
     }
 
     // ── 10단계 카운트 정확성 (큐 17 — 폐기 컨셉 제거 후 11→10) ─────────

@@ -46,10 +46,13 @@ class PaymentConfirmationServiceTest extends TestCase
             'vehicle_number' => '20D가0001',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 100_000_000,
             'currency' => 'KRW',
-            'deposit_down_payment' => 50_000_000,
         ]);
+        // 큐 22-A-3 — 4컬럼 DROP. 계약금은 confirmed FP 로 표현.
+        $vehicle->finalPayments()->create(['amount' => 50_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $vehicle->refresh();
 
         return compact('buyer', 'finance', 'sales', 'vehicle');
     }

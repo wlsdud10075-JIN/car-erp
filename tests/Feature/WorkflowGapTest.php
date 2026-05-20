@@ -59,7 +59,37 @@ class WorkflowGapTest extends TestCase
             }
         }
 
-        return Vehicle::create(array_merge($defaults, $overrides));
+        // 큐 22-A-3 (2026-05-20) — vehicles 4컬럼 DROP. override 키가 있으면 confirmed FP 자동 생성.
+        $sale4Map = [
+            'deposit_down_payment' => 'deposit_down',
+            'interim_payment' => 'interim',
+            'advance_payment1' => 'advance_1',
+            'advance_payment2' => 'advance_2',
+        ];
+        $sale4Inserts = [];
+        foreach ($sale4Map as $col => $type) {
+            if (array_key_exists($col, $overrides)) {
+                if ((float) $overrides[$col] > 0) {
+                    $sale4Inserts[] = ['amount' => (float) $overrides[$col], 'type' => $type];
+                }
+                unset($overrides[$col]);
+            }
+        }
+
+        $v = Vehicle::create(array_merge($defaults, $overrides));
+
+        foreach ($sale4Inserts as $row) {
+            $v->finalPayments()->create([
+                'amount' => $row['amount'],
+                'type' => $row['type'],
+                'confirmed_at' => now(),
+            ]);
+        }
+        if (! empty($sale4Inserts)) {
+            $v->refresh();
+        }
+
+        return $v;
     }
 
     // 큐 16 — test_c3_export_only_stages_skipped_for_heyman_channel 삭제

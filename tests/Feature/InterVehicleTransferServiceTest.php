@@ -49,14 +49,24 @@ class InterVehicleTransferServiceTest extends TestCase
             'vehicle_number' => '99가0001',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 100_000_000,
             'currency' => 'KRW',
-            'deposit_down_payment' => $sourceReceived,
         ]);
+        // 큐 22-A-3 — vehicles 4컬럼 DROP. 계약금은 confirmed FP rows 로 표현.
+        if ($sourceReceived > 0) {
+            $source->finalPayments()->create([
+                'amount' => $sourceReceived,
+                'type' => 'deposit_down',
+                'confirmed_at' => now(),
+            ]);
+            $source->refresh();
+        }
         $target = Vehicle::create([
             'vehicle_number' => '99가0002',
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01',
             'sale_price' => 80_000_000,
             'currency' => 'KRW',
         ]);
