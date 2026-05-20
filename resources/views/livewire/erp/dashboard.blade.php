@@ -233,6 +233,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
         return [
+            // 2026-05-20 #1 피드백 — 말소 대기 KPI (사용자 의도: 통관 사이드바·일반사용자 통관 대시보드·관리 토글 동일 노출)
+            ['label' => '말소 대기',               'value' => $c('deregistration_needed'),            'suffix' => '대', 'hint' => '매입가 입금 완료 → 말소 미처리'],
             ['label' => '통관 신청 대기',          'value' => $c('clearance_request_needed'),         'suffix' => '대', 'hint' => '판매 완납 → 면장 미업로드'],
             ['label' => '수출신고서 업로드 대기',  'value' => $c('export_declaration_upload_needed'), 'suffix' => '대', 'hint' => '수출통관중'],
             ['label' => '선적 처리 대기',          'value' => $c('shipping_process_needed'),          'suffix' => '대', 'hint' => '면장 완료 → 반입지 미입력'],
