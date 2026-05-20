@@ -126,6 +126,25 @@ class User extends Authenticatable
         return $this->canConfirmFinanceTransfer();
     }
 
+    /**
+     * 22-A-3a 사용자 정정 (2026-05-20) — 4 항목(계약금/중도금/선수금1/2) 입력 권한.
+     *
+     * 사용자 의도: "재무와 관리자의 역할을 하는 사람들만 기입" — 영업은 못 건드림.
+     * canConfirmFinanceTransfer 와 다른 점: 관리(manager) role 포함.
+     *   - 4 항목은 입금 분류 메타데이터 성격 (자금 이체 SoD 와 다름)
+     *   - 관리자는 자기 승인을 직접 처리하는 SoD 위반과 무관 — 4 항목 정리는 OK
+     *
+     * 영업·수출통관은 차단. 잔금 N+ 입력은 별개 (canEditVehicleFinancialFields).
+     */
+    public function canManagePaymentBreakdown(): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return in_array($this->role, ['재무', '관리'], true);
+    }
+
     public function canToggleFeatures(): bool
     {
         return $this->isSuperAdmin();
