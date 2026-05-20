@@ -1307,6 +1307,46 @@ class WorkflowGapTest extends TestCase
         }
     }
 
+    // ── 2026-05-20 사용자 정정 — 자동 PBP Draft payment_date = 매입일 동기화 ──
+
+    public function test_22c_auto_pbp_payment_date_equals_purchase_date(): void
+    {
+        // 사용자 정정 2026-05-20 — 자동 PBP Draft 생성 시 payment_date 가 vehicle.purchase_date 와 동기화.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'purchase_date' => '2026-05-15',
+        ]);
+
+        $autoPbp = $v->purchaseBalancePayments()->first();
+        $this->assertNotNull($autoPbp);
+        $this->assertEquals('2026-05-15', $autoPbp->payment_date->toDateString());
+    }
+
+    public function test_22c_purchase_date_change_syncs_draft_pbp_payment_date(): void
+    {
+        // 사용자 정정 2026-05-20 — 매입일 변경 시 Draft PBP payment_date 자동 동기화.
+        // confirmed PBP 는 잠금되어 sync 대상 X.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = $this->makeVehicle([
+            'purchase_price' => 5_000_000,
+            'purchase_date' => '2026-05-15',
+        ]);
+        $autoPbp = $v->purchaseBalancePayments()->first();
+        $this->assertEquals('2026-05-15', $autoPbp->payment_date->toDateString());
+
+        // 매입일 변경 → Draft PBP date 동기화
+        $v->purchase_date = '2026-05-20';
+        $v->save();
+
+        $autoPbp->refresh();
+        $this->assertEquals('2026-05-20', $autoPbp->payment_date->toDateString());
+    }
+
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
 
     public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void

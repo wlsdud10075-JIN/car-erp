@@ -533,7 +533,8 @@ class Vehicle extends Model
         //   - Trigger: purchase_price > 0 AND PBP 0건 (최초 1회)
         //   - 매입가 변경 시 재생성 X (PO 우려 회피, 영업이 수동 정정)
         //   - amount = 실 미지급 전액 (글로벌 표준 SAP/NetSuite/Odoo/QuickBooks)
-        //   - payment_date·confirmed_at = NULL (Draft form)
+        //   - payment_date = 매입일 (사용자 정정 2026-05-20 — 매입 탭 자금 영역 disabled 라 영업이 수정 불가)
+        //   - confirmed_at = NULL (Draft form)
         //   - Skip: auth 없음(시드/artisan), 실 미지급 ≤ 0, paid Settlement 차량
         // PBP::saved 훅의 refreshCaches는 DB::table::update로 saving 우회 → 무한 루프 X.
         static::saved(function (Vehicle $vehicle) {
@@ -543,6 +544,16 @@ class Vehicle extends Model
             if ($vehicle->purchase_price <= 0) {
                 return;
             }
+
+            // 매입일 변경 시 — Draft PBP (confirmed_at NULL) payment_date 동기화.
+            // 사용자 정정 2026-05-20: 영업이 매입일 지정 시 자동 PBP Draft 의 지급일도 같은 날짜로 자동 갱신.
+            // confirmed Draft 행은 그대로 (FP::updating 잠금이 confirmed_at SET 후 차단).
+            if ($vehicle->wasChanged('purchase_date') && $vehicle->purchase_date) {
+                $vehicle->purchaseBalancePayments()
+                    ->whereNull('confirmed_at')
+                    ->update(['payment_date' => $vehicle->purchase_date]);
+            }
+
             if ($vehicle->purchaseBalancePayments()->count() > 0) {
                 return;
             }
@@ -560,7 +571,8 @@ class Vehicle extends Model
                 PurchaseBalancePayment::create([
                     'vehicle_id' => $vehicle->id,
                     'amount' => $unpaid,
-                    'payment_date' => null,
+                    // 사용자 정정 2026-05-20 — payment_date = 매입일 (NULL → 매입일 자동 채움).
+                    'payment_date' => $vehicle->purchase_date,
                     'confirmed_at' => null,
                     'created_by_user_id' => auth()->id(),
                     'note' => '자동 생성 — 영업 매입 정보 저장 시',
