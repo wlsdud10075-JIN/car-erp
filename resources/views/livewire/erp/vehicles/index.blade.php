@@ -171,6 +171,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $voidReason = '';
 
+    // UX #3 (2026-05-20) — 영업 저장 확인 모달.
+    // 사용자 정정: 영업 [저장] → 모달에 매입+판매 필수 항목 미리보기 → [확인] 시 실제 save.
+    // 다른 role (admin/재무/관리/통관) 은 모달 없이 직접 save (빠른 처리).
+    public bool $showSaveConfirmModal = false;
+
     // 큐 16 — 카풀/헤이맨 계산서 5 properties 제거 (DB 5컬럼 drop과 동기).
 
     // ── 수출통관 ──────────────────────────────────────────────────
@@ -1158,6 +1163,34 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         $this->validate($rules, $messages, $attributes);
+    }
+
+    /**
+     * UX #3 (2026-05-20) — 영업 저장 확인 모달 트리거.
+     *
+     * 영업 role: 모달 열기 → 매입+판매 필수 항목 미리보기 → [확인] 시 confirmAndSave() 호출 → save() 실행.
+     * 다른 role (admin/재무/관리/통관): 모달 없이 즉시 save() (빠른 처리).
+     */
+    public function requestSave(): void
+    {
+        if (auth()->user()?->role === '영업') {
+            $this->showSaveConfirmModal = true;
+
+            return;
+        }
+
+        $this->save();
+    }
+
+    public function confirmAndSave(): void
+    {
+        $this->showSaveConfirmModal = false;
+        $this->save();
+    }
+
+    public function closeSaveConfirmModal(): void
+    {
+        $this->showSaveConfirmModal = false;
     }
 
     public function save(): void
@@ -2667,8 +2700,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-blue-500"></span>
                 <span class="section-title">매입 기본</span>
             </div>
+            {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">매입일</label><input wire:model="purchase_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">매입일 <span class="text-amber-500">●</span></label><input wire:model="purchase_date" type="date" class="input-base bg-yellow-50" /></div>
                 <div>
                     <label class="label-base">매입담당자</label>
                     <select wire:model="salesman_id_str" class="input-base">
@@ -2679,11 +2713,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div class="col-span-2 sm:col-span-1">
-                    <label class="label-base">구입처</label>
-                    <input wire:model="purchase_from" type="text" class="input-base" placeholder="경매 / 딜러 / 개인" />
+                    <label class="label-base">구입처 <span class="text-amber-500">●</span></label>
+                    <input wire:model="purchase_from" type="text" class="input-base bg-yellow-50" placeholder="경매 / 딜러 / 개인" />
                 </div>
-                <div><label class="label-base">매입가 (원)</label><input wire:model="purchase_price_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">매도비 (원)</label><input wire:model="selling_fee_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">매입가 (원) <span class="text-amber-500">●</span></label><input wire:model="purchase_price_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
+                <div><label class="label-base">매도비 (원) <span class="text-amber-500">●</span></label><input wire:model="selling_fee_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -2695,9 +2729,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div x-data class="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 <div>
-                    <label class="label-base">은행명</label>
+                    <label class="label-base">은행명 <span class="text-amber-500">●</span></label>
                     <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
-                           class="input-base" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
+                           class="input-base bg-yellow-50" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
                            x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
                     <datalist id="korean-banks-list">
                         <template x-for="bank in $store.koreanBanks.names()" :key="bank">
@@ -2706,17 +2740,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </datalist>
                 </div>
                 <div>
-                    <label class="label-base">예금주</label>
-                    <input wire:model="purchase_seller_holder" type="text" class="input-base" placeholder="개인명 또는 법인명" maxlength="100" />
+                    <label class="label-base">예금주 <span class="text-amber-500">●</span></label>
+                    <input wire:model="purchase_seller_holder" type="text" class="input-base bg-yellow-50" placeholder="개인명 또는 법인명" maxlength="100" />
                 </div>
                 <div class="col-span-2">
                     <label class="label-base flex items-center gap-1">
-                        계좌번호
+                        계좌번호 <span class="text-amber-500">●</span>
                         <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
                         <span class="text-[10px] font-normal text-gray-400">— 은행 선택 시 자동 hyphen</span>
                     </label>
                     <input x-ref="accountInput" wire:model.blur="purchase_seller_account" type="text"
-                           class="input-base font-mono" placeholder="123-456-789012" autocomplete="off"
+                           class="input-base bg-yellow-50 font-mono" placeholder="123-456-789012" autocomplete="off"
                            x-on:input="$el.value = $store.koreanBanks.applyMask($refs.bankInput.value, $el.value)" />
                 </div>
                 <div class="col-span-2">
@@ -2892,20 +2926,21 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             @endif
 
+            {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">판매일</label><input wire:model="sale_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">판매일 <span class="text-amber-500">●</span></label><input wire:model="sale_date" type="date" class="input-base bg-yellow-50" /></div>
                 <div>
-                    <label class="label-base">통화</label>
-                    <select wire:model.live="currency" class="input-base">
+                    <label class="label-base">통화 <span class="text-amber-500">●</span></label>
+                    <select wire:model.live="currency" class="input-base bg-yellow-50">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">환율</label><input wire:model="exchange_rate_str" type="text" class="input-base" placeholder="1350" /></div>
+                <div><label class="label-base">환율 @if($currency !== 'KRW') <span class="text-amber-500">●</span> @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-yellow-50' : '' }}" placeholder="1350" /></div>
                 <div>
-                    <label class="label-base">바이어</label>
-                    <select wire:model.live="buyer_id_str" class="input-base">
+                    <label class="label-base">바이어 <span class="text-amber-500">●</span></label>
+                    <select wire:model.live="buyer_id_str" class="input-base bg-yellow-50">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
@@ -2913,8 +2948,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">컨사이니</label>
-                    <select wire:model="consignee_id_str" class="input-base"
+                    <label class="label-base">컨사이니 <span class="text-amber-500">●</span></label>
+                    <select wire:model="consignee_id_str" class="input-base bg-yellow-50"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
                         @foreach($this->consigneesForSale as $c)
@@ -2922,7 +2957,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">판매가</label><input wire:model="sale_price_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">판매가 <span class="text-amber-500">●</span></label><input wire:model="sale_price_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">운임비</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
@@ -3582,9 +3617,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
             취소
         </button>
-        <button wire:click="save" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">{{ $editingId ? '수정 저장' : '신규 등록' }}</span>
-            <span wire:loading wire:target="save">저장 중...</span>
+        {{-- UX #3 — 영업이면 requestSave 가 모달 분기, 다른 role은 즉시 save --}}
+        <button wire:click="requestSave" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave">
+            <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? '수정 저장' : '신규 등록' }}</span>
+            <span wire:loading wire:target="save,requestSave,confirmAndSave">저장 중...</span>
         </button>
     </div>
 
@@ -3728,6 +3764,80 @@ new #[Layout('components.layouts.app')] class extends Component {
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
                 요청 보내기
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- UX #3 (2026-05-20) — 영업 저장 확인 모달.
+     매입+판매 필수 항목 미리보기 → [확인] 시 save() 실행. 영업이 입력 누락 마지막 검증. --}}
+@if($showSaveConfirmModal)
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeSaveConfirmModal"
+     wire:key="save-confirm-modal">
+    <div class="card max-w-2xl mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">저장 전 입력 확인</h3>
+        <p class="mt-1 text-xs text-gray-500">아래 항목이 정확히 입력됐는지 확인 후 [확인 후 저장]을 클릭하세요.</p>
+
+        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {{-- 매입 섹션 --}}
+            <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                <h4 class="mb-2 text-xs font-semibold text-blue-900">매입 정보</h4>
+                <dl class="space-y-1 text-xs text-gray-700">
+                    <div class="flex justify-between"><dt class="text-gray-500">매입일</dt><dd class="font-medium">{{ $purchase_date ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">매입처</dt><dd class="font-medium">{{ $purchase_from ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">매입가</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float)$purchase_price_str) : '— 미입력' }} 원</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">매도비</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float)$selling_fee_str) : '0' }} 원</dd></div>
+                    <hr class="border-blue-200 my-1">
+                    <div class="flex justify-between"><dt class="text-gray-500">은행</dt><dd class="font-medium">{{ $purchase_seller_bank ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">예금주</dt><dd class="font-medium">{{ $purchase_seller_holder ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">계좌번호</dt><dd class="font-mono font-medium">{{ $purchase_seller_account ?: '— 미입력' }}</dd></div>
+                </dl>
+            </div>
+
+            {{-- 판매 섹션 --}}
+            <div class="rounded-lg border border-purple-200 bg-purple-50/40 p-3">
+                <h4 class="mb-2 text-xs font-semibold text-purple-900">판매 정보</h4>
+                <dl class="space-y-1 text-xs text-gray-700">
+                    <div class="flex justify-between"><dt class="text-gray-500">판매일</dt><dd class="font-medium">{{ $sale_date ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">통화</dt><dd class="font-medium">{{ $currency }}</dd></div>
+                    @if($currency !== 'KRW')
+                    <div class="flex justify-between"><dt class="text-gray-500">환율</dt><dd class="font-medium">{{ $exchange_rate_str ?: '— 미입력' }}</dd></div>
+                    @endif
+                    <div class="flex justify-between"><dt class="text-gray-500">판매가</dt><dd class="font-medium">{{ $sale_price_str ? number_format((float)$sale_price_str) : '— 미입력' }} {{ $currency }}</dd></div>
+                    <hr class="border-purple-200 my-1">
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">바이어</dt>
+                        <dd class="font-medium">
+                            @php $selectedBuyer = $this->buyers->firstWhere('id', (int) $buyer_id_str); @endphp
+                            {{ $selectedBuyer?->name ?: '— 미선택' }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">컨사이니</dt>
+                        <dd class="font-medium">
+                            @php $selectedConsignee = $this->consigneesForSale->firstWhere('id', (int) $consignee_id_str); @endphp
+                            {{ $selectedConsignee?->name ?: '— 미선택' }}
+                        </dd>
+                    </div>
+                </dl>
+            </div>
+        </div>
+
+        <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+            <span class="text-amber-500">●</span> 표시된 노랑 입력란이 운영상 중요 항목입니다. 누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button wire:click="closeSaveConfirmModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+                돌아가서 수정
+            </button>
+            <button wire:click="confirmAndSave" wire:loading.attr="disabled" wire:target="confirmAndSave,save"
+                    class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
+                <span wire:loading.remove wire:target="confirmAndSave,save">확인 후 저장</span>
+                <span wire:loading wire:target="confirmAndSave,save">저장 중...</span>
             </button>
         </div>
     </div>
