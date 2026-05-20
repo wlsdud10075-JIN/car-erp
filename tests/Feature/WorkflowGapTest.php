@@ -1824,6 +1824,33 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    // ── 2026-05-20 22-C-light 후속 fix — 자동 PBP Draft sync 삭제 버그 회귀 ──
+
+    public function test_22c_auto_pbp_draft_survives_new_vehicle_save(): void
+    {
+        // 사용자 버그 보고 (2026-05-20): 영업이 신규 차량 등록 시 Vehicle::saved 자동 PBP Draft 가
+        // 매입 잔금 sync 의 array_diff 로 삭제되어 재무에게 토스 안 되는 버그.
+        // fix: Vehicle save 전에 PBP existing id 캡처 (자동 생성 후 캡처하면 자동 PBP 가 삭제 대상에 포함됨).
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        Salesman::create(['name' => 'TEST-AUTO-TOSS', 'is_active' => true, 'user_id' => $sales->id]);
+        $this->actingAs($sales);
+
+        Volt::test('erp.vehicles.index')
+            ->set('vehicle_number', 'AUTO-TOSS-1')
+            ->set('sales_channel', 'export')
+            ->set('currency', 'KRW')
+            ->set('purchase_date', '2026-05-20')
+            ->set('purchase_price_str', '5000000')
+            ->call('save');
+
+        $v = Vehicle::where('vehicle_number', 'AUTO-TOSS-1')->first();
+        $this->assertNotNull($v, '차량 저장 완료');
+        $pbps = $v->purchaseBalancePayments()->get();
+        $this->assertCount(1, $pbps, '자동 PBP Draft 1건 살아 있어야 (sync 삭제 차단)');
+        $this->assertNull($pbps->first()->confirmed_at, 'Draft 상태 (재무 확정 전)');
+        $this->assertSame(5000000, (int) $pbps->first()->amount);
+    }
+
     // ── 2026-05-20 안건 J 본격 — v3 거래완료 trigger 단순화 ──
 
     public function test_j_v3_treats_bl_document_alone_as_done(): void

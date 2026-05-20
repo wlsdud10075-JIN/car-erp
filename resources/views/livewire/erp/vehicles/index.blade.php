@@ -1421,8 +1421,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $wasCreating = $this->editingId === null;
         $vehicle = null;
+        // 22-C-light 후속 fix (2026-05-20) — Vehicle save 전에 PBP existing id 캡처.
+        // Vehicle::saved 훅이 자동 PBP Draft 생성하는데, 그 후 sync 에서 existing - submitted = 자동 Draft 가 delete 대상에 포함되어 사라지는 버그.
+        // 캡처 시점을 Vehicle 저장 전으로 옮기면 자동 PBP 보호.
+        $existingPurchaseIdsBefore = $this->editingId
+            ? PurchaseBalancePayment::where('vehicle_id', $this->editingId)->pluck('id')->toArray()
+            : [];
         try {
-            \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, &$newlyStoredPaths, &$pathsToDelete, &$vehicle) {
+            \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, $existingPurchaseIdsBefore, &$newlyStoredPaths, &$pathsToDelete, &$vehicle) {
                 if ($this->editingId) {
                     $vehicle = Vehicle::findOrFail($this->editingId);
                     $vehicle->update($data);
@@ -1560,9 +1566,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             // 매입 잔금 동기화 (type='balance' default)
-            $existingPurchaseIds = $vehicle->purchaseBalancePayments->pluck('id')->toArray();
+            // 22-C-light 후속 fix — Vehicle save 전 캡처한 $existingPurchaseIdsBefore 사용.
+            // Vehicle::saved 자동 PBP Draft 는 existing 에 없으므로 삭제 대상 X (보호).
             $submittedPurchaseIds = collect($this->purchaseBalancePayments)->pluck('id')->filter()->toArray();
-            PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIds, $submittedPurchaseIds))->delete();
+            PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIdsBefore, $submittedPurchaseIds))->delete();
             foreach ($this->purchaseBalancePayments as $row) {
                 if (($row['amount'] ?? '') === '' && ($row['payment_date'] ?? '') === '') continue;
                 $amt = $toInt($row['amount'] ?? '');
