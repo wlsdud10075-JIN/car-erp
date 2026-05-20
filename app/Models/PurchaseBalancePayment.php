@@ -12,6 +12,8 @@ class PurchaseBalancePayment extends Model
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
         // 큐 22-C-light — 자동 생성 PBP의 actor 추적 (Spec-E 해소조건)
         'created_by_user_id',
+        // 큐 22-C-D (2026-05-20) — type enum: down / selling_fee / balance.
+        'type',
     ];
 
     protected $casts = [
