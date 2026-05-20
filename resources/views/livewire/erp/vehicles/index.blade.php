@@ -282,8 +282,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             default    => 'purchase_date',
         };
 
+        // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
+        // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
+        $user = auth()->user();
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
+
         return Vehicle::query()
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+            ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")

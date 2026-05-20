@@ -1824,6 +1824,56 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count);
     }
 
+    // ── 2026-05-20 #3 — 영업 본인 차량 목록 자동 한정 ──
+
+    public function test_sales_role_lists_only_own_salesman_vehicles(): void
+    {
+        $salesUser = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $mySalesman = Salesman::create(['name' => '본인', 'is_active' => true, 'user_id' => $salesUser->id]);
+        $otherSalesman = Salesman::create(['name' => '타인', 'is_active' => true]);
+
+        $today = now()->format('Y-m-d');
+        $myVehicle = $this->makeVehicle(['salesman_id' => $mySalesman->id, 'purchase_date' => $today]);
+        $othersVehicle = $this->makeVehicle(['salesman_id' => $otherSalesman->id, 'purchase_date' => $today]);
+
+        $this->actingAs($salesUser);
+
+        $vehicleIds = Volt::test('erp.vehicles.index')->set('dateFrom', '')->set('dateTo', '')->instance()->vehicles()->pluck('id')->toArray();
+
+        $this->assertContains($myVehicle->id, $vehicleIds, '본인 차량 보임');
+        $this->assertNotContains($othersVehicle->id, $vehicleIds, '타인 차량 자동 제외');
+    }
+
+    public function test_admin_sees_all_vehicles(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
+        $sm1 = Salesman::create(['name' => 'sm1', 'is_active' => true]);
+        $sm2 = Salesman::create(['name' => 'sm2', 'is_active' => true]);
+
+        $today = now()->format('Y-m-d');
+        $v1 = $this->makeVehicle(['salesman_id' => $sm1->id, 'purchase_date' => $today]);
+        $v2 = $this->makeVehicle(['salesman_id' => $sm2->id, 'purchase_date' => $today]);
+
+        $this->actingAs($admin);
+
+        $vehicleIds = Volt::test('erp.vehicles.index')->set('dateFrom', '')->set('dateTo', '')->instance()->vehicles()->pluck('id')->toArray();
+        $this->assertContains($v1->id, $vehicleIds);
+        $this->assertContains($v2->id, $vehicleIds);
+    }
+
+    public function test_clearance_role_sees_all_vehicles(): void
+    {
+        // 통관·재무·관리는 전체 차량 보임 — 영업 한정은 영업 role 만.
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $sm = Salesman::create(['name' => 'sm', 'is_active' => true]);
+        $v = $this->makeVehicle(['salesman_id' => $sm->id, 'purchase_date' => now()->format('Y-m-d')]);
+
+        $this->actingAs($clearance);
+
+        $vehicleIds = Volt::test('erp.vehicles.index')->set('dateFrom', '')->set('dateTo', '')->instance()->vehicles()->pluck('id')->toArray();
+        $this->assertContains($v->id, $vehicleIds, '통관 role 전체 차량 보임');
+    }
+
     // ── 2026-05-20 #2-2+2-4 — 거래완료 자동 정산 생성 + Salesman.type 분기 ──
 
     private function makeCompletedVehicle(int $salesmanId, ?string $bl = null): Vehicle
