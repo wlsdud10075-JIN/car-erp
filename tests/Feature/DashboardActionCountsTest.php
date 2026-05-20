@@ -208,7 +208,7 @@ class DashboardActionCountsTest extends TestCase
 
         $component = Volt::test('erp.dashboard')
             ->set('selectedSalesmanId', $salesman->id)
-            ->set('roleView', '통관');
+            ->set('roleView', '수출통관');
 
         // 통관 뷰의 activeVehicles는 selectedSalesmanId 무시 → 2대 모두 보여야
         $this->assertSame(2, $component->get('activeVehicles')->count());
@@ -222,7 +222,7 @@ class DashboardActionCountsTest extends TestCase
         $this->actingAs($user);
 
         Volt::test('erp.dashboard')
-            ->set('roleView', '정산')
+            ->set('roleView', '재무')
             ->assertSet('roleView', '영업');
     }
 
@@ -232,8 +232,8 @@ class DashboardActionCountsTest extends TestCase
         $this->actingAs($user);
 
         Volt::test('erp.dashboard')
-            ->set('roleView', '정산')
-            ->assertSet('roleView', '정산');
+            ->set('roleView', '재무')
+            ->assertSet('roleView', '재무');
     }
 
     public function test_admin_can_toggle_role_view_freely(): void
@@ -242,7 +242,7 @@ class DashboardActionCountsTest extends TestCase
         $this->actingAs($admin);
 
         Volt::test('erp.dashboard')
-            ->set('roleView', '통관')
-            ->assertSet('roleView', '통관');
+            ->set('roleView', '수출통관')
+            ->assertSet('roleView', '수출통관');
     }
 }

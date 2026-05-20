@@ -116,7 +116,7 @@
                     'show' => true,
                 ],
                 [
-                    'label' => '정산',
+                    'label' => '재무',
                     'href' => $user->canAccessSettlement() ? route('erp.settlements.index') : '#',
                     'icon' => 'calculator',
                     'active' => request()->routeIs('erp.settlements.*'),

@@ -43,7 +43,7 @@ class InterVehicleTransferServiceTest extends TestCase
         $buyer = Buyer::create(['name' => 'TOKYO AUTO', 'is_active' => true]);
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
-        $finance = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
 
         $source = Vehicle::create([
             'vehicle_number' => '99가0001',

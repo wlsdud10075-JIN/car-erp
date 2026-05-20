@@ -88,7 +88,7 @@ class PipelineStripTest extends TestCase
 
         $component = Volt::test('erp.dashboard')
             ->set('selectedSalesmanId', $salesman->id)
-            ->set('roleView', '통관');
+            ->set('roleView', '수출통관');
 
         // 통관 뷰는 selectedSalesmanId 무시 → 2대 모두
         $counts = $component->get('pipelineCounts');
@@ -117,7 +117,7 @@ class PipelineStripTest extends TestCase
 
         $url = Volt::test('erp.dashboard')
             ->set('selectedSalesmanId', 5)
-            ->set('roleView', '통관')
+            ->set('roleView', '수출통관')
             ->instance()
             ->pipelineUrl('수출통관중');
 

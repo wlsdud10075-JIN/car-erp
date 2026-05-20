@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  * ledger == sale_unpaid_amount / purchase_unpaid_amount 단일 기준 → 회계 무결성 SoT.
  *
  * 가드:
- *   1. 권한 — canConfirmFinance (super/admin/role='정산')
+ *   1. 권한 — canConfirmFinance (super/admin/role='재무')
  *   2. 재확정 차단 — confirmed_at 이미 SET이면 차단
  *   3. transfer 잔금 차단 — final_payments.transfer_id IS NOT NULL은
  *      InterVehicleTransfer 시스템이 관리 (이중 확정 방지)

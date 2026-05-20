@@ -40,7 +40,7 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 - `admin` 최고관리자 — 고객사 측. ERP 전체 + 기타관리 (기능설정 제외)
 - `user` 일반사용자 — role에 따라 접근
 
-**role 초안** (⚠️ 미확정): `전체 / 영업 / 통관 / 정산 / 관리`. 기본값 `전체`. super/admin은 role 무관 전체 접근.
+**role**: `영업 / 수출통관 / 재무 / 관리` (2026-05-19 풀회의 안건 I — 정산→재무 / 통관→수출통관 명칭 확정). 기본값 `관리`. super/admin은 role 무관 전체 접근.
 
 **미들웨어 매핑 초안**:
 | alias | 메서드 | 보호 대상 |
@@ -49,8 +49,8 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 | `super-admin` | `isSuperAdmin()` = super만 | 기능설정 |
 | `erp` | `canAccessErp()` = super/admin ∪ role 전체 | /erp/* |
 | `sales` | role∈{전체,영업} | /erp/salesmen/{id}/cashflow (본인) |
-| `clearance` | role∈{전체,통관} | /erp/forwardings, /erp/vehicles 통관 탭 |
-| `settlement` | role∈{전체,정산} | /erp/settlements |
+| `clearance` | role∈{수출통관,관리} | /erp/forwardings, /erp/vehicles 통관 탭 |
+| `settlement` | role∈{재무,관리} | /erp/settlements |
 
 **리다이렉션**: `/dashboard` 진입 시 super/admin → `/admin/dashboard`, role=영업 → `/erp/salesmen/{id}/cashflow`(본인 ID), 그 외 → `/erp/dashboard`.
 
@@ -415,6 +415,6 @@ php artisan serve --port=8001
   - 채널별 현황, 전체 진행단계 현황, role별 탭 전환
 - **일반사용자 대시보드** (`/erp/dashboard`, 일반사용자 접근 시) — role별 오늘의 할일
   - 영업: 현재 유지 (매입미지급·판매미입금 등)
-  - 통관: 수출통관·선적 관련 처리 필요 항목
-  - 정산: 입금·출금·정산 관련 처리 필요 항목
+  - 수출통관: 수출통관·선적 관련 처리 필요 항목
+  - 재무: 입금·출금·정산 관련 처리 필요 항목
   - 관리: 보류

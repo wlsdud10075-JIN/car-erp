@@ -16,7 +16,7 @@ class User extends Authenticatable
 
     // 큐 14-1 — '전체' role 삭제. '관리' 신설 (서브관리자 — 승인 권한).
     // admin/super는 role 무관 (permission 기반)이라 임의 값 가능 — 시더에서 '관리'로 통일.
-    public const ROLES = ['영업', '통관', '정산', '관리'];
+    public const ROLES = ['영업', '수출통관', '재무', '관리'];
 
     protected $fillable = [
         'name',
@@ -86,7 +86,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['통관', '관리'], true);
+        return in_array($this->role, ['수출통관', '관리'], true);
     }
 
     public function canAccessSettlement(): bool
@@ -95,16 +95,16 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['정산', '관리'], true);
+        return in_array($this->role, ['재무', '관리'], true);
     }
 
     /**
      * 큐 19-F — 자금 이체 재무 확정 권한 (회의록 2026-05-16).
      *
      * SoD 분리: 관리(승인) ≠ 재무(실물 처리·확정).
-     * 허용: super / admin / role='정산'. ⚠️ '관리' role 명시적 차단 (canAccessSettlement 와 분리).
+     * 허용: super / admin / role='재무'. ⚠️ '관리' role 명시적 차단 (canAccessSettlement 와 분리).
      *
-     * canAccessSettlement 가 ['정산','관리'] 모두 통과시키는 것과 의도적으로 다름 —
+     * canAccessSettlement 가 ['재무','관리'] 모두 통과시키는 것과 의도적으로 다름 —
      * 박관리(관리 role)는 자기 승인을 직접 재무 확정할 수 없어야 함.
      */
     public function canConfirmFinanceTransfer(): bool
@@ -113,12 +113,12 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->role === '정산';
+        return $this->role === '재무';
     }
 
     /**
      * 큐 20-B — 매입·판매 잔금 재무 확정 범용 alias.
-     * canConfirmFinanceTransfer 와 동일 권한 (super/admin/정산 role).
+     * canConfirmFinanceTransfer 와 동일 권한 (super/admin/재무 role).
      * PaymentConfirmationService 에서 사용 — 자금 이체 외 잔금 확정에도 동일 SoD 적용.
      */
     public function canConfirmFinance(): bool
@@ -163,12 +163,12 @@ class User extends Authenticatable
      */
     public function canViewReceivables(): bool
     {
-        return $this->isAdmin() || in_array($this->role, ['정산', '관리'], true);
+        return $this->isAdmin() || in_array($this->role, ['재무', '관리'], true);
     }
 
     /**
      * 큐 2.6 — admin 미입금 우회 승인 권한.
-     * admin/super만 가능. 영업/통관/정산 role은 차단.
+     * admin/super만 가능. 영업/수출통관/재무 role은 차단.
      */
     public function canApproveUnpaidExport(): bool
     {
@@ -179,7 +179,7 @@ class User extends Authenticatable
      * 큐 7 확장 C7-a — 차량 회계 민감 컬럼 편집 권한.
      * 매입가·판매가·환율·면장금액·비용9개를 변경할 수 있는 role.
      *
-     * 차단 대상: 정산/통관/관리 role — 회계 조작 위험 + SoD(Segregation of Duties).
+     * 차단 대상: 재무/수출통관/관리 role — 회계 조작 위험 + SoD(Segregation of Duties).
      * 허용: admin/super, 영업만.
      *
      * (큐 2.5 회의록 §4 C7 + 큐 14 회의록 Security §SoD — "관리가 승인자인데 편집까지 허용하면 본인 등록을 본인 승인 가능")

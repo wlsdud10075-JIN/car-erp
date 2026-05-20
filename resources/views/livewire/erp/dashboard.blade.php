@@ -28,7 +28,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $this->selectedSalesmanId = $salesman->id;
             }
             // 본인 role이 영업/통관/정산/관리면 그것을 초기 뷰로 (큐 14-2: '관리' 추가)
-            if (in_array($user->role, ['영업', '통관', '정산', '관리'], true)) {
+            if (in_array($user->role, ['영업', '수출통관', '재무', '관리'], true)) {
                 $this->roleView = $user->role;
             }
             // 비-admin: viewMode는 본인 role로 자연 결정 (영업이면 salesman, 그 외엔 role)
@@ -77,12 +77,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         $canToggle = $user->isAdmin() || $user->role === '관리';
         if (! $canToggle) {
-            $this->roleView = in_array($user->role, ['영업', '통관', '정산', '관리'], true) ? $user->role : '영업';
+            $this->roleView = in_array($user->role, ['영업', '수출통관', '재무', '관리'], true) ? $user->role : '영업';
 
             return;
         }
         // 큐 14-2 — '관리' 4번째 탭 허용
-        if (! in_array($this->roleView, ['영업', '통관', '정산', '관리'], true)) {
+        if (! in_array($this->roleView, ['영업', '수출통관', '재무', '관리'], true)) {
             $this->roleView = '영업';
         }
     }
@@ -113,8 +113,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function kpis(): array
     {
         return match ($this->roleView) {
-            '통관' => $this->buildClearanceKpis(),
-            '정산' => $this->buildSettlementKpis(),
+            '수출통관' => $this->buildClearanceKpis(),
+            '재무' => $this->buildSettlementKpis(),
             '관리' => $this->buildManagementKpis(),
             default => $this->buildSalesKpis(),
         };
@@ -124,8 +124,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function actions(): array
     {
         return match ($this->roleView) {
-            '통관' => $this->buildClearanceActions(),
-            '정산' => $this->buildSettlementActions(),
+            '수출통관' => $this->buildClearanceActions(),
+            '재무' => $this->buildSettlementActions(),
             '관리' => $this->buildManagementActions(),
             default => $this->buildSalesActions(),
         };
@@ -399,7 +399,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     initView() {
         @if(auth()->user()->isAdmin() || auth()->user()->role === '관리')
         const savedRole = localStorage.getItem('erp_dashboard_role_view');
-        if (savedRole && ['영업','통관','정산','관리'].includes(savedRole)) {
+        if (savedRole && ['영업','수출통관','재무','관리'].includes(savedRole)) {
             this.roleView = savedRole;
         }
         const savedMode = localStorage.getItem('erp_dashboard_view_mode');
@@ -422,14 +422,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     $user = auth()->user();
     $canToggleView = $user->isAdmin() || $user->role === '관리';
     $viewLabel = match($roleView) {
-        '통관' => '내 통관 업무',
-        '정산' => '내 정산 업무',
+        '수출통관' => '내 수출통관 업무',
+        '재무' => '내 재무 업무',
         '관리' => '내 관리 업무',
         default => '내 영업 업무',
     };
     $viewBadge = match($roleView) {
-        '통관' => 'badge-amber',
-        '정산' => 'badge-green',
+        '수출통관' => 'badge-amber',
+        '재무' => 'badge-green',
         '관리' => 'badge-purple',
         default => 'badge-purple',
     };
@@ -464,7 +464,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- M7 역할 탭 pill — 역할별 모드에서만 노출 (담당자별 모드는 영업 시각 고정) --}}
         @if($canToggleView)
         <div class="flex items-center gap-1" x-show="viewMode === 'role'" x-cloak>
-            @foreach(['영업','통관','정산','관리'] as $v)
+            @foreach(['영업','수출통관','재무','관리'] as $v)
             <button type="button"
                 @click="setView('{{ $v }}')"
                 :class="roleView === '{{ $v }}' ? 'tab-pill is-active' : 'tab-pill'"
@@ -535,8 +535,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     @php
         $totalActions = collect($this->actions)->sum('count');
         $emptyMessage = match($roleView) {
-            '통관' => ['title' => '처리 대기 항목 없음', 'sub' => '통관/선적/DHL 흐름 정상'],
-            '정산' => ['title' => '회수·정산 대기 없음', 'sub' => '모든 채권/정산 정상'],
+            '수출통관' => ['title' => '처리 대기 항목 없음', 'sub' => '수출통관/선적/DHL 흐름 정상'],
+            '재무' => ['title' => '회수·재무 대기 없음', 'sub' => '모든 채권/정산 정상'],
             default => ['title' => '처리할 항목이 없습니다', 'sub' => '모든 작업이 최신 상태입니다'],
         };
     @endphp

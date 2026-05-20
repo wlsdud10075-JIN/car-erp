@@ -607,8 +607,8 @@ new #[Layout('components.layouts.app')] class extends Component
     <div class="flex flex-wrap gap-1 border-b border-gray-200">
         @foreach ([
             'sales'      => '영업',
-            'clearance'  => '통관',
-            'settlement' => '정산',
+            'clearance'  => '수출통관',
+            'settlement' => '재무',
             'receivable' => '채권',
         ] as $key => $label)
         <button type="button" @click="setActiveTab('{{ $key }}')"

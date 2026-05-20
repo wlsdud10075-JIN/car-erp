@@ -411,6 +411,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['key' => 'deregistration', 'label' => '말소',   'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
             ['key' => 'sale',           'label' => '판매',   'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
             ['key' => 'payment',        'label' => '입금',   'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
+            // 라벨 '통관' 보존 (단계 약자) — role 명칭 '수출통관'과 분리. 7노드 흐름도 박스 폭 좁아짐 방지.
             ['key' => 'clearance',      'label' => '통관',   'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
             ['key' => 'bl',             'label' => '선적',   'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
             ['key' => 'dhl',            'label' => 'DHL',    'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],

@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * 큐 14-2 보강 — /erp/receivables 접근 게이트.
  *
- * 허용: super / admin / role='정산' / role='관리'.
+ * 허용: super / admin / role='재무' / role='관리'.
  * 회의록 14 §누락 보강 + CLAUDE.md 9단계 TODO 활성화.
  */
 class ReceivableMiddleware

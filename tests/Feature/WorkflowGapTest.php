@@ -186,7 +186,7 @@ class WorkflowGapTest extends TestCase
     public function test_c7_clearance_role_can_open_any_vehicle_no_isolation(): void
     {
         // 통관 role은 본인 salesman 개념 없음 — 전체 차량 통관 처리 가능
-        $user = User::factory()->create(['permission' => 'user', 'role' => '통관']);
+        $user = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
         $otherSalesman = Salesman::create(['name' => '타인', 'is_active' => true]);
         $vehicle = $this->makeVehicle(['salesman_id' => $otherSalesman->id]);
 
@@ -599,7 +599,7 @@ class WorkflowGapTest extends TestCase
 
     public function test_q7_c7a_settlement_role_cannot_change_financial_fields(): void
     {
-        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '재무']);
         $v = $this->makeVehicle([
             'purchase_price' => 1000000,
             'selling_fee' => 700000,
@@ -687,7 +687,7 @@ class WorkflowGapTest extends TestCase
     // 정산 role이 RRN 변경 시도 → restoreFinancialFieldsFromOriginal에서 원값 복원.
     public function test_p0_rrn_silent_restore_for_settlement_role(): void
     {
-        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '재무']);
         $v = $this->makeVehicle(['nice_reg_owner_rrn' => '900101-1234567']);
 
         $this->actingAs($settlementUser);

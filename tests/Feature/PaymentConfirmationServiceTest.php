@@ -39,7 +39,7 @@ class PaymentConfirmationServiceTest extends TestCase
     private function makeContext(): array
     {
         $buyer = Buyer::create(['name' => 'TOKYO AUTO', 'is_active' => true]);
-        $finance = User::factory()->create(['permission' => 'user', 'role' => '정산']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
 
         $vehicle = Vehicle::create([

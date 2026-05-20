@@ -36,8 +36,8 @@ class DatabaseSeeder extends Seeder
             ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'permission' => 'super',  'role' => '관리'],
             ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'permission' => 'admin',  'role' => '관리'],
             ['name' => '김영업',       'email' => 'sales@car-erp.test',    'permission' => 'user',   'role' => '영업'],
-            ['name' => '이통관',       'email' => 'clear@car-erp.test',    'permission' => 'user',   'role' => '통관'],
-            ['name' => '김진영',       'email' => 'settle@car-erp.test',   'permission' => 'user',   'role' => '정산'],
+            ['name' => '이통관',       'email' => 'clear@car-erp.test',    'permission' => 'user',   'role' => '수출통관'],
+            ['name' => '김진영',       'email' => 'settle@car-erp.test',   'permission' => 'user',   'role' => '재무'],
             ['name' => '박관리',       'email' => 'manage@car-erp.test',   'permission' => 'user',   'role' => '관리'],
         ];
 
