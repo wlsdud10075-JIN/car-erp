@@ -61,6 +61,24 @@ class DashboardActionCountsTest extends TestCase
         $this->assertSame(1, Vehicle::action('purchase_unpaid')->count());
     }
 
+    // 2026-05-20 사용자 요청 — 매입 완료 + 말소 미처리 차량 액션.
+    public function test_deregistration_needed_counts_paid_unregistered_vehicles(): void
+    {
+        // 매입 완료 + 말소 미처리 → 카운트 (대상)
+        $v1 = $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 1000, 'is_deregistered' => false]);
+
+        // 매입 완료 + 말소 완료 → 제외
+        $v2 = $this->makeVehicle([
+            'purchase_price' => 1000, 'down_payment' => 1000,
+            'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
+        ]);
+
+        // 매입 미완료 (잔금 미지급) → 제외
+        $v3 = $this->makeVehicle(['purchase_price' => 1000, 'down_payment' => 500]);
+
+        $this->assertSame(1, Vehicle::action('deregistration_needed')->count());
+    }
+
     // 2026-05-19 풀회의 P0-2 — scopeAction SQL이 Draft PBP를 차감하면 재무 승인 우회 가능.
     // confirmed_at IS NOT NULL 가드로 Draft PBP는 카운트 분자에서 제외돼야 함.
     // payment_date를 어제로 — SQLite 문자열 비교에서 today datetime("YYYY-MM-DD HH:MM:SS")이

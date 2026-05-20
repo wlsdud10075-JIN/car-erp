@@ -420,6 +420,13 @@ class Vehicle extends Model
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
+            // 2026-05-20 사용자 정정 — KRW 통화 시 환율 자동 1 normalize.
+            // "한국돈인데 환율 쓸 필요 없음" 직관 보존 + DB CHECK (sale_price > 0 시 exchange_rate > 0) 통과.
+            // 진입점 통합 (UI 폼·시드·factory·tinker 모두 동일 정책).
+            if ($vehicle->currency === 'KRW' && (float) $vehicle->exchange_rate !== 1.0) {
+                $vehicle->exchange_rate = 1;
+            }
+
             // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).
             // 재무 확정 잔금 있는 차량의 매입가·판매가·환율·면장금액·비용·바이어·담당자 변경은
             // admin/super 잠금 해제 후 1회만 통과 (cache token 1회 소비 → 즉시 재잠금).
@@ -970,6 +977,7 @@ class Vehicle extends Model
         // 정산 액션 중 settlement_*·receivable_risk는 거래완료·잔여 미수금 대상이라 active 제외
         $activeOnly = [
             'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
+            'deregistration_needed',
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
             'exchange_rate_missing', 'clearance_stuck',
@@ -1005,6 +1013,19 @@ class Vehicle extends Model
             'shipping_needed' => $q->whereNotNull('export_declaration_document')
                 ->whereNull('bl_document'),
             'dhl_needed' => $q->whereNotNull('bl_document'),
+
+            // 2026-05-20 사용자 요청 — 매입 완료(미지급 ≤ 0) AND 말소 미처리 차량.
+            // canHandleDeregistration 사용자(영업·수출통관·관리·admin)의 액션 큐.
+            // SQL은 scopeAction('purchase_unpaid') 미지급 식의 부호 반전 (≤ 0).
+            'deregistration_needed' => $q->where('purchase_price', '>', 0)
+                ->where(fn ($q2) => $q2->where('is_deregistered', false)
+                    ->orWhereNull('deregistration_document'))
+                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                             - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
+                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                          WHERE vehicle_id = vehicles.id
+                                          AND payment_date IS NOT NULL AND payment_date <= ?
+                                          AND confirmed_at IS NOT NULL), 0)) <= 0', [now()->toDateString()]),
 
             // ── 통관 role (7) ──
             'clearance_request_needed' => $q->where('sale_price', '>', 0)

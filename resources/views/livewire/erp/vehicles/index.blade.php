@@ -1099,13 +1099,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         // C1 + 2026-05-19 풀회의 안건 E — 판매 정보 입력(sale_price > 0) 시 필수 필드 강화.
         //   - 회의 명세: "판매일, 바이어, 통화, 판매가, 환율은 반드시 기입"
         //   - currency는 select 강제(default 'USD') → 별도 추가 불필요
-        //   - exchange_rate는 외화·KRW 모두 > 0 강제 (KRW는 default 1로 자연 통과)
-        //   - C1 원형: 외화 한정. 본 회의에서 sale_price > 0 일반화로 확장 (KRW도 침묵 누락 차단)
+        //   - 2026-05-20 사용자 정정: KRW는 환율 입력 불필요 (한국돈). Vehicle::saving 훅이 자동 1 normalize.
+        //   - 외화만 사용자 명시 입력 강제 (C1 원형 보존).
         $salePrice = (float) str_replace(',', '', $this->sale_price_str ?: '0');
         if ($salePrice > 0) {
             $rules['sale_date'] = ['required', 'date'];
             $rules['buyer_id_str'] = ['required', 'exists:buyers,id'];
-            $rules['exchange_rate_str'] = ['required', 'numeric', 'gt:0'];
+            if ($this->currency !== 'KRW') {
+                $rules['exchange_rate_str'] = ['required', 'numeric', 'gt:0'];
+            }
         }
 
         $attributes = [

@@ -613,6 +613,7 @@ class WorkflowGapTest extends TestCase
     {
         $settlementUser = User::factory()->create(['permission' => 'user', 'role' => '재무']);
         $v = $this->makeVehicle([
+            'currency' => 'USD',   // 2026-05-20 — KRW saving 훅 강제 1 회피 (외화 환율 테스트 의도)
             'purchase_price' => 1000000,
             'selling_fee' => 700000,
             'exchange_rate' => 1300,
@@ -730,20 +731,45 @@ class WorkflowGapTest extends TestCase
 
     public function test_e_sale_required_exchange_rate_when_sale_price_set(): void
     {
+        // 2026-05-20 사용자 정정 — KRW는 환율 자동 1 normalize. 외화 시나리오만 required.
         $admin = User::factory()->create(['permission' => 'admin']);
-        $v = $this->makeVehicle();
+        $v = $this->makeVehicle(['currency' => 'USD']);
         $buyer = Buyer::firstOrCreate(['name' => 'E TEST BUYER'], ['is_active' => true]);
 
         $this->actingAs($admin);
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
+            ->set('currency', 'USD')
             ->set('sale_price_str', '1000000')
             ->set('sale_date', '2026-05-01')
             ->set('buyer_id_str', (string) $buyer->id)
             ->set('exchange_rate_str', '0')
             ->call('save')
             ->assertHasErrors(['exchange_rate_str']);
+    }
+
+    public function test_e_sale_krw_auto_normalizes_exchange_rate_to_one(): void
+    {
+        // 2026-05-20 사용자 정정 — KRW + sale_price > 0이면 saving 훅이 exchange_rate=1 자동 normalize.
+        // 사용자 직관 "한국돈인데 환율 쓸 필요 없음" 보존 + DB CHECK exchange_rate > 0 통과.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();   // currency='KRW'
+        $buyer = Buyer::firstOrCreate(['name' => 'E KRW BUYER'], ['is_active' => true]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('sale_price_str', '5000000')
+            ->set('sale_date', '2026-05-01')
+            ->set('buyer_id_str', (string) $buyer->id)
+            ->set('exchange_rate_str', '0')   // 사용자가 비워둬도 OK
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $v->refresh();
+        $this->assertEquals(1.0, (float) $v->exchange_rate, 'KRW 차량은 saving 훅이 환율 1 자동 normalize');
     }
 
     public function test_e_sale_all_required_satisfied_passes(): void
@@ -856,6 +882,7 @@ class WorkflowGapTest extends TestCase
     public function test_q10_h4_snapshot_captured_on_paid(): void
     {
         $v = $this->makeVehicle([
+            'currency' => 'USD',   // 2026-05-20 — KRW saving 훅 강제 1 회피 (외화 환율 snapshot 테스트)
             'purchase_price' => 1000000,
             'exchange_rate' => 1300,
             'export_declaration_amount' => 5000,

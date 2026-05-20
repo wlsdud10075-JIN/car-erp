@@ -239,6 +239,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
         return [
+            // 2026-05-20 사용자 요청 — canHandleDeregistration 사용자(수출통관 포함) 액션.
+            $this->row('말소 처리 필요',      '매입 완료 → 말소 미처리',                   $c('deregistration_needed'),            'bg-red-500',   'deregistration_needed', true),
             $this->row('수출통관 신청 필요',  '판매 완납 → 면장 미업로드',                 $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
             $this->row('통관 바이어/일자 누락','판매 진입 → export_buyer 또는 shipping_date 없음', $c('clearance_info_missing'),     'bg-amber-500', 'clearance_info_missing',         true),
             $this->row('포워딩사 미지정',     '통관 진입 → forwarding 없음',                $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing',             true),
