@@ -141,3 +141,60 @@ document.addEventListener('livewire:navigated', () => initVehicleGauge());
 if (window.Livewire) {
     window.Livewire.hook('morph.updated', () => initVehicleGauge());
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// UX #4·5 (2026-05-20) — 한국 13개 은행 계좌 mask + RRN mask 헬퍼.
+//
+// Alpine.store('koreanBanks') 로 전역 노출 — 차량 편집 매입처 계좌 / RRN input 에서 사용.
+//   $store.koreanBanks.applyMask(bankName, value) → 은행별 mask 적용 후 반환
+//   $store.koreanBanks.patterns → 13개 은행 데이터 (datalist 자동완성용)
+// ──────────────────────────────────────────────────────────────────────────
+
+function applyDashPattern(value, pattern) {
+    const digits = value.replace(/\D/g, '');
+    if (!pattern || !pattern.length) return digits;
+    let out = '';
+    let pos = 0;
+    for (const len of pattern) {
+        if (pos >= digits.length) break;
+        if (out !== '') out += '-';
+        out += digits.substring(pos, pos + len);
+        pos += len;
+    }
+    return out;
+}
+
+document.addEventListener('alpine:init', () => {
+    Alpine.store('koreanBanks', {
+        // 주요 한국 은행 13개 + 표준 mask 패턴 (사용자 메모리 2026-05-20)
+        patterns: {
+            '국민은행': [6, 2, 6],
+            '신한은행': [3, 3, 6],
+            '우리은행': [4, 3, 6],
+            '하나은행': [3, 6, 5],
+            '농협': [3, 4, 4, 2],
+            'IBK기업은행': [3, 6, 2, 3],
+            '우체국': [3, 6, 3],
+            '카카오뱅크': [4, 2, 7],
+            '토스뱅크': [4, 4, 4],
+            '새마을금고': [4, 2, 7],
+            '부산은행': [3, 2, 6, 1],
+            'SC제일은행': [3, 2, 6],
+            '시티은행': [3, 6, 3],
+        },
+        names() {
+            return Object.keys(this.patterns);
+        },
+        applyMask(bankName, value) {
+            return applyDashPattern(value, this.patterns[bankName] || null);
+        },
+    });
+
+    // RRN mask helper — 6자리 + 7자리 자동 hyphen (000000-0000000)
+    Alpine.store('rrnMask', {
+        apply(value) {
+            const digits = value.replace(/\D/g, '').slice(0, 13);
+            return digits.length > 6 ? digits.slice(0, 6) + '-' + digits.slice(6) : digits;
+        },
+    });
+});

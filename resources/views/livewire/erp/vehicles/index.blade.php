@@ -2622,8 +2622,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div x-data="{ show: false }">
                     <label class="label-base">소유자 주민(법인)등록번호</label>
                     <div class="relative">
-                        <input wire:model="nice_reg_owner_rrn" :type="show ? 'text' : 'password'"
-                               class="input-base pr-10 font-mono" placeholder="000000-0000000" autocomplete="off" />
+                        {{-- UX #4 (2026-05-20) — Alpine x-on:input + $store.rrnMask 로 자동 mask. wire:model.blur 로 blur 시점 sync. --}}
+                        <input wire:model.blur="nice_reg_owner_rrn" :type="show ? 'text' : 'password'"
+                               x-on:input="$el.value = $store.rrnMask.apply($el.value)"
+                               class="input-base pr-10 font-mono" placeholder="000000-0000000" autocomplete="off" maxlength="14" />
                         <button type="button" @click="show = !show"
                                 class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-gray-400 hover:text-gray-600"
                                 :title="show ? '숨기기' : '표시'">
@@ -2685,15 +2687,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
+            {{-- UX #5 (2026-05-20) — 은행명 datalist 자동완성 (13개) + 계좌번호 동적 mask ($store.koreanBanks) --}}
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-400"></span>
                 <span class="section-title">매입처 계좌 정보 (송금 대상)</span>
             </div>
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-2">
+            <div x-data class="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 <div>
                     <label class="label-base">은행명</label>
-                    <input wire:model="purchase_seller_bank" type="text" class="input-base" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" />
+                    <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
+                           class="input-base" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
+                           x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
+                    <datalist id="korean-banks-list">
+                        <template x-for="bank in $store.koreanBanks.names()" :key="bank">
+                            <option :value="bank"></option>
+                        </template>
+                    </datalist>
                 </div>
                 <div>
                     <label class="label-base">예금주</label>
@@ -2703,8 +2713,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <label class="label-base flex items-center gap-1">
                         계좌번호
                         <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
+                        <span class="text-[10px] font-normal text-gray-400">— 은행 선택 시 자동 hyphen</span>
                     </label>
-                    <input wire:model="purchase_seller_account" type="text" class="input-base font-mono" placeholder="123-456-789012" autocomplete="off" />
+                    <input x-ref="accountInput" wire:model.blur="purchase_seller_account" type="text"
+                           class="input-base font-mono" placeholder="123-456-789012" autocomplete="off"
+                           x-on:input="$el.value = $store.koreanBanks.applyMask($refs.bankInput.value, $el.value)" />
                 </div>
                 <div class="col-span-2">
                     <label class="label-base">계좌 메모</label>
