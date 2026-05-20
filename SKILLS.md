@@ -36,9 +36,22 @@ public function getProgressStatusAttribute(): string
 {
     // 큐 17 — 폐기 컨셉 제거. 10단계.
     // 큐 2.6 — v2 이중 트리거 (캐스케이드 — 다음 단계 = 이전 단계 트리거 AND 현재 단계 트리거).
-    $v2 = ((int) ($this->progress_status_rule_version ?? 2)) >= 2;
+    // 안건 J 본격 (2026-05-20) — v3 거래완료 trigger 단순화 (사용자 의도 100% 반영).
+    //   v3 거래완료 = bl_document 단독 (DHL 무관). 신규 row default.
+    //   DHL 발송 = 거래완료 후 별도 액션 (dhl_dispatch_needed 액션 큐).
+    //   선적완료/선적중/수출통관완료/수출통관중 = v2 동일 trigger 유지.
+    //   부작용: B/L 발급일 ≈ 반입지 입력일 → cascade 우선순위로 '선적완료' 단계 머무는 시간 짧음 (운영 현실).
+    $ruleVersion = (int) ($this->progress_status_rule_version ?? 2);
+    $v3 = $ruleVersion >= 3;
+    $v2 = $ruleVersion >= 2;
 
-    if ($v2) {
+    if ($v3) {
+        if ($this->bl_document) return '거래완료';                                 // 단독 (v2 와 다름)
+        if ($this->bl_document && $this->bl_loading_location) return '선적완료';   // cascade 위 매칭으로 거의 안 노출
+        if ($this->bl_loading_location && $this->is_export_cleared) return '선적중';
+        if ($this->is_export_cleared && $this->export_declaration_document) return '수출통관완료';
+        if ($this->export_buyer_id && $this->shipping_date) return '수출통관중';
+    } elseif ($v2) {
         if ($this->dhl_request && $this->bl_document) return '거래완료';
         if ($this->bl_document && $this->bl_loading_location) return '선적완료';
         if ($this->bl_loading_location && $this->is_export_cleared) return '선적중';
@@ -368,11 +381,13 @@ public function mount(): void
 ```php
 private function applyActionFilter($q)
 {
-    // ERP 대시보드 액션 5종은 active 차량 한정 (dhl_request=false)
-    // 큐 17 — is_disposed 컬럼 제거 (폐기 컨셉 없음).
+    // ERP 대시보드 액션 5종은 active 차량 한정 (progress_status_cache != '거래완료')
+    // 안건 J 본격 (2026-05-20) — dhl_request 직접 참조 폐기. v2/v3 cascade 호환.
     $userDashActions = ['purchase_unpaid','sale_unpaid','clearance_needed','shipping_needed','dhl_needed'];
     if (in_array($this->action, $userDashActions, true)) {
-        $q = $q->where('dhl_request', false);
+        $q = $q->where(fn ($q2) => $q2
+            ->where('progress_status_cache', '!=', '거래완료')
+            ->orWhereNull('progress_status_cache'));
     }
     return match ($this->action) {
         'purchase_unpaid'  => $q->where('purchase_price','>',0)->whereRaw('(매입 미지급 식) > 0'),

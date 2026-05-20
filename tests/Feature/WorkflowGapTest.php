@@ -1823,4 +1823,88 @@ class WorkflowGapTest extends TestCase
         $count = SavingsStatus::where('vehicle_id', $v->id)->count();
         $this->assertSame(0, $count);
     }
+
+    // ── 2026-05-20 안건 J 본격 — v3 거래완료 trigger 단순화 ──
+
+    public function test_j_v3_treats_bl_document_alone_as_done(): void
+    {
+        // v3 거래완료 = bl_document 단독 (DHL 무관).
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'bl_document' => 'bl.pdf',
+            'dhl_request' => false,  // DHL 미신청
+        ]);
+        $this->assertSame('거래완료', $v->progress_status);
+    }
+
+    public function test_j_v3_dhl_request_alone_does_not_complete(): void
+    {
+        // v3 — DHL 신청만으로 거래완료 X (bl_document 필수).
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'dhl_request' => true,   // DHL 신청
+            // bl_document 없음
+        ]);
+        $this->assertNotSame('거래완료', $v->progress_status);
+    }
+
+    public function test_j_v2_still_requires_dhl_request(): void
+    {
+        // v2 row 자동 강등 X — v2 거래완료는 여전히 dhl_request && bl_document 둘 다 필요.
+        // bl_loading_location 도 set — v2 선적완료 trigger 충족 (이중 trigger).
+        $v = $this->makeVehicle([
+            'progress_status_rule_version' => 2,
+            'bl_document' => 'bl.pdf',
+            'bl_loading_location' => '부산항',
+            'dhl_request' => false,
+        ]);
+        $this->assertSame('선적완료', $v->progress_status, 'v2 grandfather: bl_document 만으론 거래완료 아님');
+
+        $v->dhl_request = true;
+        $this->assertSame('거래완료', $v->progress_status, 'v2: DHL 신청 추가 시 거래완료');
+    }
+
+    public function test_j_new_vehicle_defaults_to_v3(): void
+    {
+        // 마이그 — vehicles.progress_status_rule_version DEFAULT 3 (신규 row 만 영향).
+        $v = Vehicle::create([
+            'vehicle_number' => 'J-DEFAULT',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'dhl_request' => false,
+        ]);
+        $this->assertSame(3, (int) $v->fresh()->progress_status_rule_version);
+    }
+
+    public function test_j_scope_action_active_uses_progress_status_cache(): void
+    {
+        // scopeAction activeOnly — progress_status_cache != '거래완료' 단일 출처 (v2/v3 호환).
+        // 거래완료 차량 (cache='거래완료') 은 active 필터에서 제외.
+        $vDone = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'bl_document' => 'bl.pdf',
+        ]);
+        $vDone->refreshCaches();   // cache 갱신
+        $vActive = $this->makeVehicle(['purchase_price' => 1_000_000]);
+
+        $count = Vehicle::query()->action('purchase_unpaid')->count();
+        // vActive 만 active 필터 통과 (미지급 > 0 & 거래완료 아님)
+        $this->assertSame(1, $count);
+    }
+
+    public function test_j_settlement_create_needed_uses_cache(): void
+    {
+        // scopeAction settlement_create_needed — progress_status_cache='거래완료' 차량 중 정산 미생성.
+        $vDone = $this->makeVehicle([
+            'progress_status_rule_version' => 3,
+            'bl_document' => 'bl.pdf',
+        ]);
+        $vDone->refreshCaches();
+        $vNotDone = $this->makeVehicle(['progress_status_rule_version' => 3]);
+        $vNotDone->refreshCaches();
+
+        $count = Vehicle::query()->action('settlement_create_needed')->count();
+        $this->assertSame(1, $count, '거래완료 차량만 정산 생성 필요');
+    }
 }
