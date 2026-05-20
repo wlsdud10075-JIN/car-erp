@@ -37,7 +37,9 @@ class Vehicle extends Model
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
-        'down_payment', 'selling_fee_payment', 'purchase_remittance_memo',
+        // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
+        // 2컬럼은 purchase_balance_payments.type enum (down/selling_fee) 로 통합.
+        'purchase_remittance_memo',
         'is_deregistered', 'deregistration_document',
         'sale_date', 'currency', 'exchange_rate', 'buyer_id', 'consignee_id',
         'sale_price', 'tax_dc', 'commission', 'transport_fee', 'auto_loading',
@@ -386,7 +388,8 @@ class Vehicle extends Model
         'nice_reg_owner_rrn',                  // 마스킹 — value 미저장
         // 큐 22-A-3 — 4컬럼(deposit_down_payment / interim_payment / advance_payment1 / advance_payment2) DROP.
         // 변경 추적은 이제 final_payments rows 단위 (FinalPayment 모델 events).
-        'down_payment', 'selling_fee_payment',
+        // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
+        // 추적은 purchase_balance_payments rows 단위 (PBP 모델 events).
         'savings_used',
         // 큐 21 — 회계 영향 컬럼 (LEDGER_LOCK_FIELDS와 동일)
         'purchase_price', 'selling_fee', 'tax_dc', 'commission',
@@ -560,8 +563,9 @@ class Vehicle extends Model
             if ($vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
                 return;
             }
-            $unpaid = (int) ($vehicle->purchase_price + $vehicle->selling_fee
-                - $vehicle->down_payment - $vehicle->selling_fee_payment);
+            // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
+            // 자동 Draft 트리거 조건이 'PBP count == 0' 이므로 이 시점엔 confirmed PBP 도 없음.
+            $unpaid = (int) ($vehicle->purchase_price + $vehicle->selling_fee);
             if ($unpaid <= 0) {
                 return;
             }
@@ -931,13 +935,14 @@ class Vehicle extends Model
     // payment_date <= today AND confirmed_at IS NOT NULL 동시 만족해야 ledger 반영.
     public function getPurchaseUnpaidAmountAttribute(): int
     {
+        // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
+        // type 무관 confirmed PBP rows 만 합산 (22-A-3 FP 분자와 대칭).
         $totalPurchase = $this->purchase_price + $this->selling_fee;
-        $totalPaid = $this->down_payment + $this->selling_fee_payment
-            + $this->purchaseBalancePayments
-                ->filter(fn ($p) => $p->payment_date !== null
-                    && $p->payment_date->lte(now())
-                    && $p->confirmed_at !== null)
-                ->sum('amount');
+        $totalPaid = $this->purchaseBalancePayments
+            ->filter(fn ($p) => $p->payment_date !== null
+                && $p->payment_date->lte(now())
+                && $p->confirmed_at !== null)
+            ->sum('amount');
 
         return (int) ($totalPurchase - $totalPaid);
     }
@@ -1062,12 +1067,11 @@ class Vehicle extends Model
             // ── 영업 role (5) ──
             'purchase_unpaid' => $q
                 ->where('purchase_price', '>', 0)
-                // CAST AS SIGNED — BIGINT UNSIGNED 컬럼의 빼기 결과가 음수면 underflow.
-                // 매입가/매도비 < 지급 합계가 가능 (선지급·환불 케이스) → SIGNED로 평가.
+                // 큐 22-C-E (2026-05-20) — 2컬럼 DROP 후 단순화.
+                // CAST AS SIGNED — BIGINT UNSIGNED underflow 방지 (환불·선지급 케이스).
                 // 큐 20-B 분자 A안 — confirmed_at IS NOT NULL 가드 (재무 승인 우회 차단).
-                // getPurchaseUnpaidAmountAttribute L852~860과 정합 (SKILLS §13 분모 단일 출처).
+                // getPurchaseUnpaidAmountAttribute 와 정합 (SKILLS §13 분모 단일 출처).
                 ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                             - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                           WHERE vehicle_id = vehicles.id
                                           AND payment_date IS NOT NULL AND payment_date <= ?
@@ -1091,8 +1095,8 @@ class Vehicle extends Model
             'deregistration_needed' => $q->where('purchase_price', '>', 0)
                 ->where(fn ($q2) => $q2->where('is_deregistered', false)
                     ->orWhereNull('deregistration_document'))
+                // 큐 22-C-E (2026-05-20) — 2컬럼 DROP 후 단순화. purchase_unpaid 부호 반전.
                 ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                             - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                           WHERE vehicle_id = vehicles.id
                                           AND payment_date IS NOT NULL AND payment_date <= ?

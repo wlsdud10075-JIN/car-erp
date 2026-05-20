@@ -264,17 +264,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->sum('sale_unpaid_amount_krw_cache') ?? 0);
 
         $today = now()->toDateString();
+        // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
         $totalPurchaseUnpaid = (int) (Vehicle::query()
             ->whereNull('deleted_at')
             ->where('purchase_price', '>', 0)
             // CAST AS SIGNED — BIGINT UNSIGNED 빼기 결과가 음수면 underflow. WHERE/SELECT 양쪽 적용.
             ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                         - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
                                       AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [$today])
             ->selectRaw('SUM(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                         - CAST(down_payment AS SIGNED) - CAST(selling_fee_payment AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
                                       AND payment_date IS NOT NULL AND payment_date <= ?), 0)) as total', [$today])

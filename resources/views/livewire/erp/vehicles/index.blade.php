@@ -680,8 +680,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cost_transfer_str   = $v->cost_transfer  ? number_format($v->cost_transfer)  : '';
         $this->cost_extra1_str     = $v->cost_extra1    ? number_format($v->cost_extra1)    : '';
         $this->cost_extra2_str     = $v->cost_extra2    ? number_format($v->cost_extra2)    : '';
-        $this->down_payment_str        = $v->down_payment        ? number_format($v->down_payment)        : '';
-        $this->selling_fee_payment_str = $v->selling_fee_payment ? number_format($v->selling_fee_payment) : '';
+        // 22-C-E (2026-05-20) — 2 _str = type별 confirmed PBP 합산 (down/selling_fee).
+        $confirmedPbp = $v->purchaseBalancePayments->whereNotNull('confirmed_at');
+        $sumPbpByType = function (string $type) use ($confirmedPbp): string {
+            $sum = $confirmedPbp->where('type', $type)->sum('amount');
+
+            return $sum > 0 ? number_format((int) $sum) : '';
+        };
+        $this->down_payment_str        = $sumPbpByType('down');
+        $this->selling_fee_payment_str = $sumPbpByType('selling_fee');
         $this->purchase_remittance_memo = $v->purchase_remittance_memo ?? '';
         $this->is_deregistered = $v->is_deregistered;
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
@@ -1351,8 +1358,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_transfer'    => $toInt($this->cost_transfer_str),
             'cost_extra1'      => $toInt($this->cost_extra1_str),
             'cost_extra2'      => $toInt($this->cost_extra2_str),
-            'down_payment'          => $toInt($this->down_payment_str),
-            'selling_fee_payment'   => $toInt($this->selling_fee_payment_str),
+            // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
+            // _str ↔ PBP type='down'/'selling_fee' confirmed row 동기화는 vehicle save 이후 별도 처리.
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
             'is_deregistered'  => $this->is_deregistered,
             // 판매
@@ -1510,7 +1517,49 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
 
-            // 매입 잔금 동기화
+            // 22-C-E 사용자 정정 (2026-05-20) — 2 항목 (계약금/매도비) PBP type별 sync.
+            // 재무·admin 입력 (canConfirmFinance) — 각 _str 값과 type별 confirmed 합산 비교 후 변경분만 row 재생성.
+            // confirmed_at SET row 잠금 우회 ($allowConfirmedMutation flag) — 2 항목은 분류 메타데이터.
+            if (auth()->user()?->canConfirmFinance()) {
+                $pbpTypeStrMap = [
+                    'down' => $this->down_payment_str,
+                    'selling_fee' => $this->selling_fee_payment_str,
+                ];
+                foreach ($pbpTypeStrMap as $type => $str) {
+                    $newAmount = $str === '' ? 0.0 : (float) str_replace(',', '', $str);
+                    $existingSum = (float) $vehicle->purchaseBalancePayments()
+                        ->where('type', $type)
+                        ->whereNotNull('confirmed_at')
+                        ->sum('amount');
+                    if (abs($newAmount - $existingSum) < 0.01) {
+                        continue;
+                    }
+                    PurchaseBalancePayment::$allowConfirmedMutation = true;
+                    try {
+                        $vehicle->purchaseBalancePayments()
+                            ->where('type', $type)
+                            ->whereNotNull('confirmed_at')
+                            ->delete();
+                    } finally {
+                        PurchaseBalancePayment::$allowConfirmedMutation = false;
+                    }
+                    if ($newAmount > 0) {
+                        $vehicle->purchaseBalancePayments()->create([
+                            'amount' => $newAmount,
+                            'type' => $type,
+                            'payment_date' => today(),
+                            'confirmed_at' => now(),
+                            'confirmed_by_user_id' => auth()->id(),
+                            'note' => match ($type) {
+                                'down' => '계약금',
+                                'selling_fee' => '매도비',
+                            },
+                        ]);
+                    }
+                }
+            }
+
+            // 매입 잔금 동기화 (type='balance' default)
             $existingPurchaseIds = $vehicle->purchaseBalancePayments->pluck('id')->toArray();
             $submittedPurchaseIds = collect($this->purchaseBalancePayments)->pluck('id')->filter()->toArray();
             PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIds, $submittedPurchaseIds))->delete();

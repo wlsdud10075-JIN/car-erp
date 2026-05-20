@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\ForwardingCompany;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
@@ -382,6 +383,21 @@ class AdminDashboardTest extends TestCase
             }
         }
 
+        // 큐 22-C-E (2026-05-20) — vehicles 2컬럼 DROP. override 키가 있으면 confirmed PBP 자동 생성.
+        $purchase2Map = [
+            'down_payment' => 'down',
+            'selling_fee_payment' => 'selling_fee',
+        ];
+        $purchase2Inserts = [];
+        foreach ($purchase2Map as $col => $type) {
+            if (array_key_exists($col, $overrides)) {
+                if ((float) $overrides[$col] > 0) {
+                    $purchase2Inserts[] = ['amount' => (float) $overrides[$col], 'type' => $type];
+                }
+                unset($overrides[$col]);
+            }
+        }
+
         $v = Vehicle::create(array_merge($defaults, $overrides));
 
         foreach ($sale4Inserts as $row) {
@@ -391,7 +407,22 @@ class AdminDashboardTest extends TestCase
                 'confirmed_at' => now(),
             ]);
         }
-        if (! empty($sale4Inserts)) {
+        if (! empty($purchase2Inserts)) {
+            PurchaseBalancePayment::$skipCreatingGuard = true;
+            try {
+                foreach ($purchase2Inserts as $row) {
+                    $v->purchaseBalancePayments()->create([
+                        'amount' => $row['amount'],
+                        'type' => $row['type'],
+                        'payment_date' => now()->subDay()->toDateString(),
+                        'confirmed_at' => now(),
+                    ]);
+                }
+            } finally {
+                PurchaseBalancePayment::$skipCreatingGuard = false;
+            }
+        }
+        if (! empty($sale4Inserts) || ! empty($purchase2Inserts)) {
             $v->refresh();
         }
 

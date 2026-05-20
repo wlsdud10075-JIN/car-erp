@@ -160,7 +160,19 @@ class PaymentConfirmationServiceTest extends TestCase
     public function test_confirm_purchase_payment_sets_confirmed_at_and_updates_ledger(): void
     {
         $c = $this->makeContext();
-        $c['vehicle']->update(['purchase_price' => 80_000_000, 'down_payment' => 30_000_000]);
+        $c['vehicle']->update(['purchase_price' => 80_000_000]);
+        // 큐 22-C-E (2026-05-20) — down_payment 컬럼 DROP. PBP 'down' type confirmed row 로 변환.
+        PurchaseBalancePayment::$skipCreatingGuard = true;
+        try {
+            $c['vehicle']->purchaseBalancePayments()->create([
+                'amount' => 30_000_000,
+                'type' => 'down',
+                'payment_date' => now()->toDateString(),
+                'confirmed_at' => now(),
+            ]);
+        } finally {
+            PurchaseBalancePayment::$skipCreatingGuard = false;
+        }
 
         $payment = PurchaseBalancePayment::create([
             'vehicle_id' => $c['vehicle']->id,

@@ -76,6 +76,21 @@ class WorkflowGapTest extends TestCase
             }
         }
 
+        // 큐 22-C-E (2026-05-20) — vehicles 2컬럼 DROP. override 키가 있으면 confirmed PBP 자동 생성.
+        $purchase2Map = [
+            'down_payment' => 'down',
+            'selling_fee_payment' => 'selling_fee',
+        ];
+        $purchase2Inserts = [];
+        foreach ($purchase2Map as $col => $type) {
+            if (array_key_exists($col, $overrides)) {
+                if ((float) $overrides[$col] > 0) {
+                    $purchase2Inserts[] = ['amount' => (float) $overrides[$col], 'type' => $type];
+                }
+                unset($overrides[$col]);
+            }
+        }
+
         $v = Vehicle::create(array_merge($defaults, $overrides));
 
         foreach ($sale4Inserts as $row) {
@@ -85,7 +100,23 @@ class WorkflowGapTest extends TestCase
                 'confirmed_at' => now(),
             ]);
         }
-        if (! empty($sale4Inserts)) {
+        if (! empty($purchase2Inserts)) {
+            // PBP::creating canConfirmFinance 가드 우회 ($skipCreatingGuard) — 테스트 헬퍼 셋업.
+            PurchaseBalancePayment::$skipCreatingGuard = true;
+            try {
+                foreach ($purchase2Inserts as $row) {
+                    $v->purchaseBalancePayments()->create([
+                        'amount' => $row['amount'],
+                        'type' => $row['type'],
+                        'payment_date' => now()->subDay()->toDateString(),
+                        'confirmed_at' => now(),
+                    ]);
+                }
+            } finally {
+                PurchaseBalancePayment::$skipCreatingGuard = false;
+            }
+        }
+        if (! empty($sale4Inserts) || ! empty($purchase2Inserts)) {
             $v->refresh();
         }
 
@@ -908,6 +939,7 @@ class WorkflowGapTest extends TestCase
         $this->actingAs($admin);
 
         // 영업 매입가 입력 → 자동 PBP Draft 1건 생성
+        // 큐 22-C-E (2026-05-20) — down_payment 컬럼 DROP. 자동 Draft amount = price + fee.
         $v = Vehicle::create([
             'vehicle_number' => '22C-AUTO-1',
             'sales_channel' => 'export',
@@ -915,13 +947,12 @@ class WorkflowGapTest extends TestCase
             'exchange_rate' => 1,
             'purchase_price' => 5000000,
             'selling_fee' => 500000,
-            'down_payment' => 1000000,
             'dhl_request' => false,
         ]);
 
         $pbps = $v->purchaseBalancePayments()->get();   // fresh query
         $this->assertCount(1, $pbps, '자동 PBP Draft 1건 생성');
-        $this->assertSame(4500000, (int) $pbps->first()->amount, 'amount = price + fee - down = 5000000 + 500000 - 1000000');
+        $this->assertSame(5500000, (int) $pbps->first()->amount, 'amount = price + fee = 5000000 + 500000');
         $this->assertNull($pbps->first()->payment_date, 'Draft: payment_date NULL');
         $this->assertNull($pbps->first()->confirmed_at, 'Draft: confirmed_at NULL');
         $this->assertSame($admin->id, $pbps->first()->created_by_user_id);
