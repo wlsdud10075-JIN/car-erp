@@ -486,11 +486,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 2026-05-19 풀회의 P0-1 — RRN(주민/법인등록번호) silent restore.
         // string 컬럼이라 FINANCIAL_FIELD_MAP의 float 비교 패턴 불가 → 별도 분기.
         // accessor가 자동 복호화하므로 평문 비교 가능.
-        $currentRrn = (string) ($this->nice_reg_owner_rrn ?? '');
-        $originalRrn = (string) ($original->nice_reg_owner_rrn ?? '');
-        if ($currentRrn !== $originalRrn) {
-            $this->nice_reg_owner_rrn = $originalRrn;
-            $restored++;
+        //
+        // Day 5 보강 (안건 C — 말소 [everyone]) — canHandleDeregistration() 사용자는
+        // 말소 처리 시 RRN 입력 필수(H10) → restore 대상에서 제외.
+        if (! auth()->user()?->canHandleDeregistration()) {
+            $currentRrn = (string) ($this->nice_reg_owner_rrn ?? '');
+            $originalRrn = (string) ($original->nice_reg_owner_rrn ?? '');
+            if ($currentRrn !== $originalRrn) {
+                $this->nice_reg_owner_rrn = $originalRrn;
+                $restored++;
+            }
         }
 
         if ($restored > 0) {
@@ -2712,6 +2717,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <hr class="section-divider">
             <div class="grid grid-cols-2 gap-3">
+                {{-- 2026-05-19 풀회의 안건 C — 말소 [everyone]. 재무 role 제외 (canHandleDeregistration). --}}
+                @if(auth()->user()->canHandleDeregistration())
                 <div>
                     <label class="label-base">말소완료</label>
                     <label class="flex items-center gap-2 text-sm cursor-pointer mt-1">
@@ -2731,6 +2738,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     @endif
                 </div>
+                @endif
                 <div class="col-span-2">
                     <label class="label-base">송금메모</label>
                     <textarea wire:model="purchase_remittance_memo" class="input-base" rows="2"></textarea>

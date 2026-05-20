@@ -768,6 +768,42 @@ class WorkflowGapTest extends TestCase
         $this->assertSame($buyer->id, $v->buyer_id);
     }
 
+    // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
+
+    public function test_c_can_handle_deregistration_allows_4_roles_blocks_finance(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+
+        $this->assertTrue($admin->canHandleDeregistration());
+        $this->assertTrue($sales->canHandleDeregistration());
+        $this->assertTrue($clearance->canHandleDeregistration());
+        $this->assertTrue($manager->canHandleDeregistration());
+        $this->assertFalse($finance->canHandleDeregistration(), '재무 role은 SoD로 말소 처리 차단');
+    }
+
+    public function test_c_clearance_role_can_set_rrn_for_deregistration(): void
+    {
+        // canHandleDeregistration() 사용자는 RRN silent restore에서 제외 (Day 5 보강).
+        // 수출통관 role이 말소 처리 시 RRN 입력 가능해야 H10 validation 통과.
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $v = $this->makeVehicle();
+
+        $this->actingAs($clearance);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('nice_reg_owner_rrn', '900101-1234567')
+            ->call('save')
+            ->assertSet('nice_reg_owner_rrn', '900101-1234567');
+
+        $v->refresh();
+        $this->assertSame('900101-1234567', $v->nice_reg_owner_rrn);
+    }
+
     // 2026-05-19 풀회의 P0-1 — RRN silent restore.
     // 정산 role이 RRN 변경 시도 → restoreFinancialFieldsFromOriginal에서 원값 복원.
     public function test_p0_rrn_silent_restore_for_settlement_role(): void

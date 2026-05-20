@@ -213,7 +213,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row('판매 미입금',         '판매 후 미회수 금액 존재',     $base('sale_unpaid')->count(),       'bg-amber-500',  'sale_unpaid',       true),
             $this->row('수출통관 신청 필요',  '판매 완납 → 면장서류 미업로드',$base('clearance_needed')->count(),  'bg-blue-500',   'clearance_needed'),
             $this->row('선적 처리 필요',      '수출통관 완료 → B/L 미처리',   $base('shipping_needed')->count(),   'bg-green-500',  'shipping_needed'),
-            $this->row('DHL 발송 필요',       '선적 완료 → DHL 미신청',       $base('dhl_needed')->count(),        'bg-teal-500',   'dhl_needed'),
+            $this->row('DHL 발송 대기',       '선적 완료 → DHL 미신청',       $base('dhl_needed')->count(),        'bg-teal-500',   'dhl_needed'),
             // 정산 대기는 settlements 라우트로 직접 이동
             ['label' => '정산 대기', 'desc' => '정산 방식 미입력 또는 확인 필요',
              'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
@@ -245,7 +245,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row('수출신고서 업로드',   '수출통관중 → 신고서 없음',                  $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
             $this->row('선적 처리 필요',      '면장 완료 → 반입지 미입력',                 $c('shipping_process_needed'),          'bg-green-500', 'shipping_process_needed'),
             $this->row('B/L 업로드 필요',     '선적중 → B/L 미업로드',                     $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
-            $this->row('DHL 발송 필요',       '선적완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
+            $this->row('DHL 발송 대기',       '선적완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
         ];
     }
 

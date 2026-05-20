@@ -199,6 +199,23 @@ class User extends Authenticatable
         return $this->isSuperAdmin();
     }
 
+    /**
+     * 2026-05-19 풀회의 안건 C — 말소 처리 [everyone] 권한.
+     *
+     * 사용자 명세: "어떤 부서든 할 수 있음" — 영업 한정 → 4 role 누구나.
+     * 단 SoD 보존: 재무는 자금 흐름 담당이라 말소 처리 근거 없음 → 제외.
+     *
+     * 허용: super / admin / role∈{영업, 수출통관, 관리}.
+     * 차단: role='재무'.
+     *
+     * 말소 처리에는 RRN 입력이 필수(H10 validation)이므로
+     * canHandleDeregistration() 사용자는 RRN silent restore 대상에서 제외 (Day 5 보강).
+     */
+    public function canHandleDeregistration(): bool
+    {
+        return $this->isAdmin() || in_array($this->role, ['영업', '수출통관', '관리'], true);
+    }
+
     public function salesman(): HasOne
     {
         return $this->hasOne(Salesman::class);
