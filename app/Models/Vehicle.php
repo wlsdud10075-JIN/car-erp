@@ -396,6 +396,9 @@ class Vehicle extends Model
         'buyer_id', 'salesman_id',
         // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).
         'is_deregistered', 'deregistration_document',
+        // 큐 22-C-light (2026-05-20) Security 해소조건 — 매입처 계좌 4컬럼 변경 audit.
+        // purchase_seller_account는 AuditLog::MASKED_COLUMNS 통해 마스킹 저장.
+        'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
     ];
 
     /**
@@ -522,6 +525,42 @@ class Vehicle extends Model
                 return;
             }
             $vehicle->syncSavingsUsage($delta);
+        });
+
+        // 큐 22-C-light (2026-05-20) — 매입 자동 PBP Draft 생성.
+        // 사용자 명세: "영업이 매입가·계좌 입력 → 재무 뱃지 → 재무 입금"
+        //   - Trigger: purchase_price > 0 AND PBP 0건 (최초 1회)
+        //   - 매입가 변경 시 재생성 X (PO 우려 회피, 영업이 수동 정정)
+        //   - amount = 실 미지급 전액 (글로벌 표준 SAP/NetSuite/Odoo/QuickBooks)
+        //   - payment_date·confirmed_at = NULL (Draft form)
+        //   - Skip: auth 없음(시드/artisan), 실 미지급 ≤ 0, paid Settlement 차량
+        // PBP::saved 훅의 refreshCaches는 DB::table::update로 saving 우회 → 무한 루프 X.
+        static::saved(function (Vehicle $vehicle) {
+            if (! auth()->check()) {
+                return;
+            }
+            if ($vehicle->purchase_price <= 0) {
+                return;
+            }
+            if ($vehicle->purchaseBalancePayments()->count() > 0) {
+                return;
+            }
+            if ($vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
+                return;
+            }
+            $unpaid = (int) ($vehicle->purchase_price + $vehicle->selling_fee
+                - $vehicle->down_payment - $vehicle->selling_fee_payment);
+            if ($unpaid <= 0) {
+                return;
+            }
+            PurchaseBalancePayment::create([
+                'vehicle_id' => $vehicle->id,
+                'amount' => $unpaid,
+                'payment_date' => null,
+                'confirmed_at' => null,
+                'created_by_user_id' => auth()->id(),
+                'note' => '자동 생성 — 영업 매입 정보 저장 시',
+            ]);
         });
     }
 

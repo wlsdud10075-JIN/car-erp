@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\FinalPayment;
+use App\Models\PurchaseBalancePayment;
 use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\SavingsStatus;
@@ -792,6 +793,111 @@ class WorkflowGapTest extends TestCase
         $v->refresh();
         $this->assertSame(1000000, (int) $v->sale_price);
         $this->assertSame($buyer->id, $v->buyer_id);
+    }
+
+    // ── 2026-05-20 큐 22-C-light — 매입 자동 PBP Draft 생성 ──
+
+    public function test_22c_auto_pbp_draft_created_on_purchase_price_input(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        // 영업 매입가 입력 → 자동 PBP Draft 1건 생성
+        $v = Vehicle::create([
+            'vehicle_number' => '22C-AUTO-1',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'purchase_price' => 5000000,
+            'selling_fee' => 500000,
+            'down_payment' => 1000000,
+            'dhl_request' => false,
+        ]);
+
+        $pbps = $v->purchaseBalancePayments()->get();   // fresh query
+        $this->assertCount(1, $pbps, '자동 PBP Draft 1건 생성');
+        $this->assertSame(4500000, (int) $pbps->first()->amount, 'amount = price + fee - down = 5000000 + 500000 - 1000000');
+        $this->assertNull($pbps->first()->payment_date, 'Draft: payment_date NULL');
+        $this->assertNull($pbps->first()->confirmed_at, 'Draft: confirmed_at NULL');
+        $this->assertSame($admin->id, $pbps->first()->created_by_user_id);
+    }
+
+    public function test_22c_auto_pbp_skipped_when_pbp_exists(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '22C-AUTO-2',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'purchase_price' => 5000000,
+            'dhl_request' => false,
+        ]);
+        $this->assertSame(1, $v->purchaseBalancePayments()->count(), '1차 자동 생성');
+
+        // 매입가 변경 → 자동 재생성 X (PO 우려 회피)
+        $v->purchase_price = 7000000;
+        $v->save();
+        $this->assertSame(1, $v->purchaseBalancePayments()->count(), '매입가 변경 시 PBP 재생성 X');
+    }
+
+    public function test_22c_auto_pbp_skipped_when_paid_settlement_exists(): void
+    {
+        // paid Settlement 차량에 매입가 변경 시도 → 자동 PBP 생성 차단 (defensive)
+        $admin = User::factory()->create(['permission' => 'admin']);
+
+        // 자동 생성 trigger 안 타게 시드 컨텍스트(auth 없음)로 차량 생성
+        $v = Vehicle::create([
+            'vehicle_number' => '22C-AUTO-3',
+            'sales_channel' => 'export',
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'purchase_price' => 5000000,
+            'dhl_request' => false,
+        ]);
+        $this->assertCount(0, $v->purchaseBalancePayments);
+
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        // admin 로그인 후 매입 정보 재저장 — paid라 자동 PBP skip
+        $this->actingAs($admin);
+        $v->memo = '변경 테스트';
+        $v->save();
+
+        $v->refresh();
+        $this->assertCount(0, $v->purchaseBalancePayments, 'paid Settlement 차량은 자동 PBP 생성 차단');
+    }
+
+    public function test_22c_pbp_creating_blocks_new_row_after_paid(): void
+    {
+        // PBP::creating 훅 — paid Settlement 후 신규 PBP 직접 생성 차단
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['purchase_price' => 5000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        $this->expectException(\DomainException::class);
+        $this->expectExceptionMessage('paid 상태');
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000000,
+            'payment_date' => null,
+        ]);
     }
 
     // ── 2026-05-19 풀회의 안건 C — 말소 [everyone] (canHandleDeregistration) ──
