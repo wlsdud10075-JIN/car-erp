@@ -27,13 +27,25 @@ class PipelineStripTest extends TestCase
     {
         $this->vehicleCounter++;
 
-        return Vehicle::create(array_merge([
+        $defaults = [
             'vehicle_number' => 'PIPE-'.$this->vehicleCounter,
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'dhl_request' => false,
-        ], $overrides));
+        ];
+
+        // 2026-05-19 풀회의 안건 E — sale_price > 0 시 sale_date·buyer_id 자동 채움.
+        if (($overrides['sale_price'] ?? 0) > 0) {
+            if (! array_key_exists('buyer_id', $overrides)) {
+                $defaults['buyer_id'] = Buyer::firstOrCreate(['name' => 'TEST BUYER'], ['is_active' => true])->id;
+            }
+            if (! array_key_exists('sale_date', $overrides)) {
+                $defaults['sale_date'] = '2026-05-01';
+            }
+        }
+
+        return Vehicle::create(array_merge($defaults, $overrides));
     }
 
     // ── 10단계 카운트 정확성 (큐 17 — 폐기 컨셉 제거 후 11→10) ─────────

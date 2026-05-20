@@ -350,10 +350,22 @@ class AdminDashboardTest extends TestCase
         static $i = 0;
         $i++;
 
-        return Vehicle::create(array_merge([
+        $defaults = [
             'vehicle_number' => 'SK-'.$i, 'sales_channel' => 'export', 'currency' => 'KRW',
             'dhl_request' => false, 'exchange_rate' => 1,
-        ], $overrides));
+        ];
+
+        // 2026-05-19 풀회의 안건 E — sale_price > 0 시 sale_date·buyer_id 자동 채움.
+        if (($overrides['sale_price'] ?? 0) > 0) {
+            if (! array_key_exists('buyer_id', $overrides)) {
+                $defaults['buyer_id'] = Buyer::firstOrCreate(['name' => 'TEST BUYER'], ['is_active' => true])->id;
+            }
+            if (! array_key_exists('sale_date', $overrides)) {
+                $defaults['sale_date'] = '2026-05-01';
+            }
+        }
+
+        return Vehicle::create(array_merge($defaults, $overrides));
     }
 
     public function test_settlement_kpis_monthly_aggregates_paid_by_salesman_and_month(): void

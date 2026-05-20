@@ -30,13 +30,25 @@ class DashboardActionCountsTest extends TestCase
     {
         $this->vehicleCounter++;
 
-        return Vehicle::create(array_merge([
+        $defaults = [
             'vehicle_number' => 'TEST-'.$this->vehicleCounter,
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'dhl_request' => false,
-        ], $overrides));
+        ];
+
+        // 2026-05-19 풀회의 안건 E — sale_price > 0 시 sale_date·buyer_id 자동 채움 (테스트 헬퍼 선행 PR).
+        if (($overrides['sale_price'] ?? 0) > 0) {
+            if (! array_key_exists('buyer_id', $overrides)) {
+                $defaults['buyer_id'] = Buyer::firstOrCreate(['name' => 'TEST BUYER'], ['is_active' => true])->id;
+            }
+            if (! array_key_exists('sale_date', $overrides)) {
+                $defaults['sale_date'] = '2026-05-01';
+            }
+        }
+
+        return Vehicle::create(array_merge($defaults, $overrides));
     }
 
     // ── 14 액션 케이스 (영업 5 / 통관 7 / 정산 5) ──────────────────────

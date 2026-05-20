@@ -40,13 +40,25 @@ class WorkflowGapTest extends TestCase
     {
         $this->counter++;
 
-        return Vehicle::create(array_merge([
+        $defaults = [
             'vehicle_number' => 'WGT-'.$this->counter,
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'dhl_request' => false,
-        ], $overrides));
+        ];
+
+        // 2026-05-19 풀회의 안건 E — sale_price > 0 시 sale_date·buyer_id 자동 채움 (테스트 헬퍼 선행 PR).
+        if (($overrides['sale_price'] ?? 0) > 0) {
+            if (! array_key_exists('buyer_id', $overrides)) {
+                $defaults['buyer_id'] = Buyer::firstOrCreate(['name' => 'TEST BUYER'], ['is_active' => true])->id;
+            }
+            if (! array_key_exists('sale_date', $overrides)) {
+                $defaults['sale_date'] = '2026-05-01';
+            }
+        }
+
+        return Vehicle::create(array_merge($defaults, $overrides));
     }
 
     // 큐 16 — test_c3_export_only_stages_skipped_for_heyman_channel 삭제
@@ -681,6 +693,79 @@ class WorkflowGapTest extends TestCase
             ->set('nice_reg_owner_rrn', '')
             ->call('save')
             ->assertHasErrors(['nice_reg_owner_rrn']);
+    }
+
+    // ── 2026-05-19 풀회의 안건 E — 판매 정보 입력 시 4 필드 required ──
+
+    public function test_e_sale_required_sale_date_when_sale_price_set(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();   // sale_price=0
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('sale_price_str', '1000000')
+            ->set('sale_date', '')
+            ->call('save')
+            ->assertHasErrors(['sale_date']);
+    }
+
+    public function test_e_sale_required_buyer_when_sale_price_set(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('sale_price_str', '1000000')
+            ->set('sale_date', '2026-05-01')
+            ->set('buyer_id_str', '')
+            ->call('save')
+            ->assertHasErrors(['buyer_id_str']);
+    }
+
+    public function test_e_sale_required_exchange_rate_when_sale_price_set(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+        $buyer = Buyer::firstOrCreate(['name' => 'E TEST BUYER'], ['is_active' => true]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('sale_price_str', '1000000')
+            ->set('sale_date', '2026-05-01')
+            ->set('buyer_id_str', (string) $buyer->id)
+            ->set('exchange_rate_str', '0')
+            ->call('save')
+            ->assertHasErrors(['exchange_rate_str']);
+    }
+
+    public function test_e_sale_all_required_satisfied_passes(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+        $buyer = Buyer::firstOrCreate(['name' => 'E TEST BUYER 2'], ['is_active' => true]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('sale_price_str', '1000000')
+            ->set('sale_date', '2026-05-01')
+            ->set('buyer_id_str', (string) $buyer->id)
+            ->set('exchange_rate_str', '1')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $v->refresh();
+        $this->assertSame(1000000, (int) $v->sale_price);
+        $this->assertSame($buyer->id, $v->buyer_id);
     }
 
     // 2026-05-19 풀회의 P0-1 — RRN silent restore.

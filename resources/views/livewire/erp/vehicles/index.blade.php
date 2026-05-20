@@ -1091,10 +1091,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             $rules[$field] = [$nonNegativeNumeric];
         }
 
-        // C1 — 외화 판매(currency != KRW + sale_price > 0)면 환율 필수 + > 0.
-        // 환율 0/NULL이면 sale_unpaid_amount_krw_cache가 NULL이 되어 KPI/채권에서 침묵 누락.
+        // C1 + 2026-05-19 풀회의 안건 E — 판매 정보 입력(sale_price > 0) 시 필수 필드 강화.
+        //   - 회의 명세: "판매일, 바이어, 통화, 판매가, 환율은 반드시 기입"
+        //   - currency는 select 강제(default 'USD') → 별도 추가 불필요
+        //   - exchange_rate는 외화·KRW 모두 > 0 강제 (KRW는 default 1로 자연 통과)
+        //   - C1 원형: 외화 한정. 본 회의에서 sale_price > 0 일반화로 확장 (KRW도 침묵 누락 차단)
         $salePrice = (float) str_replace(',', '', $this->sale_price_str ?: '0');
-        if ($this->currency !== 'KRW' && $salePrice > 0) {
+        if ($salePrice > 0) {
+            $rules['sale_date'] = ['required', 'date'];
+            $rules['buyer_id_str'] = ['required', 'exists:buyers,id'];
             $rules['exchange_rate_str'] = ['required', 'numeric', 'gt:0'];
         }
 

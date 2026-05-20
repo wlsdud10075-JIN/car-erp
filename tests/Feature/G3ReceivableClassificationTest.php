@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -39,14 +40,27 @@ class G3ReceivableClassificationTest extends TestCase
     {
         $this->counter++;
 
-        return Vehicle::create(array_merge([
+        $defaults = [
             'vehicle_number' => 'G3T-'.$this->counter,
             'sales_channel' => 'export',
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'sale_price' => 1000000,
             'dhl_request' => false,
-        ], $overrides));
+        ];
+
+        // 2026-05-19 풀회의 안건 E — sale_price > 0 시 sale_date·buyer_id 자동 채움.
+        $salePrice = $overrides['sale_price'] ?? $defaults['sale_price'];
+        if ($salePrice > 0) {
+            if (! array_key_exists('buyer_id', $overrides)) {
+                $defaults['buyer_id'] = Buyer::firstOrCreate(['name' => 'TEST BUYER'], ['is_active' => true])->id;
+            }
+            if (! array_key_exists('sale_date', $overrides)) {
+                $defaults['sale_date'] = '2026-05-01';
+            }
+        }
+
+        return Vehicle::create(array_merge($defaults, $overrides));
     }
 
     public function test_before_shipping_classification_includes_purchase_to_sale_complete_stages(): void
