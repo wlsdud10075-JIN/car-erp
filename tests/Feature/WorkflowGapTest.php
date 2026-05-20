@@ -128,23 +128,98 @@ class WorkflowGapTest extends TestCase
         $v->guardStageOrderForExport();
     }
 
-    public function test_c5_blocks_export_entry_with_unpaid_sale_cache(): void
+    public function test_c5_blocks_export_entry_when_unpaid_ratio_over_50_percent(): void
     {
-        $v = new Vehicle([
-            'sales_channel' => 'export',
+        // G 완화 (2026-05-20) — 미수율 > 50% 시만 C5 차단.
+        $buyer = Buyer::create(['name' => 'C5_TEST', 'is_active' => true]);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
             'is_deregistered' => true,
             'deregistration_document' => 'dereg.pdf',
-            'sale_price' => 1000,
-            'export_buyer_id' => 1,
-            'shipping_date' => '2026-05-01',
+            'buyer_id' => $buyer->id,
         ]);
-        // cache 컬럼에 미입금 잔존 시뮬레이션
-        $v->setRawAttributes(array_merge($v->getAttributes(), [
-            'sale_unpaid_amount_krw_cache' => 500,
-        ]));
+        // 30% 입금 → 미수율 70% → 차단
+        $v->finalPayments()->create(['amount' => 300, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->refresh();
+
+        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-01';
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('판매 미입금');
+        $this->expectExceptionMessage('입금률 < 50%');
+        $v->guardStageOrderForExport();
+    }
+
+    public function test_c5_allows_export_entry_when_paid_50_percent_or_more(): void
+    {
+        // G 완화 (2026-05-20) — 입금률 ≥ 50% 자유 (admin 우회 불필요).
+        $buyer = Buyer::create(['name' => 'C5_OK', 'is_active' => true]);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+            'buyer_id' => $buyer->id,
+        ]);
+        // 50% 입금 → 미수율 50% → 통과 (≤ 0.5 조건)
+        $v->finalPayments()->create(['amount' => 500, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->refresh();
+
+        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-01';
+
+        $v->guardStageOrderForExport();   // 통과
+        $this->assertTrue(true, '입금률 50% 정확 시 자유 통관');
+    }
+
+    public function test_c5_admin_override_bypasses_threshold(): void
+    {
+        // G 완화 — 입금률 < 50% 라도 admin unpaid_export_override 있으면 우회.
+        $buyer = Buyer::create(['name' => 'C5_OVR', 'is_active' => true]);
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+            'buyer_id' => $buyer->id,
+        ]);
+        // 10% 입금 → 미수율 90% (정상이면 차단)
+        $v->finalPayments()->create(['amount' => 100, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->refresh();
+
+        UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'clearance',
+            'approved_by' => $admin->id,
+            'reason' => '바이어 신뢰 — 미수 우회 승인',
+            'approved_at' => now(),
+        ]);
+        $v->load('unpaidExportOverrides');
+
+        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-01';
+
+        $v->guardStageOrderForExport();   // override → 통과
+        $this->assertTrue(true, 'admin override 시 입금률 < 50% 라도 자유');
+    }
+
+    public function test_c5_blocks_when_foreign_currency_exchange_rate_missing(): void
+    {
+        // G 완화 — 외화 환율 미입력 → unpaid_ratio = null → 차단 + admin 우회 가능.
+        $buyer = Buyer::create(['name' => 'C5_FX', 'is_active' => true]);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'currency' => 'USD',
+            'exchange_rate' => 0,   // 환율 미입력 시뮬레이션 (외화 + 0)
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+            'buyer_id' => $buyer->id,
+        ]);
+
+        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-01';
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('환율 미입력');
         $v->guardStageOrderForExport();
     }
 

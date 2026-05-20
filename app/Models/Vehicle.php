@@ -638,11 +638,14 @@ class Vehicle extends Model
     /**
      * C4·C5 — 단계 의존성 검증. 수출 정보 입력 시점에 선행 단계 강제.
      * - C4: 말소(is_deregistered + deregistration_document)가 완료돼야 통관 진입 가능
-     * - C5: 판매 미입금 잔존(sale_unpaid_amount_krw_cache > 0)인 상태에서 통관 진입 불가
+     * - C5: 판매 입금률 < 50% (unpaid_ratio > 0.5) 시 통관 진입 불가
      *
-     * 큐 17 — 폐기 컨셉 제거 (운영상 없음). bypass 제거.
-     * 캐시 컬럼(`sale_unpaid_amount_krw_cache`) 직접 사용 — accessor의 relations 의존성 회피.
-     * 신규 차량(cache=null)은 미입금 자체가 없어 C5 skip.
+     * G 완화 (2026-05-20 회의록 §G, Q4 해석 A) — 입금 100% 임계값을 50%로 완화.
+     *   - 입금률 ≥ 50% (unpaid_ratio ≤ 0.5) → 통관 자유, admin 승인 불필요
+     *   - 입금률 < 50% (unpaid_ratio > 0.5) → admin unpaid_export_override 승인 필요
+     *   - 환율 미입력 외화 차량 (unpaid_ratio = null) → 환율 입력 또는 admin 승인 필요
+     *
+     * 큐 17 — 폐기 컨셉 제거. 신규 차량(exists=false)은 미입금 자체가 없어 C5 skip.
      */
     public function guardStageOrderForExport(): void
     {
@@ -664,18 +667,29 @@ class Vehicle extends Model
             ]);
         }
 
-        // C5 — 판매 미입금 잔존 차단. cache 컬럼 우선 사용 (accessor 회피).
-        // 큐 2.6 — admin이 unpaid_export_overrides에 해당 stage 승인 레코드를 만들었으면 skip.
-        $unpaidCache = $this->sale_unpaid_amount_krw_cache;
-        if ($this->sale_price > 0 && $unpaidCache !== null && $unpaidCache > 0) {
+        // C5 + G 완화 (2026-05-20) — 입금률 < 50% 시만 차단. admin 우회 인프라 그대로 재사용.
+        if ($this->sale_price > 0 && $this->exists) {
             $stage = $this->dhl_request
                 ? 'dhl'
                 : (($this->bl_loading_location || $this->bl_document) ? 'shipping' : 'clearance');
 
-            $hasOverride = $this->exists && $this->hasUnpaidOverride($stage);
-            if (! $hasOverride) {
+            $hasOverride = $this->hasUnpaidOverride($stage);
+            if ($hasOverride) {
+                return;   // admin 승인 — 모든 시나리오 우회
+            }
+
+            // 외화 환율 미입력 → 미수율 평가 불가
+            if ($this->currency !== 'KRW' && ((float) $this->exchange_rate <= 0)) {
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => "판매 미입금이 남은 차량은 {$stage} 단계 진입이 불가합니다. 입금 완료 또는 관리자 승인(미입금 우회) 후 진행하세요.",
+                    'export_buyer_id' => '환율 미입력 외화 차량은 통관 진입 불가. 환율 입력 또는 관리자 승인(미입금 우회) 후 진행하세요.',
+                ]);
+            }
+
+            $ratio = $this->unpaid_ratio;
+            if ($ratio !== null && $ratio > 0.5) {
+                $percent = number_format($ratio * 100, 1);
+                throw ValidationException::withMessages([
+                    'export_buyer_id' => "판매 입금률 < 50% (미수율 {$percent}%) 차량은 {$stage} 단계 진입 불가. 50% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
                 ]);
             }
         }
