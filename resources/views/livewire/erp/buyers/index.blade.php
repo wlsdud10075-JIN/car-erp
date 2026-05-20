@@ -356,7 +356,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div>
+<div wire:poll.30s>
 @if(session('success'))
 <div x-data="{show:true}" x-show="show" x-init="setTimeout(()=>show=false,3000)"
      class="fixed top-4 right-4 z-50 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg">

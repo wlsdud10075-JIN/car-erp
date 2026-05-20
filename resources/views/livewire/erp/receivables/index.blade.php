@@ -311,7 +311,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div>
+<div wire:poll.30s>
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
     {{-- 헤더 — 모바일 세로 스택, 데스크탑 좌우 분리 --}}

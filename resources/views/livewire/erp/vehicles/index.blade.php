@@ -2147,7 +2147,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div>
+{{-- UX #6 (2026-05-20) — wire:poll.30s — 사이드바 뱃지 + 페이지 데이터 30초 자동 갱신. --}}
+<div wire:poll.30s>
 {{-- ── 플래시 메시지 ────────────────────────────────────────────── --}}
 @if(session('success'))
     <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 3000)"

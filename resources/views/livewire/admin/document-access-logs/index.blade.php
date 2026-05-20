@@ -50,7 +50,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div>
+<div wire:poll.30s>
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
     <div class="flex items-center justify-between">

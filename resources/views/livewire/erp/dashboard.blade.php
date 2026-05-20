@@ -394,7 +394,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div>
+{{-- UX #6 (2026-05-20) — wire:poll.30s — 사이드바 뱃지 + 페이지 데이터 30초 자동 갱신. 본인 액션은 Livewire 자체 re-render 로 즉시 반영. --}}
+<div wire:poll.30s>
 <div class="flex h-full flex-col gap-5 p-3 md:p-6" x-data="{
     roleView: @entangle('roleView').live,
     viewMode: @entangle('viewMode').live,

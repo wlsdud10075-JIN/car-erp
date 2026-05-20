@@ -554,7 +554,7 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 }; ?>
 
-<div x-data="adminDashboard()" class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
+<div wire:poll.30s x-data="adminDashboard()" class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
     {{-- 헤더 — 모바일 세로 스택, 데스크탑 좌우 분리 --}}
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>

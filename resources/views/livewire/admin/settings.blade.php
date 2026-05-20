@@ -44,7 +44,7 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
+<div wire:poll.30s class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
     <div>
         <h1 class="text-2xl font-bold text-gray-800">기능 설정</h1>
         <p class="mt-1 text-sm text-gray-500">시스템관리자(super) 전용 — 사이드바 브랜드 텍스트 등 전역 설정</p>
