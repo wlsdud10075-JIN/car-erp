@@ -89,6 +89,41 @@ new #[Layout('components.layouts.app')] class extends Component
         return Salesman::orderBy('name')->get(['id', 'name']);
     }
 
+    // 2026-05-20 #2 피드백 — 영업담당자별 합계 (인원별 솔팅 + 합계 KPI).
+    // 현재 statusFilter / dateFrom / dateTo 동일 적용 (목록 SQL 과 일치).
+    // computed accessor (total_margin / settlement_amount / actual_payout) 사용 → PHP 집계.
+    #[Computed]
+    public function salesmanSummaries(): array
+    {
+        $all = Settlement::query()
+            ->with(['vehicle', 'salesman:id,name'])
+            ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
+            ))
+            ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
+            ))
+            ->get();
+
+        return $all->groupBy('salesman_id')->map(function ($group, $salesmanId) {
+            $first = $group->first();
+
+            return [
+                'salesman_id' => $salesmanId,
+                'salesman_name' => $first->salesman?->name ?? '미지정',
+                'count' => $group->count(),
+                'total_margin_sum' => (int) $group->sum('total_margin'),
+                'settlement_amount_sum' => (int) $group->sum('settlement_amount'),
+                'actual_payout_sum' => (int) $group->sum('actual_payout'),
+            ];
+        })->sortByDesc('actual_payout_sum')->values()->toArray();
+    }
+
+    public function setSalesmanFilter(int $id): void
+    {
+        $this->salesmanFilter = $this->salesmanFilter === $id ? 0 : $id;
+        $this->resetPage();
+    }
+
     // ── 패널 차량 검색 ────────────────────────────────────────────
 
     #[Computed]
@@ -363,6 +398,42 @@ new #[Layout('components.layouts.app')] class extends Component
     <input wire:model="dateTo" type="date" class="input-filter" />
     <button wire:click="search" class="btn-search">조회</button>
 </div>
+
+{{-- 2026-05-20 #2 피드백 — 영업담당자별 합계 카드 (인원별 솔팅 + 합계). --}}
+{{-- 클릭 시 해당 담당자 필터 토글. statusFilter / dateFrom/To 와 동일 컨텍스트. --}}
+@if(!empty($this->salesmanSummaries))
+<div class="mt-3">
+    <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
+        <span>영업담당자별 합계</span>
+        <span class="text-gray-400">— 클릭하면 해당 담당자만 솔팅</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        @foreach($this->salesmanSummaries as $summary)
+        <button type="button" wire:click="setSalesmanFilter({{ $summary['salesman_id'] ?? 0 }})"
+                class="card text-left transition hover:bg-violet-50 {{ $salesmanFilter == $summary['salesman_id'] ? 'border-violet-400 bg-violet-50/40' : '' }}">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-gray-700">{{ $summary['salesman_name'] }}</span>
+                <span class="pill-count">{{ $summary['count'] }}건</span>
+            </div>
+            <div class="mt-2 space-y-1 text-[11px]">
+                <div class="flex items-center justify-between text-gray-500">
+                    <span>총마진</span>
+                    <span class="font-mono text-gray-700">{{ number_format($summary['total_margin_sum']) }}</span>
+                </div>
+                <div class="flex items-center justify-between text-gray-500">
+                    <span>정산액</span>
+                    <span class="font-mono text-gray-700">{{ number_format($summary['settlement_amount_sum']) }}</span>
+                </div>
+                <div class="flex items-center justify-between border-t border-gray-100 pt-1">
+                    <span class="text-violet-700">실지급액</span>
+                    <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
+                </div>
+            </div>
+        </button>
+        @endforeach
+    </div>
+</div>
+@endif
 
 {{-- 테이블 (데스크탑) --}}
 <div class="hidden sm:block overflow-x-auto">
