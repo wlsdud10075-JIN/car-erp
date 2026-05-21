@@ -282,7 +282,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0))
             ->when($this->classification === 'after_shipping', fn ($q) => $q
-                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0))
             ->when($this->classification === 'deposit', fn ($q) => $q
                 ->where('savings_used', '>', 0));
@@ -303,7 +303,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->count(),
             'after_shipping' => (clone $base)
-                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->count(),
             'deposit' => (clone $base)->where('savings_used', '>', 0)->count(),
@@ -391,7 +391,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </select>
         <select wire:model.live="progressFilter" class="input-filter">
             <option value="">진행상태 전체</option>
-            @foreach (['판매중','판매완료','수출통관중','수출통관완료','선적중','선적완료','거래완료'] as $s)
+            @foreach (['판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $s)
             <option value="{{ $s }}">{{ $s }}</option>
             @endforeach
         </select>

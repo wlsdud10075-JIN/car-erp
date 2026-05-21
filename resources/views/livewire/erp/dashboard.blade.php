@@ -236,7 +236,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 2026-05-20 #1 피드백 — 말소 대기 KPI (사용자 의도: 통관 사이드바·일반사용자 통관 대시보드·관리 토글 동일 노출)
             ['label' => '말소 대기',               'value' => $c('deregistration_needed'),            'suffix' => '대', 'hint' => '매입가 입금 완료 → 말소 미처리'],
             ['label' => '통관 신청 대기',          'value' => $c('clearance_request_needed'),         'suffix' => '대', 'hint' => '판매 완납 → 면장 미업로드'],
-            ['label' => '수출신고서 업로드 대기',  'value' => $c('export_declaration_upload_needed'), 'suffix' => '대', 'hint' => '수출통관중'],
+            ['label' => '수출신고서 업로드 대기',  'value' => $c('export_declaration_upload_needed'), 'suffix' => '대', 'hint' => '통관중'],
             ['label' => '선적 처리 대기',          'value' => $c('shipping_process_needed'),          'suffix' => '대', 'hint' => '면장 완료 → 반입지 미입력'],
             ['label' => 'DHL 발송 대기',           'value' => $c('dhl_dispatch_needed'),              'suffix' => '대', 'hint' => 'B/L 발행 → 미신청'],
         ];
@@ -249,13 +249,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             // 2026-05-20 사용자 요청 — canHandleDeregistration 사용자(수출통관 포함) 액션.
             $this->row('말소 처리 필요',      '매입 완료 → 말소 미처리',                   $c('deregistration_needed'),            'bg-red-500',   'deregistration_needed', true),
-            $this->row('수출통관 신청 필요',  '판매 완납 → 면장 미업로드',                 $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
+            // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
+            $this->row('통관 신청 필요',      '판매 완납 → 면장 미업로드',                 $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
             $this->row('통관 바이어/일자 누락','판매 진입 → export_buyer 또는 shipping_date 없음', $c('clearance_info_missing'),     'bg-amber-500', 'clearance_info_missing',         true),
             $this->row('포워딩사 미지정',     '통관 진입 → forwarding 없음',                $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing',             true),
-            $this->row('수출신고서 업로드',   '수출통관중 → 신고서 없음',                  $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
-            $this->row('선적 처리 필요',      '면장 완료 → 반입지 미입력',                 $c('shipping_process_needed'),          'bg-green-500', 'shipping_process_needed'),
-            $this->row('B/L 업로드 필요',     '선적중 → B/L 미업로드',                     $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
-            $this->row('DHL 발송 대기',       '선적완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
+            $this->row('수출신고서 업로드',   '통관중 → 신고서 없음',                      $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
+            $this->row('선적 처리 필요',      '판매 완료 → 반입지 미입력',                 $c('shipping_process_needed'),          'bg-amber-500', 'shipping_process_needed'),
+            $this->row('B/L 업로드 필요',     '통관 완료 → B/L 미업로드',                  $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
+            $this->row('DHL 발송 대기',       '거래완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
         ];
     }
 
@@ -632,11 +633,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tbody class="divide-y divide-gray-50">
                 @forelse($this->activeVehicles as $v)
                 @php
+                    // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
+                    // 색 매핑: 선적=amber, 통관=green (v3 amber/green 순서 유지 + 단계명만 swap)
                     $pb = match(true) {
                         in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                         in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
+                        in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+                        in_array($v->progress_status, ['통관중','통관완료'])            => 'badge-green',
+                        // v3 grandfather 호환 (운영 데이터 0이지만 안전망)
                         in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                        in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
                         default                                                         => 'badge-gray',
                     };
                     $nextAction = match($v->progress_status) {
@@ -644,11 +649,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         '매입완료'     => '말소 처리',
                         '말소완료'     => '판매 등록',
                         '판매중'       => '입금 확인',
-                        '판매완료'     => '수출통관 신청',
+                        '판매완료'     => '반입지 입력',
+                        '선적중'       => '수출신고서 업로드',
+                        '선적완료'     => '통관 완료 처리',
+                        '통관중'       => 'B/L 업로드',
+                        '통관완료'     => 'B/L 업로드',
+                        // v3 grandfather 호환
                         '수출통관중'   => '면장서류 업로드',
                         '수출통관완료' => '선적 처리',
-                        '선적중'       => 'B/L 업로드',
-                        '선적완료'     => 'DHL 발송',
+                        '거래완료'     => 'DHL 발송',
                         default        => '-',
                     };
                     $puAmt = $v->purchase_unpaid_amount;
@@ -680,11 +689,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="block space-y-2 sm:hidden">
         @forelse($this->activeVehicles as $v)
         @php
+            // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
             $pb = match(true) {
                 in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                 in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
+                in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+                in_array($v->progress_status, ['통관중','통관완료'])            => 'badge-green',
                 in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
                 default                                                         => 'badge-gray',
             };
             $nextAction = match($v->progress_status) {
@@ -692,11 +703,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 '매입완료'     => '말소 처리',
                 '말소완료'     => '판매 등록',
                 '판매중'       => '입금 확인',
-                '판매완료'     => '수출통관 신청',
+                '판매완료'     => '반입지 입력',
+                '선적중'       => '수출신고서 업로드',
+                '선적완료'     => '통관 완료 처리',
+                '통관중'       => 'B/L 업로드',
+                '통관완료'     => 'B/L 업로드',
                 '수출통관중'   => '면장서류 업로드',
                 '수출통관완료' => '선적 처리',
-                '선적중'       => 'B/L 업로드',
-                '선적완료'     => 'DHL 발송',
+                '거래완료'     => 'DHL 발송',
                 default        => '-',
             };
         @endphp

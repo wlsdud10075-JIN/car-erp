@@ -188,8 +188,11 @@ class DashboardActionCountsTest extends TestCase
 
     public function test_dhl_needed_requires_bl_with_dhl_request_false(): void
     {
-        $this->makeVehicle(['bl_document' => 'bl.pdf', 'dhl_request' => false]);
-        $this->makeVehicle(['bl_document' => 'bl.pdf', 'dhl_request' => true]);
+        // 안건 J 본격 (2026-05-20, v3) + 안건 1 v4 (2026-05-21) — bl_document 단독 → 거래완료.
+        // active 필터(progress_status_cache != '거래완료')에 dhl_needed 포함 → v3/v4에선 두 차량 모두 거래완료 → count 0.
+        // 의도 보존: v2 명시 셋업으로 grandfather 흐름(dhl_request AND bl_document → 거래완료) 검증.
+        $this->makeVehicle(['progress_status_rule_version' => 2, 'bl_document' => 'bl.pdf', 'dhl_request' => false]);
+        $this->makeVehicle(['progress_status_rule_version' => 2, 'bl_document' => 'bl.pdf', 'dhl_request' => true]);
 
         $this->assertSame(1, Vehicle::action('dhl_needed')->count());
     }

@@ -129,8 +129,10 @@ class WorkflowGapTest extends TestCase
     public function test_c3_export_channel_still_evaluates_export_stages(): void
     {
         // 큐 2.6 — 수출통관완료는 v2부터 is_export_cleared && export_declaration_document 둘 다 필요.
+        // 안건 1 v4 (2026-05-21) — v4 cascade는 이 조합 매칭 없음 → v3 명시 셋업으로 grandfather 검증.
         $v = $this->makeVehicle([
             'sales_channel' => 'export',
+            'progress_status_rule_version' => 3,
             'sale_price' => 1000, 'deposit_down_payment' => 1000,
             'is_deregistered' => true, 'deregistration_document' => 'dereg.pdf',
             'is_export_cleared' => true,
@@ -2163,9 +2165,9 @@ class WorkflowGapTest extends TestCase
         $this->assertSame('거래완료', $v->progress_status, 'v2: DHL 신청 추가 시 거래완료');
     }
 
-    public function test_j_new_vehicle_defaults_to_v3(): void
+    public function test_j_new_vehicle_defaults_to_v4(): void
     {
-        // 마이그 — vehicles.progress_status_rule_version DEFAULT 3 (신규 row 만 영향).
+        // 안건 1 v4 (2026-05-21) — vehicles.progress_status_rule_version DEFAULT 4 (신규 row 만 영향).
         $v = Vehicle::create([
             'vehicle_number' => 'J-DEFAULT',
             'sales_channel' => 'export',
@@ -2173,7 +2175,7 @@ class WorkflowGapTest extends TestCase
             'exchange_rate' => 1,
             'dhl_request' => false,
         ]);
-        $this->assertSame(3, (int) $v->fresh()->progress_status_rule_version);
+        $this->assertSame(4, (int) $v->fresh()->progress_status_rule_version);
     }
 
     public function test_j_scope_action_active_uses_progress_status_cache(): void
@@ -2205,5 +2207,68 @@ class WorkflowGapTest extends TestCase
 
         $count = Vehicle::query()->action('settlement_create_needed')->count();
         $this->assertSame(1, $count, '거래완료 차량만 정산 생성 필요');
+    }
+
+    // ── 회의확장씬 안건 1 v4 cascade 5단계 검증 (2026-05-21) ──────────────────────────
+    // v4 매핑 (우선순위 높→낮):
+    //   1. bl_document → 거래완료
+    //   2. bl_document AND is_export_cleared → 통관완료 (실질 도달 불가)
+    //   3. is_export_cleared AND bl_loading_location → 통관중
+    //   4. bl_loading_location AND export_declaration_document → 선적완료
+    //   5. bl_loading_location → 선적중
+
+    public function test_v4_step5_bl_loading_location_alone_returns_선적중(): void
+    {
+        $v = $this->makeVehicle([
+            'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
+            'bl_loading_location' => '부산항',
+        ]);
+        $this->assertSame('선적중', $v->progress_status);
+    }
+
+    public function test_v4_step4_bl_loading_location_with_export_declaration_doc_returns_선적완료(): void
+    {
+        $v = $this->makeVehicle([
+            'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
+            'bl_loading_location' => '부산항',
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+        $this->assertSame('선적완료', $v->progress_status);
+    }
+
+    public function test_v4_step3_export_cleared_with_bl_loading_returns_통관중(): void
+    {
+        $v = $this->makeVehicle([
+            'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
+            'bl_loading_location' => '부산항',
+            'is_export_cleared' => true,
+        ]);
+        $this->assertSame('통관중', $v->progress_status);
+    }
+
+    public function test_v4_step1_bl_document_alone_returns_거래완료(): void
+    {
+        // bl_document 단독 → 거래완료. is_export_cleared 무관, bl_loading_location 무관.
+        $v = $this->makeVehicle([
+            'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
+            'bl_document' => 'bl.pdf',
+        ]);
+        $this->assertSame('거래완료', $v->progress_status);
+    }
+
+    public function test_v4_no_bl_loading_falls_back_to_sale_stage(): void
+    {
+        // bl_loading_location 없으면 v4 cascade 5단계 모두 매칭 X → 판매/매입 단계로 fallback.
+        // shipping_date·is_export_cleared 채워도 v4에선 단계 평가 안 됨 (v3과 다름).
+        $v = $this->makeVehicle([
+            'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
+            'shipping_date' => '2026-05-01',
+            'is_export_cleared' => true,
+            'export_declaration_document' => 'edoc.pdf',
+        ]);
+        // v4: is_export_cleared && bl_loading_location 매칭 X (bl_loading_location 없음).
+        //     bl_loading_location && export_declaration_document 매칭 X (bl_loading_location 없음).
+        //     bl_loading_location 매칭 X. → fallback 판매완료.
+        $this->assertSame('판매완료', $v->progress_status);
     }
 }

@@ -905,13 +905,40 @@ class Vehicle extends Model
     //   DHL 발송 신청은 거래완료 이후 별도 액션(dhl_dispatch_needed 액션 큐).
     //   선적완료·선적중·수출통관완료·수출통관중 = v2 동일 trigger 유지.
     //   부작용: B/L 발급일 ≈ 반입지 입력일이라 cascade 우선순위로 '선적완료' 단계 매칭 짧음 (운영 현실 반영).
+    // 회의확장씬 안건 1 (2026-05-21) — v4 워크플로우 순서 변경:
+    //   사용자 의도: 반입(선적) → 통관 → B/L → 거래완료 (v3 통관→선적→B/L 순서 정반대).
+    //   '선적'의 도메인 의미 = 반입(bl_loading_location 입력). 단계명 swap (수출통관중/완료 → 통관중/완료).
+    //   v4 cascade 5단계 (우선순위 높→낮):
+    //     1. bl_document 단독                                     → 거래완료 (B/L 발급 = 거래완료, v3 동일)
+    //     2. bl_document AND is_export_cleared                    → 통관완료 (실질 도달 불가 — #1 우선)
+    //     3. is_export_cleared AND bl_loading_location            → 통관중   (반입 후 통관 신청)
+    //     4. bl_loading_location AND export_declaration_document  → 선적완료 (반입 + 수출신고서)
+    //     5. bl_loading_location                                  → 선적중   (반입지 입력)
     public function getProgressStatusAttribute(): string
     {
-        $ruleVersion = (int) ($this->progress_status_rule_version ?? 2);
+        $ruleVersion = (int) ($this->progress_status_rule_version ?? 4);
+        $v4 = $ruleVersion >= 4;
         $v3 = $ruleVersion >= 3;
         $v2 = $ruleVersion >= 2;
 
-        if ($v3) {
+        if ($v4) {
+            // 안건 1 — 반입 → 통관 → B/L → 거래완료
+            if ($this->bl_document) {
+                return '거래완료';
+            }
+            if ($this->bl_document && $this->is_export_cleared) {
+                return '통관완료';
+            }
+            if ($this->is_export_cleared && $this->bl_loading_location) {
+                return '통관중';
+            }
+            if ($this->bl_loading_location && $this->export_declaration_document) {
+                return '선적완료';
+            }
+            if ($this->bl_loading_location) {
+                return '선적중';
+            }
+        } elseif ($v3) {
             // 안건 J 본격 — 거래완료 trigger 만 변경 (bl_document 단독). 나머지 v2 그대로.
             if ($this->bl_document) {
                 return '거래완료';
@@ -1282,10 +1309,12 @@ class Vehicle extends Model
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
-            // 선적후 미수: progress_status_cache ∈ {수출통관중, 수출통관완료, 선적중, 선적완료}
+            // 안건 1 v4 (2026-05-21) — 단계명 swap: 수출통관중/완료 → 통관중/완료.
+            // 선적후 미수: progress_status_cache ∈ {선적중, 선적완료, 통관중, 통관완료}
             //              AND sale_unpaid_amount > 0
+            // v3 호환 라벨도 포함 (운영 데이터 0이지만 안전망).
             'receivable_after_shipping' => $q
-                ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
             // 디파짓: savings_used > 0 (적립금 사용분)

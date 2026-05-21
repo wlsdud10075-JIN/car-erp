@@ -2400,7 +2400,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 빠른 탭 필터 — 큐 16: 채널 pill 제거 (단일 채널) --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <div class="flex flex-wrap gap-1">
-            @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '선적중' => '선적중', '선적완료' => '선적완료', '거래완료' => '거래완료'] as $val => $label)
+            {{-- 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료. v3 호환 키는 매핑에서 같은 라벨로 흡수 --}}
+            @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '선적중' => '선적중', '선적완료' => '선적완료', '통관중' => '통관중', '통관완료' => '통관완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '거래완료' => '거래완료'] as $val => $label)
             <button wire:click="$set('progressFilter', '{{ $val }}')"
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            {{ $progressFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
@@ -2432,8 +2433,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $badgeClass = match(true) {
                     in_array($status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                     in_array($status, ['판매중','판매완료'])           => 'badge-purple',
-                    in_array($status, ['수출통관중','수출통관완료'])    => 'badge-amber',
-                    in_array($status, ['선적중','선적완료'])           => 'badge-green',
+                    in_array($status, ['선적중','선적완료'])            => 'badge-amber',
+                    in_array($status, ['통관중','통관완료'])             => 'badge-green',
+                    in_array($status, ['수출통관중','수출통관완료'])     => 'badge-amber',
                     $status === '거래완료'                             => 'badge-gray',
                     default                                            => 'badge-gray',
                 };
@@ -2484,8 +2486,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $badgeClass = match(true) {
             in_array($status, ['매입중','매입완료','말소완료']) => 'badge-blue',
             in_array($status, ['판매중','판매완료'])           => 'badge-purple',
-            in_array($status, ['수출통관중','수출통관완료'])    => 'badge-amber',
-            in_array($status, ['선적중','선적완료'])           => 'badge-green',
+            in_array($status, ['선적중','선적완료'])            => 'badge-amber',
+            in_array($status, ['통관중','통관완료'])             => 'badge-green',
+            in_array($status, ['수출통관중','수출통관완료'])     => 'badge-amber',
             $status === '거래완료'                             => 'badge-gray',
             default                                            => 'badge-gray',
         };
@@ -3479,7 +3482,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </label>
                 </div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">수출신고서 <span class="text-xs text-gray-400">(업로드 시 수출통관완료 상태 달성 가능)</span></label>
+                    <label class="label-base">수출신고서 <span class="text-xs text-gray-400">(업로드 시 선적완료 상태 달성 가능)</span></label>
                     <input wire:model="exportDeclarationDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
                     @if($export_declaration_document_path)

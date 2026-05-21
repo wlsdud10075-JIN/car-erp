@@ -491,12 +491,14 @@ new #[Layout('components.layouts.app')] class extends Component
                     'paid'        => '지급완료',
                     default       => $s->settlement_status,
                 };
+                // 안건 1 v4 (2026-05-21) — 색 매핑: 선적=amber, 통관=green. v3 호환 키 동시 보유
                 $progressBadge = match(true) {
                     in_array($s->vehicle?->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                     in_array($s->vehicle?->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-                    in_array($s->vehicle?->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                    in_array($s->vehicle?->progress_status, ['선적중','선적완료'])           => 'badge-green',
-                    $s->vehicle?->progress_status === '거래완료'                             => 'badge-gray',
+                    in_array($s->vehicle?->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+                    in_array($s->vehicle?->progress_status, ['통관중','통관완료'])             => 'badge-green',
+                    in_array($s->vehicle?->progress_status, ['수출통관중','수출통관완료'])    => 'badge-amber',
+                    $s->vehicle?->progress_status === '거래완료'                              => 'badge-gray',
                     default => 'badge-gray',
                 };
             @endphp
@@ -694,12 +696,14 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="flex items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm">
                 <span class="font-medium text-gray-800">{{ $this->selectedVehicle->vehicle_number }}</span>
                 @php
+                    // 안건 1 v4 (2026-05-21) — 색 매핑 swap
                     $pb = match(true) {
                         in_array($this->selectedVehicle->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                         in_array($this->selectedVehicle->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-                        in_array($this->selectedVehicle->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                        in_array($this->selectedVehicle->progress_status, ['선적중','선적완료'])           => 'badge-green',
-                        $this->selectedVehicle->progress_status === '거래완료'                             => 'badge-gray',
+                        in_array($this->selectedVehicle->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+                        in_array($this->selectedVehicle->progress_status, ['통관중','통관완료'])             => 'badge-green',
+                        in_array($this->selectedVehicle->progress_status, ['수출통관중','수출통관완료'])    => 'badge-amber',
+                        $this->selectedVehicle->progress_status === '거래완료'                              => 'badge-gray',
                         default => 'badge-red',
                     };
                 @endphp

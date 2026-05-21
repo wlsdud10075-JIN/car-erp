@@ -152,8 +152,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $statusBadge = match(true) {
                     in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
                     in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-                    in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                    in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
+                    in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+                    in_array($v->progress_status, ['통관중','통관완료'])             => 'badge-green',
+                    in_array($v->progress_status, ['수출통관중','수출통관완료'])    => 'badge-amber',
                     $v->progress_status === '거래완료'                             => 'badge-gray',
                     default => 'badge-gray',
                 };
@@ -203,8 +204,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $statusBadge = match(true) {
             in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
             in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-            in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-            in_array($v->progress_status, ['선적중','선적완료'])           => 'badge-green',
+            in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
+            in_array($v->progress_status, ['통관중','통관완료'])             => 'badge-green',
+            in_array($v->progress_status, ['수출통관중','수출통관완료'])    => 'badge-amber',
             $v->progress_status === '거래완료'                             => 'badge-gray',
             default => 'badge-gray',
         };

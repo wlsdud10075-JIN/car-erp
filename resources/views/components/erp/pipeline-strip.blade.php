@@ -8,16 +8,18 @@
 @php
     // 10단계 — CLAUDE.md 진행상태 우선순위 + SKILLS.md §10 뱃지 색 매핑.
     // 큐 17 — 폐기 컨셉 제거 (운영상 없음). 11단계 → 10단계.
+    // 안건 1 v4 (2026-05-21) — 워크플로우 순서 변경: 선적(반입) → 통관 → 거래완료.
+    // 색 매핑은 v3 amber/green 순서 그대로 유지 (단계명만 swap — 사용자 결정).
     $stages = [
         ['key' => '매입중',       'badge' => 'badge-blue'],
         ['key' => '매입완료',     'badge' => 'badge-blue'],
         ['key' => '말소완료',     'badge' => 'badge-blue'],
         ['key' => '판매중',       'badge' => 'badge-purple'],
         ['key' => '판매완료',     'badge' => 'badge-purple'],
-        ['key' => '수출통관중',   'badge' => 'badge-amber'],
-        ['key' => '수출통관완료', 'badge' => 'badge-amber'],
-        ['key' => '선적중',       'badge' => 'badge-green'],
-        ['key' => '선적완료',     'badge' => 'badge-green'],
+        ['key' => '선적중',       'badge' => 'badge-amber'],
+        ['key' => '선적완료',     'badge' => 'badge-amber'],
+        ['key' => '통관중',       'badge' => 'badge-green'],
+        ['key' => '통관완료',     'badge' => 'badge-green'],
         ['key' => '거래완료',     'badge' => 'badge-gray'],
     ];
 @endphp

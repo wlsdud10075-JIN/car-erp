@@ -355,10 +355,11 @@ new #[Layout('components.layouts.app')] class extends Component
         $byBuyer = [];
         $riskCounts = ['safe' => 0, 'caution' => 0, 'danger' => 0, 'critical' => 0, 'none' => 0];
         // 큐 10 확장 — G3 분류별 미수금 합산 (회의록 v5 §G3).
+        // 안건 1 v4 (2026-05-21) — 단계명 swap: 수출통관중/완료 → 통관중/완료.
         // 선적전: 매입중·매입완료·말소완료·판매중·판매완료 + unpaid > 0
-        // 선적후: 수출통관중·수출통관완료·선적중·선적완료 + unpaid > 0
+        // 선적후: 선적중·선적완료·통관중·통관완료 + unpaid > 0 (v3 호환 라벨 포함 — 운영 데이터 0이지만 안전망)
         $beforeShippingStages = ['매입중', '매입완료', '말소완료', '판매중', '판매완료'];
-        $afterShippingStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
+        $afterShippingStages = ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'];
         $classification = [
             'before_shipping' => ['unpaid' => 0, 'count' => 0],
             'after_shipping' => ['unpaid' => 0, 'count' => 0],
@@ -471,7 +472,7 @@ new #[Layout('components.layouts.app')] class extends Component
      * 회의록 결정 3종 (평균 통관일수는 export_cleared_at 부재로 보류):
      * 1) 통관 정체 차량 수 — 판매완료(sale_price>0 AND unpaid<=0) +
      *    수출신고서 NULL + sale_date 30일 경과
-     * 2) 수출신고서 미업로드 차량 수 — 수출통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
+     * 2) 수출신고서 미업로드 차량 수 — 통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
      *
      * SQL 100% 일치 원칙 (SKILLS.md §9):
@@ -513,8 +514,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereNull('export_declaration_document')
             ->count();
 
-        // 3) 포워딩사별 진행 차량 — 통관/선적 단계
-        $clearanceStages = ['수출통관중', '수출통관완료', '선적중', '선적완료'];
+        // 3) 포워딩사별 진행 차량 — 선적/통관 단계 (안건 1 v4 — 단계명 swap, v3 호환 포함)
+        $clearanceStages = ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'];
         $byForwarder = $applyCommonFilters(Vehicle::query())
             ->whereNotNull('forwarding_company_id')
             ->whereIn('progress_status_cache', $clearanceStages)
@@ -692,7 +693,7 @@ new #[Layout('components.layouts.app')] class extends Component
                class="card transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">수출신고서 미업로드</span>
-                    <span class="text-xs text-amber-500">수출통관중 단계</span>
+                    <span class="text-xs text-amber-500">통관중 단계</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">
                     {{ number_format($this->clearanceKpis['unfiled_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>

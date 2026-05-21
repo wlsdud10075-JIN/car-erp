@@ -60,22 +60,26 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 
 ### 차량 진행상태 10단계 (computed property — DB 컬럼 X)
 > 큐 17 — 폐기 컨셉 제거 (운영상 없음). 11단계 → 10단계.
-> 큐 2.6 — `progress_status_rule_version` 분기. v1=단일 트리거(grandfather) / **v2=이중 트리거** (기본값, 신규 row).
+> 큐 2.6 — `progress_status_rule_version` 분기. v1·v2·v3=grandfather / **v4=워크플로우 순서 변경** (기본값, 신규 row, 2026-05-21 회의확장씬 안건 1).
 
-**v2 이중 트리거 — 캐스케이드 (다음 단계 = 이전 단계 트리거 AND 현재 단계 트리거)**.
-우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환:
-1. `dhl_request` AND `bl_document` → **`거래완료`**
-2. `bl_document` AND `bl_loading_location` → **`선적완료`**
-3. `bl_loading_location` AND `is_export_cleared` → **`선적중`**
-4. `is_export_cleared` AND `export_declaration_document` → **`수출통관완료`**
-5. `export_buyer_id` AND `shipping_date` → **`수출통관중`**
+**v4 워크플로우 순서**: 매입 → 판매 → **반입(선적) → 통관** → B/L → 거래완료 (v3 통관→선적→B/L 정반대).
+'선적'의 도메인 의미 = 반입(`bl_loading_location` 입력). 단계명 swap (수출통관중/완료 → 통관중/완료).
+
+**v4 cascade — 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환**:
+1. `bl_document` → **`거래완료`** (단독, B/L 발급 = 거래완료)
+2. `bl_document` AND `is_export_cleared` → **`통관완료`** (실질 도달 불가 — #1 우선)
+3. `is_export_cleared` AND `bl_loading_location` → **`통관중`** (반입 후 통관 신청)
+4. `bl_loading_location` AND `export_declaration_document` → **`선적완료`** (반입 + 수출신고서)
+5. `bl_loading_location` → **`선적중`** (반입지 입력)
 6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
 7. `sale_price > 0` → **`판매중`**
 8. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**
 9. `purchase_price > 0` AND 매입미지급 ≤ 0 → **`매입완료`**
 10. 기본값 → **`매입중`**
 
-**v1 grandfather** (`progress_status_rule_version < 2` row): 5단계까지 단일 트리거 — `dhl_request`만으로 거래완료, `bl_document`만으로 선적완료 등. 마이그 이전 row 호환용. 신규 row는 v2.
+**v3 grandfather** (`progress_status_rule_version=3` row): 거래완료 = `bl_document` 단독 / 선적완료·선적중 = v2 동일 / 수출통관완료·수출통관중 = v2 동일. 안건 J 본격 (2026-05-20). 신규 row default 였음.
+**v2 이중 트리거** (`progress_status_rule_version=2` row): 거래완료 = `dhl_request AND bl_document`. 큐 2.6.
+**v1 grandfather** (`progress_status_rule_version < 2` row): 5단계 단일 트리거. 마이그 이전.
 
 ### 판매채널 3종 (`vehicles.sales_channel` enum)
 - `export` 수출 — 다중통화, B/L·면장·DHL 풀 흐름
