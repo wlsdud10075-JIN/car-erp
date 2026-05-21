@@ -156,7 +156,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         unset($this->users);
-        session()->flash('success', '사용자 정보가 저장됐습니다.');
+        // 2026-05-21 사용자 피드백 — 저장 시 시각 피드백 + 패널 자동 닫기.
+        $this->dispatch('notify', message: '사용자 정보가 저장됐습니다.', type: 'success');
+        $this->close();
     }
 
     public function delete(int $id): void
