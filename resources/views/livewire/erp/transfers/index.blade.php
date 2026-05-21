@@ -90,7 +90,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         if (! auth()->user()?->canConfirmFinanceTransfer()) {
-            abort(403, '재무 확정 권한이 없습니다. (관리 role 은 자기 승인을 직접 처리할 수 없음 — SoD)');
+            abort(403, '재무 확정 권한이 없습니다.');
         }
     }
 

@@ -84,15 +84,16 @@ class TransfersIndexTest extends TestCase
         $response->assertStatus(200);
     }
 
-    public function test_manager_role_blocked_from_transfers_page(): void
+    public function test_manager_role_can_access_transfers_page(): void
     {
+        // 2026-05-21 사용자 직접 결정 — 19-F SoD 정책 변경. 관리 role 을 중간 관리자로 정의.
+        // 재무처리 페이지 접근 허용 (확정/거부 등 일상 운영 가능). 삭제 등 파괴적 액션만 별도 차단.
         $c = $this->makeAwaitingTransfer();
         $this->actingAs($c['manager']);
 
-        // settlement 미들웨어는 관리 role 통과시키지만 mount() 에서 abort(403)
         $response = $this->get(route('erp.transfers.index'));
 
-        $response->assertStatus(403);
+        $response->assertStatus(200);
     }
 
     public function test_sales_role_blocked_from_transfers_page(): void

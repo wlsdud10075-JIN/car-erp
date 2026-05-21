@@ -1439,9 +1439,11 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(10_000_000, $v->purchase_unpaid_amount, 'Draft 추가는 매입 미지급 변동 X');
     }
 
-    public function test_22cf_can_confirm_finance_allows_finance_admin_blocks_others(): void
+    public function test_22cf_can_confirm_finance_allows_finance_admin_manager_blocks_others(): void
     {
-        // PBP 'down'/'selling_fee' 입력 권한 = canConfirmFinance (재무 + admin/super). 영업·통관·관리 차단.
+        // 2026-05-21 사용자 직접 결정 — 19-F SoD 정책 변경.
+        // canConfirmFinance (= canConfirmFinanceTransfer) 허용: super/admin/재무/관리 (중간 관리자).
+        // 영업·수출통관 차단 유지.
         $admin = User::factory()->create(['permission' => 'admin']);
         $super = User::factory()->create(['permission' => 'super']);
         $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
@@ -1452,9 +1454,9 @@ class WorkflowGapTest extends TestCase
         $this->assertTrue($admin->canConfirmFinance());
         $this->assertTrue($super->canConfirmFinance());
         $this->assertTrue($finance->canConfirmFinance());
+        $this->assertTrue($manager->canConfirmFinance(), '관리도 재무처리 가능 (중간 관리자)');
         $this->assertFalse($sales->canConfirmFinance(), '영업은 PBP 직접 입력 차단');
         $this->assertFalse($clearance->canConfirmFinance(), '수출통관은 PBP 직접 입력 차단');
-        $this->assertFalse($manager->canConfirmFinance(), '관리도 매입 자금은 재무 전담 (22-C 핵심)');
     }
 
     public function test_22cf_vehicles_2cols_dropped(): void

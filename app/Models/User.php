@@ -111,11 +111,12 @@ class User extends Authenticatable
     /**
      * 큐 19-F — 자금 이체 재무 확정 권한 (회의록 2026-05-16).
      *
-     * SoD 분리: 관리(승인) ≠ 재무(실물 처리·확정).
-     * 허용: super / admin / role='재무'. ⚠️ '관리' role 명시적 차단 (canAccessSettlement 와 분리).
+     * 2026-05-21 사용자 결정 — 19-F SoD 정책 직접 변경 ('회의 하지 마, 중간 관리자라 그래'):
+     *   '관리' role 을 중간 관리자로 정의 → 재무 확정/거부 등 일상 운영 허용.
+     *   삭제 등 파괴적 액션만 별도 차단 (transfers 페이지엔 직접 삭제 없어서 추가 가드 없음).
+     *   SoD 회의록 19-F 결정은 사용자 직접 결정으로 무효 — 메모리 project_pending_tasks 처리 완료.
      *
-     * canAccessSettlement 가 ['재무','관리'] 모두 통과시키는 것과 의도적으로 다름 —
-     * 박관리(관리 role)는 자기 승인을 직접 재무 확정할 수 없어야 함.
+     * 허용: super / admin / role∈{재무, 관리}.
      */
     public function canConfirmFinanceTransfer(): bool
     {
@@ -123,7 +124,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->role === '재무';
+        return in_array($this->role, ['재무', '관리'], true);
     }
 
     /**
