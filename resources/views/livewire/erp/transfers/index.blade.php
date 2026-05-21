@@ -62,6 +62,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public ?string $modalPurchaseBankMemo = null;
 
+    /** 2026-05-21 사용자 피드백 — 매입가/매도비/총금액 + 판매가 등 차량 회계 정보 표시. */
+    public array $modalVehicleData = [];
+
     /** 큐 19-K — 'confirm' (재무 처리 완료) / 'reject' (재무 거부) */
     public string $decisionMode = 'confirm';
 
@@ -201,6 +204,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->modalPurchaseAccount = null;
         $this->modalPurchaseHolder = null;
         $this->modalPurchaseBankMemo = null;
+        $this->modalVehicleData = [];
 
         // 22-A-2 — 매입 잔금 모달일 때 매입처 4컬럼 자동 표시 + finance_note default 자동 기입.
         if ($this->tabType === 'purchase_payment' && isset($p) && $p->vehicle) {
@@ -211,12 +215,34 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->modalPurchaseHolder = $v->purchase_seller_holder;
             $this->modalPurchaseBankMemo = $v->purchase_bank_memo;
 
+            // 2026-05-21 사용자 피드백 — 매입가/매도비/총금액 표시.
+            $this->modalVehicleData = [
+                'purchase_price' => (int) ($v->purchase_price ?? 0),
+                'selling_fee' => (int) ($v->selling_fee ?? 0),
+                'purchase_total' => (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0),
+            ];
+
             $target = $this->modalPurchaseFrom ?: '매입처';
             $bank = $this->modalPurchaseBank ?: '';
             $account = $this->modalPurchaseAccount ?: '';
             if ($bank !== '' || $account !== '') {
                 $this->financeNote = trim("{$target}/{$bank}/{$account}로 송금", '/');
             }
+        }
+
+        // 2026-05-21 — 판매 잔금 모달일 때 판매가/커미션/자동하역비/TAX-DC/통화 표시.
+        if ($this->tabType === 'sale_payment' && isset($p) && $p->vehicle) {
+            $v = $p->vehicle;
+            $this->modalVehicleData = [
+                'currency' => $v->currency,
+                'sale_price' => (int) ($v->sale_price ?? 0),
+                'commission' => (int) ($v->commission ?? 0),
+                'auto_loading' => (int) ($v->auto_loading ?? 0),
+                'tax_dc' => (int) ($v->tax_dc ?? 0),
+                'transport_fee' => (int) ($v->transport_fee ?? 0),
+                'sale_total' => (int) ($v->sale_total_amount ?? 0),
+                'buyer_name' => $v->buyer?->name,
+            ];
         }
 
         $this->showModal = true;
@@ -300,6 +326,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->modalPurchaseAccount = null;
         $this->modalPurchaseHolder = null;
         $this->modalPurchaseBankMemo = null;
+        $this->modalVehicleData = [];
     }
 
     /**
@@ -875,6 +902,44 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
 
+        {{-- 2026-05-21 사용자 피드백 — 매입 잔금: 매입가/매도비/총금액 표시 --}}
+        @if($tabType === 'purchase_payment' && ! empty($modalVehicleData))
+        <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs">
+            <div class="mb-1 font-medium text-amber-900">차량 매입 금액</div>
+            <dl class="grid grid-cols-[80px_1fr] gap-y-1 text-gray-700">
+                <dt class="text-gray-500">매입가</dt><dd class="text-right">₩{{ number_format($modalVehicleData['purchase_price'] ?? 0) }}</dd>
+                <dt class="text-gray-500">매도비</dt><dd class="text-right">₩{{ number_format($modalVehicleData['selling_fee'] ?? 0) }}</dd>
+                <dt class="text-gray-500 font-medium border-t border-amber-200 pt-1">총금액</dt>
+                <dd class="text-right font-bold text-amber-900 border-t border-amber-200 pt-1">₩{{ number_format($modalVehicleData['purchase_total'] ?? 0) }}</dd>
+            </dl>
+        </div>
+        @endif
+
+        {{-- 2026-05-21 사용자 피드백 — 판매 잔금: 판매가/커미션 등 표시 --}}
+        @if($tabType === 'sale_payment' && ! empty($modalVehicleData))
+        <div class="mt-3 rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs">
+            <div class="mb-1 font-medium text-purple-900">차량 판매 금액 {{ $modalVehicleData['buyer_name'] ? '(바이어: '.$modalVehicleData['buyer_name'].')' : '' }}</div>
+            @php $curr = $modalVehicleData['currency'] ?? 'KRW'; $sym = $curr === 'KRW' ? '₩' : ''; @endphp
+            <dl class="grid grid-cols-[100px_1fr] gap-y-1 text-gray-700">
+                <dt class="text-gray-500">판매가</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['sale_price'] ?? 0) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                @if(($modalVehicleData['commission'] ?? 0) > 0)
+                <dt class="text-gray-500">+ 커미션</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['commission']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                @endif
+                @if(($modalVehicleData['auto_loading'] ?? 0) > 0)
+                <dt class="text-gray-500">+ 자동하역비</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['auto_loading']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                @endif
+                @if(($modalVehicleData['tax_dc'] ?? 0) > 0)
+                <dt class="text-gray-500">- TAX/DC</dt><dd class="text-right text-red-500">{{ $sym }}{{ number_format($modalVehicleData['tax_dc']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                @endif
+                @if(($modalVehicleData['transport_fee'] ?? 0) > 0)
+                <dt class="text-gray-500">+ 운임비</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['transport_fee']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                @endif
+                <dt class="text-gray-500 font-medium border-t border-purple-200 pt-1">총 판매액</dt>
+                <dd class="text-right font-bold text-purple-900 border-t border-purple-200 pt-1">{{ $sym }}{{ number_format($modalVehicleData['sale_total'] ?? 0) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+            </dl>
+        </div>
+        @endif
+
         <div class="mt-3">
             <label class="block text-xs text-gray-500 mb-1">은행 거래 번호 또는 처리 메모 (선택)</label>
             <textarea wire:model="financeNote" rows="3"
@@ -906,7 +971,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         <div class="mt-3 space-y-3">
             <div>
-                <label class="block text-xs text-gray-500 mb-1">대상 차량 <span class="text-amber-500">●</span></label>
+                <label class="block text-xs text-gray-500 mb-1">대상 차량</label>
                 <select wire:model="newPbpVehicleId" class="input-base">
                     <option value="">-- 차량 선택 --</option>
                     @foreach($this->purchaseEligibleVehicles as $v)
@@ -917,13 +982,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             <div>
-                <label class="block text-xs text-gray-500 mb-1">금액 (원) <span class="text-amber-500">●</span></label>
+                <label class="block text-xs text-gray-500 mb-1">금액 (원)</label>
                 <input wire:model="newPbpAmountStr" type="text" class="input-base" placeholder="0" />
                 @error('newPbpAmountStr') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>
-                <label class="block text-xs text-gray-500 mb-1">지급일 <span class="text-amber-500">●</span></label>
+                <label class="block text-xs text-gray-500 mb-1">지급일</label>
                 <input wire:model="newPbpDate" type="date" class="input-base" />
                 @error('newPbpDate') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>

@@ -2063,9 +2063,10 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count, '입금률 < 50% 말소완료 차량은 통관 후보 제외');
     }
 
-    public function test_clearance_candidates_excludes_already_clearance_started(): void
+    public function test_clearance_candidates_includes_after_clearance_started(): void
     {
-        // 수출통관 시작된 차량 (export_declaration_document NOT NULL) → 제외
+        // 2026-05-21 사용자 피드백 — 통관 시작된 차량(수출통관완료/선적중/선적완료) 도 사이드바 메뉴에 노출.
+        // 거래완료 진입 시만 사라지게 (active 필터로 자동 제외).
         $v = $this->makeVehicle([
             'purchase_price' => 5_000_000,
             'sale_price' => 8_000_000,
@@ -2074,7 +2075,7 @@ class WorkflowGapTest extends TestCase
         ]);
 
         $count = Vehicle::query()->action('clearance_candidates')->count();
-        $this->assertSame(0, $count, '이미 통관 시작된 차량 제외');
+        $this->assertSame(1, $count, '통관 시작된 차량은 노출 (거래완료 전까지)');
     }
 
     public function test_clearance_candidates_excludes_completed_via_active_only(): void

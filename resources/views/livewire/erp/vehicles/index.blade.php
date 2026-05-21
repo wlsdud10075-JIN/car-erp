@@ -2773,7 +2773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">매입일 <span class="text-amber-500">●</span></label><input wire:model="purchase_date" type="date" class="input-base bg-yellow-50" /></div>
+                <div><label class="label-base">매입일 <span class="text-amber-500">●</span></label><input wire:model="purchase_date" type="date" class="input-base bg-amber-100" /></div>
                 <div>
                     <label class="label-base">매입담당자</label>
                     <select wire:model="salesman_id_str" class="input-base">
@@ -2785,10 +2785,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">구입처 <span class="text-amber-500">●</span></label>
-                    <input wire:model="purchase_from" type="text" class="input-base bg-yellow-50" placeholder="경매 / 딜러 / 개인" />
+                    <input wire:model="purchase_from" type="text" class="input-base bg-amber-100" placeholder="경매 / 딜러 / 개인" />
                 </div>
-                <div><label class="label-base">매입가 (원) <span class="text-amber-500">●</span></label><input wire:model="purchase_price_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
-                <div><label class="label-base">매도비 (원) <span class="text-amber-500">●</span></label><input wire:model="selling_fee_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
+                <div><label class="label-base">매입가 (원) <span class="text-amber-500">●</span></label><input wire:model="purchase_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">매도비 (원) <span class="text-amber-500">●</span></label><input wire:model="selling_fee_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -2802,7 +2802,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <label class="label-base">은행명 <span class="text-amber-500">●</span></label>
                     <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
-                           class="input-base bg-yellow-50" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
+                           class="input-base bg-amber-100" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
                            x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
                     <datalist id="korean-banks-list">
                         <template x-for="bank in $store.koreanBanks.names()" :key="bank">
@@ -2812,16 +2812,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">예금주 <span class="text-amber-500">●</span></label>
-                    <input wire:model="purchase_seller_holder" type="text" class="input-base bg-yellow-50" placeholder="개인명 또는 법인명" maxlength="100" />
+                    <input wire:model="purchase_seller_holder" type="text" class="input-base bg-amber-100" placeholder="개인명 또는 법인명" maxlength="100" />
                 </div>
                 <div class="col-span-2">
                     <label class="label-base flex items-center gap-1">
-                        계좌번호 <span class="text-amber-500">●</span>
-                        <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
+                        계좌번호                        <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
                         <span class="text-[10px] font-normal text-gray-400">— 은행 선택 시 자동 hyphen</span>
                     </label>
                     <input x-ref="accountInput" wire:model.blur="purchase_seller_account" type="text"
-                           class="input-base bg-yellow-50 font-mono" placeholder="123-456-789012" autocomplete="off"
+                           class="input-base bg-amber-100 font-mono" placeholder="123-456-789012" autocomplete="off"
                            x-on:input="$el.value = $store.koreanBanks.applyMask($refs.bankInput.value, $el.value)" />
                 </div>
                 <div class="col-span-2">
@@ -3028,19 +3027,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">판매일 <span class="text-amber-500">●</span></label><input wire:model="sale_date" type="date" class="input-base bg-yellow-50" /></div>
+                <div><label class="label-base">판매일 <span class="text-amber-500">●</span></label><input wire:model="sale_date" type="date" class="input-base bg-amber-100" /></div>
                 <div>
                     <label class="label-base">통화 <span class="text-amber-500">●</span></label>
-                    <select wire:model.live="currency" class="input-base bg-yellow-50">
+                    <select wire:model.live="currency" class="input-base bg-amber-100">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">환율 @if($currency !== 'KRW') <span class="text-amber-500">●</span> @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-yellow-50' : '' }}" placeholder="1350" /></div>
+                <div><label class="label-base">환율 @if($currency !== 'KRW') <span class="text-amber-500">●</span> @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-amber-100' : '' }}" placeholder="1350" /></div>
                 <div>
                     <label class="label-base">바이어 <span class="text-amber-500">●</span></label>
-                    <select wire:model.live="buyer_id_str" class="input-base bg-yellow-50">
+                    <select wire:model.live="buyer_id_str" class="input-base bg-amber-100">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
@@ -3049,7 +3048,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">컨사이니 <span class="text-amber-500">●</span></label>
-                    <select wire:model="consignee_id_str" class="input-base bg-yellow-50"
+                    <select wire:model="consignee_id_str" class="input-base bg-amber-100"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
                         @foreach($this->consigneesForSale as $c)
@@ -3057,7 +3056,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">판매가 <span class="text-amber-500">●</span></label><input wire:model="sale_price_str" type="text" class="input-base bg-yellow-50" placeholder="0" /></div>
+                <div><label class="label-base">판매가 <span class="text-amber-500">●</span></label><input wire:model="sale_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">운임비</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
@@ -3409,7 +3408,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">면장금액 (USD)</label><input wire:model="export_declaration_amount_str" type="text" class="input-base" placeholder="0.00" /></div>
+                {{-- 2026-05-21 — 면장금액 미입력 시 sale_price 자동 복사 (Vehicle::saving 훅). 인코텀즈 차이 등 명시 입력 시 그 값 우선 --}}
+                <div>
+                    <label class="label-base">면장금액</label>
+                    <input wire:model="export_declaration_amount_str" type="text" class="input-base" placeholder="비워두면 판매가 자동 적용" />
+                    <p class="mt-1 text-[11px] text-gray-400">통상 인보이스 금액과 동일. CIF/FOB 차이 시만 별도 입력</p>
+                </div>
                 <div><label class="label-base">수출신고번호</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
                 <div><label class="label-base">선적일</label><input wire:model="shipping_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">ETA</label><input wire:model="eta_date" type="date" class="input-base" /></div>
@@ -3887,8 +3891,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <dl class="space-y-1 text-xs text-gray-700">
                     <div class="flex justify-between"><dt class="text-gray-500">매입일</dt><dd class="font-medium">{{ $purchase_date ?: '— 미입력' }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">매입처</dt><dd class="font-medium">{{ $purchase_from ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">매입가</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float)$purchase_price_str) : '— 미입력' }} 원</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">매도비</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float)$selling_fee_str) : '0' }} 원</dd></div>
+                    {{-- 2026-05-21 fix — (float)"1,000,000" = 1.0 PHP 캐스팅 버그. str_replace 로 콤마 제거 필수 --}}
+                    <div class="flex justify-between"><dt class="text-gray-500">매입가</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float) str_replace(',', '', $purchase_price_str)) : '— 미입력' }} 원</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">매도비</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float) str_replace(',', '', $selling_fee_str)) : '0' }} 원</dd></div>
                     <hr class="border-blue-200 my-1">
                     <div class="flex justify-between"><dt class="text-gray-500">은행</dt><dd class="font-medium">{{ $purchase_seller_bank ?: '— 미입력' }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">예금주</dt><dd class="font-medium">{{ $purchase_seller_holder ?: '— 미입력' }}</dd></div>
@@ -3905,7 +3910,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($currency !== 'KRW')
                     <div class="flex justify-between"><dt class="text-gray-500">환율</dt><dd class="font-medium">{{ $exchange_rate_str ?: '— 미입력' }}</dd></div>
                     @endif
-                    <div class="flex justify-between"><dt class="text-gray-500">판매가</dt><dd class="font-medium">{{ $sale_price_str ? number_format((float)$sale_price_str) : '— 미입력' }} {{ $currency }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">판매가</dt><dd class="font-medium">{{ $sale_price_str ? number_format((float) str_replace(',', '', $sale_price_str)) : '— 미입력' }} {{ $currency }}</dd></div>
                     <hr class="border-purple-200 my-1">
                     <div class="flex justify-between">
                         <dt class="text-gray-500">바이어</dt>

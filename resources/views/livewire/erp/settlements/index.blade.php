@@ -160,27 +160,48 @@ new #[Layout('components.layouts.app')] class extends Component
             return [];
         }
 
-        $exportUsd = (float) ($v->export_declaration_amount ?? 0);
-        $transportUsd = (float) ($v->transport_fee ?? 0);
+        // 2026-05-21 정산 공식 재구조 — 엑셀 v2 기준 (Settlement 모델 accessor 와 동일 공식).
+        // 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate (면장 미포함)
+        $saleBase = (float) ($v->sale_price ?? 0)
+            + (float) ($v->commission ?? 0)
+            + (float) ($v->auto_loading ?? 0)
+            - (float) ($v->tax_dc ?? 0);
         $rate = (float) ($v->exchange_rate ?? 0);
-        $salesAmountKrw = (int) (($exportUsd - $transportUsd) * $rate);
-        $settlementSalesKrw = $salesAmountKrw - $v->cost_total;
-        $salesMargin = $settlementSalesKrw - (int) ($v->purchase_price ?? 0);
-        $vatMargin = (int) (($v->purchase_price ?? 0) * 0.09);
-        $totalMargin = $salesMargin + $vatMargin;
+        $salesAmountKrw = (int) ($saleBase * $rate);
 
+        $settlementSalesKrw = $salesAmountKrw - (int) ($v->cost_total ?? 0);
+
+        // 판매마진 = 정산판매금원화 - (purchase_price + selling_fee)  ← 매입합계
+        $purchaseTotal = (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0);
+        $salesMargin = $settlementSalesKrw - $purchaseTotal;
+
+        $vatMargin = (int) (($v->purchase_price ?? 0) * 0.09);
+        $totalMargin = (int) (($salesMargin + $vatMargin) * 0.9);   // × 0.9 = 부가세 10% 차감
+
+        // 정산액 — type 별 자동 분기 + NULL fallback default
         $settlementAmount = 0;
-        if ($this->settlement_type === 'ratio' && ($this->settlement_ratio ?? 0) > 0) {
-            $settlementAmount = (int) ($totalMargin * ($this->settlement_ratio / 100));
+        if ($this->settlement_type === 'ratio') {
+            $ratio = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
+                ? (float) $this->settlement_ratio
+                : \App\Models\Settlement::FREELANCE_RATIO_DEFAULT;
+            $settlementAmount = (int) ($totalMargin * ($ratio / 100));
         } elseif ($this->settlement_type === 'per_unit') {
-            $settlementAmount = (int) ($this->per_unit_amount ?? 0);
+            $settlementAmount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
+                ? (int) $this->per_unit_amount
+                : \App\Models\Settlement::EMPLOYEE_PER_UNIT_DEFAULT;
         }
 
-        $actualPayout = $settlementAmount - (int) ($this->other_deduction ?? 0);
+        // 서류비 — 프리랜서(ratio)만 50,000 자동 차감
+        $documentFee = $this->settlement_type === 'ratio'
+            ? \App\Models\Settlement::FREELANCE_DOCUMENT_FEE
+            : 0;
+
+        $actualPayout = $settlementAmount - $documentFee - (int) ($this->other_deduction ?? 0);
 
         return compact(
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
-            'vatMargin', 'totalMargin', 'settlementAmount', 'actualPayout'
+            'vatMargin', 'totalMargin', 'settlementAmount',
+            'documentFee', 'actualPayout'
         );
     }
 
@@ -697,7 +718,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600">
-                    <span>판매금원화 <span class="text-xs text-gray-400">(면장금액-운임비)×환율</span></span>
+                    <span>판매금원화 <span class="text-xs text-gray-400">(판매가+커미션+자동하역비-TAX/DC)×환율</span></span>
                     <span>₩{{ number_format($this->marginData['salesAmountKrw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
@@ -705,7 +726,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span>₩{{ number_format($this->marginData['settlementSalesKrw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
-                    <span>판매마진 <span class="text-xs text-gray-400">-매입가</span></span>
+                    <span>판매마진 <span class="text-xs text-gray-400">-(매입가+매도비)</span></span>
                     <span class="{{ $this->marginData['salesMargin'] < 0 ? 'text-red-500' : '' }}">₩{{ number_format($this->marginData['salesMargin']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
@@ -714,7 +735,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <hr class="border-gray-200" />
                 <div class="flex justify-between font-semibold text-gray-800">
-                    <span>총마진</span>
+                    <span>총마진 <span class="text-xs text-gray-400 font-normal">(판매마진+부가세마진)×0.9</span></span>
                     <span class="{{ $this->marginData['totalMargin'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['totalMargin']) }}</span>
                 </div>
             </div>
@@ -784,9 +805,22 @@ new #[Layout('components.layouts.app')] class extends Component
         @if(! empty($this->marginData))
         <div class="rounded-lg bg-purple-50 p-3 text-sm space-y-1.5">
             <div class="flex justify-between text-gray-600">
-                <span>정산액</span>
+                <span>정산액
+                    @if($settlement_type === 'ratio')
+                        <span class="text-xs text-gray-400">총마진 × {{ ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : 50 }}%</span>
+                    @else
+                        <span class="text-xs text-gray-400">건당 고정</span>
+                    @endif
+                </span>
                 <span class="font-medium">₩{{ number_format($this->marginData['settlementAmount']) }}</span>
             </div>
+            {{-- 2026-05-21 — 서류비 행 추가. 프리랜서(ratio)만 5만원 자동 차감 --}}
+            @if($this->marginData['documentFee'] > 0)
+            <div class="flex justify-between text-gray-500">
+                <span>서류비 <span class="text-xs text-gray-400">(프리랜서 자동)</span></span>
+                <span class="text-red-500">- ₩{{ number_format($this->marginData['documentFee']) }}</span>
+            </div>
+            @endif
             <div class="flex justify-between text-gray-500">
                 <span>기타공제</span>
                 <span class="text-red-500">- ₩{{ number_format((int) ($other_deduction ?? 0)) }}</span>

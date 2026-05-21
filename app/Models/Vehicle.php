@@ -434,6 +434,16 @@ class Vehicle extends Model
                 $vehicle->exchange_rate = 1;
             }
 
+            // 2026-05-21 사용자 결정 — 면장금액 = sale_price 자동 복사 (미입력 시).
+            // 통상 인보이스 금액 = 면장 신고가. 사용자가 별도 입력 안 해도 sale_price 그대로 적용.
+            // 명시 입력 시 (CIF/FOB 인코텀즈 차이 등) 그 값 우선 — 현재 값이 빈 경우만 자동 채움.
+            if (
+                (float) ($vehicle->export_declaration_amount ?? 0) <= 0
+                && (float) ($vehicle->sale_price ?? 0) > 0
+            ) {
+                $vehicle->export_declaration_amount = $vehicle->sale_price;
+            }
+
             // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).
             // 재무 확정 잔금 있는 차량의 매입가·판매가·환율·면장금액·비용·바이어·담당자 변경은
             // admin/super 잠금 해제 후 1회만 통과 (cache token 1회 소비 → 즉시 재잠금).
@@ -1177,18 +1187,23 @@ class Vehicle extends Model
             'clearance_candidates' => $q
                 ->where('purchase_price', '>', 0)
                 ->where('sale_price', '>', 0)
-                ->whereNull('export_declaration_document')
                 ->where(fn ($q2) => $q2
-                    // (a) 말소 안 됨
+                    // (a) 통관 신청 대기 — 말소 안 됨 + 수출신고서 미업로드 (말소 푸시 대상)
                     ->where(fn ($qa) => $qa
-                        ->where('is_deregistered', false)
-                        ->orWhereNull('deregistration_document'))
-                    // (b) 또는 말소완료 + 입금률 ≥ 50% (KRW 캐시 ≤ sale_price × 환율 × 0.5)
+                        ->whereNull('export_declaration_document')
+                        ->where(fn ($qa2) => $qa2
+                            ->where('is_deregistered', false)
+                            ->orWhereNull('deregistration_document')))
+                    // (b) 통관 신청 가능 — 말소완료 + 입금률 ≥ 50% + 수출신고서 미업로드
                     ->orWhere(fn ($qb) => $qb
+                        ->whereNull('export_declaration_document')
                         ->where('is_deregistered', true)
                         ->whereNotNull('deregistration_document')
                         ->whereNotNull('sale_unpaid_amount_krw_cache')
-                        ->whereRaw('sale_unpaid_amount_krw_cache <= (CAST(sale_price AS SIGNED) * CAST(COALESCE(exchange_rate, 1) AS DECIMAL(10,4)) * 0.5)'))),
+                        ->whereRaw('sale_unpaid_amount_krw_cache <= (CAST(sale_price AS SIGNED) * CAST(COALESCE(exchange_rate, 1) AS DECIMAL(10,4)) * 0.5)'))
+                    // (c) 2026-05-21 사용자 피드백 — 통관 후 선적 단계도 노출 (수출통관완료·선적중·선적완료).
+                    //     거래완료는 위 active 조건에서 자동 제외 → 진행 중 단계만 사이드바에 카운트.
+                    ->orWhereNotNull('export_declaration_document')),
 
             'clearance_request_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
