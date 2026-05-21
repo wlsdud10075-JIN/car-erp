@@ -2773,7 +2773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">매입일 <span class="text-amber-500">●</span></label><input wire:model="purchase_date" type="date" class="input-base bg-amber-100" /></div>
+                <div><label class="label-base">매입일 </label><input wire:model="purchase_date" type="date" class="input-base bg-amber-100" /></div>
                 <div>
                     <label class="label-base">매입담당자</label>
                     <select wire:model="salesman_id_str" class="input-base">
@@ -2784,11 +2784,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div class="col-span-2 sm:col-span-1">
-                    <label class="label-base">구입처 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">구입처 </label>
                     <input wire:model="purchase_from" type="text" class="input-base bg-amber-100" placeholder="경매 / 딜러 / 개인" />
                 </div>
-                <div><label class="label-base">매입가 (원) <span class="text-amber-500">●</span></label><input wire:model="purchase_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
-                <div><label class="label-base">매도비 (원) <span class="text-amber-500">●</span></label><input wire:model="selling_fee_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">매입가 (원) </label><input wire:model="purchase_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">매도비 (원) </label><input wire:model="selling_fee_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -2800,7 +2800,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div x-data class="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 <div>
-                    <label class="label-base">은행명 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">은행명 </label>
                     <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
                            class="input-base bg-amber-100" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
                            x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
@@ -2811,7 +2811,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </datalist>
                 </div>
                 <div>
-                    <label class="label-base">예금주 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">예금주 </label>
                     <input wire:model="purchase_seller_holder" type="text" class="input-base bg-amber-100" placeholder="개인명 또는 법인명" maxlength="100" />
                 </div>
                 <div class="col-span-2">
@@ -3027,18 +3027,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">판매일 <span class="text-amber-500">●</span></label><input wire:model="sale_date" type="date" class="input-base bg-amber-100" /></div>
+                <div><label class="label-base">판매일 </label><input wire:model="sale_date" type="date" class="input-base bg-amber-100" /></div>
                 <div>
-                    <label class="label-base">통화 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">통화 </label>
                     <select wire:model.live="currency" class="input-base bg-amber-100">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">환율 @if($currency !== 'KRW') <span class="text-amber-500">●</span> @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-amber-100' : '' }}" placeholder="1350" /></div>
+                <div><label class="label-base">환율 @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-amber-100' : '' }}" placeholder="1350" /></div>
                 <div>
-                    <label class="label-base">바이어 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">바이어 </label>
                     <select wire:model.live="buyer_id_str" class="input-base bg-amber-100">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
@@ -3047,7 +3047,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">컨사이니 <span class="text-amber-500">●</span></label>
+                    <label class="label-base">컨사이니 </label>
                     <select wire:model="consignee_id_str" class="input-base bg-amber-100"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
@@ -3056,7 +3056,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">판매가 <span class="text-amber-500">●</span></label><input wire:model="sale_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">판매가 </label><input wire:model="sale_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">운임비</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
@@ -3931,7 +3931,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-            <span class="text-amber-500">●</span> 표시된 노랑 입력란이 운영상 중요 항목입니다. 누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
+             표시된 노랑 입력란이 운영상 중요 항목입니다. 누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
