@@ -83,38 +83,34 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $this->validate([
-            'name' => 'required|string|max:100',
-        ], [], [
-            'name' => '이름',
-        ]);
-
-        $data = [
-            'name'      => $this->name,
-            'user_id'   => $this->user_id_str !== '' ? (int) $this->user_id_str : null,
-            'phone'     => $this->phone ?: null,
-            'email'     => $this->email ?: null,
-            'memo'      => $this->memo  ?: null,
-            'is_active' => $this->is_active,
-        ];
-
-        // 2026-05-21 — Salesman.type 은 user.type 미러링이 단일 출처.
-        // 신규 생성 시 연결된 user 가 있으면 user.type 으로 채움 (없으면 NULL 유지).
-        if (! $this->editingId && $this->user_id_str !== '') {
-            $user = User::find((int) $this->user_id_str);
-            if ($user && $user->type) {
-                $data['type'] = $user->type;
-            }
-        }
-
+        // 2026-05-21 사용자 결정: User 가 마스터. 편집 모드에서 name/email/user_id/type 은 read-only.
+        // /admin/users 폼이 자동으로 Salesman row 생성·동기화. 이 화면은 보충 정보(전화·메모·활성) 입력 전용.
         if ($this->editingId) {
+            $this->validate(['name' => 'required|string|max:100'], [], ['name' => '이름']);
             $sm = Salesman::findOrFail($this->editingId);
-            $sm->update($data);
-            // user_id 연결이 새로 생긴/변경된 경우 user.type 재미러링
-            if ($sm->user_id && $sm->user?->type) {
-                $sm->update(['type' => $sm->user->type]);
-            }
+            // 보충 필드만 update — name/email/user_id/type 은 손대지 않음 (User 마스터 보호).
+            $sm->update([
+                'phone'     => $this->phone ?: null,
+                'memo'      => $this->memo  ?: null,
+                'is_active' => $this->is_active,
+            ]);
         } else {
+            // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
+            $this->validate(['name' => 'required|string|max:100'], [], ['name' => '이름']);
+            $data = [
+                'name'      => $this->name,
+                'user_id'   => $this->user_id_str !== '' ? (int) $this->user_id_str : null,
+                'phone'     => $this->phone ?: null,
+                'email'     => $this->email ?: null,
+                'memo'      => $this->memo  ?: null,
+                'is_active' => $this->is_active,
+            ];
+            if ($this->user_id_str !== '') {
+                $user = User::find((int) $this->user_id_str);
+                if ($user && $user->type) {
+                    $data['type'] = $user->type;
+                }
+            }
             Salesman::create($data);
         }
 
@@ -261,19 +257,36 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 폼 --}}
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-3">
+        {{-- 2026-05-21 — 편집 시 사용자 마스터 안내 배너 --}}
+        @if($editingId)
+        <div class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+            이름·이메일·정산 분류는 <a href="{{ route('admin.users.index') }}" wire:navigate class="font-medium underline">사용자 관리</a>에서 변경. 이 화면은 보충 정보(전화·메모·활성) 입력 전용.
+        </div>
+        @endif
         <div>
-            <label class="label-base">이름 <span class="text-red-500">*</span></label>
-            <input wire:model="name" type="text" class="input-base" placeholder="김영업" />
-            @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            <label class="label-base">이름 @if(! $editingId)<span class="text-red-500">*</span>@endif</label>
+            @if($editingId)
+                <div class="input-base bg-gray-50 text-gray-700">{{ $name }}</div>
+            @else
+                <input wire:model="name" type="text" class="input-base" placeholder="김영업" />
+                @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            @endif
         </div>
         <div>
-            <label class="label-base">연결 계정 <span class="text-xs text-gray-400">(선택)</span></label>
-            <select wire:model="user_id_str" class="input-base">
-                <option value="">-- 연결 안 함 --</option>
-                @foreach($this->users as $u)
-                <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->email }})</option>
-                @endforeach
-            </select>
+            <label class="label-base">연결 계정 @if(! $editingId)<span class="text-xs text-gray-400">(선택)</span>@endif</label>
+            @if($editingId)
+                @php $linkedUser = $user_id_str !== '' ? \App\Models\User::find((int) $user_id_str) : null; @endphp
+                <div class="input-base bg-gray-50 text-gray-700">
+                    {{ $linkedUser ? "{$linkedUser->name} ({$linkedUser->email})" : '연결 안 됨' }}
+                </div>
+            @else
+                <select wire:model="user_id_str" class="input-base">
+                    <option value="">-- 연결 안 함 --</option>
+                    @foreach($this->users as $u)
+                    <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->email }})</option>
+                    @endforeach
+                </select>
+            @endif
         </div>
         <div class="grid grid-cols-2 gap-3">
             <div>
@@ -282,7 +295,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div>
                 <label class="label-base">이메일</label>
-                <input wire:model="email" type="email" class="input-base" />
+                @if($editingId)
+                    <div class="input-base bg-gray-50 text-gray-700">{{ $email ?: '-' }}</div>
+                @else
+                    <input wire:model="email" type="email" class="input-base" />
+                @endif
             </div>
         </div>
         {{-- 2026-05-21 — 정산 분류는 /admin/users 에서 관리. 여기서는 연결된 user.type 을 read-only 로 표시 --}}

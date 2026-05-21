@@ -137,10 +137,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             $user->update($data);
         }
 
-        // 2026-05-21 — 연결된 Salesman 의 type 미러링 (Vehicle::saved 훅이 salesman.type 사용).
-        // role=영업 이면 user.type 으로 동기화, 그 외 role 이면 손대지 않음 (salesman 행 자체가 없을 가능성 높음).
-        if ($typeValue !== null) {
-            $user->salesman()->update(['type' => $typeValue]);
+        // 2026-05-21 — User-Salesman 자동 미러링 (사용자 결정: 영업 user = 영업담당자).
+        // 운영 흐름 자동화: 영업계정 등록 → 자동 영업담당자 row 생성 → 사이드바·차량 목록·캐시플로우에 즉시 노출.
+        // 폼 내부에서만 호출 (Vehicle::saved 훅처럼 booted 에 박지 않음) — 테스트의 Salesman::create + user_id 패턴과 충돌 회피.
+        if ($this->role === '영업') {
+            \App\Models\Salesman::updateOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'name'      => $user->name,
+                    'email'     => $user->email,
+                    'type'      => $typeValue,
+                    'is_active' => true,
+                ]
+            );
+        } else {
+            // 영업 → 다른 role 전환 시: 기존 Salesman 비활성화 (차량 FK 보호 위해 삭제 X).
+            \App\Models\Salesman::where('user_id', $user->id)->update(['is_active' => false]);
         }
 
         unset($this->users);
