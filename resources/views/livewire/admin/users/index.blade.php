@@ -31,6 +31,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $password    = '';
     public string $permission  = 'user';
     public string $role        = '영업';
+    // 2026-05-21 — 정산 분류 (role='영업' 일 때만 입력). default 빈 값 → role=영업 신규 등록 시 명시 선택 강제.
+    public string $type        = '';
 
     #[Computed]
     public function users()
@@ -71,6 +73,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->password   = '';
         $this->permission = $user->permission ?? 'user';
         $this->role       = $user->role       ?? '영업';
+        $this->type       = $user->type       ?? '';
         $this->showPanel  = true;
     }
 
@@ -88,6 +91,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
             'permission' => 'required|in:super,admin,user',
             'role'       => 'required|in:전체,영업,통관,정산,관리',
+            // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
+            'type'       => 'nullable|in:employee,freelance|required_if:role,영업',
         ];
 
         if (! $this->editingId) {
@@ -96,7 +101,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             $rules['password'] = 'string|min:8';
         }
 
-        $this->validate($rules);
+        $this->validate($rules, [], [
+            'name'  => '이름',
+            'email' => '이메일',
+            'role'  => '역할',
+            'type'  => '정산 분류',
+        ]);
 
         // admin은 super 권한 부여 불가
         if (! auth()->user()->isSuperAdmin() && $this->permission === 'super') {
@@ -104,22 +114,33 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        // 2026-05-21 — role='영업' 일 때만 type 저장. 그 외 role 은 null 로 정규화.
+        $typeValue = $this->role === '영업' ? $this->type : null;
+
         $data = [
             'name'              => $this->name,
             'email'             => $this->email,
             'permission'        => $this->permission,
             'role'              => $this->role,
+            'type'              => $typeValue,
             'email_verified_at' => now(),
         ];
 
         if (! $this->editingId) {
             $data['password'] = Hash::make($this->password);
-            User::create($data);
+            $user = User::create($data);
         } else {
             if ($this->password !== '') {
                 $data['password'] = Hash::make($this->password);
             }
-            User::findOrFail($this->editingId)->update($data);
+            $user = User::findOrFail($this->editingId);
+            $user->update($data);
+        }
+
+        // 2026-05-21 — 연결된 Salesman 의 type 미러링 (Vehicle::saved 훅이 salesman.type 사용).
+        // role=영업 이면 user.type 으로 동기화, 그 외 role 이면 손대지 않음 (salesman 행 자체가 없을 가능성 높음).
+        if ($typeValue !== null) {
+            $user->salesman()->update(['type' => $typeValue]);
         }
 
         unset($this->users);
@@ -150,6 +171,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->name = $this->email = $this->password = '';
         $this->permission = 'user';
         $this->role = '영업';
+        $this->type = '';
     }
 }; ?>
 
@@ -344,7 +366,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($permission === 'user')
             <div>
                 <label class="label-base">역할 <span class="text-red-500">*</span></label>
-                <select wire:model="role" class="input-base">
+                <select wire:model.live="role" class="input-base">
                     @foreach(App\Models\User::ROLES as $r)
                     <option value="{{ $r }}">{{ $r }}</option>
                     @endforeach
@@ -352,6 +374,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-xs text-gray-400">역할에 따라 접근 가능한 메뉴가 달라집니다.</p>
                 @error('role')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            {{-- 2026-05-21 — role='영업' 일 때만 정산 분류 노출. 거래완료 시 자동 정산의 settlement_type 결정 --}}
+            @if($role === '영업')
+            <div>
+                <label class="label-base">정산 분류 <span class="text-red-500">*</span></label>
+                <select wire:model="type" class="input-base">
+                    <option value="">— 선택 —</option>
+                    @foreach(App\Models\User::TYPES as $key => $label)
+                    <option value="{{ $key }}">{{ $label }} ({{ $key === 'employee' ? '건당' : '비율' }} 정산)</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-xs text-gray-400">거래완료 시 자동 생성되는 정산 방식 결정 — 누락 방지를 위해 명시 선택 필수</p>
+                @error('type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            @endif
             @endif
         </div>
 

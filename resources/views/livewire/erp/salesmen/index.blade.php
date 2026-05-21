@@ -30,8 +30,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $email       = '';
     public string $memo        = '';
     public bool   $is_active   = true;
-    // 2026-05-20 #2-2+2-4 — Salesman.type 분기 (employee 사내직원 / freelance 프리랜서)
-    public string $type        = 'employee';
+    // 2026-05-21 — Salesman.type 입력 제거. User.type 단일 관리로 이동 (/admin/users 폼).
+    // Salesman.type 컬럼은 user.type 미러링 결과로만 채워짐 (Vehicle::saved 훅 호환).
 
     #[Computed]
     public function salesmen()
@@ -71,7 +71,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->email       = $sm->email ?? '';
         $this->memo        = $sm->memo  ?? '';
         $this->is_active   = $sm->is_active;
-        $this->type        = $sm->type ?? 'employee';
         $this->showPanel   = true;
     }
 
@@ -86,7 +85,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->validate([
             'name' => 'required|string|max:100',
-            'type' => 'required|in:employee,freelance',
+        ], [], [
+            'name' => '이름',
         ]);
 
         $data = [
@@ -96,11 +96,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             'email'     => $this->email ?: null,
             'memo'      => $this->memo  ?: null,
             'is_active' => $this->is_active,
-            'type'      => $this->type,
         ];
 
+        // 2026-05-21 — Salesman.type 은 user.type 미러링이 단일 출처.
+        // 신규 생성 시 연결된 user 가 있으면 user.type 으로 채움 (없으면 NULL 유지).
+        if (! $this->editingId && $this->user_id_str !== '') {
+            $user = User::find((int) $this->user_id_str);
+            if ($user && $user->type) {
+                $data['type'] = $user->type;
+            }
+        }
+
         if ($this->editingId) {
-            Salesman::findOrFail($this->editingId)->update($data);
+            $sm = Salesman::findOrFail($this->editingId);
+            $sm->update($data);
+            // user_id 연결이 새로 생긴/변경된 경우 user.type 재미러링
+            if ($sm->user_id && $sm->user?->type) {
+                $sm->update(['type' => $sm->user->type]);
+            }
         } else {
             Salesman::create($data);
         }
@@ -125,7 +138,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
         $this->is_active = true;
-        $this->type = 'employee';
     }
 }; ?>
 
@@ -273,15 +285,27 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="email" type="email" class="input-base" />
             </div>
         </div>
-        {{-- 2026-05-20 #2-2+2-4 — 정산 분기 (사내직원 건당 / 프리랜서 비율) --}}
+        {{-- 2026-05-21 — 정산 분류는 /admin/users 에서 관리. 여기서는 연결된 user.type 을 read-only 로 표시 --}}
+        @if($editingId)
+        @php
+            $editingSalesman = \App\Models\Salesman::with('user')->find($editingId);
+            $linkedUserType  = $editingSalesman?->user?->type;
+            $typeLabel       = $linkedUserType ? (\App\Models\User::TYPES[$linkedUserType] ?? '-') : null;
+        @endphp
         <div>
-            <label class="label-base">정산 분류 <span class="text-red-500">*</span></label>
-            <select wire:model="type" class="input-base">
-                <option value="employee">사내직원 (건당 정산)</option>
-                <option value="freelance">프리랜서 (비율 정산)</option>
-            </select>
-            <p class="mt-1 text-[11px] text-gray-500">거래완료 시 자동 생성되는 정산 방식 결정</p>
+            <label class="label-base">정산 분류</label>
+            <div class="input-base bg-gray-50 text-gray-700">
+                @if($typeLabel)
+                    {{ $typeLabel }} ({{ $linkedUserType === 'employee' ? '건당' : '비율' }} 정산)
+                @elseif($editingSalesman?->user_id)
+                    <span class="text-amber-600">미설정 — 사용자 관리에서 입력 필요</span>
+                @else
+                    <span class="text-gray-400">로그인 계정 미연결</span>
+                @endif
+            </div>
+            <p class="mt-1 text-[11px] text-gray-500">정산 분류는 <a href="{{ route('admin.users.index') }}" wire:navigate class="text-violet-600 hover:underline">사용자 관리</a>에서 변경 (role=영업)</p>
         </div>
+        @endif
         <div>
             <label class="label-base">메모</label>
             <textarea wire:model="memo" class="input-base" rows="2"></textarea>

@@ -18,12 +18,21 @@ class User extends Authenticatable
     // admin/super는 role 무관 (permission 기반)이라 임의 값 가능 — 시더에서 '관리'로 통일.
     public const ROLES = ['영업', '수출통관', '재무', '관리'];
 
+    // 2026-05-21 — 정산 분류 (role='영업' 일 때만 사용).
+    // 사용자 결정: Salesman.type 단일 관리 → User.type 으로 이동. /admin/users 폼에서 입력.
+    // 저장 시 연결된 Salesman.type 미러링 (Vehicle::saved 훅 호환 위해).
+    public const TYPES = [
+        'employee' => '사내직원',
+        'freelance' => '프리랜서',
+    ];
+
     protected $fillable = [
         'name',
         'email',
         'password',
         'permission',
         'role',
+        'type',
         'last_login_at',
     ];
 
