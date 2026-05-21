@@ -278,6 +278,13 @@ select:focus[data-flux-control] {
     box-shadow: 0 0 0 1px var(--color-primary);
 }
 
+/* 2026-05-21 사용자 피드백 — 필수 입력란 시각 강조.
+   .input-base 의 background-color: #ffffff 가 Tailwind utility (bg-amber-100 등) 를
+   덮어써서, specificity 높은 .input-required 로 명시 (0,0,2,0 > 0,0,1,0). */
+.input-base.input-required {
+    background-color: #fef3c7;  /* amber-100 */
+}
+
 /* 필터 바 전용 — w-full 없음, inline 크기 */
 .input-filter {
     border: 1px solid #d1d5db;

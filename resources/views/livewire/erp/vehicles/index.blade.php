@@ -2773,7 +2773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">매입일 </label><input wire:model="purchase_date" type="date" class="input-base bg-amber-100" /></div>
+                <div><label class="label-base">매입일 </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
                 <div>
                     <label class="label-base">매입담당자</label>
                     <select wire:model="salesman_id_str" class="input-base">
@@ -2785,10 +2785,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">구입처 </label>
-                    <input wire:model="purchase_from" type="text" class="input-base bg-amber-100" placeholder="경매 / 딜러 / 개인" />
+                    <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="경매 / 딜러 / 개인" />
                 </div>
-                <div><label class="label-base">매입가 (원) </label><input wire:model="purchase_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
-                <div><label class="label-base">매도비 (원) </label><input wire:model="selling_fee_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">매입가 (원) </label><input wire:model="purchase_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">매도비 (원) </label><input wire:model="selling_fee_str" type="text" class="input-base input-required" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -2802,7 +2802,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <label class="label-base">은행명 </label>
                     <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
-                           class="input-base bg-amber-100" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
+                           class="input-base input-required" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
                            x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
                     <datalist id="korean-banks-list">
                         <template x-for="bank in $store.koreanBanks.names()" :key="bank">
@@ -2812,7 +2812,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">예금주 </label>
-                    <input wire:model="purchase_seller_holder" type="text" class="input-base bg-amber-100" placeholder="개인명 또는 법인명" maxlength="100" />
+                    <input wire:model="purchase_seller_holder" type="text" class="input-base input-required" placeholder="개인명 또는 법인명" maxlength="100" />
                 </div>
                 <div class="col-span-2">
                     <label class="label-base flex items-center gap-1">
@@ -2820,7 +2820,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="text-[10px] font-normal text-gray-400">— 은행 선택 시 자동 hyphen</span>
                     </label>
                     <input x-ref="accountInput" wire:model.blur="purchase_seller_account" type="text"
-                           class="input-base bg-amber-100 font-mono" placeholder="123-456-789012" autocomplete="off"
+                           class="input-base input-required font-mono" placeholder="123-456-789012" autocomplete="off"
                            x-on:input="$el.value = $store.koreanBanks.applyMask($refs.bankInput.value, $el.value)" />
                 </div>
                 <div class="col-span-2">
@@ -3027,19 +3027,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">판매일 </label><input wire:model="sale_date" type="date" class="input-base bg-amber-100" /></div>
+                <div><label class="label-base">판매일 </label><input wire:model="sale_date" type="date" class="input-base input-required" /></div>
                 <div>
                     <label class="label-base">통화 </label>
-                    <select wire:model.live="currency" class="input-base bg-amber-100">
+                    <select wire:model.live="currency" class="input-base input-required">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">환율 @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'bg-amber-100' : '' }}" placeholder="1350" /></div>
+                <div><label class="label-base">환율 @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" /></div>
                 <div>
                     <label class="label-base">바이어 </label>
-                    <select wire:model.live="buyer_id_str" class="input-base bg-amber-100">
+                    <select wire:model.live="buyer_id_str" class="input-base input-required">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
@@ -3048,7 +3048,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">컨사이니 </label>
-                    <select wire:model="consignee_id_str" class="input-base bg-amber-100"
+                    <select wire:model="consignee_id_str" class="input-base input-required"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
                         @foreach($this->consigneesForSale as $c)
@@ -3056,7 +3056,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">판매가 </label><input wire:model="sale_price_str" type="text" class="input-base bg-amber-100" placeholder="0" /></div>
+                <div><label class="label-base">판매가 </label><input wire:model="sale_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">운임비</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
