@@ -291,9 +291,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
         </div>
         <div class="grid grid-cols-2 gap-3">
+            {{-- 2026-05-21 — Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
             <div>
                 <label class="label-base">전화</label>
-                <input wire:model="phone" type="text" class="input-base" />
+                <input wire:model="phone" type="tel" class="input-base"
+                       placeholder="01012345678"
+                       maxlength="13"
+                       x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" />
             </div>
             <div>
                 <label class="label-base">이메일</label>

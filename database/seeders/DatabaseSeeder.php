@@ -36,14 +36,14 @@ class DatabaseSeeder extends Seeder
         // 2026-05-21 — User-Salesman 1:1 강제. 기존 user_id=null 더미 salesman(최매입/정수출) 도 User 생성.
         //   김영업 = employee (사내직원), 최매입/정수출 = freelance (프리랜서). 'type' 은 role='영업' 한정.
         $users = [
-            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'permission' => 'super',  'role' => '관리',     'type' => null],
-            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'permission' => 'admin',  'role' => '관리',     'type' => null],
-            ['name' => '김영업',       'email' => 'sales@car-erp.test',    'permission' => 'user',   'role' => '영업',     'type' => 'employee'],
-            ['name' => '최매입',       'email' => 'choi@car-erp.test',     'permission' => 'user',   'role' => '영업',     'type' => 'freelance'],
-            ['name' => '정수출',       'email' => 'jung@car-erp.test',     'permission' => 'user',   'role' => '영업',     'type' => 'freelance'],
-            ['name' => '이통관',       'email' => 'clear@car-erp.test',    'permission' => 'user',   'role' => '수출통관', 'type' => null],
-            ['name' => '김진영',       'email' => 'settle@car-erp.test',   'permission' => 'user',   'role' => '재무',     'type' => null],
-            ['name' => '박관리',       'email' => 'manage@car-erp.test',   'permission' => 'user',   'role' => '관리',     'type' => null],
+            ['name' => '시스템관리자', 'email' => 'admin@car-erp.test',    'phone' => null,            'permission' => 'super',  'role' => '관리',     'type' => null],
+            ['name' => '최고관리자',   'email' => 'boss@car-erp.test',     'phone' => null,            'permission' => 'admin',  'role' => '관리',     'type' => null],
+            ['name' => '김영업',       'email' => 'sales@car-erp.test',    'phone' => '010-1111-2222', 'permission' => 'user',   'role' => '영업',     'type' => 'employee'],
+            ['name' => '최매입',       'email' => 'choi@car-erp.test',     'phone' => '010-3333-4444', 'permission' => 'user',   'role' => '영업',     'type' => 'freelance'],
+            ['name' => '정수출',       'email' => 'jung@car-erp.test',     'phone' => '010-5555-6666', 'permission' => 'user',   'role' => '영업',     'type' => 'freelance'],
+            ['name' => '이통관',       'email' => 'clear@car-erp.test',    'phone' => null,            'permission' => 'user',   'role' => '수출통관', 'type' => null],
+            ['name' => '김진영',       'email' => 'settle@car-erp.test',   'phone' => null,            'permission' => 'user',   'role' => '재무',     'type' => null],
+            ['name' => '박관리',       'email' => 'manage@car-erp.test',   'phone' => null,            'permission' => 'user',   'role' => '관리',     'type' => null],
         ];
 
         foreach ($users as $data) {
@@ -212,7 +212,8 @@ class DatabaseSeeder extends Seeder
         foreach ($salesmen as $data) {
             $linkedUser = $userByEmail->get($data['email']);
             $data['user_id'] = $linkedUser?->id;
-            $data['type'] = $linkedUser?->type;  // user.type 미러링 (Vehicle::saved 훅 호환)
+            $data['type'] = $linkedUser?->type;     // user.type 미러링 (Vehicle::saved 훅 호환)
+            $data['phone'] = $linkedUser?->phone ?? $data['phone'];  // 2026-05-21 — user.phone 우선
             Salesman::updateOrCreate(['name' => $data['name']], array_merge($data, ['is_active' => true]));
         }
     }

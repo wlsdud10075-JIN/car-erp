@@ -28,6 +28,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $name        = '';
     public string $email       = '';
+    public string $phone       = '';
     public string $password    = '';
     public string $permission  = 'user';
     public string $role        = '영업';
@@ -70,6 +71,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editingId  = $id;
         $this->name       = $user->name;
         $this->email      = $user->email;
+        $this->phone      = $user->phone      ?? '';
         $this->password   = '';
         $this->permission = $user->permission ?? 'user';
         $this->role       = $user->role       ?? '영업';
@@ -89,6 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $rules = [
             'name'       => 'required|string|max:100',
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
+            'phone'      => 'nullable|string|max:20',
             'permission' => 'required|in:super,admin,user',
             'role'       => 'required|in:전체,영업,통관,정산,관리',
             // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
@@ -120,6 +123,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $data = [
             'name'              => $this->name,
             'email'             => $this->email,
+            'phone'             => $this->phone ?: null,
             'permission'        => $this->permission,
             'role'              => $this->role,
             'type'              => $typeValue,
@@ -146,6 +150,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 [
                     'name'      => $user->name,
                     'email'     => $user->email,
+                    'phone'     => $user->phone,
                     'type'      => $typeValue,
                     'is_active' => true,
                 ]
@@ -182,7 +187,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
-        $this->name = $this->email = $this->password = '';
+        $this->name = $this->email = $this->phone = $this->password = '';
         $this->permission = 'user';
         $this->role = '영업';
         $this->type = '';
@@ -349,6 +354,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <label class="label-base">이메일 <span class="text-red-500">*</span></label>
                 <input wire:model="email" type="email" class="input-base" placeholder="user@car-erp.test" />
                 @error('email')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            {{-- 2026-05-21 — 전화번호 + Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
+            <div>
+                <label class="label-base">전화번호</label>
+                <input wire:model="phone" type="tel" class="input-base"
+                       placeholder="01012345678"
+                       maxlength="13"
+                       x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" />
+                @error('phone')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
                 <label class="label-base">

@@ -197,4 +197,36 @@ document.addEventListener('alpine:init', () => {
             return digits.length > 6 ? digits.slice(0, 6) + '-' + digits.slice(6) : digits;
         },
     });
+
+    // 2026-05-21 — 한국 전화번호 mask (4 패턴).
+    //   휴대폰   010-xxxx-xxxx  / 011~019-xxx-xxxx · xxxx-xxxx
+    //   서울    02-xxx-xxxx · 02-xxxx-xxxx
+    //   지방    0xx-xxx-xxxx · 0xx-xxxx-xxxx
+    //   대표    1588-xxxx (1[5-9]xx 패턴)
+    Alpine.store('phoneMask', {
+        apply(value) {
+            const d = (value || '').replace(/\D/g, '');
+            if (d.length === 0) return '';
+
+            // 02 (서울)
+            if (d.startsWith('02')) {
+                if (d.length <= 2) return d;
+                if (d.length <= 5) return d.slice(0, 2) + '-' + d.slice(2);
+                if (d.length <= 9) return d.slice(0, 2) + '-' + d.slice(2, 5) + '-' + d.slice(5);
+                return d.slice(0, 2) + '-' + d.slice(2, 6) + '-' + d.slice(6, 10);
+            }
+
+            // 1[5-9]xx 대표번호 (1588, 1644 등 8자리)
+            if (/^1[5-9]/.test(d) && d.length <= 8) {
+                if (d.length <= 4) return d;
+                return d.slice(0, 4) + '-' + d.slice(4, 8);
+            }
+
+            // 010, 011~019, 031~064, 070, 080 등 3자리 prefix
+            if (d.length <= 3) return d;
+            if (d.length <= 6) return d.slice(0, 3) + '-' + d.slice(3);
+            if (d.length <= 10) return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+            return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7, 11);
+        },
+    });
 });
