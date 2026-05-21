@@ -69,10 +69,12 @@ class VehicleCiplGenerator
         $ws->setCellValue('B9', $this->buyerBlock($buyer));
         $ws->setCellValue('J3', now()->format('Y-m-d'));
         $ws->setCellValue('I15', $v->bl_loading_location ?: '');
-        $ws->setCellValue('B16', 'INCHEON, KOREA');
-        $ws->setCellValue('E16', $buyer?->country?->name ?? '');
+        // 2026-05-21 CIPL 이식 — port_of_loading / discharge_port / incoterms 값 사용 (NULL fallback)
+        $ws->setCellValue('B16', $v->port_of_loading ?: 'INCHEON, KOREA');
+        $ws->setCellValue('E16', $v->dischargePort?->name ?? ($buyer?->country?->name ?? ''));
         $ws->setCellValue('B18', $v->vessel_name ?: '');
         $ws->setCellValue('E18', $v->shipping_date?->format('Y-m-d') ?? '');
+        $ws->setCellValue('C32', $v->incoterms ?: 'FOB');  // 인코텀즈 (FOB/CFR)
 
         // ── 차량 1대 (row 21) ─────────────────────────────────────
         $row = 21;
@@ -108,10 +110,12 @@ class VehicleCiplGenerator
         $ws->setCellValue('J3', now()->format('Y-m-d'));
         $ws->setCellValue('I15', $v->bl_loading_location ?: '');
         $ws->setCellValue('I17', $v->container_number ?: '');
-        $ws->setCellValue('B16', 'INCHEON, KOREA');
-        $ws->setCellValue('E16', $buyer?->country?->name ?? '');
+        // 2026-05-21 CIPL 이식 — port_of_loading / discharge_port / incoterms 값 사용 (NULL fallback)
+        $ws->setCellValue('B16', $v->port_of_loading ?: 'INCHEON, KOREA');
+        $ws->setCellValue('E16', $v->dischargePort?->name ?? ($buyer?->country?->name ?? ''));
         $ws->setCellValue('B18', $v->vessel_name ?: '');
         $ws->setCellValue('E18', $v->shipping_date?->format('Y-m-d') ?? '');
+        $ws->setCellValue('C37', $v->incoterms ?: 'FOB');  // 인코텀즈 (FOB/CFR — con_CIPL은 C37 셀)
 
         // ── 차량 1대 (row 21 + 22 fuel/cc) ─────────────────────────
         $row = 21;

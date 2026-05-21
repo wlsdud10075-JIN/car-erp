@@ -48,7 +48,8 @@ class Vehicle extends Model
         'sale_other_costs', 'savings_used',
         'export_buyer_id', 'export_consignee_id', 'forwarding_company_id',
         'export_declaration_amount', 'shipping_date', 'eta_date', 'shipping_method',
-        'port_of_loading', 'export_declaration_document', 'export_declaration_number', 'is_export_cleared',
+        'port_of_loading', 'incoterms', 'discharge_port_id',
+        'export_declaration_document', 'export_declaration_number', 'is_export_cleared',
         'forwarding_email_sent',
         'bl_buyer_id', 'bl_consignee_id', 'bl_number', 'container_number',
         'bl_loading_location', 'vessel_name', 'bl_document', 'bl_issue_date',
@@ -815,6 +816,12 @@ class Vehicle extends Model
     public function forwardingCompany(): BelongsTo
     {
         return $this->belongsTo(ForwardingCompany::class);
+    }
+
+    // 2026-05-21 — CIPL 도착항 마스터.
+    public function dischargePort(): BelongsTo
+    {
+        return $this->belongsTo(Port::class, 'discharge_port_id');
     }
 
     public function blBuyer(): BelongsTo

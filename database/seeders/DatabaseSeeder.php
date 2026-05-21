@@ -26,6 +26,7 @@ class DatabaseSeeder extends Seeder
         $this->seedBuyersAndConsignees();
         $this->seedForwardingCompanies();
         $this->seedSalesmen();
+        $this->call(PortSeeder::class);
         $this->call(VehicleSeeder::class);
     }
 

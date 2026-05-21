@@ -188,6 +188,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $eta_date          = '';
     public string $shipping_method   = '';
     public string $port_of_loading   = '';
+    // 2026-05-21 — CIPL 이식 — 인코텀즈 + 도착항 마스터 FK
+    public string $incoterms              = '';
+    public string $discharge_port_id_str  = '';
     public bool   $is_export_cleared = false;
 
     // ── 선적 (B/L) ────────────────────────────────────────────────
@@ -317,6 +320,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Computed]
     public function buyers() { return Buyer::where('is_active', true)->orderBy('name')->get(); }
+
+    // 2026-05-21 — CIPL 드롭다운 (Port 마스터 type 별 활성 목록)
+    #[Computed]
+    public function loadingPorts() { return \App\Models\Port::ofType('loading')->get(); }
+
+    #[Computed]
+    public function unloadingPorts() { return \App\Models\Port::ofType('unloading')->get(); }
+
+    #[Computed]
+    public function dischargePorts() { return \App\Models\Port::ofType('discharge')->get(); }
 
     #[Computed]
     public function consigneesForSale()
@@ -778,6 +791,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->eta_date        = $v->eta_date      ? $v->eta_date->format('Y-m-d')      : '';
         $this->shipping_method = $v->shipping_method ?? '';
         $this->port_of_loading = $v->port_of_loading ?? '';
+        $this->incoterms = $v->incoterms ?? '';
+        $this->discharge_port_id_str = $v->discharge_port_id ? (string) $v->discharge_port_id : '';
         $this->is_export_cleared = $v->is_export_cleared;
 
         // 선적
@@ -1392,6 +1407,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'eta_date'         => $toDate($this->eta_date),
             'shipping_method'  => $this->shipping_method  ?: null,
             'port_of_loading'  => $this->port_of_loading  ?: null,
+            'incoterms'        => $this->incoterms ?: null,
+            'discharge_port_id' => $this->discharge_port_id_str !== '' ? (int) $this->discharge_port_id_str : null,
             'is_export_cleared' => $this->is_export_cleared,
             // 선적
             'bl_buyer_id'     => $toId($this->bl_buyer_id_str),
@@ -2293,6 +2310,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'deposit_down_payment_str','interim_payment_str','advance_payment1_str','advance_payment2_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
+            'incoterms','discharge_port_id_str',
             'bl_buyer_id_str','bl_consignee_id_str','bl_number','container_number',
             'bl_loading_location','vessel_name','bl_issue_date',
             'dhl_recipient_name','dhl_recipient_address','dhl_recipient_phone',
@@ -3425,7 +3443,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="CONTAINER">CONTAINER</option>
                     </select>
                 </div>
-                <div><label class="label-base">선적항</label><input wire:model="port_of_loading" type="text" class="input-base" placeholder="부산항" /></div>
+                {{-- 2026-05-21 CIPL 이식 — 선적항(Port of Loading) 드롭다운 --}}
+                <div>
+                    <label class="label-base">선적항 (Port of Loading)</label>
+                    <select wire:model="port_of_loading" class="input-base">
+                        <option value="">-- 선택 --</option>
+                        @foreach($this->loadingPorts as $p)
+                        <option value="{{ $p->name }}">{{ $p->display_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                {{-- 2026-05-21 — 인코텀즈 (FOB/CFR) — CIPL C32/C37 셀에 사용 --}}
+                <div>
+                    <label class="label-base">인코텀즈</label>
+                    <select wire:model="incoterms" class="input-base">
+                        <option value="">-- 선택 --</option>
+                        <option value="FOB">FOB</option>
+                        <option value="CFR">CFR</option>
+                    </select>
+                </div>
+                {{-- 2026-05-21 — Discharge Port (도착항) FK — CIPL E16/F16 셀 --}}
+                <div>
+                    <label class="label-base">도착항 (Discharge Port)</label>
+                    <select wire:model="discharge_port_id_str" class="input-base">
+                        <option value="">-- 바이어 국가 자동 --</option>
+                        @foreach($this->dischargePorts as $p)
+                        <option value="{{ $p->id }}">{{ $p->display_name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-[11px] text-gray-400">미선택 시 바이어 국가명 사용</p>
+                </div>
                 <div class="flex items-end">
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
                         <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> 수출통관 완료
@@ -3506,7 +3553,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div><label class="label-base">B/L 번호</label><input wire:model="bl_number" type="text" class="input-base" /></div>
                 <div><label class="label-base">컨테이너 번호</label><input wire:model="container_number" type="text" class="input-base" /></div>
-                <div><label class="label-base">반입지</label><input wire:model="bl_loading_location" type="text" class="input-base" placeholder="부산신항 3부두" /></div>
+                {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
+                <div>
+                    <label class="label-base">반입지</label>
+                    <select wire:model="bl_loading_location" class="input-base">
+                        <option value="">-- 선택 --</option>
+                        @foreach($this->unloadingPorts as $p)
+                        <option value="{{ $p->name }}">{{ $p->display_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <div><label class="label-base">VSL (선박명)</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
                 <div><label class="label-base">B/L 발행일</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
                 <div class="col-span-2 sm:col-span-3">
