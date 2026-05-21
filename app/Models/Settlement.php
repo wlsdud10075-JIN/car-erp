@@ -136,6 +136,14 @@ class Settlement extends Model
 
     // ── 마진 computed (CLAUDE.md §정산마진공식) ─────────────────────
 
+    /**
+     * 2026-05-21 정산 공식 재구조 — 엑셀(수출차량매입-2026) 실측 기준.
+     *
+     * 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+     *   - 면장(export_declaration_amount)은 매출 검증용. 정산 공식엔 안 들어감.
+     *   - 운임비(transport_fee)는 sale_total_amount(미수율 분모)엔 들어가지만 정산엔 제외.
+     *   - 엑셀 AH 셀 공식 = SUM(AJ + AM + AN - AO) × AL.
+     */
     public function getSalesAmountKrwAttribute(): int
     {
         $v = $this->vehicle;
@@ -143,7 +151,12 @@ class Settlement extends Model
             return 0;
         }
 
-        return (int) (((float) ($v->export_declaration_amount ?? 0) - (float) ($v->transport_fee ?? 0)) * (float) ($v->exchange_rate ?? 0));
+        $base = (float) ($v->sale_price ?? 0)
+            + (float) ($v->commission ?? 0)
+            + (float) ($v->auto_loading ?? 0)
+            - (float) ($v->tax_dc ?? 0);
+
+        return (int) ($base * (float) ($v->exchange_rate ?? 0));
     }
 
     public function getSettlementSalesKrwAttribute(): int
@@ -151,32 +164,96 @@ class Settlement extends Model
         return $this->sales_amount_krw - ($this->vehicle?->cost_total ?? 0);
     }
 
+    /**
+     * 판매마진 = 정산판매금원화 - (purchase_price + selling_fee)
+     *   - 엑셀 CF = CE - CB. CB = V = SUM(T + U) = 구입금액 + 매도비.
+     *   - 매도비 포함이 매입합계 의미.
+     */
     public function getSalesMarginAttribute(): int
     {
-        return $this->settlement_sales_krw - (int) ($this->vehicle?->purchase_price ?? 0);
+        $v = $this->vehicle;
+        $purchaseTotal = (int) ($v?->purchase_price ?? 0) + (int) ($v?->selling_fee ?? 0);
+
+        return $this->settlement_sales_krw - $purchaseTotal;
     }
 
+    /**
+     * 부가세마진 = purchase_price × 0.09
+     *   - 엑셀 CG = T × 0.09 (구입금액만, 매도비 제외).
+     *   - car-erp purchase_price = 구입금액(매도비 selling_fee 별도) → 변경 불필요.
+     */
     public function getVatMarginAttribute(): int
     {
         return (int) (($this->vehicle?->purchase_price ?? 0) * 0.09);
     }
 
+    /**
+     * 총마진 = (판매마진 + 부가세마진) × 0.9
+     *   - 엑셀 CH = (CF + CG) × 0.9. × 0.9 의 의미: 부가세 10% 차감 (계산 전 부가세 제외).
+     *   - 사용자 확정 2026-05-21.
+     */
     public function getTotalMarginAttribute(): int
     {
-        return $this->sales_margin + $this->vat_margin;
+        return (int) (($this->sales_margin + $this->vat_margin) * 0.9);
     }
 
+    // ── Phase 2 (2026-05-21) — Salesman.type 별 default fallback ─────────
+    // 5만/10만/50% 은 회사 단일 정책 → 코드 상수. 변경 시 코드 수정 (사용자 결정).
+    // 컬럼 값(settlement_ratio, per_unit_amount) 명시 입력되면 user override 우선.
+    public const FREELANCE_RATIO_DEFAULT = 50;          // 프리랜서 비율 기본 50%
+
+    public const EMPLOYEE_PER_UNIT_DEFAULT = 100_000;   // 사내직원 건당 10만원
+
+    public const FREELANCE_DOCUMENT_FEE = 50_000;       // 프리랜서 서류비 5만원
+
+    /**
+     * 효과적 비율 — settlement_ratio 값 있으면 그대로, NULL 이면 freelance default 50.
+     * 어제 결정("재무가 채움") + 오늘 결정("자동 default") 양립 — NULL fallback 패턴.
+     */
+    public function getEffectiveRatioAttribute(): int
+    {
+        return $this->settlement_ratio !== null
+            ? (int) $this->settlement_ratio
+            : self::FREELANCE_RATIO_DEFAULT;
+    }
+
+    public function getEffectivePerUnitAmountAttribute(): int
+    {
+        return $this->per_unit_amount !== null
+            ? (int) $this->per_unit_amount
+            : self::EMPLOYEE_PER_UNIT_DEFAULT;
+    }
+
+    /**
+     * 서류비 (프리랜서만) — 엑셀 CJ = SUM(CH/2) - 50000 의 -50000.
+     * 사내직원은 0 (서류비 차감 없음).
+     */
+    public function getDocumentFeeAttribute(): int
+    {
+        return $this->settlement_type === 'ratio' ? self::FREELANCE_DOCUMENT_FEE : 0;
+    }
+
+    /**
+     * 정산액 = type 별 분기.
+     *   ratio (프리랜서)    = 총마진 × (effective_ratio / 100)
+     *   per_unit (사내직원) = effective_per_unit_amount (고정)
+     */
     public function getSettlementAmountAttribute(): int
     {
         if ($this->settlement_type === 'ratio') {
-            return (int) ($this->total_margin * (($this->settlement_ratio ?? 0) / 100));
+            return (int) ($this->total_margin * ($this->effective_ratio / 100));
         }
 
-        return (int) ($this->per_unit_amount ?? 0);
+        return $this->effective_per_unit_amount;
     }
 
+    /**
+     * 실지급액 = 정산액 − 서류비 − 기타공제.
+     *   - 엑셀 CM = CJ − CL. CJ = CH/2 − 50,000 (서류비 박혀있음).
+     *   - 사내직원은 서류비 0 → per_unit − other_deduction.
+     */
     public function getActualPayoutAttribute(): int
     {
-        return $this->settlement_amount - (int) ($this->other_deduction ?? 0);
+        return $this->settlement_amount - $this->document_fee - (int) ($this->other_deduction ?? 0);
     }
 }

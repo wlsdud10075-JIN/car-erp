@@ -587,9 +587,9 @@ class Vehicle extends Model
         });
 
         // 2026-05-20 #2-2+2-4 — 거래완료 진입 시 pending Settlement 자동 생성.
-        // 사용자 피드백: '거래 완료되면 자동으로 정산으로 이동되게 하는게 맞는것 같고'.
-        // 분기 — Salesman.type 보고 settlement_type 자동 결정 (employee → per_unit / freelance → ratio).
-        // ratio·per_unit_amount NULL 로 생성. 재무가 H3 가드(confirmed/paid 시 값 > 0)에서 채움.
+        // 2026-05-21 정산 공식 재구조 — type 별 default 값(ratio=50 또는 per_unit=100000) 자동 채움.
+        //   사용자 결정: "role 에 따라서 프리랜서랑 사내직원으로 나눈거에서 정산에서 자동으로 될 수 없나?"
+        //   재무가 override 필요 시 명시 입력 — 그러면 H3 가드 통과. 기본 흐름은 자동.
         // Skip: auth 없음(시드/artisan), salesman 미지정, 이미 Settlement 존재.
         static::saved(function (Vehicle $vehicle) {
             if (! auth()->check()) {
@@ -608,9 +608,16 @@ class Vehicle extends Model
             if (! $salesman) {
                 return;
             }
+            $settlementType = $salesman->defaultSettlementType();
             $vehicle->settlements()->create([
                 'salesman_id' => $salesman->id,
-                'settlement_type' => $salesman->defaultSettlementType(),
+                'settlement_type' => $settlementType,
+                'settlement_ratio' => $settlementType === 'ratio'
+                    ? Settlement::FREELANCE_RATIO_DEFAULT
+                    : null,
+                'per_unit_amount' => $settlementType === 'per_unit'
+                    ? Settlement::EMPLOYEE_PER_UNIT_DEFAULT
+                    : null,
                 'settlement_status' => 'pending',
                 'note' => '자동 생성 — 거래완료 진입 시',
             ]);

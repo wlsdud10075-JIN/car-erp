@@ -90,19 +90,33 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 ### 다중통화
 `vehicles.currency` enum: `USD / JPY / EUR / GBP / CNY / KRW`. `savings_statuses.currency` 동일.
 
-### 정산 마진 공식 (엑셀 실측 — Python ERP와 다름)
+### 정산 마진 공식 (엑셀 v2 — 수출차량현황표.xlsm 실측 / 2026-05-21 재검증)
+> ⚠️ 2026-05-21 사용자 직접 운영하는 엑셀과 1:1 매핑으로 재구조. 이전 공식(면장 기반 + × 0.9 누락 + ratio 자유)은 폐기. SKILLS.md §5/§13/§10 동시 갱신.
+
 ```
-판매금원화        = (export_declaration_amount - transport_fee_usd) × exchange_rate
+판매금원화        = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+                                                              ← 면장(export_declaration_amount)은 매출 검증용 (정산 공식엔 미포함)
+                                                              ← 운임비(transport_fee)는 sale_total_amount(미수율 분모) 에만 들어감
 정산판매금원화    = 판매금원화 - cost_total
-판매마진          = 정산판매금원화 - purchase_price          ← 매도비 제외한 순 매입가 기준
-부가세마진        = purchase_price × 0.09                    ← Python의 sales_margin × 0.1 아님
-총마진            = 판매마진 + 부가세마진
-정산액(비율)      = 총마진 × (settlement_ratio / 100)
-정산액(건당)      = per_unit_amount
-실지급액          = 정산액 - other_deduction
+판매마진          = 정산판매금원화 - (purchase_price + selling_fee)   ← 매입합계 = 구입금액 + 매도비
+부가세마진        = purchase_price × 0.09                              ← 매도비 제외, 엑셀 CG와 동일
+총마진            = (판매마진 + 부가세마진) × 0.9                      ← × 0.9 = 부가세 10% 차감 (사용자 확정)
+
+정산액 (Salesman.type 별 자동 분기):
+  - 프리랜서 (settlement_type='ratio')    = 총마진 × (settlement_ratio / 100)
+                                            기본값: settlement_ratio = 50  (Settlement::FREELANCE_RATIO_DEFAULT)
+  - 사내직원 (settlement_type='per_unit') = per_unit_amount
+                                            기본값: per_unit_amount = 100,000  (Settlement::EMPLOYEE_PER_UNIT_DEFAULT)
+
+실지급액          = 정산액 - 서류비 - other_deduction
+서류비:
+  - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE — 엑셀 CJ = CH/2 - 50000 의 -50000)
+  - 사내직원 = 0
 ```
 
 `cost_total` = `cost_deregistration + cost_license + cost_towing + cost_carry + cost_shoring + cost_insurance + cost_transfer + cost_extra1 + cost_extra2` (9개 항목 합, computed).
+
+**자동 default 동작**: 거래완료 진입 시 `Vehicle::saved` 훅이 `Salesman.type` 보고 `settlement_ratio=50` 또는 `per_unit_amount=100000` 자동 채움. 재무가 override 필요 시 명시 입력 → H3 가드(confirmed/paid 전환 시 값>0) 통과.
 
 ## 뷰 경로 규칙
 - **Volt 컴포넌트**: `resources/views/livewire/erp/...` 하위 (자동 인식)
@@ -120,8 +134,10 @@ GPU CRM과 동일 구조. **role 종류만 ERP 도메인에 맞춰 조정** (구
 7. **Tailwind v4 + Vite** — 새 유틸 클래스 미반영 시 `npm run build` 또는 `npm run dev`
 8. **차량 진행상태는 computed property** — DB 저장 X. `Vehicle::progress_status` 접근 시마다 우선순위 평가
 9. **vehicles 비용 컬럼은 9개 분리** — Python의 `other_costs(JSON)` 폐기. 합계는 computed (`cost_total`)
-10. **부가세마진 = `purchase_price × 0.09`** — Python ERP의 `sales_margin × 0.1`과 다름. 엑셀 실측 검증된 공식이므로 변경 금지
-11. **판매금원화 산정은 면장금액 기반** — `(export_declaration_amount - transport_fee_usd) × exchange_rate`. `sale_price` 직접 환산 아님
+10. **부가세마진 = `purchase_price × 0.09`** — 매도비(selling_fee) 제외한 순 구입가 기준. 엑셀 CG = T × 0.09 와 일치
+11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감
+12. **총마진은 마지막에 × 0.9** — 부가세 10% 차감. 사용자 확정 (2026-05-21)
+13. **정산 default 자동 채움** — `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50` (프리랜서) 또는 `per_unit_amount=100000` (사내직원) 자동. 코드 상수는 `Settlement::FREELANCE_RATIO_DEFAULT / EMPLOYEE_PER_UNIT_DEFAULT / FREELANCE_DOCUMENT_FEE`
 
 ## Git 브랜치 전략
 - `dev` — 작업 브랜치 (기본)

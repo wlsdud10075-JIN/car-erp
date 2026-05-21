@@ -130,17 +130,20 @@ public function removeFinalPayment(int $idx): void
 - 원본에 있고 폼에 없는 id → delete
 - 트랜잭션으로 감싸기. truncate-and-reinsert는 FK·created_at 손실 위험
 
-## 5. 정산 마진 computed 패턴
+## 5. 정산 마진 computed 패턴 (엑셀 v2 — 2026-05-21 재구조)
 
-마진은 `settlements` 테이블에 **저장하지 않고 PHP property로 매번 계산**. 환율·면장금액·매입가 변경 시 갱신 로직 불필요.
+마진은 `settlements` 테이블에 **저장하지 않고 PHP property로 매번 계산**. 환율·매입가 변경 시 갱신 로직 불필요.
+
+> ⚠️ 2026-05-21 사용자 직접 운영 엑셀(`수출차량현황표.xlsm`)과 1:1 매핑으로 재구조. 이전 면장 기반 공식 폐기.
 
 ```php
+// 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+//   ※ 면장(export_declaration_amount)은 매출 검증용. 정산 공식엔 미포함 (엑셀 AH = SUM(AJ+AM+AN-AO)×AL)
 public function getSalesAmountKrwAttribute(): int
 {
-    $exportUsd = $this->vehicle->export_declaration_amount ?? 0;
-    $transportUsd = $this->vehicle->transport_fee ?? 0;
-    $rate = $this->vehicle->exchange_rate ?? 0;
-    return (int) (($exportUsd - $transportUsd) * $rate);
+    $v = $this->vehicle;
+    $base = ($v->sale_price ?? 0) + ($v->commission ?? 0) + ($v->auto_loading ?? 0) - ($v->tax_dc ?? 0);
+    return (int) ($base * ($v->exchange_rate ?? 0));
 }
 
 public function getSettlementSalesKrwAttribute(): int
@@ -148,21 +151,47 @@ public function getSettlementSalesKrwAttribute(): int
     return $this->sales_amount_krw - $this->vehicle->cost_total;
 }
 
+// 판매마진 = 정산판매금원화 - (purchase_price + selling_fee) — 매입합계 기준 (엑셀 CF = CE - CB, CB = T+U)
 public function getSalesMarginAttribute(): int
 {
-    return $this->settlement_sales_krw - $this->vehicle->purchase_price;
+    return $this->settlement_sales_krw - ($this->vehicle->purchase_price + $this->vehicle->selling_fee);
 }
 
+// 부가세마진 = purchase_price × 0.09 (매도비 제외, 엑셀 CG = T × 0.09)
 public function getVatMarginAttribute(): int
 {
-    return (int) ($this->vehicle->purchase_price * 0.09);  // ⚠️ Python의 sales_margin × 0.1 아님
+    return (int) ($this->vehicle->purchase_price * 0.09);
 }
 
+// 총마진 = (판매마진 + 부가세마진) × 0.9 — × 0.9 = 부가세 10% 차감 (엑셀 CH)
 public function getTotalMarginAttribute(): int
 {
-    return $this->sales_margin + $this->vat_margin;
+    return (int) (($this->sales_margin + $this->vat_margin) * 0.9);
+}
+
+// 정산액 — type 별 분기 + NULL fallback 자동 default
+public const FREELANCE_RATIO_DEFAULT = 50;
+public const EMPLOYEE_PER_UNIT_DEFAULT = 100_000;
+public const FREELANCE_DOCUMENT_FEE = 50_000;
+
+public function getSettlementAmountAttribute(): int
+{
+    if ($this->settlement_type === 'ratio') {
+        $ratio = $this->settlement_ratio ?? self::FREELANCE_RATIO_DEFAULT;
+        return (int) ($this->total_margin * ($ratio / 100));
+    }
+    return $this->per_unit_amount ?? self::EMPLOYEE_PER_UNIT_DEFAULT;
+}
+
+// 실지급액 = 정산액 - 서류비 - 기타공제. 서류비는 프리랜서만 5만원 (엑셀 CJ = CH/2 - 50000)
+public function getActualPayoutAttribute(): int
+{
+    $documentFee = $this->settlement_type === 'ratio' ? self::FREELANCE_DOCUMENT_FEE : 0;
+    return $this->settlement_amount - $documentFee - ($this->other_deduction ?? 0);
 }
 ```
+
+**자동 default 채움**: `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50`(프리랜서) 또는 `per_unit_amount=100000`(사내직원) DB 컬럼에 자동 저장. 재무가 override 필요 시 명시 입력 → H3 가드(confirmed/paid 전환 시 값>0) 자연 통과.
 
 **목록에서 정산액 정렬 시**: computed 컬럼은 SQL `ORDER BY` 불가. 방법 2가지:
 - **컬렉션 정렬**: 페이지당 결과셋만 `sortBy()` (소량)
@@ -665,16 +694,22 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
 ※ payment_date <= today 만 반영
 ```
 
-### 정산 (§5와 동일)
+### 정산 (§5와 동일 — 2026-05-21 엑셀 v2 재구조)
 ```
-판매금원화        = (export_declaration_amount - transport_fee_usd) × exchange_rate
+판매금원화        = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
 정산판매금원화    = 판매금원화 - cost_total
-판매마진          = 정산판매금원화 - purchase_price
-부가세마진        = purchase_price × 0.09
-총마진            = 판매마진 + 부가세마진
-정산액(비율)      = 총마진 × (settlement_ratio / 100)
-정산액(건당)      = per_unit_amount
-실지급액          = 정산액 - other_deduction
+판매마진          = 정산판매금원화 - (purchase_price + selling_fee)
+부가세마진        = purchase_price × 0.09     ← 매도비 제외
+총마진            = (판매마진 + 부가세마진) × 0.9   ← 부가세 10% 차감
+
+정산액:
+  - 프리랜서 (ratio)    = 총마진 × (settlement_ratio / 100)    default 50
+  - 사내직원 (per_unit) = per_unit_amount                       default 100,000
+
+실지급액          = 정산액 - 서류비 - other_deduction
+서류비:
+  - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE)
+  - 사내직원 = 0
 ```
 
 ### cost_total
