@@ -63,10 +63,11 @@ Route::middleware(['auth', 'verified', 'admin-dashboard'])->prefix('admin')->nam
     Volt::route('dashboard', 'admin.dashboard')->name('dashboard');
 });
 
-// /admin 그 외 — super/admin만 (users, document-access-logs)
+// /admin 그 외 — super/admin만 (users, document-access-logs, ports)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('users', 'admin.users.index')->name('users.index');
     Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
+    Volt::route('ports', 'admin.ports.index')->name('ports.index');
 });
 
 // 기능 설정 — super만

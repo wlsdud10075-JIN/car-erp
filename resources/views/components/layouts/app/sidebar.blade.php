@@ -22,6 +22,7 @@
         $routeName === 'dashboard' => '대시보드',
         $routeName === 'admin.dashboard' => '관리자 대시보드',
         $routeName === 'admin.users.index' => '사용자 관리',
+        $routeName === 'admin.ports.index' => '항구 마스터',
         $routeName === 'admin.settings' => '기능 설정',
         $routeName === 'erp.dashboard' => 'ERP 대시보드',
         $routeName === 'erp.vehicles.index' => '차량 관리',
@@ -192,6 +193,13 @@
                     'href' => route('admin.users.index'),
                     'icon' => 'user-group',
                     'active' => request()->routeIs('admin.users.*'),
+                    'show' => true,
+                ],
+                [
+                    'label' => '항구 마스터',
+                    'href' => route('admin.ports.index'),
+                    'icon' => 'building',
+                    'active' => request()->routeIs('admin.ports.*'),
                     'show' => true,
                 ],
                 [
