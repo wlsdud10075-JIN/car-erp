@@ -482,9 +482,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['key' => 'deregistration', 'label' => '말소',   'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
             ['key' => 'sale',           'label' => '판매',   'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
             ['key' => 'payment',        'label' => '입금',   'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
+            // 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 통관.
             // 라벨 '통관' 보존 (단계 약자) — role 명칭 '수출통관'과 분리. 7노드 흐름도 박스 폭 좁아짐 방지.
-            ['key' => 'clearance',      'label' => '통관',   'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
             ['key' => 'bl',             'label' => '선적',   'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
+            ['key' => 'clearance',      'label' => '통관',   'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
             ['key' => 'dhl',            'label' => 'DHL',    'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],
         ];
     }
@@ -2744,13 +2745,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     {{-- Tab Nav --}}
+    {{-- 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 수출통관 --}}
     <div class="flex overflow-x-auto border-b border-gray-200 px-5">
         @foreach([
             ['basic',    '기본정보'],
             ['purchase', '매입'],
             ['sale',     '판매'],
-            ['clearance','수출통관'],
             ['bl',       '선적(B/L)'],
+            ['clearance','수출통관'],
             ['dhl',      'DHL'],
             ['docs',     '서류'],
         ] as [$key, $label])

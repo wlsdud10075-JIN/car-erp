@@ -232,8 +232,9 @@ class PipelineStripTest extends TestCase
         $this->assertSame('done', $flow[1]['status']); // 말소
         $this->assertSame('done', $flow[2]['status']); // 판매
         $this->assertSame('done', $flow[3]['status']); // 입금
-        $this->assertSame('done', $flow[4]['status']); // 통관 (export_declaration_document 있음)
-        $this->assertSame('pending', $flow[5]['status']); // 선적
+        // 회의확장씬 #1 v4 (2026-05-21) — 순서 swap: 선적 → 통관
+        $this->assertSame('pending', $flow[4]['status']); // 선적 (bl_loading_location 없음)
+        $this->assertSame('done', $flow[5]['status']);    // 통관 (export_declaration_document 있음)
         $this->assertSame('pending', $flow[6]['status']); // DHL
     }
 
@@ -288,9 +289,10 @@ class PipelineStripTest extends TestCase
         $v1 = $this->makeVehicle([
             'sale_price' => 1000, 'deposit_down_payment' => 1000,
         ]);
+        // 회의확장씬 #1 v4 (2026-05-21) — 통관은 flow[5] (선적 swap)
         $flow1 = Volt::test('erp.vehicles.index')->call('openEdit', $v1->id)->get('progressFlow');
-        $this->assertSame('pending', $flow1[4]['status']);
-        $this->assertStringContainsString('수출통관 정보 미입력', $flow1[4]['reason']);
+        $this->assertSame('pending', $flow1[5]['status']);
+        $this->assertStringContainsString('수출통관 정보 미입력', $flow1[5]['reason']);
 
         // 통관 바이어 + 선적일 입력 (체크박스만) + 문서 0 → progress + reason에 "수출신고서 업로드 필요"
         $buyer = Buyer::create([
@@ -301,8 +303,8 @@ class PipelineStripTest extends TestCase
             'export_buyer_id' => $buyer->id, 'shipping_date' => '2026-05-20',
         ]);
         $flow2 = Volt::test('erp.vehicles.index')->call('openEdit', $v2->id)->get('progressFlow');
-        $this->assertSame('progress', $flow2[4]['status']);
-        $this->assertStringContainsString('수출신고서 업로드 필요', $flow2[4]['reason']);
+        $this->assertSame('progress', $flow2[5]['status']);
+        $this->assertStringContainsString('수출신고서 업로드 필요', $flow2[5]['reason']);
     }
 
     // ── vehicles/index mount() — progressFilter 진입 시 날짜 필터 비움 ───
