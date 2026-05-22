@@ -623,17 +623,19 @@ class WorkflowGapTest extends TestCase
         $v->guardAttachmentDeps();
     }
 
-    public function test_q26_h4_cascade_blocks_loading_location_without_export_cleared(): void
+    public function test_q26_h4_cascade_v4_no_longer_blocks_loading_location_without_export_cleared(): void
     {
+        // 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서: 선적 → 통관 → B/L → 거래완료.
+        // 기존 H4 가드(bl_loading_location → is_export_cleared 필요)는 v3 가정 (통관 → 선적) 의 잔재 — v4 에서는 정반대.
+        // 사용자 보고 (2026-05-22): H4 + 회의확장씬 #4 컨사이니 가드 도돌이표 → H4 폐기.
         $v = new Vehicle([
             'sales_channel' => 'export',
             'is_export_cleared' => false,
             'bl_loading_location' => '부산항',
         ]);
 
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('수출통관 완료 처리');
         $v->guardAttachmentDeps();
+        $this->assertTrue(true);   // v4: bl_loading_location 가 통관보다 먼저 가능 — 예외 없음
     }
 
     // 큐 16 — test_q26_v2_skipped_for_heyman_channel 삭제 (단일 채널화)

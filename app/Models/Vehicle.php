@@ -702,27 +702,24 @@ class Vehicle extends Model
     }
 
     /**
-     * H1·H2 + 큐 2.6 — 첨부/전제 조건 + 단계 캐스케이드 검증.
-     * 11단계 v2 분류 규칙과 일치하는 UI save 게이트.
+     * H1·H3 + 큐 2.6 — 첨부/전제 조건 + 단계 캐스케이드 검증.
      *
-     * - H1: dhl_request=true 전환 시 bl_document 비어있으면 차단
-     * - H2: is_export_cleared=true 전환 시 export_declaration_document 비어있으면 차단
-     * - 큐 2.6 H3: bl_document 업로드 시 bl_loading_location(반입지) 비어있으면 차단
-     * - 큐 2.6 H4: bl_loading_location 입력 시 is_export_cleared=false면 차단
+     * 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서: 선적 → 통관 → B/L → 거래완료.
+     * 사용자 보고 (2026-05-22): H4 가드 ↔ #4 컨사이니 가드 도돌이표 형성.
      *
-     * 시드는 도메인 시뮬레이션이라 검증 우회 — vehicles/index::save()에서만 명시 호출.
-     * 큐 17 — 폐기 컨셉 제거 (운영상 없음). bypass 제거.
+     * 가드 정리 (v4 cascade 정합):
+     *   - 큐 2.6 H3: bl_document 업로드 시 bl_loading_location(반입지) 필수 (B/L 발행 = 선적 후)
+     *   - H1: dhl_request=true 시 bl_document 필수 (DHL 발송 = B/L 후)
+     *
+     * 폐기 (v4 정합 X):
+     *   - 큐 2.6 H4 (bl_loading_location → is_export_cleared 필요) — v3 가정 (통관 → 선적).
+     *     v4 에서는 선적이 통관보다 먼저라 의미 없음. 회의확장씬 #4 컨사이니 가드와
+     *     순환 차단 형성 → 폐기. (사용자 보고 2026-05-22)
+     *   - H2 (is_export_cleared → export_declaration_document) — 큐 21 모달 격하 (별건)
      */
     public function guardAttachmentDeps(): void
     {
-        // 큐 2.6 H4 — 선적 반입지 입력은 통관 완료 처리(체크박스) 후 (캐스케이드 가장 깊은 곳부터 검증)
-        if ($this->bl_loading_location && ! $this->is_export_cleared) {
-            throw ValidationException::withMessages([
-                'bl_loading_location' => '선적 반입지를 입력하려면 수출통관 완료 처리(체크박스)가 먼저 필요합니다.',
-            ]);
-        }
-
-        // 큐 2.6 H3 — B/L 문서는 반입지 입력 후
+        // 큐 2.6 H3 — B/L 문서는 반입지 입력 후 (v4: 선적 → 통관 → B/L)
         if ($this->bl_document && empty($this->bl_loading_location)) {
             throw ValidationException::withMessages([
                 'bl_document' => 'B/L 문서를 업로드하려면 선적 반입지 입력이 먼저 필요합니다.',
@@ -735,10 +732,6 @@ class Vehicle extends Model
                 'dhl_request' => 'DHL 발송 신청을 하려면 B/L 문서 업로드가 먼저 필요합니다.',
             ]);
         }
-
-        // 큐 21 후속 — H2(수출통관 체크↔서류) 강제 차단 제거.
-        // vehicles/index::detectDocCheckMismatches 모달 패턴으로 격하 (사용자 결정 2026-05-18).
-        // 운영 흐름상 체크/서류 순서가 비순차적이라 강제 차단은 마찰. 모달 confirm으로 인지 강제.
     }
 
     /**
