@@ -63,10 +63,15 @@ Route::middleware(['auth', 'verified', 'admin-dashboard'])->prefix('admin')->nam
     Volt::route('dashboard', 'admin.dashboard')->name('dashboard');
 });
 
-// /admin 그 외 — super/admin만 (users, document-access-logs, ports)
+// /admin 그 외 — super/admin만 (users, document-access-logs)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('users', 'admin.users.index')->name('users.index');
     Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
+});
+
+// 회의확장씬 2026-05-22 — 항구 마스터는 admin + [관리] (canManagePorts).
+// 라우트 'auth, verified' 만 — Volt mount() 가드로 권한 검증.
+Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('ports', 'admin.ports.index')->name('ports.index');
 });
 

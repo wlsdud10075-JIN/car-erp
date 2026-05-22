@@ -212,14 +212,29 @@ class User extends Authenticatable
      * 큐 7 확장 C7-a — 차량 회계 민감 컬럼 편집 권한.
      * 매입가·판매가·환율·면장금액·비용9개를 변경할 수 있는 role.
      *
-     * 차단 대상: 재무/수출통관/관리 role — 회계 조작 위험 + SoD(Segregation of Duties).
-     * 허용: admin/super, 영업만.
+     * 차단 대상: 재무·수출통관 role — 회계 조작 위험 + SoD(Segregation of Duties).
+     * 허용: admin/super, 영업·관리.
      *
-     * (큐 2.5 회의록 §4 C7 + 큐 14 회의록 Security §SoD — "관리가 승인자인데 편집까지 허용하면 본인 등록을 본인 승인 가능")
+     * 회의확장씬 2026-05-22 — [관리] 추가:
+     *   사용자 헤더 명세 "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" →
+     *   [영업]/[재무]/[수출통관] 권한 기본 보유. 27bf24f 정신 (중간 관리자) 일치.
+     *   기존 SoD 우려는 19-F 사용자 결정으로 무효화됨.
+     *
+     * (큐 2.5 회의록 §4 C7 + 큐 14 회의록 Security §SoD)
      */
     public function canEditVehicleFinancialFields(): bool
     {
-        return $this->isAdmin() || $this->role === '영업';
+        return $this->isAdmin() || in_array($this->role, ['영업', '관리'], true);
+    }
+
+    /**
+     * 회의확장씬 2026-05-22 — 항구 마스터 (/admin/ports) 접근/편집 권한.
+     * 사용자 명세: 항구 마스터 [관리]도 볼 수 있고 수정 가능하도록.
+     * canAccessAdmin 과 별개 (사용자 관리·기능 설정은 admin only 유지).
+     */
+    public function canManagePorts(): bool
+    {
+        return $this->isAdmin() || $this->role === '관리';
     }
 
     /**

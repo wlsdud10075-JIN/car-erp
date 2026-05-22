@@ -22,6 +22,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $code      = '';
     public bool   $is_active = true;
 
+    // 회의확장씬 2026-05-22 — [관리] 도 접근/편집 가능 (canManagePorts).
+    // 라우트 'auth, verified' 만 — Volt mount 가드로 권한 검증.
+    public function mount(): void
+    {
+        abort_unless(auth()->user()?->canManagePorts(), 403);
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {

@@ -125,7 +125,7 @@
                     'show' => true,
                 ],
                 [
-                    'label' => '재무',
+                    'label' => '정산 처리',
                     'href' => $user->canAccessSettlement() ? route('erp.settlements.index') : '#',
                     'icon' => 'calculator',
                     'active' => request()->routeIs('erp.settlements.*'),
@@ -179,28 +179,29 @@
         ],
         [
             'label' => '기타관리',
-            'show' => $user->canAccessAdmin(),
+            // 회의확장씬 2026-05-22 — [관리] 도 그룹 노출 (canManagePorts/canViewAdminDashboard 통해 일부 항목 접근).
+            'show' => $user->canAccessAdmin() || $user->canManagePorts() || $user->canViewAdminDashboard(),
             'items' => [
                 [
                     'label' => '관리자 대시보드',
-                    'href' => route('admin.dashboard'),
+                    'href' => $user->canViewAdminDashboard() ? route('admin.dashboard') : '#',
                     'icon' => 'chart-bar',
                     'active' => request()->routeIs('admin.dashboard'),
-                    'show' => true,
+                    'show' => $user->canViewAdminDashboard(),
                 ],
                 [
                     'label' => '사용자 관리',
-                    'href' => route('admin.users.index'),
+                    'href' => $user->canAccessAdmin() ? route('admin.users.index') : '#',
                     'icon' => 'user-group',
                     'active' => request()->routeIs('admin.users.*'),
-                    'show' => true,
+                    'show' => $user->canAccessAdmin(),
                 ],
                 [
                     'label' => '항구 마스터',
-                    'href' => route('admin.ports.index'),
+                    'href' => $user->canManagePorts() ? route('admin.ports.index') : '#',
                     'icon' => 'building',
                     'active' => request()->routeIs('admin.ports.*'),
-                    'show' => true,
+                    'show' => $user->canManagePorts(),
                 ],
                 [
                     'label' => '기능 설정',
