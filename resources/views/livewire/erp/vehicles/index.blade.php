@@ -1512,6 +1512,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             $submittedFinalIds = collect($this->finalPayments)->pluck('id')->filter()->toArray();
             $toDeleteIds = array_diff($existingFinalIds, $submittedFinalIds);
             FinalPayment::whereIn('id', array_diff($toDeleteIds, $lockedFinalIds))->delete();
+
+            // 회의확장씬 #6 (2026-05-22) — canConfirmFinance(재무·관리·admin) 직접 추가 시 즉시 확정.
+            // 사용자 명세: "[관리]가 직접 할 경우 요청씬 없이 추가되고 즉시 승인 가능"
+            // 영업 추가 → Draft (confirmed_at=NULL) → 재무가 transfers 에서 별도 확정
+            // 신규 row 만 자동 확정 — 기존 Draft 수정은 transfers 흐름 유지 (의도)
+            $authUser = auth()->user();
+            $autoConfirmFields = $authUser?->canConfirmFinance() ? [
+                'confirmed_at' => now(),
+                'confirmed_by_user_id' => $authUser->id,
+            ] : [];
+
             foreach ($this->finalPayments as $row) {
                 if (!empty($row['locked'])) continue;
                 if ($row['amount'] === '' && $row['payment_date'] === '') continue;
@@ -1521,7 +1532,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     if (in_array($row['id'], $lockedFinalIds)) continue;
                     FinalPayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
                 } else {
-                    $vehicle->finalPayments()->create(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
+                    $vehicle->finalPayments()->create(array_merge([
+                        'amount' => $amt,
+                        'payment_date' => $dt,
+                        'note' => $row['note'] ?? null,
+                    ], $autoConfirmFields));
                 }
             }
 
@@ -1625,7 +1640,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 if (isset($row['id']) && $row['id']) {
                     PurchaseBalancePayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
                 } else {
-                    $vehicle->purchaseBalancePayments()->create(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
+                    // 회의확장씬 #6 (2026-05-22) — canConfirmFinance 직접 추가 시 즉시 확정 (판매 잔금과 동일 정책).
+                    $vehicle->purchaseBalancePayments()->create(array_merge([
+                        'amount' => $amt,
+                        'payment_date' => $dt,
+                        'note' => $row['note'] ?? null,
+                    ], $autoConfirmFields));
                 }
             }
 
