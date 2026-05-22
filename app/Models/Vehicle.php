@@ -1080,6 +1080,29 @@ class Vehicle extends Model
         return $totalSale - $totalReceived;
     }
 
+    /**
+     * 회의확장씬 #7 (2026-05-22) — 실제 받은 KRW 누적 (잔금 row 별 입금 시점 환율 합산).
+     *
+     * 사용자 명세: "당시 실시간 환율로 계산되어진 한국 금액을 옆에 표시"
+     * 회계: 각 confirmed 잔금 row 의 amount × exchange_rate 합산 (row 별).
+     * 환율 없으면 vehicle.exchange_rate fallback (구 데이터 호환).
+     *
+     * sale_unpaid_amount (외화) 와 별개 — KPI 분모 단일 출처 (SKILLS §13) 위반 없음.
+     * Step C-4 (Settlement 2차 정산 환차 계산) 의 입력 = 이 값 vs (sale_total × 현재 환율) 차이.
+     */
+    public function getSaleReceivedKrwAccumulatedAttribute(): int
+    {
+        $fallbackRate = (float) ($this->exchange_rate ?? 1);
+
+        return (int) $this->finalPayments
+            ->whereNotNull('confirmed_at')
+            ->sum(function ($p) use ($fallbackRate) {
+                $rate = $p->exchange_rate !== null ? (float) $p->exchange_rate : $fallbackRate;
+
+                return (float) $p->amount * $rate;
+            });
+    }
+
     // ── Computed: 매입 미지급액 ─────────────────────────────────────
     // 큐 20-B — 분자 A안 필터: purchaseBalancePayments 중 confirmed_at IS NOT NULL 행만 합산.
     // payment_date <= today AND confirmed_at IS NOT NULL 동시 만족해야 ledger 반영.
