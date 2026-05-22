@@ -10,8 +10,18 @@ class Consignee extends Model
 {
     use SoftDeletes;
 
+    // 회의확장씬 #4 (2026-05-22) — ID 종류 enum-like (application 검증).
+    // 신규 ID 종류 추가 시 본 상수만 갱신 + UI select 자동 반영.
+    public const ID_TYPES = [
+        'rrn' => '주민번호',
+        'passport' => '여권번호',
+        'business' => '사업자번호',
+    ];
+
     protected $fillable = [
-        'name', 'buyer_id', 'country_id', 'contact_name', 'contact_email',
+        'name', 'buyer_id', 'country_id',
+        'id_type', 'id_value',
+        'contact_name', 'contact_email',
         'contact_phone', 'address', 'memo', 'is_active',
     ];
 
