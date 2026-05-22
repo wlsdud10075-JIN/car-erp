@@ -352,6 +352,36 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: '지급 승인 요청을 보냈습니다.', type: 'success');
     }
 
+    /**
+     * 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 (secondary_status='closed').
+     * paid → secondary_pending (자동) 후 [관리]/[재무] 가 기타비용 수정 → 최종 마무리.
+     * closed 이후 회계 잠금 (Vehicle 측 가드 Step B-2 에서 처리).
+     */
+    public function closeSecondarySettlement(int $id): void
+    {
+        $user = auth()->user();
+        abort_unless(
+            $user?->isAdmin() || in_array($user?->role, ['재무', '관리'], true),
+            403,
+            '2차 정산 완료는 [재무]/[관리]/admin 만 가능합니다.'
+        );
+
+        $settlement = Settlement::findOrFail($id);
+        if ($settlement->secondary_status !== 'pending') {
+            $this->dispatch('notify', message: '2차 정산 대기 상태가 아닙니다.', type: 'warning');
+
+            return;
+        }
+
+        $settlement->update([
+            'secondary_status' => 'closed',
+            'secondary_closed_at' => now(),
+        ]);
+
+        unset($this->settlements);
+        $this->dispatch('notify', message: '2차 정산 완료 (최종 마무리)', type: 'success');
+    }
+
     private function resetForm(): void
     {
         $this->vehicle_id = null;
@@ -491,6 +521,19 @@ new #[Layout('components.layouts.app')] class extends Component
                     'paid'        => '지급완료',
                     default       => $s->settlement_status,
                 };
+                // 회의확장씬 #8 (2026-05-22) — 2차 정산 status 보강 라벨.
+                $secondaryLabel = match($s->secondary_status) {
+                    'pending' => '2차 대기',
+                    'closed'  => '최종 마무리',
+                    default   => null,
+                };
+                $secondaryBadge = match($s->secondary_status) {
+                    'pending' => 'badge-amber',
+                    'closed'  => 'badge-gray',
+                    default   => null,
+                };
+                $canCloseSecondary = $s->secondary_status === 'pending'
+                    && (auth()->user()?->isAdmin() || in_array(auth()->user()?->role, ['재무', '관리'], true));
                 // 안건 1 v4 (2026-05-21) — 색 매핑: 선적=amber, 통관=green. v3 호환 키 동시 보유
                 $progressBadge = match(true) {
                     in_array($s->vehicle?->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
@@ -556,6 +599,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
+                    {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
+                    @if($secondaryLabel)
+                    <span class="badge {{ $secondaryBadge }} ml-1" title="2차 정산 status">{{ $secondaryLabel }}</span>
+                    @endif
                     {{-- 큐 14-4-2 — 지급 승인 요청 상태 인라인 표시 --}}
                     @php $pa = $s->latestPayApproval; @endphp
                     @if($pa && $pa->status === 'pending')
@@ -574,6 +621,12 @@ new #[Layout('components.layouts.app')] class extends Component
                         <button wire:click.stop="requestPayApproval({{ $s->id }})"
                                 wire:confirm="지급 승인 요청을 보내시겠습니까?"
                                 class="text-xs text-violet-600 hover:text-violet-800">지급 승인 요청</button>
+                        @endif
+                        {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 액션 ([재무]/[관리]/admin) --}}
+                        @if($canCloseSecondary)
+                        <button wire:click.stop="closeSecondarySettlement({{ $s->id }})"
+                                wire:confirm="2차 정산을 최종 마무리하시겠습니까? 이후 회계 컬럼 잠금됩니다."
+                                class="text-xs text-violet-600 hover:text-violet-800">2차 완료</button>
                         @endif
                         <button wire:click.stop="delete({{ $s->id }})"
                                 wire:confirm="정산을 삭제하시겠습니까?"
