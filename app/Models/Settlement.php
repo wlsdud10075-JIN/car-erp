@@ -11,19 +11,31 @@ class Settlement extends Model
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status',
+        'secondary_status', 'secondary_closed_at',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
     ];
 
     protected $casts = [
         'confirmed_at' => 'datetime',
         'paid_at' => 'datetime',
+        'secondary_closed_at' => 'datetime',
         'confirmed_snapshot' => 'array',
     ];
 
     /**
      * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Settlement 기준).
+     * 회의확장씬 #8 (2026-05-22) — secondary_status 추가.
      */
-    public const AUDITED_COLUMNS = ['settlement_status', 'paid_at'];
+    public const AUDITED_COLUMNS = ['settlement_status', 'secondary_status', 'paid_at'];
+
+    /**
+     * 회의확장씬 #8 (2026-05-22) — 2차 정산 status enum-like (application 검증).
+     * NULL = 1차 진행 중 / pending = 2차 대기 (paid 후 자동) / closed = 최종 마무리 (수동)
+     */
+    public const SECONDARY_STATUSES = [
+        'pending' => '2차 정산 대기',
+        'closed' => '최종 마무리',
+    ];
 
     /**
      * 큐 10 H3·H4 — 정산 saving 시 검증 + snapshot 캡처.
@@ -65,6 +77,15 @@ class Settlement extends Model
                         'settlement_ratio' => '정산 확정·지급 시 정산비율(ratio) 또는 건당 정산액(per_unit) 중 하나가 0보다 커야 합니다.',
                     ]);
                 }
+            }
+
+            // 회의확장씬 #8 (2026-05-22) — paid 전환 시 secondary_status='pending' 자동 set.
+            // 한 달 뒤 측정되는 기타비용(말소·면허·탁송·보험·이전비·기타1,2) 수정 대기 상태.
+            // 이미 secondary_status set 된 경우(예: 마이그·시드)는 우회.
+            $becomingPaid = $s->settlement_status === 'paid'
+                && $s->getOriginal('settlement_status') !== 'paid';
+            if ($becomingPaid && ! $s->secondary_status) {
+                $s->secondary_status = 'pending';
             }
 
             // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
