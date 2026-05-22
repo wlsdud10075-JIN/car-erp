@@ -813,6 +813,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
             $row = [
                 'id' => $p->id, 'amount' => (string) $p->amount,
+                // 회의확장씬 #7 (2026-05-22) — 잔금 row 별 입금 시점 환율
+                'exchange_rate' => $p->exchange_rate ? (string) $p->exchange_rate : '',
                 'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
                 'locked' => in_array($p->id, $lockedFinalIds),
                 'transfer' => null,
@@ -1576,12 +1578,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 if ($row['amount'] === '' && $row['payment_date'] === '') continue;
                 $amt = $toFloat($row['amount'] ?? '');
                 $dt  = $toDate($row['payment_date'] ?? '');
+                // 회의확장씬 #7 (2026-05-22) — 잔금 row 별 환율 저장.
+                $rateVal = ($row['exchange_rate'] ?? '') !== '' ? (float) str_replace(',', '', $row['exchange_rate']) : null;
                 if (isset($row['id']) && $row['id']) {
                     if (in_array($row['id'], $lockedFinalIds)) continue;
-                    FinalPayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
+                    FinalPayment::where('id', $row['id'])->update([
+                        'amount' => $amt,
+                        'exchange_rate' => $rateVal,
+                        'payment_date' => $dt,
+                        'note' => $row['note'] ?? null,
+                    ]);
                 } else {
                     $vehicle->finalPayments()->create(array_merge([
                         'amount' => $amt,
+                        'exchange_rate' => $rateVal,
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
                     ], $autoConfirmFields));
@@ -2378,7 +2388,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function addFinalPayment(): void
     {
-        $this->finalPayments[] = ['id' => null, 'amount' => '', 'payment_date' => '', 'note' => ''];
+        // 회의확장씬 #7 (2026-05-22) — 잔금 추가 시 차량 currency 의 실시간 환율 자동 기입.
+        // KRW: 1.0 / 외화: ExchangeRateService::getRate (실패 시 빈 값 → 수동 입력 fallback).
+        // payment_date 도 today 자동 (입금 날짜 = 추가 시점 자연).
+        $autoRate = '';
+        if ($this->currency === 'KRW') {
+            $autoRate = '1';
+        } else {
+            $rate = app(\App\Services\ExchangeRateService::class)->getRate($this->currency);
+            if ($rate !== null) {
+                $autoRate = (string) $rate;
+            }
+        }
+
+        $this->finalPayments[] = [
+            'id' => null,
+            'amount' => '',
+            'exchange_rate' => $autoRate,
+            'payment_date' => today()->toDateString(),
+            'note' => '',
+        ];
     }
     public function removeFinalPayment(int $idx): void
     {
@@ -3325,6 +3354,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액" />
+                    {{-- 회의확장씬 #7 (2026-05-22) — 잔금 row 별 환율 (외화만, 자동 기입 + 수정 가능) --}}
+                    @if($currency !== 'KRW')
+                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" class="input-base w-24" placeholder="환율" title="입금 시점 환율" />
+                    @php
+                        $rowAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
+                        $rowRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '0');
+                        $rowKrw = $rowAmt * $rowRate;
+                    @endphp
+                    @if($rowAmt > 0 && $rowRate > 0)
+                    <span class="text-xs text-gray-500 whitespace-nowrap" title="KRW 환산 (입금 시점 환율 기준)">= ₩{{ number_format($rowKrw, 0) }}</span>
+                    @endif
+                    @endif
                     <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
                     @if($row['id'])
