@@ -34,6 +34,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $role        = '영업';
     // 2026-05-21 — 정산 분류 (role='영업' 일 때만 입력). default 빈 값 → role=영업 신규 등록 시 명시 선택 강제.
     public string $type        = '';
+    // 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정. role='영업' 일 때만 의미.
+    public string $manager_user_id_str = '';
 
     #[Computed]
     public function users()
@@ -76,6 +78,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = $user->permission ?? 'user';
         $this->role       = $user->role       ?? '영업';
         $this->type       = $user->type       ?? '';
+        $this->manager_user_id_str = $user->manager_user_id ? (string) $user->manager_user_id : '';
         $this->showPanel  = true;
     }
 
@@ -93,9 +96,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
             'phone'      => 'nullable|string|max:20',
             'permission' => 'required|in:super,admin,user',
-            'role'       => 'required|in:전체,영업,통관,정산,관리',
+            // 회의확장씬 #11 별건 fix (2026-05-22) — 옛 role 명('전체','통관','정산')이 stale 이었음.
+            // ROLES const 변경(2026-05-20 안건 I — 정산→재무 / 통관→수출통관) 동기화 누락 — 재무·수출통관 user 편집 시 validation fail.
+            'role'       => 'required|in:'.implode(',', \App\Models\User::ROLES),
             // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
             'type'       => 'nullable|in:employee,freelance|required_if:role,영업',
+            // 회의확장씬 #11 (2026-05-22) — manager 배정. role='영업' 외엔 무시(null 저장).
+            'manager_user_id_str' => 'nullable|integer|exists:users,id',
         ];
 
         if (! $this->editingId) {
@@ -119,6 +126,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 2026-05-21 — role='영업' 일 때만 type 저장. 그 외 role 은 null 로 정규화.
         $typeValue = $this->role === '영업' ? $this->type : null;
+        // 회의확장씬 #11 (2026-05-22) — role='영업' 일 때만 manager_user_id 저장. 그 외 null 정규화.
+        $managerValue = ($this->role === '영업' && $this->manager_user_id_str !== '')
+            ? (int) $this->manager_user_id_str
+            : null;
 
         $data = [
             'name'              => $this->name,
@@ -127,6 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'permission'        => $this->permission,
             'role'              => $this->role,
             'type'              => $typeValue,
+            'manager_user_id'   => $managerValue,
             'email_verified_at' => now(),
         ];
 
@@ -191,6 +203,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = 'user';
         $this->role = '영업';
         $this->type = '';
+        $this->manager_user_id_str = '';
+    }
+
+    // 회의확장씬 #11 (2026-05-22) — [관리] role 사용자 목록 (영업 사용자 manager 배정 select 옵션).
+    #[Computed]
+    public function managers()
+    {
+        return User::where('role', '관리')->orderBy('name')->get(['id', 'name']);
     }
 }; ?>
 
@@ -414,6 +434,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
                 <p class="mt-1 text-xs text-gray-400">거래완료 시 자동 생성되는 정산 방식 결정 — 누락 방지를 위해 명시 선택 필수</p>
                 @error('type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            {{-- 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정 --}}
+            <div>
+                <label class="label-base">담당 [관리]</label>
+                <select wire:model="manager_user_id_str" class="input-base">
+                    <option value="">— 미배정 —</option>
+                    @foreach($this->managers as $m)
+                    <option value="{{ $m->id }}">{{ $m->name }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-xs text-gray-400">[관리] 로그인 시 본인 담당 영업의 차량/바이어만 조회. 미배정 시 [관리] 솔팅 결과에 안 잡힘</p>
+                @error('manager_user_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif
             @endif
