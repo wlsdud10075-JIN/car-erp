@@ -70,12 +70,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
+        // 회의확장씬 #11 + #2 (2026-05-22) — buyers ↔ salesman 직접 컬럼 없음. vehicles 통한 간접.
+        // 영업: 본인 차량의 buyer 만 (vehicles 측 8711e7d 패턴 대칭 — buyers 측엔 이번에 신규 추가)
+        // [관리]: subordinates 영업이 거래한 buyer 만 (vehicles.salesman_id IN subordinates)
+        // admin/super: 전체 (분기 X)
+        $user = auth()->user();
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
+        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
+
         return Buyer::query()
             ->with('country')
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', "%{$this->search}%")
-                   ->orWhere('contact_email', 'like', "%{$this->search}%")
-                   ->orWhere('contact_name', 'like', "%{$this->search}%")
+            ->when($restrictToOwnSalesman, fn ($q) => $q->whereHas('vehicles', fn ($q2) => $q2->where('salesman_id', $user->salesman->id)))
+            ->when($restrictToManagerScope, fn ($q) => $q->whereHas('vehicles', fn ($q2) => $q2->whereIn('salesman_id', $managerScopeSalesmanIds)))
+            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', "%{$this->search}%")
+                ->orWhere('contact_email', 'like', "%{$this->search}%")
+                ->orWhere('contact_name', 'like', "%{$this->search}%")
             ))
             ->orderBy('name')
             ->paginate($this->perPage);
