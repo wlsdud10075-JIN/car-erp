@@ -145,6 +145,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $advance_payment1_str = '';
     public string $advance_payment2_str = '';
     public string $savings_used_str     = '';
+    // 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 (한 번 저장 → SavingsStatus EARNED 거래 → reset).
+    // 누적 표시는 buyerSavingsBalance computed (SavingsStatus 단일 출처).
+    public string $savings_deposit_str  = '';
     public array  $finalPayments = [];
 
     // 판매탭 미납률 표시 (수정 불가, openEdit 시 갱신)
@@ -361,6 +364,27 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Computed]
     public function forwardingCompanies() { return ForwardingCompany::where('is_active', true)->orderBy('name')->get(); }
+
+    // 회의확장씬 #12 (2026-05-22) — 현재 편집 중 차량의 buyer × currency 누적 적립금.
+    // SavingsStatus 단일 출처 (vehicles 판매 탭 적립금 + 바이어 페이지 적립금 둘 다 누적).
+    // null = 차량 미선택 또는 buyer 미지정.
+    #[Computed]
+    public function buyerSavingsBalance(): ?float
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+        $v = Vehicle::find($this->editingId);
+        if (! $v || ! $v->buyer_id) {
+            return null;
+        }
+        $latest = \App\Models\SavingsStatus::where('buyer_id', $v->buyer_id)
+            ->where('currency', $v->currency)
+            ->orderByDesc('id')
+            ->first();
+
+        return (float) ($latest?->balance ?? 0);
+    }
 
     // 회의확장씬 #11 (2026-05-22) — [관리]는 본인 담당 영업만 select 노출.
     // admin/super 전체 / 영업 전체 (본인 차량 한정은 query 측 restrictToOwnSalesman 분리).
@@ -762,6 +786,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->advance_payment1_str = $sumByType('advance_1');
         $this->advance_payment2_str = $sumByType('advance_2');
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
+        $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
         $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
             $row = [
                 'id' => $p->id, 'amount' => (string) $p->amount,
@@ -1586,6 +1611,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
 
+            // 회의확장씬 #12 (2026-05-22) — canConfirmFinance 입력 시 SavingsStatus EARNED 거래 추가.
+            // 한 번 입력 → 거래 추가 → 입력란 reset. 누적은 SavingsStatus 단일 출처 (buyerSavingsBalance 자동 반영).
+            // 영업·통관 입력은 disabled — 만약 ui 우회로 값 들어와도 canConfirmFinance 가드로 차단.
+            if (auth()->user()?->canConfirmFinance()) {
+                $depositAmt = $this->savings_deposit_str === ''
+                    ? 0.0
+                    : (float) str_replace(',', '', $this->savings_deposit_str);
+                if ($depositAmt > 0 && $vehicle->buyer_id) {
+                    $vehicle->syncSavingsDeposit($depositAmt);
+                    $this->savings_deposit_str = '';
+                    unset($this->buyerSavingsBalance);   // computed 캐시 무효화 → 즉시 반영
+                }
+            }
+
             // 22-C-E 사용자 정정 (2026-05-20) — 2 항목 (계약금/매도비) PBP type별 sync.
             // 재무·admin 입력 (canConfirmFinance) — 각 _str 값과 type별 confirmed 합산 비교 후 변경분만 row 재생성.
             // confirmed_at SET row 잠금 우회 ($allowConfirmedMutation flag) — 2 항목은 분류 메타데이터.
@@ -2351,7 +2390,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
-            'sale_other_costs_str','savings_used_str',
+            'sale_other_costs_str','savings_used_str','savings_deposit_str',
             'deposit_down_payment_str','interim_payment_str','advance_payment1_str','advance_payment2_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
@@ -3166,6 +3205,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div><label class="label-base">적립금 사용</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
+                {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
+                @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
+                <div>
+                    <label class="label-base">적립금 적립 <span class="text-[10px] text-gray-400">(저장 시 누적, reset)</span></label>
+                    <input wire:model="savings_deposit_str" type="text"
+                           class="input-base {{ $canConfirmFinanceLocal ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinanceLocal) disabled @endif />
+                </div>
+                <div>
+                    <label class="label-base">누적 적립금 <span class="text-[10px] text-gray-400">(바이어×통화 SavingsStatus)</span></label>
+                    <div class="input-base bg-gray-50 text-gray-700">
+                        @if($this->buyerSavingsBalance === null)
+                            —
+                        @else
+                            {{ $currency }} {{ number_format($this->buyerSavingsBalance) }}
+                        @endif
+                    </div>
+                </div>
                 <div>
                     <label class="label-base">미납률 <span class="text-[10px] text-gray-400">(저장 후 갱신)</span></label>
                     @if($panelUnpaidRatio === null)

@@ -666,6 +666,42 @@ class Vehicle extends Model
     }
 
     /**
+     * 회의확장씬 #12 (2026-05-22) — 판매 탭 적립금 적립 입력 시 SavingsStatus EARNED 거래 추가.
+     *
+     * 사용자 명세: "1번차 잔금 300 + 적립금 50 → 1번차 미수금엔 50 차감 X, 바이어 적립금에만 50 누적".
+     * 적립금은 FinalPayment 가 아닌 SavingsStatus 직접 거래로 기록 — sale_unpaid_amount 분자 자연 제외.
+     *
+     * 호출자: vehicles/index::save() 가 canConfirmFinance 사용자 입력 시 호출.
+     * 동시성: syncSavingsUsage 패턴 동일 — buyer×currency lockForUpdate + 잔액 누적.
+     */
+    public function syncSavingsDeposit(float $amount): void
+    {
+        if ($amount <= 0 || ! $this->buyer_id) {
+            return;
+        }
+
+        DB::transaction(function () use ($amount) {
+            $latest = SavingsStatus::where('buyer_id', $this->buyer_id)
+                ->where('currency', $this->currency)
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->first();
+            $currentBalance = (float) ($latest?->balance ?? 0);
+            $newBalance = $currentBalance + $amount;
+
+            SavingsStatus::create([
+                'buyer_id' => $this->buyer_id,
+                'vehicle_id' => $this->id,
+                'currency' => $this->currency,
+                'transaction_type' => 'EARNED',
+                'savings' => $amount,
+                'balance' => $newBalance,
+                'note' => "차량 {$this->vehicle_number} 판매 탭 적립금 적립",
+            ]);
+        });
+    }
+
+    /**
      * H1·H2 + 큐 2.6 — 첨부/전제 조건 + 단계 캐스케이드 검증.
      * 11단계 v2 분류 규칙과 일치하는 UI save 게이트.
      *
