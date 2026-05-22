@@ -1221,7 +1221,11 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function requestSave(): void
     {
-        if (auth()->user()?->role === '영업') {
+        // 회의확장씬 (2026-05-22) — [관리] 도 매입+판매 누락 검증 모달 노출.
+        // 사용자 의도: "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" → 영업처럼 검증 필요.
+        // admin/super/재무/수출통관: 즉시 save (빠른 처리 유지)
+        $user = auth()->user();
+        if ($user && in_array($user->role, ['영업', '관리'], true)) {
             $this->showSaveConfirmModal = true;
 
             return;

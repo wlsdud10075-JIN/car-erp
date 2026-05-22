@@ -95,9 +95,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
         $user = auth()->user();
-        // 큐 14-2 — admin + 관리는 selectedSalesmanId 자유 선택 가능
-        if ($user->isAdmin() || $user->role === '관리') {
+
+        // admin/super: selectedSalesmanId 자유 선택 (전체 영업)
+        if ($user->isAdmin()) {
             return $this->selectedSalesmanId ?: null;
+        }
+
+        // 회의확장씬 #11 (2026-05-22) — [관리] 는 본인 담당 영업 중에서만 선택 가능.
+        // UI 제한 (salesmen() select 옵션) + 보안 가드 (임의 ID 차단) 이중.
+        if ($user->role === '관리') {
+            if (! $this->selectedSalesmanId) {
+                return null;
+            }
+            $allowed = $user->getSubordinateSalesmanIds();
+
+            return in_array((int) $this->selectedSalesmanId, $allowed, true)
+                ? (int) $this->selectedSalesmanId
+                : null;   // 본인 담당 외 임의 ID → 빈 결과 (보안 가드)
         }
 
         return $user->salesman?->id;
@@ -106,7 +120,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function salesmen()
     {
-        return Salesman::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        $q = Salesman::where('is_active', true)->orderBy('name');
+
+        // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업만 select 옵션 노출.
+        $user = auth()->user();
+        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+            $q->whereIn('id', $user->getSubordinateSalesmanIds());
+        }
+
+        return $q->get(['id', 'name']);
     }
 
     #[Computed]
