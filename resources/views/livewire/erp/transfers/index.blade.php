@@ -138,12 +138,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         ])->count();
     }
 
-    /** 큐 20-C — 판매 잔금 (영업 직접 입력 = transfer_id IS NULL). */
+    /** 큐 20-C — 판매 잔금 (영업 직접 입력 = transfer_id IS NULL).
+     * 회의확장씬 (2026-05-22) — vehicle soft delete 시 PBP/FP 자동 제외 (whereHas('vehicle')).
+     * Vehicle SoftDeletes + PBP/FP 는 미사용 → vehicles.deleted_at IS NULL 자동 매칭.
+     */
     #[Computed]
     public function salePayments()
     {
         return FinalPayment::query()
             ->with(['vehicle:id,vehicle_number,buyer_id', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
+            ->whereHas('vehicle')
             ->whereNull('transfer_id')
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
             ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
@@ -154,7 +158,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function salePaymentAwaitingCount(): int
     {
-        return FinalPayment::whereNull('transfer_id')->whereNull('confirmed_at')->count();
+        return FinalPayment::whereHas('vehicle')
+            ->whereNull('transfer_id')
+            ->whereNull('confirmed_at')
+            ->count();
     }
 
     /** 큐 20-C — 매입 잔금. */
@@ -163,6 +170,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return PurchaseBalancePayment::query()
             ->with(['vehicle:id,vehicle_number,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
+            ->whereHas('vehicle')
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
             ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
             ->orderByDesc('created_at')
@@ -172,7 +180,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function purchasePaymentAwaitingCount(): int
     {
-        return PurchaseBalancePayment::whereNull('confirmed_at')->count();
+        return PurchaseBalancePayment::whereHas('vehicle')->whereNull('confirmed_at')->count();
     }
 
     /** 큐 20-C — 잔금 모달 열기 (sale_payment / purchase_payment 공용). */

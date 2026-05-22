@@ -63,11 +63,14 @@
             \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
         ])->count();
         // 큐 20-C — 영업 직접 입력 잔금 중 미확정 (transfer_id IS NULL AND confirmed_at IS NULL)
+        // 회의확장씬 (2026-05-22) — vehicle soft delete 시 자동 제외 (whereHas('vehicle')).
         $pendingFinalPaymentCount = \App\Models\FinalPayment::query()
+            ->whereHas('vehicle')
             ->whereNull('transfer_id')
             ->whereNull('confirmed_at')
             ->count();
         $pendingPurchaseBalanceCount = \App\Models\PurchaseBalancePayment::query()
+            ->whereHas('vehicle')
             ->whereNull('confirmed_at')
             ->count();
         $pendingFinanceConfirmations = $pendingTransferCount + $pendingFinalPaymentCount + $pendingPurchaseBalanceCount;
