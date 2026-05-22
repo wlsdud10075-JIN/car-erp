@@ -290,9 +290,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
 
+        // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업의 차량만.
+        // admin/super 전체. 영업은 위 restrictToOwnSalesman 우선. [관리]만 subordinates 의 salesman.
+        // subordinates 0명 → whereIn([]) → 빈 결과 (의도. /admin/users 에서 배정 안내 필요).
+        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
+
         return Vehicle::query()
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
+            ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
@@ -355,8 +362,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function forwardingCompanies() { return ForwardingCompany::where('is_active', true)->orderBy('name')->get(); }
 
+    // 회의확장씬 #11 (2026-05-22) — [관리]는 본인 담당 영업만 select 노출.
+    // admin/super 전체 / 영업 전체 (본인 차량 한정은 query 측 restrictToOwnSalesman 분리).
+    // 필터바 select (L2392) + 편집 패널 select (L2802) 양쪽 자동 반영.
     #[Computed]
-    public function salesmen() { return Salesman::where('is_active', true)->orderBy('name')->get(); }
+    public function salesmen()
+    {
+        $q = Salesman::where('is_active', true)->orderBy('name');
+
+        $user = auth()->user();
+        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+            $q->whereIn('id', $user->getSubordinateSalesmanIds());
+        }
+
+        return $q->get();
+    }
 
     /**
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
