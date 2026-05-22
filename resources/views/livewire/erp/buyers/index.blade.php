@@ -24,6 +24,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $name          = '';
     public string $country_id_str = '';
+    // 회의확장씬 #5-1 (2026-05-22) — 영업담당자 직접 지정.
+    public string $salesman_id_str = '';
     public string $contact_name  = '';
     public string $contact_email = '';
     public string $contact_phone = '';
@@ -73,9 +75,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
-        // 회의확장씬 #11 + #2 (2026-05-22) — buyers ↔ salesman 직접 컬럼 없음. vehicles 통한 간접.
-        // 영업: 본인 차량의 buyer 만 (vehicles 측 8711e7d 패턴 대칭 — buyers 측엔 이번에 신규 추가)
-        // [관리]: subordinates 영업이 거래한 buyer 만 (vehicles.salesman_id IN subordinates)
+        // 회의확장씬 #11 + #2 (2026-05-22) — 영업/[관리] 본인 바이어 솔팅.
+        // E-2 보강 (2026-05-22) — buyers.salesman_id 직접 관계 우선 + vehicles 간접 fallback (운영 호환).
+        //   - 직접: buyer.salesman_id IN ids
+        //   - 간접 fallback: vehicle.salesman_id IN ids (기존 운영 데이터 — buyer.salesman_id NULL row 호환)
+        //   - 운영자가 UI 에서 buyer.salesman_id 일괄 입력하면 자연스럽게 직접 관계로 수렴
         // admin/super: 전체 (분기 X)
         $user = auth()->user();
         $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
@@ -83,15 +87,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Buyer::query()
-            ->with('country')
-            ->when($restrictToOwnSalesman, fn ($q) => $q->whereHas('vehicles', fn ($q2) => $q2->where('salesman_id', $user->salesman->id)))
-            ->when($restrictToManagerScope, fn ($q) => $q->whereHas('vehicles', fn ($q2) => $q2->whereIn('salesman_id', $managerScopeSalesmanIds)))
+            ->with(['country', 'salesman'])
+            ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('salesman_id', $user->salesman->id)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->salesman->id))
+            ))
+            ->when($restrictToManagerScope, fn ($q) => $q->where(fn ($q2) => $q2
+                ->whereIn('salesman_id', $managerScopeSalesmanIds)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $managerScopeSalesmanIds))
+            ))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', "%{$this->search}%")
                 ->orWhere('contact_email', 'like', "%{$this->search}%")
                 ->orWhere('contact_name', 'like', "%{$this->search}%")
             ))
             ->orderBy('name')
             ->paginate($this->perPage);
+    }
+
+    // 회의확장씬 #5-1 (2026-05-22) — 바이어 폼 영업담당자 select 옵션.
+    // 영업 role 본인은 자동 채움. [관리] 본인 담당 영업만 노출 (vehicles/index salesmen() 패턴 차용).
+    #[Computed]
+    public function salesmen()
+    {
+        $q = \App\Models\Salesman::where('is_active', true)->orderBy('name');
+
+        $user = auth()->user();
+        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+            $q->whereIn('id', $user->getSubordinateSalesmanIds());
+        }
+
+        return $q->get(['id', 'name']);
     }
 
     #[Computed]
@@ -115,6 +140,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editingId     = $id;
         $this->name          = $buyer->name;
         $this->country_id_str = $buyer->country_id ? (string)$buyer->country_id : '';
+        $this->salesman_id_str = $buyer->salesman_id ? (string) $buyer->salesman_id : '';
         $this->contact_name  = $buyer->contact_name  ?? '';
         $this->contact_email = $buyer->contact_email ?? '';
         $this->contact_phone = $buyer->contact_phone ?? '';
@@ -138,11 +164,23 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 바이어 저장 ───────────────────────────────────────────────
     public function save(): void
     {
-        $this->validate(['name' => 'required|string|max:100']);
+        $this->validate([
+            'name' => 'required|string|max:100',
+            // 회의확장씬 #5-1 (2026-05-22) — 영업담당자 nullable + exists 검증.
+            'salesman_id_str' => 'nullable|integer|exists:salesmen,id',
+        ]);
+
+        // 영업 role 신규 등록 시 본인 salesman 자동 채움 (vehicles/index L1240~1241 패턴 대칭).
+        $user = auth()->user();
+        if ($this->salesman_id_str === '' && ! $this->editingId
+            && $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman) {
+            $this->salesman_id_str = (string) $user->salesman->id;
+        }
 
         $data = [
             'name'          => $this->name,
-            'country_id'    => $this->country_id_str !== '' ? (int)$this->country_id_str : null,
+            'country_id'    => $this->country_id_str !== '' ? (int) $this->country_id_str : null,
+            'salesman_id'   => $this->salesman_id_str !== '' ? (int) $this->salesman_id_str : null,
             'contact_name'  => $this->contact_name  ?: null,
             'contact_email' => $this->contact_email ?: null,
             'contact_phone' => $this->contact_phone ?: null,
@@ -371,7 +409,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
-        $this->name = $this->country_id_str = $this->contact_name
+        $this->name = $this->country_id_str = $this->salesman_id_str = $this->contact_name
             = $this->contact_email = $this->contact_phone
             = $this->address = $this->memo = '';
         $this->is_active = true;
@@ -537,6 +575,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                         @endforeach
                     </select>
+                </div>
+                {{-- 회의확장씬 #5-1 (2026-05-22) — 영업담당자 직접 지정 ([관리] 솔팅 직접 관계) --}}
+                <div>
+                    <label class="label-base">영업담당자</label>
+                    <select wire:model="salesman_id_str" class="input-base">
+                        <option value="">-- 미배정 --</option>
+                        @foreach($this->salesmen as $s)
+                        <option value="{{ $s->id }}">{{ $s->name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="mt-1 text-xs text-gray-400">[관리] 로그인 시 본인 담당 영업의 바이어만 노출됩니다. 미배정 시 vehicles 통한 간접 관계로 fallback</p>
+                    @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
