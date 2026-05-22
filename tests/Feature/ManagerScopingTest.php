@@ -159,6 +159,30 @@ class ManagerScopingTest extends TestCase
         $this->assertNotContains($otherBuyer->id, $ids, '[관리] 는 외부 영업의 바이어 조회 차단');
     }
 
+    public function test_buyers_table_has_salesman_id_column(): void
+    {
+        // E-1 (2026-05-22) — buyers.salesman_id FK 마이그 확인
+        $this->assertTrue(Schema::hasColumn('buyers', 'salesman_id'));
+    }
+
+    public function test_buyer_with_direct_salesman_id_visible_to_manager(): void
+    {
+        // E-2 (2026-05-22) — buyer.salesman_id 직접 관계만으로 [관리] 솔팅 (vehicles 없음)
+        $mgr = $this->makeManager();
+        $myS = $this->makeSales($mgr, '내영업');
+        $otherS = $this->makeSales(null, '외부영업');
+
+        $myBuyer = Buyer::create(['name' => 'DIRECT MY', 'is_active' => true, 'salesman_id' => $myS->salesman->id]);
+        $otherBuyer = Buyer::create(['name' => 'DIRECT OTHER', 'is_active' => true, 'salesman_id' => $otherS->salesman->id]);
+
+        $this->actingAs($mgr);
+        $list = Volt::test('erp.buyers.index')->get('buyers');
+        $ids = collect($list->items())->pluck('id')->all();
+
+        $this->assertContains($myBuyer->id, $ids, '[관리] 는 buyer.salesman_id 직접 관계로도 솔팅');
+        $this->assertNotContains($otherBuyer->id, $ids);
+    }
+
     public function test_admin_sees_all_vehicles_and_buyers(): void
     {
         $admin = User::factory()->create([
