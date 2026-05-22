@@ -149,14 +149,25 @@ class ExchangeRateService
 
     /**
      * Detail 페이지 HTML 에서 환율 추출 (GBP 용).
-     * 구조: <p class="no_today"><em class="no_up">...<span class="value">...</span>...</em></p>
+     *
+     * 네이버 detail 구조 — 환율을 자리수별 span 분리:
+     *   <p class="no_today">...<span class="no2">2</span><span class="shim">,</span><span class="no0">0</span>
+     *   <span class="no3">3</span><span class="no6">6</span><span class="jum">.</span>
+     *   <span class="no1">1</span><span class="no1">1</span>...</p>
+     *
+     * 메인 페이지 .value span 과 다른 구조 — 자리수 합치기.
      */
     private function parseDetailRate(string $html): ?float
     {
-        if (preg_match('/<p[^>]*class="no_today"[^>]*>.*?<span[^>]*class="value"[^>]*>([\d,\.]+)<\/span>/is', $html, $m)) {
-            return (float) str_replace(',', '', $m[1]);
+        if (! preg_match('/<p[^>]*class="no_today"[^>]*>(.*?)<\/p>/is', $html, $m)) {
+            return null;
         }
+        $block = $m[1];
 
-        return null;
+        // HTML 태그 제거 후 숫자·점만 남김 (shim=',' 자동 제거됨)
+        $plain = strip_tags($block);
+        $plain = preg_replace('/[^\d.]/', '', $plain);
+
+        return is_numeric($plain) ? (float) $plain : null;
     }
 }

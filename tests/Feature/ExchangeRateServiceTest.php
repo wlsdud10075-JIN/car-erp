@@ -47,10 +47,13 @@ class ExchangeRateServiceTest extends TestCase
                 </a>
             </html>
         ';
+        // 네이버 detail 페이지 — 자리수별 span 분리 (실제 구조)
         $gbpHtml = '
             <html>
                 <p class="no_today">
-                    <em><span class="value">1,720.40</span></em>
+                    <em class="no_up">
+                        <span class="no1">1</span><span class="shim">,</span><span class="no7">7</span><span class="no2">2</span><span class="no0">0</span><span class="jum">.</span><span class="no4">4</span><span class="no0">0</span>
+                    </em>
                 </p>
             </html>
         ';
