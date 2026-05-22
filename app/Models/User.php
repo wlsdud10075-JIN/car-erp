@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -34,6 +36,7 @@ class User extends Authenticatable
         'permission',
         'role',
         'type',
+        'manager_user_id',
         'last_login_at',
     ];
 
@@ -249,6 +252,39 @@ class User extends Authenticatable
     public function salesman(): HasOne
     {
         return $this->hasOne(Salesman::class);
+    }
+
+    // 회의확장씬 #11 (2026-05-22) — [관리]별 담당 영업담당자 배정 (1:N).
+    // 영업 user.manager_user_id = [관리] user.id. [관리] 솔팅 산정 input.
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_user_id');
+    }
+
+    public function subordinates(): HasMany
+    {
+        return $this->hasMany(User::class, 'manager_user_id');
+    }
+
+    /**
+     * 회의확장씬 #11 — [관리]가 담당하는 영업의 Salesman.id 배열.
+     * vehicles/buyers 목록 SQL + 영업 select 옵션 필터링에 사용.
+     *
+     * 호출 컨텍스트:
+     *   - role='관리' 사용자만 의미 있음 (subordinates 가 영업 user 들)
+     *   - admin/super 는 호출 X (전체 노출 분기 별도)
+     *   - role='영업' 은 8711e7d restrictToOwnSalesman 가 우선 (본 함수 호출 X)
+     *
+     * 빈 배열 = 배정된 영업 0명 → 호출자가 whereIn([]) 로 빈 결과 처리.
+     *
+     * @return array<int>
+     */
+    public function getSubordinateSalesmanIds(): array
+    {
+        return Salesman::query()
+            ->whereIn('user_id', $this->subordinates()->pluck('id'))
+            ->pluck('id')
+            ->all();
     }
 
     public function initials(): string
