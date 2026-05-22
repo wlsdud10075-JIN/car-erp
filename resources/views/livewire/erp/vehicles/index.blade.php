@@ -592,6 +592,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $hasPaid) {
             return;
         }
+
+        // 회의확장씬 #8 (2026-05-22) — 2차 정산 대기 동안 [재무]/[관리]/admin 잠금 해제.
+        // paid 후 한 달 뒤 측정되는 기타비용(말소·면허·탁송·보험·이전비·기타1,2) 수정 대기.
+        // secondary_status='closed' 후 다시 잠금 (회계 무결성 복구).
+        $user = auth()->user();
+        $isFinanceOrManager = $user && ($user->isAdmin() || in_array($user->role, ['재무', '관리'], true));
+        if ($isFinanceOrManager) {
+            $hasSecondaryPending = $existing->settlements()
+                ->where('settlement_status', 'paid')
+                ->where('secondary_status', 'pending')
+                ->exists();
+            if ($hasSecondaryPending) {
+                return;   // 2차 정산 대기 동안 수정 허용 (회의확장씬 #8)
+            }
+        }
+
         $changed = [];
         foreach (self::FINANCIAL_FIELD_MAP as $formField => $dbField) {
             $newVal = (float) str_replace(',', '', (string) ($this->{$formField} ?? '0'));

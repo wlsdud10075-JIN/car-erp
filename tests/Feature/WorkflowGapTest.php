@@ -1699,6 +1699,8 @@ class WorkflowGapTest extends TestCase
 
     public function test_q10_h4_blocks_vehicle_financial_change_after_paid(): void
     {
+        // 회의확장씬 #8 (2026-05-22) — paid 후 secondary='pending' 자동 set 으로 [관리]/[재무]/admin 잠금 해제.
+        // 본 테스트는 '2차 정산 closed 후 잠금 복귀' 시나리오 — secondary_status='closed' 명시.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['purchase_price' => 1000000]);
         Settlement::create([
@@ -1706,6 +1708,8 @@ class WorkflowGapTest extends TestCase
             'settlement_type' => 'ratio',
             'settlement_ratio' => 50,
             'settlement_status' => 'paid',
+            'secondary_status' => 'closed',
+            'secondary_closed_at' => now(),
             'confirmed_at' => now(),
             'paid_at' => now(),
         ]);
