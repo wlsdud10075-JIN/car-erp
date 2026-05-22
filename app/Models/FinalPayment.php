@@ -8,13 +8,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class FinalPayment extends Model
 {
     protected $fillable = [
-        'vehicle_id', 'transfer_id', 'amount', 'payment_date', 'note',
+        'vehicle_id', 'transfer_id', 'type', 'amount', 'payment_date', 'note',
+        // 회의확장씬 #7 (2026-05-22) — 잔금 row 별 입금 시점 환율 저장.
+        'exchange_rate',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
     ];
 
     protected $casts = [
         'payment_date' => 'date',
         'confirmed_at' => 'datetime',
+        'exchange_rate' => 'decimal:4',
     ];
 
     /**
