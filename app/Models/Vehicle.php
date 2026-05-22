@@ -737,6 +737,15 @@ class Vehicle extends Model
             ]);
         }
 
+        // 회의확장씬 #4 (2026-05-22) — 선적 진입(bl_loading_location) 시 판매 컨사이니 필수.
+        // 사용자 명세: "판매에서 바이어나 컨사이니를 추가... 추가/선택 안 하면 선적으로 진입 불가"
+        // 사용자 결정 A (2026-05-22 세션): consignee_id (판매 단계). export/bl 컨사이니는 별도 단계.
+        if ($this->bl_loading_location && ! $this->consignee_id) {
+            throw ValidationException::withMessages([
+                'consignee_id' => '선적 진입 전 판매 컨사이니를 지정해야 합니다 (판매 단계).',
+            ]);
+        }
+
         // C5 + G 완화 (2026-05-20) — 입금률 < 50% 시만 차단. admin 우회 인프라 그대로 재사용.
         if ($this->sale_price > 0 && $this->exists) {
             $stage = $this->dhl_request
