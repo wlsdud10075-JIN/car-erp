@@ -59,6 +59,24 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업의 salesman.id 배열.
+     * dashboard query 들이 manager scoping 적용 시 사용.
+     *
+     * @return array<int>|null  null = 분기 X (admin/super/일반 영업).
+     *                          빈 배열 = subordinates 0명 → whereIn([]) 빈 결과 (의도).
+     *                          배열 = subordinates 의 Salesman.id.
+     */
+    private function managerScopeSalesmanIds(): ?array
+    {
+        $user = auth()->user();
+        if (! $user || $user->isAdmin() || $user->role !== '관리') {
+            return null;
+        }
+
+        return $user->getSubordinateSalesmanIds();
+    }
+
+    /**
      * 매출/KPI 전용 — 채권 위젯은 의도적으로 제외 (CLAUDE.md 9단계 결정사항 #4).
      * 채권 정보는 /erp/receivables에서 별도 관리.
      */
@@ -66,7 +84,9 @@ new #[Layout('components.layouts.app')] class extends Component
     public function kpis(): array
     {
         $col = $this->dateColumn();
+        $ids = $this->managerScopeSalesmanIds();
         $base = Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo));
 
@@ -130,10 +150,12 @@ new #[Layout('components.layouts.app')] class extends Component
     public function monthlyChartData(): array
     {
         $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
+        $ids = $this->managerScopeSalesmanIds();
 
-        $countByMonth = function (string $column) use ($year): array {
+        $countByMonth = function (string $column) use ($year, $ids): array {
             $buckets = array_fill(1, 12, 0);
             Vehicle::query()
+                ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->whereYear($column, $year)
                 ->whereNotNull($column)
                 ->select($column)
@@ -146,6 +168,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         }
                     }
                 });
+
             return array_values($buckets);
         };
 
@@ -153,6 +176,7 @@ new #[Layout('components.layouts.app')] class extends Component
         // 환율 NULL/0이면 KRW 환산 불가 → 합계에서 제외 (큐 2.5 C1과 동일 정책).
         $salesBuckets = array_fill(1, 12, 0);
         Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->whereYear('sale_date', $year)
             ->whereNotNull('sale_date')
             ->where('sale_price', '>', 0)
@@ -191,9 +215,11 @@ new #[Layout('components.layouts.app')] class extends Component
     public function salesmanPerformance(): array
     {
         $col = $this->dateColumn();
+        $ids = $this->managerScopeSalesmanIds();
         $aggregates = [];  // salesman_id => ['count' => N, 'total_krw' => N]
 
         Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->whereNotNull('salesman_id')
@@ -251,10 +277,12 @@ new #[Layout('components.layouts.app')] class extends Component
     public function settlementKpis(): array
     {
         $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
+        $ids = $this->managerScopeSalesmanIds();
 
         // 1) 인원별 정산지급액 월별 stacked bar
         $monthlyBySalesman = [];
         Settlement::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'paid')
             ->whereNotNull('paid_at')
             ->whereYear('paid_at', $year)
@@ -291,6 +319,7 @@ new #[Layout('components.layouts.app')] class extends Component
         // 2) 정산 지급 대기 총액
         $payoutPending = 0;
         Settlement::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'confirmed')
             ->when($this->dateFrom, fn ($q) => $q->where('confirmed_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('confirmed_at', '<=', $this->dateTo.' 23:59:59'))
@@ -304,6 +333,7 @@ new #[Layout('components.layouts.app')] class extends Component
         // 3) 정산 마진율 평균 — 큐 16: 채널별 평균 마진 제거 (단일 채널).
         $marginRates = [];
         Settlement::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'paid')
             ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
@@ -365,7 +395,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'after_shipping' => ['unpaid' => 0, 'count' => 0],
         ];
 
+        $ids = $this->managerScopeSalesmanIds();
         Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
             ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
