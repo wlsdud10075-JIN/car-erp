@@ -356,6 +356,11 @@ new #[Layout('components.layouts.app')] class extends Component
      * 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 (secondary_status='closed').
      * paid → secondary_pending (자동) 후 [관리]/[재무] 가 기타비용 수정 → 최종 마무리.
      * closed 이후 회계 잠금 (Vehicle 측 가드 Step B-2 에서 처리).
+     *
+     * 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시점 환차 계산.
+     *   환차 = (current_rate × Σ foreign_amount) − sale_received_krw_accumulated
+     *   +이면 환차익 → 프리랜서 정산금 +, -이면 환차손 → -.
+     *   KRW 차량 또는 ExchangeRateService 실패 → 0 (환차 없음).
      */
     public function closeSecondarySettlement(int $id): void
     {
@@ -373,13 +378,48 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
+        // Step C-4: 환차 계산 (회의확장씬 #7)
+        $exchangeDiff = $this->calculateExchangeDifference($settlement);
+
         $settlement->update([
             'secondary_status' => 'closed',
             'secondary_closed_at' => now(),
+            'exchange_difference_krw' => $exchangeDiff,
         ]);
 
         unset($this->settlements);
-        $this->dispatch('notify', message: '2차 정산 완료 (최종 마무리)', type: 'success');
+        $msg = '2차 정산 완료 (최종 마무리)';
+        if ($exchangeDiff !== null && abs($exchangeDiff) > 0.01) {
+            $sign = $exchangeDiff > 0 ? '+' : '';
+            $msg .= ' — 환차 '.$sign.'₩'.number_format($exchangeDiff);
+        }
+        $this->dispatch('notify', message: $msg, type: 'success');
+    }
+
+    /**
+     * 회의확장씬 #7 Step C-4 — 정산 시점 환율 재계산 환차.
+     *
+     * @return float|null  환차 KRW (양수=환차익 / 음수=환차손 / 0=동일). null=계산 불가 (외화+rate 실패).
+     */
+    private function calculateExchangeDifference(Settlement $settlement): ?float
+    {
+        $vehicle = $settlement->vehicle;
+        if (! $vehicle || $vehicle->currency === 'KRW') {
+            return 0.0;   // KRW 차량은 환차 없음
+        }
+
+        $currentRate = app(\App\Services\ExchangeRateService::class)->getRate($vehicle->currency);
+        if ($currentRate === null) {
+            return null;   // 환율 조회 실패 — 환차 계산 불가
+        }
+
+        $foreignReceived = (float) $vehicle->finalPayments
+            ->whereNotNull('confirmed_at')
+            ->sum('amount');
+        $krwAtNow = $foreignReceived * $currentRate;
+        $krwAtPaymentTimes = (float) $vehicle->sale_received_krw_accumulated;
+
+        return $krwAtNow - $krwAtPaymentTimes;
     }
 
     private function resetForm(): void

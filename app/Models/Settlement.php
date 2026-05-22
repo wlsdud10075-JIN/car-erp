@@ -12,6 +12,8 @@ class Settlement extends Model
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status',
         'secondary_status', 'secondary_closed_at',
+        // 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시 환차 (현재 환율 vs 입금 시점 평균)
+        'exchange_difference_krw',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
     ];
 
@@ -19,6 +21,7 @@ class Settlement extends Model
         'confirmed_at' => 'datetime',
         'paid_at' => 'datetime',
         'secondary_closed_at' => 'datetime',
+        'exchange_difference_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
     ];
 
