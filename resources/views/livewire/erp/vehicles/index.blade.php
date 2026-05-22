@@ -178,6 +178,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 사용자 정정: 영업 [저장] → 모달에 매입+판매 필수 항목 미리보기 → [확인] 시 실제 save.
     // 다른 role (admin/재무/관리/통관) 은 모달 없이 직접 save (빠른 처리).
     public bool $showSaveConfirmModal = false;
+    // 회의확장씬 (2026-05-22) — 저장 확인 모달 탭별 미리보기 분기.
+    //   'purchase' / 'sale' / 'bl' / 'clearance' — 그 외(basic/dhl/docs) 즉시 save (모달 X).
+    public string $activeTabForSave = 'purchase';
 
     // 큐 16 — 카풀/헤이맨 계산서 5 properties 제거 (DB 5컬럼 drop과 동기).
 
@@ -1269,13 +1272,15 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 영업 role: 모달 열기 → 매입+판매 필수 항목 미리보기 → [확인] 시 confirmAndSave() 호출 → save() 실행.
      * 다른 role (admin/재무/관리/통관): 모달 없이 즉시 save() (빠른 처리).
      */
-    public function requestSave(): void
+    public function requestSave(string $tab = 'purchase'): void
     {
-        // 회의확장씬 (2026-05-22) — [관리] 도 매입+판매 누락 검증 모달 노출.
-        // 사용자 의도: "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" → 영업처럼 검증 필요.
-        // admin/super/재무/수출통관: 즉시 save (빠른 처리 유지)
+        // 회의확장씬 (2026-05-22) — 영업·관리 모달 노출. 4 탭(매입/판매/선적/통관) 만 모달.
+        // 그 외(basic/dhl/docs) 즉시 save.
+        // admin/super/재무/수출통관: 즉시 save (빠른 처리).
         $user = auth()->user();
-        if ($user && in_array($user->role, ['영업', '관리'], true)) {
+        $modalTabs = ['purchase', 'sale', 'bl', 'clearance'];
+        if ($user && in_array($user->role, ['영업', '관리'], true) && in_array($tab, $modalTabs, true)) {
+            $this->activeTabForSave = $tab;
             $this->showSaveConfirmModal = true;
 
             return;
@@ -3947,8 +3952,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
             취소
         </button>
-        {{-- UX #3 — 영업이면 requestSave 가 모달 분기, 다른 role은 즉시 save --}}
-        <button wire:click="requestSave" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave">
+        {{-- 회의확장씬 (2026-05-22) — 영업·관리 + 4 탭(매입/판매/선적/통관) 시 모달. 현재 활성 탭을 인자로 전달 --}}
+        <button x-on:click="$wire.requestSave(tab)" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave">
             <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? '수정 저장' : '신규 등록' }}</span>
             <span wire:loading wire:target="save,requestSave,confirmAndSave">저장 중...</span>
         </button>
@@ -4107,17 +4112,26 @@ new #[Layout('components.layouts.app')] class extends Component {
      wire:click.self="closeSaveConfirmModal"
      wire:key="save-confirm-modal">
     <div class="card max-w-2xl mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">저장 전 입력 확인</h3>
+        @php
+            $tabLabel = match($activeTabForSave) {
+                'purchase'  => '매입',
+                'sale'      => '판매',
+                'bl'        => '선적(B/L)',
+                'clearance' => '수출통관',
+                default     => '저장',
+            };
+        @endphp
+        <h3 class="text-base font-semibold text-gray-900">{{ $tabLabel }} 정보 확인</h3>
         <p class="mt-1 text-xs text-gray-500">아래 항목이 정확히 입력됐는지 확인 후 [확인 후 저장]을 클릭하세요.</p>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {{-- 매입 섹션 --}}
+        <div class="mt-4">
+            {{-- 회의확장씬 (2026-05-22) — 4 탭별 미리보기 분기 --}}
+            @if($activeTabForSave === 'purchase')
             <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
                 <h4 class="mb-2 text-xs font-semibold text-blue-900">매입 정보</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
                     <div class="flex justify-between"><dt class="text-gray-500">매입일</dt><dd class="font-medium">{{ $purchase_date ?: '— 미입력' }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">매입처</dt><dd class="font-medium">{{ $purchase_from ?: '— 미입력' }}</dd></div>
-                    {{-- 2026-05-21 fix — (float)"1,000,000" = 1.0 PHP 캐스팅 버그. str_replace 로 콤마 제거 필수 --}}
                     <div class="flex justify-between"><dt class="text-gray-500">매입가</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float) str_replace(',', '', $purchase_price_str)) : '— 미입력' }} 원</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">매도비</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float) str_replace(',', '', $selling_fee_str)) : '0' }} 원</dd></div>
                     <hr class="border-blue-200 my-1">
@@ -4126,8 +4140,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="flex justify-between"><dt class="text-gray-500">계좌번호</dt><dd class="font-mono font-medium">{{ $purchase_seller_account ?: '— 미입력' }}</dd></div>
                 </dl>
             </div>
-
-            {{-- 판매 섹션 --}}
+            @elseif($activeTabForSave === 'sale')
             <div class="rounded-lg border border-purple-200 bg-purple-50/40 p-3">
                 <h4 class="mb-2 text-xs font-semibold text-purple-900">판매 정보</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
@@ -4154,10 +4167,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </dl>
             </div>
+            @elseif($activeTabForSave === 'bl')
+            <div class="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+                <h4 class="mb-2 text-xs font-semibold text-amber-900">선적(B/L) 정보</h4>
+                <dl class="space-y-1 text-xs text-gray-700">
+                    <div class="flex justify-between"><dt class="text-gray-500">반입지(선적지)</dt><dd class="font-medium">{{ $bl_loading_location ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">B/L 번호</dt><dd class="font-medium">{{ $bl_number ?? '' ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">컨테이너 No</dt><dd class="font-medium">{{ $container_number ?? '' ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">VSL</dt><dd class="font-medium">{{ $bl_vsl ?? '' ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">B/L 문서</dt><dd class="font-medium">{{ ($bl_document_path ?? '') || ($blDocFile ?? null) ? '✓ 첨부' : '— 미첨부' }}</dd></div>
+                </dl>
+            </div>
+            @elseif($activeTabForSave === 'clearance')
+            <div class="rounded-lg border border-green-200 bg-green-50/40 p-3">
+                <h4 class="mb-2 text-xs font-semibold text-green-900">수출통관 정보</h4>
+                <dl class="space-y-1 text-xs text-gray-700">
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">통관 바이어</dt>
+                        <dd class="font-medium">
+                            @php $expBuyer = $this->buyers->firstWhere('id', (int) ($export_buyer_id_str ?? 0)); @endphp
+                            {{ $expBuyer?->name ?: '— 미선택' }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between"><dt class="text-gray-500">선적 예정일</dt><dd class="font-medium">{{ $shipping_date ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">포워딩사</dt>
+                        <dd class="font-medium">
+                            @php $fc = ($this->forwardingCompanies ?? collect())->firstWhere('id', (int) ($forwarding_company_id_str ?? 0)); @endphp
+                            {{ $fc?->name ?: '— 미선택' }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between"><dt class="text-gray-500">면장 금액</dt><dd class="font-medium">{{ ($export_declaration_amount_str ?? '') !== '' ? number_format((float) str_replace(',', '', $export_declaration_amount_str)).' USD' : '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">수출신고서</dt><dd class="font-medium">{{ ($export_declaration_document_path ?? '') || ($exportDeclarationDocFile ?? null) ? '✓ 첨부' : '— 미첨부' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">통관 완료 체크</dt><dd class="font-medium">{{ ($is_export_cleared ?? false) ? '✓ 완료' : '— 미체크' }}</dd></div>
+                </dl>
+            </div>
+            @endif
         </div>
 
         <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-             표시된 노랑 입력란이 운영상 중요 항목입니다. 누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
+             누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
