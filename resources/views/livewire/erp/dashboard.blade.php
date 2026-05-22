@@ -3,6 +3,7 @@
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Services\ExchangeRateService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -115,6 +116,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return $user->salesman?->id;
+    }
+
+    // 회의확장씬 #7 (2026-05-22) — 실시간 환율 (네이버 marketindex 1h 캐시).
+    // [관리]/일반사용자 대시보드 위젯 + 잔금N+ 자동 기입 데이터 소스.
+    #[Computed]
+    public function exchangeRates(): ?array
+    {
+        return app(ExchangeRateService::class)->getRates();
+    }
+
+    public function refreshExchangeRates(): void
+    {
+        app(ExchangeRateService::class)->refresh();
+        unset($this->exchangeRates);
+        $this->dispatch('notify', message: '환율 새로고침 완료', type: 'success');
     }
 
     #[Computed]
@@ -576,6 +592,38 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
     @endforeach
 </div>
+
+{{-- 회의확장씬 #7 (2026-05-22) — 실시간 환율 위젯 (KRW 기준, 1h 캐시, 네이버 marketindex) --}}
+@php $exchangeRates = $this->exchangeRates; @endphp
+@if($exchangeRates !== null)
+<div class="card mt-3">
+    <div class="mb-2 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-700">
+            실시간 환율
+            <span class="ml-1 text-xs font-normal text-gray-400">(KRW 기준 · 1h 캐시)</span>
+        </h2>
+        <button wire:click="refreshExchangeRates" class="text-xs text-violet-600 hover:underline">새로고침</button>
+    </div>
+    <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        @foreach(['USD','JPY','EUR','GBP','CNY'] as $cur)
+        <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
+            <div class="text-xs text-gray-400">{{ $cur }}@if($cur === 'JPY') <span class="text-[10px]">(100)</span>@endif</div>
+            <div class="text-base font-bold text-gray-800">
+                @if(isset($exchangeRates[$cur]))
+                    ₩{{ number_format($exchangeRates[$cur], 2) }}
+                @else
+                    <span class="text-xs text-gray-400">—</span>
+                @endif
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@else
+<div class="card mt-3 bg-amber-50">
+    <p class="text-xs text-amber-700">⚠ 실시간 환율 조회 실패 — 잔금N+ 추가 시 수동 입력하세요. <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">새로고침</button></p>
+</div>
+@endif
 
 {{-- 할일 목록 --}}
 <div class="card">
