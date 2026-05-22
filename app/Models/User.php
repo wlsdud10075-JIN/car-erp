@@ -181,12 +181,25 @@ class User extends Authenticatable
     }
 
     /**
-     * 큐 14-2 — '관리' role의 /admin/dashboard read-only 조회 권한.
-     * Security 권고: settings·users·기능 토글은 차단, dashboard KPI만 허용.
+     * 관리자 대시보드 (/admin/dashboard) 접근 권한 — admin/super 전용.
+     *
+     * 회의확장씬 사용자 정정 (2026-05-22):
+     *   사용자 의도 "관리자 대시보드는 관리자(admin permission)만 볼 수 있어야"
+     *   [관리] role 은 차단. 큐 14-2 의 '관리 read-only 권고' 무효화.
+     *
+     * 용어 정의 (사용자 명세):
+     *   - [관리] = role='관리' (일반 user permission + 중간 관리자)
+     *   - 관리자 = permission ∈ {super, admin} (최고관리자)
+     *
+     * 부수 효과:
+     *   - AdminDashboardMiddleware 가 [관리] 차단 → /admin/dashboard 403
+     *   - 사이드바 '관리자 대시보드' 메뉴 [관리] 에게 자동 숨김 (show 가 canViewAdminDashboard)
+     *   - admin/dashboard.blade.php 의 managerScopeSalesmanIds() 분기는 코드 보존
+     *     (defensive — 추후 권한 재확장 시 자동 동작, 현재 dead code 아님 — 영업 role 분기 흐름 유지)
      */
     public function canViewAdminDashboard(): bool
     {
-        return $this->isAdmin() || $this->role === '관리';
+        return $this->isAdmin();
     }
 
     /**
