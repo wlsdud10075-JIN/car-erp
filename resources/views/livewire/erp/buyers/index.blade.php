@@ -43,6 +43,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cons_address       = '';
     public string $cons_memo          = '';
     public bool   $cons_is_active     = true;
+    // 회의확장씬 #4 (2026-05-22) — Consignee ID 2컬럼 입력
+    public string $cons_id_type       = '';
+    public string $cons_id_value      = '';
 
     // ── 적립금 탭 ──────────────────────────────────────────────────
     public array  $balances = [];   // ['USD' => 500.00, ...]
@@ -191,6 +194,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $c = Consignee::findOrFail($id);
             $this->cons_name           = $c->name;
             $this->cons_country_id_str = $c->country_id ? (string)$c->country_id : '';
+            $this->cons_id_type        = $c->id_type   ?? '';
+            $this->cons_id_value       = $c->id_value  ?? '';
             $this->cons_contact_name   = $c->contact_name  ?? '';
             $this->cons_contact_email  = $c->contact_email ?? '';
             $this->cons_contact_phone  = $c->contact_phone ?? '';
@@ -200,7 +205,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         } else {
             $this->cons_name = $this->cons_country_id_str = $this->cons_contact_name
                 = $this->cons_contact_email = $this->cons_contact_phone
-                = $this->cons_address = $this->cons_memo = '';
+                = $this->cons_address = $this->cons_memo
+                = $this->cons_id_type = $this->cons_id_value = '';
             $this->cons_is_active = true;
         }
         $this->showConsigneeForm = true;
@@ -214,17 +220,29 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveConsignee(): void
     {
-        $this->validate(['cons_name' => 'required|string|max:100']);
+        // 회의확장씬 #4 (2026-05-22) — id_type 선택 시 id_value 필수.
+        $this->validate([
+            'cons_name' => 'required|string|max:100',
+            'cons_id_type' => 'nullable|in:'.implode(',', array_keys(\App\Models\Consignee::ID_TYPES)),
+            'cons_id_value' => 'nullable|string|max:50|required_with:cons_id_type',
+        ], [], [
+            'cons_name' => '컨사이니명',
+            'cons_id_type' => 'ID 종류',
+            'cons_id_value' => 'ID 번호',
+        ]);
 
-        if (!$this->editingId) {
+        if (! $this->editingId) {
             $this->addError('cons_name', '바이어를 먼저 저장해주세요.');
+
             return;
         }
 
         $data = [
             'buyer_id'      => $this->editingId,
             'name'          => $this->cons_name,
-            'country_id'    => $this->cons_country_id_str !== '' ? (int)$this->cons_country_id_str : null,
+            'country_id'    => $this->cons_country_id_str !== '' ? (int) $this->cons_country_id_str : null,
+            'id_type'       => $this->cons_id_type  ?: null,
+            'id_value'      => $this->cons_id_value ?: null,
             'contact_name'  => $this->cons_contact_name  ?: null,
             'contact_email' => $this->cons_contact_email ?: null,
             'contact_phone' => $this->cons_contact_phone ?: null,
@@ -588,6 +606,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <label class="label-base">컨사이니명 <span class="text-red-500">*</span></label>
                     <input wire:model="cons_name" type="text" class="input-base" />
                     @error('cons_name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                </div>
+                {{-- 회의확장씬 #4 (2026-05-22) — ID 2컬럼. id_type 선택 시 id_value 필수 --}}
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="label-base">ID 종류</label>
+                        <select wire:model="cons_id_type" class="input-base">
+                            <option value="">— 선택 —</option>
+                            @foreach(\App\Models\Consignee::ID_TYPES as $key => $label)
+                            <option value="{{ $key }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        @error('cons_id_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">ID 번호</label>
+                        <input wire:model="cons_id_value" type="text" class="input-base" maxlength="50" />
+                        @error('cons_id_value')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
                 </div>
                 <div>
                     <label class="label-base">국가</label>
