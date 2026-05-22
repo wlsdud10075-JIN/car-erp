@@ -1243,12 +1243,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        // C7-b — 신규 등록 권한: 영업·전체 role 또는 admin/super만 가능.
-        // 통관/정산/관리 role은 신규 차량 등록 차단 (admin이 만든 차량의 자기 영역만 편집).
+        // C7-b 회의확장씬 (2026-05-22) — 신규 등록 권한: 영업·관리 role 또는 admin/super.
+        // 사용자 헤더 명세 "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" 완전 충족.
+        // 수출통관·재무 role 은 신규 등록 차단 (admin/관리 가 만든 차량의 자기 영역만 편집).
         $user = auth()->user();
         if ($this->editingId === null && ! $user->isAdmin()
-            && $user->role !== '영업') {
-            abort(403, '차량 신규 등록은 영업/전체 권한자 또는 관리자만 가능합니다.');
+            && ! in_array($user->role, ['영업', '관리'], true)) {
+            abort(403, '차량 신규 등록은 영업·관리 role 또는 admin/super 만 가능합니다.');
         }
 
         // 큐 14-4-4 후속 — 신규 등록 시 누락된 핵심 메타 자동 채움.
