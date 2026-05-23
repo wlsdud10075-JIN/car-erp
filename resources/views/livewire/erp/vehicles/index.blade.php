@@ -2997,6 +2997,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-blue-300"></span>
                 <span class="section-title">비용 9개</span>
             </div>
+
+            {{-- 회의확장씬 #9 보강 안내 (2026-05-23) — 2차 정산 대기 동안 실측 정정 가이드 --}}
+            @php
+                $hasSecondaryPending = $editingId && \App\Models\Settlement::where('vehicle_id', $editingId)
+                    ->where('settlement_status', 'paid')
+                    ->where('secondary_status', 'pending')
+                    ->exists();
+                $canEditCostNow = auth()->user()?->isAdmin()
+                    || in_array(auth()->user()?->role, ['재무', '관리'], true);
+            @endphp
+            @if($hasSecondaryPending && $canEditCostNow)
+            <div class="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <div class="font-semibold">⏳ 2차 정산 대기 — 실측 정정 가능</div>
+                <div class="mt-0.5 text-amber-700">
+                    한 달 운영 후 청구된 실제 비용으로 수정하세요.
+                    저장 시 <strong>정산 화면의 총마진·정산액·실지급액이 자동 갱신</strong>됩니다.
+                </div>
+            </div>
+            @endif
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">말소비</label><input wire:model="cost_deregistration_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">면허비</label><input wire:model="cost_license_str" type="text" class="input-base" placeholder="0" /></div>

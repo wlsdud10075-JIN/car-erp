@@ -1106,6 +1106,26 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-gray-400">₩0 (동일)</span>
                     @endif
                 </div>
+                {{-- 회의확장씬 #9 보강 안내 (2026-05-23) — 기타비용 수정 위치 안내. --}}
+                @php
+                    $vehicleEditUrl = $this->selectedVehicle
+                        ? route('erp.vehicles.index').'?openVehicle='.$this->selectedVehicle->id
+                        : null;
+                @endphp
+                <div class="mt-2 rounded border border-blue-200 bg-blue-50 px-2 py-2 text-[11px] text-blue-800 space-y-1">
+                    <div class="font-semibold">📋 기타비용 (말소·면허·탁송·보험·이전비 등) 실측 정정</div>
+                    <div class="text-blue-700">
+                        2차 대기 중에는 <strong>차량 편집 패널 → 매입 탭</strong>에서 기타비용 9개 수정 가능합니다.
+                        수정 후 저장 시 <strong>총마진·정산액·실지급액이 자동 재계산</strong>됩니다.
+                    </div>
+                    @if($vehicleEditUrl)
+                    <a href="{{ $vehicleEditUrl }}" wire:navigate
+                       class="inline-flex items-center gap-1 mt-1 text-violet-700 hover:underline font-medium">
+                        → 차량 편집으로 이동
+                    </a>
+                    @endif
+                </div>
+
                 @if($canEditRate)
                 <button type="button"
                         wire:click="closeSecondarySettlement({{ $this->editingId }})"
