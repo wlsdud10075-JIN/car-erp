@@ -204,20 +204,33 @@ new #[Layout('components.layouts.app')] class extends Component
         // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서 시 환차 1:1 반영.
         // Settlement::getActualPayoutAttribute 와 동일 정책 — 편집 패널 미리보기 정합.
         $exchangeDiff = 0;
-        if ($this->editingId && $this->settlement_type === 'ratio') {
+        $carryoverIn = 0;
+        $carryoverOut = 0;
+        if ($this->editingId) {
             $settlement = Settlement::find($this->editingId);
-            if ($settlement
-                && $settlement->secondary_status === 'closed'
-                && $settlement->exchange_difference_krw !== null) {
-                $exchangeDiff = (int) $settlement->exchange_difference_krw;
-                $actualPayout += $exchangeDiff;
+            if ($settlement) {
+                if ($this->settlement_type === 'ratio'
+                    && $settlement->secondary_status === 'closed'
+                    && $settlement->exchange_difference_krw !== null) {
+                    $exchangeDiff = (int) $settlement->exchange_difference_krw;
+                    $actualPayout += $exchangeDiff;
+                }
+                // 새회의 #8 보강 (2026-05-23) — 캐리오버 표시.
+                if ($settlement->carryover_in_krw !== null) {
+                    $carryoverIn = (int) $settlement->carryover_in_krw;
+                    $actualPayout += $carryoverIn;
+                }
+                if ($settlement->carryover_out_krw !== null) {
+                    $carryoverOut = (int) $settlement->carryover_out_krw;
+                }
             }
         }
 
         return compact(
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
-            'documentFee', 'actualPayout', 'exchangeDiff'
+            'documentFee', 'actualPayout', 'exchangeDiff',
+            'carryoverIn', 'carryoverOut'
         );
     }
 
@@ -547,11 +560,25 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         $settlement->update($update);
 
+        // 새회의 #8 보강 (2026-05-23) — 캐리오버 계산.
+        // carryover_out_krw = closed actual_payout (cost·환차 모두 반영) - paid snapshot actual_payout
+        // 다음 영업담당자 정산 creating 훅이 자동 흡수.
+        $paidSnapshotPayout = (int) ($settlement->confirmed_snapshot['actual_payout'] ?? 0);
+        $closedPayout = $settlement->fresh()->actual_payout;
+        $carryoverOut = $closedPayout - $paidSnapshotPayout;
+        if ($carryoverOut !== 0) {
+            $settlement->update(['carryover_out_krw' => $carryoverOut]);
+        }
+
         unset($this->settlements);
         $msg = '2차 정산 완료 (최종 마무리)';
         if ($exchangeDiff !== null && abs($exchangeDiff) > 0.01) {
             $sign = $exchangeDiff > 0 ? '+' : '';
             $msg .= ' — 환차 '.$sign.'₩'.number_format($exchangeDiff);
+        }
+        if ($carryoverOut !== 0) {
+            $sign = $carryoverOut > 0 ? '+' : '';
+            $msg .= ' / 다음 달 이월 '.$sign.'₩'.number_format($carryoverOut);
         }
         $this->dispatch('notify', message: $msg, type: 'success');
     }
@@ -1271,6 +1298,17 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endif
             </div>
             @endif
+            {{-- 새회의 #8 보강 (2026-05-23) — 전월 이월 (영업담당자 카운오버). --}}
+            @if(! empty($this->marginData['carryoverIn']))
+            <div class="flex justify-between text-gray-600">
+                <span>전월 이월 <span class="text-xs text-gray-400">(영업담당자 누적 잔액)</span></span>
+                @if($this->marginData['carryoverIn'] > 0)
+                <span class="text-emerald-600">+ ₩{{ number_format($this->marginData['carryoverIn']) }}</span>
+                @else
+                <span class="text-red-500">- ₩{{ number_format(abs($this->marginData['carryoverIn'])) }}</span>
+                @endif
+            </div>
+            @endif
             <hr class="border-purple-200" />
             <div class="flex justify-between text-base font-bold">
                 <span class="text-gray-800">실지급액</span>
@@ -1278,6 +1316,18 @@ new #[Layout('components.layouts.app')] class extends Component
                     ₩{{ number_format($this->marginData['actualPayout']) }}
                 </span>
             </div>
+            {{-- 새회의 #8 보강 (2026-05-23) — 다음 달 이월 표시 (closed + carryover_out_krw 존재 시). --}}
+            @if(! empty($this->marginData['carryoverOut']))
+            <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
+                <strong>다음 달 이월</strong>
+                @if($this->marginData['carryoverOut'] > 0)
+                <span class="text-emerald-700">+₩{{ number_format($this->marginData['carryoverOut']) }}</span>
+                @else
+                <span class="text-red-600">-₩{{ number_format(abs($this->marginData['carryoverOut'])) }}</span>
+                @endif
+                — 이 영업담당자의 다음 정산에 자동 가산/차감
+            </div>
+            @endif
         </div>
         @endif
 

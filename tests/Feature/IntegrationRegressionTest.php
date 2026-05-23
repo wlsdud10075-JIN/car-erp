@@ -707,4 +707,123 @@ class IntegrationRegressionTest extends TestCase
 
         $this->assertGreaterThan($countBefore, $countAfter, 'settlement_status 변경 시 audit_logs row 생성');
     }
+
+    // ─── F. 정산 캐리오버 (3건, 2026-05-23 추가, 새회의 #8) ─────────
+
+    public function test_case18_carryover_positive_applied_next_settlement(): void
+    {
+        // 영업 A 정산 #1 close → +50,000 환차익 carryover_out → 다음 정산 #2 +50,000 가산
+        $admin = $this->makeAdmin();
+        [, $sm] = $this->makeSalesUser();
+
+        // 정산 #1 — paid + 환차익 (closed 시 carryover_out_krw = +50,000)
+        $s1 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO1-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-04-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'secondary_status' => 'closed',
+            'carryover_out_krw' => 50000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 정산 #2 신규 — creating 훅이 미적용 이월 흡수
+        $s2 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO2-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame('50000.00', (string) $s2->fresh()->carryover_in_krw, '#2 정산 carryover_in_krw = #1 이월 +50,000');
+        $base = $s2->settlement_amount - $s2->document_fee;
+        $this->assertSame($base + 50000, $s2->fresh()->actual_payout, 'actual_payout 에 이월 가산');
+    }
+
+    public function test_case19_carryover_negative_deducted_next_settlement(): void
+    {
+        // 환차손 -30,000 이월 → 다음 정산에서 차감 (사용자 정책: 음수 이월 허용)
+        [, $sm] = $this->makeSalesUser();
+
+        Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO3-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-04-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => -30000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        $s2 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO4-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame('-30000.00', (string) $s2->fresh()->carryover_in_krw, '음수 이월 흡수');
+        $base = $s2->settlement_amount - $s2->document_fee;
+        $this->assertSame($base - 30000, $s2->fresh()->actual_payout, 'actual_payout 에서 차감');
+    }
+
+    public function test_case20_carryover_isolated_per_salesman(): void
+    {
+        // 영업 A 의 +20,000 이월이 영업 B 의 정산에 영향 X (영업담당자별 격리)
+        [, $smA] = $this->makeSalesUser();
+        [, $smB] = $this->makeSalesUser();
+
+        // 영업 A 의 closed 정산 — carryover_out +20,000
+        Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO5-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $smA->id,
+                'purchase_date' => '2026-04-01',
+            ])->id,
+            'salesman_id' => $smA->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 20000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 영업 B 의 신규 정산 — A 이월 흡수 X
+        $sB = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-CO6-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $smB->id,
+                'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01',
+            ])->id,
+            'salesman_id' => $smB->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertNull($sB->fresh()->carryover_in_krw, '영업 B 정산은 영업 A 이월 미흡수');
+    }
 }

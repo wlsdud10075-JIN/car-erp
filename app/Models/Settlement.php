@@ -16,6 +16,8 @@ class Settlement extends Model
         'exchange_difference_krw',
         // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 시 환율 (수동 입력 또는 자동 fetch 저장, audit trail)
         'exchange_rate_at_close',
+        // 새회의 #8 보강 (2026-05-23) — 정산 캐리오버 (영업담당자별 이월)
+        'carryover_in_krw', 'carryover_out_krw',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
     ];
 
@@ -25,6 +27,8 @@ class Settlement extends Model
         'secondary_closed_at' => 'datetime',
         'exchange_difference_krw' => 'decimal:2',
         'exchange_rate_at_close' => 'decimal:4',
+        'carryover_in_krw' => 'decimal:2',
+        'carryover_out_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
     ];
 
@@ -49,6 +53,28 @@ class Settlement extends Model
      */
     protected static function booted(): void
     {
+        // 새회의 #8 보강 (2026-05-23) — 신규 정산 creating 시 영업담당자 미적용 이월 흡수.
+        // 사용자 정책: 영업담당자별 이월 / 2차 closed 시점 트리거 / 음수 이월 허용 (차감).
+        // unconsumed = Σ(영업담당자 closed settlement.carryover_out_krw)
+        //            - Σ(영업담당자 settlement.carryover_in_krw)  (자기 자신 제외)
+        // 명시적으로 set 된 경우 (테스트·migrate 등) 우회.
+        static::creating(function (Settlement $s) {
+            if ($s->carryover_in_krw !== null || ! $s->salesman_id) {
+                return;
+            }
+            $totalOut = (float) self::where('salesman_id', $s->salesman_id)
+                ->where('secondary_status', 'closed')
+                ->whereNotNull('carryover_out_krw')
+                ->sum('carryover_out_krw');
+            $totalIn = (float) self::where('salesman_id', $s->salesman_id)
+                ->whereNotNull('carryover_in_krw')
+                ->sum('carryover_in_krw');
+            $unconsumed = $totalOut - $totalIn;
+            if (abs($unconsumed) >= 0.01) {
+                $s->carryover_in_krw = $unconsumed;
+            }
+        });
+
         static::updated(function (Settlement $s) {
             foreach (self::AUDITED_COLUMNS as $col) {
                 if ($s->wasChanged($col)) {
@@ -275,11 +301,13 @@ class Settlement extends Model
     }
 
     /**
-     * 실지급액 = 정산액 − 서류비 − 기타공제 (+ 환차, 2차 정산 closed + 프리랜서일 때).
+     * 실지급액 = 정산액 − 서류비 − 기타공제 (+ 환차, 2차 정산 closed + 프리랜서일 때) + 전월 이월액.
      *   - 엑셀 CM = CJ − CL. CJ = CH/2 − 50,000 (서류비 박혀있음).
      *   - 사내직원은 서류비 0 → per_unit − other_deduction.
      *   - 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서(ratio) 시 환차 1:1 반영.
      *     사용자 결정: 사내직원(per_unit)은 고정액이라 환차 미반영 (회사가 환차익·환차손 부담).
+     *   - 새회의 #8 보강 (2026-05-23) — 영업담당자별 캐리오버. creating 훅이 이전 정산의 미적용
+     *     carryover_out_krw 합산 → carryover_in_krw set. 본 accessor 가 +로 반영 (음수면 차감).
      */
     public function getActualPayoutAttribute(): int
     {
@@ -289,6 +317,11 @@ class Settlement extends Model
             && $this->secondary_status === 'closed'
             && $this->exchange_difference_krw !== null) {
             $base += (int) $this->exchange_difference_krw;
+        }
+
+        // 캐리오버 — 전월 이월액 가산 (양수 환차익 누적 / 음수 환차손 차감)
+        if ($this->carryover_in_krw !== null) {
+            $base += (int) $this->carryover_in_krw;
         }
 
         return $base;
