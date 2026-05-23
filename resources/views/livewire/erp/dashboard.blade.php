@@ -234,10 +234,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $monthLabel = now()->format('m').'월';
 
         return [
-            ['label' => '현재 진행중',  'value' => $active,    'suffix' => '대', 'hint' => '거래완료 제외'],
-            ['label' => '이달 매입',    'value' => $monthBuy,  'suffix' => '대', 'hint' => $monthLabel.' 매입 기준'],
-            ['label' => '이달 판매',    'value' => $monthSale, 'suffix' => '대', 'hint' => $monthLabel.' 판매 기준'],
-            ['label' => '이달 거래완료','value' => $monthDone, 'suffix' => '대', 'hint' => $monthLabel.' 완료 기준'],
+            ['label' => '현재 진행중',     'value' => $active,    'suffix' => '대', 'hint' => '거래완료 제외'],
+            ['label' => '이달 매입',       'value' => $monthBuy,  'suffix' => '대', 'hint' => $monthLabel.' 매입 기준'],
+            // 새회의 #7 (2026-05-23) — 라벨 명확화: '이달 판매' → '이달 판매 등록' (발생 기준 명시).
+            // 금액 KPI 발생/회수 분리는 관리자 대시보드에 (대수 카운트는 변경 없음).
+            ['label' => '이달 판매 등록',  'value' => $monthSale, 'suffix' => '대', 'hint' => $monthLabel.' 판매 등록 (입금 여부 무관)'],
+            ['label' => '이달 거래완료',   'value' => $monthDone, 'suffix' => '대', 'hint' => $monthLabel.' 완료 기준'],
         ];
     }
 

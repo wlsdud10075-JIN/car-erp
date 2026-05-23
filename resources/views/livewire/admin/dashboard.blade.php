@@ -93,11 +93,19 @@ new #[Layout('components.layouts.app')] class extends Component
         $vehiclesInRange = (clone $base)->count();
         $purchaseTotal = (int) (clone $base)->sum('purchase_price');
 
-        // 판매가 KRW 환산 합계
+        // 판매가 KRW 환산 합계 (발생주의 — 판매 등록 총액)
         $saleKrw = (clone $base)->where('sale_price', '>', 0)->get()->sum(function ($v) {
             return $v->currency === 'KRW' ? $v->sale_price : $v->sale_price * ($v->exchange_rate ?: 0);
         });
         $saleCount = (clone $base)->where('sale_price', '>', 0)->count();
+
+        // 새회의.txt #7 + 3-B (2026-05-23) — 발생 매출 vs 현금 회수 분리.
+        // 현금 회수 = sale_received_krw_accumulated accessor 합 (row 별 환율 합산, SKILLS §13)
+        // 미수금 = sale_unpaid_amount_krw_cache 컬럼 합 (Vehicle saving 훅 자동 갱신)
+        $cashReceivedKrw = (clone $base)->where('sale_price', '>', 0)->get()->sum(function ($v) {
+            return (int) $v->sale_received_krw_accumulated;
+        });
+        $unpaidKrw = (int) (clone $base)->where('sale_price', '>', 0)->sum('sale_unpaid_amount_krw_cache');
 
         // 큐 16 — by_channel 집계 제거 (채널 단일).
         $byProgress = (clone $base)
@@ -111,6 +119,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'purchase_total' => $purchaseTotal,
             'sale_total_krw' => (int) $saleKrw,
             'sale_count' => $saleCount,
+            'cash_received_krw' => (int) $cashReceivedKrw,
+            'unpaid_krw' => $unpaidKrw,
             'by_progress' => $byProgress,
         ];
     }
@@ -657,37 +667,58 @@ new #[Layout('components.layouts.app')] class extends Component
         @endforeach
     </div>
 
-    {{-- 매출 KPI 카드 4개 (모두 클릭 가능) --}}
-    <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
-            <div class="flex items-center justify-between">
-                <span class="text-xs text-gray-500">기간 차량 수</span>
-                <span class="text-xs text-violet-500">상세 →</span>
-            </div>
-            <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['vehicles']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
-        </a>
-        <a href="{{ $this->vehiclesUrl(['action' => 'has_purchase']) }}" wire:navigate class="card transition hover:bg-gray-50">
-            <div class="flex items-center justify-between">
-                <span class="text-xs text-gray-500">기간 매입가 합계</span>
-                <span class="text-xs text-violet-500">상세 →</span>
-            </div>
-            <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['purchase_total']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
-        </a>
-        <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate class="card transition hover:bg-gray-50">
-            <div class="flex items-center justify-between">
-                <span class="text-xs text-gray-500">기간 판매가 합계 (KRW 환산)</span>
-                <span class="text-xs text-violet-500">{{ $this->kpis['sale_count'] }}대 →</span>
-            </div>
-            <div class="mt-1 text-2xl font-bold text-blue-600">{{ number_format($this->kpis['sale_total_krw']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
-        </a>
-        <a href="{{ route('erp.receivables.index') }}" wire:navigate class="card transition hover:bg-gray-50">
-            <div class="flex items-center justify-between">
-                <span class="text-xs text-gray-500">채권 관리</span>
-                <span class="text-xs text-violet-500">이동 →</span>
-            </div>
-            <div class="mt-1 text-sm font-medium text-violet-600">미수금 / 회수 이력</div>
-            <div class="mt-1 text-xs text-gray-400">채권은 별도 화면에서 관리</div>
-        </a>
+    {{-- 매출 KPI — 차량/매입 (2 박스) + 발생/회수/미수 (3 박스) + 채권 링크 (1 박스).
+         새회의.txt #7 + 3-B (2026-05-23) — 매출 vs 현금흐름 분리 (회계 표준). --}}
+    <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="space-y-3">
+
+        {{-- 차량/매입 KPI 2개 --}}
+        <div class="grid grid-cols-2 gap-3">
+            <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">기간 차량 수</span>
+                    <span class="text-xs text-violet-500">상세 →</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['vehicles']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
+            </a>
+            <a href="{{ $this->vehiclesUrl(['action' => 'has_purchase']) }}" wire:navigate class="card transition hover:bg-gray-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">기간 매입가 합계</span>
+                    <span class="text-xs text-violet-500">상세 →</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['purchase_total']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
+            </a>
+        </div>
+
+        {{-- 발생 매출 + 현금 회수 + 미수금 — 회계 표준 3박스 분리 (새회의 #7 + 3-B) --}}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
+               class="card border-blue-200 bg-blue-50/30 transition hover:bg-blue-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-blue-700">이달 판매 (발생) <span class="font-normal text-gray-400">판매 등록 총액</span></span>
+                    <span class="text-xs text-violet-500">{{ $this->kpis['sale_count'] }}대 →</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-blue-600">₩{{ number_format($this->kpis['sale_total_krw']) }}</div>
+                <p class="mt-0.5 text-[11px] text-gray-500">발생주의 — 등록된 모든 판매가 KRW 환산 합</p>
+            </a>
+            <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
+               class="card border-emerald-200 bg-emerald-50/30 transition hover:bg-emerald-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-emerald-700">이달 현금 회수 <span class="font-normal text-gray-400">실제 입금액</span></span>
+                    <span class="text-xs text-violet-500">상세 →</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-emerald-600">₩{{ number_format($this->kpis['cash_received_krw']) }}</div>
+                <p class="mt-0.5 text-[11px] text-gray-500">현금주의 — row 별 입금 시점 환율 합산</p>
+            </a>
+            <a href="{{ route('erp.receivables.index') }}" wire:navigate
+               class="card border-amber-200 bg-amber-50/30 transition hover:bg-amber-50">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-amber-700">이달 미수금 <span class="font-normal text-gray-400">받을 돈</span></span>
+                    <span class="text-xs text-violet-500">채권관리 →</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold text-amber-600">₩{{ number_format($this->kpis['unpaid_krw']) }}</div>
+                <p class="mt-0.5 text-[11px] text-gray-500">발생 − 회수 = 미수 (자동 정합)</p>
+            </a>
+        </div>
     </div>
 
     {{-- 채널별 분포 --}}
