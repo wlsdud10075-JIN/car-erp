@@ -1,0 +1,161 @@
+<?php
+
+/**
+ * 회의확장씬 보강 (2026-05-23) — 새회의.txt #1 사용자 명세.
+ *
+ * "에러 메세지 및 승인 메세지 나오는 박스, 팝업, 모달 전부 변수명이 나오지 않게,
+ *  그리고 한글명이 명시 될 수 있도록."
+ *
+ * Laravel 기본 validation 메시지 한글 번역 + attribute 라벨 매핑 (config/column_labels.php 참조).
+ */
+return [
+
+    'accepted' => ':attribute을(를) 동의해야 합니다.',
+    'active_url' => ':attribute이(가) 올바른 URL이 아닙니다.',
+    'after' => ':attribute은(는) :date 이후의 날짜여야 합니다.',
+    'after_or_equal' => ':attribute은(는) :date 이후이거나 같은 날짜여야 합니다.',
+    'alpha' => ':attribute은(는) 알파벳만 사용할 수 있습니다.',
+    'alpha_dash' => ':attribute은(는) 알파벳, 숫자, 대시(-), 언더스코어(_)만 사용할 수 있습니다.',
+    'alpha_num' => ':attribute은(는) 알파벳과 숫자만 사용할 수 있습니다.',
+    'array' => ':attribute은(는) 배열이어야 합니다.',
+    'ascii' => ':attribute은(는) ASCII 문자만 사용할 수 있습니다.',
+    'before' => ':attribute은(는) :date 이전의 날짜여야 합니다.',
+    'before_or_equal' => ':attribute은(는) :date 이전이거나 같은 날짜여야 합니다.',
+    'between' => [
+        'array' => ':attribute의 항목은 :min ~ :max 개 사이여야 합니다.',
+        'file' => ':attribute의 파일 크기는 :min ~ :max KB 사이여야 합니다.',
+        'numeric' => ':attribute은(는) :min ~ :max 사이의 숫자여야 합니다.',
+        'string' => ':attribute은(는) :min ~ :max 자 사이여야 합니다.',
+    ],
+    'boolean' => ':attribute은(는) true 또는 false 여야 합니다.',
+    'confirmed' => ':attribute 확인이 일치하지 않습니다.',
+    'current_password' => '현재 비밀번호가 일치하지 않습니다.',
+    'date' => ':attribute이(가) 올바른 날짜가 아닙니다.',
+    'date_equals' => ':attribute은(는) :date 와 같은 날짜여야 합니다.',
+    'date_format' => ':attribute이(가) :format 형식과 일치하지 않습니다.',
+    'decimal' => ':attribute은(는) 소수점 :decimal 자리여야 합니다.',
+    'declined' => ':attribute을(를) 거부해야 합니다.',
+    'declined_if' => ':other 이(가) :value 일 때 :attribute을(를) 거부해야 합니다.',
+    'different' => ':attribute과(와) :other 은(는) 서로 달라야 합니다.',
+    'digits' => ':attribute은(는) :digits 자리 숫자여야 합니다.',
+    'digits_between' => ':attribute은(는) :min ~ :max 자리 숫자여야 합니다.',
+    'dimensions' => ':attribute 이미지 크기가 올바르지 않습니다.',
+    'distinct' => ':attribute에 중복된 값이 있습니다.',
+    'doesnt_end_with' => ':attribute은(는) 다음 중 어느 것으로도 끝날 수 없습니다: :values',
+    'doesnt_start_with' => ':attribute은(는) 다음 중 어느 것으로도 시작할 수 없습니다: :values',
+    'email' => ':attribute이(가) 올바른 이메일 형식이 아닙니다.',
+    'ends_with' => ':attribute은(는) 다음 중 하나로 끝나야 합니다: :values',
+    'enum' => '선택한 :attribute 값이 유효하지 않습니다.',
+    'exists' => '선택한 :attribute 이(가) 존재하지 않습니다.',
+    'file' => ':attribute은(는) 파일이어야 합니다.',
+    'filled' => ':attribute은(는) 값이 있어야 합니다.',
+    'gt' => [
+        'array' => ':attribute의 항목은 :value 개보다 많아야 합니다.',
+        'file' => ':attribute의 파일 크기는 :value KB보다 커야 합니다.',
+        'numeric' => ':attribute은(는) :value 보다 커야 합니다.',
+        'string' => ':attribute은(는) :value 자보다 길어야 합니다.',
+    ],
+    'gte' => [
+        'array' => ':attribute의 항목은 :value 개 이상이어야 합니다.',
+        'file' => ':attribute의 파일 크기는 :value KB 이상이어야 합니다.',
+        'numeric' => ':attribute은(는) :value 이상이어야 합니다.',
+        'string' => ':attribute은(는) :value 자 이상이어야 합니다.',
+    ],
+    'image' => ':attribute은(는) 이미지 파일이어야 합니다.',
+    'in' => '선택한 :attribute 값이 유효하지 않습니다.',
+    'in_array' => ':attribute이(가) :other 에 존재하지 않습니다.',
+    'integer' => ':attribute은(는) 정수여야 합니다.',
+    'ip' => ':attribute은(는) 올바른 IP 주소여야 합니다.',
+    'ipv4' => ':attribute은(는) 올바른 IPv4 주소여야 합니다.',
+    'ipv6' => ':attribute은(는) 올바른 IPv6 주소여야 합니다.',
+    'json' => ':attribute은(는) 올바른 JSON 문자열이어야 합니다.',
+    'lowercase' => ':attribute은(는) 소문자여야 합니다.',
+    'lt' => [
+        'array' => ':attribute의 항목은 :value 개보다 적어야 합니다.',
+        'file' => ':attribute의 파일 크기는 :value KB보다 작아야 합니다.',
+        'numeric' => ':attribute은(는) :value 보다 작아야 합니다.',
+        'string' => ':attribute은(는) :value 자보다 짧아야 합니다.',
+    ],
+    'lte' => [
+        'array' => ':attribute의 항목은 :value 개 이하여야 합니다.',
+        'file' => ':attribute의 파일 크기는 :value KB 이하여야 합니다.',
+        'numeric' => ':attribute은(는) :value 이하여야 합니다.',
+        'string' => ':attribute은(는) :value 자 이하여야 합니다.',
+    ],
+    'mac_address' => ':attribute은(는) 올바른 MAC 주소여야 합니다.',
+    'max' => [
+        'array' => ':attribute의 항목은 :max 개 이하여야 합니다.',
+        'file' => ':attribute의 파일 크기는 :max KB 이하여야 합니다.',
+        'numeric' => ':attribute은(는) :max 이하여야 합니다.',
+        'string' => ':attribute은(는) :max 자 이하여야 합니다.',
+    ],
+    'mimes' => ':attribute은(는) 다음 형식의 파일이어야 합니다: :values',
+    'mimetypes' => ':attribute은(는) 다음 형식의 파일이어야 합니다: :values',
+    'min' => [
+        'array' => ':attribute의 항목은 :min 개 이상이어야 합니다.',
+        'file' => ':attribute의 파일 크기는 :min KB 이상이어야 합니다.',
+        'numeric' => ':attribute은(는) :min 이상이어야 합니다.',
+        'string' => ':attribute은(는) :min 자 이상이어야 합니다.',
+    ],
+    'multiple_of' => ':attribute은(는) :value 의 배수여야 합니다.',
+    'not_in' => '선택한 :attribute 값이 유효하지 않습니다.',
+    'not_regex' => ':attribute 형식이 올바르지 않습니다.',
+    'numeric' => ':attribute은(는) 숫자여야 합니다.',
+    'password' => '비밀번호가 일치하지 않습니다.',
+    'present' => ':attribute 필드가 존재해야 합니다.',
+    'prohibited' => ':attribute 필드는 입력할 수 없습니다.',
+    'prohibited_if' => ':other 이(가) :value 일 때 :attribute 필드는 입력할 수 없습니다.',
+    'prohibited_unless' => ':other 이(가) :values 가 아니면 :attribute 필드는 입력할 수 없습니다.',
+    'prohibits' => ':attribute 필드는 :other 의 존재를 막습니다.',
+    'regex' => ':attribute 형식이 올바르지 않습니다.',
+    'required' => ':attribute은(는) 필수 입력 항목입니다.',
+    'required_array_keys' => ':attribute 필드에 다음 항목이 포함되어야 합니다: :values',
+    'required_if' => ':other 이(가) :value 일 때 :attribute은(는) 필수 입력 항목입니다.',
+    'required_unless' => ':other 이(가) :values 가 아닐 때 :attribute은(는) 필수 입력 항목입니다.',
+    'required_with' => ':values 입력 시 :attribute은(는) 필수 입력 항목입니다.',
+    'required_with_all' => ':values 모두 입력 시 :attribute은(는) 필수 입력 항목입니다.',
+    'required_without' => ':values 미입력 시 :attribute은(는) 필수 입력 항목입니다.',
+    'required_without_all' => ':values 가 모두 없을 때 :attribute은(는) 필수 입력 항목입니다.',
+    'same' => ':attribute과(와) :other 이(가) 일치해야 합니다.',
+    'size' => [
+        'array' => ':attribute의 항목은 정확히 :size 개여야 합니다.',
+        'file' => ':attribute의 파일 크기는 :size KB 여야 합니다.',
+        'numeric' => ':attribute은(는) :size 여야 합니다.',
+        'string' => ':attribute은(는) :size 자여야 합니다.',
+    ],
+    'starts_with' => ':attribute은(는) 다음 중 하나로 시작해야 합니다: :values',
+    'string' => ':attribute은(는) 문자열이어야 합니다.',
+    'timezone' => ':attribute은(는) 올바른 시간대여야 합니다.',
+    'unique' => ':attribute이(가) 이미 사용 중입니다.',
+    'uploaded' => ':attribute 업로드에 실패했습니다.',
+    'uppercase' => ':attribute은(는) 대문자여야 합니다.',
+    'url' => ':attribute이(가) 올바른 URL 형식이 아닙니다.',
+    'ulid' => ':attribute은(는) 올바른 ULID 여야 합니다.',
+    'uuid' => ':attribute은(는) 올바른 UUID 여야 합니다.',
+
+    'custom' => [
+        // 컬럼별 커스텀 메시지 — 필요 시 추가
+    ],
+
+    /**
+     * config/column_labels.php 의 vehicles + 다른 테이블 라벨을 attributes 로 흡수.
+     * Validation 메시지의 :attribute 자리에 한글 라벨이 들어감.
+     */
+    'attributes' => array_merge(
+        config('column_labels.vehicles', []),
+        config('column_labels.final_payments', []),
+        config('column_labels.purchase_balance_payments', []),
+        config('column_labels.settlements', []),
+        config('column_labels.buyers', []),
+        config('column_labels.consignees', []),
+        config('column_labels.users', []),
+        // _str suffix 양식 컴포넌트 attribute (vehicles/index의 wire:model)
+        [
+            'vehicle_number' => '차량번호',
+            'name' => '이름',
+            'email' => '이메일',
+            'password' => '비밀번호',
+        ]
+    ),
+
+];

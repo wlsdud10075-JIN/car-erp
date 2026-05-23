@@ -2,6 +2,7 @@
 
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Support\ColumnLabel;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -83,13 +84,13 @@ new #[Layout('components.layouts.app')] class extends Component
         <select wire:model.live="actionFilter" class="input-filter">
             <option value="">액션 전체</option>
             @foreach($this->distinctActions as $a)
-                <option value="{{ $a }}">{{ $a }}</option>
+                <option value="{{ $a }}">{{ \App\Support\ColumnLabel::action($a) }}</option>
             @endforeach
         </select>
         <select wire:model.live="columnFilter" class="input-filter">
             <option value="">컬럼 전체</option>
             @foreach($this->distinctColumns as $c)
-                <option value="{{ $c }}">{{ $c }}</option>
+                <option value="{{ $c }}" title="{{ $c }}">{{ config('column_labels.vehicles.'.$c, $c) }}</option>
             @endforeach
         </select>
         <input wire:model.live.debounce.400ms="dateFrom" type="date" class="input-filter" />
@@ -120,11 +121,16 @@ new #[Layout('components.layouts.app')] class extends Component
             </thead>
             <tbody class="divide-y divide-gray-100">
                 @forelse($this->logs as $log)
+                @php
+                    $modelLabel = \App\Support\ColumnLabel::model($log->auditable_type);
+                    $columnLabel = \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
+                    $actionLabel = \App\Support\ColumnLabel::action($log->action);
+                @endphp
                 <tr class="hover:bg-gray-50">
                     <td class="py-2 pr-4 font-mono text-xs text-gray-600 whitespace-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
                     <td class="py-2 pr-4 text-gray-700">{{ $log->user?->name ?? '시스템' }}</td>
                     <td class="py-2 pr-4 text-xs text-gray-500">
-                        <span class="font-mono">{{ class_basename($log->auditable_type) }}</span>
+                        <span>{{ $modelLabel }}</span>
                         <span class="text-gray-400">#{{ $log->auditable_id }}</span>
                     </td>
                     <td class="py-2 pr-4">
@@ -138,9 +144,12 @@ new #[Layout('components.layouts.app')] class extends Component
                                 default => 'badge-gray',
                             };
                         @endphp
-                        <span class="badge {{ $actionBadge }} text-[10px]">{{ $log->action }}</span>
+                        <span class="badge {{ $actionBadge }} text-[10px]" title="{{ $log->action }}">{{ $actionLabel }}</span>
                     </td>
-                    <td class="py-2 pr-4 font-mono text-xs text-gray-500">{{ $log->column_name ?? '-' }}</td>
+                    <td class="py-2 pr-4 text-xs text-gray-700"
+                        @if($log->column_name) title="{{ $log->column_name }}" @endif>
+                        {{ $columnLabel }}
+                    </td>
                     <td class="py-2 pr-4 text-xs text-gray-600 max-w-md">
                         @if($log->old_value !== null || $log->new_value !== null)
                             <span class="text-red-500 line-through">{{ \Illuminate\Support\Str::limit($log->old_value ?? '(null)', 40) }}</span>
@@ -169,15 +178,20 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 모바일 카드 --}}
     <div class="block sm:hidden space-y-2">
         @forelse($this->logs as $log)
+        @php
+            $modelLabelM = \App\Support\ColumnLabel::model($log->auditable_type);
+            $columnLabelM = \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
+            $actionLabelM = \App\Support\ColumnLabel::action($log->action);
+        @endphp
         <div class="card-tight">
             <div class="flex items-center justify-between">
                 <span class="font-mono text-[10px] text-gray-400">{{ $log->created_at->format('Y-m-d H:i') }}</span>
-                <span class="badge badge-blue text-[10px]">{{ $log->action }}</span>
+                <span class="badge badge-blue text-[10px]" title="{{ $log->action }}">{{ $actionLabelM }}</span>
             </div>
             <div class="mt-1 text-sm font-medium text-gray-800">{{ $log->user?->name ?? '시스템' }}</div>
             <div class="text-xs text-gray-500">
-                {{ class_basename($log->auditable_type) }} #{{ $log->auditable_id }}
-                @if($log->column_name) · <span class="font-mono">{{ $log->column_name }}</span> @endif
+                {{ $modelLabelM }} #{{ $log->auditable_id }}
+                @if($log->column_name) · <span title="{{ $log->column_name }}">{{ $columnLabelM }}</span> @endif
             </div>
             @if($log->old_value !== null || $log->new_value !== null)
             <div class="mt-1 text-xs">
