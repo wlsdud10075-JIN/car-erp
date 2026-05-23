@@ -19,6 +19,8 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Volt::route('vehicles', 'erp.vehicles.index')->name('vehicles.index');
     Volt::route('buyers', 'erp.buyers.index')->name('buyers.index');
     Volt::route('consignees', 'erp.consignees.index')->name('consignees.index');
+    // 회의확장씬 큐 15 / G5 (2026-05-23) — 영업담당자별 재고관리.
+    Volt::route('inventory', 'erp.inventory.index')->name('inventory.index');
 
     // 차량별 서류 자동 생성 (단계 11)
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])

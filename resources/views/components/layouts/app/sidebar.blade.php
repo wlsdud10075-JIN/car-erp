@@ -28,6 +28,7 @@
         $routeName === 'admin.audit-logs.index' => '감사 로그',
         $routeName === 'erp.dashboard' => 'ERP 대시보드',
         $routeName === 'erp.vehicles.index' => '차량 관리',
+        $routeName === 'erp.inventory.index' => '재고관리',
         $routeName === 'erp.buyers.index' => '바이어 관리',
         $routeName === 'erp.consignees.index' => '컨사이니 관리',
         $routeName === 'erp.forwarding-companies.index' => '포워딩사 관리',
@@ -103,6 +104,14 @@
                     'href' => route('erp.vehicles.index'),
                     'icon' => 'truck',
                     'active' => request()->routeIs('erp.vehicles.*'),
+                    'show' => true,
+                ],
+                // 회의확장씬 큐 15 / G5 (2026-05-23) — 영업담당자별 재고관리.
+                [
+                    'label' => '재고관리',
+                    'href' => route('erp.inventory.index'),
+                    'icon' => 'building',
+                    'active' => request()->routeIs('erp.inventory.*'),
                     'show' => true,
                 ],
                 // 2026-05-20 #1 피드백 — 수출통관 사이드바 = 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
