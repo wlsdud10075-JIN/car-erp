@@ -45,21 +45,33 @@ class InventoryTest extends TestCase
         return $v->refresh();
     }
 
-    public function test_inventory_includes_purchase_and_deregistration_stages(): void
+    public function test_inventory_includes_through_sale_completed(): void
     {
+        // 사용자 정정 (2026-05-23): 재고 = 매입중·매입완료·말소완료·판매중·판매완료 (선적 진입 전 모두)
         $admin = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
-        $v1 = $this->makeVehicle('매입중');
-        $v2 = $this->makeVehicle('매입완료');
+        $v1 = $this->makeVehicle('매입중');                              // 재고 O
+        $v2 = $this->makeVehicle('매입완료');                            // 재고 O
 
-        // 판매중 차량 — 재고 X
+        // 판매중 차량 (sale_price 입력, 미수 있음)
         $v3 = Vehicle::create([
-            'vehicle_number' => 'INV-SALE-'.++$this->counter,
+            'vehicle_number' => 'INV-SALE-ING-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
             'dhl_request' => false,
             'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
             'sale_price' => 2_000_000, 'sale_date' => '2026-05-01',
         ]);
-        $v3->refreshCaches();
+        $v3->refreshCaches();   // → 판매중
+
+        // 선적중 차량 — 재고 X (bl_loading_location 입력)
+        $v4 = Vehicle::create([
+            'vehicle_number' => 'INV-SHIP-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
+            'sale_price' => 2_000_000, 'sale_date' => '2026-05-01',
+            'bl_loading_location' => 'PUSAN PORT',
+        ]);
+        $v4->refreshCaches();   // → 선적중
 
         $this->actingAs($admin);
         $list = Volt::test('erp.inventory.index')->instance()->inventoryVehicles;
@@ -67,7 +79,8 @@ class InventoryTest extends TestCase
 
         $this->assertContains($v1->id, $ids, '매입중 재고 포함');
         $this->assertContains($v2->id, $ids, '매입완료 재고 포함');
-        $this->assertNotContains($v3->id, $ids, '판매중은 재고 제외');
+        $this->assertContains($v3->id, $ids, '판매중 재고 포함 (사용자 정정)');
+        $this->assertNotContains($v4->id, $ids, '선적중은 재고 제외');
     }
 
     public function test_salesman_filter_limits_results(): void

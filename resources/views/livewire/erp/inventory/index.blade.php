@@ -11,12 +11,13 @@ use Livewire\WithPagination;
 /**
  * 회의확장씬 큐 15 / G5 (2026-05-23) — 영업담당자별 재고관리.
  *
- * 회의록 2026-05-14-3way-workflow-policy.md §G5:
- *   "영업담당자별. 말소완료까지 = 재고. 선적중 시 재고 제거."
+ * 회의록 2026-05-14-3way-workflow-policy.md §G5 원문: "말소완료까지 = 재고".
+ * 사용자 정정 (2026-05-23): "선적전까지, 판매완료까지는 재고로 잡아줘."
  *
- * 재고 정의:
- *   - progress_status_cache IN ('매입중', '매입완료', '말소완료')
- *   - 즉 판매중 진입 전 차량만
+ * 재고 정의 (사용자 정정):
+ *   - progress_status_cache IN ('매입중', '매입완료', '말소완료', '판매중', '판매완료')
+ *   - 즉 선적 진입 전 차량 모두 (판매 등록·완료해도 출고 전이면 재고)
+ *   - 선적중 부터 비재고 (이미 출고 시작)
  *
  * 권한:
  *   - admin/super: 전체 재고
@@ -35,7 +36,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 20;
 
-    private const STOCK_STATUSES = ['매입중', '매입완료', '말소완료'];
+    private const STOCK_STATUSES = ['매입중', '매입완료', '말소완료', '판매중', '판매완료'];
 
     #[Computed]
     public function inventoryVehicles()
@@ -112,7 +113,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <h2 class="text-xl font-bold text-gray-800">재고관리</h2>
             <p class="mt-0.5 text-xs text-gray-500">
-                매입중 · 매입완료 · 말소완료 차량 (판매 진입 전). 영업담당자별 그룹 정렬.
+                매입중 · 매입완료 · 말소완료 · 판매중 · 판매완료 차량 (선적 진입 전). 영업담당자별 그룹 정렬.
             </p>
         </div>
         <span class="text-xs text-gray-400">총 {{ number_format($this->inventoryVehicles->total()) }} 대</span>
@@ -158,6 +159,8 @@ new #[Layout('components.layouts.app')] class extends Component
             <option value="매입중">매입중</option>
             <option value="매입완료">매입완료</option>
             <option value="말소완료">말소완료</option>
+            <option value="판매중">판매중</option>
+            <option value="판매완료">판매완료</option>
         </select>
         <button wire:click="search" class="btn-search">조회</button>
         <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">필터 초기화</button>
@@ -189,6 +192,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 @php
                     $statusBadge = match($v->progress_status_cache) {
                         '매입중', '매입완료', '말소완료' => 'badge-blue',
+                        '판매중', '판매완료' => 'badge-purple',
                         default => 'badge-gray',
                     };
                 @endphp
@@ -232,10 +236,17 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 모바일 카드 --}}
     <div class="block sm:hidden space-y-2">
         @forelse($this->inventoryVehicles as $v)
+        @php
+            $statusBadgeM = match($v->progress_status_cache) {
+                '매입중', '매입완료', '말소완료' => 'badge-blue',
+                '판매중', '판매완료' => 'badge-purple',
+                default => 'badge-gray',
+            };
+        @endphp
         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}" wire:navigate class="card-tight block">
             <div class="flex items-center justify-between">
                 <span class="font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</span>
-                <span class="badge badge-blue">{{ $v->progress_status_cache }}</span>
+                <span class="badge {{ $statusBadgeM }}">{{ $v->progress_status_cache }}</span>
             </div>
             <div class="mt-1 grid grid-cols-2 gap-x-3 text-xs text-gray-500">
                 <div>담당: {{ $v->salesman?->name ?? '미배정' }}</div>
