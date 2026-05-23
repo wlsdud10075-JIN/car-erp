@@ -34,6 +34,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
     #[Url] public string $salesmanId = '';
+    // 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select.
+    #[Url] public string $buyerId = '';
     #[Url] public int $perPage = 10;
 
     // ── 슬라이드 패널 상태 ────────────────────────────────────────
@@ -314,6 +316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
+            ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
             ->when($this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
@@ -400,6 +403,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         if ($user && ! $user->isAdmin() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());
+        }
+
+        return $q->get();
+    }
+
+    /**
+     * 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select 옵션.
+     * - admin/super/통관/재무: 전체 바이어
+     * - 관리: 본인 담당 영업의 바이어만 (direct salesman_id + indirect vehicles.salesman_id)
+     * - 영업: 본인 영업의 바이어만 (#11 패턴 동일)
+     */
+    #[Computed]
+    public function buyersForFilter()
+    {
+        $q = Buyer::orderBy('name');
+        $user = auth()->user();
+
+        if (! $user || $user->isAdmin()) {
+            return $q->get();
+        }
+
+        if ($user->role === '관리') {
+            $subIds = $user->getSubordinateSalesmanIds();
+            $q->where(function ($q2) use ($subIds) {
+                $q2->whereIn('salesman_id', $subIds)
+                    ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $subIds));
+            });
+        } elseif ($user->role === '영업' && $user->salesman) {
+            $ownId = $user->salesman->id;
+            $q->where(function ($q2) use ($ownId) {
+                $q2->where('salesman_id', $ownId)
+                    ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $ownId));
+            });
         }
 
         return $q->get();
@@ -2534,6 +2570,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="">담당자 전체</option>
             @foreach($this->salesmen as $s)
                 <option value="{{ $s->id }}">{{ $s->name }}</option>
+            @endforeach
+        </select>
+        {{-- 회의확장씬 #3 Phase 2-4 (2026-05-23) — 바이어 select 필터 --}}
+        <select wire:model.live="buyerId" class="input-filter">
+            <option value="">바이어 전체</option>
+            @foreach($this->buyersForFilter as $b)
+                <option value="{{ $b->id }}">{{ $b->name }}</option>
             @endforeach
         </select>
         <button wire:click="applyFilters" class="btn-search">조회</button>
