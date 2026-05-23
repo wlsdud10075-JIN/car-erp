@@ -205,6 +205,79 @@ new #[Layout('components.layouts.app')] class extends Component
         );
     }
 
+    /**
+     * 회의확장씬 #6+7 보강 (2026-05-23) — 정산 KRW 명세 (1차/입금/2차/환차).
+     *
+     * 사용자 명세: "1차정산·2차정산·환차익 계산 로직 그대로 화면에 나와야".
+     *
+     * 흐름:
+     *   - 1차 정산금원화 = (sale_price + commission + auto_loading - tax_dc) × vehicle.exchange_rate
+     *   - 입금 시점 KRW 합 = Σ(잔금 row × row 환율) = sale_received_krw_accumulated accessor (단일 출처)
+     *   - 2차 정산 시점 KRW 합:
+     *       · closed → vehicle 입금 시점 + exchange_difference_krw 저장값 역산
+     *       · pending/null → 외화 합 × 현재 환율 (참고용 미리보기)
+     *   - 환차 = 2차 KRW - 입금 시점 KRW
+     *   - KRW currency 차량 → 환차 없음 ({is_krw_vehicle: true})
+     *   - 환율 조회 실패 → rate_unavailable: true
+     */
+    #[Computed]
+    public function krwBreakdown(): array
+    {
+        $v = $this->selectedVehicle;
+        if (! $v) {
+            return [];
+        }
+
+        $saleBase = (float) ($v->sale_price ?? 0)
+            + (float) ($v->commission ?? 0)
+            + (float) ($v->auto_loading ?? 0)
+            - (float) ($v->tax_dc ?? 0);
+        $primaryKrw = (int) ($saleBase * (float) ($v->exchange_rate ?? 0));
+        $receivedKrw = (int) $v->sale_received_krw_accumulated;
+        $isKrwVehicle = ($v->currency ?? 'KRW') === 'KRW';
+
+        $settlement = $this->editingId ? Settlement::find($this->editingId) : null;
+        $secondaryStatus = $settlement?->secondary_status;
+
+        $base = [
+            'is_krw_vehicle' => $isKrwVehicle,
+            'primary_krw' => $primaryKrw,
+            'received_krw' => $receivedKrw,
+            'status' => $secondaryStatus,
+        ];
+
+        if ($isKrwVehicle) {
+            return $base;
+        }
+
+        // closed: 저장된 환차 사용 (확정값)
+        if ($settlement && $secondaryStatus === 'closed' && $settlement->exchange_difference_krw !== null) {
+            $storedDiff = (float) $settlement->exchange_difference_krw;
+
+            return array_merge($base, [
+                'secondary_krw' => (int) ($receivedKrw + $storedDiff),
+                'exchange_diff' => $storedDiff,
+                'is_preview' => false,
+            ]);
+        }
+
+        // pending / null: 현재 환율로 라이브 미리보기 (참고용)
+        $currentRate = app(\App\Services\ExchangeRateService::class)->getRate($v->currency);
+        if ($currentRate === null) {
+            return array_merge($base, ['rate_unavailable' => true]);
+        }
+
+        $foreignReceived = (float) $v->finalPayments->whereNotNull('confirmed_at')->sum('amount');
+        $secondaryKrw = (int) ($foreignReceived * $currentRate);
+
+        return array_merge($base, [
+            'secondary_krw' => $secondaryKrw,
+            'exchange_diff' => (float) ($secondaryKrw - $receivedKrw),
+            'current_rate' => $currentRate,
+            'is_preview' => true,
+        ]);
+    }
+
     // ── 액션 ──────────────────────────────────────────────────────
 
     public function selectVehicle(int $vehicleId): void
@@ -540,6 +613,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <th class="pb-2 pr-4 font-medium text-right">총마진</th>
                 <th class="pb-2 pr-4 font-medium text-right">정산액</th>
                 <th class="pb-2 pr-4 font-medium text-right">실지급액</th>
+                {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
+                <th class="pb-2 pr-4 font-medium text-right">환차</th>
                 <th class="pb-2 pr-4 font-medium">상태</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
@@ -637,6 +712,23 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-right font-semibold {{ $s->actual_payout < 0 ? 'text-red-600' : 'text-gray-800' }}">
                     ₩{{ number_format($s->actual_payout) }}
                 </td>
+                {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 (저장값 기준, live 계산 X). --}}
+                <td class="py-3 pr-4 text-right text-xs">
+                    @if($s->vehicle?->currency === 'KRW')
+                        <span class="text-gray-300" title="원화 차량 — 환차 없음">—</span>
+                    @elseif($s->secondary_status === 'closed' && $s->exchange_difference_krw !== null)
+                        @php $diff = (float) $s->exchange_difference_krw; @endphp
+                        @if($diff > 0)
+                        <span class="font-semibold text-emerald-600" title="환차익">+₩{{ number_format($diff) }}</span>
+                        @elseif($diff < 0)
+                        <span class="font-semibold text-red-600" title="환차손">-₩{{ number_format(abs($diff)) }}</span>
+                        @else
+                        <span class="text-gray-400" title="환차 동일">₩0</span>
+                        @endif
+                    @else
+                        <span class="text-gray-300" title="2차 정산 완료 후 표시">—</span>
+                    @endif
+                </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
                     {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
@@ -676,7 +768,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </tr>
             @empty
             <tr>
-                <td colspan="9" class="py-12 text-center text-sm text-gray-400">정산 내역이 없습니다.</td>
+                <td colspan="10" class="py-12 text-center text-sm text-gray-400">정산 내역이 없습니다.</td>
             </tr>
             @endforelse
         </tbody>
@@ -836,6 +928,80 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="{{ $this->marginData['totalMargin'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['totalMargin']) }}</span>
                 </div>
             </div>
+        </div>
+        @endif
+
+        {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 정산 KRW 명세 (1차·입금·2차·환차). --}}
+        @if(! empty($this->krwBreakdown))
+        @php $kb = $this->krwBreakdown; @endphp
+        <div>
+            <div class="section-header">
+                <span class="section-dot bg-amber-500"></span>
+                <span class="section-title">
+                    정산 KRW 명세
+                    @if($kb['status'] === 'closed')
+                    <span class="ml-1 text-emerald-600 font-semibold">(확정)</span>
+                    @elseif($kb['status'] === 'pending')
+                    <span class="ml-1 text-amber-600 font-semibold">(2차 대기)</span>
+                    @endif
+                </span>
+            </div>
+            @if($kb['is_krw_vehicle'])
+            <div class="rounded-lg bg-gray-50 p-3 text-sm text-gray-500 text-center">
+                원화 차량 — 환차 없음
+            </div>
+            @else
+            <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
+                <div class="flex justify-between text-gray-600">
+                    <span>1차 정산금원화 <span class="text-xs text-gray-400">(차량 환율 기준)</span></span>
+                    <span>₩{{ number_format($kb['primary_krw']) }}</span>
+                </div>
+                <div class="flex justify-between text-gray-600">
+                    <span>입금 시점 KRW 합 <span class="text-xs text-gray-400">(row별 환율)</span></span>
+                    <span>₩{{ number_format($kb['received_krw']) }}</span>
+                </div>
+
+                @if(! empty($kb['rate_unavailable']))
+                <div class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+                    현재 환율 조회 실패 — 정산 시점 KRW / 환차 계산 불가
+                </div>
+                @elseif(! empty($kb['is_preview']))
+                {{-- pending/null — 참고용 미리보기 (회색) --}}
+                <hr class="border-gray-200">
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">정산 시점 KRW 합 <span class="text-[10px]">(현재 환율 {{ number_format($kb['current_rate'], 2) }}, 참고용)</span></span>
+                    <span class="text-gray-500">₩{{ number_format($kb['secondary_krw']) }}</span>
+                </div>
+                <div class="flex justify-between text-xs">
+                    <span class="text-gray-400">예상 환차 <span class="text-[10px]">(2차 완료 시 확정)</span></span>
+                    @if($kb['exchange_diff'] > 0)
+                    <span class="text-emerald-500">+₩{{ number_format($kb['exchange_diff']) }}</span>
+                    @elseif($kb['exchange_diff'] < 0)
+                    <span class="text-red-500">-₩{{ number_format(abs($kb['exchange_diff'])) }}</span>
+                    @else
+                    <span class="text-gray-400">₩0</span>
+                    @endif
+                </div>
+                @else
+                {{-- closed — 저장된 확정값 --}}
+                <hr class="border-gray-200">
+                <div class="flex justify-between text-gray-700">
+                    <span>정산 시점 KRW 합 <span class="text-xs text-gray-400">(2차 정산 확정 환율)</span></span>
+                    <span class="font-medium">₩{{ number_format($kb['secondary_krw']) }}</span>
+                </div>
+                <div class="flex justify-between font-semibold">
+                    <span class="text-gray-800">환차 (확정)</span>
+                    @if($kb['exchange_diff'] > 0)
+                    <span class="text-emerald-600">+₩{{ number_format($kb['exchange_diff']) }} 환차익</span>
+                    @elseif($kb['exchange_diff'] < 0)
+                    <span class="text-red-600">-₩{{ number_format(abs($kb['exchange_diff'])) }} 환차손</span>
+                    @else
+                    <span class="text-gray-500">₩0 (동일)</span>
+                    @endif
+                </div>
+                @endif
+            </div>
+            @endif
         </div>
         @endif
 
