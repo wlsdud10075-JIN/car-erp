@@ -16,6 +16,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $search = '';
     #[Url] public int $perPage = 10;
+    // 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 필터 + 영업담당자별 정렬.
+    #[Url] public string $salesmanFilter = '';
 
     // ── 패널 ─────────────────────────────────────────────────────
     public bool   $showPanel  = false;
@@ -96,10 +98,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereIn('salesman_id', $managerScopeSalesmanIds)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $managerScopeSalesmanIds))
             ))
+            ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', "%{$this->search}%")
                 ->orWhere('contact_email', 'like', "%{$this->search}%")
                 ->orWhere('contact_name', 'like', "%{$this->search}%")
             ))
+            // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
+            ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
+            ->orderBy('salesman_id')
             ->orderBy('name')
             ->paginate($this->perPage);
     }
@@ -462,6 +468,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일 · 담당자"
            class="input-filter w-64" />
+    {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
+    <select wire:model.live="salesmanFilter" class="input-filter">
+        <option value="">담당자 전체</option>
+        @foreach($this->salesmen as $sm)
+            <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+        @endforeach
+    </select>
     <button wire:click="search" class="btn-search">조회</button>
 </div>
 
@@ -471,6 +484,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                 <th class="pb-2 pr-4 font-medium">바이어명</th>
+                <th class="pb-2 pr-4 font-medium">담당자</th>
                 <th class="pb-2 pr-4 font-medium">국가</th>
                 <th class="pb-2 pr-4 font-medium">이메일</th>
                 <th class="pb-2 pr-4 font-medium">전화</th>
@@ -482,6 +496,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             @forelse($this->buyers as $b)
             <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $b->id }})">
                 <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}</td>
+                <td class="py-3 pr-4 text-gray-500">
+                    @if($b->salesman)
+                        <span class="badge badge-blue">{{ $b->salesman->name }}</span>
+                    @else
+                        <span class="text-gray-300">미지정</span>
+                    @endif
+                </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->country?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->contact_email ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->contact_phone ?? '-' }}</td>
@@ -497,7 +518,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">바이어가 없습니다.</td></tr>
+            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">바이어가 없습니다.</td></tr>
             @endforelse
         </tbody>
     </table>
