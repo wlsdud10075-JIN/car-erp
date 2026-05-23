@@ -3053,14 +3053,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text"
-                           class="input-base w-32 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           style="width: 96px; flex: none;"
                            placeholder="금액(원)" @if(!$canConfirmFinance) disabled @endif />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date"
-                           class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           style="width: 112px; flex: none;"
                            @if(!$canConfirmFinance) disabled @endif />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text"
                            class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="메모" @if(!$canConfirmFinance) disabled @endif />
+                           style="min-width: 0;"
+                           placeholder="비고" @if(!$canConfirmFinance) disabled @endif />
                     @if(!empty($row['id']))
                         @if($isPbpConfirmed)
                         <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
@@ -3314,7 +3317,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endphp
                 <div class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
                     <span class="text-xs">{{ $isVoided ? '⊘' : ($pendingVoid ? '⏳' : '🔁') }}</span>
-                    <span class="w-32 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
+                    <span class="w-24 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
                         {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
                     </span>
                     <span class="flex-1 text-xs {{ $textMutedClass }}">
@@ -3345,9 +3348,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @elseif(!empty($row['locked']))
                 <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
                     <span class="text-xs text-gray-400">🔒</span>
-                    <span class="w-32 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
-                    <span class="flex-1 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
-                    <span class="flex-1 text-xs text-gray-400">{{ $row['note'] ?: '' }}</span>
+                    <span class="w-24 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
+                    <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
+                    <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
                     <a href="{{ route('erp.receivables.index') }}" wire:navigate
                        class="text-xs text-violet-500 hover:underline whitespace-nowrap">채권관리에서 수정</a>
                 </div>
@@ -3358,21 +3361,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $rowBg = $isConfirmed ? 'bg-emerald-50/40 border-emerald-200' : ($row['id'] ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
-                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base w-32" placeholder="금액" />
+                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base"
+                           style="width: 96px; flex: none;" placeholder="금액" />
                     {{-- 회의확장씬 #7 (2026-05-22) — 잔금 row 별 환율 (외화만, 자동 기입 + 수정 가능) --}}
                     @if($currency !== 'KRW')
-                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" class="input-base w-24" placeholder="환율" title="입금 시점 환율" />
+                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" class="input-base"
+                           style="width: 80px; flex: none;" placeholder="환율" title="입금 시점 환율" />
                     @php
                         $rowAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
                         $rowRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '0');
                         $rowKrw = $rowAmt * $rowRate;
                     @endphp
                     @if($rowAmt > 0 && $rowRate > 0)
-                    <span class="text-xs text-gray-500 whitespace-nowrap" title="KRW 환산 (입금 시점 환율 기준)">= ₩{{ number_format($rowKrw, 0) }}</span>
+                    <span class="text-[10px] text-gray-500 whitespace-nowrap" title="KRW 환산 (입금 시점 환율 기준)">≈₩{{ number_format($rowKrw, 0) }}</span>
                     @endif
                     @endif
-                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base flex-1" />
-                    <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1" placeholder="메모" />
+                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base"
+                           style="width: 112px; flex: none;" />
+                    <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1"
+                           style="min-width: 0;" placeholder="비고" />
                     @if($row['id'])
                         @if($isConfirmed)
                         <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
