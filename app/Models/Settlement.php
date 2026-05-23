@@ -14,6 +14,8 @@ class Settlement extends Model
         'secondary_status', 'secondary_closed_at',
         // 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시 환차 (현재 환율 vs 입금 시점 평균)
         'exchange_difference_krw',
+        // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 시 환율 (수동 입력 또는 자동 fetch 저장, audit trail)
+        'exchange_rate_at_close',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
     ];
 
@@ -22,6 +24,7 @@ class Settlement extends Model
         'paid_at' => 'datetime',
         'secondary_closed_at' => 'datetime',
         'exchange_difference_krw' => 'decimal:2',
+        'exchange_rate_at_close' => 'decimal:4',
         'confirmed_snapshot' => 'array',
     ];
 
