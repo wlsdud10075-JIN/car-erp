@@ -38,6 +38,33 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $buyerId = '';
     #[Url] public int $perPage = 10;
 
+    // 회의확장씬 #10 Phase 2-3 (2026-05-23) — 헤더 클릭 정렬.
+    // localStorage 가 캐시 (Alpine), 진실은 Livewire property (server-side orderBy).
+    public string $sortColumn = 'created_at';
+
+    public string $sortDirection = 'desc';
+
+    // DB 컬럼만 정렬 허용 (accessor 정렬 X — 페이지네이션 + accessor 호환 X).
+    private const SORTABLE_COLUMNS = [
+        'vehicle_number', 'brand', 'progress_status_cache',
+        'purchase_date', 'sale_date', 'shipping_date', 'bl_issue_date',
+        'salesman_id', 'sale_price', 'purchase_price',
+        'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'created_at',
+    ];
+
+    public function setSort(string $col): void
+    {
+        if (! in_array($col, self::SORTABLE_COLUMNS, true)) {
+            return;
+        }
+        if ($this->sortColumn === $col) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortColumn = $col;
+            $this->sortDirection = 'asc';
+        }
+    }
+
     // ── 슬라이드 패널 상태 ────────────────────────────────────────
     public bool $showPanel = false;
     public ?int $editingId = null;
@@ -320,7 +347,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
             ->when($this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
-            ->latest()
+            ->orderBy($this->sortColumn, $this->sortDirection)
             ->paginate($this->perPage);
     }
 
@@ -2596,17 +2623,61 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- ── 데스크탑 테이블 ─────────────────────────────────────────── --}}
-<div class="hidden sm:block overflow-x-auto">
-    <table class="w-full text-sm border-separate border-spacing-0">
+{{-- ── 데스크탑 테이블 (회의확장씬 #10 컬럼 토글 + 정렬) ─────── --}}
+<div class="hidden sm:block"
+     x-data="vehicleColumnsToggle()"
+     x-init="init()">
+
+    {{-- 컬럼 토글 드롭다운 --}}
+    <div class="mb-2 flex justify-end relative">
+        <button type="button" @click="open = !open"
+                class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
+            컬럼 <span x-text="open ? '▲' : '▼'"></span>
+        </button>
+        <div x-show="open" x-cloak @click.outside="open = false"
+             class="absolute right-0 top-8 z-10 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
+            <div class="px-3 pb-1 text-[10px] font-semibold uppercase text-gray-400">표시 컬럼</div>
+            <template x-for="col in togglableColumns" :key="col.key">
+                <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                    <input type="checkbox" :checked="visible[col.key]" @change="toggle(col.key)" class="rounded" />
+                    <span x-text="col.label"></span>
+                </label>
+            </template>
+            <div class="border-t border-gray-100 mt-1 px-3 py-1">
+                <button @click="resetDefaults()" class="text-[11px] text-violet-600 hover:underline">기본값 복원</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm border-separate border-spacing-0">
         <thead>
+            @php
+                $sortBtn = function ($col, $label, $align = 'left') {
+                    $isActive = $this->sortColumn === $col;
+                    $indicator = $isActive ? ($this->sortDirection === 'asc' ? '▲' : '▼') : '';
+                    $alignCls = $align === 'right' ? 'justify-end ml-auto' : '';
+
+                    return '<button type="button" wire:click="setSort(\''.$col.'\')" class="flex items-center gap-1 hover:text-gray-700 '.$alignCls.'">'
+                        .htmlspecialchars($label).' <span class="text-[10px]">'.$indicator.'</span></button>';
+                };
+            @endphp
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">차량번호</th>
-                <th class="pb-2 pr-4 font-medium">브랜드/차종</th>
-                <th class="pb-2 pr-4 font-medium">진행상태</th>
-                <th class="pb-2 pr-4 font-medium">매입일</th>
-                <th class="pb-2 pr-4 font-medium">담당자</th>
-                <th class="pb-2 pr-4 font-medium text-right">판매가</th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', '차량번호') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', '브랜드/차종') !!}</th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', '진행상태') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', '매입일') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', '판매일') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', '선적일') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', 'B/L발행일') !!}</th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', '담당자') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', '바이어') !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', '채널') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">통화/환율</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', '매입가', 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', '판매가', 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">미수금</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">입금률</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -2623,9 +2694,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $status === '거래완료'                             => 'badge-gray',
                     default                                            => 'badge-gray',
                 };
-                // 큐 16 — channelBadge/Label match 제거 (단일 채널)
             @endphp
-            @php $unpaidRatio = $v->unpaid_ratio; @endphp
+            @php
+                $unpaidRatio = $v->unpaid_ratio;
+                $unpaidAmount = $v->sale_unpaid_amount;
+            @endphp
             <tr class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
                 wire:click="openEdit({{ $v->id }})"
                 @if($unpaidRatio !== null)
@@ -2636,17 +2709,40 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             >
                 <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
-                <td class="py-3 pr-4 text-gray-700">
+                <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                 </td>
                 <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ $status }}</span></td>
-                <td class="py-3 pr-4 text-gray-500">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-right font-medium text-gray-800">
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ?? '-' }}</td>
+                <td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
+                    {{ $v->currency }}
+                    @if($v->exchange_rate && $v->exchange_rate != 1)
+                        <br><span class="text-[10px]">{{ number_format($v->exchange_rate, 2) }}</span>
+                    @endif
+                </td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['purchase_price']">
+                    @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
+                </td>
+                <td class="py-3 pr-4 text-right font-medium text-gray-800" x-show="visible['sale_price']">
                     @if($v->sale_price > 0)
                         {{ number_format($v->sale_price) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>
                     @else -
+                    @endif
+                </td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
+                    @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
+                </td>
+                <td class="py-3 pr-4 text-right text-xs" x-show="visible['unpaid_ratio']">
+                    @if($unpaidRatio === null)<span class="text-gray-300">-</span>
+                    @elseif($unpaidRatio <= 0)<span class="text-green-600 font-medium">완납</span>
+                    @else <span class="text-amber-600">{{ number_format((1 - $unpaidRatio) * 100, 0) }}%</span>
                     @endif
                 </td>
                 <td class="py-3 text-right">
@@ -2656,11 +2752,59 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
+            <tr><td colspan="16" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
             @endforelse
         </tbody>
-    </table>
+        </table>
+    </div>
 </div>
+
+{{-- 회의확장씬 #10 Phase 2-3 (2026-05-23) — 컬럼 토글 Alpine 컴포넌트 (localStorage 캐시). --}}
+<script>
+function vehicleColumnsToggle() {
+    const STORAGE_KEY = 'car_erp_vehicles_columns';
+    const defaultVisible = {
+        brand_model: true, purchase_date: true, sale_price: true,
+        sale_date: false, shipping_date: false, bl_issue_date: false,
+        currency_rate: false, purchase_price: false,
+        unpaid_amount: false, unpaid_ratio: false,
+        buyer: false, sales_channel: false,
+    };
+    return {
+        open: false,
+        visible: {},
+        togglableColumns: [
+            { key: 'brand_model',    label: '브랜드/차종' },
+            { key: 'purchase_date',  label: '매입일' },
+            { key: 'sale_date',      label: '판매일' },
+            { key: 'shipping_date',  label: '선적일' },
+            { key: 'bl_issue_date',  label: 'B/L발행일' },
+            { key: 'buyer',          label: '바이어' },
+            { key: 'sales_channel',  label: '채널' },
+            { key: 'currency_rate',  label: '통화/환율' },
+            { key: 'purchase_price', label: '매입가' },
+            { key: 'sale_price',     label: '판매가' },
+            { key: 'unpaid_amount',  label: '미수금' },
+            { key: 'unpaid_ratio',   label: '입금률' },
+        ],
+        init() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            const parsed = saved ? JSON.parse(saved) : {};
+            for (const key in defaultVisible) {
+                this.visible[key] = parsed[key] !== undefined ? parsed[key] : defaultVisible[key];
+            }
+        },
+        toggle(key) {
+            this.visible[key] = !this.visible[key];
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+        },
+        resetDefaults() {
+            this.visible = { ...defaultVisible };
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+        },
+    };
+}
+</script>
 
 {{-- ── 모바일 카드 리스트 ───────────────────────────────────────── --}}
 <div class="block sm:hidden space-y-2">
