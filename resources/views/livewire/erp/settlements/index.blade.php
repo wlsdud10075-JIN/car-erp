@@ -198,10 +198,23 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $actualPayout = $settlementAmount - $documentFee - (int) ($this->other_deduction ?? 0);
 
+        // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서 시 환차 1:1 반영.
+        // Settlement::getActualPayoutAttribute 와 동일 정책 — 편집 패널 미리보기 정합.
+        $exchangeDiff = 0;
+        if ($this->editingId && $this->settlement_type === 'ratio') {
+            $settlement = Settlement::find($this->editingId);
+            if ($settlement
+                && $settlement->secondary_status === 'closed'
+                && $settlement->exchange_difference_krw !== null) {
+                $exchangeDiff = (int) $settlement->exchange_difference_krw;
+                $actualPayout += $exchangeDiff;
+            }
+        }
+
         return compact(
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
-            'documentFee', 'actualPayout'
+            'documentFee', 'actualPayout', 'exchangeDiff'
         );
     }
 
@@ -999,6 +1012,16 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-gray-500">₩0 (동일)</span>
                     @endif
                 </div>
+                {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 반영 실지급액 안내 (프리랜서만, 1:1 적용). --}}
+                @if($settlement_type === 'ratio')
+                <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
+                    <strong>실지급액 환차 자동 반영</strong> — 프리랜서(비율제) 정산금에 환차 1:1 가산됨 (회의확장씬 #6+7).
+                </div>
+                @elseif($settlement_type === 'per_unit')
+                <div class="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500">
+                    사내직원(건당제) — 환차는 실지급액에 미반영 (회사 부담).
+                </div>
+                @endif
                 @endif
             </div>
             @endif
@@ -1088,6 +1111,17 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span>기타공제</span>
                 <span class="text-red-500">- ₩{{ number_format((int) ($other_deduction ?? 0)) }}</span>
             </div>
+            {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 자동 반영 라인 (프리랜서 closed 일 때만). --}}
+            @if(! empty($this->marginData['exchangeDiff']))
+            <div class="flex justify-between text-gray-600">
+                <span>환차 (2차 확정) <span class="text-xs text-gray-400">(프리랜서 1:1 반영)</span></span>
+                @if($this->marginData['exchangeDiff'] > 0)
+                <span class="text-emerald-600">+ ₩{{ number_format($this->marginData['exchangeDiff']) }}</span>
+                @else
+                <span class="text-red-500">- ₩{{ number_format(abs($this->marginData['exchangeDiff'])) }}</span>
+                @endif
+            </div>
+            @endif
             <hr class="border-purple-200" />
             <div class="flex justify-between text-base font-bold">
                 <span class="text-gray-800">실지급액</span>

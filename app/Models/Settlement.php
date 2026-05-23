@@ -272,12 +272,22 @@ class Settlement extends Model
     }
 
     /**
-     * 실지급액 = 정산액 − 서류비 − 기타공제.
+     * 실지급액 = 정산액 − 서류비 − 기타공제 (+ 환차, 2차 정산 closed + 프리랜서일 때).
      *   - 엑셀 CM = CJ − CL. CJ = CH/2 − 50,000 (서류비 박혀있음).
      *   - 사내직원은 서류비 0 → per_unit − other_deduction.
+     *   - 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서(ratio) 시 환차 1:1 반영.
+     *     사용자 결정: 사내직원(per_unit)은 고정액이라 환차 미반영 (회사가 환차익·환차손 부담).
      */
     public function getActualPayoutAttribute(): int
     {
-        return $this->settlement_amount - $this->document_fee - (int) ($this->other_deduction ?? 0);
+        $base = $this->settlement_amount - $this->document_fee - (int) ($this->other_deduction ?? 0);
+
+        if ($this->settlement_type === 'ratio'
+            && $this->secondary_status === 'closed'
+            && $this->exchange_difference_krw !== null) {
+            $base += (int) $this->exchange_difference_krw;
+        }
+
+        return $base;
     }
 }
