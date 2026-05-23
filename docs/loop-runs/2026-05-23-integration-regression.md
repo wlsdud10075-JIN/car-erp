@@ -1,0 +1,51 @@
+# Loop Run — 운영 통합 회귀 (2026-05-23)
+
+> Plan: `docs/loop-plans/2026-05-23-integration-regression.md`
+> 모드: 자율 진행 (한 turn batch)
+> 시작: 2026-05-23
+
+## 진행 로그
+
+- iter 1: case01 매입~거래완료 v4 cascade → ✅ pass
+- iter 2: case02 거래완료 자동 Settlement + 프리랜서 default 50 → 🔧 retry (G1 가드 + decimal cast) → ✅ pass
+  - 발견 1: `update(['bl_loading_location', 'bl_document'])` 한 번에 두 컬럼 update 시 finalPayments relation cache stale → G1 미수 100% 오인. case01 패턴(단계 분리 + `$v = $v->fresh()`)으로 수정.
+  - 발견 2: `settlement_ratio` decimal cast 형식 차이 — `'50.00'` 문자열 정확 매칭 실패. `assertEqualsWithDelta(50.0, ..., 0.01)` 로 완화.
+- iter 3: case03 paid 진입 시 secondary_status='pending' 자동 → ✅ pass
+- iter 4: case04 외화 환차익 (입금 1300, close 1380, +diff) → ✅ pass
+- iter 5: case05 프리랜서 actual_payout 환차 1:1 가산 → ✅ pass
+- iter 6: case06 사내직원(per_unit) 환차 미반영 → ✅ pass
+- iter 7: case07 관리자 대시보드 발생/회수/미수 정합 → ✅ pass
+- iter 8: case08 SKILLS §13 단일 출처 (sale_unpaid_amount_krw_cache + unpaid_ratio) → ✅ pass
+- iter 9: case09 관리 role 본인 부하 영업의 차량만 → ✅ pass
+- iter 10: case10 영업 role 본인 차량만 + 다른 영업 차량 비노출 → ✅ pass
+
+## 종료
+
+- 총 10 case 시도 / **10 pass** / 0 skip / 0 fail
+- 기존 회귀 419 → **429 passed** (+10 누적, 1026 assertions)
+- production 코드 무수정 (A안)
+- 1 신규 파일 (tests/Feature/IntegrationRegressionTest.php)
+- 1 신규 로그 파일 (docs/loop-runs/2026-05-23-integration-regression.md)
+
+### 통과 의미
+**누적 11 commits 안정성 검증 완료**:
+- 회의확장씬 12 안건 (Phase 1~3) + 별건3 흡수
+- 새회의.txt #1 한글화 + #7 KPI 분리
+- 큐 15 재고관리 (사용자 정정 포함)
+- 이번 세션 KRW snapshot / 환차 자동 반영 / 환율 수동 입력 / 정산 화면 보강
+
+세션 내 누적 작업이 통합 환경에서 깨짐 없음. **다음 단계 (NICE API → AWS 배포) 진행 자신감 확보.**
+
+### 검토 권장 (사용자와 함께)
+1. ✅ **전 케이스 통과** — 추가 시나리오 발견 시에만 plan §7 확장
+2. **C 트랙 (Markdown 체크리스트)** — 사용자 직접 브라우저 클릭 검증 별도 필요
+   - UI 시각·반응형·운영 직관성은 PHPUnit 검증 범위 밖
+3. **미실측 영역**:
+   - 운영 MySQL 환경 (테스트는 SQLite — DB grammar 차이 가능)
+   - 실제 운영 데이터 정합 (마이그 후 tinker)
+   - 외부 연동 (NICE / 알림톡 / SMTP — 모두 mock 또는 제외)
+
+### 다음 단계
+- 4순위 — 3-A 그룹셋 정식 (사용자 진행 요청)
+- 그 후 NICE API (사용자 키 정보 받은 후)
+- 마지막 AWS Lightsail 배포
