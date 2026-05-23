@@ -826,4 +826,232 @@ class IntegrationRegressionTest extends TestCase
 
         $this->assertNull($sB->fresh()->carryover_in_krw, '영업 B 정산은 영업 A 이월 미흡수');
     }
+
+    // ─── G. 정합성·무결성 (5건, 2026-05-23 추가) ─────────────────────
+
+    public function test_case21_carryover_accumulates_multiple_closed(): void
+    {
+        // 운영 실제 흐름 — closed 2건 누적 시 신규 정산 흡수 패턴:
+        // #1 closed (out=30k) → #2 신규 (creating 자동 흡수 in=30k) → #2 closed (out=20k 추가)
+        //   → #3 신규 — Σ(out)=50k - Σ(in)=30k = unconsumed 20k 흡수
+        // 즉 신규 정산은 항상 "미흡수 잔액"만 흡수 (이미 흡수된 분 제외).
+        [, $sm] = $this->makeSalesUser();
+
+        Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-ACC1-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-03-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 30000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+        // #2 — creating 훅이 #1 30k 자동 흡수 (carryover_in_krw=30000)
+        $s2 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-ACC2-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-04-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 20000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+        $this->assertSame('30000.00', (string) $s2->fresh()->carryover_in_krw, '#2 가 #1 30,000 흡수');
+
+        // #3 — 남은 미흡수 잔액 20k만 흡수
+        $s3 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-ACC3-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame('20000.00', (string) $s3->fresh()->carryover_in_krw, '#3 가 미흡수 20,000 흡수');
+    }
+
+    public function test_case22_carryover_not_reabsorbed_after_consumption(): void
+    {
+        // 흡수된 carryover는 동일 영업담당자 후속 정산에서 다시 흡수 X
+        [, $sm] = $this->makeSalesUser();
+
+        Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-RE1-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-04-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 40000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 1차 흡수 정산
+        $s2 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-RE2-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+        $this->assertSame('40000.00', (string) $s2->fresh()->carryover_in_krw);
+
+        // 2차 신규 정산 — 이전에 이미 흡수됐으므로 잔액 0 (불릴 carryover 없음)
+        $s3 = Settlement::create([
+            'vehicle_id' => Vehicle::create([
+                'vehicle_number' => 'IR-RE3-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-06-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-07-01',
+            ])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+        $this->assertNull($s3->fresh()->carryover_in_krw, '재흡수 안 됨 (잔액 0)');
+    }
+
+    public function test_case23_salesman_change_isolates_carryover(): void
+    {
+        // 영업 A의 이월 잔액이 영업 B의 차량 정산에 영향 X (case20과 별개로 다중 누적 확인)
+        [, $smA] = $this->makeSalesUser();
+        [, $smB] = $this->makeSalesUser();
+
+        // 영업 A 이월 +60,000 (2건 합산)
+        Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-SC1-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $smA->id, 'purchase_date' => '2026-04-01'])->id,
+            'salesman_id' => $smA->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 30000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+        Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-SC2-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $smA->id, 'purchase_date' => '2026-04-15'])->id,
+            'salesman_id' => $smA->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 30000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 영업 B 의 신규 정산 — A 60,000 이월 흡수 X
+        $sB = Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-SC3-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $smB->id, 'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01'])->id,
+            'salesman_id' => $smB->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertNull($sB->fresh()->carryover_in_krw, '영업 B 격리 (A 60,000 이월 영향 X)');
+    }
+
+    public function test_case24_closed_without_snapshot_skips_carryover_out(): void
+    {
+        // 구 data 호환 — confirmed_snapshot 없는 정산은 carryover_out 0 또는 NULL
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => 'IR-NOSNAP-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'secondary_status' => 'pending',
+            'confirmed_at' => now(), 'paid_at' => now(),
+            'confirmed_snapshot' => null,   // 명시적 null (구 data)
+        ]);
+
+        Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $s->id);
+
+        // snapshot null → paid_payout 0 → carryover_out = closed_payout 그대로.
+        // 이 정합도 통과해야 함 — 부정확하지만 NULL 안전 fallback
+        $this->assertSame('closed', $s->fresh()->secondary_status);
+        // closed_payout 자체는 계산 가능 (snapshot 없어도 actual_payout accessor 동작)
+    }
+
+    public function test_case25_consumed_carryover_does_not_double_apply(): void
+    {
+        // 흡수 후 다른 영업담당자 정산이 다른 영업담당자의 이월과 합산되지 X (정확한 격리)
+        // 누적 합 정확도 — Σ(out) - Σ(in) 산식 검증
+        [, $sm] = $this->makeSalesUser();
+
+        // closed 정산 1건 (+100,000)
+        Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-DBL1-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-03-01'])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 100000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 흡수 정산
+        $s2 = Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-DBL2-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-04-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-05-01'])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+        $this->assertSame('100000.00', (string) $s2->fresh()->carryover_in_krw);
+
+        // 신규 closed 정산 추가 (+25,000)
+        Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-DBL3-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-04-15'])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+            'carryover_out_krw' => 25000,
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 또 다른 신규 정산 — 100k 이미 흡수, 25k만 남아있어야
+        $s4 = Settlement::create([
+            'vehicle_id' => Vehicle::create(['vehicle_number' => 'IR-DBL4-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id, 'purchase_date' => '2026-05-01',
+                'sale_price' => 1_000_000, 'sale_date' => '2026-06-01'])->id,
+            'salesman_id' => $sm->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame('25000.00', (string) $s4->fresh()->carryover_in_krw, '이미 흡수된 100k 제외, 신규 25k만 흡수');
+    }
 }

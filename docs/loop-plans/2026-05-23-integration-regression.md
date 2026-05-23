@@ -121,6 +121,24 @@
 | 16 | 차량 변경 → audit_logs row 생성 (column별) | AUDITED_COLUMNS 컬럼 update → recordChange 호출 → audit_logs row 검증 |
 | 17 | 정산 paid 전환 → audit_logs 기록 | Settlement::AUDITED_COLUMNS (settlement_status / secondary_status / paid_at) 변경 감사 |
 
+### F. 정산 캐리오버 (3건, 2026-05-23 추가, 새회의 #8)
+
+| # | Case 이름 | 검증 포인트 |
+|---|---|---|
+| 18 | 환차익 +50,000 이월 → 다음 정산 가산 | carryover_out → carryover_in 자동 흡수 |
+| 19 | 환차손 -30,000 음수 이월 → 차감 | 음수 이월 허용 정책 |
+| 20 | 영업별 격리 (A 이월 → B 영향 X) | salesman_id 별 잔액 독립 |
+
+### G. 정합성·무결성 추가 (5건, 2026-05-23 추가)
+
+| # | Case 이름 | 검증 포인트 |
+|---|---|---|
+| 21 | 캐리오버 다중 누적 (closed 2건 → 신규 합산 흡수) | Σ(closed.out) 정확 산정 |
+| 22 | 흡수 후 잔액 0 — 동일 영업담당자 재흡수 시도 X | 한 carryover_out 가 1회만 적용 |
+| 23 | 영업담당자 변경 시 신규 정산 잔액 0 | 다른 salesman_id 의 이월 미흡수 |
+| 24 | confirmed_snapshot 없는 정산 closed → carryover_out NULL | NULL 안전 fallback (구 data 호환) |
+| 25 | carryover_in_krw 변경 → audit_logs 추적 (선택) | 캐리오버도 회계 감사 대상인지 검증 (현재 미추적이면 SKIP) |
+
 ## 8. 비고
 
 - **모두 기존 코드로 통과해야 함** (이번 세션까지 누적 구현 검증). 빨강이면 회의 결정과 코드 불일치 신호 — Claude 가 판단해서 SKIP·종료 결정.

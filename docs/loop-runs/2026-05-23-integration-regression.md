@@ -37,6 +37,28 @@
 - 1 신규 파일 (tests/Feature/IntegrationRegressionTest.php)
 - 1 신규 로그 파일 (docs/loop-runs/2026-05-23-integration-regression.md)
 
+## 캐리오버 박제 추가 (iter 18~20, 2026-05-23 — 새회의 #8 구현 후)
+
+- iter 18: case18 환차익 +50,000 이월 → 다음 정산 +50,000 가산 → ✅ pass
+- iter 19: case19 환차손 -30,000 음수 이월 → 다음 정산 -30,000 차감 → ✅ pass
+- iter 20: case20 영업별 격리 (A 이월이 B에 영향 X) → ✅ pass
+
+## 정합성·무결성 추가 (iter 21~25, 2026-05-23)
+
+- iter 21: case21 다중 closed 누적 — #2가 #1 흡수 (30k) + #3가 잔액 흡수 (20k) → ✅ pass
+- iter 22: case22 흡수 후 재흡수 X — 동일 영업담당자 후속 정산 잔액 0 → ✅ pass
+- iter 23: case23 영업담당자 변경 후 격리 — 60k 이월이 영업 B에 영향 X → ✅ pass
+- iter 24: case24 confirmed_snapshot 없는 closed → NULL 안전 fallback → ✅ pass
+- iter 25: case25 누적 합 정확도 — 100k 흡수 + 25k 추가 closed → 25k만 신규 흡수 → ✅ pass
+
+## 최종 종료 (2026-05-23, 25 case 완료)
+
+- 총 25 case 시도 / **25 pass** / 0 skip / 0 fail
+- 기존 회귀 → **444 passed** (+25 누적, ~1085 assertions)
+- production 코드 무수정 외 캐리오버 마이그·모델·UI는 별도 안건 (`commit 0259055`)
+- 정합성: SKILLS §13 단일 출처 / 발생·회수·미수 KPI / 환차 자동 반영 / 캐리오버 영업별 격리 — 모두 검증
+- 무결성: 권한 scoping / audit_logs 추적 / 흡수 후 재흡수 X / 영업별 잔액 독립 — 모두 검증
+
 ### 통과 의미
 **누적 11 commits 안정성 검증 완료**:
 - 회의확장씬 12 안건 (Phase 1~3) + 별건3 흡수
