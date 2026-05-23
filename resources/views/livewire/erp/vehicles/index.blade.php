@@ -3372,9 +3372,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $rowRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '0');
                         $rowKrw = $rowAmt * $rowRate;
                     @endphp
-                    @if($rowAmt > 0 && $rowRate > 0)
-                    <span class="text-[10px] text-gray-500 whitespace-nowrap" title="KRW 환산 (입금 시점 환율 기준)">≈₩{{ number_format($rowKrw, 0) }}</span>
-                    @endif
+                    {{-- 회의확장씬 #6 보강 (2026-05-23) — KRW 환산 readonly input + DB 저장 (FinalPayment::saving 훅 자동 계산). --}}
+                    <input type="text" class="input-base text-right"
+                           style="width: 130px; flex: none; background-color: #f9fafb; color: #4b5563;"
+                           readonly tabindex="-1"
+                           value="{{ $rowAmt > 0 && $rowRate > 0 ? '₩'.number_format($rowKrw) : '' }}"
+                           placeholder="₩0" title="KRW 환산 (저장됨)" />
                     @endif
                     <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base"
                            style="width: 112px; flex: none;" />

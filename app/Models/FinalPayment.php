@@ -11,6 +11,8 @@ class FinalPayment extends Model
         'vehicle_id', 'transfer_id', 'type', 'amount', 'payment_date', 'note',
         // 회의확장씬 #7 (2026-05-22) — 잔금 row 별 입금 시점 환율 저장.
         'exchange_rate',
+        // 회의확장씬 #6 보강 (2026-05-23) — KRW 환산 snapshot (amount × exchange_rate). saving 훅 자동 계산.
+        'amount_krw',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
     ];
 
@@ -18,6 +20,7 @@ class FinalPayment extends Model
         'payment_date' => 'date',
         'confirmed_at' => 'datetime',
         'exchange_rate' => 'decimal:4',
+        'amount_krw' => 'decimal:2',
     ];
 
     /**
@@ -42,6 +45,17 @@ class FinalPayment extends Model
 
     protected static function booted(): void
     {
+        // 회의확장씬 #6 보강 (2026-05-23) — amount_krw 자동 계산 (amount × exchange_rate snapshot).
+        // amount 또는 exchange_rate 가 dirty 일 때만 재계산 → confirmed lock 과 자연 정합.
+        // exchange_rate IS NULL → amount_krw NULL 유지 (미설정 보존).
+        static::saving(function (FinalPayment $p) {
+            if (! $p->exists || $p->isDirty('amount') || $p->isDirty('exchange_rate')) {
+                $rate = $p->exchange_rate !== null ? (float) $p->exchange_rate : null;
+                $amount = (float) ($p->amount ?? 0);
+                $p->amount_krw = ($rate !== null && $amount > 0) ? round($amount * $rate, 2) : null;
+            }
+        });
+
         static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
         static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
 
