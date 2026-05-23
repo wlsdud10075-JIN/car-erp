@@ -24,6 +24,8 @@
         $routeName === 'admin.users.index' => '사용자 관리',
         $routeName === 'admin.ports.index' => '항구 마스터',
         $routeName === 'admin.settings' => '기능 설정',
+        $routeName === 'admin.document-access-logs.index' => '문서 접근 로그',
+        $routeName === 'admin.audit-logs.index' => '감사 로그',
         $routeName === 'erp.dashboard' => 'ERP 대시보드',
         $routeName === 'erp.vehicles.index' => '차량 관리',
         $routeName === 'erp.buyers.index' => '바이어 관리',
@@ -212,6 +214,29 @@
                     'icon' => 'cog',
                     'active' => request()->routeIs('admin.settings'),
                     'show' => $user->isSuperAdmin(),
+                ],
+            ],
+        ],
+        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 별건3 흡수: 로그 그룹 신설 (admin/super 전용).
+        // audit_logs UI 는 Commit 2 에서 추가.
+        [
+            'label' => '로그',
+            'show' => $user->canAccessAdmin(),
+            'items' => [
+                [
+                    'label' => '문서 접근 로그',
+                    'href' => $user->canAccessAdmin() ? route('admin.document-access-logs.index') : '#',
+                    'icon' => 'identification',
+                    'active' => request()->routeIs('admin.document-access-logs.*'),
+                    'show' => $user->canAccessAdmin(),
+                ],
+                [
+                    'label' => '감사 로그',
+                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.audit-logs.index')
+                        ? route('admin.audit-logs.index') : '#',
+                    'icon' => 'check-circle',
+                    'active' => request()->routeIs('admin.audit-logs.*'),
+                    'show' => $user->canAccessAdmin(),
                 ],
             ],
         ],
