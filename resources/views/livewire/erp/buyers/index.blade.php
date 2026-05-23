@@ -61,6 +61,55 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ─────────────────────────────────────────────────────────────
 
+    /**
+     * 회의확장씬 #2 개발예정 Phase 3-1 (c) (2026-05-23) — 바이어 미수금 게이지.
+     * 분모: Σ(sale_total_amount × exchange_rate) — SKILLS §13 단일 출처.
+     * 분자: Σ(sale_unpaid_amount_krw_cache) — Vehicle saving 훅 자동 갱신.
+     * KRW 차량 또는 환율 미입력 차량은 분모·분자 모두 제외 (의미 없는 비율 방지).
+     */
+    #[Computed]
+    public function buyerReceivable(): ?array
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+        $buyer = Buyer::find($this->editingId);
+        if (! $buyer) {
+            return null;
+        }
+
+        $vehicles = $buyer->vehicles()->get();
+        if ($vehicles->isEmpty()) {
+            return null;
+        }
+
+        $totalKrw = 0;
+        $unpaidKrw = 0;
+        foreach ($vehicles as $v) {
+            $rate = (float) ($v->exchange_rate ?? 0);
+            $total = (float) ($v->sale_total_amount ?? 0);
+            if ($total > 0 && $rate > 0) {
+                $totalKrw += (int) ($total * $rate);
+            }
+            $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+        }
+
+        if ($totalKrw <= 0) {
+            return null;
+        }
+
+        $paidKrw = max(0, $totalKrw - $unpaidKrw);
+        $paidPct = max(0, min(100, $paidKrw / $totalKrw * 100));
+
+        return [
+            'total_krw' => $totalKrw,
+            'unpaid_krw' => $unpaidKrw,
+            'paid_krw' => $paidKrw,
+            'paid_pct' => $paidPct,
+            'vehicle_count' => $vehicles->count(),
+        ];
+    }
+
     public function search(): void
     {
         $this->resetPage();
@@ -582,6 +631,33 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         {{-- ── 기본정보 --}}
         <div x-show="tab==='basic'" x-cloak>
+
+            {{-- 회의확장씬 Phase 3-1 (c) (2026-05-23) — 바이어 미수금 게이지 (기존 차량 있는 경우만) --}}
+            @if($this->buyerReceivable)
+            @php $br = $this->buyerReceivable; @endphp
+            <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
+                    <span class="font-semibold text-gray-700">바이어 미수금 현황</span>
+                    <span>{{ $br['vehicle_count'] }}대 · 총 ₩{{ number_format($br['total_krw']) }}</span>
+                </div>
+                <div class="h-3 bg-white rounded-full overflow-hidden border border-gray-200">
+                    @if($br['unpaid_krw'] <= 0)
+                    <div class="h-full bg-emerald-500" style="width: 100%"></div>
+                    @else
+                    <div class="h-full bg-amber-500" style="width: {{ $br['paid_pct'] }}%"></div>
+                    @endif
+                </div>
+                <div class="mt-1.5 flex items-center justify-between text-xs">
+                    @if($br['unpaid_krw'] <= 0)
+                    <span class="font-medium text-emerald-700">✓ 완납</span>
+                    @else
+                    <span class="font-medium text-amber-700">입금률 {{ number_format($br['paid_pct'], 1) }}%</span>
+                    <span class="text-red-600 font-medium">미수금 ₩{{ number_format($br['unpaid_krw']) }}</span>
+                    @endif
+                </div>
+            </div>
+            @endif
+
             <div class="space-y-3">
                 <div>
                     <label class="label-base">바이어명 <span class="text-red-500">*</span></label>
@@ -747,15 +823,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="text-sm text-gray-400">기본정보를 먼저 저장한 후 적립금을 관리할 수 있습니다.</p>
             @else
 
-            {{-- 잔액 현황 --}}
+            {{-- 회의확장씬 #12 Phase 3-1 (b) (2026-05-23) — 카드 → 통화별 게이지 변환 --}}
             @if(count($balances))
-            <div class="mb-4 flex flex-wrap gap-2">
+            @php
+                // 게이지 정규화 기준 — 모든 통화 잔액 절대값 중 최대
+                $maxBal = max(array_map(fn ($v) => abs((float) $v), $balances));
+                $maxBal = $maxBal > 0 ? $maxBal : 1;   // div by 0 방지
+            @endphp
+            <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                <div class="text-[10px] font-semibold uppercase text-gray-400">통화별 적립금 잔액</div>
                 @foreach($balances as $cur => $bal)
-                <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
-                    <div class="text-xs text-gray-400">{{ $cur }}</div>
-                    <div class="text-base font-bold {{ $bal >= 0 ? 'text-gray-800' : 'text-red-600' }}">
-                        {{ number_format($bal, 2) }}
+                @php
+                    $bal = (float) $bal;
+                    $pct = $maxBal > 0 ? max(2, min(100, abs($bal) / $maxBal * 100)) : 0;
+                    $isNeg = $bal < 0;
+                    $barColor = $isNeg ? 'bg-red-400' : ($bal > 0 ? 'bg-emerald-400' : 'bg-gray-300');
+                    $textColor = $isNeg ? 'text-red-600' : ($bal > 0 ? 'text-emerald-700' : 'text-gray-500');
+                @endphp
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="w-10 font-mono font-semibold text-gray-600">{{ $cur }}</span>
+                    <div class="flex-1 h-3 bg-white rounded-full overflow-hidden border border-gray-200">
+                        <div class="h-full {{ $barColor }}" style="width: {{ $pct }}%"></div>
                     </div>
+                    <span class="w-32 text-right font-medium {{ $textColor }}">{{ number_format($bal, 2) }}</span>
                 </div>
                 @endforeach
             </div>
