@@ -19,10 +19,20 @@
 - iter 9: case09 관리 role 본인 부하 영업의 차량만 → ✅ pass
 - iter 10: case10 영업 role 본인 차량만 + 다른 영업 차량 비노출 → ✅ pass
 
-## 종료
+## 사용자 운영 시나리오 추가 (iter 11~17, 2026-05-23)
 
-- 총 10 case 시도 / **10 pass** / 0 skip / 0 fail
-- 기존 회귀 419 → **429 passed** (+10 누적, 1026 assertions)
+- iter 11: case11 관리 2 × 영업 5명 조직 격리 (관리A 부하 5명 차량만 / 관리B 격리) → ✅ pass
+- iter 12: case12 USD/EUR 혼합 환차 (USD +40,000 / EUR -20,000) → ✅ pass
+- iter 13: case13 2차 정산 기타비용 7개 변경 → cost_total +220,000 → actual_payout 감소 → ✅ pass
+- iter 14: case14 외화 + 1차 환차 + 2차 기타비용 변경 통합 (USD 10,000, 환차 +800,000) → ✅ pass
+- iter 15: case15 선적 전 영업별 재고 (관리A 부하 재고 + 선적중 제외 + 관리B 격리) → ✅ pass
+- iter 16: case16 차량 sale_price 변경 → audit_logs row 자동 생성 (column_name='sale_price') → ✅ pass
+- iter 17: case17 정산 status confirmed→paid 전환 → audit_logs 기록 → ✅ pass
+
+## 종료 (2026-05-23, 17 case 완료)
+
+- 총 17 case 시도 / **17 pass** / 0 skip / 0 fail
+- 기존 회귀 419 → **436 passed** (+17 누적, 1060 assertions)
 - production 코드 무수정 (A안)
 - 1 신규 파일 (tests/Feature/IntegrationRegressionTest.php)
 - 1 신규 로그 파일 (docs/loop-runs/2026-05-23-integration-regression.md)

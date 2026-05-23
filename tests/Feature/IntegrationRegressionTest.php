@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
@@ -389,5 +390,321 @@ class IntegrationRegressionTest extends TestCase
 
         $this->assertContains($mine->id, $ids, '본인 차량 노출');
         $this->assertNotContains($others->id, $ids, '다른 영업 차량 비노출');
+    }
+
+    // ─── E. 사용자 운영 시나리오 (7건, 2026-05-23 추가) ──────────────
+
+    public function test_case11_two_managers_with_five_salesmen_each(): void
+    {
+        // 사용자 명세: 관리 2명 × 각자 부하 영업 5명씩. 격리 검증.
+        $mgrA = $this->makeManager();
+        $mgrB = $this->makeManager();
+        $aIds = [];
+        $bIds = [];
+        for ($i = 0; $i < 5; $i++) {
+            [, $sm] = $this->makeSalesUser($mgrA);
+            $v = Vehicle::create([
+                'vehicle_number' => 'IR-TM-A'.($i + 1).'-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-04-01',
+            ]);
+            $aIds[] = $v->id;
+        }
+        for ($i = 0; $i < 5; $i++) {
+            [, $sm] = $this->makeSalesUser($mgrB);
+            $v = Vehicle::create([
+                'vehicle_number' => 'IR-TM-B'.($i + 1).'-'.++$this->counter,
+                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+                'dhl_request' => false, 'salesman_id' => $sm->id,
+                'purchase_date' => '2026-04-01',
+            ]);
+            $bIds[] = $v->id;
+        }
+
+        $this->actingAs($mgrA);
+        $listA = Volt::test('erp.vehicles.index')->instance()->vehicles->pluck('id')->toArray();
+        foreach ($aIds as $id) {
+            $this->assertContains($id, $listA, "관리A 부하 영업의 차량 #$id 노출");
+        }
+        foreach ($bIds as $id) {
+            $this->assertNotContains($id, $listA, "관리B 부하 영업의 차량 #$id 격리");
+        }
+
+        $this->actingAs($mgrB);
+        $listB = Volt::test('erp.vehicles.index')->instance()->vehicles->pluck('id')->toArray();
+        foreach ($bIds as $id) {
+            $this->assertContains($id, $listB, "관리B 부하 영업의 차량 #$id 노출");
+        }
+        foreach ($aIds as $id) {
+            $this->assertNotContains($id, $listB, "관리A 부하 영업의 차량 #$id 격리");
+        }
+    }
+
+    public function test_case12_mixed_usd_eur_exchange_diff_scenarios(): void
+    {
+        // USD 환차익 + EUR 환차손 동시 시나리오 — 통화별 분리 검증
+        Cache::put('exchange_rates', ['USD' => 1380.0, 'EUR' => 1400.0], 60);
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        // USD 차량 — 입금 1300, close 1380 → 환차익 +
+        $vUsd = Vehicle::create([
+            'vehicle_number' => 'IR-MX-USD-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1300,
+            'dhl_request' => false,
+            'sale_price' => 500, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+        ]);
+        $vUsd->finalPayments()->create([
+            'amount' => 500, 'exchange_rate' => 1300,
+            'payment_date' => '2026-05-01',
+            'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
+        ]);
+        $sUsd = Settlement::create([
+            'vehicle_id' => $vUsd->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'pending',
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // EUR 차량 — 입금 1450, close 1400 → 환차손 -
+        $vEur = Vehicle::create([
+            'vehicle_number' => 'IR-MX-EUR-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1450,
+            'dhl_request' => false,
+            'sale_price' => 400, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+        ]);
+        $vEur->finalPayments()->create([
+            'amount' => 400, 'exchange_rate' => 1450,
+            'payment_date' => '2026-05-01',
+            'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
+        ]);
+        $sEur = Settlement::create([
+            'vehicle_id' => $vEur->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'pending',
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        $component = Volt::test('erp.settlements.index');
+        $component->call('closeSecondarySettlement', $sUsd->id);
+        $component->call('closeSecondarySettlement', $sEur->id);
+
+        // USD: 500 × (1380 - 1300) = +40,000 환차익
+        $this->assertSame(40000.0, (float) $sUsd->fresh()->exchange_difference_krw, 'USD 환차익 +40,000');
+        // EUR: 400 × (1400 - 1450) = -20,000 환차손
+        $this->assertSame(-20000.0, (float) $sEur->fresh()->exchange_difference_krw, 'EUR 환차손 -20,000');
+    }
+
+    public function test_case13_secondary_cost_7items_change_recomputes_payout(): void
+    {
+        // 2차 정산 대기 동안 기타비용 7개 변경 → cost_total → settlement_amount → actual_payout 재계산
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => 'IR-C7-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'sale_price' => 10_000_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+            'purchase_price' => 5_000_000, 'selling_fee' => 100_000,
+            'cost_deregistration' => 24_000, 'cost_license' => 11_000, 'cost_towing' => 30_000,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'pending',
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+        $payoutBefore = $s->actual_payout;
+        $costBefore = (int) $v->cost_total;
+
+        // 7개 cost_* 변경 (보험·이전비·기타1·2 추가, 기존 3개 증액)
+        $v->update([
+            'cost_deregistration' => 30_000,
+            'cost_license' => 15_000,
+            'cost_towing' => 40_000,
+            'cost_insurance' => 100_000,
+            'cost_transfer' => 50_000,
+            'cost_extra1' => 20_000,
+            'cost_extra2' => 30_000,
+        ]);
+        $v = $v->fresh();
+        $s = $s->fresh();
+        $costAfter = (int) $v->cost_total;
+        $payoutAfter = $s->actual_payout;
+
+        $costDiff = $costAfter - $costBefore;
+        $this->assertSame(220_000, $costDiff, 'cost_total 증가분 220,000 = 30k+15k+40k+100k+50k+20k+30k - (24k+11k+30k)');
+
+        // actual_payout 변화 = cost 증가분 × ratio × (-1) × 0.9 (vat 후 보정)
+        // cost ↑ → settlement_sales_krw ↓ → sales_margin ↓ → total_margin ↓ → settlement_amount ↓ → actual_payout ↓
+        $this->assertLessThan($payoutBefore, $payoutAfter, '기타비용 증가 → actual_payout 감소');
+    }
+
+    public function test_case14_foreign_currency_full_secondary_integration(): void
+    {
+        // 외화 + 1차 환차 + 2차 기타비용 변경 통합 — case04·5·13 통합
+        Cache::put('exchange_rates', ['USD' => 1380.0], 60);
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => 'IR-FULL-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1300,
+            'dhl_request' => false,
+            'sale_price' => 10_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+            'purchase_price' => 5_000_000, 'selling_fee' => 100_000,
+            'cost_deregistration' => 24_000, 'cost_license' => 11_000, 'cost_towing' => 30_000,
+        ]);
+        $v->finalPayments()->create([
+            'amount' => 10_000, 'exchange_rate' => 1300,
+            'payment_date' => '2026-05-01',
+            'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'secondary_status' => 'pending',
+            'confirmed_at' => now(), 'paid_at' => now(),
+        ]);
+
+        // 2차 대기 중 기타비용 추가 (보험·이전비)
+        $v->update(['cost_insurance' => 150_000, 'cost_transfer' => 50_000]);
+
+        // 2차 close — 자동 환율 1380 사용
+        Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $s->id);
+        $s = $s->fresh();
+
+        $this->assertSame('closed', $s->secondary_status);
+        // 환차 = 10,000 × (1380 - 1300) = +800,000
+        $this->assertSame(800_000.0, (float) $s->exchange_difference_krw, '환차익 +800,000');
+        // actual_payout 에 환차 +800,000 가산 (프리랜서 1:1) — 단순 부등식 검증
+        $this->assertGreaterThan($s->settlement_amount, $s->actual_payout, '환차 가산으로 base 초과');
+    }
+
+    public function test_case15_inventory_per_manager_excludes_shipped(): void
+    {
+        // 관리A 부하 영업의 재고 (매입중·매입완료·말소완료·판매중·판매완료) — 선적중 제외
+        $mgrA = $this->makeManager();
+        $mgrB = $this->makeManager();
+        [, $smA] = $this->makeSalesUser($mgrA);
+        [, $smB] = $this->makeSalesUser($mgrB);
+
+        // 관리A — 재고 차량 (매입중)
+        $vA = Vehicle::create([
+            'vehicle_number' => 'IR-INV-A-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false, 'salesman_id' => $smA->id,
+            'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
+        ]);
+        $vA->refreshCaches();   // → 매입중
+
+        // 관리A — 선적중 차량 (재고 X)
+        $vAShip = Vehicle::create([
+            'vehicle_number' => 'IR-INV-A-S-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false, 'salesman_id' => $smA->id,
+            'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
+            'sale_price' => 2_000_000, 'sale_date' => '2026-05-01',
+            'bl_loading_location' => 'PUSAN',
+        ]);
+        $vAShip->refreshCaches();   // → 선적중
+
+        // 관리B — 재고 차량
+        $vB = Vehicle::create([
+            'vehicle_number' => 'IR-INV-B-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false, 'salesman_id' => $smB->id,
+            'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
+        ]);
+        $vB->refreshCaches();
+
+        $this->actingAs($mgrA);
+        $listA = Volt::test('erp.inventory.index')->instance()->inventoryVehicles->pluck('id')->toArray();
+
+        $this->assertContains($vA->id, $listA, '관리A 부하 재고 포함');
+        $this->assertNotContains($vAShip->id, $listA, '선적중 차량 재고 제외');
+        $this->assertNotContains($vB->id, $listA, '관리B 부하 차량 격리');
+    }
+
+    public function test_case16_vehicle_column_change_creates_audit_log(): void
+    {
+        // 차량 AUDITED_COLUMNS 변경 → audit_logs row 생성 (column별)
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => 'IR-AUD-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
+        ]);
+
+        $countBefore = AuditLog::query()
+            ->where('auditable_type', Vehicle::class)
+            ->where('auditable_id', $v->id)
+            ->where('column_name', 'sale_price')
+            ->count();
+
+        // sale_price update → audit_log row 생성
+        $v->update(['sale_price' => 5_000_000, 'sale_date' => '2026-05-01']);
+
+        $countAfter = AuditLog::query()
+            ->where('auditable_type', Vehicle::class)
+            ->where('auditable_id', $v->id)
+            ->where('column_name', 'sale_price')
+            ->count();
+
+        $this->assertGreaterThan($countBefore, $countAfter, 'sale_price 변경 시 audit_logs row 생성');
+
+        $log = AuditLog::query()
+            ->where('auditable_type', Vehicle::class)
+            ->where('auditable_id', $v->id)
+            ->where('column_name', 'sale_price')
+            ->latest('created_at')->first();
+        $this->assertNotNull($log, 'audit log row 존재');
+        $this->assertSame('5000000', (string) $log->new_value, 'new_value 정확');
+    }
+
+    public function test_case17_settlement_paid_transition_logs_audit(): void
+    {
+        // Settlement::AUDITED_COLUMNS (settlement_status / secondary_status / paid_at) 변경 감사
+        $admin = $this->makeAdmin();
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => 'IR-SAUD-'.++$this->counter,
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+
+        $countBefore = AuditLog::query()
+            ->where('auditable_type', Settlement::class)
+            ->where('auditable_id', $s->id)
+            ->where('column_name', 'settlement_status')
+            ->count();
+
+        // confirmed → paid
+        $s->update(['settlement_status' => 'paid', 'paid_at' => now()]);
+
+        $countAfter = AuditLog::query()
+            ->where('auditable_type', Settlement::class)
+            ->where('auditable_id', $s->id)
+            ->where('column_name', 'settlement_status')
+            ->count();
+
+        $this->assertGreaterThan($countBefore, $countAfter, 'settlement_status 변경 시 audit_logs row 생성');
     }
 }

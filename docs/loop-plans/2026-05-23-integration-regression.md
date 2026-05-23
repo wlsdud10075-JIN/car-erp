@@ -107,6 +107,20 @@
 | 9 | role=관리 본인 부하 영업의 차량만 조회 | vehicles/index restrictToManagerScope (회의확장씬 #11) |
 | 10 | role=영업 본인 차량 한정 + 다른 영업 차량 비노출 | vehicles/index restrictToOwnSalesman |
 
+### E. 사용자 운영 시나리오 (7건, 2026-05-23 추가)
+
+사용자 명세: 관리 2명 × 영업 5명씩 / USD·EUR 랜덤 외화 / 1차·2차 정산 정확도 / 기타비용 변경 / 환차익 / 영업별 재고 / 변경 로그.
+
+| # | Case 이름 | 검증 포인트 |
+|---|---|---|
+| 11 | 관리 2 × 영업 5명 조직 격리 | 관리A 부하 5명 차량만 / 관리B 부하 5명 차량만 / 교차 X |
+| 12 | USD/EUR 혼합 다중 환차 (익·손) | USD 차량 환차익 + EUR 차량 환차손 동시 시나리오 — ExchangeRateService 통화별 분리 |
+| 13 | 2차 정산 기타비용 7개 변경 → actual_payout 재계산 | cost_deregistration/license/towing/insurance/transfer/extra1/extra2 모두 변경 → cost_total → total_margin → actual_payout 정확도 |
+| 14 | 외화 + 1차 환차 + 2차 기타비용 변경 통합 시나리오 | case04·5·13 통합 — 환차익 + cost 차이 모두 actual_payout 반영 |
+| 15 | 선적 전 = 영업별 재고 (관리별 격리) | InventoryTest 확장 — 관리A 부하 영업의 재고만, 선적중 제외 |
+| 16 | 차량 변경 → audit_logs row 생성 (column별) | AUDITED_COLUMNS 컬럼 update → recordChange 호출 → audit_logs row 검증 |
+| 17 | 정산 paid 전환 → audit_logs 기록 | Settlement::AUDITED_COLUMNS (settlement_status / secondary_status / paid_at) 변경 감사 |
+
 ## 8. 비고
 
 - **모두 기존 코드로 통과해야 함** (이번 세션까지 누적 구현 검증). 빨강이면 회의 결정과 코드 불일치 신호 — Claude 가 판단해서 SKIP·종료 결정.
