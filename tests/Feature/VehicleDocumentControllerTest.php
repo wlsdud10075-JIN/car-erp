@@ -22,7 +22,7 @@ class VehicleDocumentControllerTest extends TestCase
             'sales_channel' => 'carpul',
         ]);
 
-        foreach (['invoice', 'sales_contract', 'ro_cipl', 'con_cipl'] as $type) {
+        foreach (['invoice', 'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'] as $type) {
             $response = $this->get(route('erp.vehicles.documents.show', [$vehicle->id, $type]));
             $response->assertStatus(403);
         }
@@ -38,7 +38,7 @@ class VehicleDocumentControllerTest extends TestCase
             'sales_channel' => 'carpul',
         ]);
 
-        foreach (['deregistration', 'registration_application', 'transfer_certificate'] as $type) {
+        foreach (['deregistration', 'deregistration_contract', 'poa'] as $type) {
             $response = $this->get(route('erp.vehicles.documents.show', [$vehicle->id, $type]));
             $response->assertOk();
         }
