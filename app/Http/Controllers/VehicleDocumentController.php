@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\DocumentAccessLog;
 use App\Models\Vehicle;
+use App\Services\Documents\DocumentFiller;
 use App\Services\VehicleCiplGenerator;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\Response as HttpResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -37,7 +39,8 @@ class VehicleDocumentController extends Controller
         }
 
         $response = match ($type) {
-            'deregistration' => $this->renderPdf($vehicle, 'documents.deregistration', '말소신청서'),
+            // Phase 1 (2026-05-24) — system xlsx 자동기입으로 교체 (기존 blade PDF 폐기 예정)
+            'deregistration' => $this->streamXlsx($vehicle, 'deregistration'),
             'registration_application' => $this->renderPdf($vehicle, 'documents.registration-application', '등록증재발급신청서'),
             'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
             'invoice' => $this->renderPdf($vehicle, 'documents.invoice', 'Invoice'),
@@ -55,6 +58,24 @@ class VehicleDocumentController extends Controller
         ]);
 
         return $response;
+    }
+
+    /**
+     * system xlsx 양식의 노란칸을 차량 데이터로 자동기입해 다운로드 (DocumentFiller).
+     */
+    private function streamXlsx(Vehicle $vehicle, string $type): StreamedResponse
+    {
+        $filler = new DocumentFiller($vehicle);
+        $spreadsheet = $filler->spreadsheet($type);
+        $filename = $filler->filename($type);
+
+        return response()->streamDownload(
+            function () use ($spreadsheet) {
+                (new Xlsx($spreadsheet))->save('php://output');
+            },
+            $filename,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        );
     }
 
     private function renderPdf(Vehicle $vehicle, string $view, string $kindLabel): Response
