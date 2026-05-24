@@ -26,6 +26,10 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])
         ->name('vehicles.documents.show')
         ->whereNumber('id');
+
+    // 다중차량 선적 서류 (#3) — ?ids=1,2,3. 'documents' 리터럴이라 위 {id} 라우트와 충돌 없음.
+    Route::get('vehicles/documents/{type}', [VehicleDocumentController::class, 'showMulti'])
+        ->name('vehicles.documents.multi');
 });
 
 // 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증

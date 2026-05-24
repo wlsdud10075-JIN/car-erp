@@ -38,6 +38,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $buyerId = '';
     #[Url] public int $perPage = 10;
 
+    // #3 다중차량 선적 서류 — 체크박스로 선택한 차량 id (export 차량만). 선택 N대 → 1서류.
+    public array $shipDocIds = [];
+
+    public function clearShipDocSelection(): void
+    {
+        $this->shipDocIds = [];
+    }
+
     // 회의확장씬 #10 Phase 2-3 (2026-05-23) — 헤더 클릭 정렬.
     // localStorage 가 캐시 (Alpine), 진실은 Livewire property (server-side orderBy).
     public string $sortColumn = 'created_at';
@@ -2623,6 +2631,38 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
+{{-- #3 다중차량 선적 서류 — 체크박스 선택(export 차량) 시 노출. 선택 N대를 1서류에 자동 기입(최대 30대). --}}
+@if(count($shipDocIds) > 0)
+@php
+    $shipIds = implode(',', $shipDocIds);
+    $shipCnt = count($shipDocIds);
+    $shipDocs = [
+        'container_invoice_packing' => '컨테이너 Invoice&Packing',
+        'container_contract' => '컨테이너 Contract',
+        'roro_invoice_packing' => 'RORO Invoice&Packing',
+        'roro_contract' => 'RORO Contract',
+    ];
+@endphp
+<div class="card-tight mb-3 flex flex-col gap-2 border-amber-300 bg-amber-50 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex items-center gap-2 text-sm">
+        <span class="font-semibold text-amber-800">{{ $shipCnt }}대 선택</span>
+        @if($shipCnt > 30)
+            <span class="text-xs text-red-600">최대 30대까지 발급 가능</span>
+        @endif
+        <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">선택 해제</button>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        @foreach($shipDocs as $type => $label)
+            <a href="{{ $shipCnt <= 30 ? route('erp.vehicles.documents.multi', ['type' => $type, 'ids' => $shipIds]) : '#' }}"
+               target="_blank"
+               class="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 {{ $shipCnt > 30 ? 'pointer-events-none opacity-50' : '' }}">
+                ↓ {{ $label }}
+            </a>
+        @endforeach
+    </div>
+</div>
+@endif
+
 {{-- ── 데스크탑 테이블 (회의확장씬 #10 컬럼 토글 + 정렬) ─────── --}}
 <div class="hidden sm:block"
      x-data="vehicleColumnsToggle()"
@@ -2663,6 +2703,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 };
             @endphp
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
+                <th class="w-6 pb-2 pr-2 font-medium" title="선적 서류용 다중 선택 (수출 차량)"></th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', '차량번호') !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', '브랜드/차종') !!}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', '진행상태') !!}</th>
@@ -2708,6 +2749,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     data-currency="{{ $v->currency }}"
                 @endif
             >
+                <td class="py-3 pr-2" @click.stop>
+                    @if($v->sales_channel === 'export')
+                        <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" class="rounded border-gray-300" title="선적 서류 다중 선택" />
+                    @endif
+                </td>
                 <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                 <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
@@ -2752,7 +2798,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="16" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
+            <tr><td colspan="17" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
             @endforelse
         </tbody>
         </table>
@@ -2822,6 +2868,11 @@ function vehicleColumnsToggle() {
         };
     @endphp
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $v->id }})">
+        <div class="flex items-center gap-2">
+            @if($v->sales_channel === 'export')
+                <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" @click.stop
+                       class="rounded border-gray-300" title="선적 서류 다중 선택" />
+            @endif
         <div class="space-y-0.5">
             <div class="font-mono font-semibold text-gray-800">{{ $v->vehicle_number }}</div>
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
@@ -2831,6 +2882,7 @@ function vehicleColumnsToggle() {
                     <span class="text-xs font-medium text-gray-700">{{ number_format($v->sale_price) }} {{ $v->currency }}</span>
                 @endif
             </div>
+        </div>
         </div>
         <div class="text-xs text-gray-400 text-right">
             <div>{{ $v->salesman?->name ?? '-' }}</div>
@@ -4068,11 +4120,12 @@ function vehicleColumnsToggle() {
                 </a>
             </div>
 
-            {{-- 선적 서류 (컨테이너/RORO × Invoice&Packing·Contract) — 우선 1대=1행 --}}
+            {{-- 선적 서류 (컨테이너/RORO × Invoice&Packing·Contract). 이 버튼은 이 차량 1대. 여러 대 → 1서류는 차량목록 체크박스. --}}
             <div class="section-header mt-5">
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">선적 서류 (4종, 수출)</span>
             </div>
+            <p class="mb-2 text-[11px] text-gray-500">여러 대를 한 서류에 담으려면 <span class="font-medium">차량 목록에서 체크박스로 선택</span> 후 상단 "선적 서류" 버튼을 사용하세요.</p>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('container_invoice_packing') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">

@@ -3,6 +3,7 @@
 namespace App\Services\Documents;
 
 use App\Models\Vehicle;
+use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -24,7 +25,20 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  */
 class DocumentFiller
 {
-    public function __construct(private Vehicle $vehicle) {}
+    /** @var Collection<int, Vehicle> */
+    private Collection $vehicles;
+
+    private Vehicle $primary;
+
+    /**
+     * 단일 차량 또는 차량 컬렉션(선적 다중차량) 모두 수용.
+     * 다중차량은 'multi' 매핑(선적 4종)에서만 의미가 있고, 그 외 type 은 첫 차량만 사용.
+     */
+    public function __construct(Vehicle|Collection $vehicles)
+    {
+        $this->vehicles = ($vehicles instanceof Vehicle ? collect([$vehicles]) : $vehicles)->values();
+        $this->primary = $this->vehicles->first();
+    }
 
     /**
      * type 의 템플릿을 로드해 노란칸 자동기입 후 Spreadsheet 반환.
@@ -45,27 +59,79 @@ class DocumentFiller
             $this->stripHyperlinks($sheet);
         }
 
-        // 2) 매핑된 리터럴 셀에만 값 기입 (수식 셀은 자동 skip)
         $sheet = isset($config['sheet'])
             ? $spreadsheet->getSheetByName($config['sheet'])
             : $spreadsheet->getActiveSheet();
 
-        foreach ($config['cells'] as $coord => $resolver) {
-            $this->writeCell($sheet, $coord, $resolver($this->vehicle));
+        // 2) 매핑 기입 — 'multi'(선적 다중차량) vs 단일('cells')
+        if (isset($config['multi'])) {
+            $this->fillMulti($sheet, $config);
+        } else {
+            foreach ($config['cells'] as $coord => $resolver) {
+                $this->writeCell($sheet, $coord, $resolver($this->primary));
+            }
         }
 
         return $spreadsheet;
     }
 
     /**
-     * 차량별 파일명 (다운로드용).
+     * 선적 다중차량 — 30슬롯 확장 양식에 선택 N대를 채우고 미사용 슬롯을 removeRow 로 트림.
+     *
+     * 순서가 핵심: header·footer 기입(원본 좌표) → 슬롯 N대 → footer 집계를 채운영역 range 로
+     * 재기록 → removeRow. 재기록·기입을 removeRow '전'에 끝내야 (참조가 전부 제거구간 위라)
+     * 행 삭제가 수식을 깨지 않고 footer 값이 위로 따라 올라간다. (removeRow 는 range 자동축소 X — 실측)
+     */
+    private function fillMulti(Worksheet $sheet, array $config): void
+    {
+        foreach ($config['header'] as $coord => $resolver) {
+            $this->writeCell($sheet, $coord, $resolver($this->primary));
+        }
+
+        $m = $config['multi'];
+        $first = $m['first'];
+        $stride = $m['stride'];
+        $capacity = $m['count'];
+        $n = min($this->vehicles->count(), $capacity);
+
+        for ($i = 0; $i < $n; $i++) {
+            $v = $this->vehicles[$i];
+            $base = $first + $i * $stride;
+            foreach ($m['slotCells'] as $offset => $cols) {
+                foreach ($cols as $col => $resolver) {
+                    $this->writeCell($sheet, $col.($base + $offset), $resolver($v));
+                }
+            }
+        }
+
+        $regionStart = $first;
+        $regionEnd = $first + $n * $stride - 1;
+        foreach ($m['footerAggregates'] as $agg) {
+            $sheet->getCell($agg['cell'])->setValueExplicit(
+                sprintf($agg['fmt'], $regionStart, $regionEnd),
+                DataType::TYPE_FORMULA,
+            );
+        }
+
+        if ($n < $capacity) {
+            $sheet->removeRow($first + $n * $stride, ($capacity - $n) * $stride);
+            $sheet->garbageCollect();   // 트림 후 시트 dimension 정정 (꼬리 빈 행 제거)
+        }
+    }
+
+    /**
+     * 파일명 (다운로드용). 다중차량이면 "{라벨}_{N}대_{날짜}".
      */
     public function filename(string $type): string
     {
         $config = $this->configFor($type);
         $label = $config['label'] ?? $type;
 
-        return sprintf('%s_%s_%s.xlsx', $label, $this->vehicle->vehicle_number ?: $this->vehicle->id, now()->format('Ymd'));
+        if ($this->vehicles->count() > 1) {
+            return sprintf('%s_%d대_%s.xlsx', $label, $this->vehicles->count(), now()->format('Ymd'));
+        }
+
+        return sprintf('%s_%s_%s.xlsx', $label, $this->primary->vehicle_number ?: $this->primary->id, now()->format('Ymd'));
     }
 
     /**

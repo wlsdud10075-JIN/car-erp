@@ -96,4 +96,81 @@ class VehicleDocumentControllerTest extends TestCase
 
         $this->assertEquals(0, DocumentAccessLog::count(), '403 차단된 요청은 access log에 기록되지 않아야 함');
     }
+
+    // ── #3 다중차량 선적 서류 ───────────────────────────────────────
+
+    public function test_multi_vehicle_shipping_document_downloads_and_logs_per_vehicle(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $ids = collect(range(1, 3))->map(fn ($i) => Vehicle::create([
+            'vehicle_number' => '12가000'.$i,
+            'sales_channel' => 'export',
+            'sale_price' => 1000 * $i,
+        ])->id);
+
+        $response = $this->get(route('erp.vehicles.documents.multi', [
+            'type' => 'container_invoice_packing',
+            'ids' => $ids->implode(','),
+        ]));
+
+        $response->assertOk();
+        // 차량당 1행 (개인정보 감사)
+        $this->assertEquals(3, DocumentAccessLog::count());
+        foreach ($ids as $id) {
+            $this->assertEquals(1, DocumentAccessLog::where('vehicle_id', $id)->count());
+        }
+    }
+
+    public function test_multi_vehicle_blocked_when_any_vehicle_is_not_export(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $export = Vehicle::create(['vehicle_number' => '12가0001', 'sales_channel' => 'export']);
+        $carpul = Vehicle::create(['vehicle_number' => '12가0002', 'sales_channel' => 'carpul']);
+
+        $response = $this->get(route('erp.vehicles.documents.multi', [
+            'type' => 'roro_contract',
+            'ids' => $export->id.','.$carpul->id,
+        ]));
+
+        $response->assertStatus(403);
+        $this->assertEquals(0, DocumentAccessLog::count());
+    }
+
+    public function test_multi_vehicle_rejects_non_shipping_type(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $vehicle = Vehicle::create(['vehicle_number' => '12가0001', 'sales_channel' => 'export']);
+
+        // invoice/clearance 는 다중차량 미지원 (단일 전용)
+        $response = $this->get(route('erp.vehicles.documents.multi', [
+            'type' => 'invoice',
+            'ids' => (string) $vehicle->id,
+        ]));
+
+        $response->assertStatus(404);
+    }
+
+    public function test_multi_vehicle_rejects_over_thirty(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+
+        $ids = collect(range(1, 31))->map(fn ($i) => Vehicle::create([
+            'vehicle_number' => '12가'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
+            'sales_channel' => 'export',
+        ])->id);
+
+        $response = $this->get(route('erp.vehicles.documents.multi', [
+            'type' => 'container_contract',
+            'ids' => $ids->implode(','),
+        ]));
+
+        $response->assertStatus(422);
+    }
 }
