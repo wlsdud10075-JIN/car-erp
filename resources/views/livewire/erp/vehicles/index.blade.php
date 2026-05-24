@@ -1623,7 +1623,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 foreach ($fileFields as $f) {
                     $oldPath = $vehicle->{$f['col']};
                     if ($this->{$f['fileProp']}) {
-                        $newPath = $this->{$f['fileProp']}->store("vehicles/{$vehicle->id}", 'public');
+                        $newPath = $this->{$f['fileProp']}->store("vehicles/{$vehicle->id}", config('filesystems.vehicle_docs_disk'));
                         $newlyStoredPaths[] = $newPath;
                         $fileUpdates[$f['col']] = $newPath;
                         if ($oldPath && $oldPath !== $newPath) {
@@ -1812,7 +1812,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // #1 (2026-05-20) — paid Settlement·SoD·회계 무결성 등 비즈니스 룰 위반.
             // 화이트스크린 대신 토스트로 사용자에게 사유 노출. 트랜잭션은 이미 rollback됨.
             foreach ($newlyStoredPaths as $p) {
-                Storage::disk('public')->delete($p);
+                Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
             }
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
@@ -1820,14 +1820,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         } catch (\Throwable $e) {
             // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외
             foreach ($newlyStoredPaths as $p) {
-                Storage::disk('public')->delete($p);
+                Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
             }
             throw $e;
         }
 
         // 트랜잭션 성공: 옛 파일(교체·삭제 대상) 디스크에서 제거
         foreach ($pathsToDelete as $p) {
-            Storage::disk('public')->delete($p);
+            Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
         }
 
         $this->clearDeregistrationDoc = false;
@@ -3405,7 +3405,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
                     @if($deregistration_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::url($deregistration_document_path) }}" target="_blank"
+                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($deregistration_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeDeregistrationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
@@ -3974,7 +3974,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
                     @if($export_declaration_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::url($export_declaration_document_path) }}" target="_blank"
+                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($export_declaration_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeExportDeclarationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
@@ -4061,7 +4061,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
                     @if($bl_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::url($bl_document_path) }}" target="_blank"
+                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($bl_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeBlDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>

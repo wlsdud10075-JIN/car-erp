@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
 
 class BackupDatabase extends Command
@@ -81,9 +82,28 @@ class BackupDatabase extends Command
         $sizeKb = round(filesize($backupPath) / 1024, 1);
         $this->info("✓ 완료: {$backupPath} ({$sizeKb} KB)");
 
+        $this->maybeUploadToRemote($backupPath, $filename);
         $this->cleanupOldBackups($backupDir, (int) $this->option('keep'));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * DB_BACKUP_DISK(config filesystems.db_backup_disk) 설정 시 백업을 그 디스크(예: s3)에도 업로드.
+     * 단일 인스턴스 유실에도 백업이 보존되도록 off-instance 보관. 실패해도 로컬 백업은 유효하므로 SUCCESS 유지.
+     */
+    private function maybeUploadToRemote(string $localPath, string $filename): void
+    {
+        $disk = (string) config('filesystems.db_backup_disk', '');
+        if ($disk === '') {
+            return;
+        }
+        try {
+            Storage::disk($disk)->put('db-backups/'.$filename, file_get_contents($localPath));
+            $this->info("✓ 원격 업로드: [{$disk}] db-backups/{$filename}");
+        } catch (\Throwable $e) {
+            $this->error("원격 업로드 실패 ([{$disk}]): ".$e->getMessage());
+        }
     }
 
     private function cleanupOldBackups(string $dir, int $keepDays): void
