@@ -4054,10 +4054,10 @@ function vehicleColumnsToggle() {
             <hr class="section-divider mt-5">
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">영문 서류</span>
+                <span class="section-title">판매 서류 (수출)</span>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="grid grid-cols-1 gap-3">
                 <a href="{{ $url('invoice') }}"
                    class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
@@ -4066,36 +4066,43 @@ function vehicleColumnsToggle() {
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>
                 </a>
-                <a href="{{ $url('sales_contract') }}"
-                   target="_blank"
-                   class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                    <div>
-                        <div class="text-sm font-semibold text-gray-800">Sales Contract</div>
-                        <div class="text-xs text-gray-500">EXPORT · PDF</div>
-                    </div>
-                    <span class="text-xs text-emerald-600">↓</span>
-                </a>
             </div>
 
-            {{-- Excel CIPL --}}
+            {{-- 선적 서류 (컨테이너/RORO × Invoice&Packing·Contract) — 우선 1대=1행 --}}
             <div class="section-header mt-5">
                 <span class="section-dot bg-amber-500"></span>
-                <span class="section-title">Excel CIPL (선적용)</span>
+                <span class="section-title">선적 서류 (4종, 수출)</span>
             </div>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <a href="{{ $url('ro_cipl') }}"
+                <a href="{{ $url('container_invoice_packing') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">RO_CIPL</div>
+                        <div class="text-sm font-semibold text-gray-800">컨테이너 Invoice &amp; Packing</div>
+                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                    </div>
+                    <span class="text-xs text-amber-600">↓</span>
+                </a>
+                <a href="{{ $url('container_contract') }}"
+                   class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">컨테이너 Contract</div>
+                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                    </div>
+                    <span class="text-xs text-amber-600">↓</span>
+                </a>
+                <a href="{{ $url('roro_invoice_packing') }}"
+                   class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">RORO Invoice &amp; Packing</div>
                         <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>
-                <a href="{{ $url('con_cipl') }}"
+                <a href="{{ $url('roro_contract') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">con_CIPL</div>
-                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">RORO Contract</div>
+                        <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>

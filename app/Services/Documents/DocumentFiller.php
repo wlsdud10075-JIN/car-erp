@@ -68,17 +68,35 @@ class DocumentFiller
         return sprintf('%s_%s_%s.xlsx', $label, $this->vehicle->vehicle_number ?: $this->vehicle->id, now()->format('Ymd'));
     }
 
+    /**
+     * 노란 셀 정리 — fill 제거 + 샘플값 비움(수식은 보존).
+     * 노란색 = "기입 위치 표식". 매핑 안 된 노란 셀의 템플릿 샘플(예: 매매업번호,
+     * 선적 2~4번째 차량행)을 비워야 생성본에 샘플이 안 남는다. 매핑된 셀은 이후 writeCell 이 덮어씀.
+     */
     private function clearYellowFill(Worksheet $sheet): void
     {
         $maxRow = $sheet->getHighestRow();
         $maxCol = Coordinate::columnIndexFromString($sheet->getHighestColumn());
+        $blanked = [];
 
         for ($row = 1; $row <= $maxRow; $row++) {
             for ($col = 1; $col <= $maxCol; $col++) {
                 $coord = Coordinate::stringFromColumnIndex($col).$row;
                 $fill = $sheet->getStyle($coord)->getFill();
-                if ($fill->getFillType() === Fill::FILL_SOLID && $this->isYellow($fill->getStartColor()->getRGB())) {
-                    $fill->setFillType(Fill::FILL_NONE);
+                if ($fill->getFillType() !== Fill::FILL_SOLID || ! $this->isYellow($fill->getStartColor()->getRGB())) {
+                    continue;
+                }
+                $fill->setFillType(Fill::FILL_NONE);
+
+                // 샘플값 제거 (병합앵커 기준 1회, 수식은 보존)
+                $anchor = $this->mergeAnchor($sheet, $coord);
+                if (isset($blanked[$anchor])) {
+                    continue;
+                }
+                $blanked[$anchor] = true;
+                $val = $sheet->getCell($anchor)->getValue();
+                if (! (is_string($val) && str_starts_with($val, '='))) {
+                    $sheet->getCell($anchor)->setValueExplicit(null, DataType::TYPE_NULL);
                 }
             }
         }
@@ -183,6 +201,11 @@ class DocumentFiller
             'invoice' => Mappings\SalesInvoiceMapping::class,
             // Phase 3 — 통관 SET (구매리스트 마스터 → 6시트 수식 자동연동)
             'clearance' => Mappings\ClearanceSetMapping::class,
+            // Phase 4 — 선적 4종 (우선 1대=1행)
+            'container_invoice_packing' => Mappings\ContainerInvoicePackingMapping::class,
+            'container_contract' => Mappings\ContainerContractMapping::class,
+            'roro_invoice_packing' => Mappings\RoroInvoicePackingMapping::class,
+            'roro_contract' => Mappings\RoroContractMapping::class,
             default => throw new \InvalidArgumentException('미지원 서류 type: '.$type),
         };
 

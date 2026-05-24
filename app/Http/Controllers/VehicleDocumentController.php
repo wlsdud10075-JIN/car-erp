@@ -15,8 +15,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VehicleDocumentController extends Controller
 {
-    // 영문 4종은 수출 채널 차량만 발급 가능
-    private const EXPORT_ONLY_TYPES = ['invoice', 'sales_contract', 'ro_cipl', 'con_cipl'];
+    // 수출 채널 차량만 발급 가능 (인보이스 + 선적 4종 + 구 CIPL/계약서)
+    private const EXPORT_ONLY_TYPES = [
+        'invoice', 'sales_contract', 'ro_cipl', 'con_cipl',
+        'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract',
+    ];
 
     /**
      * 차량별 서류 자동 생성.
@@ -49,6 +52,11 @@ class VehicleDocumentController extends Controller
             'invoice' => $this->streamXlsx($vehicle, 'invoice'),
             // Phase 3 (2026-05-24) — 통관 SET (구매리스트 마스터 + 6시트 자동연동)
             'clearance' => $this->streamXlsx($vehicle, 'clearance'),
+            // Phase 4 (2026-05-24) — 선적 4종 (우선 1대=1행)
+            'container_invoice_packing' => $this->streamXlsx($vehicle, 'container_invoice_packing'),
+            'container_contract' => $this->streamXlsx($vehicle, 'container_contract'),
+            'roro_invoice_packing' => $this->streamXlsx($vehicle, 'roro_invoice_packing'),
+            'roro_contract' => $this->streamXlsx($vehicle, 'roro_contract'),
             'sales_contract' => $this->renderPdf($vehicle, 'documents.sales-contract', 'SalesContract'),
             'ro_cipl' => (new VehicleCiplGenerator($vehicle))->downloadRoCipl(),
             'con_cipl' => (new VehicleCiplGenerator($vehicle))->downloadConCipl(),
