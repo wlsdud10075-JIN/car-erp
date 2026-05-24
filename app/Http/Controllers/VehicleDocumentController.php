@@ -47,6 +47,8 @@ class VehicleDocumentController extends Controller
             'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
             // Phase 2 (2026-05-24) — 판매 인보이스 system xlsx 자동기입
             'invoice' => $this->streamXlsx($vehicle, 'invoice'),
+            // Phase 3 (2026-05-24) — 통관 SET (구매리스트 마스터 + 6시트 자동연동)
+            'clearance' => $this->streamXlsx($vehicle, 'clearance'),
             'sales_contract' => $this->renderPdf($vehicle, 'documents.sales-contract', 'SalesContract'),
             'ro_cipl' => (new VehicleCiplGenerator($vehicle))->downloadRoCipl(),
             'con_cipl' => (new VehicleCiplGenerator($vehicle))->downloadConCipl(),

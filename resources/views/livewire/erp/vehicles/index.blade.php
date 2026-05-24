@@ -4101,6 +4101,22 @@ function vehicleColumnsToggle() {
                 </a>
             </div>
 
+            {{-- 통관 서류 (통관 SET — 구매리스트 1장 → 8시트 자동연동) --}}
+            <div class="section-header mt-5">
+                <span class="section-dot bg-green-500"></span>
+                <span class="section-title">통관 서류</span>
+            </div>
+            <div class="grid grid-cols-1 gap-3">
+                <a href="{{ $url('clearance') }}"
+                   class="card-tight flex items-center justify-between hover:border-green-400 hover:bg-green-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">통관 SET (등록증·말소증·인보이스·팩킹)</div>
+                        <div class="text-xs text-gray-500">구매리스트 1장 → 8시트 자동연동 · .xlsx</div>
+                    </div>
+                    <span class="text-xs text-green-600">↓</span>
+                </a>
+            </div>
+
             <div class="mt-5 text-xs text-gray-500 leading-relaxed">
                 ※ PDF는 새 탭에서 열리며 자동 다운로드됩니다. Excel은 즉시 다운로드.<br>
                 ※ 양식이 비어있는 항목은 차량 등록 정보를 채운 후 다시 생성하세요.

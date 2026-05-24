@@ -181,6 +181,8 @@ class DocumentFiller
             'poa' => Mappings\PowerOfAttorneyMapping::class,
             // Phase 2 — 판매 인보이스
             'invoice' => Mappings\SalesInvoiceMapping::class,
+            // Phase 3 — 통관 SET (구매리스트 마스터 → 6시트 수식 자동연동)
+            'clearance' => Mappings\ClearanceSetMapping::class,
             default => throw new \InvalidArgumentException('미지원 서류 type: '.$type),
         };
 
