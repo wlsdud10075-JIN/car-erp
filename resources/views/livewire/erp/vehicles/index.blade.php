@@ -4059,11 +4059,10 @@ function vehicleColumnsToggle() {
 
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('invoice') }}"
-                   target="_blank"
                    class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">Proforma Invoice</div>
-                        <div class="text-xs text-gray-500">SSANCAR · PDF</div>
+                        <div class="text-xs text-gray-500">판매 · .xlsx</div>
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>
                 </a>

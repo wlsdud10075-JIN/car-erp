@@ -179,6 +179,8 @@ class DocumentFiller
             'deregistration' => Mappings\DeregistrationMapping::class,
             'deregistration_contract' => Mappings\DeregistrationContractMapping::class,
             'poa' => Mappings\PowerOfAttorneyMapping::class,
+            // Phase 2 — 판매 인보이스
+            'invoice' => Mappings\SalesInvoiceMapping::class,
             default => throw new \InvalidArgumentException('미지원 서류 type: '.$type),
         };
 
