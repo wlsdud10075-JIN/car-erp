@@ -28,9 +28,11 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    // NICE 차량정보 — ssancar-erp 의 /provide/api/nice-lookup/ 미들웨어를 경유한다.
+    // NICE 직접 호출·키·IP 화이트리스트는 ssancar-erp 가 책임. CAR-ERP 는 이 엔드포인트에 POST 만.
     'nice' => [
-        'key' => env('NICE_API_KEY', ''),
-        'secret' => env('NICE_API_SECRET', ''),
+        'provide_url' => env('NICE_PROVIDE_URL', ''),     // /provide/api/nice-lookup/ 까지 포함한 전체 URL
+        'provide_token' => env('NICE_PROVIDE_TOKEN', ''),  // X-SSANCAR-API-KEY 헤더 토큰
     ],
 
     'slack' => [

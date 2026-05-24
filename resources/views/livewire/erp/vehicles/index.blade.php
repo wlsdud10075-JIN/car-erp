@@ -136,6 +136,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $nice_spec_curb_weight_str = '';
     public string $nice_spec_fuel_efficiency = '';
 
+    // NICE 조회 응답 원본(ssancar data) — 저장 시 nice_raw 컬럼에 보존 (미매핑 필드 재조회 없이 활용).
+    public array $niceRaw = [];
+
     // ── 매입 ──────────────────────────────────────────────────────
     public string $purchase_date = '';
     public string $salesman_id_str = '';
@@ -1583,6 +1586,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 16 — tax_invoice_*·agency_fee persist 제거.
         ];
 
+        // NICE 조회 원본 보존 — 이번에 조회한 경우에만 기입(편집 시 빈 niceRaw 가 기존 값을 덮어쓰지 않도록 조건부).
+        if (! empty($this->niceRaw)) {
+            $data['nice_raw'] = $this->niceRaw;
+        }
+
         // 파일 정리 추적용 (트랜잭션 성공·실패 분기)
         $newlyStoredPaths = [];   // 트랜잭션 실패 시 디스크에서 제거
         $pathsToDelete    = [];   // 트랜잭션 성공 시 디스크에서 제거 (옛 파일 / 사용자가 삭제 클릭)
@@ -2442,24 +2450,54 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function lookupNiceApi(): void
     {
-        if (empty(trim($this->vehicle_number))) return;
+        // NICE 1단계가 소유자명 필수 — 차량번호만 있고 소유자명 비면 안내 후 중단.
+        if (empty(trim($this->vehicle_number))) {
+            return;
+        }
+        if (empty(trim($this->nice_reg_owner_name))) {
+            session()->flash('notice', '소유자명을 먼저 입력하세요. (NICE 조회에 차량번호+소유자명 필요)');
 
-        $result = NiceApiService::fromConfig()->lookupVehicle(trim($this->vehicle_number));
+            return;
+        }
+
+        $result = NiceApiService::fromConfig()->lookupVehicle(
+            trim($this->vehicle_number),
+            trim($this->nice_reg_owner_name),
+        );
+
+        // null = 엔드포인트 미설정(수동 입력 모드) / success=false = 조회 실패(원문 메시지 노출)
         if ($result === null) {
-            session()->flash('notice', 'NICE API 조회 실패 — 수동 입력하세요.');
+            session()->flash('notice', 'NICE 조회가 설정되지 않았습니다 — 수동 입력하세요.');
+
+            return;
+        }
+        if (($result['success'] ?? false) !== true) {
+            session()->flash('notice', $result['message'] ?? 'NICE 조회에 실패했습니다.');
+
             return;
         }
 
         foreach ($result['registration'] ?? [] as $key => $value) {
-            $prop = $key . '_str';
-            if (property_exists($this, $prop)) $this->$prop = (string)$value;
-            elseif (property_exists($this, $key)) $this->$key = (string)$value;
+            $prop = $key.'_str';
+            if (property_exists($this, $prop)) {
+                $this->$prop = (string) $value;
+            } elseif (property_exists($this, $key)) {
+                $this->$key = (string) $value;
+            }
         }
         foreach ($result['spec'] ?? [] as $key => $value) {
-            $prop = $key . '_str';
-            if (property_exists($this, $prop)) $this->$prop = (string)$value;
-            elseif (property_exists($this, $key)) $this->$key = (string)$value;
+            $prop = $key.'_str';
+            if (property_exists($this, $prop)) {
+                $this->$prop = (string) $value;
+            } elseif (property_exists($this, $key)) {
+                $this->$key = (string) $value;
+            }
         }
+
+        // 응답 원본 보존 — 저장 시 nice_raw 로 기입 (미매핑 필드 재조회 없이 활용).
+        // 성공 토스트는 띄우지 않음 — 폼 칸이 자동으로 채워지는 것 자체가 성공 신호이고,
+        // wire:blur 재발 시 캐시 히트마다 토스트가 반복 노출되는 것을 피한다.
+        $this->niceRaw = $result['raw'] ?? [];
     }
 
     public function addFinalPayment(): void
@@ -2530,6 +2568,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
         foreach ($defaults as $prop) $this->$prop = '';
 
+        $this->niceRaw = [];
         $this->sales_channel = 'export';
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
@@ -3071,11 +3110,18 @@ function vehicleColumnsToggle() {
                             <input wire:model="vehicle_number" type="text" class="input-base flex-1" placeholder="12가3456"
                                    wire:blur="lookupNiceApi" />
                             <button type="button" wire:click="lookupNiceApi"
-                                    class="rounded-lg border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-50 whitespace-nowrap">
-                                조회
+                                    wire:loading.attr="disabled" wire:target="lookupNiceApi"
+                                    class="rounded-lg border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-50 whitespace-nowrap disabled:opacity-50">
+                                <span wire:loading.remove wire:target="lookupNiceApi">조회</span>
+                                <span wire:loading wire:target="lookupNiceApi">조회중…</span>
                             </button>
                         @endif
                     </div>
+                    @unless($editingId)
+                        {{-- NICE 1단계가 소유자명 필수 → 차량번호와 함께 입력. nice_reg_owner_name 에 바인딩(아래 등록정보 소유자명과 동기화). --}}
+                        <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full"
+                               placeholder="소유자명 (NICE 조회 필수)" wire:blur="lookupNiceApi" />
+                    @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 {{-- 큐 16 — 판매채널 select 제거. sales_channel은 hidden 'export' 고정. --}}
