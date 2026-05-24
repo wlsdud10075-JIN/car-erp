@@ -42,6 +42,7 @@ class DocumentFiller
                 continue;
             }
             $this->clearYellowFill($sheet);
+            $this->stripHyperlinks($sheet);
         }
 
         // 2) 매핑된 리터럴 셀에만 값 기입 (수식 셀은 자동 skip)
@@ -80,6 +81,17 @@ class DocumentFiller
                     $fill->setFillType(Fill::FILL_NONE);
                 }
             }
+        }
+    }
+
+    /**
+     * 하이퍼링크 제거 — 운영 환경 외부링크(WebDAV file:// 등) 잔재가 Xlsx writer 를
+     * "Invalid parameters" 로 깨뜨림. 서류 양식엔 클릭 링크 불필요 → 전부 제거.
+     */
+    private function stripHyperlinks(Worksheet $sheet): void
+    {
+        foreach (array_keys($sheet->getHyperlinkCollection()) as $coord) {
+            $sheet->setHyperlink($coord, null);
         }
     }
 
@@ -155,35 +167,21 @@ class DocumentFiller
     }
 
     /**
-     * type 별 템플릿·시트·셀매핑. 매핑 = 데이터(좌표 → 클로저).
+     * type → Mapping 클래스. 매핑 = 데이터(각 Mapping::config() 가 좌표→클로저 반환).
+     * 엔진은 generic — 새 서류는 Mappings/ 에 클래스 추가만.
      *
      * @return array{template:string, sheet?:string, label?:string, cells:array<string, callable>}
      */
     private function configFor(string $type): array
     {
-        return match ($type) {
-            // Phase 1 — 매입/말소신청서 (별지17호, 단일차량, GAP 없음)
-            'deregistration' => [
-                'template' => 'deregistration_application.xlsx',
-                'sheet' => '1.차량말소신청서',
-                'label' => '말소신청서',
-                'cells' => [
-                    'L1' => fn (Vehicle $v) => $this->carName($v),                 // 차량명
-                    'D6' => fn (Vehicle $v) => $v->nice_reg_owner_name,            // 소유자 성명
-                    'D7' => fn (Vehicle $v) => $v->nice_reg_owner_rrn,             // 주민(법인)등록번호 (accessor 자동 복호화)
-                    'D8' => fn (Vehicle $v) => $v->nice_reg_owner_addr,            // 사용본거지(주소)
-                    'A11' => fn (Vehicle $v) => $v->vehicle_number,               // 자동차등록번호
-                    'E11' => fn (Vehicle $v) => $v->nice_reg_vin,                 // 차대번호
-                    'J11' => fn (Vehicle $v) => $v->mileage,                      // 주행거리
-                    // A24 =TODAY() 수식 — 자동 보존. N1 사진/직인 영역 — 공란.
-                ],
-            ],
+        $mapping = match ($type) {
+            // Phase 1 — 매입 3종
+            'deregistration' => Mappings\DeregistrationMapping::class,
+            'deregistration_contract' => Mappings\DeregistrationContractMapping::class,
+            'poa' => Mappings\PowerOfAttorneyMapping::class,
             default => throw new \InvalidArgumentException('미지원 서류 type: '.$type),
         };
-    }
 
-    private function carName(Vehicle $v): string
-    {
-        return trim(($v->brand ? $v->brand.' ' : '').($v->model_type ?: $v->nice_spec_model ?: ''));
+        return $mapping::config();
     }
 }

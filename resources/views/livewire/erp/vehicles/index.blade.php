@@ -4018,36 +4018,33 @@ function vehicleColumnsToggle() {
                 </div>
             @endunless
 
-            {{-- 국문 서류 (모든 채널 노출) ──────────────────── --}}
+            {{-- 매입 서류 (전 채널) — system xlsx 자동기입 (노란칸만 채우고 노란 제거) --}}
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
-                <span class="section-title">국문 서류 (3종)</span>
+                <span class="section-title">매입 서류 (3종)</span>
             </div>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <a href="{{ $url('deregistration') }}"
-                   target="_blank"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">자동차말소등록신청서</div>
-                        <div class="text-xs text-gray-500">별지 제17호 · PDF</div>
+                        <div class="text-xs text-gray-500">별지 제17호 · .xlsx</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
-                <a href="{{ $url('registration_application') }}"
-                   target="_blank"
+                <a href="{{ $url('deregistration_contract') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">등록증 재발급 신청서</div>
-                        <div class="text-xs text-gray-500">시흥시장 · PDF</div>
+                        <div class="text-sm font-semibold text-gray-800">말소 계약서</div>
+                        <div class="text-xs text-gray-500">매입 · .xlsx</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
-                <a href="{{ $url('transfer_certificate') }}"
-                   target="_blank"
+                <a href="{{ $url('poa') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">자동차양도증명서</div>
-                        <div class="text-xs text-gray-500">별지 제16호 · PDF</div>
+                        <div class="text-sm font-semibold text-gray-800">위임장</div>
+                        <div class="text-xs text-gray-500">매입 · .xlsx</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>

@@ -39,8 +39,10 @@ class VehicleDocumentController extends Controller
         }
 
         $response = match ($type) {
-            // Phase 1 (2026-05-24) — system xlsx 자동기입으로 교체 (기존 blade PDF 폐기 예정)
+            // Phase 1 (2026-05-24) — 매입 3종 system xlsx 자동기입 (기존 blade PDF 폐기 예정)
             'deregistration' => $this->streamXlsx($vehicle, 'deregistration'),
+            'deregistration_contract' => $this->streamXlsx($vehicle, 'deregistration_contract'),
+            'poa' => $this->streamXlsx($vehicle, 'poa'),
             'registration_application' => $this->renderPdf($vehicle, 'documents.registration-application', '등록증재발급신청서'),
             'transfer_certificate' => $this->renderPdf($vehicle, 'documents.transfer-certificate', '양도증명서'),
             'invoice' => $this->renderPdf($vehicle, 'documents.invoice', 'Invoice'),
