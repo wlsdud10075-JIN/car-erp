@@ -134,6 +134,8 @@ crontab -e
 ## 7. 배포 후 점검
 - [ ] `https://도메인` 로그인 (admin@... )
 - [ ] 차량 등록 → 서류 업로드 → S3 버킷에 `vehicles/{id}/` 객체 생성 확인 + "기존 파일 보기" 링크 동작
+- [ ] 차량 사진 5~10장 업로드 → S3 `vehicles/{id}/photos/` 객체 생성 + 갤러리 썸네일·개별 삭제 동작
+- [ ] 사진 있는 차량 force-delete → `vehicle_photos` row 자동 삭제(MySQL FK cascade 검증 — 테스트는 SQLite라 미검증분)
 - [ ] `php artisan db:backup` 수동 1회 → `storage/backups/db/` + S3 `db-backups/` 확인
 - [ ] NICE 조회(차량번호+소유자명) — `.env` 2변수 채운 경우
 - [ ] 서류 9종 + 다중차량 선적 다운로드

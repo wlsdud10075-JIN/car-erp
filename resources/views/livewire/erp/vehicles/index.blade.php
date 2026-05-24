@@ -275,6 +275,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $clearExportDeclarationDoc = false;
     public bool $clearBlDoc                = false;
 
+    // ── 차량 사진 (jpg/png, 최대 10장 — vehicle_photos 테이블) ──────
+    public const MAX_PHOTOS = 10;
+
+    public array $photoFiles = [];      // 신규 업로드 (multiple temp)
+    public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
+    public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
+
     public function mount(): void
     {
         // 대시보드에서 진입한 경우 — action(처리 필요 카드) 또는 progressFilter(파이프라인 스트립):
@@ -969,6 +976,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
+        // 차량 사진 로드 (편집 패널 갤러리)
+        $this->photoFiles = [];
+        $this->deletePhotoIds = [];
+        $this->existingPhotos = $v->photos->map(fn ($p) => ['id' => $p->id, 'url' => $p->url])->all();
+
         $this->panelUnpaidRatio = $v->unpaid_ratio;
 
         // 큐 21 — Ledger 잠금 상태 갱신
@@ -1162,6 +1174,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bl_document_path = '';
     }
 
+    /** 신규 업로드 미리보기에서 한 장 제거 (저장 전). */
+    public function removeNewPhoto(int $idx): void
+    {
+        unset($this->photoFiles[$idx]);
+        $this->photoFiles = array_values($this->photoFiles);
+    }
+
+    /** 기존 사진 한 장 삭제 staged — save 시 DB row + 디스크에서 제거. */
+    public function removeExistingPhoto(int $id): void
+    {
+        if (! in_array($id, $this->deletePhotoIds, true)) {
+            $this->deletePhotoIds[] = $id;
+        }
+        $this->existingPhotos = array_values(array_filter(
+            $this->existingPhotos,
+            fn ($p) => $p['id'] !== $id,
+        ));
+    }
+
     // 버그 2 fix (2026-05-18) — 새 파일 업로드 시 clear flag reset (safety net).
     // [삭제] → 새 파일 업로드 흐름에서 clearBlDoc stale 상태로 인한 save 사이클 충돌 방지.
     public function updatedDeregistrationDocFile(): void
@@ -1272,6 +1303,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'blDocFile'                => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
 
+            // 차량 사진 — jpg/png 만, 장당 8MB. 총 장수 제한은 아래 별도 가드.
+            'photoFiles.*' => ['image', 'mimes:jpeg,jpg,png', 'max:8192'],
+
             // H9 — RRN(주민/법인등록번호) 형식 검증. 000000-0000000 패턴 강제.
             // 말소신청서·등록증재발급·양도증명서 PDF에 RRN 정확한 입력 필수.
             'nice_reg_owner_rrn' => ['nullable', 'string', 'regex:/^\d{6}-\d{7}$/'],
@@ -1338,6 +1372,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         $this->validate($rules, $messages, $attributes);
+
+        // 차량 사진 총 장수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
+        if (count($this->existingPhotos) + count($this->photoFiles) > self::MAX_PHOTOS) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'photoFiles' => '차량 사진은 최대 '.self::MAX_PHOTOS.'장까지 등록할 수 있습니다.',
+            ]);
+        }
     }
 
     /**
@@ -1636,6 +1677,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
                 if ($fileUpdates) {
                     $vehicle->update($fileUpdates);
+                }
+
+                // 차량 사진 — 개별 삭제(staged) + 신규 업로드. 디스크는 vehicle_docs_disk(로컬 public / 운영 s3).
+                // orphan 정리: 삭제 path → $pathsToDelete(tx 성공 시), 신규 path → $newlyStoredPaths(tx 실패 시).
+                if ($this->deletePhotoIds) {
+                    $delPhotos = \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)
+                        ->whereIn('id', $this->deletePhotoIds)->get();
+                    foreach ($delPhotos as $photo) {
+                        $pathsToDelete[] = $photo->path;
+                    }
+                    \App\Models\VehiclePhoto::whereIn('id', $delPhotos->pluck('id'))->delete();
+                }
+                if ($this->photoFiles) {
+                    $nextOrder = (int) \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
+                    foreach ($this->photoFiles as $photo) {
+                        $photoPath = $photo->store("vehicles/{$vehicle->id}/photos", config('filesystems.vehicle_docs_disk'));
+                        $newlyStoredPaths[] = $photoPath;
+                        \App\Models\VehiclePhoto::create([
+                            'vehicle_id' => $vehicle->id,
+                            'path' => $photoPath,
+                            'sort_order' => ++$nextOrder,
+                        ]);
+                    }
                 }
 
             // 판매 잔금 동기화 (id-diff)
@@ -2577,6 +2641,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
         $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
+        $this->photoFiles = $this->existingPhotos = $this->deletePhotoIds = [];
     }
 
     private function unsetComputedProperties(): void
@@ -3210,6 +3275,41 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">축거 (mm)</label><input wire:model="nice_spec_wheelbase_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">공차중량 (kg)</label><input wire:model="nice_spec_curb_weight_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">연비 (km/L)</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
+            </div>
+
+            {{-- 차량 사진 (jpg/png · 최대 10장 — vehicle_photos, 운영 시 S3 저장). 여러 장은 한 번에 선택. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-rose-400"></span>
+                <span class="section-title">차량 사진 (jpg/png · 최대 10장)</span>
+            </div>
+            <div>
+                <input type="file" wire:model="photoFiles" multiple accept="image/jpeg,image/png"
+                       class="input-base text-sm" />
+                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">사진 업로드 중…</div>
+                @error('photoFiles')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                @error('photoFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+
+                @if(count($existingPhotos) || count($photoFiles))
+                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    @foreach($existingPhotos as $p)
+                    <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
+                        <img src="{{ $p['url'] }}" class="h-full w-full object-cover" alt="차량 사진" />
+                        <button type="button" wire:click="removeExistingPhoto({{ $p['id'] }})"
+                                class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                    </div>
+                    @endforeach
+                    @foreach($photoFiles as $idx => $photo)
+                    <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
+                        <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="신규 사진" />
+                        <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">신규</span>
+                        <button type="button" wire:click="removeNewPhoto({{ $idx }})"
+                                class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                    </div>
+                    @endforeach
+                </div>
+                @endif
+                <p class="mt-1 text-xs text-gray-400">{{ count($existingPhotos) + count($photoFiles) }}/10장 · 저장 버튼을 눌러야 반영됩니다.</p>
             </div>
         </div>
 

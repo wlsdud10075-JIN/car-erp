@@ -881,6 +881,12 @@ class Vehicle extends Model
         return $this->hasMany(FinalPayment::class);
     }
 
+    /** 차량 등록 사진 (N장, jpg/png) — 업로드 순서대로. */
+    public function photos(): HasMany
+    {
+        return $this->hasMany(VehiclePhoto::class)->orderBy('sort_order')->orderBy('id');
+    }
+
     public function purchaseBalancePayments(): HasMany
     {
         return $this->hasMany(PurchaseBalancePayment::class);
