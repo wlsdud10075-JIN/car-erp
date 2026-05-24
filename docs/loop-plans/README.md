@@ -14,6 +14,7 @@
 | 4 | `2026-05-23-segment4a-bl-100-tdd.md` | 100% B/L 발급 게이트 | 신규 게이트 — failing test |
 | 5 | `2026-05-24-segment4b-approval-bypass-tdd.md` | 관리 승인 우회 | 큐 14 인프라 재사용 — failing test |
 | **2026-05-23** | **`2026-05-23-integration-regression.md`** | **운영 통합 회귀 (1순위)** | **회의확장씬·새회의·한글화·KPI 분리 누적 시나리오 박제 — 10건** |
+| **2026-05-24** | **`2026-05-24-document-autofill.md`** | **서류 자동기입 9종 회귀 + 사용자 체크리스트** | **PHPUnit 12건(셀 매핑·엔진 불변식) + C안 다운로드 체크리스트. #3 다중차량 추후 확장** |
 
 ## /loop 호출 명령
 
@@ -37,7 +38,7 @@ powercfg /change standby-timeout-ac 0
 powercfg /change hibernate-timeout-ac 0
 
 # 2. 베이스라인 확인
-php artisan test       # 246 passed 확인
+php artisan test       # 444 passed 확인 (2026-05-24)
 git status             # clean 확인
 git pull origin dev    # 최신 동기화
 
@@ -72,4 +73,4 @@ git pull origin dev    # 최신 동기화
 
 - 모든 케이스 박제 완료 → `ScheduleWakeup` 호출 안 함 → 자동 종료
 - 또는 3 strike (같은 케이스 3번 시도해도 작성 불가) → SKIP 후 다음 진행
-- 또는 기존 246 테스트 중 어느 하나라도 깨지면 → 즉시 종료 + 진행 로그에 경고
+- 또는 기존 444 테스트 중 어느 하나라도 깨지면 → 즉시 종료 + 진행 로그에 경고

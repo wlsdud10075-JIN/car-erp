@@ -275,19 +275,25 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | 9.5 | 대시보드 카운트 ↔ vehicles 목록 정합성 (action 파라미터 패턴 — `SKILLS.md §9` 참조) | ✅ 완료 |
 | 9.6 | 공용 UI 패턴 1차 — my-crm 기능 이식 (브랜드 텍스트 설정·관리자 대시보드 위젯 토글 패널·perPage 드롭다운 8개 페이지·Flux 사이드바 collapse 토글) | ✅ 완료 |
 | 10 | **모바일 반응형 + my-crm UI 풀-이식** — 10-A 사이드바 자체 Alpine 교체(220↔48 + drawer 3-state) / 10-B 디자인 시스템 풀-이식 / 10-C 페어 렌더 (8개 페이지 중 receivables만 신규 추가, 7개는 기 적용) / 10-D 슬라이드 패널 모바일 분기 (8개 모두 기 적용 — 무변경 검증) | ✅ 완료 |
-| 11 | **서류 자동 생성 5종 PDF + 2종 Excel** — 11-A dompdf 셋업 / 11-B 한국어 PDF 3종 (말소·등록증재발급·양도증명서) + Noto Sans KR 서브셋 / 11-C 영문 PDF 2종 (Proforma Invoice·Sales Contract) / 11-D Excel CIPL 2종 (RO/con) maatwebsite/excel + 템플릿 추출 / 11-E 차량 편집 패널 "서류" 탭 + 채널 분기 (수출만 영문서류 노출) | ✅ 완료 |
-| 12 | 포워딩사 이메일 자동 발송 (Mailable + Vehicle saving 리스너) | 🟡 보류 (SMTP 확정 후) |
-| - | NICE API 실연동 (현재 스텁) | 🟡 보류 (role/대시보드 완성 후) |
-| 13 | AWS Lightsail 배포 | ⏳ |
+| 11 | ~~서류 자동 생성 5종 PDF + 2종 Excel (dompdf + CIPL)~~ | 🔄 **폐기·대체됨** (2026-05-24 → 11-R) |
+| **11-R** | **서류 자동기입 전면 재구축 — system xlsx 9종** (매입3: 말소신청서·말소계약서·위임장 / 판매1: Proforma Invoice / 선적4: 컨테이너·RORO × Invoice&Packing·Contract / 통관: SET 8시트 마스터연동). 엔진 `App\Services\Documents\DocumentFiller`(노란셀만 기입+노란제거+수식보존+샘플비움). 구 PDF blade·CIPL 삭제. **상세 SKILLS §12** | ✅ 완료 (2026-05-24, `b6094b0`) |
+| **11-R2** | 서류 다중차량 — 선택형 N대 1서류 (선적 4종 행 동적확장). 고정 그룹테이블 X | 🔜 **다음 작업** (메모리 `project-document-mapping` §#3) |
+| 12 | 포워딩사 이메일 자동 발송 | ❌ 영구 제거 (사용자 결정) |
+| - | NICE API 실연동 | 🟡 사용자 **별도 프롬프트로 진행** (키 보유, `nice_raw`·`nice_spec_cylinders`·`deregistration_date` 컬럼 대기) |
+| 13 | AWS Lightsail 배포 | ⏳ (#3 후) |
 
-## ⏭️ 다음 세션 작업 순서 (2026-05-17 종료 시점 — 큐 20 전체 완료 후 갱신)
+## ⏭️ 다음 세션 작업 순서 (2026-05-24 갱신 — 서류 자동기입 9종 완료)
 
-> 세션 시작 시: `CLAUDE.md, CLAUDE_1.md, SKILLS.md, role기획보안_수정.md 읽고 회의록 docs/meetings/2026-05-17-purchase-sale-finance-gate.md 큐 20 완료 노트 확인해줘.`
-> 기획 기준 문서: `role기획보안_수정.md` (프로젝트 루트)
-> 핵심 회의록:
-> - `docs/meetings/2026-05-14-3way-workflow-policy.md` (v5.1 큐 분할 — Phase 1~6)
-> - `docs/meetings/2026-05-16-finance-gate-roundtable.md` (큐 19-F 자금이체 게이트)
-> - `docs/meetings/2026-05-17-purchase-sale-finance-gate.md` (큐 20 매입·판매 전 흐름 게이트 + 큐 20-A~D 완료 노트)
+> **세션 시작 시 읽을 것**: 이 `CLAUDE.md` + import 3종(`CLAUDE_1.md`·`SKILLS.md`·`role기획보안_수정.md`) + 메모리 `project-document-mapping`(서류 시스템 현황·다음 #3 계획 — **가장 중요**) + `project-extension-scene`.
+> **현재 상태 (2026-05-24)**: 서류 자동기입 9종(매입3·판매1·선적4·통관SET) 전면 재구축 완료 (`b6094b0`, 444 테스트 통과). 엔진/매핑은 `app/Services/Documents/`, 양식은 `resources/templates/system/`. 상세 **SKILLS §12**.
+> **다음 작업 순서**: ① **#3 다중차량 서류**(선택형 N대 1서류, 선적 4종 행확장 — 메모리 §#3 구현계획) → ② **AWS 1차 배포**. NICE 실연동은 사용자 별도 프롬프트.
+> **테스트(loop)**: 다음 세션에 `/loop docs/loop-plans/2026-05-24-document-autofill.md` 실행 → 서류 PHPUnit 회귀 박제 + 사용자 브라우저 체크리스트 생성.
+>
+> **📕 더 이상 안 읽어도 되는 stale (역사 보존용 — 현재 작업과 무관, 아래로 스킵)**:
+> - 본 절 아래 "완료된 큐(2026-05-17)" · "큐 20 완료 요약" · Day 1~14 배포 플랜 표 — 전부 **완료된 과거 큐**.
+> - 회의록 2026-05-14/16/17 — 과거 결정 보존용. 현재 서류 작업엔 불필요.
+> - **`SKILLS §8 #16~#18`(dompdf 한글 PDF 폰트) — PDF 폐기로 무효** (참고만). #19(정의명 purge)·#20(extension=zip)은 PhpSpreadsheet 라 **유효**.
+> - `decision_protocol.md`·과거 라운드테이블 — 무거운 신규 안건 때만.
 
 ### 🖥️ 다른 PC에서 작업 재개 절차 (필수)
 
@@ -295,7 +301,7 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 # 1. dev 브랜치 최신화
 git checkout dev && git pull origin dev
 
-# 2. 마이그 누락 확인 (큐 19-K/L 사고 재발 방지 — 회의록 부록 A § 노트북 발견 누락 참조)
+# 2. 마이그 누락 확인 (필수 — 2026-05-24 서류 GAP 컬럼 nice_raw/deregistration_date/nice_spec_cylinders 추가됨)
 php artisan migrate:status
 php artisan migrate     # Pending 있으면 실행
 
@@ -307,7 +313,7 @@ npm run build
 # 4. 캐시 클리어
 php artisan view:clear && php artisan cache:clear
 
-# 5. 자동 테스트 회귀 (현재 기대치: 246 passed)
+# 5. 자동 테스트 회귀 (현재 기대치: 444 passed — 2026-05-24)
 php artisan test
 
 # 6. 개발 서버

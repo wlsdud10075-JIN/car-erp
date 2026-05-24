@@ -338,7 +338,9 @@ jsArray: {!! json_encode($list, JSON_UNESCAPED_UNICODE) !!},
 **원인**: `x-show`로 숨겨진 canvas에서 `new Chart()` 호출 시 width=0
 **해결**: 카테고리 전환 후 `this.$nextTick(() => this.renderCharts())`. 재진입 시 기존 인스턴스 `destroy()` 필수
 
-### 16. dompdf v3 @font-face — `format('truetype')` 외 모두 무시
+> ⚠️ **#16~#18 (dompdf 한글 PDF) — 2026-05-24 무효**: 서류가 PDF→system xlsx 전면 전환(§12)되어 dompdf 미사용. 아래는 역사 보존용(향후 PDF 재도입 시 참고). **#19(정의명 purge)·#20(extension=zip)은 PhpSpreadsheet 라 여전히 유효** — DocumentFiller 템플릿 이관이 #19 패턴 사용.
+
+### 16. dompdf v3 @font-face — `format('truetype')` 외 모두 무시  (⚠️ 무효 — PDF 폐기)
 **원인**: `vendor/dompdf/dompdf/src/Css/Stylesheet.php::_parse_font_face`가 `format('truetype')`만 등록. `format('opentype')` / `format('woff')` 등은 silent skip → 폰트 미등록 → 한글이 빈 박스
 **해결**: `format()` 자체를 빼면 default가 truetype 처리되어 OTF/TTF 모두 등록 가능
 ```css
