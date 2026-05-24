@@ -56,6 +56,8 @@ class Vehicle extends Model
         'dhl_recipient_name', 'dhl_recipient_address', 'dhl_recipient_phone',
         'dhl_sender_name', 'dhl_sender_address', 'dhl_weight', 'dhl_dimensions',
         'dhl_request', 'memo',
+        // Phase 3 서류 자동기입 (2026-05-24) — NICE 원본 보관 + 말소일 + 기통수
+        'nice_raw', 'deregistration_date', 'nice_spec_cylinders',
     ];
 
     protected $casts = [
@@ -67,6 +69,8 @@ class Vehicle extends Model
         'progress_status_rule_version' => 'integer',
         'nice_reg_first_date' => 'date',
         'nice_reg_date' => 'date',
+        'deregistration_date' => 'date',
+        'nice_raw' => 'array',
         'purchase_date' => 'date',
         'sale_date' => 'date',
         'shipping_date' => 'date',
