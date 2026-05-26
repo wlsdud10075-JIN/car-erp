@@ -7,7 +7,7 @@
 
 > **운영 구조 메모**: car-erp는 회사별로 인스턴스·DB·도메인을 개별 운영하는 구조다(멀티테넌트 아님 — 코드 틀만 공유). 이 인스턴스(NEW_CAR_ERP)는 heysellcar 회사용이며, 기존 HEYMAN_ERP 인스턴스를 대체한다. 다른 회사로 확산 시 이 문서가 배포 템플릿이 된다.
 
-> ⚠️ **이 파일만 master 포함(예외)**: CLAUDE.md 규칙상 `.md`는 dev 전용(master 제외)이나, 이 배포기록은 운영 서버에서도 참조하도록 **의도적으로 master에 유지**한다(사용자 결정 2026-05-26). 다른 `.md`(CLAUDE/SKILLS/회의록 등)는 그대로 master 제외. 실제 비밀값은 모두 `***` 마스킹.
+> ⚠️ **이 파일은 dev 전용**: CLAUDE.md 규칙대로 `.md`는 dev 브랜치에만 두고 master(운영 서버)에선 제외한다. dev→master 머지 때마다 modify/delete 충돌로 나오면 **삭제 유지**로 해소. 인프라 식별값(IP·SSH 키명 등)을 담으므로 운영 트리에 두지 않는다. 실제 비밀값은 모두 `***` 마스킹.
 
 ---
 
@@ -336,11 +336,12 @@ sudo chmod 440 /etc/sudoers.d/deploy-fpm
   queue:restart → artisan up`.
 - ⚠️ 배포 중 `artisan down`으로 1~3분 점검 화면 노출됨(무중단 아님). 업무 시간 외 배포 권장.
 
-### 13-5. 첫 배포 테스트
-- 이 문서(`docs/operations/aws-deployment-record.md`)를 dev→master 머지/푸시한 것이
-  **첫 자동배포 테스트**. master push → GitHub Actions `deploy` 워크플로우 → 서버 SSH 배포.
-- 검증: GitHub Actions 탭에서 `deploy` 잡 성공 + 서버 `git log -1`이 해당 커밋인지 확인.
-- (이 `.md`는 master 포함 예외 — 상단 메모 참조. 코드 변경 없어도 배포 파이프라인 자체를 점검.)
+### 13-5. 첫 자동배포 — ✅ 검증 완료 (2026-05-26)
+- NICE fix 코드(`3b8b051`)를 dev→master 머지(`8f82448`)·push 한 것이 **첫 자동배포**였고
+  **성공**: GitHub Actions `deploy #6`, 커밋 `8f82448`, **20초** 만에 초록 완료.
+- 즉 master push → GitHub Actions → 서버 SSH 배포(`git reset --hard` → composer/npm →
+  migrate → 캐시 → fpm reload → up) 파이프라인 **정상 작동 확인**.
+- 이후로는 **dev→master 머지만 하면 자동 배포** (수동 `git pull` 불필요).
 
 ---
 
@@ -387,7 +388,7 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 | NICE 차량조회 연동 (+ 응답 정제 fix) | ✅ 완료 |
 | S3 연동 (버킷·IAM·드라이버·서명 URL·검증) | ✅ 완료 |
 | DB 백업 cron | ✅ 완료 (자동 실행 검증은 익일) |
-| GitHub Actions 자동배포 설정 | ✅ 완료 (이 문서 머지가 첫 테스트) |
+| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #6, `8f82448`, 20초 성공) |
 | 도메인 + HTTPS | ⬜ 보류 (안정화 후) |
 | 런북 §7 기능 점검 (잔여분) | ⬜ 예정 |
 
