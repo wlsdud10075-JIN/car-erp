@@ -13,17 +13,20 @@ use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
- * 큐 9 확장 — G1 50% B/L 잠금 테스트.
- * 회의록 docs/meetings/2026-05-14-3way-workflow-policy.md §G1, SKILLS §13 단일 게이트.
+ * G1 B/L 100% 발급 게이트 테스트 (2026-05-26 외부리뷰 감사 회의 결정).
+ * 회의록 docs/meetings/2026-05-26-external-review-audit.md §사용자결정 1, SKILLS §13.
  *
- * 규칙: bl_document 신규 첨부 시 unpaid_ratio > 0.5면 차단.
+ * 규칙 변경: bl_document 신규 첨부 시 unpaid_ratio > 0(=미완납)이면 차단.
+ *   - 통관·선적 진입(C5)은 50% 유지 / B/L 발급만 100% 완납 필수.
+ *   - 부족분은 관리/관리자 미입금 우회 승인(stage='shipping')으로 발급 가능.
  *
  * 검증 범위:
- * - 미수율 > 50% + 신규 bl_document 첨부 → 차단
- * - 미수율 ≤ 50% + 신규 bl_document 첨부 → 통과
+ * - 미완납(70% 미수) + 신규 bl_document 첨부 → 차단
+ * - 부분입금(40% 미수, 구 50% 룰이면 통과했던 구간) + 신규 첨부 → 차단 (50→100 변경 핵심)
+ * - 완납(미수 0) + 신규 bl_document 첨부 → 통과
  * - grandfather: 기존 bl_document 있는 차량 → 모든 변경 통과
  * - 환율 미입력 외화 (unpaid_ratio = null) → 별도 메시지 차단
- * - admin unpaid_export_override(stage='shipping') 우회 통과
+ * - 미입금 우회 승인(stage='shipping') 우회 통과
  * - bl_document 삭제(빈 값) → 통과
  */
 class G1BlLockTest extends TestCase
@@ -125,10 +128,10 @@ class G1BlLockTest extends TestCase
         return $v;
     }
 
-    public function test_g1_blocks_bl_upload_when_unpaid_ratio_over_50_percent(): void
+    public function test_g1_blocks_bl_upload_when_not_fully_paid(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
-        // 판매가 100만, 입금 30만 → 미수 70만, 미수율 70%
+        // 판매가 100만, 입금 30만 → 미수 70만, 미수율 70% → 미완납 차단
         $v = $this->makeVehicle(['sale_price' => 1000000, 'deposit_down_payment' => 300000]);
         $this->actingAs($admin);
 
@@ -140,16 +143,32 @@ class G1BlLockTest extends TestCase
         $v2->save();
     }
 
-    public function test_g1_allows_bl_upload_when_unpaid_ratio_50_or_less(): void
+    public function test_g1_blocks_bl_upload_when_partially_paid_above_50_percent(): void
     {
+        // 50→100 변경 핵심: 구 50% 룰이면 통과했던 60% 입금(40% 미수)도 이제 차단.
         $admin = User::factory()->create(['permission' => 'admin']);
-        // 판매가 100만, 입금 60만 → 미수 40만, 미수율 40%
+        // 판매가 100만, 입금 60만 → 미수 40만, 미수율 40% (50% 이하지만 완납 아님)
         $v = $this->makeVehicle(['sale_price' => 1000000, 'deposit_down_payment' => 600000]);
         $this->actingAs($admin);
 
         $v2 = Vehicle::find($v->id);
         $v2->bl_document = 'bl/test.pdf';
-        $v2->save();   // 통과 — 예외 없음
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('B/L 발행 차단');
+        $v2->save();
+    }
+
+    public function test_g1_allows_bl_upload_when_fully_paid(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        // 판매가 100만, 입금 100만 → 미수 0, 완납 → 통과
+        $v = $this->makeVehicle(['sale_price' => 1000000, 'deposit_down_payment' => 1000000]);
+        $this->actingAs($admin);
+
+        $v2 = Vehicle::find($v->id);
+        $v2->bl_document = 'bl/test.pdf';
+        $v2->save();   // 완납 — 예외 없음
 
         $this->assertSame('bl/test.pdf', $v2->fresh()->bl_document);
     }

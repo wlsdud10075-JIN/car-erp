@@ -200,16 +200,20 @@ class Vehicle extends Model
     }
 
     /**
-     * 큐 9 확장 — G1 50% B/L 잠금 (회의록 2026-05-14 §G1, SKILLS §13 단일 게이트).
+     * G1 — B/L 100% 발급 게이트 (2026-05-26 외부리뷰 감사 회의 §사용자결정 1).
      *
-     * 룰: `bl_document` 신규 첨부 시 `unpaid_ratio > 0.5`면 차단.
-     * 잔금 50% 이상 입금 후 B/L 발행 가능.
+     * 룰: `bl_document` 신규 첨부 시 `unpaid_ratio > 0`(미완납)이면 차단.
+     * 잔금 100% 완납 후 B/L 발행 가능. (통관·선적 진입 C5는 50% 유지 — 별개 게이트.)
+     *
+     * ⚠️ 2026-05-14 도입 시엔 50% 게이트였으나, 사용자 워크플로우 실제 의도
+     *    ("통관·선적은 50%, B/L(화물 인도권)은 100%")에 맞춰 100%로 상향.
      *
      * 분기:
      *   ① grandfather — 기존에 bl_document 있던 차량은 모든 변경 통과 (수정·교체·삭제 포함)
      *      (사용자 결정 2026-05-18: 이미 운영중 차량은 우회)
      *   ② 환율 미입력 외화 차량(unpaid_ratio = null) → 별도 메시지로 차단
-     *   ③ admin `unpaid_export_override` (stage='shipping') 승인 있으면 우회 (큐 2.6 인프라 재사용)
+     *   ③ `unpaid_export_override` (stage='shipping') 승인 있으면 우회 — 관리/관리자 승인
+     *      (큐 2.6 인프라 재사용. 승인 권한 = User::canApproveUnpaidExport)
      *
      * 호출 위치: saving 훅 (시드·artisan auth 없으면 우회).
      */
@@ -245,18 +249,18 @@ class Vehicle extends Model
             ]);
         }
 
-        if ($ratio <= 0.5) {
-            return;
+        if ($ratio <= 0) {
+            return;   // 완납 — 발행 가능
         }
 
-        // 50% 룰 위반 — admin 미입금 우회 승인 확인 (shipping 단계)
+        // 100% 미완납 — 미입금 우회 승인 확인 (shipping 단계, 관리/관리자)
         if ($this->hasUnpaidOverride('shipping')) {
             return;
         }
 
         $percent = number_format($ratio * 100, 1);
         throw ValidationException::withMessages([
-            'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (50% 초과). 잔금 50% 이상 입금 후 발행 가능. 또는 관리자 미입금 우회 승인(선적 단계) 필요.",
+            'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인(선적 단계) 필요.",
         ]);
     }
 
@@ -454,8 +458,8 @@ class Vehicle extends Model
             // admin/super 잠금 해제 후 1회만 통과 (cache token 1회 소비 → 즉시 재잠금).
             $vehicle->guardLedgerLockOnSaving();
 
-            // 큐 9 확장 — G1 50% B/L 잠금 (SKILLS §13 단일 게이트).
-            // bl_document 신규 첨부 시 unpaid_ratio > 0.5면 차단. grandfather + admin 우회 분기.
+            // G1 — B/L 100% 발급 게이트 (2026-05-26 회의 §사용자결정 1, SKILLS §13).
+            // bl_document 신규 첨부 시 unpaid_ratio > 0(미완납)면 차단. grandfather + 관리/관리자 우회 분기.
             $vehicle->guardBlFiftyPercentRuleOnSaving();
 
             // 큐 14-4-4 — G2 같은 바이어 미수 + 신규 거래 가드.

@@ -1888,7 +1888,7 @@ class WorkflowGapTest extends TestCase
 
     private function makeCompletedVehicle(int $salesmanId, ?string $bl = null): Vehicle
     {
-        // G1 50% B/L 게이트 우회 패턴 — sale_price 1 + FP 1 완납.
+        // G1 B/L 100% 게이트 통과 패턴 — sale_price 1 + FP 1 완납.
         $v = $this->makeVehicle([
             'progress_status_rule_version' => 3,
             'salesman_id' => $salesmanId,
