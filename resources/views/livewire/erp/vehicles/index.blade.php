@@ -3508,7 +3508,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
                     @if($deregistration_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($deregistration_document_path) }}" target="_blank"
+                        <a href="{{ \App\Support\VehicleDocUrl::for($deregistration_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeDeregistrationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
@@ -4077,7 +4077,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
                     @if($export_declaration_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($export_declaration_document_path) }}" target="_blank"
+                        <a href="{{ \App\Support\VehicleDocUrl::for($export_declaration_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeExportDeclarationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
@@ -4164,7 +4164,7 @@ function vehicleColumnsToggle() {
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
                     @if($bl_document_path)
                     <div class="mt-1 flex items-center gap-3">
-                        <a href="{{ Storage::disk(config('filesystems.vehicle_docs_disk'))->url($bl_document_path) }}" target="_blank"
+                        <a href="{{ \App\Support\VehicleDocUrl::for($bl_document_path) }}" target="_blank"
                            class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
                         <button type="button" wire:click="removeBlDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
