@@ -162,7 +162,7 @@ class ManagementWorkflowChecklistTest extends TestCase
         $v->refreshCaches();
         $this->assertSame('판매중', $v->fresh()->progress_status);
 
-        // 5) 판매완료 — 판매 잔금 100% confirmed (G1·C5 50% 룰 통과 준비)
+        // 5) 판매완료 — 판매 잔금 100% confirmed (G1 100% / C5 50% 룰 통과 준비)
         $v->finalPayments()->create([
             'amount' => 2_000_000, 'exchange_rate' => 1, 'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
@@ -245,8 +245,8 @@ class ManagementWorkflowChecklistTest extends TestCase
         );
     }
 
-    /** 락 G1 — 50% B/L 잠금 (saving 훅). 미수율 > 50% 시 B/L 발행 차단. */
-    public function test_lock_g1_bl_fifty_percent_blocks_then_payment_passes(): void
+    /** 락 G1 — 100% B/L 게이트 (saving 훅). 미완납(미수율 > 0) 시 B/L 발행 차단. */
+    public function test_lock_g1_bl_full_payment_blocks_then_payment_passes(): void
     {
         $admin = $this->admin();
         $this->actingAs($admin);
@@ -268,13 +268,13 @@ class ManagementWorkflowChecklistTest extends TestCase
             $this->fail('G1 락이 B/L 발행을 막아야 한다');
         } catch (ValidationException $e) {
             $this->assertStringContainsString('B/L 발행 차단', $e->getMessage());
-            $this->assertStringContainsString('50%', $e->getMessage());
+            $this->assertStringContainsString('100% 미완납', $e->getMessage());
         }
 
-        // 해결 — 잔금 60% 입금 (미수율 40% ≤ 50%)
+        // 해결 — 잔금 100% 완납 (미수율 0)
         $v = Vehicle::find($v->id);
         $v->finalPayments()->create([
-            'amount' => 600_000, 'exchange_rate' => 1, 'payment_date' => '2026-05-02',
+            'amount' => 1_000_000, 'exchange_rate' => 1, 'payment_date' => '2026-05-02',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);
         $v->refreshCaches();
@@ -283,7 +283,7 @@ class ManagementWorkflowChecklistTest extends TestCase
         $v = Vehicle::find($v->id);
         $v->bl_document = 'bl/test.pdf';
         $v->save();
-        $this->assertSame('bl/test.pdf', $v->fresh()->bl_document, '입금 50% 이상 → B/L 발행 통과');
+        $this->assertSame('bl/test.pdf', $v->fresh()->bl_document, '완납 → B/L 발행 통과');
     }
 
     /** 락 Ledger — 재무 확정 잔금 후 회계 영향 필드 잠금 (saving 훅). admin 잠금 해제로 1회 통과. */

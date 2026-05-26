@@ -688,8 +688,8 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
 | 차량 편집 판매 탭 미납률 % | `$vehicle->unpaid_ratio` |
 | 채권관리 KPI / 위험도 행 | `sale_unpaid_amount` / `sale_unpaid_amount_krw_cache` |
 | 관리자 대시보드 미수금 KPI | 동일 (`sale_unpaid_amount_krw_cache` 합산) |
-| **G1 50% 룰** (큐 9 확장 — B/L 잠금) | `unpaid_ratio > 0.5` 단일 게이트 |
-| **C5 50% 완화** (G 안건 2026-05-20 — 통관 게이트) | `unpaid_ratio > 0.5` 시만 차단. 외화 환율 미입력 → 별도 메시지. admin `unpaid_export_overrides` 우회. 입금률 ≥ 50% 자유 통관 |
+| **G1 100% B/L 게이트** (2026-05-26 회의 — B/L 발급) | `unpaid_ratio > 0`(미완납) 차단. **B/L 발급은 잔금 100% 완납 필수**. grandfather + `unpaid_export_overrides`(stage='shipping') 우회 — 관리/관리자 승인(`canApproveUnpaidExport`). ⚠️ 2026-05-14 도입 시 50%였으나 사용자 워크플로우(통관·선적 50% / B/L 100%)에 맞춰 상향 |
+| **C5 50% 완화** (G 안건 2026-05-20 — 통관 게이트) | `unpaid_ratio > 0.5` 시만 차단. 외화 환율 미입력 → 별도 메시지. admin `unpaid_export_overrides` 우회. 입금률 ≥ 50% 자유 통관 (**B/L과 별개 — 50% 유지**) |
 
 > KRW 환산은 `sale_unpaid_amount_krw_cache` (Vehicle saving 훅 자동 갱신). 환율 미입력 외화 차량은 `null`로 캐시되며 위험도 평가에서 '환율 미입력 경고' 액션으로 분리.
 

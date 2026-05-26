@@ -213,12 +213,15 @@ class User extends Authenticatable
     }
 
     /**
-     * 큐 2.6 — admin 미입금 우회 승인 권한.
-     * admin/super만 가능. 영업/수출통관/재무 role은 차단.
+     * 큐 2.6 — 미입금 우회 승인 권한.
+     * admin/super + 관리 role 가능. 영업/수출통관/재무 role은 차단.
+     *
+     * 2026-05-26 외부리뷰 감사 회의 결정 — B/L 100% 게이트 부족분 발급 승인을
+     * 관리 role 도 수행. (회의록 §사용자결정 1: "[관리] 및 관리자의 승인")
      */
     public function canApproveUnpaidExport(): bool
     {
-        return $this->isAdmin();
+        return $this->isAdmin() || $this->role === '관리';
     }
 
     /**

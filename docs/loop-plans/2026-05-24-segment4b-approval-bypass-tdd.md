@@ -5,6 +5,28 @@
 > 대상 워크플로우: 사용자 명확화 (2026-05-20) — "100% 다 못받고 90%정도 받았는데 바이어가 너무 원해서 추후에 준다고 하면 [관리] 및 관리자의 승인을 받고 진행"
 > 관련 인프라: 큐 14 `ApprovalRequest` 모델 (기존 — `app/Models/ApprovalRequest.php`)
 
+---
+
+## ✅ 구현 완료 (2026-05-26) — 본 플랜은 실행됨. 이하 본문은 설계 기록
+
+> 박제(red)가 아니라 **실제 구현 + green 검증**으로 완료. 본 §1~§9 본문은 계획 당시 기록(아카이브).
+> 회의록: `docs/meetings/2026-05-26-external-review-audit.md` §사용자결정 1.
+
+**구현 요약**
+- `User::canApproveUnpaidExport()` — `isAdmin()` → `isAdmin() || role === '관리'`. **관리 role + admin/super** 가 승인 가능.
+- 승인 우회 인프라 = 기존 `ApprovalRequest`(BL_ISSUE_EARLY 신규 type) 대신 **`UnpaidExportOverride` stage='shipping' 재사용** (advisor 채택안). G1 게이트가 `hasUnpaidOverride('shipping')` 확인.
+- `used_at` 단발성·`rejected_at`은 미채택 — 기존 인프라의 존재-체크(영구, append-only) 유지. 따라서 §7 케이스 7(단발성)·9(rejected)는 적용 안 함.
+
+**테스트 가능 (green 검증 명령)**
+```bash
+php artisan test --filter="BlDocumentApprovalBypassTest"
+```
+- 권한 매트릭스: 관리/admin/super 승인 가능 ✓ / 영업·재무·수출통관 불가 ✗.
+- 관리 승인 우회 → 미완납 차량 B/L 발급 통과.
+- 다른 차량 승인은 적용 안 됨 (per-vehicle).
+
+---
+
 ## 1. 목표 (Success Criteria)
 
 관리/관리자 승인 우회 사양을 PHPUnit 테스트로 **빨갛게 박제**. 큐 14 인프라 재사용 패턴 박제.

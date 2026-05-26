@@ -5,6 +5,32 @@
 > 대상 워크플로우: `워크플로우 개선 버전.txt` line 38~39 ("바이어에게 받은 금액이 50% 넘어 수출통관·선적 진행, B/L 문서는 잔금 100% 다 치뤄야만 바이어에게 전달, 거래완료")
 > 사용자 명확화 (2026-05-20): "B/L 문서 발급 자체를 100% 완납 전까지 차단"
 
+---
+
+## ✅ 구현 완료 (2026-05-26) — 본 플랜은 실행됨. 이하 본문은 설계 기록
+
+> 박제(red)가 아니라 **실제 구현 + green 검증**으로 완료. 본 §1~§9 본문은 계획 당시 기록(아카이브).
+> 회의록: `docs/meetings/2026-05-26-external-review-audit.md` §사용자결정 1.
+
+**구현 요약**
+- `Vehicle::guardBlFiftyPercentRuleOnSaving()` — `unpaid_ratio > 0.5` → `> 0`(완납) 차단. 통과 조건 = 미수율 0(100% 완납).
+- 통관·선적 진입(C5 `guardStageOrderForExport`)은 **50% 유지** — B/L만 100%.
+- 우회 = 기존 `UnpaidExportOverride` stage='shipping' **재사용** (별도 `bl_issue` stage/ApprovalRequest type 안 만듦 — advisor 채택안). 90% 시나리오는 C5(≥50%)를 이미 통과해 conflation 구조적 불가.
+
+**계획 대비 변경**
+- 신규 파일 `BlDocumentGateTest.php` 대신 기존 **`G1BlLockTest.php`를 100% 기준으로 재작성**(8건).
+- `used_at` 단발성(§ 가정)은 미채택 — 기존 인프라의 존재-체크(영구) 유지.
+
+**테스트 가능 (green 검증 명령)**
+```bash
+php artisan test --filter="G1BlLockTest|BlDocumentApprovalBypassTest|VehicleLifecycleE2ETest"
+```
+- `G1BlLockTest` (8건) — 미완납/부분입금 차단·완납 통과·grandfather·환율 미입력·우회.
+- `VehicleLifecycleE2ETest` (전체 생애주기 E2E) — 차량 등록(매입중)→매입완료→말소완료→판매중→[C5 40%선적막힘/50%통과]→선적중→선적완료→통관중→[G1 미완납 B/L막힘/100%통과]→거래완료.
+- 승인 우회는 `BlDocumentApprovalBypassTest` (segment4b).
+
+---
+
 ## 1. 목표 (Success Criteria)
 
 100% B/L 발급 게이트 사양을 PHPUnit 테스트로 **빨갛게 박제**. 다음 큐 진행 시 success criteria로 사용.

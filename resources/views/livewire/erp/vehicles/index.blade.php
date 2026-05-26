@@ -4099,7 +4099,7 @@ function vehicleColumnsToggle() {
                 <span class="section-title">선적 (B/L)</span>
             </div>
 
-            {{-- 큐 9 확장 — G1 50% B/L 잠금 상태 표시. 기존 bl_document가 없는 차량만 검사 (grandfather). --}}
+            {{-- G1 100% B/L 게이트 상태 표시 (2026-05-26 회의). 기존 bl_document가 없는 차량만 검사 (grandfather). --}}
             @if($editingId)
             @php
                 $g1Vehicle = \App\Models\Vehicle::with('unpaidExportOverrides')->find($editingId);
@@ -4111,19 +4111,19 @@ function vehicleColumnsToggle() {
             <div class="mb-3 rounded-md border px-3 py-2 text-xs
                 {{ $g1Ratio === null
                     ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : ($g1Ratio > 0.5
+                    : ($g1Ratio > 0
                         ? ($g1HasShippingOverride ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
                 @if($g1Ratio === null)
                     <span class="font-semibold">⚠ 환율 미입력</span> — 외화 차량 환율 입력 후 B/L 발행 가능
-                @elseif($g1Ratio > 0.5)
+                @elseif($g1Ratio > 0)
                     @if($g1HasShippingOverride)
-                        <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
+                        <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리/관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
                     @else
-                        <span class="font-semibold">🔒 B/L 발행 잠김</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (50% 초과). 잔금 50% 이상 입금 후 발행 가능. 또는 관리자 미입금 우회 승인(선적 단계) 필요.
+                        <span class="font-semibold">🔒 B/L 발행 잠김</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인(선적 단계) 필요.
                     @endif
                 @else
-                    <span class="font-semibold">✓ B/L 발행 가능</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (50% 이하)
+                    <span class="font-semibold">✓ B/L 발행 가능</span> — 잔금 100% 완납
                 @endif
             </div>
             @endif
@@ -4357,7 +4357,7 @@ function vehicleColumnsToggle() {
         <div class="flex items-start gap-2">
             <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
             <div class="flex-1">
-                <p class="text-xs font-semibold text-amber-800">관리자 — 미입금 우회 승인</p>
+                <p class="text-xs font-semibold text-amber-800">관리/관리자 — 미입금 우회 승인</p>
                 <p class="mt-0.5 text-[11px] text-amber-700">
                     미입금 잔존: {{ $unpaidKrw !== null ? number_format($unpaidKrw).' 원' : '없음' }}
                     @if($existingOverrides->count() > 0)
