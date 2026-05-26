@@ -12,9 +12,10 @@ use App\Services\Documents\DocValue;
  *
  * 매핑 제외:
  * - 매매업 등록번호(D3·G3): NICE 비제공·거래신고 관리번호 — 사용자 수기 (공란)
- * - 검사종료(I11): NICE resValidPeriod 분할은 NICE ingest 시 확정 (현재 공란)
  * - I6·I13: 템플릿 수식 — 엔진이 자동 보존
- * NICE 칸(형식·제원관리번호·출력·기통·검사일)은 nice_raw/전용컬럼에서 읽음 → NICE 연동 전엔 공란.
+ * NICE 칸(형식·제원관리번호·출력)은 nice_raw 에서 읽음 → NICE 연동 전엔 공란.
+ * 기통수(G12)·검사시작(I10)·검사종료(I11)는 nice_raw 의 engineSpec·resValidPeriod 를
+ *   서류 생성 시점에 파싱(DocValue::niceCylinders/niceInspectionStart/End) — 전용 컬럼·입력 필드 없이.
  */
 class ClearanceSetMapping
 {
@@ -48,12 +49,13 @@ class ClearanceSetMapping
                 'B10' => fn (Vehicle $v) => $v->port_of_loading,                   // Port
                 'D10' => fn (Vehicle $v) => DocValue::destinationCountry($v),      // 목적국
                 'G10' => fn (Vehicle $v) => $v->nice_spec_displacement,            // 배기량
-                'I10' => fn (Vehicle $v) => DocValue::niceRaw($v, 'resValidPeriod'), // 검사시작 (NICE)
+                'I10' => fn (Vehicle $v) => DocValue::niceInspectionStart($v),     // 검사시작 (NICE resValidPeriod 분할)
+                'I11' => fn (Vehicle $v) => DocValue::niceInspectionEnd($v),       // 검사종료 (NICE resValidPeriod 분할)
                 'B11' => fn (Vehicle $v) => $v->vessel_name,                       // VSL
                 'G11' => fn (Vehicle $v) => DocValue::niceRaw($v, 'maxPower'),     // 출력 (NICE)
                 'B12' => fn (Vehicle $v) => $v->container_number ?: $v->bl_loading_location, // 컨테이너 NO
                 'D12' => fn (Vehicle $v) => $v->shipping_method,                   // con/roro
-                'G12' => fn (Vehicle $v) => $v->nice_spec_cylinders,               // 기통수 (NICE)
+                'G12' => fn (Vehicle $v) => DocValue::niceCylinders($v),           // 기통수 (NICE engineSpec 앞 — nice_raw 파싱)
                 'I12' => fn (Vehicle $v) => $v->mileage,                           // 주행거리
                 'G13' => fn (Vehicle $v) => $v->nice_reg_fuel_type,                // 연료
                 'B14' => fn (Vehicle $v) => DocValue::consigneeBlock($v),          // 컨사이니 (이름+ID+주소)

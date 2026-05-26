@@ -121,13 +121,13 @@ class NiceApiService
             }
         };
 
-        // 숫자 칸 정제 — NICE 가 공백·단위·콤마·'-'·'미상' 등 비숫자를 보내도 숫자만 추출.
-        //   숫자 없으면 null → $set 이 skip → 빈 칸(폼 검증 '0 이상의 숫자' 통과).
-        //   폼이 비숫자 값(공백 등)에 막혀 저장 안 되던 문제 해소.
+        // 숫자 칸 정제 — NICE 는 '주값(보조값)' 또는 '주값/보조값' 형식으로 줌:
+        //   전장 "4840(0)"(=4840.0) · 차량중량 "2115(2235)"(=공차2115/총2235) · 승차 "4/0"(=4명).
+        //   ⇒ **첫 숫자 그룹만** 추출(보조값·소수점 분리). "4840(0)"→4840 / "2115(2235)"→2115 / "4/0"→4.
+        //   (이전 '비숫자 전부 제거'는 보조값을 붙여 48400·21152235·40 처럼 틀어졌음)
+        //   숫자 없으면 null → $set skip → 빈 칸(폼 검증 '0 이상의 숫자' 통과).
         $digits = function ($value): ?string {
-            $num = preg_replace('/[^0-9]/', '', (string) ($value ?? ''));
-
-            return $num !== '' ? $num : null;
+            return preg_match('/\d+/', (string) ($value ?? ''), $m) ? $m[0] : null;
         };
 
         // ── registration + 기본정보 ──
@@ -137,7 +137,13 @@ class NiceApiService
         $set($reg, 'nice_reg_use_type', $d['resUseType'] ?? null);
         $set($reg, 'nice_reg_vehicle_form', $d['resCarModelType'] ?? null);
         $set($reg, 'nice_reg_owner_name', $d['resFinalOwner'] ?? null);
-        $set($reg, 'nice_reg_owner_addr', $d['resGarage'] ?? null);
+        // 소유자주소 — NICE 가 상세부를 마스킹(예: "서울특별시 강서구 *** *******")해 보냄.
+        //   마스킹 주소를 기입하면 말소신청서 등 서류에 '***'가 찍히므로, 마스킹(`*` 포함) 시
+        //   미입력(빈 칸 → 수기 입력). 마스킹 안 된 전체 주소일 때만 기입. (RRN 과 동일 정책)
+        $addr = trim((string) ($d['resGarage'] ?? ''));
+        if ($addr !== '' && ! str_contains($addr, '*')) {
+            $reg['nice_reg_owner_addr'] = $addr;
+        }
         // RRN(주민/법인등록번호) — ssancar 가 마스킹(예: XXXXXX-*******) 해 보내면 숫자 형식 불가.
         //   실제 13자리(숫자6-숫자7) 형식일 때만 기입. 마스킹/형식 불일치 → 미입력(빈 칸 → 수기 입력).
         //   (Vehicle 모델이 저장 시 APP_KEY 로 자동 암호화)
