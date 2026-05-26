@@ -1219,6 +1219,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function validateVehicleForm(): void
     {
         $nonNegativeNumeric = function (string $attribute, mixed $value, \Closure $fail) {
+            // 앞뒤 공백 방어 — NICE/붙여넣기로 들어온 공백-only 값은 trim 후 빈 값 취급(미입력 허용).
+            // (behavior change: ' ' 가 이전엔 '숫자 아님' 에러였으나 이제 빈 칸으로 통과)
+            if (is_string($value)) {
+                $value = trim($value);
+            }
             if ($value === '' || $value === null) {
                 return;
             }
