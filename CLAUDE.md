@@ -277,23 +277,29 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | 10 | **모바일 반응형 + my-crm UI 풀-이식** — 10-A 사이드바 자체 Alpine 교체(220↔48 + drawer 3-state) / 10-B 디자인 시스템 풀-이식 / 10-C 페어 렌더 (8개 페이지 중 receivables만 신규 추가, 7개는 기 적용) / 10-D 슬라이드 패널 모바일 분기 (8개 모두 기 적용 — 무변경 검증) | ✅ 완료 |
 | 11 | ~~서류 자동 생성 5종 PDF + 2종 Excel (dompdf + CIPL)~~ | 🔄 **폐기·대체됨** (2026-05-24 → 11-R) |
 | **11-R** | **서류 자동기입 전면 재구축 — system xlsx 9종** (매입3: 말소신청서·말소계약서·위임장 / 판매1: Proforma Invoice / 선적4: 컨테이너·RORO × Invoice&Packing·Contract / 통관: SET 8시트 마스터연동). 엔진 `App\Services\Documents\DocumentFiller`(노란셀만 기입+노란제거+수식보존+샘플비움). 구 PDF blade·CIPL 삭제. **상세 SKILLS §12** | ✅ 완료 (2026-05-24, `b6094b0`) |
-| **11-R2** | 서류 다중차량 — 선택형 N대 1서류 (선적 4종 행 동적확장). 고정 그룹테이블 X | 🔜 **다음 작업** (메모리 `project-document-mapping` §#3) |
+| **11-R2** | 서류 다중차량 — 선택형 N대 1서류 (선적 4종 30슬롯 오프라인 확장 + 런타임 removeRow 트림). 체크박스 선택 UI | ✅ 완료 (2026-05-25, `812cecc`) |
+| - | 통관 SET 다중차량 | ⏸️ **보류** (사용자 결정 — 선적 4종으로 충분. 추후 인보이스 3시트만 N대) |
 | 12 | 포워딩사 이메일 자동 발송 | ❌ 영구 제거 (사용자 결정) |
-| - | NICE API 실연동 | 🟡 사용자 **별도 프롬프트로 진행** (키 보유, `nice_raw`·`nice_spec_cylinders`·`deregistration_date` 컬럼 대기) |
-| 13 | AWS Lightsail 배포 | ⏳ (#3 후) |
+| - | NICE API 실연동 | ✅ 완료 (2026-05-25, `698f0c9`) — **ssancar-erp 미들웨어 경유**(직접호출 X). `.env` `NICE_PROVIDE_URL/TOKEN` 채우면 동작. 미구현 2건(기통수·검사종료)=`docs/nice-followup-items.md` |
+| 13 | AWS Lightsail 배포 | 🟡 **준비 완료**(`97dc6f0` — S3전환·DB일일백업·deploy.yml·런북). 사용자 AWS 실행 대기. `docs/operations/deployment.md` |
+| - | 차량 등록 사진 N장(jpg/png, S3) | ✅ 완료 (2026-05-25, `ed7deaf`) |
 
-## ⏭️ 다음 세션 작업 순서 (2026-05-24 갱신 — 서류 자동기입 9종 완료)
+## ⏭️ 다음 세션 작업 순서 (2026-05-26 갱신 — #3·NICE·배포준비·차량사진 완료)
 
-> **세션 시작 시 읽을 것**: 이 `CLAUDE.md` + import 3종(`CLAUDE_1.md`·`SKILLS.md`·`role기획보안_수정.md`) + 메모리 `project-document-mapping`(서류 시스템 현황·다음 #3 계획 — **가장 중요**) + `project-extension-scene`.
-> **현재 상태 (2026-05-24)**: 서류 자동기입 9종(매입3·판매1·선적4·통관SET) 전면 재구축 완료 (`b6094b0`, 444 테스트 통과). 엔진/매핑은 `app/Services/Documents/`, 양식은 `resources/templates/system/`. 상세 **SKILLS §12**.
-> **다음 작업 순서**: ① **#3 다중차량 서류**(선택형 N대 1서류, 선적 4종 행확장 — 메모리 §#3 구현계획) → ② **AWS 1차 배포**. NICE 실연동은 사용자 별도 프롬프트.
-> **테스트(loop)**: 다음 세션에 `/loop docs/loop-plans/2026-05-24-document-autofill.md` 실행 → 서류 PHPUnit 회귀 박제 + 사용자 브라우저 체크리스트 생성.
+> **세션 시작 시 읽을 것**: 이 `CLAUDE.md` + import 3종(`CLAUDE_1.md`·`SKILLS.md`·`role기획보안_수정.md`) + 메모리 **`project-deployment`(배포 현황·미검증 — 가장 중요)** · `project-document-mapping`(서류·NICE 현황) · `project-extension-scene`(전부 완료).
+> **현재 상태 (2026-05-26, 465 테스트 통과, 전부 dev push)**:
+> - **#3 다중차량 선적 서류 완료** (`812cecc`) — 선적 4종 오프라인 30슬롯 확장(`scripts/extend_shipping_templates.php`) + 런타임 `DocumentFiller::fillMulti`(removeRow 트림). 차량목록 체크박스 UI.
+> - **NICE 연동 완료** (`698f0c9`) — **ssancar-erp 미들웨어 경유**(직접호출 X). `.env` `NICE_PROVIDE_URL/TOKEN` 채우면 동작. 미설정 시 수동입력 fallback.
+> - **AWS 배포 준비 완료** (`97dc6f0`) — S3 업로드 전환(`VEHICLE_DOCS_DISK`)·DB 일일백업(`db:backup` 03:00 + `DB_BACKUP_DISK` S3)·`deploy.yml`(master push 자동배포)·런북 `docs/operations/deployment.md`.
+> - **차량 등록 사진 N장(jpg/png, 최대10, S3)** (`ed7deaf`) — `vehicle_photos` 테이블 + 기본정보 탭 갤러리.
+> **다음 작업 순서**:
+> 1. **AWS 1차 배포 실행** — 코드 준비 끝, **사용자 AWS 주도**. `docs/operations/deployment.md` 따라 인스턴스·S3·cron·Secrets. 막히면 동행.
+> 2. **NICE 미구현 2건 마감** — 사용자가 실 NICE 응답으로 `engineSpec`(기통수)·`resValidPeriod`(검사종료 분할) 형식 확인하면 마감. 상세 `docs/nice-followup-items.md`.
+> 3. **(선택/대기)** 통관 SET 다중차량(보류 해제 시 인보이스 3시트만 N대) / 차량사진 점진추가 UX(updatedPhotoFiles merge) / extension-scene 2-2 잔금 layout 코스메틱.
+> **⏳ 미검증 3건** (배포후/브라우저): S3 "기존 파일 보기" URL · 다중차량 선적 Excel 시각 · 사진있는 차량 force-delete MySQL FK cascade. (deployment.md §7 체크리스트)
+> **⚠️ 다른 PC**: `php artisan migrate` 필수 (nice_raw 기존 + **vehicle_photos 신규**).
 >
-> **📕 더 이상 안 읽어도 되는 stale (역사 보존용 — 현재 작업과 무관, 아래로 스킵)**:
-> - 본 절 아래 "완료된 큐(2026-05-17)" · "큐 20 완료 요약" · Day 1~14 배포 플랜 표 — 전부 **완료된 과거 큐**.
-> - 회의록 2026-05-14/16/17 — 과거 결정 보존용. 현재 서류 작업엔 불필요.
-> - **`SKILLS §8 #16~#18`(dompdf 한글 PDF 폰트) — PDF 폐기로 무효** (참고만). #19(정의명 purge)·#20(extension=zip)은 PhpSpreadsheet 라 **유효**.
-> - `decision_protocol.md`·과거 라운드테이블 — 무거운 신규 안건 때만.
+> **📕 stale (역사 보존용 — 스킵)**: 아래 "완료된 큐(2026-05-17)"·"큐 20 완료 요약"·Day 1~14 배포플랜표 / 회의록 2026-05-14~17 / `SKILLS §8 #16~#18`(dompdf PDF 폐기 무효, #19·#20은 유효) / `decision_protocol.md`·과거 라운드테이블(무거운 신규 안건 때만).
 
 ### 🖥️ 다른 PC에서 작업 재개 절차 (필수)
 
@@ -301,7 +307,7 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 # 1. dev 브랜치 최신화
 git checkout dev && git pull origin dev
 
-# 2. 마이그 누락 확인 (필수 — 2026-05-24 서류 GAP 컬럼 nice_raw/deregistration_date/nice_spec_cylinders 추가됨)
+# 2. 마이그 누락 확인 (필수 — 서류 GAP 컬럼 + 2026-05-25 vehicle_photos 테이블 추가됨)
 php artisan migrate:status
 php artisan migrate     # Pending 있으면 실행
 
@@ -313,7 +319,7 @@ npm run build
 # 4. 캐시 클리어
 php artisan view:clear && php artisan cache:clear
 
-# 5. 자동 테스트 회귀 (현재 기대치: 444 passed — 2026-05-24)
+# 5. 자동 테스트 회귀 (현재 기대치: 465 passed — 2026-05-26)
 php artisan test
 
 # 6. 개발 서버
