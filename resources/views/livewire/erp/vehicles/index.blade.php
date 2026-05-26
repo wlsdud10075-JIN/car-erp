@@ -1326,6 +1326,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   - currency는 select 강제(default 'USD') → 별도 추가 불필요
         //   - 2026-05-20 사용자 정정: KRW는 환율 입력 불필요 (한국돈). Vehicle::saving 훅이 자동 1 normalize.
         //   - 외화만 사용자 명시 입력 강제 (C1 원형 보존).
+        //   - 2026-05-26: buyer_id_str 'required' 는 이제 이 규칙의 단일 enforcement.
+        //     (DB CHECK chk_sale_required 가 MySQL 8 error 3823 — FK 컬럼 CHECK 금지 —
+        //      때문에 buyer_id 를 제외함. 마이그레이션 2026_05_20_000002 docblock 참조.)
         $salePrice = (float) str_replace(',', '', $this->sale_price_str ?: '0');
         if ($salePrice > 0) {
             $rules['sale_date'] = ['required', 'date'];
