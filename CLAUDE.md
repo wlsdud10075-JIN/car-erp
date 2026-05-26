@@ -281,23 +281,23 @@ $geminiResult = gemini -p "질문" --approval-mode yolo 2>&1
 | - | 통관 SET 다중차량 | ⏸️ **보류** (사용자 결정 — 선적 4종으로 충분. 추후 인보이스 3시트만 N대) |
 | 12 | 포워딩사 이메일 자동 발송 | ❌ 영구 제거 (사용자 결정) |
 | - | NICE API 실연동 | ✅ 완료 (2026-05-25, `698f0c9`) — **ssancar-erp 미들웨어 경유**(직접호출 X). `.env` `NICE_PROVIDE_URL/TOKEN` 채우면 동작. 미구현 2건(기통수·검사종료)=`docs/nice-followup-items.md` |
-| 13 | AWS Lightsail 배포 | 🟡 **준비 완료**(`97dc6f0` — S3전환·DB일일백업·deploy.yml·런북). 사용자 AWS 실행 대기. `docs/operations/deployment.md` |
+| 13 | AWS Lightsail 배포 | ✅ **완료** (2026-05-26) — 인스턴스 live `52.79.200.151`(heysellcar/NEW_CAR_ERP), S3·NICE·DB백업 cron·**자동배포 검증**(deploy #6). 도메인/HTTPS만 보류. 기록=`docs/operations/aws-deployment-record.md` |
 | - | 차량 등록 사진 N장(jpg/png, S3) | ✅ 완료 (2026-05-25, `ed7deaf`) |
 
-## ⏭️ 다음 세션 작업 순서 (2026-05-26 갱신 — #3·NICE·배포준비·차량사진 완료)
+## ⏭️ 다음 세션 작업 순서 (2026-05-26 갱신 — AWS 운영 배포 완료·자동배포 검증·NICE fix. **안정화만 남음**)
 
-> **세션 시작 시 읽을 것**: 이 `CLAUDE.md` + import 3종(`CLAUDE_1.md`·`SKILLS.md`·`role기획보안_수정.md`) + 메모리 **`project-deployment`(배포 현황·미검증 — 가장 중요)** · `project-document-mapping`(서류·NICE 현황) · `project-extension-scene`(전부 완료).
-> **현재 상태 (2026-05-26, 465 테스트 통과, 전부 dev push)**:
-> - **#3 다중차량 선적 서류 완료** (`812cecc`) — 선적 4종 오프라인 30슬롯 확장(`scripts/extend_shipping_templates.php`) + 런타임 `DocumentFiller::fillMulti`(removeRow 트림). 차량목록 체크박스 UI.
-> - **NICE 연동 완료** (`698f0c9`) — **ssancar-erp 미들웨어 경유**(직접호출 X). `.env` `NICE_PROVIDE_URL/TOKEN` 채우면 동작. 미설정 시 수동입력 fallback.
-> - **AWS 배포 준비 완료** (`97dc6f0`) — S3 업로드 전환(`VEHICLE_DOCS_DISK`)·DB 일일백업(`db:backup` 03:00 + `DB_BACKUP_DISK` S3)·`deploy.yml`(master push 자동배포)·런북 `docs/operations/deployment.md`.
-> - **차량 등록 사진 N장(jpg/png, 최대10, S3)** (`ed7deaf`) — `vehicle_photos` 테이블 + 기본정보 탭 갤러리.
-> **다음 작업 순서**:
-> 1. **AWS 1차 배포 실행** — 코드 준비 끝, **사용자 AWS 주도**. `docs/operations/deployment.md` 따라 인스턴스·S3·cron·Secrets. 막히면 동행.
-> 2. **NICE 미구현 2건 마감** — 사용자가 실 NICE 응답으로 `engineSpec`(기통수)·`resValidPeriod`(검사종료 분할) 형식 확인하면 마감. 상세 `docs/nice-followup-items.md`.
-> 3. **(선택/대기)** 통관 SET 다중차량(보류 해제 시 인보이스 3시트만 N대) / 차량사진 점진추가 UX(updatedPhotoFiles merge) / extension-scene 2-2 잔금 layout 코스메틱.
-> **⏳ 미검증 3건** (배포후/브라우저): S3 "기존 파일 보기" URL · 다중차량 선적 Excel 시각 · 사진있는 차량 force-delete MySQL FK cascade. (deployment.md §7 체크리스트)
-> **⚠️ 다른 PC**: `php artisan migrate` 필수 (nice_raw 기존 + **vehicle_photos 신규**).
+> **세션 시작 시 읽을 것**: 이 `CLAUDE.md` + import 3종(`CLAUDE_1.md`·`SKILLS.md`·`role기획보안_수정.md`) + 메모리 **`project-deployment`(배포 현황 — 가장 중요)** · `project-seeder-contract`(시더 운영/더미 분리) · `project-db-tier-mismatch`(SQLite/MariaDB/운영 MySQL8 차이) · `project-document-mapping`(서류·NICE). **전체 배포 기록 = `docs/operations/aws-deployment-record.md`(dev 전용).**
+> **현재 상태 (2026-05-26, 480 테스트 통과, 전부 dev push)** — **AWS Lightsail 운영 배포 사실상 완료. 안정화만 남음.**
+> - **인스턴스 live** `52.79.200.151` (heysellcar용 NEW_CAR_ERP, Lightsail 서울 4GB/Ubuntu22). 앱 구동 `http://52.79.200.151`.
+> - **자동배포 검증 완료** — `deploy #6` (master push `8f82448`, 20초 성공). 이후 **dev→master 머지만 하면 자동 SSH 배포** (수동 git pull 불필요).
+> - **S3 (버킷 `heysellcar-erp-docs`·IAM·드라이버 `league/flysystem-aws-s3-v3`·서명URL)·NICE 연동·DB백업 cron(03:00)·시더 운영/더미 분리(ProductionSeeder/DemoSeeder)** 전부 완료·배포됨.
+> - **NICE 데이터 fix** (`3b8b051`): 숫자 `4840(0)`·`2115(2235)`·`4/0` → 첫 숫자 그룹 추출. RRN·주소는 **NICE가 마스킹**이라 skip→수기 (ssancar `vehicle_api.py` 패스스루 확인 — 못 풂). 기통수·검사종료는 nice_raw에서 **서류 생성 시 파싱**(`DocValue::niceCylinders/niceInspectionStart/End`, 통관 SET).
+> **다음 작업 = 안정화(검증) + 도메인뿐**:
+> 1. **기능 안정화 검증** (서버 브라우저): NICE 조회 숫자 정상(4840 등)·통관서류 기통수/검사종료·사진있는 차량 force-delete FK cascade·다중차량 선적 Excel 시각·cron 익일 03:00 백업 1건.
+> 2. **도메인 + HTTPS** — 보류(사용자 결정, 안정화 후). heysellcar.com 구 HEYMAN_ERP서 전환 → certbot → `.env APP_URL` → config:cache. (배포기록 §14-1)
+> 3. **(선택)** 통관 SET 다중차량(인보이스 3시트만 N대) / extension-scene 2-2 잔금 layout 코스메틱 / 말소 시 주소 필수가드 / NICE키 env분리·교체(채팅 노출).
+> **⚠️ 자동배포 주의**: master push = `artisan down` 1~3분 점검화면(무중단 X) → 업무시간 외 권장. `.md`는 master 제외(머지 시 modify/delete 충돌 → **삭제 유지**로 해소).
+> **⚠️ 다른 PC**: `php artisan migrate` 필수.
 >
 > **📕 stale (역사 보존용 — 스킵)**: 아래 "완료된 큐(2026-05-17)"·"큐 20 완료 요약"·Day 1~14 배포플랜표 / 회의록 2026-05-14~17 / `SKILLS §8 #16~#18`(dompdf PDF 폐기 무효, #19·#20은 유효) / `decision_protocol.md`·과거 라운드테이블(무거운 신규 안건 때만).
 
