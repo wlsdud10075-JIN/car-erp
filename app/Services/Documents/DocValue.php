@@ -69,6 +69,41 @@ class DocValue
         return data_get($v->nice_raw, $key);
     }
 
+    /**
+     * NICE engineSpec "기통/배기량"(예: "4/1950") → 기통수(슬래시 앞 숫자).
+     * 전용 컬럼/입력 필드 없이 nice_raw 에서 서류 생성 시점에만 파싱 (사용자 결정).
+     */
+    public static function niceCylinders(Vehicle $v): ?string
+    {
+        $spec = (string) self::niceRaw($v, 'engineSpec');
+        $head = str_contains($spec, '/') ? substr($spec, 0, strpos($spec, '/')) : $spec;
+
+        return preg_match('/\d+/', $head, $m) ? $m[0] : null;
+    }
+
+    /**
+     * NICE resValidPeriod "2025-09-15 ~ 2027-09-14  주행거리:..." → 검사 유효기간 [시작, 종료] 날짜.
+     * 형식에서 YYYY-MM-DD 를 순서대로 추출(첫째=시작, 둘째=종료). 단일 날짜면 종료는 null.
+     */
+    private static function niceValidPeriodDates(Vehicle $v): array
+    {
+        preg_match_all('/\d{4}-\d{2}-\d{2}/', (string) self::niceRaw($v, 'resValidPeriod'), $m);
+
+        return [$m[0][0] ?? null, $m[0][1] ?? null];
+    }
+
+    /** 검사 유효기간 시작일 (resValidPeriod 첫 날짜). */
+    public static function niceInspectionStart(Vehicle $v): ?string
+    {
+        return self::niceValidPeriodDates($v)[0];
+    }
+
+    /** 검사 유효기간 종료일 (resValidPeriod 둘째 날짜). */
+    public static function niceInspectionEnd(Vehicle $v): ?string
+    {
+        return self::niceValidPeriodDates($v)[1];
+    }
+
     /** 목적국 — 컨사이니 국가 우선, 없으면 바이어 국가. */
     public static function destinationCountry(Vehicle $v): ?string
     {

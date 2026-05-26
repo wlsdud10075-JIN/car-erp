@@ -107,4 +107,38 @@ class NiceApiServiceTest extends TestCase
 
         Http::assertSentCount(1);
     }
+
+    /**
+     * 실 NICE 형식 박제 (2026-05-26 로컬 실호출로 확인된 포맷):
+     * - 숫자는 '주값(보조)' 또는 '주값/보조' → 첫 숫자 그룹만 (4840(0)→4840, 2115(2235)→2115, 4/0→4)
+     * - 소유자 주민번호·주소는 NICE 가 마스킹(*) → 미매핑(빈 칸 → 수기)
+     */
+    public function test_parses_quirky_numeric_and_skips_masked_owner_info(): void
+    {
+        Http::fake(['*' => Http::response([
+            'success' => true,
+            'data' => [
+                'cbdLt' => '4840(0)', 'cbdBt' => '1860(0)', 'cbdHg' => '1440(0)',
+                'vhcleWt' => '2115(2235)', 'tkcarPscapCo' => '4/0', 'engineSpec' => '4/1950',
+                'resGarage' => '서울특별시 강서구 *** *******',   // 마스킹
+                'resUserIdentiyNo' => '110111-*******',          // 마스킹
+            ],
+        ], 200)]);
+
+        $r = (new NiceApiService('https://ssancar.test/x', 'tok'))->lookupVehicle('69나3316', '(주)전진');
+
+        // 숫자 — 첫 그룹만 (×10·연결 버그 회귀 방지)
+        $this->assertSame('4840', $r['spec']['nice_spec_length']);
+        $this->assertSame('1860', $r['spec']['nice_spec_width']);
+        $this->assertSame('1440', $r['spec']['nice_spec_height']);
+        $this->assertSame('2115', $r['spec']['weight_kg']);
+        $this->assertSame('2115', $r['spec']['nice_spec_curb_weight']);
+        $this->assertSame('4', $r['registration']['nice_reg_passengers']);
+        $this->assertSame('1950', $r['spec']['nice_spec_displacement']);
+
+        // 마스킹 — 미매핑(빈 칸 → 수기). 원본은 raw 보존(서류 파싱용).
+        $this->assertArrayNotHasKey('nice_reg_owner_addr', $r['registration']);
+        $this->assertArrayNotHasKey('nice_reg_owner_rrn', $r['registration']);
+        $this->assertSame('4/1950', $r['raw']['engineSpec']);
+    }
 }
