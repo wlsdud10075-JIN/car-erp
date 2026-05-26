@@ -110,10 +110,24 @@ class NiceApiService
      */
     private function transform(array $d): array
     {
+        // 모든 값 trim 후 빈 값은 skip — NICE 가 앞뒤 공백/패딩을 섞어 보내는 경우 방어
+        // (날짜·코드 칸 포함). 비숫자 칸은 그대로, 숫자 칸은 아래 $digits 로 별도 정제.
         $set = function (array &$arr, string $key, $value): void {
+            if (is_string($value)) {
+                $value = trim($value);
+            }
             if ($value !== null && $value !== '') {
                 $arr[$key] = $value;
             }
+        };
+
+        // 숫자 칸 정제 — NICE 가 공백·단위·콤마·'-'·'미상' 등 비숫자를 보내도 숫자만 추출.
+        //   숫자 없으면 null → $set 이 skip → 빈 칸(폼 검증 '0 이상의 숫자' 통과).
+        //   폼이 비숫자 값(공백 등)에 막혀 저장 안 되던 문제 해소.
+        $digits = function ($value): ?string {
+            $num = preg_replace('/[^0-9]/', '', (string) ($value ?? ''));
+
+            return $num !== '' ? $num : null;
         };
 
         // ── registration + 기본정보 ──
@@ -124,25 +138,31 @@ class NiceApiService
         $set($reg, 'nice_reg_vehicle_form', $d['resCarModelType'] ?? null);
         $set($reg, 'nice_reg_owner_name', $d['resFinalOwner'] ?? null);
         $set($reg, 'nice_reg_owner_addr', $d['resGarage'] ?? null);
-        $set($reg, 'nice_reg_owner_rrn', $d['resUserIdentiyNo'] ?? null);   // Vehicle 모델이 저장 시 자동 암호화
+        // RRN(주민/법인등록번호) — ssancar 가 마스킹(예: XXXXXX-*******) 해 보내면 숫자 형식 불가.
+        //   실제 13자리(숫자6-숫자7) 형식일 때만 기입. 마스킹/형식 불일치 → 미입력(빈 칸 → 수기 입력).
+        //   (Vehicle 모델이 저장 시 APP_KEY 로 자동 암호화)
+        $rrn = trim((string) ($d['resUserIdentiyNo'] ?? ''));
+        if (preg_match('/^\d{6}-\d{7}$/', $rrn)) {
+            $reg['nice_reg_owner_rrn'] = $rrn;
+        }
         $set($reg, 'nice_reg_first_date', $this->formatYmd($d['resFirstDate'] ?? null));
         $set($reg, 'nice_reg_fuel_type', $d['useFuelNm'] ?? null);
-        $set($reg, 'nice_reg_passengers', $d['tkcarPscapCo'] ?? null);
-        $set($reg, 'nice_reg_max_load', $d['mxmmLdg'] ?? null);
-        $set($reg, 'mileage', $d['resValidDistance'] ?? null);   // 기본정보 주행거리
-        $set($reg, 'year', $d['resCarYearModel'] ?? null);       // 기본정보 연식
+        $set($reg, 'nice_reg_passengers', $digits($d['tkcarPscapCo'] ?? null));
+        $set($reg, 'nice_reg_max_load', $digits($d['mxmmLdg'] ?? null));
+        $set($reg, 'mileage', $digits($d['resValidDistance'] ?? null));   // 기본정보 주행거리
+        $set($reg, 'year', $digits($d['resCarYearModel'] ?? null));       // 기본정보 연식
         $set($reg, 'model_type', $d['commCarName'] ?? null);     // 기본정보 차종
         $set($reg, 'brand', $d['mnfctEntrpsNm'] ?? null);        // 기본정보 제조사
 
         // ── spec + 기본정보 ──
         $spec = [];
-        $set($spec, 'nice_spec_length', $d['cbdLt'] ?? null);
-        $set($spec, 'nice_spec_width', $d['cbdBt'] ?? null);
-        $set($spec, 'nice_spec_height', $d['cbdHg'] ?? null);
+        $set($spec, 'nice_spec_length', $digits($d['cbdLt'] ?? null));
+        $set($spec, 'nice_spec_width', $digits($d['cbdBt'] ?? null));
+        $set($spec, 'nice_spec_height', $digits($d['cbdHg'] ?? null));
         $set($spec, 'nice_spec_maker', $d['mnfctEntrpsNm'] ?? null);
-        $set($spec, 'nice_spec_year', $d['resCarYearModel'] ?? null);
-        $set($spec, 'nice_spec_curb_weight', $d['vhcleWt'] ?? null);
-        $set($spec, 'weight_kg', $d['vhcleWt'] ?? null);          // 기본정보 중량
+        $set($spec, 'nice_spec_year', $digits($d['resCarYearModel'] ?? null));
+        $set($spec, 'nice_spec_curb_weight', $digits($d['vhcleWt'] ?? null));
+        $set($spec, 'weight_kg', $digits($d['vhcleWt'] ?? null));          // 기본정보 중량
         $displacement = $this->parseDisplacement($d['engineSpec'] ?? null);
         $set($spec, 'nice_spec_displacement', $displacement);
         $set($spec, 'cc', $displacement);                        // 기본정보 배기량
