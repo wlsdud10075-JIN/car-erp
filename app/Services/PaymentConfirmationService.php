@@ -50,19 +50,25 @@ class PaymentConfirmationService
             throw new DomainException('자금 이체로 생성된 잔금은 InterVehicleTransfer 흐름에서 재무 확정됩니다. 본 Service로 직접 확정할 수 없습니다.');
         }
 
-        if ($payment->confirmed_at !== null) {
-            throw new DomainException('이미 재무 확정된 잔금입니다 (재확정 차단).');
-        }
-
         $this->assertPaidSettlementGuard($payment->vehicle);
 
+        // claudefinalreview C — 동시/중복 확정(더블클릭·재전송) 시 확정자·스냅샷 덮어쓰기(감사오염) 방지.
+        // 행 잠금(lockForUpdate)으로 직렬화 후 재확인 — 2번째 호출은 confirmed_at SET 된 걸 보고 차단.
+        // ⚠️ 모델 update 유지(query-builder 아님) → saved 이벤트로 부모 차량 캐시 refresh 보존.
+        // (SQLite 테스트는 lockForUpdate 무동작이나 순차 재확인은 검증됨 / 운영 MySQL 은 실제 row lock.)
         DB::transaction(function () use ($payment, $financeUser, $note) {
-            $payment->update([
+            $locked = FinalPayment::whereKey($payment->id)->lockForUpdate()->first();
+            if ($locked === null || $locked->confirmed_at !== null) {
+                throw new DomainException('이미 재무 확정된 잔금입니다 (재확정 차단).');
+            }
+            $locked->update([
                 'confirmed_by_user_id' => $financeUser->id,
                 'confirmed_at' => now(),
                 'finance_note' => $note,
             ]);
         });
+
+        $payment->refresh();
     }
 
     /**
@@ -78,19 +84,22 @@ class PaymentConfirmationService
 
         $payment = $payment->fresh();
 
-        if ($payment->confirmed_at !== null) {
-            throw new DomainException('이미 재무 확정된 매입 잔금입니다 (재확정 차단).');
-        }
-
         $this->assertPaidSettlementGuard($payment->vehicle);
 
+        // claudefinalreview C — 행 잠금으로 동시/중복 확정 직렬화 + 재확인 (감사오염 방지, 캐시 이벤트 보존).
         DB::transaction(function () use ($payment, $financeUser, $note) {
-            $payment->update([
+            $locked = PurchaseBalancePayment::whereKey($payment->id)->lockForUpdate()->first();
+            if ($locked === null || $locked->confirmed_at !== null) {
+                throw new DomainException('이미 재무 확정된 매입 잔금입니다 (재확정 차단).');
+            }
+            $locked->update([
                 'confirmed_by_user_id' => $financeUser->id,
                 'confirmed_at' => now(),
                 'finance_note' => $note,
             ]);
         });
+
+        $payment->refresh();
     }
 
     /**
