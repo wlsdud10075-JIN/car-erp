@@ -76,7 +76,21 @@ class ConsigneeGateTest extends TestCase
         ]);
 
         $this->assertSame('rrn', $c->fresh()->id_type);
+        // 접근자는 복호화된 평문 반환 (서류 생성 등 정상 동작)
         $this->assertSame('900101-1234567', $c->fresh()->id_value);
+        // claudefinalreview 3-3 — DB raw 값은 암호화(at-rest), 평문 아님
+        $raw = DB::table('consignees')->where('id', $c->id)->value('id_value');
+        $this->assertNotSame('900101-1234567', $raw, 'id_value 가 평문으로 저장됨(암호화 미적용)');
+        $this->assertNotEmpty($raw);
+    }
+
+    public function test_consignee_null_id_value_stays_null(): void
+    {
+        // encrypted cast 가 null 을 깨지 않는지 (DecryptException 없이 null 유지)
+        $buyer = Buyer::create(['name' => 'BUYER2', 'is_active' => true]);
+        $c = Consignee::create(['buyer_id' => $buyer->id, 'name' => 'CONS2', 'is_active' => true]);
+
+        $this->assertNull($c->fresh()->id_value);
     }
 
     public function test_shipping_entry_blocked_without_consignee(): void
