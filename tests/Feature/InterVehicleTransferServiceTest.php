@@ -512,9 +512,16 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->service->approve($transfer, $c['manager']);
         $this->service->confirmByFinance($transfer, $c['finance']);
 
-        $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
-        $this->service->confirmByFinance($transfer, $c['finance']);
+        // claudefinalreview 3-1 — 재호출은 atomic conditional update 가 0건 전이 → 차단 + 결제 중복 생성 안 됨.
+        try {
+            $this->service->confirmByFinance($transfer, $c['finance']);
+            $this->fail('executed 상태 재확정이 차단되지 않음');
+        } catch (DomainException $e) {
+            $this->assertStringContainsString('이미 처리', $e->getMessage());
+        }
+
+        // 첫 확정의 ±쌍 2건만 존재(이중기입 없음).
+        $this->assertSame(2, FinalPayment::where('transfer_id', $transfer->id)->count());
     }
 
     /**
@@ -530,8 +537,9 @@ class InterVehicleTransferServiceTest extends TestCase
         $this->service->confirmByFinance($transfer, $c['finance']);
         $this->service->approveVoid($transfer, $c['manager'], '취소');
 
+        // claudefinalreview 3-1 — voided 상태도 conditional update 0건 전이 → 차단(메시지 통합).
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('관리 승인 대기 상태의 이체만');
+        $this->expectExceptionMessage('이미 처리');
         $this->service->confirmByFinance($transfer, $c['finance']);
     }
 

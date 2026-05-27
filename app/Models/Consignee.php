@@ -25,7 +25,13 @@ class Consignee extends Model
         'contact_phone', 'address', 'memo', 'is_active',
     ];
 
-    protected $casts = ['is_active' => 'boolean'];
+    // claudefinalreview 3-3 — id_value 저장 시 암호화(at-rest). rrn(주민번호) 평문 저장 방지.
+    // 차량 RRN 과 동일 정책. id_value 는 SQL 검색에 안 쓰여 암호화 무영향(단, DB 직접조회로
+    // 번호 검색은 불가 — 1인 운영 컨텍스트에서 영향 없음). null 은 그대로 null 유지.
+    protected $casts = [
+        'is_active' => 'boolean',
+        'id_value' => 'encrypted',
+    ];
 
     public function buyer(): BelongsTo
     {

@@ -232,9 +232,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             $target = $this->modalPurchaseFrom ?: '매입처';
             $bank = $this->modalPurchaseBank ?: '';
-            $account = $this->modalPurchaseAccount ?: '';
-            if ($bank !== '' || $account !== '') {
-                $this->financeNote = trim("{$target}/{$bank}/{$account}로 송금", '/');
+            // claudefinalreview 3-2 — 송금메모에서 계좌번호 제외(암호화 우회 방지).
+            // 계좌는 화면(modalPurchaseAccount)에만 복호화 표시, finance_note 평문엔 미저장.
+            if ($bank !== '' || ($this->modalPurchaseFrom ?: '') !== '') {
+                $parts = array_values(array_filter([$target, $bank], fn ($s) => $s !== ''));
+                $this->financeNote = implode('/', $parts).' 계좌로 송금';
             }
         }
 

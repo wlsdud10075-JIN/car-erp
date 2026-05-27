@@ -23,8 +23,11 @@ class VehicleDocUrl
 
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
 
+        // claudefinalreview 3-4 — 임시 URL 유효시간 15→3분 단축 (감사 우회 창 축소).
+        // 3분 = URL 생성~다운로드 시작까지 충분. 뷰에 렌더된 링크를 열어둔 채 3분 넘겨 클릭하면
+        // 403 만료 → 새로고침 시 재발급되므로 정상 동작(만료 시 여기를 확인).
         return $disk->providesTemporaryUrls()
-            ? $disk->temporaryUrl($path, now()->addMinutes(15))
+            ? $disk->temporaryUrl($path, now()->addMinutes(3))
             : $disk->url($path);
     }
 }
