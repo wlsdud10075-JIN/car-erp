@@ -176,20 +176,40 @@ class InterVehicleTransferService
     public function confirmByFinance(InterVehicleTransfer $transfer, User $financeUser, ?string $note = null): void
     {
         $transfer = $transfer->fresh();
-        if ($transfer->status !== InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
-            throw new DomainException("관리 승인 대기 상태의 이체만 재무 확정할 수 있습니다 (현재 상태: {$transfer->status}).");
-        }
+
+        // SoD — 관리 승인자 ≠ 재무 확정자 (비-race 검증, 빠른 실패용 유지).
         if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
             throw new DomainException('관리 승인자와 재무 확정자는 다른 사용자여야 합니다 (SoD).');
         }
 
+        // paid settlement guard — read-only 검증 (race 무관).
         $this->assertPaidSettlementGuard($transfer->sourceVehicle, $transfer->targetVehicle);
 
         DB::transaction(function () use ($transfer, $financeUser, $note) {
+            $confirmedAt = now();
+
+            // claudefinalreview 3-1 — 상태전이를 atomic conditional update 로 (이중기입 방지).
+            // AWAITING→EXECUTED 를 단일 쿼리로 전이하고, 1건 전이한 호출만 FinalPayment 를 생성한다.
+            // (구: 상태확인을 트랜잭션 밖에서 → 동시/중복 호출 시 ±결제쌍 중복 생성 위험.
+            //  이제 두 번째 호출은 0건 전이 → throw → 결제 미생성.) 상태확인은 이 update 가 단일 출처.
+            $affected = InterVehicleTransfer::whereKey($transfer->id)
+                ->where('status', InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                ->update([
+                    'status' => InterVehicleTransfer::STATUS_EXECUTED,
+                    'executed_at' => $confirmedAt,
+                    'confirmed_by_user_id' => $financeUser->id,
+                    'confirmed_at' => $confirmedAt,
+                    'finance_note' => $note,
+                ]);
+
+            if ($affected !== 1) {
+                // 이미 executed/voided 등으로 전이됐거나 동시 확정이 선행됨 → 결제 생성 안 함(롤백).
+                throw new DomainException('이미 처리됐거나 상태가 변경된 이체입니다 (동시 확정 방지). 현재 상태를 확인하세요.');
+            }
+
             $today = now()->toDateString();
             $amount = (float) $transfer->amount;
             $marker = "차량 간 자금 이체 #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
-            $confirmedAt = now();
 
             // 큐 20-B — transfer 잔금은 본질적으로 재무 확정된 ledger 페어. 생성 시점에 confirmed_at SET.
             // (분자 A안 필터 finalPayments()->whereNotNull('confirmed_at') 에 즉시 반영)
@@ -214,15 +234,10 @@ class InterVehicleTransferService
                 'confirmed_at' => $confirmedAt,
                 'finance_note' => $note,
             ]);
-
-            $transfer->update([
-                'status' => InterVehicleTransfer::STATUS_EXECUTED,
-                'executed_at' => $confirmedAt,
-                'confirmed_by_user_id' => $financeUser->id,
-                'confirmed_at' => $confirmedAt,
-                'finance_note' => $note,
-            ]);
         });
+
+        // 조건부 update 는 in-memory 모델을 갱신하지 않으므로 호출자 일관성 위해 동기화.
+        $transfer->refresh();
     }
 
     /**
