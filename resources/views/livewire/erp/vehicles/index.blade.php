@@ -3,6 +3,7 @@
 use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\Country;
 use App\Models\FinalPayment;
 use App\Models\ForwardingCompany;
 use App\Models\InterVehicleTransfer;
@@ -239,6 +240,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $discharge_port_id_str  = '';
     public bool   $is_export_cleared = false;
 
+    // ── 작업2 (2026-05-27) — 바이어·컨사이니 인라인 quick-add (패널 안 닫고 즉석 등록) ──
+    public bool   $quickAddOpen     = false;
+    public string $quickAddType     = '';   // 'buyer' | 'consignee'
+    public string $quickAddContext  = '';   // 'sale' | 'export' | 'bl'
+    public string $quickAddBuyerName = '';   // consignee 등록 시 종속 바이어명 표시용
+    public string $qaName         = '';
+    public string $qaCountryId    = '';
+    public string $qaSalesmanId   = '';
+    public string $qaContactName  = '';
+    public string $qaContactPhone = '';
+
     // ── 선적 (B/L) ────────────────────────────────────────────────
     public string $bl_buyer_id_str     = '';
     public string $bl_consignee_id_str = '';
@@ -381,6 +393,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Computed]
     public function buyers() { return Buyer::where('is_active', true)->orderBy('name')->get(); }
+
+    // 작업2 (2026-05-27) — quick-add 폼 국가 드롭다운용.
+    #[Computed]
+    public function countries() { return Country::orderBy('name')->get(); }
 
     // 2026-05-21 — CIPL 드롭다운 (Port 마스터 type 별 활성 목록)
     #[Computed]
@@ -577,6 +593,146 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; unset($this->consigneesForSale); }
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
+
+    // ── 작업2 (2026-05-27) — 차량 패널 내 바이어·컨사이니 즉석 등록 ──────────
+    //   context = 'sale' | 'export' | 'bl' (어느 드롭다운에서 호출됐는지).
+    //   consignee 는 해당 context 의 바이어가 선택돼 있어야 함 (buyer_id 종속).
+    //   ⚠️ 저장 후 *_id_str 를 서버에서 직접 할당 → updatedXxx 훅 안 뜸 →
+    //      종속 consignee 리셋·computed unset 을 saveQuickAdd 에서 수동 처리.
+    private function contextBuyerId(string $context): string
+    {
+        return match ($context) {
+            'sale'   => $this->buyer_id_str,
+            'export' => $this->export_buyer_id_str,
+            'bl'     => $this->bl_buyer_id_str,
+            default  => '',
+        };
+    }
+
+    public function openQuickAdd(string $type, string $context): void
+    {
+        if (! in_array($type, ['buyer', 'consignee'], true) || ! in_array($context, ['sale', 'export', 'bl'], true)) {
+            return;
+        }
+
+        if ($type === 'consignee') {
+            $buyerId = $this->contextBuyerId($context);
+            if ($buyerId === '') {
+                $this->dispatch('notify', message: '바이어 먼저 선택', type: 'warning');
+
+                return;
+            }
+            $this->quickAddBuyerName = (string) (Buyer::find($buyerId)?->name ?? '');
+        }
+
+        $this->quickAddType = $type;
+        $this->quickAddContext = $context;
+        $this->resetQuickAddForm();
+
+        // 바이어 quick-add: 차량 패널의 현재 선택 영업담당자를 기본값으로 prefill (수정 가능)
+        if ($type === 'buyer') {
+            $this->qaSalesmanId = $this->salesman_id_str;
+        }
+
+        $this->quickAddOpen = true;
+    }
+
+    public function saveQuickAdd(): void
+    {
+        $this->validate([
+            'qaName'       => 'required|string|max:100',
+            'qaCountryId'  => 'nullable|integer|exists:countries,id',
+            'qaSalesmanId' => 'nullable|integer|exists:salesmen,id',
+        ]);
+
+        $countryId = $this->qaCountryId !== '' ? (int) $this->qaCountryId : null;
+
+        if ($this->quickAddType === 'buyer') {
+            $buyer = Buyer::create([
+                'name'          => $this->qaName,
+                'country_id'    => $countryId,
+                'salesman_id'   => $this->qaSalesmanId !== '' ? (int) $this->qaSalesmanId : null,
+                'contact_name'  => $this->qaContactName ?: null,
+                'contact_phone' => $this->qaContactPhone ?: null,
+                'is_active'     => true,
+            ]);
+            $this->selectNewBuyer($this->quickAddContext, (string) $buyer->id);
+            unset($this->buyers);
+            $this->dispatch('notify', message: '신규 바이어 등록 완료', type: 'success');
+        } else {
+            $buyerId = $this->contextBuyerId($this->quickAddContext);
+            if ($buyerId === '') {
+                $this->dispatch('notify', message: '바이어 먼저 선택', type: 'warning');
+
+                return;
+            }
+            $consignee = Consignee::create([
+                'name'          => $this->qaName,
+                'buyer_id'      => (int) $buyerId,
+                'country_id'    => $countryId,
+                'contact_name'  => $this->qaContactName ?: null,
+                'contact_phone' => $this->qaContactPhone ?: null,
+                'is_active'     => true,
+            ]);
+            $this->selectNewConsignee($this->quickAddContext, (string) $consignee->id);
+            $this->dispatch('notify', message: '신규 컨사이니 등록 완료', type: 'success');
+        }
+
+        $this->quickAddOpen = false;
+        $this->resetQuickAddForm();
+
+        // 패널 dirty 마킹 — morphdom 프로그램적 select 변경은 input/change 이벤트 안 쏨 →
+        // 자동선택 후 패널이 clean 으로 보여 ESC/backdrop 닫힘 시 새 항목이 차량에 안 붙는 footgun 방지.
+        $this->dispatch('panel-mark-dirty');
+    }
+
+    private function selectNewBuyer(string $context, string $id): void
+    {
+        if ($context === 'sale') {
+            $this->buyer_id_str = $id;
+            $this->consignee_id_str = '';
+            unset($this->consigneesForSale);
+        } elseif ($context === 'export') {
+            $this->export_buyer_id_str = $id;
+            $this->export_consignee_id_str = '';
+            unset($this->consigneesForExport);
+        } elseif ($context === 'bl') {
+            $this->bl_buyer_id_str = $id;
+            $this->bl_consignee_id_str = '';
+            unset($this->consigneesForBl);
+        }
+    }
+
+    private function selectNewConsignee(string $context, string $id): void
+    {
+        // unset 먼저 → 재렌더 시 computed 가 신규 컨사이니 포함하도록 재계산.
+        if ($context === 'sale') {
+            unset($this->consigneesForSale);
+            $this->consignee_id_str = $id;
+        } elseif ($context === 'export') {
+            unset($this->consigneesForExport);
+            $this->export_consignee_id_str = $id;
+        } elseif ($context === 'bl') {
+            unset($this->consigneesForBl);
+            $this->bl_consignee_id_str = $id;
+        }
+    }
+
+    public function cancelQuickAdd(): void
+    {
+        $this->quickAddOpen = false;
+        $this->resetQuickAddForm();
+    }
+
+    private function resetQuickAddForm(): void
+    {
+        $this->qaName = '';
+        $this->qaCountryId = '';
+        $this->qaSalesmanId = '';
+        $this->qaContactName = '';
+        $this->qaContactPhone = '';
+        $this->resetErrorBag(['qaName', 'qaCountryId', 'qaSalesmanId']);
+    }
 
     // C1 — 통화가 KRW로 변경되면 환율 reset (KRW 차량에 환율값 dirty 방지).
     public function updatedCurrency(): void
@@ -3025,7 +3181,7 @@ function vehicleColumnsToggle() {
         if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
     },
     confirmDiscard() { this.confirmOpen = false; $wire.close(); },
-}" x-on:switch-tab.window="tab = $event.detail.tab" @keyup.escape.window="attemptClose()">
+}" x-on:switch-tab.window="tab = $event.detail.tab" @panel-mark-dirty.window="dirty = true" @keyup.escape.window="attemptClose()">
 {{-- Backdrop --}}
 <div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
 
@@ -3617,7 +3773,11 @@ function vehicleColumnsToggle() {
                 </div>
                 <div><label class="label-base">환율 @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" /></div>
                 <div>
-                    <label class="label-base">바이어 </label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">바이어 </label>
+                        <button type="button" wire:click="openQuickAdd('buyer','sale')"
+                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                    </div>
                     <select wire:model.live="buyer_id_str" class="input-base input-required">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
@@ -3626,7 +3786,12 @@ function vehicleColumnsToggle() {
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">컨사이니 </label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">컨사이니 </label>
+                        <button type="button" wire:click="openQuickAdd('consignee','sale')"
+                                @if($buyer_id_str === '') disabled @endif
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                    </div>
                     <select wire:model="consignee_id_str" class="input-base input-required"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
@@ -3997,7 +4162,11 @@ function vehicleColumnsToggle() {
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
-                    <label class="label-base">통관 바이어</label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">통관 바이어</label>
+                        <button type="button" wire:click="openQuickAdd('buyer','export')"
+                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                    </div>
                     <select wire:model.live="export_buyer_id_str" class="input-base">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
@@ -4006,7 +4175,12 @@ function vehicleColumnsToggle() {
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">통관 컨사이니</label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">통관 컨사이니</label>
+                        <button type="button" wire:click="openQuickAdd('consignee','export')"
+                                @if($export_buyer_id_str === '') disabled @endif
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                    </div>
                     <select wire:model="export_consignee_id_str" class="input-base"
                             @if($export_buyer_id_str === '') disabled @endif>
                         <option value="">{{ $export_buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
@@ -4115,7 +4289,7 @@ function vehicleColumnsToggle() {
                         ? ($g1HasShippingOverride ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
                 @if($g1Ratio === null)
-                    <span class="font-semibold">⚠ 환율 미입력</span> — 외화 차량 환율 입력 후 B/L 발행 가능
+                    <span class="font-semibold">⚠ 판매가 미입력</span> — 판매 정보(판매가) 입력 후 B/L 발행 가능
                 @elseif($g1Ratio > 0)
                     @if($g1HasShippingOverride)
                         <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리/관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
@@ -4131,7 +4305,11 @@ function vehicleColumnsToggle() {
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
-                    <label class="label-base">선적 바이어</label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">선적 바이어</label>
+                        <button type="button" wire:click="openQuickAdd('buyer','bl')"
+                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                    </div>
                     <select wire:model.live="bl_buyer_id_str" class="input-base">
                         <option value="">-- 선택 --</option>
                         @foreach($this->buyers as $b)
@@ -4140,7 +4318,12 @@ function vehicleColumnsToggle() {
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">선적 컨사이니</label>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">선적 컨사이니</label>
+                        <button type="button" wire:click="openQuickAdd('consignee','bl')"
+                                @if($bl_buyer_id_str === '') disabled @endif
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                    </div>
                     <select wire:model="bl_consignee_id_str" class="input-base"
                             @if($bl_buyer_id_str === '') disabled @endif>
                         <option value="">{{ $bl_buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
@@ -4759,6 +4942,70 @@ function vehicleColumnsToggle() {
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
                 취소 요청 보내기
             </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 작업2 (2026-05-27) — 차량 등록/수정 중 바이어·컨사이니 인라인 quick-add.
+     패널 안 닫고 즉석 등록 → 자동 선택. 슬라이드 패널 stacking context 밖(z-100)에 배치. --}}
+@if($quickAddOpen)
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="quick-add-modal">
+    <div class="card w-full max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">
+            {{ $quickAddType === 'buyer' ? '신규 바이어 등록' : '신규 컨사이니 등록' }}
+            <span class="ml-1 text-xs font-normal text-gray-400">
+                ({{ ['sale' => '판매', 'export' => '수출통관', 'bl' => '선적'][$quickAddContext] ?? '' }})
+            </span>
+        </h3>
+        @if($quickAddType === 'consignee')
+        <p class="mt-1 text-xs text-gray-500">바이어 <span class="font-medium text-gray-700">{{ $quickAddBuyerName }}</span> 에 종속됩니다.</p>
+        @endif
+
+        <div class="mt-4 space-y-3">
+            <div>
+                <label class="label-base">{{ $quickAddType === 'buyer' ? '바이어명' : '컨사이니명' }} <span class="text-red-500">*</span></label>
+                <input wire:model="qaName" type="text" class="input-base" autofocus />
+                @error('qaName')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">국가</label>
+                <select wire:model="qaCountryId" class="input-base">
+                    <option value="">-- 선택 --</option>
+                    @foreach($this->countries as $c)
+                    <option value="{{ $c->id }}">{{ $c->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @if($quickAddType === 'buyer')
+            <div>
+                <label class="label-base">영업담당자</label>
+                <select wire:model="qaSalesmanId" class="input-base">
+                    <option value="">-- 선택 --</option>
+                    @foreach($this->salesmen as $s)
+                    <option value="{{ $s->id }}">{{ $s->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @endif
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="label-base">담당자</label>
+                    <input wire:model="qaContactName" type="text" class="input-base" />
+                </div>
+                <div>
+                    <label class="label-base">전화</label>
+                    <input wire:model="qaContactPhone" type="text" class="input-base" />
+                </div>
+            </div>
+            <p class="text-[11px] text-gray-400">이메일·주소·메모 등 상세 정보는 등록 후 바이어/컨사이니 화면에서 보완할 수 있습니다.</p>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="cancelQuickAdd"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button type="button" wire:click="saveQuickAdd" wire:loading.attr="disabled"
+                    class="btn-primary px-4 py-2 text-sm">등록 + 선택</button>
         </div>
     </div>
 </div>

@@ -211,7 +211,8 @@ class Vehicle extends Model
      * 분기:
      *   ① grandfather — 기존에 bl_document 있던 차량은 모든 변경 통과 (수정·교체·삭제 포함)
      *      (사용자 결정 2026-05-18: 이미 운영중 차량은 우회)
-     *   ② 환율 미입력 외화 차량(unpaid_ratio = null) → 별도 메시지로 차단
+     *   ② 판매가 미입력(unpaid_ratio = null ⟺ sale_total_amount ≤ 0) → 별도 메시지로 차단
+     *      (unpaid_ratio는 통화 비의존 — sale_total_amount에 환율 안 곱함. 환율 누락과 무관.)
      *   ③ `unpaid_export_override` (stage='shipping') 승인 있으면 우회 — 관리/관리자 승인
      *      (큐 2.6 인프라 재사용. 승인 권한 = User::canApproveUnpaidExport)
      *
@@ -243,9 +244,9 @@ class Vehicle extends Model
         $ratio = $this->unpaid_ratio;
 
         if ($ratio === null) {
-            // 환율 미입력 외화 차량
+            // 판매가 미입력 (sale_total_amount ≤ 0) — 미수율 평가 불가
             throw ValidationException::withMessages([
-                'bl_document' => 'B/L 발행 전 환율 입력 필수입니다. 외화 차량 환율 미입력으로 미수율 평가 불가.',
+                'bl_document' => 'B/L 발행 전 판매 정보(판매가) 입력 필수입니다. 판매가 미입력으로 미수율 평가 불가.',
             ]);
         }
 
