@@ -25,7 +25,7 @@ use Tests\TestCase;
  * - 부분입금(40% 미수, 구 50% 룰이면 통과했던 구간) + 신규 첨부 → 차단 (50→100 변경 핵심)
  * - 완납(미수 0) + 신규 bl_document 첨부 → 통과
  * - grandfather: 기존 bl_document 있는 차량 → 모든 변경 통과
- * - 환율 미입력 외화 (unpaid_ratio = null) → 별도 메시지 차단
+ * - 판매가 미입력 (unpaid_ratio = null ⟺ sale_total_amount ≤ 0) → 별도 메시지 차단
  * - 미입금 우회 승인(stage='shipping') 우회 통과
  * - bl_document 삭제(빈 값) → 통과
  */
@@ -192,19 +192,14 @@ class G1BlLockTest extends TestCase
         $this->assertSame('bl/replaced.pdf', $v2->fresh()->bl_document);
     }
 
-    public function test_g1_blocks_bl_upload_when_unpaid_ratio_null_no_exchange_rate(): void
+    public function test_g1_blocks_bl_upload_when_unpaid_ratio_null_no_sale_price(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
-        // 외화 + 환율 미입력 → unpaid_ratio = null (sale_total_amount > 0 + 환율 없으니 평가 불가)
-        // sale_total_amount = sale_price (KRW 무관 통화 기준) = 1000. 환율 미입력 = 평가 불가
-        // 단 unpaid_ratio accessor는 sale_total_amount <= 0 일 때만 null 반환
-        // 환율 무관 통화 단위 미수율 계산이라 USD 차량에서도 unpaid_ratio 계산됨
-        // 진정 null인 케이스: sale_total_amount <= 0 (sale_price=0 + 부대비용 = 0 + tax_dc만 있음)
+        // unpaid_ratio는 통화 비의존 — sale_total_amount에 환율 안 곱함. null ⟺ sale_total_amount ≤ 0.
+        // 진정 null인 케이스 = 판매가 미입력: sale_price=0 + tax_dc만 → sale_total_amount = -100 ≤ 0.
         $v = $this->makeVehicle([
-            'sale_price' => 0,                // 판매가 0
+            'sale_price' => 0,                // 판매가 미입력
             'tax_dc' => 100,                  // 할인만 있음 → sale_total_amount = -100 ≤ 0
-            'currency' => 'USD',
-            'exchange_rate' => 0,
         ]);
         $this->actingAs($admin);
 
@@ -212,7 +207,7 @@ class G1BlLockTest extends TestCase
         $v2->bl_document = 'bl/test.pdf';
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('환율 입력 필수');
+        $this->expectExceptionMessage('판매 정보(판매가) 입력 필수');
         $v2->save();
     }
 

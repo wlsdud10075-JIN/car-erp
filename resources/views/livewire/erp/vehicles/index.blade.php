@@ -4115,7 +4115,7 @@ function vehicleColumnsToggle() {
                         ? ($g1HasShippingOverride ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
                 @if($g1Ratio === null)
-                    <span class="font-semibold">⚠ 환율 미입력</span> — 외화 차량 환율 입력 후 B/L 발행 가능
+                    <span class="font-semibold">⚠ 판매가 미입력</span> — 판매 정보(판매가) 입력 후 B/L 발행 가능
                 @elseif($g1Ratio > 0)
                     @if($g1HasShippingOverride)
                         <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리/관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
