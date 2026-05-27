@@ -911,10 +911,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
 
         // C7-b — 영업 role은 본인 담당 차량만 편집 가능.
-        // admin/super, 또는 영업 외 role(통관/정산/관리)은 우회.
+        // 관리 role은 본인 팀(부하 영업담당) 차량만 — 목록 스코프(managerScopeSalesmanIds)와 동일 기준.
+        // admin/super, 통관/재무는 우회. (claudereview B — openEdit 관리 미스코핑 보정)
         $user = auth()->user();
         if (! $user->isAdmin() && $user->role === '영업') {
             abort_unless($v->salesman_id === $user->salesman?->id, 403, '본인 담당 차량만 편집 가능합니다.');
+        } elseif (! $user->isAdmin() && $user->role === '관리') {
+            abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, '본인 팀 담당 차량만 편집 가능합니다.');
         }
 
         // save() 신규 등록 직후 호출인지(justCreatedId == $id) 보존,
