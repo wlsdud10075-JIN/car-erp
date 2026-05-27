@@ -35,6 +35,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
     #[Url] public string $salesmanId = '';
+    // 정산 등 외부 화면에서 ?openVehicle=ID 로 진입 → 해당 차량 편집 패널 자동 오픈.
+    #[Url] public ?int $openVehicle = null;
     // 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select.
     #[Url] public string $buyerId = '';
     #[Url] public int $perPage = 10;
@@ -296,6 +298,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        // 정산 등에서 ?openVehicle=ID 진입 → 해당 차량 편집 패널 자동 오픈 + 매입 탭(기타비용 수정 동선).
+        if ($this->openVehicle) {
+            try {
+                $this->openEdit($this->openVehicle);
+                $this->dispatch('switch-tab', tab: 'purchase');
+            } catch (\Throwable $e) {
+                // 접근 불가(스코프/미존재) — 조용히 목록만 표시
+            }
+        }
+
         // 대시보드에서 진입한 경우 — action(처리 필요 카드) 또는 progressFilter(파이프라인 스트립):
         // 날짜 기본 필터를 적용하지 않는다. 카드 카운트와 목록 카운트의 정합성을 위해
         // 산정 로직(전체 기간)과 동일 범위에서 목록을 보여줘야 함.
@@ -2121,7 +2133,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Vehicle::findOrFail($id)->delete();
+        try {
+            Vehicle::findOrFail($id)->delete();
+        } catch (\DomainException $e) {
+            // [관리] 등 권한 부족(재무확정 잔금 있는 차량은 admin/super만 삭제) → 500 Ignition 대신 토스트.
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
         $this->unsetComputedProperties();
         session()->flash('success', '차량이 삭제됐습니다.');
     }

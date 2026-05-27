@@ -50,4 +50,35 @@ class VehiclePanelAccessTest extends TestCase
             ->call('openEdit', $c['otherVehicle']->id)
             ->assertForbidden();
     }
+
+    /**
+     * [관리] 가 재무확정 잔금 있는 차량 삭제 시도 → 500 Ignition 페이지(코드 노출) 대신 토스트.
+     * (사용자 지적 2026-05-27 — 스크린샷의 DomainException 500 을 작은 팝업으로.)
+     */
+    public function test_manager_delete_locked_vehicle_shows_toast_not_500(): void
+    {
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $v = Vehicle::create(['vehicle_number' => '55마5555', 'sales_channel' => 'export', 'sale_price' => 1_000_000]);
+        $v->finalPayments()->create(['amount' => 500_000, 'type' => 'balance', 'confirmed_at' => now()]); // 확정 잔금 → lock
+        $this->actingAs($manager);
+
+        Volt::test('erp.vehicles.index')
+            ->call('delete', $v->id)
+            ->assertHasNoErrors()
+            ->assertDispatched('notify');   // 큰 에러 대신 토스트
+
+        $this->assertNotNull(Vehicle::find($v->id), '권한 부족이라 삭제 차단(차량 존속)돼야');
+    }
+
+    /** ?openVehicle=ID 진입 → 해당 차량 편집 패널 자동 오픈 + 매입 탭 전환 이벤트. */
+    public function test_open_vehicle_param_auto_opens_edit_panel(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = Vehicle::create(['vehicle_number' => '66바6666', 'sales_channel' => 'export']);
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index', ['openVehicle' => $v->id])
+            ->assertSet('editingId', $v->id)
+            ->assertDispatched('switch-tab');
+    }
 }
