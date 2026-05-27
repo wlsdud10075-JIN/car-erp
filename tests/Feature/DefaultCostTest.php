@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -68,12 +69,16 @@ class DefaultCostTest extends TestCase
     public function test_secondary_pending_allows_manager_to_edit_cost(): void
     {
         // Phase 1-3 통합 — paid + secondary='pending' 동안 [관리] 가 cost_* 수정 가능
+        // claudereview B — 관리는 본인 팀 차량만 편집 → 차량을 관리의 부하 영업에 배정.
         $manager = $this->makeUser('user', '관리');
+        $sub = User::factory()->create(['permission' => 'user', 'role' => '영업', 'manager_user_id' => $manager->id, 'email_verified_at' => now()]);
+        $salesman = Salesman::create(['name' => '팀원영업', 'user_id' => $sub->id, 'is_active' => true, 'type' => 'employee']);
         $this->actingAs($manager);
 
         $v = Vehicle::create([
             'vehicle_number' => 'DCT-'.++$this->counter,
             'sales_channel' => 'export',
+            'salesman_id' => $salesman->id,
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'dhl_request' => false,

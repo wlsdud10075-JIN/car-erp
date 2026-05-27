@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -491,18 +491,46 @@ class Vehicle extends Model
             }
         });
 
-        // hard delete (forceDelete) 시 첨부 디렉토리를 즉시 삭제하지 않고
-        // storage/backups/deleted/{id}-{timestamp}/ 로 이동 (큐 11-2).
+        // hard delete(forceDelete) 시 첨부(서류+사진)를 즉시 삭제하지 않고
+        // 같은 디스크의 deleted/{id}-{timestamp}/ 로 보존 이동 (큐 11-2, 사고 복구).
         // soft delete는 첨부 유지 — 복구 가능성 보호.
-        // 운영 사고 시 storage/backups/deleted/ 에서 수동 복구 가능.
+        //
+        // 서류·사진 모두 vehicles/{id}/ 아래 저장되므로 prefix 하나로 전부 커버.
+        // 디스크 = vehicle_docs_disk (로컬 public / 운영 private S3) — 양쪽 동일 동작.
+        // (claudereview D — 기존 로컬 File:: 이동은 storage_path 기반이라 운영 S3 미처리 →
+        //  S3 서류·사진 orphan + 삭제 백업 누락. Storage 추상화로 교체해 S3도 보존 이동.)
         static::forceDeleted(function (Vehicle $vehicle) {
-            $publicSource = storage_path("app/public/vehicles/{$vehicle->id}");
-            if (is_dir($publicSource)) {
-                $timestamp = now()->format('Ymd_His');
-                $backupDir = storage_path("backups/deleted/{$vehicle->id}-{$timestamp}");
-                File::ensureDirectoryExists(dirname($backupDir));
-                File::moveDirectory($publicSource, $backupDir);
+            $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+            $srcPrefix = "vehicles/{$vehicle->id}";
+            $timestamp = now()->format('Ymd_His');
+
+            foreach ($disk->allFiles($srcPrefix) as $from) {
+                $rel = ltrim(substr($from, strlen($srcPrefix)), '/');
+                $to = "deleted/{$vehicle->id}-{$timestamp}/{$rel}";
+
+                // 복사 실패 시 원본을 삭제하지 않는다 (데이터 보존 우선).
+                try {
+                    if (! $disk->copy($from, $to)) {
+                        throw new \RuntimeException('copy returned false');
+                    }
+                } catch (\Throwable $e) {
+                    Log::critical('forceDelete 첨부 백업 복사 실패 — 원본 보존', [
+                        'vehicle' => $vehicle->id, 'path' => $from, 'error' => $e->getMessage(),
+                    ]);
+
+                    continue;
+                }
+
+                // 복사 성공 후 원본 삭제 실패는 백업본이 있어 치명적이지 않으나 기록.
+                try {
+                    $disk->delete($from);
+                } catch (\Throwable $e) {
+                    Log::critical('forceDelete 원본 삭제 실패 — 백업본 존재', [
+                        'vehicle' => $vehicle->id, 'path' => $from, 'error' => $e->getMessage(),
+                    ]);
+                }
             }
+
             AuditLog::recordEvent($vehicle, 'force_deleted');
         });
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -148,10 +149,13 @@ class SecondarySettlementTest extends TestCase
     {
         // 회의확장씬 #8: paid + secondary='pending' 상태에서 [관리]/[재무]/admin 회계 컬럼 수정 가능
         // [관리] role user 시나리오 (사용자 명세 "[관리]/[재무]가 차량수정에서 수정")
+        // claudereview B — 관리는 본인 팀 차량만 편집 → 차량을 관리의 부하 영업에 배정.
         $manager = $this->makeUser('user', '관리');
+        $sub = User::factory()->create(['permission' => 'user', 'role' => '영업', 'manager_user_id' => $manager->id, 'email_verified_at' => now()]);
+        $salesman = Salesman::create(['name' => '팀원영업', 'user_id' => $sub->id, 'is_active' => true, 'type' => 'employee']);
         $this->actingAs($manager);
 
-        $v = $this->makeVehicle(['purchase_price' => 1_000_000]);
+        $v = $this->makeVehicle(['purchase_price' => 1_000_000, 'salesman_id' => $salesman->id]);
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',

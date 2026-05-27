@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
 
@@ -102,7 +103,14 @@ class BackupDatabase extends Command
             Storage::disk($disk)->put('db-backups/'.$filename, file_get_contents($localPath));
             $this->info("✓ 원격 업로드: [{$disk}] db-backups/{$filename}");
         } catch (\Throwable $e) {
+            // claudereview E — 무음 실패 제거. cron(03:00) 운영에선 콘솔 출력이 안 보이므로
+            // Log::critical 로 남겨 알림 연동/모니터링이 잡을 수 있게 한다. (로컬 백업은 이미 성공.)
             $this->error("원격 업로드 실패 ([{$disk}]): ".$e->getMessage());
+            Log::critical('DB 백업 원격 업로드 실패 — 원격 백업본 없음', [
+                'disk' => $disk,
+                'file' => $filename,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

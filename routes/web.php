@@ -25,11 +25,14 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     // 차량별 서류 자동 생성 (단계 11)
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])
         ->name('vehicles.documents.show')
+        ->middleware('throttle:vehicle-docs')   // claudereview A — 대량열람 억제
         ->whereNumber('id');
 
     // 다중차량 선적 서류 (#3) — ?ids=1,2,3. 'documents' 리터럴이라 위 {id} 라우트와 충돌 없음.
+    // 1요청=최대 30대라 단일보다 빡빡한 limiter 적용.
     Route::get('vehicles/documents/{type}', [VehicleDocumentController::class, 'showMulti'])
-        ->name('vehicles.documents.multi');
+        ->name('vehicles.documents.multi')
+        ->middleware('throttle:vehicle-docs-multi');
 });
 
 // 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증

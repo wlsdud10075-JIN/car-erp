@@ -173,4 +173,25 @@ class VehicleDocumentControllerTest extends TestCase
 
         $response->assertStatus(422);
     }
+
+    /**
+     * claudereview A — 문서 라우트에 Rate Limiting(throttle) 이 실제로 걸려 있는지.
+     * 정책 D(전 user 다운로드 허용) 유지의 보상통제라 미들웨어 제거 회귀를 막는다.
+     * (분당 한도 수치는 AppServiceProvider 설정값 — 동작 테스트는 비용·brittleness 커서 미들웨어 결선만 검증.)
+     */
+    public function test_document_routes_have_rate_limit_middleware(): void
+    {
+        $router = app('router')->getRoutes();
+
+        $this->assertContains(
+            'throttle:vehicle-docs',
+            $router->getByName('erp.vehicles.documents.show')->gatherMiddleware(),
+            'show 라우트에 throttle:vehicle-docs 누락'
+        );
+        $this->assertContains(
+            'throttle:vehicle-docs-multi',
+            $router->getByName('erp.vehicles.documents.multi')->gatherMiddleware(),
+            'showMulti 라우트에 throttle:vehicle-docs-multi 누락'
+        );
+    }
 }
