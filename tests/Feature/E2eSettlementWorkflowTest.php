@@ -117,11 +117,11 @@ class E2eSettlementWorkflowTest extends TestCase
      * 차량 1대를 매입→말소→판매입금(완납)→통관→선적→B/L→거래완료 까지 구동.
      * 각 단계 진행상태를 검증(누락 점검). 거래완료 시 정산 자동 생성.
      */
-    private function driveToTradeComplete(Salesman $s, string $currency, float $rate, array $fin): Vehicle
+    private function driveToTradeComplete(Salesman $s, string $currency, float $rate, array $fin, string $tag = ''): Vehicle
     {
         // 1) 매입 단계 — 차량 등록
         $v = Vehicle::create([
-            'vehicle_number' => 'E2E-'.$s->id,
+            'vehicle_number' => 'E2E-'.$s->id.$tag,
             'sales_channel' => 'export',
             'salesman_id' => $s->id,
             'buyer_id' => $this->buyer->id,
@@ -247,5 +247,59 @@ class E2eSettlementWorkflowTest extends TestCase
     public function test_usd_exchange_zero(): void
     {
         $this->runUsdCase('S5 USD 동일', 1300.0, 0, 5_507_500);
+    }
+
+    /**
+     * 환차익 이월 검증 (사용자 지적 2026-05-27) — 핵심.
+     *
+     * 사용자 모델: "1차 실지급 = 1차 정산금액(환차 없음). 환차는 다음달로 이월되어 +-".
+     * 코드: 2차 closed 시 carryover_out_krw = 환차 → 같은 영업담당자의 다음 정산 carryover_in 으로 흡수.
+     * → 환차는 2차에 또 지급되는 게 아니라 '다음 정산금에 +-'되어 한 번만 지급됨. 이중지급 없음.
+     *
+     * 같은 영업담당자 차량 2대(A: 환차 +500,000 발생 → B: 다음 정산)로 실측.
+     */
+    public function test_exchange_difference_carries_over_to_next_settlement(): void
+    {
+        $s = $this->salesman('S6 이월검증', 'freelance');
+
+        // ── 차량 A: USD, 환차익 +500,000 (입금 1300 → 마감 1350, 10,000 USD) ──
+        $vA = $this->driveToTradeComplete($s, 'USD', 1300.0,
+            ['purchase_price' => 8_000_000, 'sale_price' => 10_000], 'A');
+        $stA = Settlement::where('vehicle_id', $vA->id)->firstOrFail();
+
+        // 1차 실지급(= 1차 정산금액, 환차 없음) 손계산:
+        //  sales_amount_krw=10,000×1300=13,000,000 / sales_margin=13,000,000-8,000,000=5,000,000
+        //  vat_margin=8,000,000×0.09=720,000 / total_margin=(5,000,000+720,000)×0.9=5,148,000
+        //  settlement_amount=5,148,000×0.5=2,574,000 / 1차 actual_payout=2,574,000-50,000=2,524,000
+        $payout1st = 2_524_000;
+        $this->assertSame($payout1st, $stA->actual_payout, 'A 1차 실지급(환차 전) 불일치');
+
+        $this->confirmAndPay($stA);
+        // paid 스냅샷 = 1차 실지급액 (환차 없음) — '실제 지급한 금액' 박제
+        $this->assertSame($payout1st, (int) ($stA->fresh()->confirmed_snapshot['actual_payout'] ?? -1),
+            '1차 paid 스냅샷이 환차 없는 1차 정산금액이어야');
+
+        $this->closeSecondaryWithRate($stA, 1350.0);   // 환차 +500,000
+        $stA->refresh();
+
+        // 핵심 ①: 2차 closed 시 환차(+500,000)가 carryover_out 으로 '이월' 표시 (2차에 재지급 X)
+        $this->assertSame(500_000, (int) $stA->exchange_difference_krw, 'A 환차 불일치');
+        $this->assertSame(500_000, (int) $stA->carryover_out_krw, '환차가 carryover_out(다음달 이월)으로 안 잡힘');
+
+        // ── 차량 B: 같은 영업담당자 다음 정산 — A의 환차가 carryover_in 으로 +- 되어야 ──
+        $vB = $this->driveToTradeComplete($s, 'KRW', 1.0,
+            ['purchase_price' => 10_000_000, 'sale_price' => 13_000_000], 'B');
+        $stB = Settlement::where('vehicle_id', $vB->id)->firstOrFail();
+
+        // 핵심 ②: A의 환차 +500,000 이 B의 carryover_in 으로 흡수 (다음달 이월 실현)
+        $this->assertSame(500_000, (int) $stB->carryover_in_krw, 'A 환차가 B(다음 정산) carryover_in 으로 이월 안 됨');
+
+        // B 1차 손계산(KRW): total_margin=(3,000,000+900,000)×0.9=3,510,000
+        //  settlement_amount=3,510,000×0.5=1,755,000 / base=1,755,000-50,000=1,705,000
+        //  + carryover_in(A 환차 500,000) → B actual_payout=2,205,000  ← 환차가 여기서 한 번 지급
+        $this->assertSame(2_205_000, $stB->actual_payout, 'B 실지급에 A 환차 이월(+500,000)이 반영 안 됨');
+
+        // 이중지급 검증: 환차 500,000 은 A 2차에 지급된 게 아니라 B 정산금에 1회만 +-.
+        // (A 실제 지급 = 1차 2,524,000 / B 실제 지급 = 2,205,000 = B기본 1,705,000 + 이월 500,000)
     }
 }
