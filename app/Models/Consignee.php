@@ -21,6 +21,7 @@ class Consignee extends Model
     protected $fillable = [
         'name', 'buyer_id', 'country_id',
         'id_type', 'id_value',
+        'eori_number', 'tax_number',
         'contact_name', 'contact_email',
         'contact_phone', 'address', 'memo', 'is_active',
     ];

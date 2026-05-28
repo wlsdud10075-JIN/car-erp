@@ -30,6 +30,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $name           = '';
     public string $buyer_id_str   = '';
     public string $country_id_str = '';
+    public string $id_type        = '';      // rrn/passport/business
+    public string $id_value       = '';      // 암호화 저장
+    public string $eori_number    = '';      // 평문 (deep-interview 2026-05-28 Q1)
+    public string $tax_number     = '';      // 평문
     public string $contact_name   = '';
     public string $contact_email  = '';
     public string $contact_phone  = '';
@@ -83,6 +87,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->name           = $c->name;
         $this->buyer_id_str   = $c->buyer_id   ? (string)$c->buyer_id   : '';
         $this->country_id_str = $c->country_id ? (string)$c->country_id : '';
+        $this->id_type        = $c->id_type       ?? '';
+        $this->id_value       = $c->id_value      ?? '';
+        $this->eori_number    = $c->eori_number   ?? '';
+        $this->tax_number     = $c->tax_number    ?? '';
         $this->contact_name   = $c->contact_name  ?? '';
         $this->contact_email  = $c->contact_email ?? '';
         $this->contact_phone  = $c->contact_phone ?? '';
@@ -107,6 +115,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name'          => $this->name,
             'buyer_id'      => $this->buyer_id_str   !== '' ? (int)$this->buyer_id_str   : null,
             'country_id'    => $this->country_id_str !== '' ? (int)$this->country_id_str : null,
+            'id_type'       => in_array($this->id_type, array_keys(\App\Models\Consignee::ID_TYPES), true) ? $this->id_type : null,
+            'id_value'      => $this->id_value      ?: null,
+            'eori_number'   => $this->eori_number   ?: null,
+            'tax_number'    => $this->tax_number    ?: null,
             'contact_name'  => $this->contact_name  ?: null,
             'contact_email' => $this->contact_email ?: null,
             'contact_phone' => $this->contact_phone ?: null,
@@ -136,7 +148,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function resetForm(): void
     {
         $this->name = $this->buyer_id_str = $this->country_id_str = $this->contact_name
-            = $this->contact_email = $this->contact_phone = $this->address = $this->memo = '';
+            = $this->contact_email = $this->contact_phone = $this->address = $this->memo
+            = $this->id_type = $this->id_value = $this->eori_number = $this->tax_number = '';
         $this->is_active = true;
     }
 }; ?>
@@ -276,13 +289,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div>
             <label class="label-base">국가</label>
-            <select wire:model="country_id_str" class="input-base">
-                <option value="">-- 선택 --</option>
-                @foreach($this->countries as $c)
-                <option value="{{ $c->id }}">{{ $c->name }}</option>
-                @endforeach
-            </select>
+            <x-country-picker name="country_id_str" :value="$country_id_str" />
         </div>
+
+        {{-- deep-interview 2026-05-28 Q1·Q2 — EORI/TAX/ID 3종 식별번호 --}}
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="label-base">EORI Number</label>
+                <input wire:model="eori_number" type="text" class="input-base" placeholder="예: DE7078617" />
+            </div>
+            <div>
+                <label class="label-base">TAX Number</label>
+                <input wire:model="tax_number" type="text" class="input-base" placeholder="예: LT792855314" />
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+            <div>
+                <label class="label-base">ID 종류</label>
+                <select wire:model="id_type" class="input-base">
+                    <option value="">-- 선택 --</option>
+                    @foreach(\App\Models\Consignee::ID_TYPES as $key => $label)
+                    <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="col-span-2">
+                <label class="label-base">ID 번호 <span class="text-[10px] text-gray-400">(저장 시 암호화)</span></label>
+                <input wire:model="id_value" type="text" class="input-base" />
+            </div>
+        </div>
+
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="label-base">담당자</label>

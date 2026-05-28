@@ -50,6 +50,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 회의확장씬 #4 (2026-05-22) — Consignee ID 2컬럼 입력
     public string $cons_id_type       = '';
     public string $cons_id_value      = '';
+    // deep-interview 2026-05-28 Q1 — EORI/TAX 식별번호.
+    public string $cons_eori_number   = '';
+    public string $cons_tax_number    = '';
 
     // ── 적립금 탭 ──────────────────────────────────────────────────
     public array  $balances = [];   // ['USD' => 500.00, ...]
@@ -287,8 +290,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             $c = Consignee::findOrFail($id);
             $this->cons_name           = $c->name;
             $this->cons_country_id_str = $c->country_id ? (string)$c->country_id : '';
-            $this->cons_id_type        = $c->id_type   ?? '';
-            $this->cons_id_value       = $c->id_value  ?? '';
+            $this->cons_id_type        = $c->id_type      ?? '';
+            $this->cons_id_value       = $c->id_value     ?? '';
+            $this->cons_eori_number    = $c->eori_number  ?? '';
+            $this->cons_tax_number     = $c->tax_number   ?? '';
             $this->cons_contact_name   = $c->contact_name  ?? '';
             $this->cons_contact_email  = $c->contact_email ?? '';
             $this->cons_contact_phone  = $c->contact_phone ?? '';
@@ -299,7 +304,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->cons_name = $this->cons_country_id_str = $this->cons_contact_name
                 = $this->cons_contact_email = $this->cons_contact_phone
                 = $this->cons_address = $this->cons_memo
-                = $this->cons_id_type = $this->cons_id_value = '';
+                = $this->cons_id_type = $this->cons_id_value
+                = $this->cons_eori_number = $this->cons_tax_number = '';
             $this->cons_is_active = true;
         }
         $this->showConsigneeForm = true;
@@ -336,6 +342,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'country_id'    => $this->cons_country_id_str !== '' ? (int) $this->cons_country_id_str : null,
             'id_type'       => $this->cons_id_type  ?: null,
             'id_value'      => $this->cons_id_value ?: null,
+            'eori_number'   => $this->cons_eori_number ?: null,
+            'tax_number'    => $this->cons_tax_number  ?: null,
             'contact_name'  => $this->cons_contact_name  ?: null,
             'contact_email' => $this->cons_contact_email ?: null,
             'contact_phone' => $this->cons_contact_phone ?: null,
@@ -666,12 +674,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">국가</label>
-                    <select wire:model="country_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
-                        @foreach($this->countries as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-country-picker name="country_id_str" :value="$country_id_str" />
                 </div>
                 {{-- 회의확장씬 #5-1 (2026-05-22) — 영업담당자 직접 지정 ([관리] 솔팅 직접 관계) --}}
                 <div>
@@ -774,12 +777,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div>
                     <label class="label-base">국가</label>
-                    <select wire:model="cons_country_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
-                        @foreach($this->countries as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-country-picker name="cons_country_id_str" :value="$cons_country_id_str" />
+                </div>
+                {{-- deep-interview 2026-05-28 Q1 — EORI/TAX --}}
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="label-base">EORI Number</label>
+                        <input wire:model="cons_eori_number" type="text" class="input-base" placeholder="예: DE7078617" />
+                    </div>
+                    <div>
+                        <label class="label-base">TAX Number</label>
+                        <input wire:model="cons_tax_number" type="text" class="input-base" placeholder="예: LT792855314" />
+                    </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
