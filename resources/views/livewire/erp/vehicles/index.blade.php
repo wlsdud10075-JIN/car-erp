@@ -186,7 +186,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $deposit_down_payment_str = '';
     public string $interim_payment_str = '';
     public string $advance_payment1_str = '';
-    public string $advance_payment2_str = '';
+    public string $fee_str               = '';   // 2026-05-28 — 구 선수금2(advance_2) → 송금 수수료(fee) 재용도화 (셀러 부담)
     public string $savings_used_str     = '';
     // 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 (한 번 저장 → SavingsStatus EARNED 거래 → reset).
     // 누적 표시는 buyerSavingsBalance computed (SavingsStatus 단일 출처).
@@ -1062,7 +1062,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deposit_down_payment_str = $sumByType('deposit_down');
         $this->interim_payment_str = $sumByType('interim');
         $this->advance_payment1_str = $sumByType('advance_1');
-        $this->advance_payment2_str = $sumByType('advance_2');
+        $this->fee_str               = $sumByType('fee');
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
         $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
         $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
@@ -1429,7 +1429,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'sale_other_costs_str', 'savings_used_str',
             // 22-A-3a 사용자 정정 — 4 _str 복귀 (재무·관리자 입력)
             'deposit_down_payment_str', 'interim_payment_str',
-            'advance_payment1_str', 'advance_payment2_str',
+            'advance_payment1_str', 'fee_str',
             'export_declaration_amount_str', 'dhl_weight_str',
         ];
 
@@ -1933,7 +1933,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'deposit_down' => $this->deposit_down_payment_str,
                     'interim' => $this->interim_payment_str,
                     'advance_1' => $this->advance_payment1_str,
-                    'advance_2' => $this->advance_payment2_str,
+                    'fee' => $this->fee_str,
                 ];
                 foreach ($typeStrMap as $type => $str) {
                     $newAmount = $str === '' ? 0.0 : (float) $str;
@@ -1954,17 +1954,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                         FinalPayment::$allowConfirmedMutation = false;
                     }
                     if ($newAmount > 0) {
+                        // 2026-05-28 fix — 4항목 row 의 exchange_rate snapshot.
+                        // FinalPayment::saving 훅이 amount × exchange_rate = amount_krw 자동 계산.
+                        // 미설정 시 amount_krw=null → buyerFees / 채권관리 KRW 합산에서 누락.
                         $vehicle->finalPayments()->create([
                             'amount' => $newAmount,
                             'type' => $type,
                             'payment_date' => today(),
+                            'exchange_rate' => $vehicle->exchange_rate,
                             'confirmed_at' => now(),
                             'confirmed_by_user_id' => auth()->id(),
                             'note' => match ($type) {
                                 'deposit_down' => '계약금',
                                 'interim' => '중도금',
                                 'advance_1' => '선수금1',
-                                'advance_2' => '선수금2',
+                                'fee' => '송금 수수료',
                             },
                         ]);
                     }
@@ -2807,7 +2811,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
-            'deposit_down_payment_str','interim_payment_str','advance_payment1_str','advance_payment2_str',
+            'deposit_down_payment_str','interim_payment_str','advance_payment1_str','fee_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
             'incoterms','discharge_port_id_str',
@@ -3860,8 +3864,8 @@ function vehicleColumnsToggle() {
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">선수금2</label>
-                    <input wire:model="advance_payment2_str" type="text"
+                    <label class="label-base">송금 수수료 <span class="text-xs text-gray-400">(셀러 부담)</span></label>
+                    <input wire:model="fee_str" type="text"
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>

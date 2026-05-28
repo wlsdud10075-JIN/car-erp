@@ -781,7 +781,7 @@ class VehicleSeeder extends Seeder
             'deposit_down_payment' => 'deposit_down',
             'interim_payment' => 'interim',
             'advance_payment1' => 'advance_1',
-            'advance_payment2' => 'advance_2',
+            'advance_payment2' => 'fee',          // 2026-05-28 — 구 'advance_2' → 'fee' 재용도화
         ];
         $fpInserts = [];
         foreach ($sale4Map as $col => $type) {

@@ -3,6 +3,7 @@
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Country;
+use App\Models\FinalPayment;
 use App\Models\SavingsStatus;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -110,6 +111,40 @@ new #[Layout('components.layouts.app')] class extends Component {
             'paid_krw' => $paidKrw,
             'paid_pct' => $paidPct,
             'vehicle_count' => $vehicles->count(),
+        ];
+    }
+
+    /**
+     * 2026-05-28 — 바이어별 누적 송금 수수료 부담액 (셀러 부담).
+     * 영업이 협상 카드로 사용 — "우리가 그동안 이만큼 부담했다".
+     * type='fee' confirmed_at IS NOT NULL row 의 amount_krw 합산.
+     * 환율 미입력으로 amount_krw 가 null 인 row 는 자연 제외 (운영 일관성).
+     */
+    #[Computed]
+    public function buyerFees(): ?array
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+
+        $rows = FinalPayment::query()
+            ->whereHas('vehicle', fn ($q) => $q->where('buyer_id', $this->editingId))
+            ->where('type', 'fee')
+            ->whereNotNull('confirmed_at')
+            ->get(['amount', 'amount_krw']);
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $totalKrw = (int) $rows->sum('amount_krw');
+        if ($totalKrw <= 0) {
+            return null;
+        }
+
+        return [
+            'total_krw' => $totalKrw,
+            'count' => $rows->count(),
         ];
     }
 
@@ -662,6 +697,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-medium text-amber-700">입금률 {{ number_format($br['paid_pct'], 1) }}%</span>
                     <span class="text-red-600 font-medium">미수금 ₩{{ number_format($br['unpaid_krw']) }}</span>
                     @endif
+                </div>
+            </div>
+            @endif
+
+            {{-- 2026-05-28 — 누적 송금 수수료 (셀러 부담) — 영업 협상 카드용 --}}
+            @if($this->buyerFees)
+            @php $bf = $this->buyerFees; @endphp
+            <div class="mb-4 rounded-lg border border-violet-200 bg-violet-50 p-3">
+                <div class="flex items-center justify-between">
+                    <div class="text-xs">
+                        <div class="font-semibold text-violet-700">💸 누적 송금 수수료 (셀러 부담)</div>
+                        <div class="mt-0.5 text-violet-600">우리가 이 바이어를 위해 누적으로 부담한 송금 수수료입니다. 협상 카드로 활용하세요.</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-base font-bold text-violet-700">₩{{ number_format($bf['total_krw']) }}</div>
+                        <div class="text-xs text-violet-500">{{ $bf['count'] }}건</div>
+                    </div>
                 </div>
             </div>
             @endif

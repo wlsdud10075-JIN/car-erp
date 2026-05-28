@@ -69,7 +69,7 @@ class VehicleLedgerLockTest extends TestCase
             'deposit_down_payment' => 'deposit_down',
             'interim_payment' => 'interim',
             'advance_payment1' => 'advance_1',
-            'advance_payment2' => 'advance_2',
+            'advance_payment2' => 'fee',
         ];
         $sale4Inserts = [];
         foreach ($sale4Map as $col => $type) {
