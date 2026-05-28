@@ -1954,10 +1954,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         FinalPayment::$allowConfirmedMutation = false;
                     }
                     if ($newAmount > 0) {
+                        // 2026-05-28 fix — 4항목 row 의 exchange_rate snapshot.
+                        // FinalPayment::saving 훅이 amount × exchange_rate = amount_krw 자동 계산.
+                        // 미설정 시 amount_krw=null → buyerFees / 채권관리 KRW 합산에서 누락.
                         $vehicle->finalPayments()->create([
                             'amount' => $newAmount,
                             'type' => $type,
                             'payment_date' => today(),
+                            'exchange_rate' => $vehicle->exchange_rate,
                             'confirmed_at' => now(),
                             'confirmed_by_user_id' => auth()->id(),
                             'note' => match ($type) {
