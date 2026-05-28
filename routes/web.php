@@ -4,8 +4,11 @@ use App\Http\Controllers\VehicleDocumentController;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
+// 사내 ERP — 별도 소개(랜딩) 화면 없이 첫 접속은 로그인으로. 로그인 상태면 대시보드로.
 Route::get('/', function () {
-    return view('welcome');
+    return auth()->check()
+        ? redirect()->route('dashboard')
+        : redirect()->route('login');
 })->name('home');
 
 // 로그인 후 진입점 — 모두 ERP 대시보드로 (관리자 대시보드는 사이드바 기타관리에서 접근)
