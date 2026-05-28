@@ -667,10 +667,11 @@ sale_total_amount  = sale_price + transport_fee + sale_other_costs
                    (Vehicle::getSaleTotalAmountAttribute)   ← 분모
 
 sale_unpaid_amount = sale_total_amount
-                   - deposit_down_payment        (계약금)
-                   - interim_payment             (중도금)
-                   - advance_payment1·2          (선수금)
-                   - Σ finalPayments.amount      (잔금 N건)
+                   - Σ finalPayments(type='deposit_down').amount    (계약금)
+                   - Σ finalPayments(type='interim').amount         (중도금)
+                   - Σ finalPayments(type='advance_1').amount       (선수금1)
+                   - Σ finalPayments(type='fee').amount             (송금 수수료 — 셀러 부담, 2026-05-28 구 'advance_2' 재용도화)
+                   - Σ finalPayments(type='balance').amount         (잔금 N건)
                    - Σ receivableHistories(method ≠ 'deposit').amount
                    (Vehicle::getSaleUnpaidAmountAttribute)  ← 분자
                    ⚠️ savings_used(적립금 사용)는 차감하지 않음 — 별도 관리

@@ -64,7 +64,7 @@ class WorkflowGapTest extends TestCase
             'deposit_down_payment' => 'deposit_down',
             'interim_payment' => 'interim',
             'advance_payment1' => 'advance_1',
-            'advance_payment2' => 'advance_2',
+            'advance_payment2' => 'fee',
         ];
         $sale4Inserts = [];
         foreach ($sale4Map as $col => $type) {
@@ -1158,12 +1158,12 @@ class WorkflowGapTest extends TestCase
         $this->assertEquals(5_700_000, (int) $v->sale_unpaid_amount);
     }
 
-    public function test_22a3b_numerator_advance_2_separate_type(): void
+    public function test_22a3b_numerator_fee_separate_type(): void
     {
-        // advance_1 과 advance_2 가 다른 type 으로 별도 합산되는지 확인.
+        // 2026-05-28 — advance_1 과 fee(구 advance_2) 가 다른 type 으로 별도 합산되는지 확인.
         $v = $this->makeVehicle(['sale_price' => 5_000_000]);
         $v->finalPayments()->create(['amount' => 1_000_000, 'type' => 'advance_1', 'confirmed_at' => now()]);
-        $v->finalPayments()->create(['amount' => 2_000_000, 'type' => 'advance_2', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => 2_000_000, 'type' => 'fee', 'confirmed_at' => now()]);
 
         $v->refresh();
         $this->assertEquals(2_000_000, (int) $v->sale_unpaid_amount);   // 5M - 3M

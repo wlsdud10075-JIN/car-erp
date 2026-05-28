@@ -17,13 +17,17 @@ use Illuminate\Support\Facades\Schema;
  *   - balance:      잔금 (기존 final_payments 본래 의미, default)
  *
  * 기존 FP 행은 default 'balance'로 자동 설정 → 의미 보존.
+ *
+ * 2026-05-28 보강: enum 에 'fee' 미리 포함 (테스트 SQLite CHECK constraint 호환).
+ * 운영 MySQL/MariaDB 는 이 마이그가 이미 돌아간 상태라 재실행 없음 → 무영향.
+ * 'advance_2' → 'fee' 실제 rename 은 후속 마이그 2026_05_28_000002 가 처리 (MySQL 운영 row 변환).
  */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::table('final_payments', function (Blueprint $table) {
-            $table->enum('type', ['deposit_down', 'interim', 'advance_1', 'advance_2', 'balance'])
+            $table->enum('type', ['deposit_down', 'interim', 'advance_1', 'advance_2', 'fee', 'balance'])
                 ->default('balance')
                 ->after('amount');
         });

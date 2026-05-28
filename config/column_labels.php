@@ -71,7 +71,7 @@ return [
         'deposit_down_payment' => '계약금 입금',
         'interim_payment' => '중도금',
         'advance_payment1' => '선수금1',
-        'advance_payment2' => '선수금2',
+        'advance_payment2' => '송금 수수료',   // 2026-05-28 — 구 '선수금2' → 송금 수수료(fee) 재용도화
         'savings_used' => '적립금 사용',
 
         // 수출통관
