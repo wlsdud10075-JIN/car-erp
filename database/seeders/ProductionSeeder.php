@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Models\Country;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -25,7 +24,7 @@ class ProductionSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->seedCountries();
+        $this->call(CountrySeeder::class);
         $this->call(PortSeeder::class);
         $this->seedSettings();
         $this->seedAdminAccounts();
@@ -78,24 +77,6 @@ class ProductionSeeder extends Seeder
 
         foreach ($settings as $s) {
             Setting::updateOrCreate(['key' => $s['key']], $s);
-        }
-    }
-
-    private function seedCountries(): void
-    {
-        $countries = [
-            ['name' => '일본',       'code' => 'JPN', 'currency' => 'JPY'],
-            ['name' => '몽골',       'code' => 'MNG', 'currency' => 'USD'],
-            ['name' => '미얀마',     'code' => 'MMR', 'currency' => 'USD'],
-            ['name' => '카자흐스탄', 'code' => 'KAZ', 'currency' => 'USD'],
-            ['name' => '중국',       'code' => 'CHN', 'currency' => 'CNY'],
-            ['name' => 'UAE',        'code' => 'ARE', 'currency' => 'USD'],
-            ['name' => '러시아',     'code' => 'RUS', 'currency' => 'USD'],
-            ['name' => '한국',       'code' => 'KOR', 'currency' => 'KRW'],
-        ];
-
-        foreach ($countries as $c) {
-            Country::updateOrCreate(['code' => $c['code']], $c);
         }
     }
 }
