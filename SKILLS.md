@@ -206,6 +206,126 @@ public function getActualPayoutAttribute(): int
 
 **자동 default 채움**: `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50`(프리랜서) 또는 `per_unit_amount=100000`(사내직원) DB 컬럼에 자동 저장. 재무가 override 필요 시 명시 입력 → H3 가드(confirmed/paid 전환 시 값>0) 자연 통과.
 
+### 5-2. 1차 정산 흐름 (settlement_status)
+
+```
+거래완료 (Vehicle::saved 훅)
+  → settlement_status='pending'  (자동 생성)
+  → settlement_status='confirmed' (재무 확정)
+  → settlement_status='paid'      (관리/admin 지급 — 재무는 직접 paid 불가, 승인 요청 흐름)
+```
+
+**paid 전환 시 자동 트리거** (`Settlement::saving` 훅):
+- `confirmed_snapshot` 캡처 (paid 시점 회계 상태 영구 보존 — Gemini Lock)
+- `secondary_status='pending'` 자동 set → 2차 정산 대기 시작
+- `canApprove` 가드: 재무는 직접 못 함 → `ApprovalRequest` 흐름
+
+### 5-3. 2차 정산 흐름 (secondary_status — 2026-05-22 회의확장씬 #8)
+
+paid 후 한 달 간 secondary='pending' 상태 유지 — 실제 측정된 비용 보정 + 환차 정정용:
+
+```
+paid → secondary='pending' (자동, 한 달 대기)
+  → 차량 비용 9개 수정 (말소비·면허비·탁송·쇼링·보험·이전비·기타1·2 실측치)
+  → 정산 시점 환율 입력 (또는 ExchangeRateService 자동 fetch)
+  → "2차 완료" 버튼 클릭 (재무/관리/admin 권한, closeSecondarySettlement)
+  → secondary='closed' (회계 잠금)
+```
+
+**closed 시점 자동 계산 (2가지 값)**:
+
+```php
+// ① 환차 (exchange_difference_krw)
+//    환차 = (2차 정산 환율 × Σ외화입금) - 입금 시점 누적 KRW
+//    KRW 차량 → 0 / ExchangeRateService 실패 → null
+calculateExchangeDifference($settlement) → [$exchangeDiff, $usedRate]
+
+// ② 이월 (carryover_out_krw)
+//    carry_out = closed actual_payout - paid snapshot.actual_payout
+//    closed 시점에 cost·환차 모두 반영된 실지급액 vs paid 시점 snapshot 차이
+$carryoverOut = $closedPayout - (int) ($settlement->confirmed_snapshot['actual_payout'] ?? 0);
+```
+
+### 5-4. 환차 반영 정책 — 영업담당자 타입별 (중요)
+
+```php
+// Settlement::getActualPayoutAttribute
+$base = $this->settlement_amount - $this->document_fee - $this->other_deduction;
+
+// 환차 반영 — 프리랜서(ratio) 만 본인 정산에 +/- 반영
+if ($this->settlement_type === 'ratio'           // ← 사내직원(per_unit) 제외
+    && $this->secondary_status === 'closed'
+    && $this->exchange_difference_krw !== null) {
+    $base += (int) $this->exchange_difference_krw;
+}
+
+// 이월 흡수 — type 무관 (사내직원도 받는 carry_in은 적용)
+if ($this->carryover_in_krw !== null) {
+    $base += (int) $this->carryover_in_krw;
+}
+```
+
+| 정산 유형 | 환차 화면 표시 | 본인 실지급에 환차 반영? | UI 라벨 |
+|---|---|---|---|
+| 프리랜서 (ratio) | ✅ | ✅ +/- 반영 | "프리랜서(비율제) 정산금에 환차 1:1 가산됨" |
+| 사내직원 (per_unit) | ✅ (정보 제공) | ❌ **회사 부담** | **"미반영"** |
+
+**정책 근거** (사용자 운영 정책):
+- 프리랜서: 비율(50%) 정산이라 환율 변동도 비율로 부담 → 환차 본인 몫
+- 사내직원: 건당 고정(10만원)이라 안정적 수입 보장 → 환율 변동 회사 흡수
+
+### 5-5. 이월(carryover) 동작 — 영업담당자별 이월 (2026-05-23 회의확장씬 #8 보강)
+
+```php
+// Settlement::creating 훅 — 같은 영업담당자의 미적용 이월 자동 흡수
+static::creating(function (Settlement $s) {
+    if ($s->carryover_in_krw !== null || ! $s->salesman_id) {
+        return;
+    }
+    $totalOut = (float) self::where('salesman_id', $s->salesman_id)
+        ->where('secondary_status', 'closed')
+        ->whereNotNull('carryover_out_krw')
+        ->sum('carryover_out_krw');
+    $totalIn = (float) self::where('salesman_id', $s->salesman_id)
+        ->whereNotNull('carryover_in_krw')
+        ->sum('carryover_in_krw');
+    $unconsumed = $totalOut - $totalIn;
+    if (abs($unconsumed) >= 0.01) {
+        $s->carryover_in_krw = $unconsumed;
+    }
+});
+```
+
+**핵심 규칙**:
+- 같은 `salesman_id` 기준 (다른 영업담당자 이월 안 흡수)
+- closed된 정산의 `carryover_out_krw` 누적 합 - 이미 흡수된 `carryover_in_krw` 누적 합 = 미적용 잔액
+- 다음 정산 creating 시 자동 흡수
+- **사내직원의 carry_out은 항상 0** (per_unit 고정 + 환차 미반영이라 closed actual_payout = paid snapshot)
+- 음수 이월(환차손) 허용 — 실지급 차감
+
+### 5-6. 회계 무결성 lock (큐 20-D + Gemini Lock)
+
+paid 전환 시 `confirmed_snapshot` 캡처되는 항목들 — 사후 retroactive 변경 차단:
+- vehicle 회계 컬럼 (exchange_rate·purchase_price·cost_total 등)
+- 마진 (sales_margin·vat_margin·total_margin)
+- 정산 결과 (settlement_amount·actual_payout)
+- **confirmed FP/PBP rows** (Gemini Lock — 잔금 상태도 함께 캡처해서 회계감사 추적 가능)
+
+`Settlement::booted()` + `FinalPayment::booted()` updating/deleting 가드:
+- `confirmed_at SET` 후 amount/payment_date/transfer_id 변경 차단
+- 우회 플래그 `$allowConfirmedMutation` (정산 처리 화면에서 4항목 입력 시점에만 try/finally 패턴)
+
+### 5-7. 시드·아티즌 환경에서 정산 처리 (auth 없는 컨텍스트)
+
+`Settlement::saving` 훅에 `auth()->check() && ! auth()->user()->canApprove()` 가드 있음 — `auth()` 없으면 우회. 시드/migrate/artisan에서 paid 전환 자유롭게 가능.
+
+```php
+// 시드에서 pending → confirmed → paid 단계별
+$settlement->update(['settlement_status' => 'confirmed', 'confirmed_at' => now()]);
+$settlement->update(['settlement_status' => 'paid', 'paid_at' => now()]);
+// auth() 없으므로 canApprove 가드 통과, secondary='pending' 자동 set
+```
+
 **목록에서 정산액 정렬 시**: computed 컬럼은 SQL `ORDER BY` 불가. 방법 2가지:
 - **컬렉션 정렬**: 페이지당 결과셋만 `sortBy()` (소량)
 - **subquery select**: `select_raw('(...) as total_margin_calc')` (대량 — 단, SQL에 공식을 박아야 함 — 동기화 위험)
