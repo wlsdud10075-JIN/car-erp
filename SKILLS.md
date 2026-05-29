@@ -76,7 +76,7 @@ public function getPurchaseUnpaidAmountAttribute(): int { /* §13 공식 참조 
 
 | 탭 | 주요 필드 |
 |---|---|
-| `기본정보` | 차량번호, 주행거리, brand/type/cc/kg, NICE API 등록정보 12개, 제원정보 12개 |
+| `기본정보` | 차량번호, 주행거리, brand/type/cc/kg, NICE API 등록정보 12개, 제원정보 12개, 차량 사진/첨부(사진·PDF·Excel·HWP 등, 최대 10건 — `vehicle_photos`) |
 | `매입` | 매입일, 매입담당자, 구입처, 소유자, 매입가, 매도비, **비용 9개** (말소/면허/탁송/캐리/쇼링/보험/이전비/기타1/기타2), 계약금, 잔금 N건, 송금메모 |
 | `판매` | 판매일, 통화/환율, 바이어/컨사이니, 판매가, TAX D/C, Commission, 운임비, 입금현황(계약금 + 중도금 + 잔금 N건 + 선수금1/2 + 적립금 사용) |
 | `수출통관` | 통관 바이어/컨사이니, 포워딩사, **면장금액(USD)**, 선적일, 도착일자(ETA), RORO/CONTAINER, Port of Loading, 수출신고서 업로드 |
