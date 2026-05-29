@@ -289,7 +289,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $clearExportDeclarationDoc = false;
     public bool $clearBlDoc                = false;
 
-    // ── 차량 사진 (jpg/png, 최대 10장 — vehicle_photos 테이블) ──────
+    // ── 차량 첨부 (사진·PDF·Excel·Word·HWP 등, 최대 10건 — vehicle_photos 테이블) ──────
     public const MAX_PHOTOS = 10;
 
     public array $photoFiles = [];      // 신규 업로드 (multiple temp)
@@ -605,6 +605,28 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; unset($this->consigneesForSale); }
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
+
+    // 판매 바이어/컨사이니 둘 다 set 된 순간, 통관·선적 쌍이 비어있으면 동일 값 자동 전파.
+    // 이미 통관/선적에 값이 있으면 존중(덮어쓰지 않음). 쌍 단위 판정 — buyer/consignee 한쪽만
+    // 채우는 일이 없어야 종속관계(consignee.buyer_id) 무결성 유지.
+    public function updatedConsigneeIdStr(): void { $this->propagateSaleParty(); }
+
+    private function propagateSaleParty(): void
+    {
+        if ($this->buyer_id_str === '' || $this->consignee_id_str === '') {
+            return;
+        }
+        if ($this->export_buyer_id_str === '' && $this->export_consignee_id_str === '') {
+            $this->export_buyer_id_str = $this->buyer_id_str;
+            $this->export_consignee_id_str = $this->consignee_id_str;
+            unset($this->consigneesForExport);
+        }
+        if ($this->bl_buyer_id_str === '' && $this->bl_consignee_id_str === '') {
+            $this->bl_buyer_id_str = $this->buyer_id_str;
+            $this->bl_consignee_id_str = $this->consignee_id_str;
+            unset($this->consigneesForBl);
+        }
+    }
 
     // ── 작업2 (2026-05-27) — 차량 패널 내 바이어·컨사이니 즉석 등록 ──────────
     //   context = 'sale' | 'export' | 'bl' (어느 드롭다운에서 호출됐는지).
@@ -1150,7 +1172,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 차량 사진 로드 (편집 패널 갤러리)
         $this->photoFiles = [];
         $this->deletePhotoIds = [];
-        $this->existingPhotos = $v->photos->map(fn ($p) => ['id' => $p->id, 'url' => $p->url])->all();
+        $this->existingPhotos = $v->photos->map(fn ($p) => [
+            'id'       => $p->id,
+            'url'      => $p->url,
+            'is_image' => $p->is_image,
+            'filename' => $p->filename,
+            'ext'      => $p->extension,
+        ])->all();
 
         $this->panelUnpaidRatio = $v->unpaid_ratio;
 
@@ -1479,8 +1507,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'blDocFile'                => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
 
-            // 차량 사진 — jpg/png 만, 장당 8MB. 총 장수 제한은 아래 별도 가드.
-            'photoFiles.*' => ['image', 'mimes:jpeg,jpg,png', 'max:8192'],
+            // 차량 첨부 — 사진(jpg/png/gif/webp/bmp) + 사무 파일(pdf·xlsx·xls·csv·docx·doc·hwp·hwpx·pptx·ppt·txt·zip), 건당 10MB.
+            // 총 건수 제한은 아래 별도 가드. .exe / .php 같은 실행 파일은 mimes 화이트리스트로 자연 차단.
+            'photoFiles.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
 
             // H9 — RRN(주민/법인등록번호) 형식 검증. 000000-0000000 패턴 강제.
             // 말소신청서·등록증재발급·양도증명서 PDF에 RRN 정확한 입력 필수.
@@ -1552,10 +1581,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validate($rules, $messages, $attributes);
 
-        // 차량 사진 총 장수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
+        // 차량 첨부 총 건수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
         if (count($this->existingPhotos) + count($this->photoFiles) > self::MAX_PHOTOS) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'photoFiles' => '차량 사진은 최대 '.self::MAX_PHOTOS.'장까지 등록할 수 있습니다.',
+                'photoFiles' => '차량 첨부는 최대 '.self::MAX_PHOTOS.'건까지 등록할 수 있습니다.',
             ]);
         }
     }
@@ -3467,16 +3496,17 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">연비 (km/L)</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
             </div>
 
-            {{-- 차량 사진 (jpg/png · 최대 10장 — vehicle_photos, 운영 시 S3 저장). 여러 장은 한 번에 선택. --}}
+            {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3 저장). 여러 건은 한 번에 선택. --}}
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-rose-400"></span>
-                <span class="section-title">차량 사진 (jpg/png · 최대 10장)</span>
+                <span class="section-title">차량 사진/첨부 (최대 10건)</span>
             </div>
             <div>
-                <input type="file" wire:model="photoFiles" multiple accept="image/jpeg,image/png"
+                <input type="file" wire:model="photoFiles" multiple
+                       accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                        class="input-base text-sm" />
-                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">사진 업로드 중…</div>
+                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">업로드 중…</div>
                 @error('photoFiles')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 @error('photoFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
@@ -3484,14 +3514,33 @@ function vehicleColumnsToggle() {
                 <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
                     @foreach($existingPhotos as $p)
                     <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
-                        <img src="{{ $p['url'] }}" class="h-full w-full object-cover" alt="차량 사진" />
+                        @if($p['is_image'])
+                            <img src="{{ $p['url'] }}" class="h-full w-full object-cover" alt="{{ $p['filename'] }}" />
+                        @else
+                            <a href="{{ $p['url'] }}" target="_blank" rel="noopener"
+                               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">{{ strtoupper($p['ext']) ?: 'FILE' }}</span>
+                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                            </a>
+                        @endif
                         <button type="button" wire:click="removeExistingPhoto({{ $p['id'] }})"
                                 class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
                     </div>
                     @endforeach
                     @foreach($photoFiles as $idx => $photo)
+                    @php
+                        $_ext = strtolower($photo->getClientOriginalExtension());
+                        $_isImg = in_array($_ext, \App\Models\VehiclePhoto::IMAGE_EXTENSIONS, true);
+                    @endphp
                     <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
-                        <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="신규 사진" />
+                        @if($_isImg)
+                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="신규" />
+                        @else
+                            <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
+                                <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
+                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $photo->getClientOriginalName() }}</span>
+                            </div>
+                        @endif
                         <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">신규</span>
                         <button type="button" wire:click="removeNewPhoto({{ $idx }})"
                                 class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
@@ -3499,7 +3548,7 @@ function vehicleColumnsToggle() {
                     @endforeach
                 </div>
                 @endif
-                <p class="mt-1 text-xs text-gray-400">{{ count($existingPhotos) + count($photoFiles) }}/10장 · 저장 버튼을 눌러야 반영됩니다.</p>
+                <p class="mt-1 text-xs text-gray-400">{{ count($existingPhotos) + count($photoFiles) }}/10건 · 저장 버튼을 눌러야 반영됩니다.</p>
             </div>
         </div>
 
@@ -3818,7 +3867,7 @@ function vehicleColumnsToggle() {
                                 @if($buyer_id_str === '') disabled @endif
                                 class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
                     </div>
-                    <select wire:model="consignee_id_str" class="input-base input-required"
+                    <select wire:model.live="consignee_id_str" class="input-base input-required"
                             @if($buyer_id_str === '') disabled @endif>
                         <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
                         @foreach($this->consigneesForSale as $c)
