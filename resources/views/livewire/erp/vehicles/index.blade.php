@@ -382,6 +382,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('model_type', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
+                ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
             ))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
@@ -2913,7 +2914,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="space-y-2">
     {{-- 검색 + 날짜 + 조회 --}}
     <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-        <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자"
+        <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호"
                class="input-filter w-52" />
         <select wire:model="dateType" class="input-filter">
             <option value="purchase">매입일</option>
