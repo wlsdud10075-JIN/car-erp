@@ -32,6 +32,12 @@ class PurchaseBalancePayment extends Model
      */
     public static bool $skipCreatingGuard = false;
 
+    /**
+     * Vehicle::saved 가 만드는 자동 매입 잔금 Draft 의 note 마커.
+     * 생성부(Vehicle::saved)와 재조정부(vehicles/index save) 가 같은 문자열을 참조하도록 단일 출처화.
+     */
+    public const AUTO_DRAFT_NOTE = '자동 생성 — 영업 매입 정보 저장 시';
+
     protected static function booted(): void
     {
         static::saved(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());

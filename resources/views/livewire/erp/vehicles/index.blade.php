@@ -607,20 +607,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
 
-    // 판매 바이어/컨사이니 둘 다 set 된 순간, 통관·선적 쌍이 비어있으면 동일 값 자동 전파.
-    // 이미 통관/선적에 값이 있으면 존중(덮어쓰지 않음). 쌍 단위 판정 — buyer/consignee 한쪽만
+    // 판매 바이어/컨사이니 둘 다 set 된 순간, 선적(B/L) 쌍이 비어있으면 동일 값 자동 전파.
+    // 이미 선적에 값이 있으면 존중(덮어쓰지 않음). 쌍 단위 판정 — buyer/consignee 한쪽만
     // 채우는 일이 없어야 종속관계(consignee.buyer_id) 무결성 유지.
+    //
+    // 2026-06-01 — 통관(export) 당사자 자동 전파 제거.
+    //   export_buyer_id 는 C4/C5 게이트의 '통관 진입 신호'(guardStageOrderForExport 의 $hasExportInput,
+    //   ManagementWorkflowChecklistTest:375 등이 명시 검증)이기도 해서, 판매 시점에 자동으로 채우면
+    //   <50% 입금 차량의 판매 저장이 통째로 막히는 회귀가 발생. 통관 바이어는 실제 통관 단계에서
+    //   입력(말소+50% 충족 시점) — 게이트 의도와 정합. B/L 당사자는 게이트 트리거가 아니라 전파 유지.
     public function updatedConsigneeIdStr(): void { $this->propagateSaleParty(); }
 
     private function propagateSaleParty(): void
     {
         if ($this->buyer_id_str === '' || $this->consignee_id_str === '') {
             return;
-        }
-        if ($this->export_buyer_id_str === '' && $this->export_consignee_id_str === '') {
-            $this->export_buyer_id_str = $this->buyer_id_str;
-            $this->export_consignee_id_str = $this->consignee_id_str;
-            unset($this->consigneesForExport);
         }
         if ($this->bl_buyer_id_str === '' && $this->bl_consignee_id_str === '') {
             $this->bl_buyer_id_str = $this->buyer_id_str;
@@ -1966,7 +1967,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'fee' => $this->fee_str,
                 ];
                 foreach ($typeStrMap as $type => $str) {
-                    $newAmount = $str === '' ? 0.0 : (float) $str;
+                    // 콤마 제거 후 파싱 — 매입 2항목(down/selling_fee)과 동일. '4,000,000' → 4 절단 방지.
+                    $newAmount = $str === '' ? 0.0 : (float) str_replace(',', '', $str);
                     $existingSum = (float) $vehicle->finalPayments()
                         ->where('type', $type)
                         ->whereNotNull('confirmed_at')
@@ -2079,6 +2081,35 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
                     ], $autoConfirmFields));
+                }
+            }
+
+            // 매입 자동 PBP Draft 재조정 (2026-06-01) — 확정 입금과 중복되는 phantom 제거.
+            // Vehicle::saved 훅은 $vehicle->update/create 시점(폼 동기화 前)에 전액 자동 Draft 를 만든다.
+            // 같은 저장에서 계약금/잔금 확정 행이 추가되면 자동 Draft(전액, 대기)가 중복으로 남아
+            // 재무처리 대기에 잔존(이중 계상 위험). 폼 동기화가 끝난 이 시점에 확정 합과 대조한다.
+            //   - 확정 입금이 매입합계(매입가+매도비)를 전액 커버 → 자동 Draft 삭제
+            //   - 일부만 커버 → 남은 미지급으로 축소 (confirmed_at=NULL 유지 = 대기)
+            // 확정 입금이 0이면(순수 Draft) 손대지 않음 — 매입가 변경 시 영업이 수동 정정하는 현행 유지.
+            $autoDraft = $vehicle->purchaseBalancePayments()
+                ->whereNull('confirmed_at')
+                ->where('note', PurchaseBalancePayment::AUTO_DRAFT_NOTE)
+                ->first();
+            if ($autoDraft) {
+                // 확정 합산 필터는 미지급 accessor(getPurchaseUnpaidAmountAttribute, SKILLS §13 단일 출처)와 정합.
+                // payment_date <= now() (NULL 자동 제외) → 미래일자 확정 입금은 미지급 정의와 동일하게 미반영.
+                $confirmedOthers = (int) $vehicle->purchaseBalancePayments()
+                    ->whereNotNull('confirmed_at')
+                    ->where('payment_date', '<=', now())
+                    ->sum('amount');
+                if ($confirmedOthers > 0) {
+                    $remaining = (int) ($vehicle->purchase_price + $vehicle->selling_fee) - $confirmedOthers;
+                    if ($remaining <= 0) {
+                        $autoDraft->delete();
+                    } elseif ((int) $autoDraft->amount !== $remaining) {
+                        $autoDraft->amount = $remaining;
+                        $autoDraft->save();
+                    }
                 }
             }
 
