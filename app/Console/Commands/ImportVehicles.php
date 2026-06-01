@@ -275,7 +275,12 @@ class ImportVehicles extends Command
                         $attrs['bl_document'] = $row['bl_number'];
                     }
 
-                    $existing = Vehicle::withTrashed()->where('vehicle_number', $row['vehicle_number'])->first();
+                    // 멱등 매칭: 차대번호(VIN) 우선 — 물리 차량 영구 고유키(번호판 재발급 충돌 방지).
+                    // VIN 없는 행만 차량번호로 매칭. VIN 있고 매칭 없으면 신규(번호판 같아도 다른 차).
+                    $vin = trim((string) ($row['nice_reg_vin'] ?? ''));
+                    $existing = $vin !== ''
+                        ? Vehicle::withTrashed()->where('nice_reg_vin', $vin)->first()
+                        : Vehicle::withTrashed()->where('vehicle_number', $row['vehicle_number'])->first();
                     if ($existing) {
                         $existing->forceFill($attrs)->save();
                         $vehicle = $existing;
@@ -374,10 +379,12 @@ class ImportVehicles extends Command
         };
 
         $existingPlates = Vehicle::withTrashed()->pluck('vehicle_number')->flip()->all();
+        $existingVins = Vehicle::withTrashed()->whereNotNull('nice_reg_vin')->pluck('nice_reg_vin')->flip()->all();
         $salesmanByName = Salesman::query()->pluck('id', 'name')->all();
         $buyerByName = Buyer::query()->pluck('id', 'name')->all();
 
         $seenPlates = [];
+        $seenVin = [];
         $newSalesmen = [];
         $newBuyers = [];
         $currencies = [];
@@ -455,6 +462,19 @@ class ImportVehicles extends Command
                 }
             }
 
+            // 차대번호(VIN) — 물리 차량 영구 고유키(번호판 재발급 충돌 방지). VIN 우선 매칭.
+            $vinVal = trim((string) ($row['nice_reg_vin'] ?? ''));
+            if ($vinVal === '') {
+                $addIssue('차대번호 없음(번호판으로 매칭)', "R{$r}: {$rawPlate}");
+            } elseif (isset($seenVin[$vinVal])) {
+                $addIssue('파일 내 차대번호 중복(차단)', "R{$r}: {$vinVal} (이전 R{$seenVin[$vinVal]})");
+            } else {
+                $seenVin[$vinVal] = $r;
+                if (isset($existingVins[$vinVal])) {
+                    $addIssue('DB 기존 차대번호(=갱신)', "R{$r}: {$vinVal}");
+                }
+            }
+
             // 입금 슬롯 (2단계용) — 정산1~5 + 입금일. '취소'/비숫자/0 은 제외.
             $pays = [];
             foreach ([['AO', 'AP'], ['AQ', 'AR'], ['AS', 'AT'], ['AU', 'AV'], ['AW', 'AX']] as [$ac, $dc]) {
@@ -482,7 +502,8 @@ class ImportVehicles extends Command
             $rows[] = $row;
         }
 
-        $blockers = ($issues['파일 내 차량번호 중복(차단)']['count'] ?? 0);
+        $blockers = ($issues['파일 내 차량번호 중복(차단)']['count'] ?? 0)
+            + ($issues['파일 내 차대번호 중복(차단)']['count'] ?? 0);
 
         return [$rows, compact('rowCount', 'blankRows', 'issues', 'newSalesmen', 'newBuyers', 'currencies', 'blockers')];
     }
