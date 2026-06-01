@@ -4,7 +4,9 @@ namespace App\Console\Commands;
 
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\FinalPayment;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\Vehicle;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
@@ -43,6 +45,7 @@ class ImportVehicles extends Command
         {--data-start=3 : 데이터 시작 행 번호}
         {--dry-run : 검증 + 리포트만 (DB 수정 없음)}
         {--force : 검증 통과 후 확인 프롬프트 생략}
+        {--with-payments : 2단계 — 입금이력(정산1~5) confirmed + 완료정산(paid, 프리50%) 재현 + B/L번호→거래완료}
         {--samples=5 : 이슈 유형별 표시 샘플 수}';
 
     protected $description = '헤이맨 수출차량현황표 xlsx → 차량 일괄 import (Option A: 마스터+핵심재무)';
@@ -182,11 +185,12 @@ class ImportVehicles extends Command
      */
     private function import(array $rows, array $salesmanByName): int
     {
-        $stats = ['new' => 0, 'updated' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0];
+        $stats = ['new' => 0, 'updated' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0, 'payments' => 0, 'settlements' => 0];
         $touchedIds = [];
+        $withPay = (bool) $this->option('with-payments');
 
-        DB::transaction(function () use ($rows, $salesmanByName, &$stats, &$touchedIds) {
-            Model::withoutEvents(function () use ($rows, $salesmanByName, &$stats, &$touchedIds) {
+        DB::transaction(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds) {
+            Model::withoutEvents(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds) {
                 $buyerCache = [];
                 foreach ($rows as $row) {
                     if (($row['vehicle_number'] ?? '') === '') {
@@ -266,6 +270,11 @@ class ImportVehicles extends Command
                         $attrs['sale_date'] = null;
                     }
 
+                    // 2단계 — B/L번호 마커로 거래완료 진입 (B/L 문서 파일이 엑셀에 없음).
+                    if ($withPay && ! empty($row['bl_number']) && (float) ($attrs['sale_price'] ?? 0) > 0) {
+                        $attrs['bl_document'] = $row['bl_number'];
+                    }
+
                     $existing = Vehicle::withTrashed()->where('vehicle_number', $row['vehicle_number'])->first();
                     if ($existing) {
                         $existing->forceFill($attrs)->save();
@@ -278,6 +287,48 @@ class ImportVehicles extends Command
                         $stats['new']++;
                     }
                     $touchedIds[] = $vehicle->id;
+
+                    // 2단계 — 입금이력(정산1~5) confirmed + 완료정산(paid, 엑셀 프리50% 재현).
+                    if ($withPay && (float) ($vehicle->sale_price ?? 0) > 0) {
+                        // 재실행 멱등: 기존 import 입금/정산 제거 후 재생성.
+                        FinalPayment::where('vehicle_id', $vehicle->id)->where('note', 'import 입금')->forceDelete();
+                        Settlement::where('vehicle_id', $vehicle->id)->where('note', 'like', 'import — %')->forceDelete();
+
+                        $rate = (float) ($vehicle->exchange_rate ?? 0);
+                        if ($rate <= 0) {
+                            $rate = 1;
+                        }
+                        foreach (($row['_payments'] ?? []) as $p) {
+                            $fp = new FinalPayment;
+                            $fp->forceFill([
+                                'vehicle_id' => $vehicle->id,
+                                'type' => 'balance',
+                                'amount' => $p['amount'],
+                                'exchange_rate' => $rate,
+                                'amount_krw' => (int) round($p['amount'] * $rate),
+                                'payment_date' => $p['date'] ?: $vehicle->sale_date,
+                                'confirmed_at' => now(),
+                                'note' => 'import 입금',
+                            ])->save();
+                            $stats['payments']++;
+                        }
+                        // 엑셀은 전 행 프리랜서 50%·서류비5만으로 정산 — 담당자 현재 type 무관(과거 재현).
+                        $st = new Settlement;
+                        $st->forceFill([
+                            'vehicle_id' => $vehicle->id,
+                            'salesman_id' => $vehicle->salesman_id,
+                            'settlement_type' => 'ratio',
+                            'settlement_ratio' => 50,
+                            'per_unit_amount' => null,
+                            'settlement_status' => 'paid',
+                            'secondary_status' => 'closed',
+                            'confirmed_at' => now(),
+                            'paid_at' => now(),
+                            'secondary_closed_at' => now(),
+                            'note' => 'import — 엑셀 과거 정산 재현(프리50%)',
+                        ])->save();
+                        $stats['settlements']++;
+                    }
                 }
             });
         });
@@ -290,7 +341,12 @@ class ImportVehicles extends Command
         $this->info('✅ import 완료');
         $this->line("  차량 신규 {$stats['new']} / 갱신 {$stats['updated']}");
         $this->line("  바이어 신규 {$stats['buyer_new']} / 컨사이니 신규 {$stats['consignee_new']}");
-        $this->warn('  ⚠️ 입금이력·완료정산(paid)은 미포함(2단계) — 진행상태/미수는 입금 전 상태로 표시됨.');
+        if ($withPay) {
+            $this->line("  입금 {$stats['payments']}건 / 완료정산(paid) {$stats['settlements']}건 (엑셀 프리50% 재현)");
+            $this->warn('  ⚠️ 선수금/예치금(BA·BD·BE·BF)은 1차 제외 — 해당 행은 미수 일부 차이 가능.');
+        } else {
+            $this->warn('  ⚠️ 입금이력·완료정산(paid)은 미포함 — 진행상태/미수는 입금 전 상태. (2단계: --with-payments)');
+        }
 
         return self::SUCCESS;
     }
@@ -398,6 +454,22 @@ class ImportVehicles extends Command
                     $row['currency'] = null;   // import 시 USD fallback
                 }
             }
+
+            // 입금 슬롯 (2단계용) — 정산1~5 + 입금일. '취소'/비숫자/0 은 제외.
+            $pays = [];
+            foreach ([['AO', 'AP'], ['AQ', 'AR'], ['AS', 'AT'], ['AU', 'AV'], ['AW', 'AX']] as [$ac, $dc]) {
+                $amtRaw = $this->cell($sheet, $ac, $r);
+                if ($amtRaw === '') {
+                    continue;
+                }
+                [$amt, $w] = $this->parseNum($amtRaw);
+                if ($w !== null || $amt === null || $amt <= 0) {
+                    continue;
+                }
+                [$dt] = $this->parseDate($this->cell($sheet, $dc, $r));
+                $pays[] = ['amount' => $amt, 'date' => $dt];
+            }
+            $row['_payments'] = $pays;
 
             // 담당자/바이어 신규 집계
             if (($row['salesman'] ?? '') !== '' && ! isset($salesmanByName[$row['salesman']])) {
