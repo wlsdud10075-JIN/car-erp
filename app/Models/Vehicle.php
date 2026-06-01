@@ -627,7 +627,7 @@ class Vehicle extends Model
                     'payment_date' => $vehicle->purchase_date,
                     'confirmed_at' => null,
                     'created_by_user_id' => auth()->id(),
-                    'note' => '자동 생성 — 영업 매입 정보 저장 시',
+                    'note' => PurchaseBalancePayment::AUTO_DRAFT_NOTE,
                 ]);
             } finally {
                 PurchaseBalancePayment::$skipCreatingGuard = false;
