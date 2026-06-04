@@ -3471,6 +3471,17 @@ function vehicleColumnsToggle() {
                     <label class="label-base">색상</label>
                     <input wire:model="color" type="text" class="input-base" placeholder="흰색" />
                 </div>
+                {{-- 영업담당자 — 등록 시 지정 누락 방지 위해 매입 탭에서 기본정보로 이동 (2026-06-04).
+                     옵션은 $this->salesmen (관리 role 은 본인 팀 영업만 노출). --}}
+                <div>
+                    <label class="label-base">영업담당자</label>
+                    <select wire:model="salesman_id_str" class="input-base">
+                        <option value="">-- 선택 --</option>
+                        @foreach($this->salesmen as $sm)
+                        <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
 
             <hr class="section-divider">
@@ -3593,15 +3604,7 @@ function vehicleColumnsToggle() {
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">매입일 </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
-                <div>
-                    <label class="label-base">매입담당자</label>
-                    <select wire:model="salesman_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
-                        @foreach($this->salesmen as $sm)
-                        <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                {{-- 영업담당자 select 는 기본정보 탭(색상 옆)으로 이동 (2026-06-04). --}}
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">구입처 </label>
                     <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="경매 / 딜러 / 개인" />
