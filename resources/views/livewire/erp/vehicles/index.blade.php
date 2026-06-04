@@ -1505,9 +1505,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_buyer_id_str'           => [Rule::when($this->bl_buyer_id_str !== '', ['exists:buyers,id'])],
             'bl_consignee_id_str'       => [Rule::when($this->bl_consignee_id_str !== '', ['exists:consignees,id'])],
 
-            'deregistrationDocFile'    => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
-            'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
-            'blDocFile'                => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'deregistrationDocFile'    => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+            'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+            'blDocFile'                => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
 
             // 차량 첨부 — 사진(jpg/png/gif/webp/bmp) + 사무 파일(pdf·xlsx·xls·csv·docx·doc·hwp·hwpx·pptx·ppt·txt·zip), 건당 10MB.
             // 총 건수 제한은 아래 별도 가드. .exe / .php 같은 실행 파일은 mimes 화이트리스트로 자연 차단.
@@ -3775,12 +3775,15 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <label class="label-base">말소신청서</label>
-                    <input wire:model="deregistrationDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    <input wire:model="deregistrationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
-                    @if($deregistration_document_path)
+                    <div wire:loading wire:target="deregistrationDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    @if($deregistrationDocFile)
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $deregistrationDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    @elseif($deregistration_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($deregistration_document_path) }}" target="_blank"
-                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                           class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($deregistration_document_path) }}</a>
                         <button type="button" wire:click="removeDeregistrationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
                     </div>
@@ -4362,12 +4365,15 @@ function vehicleColumnsToggle() {
                 </div>
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">수출신고서 <span class="text-xs text-gray-400">(업로드 시 선적완료 상태 달성 가능)</span></label>
-                    <input wire:model="exportDeclarationDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    <input wire:model="exportDeclarationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
-                    @if($export_declaration_document_path)
+                    <div wire:loading wire:target="exportDeclarationDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    @if($exportDeclarationDocFile)
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $exportDeclarationDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    @elseif($export_declaration_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($export_declaration_document_path) }}" target="_blank"
-                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                           class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($export_declaration_document_path) }}</a>
                         <button type="button" wire:click="removeExportDeclarationDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
                     </div>
@@ -4458,12 +4464,15 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">B/L 발행일</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">B/L 문서 <span class="text-xs text-gray-400">(업로드 시 선적완료 상태 달성 가능)</span></label>
-                    <input wire:model="blDocFile" type="file" accept=".pdf,.jpg,.jpeg,.png"
+                    <input wire:model="blDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
-                    @if($bl_document_path)
+                    <div wire:loading wire:target="blDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    @if($blDocFile)
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $blDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    @elseif($bl_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($bl_document_path) }}" target="_blank"
-                           class="text-xs text-violet-600 hover:underline">기존 파일 보기</a>
+                           class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($bl_document_path) }}</a>
                         <button type="button" wire:click="removeBlDoc"
                                 class="text-xs text-red-500 hover:underline">삭제</button>
                     </div>
