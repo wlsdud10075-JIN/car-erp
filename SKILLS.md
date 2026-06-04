@@ -431,7 +431,27 @@ extension=zip    # 주석 제거
 ```
 설정 변경 후 **PHP 프로세스 재시작 필수** — `php artisan serve`는 Ctrl+C 후 재기동, Apache는 XAMPP Control Panel에서 Stop/Start. CLI는 즉시 반영되지만 떠있던 웹 서버는 옛 ini를 들고 있음 → "Class ZipArchive not found" 에러 그대로 발생
 
-> ERP 신규 발견 버그는 본 §8 하단에 추가 기록 (#21+).
+### 21. wire:navigate 후 JS 호버/툴팁 죽음 (게이지 hover, 2026-06-04)
+**원인**: 차량 미납 게이지 hover를 행마다 `addEventListener` + `dataset.gaugeBound` 가드로 1회 바인딩 → `wire:navigate`(SPA)가 페이지를 캐시·복원할 때 **리스너는 유실되는데 가드 속성은 복원돼 남아** 재바인딩 스킵 → hover 죽음(전체 새로고침해야 동작). 더해서 툴팁 div를 `document.body`에 append했는데 navigate가 `<body>`를 교체하면 **그 div가 제거**돼 변수는 detached 옛 요소를 가리킴(리스너는 동작해도 툴팁 안 보임).
+**해결**: ① hover를 `document` **이벤트 위임**(mouseover/out + `closest('tr[data-ratio]')`)으로 — `document`는 navigate로 안 바뀌어 리스너 유지, 페이지네이션·morph로 행이 새로 생겨도 자동 적용. ② `ensureTooltip()`에서 `tooltipEl.isConnected` 확인 → 분리됐으면 재생성. ③ 배경 inline-style 게이지는 `livewire:navigated`·`morph.updated`마다 재적용. (`resources/js/app.js`). **교훈: wire:navigate 환경에선 per-element 리스너 + DOM 캐시 복원이 충돌 — 안정 요소(document) 위임 + body-append 요소는 isConnected 재생성.**
+
+### 22. pint를 .blade.php에 돌리면 Volt 클래스 대량 reformat + 깨짐 (2026-06-04)
+**원인**: `vendor/bin/pint <파일.blade.php>` 실행 시 PHP-CS-Fixer가 Volt 단일파일의 `<?php ?>` 클래스를 전면 재배치 → 실측 `vehicles/index.blade.php`에 **1356줄 변경(783+/573−) + 테스트 깨짐**. 이 프로젝트 blade는 pint 스타일이 아님 = 팀이 blade에 pint 안 돌림(pint.json 없음=기본).
+**해결**: blade 변경은 pint 제외하고 커밋. 실수로 돌렸으면 `git checkout -- <blade>`로 pint분 되돌리고 기능 수정만 재적용. `.php`만 `pint --dirty`. (CLAUDE.md 핵심주의 #5)
+
+### 23. 매입 자동 PBP Draft phantom 중복 (2026-06-01)
+**원인**: `Vehicle::saved` 훅이 매입가 저장 시 **전액·confirmed_at=NULL 자동 잔금 Draft**를 만드는데($vehicle->update 시점, 폼 동기화 前), 같은 저장에서 계약금/잔금 확정 행이 추가되면 자동 Draft(전액, 대기)가 **중복**으로 재무처리 대기에 잔존 → 확정 시 이중 계상. (salesman.type은 거래완료 시 default 채움에만 쓰이고, 정산 계산은 settlement 자체 type만 봄 — 사내직원을 비율제로 바꾸면 그대로 비율 계산되며 서류비·환차도 ratio 기준으로 따라옴.)
+**해결**: 폼 동기화 직후 `canConfirmFinance` 사용자면 자동 Draft를 확정 입금 합과 대조 → 전액 커버 시 삭제, 일부면 남은 미지급으로 축소, 확정 0(순수 Draft)이면 대기 유지. 합산 필터는 미지급 accessor(§13: `payment_date <= now() AND confirmed_at IS NOT NULL`)와 정합. (`vehicles/index::save()`)
+
+### 24. 판매당사자 자동전파 × C5/C4 게이트 회귀 (2026-06-01)
+**원인**: 판매 바이어+컨사이니 둘 다 지정 시 `propagateSaleParty()`가 통관(export) 당사자까지 자동 전파했는데, **`export_buyer_id`는 `guardStageOrderForExport`의 `$hasExportInput`(통관 진입 신호)** 이라 — 판매 시점 자동 채움이 <50% 입금 차량의 판매 저장을 C5로 통째 차단(`ManagementWorkflowChecklistTest:375`가 export_buyer_id 단독으로 C4 발동 검증).
+**해결**: 자동전파에서 **통관(export) 당사자 제거**, B/L 당사자(bl_buyer_id — 게이트 트리거 아님)만 전파 유지. 통관 바이어는 실제 통관 단계에서 입력. **교훈: export_buyer_id에 값 넣는 건 "통관 진입"으로 간주됨 — 판매 단계에서 자동으로 채우지 말 것.**
+
+### 25. chk_sale_required — sale_price>0이면 sale_date·buyer_id·exchange_rate>0 필수 (MySQL CHECK)
+**원인**: 운영 MySQL CHECK `chk_sale_required = (sale_price=0 OR (sale_date NOT NULL AND buyer_id NOT NULL AND exchange_rate>0))`. 판매가만 넣고 나머지 누락하면 INSERT/UPDATE 실패(4025).
+**해결**: 판매가 입력 시 sale_date·buyer·환율 항상 동반. (엑셀 일괄적재처럼 sale_date 없으면 선적일/구입일로 대체, 셋 중 하나라도 못 채우면 판매가 보류=매입만.)
+
+> ERP 신규 발견 버그는 본 §8 하단에 추가 기록 (#26+).
 
 ## 9. 구현 패턴
 
