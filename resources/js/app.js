@@ -58,7 +58,9 @@ function applyHoverColor(tr, alpha) {
 let tooltipEl = null;
 
 function ensureTooltip() {
-    if (tooltipEl) return tooltipEl;
+    // wire:navigate 가 <body> 를 교체하면 body 에 append 했던 툴팁이 제거된다.
+    // 변수는 detached 옛 요소를 가리켜 툴팁이 안 보이므로, 분리됐으면 재생성.
+    if (tooltipEl && tooltipEl.isConnected) return tooltipEl;
     tooltipEl = document.createElement('div');
     tooltipEl.className = 'vehicle-gauge-tooltip';
     Object.assign(tooltipEl.style, {
@@ -113,33 +115,49 @@ function hideTooltip() {
     if (tooltipEl) tooltipEl.style.opacity = '0';
 }
 
-function initVehicleGauge(root = document) {
-    const rows = root.querySelectorAll('tr[data-ratio]');
-    rows.forEach((tr) => {
-        // 게이지는 매번 재적용 (Livewire morph가 inline style을 reset할 수 있음).
-        applyGauge(tr);
+// 게이지 배경(inline style)은 morph/navigate가 reset 할 수 있어 매번 재적용.
+function applyAllGauges(root = document) {
+    root.querySelectorAll('tr[data-ratio]').forEach(applyGauge);
+}
 
-        // 이벤트 리스너는 1번만.
-        if (tr.dataset.gaugeBound === '1') return;
-        tr.dataset.gaugeBound = '1';
+// 호버는 document 이벤트 위임(delegation) — 1회만 바인딩.
+//   wire:navigate 가 페이지를 캐시·복원할 때, 행마다 addEventListener 로 붙인 리스너는
+//   유실되는데 dataset 가드(gaugeBound)는 복원돼 남아 재바인딩이 스킵 → hover 죽음.
+//   document 는 navigate 로 교체되지 않으므로 위임 리스너는 유지되고, 페이지네이션·morph 로
+//   행이 새로 생겨도 자동 적용된다. (mouseenter/leave 는 버블 안 하므로 mouseover/out 사용)
+let gaugeHoveredTr = null;
+let gaugeDelegationBound = false;
+function bindGaugeHoverDelegation() {
+    if (gaugeDelegationBound) return;
+    gaugeDelegationBound = true;
 
-        tr.addEventListener('mouseenter', () => {
+    document.addEventListener('mouseover', (e) => {
+        const tr = e.target.closest ? e.target.closest('tr[data-ratio]') : null;
+        if (tr === gaugeHoveredTr) return;
+        if (gaugeHoveredTr) {
+            applyHoverColor(gaugeHoveredTr, BASE_ALPHA);
+            hideTooltip();
+        }
+        gaugeHoveredTr = tr;
+        if (tr) {
             applyHoverColor(tr, HOVER_ALPHA);
             showTooltip(tr);
-        });
-        tr.addEventListener('mouseleave', () => {
-            applyHoverColor(tr, BASE_ALPHA);
-            hideTooltip();
-        });
+        }
     });
+}
+
+function initVehicleGauge() {
+    gaugeHoveredTr = null;   // 이전 페이지의 detached 행 참조 정리
+    applyAllGauges();
+    bindGaugeHoverDelegation();
 }
 
 document.addEventListener('DOMContentLoaded', () => initVehicleGauge());
 
-// Livewire 네비게이션·morph 후 DOM 갱신 시 재초기화
+// Livewire 네비게이션·morph 후 DOM 갱신 시 배경 재적용 (hover 는 위임이라 재바인딩 불필요)
 document.addEventListener('livewire:navigated', () => initVehicleGauge());
 if (window.Livewire) {
-    window.Livewire.hook('morph.updated', () => initVehicleGauge());
+    window.Livewire.hook('morph.updated', () => applyAllGauges());
 }
 
 // ──────────────────────────────────────────────────────────────────────────
