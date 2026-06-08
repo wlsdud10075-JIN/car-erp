@@ -1,0 +1,86 @@
+<?php
+
+// i18n — 바이어 관리 (erp/buyers/index). 공통은 common.php, ID종류는 consignee.id_type 재사용.
+return [
+    'title' => '바이어 관리',
+    'create_btn' => '바이어 등록',
+    'edit_title' => '바이어 수정',
+    'create_title' => '바이어 등록',
+    'search_ph' => '이름 · 이메일 · 담당자',
+    'all_salesmen' => '담당자 전체',
+    'unassigned' => '미지정',
+    'empty' => '바이어가 없습니다.',
+    'delete_confirm' => ':name 바이어를 삭제하시겠습니까?',
+    'saved' => '바이어 정보가 저장됐습니다.',
+    'deleted' => '바이어가 삭제됐습니다.',
+    'col_name' => '바이어명',
+
+    'tab' => [
+        'basic' => '기본정보',
+        'consignees' => '컨사이니',
+        'savings' => '적립금',
+    ],
+
+    'receivable' => [
+        'title' => '바이어 미수금 현황',
+        'summary' => ':count대 · 총 ₩:amount',
+        'fully_paid' => '✓ 완납',
+        'paid_pct' => '입금률 :pct%',
+        'unpaid' => '미수금 ₩:amount',
+    ],
+    'fees' => [
+        'title' => '💸 누적 송금 수수료 (셀러 부담)',
+        'desc' => '우리가 이 바이어를 위해 누적으로 부담한 송금 수수료입니다. 협상 카드로 활용하세요.',
+        'count' => ':count건',
+    ],
+
+    'field' => [
+        'name' => '바이어명',
+        'name_ph' => 'TOKYO AUTO TRADING',
+        'salesman' => '영업담당자',
+        'salesman_unassigned' => '-- 미배정 --',
+        'salesman_note' => '[관리] 로그인 시 본인 담당 영업의 바이어만 노출됩니다. 미배정 시 vehicles 통한 간접 관계로 fallback',
+        'contact_name' => '담당자명',
+        'eori_ph' => '예: DE7078617',
+        'tax_ph' => '예: LT792855314',
+    ],
+
+    'cons' => [
+        'save_first' => '기본정보를 먼저 저장한 후 컨사이니를 추가할 수 있습니다.',
+        'empty' => '컨사이니가 없습니다.',
+        'add' => '+ 컨사이니 추가',
+        'delete_confirm' => '컨사이니를 삭제하시겠습니까?',
+        'form_edit' => '컨사이니 수정',
+        'form_add' => '컨사이니 추가',
+        'name' => '컨사이니명',
+        'id_type' => 'ID 종류',
+        'id_value' => 'ID 번호',
+    ],
+
+    'savings' => [
+        'save_first' => '기본정보를 먼저 저장한 후 적립금을 관리할 수 있습니다.',
+        'balances_title' => '통화별 적립금 잔액',
+        'no_balance' => '적립금 거래 내역이 없습니다.',
+        'add_txn' => '거래 추가',
+        'currency' => '통화',
+        'type' => '유형',
+        'amount' => '금액',
+        'add_btn' => '추가',
+        'type_earned' => '적립 (EARNED)',
+        'type_used' => '사용 (USED)',
+        'type_refund' => '반환 (REFUND)',
+        'type_adjustment' => '조정 (ADJUSTMENT)',
+        'col_date' => '일시',
+        'col_amount' => '금액',
+        'col_balance' => '잔액',
+        'cancel_confirm' => '이 거래를 취소하시겠습니까?',
+        'cancel_title' => '취소',
+        'no_history' => '내역이 없습니다.',
+        't_earned' => '적립',
+        't_used' => '사용',
+        't_refund' => '반환',
+        't_adjustment' => '조정',
+        't_cancelled' => '취소',
+        'neg_balance' => '취소 시 잔액이 음수가 됩니다. 취소 불가.',
+    ],
+];

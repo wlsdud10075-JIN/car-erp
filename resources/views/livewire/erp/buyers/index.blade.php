@@ -290,14 +290,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         unset($this->buyers);
-        session()->flash('success', '바이어 정보가 저장됐습니다.');
+        session()->flash('success', __('buyer.saved'));
     }
 
     public function delete(int $id): void
     {
         Buyer::findOrFail($id)->delete();
         unset($this->buyers);
-        session()->flash('success', '바이어가 삭제됐습니다.');
+        session()->flash('success', __('buyer.deleted'));
     }
 
     // ── 컨사이니 ──────────────────────────────────────────────────
@@ -487,7 +487,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $newBalance = ($latest?->balance ?? 0) + $cancelledSavings;
 
             if ($newBalance < 0) {
-                session()->flash('error', '취소 시 잔액이 음수가 됩니다. 취소 불가.');
+                session()->flash('error', __('buyer.savings.neg_balance'));
                 return;
             }
 
@@ -539,35 +539,35 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">바이어 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->buyers->total() }}개</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('buyer.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('common.total', ['count' => $this->buyers->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            바이어 등록
+            {{ __('buyer.create_btn') }}
         </button>
     </div>
 </div>
 
 {{-- 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일 · 담당자"
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('buyer.search_ph') }}"
            class="input-filter w-64" />
     {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
     <select wire:model.live="salesmanFilter" class="input-filter">
-        <option value="">담당자 전체</option>
+        <option value="">{{ __('buyer.all_salesmen') }}</option>
         @foreach($this->salesmen as $sm)
             <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
     </select>
-    <button wire:click="search" class="btn-search">조회</button>
+    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 {{-- 테이블 --}}
@@ -575,12 +575,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">바이어명</th>
-                <th class="pb-2 pr-4 font-medium">담당자</th>
-                <th class="pb-2 pr-4 font-medium">국가</th>
-                <th class="pb-2 pr-4 font-medium">이메일</th>
-                <th class="pb-2 pr-4 font-medium">전화</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('buyer.col_name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.contact') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.country') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -592,7 +592,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($b->salesman)
                         <span class="badge badge-blue">{{ $b->salesman->name }}</span>
                     @else
-                        <span class="text-gray-300">미지정</span>
+                        <span class="text-gray-300">{{ __('buyer.unassigned') }}</span>
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->country?->name ?? '-' }}</td>
@@ -600,17 +600,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $b->contact_phone ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">
-                        {{ $b->is_active ? '활성' : '비활성' }}
+                        {{ $b->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
                 <td class="py-3 text-right">
                     <button wire:click.stop="delete({{ $b->id }})"
-                            wire:confirm="{{ $b->name }} 바이어를 삭제하시겠습니까?"
-                            class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                            wire:confirm="{{ __('buyer.delete_confirm', ['name' => $b->name]) }}"
+                            class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                 </td>
             </tr>
             @empty
-            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">바이어가 없습니다.</td></tr>
+            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -624,10 +624,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="font-medium text-gray-800">{{ $b->name }}</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
         </div>
-        <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">{{ $b->is_active ? '활성' : '비활성' }}</span>
+        <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">{{ $b->is_active ? __('common.active') : __('common.inactive') }}</span>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">바이어가 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</div>
     @endforelse
 </div>
 
@@ -654,7 +654,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '바이어 수정' : '바이어 등록' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('buyer.edit_title') : __('buyer.create_title') }}</h2>
         <button @click="attemptClose()" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -662,10 +662,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 탭 --}}
     <div class="flex border-b px-5">
-        @foreach([['basic','기본정보'],['consignees','컨사이니'],['savings','적립금']] as [$k,$l])
+        @foreach(['basic','consignees','savings'] as $k)
         <button @click="tab='{{ $k }}'"
                 :class="tab==='{{ $k }}' ? 'border-b-2 border-violet-600 text-violet-600' : 'text-gray-500 hover:text-gray-700'"
-                class="px-4 py-3 text-sm font-medium transition flex-shrink-0">{{ $l }}</button>
+                class="px-4 py-3 text-sm font-medium transition flex-shrink-0">{{ __('buyer.tab.'.$k) }}</button>
         @endforeach
     </div>
 
@@ -680,8 +680,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             @php $br = $this->buyerReceivable; @endphp
             <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                 <div class="flex items-center justify-between text-xs text-gray-500 mb-1.5">
-                    <span class="font-semibold text-gray-700">바이어 미수금 현황</span>
-                    <span>{{ $br['vehicle_count'] }}대 · 총 ₩{{ number_format($br['total_krw']) }}</span>
+                    <span class="font-semibold text-gray-700">{{ __('buyer.receivable.title') }}</span>
+                    <span>{{ __('buyer.receivable.summary', ['count' => $br['vehicle_count'], 'amount' => number_format($br['total_krw'])]) }}</span>
                 </div>
                 <div class="h-3 bg-white rounded-full overflow-hidden border border-gray-200">
                     @if($br['unpaid_krw'] <= 0)
@@ -692,10 +692,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="mt-1.5 flex items-center justify-between text-xs">
                     @if($br['unpaid_krw'] <= 0)
-                    <span class="font-medium text-emerald-700">✓ 완납</span>
+                    <span class="font-medium text-emerald-700">{{ __('buyer.receivable.fully_paid') }}</span>
                     @else
-                    <span class="font-medium text-amber-700">입금률 {{ number_format($br['paid_pct'], 1) }}%</span>
-                    <span class="text-red-600 font-medium">미수금 ₩{{ number_format($br['unpaid_krw']) }}</span>
+                    <span class="font-medium text-amber-700">{{ __('buyer.receivable.paid_pct', ['pct' => number_format($br['paid_pct'], 1)]) }}</span>
+                    <span class="text-red-600 font-medium">{{ __('buyer.receivable.unpaid', ['amount' => number_format($br['unpaid_krw'])]) }}</span>
                     @endif
                 </div>
             </div>
@@ -707,12 +707,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mb-4 rounded-lg border border-violet-200 bg-violet-50 p-3">
                 <div class="flex items-center justify-between">
                     <div class="text-xs">
-                        <div class="font-semibold text-violet-700">💸 누적 송금 수수료 (셀러 부담)</div>
-                        <div class="mt-0.5 text-violet-600">우리가 이 바이어를 위해 누적으로 부담한 송금 수수료입니다. 협상 카드로 활용하세요.</div>
+                        <div class="font-semibold text-violet-700">{{ __('buyer.fees.title') }}</div>
+                        <div class="mt-0.5 text-violet-600">{{ __('buyer.fees.desc') }}</div>
                     </div>
                     <div class="text-right">
                         <div class="text-base font-bold text-violet-700">₩{{ number_format($bf['total_krw']) }}</div>
-                        <div class="text-xs text-violet-500">{{ $bf['count'] }}건</div>
+                        <div class="text-xs text-violet-500">{{ __('buyer.fees.count', ['count' => $bf['count']]) }}</div>
                     </div>
                 </div>
             </div>
@@ -720,51 +720,51 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             <div class="space-y-3">
                 <div>
-                    <label class="label-base">바이어명 <span class="text-red-500">*</span></label>
-                    <input wire:model="name" type="text" class="input-base" placeholder="TOKYO AUTO TRADING" />
+                    <label class="label-base">{{ __('buyer.field.name') }} <span class="text-red-500">*</span></label>
+                    <input wire:model="name" type="text" class="input-base" placeholder="{{ __('buyer.field.name_ph') }}" />
                     @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 <div>
-                    <label class="label-base">국가</label>
+                    <label class="label-base">{{ __('common.country') }}</label>
                     <x-country-picker name="country_id_str" :value="$country_id_str" />
                 </div>
                 {{-- 회의확장씬 #5-1 (2026-05-22) — 영업담당자 직접 지정 ([관리] 솔팅 직접 관계) --}}
                 <div>
-                    <label class="label-base">영업담당자</label>
+                    <label class="label-base">{{ __('buyer.field.salesman') }}</label>
                     <select wire:model="salesman_id_str" class="input-base">
-                        <option value="">-- 미배정 --</option>
+                        <option value="">{{ __('buyer.field.salesman_unassigned') }}</option>
                         @foreach($this->salesmen as $s)
                         <option value="{{ $s->id }}">{{ $s->name }}</option>
                         @endforeach
                     </select>
-                    <p class="mt-1 text-xs text-gray-400">[관리] 로그인 시 본인 담당 영업의 바이어만 노출됩니다. 미배정 시 vehicles 통한 간접 관계로 fallback</p>
+                    <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="label-base">담당자명</label>
+                        <label class="label-base">{{ __('buyer.field.contact_name') }}</label>
                         <input wire:model="contact_name" type="text" class="input-base" />
                     </div>
                     <div>
-                        <label class="label-base">전화</label>
+                        <label class="label-base">{{ __('common.phone') }}</label>
                         <input wire:model="contact_phone" type="text" class="input-base" />
                     </div>
                 </div>
                 <div>
-                    <label class="label-base">이메일</label>
+                    <label class="label-base">{{ __('common.email') }}</label>
                     <input wire:model="contact_email" type="email" class="input-base" />
                 </div>
                 <div>
-                    <label class="label-base">주소</label>
+                    <label class="label-base">{{ __('common.address') }}</label>
                     <input wire:model="address" type="text" class="input-base" />
                 </div>
                 <div>
-                    <label class="label-base">메모</label>
+                    <label class="label-base">{{ __('common.memo') }}</label>
                     <textarea wire:model="memo" class="input-base" rows="2"></textarea>
                 </div>
                 <div>
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                        <input wire:model="is_active" type="checkbox" class="rounded" /> 활성
+                        <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
                     </label>
                 </div>
             </div>
@@ -773,7 +773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- ── 컨사이니 --}}
         <div x-show="tab==='consignees'" x-cloak>
             @if(!$editingId)
-            <p class="text-sm text-gray-400">기본정보를 먼저 저장한 후 컨사이니를 추가할 수 있습니다.</p>
+            <p class="text-sm text-gray-400">{{ __('buyer.cons.save_first') }}</p>
             @else
             <div class="space-y-2">
                 @forelse($consigneeList as $c)
@@ -783,95 +783,95 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="text-xs text-gray-400">{{ $c['country_name'] }}{{ $c['contact_email'] ? ' · '.$c['contact_email'] : '' }}</div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <span class="badge {{ $c['is_active'] ? 'badge-green' : 'badge-gray' }} text-[10px]">{{ $c['is_active'] ? '활성' : '비활성' }}</span>
-                        <button wire:click="openConsigneeForm({{ $c['id'] }})" class="text-xs text-violet-600 hover:underline">수정</button>
+                        <span class="badge {{ $c['is_active'] ? 'badge-green' : 'badge-gray' }} text-[10px]">{{ $c['is_active'] ? __('common.active') : __('common.inactive') }}</span>
+                        <button wire:click="openConsigneeForm({{ $c['id'] }})" class="text-xs text-violet-600 hover:underline">{{ __('common.edit') }}</button>
                         <button wire:click="deleteConsignee({{ $c['id'] }})"
-                                wire:confirm="컨사이니를 삭제하시겠습니까?"
-                                class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                                wire:confirm="{{ __('buyer.cons.delete_confirm') }}"
+                                class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                     </div>
                 </div>
                 @empty
-                <p class="text-sm text-gray-400">컨사이니가 없습니다.</p>
+                <p class="text-sm text-gray-400">{{ __('buyer.cons.empty') }}</p>
                 @endforelse
 
                 {{-- 추가 버튼 --}}
                 @if(!$showConsigneeForm)
-                <button wire:click="openConsigneeForm()" class="mt-2 text-sm text-violet-600 hover:underline">+ 컨사이니 추가</button>
+                <button wire:click="openConsigneeForm()" class="mt-2 text-sm text-violet-600 hover:underline">{{ __('buyer.cons.add') }}</button>
                 @endif
             </div>
 
             {{-- 인라인 폼 --}}
             @if($showConsigneeForm)
             <div class="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4 space-y-3">
-                <h3 class="text-sm font-semibold text-violet-700">{{ $editConsigneeId ? '컨사이니 수정' : '컨사이니 추가' }}</h3>
+                <h3 class="text-sm font-semibold text-violet-700">{{ $editConsigneeId ? __('buyer.cons.form_edit') : __('buyer.cons.form_add') }}</h3>
                 <div>
-                    <label class="label-base">컨사이니명 <span class="text-red-500">*</span></label>
+                    <label class="label-base">{{ __('buyer.cons.name') }} <span class="text-red-500">*</span></label>
                     <input wire:model="cons_name" type="text" class="input-base" />
                     @error('cons_name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 {{-- 회의확장씬 #4 (2026-05-22) — ID 2컬럼. id_type 선택 시 id_value 필수 --}}
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="label-base">ID 종류</label>
+                        <label class="label-base">{{ __('buyer.cons.id_type') }}</label>
                         <select wire:model="cons_id_type" class="input-base">
-                            <option value="">— 선택 —</option>
+                            <option value="">{{ __('common.select') }}</option>
                             @foreach(\App\Models\Consignee::ID_TYPES as $key => $label)
-                            <option value="{{ $key }}">{{ $label }}</option>
+                            <option value="{{ $key }}">{{ __('consignee.id_type.'.$key) }}</option>
                             @endforeach
                         </select>
                         @error('cons_id_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="label-base">ID 번호</label>
+                        <label class="label-base">{{ __('buyer.cons.id_value') }}</label>
                         <input wire:model="cons_id_value" type="text" class="input-base" maxlength="50" />
                         @error('cons_id_value')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                     </div>
                 </div>
                 <div>
-                    <label class="label-base">국가</label>
+                    <label class="label-base">{{ __('common.country') }}</label>
                     <x-country-picker name="cons_country_id_str" :value="$cons_country_id_str" />
                 </div>
                 {{-- deep-interview 2026-05-28 Q1 — EORI/TAX --}}
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="label-base">EORI Number</label>
-                        <input wire:model="cons_eori_number" type="text" class="input-base" placeholder="예: DE7078617" />
+                        <input wire:model="cons_eori_number" type="text" class="input-base" placeholder="{{ __('buyer.field.eori_ph') }}" />
                     </div>
                     <div>
                         <label class="label-base">TAX Number</label>
-                        <input wire:model="cons_tax_number" type="text" class="input-base" placeholder="예: LT792855314" />
+                        <input wire:model="cons_tax_number" type="text" class="input-base" placeholder="{{ __('buyer.field.tax_ph') }}" />
                     </div>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="label-base">담당자</label>
+                        <label class="label-base">{{ __('common.contact') }}</label>
                         <input wire:model="cons_contact_name" type="text" class="input-base" />
                     </div>
                     <div>
-                        <label class="label-base">이메일</label>
+                        <label class="label-base">{{ __('common.email') }}</label>
                         <input wire:model="cons_contact_email" type="email" class="input-base" />
                     </div>
                     <div>
-                        <label class="label-base">전화</label>
+                        <label class="label-base">{{ __('common.phone') }}</label>
                         <input wire:model="cons_contact_phone" type="text" class="input-base" />
                     </div>
                 </div>
                 <div>
-                    <label class="label-base">주소</label>
+                    <label class="label-base">{{ __('common.address') }}</label>
                     <input wire:model="cons_address" type="text" class="input-base" />
                 </div>
                 <div>
-                    <label class="label-base">메모</label>
+                    <label class="label-base">{{ __('common.memo') }}</label>
                     <textarea wire:model="cons_memo" class="input-base" rows="1"></textarea>
                 </div>
                 <div>
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="cons_is_active" type="checkbox" class="rounded" /> 활성
+                        <input wire:model="cons_is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
                     </label>
                 </div>
                 <div class="flex gap-2 pt-1">
-                    <button wire:click="saveConsignee" class="btn-primary text-xs py-1.5 px-3">저장</button>
-                    <button wire:click="closeConsigneeForm" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600">취소</button>
+                    <button wire:click="saveConsignee" class="btn-primary text-xs py-1.5 px-3">{{ __('common.save') }}</button>
+                    <button wire:click="closeConsigneeForm" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600">{{ __('common.cancel') }}</button>
                 </div>
             </div>
             @endif
@@ -881,7 +881,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- ── 적립금 --}}
         <div x-show="tab==='savings'" x-cloak>
             @if(!$editingId)
-            <p class="text-sm text-gray-400">기본정보를 먼저 저장한 후 적립금을 관리할 수 있습니다.</p>
+            <p class="text-sm text-gray-400">{{ __('buyer.savings.save_first') }}</p>
             @else
 
             {{-- 회의확장씬 #12 Phase 3-1 (b) (2026-05-23) — 카드 → 통화별 게이지 변환 --}}
@@ -892,7 +892,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $maxBal = $maxBal > 0 ? $maxBal : 1;   // div by 0 방지
             @endphp
             <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-                <div class="text-[10px] font-semibold uppercase text-gray-400">통화별 적립금 잔액</div>
+                <div class="text-[10px] font-semibold uppercase text-gray-400">{{ __('buyer.savings.balances_title') }}</div>
                 @foreach($balances as $cur => $bal)
                 @php
                     $bal = (float) $bal;
@@ -911,15 +911,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             </div>
             @else
-            <p class="mb-4 text-xs text-gray-400">적립금 거래 내역이 없습니다.</p>
+            <p class="mb-4 text-xs text-gray-400">{{ __('buyer.savings.no_balance') }}</p>
             @endif
 
             {{-- 거래 추가 폼 --}}
             <div class="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">거래 추가</h3>
+                <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.savings.add_txn') }}</h3>
                 <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <div>
-                        <label class="label-base">통화</label>
+                        <label class="label-base">{{ __('buyer.savings.currency') }}</label>
                         <select wire:model="txn_currency" class="input-base">
                             @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                             <option value="{{ $cur }}">{{ $cur }}</option>
@@ -927,25 +927,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </select>
                     </div>
                     <div>
-                        <label class="label-base">유형</label>
+                        <label class="label-base">{{ __('buyer.savings.type') }}</label>
                         <select wire:model="txn_type" class="input-base">
-                            <option value="EARNED">적립 (EARNED)</option>
-                            <option value="USED">사용 (USED)</option>
-                            <option value="REFUND">반환 (REFUND)</option>
-                            <option value="ADJUSTMENT">조정 (ADJUSTMENT)</option>
+                            <option value="EARNED">{{ __('buyer.savings.type_earned') }}</option>
+                            <option value="USED">{{ __('buyer.savings.type_used') }}</option>
+                            <option value="REFUND">{{ __('buyer.savings.type_refund') }}</option>
+                            <option value="ADJUSTMENT">{{ __('buyer.savings.type_adjustment') }}</option>
                         </select>
                     </div>
                     <div>
-                        <label class="label-base">금액</label>
+                        <label class="label-base">{{ __('buyer.savings.amount') }}</label>
                         <input wire:model="txn_amount" type="text" class="input-base" placeholder="0.00" />
                         @error('txn_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="label-base">메모</label>
+                        <label class="label-base">{{ __('common.memo') }}</label>
                         <input wire:model="txn_note" type="text" class="input-base" />
                     </div>
                 </div>
-                <button wire:click="addSavingsTransaction" class="btn-primary mt-3 text-xs py-1.5">추가</button>
+                <button wire:click="addSavingsTransaction" class="btn-primary mt-3 text-xs py-1.5">{{ __('buyer.savings.add_btn') }}</button>
             </div>
 
             {{-- 거래 내역 --}}
@@ -953,12 +953,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <table class="w-full text-xs">
                     <thead>
                         <tr class="border-b text-left text-gray-400">
-                            <th class="pb-1.5 pr-3">일시</th>
-                            <th class="pb-1.5 pr-3">통화</th>
-                            <th class="pb-1.5 pr-3">유형</th>
-                            <th class="pb-1.5 pr-3 text-right">금액</th>
-                            <th class="pb-1.5 pr-3 text-right">잔액</th>
-                            <th class="pb-1.5">메모</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_date') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.currency') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.type') }}</th>
+                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_amount') }}</th>
+                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_balance') }}</th>
+                            <th class="pb-1.5">{{ __('common.memo') }}</th>
                             <th class="pb-1.5"></th>
                         </tr>
                     </thead>
@@ -966,8 +966,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @forelse($txnList as $t)
                         @php
                             $typeLabel = match($t['transaction_type']) {
-                                'EARNED' => '적립', 'USED' => '사용',
-                                'REFUND' => '반환', 'ADJUSTMENT' => '조정', 'CANCELLED' => '취소',
+                                'EARNED' => __('buyer.savings.t_earned'), 'USED' => __('buyer.savings.t_used'),
+                                'REFUND' => __('buyer.savings.t_refund'), 'ADJUSTMENT' => __('buyer.savings.t_adjustment'), 'CANCELLED' => __('buyer.savings.t_cancelled'),
                                 default => $t['transaction_type'],
                             };
                             $typeColor = match($t['transaction_type']) {
@@ -989,13 +989,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="py-1.5 pl-2">
                                 @if($t['transaction_type'] !== 'CANCELLED')
                                 <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"
-                                        wire:confirm="이 거래를 취소하시겠습니까?"
-                                        class="text-gray-300 hover:text-red-400" title="취소">×</button>
+                                        wire:confirm="{{ __('buyer.savings.cancel_confirm') }}"
+                                        class="text-gray-300 hover:text-red-400" title="{{ __('buyer.savings.cancel_title') }}">×</button>
                                 @endif
                             </td>
                         </tr>
                         @empty
-                        <tr><td colspan="7" class="py-6 text-center text-gray-400">내역이 없습니다.</td></tr>
+                        <tr><td colspan="7" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -1008,13 +1008,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 푸터 --}}
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
         <div x-show="tab==='basic'" class="flex gap-2">
-            <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+            <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
             <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-                <span wire:loading.remove wire:target="save">저장</span><span wire:loading wire:target="save">저장 중...</span>
+                <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>
             </button>
         </div>
         <div x-show="tab!=='basic'">
-            <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">닫기</button>
+            <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.close') }}</button>
         </div>
     </div>
 
@@ -1025,11 +1025,11 @@ new #[Layout('components.layouts.app')] class extends Component {
      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
      @click.self="confirmOpen = false">
     <div class="card max-w-sm mx-4 shadow-2xl">
-        <h3 class="text-base font-semibold text-gray-900">변경 사항이 있습니다</h3>
-        <p class="mt-2 text-sm text-gray-600">저장하지 않고 닫으면 변경 내용이 사라집니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('common.unsaved_title') }}</h3>
+        <p class="mt-2 text-sm text-gray-600">{{ __('common.unsaved_body') }}</p>
         <div class="mt-5 flex justify-end gap-2">
-            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">닫기</button>
+            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('common.close') }}</button>
         </div>
     </div>
 </div>
