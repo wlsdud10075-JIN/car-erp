@@ -237,6 +237,18 @@ class LocaleTest extends TestCase
             ->assertDontSee('컨사이니 등록');
     }
 
+    public function test_settlements_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.settlements.index'))
+            ->assertOk()
+            ->assertSee('Settlements')
+            ->assertSee('Add Settlement')
+            ->assertDontSee('정산 관리');
+    }
+
     public function test_admin_dashboard_translates_to_english(): void
     {
         $this->enableEnglish(true);
