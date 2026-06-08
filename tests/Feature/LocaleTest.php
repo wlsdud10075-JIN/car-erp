@@ -146,6 +146,17 @@ class LocaleTest extends TestCase
             ->assertSee('차량 등록');
     }
 
+    public function test_approvals_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.approvals.index'))
+            ->assertOk()
+            ->assertSee('Approval Queue')
+            ->assertDontSee('승인 큐');
+    }
+
     public function test_salesmen_translate_to_english(): void
     {
         $this->enableEnglish(true);
