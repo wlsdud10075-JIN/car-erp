@@ -206,7 +206,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         return [
             'year' => $year,
-            'labels' => array_map(fn ($m) => $m.'월', range(1, 12)),
+            'labels' => array_values(__('admin_dash.month_labels')),
             'counts' => [
                 'purchase'  => $countByMonth('purchase_date'),
                 'sale'      => $countByMonth('sale_date'),
@@ -259,7 +259,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $saleTotalKrw = [];
         $avgPerVehicle = [];
         foreach ($topIds as $id) {
-            $labels[] = $names[$id] ?? '담당자 #'.$id;
+            $labels[] = $names[$id] ?? __('admin_dash.salesman_fallback', ['id' => $id]);
             $saleCount[] = $aggregates[$id]['count'];
             $saleTotalKrw[] = $aggregates[$id]['total_krw'];
             $avgPerVehicle[] = $aggregates[$id]['count'] > 0
@@ -320,7 +320,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $datasets = [];
         foreach ($topIds as $idx => $id) {
             $datasets[] = [
-                'label' => $names[$id] ?? '담당자 #'.$id,
+                'label' => $names[$id] ?? __('admin_dash.salesman_fallback', ['id' => $id]),
                 'data' => $monthlyBySalesman[$id],
                 'backgroundColor' => $colors[$idx % count($colors)],
             ];
@@ -362,7 +362,7 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'year' => $year,
             'monthly' => [
-                'labels' => array_map(fn ($m) => $m.'월', range(1, 12)),
+                'labels' => array_values(__('admin_dash.month_labels')),
                 'datasets' => $datasets,
             ],
             'payout_pending' => $payoutPending,
@@ -604,16 +604,16 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 헤더 — 모바일 세로 스택, 데스크탑 좌우 분리 --}}
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-gray-800">관리자 대시보드</h1>
-            <p class="mt-1 text-sm text-gray-500">매출 / 차량 진행 KPI · 기간별 비즈니스 지표</p>
+            <h1 class="text-2xl font-bold text-gray-800">{{ __('admin_dash.title') }}</h1>
+            <p class="mt-1 text-sm text-gray-500">{{ __('admin_dash.subtitle') }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
             {{-- 큐 4 8-1 — 기준일 컬럼 전환 (조회 버튼 클릭 시에만 반영) --}}
             <select wire:model="dateType" class="input-filter">
-                <option value="purchase">매입일 기준</option>
-                <option value="sale">판매일 기준</option>
-                <option value="shipping">선적일 기준</option>
-                <option value="completed">거래완료일 기준</option>
+                <option value="purchase">{{ __('admin_dash.date_type.purchase') }}</option>
+                <option value="sale">{{ __('admin_dash.date_type.sale') }}</option>
+                <option value="shipping">{{ __('admin_dash.date_type.shipping') }}</option>
+                <option value="completed">{{ __('admin_dash.date_type.completed') }}</option>
             </select>
             <input type="date" wire:model="dateFrom" class="input-filter" />
             <span class="text-xs text-gray-400">~</span>
@@ -621,41 +621,41 @@ new #[Layout('components.layouts.app')] class extends Component
             <button wire:click="applyFilters" type="button"
                 class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-violet-700">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                조회
+                {{ __('admin_dash.search') }}
             </button>
             <button @click="settingsOpen = true" type="button"
                 class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
                 <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                위젯 설정
+                {{ __('admin_dash.widget_settings') }}
             </button>
         </div>
     </div>
 
     {{-- 큐 4 8-1 — 빠른 범위 선택 (클릭 시 dateFrom/dateTo만 갱신, 조회 버튼으로 재계산) --}}
     <div class="flex flex-wrap items-center gap-1.5 text-xs">
-        <span class="mr-1 text-gray-400">빠른 선택:</span>
+        <span class="mr-1 text-gray-400">{{ __('admin_dash.quick_select') }}</span>
         @foreach ([
-            'this_month' => '이번달',
-            'last_month' => '전월',
-            'this_year'  => '올해',
-            'last_year'  => '전년도',
+            'this_month' => __('admin_dash.quick.this_month'),
+            'last_month' => __('admin_dash.quick.last_month'),
+            'this_year'  => __('admin_dash.quick.this_year'),
+            'last_year'  => __('admin_dash.quick.last_year'),
         ] as $key => $label)
         <button type="button" wire:click="setQuickRange('{{ $key }}')"
             class="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-gray-600 transition hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700">
             {{ $label }}
         </button>
         @endforeach
-        <span class="ml-2 text-gray-400">→ 조회 버튼을 눌러 적용</span>
+        <span class="ml-2 text-gray-400">{{ __('admin_dash.quick_hint') }}</span>
     </div>
 
     {{-- 큐 4 8-4 — role 탭. 위젯 필터만 적용 (신규 집계 없음). --}}
     {{-- 큐 4 점검 — '전체' 탭과 '영업' 탭이 거의 같아 통합: '영업' 1개로 단일화 --}}
     <div class="flex flex-wrap gap-1 border-b border-gray-200">
         @foreach ([
-            'sales'      => '영업',
-            'clearance'  => '수출통관',
-            'settlement' => '재무',
-            'receivable' => '채권',
+            'sales'      => __('admin_dash.tab.sales'),
+            'clearance'  => __('admin_dash.tab.clearance'),
+            'settlement' => __('admin_dash.tab.settlement'),
+            'receivable' => __('admin_dash.tab.receivable'),
         ] as $key => $label)
         <button type="button" @click="setActiveTab('{{ $key }}')"
             :class="activeTab === '{{ $key }}'
@@ -675,17 +675,17 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="grid grid-cols-2 gap-3">
             <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">기간 차량 수</span>
-                    <span class="text-xs text-violet-500">상세 →</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.kpi_vehicles') }}</span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['vehicles']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['vehicles']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
             </a>
             <a href="{{ $this->vehiclesUrl(['action' => 'has_purchase']) }}" wire:navigate class="card transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">기간 매입가 합계</span>
-                    <span class="text-xs text-violet-500">상세 →</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.kpi_purchase_total') }}</span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['purchase_total']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['purchase_total']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
             </a>
         </div>
 
@@ -694,29 +694,29 @@ new #[Layout('components.layouts.app')] class extends Component
             <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
                class="card border-blue-200 bg-blue-50/30 transition hover:bg-blue-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-blue-700">이달 판매 (발생) <span class="font-normal text-gray-400">판매 등록 총액</span></span>
-                    <span class="text-xs text-violet-500">{{ $this->kpis['sale_count'] }}대 →</span>
+                    <span class="text-xs font-semibold text-blue-700">{{ __('admin_dash.kpi_sale_accrual') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_sale_accrual_sub') }}</span></span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_sale_count_link', ['count' => $this->kpis['sale_count']]) }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-blue-600">₩{{ number_format($this->kpis['sale_total_krw']) }}</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">발생주의 — 등록된 모든 판매가 KRW 환산 합</p>
+                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_sale_accrual_note') }}</p>
             </a>
             <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
                class="card border-emerald-200 bg-emerald-50/30 transition hover:bg-emerald-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-emerald-700">이달 현금 회수 <span class="font-normal text-gray-400">실제 입금액</span></span>
-                    <span class="text-xs text-violet-500">상세 →</span>
+                    <span class="text-xs font-semibold text-emerald-700">{{ __('admin_dash.kpi_cash') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_cash_sub') }}</span></span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-emerald-600">₩{{ number_format($this->kpis['cash_received_krw']) }}</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">현금주의 — row 별 입금 시점 환율 합산</p>
+                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_cash_note') }}</p>
             </a>
             <a href="{{ route('erp.receivables.index') }}" wire:navigate
                class="card border-amber-200 bg-amber-50/30 transition hover:bg-amber-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-amber-700">이달 미수금 <span class="font-normal text-gray-400">받을 돈</span></span>
-                    <span class="text-xs text-violet-500">채권관리 →</span>
+                    <span class="text-xs font-semibold text-amber-700">{{ __('admin_dash.kpi_unpaid') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_unpaid_sub') }}</span></span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_receivable_link') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">₩{{ number_format($this->kpis['unpaid_krw']) }}</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">발생 − 회수 = 미수 (자동 정합)</p>
+                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_unpaid_note') }}</p>
             </a>
         </div>
     </div>
@@ -726,14 +726,14 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (선택 기준일 기준) --}}
     @php
-        $dateTypeLabel = ['purchase' => '매입일', 'sale' => '판매일', 'shipping' => '선적일', 'completed' => '거래완료일'][$dateType] ?? '매입일';
+        $dateTypeLabel = ['purchase' => __('admin_dash.date_type_short.purchase'), 'sale' => __('admin_dash.date_type_short.sale'), 'shipping' => __('admin_dash.date_type_short.shipping'), 'completed' => __('admin_dash.date_type_short.completed')][$dateType] ?? __('admin_dash.date_type_short.purchase');
     @endphp
     <div id="w-progress" x-show="isWidgetVisible('w-progress')">
         <x-erp.pipeline-strip
             :counts="$this->kpis['by_progress']"
             :url-builder="fn (string $s) => $this->vehiclesUrl(['progressFilter' => $s])"
-            title="진행 단계별 차량 수"
-            :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' 한정'" />
+            :title="__('admin_dash.progress_title')"
+            :subtitle="$dateTypeLabel.' '.$dateFrom.' ~ '.$dateTo.' '.__('admin_dash.range_limited')" />
     </div>
 
     {{-- 큐 4 8-7 — 통관 탭 KPI (clearance 탭에서만 노출) --}}
@@ -743,39 +743,39 @@ new #[Layout('components.layouts.app')] class extends Component
             <a href="{{ $this->vehiclesUrl(['action' => 'clearance_stuck']) }}" wire:navigate
                class="card border-red-200 bg-red-50/30 transition hover:bg-red-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">통관 정체 차량</span>
-                    <span class="text-xs text-red-600">{{ $this->clearanceKpis['stuck_threshold_days'] }}일 경과</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.clearance_stuck') }}</span>
+                    <span class="text-xs text-red-600">{{ __('admin_dash.clearance_stuck_days', ['days' => $this->clearanceKpis['stuck_threshold_days']]) }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-red-600">
-                    {{ number_format($this->clearanceKpis['stuck_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
+                    {{ number_format($this->clearanceKpis['stuck_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">판매완료·완납인데 수출신고서 미발급</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.clearance_stuck_note') }}</p>
             </a>
             {{-- 카운트 SQL = Vehicle::scopeAction export_declaration_upload_needed --}}
             <a href="{{ $this->vehiclesUrl(['action' => 'export_declaration_upload_needed']) }}" wire:navigate
                class="card transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">수출신고서 미업로드</span>
-                    <span class="text-xs text-amber-500">통관중 단계</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.clearance_unfiled') }}</span>
+                    <span class="text-xs text-amber-500">{{ __('admin_dash.clearance_unfiled_badge') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">
-                    {{ number_format($this->clearanceKpis['unfiled_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span>
+                    {{ number_format($this->clearanceKpis['unfiled_count']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">통관 바이어·선적일 있지만 문서 NULL</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.clearance_unfiled_note') }}</p>
             </a>
             <div class="card">
                 <div class="section-header">
                     <span class="section-dot bg-blue-500"></span>
-                    <span class="section-title">포워딩사 TOP 5 (통관·선적 진행)</span>
+                    <span class="section-title">{{ __('admin_dash.forwarder_top') }}</span>
                 </div>
                 @if (empty($this->clearanceKpis['forwarder_top']))
-                <p class="mt-3 text-sm text-gray-400">진행 차량 없음</p>
+                <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.forwarder_empty') }}</p>
                 @else
                 <ul class="mt-2 space-y-1 text-xs">
                 @foreach ($this->clearanceKpis['forwarder_top'] as $row)
                     <li class="flex items-center justify-between">
                         <span class="text-gray-700">{{ $row['name'] }}</span>
-                        <span class="font-mono font-semibold text-blue-600">{{ $row['count'] }}대</span>
+                        <span class="font-mono font-semibold text-blue-600">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</span>
                     </li>
                 @endforeach
                 </ul>
@@ -790,23 +790,23 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex flex-wrap gap-3">
             <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">정산 지급 대기 총액</span>
-                    <span class="text-xs text-amber-500">확정·미지급</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.settle_payout_pending') }}</span>
+                    <span class="text-xs text-amber-500">{{ __('admin_dash.settle_payout_badge') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">
-                    {{ number_format($this->settlementKpis['payout_pending']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
+                    {{ number_format($this->settlementKpis['payout_pending']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">확정 상태 정산의 실지급액 합계</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.settle_payout_note') }}</p>
             </div>
             <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">정산 마진율 평균</span>
-                    <span class="text-xs text-violet-500">지급완료 한정</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.settle_margin_rate') }}</span>
+                    <span class="text-xs text-violet-500">{{ __('admin_dash.settle_margin_badge') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-violet-600">
                     {{ number_format($this->settlementKpis['avg_margin_rate'] * 100, 1) }}<span class="ml-1 text-sm font-normal text-gray-500">%</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">총마진 / 판매금원화 평균</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.settle_margin_note') }}</p>
             </div>
             {{-- 큐 16 — '채널별 평균 마진' 카드 제거 (채널 단일화). --}}
         </div>
@@ -815,12 +815,12 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">인원별 정산지급액 월별 (<span x-text="chartData.settlement.year"></span>년)</span>
+                <span class="section-title">{{ __('admin_dash.settle_monthly_title_pre') }}<span x-text="chartData.settlement.year"></span>{{ __('admin_dash.settle_monthly_title_post') }}</span>
             </div>
             <div class="mt-3 h-72">
                 <canvas x-ref="settlementMonthlyCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">지급완료 정산만 집계. 상위 8명 누적. 스냅샷 우선 (소급 보정 방지).</p>
+            <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.settle_monthly_note') }}</p>
         </div>
     </div>
 
@@ -829,22 +829,22 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-purple-500"></span>
-                <span class="section-title">담당자별 판매 대수 (상위 10명)</span>
+                <span class="section-title">{{ __('admin_dash.salesman_count_title') }}</span>
             </div>
             <div class="mt-3 h-64">
                 <canvas x-ref="salesmanCountCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">{{ $dateTypeLabel }} {{ $dateFrom }} ~ {{ $dateTo }} 기준</p>
+            <p class="mt-2 text-[11px] text-gray-400">{{ $dateTypeLabel }} {{ $dateFrom }} ~ {{ $dateTo }} {{ __('admin_dash.salesman_count_note') }}</p>
         </div>
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">담당자별 판매 금액 KRW (상위 10명)</span>
+                <span class="section-title">{{ __('admin_dash.salesman_krw_title') }}</span>
             </div>
             <div class="mt-3 h-64">
                 <canvas x-ref="salesmanKrwCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">tooltip에 평균 판매가 표시</p>
+            <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.salesman_krw_note') }}</p>
         </div>
     </div>
 
@@ -853,22 +853,22 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-violet-500"></span>
-                <span class="section-title">월별 차량 대수 (<span x-text="chartData.year"></span>년)</span>
+                <span class="section-title">{{ __('admin_dash.monthly_count_title_pre') }}<span x-text="chartData.year"></span>{{ __('admin_dash.monthly_count_title_post') }}</span>
             </div>
             <div class="mt-3 h-64">
                 <canvas x-ref="monthlyCountsCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">매입·판매·거래완료(B/L 발행) 컬럼별 월 분포</p>
+            <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.monthly_count_note') }}</p>
         </div>
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
-                <span class="section-title">월별 판매가 합계 KRW (<span x-text="chartData.year"></span>년)</span>
+                <span class="section-title">{{ __('admin_dash.monthly_sales_title_pre') }}<span x-text="chartData.year"></span>{{ __('admin_dash.monthly_sales_title_post') }}</span>
             </div>
             <div class="mt-3 h-64">
                 <canvas x-ref="monthlySalesCanvas"></canvas>
             </div>
-            <p class="mt-2 text-[11px] text-gray-400">sale_date 기준. 외화는 sale_price × exchange_rate (환율 0/NULL 제외)</p>
+            <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.monthly_sales_note') }}</p>
         </div>
     </div>
 
@@ -877,21 +877,21 @@ new #[Layout('components.layouts.app')] class extends Component
         {{-- 총 미수금 + 위험도 카운트 5개 — flex-wrap (Tailwind 빌드 누락 대비) --}}
         <div class="flex flex-wrap gap-3">
             <div class="card min-w-[180px] flex-1 border-red-200 bg-red-50/30">
-                <div class="text-xs text-gray-500">총 미수금</div>
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_total_unpaid') }}</div>
                 <div class="mt-1 text-2xl font-bold text-red-600">
-                    {{ number_format($this->receivableKpis['total_unpaid']) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span>
+                    {{ number_format($this->receivableKpis['total_unpaid']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
-                <p class="mt-1 text-[11px] text-gray-400">환율 미입력 외화 제외</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_total_unpaid_note') }}</p>
             </div>
             {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅 --}}
-            @foreach (['safe' => ['안전', 'green'], 'caution' => ['주의', 'amber'], 'danger' => ['위험', 'amber'], 'critical' => ['심각', 'red']] as $key => [$label, $badge])
+            @foreach (['safe' => [__('receivable.risk.safe'), 'green'], 'caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
             <a href="{{ $this->vehiclesUrl(['action' => 'receivable_'.$key]) }}" wire:navigate
                class="card min-w-[160px] flex-1 transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">{{ $label }}</span>
                     <span class="badge badge-{{ $badge }}">{{ $label }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">대</span></div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
             </a>
             @endforeach
         </div>
@@ -901,21 +901,21 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex flex-wrap gap-3">
             <a href="{{ route('erp.receivables.index', ['classification' => 'before_shipping']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
-                <div class="text-xs text-gray-500">선적전 미수금</div>
-                <div class="mt-1 text-2xl font-bold text-blue-700">{{ number_format($cls['before_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['before_shipping']['count'] ?? 0 }}대 · 매입~판매완료 단계</p>
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_before') }}</div>
+                <div class="mt-1 text-2xl font-bold text-blue-700">{{ number_format($cls['before_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_before_note', ['count' => $cls['before_shipping']['count'] ?? 0]) }}</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'after_shipping']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
-                <div class="text-xs text-gray-500">선적후 미수금</div>
-                <div class="mt-1 text-2xl font-bold text-amber-700">{{ number_format($cls['after_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['after_shipping']['count'] ?? 0 }}대 · 통관~선적완료 단계</p>
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_after') }}</div>
+                <div class="mt-1 text-2xl font-bold text-amber-700">{{ number_format($cls['after_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_after_note', ['count' => $cls['after_shipping']['count'] ?? 0]) }}</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'deposit']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
-                <div class="text-xs text-gray-500">디파짓 (적립금 사용분)</div>
-                <div class="mt-1 text-2xl font-bold text-violet-700">{{ number_format($cls['deposit']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">원</span></div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ $cls['deposit']['count'] ?? 0 }}대 · savings_used &gt; 0</p>
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_deposit') }}</div>
+                <div class="mt-1 text-2xl font-bold text-violet-700">{{ number_format($cls['deposit']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_deposit_note', ['count' => $cls['deposit']['count'] ?? 0]) }}</p>
             </a>
         </div>
 
@@ -924,18 +924,18 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="card">
                 <div class="section-header">
                     <span class="section-dot bg-violet-500"></span>
-                    <span class="section-title">미수금 상위 담당자 TOP 10</span>
+                    <span class="section-title">{{ __('admin_dash.recv_salesman_top') }}</span>
                 </div>
                 @if (empty($this->receivableKpis['salesman_top']))
-                <p class="mt-3 text-sm text-gray-400">미수금 차량 없음</p>
+                <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.recv_empty') }}</p>
                 @else
                 <table class="mt-3 w-full text-xs">
                     <thead>
                         <tr class="border-b border-gray-200 text-gray-500">
-                            <th class="py-1.5 text-left">담당자</th>
-                            <th class="py-1.5 text-right">미수금</th>
-                            <th class="py-1.5 text-right">미납률</th>
-                            <th class="py-1.5 text-right">차량</th>
+                            <th class="py-1.5 text-left">{{ __('admin_dash.recv_col_salesman') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_unpaid') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_rate') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_vehicle') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -944,7 +944,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <td class="py-1.5">{{ $row['name'] }}</td>
                             <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
                             <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
-                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}대</td>
+                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}{{ __('admin_dash.unit_count') }}</td>
                         </tr>
                     @endforeach
                     </tbody>
@@ -954,18 +954,18 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="card">
                 <div class="section-header">
                     <span class="section-dot bg-blue-500"></span>
-                    <span class="section-title">미수금 상위 바이어 TOP 10</span>
+                    <span class="section-title">{{ __('admin_dash.recv_buyer_top') }}</span>
                 </div>
                 @if (empty($this->receivableKpis['buyer_top']))
-                <p class="mt-3 text-sm text-gray-400">미수금 차량 없음</p>
+                <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.recv_empty') }}</p>
                 @else
                 <table class="mt-3 w-full text-xs">
                     <thead>
                         <tr class="border-b border-gray-200 text-gray-500">
-                            <th class="py-1.5 text-left">바이어</th>
-                            <th class="py-1.5 text-right">미수금</th>
-                            <th class="py-1.5 text-right">미납률</th>
-                            <th class="py-1.5 text-right">차량</th>
+                            <th class="py-1.5 text-left">{{ __('admin_dash.recv_col_buyer') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_unpaid') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_rate') }}</th>
+                            <th class="py-1.5 text-right">{{ __('admin_dash.recv_col_vehicle') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -974,7 +974,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <td class="py-1.5">{{ $row['name'] }}</td>
                             <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
                             <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
-                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}대</td>
+                            <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}{{ __('admin_dash.unit_count') }}</td>
                         </tr>
                     @endforeach
                     </tbody>
@@ -985,16 +985,16 @@ new #[Layout('components.layouts.app')] class extends Component
 
         {{-- 채권관리 상세 링크 --}}
         <div class="card border-violet-200 bg-violet-50/30">
-            <p class="text-sm text-gray-700">회수 이력·세부 차량별 정보는 채권관리 화면에서 관리됩니다.</p>
+            <p class="text-sm text-gray-700">{{ __('admin_dash.recv_link_card') }}</p>
             <a href="{{ route('erp.receivables.index') }}" wire:navigate
                class="mt-2 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700">
-                채권관리 화면으로 이동 →
+                {{ __('admin_dash.recv_link_btn') }}
             </a>
         </div>
     </div>
 
     <p class="text-xs text-gray-400" x-show="activeTab !== 'receivable'">
-        ⓘ 미수금·회수 이력·채권 위험도는 <a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-violet-600 hover:underline">채권관리 화면</a>에서 확인하세요.
+        {{ __('admin_dash.footer_pre') }}<a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-violet-600 hover:underline">{{ __('admin_dash.footer_link') }}</a>{{ __('admin_dash.footer_post') }}
     </p>
 
     {{-- 위젯 설정 슬라이드 패널 --}}
@@ -1011,13 +1011,13 @@ new #[Layout('components.layouts.app')] class extends Component
             class="relative z-10 h-full w-80 overflow-y-auto bg-white p-6 shadow-xl">
 
             <div class="mb-6 flex items-center justify-between">
-                <h3 class="font-bold text-gray-800">위젯 설정</h3>
+                <h3 class="font-bold text-gray-800">{{ __('admin_dash.widget_settings') }}</h3>
                 <button @click="settingsOpen = false" class="text-gray-400 hover:text-gray-600" type="button">
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
 
-            <p class="mb-4 text-xs text-gray-500">표시할 위젯을 선택하세요. 설정은 이 브라우저에 저장됩니다.</p>
+            <p class="mb-4 text-xs text-gray-500">{{ __('admin_dash.widget_panel_hint') }}</p>
 
             <div class="space-y-4">
                 <template x-for="w in widgetList" :key="w.key">
@@ -1043,13 +1043,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 settingsOpen: false,
                 widgets: {},
                 widgetList: [
-                    { key: 'w-kpi',        label: 'KPI 카드 (4개)' },
+                    { key: 'w-kpi',        label: '{{ __('admin_dash.widget.kpi') }}' },
                     // 큐 16 — w-channel 제거
-                    { key: 'w-progress',   label: '진행 단계별 차량 수' },
-                    { key: 'w-monthly',    label: '월별 차트 (대수·판매가)' },
-                    { key: 'w-salesman',   label: '담당자별 성과 차트' },
-                    { key: 'w-settlement', label: '정산 KPI (지급액·마진)' },
-                    { key: 'w-clearance',  label: '통관 KPI (정체·미업로드·포워딩사)' },
+                    { key: 'w-progress',   label: '{{ __('admin_dash.widget.progress') }}' },
+                    { key: 'w-monthly',    label: '{{ __('admin_dash.widget.monthly') }}' },
+                    { key: 'w-salesman',   label: '{{ __('admin_dash.widget.salesman') }}' },
+                    { key: 'w-settlement', label: '{{ __('admin_dash.widget.settlement') }}' },
+                    { key: 'w-clearance',  label: '{{ __('admin_dash.widget.clearance') }}' },
                 ],
                 // 큐 4 8-4·8-5·8-7·8-8 — 탭별 노출 위젯 매핑
                 // 점검 — 전체↔영업 통합 (영업이 회사 전체 흐름을 다 포함). 활성 탭 기본=영업.
@@ -1126,9 +1126,9 @@ new #[Layout('components.layouts.app')] class extends Component
                             data: {
                                 labels: m.labels,
                                 datasets: [
-                                    { label: '매입',    data: m.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)',  maxBarThickness: 20 },
-                                    { label: '판매',    data: m.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)',  maxBarThickness: 20 },
-                                    { label: '거래완료', data: m.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)',  maxBarThickness: 20 },
+                                    { label: '{{ __('admin_dash.chart.purchase') }}',    data: m.counts.purchase,  backgroundColor: 'rgba(59, 130, 246, 0.7)',  maxBarThickness: 20 },
+                                    { label: '{{ __('admin_dash.chart.sale') }}',    data: m.counts.sale,      backgroundColor: 'rgba(139, 92, 246, 0.7)',  maxBarThickness: 20 },
+                                    { label: '{{ __('admin_dash.chart.completed') }}', data: m.counts.completed, backgroundColor: 'rgba(16, 185, 129, 0.7)',  maxBarThickness: 20 },
                                 ],
                             },
                             options: {
@@ -1148,7 +1148,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             data: {
                                 labels: m.labels,
                                 datasets: [{
-                                    label: '판매가 KRW',
+                                    label: '{{ __('admin_dash.chart.sales_krw') }}',
                                     data: m.sales_krw,
                                     borderColor: 'rgba(59, 130, 246, 1)',
                                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -1207,7 +1207,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             data: {
                                 labels: s.labels,
                                 datasets: [{
-                                    label: '판매 대수',
+                                    label: '{{ __('admin_dash.chart.sale_count') }}',
                                     data: s.sale_count,
                                     backgroundColor: 'rgba(139, 92, 246, 0.7)',
                                     maxBarThickness: 28,
@@ -1231,7 +1231,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             data: {
                                 labels: s.labels,
                                 datasets: [{
-                                    label: '판매 금액 KRW',
+                                    label: '{{ __('admin_dash.chart.sale_amount_krw') }}',
                                     data: s.sale_total_krw,
                                     backgroundColor: 'rgba(16, 185, 129, 0.7)',
                                     maxBarThickness: 28,
@@ -1244,10 +1244,10 @@ new #[Layout('components.layouts.app')] class extends Component
                                     legend: { display: false },
                                     tooltip: {
                                         callbacks: {
-                                            label: (ctx) => '합계 ₩ ' + ctx.parsed.x.toLocaleString(),
+                                            label: (ctx) => '{{ __('admin_dash.chart.tip_total') }}' + ctx.parsed.x.toLocaleString(),
                                             afterLabel: (ctx) => {
                                                 const avg = s.avg_per_vehicle[ctx.dataIndex] || 0;
-                                                return '평균 ₩ ' + avg.toLocaleString();
+                                                return '{{ __('admin_dash.chart.tip_avg') }}' + avg.toLocaleString();
                                             },
                                         },
                                     },
