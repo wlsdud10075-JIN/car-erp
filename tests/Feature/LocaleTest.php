@@ -116,4 +116,24 @@ class LocaleTest extends TestCase
             ->assertSee('처리 필요 항목')
             ->assertSee('차량 진행 단계');
     }
+
+    public function test_vehicle_list_translates_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.vehicles.index'))
+            ->assertOk()
+            ->assertSee('Add Vehicle')
+            ->assertSee('Visible Columns')
+            ->assertDontSee('차량 등록');
+    }
+
+    public function test_vehicle_list_stays_korean_by_default(): void
+    {
+        $this->actingAs($this->localeUser('ko'))
+            ->get(route('erp.vehicles.index'))
+            ->assertOk()
+            ->assertSee('차량 등록');
+    }
 }

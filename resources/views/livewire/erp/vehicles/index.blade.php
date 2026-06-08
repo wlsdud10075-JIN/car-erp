@@ -2207,7 +2207,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         $this->unsetComputedProperties();
-        session()->flash('success', '차량이 삭제됐습니다.');
+        session()->flash('success', __('vehicle.deleted'));
     }
 
     // 큐 14-4-4 G2 — 승인 요청 모달 상태
@@ -2924,19 +2924,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- ── 페이지 헤더 ─────────────────────────────────────────────── --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">차량 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->vehicles->total() }}대</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('vehicle.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.total', ['count' => $this->vehicles->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('vehicle.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('vehicle.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('vehicle.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('vehicle.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            차량 등록
+            {{ __('vehicle.create_btn') }}
         </button>
     </div>
 </div>
@@ -2945,41 +2945,41 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="space-y-2">
     {{-- 검색 + 날짜 + 조회 --}}
     <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-        <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호"
+        <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="{{ __('vehicle.search_placeholder') }}"
                class="input-filter w-52" />
         <select wire:model="dateType" class="input-filter">
-            <option value="purchase">매입일</option>
-            <option value="sale">판매일</option>
-            <option value="shipping">선적일</option>
-            <option value="bl">B/L발행일</option>
+            <option value="purchase">{{ __('vehicle.date_type.purchase') }}</option>
+            <option value="sale">{{ __('vehicle.date_type.sale') }}</option>
+            <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
+            <option value="bl">{{ __('vehicle.date_type.bl') }}</option>
         </select>
         <input wire:model="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="date" class="input-filter" />
         <select wire:model.live="salesmanId" class="input-filter">
-            <option value="">담당자 전체</option>
+            <option value="">{{ __('vehicle.all_salesmen') }}</option>
             @foreach($this->salesmen as $s)
                 <option value="{{ $s->id }}">{{ $s->name }}</option>
             @endforeach
         </select>
         {{-- 회의확장씬 #3 Phase 2-4 (2026-05-23) — 바이어 select 필터 --}}
         <select wire:model.live="buyerId" class="input-filter">
-            <option value="">바이어 전체</option>
+            <option value="">{{ __('vehicle.all_buyers') }}</option>
             @foreach($this->buyersForFilter as $b)
                 <option value="{{ $b->id }}">{{ $b->name }}</option>
             @endforeach
         </select>
-        <button wire:click="applyFilters" class="btn-search">조회</button>
+        <button wire:click="applyFilters" class="btn-search">{{ __('vehicle.search_btn') }}</button>
     </div>
     {{-- 빠른 탭 필터 — 큐 16: 채널 pill 제거 (단일 채널) --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <div class="flex flex-wrap gap-1">
             {{-- 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료. v3 호환 키는 매핑에서 같은 라벨로 흡수 --}}
-            @foreach(['' => '전체', '매입중' => '매입중', '매입완료' => '매입완료', '말소완료' => '말소완료', '판매중' => '판매중', '판매완료' => '판매완료', '선적중' => '선적중', '선적완료' => '선적완료', '통관중' => '통관중', '통관완료' => '통관완료', '수출통관중' => '통관중', '수출통관완료' => '통관완료', '거래완료' => '거래완료'] as $val => $label)
+            @foreach(['', '매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료', '거래완료'] as $val)
             <button wire:click="$set('progressFilter', '{{ $val }}')"
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            {{ $progressFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
-                {{ $label }}
+                {{ $val === '' ? __('vehicle.filter_all') : __('domain.progress.'.$val) }}
             </button>
             @endforeach
         </div>
@@ -2991,27 +2991,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 @php
     $shipIds = implode(',', $shipDocIds);
     $shipCnt = count($shipDocIds);
-    $shipDocs = [
-        'container_invoice_packing' => '컨테이너 Invoice&Packing',
-        'container_contract' => '컨테이너 Contract',
-        'roro_invoice_packing' => 'RORO Invoice&Packing',
-        'roro_contract' => 'RORO Contract',
-    ];
+    $shipDocs = ['container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'];
 @endphp
 <div class="card-tight mb-3 flex flex-col gap-2 border-amber-300 bg-amber-50 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex items-center gap-2 text-sm">
-        <span class="font-semibold text-amber-800">{{ $shipCnt }}대 선택</span>
+        <span class="font-semibold text-amber-800">{{ __('vehicle.selected', ['count' => $shipCnt]) }}</span>
         @if($shipCnt > 30)
-            <span class="text-xs text-red-600">최대 30대까지 발급 가능</span>
+            <span class="text-xs text-red-600">{{ __('vehicle.max30') }}</span>
         @endif
-        <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">선택 해제</button>
+        <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
     </div>
     <div class="flex flex-wrap gap-2">
-        @foreach($shipDocs as $type => $label)
+        @foreach($shipDocs as $type)
             <a href="{{ $shipCnt <= 30 ? route('erp.vehicles.documents.multi', ['type' => $type, 'ids' => $shipIds]) : '#' }}"
                target="_blank"
                class="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 {{ $shipCnt > 30 ? 'pointer-events-none opacity-50' : '' }}">
-                ↓ {{ $label }}
+                ↓ {{ __('vehicle.shipdoc.'.$type) }}
             </a>
         @endforeach
     </div>
@@ -3027,11 +3022,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="mb-2 flex justify-end relative">
         <button type="button" @click="open = !open"
                 class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
-            컬럼 <span x-text="open ? '▲' : '▼'"></span>
+            {{ __('vehicle.columns') }} <span x-text="open ? '▲' : '▼'"></span>
         </button>
         <div x-show="open" x-cloak @click.outside="open = false"
              class="absolute right-0 top-8 z-10 w-56 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
-            <div class="px-3 pb-1 text-[10px] font-semibold uppercase text-gray-400">표시 컬럼</div>
+            <div class="px-3 pb-1 text-[10px] font-semibold uppercase text-gray-400">{{ __('vehicle.show_columns') }}</div>
             <template x-for="col in togglableColumns" :key="col.key">
                 <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
                     <input type="checkbox" :checked="visible[col.key]" @change="toggle(col.key)" class="rounded" />
@@ -3039,7 +3034,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </label>
             </template>
             <div class="border-t border-gray-100 mt-1 px-3 py-1">
-                <button @click="resetDefaults()" class="text-[11px] text-violet-600 hover:underline">기본값 복원</button>
+                <button @click="resetDefaults()" class="text-[11px] text-violet-600 hover:underline">{{ __('vehicle.reset_defaults') }}</button>
             </div>
         </div>
     </div>
@@ -3058,22 +3053,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 };
             @endphp
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="w-6 pb-2 pr-2 font-medium" title="선적 서류용 다중 선택 (수출 차량)"></th>
-                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', '차량번호') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', '브랜드/차종') !!}</th>
-                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', '진행상태') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', '매입일') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', '판매일') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', '선적일') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', 'B/L발행일') !!}</th>
-                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', '담당자') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', '바이어') !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', '채널') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">통화/환율</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', '매입가', 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', '판매가', 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">미수금</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">입금률</th>
+                <th class="w-6 pb-2 pr-2 font-medium" title="{{ __('vehicle.shipdoc_select_title') }}"></th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', __('vehicle.col.brand_model')) !!}</th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', __('vehicle.col.status')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('vehicle.col.shipping_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -3106,7 +3101,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             >
                 <td class="py-3 pr-2" @click.stop>
                     @if($v->sales_channel === 'export')
-                        <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" class="rounded border-gray-300" title="선적 서류 다중 선택" />
+                        <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_title') }}" />
                     @endif
                 </td>
                 <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
@@ -3114,14 +3109,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                 </td>
-                <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ $status }}</span></td>
+                <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span></td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>
                 <td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
                     {{ $v->currency }}
                     @if($v->exchange_rate && $v->exchange_rate != 1)
@@ -3142,18 +3137,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
                 <td class="py-3 pr-4 text-right text-xs" x-show="visible['unpaid_ratio']">
                     @if($unpaidRatio === null)<span class="text-gray-300">-</span>
-                    @elseif($unpaidRatio <= 0)<span class="text-green-600 font-medium">완납</span>
+                    @elseif($unpaidRatio <= 0)<span class="text-green-600 font-medium">{{ __('vehicle.fully_paid') }}</span>
                     @else <span class="text-amber-600">{{ number_format((1 - $unpaidRatio) * 100, 0) }}%</span>
                     @endif
                 </td>
                 <td class="py-3 text-right">
                     <button wire:click.stop="delete({{ $v->id }})"
-                            wire:confirm="차량 {{ $v->vehicle_number }}을 삭제하시겠습니까?"
-                            class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                            wire:confirm="{{ __('vehicle.delete_confirm', ['number' => $v->vehicle_number]) }}"
+                            class="text-xs text-red-400 hover:text-red-600">{{ __('vehicle.delete') }}</button>
                 </td>
             </tr>
             @empty
-            <tr><td colspan="17" class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</td></tr>
+            <tr><td colspan="17" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
             @endforelse
         </tbody>
         </table>
@@ -3175,18 +3170,18 @@ function vehicleColumnsToggle() {
         open: false,
         visible: {},
         togglableColumns: [
-            { key: 'brand_model',    label: '브랜드/차종' },
-            { key: 'purchase_date',  label: '매입일' },
-            { key: 'sale_date',      label: '판매일' },
-            { key: 'shipping_date',  label: '선적일' },
-            { key: 'bl_issue_date',  label: 'B/L발행일' },
-            { key: 'buyer',          label: '바이어' },
-            { key: 'sales_channel',  label: '채널' },
-            { key: 'currency_rate',  label: '통화/환율' },
-            { key: 'purchase_price', label: '매입가' },
-            { key: 'sale_price',     label: '판매가' },
-            { key: 'unpaid_amount',  label: '미수금' },
-            { key: 'unpaid_ratio',   label: '입금률' },
+            { key: 'brand_model',    label: @json(__('vehicle.col.brand_model')) },
+            { key: 'purchase_date',  label: @json(__('vehicle.col.purchase_date')) },
+            { key: 'sale_date',      label: @json(__('vehicle.col.sale_date')) },
+            { key: 'shipping_date',  label: @json(__('vehicle.col.shipping_date')) },
+            { key: 'bl_issue_date',  label: @json(__('vehicle.col.bl_issue_date')) },
+            { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
+            { key: 'sales_channel',  label: @json(__('vehicle.col.channel')) },
+            { key: 'currency_rate',  label: @json(__('vehicle.col.currency_rate')) },
+            { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
+            { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
+            { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
+            { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
         ],
         init() {
             const saved = localStorage.getItem(STORAGE_KEY);
@@ -3226,13 +3221,13 @@ function vehicleColumnsToggle() {
         <div class="flex items-center gap-2">
             @if($v->sales_channel === 'export')
                 <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" @click.stop
-                       class="rounded border-gray-300" title="선적 서류 다중 선택" />
+                       class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_title') }}" />
             @endif
         <div class="space-y-0.5">
             <div class="font-mono font-semibold text-gray-800">{{ $v->vehicle_number }}</div>
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
             <div class="flex items-center gap-1.5">
-                <span class="badge {{ $badgeClass }}">{{ $status }}</span>
+                <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
                 @if($v->sale_price > 0)
                     <span class="text-xs font-medium text-gray-700">{{ number_format($v->sale_price) }} {{ $v->currency }}</span>
                 @endif
@@ -3245,7 +3240,7 @@ function vehicleColumnsToggle() {
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">차량이 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</div>
     @endforelse
 </div>
 
