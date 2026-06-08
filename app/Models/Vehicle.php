@@ -1087,6 +1087,12 @@ class Vehicle extends Model
         return '매입중';
     }
 
+    // i18n — 진행상태 표시 라벨 (현재 locale). 키(progress_status)는 한글 그대로, 표시만 번역.
+    public function getProgressStatusLabelAttribute(): string
+    {
+        return (string) trans('domain.progress.'.$this->progress_status);
+    }
+
     // ── Computed: 비용 합계 ─────────────────────────────────────────
     public function getCostTotalAttribute(): int
     {

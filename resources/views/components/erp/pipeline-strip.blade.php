@@ -1,7 +1,7 @@
 @props([
     'counts' => [],            // ['매입중' => 5, '매입완료' => 5, ...]
     'urlBuilder' => null,      // callable(string $status): string
-    'title' => '차량 진행 단계',
+    'title' => null,            // null 이면 도메인 기본 라벨
     'subtitle' => null,        // 옵션 부제목 (예: 담당자명·기간)
 ])
 
@@ -26,7 +26,7 @@
 
 <div class="card">
     <div class="mb-2 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700">{{ $title }}</h2>
+        <h2 class="text-sm font-semibold text-gray-700">{{ $title ?? __('domain.pipeline_title') }}</h2>
         @if($subtitle)
         <p class="text-xs text-gray-400">{{ $subtitle }}</p>
         @endif
@@ -41,12 +41,12 @@
                 @if($href)
                 <a href="{{ $href }}" wire:navigate
                    class="flex flex-shrink-0 flex-col items-center gap-1.5 rounded-md px-3 py-2 transition hover:bg-gray-50">
-                    <span class="badge {{ $stage['badge'] }}">{{ $stage['key'] }}</span>
+                    <span class="badge {{ $stage['badge'] }}">{{ __('domain.progress.'.$stage['key']) }}</span>
                     <span class="text-lg font-bold {{ $count > 0 ? 'text-gray-800' : 'text-gray-300' }}">{{ $count }}</span>
                 </a>
                 @else
                 <div class="flex flex-shrink-0 flex-col items-center gap-1.5 rounded-md px-3 py-2">
-                    <span class="badge {{ $stage['badge'] }}">{{ $stage['key'] }}</span>
+                    <span class="badge {{ $stage['badge'] }}">{{ __('domain.progress.'.$stage['key']) }}</span>
                     <span class="text-lg font-bold {{ $count > 0 ? 'text-gray-800' : 'text-gray-300' }}">{{ $count }}</span>
                 </div>
                 @endif

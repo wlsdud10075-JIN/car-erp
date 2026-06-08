@@ -95,4 +95,25 @@ class LocaleTest extends TestCase
 
         $this->assertSame('ko', $user->fresh()->locale);
     }
+
+    public function test_dashboard_body_translates_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.dashboard'))
+            ->assertOk()
+            ->assertSee('Action Items')
+            ->assertSee('Vehicle Pipeline')
+            ->assertDontSee('처리 필요 항목');
+    }
+
+    public function test_dashboard_body_stays_korean_by_default(): void
+    {
+        $this->actingAs($this->localeUser('ko'))
+            ->get(route('erp.dashboard'))
+            ->assertOk()
+            ->assertSee('처리 필요 항목')
+            ->assertSee('차량 진행 단계');
+    }
 }

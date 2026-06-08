@@ -130,7 +130,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         app(ExchangeRateService::class)->refresh();
         unset($this->exchangeRates);
-        $this->dispatch('notify', message: '환율 새로고침 완료', type: 'success');
+        $this->dispatch('notify', message: __('dashboard.fx_refreshed'), type: 'success');
     }
 
     #[Computed]
@@ -231,15 +231,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $monthBuy = (clone $base)->whereBetween('purchase_date', [$ms, $me])->count();
         $monthSale = (clone $base)->where('sale_price', '>', 0)->whereBetween('sale_date', [$ms, $me])->count();
         $monthDone = (clone $base)->where('progress_status_cache', '거래완료')->whereBetween('updated_at', [$ms.' 00:00:00', $me.' 23:59:59'])->count();
-        $monthLabel = now()->format('m').'월';
+        $monthLabel = app()->getLocale() === 'en' ? now()->format('M') : now()->format('n').'월';
+        $unit = __('dashboard.unit_vehicle');
 
         return [
-            ['label' => '현재 진행중',     'value' => $active,    'suffix' => '대', 'hint' => '거래완료 제외'],
-            ['label' => '이달 매입',       'value' => $monthBuy,  'suffix' => '대', 'hint' => $monthLabel.' 매입 기준'],
-            // 새회의 #7 (2026-05-23) — 라벨 명확화: '이달 판매' → '이달 판매 등록' (발생 기준 명시).
-            // 금액 KPI 발생/회수 분리는 관리자 대시보드에 (대수 카운트는 변경 없음).
-            ['label' => '이달 판매 등록',  'value' => $monthSale, 'suffix' => '대', 'hint' => $monthLabel.' 판매 등록 (입금 여부 무관)'],
-            ['label' => '이달 거래완료',   'value' => $monthDone, 'suffix' => '대', 'hint' => $monthLabel.' 완료 기준'],
+            ['label' => __('dashboard.kpi.sales.active.l'),     'value' => $active,    'suffix' => $unit, 'hint' => __('dashboard.kpi.sales.active.h')],
+            ['label' => __('dashboard.kpi.sales.month_buy.l'),  'value' => $monthBuy,  'suffix' => $unit, 'hint' => __('dashboard.kpi.sales.month_buy.h', ['month' => $monthLabel])],
+            ['label' => __('dashboard.kpi.sales.month_sale.l'), 'value' => $monthSale, 'suffix' => $unit, 'hint' => __('dashboard.kpi.sales.month_sale.h', ['month' => $monthLabel])],
+            ['label' => __('dashboard.kpi.sales.month_done.l'), 'value' => $monthDone, 'suffix' => $unit, 'hint' => __('dashboard.kpi.sales.month_done.h', ['month' => $monthLabel])],
         ];
     }
 
@@ -254,14 +253,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('settlement_status', 'pending')
             ->count();
 
+        $t = fn (string $k, string $f) => __("dashboard.act.sales.$k.$f");
+
         return [
-            $this->row('매입 미지급',         '매입가 입력 후 잔금 미지급',    $base('purchase_unpaid')->count(),   'bg-red-500',    'purchase_unpaid',   true),
-            $this->row('판매 미입금',         '판매 후 미회수 금액 존재',     $base('sale_unpaid')->count(),       'bg-amber-500',  'sale_unpaid',       true),
-            $this->row('수출통관 신청 필요',  '판매 완납 → 면장서류 미업로드',$base('clearance_needed')->count(),  'bg-blue-500',   'clearance_needed'),
-            $this->row('선적 처리 필요',      '수출통관 완료 → B/L 미처리',   $base('shipping_needed')->count(),   'bg-green-500',  'shipping_needed'),
-            $this->row('DHL 발송 대기',       '선적 완료 → DHL 미신청',       $base('dhl_needed')->count(),        'bg-teal-500',   'dhl_needed'),
+            $this->row($t('purchase_unpaid', 'l'),  $t('purchase_unpaid', 'd'),  $base('purchase_unpaid')->count(),  'bg-red-500',   'purchase_unpaid',  true),
+            $this->row($t('sale_unpaid', 'l'),      $t('sale_unpaid', 'd'),      $base('sale_unpaid')->count(),      'bg-amber-500', 'sale_unpaid',      true),
+            $this->row($t('clearance_needed', 'l'), $t('clearance_needed', 'd'), $base('clearance_needed')->count(), 'bg-blue-500',  'clearance_needed'),
+            $this->row($t('shipping_needed', 'l'),  $t('shipping_needed', 'd'),  $base('shipping_needed')->count(),  'bg-green-500', 'shipping_needed'),
+            $this->row($t('dhl_needed', 'l'),       $t('dhl_needed', 'd'),       $base('dhl_needed')->count(),       'bg-teal-500',  'dhl_needed'),
             // 정산 대기는 settlements 라우트로 직접 이동
-            ['label' => '정산 대기', 'desc' => '정산 방식 미입력 또는 확인 필요',
+            ['label' => $t('settlement_wait', 'l'), 'desc' => $t('settlement_wait', 'd'),
              'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
              'href' => route('erp.settlements.index')],
         ];
@@ -272,13 +273,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
+        $unit = __('dashboard.unit_vehicle');
+        $t = fn (string $k, string $f) => __("dashboard.kpi.clearance.$k.$f");
+
         return [
-            // 2026-05-20 #1 피드백 — 말소 대기 KPI (사용자 의도: 통관 사이드바·일반사용자 통관 대시보드·관리 토글 동일 노출)
-            ['label' => '말소 대기',               'value' => $c('deregistration_needed'),            'suffix' => '대', 'hint' => '매입가 입금 완료 → 말소 미처리'],
-            ['label' => '통관 신청 대기',          'value' => $c('clearance_request_needed'),         'suffix' => '대', 'hint' => '판매 완납 → 면장 미업로드'],
-            ['label' => '수출신고서 업로드 대기',  'value' => $c('export_declaration_upload_needed'), 'suffix' => '대', 'hint' => '통관중'],
-            ['label' => '선적 처리 대기',          'value' => $c('shipping_process_needed'),          'suffix' => '대', 'hint' => '면장 완료 → 반입지 미입력'],
-            ['label' => 'DHL 발송 대기',           'value' => $c('dhl_dispatch_needed'),              'suffix' => '대', 'hint' => 'B/L 발행 → 미신청'],
+            ['label' => $t('derg_wait', 'l'),    'value' => $c('deregistration_needed'),            'suffix' => $unit, 'hint' => $t('derg_wait', 'h')],
+            ['label' => $t('clr_req_wait', 'l'), 'value' => $c('clearance_request_needed'),         'suffix' => $unit, 'hint' => $t('clr_req_wait', 'h')],
+            ['label' => $t('decl_wait', 'l'),    'value' => $c('export_declaration_upload_needed'), 'suffix' => $unit, 'hint' => $t('decl_wait', 'h')],
+            ['label' => $t('ship_wait', 'l'),    'value' => $c('shipping_process_needed'),          'suffix' => $unit, 'hint' => $t('ship_wait', 'h')],
+            ['label' => $t('dhl_wait', 'l'),     'value' => $c('dhl_dispatch_needed'),              'suffix' => $unit, 'hint' => $t('dhl_wait', 'h')],
         ];
     }
 
@@ -286,17 +289,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
+        $t = fn (string $k, string $f) => __("dashboard.act.clearance.$k.$f");
+
         return [
-            // 2026-05-20 사용자 요청 — canHandleDeregistration 사용자(수출통관 포함) 액션.
-            $this->row('말소 처리 필요',      '매입 완료 → 말소 미처리',                   $c('deregistration_needed'),            'bg-red-500',   'deregistration_needed', true),
-            // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
-            $this->row('통관 신청 필요',      '판매 완납 → 면장 미업로드',                 $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
-            $this->row('통관 바이어/일자 누락','판매 진입 → export_buyer 또는 shipping_date 없음', $c('clearance_info_missing'),     'bg-amber-500', 'clearance_info_missing',         true),
-            $this->row('포워딩사 미지정',     '통관 진입 → forwarding 없음',                $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing',             true),
-            $this->row('수출신고서 업로드',   '통관중 → 신고서 없음',                      $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
-            $this->row('선적 처리 필요',      '판매 완료 → 반입지 미입력',                 $c('shipping_process_needed'),          'bg-amber-500', 'shipping_process_needed'),
-            $this->row('B/L 업로드 필요',     '통관 완료 → B/L 미업로드',                  $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
-            $this->row('DHL 발송 대기',       '거래완료 → 미신청',                         $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
+            $this->row($t('deregistration_needed', 'l'),            $t('deregistration_needed', 'd'),            $c('deregistration_needed'),            'bg-red-500',   'deregistration_needed', true),
+            $this->row($t('clearance_request_needed', 'l'),         $t('clearance_request_needed', 'd'),         $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
+            $this->row($t('clearance_info_missing', 'l'),           $t('clearance_info_missing', 'd'),           $c('clearance_info_missing'),           'bg-amber-500', 'clearance_info_missing', true),
+            $this->row($t('forwarding_missing', 'l'),               $t('forwarding_missing', 'd'),               $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing', true),
+            $this->row($t('export_declaration_upload_needed', 'l'), $t('export_declaration_upload_needed', 'd'), $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
+            $this->row($t('shipping_process_needed', 'l'),          $t('shipping_process_needed', 'd'),          $c('shipping_process_needed'),          'bg-amber-500', 'shipping_process_needed'),
+            $this->row($t('bl_upload_needed', 'l'),                 $t('bl_upload_needed', 'd'),                 $c('bl_upload_needed'),                 'bg-green-500', 'bl_upload_needed'),
+            $this->row($t('dhl_dispatch_needed', 'l'),              $t('dhl_dispatch_needed', 'd'),              $c('dhl_dispatch_needed'),              'bg-teal-500',  'dhl_dispatch_needed'),
         ];
     }
 
@@ -340,14 +343,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $settlementBlockedCount = (clone $settlementBlockedQuery)->count();
         $settlementBlockedAmount = (int) ((clone $settlementBlockedQuery)->sum('sale_unpaid_amount_krw_cache') ?? 0);
 
+        $t = fn (string $k, string $f) => __("dashboard.kpi.settlement.$k.$f");
+
         return [
-            ['label' => '매입 미지급 총액', 'value' => $this->formatKrw($totalPurchaseUnpaid), 'suffix' => '', 'hint' => '진행중 매입 잔금 합계'],
-            ['label' => '판매 미입금 총액', 'value' => $this->formatKrw($totalSaleUnpaid),     'suffix' => '', 'hint' => '환율 입력 차량만 합산'],
-            ['label' => '정산 대기',        'value' => $pendingSettlements,                    'suffix' => '건','hint' => 'pending 상태'],
-            ['label' => '환율 미입력 외화', 'value' => $exchangeMissing,                       'suffix' => '대','hint' => '외화 판매 → 환율 없음'],
+            ['label' => $t('pur_unpaid', 'l'),  'value' => $this->formatKrw($totalPurchaseUnpaid), 'suffix' => '',                            'hint' => $t('pur_unpaid', 'h')],
+            ['label' => $t('sale_unpaid', 'l'), 'value' => $this->formatKrw($totalSaleUnpaid),     'suffix' => '',                            'hint' => $t('sale_unpaid', 'h')],
+            ['label' => $t('wait', 'l'),        'value' => $pendingSettlements,                    'suffix' => __('dashboard.unit_count'),    'hint' => $t('wait', 'h')],
+            ['label' => $t('fx_missing', 'l'),  'value' => $exchangeMissing,                       'suffix' => __('dashboard.unit_vehicle'),  'hint' => $t('fx_missing', 'h')],
             // 2026-05-20 #2 피드백 — 거래완료 미수금 차량 (정산 진행 차단)
-            ['label' => '정산 차단 (거래완료 미수)', 'value' => $settlementBlockedCount, 'suffix' => '대',
-             'hint' => '거래완료지만 미수금 남음 → '.$this->formatKrw($settlementBlockedAmount).' 받아야 정산 가능'],
+            ['label' => $t('blocked', 'l'),     'value' => $settlementBlockedCount, 'suffix' => __('dashboard.unit_vehicle'),
+             'hint' => __('dashboard.kpi.settlement.blocked.h', ['amount' => $this->formatKrw($settlementBlockedAmount)])],
         ];
     }
 
@@ -355,14 +360,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
+        $t = fn (string $k, string $f) => __("dashboard.act.settlement.$k.$f");
+
         return [
-            $this->row('매입 미지급',     '매입가 입력 → 잔금 미지급',     $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
-            $this->row('판매 미입금',     '판매 → 미회수 잔존',           $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
-            $this->row('환율 입력 필요',  '외화 판매 → 환율 미입력',      $c('exchange_rate_missing'),     'bg-red-500',    'exchange_rate_missing',     true),
-            $this->row('정산 생성 필요',  '거래완료 → settlement 없음',   $c('settlement_create_needed'),  'bg-blue-500',   'settlement_create_needed'),
-            $this->row('정산 확정 필요',  'settlement = pending',         $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
-            $this->row('정산 지급 필요',  'settlement = confirmed',       $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
-            $this->row('채권 위험',       '회수 위험·심각 등급',          $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
+            $this->row($t('purchase_unpaid', 'l'),           $t('purchase_unpaid', 'd'),           $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
+            $this->row($t('sale_unpaid', 'l'),               $t('sale_unpaid', 'd'),               $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
+            $this->row($t('exchange_rate_missing', 'l'),     $t('exchange_rate_missing', 'd'),     $c('exchange_rate_missing'),     'bg-red-500',    'exchange_rate_missing',     true),
+            $this->row($t('settlement_create_needed', 'l'),  $t('settlement_create_needed', 'd'),  $c('settlement_create_needed'),  'bg-blue-500',   'settlement_create_needed'),
+            $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
+            $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
+            $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
         ];
     }
 
@@ -397,11 +404,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('sale_date', '<=', $stuckDate)
             ->count();
 
+        $cnt = __('dashboard.unit_count');
+        $unit = __('dashboard.unit_vehicle');
+        $t = fn (string $k, string $f) => __("dashboard.kpi.management.$k.$f");
+
         return [
-            ['label' => '승인 대기',     'value' => $pendingApprovals,    'suffix' => '건', 'hint' => '4 액션 통합 (큐 14-3에서 활성화)'],
-            ['label' => '정산 대기',     'value' => $pendingSettlements,  'suffix' => '건', 'hint' => 'pending + confirmed'],
-            ['label' => '채권 위험',     'value' => $riskCount,           'suffix' => '대', 'hint' => '위험·심각 등급'],
-            ['label' => '통관 정체',     'value' => $stuckCount,          'suffix' => '대', 'hint' => '판매완료 30일+ → 면장 미업로드'],
+            ['label' => $t('appr_wait', 'l'),   'value' => $pendingApprovals,   'suffix' => $cnt,  'hint' => $t('appr_wait', 'h')],
+            ['label' => $t('settle_wait', 'l'), 'value' => $pendingSettlements, 'suffix' => $cnt,  'hint' => $t('settle_wait', 'h')],
+            ['label' => $t('risk', 'l'),        'value' => $riskCount,          'suffix' => $unit, 'hint' => $t('risk', 'h')],
+            ['label' => $t('clr_stuck', 'l'),   'value' => $stuckCount,         'suffix' => $unit, 'hint' => $t('clr_stuck', 'h')],
         ];
     }
 
@@ -409,15 +420,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $c = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)->count();
 
+        $t = fn (string $k, string $f) => __("dashboard.act.management.$k.$f");
+
         return [
             // 승인 대기는 별도 화면 /erp/approvals — 큐 14-3에서 활성화 (현재 카운트만 표시)
-            ['label' => '승인 대기 항목', 'desc' => '큐 14-3 활성화 예정', 'count' => 0,
+            ['label' => $t('approval_wait', 'l'), 'desc' => $t('approval_wait', 'd'), 'count' => 0,
              'dot' => 'bg-violet-500', 'urgent' => false,
              'href' => '#'],
-            $this->row('정산 확정 필요',  'settlement = pending → 승인 후 paid',  $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
-            $this->row('정산 지급 필요',  'settlement = confirmed → 승인 후 paid', $c('settlement_pay_needed'),    'bg-violet-500', 'settlement_pay_needed'),
-            $this->row('채권 위험',       '회수 위험·심각 → 추가 한도 승인 검토',  $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
-            $this->row('통관 정체',       '판매완료 30일+ → 진행 점검',           $c('clearance_stuck'),           'bg-amber-500',  'clearance_stuck',           true),
+            $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
+            $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
+            $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk', true),
+            $this->row($t('clearance_stuck', 'l'),           $t('clearance_stuck', 'd'),           $c('clearance_stuck'),           'bg-amber-500',  'clearance_stuck', true),
         ];
     }
 
@@ -445,6 +458,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if ($amount === 0) {
             return '₩0';
+        }
+        // en 은 한국식 억/만 단위 대신 전체 숫자 (외국 직원 가독성).
+        if (app()->getLocale() === 'en') {
+            return '₩'.number_format($amount);
         }
         if ($amount >= 100000000) {
             return '₩'.number_format($amount / 100000000, 1).'억';
@@ -487,12 +504,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 @php
     $user = auth()->user();
     $canToggleView = $user->isAdmin() || $user->role === '관리';
-    $viewLabel = match($roleView) {
-        '수출통관' => '내 수출통관 업무',
-        '재무' => '내 재무 업무',
-        '관리' => '내 관리 업무',
-        default => '내 영업 업무',
-    };
+    $viewLabel = __('dashboard.view_label.'.(in_array($roleView, ['수출통관','재무','관리'], true) ? $roleView : '영업'));
     $viewBadge = match($roleView) {
         '수출통관' => 'badge-amber',
         '재무' => 'badge-green',
@@ -507,8 +519,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ $viewLabel }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">
-            <span class="badge {{ $viewBadge }}">{{ $roleView }}</span>
-            · {{ now()->format('Y년 m월 d일') }}
+            <span class="badge {{ $viewBadge }}">{{ __('domain.role.'.$roleView) }}</span>
+            · {{ app()->getLocale() === 'en' ? now()->translatedFormat('M j, Y') : now()->format('Y년 m월 d일') }}
         </p>
     </div>
 
@@ -519,11 +531,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button"
                 @click="setMode('salesman')"
                 :class="viewMode === 'salesman' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-                class="rounded px-3 py-1 text-xs font-medium transition">담당자별</button>
+                class="rounded px-3 py-1 text-xs font-medium transition">{{ __('dashboard.mode_by_salesman') }}</button>
             <button type="button"
                 @click="setMode('role')"
                 :class="viewMode === 'role' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-                class="rounded px-3 py-1 text-xs font-medium transition">역할별</button>
+                class="rounded px-3 py-1 text-xs font-medium transition">{{ __('dashboard.mode_by_role') }}</button>
         </div>
         @endif
 
@@ -534,7 +546,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button"
                 @click="setView('{{ $v }}')"
                 :class="roleView === '{{ $v }}' ? 'tab-pill is-active' : 'tab-pill'"
-                class="px-3 py-1 text-xs">{{ $v }}</button>
+                class="px-3 py-1 text-xs">{{ __('domain.role.'.$v) }}</button>
             @endforeach
         </div>
         @endif
@@ -542,9 +554,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 담당자 드롭다운 — 담당자별 모드 + admin/관리만 노출 (영업 시각 고정) --}}
         @if($user->isAdmin() || $user->role === '관리')
         <div class="flex items-center gap-2" x-show="viewMode === 'salesman'" x-cloak>
-            <span class="text-xs text-gray-500">담당자</span>
+            <span class="text-xs text-gray-500">{{ __('dashboard.salesman') }}</span>
             <select wire:model.live="selectedSalesmanId" class="input-filter">
-                <option value="0">전체</option>
+                <option value="0">{{ __('dashboard.all') }}</option>
                 @foreach($this->salesmen as $sm)
                 <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                 @endforeach
@@ -562,8 +574,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
         </svg>
     </div>
-    <p class="text-base font-semibold text-gray-800">담당자 정보가 연결되지 않았습니다</p>
-    <p class="mt-1 text-sm text-gray-500">관리자에게 본 계정의 salesman 연결을 요청하세요.</p>
+    <p class="text-base font-semibold text-gray-800">{{ __('dashboard.salesman_missing_title') }}</p>
+    <p class="mt-1 text-sm text-gray-500">{{ __('dashboard.salesman_missing_sub') }}</p>
 </div>
 @else
 
@@ -571,10 +583,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 @php
     $stripSubtitle = match(true) {
         $user->isAdmin() && $this->selectedSalesmanId && $roleView === '영업'
-            => ($this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? '담당자').' 한정',
+            => __('dashboard.subtitle_only', ['name' => $this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? __('dashboard.salesman')]),
         $roleView === '영업' && ! $user->isAdmin()
-            => $user->salesman?->name ? $user->salesman->name.' 한정' : null,
-        default => '전체 차량',
+            => $user->salesman?->name ? __('dashboard.subtitle_only', ['name' => $user->salesman->name]) : null,
+        default => __('dashboard.subtitle_all'),
     };
 @endphp
 <x-erp.pipeline-strip
@@ -601,10 +613,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="card mt-3">
     <div class="mb-2 flex items-center justify-between">
         <h2 class="text-sm font-semibold text-gray-700">
-            실시간 환율
-            <span class="ml-1 text-xs font-normal text-gray-400">(KRW 기준 · 1h 캐시)</span>
+            {{ __('dashboard.fx_title') }}
+            <span class="ml-1 text-xs font-normal text-gray-400">{{ __('dashboard.fx_sub') }}</span>
         </h2>
-        <button wire:click="refreshExchangeRates" class="text-xs text-violet-600 hover:underline">새로고침</button>
+        <button wire:click="refreshExchangeRates" class="text-xs text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button>
     </div>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
         @foreach(['USD','JPY','EUR','GBP','CNY'] as $cur)
@@ -623,20 +635,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 @else
 <div class="card mt-3 bg-amber-50">
-    <p class="text-xs text-amber-700">⚠ 실시간 환율 조회 실패 — 잔금N+ 추가 시 수동 입력하세요. <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">새로고침</button></p>
+    <p class="text-xs text-amber-700">{{ __('dashboard.fx_fail') }} <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button></p>
 </div>
 @endif
 
 {{-- 할일 목록 --}}
 <div class="card">
-    <h2 class="mb-4 text-sm font-semibold text-gray-700">처리 필요 항목</h2>
+    <h2 class="mb-4 text-sm font-semibold text-gray-700">{{ __('dashboard.actions_title') }}</h2>
     @php
         $totalActions = collect($this->actions)->sum('count');
-        $emptyMessage = match($roleView) {
-            '수출통관' => ['title' => '처리 대기 항목 없음', 'sub' => '수출통관/선적/DHL 흐름 정상'],
-            '재무' => ['title' => '회수·재무 대기 없음', 'sub' => '모든 채권/정산 정상'],
-            default => ['title' => '처리할 항목이 없습니다', 'sub' => '모든 작업이 최신 상태입니다'],
-        };
+        $emptyKey = in_array($roleView, ['수출통관','재무'], true) ? $roleView : 'default';
+        $emptyMessage = ['title' => __("dashboard.empty.$emptyKey.title"), 'sub' => __("dashboard.empty.$emptyKey.sub")];
     @endphp
     @if($totalActions === 0)
     <div class="flex flex-col items-center justify-center py-8 text-center">
@@ -661,7 +670,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <span class="flex-shrink-0 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold
                          {{ $action['urgent'] ? 'bg-red-100 text-red-700' : 'text-gray-700' }}">
-                {{ $action['count'] }}건
+                {{ $action['count'] }}{{ __('dashboard.unit_count') }}
             </span>
             <svg class="h-4 w-4 flex-shrink-0 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -676,15 +685,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 진행중 차량 목록 (모든 role 공통 페어 렌더) --}}
 <div class="card">
     <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700">진행중 차량</h2>
+        <h2 class="text-sm font-semibold text-gray-700">{{ __('dashboard.active_title') }}</h2>
         <div class="flex items-center gap-3">
             <select wire:model.live="perPage" class="input-filter">
-                <option value="10">10대</option>
-                <option value="30">30대</option>
-                <option value="50">50대</option>
-                <option value="100">100대</option>
+                <option value="10">{{ __('dashboard.per_page', ['count' => 10]) }}</option>
+                <option value="30">{{ __('dashboard.per_page', ['count' => 30]) }}</option>
+                <option value="50">{{ __('dashboard.per_page', ['count' => 50]) }}</option>
+                <option value="100">{{ __('dashboard.per_page', ['count' => 100]) }}</option>
             </select>
-            <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">전체 보기 →</a>
+            <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('dashboard.view_all') }}</a>
         </div>
     </div>
 
@@ -693,13 +702,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-100 text-left text-xs text-gray-400">
-                    <th class="pb-2 pr-4 font-medium">차량번호</th>
-                    <th class="pb-2 pr-4 font-medium">담당자</th>
-                    <th class="pb-2 pr-4 font-medium">진행상태</th>
-                    <th class="pb-2 pr-4 font-medium">다음 할일</th>
-                    <th class="pb-2 pr-4 font-medium">매입일</th>
-                    <th class="pb-2 pr-4 font-medium">미지급</th>
-                    <th class="pb-2 font-medium">미입금</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.number') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.salesman') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.next') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.purchase_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.unpaid_purchase') }}</th>
+                    <th class="pb-2 font-medium">{{ __('dashboard.col.unpaid_sale') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -716,41 +725,28 @@ new #[Layout('components.layouts.app')] class extends Component {
                         in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
                         default                                                         => 'badge-gray',
                     };
-                    $nextAction = match($v->progress_status) {
-                        '매입중'       => '매입 정보 입력',
-                        '매입완료'     => '말소 처리',
-                        '말소완료'     => '판매 등록',
-                        '판매중'       => '입금 확인',
-                        '판매완료'     => '반입지 입력',
-                        '선적중'       => '수출신고서 업로드',
-                        '선적완료'     => '통관 완료 처리',
-                        '통관중'       => 'B/L 업로드',
-                        '통관완료'     => 'B/L 업로드',
-                        // v3 grandfather 호환
-                        '수출통관중'   => '면장서류 업로드',
-                        '수출통관완료' => '선적 처리',
-                        '거래완료'     => 'DHL 발송',
-                        default        => '-',
-                    };
+                    $nextAction = trans()->has('domain.next_action.'.$v->progress_status)
+                        ? __('domain.next_action.'.$v->progress_status)
+                        : __('domain.next_action.none');
                     $puAmt = $v->purchase_unpaid_amount;
                     $suAmt = $v->sale_unpaid_amount;
                 @endphp
                 <tr class="hover:bg-gray-50">
                     <td class="py-2.5 pr-4 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                     <td class="py-2.5 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
-                    <td class="py-2.5 pr-4"><span class="badge {{ $pb }}">{{ $v->progress_status }}</span></td>
+                    <td class="py-2.5 pr-4"><span class="badge {{ $pb }}">{{ $v->progress_status_label }}</span></td>
                     <td class="py-2.5 pr-4 text-xs text-gray-500">{{ $nextAction }}</td>
                     <td class="py-2.5 pr-4 text-gray-500">{{ $v->purchase_date?->format('m-d') ?? '-' }}</td>
                     <td class="py-2.5 pr-4 text-xs {{ $puAmt > 0 ? 'font-medium text-red-600' : 'text-gray-300' }}">
-                        {{ $puAmt > 0 ? '₩'.number_format($puAmt) : '없음' }}
+                        {{ $puAmt > 0 ? '₩'.number_format($puAmt) : __('dashboard.none') }}
                     </td>
                     <td class="py-2.5 text-xs {{ $suAmt > 0 ? 'font-medium text-amber-600' : 'text-gray-300' }}">
-                        {{ $suAmt > 0 ? number_format($suAmt, 0).' ('.$v->currency.')' : '없음' }}
+                        {{ $suAmt > 0 ? number_format($suAmt, 0).' ('.$v->currency.')' : __('dashboard.none') }}
                     </td>
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="7" class="py-8 text-center text-sm text-gray-400">진행중인 차량이 없습니다.</td>
+                    <td colspan="7" class="py-8 text-center text-sm text-gray-400">{{ __('dashboard.no_active') }}</td>
                 </tr>
                 @endforelse
             </tbody>
@@ -770,26 +766,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
                 default                                                         => 'badge-gray',
             };
-            $nextAction = match($v->progress_status) {
-                '매입중'       => '매입 정보 입력',
-                '매입완료'     => '말소 처리',
-                '말소완료'     => '판매 등록',
-                '판매중'       => '입금 확인',
-                '판매완료'     => '반입지 입력',
-                '선적중'       => '수출신고서 업로드',
-                '선적완료'     => '통관 완료 처리',
-                '통관중'       => 'B/L 업로드',
-                '통관완료'     => 'B/L 업로드',
-                '수출통관중'   => '면장서류 업로드',
-                '수출통관완료' => '선적 처리',
-                '거래완료'     => 'DHL 발송',
-                default        => '-',
-            };
+            $nextAction = trans()->has('domain.next_action.'.$v->progress_status)
+                ? __('domain.next_action.'.$v->progress_status)
+                : __('domain.next_action.none');
         @endphp
         <div class="rounded-lg border border-gray-100 px-3 py-2.5">
             <div class="flex items-center justify-between">
                 <span class="font-medium text-gray-800">{{ $v->vehicle_number }}</span>
-                <span class="badge {{ $pb }}">{{ $v->progress_status }}</span>
+                <span class="badge {{ $pb }}">{{ $v->progress_status_label }}</span>
             </div>
             <div class="mt-1 flex items-center justify-between">
                 <span class="text-xs text-gray-500">{{ $nextAction }}</span>
@@ -800,7 +784,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
         @empty
-        <div class="py-8 text-center text-sm text-gray-400">진행중인 차량이 없습니다.</div>
+        <div class="py-8 text-center text-sm text-gray-400">{{ __('dashboard.no_active') }}</div>
         @endforelse
     </div>
 </div>
