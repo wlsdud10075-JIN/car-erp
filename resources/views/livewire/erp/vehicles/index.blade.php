@@ -3806,52 +3806,52 @@ function vehicleColumnsToggle() {
                     <svg class="mt-0.5 h-4 w-4 flex-shrink-0 {{ $bannerColor['icon'] }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                     <div class="flex-1">
                         <p class="font-semibold {{ $bannerColor['title'] }}">
-                            이 바이어 미수 차량 {{ $overlap['count'] }}대 (₩{{ number_format($overlap['amount_krw']) }})
+                            {{ __('vehicle.overlap.title', ['count' => $overlap['count'], 'amount' => number_format($overlap['amount_krw'])]) }}
                             @if(! empty($overlap['vehicle_numbers']))
                             <span class="font-normal {{ $bannerColor['body'] }}"> · {{ implode(', ', $overlap['vehicle_numbers']) }}</span>
                             @endif
                         </p>
 
                         @if($state === 'approved_match')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">✓ 관리자 승인 받음 (차량번호 <strong>{{ $overlap['current_vehicle_number'] }}</strong>). 저장하면 신규 차량 등록됩니다 (이번 1회 한정).</p>
+                        <p class="mt-1 {{ $bannerColor['body'] }}">{!! __('vehicle.overlap.approved_match', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}</p>
 
                         @elseif($state === 'pending')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">⏳ 차량번호 <strong>{{ $overlap['current_vehicle_number'] }}</strong> 관리자 승인 대기중. 승인 후 저장 가능합니다.</p>
+                        <p class="mt-1 {{ $bannerColor['body'] }}">{!! __('vehicle.overlap.pending', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}</p>
 
                         @elseif($state === 'approved_mismatch')
                         <p class="mt-1 {{ $bannerColor['body'] }}">
-                            현재 승인된 차량번호는 <strong>{{ $overlap['approved_vehicle_number'] }}</strong>입니다.
+                            {!! __('vehicle.overlap.mismatch_approved', ['number' => '<strong>'.e($overlap['approved_vehicle_number']).'</strong>']) !!}
                             @if($overlap['current_vehicle_number'])
-                            지금 입력한 <strong>{{ $overlap['current_vehicle_number'] }}</strong>로는 저장 차단.
+                            {!! __('vehicle.overlap.mismatch_blocked', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}
                             @endif
-                            차량번호를 일치시키거나 새 승인 요청을 보내세요.
+                            {{ __('vehicle.overlap.mismatch_hint') }}
                         </p>
                         <button type="button" wire:click="openOverlapRequestModal"
                                 class="mt-2 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600">
-                            새 차량번호로 승인 요청
+                            {{ __('vehicle.overlap.req_new_number') }}
                         </button>
 
                         @elseif($state === 'rejected')
                         <p class="mt-1 {{ $bannerColor['body'] }}">
-                            ✗ 차량번호 <strong>{{ $overlap['current_vehicle_number'] }}</strong> 승인 요청이 <strong>거부됨</strong>.
+                            {!! __('vehicle.overlap.rejected', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}
                         </p>
                         @if($overlap['rejected_reason'])
-                        <p class="mt-1 text-[11px] text-red-600">요청 사유: {{ $overlap['rejected_reason'] }}</p>
+                        <p class="mt-1 text-[11px] text-red-600">{{ __('vehicle.overlap.req_reason') }} {{ $overlap['rejected_reason'] }}</p>
                         @endif
                         @if($overlap['rejected_note'])
-                        <p class="mt-1 text-[11px] text-red-600">거부 사유: <strong>{{ $overlap['rejected_note'] }}</strong></p>
+                        <p class="mt-1 text-[11px] text-red-600">{{ __('vehicle.overlap.reject_note') }} <strong>{{ $overlap['rejected_note'] }}</strong></p>
                         @endif
                         <button type="button" wire:click="openOverlapRequestModal"
                                 class="mt-2 rounded bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600">
-                            새 요청 다시 보내기
+                            {{ __('vehicle.overlap.resend') }}
                         </button>
 
                         @else
                         {{-- nothing — 요청 가능 --}}
-                        <p class="mt-1 {{ $bannerColor['body'] }}">신규 거래는 관리자 승인이 필요합니다. 승인은 (바이어 × 차량번호) 단위로 잠깁니다.</p>
+                        <p class="mt-1 {{ $bannerColor['body'] }}">{{ __('vehicle.overlap.need_approval') }}</p>
                         <button type="button" wire:click="openOverlapRequestModal"
                                 class="mt-2 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600">
-                            신규 거래 승인 요청
+                            {{ __('vehicle.overlap.req_new') }}
                         </button>
                         @endif
                     </div>
@@ -4088,7 +4088,7 @@ function vehicleColumnsToggle() {
             <div class="mt-5">
                 <div class="section-header">
                     <span class="section-dot bg-violet-500"></span>
-                    <span class="section-title">차량 간 자금 이체</span>
+                    <span class="section-title">{{ __('vehicle.transfer.section') }}</span>
                 </div>
 
                 {{-- pending 자금 이체 요청 — amber 박스 (관리 승인 대기 중) --}}
@@ -4096,19 +4096,19 @@ function vehicleColumnsToggle() {
                 <div class="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
                     <div class="flex items-center gap-2">
                         <span>⏳</span>
-                        <strong>이체 요청 승인 대기 중</strong>
+                        <strong>{{ __('vehicle.transfer.pending_title') }}</strong>
                     </div>
                     <div class="mt-1 space-y-0.5 text-amber-800">
                         <div>
-                            대상 차량 <span class="font-mono">{{ $transferCtx['pending']['target_vehicle_number'] }}</span>
-                            · 금액 <strong>{{ number_format($transferCtx['pending']['amount']) }}</strong> {{ $transferCtx['pending']['currency'] }}
+                            {{ __('vehicle.transfer.target_vehicle') }} <span class="font-mono">{{ $transferCtx['pending']['target_vehicle_number'] }}</span>
+                            · {{ __('vehicle.transfer.amount') }} <strong>{{ number_format($transferCtx['pending']['amount']) }}</strong> {{ $transferCtx['pending']['currency'] }}
                         </div>
                         <div class="text-[11px] text-amber-700">
-                            요청일 {{ $transferCtx['pending']['created_at']?->format('Y-m-d H:i') }}
-                            · 요청 #{{ $transferCtx['pending']['approval_request_id'] }}
+                            {{ __('vehicle.transfer.req_date') }} {{ $transferCtx['pending']['created_at']?->format('Y-m-d H:i') }}
+                            · {{ __('vehicle.transfer.req_no') }} #{{ $transferCtx['pending']['approval_request_id'] }}
                         </div>
                         @if($transferCtx['pending']['reason'])
-                        <div class="text-[11px] text-amber-700">사유: "{{ $transferCtx['pending']['reason'] }}"</div>
+                        <div class="text-[11px] text-amber-700">{{ __('vehicle.transfer.reason') }}: "{{ $transferCtx['pending']['reason'] }}"</div>
                         @endif
                     </div>
                 </div>
@@ -4135,21 +4135,23 @@ function vehicleColumnsToggle() {
                                 $ldKey = 'approved:'.$ld['transfer_status'];
                             }
                         }
+                        $ts = fn (string $k) => __('vehicle.transfer.s.'.$k);
+                        $tm = fn (string $k) => __('vehicle.transfer.memo.'.$k);
                         $ldClass = match($ldKey) {
-                            'approved:approved_awaiting_finance' => ['border-blue-200', 'bg-blue-50', 'text-blue-900', 'text-blue-800', 'text-blue-700', 'border-blue-100', '⏳', '관리 승인 — 재무 처리 대기 중', '승인 메모'],
-                            'approved:executed' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '이체 완료 (재무 확정)', '승인 메모'],
-                            'approved:voided_awaiting_finance' => ['border-amber-200', 'bg-amber-50', 'text-amber-900', 'text-amber-800', 'text-amber-700', 'border-amber-100', '⏳', '이체 취소 승인 — 재무 처리 대기 중', '승인 메모'],
-                            'approved:voided' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 완료', '승인 메모'],
+                            'approved:approved_awaiting_finance' => ['border-blue-200', 'bg-blue-50', 'text-blue-900', 'text-blue-800', 'text-blue-700', 'border-blue-100', '⏳', $ts('approved_awaiting_finance'), $tm('approval')],
+                            'approved:executed' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', $ts('executed'), $tm('approval')],
+                            'approved:voided_awaiting_finance' => ['border-amber-200', 'bg-amber-50', 'text-amber-900', 'text-amber-800', 'text-amber-700', 'border-amber-100', '⏳', $ts('voided_awaiting_finance'), $tm('approval')],
+                            'approved:voided' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', $ts('voided'), $tm('approval')],
                             // 큐 19-K — 재무 정방향 거부 (관리는 승인했지만 재무가 송금 불가 사유로 거부)
-                            'approved:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '재무 거부 (송금 불가)', '승인 메모'],
-                            'approved' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', '최근 이체 요청 승인됨', '승인 메모'],
-                            'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '최근 이체 요청 거부됨', '거부 사유'],
-                            'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '최근 이체 요청 취소됨', '메모'],
-                            'void:rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '이체 취소 요청 거부됨', '거부 사유'],
-                            'void:cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', '이체 취소 요청 취소됨', '메모'],
+                            'approved:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', $ts('finance_rejected'), $tm('approval')],
+                            'approved' => ['border-emerald-200', 'bg-emerald-50', 'text-emerald-900', 'text-emerald-800', 'text-emerald-700', 'border-emerald-100', '✓', $ts('approved'), $tm('approval')],
+                            'rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', $ts('rejected'), $tm('reject')],
+                            'cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', $ts('cancelled'), $tm('note')],
+                            'void:rejected'  => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', $ts('void_rejected'), $tm('reject')],
+                            'void:cancelled' => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', '⊘', $ts('void_cancelled'), $tm('note')],
                             // 큐 19-L — void 재무 거부: 관리는 승인했지만 재무가 환불 불가로 거부 → transfer 살아있음
-                            'void:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', '재무가 취소 거부 (이체 유지)', '승인 메모'],
-                            default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', '최근 이체 요청', '메모'],
+                            'void:finance_rejected' => ['border-red-200', 'bg-red-50', 'text-red-900', 'text-red-800', 'text-red-700', 'border-red-100', '❌', $ts('void_finance_rejected'), $tm('approval')],
+                            default     => ['border-gray-300', 'bg-gray-50', 'text-gray-700', 'text-gray-600', 'text-gray-500', 'border-gray-200', 'ℹ', $ts('default'), $tm('note')],
                         };
                     @endphp
                     <div class="rounded-md border {{ $ldClass[0] }} {{ $ldClass[1] }} p-3 text-xs {{ $ldClass[2] }} mb-2">
@@ -4160,30 +4162,30 @@ function vehicleColumnsToggle() {
                         <div class="mt-1 space-y-0.5 {{ $ldClass[3] }}">
                             @if($isVoid)
                                 <div>
-                                    이체 #{{ $ld['transfer_id'] }}
+                                    {{ __('vehicle.transfer.transfer_no') }} #{{ $ld['transfer_id'] }}
                                     · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
-                                    · {{ $ld['approver_name'] ?? '관리자' }}
+                                    · {{ $ld['approver_name'] ?? __('vehicle.transfer.admin_fallback') }}
                                     ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
                                 </div>
                                 @if($ld['reason'] ?? null)
                                 <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                    <span class="font-semibold">취소 요청 사유:</span> {{ $ld['reason'] }}
+                                    <span class="font-semibold">{{ __('vehicle.transfer.void_reason_label') }}:</span> {{ $ld['reason'] }}
                                 </div>
                                 @endif
                             @else
                                 <div>
-                                    대상 <span class="font-mono">{{ $ld['target_vehicle_number'] }}</span>
+                                    {{ __('vehicle.transfer.target') }} <span class="font-mono">{{ $ld['target_vehicle_number'] }}</span>
                                     · {{ number_format($ld['amount']) }} {{ $ld['currency'] }}
-                                    · {{ $ld['approver_name'] ?? '관리자' }}
+                                    · {{ $ld['approver_name'] ?? __('vehicle.transfer.admin_fallback') }}
                                     ({{ $ld['decided_at']?->format('Y-m-d H:i') }})
                                 </div>
                             @endif
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">{{ $ldClass[8] }}:</span> {{ $ld['decision_note'] ?: '(메모 없음)' }}
+                                <span class="font-semibold">{{ $ldClass[8] }}:</span> {{ $ld['decision_note'] ?: __('vehicle.transfer.no_memo') }}
                             </div>
                             @if(! $isVoid && in_array($ldKey, ['approved:executed', 'approved:voided'], true) && ! empty($ld['finance_confirmer_name']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">재무 확정:</span>
+                                <span class="font-semibold">{{ __('vehicle.transfer.finance_confirmed_label') }}:</span>
                                 {{ $ld['finance_confirmer_name'] }}
                                 ({{ $ld['confirmed_at']?->format('Y-m-d H:i') }})
                                 @if($ld['finance_note'])
@@ -4194,26 +4196,26 @@ function vehicleColumnsToggle() {
                             {{-- 큐 19-K — 재무 거부 사유 표시 (approved:finance_rejected 한정) --}}
                             @if(! $isVoid && $ldKey === 'approved:finance_rejected' && ! empty($ld['finance_rejecter_name']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">재무 거부:</span>
+                                <span class="font-semibold">{{ __('vehicle.transfer.finance_rejected_label') }}:</span>
                                 {{ $ld['finance_rejecter_name'] }}
                                 ({{ $ld['finance_rejected_at']?->format('Y-m-d H:i') }})
                             </div>
                             @if(! empty($ld['finance_reject_reason']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">거부 사유:</span> {{ $ld['finance_reject_reason'] }}
+                                <span class="font-semibold">{{ __('vehicle.transfer.reject_reason_label') }}:</span> {{ $ld['finance_reject_reason'] }}
                             </div>
                             @endif
                             @endif
                             {{-- 큐 19-L — void 재무 거부 사유 표시 (void:finance_rejected 한정) --}}
                             @if($isVoid && $ldKey === 'void:finance_rejected' && ! empty($ld['void_finance_rejecter_name']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">재무 취소 거부:</span>
+                                <span class="font-semibold">{{ __('vehicle.transfer.void_finance_rejected_label') }}:</span>
                                 {{ $ld['void_finance_rejecter_name'] }}
                                 ({{ $ld['void_finance_rejected_at']?->format('Y-m-d H:i') }})
                             </div>
                             @if(! empty($ld['void_finance_reject_reason']))
                             <div class="rounded bg-white/60 px-2 py-1 text-[11px] {{ $ldClass[4] }} border {{ $ldClass[5] }}">
-                                <span class="font-semibold">거부 사유:</span> {{ $ld['void_finance_reject_reason'] }}
+                                <span class="font-semibold">{{ __('vehicle.transfer.reject_reason_label') }}:</span> {{ $ld['void_finance_reject_reason'] }}
                             </div>
                             @endif
                             @endif
@@ -4229,14 +4231,14 @@ function vehicleColumnsToggle() {
                         $ldTransferStatus = $transferCtx['lastDecided']['transfer_status'] ?? null;
                         $isRetryCase = $ldStatus === 'rejected'
                             || ($ldStatus === 'approved' && $ldTransferStatus === 'finance_rejected');
-                        $btnLabel = $isRetryCase ? '다시 요청' : '자금 이체 요청';
+                        $btnLabel = $isRetryCase ? __('vehicle.transfer.retry') : __('vehicle.transfer.request_btn');
                     @endphp
                     <div class="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <div class="space-y-0.5">
-                                <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
-                                <div>이체 한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} <span class="text-violet-500">(받은 금액 × 50%)</span></div>
-                                <div class="text-violet-700">동일 바이어 차량 {{ $transferCtx['candidates']->count() }}대로 이체 가능</div>
+                                <div>{{ __('vehicle.transfer.received') }} <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
+                                <div>{{ __('vehicle.transfer.limit') }} <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} <span class="text-violet-500">{{ __('vehicle.transfer.limit_note') }}</span></div>
+                                <div class="text-violet-700">{{ __('vehicle.transfer.candidates', ['count' => $transferCtx['candidates']->count()]) }}</div>
                             </div>
                             <button type="button" wire:click="openTransferRequestModal"
                                     class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
@@ -4246,7 +4248,7 @@ function vehicleColumnsToggle() {
                     </div>
                     @else
                     <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
-                        {{ $transferCtx['reason'] ?: '자금 이체 가능 조건을 충족하지 않습니다.' }}
+                        {{ $transferCtx['reason'] ?: __('vehicle.transfer.not_eligible') }}
                     </div>
                     @endif
                 @endif
