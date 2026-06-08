@@ -237,6 +237,34 @@ class LocaleTest extends TestCase
             ->assertDontSee('컨사이니 등록');
     }
 
+    public function test_feature_settings_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs(User::factory()->create([
+            'permission' => 'super',
+            'locale' => 'en',
+            'email_verified_at' => now(),
+        ]))
+            ->get(route('admin.settings'))
+            ->assertOk()
+            ->assertSee('Feature Settings')
+            ->assertSee('Language (i18n)')
+            ->assertDontSee('기능 설정');
+    }
+
+    public function test_forwarding_companies_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.forwarding-companies.index'))
+            ->assertOk()
+            ->assertSee('Forwarders')
+            ->assertSee('Add Forwarder')
+            ->assertDontSee('포워딩사 관리');
+    }
+
     public function test_settlements_translate_to_english(): void
     {
         $this->enableEnglish(true);
