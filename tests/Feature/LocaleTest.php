@@ -148,6 +148,9 @@ class LocaleTest extends TestCase
             ->call('openCreate')
             ->assertSee('NICE Registration (12)')   // 기본정보 탭 섹션
             ->assertSee('Export Clearance')          // 패널 탭 네비
-            ->assertDontSee('NICE 등록정보 (12)');
+            ->assertSee('9 Cost Items')              // 매입 탭 섹션
+            ->assertSee('Seller Account (remittance target)')
+            ->assertDontSee('NICE 등록정보 (12)')
+            ->assertDontSee('비용 9개');
     }
 }

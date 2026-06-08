@@ -3586,18 +3586,18 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'purchase'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
-                <span class="section-title">매입 기본</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.purchase_basic') }}</span>
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">매입일 </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
                 {{-- 영업담당자 select 는 기본정보 탭(색상 옆)으로 이동 (2026-06-04). --}}
                 <div class="col-span-2 sm:col-span-1">
-                    <label class="label-base">구입처 </label>
-                    <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="경매 / 딜러 / 개인" />
+                    <label class="label-base">{{ __('vehicle.field.purchase_from') }} </label>
+                    <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="{{ __('vehicle.ph.purchase_from') }}" />
                 </div>
-                <div><label class="label-base">매입가 (원) </label><input wire:model="purchase_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
-                <div><label class="label-base">매도비 (원) </label><input wire:model="selling_fee_str" type="text" class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" class="input-base input-required" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -3605,13 +3605,13 @@ function vehicleColumnsToggle() {
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-400"></span>
-                <span class="section-title">매입처 계좌 정보 (송금 대상)</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.purchase_account') }}</span>
             </div>
             <div x-data class="grid grid-cols-2 gap-3 sm:grid-cols-2">
                 <div>
-                    <label class="label-base">은행명 </label>
+                    <label class="label-base">{{ __('vehicle.field.bank_name') }} </label>
                     <input x-ref="bankInput" wire:model.blur="purchase_seller_bank" type="text" list="korean-banks-list"
-                           class="input-base input-required" placeholder="국민은행 / 신한은행 / 우리은행 등" maxlength="100" autocomplete="off"
+                           class="input-base input-required" placeholder="{{ __('vehicle.ph.bank_name') }}" maxlength="100" autocomplete="off"
                            x-on:input="$refs.accountInput.value = $store.koreanBanks.applyMask($el.value, $refs.accountInput.value)" />
                     <datalist id="korean-banks-list">
                         <template x-for="bank in $store.koreanBanks.names()" :key="bank">
@@ -3620,28 +3620,28 @@ function vehicleColumnsToggle() {
                     </datalist>
                 </div>
                 <div>
-                    <label class="label-base">예금주 </label>
-                    <input wire:model="purchase_seller_holder" type="text" class="input-base input-required" placeholder="개인명 또는 법인명" maxlength="100" />
+                    <label class="label-base">{{ __('vehicle.field.account_holder') }} </label>
+                    <input wire:model="purchase_seller_holder" type="text" class="input-base input-required" placeholder="{{ __('vehicle.ph.account_holder') }}" maxlength="100" />
                 </div>
                 <div class="col-span-2">
                     <label class="label-base flex items-center gap-1">
-                        계좌번호                        <span class="text-[10px] font-normal text-violet-600">🔒 암호화 저장</span>
-                        <span class="text-[10px] font-normal text-gray-400">— 은행 선택 시 자동 hyphen</span>
+                        {{ __('vehicle.field.account_no') }} <span class="text-[10px] font-normal text-violet-600">{{ __('vehicle.panel.encrypted_note') }}</span>
+                        <span class="text-[10px] font-normal text-gray-400">{{ __('vehicle.panel.auto_hyphen') }}</span>
                     </label>
                     <input x-ref="accountInput" wire:model.blur="purchase_seller_account" type="text"
                            class="input-base input-required font-mono" placeholder="123-456-789012" autocomplete="off"
                            x-on:input="$el.value = $store.koreanBanks.applyMask($refs.bankInput.value, $el.value)" />
                 </div>
                 <div class="col-span-2">
-                    <label class="label-base">계좌 메모</label>
-                    <textarea wire:model="purchase_bank_memo" class="input-base" rows="2" placeholder="송금 시 참고할 내용 (선택)"></textarea>
+                    <label class="label-base">{{ __('vehicle.field.account_memo') }}</label>
+                    <textarea wire:model="purchase_bank_memo" class="input-base" rows="2" placeholder="{{ __('vehicle.ph.account_memo') }}"></textarea>
                 </div>
             </div>
 
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-300"></span>
-                <span class="section-title">비용 9개</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.costs') }}</span>
             </div>
 
             {{-- 회의확장씬 #9 보강 안내 (2026-05-23) — 2차 정산 대기 동안 실측 정정 가이드 --}}
@@ -3655,47 +3655,46 @@ function vehicleColumnsToggle() {
             @endphp
             @if($hasSecondaryPending && $canEditCostNow)
             <div class="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <div class="font-semibold">⏳ 2차 정산 대기 — 실측 정정 가능</div>
+                <div class="font-semibold">{{ __('vehicle.panel.secondary_pending_title') }}</div>
                 <div class="mt-0.5 text-amber-700">
-                    한 달 운영 후 청구된 실제 비용으로 수정하세요.
-                    저장 시 <strong>정산 화면의 총마진·정산액·실지급액이 자동 갱신</strong>됩니다.
+                    {{ __('vehicle.panel.secondary_pending_desc') }}
                 </div>
             </div>
             @endif
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">말소비</label><input wire:model="cost_deregistration_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">면허비</label><input wire:model="cost_license_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">탁송비</label><input wire:model="cost_towing_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">캐리비</label><input wire:model="cost_carry_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">쇼링비</label><input wire:model="cost_shoring_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">보험료</label><input wire:model="cost_insurance_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">이전비</label><input wire:model="cost_transfer_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">기타비1</label><input wire:model="cost_extra1_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">기타비2</label><input wire:model="cost_extra2_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_shoring') }}</label><input wire:model="cost_shoring_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" class="input-base" placeholder="0" /></div>
             </div>
 
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-indigo-400"></span>
-                <span class="section-title">매입 지급</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.purchase_payment') }}</span>
             </div>
             {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
             @php $canConfirmFinance = auth()->user()?->canConfirmFinance() ?? false; @endphp
             @unless($canConfirmFinance)
             <div class="mb-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
-                <strong>매입 자금 영역</strong>은 재무·관리자(admin)만 입력. 영업은 매입가·계좌 입력 시 자동 매입 잔금 Draft 가 생성되며, 재무가 <code>/erp/transfers</code> 매입 잔금 탭에서 확정합니다.
+                {{ __('vehicle.panel.finance_area_desc') }}
             </div>
             @endunless
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
-                    <label class="label-base">계약금 지급</label>
+                    <label class="label-base">{{ __('vehicle.field.down_payment') }}</label>
                     <input wire:model="down_payment_str" type="text"
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">매도비 지급</label>
+                    <label class="label-base">{{ __('vehicle.field.selling_fee_payment') }}</label>
                     <input wire:model="selling_fee_payment_str" type="text"
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinance) disabled @endif />
@@ -3704,11 +3703,11 @@ function vehicleColumnsToggle() {
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-gray-500">잔금</span>
+                    <span class="text-xs font-medium text-gray-500">{{ __('vehicle.field.balance') }}</span>
                     @if($canConfirmFinance)
-                    <button type="button" wire:click="addPurchasePayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
+                    <button type="button" wire:click="addPurchasePayment" class="text-xs text-violet-600 hover:underline">{{ __('vehicle.panel.add') }}</button>
                     @else
-                    <span class="text-[10px] text-gray-400">재무·admin 만 추가 가능</span>
+                    <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.finance_only_add') }}</span>
                     @endif
                 </div>
                 @foreach($purchaseBalancePayments as $idx => $row)
@@ -3721,7 +3720,7 @@ function vehicleColumnsToggle() {
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text"
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 96px; flex: none;"
-                           placeholder="금액(원)" @if(!$canConfirmFinance) disabled @endif />
+                           placeholder="{{ __('vehicle.ph.amount_won') }}" @if(!$canConfirmFinance) disabled @endif />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date"
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 112px; flex: none;"
@@ -3729,17 +3728,17 @@ function vehicleColumnsToggle() {
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text"
                            class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="min-width: 0;"
-                           placeholder="비고" @if(!$canConfirmFinance) disabled @endif />
+                           placeholder="{{ __('vehicle.ph.note') }}" @if(!$canConfirmFinance) disabled @endif />
                     @if(!empty($row['id']))
                         @if($isPbpConfirmed)
                         <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
-                              title="재무 확정: {{ $row['confirmed_at'] }} ({{ $row['finance_confirmer'] ?? '?' }})">
-                            ✓ 확정
+                              title="{{ __('vehicle.panel.confirmed_title', ['at' => $row['confirmed_at'], 'by' => $row['finance_confirmer'] ?? '?']) }}">
+                            {{ __('vehicle.panel.confirmed') }}
                         </span>
                         @else
                         <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
-                              title="재무 확정 대기 — ledger 미반영">
-                            ⏳ 대기
+                              title="{{ __('vehicle.panel.pending_title') }}">
+                            {{ __('vehicle.panel.pending') }}
                         </span>
                         @endif
                     @endif
@@ -3755,30 +3754,30 @@ function vehicleColumnsToggle() {
                 {{-- 2026-05-19 풀회의 안건 C — 말소 [everyone]. 재무 role 제외 (canHandleDeregistration). --}}
                 @if(auth()->user()->canHandleDeregistration())
                 <div>
-                    <label class="label-base">말소완료</label>
+                    <label class="label-base">{{ __('vehicle.field.deregistered') }}</label>
                     <label class="flex items-center gap-2 text-sm cursor-pointer mt-1">
-                        <input wire:model="is_deregistered" type="checkbox" class="rounded" /> 말소완료
+                        <input wire:model="is_deregistered" type="checkbox" class="rounded" /> {{ __('vehicle.field.deregistered') }}
                     </label>
                 </div>
                 <div>
-                    <label class="label-base">말소신청서</label>
+                    <label class="label-base">{{ __('vehicle.field.derg_doc') }}</label>
                     <input wire:model="deregistrationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
-                    <div wire:loading wire:target="deregistrationDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    <div wire:loading wire:target="deregistrationDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                     @if($deregistrationDocFile)
-                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $deregistrationDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $deregistrationDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($deregistration_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($deregistration_document_path) }}" target="_blank"
                            class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($deregistration_document_path) }}</a>
                         <button type="button" wire:click="removeDeregistrationDoc"
-                                class="text-xs text-red-500 hover:underline">삭제</button>
+                                class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
                 </div>
                 @endif
                 <div class="col-span-2">
-                    <label class="label-base">송금메모</label>
+                    <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>
                     <textarea wire:model="purchase_remittance_memo" class="input-base" rows="2"></textarea>
                 </div>
             </div>
