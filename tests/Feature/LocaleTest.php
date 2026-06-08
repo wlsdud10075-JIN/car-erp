@@ -237,6 +237,18 @@ class LocaleTest extends TestCase
             ->assertDontSee('컨사이니 등록');
     }
 
+    public function test_receivables_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.receivables.index'))
+            ->assertOk()
+            ->assertSee('Receivables')
+            ->assertSee('Total outstanding')
+            ->assertDontSee('채권관리');
+    }
+
     public function test_users_translate_to_english(): void
     {
         $this->enableEnglish(true);
