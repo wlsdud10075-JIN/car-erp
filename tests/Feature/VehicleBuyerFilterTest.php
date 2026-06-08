@@ -60,7 +60,10 @@ class VehicleBuyerFilterTest extends TestCase
         ]);
 
         $this->actingAs($admin);
-        $component = Volt::test('erp.vehicles.index')->set('buyerId', (string) $b1->id);
+        $component = Volt::test('erp.vehicles.index')
+            ->set('dateFrom', now()->subYear()->format('Y-m-d'))
+            ->set('dateTo', now()->addDay()->format('Y-m-d'))
+            ->set('buyerId', (string) $b1->id);
         $vehicles = $component->instance()->vehicles;
 
         $this->assertCount(1, $vehicles);

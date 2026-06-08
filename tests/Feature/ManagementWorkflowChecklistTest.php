@@ -587,7 +587,10 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // 관리-알파 시선 — 본인 영업 5명 차량만
         $this->actingAs($this->manager);
-        $list = Volt::test('erp.vehicles.index')->instance()->vehicles;
+        $list = Volt::test('erp.vehicles.index')
+            ->set('dateFrom', now()->subYear()->format('Y-m-d'))
+            ->set('dateTo', now()->addDay()->format('Y-m-d'))
+            ->instance()->vehicles;
         $ids = $list->pluck('id')->toArray();
 
         foreach ($myIds as $id) {

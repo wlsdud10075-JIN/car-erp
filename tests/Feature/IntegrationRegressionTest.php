@@ -358,7 +358,7 @@ class IntegrationRegressionTest extends TestCase
         ]);
 
         $this->actingAs($manager);
-        $list = Volt::test('erp.vehicles.index')->instance()->vehicles;
+        $list = Volt::test('erp.vehicles.index')->set('dateFrom', now()->subYear()->format('Y-m-d'))->set('dateTo', now()->addDay()->format('Y-m-d'))->instance()->vehicles;
         $ids = $list->pluck('id')->toArray();
 
         $this->assertContains($mine->id, $ids, '본인 부하 영업의 차량');
@@ -385,7 +385,7 @@ class IntegrationRegressionTest extends TestCase
         ]);
 
         $this->actingAs($salesUser);
-        $list = Volt::test('erp.vehicles.index')->instance()->vehicles;
+        $list = Volt::test('erp.vehicles.index')->set('dateFrom', now()->subYear()->format('Y-m-d'))->set('dateTo', now()->addDay()->format('Y-m-d'))->instance()->vehicles;
         $ids = $list->pluck('id')->toArray();
 
         $this->assertContains($mine->id, $ids, '본인 차량 노출');
@@ -423,7 +423,7 @@ class IntegrationRegressionTest extends TestCase
         }
 
         $this->actingAs($mgrA);
-        $listA = Volt::test('erp.vehicles.index')->instance()->vehicles->pluck('id')->toArray();
+        $listA = Volt::test('erp.vehicles.index')->set('dateFrom', now()->subYear()->format('Y-m-d'))->set('dateTo', now()->addDay()->format('Y-m-d'))->instance()->vehicles->pluck('id')->toArray();
         foreach ($aIds as $id) {
             $this->assertContains($id, $listA, "관리A 부하 영업의 차량 #$id 노출");
         }
@@ -432,7 +432,7 @@ class IntegrationRegressionTest extends TestCase
         }
 
         $this->actingAs($mgrB);
-        $listB = Volt::test('erp.vehicles.index')->instance()->vehicles->pluck('id')->toArray();
+        $listB = Volt::test('erp.vehicles.index')->set('dateFrom', now()->subYear()->format('Y-m-d'))->set('dateTo', now()->addDay()->format('Y-m-d'))->instance()->vehicles->pluck('id')->toArray();
         foreach ($bIds as $id) {
             $this->assertContains($id, $listB, "관리B 부하 영업의 차량 #$id 노출");
         }

@@ -98,11 +98,15 @@ class VehicleColumnSortTest extends TestCase
         ]);
 
         $asc = Volt::test('erp.vehicles.index')
+            ->set('dateFrom', now()->subYear()->format('Y-m-d'))
+            ->set('dateTo', now()->addDay()->format('Y-m-d'))
             ->call('setSort', 'sale_price')   // asc
             ->instance()->vehicles;
         $this->assertSame(1000, (int) $asc->first()->sale_price);
 
         $desc = Volt::test('erp.vehicles.index')
+            ->set('dateFrom', now()->subYear()->format('Y-m-d'))
+            ->set('dateTo', now()->addDay()->format('Y-m-d'))
             ->call('setSort', 'sale_price')
             ->call('setSort', 'sale_price')   // desc
             ->instance()->vehicles;

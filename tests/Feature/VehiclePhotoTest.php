@@ -91,14 +91,16 @@ class VehiclePhotoTest extends TestCase
         $this->assertDatabaseMissing('vehicles', ['vehicle_number' => '12가9999']);
     }
 
-    public function test_non_image_rejected(): void
+    public function test_disallowed_file_type_rejected(): void
     {
+        // 2026-05-29 — 첨부 허용 18종(PDF·Excel·HWP 등)으로 확대. PDF는 이제 허용.
+        // 실행파일(.exe 등)만 mimes 화이트리스트로 차단됨 (index.blade.php:1514).
         $this->actingAs($this->admin());
 
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가1212')
             ->set('sales_channel', 'export')
-            ->set('photoFiles', [UploadedFile::fake()->create('doc.pdf', 100, 'application/pdf')])
+            ->set('photoFiles', [UploadedFile::fake()->create('evil.exe', 100, 'application/octet-stream')])
             ->call('save')
             ->assertHasErrors('photoFiles.*');
     }
