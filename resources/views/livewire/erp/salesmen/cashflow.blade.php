@@ -79,7 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
     </a>
     <div>
-        <h1 class="text-xl font-bold text-gray-800">{{ $salesmanName }} — 캐시플로우</h1>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('cashflow.title', ['name' => $salesmanName]) }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">
             {{ $salesmanPhone }}{{ $salesmanPhone && $salesmanEmail ? ' · ' : '' }}{{ $salesmanEmail }}
         </p>
@@ -89,38 +89,38 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 날짜 필터 --}}
 <div class="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <div>
-        <label class="label-base">매입일 시작</label>
+        <label class="label-base">{{ __('cashflow.date_from') }}</label>
         <input wire:model="dateFrom" type="date" class="input-filter" />
     </div>
     <div>
-        <label class="label-base">매입일 종료</label>
+        <label class="label-base">{{ __('cashflow.date_to') }}</label>
         <input wire:model="dateTo" type="date" class="input-filter" />
     </div>
-    <button wire:click="search" class="btn-search">조회</button>
+    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 {{-- KPI 카드 --}}
 <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
     <div class="card">
-        <div class="text-xs text-gray-500">담당 차량</div>
+        <div class="text-xs text-gray-500">{{ __('cashflow.kpi_vehicles') }}</div>
         <div class="mt-1 text-2xl font-bold text-gray-800">
-            {{ $this->summary['count'] }}<span class="text-sm font-normal text-gray-500">대</span>
+            {{ $this->summary['count'] }}<span class="text-sm font-normal text-gray-500">{{ __('cashflow.unit') }}</span>
         </div>
     </div>
     <div class="card">
-        <div class="text-xs text-gray-500">매입가 합계</div>
+        <div class="text-xs text-gray-500">{{ __('cashflow.kpi_purchase_total') }}</div>
         <div class="mt-1 text-lg font-bold text-gray-800">₩{{ number_format($this->summary['purchase_total']) }}</div>
     </div>
     <div class="card">
-        <div class="text-xs text-gray-500">매입 미지급</div>
+        <div class="text-xs text-gray-500">{{ __('cashflow.kpi_purchase_unpaid') }}</div>
         <div class="mt-1 text-lg font-bold {{ $this->summary['purchase_unpaid'] > 0 ? 'text-red-600' : 'text-green-600' }}">
-            {{ $this->summary['purchase_unpaid'] > 0 ? '₩'.number_format($this->summary['purchase_unpaid']) : '없음' }}
+            {{ $this->summary['purchase_unpaid'] > 0 ? '₩'.number_format($this->summary['purchase_unpaid']) : __('cashflow.none') }}
         </div>
     </div>
     <div class="card">
-        <div class="text-xs text-gray-500">판매 미입금</div>
+        <div class="text-xs text-gray-500">{{ __('cashflow.kpi_sale_unpaid') }}</div>
         @if(empty($this->summary['sale_unpaid_by_currency']))
-            <div class="mt-1 text-lg font-bold text-green-600">없음</div>
+            <div class="mt-1 text-lg font-bold text-green-600">{{ __('cashflow.none') }}</div>
         @else
             <div class="mt-1 space-y-0.5">
                 @foreach($this->summary['sale_unpaid_by_currency'] as $currency => $amount)
@@ -136,14 +136,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">차량번호</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.number') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
                 {{-- 큐 16 — 채널 컬럼 제거 (단일 채널). --}}
-                <th class="pb-2 pr-4 font-medium">매입일</th>
-                <th class="pb-2 pr-4 font-medium text-right">매입가</th>
-                <th class="pb-2 pr-4 font-medium text-right">미지급</th>
-                <th class="pb-2 pr-4 font-medium text-right">판매가</th>
-                <th class="pb-2 font-medium text-right">미입금</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.purchase_date') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.unpaid_purchase') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.sale_price') }}</th>
+                <th class="pb-2 font-medium text-right">{{ __('vehicle.col.unpaid_sale') }}</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -165,7 +165,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tr class="hover:bg-gray-50">
                 <td class="py-3 pr-4 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                 <td class="py-3 pr-4">
-                    <span class="badge {{ $statusBadge }}">{{ $v->progress_status }}</span>
+                    <span class="badge {{ $statusBadge }}">{{ __('domain.progress.'.$v->progress_status) }}</span>
                 </td>
                 {{-- 큐 16 — 채널 td 제거 --}}
                 <td class="py-3 pr-4 text-gray-500">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
@@ -173,7 +173,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $v->purchase_price > 0 ? '₩'.number_format($v->purchase_price) : '-' }}
                 </td>
                 <td class="py-3 pr-4 text-right {{ $purchaseUnpaid > 0 ? 'font-medium text-red-500' : 'text-gray-400' }}">
-                    {{ $purchaseUnpaid > 0 ? '₩'.number_format($purchaseUnpaid) : '완납' }}
+                    {{ $purchaseUnpaid > 0 ? '₩'.number_format($purchaseUnpaid) : __('cashflow.paid') }}
                 </td>
                 <td class="py-3 pr-4 text-right text-gray-700">
                     {{ $v->sale_price > 0 ? ($v->currency.' '.number_format($v->sale_price, 2)) : '-' }}
@@ -184,13 +184,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @elseif($saleUnpaid > 0)
                         {{ $v->currency }} {{ number_format($saleUnpaid, 2) }}
                     @else
-                        완납
+                        {{ __('cashflow.paid') }}
                     @endif
                 </td>
             </tr>
             @empty
             <tr>
-                <td colspan="8" class="py-12 text-center text-sm text-gray-400">해당 기간에 담당 차량이 없습니다.</td>
+                <td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('cashflow.empty') }}</td>
             </tr>
             @endforelse
         </tbody>
@@ -216,25 +216,25 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card-tight">
         <div class="flex items-center justify-between">
             <div class="font-medium text-gray-800">{{ $v->vehicle_number }}</div>
-            <span class="badge {{ $statusBadge }}">{{ $v->progress_status }}</span>
+            <span class="badge {{ $statusBadge }}">{{ __('domain.progress.'.$v->progress_status) }}</span>
         </div>
         <div class="mt-2 grid grid-cols-2 gap-x-4 text-xs text-gray-500">
-            <div>매입일: {{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</div>
-            <div>매입가: {{ $v->purchase_price > 0 ? '₩'.number_format($v->purchase_price) : '-' }}</div>
+            <div>{{ __('cashflow.m_purchase_date') }} {{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</div>
+            <div>{{ __('cashflow.m_purchase_price') }} {{ $v->purchase_price > 0 ? '₩'.number_format($v->purchase_price) : '-' }}</div>
             <div class="{{ $purchaseUnpaid > 0 ? 'text-red-500 font-medium' : '' }}">
-                미지급: {{ $purchaseUnpaid > 0 ? '₩'.number_format($purchaseUnpaid) : '완납' }}
+                {{ __('cashflow.m_unpaid') }} {{ $purchaseUnpaid > 0 ? '₩'.number_format($purchaseUnpaid) : __('cashflow.paid') }}
             </div>
             <div class="{{ $v->sale_price > 0 && $saleUnpaid > 0 ? 'text-red-500 font-medium' : '' }}">
-                미입금:
+                {{ __('cashflow.m_sale_unpaid') }}
                 @if($v->sale_price <= 0) -
                 @elseif($saleUnpaid > 0) {{ $v->currency }} {{ number_format($saleUnpaid, 2) }}
-                @else 완납
+                @else {{ __('cashflow.paid') }}
                 @endif
             </div>
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">해당 기간에 담당 차량이 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('cashflow.empty') }}</div>
     @endforelse
 </div>
 

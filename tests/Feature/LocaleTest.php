@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -143,6 +144,41 @@ class LocaleTest extends TestCase
             ->get(route('erp.vehicles.index'))
             ->assertOk()
             ->assertSee('차량 등록');
+    }
+
+    public function test_salesmen_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.salesmen.index'))
+            ->assertOk()
+            ->assertSee('Add Salesman')
+            ->assertDontSee('담당자 등록');
+    }
+
+    public function test_cashflow_translates_to_english(): void
+    {
+        $this->enableEnglish(true);
+        $sm = Salesman::create(['name' => 'Test SM', 'is_active' => true]);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.salesmen.cashflow', $sm->id))
+            ->assertOk()
+            ->assertSee('Cashflow')
+            ->assertDontSee('캐시플로우');
+    }
+
+    public function test_inventory_translates_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.inventory.index'))
+            ->assertOk()
+            ->assertSee('Inventory')
+            ->assertSee('All statuses')
+            ->assertDontSee('재고관리');
     }
 
     public function test_ports_translate_to_english(): void
