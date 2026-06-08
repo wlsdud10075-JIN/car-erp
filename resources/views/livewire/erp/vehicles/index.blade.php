@@ -3787,10 +3787,10 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'sale'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-purple-500"></span>
-                <span class="section-title">판매 기본</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.sale_basic') }}</span>
             </div>
 
-            {{-- 큐 14-4-4 — 같은 바이어 미수 잔존 안내 배너 (신규 등록 + 비-canApprove user만, 5상태) --}}
+            {{-- 큐 14-4-4 — 같은 바이어 미수 잔존 안내 배너 (신규 등록 + 비-canApprove user만, 5상태) — 다음 chunk에서 번역 --}}
             @php
                 $overlap = $this->sameBuyerOverlap;
                 $state = $overlap['state'] ?? null;
@@ -3861,24 +3861,24 @@ function vehicleColumnsToggle() {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">판매일 </label><input wire:model="sale_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="date" class="input-base input-required" /></div>
                 <div>
-                    <label class="label-base">통화 </label>
+                    <label class="label-base">{{ __('vehicle.field.currency') }} </label>
                     <select wire:model.live="currency" class="input-base input-required">
                         @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
                         <option value="{{ $cur }}">{{ $cur }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">환율 @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.exchange_rate') }} @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" /></div>
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">바이어 </label>
+                        <label class="label-base">{{ __('vehicle.field.buyer') }} </label>
                         <button type="button" wire:click="openQuickAdd('buyer','sale')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model.live="buyer_id_str" class="input-base input-required">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
@@ -3886,73 +3886,73 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">컨사이니 </label>
+                        <label class="label-base">{{ __('vehicle.field.consignee') }} </label>
                         <button type="button" wire:click="openQuickAdd('consignee','sale')"
                                 @if($buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model.live="consignee_id_str" class="input-base input-required"
                             @if($buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
+                        <option value="">{{ $buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
                         @foreach($this->consigneesForSale as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">판매가 </label><input wire:model="sale_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">운임비</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">자동하역비</label><input wire:model="auto_loading_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">기타 판매비용</label><input wire:model="sale_other_costs_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.transport_fee') }}</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.auto_loading') }}</label><input wire:model="auto_loading_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_other_costs') }}</label><input wire:model="sale_other_costs_str" type="text" class="input-base" placeholder="0" /></div>
             </div>
 
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-purple-300"></span>
-                <span class="section-title">입금 현황</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.payment_status') }}</span>
             </div>
             {{-- 22-A-3a 사용자 정정 (2026-05-20) — 4 항목 (계약금/중도금/선수금) 입력 권한: 재무·관리·admin. 영업·수출통관은 disabled. --}}
             @php $canManagePayBreakdown = auth()->user()?->canManagePaymentBreakdown() ?? false; @endphp
             <div class="mb-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800">
-                <strong>4 항목 (계약금·중도금·선수금)</strong>은 재무·관리자만 입력. 잔금 추가는 영업이 아래 [잔금] N+ 에서 Draft → 재무가 transfers 에서 확정.
+                {{ __('vehicle.panel.breakdown_banner') }}
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
-                    <label class="label-base">계약금 입금</label>
+                    <label class="label-base">{{ __('vehicle.field.deposit_down') }}</label>
                     <input wire:model="deposit_down_payment_str" type="text"
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">중도금</label>
+                    <label class="label-base">{{ __('vehicle.field.interim') }}</label>
                     <input wire:model="interim_payment_str" type="text"
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">선수금1</label>
+                    <label class="label-base">{{ __('vehicle.field.advance1') }}</label>
                     <input wire:model="advance_payment1_str" type="text"
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">송금 수수료 <span class="text-xs text-gray-400">(셀러 부담)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.fee') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.fee_note') }}</span></label>
                     <input wire:model="fee_str" type="text"
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
-                <div><label class="label-base">적립금 사용</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.savings_used') }}</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
                 {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
                 @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
                 <div>
-                    <label class="label-base">적립금 적립 <span class="text-[10px] text-gray-400">(저장 시 누적, reset)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.savings_deposit') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_deposit_note') }}</span></label>
                     <input wire:model="savings_deposit_str" type="text"
                            class="input-base {{ $canConfirmFinanceLocal ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinanceLocal) disabled @endif />
                 </div>
                 <div>
-                    <label class="label-base">누적 적립금 <span class="text-[10px] text-gray-400">(바이어×통화 SavingsStatus)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.savings_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_balance_note') }}</span></label>
                     <div class="input-base bg-gray-50 text-gray-700">
                         @if($this->buyerSavingsBalance === null)
                             —
@@ -3962,11 +3962,11 @@ function vehicleColumnsToggle() {
                     </div>
                 </div>
                 <div>
-                    <label class="label-base">미납률 <span class="text-[10px] text-gray-400">(저장 후 갱신)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.unpaid_ratio') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
                     @if($panelUnpaidRatio === null)
                         <div class="input-base bg-gray-50 text-gray-400">—</div>
                     @elseif($panelUnpaidRatio <= 0)
-                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">✓ 완납</div>
+                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">{{ __('vehicle.panel.fully_paid') }}</div>
                     @else
                         <div class="input-base bg-gray-50 font-medium text-gray-800">{{ number_format($panelUnpaidRatio * 100, 1) }}%</div>
                     @endif
@@ -3975,8 +3975,8 @@ function vehicleColumnsToggle() {
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs font-medium text-gray-500">잔금</span>
-                    <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">+ 추가</button>
+                    <span class="text-xs font-medium text-gray-500">{{ __('vehicle.field.balance') }}</span>
+                    <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">{{ __('vehicle.panel.add') }}</button>
                 </div>
                 @foreach($finalPayments as $idx => $row)
                 @if(!empty($row['transfer']))
@@ -3998,15 +3998,16 @@ function vehicleColumnsToggle() {
                         {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
                     </span>
                     <span class="flex-1 text-xs {{ $textMutedClass }}">
+                        @php $cpNum = $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id']; @endphp
                         @if($row['transfer']['direction'] === 'outgoing')
-                            → 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 으로 이체
+                            {!! __('vehicle.panel.transfer_out', ['number' => '<span class="font-mono">'.e($cpNum).'</span>']) !!}
                         @else
-                            ← 차량 <span class="font-mono">{{ $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id'] }}</span> 에서 이체
+                            {!! __('vehicle.panel.transfer_in', ['number' => '<span class="font-mono">'.e($cpNum).'</span>']) !!}
                         @endif
                         @if($isVoided)
-                            <span class="ml-1 text-[10px] text-gray-500">(취소됨)</span>
+                            <span class="ml-1 text-[10px] text-gray-500">{{ __('vehicle.panel.transfer_voided') }}</span>
                         @elseif($pendingVoid)
-                            <span class="ml-1 text-[10px] font-semibold text-amber-700">(취소 승인 대기중)</span>
+                            <span class="ml-1 text-[10px] font-semibold text-amber-700">{{ __('vehicle.panel.transfer_pending_void') }}</span>
                         @endif
                     </span>
                     <span class="text-xs {{ $textMetaClass }} whitespace-nowrap">
@@ -4014,11 +4015,11 @@ function vehicleColumnsToggle() {
                         · 승인 #{{ $row['transfer']['approval_request_id'] }}
                     </span>
                     @if($pendingVoid)
-                    <span class="text-[11px] text-amber-600 whitespace-nowrap">취소 요청 중</span>
+                    <span class="text-[11px] text-amber-600 whitespace-nowrap">{{ __('vehicle.panel.void_requesting') }}</span>
                     @elseif(!$isVoided && !empty($row['transfer']['can_void']))
                     <button type="button" wire:click="openTransferVoidModal({{ $row['transfer']['id'] }})"
                             class="text-[11px] text-red-500 hover:underline whitespace-nowrap">
-                        이체 취소 요청
+                        {{ __('vehicle.panel.void_request_btn') }}
                     </button>
                     @endif
                 </div>
@@ -4029,7 +4030,7 @@ function vehicleColumnsToggle() {
                     <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
                     <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
                     <a href="{{ route('erp.receivables.index') }}" wire:navigate
-                       class="text-xs text-violet-500 hover:underline whitespace-nowrap">채권관리에서 수정</a>
+                       class="text-xs text-violet-500 hover:underline whitespace-nowrap">{{ __('vehicle.panel.edit_in_receivables') }}</a>
                 </div>
                 @else
                 @php
@@ -4039,11 +4040,11 @@ function vehicleColumnsToggle() {
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base"
-                           style="width: 96px; flex: none;" placeholder="금액" />
+                           style="width: 96px; flex: none;" placeholder="{{ __('vehicle.ph.amount') }}" />
                     {{-- 회의확장씬 #7 (2026-05-22) — 잔금 row 별 환율 (외화만, 자동 기입 + 수정 가능) --}}
                     @if($currency !== 'KRW')
                     <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" class="input-base"
-                           style="width: 80px; flex: none;" placeholder="환율" title="입금 시점 환율" />
+                           style="width: 80px; flex: none;" placeholder="{{ __('vehicle.ph.rate') }}" title="{{ __('vehicle.panel.rate_at_payment') }}" />
                     @php
                         $rowAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
                         $rowRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '0');
@@ -4054,22 +4055,22 @@ function vehicleColumnsToggle() {
                            style="width: 130px; flex: none; background-color: #f9fafb; color: #4b5563;"
                            readonly tabindex="-1"
                            value="{{ $rowAmt > 0 && $rowRate > 0 ? '₩'.number_format($rowKrw) : '' }}"
-                           placeholder="₩0" title="KRW 환산 (저장됨)" />
+                           placeholder="₩0" title="{{ __('vehicle.panel.krw_converted') }}" />
                     @endif
                     <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base"
                            style="width: 112px; flex: none;" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1"
-                           style="min-width: 0;" placeholder="비고" />
+                           style="min-width: 0;" placeholder="{{ __('vehicle.ph.note') }}" />
                     @if($row['id'])
                         @if($isConfirmed)
                         <span class="text-[10px] font-semibold text-emerald-700 whitespace-nowrap"
-                              title="재무 확정: {{ $row['confirmed_at'] }} ({{ $row['finance_confirmer'] ?? '?' }})">
-                            ✓ 확정
+                              title="{{ __('vehicle.panel.confirmed_title', ['at' => $row['confirmed_at'], 'by' => $row['finance_confirmer'] ?? '?']) }}">
+                            {{ __('vehicle.panel.confirmed') }}
                         </span>
                         @else
                         <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
-                              title="재무 확정 대기 — ledger 미반영">
-                            ⏳ 대기
+                              title="{{ __('vehicle.panel.pending_title') }}">
+                            {{ __('vehicle.panel.pending') }}
                         </span>
                         @endif
                     @endif

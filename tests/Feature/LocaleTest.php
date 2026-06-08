@@ -150,7 +150,10 @@ class LocaleTest extends TestCase
             ->assertSee('Export Clearance')          // 패널 탭 네비
             ->assertSee('9 Cost Items')              // 매입 탭 섹션
             ->assertSee('Seller Account (remittance target)')
+            ->assertSee('Payment Status')            // 판매 탭 섹션
+            ->assertSee('Sale Basics')
             ->assertDontSee('NICE 등록정보 (12)')
-            ->assertDontSee('비용 9개');
+            ->assertDontSee('비용 9개')
+            ->assertDontSee('입금 현황');
     }
 }
