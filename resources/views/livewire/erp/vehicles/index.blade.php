@@ -539,8 +539,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? ($v->purchase_unpaid_amount <= 0 ? 'done' : 'warn')
             : 'pending';
         $purchaseReason = match (true) {
-            $purchaseStatus === 'warn' => '매입 미지급 잔액 '.number_format($v->purchase_unpaid_amount).'원 존재',
-            $purchaseStatus === 'pending' => '매입가 미입력',
+            $purchaseStatus === 'warn' => __('vehicle.reason.purchase_warn', ['amount' => number_format($v->purchase_unpaid_amount)]),
+            $purchaseStatus === 'pending' => __('vehicle.reason.purchase_pending'),
             default => null,
         };
 
@@ -549,22 +549,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? 'done'
             : ($v->is_deregistered ? 'warn' : 'pending');
         $deregReason = match (true) {
-            $deregStatus === 'warn' => '말소 체크는 됐지만 말소등록증 미업로드',
-            $deregStatus === 'pending' => '말소 미처리 — 말소완료 체크 + 말소등록증 업로드 필요',
+            $deregStatus === 'warn' => __('vehicle.reason.dereg_warn'),
+            $deregStatus === 'pending' => __('vehicle.reason.dereg_pending'),
             default => null,
         };
 
         // 판매
         $saleStatus = $v->sale_price > 0 ? 'done' : 'pending';
-        $saleReason = $saleStatus === 'pending' ? '판매가 미입력' : null;
+        $saleReason = $saleStatus === 'pending' ? __('vehicle.reason.sale_pending') : null;
 
         // 입금
         $paymentStatus = $v->sale_price > 0
             ? ($v->sale_unpaid_amount <= 0 ? 'done' : 'warn')
             : 'pending';
         $paymentReason = match (true) {
-            $paymentStatus === 'warn' => '판매 미입금 '.number_format($v->sale_unpaid_amount).'원 존재',
-            $paymentStatus === 'pending' => '판매가 미입력 — 입금 추적 불가',
+            $paymentStatus === 'warn' => __('vehicle.reason.payment_warn', ['amount' => number_format($v->sale_unpaid_amount)]),
+            $paymentStatus === 'pending' => __('vehicle.reason.payment_pending'),
             default => null,
         };
 
@@ -572,8 +572,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $clearanceStatus = $v->export_declaration_document ? 'done'
             : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending');
         $clearanceReason = match (true) {
-            $clearanceStatus === 'progress' => '수출신고서 업로드 필요 (체크박스만으론 단계 진행 안 됨)',
-            $clearanceStatus === 'pending' => '수출통관 정보 미입력 — 통관 바이어/선적일·포워딩사 입력 후 수출신고서 업로드',
+            $clearanceStatus === 'progress' => __('vehicle.reason.clearance_progress'),
+            $clearanceStatus === 'pending' => __('vehicle.reason.clearance_pending'),
             default => null,
         };
 
@@ -581,14 +581,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $blStatus = $v->bl_document ? 'done'
             : ($v->bl_loading_location ? 'progress' : 'pending');
         $blReason = match (true) {
-            $blStatus === 'progress' => 'B/L 문서 업로드 필요 (반입지 입력 완료)',
-            $blStatus === 'pending' => '선적 미진행 — B/L 반입지 입력 후 문서 업로드',
+            $blStatus === 'progress' => __('vehicle.reason.bl_progress'),
+            $blStatus === 'pending' => __('vehicle.reason.bl_pending'),
             default => null,
         };
 
         // DHL
         $dhlStatus = $v->dhl_request ? 'done' : 'pending';
-        $dhlReason = $dhlStatus === 'pending' ? 'DHL 발송신청 미체크' : null;
+        $dhlReason = $dhlStatus === 'pending' ? __('vehicle.reason.dhl_pending') : null;
 
         return [
             ['key' => 'purchase',       'label' => __('vehicle.panel.flow.purchase'),       'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
@@ -1477,10 +1477,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         return;
                     }
                     $minutesAgo = (int) $existing->created_at->diffInMinutes(now());
-                    $hint = $minutesAgo <= 5
-                        ? ' (방금 저장하신 차량일 수 있습니다 — 차량 목록에서 확인하세요)'
-                        : '';
-                    $fail("같은 차량번호({$value})가 차량 #{$existing->id}로 이미 등록되어 있습니다.{$hint}");
+                    $hint = $minutesAgo <= 5 ? __('vehicle.toast.dup_hint') : '';
+                    $fail(__('vehicle.toast.dup_vehicle', ['value' => $value, 'id' => $existing->id, 'hint' => $hint]));
                 },
             ],
             // 큐 16 — sales_channel은 enum 'export' 단일값. DB 레벨 강제 + 폼은 hidden 유지.
@@ -1546,39 +1544,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $attributes = [
-            'vehicle_number' => '차량번호',
-            'sales_channel'  => '판매채널',
-            'currency'       => '통화',
-            'shipping_method' => '선적방식',
-            'purchase_date'  => '매입일',
-            'sale_date'      => '판매일',
-            'shipping_date'  => '선적일',
-            'eta_date'       => 'ETA',
-            'bl_issue_date'  => 'B/L 발행일',
-            'nice_reg_first_date' => '최초등록일',
-            'nice_reg_date'  => '등록일',
-            'salesman_id_str' => '영업담당자',
-            'buyer_id_str'    => '판매 바이어',
-            'consignee_id_str' => '판매 컨사이니',
-            'export_buyer_id_str'     => '수출 바이어',
-            'export_consignee_id_str' => '수출 컨사이니',
-            'forwarding_company_id_str' => '포워딩사',
-            'bl_buyer_id_str'    => 'B/L 바이어',
-            'bl_consignee_id_str' => 'B/L 컨사이니',
-            'deregistrationDocFile'    => '말소서류',
-            'exportDeclarationDocFile' => '수출신고서',
-            'blDocFile'                => 'B/L 문서',
-            'year_str' => '연식', 'cc_str' => '배기량',
-            'weight_kg_str' => '중량', 'mileage_str' => '주행거리',
-            'purchase_price_str' => '매입가', 'selling_fee_str' => '매도비',
-            'sale_price_str' => '판매가', 'exchange_rate_str' => '환율',
-            'export_declaration_amount_str' => '면장금액',
-            'dhl_weight_str' => 'DHL 중량',
-            'nice_reg_owner_rrn' => '소유자 주민(법인)등록번호',
+            'vehicle_number' => __('vehicle.attr.vehicle_number'),
+            'sales_channel'  => __('vehicle.attr.sales_channel'),
+            'currency'       => __('vehicle.attr.currency'),
+            'shipping_method' => __('vehicle.attr.shipping_method'),
+            'purchase_date'  => __('vehicle.attr.purchase_date'),
+            'sale_date'      => __('vehicle.attr.sale_date'),
+            'shipping_date'  => __('vehicle.attr.shipping_date'),
+            'eta_date'       => __('vehicle.attr.eta_date'),
+            'bl_issue_date'  => __('vehicle.attr.bl_issue_date'),
+            'nice_reg_first_date' => __('vehicle.attr.nice_reg_first_date'),
+            'nice_reg_date'  => __('vehicle.attr.nice_reg_date'),
+            'salesman_id_str' => __('vehicle.attr.salesman'),
+            'buyer_id_str'    => __('vehicle.attr.buyer'),
+            'consignee_id_str' => __('vehicle.attr.consignee'),
+            'export_buyer_id_str'     => __('vehicle.attr.export_buyer'),
+            'export_consignee_id_str' => __('vehicle.attr.export_consignee'),
+            'forwarding_company_id_str' => __('vehicle.attr.forwarder'),
+            'bl_buyer_id_str'    => __('vehicle.attr.bl_buyer'),
+            'bl_consignee_id_str' => __('vehicle.attr.bl_consignee'),
+            'deregistrationDocFile'    => __('vehicle.attr.derg_doc'),
+            'exportDeclarationDocFile' => __('vehicle.attr.export_decl_doc'),
+            'blDocFile'                => __('vehicle.attr.bl_doc'),
+            'year_str' => __('vehicle.attr.year'), 'cc_str' => __('vehicle.attr.cc'),
+            'weight_kg_str' => __('vehicle.attr.weight'), 'mileage_str' => __('vehicle.attr.mileage'),
+            'purchase_price_str' => __('vehicle.attr.purchase_price'), 'selling_fee_str' => __('vehicle.attr.selling_fee'),
+            'sale_price_str' => __('vehicle.attr.sale_price'), 'exchange_rate_str' => __('vehicle.attr.exchange_rate'),
+            'export_declaration_amount_str' => __('vehicle.attr.export_decl_amount'),
+            'dhl_weight_str' => __('vehicle.attr.dhl_weight'),
+            'nice_reg_owner_rrn' => __('vehicle.attr.owner_rrn'),
         ];
 
         $messages = [
-            'nice_reg_owner_rrn.regex' => '주민(법인)등록번호는 000000-0000000 형식이어야 합니다.',
+            'nice_reg_owner_rrn.regex' => __('vehicle.toast.rrn_format'),
         ];
 
         $this->validate($rules, $messages, $attributes);

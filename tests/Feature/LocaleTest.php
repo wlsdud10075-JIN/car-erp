@@ -12,6 +12,13 @@ class LocaleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function tearDown(): void
+    {
+        // Volt::test + 수동 app()->setLocale('en') 가 다음 테스트로 누수되지 않도록 복원.
+        app()->setLocale(config('app.locale'));
+        parent::tearDown();
+    }
+
     private function localeUser(string $locale = 'ko'): User
     {
         return User::factory()->create([
