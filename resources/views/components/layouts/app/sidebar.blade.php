@@ -10,37 +10,40 @@
 @php
     $user = auth()->user();
     $permissionLabel = match ($user->permission) {
-        'super' => '시스템관리자',
-        'admin' => '최고관리자',
-        default => '일반사용자',
+        'super' => __('nav.permission.super'),
+        'admin' => __('nav.permission.admin'),
+        default => __('nav.permission.user'),
     };
 
     $sidebarBrand = \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
 
+    // i18n Phase 0 — 영어 활성 시에만 상단바 언어 전환 노출
+    $localeEnEnabled = (bool) \App\Models\Setting::get('locale_en_enabled', false);
+
     $routeName = request()->route()?->getName();
     $breadcrumb = match (true) {
-        $routeName === 'dashboard' => '대시보드',
-        $routeName === 'admin.dashboard' => '관리자 대시보드',
-        $routeName === 'admin.users.index' => '사용자 관리',
-        $routeName === 'admin.ports.index' => '항구 마스터',
-        $routeName === 'admin.settings' => '기능 설정',
-        $routeName === 'admin.document-access-logs.index' => '문서 접근 로그',
-        $routeName === 'admin.audit-logs.index' => '감사 로그',
-        $routeName === 'erp.dashboard' => 'ERP 대시보드',
-        $routeName === 'erp.vehicles.index' => '차량 관리',
-        $routeName === 'erp.inventory.index' => '재고관리',
-        $routeName === 'erp.buyers.index' => '바이어 관리',
-        $routeName === 'erp.consignees.index' => '컨사이니 관리',
-        $routeName === 'erp.forwarding-companies.index' => '포워딩사 관리',
-        $routeName === 'erp.salesmen.index' => '영업담당자 관리',
-        $routeName === 'erp.salesmen.cashflow' => '내 캐시플로우',
-        $routeName === 'erp.settlements.index' => '정산 관리',
-        $routeName === 'erp.receivables.index' => '채권관리',
-        $routeName === 'erp.approvals.index' => '승인 큐',
-        $routeName === 'erp.transfers.index' => '재무 처리',
-        $routeName === 'settings.profile' => '프로필 설정',
-        $routeName === 'settings.password' => '비밀번호 변경',
-        $routeName === 'settings.appearance' => '테마 설정',
+        $routeName === 'dashboard' => __('nav.crumb.dashboard'),
+        $routeName === 'admin.dashboard' => __('nav.crumb.admin_dashboard'),
+        $routeName === 'admin.users.index' => __('nav.crumb.users'),
+        $routeName === 'admin.ports.index' => __('nav.crumb.ports'),
+        $routeName === 'admin.settings' => __('nav.crumb.settings'),
+        $routeName === 'admin.document-access-logs.index' => __('nav.crumb.doc_logs'),
+        $routeName === 'admin.audit-logs.index' => __('nav.crumb.audit_logs'),
+        $routeName === 'erp.dashboard' => __('nav.crumb.erp_dashboard'),
+        $routeName === 'erp.vehicles.index' => __('nav.crumb.vehicles'),
+        $routeName === 'erp.inventory.index' => __('nav.crumb.inventory'),
+        $routeName === 'erp.buyers.index' => __('nav.crumb.buyers'),
+        $routeName === 'erp.consignees.index' => __('nav.crumb.consignees'),
+        $routeName === 'erp.forwarding-companies.index' => __('nav.crumb.forwarding'),
+        $routeName === 'erp.salesmen.index' => __('nav.crumb.salesmen'),
+        $routeName === 'erp.salesmen.cashflow' => __('nav.crumb.cashflow'),
+        $routeName === 'erp.settlements.index' => __('nav.crumb.settlements'),
+        $routeName === 'erp.receivables.index' => __('nav.crumb.receivables'),
+        $routeName === 'erp.approvals.index' => __('nav.crumb.approvals'),
+        $routeName === 'erp.transfers.index' => __('nav.crumb.transfers'),
+        $routeName === 'settings.profile' => __('nav.crumb.profile'),
+        $routeName === 'settings.password' => __('nav.crumb.password'),
+        $routeName === 'settings.appearance' => __('nav.crumb.appearance'),
         default => '',
     };
 
@@ -83,11 +86,11 @@
 
     $menuGroups = [
         [
-            'label' => '메인',
+            'label' => __('nav.group.main'),
             'show' => true,
             'items' => [
                 [
-                    'label' => '대시보드',
+                    'label' => __('nav.menu.dashboard'),
                     'href' => route('dashboard'),
                     'icon' => 'home',
                     'active' => request()->routeIs('dashboard') || request()->routeIs('admin.dashboard') || request()->routeIs('erp.dashboard'),
@@ -96,11 +99,11 @@
             ],
         ],
         [
-            'label' => 'ERP',
+            'label' => __('nav.group.erp'),
             'show' => $user->canAccessErp(),
             'items' => [
                 [
-                    'label' => '차량 관리',
+                    'label' => __('nav.menu.vehicles'),
                     'href' => route('erp.vehicles.index'),
                     'icon' => 'truck',
                     'active' => request()->routeIs('erp.vehicles.*'),
@@ -108,7 +111,7 @@
                 ],
                 // 회의확장씬 큐 15 / G5 (2026-05-23) — 영업담당자별 재고관리.
                 [
-                    'label' => '재고관리',
+                    'label' => __('nav.menu.inventory'),
                     'href' => route('erp.inventory.index'),
                     'icon' => 'building',
                     'active' => request()->routeIs('erp.inventory.*'),
@@ -117,7 +120,7 @@
                 // 2026-05-20 #1 피드백 — 수출통관 사이드바 = 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
                 // 사용자 의도: (a) 매입완료 + 판매 진행 + 말소 안 됨 OR (b) 말소완료 + 판매 진행 + 입금률 ≥ 50%
                 [
-                    'label' => '수출통관',
+                    'label' => __('nav.menu.clearance'),
                     'href' => route('erp.vehicles.index').'?action=clearance_candidates',
                     'icon' => 'identification',
                     'active' => false,
@@ -125,35 +128,35 @@
                     'badge' => $clearanceBadge > 0 ? $clearanceBadge : null,
                 ],
                 [
-                    'label' => '바이어',
+                    'label' => __('nav.menu.buyers'),
                     'href' => route('erp.buyers.index'),
                     'icon' => 'users',
                     'active' => request()->routeIs('erp.buyers.*'),
                     'show' => true,
                 ],
                 [
-                    'label' => '컨사이니',
+                    'label' => __('nav.menu.consignees'),
                     'href' => route('erp.consignees.index'),
                     'icon' => 'identification',
                     'active' => request()->routeIs('erp.consignees.*'),
                     'show' => true,
                 ],
                 [
-                    'label' => '정산 처리',
+                    'label' => __('nav.menu.settlements'),
                     'href' => $user->canAccessSettlement() ? route('erp.settlements.index') : '#',
                     'icon' => 'calculator',
                     'active' => request()->routeIs('erp.settlements.*'),
                     'show' => $user->canAccessSettlement(),
                 ],
                 [
-                    'label' => '채권관리',
+                    'label' => __('nav.menu.receivables'),
                     'href' => $user->canViewReceivables() ? route('erp.receivables.index') : '#',
                     'icon' => 'banknotes',
                     'active' => request()->routeIs('erp.receivables.*'),
                     'show' => $user->canViewReceivables(),
                 ],
                 [
-                    'label' => '승인 큐',
+                    'label' => __('nav.menu.approvals'),
                     'href' => $user->canApprove() ? route('erp.approvals.index') : '#',
                     'icon' => 'check-circle',
                     'active' => request()->routeIs('erp.approvals.*'),
@@ -161,7 +164,7 @@
                     'badge' => $pendingApprovals > 0 ? $pendingApprovals : null,
                 ],
                 [
-                    'label' => '재무 처리',
+                    'label' => __('nav.menu.transfers'),
                     'href' => $user->canConfirmFinanceTransfer() ? route('erp.transfers.index') : '#',
                     'icon' => 'banknotes',
                     'active' => request()->routeIs('erp.transfers.*'),
@@ -169,21 +172,21 @@
                     'badge' => $pendingFinanceConfirmations > 0 ? $pendingFinanceConfirmations : null,
                 ],
                 [
-                    'label' => '포워딩사',
+                    'label' => __('nav.menu.forwarding'),
                     'href' => $user->canAccessAdmin() ? route('erp.forwarding-companies.index') : '#',
                     'icon' => 'building',
                     'active' => request()->routeIs('erp.forwarding-companies.*'),
                     'show' => $user->canAccessAdmin(),
                 ],
                 [
-                    'label' => '영업담당자',
+                    'label' => __('nav.menu.salesmen'),
                     'href' => $user->canAccessAdmin() ? route('erp.salesmen.index') : '#',
                     'icon' => 'briefcase',
                     'active' => request()->routeIs('erp.salesmen.index'),
                     'show' => $user->canAccessAdmin(),
                 ],
                 [
-                    'label' => '내 캐시플로우',
+                    'label' => __('nav.menu.cashflow'),
                     'href' => $isSalesUser ? route('erp.salesmen.cashflow', $mySalesman->id) : '#',
                     'icon' => 'chart-bar',
                     'active' => request()->routeIs('erp.salesmen.cashflow'),
@@ -192,33 +195,33 @@
             ],
         ],
         [
-            'label' => '기타관리',
+            'label' => __('nav.group.etc'),
             // 회의확장씬 2026-05-22 — [관리] 도 그룹 노출 (canManagePorts/canViewAdminDashboard 통해 일부 항목 접근).
             'show' => $user->canAccessAdmin() || $user->canManagePorts() || $user->canViewAdminDashboard(),
             'items' => [
                 [
-                    'label' => '관리자 대시보드',
+                    'label' => __('nav.menu.admin_dashboard'),
                     'href' => $user->canViewAdminDashboard() ? route('admin.dashboard') : '#',
                     'icon' => 'chart-bar',
                     'active' => request()->routeIs('admin.dashboard'),
                     'show' => $user->canViewAdminDashboard(),
                 ],
                 [
-                    'label' => '사용자 관리',
+                    'label' => __('nav.menu.users'),
                     'href' => $user->canAccessAdmin() ? route('admin.users.index') : '#',
                     'icon' => 'user-group',
                     'active' => request()->routeIs('admin.users.*'),
                     'show' => $user->canAccessAdmin(),
                 ],
                 [
-                    'label' => '항구 마스터',
+                    'label' => __('nav.menu.ports'),
                     'href' => $user->canManagePorts() ? route('admin.ports.index') : '#',
                     'icon' => 'building',
                     'active' => request()->routeIs('admin.ports.*'),
                     'show' => $user->canManagePorts(),
                 ],
                 [
-                    'label' => '기능 설정',
+                    'label' => __('nav.menu.settings'),
                     'href' => $user->isSuperAdmin() ? route('admin.settings') : '#',
                     'icon' => 'cog',
                     'active' => request()->routeIs('admin.settings'),
@@ -229,18 +232,18 @@
         // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 별건3 흡수: 로그 그룹 신설 (admin/super 전용).
         // audit_logs UI 는 Commit 2 에서 추가.
         [
-            'label' => '로그',
+            'label' => __('nav.group.log'),
             'show' => $user->canAccessAdmin(),
             'items' => [
                 [
-                    'label' => '문서 접근 로그',
+                    'label' => __('nav.menu.doc_logs'),
                     'href' => $user->canAccessAdmin() ? route('admin.document-access-logs.index') : '#',
                     'icon' => 'identification',
                     'active' => request()->routeIs('admin.document-access-logs.*'),
                     'show' => $user->canAccessAdmin(),
                 ],
                 [
-                    'label' => '감사 로그',
+                    'label' => __('nav.menu.audit_logs'),
                     'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.audit-logs.index')
                         ? route('admin.audit-logs.index') : '#',
                     'icon' => 'check-circle',
@@ -371,21 +374,21 @@
         <div class="border-t border-white/5 py-2 shrink-0">
             <a href="{{ route('settings.profile') }}" wire:navigate
                @click="if(isMobile) closeMobile()"
-               :title="(isMobile || open) ? '' : '내 설정'"
+               :title="(isMobile || open) ? '' : '{{ __('nav.action.my_settings') }}'"
                class="sidebar-item {{ request()->routeIs('settings.*') ? 'is-active' : '' }}"
                :class="{ 'sidebar-item-collapsed': !isMobile && !open }">
                 <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">{!! $icons['cog'] !!}</svg>
-                <span x-show="isMobile || open" class="truncate">내 설정</span>
+                <span x-show="isMobile || open" class="truncate">{{ __('nav.action.my_settings') }}</span>
             </a>
 
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit"
-                        :title="(isMobile || open) ? '' : '로그아웃'"
+                        :title="(isMobile || open) ? '' : '{{ __('nav.action.logout') }}'"
                         class="sidebar-item w-[calc(100%-16px)] text-left"
                         :class="{ 'sidebar-item-collapsed w-[calc(100%-12px)]': !isMobile && !open }">
                     <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">{!! $icons['logout'] !!}</svg>
-                    <span x-show="isMobile || open" class="truncate">로그아웃</span>
+                    <span x-show="isMobile || open" class="truncate">{{ __('nav.action.logout') }}</span>
                 </button>
             </form>
         </div>
@@ -398,13 +401,31 @@
         <header class="flex items-center h-11 bg-white border-b border-gray-200 px-3 shrink-0">
             <button type="button" @click="toggle()"
                     class="flex items-center justify-center w-8 h-8 rounded text-gray-600 hover:bg-gray-100 transition"
-                    aria-label="사이드바 토글">
+                    aria-label="{{ __('nav.action.toggle_sidebar') }}">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">{!! $icons['menu'] !!}</svg>
             </button>
 
             <div class="ml-2 text-[13px] text-gray-700 truncate">{{ $breadcrumb }}</div>
 
             <div class="flex-1"></div>
+
+            {{-- i18n Phase 0 — 언어 전환 (영어 활성 시만) --}}
+            @if($localeEnEnabled)
+                <form method="POST" action="{{ route('locale.update') }}" class="flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
+                    @csrf
+                    @foreach(['ko', 'en'] as $loc)
+                        <button type="submit" name="locale" value="{{ $loc }}"
+                                @class([
+                                    'rounded px-2 py-0.5 text-[11px] font-medium transition',
+                                    'text-white' => app()->getLocale() === $loc,
+                                    'text-gray-500 hover:bg-gray-200' => app()->getLocale() !== $loc,
+                                ])
+                                @style(['background-color: var(--color-primary)' => app()->getLocale() === $loc])>
+                            {{ __('nav.lang.'.$loc) }}
+                        </button>
+                    @endforeach
+                </form>
+            @endif
         </header>
 
         {{-- Content --}}
