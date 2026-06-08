@@ -654,7 +654,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($type === 'consignee') {
             $buyerId = $this->contextBuyerId($context);
             if ($buyerId === '') {
-                $this->dispatch('notify', message: '바이어 먼저 선택', type: 'warning');
+                $this->dispatch('notify', message: __('vehicle.toast.buyer_first'), type: 'warning');
 
                 return;
             }
@@ -694,11 +694,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]);
             $this->selectNewBuyer($this->quickAddContext, (string) $buyer->id);
             unset($this->buyers);
-            $this->dispatch('notify', message: '신규 바이어 등록 완료', type: 'success');
+            $this->dispatch('notify', message: __('vehicle.toast.buyer_created'), type: 'success');
         } else {
             $buyerId = $this->contextBuyerId($this->quickAddContext);
             if ($buyerId === '') {
-                $this->dispatch('notify', message: '바이어 먼저 선택', type: 'warning');
+                $this->dispatch('notify', message: __('vehicle.toast.buyer_first'), type: 'warning');
 
                 return;
             }
@@ -711,7 +711,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'is_active'     => true,
             ]);
             $this->selectNewConsignee($this->quickAddContext, (string) $consignee->id);
-            $this->dispatch('notify', message: '신규 컨사이니 등록 완료', type: 'success');
+            $this->dispatch('notify', message: __('vehicle.toast.consignee_created'), type: 'success');
         }
 
         $this->quickAddOpen = false;
@@ -855,7 +855,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($restored > 0) {
             $this->dispatch(
                 'notify',
-                message: "회계 민감 필드 {$restored}건은 변경 권한이 없어 원값으로 복원됨 (admin/영업만 변경 가능)",
+                message: __('vehicle.toast.fields_restored', ['count' => $restored]),
                 type: 'warning'
             );
         }
@@ -901,7 +901,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         if (! empty($changed)) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'purchase_price_str' => "정산이 'paid' 상태인 차량의 회계 컬럼은 변경할 수 없습니다 (시도: ".implode(', ', $changed).'). 정산 취소 후 재시도하세요.',
+                'purchase_price_str' => __('vehicle.toast.paid_locked', ['fields' => implode(', ', $changed)]),
             ]);
         }
     }
@@ -912,8 +912,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function approveUnpaidOverride(): void
     {
-        abort_unless(auth()->user()?->canApproveUnpaidExport(), 403, '미입금 우회 승인 권한이 없습니다.');
-        abort_unless($this->editingId, 422, '차량을 먼저 저장한 뒤 승인할 수 있습니다.');
+        abort_unless(auth()->user()?->canApproveUnpaidExport(), 403, __('vehicle.toast.override_no_perm'));
+        abort_unless($this->editingId, 422, __('vehicle.toast.save_first_approve'));
 
         $this->validate(
             [
@@ -939,7 +939,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->overrideStage = '';
         $this->overrideReason = '';
 
-        $this->dispatch('notify', message: '미입금 우회 승인 완료 — 해당 단계 진입 가능', type: 'success');
+        $this->dispatch('notify', message: __('vehicle.toast.override_done'), type: 'success');
     }
 
     public function openEdit(int $id): void
@@ -951,9 +951,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         // admin/super, 통관/재무는 우회. (claudereview B — openEdit 관리 미스코핑 보정)
         $user = auth()->user();
         if (! $user->isAdmin() && $user->role === '영업') {
-            abort_unless($v->salesman_id === $user->salesman?->id, 403, '본인 담당 차량만 편집 가능합니다.');
+            abort_unless($v->salesman_id === $user->salesman?->id, 403, __('vehicle.toast.edit_own_only'));
         } elseif (! $user->isAdmin() && $user->role === '관리') {
-            abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, '본인 팀 담당 차량만 편집 가능합니다.');
+            abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, __('vehicle.toast.edit_team_only'));
         }
 
         // save() 신규 등록 직후 호출인지(justCreatedId == $id) 보존,
@@ -1289,7 +1289,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openLedgerUnlockModal(): void
     {
         if (! auth()->user()?->canAccessAdmin()) {
-            $this->dispatch('notify', message: '잠금 해제 권한 없음 (admin/super 전용)', type: 'error');
+            $this->dispatch('notify', message: __('vehicle.toast.unlock_no_perm'), type: 'error');
 
             return;
         }
@@ -1323,7 +1323,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $this->ledgerUnlockReason
             );
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '잠금 해제 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('vehicle.toast.unlock_failed', ['error' => $e->getMessage()]), type: 'error');
 
             return;
         }
@@ -1331,7 +1331,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->refreshLedgerLockState();
         $this->closeLedgerUnlockModal();
         $this->dispatch('notify',
-            message: '잠금 해제 완료. 저장 1회 후 자동 재잠금됩니다.',
+            message: __('vehicle.toast.unlock_done'),
             type: 'success');
     }
 
@@ -1586,7 +1586,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 차량 첨부 총 건수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
         if (count($this->existingPhotos) + count($this->photoFiles) > self::MAX_PHOTOS) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'photoFiles' => '차량 첨부는 최대 '.self::MAX_PHOTOS.'건까지 등록할 수 있습니다.',
+                'photoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]),
             ]);
         }
     }
@@ -1633,7 +1633,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         if ($this->editingId === null && ! $user->isAdmin()
             && ! in_array($user->role, ['영업', '관리'], true)) {
-            abort(403, '차량 신규 등록은 영업·관리 role 또는 admin/super 만 가능합니다.');
+            abort(403, __('vehicle.toast.create_perm'));
         }
 
         // 큐 14-4-4 후속 — 신규 등록 시 누락된 핵심 메타 자동 채움.
@@ -1706,7 +1706,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 말소신청서·등록증재발급·양도증명서 PDF가 RRN 필드 사용. 빈칸 발급 차단.
         if ($this->is_deregistered && empty($this->nice_reg_owner_rrn)) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'nice_reg_owner_rrn' => '말소 처리에는 소유자 주민(법인)등록번호 입력이 필수입니다.',
+                'nice_reg_owner_rrn' => __('vehicle.toast.rrn_required'),
             ]);
         }
 
@@ -2161,14 +2161,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->dispatch('switch-tab', tab: $nextStep['tab']);
             $this->dispatch(
                 'notify',
-                message: "차량이 등록됐습니다. 다음 단계: {$nextStep['label']} — {$nextStep['reason']}",
+                message: __('vehicle.toast.created_next', ['label' => $nextStep['label'], 'reason' => $nextStep['reason']]),
                 type: 'success',
             );
             return;
         }
 
         $this->close();
-        session()->flash('success', $wasCreating ? '차량이 등록됐습니다.' : '차량 정보가 수정됐습니다.');
+        session()->flash('success', $wasCreating ? __('vehicle.toast.created') : __('vehicle.toast.updated'));
     }
 
     /**
@@ -2219,12 +2219,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $vehicleNumber = trim((string) $this->vehicle_number);
         if ($vehicleNumber === '') {
-            $this->dispatch('notify', message: '먼저 차량번호를 입력하세요. (승인은 차량번호 단위로 잠깁니다)', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.enter_vnum_first_lock'), type: 'warning');
 
             return;
         }
         if ($this->buyer_id_str === '') {
-            $this->dispatch('notify', message: '먼저 바이어를 선택하세요.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.select_buyer_first'), type: 'warning');
 
             return;
         }
@@ -2249,12 +2249,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $vehicleNumber = trim((string) $this->vehicle_number);
         if ($vehicleNumber === '') {
-            $this->dispatch('notify', message: '먼저 차량번호를 입력하세요.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.enter_vnum_first'), type: 'warning');
 
             return;
         }
         if ($this->buyer_id_str === '') {
-            $this->dispatch('notify', message: '먼저 바이어를 선택하세요.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.select_buyer_first'), type: 'warning');
 
             return;
         }
@@ -2281,7 +2281,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->first(fn (ApprovalRequest $req) => trim((string) ($req->payload['new_vehicle_number'] ?? '')) === $vehicleNumber);
 
         if ($existing) {
-            $this->dispatch('notify', message: '이미 대기중인 요청이 있습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.pending_request_exists'), type: 'warning');
             $this->closeOverlapRequestModal();
 
             return;
@@ -2308,7 +2308,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'status' => ApprovalRequest::STATUS_PENDING,
         ]);
 
-        $this->dispatch('notify', message: '신규 거래 승인 요청을 보냈습니다.', type: 'success');
+        $this->dispatch('notify', message: __('vehicle.toast.overlap_sent'), type: 'success');
         $this->closeOverlapRequestModal();
     }
 
@@ -2320,13 +2320,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openTransferRequestModal(): void
     {
         if ($this->editingId === null) {
-            $this->dispatch('notify', message: '차량을 먼저 저장한 뒤 이체 요청할 수 있습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.save_first_transfer'), type: 'warning');
 
             return;
         }
         $ctx = $this->transferContext;
         if (! empty($ctx['pending'])) {
-            $this->dispatch('notify', message: '이미 대기중인 자금 이체 요청이 있습니다. 관리 승인/거부 후 재시도하세요.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.pending_transfer_exists'), type: 'warning');
 
             return;
         }
@@ -2374,7 +2374,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $amount = (float) str_replace(',', '', $this->transferAmountStr);
 
         if (! $source || ! $target) {
-            $this->dispatch('notify', message: '이체 출처 또는 대상 차량을 찾을 수 없습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.transfer_vehicle_not_found'), type: 'warning');
 
             return;
         }
@@ -2394,7 +2394,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $this->dispatch('notify', message: '차량 간 자금 이체 승인 요청을 보냈습니다.', type: 'success');
+        $this->dispatch('notify', message: __('vehicle.toast.transfer_sent'), type: 'success');
         $this->resetTransferRequestForm();
     }
 
@@ -2404,7 +2404,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $transfer = InterVehicleTransfer::find($transferId);
         if (! $transfer || $transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
-            $this->dispatch('notify', message: '실행 완료된 이체만 취소 요청할 수 있습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.void_only_executed'), type: 'warning');
 
             return;
         }
@@ -2433,7 +2433,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $transfer = InterVehicleTransfer::find($this->voidTransferId);
         if (! $transfer) {
-            $this->dispatch('notify', message: '이체 거래를 찾을 수 없습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('vehicle.toast.transfer_not_found'), type: 'warning');
 
             return;
         }
@@ -2457,7 +2457,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        $this->dispatch('notify', message: '이체 취소 승인 요청을 보냈습니다.', type: 'success');
+        $this->dispatch('notify', message: __('vehicle.toast.void_sent'), type: 'success');
         $this->resetTransferVoidForm();
     }
 
@@ -2770,7 +2770,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         if (empty(trim($this->nice_reg_owner_name))) {
-            session()->flash('notice', '소유자명을 먼저 입력하세요. (NICE 조회에 차량번호+소유자명 필요)');
+            session()->flash('notice', __('vehicle.toast.nice_need_owner'));
 
             return;
         }
@@ -2782,12 +2782,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // null = 엔드포인트 미설정(수동 입력 모드) / success=false = 조회 실패(원문 메시지 노출)
         if ($result === null) {
-            session()->flash('notice', 'NICE 조회가 설정되지 않았습니다 — 수동 입력하세요.');
+            session()->flash('notice', __('vehicle.toast.nice_not_configured'));
 
             return;
         }
         if (($result['success'] ?? false) !== true) {
-            session()->flash('notice', $result['message'] ?? 'NICE 조회에 실패했습니다.');
+            session()->flash('notice', $result['message'] ?? __('vehicle.toast.nice_failed'));
 
             return;
         }
@@ -4847,110 +4847,106 @@ function vehicleColumnsToggle() {
      wire:key="save-confirm-modal">
     <div class="card max-w-2xl mx-4 shadow-2xl" @click.stop>
         @php
-            $tabLabel = match($activeTabForSave) {
-                'purchase'  => '매입',
-                'sale'      => '판매',
-                'bl'        => '선적(B/L)',
-                'clearance' => '수출통관',
-                default     => '저장',
-            };
+            $tabLabel = in_array($activeTabForSave, ['purchase','sale','bl','clearance'], true)
+                ? __('vehicle.panel.tab.'.$activeTabForSave)
+                : __('vehicle.save.tab_default');
         @endphp
-        <h3 class="text-base font-semibold text-gray-900">{{ $tabLabel }} 정보 확인</h3>
-        <p class="mt-1 text-xs text-gray-500">아래 항목이 정확히 입력됐는지 확인 후 [확인 후 저장]을 클릭하세요.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.save.title', ['tab' => $tabLabel]) }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.save.desc') }}</p>
 
         <div class="mt-4">
             {{-- 회의확장씬 (2026-05-22) — 4 탭별 미리보기 분기 --}}
             @if($activeTabForSave === 'purchase')
             <div class="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
-                <h4 class="mb-2 text-xs font-semibold text-blue-900">매입 정보</h4>
+                <h4 class="mb-2 text-xs font-semibold text-blue-900">{{ __('vehicle.save.preview_purchase') }}</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
-                    <div class="flex justify-between"><dt class="text-gray-500">매입일</dt><dd class="font-medium">{{ $purchase_date ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">매입처</dt><dd class="font-medium">{{ $purchase_from ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">매입가</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float) str_replace(',', '', $purchase_price_str)) : '— 미입력' }} 원</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">매도비</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float) str_replace(',', '', $selling_fee_str)) : '0' }} 원</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.purchase_date') }}</dt><dd class="font-medium">{{ $purchase_date ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.purchase_from') }}</dt><dd class="font-medium">{{ $purchase_from ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.purchase_price') }}</dt><dd class="font-medium">{{ $purchase_price_str ? number_format((float) str_replace(',', '', $purchase_price_str)) : __('vehicle.save.val_empty') }} {{ __('vehicle.save.won') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.selling_fee') }}</dt><dd class="font-medium">{{ $selling_fee_str ? number_format((float) str_replace(',', '', $selling_fee_str)) : '0' }} {{ __('vehicle.save.won') }}</dd></div>
                     <hr class="border-blue-200 my-1">
-                    <div class="flex justify-between"><dt class="text-gray-500">은행</dt><dd class="font-medium">{{ $purchase_seller_bank ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">예금주</dt><dd class="font-medium">{{ $purchase_seller_holder ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">계좌번호</dt><dd class="font-mono font-medium">{{ $purchase_seller_account ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bank') }}</dt><dd class="font-medium">{{ $purchase_seller_bank ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.holder') }}</dt><dd class="font-medium">{{ $purchase_seller_holder ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.account') }}</dt><dd class="font-mono font-medium">{{ $purchase_seller_account ?: __('vehicle.save.val_empty') }}</dd></div>
                 </dl>
             </div>
             @elseif($activeTabForSave === 'sale')
             <div class="rounded-lg border border-purple-200 bg-purple-50/40 p-3">
-                <h4 class="mb-2 text-xs font-semibold text-purple-900">판매 정보</h4>
+                <h4 class="mb-2 text-xs font-semibold text-purple-900">{{ __('vehicle.save.preview_sale') }}</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
-                    <div class="flex justify-between"><dt class="text-gray-500">판매일</dt><dd class="font-medium">{{ $sale_date ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">통화</dt><dd class="font-medium">{{ $currency }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.sale_date') }}</dt><dd class="font-medium">{{ $sale_date ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.currency') }}</dt><dd class="font-medium">{{ $currency }}</dd></div>
                     @if($currency !== 'KRW')
-                    <div class="flex justify-between"><dt class="text-gray-500">환율</dt><dd class="font-medium">{{ $exchange_rate_str ?: '— 미입력' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.rate') }}</dt><dd class="font-medium">{{ $exchange_rate_str ?: __('vehicle.save.val_empty') }}</dd></div>
                     @endif
-                    <div class="flex justify-between"><dt class="text-gray-500">판매가</dt><dd class="font-medium">{{ $sale_price_str ? number_format((float) str_replace(',', '', $sale_price_str)) : '— 미입력' }} {{ $currency }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.sale_price') }}</dt><dd class="font-medium">{{ $sale_price_str ? number_format((float) str_replace(',', '', $sale_price_str)) : __('vehicle.save.val_empty') }} {{ $currency }}</dd></div>
                     <hr class="border-purple-200 my-1">
                     <div class="flex justify-between">
-                        <dt class="text-gray-500">바이어</dt>
+                        <dt class="text-gray-500">{{ __('vehicle.save.f.buyer') }}</dt>
                         <dd class="font-medium">
                             @php $selectedBuyer = $this->buyers->firstWhere('id', (int) $buyer_id_str); @endphp
-                            {{ $selectedBuyer?->name ?: '— 미선택' }}
+                            {{ $selectedBuyer?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
                     <div class="flex justify-between">
-                        <dt class="text-gray-500">컨사이니</dt>
+                        <dt class="text-gray-500">{{ __('vehicle.save.f.consignee') }}</dt>
                         <dd class="font-medium">
                             @php $selectedConsignee = $this->consigneesForSale->firstWhere('id', (int) $consignee_id_str); @endphp
-                            {{ $selectedConsignee?->name ?: '— 미선택' }}
+                            {{ $selectedConsignee?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
                 </dl>
             </div>
             @elseif($activeTabForSave === 'bl')
             <div class="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
-                <h4 class="mb-2 text-xs font-semibold text-amber-900">선적(B/L) 정보</h4>
+                <h4 class="mb-2 text-xs font-semibold text-amber-900">{{ __('vehicle.save.preview_bl') }}</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
-                    <div class="flex justify-between"><dt class="text-gray-500">반입지(선적지)</dt><dd class="font-medium">{{ $bl_loading_location ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">B/L 번호</dt><dd class="font-medium">{{ $bl_number ?? '' ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">컨테이너 No</dt><dd class="font-medium">{{ $container_number ?? '' ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">VSL</dt><dd class="font-medium">{{ $bl_vsl ?? '' ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">B/L 문서</dt><dd class="font-medium">{{ ($bl_document_path ?? '') || ($blDocFile ?? null) ? '✓ 첨부' : '— 미첨부' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.loading') }}</dt><dd class="font-medium">{{ $bl_loading_location ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bl_number') }}</dt><dd class="font-medium">{{ $bl_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.container') }}</dt><dd class="font-medium">{{ $container_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.vsl') }}</dt><dd class="font-medium">{{ $bl_vsl ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bl_doc') }}</dt><dd class="font-medium">{{ ($bl_document_path ?? '') || ($blDocFile ?? null) ? __('vehicle.save.val_attached') : __('vehicle.save.val_not_attached') }}</dd></div>
                 </dl>
             </div>
             @elseif($activeTabForSave === 'clearance')
             <div class="rounded-lg border border-green-200 bg-green-50/40 p-3">
-                <h4 class="mb-2 text-xs font-semibold text-green-900">수출통관 정보</h4>
+                <h4 class="mb-2 text-xs font-semibold text-green-900">{{ __('vehicle.save.preview_clearance') }}</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
                     <div class="flex justify-between">
-                        <dt class="text-gray-500">통관 바이어</dt>
+                        <dt class="text-gray-500">{{ __('vehicle.save.f.exp_buyer') }}</dt>
                         <dd class="font-medium">
                             @php $expBuyer = $this->buyers->firstWhere('id', (int) ($export_buyer_id_str ?? 0)); @endphp
-                            {{ $expBuyer?->name ?: '— 미선택' }}
+                            {{ $expBuyer?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
-                    <div class="flex justify-between"><dt class="text-gray-500">선적 예정일</dt><dd class="font-medium">{{ $shipping_date ?: '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">포워딩사</dt>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.ship_date') }}</dt><dd class="font-medium">{{ $shipping_date ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.forwarder') }}</dt>
                         <dd class="font-medium">
                             @php $fc = ($this->forwardingCompanies ?? collect())->firstWhere('id', (int) ($forwarding_company_id_str ?? 0)); @endphp
-                            {{ $fc?->name ?: '— 미선택' }}
+                            {{ $fc?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
-                    <div class="flex justify-between"><dt class="text-gray-500">면장 금액</dt><dd class="font-medium">{{ ($export_declaration_amount_str ?? '') !== '' ? number_format((float) str_replace(',', '', $export_declaration_amount_str)).' USD' : '— 미입력' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">수출신고서</dt><dd class="font-medium">{{ ($export_declaration_document_path ?? '') || ($exportDeclarationDocFile ?? null) ? '✓ 첨부' : '— 미첨부' }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">통관 완료 체크</dt><dd class="font-medium">{{ ($is_export_cleared ?? false) ? '✓ 완료' : '— 미체크' }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.decl_amount') }}</dt><dd class="font-medium">{{ ($export_declaration_amount_str ?? '') !== '' ? number_format((float) str_replace(',', '', $export_declaration_amount_str)).' USD' : __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.decl_doc') }}</dt><dd class="font-medium">{{ ($export_declaration_document_path ?? '') || ($exportDeclarationDocFile ?? null) ? __('vehicle.save.val_attached') : __('vehicle.save.val_not_attached') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.cleared_check') }}</dt><dd class="font-medium">{{ ($is_export_cleared ?? false) ? __('vehicle.save.val_checked') : __('vehicle.save.val_unchecked') }}</dd></div>
                 </dl>
             </div>
             @endif
         </div>
 
         <div class="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-             누락된 항목 (— 미입력) 이 있어도 저장은 가능하지만 다시 한 번 확인을 권장합니다.
+             {{ __('vehicle.save.note') }}
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeSaveConfirmModal" type="button"
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-                돌아가서 수정
+                {{ __('vehicle.save.back') }}
             </button>
             <button wire:click="confirmAndSave" wire:loading.attr="disabled" wire:target="confirmAndSave,save"
                     class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
-                <span wire:loading.remove wire:target="confirmAndSave,save">확인 후 저장</span>
-                <span wire:loading wire:target="confirmAndSave,save">저장 중...</span>
+                <span wire:loading.remove wire:target="confirmAndSave,save">{{ __('vehicle.save.confirm') }}</span>
+                <span wire:loading wire:target="confirmAndSave,save">{{ __('vehicle.footer.saving') }}</span>
             </button>
         </div>
     </div>
@@ -4965,50 +4961,50 @@ function vehicleColumnsToggle() {
      wire:click.self="closeTransferRequestModal"
      wire:key="transfer-request-modal">
     <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">차량 간 자금 이체 요청</h3>
-        <p class="mt-1 text-xs text-gray-500">관리자 승인 후 출처 차량에 음수 잔금 + 대상 차량에 양수 잔금이 자동 생성됩니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.transfer_req_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.transfer_req_desc') }}</p>
 
         <div class="mt-3 rounded-md bg-violet-50 border border-violet-200 p-2.5 text-xs text-violet-900 space-y-0.5">
-            <div>받은 금액 <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
-            <div>한도 <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} (받은 금액 × 50%)</div>
+            <div>{{ __('vehicle.transfer.received') }} <strong>{{ number_format($transferCtx['received']) }}</strong> {{ $currency ?: 'KRW' }}</div>
+            <div>{{ __('vehicle.transfer.limit') }} <strong class="text-violet-700">{{ number_format($transferCtx['limit']) }}</strong> {{ $currency ?: 'KRW' }} {{ __('vehicle.transfer.limit_note') }}</div>
         </div>
 
         <div class="mt-3 space-y-2">
             <div>
                 <label class="label-base">이체 대상 차량 <span class="text-red-500">*</span></label>
                 <select wire:model="transferTargetVehicleId" class="input-base">
-                    <option value="">-- 선택 --</option>
+                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                     @foreach($transferCtx['candidates'] as $cand)
-                    <option value="{{ $cand->id }}">{{ $cand->vehicle_number }} (판매가 {{ number_format($cand->sale_price) }})</option>
+                    <option value="{{ $cand->id }}">{{ $cand->vehicle_number }} ({{ __('vehicle.modal.sell_price_label') }} {{ number_format($cand->sale_price) }})</option>
                     @endforeach
                 </select>
                 @error('transferTargetVehicleId')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label class="label-base">이체 금액 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('vehicle.modal.transfer_amount_label') }} <span class="text-red-500">*</span></label>
                 <input wire:model="transferAmountStr" type="text" class="input-base"
-                       placeholder="최대 {{ number_format($transferCtx['limit']) }} {{ $currency ?: 'KRW' }}" />
+                       placeholder="{{ __('vehicle.modal.transfer_amount_ph', ['max' => number_format($transferCtx['limit']), 'currency' => $currency ?: 'KRW']) }}" />
                 @error('transferAmountStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label class="label-base">승인 요청 사유 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('vehicle.modal.overlap_reason_label') }} <span class="text-red-500">*</span></label>
                 <textarea wire:model="transferReason" rows="3" class="input-base"
-                          placeholder="예: 출처 차량 50% 입금 받음. 같은 바이어가 대상 차량 계약 — 계약금으로 이체 요청. 최소 5자."></textarea>
+                          placeholder="{{ __('vehicle.modal.transfer_reason_ph') }}"></textarea>
                 @error('transferReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label class="label-base">메모 <span class="text-[10px] text-gray-400">(선택)</span></label>
-                <input wire:model="transferNotes" type="text" class="input-base" placeholder="이체 거래에 첨부될 메모" />
+                <label class="label-base">{{ __('vehicle.modal.memo_optional') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.modal.optional') }}</span></label>
+                <input wire:model="transferNotes" type="text" class="input-base" placeholder="{{ __('vehicle.modal.transfer_notes_ph') }}" />
             </div>
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" wire:click="closeTransferRequestModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="submitTransferRequest"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
-                요청 보내기
+                {{ __('vehicle.modal.overlap_send') }}
             </button>
         </div>
     </div>
@@ -5024,31 +5020,31 @@ function vehicleColumnsToggle() {
      wire:click.self="closeTransferVoidModal"
      wire:key="transfer-void-modal">
     <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-red-700">이체 취소 요청</h3>
-        <p class="mt-1 text-xs text-gray-500">관리자 승인 후 양 차량에 반대 부호 잔금이 추가되어 원래 이체가 회계상 상쇄됩니다. 기존 잔금은 삭제되지 않습니다 (append-only).</p>
+        <h3 class="text-base font-semibold text-red-700">{{ __('vehicle.modal.void_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.void_desc') }}</p>
 
         @if($voidTarget)
         <div class="mt-3 rounded-md bg-red-50 border border-red-200 p-2.5 text-xs text-red-900 space-y-0.5">
-            <div>출처 <span class="font-mono">{{ $voidTarget->sourceVehicle?->vehicle_number ?? '#'.$voidTarget->source_vehicle_id }}</span>
-                 → 대상 <span class="font-mono">{{ $voidTarget->targetVehicle?->vehicle_number ?? '#'.$voidTarget->target_vehicle_id }}</span></div>
-            <div>금액 <strong>{{ number_format((float)$voidTarget->amount) }}</strong> {{ $voidTarget->currency }}</div>
+            <div>{{ __('vehicle.modal.source') }} <span class="font-mono">{{ $voidTarget->sourceVehicle?->vehicle_number ?? '#'.$voidTarget->source_vehicle_id }}</span>
+                 → {{ __('vehicle.modal.target') }} <span class="font-mono">{{ $voidTarget->targetVehicle?->vehicle_number ?? '#'.$voidTarget->target_vehicle_id }}</span></div>
+            <div>{{ __('vehicle.modal.amount') }} <strong>{{ number_format((float)$voidTarget->amount) }}</strong> {{ $voidTarget->currency }}</div>
         </div>
         @endif
 
         <div class="mt-3">
-            <label class="label-base">취소 사유 <span class="text-red-500">*</span></label>
+            <label class="label-base">{{ __('vehicle.modal.void_reason_label') }} <span class="text-red-500">*</span></label>
             <textarea wire:model="voidReason" rows="3" class="input-base"
-                      placeholder="예: 바이어가 2번 차 계약을 무산. 자금 1번 차로 원상복구 필요. 최소 5자."></textarea>
+                      placeholder="{{ __('vehicle.modal.void_reason_ph') }}"></textarea>
             @error('voidReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" wire:click="closeTransferVoidModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="submitTransferVoidRequest"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
-                취소 요청 보내기
+                {{ __('vehicle.modal.void_send') }}
             </button>
         </div>
     </div>
@@ -5061,25 +5057,25 @@ function vehicleColumnsToggle() {
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="quick-add-modal">
     <div class="card w-full max-w-md mx-4 shadow-2xl" @click.stop>
         <h3 class="text-base font-semibold text-gray-900">
-            {{ $quickAddType === 'buyer' ? '신규 바이어 등록' : '신규 컨사이니 등록' }}
+            {{ $quickAddType === 'buyer' ? __('vehicle.modal.qa_buyer_title') : __('vehicle.modal.qa_consignee_title') }}
             <span class="ml-1 text-xs font-normal text-gray-400">
-                ({{ ['sale' => '판매', 'export' => '수출통관', 'bl' => '선적'][$quickAddContext] ?? '' }})
+                ({{ ['sale' => __('vehicle.modal.qa_ctx_sale'), 'export' => __('vehicle.modal.qa_ctx_export'), 'bl' => __('vehicle.modal.qa_ctx_bl')][$quickAddContext] ?? '' }})
             </span>
         </h3>
         @if($quickAddType === 'consignee')
-        <p class="mt-1 text-xs text-gray-500">바이어 <span class="font-medium text-gray-700">{{ $quickAddBuyerName }}</span> 에 종속됩니다.</p>
+        <p class="mt-1 text-xs text-gray-500">{!! __('vehicle.modal.qa_consignee_note', ['buyer' => '<span class="font-medium text-gray-700">'.e($quickAddBuyerName).'</span>']) !!}</p>
         @endif
 
         <div class="mt-4 space-y-3">
             <div>
-                <label class="label-base">{{ $quickAddType === 'buyer' ? '바이어명' : '컨사이니명' }} <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ $quickAddType === 'buyer' ? __('vehicle.modal.qa_buyer_name') : __('vehicle.modal.qa_consignee_name') }} <span class="text-red-500">*</span></label>
                 <input wire:model="qaName" type="text" class="input-base" autofocus />
                 @error('qaName')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label class="label-base">국가</label>
+                <label class="label-base">{{ __('vehicle.modal.qa_country') }}</label>
                 <select wire:model="qaCountryId" class="input-base">
-                    <option value="">-- 선택 --</option>
+                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                     @foreach($this->countries as $c)
                     <option value="{{ $c->id }}">{{ $c->name }}</option>
                     @endforeach
@@ -5087,9 +5083,9 @@ function vehicleColumnsToggle() {
             </div>
             @if($quickAddType === 'buyer')
             <div>
-                <label class="label-base">영업담당자</label>
+                <label class="label-base">{{ __('vehicle.field.salesman') }}</label>
                 <select wire:model="qaSalesmanId" class="input-base">
-                    <option value="">-- 선택 --</option>
+                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                     @foreach($this->salesmen as $s)
                     <option value="{{ $s->id }}">{{ $s->name }}</option>
                     @endforeach
@@ -5098,22 +5094,22 @@ function vehicleColumnsToggle() {
             @endif
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="label-base">담당자</label>
+                    <label class="label-base">{{ __('vehicle.modal.qa_contact') }}</label>
                     <input wire:model="qaContactName" type="text" class="input-base" />
                 </div>
                 <div>
-                    <label class="label-base">전화</label>
+                    <label class="label-base">{{ __('vehicle.modal.qa_phone') }}</label>
                     <input wire:model="qaContactPhone" type="text" class="input-base" />
                 </div>
             </div>
-            <p class="text-[11px] text-gray-400">이메일·주소·메모 등 상세 정보는 등록 후 바이어/컨사이니 화면에서 보완할 수 있습니다.</p>
+            <p class="text-[11px] text-gray-400">{{ __('vehicle.modal.qa_more') }}</p>
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" wire:click="cancelQuickAdd"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="saveQuickAdd" wire:loading.attr="disabled"
-                    class="btn-primary px-4 py-2 text-sm">등록 + 선택</button>
+                    class="btn-primary px-4 py-2 text-sm">{{ __('vehicle.modal.qa_save') }}</button>
         </div>
     </div>
 </div>
