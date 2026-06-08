@@ -237,6 +237,18 @@ class LocaleTest extends TestCase
             ->assertDontSee('컨사이니 등록');
     }
 
+    public function test_users_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertSee('User Management')
+            ->assertSee('Add User')
+            ->assertDontSee('사용자 관리');
+    }
+
     public function test_vehicle_panel_basic_tab_translates_to_english(): void
     {
         $this->enableEnglish(true);

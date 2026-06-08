@@ -112,15 +112,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->validate($rules, [], [
-            'name'  => '이름',
-            'email' => '이메일',
-            'role'  => '역할',
-            'type'  => '정산 분류',
+            'name'  => __('user.field.name'),
+            'email' => __('common.email'),
+            'role'  => __('user.field.role'),
+            'type'  => __('user.field.settlement_type'),
         ]);
 
         // admin은 super 권한 부여 불가
         if (! auth()->user()->isSuperAdmin() && $this->permission === 'super') {
-            $this->addError('permission', '시스템관리자 권한은 부여할 수 없습니다.');
+            $this->addError('permission', __('user.no_super'));
             return;
         }
 
@@ -174,7 +174,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         unset($this->users);
         // 2026-05-21 사용자 피드백 — 저장 시 시각 피드백 + 패널 자동 닫기.
-        $this->dispatch('notify', message: '사용자 정보가 저장됐습니다.', type: 'success');
+        $this->dispatch('notify', message: __('user.saved'), type: 'success');
         $this->close();
     }
 
@@ -184,7 +184,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 본인 계정 삭제 불가
         if ($target->id === auth()->id()) {
-            session()->flash('error', '본인 계정은 삭제할 수 없습니다.');
+            session()->flash('error', __('user.self_delete'));
             return;
         }
         // admin은 super 삭제 불가
@@ -194,7 +194,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $target->delete();
         unset($this->users);
-        session()->flash('success', '사용자가 삭제됐습니다.');
+        session()->flash('success', __('user.deleted'));
     }
 
     private function resetForm(): void
@@ -233,34 +233,34 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">사용자 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->users->total() }}명</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('user.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('user.total', ['count' => $this->users->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            사용자 추가
+            {{ __('user.create_btn') }}
         </button>
     </div>
 </div>
 
 {{-- 필터 --}}
 <div class="card-tight flex flex-wrap items-center gap-3">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="이름 · 이메일"
+    <input wire:model.live.debounce.400ms="search" type="text" placeholder="{{ __('user.search_ph') }}"
            class="input-base w-full sm:w-60" />
     <select wire:model.live="permFilter" class="input-base w-full sm:w-auto">
-        <option value="">전체 권한</option>
+        <option value="">{{ __('user.all_perm') }}</option>
         @if(auth()->user()->isSuperAdmin())
-        <option value="super">시스템관리자</option>
+        <option value="super">{{ __('nav.permission.super') }}</option>
         @endif
-        <option value="admin">최고관리자</option>
-        <option value="user">일반사용자</option>
+        <option value="admin">{{ __('nav.permission.admin') }}</option>
+        <option value="user">{{ __('nav.permission.user') }}</option>
     </select>
 </div>
 
@@ -269,11 +269,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">이름</th>
-                <th class="pb-2 pr-4 font-medium">이메일</th>
-                <th class="pb-2 pr-4 font-medium">권한</th>
-                <th class="pb-2 pr-4 font-medium">역할</th>
-                <th class="pb-2 pr-4 font-medium">마지막 로그인</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('user.col.name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('user.col.perm') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('user.col.role') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('user.col.last_login') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -283,15 +283,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $permBadge = match($u->permission) {
                     'super' => 'badge-purple', 'admin' => 'badge-blue', default => 'badge-gray',
                 };
-                $permLabel = match($u->permission) {
-                    'super' => '시스템관리자', 'admin' => '최고관리자', default => '일반사용자',
-                };
+                $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
             @endphp
             <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $u->id }})">
                 <td class="py-3 pr-4 font-medium text-gray-800">
                     {{ $u->name }}
                     @if($u->id === auth()->id())
-                    <span class="ml-1 text-[10px] text-gray-400">(나)</span>
+                    <span class="ml-1 text-[10px] text-gray-400">{{ __('user.me') }}</span>
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $u->email }}</td>
@@ -299,21 +297,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
                 </td>
                 <td class="py-3 pr-4 text-gray-500">
-                    {{ $u->permission === 'user' ? ($u->role ?? '-') : '-' }}
+                    {{ $u->permission === 'user' && $u->role ? __('domain.role.'.$u->role) : '-' }}
                 </td>
                 <td class="py-3 pr-4 text-gray-400 text-xs">
-                    {{ $u->last_login_at?->format('Y-m-d H:i') ?? '없음' }}
+                    {{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}
                 </td>
                 <td class="py-3 text-right">
                     @if($u->id !== auth()->id())
                     <button wire:click.stop="delete({{ $u->id }})"
-                            wire:confirm="{{ $u->name }} 사용자를 삭제하시겠습니까?"
-                            class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                            wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
+                            class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                     @endif
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">사용자가 없습니다.</td></tr>
+            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -324,22 +322,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     @forelse($this->users as $u)
     @php
         $permBadge = match($u->permission) { 'super' => 'badge-purple', 'admin' => 'badge-blue', default => 'badge-gray' };
-        $permLabel = match($u->permission) { 'super' => '시스관리자', 'admin' => '최고관리자', default => '일반사용자' };
+        $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
     @endphp
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $u->id }})">
         <div>
-            <div class="font-medium text-gray-800">{{ $u->name }}{{ $u->id === auth()->id() ? ' (나)' : '' }}</div>
+            <div class="font-medium text-gray-800">{{ $u->name }}{{ $u->id === auth()->id() ? ' '.__('user.me') : '' }}</div>
             <div class="text-xs text-gray-500">{{ $u->email }}</div>
         </div>
         <div class="flex items-center gap-2">
             <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
             @if($u->permission === 'user')
-            <span class="text-xs text-gray-400">{{ $u->role ?? '-' }}</span>
+            <span class="text-xs text-gray-400">{{ $u->role ? __('domain.role.'.$u->role) : '-' }}</span>
             @endif
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">사용자가 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</div>
     @endforelse
 </div>
 
@@ -354,7 +352,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '사용자 수정' : '사용자 추가' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('user.edit_title') : __('user.create_title') }}</h2>
         <button wire:click="close" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -366,18 +364,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 기본 정보 --}}
         <div class="space-y-3">
             <div>
-                <label class="label-base">이름 <span class="text-red-500">*</span></label>
-                <input wire:model="name" type="text" class="input-base" placeholder="홍길동" />
+                <label class="label-base">{{ __('user.field.name') }} <span class="text-red-500">*</span></label>
+                <input wire:model="name" type="text" class="input-base" placeholder="{{ __('user.field.name_ph') }}" />
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             <div>
-                <label class="label-base">이메일 <span class="text-red-500">*</span></label>
-                <input wire:model="email" type="email" class="input-base" placeholder="user@car-erp.test" />
+                <label class="label-base">{{ __('common.email') }} <span class="text-red-500">*</span></label>
+                <input wire:model="email" type="email" class="input-base" placeholder="{{ __('user.field.email_ph') }}" />
                 @error('email')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             {{-- 2026-05-21 — 전화번호 + Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
             <div>
-                <label class="label-base">전화번호</label>
+                <label class="label-base">{{ __('user.field.phone') }}</label>
                 <input wire:model="phone" type="tel" class="input-base"
                        placeholder="01012345678"
                        maxlength="13"
@@ -386,10 +384,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div>
                 <label class="label-base">
-                    비밀번호
-                    @if($editingId)<span class="text-xs text-gray-400">(빈 칸 = 변경 안 함)</span>@else<span class="text-red-500">*</span>@endif
+                    {{ __('user.field.password') }}
+                    @if($editingId)<span class="text-xs text-gray-400">{{ __('user.field.password_edit_note') }}</span>@else<span class="text-red-500">*</span>@endif
                 </label>
-                <input wire:model="password" type="password" class="input-base" placeholder="8자 이상" autocomplete="new-password" />
+                <input wire:model="password" type="password" class="input-base" placeholder="{{ __('user.field.password_ph') }}" autocomplete="new-password" />
                 @error('password')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
         </div>
@@ -398,53 +396,53 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="space-y-3 border-t pt-4">
             <div class="section-header">
                 <span class="section-dot bg-violet-500"></span>
-                <span class="section-title">권한 설정</span>
+                <span class="section-title">{{ __('user.field.sec_perm') }}</span>
             </div>
             <div>
-                <label class="label-base">권한 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('user.field.perm') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="permission" class="input-base">
                     @if(auth()->user()->isSuperAdmin())
-                    <option value="super">시스템관리자 (super)</option>
+                    <option value="super">{{ __('user.perm_opt.super') }}</option>
                     @endif
-                    <option value="admin">최고관리자 (admin)</option>
-                    <option value="user">일반사용자 (user)</option>
+                    <option value="admin">{{ __('user.perm_opt.admin') }}</option>
+                    <option value="user">{{ __('user.perm_opt.user') }}</option>
                 </select>
                 @error('permission')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @if($permission === 'user')
             <div>
-                <label class="label-base">역할 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('user.field.role') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="role" class="input-base">
                     @foreach(App\Models\User::ROLES as $r)
-                    <option value="{{ $r }}">{{ $r }}</option>
+                    <option value="{{ $r }}">{{ __('domain.role.'.$r) }}</option>
                     @endforeach
                 </select>
-                <p class="mt-1 text-xs text-gray-400">역할에 따라 접근 가능한 메뉴가 달라집니다.</p>
+                <p class="mt-1 text-xs text-gray-400">{{ __('user.field.role_note') }}</p>
                 @error('role')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             {{-- 2026-05-21 — role='영업' 일 때만 정산 분류 노출. 거래완료 시 자동 정산의 settlement_type 결정 --}}
             @if($role === '영업')
             <div>
-                <label class="label-base">정산 분류 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('user.field.settlement_type') }} <span class="text-red-500">*</span></label>
                 <select wire:model="type" class="input-base">
-                    <option value="">— 선택 —</option>
+                    <option value="">{{ __('user.field.type_select') }}</option>
                     @foreach(App\Models\User::TYPES as $key => $label)
-                    <option value="{{ $key }}">{{ $label }} ({{ $key === 'employee' ? '건당' : '비율' }} 정산)</option>
+                    <option value="{{ $key }}">{{ __('salesman.type.'.$key) }} {{ __('salesman.type_suffix.'.$key) }}</option>
                     @endforeach
                 </select>
-                <p class="mt-1 text-xs text-gray-400">거래완료 시 자동 생성되는 정산 방식 결정 — 누락 방지를 위해 명시 선택 필수</p>
+                <p class="mt-1 text-xs text-gray-400">{{ __('user.field.type_note') }}</p>
                 @error('type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             {{-- 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정 --}}
             <div>
-                <label class="label-base">담당 [관리]</label>
+                <label class="label-base">{{ __('user.field.manager') }}</label>
                 <select wire:model="manager_user_id_str" class="input-base">
-                    <option value="">— 미배정 —</option>
+                    <option value="">{{ __('user.field.manager_none') }}</option>
                     @foreach($this->managers as $m)
                     <option value="{{ $m->id }}">{{ $m->name }}</option>
                     @endforeach
                 </select>
-                <p class="mt-1 text-xs text-gray-400">[관리] 로그인 시 본인 담당 영업의 차량/바이어만 조회. 미배정 시 [관리] 솔팅 결과에 안 잡힘</p>
+                <p class="mt-1 text-xs text-gray-400">{{ __('user.field.manager_note') }}</p>
                 @error('manager_user_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif
@@ -455,9 +453,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 푸터 --}}
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
-        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">저장</span><span wire:loading wire:target="save">저장 중...</span>
+            <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>
         </button>
     </div>
 
