@@ -145,6 +145,17 @@ class LocaleTest extends TestCase
             ->assertSee('차량 등록');
     }
 
+    public function test_consignees_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('erp.consignees.index'))
+            ->assertOk()
+            ->assertSee('Add Consignee')
+            ->assertDontSee('컨사이니 등록');
+    }
+
     public function test_vehicle_panel_basic_tab_translates_to_english(): void
     {
         $this->enableEnglish(true);
