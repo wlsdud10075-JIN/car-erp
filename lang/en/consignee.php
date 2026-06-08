@@ -24,6 +24,8 @@ return [
         'id_type' => 'ID Type',
         'id_value' => 'ID Number',
         'id_value_note' => '(encrypted on save)',
+        'eori_ph' => 'e.g. DE7078617',
+        'tax_ph' => 'e.g. LT792855314',
     ],
 
     'id_type' => [

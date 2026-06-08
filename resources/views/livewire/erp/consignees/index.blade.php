@@ -296,11 +296,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="grid grid-cols-2 gap-3">
             <div>
                 <label class="label-base">EORI Number</label>
-                <input wire:model="eori_number" type="text" class="input-base" placeholder="예: DE7078617" />
+                <input wire:model="eori_number" type="text" class="input-base" placeholder="{{ __('consignee.field.eori_ph') }}" />
             </div>
             <div>
                 <label class="label-base">TAX Number</label>
-                <input wire:model="tax_number" type="text" class="input-base" placeholder="예: LT792855314" />
+                <input wire:model="tax_number" type="text" class="input-base" placeholder="{{ __('consignee.field.tax_ph') }}" />
             </div>
         </div>
         <div class="grid grid-cols-3 gap-3">

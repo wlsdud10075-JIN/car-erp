@@ -1,7 +1,7 @@
 @props([
     'name',
     'value' => null,
-    'placeholder' => '국가 검색 (예: 리투, 독일, LTU)',
+    'placeholder' => null,
     'allowClear' => true,
 ])
 @php
@@ -52,7 +52,7 @@
             x-model="query"
             @focus="open = true"
             @input="open = true; if (query.trim() === '') selectedId = ''"
-            placeholder="{{ $placeholder }}"
+            placeholder="{{ $placeholder ?? __('common.country_search_ph') }}"
             class="input-base w-full pr-8"
             autocomplete="off"
         />
@@ -92,6 +92,6 @@
         class="absolute z-30 mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 shadow"
         style="display: none;"
     >
-        일치하는 국가가 없습니다
+        {{ __('common.country_no_match') }}
     </div>
 </div>

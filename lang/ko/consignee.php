@@ -24,6 +24,8 @@ return [
         'id_type' => 'ID 종류',
         'id_value' => 'ID 번호',
         'id_value_note' => '(저장 시 암호화)',
+        'eori_ph' => '예: DE7078617',
+        'tax_ph' => '예: LT792855314',
     ],
 
     'id_type' => [

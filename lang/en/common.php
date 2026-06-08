@@ -22,8 +22,12 @@ return [
     'address' => 'Address',
     'memo' => 'Memo',
     'optional' => '(optional)',
+    'reset_filters' => 'Reset filters',
+    'unassigned' => 'Unassigned',
     'per_page' => ':count / page',
     'total' => ':count total',
     'unsaved_title' => 'You have unsaved changes',
     'unsaved_body' => 'Closing without saving discards your changes.',
+    'country_search_ph' => 'Search country (e.g. LTU, Germany)',
+    'country_no_match' => 'No matching country',
 ];

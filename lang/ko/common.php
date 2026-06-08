@@ -22,8 +22,12 @@ return [
     'address' => '주소',
     'memo' => '메모',
     'optional' => '(선택)',
+    'reset_filters' => '필터 초기화',
+    'unassigned' => '미배정',
     'per_page' => ':count개씩',
     'total' => '총 :count개',
     'unsaved_title' => '변경 사항이 있습니다',
     'unsaved_body' => '저장하지 않고 닫으면 변경 내용이 사라집니다.',
+    'country_search_ph' => '국가 검색 (예: 리투, 독일, LTU)',
+    'country_no_match' => '일치하는 국가가 없습니다',
 ];
