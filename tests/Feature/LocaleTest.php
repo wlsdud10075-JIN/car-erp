@@ -155,6 +155,7 @@ class LocaleTest extends TestCase
             ->assertSee('DHL Recipient')             // DHL 탭
             ->assertSee('Purchase Documents (3)')    // 서류 탭
             ->assertSee('Power of Attorney')
+            ->assertSee('Create')                    // 저장바(신규)
             ->assertDontSee('NICE 등록정보 (12)')
             ->assertDontSee('비용 9개')
             ->assertDontSee('입금 현황')

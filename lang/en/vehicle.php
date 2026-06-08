@@ -270,6 +270,70 @@ return [
         'memo' => 'Memo',
     ],
 
+    // Panel footer / save bar
+    'footer' => [
+        'cancel' => 'Cancel',
+        'save_edit' => 'Save Changes',
+        'save_create' => 'Create',
+        'saving' => 'Saving...',
+        'processing' => 'Processing...',
+    ],
+
+    // Unpaid-bypass approval footer
+    'override' => [
+        'title' => 'Management/Admin — Unpaid Bypass Approval',
+        'unpaid_left' => 'Outstanding:',
+        'none' => 'none',
+        'won' => 'KRW',
+        'existing' => ':count existing approval(s):',
+        'stage_label' => 'Stage',
+        'stage_select' => 'Select',
+        'reason_label' => 'Reason (20+ chars)',
+        'reason_ph' => 'e.g. Forced due to container departure schedule. Balance payment confirmed for 5/20.',
+        'approve_btn' => 'Record Approval',
+    ],
+
+    // Modals
+    'modal' => [
+        'cancel' => 'Cancel',
+        'not_entered' => '(not entered)',
+        // Close confirm
+        'close_title' => 'You have unsaved changes',
+        'close_body' => 'Closing without saving discards your changes.',
+        'close_discard' => 'Close',
+        // Doc-check mismatch
+        'doc_title' => '⚠ Step entry check',
+        'doc_desc' => 'For the items below, only one of the checkbox / document upload is done, so the step will not progress.',
+        'doc_checked' => '✓ Checkbox: checked',
+        'doc_unchecked' => '☐ Checkbox: unchecked',
+        'doc_uploaded' => '✓ Document: uploaded',
+        'doc_not_uploaded' => '☐ Document: not uploaded',
+        'doc_checked_no_doc' => '→ Checked but no document, so ":label complete" step does not progress',
+        'doc_doc_no_check' => '→ Document uploaded but not checked, so ":label complete" step does not progress',
+        'doc_goto' => '→ Go to :label tab to fix',
+        'doc_note' => 'On save, the above steps stay at the current step. Fill in the check/document and save again to progress.',
+        'doc_cancel' => 'Cancel (go fix it)',
+        'doc_save_anyway' => 'Save as is (aware steps not progressed)',
+        // Ledger unlock
+        'ledger_title' => '🔓 Ledger Unlock',
+        'ledger_desc' => 'Buy/sell price, rate, license amount, 9 costs, buyer, salesman can be changed once. Auto re-locks right after save.',
+        'ledger_warn' => '⚠️ The unlock is recorded in audit_logs with user, time and reason.',
+        'ledger_reason_label' => 'Unlock reason',
+        'ledger_reason_hint' => '(10+ chars)',
+        'ledger_reason_ph' => 'e.g. Sales mis-entered buy price — entered 5,000,000 but actual contract 50,000,000. Confirmed with the salesman.',
+        'ledger_submit' => '🔓 Unlock (allow 1 change)',
+        // Overlap approval request
+        'overlap_title' => 'New-deal Approval Request',
+        'overlap_desc' => 'Notify an admin of the reason and get approval. Approval is locked per (buyer × vehicle number).',
+        'overlap_vnum' => 'Vehicle No.:',
+        'overlap_buyer_unpaid' => 'Buyer outstanding:',
+        'overlap_unit' => '',
+        'overlap_unpaid_vehicles' => 'Outstanding vehicles:',
+        'overlap_reason_label' => 'Approval request reason',
+        'overlap_reason_ph' => 'e.g. This buyer outstanding is due next month; the new vehicle has a separate 50% advance. Min 5 chars.',
+        'overlap_send' => 'Send request',
+    ],
+
     // Documents tab
     'docs' => [
         'save_first' => 'Save the vehicle first to generate documents.',

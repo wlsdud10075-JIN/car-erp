@@ -4648,31 +4648,31 @@ function vehicleColumnsToggle() {
         <div class="flex items-start gap-2">
             <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
             <div class="flex-1">
-                <p class="text-xs font-semibold text-amber-800">관리/관리자 — 미입금 우회 승인</p>
+                <p class="text-xs font-semibold text-amber-800">{{ __('vehicle.override.title') }}</p>
                 <p class="mt-0.5 text-[11px] text-amber-700">
-                    미입금 잔존: {{ $unpaidKrw !== null ? number_format($unpaidKrw).' 원' : '없음' }}
+                    {{ __('vehicle.override.unpaid_left') }} {{ $unpaidKrw !== null ? number_format($unpaidKrw).' '.__('vehicle.override.won') : __('vehicle.override.none') }}
                     @if($existingOverrides->count() > 0)
-                    · 기존 승인 {{ $existingOverrides->count() }}건: {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
+                    · {{ __('vehicle.override.existing', ['count' => $existingOverrides->count()]) }} {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
                     @endif
                 </p>
                 <div class="mt-2 flex flex-wrap items-end gap-2">
                     <div>
-                        <label class="block text-[10px] text-amber-700">단계</label>
+                        <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
                         <select wire:model="overrideStage" class="input-filter">
-                            <option value="">선택</option>
-                            <option value="clearance">수출통관</option>
-                            <option value="shipping">선적</option>
+                            <option value="">{{ __('vehicle.override.stage_select') }}</option>
+                            <option value="clearance">{{ __('vehicle.panel.sec.clearance') }}</option>
+                            <option value="shipping">{{ __('vehicle.panel.flow.bl') }}</option>
                             <option value="dhl">DHL</option>
                         </select>
                     </div>
                     <div class="flex-1 min-w-[200px]">
-                        <label class="block text-[10px] text-amber-700">사유 (20자 이상)</label>
+                        <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.reason_label') }}</label>
                         <input wire:model="overrideReason" type="text" class="input-filter w-full"
-                               placeholder="예: 컨테이너 출항 일정상 강행. 잔금 5/20 입금 예정 확인됨." />
+                               placeholder="{{ __('vehicle.override.reason_ph') }}" />
                     </div>
                     <button wire:click="approveUnpaidOverride" type="button"
                             class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-                        승인 기록
+                        {{ __('vehicle.override.approve_btn') }}
                     </button>
                 </div>
             </div>
@@ -4684,12 +4684,12 @@ function vehicleColumnsToggle() {
     <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
         <button @click="attemptClose()" type="button"
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-            취소
+            {{ __('vehicle.footer.cancel') }}
         </button>
         {{-- 회의확장씬 (2026-05-22) — 영업·관리 + 4 탭(매입/판매/선적/통관) 시 모달. 현재 활성 탭을 인자로 전달 --}}
         <button x-on:click="$wire.requestSave(tab)" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave">
-            <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? '수정 저장' : '신규 등록' }}</span>
-            <span wire:loading wire:target="save,requestSave,confirmAndSave">저장 중...</span>
+            <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? __('vehicle.footer.save_edit') : __('vehicle.footer.save_create') }}</span>
+            <span wire:loading wire:target="save,requestSave,confirmAndSave">{{ __('vehicle.footer.saving') }}</span>
         </button>
     </div>
 
@@ -4700,11 +4700,11 @@ function vehicleColumnsToggle() {
      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
      @click.self="confirmOpen = false">
     <div class="card max-w-sm mx-4 shadow-2xl">
-        <h3 class="text-base font-semibold text-gray-900">변경 사항이 있습니다</h3>
-        <p class="mt-2 text-sm text-gray-600">저장하지 않고 닫으면 변경 내용이 사라집니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.close_title') }}</h3>
+        <p class="mt-2 text-sm text-gray-600">{{ __('vehicle.modal.close_body') }}</p>
         <div class="mt-5 flex justify-end gap-2">
-            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">닫기</button>
+            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.modal.close_discard') }}</button>
         </div>
     </div>
 </div>
@@ -4720,40 +4720,40 @@ function vehicleColumnsToggle() {
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
      wire:key="doc-check-mismatch-modal">
     <div class="card max-w-lg mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">⚠ 단계 진입 누락 확인</h3>
-        <p class="mt-1 text-xs text-gray-500">아래 항목은 체크박스와 문서 업로드가 한쪽만 되어있어 해당 단계가 진행되지 않습니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.doc_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.doc_desc') }}</p>
 
         <div class="mt-3 space-y-2">
             @foreach($docCheckMismatches as $m)
             <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs">
                 <div class="font-semibold text-amber-800">{{ $m['label'] }}</div>
                 <div class="mt-1 grid grid-cols-2 gap-1 text-amber-700">
-                    <div>{{ $m['checked'] ? '✓ 체크박스: 체크됨' : '☐ 체크박스: 미체크' }}</div>
-                    <div>{{ $m['has_doc'] ? '✓ 문서: 업로드됨' : '☐ 문서: 미업로드' }}</div>
+                    <div>{{ $m['checked'] ? __('vehicle.modal.doc_checked') : __('vehicle.modal.doc_unchecked') }}</div>
+                    <div>{{ $m['has_doc'] ? __('vehicle.modal.doc_uploaded') : __('vehicle.modal.doc_not_uploaded') }}</div>
                 </div>
                 <div class="mt-1.5 text-[11px] text-amber-600">
                     @if($m['checked'] && ! $m['has_doc'])
-                        → 체크는 됐지만 문서가 없어 "{{ $m['label'] }}완료" 단계 진입 안 됨
+                        {{ __('vehicle.modal.doc_checked_no_doc', ['label' => $m['label']]) }}
                     @elseif(! $m['checked'] && $m['has_doc'])
-                        → 문서는 업로드됐지만 체크 안 되어 "{{ $m['label'] }}완료" 단계 진입 안 됨
+                        {{ __('vehicle.modal.doc_doc_no_check', ['label' => $m['label']]) }}
                     @endif
                 </div>
                 <button type="button" wire:click="dismissDocCheckModal('{{ $m['tab'] }}')"
-                        class="mt-2 text-[11px] text-amber-700 hover:underline">→ {{ $m['label'] }} 탭으로 이동해서 수정</button>
+                        class="mt-2 text-[11px] text-amber-700 hover:underline">{{ __('vehicle.modal.doc_goto', ['label' => $m['label']]) }}</button>
             </div>
             @endforeach
         </div>
 
         <div class="mt-3 rounded-md bg-gray-50 border border-gray-200 p-2.5 text-[11px] text-gray-600">
-            저장 시 위 단계는 진행되지 않고 현재 단계로 유지됩니다. 나중에 체크/문서를 채워서 다시 저장하면 단계 진입.
+            {{ __('vehicle.modal.doc_note') }}
         </div>
 
         <div class="mt-4 flex justify-end gap-2">
             <button wire:click="dismissDocCheckModal" type="button"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소 (수정하러 가기)</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.doc_cancel') }}</button>
             <button wire:click="confirmSaveWithDocMismatch" type="button"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
-                그대로 저장 (단계 미진입 인지함)
+                {{ __('vehicle.modal.doc_save_anyway') }}
             </button>
         </div>
     </div>
@@ -4767,29 +4767,29 @@ function vehicleColumnsToggle() {
      wire:click.self="closeLedgerUnlockModal"
      wire:key="ledger-unlock-modal">
     <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">🔓 Ledger 잠금 해제</h3>
-        <p class="mt-1 text-xs text-gray-500">매입가·판매가·환율·면장금액·비용9개·바이어·담당자 변경이 1회 허용됩니다. 저장 직후 자동 재잠금.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.ledger_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.ledger_desc') }}</p>
 
         <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
-            <p>⚠️ 잠금 해제는 audit_logs에 사용자·시각·사유와 함께 기록됩니다.</p>
+            <p>{{ __('vehicle.modal.ledger_warn') }}</p>
         </div>
 
         <div class="mt-3">
-            <label class="label-base">잠금 해제 사유 <span class="text-red-500">*</span> <span class="text-gray-400">(10자 이상)</span></label>
+            <label class="label-base">{{ __('vehicle.modal.ledger_reason_label') }} <span class="text-red-500">*</span> <span class="text-gray-400">{{ __('vehicle.modal.ledger_reason_hint') }}</span></label>
             <textarea wire:model="ledgerUnlockReason" rows="4"
                       class="input-base"
-                      placeholder="예: 영업 매입가 오기 — 5,000,000 입력했으나 실제 계약 50,000,000. 영업 담당자 확인 완료."></textarea>
+                      placeholder="{{ __('vehicle.modal.ledger_reason_ph') }}"></textarea>
             @error('ledgerUnlockReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
 
         <div class="mt-4 flex justify-end gap-2">
             <button wire:click="closeLedgerUnlockModal" type="button"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button wire:click="submitLedgerUnlock" type="button"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
                     wire:loading.attr="disabled" wire:target="submitLedgerUnlock">
-                <span wire:loading.remove wire:target="submitLedgerUnlock">🔓 해제 (1회 변경 허용)</span>
-                <span wire:loading wire:target="submitLedgerUnlock">처리 중...</span>
+                <span wire:loading.remove wire:target="submitLedgerUnlock">{{ __('vehicle.modal.ledger_submit') }}</span>
+                <span wire:loading wire:target="submitLedgerUnlock">{{ __('vehicle.footer.processing') }}</span>
             </button>
         </div>
     </div>
@@ -4805,34 +4805,34 @@ function vehicleColumnsToggle() {
      wire:click.self="closeOverlapRequestModal"
      wire:key="overlap-request-modal">
     <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">신규 거래 승인 요청</h3>
-        <p class="mt-1 text-xs text-gray-500">관리자에게 사유를 알리고 승인을 받습니다. 승인은 (바이어 × 차량번호) 단위로 잠깁니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.overlap_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.overlap_desc') }}</p>
 
         @if($overlapForModal)
         <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800 space-y-0.5">
-            <div><span class="text-amber-600">차량번호:</span> <strong>{{ $overlapForModal['current_vehicle_number'] ?: '(미입력)' }}</strong></div>
-            <div><span class="text-amber-600">바이어 미수:</span> <strong>{{ $overlapForModal['count'] }}대</strong> · ₩{{ number_format($overlapForModal['amount_krw']) }}</div>
+            <div><span class="text-amber-600">{{ __('vehicle.modal.overlap_vnum') }}</span> <strong>{{ $overlapForModal['current_vehicle_number'] ?: __('vehicle.modal.not_entered') }}</strong></div>
+            <div><span class="text-amber-600">{{ __('vehicle.modal.overlap_buyer_unpaid') }}</span> <strong>{{ $overlapForModal['count'] }}{{ __('vehicle.modal.overlap_unit') }}</strong> · ₩{{ number_format($overlapForModal['amount_krw']) }}</div>
             @if(! empty($overlapForModal['vehicle_numbers']))
-            <div class="text-amber-700">미수 차량: {{ implode(', ', $overlapForModal['vehicle_numbers']) }}</div>
+            <div class="text-amber-700">{{ __('vehicle.modal.overlap_unpaid_vehicles') }} {{ implode(', ', $overlapForModal['vehicle_numbers']) }}</div>
             @endif
         </div>
         @endif
 
         <div class="mt-3">
-            <label class="label-base">승인 요청 사유 <span class="text-red-500">*</span></label>
+            <label class="label-base">{{ __('vehicle.modal.overlap_reason_label') }} <span class="text-red-500">*</span></label>
             <textarea wire:model="overlapRequestReason" rows="4"
                       class="input-base"
-                      placeholder="예: 본 바이어 미수는 다음 달 입금 예정이며, 신규 차량은 별도 선수금 50% 받음. 최소 5자."></textarea>
+                      placeholder="{{ __('vehicle.modal.overlap_reason_ph') }}"></textarea>
             @error('overlapRequestReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button type="button" wire:click="closeOverlapRequestModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="requestSameBuyerOverlapApproval"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-                요청 보내기
+                {{ __('vehicle.modal.overlap_send') }}
             </button>
         </div>
     </div>

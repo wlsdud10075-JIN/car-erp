@@ -270,6 +270,70 @@ return [
         'memo' => '메모',
     ],
 
+    // 패널 푸터 / 저장바
+    'footer' => [
+        'cancel' => '취소',
+        'save_edit' => '수정 저장',
+        'save_create' => '신규 등록',
+        'saving' => '저장 중...',
+        'processing' => '처리 중...',
+    ],
+
+    // 미입금 우회 승인 footer
+    'override' => [
+        'title' => '관리/관리자 — 미입금 우회 승인',
+        'unpaid_left' => '미입금 잔존:',
+        'none' => '없음',
+        'won' => '원',
+        'existing' => '기존 승인 :count건:',
+        'stage_label' => '단계',
+        'stage_select' => '선택',
+        'reason_label' => '사유 (20자 이상)',
+        'reason_ph' => '예: 컨테이너 출항 일정상 강행. 잔금 5/20 입금 예정 확인됨.',
+        'approve_btn' => '승인 기록',
+    ],
+
+    // 모달
+    'modal' => [
+        'cancel' => '취소',
+        'not_entered' => '(미입력)',
+        // 닫기 확인
+        'close_title' => '변경 사항이 있습니다',
+        'close_body' => '저장하지 않고 닫으면 변경 내용이 사라집니다.',
+        'close_discard' => '닫기',
+        // 문서 체크 mismatch
+        'doc_title' => '⚠ 단계 진입 누락 확인',
+        'doc_desc' => '아래 항목은 체크박스와 문서 업로드가 한쪽만 되어있어 해당 단계가 진행되지 않습니다.',
+        'doc_checked' => '✓ 체크박스: 체크됨',
+        'doc_unchecked' => '☐ 체크박스: 미체크',
+        'doc_uploaded' => '✓ 문서: 업로드됨',
+        'doc_not_uploaded' => '☐ 문서: 미업로드',
+        'doc_checked_no_doc' => '→ 체크는 됐지만 문서가 없어 ":label완료" 단계 진입 안 됨',
+        'doc_doc_no_check' => '→ 문서는 업로드됐지만 체크 안 되어 ":label완료" 단계 진입 안 됨',
+        'doc_goto' => '→ :label 탭으로 이동해서 수정',
+        'doc_note' => '저장 시 위 단계는 진행되지 않고 현재 단계로 유지됩니다. 나중에 체크/문서를 채워서 다시 저장하면 단계 진입.',
+        'doc_cancel' => '취소 (수정하러 가기)',
+        'doc_save_anyway' => '그대로 저장 (단계 미진입 인지함)',
+        // Ledger 잠금 해제
+        'ledger_title' => '🔓 Ledger 잠금 해제',
+        'ledger_desc' => '매입가·판매가·환율·면장금액·비용9개·바이어·담당자 변경이 1회 허용됩니다. 저장 직후 자동 재잠금.',
+        'ledger_warn' => '⚠️ 잠금 해제는 audit_logs에 사용자·시각·사유와 함께 기록됩니다.',
+        'ledger_reason_label' => '잠금 해제 사유',
+        'ledger_reason_hint' => '(10자 이상)',
+        'ledger_reason_ph' => '예: 영업 매입가 오기 — 5,000,000 입력했으나 실제 계약 50,000,000. 영업 담당자 확인 완료.',
+        'ledger_submit' => '🔓 해제 (1회 변경 허용)',
+        // 미수 승인 요청
+        'overlap_title' => '신규 거래 승인 요청',
+        'overlap_desc' => '관리자에게 사유를 알리고 승인을 받습니다. 승인은 (바이어 × 차량번호) 단위로 잠깁니다.',
+        'overlap_vnum' => '차량번호:',
+        'overlap_buyer_unpaid' => '바이어 미수:',
+        'overlap_unit' => '대',
+        'overlap_unpaid_vehicles' => '미수 차량:',
+        'overlap_reason_label' => '승인 요청 사유',
+        'overlap_reason_ph' => '예: 본 바이어 미수는 다음 달 입금 예정이며, 신규 차량은 별도 선수금 50% 받음. 최소 5자.',
+        'overlap_send' => '요청 보내기',
+    ],
+
     // 서류 탭
     'docs' => [
         'save_first' => '차량을 먼저 저장한 뒤 서류를 생성할 수 있습니다.',
