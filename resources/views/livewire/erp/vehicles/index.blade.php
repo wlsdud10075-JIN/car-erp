@@ -4260,17 +4260,17 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'clearance'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-amber-500"></span>
-                <span class="section-title">수출통관</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.clearance') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">통관 바이어</label>
+                        <label class="label-base">{{ __('vehicle.field.export_buyer') }}</label>
                         <button type="button" wire:click="openQuickAdd('buyer','export')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model.live="export_buyer_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
@@ -4278,23 +4278,23 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">통관 컨사이니</label>
+                        <label class="label-base">{{ __('vehicle.field.export_consignee') }}</label>
                         <button type="button" wire:click="openQuickAdd('consignee','export')"
                                 @if($export_buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model="export_consignee_id_str" class="input-base"
                             @if($export_buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $export_buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
+                        <option value="">{{ $export_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
                         @foreach($this->consigneesForExport as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div>
-                    <label class="label-base">포워딩사</label>
+                    <label class="label-base">{{ __('vehicle.field.forwarder') }}</label>
                     <select wire:model="forwarding_company_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->forwardingCompanies as $f)
                         <option value="{{ $f->id }}">{{ $f->name }}</option>
                         @endforeach
@@ -4302,26 +4302,26 @@ function vehicleColumnsToggle() {
                 </div>
                 {{-- 2026-05-21 — 면장금액 미입력 시 sale_price 자동 복사 (Vehicle::saving 훅). 인코텀즈 차이 등 명시 입력 시 그 값 우선 --}}
                 <div>
-                    <label class="label-base">면장금액</label>
-                    <input wire:model="export_declaration_amount_str" type="text" class="input-base" placeholder="비워두면 판매가 자동 적용" />
-                    <p class="mt-1 text-[11px] text-gray-400">통상 인보이스 금액과 동일. CIF/FOB 차이 시만 별도 입력</p>
+                    <label class="label-base">{{ __('vehicle.field.export_decl_amount') }}</label>
+                    <input wire:model="export_declaration_amount_str" type="text" class="input-base" placeholder="{{ __('vehicle.ph.export_decl_amount') }}" />
+                    <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_decl_amount_note') }}</p>
                 </div>
-                <div><label class="label-base">수출신고번호</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
-                <div><label class="label-base">선적일</label><input wire:model="shipping_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.export_decl_number') }}</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">ETA</label><input wire:model="eta_date" type="date" class="input-base" /></div>
                 <div>
-                    <label class="label-base">선적방법</label>
+                    <label class="label-base">{{ __('vehicle.field.shipping_method') }}</label>
                     <select wire:model="shipping_method" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         <option value="RORO">RORO</option>
                         <option value="CONTAINER">CONTAINER</option>
                     </select>
                 </div>
                 {{-- 2026-05-21 CIPL 이식 — 선적항(Port of Loading) 드롭다운 --}}
                 <div>
-                    <label class="label-base">선적항 (Port of Loading)</label>
+                    <label class="label-base">{{ __('vehicle.field.port_loading') }}</label>
                     <select wire:model="port_of_loading" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->loadingPorts as $p)
                         <option value="{{ $p->name }}">{{ $p->display_name }}</option>
                         @endforeach
@@ -4329,42 +4329,42 @@ function vehicleColumnsToggle() {
                 </div>
                 {{-- 2026-05-21 — 인코텀즈 (FOB/CFR) — CIPL C32/C37 셀에 사용 --}}
                 <div>
-                    <label class="label-base">인코텀즈</label>
+                    <label class="label-base">{{ __('vehicle.field.incoterms') }}</label>
                     <select wire:model="incoterms" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         <option value="FOB">FOB</option>
                         <option value="CFR">CFR</option>
                     </select>
                 </div>
                 {{-- 2026-05-21 — Discharge Port (도착항) FK — CIPL E16/F16 셀 --}}
                 <div>
-                    <label class="label-base">도착항 (Discharge Port)</label>
+                    <label class="label-base">{{ __('vehicle.field.discharge_port') }}</label>
                     <select wire:model="discharge_port_id_str" class="input-base">
-                        <option value="">-- 바이어 국가 자동 --</option>
+                        <option value="">{{ __('vehicle.panel.discharge_auto') }}</option>
                         @foreach($this->dischargePorts as $p)
                         <option value="{{ $p->id }}">{{ $p->display_name }}</option>
                         @endforeach
                     </select>
-                    <p class="mt-1 text-[11px] text-gray-400">미선택 시 바이어 국가명 사용</p>
+                    <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.discharge_note') }}</p>
                 </div>
                 <div class="flex items-end">
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> 수출통관 완료
+                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }}
                     </label>
                 </div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">수출신고서 <span class="text-xs text-gray-400">(업로드 시 선적완료 상태 달성 가능)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.export_decl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <input wire:model="exportDeclarationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
-                    <div wire:loading wire:target="exportDeclarationDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    <div wire:loading wire:target="exportDeclarationDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                     @if($exportDeclarationDocFile)
-                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $exportDeclarationDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $exportDeclarationDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($export_declaration_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($export_declaration_document_path) }}" target="_blank"
                            class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($export_declaration_document_path) }}</a>
                         <button type="button" wire:click="removeExportDeclarationDoc"
-                                class="text-xs text-red-500 hover:underline">삭제</button>
+                                class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
                 </div>
@@ -4375,7 +4375,7 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'bl'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">선적 (B/L)</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.bl') }}</span>
             </div>
 
             {{-- G1 100% B/L 게이트 상태 표시 (2026-05-26 회의). 기존 bl_document가 없는 차량만 검사 (grandfather). --}}
@@ -4394,15 +4394,15 @@ function vehicleColumnsToggle() {
                         ? ($g1HasShippingOverride ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
                 @if($g1Ratio === null)
-                    <span class="font-semibold">⚠ 판매가 미입력</span> — 판매 정보(판매가) 입력 후 B/L 발행 가능
+                    {{ __('vehicle.panel.g1.no_price') }}
                 @elseif($g1Ratio > 0)
                     @if($g1HasShippingOverride)
-                        <span class="font-semibold">⚠ 미수율 {{ number_format($g1Ratio * 100, 1) }}%</span> — 관리/관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능
+                        {{ __('vehicle.panel.g1.override', ['ratio' => number_format($g1Ratio * 100, 1)]) }}
                     @else
-                        <span class="font-semibold">🔒 B/L 발행 잠김</span> — 미수율 {{ number_format($g1Ratio * 100, 1) }}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인(선적 단계) 필요.
+                        {{ __('vehicle.panel.g1.locked', ['ratio' => number_format($g1Ratio * 100, 1)]) }}
                     @endif
                 @else
-                    <span class="font-semibold">✓ B/L 발행 가능</span> — 잔금 100% 완납
+                    {{ __('vehicle.panel.g1.ok') }}
                 @endif
             </div>
             @endif
@@ -4411,12 +4411,12 @@ function vehicleColumnsToggle() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">선적 바이어</label>
+                        <label class="label-base">{{ __('vehicle.field.bl_buyer') }}</label>
                         <button type="button" wire:click="openQuickAdd('buyer','bl')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model.live="bl_buyer_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->buyers as $b)
                         <option value="{{ $b->id }}">{{ $b->name }}</option>
                         @endforeach
@@ -4424,46 +4424,46 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
-                        <label class="label-base">선적 컨사이니</label>
+                        <label class="label-base">{{ __('vehicle.field.bl_consignee') }}</label>
                         <button type="button" wire:click="openQuickAdd('consignee','bl')"
                                 @if($bl_buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">+ 신규</button>
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
                     <select wire:model="bl_consignee_id_str" class="input-base"
                             @if($bl_buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $bl_buyer_id_str ? '-- 선택 --' : '바이어 먼저 선택' }}</option>
+                        <option value="">{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
                         @foreach($this->consigneesForBl as $c)
                         <option value="{{ $c->id }}">{{ $c->name }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">B/L 번호</label><input wire:model="bl_number" type="text" class="input-base" /></div>
-                <div><label class="label-base">컨테이너 번호</label><input wire:model="container_number" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.bl_number') }}</label><input wire:model="bl_number" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
                 {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
                 <div>
-                    <label class="label-base">반입지</label>
+                    <label class="label-base">{{ __('vehicle.field.loading_location') }}</label>
                     <select wire:model="bl_loading_location" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->unloadingPorts as $p)
                         <option value="{{ $p->name }}">{{ $p->display_name }}</option>
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">VSL (선박명)</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
-                <div><label class="label-base">B/L 발행일</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">B/L 문서 <span class="text-xs text-gray-400">(업로드 시 선적완료 상태 달성 가능)</span></label>
+                    <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <input wire:model="blDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                            class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
-                    <div wire:loading wire:target="blDocFile" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                    <div wire:loading wire:target="blDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                     @if($blDocFile)
-                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $blDocFile->getClientOriginalName() }} <span class="text-gray-400">(저장 전)</span></p>
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $blDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($bl_document_path)
                     <div class="mt-1 flex items-center gap-3">
                         <a href="{{ \App\Support\VehicleDocUrl::for($bl_document_path) }}" target="_blank"
                            class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($bl_document_path) }}</a>
                         <button type="button" wire:click="removeBlDoc"
-                                class="text-xs text-red-500 hover:underline">삭제</button>
+                                class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
                 </div>
@@ -4474,26 +4474,26 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'dhl'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-teal-500"></span>
-                <span class="section-title">DHL 수취인</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.dhl_recipient') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <div><label class="label-base">수취인 성명</label><input wire:model="dhl_recipient_name" type="text" class="input-base" /></div>
-                <div><label class="label-base">수취인 연락처</label><input wire:model="dhl_recipient_phone" type="text" class="input-base" /></div>
-                <div class="col-span-2"><label class="label-base">수취인 주소</label><input wire:model="dhl_recipient_address" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.dhl_recipient_name') }}</label><input wire:model="dhl_recipient_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.dhl_recipient_phone') }}</label><input wire:model="dhl_recipient_phone" type="text" class="input-base" /></div>
+                <div class="col-span-2"><label class="label-base">{{ __('vehicle.field.dhl_recipient_address') }}</label><input wire:model="dhl_recipient_address" type="text" class="input-base" /></div>
             </div>
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-teal-300"></span>
-                <span class="section-title">DHL 발송인</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.dhl_sender') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <div><label class="label-base">발송인 성명</label><input wire:model="dhl_sender_name" type="text" class="input-base" /></div>
-                <div class="col-span-2"><label class="label-base">발송인 주소</label><input wire:model="dhl_sender_address" type="text" class="input-base" /></div>
-                <div><label class="label-base">중량 (kg)</label><input wire:model="dhl_weight_str" type="text" class="input-base" placeholder="1.5" /></div>
-                <div><label class="label-base">크기 (W×H×L cm)</label><input wire:model="dhl_dimensions" type="text" class="input-base" placeholder="30x20x10" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.dhl_sender_name') }}</label><input wire:model="dhl_sender_name" type="text" class="input-base" /></div>
+                <div class="col-span-2"><label class="label-base">{{ __('vehicle.field.dhl_sender_address') }}</label><input wire:model="dhl_sender_address" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.dhl_weight') }}</label><input wire:model="dhl_weight_str" type="text" class="input-base" placeholder="1.5" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.dhl_dimensions') }}</label><input wire:model="dhl_dimensions" type="text" class="input-base" placeholder="30x20x10" /></div>
                 <div class="col-span-2 flex items-center gap-2">
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="dhl_request" type="checkbox" class="rounded" /> DHL 발송신청 완료
+                        <input wire:model="dhl_request" type="checkbox" class="rounded" /> {{ __('vehicle.field.dhl_request_done') }}
                     </label>
                 </div>
             </div>
@@ -4511,37 +4511,37 @@ function vehicleColumnsToggle() {
 
             @unless ($hasId)
                 <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">
-                    차량을 먼저 저장한 뒤 서류를 생성할 수 있습니다.
+                    {{ __('vehicle.docs.save_first') }}
                 </div>
             @endunless
 
             {{-- 매입 서류 (전 채널) — system xlsx 자동기입 (노란칸만 채우고 노란 제거) --}}
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
-                <span class="section-title">매입 서류 (3종)</span>
+                <span class="section-title">{{ __('vehicle.docs.sec_purchase') }}</span>
             </div>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <a href="{{ $url('deregistration') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">자동차말소등록신청서</div>
-                        <div class="text-xs text-gray-500">별지 제17호 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.deregistration') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.deregistration_sub') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
                 <a href="{{ $url('deregistration_contract') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">말소 계약서</div>
-                        <div class="text-xs text-gray-500">매입 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.derg_contract') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_purchase') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
                 <a href="{{ $url('poa') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">위임장</div>
-                        <div class="text-xs text-gray-500">매입 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.poa') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_purchase') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
@@ -4551,15 +4551,15 @@ function vehicleColumnsToggle() {
             <hr class="section-divider mt-5">
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">판매 서류 (수출)</span>
+                <span class="section-title">{{ __('vehicle.docs.sec_sale') }}</span>
             </div>
 
             <div class="grid grid-cols-1 gap-3">
                 <a href="{{ $url('invoice') }}"
                    class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">Proforma Invoice</div>
-                        <div class="text-xs text-gray-500">판매 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.invoice') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_sale') }}</div>
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>
                 </a>
@@ -4568,39 +4568,39 @@ function vehicleColumnsToggle() {
             {{-- 선적 서류 (컨테이너/RORO × Invoice&Packing·Contract). 이 버튼은 이 차량 1대. 여러 대 → 1서류는 차량목록 체크박스. --}}
             <div class="section-header mt-5">
                 <span class="section-dot bg-amber-500"></span>
-                <span class="section-title">선적 서류 (4종, 수출)</span>
+                <span class="section-title">{{ __('vehicle.docs.sec_shipping') }}</span>
             </div>
-            <p class="mb-2 text-[11px] text-gray-500">여러 대를 한 서류에 담으려면 <span class="font-medium">차량 목록에서 체크박스로 선택</span> 후 상단 "선적 서류" 버튼을 사용하세요.</p>
+            <p class="mb-2 text-[11px] text-gray-500">{{ __('vehicle.docs.multi_hint') }}</p>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('container_invoice_packing') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">컨테이너 Invoice &amp; Packing</div>
-                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.container_invoice_packing') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_container') }}</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>
                 <a href="{{ $url('container_contract') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">컨테이너 Contract</div>
-                        <div class="text-xs text-gray-500">Container 선적 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.container_contract') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_container') }}</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>
                 <a href="{{ $url('roro_invoice_packing') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">RORO Invoice &amp; Packing</div>
-                        <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.roro_invoice_packing') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_roro') }}</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>
                 <a href="{{ $url('roro_contract') }}"
                    class="card-tight flex items-center justify-between hover:border-amber-400 hover:bg-amber-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">RORO Contract</div>
-                        <div class="text-xs text-gray-500">RORO 선적 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.roro_contract') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_roro') }}</div>
                     </div>
                     <span class="text-xs text-amber-600">↓</span>
                 </a>
@@ -4609,29 +4609,29 @@ function vehicleColumnsToggle() {
             {{-- 통관 서류 (통관 SET — 구매리스트 1장 → 8시트 자동연동) --}}
             <div class="section-header mt-5">
                 <span class="section-dot bg-green-500"></span>
-                <span class="section-title">통관 서류</span>
+                <span class="section-title">{{ __('vehicle.docs.sec_clearance') }}</span>
             </div>
             <div class="grid grid-cols-1 gap-3">
                 <a href="{{ $url('clearance') }}"
                    class="card-tight flex items-center justify-between hover:border-green-400 hover:bg-green-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">통관 SET (등록증·말소증·인보이스·팩킹)</div>
-                        <div class="text-xs text-gray-500">구매리스트 1장 → 8시트 자동연동 · .xlsx</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.clearance_set') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.clearance_set_sub') }}</div>
                     </div>
                     <span class="text-xs text-green-600">↓</span>
                 </a>
             </div>
 
             <div class="mt-5 text-xs text-gray-500 leading-relaxed">
-                ※ PDF는 새 탭에서 열리며 자동 다운로드됩니다. Excel은 즉시 다운로드.<br>
-                ※ 양식이 비어있는 항목은 차량 등록 정보를 채운 후 다시 생성하세요.
+                {{ __('vehicle.docs.note_pdf') }}<br>
+                {{ __('vehicle.docs.note_empty') }}
             </div>
         </div>
 
         {{-- ─── 메모 (공통) ──────────────────────────────── --}}
         <div class="mt-5">
-            <label class="label-base">메모</label>
-            <textarea wire:model="memo" class="input-base" rows="2" placeholder="내부 메모"></textarea>
+            <label class="label-base">{{ __('vehicle.field.memo') }}</label>
+            <textarea wire:model="memo" class="input-base" rows="2" placeholder="{{ __('vehicle.ph.memo') }}"></textarea>
         </div>
 
         </div>
