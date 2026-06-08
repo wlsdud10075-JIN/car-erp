@@ -67,28 +67,28 @@ new #[Layout('components.layouts.app')] class extends Component
 <div wire:poll.30s class="flex h-full flex-col gap-4 p-3 md:p-6">
     <div class="flex items-center justify-between">
         <div>
-            <h2 class="text-xl font-bold text-gray-800">감사 로그</h2>
-            <p class="mt-0.5 text-xs text-gray-500">변경 추적 (큐 11-4 도입 이후 — 그 이전 액션은 미기록).</p>
+            <h2 class="text-xl font-bold text-gray-800">{{ __('log.audit_title') }}</h2>
+            <p class="mt-0.5 text-xs text-gray-500">{{ __('log.audit_subtitle') }}</p>
         </div>
-        <span class="text-xs text-gray-400">총 {{ number_format($this->logs->total()) }} 건</span>
+        <span class="text-xs text-gray-400">{{ __('log.total', ['count' => number_format($this->logs->total())]) }}</span>
     </div>
 
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <select wire:model.live="userFilter" class="input-filter">
-            <option value="">사용자 전체</option>
+            <option value="">{{ __('log.all_users') }}</option>
             @foreach($this->users as $u)
                 <option value="{{ $u->id }}">{{ $u->name }}</option>
             @endforeach
         </select>
         <select wire:model.live="actionFilter" class="input-filter">
-            <option value="">액션 전체</option>
+            <option value="">{{ __('log.all_actions') }}</option>
             @foreach($this->distinctActions as $a)
                 <option value="{{ $a }}">{{ \App\Support\ColumnLabel::action($a) }}</option>
             @endforeach
         </select>
         <select wire:model.live="columnFilter" class="input-filter">
-            <option value="">컬럼 전체</option>
+            <option value="">{{ __('log.all_columns') }}</option>
             @foreach($this->distinctColumns as $c)
                 <option value="{{ $c }}" title="{{ $c }}">{{ config('column_labels.vehicles.'.$c, $c) }}</option>
             @endforeach
@@ -96,11 +96,11 @@ new #[Layout('components.layouts.app')] class extends Component
         <input wire:model.live.debounce.400ms="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model.live.debounce.400ms="dateTo" type="date" class="input-filter" />
-        <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">필터 초기화</button>
+        <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('log.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
-            <option value="25">25개</option>
-            <option value="50">50개</option>
-            <option value="100">100개</option>
+            <option value="25">{{ __('common.per_page', ['count' => 25]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
     </div>
 
@@ -109,14 +109,14 @@ new #[Layout('components.layouts.app')] class extends Component
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">시각</th>
-                    <th class="pb-2 pr-4 font-medium">사용자</th>
-                    <th class="pb-2 pr-4 font-medium">대상</th>
-                    <th class="pb-2 pr-4 font-medium">액션</th>
-                    <th class="pb-2 pr-4 font-medium">컬럼</th>
-                    <th class="pb-2 pr-4 font-medium">이전 → 이후</th>
-                    <th class="pb-2 pr-4 font-medium">IP</th>
-                    <th class="pb-2 pr-4 font-medium">승인</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.time') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.user') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.target') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.action') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.column') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.change') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.ip') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.audit_col.approval') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -128,7 +128,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endphp
                 <tr class="hover:bg-gray-50">
                     <td class="py-2 pr-4 font-mono text-xs text-gray-600 whitespace-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
-                    <td class="py-2 pr-4 text-gray-700">{{ $log->user?->name ?? '시스템' }}</td>
+                    <td class="py-2 pr-4 text-gray-700">{{ $log->user?->name ?? __('log.system') }}</td>
                     <td class="py-2 pr-4 text-xs text-gray-500">
                         <span>{{ $modelLabel }}</span>
                         <span class="text-gray-400">#{{ $log->auditable_id }}</span>
@@ -169,7 +169,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">조회 조건에 일치하는 감사 로그가 없습니다.</td></tr>
+                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('log.audit_empty_filtered') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -188,7 +188,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="font-mono text-[10px] text-gray-400">{{ $log->created_at->format('Y-m-d H:i') }}</span>
                 <span class="badge badge-blue text-[10px]" title="{{ $log->action }}">{{ $actionLabelM }}</span>
             </div>
-            <div class="mt-1 text-sm font-medium text-gray-800">{{ $log->user?->name ?? '시스템' }}</div>
+            <div class="mt-1 text-sm font-medium text-gray-800">{{ $log->user?->name ?? __('log.system') }}</div>
             <div class="text-xs text-gray-500">
                 {{ $modelLabelM }} #{{ $log->auditable_id }}
                 @if($log->column_name) · <span title="{{ $log->column_name }}">{{ $columnLabelM }}</span> @endif
@@ -202,7 +202,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @endif
         </div>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">감사 로그가 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('log.audit_empty') }}</div>
         @endforelse
     </div>
 

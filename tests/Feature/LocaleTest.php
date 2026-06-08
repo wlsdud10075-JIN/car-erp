@@ -145,6 +145,18 @@ class LocaleTest extends TestCase
             ->assertSee('차량 등록');
     }
 
+    public function test_logs_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+        $user = $this->localeUser('en');
+
+        $this->actingAs($user)->get(route('admin.document-access-logs.index'))
+            ->assertOk()->assertSee('Document Download Audit Log')->assertDontSee('문서 다운로드 감사 로그');
+
+        $this->actingAs($user)->get(route('admin.audit-logs.index'))
+            ->assertOk()->assertSee('Audit Log')->assertDontSee('감사 로그');
+    }
+
     public function test_buyers_translate_to_english(): void
     {
         $this->enableEnglish(true);

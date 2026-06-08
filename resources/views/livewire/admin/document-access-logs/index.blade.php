@@ -55,24 +55,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="flex items-center justify-between">
         <div>
-            <h1 class="text-xl font-bold text-gray-800">문서 다운로드 감사 로그</h1>
-            <p class="mt-0.5 text-xs text-gray-500">개인정보보호법 §29 안전조치 — RRN 포함 서류 접근 기록. 총 {{ $this->logs->total() }}건</p>
+            <h1 class="text-xl font-bold text-gray-800">{{ __('log.doc_title') }}</h1>
+            <p class="mt-0.5 text-xs text-gray-500">{{ __('log.doc_subtitle', ['count' => $this->logs->total()]) }}</p>
         </div>
         <div class="flex items-center gap-2">
             <select wire:model.live="perPage" class="input-base w-auto">
-                <option value="10">10개씩</option>
-                <option value="30">30개씩</option>
-                <option value="50">50개씩</option>
-                <option value="100">100개씩</option>
+                <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+                <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+                <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+                <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
             </select>
         </div>
     </div>
 
     <div class="card-tight flex flex-wrap items-center gap-3">
-        <input wire:model.live.debounce.400ms="search" type="text" placeholder="접근자 · 차량번호"
+        <input wire:model.live.debounce.400ms="search" type="text" placeholder="{{ __('log.doc_search') }}"
                class="input-base w-full sm:w-72" />
         <select wire:model.live="typeFilter" class="input-base w-full sm:w-auto">
-            <option value="">전체 서류 종류</option>
+            <option value="">{{ __('log.all_doc_types') }}</option>
             @foreach(App\Models\DocumentAccessLog::DOCUMENT_TYPES as $type => $label)
             <option value="{{ $type }}">{{ $label }}</option>
             @endforeach
@@ -84,11 +84,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">시각</th>
-                    <th class="pb-2 pr-4 font-medium">접근자</th>
-                    <th class="pb-2 pr-4 font-medium">차량</th>
-                    <th class="pb-2 pr-4 font-medium">서류</th>
-                    <th class="pb-2 pr-4 font-medium">IP</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.doc_col.time') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.doc_col.accessor') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.doc_col.vehicle') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.doc_col.document') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('log.doc_col.ip') }}</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -108,7 +108,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-2 pr-4 text-xs text-gray-400">{{ $log->ip_address ?? '-' }}</td>
                 </tr>
                 @empty
-                <tr><td colspan="5" class="py-12 text-center text-sm text-gray-400">접근 로그가 없습니다.</td></tr>
+                <tr><td colspan="5" class="py-12 text-center text-sm text-gray-400">{{ __('log.doc_empty') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -129,7 +129,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         </div>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">접근 로그가 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('log.doc_empty') }}</div>
         @endforelse
     </div>
 
