@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 class LocaleTest extends TestCase
@@ -135,5 +136,18 @@ class LocaleTest extends TestCase
             ->get(route('erp.vehicles.index'))
             ->assertOk()
             ->assertSee('차량 등록');
+    }
+
+    public function test_vehicle_panel_basic_tab_translates_to_english(): void
+    {
+        $this->enableEnglish(true);
+        app()->setLocale('en');   // Volt::test 는 SetLocale 미들웨어를 안 거침
+        $this->actingAs($this->localeUser('en'));
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCreate')
+            ->assertSee('NICE Registration (12)')   // 기본정보 탭 섹션
+            ->assertSee('Export Clearance')          // 패널 탭 네비
+            ->assertDontSee('NICE 등록정보 (12)');
     }
 }

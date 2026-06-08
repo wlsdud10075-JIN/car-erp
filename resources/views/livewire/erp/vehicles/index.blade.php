@@ -591,15 +591,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         $dhlReason = $dhlStatus === 'pending' ? 'DHL 발송신청 미체크' : null;
 
         return [
-            ['key' => 'purchase',       'label' => '매입',   'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
-            ['key' => 'deregistration', 'label' => '말소',   'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
-            ['key' => 'sale',           'label' => '판매',   'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
-            ['key' => 'payment',        'label' => '입금',   'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
+            ['key' => 'purchase',       'label' => __('vehicle.panel.flow.purchase'),       'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
+            ['key' => 'deregistration', 'label' => __('vehicle.panel.flow.deregistration'), 'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
+            ['key' => 'sale',           'label' => __('vehicle.panel.flow.sale'),           'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
+            ['key' => 'payment',        'label' => __('vehicle.panel.flow.payment'),        'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
             // 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 통관.
             // 라벨 '통관' 보존 (단계 약자) — role 명칭 '수출통관'과 분리. 7노드 흐름도 박스 폭 좁아짐 방지.
-            ['key' => 'bl',             'label' => '선적',   'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
-            ['key' => 'clearance',      'label' => '통관',   'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
-            ['key' => 'dhl',            'label' => 'DHL',    'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],
+            ['key' => 'bl',             'label' => __('vehicle.panel.flow.bl'),        'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
+            ['key' => 'clearance',      'label' => __('vehicle.panel.flow.clearance'), 'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
+            ['key' => 'dhl',            'label' => __('vehicle.panel.flow.dhl'),       'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],
         ];
     }
 
@@ -3278,15 +3278,15 @@ function vehicleColumnsToggle() {
             @if($justCreated)
             <span class="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white">
                 <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
-                등록 완료
+                {{ __('vehicle.panel.created_badge') }}
             </span>
             @endif
             <div>
                 <h2 class="text-base font-bold {{ $justCreated ? 'text-emerald-800' : 'text-gray-800' }}">
                     @if($justCreated)
-                        편집 모드 — 다음 단계 진행
+                        {{ __('vehicle.panel.edit_next') }}
                     @else
-                        {{ $editingId ? '차량 수정' : '차량 등록' }}
+                        {{ $editingId ? __('vehicle.panel.edit_title') : __('vehicle.panel.create_title') }}
                     @endif
                 </h2>
                 @if($vehicle_number)
@@ -3338,18 +3338,18 @@ function vehicleColumnsToggle() {
                 <span class="text-base leading-none">{{ $hasLedgerUnlockToken ? '🔓' : '🔒' }}</span>
                 <div class="text-xs">
                     @if($hasLedgerUnlockToken)
-                    <p class="font-semibold text-amber-800">잠금 해제됨 — 저장 1회 후 자동 재잠금</p>
-                    <p class="mt-0.5 text-amber-700">매입가·판매가·환율·면장금액·비용·바이어·담당자 변경 가능. 저장하면 즉시 잠김.</p>
+                    <p class="font-semibold text-amber-800">{{ __('vehicle.panel.ledger.unlocked_title') }}</p>
+                    <p class="mt-0.5 text-amber-700">{{ __('vehicle.panel.ledger.unlocked_desc') }}</p>
                     @else
-                    <p class="font-semibold text-gray-700">재무 확정 잔금 있음 — 회계 영향 컬럼 잠김</p>
-                    <p class="mt-0.5 text-gray-500">매입가·판매가·환율·면장금액·비용9개·바이어·담당자 변경 불가. admin/super가 사유 입력 후 해제 가능.</p>
+                    <p class="font-semibold text-gray-700">{{ __('vehicle.panel.ledger.locked_title') }}</p>
+                    <p class="mt-0.5 text-gray-500">{{ __('vehicle.panel.ledger.locked_desc') }}</p>
                     @endif
                 </div>
             </div>
             @if(! $hasLedgerUnlockToken && auth()->user()?->canAccessAdmin())
             <button type="button" wire:click="openLedgerUnlockModal"
                     class="flex-shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                🔓 잠금 해제
+                🔓 {{ __('vehicle.panel.ledger.unlock_btn') }}
             </button>
             @endif
         </div>
@@ -3362,7 +3362,7 @@ function vehicleColumnsToggle() {
         <div class="flex items-start gap-2">
             <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <div class="flex-1">
-                <p class="text-xs font-semibold text-red-700">저장할 수 없습니다 — 아래 항목을 확인하세요</p>
+                <p class="text-xs font-semibold text-red-700">{{ __('vehicle.panel.validation_title') }}</p>
                 <ul class="mt-1 space-y-0.5 text-xs text-red-600">
                     @foreach($errors->all() as $msg)
                     <li>· {{ $msg }}</li>
@@ -3376,19 +3376,11 @@ function vehicleColumnsToggle() {
     {{-- Tab Nav --}}
     {{-- 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 수출통관 --}}
     <div class="flex overflow-x-auto border-b border-gray-200 px-5">
-        @foreach([
-            ['basic',    '기본정보'],
-            ['purchase', '매입'],
-            ['sale',     '판매'],
-            ['bl',       '선적(B/L)'],
-            ['clearance','수출통관'],
-            ['dhl',      'DHL'],
-            ['docs',     '서류'],
-        ] as [$key, $label])
+        @foreach(['basic', 'purchase', 'sale', 'bl', 'clearance', 'dhl', 'docs'] as $key)
         <button @click="tab = '{{ $key }}'"
                 :class="tab === '{{ $key }}' ? 'border-b-2 border-violet-600 text-violet-600' : 'text-gray-500 hover:text-gray-700'"
                 class="flex-shrink-0 px-4 py-3 text-sm font-medium transition">
-            {{ $label }}
+            {{ __('vehicle.panel.tab.'.$key) }}
         </button>
         @endforeach
     </div>
@@ -3401,14 +3393,14 @@ function vehicleColumnsToggle() {
         <div x-show="tab === 'basic'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-violet-500"></span>
-                <span class="section-title">기본 정보</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.basic') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">
-                        차량번호 <span class="text-red-500">*</span>
+                        {{ __('vehicle.field.vehicle_number') }} <span class="text-red-500">*</span>
                         @if($editingId)
-                        <span class="ml-1 text-[10px] font-normal text-gray-400">(편집 모드 — 변경 불가)</span>
+                        <span class="ml-1 text-[10px] font-normal text-gray-400">{{ __('vehicle.panel.readonly_note') }}</span>
                         @endif
                     </label>
                     <div class="flex gap-1">
@@ -3423,15 +3415,15 @@ function vehicleColumnsToggle() {
                             <button type="button" wire:click="lookupNiceApi"
                                     wire:loading.attr="disabled" wire:target="lookupNiceApi"
                                     class="rounded-lg border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-50 whitespace-nowrap disabled:opacity-50">
-                                <span wire:loading.remove wire:target="lookupNiceApi">조회</span>
-                                <span wire:loading wire:target="lookupNiceApi">조회중…</span>
+                                <span wire:loading.remove wire:target="lookupNiceApi">{{ __('vehicle.panel.lookup') }}</span>
+                                <span wire:loading wire:target="lookupNiceApi">{{ __('vehicle.panel.lookup_ing') }}</span>
                             </button>
                         @endif
                     </div>
                     @unless($editingId)
                         {{-- NICE 1단계가 소유자명 필수 → 차량번호와 함께 입력. nice_reg_owner_name 에 바인딩(아래 등록정보 소유자명과 동기화). --}}
                         <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full"
-                               placeholder="소유자명 (NICE 조회 필수)" wire:blur="lookupNiceApi" />
+                               placeholder="{{ __('vehicle.panel.owner_name_ph') }}" wire:blur="lookupNiceApi" />
                     @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
@@ -3439,39 +3431,39 @@ function vehicleColumnsToggle() {
                 <input type="hidden" wire:model="sales_channel" />
                 {{-- 큐 17 — 폐기 체크박스 제거 (운영상 폐기 없음). --}}
                 <div>
-                    <label class="label-base">제조사</label>
-                    <input wire:model="brand" type="text" class="input-base" placeholder="현대" />
+                    <label class="label-base">{{ __('vehicle.field.brand') }}</label>
+                    <input wire:model="brand" type="text" class="input-base" placeholder="{{ __('vehicle.ph.brand') }}" />
                 </div>
                 <div>
-                    <label class="label-base">차종</label>
-                    <input wire:model="model_type" type="text" class="input-base" placeholder="쏘나타" />
+                    <label class="label-base">{{ __('vehicle.field.model_type') }}</label>
+                    <input wire:model="model_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.model_type') }}" />
                 </div>
                 <div>
-                    <label class="label-base">연식</label>
+                    <label class="label-base">{{ __('vehicle.field.year') }}</label>
                     <input wire:model="year_str" type="number" class="input-base" placeholder="2020" />
                 </div>
                 <div>
-                    <label class="label-base">배기량 (cc)</label>
+                    <label class="label-base">{{ __('vehicle.field.cc') }}</label>
                     <input wire:model="cc_str" type="number" class="input-base" placeholder="1991" />
                 </div>
                 <div>
-                    <label class="label-base">중량 (kg)</label>
+                    <label class="label-base">{{ __('vehicle.field.weight_kg') }}</label>
                     <input wire:model="weight_kg_str" type="number" class="input-base" placeholder="1470" />
                 </div>
                 <div>
-                    <label class="label-base">주행거리 (km)</label>
+                    <label class="label-base">{{ __('vehicle.field.mileage') }}</label>
                     <input wire:model="mileage_str" type="number" class="input-base" placeholder="85000" />
                 </div>
                 <div>
-                    <label class="label-base">색상</label>
-                    <input wire:model="color" type="text" class="input-base" placeholder="흰색" />
+                    <label class="label-base">{{ __('vehicle.field.color') }}</label>
+                    <input wire:model="color" type="text" class="input-base" placeholder="{{ __('vehicle.ph.color') }}" />
                 </div>
                 {{-- 영업담당자 — 등록 시 지정 누락 방지 위해 매입 탭에서 기본정보로 이동 (2026-06-04).
                      옵션은 $this->salesmen (관리 role 은 본인 팀 영업만 노출). --}}
                 <div>
-                    <label class="label-base">영업담당자</label>
+                    <label class="label-base">{{ __('vehicle.field.salesman') }}</label>
                     <select wire:model="salesman_id_str" class="input-base">
-                        <option value="">-- 선택 --</option>
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->salesmen as $sm)
                         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                         @endforeach
@@ -3482,19 +3474,19 @@ function vehicleColumnsToggle() {
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-400"></span>
-                <span class="section-title">NICE 등록정보 (12)</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.nice_reg') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">차대번호</label><input wire:model="nice_reg_vin" type="text" class="input-base" /></div>
-                <div><label class="label-base">원동기형식</label><input wire:model="nice_reg_engine_no" type="text" class="input-base" /></div>
-                <div><label class="label-base">연료종류</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="가솔린" /></div>
-                <div><label class="label-base">용도</label><input wire:model="nice_reg_use_type" type="text" class="input-base" placeholder="자가용" /></div>
-                <div><label class="label-base">차체형상</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
-                <div><label class="label-base">최초등록일</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">등록일</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">소유자명</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.vin') }}</label><input wire:model="nice_reg_vin" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.engine_no') }}</label><input wire:model="nice_reg_engine_no" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.fuel_type') }}</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.fuel_type') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.use_type') }}</label><input wire:model="nice_reg_use_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.use_type') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.owner_name') }}</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" /></div>
                 <div x-data="{ show: false }">
-                    <label class="label-base">소유자 주민(법인)등록번호</label>
+                    <label class="label-base">{{ __('vehicle.field.owner_rrn') }}</label>
                     <div class="relative">
                         {{-- UX #4 (2026-05-20) — Alpine x-on:input + $store.rrnMask 로 자동 mask. wire:model.blur 로 blur 시점 sync. --}}
                         <input wire:model.blur="nice_reg_owner_rrn" :type="show ? 'text' : 'password'"
@@ -3502,49 +3494,49 @@ function vehicleColumnsToggle() {
                                class="input-base pr-10 font-mono" placeholder="000000-0000000" autocomplete="off" maxlength="14" />
                         <button type="button" @click="show = !show"
                                 class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-gray-400 hover:text-gray-600"
-                                :title="show ? '숨기기' : '표시'">
+                                :title="show ? '{{ __('vehicle.panel.hide') }}' : '{{ __('vehicle.panel.show') }}'"
                             <svg x-show="!show" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
                             <svg x-show="show" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
                         </button>
                     </div>
                 </div>
-                <div><label class="label-base">최대적재량 (kg)</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">승차인원</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">차량 색상</label><input wire:model="nice_reg_color" type="text" class="input-base" /></div>
-                <div class="col-span-2 sm:col-span-1"><label class="label-base">소유자주소</label><input wire:model="nice_reg_owner_addr" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.max_load') }}</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.passengers') }}</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.reg_color') }}</label><input wire:model="nice_reg_color" type="text" class="input-base" /></div>
+                <div class="col-span-2 sm:col-span-1"><label class="label-base">{{ __('vehicle.field.owner_addr') }}</label><input wire:model="nice_reg_owner_addr" type="text" class="input-base" /></div>
             </div>
 
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-sky-400"></span>
-                <span class="section-title">NICE 제원정보 (12)</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.nice_spec') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">제조사</label><input wire:model="nice_spec_maker" type="text" class="input-base" /></div>
-                <div><label class="label-base">모델명</label><input wire:model="nice_spec_model" type="text" class="input-base" /></div>
-                <div><label class="label-base">연식</label><input wire:model="nice_spec_year" type="text" class="input-base" /></div>
-                <div><label class="label-base">배기량 (cc)</label><input wire:model="nice_spec_displacement_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">변속기</label><input wire:model="nice_spec_transmission" type="text" class="input-base" placeholder="자동" /></div>
-                <div><label class="label-base">구동방식</label><input wire:model="nice_spec_drive_type" type="text" class="input-base" placeholder="2WD" /></div>
-                <div><label class="label-base">전장 (mm)</label><input wire:model="nice_spec_length_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">전폭 (mm)</label><input wire:model="nice_spec_width_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">전고 (mm)</label><input wire:model="nice_spec_height_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">축거 (mm)</label><input wire:model="nice_spec_wheelbase_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">공차중량 (kg)</label><input wire:model="nice_spec_curb_weight_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">연비 (km/L)</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_maker') }}</label><input wire:model="nice_spec_maker" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_model') }}</label><input wire:model="nice_spec_model" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_year') }}</label><input wire:model="nice_spec_year" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_displacement') }}</label><input wire:model="nice_spec_displacement_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_transmission') }}</label><input wire:model="nice_spec_transmission" type="text" class="input-base" placeholder="{{ __('vehicle.ph.transmission') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_drive_type') }}</label><input wire:model="nice_spec_drive_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.drive_type') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_length') }}</label><input wire:model="nice_spec_length_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_width') }}</label><input wire:model="nice_spec_width_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_height') }}</label><input wire:model="nice_spec_height_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_wheelbase') }}</label><input wire:model="nice_spec_wheelbase_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_curb_weight') }}</label><input wire:model="nice_spec_curb_weight_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_fuel_efficiency') }}</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
             </div>
 
             {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3 저장). 여러 건은 한 번에 선택. --}}
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-rose-400"></span>
-                <span class="section-title">차량 사진/첨부 (최대 10건)</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.photos') }}</span>
             </div>
             <div>
                 <input type="file" wire:model="photoFiles" multiple
                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                        class="input-base text-sm" />
-                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">업로드 중…</div>
+                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                 @error('photoFiles')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 @error('photoFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
@@ -3572,21 +3564,21 @@ function vehicleColumnsToggle() {
                     @endphp
                     <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
                         @if($_isImg)
-                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="신규" />
+                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="{{ __('vehicle.panel.new') }}" />
                         @else
                             <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
                                 <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
                                 <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $photo->getClientOriginalName() }}</span>
                             </div>
                         @endif
-                        <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">신규</span>
+                        <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">{{ __('vehicle.panel.new') }}</span>
                         <button type="button" wire:click="removeNewPhoto({{ $idx }})"
                                 class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
                     </div>
                     @endforeach
                 </div>
                 @endif
-                <p class="mt-1 text-xs text-gray-400">{{ count($existingPhotos) + count($photoFiles) }}/10건 · 저장 버튼을 눌러야 반영됩니다.</p>
+                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_count', ['count' => count($existingPhotos) + count($photoFiles)]) }}</p>
             </div>
         </div>
 
