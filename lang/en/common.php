@@ -21,6 +21,7 @@ return [
     'email' => 'Email',
     'address' => 'Address',
     'memo' => 'Memo',
+    'optional' => '(optional)',
     'per_page' => ':count / page',
     'total' => ':count total',
     'unsaved_title' => 'You have unsaved changes',

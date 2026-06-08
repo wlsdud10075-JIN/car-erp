@@ -21,6 +21,7 @@ return [
     'email' => '이메일',
     'address' => '주소',
     'memo' => '메모',
+    'optional' => '(선택)',
     'per_page' => ':count개씩',
     'total' => '총 :count개',
     'unsaved_title' => '변경 사항이 있습니다',

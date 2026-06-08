@@ -145,6 +145,17 @@ class LocaleTest extends TestCase
             ->assertSee('차량 등록');
     }
 
+    public function test_ports_translate_to_english(): void
+    {
+        $this->enableEnglish(true);
+
+        $this->actingAs($this->localeUser('en'))
+            ->get(route('admin.ports.index'))
+            ->assertOk()
+            ->assertSee('Add Port')
+            ->assertDontSee('항구 추가');
+    }
+
     public function test_logs_translate_to_english(): void
     {
         $this->enableEnglish(true);
