@@ -35,8 +35,14 @@ class Settlement extends Model
     /**
      * 큐 11-4 G7 — 감사 로그 추적 컬럼 (Settlement 기준).
      * 회의확장씬 #8 (2026-05-22) — secondary_status 추가.
+     * Review2 항목 A (2026-06-09) — 정산 금액 파라미터 변경 추적.
+     *   사내직원 차등정산(10/20/25%)을 수동 운용하는 게 의도된 정책이라 변경 자체는 허용(잠그지 않음).
+     *   대신 paid 이후 ratio/per_unit/other_deduction 수동 조정을 감사로그에 남겨 추적성 확보.
      */
-    public const AUDITED_COLUMNS = ['settlement_status', 'secondary_status', 'paid_at'];
+    public const AUDITED_COLUMNS = [
+        'settlement_status', 'secondary_status', 'paid_at',
+        'settlement_ratio', 'per_unit_amount', 'other_deduction',
+    ];
 
     /**
      * 회의확장씬 #8 (2026-05-22) — 2차 정산 status enum-like (application 검증).
