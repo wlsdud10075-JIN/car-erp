@@ -451,7 +451,15 @@ extension=zip    # 주석 제거
 **원인**: 운영 MySQL CHECK `chk_sale_required = (sale_price=0 OR (sale_date NOT NULL AND buyer_id NOT NULL AND exchange_rate>0))`. 판매가만 넣고 나머지 누락하면 INSERT/UPDATE 실패(4025).
 **해결**: 판매가 입력 시 sale_date·buyer·환율 항상 동반. (엑셀 일괄적재처럼 sale_date 없으면 선적일/구입일로 대체, 셋 중 하나라도 못 채우면 판매가 보류=매입만.)
 
-> ERP 신규 발견 버그는 본 §8 하단에 추가 기록 (#26+).
+### 26. mutating·열람 엔드포인트 재인가 누락 = IDOR (Review.md #3/#4, 2026-06-09)
+**원인**: 스코프 가드를 **읽기 진입(`openEdit`/`mount`)에서 1회만** 걸고, 변경 액션(`delete`/`save`)·문서 다운로드 컨트롤러·변조 가능 public 프로퍼티엔 재인가가 없던 안티패턴. Livewire public 프로퍼티(`editingId`·`$salesmanId`)와 라우트 `{id}`는 클라이언트가 직접 주입 가능 → 영업이 타 담당 차량 삭제/변조, 타인 차량 RRN 박힌 서류 다운로드(URL만 변경), 타 영업 자금현황 열람.
+**해결**: ① 스코프 규칙을 **`User::canScopeVehicle($vehicle)` 단일 출처**로(영업=본인/관리=팀/통관·재무·admin=전체). ② `delete`·`save(편집)`·`VehicleDocumentController::show/showMulti` 모두에서 매번 호출. ③ mount 1회 인가에만 의존하는 프로퍼티는 `#[Locked]`. **교훈: 읽기에서 인가했어도 mutating·열람 엔드포인트는 매번 재인가. abort(403)는 Livewire가 예외로 안 던지고 403 응답으로 변환 → 테스트는 `->call(...)->assertStatus(403)`.**
+
+### 27. 회계 잠금(paid) row 본체 미잠금 — deleting 가드 부재 (Review.md #1, 2026-06-09)
+**원인**: FP/PBP 소급 잠금이 `settlements()->where('settlement_status','paid')->exists()`에 의존하는데, `Settlement`엔 `deleting` 훅도 `SoftDeletes`도 없어 **paid/confirmed/closed 정산을 1클릭 하드삭제** → 잠금 해제 + `confirmed_snapshot`·감사추적 영구 소멸. (불변식을 잘 만들어도 그 불변식이 의존하는 row 자체가 무방비면 우회됨.)
+**해결**: `Settlement::deleting` 가드 — `settlement_status∈{confirmed,paid}` 또는 `secondary_status='closed'`면 `DomainException`(시드·artisan 우회), 컴포넌트는 try/catch로 토스트. 삭제는 pending/calculating만. (2026-05-21 사용자 결정 "삭제 등 파괴적 액션만 별도 차단"의 미반영분.) **SoftDeletes는 글로벌 스코프 영향 커서 보류 — 추후 검토.**
+
+> ERP 신규 발견 버그는 본 §8 하단에 추가 기록 (#28+).
 
 ## 9. 구현 패턴
 

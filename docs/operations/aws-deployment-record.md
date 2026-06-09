@@ -1,6 +1,6 @@
 # car-erp AWS Lightsail 배포 기록 (운영)
 
-> 최초 작성: 2026-05-26 / 최종 갱신: 2026-05-26
+> 최초 작성: 2026-05-26 / 최종 갱신: 2026-06-09 (deploy #7 — §17)
 > 대상: car-erp ERP 운영 배포 — **heysellcar 회사용** 인스턴스. 사용자 ~20명 규모.
 > 구성: Lightsail 단일 인스턴스(앱 + MySQL 동거) + S3(업로드 서류 / DB 백업).
 > 본 문서는 실제 배포를 진행하며 기록한 것으로, `deployment.md` 런북의 실행 결과 + 그 과정에서 발견된 이슈/해결을 담는다.
@@ -388,7 +388,7 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 | NICE 차량조회 연동 (+ 응답 정제 fix) | ✅ 완료 |
 | S3 연동 (버킷·IAM·드라이버·서명 URL·검증) | ✅ 완료 |
 | DB 백업 cron | ✅ 완료 (자동 실행 검증은 익일) |
-| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #6, `8f82448`, 20초 성공) |
+| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #7, `91595bf`, 23초 성공 — §17) |
 | 도메인 + HTTPS | ⬜ 보류 (안정화 후) |
 | 런북 §7 기능 점검 (잔여분) | ⬜ 예정 |
 
@@ -399,4 +399,25 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 - 런북(지침): `docs/operations/deployment.md`
 - APP_KEY 관리: `docs/operations/key-rotation.md`
 - NICE 미구현 2건: `docs/nice-followup-items.md`
-- 메모리: `project-deployment` · `project-seeder-contract` · `project-db-tier-mismatch`
+- 메모리: `project-deployment` · `project-seeder-contract` · `project-db-tier-mismatch` · `project-review-md-remediation`
+
+---
+
+## 17. deploy #7 — Review.md 멀티에이전트 리뷰 보안·회계 수정 (2026-06-09)
+
+바탕화면 `Review.md`(7부서 멀티에이전트 코드리뷰) 검증 후 보안·자금 직결 항목 수정 → 운영 배포.
+
+**반영 항목** (master `b4ec780`→`91595bf`):
+- #3 문서 다운로드 RRN IDOR — `VehicleDocumentController` 소유권 가드 (`User::canScopeVehicle` 단일출처)
+- #4 차량 `delete`/`save(편집)` 스코프 재인가
+- #2 영업 cashflow `$salesmanId` `#[Locked]`
+- #1 paid 정산 무가드 삭제 차단 (`Settlement::deleting`)
+- #6 매입미지급 KPI `confirmed_at` 필터 누락 보정
+- #7 `deploy.yml` 안전화 — 빌드를 `down` 이전 + `trap 'artisan up' EXIT`(점검모드 갇힘 방지). **이번 배포부터 적용**
+- #8 CI 트리거 브랜치명 `develop/main`→`dev/master` 교정
+
+**배포 방식**: master가 dev와 분기(`.md` 제외 관리)돼 있어, 격리 `git worktree`에서 7커밋 **cherry-pick(`.md` 0건 누출, code-only)** 후 `deploy-tmp:master` fast-forward push. 단순 merge는 그동안 제외한 `.md` 수십 개를 운영 트리로 끌고 오므로 금지 — cherry-pick이 `.md` 제외를 자동 보장.
+
+**검증**: GitHub Actions **deploy/tests/lint 3개 워크플로우 전부 success** (tests=SQLite 풀스위트 통과, 2m52s / lint=pint 통과, Flux secrets 이미 설정됨). 배포 직후 `/up`=200·루트=302. 로컬 544 테스트 통과.
+
+**남은 보류**: #5 환율0(운영 CHECK가 이미 방어, 미수정) / #8 후속 CI MySQL 8 서비스 컨테이너 / #1 SoftDeletes(글로벌 스코프 영향, 추후).
