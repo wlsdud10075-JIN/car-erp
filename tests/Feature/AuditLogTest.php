@@ -156,4 +156,29 @@ class AuditLogTest extends TestCase
         $this->assertSame('pending', $log->old_value);
         $this->assertSame('confirmed', $log->new_value);
     }
+
+    // Review2 항목 A (2026-06-09) — 사내직원 차등정산 수동 조정(건당 10만→20만 등) 추적.
+    // jin 정책상 변경은 허용 — 잠그지 않고 감사로그로 추적성만 확보.
+    public function test_settlement_amount_param_change_logs(): void
+    {
+        $v = Vehicle::create(['vehicle_number' => '12가0010', 'sales_channel' => 'export']);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'per_unit',
+            'per_unit_amount' => 100000,
+            'settlement_status' => 'pending',
+        ]);
+
+        $s->per_unit_amount = 200000;   // 건당 10만 → 20만 (차등 tier 수동 조정)
+        $s->save();
+
+        $log = AuditLog::where('auditable_type', Settlement::class)
+            ->where('auditable_id', $s->id)
+            ->where('column_name', 'per_unit_amount')
+            ->first();
+
+        $this->assertNotNull($log, 'per_unit_amount 변경이 audit_logs에 기록돼야 함');
+        $this->assertSame(100000, (int) $log->old_value);
+        $this->assertSame(200000, (int) $log->new_value);
+    }
 }
