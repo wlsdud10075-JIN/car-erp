@@ -99,14 +99,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         unset($this->companies);
-        session()->flash('success', '포워딩사 정보가 저장됐습니다.');
+        session()->flash('success', __('forwarding.saved'));
     }
 
     public function delete(int $id): void
     {
         ForwardingCompany::findOrFail($id)->delete();
         unset($this->companies);
-        session()->flash('success', '포워딩사가 삭제됐습니다.');
+        session()->flash('success', __('forwarding.deleted'));
     }
 
     private function resetForm(): void
@@ -129,28 +129,28 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">포워딩사 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->companies->total() }}개</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('forwarding.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('common.total', ['count' => $this->companies->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            포워딩사 등록
+            {{ __('forwarding.add') }}
         </button>
     </div>
 </div>
 
 {{-- 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="상호 · 담당자 · 이메일"
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('forwarding.search_ph') }}"
            class="input-filter w-64" />
-    <button wire:click="search" class="btn-search">조회</button>
+    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 {{-- 테이블 (데스크탑) --}}
@@ -158,11 +158,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">상호</th>
-                <th class="pb-2 pr-4 font-medium">담당자</th>
-                <th class="pb-2 pr-4 font-medium">이메일</th>
-                <th class="pb-2 pr-4 font-medium">전화</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('forwarding.col_name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.contact') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -175,17 +175,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $fc->phone ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">
-                        {{ $fc->is_active ? '활성' : '비활성' }}
+                        {{ $fc->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
                 <td class="py-3 text-right">
                     <button wire:click.stop="delete({{ $fc->id }})"
-                            wire:confirm="{{ $fc->name }}을 삭제하시겠습니까?"
-                            class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                            wire:confirm="{{ __('forwarding.delete_confirm', ['name' => $fc->name]) }}"
+                            class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">포워딩사가 없습니다.</td></tr>
+            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -199,10 +199,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="font-medium text-gray-800">{{ $fc->name }}</div>
             <div class="text-xs text-gray-500">{{ $fc->contact_name ?? '' }}{{ $fc->email ? ' · '.$fc->email : '' }}</div>
         </div>
-        <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? '활성' : '비활성' }}</span>
+        <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? __('common.active') : __('common.inactive') }}</span>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">포워딩사가 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</div>
     @endforelse
 </div>
 
@@ -228,7 +228,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '포워딩사 수정' : '포워딩사 등록' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('forwarding.panel_edit') : __('forwarding.add') }}</h2>
         <button @click="attemptClose()" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -237,44 +237,44 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 폼 --}}
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-3">
         <div>
-            <label class="label-base">상호 <span class="text-red-500">*</span></label>
+            <label class="label-base">{{ __('forwarding.field_name') }} <span class="text-red-500">*</span></label>
             <input wire:model="name" type="text" class="input-base" placeholder="SSANCAR LOGISTICS" />
             @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="label-base">담당자명</label>
+                <label class="label-base">{{ __('forwarding.field_contact') }}</label>
                 <input wire:model="contact_name" type="text" class="input-base" />
             </div>
             <div>
-                <label class="label-base">전화</label>
+                <label class="label-base">{{ __('common.phone') }}</label>
                 <input wire:model="phone" type="text" class="input-base" />
             </div>
         </div>
         <div>
-            <label class="label-base">이메일</label>
+            <label class="label-base">{{ __('common.email') }}</label>
             <input wire:model="email" type="email" class="input-base" />
         </div>
         <div>
-            <label class="label-base">주소</label>
+            <label class="label-base">{{ __('common.address') }}</label>
             <input wire:model="address" type="text" class="input-base" />
         </div>
         <div>
-            <label class="label-base">메모</label>
+            <label class="label-base">{{ __('common.memo') }}</label>
             <textarea wire:model="memo" class="input-base" rows="2"></textarea>
         </div>
         <div>
             <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input wire:model="is_active" type="checkbox" class="rounded" /> 활성
+                <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
             </label>
         </div>
     </div>
 
     {{-- 푸터 --}}
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
-        <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+        <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">저장</span><span wire:loading wire:target="save">저장 중...</span>
+            <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>
         </button>
     </div>
 
@@ -285,11 +285,11 @@ new #[Layout('components.layouts.app')] class extends Component {
      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
      @click.self="confirmOpen = false">
     <div class="card max-w-sm mx-4 shadow-2xl">
-        <h3 class="text-base font-semibold text-gray-900">변경 사항이 있습니다</h3>
-        <p class="mt-2 text-sm text-gray-600">저장하지 않고 닫으면 변경 내용이 사라집니다.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('common.unsaved_title') }}</h3>
+        <p class="mt-2 text-sm text-gray-600">{{ __('common.unsaved_body') }}</p>
         <div class="mt-5 flex justify-end gap-2">
-            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">닫기</button>
+            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('common.close') }}</button>
         </div>
     </div>
 </div>

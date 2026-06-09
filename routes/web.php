@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\VehicleDocumentController;
+use App\Models\Setting;
+use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
@@ -100,6 +103,21 @@ Route::middleware(['auth'])->group(function () {
     Volt::route('settings/profile', 'settings.profile')->name('settings.profile');
     Volt::route('settings/password', 'settings.password')->name('settings.password');
     Volt::route('settings/appearance', 'settings.appearance')->name('settings.appearance');
+
+    // i18n Phase 0 — 언어 전환 (영어는 기능설정에서 켜진 경우만 허용)
+    Route::post('locale', function (Request $request) {
+        $locale = $request->input('locale');
+        if (in_array($locale, User::LOCALES, true)) {
+            if ($locale === 'en' && ! Setting::get('locale_en_enabled', false)) {
+                $locale = 'ko';
+            }
+            $user = $request->user();
+            $user->locale = $locale;
+            $user->save();
+        }
+
+        return back();
+    })->name('locale.update');
 });
 
 require __DIR__.'/auth.php';

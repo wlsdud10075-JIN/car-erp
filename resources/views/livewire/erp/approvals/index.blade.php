@@ -25,7 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         if (! auth()->user()?->canApprove()) {
-            abort(403, '승인 권한이 없습니다.');
+            abort(403, __('approval.toast.no_perm'));
         }
     }
 
@@ -120,7 +120,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $req = ApprovalRequest::find($this->decisionId);
         if (! $req || $req->status !== 'pending') {
-            $this->dispatch('notify', message: '이미 처리되었거나 존재하지 않는 요청입니다.', type: 'warning');
+            $this->dispatch('notify', message: __('approval.toast.already'), type: 'warning');
             $this->closeDecisionModal();
 
             return;
@@ -130,7 +130,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // SoD(Segregation of Duties) — 본인이 요청한 안건을 본인이 승인할 수 없음.
         if ($req->requester_id === auth()->id()) {
             $this->dispatch('notify',
-                message: '본인이 요청한 안건은 본인이 처리할 수 없습니다 (SoD 위반).',
+                message: __('approval.toast.self'),
                 type: 'error');
             $this->closeDecisionModal();
 
@@ -139,7 +139,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if ($this->decisionMode === 'reject') {
             $this->validate(['decisionNote' => ['required', 'string', 'min:5']],
-                ['decisionNote.required' => '거부 사유를 5자 이상 입력하세요.']);
+                ['decisionNote.required' => __('approval.toast.reject_min')]);
         }
 
         try {
@@ -156,14 +156,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             });
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '처리 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('approval.toast.fail', ['error' => $e->getMessage()]), type: 'error');
             $this->closeDecisionModal();
 
             return;
         }
 
         $this->dispatch('notify',
-            message: ($this->decisionMode === 'approve' ? '승인 + 액션 실행' : '거부').' 완료.',
+            message: $this->decisionMode === 'approve' ? __('approval.toast.done_approve') : __('approval.toast.done_reject'),
             type: 'success');
         $this->closeDecisionModal();
     }
@@ -175,18 +175,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 헤더 --}}
     <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-            <h2 class="text-xl font-bold text-gray-800">승인 큐</h2>
+            <h2 class="text-xl font-bold text-gray-800">{{ __('approval.title') }}</h2>
             <p class="mt-1 text-xs text-gray-500">
-                대기 <span class="font-semibold text-amber-600">{{ $this->pendingCount }}</span>건
-                · 6 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외·자금 이체·이체 취소)
+                {!! __('approval.subtitle', ['count' => '<span class="font-semibold text-amber-600">'.$this->pendingCount.'</span>']) !!}
             </p>
         </div>
         <div class="flex items-center gap-3">
             <select wire:model.live="perPage" class="input-filter">
-                <option value="10">10개씩</option>
-                <option value="30">30개씩</option>
-                <option value="50">50개씩</option>
-                <option value="100">100개씩</option>
+                <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+                <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+                <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+                <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
             </select>
         </div>
     </div>
@@ -194,17 +193,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <div class="flex gap-1">
-            @foreach(['pending' => '대기', 'approved' => '승인', 'rejected' => '거부', 'all' => '전체'] as $val => $label)
+            @foreach(['pending', 'approved', 'rejected', 'all'] as $val)
             <button wire:click="$set('statusFilter', '{{ $val }}')"
                     class="rounded-full px-3 py-1 text-xs font-medium transition
                            {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
-                {{ $label }}
+                {{ __('approval.filter.'.$val) }}
             </button>
             @endforeach
         </div>
         <div class="h-4 w-px bg-gray-200 hidden sm:block"></div>
         <select wire:model.live="actionFilter" class="input-filter">
-            <option value="">액션 전체</option>
+            <option value="">{{ __('approval.all_actions') }}</option>
             @foreach(\App\Models\ApprovalRequest::TYPES as $code => $label)
             <option value="{{ $code }}">{{ $label }}</option>
             @endforeach
@@ -216,14 +215,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm border-separate border-spacing-0">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">생성일</th>
-                    <th class="pb-2 pr-4 font-medium">액션</th>
-                    <th class="pb-2 pr-4 font-medium">요청자</th>
-                    <th class="pb-2 pr-4 font-medium">대상</th>
-                    <th class="pb-2 pr-4 font-medium">사유</th>
-                    <th class="pb-2 pr-4 font-medium">상태</th>
-                    <th class="pb-2 pr-4 font-medium">결정자</th>
-                    <th class="pb-2 font-medium text-right">처리</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.created') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.action') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.requester') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.target') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.reason') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('approval.col.decider') }}</th>
+                    <th class="pb-2 font-medium text-right">{{ __('approval.col.handle') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -235,25 +234,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-3 pr-4 text-gray-600 text-xs">
                         @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
                             @php $p = $r->payload ?? []; @endphp
-                            <div class="font-semibold text-gray-800">{{ $p['buyer_name'] ?? '바이어 #'.$r->target_id }}</div>
+                            <div class="font-semibold text-gray-800">{{ $p['buyer_name'] ?? __('approval.t.buyer', ['id' => $r->target_id]) }}</div>
                             <div class="text-gray-500">
-                                차량 <span class="font-mono text-gray-700">{{ $p['new_vehicle_number'] ?? '(미지정)' }}</span>
+                                {{ __('approval.t.vehicle') }} <span class="font-mono text-gray-700">{{ $p['new_vehicle_number'] ?? __('approval.t.unassigned') }}</span>
                                 @if(isset($p['overlap_count'], $p['overlap_amount_krw']))
-                                · 미수 {{ $p['overlap_count'] }}대 ₩{{ number_format($p['overlap_amount_krw']) }}
+                                · {{ __('approval.t.overlap', ['count' => $p['overlap_count'], 'amount' => number_format($p['overlap_amount_krw'])]) }}
                                 @endif
                             </div>
                             @if(! empty($p['overlap_vehicle_numbers']))
-                            <div class="text-[10px] text-gray-400 truncate max-w-[260px]">미수 차량: {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
+                            <div class="text-[10px] text-gray-400 truncate max-w-[260px]">{{ __('approval.t.overlap_vehicles') }} {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
                             @endif
                         @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
                             @php $p = $r->payload ?? []; @endphp
                             <div class="space-y-0.5">
                                 <div>
-                                    <span class="text-gray-400">출처</span>
+                                    <span class="text-gray-400">{{ __('approval.t.source') }}</span>
                                     <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
                                 </div>
                                 <div>
-                                    <span class="text-gray-400">대상</span>
+                                    <span class="text-gray-400">{{ __('approval.t.target') }}</span>
                                     <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
                                 </div>
                                 <div class="font-semibold text-violet-700">
@@ -263,16 +262,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
                             @php $p = $r->payload ?? []; @endphp
                             <div class="space-y-0.5">
-                                <div class="text-red-700 font-semibold text-[11px]">⊘ 이체 #{{ $p['transfer_id'] ?? '?' }} 취소</div>
+                                <div class="text-red-700 font-semibold text-[11px]">{{ __('approval.t.void', ['id' => $p['transfer_id'] ?? '?']) }}</div>
                                 <div>
-                                    <span class="text-gray-400">출처</span>
+                                    <span class="text-gray-400">{{ __('approval.t.source') }}</span>
                                     <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
                                     →
-                                    <span class="text-gray-400">대상</span>
+                                    <span class="text-gray-400">{{ __('approval.t.target') }}</span>
                                     <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
                                 </div>
                                 <div class="font-semibold text-red-600">
-                                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} 원상복구
+                                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                                 </div>
                             </div>
                         @elseif($r->target_type && $r->target_id)
@@ -291,17 +290,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endphp
                         @php $voidRejected = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
                         @if($isTransferRow && $r->status === 'approved' && $ts === 'approved_awaiting_finance')
-                            <span class="badge badge-blue">관리 승인 (재무 처리 대기)</span>
+                            <span class="badge badge-blue">{{ __('approval.tstatus.approved_awaiting') }}</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided_awaiting_finance')
-                            <span class="badge badge-amber">취소 승인 (재무 처리 대기)</span>
+                            <span class="badge badge-amber">{{ __('approval.tstatus.voided_awaiting') }}</span>
                         @elseif($isTransferRow && $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID && $r->status === 'approved' && $ts === 'executed' && $voidRejected)
-                            <span class="badge badge-red">재무 취소 거부</span>
+                            <span class="badge badge-red">{{ __('approval.tstatus.void_rejected') }}</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'executed')
-                            <span class="badge badge-green">이체 완료</span>
+                            <span class="badge badge-green">{{ __('approval.tstatus.executed') }}</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'voided')
-                            <span class="badge badge-gray">이체 취소 완료</span>
+                            <span class="badge badge-gray">{{ __('approval.tstatus.voided') }}</span>
                         @elseif($isTransferRow && $r->status === 'approved' && $ts === 'finance_rejected')
-                            <span class="badge badge-red">재무 거부</span>
+                            <span class="badge badge-red">{{ __('approval.tstatus.finance_rejected') }}</span>
                         @else
                             <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
                         @endif
@@ -317,20 +316,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="flex justify-end gap-1">
                             <button wire:click="openApproveModal({{ $r->id }})"
                                     class="rounded bg-green-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-600">
-                                승인
+                                {{ __('approval.approve') }}
                             </button>
                             <button wire:click="openRejectModal({{ $r->id }})"
                                     class="rounded bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
-                                거부
+                                {{ __('approval.reject') }}
                             </button>
                         </div>
                         @else
-                        <span class="text-xs text-gray-400">처리됨</span>
+                        <span class="text-xs text-gray-400">{{ __('approval.handled') }}</span>
                         @endif
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">조건에 맞는 승인 요청이 없습니다.</td></tr>
+                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('approval.empty') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -351,17 +350,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="font-medium text-gray-800">{{ $r->action_label }}</div>
                 @php $voidRejectedMobile = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
                 @if($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'approved_awaiting_finance')
-                    <span class="badge badge-blue">관리 승인 (재무 대기)</span>
+                    <span class="badge badge-blue">{{ __('approval.tstatus.approved_awaiting') }}</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided_awaiting_finance')
-                    <span class="badge badge-amber">취소 승인 (재무 대기)</span>
+                    <span class="badge badge-amber">{{ __('approval.tstatus.voided_awaiting') }}</span>
                 @elseif($isTransferRowMobile && $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID && $r->status === 'approved' && $tsMobile === 'executed' && $voidRejectedMobile)
-                    <span class="badge badge-red">재무 취소 거부</span>
+                    <span class="badge badge-red">{{ __('approval.tstatus.void_rejected') }}</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'executed')
-                    <span class="badge badge-green">이체 완료</span>
+                    <span class="badge badge-green">{{ __('approval.tstatus.executed') }}</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'voided')
-                    <span class="badge badge-gray">이체 취소 완료</span>
+                    <span class="badge badge-gray">{{ __('approval.tstatus.voided') }}</span>
                 @elseif($isTransferRowMobile && $r->status === 'approved' && $tsMobile === 'finance_rejected')
-                    <span class="badge badge-red">재무 거부</span>
+                    <span class="badge badge-red">{{ __('approval.tstatus.finance_rejected') }}</span>
                 @else
                     <span class="badge {{ $r->status_badge }}">{{ $r->status_label }}</span>
                 @endif
@@ -372,31 +371,31 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
                 @php $p = $r->payload ?? []; @endphp
                 <div class="mt-1 text-xs text-gray-700">
-                    <span class="font-semibold">{{ $p['buyer_name'] ?? '바이어 #'.$r->target_id }}</span>
-                    · 차량 <span class="font-mono">{{ $p['new_vehicle_number'] ?? '(미지정)' }}</span>
+                    <span class="font-semibold">{{ $p['buyer_name'] ?? __('approval.t.buyer', ['id' => $r->target_id]) }}</span>
+                    · {{ __('approval.t.vehicle') }} <span class="font-mono">{{ $p['new_vehicle_number'] ?? __('approval.t.unassigned') }}</span>
                 </div>
                 @if(isset($p['overlap_count'], $p['overlap_amount_krw']))
-                <div class="text-[11px] text-gray-500">미수 {{ $p['overlap_count'] }}대 · ₩{{ number_format($p['overlap_amount_krw']) }}</div>
+                <div class="text-[11px] text-gray-500">{{ __('approval.t.overlap', ['count' => $p['overlap_count'], 'amount' => number_format($p['overlap_amount_krw'])]) }}</div>
                 @endif
             @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
                 @php $p = $r->payload ?? []; @endphp
                 <div class="mt-1 text-xs text-gray-700">
-                    <span class="text-gray-400">출처</span> <span class="font-mono">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                    <span class="text-gray-400">{{ __('approval.t.source') }}</span> <span class="font-mono">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
                     →
-                    <span class="text-gray-400">대상</span> <span class="font-mono">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                    <span class="text-gray-400">{{ __('approval.t.target') }}</span> <span class="font-mono">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
                 </div>
                 <div class="mt-0.5 text-xs font-semibold text-violet-700">
                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }}
                 </div>
             @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
                 @php $p = $r->payload ?? []; @endphp
-                <div class="mt-1 text-xs text-red-700 font-semibold">⊘ 이체 #{{ $p['transfer_id'] ?? '?' }} 취소</div>
+                <div class="mt-1 text-xs text-red-700 font-semibold">{{ __('approval.t.void', ['id' => $p['transfer_id'] ?? '?']) }}</div>
                 <div class="mt-0.5 text-xs text-gray-700">
                     <span class="font-mono">{{ $p['source_vehicle_number'] ?? '?' }}</span> →
                     <span class="font-mono">{{ $p['target_vehicle_number'] ?? '?' }}</span>
                 </div>
                 <div class="mt-0.5 text-xs font-semibold text-red-600">
-                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} 원상복구
+                    {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                 </div>
             @endif
             @if($r->reason)
@@ -405,14 +404,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($r->status === 'pending')
             <div class="mt-2 flex gap-2">
                 <button wire:click="openApproveModal({{ $r->id }})"
-                        class="flex-1 rounded bg-green-500 px-3 py-1.5 text-xs font-medium text-white">승인</button>
+                        class="flex-1 rounded bg-green-500 px-3 py-1.5 text-xs font-medium text-white">{{ __('approval.approve') }}</button>
                 <button wire:click="openRejectModal({{ $r->id }})"
-                        class="flex-1 rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white">거부</button>
+                        class="flex-1 rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white">{{ __('approval.reject') }}</button>
             </div>
             @endif
         </div>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">조건에 맞는 승인 요청이 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('approval.empty') }}</div>
         @endforelse
     </div>
 
@@ -426,29 +425,29 @@ new #[Layout('components.layouts.app')] class extends Component {
      wire:click.self="closeDecisionModal">
     <div class="card max-w-md mx-4 shadow-2xl">
         <h3 class="text-base font-semibold text-gray-900">
-            {{ $decisionMode === 'approve' ? '승인 확인' : '거부 사유 입력' }}
+            {{ $decisionMode === 'approve' ? __('approval.modal.approve_title') : __('approval.modal.reject_title') }}
         </h3>
         <p class="mt-2 text-sm text-gray-600">
             @if($decisionMode === 'approve')
-                이 요청을 승인하시겠습니까? 사유는 선택입니다.
+                {{ __('approval.modal.approve_desc') }}
             @else
-                거부 사유를 5자 이상 입력해야 합니다.
+                {{ __('approval.modal.reject_desc') }}
             @endif
         </p>
         <div class="mt-3">
             <textarea wire:model="decisionNote" rows="3"
                       class="input-base"
-                      placeholder="{{ $decisionMode === 'approve' ? '메모 (선택)' : '거부 사유 (필수)' }}"></textarea>
+                      placeholder="{{ $decisionMode === 'approve' ? __('approval.modal.memo_ph') : __('approval.modal.reject_ph') }}"></textarea>
             @error('decisionNote')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeDecisionModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
             <button wire:click="decide"
                     wire:loading.attr="disabled"
                     class="rounded-lg px-4 py-2 text-sm font-medium text-white
                            {{ $decisionMode === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700' }}">
-                {{ $decisionMode === 'approve' ? '승인' : '거부' }}
+                {{ $decisionMode === 'approve' ? __('approval.approve') : __('approval.reject') }}
             </button>
         </div>
     </div>

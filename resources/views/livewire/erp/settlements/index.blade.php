@@ -112,7 +112,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return [
                 'salesman_id' => $salesmanId,
-                'salesman_name' => $first->salesman?->name ?? '미지정',
+                'salesman_name' => $first->salesman?->name ?? __('settlement.summary_unassigned'),
                 'count' => $group->count(),
                 'total_margin_sum' => (int) $group->sum('total_margin'),
                 'settlement_amount_sum' => (int) $group->sum('settlement_amount'),
@@ -388,25 +388,25 @@ new #[Layout('components.layouts.app')] class extends Component
             auth()->user()?->isAdmin()
                 || in_array(auth()->user()?->role, ['재무', '관리'], true),
             403,
-            '환율 저장은 [재무]/[관리]/admin 만 가능합니다.'
+            __('settlement.forbidden_rate')
         );
 
         if ($s->secondary_status !== 'pending') {
-            $this->dispatch('notify', message: '2차 정산 대기 상태에서만 환율 수정 가능합니다.', type: 'warning');
+            $this->dispatch('notify', message: __('settlement.notify.rate_only_pending'), type: 'warning');
 
             return;
         }
 
         $rate = (float) str_replace(',', '', $this->exchange_rate_at_close_str);
         if ($rate <= 0) {
-            $this->dispatch('notify', message: '환율은 0보다 커야 합니다.', type: 'error');
+            $this->dispatch('notify', message: __('settlement.notify.rate_positive'), type: 'error');
 
             return;
         }
 
         $s->update(['exchange_rate_at_close' => $rate]);
         unset($this->krwBreakdown);
-        $this->dispatch('notify', message: '환율 저장 완료 — '.number_format($rate, 2), type: 'success');
+        $this->dispatch('notify', message: __('settlement.notify.rate_saved', ['rate' => number_format($rate, 2)]), type: 'success');
     }
 
     public function close(): void
@@ -468,14 +468,14 @@ new #[Layout('components.layouts.app')] class extends Component
 
         unset($this->settlements);
         $this->close();
-        session()->flash('success', '정산 정보가 저장됐습니다.');
+        session()->flash('success', __('settlement.notify.saved'));
     }
 
     public function delete(int $id): void
     {
         Settlement::findOrFail($id)->delete();
         unset($this->settlements);
-        session()->flash('success', '정산이 삭제됐습니다.');
+        session()->flash('success', __('settlement.notify.deleted'));
     }
 
     /**
@@ -487,7 +487,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $settlement = Settlement::findOrFail($id);
         if ($settlement->settlement_status !== 'confirmed') {
-            $this->dispatch('notify', message: 'confirmed 상태에서만 지급 승인 요청 가능합니다.', type: 'warning');
+            $this->dispatch('notify', message: __('settlement.notify.pay_only_confirmed'), type: 'warning');
 
             return;
         }
@@ -499,7 +499,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('status', ApprovalRequest::STATUS_PENDING)
             ->exists();
         if ($existing) {
-            $this->dispatch('notify', message: '이미 대기중인 승인 요청이 있습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('settlement.notify.pay_duplicate'), type: 'warning');
 
             return;
         }
@@ -513,11 +513,11 @@ new #[Layout('components.layouts.app')] class extends Component
                 'vehicle_number' => $settlement->vehicle?->vehicle_number,
                 'actual_payout' => $settlement->actual_payout,
             ],
-            'reason' => '정산 #'.$settlement->id.' ('.($settlement->vehicle?->vehicle_number ?? '?').') 지급 처리',
+            'reason' => __('settlement.notify.pay_reason', ['id' => $settlement->id, 'vehicle' => $settlement->vehicle?->vehicle_number ?? '?']),
             'status' => ApprovalRequest::STATUS_PENDING,
         ]);
 
-        $this->dispatch('notify', message: '지급 승인 요청을 보냈습니다.', type: 'success');
+        $this->dispatch('notify', message: __('settlement.notify.pay_sent'), type: 'success');
     }
 
     /**
@@ -536,12 +536,12 @@ new #[Layout('components.layouts.app')] class extends Component
         abort_unless(
             $user?->isAdmin() || in_array($user?->role, ['재무', '관리'], true),
             403,
-            '2차 정산 완료는 [재무]/[관리]/admin 만 가능합니다.'
+            __('settlement.forbidden_close')
         );
 
         $settlement = Settlement::findOrFail($id);
         if ($settlement->secondary_status !== 'pending') {
-            $this->dispatch('notify', message: '2차 정산 대기 상태가 아닙니다.', type: 'warning');
+            $this->dispatch('notify', message: __('settlement.notify.close_not_pending'), type: 'warning');
 
             return;
         }
@@ -571,14 +571,14 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         unset($this->settlements);
-        $msg = '2차 정산 완료 (최종 마무리)';
+        $msg = __('settlement.notify.close_done');
         if ($exchangeDiff !== null && abs($exchangeDiff) > 0.01) {
             $sign = $exchangeDiff > 0 ? '+' : '';
-            $msg .= ' — 환차 '.$sign.'₩'.number_format($exchangeDiff);
+            $msg .= __('settlement.notify.close_diff_suffix', ['sign' => $sign, 'amount' => number_format($exchangeDiff)]);
         }
         if ($carryoverOut !== 0) {
             $sign = $carryoverOut > 0 ? '+' : '';
-            $msg .= ' / 다음 달 이월 '.$sign.'₩'.number_format($carryoverOut);
+            $msg .= __('settlement.notify.close_carry_suffix', ['sign' => $sign, 'amount' => number_format($carryoverOut)]);
         }
         $this->dispatch('notify', message: $msg, type: 'success');
     }
@@ -645,36 +645,36 @@ new #[Layout('components.layouts.app')] class extends Component
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">정산 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->settlements->total() }}건</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('settlement.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('settlement.total', ['count' => $this->settlements->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            정산 추가
+            {{ __('settlement.add') }}
         </button>
     </div>
 </div>
 
 {{-- 필터 바 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="차량번호"
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('settlement.search_ph') }}"
            class="input-filter w-36" />
     <select wire:model="statusFilter" class="input-filter">
-        <option value="">전체 상태</option>
-        <option value="pending">대기</option>
-        <option value="calculating">계산중</option>
-        <option value="confirmed">확정</option>
-        <option value="paid">지급완료</option>
+        <option value="">{{ __('settlement.filter_all_status') }}</option>
+        <option value="pending">{{ __('settlement.status.pending') }}</option>
+        <option value="calculating">{{ __('settlement.status.calculating') }}</option>
+        <option value="confirmed">{{ __('settlement.status.confirmed') }}</option>
+        <option value="paid">{{ __('settlement.status.paid') }}</option>
     </select>
     <select wire:model="salesmanFilter" class="input-filter">
-        <option value="0">전체 담당자</option>
+        <option value="0">{{ __('settlement.filter_all_salesman') }}</option>
         @foreach($this->salesmen as $sm)
         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
@@ -682,7 +682,7 @@ new #[Layout('components.layouts.app')] class extends Component
     <input wire:model="dateFrom" type="date" class="input-filter" />
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
-    <button wire:click="search" class="btn-search">조회</button>
+    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 {{-- 2026-05-20 #2 피드백 — 영업담당자별 합계 카드 (인원별 솔팅 + 합계). --}}
@@ -690,8 +690,8 @@ new #[Layout('components.layouts.app')] class extends Component
 @if(!empty($this->salesmanSummaries))
 <div class="mt-3">
     <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
-        <span>영업담당자별 합계</span>
-        <span class="text-gray-400">— 클릭하면 해당 담당자만 솔팅</span>
+        <span>{{ __('settlement.summary_title') }}</span>
+        <span class="text-gray-400">{{ __('settlement.summary_hint') }}</span>
     </div>
     <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
         @foreach($this->salesmanSummaries as $summary)
@@ -699,19 +699,19 @@ new #[Layout('components.layouts.app')] class extends Component
                 class="card text-left transition hover:bg-violet-50 {{ $salesmanFilter == $summary['salesman_id'] ? 'border-violet-400 bg-violet-50/40' : '' }}">
             <div class="flex items-center justify-between">
                 <span class="text-xs font-medium text-gray-700">{{ $summary['salesman_name'] }}</span>
-                <span class="pill-count">{{ $summary['count'] }}건</span>
+                <span class="pill-count">{{ __('settlement.summary_count', ['count' => $summary['count']]) }}</span>
             </div>
             <div class="mt-2 space-y-1 text-[11px]">
                 <div class="flex items-center justify-between text-gray-500">
-                    <span>총마진</span>
+                    <span>{{ __('settlement.summary_total_margin') }}</span>
                     <span class="font-mono text-gray-700">{{ number_format($summary['total_margin_sum']) }}</span>
                 </div>
                 <div class="flex items-center justify-between text-gray-500">
-                    <span>정산액</span>
+                    <span>{{ __('settlement.summary_settlement_amount') }}</span>
                     <span class="font-mono text-gray-700">{{ number_format($summary['settlement_amount_sum']) }}</span>
                 </div>
                 <div class="flex items-center justify-between border-t border-gray-100 pt-1">
-                    <span class="text-violet-700">실지급액</span>
+                    <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
                     <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                 </div>
             </div>
@@ -726,18 +726,18 @@ new #[Layout('components.layouts.app')] class extends Component
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">차량번호</th>
-                <th class="pb-2 pr-4 font-medium">담당자</th>
-                <th class="pb-2 pr-4 font-medium">진행상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.vehicle_no') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.salesman') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.progress') }}</th>
                 {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (거래완료 미완납 시 정산 진행 차단 정보) --}}
-                <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">입금률</th>
-                <th class="pb-2 pr-4 font-medium">정산방식</th>
-                <th class="pb-2 pr-4 font-medium text-right">총마진</th>
-                <th class="pb-2 pr-4 font-medium text-right">정산액</th>
-                <th class="pb-2 pr-4 font-medium text-right">실지급액</th>
+                <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">{{ __('settlement.col.paid_ratio') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.type') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.total_margin') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
-                <th class="pb-2 pr-4 font-medium text-right">환차</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.exchange_diff') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -751,19 +751,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     'paid'        => 'badge-gray',
                     default       => 'badge-gray',
                 };
-                $statusLabel = match($s->settlement_status) {
-                    'pending'     => '대기',
-                    'calculating' => '계산중',
-                    'confirmed'   => '확정',
-                    'paid'        => '지급완료',
-                    default       => $s->settlement_status,
-                };
+                $statusLabel = __('settlement.status.'.$s->settlement_status);
                 // 회의확장씬 #8 (2026-05-22) — 2차 정산 status 보강 라벨.
-                $secondaryLabel = match($s->secondary_status) {
-                    'pending' => '2차 대기',
-                    'closed'  => '최종 마무리',
-                    default   => null,
-                };
+                $secondaryLabel = in_array($s->secondary_status, ['pending', 'closed'], true) ? __('settlement.secondary.'.$s->secondary_status) : null;
                 $secondaryBadge = match($s->secondary_status) {
                     'pending' => 'badge-amber',
                     'closed'  => 'badge-gray',
@@ -787,7 +777,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-gray-500">{{ $s->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     @if($s->vehicle)
-                    <span class="badge {{ $progressBadge }}">{{ $s->vehicle->progress_status }}</span>
+                    <span class="badge {{ $progressBadge }}">{{ __('domain.progress.'.$s->vehicle->progress_status) }}</span>
                     @else
                     <span class="text-gray-300">-</span>
                     @endif
@@ -799,13 +789,13 @@ new #[Layout('components.layouts.app')] class extends Component
                         $unpaidAmount = $s->vehicle?->sale_unpaid_amount ?? 0;
                     @endphp
                     @if($ratio === null)
-                        <span class="text-[10px] text-gray-400">환율 미입력</span>
+                        <span class="text-[10px] text-gray-400">{{ __('settlement.paid_ratio_no_rate') }}</span>
                     @elseif($ratio <= 0)
                         <div class="flex items-center gap-1">
                             <div class="h-2 w-full rounded-full bg-green-100 overflow-hidden">
                                 <div class="h-full bg-green-500" style="width: 100%;"></div>
                             </div>
-                            <span class="text-[10px] font-medium text-green-700">완납</span>
+                            <span class="text-[10px] font-medium text-green-700">{{ __('settlement.paid_ratio_full') }}</span>
                         </div>
                     @else
                         @php $paidPct = max(0, min(100, (1 - $ratio) * 100)); @endphp
@@ -815,14 +805,14 @@ new #[Layout('components.layouts.app')] class extends Component
                             </div>
                             <span class="text-[10px] font-medium text-amber-700">{{ number_format($paidPct, 0) }}%</span>
                         </div>
-                        <div class="mt-0.5 text-[10px] text-amber-700">받을 ₩{{ number_format($unpaidAmount) }}</div>
+                        <div class="mt-0.5 text-[10px] text-amber-700">{{ __('settlement.paid_ratio_receivable', ['amount' => number_format($unpaidAmount)]) }}</div>
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-600">
                     @if($s->settlement_type === 'ratio')
-                        비율 {{ number_format($s->settlement_ratio, 1) }}%
+                        {{ __('settlement.ratio_unit', ['ratio' => number_format($s->settlement_ratio, 1)]) }}
                     @else
-                        건당 ₩{{ number_format($s->per_unit_amount) }}
+                        {{ __('settlement.per_unit_unit', ['amount' => number_format($s->per_unit_amount)]) }}
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-right {{ $s->total_margin < 0 ? 'text-red-500' : 'text-gray-700' }}">
@@ -837,33 +827,33 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 (저장값 기준, live 계산 X). --}}
                 <td class="py-3 pr-4 text-right text-xs">
                     @if($s->vehicle?->currency === 'KRW')
-                        <span class="text-gray-300" title="원화 차량 — 환차 없음">—</span>
+                        <span class="text-gray-300" title="{{ __('settlement.exchange_krw_vehicle_title') }}">—</span>
                     @elseif($s->secondary_status === 'closed' && $s->exchange_difference_krw !== null)
                         @php $diff = (float) $s->exchange_difference_krw; @endphp
                         @if($diff > 0)
-                        <span class="font-semibold text-emerald-600" title="환차익">+₩{{ number_format($diff) }}</span>
+                        <span class="font-semibold text-emerald-600" title="{{ __('settlement.exchange_profit_title') }}">+₩{{ number_format($diff) }}</span>
                         @elseif($diff < 0)
-                        <span class="font-semibold text-red-600" title="환차손">-₩{{ number_format(abs($diff)) }}</span>
+                        <span class="font-semibold text-red-600" title="{{ __('settlement.exchange_loss_title') }}">-₩{{ number_format(abs($diff)) }}</span>
                         @else
-                        <span class="text-gray-400" title="환차 동일">₩0</span>
+                        <span class="text-gray-400" title="{{ __('settlement.exchange_same_title') }}">₩0</span>
                         @endif
                     @else
-                        <span class="text-gray-300" title="2차 정산 완료 후 표시">—</span>
+                        <span class="text-gray-300" title="{{ __('settlement.exchange_after_close') }}">—</span>
                     @endif
                 </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
                     {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
                     @if($secondaryLabel)
-                    <span class="badge {{ $secondaryBadge }} ml-1" title="2차 정산 status">{{ $secondaryLabel }}</span>
+                    <span class="badge {{ $secondaryBadge }} ml-1" title="{{ __('settlement.col.status') }}">{{ $secondaryLabel }}</span>
                     @endif
                     {{-- 큐 14-4-2 — 지급 승인 요청 상태 인라인 표시 --}}
                     @php $pa = $s->latestPayApproval; @endphp
                     @if($pa && $pa->status === 'pending')
-                    <span class="badge badge-amber ml-1" title="승인 대기중 — 관리자 결정 대기">승인 대기중</span>
+                    <span class="badge badge-amber ml-1" title="{{ __('settlement.approval_pending_title') }}">{{ __('settlement.approval_pending') }}</span>
                     @elseif($pa && $pa->status === 'rejected')
-                    <span class="badge badge-red ml-1" title="{{ $pa->approver?->name ?? '?' }} 거부 사유: {{ $pa->decision_note ?? '(사유 없음)' }}">
-                        거부됨
+                    <span class="badge badge-red ml-1" title="{{ __('settlement.approval_rejected_title', ['name' => $pa->approver?->name ?? '?', 'reason' => $pa->decision_note ?? __('settlement.approval_no_reason')]) }}">
+                        {{ __('settlement.approval_rejected') }}
                     </span>
                     @endif
                 </td>
@@ -873,24 +863,24 @@ new #[Layout('components.layouts.app')] class extends Component
                         @if($s->settlement_status === 'confirmed' && ! auth()->user()->canApprove()
                             && (! $pa || $pa->status !== 'pending'))
                         <button wire:click.stop="requestPayApproval({{ $s->id }})"
-                                wire:confirm="지급 승인 요청을 보내시겠습니까?"
-                                class="text-xs text-violet-600 hover:text-violet-800">지급 승인 요청</button>
+                                wire:confirm="{{ __('settlement.confirm_request_pay') }}"
+                                class="text-xs text-violet-600 hover:text-violet-800">{{ __('settlement.btn_request_pay') }}</button>
                         @endif
                         {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 액션 ([재무]/[관리]/admin) --}}
                         @if($canCloseSecondary)
                         <button wire:click.stop="closeSecondarySettlement({{ $s->id }})"
-                                wire:confirm="2차 정산을 최종 마무리하시겠습니까? 이후 회계 컬럼 잠금됩니다."
-                                class="text-xs text-violet-600 hover:text-violet-800">2차 완료</button>
+                                wire:confirm="{{ __('settlement.confirm_close_secondary') }}"
+                                class="text-xs text-violet-600 hover:text-violet-800">{{ __('settlement.btn_close_secondary') }}</button>
                         @endif
                         <button wire:click.stop="delete({{ $s->id }})"
-                                wire:confirm="정산을 삭제하시겠습니까?"
-                                class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                                wire:confirm="{{ __('settlement.confirm_delete') }}"
+                                class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                     </div>
                 </td>
             </tr>
             @empty
             <tr>
-                <td colspan="10" class="py-12 text-center text-sm text-gray-400">정산 내역이 없습니다.</td>
+                <td colspan="10" class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</td>
             </tr>
             @endforelse
         </tbody>
@@ -905,10 +895,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'pending' => 'badge-blue', 'calculating' => 'badge-amber',
             'confirmed' => 'badge-green', 'paid' => 'badge-gray', default => 'badge-gray',
         };
-        $statusLabel = match($s->settlement_status) {
-            'pending' => '대기', 'calculating' => '계산중',
-            'confirmed' => '확정', 'paid' => '지급완료', default => $s->settlement_status,
-        };
+        $statusLabel = __('settlement.status.'.$s->settlement_status);
     @endphp
     <div class="card-tight cursor-pointer" wire:click="openEdit({{ $s->id }})">
         <div class="flex items-center justify-between">
@@ -916,14 +903,14 @@ new #[Layout('components.layouts.app')] class extends Component
             <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
         </div>
         <div class="mt-2 grid grid-cols-2 gap-x-4 text-xs text-gray-500">
-            <div>담당자: {{ $s->salesman?->name ?? '-' }}</div>
-            <div>방식: {{ $s->settlement_type === 'ratio' ? number_format($s->settlement_ratio, 1).'%' : '건당' }}</div>
-            <div>총마진: ₩{{ number_format($s->total_margin) }}</div>
-            <div class="font-semibold text-gray-700">실지급: ₩{{ number_format($s->actual_payout) }}</div>
+            <div>{{ __('settlement.mobile_salesman') }}: {{ $s->salesman?->name ?? '-' }}</div>
+            <div>{{ __('settlement.mobile_type') }}: {{ $s->settlement_type === 'ratio' ? number_format($s->settlement_ratio, 1).'%' : __('settlement.mobile_type_per_unit') }}</div>
+            <div>{{ __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->total_margin) }}</div>
+            <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">정산 내역이 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</div>
     @endforelse
 </div>
 
@@ -938,7 +925,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '정산 수정' : '정산 추가' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('settlement.panel_title_edit') : __('settlement.panel_title_add') }}</h2>
         <button wire:click="close" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -950,7 +937,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex items-start gap-2">
             <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             <div class="flex-1">
-                <p class="text-xs font-semibold text-red-700">저장할 수 없습니다 — 아래 항목을 확인하세요</p>
+                <p class="text-xs font-semibold text-red-700">{{ __('settlement.error_box_title') }}</p>
                 <ul class="mt-1 space-y-0.5 text-xs text-red-600">
                     @foreach($errors->all() as $msg)
                     <li>· {{ $msg }}</li>
@@ -968,13 +955,13 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
-                <span class="section-title">차량</span>
+                <span class="section-title">{{ __('settlement.section_vehicle') }}</span>
             </div>
             @if(! $editingId)
             <div class="relative">
                 <input wire:model.live.debounce.300ms="vehicleSearch"
                        type="text"
-                       placeholder="차량번호 입력 (2자 이상)..."
+                       placeholder="{{ __('settlement.vehicle_search_ph') }}"
                        class="input-base w-full" />
                 @if($this->vehicleSearchResults->isNotEmpty())
                 <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border bg-white shadow-lg">
@@ -994,7 +981,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-2 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm">
                 <svg class="h-4 w-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 <span class="font-medium text-blue-800">{{ $this->selectedVehicle->vehicle_number }}</span>
-                <span class="text-blue-500">{{ $this->selectedVehicle->progress_status }}</span>
+                <span class="text-blue-500">{{ __('domain.progress.'.$this->selectedVehicle->progress_status) }}</span>
             </div>
             @endif
             @error('vehicle_id')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -1014,7 +1001,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         default => 'badge-red',
                     };
                 @endphp
-                <span class="badge {{ $pb }}">{{ $this->selectedVehicle->progress_status }}</span>
+                <span class="badge {{ $pb }}">{{ __('domain.progress.'.$this->selectedVehicle->progress_status) }}</span>
             </div>
             @endif
             @endif
@@ -1025,28 +1012,28 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
-                <span class="section-title">마진 산출내역</span>
+                <span class="section-title">{{ __('settlement.section_margin') }}</span>
             </div>
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600">
-                    <span>판매금원화 <span class="text-xs text-gray-400">(판매가+커미션+자동하역비-TAX/DC)×환율</span></span>
+                    <span>{{ __('settlement.margin_sales_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_sales_krw_formula') }}</span></span>
                     <span>₩{{ number_format($this->marginData['salesAmountKrw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
-                    <span>정산판매금원화 <span class="text-xs text-gray-400">-비용합계</span></span>
+                    <span>{{ __('settlement.margin_settle_sales_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_settle_sales_formula') }}</span></span>
                     <span>₩{{ number_format($this->marginData['settlementSalesKrw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
-                    <span>판매마진 <span class="text-xs text-gray-400">-(매입가+매도비)</span></span>
+                    <span>{{ __('settlement.margin_sales_margin') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_sales_margin_formula') }}</span></span>
                     <span class="{{ $this->marginData['salesMargin'] < 0 ? 'text-red-500' : '' }}">₩{{ number_format($this->marginData['salesMargin']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
-                    <span>부가세마진 <span class="text-xs text-gray-400">매입가×9%</span></span>
+                    <span>{{ __('settlement.margin_vat') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_vat_formula') }}</span></span>
                     <span>₩{{ number_format($this->marginData['vatMargin']) }}</span>
                 </div>
                 <hr class="border-gray-200" />
                 <div class="flex justify-between font-semibold text-gray-800">
-                    <span>총마진 <span class="text-xs text-gray-400 font-normal">(판매마진+부가세마진)×0.9</span></span>
+                    <span>{{ __('settlement.margin_total') }} <span class="text-xs text-gray-400 font-normal">{{ __('settlement.margin_total_formula') }}</span></span>
                     <span class="{{ $this->marginData['totalMargin'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['totalMargin']) }}</span>
                 </div>
             </div>
@@ -1060,32 +1047,32 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="section-header">
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">
-                    정산 KRW 명세
+                    {{ __('settlement.krw_title') }}
                     @if($kb['status'] === 'closed')
-                    <span class="ml-1 text-emerald-600 font-semibold">(확정)</span>
+                    <span class="ml-1 text-emerald-600 font-semibold">{{ __('settlement.krw_confirmed') }}</span>
                     @elseif($kb['status'] === 'pending')
-                    <span class="ml-1 text-amber-600 font-semibold">(2차 대기)</span>
+                    <span class="ml-1 text-amber-600 font-semibold">{{ __('settlement.krw_secondary_pending') }}</span>
                     @endif
                 </span>
             </div>
             @if($kb['is_krw_vehicle'])
             <div class="rounded-lg bg-gray-50 p-3 text-sm text-gray-500 text-center">
-                원화 차량 — 환차 없음
+                {{ __('settlement.krw_krw_vehicle') }}
             </div>
             @else
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600">
-                    <span>1차 정산금원화 <span class="text-xs text-gray-400">(차량 환율 기준)</span></span>
+                    <span>{{ __('settlement.krw_primary') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_primary_sub') }}</span></span>
                     <span>₩{{ number_format($kb['primary_krw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
-                    <span>입금 시점 KRW 합 <span class="text-xs text-gray-400">(row별 환율)</span></span>
+                    <span>{{ __('settlement.krw_received') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_received_sub') }}</span></span>
                     <span>₩{{ number_format($kb['received_krw']) }}</span>
                 </div>
 
                 @if(! empty($kb['rate_unavailable']))
                 <div class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
-                    현재 환율 조회 실패 — 정산 시점 KRW / 환차 계산 불가
+                    {{ __('settlement.krw_rate_unavailable') }}
                 </div>
                 @elseif(! empty($kb['is_preview']))
                 {{-- pending — 환율 수동 입력 + 라이브 미리보기 (회의확장씬 #6+7 보강 2026-05-23) --}}
@@ -1093,44 +1080,39 @@ new #[Layout('components.layouts.app')] class extends Component
                 @php
                     $canEditRate = auth()->user()?->isAdmin()
                         || in_array(auth()->user()?->role, ['재무', '관리'], true);
-                    $rateSourceLabel = match($kb['rate_source'] ?? 'auto') {
-                        'manual' => '입력 중',
-                        'stored' => '저장값',
-                        'auto'   => '자동 조회',
-                        default  => '',
-                    };
+                    $rateSourceLabel = __('settlement.rate_source.'.($kb['rate_source'] ?? 'auto'));
                 @endphp
                 <div class="space-y-1.5">
-                    <div class="text-xs font-medium text-gray-600">정산 시점 환율 (수동 입력 또는 자동 default)</div>
+                    <div class="text-xs font-medium text-gray-600">{{ __('settlement.krw_rate_input_label') }}</div>
                     <div class="flex gap-2 items-center">
                         <input wire:model.live.debounce.400ms="exchange_rate_at_close_str"
                                type="text"
                                class="input-base text-right"
                                style="width: 130px; flex: none;"
-                               placeholder="환율"
-                               title="2차 정산 시점 환율 (입력 후 [환율 저장] 또는 [2차 완료] 클릭)"
+                               placeholder="{{ __('settlement.krw_rate_input_ph') }}"
+                               title="{{ __('settlement.krw_rate_input_title') }}"
                                @if(!$canEditRate) disabled @endif />
                         <span class="text-[10px] text-gray-400">{{ $rateSourceLabel }}</span>
                         @if($canEditRate)
                         <button type="button" wire:click="saveExchangeRate({{ $this->editingId }})"
                                 class="ml-auto rounded border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
-                            환율 저장
+                            {{ __('settlement.btn_save_rate') }}
                         </button>
                         @endif
                     </div>
                 </div>
                 <div class="flex justify-between text-xs">
-                    <span class="text-gray-500">정산 시점 KRW 합 <span class="text-[10px] text-gray-400">(입력 환율 × 외화 합)</span></span>
+                    <span class="text-gray-500">{{ __('settlement.krw_secondary_krw') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_secondary_krw_sub') }}</span></span>
                     <span class="text-gray-700">₩{{ number_format($kb['secondary_krw']) }}</span>
                 </div>
                 <div class="flex justify-between text-xs">
-                    <span class="text-gray-500">예상 환차 <span class="text-[10px] text-gray-400">(2차 완료 시 확정)</span></span>
+                    <span class="text-gray-500">{{ __('settlement.krw_expected_diff') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_expected_diff_sub') }}</span></span>
                     @if($kb['exchange_diff'] > 0)
-                    <span class="text-emerald-600 font-medium">+₩{{ number_format($kb['exchange_diff']) }} 환차익</span>
+                    <span class="text-emerald-600 font-medium">+₩{{ number_format($kb['exchange_diff']) }} {{ __('settlement.diff_profit_suffix') }}</span>
                     @elseif($kb['exchange_diff'] < 0)
-                    <span class="text-red-600 font-medium">-₩{{ number_format(abs($kb['exchange_diff'])) }} 환차손</span>
+                    <span class="text-red-600 font-medium">-₩{{ number_format(abs($kb['exchange_diff'])) }} {{ __('settlement.diff_loss_suffix') }}</span>
                     @else
-                    <span class="text-gray-400">₩0 (동일)</span>
+                    <span class="text-gray-400">{{ __('settlement.diff_same') }}</span>
                     @endif
                 </div>
                 {{-- 회의확장씬 #9 보강 안내 (2026-05-23) — 기타비용 수정 위치 안내. --}}
@@ -1140,15 +1122,14 @@ new #[Layout('components.layouts.app')] class extends Component
                         : null;
                 @endphp
                 <div class="mt-2 rounded border border-blue-200 bg-blue-50 px-2 py-2 text-[11px] text-blue-800 space-y-1">
-                    <div class="font-semibold">📋 기타비용 (말소·면허·탁송·보험·이전비 등) 실측 정정</div>
+                    <div class="font-semibold">{{ __('settlement.extra_cost_title') }}</div>
                     <div class="text-blue-700">
-                        2차 대기 중에는 <strong>차량 편집 패널 → 매입 탭</strong>에서 기타비용 9개 수정 가능합니다.
-                        수정 후 저장 시 <strong>총마진·정산액·실지급액이 자동 재계산</strong>됩니다.
+                        {{ __('settlement.extra_body_1') }}<strong>{{ __('settlement.extra_strong_1') }}</strong>{{ __('settlement.extra_body_2') }}<strong>{{ __('settlement.extra_strong_2') }}</strong>{{ __('settlement.extra_body_3') }}
                     </div>
                     @if($vehicleEditUrl)
                     <a href="{{ $vehicleEditUrl }}" wire:navigate
                        class="inline-flex items-center gap-1 mt-1 text-violet-700 hover:underline font-medium">
-                        → 차량 편집으로 이동
+                        {{ __('settlement.btn_vehicle_edit') }}
                     </a>
                     @endif
                 </div>
@@ -1156,9 +1137,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 @if($canEditRate)
                 <button type="button"
                         wire:click="closeSecondarySettlement({{ $this->editingId }})"
-                        wire:confirm="2차 정산을 최종 마무리하시겠습니까? 환율 {{ number_format($kb['current_rate'], 2) }} 기준으로 확정되며 이후 회계 잠금됩니다."
+                        wire:confirm="{{ __('settlement.confirm_close_secondary_rate', ['rate' => number_format($kb['current_rate'], 2)]) }}"
                         class="mt-2 w-full rounded bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700">
-                    2차 정산 완료 (현재 환율 확정)
+                    {{ __('settlement.btn_close_secondary_full') }}
                 </button>
                 @endif
                 @else
@@ -1170,32 +1151,32 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endphp
                 @if($closedRate !== null)
                 <div class="flex justify-between text-gray-600 text-xs">
-                    <span>확정 환율 <span class="text-[10px] text-gray-400">(2차 완료 시점)</span></span>
+                    <span>{{ __('settlement.krw_closed_rate') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_closed_rate_sub') }}</span></span>
                     <span class="font-medium text-gray-700">{{ number_format((float) $closedRate, 4) }}</span>
                 </div>
                 @endif
                 <div class="flex justify-between text-gray-700">
-                    <span>정산 시점 KRW 합 <span class="text-xs text-gray-400">(2차 정산 확정 환율)</span></span>
+                    <span>{{ __('settlement.krw_secondary_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_secondary_closed_sub') }}</span></span>
                     <span class="font-medium">₩{{ number_format($kb['secondary_krw']) }}</span>
                 </div>
                 <div class="flex justify-between font-semibold">
-                    <span class="text-gray-800">환차 (확정)</span>
+                    <span class="text-gray-800">{{ __('settlement.krw_diff_confirmed') }}</span>
                     @if($kb['exchange_diff'] > 0)
-                    <span class="text-emerald-600">+₩{{ number_format($kb['exchange_diff']) }} 환차익</span>
+                    <span class="text-emerald-600">+₩{{ number_format($kb['exchange_diff']) }} {{ __('settlement.diff_profit_suffix') }}</span>
                     @elseif($kb['exchange_diff'] < 0)
-                    <span class="text-red-600">-₩{{ number_format(abs($kb['exchange_diff'])) }} 환차손</span>
+                    <span class="text-red-600">-₩{{ number_format(abs($kb['exchange_diff'])) }} {{ __('settlement.diff_loss_suffix') }}</span>
                     @else
-                    <span class="text-gray-500">₩0 (동일)</span>
+                    <span class="text-gray-500">{{ __('settlement.diff_same') }}</span>
                     @endif
                 </div>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 반영 실지급액 안내 (프리랜서만, 1:1 적용). --}}
                 @if($settlement_type === 'ratio')
                 <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
-                    <strong>실지급액 환차 자동 반영</strong> — 프리랜서(비율제) 정산금에 환차 1:1 가산됨 (회의확장씬 #6+7).
+                    <strong>{{ __('settlement.freelance_exchange_strong') }}</strong>{{ __('settlement.freelance_exchange_note') }}
                 </div>
                 @elseif($settlement_type === 'per_unit')
                 <div class="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500">
-                    사내직원(건당제) — 환차는 실지급액에 미반영 (회사 부담).
+                    {{ __('settlement.employee_exchange_note') }}
                 </div>
                 @endif
                 @endif
@@ -1208,14 +1189,14 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <div class="section-header">
                 <span class="section-dot bg-purple-500"></span>
-                <span class="section-title">정산 설정</span>
+                <span class="section-title">{{ __('settlement.section_settle') }}</span>
             </div>
 
             {{-- 담당자 --}}
             <div class="mb-3">
-                <label class="label-base">영업담당자</label>
+                <label class="label-base">{{ __('settlement.field_salesman') }}</label>
                 <select wire:model="salesman_id" class="input-base">
-                    <option value="">담당자 없음</option>
+                    <option value="">{{ __('settlement.salesman_none') }}</option>
                     @foreach($this->salesmen as $sm)
                     <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                     @endforeach
@@ -1224,39 +1205,39 @@ new #[Layout('components.layouts.app')] class extends Component
 
             {{-- 정산방식 --}}
             <div class="mb-3">
-                <label class="label-base">정산방식 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('settlement.field_type') }} <span class="text-red-500">*</span></label>
                 <div class="mt-1.5 flex gap-5">
                     <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                         <input wire:model.live="settlement_type" type="radio" value="ratio" class="accent-primary" />
-                        비율제
+                        {{ __('settlement.type_ratio') }}
                     </label>
                     <label class="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                         <input wire:model.live="settlement_type" type="radio" value="per_unit" class="accent-primary" />
-                        건당제
+                        {{ __('settlement.type_per_unit') }}
                     </label>
                 </div>
             </div>
 
             @if($settlement_type === 'ratio')
             <div class="mb-3">
-                <label class="label-base">비율 (%) <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('settlement.field_ratio') }} <span class="text-red-500">*</span></label>
                 <input wire:model.live.debounce.500ms="settlement_ratio"
                        type="number" step="0.01" min="0" max="100"
-                       class="input-base" placeholder="예: 30.00" />
+                       class="input-base" placeholder="{{ __('settlement.field_ratio_ph') }}" />
                 @error('settlement_ratio')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @else
             <div class="mb-3">
-                <label class="label-base">건당 금액 (원) <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('settlement.field_per_unit') }} <span class="text-red-500">*</span></label>
                 <input wire:model.live.debounce.500ms="per_unit_amount"
                        type="number" step="1" min="0"
-                       class="input-base" placeholder="예: 500000" />
+                       class="input-base" placeholder="{{ __('settlement.field_per_unit_ph') }}" />
                 @error('per_unit_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif
 
             <div class="mb-3">
-                <label class="label-base">기타공제 (원)</label>
+                <label class="label-base">{{ __('settlement.field_other_deduction') }}</label>
                 <input wire:model.live.debounce.500ms="other_deduction"
                        type="number" step="1" min="0"
                        class="input-base" placeholder="0" />
@@ -1267,11 +1248,11 @@ new #[Layout('components.layouts.app')] class extends Component
         @if(! empty($this->marginData))
         <div class="rounded-lg bg-purple-50 p-3 text-sm space-y-1.5">
             <div class="flex justify-between text-gray-600">
-                <span>정산액
+                <span>{{ __('settlement.result_settlement_amount') }}
                     @if($settlement_type === 'ratio')
-                        <span class="text-xs text-gray-400">총마진 × {{ ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : 50 }}%</span>
+                        <span class="text-xs text-gray-400">{{ __('settlement.result_ratio_formula', ['ratio' => ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : 50]) }}</span>
                     @else
-                        <span class="text-xs text-gray-400">건당 고정</span>
+                        <span class="text-xs text-gray-400">{{ __('settlement.result_per_unit_formula') }}</span>
                     @endif
                 </span>
                 <span class="font-medium">₩{{ number_format($this->marginData['settlementAmount']) }}</span>
@@ -1279,18 +1260,18 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 2026-05-21 — 서류비 행 추가. 프리랜서(ratio)만 5만원 자동 차감 --}}
             @if($this->marginData['documentFee'] > 0)
             <div class="flex justify-between text-gray-500">
-                <span>서류비 <span class="text-xs text-gray-400">(프리랜서 자동)</span></span>
+                <span>{{ __('settlement.result_document_fee') }} <span class="text-xs text-gray-400">{{ __('settlement.result_document_fee_sub') }}</span></span>
                 <span class="text-red-500">- ₩{{ number_format($this->marginData['documentFee']) }}</span>
             </div>
             @endif
             <div class="flex justify-between text-gray-500">
-                <span>기타공제</span>
+                <span>{{ __('settlement.result_other_deduction') }}</span>
                 <span class="text-red-500">- ₩{{ number_format((int) ($other_deduction ?? 0)) }}</span>
             </div>
             {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 자동 반영 라인 (프리랜서 closed 일 때만). --}}
             @if(! empty($this->marginData['exchangeDiff']))
             <div class="flex justify-between text-gray-600">
-                <span>환차 (2차 확정) <span class="text-xs text-gray-400">(프리랜서 1:1 반영)</span></span>
+                <span>{{ __('settlement.result_exchange') }} <span class="text-xs text-gray-400">{{ __('settlement.result_exchange_sub') }}</span></span>
                 @if($this->marginData['exchangeDiff'] > 0)
                 <span class="text-emerald-600">+ ₩{{ number_format($this->marginData['exchangeDiff']) }}</span>
                 @else
@@ -1301,7 +1282,7 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 새회의 #8 보강 (2026-05-23) — 전월 이월 (영업담당자 카운오버). --}}
             @if(! empty($this->marginData['carryoverIn']))
             <div class="flex justify-between text-gray-600">
-                <span>전월 이월 <span class="text-xs text-gray-400">(영업담당자 누적 잔액)</span></span>
+                <span>{{ __('settlement.result_carryover_in') }} <span class="text-xs text-gray-400">{{ __('settlement.result_carryover_in_sub') }}</span></span>
                 @if($this->marginData['carryoverIn'] > 0)
                 <span class="text-emerald-600">+ ₩{{ number_format($this->marginData['carryoverIn']) }}</span>
                 @else
@@ -1311,7 +1292,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @endif
             <hr class="border-purple-200" />
             <div class="flex justify-between text-base font-bold">
-                <span class="text-gray-800">실지급액</span>
+                <span class="text-gray-800">{{ __('settlement.result_actual_payout') }}</span>
                 <span class="{{ $this->marginData['actualPayout'] < 0 ? 'text-red-600' : 'text-purple-700' }}">
                     ₩{{ number_format($this->marginData['actualPayout']) }}
                 </span>
@@ -1319,13 +1300,13 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 새회의 #8 보강 (2026-05-23) — 다음 달 이월 표시 (closed + carryover_out_krw 존재 시). --}}
             @if(! empty($this->marginData['carryoverOut']))
             <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
-                <strong>다음 달 이월</strong>
+                <strong>{{ __('settlement.result_carryover_out') }}</strong>
                 @if($this->marginData['carryoverOut'] > 0)
                 <span class="text-emerald-700">+₩{{ number_format($this->marginData['carryoverOut']) }}</span>
                 @else
                 <span class="text-red-600">-₩{{ number_format(abs($this->marginData['carryoverOut'])) }}</span>
                 @endif
-                — 이 영업담당자의 다음 정산에 자동 가산/차감
+                {{ __('settlement.result_carryover_out_note') }}
             </div>
             @endif
         </div>
@@ -1335,31 +1316,31 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <div class="section-header">
                 <span class="section-dot bg-amber-500"></span>
-                <span class="section-title">진행상태</span>
+                <span class="section-title">{{ __('settlement.section_status') }}</span>
             </div>
             <select wire:model="settlement_status" class="input-base">
-                <option value="pending">대기</option>
-                <option value="calculating">계산중</option>
-                <option value="confirmed">확정</option>
-                <option value="paid">지급완료</option>
+                <option value="pending">{{ __('settlement.status.pending') }}</option>
+                <option value="calculating">{{ __('settlement.status.calculating') }}</option>
+                <option value="confirmed">{{ __('settlement.status.confirmed') }}</option>
+                <option value="paid">{{ __('settlement.status.paid') }}</option>
             </select>
             @if($editingId)
             @php
                 $existing = \App\Models\Settlement::find($editingId);
             @endphp
             @if($existing?->confirmed_at)
-            <p class="mt-1 text-xs text-gray-400">확정일: {{ $existing->confirmed_at->format('Y-m-d H:i') }}</p>
+            <p class="mt-1 text-xs text-gray-400">{{ __('settlement.confirmed_at', ['datetime' => $existing->confirmed_at->format('Y-m-d H:i')]) }}</p>
             @endif
             @if($existing?->paid_at)
-            <p class="mt-0.5 text-xs text-gray-400">지급일: {{ $existing->paid_at->format('Y-m-d H:i') }}</p>
+            <p class="mt-0.5 text-xs text-gray-400">{{ __('settlement.paid_at', ['datetime' => $existing->paid_at->format('Y-m-d H:i')]) }}</p>
             @endif
             @endif
         </div>
 
         {{-- 메모 --}}
         <div>
-            <label class="label-base">메모</label>
-            <textarea wire:model="note" class="input-base" rows="2" placeholder="특이사항 등"></textarea>
+            <label class="label-base">{{ __('settlement.field_memo') }}</label>
+            <textarea wire:model="note" class="input-base" rows="2" placeholder="{{ __('settlement.memo_ph') }}"></textarea>
         </div>
 
     </div>
@@ -1368,12 +1349,12 @@ new #[Layout('components.layouts.app')] class extends Component
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
         <button wire:click="close"
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-            취소
+            {{ __('common.cancel') }}
         </button>
         <button wire:click="save" class="btn-primary"
                 wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">저장</span>
-            <span wire:loading wire:target="save">저장 중...</span>
+            <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span>
+            <span wire:loading wire:target="save">{{ __('common.saving') }}</span>
         </button>
     </div>
 

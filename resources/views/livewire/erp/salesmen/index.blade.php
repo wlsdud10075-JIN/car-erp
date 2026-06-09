@@ -86,7 +86,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 2026-05-21 사용자 결정: User 가 마스터. 편집 모드에서 name/email/user_id/type 은 read-only.
         // /admin/users 폼이 자동으로 Salesman row 생성·동기화. 이 화면은 보충 정보(전화·메모·활성) 입력 전용.
         if ($this->editingId) {
-            $this->validate(['name' => 'required|string|max:100'], [], ['name' => '이름']);
+            $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
             $sm = Salesman::findOrFail($this->editingId);
             // 보충 필드만 update — name/email/user_id/type 은 손대지 않음 (User 마스터 보호).
             $sm->update([
@@ -96,7 +96,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]);
         } else {
             // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
-            $this->validate(['name' => 'required|string|max:100'], [], ['name' => '이름']);
+            $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
             $data = [
                 'name'      => $this->name,
                 'user_id'   => $this->user_id_str !== '' ? (int) $this->user_id_str : null,
@@ -116,7 +116,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         unset($this->salesmen);
         // 2026-05-21 사용자 피드백 — 저장 시 시각 피드백 + 패널 자동 닫기.
-        $this->dispatch('notify', message: '영업담당자 정보가 저장됐습니다.', type: 'success');
+        $this->dispatch('notify', message: __('salesman.saved'), type: 'success');
         $this->close();
     }
 
@@ -124,7 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         Salesman::findOrFail($id)->delete();
         unset($this->salesmen);
-        session()->flash('success', '영업담당자가 삭제됐습니다.');
+        session()->flash('success', __('salesman.deleted'));
     }
 
     public function search(): void
@@ -152,28 +152,28 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">영업담당자 관리</h1>
-        <p class="mt-0.5 text-xs text-gray-500">총 {{ $this->salesmen->total() }}명</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('salesman.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('salesman.total', ['count' => $this->salesmen->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            담당자 등록
+            {{ __('salesman.create_btn') }}
         </button>
     </div>
 </div>
 
 {{-- 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="이름 · 이메일 · 전화"
+    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('salesman.search_ph') }}"
            class="input-filter w-64" />
-    <button wire:click="search" class="btn-search">조회</button>
+    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 {{-- 테이블 (데스크탑) --}}
@@ -181,11 +181,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">이름</th>
-                <th class="pb-2 pr-4 font-medium">연결 계정</th>
-                <th class="pb-2 pr-4 font-medium">전화</th>
-                <th class="pb-2 pr-4 font-medium">이메일</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.account') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -198,22 +198,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->email ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">
-                        {{ $sm->is_active ? '활성' : '비활성' }}
+                        {{ $sm->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
                 <td class="py-3 text-right">
                     <div class="flex items-center justify-end gap-3">
                         <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                            onclick="event.stopPropagation()"
-                           class="text-xs text-violet-600 hover:underline">캐시플로우</a>
+                           class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
                         <button wire:click.stop="delete({{ $sm->id }})"
-                                wire:confirm="{{ $sm->name }} 담당자를 삭제하시겠습니까?"
-                                class="text-xs text-red-400 hover:text-red-600">삭제</button>
+                                wire:confirm="{{ __('salesman.delete_confirm', ['name' => $sm->name]) }}"
+                                class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                     </div>
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">영업담당자가 없습니다.</td></tr>
+            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -229,14 +229,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
             </div>
             <div class="flex items-center gap-2">
-                <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? '활성' : '비활성' }}</span>
+                <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? __('common.active') : __('common.inactive') }}</span>
                 <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
-                   class="text-xs text-violet-600 hover:underline">캐시플로우</a>
+                   class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
             </div>
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">영업담당자가 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</div>
     @endforelse
 </div>
 
@@ -251,7 +251,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '영업담당자 수정' : '영업담당자 등록' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('salesman.edit_title') : __('salesman.create_title') }}</h2>
         <button wire:click="close" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -262,28 +262,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 2026-05-21 — 편집 시 사용자 마스터 안내 배너 --}}
         @if($editingId)
         <div class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-            이름·이메일·정산 분류는 <a href="{{ route('admin.users.index') }}" wire:navigate class="font-medium underline">사용자 관리</a>에서 변경. 이 화면은 보충 정보(전화·메모·활성) 입력 전용.
+            {!! __('salesman.master_banner', ['link' => '<a href="'.route('admin.users.index').'" wire:navigate class="font-medium underline">'.e(__('salesman.users_link')).'</a>']) !!}
         </div>
         @endif
         <div>
-            <label class="label-base">이름 @if(! $editingId)<span class="text-red-500">*</span>@endif</label>
+            <label class="label-base">{{ __('salesman.field.name') }} @if(! $editingId)<span class="text-red-500">*</span>@endif</label>
             @if($editingId)
                 <div class="input-base bg-gray-50 text-gray-700">{{ $name }}</div>
             @else
-                <input wire:model="name" type="text" class="input-base" placeholder="김영업" />
+                <input wire:model="name" type="text" class="input-base" placeholder="{{ __('salesman.field.name_ph') }}" />
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             @endif
         </div>
         <div>
-            <label class="label-base">연결 계정 @if(! $editingId)<span class="text-xs text-gray-400">(선택)</span>@endif</label>
+            <label class="label-base">{{ __('salesman.field.account') }} @if(! $editingId)<span class="text-xs text-gray-400">{{ __('common.optional') }}</span>@endif</label>
             @if($editingId)
                 @php $linkedUser = $user_id_str !== '' ? \App\Models\User::find((int) $user_id_str) : null; @endphp
                 <div class="input-base bg-gray-50 text-gray-700">
-                    {{ $linkedUser ? "{$linkedUser->name} ({$linkedUser->email})" : '연결 안 됨' }}
+                    {{ $linkedUser ? "{$linkedUser->name} ({$linkedUser->email})" : __('salesman.field.linked_none') }}
                 </div>
             @else
                 <select wire:model="user_id_str" class="input-base">
-                    <option value="">-- 연결 안 함 --</option>
+                    <option value="">{{ __('salesman.field.account_none') }}</option>
                     @foreach($this->users as $u)
                     <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->email }})</option>
                     @endforeach
@@ -293,14 +293,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="grid grid-cols-2 gap-3">
             {{-- 2026-05-21 — Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
             <div>
-                <label class="label-base">전화</label>
+                <label class="label-base">{{ __('common.phone') }}</label>
                 <input wire:model="phone" type="tel" class="input-base"
                        placeholder="01012345678"
                        maxlength="13"
                        x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" />
             </div>
             <div>
-                <label class="label-base">이메일</label>
+                <label class="label-base">{{ __('common.email') }}</label>
                 @if($editingId)
                     <div class="input-base bg-gray-50 text-gray-700">{{ $email ?: '-' }}</div>
                 @else
@@ -313,29 +313,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         @php
             $editingSalesman = \App\Models\Salesman::with('user')->find($editingId);
             $linkedUserType  = $editingSalesman?->user?->type;
-            $typeLabel       = $linkedUserType ? (\App\Models\User::TYPES[$linkedUserType] ?? '-') : null;
+            $typeLabel       = $linkedUserType ? __('salesman.type.'.$linkedUserType) : null;
         @endphp
         <div>
-            <label class="label-base">정산 분류</label>
+            <label class="label-base">{{ __('salesman.field.settlement_type') }}</label>
             <div class="input-base bg-gray-50 text-gray-700">
                 @if($typeLabel)
-                    {{ $typeLabel }} ({{ $linkedUserType === 'employee' ? '건당' : '비율' }} 정산)
+                    {{ $typeLabel }} {{ __('salesman.type_suffix.'.$linkedUserType) }}
                 @elseif($editingSalesman?->user_id)
-                    <span class="text-amber-600">미설정 — 사용자 관리에서 입력 필요</span>
+                    <span class="text-amber-600">{{ __('salesman.field.type_unset') }}</span>
                 @else
-                    <span class="text-gray-400">로그인 계정 미연결</span>
+                    <span class="text-gray-400">{{ __('salesman.field.type_no_account') }}</span>
                 @endif
             </div>
-            <p class="mt-1 text-[11px] text-gray-500">정산 분류는 <a href="{{ route('admin.users.index') }}" wire:navigate class="text-violet-600 hover:underline">사용자 관리</a>에서 변경 (role=영업)</p>
+            <p class="mt-1 text-[11px] text-gray-500">{!! __('salesman.type_note', ['link' => '<a href="'.route('admin.users.index').'" wire:navigate class="text-violet-600 hover:underline">'.e(__('salesman.users_link')).'</a>']) !!}</p>
         </div>
         @endif
         <div>
-            <label class="label-base">메모</label>
+            <label class="label-base">{{ __('common.memo') }}</label>
             <textarea wire:model="memo" class="input-base" rows="2"></textarea>
         </div>
         <div>
             <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input wire:model="is_active" type="checkbox" class="rounded" /> 활성
+                <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
             </label>
         </div>
         @if($editingId)
@@ -343,7 +343,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <a href="{{ route('erp.salesmen.cashflow', $editingId) }}" wire:navigate
                class="inline-flex items-center gap-1.5 text-sm text-violet-600 hover:underline">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-                캐시플로우 보기
+                {{ __('salesman.cashflow_view') }}
             </a>
         </div>
         @endif
@@ -351,9 +351,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 푸터 --}}
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
-        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">저장</span><span wire:loading wire:target="save">저장 중...</span>
+            <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>
         </button>
     </div>
 

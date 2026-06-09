@@ -36,9 +36,13 @@ class User extends Authenticatable
         'permission',
         'role',
         'type',
+        'locale',
         'manager_user_id',
         'last_login_at',
     ];
+
+    // i18n Phase 0 — 지원 언어. 'ko' 기본(항상), 'en'은 super가 기능설정에서 활성화해야 노출.
+    public const LOCALES = ['ko', 'en'];
 
     protected $hidden = [
         'password',

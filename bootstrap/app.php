@@ -7,6 +7,7 @@ use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\ErpMiddleware;
 use App\Http\Middleware\ReceivableMiddleware;
 use App\Http\Middleware\SalesMiddleware;
+use App\Http\Middleware\SetLocale;
 use App\Http\Middleware\SettlementMiddleware;
 use App\Http\Middleware\SuperAdminMiddleware;
 use Illuminate\Foundation\Application;
@@ -20,6 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // i18n Phase 0 — 모든 web 요청에서 사용자 언어 적용
+        $middleware->web(append: [SetLocale::class]);
+
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'admin-dashboard' => AdminDashboardMiddleware::class,

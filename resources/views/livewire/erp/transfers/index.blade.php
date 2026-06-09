@@ -90,7 +90,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         if (! auth()->user()?->canConfirmFinanceTransfer()) {
-            abort(403, '재무 확정 권한이 없습니다.');
+            abort(403, __('transfer.forbidden'));
         }
     }
 
@@ -189,14 +189,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->tabType === 'sale_payment') {
             $p = FinalPayment::find($id);
             if (! $p || $p->confirmed_at !== null || $p->transfer_id !== null) {
-                $this->dispatch('notify', message: '확정 대기 상태의 판매 잔금만 처리할 수 있습니다.', type: 'warning');
+                $this->dispatch('notify', message: __('transfer.msg.only_awaiting_sale'), type: 'warning');
 
                 return;
             }
         } elseif ($this->tabType === 'purchase_payment') {
             $p = PurchaseBalancePayment::find($id);
             if (! $p || $p->confirmed_at !== null) {
-                $this->dispatch('notify', message: '확정 대기 상태의 매입 잔금만 처리할 수 있습니다.', type: 'warning');
+                $this->dispatch('notify', message: __('transfer.msg.only_awaiting_purchase'), type: 'warning');
 
                 return;
             }
@@ -230,13 +230,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'purchase_total' => (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0),
             ];
 
-            $target = $this->modalPurchaseFrom ?: '매입처';
+            $target = $this->modalPurchaseFrom ?: __('transfer.remit_target_fallback');
             $bank = $this->modalPurchaseBank ?: '';
             // claudefinalreview 3-2 — 송금메모에서 계좌번호 제외(암호화 우회 방지).
             // 계좌는 화면(modalPurchaseAccount)에만 복호화 표시, finance_note 평문엔 미저장.
             if ($bank !== '' || ($this->modalPurchaseFrom ?: '') !== '') {
                 $parts = array_values(array_filter([$target, $bank], fn ($s) => $s !== ''));
-                $this->financeNote = implode('/', $parts).' 계좌로 송금';
+                $this->financeNote = implode('/', $parts).__('transfer.remit_suffix');
             }
         }
 
@@ -268,25 +268,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($this->tabType === 'sale_payment') {
                 $p = FinalPayment::find($this->modalPaymentId);
                 if (! $p) {
-                    throw new \DomainException('판매 잔금을 찾을 수 없습니다.');
+                    throw new \DomainException(__('transfer.msg.sale_not_found'));
                 }
                 $service->confirmPayment($p, auth()->user(), $note);
-                $msg = '판매 잔금 재무 확정 완료 — ledger 반영됨.';
+                $msg = __('transfer.msg.sale_confirmed');
             } elseif ($this->tabType === 'purchase_payment') {
                 $p = PurchaseBalancePayment::find($this->modalPaymentId);
                 if (! $p) {
-                    throw new \DomainException('매입 잔금을 찾을 수 없습니다.');
+                    throw new \DomainException(__('transfer.msg.purchase_not_found'));
                 }
                 $service->confirmPurchasePayment($p, auth()->user(), $note);
-                $msg = '매입 잔금 재무 확정 완료 — ledger 반영됨.';
+                $msg = __('transfer.msg.purchase_confirmed');
             } else {
-                throw new \DomainException('알 수 없는 탭입니다.');
+                throw new \DomainException(__('transfer.msg.unknown_tab'));
             }
 
             $this->dispatch('notify', message: $msg, type: 'success');
             $this->closeModal();
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '재무 확정 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.confirm_failed', ['error' => $e->getMessage()]), type: 'error');
             $this->closeModal();
         }
     }
@@ -298,12 +298,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
             InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
         ], true)) {
-            $this->dispatch('notify', message: '재무 처리 대기 상태의 이체만 확정할 수 있습니다.', type: 'warning');
+            $this->dispatch('notify', message: __('transfer.msg.only_awaiting_transfer'), type: 'warning');
 
             return;
         }
         if ($transfer->approver_id === auth()->id()) {
-            $this->dispatch('notify', message: '본인이 승인한 이체는 직접 재무 확정할 수 없습니다 (SoD).', type: 'warning');
+            $this->dispatch('notify', message: __('transfer.msg.self_confirm_block'), type: 'warning');
 
             return;
         }
@@ -312,7 +312,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
             InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
         ], true)) {
-            $this->dispatch('notify', message: '재무 거부는 awaiting 상태에서만 가능합니다.', type: 'warning');
+            $this->dispatch('notify', message: __('transfer.msg.reject_only_awaiting'), type: 'warning');
 
             return;
         }
@@ -381,10 +381,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'newPbpDate' => ['required', 'date'],
             'newPbpNote' => ['nullable', 'string', 'max:255'],
         ], [], [
-            'newPbpVehicleId' => '차량',
-            'newPbpAmountStr' => '금액',
-            'newPbpDate' => '지급일',
-            'newPbpNote' => '메모',
+            'newPbpVehicleId' => __('transfer.attr.vehicle'),
+            'newPbpAmountStr' => __('transfer.attr.amount'),
+            'newPbpDate' => __('transfer.attr.date'),
+            'newPbpNote' => __('transfer.attr.memo'),
         ]);
 
         try {
@@ -398,16 +398,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             if ($this->newPbpImmediateConfirm) {
                 app(PaymentConfirmationService::class)
-                    ->confirmPurchasePayment($pbp, auth()->user(), '재무 신규 입력 + 즉시 확정');
-                $msg = '매입 잔금 row 추가 + 재무 확정 완료.';
+                    ->confirmPurchasePayment($pbp, auth()->user(), __('transfer.msg.pbp_immediate_note'));
+                $msg = __('transfer.msg.pbp_added_confirmed');
             } else {
-                $msg = '매입 잔금 Draft row 추가 — 확정은 별도 처리.';
+                $msg = __('transfer.msg.pbp_added_draft');
             }
 
             $this->dispatch('notify', message: $msg, type: 'success');
             $this->closeNewPbpModal();
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '매입 잔금 추가 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.pbp_add_failed', ['error' => $e->getMessage()]), type: 'error');
         }
     }
 
@@ -415,7 +415,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $transfer = InterVehicleTransfer::find($this->modalTransferId);
         if (! $transfer) {
-            $this->dispatch('notify', message: '이체 정보를 찾을 수 없습니다.', type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.transfer_not_found'), type: 'error');
             $this->closeModal();
 
             return;
@@ -427,18 +427,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
                 $service->confirmByFinance($transfer, auth()->user(), $note);
-                $msg = '재무 확정 완료 — 자금 이동이 시스템에 반영되었습니다.';
+                $msg = __('transfer.msg.transfer_confirmed');
             } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
                 $service->confirmVoidByFinance($transfer, auth()->user(), $note);
-                $msg = '취소 재무 확정 완료 — 원상복구가 시스템에 반영되었습니다.';
+                $msg = __('transfer.msg.void_confirmed');
             } else {
-                throw new \DomainException('재무 처리 대기 상태가 아닙니다.');
+                throw new \DomainException(__('transfer.msg.not_awaiting'));
             }
 
             $this->dispatch('notify', message: $msg, type: 'success');
             $this->closeModal();
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '재무 확정 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.confirm_failed', ['error' => $e->getMessage()]), type: 'error');
             $this->closeModal();
         }
     }
@@ -451,12 +451,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->validate(
             ['rejectReason' => ['required', 'string', 'min:5']],
-            ['rejectReason.required' => '거부 사유를 5자 이상 입력하세요.', 'rejectReason.min' => '거부 사유를 5자 이상 입력하세요.'],
+            ['rejectReason.required' => __('transfer.msg.reject_reason_min'), 'rejectReason.min' => __('transfer.msg.reject_reason_min')],
         );
 
         $transfer = InterVehicleTransfer::find($this->modalTransferId);
         if (! $transfer) {
-            $this->dispatch('notify', message: '이체 정보를 찾을 수 없습니다.', type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.transfer_not_found'), type: 'error');
             $this->closeModal();
 
             return;
@@ -466,18 +466,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             $service = app(InterVehicleTransferService::class);
             if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
                 $service->rejectByFinance($transfer, auth()->user(), $this->rejectReason);
-                $msg = '재무 거부 완료 — 영업에게 사유가 노출되며 새 이체 요청이 가능해집니다.';
+                $msg = __('transfer.msg.reject_done');
             } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
                 $service->rejectVoidByFinance($transfer, auth()->user(), $this->rejectReason);
-                $msg = '취소 거부 완료 — 이체는 살아있고 영업이 다시 취소 요청 가능합니다.';
+                $msg = __('transfer.msg.void_reject_done');
             } else {
-                throw new \DomainException('재무 거부 대기 상태가 아닙니다.');
+                throw new \DomainException(__('transfer.msg.not_awaiting_reject'));
             }
 
             $this->dispatch('notify', message: $msg, type: 'success');
             $this->closeModal();
         } catch (\Throwable $e) {
-            $this->dispatch('notify', message: '재무 거부 실패: '.$e->getMessage(), type: 'error');
+            $this->dispatch('notify', message: __('transfer.msg.reject_failed', ['error' => $e->getMessage()]), type: 'error');
             $this->closeModal();
         }
     }
@@ -490,17 +490,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 헤더 --}}
     <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-            <h2 class="text-xl font-bold text-gray-800">재무 처리</h2>
+            <h2 class="text-xl font-bold text-gray-800">{{ __('transfer.title') }}</h2>
             <p class="mt-1 text-xs text-gray-500">
-                자금 이체 + 매입·판매 잔금 재무 확정 통합 페이지. 재무 확정 시점에 ledger 반영.
+                {{ __('transfer.subtitle') }}
             </p>
         </div>
         <div class="flex items-center gap-3">
             <select wire:model.live="perPage" class="input-filter">
-                <option value="10">10개씩</option>
-                <option value="30">30개씩</option>
-                <option value="50">50개씩</option>
-                <option value="100">100개씩</option>
+                <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+                <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+                <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+                <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
             </select>
         </div>
     </div>
@@ -508,9 +508,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 큐 20-C — 유형 탭 (자금 이체 / 매입 잔금 / 판매 잔금) --}}
     <div class="card flex flex-wrap items-center gap-2">
         @foreach([
-            'transfer' => ['차량 간 자금 이체', $this->awaitingCount],
-            'sale_payment' => ['판매 잔금', $this->salePaymentAwaitingCount],
-            'purchase_payment' => ['매입 잔금', $this->purchasePaymentAwaitingCount],
+            'transfer' => [__('transfer.tab.transfer'), $this->awaitingCount],
+            'sale_payment' => [__('transfer.tab.sale_payment'), $this->salePaymentAwaitingCount],
+            'purchase_payment' => [__('transfer.tab.purchase_payment'), $this->purchasePaymentAwaitingCount],
         ] as $key => [$label, $cnt])
         <button wire:click="$set('tabType', '{{ $key }}')"
                 class="rounded-lg px-4 py-2 text-sm font-medium transition
@@ -529,7 +529,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card flex flex-wrap items-center gap-2">
         <div class="flex gap-1 flex-wrap">
             @if($tabType === 'transfer')
-                @foreach(['awaiting' => '재무 대기', 'executed' => '실행 완료', 'voided' => '취소', 'finance_rejected' => '재무 거부', 'all' => '전체'] as $val => $label)
+                @foreach(['awaiting' => __('transfer.filter.awaiting'), 'executed' => __('transfer.filter.executed_transfer'), 'voided' => __('transfer.filter.voided'), 'finance_rejected' => __('transfer.filter.finance_rejected'), 'all' => __('transfer.filter.all')] as $val => $label)
                 <button wire:click="$set('statusFilter', '{{ $val }}')"
                         class="rounded-full px-3 py-1 text-xs font-medium transition
                                {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
@@ -540,7 +540,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </button>
                 @endforeach
             @else
-                @foreach(['awaiting' => '재무 대기', 'executed' => '확정 완료', 'all' => '전체'] as $val => $label)
+                @foreach(['awaiting' => __('transfer.filter.awaiting'), 'executed' => __('transfer.filter.executed_payment'), 'all' => __('transfer.filter.all')] as $val => $label)
                 <button wire:click="$set('statusFilter', '{{ $val }}')"
                         class="rounded-full px-3 py-1 text-xs font-medium transition
                                {{ $statusFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
@@ -557,14 +557,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm border-separate border-spacing-0">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">유형</th>
-                    <th class="pb-2 pr-4 font-medium">출처 → 대상</th>
-                    <th class="pb-2 pr-4 font-medium">바이어</th>
-                    <th class="pb-2 pr-4 font-medium text-right">금액</th>
-                    <th class="pb-2 pr-4 font-medium">상태</th>
-                    <th class="pb-2 pr-4 font-medium">승인자</th>
-                    <th class="pb-2 pr-4 font-medium">경과</th>
-                    <th class="pb-2 font-medium text-right">처리</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.type') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.route') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.buyer') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">{{ __('transfer.col.amount') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.approver') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.elapsed') }}</th>
+                    <th class="pb-2 font-medium text-right">{{ __('transfer.col.action') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -578,19 +578,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr class="border-b border-gray-100 hover:bg-gray-50">
                     <td class="py-3 pr-4">
                         @if($isVoid)
-                        <span class="text-[11px] font-semibold text-red-600">⊘ 취소</span>
+                        <span class="text-[11px] font-semibold text-red-600">{{ __('transfer.type_void') }}</span>
                         @else
-                        <span class="text-[11px] font-semibold text-violet-600">▶ 이체</span>
+                        <span class="text-[11px] font-semibold text-violet-600">{{ __('transfer.type_transfer') }}</span>
                         @endif
                     </td>
                     <td class="py-3 pr-4 text-xs">
                         <div class="space-y-0.5">
                             <div>
-                                <span class="text-gray-400">출처</span>
+                                <span class="text-gray-400">{{ __('transfer.col.source') }}</span>
                                 <span class="font-mono text-gray-800">{{ $t->sourceVehicle?->vehicle_number ?? '#'.$t->source_vehicle_id }}</span>
                             </div>
                             <div>
-                                <span class="text-gray-400">대상</span>
+                                <span class="text-gray-400">{{ __('transfer.col.target') }}</span>
                                 <span class="font-mono text-gray-800">{{ $t->targetVehicle?->vehicle_number ?? '#'.$t->target_vehicle_id }}</span>
                             </div>
                         </div>
@@ -600,7 +600,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ number_format($t->amount, 0) }} {{ $t->currency }}
                     </td>
                     <td class="py-3 pr-4">
-                        <span class="badge {{ $t->status_badge }}">{{ $t->status_label }}</span>
+                        <span class="badge {{ $t->status_badge }}">{{ __('transfer.status.'.$t->status) }}</span>
                     </td>
                     <td class="py-3 pr-4 text-xs text-gray-600">
                         {{ $t->approver?->name ?? '-' }}
@@ -618,43 +618,43 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($isAwaiting)
                             @if($selfConfirm)
                             <button type="button" disabled
-                                    title="본인이 승인한 이체는 직접 재무 확정할 수 없습니다 (SoD)"
+                                    title="{{ __('transfer.sod_block_title') }}"
                                     class="rounded bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-400 cursor-not-allowed">
-                                SoD 차단
+                                {{ __('transfer.sod_block') }}
                             </button>
                             @else
                             <div class="flex justify-end gap-1">
                                 <button wire:click="openModal({{ $t->id }}, 'confirm')"
                                         class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
-                                    재무 처리 완료
+                                    {{ __('transfer.process_done') }}
                                 </button>
                                 {{-- 큐 19-K/L — awaiting 2종 모두 거부 가능 (정방향: 송금 불가 / void: 환불 불가) --}}
                                 @if(in_array($t->status, [InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE], true))
                                 <button wire:click="openModal({{ $t->id }}, 'reject')"
-                                        title="{{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? '환불 불가 사유로 취소 거부 (이체는 살아있음, 영업이 다시 취소 요청 가능)' : '송금 불가 사유로 거부 (영업이 사유 확인 후 새 요청 가능)' }}"
+                                        title="{{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? __('transfer.reject_void_title') : __('transfer.reject_normal_title') }}"
                                         class="rounded bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
-                                    거부
+                                    {{ __('transfer.reject') }}
                                 </button>
                                 @endif
                             </div>
                             @endif
                         @elseif($t->status === InterVehicleTransfer::STATUS_FINANCE_REJECTED)
                             <span class="text-xs text-red-600">
-                                {{ $t->financeRejecter?->name ?? '재무' }} 거부
+                                {{ __('transfer.rejected_by', ['name' => $t->financeRejecter?->name ?? __('transfer.finance_fallback')]) }}
                             </span>
                         @else
                             <span class="text-xs text-gray-400">
                                 @if($t->confirmed_by_user_id)
-                                {{ $t->financeConfirmer?->name ?? '재무' }} 확정
+                                {{ __('transfer.confirmed_by', ['name' => $t->financeConfirmer?->name ?? __('transfer.finance_fallback')]) }}
                                 @else
-                                처리됨
+                                {{ __('transfer.processed') }}
                                 @endif
                             </span>
                         @endif
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">조건에 맞는 자금 이체가 없습니다.</td></tr>
+                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_transfer') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -672,18 +672,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="flex items-center justify-between">
                 <div class="font-medium text-gray-800">
                     @if($isVoid)
-                    <span class="text-red-600">⊘ 취소</span>
+                    <span class="text-red-600">{{ __('transfer.type_void') }}</span>
                     @else
-                    <span class="text-violet-600">▶ 이체</span>
+                    <span class="text-violet-600">{{ __('transfer.type_transfer') }}</span>
                     @endif
                     · <span class="font-mono text-xs">{{ $t->sourceVehicle?->vehicle_number ?? '#'.$t->source_vehicle_id }}</span>
                     →
                     <span class="font-mono text-xs">{{ $t->targetVehicle?->vehicle_number ?? '#'.$t->target_vehicle_id }}</span>
                 </div>
-                <span class="badge {{ $t->status_badge }}">{{ $t->status_label }}</span>
+                <span class="badge {{ $t->status_badge }}">{{ __('transfer.status.'.$t->status) }}</span>
             </div>
             <div class="mt-1 text-xs text-gray-600">
-                {{ $t->buyer?->name ?? '#'.$t->buyer_id }} · 승인 {{ $t->approver?->name ?? '-' }}
+                {{ $t->buyer?->name ?? '#'.$t->buyer_id }} · {{ __('transfer.col.approver') }} {{ $t->approver?->name ?? '-' }}
             </div>
             <div class="mt-1 text-sm font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
                 {{ number_format($t->amount, 0) }} {{ $t->currency }}
@@ -692,17 +692,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mt-2 flex flex-col gap-1">
                 @if($selfConfirm)
                 <button disabled class="w-full rounded bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-400 cursor-not-allowed">
-                    SoD 차단 — 본인 승인 건 처리 불가
+                    {{ __('transfer.sod_block_mobile') }}
                 </button>
                 @else
                 <button wire:click="openModal({{ $t->id }}, 'confirm')"
                         class="w-full rounded bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white">
-                    재무 처리 완료
+                    {{ __('transfer.process_done') }}
                 </button>
                 @if(in_array($t->status, [InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE], true))
                 <button wire:click="openModal({{ $t->id }}, 'reject')"
                         class="w-full rounded bg-red-500 px-3 py-1.5 text-xs font-medium text-white">
-                    {{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? '거부 (환불 불가)' : '거부 (송금 불가)' }}
+                    {{ $t->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE ? __('transfer.reject_void_mobile') : __('transfer.reject_normal_mobile') }}
                 </button>
                 @endif
                 @endif
@@ -710,7 +710,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endif
         </div>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">조건에 맞는 자금 이체가 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_transfer') }}</div>
         @endforelse
     </div>
 
@@ -727,11 +727,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     @if($tabType === 'purchase_payment')
     <div class="card flex flex-wrap items-center justify-between gap-2">
         <div class="text-xs text-gray-600">
-            자동 PBP Draft 외 별도 매입 잔금 입력이 필요한 경우 (분할 지급·추가 비용 등)
+            {{ __('transfer.new_pbp_hint') }}
         </div>
         <button wire:click="openNewPbpModal"
                 class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
-            + 신규 매입 잔금 추가
+            {{ __('transfer.new_pbp_btn') }}
         </button>
     </div>
     @endif
@@ -741,13 +741,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm border-separate border-spacing-0">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">차량</th>
-                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? '바이어' : '매입처/담당' }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right">금액</th>
-                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? '입금일' : '지급일' }}</th>
-                    <th class="pb-2 pr-4 font-medium">메모</th>
-                    <th class="pb-2 pr-4 font-medium">상태</th>
-                    <th class="pb-2 font-medium text-right">처리</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.vehicle') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.buyer') : __('transfer.col.buyer_or_purchase') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">{{ __('transfer.col.amount') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.date_sale') : __('transfer.col.date_purchase') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.memo') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.status') }}</th>
+                    <th class="pb-2 font-medium text-right">{{ __('transfer.col.action') }}</th>
                 </tr>
             </thead>
             <tbody>
@@ -764,17 +764,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                     </td>
                     <td class="py-3 pr-4 text-right font-semibold text-violet-700">
-                        {{ number_format((float)$p->amount, 0) }} <span class="text-[10px] text-gray-500">원</span>
+                        {{ number_format((float)$p->amount, 0) }} <span class="text-[10px] text-gray-500">{{ __('transfer.unit_won') }}</span>
                     </td>
                     <td class="py-3 pr-4 text-xs text-gray-600">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4 text-xs text-gray-500 max-w-xs truncate">{{ $p->note ?? '' }}</td>
                     <td class="py-3 pr-4">
                         @if($isAwaiting)
-                        <span class="badge badge-amber">대기</span>
+                        <span class="badge badge-amber">{{ __('transfer.pending') }}</span>
                         @else
-                        <span class="badge badge-green">확정</span>
+                        <span class="badge badge-green">{{ __('transfer.confirmed') }}</span>
                         <div class="mt-0.5 text-[10px] text-gray-500">
-                            {{ $p->financeConfirmer?->name ?? '재무' }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
+                            {{ $p->financeConfirmer?->name ?? __('transfer.finance_fallback') }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
                         </div>
                         @endif
                     </td>
@@ -782,15 +782,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($isAwaiting)
                         <button wire:click="openPaymentModal({{ $p->id }})"
                                 class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
-                            재무 처리 완료
+                            {{ __('transfer.process_done') }}
                         </button>
                         @else
-                        <span class="text-xs text-gray-400">처리됨</span>
+                        <span class="text-xs text-gray-400">{{ __('transfer.processed') }}</span>
                         @endif
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">조건에 맞는 잔금이 없습니다.</td></tr>
+                <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_payment') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -803,7 +803,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="card-tight">
             <div class="flex items-center justify-between">
                 <div class="font-mono text-xs text-gray-800">{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</div>
-                <span class="badge {{ $isAwaiting ? 'badge-amber' : 'badge-green' }}">{{ $isAwaiting ? '대기' : '확정' }}</span>
+                <span class="badge {{ $isAwaiting ? 'badge-amber' : 'badge-green' }}">{{ $isAwaiting ? __('transfer.pending') : __('transfer.confirmed') }}</span>
             </div>
             <div class="mt-1 text-xs text-gray-600">
                 @if($isSale)
@@ -813,7 +813,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
             <div class="mt-1 text-sm font-semibold text-violet-700">
-                {{ number_format((float)$p->amount, 0) }} 원
+                {{ number_format((float)$p->amount, 0) }} {{ __('transfer.unit_won') }}
                 <span class="ml-2 text-[10px] text-gray-500">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</span>
             </div>
             @if($p->note)
@@ -822,16 +822,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($isAwaiting)
             <button wire:click="openPaymentModal({{ $p->id }})"
                     class="mt-2 w-full rounded bg-emerald-500 px-3 py-1.5 text-xs font-medium text-white">
-                재무 처리 완료
+                {{ __('transfer.process_done') }}
             </button>
             @else
             <div class="mt-1 text-[10px] text-gray-500">
-                {{ $p->financeConfirmer?->name ?? '재무' }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
+                {{ $p->financeConfirmer?->name ?? __('transfer.finance_fallback') }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
             </div>
             @endif
         </div>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">조건에 맞는 잔금이 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_payment') }}</div>
         @endforelse
     </div>
 
@@ -850,32 +850,31 @@ new #[Layout('components.layouts.app')] class extends Component {
             $modalTransfer = $modalTransferId ? \App\Models\InterVehicleTransfer::find($modalTransferId) : null;
             $isVoidReject = $modalTransfer?->status === \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE;
         @endphp
-        <h3 class="text-base font-semibold text-red-700">{{ $isVoidReject ? '취소 거부 확인' : '재무 거부 확인' }}</h3>
+        <h3 class="text-base font-semibold text-red-700">{{ $isVoidReject ? __('transfer.reject_modal.title_void') : __('transfer.reject_modal.title_normal') }}</h3>
         <p class="mt-2 text-sm text-gray-600">
             @if($isVoidReject)
-            환불 불가·역송금 거부 등 사유로 취소를 거부합니다.
-            <strong>이체 자체는 살아있고 final_payment 페어는 그대로 유지</strong>됩니다.
-            영업이 사유를 확인하고 다시 취소 요청 가능합니다.
+            {{ __('transfer.reject_modal.desc_void_1') }}
+            <strong>{{ __('transfer.reject_modal.desc_void_strong') }}</strong>{{ __('transfer.reject_modal.desc_void_2') }}
             @else
-            통장 잔액 부족·송금 실패·입금자 불일치 등 송금 불가 사유로 거부합니다.
-            <strong>final_payment 는 생성되지 않으며 ledger 영향이 없습니다.</strong>
-            영업에게 거부 사유가 노출되며 새 이체 요청이 가능해집니다.
+            {{ __('transfer.reject_modal.desc_normal_1') }}
+            <strong>{{ __('transfer.reject_modal.desc_normal_strong') }}</strong>
+            {{ __('transfer.reject_modal.desc_normal_2') }}
             @endif
         </p>
         <div class="mt-3">
-            <label class="block text-xs text-gray-500 mb-1">거부 사유 (필수, 5자 이상)</label>
+            <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.reject_modal.reason_label') }}</label>
             <textarea wire:model="rejectReason" rows="3"
                       class="input-base"
-                      placeholder="예: 통장 잔액 부족 / 입금자명 불일치 / 송금 보류 등"></textarea>
+                      placeholder="{{ __('transfer.reject_modal.reason_ph') }}"></textarea>
             @error('rejectReason') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
         </div>
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
             <button wire:click="reject"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
-                재무 거부
+                {{ __('transfer.reject_modal.submit') }}
             </button>
         </div>
         @else
@@ -883,14 +882,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 20-C — tabType별 confirm 액션 분기
             $confirmAction = $tabType === 'transfer' ? 'confirm' : 'confirmPayment';
             $confirmTitle = match($tabType) {
-                'sale_payment' => '판매 잔금 재무 확정',
-                'purchase_payment' => '매입 잔금 재무 확정',
-                default => '재무 처리 완료 확인',
+                'sale_payment' => __('transfer.confirm_modal.title_sale'),
+                'purchase_payment' => __('transfer.confirm_modal.title_purchase'),
+                default => __('transfer.confirm_modal.title_default'),
             };
             $confirmDesc = match($tabType) {
-                'sale_payment' => '바이어 입금이 통장에 들어왔는지 확인 후 [재무 처리 완료]를 클릭하세요. 이 시점에 confirmed_at SET → ledger 반영 → 미수금 감소.',
-                'purchase_payment' => '매입처 송금이 완료됐는지 확인 후 [재무 처리 완료]를 클릭하세요. 이 시점에 confirmed_at SET → ledger 반영 → 미지급 감소.',
-                default => '통장 거래가 정상적으로 처리되었는지 확인 후 [재무 처리 완료] 를 클릭하세요. 이 시점에 시스템 ledger (final_payment) 가 기록되고 양 차량 미수 캐시가 갱신됩니다.',
+                'sale_payment' => __('transfer.confirm_modal.desc_sale'),
+                'purchase_payment' => __('transfer.confirm_modal.desc_purchase'),
+                default => __('transfer.confirm_modal.desc_default'),
             };
         @endphp
         <h3 class="text-base font-semibold text-gray-900">{{ $confirmTitle }}</h3>
@@ -899,14 +898,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 22-A-2 — 매입 잔금: 매입처 송금 정보 자동 표시 (사용자 안건 2) --}}
         @if($tabType === 'purchase_payment' && ($modalPurchaseFrom || $modalPurchaseBank || $modalPurchaseAccount))
         <div class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs">
-            <div class="mb-1 font-medium text-blue-900">송금 대상 (매입처 정보)</div>
+            <div class="mb-1 font-medium text-blue-900">{{ __('transfer.confirm_modal.remit_title') }}</div>
             <dl class="grid grid-cols-[80px_1fr] gap-y-1 text-gray-700">
-                <dt class="text-gray-500">매입처</dt><dd>{{ $modalPurchaseFrom ?: '-' }}</dd>
-                <dt class="text-gray-500">은행</dt><dd>{{ $modalPurchaseBank ?: '-' }}</dd>
-                <dt class="text-gray-500">계좌번호</dt><dd class="font-mono">{{ $modalPurchaseAccount ?: '-' }}</dd>
-                <dt class="text-gray-500">예금주</dt><dd>{{ $modalPurchaseHolder ?: '-' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.remit_from') }}</dt><dd>{{ $modalPurchaseFrom ?: '-' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.remit_bank') }}</dt><dd>{{ $modalPurchaseBank ?: '-' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.remit_account') }}</dt><dd class="font-mono">{{ $modalPurchaseAccount ?: '-' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.remit_holder') }}</dt><dd>{{ $modalPurchaseHolder ?: '-' }}</dd>
                 @if($modalPurchaseBankMemo)
-                <dt class="text-gray-500">송금 메모</dt><dd class="text-gray-600">{{ $modalPurchaseBankMemo }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.remit_memo') }}</dt><dd class="text-gray-600">{{ $modalPurchaseBankMemo }}</dd>
                 @endif
             </dl>
         </div>
@@ -915,11 +914,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 2026-05-21 사용자 피드백 — 매입 잔금: 매입가/매도비/총금액 표시 --}}
         @if($tabType === 'purchase_payment' && ! empty($modalVehicleData))
         <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs">
-            <div class="mb-1 font-medium text-amber-900">차량 매입 금액</div>
+            <div class="mb-1 font-medium text-amber-900">{{ __('transfer.confirm_modal.purchase_amount_title') }}</div>
             <dl class="grid grid-cols-[80px_1fr] gap-y-1 text-gray-700">
-                <dt class="text-gray-500">매입가</dt><dd class="text-right">₩{{ number_format($modalVehicleData['purchase_price'] ?? 0) }}</dd>
-                <dt class="text-gray-500">매도비</dt><dd class="text-right">₩{{ number_format($modalVehicleData['selling_fee'] ?? 0) }}</dd>
-                <dt class="text-gray-500 font-medium border-t border-amber-200 pt-1">총금액</dt>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.purchase_price') }}</dt><dd class="text-right">₩{{ number_format($modalVehicleData['purchase_price'] ?? 0) }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.selling_fee') }}</dt><dd class="text-right">₩{{ number_format($modalVehicleData['selling_fee'] ?? 0) }}</dd>
+                <dt class="text-gray-500 font-medium border-t border-amber-200 pt-1">{{ __('transfer.confirm_modal.purchase_total') }}</dt>
                 <dd class="text-right font-bold text-amber-900 border-t border-amber-200 pt-1">₩{{ number_format($modalVehicleData['purchase_total'] ?? 0) }}</dd>
             </dl>
         </div>
@@ -928,41 +927,41 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 2026-05-21 사용자 피드백 — 판매 잔금: 판매가/커미션 등 표시 --}}
         @if($tabType === 'sale_payment' && ! empty($modalVehicleData))
         <div class="mt-3 rounded-lg border border-purple-200 bg-purple-50 p-3 text-xs">
-            <div class="mb-1 font-medium text-purple-900">차량 판매 금액 {{ $modalVehicleData['buyer_name'] ? '(바이어: '.$modalVehicleData['buyer_name'].')' : '' }}</div>
+            <div class="mb-1 font-medium text-purple-900">{{ __('transfer.confirm_modal.sale_amount_title') }} {{ $modalVehicleData['buyer_name'] ? '('.__('transfer.confirm_modal.sale_buyer').': '.$modalVehicleData['buyer_name'].')' : '' }}</div>
             @php $curr = $modalVehicleData['currency'] ?? 'KRW'; $sym = $curr === 'KRW' ? '₩' : ''; @endphp
             <dl class="grid grid-cols-[100px_1fr] gap-y-1 text-gray-700">
-                <dt class="text-gray-500">판매가</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['sale_price'] ?? 0) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.sale_price') }}</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['sale_price'] ?? 0) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
                 @if(($modalVehicleData['commission'] ?? 0) > 0)
-                <dt class="text-gray-500">+ 커미션</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['commission']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.commission') }}</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['commission']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
                 @endif
                 @if(($modalVehicleData['auto_loading'] ?? 0) > 0)
-                <dt class="text-gray-500">+ 자동하역비</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['auto_loading']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.auto_loading') }}</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['auto_loading']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
                 @endif
                 @if(($modalVehicleData['tax_dc'] ?? 0) > 0)
-                <dt class="text-gray-500">- TAX/DC</dt><dd class="text-right text-red-500">{{ $sym }}{{ number_format($modalVehicleData['tax_dc']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.tax_dc') }}</dt><dd class="text-right text-red-500">{{ $sym }}{{ number_format($modalVehicleData['tax_dc']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
                 @endif
                 @if(($modalVehicleData['transport_fee'] ?? 0) > 0)
-                <dt class="text-gray-500">+ 운임비</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['transport_fee']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
+                <dt class="text-gray-500">{{ __('transfer.confirm_modal.transport_fee') }}</dt><dd class="text-right">{{ $sym }}{{ number_format($modalVehicleData['transport_fee']) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
                 @endif
-                <dt class="text-gray-500 font-medium border-t border-purple-200 pt-1">총 판매액</dt>
+                <dt class="text-gray-500 font-medium border-t border-purple-200 pt-1">{{ __('transfer.confirm_modal.sale_total') }}</dt>
                 <dd class="text-right font-bold text-purple-900 border-t border-purple-200 pt-1">{{ $sym }}{{ number_format($modalVehicleData['sale_total'] ?? 0) }} {{ $curr !== 'KRW' ? $curr : '' }}</dd>
             </dl>
         </div>
         @endif
 
         <div class="mt-3">
-            <label class="block text-xs text-gray-500 mb-1">은행 거래 번호 또는 처리 메모 (선택)</label>
+            <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.confirm_modal.note_label') }}</label>
             <textarea wire:model="financeNote" rows="3"
                       class="input-base"
-                      placeholder="예: KB 12345-6789 / 신한 거래번호 등 — 입력 시 finance_note 에 기록"></textarea>
+                      placeholder="{{ __('transfer.confirm_modal.note_ph') }}"></textarea>
         </div>
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
             <button wire:click="{{ $confirmAction }}"
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-                재무 처리 완료
+                {{ __('transfer.process_done') }}
             </button>
         </div>
         @endif
@@ -976,52 +975,52 @@ new #[Layout('components.layouts.app')] class extends Component {
      wire:click.self="closeNewPbpModal"
      wire:key="new-pbp-modal">
     <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">매입 잔금 신규 추가</h3>
-        <p class="mt-1 text-xs text-gray-500">재무가 자동 PBP Draft 외 별도 매입 잔금 row 입력. 즉시 확정 옵션 선택 가능.</p>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('transfer.new_pbp_modal.title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('transfer.new_pbp_modal.subtitle') }}</p>
 
         <div class="mt-3 space-y-3">
             <div>
-                <label class="block text-xs text-gray-500 mb-1">대상 차량</label>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.new_pbp_modal.vehicle_label') }}</label>
                 <select wire:model="newPbpVehicleId" class="input-base">
-                    <option value="">-- 차량 선택 --</option>
+                    <option value="">{{ __('transfer.new_pbp_modal.vehicle_select') }}</option>
                     @foreach($this->purchaseEligibleVehicles as $v)
-                    <option value="{{ $v->id }}">{{ $v->vehicle_number }} ({{ $v->purchase_from ?: '미지정' }})</option>
+                    <option value="{{ $v->id }}">{{ $v->vehicle_number }} ({{ $v->purchase_from ?: __('transfer.new_pbp_modal.vehicle_unassigned') }})</option>
                     @endforeach
                 </select>
                 @error('newPbpVehicleId') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>
-                <label class="block text-xs text-gray-500 mb-1">금액 (원)</label>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.new_pbp_modal.amount_label') }}</label>
                 <input wire:model="newPbpAmountStr" type="text" class="input-base" placeholder="0" />
                 @error('newPbpAmountStr') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>
-                <label class="block text-xs text-gray-500 mb-1">지급일</label>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.new_pbp_modal.date_label') }}</label>
                 <input wire:model="newPbpDate" type="date" class="input-base" />
                 @error('newPbpDate') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
 
             <div>
-                <label class="block text-xs text-gray-500 mb-1">메모 (선택)</label>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.new_pbp_modal.memo_label') }}</label>
                 <textarea wire:model="newPbpNote" rows="2" class="input-base"
-                          placeholder="예: 2차 잔금, 탁송비, 수리비 등"></textarea>
+                          placeholder="{{ __('transfer.new_pbp_modal.memo_ph') }}"></textarea>
             </div>
 
             <label class="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                 <input wire:model="newPbpImmediateConfirm" type="checkbox" class="rounded" />
-                <span>즉시 재무 확정 (체크 시 ledger 반영 / 미체크 시 Draft 상태로 저장)</span>
+                <span>{{ __('transfer.new_pbp_modal.immediate') }}</span>
             </label>
         </div>
 
         <div class="mt-5 flex justify-end gap-2">
             <button wire:click="closeNewPbpModal" type="button"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
             <button wire:click="createNewPbp" wire:loading.attr="disabled" wire:target="createNewPbp"
                     class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-                <span wire:loading.remove wire:target="createNewPbp">추가</span>
-                <span wire:loading wire:target="createNewPbp">처리 중...</span>
+                <span wire:loading.remove wire:target="createNewPbp">{{ __('transfer.new_pbp_modal.submit') }}</span>
+                <span wire:loading wire:target="createNewPbp">{{ __('transfer.new_pbp_modal.processing') }}</span>
             </button>
         </div>
     </div>

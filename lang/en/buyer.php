@@ -1,0 +1,86 @@
+<?php
+
+// i18n — Buyer management (erp/buyers/index). Shared in common.php, ID types reuse consignee.id_type.
+return [
+    'title' => 'Buyers',
+    'create_btn' => 'Add Buyer',
+    'edit_title' => 'Edit Buyer',
+    'create_title' => 'Add Buyer',
+    'search_ph' => 'Name · email · contact',
+    'all_salesmen' => 'All Salesmen',
+    'unassigned' => 'Unassigned',
+    'empty' => 'No buyers.',
+    'delete_confirm' => 'Delete buyer :name?',
+    'saved' => 'Buyer saved.',
+    'deleted' => 'Buyer deleted.',
+    'col_name' => 'Buyer Name',
+
+    'tab' => [
+        'basic' => 'Basic Info',
+        'consignees' => 'Consignees',
+        'savings' => 'Savings',
+    ],
+
+    'receivable' => [
+        'title' => 'Buyer Receivables',
+        'summary' => ':count vehicles · ₩:amount total',
+        'fully_paid' => '✓ Paid',
+        'paid_pct' => 'Paid :pct%',
+        'unpaid' => 'Outstanding ₩:amount',
+    ],
+    'fees' => [
+        'title' => '💸 Cumulative Remittance Fees (seller paid)',
+        'desc' => 'Remittance fees we have covered for this buyer cumulatively. Use as a negotiation point.',
+        'count' => ':count items',
+    ],
+
+    'field' => [
+        'name' => 'Buyer Name',
+        'name_ph' => 'TOKYO AUTO TRADING',
+        'salesman' => 'Salesman',
+        'salesman_unassigned' => '-- Unassigned --',
+        'salesman_note' => 'When [Management] logs in, only their own salesmen\'s buyers show. If unassigned, falls back to the indirect relation via vehicles.',
+        'contact_name' => 'Contact Name',
+        'eori_ph' => 'e.g. DE7078617',
+        'tax_ph' => 'e.g. LT792855314',
+    ],
+
+    'cons' => [
+        'save_first' => 'Save the basic info first to add consignees.',
+        'empty' => 'No consignees.',
+        'add' => '+ Add Consignee',
+        'delete_confirm' => 'Delete this consignee?',
+        'form_edit' => 'Edit Consignee',
+        'form_add' => 'Add Consignee',
+        'name' => 'Consignee Name',
+        'id_type' => 'ID Type',
+        'id_value' => 'ID Number',
+    ],
+
+    'savings' => [
+        'save_first' => 'Save the basic info first to manage savings.',
+        'balances_title' => 'Savings Balance by Currency',
+        'no_balance' => 'No savings transactions.',
+        'add_txn' => 'Add Transaction',
+        'currency' => 'Currency',
+        'type' => 'Type',
+        'amount' => 'Amount',
+        'add_btn' => 'Add',
+        'type_earned' => 'Earned',
+        'type_used' => 'Used',
+        'type_refund' => 'Refund',
+        'type_adjustment' => 'Adjustment',
+        'col_date' => 'Date',
+        'col_amount' => 'Amount',
+        'col_balance' => 'Balance',
+        'cancel_confirm' => 'Cancel this transaction?',
+        'cancel_title' => 'Cancel',
+        'no_history' => 'No history.',
+        't_earned' => 'Earned',
+        't_used' => 'Used',
+        't_refund' => 'Refund',
+        't_adjustment' => 'Adjustment',
+        't_cancelled' => 'Cancelled',
+        'neg_balance' => 'Cancelling would make the balance negative. Cannot cancel.',
+    ],
+];

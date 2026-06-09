@@ -111,19 +111,19 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 헤더 --}}
     <div class="flex items-center justify-between">
         <div>
-            <h2 class="text-xl font-bold text-gray-800">재고관리</h2>
+            <h2 class="text-xl font-bold text-gray-800">{{ __('inventory.title') }}</h2>
             <p class="mt-0.5 text-xs text-gray-500">
-                매입중 · 매입완료 · 말소완료 · 판매중 · 판매완료 차량 (선적 진입 전). 영업담당자별 그룹 정렬.
+                {{ __('inventory.subtitle') }}
             </p>
         </div>
-        <span class="text-xs text-gray-400">총 {{ number_format($this->inventoryVehicles->total()) }} 대</span>
+        <span class="text-xs text-gray-400">{{ __('inventory.total', ['count' => number_format($this->inventoryVehicles->total())]) }}</span>
     </div>
 
     {{-- 영업담당자별 재고 카운트 스트립 --}}
     @if(count($this->stockCountsBySalesman))
     <div class="card-tight overflow-x-auto">
         <div class="flex items-center gap-2 text-xs">
-            <span class="font-semibold text-gray-500 whitespace-nowrap">담당자별:</span>
+            <span class="font-semibold text-gray-500 whitespace-nowrap">{{ __('inventory.by_salesman') }}</span>
             @foreach($this->salesmen as $sm)
                 @php $cnt = $this->stockCountsBySalesman[$sm->id] ?? 0; @endphp
                 <button wire:click="$set('salesmanFilter', '{{ $sm->id }}')"
@@ -136,7 +136,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @php $unassignedCnt = $this->stockCountsBySalesman[''] ?? $this->stockCountsBySalesman[null] ?? 0; @endphp
             @if($unassignedCnt > 0)
                 <span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-amber-800">
-                    미배정 {{ $unassignedCnt }}
+                    {{ __('inventory.unassigned_strip', ['count' => $unassignedCnt]) }}
                 </span>
             @endif
         </div>
@@ -146,29 +146,27 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <input wire:model="search" wire:keydown.enter="search" type="text"
-               placeholder="차량번호 · 브랜드 · 차종 · 소유자"
+               placeholder="{{ __('inventory.search_ph') }}"
                class="input-filter w-64" />
         <select wire:model.live="salesmanFilter" class="input-filter">
-            <option value="">담당자 전체</option>
+            <option value="">{{ __('inventory.all_salesmen') }}</option>
             @foreach($this->salesmen as $sm)
                 <option value="{{ $sm->id }}">{{ $sm->name }}</option>
             @endforeach
         </select>
         <select wire:model.live="statusFilter" class="input-filter">
-            <option value="">상태 전체</option>
-            <option value="매입중">매입중</option>
-            <option value="매입완료">매입완료</option>
-            <option value="말소완료">말소완료</option>
-            <option value="판매중">판매중</option>
-            <option value="판매완료">판매완료</option>
+            <option value="">{{ __('inventory.all_status') }}</option>
+            @foreach(['매입중','매입완료','말소완료','판매중','판매완료'] as $st)
+            <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>
+            @endforeach
         </select>
-        <button wire:click="search" class="btn-search">조회</button>
-        <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">필터 초기화</button>
+        <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+        <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('common.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
-            <option value="10">10개</option>
-            <option value="20">20개</option>
-            <option value="50">50개</option>
-            <option value="100">100개</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="20">{{ __('common.per_page', ['count' => 20]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
     </div>
 
@@ -177,13 +175,13 @@ new #[Layout('components.layouts.app')] class extends Component
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">차량번호</th>
-                    <th class="pb-2 pr-4 font-medium">담당자</th>
-                    <th class="pb-2 pr-4 font-medium">진행상태</th>
-                    <th class="pb-2 pr-4 font-medium">브랜드/차종</th>
-                    <th class="pb-2 pr-4 font-medium">매입일</th>
-                    <th class="pb-2 pr-4 font-medium text-right">매입가</th>
-                    <th class="pb-2 pr-4 font-medium">소유자</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.number') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.salesman') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.brand_model') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.purchase_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_owner') }}</th>
                     <th class="pb-2 font-medium"></th>
                 </tr>
             </thead>
@@ -203,11 +201,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         @if($v->salesman)
                             <span class="badge badge-blue">{{ $v->salesman->name }}</span>
                         @else
-                            <span class="text-gray-300">미배정</span>
+                            <span class="text-gray-300">{{ __('common.unassigned') }}</span>
                         @endif
                     </td>
                     <td class="py-3 pr-4">
-                        <span class="badge {{ $statusBadge }}">{{ $v->progress_status_cache }}</span>
+                        <span class="badge {{ $statusBadge }}">{{ __('domain.progress.'.$v->progress_status_cache) }}</span>
                     </td>
                     <td class="py-3 pr-4 text-gray-700">
                         {{ $v->brand }} {{ $v->model_type }}
@@ -221,12 +219,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td class="py-3 text-right">
                         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}"
                            wire:navigate
-                           class="text-xs text-violet-600 hover:underline">차량 편집</a>
+                           class="text-xs text-violet-600 hover:underline">{{ __('inventory.edit_vehicle') }}</a>
                     </td>
                 </tr>
                 @empty
                 <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">
-                    조회 조건에 일치하는 재고 차량이 없습니다.
+                    {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse
             </tbody>
@@ -246,17 +244,17 @@ new #[Layout('components.layouts.app')] class extends Component
         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}" wire:navigate class="card-tight block">
             <div class="flex items-center justify-between">
                 <span class="font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</span>
-                <span class="badge {{ $statusBadgeM }}">{{ $v->progress_status_cache }}</span>
+                <span class="badge {{ $statusBadgeM }}">{{ __('domain.progress.'.$v->progress_status_cache) }}</span>
             </div>
             <div class="mt-1 grid grid-cols-2 gap-x-3 text-xs text-gray-500">
-                <div>담당: {{ $v->salesman?->name ?? '미배정' }}</div>
+                <div>{{ __('inventory.m_salesman') }} {{ $v->salesman?->name ?? __('common.unassigned') }}</div>
                 <div>{{ $v->brand }} {{ $v->model_type }}</div>
-                <div>매입일: {{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</div>
+                <div>{{ __('inventory.m_purchase') }} {{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</div>
                 <div class="text-right">@if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif</div>
             </div>
         </a>
         @empty
-        <div class="py-12 text-center text-sm text-gray-400">재고 차량이 없습니다.</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('inventory.empty_mobile') }}</div>
         @endforelse
     </div>
 

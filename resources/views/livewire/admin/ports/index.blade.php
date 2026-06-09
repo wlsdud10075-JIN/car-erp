@@ -83,9 +83,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name' => 'required|string|max:100',
             'code' => 'nullable|string|max:50',
         ], [], [
-            'type' => '구분',
-            'name' => '항구명',
-            'code' => '코드',
+            'type' => __('port.field.type'),
+            'name' => __('port.field.name'),
+            'code' => __('port.field.code'),
         ]);
 
         $data = [
@@ -101,14 +101,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             // (name, type) unique — 중복 시 validation 메시지
             $exists = Port::where('name', $this->name)->where('type', $this->type)->exists();
             if ($exists) {
-                $this->addError('name', '같은 구분에 동일 이름 항구가 이미 있습니다.');
+                $this->addError('name', __('port.dup'));
                 return;
             }
             Port::create($data);
         }
 
         unset($this->ports);
-        $this->dispatch('notify', message: '항구 정보가 저장됐습니다.', type: 'success');
+        $this->dispatch('notify', message: __('port.saved'), type: 'success');
         $this->close();
     }
 
@@ -117,7 +117,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $p = Port::findOrFail($id);
         $p->update(['is_active' => ! $p->is_active]);
         unset($this->ports);
-        $this->dispatch('notify', message: $p->is_active ? '활성화됨' : '비활성화됨', type: 'success');
+        $this->dispatch('notify', message: $p->is_active ? __('port.activated') : __('port.deactivated'), type: 'success');
     }
 
     public function search(): void
@@ -139,31 +139,31 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 헤더 --}}
 <div class="flex items-center justify-between">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">항구 마스터</h1>
-        <p class="mt-0.5 text-xs text-gray-500">CIPL 드롭다운 옵션 — 총 {{ $this->ports->total() }}건</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ __('port.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('port.subtitle', ['count' => $this->ports->total()]) }}</p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
-            <option value="10">10개씩</option>
-            <option value="30">30개씩</option>
-            <option value="50">50개씩</option>
-            <option value="100">100개씩</option>
+            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
+            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
+            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
+            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            항구 추가
+            {{ __('port.create_btn') }}
         </button>
     </div>
 </div>
 
 {{-- 필터 --}}
 <div class="card-tight flex flex-wrap items-center gap-3">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="이름 · 코드"
+    <input wire:model.live.debounce.400ms="search" type="text" placeholder="{{ __('port.search_ph') }}"
            class="input-base w-full sm:w-60" />
     <select wire:model.live="typeFilter" class="input-base w-full sm:w-auto">
-        <option value="">전체 구분</option>
+        <option value="">{{ __('port.all_types') }}</option>
         @foreach(\App\Models\Port::TYPES as $key => $label)
-        <option value="{{ $key }}">{{ $label }}</option>
+        <option value="{{ $key }}">{{ __('port.type.'.$key) }}</option>
         @endforeach
     </select>
 </div>
@@ -173,10 +173,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">구분</th>
-                <th class="pb-2 pr-4 font-medium">항구명</th>
-                <th class="pb-2 pr-4 font-medium">코드</th>
-                <th class="pb-2 pr-4 font-medium">상태</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('port.col.type') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('port.col.name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('port.col.code') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -189,24 +189,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endphp
             <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $p->id }})">
                 <td class="py-3 pr-4">
-                    <span class="badge {{ $typeBadge }}">{{ \App\Models\Port::TYPES[$p->type] ?? $p->type }}</span>
+                    <span class="badge {{ $typeBadge }}">{{ __('port.type.'.$p->type) }}</span>
                 </td>
                 <td class="py-3 pr-4 font-medium text-gray-800">{{ $p->name }}</td>
                 <td class="py-3 pr-4 text-gray-500 font-mono text-xs">{{ $p->code ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $p->is_active ? 'badge-green' : 'badge-gray' }}">
-                        {{ $p->is_active ? '활성' : '비활성' }}
+                        {{ $p->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
                 <td class="py-3 text-right">
                     <button wire:click.stop="toggleActive({{ $p->id }})"
                             class="text-xs text-violet-600 hover:underline">
-                        {{ $p->is_active ? '비활성화' : '활성화' }}
+                        {{ $p->is_active ? __('port.deactivate') : __('port.activate') }}
                     </button>
                 </td>
             </tr>
             @empty
-            <tr><td colspan="5" class="py-12 text-center text-sm text-gray-400">항구가 없습니다.</td></tr>
+            <tr><td colspan="5" class="py-12 text-center text-sm text-gray-400">{{ __('port.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -227,13 +227,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500 font-mono">{{ $p->code ?? '' }}</div>
             </div>
             <div class="flex items-center gap-2">
-                <span class="badge {{ $typeBadge }}">{{ \App\Models\Port::TYPES[$p->type] ?? $p->type }}</span>
-                <span class="badge {{ $p->is_active ? 'badge-green' : 'badge-gray' }}">{{ $p->is_active ? '활성' : '비활성' }}</span>
+                <span class="badge {{ $typeBadge }}">{{ __('port.type.'.$p->type) }}</span>
+                <span class="badge {{ $p->is_active ? 'badge-green' : 'badge-gray' }}">{{ $p->is_active ? __('common.active') : __('common.inactive') }}</span>
             </div>
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">항구가 없습니다.</div>
+    <div class="py-12 text-center text-sm text-gray-400">{{ __('port.empty') }}</div>
     @endforelse
 </div>
 
@@ -247,7 +247,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[480px]">
 
     <div class="flex items-center justify-between border-b px-5 py-4">
-        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? '항구 수정' : '항구 추가' }}</h2>
+        <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('port.edit_title') : __('port.create_title') }}</h2>
         <button wire:click="close" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
@@ -255,36 +255,36 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-4">
         <div>
-            <label class="label-base">구분 <span class="text-red-500">*</span></label>
+            <label class="label-base">{{ __('port.field.type') }} <span class="text-red-500">*</span></label>
             <select wire:model="type" class="input-base">
                 @foreach(\App\Models\Port::TYPES as $key => $label)
-                <option value="{{ $key }}">{{ $label }}</option>
+                <option value="{{ $key }}">{{ __('port.type.'.$key) }}</option>
                 @endforeach
             </select>
             @error('type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
-            <label class="label-base">항구명 <span class="text-red-500">*</span></label>
-            <input wire:model="name" type="text" class="input-base" placeholder="예: BUSAN, KOREA / 평택항" />
+            <label class="label-base">{{ __('port.field.name') }} <span class="text-red-500">*</span></label>
+            <input wire:model="name" type="text" class="input-base" placeholder="{{ __('port.field.name_ph') }}" />
             @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
-            <label class="label-base">코드 <span class="text-xs text-gray-400">(선택)</span></label>
-            <input wire:model="code" type="text" class="input-base font-mono" placeholder="예: 020-77-002" />
-            <p class="mt-1 text-[11px] text-gray-400">부두 코드. 괄호 안 숫자 — 없는 항구는 비워둠</p>
+            <label class="label-base">{{ __('port.field.code') }} <span class="text-xs text-gray-400">{{ __('common.optional') }}</span></label>
+            <input wire:model="code" type="text" class="input-base font-mono" placeholder="{{ __('port.field.code_ph') }}" />
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('port.field.code_note') }}</p>
             @error('code')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
             <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input wire:model="is_active" type="checkbox" class="rounded" /> 활성 (드롭다운에 노출)
+                <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('port.field.active_note') }}
             </label>
         </div>
     </div>
 
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
-        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">취소</button>
+        <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
-            <span wire:loading.remove wire:target="save">저장</span><span wire:loading wire:target="save">저장 중...</span>
+            <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>
         </button>
     </div>
 
