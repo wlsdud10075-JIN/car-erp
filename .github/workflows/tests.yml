@@ -3,12 +3,12 @@ name: tests
 on:
   push:
     branches:
-      - develop
-      - main
+      - dev
+      - master
   pull_request:
     branches:
-      - develop
-      - main
+      - dev
+      - master
 
 jobs:
   ci:

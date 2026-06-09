@@ -28,12 +28,16 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
-            php artisan down || true
+            # Review.md #7 (2026-06-09) — 코드·의존성·빌드는 점검모드 진입 전에 수행.
+            # 이렇게 하면 composer/npm 실패가 사이트를 내리지 않음(점검모드 갇힘 방지).
             git fetch origin master
             git reset --hard origin/master
             composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
             npm ci
             npm run build
+            # 어떤 경로(실패·중단 포함)로 끝나도 항상 점검모드 해제 — 무기한 점검화면 방지.
+            trap 'php artisan up' EXIT
+            php artisan down || true
             php artisan migrate --force
             php artisan config:cache
             php artisan route:cache
