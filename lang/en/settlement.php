@@ -172,6 +172,7 @@ return [
         'rate_saved' => 'Rate saved — :rate',
         'saved' => 'Settlement saved.',
         'deleted' => 'Settlement deleted.',
+        'delete_locked' => 'Confirmed, paid, or closed settlements cannot be deleted. (accounting lock)',
         'pay_only_confirmed' => 'Payout approval can only be requested in the confirmed state.',
         'pay_duplicate' => 'There is already a pending approval request.',
         'pay_reason' => 'Settlement #:id (:vehicle) payout',

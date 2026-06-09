@@ -473,7 +473,15 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function delete(int $id): void
     {
-        Settlement::findOrFail($id)->delete();
+        // Review.md #1 (2026-06-09) — 모델 deleting 가드(confirmed/paid/closed 차단)가
+        // 던지는 DomainException 을 토스트로 안내 (500 대신).
+        try {
+            Settlement::findOrFail($id)->delete();
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
         unset($this->settlements);
         session()->flash('success', __('settlement.notify.deleted'));
     }

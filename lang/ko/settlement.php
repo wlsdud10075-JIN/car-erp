@@ -172,6 +172,7 @@ return [
         'rate_saved' => '환율 저장 완료 — :rate',
         'saved' => '정산 정보가 저장됐습니다.',
         'deleted' => '정산이 삭제됐습니다.',
+        'delete_locked' => '확정·지급·마감된 정산은 삭제할 수 없습니다. (회계 잠금)',
         'pay_only_confirmed' => 'confirmed 상태에서만 지급 승인 요청 가능합니다.',
         'pay_duplicate' => '이미 대기중인 승인 요청이 있습니다.',
         'pay_reason' => '정산 #:id (:vehicle) 지급 처리',

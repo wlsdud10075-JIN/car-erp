@@ -75,6 +75,21 @@ class Settlement extends Model
             }
         });
 
+        // Review.md #1 (2026-06-09) — 회계 잠금 정산의 무가드 삭제 차단.
+        // confirmed/paid/closed 정산을 삭제하면 FP·PBP 의 소급 잠금이 풀리고
+        // confirmed_snapshot·감사추적이 영구 소멸 → 삭제는 pending/calculating 만 허용.
+        // (2026-05-21 사용자 결정 "삭제 등 파괴적 액션만 별도 차단" 의 미반영분 보강.)
+        // 시드·artisan(auth 없음)은 데이터 정리 위해 우회.
+        static::deleting(function (Settlement $s) {
+            if (! auth()->check()) {
+                return;
+            }
+            if (in_array($s->settlement_status, ['confirmed', 'paid'], true)
+                || $s->secondary_status === 'closed') {
+                throw new \DomainException(__('settlement.notify.delete_locked'));
+            }
+        });
+
         static::updated(function (Settlement $s) {
             foreach (self::AUDITED_COLUMNS as $col) {
                 if ($s->wasChanged($col)) {
