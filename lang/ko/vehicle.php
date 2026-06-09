@@ -40,6 +40,8 @@ return [
         'sale_price' => '판매가',
         'unpaid_amount' => '미수금',
         'unpaid_ratio' => '입금률',
+        'unpaid_purchase' => '미지급',
+        'unpaid_sale' => '미입금',
     ],
 
     'fully_paid' => '완납',

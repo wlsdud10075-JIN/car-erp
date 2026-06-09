@@ -177,7 +177,9 @@ class LocaleTest extends TestCase
             ->get(route('erp.salesmen.cashflow', $sm->id))
             ->assertOk()
             ->assertSee('Cashflow')
-            ->assertDontSee('캐시플로우');
+            ->assertDontSee('캐시플로우')
+            ->assertDontSee('vehicle.col.unpaid_purchase')
+            ->assertDontSee('vehicle.col.unpaid_sale');
     }
 
     public function test_inventory_translates_to_english(): void

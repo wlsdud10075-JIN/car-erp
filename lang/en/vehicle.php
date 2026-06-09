@@ -40,6 +40,8 @@ return [
         'sale_price' => 'Sell Price',
         'unpaid_amount' => 'Outstanding',
         'unpaid_ratio' => 'Paid %',
+        'unpaid_purchase' => 'Purchase unpaid',
+        'unpaid_sale' => 'Sale unpaid',
     ],
 
     'fully_paid' => 'Paid',
