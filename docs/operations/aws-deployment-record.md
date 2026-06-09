@@ -388,7 +388,7 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 | NICE 차량조회 연동 (+ 응답 정제 fix) | ✅ 완료 |
 | S3 연동 (버킷·IAM·드라이버·서명 URL·검증) | ✅ 완료 |
 | DB 백업 cron | ✅ 완료 (자동 실행 검증은 익일) |
-| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #8, `22a2d3e` — §18. db:backup 스냅샷·migrate 실패가드 적용) |
+| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #9, `f6028ef` — §19. 마이그 동반 첫 배포, SoftDeletes deleted_at 운영 적용) |
 | 도메인 + HTTPS | ⬜ 보류 (안정화 후) |
 | 런북 §7 기능 점검 (잔여분) | ⬜ 예정 |
 
@@ -436,3 +436,18 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 **검증**: deploy/tests(ci+mysql-check)/lint 3워크플로우 success. `/up`=200. 로컬 545 통과+1 skip(MySQL 전용).
 
 **남은(낮음)**: B(Settlement SoftDeletes) / E(이월 stranding·환율실패 close 강행) / 조사2건(권한변경 세션무효화·종결상태 동시성). #5는 C(mysql-check)가 검증 커버.
+
+---
+
+## 19. deploy #9 — Review2 항목 B·E (2026-06-09)
+
+**반영 항목** (master `22a2d3e`→`f6028ef`, **마이그레이션 동반 첫 배포**):
+- **B(SoftDeletes)** — `settlements.deleted_at` 마이그(`2026_06_09_000001`) + `Settlement use SoftDeletes`. pending/calculating 삭제는 복구 가능(withTrashed), deleting 가드는 confirmed/paid/closed 여전히 차단. 데모·임포트는 forceDelete() 사용이라 무영향.
+- **E1(외화 close 가드)** — `closeSecondarySettlement`: 외화 차량 환율 조회 실패 시(calculateExchangeDifference null) 마감 차단. null 환차로 잠겨 환차익/손 영구 누락되던 문제 해소. KRW는 환율 없이도 마감.
+- **E2(이월 리포트)** — `settlements:carryover-report {--stranded}` 명령. 영업담당자별 미흡수 이월 가시화(퇴사자 stranding ⚠ 마킹). 미흡수분 처리(상계/지급/소멸)는 운영 정책 결정(읽기 전용).
+
+**D 경로 실증** (마이그 동반 첫 배포): db:backup `car_erp-20260609_205111.sql`(244KB) → down → migrate `add_soft_deletes_to_settlements 33.43ms DONE` → up → /up=200. mysql-check 잡이 새 마이그를 MySQL 8 적용 사전 검증.
+
+**검증**: deploy/tests(ci+mysql-check)/lint 3워크플로우 success. 로컬 550 통과+1 skip. 테스트 5건 추가.
+
+**Review/Review2 잔여**: A hard-lock(차등 수동운용 정책상 미채택) · E2 auto-sweep(정책 미정) · 조사2건(세션무효화·동시성, 낮음)뿐. 실행 항목 사실상 전부 완료.
