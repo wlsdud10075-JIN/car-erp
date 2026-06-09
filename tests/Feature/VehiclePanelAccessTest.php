@@ -57,8 +57,12 @@ class VehiclePanelAccessTest extends TestCase
      */
     public function test_manager_delete_locked_vehicle_shows_toast_not_500(): void
     {
+        // Review.md #4 (2026-06-09) — delete 스코프 가드 추가 후, 토스트 경로는
+        // "관리가 접근 가능한 본인 팀 차량이 잠긴 경우"여야 한다 (팀 밖 차량은 403 선차단).
         $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
-        $v = Vehicle::create(['vehicle_number' => '55마5555', 'sales_channel' => 'export', 'sale_price' => 1_000_000]);
+        $sub = User::factory()->create(['permission' => 'user', 'role' => '영업', 'manager_user_id' => $manager->id]);
+        $salesman = Salesman::create(['name' => '팀원영업', 'user_id' => $sub->id, 'is_active' => true, 'type' => 'employee']);
+        $v = Vehicle::create(['vehicle_number' => '55마5555', 'sales_channel' => 'export', 'sale_price' => 1_000_000, 'salesman_id' => $salesman->id]);
         $v->finalPayments()->create(['amount' => 500_000, 'type' => 'balance', 'confirmed_at' => now()]); // 확정 잔금 → lock
         $this->actingAs($manager);
 
