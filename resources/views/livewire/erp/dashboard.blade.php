@@ -325,14 +325,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->whereNull('deleted_at')
             ->where('purchase_price', '>', 0)
             // CAST AS SIGNED — BIGINT UNSIGNED 빼기 결과가 음수면 underflow. WHERE/SELECT 양쪽 적용.
+            // Review.md #6 (2026-06-09) — confirmed_at IS NOT NULL 필터 추가.
+            // 누락 시 미확정 Draft PBP(매입가 입력 시 자동생성, payment_date=매입일)가 집계를 깎아
+            // 카드 카운트(scopeAction·accessor=confirmed만)와 KPI 금액 모집단이 불일치했음.
             ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
-                                      AND payment_date IS NOT NULL AND payment_date <= ?), 0)) > 0', [$today])
+                                      AND payment_date IS NOT NULL AND payment_date <= ?
+                                      AND confirmed_at IS NOT NULL), 0)) > 0', [$today])
             ->selectRaw('SUM(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
-                                      AND payment_date IS NOT NULL AND payment_date <= ?), 0)) as total', [$today])
+                                      AND payment_date IS NOT NULL AND payment_date <= ?
+                                      AND confirmed_at IS NOT NULL), 0)) as total', [$today])
             ->value('total') ?? 0);
 
         $pendingSettlements = Settlement::query()->where('settlement_status', 'pending')->count();
