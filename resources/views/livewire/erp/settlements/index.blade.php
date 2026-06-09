@@ -558,6 +558,15 @@ new #[Layout('components.layouts.app')] class extends Component
         // 회의확장씬 #6+7 보강 (2026-05-23): saveExchangeRate 로 저장된 값 있으면 그 값 사용 (수동 override).
         [$exchangeDiff, $usedRate] = $this->calculateExchangeDifference($settlement);
 
+        // Review2 항목 E (2026-06-09) — 외화 차량인데 환율을 못 구하면(저장값 없고 자동조회 실패) 마감 차단.
+        // 그냥 닫으면 exchange_difference_krw=null 로 잠겨 환차익/손이 영구 누락됨.
+        // 사용자는 상단 '2차 정산 환율' 입력(saveExchangeRate)으로 수동 환율 넣은 뒤 다시 마감.
+        if ($exchangeDiff === null) {
+            $this->dispatch('notify', message: __('settlement.notify.close_needs_rate'), type: 'error');
+
+            return;
+        }
+
         $update = [
             'secondary_status' => 'closed',
             'secondary_closed_at' => now(),

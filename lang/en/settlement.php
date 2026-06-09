@@ -178,6 +178,7 @@ return [
         'pay_reason' => 'Settlement #:id (:vehicle) payout',
         'pay_sent' => 'Payout approval request sent.',
         'close_not_pending' => 'Not in the secondary-pending state.',
+        'close_needs_rate' => 'Foreign-currency vehicles require a settlement exchange rate before closing (auto rate lookup failed). Enter the rate above, then close again.',
         'close_done' => 'Secondary settlement finalized',
         'close_diff_suffix' => ' — FX diff :sign₩:amount',
         'close_carry_suffix' => ' / carryover :sign₩:amount',

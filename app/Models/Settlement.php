@@ -4,10 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Validation\ValidationException;
 
 class Settlement extends Model
 {
+    // Review2 항목 B (2026-06-09) — soft delete (복구 가능). deleting 가드는 confirmed/paid/closed 차단,
+    // 데모·임포트 정리는 forceDelete() 사용 → 영향 없음.
+    use SoftDeletes;
+
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status',
