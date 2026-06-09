@@ -1634,6 +1634,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             abort(403, __('vehicle.toast.create_perm'));
         }
 
+        // Review.md #4 (2026-06-09) — 편집 분기 스코프 재인가.
+        // openEdit 가 가드돼 있어도 editingId 를 클라이언트가 직접 주입할 수 있으므로
+        // save() 에서 본인/팀 차량인지 다시 확인 (타 담당 차량 변조 IDOR 차단).
+        if ($this->editingId) {
+            $editingVehicle = \App\Models\Vehicle::find($this->editingId);
+            abort_unless($editingVehicle && $user->canScopeVehicle($editingVehicle), 403, __('vehicle.toast.edit_own_only'));
+        }
+
         // 큐 14-4-4 후속 — 신규 등록 시 누락된 핵심 메타 자동 채움.
         // A) 영업 role이 본인 담당자 미지정으로 등록 → 자동으로 본인 salesman 적용.
         //    (영업 외 role/admin은 명시적 선택 필요 — 다른 영업 대신 등록할 수 있어 자동 set X)
@@ -2196,8 +2204,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
+        $vehicle = Vehicle::findOrFail($id);
+
+        // Review.md #4 (2026-06-09) — openEdit 와 동일 스코프 재인가.
+        // 변경 액션은 읽기 진입과 별개로 매번 검사해야 IDOR(타 담당 차량 삭제) 차단.
+        abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, __('vehicle.toast.edit_own_only'));
+
         try {
-            Vehicle::findOrFail($id)->delete();
+            $vehicle->delete();
         } catch (\DomainException $e) {
             // [관리] 등 권한 부족(재무확정 잔금 있는 차량은 admin/super만 삭제) → 500 Ignition 대신 토스트.
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
