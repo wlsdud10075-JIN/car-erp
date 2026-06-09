@@ -43,6 +43,10 @@ class VehicleDocumentController extends Controller
     {
         $vehicle = Vehicle::findOrFail($id);
 
+        // Review.md #3 (2026-06-09) — 소유권 스코프 가드. 영업이 타인 차량의 RRN 박힌
+        // 서류를 URL 직접 호출로 다운로드하던 IDOR 차단. openEdit 와 동일 기준.
+        abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, '접근 권한이 없는 차량입니다.');
+
         abort_unless(in_array($type, self::SUPPORTED_TYPES, true), 404, '지원하지 않는 서류 종류입니다: '.$type);
 
         if (in_array($type, self::EXPORT_ONLY_TYPES, true)) {
@@ -90,6 +94,14 @@ class VehicleDocumentController extends Controller
             $vehicles->every(fn (Vehicle $v) => $v->sales_channel === 'export'),
             403,
             '수출 채널 차량에서만 발급 가능한 서류입니다.',
+        );
+
+        // Review.md #3 (2026-06-09) — 다중 발급도 전 차량 소유권 스코프 검사 (IDOR 차단).
+        $user = auth()->user();
+        abort_unless(
+            $vehicles->every(fn (Vehicle $v) => $user->canScopeVehicle($v)),
+            403,
+            '접근 권한이 없는 차량이 포함되어 있습니다.',
         );
 
         $response = $this->stream(new DocumentFiller($vehicles), $type);

@@ -322,6 +322,31 @@ class User extends Authenticatable
             ->all();
     }
 
+    /**
+     * Review.md #3/#4 (2026-06-09) — 차량 접근 스코프 단일 출처.
+     *
+     * 영업 = 본인 담당 차량 / 관리 = 본인 팀(subordinate 영업) 차량 / admin·super·수출통관·재무 = 전체.
+     * openEdit 의 인라인 가드와 동일 의미 — 변경(delete·save 편집)·문서 다운로드 등
+     * "mutating·열람 엔드포인트"에서 매번 재인가하도록 공통 사용 (IDOR 차단).
+     */
+    public function canScopeVehicle(Vehicle $vehicle): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        if ($this->role === '영업') {
+            return $vehicle->salesman_id === $this->salesman?->id;
+        }
+
+        if ($this->role === '관리') {
+            return in_array($vehicle->salesman_id, $this->getSubordinateSalesmanIds(), true);
+        }
+
+        // 수출통관·재무 등은 전 차량 대상 업무 → 전체 허용.
+        return true;
+    }
+
     public function initials(): string
     {
         return Str::of($this->name)
