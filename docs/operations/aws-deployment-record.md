@@ -388,7 +388,7 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 | NICE 차량조회 연동 (+ 응답 정제 fix) | ✅ 완료 |
 | S3 연동 (버킷·IAM·드라이버·서명 URL·검증) | ✅ 완료 |
 | DB 백업 cron | ✅ 완료 (자동 실행 검증은 익일) |
-| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #7, `91595bf`, 23초 성공 — §17) |
+| GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #8, `22a2d3e` — §18. db:backup 스냅샷·migrate 실패가드 적용) |
 | 도메인 + HTTPS | ⬜ 보류 (안정화 후) |
 | 런북 §7 기능 점검 (잔여분) | ⬜ 예정 |
 
@@ -421,3 +421,18 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 **검증**: GitHub Actions **deploy/tests/lint 3개 워크플로우 전부 success** (tests=SQLite 풀스위트 통과, 2m52s / lint=pint 통과, Flux secrets 이미 설정됨). 배포 직후 `/up`=200·루트=302. 로컬 544 테스트 통과.
 
 **남은 보류**: #5 환율0(운영 CHECK가 이미 방어, 미수정) / #8 후속 CI MySQL 8 서비스 컨테이너 / #1 SoftDeletes(글로벌 스코프 영향, 추후).
+
+---
+
+## 18. deploy #8 — Review2(2차검증) 항목 A감사·D·C (2026-06-09)
+
+바탕화면 `Review2.md`(2차 검증 + 사외이사 교차검증) 반영. 검증리포트2 = `car-erp-검증리포트2.html`.
+
+**반영 항목** (master `91595bf`→`22a2d3e`):
+- **A(감사 편입)** — `Settlement::AUDITED_COLUMNS`에 `settlement_ratio`·`per_unit_amount`·`other_deduction` 추가. paid 이후 금액 수동 조정을 audit_logs에 기록. ⚠️ **immutable hard-lock은 미채택** — 사내직원 차등정산(총마진 ≤100만=10만/≥100만=20만/>1억=25%)을 수동 운용하는 게 의도된 정책이라 잠그면 충돌(잠그지 않고 추적만).
+- **D(배포 안전화 정제)** — `deploy.yml`: trap 제거 → 단계별 명시 처리. 빌드 실패=사이트 유지 / **migrate 실패=점검모드 유지+에러+exit**(half-migrated 서빙 방지) / 성공=up. **배포 직전 `db:backup` 스냅샷**(복구점). 실측: 이번 배포에서 백업 `car_erp-20260609_165618.sql`(241KB) 생성 확인.
+- **C(MySQL CI)** — 전체 스위트는 SQLite 전용 코드(PRAGMA 30파일)라 유지하고, `tests.yml`에 **별도 `mysql-check` 잡** 추가(MySQL 8 서비스 → `migrate` 운영 동형 검증 + `MysqlCheckConstraintTest`로 chk_sale_required 검증, #5 방어 CI 보증). mysql-check 잡 success 확인.
+
+**검증**: deploy/tests(ci+mysql-check)/lint 3워크플로우 success. `/up`=200. 로컬 545 통과+1 skip(MySQL 전용).
+
+**남은(낮음)**: B(Settlement SoftDeletes) / E(이월 stranding·환율실패 close 강행) / 조사2건(권한변경 세션무효화·종결상태 동시성). #5는 C(mysql-check)가 검증 커버.
