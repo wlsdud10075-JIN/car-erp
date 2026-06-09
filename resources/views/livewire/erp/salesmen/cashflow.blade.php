@@ -4,10 +4,14 @@ use App\Models\Salesman;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
 
+    // Review.md #2 (2026-06-09) — IDOR 차단. mount() 인가 후 클라이언트가
+    // $salesmanId 를 변조해 타 영업 자금현황을 조회하던 경로를 #[Locked] 로 봉인.
+    #[Locked]
     public int    $salesmanId    = 0;
     public string $salesmanName  = '';
     public string $salesmanPhone = '';
