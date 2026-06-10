@@ -49,4 +49,23 @@ class Salesman extends Model
     {
         return $this->hasMany(Settlement::class);
     }
+
+    /**
+     * 미청산 이월 잔액 (KRW) — Σ closed 정산의 carryover_out − Σ carryover_in.
+     * Settlement::creating 흡수 훅(SKILLS §5-5)과 동일 공식 = 단일 출처.
+     * 활성 담당자는 다음 정산이 흡수해 보통 0, 마지막/퇴사 건이면 stranded 잔액으로 남음.
+     * 양수 = 담당자에게 지급 대기 / 음수 = 담당자에게 청구 대상.
+     */
+    public function getUnconsumedCarryoverAttribute(): int
+    {
+        $out = (float) $this->settlements()
+            ->where('secondary_status', 'closed')
+            ->whereNotNull('carryover_out_krw')
+            ->sum('carryover_out_krw');
+        $in = (float) $this->settlements()
+            ->whereNotNull('carryover_in_krw')
+            ->sum('carryover_in_krw');
+
+        return (int) round($out - $in);
+    }
 }

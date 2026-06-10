@@ -31,6 +31,7 @@ return [
     'summary_total_margin' => 'Total margin',
     'summary_settlement_amount' => 'Settlement amount',
     'summary_actual_payout' => 'Actual payout',
+    'summary_carryover' => 'Unconsumed carryover',
 
     'col' => [
         'vehicle_no' => 'Plate',

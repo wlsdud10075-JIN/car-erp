@@ -9,6 +9,7 @@ return [
     'empty' => '영업담당자가 없습니다.',
     'cashflow' => '캐시플로우',
     'cashflow_view' => '캐시플로우 보기',
+    'carryover_badge' => '미청산 이월',
     'delete_confirm' => ':name 담당자를 삭제하시겠습니까?',
     'saved' => '영업담당자 정보가 저장됐습니다.',
     'deleted' => '영업담당자가 삭제됐습니다.',
