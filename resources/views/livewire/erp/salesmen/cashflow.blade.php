@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CarryoverClearance;
 use App\Models\Salesman;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
@@ -73,6 +74,36 @@ new #[Layout('components.layouts.app')] class extends Component {
             'unconsumed_carryover'   => (int) (Salesman::find($this->salesmanId)?->unconsumed_carryover ?? 0),
         ];
     }
+
+    /**
+     * 미청산 이월 청산 (퇴사자/관계종료) — 현재 net 을 1회 정리해 0으로.
+     * +면 담당자에게 지급 / −면 회수했다는 기록(CarryoverClearance)을 남기고, accessor·흡수 훅이 Σ청산액 차감.
+     * 권한: canApprove (super/admin/관리)만. 영업 본인은 자기 cashflow 봐도 청산 불가.
+     */
+    public function clearCarryover(): void
+    {
+        $user = auth()->user();
+        abort_unless($user->canApprove(), 403);
+
+        $salesman = Salesman::findOrFail($this->salesmanId);
+        $amount = $salesman->unconsumed_carryover;
+
+        if ($amount === 0) {
+            $this->dispatch('notify', message: __('cashflow.carryover_already_zero'), type: 'warning');
+
+            return;
+        }
+
+        CarryoverClearance::create([
+            'salesman_id' => $salesman->id,
+            'amount_krw' => $amount,
+            'direction' => $amount > 0 ? 'pay' : 'collect',
+            'cleared_by' => $user->id,
+        ]);
+
+        unset($this->summary);
+        $this->dispatch('notify', message: __('cashflow.carryover_cleared', ['amount' => number_format(abs($amount))]), type: 'success');
+    }
 }; ?>
 
 <div wire:poll.30s>
@@ -139,24 +170,34 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 미청산 이월 (stranded carryover) — 흡수 안 된 잔액 상시 표시. 0이면 회색 '없음'. --}}
 @php $carryover = $this->summary['unconsumed_carryover']; @endphp
-<div class="card flex items-center justify-between {{ $carryover > 0 ? 'border-emerald-300 bg-emerald-50/40' : ($carryover < 0 ? 'border-red-300 bg-red-50/40' : '') }}">
+<div class="card flex items-center justify-between gap-3 {{ $carryover > 0 ? 'border-emerald-300 bg-emerald-50/40' : ($carryover < 0 ? 'border-red-300 bg-red-50/40' : '') }}">
     <div>
         <div class="text-xs text-gray-500">{{ __('cashflow.kpi_carryover') }}</div>
         <div class="text-[11px] text-gray-400">{{ __('cashflow.carryover_sub') }}</div>
     </div>
-    @if($carryover > 0)
-        <div class="text-right">
-            <div class="text-xl font-bold text-emerald-600">+₩{{ number_format($carryover) }}</div>
-            <div class="text-[11px] font-medium text-emerald-600">{{ __('cashflow.carryover_to_pay') }}</div>
-        </div>
-    @elseif($carryover < 0)
-        <div class="text-right">
-            <div class="text-xl font-bold text-red-600">−₩{{ number_format(abs($carryover)) }}</div>
-            <div class="text-[11px] font-medium text-red-600">{{ __('cashflow.carryover_to_collect') }}</div>
-        </div>
-    @else
-        <div class="text-lg font-bold text-gray-400">{{ __('cashflow.none') }}</div>
-    @endif
+    <div class="flex items-center gap-3">
+        @if($carryover > 0)
+            <div class="text-right">
+                <div class="text-xl font-bold text-emerald-600">+₩{{ number_format($carryover) }}</div>
+                <div class="text-[11px] font-medium text-emerald-600">{{ __('cashflow.carryover_to_pay') }}</div>
+            </div>
+        @elseif($carryover < 0)
+            <div class="text-right">
+                <div class="text-xl font-bold text-red-600">−₩{{ number_format(abs($carryover)) }}</div>
+                <div class="text-[11px] font-medium text-red-600">{{ __('cashflow.carryover_to_collect') }}</div>
+            </div>
+        @else
+            <div class="text-lg font-bold text-gray-400">{{ __('cashflow.none') }}</div>
+        @endif
+        {{-- 청산 버튼 — 퇴사자/관계종료 정리. canApprove(super/admin/관리)만. 영업 본인 불가. --}}
+        @if($carryover != 0 && auth()->user()->canApprove())
+        <button type="button" wire:click="clearCarryover"
+                wire:confirm="{{ __('cashflow.carryover_clear_confirm', ['amount' => number_format(abs($carryover)), 'action' => $carryover > 0 ? __('cashflow.carryover_to_pay') : __('cashflow.carryover_to_collect')]) }}"
+                class="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
+            {{ __('cashflow.carryover_clear_btn') }}
+        </button>
+        @endif
+    </div>
 </div>
 
 {{-- 테이블 (데스크탑) --}}

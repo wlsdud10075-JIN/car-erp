@@ -80,7 +80,10 @@ class Settlement extends Model
             $totalIn = (float) self::where('salesman_id', $s->salesman_id)
                 ->whereNotNull('carryover_in_krw')
                 ->sum('carryover_in_krw');
-            $unconsumed = $totalOut - $totalIn;
+            // 퇴사자 청산분(CarryoverClearance)도 차감 — 청산 후 새 정산이 재흡수(이중계상)하지 않도록.
+            // Salesman::unconsumed_carryover accessor 와 동일 공식 유지(단일 출처).
+            $totalCleared = (float) CarryoverClearance::where('salesman_id', $s->salesman_id)->sum('amount_krw');
+            $unconsumed = $totalOut - $totalIn - $totalCleared;
             if (abs($unconsumed) >= 0.01) {
                 $s->carryover_in_krw = $unconsumed;
             }
