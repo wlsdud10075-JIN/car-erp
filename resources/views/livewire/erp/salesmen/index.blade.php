@@ -192,7 +192,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <tbody class="divide-y divide-gray-100">
             @forelse($this->salesmen as $sm)
             <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $sm->id }})">
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $sm->name }}</td>
+                <td class="py-3 pr-4 font-medium text-gray-800">
+                    {{ $sm->name }}
+                    @php $co = $sm->unconsumed_carryover; @endphp
+                    @if($co != 0)
+                    <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} ml-1.5 text-[10px]"
+                          title="{{ __('salesman.carryover_badge') }}">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
+                    @endif
+                </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->user?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->email ?? '-' }}</td>
@@ -225,7 +232,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card-tight">
         <div class="flex items-center justify-between">
             <div class="cursor-pointer" wire:click="openEdit({{ $sm->id }})">
-                <div class="font-medium text-gray-800">{{ $sm->name }}</div>
+                <div class="font-medium text-gray-800">
+                    {{ $sm->name }}
+                    @php $co = $sm->unconsumed_carryover; @endphp
+                    @if($co != 0)
+                    <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} text-[10px]">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
+                    @endif
+                </div>
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
             </div>
             <div class="flex items-center gap-2">

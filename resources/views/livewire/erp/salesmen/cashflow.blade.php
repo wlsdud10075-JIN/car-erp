@@ -69,6 +69,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_total'         => (int) $vehicles->sum('purchase_price'),
             'purchase_unpaid'        => (int) $vehicles->sum('purchase_unpaid_amount'),
             'sale_unpaid_by_currency' => $saleUnpaidByCurrency,
+            // 미청산 이월 — Salesman accessor(단일 출처, 흡수 훅과 동일 공식). 날짜필터 무관 현재 잔액.
+            'unconsumed_carryover'   => (int) (Salesman::find($this->salesmanId)?->unconsumed_carryover ?? 0),
         ];
     }
 }; ?>
@@ -133,6 +135,28 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
         @endif
     </div>
+</div>
+
+{{-- 미청산 이월 (stranded carryover) — 흡수 안 된 잔액 상시 표시. 0이면 회색 '없음'. --}}
+@php $carryover = $this->summary['unconsumed_carryover']; @endphp
+<div class="card flex items-center justify-between {{ $carryover > 0 ? 'border-emerald-300 bg-emerald-50/40' : ($carryover < 0 ? 'border-red-300 bg-red-50/40' : '') }}">
+    <div>
+        <div class="text-xs text-gray-500">{{ __('cashflow.kpi_carryover') }}</div>
+        <div class="text-[11px] text-gray-400">{{ __('cashflow.carryover_sub') }}</div>
+    </div>
+    @if($carryover > 0)
+        <div class="text-right">
+            <div class="text-xl font-bold text-emerald-600">+₩{{ number_format($carryover) }}</div>
+            <div class="text-[11px] font-medium text-emerald-600">{{ __('cashflow.carryover_to_pay') }}</div>
+        </div>
+    @elseif($carryover < 0)
+        <div class="text-right">
+            <div class="text-xl font-bold text-red-600">−₩{{ number_format(abs($carryover)) }}</div>
+            <div class="text-[11px] font-medium text-red-600">{{ __('cashflow.carryover_to_collect') }}</div>
+        </div>
+    @else
+        <div class="text-lg font-bold text-gray-400">{{ __('cashflow.none') }}</div>
+    @endif
 </div>
 
 {{-- 테이블 (데스크탑) --}}

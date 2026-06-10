@@ -117,6 +117,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 'total_margin_sum' => (int) $group->sum('total_margin'),
                 'settlement_amount_sum' => (int) $group->sum('settlement_amount'),
                 'actual_payout_sum' => (int) $group->sum('actual_payout'),
+                // 미청산 이월 — Salesman accessor(단일 출처). 필터 무관 현재 잔액. 재무 사각지대 보완.
+                'unconsumed_carryover' => (int) ($first->salesman?->unconsumed_carryover ?? 0),
             ];
         })->sortByDesc('actual_payout_sum')->values()->toArray();
     }
@@ -731,6 +733,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
                     <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                 </div>
+                @if(($summary['unconsumed_carryover'] ?? 0) != 0)
+                <div class="flex items-center justify-between border-t border-gray-100 pt-1">
+                    <span class="{{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ __('settlement.summary_carryover') }}</span>
+                    <span class="font-mono font-semibold {{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['unconsumed_carryover'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['unconsumed_carryover'])) }}</span>
+                </div>
+                @endif
             </div>
         </button>
         @endforeach

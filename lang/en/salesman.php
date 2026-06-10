@@ -9,6 +9,7 @@ return [
     'empty' => 'No salesmen.',
     'cashflow' => 'Cashflow',
     'cashflow_view' => 'View cashflow',
+    'carryover_badge' => 'Unconsumed carryover',
     'delete_confirm' => 'Delete salesman :name?',
     'saved' => 'Salesman saved.',
     'deleted' => 'Salesman deleted.',

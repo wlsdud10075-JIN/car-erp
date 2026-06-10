@@ -31,6 +31,7 @@ return [
     'summary_total_margin' => '총마진',
     'summary_settlement_amount' => '정산액',
     'summary_actual_payout' => '실지급액',
+    'summary_carryover' => '미청산 이월',
 
     'col' => [
         'vehicle_no' => '차량번호',
