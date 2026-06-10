@@ -17,6 +17,9 @@
 
     $sidebarBrand = \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
 
+    // 업무 워크프로세스 Notion 가이드 (전 직원 공통). URL 은 Setting 으로 교체 가능 — 기본값은 현재 Notion 페이지.
+    $workGuideUrl = \App\Models\Setting::get('work_guide_url', 'https://app.notion.com/p/37345d82bd838108a418c76a210f1854') ?: '';
+
     // i18n Phase 0 — 영어 활성 시에만 상단바 언어 전환 노출
     $localeEnEnabled = (bool) \App\Models\Setting::get('locale_en_enabled', false);
 
@@ -269,6 +272,7 @@
         'logout'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>',
         'menu'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/>',
         'check-circle'   => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+        'book'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>',
     ];
 @endphp
 
@@ -370,8 +374,23 @@
             @endforeach
         </nav>
 
-        {{-- 하단 고정: 설정 + 로그아웃 --}}
+        {{-- 하단 고정: 업무 가이드 + 설정 + 로그아웃 --}}
         <div class="border-t border-white/5 py-2 shrink-0">
+            @if($workGuideUrl)
+            {{-- 업무 워크프로세스 Notion (외부 새 탭, wire:navigate 미사용) --}}
+            <a href="{{ $workGuideUrl }}" target="_blank" rel="noopener noreferrer"
+               @click="if(isMobile) closeMobile()"
+               :title="(isMobile || open) ? '' : '{{ __('nav.action.work_guide') }}'"
+               class="sidebar-item"
+               :class="{ 'sidebar-item-collapsed': !isMobile && !open }">
+                <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">{!! $icons['book'] !!}</svg>
+                <span x-show="isMobile || open" class="flex-1 truncate">{{ __('nav.action.work_guide') }}</span>
+                <svg x-show="isMobile || open" class="ml-auto h-3 w-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5h5m0 0v5m0-5L10 14M9 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-3"/>
+                </svg>
+            </a>
+            @endif
+
             <a href="{{ route('settings.profile') }}" wire:navigate
                @click="if(isMobile) closeMobile()"
                :title="(isMobile || open) ? '' : '{{ __('nav.action.my_settings') }}'"

@@ -66,6 +66,7 @@ return [
         'my_settings' => 'My Settings',
         'logout' => 'Logout',
         'toggle_sidebar' => 'Toggle sidebar',
+        'work_guide' => 'Work Guide',
     ],
 
     'lang' => [

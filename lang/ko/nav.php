@@ -66,6 +66,7 @@ return [
         'my_settings' => '내 설정',
         'logout' => '로그아웃',
         'toggle_sidebar' => '사이드바 토글',
+        'work_guide' => '업무 가이드',
     ],
 
     'lang' => [
