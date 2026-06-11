@@ -185,7 +185,7 @@ class ImportVehicles extends Command
      */
     private function import(array $rows, array $salesmanByName): int
     {
-        $stats = ['new' => 0, 'updated' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0, 'payments' => 0, 'settlements' => 0];
+        $stats = ['new' => 0, 'updated' => 0, 'restored' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0, 'payments' => 0, 'settlements' => 0];
         $touchedIds = [];
         $withPay = (bool) $this->option('with-payments');
 
@@ -282,6 +282,12 @@ class ImportVehicles extends Command
                         ? Vehicle::withTrashed()->where('nice_reg_vin', $vin)->first()
                         : Vehicle::withTrashed()->where('vehicle_number', $row['vehicle_number'])->first();
                     if ($existing) {
+                        // 소프트삭제 차량이 매칭되면 부활(restore) — 엑셀=현재 활성 fleet 원본이므로
+                        // 갱신만 하고 trashed로 두면 차량이 live에서 묻힘(실측 2026-06-11). deleted_at 직접 해제(withoutEvents 내).
+                        if ($existing->trashed()) {
+                            $existing->deleted_at = null;
+                            $stats['restored']++;
+                        }
                         $existing->forceFill($attrs)->save();
                         $vehicle = $existing;
                         $stats['updated']++;
@@ -344,7 +350,7 @@ class ImportVehicles extends Command
 
         $this->newLine();
         $this->info('✅ import 완료');
-        $this->line("  차량 신규 {$stats['new']} / 갱신 {$stats['updated']}");
+        $this->line("  차량 신규 {$stats['new']} / 갱신 {$stats['updated']}".($stats['restored'] > 0 ? " (그중 소프트삭제 복구 {$stats['restored']})" : ''));
         $this->line("  바이어 신규 {$stats['buyer_new']} / 컨사이니 신규 {$stats['consignee_new']}");
         if ($withPay) {
             $this->line("  입금 {$stats['payments']}건 / 완료정산(paid) {$stats['settlements']}건 (엑셀 프리50% 재현)");
