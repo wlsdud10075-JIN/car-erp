@@ -70,6 +70,8 @@ return [
         'readonly_note' => '(edit mode — locked)',
         'lookup' => 'Look up',
         'lookup_ing' => 'Looking up…',
+        'lookup_nice' => 'NICE lookup',
+        'lookup_edit_hint' => 'Check the owner name, look up, then click Save to apply.',
         'owner_name_ph' => 'Owner name (required for NICE lookup)',
         'select_placeholder' => '-- Select --',
         'show' => 'Show',

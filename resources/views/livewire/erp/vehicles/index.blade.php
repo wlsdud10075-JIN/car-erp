@@ -3496,7 +3496,21 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.owner_name') }}</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" /></div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
+                    <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" />
+                    {{-- 편집 모드 NICE 재조회 — 신규등록 모드의 조회 버튼이 편집엔 없어 import/기존 차량은 제원을 못 채웠음(2026-06-11).
+                         lookupNiceApi 는 차량번호+소유자명(둘 다 편집모드에서 채워짐)으로 동작 → 채움 후 저장해야 반영. --}}
+                    @if($editingId)
+                        <button type="button" wire:click="lookupNiceApi"
+                                wire:loading.attr="disabled" wire:target="lookupNiceApi"
+                                class="mt-1 w-full rounded-lg border border-blue-300 bg-blue-50 px-2 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50">
+                            <span wire:loading.remove wire:target="lookupNiceApi">{{ __('vehicle.panel.lookup_nice') }}</span>
+                            <span wire:loading wire:target="lookupNiceApi">{{ __('vehicle.panel.lookup_ing') }}</span>
+                        </button>
+                        <p class="mt-1 text-[11px] leading-tight text-gray-400">{{ __('vehicle.panel.lookup_edit_hint') }}</p>
+                    @endif
+                </div>
                 <div x-data="{ show: false }">
                     <label class="label-base">{{ __('vehicle.field.owner_rrn') }}</label>
                     <div class="relative">
