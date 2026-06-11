@@ -70,6 +70,8 @@ return [
         'readonly_note' => '(편집 모드 — 변경 불가)',
         'lookup' => '조회',
         'lookup_ing' => '조회중…',
+        'lookup_nice' => 'NICE 조회',
+        'lookup_edit_hint' => '소유자명 확인 후 조회 → 저장을 눌러야 반영됩니다.',
         'owner_name_ph' => '소유자명 (NICE 조회 필수)',
         'select_placeholder' => '-- 선택 --',
         'show' => '표시',
