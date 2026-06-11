@@ -3079,6 +3079,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>
                 <th class="pb-2 font-medium"></th>
@@ -3144,6 +3145,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @else -
                     @endif
                 </td>
+                <td class="py-3 pr-4 text-right font-medium text-gray-700" x-show="visible['sale_total']">
+                    @if($v->sale_price > 0)
+                        {{ number_format($v->sale_total_amount) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>
+                    @else -
+                    @endif
+                </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
                     @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
                 </td>
@@ -3172,7 +3179,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 function vehicleColumnsToggle() {
     const STORAGE_KEY = 'car_erp_vehicles_columns';
     const defaultVisible = {
-        brand_model: true, purchase_date: true, sale_price: true,
+        brand_model: true, purchase_date: true, sale_price: true, sale_total: true,
         sale_date: false, shipping_date: false, bl_issue_date: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
@@ -3192,6 +3199,7 @@ function vehicleColumnsToggle() {
             { key: 'currency_rate',  label: @json(__('vehicle.col.currency_rate')) },
             { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
             { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
+            { key: 'sale_total',     label: @json(__('vehicle.col.sale_total')) },
             { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
             { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
         ],

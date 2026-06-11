@@ -38,6 +38,7 @@ return [
         'currency_rate' => 'Currency/Rate',
         'purchase_price' => 'Buy Price',
         'sale_price' => 'Sell Price',
+        'sale_total' => 'Sell Total',
         'unpaid_amount' => 'Outstanding',
         'unpaid_ratio' => 'Paid %',
         'unpaid_purchase' => 'Purchase unpaid',
