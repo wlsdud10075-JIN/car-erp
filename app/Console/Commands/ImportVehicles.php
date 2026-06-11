@@ -309,36 +309,54 @@ class ImportVehicles extends Command
                         if ($rate <= 0) {
                             $rate = 1;
                         }
-                        foreach (($row['_payments'] ?? []) as $p) {
-                            $fp = new FinalPayment;
-                            $fp->forceFill([
+
+                        // 이중계상 방지 — 이미 수동(비-import) 확정 입금이 있으면 import 2단계(입금+정산) 생략.
+                        // (2026-06-11: 6/8 수동입금 차량에 6/11 import 입금이 또 들어가 이중계상된 사고 방지.)
+                        $hasManual = FinalPayment::where('vehicle_id', $vehicle->id)
+                            ->whereNotNull('confirmed_at')
+                            ->where(fn ($q) => $q->whereNull('note')->orWhere('note', 'not like', '%import%'))
+                            ->exists();
+
+                        if ($hasManual) {
+                            $this->warn("  수동 입금 존재 → import 입금/정산 생략(이중 방지): {$row['vehicle_number']}");
+                        } else {
+                            foreach (($row['_payments'] ?? []) as $p) {
+                                // 외화차인데 입금액이 100만↑ = 엑셀이 원화로 기재한 것 → 외화 환산(amount÷환율).
+                                // (중고차 외화결제는 보통 <20만. 100만↑ 외화는 사실상 원화 → ×환율 폭발 방지.)
+                                $amt = (float) $p['amount'];
+                                if ($vehicle->currency !== 'KRW' && $amt >= 1_000_000) {
+                                    $amt = round($amt / $rate, 2);
+                                }
+                                $fp = new FinalPayment;
+                                $fp->forceFill([
+                                    'vehicle_id' => $vehicle->id,
+                                    'type' => 'balance',
+                                    'amount' => $amt,
+                                    'exchange_rate' => $rate,
+                                    'amount_krw' => (int) round($amt * $rate),
+                                    'payment_date' => $p['date'] ?: $vehicle->sale_date,
+                                    'confirmed_at' => now(),
+                                    'note' => 'import 입금',
+                                ])->save();
+                                $stats['payments']++;
+                            }
+                            // 엑셀은 전 행 프리랜서 50%·서류비5만으로 정산 — 담당자 현재 type 무관(과거 재현).
+                            $st = new Settlement;
+                            $st->forceFill([
                                 'vehicle_id' => $vehicle->id,
-                                'type' => 'balance',
-                                'amount' => $p['amount'],
-                                'exchange_rate' => $rate,
-                                'amount_krw' => (int) round($p['amount'] * $rate),
-                                'payment_date' => $p['date'] ?: $vehicle->sale_date,
+                                'salesman_id' => $vehicle->salesman_id,
+                                'settlement_type' => 'ratio',
+                                'settlement_ratio' => 50,
+                                'per_unit_amount' => null,
+                                'settlement_status' => 'paid',
+                                'secondary_status' => 'closed',
                                 'confirmed_at' => now(),
-                                'note' => 'import 입금',
+                                'paid_at' => now(),
+                                'secondary_closed_at' => now(),
+                                'note' => 'import — 엑셀 과거 정산 재현(프리50%)',
                             ])->save();
-                            $stats['payments']++;
+                            $stats['settlements']++;
                         }
-                        // 엑셀은 전 행 프리랜서 50%·서류비5만으로 정산 — 담당자 현재 type 무관(과거 재현).
-                        $st = new Settlement;
-                        $st->forceFill([
-                            'vehicle_id' => $vehicle->id,
-                            'salesman_id' => $vehicle->salesman_id,
-                            'settlement_type' => 'ratio',
-                            'settlement_ratio' => 50,
-                            'per_unit_amount' => null,
-                            'settlement_status' => 'paid',
-                            'secondary_status' => 'closed',
-                            'confirmed_at' => now(),
-                            'paid_at' => now(),
-                            'secondary_closed_at' => now(),
-                            'note' => 'import — 엑셀 과거 정산 재현(프리50%)',
-                        ])->save();
-                        $stats['settlements']++;
                     }
                 }
             });
