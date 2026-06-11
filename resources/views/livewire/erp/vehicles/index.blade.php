@@ -3177,9 +3177,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 회의확장씬 #10 Phase 2-3 (2026-05-23) — 컬럼 토글 Alpine 컴포넌트 (localStorage 캐시). --}}
 <script>
 function vehicleColumnsToggle() {
-    const STORAGE_KEY = 'car_erp_vehicles_columns';
+    const STORAGE_KEY = 'car_erp_vehicles_columns_v2';   // v2: 판매가 기본 off, 판매총액 기본 on (2026-06-11)
     const defaultVisible = {
-        brand_model: true, purchase_date: true, sale_price: true, sale_total: true,
+        brand_model: true, purchase_date: true, sale_price: false, sale_total: true,
         sale_date: false, shipping_date: false, bl_issue_date: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
