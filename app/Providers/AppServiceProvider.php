@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,5 +27,8 @@ class AppServiceProvider extends ServiceProvider
         // 다중차량(showMulti)은 1요청=최대 30대라 분당 횟수를 더 낮게 잡아 대량열람 억제.
         RateLimiter::for('vehicle-docs', fn ($request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
         RateLimiter::for('vehicle-docs-multi', fn ($request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+
+        // @krw($amount) — 대시보드 금액 억/만 축약 표시(+정확 금액 title 툴팁). 2026-06-11.
+        Blade::directive('krw', fn ($expr) => "<?php echo \\App\\Support\\Money::krwTag($expr); ?>");
     }
 }
