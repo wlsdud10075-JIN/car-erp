@@ -5,6 +5,7 @@ use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -215,14 +216,30 @@ new #[Layout('components.layouts.app')] class extends Component {
             'note' => $this->hNote ?: null,
         ];
 
-        if ($this->historyEditId) {
-            ReceivableHistory::find($this->historyEditId)?->update($payload);
-            session()->flash('panel_success', __('receivable.saved_edit'));
-        } else {
-            ReceivableHistory::create($payload);
-            session()->flash('panel_success', __('receivable.saved_add'));
+        // paid 정산 차량엔 '입금(deposit)' 추가 불가 — 미러링이 신규 잔금(FinalPayment) 생성을 시도해
+        // FinalPayment::creating(paid) 가드에 막혀 500 + 고아 RH 가 됨. 현금/상계/기타로 안내.
+        if ($this->hMethod === 'deposit' && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
+            $this->addError('hMethod', __('receivable.err_paid_no_deposit'));
+
+            return;
         }
 
+        // 미러링(saved 훅 → FinalPayment 생성)이 가드 예외를 던지면 RH 도 함께 롤백 → 고아 RH 방지.
+        try {
+            DB::transaction(function () use ($payload) {
+                if ($this->historyEditId) {
+                    ReceivableHistory::find($this->historyEditId)?->update($payload);
+                } else {
+                    ReceivableHistory::create($payload);
+                }
+            });
+        } catch (\DomainException $e) {
+            $this->addError('hMethod', $e->getMessage());
+
+            return;
+        }
+
+        session()->flash('panel_success', $this->historyEditId ? __('receivable.saved_edit') : __('receivable.saved_add'));
         $this->resetHistoryForm();
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
     }

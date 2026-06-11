@@ -86,6 +86,7 @@ return [
     'saved_edit' => 'Collection updated.',
     'saved_add' => 'Collection added.',
     'deleted' => 'Collection deleted.',
+    'err_paid_no_deposit' => "This vehicle's settlement is paid; the 'Deposit' method can't be used. Choose cash, offset, or other.",
     'list_title' => 'Collection history (latest first)',
     'list_empty' => 'No collection history.',
     'mirror_title' => 'Mirrored with final_payments',
