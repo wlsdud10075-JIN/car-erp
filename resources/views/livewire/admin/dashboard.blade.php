@@ -685,7 +685,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-xs text-gray-500">{{ __('admin_dash.kpi_purchase_total') }}</span>
                     <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['purchase_total']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <div class="mt-1 text-2xl font-bold text-gray-800">@krw($this->kpis['purchase_total'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
             </a>
         </div>
 
@@ -697,7 +697,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-xs font-semibold text-blue-700">{{ __('admin_dash.kpi_sale_accrual') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_sale_accrual_sub') }}</span></span>
                     <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_sale_count_link', ['count' => $this->kpis['sale_count']]) }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-blue-600">₩{{ number_format($this->kpis['sale_total_krw']) }}</div>
+                <div class="mt-1 text-2xl font-bold text-blue-600">₩@krw($this->kpis['sale_total_krw'])</div>
                 <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_sale_accrual_note') }}</p>
             </a>
             <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
@@ -706,7 +706,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-xs font-semibold text-emerald-700">{{ __('admin_dash.kpi_cash') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_cash_sub') }}</span></span>
                     <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-emerald-600">₩{{ number_format($this->kpis['cash_received_krw']) }}</div>
+                <div class="mt-1 text-2xl font-bold text-emerald-600">₩@krw($this->kpis['cash_received_krw'])</div>
                 <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_cash_note') }}</p>
             </a>
             <a href="{{ route('erp.receivables.index') }}" wire:navigate
@@ -715,7 +715,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-xs font-semibold text-amber-700">{{ __('admin_dash.kpi_unpaid') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_unpaid_sub') }}</span></span>
                     <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_receivable_link') }}</span>
                 </div>
-                <div class="mt-1 text-2xl font-bold text-amber-600">₩{{ number_format($this->kpis['unpaid_krw']) }}</div>
+                <div class="mt-1 text-2xl font-bold text-amber-600">₩@krw($this->kpis['unpaid_krw'])</div>
                 <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_unpaid_note') }}</p>
             </a>
         </div>
@@ -794,7 +794,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-xs text-amber-500">{{ __('admin_dash.settle_payout_badge') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold text-amber-600">
-                    {{ number_format($this->settlementKpis['payout_pending']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
+                    @krw($this->settlementKpis['payout_pending'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.settle_payout_note') }}</p>
             </div>
@@ -879,7 +879,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="card min-w-[180px] flex-1 border-red-200 bg-red-50/30">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_total_unpaid') }}</div>
                 <div class="mt-1 text-2xl font-bold text-red-600">
-                    {{ number_format($this->receivableKpis['total_unpaid']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
+                    @krw($this->receivableKpis['total_unpaid'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_total_unpaid_note') }}</p>
             </div>
@@ -902,19 +902,19 @@ new #[Layout('components.layouts.app')] class extends Component
             <a href="{{ route('erp.receivables.index', ['classification' => 'before_shipping']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_before') }}</div>
-                <div class="mt-1 text-2xl font-bold text-blue-700">{{ number_format($cls['before_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <div class="mt-1 text-2xl font-bold text-blue-700">@krw($cls['before_shipping']['unpaid'] ?? 0)<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_before_note', ['count' => $cls['before_shipping']['count'] ?? 0]) }}</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'after_shipping']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_after') }}</div>
-                <div class="mt-1 text-2xl font-bold text-amber-700">{{ number_format($cls['after_shipping']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <div class="mt-1 text-2xl font-bold text-amber-700">@krw($cls['after_shipping']['unpaid'] ?? 0)<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_after_note', ['count' => $cls['after_shipping']['count'] ?? 0]) }}</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'deposit']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_deposit') }}</div>
-                <div class="mt-1 text-2xl font-bold text-violet-700">{{ number_format($cls['deposit']['unpaid'] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
+                <div class="mt-1 text-2xl font-bold text-violet-700">@krw($cls['deposit']['unpaid'] ?? 0)<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_deposit_note', ['count' => $cls['deposit']['count'] ?? 0]) }}</p>
             </a>
         </div>
@@ -942,7 +942,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach ($this->receivableKpis['salesman_top'] as $row)
                         <tr class="{{ $row['unpaid_rate'] >= 50 ? 'bg-amber-50' : '' }}">
                             <td class="py-1.5">{{ $row['name'] }}</td>
-                            <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
+                            <td class="py-1.5 text-right font-mono">@krw($row['unpaid'])</td>
                             <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
                             <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}{{ __('admin_dash.unit_count') }}</td>
                         </tr>
@@ -972,7 +972,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach ($this->receivableKpis['buyer_top'] as $row)
                         <tr class="{{ $row['unpaid_rate'] >= 50 ? 'bg-amber-50' : '' }}">
                             <td class="py-1.5">{{ $row['name'] }}</td>
-                            <td class="py-1.5 text-right font-mono">{{ number_format($row['unpaid']) }}</td>
+                            <td class="py-1.5 text-right font-mono">@krw($row['unpaid'])</td>
                             <td class="py-1.5 text-right font-semibold {{ $row['unpaid_rate'] >= 50 ? 'text-amber-700' : 'text-gray-700' }}">{{ $row['unpaid_rate'] }}%</td>
                             <td class="py-1.5 text-right text-gray-500">{{ $row['vehicle_count'] }}{{ __('admin_dash.unit_count') }}</td>
                         </tr>
@@ -1163,7 +1163,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     tooltip: { callbacks: { label: (ctx) => '₩ ' + ctx.parsed.y.toLocaleString() } },
                                 },
                                 scales: {
-                                    y: { beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } },
+                                    y: { beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } },
                                 },
                             },
                         });
@@ -1189,7 +1189,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             },
                             scales: {
                                 x: { stacked: true },
-                                y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } },
+                                y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } },
                             },
                         },
                     });
@@ -1252,7 +1252,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                         },
                                     },
                                 },
-                                scales: { x: { beginAtZero: true, ticks: { callback: (v) => (v / 1e6).toFixed(0) + 'M' } } },
+                                scales: { x: { beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } } },
                             },
                         });
                     }

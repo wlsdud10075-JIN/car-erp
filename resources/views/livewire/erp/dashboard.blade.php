@@ -468,14 +468,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (app()->getLocale() === 'en') {
             return '₩'.number_format($amount);
         }
-        if ($amount >= 100000000) {
-            return '₩'.number_format($amount / 100000000, 1).'억';
-        }
-        if ($amount >= 10000) {
-            return '₩'.number_format($amount / 10000, 0).'만';
-        }
 
-        return '₩'.number_format($amount);
+        // 한국어 — 억/만 단위 축약 (만 단위까지 정확, 2026-06-11). 공통 헬퍼 단일 출처.
+        return '₩'.\App\Support\Money::krwShort($amount);
     }
 }; ?>
 
