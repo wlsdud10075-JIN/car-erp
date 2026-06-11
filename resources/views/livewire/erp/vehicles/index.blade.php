@@ -3434,7 +3434,7 @@ function vehicleColumnsToggle() {
                     </div>
                     @unless($editingId)
                         {{-- NICE 1단계가 소유자명 필수 → 차량번호와 함께 입력. nice_reg_owner_name 에 바인딩(아래 등록정보 소유자명과 동기화). --}}
-                        <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full"
+                        <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full" autocomplete="off"
                                placeholder="{{ __('vehicle.panel.owner_name_ph') }}" wire:blur="lookupNiceApi" />
                     @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -3496,7 +3496,7 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.owner_name') }}</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.owner_name') }}</label><input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" /></div>
                 <div x-data="{ show: false }">
                     <label class="label-base">{{ __('vehicle.field.owner_rrn') }}</label>
                     <div class="relative">
