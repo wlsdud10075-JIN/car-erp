@@ -86,6 +86,7 @@ return [
     'saved_edit' => '회수 이력이 수정됐습니다.',
     'saved_add' => '회수 이력이 추가됐습니다.',
     'deleted' => '회수 이력이 삭제됐습니다.',
+    'err_paid_no_deposit' => "정산이 완료(paid)된 차량은 '입금' 방식으로 추가할 수 없습니다. 현금·상계·기타 방식을 사용하세요.",
     'list_title' => '회수 이력 목록 (최신순)',
     'list_empty' => '회수 이력이 없습니다.',
     'mirror_title' => 'final_payments와 미러링됨',
