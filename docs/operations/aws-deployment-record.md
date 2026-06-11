@@ -347,12 +347,22 @@ sudo chmod 440 /etc/sudoers.d/deploy-fpm
 
 ## 14. 미해결 / 다음 작업 (TODO)
 
-### 14-1. 도메인 + HTTPS (미완 — 보류 중)
-- 이 인스턴스는 `heysellcar.com`(현재 구 HEYMAN_ERP 인스턴스 사용 중)을 대체할 예정.
-- **car-erp 안정화 후 전환**: 구 인스턴스에서 도메인 분리 → NEW_CAR_ERP에 할당 →
-  certbot HTTPS 발급 → `.env` `APP_URL`을 https 도메인으로 변경 → `config:cache`.
-- 구 HEYMAN_ERP 인스턴스는 전환 후에도 한동안 유지(IP 직접 접근 가능, 데이터 보존).
-- 안정화 기간 동안은 `http://52.79.200.151`로 운영.
+### 14-1. 도메인 + HTTPS — ✅ 완료 (2026-06-11)
+`https://heysellcar.com` + `https://www.heysellcar.com` 운영 라이브.
+
+**전환 절차 (실제 수행)**:
+1. **Lightsail 콘솔에서 도메인 이전** (heysellcar.com이 Lightsail DNS 관리 → 등록대행사 작업 불필요):
+   - 구 **HEYMAN_ERP**(`3.34.215.235`) 도메인탭 → `heysellcar.com`·`www` 할당 🗑 해제.
+   - **NEW_CAR_ERP**(`52.79.200.151` 고정IP) 도메인탭 → 도메인 할당: apex + www, **고정 IP 주소(IPv4)** 선택. (IPv6 AAAA는 미설정 — certbot IPv6 검증 함정 회피)
+   - 방화벽 IPv4·IPv6 모두 80·443 열림 확인.
+2. **서버**: nginx `server_name`에 `heysellcar.com www.heysellcar.com` 추가(IP 유지) → reload → `apt install certbot python3-certbot-nginx` → `certbot --nginx -d heysellcar.com -d www.heysellcar.com --redirect` (Let's Encrypt, 만료 2026-09-09, **자동갱신**, http→https 301 자동) → `.env` `APP_URL=https://heysellcar.com` + `SESSION_SECURE_COOKIE=true` → `php artisan config:cache`.
+
+**교훈/주의**:
+- **리디렉트 루프 없음** = nginx가 fastcgi 직결(`location ~ \.php` 에 `include fastcgi_params` → `fastcgi_param HTTPS $https`)이라 Laravel이 https 자동인식. **TrustProxies/forceScheme 불필요**(코드 무변경). 단 추후 **Cloudflare/LB를 앞에 두면 그땐 TrustProxies + forceScheme 필요**.
+- 순서 = DNS→cert→APP_URL/secure쿠키. **cert 동작 확인 후에** APP_URL을 https로(전에 바꾸면 깨짐). SESSION_SECURE_COOKIE도 cert 후(전에 true면 http 로그인 깨짐).
+- 자동배포(dev→master)는 `.env`/nginx 안 건드리고 `config:cache`만 → **https 유지**. APP_KEY 불변(RRN 안전).
+- 구 HEYMAN_ERP(`3.34.215.235`)는 도메인에서 떨어짐(사용자: 죽어도 OK). `http://52.79.200.151` 직접접속도 계속 가능.
+- nginx 설정 `.bak.YYYYMMDD_HHMMSS` 백업 보존.
 
 ### 14-2. 런북 §7 기능 점검 (일부 미완)
 - ✅ 차량 등록, 서류·사진 S3 업로드/표시/다운로드
@@ -389,7 +399,7 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 | S3 연동 (버킷·IAM·드라이버·서명 URL·검증) | ✅ 완료 |
 | DB 백업 cron | ✅ 완료 (자동 실행 검증은 익일) |
 | GitHub Actions 자동배포 | ✅ 완료·검증됨 (deploy #9, `f6028ef` — §19. 마이그 동반 첫 배포, SoftDeletes deleted_at 운영 적용) |
-| 도메인 + HTTPS | ⬜ 보류 (안정화 후) |
+| 도메인 + HTTPS | ✅ 완료 (2026-06-11, `https://heysellcar.com` + www, Let's Encrypt 자동갱신) — §14-1 |
 | 런북 §7 기능 점검 (잔여분) | ⬜ 예정 |
 
 ---
