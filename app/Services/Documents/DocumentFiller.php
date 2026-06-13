@@ -47,7 +47,9 @@ class DocumentFiller
     {
         $config = $this->configFor($type);
 
-        $path = resource_path('templates/system/'.$config['template']);
+        // 테넌트별 양식 세트 (회사별 회사정보 인쇄본). default='system'(ssancar) → .env COMPANY_TEMPLATE_SET 로 분기.
+        $set = config('company.template_set', 'system');
+        $path = resource_path('templates/'.$set.'/'.$config['template']);
         $spreadsheet = IOFactory::load($path);
 
         // 1) 모든 visible 시트의 노란 fill 제거 (수식·공란 포함 전부)

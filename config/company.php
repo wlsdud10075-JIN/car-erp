@@ -15,6 +15,10 @@
 */
 
 return [
+    // 서류 템플릿 세트 폴더 (resources/templates/{set}/). 회사별 회사정보 인쇄본 분기.
+    // default='system'(ssancar). karaba 등 → .env COMPANY_TEMPLATE_SET=karaba.
+    'template_set' => env('COMPANY_TEMPLATE_SET', 'system'),
+
     'name_ko' => '주식회사 싼카',
     'name_en' => 'SSANCAR CO., LTD.',
     'address_ko' => '경기도 시흥시 산기대학로 163, A동 328호 (정왕동)',
