@@ -2,7 +2,9 @@
 
 > **구조 결정 (2026-06-13)**: 멀티테넌트 아님. **단일 master 코드 + 회사별 인스턴스/DB/S3/도메인/APP_KEY 분리.**
 > 분기는 코드가 아니라 **설정(.env)·프로파일(전략클래스)** 로 처리. karaba가 직접 써보고 변경요청 → 정산 등 *국지적*이면 프로파일로 흡수, *광범위*해지면 그때 **별도 repo(fork)**. 브랜치는 안 만듦.
-> 상세 배포 절차/이슈는 `aws-deployment-record.md`(ssancar 기준) 참조 — 이 문서는 **karaba 차이점 + 순서**만.
+> 상세 배포 절차/이슈는 `aws-deployment-record.md`(heyman 기준) 참조 — 이 문서는 **karaba 차이점 + 순서**만.
+>
+> **서버 명칭(2026-06-13)**: heyman=현재 운영서버(구 "ssancar/현재서버") / karaba=이 문서 대상(2번째 회사) / ssancar=미래 대물량 싼카 서버. 회사(법인)는 싼카·카라바 2개 — heyman·ssancar 서버는 같은 싼카 법인이라 `system/` 양식 공용, karaba만 `karaba/` 양식. "SSANCAR 상호/계좌"는 싼카 법인 정보(양식에 인쇄).
 
 ---
 
@@ -12,7 +14,7 @@
 |---|---|---|
 | AWS 계정 | karaba 계정 접근 (받음 ✓) | 인스턴스 생성 권한 |
 | 도메인 | karaba 운영 도메인 | certbot HTTPS용 (없으면 IP 임시) |
-| **회사정보** | 상호(국/영)·주소·사업자번호·대표·**매매업등록번호**·은행계좌(SWIFT 포함) | 서류(인보이스/계약서) 출력용 — `config/company.php` 대체값 ⚠️ B-2 참조 |
+| **회사정보** ✓받음 | 상호(국/영)·주소·사업자번호·대표·**매매업등록번호**·은행계좌(SWIFT) | 서류 출력용 — `templates/karaba/` 셀에 기입 완료(B-2). 회사정보 .env 키 불필요 |
 | 관리자 계정 | ADMIN_*/BOSS_* 이메일·비번 | 시드 생성 |
 | NICE 연동 | karaba 매매업 기준 토큰 (쓸 경우) | 안 쓰면 수기 입력 fallback |
 
@@ -27,7 +29,7 @@
 **실태 (2026-06-13 확인)**: `config/company.php` 는 **코드 어디서도 안 읽힘**(dead config, 옛 dompdf 잔재). 회사정보(상호·주소·사업자번호·**계좌·SWIFT·매매업번호**)는 **`resources/templates/system/*.xlsx` 9개 템플릿에 인쇄**돼 있음. DocumentFiller 는 노란셀(차량데이터)만 채우고 회사정보는 템플릿 정적텍스트 그대로 출력.
 
 **해결**: 테넌트별 템플릿 폴더 분기.
-1. (코드, 1회) `DocumentFiller` 가 `config('company.template_set', 'system')` 기준으로 `resources/templates/{set}/` 에서 로드하도록 — `.env COMPANY_TEMPLATE_SET=karaba`. ssancar 는 default 'system' → 무영향.
+1. (코드, 1회) `DocumentFiller` 가 `config('company.template_set', 'system')` 기준으로 `resources/templates/{set}/` 에서 로드하도록 — `.env COMPANY_TEMPLATE_SET=karaba`. heyman 등 싼카 서버는 default 'system' → 무영향.
 2. (데이터) `resources/templates/karaba/` 에 9개 복사 + **회사정보 셀만 karaba 값으로 교체** (상호·주소·사업자번호·계좌·SWIFT·매매업번호·대표). ← **karaba 회사정보 회신 필요**.
 → karaba가 인보이스/계약서 출력 *전* 완료 (안 하면 karaba 서류에 SSANCAR 상호·계좌 찍힘).
 → **코드 분기(1)는 지금 가능 / 템플릿 교체(2)는 karaba 정보 후.**
@@ -38,12 +40,12 @@
 
 1. **인스턴스**: Ubuntu (Lightsail 단일 또는 EC2). 고정 IP 할당.
 2. **방화벽**: 22(SSH)·80·443 오픈.
-3. **소프트웨어 스택** (ssancar §1 동일):
+3. **소프트웨어 스택** (heyman 배포기록 §1 동일):
    ```bash
    # PHP 8.4 (ondrej PPA)
    sudo apt install -y php8.4-fpm php8.4-mysql php8.4-gd php8.4-zip \
      php8.4-mbstring php8.4-xml php8.4-curl php8.4-bcmath php8.4-intl \
-     php8.4-dom php8.4-simplexml          # ← dom/zip 누락 주의(ssancar 실패 사례)
+     php8.4-dom php8.4-simplexml          # ← dom/zip 누락 주의(heyman 배포 실패 사례)
    sudo systemctl restart php8.4-fpm
    # zip CLI 미인식 시: sudo phpenmod zip && sudo systemctl restart php8.4-fpm
    sudo apt install -y nginx mysql-server composer
@@ -75,7 +77,7 @@ APP_ENV=production
 APP_DEBUG=false
 APP_NAME="karaba ERP"
 APP_URL=https://(karaba 도메인)
-APP_KEY=                              # ← G단계에서 1회 생성 (절대 ssancar 키 재사용 X)
+APP_KEY=                              # ← G단계에서 1회 생성 (절대 heyman 키 재사용 X)
 
 DB_DATABASE=karaba_erp                # ← 분리
 DB_USERNAME=karaba_erp_user           # ← 분리
@@ -99,12 +101,8 @@ ADMIN_PASSWORD=***
 BOSS_EMAIL=***
 BOSS_PASSWORD=***
 
-# B-2 외부화 후 — karaba 회사정보
-COMPANY_NAME_KO=***
-COMPANY_NAME_EN=***
-COMPANY_BIZ_NO=***
-COMPANY_DEALER_NO=***
-# ... (B-2에서 정한 키 전부)
+# 서류 양식 세트 — karaba 회사정보는 templates/karaba/ 에 인쇄됨(B-2). 별도 회사정보 .env 키 불필요.
+COMPANY_TEMPLATE_SET=karaba
 
 NICE_PROVIDE_URL=***                  # karaba 토큰 (쓸 경우)
 NICE_PROVIDE_TOKEN=***
@@ -115,7 +113,7 @@ NICE_PROVIDE_TOKEN=***
 ```bash
 php artisan key:generate              # ← karaba 전용, 최초 1회만
 ```
-→ 생성 즉시 **별도 안전저장소(1Password 등)에 백업**. 절대 재실행 금지(`nice_reg_owner_rrn` 복호화 불가 = 영구손실). ssancar 키와 **완전 별개**.
+→ 생성 즉시 **별도 안전저장소(1Password 등)에 백업**. 절대 재실행 금지(`nice_reg_owner_rrn` 복호화 불가 = 영구손실). heyman 키와 **완전 별개**.
 
 ## H. 마이그레이션 + 시드
 
@@ -126,7 +124,7 @@ php artisan storage:link
 ```
 → 검증: 관리자 계정 2개만, 더미 차량/바이어 0건.
 
-## I. 권한 (ssancar §8 — ubuntu vs www-data 함정)
+## I. 권한 (heyman 배포기록 §8 — ubuntu vs www-data 함정)
 
 ```bash
 cd /var/www/car-erp
@@ -160,7 +158,7 @@ crontab -e
 ## M. 자동배포 타깃 추가 (브랜치 아님 — 배포 대상 목록)
 
 현재 `.github/workflows/deploy.yml` 은 단일 타깃(Secrets `DEPLOY_HOST` 등). karaba 추가 방법:
-- **GitHub Environments**: `Production`(ssancar) + `Production-karaba`(karaba) 각자 DEPLOY_* 시크릿 → deploy.yml 에 **matrix/job 2개**로 양쪽 배포.
+- **GitHub Environments**: `Production`(heyman) + `Production-karaba`(karaba) 각자 DEPLOY_* 시크릿 → deploy.yml 에 **matrix/job 2개**로 양쪽 배포.
 - 또는 karaba는 **수동배포**(초기): karaba 서버에서 `git pull && composer install --no-dev && npm ci && npm run build && php artisan migrate --force && ... && php artisan up`.
 - karaba 서버 `~/.ssh/authorized_keys` 에 배포용 공개키 등록 필요.
 - ⚠️ 양쪽 동시 자동배포면 master 푸시 1번에 둘 다 배포됨. 단계적 롤아웃 원하면 karaba는 수동/태그배포로.
@@ -184,4 +182,4 @@ crontab -e
 | UI 일부(필드·메뉴·토글) | Setting 토글 / 조건분기 |
 | UI 전체·대시보드 전반 갈아엎기 | 누적되면 **fork(별도 repo)** 신호 — 브랜치 아님 |
 
-**판단 룰**: "이 변경, ssancar에도 좋은가?" → 응=공통코드 / 아니=karaba격리(작으면 프로파일, 크고 계속 쌓이면 fork).
+**판단 룰**: "이 변경, heyman(싼카)에도 좋은가?" → 응=공통코드 / 아니=karaba격리(작으면 프로파일, 크고 계속 쌓이면 fork).
