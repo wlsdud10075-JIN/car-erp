@@ -54,3 +54,38 @@ jobs:
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
             php artisan up
+
+  # 2번째 회사 karaba 서버 (멀티회사, 2026-06-14). heyman 잡과 동일 스크립트 —
+  # environment=karaba 로 DEPLOY_* 시크릿만 분리. 한 잡 실패해도 다른 잡은 영향 없음.
+  deploy-karaba:
+    runs-on: ubuntu-latest
+    environment: karaba
+    steps:
+      - name: Deploy over SSH (karaba)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            git fetch origin master
+            git reset --hard origin/master
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            npm ci
+            npm run build
+            php artisan db:backup || echo "::warning::pre-deploy db:backup failed — proceeding without fresh snapshot"
+            php artisan down || true
+            if ! php artisan migrate --force; then
+              echo "::error::migration failed — site kept in MAINTENANCE. 복구: storage/backups/db 최신 스냅샷 복원 후 재배포"
+              exit 1
+            fi
+            php artisan config:cache || true
+            php artisan route:cache || true
+            php artisan view:cache || true
+            php artisan storage:link || true
+            sudo systemctl reload php8.4-fpm || true
+            php artisan queue:restart || true
+            php artisan up
