@@ -461,3 +461,20 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 **검증**: deploy/tests(ci+mysql-check)/lint 3워크플로우 success. 로컬 550 통과+1 skip. 테스트 5건 추가.
 
 **Review/Review2 잔여**: A hard-lock(차등 수동운용 정책상 미채택) · E2 auto-sweep(정책 미정) · 조사2건(세션무효화·동시성, 낮음)뿐. 실행 항목 사실상 전부 완료.
+
+## 20. deploy #10 — 연동 B 수신측 (board → car-erp purchase-sync) (2026-06-15)
+
+**반영** (master `53f2cd1`→`5d127d2`, cherry-pick 3커밋 `5f97271`·`17edf53`·`5d127d2`, 마이그레이션 동반):
+- `POST /api/internal/purchase-sync` — board(매입보드)가 won 낙찰차를 car-erp 매입 재고로 단방향 push 수신. HMAC(`X-Board-Signature`) + vehicle_number 멱등 + 영업 매칭 + NICE(vehicle_number+owner_name)로 VIN 채움 + payee→매입탭 정산계좌(암호화) + 기본 기타비용 자동기입.
+- 신규 컬럼 마이그 `2026_06_15_000001_add_purchase_sync_columns_to_vehicles`(purchase_source·c_no, additive nullable).
+- 수신 스펙(권위) = `docs/integration/purchase-sync-receiver.md`. 구현·계약·확정사항 전부 거기.
+
+**시크릿 세팅** (2026-06-15): 운영 car-erp `.env CAR_ERP_HMAC_SECRET` 교체 + `config:cache` 완료 (값은 .env/AWS 폴더에만 보관 — 문서에 평문 금지). `.env.bak.hmac-20260615-124804` 백업 존재. APP_KEY 미변경.
+
+**안전밸브 상태**: car-erp 수신측은 켜졌으나 **board 운영 `.env`(CAR_ERP_BASE_URL + CAR_ERP_HMAC_SECRET) 세팅 전까지 데이터 안 흐름**(board Job no-op). 양쪽 시크릿 일치 시 활성.
+
+**⏭️ 다음 세션 (내일 이어서)**:
+1. **board 운영 서버 `.env`** 세팅 (board 세션·board repo) — `CAR_ERP_BASE_URL=https://heysellcar.com` + `CAR_ERP_HMAC_SECRET`(car-erp와 동일) + `config:cache`.
+2. **운영 end-to-end**: board에서 차 하나 won → 운영 car-erp 자동 생성 확인 (vehicle_id 응답·담당자 매칭·기본비용).
+3. board가 보내는 `salesman_email`은 **car-erp 등록 영업 이메일**이어야 매칭(아니면 `car_erp_salesman_id`). board 계정 이메일(admin@board.test 등)과 다름 — 로컬 e2e에서 확인된 식별자 정책.
+4. (선택) 시크릿을 랜덤 강한 값으로 교체 — 양쪽 동시 + 각자 config:cache.

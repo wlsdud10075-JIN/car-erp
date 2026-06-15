@@ -4,7 +4,7 @@
 > ⚠️ **계약 변경은 양쪽 동기화 + 수신측(car-erp) 먼저 배포** → 그다음 board 발신. (car-erp `artisan down` 1~3분 순단은 board 큐+재시도가 흡수.)
 > 두 앱은 **DB·보안경계가 다른 별도 앱**(board=RRN 없음 / car-erp=RRN 보유). 합치지 않고 **이 API 계약 1개**로만 연결.
 
-상태: **✅ car-erp 수신측 구현 완료 + 2차 수정 반영 (2026-06-15, dev)** — board 발신측은 이미 완료. 남은 것 = 양쪽 `.env` 비밀키 세팅 + 배포(car-erp 먼저). 구현 파일: `routes/api.php` · `bootstrap/app.php`(api 등록) · `app/Http/Middleware/VerifyPurchaseSyncHmac.php` · `app/Http/Controllers/Webhook/PurchaseSyncController.php` · `config/services.php`(`services.purchase_sync.hmac_secret`) · 마이그레이션 `…add_purchase_sync_columns_to_vehicles`(purchase_source·c_no) · 테스트 `tests/Feature/PurchaseSyncReceiverTest.php`(17 케이스). **2차 수정(board 로컬 e2e 발견)**: ① `sales_channel='heyman'` 제거(enum export 단일) ② 매칭키 vin→vehicle_number + NICE 조회로 VIN 채우기.
+상태: **✅ 구현·2차수정·기본비용 자동기입 + 운영 배포 완료 (2026-06-15, master deploy #10 — 배포기록 §20)** — 운영 car-erp `.env CAR_ERP_HMAC_SECRET` 세팅 + `config:cache` 완료(값은 .env/AWS 폴더에만, 문서 평문 금지). 테스트 18케이스. **남은 것 = board 운영 `.env`(CAR_ERP_BASE_URL + 동일 시크릿) 세팅 → 운영 end-to-end 확인**(board 세팅 전까진 board Job no-op라 안 흐름·안전). 구현 파일: `routes/api.php` · `bootstrap/app.php`(api 등록) · `app/Http/Middleware/VerifyPurchaseSyncHmac.php` · `app/Http/Controllers/Webhook/PurchaseSyncController.php` · `config/services.php`(`services.purchase_sync.hmac_secret`) · 마이그레이션 `…add_purchase_sync_columns_to_vehicles`(purchase_source·c_no) · 테스트 `tests/Feature/PurchaseSyncReceiverTest.php`(17 케이스). **2차 수정(board 로컬 e2e 발견)**: ① `sales_channel='heyman'` 제거(enum export 단일) ② 매칭키 vin→vehicle_number + NICE 조회로 VIN 채우기.
 
 ---
 
