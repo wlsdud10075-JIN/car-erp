@@ -17,6 +17,12 @@
 
 > 📦 **2026-05-29 트림** — 완료된 큐 표·grandfather 코드·폐기된 dompdf 버그·구 기획안(role기획보안_수정.md)·1차 배포 day-by-day 플랜은 `docs/archive/md-2026-05-29/` 로 이동. `CLAUDE.md.full` / `SKILLS.md.full` 원본 백업 보존. 옛 결정 맥락 필요 시 grep.
 
+> 🔗 **형제 앱 `board` + 연동** (별도 repo/DB/APP_KEY/배포):
+> - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp(heyman) 재고 전환**. 현재 **heyman만 연동**.
+> - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
+> - ⚠️ **크로스 레포 규칙**: 레포 X 관련 결정/변경은 **X의 *커밋된 파일*에 남기고 X 세션에서 커밋**한다. 메모리는 레포별·PC별이라 안 따라옴 — **git 커밋된 파일만** 모든 세션·PC에 전파. (board 수정 = board 세션·board repo에 커밋.)
+> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(미래 대물량). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project-deployment-naming`.
+
 SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
 
 ## 환경설정
