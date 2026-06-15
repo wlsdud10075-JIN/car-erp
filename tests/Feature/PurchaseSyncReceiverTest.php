@@ -9,14 +9,19 @@ use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
  * 연동 B 수신측 — POST /api/internal/purchase-sync (board → car-erp).
  * 수신 스펙(권위) = docs/integration/purchase-sync-receiver.md.
  *
- * 검증: HMAC 위변조 → 401 / 유효 서명 → vehicle 생성 + vehicle_id / VIN 멱등 재전송 →
- *       중복 생성 안 함 / 영업 매칭(이메일·override) / 미지원 버전 → 422 / payee 암호화.
+ * ⚠️ 매칭/멱등 키 = vehicle_number (VIN 아님). board 는 VIN 을 모름 — car-erp 가
+ *    NICE(차량번호+소유자명)로 VIN 을 채운다.
+ *
+ * 검증: HMAC 위변조 → 401 / 유효 서명 → vehicle 생성 + vehicle_id / vehicle_number 멱등
+ *       재전송 → 중복 없음 / 영업 매칭 / 미지원 버전 → 422 / payee 암호화 / NICE→VIN 채움 /
+ *       owner_name 없으면 graceful(VIN 없이 생성) / sales_channel=export(heyman 제거).
  */
 class PurchaseSyncReceiverTest extends TestCase
 {
@@ -30,6 +35,10 @@ class PurchaseSyncReceiverTest extends TestCase
     {
         parent::setUp();
         config()->set('services.purchase_sync.hmac_secret', self::SECRET);
+        // NICE 는 기본 미설정(수동 모드) — 대부분 케이스는 graceful(VIN 없이 생성).
+        // NICE→VIN 채움은 전용 테스트에서 config + Http::fake 로 검증.
+        config()->set('services.nice.provide_url', '');
+        config()->set('services.nice.provide_token', '');
     }
 
     /** board 와 동일한 직렬화 + 서명으로 raw body POST. */
@@ -48,14 +57,14 @@ class PurchaseSyncReceiverTest extends TestCase
     {
         return array_merge([
             'contract_version' => 1,
-            'vin' => 'KMHXX00XXXX000001',
             'vehicle_number' => '12가3456',
+            'owner_name' => '홍길동',
             'source' => 'auction',
             'final_price' => 12000000,
             'salesman_email' => 'sales@car-erp.test',
             'car_erp_salesman_id' => null,
             'c_no' => 'C-7788',
-            'payee_name' => '홍길동',
+            'payee_name' => '김예금',
             'payee_bank' => '국민은행',
             'payee_account' => '123-456-789012',
         ], $overrides);
@@ -74,14 +83,76 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertNotNull($vehicleId);
 
         $vehicle = Vehicle::find($vehicleId);
-        $this->assertSame('KMHXX00XXXX000001', $vehicle->nice_reg_vin);
         $this->assertSame('12가3456', $vehicle->vehicle_number);
-        $this->assertSame('heyman', $vehicle->sales_channel);
+        $this->assertSame('export', $vehicle->sales_channel);   // heyman 아님 (enum 축소)
         $this->assertSame('auction', $vehicle->purchase_source);
         $this->assertSame('C-7788', $vehicle->c_no);
         $this->assertSame(12000000, (int) $vehicle->purchase_price);
         $this->assertSame($salesman->id, $vehicle->salesman_id);
         $this->assertSame(4, (int) $vehicle->progress_status_rule_version);
+        $this->assertSame('홍길동', $vehicle->nice_reg_owner_name);   // owner_name baseline
+    }
+
+    public function test_nice_lookup_fills_vin_on_creation(): void
+    {
+        config()->set('services.nice.provide_url', 'https://ssancar.test/provide/api/nice-lookup/');
+        config()->set('services.nice.provide_token', 'fake-token');
+
+        Http::fake([
+            'ssancar.test/*' => Http::response([
+                'success' => true,
+                'data' => [
+                    'resVehicleIdNo' => 'KMHXX00XXXX099999',
+                    'resFinalOwner' => '홍길동',
+                    'commCarName' => '아반떼',
+                    'mnfctEntrpsNm' => '현대',
+                    'resCarYearModel' => '2020',
+                ],
+            ], 200),
+        ]);
+
+        $res = $this->postSigned($this->validPayload(['salesman_email' => 'nobody@car-erp.test']));
+        $res->assertStatus(201);
+
+        $vehicle = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame('KMHXX00XXXX099999', $vehicle->nice_reg_vin);
+        $this->assertSame('아반떼', $vehicle->model_type);
+        $this->assertSame('현대', $vehicle->brand);
+        $this->assertNotEmpty($vehicle->nice_raw);
+        $this->assertSame('KMHXX00XXXX099999', $vehicle->nice_raw['resVehicleIdNo']);
+    }
+
+    public function test_missing_owner_name_creates_vehicle_without_vin_gracefully(): void
+    {
+        // NICE 설정돼 있어도 owner_name 없으면 NICE 호출 자체를 안 함 → 에러 없이 VIN 없이 생성.
+        config()->set('services.nice.provide_url', 'https://ssancar.test/provide/api/nice-lookup/');
+        config()->set('services.nice.provide_token', 'fake-token');
+        Http::fake();   // 어떤 호출도 일어나면 안 됨
+
+        $res = $this->postSigned($this->validPayload([
+            'owner_name' => null,
+            'salesman_email' => 'nobody@car-erp.test',
+        ]));
+
+        $res->assertStatus(201);
+        $vehicle = Vehicle::find($res->json('vehicle_id'));
+        $this->assertNull($vehicle->nice_reg_vin);
+        $this->assertSame('12가3456', $vehicle->vehicle_number);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_nice_failure_is_graceful(): void
+    {
+        config()->set('services.nice.provide_url', 'https://ssancar.test/provide/api/nice-lookup/');
+        config()->set('services.nice.provide_token', 'fake-token');
+        Http::fake(['ssancar.test/*' => Http::response(['success' => false, 'message' => '조회 실패'], 200)]);
+
+        $res = $this->postSigned($this->validPayload(['salesman_email' => 'nobody@car-erp.test']));
+
+        $res->assertStatus(201);   // NICE 실패해도 생성은 성공
+        $vehicle = Vehicle::find($res->json('vehicle_id'));
+        $this->assertNull($vehicle->nice_reg_vin);
     }
 
     public function test_payee_account_is_encrypted(): void
@@ -90,7 +161,7 @@ class PurchaseSyncReceiverTest extends TestCase
         $res->assertStatus(201);
 
         $vehicle = Vehicle::find($res->json('vehicle_id'));
-        $this->assertSame('홍길동', $vehicle->purchase_seller_holder);
+        $this->assertSame('김예금', $vehicle->purchase_seller_holder);
         $this->assertSame('국민은행', $vehicle->purchase_seller_bank);
         $this->assertSame('123-456-789012', $vehicle->purchase_seller_account);
 
@@ -101,8 +172,7 @@ class PurchaseSyncReceiverTest extends TestCase
 
     public function test_invalid_signature_returns_401(): void
     {
-        $payload = $this->validPayload();
-        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $body = json_encode($this->validPayload(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         $res = $this->call('POST', self::URI, [], [], [], [
             'CONTENT_TYPE' => 'application/json',
@@ -129,16 +199,16 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame(0, Vehicle::count());
     }
 
-    public function test_same_vin_resend_is_idempotent(): void
+    public function test_same_vehicle_number_resend_is_idempotent(): void
     {
         $first = $this->postSigned($this->validPayload(['salesman_email' => 'nobody@car-erp.test']));
         $first->assertStatus(201);
         $vehicleId = $first->json('vehicle_id');
 
-        // 동일 VIN, 다른 vehicle_number 로 재전송 — 새로 만들지 않고 기존 id 반환(200).
+        // 동일 vehicle_number 재전송 — 새로 만들지 않고 기존 id 반환(200).
         $second = $this->postSigned($this->validPayload([
             'salesman_email' => 'nobody@car-erp.test',
-            'vehicle_number' => '99호9999',
+            'final_price' => 99999999,
         ]));
         $second->assertStatus(200);
 
@@ -154,9 +224,19 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame(0, Vehicle::count());
     }
 
-    public function test_validation_failure_returns_422(): void
+    public function test_missing_vehicle_number_returns_422(): void
     {
-        // source 가 enum 외 값
+        $payload = $this->validPayload();
+        unset($payload['vehicle_number']);
+
+        $res = $this->postSigned($payload);
+
+        $res->assertStatus(422);
+        $this->assertSame(0, Vehicle::count());
+    }
+
+    public function test_invalid_source_returns_422(): void
+    {
         $res = $this->postSigned($this->validPayload(['source' => 'craigslist']));
 
         $res->assertStatus(422);
@@ -167,17 +247,18 @@ class PurchaseSyncReceiverTest extends TestCase
     {
         $res = $this->postSigned($this->validPayload([
             'salesman_email' => 'nobody@car-erp.test',
+            'vin' => 'SHOULD-BE-IGNORED',   // 구 계약 잔재 — 무시돼야 함
             'future_field' => 'something new',
-            'another_unknown' => 12345,
         ]));
 
         $res->assertStatus(201);
         $this->assertSame(1, Vehicle::count());
+        // vin 필드는 무시 — NICE 미설정이라 VIN 은 비어 있어야 함
+        $this->assertNull(Vehicle::first()->nice_reg_vin);
     }
 
     public function test_car_erp_salesman_id_override_takes_precedence(): void
     {
-        // 이메일로 찾히는 영업과, override 로 지정할 영업을 따로 둠.
         Salesman::create(['name' => '이메일영업', 'email' => 'sales@car-erp.test', 'type' => 'employee', 'is_active' => true]);
         $override = Salesman::create(['name' => '지정영업', 'email' => 'other@car-erp.test', 'type' => 'employee', 'is_active' => true]);
 
