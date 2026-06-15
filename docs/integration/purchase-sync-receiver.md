@@ -4,7 +4,7 @@
 > ⚠️ **계약 변경은 양쪽 동기화 + 수신측(car-erp) 먼저 배포** → 그다음 board 발신. (car-erp `artisan down` 1~3분 순단은 board 큐+재시도가 흡수.)
 > 두 앱은 **DB·보안경계가 다른 별도 앱**(board=RRN 없음 / car-erp=RRN 보유). 합치지 않고 **이 API 계약 1개**로만 연결.
 
-상태: **스펙 초안 (2026-06-15)** — 구현 전. car-erp API 1개 승인됨(2026-06-15). 구현 순서: ① 이 엔드포인트(car-erp, car-erp-security/qa 검토) → ② board Job → ③ 통합 테스트.
+상태: **✅ car-erp 수신측 구현 완료 (2026-06-15, dev)** — board 발신측은 이미 완료. 남은 것 = 양쪽 `.env` 비밀키 세팅 + 배포(car-erp 먼저). 구현 파일: `routes/api.php` · `bootstrap/app.php`(api 등록) · `app/Http/Middleware/VerifyPurchaseSyncHmac.php` · `app/Http/Controllers/Webhook/PurchaseSyncController.php` · `config/services.php`(`services.purchase_sync.hmac_secret`) · 마이그레이션 `…add_purchase_sync_columns_to_vehicles`(purchase_source·c_no) · 테스트 `tests/Feature/PurchaseSyncReceiverTest.php`(13 케이스).
 
 ---
 
@@ -55,8 +55,14 @@
 - (확인) 매입출처(source) 컬럼 · payee 정산계좌 컬럼명
 - 테스트: HMAC 위변조·멱등 재전송·영업 매칭·미지원 버전 (car-erp-qa/security)
 
-## 구현 시 확정할 것
-- 기존 VIN 시 갱신 정책(스킵 vs 일부 필드 갱신)
-- `source` 저장 컬럼 유무(없으면 추가)
-- payee 정산계좌 정확 컬럼명 + `payee_account` 암호화 여부
-- HMAC 헤더 포맷/서명 알고리즘(board와 합의 — 예: `X-Signature: sha256=...` over raw body + timestamp)
+## 구현 확정 사항 (2026-06-15)
+- **기존 VIN 갱신 정책** = **스킵**. 기존행 건드리지 않고 `{vehicle_id}` 200 반환. (갱신은 car-erp 내부 운영이 담당 — board는 push-once.)
+- **`source` 저장** = 신설 컬럼 `vehicles.purchase_source`(string 20, nullable). 기존 `purchase_from`(구입처, 자유서식)과 별개 — board origin 추적용.
+- **`c_no` 저장** = 신설 컬럼 `vehicles.c_no`(string nullable, **index·non-unique**). 연동 A 조인 thread 키.
+- **payee 정산계좌** = 기존 매입탭 계좌 3컬럼 재사용: `payee_name`→`purchase_seller_holder` · `payee_bank`→`purchase_seller_bank` · `payee_account`→`purchase_seller_account`(**모델 cast 로 자동 암호화** = RRN 패턴, `AuditLog::MASKED_COLUMNS` 에도 이미 등록).
+- **HMAC** = 헤더 `X-Board-Signature: sha256=<hex>`, 서명대상 = **수신 raw body 그대로**(`$request->getContent()`), `hash_equals` 타이밍-세이프 비교. 비밀키 `config('services.purchase_sync.hmac_secret')` ← `CAR_ERP_HMAC_SECRET`. 미설정/불일치/누락 → 401.
+- **재전송 방지** = timestamp/nonce 미도입. **VIN 멱등 자체가 재전송을 무해화**(중복 생성 불가) → 별도 nonce 불필요로 판단. 필요 시 추후 보강.
+- **sales_channel** = 생성 시 `heyman` 고정(CLAUDE.md 연동 B — board → heyman 재고 전환).
+- **응답 코드** = 신규 **201** / 멱등 스킵 **200** (board는 2xx 모두 성공 처리). 미지원 버전·검증 실패 **422**.
+- **rate limit** = `throttle:30,1`(분당 30). **감사** = `audit_logs` action `inbound_purchase_sync`(차량당 1행, payee_account 는 마스킹 대상이라 미로깅).
+- **라우트 prefix** = Laravel `api:` 자동 `/api` prefix → 최종 경로 `/api/internal/purchase-sync`.
