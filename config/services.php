@@ -42,4 +42,11 @@ return [
         ],
     ],
 
+    // 연동 B 수신 — board(매입보드)와 공유하는 HMAC 비밀키.
+    // 미설정 시 수신 엔드포인트는 모든 요청을 401 로 거부(안전밸브).
+    // 수신 스펙(권위) = docs/integration/purchase-sync-receiver.md.
+    'purchase_sync' => [
+        'hmac_secret' => env('CAR_ERP_HMAC_SECRET'),
+    ],
+
 ];
