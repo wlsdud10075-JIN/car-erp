@@ -155,6 +155,18 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertNull($vehicle->nice_reg_vin);
     }
 
+    public function test_default_purchase_costs_are_filled(): void
+    {
+        $res = $this->postSigned($this->validPayload(['salesman_email' => 'nobody@car-erp.test']));
+        $res->assertStatus(201);
+
+        $vehicle = Vehicle::find($res->json('vehicle_id'));
+        // UI 신규등록과 동일 단일 출처(Vehicle::DEFAULT_PURCHASE_COSTS).
+        $this->assertSame(24000, (int) $vehicle->cost_deregistration);
+        $this->assertSame(11000, (int) $vehicle->cost_license);
+        $this->assertSame(30000, (int) $vehicle->cost_towing);
+    }
+
     public function test_payee_account_is_encrypted(): void
     {
         $res = $this->postSigned($this->validPayload(['salesman_email' => 'nobody@car-erp.test']));

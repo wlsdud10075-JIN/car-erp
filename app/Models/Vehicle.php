@@ -81,6 +81,17 @@ class Vehicle extends Model
         'purchase_seller_account' => 'encrypted',
     ];
 
+    /**
+     * 신규 매입 차량 기본 기타비용 (회의확장씬 #9, 2026-05-22 — 사용자 명세).
+     * 운영자가 수정/0 가능, 2차 정산에서 실측치로 정정. UI 신규등록(openCreate)과
+     * 연동 B 수신(PurchaseSyncController) **양쪽이 이 단일 출처를 참조** — drift 방지.
+     */
+    public const DEFAULT_PURCHASE_COSTS = [
+        'cost_deregistration' => 24000,
+        'cost_license' => 11000,
+        'cost_towing' => 30000,
+    ];
+
     // ── RRN 암호화 (개인정보보호법 §29) ─────────────────────────────
     // 표식 컬럼 nice_reg_owner_rrn_encrypted_at 기반 점진 전환:
     // - NULL: 평문 row (마이그레이션 전 또는 신규 마이그레이션 도중 부분 상태)

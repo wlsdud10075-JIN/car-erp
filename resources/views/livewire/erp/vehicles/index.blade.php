@@ -789,9 +789,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 회의확장씬 #9 (2026-05-22) — 신규 차량 기타비용 기본기재 (사용자 명세).
         // 운영자가 수정 가능 (또는 0 으로 비움). 2차 정산 단계에서 [관리]/[재무] 가
         // 한 달 뒤 측정된 실제 비용으로 정정 (Phase 1-3 흐름).
-        $this->cost_deregistration_str = '24,000';
-        $this->cost_license_str = '11,000';
-        $this->cost_towing_str = '30,000';
+        $this->cost_deregistration_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_deregistration']);
+        $this->cost_license_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_license']);
+        $this->cost_towing_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_towing']);
         $this->showPanel = true;
     }
 
