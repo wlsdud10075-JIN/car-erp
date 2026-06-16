@@ -29,9 +29,10 @@ return [
         'unpaid' => 'Outstanding ₩:amount',
     ],
     'fees' => [
-        'title' => '💸 Cumulative Remittance Fees (seller paid)',
-        'desc' => 'Remittance fees we have covered for this buyer cumulatively. Use as a negotiation point.',
+        'title' => '💸 Cumulative Seller-Absorbed Amount (fees · write-offs)',
+        'desc' => 'Remittance fees and losses we have absorbed for this buyer cumulatively. Use as a negotiation point.',
         'count' => ':count items',
+        'breakdown' => ':fee fee + :wo write-off',
     ],
 
     'field' => [

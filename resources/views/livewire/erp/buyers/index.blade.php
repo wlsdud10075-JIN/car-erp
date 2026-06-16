@@ -4,6 +4,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\FinalPayment;
+use App\Models\ReceivableHistory;
 use App\Models\SavingsStatus;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -115,10 +116,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 2026-05-28 — 바이어별 누적 송금 수수료 부담액 (셀러 부담).
-     * 영업이 협상 카드로 사용 — "우리가 그동안 이만큼 부담했다".
-     * type='fee' confirmed_at IS NOT NULL row 의 amount_krw 합산.
-     * 환율 미입력으로 amount_krw 가 null 인 row 는 자연 제외 (운영 일관성).
+     * 2026-05-28 — 바이어별 누적 셀러부담액 (영업 협상 카드 — "우리가 그동안 이만큼 떠안았다").
+     * 2026-06-16 — 송금수수료 + 손실(write_off) 합산. 표시는 통합 한 줄, 내역은 건수로만 구분.
+     *   · 수수료 = FinalPayment type='fee' confirmed 의 amount_krw 합 (이미 KRW 환산됨)
+     *   · 손실   = ReceivableHistory method='write_off' 의 amount × 환율 (KRW 차량은 amount 그대로)
+     * 환율 미입력 외화는 KRW 산정 불가 → 제외 (수수료의 amount_krw null 제외와 동일 정책).
      */
     #[Computed]
     public function buyerFees(): ?array
@@ -127,24 +129,48 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
 
-        $rows = FinalPayment::query()
+        // 수수료 — 이미 KRW 환산된 amount_krw 합산
+        $feeRows = FinalPayment::query()
             ->whereHas('vehicle', fn ($q) => $q->where('buyer_id', $this->editingId))
             ->where('type', 'fee')
             ->whereNotNull('confirmed_at')
-            ->get(['amount', 'amount_krw']);
+            ->get(['amount_krw']);
+        $feeKrw = (int) $feeRows->sum('amount_krw');
+        $feeCount = $feeRows->count();
 
-        if ($rows->isEmpty()) {
-            return null;
+        // 손실(셀러부담) — 차량 통화 × 환율로 KRW 환산
+        $woRows = ReceivableHistory::query()
+            ->where('method', 'write_off')
+            ->whereHas('vehicle', fn ($q) => $q->where('buyer_id', $this->editingId))
+            ->with('vehicle:id,currency,exchange_rate')
+            ->get();
+        $woKrw = 0;
+        $woCount = 0;
+        foreach ($woRows as $r) {
+            $v = $r->vehicle;
+            if (! $v) {
+                continue;
+            }
+            $krw = $v->currency === 'KRW'
+                ? (float) $r->amount
+                : (float) $r->amount * (float) ($v->exchange_rate ?? 0);
+            if ($krw <= 0) {
+                continue;   // 환율 미입력 외화 → 제외
+            }
+            $woKrw += $krw;
+            $woCount++;
         }
 
-        $totalKrw = (int) $rows->sum('amount_krw');
+        $totalKrw = $feeKrw + (int) $woKrw;
         if ($totalKrw <= 0) {
             return null;
         }
 
         return [
             'total_krw' => $totalKrw,
-            'count' => $rows->count(),
+            'fee_count' => $feeCount,
+            'wo_count' => $woCount,
+            'count' => $feeCount + $woCount,
         ];
     }
 
@@ -712,7 +738,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     <div class="text-right">
                         <div class="text-base font-bold text-violet-700">₩{{ number_format($bf['total_krw']) }}</div>
-                        <div class="text-xs text-violet-500">{{ __('buyer.fees.count', ['count' => $bf['count']]) }}</div>
+                        @if($bf['wo_count'] > 0)
+                            <div class="text-xs text-violet-500">{{ __('buyer.fees.breakdown', ['fee' => $bf['fee_count'], 'wo' => $bf['wo_count']]) }}</div>
+                        @else
+                            <div class="text-xs text-violet-500">{{ __('buyer.fees.count', ['count' => $bf['count']]) }}</div>
+                        @endif
                     </div>
                 </div>
             </div>
