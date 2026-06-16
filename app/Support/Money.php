@@ -54,16 +54,64 @@ class Money
         return $sign.implode(' ', $parts);
     }
 
+    /**
+     * 영어 로케일용 K/M/B 축약 ('₩' 미포함). 만 단위까지 정확한 ko 버전과 달리
+     * Thousand/Million/Billion 으로 외국 직원 가독성 우선 (2026-06-11 jin 요청).
+     *
+     *   krwShortEn(12_345)        === '12.3K'
+     *   krwShortEn(195_000_000)   === '195M'
+     *   krwShortEn(1_948_806_360) === '1.9B'
+     *   krwShortEn(500)           === '500'    (1,000 미만은 그대로)
+     */
+    public static function krwShortEn(int|float|string|null $value): string
+    {
+        $n = (int) round((float) $value);
+        if ($n === 0) {
+            return '0';
+        }
+
+        $sign = $n < 0 ? '-' : '';
+        $n = abs($n);
+
+        if ($n < 1_000) {
+            return $sign.number_format($n);
+        }
+        if ($n < 1_000_000) {
+            return $sign.self::trimZero($n / 1_000).'K';
+        }
+        if ($n < 1_000_000_000) {
+            return $sign.self::trimZero($n / 1_000_000).'M';
+        }
+
+        return $sign.self::trimZero($n / 1_000_000_000).'B';
+    }
+
+    /** 소수 1자리 표기 후 '.0' 제거 ('195.0' → '195', '1.9' → '1.9'). */
+    private static function trimZero(float $v): string
+    {
+        $s = number_format($v, 1);
+
+        return str_ends_with($s, '.0') ? substr($s, 0, -2) : $s;
+    }
+
+    /** 로케일별 축약 (ko: 억/만, en: K/M/B). 앱 부팅 컨텍스트에서만 호출. */
+    public static function krw(int|float|string|null $value): string
+    {
+        return app()->getLocale() === 'en'
+            ? self::krwShortEn($value)
+            : self::krwShort($value);
+    }
+
     /** 정확 원 단위 ('₩1,234,567'). 툴팁·상세용. */
     public static function krwExact(int|float|string|null $value): string
     {
         return '₩'.number_format((int) round((float) $value));
     }
 
-    /** Blade @krw 용 — 축약 표시 + 정확 금액 title 툴팁 <span>. */
+    /** Blade @krw 용 — 로케일별 축약 표시 + 정확 금액 title 툴팁 <span>. */
     public static function krwTag(int|float|string|null $value): HtmlString
     {
-        $short = e(self::krwShort($value));
+        $short = e(self::krw($value));
         $exact = e(self::krwExact($value));
 
         return new HtmlString('<span class="cursor-help" title="'.$exact.'">'.$short.'</span>');

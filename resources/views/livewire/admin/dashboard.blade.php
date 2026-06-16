@@ -1038,6 +1038,12 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- Chart.js v4 (my-crm 패턴과 동일 CDN) --}}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script>
+        // 차트 금액 축약 포맷 — 로케일별 (ko: 억/만 / en: K/M/B). krw 헬퍼·formatKrw 와 동일 규칙.
+        const krwLocale = '{{ app()->getLocale() }}';
+        const axisKrwFmt = krwLocale === 'en'
+            ? (v) => v >= 1e9 ? (v / 1e9).toFixed(1).replace(/\.0$/, '') + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : v >= 1e3 ? Math.round(v / 1e3).toLocaleString() + 'K' : Math.round(v).toLocaleString()
+            : (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만';
+
         function adminDashboard() {
             return {
                 settingsOpen: false,
@@ -1163,7 +1169,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     tooltip: { callbacks: { label: (ctx) => '₩ ' + ctx.parsed.y.toLocaleString() } },
                                 },
                                 scales: {
-                                    y: { beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } },
+                                    y: { beginAtZero: true, ticks: { callback: axisKrwFmt } },
                                 },
                             },
                         });
@@ -1189,7 +1195,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             },
                             scales: {
                                 x: { stacked: true },
-                                y: { stacked: true, beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } },
+                                y: { stacked: true, beginAtZero: true, ticks: { callback: axisKrwFmt } },
                             },
                         },
                     });
@@ -1252,7 +1258,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                         },
                                     },
                                 },
-                                scales: { x: { beginAtZero: true, ticks: { callback: (v) => v >= 1e8 ? (v / 1e8).toFixed(1) + '억' : Math.round(v / 1e4).toLocaleString() + '만' } } },
+                                scales: { x: { beginAtZero: true, ticks: { callback: axisKrwFmt } } },
                             },
                         });
                     }
