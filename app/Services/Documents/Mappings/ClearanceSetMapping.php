@@ -11,8 +11,9 @@ use App\Services\Documents\DocValue;
  * `=구매리스트!셀` 수식으로 자동연동(검증완료). 매핑은 구매리스트만.
  *
  * 매핑 제외:
- * - 매매업 등록번호(D3·G3): NICE 비제공·거래신고 관리번호 — 사용자 수기 (공란)
+ * - 등록번호 G3: 한글/영문등록증 시트 cascade 용 — 사용자 수기 (공란)
  * - I6·I13: 템플릿 수식 — 엔진이 자동 보존
+ * D3(등록번호)은 차량 registration_number 로 기입 → 말소증 "제 [D3] 호" cascade.
  * NICE 칸(형식·제원관리번호·출력)은 nice_raw 에서 읽음 → NICE 연동 전엔 공란.
  * 기통수(G12)·검사시작(I10)·검사종료(I11)는 nice_raw 의 engineSpec·resValidPeriod 를
  *   서류 생성 시점에 파싱(DocValue::niceCylinders/niceInspectionStart/End) — 전용 컬럼·입력 필드 없이.
@@ -27,6 +28,7 @@ class ClearanceSetMapping
             'label' => '통관SET',
             'cells' => [
                 'B3' => fn (Vehicle $v) => $v->nice_reg_vin ? substr($v->nice_reg_vin, -6) : null,  // ID (VIN 끝 6자리)
+                'D3' => fn (Vehicle $v) => $v->registration_number,                 // 등록번호 (말소증 "제 ○○ 호")
                 'I3' => fn (Vehicle $v) => $v->nice_reg_date,                       // 등록증날짜
                 'B4' => fn (Vehicle $v) => $v->vehicle_number,                      // 차량번호
                 'D4' => fn (Vehicle $v) => DocValue::romanizePlate($v->vehicle_number), // 영문차량번호

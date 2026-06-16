@@ -165,6 +165,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $down_payment_str        = '';
     public string $selling_fee_payment_str = '';
     public string $purchase_remittance_memo = '';
+    public string $registration_number = '';
     public bool   $is_deregistered = false;
     public array  $purchaseBalancePayments = [];
 
@@ -1055,6 +1056,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->down_payment_str        = $sumPbpByType('down');
         $this->selling_fee_payment_str = $sumPbpByType('selling_fee');
         $this->purchase_remittance_memo = $v->purchase_remittance_memo ?? '';
+        $this->registration_number = $v->registration_number ?? '';
         $this->is_deregistered = $v->is_deregistered;
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
@@ -1793,6 +1795,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
             // _str ↔ PBP type='down'/'selling_fee' confirmed row 동기화는 vehicle save 이후 별도 처리.
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
+            'registration_number' => $this->registration_number ?: null,
             'is_deregistered'  => $this->is_deregistered,
             // 판매
             'sale_date'    => $toDate($this->sale_date),
@@ -2880,7 +2883,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
-            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo',
+            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
@@ -3810,9 +3813,14 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
                 @endif
-                <div class="col-span-2">
+                <div>
                     <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>
                     <textarea wire:model="purchase_remittance_memo" class="input-base" rows="2"></textarea>
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.registration_number') }}</label>
+                    <input type="text" wire:model="registration_number" class="input-base" placeholder="{{ __('vehicle.field.registration_number_ph') }}" />
+                    <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.registration_number_hint') }}</p>
                 </div>
             </div>
         </div>
