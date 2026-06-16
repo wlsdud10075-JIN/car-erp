@@ -191,7 +191,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'hCollectedAt' => ['required', 'date'],
             'hCollectorId' => ['required', 'exists:users,id'],
-            'hMethod' => ['required', 'in:deposit,cash,offset,other'],
+            'hMethod' => ['required', 'in:deposit,cash,offset,other,write_off'],
             'hAmount' => ['required', 'numeric', 'min:0'],
             'hNote' => ['nullable', 'string', 'max:500'],
         ], [], [
@@ -656,6 +656,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="cash">{{ __('receivable.method.cash') }}</option>
                         <option value="offset">{{ __('receivable.method.offset') }}</option>
                         <option value="other">{{ __('receivable.method.other') }}</option>
+                        <option value="write_off">{{ __('receivable.method.write_off') }}</option>
                     </select>
                     @error('hMethod')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
                 </div>
@@ -698,7 +699,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @foreach ($histories as $h)
                 @php
                     $methodLabel = __('receivable.method.'.$h->method);
-                    $methodBadge = $h->method === 'deposit' ? 'badge-blue' : 'badge-gray';
+                    $methodBadge = match ($h->method) {
+                        'deposit' => 'badge-blue',
+                        'write_off' => 'badge-red',
+                        default => 'badge-gray',
+                    };
                 @endphp
                 <div class="rounded border border-gray-200 px-3 py-2">
                     <div class="flex items-start justify-between">
