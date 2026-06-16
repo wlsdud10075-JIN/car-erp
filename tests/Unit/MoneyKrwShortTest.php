@@ -32,4 +32,27 @@ class MoneyKrwShortTest extends TestCase
             '음수' => [-35_000_000, '-3,500만'],
         ];
     }
+
+    #[DataProvider('enCases')]
+    public function test_krw_short_en(int $input, string $expected): void
+    {
+        $this->assertSame($expected, Money::krwShortEn($input));
+    }
+
+    public static function enCases(): array
+    {
+        return [
+            '0' => [0, '0'],
+            '1천 미만은 그대로' => [500, '500'],
+            '경계 999' => [999, '999'],
+            '1K' => [1_000, '1K'],
+            '12.3K' => [12_345, '12.3K'],
+            '소수 절삭' => [3_000, '3K'],
+            '1M' => [1_000_000, '1M'],
+            '195M' => [195_000_000, '195M'],
+            '1.9B' => [1_948_806_360, '1.9B'],
+            '딱 1B' => [1_000_000_000, '1B'],
+            '음수' => [-35_000_000, '-35M'],
+        ];
+    }
 }

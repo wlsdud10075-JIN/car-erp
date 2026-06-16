@@ -461,16 +461,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function formatKrw(int $amount): string
     {
-        if ($amount === 0) {
-            return '₩0';
-        }
-        // en 은 한국식 억/만 단위 대신 전체 숫자 (외국 직원 가독성).
-        if (app()->getLocale() === 'en') {
-            return '₩'.number_format($amount);
-        }
-
-        // 한국어 — 억/만 단위 축약 (만 단위까지 정확, 2026-06-11). 공통 헬퍼 단일 출처.
-        return '₩'.\App\Support\Money::krwShort($amount);
+        // 로케일별 축약 (ko: 억/만 만단위까지 정확 / en: K/M/B). 공통 헬퍼 단일 출처.
+        return '₩'.\App\Support\Money::krw($amount);
     }
 }; ?>
 
