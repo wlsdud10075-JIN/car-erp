@@ -14,6 +14,7 @@ return [
         'vehicles' => 'Vehicles',
         'inventory' => 'Inventory',
         'clearance' => 'Export Clearance',
+        'alarms' => 'Alarms',
         'buyers' => 'Buyers',
         'consignees' => 'Consignees',
         'settlements' => 'Settlements',

@@ -19,4 +19,9 @@ return [
     'always_on' => '항상 켜짐',
     'en_label' => 'English',
     'en_sub' => '(영어)',
+
+    'alarm_section' => '통관서류 알람',
+    'alarm_hint' => '도착(ETA) 10일 전 수출 차량에 "통관서류 작업" 알람이 뜹니다. 켜기 전 `php artisan alarms:scan --dry-run` 으로 대상 건수를 먼저 확인하세요.',
+    'alarm_label' => 'ETA 통관서류 알람 사용',
+    'alarm_sub' => '(끄면 알람 생성 안 함)',
 ];

@@ -64,6 +64,11 @@
         ? \App\Models\Vehicle::query()->whereNull('deleted_at')->action('clearance_candidates')->count()
         : 0;
 
+    // 2026-06-18 ETA 통관서류 알람 — 미확인(미해소+미확인) 건수. canAccessClearance 만 계산.
+    $alarmUnread = $user->canAccessClearance()
+        ? \App\Models\TaskAlarm::query()->visibleTo($user)->unread()->count()
+        : 0;
+
     // 큐 19-F / 20-C — 재무 처리 대기 건수 합산 (자금 이체 + 매입 잔금 + 판매 잔금)
     // 단일 사용자(canConfirmFinanceTransfer)만 계산. 비-재무 사용자는 0.
     if ($user->canConfirmFinanceTransfer()) {
@@ -129,6 +134,15 @@
                     'active' => false,
                     'show' => $user->canAccessClearance(),
                     'badge' => $clearanceBadge > 0 ? $clearanceBadge : null,
+                ],
+                // 2026-06-18 ETA 통관서류 알림함 (벨). canAccessClearance(admin·수출통관·관리)만.
+                [
+                    'label' => __('nav.menu.alarms'),
+                    'href' => route('erp.alarms.index'),
+                    'icon' => 'bell',
+                    'active' => request()->routeIs('erp.alarms.*'),
+                    'show' => $user->canAccessClearance(),
+                    'badge' => $alarmUnread > 0 ? $alarmUnread : null,
                 ],
                 [
                     'label' => __('nav.menu.buyers'),
@@ -272,6 +286,7 @@
         'logout'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>',
         'menu'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/>',
         'check-circle'   => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>',
+        'bell'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>',
         'book'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>',
     ];
 @endphp
@@ -475,6 +490,11 @@
         </div>
     </template>
 </div>
+
+{{-- 2026-06-18 ETA 통관서류 상주 알람 카드 (우하단, A동작) — canAccessClearance 만 --}}
+@if($user->canAccessClearance())
+    <livewire:erp.alarm-center />
+@endif
 
 @fluxScripts
 </body>

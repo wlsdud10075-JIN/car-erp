@@ -10,6 +10,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $localeEnEnabled = false;
 
+    public bool $alarmEnabled = false;
+
     public function mount(): void
     {
         if (! auth()->user()?->isSuperAdmin()) {
@@ -17,6 +19,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         $this->sidebarBrand = Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
+        $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
     }
 
     public function save(): void
@@ -68,6 +71,21 @@ new #[Layout('components.layouts.app')] class extends Component
             : __('feature_settings.locale_disabled_flash'));
 
         $this->redirect(route('admin.settings'), navigate: false);
+    }
+
+    // ETA 통관서류 알람 on/off (배포 ≠ 작동). off면 alarms:scan 이 생성 건너뜀.
+    public function updatedAlarmEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        Setting::updateOrCreate(
+            ['key' => 'alarm_enabled'],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => 'ETA 통관서류 알람 활성화'],
+        );
+
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 }; ?>
 
@@ -137,6 +155,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="text-sm text-gray-700">{{ __('feature_settings.en_label') }} <span class="text-xs text-gray-400">{{ __('feature_settings.en_sub') }}</span></span>
                 <input type="checkbox" wire:model.live="localeEnEnabled" class="peer sr-only">
                 <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-violet-600
+                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+        </div>
+    </div>
+
+    {{-- 알람 그룹 --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-amber-500"></span>
+                <span class="section-title">{{ __('feature_settings.alarm_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.alarm_hint') }}</p>
+            <label class="flex cursor-pointer items-center justify-between rounded-md border border-gray-100 px-3 py-2">
+                <span class="text-sm text-gray-700">{{ __('feature_settings.alarm_label') }} <span class="text-xs text-gray-400">{{ __('feature_settings.alarm_sub') }}</span></span>
+                <input type="checkbox" wire:model.live="alarmEnabled" class="peer sr-only">
+                <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                              after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
             </label>
         </div>
