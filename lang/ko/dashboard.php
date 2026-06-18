@@ -95,6 +95,7 @@ return [
             'deregistration_needed' => ['l' => '말소 처리 필요', 'd' => '매입 완료 → 말소 미처리'],
             'clearance_request_needed' => ['l' => '통관 신청 필요', 'd' => '판매 완납 → 면장 미업로드'],
             'clearance_info_missing' => ['l' => '통관 바이어/일자 누락', 'd' => '판매 진입 → export_buyer 또는 shipping_date 없음'],
+            'eta_missing' => ['l' => '데이터 보정 — 도착일(ETA) 없음', 'd' => '선적했는데 도착일 미입력 → 채워야 통관서류 알람 예약됨'],
             'forwarding_missing' => ['l' => '포워딩사 미지정', 'd' => '통관 진입 → forwarding 없음'],
             'export_declaration_upload_needed' => ['l' => '수출신고서 업로드', 'd' => '통관중 → 신고서 없음'],
             'shipping_process_needed' => ['l' => '선적 처리 필요', 'd' => '판매 완료 → 반입지 미입력'],
