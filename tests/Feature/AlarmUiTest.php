@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -110,5 +111,24 @@ class AlarmUiTest extends TestCase
         Volt::test('erp.alarms.index')->call('setEta', $v->id, 'not-a-date');
 
         $this->assertNull($v->fresh()->eta_date);
+    }
+
+    public function test_inbox_groups_alarms_by_buyer(): void
+    {
+        $buyer = Buyer::create(['name' => 'TOKYO MOTORS', 'is_active' => true, 'country_id' => null]);
+        foreach (['10가1111', '10가2222'] as $vn) {
+            $v = Vehicle::create(['vehicle_number' => $vn, 'sales_channel' => 'export', 'buyer_id' => $buyer->id]);
+            TaskAlarm::create([
+                'type' => 'eta_clearance', 'vehicle_id' => $v->id, 'target_role' => '수출통관',
+                'due_date' => now()->addDays(5)->toDateString(),
+                'message_meta' => ['vehicle_number' => $vn, 'eta_date' => now()->addDays(5)->toDateString(), 'unpaid_amount_krw' => 0],
+            ]);
+        }
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.alarms.index')
+            ->assertSee('TOKYO MOTORS')   // 바이어 그룹 헤더
+            ->assertSee('10가1111')
+            ->assertSee('10가2222');
     }
 }

@@ -58,10 +58,29 @@ new #[Layout('components.layouts.app')] class extends Component
         $alarms = TaskAlarm::query()
             ->visibleTo($user)
             ->open()
-            ->with('vehicle')
+            ->with(['vehicle.buyer', 'vehicle.exportBuyer'])   // 바이어명은 message_meta 아닌 관계로(개인정보 whitelist 보존)
             ->orderByRaw('confirmed_at IS NOT NULL')   // 미확인 먼저
             ->orderBy('due_date')
             ->get();
+
+        // board 현지확인(지역별 accordion) 응용 — 바이어별 그룹 + 클릭 펼침.
+        //   통관 바이어(export) 우선, 없으면 판매 바이어. 미지정은 한 그룹.
+        $buyerGroups = $alarms
+            ->groupBy(fn ($a) => ($b = $a->vehicle?->exportBuyer ?: $a->vehicle?->buyer)?->id
+                ? 'b:'.$b->id : 'unassigned')
+            ->map(function ($items) {
+                $v = $items->first()->vehicle;
+                $b = $v?->exportBuyer ?: $v?->buyer;
+
+                return [
+                    'name' => $b?->name ?? __('alarm.buyer_unassigned'),
+                    'count' => $items->count(),
+                    'unread' => $items->whereNull('confirmed_at')->count(),
+                    'items' => $items,
+                ];
+            })
+            ->sortByDesc('unread')   // 미확인 많은 바이어 위로
+            ->values();
 
         // 데이터 보정 — 선적했는데 ETA 없는 차량 (관리는 본인 팀만).
         $cq = \App\Models\Vehicle::query()->whereNull('deleted_at')->action('eta_missing')->with('salesman');
@@ -70,7 +89,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         $correctionVehicles = $cq->orderBy('shipping_date')->limit(50)->get();
 
-        return ['alarms' => $alarms, 'correctionVehicles' => $correctionVehicles];
+        return ['buyerGroups' => $buyerGroups, 'correctionVehicles' => $correctionVehicles];
     }
 }; ?>
 
@@ -106,100 +125,61 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     @endif
 
-    @if ($alarms->isEmpty())
+    {{-- 통관서류 알람 — board 현지확인(지역별) 응용: 바이어별 그룹 + 클릭 시 펼침(accordion). --}}
+    @if ($buyerGroups->isEmpty())
         <div class="card text-center text-sm text-gray-400">{{ __('alarm.empty') }}</div>
     @else
-        {{-- 데스크탑: 테이블 --}}
-        <div class="card hidden sm:block">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                        <th class="px-2 py-2">{{ __('alarm.col_vehicle') }}</th>
-                        <th class="px-2 py-2">{{ __('alarm.col_eta') }}</th>
-                        <th class="px-2 py-2">{{ __('alarm.col_dday') }}</th>
-                        <th class="px-2 py-2">{{ __('alarm.col_unpaid') }}</th>
-                        <th class="px-2 py-2">{{ __('alarm.col_status') }}</th>
-                        <th class="px-2 py-2"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($alarms as $a)
+        @foreach ($buyerGroups as $g)
+            <div class="card mb-3" x-data="{ open: false }">
+                <button type="button" @click="open = !open" class="flex w-full items-center justify-between text-left">
+                    <span class="flex flex-wrap items-center gap-2">
+                        <span class="font-bold text-gray-800">🧑 {{ $g['name'] }}</span>
+                        <span class="text-xs text-gray-400">· {{ $g['count'] }}{{ __('dashboard.unit_count') }}</span>
+                        @if ($g['unread'] > 0)
+                            <span class="badge badge-amber">{{ __('alarm.status_unread') }} {{ $g['unread'] }}</span>
+                        @else
+                            <span class="badge badge-gray">{{ __('alarm.all_seen') }}</span>
+                        @endif
+                    </span>
+                    <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 flex-shrink-0 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+
+                <div x-show="open" x-transition x-cloak class="mt-3 divide-y divide-gray-50">
+                    @foreach ($g['items'] as $a)
                         @php
                             $meta = $a->message_meta ?? [];
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = $dday !== null && $dday <= 3;
                         @endphp
-                        <tr class="border-b border-gray-50 hover:bg-gray-50">
-                            <td class="px-2 py-2.5">
-                                <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="font-bold text-gray-800 hover:text-violet-700">
-                                    {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
-                                </a>
-                            </td>
-                            <td class="px-2 py-2.5 tabular-nums text-gray-600">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</td>
-                            <td class="px-2 py-2.5">
-                                @if ($dday !== null)
-                                    <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
-                                        {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
-                                    </span>
-                                @endif
-                            </td>
-                            <td class="px-2 py-2.5 text-[12.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                            <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
+                                {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
+                            </a>
+                            <span class="text-xs tabular-nums text-gray-400">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
+                            @if ($dday !== null)
+                                <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
+                                    {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
+                                </span>
+                            @endif
+                            <span class="text-[12px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
                                 @if ($unpaid){{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}@elseif ($unpaid === 0){{ __('alarm.paid') }}@else{{ __('alarm.fx_missing') }}@endif
-                            </td>
-                            <td class="px-2 py-2.5">
+                            </span>
+                            <div class="ml-auto">
                                 @if ($a->confirmed_at)
                                     <span class="badge badge-gray">{{ __('alarm.status_confirmed') }}</span>
                                 @else
-                                    <span class="badge badge-amber">{{ __('alarm.status_unread') }}</span>
-                                @endif
-                            </td>
-                            <td class="px-2 py-2.5 text-right">
-                                @unless ($a->confirmed_at)
                                     <button wire:click="confirm({{ $a->id }})" class="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
                                         {{ __('alarm.confirm') }}
                                     </button>
-                                @endunless
-                            </td>
-                        </tr>
+                                @endif
+                            </div>
+                        </div>
                     @endforeach
-                </tbody>
-            </table>
-        </div>
-
-        {{-- 모바일: 카드 --}}
-        <div class="space-y-2 sm:hidden">
-            @foreach ($alarms as $a)
-                @php
-                    $meta = $a->message_meta ?? [];
-                    $unpaid = $meta['unpaid_amount_krw'] ?? null;
-                    $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                    $soon = $dday !== null && $dday <= 3;
-                @endphp
-                <div class="card-sm">
-                    <div class="flex items-center justify-between">
-                        <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="font-bold text-gray-800">
-                            {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
-                        </a>
-                        @if ($dday !== null)
-                            <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
-                                {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
-                            </span>
-                        @endif
-                    </div>
-                    <div class="mt-1 flex items-center justify-between text-xs">
-                        <span class="text-gray-500">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
-                        <span class="font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
-                            @if ($unpaid){{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}@elseif ($unpaid === 0){{ __('alarm.paid') }}@else{{ __('alarm.fx_missing') }}@endif
-                        </span>
-                    </div>
-                    @unless ($a->confirmed_at)
-                        <button wire:click="confirm({{ $a->id }})" class="mt-2 w-full rounded-md border border-violet-200 bg-violet-50 py-1.5 text-[12px] font-semibold text-violet-700">
-                            {{ __('alarm.confirm') }}
-                        </button>
-                    @endunless
                 </div>
-            @endforeach
-        </div>
+            </div>
+        @endforeach
     @endif
 </div>

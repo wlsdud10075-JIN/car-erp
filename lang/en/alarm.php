@@ -25,6 +25,8 @@ return [
     'col_status' => 'Status',
     'status_unread' => 'Unread',
     'status_confirmed' => 'Acknowledged',
+    'buyer_unassigned' => 'Buyer unassigned',
+    'all_seen' => 'All seen',
 
     // Data fix (ETA missing — inline input)
     'correction_title' => 'Data Fix — ETA Missing',

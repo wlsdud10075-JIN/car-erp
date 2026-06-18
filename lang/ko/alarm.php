@@ -25,6 +25,8 @@ return [
     'col_status' => '상태',
     'status_unread' => '미확인',
     'status_confirmed' => '확인됨',
+    'buyer_unassigned' => '바이어 미지정',
+    'all_seen' => '모두 확인',
 
     // 데이터 보정 (ETA 없음 — 인라인 입력)
     'correction_title' => '데이터 보정 — 도착일(ETA) 없음',
