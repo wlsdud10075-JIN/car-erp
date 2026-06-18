@@ -39,8 +39,8 @@ class ContainerContractMapping
                         'C' => fn (Vehicle $v) => DocValue::carName($v), // Model
                         'D' => fn (Vehicle $v) => $v->year,             // Year
                         'E' => fn (Vehicle $v) => $v->nice_reg_vin,     // Chassis No.
-                        'F' => fn (Vehicle $v) => $v->sale_price,       // FOB PRICE
-                        'G' => fn (Vehicle $v) => $v->transport_fee,    // Shipping cost
+                        'F' => fn (Vehicle $v) => DocValue::money($v->sale_price),    // FOB PRICE
+                        'G' => fn (Vehicle $v) => DocValue::money($v->transport_fee), // Shipping cost
                     ],
                 ],
             ],

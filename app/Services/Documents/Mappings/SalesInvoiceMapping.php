@@ -28,15 +28,15 @@ class SalesInvoiceMapping
                 'E7' => fn (Vehicle $v) => DocValue::consigneeIdValue($v),                             // Passport
                 'E8' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address, // Address
                 'E9' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->contact_phone ?: DocValue::invoiceBuyer($v)?->contact_phone, // Phone
-                'E10' => fn (Vehicle $v) => $v->exchange_rate,                                         // Dollar Rate
+                'E10' => fn (Vehicle $v) => DocValue::money($v->exchange_rate),                        // Dollar Rate
                 'A18' => fn (Vehicle $v) => $v->vehicle_number,                                        // Code
                 'B18' => fn (Vehicle $v) => $v->brand,                                                 // Maker
                 'C18' => fn (Vehicle $v) => DocValue::carName($v),                                     // Model
                 'D18' => fn (Vehicle $v) => $v->nice_reg_vin,                                          // Chassis No.
-                'E18' => fn (Vehicle $v) => $v->sale_price,                                            // FOB PRICE
-                'F18' => fn (Vehicle $v) => $v->transport_fee,                                         // Shipping cost
-                'E24' => fn (Vehicle $v) => $v->commission,                                            // COMMISSION
-                'E25' => fn (Vehicle $v) => $v->auto_loading,                                          // AUTO LODING
+                'E18' => fn (Vehicle $v) => DocValue::money($v->sale_price),                           // FOB PRICE
+                'F18' => fn (Vehicle $v) => DocValue::money($v->transport_fee),                        // Shipping cost
+                'E24' => fn (Vehicle $v) => DocValue::money($v->commission),                           // COMMISSION
+                'E25' => fn (Vehicle $v) => DocValue::money($v->auto_loading),                         // AUTO LODING
                 'E26' => fn (Vehicle $v) => $v->tax_dc ? -1 * $v->tax_dc : null,                       // TAX D/C (양식 SUM 에 더해지므로 음수로 — 할인)
                 'E29' => fn (Vehicle $v) => DocValue::confirmedReceived($v),                           // DEPOSIT (확정 입금 합, 양수)
             ],

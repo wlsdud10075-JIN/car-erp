@@ -47,9 +47,9 @@ class ContainerInvoicePackingMapping
                         'E' => fn (Vehicle $v) => $v->year,                                  // year
                         'F' => fn (Vehicle $v) => $v->nice_reg_vin,                          // chassis no.
                         'G' => fn (Vehicle $v) => 1,                                         // Q'TY
-                        'H' => fn (Vehicle $v) => $v->sale_price,                            // unit price
+                        'H' => fn (Vehicle $v) => DocValue::money($v->sale_price),            // unit price
                         'J' => fn (Vehicle $v) => $v->nice_spec_curb_weight ?: $v->weight_kg, // weight(KG)
-                        'L' => fn (Vehicle $v) => $v->transport_fee,                         // shipping
+                        'L' => fn (Vehicle $v) => DocValue::money($v->transport_fee),         // shipping
                     ],
                     1 => [   // 연료/배기량 sub-row
                         'E' => fn (Vehicle $v) => $v->nice_reg_fuel_type,                    // type of fuel
