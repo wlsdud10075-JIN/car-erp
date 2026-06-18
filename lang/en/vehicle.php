@@ -80,6 +80,7 @@ return [
         'uploading' => 'Uploading…',
         'new' => 'New',
         'photo_count' => ':count/10 · click Save to apply.',
+        'photo_multi_hint' => 'Select several photos/documents at once, or add more in separate picks — they accumulate.',
         'validation_title' => 'Cannot save — please check the items below',
         'tab' => [
             'basic' => 'Basic Info',
@@ -230,6 +231,8 @@ return [
         'registration_number' => 'Registration No.',
         'registration_number_ph' => 'e.g. 2024-12345',
         'registration_number_hint' => 'Fills Clearance SET 구매리스트 → Deregistration cert. "No. ○○"',
+        'deregistration_date' => 'Deregistration Date',
+        'deregistration_date_hint' => 'Date the deregistration certificate was issued (used in Clearance SET 구매리스트)',
         'sale_date' => 'Sale Date',
         'currency' => 'Currency',
         'exchange_rate' => 'Exchange Rate',
