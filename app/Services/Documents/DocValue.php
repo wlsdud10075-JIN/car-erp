@@ -55,6 +55,21 @@ class DocValue
         return (float) $v->finalPayments()->whereNotNull('confirmed_at')->sum('amount');
     }
 
+    /**
+     * 금액 셀 — float 로 강제. (sale_price 등 decimal cast 는 PHP 에서 문자열 "3760.00" 이라
+     * writeCell 이 텍스트로 박제 → Excel SUM 이 텍스트를 무시해 SUB TOTAL/GRAND TOTAL 이 0 이 됨.
+     * float 로 넘겨 숫자 셀로 기입해야 footer 합산 수식이 Excel 에서 동작.)
+     * null/'' 은 null 유지(빈 칸).
+     */
+    public static function money(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value;
+    }
+
     /** 차명(제조사 포함) — 통관 차명 칸 등 brand+model 형식이 필요한 곳. (말소/위임장은 model-only carName 사용) */
     public static function carNameFull(Vehicle $v): string
     {

@@ -7,6 +7,7 @@ use App\Services\Documents\DocumentFiller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -109,6 +110,29 @@ class MultiVehicleShippingDocumentTest extends TestCase
         $this->assertEquals(15000, (float) $sheet->getCell('I26')->getCalculatedValue());
 
         @unlink($tmp);
+    }
+
+    /**
+     * 금액 셀은 숫자형(TYPE_NUMERIC)이어야 한다. decimal cast 가 문자열 "3760.00" 로 들어가
+     * 텍스트로 박히면 PhpSpreadsheet SUM 은 강제변환해 맞게 나오지만 **실제 Excel SUM 은 텍스트를
+     * 무시** → SUB TOTAL/GRAND TOTAL 금액이 0(Weight 만 합산). 이 회귀를 셀 타입으로 직접 가드.
+     */
+    #[DataProvider('shippingTypes')]
+    public function test_money_cells_written_as_numeric(string $type, string $sheetName, int $first, int $stride, string $brandCol, string $modelCol): void
+    {
+        $moneyCols = in_array($type, ['container_invoice_packing', 'roro_invoice_packing'], true)
+            ? ['H', 'L']   // unit price, shipping
+            : ['F', 'G'];  // FOB price, shipping cost (contracts)
+
+        $sheet = (new DocumentFiller($this->makeVehicles(3)))->spreadsheet($type)->getSheetByName($sheetName);
+
+        foreach ($moneyCols as $col) {
+            $this->assertSame(
+                DataType::TYPE_NUMERIC,
+                $sheet->getCell($col.$first)->getDataType(),
+                "$type 금액 셀 $col$first 은 숫자형이어야 Excel SUM 이 합산함 (텍스트면 무시됨)",
+            );
+        }
     }
 
     public function test_single_vehicle_still_produces_one_slot(): void

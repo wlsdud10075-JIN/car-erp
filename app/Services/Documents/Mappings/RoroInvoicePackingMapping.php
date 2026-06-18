@@ -43,9 +43,9 @@ class RoroInvoicePackingMapping
                         'E' => fn (Vehicle $v) => $v->year,
                         'F' => fn (Vehicle $v) => $v->nice_reg_vin,
                         'G' => fn (Vehicle $v) => 1,                                         // Q'TY
-                        'H' => fn (Vehicle $v) => $v->sale_price,
+                        'H' => fn (Vehicle $v) => DocValue::money($v->sale_price),
                         'J' => fn (Vehicle $v) => $v->nice_spec_curb_weight ?: $v->weight_kg, // weight(KG)
-                        'L' => fn (Vehicle $v) => $v->transport_fee,                         // shipping
+                        'L' => fn (Vehicle $v) => DocValue::money($v->transport_fee),         // shipping
                     ],
                 ],
             ],
