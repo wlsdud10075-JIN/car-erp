@@ -94,6 +94,7 @@ return [
             'deregistration_needed' => ['l' => 'Deregistration Needed', 'd' => 'purchase done → not deregistered'],
             'clearance_request_needed' => ['l' => 'Clearance Request Needed', 'd' => 'sale fully paid → license not uploaded'],
             'clearance_info_missing' => ['l' => 'Clearance Buyer/Date Missing', 'd' => 'sale started → export_buyer or shipping_date missing'],
+            'eta_missing' => ['l' => 'Data Fix — ETA Missing', 'd' => 'shipped but arrival date empty → fill it to schedule the clearance alarm'],
             'forwarding_missing' => ['l' => 'Forwarder Not Set', 'd' => 'clearance started → no forwarder'],
             'export_declaration_upload_needed' => ['l' => 'Export Declaration Upload', 'd' => 'clearing → no declaration'],
             'shipping_process_needed' => ['l' => 'Shipment Needed', 'd' => 'sold → loading location empty'],
