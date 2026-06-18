@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -682,6 +683,25 @@ class Vehicle extends Model
                 'note' => '자동 생성 — 거래완료 진입 시',
             ]);
         });
+
+        // 2026-06-18 ETA 알람 즉시 자동해소 (Hybrid — 매일 alarms:scan 보정과 별개).
+        //   수출신고서 업로드/거래완료 시 24h 기다리지 않고 즉시 해소 → obsolete 알람 노출 방지.
+        static::saved(function (Vehicle $vehicle) {
+            static $hasAlarmTable = null;
+            if ($hasAlarmTable === null) {
+                $hasAlarmTable = Schema::hasTable('task_alarms');
+            }
+            if (! $hasAlarmTable) {
+                return;
+            }
+            if (! $vehicle->export_declaration_document && $vehicle->progress_status_cache !== '거래완료') {
+                return;
+            }
+            TaskAlarm::where('type', 'eta_clearance')
+                ->where('vehicle_id', $vehicle->id)
+                ->whereNull('resolved_at')
+                ->update(['resolved_at' => now(), 'resolved_reason' => 'document_uploaded']);
+        });
     }
 
     /**
@@ -1285,6 +1305,8 @@ class Vehicle extends Model
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
             'exchange_rate_missing', 'clearance_stuck',
+            // 2026-06-18 ETA 영구 알람 — 알람 생성/자동해소 + 보정 섹션 (단일출처)
+            'eta_clearance_reminder', 'eta_missing',
             // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합)
             'clearance_candidates',
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
@@ -1365,6 +1387,22 @@ class Vehicle extends Model
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
                 ->whereNull('export_declaration_document'),
+
+            // 2026-06-18 ETA 영구 알람 (v1) — 단일출처. alarms:scan 이 생성/자동해소 둘 다 이 스코프로 판정.
+            //   도착(eta_date) N일 이내 + 수출신고서 미업로드 + export 채널 (active = 거래완료 제외).
+            //   리드데이 N = Setting('alarm_eta_lead_days', 기본 10).
+            'eta_clearance_reminder' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('eta_date')
+                ->where('eta_date', '<=', now()->addDays((int) Setting::get('alarm_eta_lead_days', 10))->toDateString())
+                ->whereNull('export_declaration_document'),
+
+            // 2026-06-18 데이터 보정 — 선적(반입)됐는데 도착일(ETA) 미입력 (수출통관 보드 보정 섹션).
+            //   '알림' 아닌 '데이터 품질' — 벨 알람으로 안 띄움. ETA 채우면 자동으로 목록에서 빠짐.
+            'eta_missing' => $q
+                ->where('sales_channel', 'export')
+                ->whereNotNull('shipping_date')
+                ->whereNull('eta_date'),
             'clearance_info_missing' => $q->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2
                     ->whereNull('export_buyer_id')
