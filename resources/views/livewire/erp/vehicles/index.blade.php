@@ -167,6 +167,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_remittance_memo = '';
     public string $registration_number = '';
     public bool   $is_deregistered = false;
+    public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
 
     // ── 판매 ──────────────────────────────────────────────────────
@@ -293,7 +294,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 차량 첨부 (사진·PDF·Excel·Word·HWP 등, 최대 10건 — vehicle_photos 테이블) ──────
     public const MAX_PHOTOS = 10;
 
-    public array $photoFiles = [];      // 신규 업로드 (multiple temp)
+    public array $photoFiles = [];      // 누적 버퍼 — 여러 번 선택해도 합쳐짐 (updatedPhotoUpload 가 merge)
+    public array $photoUpload = [];     // input 바인딩 (선택 즉시 photoFiles 로 누적 후 비움)
     public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
     public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
 
@@ -1058,6 +1060,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_remittance_memo = $v->purchase_remittance_memo ?? '';
         $this->registration_number = $v->registration_number ?? '';
         $this->is_deregistered = $v->is_deregistered;
+        $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
             'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
@@ -1175,6 +1178,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 차량 사진 로드 (편집 패널 갤러리)
         $this->photoFiles = [];
+        $this->photoUpload = [];
         $this->deletePhotoIds = [];
         $this->existingPhotos = $v->photos->map(fn ($p) => [
             'id'       => $p->id,
@@ -1375,6 +1379,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearBlDoc = true;
         $this->blDocFile = null;
         $this->bl_document_path = '';
+    }
+
+    /**
+     * 파일 선택 시 photoFiles 버퍼에 누적.
+     * Livewire 는 input 재선택 시 바인딩을 교체하므로, 한 번에 여러 개 선택하거나
+     * 여러 번 나눠 선택해도 모두 합쳐지도록 매 선택을 버퍼로 옮기고 input 을 비운다.
+     */
+    public function updatedPhotoUpload(): void
+    {
+        $this->validate([
+            'photoUpload.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+        ]);
+
+        foreach ($this->photoUpload as $file) {
+            if (count($this->existingPhotos) + count($this->photoFiles) >= self::MAX_PHOTOS) {
+                $this->dispatch('notify', message: __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]), type: 'warning');
+                break;
+            }
+            $this->photoFiles[] = $file;
+        }
+
+        $this->photoUpload = [];
     }
 
     /** 신규 업로드 미리보기에서 한 장 제거 (저장 전). */
@@ -1797,6 +1823,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
             'registration_number' => $this->registration_number ?: null,
             'is_deregistered'  => $this->is_deregistered,
+            'deregistration_date' => $toDate($this->deregistration_date),
             // 판매
             'sale_date'    => $toDate($this->sale_date),
             'currency'     => $this->currency,
@@ -2883,7 +2910,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
-            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number',
+            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','deregistration_date',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
@@ -2907,7 +2934,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
         $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
-        $this->photoFiles = $this->existingPhotos = $this->deletePhotoIds = [];
+        $this->photoFiles = $this->photoUpload = $this->existingPhotos = $this->deletePhotoIds = [];
     }
 
     private function unsetComputedProperties(): void
@@ -3570,12 +3597,13 @@ function vehicleColumnsToggle() {
                 <span class="section-title">{{ __('vehicle.panel.sec.photos') }}</span>
             </div>
             <div>
-                <input type="file" wire:model="photoFiles" multiple
+                <input type="file" wire:model="photoUpload" multiple
                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                        class="input-base text-sm" />
-                <div wire:loading wire:target="photoFiles" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
-                @error('photoFiles')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-                @error('photoFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
+                <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                @error('photoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
                 @if(count($existingPhotos) || count($photoFiles))
                 <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -3813,7 +3841,7 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
                 @endif
-                <div>
+                <div class="col-span-2">
                     <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>
                     <textarea wire:model="purchase_remittance_memo" class="input-base" rows="2"></textarea>
                 </div>
@@ -3821,6 +3849,11 @@ function vehicleColumnsToggle() {
                     <label class="label-base">{{ __('vehicle.field.registration_number') }}</label>
                     <input type="text" wire:model="registration_number" class="input-base" placeholder="{{ __('vehicle.field.registration_number_ph') }}" />
                     <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.registration_number_hint') }}</p>
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.deregistration_date') }}</label>
+                    <input type="date" wire:model="deregistration_date" class="input-base" />
+                    <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.deregistration_date_hint') }}</p>
                 </div>
             </div>
         </div>

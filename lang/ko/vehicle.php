@@ -80,6 +80,7 @@ return [
         'uploading' => '업로드 중…',
         'new' => '신규',
         'photo_count' => ':count/10건 · 저장 버튼을 눌러야 반영됩니다.',
+        'photo_multi_hint' => '사진·문서 여러 개를 한 번에 선택할 수 있고, 나눠서 추가해도 누적됩니다.',
         'validation_title' => '저장할 수 없습니다 — 아래 항목을 확인하세요',
         'tab' => [
             'basic' => '기본정보',
@@ -230,6 +231,8 @@ return [
         'registration_number' => '등록번호',
         'registration_number_ph' => '예: 2024-12345',
         'registration_number_hint' => '통관 SET 구매리스트 → 말소증 "제 ○○ 호"에 기입',
+        'deregistration_date' => '말소등록일',
+        'deregistration_date_hint' => '말소등록증 발급일 (통관 SET 구매리스트에 반영)',
         'sale_date' => '판매일',
         'currency' => '통화',
         'exchange_rate' => '환율',
