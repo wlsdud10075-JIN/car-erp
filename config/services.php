@@ -49,4 +49,10 @@ return [
         'hmac_secret' => env('CAR_ERP_HMAC_SECRET'),
     ],
 
+    // board 영업 포털 읽기 API — 쓰기(purchase_sync)와 분리된 별도 시크릿.
+    // 미설정 시 읽기 엔드포인트 전부 401(안전밸브). 권위 스펙 = docs/integration/board-portal-api.md.
+    'board_read' => [
+        'hmac_secret' => env('CAR_ERP_READ_HMAC_SECRET'),
+    ],
+
 ];

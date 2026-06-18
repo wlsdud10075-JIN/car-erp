@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
+use App\Http\Middleware\VerifyBoardReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
 use Illuminate\Support\Facades\Route;
 
@@ -16,3 +18,19 @@ use Illuminate\Support\Facades\Route;
 Route::middleware([VerifyPurchaseSyncHmac::class, 'throttle:30,1'])
     ->post('/internal/purchase-sync', PurchaseSyncController::class)
     ->name('api.internal.purchase-sync');
+
+/*
+| board 영업 포털 읽기 API (HMAC GET) — purchase-sync 의 역방향.
+| 인증 = VerifyBoardReadHmac(별도 READ 시크릿·replay 방지). 본인격리 = SalesmanResolver.
+| 권위 스펙 = docs/integration/board-portal-api.md. ④ 재무 읽기(이번 단계). ③선적요청·①②서류는 후속.
+*/
+Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
+    ->prefix('internal/board')
+    ->name('api.internal.board.')
+    ->group(function () {
+        Route::get('finance', [InternalPortalController::class, 'finance'])->name('finance');
+        Route::get('receivables', [InternalPortalController::class, 'receivables'])->name('receivables');
+        Route::get('sales', [InternalPortalController::class, 'sales'])->name('sales');
+        Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
+        Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
+    });
