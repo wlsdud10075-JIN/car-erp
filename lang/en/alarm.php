@@ -25,4 +25,12 @@ return [
     'col_status' => 'Status',
     'status_unread' => 'Unread',
     'status_confirmed' => 'Acknowledged',
+
+    // Data fix (ETA missing — inline input)
+    'correction_title' => 'Data Fix — ETA Missing',
+    'correction_sub' => 'Shipped but the arrival date is empty. Fill it and the clearance alarm is auto-scheduled 10 days before arrival.',
+    'eta_save' => 'Save',
+    'eta_saved' => ':v ETA saved',
+    'eta_required' => 'Please enter an arrival date.',
+    'eta_invalid' => 'Invalid date format.',
 ];
