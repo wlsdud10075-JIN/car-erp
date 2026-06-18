@@ -19,7 +19,7 @@ class DocumentAccessLog extends Model
     ];
 
     protected $fillable = [
-        'user_id', 'vehicle_id', 'document_type', 'ip_address',
+        'user_id', 'vehicle_id', 'document_type', 'ip_address', 'source', 'actor_email',
     ];
 
     public function user(): BelongsTo

@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
+use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
@@ -33,4 +35,9 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('sales', [InternalPortalController::class, 'sales'])->name('sales');
         Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
         Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
+        // ③ 선적요청
+        Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');
+        Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');
+        // ①② 서류 다운로드 (선적 4종만, 프록시)
+        Route::get('documents/{type}', [InternalDocumentController::class, 'show'])->name('documents');
     });

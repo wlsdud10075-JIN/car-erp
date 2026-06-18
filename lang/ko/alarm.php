@@ -7,6 +7,7 @@ return [
     'dday' => '도착 D-:d',
     'overdue' => '도착 지남',
     'task_clearance' => '통관서류 작업',
+    'task_shipping' => '선적 요청',
     'unpaid' => '미수금 ₩:amt',
     'paid' => '완납',
     'fx_missing' => '환율 미입력',

@@ -7,6 +7,7 @@ return [
     'dday' => 'Arrives D-:d',
     'overdue' => 'Arrival passed',
     'task_clearance' => 'Prepare clearance docs',
+    'task_shipping' => 'Shipping requested',
     'unpaid' => 'Unpaid ₩:amt',
     'paid' => 'Paid',
     'fx_missing' => 'FX rate missing',
