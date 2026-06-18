@@ -295,8 +295,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('deregistration_needed', 'l'),            $t('deregistration_needed', 'd'),            $c('deregistration_needed'),            'bg-red-500',   'deregistration_needed', true),
             $this->row($t('clearance_request_needed', 'l'),         $t('clearance_request_needed', 'd'),         $c('clearance_request_needed'),         'bg-blue-500',  'clearance_request_needed'),
             $this->row($t('clearance_info_missing', 'l'),           $t('clearance_info_missing', 'd'),           $c('clearance_info_missing'),           'bg-amber-500', 'clearance_info_missing', true),
-            // 2026-06-18 데이터 보정 — 선적했는데 도착일(ETA) 미입력. 채워야 ETA 알람 예약됨.
-            $this->row($t('eta_missing', 'l'),                      $t('eta_missing', 'd'),                      $c('eta_missing'),                      'bg-amber-500', 'eta_missing', true),
+            // 2026-06-18 데이터 보정 — 선적했는데 도착일(ETA) 미입력. 클릭 → 알림함(도착일 인라인 입력).
+            $this->row($t('eta_missing', 'l'),                      $t('eta_missing', 'd'),                      $c('eta_missing'),                      'bg-amber-500', 'eta_missing', true, route('erp.alarms.index')),
             $this->row($t('forwarding_missing', 'l'),               $t('forwarding_missing', 'd'),               $c('forwarding_missing'),               'bg-amber-500', 'forwarding_missing', true),
             $this->row($t('export_declaration_upload_needed', 'l'), $t('export_declaration_upload_needed', 'd'), $c('export_declaration_upload_needed'), 'bg-blue-500',  'export_declaration_upload_needed'),
             $this->row($t('shipping_process_needed', 'l'),          $t('shipping_process_needed', 'd'),          $c('shipping_process_needed'),          'bg-amber-500', 'shipping_process_needed'),
@@ -441,12 +441,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
-    private function row(string $label, string $desc, int $count, string $dot, string $action, bool $urgent = false): array
+    private function row(string $label, string $desc, int $count, string $dot, string $action, bool $urgent = false, ?string $href = null): array
     {
         return [
             'label' => $label, 'desc' => $desc, 'count' => $count,
             'dot' => $dot, 'urgent' => $urgent,
-            'href' => $this->vehiclesUrl($action),
+            'href' => $href ?? $this->vehiclesUrl($action),
         ];
     }
 

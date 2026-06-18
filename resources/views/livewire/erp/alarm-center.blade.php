@@ -23,13 +23,15 @@ new class extends Component
             return ['alarms' => collect(), 'unreadCount' => 0, 'moreCount' => 0];
         }
 
-        $unread = TaskAlarm::query()->visibleTo($user)->unread();
-        $unreadCount = (clone $unread)->count();
-        $alarms = $unread->with('vehicle')->orderBy('due_date')->limit(5)->get();
+        $base = TaskAlarm::query()->visibleTo($user)->unread();
+        $unreadCount = (clone $base)->count();
+        $maxUnreadId = (int) ((clone $base)->max('id') ?? 0);   // "새 알람" 판별 키 (id 증가)
+        $alarms = $base->with('vehicle')->orderBy('due_date')->limit(5)->get();
 
         return [
             'alarms' => $alarms,
             'unreadCount' => $unreadCount,
+            'maxUnreadId' => $maxUnreadId,
             'moreCount' => max(0, $unreadCount - $alarms->count()),
         ];
     }
@@ -37,8 +39,21 @@ new class extends Component
 
 <div wire:poll.60s>
     @if ($unreadCount > 0)
-        {{-- A동작: 진입 시 자동으로 카드 뜸(open=true) · ✕ 누르면 벨 pill로 접힘 --}}
-        <div x-data="{ open: true }" class="fixed bottom-4 right-4 z-40 print:hidden">
+        {{-- A동작: 진입 시 자동으로 뜨되, ✕로 닫으면 "새 알람(더 큰 id)이 올 때까지" 접힌 상태 유지.
+             localStorage 에 마지막으로 본 maxId 저장 → 페이지 이동해도 다시 안 뜸. 새 알람(maxId↑) 오면 자동으로 다시 뜸. --}}
+        <div data-max-id="{{ $maxUnreadId }}"
+             x-data="{
+                open: false,
+                init() {
+                    const seen = parseInt(localStorage.getItem('alarmSeenId') || '0');
+                    this.open = parseInt(this.$el.dataset.maxId) > seen;
+                },
+                dismiss() {
+                    localStorage.setItem('alarmSeenId', this.$el.dataset.maxId);
+                    this.open = false;
+                },
+             }"
+             class="fixed bottom-4 right-4 z-40 print:hidden">
 
             {{-- 접힌 상태: 벨 pill --}}
             <button x-show="!open" x-cloak @click="open = true"
@@ -53,7 +68,7 @@ new class extends Component
                     <span>🔔 {{ __('alarm.bell_title') }}</span>
                     <span class="flex items-center gap-2">
                         <span class="text-[11px] font-medium text-gray-300">{{ $alarms->count() }}@if ($moreCount > 0) · {{ __('alarm.more_n', ['n' => $moreCount]) }}@endif</span>
-                        <button @click="open = false" title="{{ __('alarm.collapse') }}" class="px-1 text-gray-300 hover:text-white">✕</button>
+                        <button @click="dismiss()" title="{{ __('alarm.collapse') }}" class="px-1 text-gray-300 hover:text-white">✕</button>
                     </span>
                 </div>
 

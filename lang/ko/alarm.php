@@ -25,4 +25,12 @@ return [
     'col_status' => '상태',
     'status_unread' => '미확인',
     'status_confirmed' => '확인됨',
+
+    // 데이터 보정 (ETA 없음 — 인라인 입력)
+    'correction_title' => '데이터 보정 — 도착일(ETA) 없음',
+    'correction_sub' => '선적은 끝났는데 도착일이 비어 있어요. 입력하면 도착 10일 전 통관서류 알람이 자동 예약됩니다.',
+    'eta_save' => '저장',
+    'eta_saved' => ':v 도착일 저장됨',
+    'eta_required' => '도착일을 입력하세요.',
+    'eta_invalid' => '날짜 형식이 올바르지 않습니다.',
 ];

@@ -79,4 +79,36 @@ class AlarmUiTest extends TestCase
         $this->actingAs($this->salesUser());
         $this->get(route('erp.alarms.index'))->assertForbidden();
     }
+
+    public function test_set_eta_inline_fills_arrival_date(): void
+    {
+        $user = $this->clearanceUser();
+        $v = Vehicle::create([
+            'vehicle_number' => '77가1234',
+            'sales_channel' => 'export',
+            'shipping_date' => now()->subDays(5)->toDateString(),   // 선적O, ETA 없음 → 보정 대상
+        ]);
+        $this->actingAs($user);
+
+        Volt::test('erp.alarms.index')
+            ->assertSee($v->vehicle_number)   // 보정 목록 노출
+            ->call('setEta', $v->id, now()->addDays(7)->toDateString());
+
+        $this->assertSame(now()->addDays(7)->toDateString(), $v->fresh()->eta_date->toDateString());
+    }
+
+    public function test_set_eta_invalid_date_does_not_update(): void
+    {
+        $user = $this->clearanceUser();
+        $v = Vehicle::create([
+            'vehicle_number' => '77가5678',
+            'sales_channel' => 'export',
+            'shipping_date' => now()->subDays(5)->toDateString(),
+        ]);
+        $this->actingAs($user);
+
+        Volt::test('erp.alarms.index')->call('setEta', $v->id, 'not-a-date');
+
+        $this->assertNull($v->fresh()->eta_date);
+    }
 }
