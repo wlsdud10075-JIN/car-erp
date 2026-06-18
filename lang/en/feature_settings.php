@@ -19,4 +19,9 @@ return [
     'always_on' => 'Always on',
     'en_label' => 'English',
     'en_sub' => '(English)',
+
+    'alarm_section' => 'Clearance Document Alarm',
+    'alarm_hint' => 'Export vehicles 10 days before arrival (ETA) get a "prepare clearance documents" alarm. Run `php artisan alarms:scan --dry-run` first to check how many will fire.',
+    'alarm_label' => 'Enable ETA clearance alarm',
+    'alarm_sub' => '(off = no alarms generated)',
 ];

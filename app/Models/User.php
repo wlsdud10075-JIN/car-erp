@@ -347,6 +347,23 @@ class User extends Authenticatable
         return true;
     }
 
+    /**
+     * 업무 알람 [확인]·열람 재인가 단일 출처 (IDOR 차단 — Review.md #26 패턴).
+     * v1 = eta_clearance(target_role 수출통관). 볼 수 있는 사람 = admin·수출통관·관리(본인 팀).
+     */
+    public function canSeeAlarm(TaskAlarm $alarm): bool
+    {
+        if ($alarm->target_role !== '수출통관' || ! $this->canAccessClearance()) {
+            return false;
+        }
+        if ($this->isAdmin() || $this->role === '수출통관') {
+            return true;
+        }
+
+        // 관리 — 본인 팀(subordinate 영업) 차량 알람만.
+        return $alarm->vehicle ? $this->canScopeVehicle($alarm->vehicle) : false;
+    }
+
     public function initials(): string
     {
         return Str::of($this->name)

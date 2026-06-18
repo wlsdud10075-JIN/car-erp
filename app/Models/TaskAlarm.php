@@ -56,6 +56,25 @@ class TaskAlarm extends Model
         return $q->where('target_role', $role);
     }
 
+    /**
+     * 사용자가 볼 수 있는 알람만 (목록·벨 카운트 SQL 필터 — canSeeAlarm 의 SQL 짝).
+     * v1 = 수출통관 알람: admin·수출통관 전체 / 관리 본인 팀 / 그 외 0건.
+     */
+    public function scopeVisibleTo(Builder $q, User $user): Builder
+    {
+        $q->where('target_role', '수출통관');
+
+        if (! $user->canAccessClearance()) {
+            return $q->whereRaw('1 = 0');
+        }
+        if ($user->isAdmin() || $user->role === '수출통관') {
+            return $q;
+        }
+
+        // 관리 — 본인 팀 차량 알람만.
+        return $q->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
+    }
+
     /** message_meta 를 허용 키로만 제한 (저장 직전 strip). */
     public static function sanitizeMeta(array $meta): array
     {

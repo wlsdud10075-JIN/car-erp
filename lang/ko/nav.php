@@ -14,6 +14,7 @@ return [
         'vehicles' => '차량 관리',
         'inventory' => '재고관리',
         'clearance' => '수출통관',
+        'alarms' => '알림',
         'buyers' => '바이어',
         'consignees' => '컨사이니',
         'settlements' => '정산 처리',
