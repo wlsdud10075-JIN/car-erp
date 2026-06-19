@@ -31,6 +31,9 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     // ETA 통관서류 알림함 (2026-06-18) — 컴포넌트 mount 에서 canAccessClearance 가드.
     Volt::route('alarms', 'erp.alarms.index')->name('alarms.index');
 
+    // board 영업포털 선적요청 목록 (2026-06-19) — 배치별 묶음·상태추적. mount/transition 에서 canAccessClearance 가드.
+    Volt::route('shipping-requests', 'erp.shipping-requests.index')->name('shipping-requests.index');
+
     // 차량별 서류 자동 생성 (단계 11)
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])
         ->name('vehicles.documents.show')

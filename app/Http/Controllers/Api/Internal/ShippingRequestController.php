@@ -9,6 +9,7 @@ use App\Models\Vehicle;
 use App\Services\SalesmanResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 /**
  * board 영업 포털 ③ 선적요청 (읽기 + 가벼운 쓰기).
@@ -57,6 +58,7 @@ class ShippingRequestController extends Controller
             'shipping_method' => ['required', 'in:RORO,CONTAINER'],
         ]);
 
+        $batchId = (string) Str::uuid();   // 1요청(POST) = 1배치 — car-erp 선적요청 화면에서 묶음 표시
         $created = [];
         $skipped = [];
         foreach ($v['vehicle_ids'] as $vid) {
@@ -75,6 +77,7 @@ class ShippingRequestController extends Controller
             }
 
             ShippingRequest::create([
+                'batch_id' => $batchId,
                 'vehicle_id' => $vid,
                 'buyer_id' => $v['buyer_id'] ?? null,
                 'consignee_id' => $v['consignee_id'] ?? null,

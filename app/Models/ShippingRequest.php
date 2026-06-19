@@ -22,7 +22,7 @@ class ShippingRequest extends Model
     public const METHODS = ['RORO', 'CONTAINER'];
 
     protected $fillable = [
-        'vehicle_id', 'buyer_id', 'consignee_id', 'shipping_method',
+        'batch_id', 'vehicle_id', 'buyer_id', 'consignee_id', 'shipping_method',
         'requested_by_email', 'status', 'requested_at', 'processed_at', 'note',
     ];
 
