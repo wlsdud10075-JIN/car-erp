@@ -501,3 +501,12 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 **⚠️ 배포 함정(실측, 재발방지)**: 1차 push 가 **stale `origin/dev`** 머지라 세션 9커밋 누락(by-buyer·사이드바·batch_id·선적요청 화면 전부 빠짐) → 운영 검증서 발견(`git show origin/master:...|grep`) → `git push origin dev` 후 재머지·재배포(`8471990`)로 복구. **교훈: dev→master 전에 반드시 `git push origin dev` 먼저(origin/dev 최신화) — 로컬 dev가 origin보다 앞서면 머지가 옛 코드 배포.**
 
 **시크릿**(2026-06-19): 운영 `.env CAR_ERP_READ_HMAC_SECRET` 설정 + `config:cache`. 서명요청 검증 = 403(HMAC통과·영업없음)로 동작 확인. `.env.bak.readsecret-*` 백업. ⚠️ **값이 약함 → 강한 랜덤으로 교체 권장**(board 세팅과 동시). board 운영 `.env`에 동일값 + `CAR_ERP_BASE_URL=https://heysellcar.com` 설정 시 연동 활성.
+
+## 23. deploy #12 — 통관SET 서류 보강 (2026-06-19)
+
+**반영** (master `8471990`→`169707e`, 자동배포 success):
+- ① 차량등록증 자동차등록번호 `reg_cert_number` 컬럼 + 기본정보 탭 2열 입력 → ClearanceSet G3(한글/영문등록증).
+- ③ 구매리스트 I6 차종 영문변환 수식 교정(템플릿 "중형승용"→"승용 중형" 실데이터 매칭, system+karaba 바이너리).
+- ⑤ 차량인보이스 A3 상호 첫 줄 = 기능설정 브랜드 대문자(DocumentFiller brandHeader).
+- 마이그 `add_reg_cert_number_to_vehicles` [14] Ran. 사이트 302 정상.
+- ④ H13 연비는 미반영(jin 미들웨어 연비 조사중). ⑤ 다른서류 확장 보류.
