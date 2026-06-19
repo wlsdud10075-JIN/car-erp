@@ -490,3 +490,14 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 **⚠️ 함정(실측)**: `sudo systemctl restart php*-fpm` 의 **glob 이 실제 유닛 `php8.4-fpm.service` 를 매칭 못 해 no-op**(그런데 exit 0·"OK" 출력). php.ini 는 40M인데 FPM 마스터는 부팅 시점 2M 유지 → "파일은 40M·동작은 2M". **정확 유닛명 `sudo systemctl restart php8.4-fpm.service` 로 재시작**해야 반영. 검증 = webroot 임시 `phpinfo` 프로브를 **https 경로(`curl -k --resolve heysellcar.com:443:127.0.0.1`)**로 찍어 `ini_get` 확인 후 즉시 삭제(http 는 301 리다이렉트라 값 못 봄).
 
 **교훈**: ① ubuntu 사용자(Bitnami 아님), PHP 8.4. ② 서버 ini 변경 후 **반드시 실 HTTP 경로로 적용값 검증**(파일 grep 만으론 마스터 캐시 못 잡음). ③ glob 유닛 재시작 금지 — 정확 유닛명.
+
+## 22. deploy #11 — board 영업포털 (Phase A/B/C + 선적요청 후단) (2026-06-19)
+
+**반영** (master `8d4dc98`→`4d0ccac`→`8471990`, 자동배포 2회 success):
+- board 읽기 API(`VerifyBoardReadHmac`·`SalesmanResolver`·`InternalPortalController` finance/receivables/sales/purchases/settlements/**by-buyer**) + 선적요청(`ShippingRequestController` shippable/store/cancel) + 서류 프록시(선적4종) + **선적요청 화면**·차량관리 ids 딥링크·**사이드바 7그룹 트리**.
+- 마이그 3종 Ran: `create_shipping_requests_table`·`add_board_source_to_document_access_logs`·`add_batch_id_to_shipping_requests`(additive, 운영 데이터 없음).
+- 권위 스펙 = `docs/integration/board-portal-api.md`.
+
+**⚠️ 배포 함정(실측, 재발방지)**: 1차 push 가 **stale `origin/dev`** 머지라 세션 9커밋 누락(by-buyer·사이드바·batch_id·선적요청 화면 전부 빠짐) → 운영 검증서 발견(`git show origin/master:...|grep`) → `git push origin dev` 후 재머지·재배포(`8471990`)로 복구. **교훈: dev→master 전에 반드시 `git push origin dev` 먼저(origin/dev 최신화) — 로컬 dev가 origin보다 앞서면 머지가 옛 코드 배포.**
+
+**시크릿**(2026-06-19): 운영 `.env CAR_ERP_READ_HMAC_SECRET` 설정 + `config:cache`. 서명요청 검증 = 403(HMAC통과·영업없음)로 동작 확인. `.env.bak.readsecret-*` 백업. ⚠️ **값이 약함 → 강한 랜덤으로 교체 권장**(board 세팅과 동시). board 운영 `.env`에 동일값 + `CAR_ERP_BASE_URL=https://heysellcar.com` 설정 시 연동 활성.
