@@ -60,10 +60,40 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('shipping.toast.updated'), type: 'success');
     }
 
+    /**
+     * 배치 취소 — 영업이 board에서 올린 요청을 통관/관리가 car-erp 에서 무름.
+     * status='cancelled'(open 집계 제외 → 차 재요청 가능) + 연동 알람 resolve. done 은 취소 불가.
+     */
+    public function cancel(string $batchId): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+
+        $rows = ShippingRequest::where('batch_id', $batchId)
+            ->whereIn('status', [ShippingRequest::STATUS_REQUESTED, ShippingRequest::STATUS_IN_PROGRESS])
+            ->get();
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        foreach ($rows as $r) {
+            $r->status = ShippingRequest::STATUS_CANCELLED;
+            $r->processed_at = now();
+            $r->save();
+        }
+
+        TaskAlarm::where('type', 'shipping_requested')
+            ->whereIn('vehicle_id', $rows->pluck('vehicle_id'))
+            ->whereNull('resolved_at')
+            ->update(['resolved_at' => now(), 'resolved_reason' => 'shipping_cancelled']);
+
+        $this->dispatch('notify', message: __('shipping.toast.cancelled'), type: 'success');
+    }
+
     public function with(): array
     {
         $rows = ShippingRequest::query()
             ->with(['vehicle', 'buyer', 'consignee'])
+            ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)   // 취소건 = 목록서 제외(무른 것)
             ->when($this->statusFilter !== '', fn ($q) => $q->where('status', $this->statusFilter))
             ->orderByDesc('requested_at')
             ->get();
@@ -87,8 +117,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ];
         })->sortByDesc(fn ($b) => optional($b['requested_at'])->timestamp)->values();
 
-        // 상태별 배치 수 (필터 칩 카운트)
+        // 상태별 배치 수 (필터 칩 카운트) — 취소건 제외
         $counts = ShippingRequest::query()
+            ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
             ->selectRaw('status, COUNT(DISTINCT batch_id) as c')
             ->groupBy('status')->pluck('c', 'status');
 
@@ -174,6 +205,11 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'done')"
                                         class="rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100">
                                     {{ __('shipping.action.done') }}
+                                </button>
+                                <button type="button" wire:click="cancel('{{ $b['batch_id'] }}')"
+                                        wire:confirm="{{ __('shipping.confirm.cancel', ['n' => $b['count']]) }}"
+                                        class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">
+                                    {{ __('shipping.action.cancel') }}
                                 </button>
                             @endif
                         </div>

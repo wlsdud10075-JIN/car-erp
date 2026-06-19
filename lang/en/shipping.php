@@ -24,7 +24,12 @@ return [
     'action' => [
         'start' => 'Mark in progress',
         'done' => 'Mark done',
+        'cancel' => 'Cancel',
         'open_in_vehicles' => 'Open :count in Vehicles',
+    ],
+
+    'confirm' => [
+        'cancel' => 'Cancel this shipping request (:n vehicles)? Sales can re-request from board. Proceed?',
     ],
 
     'doc' => [
@@ -35,5 +40,6 @@ return [
 
     'toast' => [
         'updated' => 'Shipping request status updated.',
+        'cancelled' => 'Shipping request cancelled.',
     ],
 ];

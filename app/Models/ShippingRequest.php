@@ -19,6 +19,8 @@ class ShippingRequest extends Model
 
     public const STATUS_DONE = 'done';
 
+    public const STATUS_CANCELLED = 'cancelled';   // car-erp 에서 무름 — open 집계서 제외, 차 재요청 가능
+
     public const METHODS = ['RORO', 'CONTAINER'];
 
     protected $fillable = [

@@ -71,6 +71,23 @@ class ShippingRequestsScreenTest extends TestCase
         $this->assertSame(0, TaskAlarm::where('type', 'shipping_requested')->whereNull('resolved_at')->count());
     }
 
+    public function test_cancel_voids_batch_resolves_alarm_and_hides(): void
+    {
+        $this->batch('batch-A', ['11가1111', '22나2222']);
+        foreach (ShippingRequest::all() as $r) {
+            TaskAlarm::create(['type' => 'shipping_requested', 'vehicle_id' => $r->vehicle_id, 'target_role' => '수출통관', 'due_date' => now()]);
+        }
+
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('cancel', 'batch-A')
+            ->assertViewHas('batches', fn ($b) => $b->isEmpty());   // 취소건은 목록서 사라짐
+
+        $this->assertSame(2, ShippingRequest::where('batch_id', 'batch-A')->where('status', 'cancelled')->count());
+        $this->assertSame(0, TaskAlarm::where('type', 'shipping_requested')->whereNull('resolved_at')->count());
+    }
+
     public function test_status_filter(): void
     {
         $this->batch('batch-A', ['11가1111'], 'requested');

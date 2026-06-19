@@ -65,6 +65,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   ```
   - 적재 = **신규 `shipping_requests` 테이블**(`batch_id`(1 POST=1 uuid, car-erp 내부 묶음표시용)·`vehicle_id` FK·`buyer_id`·`consignee_id`·`shipping_method` enum·`requested_by_email`·`status` enum(requested/in_progress/done)·`requested_at`·`processed_at`·`note`). **⚠️ `vehicles` 컬럼(특히 `export_buyer_id`)에 적재 금지** — C4/C5 게이트(`guardStageOrderForExport`)·`ManagementWorkflowChecklistTest:375` 회귀.
   - car-erp 후단: 수출통관/관리가 **「통관·선적 > 선적요청」 화면**(`erp.shipping-requests.index`)에서 배치별로 보고 `requested→in_progress→done` 전환. done 시 연동 `shipping_requested` 알람 자동 resolve.
+  - **취소 = car-erp 측 처리**(board 취소 엔드포인트 없음). 통관/관리가 화면에서 배치 취소 → `status='cancelled'`(open 집계 제외 → `/shippable` shipping_status 가 다시 `none` → 영업이 board 에서 재요청 가능) + 연동 알람 resolve. done 은 취소 불가.
   - **재요청 = 제자리 갱신**: open `'requested'` 있으면 새 row 안 만들고 **기존 row 의 consignee/method 갱신**(batch_id·status 유지 = 배치 정합). `'in_progress'`(관리 처리중)면 갱신 불가 skip. 응답 `{created:[], updated:[], skipped:[]}` 구분.
   - 알람 = **`TaskAlarm` 신규 type `shipping_requested`**(`target_role='관리'`) **즉시 생성·발동**(scan 불필요, ETA `eta_clearance`와 별개). 관리가 차량 편집 패널에서 실무(컨테이너#·B/L·선적일·서류) 채움.
   - board 표시 = 요청 상태(requested/in_progress/done)만. 권위 = `progress_status_cache`(관리가 진행).
