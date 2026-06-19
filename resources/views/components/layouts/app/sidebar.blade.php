@@ -35,6 +35,7 @@
         $routeName === 'erp.dashboard' => __('nav.crumb.erp_dashboard'),
         $routeName === 'erp.vehicles.index' => __('nav.crumb.vehicles'),
         $routeName === 'erp.inventory.index' => __('nav.crumb.inventory'),
+        $routeName === 'erp.shipping-requests.index' => __('nav.menu.shipping_requests'),
         $routeName === 'erp.buyers.index' => __('nav.crumb.buyers'),
         $routeName === 'erp.consignees.index' => __('nav.crumb.consignees'),
         $routeName === 'erp.forwarding-companies.index' => __('nav.crumb.forwarding'),
@@ -69,6 +70,11 @@
         ? \App\Models\TaskAlarm::query()->visibleTo($user)->unread()->count()
         : 0;
 
+    // 2026-06-19 선적요청 — 미처리(requested) 배치 수. canAccessClearance 만 계산.
+    $shippingOpen = $user->canAccessClearance()
+        ? \App\Models\ShippingRequest::where('status', 'requested')->distinct()->count('batch_id')
+        : 0;
+
     // 큐 19-F / 20-C — 재무 처리 대기 건수 합산 (자금 이체 + 매입 잔금 + 판매 잔금)
     // 단일 사용자(canConfirmFinanceTransfer)만 계산. 비-재무 사용자는 0.
     if ($user->canConfirmFinanceTransfer()) {
@@ -92,23 +98,31 @@
         $pendingFinanceConfirmations = 0;
     }
 
+    // 2026-06-19 — 사이드바 트리 재편. role 게이트는 항목별 'show' 단일출처, 그룹은 'key'(접기 localStorage)+빈그룹 자동숨김(렌더에서 visible 항목 0이면 헤더 미출력).
     $menuGroups = [
         [
+            'key' => 'main',
             'label' => __('nav.group.main'),
-            'show' => true,
             'items' => [
                 [
                     'label' => __('nav.menu.dashboard'),
                     'href' => route('dashboard'),
                     'icon' => 'home',
-                    'active' => request()->routeIs('dashboard') || request()->routeIs('admin.dashboard') || request()->routeIs('erp.dashboard'),
+                    'active' => request()->routeIs('dashboard') || request()->routeIs('erp.dashboard'),
                     'show' => true,
+                ],
+                [
+                    'label' => __('nav.menu.admin_dashboard'),
+                    'href' => $user->canViewAdminDashboard() ? route('admin.dashboard') : '#',
+                    'icon' => 'chart-bar',
+                    'active' => request()->routeIs('admin.dashboard'),
+                    'show' => $user->canViewAdminDashboard(),
                 ],
             ],
         ],
         [
-            'label' => __('nav.group.erp'),
-            'show' => $user->canAccessErp(),
+            'key' => 'work',
+            'label' => __('nav.group.work'),
             'items' => [
                 [
                     'label' => __('nav.menu.vehicles'),
@@ -135,7 +149,36 @@
                     'show' => $user->canAccessClearance(),
                     'badge' => $clearanceBadge > 0 ? $clearanceBadge : null,
                 ],
-                // 2026-06-18 ETA 통관서류 알림함 (벨). canAccessClearance(admin·수출통관·관리)만.
+                [
+                    'label' => __('nav.menu.receivables'),
+                    'href' => $user->canViewReceivables() ? route('erp.receivables.index') : '#',
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.receivables.*'),
+                    'show' => $user->canViewReceivables(),
+                ],
+                [
+                    'label' => __('nav.menu.salesmen'),
+                    'href' => $user->canAccessAdmin() ? route('erp.salesmen.index') : '#',
+                    'icon' => 'briefcase',
+                    'active' => request()->routeIs('erp.salesmen.index'),
+                    'show' => $user->canAccessAdmin(),
+                ],
+                // 영업 본인 캐시플로우 — 영업 role 만. car-erp 계정 가진 영업이 자기 현황 보는 진입.
+                [
+                    'label' => __('nav.menu.cashflow'),
+                    'href' => $isSalesUser ? route('erp.salesmen.cashflow', $mySalesman->id) : '#',
+                    'icon' => 'chart-bar',
+                    'active' => request()->routeIs('erp.salesmen.cashflow'),
+                    'show' => $isSalesUser,
+                ],
+            ],
+        ],
+        // 2026-06-19 — 통관·선적 그룹 신설 (알림 + 선적요청). canAccessClearance(admin·수출통관·관리).
+        [
+            'key' => 'clearance',
+            'label' => __('nav.group.clearance'),
+            'items' => [
+                // ETA 통관서류 알림함 (벨).
                 [
                     'label' => __('nav.menu.alarms'),
                     'href' => route('erp.alarms.index'),
@@ -144,6 +187,21 @@
                     'show' => $user->canAccessClearance(),
                     'badge' => $alarmUnread > 0 ? $alarmUnread : null,
                 ],
+                // board 영업포털 선적요청 목록 (배치별 묶음).
+                [
+                    'label' => __('nav.menu.shipping_requests'),
+                    'href' => route('erp.shipping-requests.index'),
+                    'icon' => 'truck',
+                    'active' => request()->routeIs('erp.shipping-requests.*'),
+                    'show' => $user->canAccessClearance(),
+                    'badge' => $shippingOpen > 0 ? $shippingOpen : null,
+                ],
+            ],
+        ],
+        [
+            'key' => 'customer',
+            'label' => __('nav.group.customer'),
+            'items' => [
                 [
                     'label' => __('nav.menu.buyers'),
                     'href' => route('erp.buyers.index'),
@@ -159,18 +217,31 @@
                     'show' => true,
                 ],
                 [
+                    'label' => __('nav.menu.forwarding'),
+                    'href' => $user->canAccessAdmin() ? route('erp.forwarding-companies.index') : '#',
+                    'icon' => 'building',
+                    'active' => request()->routeIs('erp.forwarding-companies.*'),
+                    'show' => $user->canAccessAdmin(),
+                ],
+                [
+                    'label' => __('nav.menu.ports'),
+                    'href' => $user->canManagePorts() ? route('admin.ports.index') : '#',
+                    'icon' => 'building',
+                    'active' => request()->routeIs('admin.ports.*'),
+                    'show' => $user->canManagePorts(),
+                ],
+            ],
+        ],
+        [
+            'key' => 'finance',
+            'label' => __('nav.group.finance'),
+            'items' => [
+                [
                     'label' => __('nav.menu.settlements'),
                     'href' => $user->canAccessSettlement() ? route('erp.settlements.index') : '#',
                     'icon' => 'calculator',
                     'active' => request()->routeIs('erp.settlements.*'),
                     'show' => $user->canAccessSettlement(),
-                ],
-                [
-                    'label' => __('nav.menu.receivables'),
-                    'href' => $user->canViewReceivables() ? route('erp.receivables.index') : '#',
-                    'icon' => 'banknotes',
-                    'active' => request()->routeIs('erp.receivables.*'),
-                    'show' => $user->canViewReceivables(),
                 ],
                 [
                     'label' => __('nav.menu.approvals'),
@@ -188,54 +259,18 @@
                     'show' => $user->canConfirmFinanceTransfer(),
                     'badge' => $pendingFinanceConfirmations > 0 ? $pendingFinanceConfirmations : null,
                 ],
-                [
-                    'label' => __('nav.menu.forwarding'),
-                    'href' => $user->canAccessAdmin() ? route('erp.forwarding-companies.index') : '#',
-                    'icon' => 'building',
-                    'active' => request()->routeIs('erp.forwarding-companies.*'),
-                    'show' => $user->canAccessAdmin(),
-                ],
-                [
-                    'label' => __('nav.menu.salesmen'),
-                    'href' => $user->canAccessAdmin() ? route('erp.salesmen.index') : '#',
-                    'icon' => 'briefcase',
-                    'active' => request()->routeIs('erp.salesmen.index'),
-                    'show' => $user->canAccessAdmin(),
-                ],
-                [
-                    'label' => __('nav.menu.cashflow'),
-                    'href' => $isSalesUser ? route('erp.salesmen.cashflow', $mySalesman->id) : '#',
-                    'icon' => 'chart-bar',
-                    'active' => request()->routeIs('erp.salesmen.cashflow'),
-                    'show' => $isSalesUser,
-                ],
             ],
         ],
         [
+            'key' => 'etc',
             'label' => __('nav.group.etc'),
-            // 회의확장씬 2026-05-22 — [관리] 도 그룹 노출 (canManagePorts/canViewAdminDashboard 통해 일부 항목 접근).
-            'show' => $user->canAccessAdmin() || $user->canManagePorts() || $user->canViewAdminDashboard(),
             'items' => [
-                [
-                    'label' => __('nav.menu.admin_dashboard'),
-                    'href' => $user->canViewAdminDashboard() ? route('admin.dashboard') : '#',
-                    'icon' => 'chart-bar',
-                    'active' => request()->routeIs('admin.dashboard'),
-                    'show' => $user->canViewAdminDashboard(),
-                ],
                 [
                     'label' => __('nav.menu.users'),
                     'href' => $user->canAccessAdmin() ? route('admin.users.index') : '#',
                     'icon' => 'user-group',
                     'active' => request()->routeIs('admin.users.*'),
                     'show' => $user->canAccessAdmin(),
-                ],
-                [
-                    'label' => __('nav.menu.ports'),
-                    'href' => $user->canManagePorts() ? route('admin.ports.index') : '#',
-                    'icon' => 'building',
-                    'active' => request()->routeIs('admin.ports.*'),
-                    'show' => $user->canManagePorts(),
                 ],
                 [
                     'label' => __('nav.menu.settings'),
@@ -246,11 +281,10 @@
                 ],
             ],
         ],
-        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 별건3 흡수: 로그 그룹 신설 (admin/super 전용).
-        // audit_logs UI 는 Commit 2 에서 추가.
+        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹 (admin/super 전용).
         [
+            'key' => 'log',
             'label' => __('nav.group.log'),
-            'show' => $user->canAccessAdmin(),
             'items' => [
                 [
                     'label' => __('nav.menu.doc_logs'),
@@ -361,13 +395,24 @@
         </div>
 
         {{-- 메뉴 --}}
-        <nav class="flex-1 overflow-y-auto py-3 space-y-4">
+        <nav class="flex-1 overflow-y-auto py-3 space-y-3">
             @foreach($menuGroups as $group)
-                @if($group['show'])
-                    <div>
-                        <div x-show="isMobile || open" x-transition.opacity class="sidebar-section-label">{{ $group['label'] }}</div>
-                        @foreach($group['items'] as $item)
-                            @if($item['show'])
+                {{-- 빈그룹 자동숨김 — role 로 항목이 전부 가려지면 헤더도 미출력 (단일출처=항목 'show') --}}
+                @php $visibleItems = array_values(array_filter($group['items'], fn ($it) => $it['show'])); @endphp
+                @if(count($visibleItems))
+                    <div x-data="{ grpOpen: localStorage.getItem('navgrp-{{ $group['key'] }}') !== 'false' }">
+                        {{-- 그룹 헤더 = 접기 토글 (펼친 사이드바에서만). 아이콘 모드(!open)에선 헤더 숨고 항목은 그대로 노출 --}}
+                        <button type="button" x-show="isMobile || open" x-transition.opacity
+                                @click="grpOpen = !grpOpen; localStorage.setItem('navgrp-{{ $group['key'] }}', grpOpen)"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>{{ $group['label'] }}</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" :class="{ '-rotate-90': !grpOpen }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        {{-- 항목: 아이콘 모드면 항상 표시, 펼친 모드면 grpOpen 일 때만 --}}
+                        <div x-show="!(isMobile || open) || grpOpen" x-transition.opacity>
+                            @foreach($visibleItems as $item)
                                 <a href="{{ $item['href'] }}" wire:navigate
                                    @click="if(isMobile) closeMobile()"
                                    :title="(isMobile || open) ? '' : '{{ $item['label'] }}'"
@@ -382,8 +427,8 @@
                                     </span>
                                     @endif
                                 </a>
-                            @endif
-                        @endforeach
+                            @endforeach
+                        </div>
                     </div>
                 @endif
             @endforeach
