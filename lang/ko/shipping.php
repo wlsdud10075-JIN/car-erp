@@ -24,6 +24,7 @@ return [
     'action' => [
         'start' => '진행중으로',
         'done' => '완료 처리',
+        'open_in_vehicles' => '차량관리에서 :count대 보기',
     ],
 
     'doc' => [

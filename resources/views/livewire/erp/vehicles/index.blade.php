@@ -35,6 +35,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
     #[Url] public string $salesmanId = '';
+    // 2026-06-19 — 선적요청 배치 딥링크: ?ids=1,2,3 → 그 차량만 조회(입금률·게이트 한눈에 + 묶음 처리).
+    #[Url] public string $ids = '';
     // 정산 등 외부 화면에서 ?openVehicle=ID 로 진입 → 해당 차량 편집 패널 자동 오픈.
     #[Url] public ?int $openVehicle = null;
     // 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select.
@@ -314,7 +316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 대시보드에서 진입한 경우 — action(처리 필요 카드) 또는 progressFilter(파이프라인 스트립):
         // 날짜 기본 필터를 적용하지 않는다. 카드 카운트와 목록 카운트의 정합성을 위해
         // 산정 로직(전체 기간)과 동일 범위에서 목록을 보여줘야 함.
-        if ($this->action !== '' || $this->progressFilter !== '') {
+        if ($this->action !== '' || $this->progressFilter !== '' || $this->ids !== '') {
             return;
         }
 
@@ -387,6 +389,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
                 ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
             ))
+            ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
@@ -2982,6 +2985,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 </div>
+
+{{-- 선적요청 배치 딥링크 활성 — 그 차량만 조회 중임을 안내 + 전체 복귀 --}}
+@if($ids !== '')
+<div class="flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm">
+    <span class="font-semibold text-teal-800">{{ __('vehicle.batch_filter', ['count' => count(array_filter(explode(',', $ids)))]) }}</span>
+    <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="rounded-md border border-teal-300 bg-white px-2.5 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-100">
+        {{ __('vehicle.batch_filter_clear') }}
+    </a>
+</div>
+@endif
 
 {{-- ── 필터 바 ─────────────────────────────────────────────────── --}}
 <div class="space-y-2">

@@ -5,6 +5,8 @@ return [
     'title' => 'Vehicles',
     'total' => ':count vehicles',
     'per_page' => ':count / page',
+    'batch_filter' => 'Showing only :count vehicle(s) from shipping request batch',
+    'batch_filter_clear' => 'Show all',
     'create_btn' => 'Add Vehicle',
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no.',

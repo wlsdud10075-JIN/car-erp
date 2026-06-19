@@ -24,6 +24,7 @@ return [
     'action' => [
         'start' => 'Mark in progress',
         'done' => 'Mark done',
+        'open_in_vehicles' => 'Open :count in Vehicles',
     ],
 
     'doc' => [

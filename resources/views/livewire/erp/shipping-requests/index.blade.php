@@ -157,7 +157,13 @@ new #[Layout('components.layouts.app')] class extends Component
                         </div>
 
                         {{-- 상태 전환 액션 --}}
-                        <div class="flex shrink-0 gap-1.5">
+                        @php $idsCsv = implode(',', array_column($b['vehicles'], 'id')); @endphp
+                        <div class="flex shrink-0 flex-wrap gap-1.5">
+                            {{-- 배치 N대를 차량관리에 그 차량만 조회 — 입금률·게이트 보며 묶음 처리 --}}
+                            <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
+                               class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
+                                {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
+                            </a>
                             @if ($b['status'] === 'requested')
                                 <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
                                         class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
