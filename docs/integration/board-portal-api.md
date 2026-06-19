@@ -49,6 +49,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | `GET /purchases` | 매입 차 — `purchase_price`·비용9 합·매입일·매입 미지급(`PurchaseBalancePayment`) | |
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /settlements` | 정산 — `status`·`actual_payout`·확정일 | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기) |
+| `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만) | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
 
 - **환율0 외화**: `sale_unpaid_amount_krw_cache`가 `NULL`이면 그대로 `null` 반환 + `currency`·`exchange_rate` 동봉. board는 `null`을 "환율 미입력"으로 표시(절대 `0`/완납 coerce 금지).
 - N+1 방지: `with(['finalPayments','purchaseBalancePayments','receivableHistories'])`.

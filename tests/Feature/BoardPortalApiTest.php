@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -147,6 +148,34 @@ class BoardPortalApiTest extends TestCase
         foreach (['finance', 'sales', 'purchases', 'settlements'] as $ep) {
             $this->signedGet("/api/internal/board/$ep", ['salesman_email' => 'me@a.com'])->assertOk();
         }
+    }
+
+    public function test_by_buyer_groups_sales_and_payout_scoped(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $tokyo = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
+        $osaka = Buyer::create(['name' => 'OSAKA', 'is_active' => true, 'country_id' => null]);
+
+        // 내 차: TOKYO 2대(USD 1000+500) + OSAKA 1대
+        $t1 = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 500, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+        Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 700, 'currency' => 'JPY', 'exchange_rate' => 9, 'buyer_id' => $osaka->id]);
+        // 타 영업 차 — 같은 바이어라도 안 섞여야(IDOR)
+        Vehicle::create(['vehicle_number' => '99자9999', 'sales_channel' => 'export', 'salesman_id' => $other->id, 'sale_price' => 9999, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+
+        // TOKYO 차 1대에 확정정산 — "나에게 준 이득"
+        Settlement::create(['vehicle_id' => $t1->id, 'salesman_id' => $me->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 150000, 'settlement_status' => 'confirmed']);
+
+        $res = $this->signedGet('/api/internal/board/by-buyer', ['salesman_email' => 'me@a.com'])->assertOk();
+
+        $res->assertJsonPath('count', 2);   // TOKYO·OSAKA 2개 바이어
+        // payout 큰 바이어부터 → TOKYO 선두
+        $res->assertJsonPath('data.0.buyer', 'TOKYO');
+        $res->assertJsonPath('data.0.vehicle_count', 2);
+        $res->assertJsonPath('data.0.sales_by_currency.USD', 1500);   // 1000+500, 타 영업 9999 안 섞임
+        $res->assertJsonPath('data.0.payout_total_krw', 150000);
+        $this->assertStringNotContainsString('9999', $res->getContent());
     }
 
     // ── ③ 선적요청 ──────────────────────────────────────────
