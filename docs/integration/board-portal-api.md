@@ -56,7 +56,8 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 
 ## 5. ③ 선적요청 (읽기 + 가벼운 쓰기)
 - **`GET /shippable?salesman_email=`** — 선적 가능 차 + 바이어 + 컨사이니 목록.
-  - 대상(확정): `progress_status_cache = '판매완료'` **AND** `sales_channel='export'` **AND** open shipping_request 없음. (이미 선적중/완료는 제외.)
+  - 대상(확정): `progress_status_cache = '판매완료'` **AND** `sales_channel='export'`. **⚠️ 요청해도 목록서 안 빠짐** — 사라짐 = 관리가 선적/통관 진행해 progress 가 '판매완료' 벗어날 때(자연소멸). board 가 요청한 차를 계속 보고 재요청 가능.
+  - item 에 **`shipping_status`**(`none`/`requested`/`in_progress`) + `requested_method`·`requested_consignee_id`(재요청 prefill·뱃지). board 가 "요청됨/진행중" 뱃지.
   - 컨사이니(열린항목1 확정): **기존 컨사이니 선택만**(Buyer HasMany Consignee). 신규 입력은 v2(PII 신규생성·중복 검증 이슈).
 - **`POST /shipping-request`** (HMAC) — payload:
   ```json
@@ -64,7 +65,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   ```
   - 적재 = **신규 `shipping_requests` 테이블**(`batch_id`(1 POST=1 uuid, car-erp 내부 묶음표시용)·`vehicle_id` FK·`buyer_id`·`consignee_id`·`shipping_method` enum·`requested_by_email`·`status` enum(requested/in_progress/done)·`requested_at`·`processed_at`·`note`). **⚠️ `vehicles` 컬럼(특히 `export_buyer_id`)에 적재 금지** — C4/C5 게이트(`guardStageOrderForExport`)·`ManagementWorkflowChecklistTest:375` 회귀.
   - car-erp 후단: 수출통관/관리가 **「통관·선적 > 선적요청」 화면**(`erp.shipping-requests.index`)에서 배치별로 보고 `requested→in_progress→done` 전환. done 시 연동 `shipping_requested` 알람 자동 resolve.
-  - 멱등 = `(vehicle_id, status='requested')` unique. 중복 POST → 기존 row 200 반환.
+  - **재요청 = 제자리 갱신**: open `'requested'` 있으면 새 row 안 만들고 **기존 row 의 consignee/method 갱신**(batch_id·status 유지 = 배치 정합). `'in_progress'`(관리 처리중)면 갱신 불가 skip. 응답 `{created:[], updated:[], skipped:[]}` 구분.
   - 알람 = **`TaskAlarm` 신규 type `shipping_requested`**(`target_role='관리'`) **즉시 생성·발동**(scan 불필요, ETA `eta_clearance`와 별개). 관리가 차량 편집 패널에서 실무(컨테이너#·B/L·선적일·서류) 채움.
   - board 표시 = 요청 상태(requested/in_progress/done)만. 권위 = `progress_status_cache`(관리가 진행).
 

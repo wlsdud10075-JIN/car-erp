@@ -26,6 +26,12 @@ return [
         'done' => '완료 처리',
     ],
 
+    'doc' => [
+        'label' => '묶음 서류',
+        'invoice_packing' => 'Invoice & Packing',
+        'contract' => '계약서',
+    ],
+
     'toast' => [
         'updated' => '선적요청 상태를 변경했습니다.',
     ],

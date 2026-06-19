@@ -182,6 +182,23 @@ new #[Layout('components.layouts.app')] class extends Component
                             </a>
                         @endforeach
                     </div>
+
+                    {{-- 묶음 서류 — 배치 N대를 1서류로 (기존 다중차량 선적서류 재사용). 방식별 2종. --}}
+                    @php
+                        $idsCsv = implode(',', array_column($b['vehicles'], 'id'));
+                        $docTypes = $b['shipping_method'] === 'CONTAINER'
+                            ? ['container_invoice_packing' => __('shipping.doc.invoice_packing'), 'container_contract' => __('shipping.doc.contract')]
+                            : ['roro_invoice_packing' => __('shipping.doc.invoice_packing'), 'roro_contract' => __('shipping.doc.contract')];
+                    @endphp
+                    <div class="mt-2 flex flex-wrap items-center gap-1.5 border-t border-gray-100 pt-2">
+                        <span class="text-[11px] font-semibold text-gray-400">{{ __('shipping.doc.label') }}</span>
+                        @foreach ($docTypes as $type => $label)
+                            <a href="{{ route('erp.vehicles.documents.multi', ['type' => $type, 'ids' => $idsCsv]) }}" target="_blank" rel="noopener"
+                               class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100">
+                                ⬇ {{ $b['shipping_method'] }} {{ $label }}
+                            </a>
+                        @endforeach
+                    </div>
                 </div>
             @endforeach
         </div>

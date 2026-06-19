@@ -26,6 +26,12 @@ return [
         'done' => 'Mark done',
     ],
 
+    'doc' => [
+        'label' => 'Batch documents',
+        'invoice_packing' => 'Invoice & Packing',
+        'contract' => 'Contract',
+    ],
+
     'toast' => [
         'updated' => 'Shipping request status updated.',
     ],
