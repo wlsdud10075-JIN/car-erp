@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -149,6 +150,34 @@ class BoardPortalApiTest extends TestCase
         }
     }
 
+    public function test_by_buyer_groups_sales_and_payout_scoped(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $tokyo = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
+        $osaka = Buyer::create(['name' => 'OSAKA', 'is_active' => true, 'country_id' => null]);
+
+        // 내 차: TOKYO 2대(USD 1000+500) + OSAKA 1대
+        $t1 = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 500, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+        Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 700, 'currency' => 'JPY', 'exchange_rate' => 9, 'buyer_id' => $osaka->id]);
+        // 타 영업 차 — 같은 바이어라도 안 섞여야(IDOR)
+        Vehicle::create(['vehicle_number' => '99자9999', 'sales_channel' => 'export', 'salesman_id' => $other->id, 'sale_price' => 9999, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $tokyo->id]);
+
+        // TOKYO 차 1대에 확정정산 — "나에게 준 이득"
+        Settlement::create(['vehicle_id' => $t1->id, 'salesman_id' => $me->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 150000, 'settlement_status' => 'confirmed']);
+
+        $res = $this->signedGet('/api/internal/board/by-buyer', ['salesman_email' => 'me@a.com'])->assertOk();
+
+        $res->assertJsonPath('count', 2);   // TOKYO·OSAKA 2개 바이어
+        // payout 큰 바이어부터 → TOKYO 선두
+        $res->assertJsonPath('data.0.buyer', 'TOKYO');
+        $res->assertJsonPath('data.0.vehicle_count', 2);
+        $res->assertJsonPath('data.0.sales_by_currency.USD', 1500);   // 1000+500, 타 영업 9999 안 섞임
+        $res->assertJsonPath('data.0.payout_total_krw', 150000);
+        $this->assertStringNotContainsString('9999', $res->getContent());
+    }
+
     // ── ③ 선적요청 ──────────────────────────────────────────
 
     public function test_shippable_returns_own_sale_done_only(): void
@@ -166,7 +195,7 @@ class BoardPortalApiTest extends TestCase
         $res->assertJsonMissing(['vehicle_number' => '99자9999']);
     }
 
-    public function test_store_creates_request_and_alarm_idempotent(): void
+    public function test_store_creates_then_rerequest_updates_in_place(): void
     {
         $me = $this->salesman('me@a.com');
         $v = $this->exportVehicle($me->id, '22나2222');
@@ -178,11 +207,50 @@ class BoardPortalApiTest extends TestCase
         $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $v->id, 'status' => 'requested', 'shipping_method' => 'RORO']);
         $this->assertDatabaseHas('task_alarms', ['type' => 'shipping_requested', 'vehicle_id' => $v->id, 'target_role' => '수출통관']);
 
-        // 멱등 — 2번째 요청은 skip
+        $batchId = ShippingRequest::where('vehicle_id', $v->id)->value('batch_id');
+
+        // 재요청 — 방식 정정(RORO→CONTAINER). 새 row 안 만들고 제자리 갱신, 같은 batch 유지.
         $this->signedPost('/api/internal/board/shipping-request', [
-            'vehicle_ids' => [$v->id], 'shipping_method' => 'RORO', 'salesman_email' => 'me@a.com',
-        ])->assertStatus(201)->assertJsonPath('skipped', [$v->id]);
+            'vehicle_ids' => [$v->id], 'shipping_method' => 'CONTAINER', 'salesman_email' => 'me@a.com',
+        ])->assertStatus(201)->assertJsonPath('updated', [$v->id]);
+
         $this->assertSame(1, ShippingRequest::where('vehicle_id', $v->id)->count());
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $v->id, 'shipping_method' => 'CONTAINER', 'batch_id' => $batchId]);
+    }
+
+    public function test_store_skips_rerequest_when_in_progress(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $v = $this->exportVehicle($me->id, '33다3333');
+        ShippingRequest::create([
+            'batch_id' => 'b1', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO',
+            'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now(),
+        ]);
+
+        // 관리가 처리중(in_progress) → 재요청 skip, 갱신 안 됨
+        $this->signedPost('/api/internal/board/shipping-request', [
+            'vehicle_ids' => [$v->id], 'shipping_method' => 'CONTAINER', 'salesman_email' => 'me@a.com',
+        ])->assertStatus(201)->assertJsonPath('skipped', [$v->id]);
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'status' => 'in_progress']);
+    }
+
+    public function test_shippable_keeps_requested_vehicle_with_status(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
+        $v = $this->exportVehicle($me->id, '11가1111');
+        $v->update(['buyer_id' => $buyer->id]);
+        Vehicle::where('id', $v->id)->update(['progress_status_cache' => '판매완료']);
+        ShippingRequest::create([
+            'batch_id' => 'b1', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO',
+            'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now(),
+        ]);
+
+        // 요청해도 목록서 안 사라짐 + shipping_status='requested' (board 뱃지/재요청용)
+        $res = $this->signedGet('/api/internal/board/shippable', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('count', 1);
+        $res->assertJsonPath('data.0.shipping_status', 'requested');
+        $res->assertJsonPath('data.0.requested_method', 'RORO');
     }
 
     public function test_store_skips_other_salesman_vehicle(): void

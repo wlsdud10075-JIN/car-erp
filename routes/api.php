@@ -35,6 +35,7 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('sales', [InternalPortalController::class, 'sales'])->name('sales');
         Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
         Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
+        Route::get('by-buyer', [InternalPortalController::class, 'byBuyer'])->name('by-buyer');
         // ③ 선적요청
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');
         Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');

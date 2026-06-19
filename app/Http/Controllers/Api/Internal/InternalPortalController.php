@@ -91,6 +91,62 @@ class InternalPortalController extends Controller
         return response()->json(['count' => $data->count(), 'data' => $data]);
     }
 
+    /**
+     * 바이어별 묶음 — 영업이 "이 바이어가 나에게 얼마 이득을 줬나"를 보는 뷰.
+     *
+     * - 판매(sale): 바이어별 판매금액 합(통화별). 바이어 = 판매측 개념(`buyer_id`).
+     * - 정산(이득): 바이어 차량의 `actual_payout`(영업 실지급액) 합 = "나에게 준 이득".
+     *   accessor 그대로 합산(환차·이월 반영). paid(확정)/전체 분리.
+     * - 매입은 구입처(`purchase_from`) 기준이라 바이어 무관 → 미포함(설계 확정).
+     */
+    public function byBuyer(Request $request): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+
+        $byBuyer = [];
+
+        // 판매금액 — 바이어 배정된(판매된) 본인 차량
+        foreach ($this->ownVehicles($sid)->where('sale_price', '>', 0)->whereNotNull('buyer_id')->with('buyer')->get() as $v) {
+            $bid = $v->buyer_id;
+            $byBuyer[$bid] ??= $this->emptyBuyerRow($v->buyer?->name);
+            $byBuyer[$bid]['vehicle_count']++;
+            $cur = $v->currency ?: 'KRW';
+            $byBuyer[$bid]['sales_by_currency'][$cur] = ($byBuyer[$bid]['sales_by_currency'][$cur] ?? 0) + (float) $v->sale_price;
+        }
+
+        // 정산 실지급액 — 본인 정산을 차량의 바이어로 귀속
+        foreach (Settlement::query()->where('salesman_id', $sid)->with('vehicle.buyer')->get() as $s) {
+            $bid = $s->vehicle?->buyer_id;
+            if ($bid === null) {
+                continue;
+            }
+            $byBuyer[$bid] ??= $this->emptyBuyerRow($s->vehicle->buyer?->name);
+            $byBuyer[$bid]['payout_total_krw'] += (int) $s->actual_payout;
+            if ($s->settlement_status === 'paid') {
+                $byBuyer[$bid]['payout_paid_krw'] += (int) $s->actual_payout;
+            }
+        }
+
+        $data = collect($byBuyer)
+            ->map(fn (array $row, $bid) => ['buyer_id' => (int) $bid] + $row)
+            ->sortByDesc('payout_total_krw')   // 이득 큰 바이어부터 (채권 TOP10 패턴)
+            ->values();
+
+        return response()->json(['count' => $data->count(), 'data' => $data]);
+    }
+
+    /** 바이어 1행 초기값. payout: 전체(예상+확정) / paid(확정)만 분리. */
+    private function emptyBuyerRow(?string $name): array
+    {
+        return [
+            'buyer' => $name,
+            'vehicle_count' => 0,
+            'sales_by_currency' => [],
+            'payout_total_krw' => 0,
+            'payout_paid_krw' => 0,
+        ];
+    }
+
     public function finance(Request $request): JsonResponse
     {
         $sid = $this->salesmanId($request);
