@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TaskAlarm extends Model
 {
     /** message_meta 에 저장 허용된 키 (개인정보 §29 — RRN·성명·계좌·연락처 금지). */
-    public const ALLOWED_META = ['vehicle_number', 'eta_date', 'unpaid_amount_krw'];
+    public const ALLOWED_META = ['vehicle_number', 'eta_date', 'unpaid_amount_krw', 'shipping_method'];
 
     protected $fillable = [
         'type', 'vehicle_id', 'target_role', 'due_date', 'message_meta',

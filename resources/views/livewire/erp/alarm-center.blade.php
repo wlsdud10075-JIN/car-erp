@@ -76,32 +76,39 @@ new class extends Component
                     @foreach ($alarms as $a)
                         @php
                             $meta = $a->message_meta ?? [];
+                            $isShip = ($a->type ?? '') === 'shipping_requested';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && $dday !== null && $dday <= 3;
                         @endphp
-                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $soon ? 'border-l-red-500' : 'border-l-amber-400' }}">
+                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400') }}">
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="block">
                                 <div class="flex items-center justify-between">
                                     <span class="text-[13px] font-bold text-gray-800">{{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}</span>
-                                    @if ($dday !== null)
+                                    @if ($isShip)
+                                        <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ $meta['shipping_method'] ?? '' }}</span>
+                                    @elseif ($dday !== null)
                                         <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
                                             {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ __('alarm.task_clearance') }}@if ($a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isShip ? __('alarm.task_shipping') : __('alarm.task_clearance') }}@if (! $isShip && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
-                                <span class="text-[11.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
-                                    @if ($unpaid)
-                                        {{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}
-                                    @elseif ($unpaid === 0)
-                                        {{ __('alarm.paid') }}
-                                    @else
-                                        {{ __('alarm.fx_missing') }}
-                                    @endif
-                                </span>
+                                @if ($isShip)
+                                    <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>
+                                @else
+                                    <span class="text-[11.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
+                                        @if ($unpaid)
+                                            {{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}
+                                        @elseif ($unpaid === 0)
+                                            {{ __('alarm.paid') }}
+                                        @else
+                                            {{ __('alarm.fx_missing') }}
+                                        @endif
+                                    </span>
+                                @endif
                                 <button wire:click="confirm({{ $a->id }})"
                                         class="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
                                     {{ __('alarm.confirm') }}

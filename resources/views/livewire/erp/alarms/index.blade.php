@@ -150,23 +150,28 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach ($g['items'] as $a)
                         @php
                             $meta = $a->message_meta ?? [];
+                            $isShip = ($a->type ?? '') === 'shipping_requested';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && $dday !== null && $dday <= 3;
                         @endphp
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
                                 {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
                             </a>
                             <span class="text-xs tabular-nums text-gray-400">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
-                            @if ($dday !== null)
-                                <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
-                                    {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
+                            @if ($isShip)
+                                <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ __('alarm.task_shipping') }} {{ $meta['shipping_method'] ?? '' }}</span>
+                            @else
+                                @if ($dday !== null)
+                                    <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
+                                        {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
+                                    </span>
+                                @endif
+                                <span class="text-[12px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
+                                    @if ($unpaid){{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}@elseif ($unpaid === 0){{ __('alarm.paid') }}@else{{ __('alarm.fx_missing') }}@endif
                                 </span>
                             @endif
-                            <span class="text-[12px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
-                                @if ($unpaid){{ __('alarm.unpaid', ['amt' => number_format($unpaid)]) }}@elseif ($unpaid === 0){{ __('alarm.paid') }}@else{{ __('alarm.fx_missing') }}@endif
-                            </span>
                             <div class="ml-auto">
                                 @if ($a->confirmed_at)
                                     <span class="badge badge-gray">{{ __('alarm.status_confirmed') }}</span>
