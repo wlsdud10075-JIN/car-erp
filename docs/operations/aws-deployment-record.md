@@ -478,3 +478,15 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 2. **운영 end-to-end**: board에서 차 하나 won → 운영 car-erp 자동 생성 확인 (vehicle_id 응답·담당자 매칭·기본비용).
 3. board가 보내는 `salesman_email`은 **car-erp 등록 영업 이메일**이어야 매칭(아니면 `car_erp_salesman_id`). board 계정 이메일(admin@board.test 등)과 다름 — 로컬 e2e에서 확인된 식별자 정책.
 4. (선택) 시크릿을 랜덤 강한 값으로 교체 — 양쪽 동시 + 각자 config:cache.
+
+## 21. 운영 PHP 업로드 한도 2M→40M (2026-06-19, 배포 아님·서버 설정)
+
+**증상**: 운영(heysellcar.com)에서 차량 사진 업로드 시 **1.5MB는 되고 2MB·3MB는 "photoUpload 업로드에 실패" / 조용히 누락**. 로컬(8001)은 40M라 정상. 앱 검증은 `max:10240`(10MB)·nginx `client_max_body_size 50M`라 둘 다 원인 아님.
+
+**원인**: 운영 PHP-FPM `php.ini`가 **기본값 `upload_max_filesize=2M`·`post_max_size=8M`**. 정확히 2M 선에서 잘림. (사진뿐 아니라 2MB↑ 모든 첨부·서류 동일 차단이었음.)
+
+**조치**: `/etc/php/8.4/fpm/php.ini` → `upload_max_filesize=40M`·`post_max_size=40M`(로컬과 동일) 후 php-fpm 재시작.
+
+**⚠️ 함정(실측)**: `sudo systemctl restart php*-fpm` 의 **glob 이 실제 유닛 `php8.4-fpm.service` 를 매칭 못 해 no-op**(그런데 exit 0·"OK" 출력). php.ini 는 40M인데 FPM 마스터는 부팅 시점 2M 유지 → "파일은 40M·동작은 2M". **정확 유닛명 `sudo systemctl restart php8.4-fpm.service` 로 재시작**해야 반영. 검증 = webroot 임시 `phpinfo` 프로브를 **https 경로(`curl -k --resolve heysellcar.com:443:127.0.0.1`)**로 찍어 `ini_get` 확인 후 즉시 삭제(http 는 301 리다이렉트라 값 못 봄).
+
+**교훈**: ① ubuntu 사용자(Bitnami 아님), PHP 8.4. ② 서버 ini 변경 후 **반드시 실 HTTP 경로로 적용값 검증**(파일 grep 만으론 마스터 캐시 못 잡음). ③ glob 유닛 재시작 금지 — 정확 유닛명.
