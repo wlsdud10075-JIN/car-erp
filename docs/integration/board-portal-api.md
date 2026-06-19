@@ -18,7 +18,7 @@
   ```
   METHOD + "\n" + PATH + "?" + SORTED_QUERY + "\n" + X-Timestamp + "\n" + BODY
   ```
-  (GET은 BODY="" / POST는 raw body. SORTED_QUERY = 쿼리 키 ksort 후 `k=v&...`. **`salesman_email`은 쿼리에 포함 = 서명 대상** → 위조 차단.)
+  (GET은 BODY="" / POST는 raw body. SORTED_QUERY = 쿼리 키 ksort 후 PHP `http_build_query()`로 직렬화 — **값·키 URL 인코딩됨**(공백→`+`, RFC1738 기본). 단순 `k=v&...` raw 결합 아님 — 양쪽이 바이트 단위 일치해야 함. 구현 출처 = `app/Http/Middleware/VerifyBoardReadHmac.php:49-51`. **`salesman_email`은 쿼리에 포함 = 서명 대상** → 위조 차단.)
 - **헤더**: `X-Board-Signature: sha256=<hex>` · `X-Timestamp: <unix epoch sec>` · `X-Nonce: <uuid>`
 - **replay 방지**: `|now - X-Timestamp| ≤ 300초` + `X-Nonce` 캐시(5분 TTL, 재사용 거부).
 - 비교 = `hash_equals`(timing-safe). 로그엔 IP만(서명·시크릿 평문 금지).
