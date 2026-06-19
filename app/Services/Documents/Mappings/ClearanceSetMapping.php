@@ -11,9 +11,9 @@ use App\Services\Documents\DocValue;
  * `=구매리스트!셀` 수식으로 자동연동(검증완료). 매핑은 구매리스트만.
  *
  * 매핑 제외:
- * - 등록번호 G3: 한글/영문등록증 시트 cascade 용 — 사용자 수기 (공란)
- * - I6·I13: 템플릿 수식 — 엔진이 자동 보존
+ * - I6·I13: 템플릿 수식 — 엔진이 자동 보존 (차종/연료 영문변환)
  * D3(등록번호)은 차량 registration_number 로 기입 → 말소증 "제 [D3] 호" cascade.
+ * G3(차량등록증 자동차등록번호)은 reg_cert_number 수기필드 → 한글/영문등록증 cascade.
  * NICE 칸(형식·제원관리번호·출력)은 nice_raw 에서 읽음 → NICE 연동 전엔 공란.
  * 기통수(G12)·검사시작(I10)·검사종료(I11)는 nice_raw 의 engineSpec·resValidPeriod 를
  *   서류 생성 시점에 파싱(DocValue::niceCylinders/niceInspectionStart/End) — 전용 컬럼·입력 필드 없이.
@@ -26,9 +26,12 @@ class ClearanceSetMapping
             'template' => 'clearance_set.xlsx',
             'sheet' => '구매리스트',
             'label' => '통관SET',
+            // ⑤ 차량인보이스 상호 첫 줄을 기능설정 브랜드(대문자)로 — RichText 첫 줄만 치환(나머지 보존).
+            'brandHeader' => ['sheet' => '차량인보이스', 'cell' => 'A3'],
             'cells' => [
                 'B3' => fn (Vehicle $v) => $v->nice_reg_vin ? substr($v->nice_reg_vin, -6) : null,  // ID (VIN 끝 6자리)
                 'D3' => fn (Vehicle $v) => $v->registration_number,                 // 등록번호 (말소증 "제 ○○ 호")
+                'G3' => fn (Vehicle $v) => $v->reg_cert_number,                     // 차량등록증 자동차등록번호 (한글/영문등록증 cascade)
                 'I3' => fn (Vehicle $v) => $v->nice_reg_date,                       // 등록증날짜
                 'B4' => fn (Vehicle $v) => $v->vehicle_number,                      // 차량번호
                 'D4' => fn (Vehicle $v) => DocValue::romanizePlate($v->vehicle_number), // 영문차량번호

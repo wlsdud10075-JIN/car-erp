@@ -41,7 +41,7 @@ class Vehicle extends Model
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
         // 2컬럼은 purchase_balance_payments.type enum (down/selling_fee) 로 통합.
         'purchase_remittance_memo',
-        'registration_number',
+        'registration_number', 'reg_cert_number',
         'is_deregistered', 'deregistration_document',
         'sale_date', 'currency', 'exchange_rate', 'buyer_id', 'consignee_id',
         'sale_price', 'tax_dc', 'commission', 'transport_fee', 'auto_loading',

@@ -2,11 +2,13 @@
 
 namespace App\Services\Documents;
 
+use App\Models\Setting;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\RichText\RichText;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -74,7 +76,40 @@ class DocumentFiller
             }
         }
 
+        // 3) ⑤ 상호 헤더 — 지정 시트/셀 RichText 첫 줄(상호)을 기능설정 브랜드(대문자)로 치환.
+        if (isset($config['brandHeader'])) {
+            $this->applyBrandHeader($spreadsheet, $config['brandHeader']);
+        }
+
         return $spreadsheet;
+    }
+
+    /**
+     * ⑤ 인보이스 등 상호 셀 — RichText 첫 줄을 기능설정 브랜드(sidebar_brand) 대문자 + ' LTD.,' 로 치환.
+     * 첫 run 의 첫 줄만 바꿔 나머지(주소·TEL·FAX·EMAIL)·서식 보존.
+     */
+    private function applyBrandHeader(Spreadsheet $spreadsheet, array $hdr): void
+    {
+        $sheet = $spreadsheet->getSheetByName($hdr['sheet']);
+        if (! $sheet) {
+            return;
+        }
+        $brand = strtoupper((string) (Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR'));
+        $firstLine = $brand.' LTD.,';
+
+        $cell = $sheet->getCell($hdr['cell']);
+        $val = $cell->getValue();
+        if ($val instanceof RichText) {
+            $elements = $val->getRichTextElements();
+            if (! empty($elements)) {
+                $t = $elements[0]->getText();
+                $nl = strpos($t, "\n");
+                $elements[0]->setText($nl !== false ? $firstLine.substr($t, $nl) : $firstLine);
+            }
+        } elseif (is_string($val) && $val !== '') {
+            $nl = strpos($val, "\n");
+            $cell->setValue($nl !== false ? $firstLine.substr($val, $nl) : $firstLine);
+        }
     }
 
     /**

@@ -168,6 +168,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $selling_fee_payment_str = '';
     public string $purchase_remittance_memo = '';
     public string $registration_number = '';
+    public string $reg_cert_number = '';
     public bool   $is_deregistered = false;
     public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
@@ -1062,6 +1063,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->selling_fee_payment_str = $sumPbpByType('selling_fee');
         $this->purchase_remittance_memo = $v->purchase_remittance_memo ?? '';
         $this->registration_number = $v->registration_number ?? '';
+        $this->reg_cert_number = $v->reg_cert_number ?? '';
         $this->is_deregistered = $v->is_deregistered;
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
@@ -1825,6 +1827,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // _str ↔ PBP type='down'/'selling_fee' confirmed row 동기화는 vehicle save 이후 별도 처리.
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
             'registration_number' => $this->registration_number ?: null,
+            'reg_cert_number' => $this->reg_cert_number ?: null,
             'is_deregistered'  => $this->is_deregistered,
             'deregistration_date' => $toDate($this->deregistration_date),
             // 판매
@@ -2913,7 +2916,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
-            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','deregistration_date',
+            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
@@ -3603,20 +3606,28 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.spec_fuel_efficiency') }}</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
             </div>
 
-            {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3 저장). 여러 건은 한 번에 선택. --}}
+            {{-- 차량등록증 자동차등록번호 ↔ 차량 첨부 — 나란히(2열) 배치로 세로 공간 절약 --}}
             <hr class="section-divider">
-            <div class="section-header">
-                <span class="section-dot bg-rose-400"></span>
-                <span class="section-title">{{ __('vehicle.panel.sec.photos') }}</span>
-            </div>
             <div>
-                <input type="file" wire:model="photoUpload" multiple
-                       accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                       class="input-base text-sm" />
-                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
-                <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
-                @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-                @error('photoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {{-- 차량등록증 자동차등록번호 — 통관SET 구매리스트 G3(한글/영문등록증). 매입 등록번호와 별개. --}}
+                    <div>
+                        <label class="label-base">{{ __('vehicle.field.reg_cert_number') }}</label>
+                        <input type="text" wire:model="reg_cert_number" class="input-base" placeholder="{{ __('vehicle.field.reg_cert_number_ph') }}" maxlength="50" />
+                        <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.reg_cert_number_hint') }}</p>
+                    </div>
+                    {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3). 여러 건 한 번에 선택. --}}
+                    <div>
+                        <label class="label-base">{{ __('vehicle.panel.sec.photos') }}</label>
+                        <input type="file" wire:model="photoUpload" multiple
+                               accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
+                               class="input-base text-sm" />
+                        <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
+                        <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                        @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        @error('photoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                </div>
 
                 @if(count($existingPhotos) || count($photoFiles))
                 <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
