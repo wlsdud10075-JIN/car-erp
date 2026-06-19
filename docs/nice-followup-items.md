@@ -33,13 +33,17 @@ NICE 원본 ──①──▶ ssancar-erp 미들웨어 ──②──▶ car-e
 
 → 메모리/문서에 "죽은칸"으로 적혀 있던 **변속기·구동·축거·연비가 사실 NICE엔 다 들어있다.** 미들웨어 whitelist만 안 꺼낼 뿐.
 
-### 연비를 실제로 받아 기록하려면 (2곳 수정 필요 — 미착수)
-1. **ssancar-erp 미들웨어** (`exportstatus/vehicle_api.py`의 `result_data`에 한 줄):
+### 연비 — 양쪽 수정 적용 완료 (2026-06-19), 검증·배포 대기
+1. **ssancar-erp 미들웨어** ✅ — `exportstatus/vehicle_api.py`의 `result_data`에 추가 + `systemctl restart ssancar-erp`(active). 백업 `vehicle_api.py.bak_20260619`. (git 아님 — 직접 수정, 롤백은 백업으로.)
    ```python
    'fuelCnsmpRt': dtl_spec_info.get('fuelCnsmpRt', ''),
    ```
-   ⚠️ **별도 repo/서버**라 ssancar-erp 쪽에 커밋해야 전파됨(크로스레포 규칙). 운영 코드 변경 → 명시 승인 필요.
-2. **car-erp** `App\Services\NiceApiService::transform()` — 받은 `fuelCnsmpRt`를 `nice_spec_fuel_efficiency`로 매핑(필요 시 통관서류 연비칸 자동기입).
+2. **car-erp** ✅ — `App\Services\NiceApiService::transform()`에서 `fuelCnsmpRt → nice_spec_fuel_efficiency` 매핑(소수점 보존). dev 커밋 `887c476`, NiceApiServiceTest 통과. (컴포넌트 배선은 기존 존재.)
+
+**⚠️ 남은 것 (jin 결정 2026-06-19): NICE 점검 끝나고 로컬 테스트 후 배포.**
+- NICE 점검 중: `2026.06.19 19:30 ~ 06.20 16:00`(E999) — 점검 동안 조회 전부 실패(우리 변경 무관).
+- 순서: **6/20 16:00 이후 → 로컬에서 차량 1대 NICE 조회로 연비 들어오는지 확인 → dev→master 배포**(heyman·karaba 반영). master 배포는 jin 승인 건.
+- (통관서류 H13 연비칸 자동기입은 별개 — 매핑된 `nice_spec_fuel_efficiency`를 DocValue로 연결, 추후.)
 
 ### 미들웨어 서버 접근 (2026-06-19 등록 완료)
 - 고정 IP **`54.116.7.83`** (도메인 `heymancar.com`), Django+gunicorn, 앱 경로 `/ssancar-erp`, venv `/ssancar-erp/venv/bin/python`, user `ubuntu`.
@@ -73,4 +77,4 @@ NICE 원본 ──①──▶ ssancar-erp 미들웨어 ──②──▶ car-e
 
 ## 다음 행동
 - 1·2는 **형식이 실측 확정**됐으므로 사용자 "자동기입 할지" 결정만 나면 즉시 마감 가능(각 10~15분).
-- 연비(item ★)는 **미들웨어 1줄 + car-erp 매핑** 두 곳 수정이 전제 — 사용자 승인 시 진행. 미들웨어는 별도 repo/세션에서 커밋.
+- 연비(item ★)는 **양쪽 수정 완료(2026-06-19)** — 남은 건 NICE 점검 종료(6/20 16:00) 후 **로컬 검증 → master 배포**(jin 결정).
