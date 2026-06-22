@@ -115,6 +115,14 @@ O 송금내역을 파싱해 **ERP 구조대로** PBP 입력:
 - export(읽기전용 컨텍스트) + 기입칸 분리 = 사람이 "어느 차에 얼마" 헷갈리지 않음.
 - 동일 패턴을 **매입/판매입금/정산** 등 다른 일괄 정리에도 재사용 가능.
 
-### 6-4. 상태
+### 6-4. ⚠️ 정책 경계 — 사용자 셀프서비스 아님 (T2 회계 import 금지와 구분)
+- `project_excel_export_import` 풀회의(2026-06-18)는 **사용자 셀프서비스 T2 거래/회계 import를 영구 NO-GO**로
+  결정함(잔금 FP/PBP·정산·적립금. 가드 우회로 회계감사 영구불능 위험). 사용자 대상 회계 입력은 "딥링크 → 차량편집 1대씩".
+- 본 설계(6-1/6-2)는 **재무/admin 권한자가 운영하는 일괄 정리 artisan 도구** = 현 `vehicles:import`/
+  `mark-import-purchase-paid`와 **동급**(개발/운영 마이그레이션 카테고리). 영업 등 일반 사용자 셀프 import가 아님.
+- 필수 가드: 재무/admin 한정, **dry-run 기본**, draft→사람 승인, note 마커 멱등, export 시 RRN/계좌 등 PII 블랙리스트,
+  formula injection·xlsx-only·임시파일 삭제. 확정(confirmed)은 회계잠금이라 신중.
+
+### 6-5. 상태
 **미구현 (설계만).** ssancar 도입 시점 또는 `project_excel_export_import` 구현 시 함께 착수.
 트리거: "매입대금 기입 템플릿", "purchase payment export 이어서".
