@@ -152,9 +152,21 @@ class Settlement extends Model
                 $s->secondary_status = 'pending';
             }
 
-            // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
+            // paid 전환 시 정산 파라미터 동결(materialize, 2026-06-22) — 이후 Setting 변경·tier 재계산으로부터
+            // 확정 정산 금액을 보호. 특히 사내직원 per_unit 을 고정해 carry_out=0 불변식(SKILLS §5-5) 유지
+            //   (tier 는 total_margin 의존이라, 미고정 시 2차 비용보정으로 closed actual_payout ≠ paid snapshot).
             $becamePaid = $s->settlement_status === 'paid'
                 && $s->getOriginal('settlement_status') !== 'paid';
+            if ($becamePaid) {
+                if ($s->settlement_type === 'ratio' && $s->settlement_ratio === null) {
+                    $s->settlement_ratio = $s->effective_ratio;
+                }
+                if ($s->settlement_type === 'per_unit' && $s->per_unit_amount === null) {
+                    $s->per_unit_amount = $s->effective_per_unit_amount;
+                }
+            }
+
+            // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
             if ($becamePaid && empty($s->confirmed_snapshot)) {
                 $v = $s->vehicle;
                 // 큐 20-D — Gemini Lock 지적 — 잔금 confirmed 상태도 함께 캡처.
