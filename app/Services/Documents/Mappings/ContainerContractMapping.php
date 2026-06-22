@@ -47,7 +47,7 @@ class ContainerContractMapping
             // 직인 오버레이 — B59 합성블록(회사정보+직인). 회사정보는 텍스트 셀(C11 등)에 있어 중복.
             // applyStamps 는 fill(=removeRow) 前 호출이라 도장도 트림 위치로 함께 이동(스파이크 실측).
             'stamps' => [
-                ['role' => 'seal', 'anchor' => 'B59', 'width' => 610, 'height' => 405],
+                ['role' => 'seal', 'anchor' => 'B59', 'width' => 160, 'height' => 160],
             ],
         ];
     }

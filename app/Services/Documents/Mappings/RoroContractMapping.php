@@ -43,7 +43,7 @@ class RoroContractMapping
             ],
             // 직인 오버레이 — B59 합성블록(회사정보+직인). 컨테이너 계약서와 동일.
             'stamps' => [
-                ['role' => 'seal', 'anchor' => 'B59', 'width' => 610, 'height' => 405],
+                ['role' => 'seal', 'anchor' => 'B59', 'width' => 160, 'height' => 160],
             ],
         ];
     }
