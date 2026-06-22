@@ -368,17 +368,17 @@ class Settlement extends Model
     /**
      * 사내직원(per_unit) 차등 정산액 — 2026-06-22 jin 확정 (엑셀 CF).
      *
-     *   매입금액(purchase_price) ≥ 1억  → 총마진 × 25%   (1억 트리거가 최우선 — 총마진 음수여도 적용)
+     *   매입금액(purchase_price) ≥ 1억  → 총마진 × 25%   (1억 트리거 최우선, 단 음수면 0 바닥 — jin 2026-06-22)
      *   총마진 < 0                       → 0
      *   총마진 < 100만                   → 100,000
      *   그 외(총마진 ≥ 100만)            → 200,000        (상한 없음, 100만 정확히=20만)
      *
-     * 엑셀 IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))).
+     * 엑셀 IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))) — 단 1억+ 손해차량은 0 바닥(jin 확정).
      */
     public static function employeePerUnitTier(int $totalMargin, int $purchasePrice): int
     {
         if ($purchasePrice >= self::param('settlement_employee_high_threshold')) {
-            return (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100);
+            return max(0, (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100));
         }
         if ($totalMargin < 0) {
             return 0;
