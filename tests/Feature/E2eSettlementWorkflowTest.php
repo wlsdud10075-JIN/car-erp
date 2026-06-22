@@ -192,16 +192,16 @@ class E2eSettlementWorkflowTest extends TestCase
         //  sales_margin = 12,900,000 - (10,000,000 + 1,000,000) = 1,900,000
         //  vat_margin = 10,000,000 × 0.09 = 900,000
         //  total_margin = (1,900,000 + 900,000) × 0.9 = 2,520,000
-        //  per_unit: settlement_amount = 100,000, document_fee = 0
-        //  actual_payout = 100,000
+        //  per_unit 차등 tier(2026-06-22): 매입 1천만<1억, 총마진 252만≥100만 → 건당 20만
+        //  actual_payout = 200,000 (서류비 0, 기타공제 0)
         $this->assertSame(13_000_000, $st->sales_amount_krw, 'sales_amount_krw 불일치');
         $this->assertSame(12_900_000, $st->settlement_sales_krw, 'settlement_sales_krw 불일치');
         $this->assertSame(1_900_000, $st->sales_margin, 'sales_margin 불일치');
         $this->assertSame(900_000, $st->vat_margin, 'vat_margin 불일치');
         $this->assertSame(2_520_000, $st->total_margin, 'total_margin 불일치');
-        $this->assertSame(100_000, $st->settlement_amount, '사내직원 정산액(건당 10만) 불일치');
+        $this->assertSame(200_000, $st->settlement_amount, '사내직원 차등 정산액(총마진≥100만→20만) 불일치');
         $this->assertSame(0, $st->document_fee, '사내직원 서류비는 0이어야');
-        $this->assertSame(100_000, $st->actual_payout, '실지급액 불일치');
+        $this->assertSame(200_000, $st->actual_payout, '실지급액 불일치');
     }
 
     public function test_eur_freelance_settlement_with_exchange_gain(): void

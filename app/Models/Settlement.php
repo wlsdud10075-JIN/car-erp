@@ -131,11 +131,14 @@ class Settlement extends Model
 
             // H3 — status ∈ {confirmed, paid}이면 settlement_type별 값 > 0 강제.
             if (in_array($s->settlement_status, ['confirmed', 'paid'], true)) {
-                $hasRatio = $s->settlement_type === 'ratio' && (float) ($s->settlement_ratio ?? 0) > 0;
-                $hasPerUnit = $s->settlement_type === 'per_unit' && (float) ($s->per_unit_amount ?? 0) > 0;
+                // ratio = 비율>0 필요. per_unit = 차등 tier 자동 산정이라 항상 값 결정됨
+                // (총마진 음수 직원 → 0 도 유효한 정산). per_unit_amount 명시 override 시도 그대로 통과.
+                $hasRatio = $s->settlement_type === 'ratio'
+                    && ($s->settlement_ratio !== null ? (float) $s->settlement_ratio > 0 : self::param('settlement_freelance_ratio') > 0);
+                $hasPerUnit = $s->settlement_type === 'per_unit';
                 if (! $hasRatio && ! $hasPerUnit) {
                     throw ValidationException::withMessages([
-                        'settlement_ratio' => '정산 확정·지급 시 정산비율(ratio) 또는 건당 정산액(per_unit) 중 하나가 0보다 커야 합니다.',
+                        'settlement_ratio' => '정산 확정·지급 시 정산비율(ratio) 또는 건당 정산액(per_unit) 중 하나가 설정되어야 합니다.',
                     ]);
                 }
             }
@@ -279,14 +282,51 @@ class Settlement extends Model
         return (int) (($this->sales_margin + $this->vat_margin) * 0.9);
     }
 
-    // ── Phase 2 (2026-05-21) — Salesman.type 별 default fallback ─────────
-    // 5만/10만/50% 은 회사 단일 정책 → 코드 상수. 변경 시 코드 수정 (사용자 결정).
-    // 컬럼 값(settlement_ratio, per_unit_amount) 명시 입력되면 user override 우선.
+    // ── 정산 파라미터 (2026-06-22) — super admin 기능설정에서 Setting override 가능 ─────────
+    // 상수 = 기본값(Setting row 없으면 사용). 컬럼 값(settlement_ratio, per_unit_amount) 명시 시 user override 우선.
     public const FREELANCE_RATIO_DEFAULT = 50;          // 프리랜서 비율 기본 50%
 
-    public const EMPLOYEE_PER_UNIT_DEFAULT = 100_000;   // 사내직원 건당 10만원
+    public const EMPLOYEE_PER_UNIT_DEFAULT = 100_000;   // 사내직원 건당(총마진 기준 미만) 10만원
 
     public const FREELANCE_DOCUMENT_FEE = 50_000;       // 프리랜서 서류비 5만원
+
+    public const EMPLOYEE_HIGH_THRESHOLD = 100_000_000; // 사내직원 고율 트리거 = 매입금액 ≥ 1억
+
+    public const EMPLOYEE_HIGH_RATE = 25;               // 사내직원 고율 % (총마진 × 25%)
+
+    public const EMPLOYEE_MARGIN_THRESHOLD = 1_000_000; // 사내직원 건당 분기 = 총마진 100만
+
+    public const EMPLOYEE_AMOUNT_HIGH = 200_000;        // 사내직원 건당(총마진 기준 이상) 20만원
+
+    /** Setting key ↔ 기본 상수 매핑 (super admin 기능설정 입력 대상). */
+    public const PARAM_DEFAULTS = [
+        'settlement_freelance_ratio' => self::FREELANCE_RATIO_DEFAULT,
+        'settlement_freelance_document_fee' => self::FREELANCE_DOCUMENT_FEE,
+        'settlement_employee_high_threshold' => self::EMPLOYEE_HIGH_THRESHOLD,
+        'settlement_employee_high_rate' => self::EMPLOYEE_HIGH_RATE,
+        'settlement_employee_margin_threshold' => self::EMPLOYEE_MARGIN_THRESHOLD,
+        'settlement_employee_amount_low' => self::EMPLOYEE_PER_UNIT_DEFAULT,
+        'settlement_employee_amount_high' => self::EMPLOYEE_AMOUNT_HIGH,
+    ];
+
+    /** @var array<string,int> 요청 단위 메모 (정산 목록에서 per-row Setting 쿼리 폭주 방지) */
+    private static array $paramMemo = [];
+
+    /** 정산 파라미터 읽기 — Setting override 있으면 그 값, 없으면 기본 상수. 요청 단위 캐시. */
+    public static function param(string $key): int
+    {
+        if (! array_key_exists($key, self::$paramMemo)) {
+            self::$paramMemo[$key] = (int) Setting::get($key, self::PARAM_DEFAULTS[$key] ?? 0);
+        }
+
+        return self::$paramMemo[$key];
+    }
+
+    /** 설정 변경 후(또는 테스트) 메모 초기화. */
+    public static function flushParamMemo(): void
+    {
+        self::$paramMemo = [];
+    }
 
     /**
      * 효과적 비율 — settlement_ratio 값 있으면 그대로, NULL 이면 freelance default 50.
@@ -296,14 +336,46 @@ class Settlement extends Model
     {
         return $this->settlement_ratio !== null
             ? (int) $this->settlement_ratio
-            : self::FREELANCE_RATIO_DEFAULT;
+            : self::param('settlement_freelance_ratio');
     }
 
     public function getEffectivePerUnitAmountAttribute(): int
     {
-        return $this->per_unit_amount !== null
-            ? (int) $this->per_unit_amount
-            : self::EMPLOYEE_PER_UNIT_DEFAULT;
+        // 재무가 per_unit_amount 명시 입력 시 그 값 override 우선.
+        if ($this->per_unit_amount !== null) {
+            return (int) $this->per_unit_amount;
+        }
+
+        // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입금액·총마진 기준.
+        return self::employeePerUnitTier(
+            $this->total_margin,
+            (int) ($this->vehicle->purchase_price ?? 0)
+        );
+    }
+
+    /**
+     * 사내직원(per_unit) 차등 정산액 — 2026-06-22 jin 확정 (엑셀 CF).
+     *
+     *   매입금액(purchase_price) ≥ 1억  → 총마진 × 25%   (1억 트리거가 최우선 — 총마진 음수여도 적용)
+     *   총마진 < 0                       → 0
+     *   총마진 < 100만                   → 100,000
+     *   그 외(총마진 ≥ 100만)            → 200,000        (상한 없음, 100만 정확히=20만)
+     *
+     * 엑셀 IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))).
+     */
+    public static function employeePerUnitTier(int $totalMargin, int $purchasePrice): int
+    {
+        if ($purchasePrice >= self::param('settlement_employee_high_threshold')) {
+            return (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100);
+        }
+        if ($totalMargin < 0) {
+            return 0;
+        }
+        if ($totalMargin < self::param('settlement_employee_margin_threshold')) {
+            return self::param('settlement_employee_amount_low');
+        }
+
+        return self::param('settlement_employee_amount_high');
     }
 
     /**
@@ -312,7 +384,7 @@ class Settlement extends Model
      */
     public function getDocumentFeeAttribute(): int
     {
-        return $this->settlement_type === 'ratio' ? self::FREELANCE_DOCUMENT_FEE : 0;
+        return $this->settlement_type === 'ratio' ? self::param('settlement_freelance_document_fee') : 0;
     }
 
     /**
