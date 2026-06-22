@@ -1,7 +1,42 @@
-# 서류 양식 도장·서명 이미지 — 위치 및 교체 절차
+# 서류 양식 도장·서명 이미지 — 업로드 오버레이 + 위치/크기 조정
 
-> 목적: 회사별(테넌트별)로 **도장(직인)·서명 이미지**를 교체해야 할 때를 위한 위치 색인 + 교체 절차.
-> 2026-06-22 작성. 신규 기능 아님 — 교체는 아래 수동 절차로 수행.
+> 2026-06-22. **구현 완료**: 기능설정에서 도장/서명을 업로드하면 서류 생성 시 자동 오버레이.
+> 크기·위치는 코드(Mapping)에서 **언제든 수정 가능** — 아래 "크기·위치 조정" 참조.
+
+## ✅ 구현된 기능 — 기능설정 업로드 오버레이
+
+- **기능설정 → "도장·서명"** (super 전용): 회사(template_set)별로 **서명**·**직인** 이미지 업로드/되돌리기.
+- 서류 생성 시 `DocumentFiller::applyStamps/overlayStamp` 가 양식의 정해진 앵커에 업로드 이미지를 오버레이.
+  - 업로드 **원본 비율 유지**하며 목표 박스 안에 fit(왜곡 방지). PNG 투명도 보존(path 기반 Drawing).
+  - 미업로드 = 양식 기본 이미지 그대로(하위호환).
+  - 선적 4종(removeRow)도 fill 前 적용이라 도장이 트림 위치로 함께 이동.
+- 저장: `Setting` 키 `stamp_{set}_{role}` → 업로드 경로. 디스크 = `config('filesystems.vehicle_docs_disk')`.
+- 테스트: `tests/Feature/StampOverlayTest.php`.
+
+### 역할 ↔ 양식 ↔ 앵커 ↔ 목표크기 (현재값)
+
+| role | 양식(type) | 시트 | 앵커 | 목표크기(pt) | Mapping 파일 |
+|---|---|---|---|---|---|
+| `signature` | deregistration_contract | 2.계약서 | A60 | 612×179 | `DeregistrationContractMapping` |
+| `signature` | container_invoice_packing | INVOICE | H115 | 490×234 | `ContainerInvoicePackingMapping` |
+| `signature` | roro_invoice_packing | INVOICE | H55 | 490×234 | `RoroInvoicePackingMapping` |
+| `seal` | invoice (sales_invoice) | Invoice | B36 | **160×160** | `SalesInvoiceMapping` |
+| `seal` | container_contract | HBB340. | B59 | **160×160** | `ContainerContractMapping` |
+| `seal` | roro_contract | HBB340. | B59 | **160×160** | `RoroContractMapping` |
+
+### ⚙️ 크기·위치 조정 (언제든 가능)
+
+각 `app/Services/Documents/Mappings/*Mapping.php` 의 `'stamps'` 배열에서:
+- **크기** = `'width'` / `'height'` (pt). 비율 유지 fit 이라 정사각 이미지면 둘 중 작은 쪽에 맞춰 축소.
+  - 예: 직인을 더 작게 → `160` → `120`. 더 크게 → `200`.
+- **위치** = `'anchor'` (셀 좌표, 예 `B36`). 다른 셀로 옮기면 그 셀 좌상단 기준으로 배치.
+- 수정 후 `php artisan view:clear` 불필요(서버 코드라 즉시 반영), 실제 다운로드로 육안 확인 권장.
+- ⚠️ 직인 목표 160 = jin 실측치(2026-06-22). 서명(A60·H115)은 미조정 — 크면 동일 방식으로 줄이면 됨.
+
+---
+
+> 아래는 **양식 자체의 기본 이미지**를 직접 교체하는 레거시 절차(업로드 기능 쓰면 보통 불필요).
+> 목적: 회사별(테넌트별) **도장(직인)·서명 이미지** 위치 색인 + 양식 직접 교체.
 
 ## 테넌트 구조 (이미 존재)
 
