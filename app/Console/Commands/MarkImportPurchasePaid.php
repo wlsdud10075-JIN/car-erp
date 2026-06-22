@@ -242,34 +242,43 @@ class MarkImportPurchasePaid extends Command
         $o = str_replace(["\n", "\r"], ' / ', $o);
         $o = preg_replace('#(?<!\d)\d{1,2}/\d{1,2}(?!\d)#', ' ', $o); // 날짜(M/D) 제거
 
+        // 금액 추출 — 좌표 일치 위해 '만' 토큰은 동일 길이 공백으로 마스킹(오프셋 보존).
         $hits = [];
-        if (preg_match_all('/([0-9][0-9,]*)\s*만\s*원?/u', $o, $m, PREG_OFFSET_CAPTURE)) {
-            foreach ($m[1] as $i => $g) {
-                $hits[] = ['amt' => (int) str_replace(',', '', $g[0]) * 10000, 'pos' => $m[0][$i][1], 'len' => strlen($m[0][$i][0])];
+        if (preg_match_all('/[0-9][0-9,]*\s*만\s*원?/u', $o, $m, PREG_OFFSET_CAPTURE)) {
+            foreach ($m[0] as $g) {
+                $hits[] = ['amt' => (int) preg_replace('/[^0-9]/', '', explode('만', $g[0])[0]) * 10000, 'c' => $g[1] + strlen($g[0]) / 2];
             }
         }
-        $oNoMan = preg_replace('/[0-9][0-9,]*\s*만\s*원?/u', ' ', $o);
-        if (preg_match_all('/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{6,}/u', $oNoMan, $m2, PREG_OFFSET_CAPTURE)) {
+        $masked = preg_replace_callback('/[0-9][0-9,]*\s*만\s*원?/u', fn ($mm) => str_repeat(' ', strlen($mm[0])), $o);
+        if (preg_match_all('/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{6,}/u', $masked, $m2, PREG_OFFSET_CAPTURE)) {
             foreach ($m2[0] as $g) {
-                $hits[] = ['amt' => (int) str_replace(',', '', $g[0]), 'pos' => $g[1], 'len' => strlen($g[0])];
+                $hits[] = ['amt' => (int) str_replace(',', '', $g[0]), 'c' => $g[1] + strlen($g[0]) / 2];
             }
         }
 
+        // 라벨 위치 수집 (계약→down 등)
+        $labels = [];
+        foreach (['계약' => 'down', '잔금' => 'balance', '중도금' => 'balance', '매도비' => 'selling', '대금' => 'lump', '입금' => 'lump', '송금' => 'lump'] as $kw => $type) {
+            if (preg_match_all('/'.$kw.'/u', $o, $mm, PREG_OFFSET_CAPTURE)) {
+                foreach ($mm[0] as $g) {
+                    $labels[] = ['c' => $g[1] + strlen($kw) / 2, 'type' => $type];
+                }
+            }
+        }
+
+        // 각 금액 → 가장 가까운 라벨 (거리순)
         $out = [];
         foreach ($hits as $h) {
-            $ctx = substr($o, max(0, $h['pos'] - 18), $h['len'] + 36);
-            if (preg_match('/계약/u', $ctx)) {
-                $label = 'down';
-            } elseif (preg_match('/잔금|중도금/u', $ctx)) {
-                $label = 'balance';
-            } elseif (preg_match('/매도비/u', $ctx)) {
-                $label = 'selling';
-            } elseif (preg_match('/대금|입금|송금/u', $ctx)) {
-                $label = 'lump';
-            } else {
-                $label = 'unknown';
+            $best = 'unknown';
+            $bestD = PHP_INT_MAX;
+            foreach ($labels as $l) {
+                $d = abs($l['c'] - $h['c']);
+                if ($d < $bestD) {
+                    $bestD = $d;
+                    $best = $l['type'];
+                }
             }
-            $out[] = ['label' => $label, 'amount' => $h['amt']];
+            $out[] = ['label' => $best, 'amount' => $h['amt']];
         }
 
         return $out;
