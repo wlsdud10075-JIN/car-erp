@@ -520,3 +520,11 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 - **연동 B v2 — 차량 첨부(사진/서류) 수신**: board 가 `won→synced` 시 `attachments[]`(공유 S3 키) 전송 → `vehicle_photos`(기본정보탭, 최대10·결정적 target dedup) 연결. S3=(B)서버사이드 복사. **소스디스크 분리**(`config filesystems.purchase_sync_inbound_disk`, 운영 미설정=같은 s3 서버복사 / 로컬 `board_inbound`+`BOARD_STORAGE_PATH` 브리지). `contract_version` 1·2 수용(전방호환). 승인=purchase-sync 위 신규변경(대표영역)이나 대표부재+근거로 **Jin 권한 진행**(문서 명시). 권위=`docs/integration/purchase-sync-receiver.md`. ⚠️ **board 송신(v2)은 board 세션에서 배포 필요**(car-erp 받는쪽만 완료). 로컬 e2e 확인됨(board 브리지).
 - **연비**(NICE `fuelCnsmpRt`) 매핑 — 보류분 함께 배포(저위험: NICE 미전송 시 빈값 graceful).
 - **마이그레이션 없음**(스키마 무변경 — vehicle_photos 재사용). 전체 **673 통과**.
+
+## 25. deploy #14 — 매입/판매 잔금 검증 메시지 한글화 (2026-06-22)
+
+**반영** (master `0f6b657`→`cc7eb96`, 자동배포). 운영서 매입 잔금 입금일 누락 시
+검증 메시지가 `purchaseBalancePayments.0.payment_date은(는) 필수…` 로 **영어 필드명 노출**.
+원인 = `:attribute` 한글 라벨 미매핑. `$attributes` 에 매입/판매 잔금 4개(amount·payment_date)
+라벨 + `vehicle.attr` 키(ko/en) 추가 → "매입 잔금 입금일은(는) 필수 입력 항목입니다."
+마이그 없음. (검증 동작 자체는 정상 — 입금일 필수는 미지급 계산 정확성 C2.)
