@@ -152,8 +152,9 @@ class IntegrationRegressionTest extends TestCase
         $this->assertNotNull($settlement, '거래완료 시 Settlement 자동 생성');
         // Salesman.type='freelance' → settlement_type='ratio'
         $this->assertSame('ratio', $settlement->settlement_type);
-        // ratio default 50 — decimal cast 형식 차이 가능. 50.0 검증 (float).
-        $this->assertEqualsWithDelta(50.0, (float) $settlement->settlement_ratio, 0.01);
+        // 자동생성 = settlement_ratio 컬럼 null + 설정 기반 effective_ratio (기본 50%).
+        $this->assertNull($settlement->settlement_ratio);
+        $this->assertSame(50, $settlement->effective_ratio);
     }
 
     public function test_case03_paid_auto_secondary_pending(): void

@@ -167,7 +167,8 @@ class ManagerPanelLifecycleE2ETest extends TestCase
         $this->assertNotNull($s, '거래완료 진입 시 정산 자동 생성');
         $this->assertSame('pending', $s->settlement_status);
         $this->assertSame('ratio', $s->settlement_type, '프리랜서 → 비율제');
-        $this->assertSame(50, (int) $s->settlement_ratio);
+        $this->assertNull($s->settlement_ratio, '자동생성 = 컬럼 null(설정 기반 산정)');
+        $this->assertSame(50, $s->effective_ratio, 'effective_ratio = 설정 기본 50%');
 
         $this->assertSame(10_000_000, $s->sales_amount_krw, '판매금원화');
         $this->assertSame(0, $s->sales_margin, '판매마진');

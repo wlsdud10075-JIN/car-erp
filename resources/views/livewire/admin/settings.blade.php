@@ -16,6 +16,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
+    public array $settlementParams = [];
+
     // 도장/서명 역할 2종 — signature(서명: 말소계약서·선적인보이스), seal(직인: 판매인보이스·계약서).
     public array $stampRoles = ['signature', 'seal'];
 
@@ -35,7 +38,42 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->sidebarBrand = Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
+            $this->settlementParams[$key] = (int) Setting::get($key, $default);
+        }
         $this->refreshStamps();
+    }
+
+    /** 정산 파라미터 화면 메타 (라벨/힌트) — blade foreach. */
+    public function settlementParamMeta(): array
+    {
+        return [
+            'settlement_freelance_ratio' => ['label' => '프리랜서 정산 비율 (%)', 'hint' => '총마진 × 이 비율. 기본 50'],
+            'settlement_freelance_document_fee' => ['label' => '프리랜서 서류비 (원)', 'hint' => '실지급액에서 차감. 기본 50,000'],
+            'settlement_employee_high_threshold' => ['label' => '사내직원 고율 트리거 — 매입금액 ≥ (원)', 'hint' => '이 매입금액 이상이면 비율제 적용. 기본 100,000,000(1억)'],
+            'settlement_employee_high_rate' => ['label' => '사내직원 고율 (%)', 'hint' => '위 트리거 시 총마진 × 이 비율. 기본 25'],
+            'settlement_employee_margin_threshold' => ['label' => '사내직원 건당 분기 — 총마진 (원)', 'hint' => '총마진이 이 값 미만/이상으로 건당액 분기. 기본 1,000,000(100만)'],
+            'settlement_employee_amount_low' => ['label' => '사내직원 건당 — 총마진 기준 미만 (원)', 'hint' => '기본 100,000'],
+            'settlement_employee_amount_high' => ['label' => '사내직원 건당 — 총마진 기준 이상 (원)', 'hint' => '기본 200,000'],
+        ];
+    }
+
+    public function saveSettlementParams(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $meta = $this->settlementParamMeta();
+        foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
+            $val = max(0, (int) ($this->settlementParams[$key] ?? $default));
+            Setting::updateOrCreate(
+                ['key' => $key],
+                ['value' => (string) $val, 'type' => 'integer', 'description' => '정산 파라미터 — '.($meta[$key]['label'] ?? $key)],
+            );
+            $this->settlementParams[$key] = $val;
+        }
+        \App\Models\Settlement::flushParamMemo();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
     // 현재 template_set(=회사) — 배포별 1개 회사라 이 화면은 자기 회사 도장만 관리.
@@ -231,6 +269,37 @@ new #[Layout('components.layouts.app')] class extends Component
             />
             <div class="mt-4 flex justify-end">
                 <button wire:click="save" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- 정산 파라미터 그룹 (2026-06-22) — 차등 tier/비율. super 전용 --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-blue-500"></span>
+                <span class="section-title">정산 파라미터</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">프리랜서 비율·사내직원 차등(건당/고율) 기준. 변경 시 이후 정산(미확정)에 자동 반영, 확정·지급된 건은 스냅샷 보존.</p>
+            @foreach ($this->settlementParamMeta() as $key => $meta)
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">{{ $meta['label'] }}</label>
+                    <input
+                        wire:model="settlementParams.{{ $key }}"
+                        type="number" min="0" step="1"
+                        class="input-base mt-1 w-full"
+                    />
+                    <p class="mt-1 text-xs text-gray-400">{{ $meta['hint'] }}</p>
+                </div>
+            @endforeach
+            <div class="flex justify-end pt-1">
+                <button wire:click="saveSettlementParams" class="btn-primary">{{ __('common.save') }}</button>
             </div>
         </div>
     </div>

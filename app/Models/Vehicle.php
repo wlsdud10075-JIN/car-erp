@@ -673,12 +673,11 @@ class Vehicle extends Model
             $vehicle->settlements()->create([
                 'salesman_id' => $salesman->id,
                 'settlement_type' => $settlementType,
-                'settlement_ratio' => $settlementType === 'ratio'
-                    ? Settlement::FREELANCE_RATIO_DEFAULT
-                    : null,
-                'per_unit_amount' => $settlementType === 'per_unit'
-                    ? Settlement::EMPLOYEE_PER_UNIT_DEFAULT
-                    : null,
+                // 2026-06-22 — null 저장 = 정산 파라미터(Setting) 기반 자동 산정에 위임.
+                //   ratio   → effective_ratio = settlement_freelance_ratio (기본 50%)
+                //   per_unit → 차등 tier(매입금액·총마진 기준). 재무 필요 시 컬럼 명시로 override.
+                'settlement_ratio' => null,
+                'per_unit_amount' => null,
                 'settlement_status' => 'pending',
                 'note' => '자동 생성 — 거래완료 진입 시',
             ]);
