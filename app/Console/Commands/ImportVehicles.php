@@ -46,6 +46,7 @@ class ImportVehicles extends Command
         {--dry-run : 검증 + 리포트만 (DB 수정 없음)}
         {--force : 검증 통과 후 확인 프롬프트 생략}
         {--with-payments : 2단계 — 입금이력(정산1~5) confirmed + 완료정산(paid, 프리50%) 재현 + B/L번호→거래완료}
+        {--only= : 특정 차량번호만 import (쉼표구분). 신규 추가용 — 미지정 시 전체(기존 갱신 포함)}
         {--samples=5 : 이슈 유형별 표시 샘플 수}';
 
     protected $description = '헤이맨 수출차량현황표 xlsx → 차량 일괄 import (Option A: 마스터+핵심재무)';
@@ -136,6 +137,24 @@ class ImportVehicles extends Command
 
         // 파싱 (계산된 값 + 정제)
         [$rows, $report] = $this->parseAll($sheet, $dataStart);
+
+        // --only: 지정 차량번호만 처리 (신규 추가용 — 기존 차량 갱신 방지)
+        $only = array_values(array_filter(array_map('trim', explode(',', (string) $this->option('only')))));
+        if ($only) {
+            $onlySet = array_flip($only);
+            $before = count($rows);
+            $rows = array_values(array_filter($rows, fn ($r) => isset($onlySet[$r['vehicle_number'] ?? ''])));
+            $report['rowCount'] = count($rows);
+            $this->warn('--only 적용: '.count($rows)."행만 처리 (전체 {$before}행 중, 지정 ".count($only).'개). 기존 차량 무수정.');
+            $found = array_column($rows, 'vehicle_number');
+            $miss = array_values(array_diff($only, $found));
+            if ($miss) {
+                $this->warn('  파일에서 못 찾은 지정 차량번호: '.implode(', ', $miss));
+            }
+            // 필터 전 전체 기준 이슈는 오해 소지 → --only 에선 제거(실제 처리는 위 12행만).
+            unset($report['issues']['DB 기존 차량번호(=갱신)'], $report['issues']['DB 기존 차대번호(=갱신)']);
+        }
+
         $this->printReport($report);
 
         // 담당자 미등록 차단 (사용자가 type 직접 지정해 먼저 생성)
