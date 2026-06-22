@@ -42,12 +42,37 @@ class MarkImportPurchasePaid extends Command
         {--sheet=수출차량매입-2026 : 시트명}
         {--apply : 실제 처리 (미지정 시 dry-run — 명단/계획만, 쓰기 없음)}';
 
-    protected $description = 'import 차량 매입대금을 O열 계약금/잔금 구조대로 PBP 입력 (S열 보정). 기본 dry-run.';
+    protected $description = 'import 차량 매입대금을 O열 계약금/잔금 구조대로 PBP 입력 (S열 보정 + jin 수동 override, 불확실분 draft). 기본 dry-run.';
 
     private const NOTE_MARKER = 'import 매입(구조)';
 
     /** S열 매입 다운스트림(매입 완료 이후) 단계 — 도달했으면 매입대금 지급된 것으로 본다. */
     private const S_DONE = ['입고', '선적대기', '선적완료', '입금대기', '완료'];
+
+    /**
+     * jin 수동 매칭(2026-06-22) — 자동 판별로 안 잡히는 차량만 명시. [mode, kind, amount].
+     *   mode  = confirmed(즉시 확정) | draft(재무처리 대기, 내일 jin 승인)
+     *   kind  = down(계약금) | balance(잔금) | full(잔금=미지급 전액)
+     * 그 외 차량은 자동(S열+O열 파싱, confirmed). B/C/A·일부 부분차량은 자동이 이미 정확.
+     */
+    private const OVERRIDES = [
+        // 부분지급 — 계약금/잔금만 확정, 나머지 잔금은 미지급 유지 (S가 선적/입고라 자동은 완납 처리하므로 강제)
+        '212수6558' => ['confirmed', 'down', 1_000_000],
+        '25부7058' => ['confirmed', 'down', 1_000_000],
+        '234조6163' => ['confirmed', 'balance', 10_300_000],
+        '101부1909' => ['confirmed', 'down', 500_000],
+        // D 빈칸 10대 — 전액 잔금이되 미확정(draft) 로 재무처리 대기, 내일 jin 확인 후 승인
+        '54가6191' => ['draft', 'full', 0],
+        '65고2880' => ['draft', 'full', 0],
+        '38모1950' => ['draft', 'full', 0],
+        '17버0790' => ['draft', 'full', 0],
+        '62소0176' => ['draft', 'full', 0],
+        '12너4283' => ['draft', 'full', 0],
+        '01너3060' => ['draft', 'full', 0],
+        '54오0483' => ['draft', 'full', 0],
+        '38오0305' => ['draft', 'full', 0],
+        '02노0396' => ['draft', 'full', 0],
+    ];
 
     public function handle(): int
     {
@@ -89,23 +114,33 @@ class MarkImportPurchasePaid extends Command
 
                 continue;
             }
-            $plans[$vno] = $this->buildPlan($v, $row, $unpaid);
+            $plans[$vno] = $this->buildPlan($vno, $v, $row, $unpaid);
         }
 
         // ── 요약 ──
-        $fullCnt = count(array_filter($plans, fn ($p) => $p['full']));
-        $partCnt = count($plans) - $fullCnt;
+        $confirmedCnt = count(array_filter($plans, fn ($p) => $p['confirmed']));
+        $draftCnt = count($plans) - $confirmedCnt;
         $sumDown = array_sum(array_column($plans, 'down'));
         $sumBal = array_sum(array_column($plans, 'balance'));
         $sumSell = array_sum(array_column($plans, 'selling'));
-        $this->info('처리 대상: '.count($plans)."대  (완납 {$fullCnt} / 부분(계약금만) {$partCnt})");
+        $this->info('처리 대상: '.count($plans)."대  (확정 {$confirmedCnt} / 재무처리대기(draft) {$draftCnt})");
         $this->line('  입력 합계 — 계약금 '.number_format($sumDown).' / 잔금 '.number_format($sumBal).' / 매도비 '.number_format($sumSell));
         $this->line("  이미 처리됨 skip: {$already}대 / 서버에 없음: ".count($unmatched).'대'.(count($unmatched) ? ' — '.implode(', ', array_slice($unmatched, 0, 15)).(count($unmatched) > 15 ? ' …' : '') : ''));
         $this->newLine();
 
-        $this->line('처리 계획 (샘플 20):');
+        // draft(재무처리 대기) 전체 명단 — 내일 jin 승인 대상이라 항상 노출
+        $drafts = array_filter($plans, fn ($p) => ! $p['confirmed']);
+        if ($drafts) {
+            $this->line('▶ draft (재무처리 대기, 내일 승인) '.count($drafts).'대:');
+            foreach ($drafts as $vno => $p) {
+                $this->line(sprintf('    %-11s 잔금(대기)=%s', $vno, number_format($p['balance'])));
+            }
+            $this->newLine();
+        }
+
+        $this->line('확정 처리 계획 (샘플 20):');
         $i = 0;
-        foreach ($plans as $vno => $p) {
+        foreach (array_filter($plans, fn ($p) => $p['confirmed']) as $vno => $p) {
             $this->line(sprintf('  %-11s %-6s 계약금=%-10s 잔금=%-11s 매도비=%-9s 잔여미지급=%s',
                 $vno, $p['full'] ? '완납' : '부분',
                 number_format($p['down']), number_format($p['balance']), number_format($p['selling']),
@@ -137,6 +172,7 @@ class MarkImportPurchasePaid extends Command
                     $draftsDeleted++;
                 }
 
+                $confirmedAt = $p['confirmed'] ? now() : null;
                 foreach (['down' => $p['down'], 'balance' => $p['balance'], 'selling_fee' => $p['selling']] as $type => $amt) {
                     if ($amt <= 0) {
                         continue;
@@ -146,7 +182,7 @@ class MarkImportPurchasePaid extends Command
                         'amount' => $amt,
                         'type' => $type,
                         'payment_date' => $payDate,
-                        'confirmed_at' => now(),
+                        'confirmed_at' => $confirmedAt,
                         'confirmed_by_user_id' => null,
                         'created_by_user_id' => null,
                         'note' => self::NOTE_MARKER,
@@ -169,22 +205,38 @@ class MarkImportPurchasePaid extends Command
      *
      * @return array{vehicle:Vehicle, full:bool, down:int, balance:int, selling:int, unpaidAfter:int}
      */
-    private function buildPlan(Vehicle $v, array $row, int $unpaid): array
+    private function buildPlan(string $vno, Vehicle $v, array $row, int $unpaid): array
     {
-        $down = min($row['down'], $unpaid);
-        $selling = min($row['selling'], max(0, $unpaid - $down));
+        $down = 0;
+        $balance = 0;
+        $selling = 0;
+        $confirmed = true;
+        $full = false;
 
-        $ratioOk = $row['fileTotal'] > 0 && $row['parsedSum'] / $row['fileTotal'] >= 0.97 && $row['parsedSum'] / $row['fileTotal'] <= 1.03;
-        $full = $ratioOk || in_array($row['s'], self::S_DONE, true);
-
-        if ($full) {
-            $balance = max(0, $unpaid - $down - $selling);  // 차액 채워 완납
+        if (isset(self::OVERRIDES[$vno])) {
+            [$mode, $kind, $amt] = self::OVERRIDES[$vno];
+            $confirmed = $mode === 'confirmed';
+            if ($kind === 'full') {
+                $balance = $unpaid;
+                $full = true;
+            } elseif ($kind === 'down') {
+                $down = min($amt, $unpaid);
+            } elseif ($kind === 'balance') {
+                $balance = min($amt, $unpaid);
+            }
         } else {
-            $balance = min($row['balance'], max(0, $unpaid - $down - $selling)); // 파싱된 잔금만 (보통 0)
+            $down = min($row['down'], $unpaid);
+            $selling = min($row['selling'], max(0, $unpaid - $down));
+            $ratioOk = $row['fileTotal'] > 0 && $row['parsedSum'] / $row['fileTotal'] >= 0.97 && $row['parsedSum'] / $row['fileTotal'] <= 1.03;
+            $full = $ratioOk || in_array($row['s'], self::S_DONE, true);
+            $balance = $full
+                ? max(0, $unpaid - $down - $selling)               // 차액 채워 완납
+                : min($row['balance'], max(0, $unpaid - $down - $selling)); // 파싱된 잔금만 (보통 0)
         }
 
         return [
             'vehicle' => $v,
+            'confirmed' => $confirmed,
             'full' => $full,
             'down' => $down,
             'balance' => $balance,
