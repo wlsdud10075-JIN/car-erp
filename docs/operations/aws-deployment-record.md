@@ -510,3 +510,13 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 - ⑤ 차량인보이스 A3 상호 첫 줄 = 기능설정 브랜드 대문자(DocumentFiller brandHeader).
 - 마이그 `add_reg_cert_number_to_vehicles` [14] Ran. 사이트 302 정상.
 - ④ H13 연비는 미반영(jin 미들웨어 연비 조사중). ⑤ 다른서류 확장 보류.
+
+## 24. deploy #13 — 양식 유령열 + 도장/서명 오버레이 + 연동 B v2 첨부 + 연비 (2026-06-22)
+
+**반영** (master `169707e`→`0f6b657`, 자동배포 트리거). dev→master = **.md 제외 path cherry**(23 코드파일, `git checkout origin/dev -- . ':(exclude)*.md'`).
+
+- **매입 3종 양식 유령 열 제거**: 말소신청서·말소계약서·위임장이 256열마다 반복되는 `<col>` 잔재(→16384열)라 다운로드 시 PhpSpreadsheet 가 펼쳐 시트범위 폭발(A1:WVX)→엑셀 "복구"→열너비 리셋→**정렬 흐트러짐**. `scripts/strip-phantom-columns.py`(zipfile 로 `<cols>`만 외과수술, 이미지·서식 byte 보존) system+karaba 6파일.
+- **도장·서명 업로드 오버레이**: 기능설정 "도장·서명"(super)에서 회사(`template_set`)별 서명/직인 업로드 → `DocumentFiller::applyStamps` 가 생성 시 양식 앵커에 오버레이(원본비율 fit·PNG 투명 보존·선적 removeRow 동반이동). 미업로드=양식 기본 유지. 직인 목표 160pt(jin 실측). 6서류(말소계약서 A60·판매인보이스 B36·컨/로로 계약서 B59·선적인보이스 H115/H55). 회사정보는 이미 텍스트 셀이라 합성블록 제거해도 유지. ⚠️ karaba 가 SSANCAR 직인 찍던 버그 → karaba 직인 업로드로 해소.
+- **연동 B v2 — 차량 첨부(사진/서류) 수신**: board 가 `won→synced` 시 `attachments[]`(공유 S3 키) 전송 → `vehicle_photos`(기본정보탭, 최대10·결정적 target dedup) 연결. S3=(B)서버사이드 복사. **소스디스크 분리**(`config filesystems.purchase_sync_inbound_disk`, 운영 미설정=같은 s3 서버복사 / 로컬 `board_inbound`+`BOARD_STORAGE_PATH` 브리지). `contract_version` 1·2 수용(전방호환). 승인=purchase-sync 위 신규변경(대표영역)이나 대표부재+근거로 **Jin 권한 진행**(문서 명시). 권위=`docs/integration/purchase-sync-receiver.md`. ⚠️ **board 송신(v2)은 board 세션에서 배포 필요**(car-erp 받는쪽만 완료). 로컬 e2e 확인됨(board 브리지).
+- **연비**(NICE `fuelCnsmpRt`) 매핑 — 보류분 함께 배포(저위험: NICE 미전송 시 빈값 graceful).
+- **마이그레이션 없음**(스키마 무변경 — vehicle_photos 재사용). 전체 **673 통과**.
