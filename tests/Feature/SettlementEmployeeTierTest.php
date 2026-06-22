@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\User;
+use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -20,6 +22,7 @@ class SettlementEmployeeTierTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        DB::statement('PRAGMA foreign_keys = OFF');
         Settlement::flushParamMemo();
     }
 
@@ -89,5 +92,51 @@ class SettlementEmployeeTierTest extends TestCase
         Settlement::flushParamMemo();
         $this->assertSame(45, Settlement::param('settlement_freelance_ratio'));
         $this->assertSame(250_000, Settlement::employeePerUnitTier(5_000_000, 10_000_000)); // 총마진≥100만 → 상한 25만
+    }
+
+    /**
+     * paid 전환 시 사내직원 per_unit(tier) 동결 → 2차 비용보정으로 total_margin 변해도
+     * 정산액 불변 → closed actual_payout = paid snapshot → carryover_out = 0 (SKILLS §5-5 불변식).
+     * (advisor 지적: tier 가 margin 의존이라 미동결 시 1억+ 직원 carry_out 비0 발생)
+     */
+    public function test_paid_freezes_employee_per_unit_against_margin_change(): void
+    {
+        $v = Vehicle::create([
+            'vehicle_number' => 'TIER-FREEZE-1',
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'purchase_price' => 120_000_000, 'selling_fee' => 0,   // 매입 1억 이상 → 비율제(×25%)
+            'sale_price' => 200_000_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01', 'dhl_request' => false,
+        ]);
+
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => null,
+            'settlement_status' => 'confirmed',
+        ]);
+
+        // total_margin = ((200M-120M) + 120M×0.09) × 0.9 = (80M+10.8M)×0.9 = 81,720,000
+        // tier(1억+) = 81,720,000 × 25% = 20,430,000
+        $expected = 20_430_000;
+        $this->assertSame(81_720_000, $s->total_margin);
+        $this->assertSame($expected, $s->settlement_amount);
+        $this->assertNull($s->per_unit_amount);
+
+        // paid 전환 → 동결
+        $s->update(['settlement_status' => 'paid']);
+        $s->refresh();
+        $this->assertSame($expected, (int) $s->per_unit_amount, 'paid 시 tier 값이 per_unit_amount 로 동결');
+        $this->assertSame($expected, (int) ($s->confirmed_snapshot['actual_payout'] ?? -1));
+
+        // 2차 비용보정: 말소비 5천만 추가 → total_margin 급감 (미동결이면 tier 9,180,000 으로 재계산됨)
+        $v->update(['cost_deregistration' => 50_000_000]);
+        $s->refresh();
+        $this->assertSame(36_720_000, $s->total_margin, '총마진은 비용보정 반영해 변함');
+        $this->assertSame($expected, $s->settlement_amount, '동결돼 정산액은 불변(재계산 안 됨)');
+        $this->assertSame(
+            (int) ($s->confirmed_snapshot['actual_payout'] ?? 0),
+            $s->actual_payout,
+            'closed actual_payout = paid snapshot → carryover_out 0'
+        );
     }
 }
