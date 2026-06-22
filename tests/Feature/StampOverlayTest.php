@@ -71,6 +71,44 @@ class StampOverlayTest extends TestCase
         $this->assertCount(1, $this->drawingAt($sheet, 'A60'), '미업로드 시 양식 기본 도장 유지');
     }
 
+    public function test_uploaded_seal_replaces_invoice_composite(): void
+    {
+        Storage::fake($this->disk());
+        $bytes = (string) UploadedFile::fake()->image('seal.png', 200, 200)->get();
+        Storage::disk($this->disk())->put('stamps/system/seal.png', $bytes);
+        Setting::updateOrCreate(['key' => 'stamp_system_seal'], ['value' => 'stamps/system/seal.png', 'type' => 'string']);
+
+        $vehicle = Vehicle::create(['vehicle_number' => '56다7890', 'sales_channel' => 'export']);
+        $ss = (new DocumentFiller($vehicle))->spreadsheet('invoice');
+        $sheet = $ss->getSheetByName('Invoice');
+
+        $hits = $this->drawingAt($sheet, 'B36');
+        $this->assertCount(1, $hits, 'B36 직인이 정확히 1개');
+        $this->assertSame($bytes, file_get_contents($hits[0]->getPath()), '업로드 직인으로 교체');
+    }
+
+    public function test_uploaded_seal_on_multi_doc_contract(): void
+    {
+        // 선적 계약서(removeRow 경유)에서도 직인 오버레이가 살아남아야 함.
+        Storage::fake($this->disk());
+        $bytes = (string) UploadedFile::fake()->image('seal.png', 200, 200)->get();
+        Storage::disk($this->disk())->put('stamps/system/seal.png', $bytes);
+        Setting::updateOrCreate(['key' => 'stamp_system_seal'], ['value' => 'stamps/system/seal.png', 'type' => 'string']);
+
+        $vehicle = Vehicle::create(['vehicle_number' => '78라9012', 'sales_channel' => 'export']);
+        $ss = (new DocumentFiller($vehicle))->spreadsheet('container_contract');
+        $sheet = $ss->getSheetByName('HBB340.');
+
+        // removeRow 로 B59 가 위로 이동했어도 업로드 직인이 정확히 1개 존재
+        $seals = [];
+        foreach ($sheet->getDrawingCollection() as $d) {
+            if ($d instanceof Drawing && @file_get_contents($d->getPath()) === $bytes) {
+                $seals[] = $d;
+            }
+        }
+        $this->assertCount(1, $seals, '선적 계약서에 업로드 직인 1개 (removeRow 후에도 생존)');
+    }
+
     public function test_super_can_upload_and_remove_signature(): void
     {
         Storage::fake($this->disk());
@@ -83,8 +121,20 @@ class StampOverlayTest extends TestCase
         $this->assertNotNull(Setting::get('stamp_system_signature'));
         Storage::disk($this->disk())->assertExists(Setting::get('stamp_system_signature'));
 
-        $component->call('removeSignature');
+        $component->call('removeStamp', 'signature');
         $this->assertNull(Setting::get('stamp_system_signature'));
+    }
+
+    public function test_super_can_upload_seal(): void
+    {
+        Storage::fake($this->disk());
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $this->actingAs($super);
+
+        Volt::test('admin.settings')->set('sealUpload', UploadedFile::fake()->image('seal.png', 200, 200));
+
+        $this->assertNotNull(Setting::get('stamp_system_seal'));
+        Storage::disk($this->disk())->assertExists(Setting::get('stamp_system_seal'));
     }
 
     public function test_non_super_cannot_open_settings(): void
