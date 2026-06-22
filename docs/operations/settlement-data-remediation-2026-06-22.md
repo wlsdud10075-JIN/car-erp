@@ -34,6 +34,48 @@
 ⚠️ paid+closed 정산은 보호 가드(Settlement deleting 가드 SKILLS #27 + paid 잠금)가 있어 그냥 못 지움 → **통제된 artisan 명령**(skip 플래그/명시)으로. 운영 데이터라 직접 손대지 말고 dry-run→승인.
 ⚠️ 운영 SSH는 읽기전용 원칙. 교정은 artisan 명령을 배포(또는 명시 승인된 1회 실행)로.
 
+---
+
+## A-2. 진행 (2026-06-22 세션 2) — 분석 완료 + 삭제 커맨드 작성
+
+### CK 규칙 확정 (jin)
+- **정산됨** = CK 에 `정산` 포함 AND `미정산` 미포함 (예 `26.05.10정산`, `6월 정산`).
+- **미정산** = 빈칸 OR `미정산` 포함 (jin: "6월 미정산은 진짜 미정산, 빈칸과 같다").
+- xlsx CK 분포(168행): 빈칸 65 / `26.05.10정산` 55 / `6월 정산` 46 / `6월 미정산` 2 → 정산됨 101 · 미정산 67.
+
+### 146건 분류 (`scripts/audit-settlement-ck.php`, 로컬=서버 동일)
+| 그룹 | 조건 | 건수 | 판정 |
+|---|---|---|---|
+| G1 | 진행중 + 미정산 | 40 | 제거 (96더5119 등 잠금 원인) |
+| G2 | 거래완료 + 정산됨 | 71 | 정산됨 |
+| G3 | 거래완료 + 미정산 | 5 | 미정산 |
+| G4 | 판매완료 + 정산됨(`6월 정산`) | 30 | **정산됨 (jin 확인 — 30건 전부 정산완료)** |
+- G1+G4=70 → handoff의 "진행중 70대"와 일치(40 미정산+30 정산).
+- 정산됨(재산정 대상) = G2 71 + G4 30 = **101대**. 미정산 = G1 40 + G3 5 = 45.
+
+### 원인 + 삭제 메커니즘 (검증 완료, 로컬)
+- 원인: `vehicles:import --with-payments` 가 판매가>0 전 차량에 CK 무시하고 paid+closed 정산을 **전부 ratio 50%** 로 생성(`ImportVehicles.php:344-358`).
+- ⚠️ **유지 후보 101건도 전부 ratio 50% 오류** — 금액 정합 아님(CK상 사내직원 tier 10만/20만 또는 비율). 클린 슬레이트 필요.
+- 삭제 가드: `Settlement::deleting`(`Settlement.php:98`)은 `auth()->check()` 없으면 통과 → artisan 컨텍스트라 paid/closed 여도 삭제 가능. query-builder `forceDelete` 로 우회.
+- 회계잠금: H4(`vehicles/index.blade.php:883`)·자동PBP(`Vehicle.php:624`) 모두 `settlements()->where('settlement_status','paid')->exists()` 의존 → **정산 삭제 시 즉시 해제**(96더5119 로컬 실증).
+- 정산 자동생성은 **전환 트리거**(`Vehicle.php:662` `wasChanged('progress_status_cache')`) → 이미 거래완료인 차량은 일반 편집으로 재생성 안 됨.
+- 삭제는 progress/미수 캐시에 영향 없음(설정값이 정산에 의존 X) — 로컬에서 146 삭제 후 96더5119 판매중 불변 확인.
+
+### jin 결정 (2026-06-22)
+- **146건 전부 삭제 → Part B(사내직원 차등 tier) 구현 후 CK='정산' 차량(101대)만 올바른 금액으로 재산정** (클린 슬레이트).
+- import 입금(FinalPayment `note='import 입금'`)은 **보존** — 실제 수금/미수/진행상태 근거.
+
+### 커맨드 (작성·로컬 검증 완료, dev 커밋)
+`php artisan settlements:purge-import [--apply]` (`app/Console/Commands/PurgeImportSettlements.php`)
+- dry-run 기본: 146건·영향차량·진행상태 분포 출력, 쓰기 없음. `--apply` 시 forceDelete + refreshCaches.
+- 로컬 트랜잭션 실증: 146→0, 96더5119 잠금 해제 ✅, progress 불변, 롤백 정상.
+
+### 다음 단계 (서버 실행 — jin 승인 대기)
+1. **서버 실행 방법 결정** (jin): (a) master 배포 후 `settlements:purge-import --apply` (배포 승인 필요) / (b) 미배포·서버 tinker 1회 실행(검증된 동일 쿼리).
+2. 실행 전 `php artisan db:backup`.
+3. 실행 후 96더5119 등 진행중 차량 환율/판매가 수정 가능 확인.
+4. **Part B 구현 → 재산정** (아래 B).
+
 ## B. 사내직원 차등정산 공식 — 확정 (구현 보류, A 끝난 뒤)
 
 기존: `Settlement` 사내직원(per_unit) = flat `EMPLOYEE_PER_UNIT_DEFAULT=100,000`. 이걸 차등으로:
