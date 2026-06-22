@@ -25,6 +25,13 @@ return [
     'vehicle_docs_disk' => env('VEHICLE_DOCS_DISK', 'public'),
 
     /*
+    | 연동 B v2 첨부 수신 — board 가 보낸 S3 키를 읽어올 "소스" 디스크.
+    | 운영: 미설정 → vehicle_docs_disk(=s3 공유버킷)와 동일 → 서버사이드 복사(바이트 전송 X).
+    | 로컬: 'board_inbound' 로 지정(+ BOARD_STORAGE_PATH) → board 로컬 폴더에서 읽어 교차복사.
+    */
+    'purchase_sync_inbound_disk' => env('PURCHASE_SYNC_INBOUND_DISK', env('VEHICLE_DOCS_DISK', 'public')),
+
+    /*
     | DB 백업 원격 디스크 — 설정 시 db:backup 이 mysqldump 결과를 이 디스크에도 업로드.
     | 단일 인스턴스 운영 시 's3' 권장(인스턴스 유실에도 백업 보존). 빈 값이면 로컬만.
     | S3 보관주기는 버킷 lifecycle 규칙으로 관리(로컬 --keep 와 별개).
@@ -70,6 +77,14 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            'throw' => false,
+        ],
+
+        // 로컬 전용 — 연동 B 첨부 소스로 board 앱 폴더를 읽기 위한 브리지.
+        // BOARD_STORAGE_PATH = board 의 storage/app/public (purchase-board/... 키가 그 아래).
+        'board_inbound' => [
+            'driver' => 'local',
+            'root' => env('BOARD_STORAGE_PATH', storage_path('app/board-inbound')),
             'throw' => false,
         ],
 

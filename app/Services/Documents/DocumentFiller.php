@@ -5,6 +5,7 @@ namespace App\Services\Documents;
 use App\Models\Setting;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -12,6 +13,7 @@ use PhpOffice\PhpSpreadsheet\RichText\RichText;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
@@ -67,7 +69,11 @@ class DocumentFiller
             ? $spreadsheet->getSheetByName($config['sheet'])
             : $spreadsheet->getActiveSheet();
 
-        // 2) 매핑 기입 — 'multi'(선적 다중차량) vs 단일('cells')
+        // 2) 도장/서명 오버레이 — 업로드된 회사 도장이 있으면 fill 前에 얹는다.
+        //    fillMulti 의 removeRow 前이어야 선적 문서에서 도장이 트림된 위치로 함께 이동(실측).
+        $this->applyStamps($sheet, $config);
+
+        // 3) 매핑 기입 — 'multi'(선적 다중차량) vs 단일('cells')
         if (isset($config['multi'])) {
             $this->fillMulti($sheet, $config);
         } else {
@@ -76,12 +82,80 @@ class DocumentFiller
             }
         }
 
-        // 3) ⑤ 상호 헤더 — 지정 시트/셀 RichText 첫 줄(상호)을 기능설정 브랜드(대문자)로 치환.
+        // 4) ⑤ 상호 헤더 — 지정 시트/셀 RichText 첫 줄(상호)을 기능설정 브랜드(대문자)로 치환.
         if (isset($config['brandHeader'])) {
             $this->applyBrandHeader($spreadsheet, $config['brandHeader']);
         }
 
         return $spreadsheet;
+    }
+
+    /**
+     * 도장/서명 오버레이 — config['stamps'] 의 각 슬롯에 대해, 기능설정에서 업로드된
+     * 회사(template_set)별 이미지가 있으면 해당 앵커의 기존 도장을 제거하고 그 자리에 얹는다.
+     * 업로드본이 없으면 양식 기본 도장 유지(하위호환).
+     *
+     * path 기반 Drawing 사용 = 업로드 PNG 의 투명도(빨간 원형 직인)를 GD 재인코딩 없이 보존(실측).
+     * fill 前 호출이라 선적 문서의 removeRow 가 이 Drawing 도 함께 트림 위치로 이동시킨다.
+     *
+     * stamps 슬롯 스키마: ['role' => 'signature', 'anchor' => 'A60', 'width' => 612, 'height' => 179]
+     */
+    private function applyStamps(Worksheet $sheet, array $config): void
+    {
+        if (empty($config['stamps'])) {
+            return;
+        }
+
+        $set = config('company.template_set', 'system');
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+
+        foreach ($config['stamps'] as $stamp) {
+            $path = Setting::get("stamp_{$set}_{$stamp['role']}");
+            if (! $path || ! $disk->exists($path)) {
+                continue;   // 업로드본 없음 → 양식 기본 도장 유지
+            }
+            $this->overlayStamp($sheet, $stamp, $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+        }
+    }
+
+    /**
+     * 앵커의 기존 Drawing 제거 + 업로드 이미지를 같은 앵커·크기로 삽입.
+     * 임시파일은 streamDownload 저장(요청 종료 시점) 까지 살아있어야 하므로 shutdown 에서 정리.
+     */
+    private function overlayStamp(Worksheet $sheet, array $stamp, string $bytes, string $ext): void
+    {
+        $anchor = $stamp['anchor'];
+
+        // 같은 앵커의 기존 도장 제거 (ArrayObject — 뒤에서부터 unset)
+        $drawings = $sheet->getDrawingCollection();
+        for ($i = count($drawings) - 1; $i >= 0; $i--) {
+            if (isset($drawings[$i]) && $drawings[$i]->getCoordinates() === $anchor) {
+                unset($drawings[$i]);
+            }
+        }
+
+        $tmp = tempnam(sys_get_temp_dir(), 'stamp_').'.'.$ext;
+        file_put_contents($tmp, $bytes);
+        register_shutdown_function(static fn () => @unlink($tmp));
+
+        // 업로드 원본 비율을 유지하며 슬롯 박스(width×height) 안에 맞춤(contain).
+        // 박스 비율로 강제하면 정사각 도장이 가로로 찌그러짐 → 원본 종횡비 보존 후 축소.
+        [$boxW, $boxH] = [(int) $stamp['width'], (int) $stamp['height']];
+        $info = @getimagesizefromstring($bytes);
+        if ($info && $info[0] > 0 && $info[1] > 0) {
+            $scale = min($boxW / $info[0], $boxH / $info[1]);
+            [$w, $h] = [(int) round($info[0] * $scale), (int) round($info[1] * $scale)];
+        } else {
+            [$w, $h] = [$boxW, $boxH];
+        }
+
+        $drawing = new Drawing;
+        $drawing->setPath($tmp);
+        $drawing->setCoordinates($anchor);
+        $drawing->setResizeProportional(false);
+        $drawing->setWidth(max(1, $w));
+        $drawing->setHeight(max(1, $h));
+        $drawing->setWorksheet($sheet);
     }
 
     /**

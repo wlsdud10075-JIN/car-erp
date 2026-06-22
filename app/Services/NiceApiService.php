@@ -173,8 +173,12 @@ class NiceApiService
         $set($spec, 'nice_spec_displacement', $displacement);
         $set($spec, 'cc', $displacement);                        // 기본정보 배기량
 
+        // 연비(공인연비) — NICE fuelCnsmpRt (예: "9.5"). 정수 추출($digits)이 아니라 소수점 보존.
+        $fuelEff = preg_match('/\d+(?:\.\d+)?/', (string) ($d['fuelCnsmpRt'] ?? ''), $mFuel) ? $mFuel[0] : null;
+        $set($spec, 'nice_spec_fuel_efficiency', $fuelEff);
+
         // 대응 컬럼 없음(resValidPeriod·resSpecControlNo·maxPower·mtrsFomNm·fomNm)은 raw 에만 보존.
-        // NICE 미제공 컬럼(transmission·drive_type·wheelbase·fuel_efficiency)은 빈 채로 둔다.
+        // NICE 미제공 컬럼(transmission·drive_type·wheelbase)은 빈 채로 둔다.
         return [
             'success' => true,
             'registration' => $reg,

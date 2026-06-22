@@ -40,6 +40,12 @@ class SalesInvoiceMapping
                 'E26' => fn (Vehicle $v) => $v->tax_dc ? -1 * $v->tax_dc : null,                       // TAX D/C (양식 SUM 에 더해지므로 음수로 — 할인)
                 'E29' => fn (Vehicle $v) => DocValue::confirmedReceived($v),                           // DEPOSIT (확정 입금 합, 양수)
             ],
+            // 직인 오버레이 — B36 양식 기본 = 회사정보+직인 합성블록. 회사정보는 이미 텍스트 셀(C13·E15 등)에
+            // 있어 중복이므로, 직인 업로드 시 합성블록 제거 + 업로드 직인으로 교체. 미업로드 시 기본 유지.
+            'stamps' => [
+                // 직인 목표 크기 ≈160(jin 실측 — 합성블록 박스로 두면 과대). 비율 유지 fit.
+                ['role' => 'seal', 'anchor' => 'B36', 'width' => 160, 'height' => 160],
+            ],
         ];
     }
 }

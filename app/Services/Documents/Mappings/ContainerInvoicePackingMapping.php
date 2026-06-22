@@ -57,6 +57,11 @@ class ContainerInvoicePackingMapping
                     ],
                 ],
             ],
+            // 서명 오버레이 — H115 합성블록(상호+서명). 상호는 텍스트 셀(B3 등)에 있어 중복.
+            // applyStamps 는 removeRow 前 호출이라 서명도 트림 위치로 함께 이동.
+            'stamps' => [
+                ['role' => 'signature', 'anchor' => 'H115', 'width' => 490, 'height' => 234],
+            ],
         ];
     }
 }

@@ -6,10 +6,12 @@ use App\Models\AuditLog;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehiclePhoto;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -39,6 +41,9 @@ class PurchaseSyncReceiverTest extends TestCase
         // NICE→VIN 채움은 전용 테스트에서 config + Http::fake 로 검증.
         config()->set('services.nice.provide_url', '');
         config()->set('services.nice.provide_token', '');
+        // 첨부 소스 디스크를 타겟과 동일로 고정(.env 로컬 board 브리지 설정이 테스트에 새지 않게).
+        // 교차디스크 시나리오는 전용 테스트가 명시 override.
+        config()->set('filesystems.purchase_sync_inbound_disk', config('filesystems.vehicle_docs_disk'));
     }
 
     /** board 와 동일한 직렬화 + 서명으로 raw body POST. */
@@ -311,5 +316,100 @@ class PurchaseSyncReceiverTest extends TestCase
 
         $this->assertSame(1, AuditLog::where('action', 'inbound_purchase_sync')
             ->where('auditable_id', $res->json('vehicle_id'))->count());
+    }
+
+    // ── 연동 B v2 — 차량 첨부(사진/서류) 수신 ────────────────────────────
+
+    public function test_v2_attachments_create_photos_and_copy_to_car_erp_prefix(): void
+    {
+        $disk = Storage::fake(config('filesystems.vehicle_docs_disk'));
+        $disk->put('purchase-board/sales/photos/9/front.jpg', 'IMGBYTES1');
+        $disk->put('purchase-board/sales/documents/9/reg.pdf', 'PDFBYTES2');
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2,
+            'vehicle_number' => '99허9999',
+            'attachments' => [
+                ['s3_path' => 'purchase-board/sales/photos/9/front.jpg', 'original_name' => 'front.jpg', 'kind' => 'sales_photo', 'sort' => 1],
+                ['s3_path' => 'purchase-board/sales/documents/9/reg.pdf', 'original_name' => '차량등록증.pdf', 'kind' => 'sales_document', 'sort' => 2],
+            ],
+        ]));
+        $res->assertStatus(201);
+        $vid = $res->json('vehicle_id');
+
+        $photos = VehiclePhoto::where('vehicle_id', $vid)->orderBy('sort_order')->get();
+        $this->assertCount(2, $photos);
+        foreach ($photos as $p) {
+            $this->assertStringStartsWith("vehicles/{$vid}/synced/", $p->path);   // car-erp prefix 로 복사
+            $disk->assertExists($p->path);
+        }
+        $disk->assertExists('purchase-board/sales/photos/9/front.jpg');           // 원본 보존(복사≠이동)
+    }
+
+    public function test_v2_without_attachments_creates_no_photos(): void
+    {
+        Storage::fake(config('filesystems.vehicle_docs_disk'));
+        $res = $this->postSigned($this->validPayload(['contract_version' => 2, 'vehicle_number' => '11가1111']));
+        $res->assertStatus(201);
+        $this->assertSame(0, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+    }
+
+    public function test_attachment_resend_is_deduped(): void
+    {
+        Storage::fake(config('filesystems.vehicle_docs_disk'))->put('purchase-board/x/a.jpg', 'A');
+        $payload = $this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '22나2222',
+            'attachments' => [['s3_path' => 'purchase-board/x/a.jpg', 'sort' => 1]],
+        ]);
+        $first = $this->postSigned($payload);
+        $first->assertStatus(201);
+        $this->postSigned($payload)->assertStatus(200);   // 멱등 재전송
+
+        $this->assertSame(1, VehiclePhoto::where('vehicle_id', $first->json('vehicle_id'))->count());
+    }
+
+    public function test_attachments_capped_at_ten(): void
+    {
+        $disk = Storage::fake(config('filesystems.vehicle_docs_disk'));
+        $atts = [];
+        for ($i = 1; $i <= 13; $i++) {
+            $disk->put("purchase-board/c/{$i}.jpg", 'X');
+            $atts[] = ['s3_path' => "purchase-board/c/{$i}.jpg", 'sort' => $i];
+        }
+        $res = $this->postSigned($this->validPayload(['contract_version' => 2, 'vehicle_number' => '33다3333', 'attachments' => $atts]));
+        $res->assertStatus(201);
+        $this->assertSame(10, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+    }
+
+    public function test_missing_source_is_skipped_gracefully(): void
+    {
+        Storage::fake(config('filesystems.vehicle_docs_disk'));
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '44라4444',
+            'attachments' => [['s3_path' => 'purchase-board/missing/none.jpg', 'sort' => 1]],
+        ]));
+        $res->assertStatus(201);   // 차량은 생성, 누락 첨부만 skip
+        $this->assertSame(0, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+    }
+
+    public function test_attachments_cross_disk_bridge(): void
+    {
+        // 로컬 시나리오 — 소스(board)≠타겟(car-erp) 디스크 → 스트림 교차복사.
+        Storage::fake('public');                    // 타겟
+        $board = Storage::fake('board_inbound');     // 소스(board 폴더 브리지)
+        config()->set('filesystems.vehicle_docs_disk', 'public');
+        config()->set('filesystems.purchase_sync_inbound_disk', 'board_inbound');
+        $board->put('purchase-board/sales/photos/5/x.jpg', 'BOARDBYTES');
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '55마5555',
+            'attachments' => [['s3_path' => 'purchase-board/sales/photos/5/x.jpg', 'sort' => 1]],
+        ]));
+        $res->assertStatus(201);
+
+        $photos = VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->get();
+        $this->assertCount(1, $photos);
+        Storage::disk('public')->assertExists($photos[0]->path);
+        $this->assertSame('BOARDBYTES', Storage::disk('public')->get($photos[0]->path));   // board 바이트가 car-erp 로
     }
 }

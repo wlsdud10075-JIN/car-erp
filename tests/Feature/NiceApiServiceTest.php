@@ -40,6 +40,7 @@ class NiceApiServiceTest extends TestCase
                 'resCarYearModel' => '2017', 'resValidDistance' => '120000', 'resFirstDate' => '20170428',
                 'useFuelNm' => '경유', 'resFinalOwner' => '홍길동', 'resUserIdentiyNo' => '700101-1234567',
                 'engineSpec' => '6/3342', 'vhcleWt' => '1600', 'cbdLt' => '4900',
+                'fuelCnsmpRt' => '9.5',   // 연비 — 소수점 보존
                 'maxPower' => '190/4000', 'resSpecControlNo' => 'SPEC-1',   // 미매핑 → raw 만
             ],
         ], 200)]);
@@ -62,6 +63,7 @@ class NiceApiServiceTest extends TestCase
         $this->assertSame('1600', $r['spec']['weight_kg']);
         $this->assertSame('4900', $r['spec']['nice_spec_length']);
         $this->assertSame('현대', $r['spec']['nice_spec_maker']);
+        $this->assertSame('9.5', $r['spec']['nice_spec_fuel_efficiency']);   // 연비 소수점 보존
         // raw 원본 보존 (미매핑 필드 포함)
         $this->assertSame('190/4000', $r['raw']['maxPower']);
         $this->assertSame('SPEC-1', $r['raw']['resSpecControlNo']);
