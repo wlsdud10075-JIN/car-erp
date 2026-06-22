@@ -15,12 +15,13 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
  *       매입 미지급으로 떠 재무처리 대기를 채운다(예: 43머3974·21버4376). 헤이맨 과거
  *       데이터는 매입이 이미 완납된 차량이라, 지급 완료분만 골라 confirmed PBP 로 0 만든다.
  *
- * jin 결정(2026-06-22):
- *   - 판별 기준 = "1. 헤이맨 수출차량현황표.xlsx" 의 O열(송금내역확인) + BX열(정산 매입금액).
- *     · O 에 지급 증거(완료/잔금/대금/입금/매도비/중도금) → PAID
- *     · O="취소" 또는 BX=0 → 취소 (제외)
- *     · O 빈칸 → 제외 (지급 불명, 재무처리에 유지)
- *     · O 계약금/계약만 → 제외 (실제 미지급, 재무처리에 유지)
+ * jin 결정(2026-06-22, S열 반영 정밀화):
+ *   - 판별 기준 = "1. 헤이맨 수출차량현황표.xlsx" 의 S열(재고/판매 단계) + O열(송금내역) + BX열.
+ *     핵심 통찰: S열이 매입 다운스트림 단계(입고/선적대기/선적완료/입금대기/완료)면 차를
+ *     선적·판매하려고 매입+말소가 끝난 것 → 매입대금 지급됨(O 메모 누락·한글숫자여도 PAID).
+ *   - 제외(EXCLUDE) = ① O="취소" 또는 BX=0  ② S∈{매입대기, 빈} AND (O 계약금만 OR O 빈칸).
+ *     → 진짜 미지급/취소만 빠지고 재무처리에 유지. 나머지 전부 PAID.
+ *   - 실측: PAID 160 / 제외 8(취소·BX0 3 + 매입대기·계약금만 5).
  *   - 금액은 "파일"이 아니라 "서버 현재 매입합계(purchase_price+selling_fee)" 기준으로 0 만듦.
  *     파일은 어느 차량을 처리할지 명단 판별용으로만 사용(차량번호 매칭).
  *
@@ -49,8 +50,11 @@ class MarkImportPurchasePaid extends Command
 
     private const NOTE_MARKER = 'import 매입 기지급';
 
-    /** O열 지급 증거 키워드 */
-    private const PAID_KEYWORDS = ['완료', '잔금', '차량대금', '차량 대금', '대금', '입금', '매도비', '중도금'];
+    /** S열 매입 다운스트림(매입 완료 이후) 단계 — 도달했으면 매입대금 지급된 것으로 본다. */
+    private const S_DONE = ['입고', '선적대기', '선적완료', '입금대기', '완료'];
+
+    /** O열 잔금 지급 증거 키워드 (계약금만 vs 완납 구분용) */
+    private const BALANCE_KEYWORDS = ['잔금', '완료', '차량대금', '차량 대금', '중도금', '대금', '입금', '매도비'];
 
     public function handle(): int
     {
@@ -185,32 +189,36 @@ class MarkImportPurchasePaid extends Command
             if ($vno === '') {
                 continue;
             }
+            $s = trim((string) $ws->getCell('S'.$r)->getCalculatedValue());
             $o = str_replace(["\n", "\r"], ' ', trim((string) $ws->getCell('O'.$r)->getCalculatedValue()));
             $bx = $num($ws->getCell('BX'.$r)->getCalculatedValue());
 
+            // ① 취소 / BX=0 → 제외
             if (mb_strpos($o, '취소') !== false || $bx === 0) {
                 $cancel++;
                 $leave++;
 
                 continue;
             }
-            if ($o === '') {
+
+            // ② 매입 전(매입대기·빈 단계) + (계약금만 OR 빈칸) → 진짜 미지급, 제외
+            $sPre = ($s === '' || $s === '매입대기');
+            $hasBalanceEvidence = false;
+            foreach (self::BALANCE_KEYWORDS as $kw) {
+                if (mb_strpos($o, $kw) !== false) {
+                    $hasBalanceEvidence = true;
+                    break;
+                }
+            }
+            $onlyDepositOrBlank = ! $hasBalanceEvidence; // 잔금 증거 없음 = 계약금만 또는 빈칸
+            if ($sPre && $onlyDepositOrBlank) {
                 $leave++;
 
                 continue;
             }
-            $hasPaid = false;
-            foreach (self::PAID_KEYWORDS as $kw) {
-                if (mb_strpos($o, $kw) !== false) {
-                    $hasPaid = true;
-                    break;
-                }
-            }
-            if ($hasPaid) {
-                $paid[] = $vno;
-            } else {
-                $leave++; // 계약금/계약만
-            }
+
+            // ③ 그 외 전부 PAID — S 다운스트림(선적/입금) = 매입 완료 단계, 또는 O 잔금 완납.
+            $paid[] = $vno;
         }
 
         return [$paid, $leave, $cancel];
