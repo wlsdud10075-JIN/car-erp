@@ -23,7 +23,7 @@
   "c_no": null, "payee_name": null, "payee_bank": null, "payee_account": null }
 ```
 - ⚠️ **VIN 은 payload 에 없음** (2026-06-15 정정). board 는 VIN 을 모른다 — VIN 은 **NICE 차량조회로만** 나오고 그건 **car-erp 책임**. board 는 `vehicle_number + owner_name` 을 보내고 car-erp 가 NICE 로 VIN·차량정보를 채운다. **매칭/멱등/식별 키 = `vehicle_number`**. (과거 vin 기반 계약은 drift — 되돌리지 말 것.)
-- **전방호환**: **모르는 필드는 무시**(구 계약의 `vin` 잔재 포함). `contract_version` 검사 — `1` 처리, 미지원 버전 → **422** + 로그.
+- **전방호환**: **모르는 필드는 무시**(구 계약의 `vin` 잔재 포함). `contract_version` 검사 — **`1`·`2` 처리**(v2 = `attachments[]` 추가, §연동 B v2), 미지원 버전 → **422** + 로그.
 - **필수**: `vehicle_number · source · final_price · salesman_email`. `owner_name` 포함 나머지 optional. (`owner_name` 없으면 NICE 불가 → vehicle_number 로만 생성, VIN 수동/후속.)
 - **보안경계**: RRN/전화/서류 **미포함**(board가 안 보냄). `payee_account` 는 HMAC+HTTPS 한정 평문 수신.
 
@@ -36,6 +36,33 @@
 4. **NICE 조회로 VIN·차량정보 채움**: `owner_name` 있으면 `NiceApiService::lookupVehicle(vehicle_number, owner_name)` → 성공 시 registration/spec(=vehicle 컬럼명) 을 fillable 가드로 적용(`nice_reg_vin` 등 + `nice_raw` 보존). owner_name 없거나 NICE 미설정/실패 → **graceful**(VIN 없이 생성, 에러 아님). UI `lookupNiceApi()` 와 동일 매핑.
 5. **필드 매핑**: `final_price`→`purchase_price` · `vehicle_number` · `owner_name`→`nice_reg_owner_name`(baseline, NICE resFinalOwner 가 덮어쓸 수 있음) · `source`→`purchase_source`(신설) · `c_no`→`c_no`(신설, 연동 A 조인키 nullable·non-unique) · `payee_*`→**매입탭 정산계좌**(`purchase_seller_holder/bank/account`, account 는 모델 cast 자동 암호화 = RRN 패턴). **`sales_channel` 은 set 안 함** — enum 이 `export` 단일로 축소됨(2026-05-14) → default 사용.
 6. **감사**: `audit_logs` action `inbound_purchase_sync`(차량당 1행). board 는 outbound 를 `integration_events` 에 기록 → 양방향 추적.
+
+## 연동 B v2 — 차량 첨부(사진/서류) 수신 (2026-06-22)
+
+> 발신 권위 = board `SKILLS.md §12` (`contract_version: 2`). 인계 = board `meetings/handoff-car-erp-vehicle-attachments.md`.
+> ⚠️ **승인**: purchase-sync 승인 위의 신규 변경(대표 승인 영역). 대표 부재 + 근거(① 차량등록증=주소·RRN 마스킹본 ② car-erp 가 NICE 권위데이터 재등록 → board 분은 참고사본 ③ 실행파일 차단)로 **Jin 권한 진행**. board측 게이트는 이미 해소.
+
+영업이 board 에 올린 **차량 사진(sales_photo)·서류(sales_document)** 를 `won→synced` 시 1회 payload 에 실어 보낸다(**S3 키만, 바이트 X** — 공유 버킷 `heysellcar-erp-docs`).
+
+**payload 확장** (v2, 나머지 필드 불변):
+```json
+"attachments": [
+  { "s3_path": "purchase-board/sales/photos/123/abc.jpg", "original_name": "front.jpg", "kind": "sales_photo", "sort": 1 },
+  { "s3_path": "purchase-board/sales/documents/123/reg.pdf", "original_name": "차량등록증.pdf", "kind": "sales_document", "sort": 2 }
+]
+```
+
+**수신 로직** (`PurchaseSyncController::syncAttachments`):
+1. `attachments[]` 있으면 생성/매칭된 vehicle 의 **`vehicle_photos`(차량 기본정보탭 첨부, 최대 10건)** 에 행 생성. `sort` 로 정렬.
+2. **S3 접근 = (B) 서버사이드 복사** (car-erp 결정). board 키 → car-erp prefix `vehicles/{id}/synced/{md58}_{basename}` 로 `disk->copy`(같은 버킷이라 저렴, 소유권 분리 — board 가 원본 지워도 car-erp 무관).
+3. **멱등/dedup**: target 경로가 source 키로 **결정적** → 재전송 시 동일 target → 기존 행 있으면 skip. 멱등(기존 vehicle 200) 분기에서도 첨부는 보강 시도(방어적).
+4. **cap 10** 초과분 무시. **원본 누락·복사 실패 = graceful**(해당 건만 skip, 동기화 전체 성공).
+5. **스키마**: `vehicle_photos` 는 `path`·`sort_order` 만(원본명·kind 컬럼 미도입 — Jin 결정 "최소"). 파일명은 key basename. `kind` 는 prefix(photos/documents)로 구분 가능.
+6. **서류(sales_document) PII**: car-erp 기존 문서 보안 정책(접근권한·다운로드 감사)이 `vehicle_photos` 경유 자동 적용.
+
+**배포 순서**: car-erp 먼저(전방호환이라 board v1 발신 중에도 안전) → board v2 송신. e2e = board 영업자료 올린 차 won → car-erp 첨부탭에 사진/서류.
+
+테스트 = `PurchaseSyncReceiverTest`(첨부 5케이스: 생성+복사·미첨부·dedup·cap10·원본누락 graceful) 포함 23케이스.
 
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |

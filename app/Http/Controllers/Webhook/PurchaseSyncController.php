@@ -7,10 +7,12 @@ use App\Models\AuditLog;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehiclePhoto;
 use App\Services\NiceApiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -27,8 +29,8 @@ use Illuminate\Support\Facades\Validator;
  */
 class PurchaseSyncController extends Controller
 {
-    /** 현재 지원하는 계약 버전. 미지원 버전 → 422. */
-    private const SUPPORTED_VERSION = 1;
+    /** 지원 계약 버전. v2 = attachments[] 추가(전방호환, v1 도 계속 수용). 미지원 → 422. */
+    private const SUPPORTED_VERSIONS = [1, 2];
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -36,12 +38,12 @@ class PurchaseSyncController extends Controller
 
         // 전방호환 — contract_version 검사 (모르는 *필드*는 무시하되 *버전*은 게이트).
         $version = (int) ($payload['contract_version'] ?? 0);
-        if ($version !== self::SUPPORTED_VERSION) {
+        if (! in_array($version, self::SUPPORTED_VERSIONS, true)) {
             Log::warning('[purchase-sync] 미지원 contract_version', ['version' => $version]);
 
             return response()->json([
                 'message' => 'Unsupported contract_version',
-                'supported' => self::SUPPORTED_VERSION,
+                'supported' => self::SUPPORTED_VERSIONS,
             ], 422);
         }
 
@@ -56,6 +58,12 @@ class PurchaseSyncController extends Controller
             'payee_name' => ['nullable', 'string', 'max:100'],
             'payee_bank' => ['nullable', 'string', 'max:100'],
             'payee_account' => ['nullable', 'string', 'max:255'],
+            // 연동 B v2 — 차량 사진/서류 첨부(공유 S3 키만, 바이트 아님). 전방호환: 없으면 무시.
+            'attachments' => ['nullable', 'array', 'max:50'],
+            'attachments.*.s3_path' => ['required_with:attachments', 'string', 'max:1024'],
+            'attachments.*.original_name' => ['nullable', 'string', 'max:255'],
+            'attachments.*.kind' => ['nullable', 'string', 'in:sales_photo,sales_document'],
+            'attachments.*.sort' => ['nullable', 'integer'],
         ]);
 
         if ($validator->fails()) {
@@ -71,9 +79,12 @@ class PurchaseSyncController extends Controller
         // 동일 차량번호가 이미 있으면 새로 만들지 않고 기존 id 반환(스킵). NICE 재호출 방지. 200.
         $existing = Vehicle::where('vehicle_number', $data['vehicle_number'])->first();
         if ($existing) {
+            // 멱등 — 신규 생성/NICE 재호출은 스킵하되, 첨부가 오면 dedup 으로 보강(방어적).
+            $synced = $this->syncAttachments($existing, $data['attachments'] ?? []);
             Log::info('[purchase-sync] 멱등 스킵 — 기존 vehicle_number', [
                 'vehicle_id' => $existing->id,
                 'vehicle_number' => $data['vehicle_number'],
+                'attachments_added' => $synced,
             ]);
 
             return response()->json(['vehicle_id' => $existing->id], 200);
@@ -130,6 +141,8 @@ class PurchaseSyncController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
+        $attachmentsAdded = $this->syncAttachments($vehicle, $data['attachments'] ?? []);
+
         Log::info('[purchase-sync] vehicle 생성', [
             'vehicle_id' => $vehicle->id,
             'vehicle_number' => $data['vehicle_number'],
@@ -137,9 +150,75 @@ class PurchaseSyncController extends Controller
             'source' => $data['source'],
             'nice_filled' => $niceFilled,
             'vin' => $vehicle->nice_reg_vin,
+            'attachments_added' => $attachmentsAdded,
         ]);
 
         return response()->json(['vehicle_id' => $vehicle->id], 201);
+    }
+
+    /**
+     * 연동 B v2 — board 가 보낸 첨부(S3 키)를 차량 사진/첨부(vehicle_photos)로 연결.
+     * S3 접근 = (B) car-erp prefix 로 서버사이드 복사(같은 버킷 heysellcar-erp-docs, 바이트 전송 X).
+     * 멱등/방어: target 경로를 source 키로 결정적 생성 → 재전송 시 중복 행 skip. 최대 10건 cap.
+     * 원본 누락·복사 실패는 graceful(해당 건만 skip, 동기화 전체는 성공). 스키마는 path 만(원본명·kind 미저장).
+     *
+     * @param  array<int, array<string, mixed>>  $attachments
+     * @return int 생성된 첨부 행 수
+     */
+    private function syncAttachments(Vehicle $vehicle, array $attachments): int
+    {
+        if (empty($attachments)) {
+            return 0;
+        }
+
+        // sort 힌트로 정렬(없으면 0).
+        usort($attachments, fn ($a, $b) => ((int) (is_array($a) ? ($a['sort'] ?? 0) : 0)) <=> ((int) (is_array($b) ? ($b['sort'] ?? 0) : 0)));
+
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $count = VehiclePhoto::where('vehicle_id', $vehicle->id)->count();
+        $nextOrder = (int) VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
+        $created = 0;
+
+        foreach ($attachments as $att) {
+            if ($count + $created >= 10) {
+                break;   // 첨부 최대 10건 cap
+            }
+            $src = is_array($att) ? ($att['s3_path'] ?? null) : null;
+            if (! is_string($src) || $src === '') {
+                continue;
+            }
+
+            // 결정적 target — 재전송 멱등(같은 source → 같은 target → dedup). basename 으로 확장자 보존.
+            $target = 'vehicles/'.$vehicle->id.'/synced/'.substr(md5($src), 0, 8).'_'.basename($src);
+
+            if (VehiclePhoto::where('vehicle_id', $vehicle->id)->where('path', $target)->exists()) {
+                continue;   // 이미 연결됨
+            }
+
+            try {
+                if (! $disk->exists($target)) {
+                    if (! $disk->exists($src)) {
+                        Log::warning('[purchase-sync] 첨부 원본 없음 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src]);
+
+                        continue;
+                    }
+                    $disk->copy($src, $target);   // (B) 서버사이드 복사
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[purchase-sync] 첨부 복사 실패 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src, 'error' => $e->getMessage()]);
+
+                continue;
+            }
+
+            VehiclePhoto::create([
+                'vehicle_id' => $vehicle->id,
+                'path' => $target,
+                'sort_order' => ++$nextOrder,
+            ]);
+            $created++;
+        }
+
+        return $created;
     }
 
     /**
