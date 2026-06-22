@@ -70,11 +70,15 @@
 - dry-run 기본: 146건·영향차량·진행상태 분포 출력, 쓰기 없음. `--apply` 시 forceDelete + refreshCaches.
 - 로컬 트랜잭션 실증: 146→0, 96더5119 잠금 해제 ✅, progress 불변, 롤백 정상.
 
-### 다음 단계 (서버 실행 — jin 승인 대기)
-1. **서버 실행 방법 결정** (jin): (a) master 배포 후 `settlements:purge-import --apply` (배포 승인 필요) / (b) 미배포·서버 tinker 1회 실행(검증된 동일 쿼리).
-2. 실행 전 `php artisan db:backup`.
-3. 실행 후 96더5119 등 진행중 차량 환율/판매가 수정 가능 확인.
-4. **Part B 구현 → 재산정** (아래 B).
+### ✅ 서버 실행 완료 (2026-06-22 17:12, deploy #15)
+- master `7c2b4f8` (코드 2개만, .md 제외) → 자동배포.
+- 사전 백업: `storage/backups/db/car_erp-20260622_171207.sql` (799KB, S3 `db-backups/`).
+- 서버 dry-run 146건(거래완료 76·통관중 1·판매완료 32·판매중 37) → `--apply`: **146 forceDelete, 캐시 146대 재계산, 정산 잔여 0**.
+- 검증: **96더5119 회계잠금 해제 ✅** (progress 판매중 유지).
+
+### 남은 작업
+1. (jin) 96더5119 등 진행중 차량 환율/판매가 실제 수정 동작 확인.
+2. **Part B 구현 → CK='정산' 101대 재산정** (아래 B). 재산정 대상 = `scripts/audit-settlement-ck.php` G2(71)+G4(30). G4 30건 jin 정산완료 확인.
 
 ## B. 사내직원 차등정산 공식 — 확정 (구현 보류, A 끝난 뒤)
 

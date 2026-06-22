@@ -528,3 +528,16 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
 원인 = `:attribute` 한글 라벨 미매핑. `$attributes` 에 매입/판매 잔금 4개(amount·payment_date)
 라벨 + `vehicle.attr` 키(ko/en) 추가 → "매입 잔금 입금일은(는) 필수 입력 항목입니다."
 마이그 없음. (검증 동작 자체는 정상 — 입금일 필수는 미지급 계산 정확성 C2.)
+
+## 26. deploy #15 — 정산 데이터 정리 (import 일괄생성 146건 삭제) (2026-06-22)
+
+**반영** (master `cc7eb96`→`7c2b4f8`, 자동배포, 코드 2파일만). 운영 정산 146건이 전부
+`paid+closed`(ratio 50%)로 잘못 적재된 문제 정리. 원인 = `vehicles:import --with-payments`
+가 판매가>0 전 차량에 CK(정산여부) 무시하고 정산 일괄 생성 → 진행중 차량까지 회계잠금
+(96더5119 등 환율/판매가 수정 불가). 마이그 없음.
+- `settlements:purge-import [--apply]` 신설 — import 정산(note=`import — %`) forceDelete +
+  refreshCaches, dry-run 기본. 입금이력 보존. `scripts/audit-settlement-ck.php`(xlsx CK 대조).
+- 실행: 사전 `db:backup`(car_erp-20260622_171207.sql 799KB + S3) → dry-run 146건 →
+  `--apply` 146 삭제·캐시 146대 재계산·정산 잔여 0. **96더5119 회계잠금 해제 검증 완료.**
+- 다음: Part B(사내직원 차등 tier) 구현 후 CK='정산' 101대(G2 71+G4 30) 올바른 금액 재산정.
+  핸드오프 = `docs/operations/settlement-data-remediation-2026-06-22.md`.
