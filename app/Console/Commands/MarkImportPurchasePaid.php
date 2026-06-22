@@ -9,35 +9,31 @@ use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
- * import 차량 매입대금 일괄 "기지급" 처리 (2026-06-22).
+ * import 차량 매입대금 — O열 송금내역을 계약금/잔금/매도비 구조대로 PBP 입력 (2026-06-22).
  *
- * 배경: `vehicles:import` 는 매입 입금이력(PBP)을 적재하지 않아 import 차량 전부가
- *       매입 미지급으로 떠 재무처리 대기를 채운다(예: 43머3974·21버4376). 헤이맨 과거
- *       데이터는 매입이 이미 완납된 차량이라, 지급 완료분만 골라 confirmed PBP 로 0 만든다.
+ * 배경: `vehicles:import` 는 매입 입금이력(PBP)을 적재 안 해 import 차량 전부가 매입 미지급으로
+ *       떠 재무처리 대기를 채운다(예 43머3974·21버4376 — Vehicle::saved 가 전액 draft 자동생성).
  *
- * jin 결정(2026-06-22, S열 반영 정밀화):
- *   - 판별 기준 = "1. 헤이맨 수출차량현황표.xlsx" 의 S열(재고/판매 단계) + O열(송금내역) + BX열.
- *     핵심 통찰: S열이 매입 다운스트림 단계(입고/선적대기/선적완료/입금대기/완료)면 차를
- *     선적·판매하려고 매입+말소가 끝난 것 → 매입대금 지급됨(O 메모 누락·한글숫자여도 PAID).
- *   - 제외(EXCLUDE) = ① O="취소" 또는 BX=0  ② S∈{매입대기, 빈} AND (O 계약금만 OR O 빈칸).
- *     → 진짜 미지급/취소만 빠지고 재무처리에 유지. 나머지 전부 PAID.
- *   - 실측: PAID 160 / 제외 8(취소·BX0 3 + 매입대기·계약금만 5).
- *   - 금액은 "파일"이 아니라 "서버 현재 매입합계(purchase_price+selling_fee)" 기준으로 0 만듦.
- *     파일은 어느 차량을 처리할지 명단 판별용으로만 사용(차량번호 매칭).
+ * jin 결정(2026-06-22): O 메모를 파싱해 ERP 구조대로 입력(전액 lump 아님).
+ *   - O "계약금/계약 N"  → type=down(계약금)
+ *   - O "잔금/대금/입금/중도금 N" → type=balance(잔금)
+ *   - O "매도비 N"        → type=selling_fee
+ *   판별 기준 = "1. 헤이맨 수출차량현황표.xlsx" 의 S열(재고/판매단계)+O열+BX열.
  *
- * 동작(차량당):
- *   - 미지급 ≤ 0 → 이미 처리됨 skip (멱등).
- *   - 기존 draft(미확정) PBP 있으면 confirmed 로 전환(행 재사용 — 자동 Draft 중복 방지).
- *   - 확정 후에도 미지급 > 0 이면 잔액만큼 confirmed PBP 신규 생성.
- *   - payment_date 는 반드시 채움(purchase_date ?? today) — 미지급 accessor 가 non-null 요구.
+ * 차량당 처리:
+ *   - 취소(O="취소") 또는 BX=0 → skip.
+ *   - 파싱합계 ≈ 파일 매입합계(±3%)  OR  S∈{입고/선적대기/선적완료/입금대기/완료} → **완납**:
+ *       계약금/매도비는 파싱값, 잔금 = 서버 매입합계 - 계약금 - 매도비 (차액 채워 미지급 0).
+ *       (빈칸·한글숫자 "2억5백만원"·오타 "14,3000,000" 등 파싱불완전도 S단계로 보정)
+ *   - 그 외(S∈{매입대기,빈} + 계약금만) → **부분**: 계약금(+매도비)만 입력, 잔금은 미지급 유지.
  *
- * 마커: note='import 매입 기지급' / finance_note 에 일자 — 감사·멱등 식별용.
+ * 금액 기준 = 서버 현재 매입합계(purchase_price+selling_fee). 파일 = 명단/구조 판별용.
+ * 기존 미확정(auto-draft) PBP 는 삭제 후 구조 입력(중복 방지). 멱등: note 마커 있으면 skip.
  *
- * 가드: artisan 컨텍스트(auth 없음)라 PBP creating 가드 자동 우회. draft 의 confirmed_at 최초
- *       설정은 updating 가드 통과(원래 confirmed_at=null). $allowConfirmedMutation 불필요.
+ * 가드: artisan(auth 없음) → PBP creating 가드 자동 우회. 미확정 draft 삭제는 deleting 가드 통과.
  *
- *   php artisan vehicles:mark-import-purchase-paid "경로/1. 헤이맨 수출차량현황표.xlsx"           # dry-run
- *   php artisan vehicles:mark-import-purchase-paid "..." --apply                                  # 실제 처리
+ *   php artisan vehicles:mark-import-purchase-paid "경로/1. 헤이맨 수출차량현황표.xlsx"            # dry-run
+ *   php artisan vehicles:mark-import-purchase-paid "..." --apply                                   # 실제 처리
  */
 class MarkImportPurchasePaid extends Command
 {
@@ -46,15 +42,12 @@ class MarkImportPurchasePaid extends Command
         {--sheet=수출차량매입-2026 : 시트명}
         {--apply : 실제 처리 (미지정 시 dry-run — 명단/계획만, 쓰기 없음)}';
 
-    protected $description = 'import 차량 매입대금 일괄 기지급 처리 (1.파일 O/BX 판별, 서버 매입합계 기준). 기본 dry-run.';
+    protected $description = 'import 차량 매입대금을 O열 계약금/잔금 구조대로 PBP 입력 (S열 보정). 기본 dry-run.';
 
-    private const NOTE_MARKER = 'import 매입 기지급';
+    private const NOTE_MARKER = 'import 매입(구조)';
 
     /** S열 매입 다운스트림(매입 완료 이후) 단계 — 도달했으면 매입대금 지급된 것으로 본다. */
     private const S_DONE = ['입고', '선적대기', '선적완료', '입금대기', '완료'];
-
-    /** O열 잔금 지급 증거 키워드 (계약금만 vs 완납 구분용) */
-    private const BALANCE_KEYWORDS = ['잔금', '완료', '차량대금', '차량 대금', '중도금', '대금', '입금', '매도비'];
 
     public function handle(): int
     {
@@ -65,20 +58,28 @@ class MarkImportPurchasePaid extends Command
             return self::FAILURE;
         }
 
-        // ── 1. 파일에서 PAID 차량번호 판별 ──
-        [$paidNumbers, $leaveCount, $cancelCount] = $this->classifyFromFile($path);
-        $this->info('파일 판별: PAID '.count($paidNumbers)."대 / 제외(취소 {$cancelCount} + 빈칸·계약금만 ".($leaveCount - $cancelCount).'대)');
+        $parsed = $this->parseFile($path);   // [vno => row]
+        $cancelled = count(array_filter($parsed, fn ($r) => $r['cancelled']));
+        $this->info('파일: '.count($parsed).'행 (취소/BX0 '.$cancelled.'대 제외)');
         $this->newLine();
 
-        // ── 2. 서버 차량 매칭 + 처리 계획 ──
-        $plans = [];      // [vno => ['vehicle'=>, 'unpaid'=>, 'drafts'=>count, 'action'=>]]
+        $plans = [];
         $unmatched = [];
         $already = 0;
 
-        foreach ($paidNumbers as $vno) {
+        foreach ($parsed as $vno => $row) {
+            if ($row['cancelled']) {
+                continue;
+            }
             $v = Vehicle::where('vehicle_number', $vno)->first();
             if (! $v) {
                 $unmatched[] = $vno;
+
+                continue;
+            }
+            // 멱등: 이미 구조 입력된 차량 skip
+            if ($v->purchaseBalancePayments()->where('note', 'like', self::NOTE_MARKER.'%')->exists()) {
+                $already++;
 
                 continue;
             }
@@ -88,23 +89,28 @@ class MarkImportPurchasePaid extends Command
 
                 continue;
             }
-            $drafts = $v->purchaseBalancePayments()->whereNull('confirmed_at')->count();
-            $plans[$vno] = ['vehicle' => $v, 'unpaid' => $unpaid, 'drafts' => $drafts];
+            $plans[$vno] = $this->buildPlan($v, $row, $unpaid);
         }
 
-        $sumUnpaid = array_sum(array_map(fn ($p) => $p['unpaid'], $plans));
-        $this->info('처리 대상: '.count($plans).'대 (미지급 합계 '.number_format($sumUnpaid).'원)');
-        $this->line("  이미 지급처리됨(미지급≤0) skip: {$already}대");
-        $this->line('  서버에 없는 차량번호: '.count($unmatched).'대'.(count($unmatched) ? ' — '.implode(', ', array_slice($unmatched, 0, 20)).(count($unmatched) > 20 ? ' …' : '') : ''));
+        // ── 요약 ──
+        $fullCnt = count(array_filter($plans, fn ($p) => $p['full']));
+        $partCnt = count($plans) - $fullCnt;
+        $sumDown = array_sum(array_column($plans, 'down'));
+        $sumBal = array_sum(array_column($plans, 'balance'));
+        $sumSell = array_sum(array_column($plans, 'selling'));
+        $this->info('처리 대상: '.count($plans)."대  (완납 {$fullCnt} / 부분(계약금만) {$partCnt})");
+        $this->line('  입력 합계 — 계약금 '.number_format($sumDown).' / 잔금 '.number_format($sumBal).' / 매도비 '.number_format($sumSell));
+        $this->line("  이미 처리됨 skip: {$already}대 / 서버에 없음: ".count($unmatched).'대'.(count($unmatched) ? ' — '.implode(', ', array_slice($unmatched, 0, 15)).(count($unmatched) > 15 ? ' …' : '') : ''));
         $this->newLine();
 
-        // 계획 샘플
-        $this->line('처리 계획 (샘플 15):');
+        $this->line('처리 계획 (샘플 20):');
         $i = 0;
         foreach ($plans as $vno => $p) {
-            $how = $p['drafts'] > 0 ? "draft {$p['drafts']}건 확정".($p['unpaid'] - $this->draftSum($p['vehicle']) > 0 ? ' + 잔액 생성' : '') : 'confirmed PBP 신규생성';
-            $this->line(sprintf('  %-11s %-8s 미지급=%-11s → %s', $vno, $p['vehicle']->progress_status_cache, number_format($p['unpaid']), $how));
-            if (++$i >= 15) {
+            $this->line(sprintf('  %-11s %-6s 계약금=%-10s 잔금=%-11s 매도비=%-9s 잔여미지급=%s',
+                $vno, $p['full'] ? '완납' : '부분',
+                number_format($p['down']), number_format($p['balance']), number_format($p['selling']),
+                number_format($p['unpaidAfter'])));
+            if (++$i >= 20) {
                 $this->line('  …');
                 break;
             }
@@ -117,32 +123,28 @@ class MarkImportPurchasePaid extends Command
             return self::SUCCESS;
         }
 
-        // ── 3. 실제 처리 ──
         $today = now()->toDateString();
-        $created = 0;
-        $confirmed = 0;
-        DB::transaction(function () use ($plans, $today, &$created, &$confirmed) {
+        $rowsCreated = 0;
+        $draftsDeleted = 0;
+        DB::transaction(function () use ($plans, $today, &$rowsCreated, &$draftsDeleted) {
             foreach ($plans as $p) {
                 $v = $p['vehicle'];
                 $payDate = $v->purchase_date?->toDateString() ?? $today;
 
-                // 기존 draft 확정
+                // 기존 미확정 auto-draft 삭제 (중복 방지)
                 foreach ($v->purchaseBalancePayments()->whereNull('confirmed_at')->get() as $draft) {
-                    $draft->confirmed_at = now();
-                    $draft->payment_date = $draft->payment_date ?? $payDate;
-                    $draft->finance_note = trim(($draft->finance_note ? $draft->finance_note.' / ' : '').self::NOTE_MARKER.' '.$today);
-                    $draft->save();
-                    $confirmed++;
+                    $draft->delete();
+                    $draftsDeleted++;
                 }
 
-                // 확정 후 남은 미지급 → 신규 confirmed PBP
-                $v->refresh();
-                $remain = $v->purchase_unpaid_amount;
-                if ($remain > 0) {
+                foreach (['down' => $p['down'], 'balance' => $p['balance'], 'selling_fee' => $p['selling']] as $type => $amt) {
+                    if ($amt <= 0) {
+                        continue;
+                    }
                     PurchaseBalancePayment::create([
                         'vehicle_id' => $v->id,
-                        'amount' => $remain,
-                        'type' => 'balance',
+                        'amount' => $amt,
+                        'type' => $type,
                         'payment_date' => $payDate,
                         'confirmed_at' => now(),
                         'confirmed_by_user_id' => null,
@@ -150,27 +152,53 @@ class MarkImportPurchasePaid extends Command
                         'note' => self::NOTE_MARKER,
                         'finance_note' => self::NOTE_MARKER.' '.$today,
                     ]);
-                    $created++;
+                    $rowsCreated++;
                 }
 
                 $v->refreshCaches();
             }
         });
 
-        $this->info("✅ 완료: draft 확정 {$confirmed}건 + 신규 confirmed PBP {$created}건. 처리 차량 ".count($plans).'대.');
+        $this->info("✅ 완료: PBP {$rowsCreated}건 생성 (계약금/잔금/매도비), draft {$draftsDeleted}건 삭제. 처리 ".count($plans).'대.');
 
         return self::SUCCESS;
     }
 
-    private function draftSum(Vehicle $v): int
+    /**
+     * 차량 1대 처리 계획 산정.
+     *
+     * @return array{vehicle:Vehicle, full:bool, down:int, balance:int, selling:int, unpaidAfter:int}
+     */
+    private function buildPlan(Vehicle $v, array $row, int $unpaid): array
     {
-        return (int) $v->purchaseBalancePayments()->whereNull('confirmed_at')->sum('amount');
+        $down = min($row['down'], $unpaid);
+        $selling = min($row['selling'], max(0, $unpaid - $down));
+
+        $ratioOk = $row['fileTotal'] > 0 && $row['parsedSum'] / $row['fileTotal'] >= 0.97 && $row['parsedSum'] / $row['fileTotal'] <= 1.03;
+        $full = $ratioOk || in_array($row['s'], self::S_DONE, true);
+
+        if ($full) {
+            $balance = max(0, $unpaid - $down - $selling);  // 차액 채워 완납
+        } else {
+            $balance = min($row['balance'], max(0, $unpaid - $down - $selling)); // 파싱된 잔금만 (보통 0)
+        }
+
+        return [
+            'vehicle' => $v,
+            'full' => $full,
+            'down' => $down,
+            'balance' => $balance,
+            'selling' => $selling,
+            'unpaidAfter' => $unpaid - $down - $balance - $selling,
+        ];
     }
 
     /**
-     * @return array{0: list<string>, 1: int, 2: int} [paidNumbers, leaveTotal, cancelCount]
+     * xlsx → [vno => ['s','o','fileTotal','bx','down','balance','selling','parsedSum','cancelled']]
+     *
+     * @return array<string, array<string, mixed>>
      */
-    private function classifyFromFile(string $path): array
+    private function parseFile(string $path): array
     {
         $reader = IOFactory::createReader('Xlsx');
         $reader->setReadDataOnly(true);
@@ -180,10 +208,7 @@ class MarkImportPurchasePaid extends Command
 
         $num = fn ($v) => (int) round((float) str_replace([',', ' ', '원'], '', (string) $v));
 
-        $paid = [];
-        $leave = 0;
-        $cancel = 0;
-
+        $out = [];
         for ($r = 3; $r <= $high; $r++) {
             $vno = trim((string) $ws->getCell('D'.$r)->getCalculatedValue());
             if ($vno === '') {
@@ -191,36 +216,62 @@ class MarkImportPurchasePaid extends Command
             }
             $s = trim((string) $ws->getCell('S'.$r)->getCalculatedValue());
             $o = str_replace(["\n", "\r"], ' ', trim((string) $ws->getCell('O'.$r)->getCalculatedValue()));
+            $fileTotal = $num($ws->getCell('P'.$r)->getCalculatedValue()) + $num($ws->getCell('Q'.$r)->getCalculatedValue());
             $bx = $num($ws->getCell('BX'.$r)->getCalculatedValue());
 
-            // ① 취소 / BX=0 → 제외
-            if (mb_strpos($o, '취소') !== false || $bx === 0) {
-                $cancel++;
-                $leave++;
+            $cancelled = mb_strpos($o, '취소') !== false || $bx === 0;
+            $pays = $this->parsePayments($o);
+            $down = array_sum(array_map(fn ($p) => $p['label'] === 'down' ? $p['amount'] : 0, $pays));
+            $balance = array_sum(array_map(fn ($p) => in_array($p['label'], ['balance', 'lump', 'unknown'], true) ? $p['amount'] : 0, $pays));
+            $selling = array_sum(array_map(fn ($p) => $p['label'] === 'selling' ? $p['amount'] : 0, $pays));
 
-                continue;
-            }
-
-            // ② 매입 전(매입대기·빈 단계) + (계약금만 OR 빈칸) → 진짜 미지급, 제외
-            $sPre = ($s === '' || $s === '매입대기');
-            $hasBalanceEvidence = false;
-            foreach (self::BALANCE_KEYWORDS as $kw) {
-                if (mb_strpos($o, $kw) !== false) {
-                    $hasBalanceEvidence = true;
-                    break;
-                }
-            }
-            $onlyDepositOrBlank = ! $hasBalanceEvidence; // 잔금 증거 없음 = 계약금만 또는 빈칸
-            if ($sPre && $onlyDepositOrBlank) {
-                $leave++;
-
-                continue;
-            }
-
-            // ③ 그 외 전부 PAID — S 다운스트림(선적/입금) = 매입 완료 단계, 또는 O 잔금 완납.
-            $paid[] = $vno;
+            $out[$vno] = compact('s', 'o', 'fileTotal', 'bx', 'down', 'balance', 'selling', 'cancelled')
+                + ['parsedSum' => $down + $balance + $selling];
         }
 
-        return [$paid, $leave, $cancel];
+        return $out;
+    }
+
+    /**
+     * O 메모 → [['label'=>down|balance|selling|lump|unknown, 'amount'=>int], ...]
+     *
+     * @return list<array{label:string, amount:int}>
+     */
+    private function parsePayments(string $o): array
+    {
+        $o = str_replace(["\n", "\r"], ' / ', $o);
+        $o = preg_replace('#(?<!\d)\d{1,2}/\d{1,2}(?!\d)#', ' ', $o); // 날짜(M/D) 제거
+
+        $hits = [];
+        if (preg_match_all('/([0-9][0-9,]*)\s*만\s*원?/u', $o, $m, PREG_OFFSET_CAPTURE)) {
+            foreach ($m[1] as $i => $g) {
+                $hits[] = ['amt' => (int) str_replace(',', '', $g[0]) * 10000, 'pos' => $m[0][$i][1], 'len' => strlen($m[0][$i][0])];
+            }
+        }
+        $oNoMan = preg_replace('/[0-9][0-9,]*\s*만\s*원?/u', ' ', $o);
+        if (preg_match_all('/[0-9]{1,3}(?:,[0-9]{3})+|[0-9]{6,}/u', $oNoMan, $m2, PREG_OFFSET_CAPTURE)) {
+            foreach ($m2[0] as $g) {
+                $hits[] = ['amt' => (int) str_replace(',', '', $g[0]), 'pos' => $g[1], 'len' => strlen($g[0])];
+            }
+        }
+
+        $out = [];
+        foreach ($hits as $h) {
+            $ctx = substr($o, max(0, $h['pos'] - 18), $h['len'] + 36);
+            if (preg_match('/계약/u', $ctx)) {
+                $label = 'down';
+            } elseif (preg_match('/잔금|중도금/u', $ctx)) {
+                $label = 'balance';
+            } elseif (preg_match('/매도비/u', $ctx)) {
+                $label = 'selling';
+            } elseif (preg_match('/대금|입금|송금/u', $ctx)) {
+                $label = 'lump';
+            } else {
+                $label = 'unknown';
+            }
+            $out[] = ['label' => $label, 'amount' => $h['amt']];
+        }
+
+        return $out;
     }
 }
