@@ -174,7 +174,14 @@ class PurchaseSyncController extends Controller
         // sort 힌트로 정렬(없으면 0).
         usort($attachments, fn ($a, $b) => ((int) (is_array($a) ? ($a['sort'] ?? 0) : 0)) <=> ((int) (is_array($b) ? ($b['sort'] ?? 0) : 0)));
 
-        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        // 소스(board 가 올린 키) ↔ 타겟(car-erp 보관) 디스크. 운영=동일(s3) → 서버사이드 복사,
+        // 로컬=다름(board_inbound) → 스트림 교차복사. (filesystems.purchase_sync_inbound_disk)
+        $targetName = config('filesystems.vehicle_docs_disk');
+        $sourceName = config('filesystems.purchase_sync_inbound_disk') ?: $targetName;
+        $targetDisk = Storage::disk($targetName);
+        $sourceDisk = Storage::disk($sourceName);
+        $sameDisk = $sourceName === $targetName;
+
         $count = VehiclePhoto::where('vehicle_id', $vehicle->id)->count();
         $nextOrder = (int) VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
         $created = 0;
@@ -196,13 +203,17 @@ class PurchaseSyncController extends Controller
             }
 
             try {
-                if (! $disk->exists($target)) {
-                    if (! $disk->exists($src)) {
+                if (! $targetDisk->exists($target)) {
+                    if (! $sourceDisk->exists($src)) {
                         Log::warning('[purchase-sync] 첨부 원본 없음 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src]);
 
                         continue;
                     }
-                    $disk->copy($src, $target);   // (B) 서버사이드 복사
+                    if ($sameDisk) {
+                        $targetDisk->copy($src, $target);                          // 운영: 같은 디스크 서버사이드 복사
+                    } else {
+                        $targetDisk->writeStream($target, $sourceDisk->readStream($src));   // 로컬: 교차 디스크 스트림
+                    }
                 }
             } catch (\Throwable $e) {
                 Log::warning('[purchase-sync] 첨부 복사 실패 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src, 'error' => $e->getMessage()]);

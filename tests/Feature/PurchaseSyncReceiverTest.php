@@ -41,6 +41,9 @@ class PurchaseSyncReceiverTest extends TestCase
         // NICE→VIN 채움은 전용 테스트에서 config + Http::fake 로 검증.
         config()->set('services.nice.provide_url', '');
         config()->set('services.nice.provide_token', '');
+        // 첨부 소스 디스크를 타겟과 동일로 고정(.env 로컬 board 브리지 설정이 테스트에 새지 않게).
+        // 교차디스크 시나리오는 전용 테스트가 명시 override.
+        config()->set('filesystems.purchase_sync_inbound_disk', config('filesystems.vehicle_docs_disk'));
     }
 
     /** board 와 동일한 직렬화 + 서명으로 raw body POST. */
@@ -387,5 +390,26 @@ class PurchaseSyncReceiverTest extends TestCase
         ]));
         $res->assertStatus(201);   // 차량은 생성, 누락 첨부만 skip
         $this->assertSame(0, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+    }
+
+    public function test_attachments_cross_disk_bridge(): void
+    {
+        // 로컬 시나리오 — 소스(board)≠타겟(car-erp) 디스크 → 스트림 교차복사.
+        Storage::fake('public');                    // 타겟
+        $board = Storage::fake('board_inbound');     // 소스(board 폴더 브리지)
+        config()->set('filesystems.vehicle_docs_disk', 'public');
+        config()->set('filesystems.purchase_sync_inbound_disk', 'board_inbound');
+        $board->put('purchase-board/sales/photos/5/x.jpg', 'BOARDBYTES');
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '55마5555',
+            'attachments' => [['s3_path' => 'purchase-board/sales/photos/5/x.jpg', 'sort' => 1]],
+        ]));
+        $res->assertStatus(201);
+
+        $photos = VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->get();
+        $this->assertCount(1, $photos);
+        Storage::disk('public')->assertExists($photos[0]->path);
+        $this->assertSame('BOARDBYTES', Storage::disk('public')->get($photos[0]->path));   // board 바이트가 car-erp 로
     }
 }

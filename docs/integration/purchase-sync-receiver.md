@@ -54,7 +54,9 @@
 
 **수신 로직** (`PurchaseSyncController::syncAttachments`):
 1. `attachments[]` 있으면 생성/매칭된 vehicle 의 **`vehicle_photos`(차량 기본정보탭 첨부, 최대 10건)** 에 행 생성. `sort` 로 정렬.
-2. **S3 접근 = (B) 서버사이드 복사** (car-erp 결정). board 키 → car-erp prefix `vehicles/{id}/synced/{md58}_{basename}` 로 `disk->copy`(같은 버킷이라 저렴, 소유권 분리 — board 가 원본 지워도 car-erp 무관).
+2. **S3 접근 = (B) 서버사이드 복사** (car-erp 결정). board 키 → car-erp prefix `vehicles/{id}/synced/{md58}_{basename}`. 소스 디스크 = `config('filesystems.purchase_sync_inbound_disk')`(기본 = vehicle_docs_disk).
+   - **운영**: 소스=타겟=같은 s3 버킷 → `disk->copy`(서버사이드, 바이트 전송 X). **env 무설정 = 자동.**
+   - **로컬**: board·car-erp 가 별도 디스크라 그대로면 source 못 찾음(skip). `.env` 에 `PURCHASE_SYNC_INBOUND_DISK=board_inbound` + `BOARD_STORAGE_PATH=<board>/storage/app/public` → 교차 디스크 스트림 복사로 로컬 e2e 가능. (운영엔 이 두 env 미설정.)
 3. **멱등/dedup**: target 경로가 source 키로 **결정적** → 재전송 시 동일 target → 기존 행 있으면 skip. 멱등(기존 vehicle 200) 분기에서도 첨부는 보강 시도(방어적).
 4. **cap 10** 초과분 무시. **원본 누락·복사 실패 = graceful**(해당 건만 skip, 동기화 전체 성공).
 5. **스키마**: `vehicle_photos` 는 `path`·`sort_order` 만(원본명·kind 컬럼 미도입 — Jin 결정 "최소"). 파일명은 key basename. `kind` 는 prefix(photos/documents)로 구분 가능.
