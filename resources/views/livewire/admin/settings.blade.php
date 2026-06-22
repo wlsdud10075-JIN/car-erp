@@ -1,16 +1,26 @@
 <?php
 
 use App\Models\Setting;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('components.layouts.app')] class extends Component
 {
+    use WithFileUploads;
+
     public string $sidebarBrand = '';
 
     public bool $localeEnEnabled = false;
 
     public bool $alarmEnabled = false;
+
+    public $signatureUpload = null;
+
+    public ?string $signaturePath = null;
+
+    public ?string $signatureUrl = null;
 
     public function mount(): void
     {
@@ -20,6 +30,73 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->sidebarBrand = Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        $this->refreshSignatureState();
+    }
+
+    // 현재 template_set(=회사) — 배포별 1개 회사라 이 화면은 자기 회사 도장만 관리.
+    private function stampSet(): string
+    {
+        return config('company.template_set', 'system');
+    }
+
+    private function refreshSignatureState(): void
+    {
+        $this->signaturePath = Setting::get('stamp_'.$this->stampSet().'_signature');
+        $this->signatureUrl = null;
+        if ($this->signaturePath) {
+            try {
+                $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+                if ($disk->exists($this->signaturePath)) {
+                    $this->signatureUrl = $disk->url($this->signaturePath);
+                }
+            } catch (\Throwable $e) {
+                $this->signatureUrl = null;   // 미리보기 URL 미지원 디스크 — 상태만 표시
+            }
+        }
+    }
+
+    public function updatedSignatureUpload(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate(
+            ['signatureUpload' => 'image|mimes:png,jpg,jpeg|max:2048'],
+            ['signatureUpload' => __('feature_settings.stamp_invalid')],
+        );
+
+        $set = $this->stampSet();
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+
+        // 기존 업로드본 제거(확장자 바뀜 대비) 후 저장
+        if ($old = Setting::get('stamp_'.$set.'_signature')) {
+            $disk->delete($old);
+        }
+        $ext = strtolower($this->signatureUpload->getClientOriginalExtension() ?: 'png');
+        $path = $this->signatureUpload->storeAs('stamps/'.$set, 'signature.'.$ext, config('filesystems.vehicle_docs_disk'));
+
+        Setting::updateOrCreate(
+            ['key' => 'stamp_'.$set.'_signature'],
+            ['value' => $path, 'type' => 'string', 'description' => '서류 서명 이미지 ('.$set.')'],
+        );
+
+        $this->signatureUpload = null;
+        $this->refreshSignatureState();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    public function removeSignature(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $set = $this->stampSet();
+        if ($old = Setting::get('stamp_'.$set.'_signature')) {
+            Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($old);
+        }
+        Setting::where('key', 'stamp_'.$set.'_signature')->delete();
+        $this->refreshSignatureState();
+        $this->dispatch('notify', message: __('feature_settings.stamp_removed'), type: 'success');
     }
 
     public function save(): void
@@ -180,6 +257,61 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                              after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
             </label>
+        </div>
+    </div>
+
+    {{-- 도장 · 서명 그룹 --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-rose-500"></span>
+                <span class="section-title">{{ __('feature_settings.stamp_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.stamp_hint') }}</p>
+
+            {{-- 서명 슬롯 --}}
+            <div class="rounded-md border border-gray-100 px-3 py-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-sm text-gray-700">
+                        {{ __('feature_settings.stamp_signature_label') }}
+                        <span class="text-xs text-gray-400">{{ __('feature_settings.stamp_signature_sub') }}</span>
+                    </span>
+                    @if ($signaturePath)
+                        <span class="badge badge-green">{{ __('feature_settings.stamp_uploaded') }}</span>
+                    @else
+                        <span class="badge badge-gray">{{ __('feature_settings.stamp_default') }}</span>
+                    @endif
+                </div>
+
+                @if ($signatureUrl)
+                    <div class="mt-2">
+                        <img src="{{ $signatureUrl }}" alt="signature" class="max-h-20 rounded border border-gray-200 bg-white p-1">
+                    </div>
+                @endif
+
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <label class="btn-primary cursor-pointer text-sm">
+                        <span wire:loading.remove wire:target="signatureUpload">{{ __('feature_settings.stamp_upload_btn') }}</span>
+                        <span wire:loading wire:target="signatureUpload">…</span>
+                        <input type="file" wire:model="signatureUpload" accept="image/png,image/jpeg" class="hidden">
+                    </label>
+                    @if ($signaturePath)
+                        <button type="button" wire:click="removeSignature" class="text-sm text-gray-500 underline hover:text-rose-600">
+                            {{ __('feature_settings.stamp_remove_btn') }}
+                        </button>
+                    @endif
+                </div>
+
+                @error('signatureUpload')
+                    <p class="mt-2 text-xs text-rose-600">{{ $message }}</p>
+                @enderror
+            </div>
         </div>
     </div>
 </div>
