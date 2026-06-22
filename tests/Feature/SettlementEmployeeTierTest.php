@@ -41,13 +41,13 @@ class SettlementEmployeeTierTest extends TestCase
         $this->assertSame(200_000, Settlement::employeePerUnitTier(50_000_000, $purchase));
     }
 
-    public function test_high_purchase_uses_rate_even_for_negative_margin(): void
+    public function test_high_purchase_uses_rate_with_zero_floor(): void
     {
         // 매입금액 ≥ 1억 → 총마진 × 25% (트리거 최우선)
         $this->assertSame(2_500_000, Settlement::employeePerUnitTier(10_000_000, 100_000_000));
         $this->assertSame(2_500_000, Settlement::employeePerUnitTier(10_000_000, 250_000_000));
-        // 1억 이상 + 음수 마진 → 음수 (엑셀 공식 그대로)
-        $this->assertSame(-250_000, Settlement::employeePerUnitTier(-1_000_000, 120_000_000));
+        // 1억 이상 + 음수 마진 → 0 바닥 (jin 2026-06-22 확정)
+        $this->assertSame(0, Settlement::employeePerUnitTier(-1_000_000, 120_000_000));
     }
 
     public function test_setting_override_reflected(): void
