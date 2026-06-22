@@ -138,12 +138,23 @@ class DocumentFiller
         file_put_contents($tmp, $bytes);
         register_shutdown_function(static fn () => @unlink($tmp));
 
+        // 업로드 원본 비율을 유지하며 슬롯 박스(width×height) 안에 맞춤(contain).
+        // 박스 비율로 강제하면 정사각 도장이 가로로 찌그러짐 → 원본 종횡비 보존 후 축소.
+        [$boxW, $boxH] = [(int) $stamp['width'], (int) $stamp['height']];
+        $info = @getimagesizefromstring($bytes);
+        if ($info && $info[0] > 0 && $info[1] > 0) {
+            $scale = min($boxW / $info[0], $boxH / $info[1]);
+            [$w, $h] = [(int) round($info[0] * $scale), (int) round($info[1] * $scale)];
+        } else {
+            [$w, $h] = [$boxW, $boxH];
+        }
+
         $drawing = new Drawing;
         $drawing->setPath($tmp);
         $drawing->setCoordinates($anchor);
         $drawing->setResizeProportional(false);
-        $drawing->setWidth((int) $stamp['width']);
-        $drawing->setHeight((int) $stamp['height']);
+        $drawing->setWidth(max(1, $w));
+        $drawing->setHeight(max(1, $h));
         $drawing->setWorksheet($sheet);
     }
 

@@ -109,6 +109,24 @@ class StampOverlayTest extends TestCase
         $this->assertCount(1, $seals, '선적 계약서에 업로드 직인 1개 (removeRow 후에도 생존)');
     }
 
+    public function test_large_upload_is_scaled_to_fit_without_distortion(): void
+    {
+        Storage::fake($this->disk());
+        // 1000x1000 정사각 도장 — 박스(598x373)로 강제하면 찌그러짐. 비율 유지 fit 이어야 함.
+        $bytes = (string) UploadedFile::fake()->image('seal.png', 1000, 1000)->get();
+        Storage::disk($this->disk())->put('stamps/system/seal.png', $bytes);
+        Setting::updateOrCreate(['key' => 'stamp_system_seal'], ['value' => 'stamps/system/seal.png', 'type' => 'string']);
+
+        $vehicle = Vehicle::create(['vehicle_number' => '90마1234', 'sales_channel' => 'export']);
+        $ss = (new DocumentFiller($vehicle))->spreadsheet('invoice');
+        $sheet = $ss->getSheetByName('Invoice');
+
+        $d = $this->drawingAt($sheet, 'B36')[0];
+        $this->assertSame($d->getWidth(), $d->getHeight(), '정사각 업로드는 정사각 유지(왜곡 X)');
+        $this->assertLessThanOrEqual(598, $d->getWidth(), '박스 폭 이내');
+        $this->assertLessThanOrEqual(373, $d->getHeight(), '박스 높이 이내');
+    }
+
     public function test_super_can_upload_and_remove_signature(): void
     {
         Storage::fake($this->disk());
