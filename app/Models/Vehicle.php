@@ -284,7 +284,7 @@ class Vehicle extends Model
      * 회의록 2026-05-18 vehicle-ledger-field-lock — 사용자 최종 결정 반영:
      *   ① 트리거 = confirmed FinalPayment OR PurchaseBalancePayment 1건 이상
      *   ② 잠금 컬럼 = LEDGER_LOCK_FIELDS (Tier 1·2 통합 21컬럼)
-     *   ③ 잠금 해제 권한 = admin + super (User::canAccessAdmin)
+     *   ③ 잠금 해제 권한 = super/admin + role '관리'(본인 팀, User::canUnlockLedger) — 2026-06-22 jin override
      *   ④ 사유 10자 이상 + 저장 1회 완료 즉시 재잠금 (cache token pull 패턴)
      *
      * 신규 차량 등록(exists=false)은 자유 — 잔금 자체가 없음.

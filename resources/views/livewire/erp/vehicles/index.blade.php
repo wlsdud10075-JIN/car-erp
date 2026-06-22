@@ -88,10 +88,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── 큐 21 — Ledger 잠금 상태 (회의록 2026-05-18) ───────────────
     // confirmed FinalPayment OR PurchaseBalancePayment 1건 이상 → isLedgerLocked = true.
-    // admin/super가 [잠금 해제] 모달에서 사유 입력 → unlock 토큰 발급 → hasLedgerUnlockToken = true.
+    // super/admin·본인 팀 관리가 [잠금 해제] 모달에서 사유 입력 → unlock 토큰 발급 → hasLedgerUnlockToken = true.
     // 저장 1회 후 토큰 소비되어 다시 false로. openEdit / save 후 갱신.
     public bool $isLedgerLocked = false;
     public bool $hasLedgerUnlockToken = false;
+    // 잠금 해제 권한 = super/admin(전체) + role '관리'(본인 팀). refreshLedgerLockState 에서 편집 차량 기준 갱신.
+    public bool $canUnlockLedger = false;
     public bool $showLedgerUnlockModal = false;
     public string $ledgerUnlockReason = '';
 
@@ -1278,6 +1280,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 큐 21 — Ledger 잠금 상태 메서드 (회의록 2026-05-18) ────────────
     private function refreshLedgerLockState(?Vehicle $vehicle = null): void
     {
+        $this->canUnlockLedger = false;
         if (! $this->editingId) {
             $this->isLedgerLocked = false;
             $this->hasLedgerUnlockToken = false;
@@ -1295,16 +1298,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->hasLedgerUnlockToken = \Illuminate\Support\Facades\Cache::has(
             Vehicle::ledgerUnlockCacheKey($v->id)
         );
+        $this->canUnlockLedger = auth()->user()?->canUnlockLedger($v) ?? false;
     }
 
     public function openLedgerUnlockModal(): void
     {
-        if (! auth()->user()?->canAccessAdmin()) {
-            $this->dispatch('notify', message: __('vehicle.toast.unlock_no_perm'), type: 'error');
-
+        if (! $this->editingId) {
             return;
         }
-        if (! $this->editingId) {
+        // 권한 재확인 — super/admin(전체) + role '관리'(본인 팀). editingId 는 클라이언트 주입 가능 → 매번 차량 기준 재인가.
+        $v = Vehicle::find($this->editingId);
+        if (! $v || ! auth()->user()?->canUnlockLedger($v)) {
+            $this->dispatch('notify', message: __('vehicle.toast.unlock_no_perm'), type: 'error');
+
             return;
         }
         $this->ledgerUnlockReason = '';
@@ -3416,7 +3422,7 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
             </div>
-            @if(! $hasLedgerUnlockToken && auth()->user()?->canAccessAdmin())
+            @if(! $hasLedgerUnlockToken && $canUnlockLedger)
             <button type="button" wire:click="openLedgerUnlockModal"
                     class="flex-shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
                 🔓 {{ __('vehicle.panel.ledger.unlock_btn') }}
@@ -4863,7 +4869,7 @@ function vehicleColumnsToggle() {
 </div>
 @endif
 
-{{-- 큐 21 — Ledger 잠금 해제 모달 (회의록 2026-05-18, admin/super 전용).
+{{-- 큐 21 — Ledger 잠금 해제 모달 (회의록 2026-05-18 + 2026-06-22 jin override = super/admin + 본인 팀 관리).
      슬라이드 패널 stacking context 밖에 배치. close()에서 정리됨. --}}
 @if($showLedgerUnlockModal)
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"

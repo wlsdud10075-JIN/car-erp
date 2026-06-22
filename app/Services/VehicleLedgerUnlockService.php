@@ -13,8 +13,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * 큐 21 — 차량 본체 Ledger 영향 필드 잠금 해제 서비스.
  *
- * 회의록 docs/meetings/2026-05-18-vehicle-ledger-field-lock.md 사용자 최종 결정 반영:
- *   ① 권한 = admin + super (User::canAccessAdmin)
+ * 회의록 docs/meetings/2026-05-18-vehicle-ledger-field-lock.md + 2026-06-22 jin override:
+ *   ① 권한 = super/admin(전체) + role '관리'(본인 팀 차량만, User::canUnlockLedger)
+ *      ※ 2026-06-22 jin: 환율·판매가 정정이 비일비재 → 2026-05-18 "admin/super 전용"을 완화.
  *   ② 사유 = 10자 이상 필수
  *   ③ 토큰 = cache 1회 소비 → 저장 1회 완료 즉시 자동 재잠금 (race window 0)
  *   ④ AuditLog = ledger_field_unlocked + new_value=reason 기록
@@ -38,13 +39,15 @@ class VehicleLedgerUnlockService
     /**
      * 차량 본체 Ledger 잠금 해제 토큰 발급.
      *
-     * @throws AuthorizationException admin/super 권한 없을 때
+     * @throws AuthorizationException super/admin 또는 본인 팀 관리(role='관리') 아닐 때
      * @throws DomainException 사유 10자 미만 또는 confirmed 잔금 없을 때
      */
     public function unlock(Vehicle $vehicle, User $by, string $reason): void
     {
-        if (! $by->canAccessAdmin()) {
-            throw new AuthorizationException('잠금 해제 권한 없음 (admin/super 전용)');
+        // 권한 = super/admin(전체) + role '관리'(본인 팀 차량만, canScopeVehicle). 스코프 체크가
+        // IDOR 방지의 단일 enforcement — editingId 는 클라이언트 주입 가능하므로 서비스가 최종 게이트.
+        if (! $by->canUnlockLedger($vehicle)) {
+            throw new AuthorizationException('잠금 해제 권한 없음 (super/admin 또는 본인 팀 관리 전용)');
         }
 
         $reasonTrimmed = trim($reason);

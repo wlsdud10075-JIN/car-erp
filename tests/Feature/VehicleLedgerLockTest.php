@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\PurchaseBalancePayment;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\VehicleLedgerUnlockService;
@@ -378,5 +379,62 @@ class VehicleLedgerLockTest extends TestCase
         $v2->buyer_id = $buyerB->id;
         $v2->save();
         $this->assertSame($buyerB->id, (int) $v2->fresh()->buyer_id);
+    }
+
+    // ── 2026-06-22 jin override — role '관리' 잠금 해제(본인 팀만) ──────────
+
+    /** 관리 팀(부하 영업이 담당) 차량 — 그 영업을 부하로 둔 관리 user 1건 발행. */
+    private function makeTeamVehicle(User $manager, array $overrides = []): Vehicle
+    {
+        $this->counter++;
+        $salesUser = User::factory()->create([
+            'permission' => 'user', 'role' => '영업', 'manager_user_id' => $manager->id,
+        ]);
+        $salesman = Salesman::create([
+            'user_id' => $salesUser->id, 'name' => 'TS'.$this->counter,
+            'email' => 'ts'.$this->counter.'@t.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+        $v = $this->makeVehicle(array_merge(['salesman_id' => $salesman->id], $overrides));
+        $this->makeConfirmedFinalPayment($v);
+
+        return $v;
+    }
+
+    public function test_manager_can_unlock_own_team_vehicle(): void
+    {
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $v = $this->makeTeamVehicle($manager);
+
+        app(VehicleLedgerUnlockService::class)->unlock($v, $manager, '관리 정정 — 환율 1500 → 1700 수정');
+        $this->assertTrue(Cache::has(Vehicle::ledgerUnlockCacheKey($v->id)));
+    }
+
+    public function test_manager_cannot_unlock_other_team_vehicle(): void
+    {
+        $managerA = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $v = $this->makeTeamVehicle($managerA);                 // A 팀(부하 영업 담당) 차량
+        $managerB = User::factory()->create(['permission' => 'user', 'role' => '관리']);  // 부하 없는 타 팀 관리
+
+        $this->expectException(AuthorizationException::class);
+        app(VehicleLedgerUnlockService::class)->unlock($v, $managerB, '타 팀 관리 IDOR 시도 — 차단되어야 함');
+    }
+
+    public function test_manager_unlock_then_edit_logs_value_change(): void
+    {
+        // "로그에 남기도록" — 관리가 잠금 해제 후 환율을 바꾸면 값 변경(1500→1700)이 AuditLog 에 기록.
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $v = $this->makeTeamVehicle($manager, ['currency' => 'USD', 'exchange_rate' => 1500, 'sale_price' => 1000000]);
+        $this->actingAs($manager);
+
+        app(VehicleLedgerUnlockService::class)->unlock($v, $manager, '환율 정정 — 1500 → 1700 (등록 후 변동)');
+        $v2 = Vehicle::find($v->id);
+        $v2->exchange_rate = 1700;
+        $v2->save();
+
+        $this->assertSame(1700, (int) $v2->fresh()->exchange_rate);
+        $log = AuditLog::where('auditable_id', $v->id)
+            ->where('action', 'updated')->where('column_name', 'exchange_rate')->latest('id')->first();
+        $this->assertNotNull($log, '환율 변경이 AuditLog 에 기록되어야 함');
+        $this->assertSame(1700, (int) $log->new_value);
     }
 }
