@@ -378,6 +378,10 @@ return [
         'export_decl_amount' => '면장금액',
         'dhl_weight' => 'DHL 중량',
         'owner_rrn' => '소유자 주민(법인)등록번호',
+        'purchase_balance_amount' => '매입 잔금',
+        'purchase_balance_date' => '매입 잔금 입금일',
+        'final_payment_amount' => '판매 잔금',
+        'final_payment_date' => '판매 잔금 입금일',
     ],
 
     // 패널 푸터 / 저장바

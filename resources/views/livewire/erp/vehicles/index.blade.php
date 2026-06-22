@@ -1606,6 +1606,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'export_declaration_amount_str' => __('vehicle.attr.export_decl_amount'),
             'dhl_weight_str' => __('vehicle.attr.dhl_weight'),
             'nice_reg_owner_rrn' => __('vehicle.attr.owner_rrn'),
+            'purchaseBalancePayments.*.amount'       => __('vehicle.attr.purchase_balance_amount'),
+            'purchaseBalancePayments.*.payment_date' => __('vehicle.attr.purchase_balance_date'),
+            'finalPayments.*.amount'                 => __('vehicle.attr.final_payment_amount'),
+            'finalPayments.*.payment_date'           => __('vehicle.attr.final_payment_date'),
         ];
 
         $messages = [

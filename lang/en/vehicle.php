@@ -378,6 +378,10 @@ return [
         'export_decl_amount' => 'Declaration Amount',
         'dhl_weight' => 'DHL Weight',
         'owner_rrn' => 'Owner Resident/Corp Reg. No.',
+        'purchase_balance_amount' => 'Purchase balance amount',
+        'purchase_balance_date' => 'Purchase balance payment date',
+        'final_payment_amount' => 'Sale balance amount',
+        'final_payment_date' => 'Sale balance payment date',
     ],
 
     // Panel footer / save bar
