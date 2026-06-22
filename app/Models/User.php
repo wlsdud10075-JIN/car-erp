@@ -185,6 +185,22 @@ class User extends Authenticatable
     }
 
     /**
+     * 큐 21 — 차량 Ledger(회계 영향 필드: 환율·판매가 등 21컬럼) 잠금 해제 권한.
+     *
+     * 2026-06-22 jin 결정: 등록 후 환율·판매가 정정이 비일비재해 admin/super 외 role='관리'도 허용
+     *   (2026-05-18 회의의 "admin/super 전용" 결정을 override). 단 관리는 **본인 팀 차량**(canScopeVehicle)만.
+     *   해제 사유 + 필드 값 변경(old→new) 모두 AuditLog 자동 기록(ledger_field_unlocked + recordChange).
+     */
+    public function canUnlockLedger(Vehicle $vehicle): bool
+    {
+        if ($this->canAccessAdmin()) {
+            return true;   // super/admin — 전체 차량
+        }
+
+        return $this->role === '관리' && $this->canScopeVehicle($vehicle);   // 관리 — 본인 팀 차량만 (IDOR 방지)
+    }
+
+    /**
      * 관리자 대시보드 (/admin/dashboard) 접근 권한 — admin/super 전용.
      *
      * 회의확장씬 사용자 정정 (2026-05-22):
