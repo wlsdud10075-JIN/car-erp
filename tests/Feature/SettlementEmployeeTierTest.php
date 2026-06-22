@@ -139,4 +139,35 @@ class SettlementEmployeeTierTest extends TestCase
             'closed actual_payout = paid snapshot → carryover_out 0'
         );
     }
+
+    /**
+     * B-2 재생성 흐름(create confirmed → paid → 2차 closed, 환차 0)의 사내직원 최종 상태.
+     * 환차 0 + per_unit 동결 → actual_payout = tier 정산액(회사부담, 환차 미반영).
+     */
+    public function test_recreate_flow_employee_paid_closed_zero_exchange(): void
+    {
+        $v = Vehicle::create([
+            'vehicle_number' => 'RECREATE-1',
+            'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1300,
+            'purchase_price' => 20_000_000, 'selling_fee' => 0,
+            'sale_price' => 25_000, 'sale_date' => '2026-05-01',   // USD
+            'purchase_date' => '2026-04-01', 'dhl_request' => false,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => null,
+            'settlement_type' => 'per_unit', 'settlement_ratio' => null, 'per_unit_amount' => null,
+            'settlement_status' => 'confirmed', 'confirmed_at' => now(),
+        ]);
+        $expected = $s->settlement_amount;   // tier (매입 2천만<1억, 총마진 양수 → 20만 또는 10만)
+
+        $s->update(['settlement_status' => 'paid', 'paid_at' => now()]);
+        $s->update(['secondary_status' => 'closed', 'secondary_closed_at' => now(), 'exchange_difference_krw' => 0, 'carryover_out_krw' => 0]);
+        $s->refresh();
+
+        $this->assertSame('paid', $s->settlement_status);
+        $this->assertSame('closed', $s->secondary_status);
+        $this->assertSame((int) $expected, (int) $s->per_unit_amount, 'paid 동결');
+        // 환차 0 + 사내직원(per_unit) → actual_payout = 정산액 (환차 미반영, 회사부담)
+        $this->assertSame((int) $expected, $s->actual_payout);
+    }
 }
