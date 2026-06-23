@@ -127,7 +127,10 @@ class DocValue
         return $country?->name;
     }
 
-    /** 컨사이니 통합 블록(이름 + ID + 주소) — 통관 구매리스트 컨사이니 칸. */
+    /**
+     * 컨사이니 통합 블록 — 통관 구매리스트 B14 + 선적 컨테이너/RORO 인보이스 수하인칸 공용.
+     * 이름 + ID + 주소 + 이메일 + 전화 + 담당자. 줄바꿈 조인(대상 셀 전부 wrapText 확인됨).
+     */
     public static function consigneeBlock(Vehicle $v): ?string
     {
         $c = self::invoiceConsignee($v);
@@ -135,7 +138,16 @@ class DocValue
             return null;
         }
 
-        return trim(implode(' ', array_filter([$c->name, $c->id_value, $c->address]))) ?: null;
+        $lines = array_filter([
+            $c->name,
+            $c->id_value,
+            $c->address,
+            $c->contact_email ? 'EMAIL: '.$c->contact_email : null,
+            $c->contact_phone ? 'TEL: '.$c->contact_phone : null,
+            $c->contact_name ? 'ATTN: '.$c->contact_name : null,
+        ], fn ($l) => $l !== null && trim((string) $l) !== '');
+
+        return $lines ? implode("\n", $lines) : null;
     }
 
     /**
