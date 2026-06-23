@@ -18,7 +18,13 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
         abort_unless((bool) auth()->user()?->canSeeAlarm($alarm), 403);
-        $alarm->update(['confirmed_at' => now(), 'confirmed_by' => auth()->id()]);
+        $updates = ['confirmed_at' => now(), 'confirmed_by' => auth()->id()];
+        // 매입 도착 알람 — 수동 [확인] = 해소(사라짐). jin 2026-06-23.
+        if ($alarm->type === 'purchase_arrival') {
+            $updates['resolved_at'] = now();
+            $updates['resolved_reason'] = 'manual_confirm';
+        }
+        $alarm->update($updates);
     }
 
     /** 데이터 보정 — ETA 없는 차량에 도착일 인라인 입력. canScopeVehicle 재인가. */
@@ -150,10 +156,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach ($g['items'] as $a)
                         @php
                             $meta = $a->message_meta ?? [];
-                            $isShip = ($a->type ?? '') === 'shipping_requested';
+                            $type = $a->type ?? '';
+                            $isShip = $type === 'shipping_requested';
+                            $isArrival = $type === 'purchase_arrival';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
                         @endphp
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
@@ -162,6 +170,9 @@ new #[Layout('components.layouts.app')] class extends Component
                             <span class="text-xs tabular-nums text-gray-400">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
                             @if ($isShip)
                                 <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ __('alarm.task_shipping') }} {{ $meta['shipping_method'] ?? '' }}</span>
+                            @elseif ($isArrival)
+                                <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">{{ __('alarm.badge_new') }}</span>
+                                <span class="text-[12px] font-semibold text-blue-700">{{ __('alarm.arrival_action') }}</span>
                             @else
                                 @if ($dday !== null)
                                     <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">

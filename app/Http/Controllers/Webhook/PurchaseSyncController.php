@@ -7,6 +7,8 @@ use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
+use App\Models\Setting;
+use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
@@ -14,6 +16,7 @@ use App\Services\NiceApiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 
@@ -197,6 +200,10 @@ class PurchaseSyncController extends Controller
 
         $attachmentsAdded = $this->syncAttachments($vehicle, $data['attachments'] ?? []);
 
+        // ── 매입 도착 알람 ([관리] 대상 — "신규 매입차 도착, 계약금 진행") ──
+        // 201(신규) 경로에서만 발화. 멱등 스킵(200)은 위에서 이미 return → 재전송 스팸 없음.
+        $this->createArrivalAlarm($vehicle);
+
         Log::info('[purchase-sync] vehicle 생성', [
             'vehicle_id' => $vehicle->id,
             'vehicle_number' => $data['vehicle_number'],
@@ -317,6 +324,26 @@ class PurchaseSyncController extends Controller
         $vehicle->nice_raw = $result['raw'] ?? [];
 
         return true;
+    }
+
+    /**
+     * 매입 도착 알람 생성 — [관리]/admin 에게 신규 매입차 도착 통지.
+     * 게이트: alarm_enabled(기능설정) ON + task_alarms 테이블 존재. 해소 = 계약금(PBP down)
+     * 입력 자동 + 수동 [확인](alarm-center/alarms.index). message_meta whitelist(차량번호만).
+     */
+    private function createArrivalAlarm(Vehicle $vehicle): void
+    {
+        if (! Schema::hasTable('task_alarms') || ! (bool) Setting::get('alarm_enabled', false)) {
+            return;
+        }
+
+        TaskAlarm::create([
+            'type' => 'purchase_arrival',
+            'vehicle_id' => $vehicle->id,
+            'target_role' => '관리',
+            'due_date' => now()->toDateString(),
+            'message_meta' => TaskAlarm::sanitizeMeta(['vehicle_number' => $vehicle->vehicle_number]),
+        ]);
     }
 
     /**

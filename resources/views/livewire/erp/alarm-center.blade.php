@@ -13,7 +13,13 @@ new class extends Component
             return;
         }
         abort_unless((bool) auth()->user()?->canSeeAlarm($alarm), 403);
-        $alarm->update(['confirmed_at' => now(), 'confirmed_by' => auth()->id()]);
+        $updates = ['confirmed_at' => now(), 'confirmed_by' => auth()->id()];
+        // 매입 도착 알람 — 수동 [확인] = 해소(사라짐). jin 2026-06-23.
+        if ($alarm->type === 'purchase_arrival') {
+            $updates['resolved_at'] = now();
+            $updates['resolved_reason'] = 'manual_confirm';
+        }
+        $alarm->update($updates);
     }
 
     public function with(): array
@@ -76,28 +82,34 @@ new class extends Component
                     @foreach ($alarms as $a)
                         @php
                             $meta = $a->message_meta ?? [];
-                            $isShip = ($a->type ?? '') === 'shipping_requested';
+                            $type = $a->type ?? '';
+                            $isShip = $type === 'shipping_requested';
+                            $isArrival = $type === 'purchase_arrival';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
                         @endphp
-                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400') }}">
+                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isArrival ? 'border-l-blue-500' : ($isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400')) }}">
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="block">
                                 <div class="flex items-center justify-between">
                                     <span class="text-[13px] font-bold text-gray-800">{{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}</span>
                                     @if ($isShip)
                                         <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ $meta['shipping_method'] ?? '' }}</span>
+                                    @elseif ($isArrival)
+                                        <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">{{ __('alarm.badge_new') }}</span>
                                     @elseif ($dday !== null)
                                         <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
                                             {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isShip ? __('alarm.task_shipping') : __('alarm.task_clearance') }}@if (! $isShip && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : __('alarm.task_clearance')) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
                                 @if ($isShip)
                                     <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>
+                                @elseif ($isArrival)
+                                    <span class="text-[11.5px] font-semibold text-blue-700">{{ __('alarm.arrival_action') }}</span>
                                 @else
                                     <span class="text-[11.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
                                         @if ($unpaid)

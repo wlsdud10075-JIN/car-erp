@@ -58,21 +58,36 @@ class TaskAlarm extends Model
 
     /**
      * 사용자가 볼 수 있는 알람만 (목록·벨 카운트 SQL 필터 — canSeeAlarm 의 SQL 짝).
-     * v1 = 수출통관 알람: admin·수출통관 전체 / 관리 본인 팀 / 그 외 0건.
+     * type 별로 OR 결합 (한쪽만 고치면 IDOR/누락 — canSeeAlarm 과 lockstep 유지):
+     * - 수출통관 알람(eta_clearance·shipping_requested, target_role='수출통관'):
+     *   admin·수출통관 전체 / 관리 본인 팀 / 그 외 0건.
+     * - 매입 도착 알람(purchase_arrival, target_role='관리'):
+     *   admin 전체 / 관리 본인 팀 / 그 외 0건.
      */
     public function scopeVisibleTo(Builder $q, User $user): Builder
     {
-        $q->where('target_role', '수출통관');
-
-        if (! $user->canAccessClearance()) {
-            return $q->whereRaw('1 = 0');
-        }
-        if ($user->isAdmin() || $user->role === '수출통관') {
-            return $q;
-        }
-
-        // 관리 — 본인 팀 차량 알람만.
-        return $q->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
+        return $q->where(function (Builder $outer) use ($user) {
+            // 수출통관 알람
+            if ($user->canAccessClearance()) {
+                $outer->orWhere(function (Builder $q2) use ($user) {
+                    $q2->where('target_role', '수출통관');
+                    if (! ($user->isAdmin() || $user->role === '수출통관')) {
+                        $q2->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
+                    }
+                });
+            }
+            // 매입 도착 알람 (관리/admin)
+            if ($user->isAdmin() || $user->role === '관리') {
+                $outer->orWhere(function (Builder $q3) use ($user) {
+                    $q3->where('target_role', '관리');
+                    if (! $user->isAdmin()) {
+                        $q3->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
+                    }
+                });
+            }
+            // 아무 type 도 볼 수 없으면 빈 결과.
+            $outer->orWhereRaw('1 = 0');
+        });
     }
 
     /** message_meta 를 허용 키로만 제한 (저장 직전 strip). */
