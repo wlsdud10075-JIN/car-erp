@@ -226,7 +226,8 @@ class Vehicle extends Model
      *      (사용자 결정 2026-05-18: 이미 운영중 차량은 우회)
      *   ② 판매가 미입력(unpaid_ratio = null ⟺ sale_total_amount ≤ 0) → 별도 메시지로 차단
      *      (unpaid_ratio는 통화 비의존 — sale_total_amount에 환율 안 곱함. 환율 누락과 무관.)
-     *   ③ `unpaid_export_override` (stage='shipping') 승인 있으면 우회 — 관리/관리자 승인
+     *   ③ `unpaid_export_override` (stage='bl') 승인 있으면 우회 — 관리/관리자 승인
+     *      ⚠ 선적 진입 우회('shipping', C5 50%)와 **별개** — B/L 발행은 'bl' 우회만 통과(2026-06-23 jin).
      *      (큐 2.6 인프라 재사용. 승인 권한 = User::canApproveUnpaidExport)
      *
      * 호출 위치: saving 훅 (시드·artisan auth 없으면 우회).
@@ -267,14 +268,15 @@ class Vehicle extends Model
             return;   // 완납 — 발행 가능
         }
 
-        // 100% 미완납 — 미입금 우회 승인 확인 (shipping 단계, 관리/관리자)
-        if ($this->hasUnpaidOverride('shipping')) {
+        // 100% 미완납 — 미입금 우회 승인 확인 ('bl'(B/L 발행) 단계, 관리/관리자)
+        //   ⚠ 'shipping'(선적 진입) 우회로는 안 뚫림 — B/L 발행은 별도 'bl' 승인 필요(2026-06-23 jin).
+        if ($this->hasUnpaidOverride('bl')) {
             return;
         }
 
         $percent = number_format($ratio * 100, 1);
         throw ValidationException::withMessages([
-            'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인(선적 단계) 필요.",
+            'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인('B/L 발행' 단계) 필요.",
         ]);
     }
 
@@ -845,9 +847,9 @@ class Vehicle extends Model
 
         // C5 + G 완화 (2026-05-20) — 입금률 < 50% 시만 차단. admin 우회 인프라 그대로 재사용.
         if ($this->sale_price > 0 && $this->exists) {
-            $stage = $this->dhl_request
-                ? 'dhl'
-                : (($this->bl_loading_location || $this->bl_document) ? 'shipping' : 'clearance');
+            // C5(50%)는 진입 단계 우회 — 선적 관련 입력이면 'shipping', 아니면 'clearance'.
+            // ('dhl' 폐기 — DHL 단계 액션도 'shipping' 으로 평가. B/L 발행 100% 우회는 별도 'bl' 게이트=G1.)
+            $stage = ($this->bl_loading_location || $this->bl_document || $this->dhl_request) ? 'shipping' : 'clearance';
 
             $hasOverride = $this->hasUnpaidOverride($stage);
             if ($hasOverride) {

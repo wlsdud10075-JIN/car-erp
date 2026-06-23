@@ -127,7 +127,7 @@ return [
         'upload_enables_loaded' => '(업로드 시 선적완료 상태 달성 가능)',
         'g1' => [
             'no_price' => '⚠ 판매가 미입력 — 판매 정보(판매가) 입력 후 B/L 발행 가능',
-            'override' => '⚠ 미수율 :ratio% — 관리/관리자 미입금 우회 승인(선적 단계) 적용됨 → B/L 발행 가능',
+            'override' => '⚠ 미수율 :ratio% — 관리/관리자 미입금 우회 승인(B/L 발행 단계) 적용됨 → B/L 발행 가능',
             'locked' => '🔒 B/L 발행 잠김 — 미수율 :ratio% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인(선적 단계) 필요.',
             'ok' => '✓ B/L 발행 가능 — 잔금 100% 완납',
         ],
@@ -404,6 +404,9 @@ return [
         'existing' => '기존 승인 :count건:',
         'stage_label' => '단계',
         'stage_select' => '선택',
+        'stage_clearance' => '통관 진입 (입금 50%)',
+        'stage_shipping' => '선적 진입 (입금 50%)',
+        'stage_bl' => 'B/L 발행 (입금 100%)',
         'reason_label' => '사유 (20자 이상)',
         'reason_ph' => '예: 컨테이너 출항 일정상 강행. 잔금 5/20 입금 예정 확인됨.',
         'approve_btn' => '승인 기록',
