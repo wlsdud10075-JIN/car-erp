@@ -171,7 +171,9 @@ new #[Layout('components.layouts.app')] class extends Component
             if ($path) {
                 try {
                     if ($disk->exists($path)) {
-                        $this->stampUrls[$role] = $disk->url($path);
+                        // 운영 private S3 는 ->url() 이 403 → 미리보기 깨짐. VehicleDocUrl 이 S3 면
+                        // 임시 서명URL, 로컬이면 일반 URL 로 분기(사진/서류와 동일 단일출처).
+                        $this->stampUrls[$role] = \App\Support\VehicleDocUrl::for($path);
                     }
                 } catch (\Throwable $e) {
                     $this->stampUrls[$role] = null;   // 미리보기 URL 미지원 디스크 — 상태만 표시
