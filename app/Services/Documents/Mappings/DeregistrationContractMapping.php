@@ -19,11 +19,7 @@ class DeregistrationContractMapping
             'cells' => [
                 'B50' => fn (Vehicle $v) => $v->nice_reg_vin,   // BODY NUMBER (차대번호)
             ],
-            // 도장/서명 오버레이 — A60 양식 기본 = 서명만(회사정보 미포함)이라 교체가 안전.
-            // 기능설정에서 회사(template_set)별 서명 업로드 시 그 이미지로 교체, 없으면 기본 유지.
-            'stamps' => [
-                ['role' => 'signature', 'anchor' => 'A60', 'width' => 612, 'height' => 179],
-            ],
+            // 도장/서명 슬롯은 App\Services\Documents\StampSlots 로 중앙화.
         ];
     }
 }
