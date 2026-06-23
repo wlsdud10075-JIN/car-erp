@@ -44,6 +44,11 @@ $map = [
         '영문등록증' => ['E8' => ['set', 'HEYMAN LTD,. ']],
         '말소증' => ['E21' => ['set', '주식회사헤이맨']],
         '차량팩킹' => ['A3' => ['set', $packing]],
+        'Travel Services Invoice' => [
+            'A2' => ['replace', ['Ssancar LTD' => 'Heyman LTD']],   // 상단 상호 줄(주소·전화 보존)
+            'C16' => ['replace', ['SSANCAR' => 'HEYMAN']],          // Beneficiary
+            'C18' => ['set', '180-012-458342'],                     // Bank Account Number (heyman)
+        ],
     ],
     'container_invoice_packing.xlsx' => ['INVOICE' => [
         'B3' => ['set', $containerB3],
@@ -57,8 +62,10 @@ $map = [
     'roro_contract.xlsx' => ['HBB340.' => [
         'C11' => ['set', 'HEYMAN LTD.'],
     ]],
-    // 패치 없이 복사만 (heyman 세트에 파일은 있어야 함 — 누락분은 차차):
-    'sales_invoice.xlsx' => [],
+    'sales_invoice.xlsx' => ['Invoice' => [
+        'C13' => ['replace', ['SSANCAR' => 'HEYMAN']],   // Beneficiary (SSANCAR LTD. → HEYMAN LTD.)
+        'C15' => ['set', '180-012-458342'],              // Bank Account Number (heyman)
+    ]],
 ];
 
 $srcDir = resource_path('templates/system');
