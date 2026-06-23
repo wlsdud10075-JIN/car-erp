@@ -288,7 +288,7 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 
 **현재 시점 (2026-05-29)**:
 - 통관 SET 다중차량 — ⏸️ 보류 (선적 4종 충분, 추후 인보이스 3시트만 N대)
-- 별건 3 (사이드바 재구성 + 로그 화면 일괄 노출 + audit_logs UI) — 대기
+- 별건 3 (사이드바 '로그' 그룹 + document-access-logs + audit_logs UI) — ✅ **완료** (회의확장씬 Phase 3-1 흡수, 커밋 `fdb02b8`/`55514bd`. 라우트 `routes/web.php` document-access-logs/audit-logs)
 - 도메인 + HTTPS — ✅ **완료 (2026-06-11, `https://heysellcar.com` + www 라이브)**. Lightsail 도메인 이전 + certbot + APP_URL https + config:cache.
 
 ## ⏭️ 다음 세션 작업 순서
@@ -300,8 +300,9 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 **남은 작업**:
 1. **기능 안정화 검증** (서버 브라우저): NICE 조회 숫자 정상(4840 등)·통관서류 기통수/검사종료·사진있는 차량 force-delete FK cascade·다중차량 선적 Excel 시각·cron 익일 03:00 백업 1건.
 2. ✅ **도메인 + HTTPS 완료** (2026-06-11). 상세 = 메모리 `project-deployment` 2026-06-11 섹션 / 배포기록 §14-1.
-3. **(선택)** 통관 SET 다중차량(인보이스 3시트만 N대) / extension-scene 2-2 잔금 layout 코스메틱 / 말소 시 주소 필수가드 / NICE키 env분리·교체.
-4. **별건 3** — 사이드바 재구성 + 로그 화면군 일괄 노출(`/admin/document-access-logs` + `audit_logs` UI 신설). 5~7h.
+3. **(선택)** 통관 SET 다중차량(인보이스 3시트만 N대) / extension-scene 2-2 잔금 layout 코스메틱.
+   (별건 3 = ✅ 완료, 회의확장씬 Phase 3-1 흡수)
+   (말소 주소 필수가드 = ❌ 안 함, jin 2026-06-23 — RRN 가드 H10 있고 NICE 조회로 주소 자동기입돼 불필요. NICE키 env = ✅ 이미 .env 설정됨.)
 
 ## 대시보드 명칭 및 설계 원칙 (확정)
 
