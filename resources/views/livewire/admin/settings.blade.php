@@ -22,16 +22,21 @@ new #[Layout('components.layouts.app')] class extends Component
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
-    // 도장/서명 역할 2종 — signature(서명: 말소계약서·선적인보이스), seal(직인: 판매인보이스·계약서).
-    public array $stampRoles = ['signature', 'seal'];
+    // 도장/서명/로고 역할 3종 — signature(서명), seal(직인), logo(상호 로고). 회사당 1장씩, 슬롯에 재사용.
+    public array $stampRoles = ['signature', 'seal', 'logo'];
 
     public $signatureUpload = null;
 
     public $sealUpload = null;
 
+    public $logoUpload = null;
+
     public array $stampPaths = [];   // role => 저장 경로|null
 
     public array $stampUrls = [];    // role => 미리보기 URL|null
+
+    // 슬롯별 위치/크기 — "type::key" => ['doc','slot','role','dx','dy','w','h']
+    public array $stampPositions = [];
 
     public function mount(): void
     {
@@ -46,6 +51,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
         }
         $this->refreshStamps();
+        $this->loadStampPositions();
     }
 
     /** 정산 파라미터 화면 메타 (라벨/힌트) — blade foreach. */
@@ -92,7 +98,66 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             ['role' => 'signature', 'prop' => 'signatureUpload', 'label' => __('feature_settings.stamp_signature_label'), 'sub' => __('feature_settings.stamp_signature_sub')],
             ['role' => 'seal', 'prop' => 'sealUpload', 'label' => __('feature_settings.stamp_seal_label'), 'sub' => __('feature_settings.stamp_seal_sub')],
+            ['role' => 'logo', 'prop' => 'logoUpload', 'label' => __('feature_settings.stamp_logo_label'), 'sub' => __('feature_settings.stamp_logo_sub')],
         ];
+    }
+
+    // 슬롯별 위치/크기 로드 — 현재 회사(set) 기준. Setting override 없으면 슬롯 기본값.
+    private function loadStampPositions(): void
+    {
+        $set = $this->stampSet();
+        $this->stampPositions = [];
+        foreach (\App\Services\Documents\StampSlots::all() as $type => $slots) {
+            foreach ($slots as $slot) {
+                $pos = \App\Services\Documents\StampSlots::position($set, $type, $slot);
+                $this->stampPositions[$type.'::'.$slot['key']] = [
+                    'doc' => \App\Services\Documents\StampSlots::DOC_LABELS[$type] ?? $type,
+                    'slot' => $slot['sheet'].' · '.(\App\Services\Documents\StampSlots::ROLE_LABELS[$slot['role']] ?? $slot['role']),
+                    'role' => $slot['role'],
+                    'dx' => $pos['dx'], 'dy' => $pos['dy'], 'w' => $pos['w'], 'h' => $pos['h'],
+                ];
+            }
+        }
+    }
+
+    /** blade 표시용 — 서류별 그룹핑된 슬롯 위치. */
+    public function stampPositionGroups(): array
+    {
+        $groups = [];
+        foreach ($this->stampPositions as $key => $p) {
+            $groups[$p['doc']][$key] = $p;
+        }
+
+        return $groups;
+    }
+
+    // 슬롯 위치/크기 일괄 저장 — super 전용. stamp_pos_{set}_{type}_{key} = {dx,dy,w,h} JSON.
+    public function saveStampPositions(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $set = $this->stampSet();
+        foreach (\App\Services\Documents\StampSlots::all() as $type => $slots) {
+            foreach ($slots as $slot) {
+                $k = $type.'::'.$slot['key'];
+                $p = $this->stampPositions[$k] ?? null;
+                if (! $p) {
+                    continue;
+                }
+                $json = json_encode([
+                    'dx' => max(0, (int) $p['dx']),
+                    'dy' => max(0, (int) $p['dy']),
+                    'w' => max(1, (int) $p['w']),
+                    'h' => max(1, (int) $p['h']),
+                ]);
+                Setting::updateOrCreate(
+                    ['key' => "stamp_pos_{$set}_{$type}_{$slot['key']}"],
+                    ['value' => $json, 'type' => 'string', 'description' => "도장 위치 {$type}/{$slot['key']} ({$set})"],
+                );
+            }
+        }
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
     private function refreshStamps(): void
@@ -151,6 +216,16 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->validate(['sealUpload' => 'image|mimes:png,jpg,jpeg|max:2048'], ['sealUpload' => __('feature_settings.stamp_invalid')]);
         $this->storeStamp('seal', $this->sealUpload);
         $this->sealUpload = null;
+    }
+
+    public function updatedLogoUpload(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate(['logoUpload' => 'image|mimes:png,jpg,jpeg|max:2048'], ['logoUpload' => __('feature_settings.stamp_invalid')]);
+        $this->storeStamp('logo', $this->logoUpload);
+        $this->logoUpload = null;
     }
 
     public function removeStamp(string $role): void
@@ -266,6 +341,7 @@ new #[Layout('components.layouts.app')] class extends Component
         );
 
         $this->refreshStamps();   // 도장도 선택 회사 기준으로 갱신
+        $this->loadStampPositions();
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 }; ?>
@@ -471,6 +547,48 @@ new #[Layout('components.layouts.app')] class extends Component
                     @enderror
                 </div>
             @endforeach
+        </div>
+    </div>
+
+    {{-- 도장 위치 조정 그룹 — 서류별 슬롯에 dx/dy 오프셋·크기(W/H). super 전용 --}}
+    <div class="card max-w-3xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-rose-400"></span>
+                <span class="section-title">{{ __('feature_settings.stamp_pos_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-4">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.stamp_pos_hint') }}</p>
+
+            @foreach ($this->stampPositionGroups() as $docLabel => $slots)
+                <div class="rounded-md border border-gray-100 p-3">
+                    <div class="mb-2 text-sm font-semibold text-gray-700">{{ $docLabel }}</div>
+                    <div class="space-y-2">
+                        @foreach ($slots as $key => $p)
+                            <div class="flex flex-wrap items-center gap-2 text-xs">
+                                <span class="w-40 shrink-0 text-gray-600">{{ $p['slot'] }}</span>
+                                <label class="flex items-center gap-1">X
+                                    <input type="number" wire:model="stampPositions.{{ $key }}.dx" class="input-base w-16 px-1 py-0.5 text-right"></label>
+                                <label class="flex items-center gap-1">Y
+                                    <input type="number" wire:model="stampPositions.{{ $key }}.dy" class="input-base w-16 px-1 py-0.5 text-right"></label>
+                                <label class="flex items-center gap-1">W
+                                    <input type="number" wire:model="stampPositions.{{ $key }}.w" class="input-base w-16 px-1 py-0.5 text-right"></label>
+                                <label class="flex items-center gap-1">H
+                                    <input type="number" wire:model="stampPositions.{{ $key }}.h" class="input-base w-16 px-1 py-0.5 text-right"></label>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endforeach
+
+            <div class="flex justify-end">
+                <button wire:click="saveStampPositions" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
         </div>
     </div>
 </div>

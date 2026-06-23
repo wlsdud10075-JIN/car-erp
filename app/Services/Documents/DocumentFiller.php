@@ -69,9 +69,9 @@ class DocumentFiller
             ? $spreadsheet->getSheetByName($config['sheet'])
             : $spreadsheet->getActiveSheet();
 
-        // 2) 도장/서명 오버레이 — 업로드된 회사 도장이 있으면 fill 前에 얹는다.
+        // 2) 도장/서명/로고 오버레이 — 업로드된 회사 이미지가 있으면 fill 前에 얹는다.
         //    fillMulti 의 removeRow 前이어야 선적 문서에서 도장이 트림된 위치로 함께 이동(실측).
-        $this->applyStamps($sheet, $config);
+        $this->applyStamps($spreadsheet, $type);
 
         // 3) 매핑 기입 — 'multi'(선적 다중차량) vs 단일('cells')
         if (isset($config['multi'])) {
@@ -91,41 +91,43 @@ class DocumentFiller
     }
 
     /**
-     * 도장/서명 오버레이 — config['stamps'] 의 각 슬롯에 대해, 기능설정에서 업로드된
-     * 회사(template_set)별 이미지가 있으면 해당 앵커의 기존 도장을 제거하고 그 자리에 얹는다.
-     * 업로드본이 없으면 양식 기본 도장 유지(하위호환).
+     * 도장/서명/로고 오버레이 — StampSlots::for(type) 의 각 슬롯에 대해, 기능설정에서 업로드된
+     * 회사(template_set)별 role 이미지가 있으면 슬롯 시트의 앵커 기존 도장을 제거하고 그 자리에 얹는다.
+     * 위치/크기는 슬롯 기본값 + `stamp_pos_{set}_{type}_{key}`(dx,dy,w,h) override. 업로드본 없으면 양식 기본 유지.
      *
-     * path 기반 Drawing 사용 = 업로드 PNG 의 투명도(빨간 원형 직인)를 GD 재인코딩 없이 보존(실측).
-     * fill 前 호출이라 선적 문서의 removeRow 가 이 Drawing 도 함께 트림 위치로 이동시킨다.
-     *
-     * stamps 슬롯 스키마: ['role' => 'signature', 'anchor' => 'A60', 'width' => 612, 'height' => 179]
+     * path 기반 Drawing = 업로드 PNG 투명도(빨간 직인) GD 재인코딩 없이 보존(실측).
+     * fill(fillMulti removeRow) 前 호출이라 선적 문서에서 도장이 트림된 위치로 함께 이동.
      */
-    private function applyStamps(Worksheet $sheet, array $config): void
+    private function applyStamps(Spreadsheet $spreadsheet, string $type): void
     {
-        if (empty($config['stamps'])) {
+        $slots = StampSlots::for($type);
+        if (! $slots) {
             return;
         }
 
         $set = Setting::companyTemplateSet();
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
 
-        foreach ($config['stamps'] as $stamp) {
-            $path = Setting::get("stamp_{$set}_{$stamp['role']}");
+        foreach ($slots as $slot) {
+            $path = Setting::get("stamp_{$set}_{$slot['role']}");
             if (! $path || ! $disk->exists($path)) {
-                continue;   // 업로드본 없음 → 양식 기본 도장 유지
+                continue;   // 해당 role 업로드본 없음 → 양식 기본 도장 유지
             }
-            $this->overlayStamp($sheet, $stamp, $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+            $sheet = $spreadsheet->getSheetByName($slot['sheet']);
+            if (! $sheet) {
+                continue;
+            }
+            $pos = StampSlots::position($set, $type, $slot);
+            $this->overlayStamp($sheet, $slot['anchor'], $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png', $pos);
         }
     }
 
     /**
-     * 앵커의 기존 Drawing 제거 + 업로드 이미지를 같은 앵커·크기로 삽입.
+     * 앵커의 기존 Drawing 제거 + 업로드 이미지를 앵커+오프셋(dx,dy) 위치, 박스(w,h) 안 비율맞춤으로 삽입.
      * 임시파일은 streamDownload 저장(요청 종료 시점) 까지 살아있어야 하므로 shutdown 에서 정리.
      */
-    private function overlayStamp(Worksheet $sheet, array $stamp, string $bytes, string $ext): void
+    private function overlayStamp(Worksheet $sheet, string $anchor, string $bytes, string $ext, array $pos): void
     {
-        $anchor = $stamp['anchor'];
-
         // 같은 앵커의 기존 도장 제거 (ArrayObject — 뒤에서부터 unset)
         $drawings = $sheet->getDrawingCollection();
         for ($i = count($drawings) - 1; $i >= 0; $i--) {
@@ -138,9 +140,8 @@ class DocumentFiller
         file_put_contents($tmp, $bytes);
         register_shutdown_function(static fn () => @unlink($tmp));
 
-        // 업로드 원본 비율을 유지하며 슬롯 박스(width×height) 안에 맞춤(contain).
-        // 박스 비율로 강제하면 정사각 도장이 가로로 찌그러짐 → 원본 종횡비 보존 후 축소.
-        [$boxW, $boxH] = [(int) $stamp['width'], (int) $stamp['height']];
+        // 박스(w×h) 안에 원본 비율 유지 맞춤(contain) — 정사각 직인이 가로로 안 찌그러지게.
+        [$boxW, $boxH] = [max(1, (int) $pos['w']), max(1, (int) $pos['h'])];
         $info = @getimagesizefromstring($bytes);
         if ($info && $info[0] > 0 && $info[1] > 0) {
             $scale = min($boxW / $info[0], $boxH / $info[1]);
@@ -152,6 +153,8 @@ class DocumentFiller
         $drawing = new Drawing;
         $drawing->setPath($tmp);
         $drawing->setCoordinates($anchor);
+        $drawing->setOffsetX(max(0, (int) $pos['dx']));
+        $drawing->setOffsetY(max(0, (int) $pos['dy']));
         $drawing->setResizeProportional(false);
         $drawing->setWidth(max(1, $w));
         $drawing->setHeight(max(1, $h));

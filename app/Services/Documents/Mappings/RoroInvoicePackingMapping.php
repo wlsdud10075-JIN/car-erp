@@ -49,10 +49,7 @@ class RoroInvoicePackingMapping
                     ],
                 ],
             ],
-            // 서명 오버레이 — H55 합성블록(상호+서명). 컨테이너 인보이스와 동일 역할.
-            'stamps' => [
-                ['role' => 'signature', 'anchor' => 'H55', 'width' => 490, 'height' => 234],
-            ],
+            // 도장/서명 슬롯은 App\Services\Documents\StampSlots 로 중앙화.
         ];
     }
 }
