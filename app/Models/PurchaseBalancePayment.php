@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Schema;
 
 class PurchaseBalancePayment extends Model
 {
@@ -40,7 +41,17 @@ class PurchaseBalancePayment extends Model
 
     protected static function booted(): void
     {
-        static::saved(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
+        static::saved(function (PurchaseBalancePayment $p) {
+            $p->vehicle?->refreshCaches();
+
+            // 계약금(down) 입력 → 매입 도착 알람 자동 해소 (jin 2026-06-23, purchase_arrival).
+            if ($p->type === 'down' && (int) $p->amount > 0 && Schema::hasTable('task_alarms')) {
+                TaskAlarm::where('type', 'purchase_arrival')
+                    ->where('vehicle_id', $p->vehicle_id)
+                    ->whereNull('resolved_at')
+                    ->update(['resolved_at' => now(), 'resolved_reason' => 'down_payment']);
+            }
+        });
         static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
 
         // 큐 22-C-light (2026-05-20) Spec-F 권고 — paid Settlement 후 신규 PBP 차단.

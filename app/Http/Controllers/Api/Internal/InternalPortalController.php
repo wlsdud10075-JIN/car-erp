@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Internal;
 
 use App\Http\Controllers\Controller;
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use App\Services\SalesmanResolver;
@@ -145,6 +147,46 @@ class InternalPortalController extends Controller
             'payout_total_krw' => 0,
             'payout_paid_krw' => 0,
         ];
+    }
+
+    /**
+     * board 경매/구매 드로어용 — 영업 본인 바이어 목록 (드롭다운).
+     * jin 2026-06-23: 전체 활성이 아니라 **영업 본인 바이어만**(IDOR 격리 유지). board 는
+     * salesman_email 로 본인 바이어만 보고 신차에 지정. 응답 = 화이트리스트만(연락처·PII 금지).
+     */
+    public function buyers(Request $request): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+        $data = Buyer::query()->where('salesman_id', $sid)->where('is_active', true)
+            ->with('country')->orderBy('name')->get()
+            ->map(fn (Buyer $b) => [
+                'id' => $b->id,
+                'name' => $b->name,
+                'country' => $b->country?->name,
+            ])->values();
+
+        return response()->json(['count' => $data->count(), 'data' => $data]);
+    }
+
+    /**
+     * board 드로어용 — 선택 바이어 하위 컨사이니 목록.
+     * IDOR — 요청 buyer_id 가 본인 소유일 때만 반환(타 영업 바이어 컨사이니 열람 차단).
+     */
+    public function consignees(Request $request): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+        $buyerId = (int) $request->query('buyer_id', 0);
+
+        $ownsBuyer = $buyerId > 0
+            && Buyer::where('id', $buyerId)->where('salesman_id', $sid)->exists();
+
+        $data = $ownsBuyer
+            ? Consignee::query()->where('buyer_id', $buyerId)->where('is_active', true)
+                ->orderBy('name')->get()
+                ->map(fn (Consignee $c) => ['id' => $c->id, 'name' => $c->name])->values()
+            : collect();
+
+        return response()->json(['count' => $data->count(), 'data' => $data]);
     }
 
     public function finance(Request $request): JsonResponse

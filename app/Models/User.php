@@ -369,6 +369,19 @@ class User extends Authenticatable
      */
     public function canSeeAlarm(TaskAlarm $alarm): bool
     {
+        // 매입 도착 알람(purchase_arrival, target_role='관리') — admin 전체 / 관리 본인 팀.
+        if ($alarm->target_role === '관리') {
+            if ($this->isAdmin()) {
+                return true;
+            }
+            if ($this->role === '관리') {
+                return $alarm->vehicle ? $this->canScopeVehicle($alarm->vehicle) : false;
+            }
+
+            return false;
+        }
+
+        // 수출통관 알람 (eta_clearance·shipping_requested).
         if ($alarm->target_role !== '수출통관' || ! $this->canAccessClearance()) {
             return false;
         }
