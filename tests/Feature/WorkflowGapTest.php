@@ -697,7 +697,7 @@ class WorkflowGapTest extends TestCase
         $v = $this->makeVehicle();
         $override = UnpaidExportOverride::create([
             'vehicle_id' => $v->id,
-            'stage' => 'dhl',
+            'stage' => 'shipping',
             'approved_by' => $admin->id,
             'reason' => '20글자 이상의 사유 텍스트 예시 — 검증용',
             'approved_at' => now(),

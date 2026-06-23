@@ -211,16 +211,16 @@ class G1BlLockTest extends TestCase
         $v2->save();
     }
 
-    public function test_g1_admin_shipping_override_bypasses_lock(): void
+    public function test_g1_admin_bl_override_bypasses_lock(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         // 미수율 90% — 정상이면 차단
         $v = $this->makeVehicle(['sale_price' => 1000000, 'deposit_down_payment' => 100000]);
 
-        // admin 미입금 우회 승인 (shipping 단계)
+        // admin 미입금 우회 승인 ('bl'=B/L 발행 단계 — 2026-06-23 선적 우회와 분리)
         UnpaidExportOverride::create([
             'vehicle_id' => $v->id,
-            'stage' => 'shipping',
+            'stage' => 'bl',
             'approved_by' => $admin->id,
             'reason' => '바이어 신용 확인 + 잔금 5/30 입금 약정 확보. 컨테이너 출항 일정 압박.',
             'approved_at' => now(),
@@ -231,9 +231,35 @@ class G1BlLockTest extends TestCase
         $this->actingAs($admin);
         $v2 = Vehicle::find($v->id);
         $v2->bl_document = 'bl/test.pdf';
-        $v2->save();   // override 있으니 통과
+        $v2->save();   // 'bl' override 있으니 통과
 
         $this->assertSame('bl/test.pdf', $v2->fresh()->bl_document);
+    }
+
+    /** 분리 검증(2026-06-23) — 'shipping'(선적 진입) 우회만으로는 B/L 발행이 안 뚫린다. 'bl' 우회 필요. */
+    public function test_g1_shipping_override_alone_does_not_bypass_bl(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 1000000, 'deposit_down_payment' => 100000]); // 미수율 90%
+
+        // 선적 진입 우회만 승인 (B/L 발행 우회 아님)
+        UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'shipping',
+            'approved_by' => $admin->id,
+            'reason' => '선적 진입만 강행 — B/L 발행 우회는 별도 승인 필요',
+            'approved_at' => now(),
+            'ip_address' => '127.0.0.1',
+            'sale_unpaid_amount_snapshot' => 900000,
+        ]);
+
+        $this->actingAs($admin);
+        $v2 = Vehicle::find($v->id);
+        $v2->bl_document = 'bl/test.pdf';
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('B/L 발행 차단');
+        $v2->save();   // 'shipping' 만 있고 'bl' 없음 → 차단
     }
 
     public function test_g1_allows_bl_document_removal(): void

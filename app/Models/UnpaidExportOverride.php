@@ -16,7 +16,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class UnpaidExportOverride extends Model
 {
-    public const STAGES = ['clearance', 'shipping', 'dhl'];
+    // clearance=통관 진입(C5 50%) / shipping=선적 진입(C5 50%) / bl=B/L 발행(G1 100%) 우회.
+    // 'dhl'(폐기, 2026-06-23)은 enum 에만 남고 신규 미사용 — 선적·B/L 우회 분리로 대체.
+    public const STAGES = ['clearance', 'shipping', 'bl'];
 
     protected $fillable = [
         'vehicle_id', 'stage', 'approved_by',

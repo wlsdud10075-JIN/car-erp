@@ -16,7 +16,7 @@ use Tests\TestCase;
  * 회의록 docs/meetings/2026-05-26-external-review-audit.md §사용자결정 1.
  *
  * 정책: B/L 발급은 잔금 100% 완납 필수. 부족분(예 90%)은 [관리] role 또는 admin/super 가
- *   미입금 우회(UnpaidExportOverride, stage='shipping')를 승인하면 발급 가능.
+ *   미입금 우회(UnpaidExportOverride, stage='bl')를 승인하면 발급 가능.
  *
  * 검증 범위:
  * - 권한 매트릭스: 관리/admin/super → 승인 가능 / 영업·재무·수출통관 → 불가
@@ -93,7 +93,7 @@ class BlDocumentApprovalBypassTest extends TestCase
 
         UnpaidExportOverride::create([
             'vehicle_id' => $v->id,
-            'stage' => 'shipping',
+            'stage' => 'bl',
             'approved_by' => $manager->id,
             'reason' => '바이어 신용 확인 + 잔금 추후 입금 약정. 관리 승인 우회.',
             'approved_at' => now(),
@@ -119,7 +119,7 @@ class BlDocumentApprovalBypassTest extends TestCase
         // 승인은 A 차량에만
         UnpaidExportOverride::create([
             'vehicle_id' => $vehicleA->id,
-            'stage' => 'shipping',
+            'stage' => 'bl',
             'approved_by' => $admin->id,
             'reason' => 'A 차량 한정 승인 — B 차량에는 적용되지 않아야 함.',
             'approved_at' => now(),

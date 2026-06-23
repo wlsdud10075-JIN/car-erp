@@ -15,8 +15,9 @@ return new class extends Migration
         Schema::create('unpaid_export_overrides', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vehicle_id')->constrained('vehicles')->cascadeOnDelete();
-            // 단계별 승인 (per-stage, Gemini 지적) — 통관 OK ≠ 선적 OK ≠ DHL OK
-            $table->enum('stage', ['clearance', 'shipping', 'dhl']);
+            // 단계별 승인 (per-stage). clearance/shipping=진입(50%) · bl=B/L발행(100%) 우회.
+            // 'dhl'(폐기 2026-06-23)은 기존 운영행 보존용으로 enum 유지(신규 미사용). 신규 fresh/test DB도 동일 집합.
+            $table->enum('stage', ['clearance', 'shipping', 'dhl', 'bl']);
             $table->foreignId('approved_by')->constrained('users')->restrictOnDelete();
             $table->text('reason'); // application-level min:20 검증
             $table->timestamp('approved_at');

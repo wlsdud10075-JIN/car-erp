@@ -127,7 +127,7 @@ return [
         'upload_enables_loaded' => '(uploading can reach Loaded status)',
         'g1' => [
             'no_price' => '⚠ Sell price missing — enter sale info (sell price) before issuing B/L',
-            'override' => '⚠ Unpaid :ratio% — management/admin unpaid-bypass approval (shipping) applied → B/L can be issued',
+            'override' => '⚠ Unpaid :ratio% — management/admin unpaid-bypass approval (B/L issuance) applied → B/L can be issued',
             'locked' => '🔒 B/L issuance locked — unpaid :ratio% (balance not 100% paid). Issue after full payment, or needs management/admin unpaid-bypass approval (shipping).',
             'ok' => '✓ B/L can be issued — balance 100% paid',
         ],
@@ -404,6 +404,9 @@ return [
         'existing' => ':count existing approval(s):',
         'stage_label' => 'Stage',
         'stage_select' => 'Select',
+        'stage_clearance' => 'Clearance entry (50% paid)',
+        'stage_shipping' => 'Shipping entry (50% paid)',
+        'stage_bl' => 'B/L issuance (100% paid)',
         'reason_label' => 'Reason (20+ chars)',
         'reason_ph' => 'e.g. Forced due to container departure schedule. Balance payment confirmed for 5/20.',
         'approve_btn' => 'Record Approval',

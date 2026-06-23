@@ -926,7 +926,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validate(
             [
-                'overrideStage' => ['required', Rule::in(['clearance', 'shipping', 'dhl'])],
+                'overrideStage' => ['required', Rule::in(['clearance', 'shipping', 'bl'])],
                 'overrideReason' => ['required', 'string', 'min:20'],
             ],
             [],
@@ -4511,7 +4511,7 @@ function vehicleColumnsToggle() {
                 $g1Vehicle = \App\Models\Vehicle::with('unpaidExportOverrides')->find($editingId);
                 $g1Ratio = $g1Vehicle?->unpaid_ratio;
                 $g1HasExistingBl = $g1Vehicle && ! empty($g1Vehicle->bl_document);
-                $g1HasShippingOverride = $g1Vehicle?->hasUnpaidOverride('shipping') ?? false;
+                $g1HasShippingOverride = $g1Vehicle?->hasUnpaidOverride('bl') ?? false;   // B/L 발행 우회는 'bl' 단계
             @endphp
             @if(! $g1HasExistingBl)
             <div class="mb-3 rounded-md border px-3 py-2 text-xs
@@ -4787,9 +4787,9 @@ function vehicleColumnsToggle() {
                         <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
                         <select wire:model="overrideStage" class="input-filter">
                             <option value="">{{ __('vehicle.override.stage_select') }}</option>
-                            <option value="clearance">{{ __('vehicle.panel.sec.clearance') }}</option>
-                            <option value="shipping">{{ __('vehicle.panel.flow.bl') }}</option>
-                            <option value="dhl">DHL</option>
+                            <option value="clearance">{{ __('vehicle.override.stage_clearance') }}</option>
+                            <option value="shipping">{{ __('vehicle.override.stage_shipping') }}</option>
+                            <option value="bl">{{ __('vehicle.override.stage_bl') }}</option>
                         </select>
                     </div>
                     <div class="flex-1 min-w-[200px]">
