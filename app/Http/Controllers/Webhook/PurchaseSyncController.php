@@ -37,7 +37,7 @@ class PurchaseSyncController extends Controller
     /**
      * 지원 계약 버전. 미지원 → 422.
      * v2 = attachments[] 추가(전방호환, v1 도 계속 수용).
-     * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee_usd·
+     * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee·
      *      sale_price·sale_currency·sale_exchange_rate·buyer_id·consignee_id (모두 optional).
      */
     private const SUPPORTED_VERSIONS = [1, 2, 3];
@@ -75,7 +75,7 @@ class PurchaseSyncController extends Controller
             // 연동 B v3 — 금액/바이어/컨사이니 확장 (모두 optional, 전방호환).
             'purchase_price_krw' => ['nullable', 'integer', 'min:0'],   // 구입금액(차값−할인)만 — final_price 부풀림 교정
             'selling_fee_krw' => ['nullable', 'integer', 'min:0'],      // 매도비 (별도 컬럼)
-            'transport_fee_usd' => ['nullable', 'numeric', 'min:0'],    // 운임비 (외화/USD)
+            'transport_fee' => ['nullable', 'numeric', 'min:0'],        // 운임비 — ⚠️ 판매통화(board 가 환산해 보냄), USD raw 아님
             'sale_price' => ['nullable', 'numeric', 'min:0'],           // pre-fill, 관리 편집
             'sale_currency' => ['nullable', 'string', 'in:'.implode(',', self::SALE_CURRENCIES)],
             'sale_exchange_rate' => ['nullable', 'numeric', 'min:0'],   // pre-fill, 관리가 지정시점 환율로 덮어씀
@@ -134,8 +134,11 @@ class PurchaseSyncController extends Controller
         if (isset($data['selling_fee_krw'])) {
             $vehicle->selling_fee = $data['selling_fee_krw'];
         }
-        if (isset($data['transport_fee_usd'])) {
-            $vehicle->transport_fee = $data['transport_fee_usd'];   // car-erp transport_fee = 외화/USD
+        if (isset($data['transport_fee'])) {
+            // ⚠️ 운임비 = 판매통화 기준. sale_total_amount(미수율 분모) = sale_price + transport_fee + …
+            //    뒤에서 단일 exchange_rate 로 곱해짐(Vehicle::getSaleTotalAmountAttribute) → USD raw 저장 시
+            //    EUR 판매차에서 EUR 환율로 곱해져 부풀음. board 가 판매통화로 환산해 보냄(2026-06-23 버그수정).
+            $vehicle->transport_fee = $data['transport_fee'];
         }
 
         // v3 — 바이어/컨사이니 FK (존재·활성 검증, consignee 는 buyer 하위. 무효면 null).

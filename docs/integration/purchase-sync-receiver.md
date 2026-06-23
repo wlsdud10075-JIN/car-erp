@@ -74,7 +74,7 @@
 ```json
 "purchase_price_krw": 0,      // 구입금액(차값−할인)만 → purchase_price (final_price 부풀림 교정)
 "selling_fee_krw": 0,         // 매도비 → selling_fee
-"transport_fee_usd": 0,       // 운임비 → transport_fee (외화/USD)
+"transport_fee": 0,           // 운임비 → transport_fee ⚠️ 판매통화(board 환산), USD raw 아님
 "sale_price": 0,              // pre-fill → sale_price (관리 편집)
 "sale_currency": "USD",       // → currency (enum USD/JPY/EUR/GBP/CNY/KRW)
 "sale_exchange_rate": 0,      // pre-fill → exchange_rate (관리가 지정시점 환율로 덮어씀)
@@ -85,7 +85,7 @@
 **수신 규칙** (`PurchaseSyncController`):
 1. **`contract_version: 3` 수용** (1·2·3). 미지원 → 422 유지.
 2. **purchase_price**: v3 & `purchase_price_krw` 있으면 그것, 아니면 `final_price`(v2 호환). validation = `final_price` 는 `required_without:purchase_price_krw`(둘 중 하나 필수).
-3. **selling_fee/transport_fee**: 값 있으면 채움(관리 이후 편집).
+3. **selling_fee/transport_fee**: 값 있으면 채움(관리 이후 편집). ⚠️ **운임비(`transport_fee`)는 판매통화 기준** — `sale_total_amount`(미수율 분모) = `sale_price + transport_fee + …` 가 뒤에서 단일 `exchange_rate` 로 곱해짐(`Vehicle::getSaleTotalAmountAttribute`). board 가 `shipping_usd × (USD환율/판매환율)` 로 판매통화 환산해 보냄(USD판매=×1·EUR판매=USD/EUR 크로스·KRW판매=×USD환율). **USD raw 저장 금지**(2026-06-23 board 발견 버그 — EUR차 ~16% 부풀림).
 4. **sale pre-fill — ⚠️ chk_sale_required all-or-nothing**: `sale_price>0` 이면 DB CHECK 가 `sale_date NOT NULL AND exchange_rate>0` 요구(SKILLS #25). 따라서 **`sale_price>0 AND sale_exchange_rate>0` 일 때만** sale_price·exchange_rate·currency·`sale_date=now()` 세팅(→ progress 즉시 `판매중`, Jin 확정 OK). **환율 누락 시 sale 필드 통째 보류**(매입중 유지, currency 힌트만 무해 보존) — INSERT 실패 방지.
 5. **buyer_id/consignee_id**: 존재 + `is_active` 검증. consignee 는 **해당 buyer 하위 + active** 여야 함(소속 불일치 → null). buyer 무효 → 둘 다 null.
 6. **정산(부가세 9%·마진) 미변경** — 기존 정산씬 그대로.

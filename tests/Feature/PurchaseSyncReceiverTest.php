@@ -426,7 +426,7 @@ class PurchaseSyncReceiverTest extends TestCase
             'final_price' => 12000000,         // 부풀림(매도비·배송 포함)
             'purchase_price_krw' => 10000000,  // 구입금액만 — 이게 우선
             'selling_fee_krw' => 440000,
-            'transport_fee_usd' => 350,
+            'transport_fee' => 350,            // 판매통화 기준(board 환산) — USD raw 아님
         ]));
         $res->assertStatus(201);
 
