@@ -60,13 +60,13 @@ class StampSlots
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
+            // ⚠ 한글/영문등록증·말소증의 빨간 직인은 "대한민국(시장·도지사) 공인 직인" = 정부 인장.
+            //   회사 도장으로 덮으면 안 됨 → 슬롯에서 제외. 회사 도장/서명은 인보이스·팩킹·Travel 만.
             'clearance' => [
-                ['key' => 'seal_hangul', 'role' => 'seal', 'sheet' => '한글등록증', 'anchor' => 'O13', 'width' => 111, 'height' => 108],
-                ['key' => 'seal_english', 'role' => 'seal', 'sheet' => '영문등록증', 'anchor' => 'O13', 'width' => 111, 'height' => 108],
-                ['key' => 'seal_malso', 'role' => 'seal', 'sheet' => '말소증', 'anchor' => 'K33', 'width' => 131, 'height' => 129],
                 ['key' => 'sign_invoice', 'role' => 'signature', 'sheet' => '차량인보이스', 'anchor' => 'G33', 'width' => 290, 'height' => 137],
                 ['key' => 'sign_packing', 'role' => 'signature', 'sheet' => '차량팩킹', 'anchor' => 'G33', 'width' => 290, 'height' => 136],
                 ['key' => 'sign_travel', 'role' => 'signature', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'width' => 291, 'height' => 188],
+                ['key' => 'logo_travel', 'role' => 'logo', 'sheet' => 'Travel Services Invoice', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
         ];
     }
