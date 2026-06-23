@@ -541,3 +541,32 @@ ProductionSeeder / DemoSeeder 분리 + 환경 분기 코드 완료(commit `dc47d
   `--apply` 146 삭제·캐시 146대 재계산·정산 잔여 0. **96더5119 회계잠금 해제 검증 완료.**
 - 다음: Part B(사내직원 차등 tier) 구현 후 CK='정산' 101대(G2 71+G4 30) 올바른 금액 재산정.
   핸드오프 = `docs/operations/settlement-data-remediation-2026-06-22.md`.
+
+## 27. deploy #16 — 서류/통관 보강 + 회사 양식 토글 + 도장 XY 씬 (2026-06-23)
+
+**반영** (master `7430179`→`4eb9777`, 자동배포 success 31초, heysellcar.com 200). dev 7커밋
+cherry-pick(.md 제외). 마이그 없음.
+- 차량 첨부 미리보기 라이트박스(이미지·PDF).
+- 통관SET: 컨사이니 블록에 이메일·전화·담당자 추가, 구매리스트 D14=B14(컨사이니 미러),
+  연비 H13 매핑(NICE fuelCnsmpRt→nice_spec_fuel_efficiency→등록증 F31 cascade), 정부직인 보존
+  (등록증/말소증 빨간직인=대한민국 공인직인, 회사도장 슬롯에서 제외), 대한민국/Republic of Korea
+  텍스트 복원 + 등록증/말소증 Gridlines OFF.
+- **회사 양식 세트 토글**(기능설정 super): SSANCAR/HEYMAN/KARABA. `Setting::companyTemplateSet()`
+  단일출처(DB 토글>.env fallback). `resources/templates/heyman/` 9종 신설(jin _HEYMAN rebrand 11셀+
+  A1 HETMAN오타교정, 은행정보 HEYMAN/180-012-458342). `scripts/generate-heyman-templates.php`.
+- **도장/서명/로고 업로드 + 슬롯별 XY위치·크기 조정 씬**: `StampSlots` 레지스트리(서류별 슬롯·서브시트),
+  `applyStamps` 재작성(role 이미지 재사용+`stamp_pos_*` offset), 로고 역할 추가, 도장 미리보기 S3
+  서명URL(`VehicleDocUrl`). 선적 도장이 fillMulti removeRow 트림 따라 이동 검증(단일/다중).
+- NICE 조회 성공/실패 토스트 + 미들웨어 실제 사유 노출(E901 소유주명 불일치 등). 기존 "HTTP 400"만 뜨던 것.
+
+## 28. deploy #17 — 미입금 우회 선적/B/L 분리 + 도장 미리보기 S3 수정 (2026-06-23)
+
+**반영** (master 자동배포, dev `3f362c5`·`911863c` cherry-pick). **마이그 있음**(enum 'bl' 추가).
+- 미입금 우회 stage 분리: `'bl'`(B/L 발행 G1 100%) 신설, `'dhl'` 폐기. 선적 우회('shipping', C5 50%)
+  만으론 B/L 발행 안 뚫림 → 별도 'bl' 승인. enum 비파괴 마이그('dhl' 보존, 운영 override 0건 확인).
+  승인 UI=통관 진입/선적 진입/B/L 발행. 상세=메모리 `project-bl-gate-100-decision`.
+- 도장 미리보기 운영 S3 깨짐 수정(`VehicleDocUrl` 임시 서명URL). 업로드·서류 반영은 원래 정상이었음.
+- 전체 684 테스트 통과(분리 검증 신규 포함).
+
+> ⚠️ heyman 운영 적용 잔여: 기능설정에서 회사=HEYMAN 선택 + heyman 직인/서명/로고 업로드·XY조정
+>   (회사 토글·도장은 DB 데이터라 서버별 — 로컬 설정 운영 미전파).
