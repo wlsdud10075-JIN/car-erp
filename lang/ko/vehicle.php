@@ -83,6 +83,7 @@ return [
         'new' => '신규',
         'photo_count' => ':count/10건 · 저장 버튼을 눌러야 반영됩니다.',
         'photo_multi_hint' => '사진·문서 여러 개를 한 번에 선택할 수 있고, 나눠서 추가해도 누적됩니다.',
+        'open_new_tab' => '새 탭에서 열기',
         'validation_title' => '저장할 수 없습니다 — 아래 항목을 확인하세요',
         'tab' => [
             'basic' => '기본정보',

@@ -3334,7 +3334,11 @@ function vehicleColumnsToggle() {
     tab: 'basic',
     dirty: false,
     confirmOpen: false,
+    lightbox: { open: false, url: '', name: '', kind: '' },
+    openLightbox(url, name, kind) { this.lightbox = { open: true, url: url, name: name, kind: kind }; },
+    closeLightbox() { this.lightbox.open = false; },
     attemptClose() {
+        if (this.lightbox.open) { this.lightbox.open = false; return; }
         if (this.confirmOpen) { this.confirmOpen = false; return; }
         if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
     },
@@ -3644,7 +3648,16 @@ function vehicleColumnsToggle() {
                     @foreach($existingPhotos as $p)
                     <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
                         @if($p['is_image'])
-                            <img src="{{ $p['url'] }}" class="h-full w-full object-cover" alt="{{ $p['filename'] }}" />
+                            <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
+                                 alt="{{ $p['filename'] }}"
+                                 @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
+                        @elseif($p['ext'] === 'pdf')
+                            <button type="button"
+                                    @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
+                                    class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
+                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                            </button>
                         @else
                             <a href="{{ $p['url'] }}" target="_blank" rel="noopener"
                                class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
@@ -3663,7 +3676,9 @@ function vehicleColumnsToggle() {
                     @endphp
                     <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
                         @if($_isImg)
-                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full object-cover" alt="{{ __('vehicle.panel.new') }}" />
+                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
+                                 alt="{{ __('vehicle.panel.new') }}"
+                                 @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
                         @else
                             <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
                                 <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
@@ -4803,6 +4818,29 @@ function vehicleColumnsToggle() {
     </div>
 
 </div>{{-- /panel --}}
+
+{{-- 차량 첨부 미리보기 라이트박스 (이미지·PDF) --}}
+<div x-show="lightbox.open" x-cloak x-transition.opacity
+     class="fixed inset-0 z-[100] flex flex-col bg-black/80"
+     @click.self="closeLightbox()">
+    <div class="flex items-center justify-between px-4 py-3 text-white">
+        <span class="truncate text-sm" x-text="lightbox.name"></span>
+        <div class="flex items-center gap-3">
+            <a :href="lightbox.url" target="_blank" rel="noopener"
+               class="rounded border border-white/40 px-3 py-1 text-xs hover:bg-white/10">{{ __('vehicle.panel.open_new_tab') }}</a>
+            <button type="button" @click="closeLightbox()"
+                    class="rounded-full bg-white/20 px-2.5 py-0.5 text-lg leading-none hover:bg-white/30">×</button>
+        </div>
+    </div>
+    <div class="flex flex-1 items-center justify-center overflow-auto p-4" @click.self="closeLightbox()">
+        <template x-if="lightbox.kind === 'image'">
+            <img :src="lightbox.url" :alt="lightbox.name" class="max-h-full max-w-full object-contain" />
+        </template>
+        <template x-if="lightbox.kind === 'pdf'">
+            <iframe :src="lightbox.url" class="h-full w-full rounded bg-white sm:w-[800px]"></iframe>
+        </template>
+    </div>
+</div>
 
 {{-- 큐 18: close confirm 모달 (.card) --}}
 <div x-show="confirmOpen" x-cloak x-transition.opacity

@@ -83,6 +83,7 @@ return [
         'new' => 'New',
         'photo_count' => ':count/10 · click Save to apply.',
         'photo_multi_hint' => 'Select several photos/documents at once, or add more in separate picks — they accumulate.',
+        'open_new_tab' => 'Open in new tab',
         'validation_title' => 'Cannot save — please check the items below',
         'tab' => [
             'basic' => 'Basic Info',
