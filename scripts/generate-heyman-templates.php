@@ -112,6 +112,15 @@ foreach ($map as $file => $sheets) {
             }
         }
     }
+    // 통관 등록증/말소증은 화면 Gridlines OFF (정부 양식). PhpSpreadsheet reader 가 showGridLines="false"
+    // 를 true 로 오독 → load 마다 재설정 필요(명시). 엑셀은 "false" 정상 인식.
+    if ($file === 'clearance_set.xlsx') {
+        foreach (['한글등록증', '영문등록증', '말소증'] as $gsh) {
+            if ($g = $ss->getSheetByName($gsh)) {
+                $g->setShowGridlines(false);
+            }
+        }
+    }
     if ($APPLY) {
         // 외부 하이퍼링크 제거 — writer 깨짐 방어 (SKILLS §12 stripHyperlinks)
         foreach ($ss->getWorksheetIterator() as $sh) {
