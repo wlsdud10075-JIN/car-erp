@@ -336,6 +336,7 @@ return [
         'nice_need_owner' => 'Enter the owner name first. (NICE lookup needs vehicle number + owner name)',
         'nice_not_configured' => 'NICE lookup is not configured — enter manually.',
         'nice_failed' => 'NICE lookup failed.',
+        'nice_success' => 'NICE lookup done — :count registration/spec fields auto-filled. (Save to apply)',
         'paid_locked' => "Accounting columns of a 'paid' settlement vehicle cannot be changed (attempted: :fields). Cancel the settlement and retry.",
         'max_photos' => 'Up to :max attachments can be added.',
         'rrn_required' => 'Deregistration requires the owner resident/corp registration number.',

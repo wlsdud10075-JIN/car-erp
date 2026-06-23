@@ -88,7 +88,19 @@ class NiceApiService
         }
 
         if ($response->failed()) {
-            return ['success' => false, 'message' => 'NICE 조회 서버 오류 (HTTP '.$response->status().')'];
+            // 미들웨어가 4xx 에도 사유 메시지(JSON body)를 줌 (예: "소유주명이 일치하지 않습니다 E901").
+            // 그 메시지를 그대로 노출 — 사용자가 원인(소유주명 불일치 등)을 바로 알 수 있게.
+            $detail = null;
+            try {
+                $b = $response->json();
+                if (is_array($b) && ! empty($b['message'])) {
+                    $detail = $b['message'];
+                }
+            } catch (\Throwable $e) {
+                // body 파싱 실패 시 status 만
+            }
+
+            return ['success' => false, 'message' => $detail ?: ('NICE 조회 서버 오류 (HTTP '.$response->status().')')];
         }
 
         try {

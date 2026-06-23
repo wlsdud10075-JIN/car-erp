@@ -2828,7 +2828,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         if (empty(trim($this->nice_reg_owner_name))) {
-            session()->flash('notice', __('vehicle.toast.nice_need_owner'));
+            $this->dispatch('notify', message: __('vehicle.toast.nice_need_owner'), type: 'warning');
 
             return;
         }
@@ -2838,14 +2838,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             trim($this->nice_reg_owner_name),
         );
 
-        // null = 엔드포인트 미설정(수동 입력 모드) / success=false = 조회 실패(원문 메시지 노출)
+        // null = 엔드포인트 미설정(수동 입력 모드) / success=false = 조회 실패(미들웨어 원문 메시지 노출)
         if ($result === null) {
-            session()->flash('notice', __('vehicle.toast.nice_not_configured'));
+            $this->dispatch('notify', message: __('vehicle.toast.nice_not_configured'), type: 'warning');
 
             return;
         }
         if (($result['success'] ?? false) !== true) {
-            session()->flash('notice', $result['message'] ?? __('vehicle.toast.nice_failed'));
+            // 미들웨어 실제 사유 노출 (예: "소유주명이 일치하지 않습니다 E901") — 실패를 명확히 인지.
+            $this->dispatch('notify', message: $result['message'] ?? __('vehicle.toast.nice_failed'), type: 'error');
 
             return;
         }
@@ -2868,9 +2869,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 응답 원본 보존 — 저장 시 nice_raw 로 기입 (미매핑 필드 재조회 없이 활용).
-        // 성공 토스트는 띄우지 않음 — 폼 칸이 자동으로 채워지는 것 자체가 성공 신호이고,
-        // wire:blur 재발 시 캐시 히트마다 토스트가 반복 노출되는 것을 피한다.
         $this->niceRaw = $result['raw'] ?? [];
+
+        // 성공 토스트 — 조회 성공/실패를 사용자가 명확히 인지하도록(저장 전 단계라 헷갈리기 쉬움).
+        $count = count($result['registration'] ?? []) + count($result['spec'] ?? []);
+        $this->dispatch('notify', message: __('vehicle.toast.nice_success', ['count' => $count]), type: 'success');
     }
 
     public function addFinalPayment(): void
