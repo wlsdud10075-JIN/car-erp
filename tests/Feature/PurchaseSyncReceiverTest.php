@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -411,5 +413,127 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertCount(1, $photos);
         Storage::disk('public')->assertExists($photos[0]->path);
         $this->assertSame('BOARDBYTES', Storage::disk('public')->get($photos[0]->path));   // board 바이트가 car-erp 로
+    }
+
+    // ── 연동 B v3 — 금액/바이어/컨사이니 확장 ──────────────────────────────
+
+    public function test_v3_purchase_price_krw_overrides_final_price(): void
+    {
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '60가6000',
+            'salesman_email' => 'nobody@car-erp.test',
+            'final_price' => 12000000,         // 부풀림(매도비·배송 포함)
+            'purchase_price_krw' => 10000000,  // 구입금액만 — 이게 우선
+            'selling_fee_krw' => 440000,
+            'transport_fee_usd' => 350,
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame(10000000, (int) $v->purchase_price);
+        $this->assertSame(440000, (int) $v->selling_fee);
+        $this->assertSame(350.0, (float) $v->transport_fee);
+    }
+
+    public function test_v3_without_purchase_price_krw_falls_back_to_final_price(): void
+    {
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '61나6100',
+            'salesman_email' => 'nobody@car-erp.test',
+            'final_price' => 9000000,
+        ]));
+        $res->assertStatus(201);
+        $this->assertSame(9000000, (int) Vehicle::find($res->json('vehicle_id'))->purchase_price);
+    }
+
+    public function test_v3_sale_prefill_with_rate_sets_sale_fields(): void
+    {
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '62다6200',
+            'salesman_email' => 'nobody@car-erp.test',
+            'sale_price' => 5000,
+            'sale_currency' => 'USD',
+            'sale_exchange_rate' => 1350,
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame(5000.0, (float) $v->sale_price);
+        $this->assertSame('USD', $v->currency);
+        $this->assertSame(1350.0, (float) $v->exchange_rate);
+        $this->assertNotNull($v->sale_date);   // chk_sale_required 충족
+        $this->assertSame('판매중', $v->progress_status);
+    }
+
+    public function test_v3_sale_prefill_without_rate_is_held(): void
+    {
+        // 환율 누락 → sale_price 보류(매입중 유지). chk_sale_required INSERT 실패 방지.
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '63라6300',
+            'salesman_email' => 'nobody@car-erp.test',
+            'sale_price' => 5000,
+            'sale_currency' => 'USD',
+            // sale_exchange_rate 없음
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame(0, (int) $v->sale_price);
+        $this->assertSame('USD', $v->currency);   // 통화 힌트만 무해하게 보존
+        $this->assertSame('매입중', $v->progress_status);
+    }
+
+    public function test_v3_resolves_valid_buyer_and_consignee(): void
+    {
+        $buyer = Buyer::create(['name' => 'ABC Motors', 'is_active' => true]);
+        $consignee = Consignee::create(['name' => 'ABC Consignee', 'buyer_id' => $buyer->id, 'is_active' => true]);
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '64마6400',
+            'salesman_email' => 'nobody@car-erp.test',
+            'buyer_id' => $buyer->id,
+            'consignee_id' => $consignee->id,
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame($buyer->id, $v->buyer_id);
+        $this->assertSame($consignee->id, $v->consignee_id);
+    }
+
+    public function test_v3_invalid_buyer_and_mismatched_consignee_are_nulled(): void
+    {
+        $buyerA = Buyer::create(['name' => 'A', 'is_active' => true]);
+        $buyerB = Buyer::create(['name' => 'B', 'is_active' => true]);
+        // consignee 는 buyerB 하위인데 payload 는 buyerA 로 보냄 → consignee 소속 불일치 → null.
+        $consigneeB = Consignee::create(['name' => 'CB', 'buyer_id' => $buyerB->id, 'is_active' => true]);
+        $inactive = Buyer::create(['name' => 'dead', 'is_active' => false]);
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '65바6500',
+            'salesman_email' => 'nobody@car-erp.test',
+            'buyer_id' => $buyerA->id,
+            'consignee_id' => $consigneeB->id,
+        ]));
+        $res->assertStatus(201);
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame($buyerA->id, $v->buyer_id);
+        $this->assertNull($v->consignee_id);   // 소속 불일치
+
+        // 비활성 buyer → null
+        $res2 = $this->postSigned($this->validPayload([
+            'contract_version' => 3,
+            'vehicle_number' => '66사6600',
+            'salesman_email' => 'nobody@car-erp.test',
+            'buyer_id' => $inactive->id,
+        ]));
+        $res2->assertStatus(201);
+        $this->assertNull(Vehicle::find($res2->json('vehicle_id'))->buyer_id);
     }
 }

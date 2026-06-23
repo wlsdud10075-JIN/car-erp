@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\ShippingRequest;
@@ -297,5 +298,61 @@ class BoardPortalApiTest extends TestCase
 
         $this->signedGet('/api/internal/board/documents/roro_contract', ['salesman_email' => 'me@a.com', 'ids' => (string) $theirs->id])
             ->assertStatus(403);
+    }
+
+    // ── 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프) ──────
+
+    public function test_buyers_returns_own_active_buyers_only(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $mine = Buyer::create(['name' => 'Mine', 'salesman_id' => $me->id, 'is_active' => true]);
+        Buyer::create(['name' => 'MyDead', 'salesman_id' => $me->id, 'is_active' => false]);
+        Buyer::create(['name' => 'Theirs', 'salesman_id' => $other->id, 'is_active' => true]);
+
+        $res = $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('count', 1);
+        $res->assertJsonFragment(['id' => $mine->id, 'name' => 'Mine']);
+        $res->assertJsonMissing(['name' => 'MyDead']);    // 비활성 제외
+        $res->assertJsonMissing(['name' => 'Theirs']);    // 타 영업 제외 (IDOR)
+    }
+
+    public function test_buyers_response_has_no_pii(): void
+    {
+        $me = $this->salesman('me@a.com');
+        Buyer::create([
+            'name' => 'PII', 'salesman_id' => $me->id, 'is_active' => true,
+            'contact_phone' => '010-1111-2222', 'contact_email' => 'secret@x.com', 'address' => '비밀주소',
+        ]);
+
+        $body = $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'me@a.com'])->assertOk()->getContent();
+        foreach (['010-1111-2222', 'secret@x.com', '비밀주소'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $body, "buyers 응답에 $forbidden 노출 금지");
+        }
+    }
+
+    public function test_consignees_returns_active_under_owned_buyer(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'B', 'salesman_id' => $me->id, 'is_active' => true]);
+        $c = Consignee::create(['name' => 'C1', 'buyer_id' => $buyer->id, 'is_active' => true]);
+        Consignee::create(['name' => 'Cdead', 'buyer_id' => $buyer->id, 'is_active' => false]);
+
+        $res = $this->signedGet('/api/internal/board/consignees', ['salesman_email' => 'me@a.com', 'buyer_id' => (string) $buyer->id])->assertOk();
+        $res->assertJsonPath('count', 1);
+        $res->assertJsonFragment(['id' => $c->id, 'name' => 'C1']);
+        $res->assertJsonMissing(['name' => 'Cdead']);
+    }
+
+    public function test_consignees_idor_other_salesman_buyer_returns_empty(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $theirBuyer = Buyer::create(['name' => 'TB', 'salesman_id' => $other->id, 'is_active' => true]);
+        Consignee::create(['name' => 'TC', 'buyer_id' => $theirBuyer->id, 'is_active' => true]);
+
+        // 본인 소유 아닌 buyer_id 로 조회 → 빈 목록 (타 영업 컨사이니 열람 차단).
+        $res = $this->signedGet('/api/internal/board/consignees', ['salesman_email' => 'me@a.com', 'buyer_id' => (string) $theirBuyer->id])->assertOk();
+        $res->assertJsonPath('count', 0);
     }
 }

@@ -66,6 +66,35 @@
 
 테스트 = `PurchaseSyncReceiverTest`(첨부 5케이스: 생성+복사·미첨부·dedup·cap10·원본누락 graceful) 포함 23케이스.
 
+## 연동 B v3 — 금액/바이어/컨사이니 확장 (2026-06-23)
+
+> 발신 권위 = board `SKILLS.md §12` (`contract_version: 3`). 인계 = board `meetings/handoff-car-erp-amount-mapping.md`. 배경: 차량은 원가판매(판매마진≈0), 회사수익=부가세환급(구입금액×9%, 정산씬 불변). 판매가/환율은 **관리가 ERP 지정시점 환율로 확정** → board 는 **pre-fill(추정치)만** 보내고 관리가 덮어씀. ⚠️ 무수정 원칙의 명시적 확장 = **Jin 권한 진행**.
+
+**payload 확장** (v3, 기존 v1/v2 필드 전부 유지·전방호환. 신규 모두 nullable):
+```json
+"purchase_price_krw": 0,      // 구입금액(차값−할인)만 → purchase_price (final_price 부풀림 교정)
+"selling_fee_krw": 0,         // 매도비 → selling_fee
+"transport_fee_usd": 0,       // 운임비 → transport_fee (외화/USD)
+"sale_price": 0,              // pre-fill → sale_price (관리 편집)
+"sale_currency": "USD",       // → currency (enum USD/JPY/EUR/GBP/CNY/KRW)
+"sale_exchange_rate": 0,      // pre-fill → exchange_rate (관리가 지정시점 환율로 덮어씀)
+"buyer_id": null,             // → buyer_id (FK buyers, 검증 후)
+"consignee_id": null          // → consignee_id (FK consignees, 검증 후)
+```
+
+**수신 규칙** (`PurchaseSyncController`):
+1. **`contract_version: 3` 수용** (1·2·3). 미지원 → 422 유지.
+2. **purchase_price**: v3 & `purchase_price_krw` 있으면 그것, 아니면 `final_price`(v2 호환). validation = `final_price` 는 `required_without:purchase_price_krw`(둘 중 하나 필수).
+3. **selling_fee/transport_fee**: 값 있으면 채움(관리 이후 편집).
+4. **sale pre-fill — ⚠️ chk_sale_required all-or-nothing**: `sale_price>0` 이면 DB CHECK 가 `sale_date NOT NULL AND exchange_rate>0` 요구(SKILLS #25). 따라서 **`sale_price>0 AND sale_exchange_rate>0` 일 때만** sale_price·exchange_rate·currency·`sale_date=now()` 세팅(→ progress 즉시 `판매중`, Jin 확정 OK). **환율 누락 시 sale 필드 통째 보류**(매입중 유지, currency 힌트만 무해 보존) — INSERT 실패 방지.
+5. **buyer_id/consignee_id**: 존재 + `is_active` 검증. consignee 는 **해당 buyer 하위 + active** 여야 함(소속 불일치 → null). buyer 무효 → 둘 다 null.
+6. **정산(부가세 9%·마진) 미변경** — 기존 정산씬 그대로.
+7. **멱등(기존 vehicle 200)**: 신규 필드도 스킵(push-once, 기존행 갱신 안 함). 첨부 보강만 유지.
+
+**배포 순서 (중요)**: ⚠️ board 가 `contract_version:3` 을 보내는데 car-erp 가 아직 v3 미배포면 **422 로 sync 전체 거부**. → **car-erp v3 master 먼저 배포 → board v3 송신 전환**. (엔드포인트도 board 는 404 graceful 이지만 라이브 전엔 실제로 안 됨.)
+
+테스트 = `PurchaseSyncReceiverTest` v3 6케이스(purchase_price_krw 우선·fallback·sale prefill 환율유무·buyer/consignee 검증·소속불일치).
+
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|

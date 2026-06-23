@@ -36,6 +36,9 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
         Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
         Route::get('by-buyer', [InternalPortalController::class, 'byBuyer'])->name('by-buyer');
+        // 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프).
+        Route::get('buyers', [InternalPortalController::class, 'buyers'])->name('buyers');
+        Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
         // ③ 선적요청
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');
         Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');

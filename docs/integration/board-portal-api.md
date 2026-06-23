@@ -50,7 +50,10 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /settlements` | 정산 — `status`·`actual_payout`·확정일 | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기) |
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만) | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
+| `GET /buyers` | **드로어 드롭다운** — `{id, name, country}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지 |
+| `GET /consignees?buyer_id=` | **드로어 드롭다운** — `{id, name}` | 해당 buyer 하위 `is_active` 컨사이니. **IDOR — buyer_id 가 본인 소유일 때만**(아니면 빈 목록) |
 
+- **연동 B v3 드롭다운**(2026-06-23): board 경매/구매 드로어가 바이어·컨사이니를 car-erp 목록에서 선택(→ purchase-sync v3 `buyer_id`/`consignee_id` 송신). ⚠️ **Jin 결정 = 영업 본인 스코프**(인계문서의 "전체 활성 허용" 권장과 다름). `buyers` 가 비스코프였다면 IDOR 불변식 깨는 첫 사례라 거부 — 본인 바이어만. board 는 신차에 본인 바이어만 지정 가능(타 영업 바이어 필요 시 car-erp 에서 수동). 미구현 시 board graceful degrade(수동 입력).
 - **환율0 외화**: `sale_unpaid_amount_krw_cache`가 `NULL`이면 그대로 `null` 반환 + `currency`·`exchange_rate` 동봉. board는 `null`을 "환율 미입력"으로 표시(절대 `0`/완납 coerce 금지).
 - N+1 방지: `with(['finalPayments','purchaseBalancePayments','receivableHistories'])`.
 

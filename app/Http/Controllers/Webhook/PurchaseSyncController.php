@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Webhook;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -29,8 +31,16 @@ use Illuminate\Support\Facades\Validator;
  */
 class PurchaseSyncController extends Controller
 {
-    /** 지원 계약 버전. v2 = attachments[] 추가(전방호환, v1 도 계속 수용). 미지원 → 422. */
-    private const SUPPORTED_VERSIONS = [1, 2];
+    /**
+     * 지원 계약 버전. 미지원 → 422.
+     * v2 = attachments[] 추가(전방호환, v1 도 계속 수용).
+     * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee_usd·
+     *      sale_price·sale_currency·sale_exchange_rate·buyer_id·consignee_id (모두 optional).
+     */
+    private const SUPPORTED_VERSIONS = [1, 2, 3];
+
+    /** sale_currency 허용 enum (vehicles.currency 와 동일). */
+    private const SALE_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
 
     public function __invoke(Request $request): JsonResponse
     {
@@ -51,13 +61,23 @@ class PurchaseSyncController extends Controller
             'vehicle_number' => ['required', 'string', 'max:255'],
             'owner_name' => ['nullable', 'string', 'max:255'],
             'source' => ['required', 'string', 'in:encar,auction'],
-            'final_price' => ['required', 'integer', 'min:0'],
+            // v3 는 purchase_price_krw 로 대체 가능 → 둘 중 하나는 필수(전방호환).
+            'final_price' => ['required_without:purchase_price_krw', 'nullable', 'integer', 'min:0'],
             'salesman_email' => ['required', 'email'],
             'car_erp_salesman_id' => ['nullable', 'integer'],
             'c_no' => ['nullable', 'string', 'max:255'],
             'payee_name' => ['nullable', 'string', 'max:100'],
             'payee_bank' => ['nullable', 'string', 'max:100'],
             'payee_account' => ['nullable', 'string', 'max:255'],
+            // 연동 B v3 — 금액/바이어/컨사이니 확장 (모두 optional, 전방호환).
+            'purchase_price_krw' => ['nullable', 'integer', 'min:0'],   // 구입금액(차값−할인)만 — final_price 부풀림 교정
+            'selling_fee_krw' => ['nullable', 'integer', 'min:0'],      // 매도비 (별도 컬럼)
+            'transport_fee_usd' => ['nullable', 'numeric', 'min:0'],    // 운임비 (외화/USD)
+            'sale_price' => ['nullable', 'numeric', 'min:0'],           // pre-fill, 관리 편집
+            'sale_currency' => ['nullable', 'string', 'in:'.implode(',', self::SALE_CURRENCIES)],
+            'sale_exchange_rate' => ['nullable', 'numeric', 'min:0'],   // pre-fill, 관리가 지정시점 환율로 덮어씀
+            'buyer_id' => ['nullable', 'integer'],
+            'consignee_id' => ['nullable', 'integer'],
             // 연동 B v2 — 차량 사진/서류 첨부(공유 S3 키만, 바이트 아님). 전방호환: 없으면 무시.
             'attachments' => ['nullable', 'array', 'max:50'],
             'attachments.*.s3_path' => ['required_with:attachments', 'string', 'max:1024'],
@@ -102,9 +122,43 @@ class PurchaseSyncController extends Controller
         $vehicle->progress_status_rule_version = 4;
         $vehicle->purchase_source = $data['source'];
         $vehicle->c_no = $data['c_no'] ?? null;
-        $vehicle->purchase_price = $data['final_price'];
+        // v3: purchase_price_krw(구입금액만) 우선 → 없으면 final_price(v2 호환, 매도비·배송 포함 부풀림).
+        $vehicle->purchase_price = $data['purchase_price_krw'] ?? $data['final_price'] ?? 0;
         $vehicle->salesman_id = $salesmanId;
         $vehicle->purchase_date = now()->toDateString();
+
+        // v3 — 매입측 금액 확장 (값 있을 때만 채움, 관리가 이후 편집).
+        if (isset($data['selling_fee_krw'])) {
+            $vehicle->selling_fee = $data['selling_fee_krw'];
+        }
+        if (isset($data['transport_fee_usd'])) {
+            $vehicle->transport_fee = $data['transport_fee_usd'];   // car-erp transport_fee = 외화/USD
+        }
+
+        // v3 — 바이어/컨사이니 FK (존재·활성 검증, consignee 는 buyer 하위. 무효면 null).
+        [$buyerId, $consigneeId] = $this->resolveBuyerConsignee($data['buyer_id'] ?? null, $data['consignee_id'] ?? null);
+        $vehicle->buyer_id = $buyerId;
+        $vehicle->consignee_id = $consigneeId;
+
+        // v3 — 판매 pre-fill (관리 편집). ⚠️ chk_sale_required: sale_price>0 이면 sale_date·exchange_rate>0 필수.
+        //   환율 누락 시 sale 필드 통째 보류(= 매입중 유지) — INSERT 실패 방지(SKILLS #25).
+        $salePrice = isset($data['sale_price']) ? (float) $data['sale_price'] : 0.0;
+        $saleRate = isset($data['sale_exchange_rate']) ? (float) $data['sale_exchange_rate'] : 0.0;
+        if ($salePrice > 0 && $saleRate > 0) {
+            $vehicle->sale_price = $salePrice;
+            $vehicle->exchange_rate = $saleRate;
+            $vehicle->currency = $data['sale_currency'] ?? 'KRW';
+            $vehicle->sale_date = now()->toDateString();
+        } elseif ($salePrice > 0) {
+            // 통화 힌트만 무해하게 보존(sale_price·환율 없이) — CHECK 무영향.
+            if (isset($data['sale_currency'])) {
+                $vehicle->currency = $data['sale_currency'];
+            }
+            Log::info('[purchase-sync] sale pre-fill 보류 — 환율 누락', [
+                'vehicle_number' => $data['vehicle_number'],
+                'sale_price' => $salePrice,
+            ]);
+        }
 
         // 신규 매입 기본 기타비용(말소·면허·탁송) — UI 신규등록과 동일 단일 출처.
         // 운영자가 추후 수정/0 가능, 2차 정산에서 실측치로 정정.
@@ -263,6 +317,46 @@ class PurchaseSyncController extends Controller
         $vehicle->nice_raw = $result['raw'] ?? [];
 
         return true;
+    }
+
+    /**
+     * v3 — 바이어/컨사이니 FK 해소. board 드롭다운 선택값을 검증 후 세팅.
+     * - buyer: 존재 + is_active. 무효면 null.
+     * - consignee: 존재 + is_active + 해당 buyer 하위. buyer 무효거나 소속 불일치면 null.
+     *
+     * @return array{0: ?int, 1: ?int} [buyer_id, consignee_id]
+     */
+    private function resolveBuyerConsignee(?int $buyerId, ?int $consigneeId): array
+    {
+        if ($buyerId === null) {
+            return [null, null];   // buyer 없으면 consignee 도 무의미
+        }
+
+        $buyer = Buyer::where('id', $buyerId)->where('is_active', true)->first();
+        if (! $buyer) {
+            Log::info('[purchase-sync] buyer_id 무효 — 무시', ['buyer_id' => $buyerId]);
+
+            return [null, null];
+        }
+
+        if ($consigneeId === null) {
+            return [$buyer->id, null];
+        }
+
+        $consignee = Consignee::where('id', $consigneeId)
+            ->where('buyer_id', $buyer->id)   // 반드시 해당 buyer 하위
+            ->where('is_active', true)
+            ->first();
+
+        if (! $consignee) {
+            Log::info('[purchase-sync] consignee_id 무효/소속 불일치 — 무시', [
+                'buyer_id' => $buyer->id, 'consignee_id' => $consigneeId,
+            ]);
+
+            return [$buyer->id, null];
+        }
+
+        return [$buyer->id, $consignee->id];
     }
 
     /**
