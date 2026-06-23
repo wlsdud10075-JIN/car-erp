@@ -51,8 +51,8 @@ class DocumentFiller
     {
         $config = $this->configFor($type);
 
-        // 테넌트별 양식 세트 (회사별 회사정보 인쇄본). default='system'(ssancar) → .env COMPANY_TEMPLATE_SET 로 분기.
-        $set = config('company.template_set', 'system');
+        // 테넌트별 양식 세트 (회사별 회사정보 인쇄본). 기능설정 토글(company_template_set) 우선, .env fallback.
+        $set = Setting::companyTemplateSet();
         $path = resource_path('templates/'.$set.'/'.$config['template']);
         $spreadsheet = IOFactory::load($path);
 
@@ -106,7 +106,7 @@ class DocumentFiller
             return;
         }
 
-        $set = config('company.template_set', 'system');
+        $set = Setting::companyTemplateSet();
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
 
         foreach ($config['stamps'] as $stamp) {

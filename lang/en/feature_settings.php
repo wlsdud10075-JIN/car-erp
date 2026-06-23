@@ -12,6 +12,11 @@ return [
     'brand_label' => 'Sidebar brand text',
     'brand_hint' => 'Shown next to the logo at the top of the sidebar (max 12 chars). e.g. SSANCAR / SANCAR ERP',
 
+    'company_set_section' => 'Document templates (company)',
+    'company_set_label' => 'Company template set for documents',
+    'company_set_hint' => 'All documents are generated with the selected company\'s templates (name, account, seal). Applies immediately.',
+    'company_set_invalid' => 'That company template folder does not exist.',
+
     'lang_section' => 'Language (i18n)',
     'lang_hint' => 'Users can only pick enabled languages from the top bar. Turning one off reverts those users to Korean.',
     'ko_label' => 'Korean',

@@ -12,6 +12,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $sidebarBrand = '';
 
+    // 서류 양식 세트(=회사) 토글. system=SSANCAR(기본) / heyman / karaba.
+    public string $companyTemplateSet = 'system';
+
     public bool $localeEnEnabled = false;
 
     public bool $alarmEnabled = false;
@@ -36,6 +39,7 @@ new #[Layout('components.layouts.app')] class extends Component
             abort(403);
         }
         $this->sidebarBrand = Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
+        $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
@@ -76,10 +80,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
-    // 현재 template_set(=회사) — 배포별 1개 회사라 이 화면은 자기 회사 도장만 관리.
+    // 현재 template_set(=회사) — 기능설정 토글(company_template_set) 따라감. 도장도 선택 회사 기준.
     private function stampSet(): string
     {
-        return config('company.template_set', 'system');
+        return Setting::companyTemplateSet();
     }
 
     // UI 슬롯 메타 — blade 에서 foreach.
@@ -231,6 +235,39 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
+
+    // 서류 양식 세트(=회사) 선택지 — value=폴더명, label=표시명. resources/templates/{value} 존재해야 함.
+    public function companyTemplateSetOptions(): array
+    {
+        return [
+            'system' => 'SSANCAR',
+            'heyman' => 'HEYMAN',
+            'karaba' => 'KARABA',
+        ];
+    }
+
+    // 회사 양식 세트 토글 즉시 저장 — 이후 모든 서류 생성이 이 세트로. super 전용.
+    public function updatedCompanyTemplateSet(string $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        if (! array_key_exists($value, $this->companyTemplateSetOptions())
+            || ! is_dir(resource_path('templates/'.$value))) {
+            $this->companyTemplateSet = Setting::companyTemplateSet();
+            $this->dispatch('notify', message: __('feature_settings.company_set_invalid'), type: 'warning');
+
+            return;
+        }
+
+        Setting::updateOrCreate(
+            ['key' => 'company_template_set'],
+            ['value' => $value, 'type' => 'string', 'description' => '서류 양식 세트(회사) — system/heyman/karaba'],
+        );
+
+        $this->refreshStamps();   // 도장도 선택 회사 기준으로 갱신
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
 }; ?>
 
 <div wire:poll.30s class="flex h-full w-full flex-1 flex-col gap-4 p-3 md:p-6">
@@ -270,6 +307,29 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-4 flex justify-end">
                 <button wire:click="save" class="btn-primary">{{ __('common.save') }}</button>
             </div>
+        </div>
+    </div>
+
+    {{-- 서류 양식 세트(=회사) 그룹 — 어느 회사 양식으로 서류 생성할지. super 전용 --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ __('feature_settings.company_set_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3">
+            <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.company_set_label') }}</label>
+            <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.company_set_hint') }}</p>
+            <select wire:model.live="companyTemplateSet" class="input-base mt-2 w-full">
+                @foreach($this->companyTemplateSetOptions() as $value => $label)
+                    <option value="{{ $value }}">{{ $label }}</option>
+                @endforeach
+            </select>
         </div>
     </div>
 
