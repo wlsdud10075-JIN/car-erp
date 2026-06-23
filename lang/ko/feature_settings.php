@@ -12,6 +12,11 @@ return [
     'brand_label' => '사이드바 브랜드 텍스트',
     'brand_hint' => '사이드바 상단 로고 옆에 표시 (최대 12자). 예: SSANCAR / 산카 ERP',
 
+    'company_set_section' => '서류 양식 (회사)',
+    'company_set_label' => '서류 생성에 사용할 회사 양식',
+    'company_set_hint' => '선택한 회사의 양식(상호·계좌·도장)으로 모든 서류가 생성됩니다. 즉시 적용.',
+    'company_set_invalid' => '해당 회사 양식 폴더가 없습니다.',
+
     'lang_section' => '언어 (다국어)',
     'lang_hint' => '활성화한 언어만 사용자가 상단바에서 선택할 수 있습니다. 끄면 해당 언어 사용자는 한국어로 돌아갑니다.',
     'ko_label' => '한국어',
