@@ -5,6 +5,47 @@ use Livewire\Volt\Component;
 
 new class extends Component
 {
+    /** 직전 폴링까지 본 최대 알람 id — 이 이후 새 알람이 생기면 토스트 1번. */
+    public int $toastSeenId = 0;
+
+    public function mount(): void
+    {
+        $this->toastSeenId = $this->maxUnreadId();   // 기존 알람은 토스트 안 함(첫 로드 기준선)
+    }
+
+    private function maxUnreadId(): int
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->canAccessClearance()) {
+            return 0;
+        }
+
+        return (int) (TaskAlarm::query()->visibleTo($user)->unread()->max('id') ?? 0);
+    }
+
+    /**
+     * 폴링 — 직전 본 id 이후 새 알람(board 도착·ETA 등)이 생겼으면 떴다 사라지는 토스트 1번.
+     * 배지/벨(영구)은 별도 유지 — 토스트는 "지금 보고 있는 사람" 즉시 인지용 보조. (jin 2026-06-24)
+     */
+    public function poll(): void
+    {
+        $user = auth()->user();
+        if (! $user || ! $user->canAccessClearance()) {
+            return;
+        }
+        $fresh = TaskAlarm::query()->visibleTo($user)->unread()
+            ->where('id', '>', $this->toastSeenId)->get(['id', 'type']);
+        if ($fresh->isEmpty()) {
+            return;
+        }
+        $arrival = $fresh->where('type', 'purchase_arrival')->count();
+        $msg = $arrival > 0
+            ? __('alarm.toast_arrival', ['n' => $arrival])
+            : __('alarm.toast_new', ['n' => $fresh->count()]);
+        $this->dispatch('notify', message: $msg, type: 'info');
+        $this->toastSeenId = (int) $fresh->max('id');
+    }
+
     /** [확인] = 봤음 처리. canSeeAlarm 재인가(IDOR 차단) + confirmed_by 서버 지정. */
     public function confirm(int $id): void
     {
@@ -43,7 +84,7 @@ new class extends Component
     }
 }; ?>
 
-<div wire:poll.60s>
+<div wire:poll.30s="poll">
     @if ($unreadCount > 0)
         {{-- A동작: 진입 시 자동으로 뜨되, ✕로 닫으면 "새 알람(더 큰 id)이 올 때까지" 접힌 상태 유지.
              localStorage 에 마지막으로 본 maxId 저장 → 페이지 이동해도 다시 안 뜸. 새 알람(maxId↑) 오면 자동으로 다시 뜸. --}}
