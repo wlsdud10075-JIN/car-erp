@@ -381,10 +381,12 @@ class DocumentFiller
         };
 
         foreach ($sheet->getCoordinates(false) as $coord) {
-            // ① 금액 서식의 '$' → 통화기호
+            // ① 금액 서식의 '$' → 통화기호.
+            //   단, 날짜 로케일 토큰 `[$-409]`(영문등록증 등록증날짜 등)의 '$'는 건드리면 안 됨
+            //   — 깨지면 Excel 이 서식을 못 읽어 날짜가 serial(예: 43705)로 표시됨. '$' 뒤가 '-'면 로케일이라 제외.
             $fmt = $sheet->getStyle($coord)->getNumberFormat()->getFormatCode();
             if ($fmt !== null && str_contains($fmt, '$')) {
-                $sheet->getStyle($coord)->getNumberFormat()->setFormatCode(str_replace('$', $symbol, $fmt));
+                $sheet->getStyle($coord)->getNumberFormat()->setFormatCode(preg_replace('/\$(?!-)/', $symbol, $fmt));
             }
             // ② "Dollar" 라벨 → 통화코드 (RichText 라벨도 평문 치환)
             $val = $sheet->getCell($coord)->getValue();
