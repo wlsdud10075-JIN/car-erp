@@ -82,6 +82,16 @@ class DocumentFiller
             }
         }
 
+        // 3-1) clearCells — 비노란 라벨 등 강제 공란 (예: DEPOSIT 라벨 제거).
+        foreach ($config['clearCells'] ?? [] as $coord) {
+            $sheet->getCell($coord)->setValueExplicit(null, DataType::TYPE_NULL);
+        }
+
+        // 3-2) 통화 적응 — 판매통화에 맞춰 $ 서식·"Dollar" 라벨을 통화기호/코드로 치환.
+        if ($config['currencyAware'] ?? false) {
+            $this->applyCurrency($sheet, $this->primary);
+        }
+
         // 4) ⑤ 상호 헤더 — 지정 시트/셀 RichText 첫 줄(상호)을 기능설정 브랜드(대문자)로 치환.
         if (isset($config['brandHeader'])) {
             $this->applyBrandHeader($spreadsheet, $config['brandHeader']);
@@ -346,6 +356,38 @@ class DocumentFiller
 
         // 문자열 — 숫자처럼 보여도 텍스트로 박제 (차량번호·VIN·주민번호 등 형식 보존)
         $sheet->getCell($coord)->setValueExplicit((string) $value, DataType::TYPE_STRING);
+    }
+
+    /**
+     * 판매통화 적응 — 템플릿이 USD($) 고정이라, 차량 판매통화에 맞춰
+     *   ① 금액 셀 number format 의 '$' → 통화기호(€·¥·£·₩)
+     *   ② "Dollar Rate" 등 라벨 텍스트의 'Dollar' → 통화코드(EUR 등)
+     * USD 는 템플릿 그대로(무변경). currencyAware 매핑에서만 호출.
+     */
+    private function applyCurrency(Worksheet $sheet, Vehicle $vehicle): void
+    {
+        $cur = $vehicle->currency ?: 'USD';
+        if ($cur === 'USD') {
+            return;
+        }
+        $symbol = match ($cur) {
+            'EUR' => '€', 'JPY' => '¥', 'GBP' => '£', 'CNY' => '¥', 'KRW' => '₩',
+            default => $cur.' ',
+        };
+
+        foreach ($sheet->getCoordinates(false) as $coord) {
+            // ① 금액 서식의 '$' → 통화기호
+            $fmt = $sheet->getStyle($coord)->getNumberFormat()->getFormatCode();
+            if ($fmt !== null && str_contains($fmt, '$')) {
+                $sheet->getStyle($coord)->getNumberFormat()->setFormatCode(str_replace('$', $symbol, $fmt));
+            }
+            // ② "Dollar" 라벨 → 통화코드 (RichText 라벨도 평문 치환)
+            $val = $sheet->getCell($coord)->getValue();
+            $text = $val instanceof RichText ? $val->getPlainText() : (is_string($val) ? $val : null);
+            if ($text !== null && str_contains($text, 'Dollar')) {
+                $sheet->getCell($coord)->setValue(str_replace('Dollar', $cur, $text));
+            }
+        }
     }
 
     /**

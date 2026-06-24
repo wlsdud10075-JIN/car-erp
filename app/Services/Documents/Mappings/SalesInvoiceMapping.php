@@ -20,6 +20,11 @@ class SalesInvoiceMapping
             'template' => 'sales_invoice.xlsx',
             'sheet' => 'Invoice',
             'label' => 'Invoice',
+            // 판매통화 적응 ($ → 통화기호) — 2026-06-24.
+            'currencyAware' => true,
+            // DEPOSIT 행 제거 — 합계(E31)/잔액(E34) 수식 범위에 양수로 들어가 더블카운트(11400) 유발.
+            // E29(값)은 노란셀이라 clearYellowFill 로 자동 공란, C28/C29(라벨)은 비노란이라 강제 공란. (jin 2026-06-24)
+            'clearCells' => ['C28', 'C29'],
             'cells' => [
                 'E3' => fn (Vehicle $v) => $v->sale_date ?: now(),                                   // Date
                 'E4' => fn (Vehicle $v) => 'SC'.now()->format('ym').'-'.str_pad((string) ($v->id ?? 0), 5, '0', STR_PAD_LEFT), // Invoice No.
@@ -38,7 +43,7 @@ class SalesInvoiceMapping
                 'E24' => fn (Vehicle $v) => DocValue::money($v->commission),                           // COMMISSION
                 'E25' => fn (Vehicle $v) => DocValue::money($v->auto_loading),                         // AUTO LODING
                 'E26' => fn (Vehicle $v) => $v->tax_dc ? -1 * $v->tax_dc : null,                       // TAX D/C (양식 SUM 에 더해지므로 음수로 — 할인)
-                'E29' => fn (Vehicle $v) => DocValue::confirmedReceived($v),                           // DEPOSIT (확정 입금 합, 양수)
+                // E29 DEPOSIT 제거 — TOTAL/BALANCE(=SUM(E27:F30)) 에 양수로 가산돼 판매총액 2배 버그. (jin 2026-06-24)
             ],
             // 도장/서명 슬롯은 App\Services\Documents\StampSlots 로 중앙화.
         ];
