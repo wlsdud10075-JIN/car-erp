@@ -12,6 +12,9 @@ return [
     'search_ph' => '차량번호',
     'filter_all_status' => '전체 상태',
     'filter_all_salesman' => '전체 담당자',
+    'filter_all_month' => '전체 월',
+    'filter_month_title' => '정산 월(월급 귀속월) — 거래완료/정산 발생 시점 기준',
+    'filter_month_pay' => '지급',
 
     'status' => [
         'pending' => '대기',

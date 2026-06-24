@@ -25,6 +25,10 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $dateTo = '';
 
+    // 2026-06-24 — 정산 월(월급 귀속월) 솔팅. 기준 = created_at(정산 발생/거래완료월, jin 결정).
+    // 'YYYY-MM' 형식. 빈 문자열 = 전체. 1일~말일 일한 정산 → 다음달 10일 지급 주기를 월 단위로 묶음.
+    #[Url] public string $monthFilter = '';
+
     #[Url] public int $perPage = 10;
 
     // ── 슬라이드 패널 ─────────────────────────────────────────────
@@ -67,6 +71,34 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
+    public function updatedMonthFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    // 2026-06-24 — 드롭다운에 노출할 정산 월 목록 (created_at 기준, 최신순).
+    // DATE_FORMAT 은 MySQL 전용 → 테스트 SQLite 호환 위해 PHP 에서 포맷 (project_db_tier_mismatch).
+    #[Computed]
+    public function availableMonths(): array
+    {
+        return Settlement::query()
+            ->whereNotNull('created_at')
+            ->pluck('created_at')
+            ->map(fn ($d) => $d->format('Y-m'))
+            ->unique()
+            ->sortDesc()
+            ->values()
+            ->toArray();
+    }
+
+    // monthFilter('YYYY-MM') → whereYear/whereMonth 클로저 (크로스 DB 안전, 목록·카드 공용).
+    private function monthScope(): \Closure
+    {
+        [$y, $m] = array_pad(explode('-', $this->monthFilter), 2, null);
+
+        return fn ($q) => $q->whereYear('created_at', (int) $y)->whereMonth('created_at', (int) $m);
+    }
+
     // ── 목록 ──────────────────────────────────────────────────────
 
     #[Computed]
@@ -78,6 +110,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
             ))
             ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
@@ -93,7 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     // 2026-05-20 #2 피드백 — 영업담당자별 합계 (인원별 솔팅 + 합계 KPI).
-    // 현재 statusFilter / dateFrom / dateTo 동일 적용 (목록 SQL 과 일치).
+    // 현재 statusFilter / monthFilter / dateFrom / dateTo 동일 적용 (목록 SQL 과 일치).
     // computed accessor (total_margin / settlement_amount / actual_payout) 사용 → PHP 집계.
     #[Computed]
     public function salesmanSummaries(): array
@@ -101,6 +134,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $all = Settlement::query()
             ->with(['vehicle', 'salesman:id,name'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
             ))
             ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
@@ -696,6 +730,14 @@ new #[Layout('components.layouts.app')] class extends Component
         <option value="0">{{ __('settlement.filter_all_salesman') }}</option>
         @foreach($this->salesmen as $sm)
         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+        @endforeach
+    </select>
+    {{-- 2026-06-24 — 정산 월(월급 귀속월) 솔팅. created_at 기준, 다음달 10일 지급 라벨 병기. --}}
+    <select wire:model.live="monthFilter" class="input-filter" title="{{ __('settlement.filter_month_title') }}">
+        <option value="">{{ __('settlement.filter_all_month') }}</option>
+        @foreach($this->availableMonths as $ym)
+        @php $payDate = \Carbon\Carbon::parse($ym.'-01')->addMonthNoOverflow()->format('Y-m').'-10'; @endphp
+        <option value="{{ $ym }}">{{ $ym }} → {{ $payDate }} {{ __('settlement.filter_month_pay') }}</option>
         @endforeach
     </select>
     <input wire:model="dateFrom" type="date" class="input-filter" />
