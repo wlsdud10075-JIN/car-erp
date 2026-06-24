@@ -3493,8 +3493,8 @@ function vehicleColumnsToggle() {
                                    class="input-base flex-1 bg-gray-100 text-gray-600 cursor-not-allowed"
                                    placeholder="12가3456" readonly />
                         @else
-                            <input wire:model="vehicle_number" type="text" class="input-base flex-1" placeholder="12가3456"
-                                   wire:blur="lookupNiceApi" />
+                            {{-- NICE 조회는 버튼 클릭으로만 (blur 자동조회 제거 — 의도 안 한 건당 과금 방지, jin 2026-06-24) --}}
+                            <input wire:model="vehicle_number" type="text" class="input-base flex-1" placeholder="12가3456" />
                             <button type="button" wire:click="lookupNiceApi"
                                     wire:loading.attr="disabled" wire:target="lookupNiceApi"
                                     class="rounded-lg border border-gray-300 px-2 py-2 text-xs text-gray-600 hover:bg-gray-50 whitespace-nowrap disabled:opacity-50">
@@ -3506,7 +3506,7 @@ function vehicleColumnsToggle() {
                     @unless($editingId)
                         {{-- NICE 1단계가 소유자명 필수 → 차량번호와 함께 입력. nice_reg_owner_name 에 바인딩(아래 등록정보 소유자명과 동기화). --}}
                         <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full" autocomplete="off"
-                               placeholder="{{ __('vehicle.panel.owner_name_ph') }}" wire:blur="lookupNiceApi" />
+                               placeholder="{{ __('vehicle.panel.owner_name_ph') }}" />
                     @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
