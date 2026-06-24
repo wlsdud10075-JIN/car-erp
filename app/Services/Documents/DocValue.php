@@ -119,12 +119,22 @@ class DocValue
         return self::niceValidPeriodDates($v)[1];
     }
 
-    /** 목적국 — 컨사이니 국가 우선, 없으면 바이어 국가. */
+    /** 목적국 — 컨사이니 국가 우선, 없으면 바이어 국가. (Country.name = 한글명) */
     public static function destinationCountry(Vehicle $v): ?string
     {
         $country = self::invoiceConsignee($v)?->country ?: self::invoiceBuyer($v)?->country;
 
         return $country?->name;
+    }
+
+    /**
+     * 선적 서류 Discharge / Final Destination — 입력한 목적항(discharge_port, 영문) 우선.
+     * 양식이 영문 수출서류라 목적국 한글명("코소보") 대신 입력 항구명("DURRESS, ALBANIA")을 쓴다.
+     * 목적항 미입력 차량은 목적국명으로 fallback (기존 동작 유지, 빈칸 방지).
+     */
+    public static function dischargeDestination(Vehicle $v): ?string
+    {
+        return $v->dischargePort?->name ?: self::destinationCountry($v);
     }
 
     /**
