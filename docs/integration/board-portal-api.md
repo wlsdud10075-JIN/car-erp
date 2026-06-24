@@ -48,7 +48,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | `GET /receivables` | 차량별 미수금 — `sale_unpaid_amount_krw_cache`·`currency`·`exchange_rate`·바이어 | **NULL=환율 미입력**(완납 아님) |
 | `GET /purchases` | 매입 차 — `purchase_price`·비용9 합·매입일·매입 미지급(`PurchaseBalancePayment`) | |
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
-| `GET /settlements` | 정산 — `status`·`actual_payout`·확정일 | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기) |
+| `GET /settlements` | 정산 — `status`·`actual_payout`·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만) | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
 | `GET /buyers` | **드로어 드롭다운** — `{id, name, country}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지 |
 | `GET /consignees?buyer_id=` | **드로어 드롭다운** — `{id, name}` | 해당 buyer 하위 `is_active` 컨사이니. **IDOR — buyer_id 가 본인 소유일 때만**(아니면 빈 목록) |
