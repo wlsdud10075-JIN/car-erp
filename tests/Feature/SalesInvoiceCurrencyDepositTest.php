@@ -6,6 +6,7 @@ use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use Tests\TestCase;
 
 /**
@@ -96,6 +97,20 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         }
     }
 
+    public function test_eur_clearance_keeps_date_locale_format(): void
+    {
+        // 회귀가드: applyCurrency 가 날짜서식 `[$-409]` 의 '$'를 통화기호로 바꾸면
+        //   Excel 이 서식을 못 읽어 등록증날짜가 serial(43705)로 표시됨 (jin 보고).
+        $ss = (new DocumentFiller($this->invoiceVehicle('EUR')))->spreadsheet('clearance');
+        $eng = $ss->getSheetByName('영문등록증');
+
+        foreach (['O3', 'L13'] as $c) {
+            $fmt = $eng->getStyle($c)->getNumberFormat()->getFormatCode();
+            $this->assertStringContainsString('[$-409]', $fmt, "영문등록증 {$c} 날짜 로케일 토큰 손상");
+            $this->assertStringNotContainsString('€', $fmt, "영문등록증 {$c} 날짜서식에 통화기호 오주입");
+        }
+    }
+
     private function countDollarFormats($spreadsheet): int
     {
         $n = 0;
@@ -104,12 +119,13 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
                 continue;
             }
             $maxRow = min(120, $sheet->getHighestRow());
-            $maxCol = min(60, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn()));
+            $maxCol = min(60, Coordinate::columnIndexFromString($sheet->getHighestColumn()));
             for ($r = 1; $r <= $maxRow; $r++) {
                 for ($c = 1; $c <= $maxCol; $c++) {
-                    $coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c).$r;
+                    $coord = Coordinate::stringFromColumnIndex($c).$r;
                     $fmt = $sheet->getCell($coord)->getStyle()->getNumberFormat()->getFormatCode();
-                    if ($fmt && str_contains($fmt, '$')) {
+                    // 통화기호 '$'만 카운트 — 날짜 로케일 토큰 `[$-409]`('$' 뒤 '-')은 통화 아님이라 제외.
+                    if ($fmt && preg_match('/\$(?!-)/', $fmt)) {
                         $n++;
                     }
                 }
