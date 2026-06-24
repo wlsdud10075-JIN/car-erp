@@ -20,6 +20,7 @@ class ContainerContractMapping
             'template' => 'container_contract.xlsx',
             'sheet' => 'HBB340.',
             'label' => '컨테이너_Contract',
+            'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             'header' => [
                 'F4' => fn (Vehicle $v) => $v->container_number ?: $v->bl_loading_location, // Invoice No(컨테이너)
                 'F5' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->name,           // Name

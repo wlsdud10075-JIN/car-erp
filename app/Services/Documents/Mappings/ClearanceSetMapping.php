@@ -26,6 +26,7 @@ class ClearanceSetMapping
             'template' => 'clearance_set.xlsx',
             'sheet' => '구매리스트',
             'label' => '통관SET',
+            'currencyAware' => true,   // 판매통화 적응 ($→통화기호, 전 시트) — 2026-06-24
             // ⑤ 차량인보이스 상호 첫 줄을 기능설정 브랜드(대문자)로 — RichText 첫 줄만 치환(나머지 보존).
             'brandHeader' => ['sheet' => '차량인보이스', 'cell' => 'A3'],
             'cells' => [
