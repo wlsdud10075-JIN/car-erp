@@ -11,6 +11,8 @@ return [
     'task_arrival' => 'New purchase vehicle arrived',
     'arrival_action' => 'Proceed with deposit',
     'badge_new' => 'NEW',
+    'toast_arrival' => '🚚 :n new vehicle(s) arrived from board — please check',
+    'toast_new' => '🔔 :n new alert(s)',
     'unpaid' => 'Unpaid ₩:amt',
     'paid' => 'Paid',
     'fx_missing' => 'FX rate missing',

@@ -11,6 +11,8 @@ return [
     'task_arrival' => '신규 매입차 도착',
     'arrival_action' => '계약금 진행',
     'badge_new' => 'NEW',
+    'toast_arrival' => '🚚 board에서 신규 매입차 도착 :n건 — 확인하세요',
+    'toast_new' => '🔔 새 알림 :n건 도착',
     'unpaid' => '미수금 ₩:amt',
     'paid' => '완납',
     'fx_missing' => '환율 미입력',
