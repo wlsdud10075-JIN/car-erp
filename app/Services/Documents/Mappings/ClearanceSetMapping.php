@@ -53,7 +53,7 @@ class ClearanceSetMapping
                 'I8' => fn (Vehicle $v) => $v->weight_kg,                          // 총중량
                 'G9' => fn (Vehicle $v) => $v->nice_reg_passengers,                // 인원
                 'B10' => fn (Vehicle $v) => $v->port_of_loading,                   // Port
-                'D10' => fn (Vehicle $v) => DocValue::destinationCountry($v),      // 목적국
+                'D10' => fn (Vehicle $v) => DocValue::dischargeDestination($v),    // 목적국/목적항 — 입력 목적항(영문) 우선
                 'G10' => fn (Vehicle $v) => $v->nice_spec_displacement,            // 배기량
                 'I10' => fn (Vehicle $v) => DocValue::niceInspectionStart($v),     // 검사시작 (NICE resValidPeriod 분할)
                 'I11' => fn (Vehicle $v) => DocValue::niceInspectionEnd($v),       // 검사종료 (NICE resValidPeriod 분할)
