@@ -88,6 +88,17 @@ php artisan up
 ```
 - 0)에서 기록한 vehicles/settlements 숫자와 복구 후 숫자가 같은지 확인.
 
+### 6) 복구 후 — 정산 날짜 보정 (CK 배치 → created_at·paid_at)
+> ⚠️ 복구된 정산은 created_at·paid_at 이 전부 recreate 실행일(6/23)로 뭉쳐 있다.
+> 월별 드롭다운(일한月)·board(받은月=paid_at)이 갈리려면 CK 배치로 백데이트해야 한다.
+> **선행: dev 의 paid_at 코드(`e07d600` 이후)가 master 에 배포돼 있어야 함** (복구와 함께 배포).
+```bash
+php artisan settlements:backdate-from-ck "경로/1. 헤이맨 수출차량현황표.xlsx"          # dry-run 확인
+php artisan settlements:backdate-from-ck "경로/..." --apply                          # 적용
+```
+- 결과: created_at = 일한月(4/5월) · paid_at = 지급일(5/10·6/10). 드롭다운 4/5월, board 5/6월.
+- [[project_board_settlement_paid_at]] / [[project_settlement_payroll_batch]]
+
 ---
 
 ## 비파괴 대안 (참고)
