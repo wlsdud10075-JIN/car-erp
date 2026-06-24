@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Support\SettlementCkBatch;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -23,7 +24,8 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
  *   - 62두1461 = ERP total_margin 기준(엑셀 환율누락 오류분 미반영) — 자동.
  *
  * 멱등: 이미 정산 있는 차량 skip. artisan(auth 없음) → paid 전환 canApprove 가드 우회.
- * 타임스탬프(confirmed/paid/closed_at) = 실행 시점. (실제 5·6월 지급일 반영 필요 시 후속 조정.)
+ * created_at = CK 배치(일한 月)로 백데이트 — 정산 월별 드롭다운 정합 (2026-06-24, [[project_settlement_payroll_batch]]).
+ *   confirmed/paid/closed_at 는 실행 시점 유지 (회계 처리 타임스탬프, 드롭다운 무관).
  *
  *   php artisan settlements:recreate-from-ck "경로/1. 헤이맨 수출차량현황표.xlsx"            # dry-run
  *   php artisan settlements:recreate-from-ck "..." --apply                                   # 실제 생성
@@ -48,7 +50,8 @@ class RecreateSettlementsFromCk extends Command
             return self::FAILURE;
         }
 
-        $targets = $this->settledVehicleNumbers($path);
+        $year = SettlementCkBatch::yearFromSheet((string) $this->option('sheet'), now()->year);
+        $targets = $this->settledCkByVehicleNumber($path);   // [차량번호 => CK]
         $this->info('CK=정산 차량(파일): '.count($targets).'대');
 
         $plans = [];
@@ -56,7 +59,7 @@ class RecreateSettlementsFromCk extends Command
         $noVehicle = [];
         $noSalesman = [];
 
-        foreach ($targets as $vno) {
+        foreach ($targets as $vno => $ck) {
             $v = Vehicle::where('vehicle_number', $vno)->first();
             if (! $v) {
                 $noVehicle[] = $vno;
@@ -81,6 +84,8 @@ class RecreateSettlementsFromCk extends Command
                 'salesman' => $v->salesman->name,
                 'type' => $type,
                 'amount' => $s->settlement_amount,
+                // 2026-06-24 — created_at 을 CK 배치(일한 月)로 백데이트 (월별 드롭다운 정합).
+                'created_at' => SettlementCkBatch::workCreatedAt($ck, $year),
             ];
         }
 
@@ -138,6 +143,11 @@ class RecreateSettlementsFromCk extends Command
                     'exchange_difference_krw' => 0,
                     'carryover_out_krw' => 0,
                 ]);
+                // 4) created_at 백데이트 — CK 배치(일한 月). 파싱 불가 시 now() 유지.
+                if ($p['created_at']) {
+                    DB::table('settlements')->where('id', $s->id)
+                        ->update(['created_at' => $p['created_at']->format('Y-m-d H:i:s')]);
+                }
                 $created++;
             }
         });
@@ -148,8 +158,8 @@ class RecreateSettlementsFromCk extends Command
         return self::SUCCESS;
     }
 
-    /** xlsx CK='정산'(정산 포함 AND 미정산 미포함) 차량번호 목록. */
-    private function settledVehicleNumbers(string $path): array
+    /** xlsx CK='정산'(정산 포함 AND 미정산 미포함) → [차량번호 => CK]. */
+    private function settledCkByVehicleNumber(string $path): array
     {
         $reader = IOFactory::createReader('Xlsx');
         $reader->setReadDataOnly(true);
@@ -165,8 +175,8 @@ class RecreateSettlementsFromCk extends Command
                 continue;
             }
             $ck = (string) $ws->getCell('CK'.$r)->getCalculatedValue();
-            if ($ck !== '' && str_contains($ck, '정산') && ! str_contains($ck, '미정산')) {
-                $out[] = $vno;
+            if (SettlementCkBatch::isSettled($ck)) {
+                $out[$vno] = trim($ck);
             }
         }
 
