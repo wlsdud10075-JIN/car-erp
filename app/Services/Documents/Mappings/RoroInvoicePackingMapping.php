@@ -19,6 +19,7 @@ class RoroInvoicePackingMapping
             'template' => 'roro_invoice_packing.xlsx',
             'sheet' => 'INVOICE',
             'label' => 'RORO_Invoice_Packing',
+            'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             'header' => [
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,          // 반입지

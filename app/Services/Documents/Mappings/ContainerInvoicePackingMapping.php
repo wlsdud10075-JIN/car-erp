@@ -21,6 +21,7 @@ class ContainerInvoicePackingMapping
             'template' => 'container_invoice_packing.xlsx',
             'sheet' => 'INVOICE',
             'label' => '컨테이너_Invoice_Packing',
+            'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             // 슬롯 위/아래 1회 기입 (primary = 선택 첫 차량). D112 = 확장본의 Incoterms(슬롯 아래로 이동).
             'header' => [
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),       // 수하인(account & risk)

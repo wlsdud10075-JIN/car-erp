@@ -76,4 +76,46 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         $this->assertEquals(5700, $sheet->getCell('E31')->getCalculatedValue());
         $this->assertEquals(5700, $sheet->getCell('E34')->getCalculatedValue());
     }
+
+    public function test_all_export_docs_have_no_dollar_format_for_eur(): void
+    {
+        $v = $this->invoiceVehicle('EUR');
+        $coll = collect([$v]);
+        $types = [
+            'invoice' => $v,
+            'container_invoice_packing' => $coll,
+            'roro_invoice_packing' => $coll,
+            'container_contract' => $coll,
+            'roro_contract' => $coll,
+            'clearance' => $v,
+        ];
+
+        foreach ($types as $type => $arg) {
+            $ss = (new DocumentFiller($arg))->spreadsheet($type);
+            $this->assertSame(0, $this->countDollarFormats($ss), "{$type} 에 \$ 서식 잔존 (통화 미변환)");
+        }
+    }
+
+    private function countDollarFormats($spreadsheet): int
+    {
+        $n = 0;
+        foreach ($spreadsheet->getWorksheetIterator() as $sheet) {
+            if ($sheet->getSheetState() !== 'visible') {
+                continue;
+            }
+            $maxRow = min(120, $sheet->getHighestRow());
+            $maxCol = min(60, \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn()));
+            for ($r = 1; $r <= $maxRow; $r++) {
+                for ($c = 1; $c <= $maxCol; $c++) {
+                    $coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c).$r;
+                    $fmt = $sheet->getCell($coord)->getStyle()->getNumberFormat()->getFormatCode();
+                    if ($fmt && str_contains($fmt, '$')) {
+                        $n++;
+                    }
+                }
+            }
+        }
+
+        return $n;
+    }
 }

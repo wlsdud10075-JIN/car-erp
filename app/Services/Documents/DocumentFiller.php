@@ -87,9 +87,14 @@ class DocumentFiller
             $sheet->getCell($coord)->setValueExplicit(null, DataType::TYPE_NULL);
         }
 
-        // 3-2) 통화 적응 — 판매통화에 맞춰 $ 서식·"Dollar" 라벨을 통화기호/코드로 치환.
+        // 3-2) 통화 적응 — 판매통화에 맞춰 $ 서식·"Dollar" 라벨을 전 visible 시트에서 치환.
+        //   (통관 SET 처럼 금액이 여러 시트에 흩어진 경우까지 커버. $ 서식 셀만 건드려 안전.)
         if ($config['currencyAware'] ?? false) {
-            $this->applyCurrency($sheet, $this->primary);
+            foreach ($spreadsheet->getWorksheetIterator() as $cs) {
+                if ($cs->getSheetState() === Worksheet::SHEETSTATE_VISIBLE) {
+                    $this->applyCurrency($cs, $this->primary);
+                }
+            }
         }
 
         // 4) ⑤ 상호 헤더 — 지정 시트/셀 RichText 첫 줄(상호)을 기능설정 브랜드(대문자)로 치환.
