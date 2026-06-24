@@ -21,6 +21,31 @@ class NiceApiServiceTest extends TestCase
         $this->assertNull((new NiceApiService('', ''))->lookupVehicle('12가1234', '홍길동'));
     }
 
+    public function test_humanize_error_timeout(): void
+    {
+        // 504 또는 "시간 초과" → 응답 지연 + 한도 무관 안내.
+        $byStatus = NiceApiService::humanizeError('API 요청 시간 초과. 잠시 후 다시 시도해주세요.', 504);
+        $this->assertStringContainsString('지연', $byStatus);
+        $this->assertStringContainsString('한도', $byStatus);
+
+        $byText = NiceApiService::humanizeError('상세제원 조회 실패: 시간요청초과 (코드: 5000)');
+        $this->assertStringContainsString('지연', $byText);
+    }
+
+    public function test_humanize_error_owner_mismatch(): void
+    {
+        $r = NiceApiService::humanizeError('등록원부 조회 실패: 소유주명이 일치하지 않습니다 (코드: E901)', 400);
+        $this->assertStringContainsString('소유주명', $r);
+        $this->assertStringContainsString('상품용', $r);
+    }
+
+    public function test_humanize_error_unknown_code_keeps_original(): void
+    {
+        // 미확인 코드 → NICE 원문 그대로(틀린 안내 방지).
+        $raw = '등록원부 조회 실패: 알 수 없는 오류 (코드: 7777)';
+        $this->assertSame($raw, NiceApiService::humanizeError($raw, 400));
+    }
+
     public function test_requires_vehicle_and_owner(): void
     {
         $svc = new NiceApiService('https://ssancar.test/provide/api/nice-lookup/', 'tok');
