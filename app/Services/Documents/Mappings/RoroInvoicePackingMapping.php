@@ -9,7 +9,7 @@ use App\Services\Documents\DocValue;
  * 선적 — RORO Invoice & Packing. 수출 전용. 다중차량.
  *
  * 양식은 30슬롯 확장됨(슬롯 = 1행, stride 1, first 21 — 연료 sub-row 없음). C52 = 확장본 Incoterms.
- * footer 집계(I/J/K/L row 51)는 채운 영역 range 로 재기록. G12(Notify party)는 car-erp 대응 없음 → 공란.
+ * footer 집계(I/J/K/L row 51)는 채운 영역 range 로 재기록. G12 는 운송방식 라벨 "RORO" 고정(컨테이너 양식 G12="CONTAINER" 대응). Notify party 데이터는 car-erp 대응 없음.
  */
 class RoroInvoicePackingMapping
 {
@@ -22,6 +22,7 @@ class RoroInvoicePackingMapping
             'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             'header' => [
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),
+                'G12' => fn (Vehicle $v) => 'RORO',                          // 운송방식 라벨 (컨테이너 양식 G12="CONTAINER" 대응)
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,          // 반입지
                 'B16' => fn (Vehicle $v) => $v->port_of_loading,             // Port of loading
                 'E16' => fn (Vehicle $v) => DocValue::dischargeDestination($v), // Discharge/Final Destination — 입력 목적항(영문)

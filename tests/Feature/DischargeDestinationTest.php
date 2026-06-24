@@ -61,6 +61,8 @@ class DischargeDestinationTest extends TestCase
         $sheet = $ss->getSheetByName('INVOICE');
 
         $this->assertSame('DURRESS, ALBANIA', (string) $sheet->getCell('E16')->getValue());
+        // G12 운송방식 라벨 = "RORO" (컨테이너 양식 "CONTAINER" 대응).
+        $this->assertSame('RORO', (string) $sheet->getCell('G12')->getValue());
     }
 
     public function test_clearance_d10_uses_discharge_port(): void
