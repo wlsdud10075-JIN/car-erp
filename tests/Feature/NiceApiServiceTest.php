@@ -28,8 +28,17 @@ class NiceApiServiceTest extends TestCase
         $this->assertStringContainsString('지연', $byStatus);
         $this->assertStringContainsString('한도', $byStatus);
 
-        $byText = NiceApiService::humanizeError('상세제원 조회 실패: 시간요청초과 (코드: 5000)');
+        $byText = NiceApiService::humanizeError('상세제원 조회 실패: 요청 시간 초과');
         $this->assertStringContainsString('지연', $byText);
+    }
+
+    public function test_humanize_error_target_institution_failure_5000(): void
+    {
+        // 실측 메시지(jin 2026-06-24): 코드 5000 = 대상기관 장애.
+        $raw = '등록원부 조회 실패:[parts][pe]:대상기관 장애로 조회가 원활하지 않습니다.(코드5000)';
+        $r = NiceApiService::humanizeError($raw, 400);
+        $this->assertStringContainsString('원천기관', $r);
+        $this->assertStringNotContainsString('[parts]', $r);   // 기술 노이즈 제거
     }
 
     public function test_humanize_error_owner_mismatch(): void
