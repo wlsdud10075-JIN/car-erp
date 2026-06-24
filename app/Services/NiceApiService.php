@@ -70,8 +70,9 @@ class NiceApiService
     private function fetch(string $vehicleNumber, string $ownerName): array
     {
         try {
-            // ssancar 가 NICE 2단계를 대신 호출하므로 타임아웃을 넉넉히(35초).
-            $response = Http::timeout(35)
+            // ssancar 가 NICE 2단계(등록원부+상세제원)를 순차 호출하므로 타임아웃을 넉넉히.
+            // car-erp(55초) > 미들웨어 단계당(45초) — 느린 NICE 정상응답이 504 로 끊기지 않게.
+            $response = Http::timeout(55)
                 ->withHeaders(['X-SSANCAR-API-KEY' => $this->provideToken])
                 ->post($this->provideUrl, [
                     'vehicle_number' => $vehicleNumber,
@@ -79,8 +80,12 @@ class NiceApiService
                 ]);
         } catch (ConnectionException $e) {
             Log::warning('NICE provide connection failed', ['vehicle' => $vehicleNumber, 'error' => $e->getMessage()]);
+            // cURL 28(타임아웃)이면 "지연" 안내, 아니면 연결 오류.
+            $isTimeout = str_contains(strtolower($e->getMessage()), 'timed out') || str_contains($e->getMessage(), '28');
 
-            return ['success' => false, 'message' => 'NICE 조회 서버에 연결할 수 없습니다. 네트워크/도메인 설정을 확인하세요.'];
+            return ['success' => false, 'message' => $isTimeout
+                ? self::humanizeError('API 요청 시간 초과', 504)
+                : 'NICE 조회 서버에 연결할 수 없습니다. 네트워크/도메인 설정을 확인하세요.'];
         } catch (\Throwable $e) {
             Log::warning('NICE provide call failed', ['vehicle' => $vehicleNumber, 'error' => $e->getMessage()]);
 
@@ -88,8 +93,7 @@ class NiceApiService
         }
 
         if ($response->failed()) {
-            // 미들웨어가 4xx 에도 사유 메시지(JSON body)를 줌 (예: "소유주명이 일치하지 않습니다 E901").
-            // 그 메시지를 그대로 노출 — 사용자가 원인(소유주명 불일치 등)을 바로 알 수 있게.
+            // 미들웨어가 4xx/5xx 에도 사유 메시지(JSON body)를 줌 (예: "소유주명이 일치하지 않습니다 E901", "API 요청 시간 초과").
             $detail = null;
             try {
                 $b = $response->json();
@@ -100,7 +104,9 @@ class NiceApiService
                 // body 파싱 실패 시 status 만
             }
 
-            return ['success' => false, 'message' => $detail ?: ('NICE 조회 서버 오류 (HTTP '.$response->status().')')];
+            return ['success' => false, 'message' => $detail
+                ? self::humanizeError($detail, $response->status())
+                : self::humanizeError('NICE 조회 서버 오류 (HTTP '.$response->status().')', $response->status())];
         }
 
         try {
@@ -110,10 +116,47 @@ class NiceApiService
         }
 
         if (! is_array($body) || ($body['success'] ?? false) !== true) {
-            return ['success' => false, 'message' => is_array($body) ? ($body['message'] ?? 'NICE 조회에 실패했습니다.') : 'NICE 조회에 실패했습니다.'];
+            $raw = is_array($body) ? ($body['message'] ?? 'NICE 조회에 실패했습니다.') : 'NICE 조회에 실패했습니다.';
+
+            return ['success' => false, 'message' => self::humanizeError($raw)];
         }
 
         return $this->transform(is_array($body['data'] ?? null) ? $body['data'] : []);
+    }
+
+    /** NICE resultCode → 사용자 친화 문구. 실제 코드 의미 확인되는 대로 추가(미확인은 원문 노출). */
+    private const NICE_CODE_MESSAGES = [
+        // '4000' => 'NICE 에 해당 차량 등록 정보가 없습니다',  // 예시 — 확인 후 채움
+    ];
+
+    /**
+     * 미들웨어/NICE 원문 에러를 사용자 친화 메시지로 변환 (jin 2026-06-24).
+     * 확신하는 케이스(응답지연·소유주명불일치)만 다듬고, 미확인 코드는 NICE 원문 그대로 노출
+     * (틀린 안내 방지). 코드 의미가 확인되면 NICE_CODE_MESSAGES 에 추가.
+     */
+    public static function humanizeError(string $raw, ?int $status = null): string
+    {
+        $raw = trim($raw);
+
+        // ① 응답 지연(타임아웃, 504/408 또는 "시간 초과") — NICE 혼잡, 일일 한도와 무관.
+        if ($status === 504 || $status === 408 || preg_match('/시간\s*초과|시간요청초과|timed?\s*out/iu', $raw)) {
+            return 'NICE 응답이 지연되고 있습니다. 1~2분 후 다시 시도해 주세요. (NICE 서버 혼잡 — 일일 조회 한도와는 무관합니다)';
+        }
+
+        // ② 소유주명 불일치 — 등록원부 소유주와 입력값이 다름. '(상품용)' 등 표기 차이가 흔한 원인.
+        if (preg_match('/소유[주자]|일치하지\s*않|E901/u', $raw)) {
+            return "소유주명이 등록원부와 일치하지 않습니다. '(상품용)'·'(주)' 같은 표기를 등록원부 그대로 맞춰 다시 시도해 주세요.\n(원문: {$raw})";
+        }
+
+        // ③ NICE resultCode(코드: XXXX) — 확인된 코드만 친절 문구로 치환, 그 외는 원문 유지.
+        if (preg_match('/코드:?\s*([0-9A-Za-z]+)/u', $raw, $m)) {
+            $code = strtoupper($m[1]);
+            if (isset(self::NICE_CODE_MESSAGES[$code])) {
+                return self::NICE_CODE_MESSAGES[$code]." (코드 {$code})";
+            }
+        }
+
+        return $raw;   // 미확인 코드·기타 — NICE 원문 그대로(이미 한글)
     }
 
     /**
