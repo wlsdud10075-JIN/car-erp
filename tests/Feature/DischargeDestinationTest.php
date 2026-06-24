@@ -62,4 +62,15 @@ class DischargeDestinationTest extends TestCase
 
         $this->assertSame('DURRESS, ALBANIA', (string) $sheet->getCell('E16')->getValue());
     }
+
+    public function test_clearance_d10_uses_discharge_port(): void
+    {
+        $port = Port::create(['type' => 'discharge', 'name' => 'DURRESS, ALBANIA', 'is_active' => true]);
+        $v = $this->makeVehicle($port->id);
+
+        $ss = (new DocumentFiller($v))->spreadsheet('clearance');
+        $sheet = $ss->getSheetByName('구매리스트');
+
+        $this->assertSame('DURRESS, ALBANIA', (string) $sheet->getCell('D10')->getValue());
+    }
 }
