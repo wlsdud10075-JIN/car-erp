@@ -27,7 +27,7 @@ class ContainerInvoicePackingMapping
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),       // 수하인(account & risk)
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,           // 반입지
                 'B16' => fn (Vehicle $v) => $v->port_of_loading,              // Port of loading
-                'E16' => fn (Vehicle $v) => DocValue::destinationCountry($v),  // Discharge(목적국)
+                'E16' => fn (Vehicle $v) => DocValue::dischargeDestination($v),  // Discharge/Final Destination — 입력 목적항(영문)
                 'I17' => fn (Vehicle $v) => $v->container_number,             // CONTAINER NO
                 'D112' => fn (Vehicle $v) => $v->incoterms,                   // Incoterms (footer)
             ],
