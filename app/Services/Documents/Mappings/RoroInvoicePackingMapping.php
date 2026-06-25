@@ -42,7 +42,7 @@ class RoroInvoicePackingMapping
                 ],
                 'slotCells' => [
                     0 => [
-                        'C' => fn (Vehicle $v) => $v->brand,
+                        'C' => fn (Vehicle $v) => DocValue::brandEn($v),                      // maker (제조사 영문 — NICE 한글 변환)
                         'D' => fn (Vehicle $v) => DocValue::carName($v),
                         'E' => fn (Vehicle $v) => $v->year,
                         'F' => fn (Vehicle $v) => $v->nice_reg_vin,

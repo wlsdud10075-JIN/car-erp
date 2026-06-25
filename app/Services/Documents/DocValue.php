@@ -78,6 +78,52 @@ class DocValue
         return trim(($v->brand ? $v->brand.' ' : '').$model);
     }
 
+    /**
+     * 제조사 영문 — NICE 는 한글(벤츠·아우디)로 보냄. 수출서류는 영문 필요.
+     * 매핑에 없으면 원본 그대로(이미 영문이거나 미지정 브랜드 → 통과). 기존 import 영문값 보존.
+     */
+    public static function brandEn(Vehicle $v): string
+    {
+        $brand = trim((string) $v->brand);
+
+        return [
+            '벤츠' => 'BENZ', '메르세데스벤츠' => 'BENZ', '메르세데스-벤츠' => 'BENZ',
+            '비엠더블유' => 'BMW', '아우디' => 'AUDI', '폭스바겐' => 'Volkswagen',
+            '볼보' => 'VOLVO', '르노' => 'RENAULT', '르노삼성' => 'RENAULT', '르노코리아' => 'RENAULT',
+            '기아' => 'KIA', '현대' => 'HYUNDAI', '제네시스' => 'GENESIS',
+            '쌍용' => 'SSANGYONG', '롤스로이스' => 'ROLLSROYCE', '푸조' => 'Peugeot',
+            '도요타' => 'TOYOTA', '토요타' => 'TOYOTA', '렉서스' => 'LEXUS', '혼다' => 'HONDA',
+            '닛산' => 'NISSAN', '포드' => 'FORD', '쉐보레' => 'CHEVROLET', '시보레' => 'CHEVROLET',
+            '지프' => 'JEEP', '크라이슬러' => 'CHRYSLER', '캐딜락' => 'CADILLAC', '링컨' => 'LINCOLN',
+            '포르쉐' => 'PORSCHE', '미니' => 'MINI', '재규어' => 'JAGUAR', '랜드로버' => 'LAND ROVER',
+            '마세라티' => 'MASERATI', '페라리' => 'FERRARI', '람보르기니' => 'LAMBORGHINI',
+            '벤틀리' => 'BENTLEY', '테슬라' => 'TESLA',
+        ][$brand] ?? $brand;
+    }
+
+    /**
+     * 연료 영문 — NICE 한글(휘발유·경유·하이브리드(휘발유+전기) 등). 통관 SET I13 수식과 동일 컨벤션
+     * (GASOLINE/DIESEL/LPG/HYBRID/ELECTRIC). 괄호 변형까지 잡도록 부분일치, 하이브리드 우선.
+     */
+    public static function fuelEn(Vehicle $v): ?string
+    {
+        $fuel = trim((string) $v->nice_reg_fuel_type);
+        if ($fuel === '') {
+            return null;
+        }
+
+        return match (true) {
+            str_contains($fuel, '하이브리드') => 'HYBRID',
+            str_contains($fuel, '경유') || stripos($fuel, 'diesel') !== false => 'DIESEL',
+            str_contains($fuel, '휘발유') || str_contains($fuel, '가솔린') || stripos($fuel, 'gasoline') !== false => 'GASOLINE',
+            str_contains($fuel, '전기') || stripos($fuel, 'electric') !== false => 'ELECTRIC',
+            str_contains($fuel, '수소') => 'HYDROGEN',
+            stripos($fuel, 'lpg') !== false => 'LPG',
+            stripos($fuel, 'cng') !== false => 'CNG',
+            default => $fuel,
+        };
+    }
+
     /** NICE 응답 원본(nice_raw JSON)에서 키로 읽기. 전용컬럼 없는 NICE 필드용. NICE 연동 전엔 null(공란). */
     public static function niceRaw(Vehicle $v, string $key): mixed
     {

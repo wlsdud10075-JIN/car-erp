@@ -46,7 +46,7 @@ class ContainerInvoicePackingMapping
                 ],
                 'slotCells' => [
                     0 => [   // main 행
-                        'C' => fn (Vehicle $v) => $v->brand,                                  // maker
+                        'C' => fn (Vehicle $v) => DocValue::brandEn($v),                      // maker (제조사 영문 — NICE 한글 변환)
                         'D' => fn (Vehicle $v) => DocValue::carName($v),                      // model
                         'E' => fn (Vehicle $v) => $v->year,                                  // year
                         'F' => fn (Vehicle $v) => $v->nice_reg_vin,                          // chassis no.
@@ -56,7 +56,7 @@ class ContainerInvoicePackingMapping
                         'L' => fn (Vehicle $v) => DocValue::money($v->transport_fee),         // shipping
                     ],
                     1 => [   // 연료/배기량 sub-row
-                        'E' => fn (Vehicle $v) => $v->nice_reg_fuel_type,                    // type of fuel
+                        'E' => fn (Vehicle $v) => DocValue::fuelEn($v),                       // type of fuel (영문 — NICE 한글 변환)
                         'G' => fn (Vehicle $v) => $v->nice_spec_displacement,                // piston displacement
                     ],
                 ],
