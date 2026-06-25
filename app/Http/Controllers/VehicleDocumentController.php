@@ -130,7 +130,12 @@ class VehicleDocumentController extends Controller
 
         return response()->streamDownload(
             function () use ($spreadsheet) {
-                (new Xlsx($spreadsheet))->save('php://output');
+                $writer = new Xlsx($spreadsheet);
+                // preCalc=false → fullCalcOnLoad=1: Excel 이 열 때 전체 재계산. 통관SET 은 크로스시트
+                // cascade + 고급함수(TEXTJOIN/UNIQUE/SUBSTITUTE) 라 PhpSpreadsheet 계산엔진에 맡기면
+                // 문자열 참조·합계 캐시가 비어 빈칸으로 보임 → Excel 네이티브 계산에 위임(jin 실측).
+                $writer->setPreCalculateFormulas(false);
+                $writer->save('php://output');
             },
             $filename,
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
