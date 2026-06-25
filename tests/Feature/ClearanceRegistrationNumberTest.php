@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Consignee;
 use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
@@ -71,6 +72,24 @@ class ClearanceRegistrationNumberTest extends TestCase
         $this->assertStringContainsString('승용 중형', $i6);   // 띄어쓰기 포맷
         $this->assertStringContainsString('Medium Passenger', $i6);
         $this->assertStringNotContainsString('중형승용', $i6);  // 옛 붙여쓰기(버그) 아님
+    }
+
+    // 구매리스트 B14 컨사이니 — ID 줄에 'Business number : ' 라벨 (jin 2026-06-25)
+    public function test_clearance_b14_consignee_labels_business_number(): void
+    {
+        $consignee = Consignee::create([
+            'name' => 'VIA AUTO', 'id_value' => '812326016', 'address' => 'PRISHTINE, KOSOVO',
+        ]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'REG-6', 'sales_channel' => 'export',
+            'currency' => 'USD', 'exchange_rate' => 1438, 'dhl_request' => false,
+            'consignee_id' => $consignee->id,
+        ]);
+
+        $b14 = (string) (new DocumentFiller($v))->spreadsheet('clearance')->getSheetByName('구매리스트')->getCell('B14')->getValue();
+
+        $this->assertStringContainsString('Business number : 812326016', $b14);
+        $this->assertStringContainsString('VIA AUTO', $b14);   // 이름 줄 보존
     }
 
     // ⑤ 차량인보이스 상호 첫 줄 = 기능설정 브랜드(대문자), 나머지 줄 보존

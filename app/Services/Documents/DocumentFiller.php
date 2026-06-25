@@ -133,15 +133,16 @@ class DocumentFiller
                 continue;
             }
             $pos = StampSlots::position($set, $type, $slot);
-            $this->overlayStamp($sheet, $slot['anchor'], $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png', $pos);
+            $this->overlayStamp($sheet, $slot['anchor'], $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png', $pos, (bool) ($slot['exact'] ?? false));
         }
     }
 
     /**
      * 앵커의 기존 Drawing 제거 + 업로드 이미지를 앵커+오프셋(dx,dy) 위치, 박스(w,h) 안 비율맞춤으로 삽입.
+     * $exact=true 면 비율맞춤 없이 박스(w,h) 크기 그대로(서명을 지정 cm 로 정확히 — jin 2026-06-25).
      * 임시파일은 streamDownload 저장(요청 종료 시점) 까지 살아있어야 하므로 shutdown 에서 정리.
      */
-    private function overlayStamp(Worksheet $sheet, string $anchor, string $bytes, string $ext, array $pos): void
+    private function overlayStamp(Worksheet $sheet, string $anchor, string $bytes, string $ext, array $pos, bool $exact = false): void
     {
         // 같은 앵커의 기존 도장 제거 (ArrayObject — 뒤에서부터 unset)
         $drawings = $sheet->getDrawingCollection();
@@ -156,9 +157,12 @@ class DocumentFiller
         register_shutdown_function(static fn () => @unlink($tmp));
 
         // 박스(w×h) 안에 원본 비율 유지 맞춤(contain) — 정사각 직인이 가로로 안 찌그러지게.
+        // exact=true(서명 지정 cm)면 비율맞춤 없이 박스 크기 그대로 사용.
         [$boxW, $boxH] = [max(1, (int) $pos['w']), max(1, (int) $pos['h'])];
         $info = @getimagesizefromstring($bytes);
-        if ($info && $info[0] > 0 && $info[1] > 0) {
+        if ($exact) {
+            [$w, $h] = [$boxW, $boxH];
+        } elseif ($info && $info[0] > 0 && $info[1] > 0) {
             $scale = min($boxW / $info[0], $boxH / $info[1]);
             [$w, $h] = [(int) round($info[0] * $scale), (int) round($info[1] * $scale)];
         } else {

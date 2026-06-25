@@ -65,7 +65,7 @@ class ClearanceSetMapping
                 'I12' => fn (Vehicle $v) => $v->mileage,                           // 주행거리
                 'G13' => fn (Vehicle $v) => $v->nice_reg_fuel_type,                // 연료
                 'H13' => fn (Vehicle $v) => $v->nice_spec_fuel_efficiency,         // 연비 (NICE fuelCnsmpRt → 한글/영문등록증 F31 cascade)
-                'B14' => fn (Vehicle $v) => DocValue::consigneeBlock($v),          // 컨사이니 (이름+ID+주소+이메일+전화+담당자)
+                'B14' => fn (Vehicle $v) => DocValue::consigneeBlock($v, labelIdValue: true), // 컨사이니 (이름+Business number 라벨+주소+이메일+전화+담당자)
                 // D14(NAME)는 템플릿 셀에 `=B14` 수식 — 컨사이니 블록 전체를 미러(Travel Invoice F5 cascade).
                 //   writeCell 이 수식 셀은 안 덮어쓰므로 매핑에서 제외.
                 'B15' => fn (Vehicle $v) => $v->sale_price,                        // 판매금
