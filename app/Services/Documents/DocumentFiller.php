@@ -409,7 +409,12 @@ class DocumentFiller
             //   — 깨지면 Excel 이 서식을 못 읽어 날짜가 serial(예: 43705)로 표시됨. '$' 뒤가 '-'면 로케일이라 제외.
             $fmt = $sheet->getStyle($coord)->getNumberFormat()->getFormatCode();
             if ($fmt !== null && str_contains($fmt, '$')) {
-                $sheet->getStyle($coord)->getNumberFormat()->setFormatCode(preg_replace('/\$(?!-)/', $symbol, $fmt));
+                $converted = preg_replace('/\$(?!-)/', $symbol, $fmt);
+                // 멀티바이트 통화기호(€·¥·£·₩) 앞의 이스케이프 백슬래시 제거. 양식의 `\$#,##0` 가
+                // `\€#,##0` 이 되면 Excel 은 `\` 를 1바이트만 이스케이프 → 멀티바이트 기호 서식이 깨져
+                // 셀이 빈칸/기호누락으로 표시됨(실측 EUR 통관SET). 백슬래시 빼고 `€#,##0` 로.
+                $converted = str_replace('\\'.$symbol, $symbol, $converted);
+                $sheet->getStyle($coord)->getNumberFormat()->setFormatCode($converted);
             }
             // ② "Dollar" 라벨 → 통화코드 (RichText 라벨도 평문 치환)
             $val = $sheet->getCell($coord)->getValue();
