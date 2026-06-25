@@ -53,8 +53,10 @@ class StampOverlayTest extends TestCase
         $ss = (new DocumentFiller($vehicle))->spreadsheet('deregistration_contract');
         $sheet = $ss->getSheetByName('2.계약서');
 
-        $hits = $this->drawingAt($sheet, 'A60');
-        $this->assertCount(1, $hits, 'A60 에 도장이 정확히 1개여야 함 (이중 X)');
+        // 업로드 서명은 슬롯 위치(A62, jin 지정)에 1개. 양식 baked(A60)는 clearAnchors 로 제거 → 이중 X.
+        $this->assertCount(0, $this->drawingAt($sheet, 'A60'), '양식 baked 서명(A60)은 제거되어야 함');
+        $hits = $this->drawingAt($sheet, 'A62');
+        $this->assertCount(1, $hits, 'A62 에 업로드 서명이 정확히 1개여야 함 (이중 X)');
         $this->assertInstanceOf(Drawing::class, $hits[0]);
         $this->assertSame($bytes, file_get_contents($hits[0]->getPath()), '업로드한 서명으로 교체되어야 함');
     }

@@ -34,14 +34,29 @@ class StampSlots
     ];
 
     /**
+     * 회사(template_set)별 슬롯. heyman 은 jin 2026-06-25 정책(서명=말소계약서만 /
+     * 직인=판매·선적인보이스·계약서·통관 차량인보이스/팩킹/Travel, 등록증·말소증 정부직인 제외).
+     * 그 외(system/karaba)는 기본 배치.
+     *
      * @return array<string, list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}>>
      */
-    public static function all(): array
+    public static function all(?string $set = null): array
+    {
+        return $set === 'heyman' ? self::heymanSlots() : self::defaultSlots();
+    }
+
+    /**
+     * 기본(SSANCAR/karaba) 슬롯.
+     *
+     * @return array<string, list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}>>
+     */
+    private static function defaultSlots(): array
     {
         return [
             'deregistration_contract' => [
                 // 서명 — jin 지정 11.38cm×1.59cm(=430×60px) @ A62. exact=지정크기 그대로(비율맞춤 아님).
-                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true],
+                // clearAnchors: 양식 baked 서명(A60)을 업로드본 추가 전 제거 → 이중 서명 방지.
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
             'invoice' => [
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
@@ -74,10 +89,54 @@ class StampSlots
         ];
     }
 
-    /** @return list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}> */
-    public static function for(string $type): array
+    /**
+     * HEYMAN 전용 슬롯 (jin 2026-06-25).
+     * - 서명(signature): 말소계약서만.
+     * - 직인(seal): 판매인보이스 / 선적인보이스(컨테이너·RORO) / 계약서(컨테이너·RORO) /
+     *   통관 SET 차량인보이스·차량팩킹·Travel.
+     * - 등록증·말소증: 정부 공인직인 자리 → 회사도장 미부착(슬롯 없음).
+     * 직인으로 바뀐 슬롯은 기본 박스 안에서 비율맞춤(exact 미사용 → 정사각 직인 안 찌그러짐).
+     *
+     * @return array<string, list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}>>
+     */
+    private static function heymanSlots(): array
     {
-        return self::all()[$type] ?? [];
+        return [
+            'deregistration_contract' => [
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
+            ],
+            'invoice' => [
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
+                ['key' => 'logo', 'role' => 'logo', 'sheet' => 'Invoice', 'anchor' => 'A1', 'width' => 333, 'height' => 72],
+            ],
+            'container_invoice_packing' => [
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'INVOICE', 'anchor' => 'H115', 'width' => 291, 'height' => 137],
+            ],
+            'container_contract' => [
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
+                ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
+            ],
+            'roro_invoice_packing' => [
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'INVOICE', 'anchor' => 'H55', 'width' => 291, 'height' => 137],
+            ],
+            'roro_contract' => [
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
+                ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
+            ],
+            // 등록증·말소증 정부직인은 슬롯에서 제외. 회사 직인은 차량인보이스·팩킹·Travel 만.
+            'clearance' => [
+                ['key' => 'seal_invoice', 'role' => 'seal', 'sheet' => '차량인보이스', 'anchor' => 'G33', 'width' => 290, 'height' => 137],
+                ['key' => 'seal_packing', 'role' => 'seal', 'sheet' => '차량팩킹', 'anchor' => 'G33', 'width' => 290, 'height' => 136],
+                ['key' => 'seal_travel', 'role' => 'seal', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'width' => 291, 'height' => 188],
+                ['key' => 'logo_travel', 'role' => 'logo', 'sheet' => 'Travel Services Invoice', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
+            ],
+        ];
+    }
+
+    /** @return list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}> */
+    public static function for(string $type, ?string $set = null): array
+    {
+        return self::all($set ?? Setting::companyTemplateSet())[$type] ?? [];
     }
 
     /** 회사(set)·서류(type)·슬롯(key) 별 위치/크기 override. 미설정 시 슬롯 기본값. */
