@@ -126,6 +126,32 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         }
     }
 
+    public function test_eur_clearance_currency_symbol_not_backslash_escaped(): void
+    {
+        // 회귀가드: 양식의 `\$#,##0` 를 `\€#,##0` 로 바꾸면 Excel 이 `\` 로 멀티바이트 €(3바이트)를
+        //   잘못 이스케이프 → 서식 깨져 금액/통화 빈칸(jin 보고, 234조6163 EUR 통관SET).
+        //   applyCurrency 가 기호 앞 백슬래시를 떼서 `€#,##0` 로 만들어야 함.
+        $ss = (new DocumentFiller($this->invoiceVehicle('EUR')))->spreadsheet('clearance');
+
+        $inv = $ss->getSheetByName('차량인보이스');
+        foreach (['G22', 'H22', 'I22', 'H32'] as $c) {
+            $this->assertSame('€#,##0', $inv->getStyle($c)->getNumberFormat()->getFormatCode(), "차량인보이스 {$c} 통화서식이 €#,##0 이어야 함");
+        }
+
+        // 전 visible 시트에 이스케이프된 멀티바이트 기호(\€ 등) 잔존 0건.
+        foreach ($ss->getWorksheetIterator() as $sheet) {
+            if ($sheet->getSheetState() !== 'visible') {
+                continue;
+            }
+            foreach ($sheet->getCoordinates(false) as $coord) {
+                $fmt = (string) $sheet->getStyle($coord)->getNumberFormat()->getFormatCode();
+                foreach (['€', '¥', '£', '₩'] as $sym) {
+                    $this->assertStringNotContainsString('\\'.$sym, $fmt, "{$sheet->getTitle()} {$coord} 서식에 백슬래시-이스케이프된 통화기호 잔존");
+                }
+            }
+        }
+    }
+
     private function countDollarFormats($spreadsheet): int
     {
         $n = 0;
