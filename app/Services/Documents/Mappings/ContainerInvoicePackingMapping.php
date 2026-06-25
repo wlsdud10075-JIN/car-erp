@@ -24,6 +24,8 @@ class ContainerInvoicePackingMapping
             'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             // 슬롯 위/아래 1회 기입 (primary = 선택 첫 차량). D112 = 확장본의 Incoterms(슬롯 아래로 이동).
             'header' => [
+                'G3' => fn (Vehicle $v) => $v->nice_reg_vin ? substr($v->nice_reg_vin, -6) : null, // ID (VIN 끝 6자리)
+                'E18' => fn (Vehicle $v) => $v->shipping_date?->format('Y-m-d'),  // 선적일 (Sailing on or about)
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),       // 수하인(account & risk)
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,           // 반입지
                 'B16' => fn (Vehicle $v) => $v->port_of_loading,              // Port of loading

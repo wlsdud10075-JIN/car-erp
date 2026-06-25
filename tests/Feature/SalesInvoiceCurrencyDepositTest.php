@@ -152,6 +152,17 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         }
     }
 
+    public function test_clearance_purchase_list_amounts_are_numeric(): void
+    {
+        // 회귀가드: 구매리스트 B15(판매금)/D15(운임)이 텍스트면 차량인보이스 G22 통화서식 미적용 +
+        //   H22/H32 SUM 이 텍스트 무시로 0/빈칸 (jin 보고 234조6163). float(숫자)로 기입돼야 함.
+        $ss = (new DocumentFiller($this->invoiceVehicle('EUR')))->spreadsheet('clearance');
+        $pl = $ss->getSheetByName('구매리스트');
+
+        $this->assertSame('n', $pl->getCell('B15')->getDataType(), '구매리스트 B15(판매금)은 숫자여야 SUM/통화서식 동작');
+        $this->assertSame('n', $pl->getCell('D15')->getDataType(), '구매리스트 D15(운임)은 숫자여야 함');
+    }
+
     private function countDollarFormats($spreadsheet): int
     {
         $n = 0;

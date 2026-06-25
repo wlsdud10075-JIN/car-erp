@@ -21,6 +21,8 @@ class RoroInvoicePackingMapping
             'label' => 'RORO_Invoice_Packing',
             'currencyAware' => true,   // 판매통화 적응 ($→통화기호) — 2026-06-24
             'header' => [
+                'G3' => fn (Vehicle $v) => $v->nice_reg_vin ? substr($v->nice_reg_vin, -6) : null, // ID (VIN 끝 6자리)
+                'E18' => fn (Vehicle $v) => $v->shipping_date?->format('Y-m-d'),  // 선적일 (Sailing on or about)
                 'B9' => fn (Vehicle $v) => DocValue::consigneeBlock($v),
                 'G12' => fn (Vehicle $v) => 'RORO',                          // 운송방식 라벨 (컨테이너 양식 G12="CONTAINER" 대응)
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,          // 반입지
