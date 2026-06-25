@@ -97,6 +97,21 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         }
     }
 
+    public function test_shipping_invoice_unit_price_shows_currency(): void
+    {
+        // 단가(H) 칸 통화 미러 (jin 2026-06-25) — 양식 H 가 통화 없는 일반숫자라 옆 금액(I)
+        //   통화서식을 복제해 통화기호가 붙어야 함. (getStyle 중첩 supervisor 함정 회귀가드)
+        $v = $this->invoiceVehicle('EUR');
+        $coll = collect([$v]);
+
+        foreach (['container_invoice_packing' => 'H21', 'roro_invoice_packing' => 'H21'] as $type => $cell) {
+            $ss = (new DocumentFiller($coll))->spreadsheet($type);
+            $fmt = $ss->getSheetByName('INVOICE')->getStyle($cell)->getNumberFormat()->getFormatCode();
+            $this->assertStringContainsString('€', $fmt, "{$type} {$cell}(단가) 통화기호 누락");
+            $this->assertStringNotContainsString('$', $fmt, "{$type} {$cell} 달러 잔존");
+        }
+    }
+
     public function test_eur_clearance_keeps_date_locale_format(): void
     {
         // 회귀가드: applyCurrency 가 날짜서식 `[$-409]` 의 '$'를 통화기호로 바꾸면

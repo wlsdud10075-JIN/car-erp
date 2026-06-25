@@ -32,6 +32,8 @@ class RoroInvoicePackingMapping
                 'first' => 21,
                 'stride' => 1,
                 'count' => 30,
+                // 단가(H) 칸에 통화기호 — 옆 금액(I) 통화서식을 슬롯마다 복제 (jin 2026-06-25, M 합계 제외).
+                'currencyMirror' => ['H' => 'I'],
                 'footerAggregates' => [
                     ['cell' => 'I51', 'fmt' => '=SUM(I%d:I%d)'],
                     ['cell' => 'J51', 'fmt' => '=SUM(J%d:J%d)'],
