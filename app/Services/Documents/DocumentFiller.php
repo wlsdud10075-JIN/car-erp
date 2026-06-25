@@ -132,6 +132,11 @@ class DocumentFiller
             if (! $sheet) {
                 continue;
             }
+            // 양식에 박힌 기본 도장이 슬롯 앵커와 다른 위치(예: 서명 baked A60 ↔ 슬롯 A62)에 있으면
+            // 업로드본 추가 전에 그 위치도 제거 — 안 그러면 이중 도장(jin 2026-06-25 A62 이동분 보정).
+            foreach ($slot['clearAnchors'] ?? [] as $clearAnchor) {
+                $this->removeDrawingsAt($sheet, $clearAnchor);
+            }
             $pos = StampSlots::position($set, $type, $slot);
             $this->overlayStamp($sheet, $slot['anchor'], $disk->get($path), pathinfo($path, PATHINFO_EXTENSION) ?: 'png', $pos, (bool) ($slot['exact'] ?? false));
         }
@@ -144,13 +149,8 @@ class DocumentFiller
      */
     private function overlayStamp(Worksheet $sheet, string $anchor, string $bytes, string $ext, array $pos, bool $exact = false): void
     {
-        // 같은 앵커의 기존 도장 제거 (ArrayObject — 뒤에서부터 unset)
-        $drawings = $sheet->getDrawingCollection();
-        for ($i = count($drawings) - 1; $i >= 0; $i--) {
-            if (isset($drawings[$i]) && $drawings[$i]->getCoordinates() === $anchor) {
-                unset($drawings[$i]);
-            }
-        }
+        // 같은 앵커의 기존 도장 제거
+        $this->removeDrawingsAt($sheet, $anchor);
 
         $tmp = tempnam(sys_get_temp_dir(), 'stamp_').'.'.$ext;
         file_put_contents($tmp, $bytes);
@@ -178,6 +178,17 @@ class DocumentFiller
         $drawing->setWidth(max(1, $w));
         $drawing->setHeight(max(1, $h));
         $drawing->setWorksheet($sheet);
+    }
+
+    /** 지정 앵커에 걸린 기존 Drawing 제거 (ArrayObject — 뒤에서부터 unset). */
+    private function removeDrawingsAt(Worksheet $sheet, string $anchor): void
+    {
+        $drawings = $sheet->getDrawingCollection();
+        for ($i = count($drawings) - 1; $i >= 0; $i--) {
+            if (isset($drawings[$i]) && $drawings[$i]->getCoordinates() === $anchor) {
+                unset($drawings[$i]);
+            }
+        }
     }
 
     /**

@@ -107,7 +107,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $set = $this->stampSet();
         $this->stampPositions = [];
-        foreach (\App\Services\Documents\StampSlots::all() as $type => $slots) {
+        foreach (\App\Services\Documents\StampSlots::all($set) as $type => $slots) {
             foreach ($slots as $slot) {
                 $pos = \App\Services\Documents\StampSlots::position($set, $type, $slot);
                 $this->stampPositions[$type.'::'.$slot['key']] = [
@@ -138,7 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component
             abort(403);
         }
         $set = $this->stampSet();
-        foreach (\App\Services\Documents\StampSlots::all() as $type => $slots) {
+        foreach (\App\Services\Documents\StampSlots::all($set) as $type => $slots) {
             foreach ($slots as $slot) {
                 $k = $type.'::'.$slot['key'];
                 $p = $this->stampPositions[$k] ?? null;
