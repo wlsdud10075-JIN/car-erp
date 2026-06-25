@@ -62,7 +62,11 @@ class InternalDocumentController extends Controller
         }
 
         return response()->streamDownload(
-            fn () => (new Xlsx($spreadsheet))->save('php://output'),
+            function () use ($spreadsheet) {
+                $writer = new Xlsx($spreadsheet);
+                $writer->setPreCalculateFormulas(false);   // fullCalcOnLoad=1 — Excel 재계산 위임 (크로스시트 cascade)
+                $writer->save('php://output');
+            },
             $filename,
             ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
         );
