@@ -140,17 +140,25 @@ class DocValue
     /**
      * 컨사이니 통합 블록 — 통관 구매리스트 B14 + 선적 컨테이너/RORO 인보이스 수하인칸 공용.
      * 이름 + ID + 주소 + 이메일 + 전화 + 담당자. 줄바꿈 조인(대상 셀 전부 wrapText 확인됨).
+     *
+     * $labelIdValue=true 면 ID 줄에 'Business number : ' 라벨을 붙인다(통관 B14 — jin 2026-06-25).
+     * 선적 인보이스(B9)는 라벨 없이 값만(기존 동작 유지).
      */
-    public static function consigneeBlock(Vehicle $v): ?string
+    public static function consigneeBlock(Vehicle $v, bool $labelIdValue = false): ?string
     {
         $c = self::invoiceConsignee($v);
         if (! $c) {
             return null;
         }
 
+        $idLine = $c->id_value;
+        if ($labelIdValue && $idLine !== null && trim((string) $idLine) !== '') {
+            $idLine = 'Business number : '.$idLine;
+        }
+
         $lines = array_filter([
             $c->name,
-            $c->id_value,
+            $idLine,
             $c->address,
             $c->contact_email ? 'EMAIL: '.$c->contact_email : null,
             $c->contact_phone ? 'TEL: '.$c->contact_phone : null,

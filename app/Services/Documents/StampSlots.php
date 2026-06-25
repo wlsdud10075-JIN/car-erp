@@ -40,21 +40,24 @@ class StampSlots
     {
         return [
             'deregistration_contract' => [
-                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A60', 'width' => 305, 'height' => 77],
+                // 서명 — jin 지정 11.38cm×1.59cm(=430×60px) @ A62. exact=지정크기 그대로(비율맞춤 아님).
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true],
             ],
             'invoice' => [
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'Invoice', 'anchor' => 'A1', 'width' => 333, 'height' => 72],
             ],
             'container_invoice_packing' => [
-                ['key' => 'sign', 'role' => 'signature', 'sheet' => 'INVOICE', 'anchor' => 'H115', 'width' => 290, 'height' => 137],
+                // 서명 — jin 지정 7.7cm×3.63cm(=291×137px). exact=지정크기 그대로(비율맞춤 아님).
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => 'INVOICE', 'anchor' => 'H115', 'width' => 291, 'height' => 137, 'exact' => true],
             ],
             'container_contract' => [
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
             'roro_invoice_packing' => [
-                ['key' => 'sign', 'role' => 'signature', 'sheet' => 'INVOICE', 'anchor' => 'H55', 'width' => 290, 'height' => 137],
+                // 서명 — jin 지정 7.7cm×3.63cm(=291×137px). exact=지정크기 그대로(비율맞춤 아님).
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => 'INVOICE', 'anchor' => 'H55', 'width' => 291, 'height' => 137, 'exact' => true],
             ],
             'roro_contract' => [
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
