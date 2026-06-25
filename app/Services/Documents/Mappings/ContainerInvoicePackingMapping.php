@@ -35,6 +35,9 @@ class ContainerInvoicePackingMapping
                 'first' => 21,
                 'stride' => 3,
                 'count' => 30,
+                // 단가(H) 칸에 통화기호 — 양식 H 서식이 통화 없는 일반숫자라, 옆 금액(I) 통화서식을
+                //   슬롯마다 복제해 applyCurrency 가 같이 변환하게 함 (jin 2026-06-25, M 합계는 제외).
+                'currencyMirror' => ['H' => 'I'],
                 'footerAggregates' => [
                     ['cell' => 'I111', 'fmt' => '=SUM(I%d:I%d)'],   // AMOUNT 합
                     ['cell' => 'J111', 'fmt' => '=SUM(J%d:J%d)'],   // Weight 합

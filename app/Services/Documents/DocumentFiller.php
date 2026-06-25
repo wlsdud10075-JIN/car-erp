@@ -235,6 +235,14 @@ class DocumentFiller
                     $this->writeCell($sheet, $col.($base + $offset), $resolver($v));
                 }
             }
+            // 통화서식 복제 — 통화 없는 금액칸(예: 단가 H)에 옆칸(금액 I)의 $서식만 입혀
+            //   뒤이은 applyCurrency 가 통화기호로 변환하게 한다(슬롯 main 행 기준).
+            //   ⚠ 원본 서식을 먼저 변수로 읽어야 함 — getStyle() 중첩 호출은 supervisor 가 꼬여
+            //      setFormatCode 가 엉뚱한 셀에 적용됨(실측). (번호서식만 복제, 테두리/정렬은 H 유지)
+            foreach ($m['currencyMirror'] ?? [] as $target => $source) {
+                $srcFmt = $sheet->getStyle($source.$base)->getNumberFormat()->getFormatCode();
+                $sheet->getStyle($target.$base)->getNumberFormat()->setFormatCode($srcFmt);
+            }
         }
 
         $regionStart = $first;
