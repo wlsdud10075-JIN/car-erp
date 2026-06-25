@@ -70,8 +70,8 @@ class ClearanceSetMapping
                 'B14' => fn (Vehicle $v) => DocValue::consigneeBlock($v, labelIdValue: true), // 컨사이니 (이름+Business number 라벨+주소+이메일+전화+담당자)
                 // D14(NAME)는 템플릿 셀에 `=B14` 수식 — 컨사이니 블록 전체를 미러(Travel Invoice F5 cascade).
                 //   writeCell 이 수식 셀은 안 덮어쓰므로 매핑에서 제외.
-                'B15' => fn (Vehicle $v) => $v->sale_price,                        // 판매금
-                'D15' => fn (Vehicle $v) => $v->transport_fee,                     // 운임
+                'B15' => fn (Vehicle $v) => DocValue::money($v->sale_price),        // 판매금 (float — 텍스트면 차량인보이스 SUM/통화서식 깨짐)
+                'D15' => fn (Vehicle $v) => DocValue::money($v->transport_fee),     // 운임 (float)
             ],
         ];
     }
