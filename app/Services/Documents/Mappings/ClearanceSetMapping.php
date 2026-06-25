@@ -45,6 +45,7 @@ class ClearanceSetMapping
                 'B6' => fn (Vehicle $v) => $v->nice_reg_first_date,                 // 최초등록일
                 'D6' => fn (Vehicle $v) => $v->year,                               // 연도
                 'G6' => fn (Vehicle $v) => $v->nice_reg_vehicle_form,               // 차종
+                'B8' => fn (Vehicle $v) => $v->nice_reg_use_type ?: DocValue::niceRaw($v, 'resUseType'), // 용도/Usage (NICE resUseType → 한글/영문등록증 P4 cascade)
                 'B7' => fn (Vehicle $v) => $v->deregistration_date,                // 말소등록일
                 'D7' => fn (Vehicle $v) => $v->mileage,                            // 주행거리
                 'G7' => fn (Vehicle $v) => $v->nice_spec_length,                   // 길이
@@ -58,6 +59,7 @@ class ClearanceSetMapping
                 'I10' => fn (Vehicle $v) => DocValue::niceInspectionStart($v),     // 검사시작 (NICE resValidPeriod 분할)
                 'I11' => fn (Vehicle $v) => DocValue::niceInspectionEnd($v),       // 검사종료 (NICE resValidPeriod 분할)
                 'B11' => fn (Vehicle $v) => $v->vessel_name,                       // VSL
+                'D11' => fn (Vehicle $v) => $v->shipping_date,                     // 선적일 (차량인보이스 C18 cascade)
                 'G11' => fn (Vehicle $v) => DocValue::niceRaw($v, 'maxPower'),     // 출력 (NICE)
                 'B12' => fn (Vehicle $v) => $v->container_number ?: $v->bl_loading_location, // 컨테이너 NO
                 'D12' => fn (Vehicle $v) => $v->shipping_method,                   // con/roro
