@@ -10,7 +10,7 @@
 
 1. **위치 = 기존 NICE 박스 `54.116.7.83`에 ssancar 쌍을 함께 co-locate.** (자원 충분 RAM7.6/디스크154. NICE 화이트리스트 IP 자동 유지.) board handoff 의 "새 인스턴스"는 이 박스로 해석 — Django 와 공존(다른 nginx 블록) 후 정리.
 2. **이번 범위 = 쌍 배포만. NICE 게이트웨이 이식(§3,§4-A)은 별도 후속.** (cutover 가 heyman live NICE 경로를 건드려 가장 위험 → 분리. 그때까지 heyman 은 기존 Django 게이트웨이 그대로 사용.)
-3. **도메인 = heymancar.com 재활용** (ssancar.com 아님 — `project_deployment_naming` 명시). ssancar car-erp = heymancar.com 서브경로/서브도메인. certbot 확장.
+3. **도메인 = heymancar.com 재활용** (ssancar.com 아님). **Option B(2026-06-26)**: car-erp(ssancar) = **apex `heymancar.com`** 자체 / board(ssancar) = `board.heymancar.com`. NICE `/provide/` 는 apex의 경로(긴 prefix 우선)라 같은 블록서 Django와 공존 → 이식 때 그 location 만 car-erp 로 flip. **배포 = 주말(다운타임 허용)**, 지금은 계획만.
 4. **car-erp 코드 변경 0** — master(`ba4d274` 기준) 에 board 수신 4종 전부 LIVE 확인됨: purchase-sync(HMAC·멱등=vehicle_number·salesman_email) / 영업포털 read API(InternalPortalController) / 첨부 v2(attachments[] s3_path) / 금액매핑 v3. **clone 만 하면 끝.**
 5. **시크릿 2개(purchase-sync·portal-read HMAC)는 board 세션이 `openssl rand -hex 32` 로 생성** → 양쪽 .env 동일. car-erp 세션은 받아서 car-erp .env 에만.
 6. **ssancar 는 master push 자동배포 안 됨** (CI 환경=heyman 1개). ssancar 는 박스에서 수동 `git pull` (또는 추후 deploy.yml 2번째 job — board 세션 §96).
