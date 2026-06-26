@@ -29,6 +29,7 @@ return [
     'col' => [
         'number' => '차량번호',
         'brand_model' => '브랜드/차종',
+        'vin' => '차대번호',
         'status' => '진행상태',
         'purchase_date' => '매입일',
         'sale_date' => '판매일',

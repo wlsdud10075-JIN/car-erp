@@ -3127,6 +3127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="w-6 pb-2 pr-2 font-medium" title="{{ __('vehicle.shipdoc_select_title') }}"></th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', __('vehicle.col.brand_model')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('nice_reg_vin', __('vehicle.col.vin')) !!}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', __('vehicle.col.status')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date')) !!}</th>
@@ -3181,6 +3182,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                 </td>
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>
                 <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span></td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
@@ -3238,7 +3240,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 function vehicleColumnsToggle() {
     const STORAGE_KEY = 'car_erp_vehicles_columns_v2';   // v2: 판매가 기본 off, 판매총액 기본 on (2026-06-11)
     const defaultVisible = {
-        brand_model: true, purchase_date: true, sale_price: false, sale_total: true,
+        brand_model: true, vin: true, purchase_date: true, sale_price: false, sale_total: true,
         sale_date: false, shipping_date: false, bl_issue_date: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
@@ -3249,6 +3251,7 @@ function vehicleColumnsToggle() {
         visible: {},
         togglableColumns: [
             { key: 'brand_model',    label: @json(__('vehicle.col.brand_model')) },
+            { key: 'vin',            label: @json(__('vehicle.col.vin')) },
             { key: 'purchase_date',  label: @json(__('vehicle.col.purchase_date')) },
             { key: 'sale_date',      label: @json(__('vehicle.col.sale_date')) },
             { key: 'shipping_date',  label: @json(__('vehicle.col.shipping_date')) },
