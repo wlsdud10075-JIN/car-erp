@@ -1,7 +1,32 @@
 # ssancar car-erp 이식/배포 계획 (Django ssancar-erp → car-erp)
 
-> ⚠️ **이 문서는 dev 전용**(.md 배포 제외). 조만간 착수 예정. **트리거: "ssancar 이식 이어서"**
+> ⚠️ **이 문서는 dev 전용**(.md 배포 제외). **트리거: "ssancar 이식 이어서"**
 > 2026-06-25 정리 (jin과 방향 확정). 착수 전 이 문서 + 메모리 `project_ssancar_migration` 읽기.
+
+## ★ 확정 결정 (2026-06-26, jin) — board 동시 배포 맥락
+
+> 이번엔 **ssancar ERP 쌍(car-erp + board) 동시 배포**가 목표. board 세션이 인계문서
+> `board/meetings/handoff-car-erp-ssancar-deploy.md` 를 줬고, 그걸 이 계획과 합쳐 확정함.
+
+1. **위치 = 기존 NICE 박스 `54.116.7.83`에 ssancar 쌍을 함께 co-locate.** (자원 충분 RAM7.6/디스크154. NICE 화이트리스트 IP 자동 유지.) board handoff 의 "새 인스턴스"는 이 박스로 해석 — Django 와 공존(다른 nginx 블록) 후 정리.
+2. **이번 범위 = 쌍 배포만. NICE 게이트웨이 이식(§3,§4-A)은 별도 후속.** (cutover 가 heyman live NICE 경로를 건드려 가장 위험 → 분리. 그때까지 heyman 은 기존 Django 게이트웨이 그대로 사용.)
+3. **도메인 = heymancar.com 재활용** (ssancar.com 아님 — `project_deployment_naming` 명시). ssancar car-erp = heymancar.com 서브경로/서브도메인. certbot 확장.
+4. **car-erp 코드 변경 0** — master(`ba4d274` 기준) 에 board 수신 4종 전부 LIVE 확인됨: purchase-sync(HMAC·멱등=vehicle_number·salesman_email) / 영업포털 read API(InternalPortalController) / 첨부 v2(attachments[] s3_path) / 금액매핑 v3. **clone 만 하면 끝.**
+5. **시크릿 2개(purchase-sync·portal-read HMAC)는 board 세션이 `openssl rand -hex 32` 로 생성** → 양쪽 .env 동일. car-erp 세션은 받아서 car-erp .env 에만.
+6. **ssancar 는 master push 자동배포 안 됨** (CI 환경=heyman 1개). ssancar 는 박스에서 수동 `git pull` (또는 추후 deploy.yml 2번째 job — board 세션 §96).
+7. **board 회사분리(heyman/ssancar/karaba)** = board 세션 작업. board 는 이미 "같은 코드·다른 데이터" 멀티테넌트 설계(handoff §97)라 car-erp 와 동일 패턴(단일 master + 테넌트별 .env/DB/APP_KEY + DB시드 브랜딩, 코드 브랜치 X).
+
+### 이번 배포 순서 (co-locate 쌍, NICE 이식 제외)
+1. `54.116.7.83` 박스 LEMP 설치 (PHP 8.4+확장·php-fpm·MySQL/MariaDB·composer·node·supervisor·certbot). **Django gunicorn/nginx 무중단 공존**(heyman NICE 살아있음).
+2. car-erp(ssancar) 배포: master clone → ssancar 전용 신규 APP_KEY(생성·백업)·DB+전용user·S3(버킷 `ssancar-erp-docs`+IAM)·heymancar.com 서브경로 + certbot → migrate → build → 큐워커(supervisor startretries=20)·cron(03:00 db:backup).
+3. board(ssancar) 배포 (board 세션·런북 §B): 신규 APP_KEY·DB·시크릿2개·`CAR_ERP_BASE_URL=https://<ssancar car-erp 주소>`·respond.io ssancar 토큰·S3.
+4. salesmen.email = board(ssancar) 영업 로그인 이메일 일치하게 ssancar salesmen 시드.
+5. e2e: board(ssancar) 차 1대 won → car-erp(ssancar) 자동생성 + board `/audit` 201.
+
+### 아직 jin 확인 (이번 배포 관련)
+- [ ] ssancar 전용 NICE 키 (ssancar 계약분 있나? — 단, NICE 게이트웨이 이식 전엔 ssancar car-erp 도 heyman 게이트웨이 URL 을 가리켜도 됨)
+- [ ] 바이어/컨사이니 이식(`ssancar_바이어컨사이니_260625.xlsx`) 테스트행 제외 — 배포 후 consignee-import
+- [ ] respond.io ssancar 워크스페이스 토큰 (연동 C)
 
 ## 0. 한 줄 요약
 
