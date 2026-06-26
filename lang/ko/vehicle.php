@@ -175,7 +175,7 @@ return [
 
     'field' => [
         'vehicle_number' => '차량번호',
-        'brand' => '제조사',
+        'brand' => '브랜드',
         'model_type' => '차종',
         'year' => '연식',
         'cc' => '배기량 (cc)',
