@@ -25,6 +25,11 @@
 | **공유 시크릿 2개** | `CAR_ERP_HMAC_SECRET`·`CAR_ERP_READ_HMAC_SECRET` (`openssl rand -hex 32` 각) | **board 세션 생성** → 양쪽 .env 동일값 |
 | NICE | (이번엔 이식 X) 기존 게이트웨이 URL+토큰 그대로 사용 가능 | heyman .env 값 재사용 가능(같은 박스 localhost 도 가능) |
 
+### ✅ AWS 사전준비 완료 (2026-06-26)
+- S3 버킷 `ssancar-erp-docs`(서울·퍼블릭차단·버전관리·SSE) + IAM `ssancar-erp-s3-user` **액세스 키 = `바탕화면\AWS\` 보관** ✅
+- DNS `board.heymancar.com` → `54.116.7.83`(전파 확인) / apex `heymancar.com`도 박스 ✅
+- → 남은 준비(주말/별도): 박스 MySQL DB비번 / 관리자 계정 / **board 세션 시크릿 2개** / (권장)Lightsail 스냅샷
+
 ## B. 코드 선결 = 없음
 
 master(`ba4d274`+) 그대로. 확인됨: board 수신 4종 LIVE(purchase-sync HMAC·멱등=vehicle_number·salesman_email / 포털 read API / 첨부 v2 / 금액 v3). ssancar = **싼카 법인 → `system` 양식 공용**(COMPANY_TEMPLATE_SET 미설정/`system`). 템플릿 작업 0.
