@@ -3,6 +3,8 @@
 > ⚠️ **dev 전용 .md**. **트리거: "ssancar 배포 이어서"**. 결정 맥락 = `ssancar-migration-plan.md` ★확정 결정 / 메모리 `project_ssancar_migration`.
 > 멀티테넌트 공통 절차는 `karaba-deployment-checklist.md`·`aws-deployment-record.md` 참조 — **이 문서는 ssancar 차이점(co-location + Django 공존)만 상세화.**
 
+> 🗓️ **배포 시점 = 주말(아무도 안 쓸 때), 다운타임 허용** (jin 2026-06-26). → 아래 "무중단/공존" 절차는 **권장이지 필수 아님**. 급하면 apex 잠깐 내리고 편집해도 됨(주말이라 heyman NICE 잠깐 끊겨도 무방). 지금은 **계획만**, 실행은 주말.
+
 ## 0. 한 줄 + ⚠️ 최우선 안전원칙
 
 `54.116.7.83` = **heyman 라이브 NICE 게이트웨이(Django/gunicorn)** 서빙 박스. 여기에 car-erp(ssancar) + board(ssancar)를 **공존 추가**. **이번 범위 = 쌍 배포만**(NICE 게이트웨이 이식 X — 후속).
@@ -16,7 +18,7 @@
 
 | 항목 | 값 | 출처 |
 |---|---|---|
-| ssancar car-erp 도메인 | heymancar.com **서브도메인** (예 `erp.heymancar.com`) | jin — heymancar.com DNS A레코드 추가 |
+| 도메인 (Option B) | car-erp = **apex `heymancar.com`** (이미 박스 가리킴 → DNS 추가 불필요) / board = `board.heymancar.com` (jin DNS A레코드 추가) | apex 는 Django 와 공존(§I) |
 | DB 비번 | ssancar_erp_user 전용 비번 | jin 생성 |
 | S3 | 버킷 `ssancar-erp-docs` + IAM `ssancar-erp-s3-user` 키 (heyman과 동일 AWS 계정) | jin (콘솔) |
 | 관리자 계정 | ADMIN_*/BOSS_* 이메일·비번 | jin |
@@ -68,7 +70,7 @@ cp .env.example .env && npm ci && npm run build
 APP_ENV=production
 APP_DEBUG=false
 APP_NAME="SSANCAR ERP"
-APP_URL=https://erp.heymancar.com           # ← 확정 서브도메인
+APP_URL=https://heymancar.com                # ← Option B: car-erp = apex (board=board.heymancar.com)
 APP_KEY=                                     # ← G에서 1회 생성 (heyman 키 재사용 절대 X)
 
 DB_DATABASE=ssancar_erp
@@ -121,24 +123,61 @@ php artisan config:cache && php artisan route:cache && php artisan view:cache
 ```
 → ssancar 영업진 31명은 별도 시드/`consignee-import`(바이어38·컨사이니46) — 배포 후. salesmen.email = board(ssancar) 영업 로그인 이메일과 일치.
 
-## 도메인 아키텍처 (NICE 게이트웨이 vs 앱 서브도메인 — 혼동 방지)
+## 도메인 아키텍처 (Option B 확정 2026-06-26 — car-erp = apex)
 
 | 호스트 | 서빙 | 용도 |
 |---|---|---|
-| `heymancar.com` **`/provide/api/nice-lookup/`** (apex **경로**) | 지금 Django → NICE 이식 후 car-erp | NICE 게이트웨이 = heyman `.env` 고정 URL. **절대 불변** |
-| `erp.heymancar.com` (제안) | car-erp(ssancar) | ssancar ERP 앱 |
+| `heymancar.com` **루트 `/`** | car-erp(ssancar) | **ssancar ERP 앱**(로그인·ERP) — apex 자체 |
+| `heymancar.com` **`/provide/...`** (apex 경로) | 지금 Django → NICE 이식 후 car-erp | NICE 게이트웨이 = heyman `.env` 고정 URL. **절대 불변** |
 | `board.heymancar.com` | board(ssancar) | board(ssancar) 앱 |
 
-- **NICE 게이트웨이는 도메인이 아니라 apex의 nginx `location /provide/`** → 앱 서브도메인 이름과 무관.
-- **이번 배포**: apex `/provide/`(Django) **무수정**. 앱 서브도메인만 추가. ssancar car-erp 의 NICE 조회는 그 기존 게이트웨이 URL 을 그대로 호출(`.env` F단계).
-- **NICE 이식(후속)**: car-erp 에 `/provide/api/nice-lookup/` 라우트(포팅 게이트웨이) 추가 → apex 서버블록의 `location /provide/ { fastcgi_pass php-fpm; }` 를 Django proxy → car-erp `public/index.php` 로 교체. Laravel 은 host 무관 path 라우팅이라 car-erp 가 자기 서브도메인 앱 + apex `/provide/` 둘 다 처리. **heyman `.env` URL 불변, 문제 시 location 한 줄 원복.**
+- **car-erp 앱 = apex 루트, NICE `/provide/` = 같은 apex의 경로.** nginx 는 긴 prefix 우선 → `/provide/`는 Django, 나머지 `/`는 car-erp. **같은 블록에서 공존**(heyman NICE 무중단).
+- **이번 배포**: apex 블록을 **편집**해 root=car-erp 추가 + `/provide/` location 은 Django 그대로 유지(§I). ssancar 자기 차량 NICE 조회는 기존 게이트웨이 URL 호출(`.env` F).
+- **NICE 이식(후속)**: apex `location /provide/` 를 Django proxy → car-erp `public/index.php` 로 교체(car-erp 에 포팅 라우트 추가). **heyman `.env` URL 불변, 문제 시 location 한 줄 원복.**
+- ⚠️ B 는 apex(=heyman 라이브 NICE 서빙 블록)를 편집하므로 A(서브도메인)보다 신중. §I 안전절차 필수.
 
-## I. Nginx 새 블록 + HTTPS (⚠️ 기존 /provide/ 무수정)
+## I. Nginx — apex 블록 편집(car-erp root) + board 서브도메인 (⚠️ heyman NICE 무중단)
 
-1. **새 파일** `/etc/nginx/sites-available/ssancar-car-erp` (기존 `ssancar-erp` Django 블록 건드리지 말 것):
-   - `server_name erp.heymancar.com;` root `/var/www/car-erp/public;` php8.4-fpm.sock, `client_max_body_size 50M`.
-2. `sudo ln -s .../sites-available/ssancar-car-erp /etc/nginx/sites-enabled/ && sudo nginx -t && sudo systemctl reload nginx`
-3. `sudo certbot --nginx -d erp.heymancar.com` (새 서브도메인만 — 기존 인증서/heymancar.com 블록 영향 X) → APP_URL https 확인 → `php artisan config:cache`.
+### I-1. apex `heymancar.com` 블록 편집 (car-erp 를 root 에, /provide/ 는 Django 유지)
+> ⚠️ 이 블록이 heyman 라이브 NICE 를 서빙 중. **백업 → 편집 → `nginx -t` → reload → 즉시 NICE 검증** 순서 엄수.
+```bash
+# 0) 백업
+sudo cp /etc/nginx/sites-available/ssancar-erp /etc/nginx/sites-available/ssancar-erp.bak
+```
+편집 (기존 apex server 블록 안):
+```nginx
+server {
+    server_name heymancar.com;
+    # ── heyman NICE: 그대로 Django(gunicorn) — 긴 prefix 라 / 보다 우선 매칭 ──
+    location /provide/ {
+        proxy_pass http://unix:/ssancar-erp/gunicorn.sock;   # 기존 그대로
+        proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    # ── ssancar car-erp 앱 = apex root ──
+    root /var/www/car-erp/public;
+    index index.php;
+    client_max_body_size 50M;
+    location / { try_files $uri $uri/ /index.php?$query_string; }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+    # (기존 certbot listen 443 + ssl_certificate heymancar.com 줄은 유지)
+}
+```
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+**즉시 검증 (heyman NICE 무중단 + 앱):**
+```bash
+curl -s -o /dev/null -w "provide(Django): %{http_code}\n" https://heymancar.com/provide/api/nice-lookup/   # 기존대로 응답(405/400 등 Django) = 정상
+curl -s -o /dev/null -w "root(car-erp):  %{http_code}\n" https://heymancar.com/                            # 302(로그인) = car-erp 정상
+```
+→ 이상 시 **롤백**: `sudo cp .../ssancar-erp.bak .../ssancar-erp && sudo systemctl reload nginx` (heyman NICE 즉시 원복).
+- cert: heymancar.com 은 이미 certbot 됨(Django HTTPS). **새 발급 불필요** — 기존 listen 443/ssl 줄 유지. APP_URL=https://heymancar.com 확인 후 `php artisan config:cache`.
+
+### I-2. board 서브도메인 (board 세션 배포, 참고)
+`board.heymancar.com` = **새 블록** + `sudo certbot --nginx -d board.heymancar.com` (신규 cert). DNS A레코드 board → 54.116.7.83.
 
 ## J. 큐 워커 (supervisor) + Cron
 
@@ -171,7 +210,7 @@ crontab -e   # * * * * * cd /var/www/car-erp && php artisan schedule:run >> /dev
 
 ## M. 롤백 / 함정
 
-- car-erp 배포가 잘못돼도 **Django(heyman NICE)는 무관** — nginx 새 블록만 `rm` + reload 하면 원상. heyman 영향 0.
+- **롤백(Option B)**: apex 블록 백업 복원 `sudo cp .../ssancar-erp.bak .../ssancar-erp && sudo systemctl reload nginx` → heyman NICE 즉시 원복. (`/provide/` location 만 유지되면 Django NICE 무중단이라, 잘못돼도 그 location 만 남기면 됨.)
 - `.github/workflows/deploy.yml`은 heyman 1곳만 자동배포 → **ssancar는 수동 `git pull`**(또는 추후 Production-ssancar job). 매 배포: `git pull && composer install --no-dev && npm ci && npm run build && php artisan migrate --force && php artisan config:cache && supervisorctl restart ssancar-car-erp-worker`.
 - APP_KEY 분실 = RRN 복호화 불가. 생성 즉시 백업.
 - 시크릿 2개 미설정 시 연동 B/포털 전부 401(의도된 안전밸브) — board와 동일값 확인.
