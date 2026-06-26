@@ -24,6 +24,9 @@ class ContainerContractMapping
             'header' => [
                 'F4' => fn (Vehicle $v) => $v->container_number ?: $v->bl_loading_location, // Invoice No(컨테이너)
                 'F5' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->name,           // Name
+                'F6' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address,             // Adress
+                'F7' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->contact_phone ?: DocValue::invoiceBuyer($v)?->contact_phone, // Phone
+                'F9' => fn (Vehicle $v) => DocValue::money($v->exchange_rate),              // Dollar/통화 Rate (환율)
             ],
             'multi' => [
                 'first' => 16,

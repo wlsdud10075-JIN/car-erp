@@ -1,7 +1,35 @@
-# HEYMAN 양식 회사정보 일괄 정리 (예정: 2026-06-26)
+# HEYMAN 양식 회사정보 일괄 정리
 
-> 2026-06-25 세션 종료 시점 기록. **트리거: "heyman 회사정보 정리 이어서"**
-> jin 이 내일(2026-06-26) **HEYMAN 정확한 영문 회사정보**를 주면 전 양식을 한 벌로 통일한다.
+> 2026-06-25 기록 → **2026-06-26 주소·이메일 통일 실행 완료**. **트리거: "heyman 회사정보 정리 이어서"**
+
+## ✅ 2026-06-26 실행 완료 (jin 확정 정보 반영)
+
+**jin 확정 회사정보**:
+- 주소(한글): `서울특별시 영등포구 선유동1로 50, 513호(당산동3가, THE PARK 365)`
+- 주소(영문): `#513, THE PARK 365, 50 Seonyudong1-ro, Yeongdeungpo-gu, Seoul, Korea`
+- 이메일: `heyman99888@gmail.com` (man99777@naver.com·ssancar9977@gmail.com 모두 교체)
+- FAX: `0505-366-9977`(=82-505-366-9977, 양식 대부분 이미 366) / TEL·상호·대표자(조태신, heyman·ssancar 공동대표)는 유지
+- ⚠️ **어제(6-25) 기록한 "매봉산로 31, 에스플랙스센터(상암동)" 주소는 폐기** — jin 이 6-26 에 선유동1로(당산동, THE PARK 365)로 정정.
+
+**교체한 셀 (heyman 양식 12셀 + 등록증 2셀, `scripts/` 미보존 스크립트로 단일run 텍스트 치환·preCalc=false 저장)**:
+container_contract/roro_contract `HBB340.!A2` · container_invoice_packing/roro_invoice_packing `INVOICE!B3` · sales_invoice `Invoice!A2`(Ssancar→Heyman LTD.+주소+이메일, 대표자 Cho Tae Shin 유지)·`E15` · clearance_set `한글등록증!E7`·`영문등록증!E7`·`차량인보이스!A3`·`차량팩킹!A3`·`Travel Services Invoice!A2`·`F18` · power_of_attorney `4.위임장!C24`(위임받는자=헤이맨. C19 평택=위임하는자=차주라 유지).
+
+**같이 처리한 별건 (3개 세트 system/karaba/heyman 공통 양식 결함)**:
+- 말소증 `E21:G21` 하단 테두리 제거 (E21/E22 사이 진한 선 — 소유자명 박스 둘로 갈라보임).
+- `차량인보이스!E22` Q'TY=1 노란 제거 (노란+매핑없음이라 엔진이 "샘플값 비움"으로 지워 수량이 빈칸이던 버그. 차량팩킹 E22=`=차량인보이스!E22` 가 미러).
+- `말소증!K14` 용도 → `=구매리스트!B8` 동적연동 (Q'TY와 동일한 노란 리터럴 wipe 버그).
+- **최대적재량 NICE 연동** (3세트): NICE `nice_reg_max_load`(`mxmmLdg`) 존재 확인 → `ClearanceSetMapping` `I9` 매핑 + 구매리스트 `H9`="최대적재량" 라벨 + 한글/영문등록증 `I23`=`=구매리스트!I9` cascade. (이전엔 static 0 — 이제 NICE 실값. 승용차=0/null, 화물차=실적재량. 검증: 차량#140 max_load 300 → I23=300.)
+- **RORO/컨테이너 CONTRACT Adress·Phone·환율 매핑** (코드: `Container/RoroContractMapping` header): `F6`=컨사이니 address(없으면 바이어) / `F7`=contact_phone / `F9`=`DocValue::money(exchange_rate)`. 라벨 E9 "Dollar Rate"는 currencyAware가 "EUR Rate" 등으로 자동 변환. (그동안 라벨만 있고 값 셀이 매핑 안 돼 공란이었음 — SalesInvoiceMapping E8/E9/E10 패턴 미러.)
+
+**MADAGASCAR**(container/roro `INVOICE!N14/N17` SSANCAR MADAGASCAR 현지파트너) = jin "그대로 둔다".
+
+## ⏳ 추후 정리 보류 (jin 6-26: "3번으로, 추후 변경 가능하니 기억")
+
+- **`deregistration_contract`(말소계약서) 전면 정리** — 동적 채움이 `B50`(차대번호) 하나뿐이라 나머지가 전부 샘플/레거시로 인쇄됨:
+  - 헤더 `2.계약서!A2/A3` = 옛 인천(194-75 Okryendong Yeonsugu)·고양(63 Seonghyeon) 주소 / `E5` FAX = 031-499-1989(옛 시흥).
+  - 하단 `C57` SELLER = **SUNGSIN MOTORS CO.LTD**(헤이맨/싼카 아님) / `A57` BUYER = AQABA(요르단) / `A18:C49` 차량 240UNIT 샘플 리스트 / 계약번호 YO7511008 등.
+  - → 주소만 고치면 앞뒤 안 맞아서 jin 이 "지금은 그대로" 결정. 전체 재구성 시 SELLER 를 무엇으로 할지 jin 확인 필요.
+- **`power_of_attorney` 위임하는자(차주) 동적화** — `C18`(이동석)·`C19`(평택 용이동)·`C20`(주민번호 710208-…) 가 샘플 정적. 실제 차주가 들어가야 하나 매핑 미연동. RRN 취급 주의 필요한 별건.
 
 ## 배경
 
