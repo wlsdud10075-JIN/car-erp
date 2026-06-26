@@ -78,7 +78,18 @@ class DocumentFiller
             $this->fillMulti($sheet, $config);
         } else {
             foreach ($config['cells'] as $coord => $resolver) {
-                $this->writeCell($sheet, $coord, $resolver($this->primary));
+                // 좌표에 'Sheet!Cell' 형태면 해당 시트로 기입 (없으면 기본 $config['sheet']).
+                //   통관 SET 처럼 한 매핑이 마스터 외 다른 시트(Travel 인보이스 등)도 채울 때 사용.
+                $target = $sheet;
+                $cell = $coord;
+                if (str_contains($coord, '!')) {
+                    [$sheetName, $cell] = explode('!', $coord, 2);
+                    $target = $spreadsheet->getSheetByName($sheetName);
+                    if (! $target) {
+                        continue;   // 지정 시트 없으면 skip — 마스터 시트 오기입 방지
+                    }
+                }
+                $this->writeCell($target, $cell, $resolver($this->primary));
             }
         }
 
