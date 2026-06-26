@@ -175,7 +175,7 @@ return [
 
     'field' => [
         'vehicle_number' => 'Vehicle No.',
-        'brand' => 'Maker',
+        'brand' => 'Brand',
         'model_type' => 'Model',
         'year' => 'Year',
         'cc' => 'Displacement (cc)',
