@@ -29,6 +29,7 @@ return [
     'col' => [
         'number' => 'Vehicle No.',
         'brand_model' => 'Brand/Model',
+        'vin' => 'Chassis No.',
         'status' => 'Status',
         'purchase_date' => 'Purchased',
         'sale_date' => 'Sold',
