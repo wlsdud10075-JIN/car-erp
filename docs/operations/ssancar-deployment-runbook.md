@@ -202,7 +202,9 @@ crontab -e   # * * * * * cd /var/www/car-erp && php artisan schedule:run >> /dev
 
 ## K. S3 (ssancar 전용 버킷)
 
-버킷 `ssancar-erp-docs`(서울·퍼블릭차단·버전관리·SSE) + IAM `ssancar-erp-s3-user`(해당 버킷 ARN만 Put/Get/Delete/List). heyman과 동일 AWS 계정이지만 **버킷·IAM 분리**(RRN 서류 격리). 키 → .env AWS_*.
+버킷 `ssancar-erp-docs`(서울·퍼블릭차단·버전관리·SSE) + IAM `ssancar-erp-s3-user`(해당 버킷 ARN만 Put/Get/Delete/List). 다른 회사(heyman/karaba)와 **버킷·IAM 분리**(RRN 격리). 키 = `바탕화면\AWS\`(2026-06-26 발급).
+
+**⚠️ board(ssancar)와 버킷 공유 (첨부 v2 구조)**: heyman 처럼 board+car-erp 가 **같은 버킷** 사용. 첨부 v2 = board 가 `ssancar-erp-docs/purchase-board/...` 로 올리면 car-erp 가 **같은 버킷 안에서 서버사이드 복사**(`PURCHASE_SYNC_INBOUND_DISK` 미설정 = `vehicle_docs_disk`=ssancar-erp-docs). 발급한 `ssancar-erp-s3-user` 정책이 `ssancar-erp-docs/*` 전체 Put/Get/Delete 라 `purchase-board/` 포함 → **board 도 같은 키 사용 가능**(별도 키 불필요). board(ssancar) `.env` `AWS_BUCKET=ssancar-erp-docs` 로 맞추면 됨. (격리 원하면 board 전용 키 추가 발급 — 같은 버킷 대상, 선택.)
 
 ## L. 검증 + e2e (board 연동)
 
