@@ -121,6 +121,18 @@ php artisan config:cache && php artisan route:cache && php artisan view:cache
 ```
 → ssancar 영업진 31명은 별도 시드/`consignee-import`(바이어38·컨사이니46) — 배포 후. salesmen.email = board(ssancar) 영업 로그인 이메일과 일치.
 
+## 도메인 아키텍처 (NICE 게이트웨이 vs 앱 서브도메인 — 혼동 방지)
+
+| 호스트 | 서빙 | 용도 |
+|---|---|---|
+| `heymancar.com` **`/provide/api/nice-lookup/`** (apex **경로**) | 지금 Django → NICE 이식 후 car-erp | NICE 게이트웨이 = heyman `.env` 고정 URL. **절대 불변** |
+| `erp.heymancar.com` (제안) | car-erp(ssancar) | ssancar ERP 앱 |
+| `board.heymancar.com` | board(ssancar) | board(ssancar) 앱 |
+
+- **NICE 게이트웨이는 도메인이 아니라 apex의 nginx `location /provide/`** → 앱 서브도메인 이름과 무관.
+- **이번 배포**: apex `/provide/`(Django) **무수정**. 앱 서브도메인만 추가. ssancar car-erp 의 NICE 조회는 그 기존 게이트웨이 URL 을 그대로 호출(`.env` F단계).
+- **NICE 이식(후속)**: car-erp 에 `/provide/api/nice-lookup/` 라우트(포팅 게이트웨이) 추가 → apex 서버블록의 `location /provide/ { fastcgi_pass php-fpm; }` 를 Django proxy → car-erp `public/index.php` 로 교체. Laravel 은 host 무관 path 라우팅이라 car-erp 가 자기 서브도메인 앱 + apex `/provide/` 둘 다 처리. **heyman `.env` URL 불변, 문제 시 location 한 줄 원복.**
+
 ## I. Nginx 새 블록 + HTTPS (⚠️ 기존 /provide/ 무수정)
 
 1. **새 파일** `/etc/nginx/sites-available/ssancar-car-erp` (기존 `ssancar-erp` Django 블록 건드리지 말 것):
