@@ -53,6 +53,7 @@ class ClearanceSetMapping
                 'G8' => fn (Vehicle $v) => $v->nice_spec_height,                   // 높이
                 'I8' => fn (Vehicle $v) => $v->weight_kg,                          // 총중량
                 'G9' => fn (Vehicle $v) => $v->nice_reg_passengers,                // 인원
+                'I9' => fn (Vehicle $v) => $v->nice_reg_max_load,                  // 최대적재량 (NICE mxmmLdg → 한글/영문등록증 I23 cascade)
                 'B10' => fn (Vehicle $v) => $v->port_of_loading,                   // Port
                 'D10' => fn (Vehicle $v) => DocValue::dischargeDestination($v),    // 목적국/목적항 — 입력 목적항(영문) 우선
                 'G10' => fn (Vehicle $v) => $v->nice_spec_displacement,            // 배기량
