@@ -73,6 +73,11 @@ class ClearanceSetMapping
                 //   writeCell 이 수식 셀은 안 덮어쓰므로 매핑에서 제외.
                 'B15' => fn (Vehicle $v) => DocValue::money($v->sale_price),        // 판매금 (float — 텍스트면 차량인보이스 SUM/통화서식 깨짐)
                 'D15' => fn (Vehicle $v) => DocValue::money($v->transport_fee),     // 운임 (float)
+                // Travel Services Invoice 컨사이니 칸 — 계약서 F6/F7 과 동일 소스(컨사이니→없으면 바이어).
+                //   엔진의 'Sheet!Cell' 시트지정 좌표로 마스터 외 시트에 직접 기입.
+                'Travel Services Invoice!F7' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address,             // Adress
+                'Travel Services Invoice!F8' => fn (Vehicle $v) => (DocValue::invoiceConsignee($v)?->country ?: DocValue::invoiceBuyer($v)?->country)?->code, // Country (ISO3 코드 — 수출서류라 한글명 X)
+                'Travel Services Invoice!F9' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->contact_phone ?: DocValue::invoiceBuyer($v)?->contact_phone, // Phone
             ],
         ];
     }
