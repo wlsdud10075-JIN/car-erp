@@ -28,6 +28,7 @@ class RoroInvoicePackingMapping
                 'I15' => fn (Vehicle $v) => $v->bl_loading_location,          // 반입지
                 'B16' => fn (Vehicle $v) => $v->port_of_loading,             // Port of loading
                 'E16' => fn (Vehicle $v) => DocValue::dischargeDestination($v), // Discharge/Final Destination — 입력 목적항(영문)
+                'B18' => fn (Vehicle $v) => $v->vessel_name,                 // Vessel name (6번칸 — 라벨 B17)
                 'C52' => fn (Vehicle $v) => $v->incoterms,                   // Incoterms (footer)
             ],
             'multi' => [
