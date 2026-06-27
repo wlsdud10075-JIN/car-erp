@@ -39,9 +39,11 @@ heymanerp/karabaerp 는 비워둠(이 게이트웨이 경유).
 
 > ⚠️ 검증 중 NICE 코드 5000(원천기관 일시장애) 간헐 발생 — 우리 코드 무관, NICE 불안정(제조사 Audi↔Benz 흔들림과 동일 맥락). 연속 호출 시 더 자주.
 
-## 컷오버 (nginx flip) — ⚠️ heyman 라이브 영향, advisor 재점검 필수
+## 컷오버 (nginx flip) — ✅ 완료 (2026-06-27)
 
-현재 nginx `/etc/nginx/sites-available/ssancar-erp`: `location ^~ /provide/` → Django gunicorn.
+> **✅ 적용됨**: 백업 `.bak.20260627-071700`. 검증 = 빈-body probe(`-d '{}'` → JSON 400 "차량번호와 소유자명…", NICE 안 건드리고 plumbing 증명) + 실차 success:true(234조6163=CLA250/2017). 롤백 트리거 = 비-JSON(HTML/502)만 — code 5000은 NICE 일시장애라 정상. exact 블록은 `try_files`만(fastcgi는 기존 `~\.php$` 재사용 = apex 검증된 체인).
+
+현재(컷오버 전) nginx `/etc/nginx/sites-available/ssancar-erp`: `location ^~ /provide/` → Django gunicorn.
 **Django provide 앱은 `api/nice-lookup/` 하나만 서빙** (provide/urls.py). 컷오버 = 이 경로만 car-erp 로:
 
 ```nginx
