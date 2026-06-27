@@ -104,9 +104,14 @@ BOSS_PASSWORD=***
 # 서류 양식 세트 — karaba 회사정보는 templates/karaba/ 에 인쇄됨(B-2). 별도 회사정보 .env 키 불필요.
 COMPANY_TEMPLATE_SET=karaba
 
-NICE_PROVIDE_URL=***                  # karaba 토큰 (쓸 경우)
-NICE_PROVIDE_TOKEN=***
+# ⚠️ NICE는 ssancarerp(heymancar.com 박스) 게이트웨이 경유 — karaba IP는 NICE 화이트리스트 밖이라 직접 호출 불가!
+NICE_PROVIDE_URL=https://heymancar.com/provide/api/nice-lookup/   # ssancarerp 게이트웨이 경유 (직접 X)
+NICE_PROVIDE_TOKEN=***                # 게이트웨이 토큰 (현재 게이트웨이는 미검증이나 설정 권장)
+# 🚫 NICE_DIRECT_* 절대 설정 금지 — 설정하면 karaba가 NICE 직접 호출 시도→IP 화이트리스트 밖이라 실패.
+#    NICE_DIRECT_*(API_KEY/LOGIN_ID/BUSINESS_NUMBER) 는 ssancarerp(54.116.7.83)만. 상세=docs/operations/nice-gateway-migration.md
 ```
+
+> **🏷️ NICE 분리 요약** (2026-06-27 게이트웨이 이식 후): NICE 직접 호출은 `NICE_DIRECT_*` .env 로만 켜짐. **ssancarerp만 설정**(IP 화이트리스트=그 박스). heymanerp·karabaerp 는 `NICE_DIRECT_*` **비우고** `NICE_PROVIDE_URL=https://heymancar.com/provide/api/nice-lookup/` 로 ssancarerp 경유. master 단일 코드라도 .env 가 동작을 가름 — karaba 배포 시 `NICE_DIRECT_*` 건드리지 말 것.
 
 ## G. ⚠️ APP_KEY (최우선 — RRN 영구 손실 방지)
 
