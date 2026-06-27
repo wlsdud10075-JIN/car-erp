@@ -33,6 +33,16 @@ return [
     'nice' => [
         'provide_url' => env('NICE_PROVIDE_URL', ''),     // /provide/api/nice-lookup/ 까지 포함한 전체 URL
         'provide_token' => env('NICE_PROVIDE_TOKEN', ''),  // X-SSANCAR-API-KEY 헤더 토큰
+
+        // NICE 직접 호출 (게이트웨이 이식) — ssancarerp(heymancar.com 박스)에서만 사용.
+        // NICE IP 화이트리스트가 이 박스(54.116.7.83)라 같은 박스의 car-erp 가 직접 2단계 호출 가능.
+        // 다른 박스(heymanerp 등)는 이 박스 /provide/ 를 경유(IP 불일치로 직접 불가). 미설정 시 NiceDirectClient 호출 실패.
+        'direct' => [
+            'api_url' => env('NICE_DIRECT_API_URL', 'https://niceab.nicednr.co.kr/carInfos'),
+            'api_key' => env('NICE_DIRECT_API_KEY', ''),
+            'login_id' => env('NICE_DIRECT_LOGIN_ID', ''),
+            'business_number' => (int) env('NICE_DIRECT_BUSINESS_NUMBER', 0),
+        ],
     ],
 
     'slack' => [
