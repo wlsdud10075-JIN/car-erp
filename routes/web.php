@@ -1,11 +1,16 @@
 <?php
 
+use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
+
+// NICE 게이트웨이 (Django ssancar-erp 이식) — ssancarerp 박스(heymancar.com)에서 NICE 직접 2단계 호출.
+// heymanerp 등 다른 박스는 NICE IP 화이트리스트 밖이라 이 경로를 그대로 경유. 인증·토큰 없음(Django @csrf_exempt 동일, CSRF 제외=bootstrap/app.php).
+Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class);
 
 // 사내 ERP — 별도 소개(랜딩) 화면 없이 첫 접속은 로그인으로. 로그인 상태면 대시보드로.
 Route::get('/', function () {

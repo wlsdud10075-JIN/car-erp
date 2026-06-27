@@ -25,6 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // i18n Phase 0 — 모든 web 요청에서 사용자 언어 적용
         $middleware->web(append: [SetLocale::class]);
 
+        // NICE 게이트웨이(이식) — 외부 박스(heymanerp 등)가 CSRF 토큰 없이 POST. Django @csrf_exempt 동일.
+        $middleware->validateCsrfTokens(except: ['provide/*']);
+
         $middleware->alias([
             'admin' => AdminMiddleware::class,
             'admin-dashboard' => AdminDashboardMiddleware::class,
