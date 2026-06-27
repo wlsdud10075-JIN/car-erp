@@ -21,7 +21,8 @@
 > - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp(heyman) 재고 전환**. 현재 **heyman만 연동**.
 > - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
 > - ⚠️ **크로스 레포 규칙**: 레포 X 관련 결정/변경은 **X의 *커밋된 파일*에 남기고 X 세션에서 커밋**한다. 메모리는 레포별·PC별이라 안 따라옴 — **git 커밋된 파일만** 모든 세션·PC에 전파. (board 수정 = board 세션·board repo에 커밋.)
-> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(미래 대물량). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project-deployment-naming`.
+> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(`heymancar.com` 운영, 2026-06-27 배포). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project-deployment-naming`.
+> - **🏷️ 명칭 규칙 (혼동 방지 — 항상 이대로, jin 2026-06-27 박제)**: 회사 3사 = **ssancar · heyman · karaba**(karaba board는 추후 설치), 앱 2종 = **erp**(이 car-erp) · **board**(형제 앞단 앱). 지칭은 반드시 **{회사}{앱}** 한 토큰으로: `ssancarerp` · `ssancarboard` · `heymanerp` · `heymanboard` · `karabaerp` · `karababoard`. 막연히 "ssancar"·"car-erp"·"board"만 쓰지 말 것. 매핑: `ssancarerp`=`heymancar.com` / `heymanerp`=`heysellcar.com` / `karabaerp`=`karaba-erp.com`. (car-erp·board 양 레포·전 세션 공통 — board 세션에도 동일 규칙.)
 
 SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
 

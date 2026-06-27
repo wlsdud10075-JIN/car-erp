@@ -3,7 +3,12 @@
 > ⚠️ **dev 전용 .md**. **트리거: "ssancar 배포 이어서"**. 결정 맥락 = `ssancar-migration-plan.md` ★확정 결정 / 메모리 `project_ssancar_migration`.
 > 멀티테넌트 공통 절차는 `karaba-deployment-checklist.md`·`aws-deployment-record.md` 참조 — **이 문서는 ssancar 차이점(co-location + Django 공존)만 상세화.**
 
-> 🗓️ **배포 시점 = 주말(아무도 안 쓸 때), 다운타임 허용** (jin 2026-06-26). → 아래 "무중단/공존" 절차는 **권장이지 필수 아님**. 급하면 apex 잠깐 내리고 편집해도 됨(주말이라 heyman NICE 잠깐 끊겨도 무방). 지금은 **계획만**, 실행은 주말.
+> 🗓️ **배포 시점 = 주말(아무도 안 쓸 때), 다운타임 허용** (jin 2026-06-26). → 아래 "무중단/공존" 절차는 **권장이지 필수 아님**. 급하면 apex 잠깐 내리고 편집해도 됨(주말이라 heyman NICE 잠깐 끊겨도 무방).
+
+> ✅ **2026-06-27 배포 완료** — `https://heymancar.com` apex 라이브, heyman NICE 무중단(provide=302). 메모리 [[project_ssancar_migration]] 참조. **실제와 런북 가정 차이 2건 (재배포·후속 시 주의)**:
+> - **§I-1 nginx**: 런북은 "apex에 `/provide/` location 이미 있고 루트는 빈 상태"로 가정했으나 **실제는 `location /` 전체가 Django**(루트=라이브 로그인 앱 /account/login). → `location ^~ /provide/` 블록을 **신설**해 NICE 보존 + root=car-erp. jin "Django 웹 안 씀" 확정으로 Django 루트앱 은퇴. 편집본 = `/etc/nginx/sites-available/ssancar-erp`(`.bak.20260627-*` 백업 보존).
+> - **§K S3**: 버킷이 메모(서울)와 달리 **us-east-1 생성**돼 있었음(PermanentRedirect) → 데이터0일 때 서울(ap-northeast-2) 재생성. **콘솔 우상단 리전 먼저 서울로** 바꾸고 생성. 같은이름 재생성 시 "conflicting conditional operation"=네임스페이스 전파지연(10~30분 대기 후 재시도).
+> - 박스에 PHP8.4/MySQL8/composer/node24/supervisor 설치 완료 → **board 세션은 설치 스킵, 재사용**.
 
 ## 0. 한 줄 + ⚠️ 최우선 안전원칙
 
