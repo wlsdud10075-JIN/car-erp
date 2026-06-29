@@ -29,16 +29,32 @@ class VehicleExportController extends Controller
         $restrictMgr = ! $user->isAdmin() && $user->role === '관리';
         $subIds = $restrictMgr ? $user->getSubordinateSalesmanIds() : [];
 
-        $channel = (string) $request->query('channel', '');
-        $progress = (string) $request->query('progress', '');
-        $search = trim((string) $request->query('q', ''));
+        // 컬럼 선택 — 화이트리스트 교집합만(보안: 알 수 없는 key 무시).
+        $selected = array_values(array_filter(explode(',', (string) $request->query('cols', ''))));
+        $selected = array_values(array_intersect($selected, $exporter->columnKeys()));
+
+        // 범위 — current(화면 필터 미러) / all(전 기간 전체, 필터 무시).
+        $mirror = $request->query('scope', 'current') !== 'all';
+        $progress = $mirror ? (string) $request->query('progress', '') : '';
+        $search = $mirror ? trim((string) $request->query('q', '')) : '';
+        $salesmanId = $mirror ? (string) $request->query('salesmanId', '') : '';
+        $dateFrom = $mirror ? (string) $request->query('dateFrom', '') : '';
+        $dateTo = $mirror ? (string) $request->query('dateTo', '') : '';
+        $dateCol = match ((string) $request->query('dateType', 'purchase')) {
+            'sale' => 'sale_date',
+            'shipping' => 'shipping_date',
+            'bl' => 'bl_issue_date',
+            default => 'purchase_date',
+        };
 
         $vehicles = Vehicle::query()
             ->with(['salesman', 'buyer', 'consignee'])
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
-            ->when($channel !== '', fn ($q) => $q->where('sales_channel', $channel))
+            ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
+            ->when($dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
+            ->when($dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('vehicle_number', 'like', "%{$search}%")
                 ->orWhere('brand', 'like', "%{$search}%")
@@ -46,7 +62,7 @@ class VehicleExportController extends Controller
             ->orderBy('id')
             ->get();
 
-        $spreadsheet = $exporter->build($vehicles);
+        $spreadsheet = $exporter->build($vehicles, $selected);
 
         ExportLog::create([
             'user_id' => $user->id,
@@ -54,8 +70,12 @@ class VehicleExportController extends Controller
             'target' => 'vehicles',
             'scope' => $restrictOwn ? 'own' : ($restrictMgr ? 'team' : 'all'),
             'row_count' => $vehicles->count(),
-            'columns' => $exporter->columnKeys(),
-            'filters' => array_filter(['channel' => $channel, 'progress' => $progress, 'q' => $search]),
+            'columns' => $selected !== [] ? $selected : $exporter->columnKeys(),
+            'filters' => array_filter([
+                'range' => $mirror ? 'current' : 'all',
+                'progress' => $progress, 'q' => $search, 'salesmanId' => $salesmanId,
+                'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
+            ]),
         ]);
 
         $filename = '차량목록_'.now()->format('Ymd_His').'.xlsx';

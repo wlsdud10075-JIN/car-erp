@@ -102,6 +102,36 @@ class VehicleExportTest extends TestCase
         $this->assertStringContainsString('=HYPERLINK("http://x")', $flat, '값이 텍스트로 보존돼야(무손실)');
     }
 
+    public function test_export_respects_selected_columns(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle();
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'vehicle_number,brand']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat);
+        $this->assertStringContainsString('브랜드', $flat);
+        $this->assertStringNotContainsString('진행상태', $flat, '선택 안 한 컬럼 노출');
+        $this->assertStringNotContainsString('주민/법인번호(마스킹)', $flat, '선택 안 한 PII 컬럼 노출');
+    }
+
+    /** 알 수 없는 컬럼 key 는 화이트리스트 교집합에서 제외(클라이언트 우회 차단) */
+    public function test_export_ignores_unknown_columns(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle();
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'evilcol,vehicle_number']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat);
+        $this->assertStringNotContainsString('evilcol', $flat);
+        $this->assertStringNotContainsString('브랜드', $flat, '선택 안 한 컬럼이 나옴');
+    }
+
     public function test_non_admin_cannot_export(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
