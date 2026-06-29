@@ -56,7 +56,7 @@ class ImportVehicles extends Command
      *
      * @var array<string, array{col:string, type:string, label:string}>
      */
-    private const MAP = [
+    public const MAP = [
         'vehicle_number' => ['col' => 'D', 'type' => 'str', 'label' => '차량번호'],
         'brand' => ['col' => 'E', 'type' => 'str', 'label' => '브랜드'],
         'model_type' => ['col' => 'F', 'type' => 'str', 'label' => '차명'],
@@ -99,7 +99,7 @@ class ImportVehicles extends Command
         'memo' => ['col' => 'CK', 'type' => 'str', 'label' => '비고'],
     ];
 
-    private const VALID_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
+    public const VALID_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
 
     /** 차량 컬럼으로 직접 들어가는 필드 (salesman/buyer/consignee 는 별도 resolve) */
     private const VEHICLE_FIELDS = [
@@ -457,6 +457,11 @@ class ImportVehicles extends Command
                 }
             }
 
+            // 연도없는 날짜('05-10') 추정용 — 같은 행 구입연도 (jin 2026-06-29). 구입일 자체가
+            // 연도없으면 추정 불가(null 유지). 시트가 연차표(수출차량매입-YYYY)라 형제날짜가 같은 해.
+            [$pd] = $this->parseDate($this->cell($sheet, self::MAP['purchase_date']['col'], $r));
+            $inferYear = $pd ? (int) substr($pd, 0, 4) : null;
+
             foreach (self::MAP as $field => $def) {
                 $raw = $this->cell($sheet, $def['col'], $r);
                 if ($raw === '') {
@@ -470,7 +475,16 @@ class ImportVehicles extends Command
                 switch ($def['type']) {
                     case 'date':
                         [$v, $w] = $this->parseDate($raw);
-                        if ($w !== null) {
+                        if ($w === '연도없음' && $inferYear && preg_match('/^(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/u', trim($raw), $mmdd)
+                            && checkdate((int) $mmdd[1], (int) $mmdd[2], $inferYear)) {
+                            // 같은 행 구입연도로 추정 (jin 2026-06-29). 12월→1월 경계 오차 가능 → 추정행 로그.
+                            $v = sprintf('%04d-%02d-%02d', $inferYear, (int) $mmdd[1], (int) $mmdd[2]);
+                            $addIssue("연도추정(구입연도 {$inferYear}): {$def['label']}", "R{$r}{$def['col']}: '{$raw}' → {$v}");
+                        } elseif ($w === '미발생') {
+                            $addIssue("미발생(예정/진행상태)→빈날짜: {$def['label']}", "R{$r}{$def['col']}: '{$raw}'");
+                        } elseif ($w === '연도없음') {
+                            $addIssue("연도없는 날짜→null(구입연도 없어 추정불가): {$def['label']}", "R{$r}{$def['col']}: '{$raw}'");
+                        } elseif ($w !== null) {
                             $addIssue("날짜 파싱 실패→null: {$def['label']}", "R{$r}{$def['col']}: '{$raw}'");
                         }
                         $row[$field] = $v;
@@ -574,7 +588,17 @@ class ImportVehicles extends Command
         }
     }
 
-    /** @return array{0:?string,1:?string} */
+    /**
+     * 날짜 셀 파싱. ssancar 데이터는 서식이 제각각(시리얼·텍스트·예정·혼합) → 관대하게 정규화.
+     *
+     * 두 번째 반환값(경고):
+     *   null        = 정상
+     *   '미발생'    = 예정/진행상태 텍스트('5월 예정'·'선적중') → 날짜 미발생이 정상. 에러 아님(빈 날짜).
+     *   '연도없음'  = 월-일만('05-10') → 연도 불명, 보류
+     *   그 외        = 실제 파싱 실패('형식 불명'·'유효하지 않은 날짜'·'시리얼 변환 실패')
+     *
+     * @return array{0:?string,1:?string}
+     */
     private function parseDate(string $raw): array
     {
         $s = trim($raw);
@@ -588,7 +612,8 @@ class ImportVehicles extends Command
                 return [null, '시리얼 변환 실패'];
             }
         }
-        if (preg_match('/^(\d{2,4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})\.?$/', $s, $m)) {
+        // 날짜 프리픽스 추출 — 뒤에 텍스트가 붙어도 앞 날짜만 ('26.05.10정산', '26.1.6 예정').
+        if (preg_match('/^(\d{2,4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})/', $s, $m)) {
             $y = (int) $m[1];
             $y = $y < 100 ? 2000 + $y : $y;
             $mo = (int) $m[2];
@@ -598,6 +623,26 @@ class ImportVehicles extends Command
             }
 
             return [null, '유효하지 않은 날짜'];
+        }
+        // 한국식 'YYYY년 M월 D일'
+        if (preg_match('/^(\d{2,4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일?/u', $s, $m)) {
+            $y = (int) $m[1];
+            $y = $y < 100 ? 2000 + $y : $y;
+            $mo = (int) $m[2];
+            $d = (int) $m[3];
+            if (checkdate($mo, $d, $y)) {
+                return [sprintf('%04d-%02d-%02d', $y, $mo, $d), null];
+            }
+
+            return [null, '유효하지 않은 날짜'];
+        }
+        // 미발생 — 예정/미정/진행상태 텍스트('5월 예정'·'선적중'·'매입예정'). 날짜 미발생이 정상.
+        if (preg_match('/(예정|미정|진행|대기|보류|확인|매입|판매|선적|통관|말소|중$|완료)/u', $s)) {
+            return [null, '미발생'];
+        }
+        // 연도 없는 월-일 ('05-10'·'5/10'·'5월10일') → 연도 불명.
+        if (preg_match('/^(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/u', $s)) {
+            return [null, '연도없음'];
         }
 
         return [null, '형식 불명'];
