@@ -90,21 +90,32 @@ class VehicleExportService
         return $s;
     }
 
-    /** @return list<string> export 컬럼 key (감사 로그용) */
-    public function columnKeys(): array
+    /**
+     * export 가능 컬럼 key. 정산 그룹은 정산 접근 role(canAccessSettlement)에게만.
+     *
+     * @return list<string>
+     */
+    public function columnKeys(bool $allowSettlement = true): array
     {
-        return array_keys($this->whitelist());
+        return array_keys(array_filter(
+            $this->whitelist(),
+            fn ($def) => $allowSettlement || $def[3] !== '정산',
+        ));
     }
 
     /**
      * 팝오버 UI 용 그룹별 컬럼 목록. [그룹라벨 => [key => 컬럼라벨]].
+     * 정산 그룹은 allowSettlement 일 때만 노출.
      *
      * @return array<string, array<string,string>>
      */
-    public function columnsForUi(): array
+    public function columnsForUi(bool $allowSettlement = true): array
     {
         $grouped = [];
         foreach ($this->whitelist() as $key => $def) {
+            if (! $allowSettlement && $def[3] === '정산') {
+                continue;
+            }
             $grouped[$def[3]][$key] = $def[0];
         }
 
@@ -114,10 +125,14 @@ class VehicleExportService
     /**
      * @param  Collection<int,Vehicle>  $vehicles
      * @param  list<string>|null  $selectedKeys  선택 컬럼(화이트리스트 key). null/빈 배열이면 전체.
+     * @param  bool  $allowSettlement  false 면 정산 그룹 컬럼 강제 제외(권한 게이팅 — 클라이언트 우회 불가).
      */
-    public function build(Collection $vehicles, ?array $selectedKeys = null): Spreadsheet
+    public function build(Collection $vehicles, ?array $selectedKeys = null, bool $allowSettlement = true): Spreadsheet
     {
         $cols = $this->whitelist();
+        if (! $allowSettlement) {
+            $cols = array_filter($cols, fn ($def) => $def[3] !== '정산');
+        }
         if ($selectedKeys) {
             // 화이트리스트 교집합만(보안: 알 수 없는 key 무시). 원본 정의 순서 보존. 빈 결과면 전체로 폴백.
             $filtered = array_filter($cols, fn ($k) => in_array($k, $selectedKeys, true), ARRAY_FILTER_USE_KEY);

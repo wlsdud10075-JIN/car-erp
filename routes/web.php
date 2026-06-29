@@ -48,10 +48,12 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
         ->middleware('admin');
 
     // 차량 데이터 export (고정 화이트리스트 + PII 마스킹) — 2026-06-29 라운드테이블 조건부 GO.
-    // 'export' 리터럴이라 {id}(whereNumber) 라우트와 충돌 없음. admin 한정 + rate limit(분3/일100).
+    // 'export' 리터럴이라 {id}(whereNumber) 라우트와 충돌 없음. 전 ERP role(canScopeVehicle 스코핑:
+    // 영업 본인/관리 팀/통관·재무·admin 전체) + rate limit(분3/일100). 정산 컬럼은 컨트롤러에서
+    // canAccessSettlement role 만 허용. (erp 그룹 미들웨어로 auth·verified·erp 이미 적용)
     Route::get('vehicles/export', [VehicleExportController::class, 'download'])
         ->name('vehicles.export')
-        ->middleware(['admin', 'throttle:data-export']);
+        ->middleware('throttle:data-export');
 
     // 차량별 서류 자동 생성 (단계 11)
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])
