@@ -132,6 +132,20 @@ class VehicleExportTest extends TestCase
         $this->assertStringNotContainsString('브랜드', $flat, '선택 안 한 컬럼이 나옴');
     }
 
+    /** 정산 그룹(총마진·정산상태 등) 포함 — 정산 row 없어도 크래시 없이 빈칸 */
+    public function test_export_includes_settlement_group(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle();   // 정산 없음
+
+        $res = $this->actingAs($admin)->get(route('erp.vehicles.export'))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('총마진', $flat);
+        $this->assertStringContainsString('정산상태', $flat);
+        $this->assertStringContainsString('실지급액', $flat);
+    }
+
     public function test_non_admin_cannot_export(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);

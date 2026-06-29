@@ -48,7 +48,7 @@ class VehicleExportController extends Controller
         };
 
         $vehicles = Vehicle::query()
-            ->with(['salesman', 'buyer', 'consignee'])
+            ->with(['salesman', 'buyer', 'consignee', 'settlements'])
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
