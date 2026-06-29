@@ -8,6 +8,7 @@ return [
     'batch_filter' => '선적요청 배치 :count대만 보는 중',
     'batch_filter_clear' => '전체 보기',
     'create_btn' => '차량 등록',
+    'import_template_btn' => '적재 양식',
 
     'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호',
     'search_btn' => '조회',

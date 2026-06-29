@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Salesman;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -54,6 +55,26 @@ class VehicleImportTemplateTest extends TestCase
         $this->assertSame('2026-05-10', $v->shipping_date?->format('Y-m-d'), "'05-10'은 구입연도(2026)로 추정되어야");
         $this->assertSame('2026-06-07', $v->eta_date?->format('Y-m-d'), '한국식 년월일 파싱 실패');
         $this->assertFalse((bool) $v->is_deregistered, '말소일 null 이므로 미말소');
+    }
+
+    /** 빈 양식 다운로드 버튼 — admin/super 만 접근 */
+    public function test_admin_can_download_import_template(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+
+        $this->actingAs($admin)
+            ->get(route('erp.vehicles.import-template'))
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
+
+    public function test_non_admin_cannot_download_import_template(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+
+        $this->actingAs($sales)
+            ->get(route('erp.vehicles.import-template'))
+            ->assertStatus(403);
     }
 
     /** 구입연도가 없으면 연도없는 날짜는 추정 못 하고 null 유지 */

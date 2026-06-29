@@ -2995,6 +2995,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="50">{{ __('vehicle.per_page', ['count' => 50]) }}</option>
             <option value="100">{{ __('vehicle.per_page', ['count' => 100]) }}</option>
         </select>
+        @if(auth()->user()->canAccessAdmin())
+        {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin). 데이터 없는 빈 양식이라 PII·회계 0.
+             일반 <a>(wire:navigate 미사용)로 브라우저 파일 다운로드. --}}
+        <a href="{{ route('erp.vehicles.import-template') }}"
+           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+            {{ __('vehicle.import_template_btn') }}
+        </a>
+        @endif
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             {{ __('vehicle.create_btn') }}

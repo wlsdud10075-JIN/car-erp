@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\VehicleDocumentController;
+use App\Http\Controllers\VehicleTemplateController;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -38,6 +39,12 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
 
     // board 영업포털 선적요청 목록 (2026-06-19) — 배치별 묶음·상태추적. mount/transition 에서 canAccessClearance 가드.
     Volt::route('shipping-requests', 'erp.shipping-requests.index')->name('shipping-requests.index');
+
+    // 차량 일괄적재 빈 양식 다운로드 (super/admin 마이그레이션 도구). 'import-template' 리터럴이라
+    // 아래 {id}(whereNumber) 라우트와 충돌 없음. 데이터 없는 빈 양식이라 PII·회계 노출 0.
+    Route::get('vehicles/import-template', [VehicleTemplateController::class, 'download'])
+        ->name('vehicles.import-template')
+        ->middleware('admin');
 
     // 차량별 서류 자동 생성 (단계 11)
     Route::get('vehicles/{id}/documents/{type}', [VehicleDocumentController::class, 'show'])
