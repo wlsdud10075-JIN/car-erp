@@ -146,10 +146,43 @@ class VehicleExportTest extends TestCase
         $this->assertStringContainsString('실지급액', $flat);
     }
 
-    public function test_non_admin_cannot_export(): void
+    /** 영업 role 도 export 가능하되 정산(마진) 컬럼은 제외 */
+    public function test_sales_role_exports_without_settlement(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $this->vehicle();
 
-        $this->actingAs($sales)->get(route('erp.vehicles.export'))->assertStatus(403);
+        $res = $this->actingAs($sales)->get(route('erp.vehicles.export'))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat);
+        $this->assertStringNotContainsString('총마진', $flat, '영업에 정산 노출');
+        $this->assertStringNotContainsString('정산상태', $flat);
+    }
+
+    /** 영업이 URL 로 정산 컬럼을 직접 요청해도 권한 게이팅으로 제외 */
+    public function test_sales_cannot_bypass_settlement_via_url(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $this->vehicle();
+
+        $res = $this->actingAs($sales)
+            ->get(route('erp.vehicles.export', ['cols' => 'vehicle_number,total_margin']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat);
+        $this->assertStringNotContainsString('총마진', $flat, 'URL 로 정산 우회됨');
+    }
+
+    /** 관리 role 은 정산 접근 권한이 있어 정산 컬럼 export 가능 */
+    public function test_manager_role_exports_with_settlement(): void
+    {
+        $mgr = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $this->vehicle();
+
+        $res = $this->actingAs($mgr)->get(route('erp.vehicles.export'))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('총마진', $flat, '관리에 정산 미노출');
     }
 }

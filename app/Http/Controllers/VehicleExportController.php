@@ -29,9 +29,12 @@ class VehicleExportController extends Controller
         $restrictMgr = ! $user->isAdmin() && $user->role === '관리';
         $subIds = $restrictMgr ? $user->getSubordinateSalesmanIds() : [];
 
-        // 컬럼 선택 — 화이트리스트 교집합만(보안: 알 수 없는 key 무시).
+        // 정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 — 영업·통관은 마진 export 불가.
+        $allowSettlement = $user->canAccessSettlement();
+
+        // 컬럼 선택 — 화이트리스트 교집합만(보안: 알 수 없는 key·권한 밖 정산 컬럼 무시).
         $selected = array_values(array_filter(explode(',', (string) $request->query('cols', ''))));
-        $selected = array_values(array_intersect($selected, $exporter->columnKeys()));
+        $selected = array_values(array_intersect($selected, $exporter->columnKeys($allowSettlement)));
 
         // 범위 — current(화면 필터 미러) / all(전 기간 전체, 필터 무시).
         $mirror = $request->query('scope', 'current') !== 'all';
@@ -62,7 +65,7 @@ class VehicleExportController extends Controller
             ->orderBy('id')
             ->get();
 
-        $spreadsheet = $exporter->build($vehicles, $selected);
+        $spreadsheet = $exporter->build($vehicles, $selected, $allowSettlement);
 
         ExportLog::create([
             'user_id' => $user->id,
@@ -70,7 +73,7 @@ class VehicleExportController extends Controller
             'target' => 'vehicles',
             'scope' => $restrictOwn ? 'own' : ($restrictMgr ? 'team' : 'all'),
             'row_count' => $vehicles->count(),
-            'columns' => $selected !== [] ? $selected : $exporter->columnKeys(),
+            'columns' => $selected !== [] ? $selected : $exporter->columnKeys($allowSettlement),
             'filters' => array_filter([
                 'range' => $mirror ? 'current' : 'all',
                 'progress' => $progress, 'q' => $search, 'salesmanId' => $salesmanId,

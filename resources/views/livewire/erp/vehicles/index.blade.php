@@ -3328,17 +3328,19 @@ function vehicleColumnsToggle() {
 
 {{-- ── 페이지네이션 (좌: 데이터 도구 / 우: 페이저) ───────────────────── --}}
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    @if(auth()->user()->canAccessAdmin())
     <div class="flex items-center gap-2">
-        {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin). 데이터 없는 빈 양식이라 PII·회계 0. 일반 <a> 다운로드. --}}
+        @if(auth()->user()->canAccessAdmin())
+        {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin 마이그레이션 도구). 데이터 없는 빈 양식이라 PII·회계 0. --}}
         <a href="{{ route('erp.vehicles.import-template') }}"
            class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
             {{ __('vehicle.import_template_btn') }}
         </a>
-        {{-- 데이터 내려받기 팝오버 — 범위(현재필터/전체) + 컬럼 선택(그룹/개별). 고정 화이트리스트 + PII 마스킹.
-             선택 컬럼은 서버에서 화이트리스트와 교집합만 처리(클라이언트 우회 불가). --}}
-        @php $exportCols = (new \App\Services\VehicleExportService)->columnsForUi();
+        @endif
+        {{-- 데이터 내려받기 팝오버 (전 ERP role — canScopeVehicle 스코핑). 범위(현재필터/전체) + 컬럼 선택.
+             정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 노출·허용. 선택 컬럼은 서버 화이트리스트 교집합. --}}
+        @php $allowSettlement = auth()->user()->canAccessSettlement();
+             $exportCols = (new \App\Services\VehicleExportService)->columnsForUi($allowSettlement);
              $exportAllKeys = array_merge(...array_map('array_keys', array_values($exportCols))); @endphp
         <div class="relative" x-data="{
                 open: false, scope: 'current', showCols: false,
@@ -3402,7 +3404,6 @@ function vehicleColumnsToggle() {
             </div>
         </div>
     </div>
-    @endif
     <div>{{ $this->vehicles->links() }}</div>
 </div>
 
