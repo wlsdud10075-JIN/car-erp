@@ -62,7 +62,10 @@ class ClearanceSetMapping
                 'B11' => fn (Vehicle $v) => $v->vessel_name,                       // VSL
                 'D11' => fn (Vehicle $v) => $v->shipping_date,                     // 선적일 (차량인보이스 C18 cascade)
                 'G11' => fn (Vehicle $v) => DocValue::niceRaw($v, 'maxPower'),     // 출력 (NICE)
-                'B12' => fn (Vehicle $v) => $v->container_number ?: $v->bl_loading_location, // 컨테이너 NO
+                // 컨테이너 NO. RORO 면 컨테이너 번호가 없어 참조셀(차량인보이스 G2·G3)이 빈칸 → 'RORO' 표기.
+                'B12' => fn (Vehicle $v) => $v->shipping_method === 'RORO'
+                    ? 'RORO'
+                    : ($v->container_number ?: $v->bl_loading_location),
                 'D12' => fn (Vehicle $v) => $v->shipping_method,                   // con/roro
                 'G12' => fn (Vehicle $v) => DocValue::niceCylinders($v),           // 기통수 (NICE engineSpec 앞 — nice_raw 파싱)
                 'I12' => fn (Vehicle $v) => $v->mileage,                           // 주행거리
