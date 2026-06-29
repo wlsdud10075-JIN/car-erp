@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Settlement;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -67,7 +68,26 @@ class VehicleExportService
             'shipping_date' => ['선적일ETD', 'date', fn (Vehicle $v) => $v->shipping_date, '선적'],
             'eta_date' => ['도착일ETA', 'date', fn (Vehicle $v) => $v->eta_date, '선적'],
             'bl_number' => ['B/L번호', 'str', fn (Vehicle $v) => $v->bl_number, '선적'],
+            // 정산 (admin 전용 export 라우트라 허용 — 회의 2026-06-18/29 'admin 전용 마진'). 전부 accessor 경유,
+            // snapshot 아닌 현재 DB 값(F슬롯). 정산 row 없으면 빈칸.
+            'settlement_status' => ['정산상태', 'str', fn (Vehicle $v) => $this->settlementOf($v)?->settlement_status, '정산'],
+            'sales_margin' => ['판매마진', 'num', fn (Vehicle $v) => $this->settlementOf($v)?->sales_margin, '정산'],
+            'vat_margin' => ['부가세마진', 'num', fn (Vehicle $v) => $this->settlementOf($v)?->vat_margin, '정산'],
+            'total_margin' => ['총마진', 'num', fn (Vehicle $v) => $this->settlementOf($v)?->total_margin, '정산'],
+            'settlement_amount' => ['정산액', 'num', fn (Vehicle $v) => $this->settlementOf($v)?->settlement_amount, '정산'],
+            'actual_payout' => ['실지급액', 'num', fn (Vehicle $v) => $this->settlementOf($v)?->actual_payout, '정산'],
         ];
+    }
+
+    /** 차량의 대표 정산 row(최신). accessor 가 $this->vehicle 을 참조하므로 관계 주입(N+1 방지). */
+    private function settlementOf(Vehicle $v): ?Settlement
+    {
+        $s = $v->settlements->sortByDesc('id')->first();
+        if ($s) {
+            $s->setRelation('vehicle', $v);
+        }
+
+        return $s;
     }
 
     /** @return list<string> export 컬럼 key (감사 로그용) */
