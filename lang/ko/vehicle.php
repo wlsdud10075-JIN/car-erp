@@ -10,6 +10,13 @@ return [
     'create_btn' => '차량 등록',
     'import_template_btn' => '적재 양식',
     'export_btn' => '데이터 내려받기',
+    'export_scope' => '범위',
+    'export_scope_current' => '현재 필터',
+    'export_scope_all' => '전체',
+    'export_cols_expand' => '개별 컬럼 펼치기',
+    'export_cols_collapse' => '개별 컬럼 접기',
+    'export_do' => '엑셀 내려받기',
+    'export_pick_col' => '컬럼을 1개 이상 선택하세요.',
 
     'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호',
     'search_btn' => '조회',

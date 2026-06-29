@@ -2995,21 +2995,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="50">{{ __('vehicle.per_page', ['count' => 50]) }}</option>
             <option value="100">{{ __('vehicle.per_page', ['count' => 100]) }}</option>
         </select>
-        @if(auth()->user()->canAccessAdmin())
-        {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin). 데이터 없는 빈 양식이라 PII·회계 0.
-             일반 <a>(wire:navigate 미사용)로 브라우저 파일 다운로드. --}}
-        <a href="{{ route('erp.vehicles.import-template') }}"
-           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-            {{ __('vehicle.import_template_btn') }}
-        </a>
-        {{-- 데이터 내려받기 (고정 화이트리스트 + PII 마스킹). 현재 검색/진행상태 필터 반영. 일반 <a> 다운로드. --}}
-        <a href="{{ route('erp.vehicles.export', ['q' => $search, 'progress' => $progressFilter]) }}"
-           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
-            {{ __('vehicle.export_btn') }}
-        </a>
-        @endif
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             {{ __('vehicle.create_btn') }}
@@ -3341,8 +3326,85 @@ function vehicleColumnsToggle() {
     @endforelse
 </div>
 
-{{-- ── 페이지네이션 ────────────────────────────────────────────── --}}
-<div>{{ $this->vehicles->links() }}</div>
+{{-- ── 페이지네이션 (좌: 데이터 도구 / 우: 페이저) ───────────────────── --}}
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    @if(auth()->user()->canAccessAdmin())
+    <div class="flex items-center gap-2">
+        {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin). 데이터 없는 빈 양식이라 PII·회계 0. 일반 <a> 다운로드. --}}
+        <a href="{{ route('erp.vehicles.import-template') }}"
+           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+            {{ __('vehicle.import_template_btn') }}
+        </a>
+        {{-- 데이터 내려받기 팝오버 — 범위(현재필터/전체) + 컬럼 선택(그룹/개별). 고정 화이트리스트 + PII 마스킹.
+             선택 컬럼은 서버에서 화이트리스트와 교집합만 처리(클라이언트 우회 불가). --}}
+        @php $exportCols = (new \App\Services\VehicleExportService)->columnsForUi();
+             $exportAllKeys = array_merge(...array_map('array_keys', array_values($exportCols))); @endphp
+        <div class="relative" x-data="{
+                open: false, scope: 'current', showCols: false,
+                cols: Object.fromEntries(@js($exportAllKeys).map(k => [k, true])),
+                allChecked(keys) { return keys.every(k => this.cols[k]); },
+                setGroup(keys, v) { keys.forEach(k => this.cols[k] = v); },
+                download() {
+                    const sel = Object.keys(this.cols).filter(k => this.cols[k]);
+                    if (!sel.length) { alert(@js(__('vehicle.export_pick_col'))); return; }
+                    const p = new URLSearchParams({ scope: this.scope, cols: sel.join(',') });
+                    if (this.scope === 'current') {
+                        if ($wire.search) p.set('q', $wire.search);
+                        if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
+                        p.set('dateType', $wire.dateType || 'purchase');
+                        if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
+                        if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
+                        if ($wire.salesmanId) p.set('salesmanId', $wire.salesmanId);
+                    }
+                    window.location.href = '{{ route('erp.vehicles.export') }}?' + p.toString();
+                    this.open = false;
+                }
+             }">
+            <button type="button" @click="open = !open"
+                    class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                {{ __('vehicle.export_btn') }}
+                <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div x-show="open" x-cloak @click.outside="open = false"
+                 class="absolute bottom-full left-0 z-30 mb-1 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
+                {{-- 범위 --}}
+                <div class="mb-2 flex items-center gap-3">
+                    <span class="text-xs font-semibold text-gray-500">{{ __('vehicle.export_scope') }}</span>
+                    <label class="flex items-center gap-1"><input type="radio" value="current" x-model="scope"> {{ __('vehicle.export_scope_current') }}</label>
+                    <label class="flex items-center gap-1"><input type="radio" value="all" x-model="scope"> {{ __('vehicle.export_scope_all') }}</label>
+                </div>
+                <hr class="my-2 border-gray-100">
+                {{-- 그룹 + 개별 컬럼 --}}
+                <div class="max-h-64 space-y-1 overflow-y-auto">
+                    @foreach($exportCols as $groupLabel => $colmap)
+                        @php $keys = array_keys($colmap); @endphp
+                        <label class="flex items-center gap-2 font-medium text-gray-700">
+                            <input type="checkbox" :checked="allChecked(@js($keys))"
+                                   @change="setGroup(@js($keys), $event.target.checked)">
+                            {{ $groupLabel }}
+                            <span class="text-xs font-normal text-gray-400">({{ count($colmap) }})</span>
+                        </label>
+                        <div x-show="showCols" class="ml-5 space-y-0.5">
+                            @foreach($colmap as $key => $label)
+                                <label class="flex items-center gap-2 text-xs text-gray-600">
+                                    <input type="checkbox" x-model="cols['{{ $key }}']"> {{ $label }}
+                                </label>
+                            @endforeach
+                        </div>
+                    @endforeach
+                </div>
+                <button type="button" @click="showCols = !showCols" class="mt-1 text-xs text-primary-text hover:underline"
+                        x-text="showCols ? '{{ __('vehicle.export_cols_collapse') }}' : '{{ __('vehicle.export_cols_expand') }}'"></button>
+                <hr class="my-2 border-gray-100">
+                <button type="button" @click="download()" class="btn-primary w-full justify-center">{{ __('vehicle.export_do') }}</button>
+            </div>
+        </div>
+    </div>
+    @endif
+    <div>{{ $this->vehicles->links() }}</div>
+</div>
 
 </div>{{-- /flex col --}}
 

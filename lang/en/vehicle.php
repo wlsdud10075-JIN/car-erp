@@ -10,6 +10,13 @@ return [
     'create_btn' => 'Add Vehicle',
     'import_template_btn' => 'Import Template',
     'export_btn' => 'Export Data',
+    'export_scope' => 'Range',
+    'export_scope_current' => 'Current filter',
+    'export_scope_all' => 'All',
+    'export_cols_expand' => 'Expand columns',
+    'export_cols_collapse' => 'Collapse columns',
+    'export_do' => 'Download Excel',
+    'export_pick_col' => 'Select at least one column.',
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no.',
     'search_btn' => 'Search',

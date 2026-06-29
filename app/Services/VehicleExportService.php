@@ -25,48 +25,48 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 class VehicleExportService
 {
     /**
-     * 고정 화이트리스트. [label, type(str|num|date), fn(Vehicle)].
+     * 고정 화이트리스트. [label, type(str|num|date), fn(Vehicle), group].
      * fn 은 반드시 accessor/마스킹 경유. 원본 PII 컬럼 직접 노출 금지.
      *
-     * @return array<string, array{0:string,1:string,2:callable}>
+     * @return array<string, array{0:string,1:string,2:callable,3:string}>
      */
     private function whitelist(): array
     {
         return [
-            'vehicle_number' => ['차량번호', 'str', fn (Vehicle $v) => $v->vehicle_number],
-            'brand' => ['브랜드', 'str', fn (Vehicle $v) => $v->brand],
-            'model_type' => ['차명', 'str', fn (Vehicle $v) => $v->model_type],
-            'year' => ['년식', 'num', fn (Vehicle $v) => $v->year],
-            'mileage' => ['주행거리', 'num', fn (Vehicle $v) => $v->mileage],
-            'sales_channel' => ['판매채널', 'str', fn (Vehicle $v) => $v->sales_channel],
-            'progress_status' => ['진행상태', 'str', fn (Vehicle $v) => $v->progress_status],   // accessor
-            'salesman' => ['담당자', 'str', fn (Vehicle $v) => $v->salesman?->name],
+            'vehicle_number' => ['차량번호', 'str', fn (Vehicle $v) => $v->vehicle_number, '기본'],
+            'brand' => ['브랜드', 'str', fn (Vehicle $v) => $v->brand, '기본'],
+            'model_type' => ['차명', 'str', fn (Vehicle $v) => $v->model_type, '기본'],
+            'year' => ['년식', 'num', fn (Vehicle $v) => $v->year, '기본'],
+            'mileage' => ['주행거리', 'num', fn (Vehicle $v) => $v->mileage, '기본'],
+            'sales_channel' => ['판매채널', 'str', fn (Vehicle $v) => $v->sales_channel, '기본'],
+            'progress_status' => ['진행상태', 'str', fn (Vehicle $v) => $v->progress_status, '기본'],   // accessor
+            'salesman' => ['담당자', 'str', fn (Vehicle $v) => $v->salesman?->name, '기본'],
             // 매입
-            'purchase_date' => ['구입일자', 'date', fn (Vehicle $v) => $v->purchase_date],
-            'purchase_from' => ['구입처', 'str', fn (Vehicle $v) => $v->purchase_from],
-            'owner_name' => ['소유자(마스킹)', 'str', fn (Vehicle $v) => $this->maskName($v->nice_reg_owner_name)],
-            'owner_rrn' => ['주민/법인번호(마스킹)', 'str', fn (Vehicle $v) => $this->maskRrn($v->nice_reg_owner_rrn)],
-            'owner_addr' => ['사용본거지(마스킹)', 'str', fn (Vehicle $v) => $this->maskAddr($v->nice_reg_owner_addr)],
-            'purchase_price' => ['구입금액', 'num', fn (Vehicle $v) => $v->purchase_price],
-            'selling_fee' => ['매도비', 'num', fn (Vehicle $v) => $v->selling_fee],
-            'cost_total' => ['비용합계', 'num', fn (Vehicle $v) => $v->cost_total],   // accessor
+            'purchase_date' => ['구입일자', 'date', fn (Vehicle $v) => $v->purchase_date, '매입'],
+            'purchase_from' => ['구입처', 'str', fn (Vehicle $v) => $v->purchase_from, '매입'],
+            'owner_name' => ['소유자(마스킹)', 'str', fn (Vehicle $v) => $this->maskName($v->nice_reg_owner_name), '매입'],
+            'owner_rrn' => ['주민/법인번호(마스킹)', 'str', fn (Vehicle $v) => $this->maskRrn($v->nice_reg_owner_rrn), '매입'],
+            'owner_addr' => ['사용본거지(마스킹)', 'str', fn (Vehicle $v) => $this->maskAddr($v->nice_reg_owner_addr), '매입'],
+            'purchase_price' => ['구입금액', 'num', fn (Vehicle $v) => $v->purchase_price, '매입'],
+            'selling_fee' => ['매도비', 'num', fn (Vehicle $v) => $v->selling_fee, '매입'],
+            'cost_total' => ['비용합계', 'num', fn (Vehicle $v) => $v->cost_total, '매입'],   // accessor
             // 판매
-            'buyer' => ['바이어', 'str', fn (Vehicle $v) => $v->buyer?->name],
-            'consignee' => ['컨사이니', 'str', fn (Vehicle $v) => $v->consignee?->name],
-            'sale_date' => ['판매일자', 'date', fn (Vehicle $v) => $v->sale_date],
-            'currency' => ['통화', 'str', fn (Vehicle $v) => $v->currency],
-            'exchange_rate' => ['환율', 'num', fn (Vehicle $v) => $v->exchange_rate],
-            'sale_price' => ['판매금액', 'num', fn (Vehicle $v) => $v->sale_price],
-            'commission' => ['커미션', 'num', fn (Vehicle $v) => $v->commission],
-            'auto_loading' => ['Auto Loading', 'num', fn (Vehicle $v) => $v->auto_loading],
-            'tax_dc' => ['TAX/D.C', 'num', fn (Vehicle $v) => $v->tax_dc],
-            'transport_fee' => ['운임비', 'num', fn (Vehicle $v) => $v->transport_fee],
-            'sale_total_amount' => ['판매총액', 'num', fn (Vehicle $v) => $v->sale_total_amount],     // accessor
-            'sale_unpaid_amount' => ['미입금액', 'num', fn (Vehicle $v) => $v->sale_unpaid_amount],   // accessor
+            'buyer' => ['바이어', 'str', fn (Vehicle $v) => $v->buyer?->name, '판매'],
+            'consignee' => ['컨사이니', 'str', fn (Vehicle $v) => $v->consignee?->name, '판매'],
+            'sale_date' => ['판매일자', 'date', fn (Vehicle $v) => $v->sale_date, '판매'],
+            'currency' => ['통화', 'str', fn (Vehicle $v) => $v->currency, '판매'],
+            'exchange_rate' => ['환율', 'num', fn (Vehicle $v) => $v->exchange_rate, '판매'],
+            'sale_price' => ['판매금액', 'num', fn (Vehicle $v) => $v->sale_price, '판매'],
+            'commission' => ['커미션', 'num', fn (Vehicle $v) => $v->commission, '판매'],
+            'auto_loading' => ['Auto Loading', 'num', fn (Vehicle $v) => $v->auto_loading, '판매'],
+            'tax_dc' => ['TAX/D.C', 'num', fn (Vehicle $v) => $v->tax_dc, '판매'],
+            'transport_fee' => ['운임비', 'num', fn (Vehicle $v) => $v->transport_fee, '판매'],
+            'sale_total_amount' => ['판매총액', 'num', fn (Vehicle $v) => $v->sale_total_amount, '판매'],     // accessor
+            'sale_unpaid_amount' => ['미입금액', 'num', fn (Vehicle $v) => $v->sale_unpaid_amount, '판매'],   // accessor
             // 선적/통관
-            'shipping_date' => ['선적일ETD', 'date', fn (Vehicle $v) => $v->shipping_date],
-            'eta_date' => ['도착일ETA', 'date', fn (Vehicle $v) => $v->eta_date],
-            'bl_number' => ['B/L번호', 'str', fn (Vehicle $v) => $v->bl_number],
+            'shipping_date' => ['선적일ETD', 'date', fn (Vehicle $v) => $v->shipping_date, '선적'],
+            'eta_date' => ['도착일ETA', 'date', fn (Vehicle $v) => $v->eta_date, '선적'],
+            'bl_number' => ['B/L번호', 'str', fn (Vehicle $v) => $v->bl_number, '선적'],
         ];
     }
 
@@ -76,10 +76,33 @@ class VehicleExportService
         return array_keys($this->whitelist());
     }
 
-    /** @param  Collection<int,Vehicle>  $vehicles */
-    public function build(Collection $vehicles): Spreadsheet
+    /**
+     * 팝오버 UI 용 그룹별 컬럼 목록. [그룹라벨 => [key => 컬럼라벨]].
+     *
+     * @return array<string, array<string,string>>
+     */
+    public function columnsForUi(): array
+    {
+        $grouped = [];
+        foreach ($this->whitelist() as $key => $def) {
+            $grouped[$def[3]][$key] = $def[0];
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param  Collection<int,Vehicle>  $vehicles
+     * @param  list<string>|null  $selectedKeys  선택 컬럼(화이트리스트 key). null/빈 배열이면 전체.
+     */
+    public function build(Collection $vehicles, ?array $selectedKeys = null): Spreadsheet
     {
         $cols = $this->whitelist();
+        if ($selectedKeys) {
+            // 화이트리스트 교집합만(보안: 알 수 없는 key 무시). 원본 정의 순서 보존. 빈 결과면 전체로 폴백.
+            $filtered = array_filter($cols, fn ($k) => in_array($k, $selectedKeys, true), ARRAY_FILTER_USE_KEY);
+            $cols = $filtered !== [] ? $filtered : $cols;
+        }
         $ss = new Spreadsheet;
         $sheet = $ss->getActiveSheet();
         $sheet->setTitle('차량목록');
