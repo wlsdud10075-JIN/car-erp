@@ -9,6 +9,7 @@ return [
     'batch_filter_clear' => 'Show all',
     'create_btn' => 'Add Vehicle',
     'import_template_btn' => 'Import Template',
+    'export_btn' => 'Export Data',
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no.',
     'search_btn' => 'Search',

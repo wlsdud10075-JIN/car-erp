@@ -32,6 +32,12 @@ class AppServiceProvider extends ServiceProvider
         // (by(IP) 면 전 영업이 한 한도 공유). HMAC 으로 이미 인증되므로 상한은 넉넉히.
         RateLimiter::for('board-read', fn ($request) => Limit::perMinute(120)->by((string) $request->query('salesman_email', $request->ip())));
 
+        // 차량 데이터 export — 2026-06-29 라운드테이블 조건(분3/일100). 파일 반출이라 억제.
+        RateLimiter::for('data-export', fn ($request) => [
+            Limit::perMinute(3)->by($request->user()?->id ?: $request->ip()),
+            Limit::perDay(100)->by($request->user()?->id ?: $request->ip()),
+        ]);
+
         // @krw($amount) — 대시보드 금액 억/만 축약 표시(+정확 금액 title 툴팁). 2026-06-11.
         Blade::directive('krw', fn ($expr) => "<?php echo \\App\\Support\\Money::krwTag($expr); ?>");
     }
