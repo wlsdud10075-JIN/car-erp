@@ -3372,11 +3372,12 @@ function vehicleColumnsToggle() {
             <div x-show="open" x-cloak @click.outside="open = false"
                  class="absolute bottom-full left-0 z-30 mb-1 w-72 rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-lg">
                 {{-- 범위 --}}
-                <div class="mb-2 flex items-center gap-3">
+                <div class="mb-1 flex items-center gap-3">
                     <span class="text-xs font-semibold text-gray-500">{{ __('vehicle.export_scope') }}</span>
                     <label class="flex items-center gap-1"><input type="radio" value="current" x-model="scope"> {{ __('vehicle.export_scope_current') }}</label>
                     <label class="flex items-center gap-1"><input type="radio" value="all" x-model="scope"> {{ __('vehicle.export_scope_all') }}</label>
                 </div>
+                <p class="mb-2 text-[11px] leading-snug text-gray-400">{{ __('vehicle.export_scope_hint') }}</p>
                 <hr class="my-2 border-gray-100">
                 {{-- 그룹 + 개별 컬럼 --}}
                 <div class="max-h-64 space-y-1 overflow-y-auto">
