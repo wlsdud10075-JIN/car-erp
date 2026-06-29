@@ -8,6 +8,7 @@ return [
     'batch_filter' => 'Showing only :count vehicle(s) from shipping request batch',
     'batch_filter_clear' => 'Show all',
     'create_btn' => 'Add Vehicle',
+    'import_template_btn' => 'Import Template',
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no.',
     'search_btn' => 'Search',
