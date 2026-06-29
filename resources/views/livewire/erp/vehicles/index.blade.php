@@ -3003,6 +3003,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
             {{ __('vehicle.import_template_btn') }}
         </a>
+        {{-- 데이터 내려받기 (고정 화이트리스트 + PII 마스킹). 현재 검색/진행상태 필터 반영. 일반 <a> 다운로드. --}}
+        <a href="{{ route('erp.vehicles.export', ['q' => $search, 'progress' => $progressFilter]) }}"
+           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            {{ __('vehicle.export_btn') }}
+        </a>
         @endif
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
