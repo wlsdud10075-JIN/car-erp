@@ -2,7 +2,7 @@
 
 > **권위 스펙(car-erp).** board는 이 파일을 **경로로 읽고** 자기 client(`CarErpReadService`)를 맞춰 구현한다. board repo의 SKILLS/CLAUDE엔 **포인터 1줄만**(복사 금지 — drift). 연동 B(`purchase-sync-receiver.md`)와 동일 상호링크 규칙.
 > **방향**: 영업은 board만 씀(car-erp 계정 없음). board → car-erp **HMAC GET = 읽기**(purchase-sync POST의 역방향) + 유일 쓰기 = 선적요청. car-erp 권위·계산, board 표시만(재무로직 재현 금지 = drift 방지).
-> 상태: **설계 확정 / 미구현**. 회의록 = `docs/meetings/2026-06-18-board-portal-api.md`(6부서+Codex/Gemini, 조건부 GO·보안 선행조건). 인계 출처 = `board/meetings/handoff-car-erp-board-portal.md`.
+> 상태: **base(§4 재무읽기·§5 단발 선적요청·§6 서류) = ✅배포완료**(deploy #11, 2026-06-19 / v3 `ad1c8b3`). **§5 v2 묶음 모델(영속 묶음·선언형 sync·B/L요청·오리지널/써랜더 이중가드·묶음 미수 집계) = 신규 미구현**(2026-06-30 jin 설계 확정). 회의록 = `docs/meetings/2026-06-18-board-portal-api.md`(6부서+Codex/Gemini, 조건부 GO·보안 선행조건). 인계 출처 = `board/meetings/handoff-car-erp-board-portal.md`.
 > ⚠️ **구현 순서**: ① 이 스펙 커밋 → ② car-erp 미들웨어/API/테이블 구현 → ③ board가 이 스펙대로 client 구현. **보안 선행조건(아래 §1~§3) 충족 전 라우트 활성화 금지.**
 
 ## 0. 빌드 순서
@@ -57,21 +57,63 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 - **환율0 외화**: `sale_unpaid_amount_krw_cache`가 `NULL`이면 그대로 `null` 반환 + `currency`·`exchange_rate` 동봉. board는 `null`을 "환율 미입력"으로 표시(절대 `0`/완납 coerce 금지).
 - N+1 방지: `with(['finalPayments','purchaseBalancePayments','receivableHistories'])`.
 
-## 5. ③ 선적요청 (읽기 + 가벼운 쓰기)
-- **`GET /shippable?salesman_email=`** — 선적 가능 차 + 바이어 + 컨사이니 목록.
-  - 대상(확정): `progress_status_cache = '판매완료'` **AND** `sales_channel='export'`. **⚠️ 요청해도 목록서 안 빠짐** — 사라짐 = 관리가 선적/통관 진행해 progress 가 '판매완료' 벗어날 때(자연소멸). board 가 요청한 차를 계속 보고 재요청 가능.
-  - item 에 **`shipping_status`**(`none`/`requested`/`in_progress`) + `requested_method`·`requested_consignee_id`(재요청 prefill·뱃지). board 가 "요청됨/진행중" 뱃지.
-  - 컨사이니(열린항목1 확정): **기존 컨사이니 선택만**(Buyer HasMany Consignee). 신규 입력은 v2(PII 신규생성·중복 검증 이슈).
-- **`POST /shipping-request`** (HMAC) — payload:
+## 5. ③ 선적·B/L 묶음 (bundle) — 영속 그룹 + 선언형 sync + 재무 집계
+> **v2 묶음 모델 (2026-06-30, jin 4턴 설계).** 구 단발 선적요청(1 POST=1 batch, 판매완료서 자연소멸, car-erp만 취소)을 **영속 묶음**으로 확장. 핵심 통찰 = **1 묶음 = 1 선적 = 1 B/L = 1 오리지널/써랜더.** 묶음은 선적단계→B/L단계까지 살아있고 board에서 안 사라짐(같은 묶음을 B/L요청으로 재사용). 회의록 = `docs/meetings/2026-06-18-board-portal-api.md` + `docs/meetings/2026-06-30-bl-shipment-bundle-v2.md`(풀회의 조건부 GO) + 본 절.
+>
+> **🔑 jin 결정 반영 (2026-06-30 회의 후)**:
+> 1. **알람 target_role 분리** — 선적요청=`수출통관`(현행 유지) / **B/L요청·변경요청=`관리`**. ⚠️ 현재 [관리]가 실무를 다 겸하므로 **`관리`가 두 종류 알람을 모두 볼 수 있어야 함**(`TaskAlarm::visibleToScope`·`User::canSeeAlarm`에서 관리가 수출통관 타겟 알람도 보이는지 확인 — 관리∈clearance이므로 통상 가시).
+> 2. **v1 → v2 한 번에 교체(하위호환 불필요)** — board 포털 base가 deploy #11로 **배포는 됐으나 board가 실제로 미가동**(실트래픽·실데이터 0, jin 확인). 따라서 구 `POST /shipping-request`(단발)은 병존 없이 **`/sync`로 교체/제거**, `/shippable` 의미축소도 자유 적용(board 의존 없음). Codex의 "병존" 권고는 board 라이브 전제였으므로 기각.
+> 3. (파생) `InternalPortalController::finance() L199 ?? 0` 버그는 board 미가동이라 **현재 실사용자 오표시는 없음** → "긴급"에서 "**board 가동 전 수정 필수**"로 격하(여전히 묶음 집계 전 수정).
+
+### 5-0. 묶음 = 얇은 그룹 레이어 (⚠️ 새 테이블 없음)
+- 저장 = **기존 `shipping_requests` 행(멤버십, vehicle 단위) + `batch_id`(영속 식별자)**. `shipping_requests`는 **하드삭제 안 함**(cancel=`status='cancelled'`, 끝=`done`) → 묶음은 항상 살아있음.
+- **B/L 실데이터(`bl_document`·`bl_number`·`vessel`…)는 `vehicles`에 저장** — 진행상태 cascade(`bl_document → 거래완료`)가 **per-vehicle**이라 다른 집은 불가(drift). 묶음은 `batch_id` + `bl_type`(영업 요청값) + `bl_status` 플래그만 갖는 **그룹/의도 레이어**.
+- **컬럼 추가 (마이그 2개 — 2026-06-30 회의 확정)**: ① `shipping_requests`에 `bl_type`(`original`/`surrender`, nullable)·`bl_status`(`none`/`requested`/`issued`, default none)·`change_requested_at`(nullable)·`change_request_meta`(json) ② **`vehicles.bl_type`**(nullable — 이중가드가 `bundle.bl_type` vs `vehicle.bl_type` 비교할 컬럼. 없으면 silent null 비교). 둘 다 nullable/default → MySQL 8 INSTANT DDL 무중단(ssancarerp 0초). `ShippingRequest` 상수(`BL_TYPES`/`BL_STATUS`)·`$fillable`·`$casts`(json) 추가 필수(누락 시 4엔드포인트 500). 기존 `status`(requested/in_progress/done/cancelled)=선적단계.
+- **⚠️ `vehicles` 컬럼(특히 `export_buyer_id`)에 적재 금지** — C4/C5 게이트(`guardStageOrderForExport`)·`ManagementWorkflowChecklistTest:375` 회귀.
+
+### 5-1. 읽기 — `GET /shippable` (새로 묶을 차 후보) + `GET /bundles` (영속 묶음)
+- **`GET /shippable?salesman_email=`** — **새로 묶을 차 후보만.** `progress_status_cache='판매완료'` **AND** `sales_channel='export'` **AND** 아직 어느 open 묶음에도 없음. + 바이어·컨사이니(기존 선택만, 신규입력 v2).
+- **`GET /bundles?salesman_email=`** — **영업 본인 묶음 전체(전 상태, 안 사라짐).** 묶음별:
+  - `batch_id`·`buyer`·`consignee`·`shipping_method`·`bl_type`·`status`(선적단계)·`bl_status`·`vehicles[]`(번호·차별 상태).
+  - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`.
+  - `change_requested`(in_progress 변경요청 대기 여부).
+  - → board "내 선적묶음" 영속 뷰 + 미수 게이지. *(이게 "묶음이 화면에서 안 사라짐"의 구현)*
+
+### 5-2. 쓰기 — 선언형 sync + B/L요청 + 변경요청 (모두 HMAC, 본인 차만)
+- **`POST /shipping-requests/sync`** — 영업의 **"지금 원하는 묶음 전체(desired state)"** 전송 → car-erp가 현재 open 행과 diff.
   ```json
-  { "vehicle_ids":[...], "buyer_id":N, "consignee_id":N, "shipping_method":"RORO|CONTAINER", "salesman_email":"...", "requested_at":"..." }
+  { "salesman_email":"...",
+    "bundles":[
+      { "buyer_id":N, "consignee_id":N, "shipping_method":"RORO|CONTAINER", "bl_type":"original|surrender|null", "vehicle_ids":[A,B] }
+    ] }
   ```
-  - 적재 = **신규 `shipping_requests` 테이블**(`batch_id`(1 POST=1 uuid, car-erp 내부 묶음표시용)·`vehicle_id` FK·`buyer_id`·`consignee_id`·`shipping_method` enum·`requested_by_email`·`status` enum(requested/in_progress/done)·`requested_at`·`processed_at`·`note`). **⚠️ `vehicles` 컬럼(특히 `export_buyer_id`)에 적재 금지** — C4/C5 게이트(`guardStageOrderForExport`)·`ManagementWorkflowChecklistTest:375` 회귀.
-  - car-erp 후단: 수출통관/관리가 **「통관·선적 > 선적요청」 화면**(`erp.shipping-requests.index`)에서 배치별로 보고 `requested→in_progress→done` 전환. done 시 연동 `shipping_requested` 알람 자동 resolve.
-  - **취소 = car-erp 측 처리**(board 취소 엔드포인트 없음). 통관/관리가 화면에서 배치 취소 → `status='cancelled'`(open 집계 제외 → `/shippable` shipping_status 가 다시 `none` → 영업이 board 에서 재요청 가능) + 연동 알람 resolve. done 은 취소 불가.
-  - **재요청 = 제자리 갱신**: open `'requested'` 있으면 새 row 안 만들고 **기존 row 의 consignee/method 갱신**(batch_id·status 유지 = 배치 정합). `'in_progress'`(관리 처리중)면 갱신 불가 skip. 응답 `{created:[], updated:[], skipped:[]}` 구분.
-  - 알람 = **`TaskAlarm` 신규 type `shipping_requested`**(`target_role='관리'`) **즉시 생성·발동**(scan 불필요, ETA `eta_clearance`와 별개). 관리가 차량 편집 패널에서 실무(컨테이너#·B/L·선적일·서류) 채움.
-  - board 표시 = 요청 상태(requested/in_progress/done)만. 권위 = `progress_status_cache`(관리가 진행).
+  - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
+  - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
+  - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
+- **`POST /bundles/{batch}/bl-request`** — 기존 묶음의 **B/L요청 재사용**. `{ salesman_email, bl_type:"original|surrender" }` → `bl_type` 확정 + `bl_status='requested'` + 관리 알람. (선적요청을 베낀 별도 시스템 아님 = 같은 묶음의 상태 전이.)
+- **`POST /shipping-requests/change-request`** — `in_progress`(관리 착수) 차의 **명시적** 변경/취소 요청. `{ vehicle_id, salesman_email, note }` → `change_requested_at`·`change_request_meta` 기록 + 관리 알람. **자동적용 안 함** — 관리가 화면에서 수락(취소/재오픈)/거절. (omission으로 cancel-request 추론 절대 금지.)
+
+### 5-3. car-erp 후단 — 「선적·B/L 묶음」 화면 (구 「선적요청」 확장)
+- 라우트 `erp.shipping-requests.index` 확장. 선적단계(requested→in_progress→done) + **B/L단계**(bl_status) 같이 표시. done/취소/B/L요청·변경요청 수락거절·자동취소 반영.
+- 묶음별 **미수 게이지(`unpaid_ratio`)** + 완납뱃지 + **환율 미입력 N대 경고** → 관리가 "이 묶음 B/L 발급 가능?" 한눈에.
+- **「B/L 발급」 bulk-apply**: bl_status='requested' 묶음에서 관리가 1회 클릭 → 공유 B/L 필드(`bl_number`·`bl_type`·`container_number`·`vessel_name`·`bl_loading_location`)를 **멤버 차량 전체에 트랜잭션 일괄 기입** → bl_status='issued'. (B/L 문서 업로드는 차량별, 이중가드 적용.)
+- **이중가드 (B/L 문서 업로드 전)**: `bundle.bl_type`(영업 요청) vs `vehicle.bl_type`(관리가 업로드 전 선택) **비교** — 불일치 시 경고. 가드는 **신규 B/L 문서 set 시에만** 강제(blDocFile 있거나 bl_document 빈→채움), **기존 B/L 보유 차(grandfather) 제외**(G1 박스 `if(! $g1HasExistingBl)` 패턴).
+- **써랜더 × 미완납 = 경고만**(저장 허용). 최종 차단은 기존 **G1 100% B/L 게이트**(`unpaid_export_overrides` stage='bl').
+- 알람 (jin 결정 분리): **선적요청 = `TaskAlarm` type `shipping_requested`·`target_role='수출통관'`**(현행 `fireShippingAlarm()` 유지) / **B/L요청·변경요청 = `target_role='관리'`**(신규 type). 즉시발동, done·취소 시 resolve. 관리가 실무 겸업이라 두 알람 모두 가시여야 함.
+
+### 5-4. 묶음 재무 집계 (⚠️ 단일출처 SKILLS §13 — accessor만, raw SQL 재계산 금지)
+> 구현 = **기존 `InternalPortalController`(`/finance`·`/by-buyer`) 집계 패턴 재사용**. 새 저장·새 accessor 없음.
+```
+unpaid_total_krw  = Σ sale_unpaid_amount_krw_cache (멤버, NULL 제외)
+sales_by_currency = 통화별 Σ sale_price
+fx_missing_count  = count(sale_unpaid_amount_krw_cache === null)        // 환율 미입력 차
+unpaid_ratio      = Σ unpaid_krw / Σ(sale_total_amount × exchange_rate)  // fx-missing 양쪽 제외 → 게이지 fill
+fully_paid        = (unpaid_total_krw <= 0) AND (fx_missing_count === 0)
+```
+- **⚠️ NULL(환율 미입력)을 0으로 합치지 말 것** — 가짜 "완납" → 가짜 B/L 발급 가능(cash_audit 교훈). 환율 미입력 1대라도 있으면 `fully_paid=false` + "환율 미입력 N대" 경고. **집계는 `whereNotNull('sale_unpaid_amount_krw_cache')` 또는 `filter(fn=>$v!==null)` 명시.**
+- **⚠️ 기존 버그 동반 수정 (2026-06-30 회의 발견)**: `InternalPortalController::finance()` (≈L199)가 `$v->sale_unpaid_amount_krw_cache ?? 0`로 **NULL을 0(완납) coerce** — board 재무 미러가 **지금도 미수금을 낮게 오표시 중**(deployed). 묶음 집계 재사용 전 이 `?? 0` 제거(긴급). 묶음 집계 코드는 절대 이 패턴 답습 금지.
+- **UI**: 묶음 미수 = **기존 미납 게이지 패턴(`unpaid_ratio`)** 재사용 + 보기 좋은 카드. **board·car-erp 양쪽 표시**. ⚠️ `fully_paid`·`써랜더×미완납 warning`은 **car-erp가 계산해서 내려보냄**(Codex+Spec-F 수렴 — board가 raw값으로 재계산하면 drift=운영장애). board는 **표시/경고만**, 절대 완납판정 재현 금지.
+- 화이트리스트(§3): 미수금·통화·환율 **허용** / 마진 raw(`sales/vat/total_margin`) **금지**.
 
 ## 6. ①② 서류 다운로드 (프록시 스트림 — 선적 4종만)
 - **`GET /documents/{type}?ids=1,2,3&salesman_email=`** — car-erp가 `DocumentFiller`로 동적 생성 → xlsx 바이트 스트림 반환(프록시). board가 그대로 전달.
@@ -85,8 +127,11 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | # | 항목 | 확정 |
 |---|---|---|
 | 1 | 선적요청 컨사이니 | **기존 선택만**(신규 입력 v2) |
-| 2 | 선적 가능 차 상태경계 | **`판매완료` + export + open요청 없음** |
-| 3 | 알람 매핑 | `TaskAlarm` 신규 type `shipping_requested`(관리) 즉시발동 |
+| 2 | 선적 가능 차 상태경계 | **`판매완료` + export + open묶음 없음**(`/shippable`=새로 묶을 차만 / 기존 묶음=`/bundles` 영속) |
+| 3 | 알람 매핑 (jin 2026-06-30) | 선적요청=`shipping_requested`·`target_role='수출통관'`(현행) / B/L요청·변경요청=`target_role='관리'`. 관리 겸업이라 둘 다 가시 |
+| 7 | 재구성·취소 (v2) | **선언형 sync** — `requested`=board sync로 자동취소·재구성 / `in_progress`=잠금, board "변경요청"→관리 수락거절 / car-erp 관리 취소도 유지 (양방향). 구 "board 취소 엔드포인트 없음" 폐기 |
+| 8 | 묶음 영속·B/L 재사용 (v2) | 새 테이블 X. `batch_id` 영속 그룹 + `bl_status` 플래그. B/L실데이터는 vehicles(cascade per-vehicle). board는 `/bundles`로 전상태 조회 |
+| 9 | 묶음 미수 총액 (v2) | `unpaid_total_krw`=Σ`sale_unpaid_amount_krw_cache`(NULL제외)+`fx_missing_count`. 미납 게이지 패턴, board·car-erp 양쪽 표시. 마진 raw 금지 |
 | 4 | 운임비 매핑 | 판매배송(바이어向)=`transport_fee` / 매입배송(지급게이트웨이)=`cost_towing` **분리**. board 선적요청은 transport_fee 미접촉(관리가 입금 전 확정) |
 | 5 | 서류 인증 | **프록시 스트림** |
 | 6 | HMAC 시크릿 | **별도 `CAR_ERP_READ_HMAC_SECRET`** |
@@ -99,6 +144,14 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 - 서류는 **선적 4종만** 요청(그 외 car-erp 403).
 - 마진 raw 안 받음(미수금·정산상태·실지급액만).
 - car-erp 응답 board측 캐싱(30~60초) 여부 = board 결정(throttle 완화).
+
+### 8-1. v2 선적·B/L 묶음 board 작업 (handoff — board 세션에서 구현·커밋)
+> car-erp가 §5 권위로 먼저 구현·배포 → board는 본 절 읽고 client 구현. **board 변경은 board repo/세션 커밋**(복사 금지=drift). 구 단발 선적요청 UI는 **병존 없이 교체**(board 미가동이라 안전).
+1. **「내 선적묶음」 영속 뷰** — `GET /bundles` 폴링. 카드: 차목록·`status`(선적단계)/`bl_status`·`bl_type` + **미수 게이지(`unpaid_ratio`)**·`fully_paid` 완납뱃지·`fx_missing_count` "환율 미입력 N대" 경고. **car-erp 값 그대로**(재계산·0/완납 coerce 금지).
+2. **선적 계획(재구성) 뷰** — `/shippable`(새로 묶을 차) + `/bundles`(기존) → 체크/이동/빼기 → **「동기화」 = `POST /shipping-requests/sync`로 전체 desired 전송**(⚠️ 부분=자동취소). 응답 `cancelled[]`/`locked[]` → "취소 N·처리중 N" 토스트. `in_progress`는 취소/이동 비활성 + "변경요청" 버튼만.
+3. **오리지널/써랜더 선택기** — sync bundle별 `bl_type`(선택값, 미정 생략).
+4. **B/L요청** — `POST /bundles/{batch}/bl-request`(`bl_type` 확정). **변경요청** — `POST /shipping-requests/change-request`(`vehicle_id`+note).
+5. **HMAC** — 4신규도 §1 canonical 바이트 일치. `CarErpReadService` 재사용. 401/5xx/미설정 → "조회 불가" degrade.
 
 ## 9. 흡수 금지
 - board가 `vehicles`/정산/회계 컬럼 **쓰기**(읽기 + 선적요청 지시만).
