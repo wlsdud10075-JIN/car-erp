@@ -24,6 +24,11 @@ class ShippingRequestsScreenTest extends TestCase
         return User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
     }
 
+    private function managerUser(): User
+    {
+        return User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+    }
+
     private function batch(string $batchId, array $vehicleNumbers, string $status = 'requested'): void
     {
         foreach ($vehicleNumbers as $vn) {
@@ -108,5 +113,79 @@ class ShippingRequestsScreenTest extends TestCase
 
         // mount + transition 동일 게이트(canAccessClearance) — 영업은 진입 자체 403
         Volt::test('erp.shipping-requests.index')->assertStatus(403);
+    }
+
+    // ── v2 B/L 발급 bulk-apply · 변경요청 ──────────────────────
+
+    public function test_bl_issue_bulk_applies_to_members_when_fully_paid(): void
+    {
+        // sale_price 0 = 미수 0 → fully_paid (발급 가드 통과). 멤버 2대.
+        $this->batch('batch-A', ['11가1111', '22나2222']);
+        ShippingRequest::where('batch_id', 'batch-A')->update(['bl_type' => 'surrender', 'bl_status' => 'requested']);
+
+        $this->actingAs($this->managerUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openIssue', 'batch-A')
+            ->set('blForm.bl_number', 'BL123')
+            ->call('applyBlIssue');
+
+        // 공유 B/L 필드가 멤버 차량 전체에 일괄 기입
+        $this->assertSame(2, Vehicle::where('bl_type', 'surrender')->where('bl_number', 'BL123')->count());
+        $this->assertSame(2, ShippingRequest::where('batch_id', 'batch-A')->where('bl_status', 'issued')->count());
+    }
+
+    public function test_bl_issue_blocked_when_unpaid(): void
+    {
+        $v = Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200]);
+        ShippingRequest::create(['batch_id' => 'batch-U', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'bl_type' => 'original', 'bl_status' => 'requested', 'requested_by_email' => 's@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        $this->actingAs($this->managerUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openIssue', 'batch-U')
+            ->call('applyBlIssue');
+
+        // 미완납 → 발급 차단(bl_status 그대로, 차량 bl_type 미기입)
+        $this->assertSame('requested', ShippingRequest::where('batch_id', 'batch-U')->value('bl_status'));
+        $this->assertNull(Vehicle::find($v->id)->bl_type);
+    }
+
+    public function test_clearance_non_approver_cannot_issue_bl(): void
+    {
+        $this->batch('batch-A', ['11가1111']);
+        ShippingRequest::where('batch_id', 'batch-A')->update(['bl_status' => 'requested']);
+
+        // 수출통관 = 화면 진입 O(canAccessClearance) / 발급 X(canApprove false) → 403
+        $this->actingAs($this->clearanceUser());
+        Volt::test('erp.shipping-requests.index')->call('openIssue', 'batch-A')->assertStatus(403);
+    }
+
+    public function test_accept_change_releases_bundle_and_resolves_alarm(): void
+    {
+        $v = Vehicle::create(['vehicle_number' => '44라4444', 'sales_channel' => 'export']);
+        $sr = ShippingRequest::create(['batch_id' => 'batch-C', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'requested_by_email' => 's@a.com', 'status' => 'in_progress', 'requested_at' => now(), 'change_requested_at' => now(), 'change_request_meta' => ['note' => '바꿔주세요', 'requested_by' => 's@a.com']]);
+        TaskAlarm::create(['type' => 'shipping_change_requested', 'vehicle_id' => $v->id, 'target_role' => '관리', 'due_date' => now()]);
+
+        $this->actingAs($this->managerUser());
+        Volt::test('erp.shipping-requests.index')->call('acceptChange', $sr->id);
+
+        $fresh = ShippingRequest::find($sr->id);
+        $this->assertSame('cancelled', $fresh->status);
+        $this->assertNull($fresh->change_requested_at);
+        $this->assertSame(0, TaskAlarm::where('type', 'shipping_change_requested')->whereNull('resolved_at')->count());
+    }
+
+    public function test_reject_change_clears_flag_only(): void
+    {
+        $v = Vehicle::create(['vehicle_number' => '55마5555', 'sales_channel' => 'export']);
+        $sr = ShippingRequest::create(['batch_id' => 'batch-R', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'requested_by_email' => 's@a.com', 'status' => 'in_progress', 'requested_at' => now(), 'change_requested_at' => now(), 'change_request_meta' => ['note' => 'x']]);
+
+        $this->actingAs($this->managerUser());
+        Volt::test('erp.shipping-requests.index')->call('rejectChange', $sr->id);
+
+        $fresh = ShippingRequest::find($sr->id);
+        $this->assertSame('in_progress', $fresh->status);   // 묶음 유지
+        $this->assertNull($fresh->change_requested_at);     // 플래그만 클리어
     }
 }
