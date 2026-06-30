@@ -35,9 +35,9 @@ return [
         'settlement_type' => 'Settlement Type',
         'type_select' => '— Select —',
         'type_note' => 'Determines the auto-created settlement method on completion — explicit selection required to avoid omissions.',
-        'manager' => 'Manager [Management]',
-        'manager_none' => '— Unassigned —',
-        'manager_note' => 'When [Management] logs in, only their salesmen\'s vehicles/buyers show. If unassigned, not picked up in [Management] scoping.',
+        'manager' => 'Managers [Management] (multi-select)',
+        'manager_none' => 'No [Management] users',
+        'manager_note' => 'Select one or more [Management] users to oversee this salesman — every checked manager can view/edit this salesman\'s vehicles/buyers. If none selected, not picked up in any [Management] scoping.',
     ],
 
     'perm_opt' => [
