@@ -44,6 +44,7 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('bundles', [ShippingRequestController::class, 'bundles'])->name('bundles');                // 영속 묶음 + 미수집계
         Route::post('shipping-requests/sync', [ShippingRequestController::class, 'sync'])->name('sync');      // 선언형 재동기화
         Route::post('bundles/{batch}/bl-request', [ShippingRequestController::class, 'blRequest'])->name('bl-request');   // B/L요청
+        Route::post('bundles/{batch}/bl-cancel', [ShippingRequestController::class, 'blCancel'])->name('bl-cancel');     // B/L요청 무름(영업 오발송 정정)
         Route::post('shipping-requests/change-request', [ShippingRequestController::class, 'changeRequest'])->name('change-request');   // in_progress 변경요청
         // @deprecated v1 단발 (board 미가동, sync 로 교체 예정)
         Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');

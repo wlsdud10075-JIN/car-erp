@@ -74,8 +74,9 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 ### 5-1. 읽기 — `GET /shippable` (새로 묶을 차 후보) + `GET /bundles` (영속 묶음)
 - **`GET /shippable?salesman_email=`** — **새로 묶을 차 후보만.** `progress_status_cache='판매완료'` **AND** `sales_channel='export'` **AND** 아직 어느 open 묶음에도 없음. + 바이어·컨사이니(기존 선택만, 신규입력 v2).
 - **`GET /bundles?salesman_email=`** — **영업 본인 묶음 전체(전 상태, 안 사라짐).** 묶음별:
-  - `batch_id`·`buyer`·`consignee`·`shipping_method`·`bl_type`·`status`(선적단계)·`bl_status`·`vehicles[]`(번호·차별 상태).
-  - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`.
+  - `batch_id`·`shipping_method`·`bl_type`·**`ship_status`**(선적단계 — ⚠️ 키 이름은 `ship_status`, 스펙 초기 텍스트의 `status` 아님. 권위=구현)·`bl_status`·`vehicles[]`(번호·차별 status).
+  - **⚠️ `buyer`/`consignee` = `{id, name}` 객체** (이름 문자열 아님 — board 가 sync 재전송 시 `buyer_id` 필요. 문자열만이면 묶음 누락→자동취소 footgun. 2026-06-30 board e2e 차단이슈) + **`consignees`=`[{id,name}]`**(그 바이어 컨사이니 옵션, 편집용). buyer 없으면 `null`·`[]`.
+  - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`·`surrender_unpaid_warning`.
   - `change_requested`(in_progress 변경요청 대기 여부).
   - → board "내 선적묶음" 영속 뷰 + 미수 게이지. *(이게 "묶음이 화면에서 안 사라짐"의 구현)*
 
@@ -91,6 +92,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
   - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
 - **`POST /bundles/{batch}/bl-request`** — 기존 묶음의 **B/L요청 재사용**. `{ salesman_email, bl_type:"original|surrender" }` → `bl_type` 확정 + `bl_status='requested'` + 관리 알람. (선적요청을 베낀 별도 시스템 아님 = 같은 묶음의 상태 전이.)
+- **`POST /bundles/{batch}/bl-cancel`** — **B/L요청 무름**(영업 오발송 정정, 2026-06-30 board 요청). `{ salesman_email }` → `bl_status='requested'→'none'`(`bl_type`은 유지=재요청 prefill) + 관리 `bl_requested` 알람 resolve. **이미 발급(`issued`)됐으면 `409 already_issued`**(관리가 발급함 → 무름 불가, 관리에게 문의). IDOR — batch 의 모든 행이 본인 차.
 - **`POST /shipping-requests/change-request`** — `in_progress`(관리 착수) 차의 **명시적** 변경/취소 요청. `{ vehicle_id, salesman_email, note }` → `change_requested_at`·`change_request_meta` 기록 + 관리 알람. **자동적용 안 함** — 관리가 화면에서 수락(취소/재오픈)/거절. (omission으로 cancel-request 추론 절대 금지.)
 
 ### 5-3. car-erp 후단 — 「선적·B/L 묶음」 화면 (구 「선적요청」 확장)
@@ -150,7 +152,7 @@ fully_paid        = (unpaid_total_krw <= 0) AND (fx_missing_count === 0)
 1. **「내 선적묶음」 영속 뷰** — `GET /bundles` 폴링. 카드: 차목록·`status`(선적단계)/`bl_status`·`bl_type` + **미수 게이지(`unpaid_ratio`)**·`fully_paid` 완납뱃지·`fx_missing_count` "환율 미입력 N대" 경고. **car-erp 값 그대로**(재계산·0/완납 coerce 금지).
 2. **선적 계획(재구성) 뷰** — `/shippable`(새로 묶을 차) + `/bundles`(기존) → 체크/이동/빼기 → **「동기화」 = `POST /shipping-requests/sync`로 전체 desired 전송**(⚠️ 부분=자동취소). 응답 `cancelled[]`/`locked[]` → "취소 N·처리중 N" 토스트. `in_progress`는 취소/이동 비활성 + "변경요청" 버튼만.
 3. **오리지널/써랜더 선택기** — sync bundle별 `bl_type`(선택값, 미정 생략).
-4. **B/L요청** — `POST /bundles/{batch}/bl-request`(`bl_type` 확정). **변경요청** — `POST /shipping-requests/change-request`(`vehicle_id`+note).
+4. **B/L요청** — `POST /bundles/{batch}/bl-request`(`bl_type` 확정) + **무름** `POST /bundles/{batch}/bl-cancel`(`bl_status='requested'`일 때만, `409 already_issued`면 "관리 발급완료" 표시). **변경요청** — `POST /shipping-requests/change-request`(`vehicle_id`+note).
 5. **HMAC** — 4신규도 §1 canonical 바이트 일치. `CarErpReadService` 재사용. 401/5xx/미설정 → "조회 불가" degrade.
 
 ## 9. 흡수 금지
