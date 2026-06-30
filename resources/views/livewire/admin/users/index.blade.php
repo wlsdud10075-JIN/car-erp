@@ -35,7 +35,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-05-21 — 정산 분류 (role='영업' 일 때만 입력). default 빈 값 → role=영업 신규 등록 시 명시 선택 강제.
     public string $type        = '';
     // 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정. role='영업' 일 때만 의미.
-    public string $manager_user_id_str = '';
+    // 2026-06-30 — 영업 1명을 여러 [관리]가 담당(다대다). 선택된 [관리] user id 배열.
+    public array $manager_user_ids = [];
 
     #[Computed]
     public function users()
@@ -78,7 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = $user->permission ?? 'user';
         $this->role       = $user->role       ?? '영업';
         $this->type       = $user->type       ?? '';
-        $this->manager_user_id_str = $user->manager_user_id ? (string) $user->manager_user_id : '';
+        $this->manager_user_ids = $user->managers()->pluck('users.id')->map(fn ($i) => (string) $i)->all();
         $this->showPanel  = true;
     }
 
@@ -101,8 +102,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'role'       => 'required|in:'.implode(',', \App\Models\User::ROLES),
             // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
             'type'       => 'nullable|in:employee,freelance|required_if:role,영업',
-            // 회의확장씬 #11 (2026-05-22) — manager 배정. role='영업' 외엔 무시(null 저장).
-            'manager_user_id_str' => 'nullable|integer|exists:users,id',
+            // 2026-06-30 — 다중 관리 배정 (role='영업' 외엔 비움). pivot sync.
+            'manager_user_ids' => 'array',
+            'manager_user_ids.*' => 'integer|exists:users,id',
         ];
 
         if (! $this->editingId) {
@@ -126,10 +128,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 2026-05-21 — role='영업' 일 때만 type 저장. 그 외 role 은 null 로 정규화.
         $typeValue = $this->role === '영업' ? $this->type : null;
-        // 회의확장씬 #11 (2026-05-22) — role='영업' 일 때만 manager_user_id 저장. 그 외 null 정규화.
-        $managerValue = ($this->role === '영업' && $this->manager_user_id_str !== '')
-            ? (int) $this->manager_user_id_str
-            : null;
+        // 2026-06-30 — 다중 관리 배정. pivot 이 스코프 단일 출처(getSubordinateSalesmanIds).
+        // manager_user_id 컬럼은 primary(첫 선택)로 레거시 보존 — 호환용.
+        $managerIds = $this->role === '영업'
+            ? array_values(array_unique(array_map('intval', $this->manager_user_ids)))
+            : [];
+        $managerValue = $managerIds[0] ?? null;
 
         $data = [
             'name'              => $this->name,
@@ -172,6 +176,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             \App\Models\Salesman::where('user_id', $user->id)->update(['is_active' => false]);
         }
 
+        // 2026-06-30 — 다중 관리 배정 pivot sync (영업만; 그 외 role 은 비움).
+        $user->managers()->sync($managerIds);
+
         unset($this->users);
         // 2026-05-21 사용자 피드백 — 저장 시 시각 피드백 + 패널 자동 닫기.
         $this->dispatch('notify', message: __('user.saved'), type: 'success');
@@ -203,7 +210,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = 'user';
         $this->role = '영업';
         $this->type = '';
-        $this->manager_user_id_str = '';
+        $this->manager_user_ids = [];
     }
 
     // 회의확장씬 #11 (2026-05-22) — [관리] role 사용자 목록 (영업 사용자 manager 배정 select 옵션).
@@ -433,17 +440,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-xs text-gray-400">{{ __('user.field.type_note') }}</p>
                 @error('type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
-            {{-- 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정 --}}
+            {{-- 2026-06-30 — 영업을 담당할 [관리] 다수 배정 (다대다). 여러 명 체크 가능 --}}
             <div>
                 <label class="label-base">{{ __('user.field.manager') }}</label>
-                <select wire:model="manager_user_id_str" class="input-base">
-                    <option value="">{{ __('user.field.manager_none') }}</option>
-                    @foreach($this->managers as $m)
-                    <option value="{{ $m->id }}">{{ $m->name }}</option>
-                    @endforeach
-                </select>
+                <div class="mt-1 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                    @forelse($this->managers as $m)
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" wire:model="manager_user_ids" value="{{ $m->id }}" class="accent-primary" />
+                        {{ $m->name }}
+                    </label>
+                    @empty
+                    <p class="text-xs text-gray-400">{{ __('user.field.manager_none') }}</p>
+                    @endforelse
+                </div>
                 <p class="mt-1 text-xs text-gray-400">{{ __('user.field.manager_note') }}</p>
-                @error('manager_user_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                @error('manager_user_ids')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                @error('manager_user_ids.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif
             @endif

@@ -5,6 +5,7 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -317,6 +318,19 @@ class User extends Authenticatable
         return $this->hasMany(User::class, 'manager_user_id');
     }
 
+    // 2026-06-30 — 관리↔영업 다대다 (영업 1명을 여러 [관리]가 함께 담당). manager_salesman pivot.
+    /** 이 [관리] user 가 담당하는 영업 user 들. */
+    public function managedSalesmanUsers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'manager_salesman', 'manager_user_id', 'salesman_user_id');
+    }
+
+    /** 이 영업 user 를 담당하는 [관리] user 들 (사용자관리 다중 배정 UI). */
+    public function managers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'manager_salesman', 'salesman_user_id', 'manager_user_id');
+    }
+
     /**
      * 회의확장씬 #11 — [관리]가 담당하는 영업의 Salesman.id 배열.
      * vehicles/buyers 목록 SQL + 영업 select 옵션 필터링에 사용.
@@ -332,8 +346,16 @@ class User extends Authenticatable
      */
     public function getSubordinateSalesmanIds(): array
     {
+        // 2026-06-30 — 다대다 pivot(주 출처) ∪ 레거시 단일 manager_user_id(이관 전·구 코드 호환).
+        // UI 저장 시 manager_user_id = pivot 첫 멤버로 유지 → 항상 pivot ⊇ {manager_user_id} →
+        // 합집합 = pivot (드리프트·제거 누락 없음). 영업 1명을 여러 [관리]가 담당.
+        // 스코프 단일 출처라 차량/buyers/재고/알람/export 전부 자동 적용.
+        $userIds = $this->managedSalesmanUsers()->pluck('users.id')
+            ->merge($this->subordinates()->pluck('id'))
+            ->unique();
+
         return Salesman::query()
-            ->whereIn('user_id', $this->subordinates()->pluck('id'))
+            ->whereIn('user_id', $userIds)
             ->pluck('id')
             ->all();
     }
