@@ -48,6 +48,38 @@ class BackdateSettlementsFromCkTest extends TestCase
         $this->assertSame(1999, SettlementCkBatch::yearFromSheet('시트', 1999));
     }
 
+    public function test_payout_date_is_actual_disbursement_day(): void
+    {
+        // 지급일 = CK 그대로. (workCreatedAt = 지급月−1, payoutDate = 지급일 자체)
+        $this->assertSame('2026-05-10', SettlementCkBatch::payoutDate('26.05.10정산', 2026)?->format('Y-m-d'));
+        $this->assertSame('2026-06-10', SettlementCkBatch::payoutDate('6월 정산', 2026)?->format('Y-m-d'));
+        $this->assertNull(SettlementCkBatch::payoutDate('미정산', 2026));
+    }
+
+    public function test_command_backdates_paid_at_to_payout_date(): void
+    {
+        $sm = Salesman::create(['name' => '지급담당', 'type' => 'freelance']);
+        $v = Vehicle::create([
+            'vehicle_number' => '99지9999', 'sales_channel' => 'export', 'currency' => 'USD',
+            'dhl_request' => false, 'sale_price' => 400, 'sale_date' => '2026-03-01',
+            'purchase_date' => '2026-01-01', 'salesman_id' => $sm->id,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'ratio',
+            'settlement_ratio' => 50, 'settlement_status' => 'paid',
+        ]);
+        // paid_at 을 6/22 클러스터로 모사.
+        Settlement::where('id', $s->id)->update(['paid_at' => '2026-06-22 10:00:00', 'created_at' => '2026-06-22 10:00:00']);
+
+        $path = $this->makeCkXlsx([['99지9999', '26.05.10정산']]);
+        $this->artisan('settlements:backdate-from-ck', ['path' => $path, '--apply' => true])->assertSuccessful();
+        @unlink($path);
+
+        $fresh = Settlement::find($s->id);
+        $this->assertSame('2026-05-10', $fresh->paid_at->format('Y-m-d'));   // 지급일
+        $this->assertSame('2026-04', $fresh->created_at->format('Y-m'));     // 일한月
+    }
+
     private function vehicleWithSettlement(string $vno): Vehicle
     {
         $sm = Salesman::create(['name' => '담당'.++$this->counter, 'type' => 'freelance']);

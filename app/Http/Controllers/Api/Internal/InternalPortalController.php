@@ -88,6 +88,7 @@ class InternalPortalController extends Controller
                 'status' => $s->settlement_status,
                 'actual_payout' => $s->actual_payout,   // 실지급액 — 마진 raw 는 미포함
                 'confirmed_at' => $s->confirmed_at?->toDateString(),
+                'paid_at' => $s->paid_at?->toDateString(),   // 실제 지급일 — board 가 받은 月(5/6월) 기준으로 묶음
             ])->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);

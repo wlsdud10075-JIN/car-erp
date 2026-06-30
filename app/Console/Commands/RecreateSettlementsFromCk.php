@@ -84,8 +84,9 @@ class RecreateSettlementsFromCk extends Command
                 'salesman' => $v->salesman->name,
                 'type' => $type,
                 'amount' => $s->settlement_amount,
-                // 2026-06-24 — created_at 을 CK 배치(일한 月)로 백데이트 (월별 드롭다운 정합).
+                // 2026-06-24 — created_at(일한月, 드롭다운) + paid_at(지급일, board)을 CK 배치로 백데이트.
                 'created_at' => SettlementCkBatch::workCreatedAt($ck, $year),
+                'paid_at' => SettlementCkBatch::payoutDate($ck, $year),
             ];
         }
 
@@ -143,10 +144,16 @@ class RecreateSettlementsFromCk extends Command
                     'exchange_difference_krw' => 0,
                     'carryover_out_krw' => 0,
                 ]);
-                // 4) created_at 백데이트 — CK 배치(일한 月). 파싱 불가 시 now() 유지.
+                // 4) created_at(일한月) + paid_at(지급일) 백데이트 — CK 배치. 파싱 불가 시 now() 유지.
+                $back = [];
                 if ($p['created_at']) {
-                    DB::table('settlements')->where('id', $s->id)
-                        ->update(['created_at' => $p['created_at']->format('Y-m-d H:i:s')]);
+                    $back['created_at'] = $p['created_at']->format('Y-m-d H:i:s');
+                }
+                if ($p['paid_at']) {
+                    $back['paid_at'] = $p['paid_at']->format('Y-m-d H:i:s');
+                }
+                if ($back) {
+                    DB::table('settlements')->where('id', $s->id)->update($back);
                 }
                 $created++;
             }

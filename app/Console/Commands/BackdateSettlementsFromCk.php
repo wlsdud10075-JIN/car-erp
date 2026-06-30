@@ -29,7 +29,7 @@ class BackdateSettlementsFromCk extends Command
         {--sheet=수출차량매입-2026 : 시트명}
         {--apply : 실제 보정 (미지정 시 dry-run)}';
 
-    protected $description = '정산 created_at 을 엑셀 CK 배치(일한 月)로 백데이트 — 월별 드롭다운 정합. 기본 dry-run.';
+    protected $description = '정산 created_at(일한月)+paid_at(지급일)을 엑셀 CK 배치로 백데이트 — 내부 드롭다운+board 정합. 기본 dry-run.';
 
     public function handle(): int
     {
@@ -48,7 +48,7 @@ class BackdateSettlementsFromCk extends Command
         // 정산 + 차량번호 로딩.
         $settlements = Settlement::with('vehicle:id,vehicle_number')->get();
 
-        $plan = [];           // [settlement_id => Carbon]
+        $plan = [];           // [settlement_id => ['created_at'=>Carbon, 'paid_at'=>?Carbon]]
         $monthPreview = [];    // [YYYY-MM => count]
         $noMatch = 0;
         $noVehicle = 0;
@@ -66,14 +66,18 @@ class BackdateSettlementsFromCk extends Command
 
                 continue;
             }
-            $date = SettlementCkBatch::workCreatedAt($ck, $year);
-            if (! $date) {
+            $work = SettlementCkBatch::workCreatedAt($ck, $year);
+            if (! $work) {
                 $noMatch++;
 
                 continue;
             }
-            $plan[$s->id] = $date;
-            $ym = $date->format('Y-m');
+            $plan[$s->id] = [
+                'created_at' => $work,                                            // 일한 月(내부 드롭다운)
+                // paid_at = 실제 지급일(board, 받은 月). paid 상태일 때만 보정.
+                'paid_at' => $s->paid_at ? SettlementCkBatch::payoutDate($ck, $year) : null,
+            ];
+            $ym = $work->format('Y-m');
             $monthPreview[$ym] = ($monthPreview[$ym] ?? 0) + 1;
         }
 
@@ -95,15 +99,19 @@ class BackdateSettlementsFromCk extends Command
 
         $updated = 0;
         DB::transaction(function () use ($plan, &$updated) {
-            foreach ($plan as $sid => $date) {
-                // created_at 직접 보정 (Eloquent 는 created_at 갱신 안 함 — raw update).
-                DB::table('settlements')->where('id', $sid)->update(['created_at' => $date->format('Y-m-d H:i:s')]);
+            foreach ($plan as $sid => $dates) {
+                // created_at(일한月) + paid_at(지급일) raw 보정 — Eloquent 미갱신 + paid 가드 우회.
+                $upd = ['created_at' => $dates['created_at']->format('Y-m-d H:i:s')];
+                if ($dates['paid_at']) {
+                    $upd['paid_at'] = $dates['paid_at']->format('Y-m-d H:i:s');
+                }
+                DB::table('settlements')->where('id', $sid)->update($upd);
                 $updated++;
             }
         });
 
         $this->newLine();
-        $this->info("✅ 완료: 정산 {$updated}건 created_at 백데이트.");
+        $this->info("✅ 완료: 정산 {$updated}건 created_at(일한月)+paid_at(지급일) 백데이트.");
 
         return self::SUCCESS;
     }
