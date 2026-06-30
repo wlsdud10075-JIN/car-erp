@@ -81,6 +81,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 슬라이드 패널 상태 ────────────────────────────────────────
     public bool $showPanel = false;
     public ?int $editingId = null;
+
+    // 동시 편집 잠금 (2026-06-30) — 한 차량을 두 사람이 동시에 수정해 덮어쓰는 사고 방지.
+    //   캐시 TTL 잠금 + wire:poll 하트비트. 2번째로 연 사람은 읽기 전용(저장·승인·삭제는 서버에서 423 차단).
+    //   클라이언트가 못 바꾸도록 #[Locked].
+    #[\Livewire\Attributes\Locked]
+    public bool $editLockedByOther = false;
+
+    #[\Livewire\Attributes\Locked]
+    public string $editLockOwnerName = '';
     // 큐 14-4-4 — 신규 등록 직후 같은 패널이 편집 모드로 재로드될 때(H14 next-step 동선),
     // 헤더 배지·차량번호 readonly 강조로 "이미 저장됨"을 시각적으로 알리기 위한 마커.
     // close()/openEdit() 진입 시 reset.
@@ -923,6 +932,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         abort_unless(auth()->user()?->canApproveUnpaidExport(), 403, __('vehicle.toast.override_no_perm'));
         abort_unless($this->editingId, 422, __('vehicle.toast.save_first_approve'));
+        $this->assertEditable(); // 동시 편집 잠금 — 타인이 잠근 차량엔 우회 승인 차단
 
         $this->validate(
             [
@@ -951,6 +961,83 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('vehicle.toast.override_done'), type: 'success');
     }
 
+    // ── 동시 편집 잠금 (2026-06-30) ──────────────────────────────────────
+    private const EDIT_LOCK_TTL = 90; // 초 — 하트비트로 갱신, 자리 비우면(브라우저 닫힘 등) 자동 만료
+
+    private function editLockKey(int $id): string
+    {
+        return "vehicle-edit-lock:{$id}";
+    }
+
+    /** 차량 $id 편집 잠금 획득 시도 — 타인이 보유 중이면 읽기 전용 플래그만 세움(점유 안 함). */
+    private function acquireEditLock(int $id): void
+    {
+        $lock = \Illuminate\Support\Facades\Cache::get($this->editLockKey($id));
+        if ($lock && (int) ($lock['user_id'] ?? 0) !== auth()->id()) {
+            $this->editLockedByOther = true;
+            $this->editLockOwnerName = (string) ($lock['name'] ?? __('vehicle.lock.someone'));
+
+            return;
+        }
+        \Illuminate\Support\Facades\Cache::put(
+            $this->editLockKey($id),
+            ['user_id' => auth()->id(), 'name' => (string) auth()->user()->name],
+            self::EDIT_LOCK_TTL,
+        );
+        $this->editLockedByOther = false;
+        $this->editLockOwnerName = '';
+    }
+
+    /** 내 잠금이면 해제 (다른 차량으로 이동·패널 닫기 시). 타인 잠금은 건드리지 않음. */
+    private function releaseEditLock(?int $id): void
+    {
+        if (! $id) {
+            return;
+        }
+        $lock = \Illuminate\Support\Facades\Cache::get($this->editLockKey($id));
+        if ($lock && (int) ($lock['user_id'] ?? 0) === auth()->id()) {
+            \Illuminate\Support\Facades\Cache::forget($this->editLockKey($id));
+        }
+    }
+
+    /** 변경 액션 가드 — 타인이 잠근 차량이면 423 차단 (읽기전용 UI 우회·클라이언트 변조 방지). */
+    private function assertEditable(?int $id = null): void
+    {
+        $id ??= $this->editingId;
+        if (! $id) {
+            return;
+        }
+        $lock = \Illuminate\Support\Facades\Cache::get($this->editLockKey($id));
+        if ($lock && (int) ($lock['user_id'] ?? 0) !== auth()->id()) {
+            abort(423, __('vehicle.lock.locked_by', ['name' => (string) ($lock['name'] ?? __('vehicle.lock.someone'))]));
+        }
+    }
+
+    /** wire:poll 하트비트 — 패널 열린 동안 내 잠금 TTL 갱신. 타인 잠금이 만료됐으면 점유로 전환. */
+    public function heartbeat(): void
+    {
+        if (! $this->editingId) {
+            return;
+        }
+        if ($this->editLockedByOther) {
+            // 앞사람이 자리를 비워 잠금이 만료됐으면 내가 이어받아 편집 가능 전환.
+            $lock = \Illuminate\Support\Facades\Cache::get($this->editLockKey($this->editingId));
+            if (! $lock || (int) ($lock['user_id'] ?? 0) === auth()->id()) {
+                $this->acquireEditLock($this->editingId);
+                if (! $this->editLockedByOther) {
+                    $this->dispatch('notify', message: __('vehicle.lock.now_editable'), type: 'success');
+                }
+            }
+
+            return;
+        }
+        \Illuminate\Support\Facades\Cache::put(
+            $this->editLockKey($this->editingId),
+            ['user_id' => auth()->id(), 'name' => (string) auth()->user()->name],
+            self::EDIT_LOCK_TTL,
+        );
+    }
+
     public function openEdit(int $id): void
     {
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
@@ -964,6 +1051,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         } elseif (! $user->isAdmin() && $user->role === '관리') {
             abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, __('vehicle.toast.edit_team_only'));
         }
+
+        // 동시 편집 잠금 — 다른 차량을 보고 있었으면 그 잠금부터 해제, 그다음 이 차량 잠금 획득.
+        if ($this->editingId && $this->editingId !== $id) {
+            $this->releaseEditLock($this->editingId);
+        }
+        $this->acquireEditLock($id);
 
         // save() 신규 등록 직후 호출인지(justCreatedId == $id) 보존,
         // 다른 차량 열기 시엔 reset.
@@ -1207,6 +1300,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->resetValidation();
         $this->showPanel = false;
+        // 동시 편집 잠금 — 내 잠금 해제 후 editingId 비움 (순서 중요: 해제는 editingId 기준).
+        $this->releaseEditLock($this->editingId);
+        $this->editLockedByOther = false;
+        $this->editLockOwnerName = '';
         $this->editingId = null;
         $this->justCreatedId = null;
         $this->panelUnpaidRatio = null;
@@ -1683,6 +1780,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->editingId) {
             $editingVehicle = \App\Models\Vehicle::find($this->editingId);
             abort_unless($editingVehicle && $user->canScopeVehicle($editingVehicle), 403, __('vehicle.toast.edit_own_only'));
+            // 동시 편집 잠금 — 타인이 잠근 차량이면 저장 차단(읽기전용 UI 우회 방지).
+            $this->assertEditable();
         }
 
         // 큐 14-4-4 후속 — 신규 등록 시 누락된 핵심 메타 자동 채움.
@@ -2255,6 +2354,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // Review.md #4 (2026-06-09) — openEdit 와 동일 스코프 재인가.
         // 변경 액션은 읽기 진입과 별개로 매번 검사해야 IDOR(타 담당 차량 삭제) 차단.
         abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, __('vehicle.toast.edit_own_only'));
+        $this->assertEditable($id); // 동시 편집 잠금 — 누군가 편집 중인 차량은 삭제 차단
 
         try {
             $vehicle->delete();
@@ -3463,6 +3563,17 @@ function vehicleColumnsToggle() {
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
+
+    {{-- 동시 편집 잠금 — 패널 열린 동안 하트비트(내 잠금 갱신) + 타인 점유 시 읽기전용 배너 --}}
+    @if($editingId !== null)
+    <div wire:poll.30s="heartbeat"></div>
+    @endif
+    @if($editLockedByOther)
+    <div class="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-sm text-amber-800">
+        <span class="text-base">🔒</span>
+        <span>{{ __('vehicle.lock.banner', ['name' => $editLockOwnerName]) }}</span>
+    </div>
+    @endif
 
     {{-- 큐 2번 — 1대 흐름도 스트립 (편집 모드에서만). 큐 6 H13 — warn/pending/progress에 reason tooltip. --}}
     @if($this->progressFlow)
@@ -4896,7 +5007,7 @@ function vehicleColumnsToggle() {
             {{ __('vehicle.footer.cancel') }}
         </button>
         {{-- 회의확장씬 (2026-05-22) — 영업·관리 + 4 탭(매입/판매/선적/통관) 시 모달. 현재 활성 탭을 인자로 전달 --}}
-        <button x-on:click="$wire.requestSave(tab)" type="button" class="btn-primary" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave">
+        <button x-on:click="$wire.requestSave(tab)" type="button" class="btn-primary disabled:cursor-not-allowed disabled:opacity-50" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave" @disabled($editLockedByOther)>
             <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? __('vehicle.footer.save_edit') : __('vehicle.footer.save_create') }}</span>
             <span wire:loading wire:target="save,requestSave,confirmAndSave">{{ __('vehicle.footer.saving') }}</span>
         </button>
