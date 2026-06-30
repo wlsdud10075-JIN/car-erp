@@ -799,6 +799,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (거래완료 미완납 시 정산 진행 차단 정보) --}}
                 <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">{{ __('settlement.col.paid_ratio') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.type') }}</th>
+                {{-- 매입가 — 사내직원 차등 tier 트리거(≥1억→총마진×25%). 방식↔총마진 사이 기준값. --}}
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.purchase_price') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.total_margin') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
@@ -881,6 +883,10 @@ new #[Layout('components.layouts.app')] class extends Component
                     @else
                         {{ __('settlement.per_unit_unit', ['amount' => number_format($s->per_unit_amount)]) }}
                     @endif
+                </td>
+                {{-- 매입가 — tier 기준값(₩1억 이상이면 총마진×25%). 1억↑은 강조. --}}
+                <td class="py-3 pr-4 text-right {{ ($s->vehicle?->purchase_price ?? 0) >= 100000000 ? 'font-semibold text-primary-text' : 'text-gray-500' }}">
+                    ₩{{ number_format($s->vehicle?->purchase_price ?? 0) }}
                 </td>
                 <td class="py-3 pr-4 text-right {{ $s->total_margin < 0 ? 'text-red-500' : 'text-gray-700' }}">
                     ₩{{ number_format($s->total_margin) }}
@@ -972,6 +978,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="mt-2 grid grid-cols-2 gap-x-4 text-xs text-gray-500">
             <div>{{ __('settlement.mobile_salesman') }}: {{ $s->salesman?->name ?? '-' }}</div>
             <div>{{ __('settlement.mobile_type') }}: {{ $s->settlement_type === 'ratio' ? number_format($s->settlement_ratio, 1).'%' : __('settlement.mobile_type_per_unit') }}</div>
+            <div>{{ __('settlement.mobile_purchase_price') }}: ₩{{ number_format($s->vehicle?->purchase_price ?? 0) }}</div>
             <div>{{ __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->total_margin) }}</div>
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>

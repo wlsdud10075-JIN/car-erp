@@ -42,6 +42,7 @@ return [
         'progress' => 'Status',
         'paid_ratio' => 'Paid %',
         'type' => 'Method',
+        'purchase_price' => 'Purchase',
         'total_margin' => 'Total margin',
         'settlement_amount' => 'Settlement',
         'actual_payout' => 'Actual payout',
@@ -74,6 +75,7 @@ return [
     'mobile_salesman' => 'Salesman',
     'mobile_type' => 'Method',
     'mobile_type_per_unit' => 'Per-unit',
+    'mobile_purchase_price' => 'Purchase',
     'mobile_total_margin' => 'Total margin',
     'mobile_actual' => 'Payout',
 
