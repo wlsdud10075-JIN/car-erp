@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>매입-검차-경매 업무보드 — UI 목업</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-500:#6b7280; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.5}
+  .app{max-width:1180px;margin:0 auto;padding:16px}
+
+  /* top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--primary),#9a8de0);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  .brand h1{font-size:17px;font-weight:800}
+  .brand .sub{font-size:11px;color:var(--gray-500)}
+  .roleswitch{display:flex;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:4px}
+  .roleswitch button{border:0;background:transparent;padding:7px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--gray-700);font-weight:600;white-space:nowrap}
+  .roleswitch button.active{background:var(--primary);color:#fff}
+  .roleswitch .who{font-size:10px;display:block;opacity:.8;font-weight:500}
+
+  /* pipeline */
+  .pipeline{display:flex;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:10px;margin-bottom:12px;overflow-x:auto}
+  .pstep{flex:1;min-width:92px;text-align:center;position:relative}
+  .pstep .dot{width:26px;height:26px;border-radius:50%;margin:0 auto 5px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+  .pstep .lbl{font-size:11px;color:var(--gray-700);font-weight:600}
+  .pstep .cnt{font-size:10px;color:var(--gray-500)}
+  .pstep:not(:last-child)::after{content:'›';position:absolute;right:-4px;top:4px;color:var(--gray-300);font-size:16px}
+
+  /* time gate banner */
+  .gate{display:flex;align-items:center;gap:10px;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-weight:600}
+  .gate.open{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+  .gate.locked{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .gate .clock{font-variant-numeric:tabular-nums;font-weight:800;font-size:16px}
+  .gate .tag{margin-left:auto;font-size:11px;background:rgba(0,0,0,.06);padding:3px 8px;border-radius:20px;font-weight:600}
+
+  /* card */
+  .card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:16px;margin-bottom:12px}
+  .card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .card-h h2{font-size:15px;font-weight:800}
+  .muted{color:var(--gray-500);font-size:12px}
+
+  /* badges */
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .badge-blue{background:#dbeafe;color:#1d4ed8}
+  .badge-amber{background:#fef3c7;color:#b45309}
+  .badge-green{background:#d1fae5;color:#047857}
+  .badge-red{background:#fee2e2;color:#b91c1c}
+  .badge-purple{background:#ede9fe;color:#6d28d9}
+  .badge-gray{background:#eef0f4;color:#4b5563}
+  .badge-teal{background:#ccfbf1;color:#0f766e}
+
+  /* table */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:var(--gray-500);font-weight:700;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--gray-200)}
+  td{padding:11px 10px;border-bottom:1px solid var(--gray-100);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  .vno{font-weight:800;font-size:14px}
+  .vin{font-size:10px;color:var(--gray-500);font-family:monospace}
+  .price{font-weight:800;font-variant-numeric:tabular-nums}
+  .price .won{font-size:11px;color:var(--gray-500);font-weight:600}
+
+  /* buttons */
+  .btn{border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-primary{background:var(--primary);color:#fff}
+  .btn-primary:hover{background:var(--primary-hover)}
+  .btn-ghost{background:var(--gray-100);color:var(--gray-700)}
+  .btn-green{background:var(--green);color:#fff}
+  .btn-red{background:var(--red);color:#fff}
+  .btn-sm{padding:5px 11px;font-size:12px;border-radius:7px}
+  .btn-outline{background:#fff;border:1px solid var(--gray-300);color:var(--gray-700)}
+
+  /* add form */
+  .addform{background:var(--gray-50);border:1px dashed var(--gray-300);border-radius:9px;padding:14px;margin-bottom:14px;display:none}
+  .addform.show{display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+  .field label{display:block;font-size:11px;color:var(--gray-500);font-weight:600;margin-bottom:4px}
+  .field input{width:100%;border:1px solid var(--gray-300);border-radius:7px;padding:8px 10px;font-size:13px;background:#fff}
+  .field input:focus{outline:0;border-color:var(--primary)}
+  .req{color:var(--red)}
+
+  /* isolation note */
+  .iso{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--primary-text);background:var(--primary-light);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-weight:600}
+
+  /* KPI */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+  .kpi{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:14px}
+  .kpi .k{font-size:11px;color:var(--gray-500);font-weight:600}
+  .kpi .v{font-size:24px;font-weight:800;margin-top:3px}
+
+  /* salesman group (검차) */
+  .group{border:1px solid var(--gray-200);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .group-h{display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--gray-50);cursor:pointer;font-weight:700}
+  .group-h .count{margin-left:auto;font-size:11px;color:var(--gray-500)}
+  .insp-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--gray-100)}
+  .insp-card .info{flex:1}
+  .insp-card .info .sub{font-size:11px;color:var(--gray-500);margin-top:2px}
+
+  /* drawer */
+  .drawer-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40}
+  .drawer-mask.show{display:block}
+  .drawer{position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(100%);width:min(480px,100%);background:#fff;border-radius:16px 16px 0 0;z-index:50;transition:transform .25s ease;max-height:88vh;overflow-y:auto;box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+  .drawer.show{transform:translateX(-50%) translateY(0)}
+  .drawer-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--gray-200);position:sticky;top:0;background:#fff}
+  .drawer-h h3{font-size:16px;font-weight:800}
+  .drawer-b{padding:16px 18px}
+  .drawer .x{border:0;background:var(--gray-100);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px}
+  .check{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--gray-100)}
+  .check input{width:18px;height:18px;accent-color:var(--primary)}
+  .photo-zone{border:2px dashed var(--gray-300);border-radius:10px;padding:22px;text-align:center;color:var(--gray-500);margin:12px 0;font-size:13px;background:var(--gray-50)}
+  .photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .photo{width:56px;height:56px;border-radius:8px;background:linear-gradient(135deg,#cbd5e1,#94a3b8);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .verdict{display:flex;gap:10px;margin-top:14px}
+  .verdict button{flex:1;padding:13px;border-radius:10px;border:2px solid var(--gray-200);background:#fff;font-weight:800;cursor:pointer;font-size:15px}
+  .verdict button.pass.on{background:#d1fae5;border-color:var(--green);color:#047857}
+  .verdict button.fail.on{background:#fee2e2;border-color:var(--red);color:#b91c1c}
+
+  .section-title{font-size:11px;text-transform:uppercase;color:var(--gray-500);font-weight:700;letter-spacing:.04em;margin:18px 0 8px}
+  .hint{font-size:11px;color:var(--gray-500);margin-top:6px}
+  .view{display:none}
+  .view.active{display:block}
+  .row-actions{display:flex;gap:6px}
+  .mockup-note{text-align:center;font-size:11px;color:var(--gray-500);margin:18px 0 8px}
+  @media(max-width:640px){
+    .brand h1{font-size:15px}
+    .roleswitch button{padding:6px 9px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">P</div>
+      <div>
+        <h1>매입-검차-경매 업무보드</h1>
+        <div class="sub">purchase-board · 2026-06-02 (목) · 회의 결론 기반 UI 목업</div>
+      </div>
+    </div>
+    <div class="roleswitch">
+      <button class="active" data-view="sales" onclick="setView(this,'sales')">영업<span class="who">김영업</span></button>
+      <button data-view="inspect" onclick="setView(this,'inspect')">검차팀<span class="who">박검차</span></button>
+      <button data-view="auction" onclick="setView(this,'auction')">경매팀<span class="who">최경매</span></button>
+      <button data-view="manager" onclick="setView(this,'manager')">관리자<span class="who">override</span></button>
+    </div>
+  </div>
+
+  <!-- PIPELINE -->
+  <div class="pipeline">
+    <div class="pstep"><div class="dot" style="background:var(--blue)">1</div><div class="lbl">매입예정</div><div class="cnt">작성중·마감</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--gray-500)">2</div><div class="lbl">마감(10:00)</div><div class="cnt">리스트 확정</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--amber)">3</div><div class="lbl">검차</div><div class="cnt">대기·중</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--green)">4</div><div class="lbl">바이어확인(13:00)</div><div class="cnt">통과·미통과</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--purple)">5</div><div class="lbl">경매</div><div class="cnt">대기·중</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--teal)">6</div><div class="lbl">낙찰→ERP</div><div class="cnt">재고 전환</div></div>
+  </div>
+
+  <!-- ============ 영업 뷰 ============ -->
+  <div id="view-sales" class="view active">
+    <div class="gate open">
+      ⏰ 매입예정 리스트 마감까지 <span class="clock" id="clk1">01:23:45</span>
+      <span class="muted" style="font-weight:600">· 10:00 이후 수정 잠금(관리자만 해제)</span>
+      <span class="tag">작성 가능</span>
+    </div>
+
+    <div class="iso">🔒 본인(김영업) 리스트만 표시됩니다 — 타 영업 제시가는 서버/DB 레벨에서 격리(Global Scope)</div>
+
+    <div class="card">
+      <div class="card-h">
+        <h2>내 매입예정 리스트 <span class="muted">· 4대 · 총 제시가 5,540만원</span></h2>
+        <button class="btn btn-primary" onclick="toggleAdd()">+ 매입예정 추가</button>
+      </div>
+
+      <div class="addform" id="addform">
+        <div class="grid">
+          <div class="field"><label>차량번호 <span class="req">*</span></label><input placeholder="12가3456"></div>
+          <div class="field"><label>차대번호 VIN <span class="req">*</span></label><input placeholder="KMHxxxxxxxxxxxxxx"></div>
+          <div class="field"><label>경매장</label><input placeholder="롯데 / 현대 글로비스"></div>
+          <div class="field"><label>출품번호</label><input placeholder="A-1024"></div>
+          <div class="field"><label>제시 금액 <span class="req">*</span></label><input placeholder="13,500,000"></div>
+        </div>
+        <div class="hint">VIN은 낙찰 후 car-erp 재고 전환 시 중복 방지 식별키라 필수입니다.</div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="toggleAdd()">저장</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAdd()">취소</button>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>차량</th><th>제시가</th><th>바이어 확인</th><th>경매 결과</th><th>상태</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="vno">12가3456</div><div class="vin">VIN ·KMHE341・롯데 A-1024</div></td>
+            <td class="price">13,500,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td><span class="badge badge-green">낙찰</span></td>
+            <td><span class="badge badge-teal">ERP 전환대기</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">34나7890</div><div class="vin">VIN ·KNAJ881・현대 B-2210</div></td>
+            <td class="price">8,900,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td><span class="badge badge-gray">유찰</span></td>
+            <td><span class="badge badge-gray">종료</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">56다1234</div><div class="vin">VIN ·WBA5G7・롯데 A-1099</div></td>
+            <td class="price">21,000,000<span class="won">원</span></td>
+            <td><span class="badge badge-amber">확인중</span></td>
+            <td><span class="badge badge-gray">—</span></td>
+            <td><span class="badge badge-amber">확인중</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">78라5678</div><div class="vin">VIN ·MNTBB2・현대 C-3001</div></td>
+            <td class="price">12,000,000<span class="won">원</span></td>
+            <td><span class="badge badge-blue">확인대기</span></td>
+            <td><span class="badge badge-gray">—</span></td>
+            <td><span class="badge badge-gray">마감</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ 검차 뷰 ============ -->
+  <div id="view-inspect" class="view">
+    <div class="gate open">
+      ⏰ 검차 마감까지 <span class="clock" id="clk2">03:58:12</span>
+      <span class="muted" style="font-weight:600">· 13:00 마감 후 결과 잠금</span>
+      <span class="tag">📱 현장 모바일 최적화</span>
+    </div>
+
+    <div class="iso">👁 전체 영업 리스트 열람 · 영업별 그룹 · 바이어에게 사진 공유 → 구매의사(통과/미통과)만 기록 · 제시가는 읽기 전용</div>
+
+    <div class="card">
+      <div class="card-h"><h2>검차 작업창 <span class="muted">· 오늘 검차 대상 7대</span></h2></div>
+
+      <div class="group">
+        <div class="group-h" onclick="toggleGroup(this)">▾ 김영업 <span class="badge badge-blue">2 대기</span> <span class="count">3대</span></div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">56다1234</div><div class="sub">제시가 21,000,000원 · VIN WBA5G7 · 롯데 A-1099</div></div>
+          <span class="badge badge-amber">확인중</span>
+          <button class="btn btn-primary btn-sm" onclick="openDrawer('56다1234','21,000,000')">바이어 확인</button>
+        </div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">78라5678</div><div class="sub">제시가 12,000,000원 · VIN MNTBB2 · 현대 C-3001</div></div>
+          <span class="badge badge-blue">확인대기</span>
+          <button class="btn btn-primary btn-sm" onclick="openDrawer('78라5678','12,000,000')">바이어 확인</button>
+        </div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">12가3456</div><div class="sub">제시가 13,500,000원 · VIN KMHE341 · 롯데 A-1024</div></div>
+          <span class="badge badge-green">통과</span>
+          <button class="btn btn-outline btn-sm" onclick="openDrawer('12가3456','13,500,000')">수정</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-h" onclick="toggleGroup(this)">▾ 이영업 <span class="badge badge-blue">2 대기</span> <span class="count">2대</span></div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">90마2468</div><div class="sub">제시가 9,300,000원 · VIN JTDKB2 · 현대 B-2255</div></div>
+          <span class="badge badge-blue">확인대기</span>
+          <button class="btn btn-primary btn-sm" onclick="openDrawer('90마2468','9,300,000')">바이어 확인</button>
+        </div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">11바3579</div><div class="sub">제시가 18,700,000원 · VIN 5YJ3E1 · 롯데 A-1130</div></div>
+          <span class="badge badge-blue">확인대기</span>
+          <button class="btn btn-primary btn-sm" onclick="openDrawer('11바3579','18,700,000')">바이어 확인</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 경매 뷰 ============ -->
+  <div id="view-auction" class="view">
+    <div class="gate locked">
+      🔨 경매 진행 중 <span class="muted" style="font-weight:600">· 검차 통과 차량만 노출 · 영업 제시가 그대로 집행</span>
+      <span class="tag">통과 5대</span>
+    </div>
+
+    <div class="iso">🏁 바이어가 <b>통과</b>시킨(구매의사 있는) 차량만 경매 진입(미통과·미확인 차량은 시스템 차단) · 결과는 낙찰/유찰만</div>
+
+    <div class="card">
+      <div class="card-h"><h2>경매 컨트롤창 <span class="muted">· 검차완료 5대</span></h2></div>
+      <table>
+        <thead><tr><th>차량</th><th>영업</th><th>제시가 (집행가)</th><th>검차</th><th>처리</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="vno">56다1234</div><div class="vin">롯데 A-1099</div></td>
+            <td>김영업</td>
+            <td class="price">21,000,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td class="row-actions"><button class="btn btn-green btn-sm" onclick="setResult(this,'낙찰')">낙찰</button><button class="btn btn-ghost btn-sm" onclick="setResult(this,'유찰')">유찰</button></td>
+          </tr>
+          <tr>
+            <td><div class="vno">11바3579</div><div class="vin">롯데 A-1130</div></td>
+            <td>이영업</td>
+            <td class="price">18,700,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td class="row-actions"><button class="btn btn-green btn-sm" onclick="setResult(this,'낙찰')">낙찰</button><button class="btn btn-ghost btn-sm" onclick="setResult(this,'유찰')">유찰</button></td>
+          </tr>
+          <tr>
+            <td><div class="vno">12가3456</div><div class="vin">롯데 A-1024</div></td>
+            <td>김영업</td>
+            <td class="price">13,500,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td><span class="badge badge-green">낙찰 ✓</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">34나7890</div><div class="vin">현대 B-2210</div></td>
+            <td>김영업</td>
+            <td class="price">8,900,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td><span class="badge badge-gray">유찰 ✓</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">90마2468</div><div class="vin">현대 B-2255</div></td>
+            <td>이영업</td>
+            <td class="price">9,300,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">통과</span></td>
+            <td class="row-actions"><button class="btn btn-green btn-sm" onclick="setResult(this,'낙찰')">낙찰</button><button class="btn btn-ghost btn-sm" onclick="setResult(this,'유찰')">유찰</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ 관리자 뷰 ============ -->
+  <div id="view-manager" class="view">
+    <div class="gate locked">
+      🛡 관리자 — 전체 현황 + 마감 override
+      <span class="tag">감사로그 기록됨</span>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="k">오늘 매입예정</div><div class="v">9<span class="muted" style="font-size:13px">대</span></div></div>
+      <div class="kpi"><div class="k">검차완료(통과)</div><div class="v" style="color:var(--green)">5</div></div>
+      <div class="kpi"><div class="k">낙찰</div><div class="v" style="color:var(--teal)">2</div></div>
+      <div class="kpi"><div class="k">유찰</div><div class="v" style="color:var(--gray-500)">1</div></div>
+      <div class="kpi"><div class="k">ERP 전환대기</div><div class="v" style="color:var(--primary)">1</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <h2>전체 영업 현황</h2>
+        <div class="row-actions">
+          <button class="btn btn-outline btn-sm">⏰ 10:00 마감 해제</button>
+          <button class="btn btn-outline btn-sm">🔨 13:00 검차 마감 해제</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>영업</th><th>예정</th><th>검차완료</th><th>낙찰</th><th>유찰</th><th>총 제시가</th></tr></thead>
+        <tbody>
+          <tr><td><b>김영업</b></td><td>4</td><td>3</td><td><span class="badge badge-green">2</span></td><td><span class="badge badge-gray">1</span></td><td class="price">55,400,000<span class="won">원</span></td></tr>
+          <tr><td><b>이영업</b></td><td>3</td><td>2</td><td><span class="badge badge-green">0</span></td><td><span class="badge badge-gray">0</span></td><td class="price">28,000,000<span class="won">원</span></td></tr>
+          <tr><td><b>정영업</b></td><td>2</td><td>0</td><td><span class="badge badge-gray">0</span></td><td><span class="badge badge-gray">0</span></td><td class="price">17,200,000<span class="won">원</span></td></tr>
+        </tbody>
+      </table>
+      <div class="hint">마감 해제·담당 배정 등 override는 <b>purchase_board_audit_logs</b>에 누가·언제·무엇을 변경했는지 기록됩니다.</div>
+    </div>
+  </div>
+
+  <div class="mockup-note">⚠️ 이건 동작 없는 <b>정적 UI 목업</b>입니다 (실제 데이터·저장 X). 레이아웃·흐름 확인용 · 2026-06-02 회의 결론 반영</div>
+</div>
+
+<!-- DRAWER (검차 입력) -->
+<div class="drawer-mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-h">
+    <h3 id="dTitle">바이어 확인</h3>
+    <button class="x" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-b">
+    <div class="muted" id="dSub">제시가 — · 영업 제시가는 읽기 전용</div>
+
+    <div class="section-title">차량 사진 (바이어에게 공유)</div>
+    <div class="photo-zone">📷 사진 촬영 / 업로드 → 바이어에게 전송<div class="hint">S3 heysellcar-erp-docs · purchase-board/inspections/</div></div>
+    <div class="photos">
+      <div class="photo">🖼</div><div class="photo">🖼</div><div class="photo">🖼</div><div class="photo">➕</div>
+    </div>
+
+    <div class="section-title">바이어</div>
+    <div class="field"><input placeholder="예: ABC Trading (해외 바이어)"></div>
+
+    <div class="section-title">바이어 코멘트 / 메모</div>
+    <div class="field"><input placeholder="예: 사진 보고 '이 차 살게요!' → 통과"></div>
+
+    <div class="section-title">바이어 구매의사</div>
+    <div class="verdict">
+      <button class="pass" onclick="setVerdict(this,'pass')">👍 통과 (살게요)</button>
+      <button class="fail" onclick="setVerdict(this,'fail')">👎 미통과 (별로)</button>
+    </div>
+    <div class="hint">바이어가 "살게요"라고 한(통과) 차량만 경매로 진입합니다.</div>
+
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="closeDrawer()">저장</button>
+      <button class="btn btn-ghost" onclick="closeDrawer()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setView(btn, v){
+    document.querySelectorAll('.roleswitch button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+    document.getElementById('view-'+v).classList.add('active');
+    window.scrollTo(0,0);
+  }
+  function toggleAdd(){ document.getElementById('addform').classList.toggle('show'); }
+  function toggleGroup(h){
+    let n=h.nextElementSibling;
+    let open=h.textContent.startsWith('▾');
+    h.textContent = (open?'▸':'▾')+h.textContent.slice(1);
+    while(n && n.classList.contains('insp-card')){ n.style.display = open?'none':'flex'; n=n.nextElementSibling; }
+  }
+  function openDrawer(vno, price){
+    document.getElementById('dTitle').textContent = vno+' · 바이어 확인';
+    document.getElementById('dSub').textContent = '제시가 '+price+'원 (읽기 전용) · 사진 공유 후 바이어 구매의사만 기록';
+    document.getElementById('mask').classList.add('show');
+    document.getElementById('drawer').classList.add('show');
+  }
+  function closeDrawer(){
+    document.getElementById('mask').classList.remove('show');
+    document.getElementById('drawer').classList.remove('show');
+  }
+  function setVerdict(btn, type){
+    document.querySelectorAll('.verdict button').forEach(b=>b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+  function setResult(btn, result){
+    let td = btn.closest('td');
+    let cls = result==='낙찰' ? 'badge-green' : 'badge-gray';
+    td.innerHTML = '<span class="badge '+cls+'">'+result+' ✓</span>';
+  }
+  // fake countdown
+  function tick(id){
+    let el=document.getElementById(id); if(!el) return;
+    let [h,m,s]=el.textContent.split(':').map(Number);
+    let t=h*3600+m*60+s-1; if(t<0)t=0;
+    el.textContent=[Math.floor(t/3600),Math.floor(t%3600/60),t%60].map(x=>String(x).padStart(2,'0')).join(':');
+  }
+  setInterval(()=>{tick('clk1');tick('clk2');},1000);
+</script>
+</body>
+</html>

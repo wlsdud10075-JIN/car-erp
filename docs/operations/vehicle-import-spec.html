@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>수출차량현황표 업로드 입력 규칙</title>
+<style>
+  :root { --red:#c0392b; --org:#d2691e; --teal:#1287a8; --blue:#2c5fb3; --purple:#6a4ca8; --gray:#666; --line:#ccc; --soft:#f5f6f8; }
+  * { box-sizing:border-box; }
+  body { font-family:"Malgun Gothic","맑은 고딕",sans-serif; color:#1a1a1a; margin:0; padding:12mm 11mm; font-size:10pt; line-height:1.38; }
+  h1 { font-size:15pt; margin:0 0 2px; }
+  .sub { color:var(--gray); font-size:8.6pt; margin-bottom:6px; }
+  .warn { border:1.5px solid var(--red); border-radius:5px; padding:6px 9px; background:#fdf0ee; font-size:9pt; margin-bottom:8px; }
+  .warn b { color:var(--red); }
+  h2 { font-size:9pt; margin:9px 0 3px; padding:3px 8px; border-radius:4px; color:#fff; }
+  h2.req{background:var(--red);} h2.sale{background:var(--org);} h2.pay{background:var(--teal);} h2.fmt{background:var(--blue);} h2.verify{background:var(--purple);}
+  table { width:100%; border-collapse:collapse; margin:1px 0 3px; }
+  th,td { border:1px solid var(--line); padding:2.5px 6px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); font-weight:700; white-space:nowrap; }
+  td.col { font-weight:700; text-align:center; white-space:nowrap; background:#fafbfc; }
+  .ok{color:#1e7e34;font-weight:700;} .no{color:var(--red);font-weight:700;}
+  .summary { border:2px solid #222; border-radius:6px; padding:7px 10px; margin-top:9px; font-weight:700; font-size:9.3pt; }
+  code { background:#eef0f3; padding:0 3px; border-radius:3px; font-size:9pt; }
+  .note { color:var(--gray); font-size:8.0pt; }
+  @page { size:A4; margin:9mm; }
+  @media print { body{padding:0;} h2,.warn{-webkit-print-color-adjust:exact;print-color-adjust:exact;} }
+</style>
+</head>
+<body>
+
+<h1>수출차량현황표 업로드 — 입력 규칙</h1>
+
+<h2 class="req">① 절대 필수 — 차량 식별 키</h2>
+<table>
+  <tr><th style="width:50px">열</th><th style="width:110px">항목</th><th>규칙</th></tr>
+  <tr><td class="col">I</td><td>차대번호(VIN)</td><td><b>반드시.</b> 차 1대당 <b>영구 고유</b> — 재업로드 매칭 기준키(VIN 우선). 번호판은 말소 후 재발급되면 다른 차에 같은 번호가 붙을 수 있어 VIN이 정확</td></tr>
+  <tr><td class="col">D</td><td>차량번호</td><td><b>반드시.</b> 번호 없는 행(빈 행·합계 행) 자동 무시. VIN 없는 행은 차량번호로 매칭</td></tr>
+</table>
+<div class="note">소유자명(L)·주행거리 등은 <b>데이터지 키가 아님</b> — 있으면 좋지만 안 채워도 가져오기·매칭엔 지장 없음(모든 칸 저장됨).</div>
+
+<h2 class="sale">② 판매금액(AF)을 적었다면 → 아래 4개도 반드시</h2>
+<div class="note">하나라도 비면 판매 정보가 보류되고 매입만 적재됨</div>
+<table>
+  <tr><th style="width:50px">열</th><th style="width:100px">항목</th><th>규칙</th></tr>
+  <tr><td class="col">AB</td><td>바이어</td><td><b>같은 바이어는 철자·공백 동일하게</b> (다르면 중복 생성)</td></tr>
+  <tr><td class="col">AE</td><td>통화</td><td><code>USD / JPY / EUR / GBP / CNY / KRW</code> <b>대문자 코드만</b></td></tr>
+  <tr><td class="col">AG</td><td>환율</td><td>외화 <b>0보다 큰 숫자</b>. 원화(KRW)면 <code>1</code></td></tr>
+  <tr><td class="col">W</td><td>선적일자(ETD)</td><td>판매일 대용. 비면 구입일로 대체되나 <b>채워주는 게 정확</b></td></tr>
+</table>
+
+<h2 class="pay">③ 입금 이력 — 정산(입금) 칸 + B/L번호</h2>
+<table>
+  <tr><th style="width:130px">열</th><th>규칙</th></tr>
+  <tr><td class="col">AO·AQ·AS·AU·AW<br>(정산1~5)</td><td>입금받은 <b>금액(숫자)</b>, 판매 통화 기준. 입금 안 된 회차는 비움 · 취소건은 <code>취소</code>로 적어도 됨(입금 제외)</td></tr>
+  <tr><td class="col">AP·AR·AT·AV·AX</td><td>각 <b>입금일(날짜)</b> <code>2026.02.05</code></td></tr>
+  <tr><td class="col">X (B/L번호)</td><td>있으면 그 차량은 <b>거래완료</b>로 처리 → 번호 정확히</td></tr>
+</table>
+<div class="note">선수금/예치금(BA·BD·BE·BF)이 있으면 그대로 두세요(현재 일부 미반영 — 해당 행 미수 약간 차이 가능).</div>
+
+<h2 class="fmt">④ 형식 규칙 — 어기면 그 값만 버려지고 경고 (행은 적재됨)</h2>
+<table>
+  <tr><th style="width:110px">칸</th><th>규칙</th></tr>
+  <tr><td><b>날짜칸</b><br><span class="note">구입·말소·선적·도착·입금일</span></td>
+      <td><span class="ok">✓</span> <code>2026.01.06</code> / <code>26.01.06</code> / 엑셀 날짜셀 &nbsp; <span class="no">✗</span> <code>3월</code>·<code>미정</code>·<code>대기</code>·<code>취소예정</code>·끝점<code>26.05.06.</code>·콤마<code>26.05,13</code></td></tr>
+  <tr><td><b>숫자칸</b><br><span class="note">구입금액·매도비·판매가·환율·커미션·운임·면장·비용9·입금액</span></td>
+      <td><span class="ok">✓</span> 숫자만(콤마 <code>15,160,000</code> OK), 없으면 빈칸/<code>0</code> &nbsp; <span class="no">✗</span> 글자(<code>싼카</code>·<code>미수</code>·<code>BULGARIA</code>) → <b>메모는 비고(CK)·송금확인(O) 칸에만</b></td></tr>
+  <tr><td><b>주민(법인)등록번호</b> (M)</td><td><span class="ok">✓</span> <code>000000-0000000</code> (13자리+하이픈). 앞자리만/마스킹 지양</td></tr>
+  <tr><td><b>담당자</b> (J)</td><td>시스템 등록명과 <b>정확히 일치</b>. 신규 담당자는 <b>업로드 전 등록</b>(프리랜서/사내직원 지정)</td></tr>
+</table>
+
+<h2 class="verify">⑤ 계산·정산 칸 — 비우지 말 것 (우리가 다시 계산해 2중 대조)</h2>
+<div class="note">시스템이 자동 재계산하지만, <b>엑셀 값을 그대로 둬야</b> 맞는지 검증함. 과거 정산은 엑셀대로 프리50%·서류비5만 기준 재현.</div>
+<table>
+  <tr><th style="width:200px">열 / 항목</th><th>용도</th></tr>
+  <tr><td><b>CD</b> 총마진 · <b>CE</b> 정산액(정산비율) · <b>CF</b> 지급액 · <b>CI</b> 실지급</td><td>시스템 계산 정산값과 1:1 대조</td></tr>
+  <tr><td><b>BG</b> 입금합계 · <b>BH</b> 미납</td><td>시스템 입금·미수와 대조</td></tr>
+  <tr><td><b>R</b> 매입합계 · <b>AM</b> 판매총합 · <b>AD</b> 판매금원화 · <b>BV</b> 비용합계</td><td>참고 대조</td></tr>
+</table>
+
+<div class="summary">
+  ▶ 차량번호 필수·고유 · 판매가엔 <span style="color:var(--org)">바이어·통화·환율</span> · 입금은 <span style="color:var(--teal)">금액+입금일</span> ·
+  <span style="color:var(--blue)">날짜칸엔 날짜만, 금액칸엔 숫자만</span>(메모는 비고칸) · 담당자는 등록명과 동일 ·
+  <span style="color:var(--purple)">총마진·정산액·지급액 등 계산 칸은 비우지 말고 엑셀 그대로</span>(우리가 다시 계산해 2중 검토).
+</div>
+
+</body>
+</html>

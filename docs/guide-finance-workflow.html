@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>재무 업무 가이드 — 입금·지급·정산</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --dept:#8b5cf6; --dept-soft:#ede9fe; --dept-text:#6d28d9; --dept-bg:#f5f3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.65}
+  .app{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  .head .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--dept),#a78bfa);display:flex;align-items:center;justify-content:center;font-size:24px}
+  .head h1{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .head .sub{font-size:12.5px;color:var(--gray-500);margin-top:2px}
+  .deptchip{display:inline-block;background:var(--dept-soft);color:var(--dept-text);font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;margin-left:8px;vertical-align:middle}
+  .purpose{background:var(--dept-bg);border:1px solid var(--dept-soft);border-radius:13px;padding:15px 18px;margin:16px 0 8px;font-size:13.5px;color:var(--dept-text)}
+  .purpose b{color:var(--dept)}
+  .precond{font-size:11.5px;color:var(--gray-500);margin:0 0 18px;padding-left:4px}
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 13px;display:flex;align-items:center;gap:9px}
+  .pipe{display:flex;gap:5px;background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:13px 11px;overflow-x:auto}
+  .pnode{flex:1;min-width:92px;text-align:center;position:relative}
+  .pnode .dot{width:34px;height:34px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;background:var(--dept)}
+  .pnode .lbl{font-size:11px;font-weight:700;color:var(--gray-700);line-height:1.3}
+  .pnode:not(:last-child)::after{content:'›';position:absolute;right:-3px;top:6px;color:var(--gray-300);font-size:18px;font-weight:800}
+  .step{background:#fff;border:1px solid var(--gray-200);border-radius:14px;margin-bottom:14px;overflow:hidden;border-left:5px solid var(--dept)}
+  .step-h{display:flex;align-items:center;gap:12px;padding:14px 17px;background:linear-gradient(90deg,var(--dept-bg),#fff)}
+  .step-h .num{width:30px;height:30px;border-radius:50%;background:var(--dept);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .step-h .tt{font-weight:800;font-size:15px}
+  .step-h .when{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px;white-space:nowrap}
+  .step-b{padding:14px 18px 16px}
+  .step-b .doh{font-size:11px;font-weight:800;color:var(--dept-text);letter-spacing:.03em;margin-bottom:7px;text-transform:uppercase}
+  .step-b ol{margin:0 0 0 18px}.step-b ol li{margin-bottom:6px;font-size:13px;color:var(--gray-700)}
+  /* settlement flow */
+  .sflow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff;border:1px solid var(--gray-200);border-radius:11px;padding:13px;margin:6px 0;font-size:12px;font-weight:700}
+  .snode{padding:6px 12px;border-radius:8px;border:1.5px solid}
+  .snode.s1{border-color:var(--blue);color:#1d4ed8;background:#eff6ff}
+  .snode.s2{border-color:var(--green);color:#047857;background:#ecfdf5}
+  .snode.s3{border-color:var(--gray-400);color:#4b5563;background:#f8f9fb}
+  .sarr{color:var(--gray-400);font-size:15px}
+  .sowner{font-size:10px;font-weight:700;display:block;opacity:.85}
+  .warn{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:11px 14px;margin:10px 0;font-size:12.5px;color:#991b1b}
+  .warn b{color:#b91c1c}.warn .wh{font-weight:800;font-size:12.5px;margin-bottom:4px}
+  .sod{background:#fffbeb;border:1px solid #fde68a;border-radius:11px;padding:13px 16px;margin:10px 0;font-size:12.5px;color:#92400e}
+  .sod .sh{font-weight:800;color:#b45309;margin-bottom:5px}
+  .tip{background:var(--dept-bg);border:1px solid var(--dept-soft);border-radius:10px;padding:11px 14px;margin:9px 0;font-size:12.5px;color:var(--dept-text)}
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:26px;line-height:1.6}
+  @media(max-width:640px){.head h1{font-size:17px}}
+  @media print{body{background:#fff}.app{padding:0}.step,.pipe{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <div class="logo">💰</div>
+    <div><h1>재무 업무 가이드<span class="deptchip">재무</span></h1>
+    <div class="sub">판매 입금 → 매입 지급 → 미수금 관리 → 정산 확정 → 2차 정산</div></div>
+  </div>
+
+  <div class="purpose">
+    바이어 <b>입금 확인·입력</b>, 매입처 <b>지급 처리</b>, <b>미수금 관리</b>, 그리고 거래완료 차량의 <b>정산 확정</b>까지 돈과 관련된 전 과정을 담당합니다.
+    car-erp의 <b>판매·매입 탭</b>과 <b>정산 화면</b>에서 진행합니다.
+  </div>
+  <div class="precond">※ 핵심 원칙 — 입금/지급/정산은 <b>재무가 확정</b>까지, 실제 <b>지급(paid)은 [관리]가 승인</b> (직무 분리). 현재는 [관리]가 이 업무도 겸함.</div>
+
+  <h2 class="sec">🔄 전체 흐름</h2>
+  <div class="pipe">
+    <div class="pnode"><div class="dot">💵</div><div class="lbl">판매 입금 입력</div></div>
+    <div class="pnode"><div class="dot">🧾</div><div class="lbl">매입 지급</div></div>
+    <div class="pnode"><div class="dot">📊</div><div class="lbl">미수금 관리</div></div>
+    <div class="pnode"><div class="dot">✅</div><div class="lbl">정산 확정</div></div>
+    <div class="pnode"><div class="dot">🔁</div><div class="lbl">2차 정산</div></div>
+  </div>
+
+  <h2 class="sec">📋 단계별 상세</h2>
+
+  <div class="step">
+    <div class="step-h"><div class="num">1</div><div class="tt">판매 입금 입력</div><div class="when">입금 확인 즉시</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — 판매 탭 입금현황</div>
+      <ol>
+        <li>바이어 송금을 확인하면 <b>그 금액을 입력</b> — 계약금 / 중도금 / 잔금(N건) / 선수금.</li>
+        <li>외화 차량은 <b>통화·환율</b>을 반드시 같이 입력 (환율 0이면 미수금 계산이 깨짐).</li>
+        <li>입력하면 입금 상태가 자동 갱신 — <b>완납 / 부분입금(%) / 미입금</b>.</li>
+      </ol>
+      <div class="tip">💡 입금액 입력 = 곧 확정 처리입니다. 입금률이 50%를 넘으면 통관·선적이, 100% 완납되면 B/L 발급이 가능해집니다(수출통관 가이드와 연결).</div>
+      <div class="warn"><div class="wh">⚠️ 환율 필수</div>외화차에 <b>환율을 안 넣으면</b> 미수금이 0으로 잘못 잡혀 "완납"으로 오인됩니다. 판매가 입력 시 통화·환율·판매일·바이어 항상 함께.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">2</div><div class="tt">매입 지급 처리</div><div class="when">매입 후</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — 매입 탭</div>
+      <ol>
+        <li>매입가·매도비 확인, 계약금/잔금(N건) <b>지급 입력</b>.</li>
+        <li>지급일이 도래한 건만 미지급에서 차감됩니다 (예정일 미래 건은 제외).</li>
+        <li>매입처 계좌 등 민감정보는 권한 범위 내에서만.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">3</div><div class="tt">미수금 · 채권 관리</div><div class="when">상시</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — 채권관리 / 대시보드</div>
+      <ol>
+        <li>미입금·부분입금 차량을 모니터링 (담당자별·바이어별 TOP10 미수금).</li>
+        <li><b>환율 미입력 외화 차량</b>은 별도 경고로 분리 표시 → 환율 채우기.</li>
+        <li>회수 진행 상황을 입금현황에 반영.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">4</div><div class="tt">정산 확정</div><div class="when">거래완료 시</div></div>
+    <div class="step-b">
+      <div class="doh">정산 상태 흐름</div>
+      <div class="sflow">
+        <span class="snode s1">pending<span class="sowner">자동 생성</span></span>
+        <span class="sarr">→</span>
+        <span class="snode s2">confirmed<span class="sowner">재무 확정</span></span>
+        <span class="sarr">→</span>
+        <span class="snode s3">paid<span class="sowner">[관리] 지급</span></span>
+      </div>
+      <ol>
+        <li>거래완료되면 정산이 <b>pending</b>으로 자동 생성 (마진·정산액 자동 계산).</li>
+        <li>금액 검토 후 <b>confirmed(확정)</b> 처리 — 재무 담당.</li>
+      </ol>
+      <div class="sod"><div class="sh">🔐 직무 분리 (중요)</div><b>재무는 paid(지급)를 직접 못 합니다.</b> 확정(confirmed)까지가 재무, 실제 지급(paid)은 <b>[관리]/관리자 승인</b>으로만. 본인이 요청하고 본인이 지급하는 것 차단.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">5</div><div class="tt">2차 정산 (사후 보정)</div><div class="when">지급 후 ~1개월</div></div>
+    <div class="step-b">
+      <div class="doh">할 일</div>
+      <ol>
+        <li>지급(paid) 후 한 달간 <b>실측 비용 보정</b> — 말소비·탁송·쇼링·보험 등 9개 비용 실제값 수정.</li>
+        <li>정산 시점 <b>환율 정정</b>(환차 반영).</li>
+        <li>"2차 완료" 처리 → <b>closed</b>(회계 잠금). 환차·이월이 자동 계산됩니다.</li>
+      </ol>
+      <div class="warn"><div class="wh">⚠️ 잠금 주의</div>confirmed/paid 이후 회계 데이터는 함부로 못 바꿉니다(스냅샷 보존). 비용 보정은 2차 정산 절차 안에서만.</div>
+    </div>
+  </div>
+
+  <h2 class="sec">⚠️ 자주 하는 실수</h2>
+  <div class="step"><div class="step-b">
+    <ol>
+      <li><b>외화 환율 미입력</b> → 미수금이 0으로 잘못 잡혀 완납 오판.</li>
+      <li>재무가 <b>paid 직접</b> 시도 → 불가([관리] 승인).</li>
+      <li>지급일이 <b>미래</b>인 매입 잔금을 미지급으로 오인.</li>
+      <li>확정 후 회계 컬럼 임의 수정 → 2차 정산 절차로만.</li>
+    </ol>
+  </div></div>
+
+  <div class="note">SSANCAR 사내 업무 가이드 · 재무 · 2026-06-05 작성<br>※ 현재는 [관리]가 이 업무를 겸함. 역할 분리 시 본 가이드가 재무 담당 기준이 됩니다.</div>
+</div>
+</body>
+</html>

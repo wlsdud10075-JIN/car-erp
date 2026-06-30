@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>respond.io ↔ car-erp ↔ purchase-board — A·B·C 연동 단계도</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.6}
+  .app{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+
+  /* header */
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .head .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--primary),#9a8de0);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px}
+  .head h1{font-size:20px;font-weight:800}
+  .head .sub{font-size:12px;color:var(--gray-500)}
+  .lead{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:14px 18px;margin:14px 0 22px;font-size:13.5px;color:var(--gray-700)}
+  .lead b{color:var(--primary-text)}
+
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 12px;display:flex;align-items:center;gap:8px}
+  h2.sec .n{width:24px;height:24px;border-radius:7px;background:var(--primary);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+
+  /* system map */
+  .map{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:22px 18px}
+  .sysrow{display:flex;align-items:stretch;gap:0;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  .sys{flex:1;min-width:200px;border:2px solid var(--gray-200);border-radius:12px;padding:14px;text-align:center;position:relative;background:var(--gray-50)}
+  .sys .ico{font-size:26px}
+  .sys .nm{font-weight:800;font-size:15px;margin-top:4px}
+  .sys .role{font-size:11px;color:var(--gray-500);margin-top:2px}
+  .sys .st{display:inline-block;margin-top:8px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+  .sys.live{border-color:var(--green)}
+  .sys.live .st{background:#d1fae5;color:#047857}
+  .sys.mock{border-color:var(--amber);border-style:dashed}
+  .sys.mock .st{background:#fef3c7;color:#b45309}
+  .sys.ext{border-color:var(--blue)}
+  .sys.ext .st{background:#dbeafe;color:#1d4ed8}
+  .arrowcol{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 4px;min-width:54px}
+  .conn{font-size:11px;font-weight:800;color:#fff;border-radius:20px;padding:3px 10px;white-space:nowrap}
+  .cA{background:var(--purple)} .cB{background:var(--teal)} .cC{background:var(--amber)}
+  .arrowcol .ar{font-size:20px;color:var(--gray-400);line-height:1}
+  .cline{margin-top:16px;text-align:center;font-size:12px;color:var(--gray-500);border-top:1px dashed var(--gray-300);padding-top:12px}
+  .cline .cC{color:#fff}
+
+  /* legend */
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:11.5px;color:var(--gray-600)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  /* connection cards */
+  .ccard{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:0;margin-bottom:18px;overflow:hidden}
+  .ctop{display:flex;align-items:center;gap:12px;padding:15px 18px;color:#fff}
+  .ctop.A{background:linear-gradient(135deg,#8b5cf6,#a78bfa)}
+  .ctop.B{background:linear-gradient(135deg,#14b8a6,#2dd4bf)}
+  .ctop.C{background:linear-gradient(135deg,#f59e0b,#fbbf24)}
+  .ctop .big{font-size:26px;font-weight:900;width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center}
+  .ctop .ttl{font-size:16px;font-weight:800}
+  .ctop .desc{font-size:12px;opacity:.95;margin-top:1px}
+  .ctop .prio{margin-left:auto;text-align:right;font-size:11px;font-weight:700;background:rgba(255,255,255,.22);padding:5px 11px;border-radius:20px}
+  .cbody{padding:18px}
+
+  /* status badges */
+  .status3{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .sbadge{flex:1;min-width:130px;border:1px solid var(--gray-200);border-radius:9px;padding:9px 12px;text-align:center}
+  .sbadge .lbl{font-size:10px;color:var(--gray-500);font-weight:700;text-transform:uppercase}
+  .sbadge .val{font-size:13px;font-weight:800;margin-top:3px}
+  .ok{color:var(--green)} .no{color:var(--red)} .wait{color:var(--amber)}
+
+  /* flow diagram inside card */
+  .flow{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:14px;margin-bottom:14px}
+  .flow .flbl{font-size:11px;font-weight:800;color:var(--primary-text);text-transform:uppercase;letter-spacing:.03em;margin-bottom:10px}
+  .fline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .node{background:#fff;border:1.5px solid var(--gray-300);border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;min-width:90px;text-align:center}
+  .node.src{border-color:var(--primary)}
+  .node.dst{border-color:var(--green)}
+  .fa{font-size:18px;color:var(--gray-400)}
+  .fa small{display:block;font-size:9px;color:var(--gray-500);font-weight:700;text-align:center;margin-top:-2px}
+  .pay{font-size:11.5px;color:var(--gray-600);background:#fff;border:1px dashed var(--gray-300);border-radius:7px;padding:6px 10px;margin-top:8px;font-family:monospace}
+
+  /* detail grid */
+  .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:680px){.dgrid{grid-template-columns:1fr}}
+  .dbox{border:1px solid var(--gray-200);border-radius:9px;padding:12px 13px}
+  .dbox h4{font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;letter-spacing:.03em;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+  .dbox ul{list-style:none;font-size:12.5px;color:var(--gray-700)}
+  .dbox li{padding:3px 0 3px 16px;position:relative}
+  .dbox li::before{content:'•';position:absolute;left:3px;color:var(--primary)}
+  .dbox li.x::before{content:'✕';color:var(--red);font-size:10px;top:4px}
+  .dbox li.c::before{content:'✓';color:var(--green);font-size:11px;top:3px}
+  code{background:var(--primary-light);color:var(--primary-text);padding:1px 5px;border-radius:4px;font-size:11.5px;font-family:monospace}
+
+  /* roadmap */
+  .road{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:8px}
+  .phase{display:flex;gap:14px;padding:14px;border-bottom:1px solid var(--gray-100)}
+  .phase:last-child{border-bottom:0}
+  .phase .ph{flex-shrink:0;width:120px}
+  .phase .ph .pn{font-weight:800;font-size:14px}
+  .phase .ph .pt{font-size:11px;color:var(--gray-500);margin-top:2px}
+  .phase .pc{flex:1}
+  .phase .pc .ph-h{font-weight:700;font-size:13.5px;margin-bottom:4px}
+  .phase .pc ul{list-style:none;font-size:12.5px;color:var(--gray-700)}
+  .phase .pc li{padding:2px 0 2px 16px;position:relative}
+  .phase .pc li::before{content:'›';position:absolute;left:4px;color:var(--gray-400);font-weight:800}
+  .pnow{background:var(--primary);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:5px}
+  .pnext{background:var(--amber);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:5px}
+  .plater{background:var(--gray-300);color:var(--gray-700);font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:5px}
+
+  /* nogo */
+  .nogo{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px 18px;margin-top:8px}
+  .nogo h3{color:#991b1b;font-size:14px;font-weight:800;margin-bottom:8px}
+  .nogo ul{list-style:none;font-size:13px;color:#7f1d1d}
+  .nogo li{padding:3px 0 3px 20px;position:relative}
+  .nogo li::before{content:'⛔';position:absolute;left:0;font-size:11px}
+  .nogo .ok{color:#047857;font-weight:700}
+
+  /* summary table */
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--gray-200);border-radius:12px;overflow:hidden}
+  th{background:var(--gray-50);text-align:left;font-size:11px;color:var(--gray-500);font-weight:800;text-transform:uppercase;padding:11px 12px;border-bottom:1px solid var(--gray-200)}
+  td{padding:12px;border-bottom:1px solid var(--gray-100);font-size:12.5px;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td .tag{font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px;white-space:nowrap}
+  .t-design{background:#ede9fe;color:#6d28d9}
+  .t-build{background:#fef3c7;color:#b45309}
+  .t-need{background:#dbeafe;color:#1d4ed8}
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:24px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="head">
+    <div class="logo">↔</div>
+    <div>
+      <h1>respond.io ↔ car-erp ↔ purchase-board 연동 단계도</h1>
+      <div class="sub">A·B·C 3개 연동 — 무엇을 설계하고 / 만들고 / 어떤 정보를 주고받나 · 2026-06-04 회의 결론 기반</div>
+    </div>
+  </div>
+
+  <div class="lead">
+    핵심 한 줄: <b>지금 실제로 작동하는 건 car-erp 하나뿐</b>입니다. purchase-board는 껍데기(목업), respond.io는 따로 도는 메시징 도구.
+    이 셋을 잇는 다리가 <b>A·B·C</b>인데, <b>셋 다 아직 안 만들어졌습니다.</b> 차이는 "설계가 어디까지 됐나"와 "지금 만들 수 있나" 입니다.
+  </div>
+
+  <!-- ===================== 현재 시스템 맵 ===================== -->
+  <h2 class="sec"><span class="n">0</span> 지금 그림 — 세 시스템의 현재 상태</h2>
+  <div class="map">
+    <div class="sysrow">
+      <div class="sys ext">
+        <div class="ico">💬</div>
+        <div class="nm">respond.io</div>
+        <div class="role">해외 바이어 · 메시징 (수요)</div>
+        <div class="st">외부 SaaS · 작동중</div>
+      </div>
+      <div class="arrowcol">
+        <div class="conn cA">A</div>
+        <div class="ar">↔</div>
+      </div>
+      <div class="sys mock">
+        <div class="ico">📋</div>
+        <div class="nm">purchase-board</div>
+        <div class="role">매입·검차·경매 (공급)</div>
+        <div class="st">목업(껍데기) · 미구현</div>
+      </div>
+      <div class="arrowcol">
+        <div class="conn cB">B</div>
+        <div class="ar">→</div>
+      </div>
+      <div class="sys live">
+        <div class="ico">🗄️</div>
+        <div class="nm">car-erp</div>
+        <div class="role">재고·정산·통관 (원장)</div>
+        <div class="st">✓ 실제 작동중</div>
+      </div>
+    </div>
+    <div class="cline">
+      <span class="conn cC">C</span> &nbsp; car-erp 입금/판매 → respond.io 바이어 단계 자동전진 (맨 오른쪽 → 맨 왼쪽으로 돌아오는 연결)
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--green)"></span> 작동중</span>
+      <span><span class="dot" style="background:var(--amber)"></span> 목업(미구현)</span>
+      <span><span class="dot" style="background:var(--blue)"></span> 외부 서비스</span>
+      <span>↔ 양방향 · → 단방향</span>
+    </div>
+  </div>
+
+  <!-- ===================== 연동 B ===================== -->
+  <h2 class="sec"><span class="n">1</span> 연동 B — 낙찰차 → car-erp 자동 차량등록 <span style="font-size:12px;font-weight:600;color:var(--gray-500)">(대표님이 목업 만드신 그 목적)</span></h2>
+  <div class="ccard">
+    <div class="ctop B">
+      <div class="big">B</div>
+      <div>
+        <div class="ttl">purchase-board 낙찰 → car-erp 재고 등록</div>
+        <div class="desc">경매에서 낙찰된 차가 car-erp에 차량으로 자동 등록</div>
+      </div>
+      <div class="prio">설계 가장 구체적<br>(6/2 회의 확정)</div>
+    </div>
+    <div class="cbody">
+      <div class="status3">
+        <div class="sbadge"><div class="lbl">설계(방향)</div><div class="val ok">✓ 확정 (6/2)</div></div>
+        <div class="sbadge"><div class="lbl">구현(코드)</div><div class="val no">✕ 아직</div></div>
+        <div class="sbadge"><div class="lbl">작동</div><div class="val no">✕ 불가</div></div>
+      </div>
+
+      <div class="flow">
+        <div class="flbl">데이터가 흐르는 법</div>
+        <div class="fline">
+          <div class="node src">purchase-board<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">낙찰 확정</span></div>
+          <div class="fa">→<small>API 호출</small></div>
+          <div class="node dst">car-erp<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">차량 신규등록</span></div>
+        </div>
+        <div class="pay">POST /api/internal/purchase-sync &nbsp;(HMAC 서명) → 보내는 정보: VIN, 차량번호, 경매장/출품번호, 낙찰가, 영업담당</div>
+      </div>
+
+      <div class="dgrid">
+        <div class="dbox">
+          <h4>🛠 만들어야 할 것</h4>
+          <ul>
+            <li class="x">purchase-board를 <b>진짜 앱으로</b> (지금은 목업)</li>
+            <li class="x">car-erp에 수신용 API 1개 (<code>routes/api.php</code>)</li>
+            <li class="x">HMAC 서명 검증 미들웨어</li>
+          </ul>
+        </div>
+        <div class="dbox">
+          <h4>📥 필요한 정보 / 조인키</h4>
+          <ul>
+            <li><b>VIN(차대번호)</b> = 중복방지 식별키 (필수)</li>
+            <li><code>(경매장, 출품번호)</code> 복합 유니크</li>
+            <li><code>car_erp_vehicle_id</code> 역참조 저장</li>
+            <li class="c">낙찰(won) 상태만 전송 — 검차중·유찰 차단</li>
+          </ul>
+        </div>
+      </div>
+      <div class="dbox" style="margin-top:12px;border-color:#fed7aa;background:#fff7ed">
+        <h4 style="color:#9a3412">⚠️ 전제</h4>
+        <ul><li>car-erp는 이 <b>API 1개만 예외로</b> 손대고 나머지는 안 건드림 (6/2 약속)</li><li>purchase-board MVP가 먼저 존재해야 함</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 연동 C ===================== -->
+  <h2 class="sec"><span class="n">2</span> 연동 C — car-erp 입금 → respond.io 단계 자동전진 <span style="font-size:12px;font-weight:600;color:var(--green)">(지금 추가비용 없이 가능)</span></h2>
+  <div class="ccard">
+    <div class="ctop C">
+      <div class="big">C</div>
+      <div>
+        <div class="ttl">car-erp 판매/입금 → respond.io 라이프사이클 전진</div>
+        <div class="desc">돈 들어오면 바이어 단계가 Payment·Customer로 자동으로 올라감</div>
+      </div>
+      <div class="prio">최우선<br>(Growth 플랜으로 가능)</div>
+    </div>
+    <div class="cbody">
+      <div class="status3">
+        <div class="sbadge"><div class="lbl">설계(방향)</div><div class="val wait">◐ 오늘 회의서 방향</div></div>
+        <div class="sbadge"><div class="lbl">구현(코드)</div><div class="val no">✕ 아직 (8~12h)</div></div>
+        <div class="sbadge"><div class="lbl">작동</div><div class="val no">✕ 불가 (인프라 선행)</div></div>
+      </div>
+
+      <div class="flow">
+        <div class="flbl">데이터가 흐르는 법 — 단방향 (car-erp가 진실, respond.io는 표시)</div>
+        <div class="fline">
+          <div class="node src">car-erp<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">입금/판매 확정</span></div>
+          <div class="fa">→<small>우리가 호출</small></div>
+          <div class="node" style="border-color:var(--amber)">큐(대기열)<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">비동기 처리</span></div>
+          <div class="fa">→<small>Developer API</small></div>
+          <div class="node dst">respond.io<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">단계 전진</span></div>
+        </div>
+        <div class="pay">보내는 정보(최소): { respond_contact_id, 단계(Payment/Customer), vehicle_id } &nbsp;— 그 외 개인정보·금액 전송 금지</div>
+      </div>
+
+      <div class="dgrid">
+        <div class="dbox">
+          <h4>🛠 만들어야 할 것</h4>
+          <ul>
+            <li class="x">car-erp → respond.io 호출 서비스</li>
+            <li class="x">비동기 큐 Job (10초 멈춤 방지)</li>
+            <li class="x"><code>respond_io_contact_id</code> 컬럼 <b>(대표 승인 필요)</b></li>
+            <li class="x">중복전진 방지(멱등) 가드</li>
+          </ul>
+        </div>
+        <div class="dbox">
+          <h4>📥 필요한 정보 / 조인키</h4>
+          <ul>
+            <li>car-erp 차량 ↔ <b>respond.io contact 연결</b></li>
+            <li class="c">발화 조건 = <b>실제 입금/정산확정</b> 이벤트</li>
+            <li class="c">수출(export) 채널만 (국내 바이어 제외)</li>
+            <li class="c">단방향 — respond.io→car-erp 역방향 금지</li>
+          </ul>
+        </div>
+      </div>
+      <div class="dbox" style="margin-top:12px;border-color:#fed7aa;background:#fff7ed">
+        <h4 style="color:#9a3412">⚠️ 전제 (이게 없으면 작동 못 함)</h4>
+        <ul>
+          <li>car-erp <b>도메인 + HTTPS</b> (현재 IP 직접 = 미완)</li>
+          <li><b>큐 워커 상시 가동</b> (현재 꺼져 있음)</li>
+          <li>respond.io <b>Growth 플랜</b> ✓ 확인됨 — Developer API 사용 가능</li>
+          <li>환율 0원 차량 "완납 오판" 방지 가드</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 연동 A ===================== -->
+  <h2 class="sec"><span class="n">3</span> 연동 A — 검차 사진 ↔ 바이어 구매의사 <span style="font-size:12px;font-weight:600;color:var(--gray-500)">(가장 편하지만 가장 나중)</span></h2>
+  <div class="ccard">
+    <div class="ctop A">
+      <div class="big">A</div>
+      <div>
+        <div class="ttl">respond.io 바이어 ↔ purchase-board 검차</div>
+        <div class="desc">검차팀이 찍은 차 사진을 바이어에게 보내고, "살게요" 응답을 받아옴</div>
+      </div>
+      <div class="prio">후행<br>(앱부터 만들어야)</div>
+    </div>
+    <div class="cbody">
+      <div class="status3">
+        <div class="sbadge"><div class="lbl">설계(방향)</div><div class="val wait">◐ 오늘 회의서 방향</div></div>
+        <div class="sbadge"><div class="lbl">구현(코드)</div><div class="val no">✕ 아직</div></div>
+        <div class="sbadge"><div class="lbl">작동</div><div class="val no">✕ 불가 (2겹 의존)</div></div>
+      </div>
+
+      <div class="flow">
+        <div class="flbl">데이터가 흐르는 법 — 양방향</div>
+        <div class="fline">
+          <div class="node src">검차팀<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">현장 사진 촬영</span></div>
+          <div class="fa">→<small>① 보냄</small></div>
+          <div class="node dst">바이어<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">WhatsApp 수신</span></div>
+          <div class="fa">→<small>② "살게요"</small></div>
+          <div class="node src">검차 화면<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">통과/미통과</span></div>
+        </div>
+        <div class="pay">사진은 직접 전송 X → S3 링크(차량 외관만)로 전송 · ② 응답은 초기엔 수동 체크 → 나중에 자동 회수</div>
+      </div>
+
+      <div class="dgrid">
+        <div class="dbox">
+          <h4>🛠 만들어야 할 것</h4>
+          <ul>
+            <li class="x">purchase-board 진짜 앱 (B와 동일 선행)</li>
+            <li class="x">검차 드로어에 사진→전송 + 응답 상태 3종</li>
+            <li class="x">바이어(respond.io contact) 선택 UI</li>
+            <li class="x">서류·번호판 사진 차단 필터</li>
+          </ul>
+        </div>
+        <div class="dbox">
+          <h4>📥 필요한 정보 / 조인키</h4>
+          <ul>
+            <li>검차 매물 ↔ <b>respond.io contact 연결</b></li>
+            <li>차량 외관 사진 (S3 보관)</li>
+            <li class="c">자동 회수는 Advanced 플랜 필요 → 초기 수동</li>
+          </ul>
+        </div>
+      </div>
+      <div class="dbox" style="margin-top:12px;border-color:#fed7aa;background:#fff7ed">
+        <h4 style="color:#9a3412">⚠️ 전제 — 가장 늦는 이유 (2겹 의존)</h4>
+        <ul><li>① purchase-board 앱이 먼저 존재 &nbsp; ② car-erp 도메인+HTTPS</li><li>바이어 응답 자동회수 = Advanced 플랜(+월 16만원) → 초기엔 수동으로 충분</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 조인키 스토리 ===================== -->
+  <h2 class="sec"><span class="n">4</span> 모든 연동의 공통 열쇠 — "누가 어느 차를 샀나" 연결</h2>
+  <div class="map">
+    <div class="fline" style="justify-content:center">
+      <div class="node ext" style="border-color:var(--blue)">respond.io contact<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">바이어 1명</span></div>
+      <div class="fa">↔</div>
+      <div class="node" style="border-color:var(--purple)">연결 테이블<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">1:N 매핑</span></div>
+      <div class="fa">↔</div>
+      <div class="node dst">car-erp 차량<br><span style="font-weight:500;font-size:11px;color:var(--gray-500)">VIN별 여러 대</span></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--gray-700);margin-top:14px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:9px;padding:12px 14px">
+      <b>왜 중요한가:</b> 바이어 1명이 차를 여러 대 살 수 있습니다(1:N). 그래서 respond.io에는 <b>고정 ID(contact_id)만</b> 저장하고,
+      "이 바이어가 이 차(VIN)를 샀다"는 연결은 <b>별도 연결 테이블</b>에서 관리합니다.
+      <span style="color:var(--red);font-weight:700">차량 정보(VIN)를 respond.io에 직접 박으면</span> 두 번째 차 살 때 첫 번째가 덮어써져서 추적이 끊깁니다 — 그래서 금지.
+    </div>
+  </div>
+
+  <!-- ===================== 로드맵 ===================== -->
+  <h2 class="sec"><span class="n">5</span> 진행 순서 (로드맵)</h2>
+  <div class="road">
+    <div class="phase">
+      <div class="ph"><div class="pn">Phase 0</div><div class="pt">지금</div><div class="pnow">현재 위치</div></div>
+      <div class="pc">
+        <div class="ph-h">바탕 다지기 (이미 할 일 목록에 있던 것들)</div>
+        <ul>
+          <li>purchase-board를 진짜 앱으로 만들기 (목업 → MVP)</li>
+          <li>car-erp 도메인 + HTTPS 적용</li>
+          <li>큐 워커 상시 가동</li>
+          <li>respond.io 요금제 ✓ 확인 완료 (Growth) · DPA(개인정보 위탁계약) 알아보기</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="ph"><div class="pn">Phase 1</div><div class="pt">바탕 완성 후</div><div class="pnext">연동 C 먼저</div></div>
+      <div class="pc">
+        <div class="ph-h">연동 C 파일럿 — car-erp 입금 → respond.io 단계 전진</div>
+        <ul>
+          <li>우리가 respond.io를 호출하는 단방향이라 가장 단순 · 추가비용 0</li>
+          <li>수출 채널만, 정보 최소화, 중복방지</li>
+          <li>예상 8~12시간 + 대표 승인(contact 연결 컬럼)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="ph"><div class="pn">Phase 2</div><div class="pt">앱 완성 후</div><div class="plater">연동 A 나중</div></div>
+      <div class="pc">
+        <div class="ph-h">연동 A — 검차 사진공유 + 구매의사</div>
+        <ul>
+          <li>처음엔 S3 링크 수동 전송 + 응답 수동 체크</li>
+          <li>잘 돌면 자동 회수로 업그레이드 (Advanced 플랜 필요시)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="ph"><div class="pn">연동 B</div><div class="pt">앱 만들 때 함께</div><div class="plater">설계 완료</div></div>
+      <div class="pc">
+        <div class="ph-h">낙찰 → car-erp 차량등록 (purchase-board 만들 때 자연히 포함)</div>
+        <ul>
+          <li>설계는 6/2에 가장 구체적으로 끝남 — API 1개 + HMAC</li>
+          <li>purchase-board 앱 구현의 마지막 단계로 붙음</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== NO-GO ===================== -->
+  <h2 class="sec"><span class="n">6</span> 절대 넘으면 안 되는 선 (보안·법)</h2>
+  <div class="nogo">
+    <h3>⛔ respond.io(해외 서버)에 보내면 안 되는 것 — 개인정보 국외이전(법 §28)</h3>
+    <ul>
+      <li>판매자(매입처)의 주민번호 · 이름 · 주소 · 계좌</li>
+      <li>차량등록증 · 성능점검부 · 말소신청서 같은 <b>서류 사진</b></li>
+      <li>차량 <b>번호판</b>이 찍힌 사진 (마스킹 검토)</li>
+      <li>매입가 · 판매가 등 금액 (영업비밀)</li>
+    </ul>
+    <div style="margin-top:10px;font-size:12.5px;color:#7f1d1d">
+      <span class="ok">✓ 해결책:</span> 사진은 <b>차량 외관만</b> S3 링크로 · 보내는 정보는 <b>contact_id·단계·차량ID만</b> · respond.io와 <b>위탁계약(DPA)</b> 체결.
+    </div>
+  </div>
+
+  <!-- ===================== 요약표 ===================== -->
+  <h2 class="sec"><span class="n">7</span> 한 장 요약 — 무엇을 설계 / 구현 / 받아야 하나</h2>
+  <table>
+    <thead><tr><th style="width:55px">연동</th><th>설계 (방향·결정)</th><th>구현 (만들 코드)</th><th>주고받는 정보</th><th style="width:90px">상태</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="tag t-design" style="background:#ccfbf1;color:#0f766e">B</span></td>
+        <td><span class="tag t-design">완료(6/2)</span> API 1개 + HMAC, VIN 식별키</td>
+        <td><span class="tag t-build">대기</span> purchase-board 앱 + car-erp 수신 API</td>
+        <td>VIN, 차량번호, 경매장/출품번호, 낙찰가, 영업</td>
+        <td>설계✓ 구현✕</td>
+      </tr>
+      <tr>
+        <td><span class="tag t-design" style="background:#fef3c7;color:#b45309">C</span></td>
+        <td><span class="tag t-design">방향(오늘)</span> 단방향, 수출만, 멱등</td>
+        <td><span class="tag t-build">대기</span> 호출서비스+큐+contact 컬럼</td>
+        <td>respond_contact_id, 단계, 차량ID <b>(최소)</b></td>
+        <td>지금 가능🟢</td>
+      </tr>
+      <tr>
+        <td><span class="tag t-design" style="background:#ede9fe;color:#6d28d9">A</span></td>
+        <td><span class="tag t-design">방향(오늘)</span> S3링크, 응답 상태 3종</td>
+        <td><span class="tag t-build">대기</span> 앱+검차드로어+사진필터</td>
+        <td>외관사진(S3링크), contact_id, 구매의사</td>
+        <td>후행🟡</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">⚠️ 이 문서는 2026-06-04 라운드테이블 회의(내부 6부서 + 사외이사 Codex·Gemini) 결론을 시각화한 것입니다. 상세: <code>docs/meetings/2026-06-04-tri-system-integration-respondio.md</code></div>
+
+</div>
+</body>
+</html>

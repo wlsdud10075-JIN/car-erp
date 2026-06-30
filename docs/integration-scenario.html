@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>시나리오로 보는 연동 — 바이어 한 명이 차 사기까지 (실제 흐름)</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --ai:#d946ef; --site:#6366f1;
+    --respond:#3b82f6; --board:#f59e0b; --erp:#10b981;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.65}
+  .app{max-width:880px;margin:0 auto;padding:20px 16px 70px}
+
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .head .logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,var(--primary),#9a8de0);display:flex;align-items:center;justify-content:center;font-size:20px}
+  .head h1{font-size:20px;font-weight:800}
+  .head .sub{font-size:12px;color:var(--gray-500)}
+
+  .cast{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+  .person{flex:1;min-width:140px;background:#fff;border:1px solid var(--gray-200);border-radius:11px;padding:12px;display:flex;align-items:center;gap:10px}
+  .person.aibot{border-color:var(--ai);background:#fdf4ff}
+  .person .av{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+  .person .nm{font-weight:800;font-size:13.5px}
+  .person .ds{font-size:11px;color:var(--gray-500)}
+  .av.b{background:#dbeafe} .av.s{background:#ede9fe} .av.i{background:#fef3c7} .av.c{background:#d1fae5} .av.a{background:#fae8ff}
+
+  .syslegend{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 16px;font-size:11.5px}
+  .syschip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:20px;padding:5px 12px;font-weight:700}
+  .sq{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .sq.site{background:var(--site)} .sq.r{background:var(--respond)} .sq.bo{background:var(--board)} .sq.e{background:var(--erp)} .sq.ai{background:var(--ai)}
+
+  /* c_no thread box */
+  .thread{background:linear-gradient(135deg,#eef2ff,#faf5ff);border:1.5px solid #c7d2fe;border-radius:13px;padding:16px 18px;margin-bottom:22px}
+  .thread h3{font-size:14.5px;font-weight:800;color:#4338ca;margin-bottom:8px}
+  .thread .ex{background:#fff;border:1px solid var(--gray-200);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--gray-700);font-family:monospace;line-height:1.7;margin:8px 0}
+  .thread .ex b{background:#fef08a;padding:1px 5px;border-radius:4px;font-family:inherit}
+  .threadflow{font-size:12px;color:#4338ca;font-weight:600;margin-top:8px}
+
+  .tl{position:relative;padding-left:34px}
+  .tl::before{content:'';position:absolute;left:13px;top:6px;bottom:30px;width:3px;background:var(--gray-200);border-radius:2px}
+  .step{position:relative;margin-bottom:18px}
+  .step .num{position:absolute;left:-34px;top:0;width:28px;height:28px;border-radius:50%;background:var(--primary);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:12px;border:3px solid var(--gray-100);z-index:2}
+  .step .num.ainum{background:var(--ai)}
+  .step .num.sitenum{background:var(--site)}
+  .scard{background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;border-left-width:5px}
+  .scard.site{border-left-color:var(--site)}
+  .scard.r{border-left-color:var(--respond)}
+  .scard.bo{border-left-color:var(--board)}
+  .scard.e{border-left-color:var(--erp)}
+  .scard.ai{border-left-color:var(--ai)}
+  .scard.multi{border-left-color:var(--primary)}
+  .shead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px}
+  .shead .stitle{font-weight:800;font-size:14.5px}
+  .badges{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+  .bdg{font-size:10px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .bdg.sys-site{background:#e0e7ff;color:#4338ca}
+  .bdg.sys-r{background:#dbeafe;color:#1d4ed8}
+  .bdg.sys-bo{background:#fef3c7;color:#b45309}
+  .bdg.sys-e{background:#d1fae5;color:#047857}
+  .bdg.sys-ai{background:#fae8ff;color:#a21caf}
+  .bdg.auto{background:#ccfbf1;color:#0f766e}
+  .bdg.manual{background:#eef0f4;color:#4b5563}
+  .bdg.now{background:#dcfce7;color:#15803d}
+  .bdg.future{background:#f3e8ff;color:#7e22ce}
+  .sbody{font-size:13px;color:var(--gray-700)}
+  .sbody .q{display:block;background:var(--gray-50);border-left:3px solid var(--gray-300);padding:6px 11px;border-radius:6px;margin:7px 0;font-style:italic;color:var(--gray-600);font-size:12.5px}
+  .sbody .q.ai{border-left-color:var(--ai);background:#fdf4ff;color:#86198f;font-style:normal}
+  .sbody .q.ai::before{content:'🤖 ';font-style:normal}
+  .cno{background:#fef08a;padding:1px 5px;border-radius:4px;font-weight:700;font-family:monospace;font-size:12px}
+
+  .conn{margin-top:10px;border-radius:9px;padding:10px 13px;font-size:12.5px;font-weight:600;display:flex;align-items:flex-start;gap:9px}
+  .conn .tag{font-size:14px;font-weight:900;width:26px;height:26px;border-radius:7px;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .conn.A{background:#f5f3ff;color:#5b21b6} .conn.A .tag{background:var(--purple)}
+  .conn.B{background:#f0fdfa;color:#115e59} .conn.B .tag{background:var(--teal)}
+  .conn.C{background:#fffbeb;color:#92400e} .conn.C .tag{background:var(--amber)}
+  .conn.AI{background:#fdf4ff;color:#86198f} .conn.AI .tag{background:var(--ai);font-size:13px}
+
+  .mini{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;font-weight:700}
+  .mnode{background:#fff;border:1.5px solid var(--gray-300);border-radius:7px;padding:4px 9px}
+  .mnode.site{border-color:var(--site);color:#4338ca}
+  .mnode.r{border-color:var(--respond);color:#1d4ed8}
+  .mnode.bo{border-color:var(--board);color:#b45309}
+  .mnode.e{border-color:var(--erp);color:#047857}
+  .mnode.ai{border-color:var(--ai);color:#a21caf}
+  .marr{color:var(--gray-400);font-size:15px}
+
+  .closing{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:18px;margin-top:24px}
+  .closing h3{font-size:15px;font-weight:800;margin-bottom:10px}
+  .sumrow{display:flex;gap:10px;flex-wrap:wrap}
+  .sumcard{flex:1;min-width:150px;border:1px solid var(--gray-200);border-radius:10px;padding:12px;border-top:4px solid}
+  .sumcard .ct{font-weight:800;font-size:13px}
+  .sumcard .cd{font-size:11.5px;color:var(--gray-600);margin-top:4px}
+
+  .spec{display:flex;height:34px;border-radius:9px;overflow:hidden;margin:10px 0;border:1px solid var(--gray-200);font-size:12px;font-weight:800}
+  .spec .ai-part{background:#f5d0fe;color:#86198f;display:flex;align-items:center;justify-content:center;flex:0 0 75%}
+  .spec .hu-part{background:#e0e7ff;color:#3730a3;display:flex;align-items:center;justify-content:center;flex:1}
+
+  .guard{background:#fdf4ff;border:1px solid #f0abfc;border-radius:12px;padding:16px 18px;margin-top:18px}
+  .guard h3{color:#86198f;font-size:14px;font-weight:800;margin-bottom:6px}
+  .guard .gr{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .guard .gi{flex:1;min-width:200px;background:#fff;border:1px solid #f0abfc;border-radius:9px;padding:10px 12px;font-size:12px;color:#701a75}
+  .guard .gi b{display:block;margin-bottom:2px;font-size:12.5px}
+
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="head">
+    <div class="logo">🎬</div>
+    <div>
+      <h1>시나리오로 보는 연동 (실제 흐름)</h1>
+      <div class="sub">바이어 '드라간'이 ssancar.com에서 제네시스 GV70을 보고 사기까지 · 매물번호(c_no)가 모든 걸 꿴다</div>
+    </div>
+  </div>
+
+  <div class="cast">
+    <div class="person aibot"><div class="av a">🤖</div><div><div class="nm">SSANCAR Front Desk</div><div class="ds">respond.io AI (1차 응대)</div></div></div>
+    <div class="person"><div class="av b">🧔🏽</div><div><div class="nm">드라간</div><div class="ds">세르비아 바이어</div></div></div>
+    <div class="person"><div class="av s">👨‍💼</div><div><div class="nm">김영업</div><div class="ds">영업 (AI 막힐 때)</div></div></div>
+    <div class="person"><div class="av c">💰</div><div><div class="nm">이재무</div><div class="ds">재무 (입금 확인)</div></div></div>
+  </div>
+
+  <div class="syslegend">
+    <span class="syschip"><span class="sq site"></span>🛒 ssancar.com (매물 카탈로그)</span>
+    <span class="syschip"><span class="sq r"></span>respond.io (채팅)</span>
+    <span class="syschip"><span class="sq ai"></span>🤖 AI</span>
+    <span class="syschip"><span class="sq bo"></span>purchase-board</span>
+    <span class="syschip"><span class="sq e"></span>car-erp</span>
+  </div>
+
+  <!-- c_no thread -->
+  <div class="thread">
+    <h3>🧵 모든 걸 꿰는 실 = 매물번호 (c_no)</h3>
+    <div style="font-size:12.5px;color:var(--gray-700)">바이어가 ssancar.com에서 차 보고 채팅 누르면, <b>그 차 정보·사진·고유번호가 자동으로 따라옵니다</b> (2026-06-04 실제 확인). 예시:</div>
+    <div class="ex">
+      GENESIS GV70 2.5T AWD · 2022.03 · 41,189km · 26,005 USD<br>
+      "Hi SSANCAR, Is this car still available?"<br>
+      GENESIS GV70 (<b>#6797296</b>) · Plate 191누7710 · 📷사진첨부 · Ref: SSC-WEB
+    </div>
+    <div class="threadflow">이 <span class="cno">6797296</span> 하나가 → 채팅 → 매입 → car-erp → 입금까지 쭉 따라가며 "이 바이어 = 이 차"를 처음부터 묶어줍니다.</div>
+  </div>
+
+  <div class="tl">
+
+    <!-- 1 : ssancar.com → respond.io -->
+    <div class="step">
+      <div class="num sitenum">1</div>
+      <div class="scard site">
+        <div class="shead">
+          <span class="stitle">드라간이 ssancar.com에서 GV70 보고 채팅 클릭</span>
+          <span class="badges"><span class="bdg sys-site">ssancar.com</span><span class="bdg sys-r">respond.io</span><span class="bdg auto">자동</span><span class="bdg now">🟢 지금 됨</span></span>
+        </div>
+        <div class="sbody">
+          드라간이 ssancar.com(여러 사이트 매물 모은 곳)에서 제네시스 GV70(<span class="cno">#6797296</span>)을 보고 WhatsApp 채팅을 누릅니다.
+          그 순간 <b>차 정보·사진·매물번호가 respond.io로 자동으로 도착</b>.
+          <span class="q">드라간: "Hi SSANCAR, 이 GV70 (#6797296) 아직 있어요?"</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 : AI 응대 (이미 어느 차인지 앎) -->
+    <div class="step">
+      <div class="num ainum">2</div>
+      <div class="scard ai">
+        <div class="shead">
+          <span class="stitle">🤖 AI가 어느 차인지 알고 바로 응대</span>
+          <span class="badges"><span class="bdg sys-ai">AI</span><span class="bdg auto">자동</span><span class="bdg future">🟣 학습·설정 필요</span></span>
+        </div>
+        <div class="sbody">
+          <span class="cno">6797296</span>이 같이 왔으니 AI는 묻지 않아도 어느 차인지 압니다.
+          <span class="q ai">AI: "네, GV70 2.5T 문의주셨네요! 2022년식 41,189km, 26,005달러입니다. 수출 절차 안내해드릴까요?"</span>
+          밤이든 새벽이든 즉시 응대. (수출 절차·보증 같은 안 바뀌는 정보는 <b>학습</b>으로 답)
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 : "still available?" + handoff -->
+    <div class="step">
+      <div class="num ainum">3</div>
+      <div class="scard ai">
+        <div class="shead">
+          <span class="stitle">🤖 "아직 있어요?" 확인 · 막히면 김영업 호출</span>
+          <span class="badges"><span class="bdg sys-ai">AI</span><span class="bdg manual">→ 사람</span><span class="bdg future">🟣 미래</span></span>
+        </div>
+        <div class="sbody">
+          "아직 있냐"의 답은 <b>car-erp가 아니라 ssancar.com(원본 사이트) 재고</b>를 봐야 합니다 (아직 SSANCAR이 산 차가 아니니까).
+          가격 흥정·세부 판단이 나오면 AI가 스스로 김영업을 부릅니다.
+          <span class="q">드라간: "조금 깎아줄 수 있어요? 사고이력은요?"</span>
+          <div class="conn AI">
+            <span class="tag">핵심</span>
+            <div><b>"문제일 때만 사람" 모델.</b> 평소 대화는 AI, 돈·예외는 김영업.
+              <div class="mini"><span class="mnode ai">🤖 AI 응대</span><span class="marr">→ 막힘 →</span><span class="mnode s" style="border-color:var(--purple);color:#5b21b6">👨‍💼 김영업</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 : 살게요 → 수주 후 매입 -->
+    <div class="step">
+      <div class="num">4</div>
+      <div class="scard bo">
+        <div class="shead">
+          <span class="stitle">"살게요!" → SSANCAR이 그 차를 매입하러 감</span>
+          <span class="badges"><span class="bdg sys-bo">purchase-board</span><span class="bdg manual">사람이</span><span class="bdg future">🟣 미래</span></span>
+        </div>
+        <div class="sbody">
+          드라간이 사겠다 하면, 그제서야 SSANCAR이 그 차(<span class="cno">6797296</span>)를 <b>경매/구매로 실제 매입</b>합니다.
+          <span style="color:var(--gray-500)">※ 재고를 쌓아두는 게 아니라 "수주 후 매입" 구조. purchase-board에 매입예정으로 등록.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 = A : 검차 -->
+    <div class="step">
+      <div class="num">5</div>
+      <div class="scard multi">
+        <div class="shead">
+          <span class="stitle">검차 — 실차 사진을 드라간에게 보내 최종 확인</span>
+          <span class="badges"><span class="bdg sys-bo">purchase-board</span><span class="bdg sys-r">respond.io</span><span class="bdg future">🟣 미래</span></span>
+        </div>
+        <div class="sbody">
+          박검차가 현장에서 실제 차를 검수하며 찍은 사진을 드라간에게 보내 최종 확인받습니다.
+          <span class="q">드라간: "👍 좋아요, 진행해주세요!"</span>
+        </div>
+        <div class="conn A">
+          <span class="tag">A</span>
+          <div><b>연동 A.</b> 사진 전송 자동 · 답은 초기 수동 체크 → 나중 자동 회수.
+            <div class="mini"><span class="mnode bo">실차 사진</span><span class="marr">→</span><span class="mnode r">드라간 WhatsApp</span><span class="marr">→</span><span class="mnode bo">확인 기록</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6 : 낙찰 -->
+    <div class="step">
+      <div class="num">6</div>
+      <div class="scard bo">
+        <div class="shead">
+          <span class="stitle">경매에서 낙찰 / 구매 확정</span>
+          <span class="badges"><span class="bdg sys-bo">purchase-board</span><span class="bdg manual">사람이</span><span class="bdg future">🟣 미래</span></span>
+        </div>
+        <div class="sbody">경매팀이 그 차를 <b>낙찰</b>받습니다. 이제 이 차는 SSANCAR 소유 = 우리 재고. <span style="color:var(--gray-500)">(돈 거는 결정이라 사람이)</span></div>
+      </div>
+    </div>
+
+    <!-- 7 = B : car-erp 등록 -->
+    <div class="step">
+      <div class="num">7</div>
+      <div class="scard multi">
+        <div class="shead">
+          <span class="stitle">car-erp에 차량 등록 → 워크플로우 시작</span>
+          <span class="badges"><span class="bdg sys-bo">purchase-board</span><span class="bdg sys-e">car-erp</span><span class="bdg future">🟣 미래</span></span>
+        </div>
+        <div class="sbody">
+          <b>지금은:</b> 낙찰되면 [관리]에게 <b>카톡으로 차량정보를 보내고, [관리]가 car-erp에 손으로 등록</b>합니다.
+          <b>연동 B면:</b> 낙찰 순간 <b>car-erp에 자동 등록</b> (카톡·수동입력 사라짐). <span class="cno">6797296</span>도 같이 기록돼 실이 안 끊김.
+        </div>
+        <div class="conn B">
+          <span class="tag">B</span>
+          <div><b>연동 B = 지금 Jin이 겪는 그 카톡·수동작업을 없애는 것.</b>
+            <div class="mini"><span class="mnode bo">낙찰</span><span class="marr">→ (지금 카톡) →</span><span class="mnode e">car-erp 등록</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8 : 판매·입금 -->
+    <div class="step">
+      <div class="num">8</div>
+      <div class="scard e">
+        <div class="shead">
+          <span class="stitle">판매 등록 → 드라간 입금 → 이재무 확정</span>
+          <span class="badges"><span class="bdg sys-e">car-erp</span><span class="bdg manual">사람이</span><span class="bdg now">🟢 지금도 됨</span></span>
+        </div>
+        <div class="sbody">판매가 등록 후 드라간이 송금. <b>이재무가 입금 확정</b>을 누름. <span style="color:var(--gray-500)">(돈 확인은 반드시 사람)</span></div>
+      </div>
+    </div>
+
+    <!-- 9 = C -->
+    <div class="step">
+      <div class="num">9</div>
+      <div class="scard multi">
+        <div class="shead">
+          <span class="stitle">입금 확정 → respond.io 단계 자동전진</span>
+          <span class="badges"><span class="bdg sys-e">car-erp</span><span class="bdg sys-r">respond.io</span><span class="bdg auto">자동</span><span class="bdg now">🟢 지금 가능!</span></span>
+        </div>
+        <div class="sbody">입금 확정 순간 드라간 단계가 <b>자동으로 'Payment'로</b>. <span class="cno">6797296</span>으로 처음부터 묶여 있어 <b>누구 단계를 올릴지 안 헷갈림.</b></div>
+        <div class="conn C">
+          <span class="tag">C</span>
+          <div><b>연동 C.</b> <u>purchase-board 없이 지금 가능.</u> car-erp → respond.io 단방향.
+            <div class="mini"><span class="mnode e">car-erp 입금확정</span><span class="marr">→</span><span class="mnode r">respond.io 단계↑</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 10 : AI reads car-erp -->
+    <div class="step">
+      <div class="num ainum">10</div>
+      <div class="scard ai">
+        <div class="shead">
+          <span class="stitle">🤖 "내 차 어디?" → AI가 car-erp 보고 정확히 답</span>
+          <span class="badges"><span class="bdg sys-ai">AI</span><span class="bdg sys-e">car-erp 읽기</span><span class="bdg now">🟢 지금 가능</span></span>
+        </div>
+        <div class="sbody">
+          며칠 뒤 드라간이 묻습니다:
+          <span class="q">드라간: "내 차 지금 어디쯤이야?"</span>
+          <span class="q ai">AI: "통관 완료, B/L 발급됐어요. DHL 추적번호 1234, 약 12일 후 도착 예정입니다."</span>
+          <div class="conn AI">
+            <span class="tag">📖</span>
+            <div>이건 <b>배송상태라 계속 바뀌니 학습 X</b> → 물어볼 때마다 <b>car-erp 실시간 조회</b>. (Webhook으로 우리 서버가 받아 car-erp 보고 답장 — Growth로 가능)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 11 -->
+    <div class="step">
+      <div class="num">11</div>
+      <div class="scard e">
+        <div class="shead">
+          <span class="stitle">거래완료 → 드라간은 Customer 🎉</span>
+          <span class="badges"><span class="bdg sys-e">car-erp</span><span class="bdg now">🟢 지금도 됨</span></span>
+        </div>
+        <div class="sbody">통관 → 선적(B/L) → DHL → <b>거래완료</b>. (연동 C로) respond.io에서 드라간이 <b>Customer</b>가 됩니다.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================= 숙제 해결 ================= -->
+  <div class="closing" style="border:1.5px solid #c7d2fe;background:#eef2ff">
+    <h3 style="color:#4338ca">🧵 c_no가 풀어준 숙제</h3>
+    <div style="font-size:13px;color:var(--gray-700)">
+      회의 때 엔지니어가 <b>"문의한 바이어 = 실제 산 사람이 같은지 보장할 키가 없다"</b>고 걱정했는데 —
+      바이어가 처음부터 <span class="cno">6797296</span> 차를 콕 집어 문의하니, 그 번호만 끝까지 들고 가면 <b>"이 바이어 = 이 차"가 처음부터 자동 확정</b>됩니다. 숙제 하나가 공짜로 풀렸어요.
+      <br>→ 권장: SSANCAR이 차 살 때 <b>c_no를 car-erp에도 기록</b>해두면 첫 문의~거래완료가 한 줄로 이어집니다.
+    </div>
+  </div>
+
+  <!-- ================= AUTOMATION SPECTRUM ================= -->
+  <div class="closing">
+    <h3>🎚️ "완전 자동화"의 진짜 모습 — 켜고 끄기가 아니라 비율</h3>
+    <div class="spec">
+      <div class="ai-part">🤖 AI 자동 (대화·안내·상태답변) ~75%</div>
+      <div class="hu-part">👤 사람 (돈·예외) ~25%</div>
+    </div>
+    <div style="font-size:12.5px;color:var(--gray-700)">
+      AI가 인사·FAQ·차 안내·상태답변 같은 <b>대화 대부분</b>을, <b>제시가·낙찰·입금확인·분쟁</b> 같은 돈/리스크는 사람이.
+      Jin이 말씀하신 "문제 될 때만 사람" = 바로 이 그림. <b>달성 가능합니다.</b>
+    </div>
+  </div>
+
+  <!-- ================= AI GUARDRAILS ================= -->
+  <div class="guard">
+    <h3>🛡️ AI를 켜기 전 거는 가드레일 3개 (미구현 · 새 숙제)</h3>
+    <div class="gr">
+      <div class="gi"><b>① 약속 제한</b>AI가 멋대로 "깎아줄게" 못 하게. 가격 하한·약속 범위를 코드로 묶고 넘으면 사람 호출.</div>
+      <div class="gi"><b>② 개인정보</b>과거 대화엔 다른 바이어 정보가 섞임. 학습 시 유출 위험 + 국외이전(§28).</div>
+      <div class="gi"><b>③ 실시간 데이터</b>AI가 지어내지 않게 car-erp를 읽는 안전한 통로. 10번 단계의 그것.</div>
+    </div>
+  </div>
+
+  <!-- ================= PLAN ================= -->
+  <div class="closing" style="border:2px solid #86efac;background:#f0fdf4">
+    <h3 style="color:#15803d">💳 지금 우리 요금제(Growth)로 어디까지 되나? — 추가 돈 0원</h3>
+    <p style="font-size:13px;color:var(--gray-700);margin-bottom:10px">
+      두 시스템을 잇는 건 <b>"전화선 두 줄"</b> — 우리가 거는 선, 상대(respond.io)가 거는 선. <b>확인해보니 둘 다 우리 요금제로 됩니다.</b>
+    </p>
+    <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--gray-200);border-radius:10px;overflow:hidden;font-size:13px">
+      <thead><tr style="background:var(--gray-50)">
+        <th style="text-align:left;padding:10px 13px;font-size:11px;color:var(--gray-500);font-weight:800;border-bottom:1px solid var(--gray-200)">우리가 하려는 것</th>
+        <th style="text-align:right;padding:10px 13px;font-size:11px;color:var(--gray-500);font-weight:800;border-bottom:1px solid var(--gray-200);width:130px">되나?</th>
+      </tr></thead>
+      <tbody>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">🛒 채팅에 차 정보·매물번호 자동 도착</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">✅ 이미 됨</span></td></tr>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">💰 입금하면 바이어 단계 자동전진 (C)</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">✅ 지금 됨</span></td></tr>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">🤖 AI 1차응대 / 막히면 사람 호출</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">✅ 지금 됨</span></td></tr>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">↩️ 바이어 답 자동 받기 (A)</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">✅ 지금 됨</span></td></tr>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">🔔 "내 차 어디?" 자동 안내</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">✅ 지금 됨</span></td></tr>
+        <tr><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100)">🚗 낙찰차 car-erp 자동등록 (B)</td><td style="padding:11px 13px;border-bottom:1px solid var(--gray-100);text-align:right"><span style="background:#f3e8ff;color:#7e22ce;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">🟣 앱 만든 후</span></td></tr>
+        <tr><td style="padding:11px 13px">🎙️ AI 음성통화 · 개인정보 가리기</td><td style="padding:11px 13px;text-align:right"><span style="background:#f3f4f6;color:#6b7280;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800">⬆️ Advanced</span></td></tr>
+      </tbody>
+    </table>
+    <div style="font-size:11.5px;color:var(--gray-500);margin-top:6px">✅ = 추가 돈 없이 현재 Growth · 🟣 = 앱 먼저 만들면 됨 · ⬆️ Advanced = 나중 사치품(+월 16만원)</div>
+    <div style="margin-top:14px;font-size:13.5px;color:#14532d;background:#dcfce7;border-radius:9px;padding:13px 15px;font-weight:600">
+      🎉 <b>결론:</b> Jin이 그린 시스템 — AI 자동응대까지 — <b>거의 전부 지금 요금제로, 더 낼 돈 없이</b> 가능. Advanced는 음성통화 같은 나중 사치품일 뿐.
+    </div>
+  </div>
+
+  <div class="note">⚠️ 2026-06-04 실제 흐름 반영 (ssancar.com 매물집합 + c_no 조인키 + AI + 요금제) · 인물은 예시, GV70/6797296은 실제 채팅 예시 · 상세: docs/meetings/2026-06-04-tri-system-integration-respondio.md</div>
+
+</div>
+</body>
+</html>

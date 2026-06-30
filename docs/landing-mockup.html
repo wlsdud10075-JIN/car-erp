@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>car-erp — 중고차 수출 ERP</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #1e40af;
+    --primary-hover: #1e3a8a;
+    --primary-light: #eff6ff;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --bg-soft: #f8fafc;
+    --red: #dc2626;
+    --green: #16a34a;
+    --amber: #d97706;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+    color: var(--text);
+    line-height: 1.6;
+    background: white;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* ===== NAV ===== */
+  nav {
+    position: sticky;
+    top: 0;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    z-index: 100;
+  }
+  nav .container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+  .logo {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--primary);
+    letter-spacing: -0.5px;
+  }
+  .nav-cta {
+    background: var(--primary);
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background 0.2s;
+  }
+  .nav-cta:hover { background: var(--primary-hover); }
+
+  /* ===== HERO ===== */
+  .hero {
+    padding: 80px 0 100px;
+    background: linear-gradient(180deg, white 0%, var(--bg-soft) 100%);
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+  .hero-badge {
+    display: inline-block;
+    background: var(--primary-light);
+    color: var(--primary);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  .hero h1 {
+    font-size: 44px;
+    line-height: 1.25;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin-bottom: 20px;
+  }
+  .hero h1 span { color: var(--primary); }
+  .hero-sub {
+    font-size: 18px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+  }
+  .hero-cta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+    padding: 14px 28px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 16px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: inline-block;
+  }
+  .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+  .btn-secondary {
+    background: white;
+    color: var(--text);
+    padding: 14px 24px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: var(--bg-soft); }
+
+  /* Mock screenshot */
+  .mockup {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.12);
+    overflow: hidden;
+  }
+  .mockup-bar {
+    height: 32px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 6px;
+  }
+  .mockup-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #e2e8f0;
+  }
+  .mockup-content {
+    padding: 16px;
+    font-size: 12px;
+  }
+  .mock-row {
+    display: grid;
+    grid-template-columns: 30% 25% 20% 25%;
+    gap: 8px;
+    padding: 10px 8px;
+    border-bottom: 1px solid #f1f5f9;
+    align-items: center;
+  }
+  .mock-row.header {
+    font-weight: 700;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+  .mock-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .mb-blue { background: #dbeafe; color: #1e40af; }
+  .mb-green { background: #dcfce7; color: #16a34a; }
+  .mb-amber { background: #fef3c7; color: #d97706; }
+  .mb-purple { background: #ede9fe; color: #7c3aed; }
+
+  /* ===== SECTION COMMON ===== */
+  section { padding: 80px 0; }
+  .section-title {
+    text-align: center;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 16px;
+  }
+  .section-sub {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 17px;
+    margin-bottom: 56px;
+  }
+
+  /* ===== PAIN ===== */
+  .pain { background: var(--bg-soft); }
+  .pain-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  .pain-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--red);
+    padding: 24px;
+    border-radius: 10px;
+    display: flex;
+    gap: 16px;
+  }
+  .pain-icon {
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    background: #fee2e2;
+    color: var(--red);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .pain-card p {
+    font-size: 16px;
+    color: var(--text);
+    margin: 0;
+  }
+
+  /* ===== SOLUTION COMPARISON ===== */
+  .compare-table {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-row:last-child { border-bottom: none; }
+  .compare-row.header { background: var(--bg-soft); font-weight: 700; }
+  .compare-cell {
+    padding: 18px 24px;
+    font-size: 15px;
+  }
+  .compare-cell.before {
+    color: var(--text-muted);
+    border-right: 1px solid var(--border);
+  }
+  .compare-cell.after {
+    background: var(--primary-light);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .compare-cell.after::before {
+    content: "✓ ";
+    color: var(--green);
+    font-weight: 700;
+    margin-right: 6px;
+  }
+
+  /* ===== TESTIMONIAL ===== */
+  .testimonial {
+    background: var(--primary);
+    color: white;
+  }
+  .testimonial .container {
+    text-align: center;
+    max-width: 800px;
+  }
+  .testimonial-quote {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.55;
+    margin-bottom: 24px;
+    letter-spacing: -0.5px;
+  }
+  .testimonial-author {
+    font-size: 15px;
+    opacity: 0.85;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-top: 40px;
+    border-top: 1px solid rgba(255,255,255,0.2);
+    padding-top: 40px;
+  }
+  .stat-num {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+  .stat-label {
+    font-size: 14px;
+    opacity: 0.85;
+    margin-top: 4px;
+  }
+
+  /* ===== FEATURES ===== */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+  .feature-card {
+    background: white;
+    border: 1px solid var(--border);
+    padding: 24px;
+    border-radius: 10px;
+    display: flex;
+    gap: 16px;
+  }
+  .feature-icon {
+    flex-shrink: 0;
+    width: 44px; height: 44px;
+    background: var(--primary-light);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+  }
+  .feature-card h3 {
+    font-size: 16px;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .feature-card p {
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+
+  /* ===== PRICING ===== */
+  .pricing { background: var(--bg-soft); }
+  .price-card {
+    max-width: 480px;
+    margin: 0 auto;
+    background: white;
+    border: 2px solid var(--primary);
+    border-radius: 16px;
+    padding: 40px;
+    box-shadow: 0 12px 40px rgba(30,64,175,0.12);
+    position: relative;
+  }
+  .price-badge {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--primary);
+    color: white;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .price-tier {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+  }
+  .price-amount {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+  .price-amount span {
+    font-size: 18px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .price-meta {
+    color: var(--text-muted);
+    margin-bottom: 28px;
+    font-size: 14px;
+  }
+  .price-list {
+    list-style: none;
+    margin: 24px 0;
+  }
+  .price-list li {
+    padding: 8px 0;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .price-list li::before {
+    content: "✓";
+    color: var(--green);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .price-discount {
+    background: var(--primary-light);
+    padding: 16px;
+    border-radius: 10px;
+    margin: 24px 0;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+  .price-discount strong { color: var(--primary); }
+
+  /* ===== FAQ ===== */
+  .faq-list { max-width: 800px; margin: 0 auto; }
+  .faq-item {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 0;
+  }
+  .faq-q {
+    font-weight: 700;
+    font-size: 17px;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+  .faq-q::before {
+    content: "Q. ";
+    color: var(--primary);
+    font-weight: 800;
+  }
+  .faq-a {
+    color: var(--text-muted);
+    font-size: 15px;
+    padding-left: 24px;
+  }
+
+  /* ===== FINAL CTA ===== */
+  .final-cta {
+    background: linear-gradient(135deg, var(--primary) 0%, #312e81 100%);
+    color: white;
+    text-align: center;
+  }
+  .final-cta h2 {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 16px;
+    letter-spacing: -0.5px;
+  }
+  .final-cta p {
+    font-size: 17px;
+    opacity: 0.9;
+    margin-bottom: 32px;
+  }
+  .final-form {
+    max-width: 480px;
+    margin: 0 auto;
+    background: white;
+    padding: 28px;
+    border-radius: 14px;
+    color: var(--text);
+    text-align: left;
+  }
+  .final-form input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    margin-bottom: 10px;
+    font-family: inherit;
+  }
+  .final-form input:focus {
+    outline: none;
+    border-color: var(--primary);
+  }
+  .final-form button {
+    width: 100%;
+    background: var(--primary);
+    color: white;
+    padding: 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  .phone-direct {
+    margin-top: 24px;
+    font-size: 16px;
+    opacity: 0.9;
+  }
+  .phone-direct strong {
+    font-size: 22px;
+    color: white;
+  }
+
+  /* ===== FOOTER ===== */
+  footer {
+    background: #0f172a;
+    color: #94a3b8;
+    padding: 40px 0;
+    font-size: 13px;
+    text-align: center;
+  }
+  footer a { color: #cbd5e1; text-decoration: none; margin: 0 8px; }
+  footer strong { color: white; }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 768px) {
+    .hero { padding: 48px 0; }
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    .hero h1 { font-size: 30px; }
+    .section-title { font-size: 24px; }
+    .pain-grid, .features-grid { grid-template-columns: 1fr; }
+    .compare-row { grid-template-columns: 1fr; }
+    .compare-cell.before { border-right: none; border-bottom: 1px solid var(--border); }
+    .stats { grid-template-columns: 1fr; gap: 16px; }
+    section { padding: 56px 0; }
+    .testimonial-quote { font-size: 19px; }
+    .final-cta h2 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="container">
+    <div class="logo">car-erp</div>
+    <a href="#cta" class="nav-cta">데모 신청</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div>
+      <div class="hero-badge">🇰🇷 한국 중고차 수출 업종 전용 ERP</div>
+      <h1>중고차 수출 전 과정을<br><span>ERP 한 곳에서</span></h1>
+      <p class="hero-sub">
+        매입 · 말소 · 판매 · 통관 · 선적 · DHL · 정산까지.<br>
+        SSANCAR가 매일 실제로 쓰는 시스템.
+      </p>
+      <div class="hero-cta">
+        <a href="#cta" class="btn-primary">▶ 30분 무료 데모 신청</a>
+        <a href="tel:010-0000-0000" class="btn-secondary">☎ 010-XXXX-XXXX</a>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-bar">
+        <div class="mockup-dot"></div>
+        <div class="mockup-dot"></div>
+        <div class="mockup-dot"></div>
+      </div>
+      <div class="mockup-content">
+        <div class="mock-row header">
+          <div>차량번호</div><div>진행상태</div><div>채널</div><div>판매가</div>
+        </div>
+        <div class="mock-row">
+          <div>19더9065</div><div><span class="mock-badge mb-blue">매입완료</span></div><div>수출</div><div>USD 8,200</div>
+        </div>
+        <div class="mock-row">
+          <div>34나1238</div><div><span class="mock-badge mb-purple">판매완료</span></div><div>수출</div><div>USD 12,500</div>
+        </div>
+        <div class="mock-row">
+          <div>21수7766</div><div><span class="mock-badge mb-amber">선적중</span></div><div>수출</div><div>JPY 850,000</div>
+        </div>
+        <div class="mock-row">
+          <div>56허0421</div><div><span class="mock-badge mb-green">통관완료</span></div><div>수출</div><div>USD 9,800</div>
+        </div>
+        <div class="mock-row">
+          <div>78고2310</div><div><span class="mock-badge mb-blue">매입완료</span></div><div>헤이맨</div><div>KRW 18,000,000</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PAIN -->
+<section class="pain">
+  <div class="container">
+    <h2 class="section-title">이런 거 힘드시죠?</h2>
+    <p class="section-sub">엑셀 30개로 굴리던 거, 이제 한 곳에서 끝낼 수 있습니다.</p>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="pain-icon">!</div>
+        <p>잔금·미수금이 엑셀 곳곳에 흩어져 있어, 누가 얼마 안 줬는지 한눈에 안 보입니다</p>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">!</div>
+        <p>수출신고서·B/L·인보이스 양식 채우느라 차 1대당 30분씩 소모됩니다</p>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">!</div>
+        <p>직원이 그만두면 그 사람 컴퓨터·머릿속에 있던 데이터가 다 사라집니다</p>
+      </div>
+      <div class="pain-card">
+        <div class="pain-icon">!</div>
+        <p>환율 바뀔 때마다 정산표 다시 계산, 부가세마진 빼먹어 손해 본 적이 있습니다</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SOLUTION -->
+<section>
+  <div class="container">
+    <h2 class="section-title">엑셀 vs car-erp</h2>
+    <p class="section-sub">실제로 무엇이 어떻게 바뀌는지 한눈에 보세요.</p>
+    <div class="compare-table">
+      <div class="compare-row header">
+        <div class="compare-cell before">❌ 기존 (엑셀)</div>
+        <div class="compare-cell" style="background:var(--primary-light);">⚡ car-erp</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell before">차량번호 입력 → 등록증·제원표 보고 24개 항목 수기 입력</div>
+        <div class="compare-cell after">NICE 자동조회로 24개 항목 자동 채움</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell before">말소신청서·Invoice·Packing·통관 SET 양식 매번 작성</div>
+        <div class="compare-cell after">노란 셀에 차량 데이터 자동 기입 (서류 9종)</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell before">정산표 환율·부가세마진·서류비 매번 계산</div>
+        <div class="compare-cell after">사장님 엑셀 공식 100% 그대로, 자동 계산</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell before">미수금 누가 얼마인지 한 명씩 찾아봄</div>
+        <div class="compare-cell after">위험도(안전/주의/위험/심각) 자동 분류</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-cell before">영업·통관·재무가 같은 엑셀 만지다 충돌</div>
+        <div class="compare-cell after">권한 분리 + 모든 변경 이력 자동 기록</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIAL -->
+<section class="testimonial">
+  <div class="container">
+    <div class="testimonial-quote">
+      "엑셀로 100대 굴리던 거 ERP 옮기고 나서,<br>
+      직원 한 명이 다 보고 잔금까지 챙길 수 있게 됐어요.<br>
+      정산할 때 환차익 빼먹는 실수가 없어진 게 제일 큽니다."
+    </div>
+    <div class="testimonial-author">— SSANCAR LTD. ○○○ 대표</div>
+    <div class="stats">
+      <div>
+        <div class="stat-num">100+</div>
+        <div class="stat-label">월 수출 대수</div>
+      </div>
+      <div>
+        <div class="stat-num">6종</div>
+        <div class="stat-label">다중통화 지원</div>
+      </div>
+      <div>
+        <div class="stat-num">24h</div>
+        <div class="stat-label">자동 백업 주기</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section>
+  <div class="container">
+    <h2 class="section-title">사장님이 가장 걱정하시는 것</h2>
+    <p class="section-sub">보안 · 운영 · 신뢰 — 한국 개인정보보호법 기준 설계</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <div>
+          <h3>주민등록번호 암호화 저장</h3>
+          <p>개인정보보호법 준수, APP_KEY 분리 관리</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💾</div>
+        <div>
+          <h3>매일 새벽 3시 자동 백업</h3>
+          <p>AWS S3 저장 — 노트북 망가져도 안전</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">👥</div>
+        <div>
+          <h3>재무·영업·통관 권한 분리</h3>
+          <p>모든 변경 이력 자동 기록 (audit log)</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🚫</div>
+        <div>
+          <h3>잔금 100% 미입금 시 B/L 자동 차단</h3>
+          <p>관리자 승인 시에만 우회 가능</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔐</div>
+        <div>
+          <h3>금액 확정 후 수정 금지</h3>
+          <p>회계 무결성 유지, 추적 가능</p>
+        </div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">☁️</div>
+        <div>
+          <h3>AWS 클라우드 + HTTPS</h3>
+          <p>회사 PC 1대에 의존하지 않습니다</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <h2 class="section-title">요금</h2>
+    <p class="section-sub">단순합니다. 숨겨진 비용 없습니다.</p>
+    <div class="price-card">
+      <div class="price-badge">⭐ 추천</div>
+      <div class="price-tier">STANDARD</div>
+      <div class="price-amount">월 50<span>만원</span></div>
+      <div class="price-meta">사용자 5명 / 추가 1명당 5만원</div>
+      <ul class="price-list">
+        <li>전 기능 포함 (제한 없음)</li>
+        <li>기존 엑셀 데이터 이전 무료</li>
+        <li>첫 2주 무료 체험</li>
+        <li>월 1회 1:1 운영 지원</li>
+        <li>주민등록번호 암호화 · 자동 백업 기본 제공</li>
+      </ul>
+      <div class="price-discount">
+        💰 <strong>6개월 선납</strong> 10% 할인 → 270만원<br>
+        💰 <strong>1년 선납</strong> 15% 할인 → 510만원
+      </div>
+      <a href="#cta" class="btn-primary" style="display:block; text-align:center;">데모 신청하기</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="container">
+    <h2 class="section-title">자주 묻는 질문</h2>
+    <p class="section-sub">결정 전 궁금한 점, 솔직하게 답해드립니다.</p>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-q">우리 회사 엑셀 데이터 그대로 옮길 수 있나요?</div>
+        <div class="faq-a">네. 바이어·포워딩사·영업담당자·차량 기존 데이터 모두 양식 드리고 일괄 업로드해 드립니다 (무료).</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">인터넷 안 되면 못 쓰나요?</div>
+        <div class="faq-a">클라우드 기반이라 인터넷이 필요합니다. 단 PC · 모바일 · 태블릿 어디서든 접속 가능합니다.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">우리 회사만의 정산 공식이 따로 있는데 가능한가요?</div>
+        <div class="faq-a">현재 공식은 실제 사용자 엑셀과 1:1 매핑되어 있습니다. 조정 필요 시 별도 협의 가능합니다.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">계약 해지하면 데이터는요?</div>
+        <div class="faq-a">전체 데이터를 엑셀로 추출해 드립니다. 락인 없이 깔끔하게 가져가실 수 있습니다.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">보안은 안전한가요?</div>
+        <div class="faq-a">주민등록번호는 APP_KEY로 암호화 저장됩니다. AWS 인프라 + HTTPS + 권한 분리 + 변경 이력 기록 적용.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final-cta" id="cta">
+  <div class="container">
+    <h2>30분만 데모 보고 결정하세요</h2>
+    <p>직접 화면 보여드리고, 질문 다 답해드립니다. 계약 강요 일절 없습니다.</p>
+    <form class="final-form" onsubmit="event.preventDefault(); alert('데모 신청이 접수되었습니다. 곧 연락드리겠습니다.');">
+      <input type="text" placeholder="대표자 또는 담당자 이름" required>
+      <input type="text" placeholder="회사명" required>
+      <input type="tel" placeholder="연락 가능한 전화번호" required>
+      <input type="text" placeholder="희망 시간 (예: 화요일 오후 2시)">
+      <button type="submit">데모 신청하기</button>
+    </form>
+    <div class="phone-direct">
+      또는 대표 직통 <strong>☎ 010-XXXX-XXXX</strong>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div style="margin-bottom:12px;">
+      <strong>car-erp</strong> · 중고차 수출 ERP
+    </div>
+    <div>
+      회사명: ○○○ · 사업자등록번호: 000-00-00000 · 대표자: ○○○<br>
+      주소: 서울특별시 ○○구 ○○로 ○○ · 이메일: contact@car-erp.com
+    </div>
+    <div style="margin-top:16px;">
+      <a href="#">개인정보처리방침</a> · <a href="#">이용약관</a>
+    </div>
+    <div style="margin-top:20px; opacity:0.6;">
+      © 2026 car-erp. All rights reserved.
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

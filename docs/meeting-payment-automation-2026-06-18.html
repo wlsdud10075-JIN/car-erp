@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계약금 자동이체 — 회의 결정시트 (2026-06-18)</title>
+<style>
+  :root{--p:#7c6fcd;--pl:#ece9f8;--pt:#4c3fb1;--ink:#1f2430;--mut:#6b7280;--line:#e5e7eb;--ok:#16a34a;--warn:#d97706;--red:#dc2626;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,'Segoe UI',Roboto,'Malgun Gothic',sans-serif;color:var(--ink);background:#f7f7fb;line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:26px 18px 90px}
+  h1{font-size:23px;margin:0 0 4px}
+  .sub{color:var(--mut);margin:0 0 20px;font-size:14px}
+  h2{font-size:16px;margin:30px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--pl);display:flex;align-items:center;gap:8px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 17px;margin:11px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  .d{display:flex;gap:13px;align-items:flex-start}
+  .dn{flex:0 0 30px;height:30px;border-radius:8px;background:var(--p);color:#fff;font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .dt{font-size:15.5px;font-weight:700;margin:1px 0 3px}
+  .ctx{font-size:13px;color:var(--mut);margin:0 0 10px}
+  .rec{font-size:11px;background:#dcfce7;color:#15803d;border-radius:20px;padding:1px 8px;font-weight:600;margin-left:6px}
+  .opts label{display:block;padding:6px 0;font-size:14px;cursor:pointer}
+  .opts input[type=radio]{margin-right:8px;transform:translateY(1px)}
+  select,input[type=text],input[type=number],textarea{font:inherit;border:1px solid #cbd0d8;border-radius:8px;padding:7px 10px;color:var(--ink);background:#fff}
+  select,textarea{width:100%}
+  .inline{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .inline input[type=number]{width:140px}
+  .note{font-size:12.5px;color:var(--mut);margin-top:6px}
+  .callout{border-radius:10px;padding:11px 14px;margin:10px 0;font-size:13.5px}
+  .c-info{background:#eef2ff;border:1px solid #c7d2fe}
+  .c-warn{background:#fff7ed;border:1px solid #fed7aa}
+  .c-ok{background:#f0fdf4;border:1px solid #bbf7d0}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#faf9ff;font-weight:600}
+  .flow{background:#fff;border:1px dashed #c7c2e8;border-radius:10px;padding:14px;font-size:13.5px;line-height:1.9}
+  .flow b{color:var(--pt)}
+  #summary{background:#1f2430;color:#fff;border-radius:12px;padding:14px 18px;margin-top:24px;font-size:13.5px;box-shadow:0 2px 12px rgba(0,0,0,.12)}
+  #summary h3{margin:0 0 8px;font-size:14px;color:#cbb8ff}
+  #summaryBody div{padding:2px 0;border-bottom:1px solid #333a47}
+  #summaryBody .k{color:#9aa3b2;display:inline-block;min-width:200px}
+  #summaryBody .v{color:#fff;font-weight:600}
+  #summaryBody .undecided{color:#f0a35e;font-weight:600}
+  .btn{background:var(--p);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;cursor:pointer;margin-top:10px}
+  .tag{font-size:11px;padding:1px 7px;border-radius:6px;font-weight:600}
+  .t-hand{background:#dcfce7;color:#15803d}
+  .t-code{background:#e0f2fe;color:#0369a1}
+  @media print{ #summary{position:static} .btn{display:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>계약금 자동이체 — 회의 결정시트</h1>
+  <p class="sub">board(영업팀장 승인) → car-erp 게이트웨이 → 하나은행 펌뱅킹 국내이체 · 회의일 2026-06-18 · 각 항목 선택/입력 후 하단 요약 확인</p>
+
+  <div class="callout c-info">
+    <b>오늘 정할 것 = 9가지.</b> 아래에서 드롭다운/선택/입력 → 맨 아래 <b>결정 요약</b>이 실시간으로 채워집니다.
+    은행·VAN 계약(서류·가입)은 결정 후 Jin이 진행, 게이트웨이 코드는 car-erp가 구현.
+  </div>
+
+  <h2>전체 구조 (참고 · 결정 아님)</h2>
+  <div class="flow">
+    [board] 영업사원 "송금 요청" 올림 → <b>영업팀장 board에서 수락</b>
+    &nbsp;→&nbsp;(HMAC 서명 요청)&nbsp;→&nbsp;
+    [car-erp] <b>지급 게이트웨이</b>(한도·계좌·중복 재검증) → 하나은행 계약금 이체 → 성공 시 <b>차량 등록</b>(매입가·계약금·남은금액) → board 회신
+    <div class="callout c-ok" style="margin-top:10px">
+      ✅ <b>승인은 board에서 그대로</b> — car-erp에 영업팀장 직책/전용화면 추가 <b>불필요</b>. 승인자 이름은 요청에 담겨와 car-erp 감사로그에 기록.
+      자금 자격증명(VAN·은행)은 <b>car-erp 한 곳에만</b>, board는 요청만(뚫려도 안 샘).
+    </div>
+  </div>
+
+  <h2>🟣 결정 항목</h2>
+
+  <div class="card d">
+    <div class="dn">1</div>
+    <div style="flex:1">
+      <div class="dt">구조 — 지급 통로를 한 곳에 몰까, 각자 둘까? <span class="rec">몰빵 추천</span></div>
+      <p class="ctx">펌뱅킹/VAN은 회사계좌 단위라 한 벌이면 충분. 몰빵=자격증명·한도·감사 한 곳, board 뚫려도 안 샘.</p>
+      <div class="opts" data-sum="구조">
+        <label><input type="radio" name="d1" value="car-erp 단일 게이트웨이(몰빵)" checked> car-erp 단일 게이트웨이(몰빵) — 추천</label>
+        <label><input type="radio" name="d1" value="board·car-erp 개별 연동"> board·car-erp 각자 VAN 연동(개별)</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">2</div>
+    <div style="flex:1">
+      <div class="dt">배송금액을 car-erp 어느 항목에 넣나?</div>
+      <p class="ctx">⚠️ car-erp "운임비"는 <b>판매측</b>(미수율 계산용)이라 매입 배송을 넣으면 숫자가 엉킴. 매입 단계 비용으로.</p>
+      <select name="d2" data-sum="배송금액 매핑">
+        <option value="">— 선택 —</option>
+        <option value="탁송비(cost_towing) [추천]">탁송비 (cost_towing) — 추천</option>
+        <option value="캐리비(cost_carry)">캐리비 (cost_carry)</option>
+        <option value="운임비(transport_fee) — 비추천">운임비 (transport_fee) — 비추천(판매측)</option>
+        <option value="매입가에 합산(별도 안 보냄)">매입가에 합산(배송 따로 안 보냄)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">3</div>
+    <div style="flex:1">
+      <div class="dt">매입가 통화 — 외화일 수 있나?</div>
+      <p class="ctx">펌뱅킹 국내이체는 <b>원화 전용</b>(계약금 송금=원화). car-erp "통화"는 판매측 다중통화 필드.</p>
+      <div class="opts" data-sum="매입가 통화">
+        <label><input type="radio" name="d3" value="항상 원화(국내 매입)"> 매입은 항상 원화(국내 경매) — 통화필드 불필요</label>
+        <label><input type="radio" name="d3" value="외화 가능 → 매입통화 필드 신설"> 매입가가 외화일 수 있음 → 매입통화 필드 별도 신설</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">4</div>
+    <div style="flex:1">
+      <div class="dt">board 송금 트리거 <span class="rec">건당 승인 추천</span></div>
+      <p class="ctx">소액(50~100만)·잦음. 영업팀장이 건마다 수락하면 그 즉시 송금.</p>
+      <div class="opts" data-sum="board 트리거">
+        <label><input type="radio" name="d4" value="건당 승인 → 즉시 송금" checked> 건당 승인 → 즉시 송금 (Jin 구상)</label>
+        <label><input type="radio" name="d4" value="모아서 일괄 송금"> 모아서 일괄 송금</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">5</div>
+    <div style="flex:1">
+      <div class="dt">car-erp(매입·정산, 고액) 송금 트리거</div>
+      <p class="ctx">금액 크니 완전자동보다 승인 게이트 권장. 임계값으로 자동/수동 나눌 수도.</p>
+      <div class="opts" data-sum="car-erp 트리거">
+        <label><input type="radio" name="d5" value="Jin 승인 버튼 후 실행" checked> Jin 승인 버튼 후 실행 — 추천</label>
+        <label><input type="radio" name="d5" value="임계값 분기(미만 자동/이상 승인)"> 임계값 분기: 아래 금액 미만 자동, 이상은 승인</label>
+        <label><input type="radio" name="d5" value="정산 진입 시 완전 자동"> 정산 진입 시 완전 자동</label>
+      </div>
+      <div class="inline" style="margin-top:6px">임계값(원): <input type="number" name="d5amt" placeholder="예: 1000000" data-sum="car-erp 자동 임계값"></div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">6</div>
+    <div style="flex:1">
+      <div class="dt">VAN사 선택</div>
+      <p class="ctx">하나은행 펌뱅킹 입금이체+예금주조회+샌드박스 제공처. ERP 연동이면 쿠콘/웹케시 무난.</p>
+      <div class="inline">
+        <select name="d6" data-sum="VAN사">
+          <option value="">— 선택 —</option>
+          <option value="쿠콘(CODEF)">쿠콘 (CODEF)</option>
+          <option value="웹케시">웹케시</option>
+          <option value="세틀뱅크">세틀뱅크</option>
+          <option value="기타(메모)">기타 →</option>
+        </select>
+        <input type="text" name="d6other" placeholder="기타 VAN사명" data-sum="VAN사(기타)">
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">7</div>
+    <div style="flex:1">
+      <div class="dt">예금주 조회(수취인 성명 확인) <span class="rec">사용 추천</span></div>
+      <p class="ctx">송금 직전 계좌 예금주 실시간 확인 → 계좌 오타·오송금 차단(회수 거의 불가하므로 권장).</p>
+      <div class="opts" data-sum="예금주조회">
+        <label><input type="radio" name="d7" value="사용(전 송금)" checked> 사용 — 모든 송금 직전 1회</label>
+        <label><input type="radio" name="d7" value="board만 사용"> board(외부계좌)만 사용</label>
+        <label><input type="radio" name="d7" value="미사용"> 미사용</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">8</div>
+    <div style="flex:1">
+      <div class="dt">한도 설정 (사고 방지선 — 보수적으로)</div>
+      <p class="ctx">코드 버그·오류로 큰돈이 잘못 나가도 한도선에서 막힘. 펌뱅킹 계약 한도도 여기 맞춰.</p>
+      <div class="inline" style="margin-bottom:6px">board &nbsp; 건당 <input type="number" name="d8bp" placeholder="원" data-sum="board 건당한도"> / 일일 <input type="number" name="d8bd" placeholder="원" data-sum="board 일일한도"></div>
+      <div class="inline">car-erp 건당 <input type="number" name="d8ep" placeholder="원" data-sum="car-erp 건당한도"> / 일일 <input type="number" name="d8ed" placeholder="원" data-sum="car-erp 일일한도"></div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">9</div>
+    <div style="flex:1">
+      <div class="dt">차량등록 + 송금을 한 번에? 분리?</div>
+      <p class="ctx">현재 연동B는 기존 차량이면 갱신 안 함. "이체완료 후 등록" 흐름이면 한 콜이 깔끔.</p>
+      <div class="opts" data-sum="등록+송금 엔드포인트">
+        <label><input type="radio" name="d9" value="한 콜(승인→송금→등록)" checked> 한 콜에 묶기(승인→송금→등록) — 추천</label>
+        <label><input type="radio" name="d9" value="분리(등록 후 송금 별도 엔드포인트)"> 분리(먼저 등록, 송금은 별도 호출)</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card d">
+    <div class="dn">+</div>
+    <div style="flex:1">
+      <div class="dt">기타 결정/메모</div>
+      <textarea name="memo" rows="3" placeholder="회의 중 추가 결정사항…" data-sum="기타 메모"></textarea>
+    </div>
+  </div>
+
+  <h2>📦 확정 시 board가 보낼 필드 (위 결정 반영, 참고)</h2>
+  <div class="card">
+    <table>
+      <tr><th>board 전송</th><th>car-erp 매핑</th><th>비고</th></tr>
+      <tr><td>vehicle_number, owner_name</td><td>차량번호 / NICE 조회 키</td><td>기존</td></tr>
+      <tr><td>차량금액(final_price)</td><td>purchase_price (매입가)</td><td>기존</td></tr>
+      <tr><td>배송금액</td><td><b>결정 #2</b></td><td>매입측 비용</td></tr>
+      <tr><td>통화</td><td>currency / (또는 매입통화 신설 — <b>결정 #3</b>)</td><td>송금은 원화</td></tr>
+      <tr><td>은행·예금주·계좌</td><td>purchase_seller_bank/holder/account(암호화)</td><td>기존</td></tr>
+      <tr><td><b>계약금(deposit_amount)</b></td><td>PBP type='down' (이체완료 시 confirmed)</td><td>board 입력란 신설</td></tr>
+      <tr><td><b>이체완료일 · 거래관리번호</b></td><td>PBP payment_date · 감사/멱등키</td><td>신설(이중송금 방지)</td></tr>
+      <tr><td>(자동) 남은금액</td><td>매입 미지급 = (매입가+매도비)−계약금</td><td>car-erp 자동계산</td></tr>
+    </table>
+  </div>
+
+  <h2>📋 결정 후 사람이 할 일 (코드 무관)</h2>
+  <div class="card">
+    <span class="tag t-hand">사람(Jin)</span> VAN사 가입 → 하나은행 펌뱅킹 계약(법인등기부·인감증명·사업자등록증·수수료계좌 통장사본·대표 실명증표) → 샌드박스 테스트 → 업무개시.
+    <span class="tag t-code">코드(car-erp)</span> 지급 게이트웨이(멱등·한도·화이트리스트·감사·예금주조회) + board 호출 엔드포인트.
+    <div class="callout c-warn" style="margin-top:8px">멀티회사: heyman·karaba는 <b>법인별 별도 계약·계좌</b>. 우선 heyman부터(현재 board 연동도 heyman만). 해외송금은 펌뱅킹 불가(별도).</div>
+  </div>
+
+  <div id="summary">
+    <h3>✅ 결정 요약 (실시간)</h3>
+    <div id="summaryBody"></div>
+    <button class="btn" onclick="copySummary()">요약 복사</button>
+  </div>
+
+</div>
+
+<script>
+  function readControls(){
+    const out=[];
+    document.querySelectorAll('[data-sum]').forEach(el=>{
+      const label=el.getAttribute('data-sum');
+      let val='';
+      if(el.classList && el.classList.contains('opts')){
+        const name=el.querySelector('input[type=radio]')?.name;
+        const sel=document.querySelector('input[name="'+name+'"]:checked');
+        val=sel?sel.value:'';
+      } else {
+        val=(el.value||'').trim();
+      }
+      out.push({label,val});
+    });
+    return out;
+  }
+  function render(){
+    const body=document.getElementById('summaryBody');
+    body.innerHTML='';
+    readControls().forEach(({label,val})=>{
+      const d=document.createElement('div');
+      const v = val!=='' ? '<span class="v">'+val+'</span>' : '<span class="undecided">미정</span>';
+      d.innerHTML='<span class="k">'+label+'</span> '+v;
+      body.appendChild(d);
+    });
+  }
+  function copySummary(){
+    const txt=readControls().map(({label,val})=>label+': '+(val||'(미정)')).join('\n');
+    navigator.clipboard?.writeText('계약금 자동이체 결정('+new Date().toISOString().slice(0,10)+')\n'+txt)
+      .then(()=>alert('결정 요약을 복사했어요.')).catch(()=>alert('복사 실패 — 직접 선택해 주세요.'));
+  }
+  document.addEventListener('change',render);
+  document.addEventListener('input',render);
+  render();
+</script>
+</body>
+</html>

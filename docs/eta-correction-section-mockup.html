@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETA 알람 + 보정 섹션 — 목업</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --ink:#1f2937; --ink-soft:#6b7280; --line:#e5e7eb; --bg:#f5f6f8;
+    --amber:#f59e0b; --amber-bg:#fef3c7; --amber-text:#92400e;
+    --red:#ef4444; --red-bg:#fee2e2; --red-text:#991b1b; --green:#10b981; --green-text:#065f46;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.5;}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 16px 64px;}
+
+  /* 페이지 헤더 (대시보드 맥락) + 벨 */
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;}
+  .page-head h1{font-size:20px;font-weight:700;color:#374151;margin:0;}
+  .head-right{display:flex;align-items:center;gap:16px;}
+  .head-right .meta{font-size:12px;color:var(--ink-soft);}
+  .bell{position:relative;font-size:20px;cursor:pointer;line-height:1;}
+  .bell .dot{position:absolute;top:-6px;right:-9px;background:var(--red);color:#fff;font-size:10px;
+    font-weight:700;min-width:18px;height:18px;border-radius:999px;display:flex;align-items:center;
+    justify-content:center;padding:0 4px;border:2px solid #fff;}
+  .ctx-note{font-size:12px;color:var(--ink-soft);background:#fff;border:1px dashed var(--line);
+    border-radius:8px;padding:8px 12px;margin-bottom:20px;}
+  .ctx-note b{color:var(--primary-text);}
+
+  /* 카드 공통 */
+  .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;}
+  .card + .card{margin-top:16px;}
+  .board-tag{display:inline-block;font-size:11px;font-weight:600;color:var(--primary-text);
+    background:var(--primary-light);border-radius:6px;padding:2px 8px;margin-bottom:12px;}
+
+  /* 섹션 헤더 */
+  .section-header{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .section-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+  .dot-amber{background:var(--amber);box-shadow:0 0 0 3px var(--amber-bg);}
+  .dot-green{background:var(--green);box-shadow:0 0 0 3px #d1fae5;}
+  .section-title{font-size:15px;font-weight:700;color:#374151;}
+  .section-sub{font-size:12px;color:var(--ink-soft);margin:0 0 14px 16px;}
+  .pill-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;
+    padding:0 7px;border-radius:999px;font-size:11px;font-weight:700;}
+  .pill-amber{background:var(--amber-bg);color:var(--amber-text);}
+  .pill-red{background:var(--red-bg);color:var(--red-text);}
+
+  /* 테이블 */
+  table{width:100%;border-collapse:collapse;}
+  thead th{font-size:11px;font-weight:600;color:var(--ink-soft);text-align:left;
+    padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  tbody td{padding:11px 10px;border-bottom:1px solid #f1f2f4;vertical-align:middle;}
+  tbody tr:hover{background:#fafaff;}
+  tbody tr:last-child td{border-bottom:none;}
+  .vno{font-weight:700;letter-spacing:.2px;}
+  .muted{color:var(--ink-soft);}
+  .num{font-variant-numeric:tabular-nums;}
+
+  .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;}
+  .badge-blue{background:#dbeafe;color:#1e40af;}
+  .elapsed{font-weight:600;}
+  .elapsed.warn{color:var(--amber-text);} .elapsed.danger{color:var(--red-text);}
+
+  .btn-input{border:1px solid var(--primary);color:var(--primary-text);background:var(--primary-light);
+    font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;cursor:pointer;white-space:nowrap;}
+  .btn-input:hover{background:#e2ddf5;}
+  .inline-edit{display:flex;align-items:center;gap:6px;justify-content:flex-end;}
+  .inline-edit input[type=date]{border:1px solid var(--primary);border-radius:7px;padding:4px 8px;font-size:12px;outline:none;}
+  .btn-save{background:var(--primary);color:#fff;border:none;font-size:12px;font-weight:600;padding:5px 12px;border-radius:7px;cursor:pointer;}
+  .btn-cancel{background:transparent;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;padding:5px 4px;}
+
+  .foot-note{margin-top:14px;display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--ink-soft);
+    background:#f9fafb;border-radius:8px;padding:10px 12px;}
+  .foot-note b{color:var(--primary-text);}
+  .legend{font-size:11px;color:var(--ink-soft);margin-top:6px;}
+  .swatch{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin:0 3px 0 8px;}
+
+  /* ====== 상주 알람 카드 (우하단 고정) ====== */
+  .alarm-stack{position:fixed;right:18px;bottom:18px;width:330px;z-index:40;}
+  .alarm-head{display:flex;align-items:center;justify-content:space-between;
+    background:#374151;color:#fff;border-radius:10px 10px 0 0;padding:9px 13px;font-size:13px;font-weight:600;}
+  .alarm-head .grp{font-size:11px;font-weight:500;color:#cbd5e1;}
+  .alarm-head .hd-right{display:flex;align-items:center;gap:8px;}
+  .alarm-x{cursor:pointer;color:#cbd5e1;font-size:16px;line-height:1;padding:0 2px;}
+  .alarm-x:hover{color:#fff;}
+  /* 접힌 상태(벨로 최소화) 미니 위젯 */
+  .mini-collapsed{display:inline-flex;align-items:center;gap:7px;background:#374151;color:#fff;
+    border-radius:999px;padding:7px 14px 7px 11px;font-size:12.5px;font-weight:600;box-shadow:0 6px 16px rgba(0,0,0,.18);}
+  .mini-collapsed .mc-dot{background:var(--red);color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;
+    border-radius:999px;display:inline-flex;align-items:center;justify-content:center;padding:0 4px;}
+  .state-demo{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:10px 0 2px 16px;}
+  .state-demo .arrow{color:var(--ink-soft);font-size:13px;}
+  .state-demo .cap{font-size:11px;color:var(--ink-soft);margin-top:4px;}
+  .mini-open{width:210px;border:1px solid var(--line);border-radius:9px;overflow:hidden;box-shadow:0 6px 16px rgba(0,0,0,.12);}
+  .mini-open .mh{background:#374151;color:#fff;font-size:11px;font-weight:600;padding:6px 9px;display:flex;justify-content:space-between;}
+  .mini-open .mr{padding:7px 9px;border-left:3px solid var(--amber);font-size:11px;}
+  .mini-open .mr b{color:var(--primary-text);}
+  .alarm-body{background:#fff;border:1px solid var(--line);border-top:none;border-radius:0 0 10px 10px;
+    box-shadow:0 10px 30px rgba(0,0,0,.16);overflow:hidden;}
+  .alarm-card{display:block;padding:11px 13px;border-bottom:1px solid #f1f2f4;border-left:3px solid var(--amber);
+    cursor:pointer;text-decoration:none;color:inherit;background:#fff;transition:background .12s;}
+  .alarm-card:hover{background:#fffdf5;}
+  .alarm-card.dday-soon{border-left-color:var(--red);}
+  .ac-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+  .ac-vno{font-weight:700;font-size:13px;}
+  .ac-dday{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--amber-bg);color:var(--amber-text);}
+  .ac-dday.soon{background:var(--red-bg);color:var(--red-text);}
+  .ac-task{font-size:12.5px;color:#374151;margin-bottom:3px;}
+  .ac-task b{color:var(--primary-text);}
+  .ac-meta{display:flex;align-items:center;justify-content:space-between;}
+  .ac-money{font-size:11.5px;font-weight:600;}
+  .ac-money.unpaid{color:var(--red-text);} .ac-money.paid{color:var(--green-text);}
+  .ac-confirm{font-size:11px;font-weight:600;color:var(--primary-text);background:var(--primary-light);
+    border:1px solid #d9d3f3;border-radius:6px;padding:3px 9px;cursor:pointer;}
+  .ac-confirm:hover{background:#e2ddf5;}
+  .alarm-more{display:block;text-align:center;padding:9px;font-size:12px;font-weight:600;color:var(--primary-text);
+    background:#faf9fe;text-decoration:none;}
+  .alarm-more:hover{background:var(--primary-light);}
+
+  /* 토스트(기존, 우상단) — z-index 관계 보여주기용 */
+  .toast{position:fixed;top:16px;right:16px;z-index:50;background:#2563eb;color:#fff;font-size:13px;
+    border-radius:9px;padding:11px 15px;box-shadow:0 8px 20px rgba(0,0,0,.18);max-width:300px;opacity:.96;}
+
+  .mobile-demo{margin-top:28px;}
+  .mobile-demo h2{font-size:13px;color:var(--ink-soft);font-weight:600;margin:0 0 10px;}
+  .mcard{border:1px solid var(--line);border-radius:10px;padding:12px;max-width:340px;background:#fff;}
+  .mcard .row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .mcard .lbl{font-size:11px;color:var(--ink-soft);} .mcard .val{font-size:13px;}
+  .mcard .btn-input{width:100%;margin-top:10px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="page-head">
+    <h1>수출통관 업무 대시보드</h1>
+    <div class="head-right">
+      <span class="meta">담당자: 전체</span>
+      <span class="bell" title="알림">🔔<span class="dot">21</span></span>
+    </div>
+  </div>
+  <div class="ctx-note">
+    ※ 목업: <b>① 우하단 상주 알람 카드</b> + <b>② 우상단 사이드바 벨(21)</b> + <b>③ 데이터 보정 섹션</b>을 한 화면에 같이 표시.
+    실제로는 이 세 가지가 <b>수출통관 업무보드</b>에 함께 들어갑니다. (벨/카드는 화면 위에 떠 있음)
+  </div>
+
+  <!-- ===== ① 알람: 통관서류 작업 (상주 카드) ===== -->
+  <div class="card">
+    <span class="board-tag">⓵ 통관서류 알람 — 우하단 상주 카드로 표시 (실제 위치는 화면 우하단 ↘)</span>
+    <div class="section-header">
+      <span class="section-dot dot-amber"></span>
+      <span class="section-title">통관서류 작업 알람</span>
+      <span class="pill-count pill-red">21</span>
+    </div>
+    <p class="section-sub">도착(ETA) <b>10일 전</b>이 된 수출 차량 — 통관서류를 미리 준비하세요. 서류 올리면 자동으로 사라져요.</p>
+    <p style="font-size:12px;color:var(--ink-soft);margin:0 0 4px 16px;">
+      ↘ 화면 <b>우하단</b>에 실제로 어떻게 뜨는지 떠 있는 카드를 보세요. (캡: 5장 + "외 16건")
+    </p>
+
+    <div style="margin:14px 0 2px 16px;font-size:12px;font-weight:600;color:#374151;">동작 방식 (A안 확정) — 로그인 시 자동으로 뜸 · [✕] 닫으면 <b style="color:var(--primary-text)">벨로 접힘</b> · 새 알람 오면 다시 뜸</div>
+    <div class="state-demo">
+      <div>
+        <div class="mini-open">
+          <div class="mh"><span>🔔 통관서류 알람</span><span>✕</span></div>
+          <div class="mr"><b>24구3389</b> · 도착 D-3<br>통관서류 작업 · 미수금 ₩3.2M</div>
+        </div>
+        <div class="cap">① 열린 상태 (우하단 카드)</div>
+      </div>
+      <span class="arrow">— ✕ 닫기 →</span>
+      <div>
+        <div class="mini-collapsed">🔔 통관서류 알람 <span class="mc-dot">21</span></div>
+        <div class="cap">② 접힌 상태 (벨에 숫자만 · 화면 안 가림)</div>
+      </div>
+      <span class="arrow">— 벨 클릭 →</span>
+      <div>
+        <div class="cap" style="margin-top:0;">③ 다시 ①로 펼침<br>(또는 새 알람 오면 자동으로 ①)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ③ 데이터 보정 필요 섹션 ===== -->
+  <div class="card">
+    <span class="board-tag">⓷ 데이터 보정 — ETA 없는 차량은 알람 대신 여기로 (조용한 할일)</span>
+    <div class="section-header">
+      <span class="section-dot dot-amber"></span>
+      <span class="section-title">데이터 보정 필요</span>
+      <span class="pill-count pill-amber">6</span>
+    </div>
+    <p class="section-sub">선적(반입)은 끝났는데 <b>도착일(ETA)</b>이 비어 있어요. 채워야 도착 전 통관서류 알람이 예약됩니다.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>차량번호</th><th>채널</th><th>선적일 (ETD)</th><th>선적 후 경과</th><th>담당자</th>
+          <th style="text-align:right;">도착일 (ETA)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="vno">19더9065</td><td><span class="badge badge-blue">수출</span></td>
+          <td class="num muted">2026-06-02</td><td><span class="elapsed danger num">16일</span></td><td>김민수</td>
+          <td>
+            <div class="inline-edit"><input type="date" value="2026-07-30"><button class="btn-save">저장</button><button class="btn-cancel">취소</button></div>
+          </td>
+        </tr>
+        <tr><td class="vno">23호4412</td><td><span class="badge badge-blue">수출</span></td><td class="num muted">2026-06-08</td><td><span class="elapsed danger num">10일</span></td><td>박서준</td><td style="text-align:right;"><button class="btn-input">＋ 도착일 입력</button></td></tr>
+        <tr><td class="vno">31가7788</td><td><span class="badge badge-blue">수출</span></td><td class="num muted">2026-06-11</td><td><span class="elapsed warn num">7일</span></td><td>이지은</td><td style="text-align:right;"><button class="btn-input">＋ 도착일 입력</button></td></tr>
+        <tr><td class="vno">06두1199</td><td><span class="badge badge-blue">수출</span></td><td class="num muted">2026-06-13</td><td><span class="elapsed warn num">5일</span></td><td>김민수</td><td style="text-align:right;"><button class="btn-input">＋ 도착일 입력</button></td></tr>
+        <tr><td class="vno">48바2030</td><td><span class="badge badge-blue">수출</span></td><td class="num muted">2026-06-15</td><td><span class="elapsed num">3일</span></td><td>최유나</td><td style="text-align:right;"><button class="btn-input">＋ 도착일 입력</button></td></tr>
+        <tr><td class="vno">77사5521</td><td><span class="badge badge-blue">수출</span></td><td class="num muted">2026-06-16</td><td><span class="elapsed num">2일</span></td><td>박서준</td><td style="text-align:right;"><button class="btn-input">＋ 도착일 입력</button></td></tr>
+      </tbody>
+    </table>
+    <div class="legend">경과 색:<span class="swatch" style="background:#9ca3af;"></span>최근<span class="swatch" style="background:var(--amber);"></span>5일+ 주의<span class="swatch" style="background:var(--red);"></span>10일+ 시급</div>
+    <div class="foot-note"><span>🔗</span><span>도착일을 넣으면 이 목록에서 <b>바로 사라지고</b>, 그 차량은 <b>도착 10일 전 통관서류 알람</b>이 자동 예약됩니다.</span></div>
+  </div>
+
+  <!-- 모바일 참고 -->
+  <div class="mobile-demo">
+    <h2>📱 모바일 — 보정 섹션 카드형 (페어 렌더)</h2>
+    <div class="mcard">
+      <div class="row1"><span class="vno">23호4412</span><span class="badge badge-blue">수출</span></div>
+      <div class="row1"><span class="lbl">선적일(ETD)</span><span class="val num">2026-06-08</span></div>
+      <div class="row1"><span class="lbl">선적 후 경과</span><span class="val"><span class="elapsed danger num">10일</span></span></div>
+      <div class="row1"><span class="lbl">담당자</span><span class="val">박서준</span></div>
+      <button class="btn-input">＋ 도착일(ETA) 입력</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== 기존 토스트(우상단, z-50) — 알람 카드와 안 겹침을 보여줌 ===== -->
+<div class="toast">✅ 저장되었습니다 <span style="opacity:.8;font-size:11px;">(기존 4.5초 토스트 — 알람과 별개)</span></div>
+
+<!-- ===== ① 상주 알람 카드 스택 (우하단 고정, z-40) ===== -->
+<div class="alarm-stack">
+  <div class="alarm-head">
+    <span>🔔 통관서류 알람</span>
+    <span class="hd-right"><span class="grp">5 · 외 16건</span><span class="alarm-x" title="닫기 → 벨로 접힘">✕</span></span>
+  </div>
+  <div class="alarm-body">
+
+    <a class="alarm-card dday-soon" href="#">
+      <div class="ac-top"><span class="ac-vno">24구3389</span><span class="ac-dday soon">도착 D-3</span></div>
+      <div class="ac-task"><b>통관서류 작업</b> 필요 · 도착일 06-21</div>
+      <div class="ac-meta"><span class="ac-money unpaid">미수금 ₩3,200,000</span><button class="ac-confirm">확인</button></div>
+    </a>
+
+    <a class="alarm-card" href="#">
+      <div class="ac-top"><span class="ac-vno">17모7741</span><span class="ac-dday">도착 D-5</span></div>
+      <div class="ac-task"><b>통관서류 작업</b> 필요 · 도착일 06-23</div>
+      <div class="ac-meta"><span class="ac-money paid">완납</span><button class="ac-confirm">확인</button></div>
+    </a>
+
+    <a class="alarm-card" href="#">
+      <div class="ac-top"><span class="ac-vno">09러2256</span><span class="ac-dday">도착 D-6</span></div>
+      <div class="ac-task"><b>통관서류 작업</b> 필요 · 도착일 06-24</div>
+      <div class="ac-meta"><span class="ac-money unpaid">미수금 ₩1,150,000</span><button class="ac-confirm">확인</button></div>
+    </a>
+
+    <a class="alarm-card" href="#">
+      <div class="ac-top"><span class="ac-vno">35버8810</span><span class="ac-dday">도착 D-8</span></div>
+      <div class="ac-task"><b>통관서류 작업</b> 필요 · 도착일 06-26</div>
+      <div class="ac-meta"><span class="ac-money unpaid">미수금 ₩8,400,000</span><button class="ac-confirm">확인</button></div>
+    </a>
+
+    <a class="alarm-card" href="#">
+      <div class="ac-top"><span class="ac-vno">88저4417</span><span class="ac-dday">도착 D-9</span></div>
+      <div class="ac-task"><b>통관서류 작업</b> 필요 · 도착일 06-27</div>
+      <div class="ac-meta"><span class="ac-money paid">완납</span><button class="ac-confirm">확인</button></div>
+    </a>
+
+    <a class="alarm-more" href="#">외 16건 더 보기 →</a>
+  </div>
+</div>
+
+</body>
+</html>

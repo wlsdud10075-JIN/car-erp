@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>관리 통합 업무 가이드 — 현재 [관리]가 도맡는 전 과정</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#0d9488;
+    --dept:#4c3fb1; --dept-soft:#ece9f8; --dept-text:#4c3fb1; --dept-bg:#f5f3ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.65}
+  .app{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  .head .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--dept),#7c6fcd);display:flex;align-items:center;justify-content:center;font-size:24px}
+  .head h1{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .head .sub{font-size:12.5px;color:var(--gray-500);margin-top:2px}
+  .deptchip{display:inline-block;background:var(--dept-soft);color:var(--dept-text);font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;margin-left:8px;vertical-align:middle}
+  .banner{background:linear-gradient(135deg,#4c3fb1,#7c6fcd);color:#fff;border-radius:14px;padding:17px 20px;margin:16px 0 10px}
+  .banner .bt{font-weight:800;font-size:15px;margin-bottom:6px}
+  .banner .bd{font-size:12.5px;opacity:.94;line-height:1.6}
+  .banner .bd b{background:rgba(255,255,255,.2);padding:1px 6px;border-radius:5px}
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 13px;display:flex;align-items:center;gap:9px}
+  /* combined pipeline with phase colors */
+  .pipe{display:flex;gap:5px;background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:13px 11px;overflow-x:auto}
+  .pnode{flex:1;min-width:84px;text-align:center;position:relative}
+  .pnode .dot{width:32px;height:32px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff}
+  .pnode .lbl{font-size:10.5px;font-weight:700;color:var(--gray-700);line-height:1.3}
+  .pnode .ph{font-size:9px;font-weight:700;margin-top:2px}
+  .pnode:not(:last-child)::after{content:'›';position:absolute;right:-3px;top:5px;color:var(--gray-300);font-size:16px;font-weight:800}
+  /* phase legend */
+  .plegend{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0;font-size:11px;font-weight:700}
+  .pl{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px}
+  .pl .d{width:9px;height:9px;border-radius:50%}
+  .pl.reg{background:var(--dept-soft);color:var(--dept-text)} .pl.reg .d{background:var(--dept)}
+  .pl.fin{background:#ede9fe;color:#6d28d9} .pl.fin .d{background:#8b5cf6}
+  .pl.cle{background:#ccfbf1;color:#0f766e} .pl.cle .d{background:#0d9488}
+  /* phase blocks */
+  .phase{background:#fff;border:1px solid var(--gray-200);border-radius:14px;margin-bottom:14px;overflow:hidden;border-left:5px solid}
+  .phase.reg{border-left-color:var(--dept)} .phase.fin{border-left-color:#8b5cf6} .phase.cle{border-left-color:#0d9488} .phase.mgr{border-left-color:var(--amber)}
+  .phase-h{display:flex;align-items:center;gap:11px;padding:13px 17px}
+  .phase.reg .phase-h{background:linear-gradient(90deg,var(--dept-bg),#fff)}
+  .phase.fin .phase-h{background:linear-gradient(90deg,#f5f3ff,#fff)}
+  .phase.cle .phase-h{background:linear-gradient(90deg,#f0fdfa,#fff)}
+  .phase.mgr .phase-h{background:linear-gradient(90deg,#fffbeb,#fff)}
+  .phase-h .pic{font-size:20px}
+  .phase-h .pt{font-weight:800;font-size:15px}
+  .phase-h .src{margin-left:auto;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-500)}
+  .phase-b{padding:13px 18px 16px}
+  .phase-b ol{margin:0 0 0 18px}.phase-b ol li{margin-bottom:6px;font-size:13px;color:var(--gray-700)}
+  .phase-b .ref{font-size:11.5px;color:var(--gray-500);margin-top:8px;font-style:italic}
+  .reflink{display:inline-block;margin-top:10px;font-size:12.5px;font-weight:800;color:#4338ca;text-decoration:none;background:#eef2ff;border:1px solid #c7d2fe;border-radius:9px;padding:8px 14px}
+  .reflink:hover{background:#e0e7ff}
+  .gate{background:#fff7ed;border:1px solid #fed7aa;border-radius:9px;padding:9px 13px;margin:9px 0;font-size:12px;color:#7c2d12}
+  .gate b{color:#9a3412}
+  .sod{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:9px 13px;margin:9px 0;font-size:12px;color:#92400e}
+  .sod b{color:#b45309}
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:26px;line-height:1.6}
+  @media(max-width:640px){.head h1{font-size:17px}}
+  @media print{body{background:#fff}.app{padding:0}.phase,.pipe{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <div class="logo">🗂️</div>
+    <div><h1>관리 통합 업무 가이드<span class="deptchip">관리</span></h1>
+    <div class="sub">현재 [관리]가 도맡는 전 과정 — 차량 등록 + 재무 + 수출통관</div></div>
+  </div>
+
+  <div class="banner">
+    <div class="bt">📌 이 가이드는 "지금 현실" 버전입니다</div>
+    <div class="bd">
+      역할 분리(영업/수출통관/재무) 전이라, 현재는 <b>[관리] 한 사람이</b> 영업에게 받은 차량을 car-erp에 등록하고,
+      <b>재무(입금·지급·정산)</b>와 <b>수출통관(반입·B/L·DHL)</b>까지 전부 처리합니다.<br>
+      → 아래는 그 전 과정을 한 줄로 모은 통합 흐름입니다. (분리되면 가운데는 <b>재무 가이드</b>, 뒤는 <b>수출통관 가이드</b>로 넘어갑니다)
+    </div>
+  </div>
+
+  <!-- COMBINED PIPELINE -->
+  <h2 class="sec">🔄 통합 흐름 (단계별 출처 색)</h2>
+  <div class="pipe">
+    <div class="pnode"><div class="dot" style="background:var(--dept)">📥</div><div class="lbl">차량 등록</div><div class="ph" style="color:var(--dept-text)">등록</div></div>
+    <div class="pnode"><div class="dot" style="background:#8b5cf6">💵</div><div class="lbl">판매·입금</div><div class="ph" style="color:#6d28d9">재무</div></div>
+    <div class="pnode"><div class="dot" style="background:#0d9488">🏭</div><div class="lbl">반입·선적</div><div class="ph" style="color:#0f766e">통관</div></div>
+    <div class="pnode"><div class="dot" style="background:#0d9488">📋</div><div class="lbl">통관·B/L</div><div class="ph" style="color:#0f766e">통관</div></div>
+    <div class="pnode"><div class="dot" style="background:#0d9488">📦</div><div class="lbl">DHL</div><div class="ph" style="color:#0f766e">통관</div></div>
+    <div class="pnode"><div class="dot" style="background:#8b5cf6">✅</div><div class="lbl">정산</div><div class="ph" style="color:#6d28d9">재무</div></div>
+  </div>
+  <div class="plegend">
+    <span class="pl reg"><span class="d"></span>차량 등록 (관리 고유)</span>
+    <span class="pl fin"><span class="d"></span>재무 영역</span>
+    <span class="pl cle"><span class="d"></span>수출통관 영역</span>
+  </div>
+
+  <h2 class="sec">📋 통합 단계 상세</h2>
+
+  <!-- A 등록 -->
+  <div class="phase reg">
+    <div class="phase-h"><span class="pic">📥</span><span class="pt">A. 영업 카톡 → car-erp 차량 등록</span><span class="src">관리 고유</span></div>
+    <div class="phase-b">
+      <ol>
+        <li>영업이 카톡으로 보낸 <b>차량 사진·정보</b>를 받습니다 (차량번호·VIN·매물번호 c_no·<b>출처(엔카/경매)</b>·매입가·바이어 등).</li>
+        <li>car-erp에 신규 차량 등록 — 기본정보·매입 정보 입력, 사진 첨부. 출처가 엔카면 <b>엔카 매물번호</b>도 기록.</li>
+        <li><b>매물번호(c_no)</b>도 함께 기록 (첫 문의~거래완료 추적용).</li>
+      </ol>
+      <div class="ref">※ 향후 연동 B가 되면 이 카톡·수동등록이 자동화됩니다.</div>
+    </div>
+  </div>
+
+  <!-- B 재무 -->
+  <div class="phase fin">
+    <div class="phase-h"><span class="pic">💵</span><span class="pt">B. 판매 등록 · 입금 처리</span><span class="src">재무 영역</span></div>
+    <div class="phase-b">
+      <ol>
+        <li>판매가·통화·환율·바이어 입력 (외화는 <b>환율 필수</b>).</li>
+        <li>바이어 입금을 확인하면 <b>그 금액 입력</b> = 자동 확정 (계약금/중도금/잔금).</li>
+        <li>입금률에 따라 다음 단계 진입이 열립니다 ↓</li>
+      </ol>
+      <div class="gate">🚦 <b>50% 이상</b> → 반입·통관 가능 / <b>100% 완납</b> → B/L 발급 가능</div>
+      <a class="reflink" href="guide-finance-workflow.html">💰 재무 가이드 열기 →</a>
+    </div>
+  </div>
+
+  <!-- C 통관 -->
+  <div class="phase cle">
+    <div class="phase-h"><span class="pic">🚢</span><span class="pt">C. 반입 · 통관 · B/L · DHL</span><span class="src">수출통관 영역</span></div>
+    <div class="phase-b">
+      <ol>
+        <li>수출통관 탭 — 통관 바이어/컨사이니, 포워딩사, 면장금액, 수출신고서 업로드.</li>
+        <li>선적(B/L) 탭 — 반입지·선적일·VSL 입력 → 선적 서류 생성.</li>
+        <li><b>100% 완납 확인 후</b> B/L 발급 (번호·컨테이너·B/L 문서) → 거래완료.</li>
+        <li>DHL 탭 — 수취인 정보·발송신청.</li>
+      </ol>
+      <div class="gate">⚠️ B/L은 <b>100% 완납</b> 필수. 미완납은 본인(관리) 권한으로 <b>승인 우회</b> 가능하나 신중히. (수출 채널만 해당)</div>
+      <a class="reflink" href="guide-clearance-workflow.html">🚢 수출통관 가이드 열기 →</a>
+    </div>
+  </div>
+
+  <!-- D 정산 -->
+  <div class="phase fin">
+    <div class="phase-h"><span class="pic">📊</span><span class="pt">D. 정산 확정 · 지급 · 2차 정산</span><span class="src">재무 영역</span></div>
+    <div class="phase-b">
+      <ol>
+        <li>거래완료 시 정산 자동 생성(pending) → 금액 검토 후 <b>확정(confirmed)</b>.</li>
+        <li><b>지급(paid)</b> 처리 — 현재는 [관리]가 직접 (분리되면 재무는 확정까지, 지급은 관리 승인).</li>
+        <li>지급 후 한 달 내 <b>2차 정산</b> — 실측 비용 보정·환차 정정 → 2차 완료(closed).</li>
+      </ol>
+      <div class="sod">🔐 역할 분리 시 — <b>재무는 confirmed까지, paid(지급)는 관리 승인.</b> 지금은 한 사람이라 통합 처리하되, 분리 대비해 흐름은 동일하게 유지.</div>
+      <a class="reflink" href="guide-finance-workflow.html">💰 재무 가이드 열기 →</a>
+    </div>
+  </div>
+
+  <!-- E 관리 고유 -->
+  <div class="phase mgr">
+    <div class="phase-h"><span class="pic">🛡️</span><span class="pt">E. 관리 고유 권한 (분리돼도 관리 몫)</span><span class="src">관리 전용</span></div>
+    <div class="phase-b">
+      <ol>
+        <li><b>정산 지급(paid) 승인</b> — 재무 확정 건을 지급 처리.</li>
+        <li><b>게이트 우회 승인</b> — 미완납 B/L 발급 등 예외 승인.</li>
+        <li>마감 해제·삭제 등 민감 액션 (감사로그 기록됨).</li>
+      </ol>
+    </div>
+  </div>
+
+  <h2 class="sec">⚠️ 통합 운영 시 핵심 주의</h2>
+  <div class="phase"><div class="phase-b">
+    <ol>
+      <li>등록 시 <b>VIN·매물번호(c_no)</b> 누락 금지 — 추적·중복 방지의 핵심.</li>
+      <li>외화차 <b>환율</b> 항상 입력 — 미수금 오판 방지.</li>
+      <li>입금률 게이트(<b>50%/100%</b>) 확인 후 통관·B/L 진행.</li>
+      <li>한 사람이 다 하더라도 <b>확정→지급</b> 순서·스냅샷 잠금 흐름은 그대로 (분리 대비).</li>
+    </ol>
+  </div></div>
+
+  <div class="note">SSANCAR 사내 업무 가이드 · 관리(통합) · 2026-06-05 작성<br>※ 현재 현실 버전. 역할 분리(영업/수출통관/재무) 시 B는 재무, C는 수출통관 가이드로 이관되고 본 가이드는 E(관리 고유)만 남습니다.</div>
+</div>
+</body>
+</html>

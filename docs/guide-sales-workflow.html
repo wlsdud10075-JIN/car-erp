@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영업 업무 가이드 — 문의 접수부터 [관리] 전달까지 (v2)</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --sales:#3b82f6; --insp:#f59e0b; --auc:#8b5cf6; --mgr:#6b7280; --encar:#06b6d4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.65}
+  .app{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  .head .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--sales),#60a5fa);display:flex;align-items:center;justify-content:center;font-size:24px}
+  .head h1{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .head .sub{font-size:12.5px;color:var(--gray-500);margin-top:2px}
+  .deptchip{display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;margin-left:8px;vertical-align:middle}
+  .purpose{background:#eff6ff;border:1px solid #bfdbfe;border-radius:13px;padding:15px 18px;margin:16px 0 8px;font-size:13.5px;color:#1e3a8a}
+  .purpose b{color:#1d4ed8}
+  .precond{font-size:11.5px;color:var(--gray-500);margin:0 0 12px;padding-left:4px}
+  .rolelegend{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+  .rb{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:4px 11px;border-radius:20px}
+  .rb .d{width:9px;height:9px;border-radius:50%}
+  .rb.sales{background:#dbeafe;color:#1d4ed8} .rb.sales .d{background:var(--sales)}
+  .rb.insp{background:#fef3c7;color:#b45309} .rb.insp .d{background:var(--insp)}
+  .rb.auc{background:#ede9fe;color:#6d28d9} .rb.auc .d{background:var(--auc)}
+  .rb.mgr{background:#eef0f4;color:#4b5563} .rb.mgr .d{background:var(--mgr)}
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 13px;display:flex;align-items:center;gap:9px}
+  .pipe{display:flex;gap:5px;background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:13px 11px;overflow-x:auto}
+  .pnode{flex:1;min-width:94px;text-align:center;position:relative}
+  .pnode .dot{width:34px;height:34px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff}
+  .pnode .lbl{font-size:11px;font-weight:700;color:var(--gray-700);line-height:1.3}
+  .pnode .who{font-size:10px;font-weight:700;margin-top:2px}
+  .pnode:not(:last-child)::after{content:'›';position:absolute;right:-3px;top:6px;color:var(--gray-300);font-size:18px;font-weight:800}
+  .timebar{display:flex;gap:0;margin:14px 0 4px;background:#fff;border:1px solid var(--gray-200);border-radius:11px;overflow:hidden;font-size:12px;font-weight:700}
+  .timebar .seg{flex:1;padding:11px 13px;border-right:1px solid var(--gray-200)}
+  .timebar .seg:last-child{border-right:0}
+  .timebar .seg .t{font-size:10px;color:var(--gray-400);font-weight:800;display:block;margin-bottom:3px}
+  .timebar .auc{background:#faf5ff;color:#6d28d9}
+  .timebar .enc{background:#ecfeff;color:#0e7490}
+  .step{background:#fff;border:1px solid var(--gray-200);border-radius:14px;margin-bottom:14px;overflow:hidden;border-left:5px solid var(--sales)}
+  .step.inspc{border-left-color:var(--insp)} .step.aucc{border-left-color:var(--auc)}
+  .step-h{display:flex;align-items:center;gap:12px;padding:14px 17px;background:linear-gradient(90deg,#eff6ff,#fff)}
+  .step.inspc .step-h{background:linear-gradient(90deg,#fffbeb,#fff)} .step.aucc .step-h{background:linear-gradient(90deg,#f5f3ff,#fff)}
+  .step-h .num{width:30px;height:30px;border-radius:50%;background:var(--sales);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .step.inspc .step-h .num{background:var(--insp)} .step.aucc .step-h .num{background:var(--auc)}
+  .step-h .tt{font-weight:800;font-size:15px}
+  .step-h .owner{margin-left:auto}
+  .step-b{padding:14px 18px 16px}
+  .step-b .doh{font-size:11px;font-weight:800;color:var(--sales);letter-spacing:.03em;margin-bottom:7px;text-transform:uppercase}
+  .step.inspc .step-b .doh{color:#b45309} .step.aucc .step-b .doh{color:#6d28d9}
+  .step-b ol{margin:0 0 0 18px}.step-b ol li{margin-bottom:6px;font-size:13px;color:var(--gray-700)}
+  .chat{display:flex;flex-direction:column;gap:12px;background:#eef2f7;border:1px solid var(--gray-200);border-radius:13px;padding:16px 14px;margin:6px 0 4px}
+  .chat-title{font-size:11px;font-weight:800;color:var(--gray-500);text-transform:uppercase;margin-bottom:2px;text-align:center}
+  .chat-time{text-align:center;font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:20px;padding:4px 12px;align-self:center}
+  .msg{max-width:84%;display:flex;flex-direction:column}
+  .msg.buyer{align-self:flex-start;align-items:flex-start}
+  .msg.sales{align-self:flex-end;align-items:flex-end}
+  .who-tag{font-size:10px;font-weight:800;margin-bottom:3px;padding:0 3px}
+  .msg.buyer .who-tag{color:#6b7280} .msg.sales .who-tag{color:#1d4ed8}
+  .bubble{padding:9px 13px;border-radius:15px;font-size:13.5px;line-height:1.4;font-weight:600}
+  .msg.buyer .bubble{background:#fff;border:1px solid var(--gray-200);border-bottom-left-radius:4px;color:var(--gray-800)}
+  .msg.sales .bubble{background:#3b82f6;color:#fff;border-bottom-right-radius:4px}
+  .cc{font-size:11.5px;color:var(--gray-500);margin-top:4px;padding:0 5px;line-height:1.4}
+  .msg.sales .cc{text-align:right}
+  .chat-end{text-align:center;font-size:11.5px;font-weight:700;color:var(--green);background:#dcfce7;border-radius:8px;padding:7px;margin-top:4px}
+  .srcbox{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0}
+  .srccol{border:1px solid var(--gray-200);border-radius:11px;padding:12px 14px}
+  .srccol.enc{border-top:3px solid var(--encar)} .srccol.auc{border-top:3px solid var(--auc)}
+  .srccol .sh{font-weight:800;font-size:13px;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+  .srccol.enc .sh{color:#0e7490} .srccol.auc .sh{color:#6d28d9}
+  .srccol ul{margin:0 0 0 16px}.srccol li{font-size:12px;color:var(--gray-700);margin-bottom:5px}
+  .rolesplit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
+  .rolecol{border:1px solid var(--gray-200);border-radius:11px;padding:12px 14px;background:#fff}
+  .rolecol.sales{border-top:3px solid var(--sales)} .rolecol.insp{border-top:3px solid var(--insp)} .rolecol.auc{border-top:3px solid var(--auc)}
+  .rolecol .rch{font-weight:800;font-size:12.5px;margin-bottom:8px}
+  .rolecol.sales .rch{color:#1d4ed8} .rolecol.insp .rch{color:#b45309} .rolecol.auc .rch{color:#6d28d9}
+  .rolecol ul{margin:0 0 0 16px}.rolecol li{font-size:12px;color:var(--gray-700);margin-bottom:6px;line-height:1.45}
+  .check{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:11px;padding:14px 16px;margin:10px 0}
+  .check .ct{font-weight:800;font-size:13px;color:#15803d;margin-bottom:9px}
+  .check label{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13px;color:var(--gray-700);cursor:pointer}
+  .check input{width:17px;height:17px;accent-color:var(--green)}
+  .warn{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:11px 14px;margin:10px 0;font-size:12.5px;color:#991b1b}
+  .warn b{color:#b91c1c}.warn .wh{font-weight:800;font-size:12.5px;margin-bottom:4px}
+  .pii{background:#fdf4ff;border:1px solid #f0abfc;border-radius:11px;padding:13px 16px;font-size:12.5px;color:#701a75;margin:10px 0}
+  .pii .ph{font-weight:800;margin-bottom:5px;color:#86198f}
+  .tip{background:#ecfeff;border:1px solid #a5f3fc;border-radius:10px;padding:11px 14px;margin:9px 0;font-size:12.5px;color:#155e75}
+  .tip b{color:#0e7490}
+  .mistakes{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:16px 18px}
+  .mistakes ol{margin:0 0 0 18px}.mistakes li{margin-bottom:8px;font-size:13px;color:var(--gray-700)}.mistakes li b{color:#b91c1c}
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:26px;line-height:1.6}
+  @media(max-width:640px){.head h1{font-size:17px}.srcbox{grid-template-columns:1fr}.rolesplit{grid-template-columns:1fr}.msg{max-width:92%}.timebar{flex-direction:column}.timebar .seg{border-right:0;border-bottom:1px solid var(--gray-200)}}
+  @media print{body{background:#fff}.app{padding:0}.step,.pipe,.mistakes,.chat{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <div class="logo">🤝</div>
+    <div><h1>영업 업무 가이드<span class="deptchip">영업 · v2</span></h1>
+    <div class="sub">문의 → 응대 → 매입보드 등록(엔카/경매) → 검차팀 현지확인·최종금액 → 바이어 → 경매/구매 → [관리]</div></div>
+  </div>
+
+  <div class="purpose">
+    바이어가 채팅앱으로 문의하면 <b>영업이 직접(영어로) 응대</b>해서, 그 차를 <b>매입보드에 등록(엔카 또는 경매)</b>합니다.
+    <b>검차팀이 현지에서 실차를 보고 최종금액을 산정</b>하면, 영업이 <b>사진과 최종금액을 바이어에게 전달</b>하고,
+    수락되면 <b>경매/구매</b> 후 <b>[관리]에게 카톡 전달</b>합니다.
+  </div>
+  <div class="precond">※ 현재 기준(자동 AI 응대·자동 연동 도입 전). 단계마다 담당이 다릅니다 — 아래 색으로 구분.</div>
+
+  <div class="rolelegend">
+    <span class="rb sales"><span class="d"></span>영업 (응대·등록·전달)</span>
+    <span class="rb insp"><span class="d"></span>검차팀 (현지 차상태·최종금액)</span>
+    <span class="rb auc"><span class="d"></span>경매팀 (낙찰·구매)</span>
+    <span class="rb mgr"><span class="d"></span>[관리] (car-erp 등록)</span>
+  </div>
+
+  <h2 class="sec">🔄 전체 흐름 (담당별 색)</h2>
+  <div class="pipe">
+    <div class="pnode"><div class="dot" style="background:var(--sales)">💬</div><div class="lbl">문의 응대</div><div class="who" style="color:#1d4ed8">영업</div></div>
+    <div class="pnode"><div class="dot" style="background:var(--sales)">📝</div><div class="lbl">매입예정 등록<br>(엔카/경매)</div><div class="who" style="color:#1d4ed8">영업</div></div>
+    <div class="pnode"><div class="dot" style="background:var(--insp)">🔍</div><div class="lbl">현지확인<br>·최종금액</div><div class="who" style="color:#b45309">검차팀</div></div>
+    <div class="pnode"><div class="dot" style="background:var(--sales)">📤</div><div class="lbl">바이어 사진<br>+최종금액</div><div class="who" style="color:#1d4ed8">영업</div></div>
+    <div class="pnode"><div class="dot" style="background:var(--auc)">🔨</div><div class="lbl">경매/구매</div><div class="who" style="color:#6d28d9">경매팀</div></div>
+    <div class="pnode"><div class="dot" style="background:var(--mgr)">📤</div><div class="lbl">[관리] 카톡<br>→ car-erp</div><div class="who" style="color:#4b5563">영업→관리</div></div>
+  </div>
+
+  <div class="timebar">
+    <div class="seg auc"><span class="t">🔨 경매</span>10:00 매입예정 마감 · 13:00 검차 마감 (이후 [관리]만 수정)</div>
+    <div class="seg enc"><span class="t">🛒 엔카</span>시간 마감 없음 — 상시 등록·진행</div>
+  </div>
+
+  <h2 class="sec">📋 단계별 상세</h2>
+
+  <!-- 1 영업 1차 응대 -->
+  <div class="step">
+    <div class="step-h"><div class="num">1</div><div class="tt">채팅 문의 접수 & 1차 응대</div><div class="owner"><span class="rb sales"><span class="d"></span>영업</span></div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — 영어로 응대 (바이어 대부분 해외)</div>
+      <ol>
+        <li>채팅에 차 정보가 자동으로 옵니다 — 매물번호·차종·연식·주행거리·가격·사진. 매물번호(c_no)를 메모.</li>
+        <li>재고·기본사항 안내하고, <b>"실차를 확인한 뒤 사진과 최종금액을 보내드리겠다"</b>고 안내 (가격은 현지 확인 후 확정).</li>
+        <li>그다음 2단계(매입예정 등록)로.</li>
+      </ol>
+      <div class="chat">
+        <div class="chat-title">💬 1차 대화 (English / 한글 자막)</div>
+        <div class="msg buyer"><div class="who-tag">🧔🏽 바이어</div><div class="bubble">Hi SSANCAR, is this Genesis GV70 (#6797296) still available?</div><div class="cc">안녕하세요, 이 제네시스 GV70 (#6797296) 아직 있나요?</div></div>
+        <div class="msg sales"><div class="who-tag">👨‍💼 영업</div><div class="bubble">Hello! Let me check availability — the 2022 GV70 2.5T, 41,189 km, right? We'll inspect the actual car and send you photos with the final price.</div><div class="cc">안녕하세요! 확인해 드릴게요 — 2022년식 GV70 2.5T, 41,189km 맞으시죠? 실차 확인 후 사진과 최종금액을 보내드리겠습니다.</div></div>
+        <div class="msg buyer"><div class="who-tag">🧔🏽 바이어</div><div class="bubble">Great. How long will it take?</div><div class="cc">좋아요. 얼마나 걸릴까요?</div></div>
+        <div class="msg sales"><div class="who-tag">👨‍💼 영업</div><div class="bubble">Usually within a few hours — I'll message you with photos and the final price.</div><div class="cc">보통 몇 시간 내예요 — 사진과 최종금액으로 다시 연락드릴게요.</div></div>
+        <div class="chat-end">↳ 매입예정 등록 + 검차팀 현지확인으로</div>
+      </div>
+      <div class="warn"><div class="wh">⚠️ 주의</div>"아직 있나요?"는 원본 사이트(엔카/ssancar.com) 재고 기준으로 답. <b>최종금액은 현지 확인 전에 확정해 주지 말 것</b> (차 상태로 달라짐). 큰 할인 약속은 윗선 확인.</div>
+    </div>
+  </div>
+
+  <!-- 2 영업 등록 (엔카/경매) -->
+  <div class="step">
+    <div class="step-h"><div class="num">2</div><div class="tt">매입예정 등록 (매입보드) — 엔카 / 경매 선택</div><div class="owner"><span class="rb sales"><span class="d"></span>영업</span></div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — [+ 매입예정 추가] → 먼저 출처 선택</div>
+      <div class="srcbox">
+        <div class="srccol enc">
+          <div class="sh">🛒 엔카 (즉시구매)</div>
+          <ul>
+            <li>엔카 <b>매물 URL / 매물번호</b> 붙여넣기 (식별용)</li>
+            <li>판매 딜러 / 지역</li>
+            <li><b>시간 마감 없음 — 상시 등록</b></li>
+          </ul>
+        </div>
+        <div class="srccol auc">
+          <div class="sh">🔨 경매</div>
+          <ul>
+            <li>경매장 / 출품번호</li>
+            <li><b>10:00 매입예정 마감</b> (이후 [관리]만 수정)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="doh" style="margin-top:10px">공통 입력</div>
+      <ul style="margin:0 0 0 18px"><li style="font-size:13px;margin-bottom:5px"><b>차량번호 · 차대번호(VIN) — 필수</b> (등록 후 수정 불가, 중복 방지 키)</li>
+      <li style="font-size:13px"><b>예상가 — 선택</b> (엔카/경매 매물 표시가를 넣어두면 좋지만 비워도 됨. 진짜 금액은 현지 확인 후 확정)</li></ul>
+      <div class="warn"><div class="wh">⏰ 시간 마감 — 경매만</div>경매 차량은 <b>10:00 이후 잠금</b>(관리자만 해제). <b>엔카는 상시</b>라 마감 없음. 본인 등록 차량만 본인 화면에 보임.</div>
+    </div>
+  </div>
+
+  <!-- 3 검차팀 현지확인·최종금액 -->
+  <div class="step inspc">
+    <div class="step-h"><div class="num">3</div><div class="tt">현지 차상태 확인 & 최종금액 산정</div><div class="owner"><span class="rb insp"><span class="d"></span>검차팀</span></div></div>
+    <div class="step-b">
+      <div class="doh">검차팀이 하는 일 (영업은 결과 대기)</div>
+      <ol>
+        <li>현장에서 <b>실차 상태 확인</b> (외관·주행·사고흔적 등) + <b>외관 사진 촬영</b>.</li>
+        <li>차 상태를 반영해 <b>현지 최종금액 산정</b> (예상가와 달라도 됨 — 실제 상태가 기준).</li>
+        <li>최종금액·사진을 보드에 입력 → 영업에게 넘어감.</li>
+      </ol>
+      <div class="tip">⚡ <b>현지(한국) 흥정은 실시간으로 빠르게</b> 진행됩니다. 검차팀이 차 보고 금액 정하는 건 보통 그 자리에서.</div>
+      <div class="pii"><div class="ph">🛡 개인정보</div>촬영·공유 사진은 <b>차량 외관/상태만</b>. 번호판·서류(등록증·성능지·말소신청서)는 제외.</div>
+    </div>
+  </div>
+
+  <!-- 4 영업 바이어 전달 (시간차) -->
+  <div class="step">
+    <div class="step-h"><div class="num">4</div><div class="tt">바이어에게 사진 + 최종금액 전달 → 회신</div><div class="owner"><span class="rb sales"><span class="d"></span>영업</span></div></div>
+    <div class="step-b">
+      <div class="doh">할 일</div>
+      <ol>
+        <li>검차팀이 올린 <b>실차 사진 + 최종금액</b>을 바이어에게 전달.</li>
+        <li>바이어 회신을 기다림 — <b>수락 / 거절</b>. 흥정으로 금액이 바뀌면 <b>최종금액을 다시 수정</b>.</li>
+        <li>수락되면 5단계(경매/구매)로.</li>
+      </ol>
+      <div class="chat">
+        <div class="chat-title">💬 2차 대화 (사진 + 최종금액)</div>
+        <div class="chat-time">⏱ 몇 시간 뒤 — 바이어 응답은 늦을 수 있음</div>
+        <div class="msg sales"><div class="who-tag">👨‍💼 영업</div><div class="bubble">📷 Here are the actual photos. After on-site inspection: clean record, minor scratch on front bumper. Final price: 13,200,000 KRW. Shall we proceed?</div><div class="cc">📷 실차 사진입니다. 현지 확인 결과 무사고, 앞범퍼 미세 스크래치. 최종금액 13,200,000원. 진행할까요?</div></div>
+        <div class="msg buyer"><div class="who-tag">🧔🏽 바이어</div><div class="bubble">Looks good. Yes, please proceed!</div><div class="cc">좋네요. 네, 진행해 주세요!</div></div>
+        <div class="chat-end">↳ 수락 → 경매/구매로 (거절이면 종료)</div>
+      </div>
+      <div class="tip">⏱ <b>바이어 대화는 몇 시간 뒤 시작</b>되거나 <b>몇 시간 이어질</b> 수 있습니다. "회신대기"로 두고 다른 차량을 먼저 처리하세요.</div>
+    </div>
+  </div>
+
+  <!-- 5 경매/구매 -->
+  <div class="step aucc">
+    <div class="step-h"><div class="num">5</div><div class="tt">경매 · 구매 (수락 차량만)</div><div class="owner"><span class="rb auc"><span class="d"></span>경매팀</span> <span class="rb sales"><span class="d"></span>영업</span></div></div>
+    <div class="step-b">
+      <div class="rolesplit">
+        <div class="rolecol auc">
+          <div class="rch">🔨 경매팀이 하는 일</div>
+          <ul>
+            <li>바이어 수락 차량만 진입 (미수락 차단)</li>
+            <li>현지 최종금액으로 집행 — <b>경매=낙찰/유찰</b>, <b>엔카=구매확정/취소</b></li>
+            <li>낙찰·구매확정 = SSANCAR 소유(우리 재고)</li>
+          </ul>
+        </div>
+        <div class="rolecol sales">
+          <div class="rch">👨‍💼 영업이 하는 일</div>
+          <ul>
+            <li>결과 확인</li>
+            <li>유찰/취소 시 바이어에게 안내</li>
+            <li>낙찰/구매확정 시 바로 6단계</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6 영업 [관리] 카톡 -->
+  <div class="step">
+    <div class="step-h"><div class="num">6</div><div class="tt">★ [관리]에게 카톡 전달 (핵심 인계)</div><div class="owner"><span class="rb sales"><span class="d"></span>영업</span> → <span class="rb mgr"><span class="d"></span>관리</span></div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — [관리]에게 카카오톡으로 아래 전달 → [관리]가 car-erp 등록</div>
+      <div class="check">
+        <div class="ct">📤 카톡에 넣을 정보 체크리스트</div>
+        <label><input type="checkbox"> 차량번호 / 차대번호(VIN)</label>
+        <label><input type="checkbox"> 매물번호(c_no) — 예: #6797296</label>
+        <label><input type="checkbox"> 출처 (엔카 / 경매)</label>
+        <label><input type="checkbox"> 차종 · 연식 · 주행거리</label>
+        <label><input type="checkbox"> 매입가(현지 최종금액 = 낙찰/구매가)</label>
+        <label><input type="checkbox"> 경매장/출품번호 또는 엔카 매물번호</label>
+        <label><input type="checkbox"> 담당 영업 본인 이름</label>
+        <label><input type="checkbox"> 바이어 정보 (누가 사기로 했는지)</label>
+        <label><input type="checkbox"> 차량 사진 (외관 등)</label>
+      </div>
+      <div class="warn"><div class="wh">⚠️ 꼭 지킬 것</div><b>매물번호(c_no)를 같이</b> — 처음 문의~거래완료까지 한 줄로 이어집니다. 누락 없이 한 번에 보내면 [관리] 재입력이 줄어듭니다.</div>
+    </div>
+  </div>
+
+  <!-- 역할 요약 -->
+  <h2 class="sec">👥 역할별 요약</h2>
+  <div class="rolesplit" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="rolecol sales"><div class="rch">👨‍💼 영업</div><ul><li>채팅 응대(영어)</li><li>매입예정 등록(엔카/경매)</li><li>바이어에 사진+최종금액 전달</li><li>유찰/취소 안내</li><li>[관리] 카톡 전달</li></ul></div>
+    <div class="rolecol insp"><div class="rch">🔍 검차팀</div><ul><li>현지 실차 검수</li><li>외관 사진 촬영</li><li>차상태 반영 최종금액 산정</li></ul></div>
+    <div class="rolecol auc"><div class="rch">🔨 경매팀</div><ul><li>수락 차량 진입</li><li>최종금액으로 집행</li><li>경매=낙찰/유찰<br>엔카=구매확정/취소</li></ul></div>
+  </div>
+
+  <h2 class="sec">⚠️ 자주 하는 실수</h2>
+  <div class="mistakes">
+    <ol>
+      <li><b>현지 확인 전에 바이어에게 최종금액을 확정</b>해 줌 → 차 상태로 금액 달라짐, 신뢰 문제.</li>
+      <li>경매 차량 <b>10:00 마감</b>을 넘겨 등록 못 함 (엔카는 상시).</li>
+      <li><b>VIN 누락</b> → car-erp 등록 시 중복·오류. 등록 후 수정 불가니 처음에 정확히.</li>
+      <li>바이어에게 <b>서류·번호판 사진</b> 전송 → 금지(개인정보).</li>
+      <li>[관리] 카톡에 <b>매물번호(c_no)·출처</b> 빠뜨림 → 추적 끊김.</li>
+    </ol>
+  </div>
+
+  <div class="note">SSANCAR 사내 업무 가이드 · 영업 · 2026-06-05 갱신 (v2: 엔카/경매 출처 · 검차팀 현지 최종금액 · 바이어 시간차)<br>※ 자동 AI 응대·자동 연동 도입 시 일부 단계가 자동화될 예정 (현재 수동 기준)</div>
+</div>
+</body>
+</html>

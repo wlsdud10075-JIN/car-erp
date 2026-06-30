@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>매입-검차-경매 업무보드 v2 — 엔카/경매 출처 · 현지 금액산정 · 관리 무제한 수정</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-500:#6b7280; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --encar:#06b6d4; --auction:#8b5cf6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.5}
+  .app{max-width:1180px;margin:0 auto;padding:16px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--primary),#9a8de0);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  .brand h1{font-size:17px;font-weight:800}
+  .brand .sub{font-size:11px;color:var(--gray-500)}
+  .roleswitch{display:flex;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:4px}
+  .roleswitch button{border:0;background:transparent;padding:7px 12px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--gray-700);font-weight:600;white-space:nowrap}
+  .roleswitch button.active{background:var(--primary);color:#fff}
+  .roleswitch .who{font-size:10px;display:block;opacity:.8;font-weight:500}
+
+  .changelog{background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:12px;color:#3730a3}
+  .changelog b{color:#4338ca}
+
+  .pipeline{display:flex;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:10px;margin-bottom:12px;overflow-x:auto}
+  .pstep{flex:1;min-width:104px;text-align:center;position:relative}
+  .pstep .dot{width:26px;height:26px;border-radius:50%;margin:0 auto 5px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+  .pstep .lbl{font-size:11px;color:var(--gray-700);font-weight:600}
+  .pstep .cnt{font-size:10px;color:var(--gray-500)}
+  .pstep:not(:last-child)::after{content:'›';position:absolute;right:-4px;top:4px;color:var(--gray-300);font-size:16px}
+
+  .gate{display:flex;align-items:center;gap:10px;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-weight:600}
+  .gate.open{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+  .gate.locked{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .gate.mgr{background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6}
+  .gate .clock{font-variant-numeric:tabular-nums;font-weight:800;font-size:16px}
+  .gate .tag{margin-left:auto;font-size:11px;background:rgba(0,0,0,.06);padding:3px 8px;border-radius:20px;font-weight:600}
+
+  .card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:16px;margin-bottom:12px}
+  .card-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .card-h h2{font-size:15px;font-weight:800}
+  .muted{color:var(--gray-500);font-size:12px}
+
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+  .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-amber{background:#fef3c7;color:#b45309}
+  .badge-green{background:#d1fae5;color:#047857}.badge-red{background:#fee2e2;color:#b91c1c}
+  .badge-purple{background:#ede9fe;color:#6d28d9}.badge-gray{background:#eef0f4;color:#4b5563}
+  .badge-teal{background:#ccfbf1;color:#0f766e}
+  .badge-encar{background:#cffafe;color:#0e7490}.badge-auction{background:#ede9fe;color:#6d28d9}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:var(--gray-500);font-weight:700;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--gray-200)}
+  td{padding:11px 10px;border-bottom:1px solid var(--gray-100);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  .vno{font-weight:800;font-size:14px}
+  .vin{font-size:10px;color:var(--gray-500);font-family:monospace}
+  .price{font-weight:800;font-variant-numeric:tabular-nums}
+  .price .won{font-size:11px;color:var(--gray-500);font-weight:600}
+  .price.final{color:#047857}
+
+  .btn{border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  .btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-hover)}
+  .btn-ghost{background:var(--gray-100);color:var(--gray-700)}
+  .btn-green{background:var(--green);color:#fff}.btn-red{background:var(--red);color:#fff}
+  .btn-sm{padding:5px 11px;font-size:12px;border-radius:7px}
+  .btn-outline{background:#fff;border:1px solid var(--gray-300);color:var(--gray-700)}
+
+  .addform{background:var(--gray-50);border:1px dashed var(--gray-300);border-radius:9px;padding:14px;margin-bottom:14px;display:none}
+  .addform.show{display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+  .field label{display:block;font-size:11px;color:var(--gray-500);font-weight:600;margin-bottom:4px}
+  .field input{width:100%;border:1px solid var(--gray-300);border-radius:7px;padding:8px 10px;font-size:13px;background:#fff}
+  .field input:focus{outline:0;border-color:var(--primary)}
+  .req{color:var(--red)}
+
+  /* source segmented */
+  .srcseg{display:inline-flex;gap:0;border:1.5px solid var(--gray-300);border-radius:9px;overflow:hidden;margin-bottom:12px}
+  .srcseg button{border:0;background:#fff;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;color:var(--gray-500);display:flex;align-items:center;gap:6px}
+  .srcseg button.on.encar{background:var(--encar);color:#fff}
+  .srcseg button.on.auction{background:var(--auction);color:#fff}
+  .srcseg button:not(:last-child){border-right:1.5px solid var(--gray-300)}
+  .src-fields{display:none}.src-fields.show{display:block}
+
+  .iso{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--primary-text);background:var(--primary-light);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-weight:600}
+  .timehint{display:flex;gap:9px;align-items:flex-start;background:#ecfeff;border:1px solid #a5f3fc;border-radius:9px;padding:10px 13px;margin-bottom:12px;font-size:12px;color:#155e75}
+  .timehint b{color:#0e7490}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:12px}
+  .kpi{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:14px}
+  .kpi .k{font-size:11px;color:var(--gray-500);font-weight:600}.kpi .v{font-size:24px;font-weight:800;margin-top:3px}
+
+  .group{border:1px solid var(--gray-200);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .group-h{display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--gray-50);cursor:pointer;font-weight:700}
+  .group-h .count{margin-left:auto;font-size:11px;color:var(--gray-500)}
+  .insp-card{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--gray-100)}
+  .insp-card .info{flex:1}.insp-card .info .sub{font-size:11px;color:var(--gray-500);margin-top:2px}
+
+  .drawer-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:40}
+  .drawer-mask.show{display:block}
+  .drawer{position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(100%);width:min(480px,100%);background:#fff;border-radius:16px 16px 0 0;z-index:50;transition:transform .25s ease;max-height:90vh;overflow-y:auto;box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+  .drawer.show{transform:translateX(-50%) translateY(0)}
+  .drawer-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--gray-200);position:sticky;top:0;background:#fff}
+  .drawer-h h3{font-size:16px;font-weight:800}
+  .drawer-b{padding:16px 18px}
+  .drawer .x{border:0;background:var(--gray-100);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px}
+  .photo-zone{border:2px dashed var(--gray-300);border-radius:10px;padding:20px;text-align:center;color:var(--gray-500);margin:10px 0;font-size:13px;background:var(--gray-50)}
+  .photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .photo{width:54px;height:54px;border-radius:8px;background:linear-gradient(135deg,#cbd5e1,#94a3b8);display:flex;align-items:center;justify-content:center;font-size:18px}
+  .verdict{display:flex;gap:10px;margin-top:12px}
+  .verdict button{flex:1;padding:12px;border-radius:10px;border:2px solid var(--gray-200);background:#fff;font-weight:800;cursor:pointer;font-size:14px}
+  .verdict button.pass.on{background:#d1fae5;border-color:var(--green);color:#047857}
+  .verdict button.fail.on{background:#fee2e2;border-color:var(--red);color:#b91c1c}
+  .verdict button.wait.on{background:#fef3c7;border-color:var(--amber);color:#b45309}
+  .section-title{font-size:11px;text-transform:uppercase;color:var(--gray-500);font-weight:700;letter-spacing:.04em;margin:16px 0 7px}
+  .hint{font-size:11px;color:var(--gray-500);margin-top:6px}
+  .view{display:none}.view.active{display:block}
+  .row-actions{display:flex;gap:6px}
+  .mockup-note{text-align:center;font-size:11px;color:var(--gray-500);margin:18px 0 8px}
+  @media(max-width:640px){.brand h1{font-size:15px}.roleswitch button{padding:6px 9px;font-size:12px}}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">P</div>
+      <div><h1>매입-검차-경매 업무보드 <span class="badge badge-purple">v2</span></h1>
+      <div class="sub">purchase-board v2 · 엔카/경매 출처 · 현지 금액산정 · 관리 무제한 수정</div></div>
+    </div>
+    <div class="roleswitch">
+      <button class="active" data-view="sales" onclick="setView(this,'sales')">영업<span class="who">김영업</span></button>
+      <button data-view="inspect" onclick="setView(this,'inspect')">현지확인<span class="who">박검차</span></button>
+      <button data-view="auction" onclick="setView(this,'auction')">경매/구매<span class="who">최경매</span></button>
+      <button data-view="manager" onclick="setView(this,'manager')">관리자<span class="who">무제한 수정</span></button>
+    </div>
+  </div>
+
+  <div class="changelog">
+    <b>v2 변경점</b> ① 기존 보드는 <b>경매</b> 전용 → 이제 <b>엔카(즉시구매)·경매</b> 두 출처를 등록 시 선택
+    ② 차 상태를 보고 <b>현지에서 최종금액 산정</b> 후 바이어에게 사진+최종금액 전달(시간차 발생)
+    ③ <b>[관리]는 시간잠금과 무관하게 수정 가능</b> (차량번호·VIN 등 유니크 식별값 제외 · 제시가↔실제 금액 차이 반영)
+    <div style="margin-top:6px;color:#0f766e"><b>🟢 확정</b> — 시간잠금(10:00/13:00)은 <b>경매 차량만</b> 적용. <b>엔카(상시 매물)는 잠금 없이 상시 등록·진행</b>.</div>
+  </div>
+
+  <div class="pipeline">
+    <div class="pstep"><div class="dot" style="background:var(--blue)">1</div><div class="lbl">등록 (엔카/경매)</div><div class="cnt">출처 선택</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--amber)">2</div><div class="lbl">현지 차상태·금액산정</div><div class="cnt">한국, 실시간</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--teal)">3</div><div class="lbl">바이어 사진+최종금액</div><div class="cnt">시간차 회신</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--green)">4</div><div class="lbl">바이어 확정</div><div class="cnt">수락/거절</div></div>
+    <div class="pstep"><div class="dot" style="background:var(--purple)">5</div><div class="lbl">경매/구매</div><div class="cnt">낙찰·구매</div></div>
+    <div class="pstep"><div class="dot" style="background:#0d9488">6</div><div class="lbl">낙찰/구매→ERP</div><div class="cnt">재고 전환</div></div>
+  </div>
+
+  <!-- ============ 영업 ============ -->
+  <div id="view-sales" class="view active">
+    <div class="gate open">⏰ 매입예정 작성 <span class="muted" style="font-weight:600">· 🔨경매만 10:00 이후 잠금(관리자 해제) · 🛒엔카는 상시</span><span class="tag">작성 가능</span></div>
+    <div class="iso">🔒 본인(김영업) 리스트만 표시 — 타 영업 금액은 서버/DB 레벨 격리</div>
+
+    <div class="card">
+      <div class="card-h">
+        <h2>내 매입예정 리스트 <span class="muted">· 4건</span></h2>
+        <button class="btn btn-primary" onclick="toggleAdd()">+ 매입예정 추가</button>
+      </div>
+
+      <div class="addform" id="addform">
+        <label style="font-size:11px;color:var(--gray-500);font-weight:700">출처 선택 <span class="req">*</span></label>
+        <div class="srcseg" style="margin-top:5px">
+          <button class="encar on" id="segEncar" onclick="setSrc('encar')">🛒 엔카 (즉시구매)</button>
+          <button class="auction" id="segAuction" onclick="setSrc('auction')">🔨 경매</button>
+        </div>
+
+        <div class="grid">
+          <div class="field"><label>차량번호 <span class="req">*</span></label><input placeholder="12가3456"></div>
+          <div class="field"><label>차대번호 VIN <span class="req">*</span></label><input placeholder="KMHxxxxxxxxxxxxxx"></div>
+          <div class="field"><label>예상가 (매물 표시가, 선택)</label><input placeholder="13,500,000"></div>
+        </div>
+
+        <!-- 엔카 전용 -->
+        <div class="src-fields show" id="fEncar">
+          <div class="grid" style="margin-top:10px">
+            <div class="field"><label>엔카 매물 URL / 매물번호</label><input placeholder="encar.com/... 또는 매물번호 붙여넣기"></div>
+            <div class="field"><label>판매 딜러 / 지역</label><input placeholder="예: 강남지점"></div>
+          </div>
+          <div class="hint">💡 엔카는 공식 API가 없습니다. 매물 URL/번호를 붙여넣어 식별용으로만 기록 (자동 정보수집 아님).</div>
+        </div>
+        <!-- 경매 전용 -->
+        <div class="src-fields" id="fAuction">
+          <div class="grid" style="margin-top:10px">
+            <div class="field"><label>경매장</label><input placeholder="롯데 / 현대 글로비스"></div>
+            <div class="field"><label>출품번호</label><input placeholder="A-1024"></div>
+          </div>
+        </div>
+
+        <div class="hint" style="margin-top:8px">차량번호·VIN은 중복 방지 식별키라 <b>필수</b>(이후 수정 불가). 예상가는 <b>선택</b> — 엔카/경매 매물 표시가를 넣어두면 좋지만, 비워도 됩니다. 현지 차상태 확인 후 <b>최종금액으로 확정</b>됩니다.</div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="toggleAdd()">저장</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAdd()">취소</button>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr><th>차량</th><th>출처</th><th>예상가</th><th>현지 최종금액</th><th>바이어</th><th>상태</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="vno">12가3456</div><div class="vin">VIN ·KMHE341</div></td>
+            <td><span class="badge badge-encar">엔카</span></td>
+            <td class="price">13,500,000<span class="won">원</span></td>
+            <td class="price final">13,200,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">수락</span></td>
+            <td><span class="badge badge-teal">구매대기</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">34나7890</div><div class="vin">VIN ·KNAJ881·롯데 B-2210</div></td>
+            <td><span class="badge badge-auction">경매</span></td>
+            <td class="price">8,900,000<span class="won">원</span></td>
+            <td class="price final">9,300,000<span class="won">원</span></td>
+            <td><span class="badge badge-amber">회신대기</span></td>
+            <td><span class="badge badge-amber">바이어 확인중</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">56다1234</div><div class="vin">VIN ·WBA5G7</div></td>
+            <td><span class="badge badge-encar">엔카</span></td>
+            <td class="price">21,000,000<span class="won">원</span></td>
+            <td class="price">—</td>
+            <td><span class="badge badge-gray">—</span></td>
+            <td><span class="badge badge-blue">현지확인 대기</span></td>
+          </tr>
+          <tr>
+            <td><div class="vno">78라5678</div><div class="vin">VIN ·MNTBB2·현대 C-3001</div></td>
+            <td><span class="badge badge-auction">경매</span></td>
+            <td class="price">12,000,000<span class="won">원</span></td>
+            <td class="price final">11,500,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">수락</span></td>
+            <td><span class="badge badge-purple">경매대기</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ 현지확인 ============ -->
+  <div id="view-inspect" class="view">
+    <div class="gate open">⏰ 현지 차상태 확인 · 금액 산정 <span class="tag">📱 현장 모바일</span></div>
+    <div class="timehint">⏱ <div><b>시간 흐름 안내</b> — 현지(한국)에서 차 상태 보고 금액 정하는 흥정은 <b>실시간</b>으로 빠르게 진행됩니다. 하지만 바이어와의 대화는 <b>몇 시간 뒤</b>에 시작될 수도, <b>몇 시간 동안</b> 이어질 수도 있습니다. → "바이어 회신대기" 상태로 두고 다른 차량 먼저 처리하세요.</div></div>
+    <div class="iso">👁 전체 영업 리스트 열람 · 차 상태 확인 → 최종금액 산정 → 바이어에게 사진+최종금액 전달</div>
+
+    <div class="card">
+      <div class="card-h"><h2>현지 확인 작업창 <span class="muted">· 오늘 대상 5건 (엔카 3 · 경매 2)</span></h2></div>
+
+      <div class="group">
+        <div class="group-h" onclick="toggleGroup(this)">▾ 김영업 <span class="badge badge-blue">2 대기</span> <span class="count">3건</span></div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">56다1234 <span class="badge badge-encar">엔카</span></div><div class="sub">예상가 21,000,000원 · VIN WBA5G7</div></div>
+          <span class="badge badge-blue">현지확인 대기</span>
+          <button class="btn btn-primary btn-sm" onclick="openDrawer('56다1234','21,000,000','엔카')">차상태·금액</button>
+        </div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">34나7890 <span class="badge badge-auction">경매</span></div><div class="sub">예상가 8,900,000원 · 롯데 B-2210</div></div>
+          <span class="badge badge-amber">회신대기</span>
+          <button class="btn btn-outline btn-sm" onclick="openDrawer('34나7890','8,900,000','경매')">보기/수정</button>
+        </div>
+        <div class="insp-card">
+          <div class="info"><div class="vno">12가3456 <span class="badge badge-encar">엔카</span></div><div class="sub">최종 13,200,000원 · 바이어 수락</div></div>
+          <span class="badge badge-green">수락</span>
+          <button class="btn btn-outline btn-sm" onclick="openDrawer('12가3456','13,200,000','엔카')">보기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 경매/구매 ============ -->
+  <div id="view-auction" class="view">
+    <div class="gate locked">🔨 경매/구매 진행 <span class="muted" style="font-weight:600">· 바이어 수락 차량만 노출 · 현지 최종금액으로 집행</span><span class="tag">수락 3건</span></div>
+    <div class="iso">🏁 바이어가 <b>수락</b>한 차량만 진입 — 경매=낙찰/유찰 · 엔카=구매확정/취소</div>
+
+    <div class="card">
+      <div class="card-h"><h2>경매/구매 컨트롤창 <span class="muted">· 수락 3건</span></h2></div>
+      <table>
+        <thead><tr><th>차량</th><th>출처</th><th>영업</th><th>현지 최종금액</th><th>처리</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><div class="vno">12가3456</div></td><td><span class="badge badge-encar">엔카</span></td><td>김영업</td>
+            <td class="price final">13,200,000<span class="won">원</span></td>
+            <td class="row-actions"><button class="btn btn-green btn-sm" onclick="setResult(this,'구매확정')">구매확정</button><button class="btn btn-ghost btn-sm" onclick="setResult(this,'취소')">취소</button></td>
+          </tr>
+          <tr>
+            <td><div class="vno">78라5678</div></td><td><span class="badge badge-auction">경매</span></td><td>김영업</td>
+            <td class="price final">11,500,000<span class="won">원</span></td>
+            <td class="row-actions"><button class="btn btn-green btn-sm" onclick="setResult(this,'낙찰')">낙찰</button><button class="btn btn-ghost btn-sm" onclick="setResult(this,'유찰')">유찰</button></td>
+          </tr>
+          <tr>
+            <td><div class="vno">90마2468</div></td><td><span class="badge badge-auction">경매</span></td><td>이영업</td>
+            <td class="price final">9,300,000<span class="won">원</span></td>
+            <td><span class="badge badge-green">낙찰 ✓</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ============ 관리자 ============ -->
+  <div id="view-manager" class="view">
+    <div class="gate mgr">🛡 관리자 — <b style="margin:0 4px">시간잠금 무관 수정 (차량번호·VIN 제외)</b> <span class="tag">감사로그 기록됨</span></div>
+    <div class="iso" style="color:#5b21b6;background:#f5f3ff">✏️ [관리]는 10:00/13:00 잠금과 무관하게 <b style="margin:0 3px">예상가·최종금액·출처·상태 등 수정 가능</b> — 단 <b>차량번호·차대번호(VIN) 등 유니크 식별값은 수정 불가</b>(중복 방지 키). 영업 제시가와 실제 차상태 금액 차이가 비일비재해 허용. 모든 수정은 <b>purchase_board_audit_logs</b>에 기록.</div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="k">오늘 매입예정</div><div class="v">9</div></div>
+      <div class="kpi"><div class="k">엔카</div><div class="v" style="color:var(--encar)">5</div></div>
+      <div class="kpi"><div class="k">경매</div><div class="v" style="color:var(--auction)">4</div></div>
+      <div class="kpi"><div class="k">바이어 수락</div><div class="v" style="color:var(--green)">3</div></div>
+      <div class="kpi"><div class="k">ERP 전환대기</div><div class="v" style="color:var(--primary)">1</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-h"><h2>전체 현황 (모든 행 수정 가능)</h2>
+        <div class="row-actions"><button class="btn btn-outline btn-sm">⏰ 10:00 해제</button><button class="btn btn-outline btn-sm">🔨 마감 해제</button></div>
+      </div>
+      <table>
+        <thead><tr><th>차량</th><th>출처</th><th>영업</th><th>예상가</th><th>최종금액</th><th>상태</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><div class="vno">12가3456</div></td><td><span class="badge badge-encar">엔카</span></td><td>김영업</td><td class="price">13,500,000</td><td class="price final">13,200,000</td><td><span class="badge badge-teal">구매대기</span></td><td><button class="btn btn-outline btn-sm" onclick="openDrawer('12가3456','13,200,000','엔카')">✏️ 수정</button></td></tr>
+          <tr><td><div class="vno">34나7890</div></td><td><span class="badge badge-auction">경매</span></td><td>김영업</td><td class="price">8,900,000</td><td class="price final">9,300,000</td><td><span class="badge badge-amber">회신대기</span></td><td><button class="btn btn-outline btn-sm" onclick="openDrawer('34나7890','9,300,000','경매')">✏️ 수정</button></td></tr>
+          <tr><td><div class="vno">56다1234</div></td><td><span class="badge badge-encar">엔카</span></td><td>김영업</td><td class="price">21,000,000</td><td class="price">—</td><td><span class="badge badge-blue">현지확인 대기</span></td><td><button class="btn btn-outline btn-sm" onclick="openDrawer('56다1234','21,000,000','엔카')">✏️ 수정</button></td></tr>
+        </tbody>
+      </table>
+      <div class="hint">잠금 해제·금액 정정 등 모든 override는 <b>purchase_board_audit_logs</b>에 누가·언제·무엇을(이전값→새값) 변경했는지 기록됩니다.</div>
+    </div>
+  </div>
+
+  <div class="mockup-note">⚠️ 동작 없는 <b>정적 UI 목업 v2</b> (실제 데이터·저장 X) · 2026-06-05 변경사항 반영 · 엔카는 공식 API 없음(URL/번호 붙여넣기 식별용)</div>
+</div>
+
+<!-- DRAWER : 현지 차상태·금액 산정 -->
+<div class="drawer-mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-h"><h3 id="dTitle">현지 확인</h3><button class="x" onclick="closeDrawer()">✕</button></div>
+  <div class="drawer-b">
+    <div class="muted" id="dSub">예상가 — · 차 상태 보고 최종금액 산정</div>
+
+    <div class="section-title">차량 사진 (현지 촬영 → 바이어 공유용)</div>
+    <div class="photo-zone">📷 후면카메라 촬영 / 업로드<div class="hint">S3 · purchase-board/inspections/vehicle-photos/ (외관만 · 서류/번호판 제외)</div></div>
+    <div class="photos"><div class="photo">🖼</div><div class="photo">🖼</div><div class="photo">🖼</div><div class="photo">➕</div></div>
+
+    <div class="section-title">차 상태 메모</div>
+    <div class="field"><input placeholder="예: 운전석 시트 사용감, 앞범퍼 미세 스크래치 등"></div>
+
+    <div class="section-title">현지 최종금액 (차 상태 반영)</div>
+    <div class="field"><input placeholder="예: 13,200,000"></div>
+    <div class="hint">예상가와 달라도 됩니다. 실제 차 상태로 판단한 금액을 입력 → 바이어에게 이 금액으로 전달.</div>
+
+    <div class="section-title">바이어에게 전달 / 회신</div>
+    <div class="field"><input placeholder="바이어명 (respond.io 연락처)"></div>
+    <button class="btn btn-primary btn-sm" style="margin-top:8px;width:100%" onclick="alert('(목업) 사진+최종금액 전달')">📤 사진 + 최종금액 바이어에게 전달</button>
+    <div class="hint">⏱ 바이어 회신은 몇 시간 뒤일 수 있습니다 — 전달 후 "회신대기"로 두고 다른 차량 진행.</div>
+
+    <div class="section-title">바이어 회신 결과</div>
+    <div class="verdict">
+      <button class="wait on" onclick="setVerdict(this)">⏳ 회신대기</button>
+      <button class="pass" onclick="setVerdict(this)">👍 수락</button>
+      <button class="fail" onclick="setVerdict(this)">👎 거절</button>
+    </div>
+    <div class="hint">수락한 차량만 경매/구매로 진입합니다.</div>
+
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="closeDrawer()">저장</button>
+      <button class="btn btn-ghost" onclick="closeDrawer()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setView(btn,v){
+    document.querySelectorAll('.roleswitch button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+    document.getElementById('view-'+v).classList.add('active');
+    window.scrollTo(0,0);
+  }
+  function toggleAdd(){ document.getElementById('addform').classList.toggle('show'); }
+  function setSrc(s){
+    document.getElementById('segEncar').classList.toggle('on', s==='encar');
+    document.getElementById('segAuction').classList.toggle('on', s==='auction');
+    document.getElementById('fEncar').classList.toggle('show', s==='encar');
+    document.getElementById('fAuction').classList.toggle('show', s==='auction');
+  }
+  function toggleGroup(h){
+    let n=h.nextElementSibling, open=h.textContent.startsWith('▾');
+    h.textContent=(open?'▸':'▾')+h.textContent.slice(1);
+    while(n&&n.classList.contains('insp-card')){ n.style.display=open?'none':'flex'; n=n.nextElementSibling; }
+  }
+  function openDrawer(vno,price,src){
+    document.getElementById('dTitle').textContent=vno+' · 현지 확인 ('+src+')';
+    document.getElementById('dSub').textContent='예상가/현재 '+price+'원 · 차 상태 보고 최종금액 산정';
+    document.getElementById('mask').classList.add('show');
+    document.getElementById('drawer').classList.add('show');
+  }
+  function closeDrawer(){ document.getElementById('mask').classList.remove('show'); document.getElementById('drawer').classList.remove('show'); }
+  function setVerdict(btn){ document.querySelectorAll('.verdict button').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); }
+  function setResult(btn,result){ let td=btn.closest('td'); let cls=(result==='낙찰'||result==='구매확정')?'badge-green':'badge-gray'; td.innerHTML='<span class="badge '+cls+'">'+result+' ✓</span>'; }
+</script>
+</body>
+</html>

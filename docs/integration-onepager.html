@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSANCAR 4시스템 통합 — 한 장 요약</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1;
+    --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --ai:#d946ef; --site:#6366f1;
+    --respond:#3b82f6; --board:#f59e0b; --erp:#10b981;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.6}
+  .app{max-width:920px;margin:0 auto;padding:22px 16px 80px}
+
+  /* header */
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:18px}
+  .head .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--primary),#9a8de0);display:flex;align-items:center;justify-content:center;font-size:24px}
+  .head h1{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .head .sub{font-size:12.5px;color:var(--gray-500);margin-top:2px}
+
+  /* one-liner hero */
+  .hero{background:linear-gradient(135deg,#4c3fb1,#7c6fcd);color:#fff;border-radius:16px;padding:24px 26px;margin-bottom:24px;box-shadow:0 8px 26px rgba(124,111,205,.28)}
+  .hero .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.08em;background:rgba(255,255,255,.18);padding:4px 11px;border-radius:20px;margin-bottom:11px}
+  .hero .big{font-size:19px;font-weight:800;line-height:1.5}
+  .hero .big .hl{background:rgba(255,255,255,.22);padding:1px 7px;border-radius:6px}
+  .hero .small{font-size:12.5px;opacity:.9;margin-top:11px;line-height:1.6}
+
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 13px;display:flex;align-items:center;gap:9px}
+  h2.sec .n{width:25px;height:25px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+
+  /* 4 system cards */
+  .sys4{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .syscard{background:#fff;border:1px solid var(--gray-200);border-radius:13px;padding:15px 16px;border-top:4px solid}
+  .syscard.site{border-top-color:var(--site)}
+  .syscard.r{border-top-color:var(--respond)}
+  .syscard.bo{border-top-color:var(--board)}
+  .syscard.e{border-top-color:var(--erp)}
+  .syscard .t{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14.5px;margin-bottom:6px}
+  .syscard .t .ico{font-size:19px}
+  .syscard .d{font-size:12.5px;color:var(--gray-600);line-height:1.55}
+  .syscard .st{display:inline-block;margin-top:9px;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px}
+  .st.live{background:#dcfce7;color:#15803d}
+  .st.ext{background:#dbeafe;color:#1d4ed8}
+  .st.mock{background:#fef3c7;color:#b45309}
+
+  /* c_no thread */
+  .thread{background:linear-gradient(135deg,#eef2ff,#faf5ff);border:1.5px solid #c7d2fe;border-radius:14px;padding:18px 20px}
+  .thread h3{font-size:15px;font-weight:800;color:#4338ca;margin-bottom:9px;display:flex;align-items:center;gap:7px}
+  .thread p{font-size:13px;color:var(--gray-700)}
+  .cno{background:#fef08a;padding:1px 6px;border-radius:5px;font-weight:800;font-family:monospace}
+  .threadline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:13px;font-size:11.5px;font-weight:700}
+  .tn{background:#fff;border:1.5px solid var(--gray-300);border-radius:8px;padding:5px 10px;white-space:nowrap}
+  .tn.site{border-color:var(--site);color:#4338ca}
+  .tn.r{border-color:var(--respond);color:#1d4ed8}
+  .tn.bo{border-color:var(--board);color:#b45309}
+  .tn.e{border-color:var(--erp);color:#047857}
+  .ta{color:var(--gray-400);font-size:15px;font-weight:800}
+
+  /* A B C diagram (SVG-ish via flex) */
+  .abc{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:20px 18px}
+  .abcrow{display:flex;align-items:stretch;gap:10px;justify-content:center;flex-wrap:wrap}
+  .box{flex:1;min-width:120px;border-radius:11px;padding:13px 12px;text-align:center;border:2px solid;background:#fff}
+  .box .ic{font-size:22px}
+  .box .nm{font-weight:800;font-size:13px;margin-top:4px}
+  .box .role{font-size:10.5px;color:var(--gray-500);margin-top:2px}
+  .box.site{border-color:var(--site)} .box.r{border-color:var(--respond)} .box.bo{border-color:var(--board)} .box.e{border-color:var(--erp)}
+  .link{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:46px}
+  .link .lbl{width:30px;height:30px;border-radius:9px;color:#fff;font-weight:900;font-size:15px;display:flex;align-items:center;justify-content:center}
+  .link .arr{font-size:18px;color:var(--gray-400);margin-top:2px}
+  .link.A .lbl{background:var(--purple)} .link.B .lbl{background:var(--teal)} .link.C .lbl{background:var(--amber)}
+  .clist{margin-top:18px;display:flex;flex-direction:column;gap:9px}
+  .citem{display:flex;gap:11px;align-items:flex-start;background:var(--gray-50);border-radius:10px;padding:11px 13px}
+  .citem .badge{width:26px;height:26px;border-radius:8px;color:#fff;font-weight:900;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .citem.A .badge{background:var(--purple)} .citem.B .badge{background:var(--teal)} .citem.C .badge{background:var(--amber)}
+  .citem .tx{font-size:12.5px;color:var(--gray-700)}
+  .citem .tx b{color:var(--gray-800)}
+  .citem .when{margin-left:auto;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;align-self:center}
+  .when.now{background:#dcfce7;color:#15803d}
+  .when.next{background:#f3e8ff;color:#7e22ce}
+
+  /* AI ratio */
+  .spec{display:flex;height:46px;border-radius:11px;overflow:hidden;border:1px solid var(--gray-200);font-size:13px;font-weight:800}
+  .spec .ai-part{background:linear-gradient(135deg,#f5d0fe,#e9a8f5);color:#86198f;display:flex;align-items:center;justify-content:center;flex:0 0 75%}
+  .spec .hu-part{background:#e0e7ff;color:#3730a3;display:flex;align-items:center;justify-content:center;flex:1}
+  .guard{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:13px}
+  .gi{background:#fdf4ff;border:1px solid #f0abfc;border-radius:10px;padding:11px 12px;font-size:11.5px;color:#701a75}
+  .gi b{display:block;font-size:12.5px;margin-bottom:3px}
+
+  /* roadmap */
+  .road{position:relative;padding-left:30px}
+  .road::before{content:'';position:absolute;left:11px;top:8px;bottom:14px;width:2.5px;background:var(--gray-200);border-radius:2px}
+  .rstep{position:relative;margin-bottom:13px}
+  .rstep .dot{position:absolute;left:-30px;top:1px;width:24px;height:24px;border-radius:50%;color:#fff;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;border:3px solid var(--gray-100);z-index:2}
+  .rcard{background:#fff;border:1px solid var(--gray-200);border-radius:11px;padding:12px 15px;border-left:4px solid}
+  .rcard .rh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .rcard .rt{font-weight:800;font-size:13.5px}
+  .rcard .rd{font-size:12px;color:var(--gray-600);margin-top:4px;line-height:1.55}
+  .rcard .chip{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;margin-left:auto}
+  .chip.first{background:#fee2e2;color:#b91c1c}
+  .chip.par{background:#e0e7ff;color:#3730a3}
+  .chip.later{background:#f1f2f5;color:#6b7280}
+
+  /* myth box */
+  .myth{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mcard{border-radius:12px;padding:14px 15px;font-size:12.5px;line-height:1.55}
+  .mcard.x{background:#fef2f2;border:1px solid #fecaca}
+  .mcard.o{background:#f0fdf4;border:1px solid #bbf7d0}
+  .mcard .mh{font-weight:800;font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .mcard.x .mh{color:#b91c1c} .mcard.o .mh{color:#15803d}
+
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:26px;line-height:1.6}
+
+  @media(max-width:640px){
+    .sys4{grid-template-columns:1fr}
+    .guard{grid-template-columns:1fr}
+    .myth{grid-template-columns:1fr}
+    .hero .big{font-size:16px}
+    .abcrow .link{min-width:100%;flex-direction:row;gap:8px}
+    .abcrow .link .arr{transform:rotate(90deg);margin-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="head">
+    <div class="logo">🔗</div>
+    <div>
+      <h1>SSANCAR 4시스템 통합 — 한 장 요약</h1>
+      <div class="sub">2026-06-05 실행 로드맵 회의 결론 반영 · 일반인이 읽어도 이해되게</div>
+    </div>
+  </div>
+
+  <!-- HERO one-liner -->
+  <div class="hero">
+    <span class="tag">🎯 한 줄로 말하면</span>
+    <div class="big">
+      바이어 <span class="hl">첫 문의(c_no)</span>부터 <span class="hl">거래완료</span>까지, 흩어진 4개 도구를
+      <span class="hl">매물번호 하나</span>로 꿰어 — <b>사람은 돈·판단만, 나머지는 자동으로 흐르게</b> 하는
+      중고차 수출 영업 파이프라인 통합.
+    </div>
+    <div class="small">
+      🏗 <b>아키텍처로는</b> — car-erp(원장)를 진실원천으로 둔 <b>단방향 이벤트 기반(Event-Driven)</b> 통합. ERP가 쏘고, 채팅(respond.io)은 표시만 한다.<br>
+      🤖 <b>비전으로는</b> — AI 75% / 사람 25%, "문제 될 때만 사람이 끼는" 반자동 영업 데스크.
+    </div>
+  </div>
+
+  <!-- 4 systems -->
+  <h2 class="sec"><span class="n">1</span> 시스템 4개 (각자 하는 일)</h2>
+  <div class="sys4">
+    <div class="syscard site">
+      <div class="t"><span class="ico">🛒</span> ssancar.com</div>
+      <div class="d">여러 중고차 사이트 매물을 <b>API로 긁어모은 카탈로그</b>. 바이어가 여기서 차를 본다. <b>재고가 아니라 "주문받고 사 오는" 구조.</b></div>
+      <span class="st live">작동 중 (별개 사이트)</span>
+    </div>
+    <div class="syscard r">
+      <div class="t"><span class="ico">💬</span> respond.io</div>
+      <div class="d">바이어가 WhatsApp·FB·IG로 채팅하면 받아주는 메시징 도구. <b>여기에 AI 1차 응대</b>를 얹는다.</div>
+      <span class="st ext">작동 중 (외부 서비스)</span>
+    </div>
+    <div class="syscard bo">
+      <div class="t"><span class="ico">📋</span> purchase-board</div>
+      <div class="d">"살게요" 한 차를 실제로 <b>매입·검차·경매</b>하는 업무보드. (영업→검차→경매→낙찰)</div>
+      <span class="st mock">아직 껍데기(목업)</span>
+    </div>
+    <div class="syscard e">
+      <div class="t"><span class="ico">📒</span> car-erp</div>
+      <div class="d"><b>산 뒤부터</b> 재고·정산·통관·B/L·DHL을 관리하는 본체 원장. = 우리가 만든 것.</div>
+      <span class="st live">작동 중 (본체)</span>
+    </div>
+  </div>
+
+  <!-- c_no thread -->
+  <h2 class="sec"><span class="n">2</span> 모든 걸 꿰는 실 = 매물번호(c_no)</h2>
+  <div class="thread">
+    <h3>🧵 채팅 한 번에 "어느 차"가 자동으로 따라온다</h3>
+    <p>바이어가 ssancar.com에서 차를 보고 채팅을 누르면, 그 차의 <b>고유번호(c_no)·사진·번호판이 자동으로 같이 도착</b>한다 (2026-06-04 실제 확인). 예: <span class="cno">#6797296</span> GENESIS GV70.</p>
+    <div class="threadline">
+      <span class="tn site">🛒 매물 #6797296</span><span class="ta">→</span>
+      <span class="tn r">💬 채팅(이 차 관심)</span><span class="ta">→</span>
+      <span class="tn bo">📋 매입·낙찰</span><span class="ta">→</span>
+      <span class="tn e">📒 car-erp 등록</span><span class="ta">→</span>
+      <span class="tn r">💬 입금되면 단계↑</span>
+    </div>
+    <p style="margin-top:13px;font-size:12px;color:#4338ca;font-weight:600">⚠️ 단, c_no는 "어느 <u>차</u>"는 꿰지만 "<u>문의한 사람 = 실제 산 사람</u>"까지 자동 보장하진 못한다 → 최초 1회 사람이 바이어를 연결(Human-in-the-loop)해야 안전.</p>
+  </div>
+
+  <!-- A B C -->
+  <h2 class="sec"><span class="n">3</span> 연결선 A · B · C</h2>
+  <div class="abc">
+    <div class="abcrow">
+      <div class="box r"><div class="ic">💬</div><div class="nm">respond.io</div><div class="role">채팅·AI</div></div>
+      <div class="link A"><div class="lbl">A</div><div class="arr">↔</div></div>
+      <div class="box bo"><div class="ic">📋</div><div class="nm">purchase-board</div><div class="role">매입·검차·경매</div></div>
+      <div class="link B"><div class="lbl">B</div><div class="arr">→</div></div>
+      <div class="box e"><div class="ic">📒</div><div class="nm">car-erp</div><div class="role">원장</div></div>
+    </div>
+    <div style="text-align:center;font-size:11.5px;color:var(--gray-500);margin-top:9px">↑ C는 car-erp가 respond.io로 <b>되돌려 쏘는 선</b> (입금되면 바이어 단계 자동 전진)</div>
+
+    <div class="clist">
+      <div class="citem C">
+        <div class="badge">C</div>
+        <div class="tx"><b>[관리]가 입금액을 적는 순간 → respond.io 단계 자동전진.</b> 입금액 입력 = 자동 확정이라, <b>일부(계약금)라도 들어오면 'Payment'</b>, 거래완료면 'Customer'로. <b>purchase-board 없이 지금 가능</b> = 가장 먼저 할 일.</div>
+        <span class="when now">🟢 우선</span>
+      </div>
+      <div class="citem B">
+        <div class="badge">B</div>
+        <div class="tx"><b>낙찰차 → car-erp 자동등록.</b> 지금은 낙찰되면 [관리]에게 카톡 → 손으로 입력. 이 <b>카톡·수동작업을 없애는 것.</b></div>
+        <span class="when next">🟣 앱 만든 후</span>
+      </div>
+      <div class="citem A">
+        <div class="badge">A</div>
+        <div class="tx"><b>검차 사진 → 바이어에게.</b> 실차 검수 사진을 바이어 WhatsApp으로 보내고 "살게요" 답을 받는다.</div>
+        <span class="when next">🟣 앱 만든 후</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI -->
+  <h2 class="sec"><span class="n">4</span> AI 레이어 — 켜고 끄기가 아니라 "비율"</h2>
+  <div class="spec">
+    <div class="ai-part">🤖 AI 자동 (인사·FAQ·차 안내·상태답변) ~75%</div>
+    <div class="hu-part">👤 사람 (돈·낙찰·입금·분쟁) ~25%</div>
+  </div>
+  <div class="guard">
+    <div class="gi"><b>① 약속 제한</b>AI가 멋대로 "깎아줄게" 못 하게. 넘으면 사람 호출.</div>
+    <div class="gi"><b>② 개인정보</b>과거 대화 속 타 바이어 정보·국외이전 차단.</div>
+    <div class="gi"><b>③ 실시간 통로</b>지어내지 않게 car-erp를 읽는 안전한 길.</div>
+  </div>
+
+  <!-- roadmap -->
+  <h2 class="sec"><span class="n">5</span> 앞으로 할 순서 (2026-06-05 회의 확정)</h2>
+  <div class="road">
+    <div class="rstep">
+      <div class="dot" style="background:var(--gray-500)">0</div>
+      <div class="rcard" style="border-left-color:var(--gray-500)">
+        <div class="rh"><span class="rt">대표(Jin) 결정 3건 — 지금, 코드와 무관하게 병행</span></div>
+        <div class="rd">① respond.io 개인정보 위탁계약(DPA) 착수 — 해외 서버로 가는 바이어 정보 보호 서류(돈X, 30분) ② respond.io에서 단계 바꾸는 <b>방법</b> 확인 — <b>요금제는 Growth로 충분</b>, API로 직접 할지 우회할지만 결정(5분) ③ 새 컬럼·큐 워커 추가 승인</div>
+      </div>
+    </div>
+    <div class="rstep">
+      <div class="dot" style="background:var(--red)">1</div>
+      <div class="rcard" style="border-left-color:var(--red)">
+        <div class="rh"><span class="rt">⛏ 진짜 첫 삽 — 큐 워커(Queue Worker) 설치</span><span class="chip first">FIRST</span></div>
+        <div class="rd">자동 작업을 뒤에서 처리해주는 일꾼. 이게 없으면 연동 C가 작동 안 함. (서버 작업, 멈춤 0초) — <b>도메인+HTTPS가 1순위가 아니다</b>는 게 이번 회의 핵심 반전.</div>
+      </div>
+    </div>
+    <div class="rstep">
+      <div class="dot" style="background:var(--amber)">2</div>
+      <div class="rcard" style="border-left-color:var(--amber)">
+        <div class="rh"><span class="rt">연동 C 첫 구현 (입금 → 단계 자동전진)</span><span class="chip par">+ 별건3 병렬</span></div>
+        <div class="rd">수출 채널만, 정보는 최소(연락처·단계)만 전송. 약 8~11시간. 사이드바·로그 화면(별건3)은 동시에 따로 진행 가능.</div>
+      </div>
+    </div>
+    <div class="rstep">
+      <div class="dot" style="background:var(--green)">3</div>
+      <div class="rcard" style="border-left-color:var(--green)">
+        <div class="rh"><span class="rt">도메인 + HTTPS</span><span class="chip later">연동 A 직전</span></div>
+        <div class="rd">erp.heysellcar.com 주소 + 보안 인증서. <b>연동 C엔 필요 없고</b>, 검차 사진을 주고받는 연동 A부터 필요해서 이 순서로 옮김.</div>
+      </div>
+    </div>
+    <div class="rstep">
+      <div class="dot" style="background:var(--board)">4</div>
+      <div class="rcard" style="border-left-color:var(--board)">
+        <div class="rh"><span class="rt">purchase-board 앱 만들기 (MVP)</span><span class="chip later">다음</span></div>
+        <div class="rd">매입·검차·경매 업무보드를 실제 앱으로. (별도 DB·전용 계정·시간잠금 등) 약 19~27시간.</div>
+      </div>
+    </div>
+    <div class="rstep">
+      <div class="dot" style="background:var(--teal)">5</div>
+      <div class="rcard" style="border-left-color:var(--teal)">
+        <div class="rh"><span class="rt">연동 B → 연동 A → AI 레이어</span><span class="chip later">마지막</span></div>
+        <div class="rd">앱 완성 후 낙찰 자동등록(B), 검차 사진 공유(A), 마지막에 AI 자동응대. AI를 맨 마지막에 두는 이유 = 먼저 켜면 볼 데이터가 없어 지어낸다.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- myth correction -->
+  <h2 class="sec"><span class="n">6</span> 이번 회의가 바로잡은 두 가지</h2>
+  <div class="myth">
+    <div class="mcard x">
+      <div class="mh">❌ 예전 생각</div>
+      "도메인+HTTPS부터 깔아야 아무것도 시작 가능"<br><br>
+      "c_no만 있으면 문의한 사람=산 사람이 자동으로 보장된다"
+    </div>
+    <div class="mcard o">
+      <div class="mh">✅ 바로잡음 (사외이사 2인도 동의)</div>
+      연동 C는 우리가 <b>보내기만</b> 하므로 HTTPS 불필요 → <b>첫 삽은 큐 워커</b>.<br><br>
+      c_no는 "어느 차"만 꿰고 사람은 못 꿴다 → <b>최초 1회 사람이 연결</b>해야 안전.
+    </div>
+  </div>
+
+  <div class="note">
+    ⚠️ 이 문서는 요약본입니다. 상세 회의록: <b>docs/meetings/2026-06-05-integration-execution-roadmap.md</b><br>
+    배경: Fullworkflow.md · integration-scenario.html · purchase-board-mockup.html · 2026-06-02 / 06-04 회의록<br>
+    인물·예시(GV70 #6797296)는 실제 채팅 예시 · 시스템 4종은 실재
+  </div>
+
+</div>
+</body>
+</html>

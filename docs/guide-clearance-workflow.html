@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>수출통관 업무 가이드 — 반입·통관·B/L·DHL</title>
+<style>
+  :root{
+    --primary:#7c6fcd; --gray-50:#f8f9fb; --gray-100:#f1f2f5; --gray-200:#e6e8ee; --gray-300:#d4d7e0;
+    --gray-400:#9aa0ad; --gray-500:#6b7280; --gray-600:#4b5563; --gray-700:#374151; --gray-800:#1f2433;
+    --blue:#3b82f6; --amber:#f59e0b; --green:#10b981; --red:#ef4444; --purple:#8b5cf6; --teal:#14b8a6;
+    --dept:#0d9488; --dept-soft:#ccfbf1; --dept-text:#0f766e; --dept-bg:#f0fdfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;line-height:1.65}
+  .app{max-width:880px;margin:0 auto;padding:22px 16px 80px}
+  .head{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  .head .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--dept),#2dd4bf);display:flex;align-items:center;justify-content:center;font-size:24px}
+  .head h1{font-size:21px;font-weight:800;letter-spacing:-.3px}
+  .head .sub{font-size:12.5px;color:var(--gray-500);margin-top:2px}
+  .deptchip{display:inline-block;background:var(--dept-soft);color:var(--dept-text);font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;margin-left:8px;vertical-align:middle}
+  .purpose{background:var(--dept-bg);border:1px solid var(--dept-soft);border-radius:13px;padding:15px 18px;margin:16px 0 8px;font-size:13.5px;color:var(--dept-text)}
+  .purpose b{color:var(--dept)}
+  .precond{font-size:11.5px;color:var(--gray-500);margin:0 0 18px;padding-left:4px}
+  h2.sec{font-size:16px;font-weight:800;margin:30px 0 13px;display:flex;align-items:center;gap:9px}
+  .pipe{display:flex;gap:5px;background:#fff;border:1px solid var(--gray-200);border-radius:12px;padding:13px 11px;overflow-x:auto}
+  .pnode{flex:1;min-width:92px;text-align:center;position:relative}
+  .pnode .dot{width:34px;height:34px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;background:var(--dept)}
+  .pnode .lbl{font-size:11px;font-weight:700;color:var(--gray-700);line-height:1.3}
+  .pnode:not(:last-child)::after{content:'›';position:absolute;right:-3px;top:6px;color:var(--gray-300);font-size:18px;font-weight:800}
+  .step{background:#fff;border:1px solid var(--gray-200);border-radius:14px;margin-bottom:14px;overflow:hidden;border-left:5px solid var(--dept)}
+  .step-h{display:flex;align-items:center;gap:12px;padding:14px 17px;background:linear-gradient(90deg,var(--dept-bg),#fff)}
+  .step-h .num{width:30px;height:30px;border-radius:50%;background:var(--dept);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+  .step-h .tt{font-weight:800;font-size:15px}
+  .step-h .when{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--gray-500);background:var(--gray-100);padding:3px 10px;border-radius:20px;white-space:nowrap}
+  .step-b{padding:14px 18px 16px}
+  .step-b .doh{font-size:11px;font-weight:800;color:var(--dept-text);letter-spacing:.03em;margin-bottom:7px;text-transform:uppercase}
+  .step-b ol{margin:0 0 0 18px}.step-b ol li{margin-bottom:6px;font-size:13px;color:var(--gray-700)}
+  .tbl{width:100%;border-collapse:collapse;margin:8px 0;font-size:12.5px;border:1px solid var(--gray-200);border-radius:9px;overflow:hidden}
+  .tbl th{background:var(--gray-50);text-align:left;padding:8px 11px;font-size:10.5px;color:var(--gray-500);font-weight:800;text-transform:uppercase;border-bottom:1px solid var(--gray-200)}
+  .tbl td{padding:9px 11px;border-bottom:1px solid var(--gray-100);color:var(--gray-700)}
+  .tbl tr:last-child td{border-bottom:0}
+  .req{display:inline-block;background:#fee2e2;color:#b91c1c;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:10px}
+  .gatebox{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;margin:6px 0}
+  .gatebox .gt{font-weight:800;color:#9a3412;font-size:13px;margin-bottom:9px}
+  .gaterow{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12.5px;color:#7c2d12;border-bottom:1px dashed #fed7aa}
+  .gaterow:last-child{border-bottom:0}
+  .gpill{font-weight:800;font-size:11px;padding:3px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+  .gpill.g50{background:#fef3c7;color:#b45309}.gpill.g100{background:#fee2e2;color:#b91c1c}
+  .warn{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:11px 14px;margin:10px 0;font-size:12.5px;color:#991b1b}
+  .warn b{color:#b91c1c}.warn .wh{font-weight:800;font-size:12.5px;margin-bottom:4px}
+  .docbox{background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:11px 14px;margin:9px 0;font-size:12.5px;color:var(--gray-700)}
+  .docbox b{color:var(--dept-text)}
+  .note{font-size:11px;color:var(--gray-500);text-align:center;margin-top:26px;line-height:1.6}
+  @media(max-width:640px){.head h1{font-size:17px}}
+  @media print{body{background:#fff}.app{padding:0}.step,.pipe{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <div class="logo">🚢</div>
+    <div><h1>수출통관 업무 가이드<span class="deptchip">수출통관</span></h1>
+    <div class="sub">판매완료 인수 → 반입(선적) → 통관 → B/L → DHL → 거래완료</div></div>
+  </div>
+
+  <div class="purpose">
+    영업이 판매를 마친 차량을 받아 <b>반입(선적)·수출통관·B/L 발급·DHL 발송</b>까지 처리해 <b>거래완료</b>로 만드는 절차입니다.
+    car-erp 차량 편집의 <b>수출통관 / 선적(B/L) / DHL / 서류</b> 탭에서 진행합니다.
+  </div>
+  <div class="precond">※ 수출(export) 채널 차량만 해당. 헤이맨·카풀(국내)은 통관·B/L·DHL 흐름이 없습니다. (현재는 [관리]가 이 업무도 겸함)</div>
+
+  <h2 class="sec">🔄 전체 흐름 (car-erp v4 순서)</h2>
+  <div class="pipe">
+    <div class="pnode"><div class="dot">📥</div><div class="lbl">판매완료 인수</div></div>
+    <div class="pnode"><div class="dot">🏭</div><div class="lbl">반입(선적)</div></div>
+    <div class="pnode"><div class="dot">📋</div><div class="lbl">통관 신청</div></div>
+    <div class="pnode"><div class="dot">📄</div><div class="lbl">B/L 발급</div></div>
+    <div class="pnode"><div class="dot">📦</div><div class="lbl">DHL 발송</div></div>
+    <div class="pnode"><div class="dot">✅</div><div class="lbl">거래완료</div></div>
+  </div>
+
+  <!-- GATES -->
+  <h2 class="sec">🚦 진행 게이트 (입금률 조건 — 꼭 기억)</h2>
+  <div class="gatebox">
+    <div class="gt">입금이 얼마나 됐는지에 따라 다음 단계 진입이 막힙니다</div>
+    <div class="gaterow"><span class="gpill g50">50% 이상</span> 입금률 50% 넘으면 → <b>반입(선적)·통관 진입 가능</b></div>
+    <div class="gaterow"><span class="gpill g100">100% 완납</span> 잔금까지 100% 완납돼야 → <b>B/L 발급 가능</b> (미완납이면 [관리]/관리자 승인으로만 우회)</div>
+  </div>
+
+  <h2 class="sec">📋 단계별 상세</h2>
+
+  <div class="step">
+    <div class="step-h"><div class="num">1</div><div class="tt">판매완료 차량 인수</div><div class="when">판매·입금 50%↑ 후</div></div>
+    <div class="step-b">
+      <div class="doh">할 일</div>
+      <ol>
+        <li>판매가 등록되고 입금률 50%를 넘은 수출 차량을 통관 대상으로 확인.</li>
+        <li>차량 편집 패널 → <b>수출통관 탭</b>으로 이동.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">2</div><div class="tt">통관 정보 입력 (수출통관 탭)</div><div class="when">반입 전·후</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — car-erp 수출통관 탭</div>
+      <table class="tbl">
+        <tr><th>항목</th><th>설명</th><th></th></tr>
+        <tr><td>통관 바이어 / 컨사이니</td><td>실제 통관 서류상 당사자</td><td><span class="req">필수</span></td></tr>
+        <tr><td>포워딩사</td><td>운송 대행사 지정</td><td><span class="req">필수</span></td></tr>
+        <tr><td>면장금액 (USD)</td><td>수출신고 금액 (매출 검증용)</td><td></td></tr>
+        <tr><td>도착일자(ETA)·RORO/CONTAINER</td><td>운송 방식·예정일</td><td></td></tr>
+        <tr><td>Port of Loading</td><td>선적항</td><td></td></tr>
+        <tr><td>수출신고서 업로드</td><td>신고 완료 서류 첨부</td><td></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">3</div><div class="tt">반입(선적) 처리 (선적 B/L 탭)</div><div class="when">반입지 입력 시점</div></div>
+    <div class="step-b">
+      <div class="doh">할 일</div>
+      <ol>
+        <li><b>반입지(선적지)</b>를 입력하면 진행상태가 "선적중"으로 넘어갑니다.</li>
+        <li>선적 바이어/컨사이니, 선적일, VSL(선박) 정보 입력.</li>
+      </ol>
+      <div class="docbox">📄 <b>선적 서류 생성</b> — 서류 탭에서 RORO/컨테이너 <b>Invoice&Packing·Contract</b> 자동 생성. 여러 대를 한 서류에 담으려면 차량목록에서 체크 후 일괄 생성.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">4</div><div class="tt">B/L 발급</div><div class="when">100% 완납 후</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — 선적(B/L) 탭</div>
+      <ol>
+        <li>B/L번호, 컨테이너 No, VSL 입력.</li>
+        <li><b>B/L 문서 업로드</b> → 진행상태가 "거래완료"로.</li>
+      </ol>
+      <div class="warn"><div class="wh">⚠️ 100% 완납 게이트</div>B/L 발급은 <b>잔금까지 100% 완납</b>돼야 가능. 미완납 차량은 <b>[관리]/관리자 승인(우회)</b> 없이는 막힙니다. 임의 발급 금지.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">5</div><div class="tt">DHL 발송</div><div class="when">B/L 후</div></div>
+    <div class="step-b">
+      <div class="doh">할 일 — DHL 탭</div>
+      <ol>
+        <li>수취인·발송인 정보, 중량/크기 입력.</li>
+        <li>DHL 발송신청 체크 → 추적번호 기록(수동).</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-h"><div class="num">6</div><div class="tt">통관 SET 서류 / 마무리</div><div class="when">필요 시</div></div>
+    <div class="step-b">
+      <div class="docbox">📄 <b>통관 SET</b> — 서류 탭에서 8시트 통관 SET 생성(구매리스트 마스터→6시트 자동연동). 매매업등록번호 등 NICE 미제공 항목은 공란→수기.</div>
+      <ol><li>모든 서류·B/L·DHL 완료 → <b>거래완료</b> 상태 확인.</li></ol>
+    </div>
+  </div>
+
+  <h2 class="sec">⚠️ 자주 하는 실수</h2>
+  <div class="step"><div class="step-b">
+    <ol>
+      <li><b>50% 미만인데 통관 진입</b> 시도 → 막힘. 입금률 먼저 확인.</li>
+      <li><b>100% 미완납인데 B/L 발급</b> 시도 → 승인 없이는 불가.</li>
+      <li><b>국내(헤이맨·카풀) 차량</b>에 통관/B/L 처리 시도 → 수출 채널만 해당.</li>
+      <li>포워딩사·통관 바이어 <b>누락</b> → 서류 생성 시 공란.</li>
+    </ol>
+  </div></div>
+
+  <div class="note">SSANCAR 사내 업무 가이드 · 수출통관 · 2026-06-05 작성<br>※ 현재는 [관리]가 이 업무를 겸함. 역할 분리 시 본 가이드가 수출통관 담당 기준이 됩니다.</div>
+</div>
+</body>
+</html>
