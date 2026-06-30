@@ -69,7 +69,7 @@ class ShippingRequestController extends Controller
         $rows = ShippingRequest::query()
             ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
             ->whereHas('vehicle', fn ($q) => $q->where('salesman_id', $sid)->whereNull('deleted_at'))
-            ->with(['vehicle', 'buyer', 'consignee'])
+            ->with(['vehicle', 'buyer.consignees', 'consignee'])
             ->orderByDesc('id')
             ->get();
 
@@ -80,8 +80,12 @@ class ShippingRequestController extends Controller
 
             return array_merge([
                 'batch_id' => (string) $f->batch_id,
-                'buyer' => $f->buyer?->name,
-                'consignee' => $f->consignee?->name,
+                // board 선언형 sync 재전송용 — id 포함 객체 필수(이름만이면 buyer_id 몰라 자동취소 footgun)
+                'buyer' => $f->buyer ? ['id' => $f->buyer->id, 'name' => $f->buyer->name] : null,
+                'consignee' => $f->consignee ? ['id' => $f->consignee->id, 'name' => $f->consignee->name] : null,
+                'consignees' => $f->buyer
+                    ? $f->buyer->consignees->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values()
+                    : [],
                 'shipping_method' => $f->shipping_method,
                 'bl_type' => $f->bl_type,
                 'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
@@ -224,6 +228,35 @@ class ShippingRequestController extends Controller
         $this->fireBlAlarm($rows->first()->vehicle, $data['bl_type']);
 
         return response()->json(['ok' => true, 'batch_id' => $batch, 'bl_type' => $data['bl_type'], 'count' => $rows->count()]);
+    }
+
+    /**
+     * POST /bundles/{batch}/bl-request 의 무름 — 영업이 B/L요청 오발송 시 되돌림(bl_status requested→none).
+     * 이미 관리가 발급(issued)했으면 409(되돌릴 수 없음 — 관리에게 문의). IDOR — batch 의 모든 행이 본인 차.
+     */
+    public function blCancel(Request $request, string $batch): JsonResponse
+    {
+        $salesman = $this->salesman($request);
+
+        $rows = ShippingRequest::where('batch_id', $batch)->with('vehicle')->get();
+        $ownsAll = $rows->isNotEmpty() && $rows->every(fn ($r) => $r->vehicle && (int) $r->vehicle->salesman_id === (int) $salesman->id);
+        abort_unless($ownsAll, 403);
+
+        if ($rows->contains(fn ($r) => $r->bl_status === ShippingRequest::BL_STATUS_ISSUED)) {
+            return response()->json(['ok' => false, 'reason' => 'already_issued'], 409);   // 관리 발급 후 = 무름 불가
+        }
+
+        DB::transaction(function () use ($rows) {
+            foreach ($rows as $r) {
+                $r->update(['bl_status' => ShippingRequest::BL_STATUS_NONE]);   // bl_type 은 유지(재요청 prefill)
+            }
+        });
+
+        TaskAlarm::where('type', 'bl_requested')->whereIn('vehicle_id', $rows->pluck('vehicle_id'))
+            ->whereNull('resolved_at')
+            ->update(['resolved_at' => now(), 'resolved_reason' => 'bl_request_cancelled']);
+
+        return response()->json(['ok' => true, 'batch_id' => $batch, 'count' => $rows->count()]);
     }
 
     /**

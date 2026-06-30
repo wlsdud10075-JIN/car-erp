@@ -455,4 +455,40 @@ class BoardPortalApiTest extends TestCase
         $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
         $res->assertJsonPath('data.0.surrender_unpaid_warning', true);
     }
+
+    public function test_bundles_returns_buyer_consignee_objects_with_options(): void
+    {
+        // board 선언형 sync 재전송용 — buyer/consignee 는 {id,name} 객체 + consignees 옵션 필수.
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null, 'salesman_id' => $me->id]);
+        $c1 = Consignee::create(['name' => 'C1', 'buyer_id' => $buyer->id, 'is_active' => true]);
+        $v = $this->exportVehicle($me->id, '11가1111');
+        $v->update(['buyer_id' => $buyer->id]);
+        ShippingRequest::create(['batch_id' => 'bk', 'vehicle_id' => $v->id, 'buyer_id' => $buyer->id, 'consignee_id' => $c1->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now()]);
+
+        $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('data.0.buyer.id', $buyer->id);
+        $res->assertJsonPath('data.0.buyer.name', 'TOKYO');
+        $res->assertJsonPath('data.0.consignee.id', $c1->id);
+        $res->assertJsonPath('data.0.consignees.0.id', $c1->id);   // 편집용 컨사이니 옵션
+    }
+
+    public function test_bl_cancel_resets_status_idor_and_blocks_after_issued(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $this->salesman('other@a.com');
+        $v = $this->exportVehicle($me->id, '22나2222');
+        ShippingRequest::create(['batch_id' => 'bd', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'bl_type' => 'surrender', 'bl_status' => 'requested', 'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        // 타 영업 무름 → 403 (IDOR)
+        $this->signedPost('/api/internal/board/bundles/bd/bl-cancel', ['salesman_email' => 'other@a.com'])->assertStatus(403);
+
+        // 본인 → bl_status none (bl_type 유지)
+        $this->signedPost('/api/internal/board/bundles/bd/bl-cancel', ['salesman_email' => 'me@a.com'])->assertOk();
+        $this->assertDatabaseHas('shipping_requests', ['batch_id' => 'bd', 'bl_status' => 'none', 'bl_type' => 'surrender']);
+
+        // 관리 발급(issued) 후 = 무름 불가 409
+        ShippingRequest::where('batch_id', 'bd')->update(['bl_status' => 'issued']);
+        $this->signedPost('/api/internal/board/bundles/bd/bl-cancel', ['salesman_email' => 'me@a.com'])->assertStatus(409);
+    }
 }
