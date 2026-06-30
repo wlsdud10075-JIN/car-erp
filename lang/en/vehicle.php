@@ -314,6 +314,14 @@ return [
         'dhl_pending' => 'DHL dispatch not checked',
     ],
 
+    // Concurrent-edit lock (2026-06-30)
+    'lock' => [
+        'someone' => 'Another user',
+        'locked_by' => ':name is currently editing — you cannot make changes.',
+        'banner' => ':name is editing this vehicle — opened read-only (auto-releases shortly after they leave).',
+        'now_editable' => 'The edit lock was released — you can edit now.',
+    ],
+
     // PHP toasts / flash / validation messages
     'toast' => [
         'buyer_first' => 'Select a buyer first',
