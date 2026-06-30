@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Salesman;
+use App\Models\ShippingRequest;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -49,6 +50,28 @@ class VehiclePanelAccessTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $c['otherVehicle']->id)
             ->assertForbidden();
+    }
+
+    /**
+     * B/L 이중가드 (선적·B/L 묶음 v2) — 영업 요청(shipping_requests.bl_type) ≠
+     * 관리 확인(vehicles.bl_type) 시 B/L탭에 경고 표시 + bl_type 패널 로드.
+     */
+    public function test_bl_double_guard_warns_when_vehicle_type_differs_from_bundle(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
+        $v = Vehicle::create(['vehicle_number' => '77사7777', 'sales_channel' => 'export', 'bl_type' => 'original']);
+        ShippingRequest::create([
+            'batch_id' => 'bg', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO',
+            'bl_type' => 'surrender', 'bl_status' => 'requested',
+            'requested_by_email' => 's@a.com', 'status' => 'in_progress', 'requested_at' => now(),
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSet('bl_type', 'original')   // 차량 확인값 로드
+            ->assertSee('이중가드');              // 영업(써랜더) ≠ 관리(오리지널) → 경고
     }
 
     /**
