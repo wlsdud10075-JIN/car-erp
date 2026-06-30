@@ -202,6 +202,47 @@ class User extends Authenticatable
     }
 
     /**
+     * 사용자 관리(/admin/users) 진입 권한 — super/admin(전체) + 관리(본인 팀 영업만).
+     * 2026-06-30 jin: 2026-05-14 "super/admin 전용" 결정을 팀 영업 한정으로 완화.
+     *   ⚠️ 관리는 super/admin 계정 생성·변경 절대 불가 — escalation 차단(canManageUserAccount + save 강제).
+     */
+    public function canManageUsers(): bool
+    {
+        return $this->isAdmin() || $this->role === '관리';
+    }
+
+    /**
+     * 특정 사용자 계정 변경(편집·저장·삭제) 권한 — IDOR/escalation 단일 출처(SKILLS #26).
+     *   super/admin = 전체. 관리 = 본인 팀 영업(영업 role + user permission)만.
+     *   ⚠️ 관리는 super/admin/타 관리 계정을 절대 못 건드림 — editingId 클라이언트 주입 방어용으로
+     *   openEdit·save(편집)·delete 모든 mutating 경로에서 매번 호출.
+     */
+    public function canManageUserAccount(User $target): bool
+    {
+        if ($this->isAdmin()) {
+            return true;   // super/admin — 전체 (단 admin은 super 편집 불가 가드는 컴포넌트에서 별도)
+        }
+        if ($this->role !== '관리') {
+            return false;
+        }
+
+        // 관리 — 대상이 본인 팀 영업(영업 role + 일반 user permission)일 때만.
+        return $target->permission === 'user'
+            && $target->role === '영업'
+            && in_array($target->id, $this->getManagedSalesmanUserIds(), true);
+    }
+
+    /** 이 관리가 담당하는 영업 user id 배열 (pivot ∪ 레거시 manager_user_id — getSubordinateSalesmanIds 와 동일 출처군). */
+    public function getManagedSalesmanUserIds(): array
+    {
+        return $this->managedSalesmanUsers()->pluck('users.id')
+            ->merge($this->subordinates()->pluck('id'))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * 관리자 대시보드 (/admin/dashboard) 접근 권한 — admin/super 전용.
      *
      * 회의확장씬 사용자 정정 (2026-05-22):

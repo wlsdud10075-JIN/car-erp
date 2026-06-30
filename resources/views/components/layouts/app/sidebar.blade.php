@@ -267,10 +267,10 @@
             'items' => [
                 [
                     'label' => __('nav.menu.users'),
-                    'href' => $user->canAccessAdmin() ? route('admin.users.index') : '#',
+                    'href' => $user->canManageUsers() ? route('admin.users.index') : '#',
                     'icon' => 'user-group',
                     'active' => request()->routeIs('admin.users.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canManageUsers(),
                 ],
                 [
                     'label' => __('nav.menu.settings'),
