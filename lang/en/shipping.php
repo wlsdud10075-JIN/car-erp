@@ -63,6 +63,7 @@ return [
         'cancel' => 'Close',
         'not_fully_paid' => 'Fully-paid required before issuing (bundle has unpaid)',
         'requested_hint' => 'Sales-requested type',
+        'guard_mismatch' => '⚠ Double-guard — sales requested :req but :cur is selected. Verify before uploading the B/L document.',
     ],
 
     'fin' => [

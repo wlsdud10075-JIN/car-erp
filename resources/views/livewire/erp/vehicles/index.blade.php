@@ -276,6 +276,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $container_number    = '';
     public string $bl_loading_location = '';
     public string $vessel_name         = '';
+    public string $bl_type             = '';   // 오리지널/써랜더 — 이중가드 관리 확인값(영업 요청 = shipping_requests.bl_type)
     public string $bl_issue_date       = '';
 
     // ── DHL ───────────────────────────────────────────────────────
@@ -1256,6 +1257,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->container_number    = $v->container_number    ?? '';
         $this->bl_loading_location = $v->bl_loading_location ?? '';
         $this->vessel_name         = $v->vessel_name         ?? '';
+        $this->bl_type             = $v->bl_type             ?? '';
         $this->bl_issue_date       = $v->bl_issue_date ? $v->bl_issue_date->format('Y-m-d') : '';
 
         // DHL
@@ -1973,6 +1975,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'container_number'    => $this->container_number    ?: null,
             'bl_loading_location' => $this->bl_loading_location ?: null,
             'vessel_name'         => $this->vessel_name         ?: null,
+            'bl_type'             => $this->bl_type             ?: null,
             'bl_issue_date'       => $toDate($this->bl_issue_date),
             // DHL
             'dhl_recipient_name'    => $this->dhl_recipient_name    ?: null,
@@ -4771,6 +4774,29 @@ function vehicleColumnsToggle() {
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
+                {{-- B/L 방식(오리지널/써랜더) + 이중가드 — 영업 요청(shipping_requests.bl_type) vs 관리 확인(vehicles.bl_type) --}}
+                @php
+                    $reqBlType = $editingId
+                        ? \App\Models\ShippingRequest::where('vehicle_id', $editingId)
+                            ->where('status', '!=', 'cancelled')->whereNotNull('bl_type')
+                            ->orderByDesc('id')->value('bl_type')
+                        : null;
+                @endphp
+                <div>
+                    <label class="label-base">{{ __('shipping.bl.field_type') }}
+                        @if($reqBlType) <span class="text-[10px] text-gray-400">({{ __('shipping.bl.requested_hint') }}: {{ __('shipping.bl.type.'.$reqBlType) }})</span> @endif
+                    </label>
+                    <select wire:model.live="bl_type" class="input-base">
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                        <option value="original">{{ __('shipping.bl.type.original') }}</option>
+                        <option value="surrender">{{ __('shipping.bl.type.surrender') }}</option>
+                    </select>
+                </div>
+                @if($reqBlType && $bl_type && $reqBlType !== $bl_type)
+                <div class="col-span-2 sm:col-span-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                    {{ __('shipping.bl.guard_mismatch', ['req' => __('shipping.bl.type.'.$reqBlType), 'cur' => __('shipping.bl.type.'.$bl_type)]) }}
+                </div>
+                @endif
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <input wire:model="blDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"

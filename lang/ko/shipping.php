@@ -64,6 +64,7 @@ return [
         'cancel' => '닫기',
         'not_fully_paid' => '완납 후 발급 가능 (미완납 묶음)',
         'requested_hint' => '영업 요청 방식',
+        'guard_mismatch' => '⚠ 이중가드 — 영업 요청은 :req 인데 현재 :cur 로 선택됨. B/L 문서 업로드 전 확인하세요.',
     ],
 
     // 묶음 미수
