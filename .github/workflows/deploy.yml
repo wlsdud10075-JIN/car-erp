@@ -89,3 +89,35 @@ jobs:
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
             php artisan up
+
+  # 3번째 회사 ssancar 서버 (2026-06-30 추가). ⚠️ NICE 게이트웨이(heymancar.com/provide/)와
+  # co-location → artisan down 시 heyman NICE 조회까지 멈춤. 그래서 이 잡만 '무중단'(down 없음).
+  # 추가형 마이그(create table 등)는 안전. 파괴적/대형 마이그는 ssancar 수동배포(런북) 권장.
+  deploy-ssancar:
+    runs-on: ubuntu-latest
+    environment: ssancar
+    steps:
+      - name: Deploy over SSH (ssancar — no-downtime, NICE 보호)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH }}
+            php artisan db:backup || echo "::warning::pre-deploy db:backup failed — proceeding"
+            git fetch origin master
+            git reset --hard origin/master
+            composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+            npm ci
+            npm run build
+            # ⚠️ artisan down 없음 — NICE /provide/ 무중단 유지. 추가형 마이그 전제.
+            php artisan migrate --force
+            php artisan config:cache || true
+            php artisan route:cache || true
+            php artisan view:cache || true
+            php artisan storage:link || true
+            sudo systemctl reload php8.4-fpm || true
+            php artisan queue:restart || true
