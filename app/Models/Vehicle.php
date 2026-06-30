@@ -54,7 +54,7 @@ class Vehicle extends Model
         'export_declaration_document', 'export_declaration_number', 'is_export_cleared',
         'forwarding_email_sent',
         'bl_buyer_id', 'bl_consignee_id', 'bl_number', 'container_number',
-        'bl_loading_location', 'vessel_name', 'bl_document', 'bl_issue_date',
+        'bl_loading_location', 'vessel_name', 'bl_document', 'bl_type', 'bl_issue_date',
         'dhl_recipient_name', 'dhl_recipient_address', 'dhl_recipient_phone',
         'dhl_sender_name', 'dhl_sender_address', 'dhl_weight', 'dhl_dimensions',
         'dhl_request', 'memo',

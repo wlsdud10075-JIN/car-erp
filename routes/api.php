@@ -39,8 +39,13 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         // 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프).
         Route::get('buyers', [InternalPortalController::class, 'buyers'])->name('buyers');
         Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
-        // ③ 선적요청
-        Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');
+        // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
+        Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
+        Route::get('bundles', [ShippingRequestController::class, 'bundles'])->name('bundles');                // 영속 묶음 + 미수집계
+        Route::post('shipping-requests/sync', [ShippingRequestController::class, 'sync'])->name('sync');      // 선언형 재동기화
+        Route::post('bundles/{batch}/bl-request', [ShippingRequestController::class, 'blRequest'])->name('bl-request');   // B/L요청
+        Route::post('shipping-requests/change-request', [ShippingRequestController::class, 'changeRequest'])->name('change-request');   // in_progress 변경요청
+        // @deprecated v1 단발 (board 미가동, sync 로 교체 예정)
         Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');
         // ①② 서류 다운로드 (선적 4종만, 프록시)
         Route::get('documents/{type}', [InternalDocumentController::class, 'show'])->name('documents');

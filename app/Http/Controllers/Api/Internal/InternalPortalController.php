@@ -196,7 +196,9 @@ class InternalPortalController extends Controller
         $vehicles = $this->ownVehicles($sid)->get();
 
         return response()->json([
-            'unpaid_total_krw' => (int) $vehicles->sum(fn (Vehicle $v) => $v->sale_unpaid_amount_krw_cache ?? 0),
+            // NULL(환율 미입력)은 합산서 제외(?? 0 금지 — cash_audit 교훈). fx_missing_count 로 별도 노출.
+            'unpaid_total_krw' => (int) $vehicles->whereNotNull('sale_unpaid_amount_krw_cache')
+                ->sum('sale_unpaid_amount_krw_cache'),
             'purchase_unpaid_total' => (int) $vehicles->where('purchase_price', '>', 0)->sum->purchase_unpaid_amount,
             'fx_missing_count' => $vehicles->where('sale_price', '>', 0)
                 ->filter(fn (Vehicle $v) => $v->sale_unpaid_amount_krw_cache === null)->count(),
