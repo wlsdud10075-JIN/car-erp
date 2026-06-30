@@ -42,6 +42,7 @@ return [
         'progress' => '진행상태',
         'paid_ratio' => '입금률',
         'type' => '정산방식',
+        'purchase_price' => '매입가',
         'total_margin' => '총마진',
         'settlement_amount' => '정산액',
         'actual_payout' => '실지급액',
@@ -74,6 +75,7 @@ return [
     'mobile_salesman' => '담당자',
     'mobile_type' => '방식',
     'mobile_type_per_unit' => '건당',
+    'mobile_purchase_price' => '매입가',
     'mobile_total_margin' => '총마진',
     'mobile_actual' => '실지급',
 
