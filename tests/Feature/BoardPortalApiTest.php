@@ -235,8 +235,9 @@ class BoardPortalApiTest extends TestCase
         $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'status' => 'in_progress']);
     }
 
-    public function test_shippable_keeps_requested_vehicle_with_status(): void
+    public function test_shippable_excludes_open_bundle_vehicle_now_in_bundles(): void
     {
+        // v2 (2026-06-30): 이미 open 묶음(requested/in_progress)에 든 차는 /shippable 에서 제외 → /bundles 가 담당.
         $me = $this->salesman('me@a.com');
         $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
         $v = $this->exportVehicle($me->id, '11가1111');
@@ -247,11 +248,15 @@ class BoardPortalApiTest extends TestCase
             'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now(),
         ]);
 
-        // 요청해도 목록서 안 사라짐 + shipping_status='requested' (board 뱃지/재요청용)
-        $res = $this->signedGet('/api/internal/board/shippable', ['salesman_email' => 'me@a.com'])->assertOk();
+        // 새로 묶을 차 후보(shippable)서는 제외
+        $this->signedGet('/api/internal/board/shippable', ['salesman_email' => 'me@a.com'])
+            ->assertOk()->assertJsonPath('count', 0);
+
+        // 대신 영속 묶음(/bundles)에 보임
+        $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
         $res->assertJsonPath('count', 1);
-        $res->assertJsonPath('data.0.shipping_status', 'requested');
-        $res->assertJsonPath('data.0.requested_method', 'RORO');
+        $res->assertJsonPath('data.0.ship_status', 'requested');
+        $res->assertJsonPath('data.0.shipping_method', 'RORO');
     }
 
     public function test_store_skips_other_salesman_vehicle(): void
@@ -354,5 +359,100 @@ class BoardPortalApiTest extends TestCase
         // 본인 소유 아닌 buyer_id 로 조회 → 빈 목록 (타 영업 컨사이니 열람 차단).
         $res = $this->signedGet('/api/internal/board/consignees', ['salesman_email' => 'me@a.com', 'buyer_id' => (string) $theirBuyer->id])->assertOk();
         $res->assertJsonPath('count', 0);
+    }
+
+    // ── v2 선적·B/L 묶음 (2026-06-30 회의) ──────────────────────
+
+    public function test_sync_creates_updates_cancels_and_locks(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $a = $this->exportVehicle($me->id, '11가1111');
+        $b = $this->exportVehicle($me->id, '22나2222');
+        $c = $this->exportVehicle($me->id, '33다3333');
+        $theirs = $this->exportVehicle($other->id, '99자9999');
+
+        // c = 관리 착수(in_progress) → sync 로 못 바꿈(locked)
+        ShippingRequest::create(['batch_id' => 'bx', 'vehicle_id' => $c->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        // 1차 sync — a,b 생성 / c 잠금 / theirs IDOR skip
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => 'me@a.com',
+            'bundles' => [['shipping_method' => 'RORO', 'vehicle_ids' => [$a->id, $b->id, $c->id, $theirs->id]]],
+        ])->assertOk();
+        $res->assertJsonCount(2, 'created');
+        $res->assertJsonPath('locked.0', $c->id);
+        $res->assertJsonPath('skipped.0', $theirs->id);
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $a->id, 'status' => 'requested']);
+        $this->assertDatabaseMissing('shipping_requests', ['vehicle_id' => $theirs->id]);
+
+        // 2차 sync — b 빠짐 → b 자동취소 / a 갱신(CONTAINER)
+        $res2 = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => 'me@a.com',
+            'bundles' => [['shipping_method' => 'CONTAINER', 'vehicle_ids' => [$a->id]]],
+        ])->assertOk();
+        $res2->assertJsonPath('updated.0', $a->id);
+        $res2->assertJsonPath('cancelled.0', $b->id);
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $b->id, 'status' => 'cancelled']);
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $a->id, 'shipping_method' => 'CONTAINER']);
+    }
+
+    public function test_bundle_fx_missing_is_not_fake_fully_paid(): void
+    {
+        // ⚠️ cash_audit 교훈 — 환율 미입력(cache null)을 0 완납으로 coerce 금지.
+        $me = $this->salesman('me@a.com');
+        $v = Vehicle::create(['vehicle_number' => '44라4444', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 500, 'currency' => 'USD', 'exchange_rate' => 0]);
+        ShippingRequest::create(['batch_id' => 'bz', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now()]);
+
+        $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('data.0.fx_missing_count', 1);
+        $res->assertJsonPath('data.0.unpaid_total_krw', 0);
+        $res->assertJsonPath('data.0.fully_paid', false);
+    }
+
+    public function test_bl_request_sets_status_and_blocks_other_salesman(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $this->salesman('other@a.com');
+        $v = $this->exportVehicle($me->id, '55마5555');
+        ShippingRequest::create(['batch_id' => 'bb', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        // 타 영업이 내 batch 에 bl-request → 403 (IDOR)
+        $this->signedPost('/api/internal/board/bundles/bb/bl-request', ['salesman_email' => 'other@a.com', 'bl_type' => 'surrender'])
+            ->assertStatus(403);
+
+        // 본인 → bl_status=requested + bl_type + 관리 알람
+        $this->signedPost('/api/internal/board/bundles/bb/bl-request', ['salesman_email' => 'me@a.com', 'bl_type' => 'surrender'])
+            ->assertOk();
+        $this->assertDatabaseHas('shipping_requests', ['batch_id' => 'bb', 'bl_status' => 'requested', 'bl_type' => 'surrender']);
+        $this->assertDatabaseHas('task_alarms', ['type' => 'bl_requested', 'vehicle_id' => $v->id, 'target_role' => '관리']);
+    }
+
+    public function test_change_request_requires_own_in_progress(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $v = $this->exportVehicle($me->id, '66바6666');
+        $sr = ShippingRequest::create(['batch_id' => 'bc', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now()]);
+
+        // requested(관리 미착수) → 변경요청 대상 아님 403
+        $this->signedPost('/api/internal/board/shipping-requests/change-request', ['salesman_email' => 'me@a.com', 'vehicle_id' => $v->id, 'note' => 'x'])
+            ->assertStatus(403);
+
+        // in_progress → 플래그 + 관리 알람
+        $sr->update(['status' => 'in_progress']);
+        $this->signedPost('/api/internal/board/shipping-requests/change-request', ['salesman_email' => 'me@a.com', 'vehicle_id' => $v->id, 'note' => '바꿔주세요'])
+            ->assertOk();
+        $this->assertNotNull(ShippingRequest::find($sr->id)->change_requested_at);
+        $this->assertDatabaseHas('task_alarms', ['type' => 'shipping_change_requested', 'vehicle_id' => $v->id, 'target_role' => '관리']);
+    }
+
+    public function test_bundle_surrender_unpaid_warning(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $v = Vehicle::create(['vehicle_number' => '77사7777', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200]);
+        ShippingRequest::create(['batch_id' => 'bw', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO', 'bl_type' => 'surrender', 'bl_status' => 'requested', 'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('data.0.surrender_unpaid_warning', true);
     }
 }
