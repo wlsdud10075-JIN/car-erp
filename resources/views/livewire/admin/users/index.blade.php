@@ -41,10 +41,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function users()
     {
-        $isSuperAdmin = auth()->user()->isSuperAdmin();
+        $authUser = auth()->user();
+        // 2026-06-30 — 관리는 본인 팀 영업만 (escalation 방지). 검색/필터보다 먼저 무조건 스코프.
+        $isManager = ! $authUser->isAdmin() && $authUser->role === '관리';
 
         return User::query()
-            ->when(! $isSuperAdmin, fn($q) => $q->where('permission', '!=', 'super'))
+            ->when(! $authUser->isSuperAdmin(), fn($q) => $q->where('permission', '!=', 'super'))
+            ->when($isManager, fn($q) => $q
+                ->whereIn('id', $authUser->getManagedSalesmanUserIds())
+                ->where('role', '영업')
+                ->where('permission', 'user'))
             ->when($this->search, fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', "%{$this->search}%")
                    ->orWhere('email', 'like', "%{$this->search}%")
@@ -70,6 +76,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! auth()->user()->isSuperAdmin() && $user->isSuperAdmin()) {
             return;
         }
+        // 2026-06-30 — 계정별 가드(IDOR/escalation 단일 출처). 관리는 본인 팀 영업만.
+        abort_unless(auth()->user()->canManageUserAccount($user), 403);
 
         $this->editingId  = $id;
         $this->name       = $user->name;
@@ -92,6 +100,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
+        // 2026-06-30 — 인가 먼저 (validate 전). jin: 관리는 super/admin 변경·생성 절대 불가(escalation 차단).
+        $actor = auth()->user();
+        $actorIsManager = ! $actor->isAdmin() && $actor->role === '관리';
+        if ($this->editingId) {
+            // 편집 대상 계정별 재인가 — editingId 클라이언트 주입 방어 (SKILLS #26 IDOR).
+            $target = \App\Models\User::findOrFail($this->editingId);
+            abort_unless($actor->canManageUserAccount($target), 403);
+        } else {
+            abort_unless($actor->canManageUsers(), 403);   // 신규: 관리는 일반 영업만 생성
+        }
+        if ($actorIsManager) {
+            // 관리는 일반 영업만 — 권한·role 서버 강제 (폼 변조로 super/admin 승격 무력화).
+            $this->permission = 'user';
+            $this->role = '영업';
+        }
+
         $rules = [
             'name'       => 'required|string|max:100',
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
@@ -177,6 +201,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 2026-06-30 — 다중 관리 배정 pivot sync (영업만; 그 외 role 은 비움).
+        // 관리가 저장 시 본인은 항상 포함 — 자기 팀 보장 + 실수로 본인 access 제거 방지.
+        if ($actorIsManager) {
+            $managerIds = array_values(array_unique(array_merge($managerIds, [$actor->id])));
+        }
         $user->managers()->sync($managerIds);
 
         unset($this->users);
@@ -187,6 +215,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
+        // 2026-06-30 — 삭제는 super/admin 만 (관리는 본인 팀 영업이라도 삭제 불가).
+        abort_unless(auth()->user()->isAdmin(), 403);
+
         $target = User::findOrFail($id);
 
         // 본인 계정 삭제 불가
@@ -310,7 +341,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}
                 </td>
                 <td class="py-3 text-right">
-                    @if($u->id !== auth()->id())
+                    {{-- 삭제는 super/admin 만 (관리는 팀 영업이라도 삭제 불가) --}}
+                    @if($u->id !== auth()->id() && auth()->user()->isAdmin())
                     <button wire:click.stop="delete({{ $u->id }})"
                             wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
                             class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
@@ -405,6 +437,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="section-dot bg-violet-500"></span>
                 <span class="section-title">{{ __('user.field.sec_perm') }}</span>
             </div>
+            {{-- 권한·role 드롭다운은 super/admin 만. 관리는 일반 영업만 생성/수정 → 서버에서 user·영업 강제. --}}
+            @if(auth()->user()->canAccessAdmin())
             <div>
                 <label class="label-base">{{ __('user.field.perm') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="permission" class="input-base">
@@ -416,7 +450,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
                 @error('permission')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @endif
             @if($permission === 'user')
+            @if(auth()->user()->canAccessAdmin())
             <div>
                 <label class="label-base">{{ __('user.field.role') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="role" class="input-base">
@@ -427,6 +463,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <p class="mt-1 text-xs text-gray-400">{{ __('user.field.role_note') }}</p>
                 @error('role')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @endif
             {{-- 2026-05-21 — role='영업' 일 때만 정산 분류 노출. 거래완료 시 자동 정산의 settlement_type 결정 --}}
             @if($role === '영업')
             <div>

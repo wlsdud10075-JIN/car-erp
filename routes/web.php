@@ -105,9 +105,13 @@ Route::middleware(['auth', 'verified', 'admin-dashboard'])->prefix('admin')->nam
     Volt::route('dashboard', 'admin.dashboard')->name('dashboard');
 });
 
-// /admin 그 외 — super/admin만 (users, document-access-logs, audit-logs)
-Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+// 사용자 관리 — super/admin + 관리(본인 팀 영업만, 컴포넌트 가드). 2026-06-30 jin.
+Route::middleware(['auth', 'verified', 'manage-users'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('users', 'admin.users.index')->name('users.index');
+});
+
+// /admin 그 외 — super/admin만 (document-access-logs, audit-logs)
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
     // 회의확장씬 Phase 3-1 (d-2) (2026-05-23) — 별건3 흡수: 감사 로그 UI.
     Volt::route('audit-logs', 'admin.audit-logs.index')->name('audit-logs.index');
