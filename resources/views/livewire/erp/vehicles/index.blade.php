@@ -111,6 +111,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->applyCostRowsToPreview($rows);
     }
 
+    /** 파일 선택 즉시 자동 파싱 — 「파일 읽기」 누락으로 미리보기 안 뜨는 마찰 제거. */
+    public function updatedCostImportFile(): void
+    {
+        if ($this->costImportFile) {
+            $this->parseCostImportFile();
+        }
+    }
+
     /** xlsx 업로드 파싱 — 각 행의 셀을 이어붙여 줄 단위 파서에 넣음(위카 시트0: E=차량번호·J=합계 자동). */
     public function parseCostImportFile(): void
     {
@@ -118,19 +126,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
         $this->validate(['costImportFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
 
-        $rows = [];
-        $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
-        foreach ($ss->getSheet(0)->getRowIterator() as $row) {
-            $cells = [];
-            $it = $row->getCellIterator();
-            $it->setIterateOnlyExistingCells(false);
-            foreach ($it as $cell) {
-                $cells[] = trim((string) $cell->getCalculatedValue());
+        try {
+            $rows = [];
+            $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
+            foreach ($ss->getSheet(0)->getRowIterator() as $row) {
+                $cells = [];
+                $it = $row->getCellIterator();
+                $it->setIterateOnlyExistingCells(false);
+                foreach ($it as $cell) {
+                    $cells[] = trim((string) $cell->getCalculatedValue());
+                }
+                $parsed = $this->parseCostLine(implode(' ', $cells));
+                if ($parsed) {
+                    $rows[] = $parsed;
+                }
             }
-            $parsed = $this->parseCostLine(implode(' ', $cells));
-            if ($parsed) {
-                $rows[] = $parsed;
-            }
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
+
+            return;
         }
         $this->applyCostRowsToPreview($rows);
     }
@@ -205,8 +219,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $label = __('vehicle.field.'.$this->costImportColumn);
         $reason = $label.' 명세서 일괄 기입 ('.now()->format('Y-m-d').', '.count($amounts).'대)';
-        $res = app(\App\Services\BulkVehicleCostService::class)
-            ->apply($this->costImportColumn, $amounts, auth()->user(), $reason, true);
+        try {
+            $res = app(\App\Services\BulkVehicleCostService::class)
+                ->apply($this->costImportColumn, $amounts, auth()->user(), $reason, true);
+        } catch (\Throwable $e) {
+            // 한 대라도 저장 가드/제약에 걸리면 전체 롤백 — 사유를 토스트로 노출(무반응 방지).
+            $this->dispatch('notify', message: __('vehicle.cost_import.apply_failed', ['msg' => $e->getMessage()]), type: 'error');
+
+            return;
+        }
 
         $this->closeCostImport();
         $this->dispatch('notify', message: __('vehicle.cost_import.applied', ['count' => $res['applied']]), type: 'success');
@@ -3393,6 +3414,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ↓ {{ __('vehicle.shipdoc.'.$type) }}
             </a>
         @endforeach
+        {{-- 판매계약서 (다중차량) — 동일 바이어·통화일 때만 활성(컨트롤러 가드와 동일). --}}
+        @php
+            $scRows = \App\Models\Vehicle::whereIn('id', $shipDocIds)->get(['buyer_id', 'currency']);
+            $scOk = $scRows->isNotEmpty()
+                && $scRows->pluck('buyer_id')->unique()->count() === 1
+                && $scRows->pluck('currency')->unique()->count() === 1;
+        @endphp
+        <a href="{{ ($scOk && $shipCnt <= 30) ? route('erp.vehicles.documents.multi', ['type' => 'sales_contract', 'ids' => $shipIds]) : '#' }}"
+           target="_blank"
+           title="{{ $scOk ? '' : __('vehicle.sales_contract_homogeneous_hint') }}"
+           class="rounded border border-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 {{ (! $scOk || $shipCnt > 30) ? 'pointer-events-none opacity-50' : '' }}">
+            ↓ {{ __('vehicle.shipdoc.sales_contract') }}
+        </a>
     </div>
 </div>
 @endif
