@@ -51,6 +51,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->shipDocIds = [];
     }
 
+    /**
+     * ② 하이브리드 — 선택한 export 차량들이 "한 선적 묶음(batch)"에 온전히 속하면 그 batch_id 반환.
+     * 여러 묶음에 걸치거나 묶음 없으면 null → 면허비 딥링크 비노출(완전묶음만 허용, 부분/혼합 실수 차단).
+     */
+    #[Computed]
+    public function selectedBundle(): ?string
+    {
+        if (empty($this->shipDocIds)) {
+            return null;
+        }
+        $batches = \App\Models\ShippingRequest::whereIn('vehicle_id', $this->shipDocIds)
+            ->where('status', '!=', \App\Models\ShippingRequest::STATUS_CANCELLED)
+            ->pluck('batch_id')->unique()->values();
+
+        return $batches->count() === 1 ? (string) $batches->first() : null;
+    }
+
     // ── 탁송비 명세서 일괄 기입 (건바이건 비용 — 위카 등 업체 명세서 붙여넣기 → 차량번호 매칭) ──
     //   면허비(묶음 n/1)와 정반대 축: 묶음 무관, 전체 차량 대상(canApprove). 비용 컬럼만 기입(BulkVehicleCostService).
     public bool $showCostImport = false;
@@ -59,13 +76,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $costImportRaw = '';
 
+    public $costImportFile = null;   // xlsx 직접 업로드 (위카 등 업체 명세서 파일)
+
     // ['matched' => [['id','number','model','current','amount'], ...], 'unmatched' => [['number','amount'], ...]]
     public array $costImportParsed = [];
 
     public function openCostImport(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
-        $this->reset(['costImportRaw', 'costImportParsed']);
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
         $this->costImportColumn = 'cost_towing';
         $this->showCostImport = true;
     }
@@ -73,49 +92,88 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function closeCostImport(): void
     {
         $this->showCostImport = false;
-        $this->reset(['costImportRaw', 'costImportParsed']);
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
     }
 
-    /** 붙여넣은 명세서 파싱 — 줄마다 차량번호(2~3숫자+한글+4숫자) + 금액(차량번호 제외 마지막 숫자=합계). */
+    /** 붙여넣은 명세서 파싱 — 줄 단위. */
     public function parseCostImport(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
 
+        $rows = [];
+        foreach (preg_split('/\r\n|\r|\n/', trim($this->costImportRaw)) as $line) {
+            $parsed = $this->parseCostLine($line);
+            if ($parsed) {
+                $rows[] = $parsed;
+            }
+        }
+        $this->applyCostRowsToPreview($rows);
+    }
+
+    /** xlsx 업로드 파싱 — 각 행의 셀을 이어붙여 줄 단위 파서에 넣음(위카 시트0: E=차량번호·J=합계 자동). */
+    public function parseCostImportFile(): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
+        $this->validate(['costImportFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
+
+        $rows = [];
+        $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
+        foreach ($ss->getSheet(0)->getRowIterator() as $row) {
+            $cells = [];
+            $it = $row->getCellIterator();
+            $it->setIterateOnlyExistingCells(false);
+            foreach ($it as $cell) {
+                $cells[] = trim((string) $cell->getCalculatedValue());
+            }
+            $parsed = $this->parseCostLine(implode(' ', $cells));
+            if ($parsed) {
+                $rows[] = $parsed;
+            }
+        }
+        $this->applyCostRowsToPreview($rows);
+    }
+
+    /** 한 줄에서 차량번호(2~3숫자+한글+4숫자) + 금액(차량번호 제외 마지막 숫자=합계) 추출. */
+    private function parseCostLine(string $line): ?array
+    {
+        $line = trim($line);
+        if ($line === '' || ! preg_match('/(\d{2,3}\s*[가-힣]\s*\d{4})/u', $line, $m)) {
+            return null;
+        }
+        $plate = preg_replace('/\s+/u', '', $m[1]);
+        $rest = str_replace($m[1], ' ', $line);
+        if (! preg_match_all('/[\d,]+/', $rest, $nums) || empty($nums[0])) {
+            return null;
+        }
+
+        return ['plate' => $plate, 'amount' => (int) str_replace(',', '', end($nums[0]))];
+    }
+
+    /** 추출 행(plate/amount) → 차량번호 매칭 → 미리보기(matched/unmatched). 같은 차량번호 첫 줄만. */
+    private function applyCostRowsToPreview(array $rows): void
+    {
         $matched = [];
         $unmatched = [];
         $seen = [];
-        foreach (preg_split('/\r\n|\r|\n/', trim($this->costImportRaw)) as $line) {
-            $line = trim($line);
-            if ($line === '') {
+        foreach ($rows as $r) {
+            if (isset($seen[$r['plate']])) {
                 continue;
             }
-            if (! preg_match('/(\d{2,3}\s*[가-힣]\s*\d{4})/u', $line, $m)) {
-                continue;   // 차량번호 없는 줄(헤더·합계 등) 스킵
-            }
-            $plate = preg_replace('/\s+/u', '', $m[1]);
-            // 차량번호를 제거한 나머지에서 마지막 숫자 = 합계(J)
-            $rest = str_replace($m[1], ' ', $line);
-            if (! preg_match_all('/[\d,]+/', $rest, $nums) || empty($nums[0])) {
-                continue;
-            }
-            $amount = (int) str_replace(',', '', end($nums[0]));
-            if (isset($seen[$plate])) {
-                continue;   // 같은 차량번호 중복 줄 — 첫 줄만
-            }
-            $seen[$plate] = true;
+            $seen[$r['plate']] = true;
 
-            $vehicle = \App\Models\Vehicle::where('vehicle_number', $plate)->first();
+            $vehicle = \App\Models\Vehicle::where('vehicle_number', $r['plate'])->first();
             if ($vehicle) {
                 $matched[] = [
                     'id' => $vehicle->id,
                     'number' => $vehicle->vehicle_number,
                     'model' => trim(($vehicle->brand ?? '').' '.($vehicle->model_type ?? '')),
                     'current' => (int) $vehicle->{$this->costImportColumn},
-                    'amount' => $amount,
+                    'amount' => $r['amount'],
                 ];
             } else {
-                $unmatched[] = ['number' => $plate, 'amount' => $amount];
+                $unmatched[] = ['number' => $r['plate'], 'amount' => $r['amount']];
             }
         }
 
@@ -3321,6 +3379,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
     </div>
     <div class="flex flex-wrap gap-2">
+        {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
+        @if(auth()->user()?->canApprove() && $this->selectedBundle)
+            <a href="{{ route('erp.shipping-requests.index', ['focus' => $this->selectedBundle]) }}" wire:navigate
+               class="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100">
+                → {{ __('vehicle.shipdoc_license_link') }}
+            </a>
+        @endif
         @foreach($shipDocs as $type)
             <a href="{{ $shipCnt <= 30 ? route('erp.vehicles.documents.multi', ['type' => $type, 'ids' => $shipIds]) : '#' }}"
                target="_blank"
@@ -5697,15 +5762,31 @@ function vehicleColumnsToggle() {
                 <p class="flex-1 text-[11px] text-gray-500">{{ __('vehicle.cost_import.col_hint') }}</p>
             </div>
 
-            {{-- 붙여넣기 --}}
-            <label class="label-base">{{ __('vehicle.cost_import.paste_label') }}</label>
-            <textarea wire:model="costImportRaw" rows="5" class="input-base font-mono text-xs"
-                      placeholder="{{ __('vehicle.cost_import.paste_ph') }}"></textarea>
-            <div class="mt-2 flex justify-end">
-                <button type="button" wire:click="parseCostImport" wire:loading.attr="disabled"
-                        class="rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary-text hover:bg-primary-light">
-                    {{ __('vehicle.cost_import.parse_btn') }}
+            {{-- ① 엑셀 파일 업로드 (권장) --}}
+            <label class="label-base">{{ __('vehicle.cost_import.file_label') }}</label>
+            <div class="flex flex-wrap items-center gap-2">
+                <input type="file" wire:model="costImportFile" accept=".xlsx,.xls"
+                       class="text-xs file:mr-2 file:rounded-md file:border file:border-gray-300 file:bg-gray-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-600 hover:file:bg-gray-100" />
+                <button type="button" wire:click="parseCostImportFile" wire:loading.attr="disabled" wire:target="parseCostImportFile,costImportFile"
+                        @disabled(! $costImportFile)
+                        class="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">
+                    <span wire:loading.remove wire:target="parseCostImportFile,costImportFile">{{ __('vehicle.cost_import.file_btn') }}</span>
+                    <span wire:loading wire:target="parseCostImportFile,costImportFile">{{ __('vehicle.panel.uploading') }}</span>
                 </button>
+            </div>
+            @error('costImportFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+
+            {{-- ② 또는 붙여넣기 --}}
+            <div class="mt-3 border-t border-gray-100 pt-3">
+                <label class="label-base">{{ __('vehicle.cost_import.paste_label') }}</label>
+                <textarea wire:model="costImportRaw" rows="4" class="input-base font-mono text-xs"
+                          placeholder="{{ __('vehicle.cost_import.paste_ph') }}"></textarea>
+                <div class="mt-2 flex justify-end">
+                    <button type="button" wire:click="parseCostImport" wire:loading.attr="disabled" wire:target="parseCostImport"
+                            class="rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary-text hover:bg-primary-light">
+                        {{ __('vehicle.cost_import.parse_btn') }}
+                    </button>
+                </div>
             </div>
 
             {{-- 미리보기 --}}

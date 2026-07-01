@@ -92,9 +92,19 @@ new #[Layout('components.layouts.app')] class extends Component
         }
     }
 
+    /** 차량목록에서 「면허비 n/1」 딥링크로 넘어온 batch_id — 2차 비용 탭 + 해당 묶음 폼 자동 오픈. */
+    #[Url]
+    public string $focus = '';
+
     public function mount(): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+
+        // 딥링크 진입 — 승인 권한자면 2차 비용 탭 열고 해당 묶음 면허비 폼 자동 오픈.
+        if ($this->focus !== '' && auth()->user()?->canApprove()) {
+            $this->viewTab = 'cost';
+            $this->licenseBatch = $this->focus;
+        }
     }
 
     public function setStatus(string $s): void

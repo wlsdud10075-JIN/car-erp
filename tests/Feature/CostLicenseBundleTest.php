@@ -97,6 +97,18 @@ class CostLicenseBundleTest extends TestCase
             ->assertSee($vehicles[0]->vehicle_number);
     }
 
+    public function test_focus_deeplink_opens_cost_tab_and_license_form(): void
+    {
+        // ② 차량목록 「면허비 n/1」 딥링크 진입 — focus=batch → 2차 비용 탭 + 폼 자동 오픈.
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+        [$s, $vehicles, $batch] = $this->makeBundle(2);
+
+        Volt::test('erp.shipping-requests.index', ['focus' => $batch])
+            ->assertSet('viewTab', 'cost')
+            ->assertSet('licenseBatch', $batch);
+    }
+
     public function test_non_approver_cannot_apply_license_fee(): void
     {
         // 수출통관은 화면(clearance)엔 들어오지만 canApprove 아니라 openLicenseFee 403.
