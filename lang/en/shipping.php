@@ -21,6 +21,30 @@ return [
     'requested_by' => 'Requested by',
     'vehicles_n' => ':n vehicles',
 
+    'tab' => [
+        'shipping' => 'Shipping / B/L',
+        'cost' => '2nd-stage Cost (License)',
+    ],
+
+    // 2nd-stage cost tab — license fee n/1 across bundle
+    'license' => [
+        'tab_hint' => 'Bundles awaiting 2nd settlement (one month after completion). License fee arrives as one lump per shipment and is split n/1 across the vehicles. Management sees only their team bundles.',
+        'empty' => 'No bundles awaiting 2nd settlement.',
+        'batch_n' => ':n bundles',
+        'not_entered_n' => ':n unfilled',
+        'badge_not_entered' => 'License unfilled',
+        'badge_entered' => 'Filled',
+        'enter_btn' => 'License n/1',
+        'form_title' => 'License n/1 — split across :n',
+        'total_label' => 'License total',
+        'preview' => ':n × :each',
+        'preview_hint' => 'Enter the total to see the n/1 preview.',
+        'apply_btn' => 'Apply',
+        'invalid_total' => 'Enter a valid license total.',
+        'applied' => 'License fee entered for :count vehicle(s) via n/1',
+        'applied_partial' => 'License entered for :ok, :skip skipped (permission/unmatched)',
+    ],
+
     'action' => [
         'start' => 'Mark in progress',
         'done' => 'Mark done',

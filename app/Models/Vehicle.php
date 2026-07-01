@@ -448,6 +448,16 @@ class Vehicle extends Model
         'buyer_id', 'salesman_id',
     ];
 
+    /**
+     * 2차 정산 비용 일괄 기입 대상 컬럼 화이트리스트 (9개 비용만).
+     * 면허비 묶음 n/1·탁송비 명세서 매칭 도구는 **이 컬럼만** 건드릴 수 있음.
+     * → fleet-wide(전체 차량) 권한이어도 판매가·환율·매입가·바이어·담당자 등 민감 21필드는 봉인.
+     */
+    public const BULK_COST_FIELDS = [
+        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+    ];
+
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {

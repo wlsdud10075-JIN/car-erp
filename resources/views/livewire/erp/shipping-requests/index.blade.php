@@ -18,6 +18,80 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public array $blForm = ['bl_number' => '', 'container_number' => '', 'vessel_name' => '', 'bl_type' => 'original'];
 
+    /** 상단 탭 — 'shipping'(선적/발급, 기본) | 'cost'(2차 비용: 면허비 n/1). */
+    public string $viewTab = 'shipping';
+
+    /** 면허비 n/1 인라인 폼 — 기입 중인 batch_id + 총액. */
+    public string $licenseBatch = '';
+
+    public string $licenseTotal = '';
+
+    public function setViewTab(string $t): void
+    {
+        $this->viewTab = $t === 'cost' ? 'cost' : 'shipping';
+        $this->licenseBatch = '';
+        $this->licenseTotal = '';
+    }
+
+    /** 면허비 n/1 폼 열기 (승인 권한). */
+    public function openLicenseFee(string $batchId): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        $this->licenseBatch = $batchId;
+        $this->licenseTotal = '';
+    }
+
+    public function cancelLicenseFee(): void
+    {
+        $this->licenseBatch = '';
+        $this->licenseTotal = '';
+    }
+
+    /**
+     * 면허비 묶음 n/1 — 총액을 묶음 멤버 차량 수로 나눠(첫 차량에 나머지 원) cost_license 일괄 기입.
+     * 팀 스코프(canUnlockLedger, fleetWide=false): 본인 팀 차량만. 팀 밖은 skip 리포트.
+     */
+    public function applyLicenseFee(): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+
+        $total = (int) round((float) str_replace(',', '', $this->licenseTotal));
+        if ($total <= 0) {
+            $this->dispatch('notify', message: __('shipping.license.invalid_total'), type: 'error');
+
+            return;
+        }
+
+        $vehicles = ShippingRequest::where('batch_id', $this->licenseBatch)
+            ->with('vehicle')->get()
+            ->map->vehicle->filter()->unique('id')->values();
+        $n = $vehicles->count();
+        if ($n === 0) {
+            return;
+        }
+
+        // n/1 — 첫 차량에 나머지 원 몰아 합계 정확히 일치.
+        $base = intdiv($total, $n);
+        $remainder = $total - $base * $n;
+        $amounts = [];
+        foreach ($vehicles as $idx => $v) {
+            $amounts[$v->id] = $base + ($idx === 0 ? $remainder : 0);
+        }
+
+        $reason = '면허비 2차 정산 n/1 (묶음 '.$this->licenseBatch.', '.$n.'대, 총 '.number_format($total).'원)';
+        $res = app(\App\Services\BulkVehicleCostService::class)
+            ->apply('cost_license', $amounts, auth()->user(), $reason, false);
+
+        $this->licenseBatch = '';
+        $this->licenseTotal = '';
+
+        if (! empty($res['skipped'])) {
+            $this->dispatch('notify', message: __('shipping.license.applied_partial', ['ok' => $res['applied'], 'skip' => count($res['skipped'])]), type: 'warning');
+        } else {
+            $this->dispatch('notify', message: __('shipping.license.applied', ['count' => $res['applied']]), type: 'success');
+        }
+    }
+
     public function mount(): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
@@ -250,7 +324,67 @@ new #[Layout('components.layouts.app')] class extends Component
             ->selectRaw('status, COUNT(DISTINCT batch_id) as c')
             ->groupBy('status')->pluck('c', 'status');
 
-        return ['batches' => $batches, 'counts' => $counts, 'canApprove' => (bool) auth()->user()?->canApprove()];
+        // 2차 비용(면허비) 탭 — 2차 정산 pending 인 묶음만, paid월 그룹, 팀 스코프. (탭 진입 시만 계산)
+        $costBatches = collect();
+        if ($this->viewTab === 'cost') {
+            $costBatches = $this->buildCostBatches();
+        }
+
+        return [
+            'batches' => $batches,
+            'counts' => $counts,
+            'costBatches' => $costBatches,
+            'canApprove' => (bool) auth()->user()?->canApprove(),
+        ];
+    }
+
+    /**
+     * 2차 비용 탭 데이터 — 멤버 차량이 2차 정산 pending(paid 후 한 달 창)인 묶음.
+     *   - 팀 스코프: 관리는 본인 팀 차량 묶음만 / admin·super 전체.
+     *   - paid월(정산 paid_at) 기준 그룹 → 최신월 먼저. 면허비 미기입(전부 기본값 11,000) 뱃지.
+     */
+    private function buildCostBatches()
+    {
+        $user = auth()->user();
+        $defaultLicense = (int) (Vehicle::DEFAULT_PURCHASE_COSTS['cost_license'] ?? 11000);
+
+        $rows = ShippingRequest::query()
+            ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
+            ->with(['vehicle.settlements', 'buyer'])
+            ->get()
+            ->filter(function ($r) use ($user) {
+                $v = $r->vehicle;
+
+                return $v
+                    && $v->settlements->contains(fn ($s) => $s->secondary_status === 'pending')
+                    && ($user->canAccessAdmin() || $user->canScopeVehicle($v));
+            });
+
+        return $rows->groupBy('batch_id')->map(function ($items) use ($defaultLicense) {
+            $f = $items->first();
+            $vehicles = $items->map->vehicle->filter()->unique('id')->values();
+
+            $paidAt = null;
+            foreach ($vehicles as $v) {
+                $s = $v->settlements->first(fn ($s) => $s->secondary_status === 'pending' && $s->paid_at);
+                if ($s) {
+                    $paidAt = $s->paid_at;
+                    break;
+                }
+            }
+
+            return [
+                'batch_id' => (string) $f->batch_id,
+                'buyer' => $f->buyer?->name,
+                'count' => $vehicles->count(),
+                'month' => $paidAt ? $paidAt->format('Y-m') : '—',
+                'not_entered' => $vehicles->every(fn ($v) => (int) $v->cost_license === $defaultLicense),
+                'vehicles' => $vehicles->map(fn ($v) => [
+                    'number' => $v->vehicle_number,
+                    'license' => (int) $v->cost_license,
+                ])->all(),
+            ];
+        })->values()->groupBy('month')->sortKeysDesc();
     }
 }; ?>
 
@@ -263,6 +397,21 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
+    {{-- 상단 탭: 선적/발급 ↔ 2차 비용(면허비 n/1). 2차 비용은 승인 권한자만. --}}
+    <div class="mb-4 flex gap-2 border-b border-gray-200">
+        <button type="button" wire:click="setViewTab('shipping')"
+                class="-mb-px border-b-2 px-3 py-2 text-sm font-medium {{ $viewTab === 'shipping' ? 'border-primary text-primary-text' : 'border-transparent text-gray-500 hover:text-gray-700' }}">
+            {{ __('shipping.tab.shipping') }}
+        </button>
+        @if($canApprove)
+        <button type="button" wire:click="setViewTab('cost')"
+                class="-mb-px border-b-2 px-3 py-2 text-sm font-medium {{ $viewTab === 'cost' ? 'border-primary text-primary-text' : 'border-transparent text-gray-500 hover:text-gray-700' }}">
+            {{ __('shipping.tab.cost') }}
+        </button>
+        @endif
+    </div>
+
+    @if($viewTab === 'shipping')
     {{-- 상태 필터 칩 --}}
     @php
         $statusMeta = [
@@ -463,5 +612,93 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
             @endforeach
         </div>
+    @endif
+    @endif
+
+    {{-- ══ 2차 비용 탭 — 면허비 묶음 n/1 (2차 정산 pending 묶음, paid월 접기, 미기입 뱃지) ══ --}}
+    @if($viewTab === 'cost')
+    <p class="mb-3 text-xs text-gray-500">{{ __('shipping.license.tab_hint') }}</p>
+    @if($costBatches->isEmpty())
+        <div class="card text-center text-sm text-gray-400">{{ __('shipping.license.empty') }}</div>
+    @else
+        <div class="space-y-4">
+            @foreach($costBatches as $month => $monthBatches)
+            <div x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="rounded-lg border border-gray-200">
+                {{-- 월 헤더 (접기/펼치기, 최신월 기본 펼침) --}}
+                <button type="button" @click="open = ! open"
+                        class="flex w-full items-center gap-2 bg-gray-50 px-4 py-2 text-left">
+                    <span class="text-sm font-bold text-gray-700">{{ $month }}</span>
+                    <span class="pill-count">{{ __('shipping.license.batch_n', ['n' => $monthBatches->count()]) }}</span>
+                    @php $notEntered = $monthBatches->where('not_entered', true)->count(); @endphp
+                    @if($notEntered > 0)
+                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">{{ __('shipping.license.not_entered_n', ['n' => $notEntered]) }}</span>
+                    @endif
+                    <svg class="ml-auto h-4 w-4 flex-shrink-0 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+
+                <div x-show="open" x-cloak class="divide-y divide-gray-100 p-2">
+                    @foreach($monthBatches as $b)
+                    @php $preview = null; @endphp
+                    <div class="p-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            @if($b['not_entered'])
+                            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">{{ __('shipping.license.badge_not_entered') }}</span>
+                            @else
+                            <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">{{ __('shipping.license.badge_entered') }}</span>
+                            @endif
+                            <span class="text-sm font-bold text-gray-800">{{ $b['buyer'] ?? '—' }}</span>
+                            <span class="pill-count">{{ __('shipping.vehicles_n', ['n' => $b['count']]) }}</span>
+                            <button type="button" wire:click="openLicenseFee('{{ $b['batch_id'] }}')"
+                                    class="ml-auto rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
+                                {{ __('shipping.license.enter_btn') }}
+                            </button>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-1.5">
+                            @foreach($b['vehicles'] as $veh)
+                            <span class="rounded border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                                {{ $veh['number'] }} <span class="text-gray-400">{{ number_format($veh['license']) }}</span>
+                            </span>
+                            @endforeach
+                        </div>
+
+                        {{-- 면허비 n/1 인라인 폼 --}}
+                        @if($licenseBatch === $b['batch_id'])
+                        @php
+                            $totalNum = (int) round((float) str_replace(',', '', $licenseTotal ?: '0'));
+                            $n = max($b['count'], 1);
+                            $base = intdiv($totalNum, $n);
+                            $rem = $totalNum - $base * $n;
+                        @endphp
+                        <div class="mt-2 rounded-md border border-violet-200 bg-violet-50/60 p-3">
+                            <div class="mb-2 text-xs font-bold text-violet-800">{{ __('shipping.license.form_title', ['n' => $b['count']]) }}</div>
+                            <div class="flex flex-wrap items-end gap-2">
+                                <div>
+                                    <label class="label-base">{{ __('shipping.license.total_label') }}</label>
+                                    <input wire:model.live="licenseTotal" type="text" class="input-base w-40" placeholder="200,000" />
+                                </div>
+                                <div class="text-[11px] text-violet-700">
+                                    @if($totalNum > 0)
+                                        {{ __('shipping.license.preview', ['n' => $n, 'each' => number_format($base + $rem)]) }}
+                                        @if($n > 1) + {{ number_format($base) }} × {{ $n - 1 }} @endif
+                                        = <b>{{ number_format($totalNum) }}</b>
+                                    @else
+                                        {{ __('shipping.license.preview_hint') }}
+                                    @endif
+                                </div>
+                            </div>
+                            <div class="mt-2 flex gap-2">
+                                <button type="button" wire:click="applyLicenseFee" class="btn-primary text-[11px]">{{ __('shipping.license.apply_btn') }}</button>
+                                <button type="button" wire:click="cancelLicenseFee"
+                                        class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">{{ __('shipping.bl.cancel') }}</button>
+                            </div>
+                        </div>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+            @endforeach
+        </div>
+    @endif
     @endif
 </div>

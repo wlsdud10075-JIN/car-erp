@@ -63,6 +63,47 @@ class VehicleLedgerUnlockService
             throw new DomainException('재무 확정 잔금이 없는 차량은 잠금 해제할 필요가 없습니다');
         }
 
+        $this->putToken($vehicle, $by, $reasonTrimmed);
+    }
+
+    /**
+     * 2차 정산 비용 일괄 기입 전용 잠금 해제 (면허비 묶음 n/1 · 탁송비 명세서).
+     *
+     * 단일 [🔓 잠금 해제] 버튼(unlock)과 분리:
+     *   - $fleetWide=false (면허비): 권한 = canUnlockLedger(본인 팀 차량만) — 단일 버튼과 동일 팀 스코프.
+     *   - $fleetWide=true  (탁송비): 권한 = canApprove(관리/admin 전체) — 위카 명세서가 전체 차량 1장이라 필요.
+     *
+     * ⚠️ fleet-wide 여도 호출측(BulkVehicleCostService)이 Vehicle::BULK_COST_FIELDS(비용 9개)만 기입하도록 강제 →
+     *    전체 권한이어도 판매가·환율 등 민감필드는 못 건드림. 사유·필드변경 모두 AuditLog 기록.
+     *
+     * 잠긴 차량(hasConfirmedPaymentLock)일 때만 호출 — 안 잠긴 차량은 토큰 불필요(호출측이 판단).
+     *
+     * @throws AuthorizationException 권한 없을 때
+     * @throws DomainException 사유 10자 미만
+     */
+    public function unlockForCostBulk(Vehicle $vehicle, User $by, string $reason, bool $fleetWide): void
+    {
+        $authorized = $fleetWide ? $by->canApprove() : $by->canUnlockLedger($vehicle);
+        if (! $authorized) {
+            throw new AuthorizationException($fleetWide
+                ? '비용 일괄 기입 권한 없음 (관리/admin 전용)'
+                : '잠금 해제 권한 없음 (super/admin 또는 본인 팀 관리 전용)');
+        }
+
+        $reasonTrimmed = trim($reason);
+        if (mb_strlen($reasonTrimmed) < self::MIN_REASON_LENGTH) {
+            throw new DomainException('잠금 해제 사유는 '.self::MIN_REASON_LENGTH.'자 이상 필수');
+        }
+
+        $this->putToken($vehicle, $by, $reasonTrimmed);
+    }
+
+    /**
+     * unlock 토큰 발급 + AuditLog 기록 (단일/일괄 공통 단일 출처).
+     * 저장 1회 후 Vehicle::consumeLedgerUnlockToken(cache pull)로 소비 → 즉시 재잠금.
+     */
+    private function putToken(Vehicle $vehicle, User $by, string $reasonTrimmed): void
+    {
         DB::transaction(function () use ($vehicle, $by, $reasonTrimmed) {
             Cache::put(
                 Vehicle::ledgerUnlockCacheKey($vehicle->id),

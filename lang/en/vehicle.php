@@ -434,6 +434,27 @@ return [
         'approve_btn' => 'Record Approval',
     ],
 
+    // Per-vehicle cost statement bulk entry (towing etc., matched by vehicle no.)
+    'cost_import' => [
+        'btn' => 'Import Statement',
+        'title' => 'Bulk Cost Entry from Statement',
+        'subtitle' => 'Paste a vendor statement (e.g. Wika); vehicles are matched by number and the cost is filled at once. Management/admin · all vehicles · costs only.',
+        'target_col' => 'Target cost',
+        'col_hint' => 'Per-vehicle costs like towing. (License fee uses n/1 on the shipping bundle screen.)',
+        'paste_label' => 'Paste statement (copy from Excel)',
+        'paste_ph' => "Paste lines containing a vehicle number and amount. e.g.\n393어3064  SM6  25000  10000  35000\n14주4848  AUDI  45000  20000  65000",
+        'parse_btn' => 'Preview',
+        'parse_empty' => 'No vehicle number found. Paste lines that include a vehicle number.',
+        'matched' => ':count matched',
+        'unmatched' => ':count unmatched',
+        'unmatched_title' => '⚠ Vehicle numbers not in ERP (typo/unregistered — check manually)',
+        'current' => 'Current',
+        'new_amount' => 'New',
+        'no_matched' => 'No matched vehicles.',
+        'applied' => 'Cost entered for :count vehicle(s)',
+        'apply_btn' => 'Apply',
+    ],
+
     // Modals
     'modal' => [
         'cancel' => 'Cancel',
