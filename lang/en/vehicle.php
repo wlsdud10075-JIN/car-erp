@@ -19,7 +19,7 @@ return [
     'export_do' => 'Download Excel',
     'export_pick_col' => 'Select at least one column.',
 
-    'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no.',
+    'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6)',
     'search_btn' => 'Search',
     'all_salesmen' => 'All Salesmen',
     'all_buyers' => 'All Buyers',
