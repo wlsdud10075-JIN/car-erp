@@ -215,6 +215,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   > 0   = 미납 (0~1)
     public ?float $panelUnpaidRatio = null;
 
+    // 판매탭 총판매가·남은잔금 표시 (수정 불가, openEdit 시 갱신 — panelUnpaidRatio 와 동일 스냅샷)
+    //   null = 판매 전 (sale_total_amount <= 0) → "—"
+    public ?float $panelSaleTotal = null;   // sale_total_amount (SKILLS §13 미수율 분모, 통화 단위)
+    public ?float $panelSaleUnpaid = null;  // sale_unpaid_amount (남은 잔금, 통화 단위)
+
+    // "저장하고 계속" — 저장 후 패널을 닫지 않고 재로드(스냅샷 즉시 갱신). 확정 모달 바운스 넘어서 유지되도록 프로퍼티.
+    public bool $keepPanelOpen = false;
+
     // 큐 19-C — 차량 간 자금 이체 요청 모달 상태
     public bool $showTransferRequestModal = false;
 
@@ -1292,6 +1300,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         ])->all();
 
         $this->panelUnpaidRatio = $v->unpaid_ratio;
+        // 판매 전(분모 0) 이면 null → "—" (unpaid_ratio 와 동일 게이팅)
+        $saleTotal = (float) $v->sale_total_amount;
+        $this->panelSaleTotal = $saleTotal > 0 ? $saleTotal : null;
+        $this->panelSaleUnpaid = $saleTotal > 0 ? (float) $v->sale_unpaid_amount : null;
 
         // 큐 21 — Ledger 잠금 상태 갱신
         $this->refreshLedgerLockState($v);
@@ -1303,6 +1315,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->resetValidation();
         $this->showPanel = false;
+        $this->keepPanelOpen = false;
         // 동시 편집 잠금 — 내 잠금 해제 후 editingId 비움 (순서 중요: 해제는 editingId 기준).
         $this->releaseEditLock($this->editingId);
         $this->editLockedByOther = false;
@@ -1755,6 +1768,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->save();
     }
 
+    // "저장하고 계속" — 일반 저장과 동일 가드(서류불일치 확정 모달 포함) 통과.
+    // keepPanelOpen 플래그를 세운 뒤 requestSave 로 위임 → 확정 모달을 거쳐도 플래그 유지 → save() 종료 시 close 대신 재로드.
+    public function saveAndContinue(string $tab = 'purchase'): void
+    {
+        $this->keepPanelOpen = true;
+        $this->requestSave($tab);
+    }
+
     public function confirmAndSave(): void
     {
         $this->showSaveConfirmModal = false;
@@ -1764,10 +1785,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function closeSaveConfirmModal(): void
     {
         $this->showSaveConfirmModal = false;
+        // 사용자가 모달을 취소하면 "저장하고 계속" 플래그도 해제 (다음 일반 저장에 잔존 방지).
+        $this->keepPanelOpen = false;
     }
 
     public function save(): void
     {
+        // "저장하고 계속" 플래그 캡처 후 즉시 해제 (조기 return·예외 경로에서도 잔존 안 하도록).
+        $keepOpen = $this->keepPanelOpen;
+        $this->keepPanelOpen = false;
+
         // C7-b 회의확장씬 (2026-05-22) — 신규 등록 권한: 영업·관리 role 또는 admin/super.
         // 사용자 헤더 명세 "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" 완전 충족.
         // 수출통관·재무 role 은 신규 등록 차단 (admin/관리 가 만든 차량의 자기 영역만 편집).
@@ -2319,6 +2346,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 message: __('vehicle.toast.created_next', ['label' => $nextStep['label'], 'reason' => $nextStep['reason']]),
                 type: 'success',
             );
+            return;
+        }
+
+        // "저장하고 계속" — 창을 닫지 않고 방금 저장한 차량을 재로드.
+        //   openEdit 가 폼·스냅샷(총판매가·남은잔금·미납률 등)을 DB 최신값으로 다시 채우고, 내 편집잠금을 재획득한다.
+        //   Alpine 탭 상태는 클라이언트 측이라 재로드에도 현재 탭 유지 (switch-tab 미발행).
+        if ($keepOpen && $vehicle) {
+            $this->openEdit($vehicle->id);
+            $this->dispatch(
+                'notify',
+                message: $wasCreating ? __('vehicle.toast.created') : __('vehicle.toast.updated'),
+                type: 'success',
+            );
+
             return;
         }
 
@@ -3612,23 +3653,23 @@ function vehicleColumnsToggle() {
 
     {{-- 큐 21 — Ledger 잠금 배너 (회의록 2026-05-18). 회계 영향 컬럼 21개(매입가/판매가/환율/면장금액/비용9개/관련 5컬럼/바이어/담당자) 잠금 표시. --}}
     @if($isLedgerLocked)
-    <div class="border-b {{ $hasLedgerUnlockToken ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50' }} px-5 py-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-start gap-2">
-                <span class="text-base leading-none">{{ $hasLedgerUnlockToken ? '🔓' : '🔒' }}</span>
-                <div class="text-xs">
-                    @if($hasLedgerUnlockToken)
-                    <p class="font-semibold text-amber-800">{{ __('vehicle.panel.ledger.unlocked_title') }}</p>
-                    <p class="mt-0.5 text-amber-700">{{ __('vehicle.panel.ledger.unlocked_desc') }}</p>
-                    @else
-                    <p class="font-semibold text-gray-700">{{ __('vehicle.panel.ledger.locked_title') }}</p>
-                    <p class="mt-0.5 text-gray-500">{{ __('vehicle.panel.ledger.locked_desc') }}</p>
-                    @endif
-                </div>
-            </div>
+    {{-- 접기/펼치기 (기본 접힘) — 🔒/🔓 상태는 헤더에 항상 노출, 설명·잠금해제 버튼은 쓸 때만 펼침.
+         색상은 미입금 우회 승인 섹션과 동일한 앰버로 통일 (잠긴 회색은 사용자 눈에 안 띔 — jin 2026-07-01). --}}
+    <div x-data="{ open: false }" class="border-b border-amber-200 bg-amber-50 px-5 py-2">
+        <button type="button" @click="open = ! open" class="flex w-full items-center gap-2 text-left">
+            <span class="text-base leading-none">{{ $hasLedgerUnlockToken ? '🔓' : '🔒' }}</span>
+            <span class="flex-1 text-xs font-semibold text-amber-800">
+                {{ $hasLedgerUnlockToken ? __('vehicle.panel.ledger.unlocked_title') : __('vehicle.panel.ledger.locked_title') }}
+            </span>
+            <svg class="h-4 w-4 flex-shrink-0 text-amber-500 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="open" x-cloak class="mt-2 flex flex-wrap items-center justify-between gap-2 pl-6">
+            <p class="text-xs text-amber-700">
+                {{ $hasLedgerUnlockToken ? __('vehicle.panel.ledger.unlocked_desc') : __('vehicle.panel.ledger.locked_desc') }}
+            </p>
             @if(! $hasLedgerUnlockToken && $canUnlockLedger)
             <button type="button" wire:click="openLedgerUnlockModal"
-                    class="flex-shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                    class="flex-shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
                 🔓 {{ __('vehicle.panel.ledger.unlock_btn') }}
             </button>
             @endif
@@ -4229,6 +4270,14 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.transport_fee') }}</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.auto_loading') }}</label><input wire:model="auto_loading_str" type="text" class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.sale_other_costs') }}</label><input wire:model="sale_other_costs_str" type="text" class="input-base" placeholder="0" /></div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.sale_total_display') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
+                    @if($panelSaleTotal === null)
+                        <div class="input-base bg-gray-50 text-gray-400">—</div>
+                    @else
+                        <div class="input-base bg-purple-50 font-medium text-purple-800">{{ $currency }} {{ number_format($panelSaleTotal) }}</div>
+                    @endif
+                </div>
             </div>
 
             <hr class="section-divider">
@@ -4293,6 +4342,16 @@ function vehicleColumnsToggle() {
                         <div class="input-base bg-emerald-50 text-emerald-700 font-medium">{{ __('vehicle.panel.fully_paid') }}</div>
                     @else
                         <div class="input-base bg-gray-50 font-medium text-gray-800">{{ number_format($panelUnpaidRatio * 100, 1) }}%</div>
+                    @endif
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.remaining_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
+                    @if($panelSaleUnpaid === null)
+                        <div class="input-base bg-gray-50 text-gray-400">—</div>
+                    @elseif($panelSaleUnpaid <= 0)
+                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">{{ $currency }} 0</div>
+                    @else
+                        <div class="input-base bg-amber-50 font-medium text-amber-800">{{ $currency }} {{ number_format($panelSaleUnpaid) }}</div>
                     @endif
                 </div>
             </div>
@@ -4991,36 +5050,41 @@ function vehicleColumnsToggle() {
         $existingOverrides = $editingVehicle?->unpaidExportOverrides ?? collect();
         $unpaidKrw = $editingVehicle?->sale_unpaid_amount_krw_cache;
     @endphp
-    <div class="border-t border-amber-200 bg-amber-50 px-5 py-3">
-        <div class="flex items-start gap-2">
-            <svg class="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
-            <div class="flex-1">
-                <p class="text-xs font-semibold text-amber-800">{{ __('vehicle.override.title') }}</p>
-                <p class="mt-0.5 text-[11px] text-amber-700">
-                    {{ __('vehicle.override.unpaid_left') }} {{ $unpaidKrw !== null ? number_format($unpaidKrw).' '.__('vehicle.override.won') : __('vehicle.override.none') }}
-                    @if($existingOverrides->count() > 0)
-                    · {{ __('vehicle.override.existing', ['count' => $existingOverrides->count()]) }} {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
-                    @endif
-                </p>
-                <div class="mt-2 flex flex-wrap items-end gap-2">
-                    <div>
-                        <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
-                        <select wire:model="overrideStage" class="input-filter">
-                            <option value="">{{ __('vehicle.override.stage_select') }}</option>
-                            <option value="shipping">{{ __('vehicle.override.stage_entry') }}</option>
-                            <option value="bl">{{ __('vehicle.override.stage_bl') }}</option>
-                        </select>
-                    </div>
-                    <div class="flex-1 min-w-[200px]">
-                        <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.reason_label') }}</label>
-                        <input wire:model="overrideReason" type="text" class="input-filter w-full"
-                               placeholder="{{ __('vehicle.override.reason_ph') }}" />
-                    </div>
-                    <button wire:click="approveUnpaidOverride" type="button"
-                            class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-                        {{ __('vehicle.override.approve_btn') }}
-                    </button>
+    {{-- 접기/펼치기 (기본 접힘) — 모바일 공간 절약. 헤더는 항상 노출, 폼은 쓸 때만 펼침. --}}
+    <div x-data="{ open: false }" class="border-t border-amber-200 bg-amber-50 px-5 py-2">
+        <button type="button" @click="open = ! open" class="flex w-full items-center gap-2 text-left">
+            <svg class="h-4 w-4 flex-shrink-0 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0l-7.1 12.25A2 2 0 005 19z"/></svg>
+            <span class="flex-1 text-xs font-semibold text-amber-800">{{ __('vehicle.override.title') }}</span>
+            @if($existingOverrides->count() > 0)
+            <span class="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{{ __('vehicle.override.existing_badge', ['count' => $existingOverrides->count()]) }}</span>
+            @endif
+            <svg class="h-4 w-4 flex-shrink-0 text-amber-500 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="open" x-cloak class="mt-2 pl-6">
+            <p class="text-[11px] text-amber-700">
+                {{ __('vehicle.override.unpaid_left') }} {{ $unpaidKrw !== null ? number_format($unpaidKrw).' '.__('vehicle.override.won') : __('vehicle.override.none') }}
+                @if($existingOverrides->count() > 0)
+                · {{ __('vehicle.override.existing', ['count' => $existingOverrides->count()]) }} {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
+                @endif
+            </p>
+            <div class="mt-2 flex flex-wrap items-end gap-2">
+                <div>
+                    <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
+                    <select wire:model="overrideStage" class="input-filter">
+                        <option value="">{{ __('vehicle.override.stage_select') }}</option>
+                        <option value="shipping">{{ __('vehicle.override.stage_entry') }}</option>
+                        <option value="bl">{{ __('vehicle.override.stage_bl') }}</option>
+                    </select>
                 </div>
+                <div class="flex-1 min-w-[200px]">
+                    <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.reason_label') }}</label>
+                    <input wire:model="overrideReason" type="text" class="input-filter w-full"
+                           placeholder="{{ __('vehicle.override.reason_ph') }}" />
+                </div>
+                <button wire:click="approveUnpaidOverride" type="button"
+                        class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                    {{ __('vehicle.override.approve_btn') }}
+                </button>
             </div>
         </div>
     </div>
@@ -5033,6 +5097,15 @@ function vehicleColumnsToggle() {
             {{ __('vehicle.footer.cancel') }}
         </button>
         {{-- 회의확장씬 (2026-05-22) — 영업·관리 + 4 탭(매입/판매/선적/통관) 시 모달. 현재 활성 탭을 인자로 전달 --}}
+        {{-- 저장하고 계속 — 창을 닫지 않고 저장(스냅샷 총판매가·남은잔금·미납률 즉시 갱신). 편집 모드만 노출. --}}
+        @if($editingId)
+        <button x-on:click="$wire.saveAndContinue(tab)" type="button"
+                class="rounded-lg border border-primary px-4 py-2 text-sm font-medium text-primary-text hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+                wire:loading.attr="disabled" wire:target="saveAndContinue,save,confirmAndSave" @disabled($editLockedByOther)>
+            <span wire:loading.remove wire:target="saveAndContinue,save,confirmAndSave">{{ __('vehicle.footer.save_continue') }}</span>
+            <span wire:loading wire:target="saveAndContinue,save,confirmAndSave">{{ __('vehicle.footer.saving') }}</span>
+        </button>
+        @endif
         <button x-on:click="$wire.requestSave(tab)" type="button" class="btn-primary disabled:cursor-not-allowed disabled:opacity-50" wire:loading.attr="disabled" wire:target="save,requestSave,confirmAndSave" @disabled($editLockedByOther)>
             <span wire:loading.remove wire:target="save,requestSave,confirmAndSave">{{ $editingId ? __('vehicle.footer.save_edit') : __('vehicle.footer.save_create') }}</span>
             <span wire:loading wire:target="save,requestSave,confirmAndSave">{{ __('vehicle.footer.saving') }}</span>
