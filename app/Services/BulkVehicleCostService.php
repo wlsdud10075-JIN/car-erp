@@ -29,7 +29,7 @@ class BulkVehicleCostService
      * @param  string  $column  Vehicle::BULK_COST_FIELDS 중 하나 (예: cost_towing / cost_license)
      * @param  array<int, int|float>  $amounts  [vehicleId => 금액] (원, 음수 불가)
      * @param  bool  $fleetWide  true=탁송비(canApprove 전체) / false=면허비(canUnlockLedger 팀)
-     * @return array{applied:int, skipped:list<array{id:int,number:?string,reason:string}>}
+     * @return array{applied:int, unchanged:int, skipped:list<array{id:int,number:?string,reason:string}>}
      */
     public function apply(string $column, array $amounts, User $by, string $reason, bool $fleetWide): array
     {
@@ -43,9 +43,10 @@ class BulkVehicleCostService
         }
 
         $applied = 0;
+        $unchanged = 0;
         $skipped = [];
 
-        DB::transaction(function () use ($column, $amounts, $by, $reason, $fleetWide, &$applied, &$skipped) {
+        DB::transaction(function () use ($column, $amounts, $by, $reason, $fleetWide, &$applied, &$unchanged, &$skipped) {
             foreach ($amounts as $vehicleId => $amount) {
                 $vehicle = Vehicle::find($vehicleId);
                 if (! $vehicle) {
@@ -61,16 +62,32 @@ class BulkVehicleCostService
                     continue;
                 }
 
+                // 2차 정산 마감(closed) 차량 보호 — 정산 마무리된 건 재업로드로 소급 변경 안 함.
+                //   (필요 시 개별 [🔓 잠금 해제]로만 정정 — 일괄 도구는 마감 건을 절대 안 건드림.)
+                if ($vehicle->settlements()->where('secondary_status', 'closed')->exists()) {
+                    $skipped[] = ['id' => $vehicle->id, 'number' => $vehicle->vehicle_number, 'reason' => 'settlement_closed'];
+
+                    continue;
+                }
+
+                // 이미 같은 값이면 건드리지 않음 — 재업로드 시 잠금해제 토큰·감사로그 중복 방지.
+                $newValue = (int) round((float) $amount);
+                if ((int) $vehicle->{$column} === $newValue) {
+                    $unchanged++;
+
+                    continue;
+                }
+
                 // 잠긴 차량만 토큰 발급 (안 잠긴 차량은 saving 가드가 자유 통과).
                 if ($vehicle->hasConfirmedPaymentLock()) {
                     $this->unlockService->unlockForCostBulk($vehicle, $by, $reason, $fleetWide);
                 }
 
-                $vehicle->update([$column => (int) round((float) $amount)]);
+                $vehicle->update([$column => $newValue]);
                 $applied++;
             }
         });
 
-        return ['applied' => $applied, 'skipped' => $skipped];
+        return ['applied' => $applied, 'unchanged' => $unchanged, 'skipped' => $skipped];
     }
 }
