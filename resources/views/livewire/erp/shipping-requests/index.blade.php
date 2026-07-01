@@ -10,8 +10,15 @@ use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component
 {
+    use \Livewire\WithPagination;
+
+    /** 선적/발급 탭 상태 필터 — active(요청+진행중, 기본) / requested / in_progress / done / all. */
     #[Url]
-    public string $statusFilter = '';
+    public string $statusFilter = 'active';
+
+    /** 검색 — 바이어·컨사이니·차량번호·batch. */
+    #[Url]
+    public string $search = '';
 
     /** B/L 발급 인라인 폼 — 현재 발급 중인 batch_id. */
     public string $issuingBatch = '';
@@ -110,10 +117,18 @@ new #[Layout('components.layouts.app')] class extends Component
     public function setStatus(string $s): void
     {
         $this->statusFilter = in_array($s, [
+            'active',
             ShippingRequest::STATUS_REQUESTED,
             ShippingRequest::STATUS_IN_PROGRESS,
             ShippingRequest::STATUS_DONE,
-        ], true) ? $s : '';
+            'all',
+        ], true) ? $s : 'active';
+        $this->resetPage();
+    }
+
+    public function updatingSearch(): void
+    {
+        $this->resetPage();
     }
 
     /**
@@ -291,48 +306,83 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function with(): array
     {
-        $rows = ShippingRequest::query()
+        // ── 선적/발급 탭 — batch 단위 페이지네이션 + 검색 (탭 진입 시만) ──
+        //   기본 필터 = active(요청+진행중, 할 일). 완료는 누적되므로 필터/검색/페이지로 접근.
+        $search = trim($this->search);
+        $applyFilters = function ($q) use ($search) {
+            $q->where('status', '!=', ShippingRequest::STATUS_CANCELLED);
+            if ($this->statusFilter === 'active') {
+                $q->whereIn('status', [ShippingRequest::STATUS_REQUESTED, ShippingRequest::STATUS_IN_PROGRESS]);
+            } elseif (in_array($this->statusFilter, [ShippingRequest::STATUS_REQUESTED, ShippingRequest::STATUS_IN_PROGRESS, ShippingRequest::STATUS_DONE], true)) {
+                $q->where('status', $this->statusFilter);
+            }   // 'all' → 상태 무조건
+            if ($search !== '') {
+                $q->where(function ($q2) use ($search) {
+                    $q2->whereHas('buyer', fn ($b) => $b->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('consignee', fn ($c) => $c->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('vehicle', fn ($v) => $v->where('vehicle_number', 'like', "%{$search}%"))
+                        ->orWhere('batch_id', 'like', "%{$search}%");
+                });
+            }
+        };
+
+        // batch 단위로 페이지네이션 (최신 요청 desc) → 그 페이지의 batch 만 전체 로드.
+        $batchPage = ShippingRequest::query()
+            ->tap($applyFilters)
+            ->groupBy('batch_id')
+            ->selectRaw('batch_id, MAX(requested_at) as latest_req')
+            ->orderByDesc('latest_req')
+            ->paginate(20);
+
+        $batchIds = collect($batchPage->items())->pluck('batch_id')->all();
+        $order = array_flip($batchIds);
+
+        $batches = ShippingRequest::query()
             ->with(['vehicle', 'buyer', 'consignee'])
-            ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)   // 취소건 = 목록서 제외(무른 것)
-            ->when($this->statusFilter !== '', fn ($q) => $q->where('status', $this->statusFilter))
-            ->orderByDesc('requested_at')
-            ->get();
+            ->whereIn('batch_id', $batchIds)
+            ->get()
+            ->groupBy('batch_id')->map(function ($items) {
+                $f = $items->first();
+                $memberVehicles = $items->map->vehicle->filter();
+                $fin = ShippingRequest::financeForVehicles($memberVehicles);
 
-        $batches = $rows->groupBy('batch_id')->map(function ($items) {
-            $f = $items->first();
-            $memberVehicles = $items->map->vehicle->filter();
-            $fin = ShippingRequest::financeForVehicles($memberVehicles);
-
-            return array_merge([
-                'batch_id' => (string) $f->batch_id,
-                'buyer' => $f->buyer?->name,
-                'consignee' => $f->consignee?->name,
-                'shipping_method' => $f->shipping_method,
-                'bl_type' => $f->bl_type,
-                'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
-                'requested_by' => $f->requested_by_email,
-                'requested_at' => $f->requested_at,
-                'status' => $f->status,
-                'vehicles' => $items->map(fn ($r) => [
-                    'id' => $r->vehicle_id,
-                    'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
-                ])->values()->all(),
-                'count' => $items->count(),
-                'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
-                'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
-                    ->map(fn ($r) => [
-                        'id' => $r->id,
+                return array_merge([
+                    'batch_id' => (string) $f->batch_id,
+                    'buyer' => $f->buyer?->name,
+                    'consignee' => $f->consignee?->name,
+                    'shipping_method' => $f->shipping_method,
+                    'bl_type' => $f->bl_type,
+                    'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
+                    'requested_by' => $f->requested_by_email,
+                    'requested_at' => $f->requested_at,
+                    'status' => $f->status,
+                    'vehicles' => $items->map(fn ($r) => [
+                        'id' => $r->vehicle_id,
                         'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
-                        'note' => $r->change_request_meta['note'] ?? null,
                     ])->values()->all(),
-            ], $fin);
-        })->sortByDesc(fn ($b) => optional($b['requested_at'])->timestamp)->values();
+                    'count' => $items->count(),
+                    'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
+                    'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
+                        ->map(fn ($r) => [
+                            'id' => $r->id,
+                            'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
+                            'note' => $r->change_request_meta['note'] ?? null,
+                        ])->values()->all(),
+                ], $fin);
+            })->sortBy(fn ($b) => $order[$b['batch_id']] ?? 999)->values();
 
-        // 상태별 배치 수 (필터 칩 카운트) — 취소건 제외
-        $counts = ShippingRequest::query()
+        // 필터 칩 카운트 (batch 단위, 취소 제외). 상태는 batch 내 균일(changeStatus 가 batch 전체 갱신).
+        $statusCounts = ShippingRequest::query()
             ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
             ->selectRaw('status, COUNT(DISTINCT batch_id) as c')
             ->groupBy('status')->pluck('c', 'status');
+        $counts = [
+            'active' => (int) (($statusCounts[ShippingRequest::STATUS_REQUESTED] ?? 0) + ($statusCounts[ShippingRequest::STATUS_IN_PROGRESS] ?? 0)),
+            'requested' => (int) ($statusCounts[ShippingRequest::STATUS_REQUESTED] ?? 0),
+            'in_progress' => (int) ($statusCounts[ShippingRequest::STATUS_IN_PROGRESS] ?? 0),
+            'done' => (int) ($statusCounts[ShippingRequest::STATUS_DONE] ?? 0),
+            'all' => (int) ShippingRequest::where('status', '!=', ShippingRequest::STATUS_CANCELLED)->distinct()->count('batch_id'),
+        ];
 
         // 2차 비용(면허비) 탭 — 2차 정산 pending 인 묶음만, paid월 그룹, 팀 스코프. (탭 진입 시만 계산)
         $costBatches = collect();
@@ -342,6 +392,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         return [
             'batches' => $batches,
+            'batchPage' => $batchPage,
             'counts' => $counts,
             'costBatches' => $costBatches,
             'canApprove' => (bool) auth()->user()?->canApprove(),
@@ -422,16 +473,17 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
 
     @if($viewTab === 'shipping')
-    {{-- 상태 필터 칩 --}}
+    {{-- 상태 필터 칩(기본 '할 일'=요청+진행중) + 검색 --}}
     @php
         $statusMeta = [
-            '' => ['label' => __('shipping.filter.all'), 'count' => $counts->sum()],
-            ShippingRequest::STATUS_REQUESTED => ['label' => __('shipping.filter.requested'), 'count' => $counts[ShippingRequest::STATUS_REQUESTED] ?? 0],
-            ShippingRequest::STATUS_IN_PROGRESS => ['label' => __('shipping.filter.in_progress'), 'count' => $counts[ShippingRequest::STATUS_IN_PROGRESS] ?? 0],
-            ShippingRequest::STATUS_DONE => ['label' => __('shipping.filter.done'), 'count' => $counts[ShippingRequest::STATUS_DONE] ?? 0],
+            'active' => ['label' => __('shipping.filter.active'), 'count' => $counts['active']],
+            ShippingRequest::STATUS_REQUESTED => ['label' => __('shipping.filter.requested'), 'count' => $counts['requested']],
+            ShippingRequest::STATUS_IN_PROGRESS => ['label' => __('shipping.filter.in_progress'), 'count' => $counts['in_progress']],
+            ShippingRequest::STATUS_DONE => ['label' => __('shipping.filter.done'), 'count' => $counts['done']],
+            'all' => ['label' => __('shipping.filter.all'), 'count' => $counts['all']],
         ];
     @endphp
-    <div class="mb-4 flex flex-wrap gap-2">
+    <div class="mb-4 flex flex-wrap items-center gap-2">
         @foreach ($statusMeta as $key => $m)
             <button type="button" wire:click="setStatus('{{ $key }}')"
                     class="tab-pill {{ $statusFilter === $key ? 'is-active' : '' }}">
@@ -439,24 +491,16 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="pill-count">{{ $m['count'] }}</span>
             </button>
         @endforeach
+        <input wire:model.live.debounce.400ms="search" type="text"
+               placeholder="{{ __('shipping.search_ph') }}" class="input-filter ml-auto w-56" />
     </div>
 
-    {{-- 배치 카드 --}}
+    {{-- 배치 카드 (batch 단위 페이지네이션 20개) --}}
     @if ($batches->isEmpty())
-        <div class="card text-center text-sm text-gray-400">{{ __('shipping.empty') }}</div>
+        <div class="card text-center text-sm text-gray-400">{{ $search !== '' ? __('shipping.empty_search') : __('shipping.empty') }}</div>
     @else
-        {{-- 월별(선적요청 월) 그룹 + 접기 — 최신월 펼침. 2차 비용 탭과 동일 패턴. --}}
-        @php $byMonth = collect($batches)->groupBy(fn ($b) => optional($b['requested_at'])->format('Y-m') ?: '—'); @endphp
-        <div class="space-y-4">
-            @foreach ($byMonth as $month => $monthBatches)
-            <div x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="rounded-lg border border-gray-200">
-                <button type="button" @click="open = ! open" class="flex w-full items-center gap-2 bg-gray-50 px-4 py-2 text-left">
-                    <span class="text-sm font-bold text-gray-700">{{ $month }}</span>
-                    <span class="pill-count">{{ __('shipping.license.batch_n', ['n' => $monthBatches->count()]) }}</span>
-                    <svg class="ml-auto h-4 w-4 flex-shrink-0 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                </button>
-                <div x-show="open" x-cloak class="space-y-3 p-3">
-            @foreach ($monthBatches as $b)
+        <div class="space-y-3">
+            @foreach ($batches as $b)
                 @php
                     $statusBadge = match ($b['status']) {
                         'requested' => 'badge-blue',
@@ -631,10 +675,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     </div>
                 </div>
             @endforeach
-                </div>{{-- /x-show 월 본문 --}}
-            </div>{{-- /월 그룹 --}}
-            @endforeach
         </div>
+        <div class="mt-4">{{ $batchPage->links() }}</div>
     @endif
     @endif
 
