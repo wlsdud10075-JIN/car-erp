@@ -74,7 +74,9 @@ return [
         'container_contract' => '컨테이너 Contract',
         'roro_invoice_packing' => 'RORO Invoice&Packing',
         'roro_contract' => 'RORO Contract',
+        'sales_contract' => '판매계약서',
     ],
+    'sales_contract_homogeneous_hint' => '동일 바이어·통화 차량만 함께 발급할 수 있습니다.',
 
     // ── 슬라이드 패널 ─────────────────────────────────────────
     'panel' => [
@@ -449,6 +451,8 @@ return [
         'paste_ph' => "차량번호와 금액이 포함된 줄을 붙여넣으세요. 예)\n393어3064  SM6  25000  10000  35000\n14주4848  AUDI  45000  20000  65000",
         'parse_btn' => '미리보기',
         'parse_empty' => '차량번호를 찾지 못했습니다. 차량번호가 포함된 줄을 붙여넣으세요.',
+        'file_error' => '엑셀 파일을 읽지 못했습니다. .xlsx 형식인지 확인하세요.',
+        'apply_failed' => '일괄 기입 실패: :msg',
         'matched' => '매칭 :count대',
         'unmatched' => '미매칭 :count건',
         'unmatched_title' => '⚠ ERP에 없는 차량번호 (오타·미등록 — 수기 확인)',

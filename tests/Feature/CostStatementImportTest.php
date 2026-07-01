@@ -98,11 +98,12 @@ class CostStatementImportTest extends TestCase
         (new Xlsx($ss))->save($path);
         $file = UploadedFile::fake()->createWithContent('wika.xlsx', file_get_contents($path));
 
+        // 파일 선택만으로 자동 파싱(updatedCostImportFile) → 미리보기 → 일괄 기입. 「파일 읽기」 별도 호출 없이.
         Volt::test('erp.vehicles.index')
             ->call('openCostImport')
             ->set('costImportColumn', 'cost_towing')
             ->set('costImportFile', $file)
-            ->call('parseCostImportFile')
+            ->assertSet('costImportParsed.matched.0.number', '393어3064')   // 자동 파싱됨
             ->call('applyCostImport');
 
         $this->assertSame(35000, (int) $v->fresh()->cost_towing);

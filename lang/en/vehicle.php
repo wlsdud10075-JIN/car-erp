@@ -74,7 +74,9 @@ return [
         'container_contract' => 'Container Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',
         'roro_contract' => 'RORO Contract',
+        'sales_contract' => 'Sales Contract',
     ],
+    'sales_contract_homogeneous_hint' => 'Only vehicles with the same buyer and currency can be issued together.',
 
     // ── Slide panel ─────────────────────────────────────────
     'panel' => [
@@ -449,6 +451,8 @@ return [
         'paste_ph' => "Paste lines containing a vehicle number and amount. e.g.\n393어3064  SM6  25000  10000  35000\n14주4848  AUDI  45000  20000  65000",
         'parse_btn' => 'Preview',
         'parse_empty' => 'No vehicle number found. Paste lines that include a vehicle number.',
+        'file_error' => 'Could not read the Excel file. Make sure it is .xlsx.',
+        'apply_failed' => 'Bulk entry failed: :msg',
         'matched' => ':count matched',
         'unmatched' => ':count unmatched',
         'unmatched_title' => '⚠ Vehicle numbers not in ERP (typo/unregistered — check manually)',
