@@ -74,7 +74,9 @@ return [
         'container_contract' => 'Container Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',
         'roro_contract' => 'RORO Contract',
+        'sales_contract' => 'Sales Contract',
     ],
+    'sales_contract_homogeneous_hint' => 'Only vehicles with the same buyer and currency can be issued together.',
 
     // ── Slide panel ─────────────────────────────────────────
     'panel' => [
@@ -602,6 +604,7 @@ return [
         'derg_contract' => 'Deregistration Contract',
         'poa' => 'Power of Attorney',
         'invoice' => 'Proforma Invoice',
+        'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => 'Container Invoice & Packing',
         'container_contract' => 'Container Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',

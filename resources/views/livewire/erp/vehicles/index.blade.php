@@ -3429,6 +3429,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ↓ {{ __('vehicle.shipdoc.'.$type) }}
             </a>
         @endforeach
+        {{-- 판매계약서 (다중차량) — 동일 바이어·통화일 때만 활성(컨트롤러 가드와 동일). --}}
+        @php
+            $scRows = \App\Models\Vehicle::whereIn('id', $shipDocIds)->get(['buyer_id', 'currency']);
+            $scOk = $scRows->isNotEmpty()
+                && $scRows->pluck('buyer_id')->unique()->count() === 1
+                && $scRows->pluck('currency')->unique()->count() === 1;
+        @endphp
+        <a href="{{ ($scOk && $shipCnt <= 30) ? route('erp.vehicles.documents.multi', ['type' => 'sales_contract', 'ids' => $shipIds]) : '#' }}"
+           target="_blank"
+           title="{{ $scOk ? '' : __('vehicle.sales_contract_homogeneous_hint') }}"
+           class="rounded border border-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 {{ (! $scOk || $shipCnt > 30) ? 'pointer-events-none opacity-50' : '' }}">
+            ↓ {{ __('vehicle.shipdoc.sales_contract') }}
+        </a>
     </div>
 </div>
 @endif
@@ -5172,11 +5185,20 @@ function vehicleColumnsToggle() {
                 <span class="section-title">{{ __('vehicle.docs.sec_sale') }}</span>
             </div>
 
-            <div class="grid grid-cols-1 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('invoice') }}"
                    class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.invoice') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_sale') }}</div>
+                    </div>
+                    <span class="text-xs text-emerald-600">↓</span>
+                </a>
+                {{-- 판매계약서 — Proforma Invoice 옆. 이 버튼은 이 차량 1대. 여러 대 → 1서류는 차량목록 체크박스. --}}
+                <a href="{{ $url('sales_contract') }}"
+                   class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.sales_contract') }}</div>
                         <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_sale') }}</div>
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>

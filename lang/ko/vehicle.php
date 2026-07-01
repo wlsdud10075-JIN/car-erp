@@ -74,7 +74,9 @@ return [
         'container_contract' => '컨테이너 Contract',
         'roro_invoice_packing' => 'RORO Invoice&Packing',
         'roro_contract' => 'RORO Contract',
+        'sales_contract' => '판매계약서',
     ],
+    'sales_contract_homogeneous_hint' => '동일 바이어·통화 차량만 함께 발급할 수 있습니다.',
 
     // ── 슬라이드 패널 ─────────────────────────────────────────
     'panel' => [
@@ -602,6 +604,7 @@ return [
         'derg_contract' => '말소 계약서',
         'poa' => '위임장',
         'invoice' => 'Proforma Invoice',
+        'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => '컨테이너 Invoice & Packing',
         'container_contract' => '컨테이너 Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',
