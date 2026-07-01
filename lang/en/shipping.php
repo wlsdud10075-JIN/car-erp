@@ -31,7 +31,8 @@ return [
 
     // 2nd-stage cost tab — license fee n/1 across bundle
     'license' => [
-        'tab_hint' => 'Bundles awaiting 2nd settlement (one month after completion). License fee arrives as one lump per shipment and is split n/1 across the vehicles. Management sees only their team bundles.',
+        'tab_hint' => 'Bundles awaiting 2nd settlement (one month after completion). Grouped by settlement attribution month (e.g. May batch → paid 6/10), matching the settlement screen. License fee arrives as one lump per shipment and is split n/1 across the vehicles. Management sees only their team bundles.',
+        'pay_label' => 'paid',
         'empty' => 'No bundles awaiting 2nd settlement.',
         'batch_n' => ':n bundles',
         'not_entered_n' => ':n unfilled',

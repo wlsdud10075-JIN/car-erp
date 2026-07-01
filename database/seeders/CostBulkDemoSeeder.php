@@ -55,14 +55,15 @@ class CostBulkDemoSeeder extends Seeder
         $salesman = Salesman::create(['name' => self::MARKER.'위카영업', 'is_active' => true]);
         $buyer = Buyer::create(['name' => self::MARKER.'DEMO BUYER', 'is_active' => true]);
 
-        // A = 진행중(할 일 필터 시연) / B = 완료(완료 필터 시연). 둘 다 2차 pending → 면허비 탭엔 함께 노출.
-        $this->makeBundle(self::BUNDLE_A, 'COSTDEMO-A', 'RORO', '2026-06-10', 'in_progress', $salesman, $buyer, $approver);
-        $this->makeBundle(self::BUNDLE_B, 'COSTDEMO-B', 'CONTAINER', '2026-05-10', 'done', $salesman, $buyer, $approver);
+        // A = 진행중(할 일 필터) / B = 완료(완료 필터). 둘 다 2차 pending → 면허비 탭엔 함께.
+        // 귀속월(정산 created_at) = 지급월 전월: 6/10 지급 → 5월분 / 5/10 지급 → 4월분.
+        $this->makeBundle(self::BUNDLE_A, 'COSTDEMO-A', 'RORO', '2026-06-10', '2026-05-15', 'in_progress', $salesman, $buyer, $approver);
+        $this->makeBundle(self::BUNDLE_B, 'COSTDEMO-B', 'CONTAINER', '2026-05-10', '2026-04-15', 'done', $salesman, $buyer, $approver);
 
         $this->command?->info('CostBulkDemoSeeder: 면허비 탭용 묶음 2개(2026-06·2026-05) 생성. 탁송비는 위카 파일을 기존 차량에 업로드해 테스트.');
     }
 
-    private function makeBundle(array $numbers, string $batchId, string $method, string $paidAt, string $status, Salesman $s, Buyer $buyer, ?User $approver): void
+    private function makeBundle(array $numbers, string $batchId, string $method, string $paidAt, string $attribAt, string $status, Salesman $s, Buyer $buyer, ?User $approver): void
     {
         foreach ($numbers as $number) {
             $v = Vehicle::create([
@@ -88,7 +89,8 @@ class CostBulkDemoSeeder extends Seeder
             ]);
 
             // 2차 정산 pending (paid 후 한 달 창) — 이벤트 우회(paid 전환 가드/카운트 회피).
-            Settlement::withoutEvents(fn () => Settlement::create([
+            //   created_at = 귀속월(정산 화면 monthFilter 기준). 2차 비용 탭이 이 월로 묶임.
+            $settlement = Settlement::withoutEvents(fn () => Settlement::create([
                 'vehicle_id' => $v->id,
                 'salesman_id' => $s->id,
                 'settlement_type' => 'ratio',
@@ -97,6 +99,7 @@ class CostBulkDemoSeeder extends Seeder
                 'secondary_status' => 'pending',
                 'paid_at' => $paidAt,
             ]));
+            Settlement::where('id', $settlement->id)->update(['created_at' => $attribAt.' 10:00:00']);
 
             ShippingRequest::create([
                 'batch_id' => $batchId,
