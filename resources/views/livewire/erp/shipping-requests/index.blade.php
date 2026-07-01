@@ -445,8 +445,18 @@ new #[Layout('components.layouts.app')] class extends Component
     @if ($batches->isEmpty())
         <div class="card text-center text-sm text-gray-400">{{ __('shipping.empty') }}</div>
     @else
-        <div class="space-y-3">
-            @foreach ($batches as $b)
+        {{-- 월별(선적요청 월) 그룹 + 접기 — 최신월 펼침. 2차 비용 탭과 동일 패턴. --}}
+        @php $byMonth = collect($batches)->groupBy(fn ($b) => optional($b['requested_at'])->format('Y-m') ?: '—'); @endphp
+        <div class="space-y-4">
+            @foreach ($byMonth as $month => $monthBatches)
+            <div x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="rounded-lg border border-gray-200">
+                <button type="button" @click="open = ! open" class="flex w-full items-center gap-2 bg-gray-50 px-4 py-2 text-left">
+                    <span class="text-sm font-bold text-gray-700">{{ $month }}</span>
+                    <span class="pill-count">{{ __('shipping.license.batch_n', ['n' => $monthBatches->count()]) }}</span>
+                    <svg class="ml-auto h-4 w-4 flex-shrink-0 text-gray-400 transition-transform" :class="open && 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+                <div x-show="open" x-cloak class="space-y-3 p-3">
+            @foreach ($monthBatches as $b)
                 @php
                     $statusBadge = match ($b['status']) {
                         'requested' => 'badge-blue',
@@ -620,6 +630,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         @endforeach
                     </div>
                 </div>
+            @endforeach
+                </div>{{-- /x-show 월 본문 --}}
+            </div>{{-- /월 그룹 --}}
             @endforeach
         </div>
     @endif

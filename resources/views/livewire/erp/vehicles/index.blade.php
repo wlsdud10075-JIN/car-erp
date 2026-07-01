@@ -5762,14 +5762,23 @@ function vehicleColumnsToggle() {
                 <p class="flex-1 text-[11px] text-gray-500">{{ __('vehicle.cost_import.col_hint') }}</p>
             </div>
 
-            {{-- ① 엑셀 파일 업로드 (권장) --}}
+            {{-- ① 엑셀 파일 업로드 (권장) — 눈에 띄는 선택 버튼 + 파일명 --}}
             <label class="label-base">{{ __('vehicle.cost_import.file_label') }}</label>
             <div class="flex flex-wrap items-center gap-2">
-                <input type="file" wire:model="costImportFile" accept=".xlsx,.xls"
-                       class="text-xs file:mr-2 file:rounded-md file:border file:border-gray-300 file:bg-gray-50 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-gray-600 hover:file:bg-gray-100" />
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-primary bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary-text hover:brightness-95">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                    {{ __('vehicle.cost_import.file_choose') }}
+                    <input type="file" wire:model="costImportFile" accept=".xlsx,.xls" class="hidden" />
+                </label>
+                @if($costImportFile)
+                    <span class="inline-flex items-center gap-1 text-xs text-gray-700">
+                        <span wire:loading.remove wire:target="costImportFile">📄 {{ $costImportFile->getClientOriginalName() }}</span>
+                        <span wire:loading wire:target="costImportFile" class="text-gray-400">{{ __('vehicle.panel.uploading') }}</span>
+                    </span>
+                @endif
                 <button type="button" wire:click="parseCostImportFile" wire:loading.attr="disabled" wire:target="parseCostImportFile,costImportFile"
                         @disabled(! $costImportFile)
-                        class="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">
+                        class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">
                     <span wire:loading.remove wire:target="parseCostImportFile,costImportFile">{{ __('vehicle.cost_import.file_btn') }}</span>
                     <span wire:loading wire:target="parseCostImportFile,costImportFile">{{ __('vehicle.panel.uploading') }}</span>
                 </button>

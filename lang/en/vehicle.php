@@ -443,6 +443,7 @@ return [
         'target_col' => 'Target cost',
         'col_hint' => 'Per-vehicle costs like towing. (License fee uses n/1 on the shipping bundle screen.)',
         'file_label' => 'Upload Excel file (vendor statement .xlsx)',
+        'file_choose' => 'Choose Excel file',
         'file_btn' => 'Read file',
         'paste_label' => 'Or paste (copy from Excel)',
         'paste_ph' => "Paste lines containing a vehicle number and amount. e.g.\n393어3064  SM6  25000  10000  35000\n14주4848  AUDI  45000  20000  65000",
