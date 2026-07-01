@@ -5,7 +5,10 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Livewire\Volt\Volt;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 /**
@@ -76,6 +79,34 @@ class CostStatementImportTest extends TestCase
 
         $this->assertSame(35000, (int) $v1->fresh()->cost_towing);
         $this->assertSame(65000, (int) $v2->fresh()->cost_towing);
+    }
+
+    public function test_xlsx_upload_parses_and_matches(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->makeVehicle('393어3064');
+
+        // 위카 레이아웃(E=차량번호, J=합계) 유사 xlsx 생성.
+        $ss = new Spreadsheet;
+        $ws = $ss->getActiveSheet();
+        $ws->fromArray([
+            ['', '', '', '', '차량번호', '차종', '공급가', '유류비', '합계'],
+            ['1', '2026-06-01', '부천', '시흥', '393어3064', 'SM6', 25000, 10000, 35000],
+        ], null, 'A1');
+        \Illuminate\Support\Facades\Storage::fake('livewire-tmp');
+        $path = tempnam(sys_get_temp_dir(), 'wika').'.xlsx';
+        (new Xlsx($ss))->save($path);
+        $file = UploadedFile::fake()->createWithContent('wika.xlsx', file_get_contents($path));
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_towing')
+            ->set('costImportFile', $file)
+            ->call('parseCostImportFile')
+            ->call('applyCostImport');
+
+        $this->assertSame(35000, (int) $v->fresh()->cost_towing);
+        @unlink($path);
     }
 
     public function test_sales_role_cannot_open_tool(): void

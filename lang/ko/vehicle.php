@@ -68,6 +68,7 @@ return [
     'selected' => ':count대 선택',
     'max30' => '최대 30대까지 발급 가능',
     'clear_selection' => '선택 해제',
+    'shipdoc_license_link' => '면허비 n/1',
     'shipdoc' => [
         'container_invoice_packing' => '컨테이너 Invoice&Packing',
         'container_contract' => '컨테이너 Contract',
@@ -441,7 +442,9 @@ return [
         'subtitle' => '업체 명세서(위카 등)를 붙여넣으면 차량번호로 매칭해 비용을 한 번에 기입합니다. 관리/admin · 전체 차량 · 비용만.',
         'target_col' => '대상 비용',
         'col_hint' => '탁송비 등 건바이건으로 다른 비용. (면허비는 선적 묶음 화면에서 n/1)',
-        'paste_label' => '명세서 붙여넣기 (엑셀에서 복사)',
+        'file_label' => '엑셀 파일 업로드 (위카 등 업체 명세서 .xlsx)',
+        'file_btn' => '파일 읽기',
+        'paste_label' => '또는 붙여넣기 (엑셀에서 복사)',
         'paste_ph' => "차량번호와 금액이 포함된 줄을 붙여넣으세요. 예)\n393어3064  SM6  25000  10000  35000\n14주4848  AUDI  45000  20000  65000",
         'parse_btn' => '미리보기',
         'parse_empty' => '차량번호를 찾지 못했습니다. 차량번호가 포함된 줄을 붙여넣으세요.',
