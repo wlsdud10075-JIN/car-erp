@@ -5007,8 +5007,7 @@ function vehicleColumnsToggle() {
                         <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
                         <select wire:model="overrideStage" class="input-filter">
                             <option value="">{{ __('vehicle.override.stage_select') }}</option>
-                            <option value="clearance">{{ __('vehicle.override.stage_clearance') }}</option>
-                            <option value="shipping">{{ __('vehicle.override.stage_shipping') }}</option>
+                            <option value="shipping">{{ __('vehicle.override.stage_entry') }}</option>
                             <option value="bl">{{ __('vehicle.override.stage_bl') }}</option>
                         </select>
                     </div>

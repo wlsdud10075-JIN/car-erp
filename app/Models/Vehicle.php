@@ -847,13 +847,13 @@ class Vehicle extends Model
 
         // C5 + G 완화 (2026-05-20) — 입금률 < 50% 시만 차단. admin 우회 인프라 그대로 재사용.
         if ($this->sale_price > 0 && $this->exists) {
-            // C5(50%)는 진입 단계 우회 — 선적 관련 입력이면 'shipping', 아니면 'clearance'.
-            // ('dhl' 폐기 — DHL 단계 액션도 'shipping' 으로 평가. B/L 발행 100% 우회는 별도 'bl' 게이트=G1.)
-            $stage = ($this->bl_loading_location || $this->bl_document || $this->dhl_request) ? 'shipping' : 'clearance';
-
-            $hasOverride = $this->hasUnpaidOverride($stage);
-            if ($hasOverride) {
-                return;   // admin 승인 — 모든 시나리오 우회
+            // C5(50%) 진입 게이트 — 통관·선적은 동일 50% 관문이므로 진입 우회 1건(clearance∪shipping)이면 통과.
+            //   (2026-07-01 jin: 입력 순서에 따라 stage 라벨이 clearance↔shipping 으로 갈려
+            //    같은 미수·같은 50% 인데 우회를 2번 해야 하던 마찰 제거. 서버 실증 = 145나1447.)
+            //   ⚠ B/L 발행 100% 우회 'bl' 은 별개 — G1(guardBlFiftyPercentRuleOnSaving)에서만 소비.
+            //     진입 우회로는 안 쳐줌 (G1BlLockTest::test_g1_shipping_override_alone_does_not_bypass_bl 가드).
+            if ($this->hasEntryUnpaidOverride()) {
+                return;   // 진입 우회 승인 — 통관·선적 모두 통과
             }
 
             // 외화 환율 미입력 → 미수율 평가 불가
@@ -867,7 +867,7 @@ class Vehicle extends Model
             if ($ratio !== null && $ratio > 0.5) {
                 $percent = number_format($ratio * 100, 1);
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => "판매 입금률 < 50% (미수율 {$percent}%) 차량은 {$stage} 단계 진입 불가. 50% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
+                    'export_buyer_id' => "판매 입금률 < 50% (미수율 {$percent}%) 차량은 통관·선적 진입 불가. 50% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
                 ]);
             }
         }
@@ -1002,6 +1002,18 @@ class Vehicle extends Model
     {
         return $this->unpaidExportOverrides()
             ->where('stage', $stage)
+            ->exists();
+    }
+
+    /**
+     * C5(50%) 진입 우회 — 통관·선적은 같은 50% 관문이라 하나로 취급.
+     * clearance ∪ shipping 중 하나라도 승인돼 있으면 통관·선적 진입 모두 통과.
+     * (bl(100%)은 제외 — B/L 발행은 G1 에서 hasUnpaidOverride('bl')로만 소비. 2026-07-01 jin.)
+     */
+    public function hasEntryUnpaidOverride(): bool
+    {
+        return $this->unpaidExportOverrides()
+            ->whereIn('stage', ['clearance', 'shipping'])
             ->exists();
     }
 

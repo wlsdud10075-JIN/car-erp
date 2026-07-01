@@ -235,6 +235,42 @@ class WorkflowGapTest extends TestCase
         $this->assertTrue(true, 'admin override 시 입금률 < 50% 라도 자유');
     }
 
+    /**
+     * 진입 우회 통합 (2026-07-01 jin) — 통관·선적은 같은 50% 관문이라 하나로 취급.
+     * 드롭다운이 진입 우회를 canonical 'shipping' 으로 기록하는데, 반입지 없는 '통관' 상태
+     * (코드가 'clearance' 로 판정)에서도 그 하나로 통과해야 한다.
+     * (이전엔 stage 불일치 — 'shipping' 승인 ≠ 'clearance' 판정 — 로 차단돼 2회 우회가 필요했음. 서버 실증=145나1447.)
+     */
+    public function test_c5_entry_override_unified_shipping_covers_clearance_state(): void
+    {
+        $buyer = Buyer::create(['name' => 'C5_ENTRY', 'is_active' => true]);
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle([
+            'sale_price' => 1000,
+            'is_deregistered' => true,
+            'deregistration_document' => 'dereg.pdf',
+            'buyer_id' => $buyer->id,
+        ]);
+        // 10% 입금 → 미수율 90% (정상이면 차단)
+        $v->finalPayments()->create(['amount' => 100, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->refresh();
+
+        // 진입 우회 canonical = 'shipping' 만 승인
+        UnpaidExportOverride::create([
+            'vehicle_id' => $v->id,
+            'stage' => 'shipping',
+            'approved_by' => $admin->id,
+            'reason' => '진입 우회 — 통관(반입지 없음) 상태에서도 통과해야 한다',
+            'approved_at' => now(),
+        ]);
+        $v->load('unpaidExportOverrides');
+
+        // 반입지 없는 통관 진입 (export_buyer_id 만) → 코드 판정은 'clearance' 지만 shipping 진입 우회로 통과
+        $v->export_buyer_id = $buyer->id;
+        $v->guardStageOrderForExport();   // 통합 후 통과 (이전엔 stage 불일치로 차단)
+        $this->assertTrue(true, '진입 우회(shipping)가 통관(clearance) 상태도 커버');
+    }
+
     public function test_c5_blocks_when_foreign_currency_exchange_rate_missing(): void
     {
         // G 완화 — 외화 환율 미입력 → unpaid_ratio = null → 차단 + admin 우회 가능.
