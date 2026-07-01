@@ -402,7 +402,9 @@ new #[Layout('components.layouts.app')] class extends Component
     /**
      * 2차 비용 탭 데이터 — 멤버 차량이 2차 정산 pending(paid 후 한 달 창)인 묶음.
      *   - 팀 스코프: 관리는 본인 팀 차량 묶음만 / admin·super 전체.
-     *   - paid월(정산 paid_at) 기준 그룹 → 최신월 먼저. 면허비 미기입(전부 기본값 11,000) 뱃지.
+     *   - 귀속월(정산 created_at) 기준 그룹 — 정산 화면과 동일 축(월급 귀속월, "5월분→6/10 지급").
+     *     지급월(paid_at)이 아니라 귀속월이라야 2차 정산 배치와 맞물림(jin 2026-07-01).
+     *   - 최신월 먼저. 면허비 미기입(전부 기본값 11,000) 뱃지.
      */
     private function buildCostBatches()
     {
@@ -425,11 +427,12 @@ new #[Layout('components.layouts.app')] class extends Component
             $f = $items->first();
             $vehicles = $items->map->vehicle->filter()->unique('id')->values();
 
-            $paidAt = null;
+            // 귀속월 = 2차 pending 정산의 created_at (정산 화면 monthFilter 와 동일 기준).
+            $attribMonth = null;
             foreach ($vehicles as $v) {
-                $s = $v->settlements->first(fn ($s) => $s->secondary_status === 'pending' && $s->paid_at);
+                $s = $v->settlements->first(fn ($s) => $s->secondary_status === 'pending' && $s->created_at);
                 if ($s) {
-                    $paidAt = $s->paid_at;
+                    $attribMonth = $s->created_at;
                     break;
                 }
             }
@@ -438,7 +441,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'batch_id' => (string) $f->batch_id,
                 'buyer' => $f->buyer?->name,
                 'count' => $vehicles->count(),
-                'month' => $paidAt ? $paidAt->format('Y-m') : '—',
+                'month' => $attribMonth ? $attribMonth->format('Y-m') : '—',
                 'not_entered' => $vehicles->every(fn ($v) => (int) $v->cost_license === $defaultLicense),
                 'vehicles' => $vehicles->map(fn ($v) => [
                     'number' => $v->vehicle_number,
@@ -693,6 +696,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 <button type="button" @click="open = ! open"
                         class="flex w-full items-center gap-2 bg-gray-50 px-4 py-2 text-left">
                     <span class="text-sm font-bold text-gray-700">{{ $month }}</span>
+                    @if($month !== '—')
+                    @php $payDate = \Carbon\Carbon::parse($month.'-01')->addMonthNoOverflow()->format('Y-m').'-10'; @endphp
+                    <span class="text-[11px] text-gray-400">→ {{ $payDate }} {{ __('shipping.license.pay_label') }}</span>
+                    @endif
                     <span class="pill-count">{{ __('shipping.license.batch_n', ['n' => $monthBatches->count()]) }}</span>
                     @php $notEntered = $monthBatches->where('not_entered', true)->count(); @endphp
                     @if($notEntered > 0)

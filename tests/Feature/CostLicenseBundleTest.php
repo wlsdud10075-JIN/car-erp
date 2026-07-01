@@ -97,6 +97,33 @@ class CostLicenseBundleTest extends TestCase
             ->assertSee($vehicles[0]->vehicle_number);
     }
 
+    public function test_cost_tab_groups_by_attribution_month_not_paid_month(): void
+    {
+        // jin: 5월분(귀속 5월) 정산이 6/10 지급 → 「5월」에 묶여야 정산과 맞물림. 지급월(6월) 아님.
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+        $salesman = Salesman::create(['name' => 'Sattr', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'ATTR-1', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'exchange_rate' => 1, 'salesman_id' => $salesman->id, 'purchase_price' => 1000000,
+            'cost_license' => 11000, 'dhl_request' => false,
+        ]);
+        $s = Settlement::withoutEvents(fn () => Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $salesman->id, 'settlement_type' => 'ratio',
+            'settlement_status' => 'paid', 'secondary_status' => 'pending', 'paid_at' => '2026-06-10',
+        ]));
+        Settlement::where('id', $s->id)->update(['created_at' => '2026-05-15 10:00:00']);   // 귀속월 5월
+        ShippingRequest::create([
+            'batch_id' => 'ATTRB', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO',
+            'requested_by_email' => 'x@a.com', 'status' => 'done', 'requested_at' => '2026-06-10',
+        ]);
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('setViewTab', 'cost')
+            ->assertSee('2026-05')        // 귀속월 그룹 헤더
+            ->assertSee('2026-06-10');    // → 지급일 라벨
+    }
+
     public function test_active_filter_hides_done_and_search_finds(): void
     {
         // 선적/발급 탭 — 기본 'active'는 done 묶음 숨김, '완료'/검색으로 접근.
