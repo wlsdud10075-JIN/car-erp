@@ -401,6 +401,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('model_type', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
                 ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")   // 차대번호 — 끝 6자리 등 부분 검색
             ))
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
