@@ -21,6 +21,30 @@ return [
     'requested_by' => '요청 영업',
     'vehicles_n' => ':n대',
 
+    'tab' => [
+        'shipping' => '선적 / 발급',
+        'cost' => '2차 비용 (면허비)',
+    ],
+
+    // 2차 비용 탭 — 면허비 묶음 n/1
+    'license' => [
+        'tab_hint' => '2차 정산 대기(거래완료 후 한 달) 묶음. 면허비는 묶음당 한 덩어리로 나와 차량 수로 n/1 분배합니다. 관리는 본인 팀 묶음만 표시.',
+        'empty' => '2차 정산 대기 중인 묶음이 없습니다.',
+        'batch_n' => '묶음 :n개',
+        'not_entered_n' => '미기입 :n',
+        'badge_not_entered' => '면허비 미기입',
+        'badge_entered' => '기입됨',
+        'enter_btn' => '면허비 n/1',
+        'form_title' => '면허비 n/1 — :n대에 분배',
+        'total_label' => '면허비 총액',
+        'preview' => ':n대 · :each',
+        'preview_hint' => '총액을 입력하면 n/1 미리보기가 표시됩니다.',
+        'apply_btn' => '일괄 기입',
+        'invalid_total' => '면허비 총액을 정확히 입력하세요.',
+        'applied' => '면허비 :count대 n/1 기입 완료',
+        'applied_partial' => '면허비 :ok대 기입 완료, :skip대 제외(권한/미매칭)',
+    ],
+
     'action' => [
         'start' => '진행중으로',
         'done' => '완료 처리',

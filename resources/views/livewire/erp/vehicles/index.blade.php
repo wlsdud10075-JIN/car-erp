@@ -51,6 +51,109 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->shipDocIds = [];
     }
 
+    // ── 탁송비 명세서 일괄 기입 (건바이건 비용 — 위카 등 업체 명세서 붙여넣기 → 차량번호 매칭) ──
+    //   면허비(묶음 n/1)와 정반대 축: 묶음 무관, 전체 차량 대상(canApprove). 비용 컬럼만 기입(BulkVehicleCostService).
+    public bool $showCostImport = false;
+
+    public string $costImportColumn = 'cost_towing';
+
+    public string $costImportRaw = '';
+
+    // ['matched' => [['id','number','model','current','amount'], ...], 'unmatched' => [['number','amount'], ...]]
+    public array $costImportParsed = [];
+
+    public function openCostImport(): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        $this->reset(['costImportRaw', 'costImportParsed']);
+        $this->costImportColumn = 'cost_towing';
+        $this->showCostImport = true;
+    }
+
+    public function closeCostImport(): void
+    {
+        $this->showCostImport = false;
+        $this->reset(['costImportRaw', 'costImportParsed']);
+    }
+
+    /** 붙여넣은 명세서 파싱 — 줄마다 차량번호(2~3숫자+한글+4숫자) + 금액(차량번호 제외 마지막 숫자=합계). */
+    public function parseCostImport(): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
+
+        $matched = [];
+        $unmatched = [];
+        $seen = [];
+        foreach (preg_split('/\r\n|\r|\n/', trim($this->costImportRaw)) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (! preg_match('/(\d{2,3}\s*[가-힣]\s*\d{4})/u', $line, $m)) {
+                continue;   // 차량번호 없는 줄(헤더·합계 등) 스킵
+            }
+            $plate = preg_replace('/\s+/u', '', $m[1]);
+            // 차량번호를 제거한 나머지에서 마지막 숫자 = 합계(J)
+            $rest = str_replace($m[1], ' ', $line);
+            if (! preg_match_all('/[\d,]+/', $rest, $nums) || empty($nums[0])) {
+                continue;
+            }
+            $amount = (int) str_replace(',', '', end($nums[0]));
+            if (isset($seen[$plate])) {
+                continue;   // 같은 차량번호 중복 줄 — 첫 줄만
+            }
+            $seen[$plate] = true;
+
+            $vehicle = \App\Models\Vehicle::where('vehicle_number', $plate)->first();
+            if ($vehicle) {
+                $matched[] = [
+                    'id' => $vehicle->id,
+                    'number' => $vehicle->vehicle_number,
+                    'model' => trim(($vehicle->brand ?? '').' '.($vehicle->model_type ?? '')),
+                    'current' => (int) $vehicle->{$this->costImportColumn},
+                    'amount' => $amount,
+                ];
+            } else {
+                $unmatched[] = ['number' => $plate, 'amount' => $amount];
+            }
+        }
+
+        $this->costImportParsed = ['matched' => $matched, 'unmatched' => $unmatched];
+
+        if (empty($matched) && empty($unmatched)) {
+            $this->dispatch('notify', message: __('vehicle.cost_import.parse_empty'), type: 'warning');
+        }
+    }
+
+    /** 미리보기 확정 → 매칭 차량에 비용 일괄 기입(fleet-wide, 잠금해제 자동 + 감사). */
+    public function applyCostImport(): void
+    {
+        abort_unless((bool) auth()->user()?->canApprove(), 403);
+
+        $amounts = [];
+        foreach ($this->costImportParsed['matched'] ?? [] as $row) {
+            $amt = (int) round((float) str_replace(',', '', (string) ($row['amount'] ?? 0)));
+            if ($amt < 0) {
+                continue;
+            }
+            $amounts[(int) $row['id']] = $amt;
+        }
+        if (empty($amounts)) {
+            $this->dispatch('notify', message: __('vehicle.cost_import.no_matched'), type: 'error');
+
+            return;
+        }
+
+        $label = __('vehicle.field.'.$this->costImportColumn);
+        $reason = $label.' 명세서 일괄 기입 ('.now()->format('Y-m-d').', '.count($amounts).'대)';
+        $res = app(\App\Services\BulkVehicleCostService::class)
+            ->apply($this->costImportColumn, $amounts, auth()->user(), $reason, true);
+
+        $this->closeCostImport();
+        $this->dispatch('notify', message: __('vehicle.cost_import.applied', ['count' => $res['applied']]), type: 'success');
+    }
+
     // 회의확장씬 #10 Phase 2-3 (2026-05-23) — 헤더 클릭 정렬.
     // localStorage 가 캐시 (Alpine), 진실은 Livewire property (server-side orderBy).
     public string $sortColumn = 'created_at';
@@ -3549,6 +3652,14 @@ function vehicleColumnsToggle() {
                 <button type="button" @click="download()" class="btn-primary w-full justify-center">{{ __('vehicle.export_do') }}</button>
             </div>
         </div>
+        {{-- 탁송비 명세서 일괄 기입 (건바이건 비용 — 관리/admin, 전체 차량). 면허비는 묶음화면. --}}
+        @if(auth()->user()?->canApprove())
+        <button type="button" wire:click="openCostImport"
+                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+            {{ __('vehicle.cost_import.btn') }}
+        </button>
+        @endif
     </div>
     <div>{{ $this->vehicles->links() }}</div>
 </div>
@@ -5552,6 +5663,112 @@ function vehicleColumnsToggle() {
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="saveQuickAdd" wire:loading.attr="disabled"
                     class="btn-primary px-4 py-2 text-sm">{{ __('vehicle.modal.qa_save') }}</button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- ══ 탁송비 명세서 일괄 기입 모달 (건바이건 비용 — 차량번호 매칭) ══ --}}
+@if($showCostImport)
+<div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4" wire:key="cost-import-modal">
+    <div class="mt-8 w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+        {{-- 헤더 --}}
+        <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+            <div>
+                <h3 class="text-base font-bold text-gray-800">{{ __('vehicle.cost_import.title') }}</h3>
+                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('vehicle.cost_import.subtitle') }}</p>
+            </div>
+            <button type="button" wire:click="closeCostImport" class="text-gray-400 hover:text-gray-600">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="max-h-[70vh] overflow-y-auto px-5 py-4">
+            {{-- 대상 비용 컬럼 --}}
+            <div class="mb-3 flex flex-wrap items-end gap-3">
+                <div>
+                    <label class="label-base">{{ __('vehicle.cost_import.target_col') }}</label>
+                    <select wire:model="costImportColumn" class="input-base">
+                        @foreach(\App\Models\Vehicle::BULK_COST_FIELDS as $col)
+                        <option value="{{ $col }}">{{ __('vehicle.field.'.$col) }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <p class="flex-1 text-[11px] text-gray-500">{{ __('vehicle.cost_import.col_hint') }}</p>
+            </div>
+
+            {{-- 붙여넣기 --}}
+            <label class="label-base">{{ __('vehicle.cost_import.paste_label') }}</label>
+            <textarea wire:model="costImportRaw" rows="5" class="input-base font-mono text-xs"
+                      placeholder="{{ __('vehicle.cost_import.paste_ph') }}"></textarea>
+            <div class="mt-2 flex justify-end">
+                <button type="button" wire:click="parseCostImport" wire:loading.attr="disabled"
+                        class="rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary-text hover:bg-primary-light">
+                    {{ __('vehicle.cost_import.parse_btn') }}
+                </button>
+            </div>
+
+            {{-- 미리보기 --}}
+            @php $matched = $costImportParsed['matched'] ?? []; $unmatched = $costImportParsed['unmatched'] ?? []; @endphp
+            @if(count($matched) > 0 || count($unmatched) > 0)
+            <hr class="my-3 border-gray-100">
+            <div class="mb-2 flex items-center gap-3 text-xs">
+                <span class="font-semibold text-emerald-700">{{ __('vehicle.cost_import.matched', ['count' => count($matched)]) }}</span>
+                @if(count($unmatched) > 0)
+                <span class="font-semibold text-red-600">{{ __('vehicle.cost_import.unmatched', ['count' => count($unmatched)]) }}</span>
+                @endif
+            </div>
+
+            @if(count($matched) > 0)
+            <div class="overflow-hidden rounded-lg border border-gray-200">
+                <table class="w-full text-xs">
+                    <thead class="bg-gray-50 text-gray-500">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.col.number') }}</th>
+                            <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.col.brand_model') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.current') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.new_amount') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach($matched as $i => $row)
+                        <tr @class(['bg-amber-50/50' => (int) $row['current'] !== (int) $row['amount']])>
+                            <td class="px-3 py-1.5 font-mono font-medium text-gray-800">{{ $row['number'] }}</td>
+                            <td class="px-3 py-1.5 text-gray-600">{{ $row['model'] }}</td>
+                            <td class="px-3 py-1.5 text-right text-gray-400">{{ number_format($row['current']) }}</td>
+                            <td class="px-3 py-1.5 text-right">
+                                <input type="text" wire:model="costImportParsed.matched.{{ $i }}.amount"
+                                       class="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs focus:border-primary focus:outline-none" />
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @endif
+
+            @if(count($unmatched) > 0)
+            <div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                <p class="mb-1 text-[11px] font-semibold text-red-700">{{ __('vehicle.cost_import.unmatched_title') }}</p>
+                <div class="flex flex-wrap gap-1.5">
+                    @foreach($unmatched as $u)
+                    <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] text-red-600">{{ $u['number'] }} ({{ number_format($u['amount']) }})</span>
+                    @endforeach
+                </div>
+            </div>
+            @endif
+            @endif
+        </div>
+
+        {{-- 푸터 --}}
+        <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
+            <button type="button" wire:click="closeCostImport"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button type="button" wire:click="applyCostImport" wire:loading.attr="disabled" wire:target="applyCostImport"
+                    @disabled(count($costImportParsed['matched'] ?? []) === 0)
+                    class="btn-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50">
+                {{ __('vehicle.cost_import.apply_btn') }}
+            </button>
         </div>
     </div>
 </div>
