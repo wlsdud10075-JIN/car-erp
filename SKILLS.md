@@ -461,6 +461,16 @@ extension=zip    # 주석 제거
 
 > ERP 신규 발견 버그는 본 §8 하단에 추가 기록 (#28+).
 
+### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
+2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
+- **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — 차량별 잠금해제 토큰 자동발급(`VehicleLedgerUnlockService::unlockForCostBulk`)→`update`→saving 훅이 토큰 소비→즉시 재잠금. 차량별 `AuditLog(ledger_field_unlocked)`. 반환 `[applied, unchanged, skipped]`.
+- **비용컬럼 봉인**: `Vehicle::BULK_COST_FIELDS`(비용 9개) 화이트리스트 — **fleet-wide여도 판매가·환율 등 민감 21필드 못 건드림**. `$column` 미포함이면 `InvalidArgumentException`.
+- **권한 2축**: 면허비=`canUnlockLedger`(팀, `fleetWide=false`) / 탁송비=`canApprove`(전체, `fleetWide=true`, 명세서 한 장이 전 차량이라). 단일 🔓 버튼은 팀 스코프 그대로(안 건드림).
+- **재업로드 안전(2중)**: ① 2차 마감(`secondary_status='closed'`) 차량은 절대 안 건드림(skip=`settlement_closed`, 값 달라도) — 소급 변경은 개별 🔓로만. ② 값 동일이면 잠금해제·감사 없이 skip(`unchanged`).
+- **면허비 뷰(선적요청 「2차 비용」 탭)**: `secondary=pending` 묶음만, **월 그룹=정산 `created_at`(귀속월)** — 지급월(`paid_at`) 아님. 정산 화면 monthFilter와 동일 축("5월분→6/10 지급"). n/1=첫 차량에 나머지 원.
+- **탁송비 도구(차량목록 「명세서 기입」)**: xlsx 업로드(`updatedCostImportFile` 자동 파싱) + 붙여넣기. `parseCostLine`(차량번호 `\d{2,3}[가-힣]\d{4}` + 차량번호 제외 마지막 숫자=합계). 차량번호 매칭, 미매칭은 빨강 표시만(기입 X, 유령데이터 방지).
+- **정산 연동**: 마진 computed라 비용 저장 즉시 정산처리 자동 재계산. 2차 완료(closeSecondarySettlement)만 수동. 상세=[[project_settlement_cost_bulk]] 메모리.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
