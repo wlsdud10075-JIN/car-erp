@@ -185,6 +185,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'model' => trim(($vehicle->brand ?? '').' '.($vehicle->model_type ?? '')),
                     'current' => (int) $vehicle->{$this->costImportColumn},
                     'amount' => $r['amount'],
+                    // 2차 정산 마감 차량 = 재업로드로 안 건드림(보호). 미리보기에서 회색 '마감' 표시.
+                    'finalized' => $vehicle->settlements()->where('secondary_status', 'closed')->exists(),
                 ];
             } else {
                 $unmatched[] = ['number' => $r['plate'], 'amount' => $r['amount']];
@@ -204,7 +206,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
 
         $amounts = [];
+        $finalizedCount = 0;
         foreach ($this->costImportParsed['matched'] ?? [] as $row) {
+            if (! empty($row['finalized'])) {
+                $finalizedCount++;   // 2차 마감 = 재업로드로 안 건드림(제외)
+
+                continue;
+            }
             $amt = (int) round((float) str_replace(',', '', (string) ($row['amount'] ?? 0)));
             if ($amt < 0) {
                 continue;
@@ -230,7 +238,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->closeCostImport();
-        $this->dispatch('notify', message: __('vehicle.cost_import.applied', ['count' => $res['applied']]), type: 'success');
+        $msg = __('vehicle.cost_import.applied', ['count' => $res['applied']]);
+        if (($res['unchanged'] ?? 0) > 0) {
+            $msg .= ' '.__('vehicle.cost_import.unchanged_suffix', ['count' => $res['unchanged']]);
+        }
+        if ($finalizedCount > 0) {
+            $msg .= ' '.__('vehicle.cost_import.finalized_suffix', ['count' => $finalizedCount]);
+        }
+        $this->dispatch('notify', message: $msg, type: 'success');
     }
 
     // 회의확장씬 #10 Phase 2-3 (2026-05-23) — 헤더 클릭 정렬.
@@ -5835,9 +5850,13 @@ function vehicleColumnsToggle() {
             {{-- 미리보기 --}}
             @php $matched = $costImportParsed['matched'] ?? []; $unmatched = $costImportParsed['unmatched'] ?? []; @endphp
             @if(count($matched) > 0 || count($unmatched) > 0)
+            @php $finalizedCnt = collect($matched)->where('finalized', true)->count(); @endphp
             <hr class="my-3 border-gray-100">
-            <div class="mb-2 flex items-center gap-3 text-xs">
-                <span class="font-semibold text-emerald-700">{{ __('vehicle.cost_import.matched', ['count' => count($matched)]) }}</span>
+            <div class="mb-2 flex flex-wrap items-center gap-3 text-xs">
+                <span class="font-semibold text-emerald-700">{{ __('vehicle.cost_import.matched', ['count' => count($matched) - $finalizedCnt]) }}</span>
+                @if($finalizedCnt > 0)
+                <span class="font-semibold text-gray-500">{{ __('vehicle.cost_import.finalized', ['count' => $finalizedCnt]) }}</span>
+                @endif
                 @if(count($unmatched) > 0)
                 <span class="font-semibold text-red-600">{{ __('vehicle.cost_import.unmatched', ['count' => count($unmatched)]) }}</span>
                 @endif
@@ -5856,13 +5875,21 @@ function vehicleColumnsToggle() {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($matched as $i => $row)
-                        <tr @class(['bg-amber-50/50' => (int) $row['current'] !== (int) $row['amount']])>
-                            <td class="px-3 py-1.5 font-mono font-medium text-gray-800">{{ $row['number'] }}</td>
-                            <td class="px-3 py-1.5 text-gray-600">{{ $row['model'] }}</td>
+                        @php $isFinal = ! empty($row['finalized']); @endphp
+                        <tr @class(['bg-gray-50 text-gray-400' => $isFinal, 'bg-amber-50/50' => ! $isFinal && (int) $row['current'] !== (int) $row['amount']])>
+                            <td class="px-3 py-1.5 font-mono font-medium {{ $isFinal ? 'text-gray-400' : 'text-gray-800' }}">
+                                {{ $row['number'] }}
+                                @if($isFinal)<span class="ml-1 rounded bg-gray-200 px-1 py-0.5 text-[9px] text-gray-500">{{ __('vehicle.cost_import.finalized_badge') }}</span>@endif
+                            </td>
+                            <td class="px-3 py-1.5 {{ $isFinal ? 'text-gray-400' : 'text-gray-600' }}">{{ $row['model'] }}</td>
                             <td class="px-3 py-1.5 text-right text-gray-400">{{ number_format($row['current']) }}</td>
                             <td class="px-3 py-1.5 text-right">
-                                <input type="text" wire:model="costImportParsed.matched.{{ $i }}.amount"
-                                       class="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs focus:border-primary focus:outline-none" />
+                                @if($isFinal)
+                                    <span class="text-[11px] text-gray-400">{{ __('vehicle.cost_import.protected') }}</span>
+                                @else
+                                    <input type="text" wire:model="costImportParsed.matched.{{ $i }}.amount"
+                                           class="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs focus:border-primary focus:outline-none" />
+                                @endif
                             </td>
                         </tr>
                         @endforeach

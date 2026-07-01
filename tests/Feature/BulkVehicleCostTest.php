@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\FinalPayment;
+use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\BulkVehicleCostService;
@@ -83,6 +86,50 @@ class BulkVehicleCostTest extends TestCase
             'action' => 'ledger_field_unlocked',
             'new_value' => '위카 탁송비 명세서 일괄 (2026-06)',
         ]);
+    }
+
+    public function test_reapply_same_value_is_unchanged_no_new_audit(): void
+    {
+        // 같은 파일 재업로드 시 값 동일 차량은 잠금해제·감사로그 중복 없이 넘어감.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+        $v = $this->makeVehicle();
+        $this->lock($v);
+
+        $r1 = $this->service()->apply('cost_towing', [$v->id => 35_000], $admin, '위카 탁송비 명세서 1차 일괄', true);
+        $this->assertSame(1, $r1['applied']);
+        $this->assertSame(0, $r1['unchanged']);
+        $auditCount = AuditLog::where('auditable_id', $v->id)->where('action', 'ledger_field_unlocked')->count();
+
+        // 같은 값 재적용 → unchanged, 감사로그 증가 없음.
+        $r2 = $this->service()->apply('cost_towing', [$v->id => 35_000], $admin, '위카 탁송비 명세서 재업로드 일괄', true);
+        $this->assertSame(0, $r2['applied']);
+        $this->assertSame(1, $r2['unchanged']);
+        $this->assertSame(
+            $auditCount,
+            AuditLog::where('auditable_id', $v->id)->where('action', 'ledger_field_unlocked')->count()
+        );
+        $this->assertSame(35_000, (int) $v->fresh()->cost_towing);
+    }
+
+    public function test_finalized_2nd_settlement_vehicle_is_protected(): void
+    {
+        // 2차 정산 마감(closed) 차량 = 재업로드로 안 건드림(값 달라도 제외).
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+        $sm = Salesman::create(['name' => 'FinSm', 'is_active' => true]);
+        $v = $this->makeVehicle(['salesman_id' => $sm->id]);
+        $this->lock($v);
+        Settlement::withoutEvents(fn () => Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'ratio',
+            'settlement_status' => 'paid', 'secondary_status' => 'closed',
+        ]));
+
+        $res = $this->service()->apply('cost_towing', [$v->id => 99_999], $admin, '마감건 소급 시도 차단', true);
+
+        $this->assertSame(0, $res['applied']);
+        $this->assertSame('settlement_closed', $res['skipped'][0]['reason']);
+        $this->assertSame(30_000, (int) $v->fresh()->cost_towing);   // 보호 — 변경 없음
     }
 
     public function test_non_cost_column_is_rejected(): void
