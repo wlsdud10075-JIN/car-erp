@@ -55,13 +55,14 @@ class CostBulkDemoSeeder extends Seeder
         $salesman = Salesman::create(['name' => self::MARKER.'위카영업', 'is_active' => true]);
         $buyer = Buyer::create(['name' => self::MARKER.'DEMO BUYER', 'is_active' => true]);
 
-        $this->makeBundle(self::BUNDLE_A, 'COSTDEMO-A', 'RORO', '2026-06-10', $salesman, $buyer, $approver);
-        $this->makeBundle(self::BUNDLE_B, 'COSTDEMO-B', 'CONTAINER', '2026-05-10', $salesman, $buyer, $approver);
+        // A = 진행중(할 일 필터 시연) / B = 완료(완료 필터 시연). 둘 다 2차 pending → 면허비 탭엔 함께 노출.
+        $this->makeBundle(self::BUNDLE_A, 'COSTDEMO-A', 'RORO', '2026-06-10', 'in_progress', $salesman, $buyer, $approver);
+        $this->makeBundle(self::BUNDLE_B, 'COSTDEMO-B', 'CONTAINER', '2026-05-10', 'done', $salesman, $buyer, $approver);
 
         $this->command?->info('CostBulkDemoSeeder: 면허비 탭용 묶음 2개(2026-06·2026-05) 생성. 탁송비는 위카 파일을 기존 차량에 업로드해 테스트.');
     }
 
-    private function makeBundle(array $numbers, string $batchId, string $method, string $paidAt, Salesman $s, Buyer $buyer, ?User $approver): void
+    private function makeBundle(array $numbers, string $batchId, string $method, string $paidAt, string $status, Salesman $s, Buyer $buyer, ?User $approver): void
     {
         foreach ($numbers as $number) {
             $v = Vehicle::create([
@@ -103,7 +104,7 @@ class CostBulkDemoSeeder extends Seeder
                 'buyer_id' => $buyer->id,
                 'shipping_method' => $method,
                 'requested_by_email' => 'demo@heyman',
-                'status' => 'done',
+                'status' => $status,
                 'requested_at' => $paidAt,
             ]);
         }

@@ -7,11 +7,14 @@ return [
     'empty' => 'No shipping requests.',
 
     'filter' => [
+        'active' => 'To do',
         'all' => 'All',
         'requested' => 'Requested',
         'in_progress' => 'In progress',
         'done' => 'Done',
     ],
+    'search_ph' => 'Buyer · consignee · vehicle no.',
+    'empty_search' => 'No results.',
     'status' => [
         'requested' => 'Requested',
         'in_progress' => 'In progress',

@@ -97,6 +97,22 @@ class CostLicenseBundleTest extends TestCase
             ->assertSee($vehicles[0]->vehicle_number);
     }
 
+    public function test_active_filter_hides_done_and_search_finds(): void
+    {
+        // 선적/발급 탭 — 기본 'active'는 done 묶음 숨김, '완료'/검색으로 접근.
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+        [$s, $vehicles, $batch] = $this->makeBundle(2);   // status=done
+        $num = $vehicles[0]->vehicle_number;
+
+        // 기본 active → done 묶음 안 보임
+        Volt::test('erp.shipping-requests.index')->assertDontSee($num);
+        // 완료 필터 → 보임
+        Volt::test('erp.shipping-requests.index')->call('setStatus', 'done')->assertSee($num);
+        // 검색(차량번호) → 보임
+        Volt::test('erp.shipping-requests.index')->call('setStatus', 'all')->set('search', $num)->assertSee($num);
+    }
+
     public function test_focus_deeplink_opens_cost_tab_and_license_form(): void
     {
         // ② 차량목록 「면허비 n/1」 딥링크 진입 — focus=batch → 2차 비용 탭 + 폼 자동 오픈.

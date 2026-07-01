@@ -7,11 +7,14 @@ return [
     'empty' => '선적요청이 없습니다.',
 
     'filter' => [
+        'active' => '할 일',
         'all' => '전체',
         'requested' => '요청',
         'in_progress' => '진행중',
         'done' => '완료',
     ],
+    'search_ph' => '바이어·컨사이니·차량번호',
+    'empty_search' => '검색 결과가 없습니다.',
     'status' => [
         'requested' => '요청',
         'in_progress' => '진행중',
