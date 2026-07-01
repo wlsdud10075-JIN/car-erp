@@ -604,6 +604,7 @@ return [
         'derg_contract' => '말소 계약서',
         'poa' => '위임장',
         'invoice' => 'Proforma Invoice',
+        'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => '컨테이너 Invoice & Packing',
         'container_contract' => '컨테이너 Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',

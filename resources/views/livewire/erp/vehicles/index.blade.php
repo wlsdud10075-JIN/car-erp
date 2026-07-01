@@ -5185,11 +5185,20 @@ function vehicleColumnsToggle() {
                 <span class="section-title">{{ __('vehicle.docs.sec_sale') }}</span>
             </div>
 
-            <div class="grid grid-cols-1 gap-3">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('invoice') }}"
                    class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.invoice') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_sale') }}</div>
+                    </div>
+                    <span class="text-xs text-emerald-600">↓</span>
+                </a>
+                {{-- 판매계약서 — Proforma Invoice 옆. 이 버튼은 이 차량 1대. 여러 대 → 1서류는 차량목록 체크박스. --}}
+                <a href="{{ $url('sales_contract') }}"
+                   class="card-tight flex items-center justify-between hover:border-emerald-400 hover:bg-emerald-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.sales_contract') }}</div>
                         <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_sale') }}</div>
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>

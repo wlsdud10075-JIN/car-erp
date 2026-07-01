@@ -604,6 +604,7 @@ return [
         'derg_contract' => 'Deregistration Contract',
         'poa' => 'Power of Attorney',
         'invoice' => 'Proforma Invoice',
+        'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => 'Container Invoice & Packing',
         'container_contract' => 'Container Contract',
         'roro_invoice_packing' => 'RORO Invoice & Packing',

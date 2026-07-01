@@ -276,6 +276,13 @@ class DocumentFiller
             );
         }
 
+        // 선택 차량 '전체' 합산 스칼라 푸터(운임·기타·입금·합계·잔금 등). header(primary만) 로는
+        // 표현 불가한, 표에 없는 필드의 컬렉션 집계. footer 좌표에 '값'으로 기입 → 참조가 없어
+        // 뒤이은 removeRow 가 위로 당겨도 안전(수식 footer 는 cross-ref 깨지므로 값으로).
+        foreach ($m['aggregates'] ?? [] as $coord => $resolver) {
+            $this->writeCell($sheet, $coord, $resolver($this->vehicles));
+        }
+
         if ($n < $capacity) {
             $sheet->removeRow($first + $n * $stride, ($capacity - $n) * $stride);
             $sheet->garbageCollect();   // 트림 후 시트 dimension 정정 (꼬리 빈 행 제거)
@@ -474,6 +481,8 @@ class DocumentFiller
             'container_contract' => Mappings\ContainerContractMapping::class,
             'roro_invoice_packing' => Mappings\RoroInvoicePackingMapping::class,
             'roro_contract' => Mappings\RoroContractMapping::class,
+            // 판매 계약서 (다중차량, export 전용) — 2026-07-01
+            'sales_contract' => Mappings\SalesContractMapping::class,
             default => throw new \InvalidArgumentException('미지원 서류 type: '.$type),
         };
 
