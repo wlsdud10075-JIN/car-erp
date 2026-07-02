@@ -58,6 +58,7 @@ class LicenseFeeImportDemoSeeder extends Seeder
                 'currency' => 'KRW',
                 'exchange_rate' => 1,
                 'salesman_id' => $salesman->id,
+                'purchase_date' => now()->subMonths(1)->format('Y-m-d'),   // 기본 매입일 필터(최근 2개월) 안에 들어와 목록·검색에 노출
                 'purchase_price' => 5000000,
                 'export_declaration_number' => self::DECL_NUMBER,
                 'cost_license' => 11000,   // 임포트 후 2,475 로 바뀌는지 대조용 초기값
