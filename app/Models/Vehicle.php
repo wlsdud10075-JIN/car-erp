@@ -1174,7 +1174,13 @@ class Vehicle extends Model
         $totalReceived = $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
             + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
 
-        return $totalSale - $totalReceived;
+        $unpaid = $totalSale - $totalReceived;
+
+        // 통화 1단위 미만 양수 잔차(외화 소수점, 예: 8397.34 EUR 판매 - 8397 입금 = 0.34)는
+        // 회계상 완납으로 스냅 → 0. 여기가 미수 단일 출처(SKILLS §13)라 게이지·채권 KPI·
+        // 진행상태(판매완료)·위험도가 전부 일관되게 완납 처리됨 (jin 2026-07-02).
+        // 음수(과입금)는 건드리지 않음 — 환급 표시 보존. KRW는 정수라 영향 없음.
+        return ($unpaid > 0 && $unpaid < 1) ? 0.0 : $unpaid;
     }
 
     /**
@@ -1236,10 +1242,9 @@ class Vehicle extends Model
         if ($total <= 0) {
             return null;
         }
-        // 통화 1단위 미만 미수(외화 소수점 잔차, 예: 8397.34 EUR 판매 - 8397 입금 = 0.34)는
-        // 회계상 완납으로 간주 → 게이지 "완납" 표기. KRW는 정수라 영향 없음.
+        // 1단위 미만 외화 잔차는 sale_unpaid_amount 단일 출처에서 이미 0 스냅됨 (§13).
         $unpaid = (float) $this->sale_unpaid_amount;
-        if ($unpaid < 1) {
+        if ($unpaid <= 0) {
             return 0.0;
         }
 
