@@ -39,6 +39,7 @@ class VehicleExportController extends Controller
         // 범위 — current(화면 필터 미러) / all(전 기간 전체, 필터 무시).
         $mirror = $request->query('scope', 'current') !== 'all';
         $progress = $mirror ? (string) $request->query('progress', '') : '';
+        $exclude = $mirror ? array_values(array_filter(explode(',', (string) $request->query('exclude', '')))) : [];
         $search = $mirror ? trim((string) $request->query('q', '')) : '';
         $salesmanId = $mirror ? (string) $request->query('salesmanId', '') : '';
         $dateFrom = $mirror ? (string) $request->query('dateFrom', '') : '';
@@ -56,6 +57,7 @@ class VehicleExportController extends Controller
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
+            ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
             ->when($dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
             ->when($dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
@@ -76,7 +78,7 @@ class VehicleExportController extends Controller
             'columns' => $selected !== [] ? $selected : $exporter->columnKeys($allowSettlement),
             'filters' => array_filter([
                 'range' => $mirror ? 'current' : 'all',
-                'progress' => $progress, 'q' => $search, 'salesmanId' => $salesmanId,
+                'progress' => $progress, 'exclude' => implode(',', $exclude), 'q' => $search, 'salesmanId' => $salesmanId,
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
             ]),
         ]);
