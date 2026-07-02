@@ -466,6 +466,18 @@ return [
         'applied' => 'Cost entered for :count vehicle(s)',
         'unchanged_suffix' => '(:count unchanged)',
         'apply_btn' => 'Apply',
+        // License fee (customs license monthly statement — split total n/1 by export declaration number)
+        'lic_col_hint' => 'Customs license-fee statement (monthly). Vehicles are grouped by export declaration number and the total is split n/1.',
+        'lic_file_label' => 'Upload Excel file (customs license-fee monthly statement .xlsx)',
+        'lic_parse_empty' => 'No export declaration number found. Make sure this is a license-fee statement (with declaration no., qty, total).',
+        'lic_decl' => 'Declaration No.',
+        'lic_carname' => 'Item',
+        'lic_qty' => 'Qty (file)',
+        'lic_matched' => 'ERP matched',
+        'lic_total' => 'Total',
+        'lic_per' => 'n/1 (each)',
+        'lic_mismatch_hint' => '⚠ File qty differs from ERP matches. Per-vehicle amount is split by the file qty (applied only to matched vehicles). Check for missing declaration numbers.',
+        'lic_unmatched_title' => '⚠ Declaration numbers not in ERP (number not entered on the vehicle — enter during customs stage)',
     ],
 
     // Modals
