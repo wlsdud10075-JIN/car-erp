@@ -93,6 +93,60 @@ class SettlementMonthFilterTest extends TestCase
         $this->assertSame(1, $component->instance()->salesmanSummaries()[0]['count']);
     }
 
+    private function makeSettlementOnDate(string $date, Salesman $salesman): Settlement
+    {
+        $v = Vehicle::create([
+            'vehicle_number' => 'MD-'.++$this->counter,
+            'sales_channel' => 'export',
+            'currency' => 'USD',
+            'exchange_rate' => 1350,
+            'dhl_request' => false,
+            'sale_price' => 400, 'sale_date' => substr($date, 0, 7).'-01',
+            'purchase_date' => '2026-01-01',
+            'salesman_id' => $salesman->id,
+        ]);
+
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'salesman_id' => $salesman->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'pending',
+        ]);
+
+        Settlement::where('id', $s->id)->update(['created_at' => $date.' 10:00:00']);
+
+        return $s->fresh();
+    }
+
+    /**
+     * 급여 10일 cutoff (jin 2026-07-02, 서버 실사용 발견): 1~9일 마무리분은 전달 귀속(이달 10일 지급).
+     * 예: 7/2 거래완료(6월 것 마무리) → 6월 정산 → 7/10 지급. 8/10 아님.
+     */
+    public function test_early_month_settlement_belongs_to_previous_payroll_month(): void
+    {
+        $manager = $this->makeManager();
+        $sm = Salesman::create(['name' => 'cutoff테스트', 'settlement_type' => 'ratio']);
+
+        $early = $this->makeSettlementOnDate('2026-07-02', $sm);   // day 2 < 10 → 2026-06 귀속
+        $onOrAfter = $this->makeSettlementOnDate('2026-07-15', $sm); // day 15 ≥ 10 → 2026-07 귀속
+        $boundary = $this->makeSettlementOnDate('2026-07-10', $sm);  // day 10 ≥ 10 → 2026-07 귀속
+
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+
+        // 드롭다운 = 귀속월(2026-07, 2026-06) 최신순.
+        $this->assertSame(['2026-07', '2026-06'], $component->instance()->availableMonths());
+
+        // 2026-06 귀속(7/10 지급) → 7/2 마무리분 1건만.
+        $component->set('monthFilter', '2026-06');
+        $items = $component->instance()->settlements()->items();
+        $this->assertCount(1, $items);
+        $this->assertSame($early->id, $items[0]->id);
+
+        // 2026-07 귀속(8/10 지급) → 7/10·7/15 2건.
+        $component->set('monthFilter', '2026-07');
+        $this->assertCount(2, $component->instance()->settlements()->items());
+    }
+
     public function test_available_months_lists_distinct_created_at_months_desc(): void
     {
         $manager = $this->makeManager();
