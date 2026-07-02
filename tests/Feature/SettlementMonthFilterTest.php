@@ -93,7 +93,7 @@ class SettlementMonthFilterTest extends TestCase
         $this->assertSame(1, $component->instance()->salesmanSummaries()[0]['count']);
     }
 
-    private function makeSettlementOnDate(string $date, Salesman $salesman): Settlement
+    private function makeSettlementOnDate(string $date, Salesman $salesman, ?string $confirmedAt = null): Settlement
     {
         $v = Vehicle::create([
             'vehicle_number' => 'MD-'.++$this->counter,
@@ -110,12 +110,42 @@ class SettlementMonthFilterTest extends TestCase
             'vehicle_id' => $v->id,
             'salesman_id' => $salesman->id,
             'settlement_type' => 'ratio', 'settlement_ratio' => 50,
-            'settlement_status' => 'pending',
+            'settlement_status' => $confirmedAt ? 'confirmed' : 'pending',
         ]);
 
-        Settlement::where('id', $s->id)->update(['created_at' => $date.' 10:00:00']);
+        $upd = ['created_at' => $date.' 10:00:00'];
+        if ($confirmedAt) {
+            $upd['confirmed_at'] = $confirmedAt.' 10:00:00';
+        }
+        Settlement::where('id', $s->id)->update($upd);
 
         return $s->fresh();
+    }
+
+    /**
+     * 앵커 = confirmed_at (재무확정일). 거래완료(created_at)가 늦어도 확정일 기준 귀속 (jin 2026-07-02).
+     * 예: 거래완료 7/20 이지만 완납으로 7/2 확정 → 6월 귀속(7/10 지급), created_at(7월) 아님.
+     */
+    public function test_confirmed_at_anchors_payroll_month_over_created_at(): void
+    {
+        $manager = $this->makeManager();
+        $sm = Salesman::create(['name' => 'confirmed앵커', 'settlement_type' => 'ratio']);
+
+        // created_at 7/20(거래완료 늦음), confirmed_at 7/2(완납 확정 이름) → 귀속 6월.
+        $s = $this->makeSettlementOnDate('2026-07-20', $sm, '2026-07-02');
+
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+
+        $this->assertSame(['2026-06'], $component->instance()->availableMonths());
+
+        $component->set('monthFilter', '2026-06');
+        $items = $component->instance()->settlements()->items();
+        $this->assertCount(1, $items);
+        $this->assertSame($s->id, $items[0]->id);
+
+        // created_at 이 속한 2026-07 로는 안 잡힘 (앵커가 confirmed_at 이므로).
+        $component->set('monthFilter', '2026-07');
+        $this->assertCount(0, $component->instance()->settlements()->items());
     }
 
     /**

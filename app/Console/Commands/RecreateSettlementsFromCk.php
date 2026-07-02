@@ -144,10 +144,12 @@ class RecreateSettlementsFromCk extends Command
                     'exchange_difference_krw' => 0,
                     'carryover_out_krw' => 0,
                 ]);
-                // 4) created_at(일한月) + paid_at(지급일) 백데이트 — CK 배치. 파싱 불가 시 now() 유지.
+                // 4) created_at(일한月) + confirmed_at(귀속월 앵커) + paid_at(지급일) 백데이트 — CK 배치.
+                //    귀속월 앵커가 confirmed_at 이므로 confirmed_at 도 일한月로 맞춤 (jin 2026-07-02). 파싱 불가 시 now() 유지.
                 $back = [];
                 if ($p['created_at']) {
                     $back['created_at'] = $p['created_at']->format('Y-m-d H:i:s');
+                    $back['confirmed_at'] = $p['created_at']->format('Y-m-d H:i:s');
                 }
                 if ($p['paid_at']) {
                     $back['paid_at'] = $p['paid_at']->format('Y-m-d H:i:s');

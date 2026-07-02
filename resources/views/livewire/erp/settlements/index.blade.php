@@ -77,15 +77,16 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     // 2026-06-24 — 드롭다운에 노출할 정산 월 목록 (귀속월 기준, 최신순).
-    // 귀속월 = SettlementCkBatch::payrollMonthOf(created_at) — 10일 cutoff 적용 (jin 2026-07-02).
+    // 귀속월 = payrollMonthOf(confirmed_at ?? created_at) — 재무확정일 앵커 + 10일 cutoff (jin 2026-07-02).
+    //   앵커=confirmed_at: 거래완료 아니어도 완납되면 정산 진행하므로 '확정 시점'이 귀속월 결정 (jin).
+    //   pending(confirmed_at=null)은 created_at 로 잠정 배치. import 백데이트분은 confirmed_at=created_at 로 정렬됨.
     // DATE_FORMAT 은 MySQL 전용 → 테스트 SQLite 호환 위해 PHP 에서 포맷 (project_db_tier_mismatch).
     #[Computed]
     public function availableMonths(): array
     {
         return Settlement::query()
-            ->whereNotNull('created_at')
-            ->pluck('created_at')
-            ->map(fn ($d) => \App\Support\SettlementCkBatch::payrollMonthOf($d))
+            ->get(['confirmed_at', 'created_at'])
+            ->map(fn ($s) => \App\Support\SettlementCkBatch::payrollMonthOf($s->confirmed_at ?? $s->created_at))
             ->unique()
             ->sortDesc()
             ->values()
@@ -93,7 +94,7 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     // monthFilter('YYYY-MM') → 귀속월 범위 [M/10, (M+1)/10) 클로저 (크로스 DB 안전, 목록·카드 공용).
-    // 10일 cutoff: 1~9일 마무리분은 전달 귀속 → created_at 범위로 필터 (jin 2026-07-02).
+    // 앵커 = COALESCE(confirmed_at, created_at). 10일 cutoff: 1~9일 확정분은 전달 귀속 (jin 2026-07-02).
     private function monthScope(): \Closure
     {
         // when($this->monthFilter, ...) 이 이 메서드를 항상 즉시 평가하므로 빈 값 방어 (기존 array_pad 대체).
@@ -101,8 +102,11 @@ new #[Layout('components.layouts.app')] class extends Component
             return fn ($q) => $q;
         }
         [$start, $end] = \App\Support\SettlementCkBatch::monthRange($this->monthFilter);
+        $s = $start->format('Y-m-d H:i:s');
+        $e = $end->format('Y-m-d H:i:s');
 
-        return fn ($q) => $q->where('created_at', '>=', $start)->where('created_at', '<', $end);
+        return fn ($q) => $q->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$s])
+            ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$e]);
     }
 
     // ── 목록 ──────────────────────────────────────────────────────
