@@ -381,14 +381,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function saveConsignee(): void
     {
         // 회의확장씬 #4 (2026-05-22) — id_type 선택 시 id_value 필수.
+        // attribute 라벨은 lang/{ko,en}/validation.php attributes 전역 맵에서 해석 (양쪽 언어 대응).
         $this->validate([
             'cons_name' => 'required|string|max:100',
             'cons_id_type' => 'nullable|in:'.implode(',', array_keys(\App\Models\Consignee::ID_TYPES)),
             'cons_id_value' => 'nullable|string|max:50|required_with:cons_id_type',
-        ], [], [
-            'cons_name' => '컨사이니명',
-            'cons_id_type' => 'ID 종류',
-            'cons_id_value' => 'ID 번호',
         ]);
 
         if (! $this->editingId) {

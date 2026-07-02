@@ -149,12 +149,35 @@ return [
         config('column_labels.buyers', []),
         config('column_labels.consignees', []),
         config('column_labels.users', []),
-        // _str suffix 양식 컴포넌트 attribute (vehicles/index의 wire:model)
+        // 양식 컴포넌트(Livewire 프로퍼티) attribute — DB 컬럼 아님. 미매핑 시 변수명 노출 방지.
         [
             'vehicle_number' => '차량번호',
             'name' => '이름',
             'email' => '이메일',
             'password' => '비밀번호',
+            'current_password' => '현재 비밀번호',
+            'token' => '토큰',
+            // 차량목록 — 명세서 기입 / 빠른 추가 / 사진·첨부
+            'costImportFile' => '명세서 파일',
+            'photoUpload' => '첨부파일',
+            'photoUpload.*' => '첨부파일',
+            'qaName' => '이름',
+            'qaCountryId' => '국가',
+            'qaSalesmanId' => '영업담당자',
+            'overrideStage' => '단계',
+            'overrideReason' => '사유',
+            'ledgerUnlockReason' => '잠금 해제 사유',
+            // 바이어 — 컨사이니 / 적립금 / 영업담당
+            'salesman_id_str' => '영업담당자',
+            'cons_name' => '컨사이니명',
+            'cons_id_type' => 'ID 종류',
+            'cons_id_value' => 'ID 번호',
+            'txn_amount' => '금액',
+            // 선적요청 — B/L 입력 폼
+            'blForm.bl_type' => 'B/L 유형',
+            'blForm.bl_number' => 'B/L 번호',
+            'blForm.container_number' => '컨테이너 번호',
+            'blForm.vessel_name' => '선박명',
         ]
     ),
 
