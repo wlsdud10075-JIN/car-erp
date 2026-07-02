@@ -458,6 +458,12 @@ class Vehicle extends Model
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
     ];
 
+    // 명세서 엑셀 일괄 업로드가 지원되는 비용 컬럼 (「명세서 기입」 도구 대상비용 드롭박스).
+    //   - cost_towing  : 업체 월명세서, 차량번호 건바이건 매칭
+    //   - cost_license : 통관 면허비 월명세서, 수출신고번호로 묶어 합계 n/1 분배
+    // ⚠️ 봉인 화이트리스트는 BULK_COST_FIELDS(9개) 그대로 — 이건 UI 노출/파서 분기용 축소 목록.
+    public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license'];
+
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {
