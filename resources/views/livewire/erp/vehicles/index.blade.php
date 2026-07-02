@@ -1291,14 +1291,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($this->editingId, 422, __('vehicle.toast.save_first_approve'));
         $this->assertEditable(); // 동시 편집 잠금 — 타인이 잠근 차량엔 우회 승인 차단
 
-        $this->validate(
-            [
-                'overrideStage' => ['required', Rule::in(['clearance', 'shipping', 'bl'])],
-                'overrideReason' => ['required', 'string', 'min:20'],
-            ],
-            [],
-            ['overrideStage' => '단계', 'overrideReason' => '사유']
-        );
+        // attribute 라벨(단계·사유)은 validation.php attributes 전역 맵에서 해석 (양쪽 언어).
+        $this->validate([
+            'overrideStage' => ['required', Rule::in(['clearance', 'shipping', 'bl'])],
+            'overrideReason' => ['required', 'string', 'min:20'],
+        ]);
 
         $v = Vehicle::findOrFail($this->editingId);
 
