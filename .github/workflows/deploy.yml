@@ -78,7 +78,8 @@ jobs:
             npm ci
             npm run build
             php artisan db:backup || echo "::warning::pre-deploy db:backup failed — proceeding without fresh snapshot"
-            php artisan down || true
+            # 점검모드 진입 — errors/503 pre-render(정적 서빙). 구 코드(뷰 부재)면 plain down 폴백.
+            php artisan down --retry=120 --render="errors.503" || php artisan down || true
             if ! php artisan migrate --force; then
               echo "::error::migration failed — site kept in MAINTENANCE. 복구: storage/backups/db 최신 스냅샷 복원 후 재배포"
               exit 1
