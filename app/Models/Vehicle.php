@@ -1236,8 +1236,10 @@ class Vehicle extends Model
         if ($total <= 0) {
             return null;
         }
+        // 통화 1단위 미만 미수(외화 소수점 잔차, 예: 8397.34 EUR 판매 - 8397 입금 = 0.34)는
+        // 회계상 완납으로 간주 → 게이지 "완납" 표기. KRW는 정수라 영향 없음.
         $unpaid = (float) $this->sale_unpaid_amount;
-        if ($unpaid <= 0) {
+        if ($unpaid < 1) {
             return 0.0;
         }
 
