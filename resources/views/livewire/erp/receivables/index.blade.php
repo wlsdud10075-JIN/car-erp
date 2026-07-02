@@ -375,15 +375,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_sale') }}</div>
-            <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->summary['total_sale_krw']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-gray-800">@krw($this->summary['total_sale_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_paid') }}</div>
-            <div class="mt-1 text-2xl font-bold text-blue-600">{{ number_format($this->summary['total_paid_krw']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-blue-600">@krw($this->summary['total_paid_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_unpaid') }}</div>
-            <div class="mt-1 text-2xl font-bold text-red-600">{{ number_format($this->summary['total_unpaid_krw']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-red-600">@krw($this->summary['total_unpaid_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.risk_count') }}</div>
