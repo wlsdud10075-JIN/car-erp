@@ -31,6 +31,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $dateTo = '';
     // 큐 16 — channelFilter Url 파라미터 제거 (채널 단일).
     #[Url] public string $progressFilter = '';
+    // 진행상태 pill 3상태 순환: 미선택(회색) → 이것만(보라, progressFilter) → 제외(빨강, excludeStatuses).
+    // 전체 유지 + 완료건 제외 같은 다중 제외 지원. progress_status_cache 인덱스로 whereNotIn.
+    #[Url(as: 'exclude')] public array $excludeStatuses = [];
     // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
@@ -560,6 +563,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /**
+     * 진행상태 pill 3상태 순환.
+     *  - '전체'('') 클릭 → 포함·제외 전부 리셋
+     *  - 회색(미선택) → 보라(이것만 보기, progressFilter 단일)  ※ 제외 목록도 클리어
+     *  - 보라(이것만)  → 빨강(제외, excludeStatuses 에 추가)
+     *  - 빨강(제외)    → 회색(미선택, excludeStatuses 에서 제거)
+     * 제외는 다중 가능, 포함(이것만)은 단일. 둘은 상호 배타.
+     */
+    public function cycleProgress(string $val): void
+    {
+        if ($val === '') {
+            $this->progressFilter = '';
+            $this->excludeStatuses = [];
+        } elseif ($this->progressFilter === $val) {
+            $this->progressFilter = '';
+            $this->excludeStatuses = array_values(array_unique([...$this->excludeStatuses, $val]));
+        } elseif (in_array($val, $this->excludeStatuses, true)) {
+            $this->excludeStatuses = array_values(array_filter($this->excludeStatuses, fn ($s) => $s !== $val));
+        } else {
+            $this->progressFilter = $val;
+            $this->excludeStatuses = [];
+        }
+
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     public function updatedSalesmanId(): void
     {
         unset($this->vehicles);
@@ -610,6 +640,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ))
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
+            ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -3389,9 +3420,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex flex-wrap gap-1">
             {{-- 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료. v3 호환 키는 매핑에서 같은 라벨로 흡수 --}}
             @foreach(['', '매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료', '거래완료'] as $val)
-            <button wire:click="$set('progressFilter', '{{ $val }}')"
+            @php
+                if ($val === '') {
+                    $isInclude = $progressFilter === '' && count($excludeStatuses) === 0;
+                    $isExclude = false;
+                } else {
+                    $isInclude = $progressFilter === $val;
+                    $isExclude = in_array($val, $excludeStatuses, true);
+                }
+            @endphp
+            <button wire:click="cycleProgress('{{ $val }}')"
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
-                           {{ $progressFilter === $val ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
+                           @if($isInclude) bg-violet-600 text-white @elseif($isExclude) bg-red-500 text-white line-through @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
                 {{ $val === '' ? __('vehicle.filter_all') : __('domain.progress.'.$val) }}
             </button>
             @endforeach
@@ -3716,6 +3756,7 @@ function vehicleColumnsToggle() {
                     if (this.scope === 'current') {
                         if ($wire.search) p.set('q', $wire.search);
                         if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
+                        if ($wire.excludeStatuses && $wire.excludeStatuses.length) p.set('exclude', $wire.excludeStatuses.join(','));
                         p.set('dateType', $wire.dateType || 'purchase');
                         if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
                         if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
