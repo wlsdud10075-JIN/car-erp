@@ -288,7 +288,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $per = intdiv($rec['total'], $divisor);
-            $remainder = $rec['total'] - $per * $count;   // 매칭 차량들에 실제 배정되는 합의 나머지(첫 차량)
+            // 정수나눗셈 반올림 잔여는 파일수량==매칭수(전부 ERP에 존재)일 때만 첫 차량에 흡수.
+            // 수량 불일치(매칭<파일수량)면 누락 차 몫은 버림 → 미리보기 per 와 기입값 일치 (jin 2026-07-02).
+            $remainder = $count === $divisor ? $rec['total'] - $per * $divisor : 0;
             $i = 0;
             foreach ($vehicles as $v) {
                 $matched[] = [
