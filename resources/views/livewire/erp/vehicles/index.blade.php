@@ -1784,9 +1784,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->validate(
             ['ledgerUnlockReason' => ['required', 'string', 'min:10']],
-            ['ledgerUnlockReason.required' => '잠금 해제 사유를 10자 이상 입력하세요.',
-                'ledgerUnlockReason.min' => '잠금 해제 사유는 10자 이상 필수입니다.'],
-            ['ledgerUnlockReason' => '잠금 해제 사유']
+            ['ledgerUnlockReason.required' => __('vehicle.valmsg.unlock_reason_required'),
+                'ledgerUnlockReason.min' => __('vehicle.valmsg.unlock_reason_min')]
         );
 
         try {
@@ -2809,8 +2808,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'overlapRequestReason' => ['required', 'string', 'min:5'],
         ], [
-            'overlapRequestReason.required' => '승인 요청 사유를 입력하세요.',
-            'overlapRequestReason.min' => '사유는 최소 5자 이상이어야 합니다.',
+            'overlapRequestReason.required' => __('vehicle.valmsg.approval_reason_required'),
+            'overlapRequestReason.min' => __('vehicle.valmsg.reason_min5'),
         ]);
 
         $buyerId = (int) $this->buyer_id_str;
@@ -2910,10 +2909,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'transferAmountStr' => ['required', 'string'],
             'transferReason' => ['required', 'string', 'min:5'],
         ], [
-            'transferTargetVehicleId.required' => '이체 대상 차량을 선택하세요.',
-            'transferAmountStr.required' => '이체 금액을 입력하세요.',
-            'transferReason.required' => '승인 요청 사유를 입력하세요.',
-            'transferReason.min' => '사유는 최소 5자 이상이어야 합니다.',
+            'transferTargetVehicleId.required' => __('vehicle.valmsg.transfer_target_required'),
+            'transferAmountStr.required' => __('vehicle.valmsg.transfer_amount_required'),
+            'transferReason.required' => __('vehicle.valmsg.approval_reason_required'),
+            'transferReason.min' => __('vehicle.valmsg.reason_min5'),
         ]);
 
         $source = Vehicle::find($this->editingId);
@@ -2974,8 +2973,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'voidReason' => ['required', 'string', 'min:5'],
         ], [
-            'voidReason.required' => '이체 취소 사유를 입력하세요.',
-            'voidReason.min' => '사유는 최소 5자 이상이어야 합니다.',
+            'voidReason.required' => __('vehicle.valmsg.void_reason_required'),
+            'voidReason.min' => __('vehicle.valmsg.reason_min5'),
         ]);
 
         $transfer = InterVehicleTransfer::find($this->voidTransferId);

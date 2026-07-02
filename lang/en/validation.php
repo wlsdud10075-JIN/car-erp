@@ -233,6 +233,13 @@ return [
         'blForm.bl_number' => 'B/L number',
         'blForm.container_number' => 'container number',
         'blForm.vessel_name' => 'vessel name',
+        'overlapRequestReason' => 'reason',
+        'transferTargetVehicleId' => 'transfer target vehicle',
+        'transferAmountStr' => 'transfer amount',
+        'transferReason' => 'reason',
+        'voidReason' => 'reason',
+        'rejectReason' => 'rejection reason',
+        'decisionNote' => 'decision note',
     ],
 
 ];
