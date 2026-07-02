@@ -76,7 +76,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
-    // 2026-06-24 — 드롭다운에 노출할 정산 월 목록 (created_at 기준, 최신순).
+    // 2026-06-24 — 드롭다운에 노출할 정산 월 목록 (귀속월 기준, 최신순).
+    // 귀속월 = SettlementCkBatch::payrollMonthOf(created_at) — 10일 cutoff 적용 (jin 2026-07-02).
     // DATE_FORMAT 은 MySQL 전용 → 테스트 SQLite 호환 위해 PHP 에서 포맷 (project_db_tier_mismatch).
     #[Computed]
     public function availableMonths(): array
@@ -84,19 +85,24 @@ new #[Layout('components.layouts.app')] class extends Component
         return Settlement::query()
             ->whereNotNull('created_at')
             ->pluck('created_at')
-            ->map(fn ($d) => $d->format('Y-m'))
+            ->map(fn ($d) => \App\Support\SettlementCkBatch::payrollMonthOf($d))
             ->unique()
             ->sortDesc()
             ->values()
             ->toArray();
     }
 
-    // monthFilter('YYYY-MM') → whereYear/whereMonth 클로저 (크로스 DB 안전, 목록·카드 공용).
+    // monthFilter('YYYY-MM') → 귀속월 범위 [M/10, (M+1)/10) 클로저 (크로스 DB 안전, 목록·카드 공용).
+    // 10일 cutoff: 1~9일 마무리분은 전달 귀속 → created_at 범위로 필터 (jin 2026-07-02).
     private function monthScope(): \Closure
     {
-        [$y, $m] = array_pad(explode('-', $this->monthFilter), 2, null);
+        // when($this->monthFilter, ...) 이 이 메서드를 항상 즉시 평가하므로 빈 값 방어 (기존 array_pad 대체).
+        if ($this->monthFilter === '') {
+            return fn ($q) => $q;
+        }
+        [$start, $end] = \App\Support\SettlementCkBatch::monthRange($this->monthFilter);
 
-        return fn ($q) => $q->whereYear('created_at', (int) $y)->whereMonth('created_at', (int) $m);
+        return fn ($q) => $q->where('created_at', '>=', $start)->where('created_at', '<', $end);
     }
 
     // ── 목록 ──────────────────────────────────────────────────────

@@ -62,4 +62,31 @@ class SettlementCkBatch
     {
         return preg_match('/(\d{4})/', $sheet, $m) ? (int) $m[1] : $fallback;
     }
+
+    /**
+     * created_at → 정산 귀속월('YYYY-MM'). 급여 10일 cutoff (jin 2026-07-02, 서버 실사용 발견):
+     *   1~9일 마무리분 = 전달 귀속(이달 10일 지급) / 10일 이후 = 당월 귀속(다음달 10일 지급).
+     * 예: 거래완료 2026-07-02 → 2026-06(7/10 지급) / 2026-07-15 → 2026-07(8/10 지급).
+     * import 백데이트(일한月 15일, 15≥10)는 당월 유지 → 일한月 보존(무영향).
+     */
+    public static function payrollMonthOf(Carbon $date): string
+    {
+        return $date->day < 10
+            ? $date->copy()->subMonthNoOverflow()->format('Y-m')
+            : $date->format('Y-m');
+    }
+
+    /**
+     * 귀속월('YYYY-MM') → created_at 필터 범위 [start, end).
+     * 귀속월 M ⟺ created_at ∈ [M월 10일, (M+1)월 10일). payrollMonthOf 의 역함수.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    public static function monthRange(string $ym): array
+    {
+        [$y, $m] = array_map('intval', explode('-', $ym));
+        $start = Carbon::create($y, $m, 10, 0, 0, 0);
+
+        return [$start, $start->copy()->addMonthNoOverflow()];
+    }
 }
