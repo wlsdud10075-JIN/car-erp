@@ -492,6 +492,40 @@ $dateColumn = match ($this->dateType) {
 ```
 탭 클릭 시 `dateColumn`만 바뀌고 동일 검색 필드 재사용.
 
+### 진행상태 필터 pill 3상태 순환 (전체 유지 + 다중 제외, 2026-07-02)
+
+차량목록 진행상태 스트립 pill을 **단일선택 → 3상태 순환 토글**로 확장. "전체 켠 채 거래완료·통관완료 등 완료건을 빼고 진행중만 보기" 유스케이스.
+
+**클릭 순환**: 회색(미선택) → 🟣보라(이것만 보기 = `progressFilter` 단일) → 🔴빨강+`line-through`(제외 = `excludeStatuses` 다중) → 회색.
+- 제외는 다중, 포함(보라)은 단일. **상호 배타** — 보라 켜면 excludeStatuses 클리어.
+- `[전체]`('') pill = 포함·제외 전부 리셋.
+
+```php
+#[Url(as: 'exclude')] public array $excludeStatuses = [];
+
+public function cycleProgress(string $val): void
+{
+    if ($val === '') {                                   // 전체 → 리셋
+        $this->progressFilter = '';
+        $this->excludeStatuses = [];
+    } elseif ($this->progressFilter === $val) {          // 보라 → 빨강(제외 추가)
+        $this->progressFilter = '';
+        $this->excludeStatuses = array_values(array_unique([...$this->excludeStatuses, $val]));
+    } elseif (in_array($val, $this->excludeStatuses, true)) {  // 빨강 → 회색(제외 제거)
+        $this->excludeStatuses = array_values(array_filter($this->excludeStatuses, fn ($s) => $s !== $val));
+    } else {                                             // 회색 → 보라(이것만, 제외 클리어)
+        $this->progressFilter = $val;
+        $this->excludeStatuses = [];
+    }
+    unset($this->vehicles);
+    $this->resetPage();
+}
+```
+
+- 목록 쿼리: `->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))` (기존 인덱스 활용, 성능 영향 없음).
+- **export 정합**: `vehicles/index` export JS가 `exclude` 파라미터 전달 → `VehicleExportController` 도 `whereNotIn` + `ExportLog` 감사 기록. 화면 필터 ↔ export 일치.
+- pill 상태 판정: `''` = `progressFilter==='' && count(excludeStatuses)===0`, 그 외 = `progressFilter===$val`(보라) / `in_array($val,$excludeStatuses)`(빨강).
+
 ### 대시보드 → 차량목록 정합성 (action 파라미터 패턴)
 
 **핵심 원칙**: 대시보드 카드의 카운트 산정 로직과 클릭 후 vehicles 목록의 SQL where가 **100% 일치**해야 한다. 단순히 `progressFilter` 같은 단일 컬럼 필터로 표현 안 되는 액션(예: "선적 처리 필요" = 수출통관완료 + 선적중 두 진행상태에 분포)을 전달하기 위해 `action` 파라미터를 사용한다.
