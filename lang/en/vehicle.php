@@ -711,4 +711,15 @@ return [
         'export_decl_amount' => 'leave empty to auto-apply sell price',
         'memo' => 'Internal memo',
     ],
+
+    // Custom validation messages (approval / transfer / ledger unlock reasons)
+    'valmsg' => [
+        'unlock_reason_required' => 'Enter an unlock reason of at least 10 characters.',
+        'unlock_reason_min' => 'The unlock reason must be at least 10 characters.',
+        'approval_reason_required' => 'Enter a reason for the approval request.',
+        'reason_min5' => 'The reason must be at least 5 characters.',
+        'transfer_target_required' => 'Select a target vehicle for the transfer.',
+        'transfer_amount_required' => 'Enter the transfer amount.',
+        'void_reason_required' => 'Enter a reason for voiding the transfer.',
+    ],
 ];

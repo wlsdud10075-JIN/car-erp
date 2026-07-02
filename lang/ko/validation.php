@@ -178,6 +178,14 @@ return [
             'blForm.bl_number' => 'B/L 번호',
             'blForm.container_number' => '컨테이너 번호',
             'blForm.vessel_name' => '선박명',
+            // 승인·이체·반려 사유 (커스텀 메시지 미커버 규칙 대비)
+            'overlapRequestReason' => '사유',
+            'transferTargetVehicleId' => '이체 대상 차량',
+            'transferAmountStr' => '이체 금액',
+            'transferReason' => '사유',
+            'voidReason' => '사유',
+            'rejectReason' => '반려 사유',
+            'decisionNote' => '결정 메모',
         ]
     ),
 

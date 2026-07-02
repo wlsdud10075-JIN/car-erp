@@ -711,4 +711,15 @@ return [
         'export_decl_amount' => '비워두면 판매가 자동 적용',
         'memo' => '내부 메모',
     ],
+
+    // 검증 커스텀 메시지 (승인·이체·잠금해제 사유 등)
+    'valmsg' => [
+        'unlock_reason_required' => '잠금 해제 사유를 10자 이상 입력하세요.',
+        'unlock_reason_min' => '잠금 해제 사유는 10자 이상 필수입니다.',
+        'approval_reason_required' => '승인 요청 사유를 입력하세요.',
+        'reason_min5' => '사유는 최소 5자 이상이어야 합니다.',
+        'transfer_target_required' => '이체 대상 차량을 선택하세요.',
+        'transfer_amount_required' => '이체 금액을 입력하세요.',
+        'void_reason_required' => '이체 취소 사유를 입력하세요.',
+    ],
 ];

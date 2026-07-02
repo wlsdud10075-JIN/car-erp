@@ -24,7 +24,7 @@ return [
         'message' => 'A temporary error occurred. Please try again in a moment.',
     ],
     '503' => [
-        'title' => 'Under maintenance',
-        'message' => 'The system is under maintenance. Please try again shortly.',
+        'title' => 'System maintenance in progress',
+        'message' => 'An update is being deployed. The service will be back to normal within 1–5 minutes. Please wait a moment.',
     ],
 ];
