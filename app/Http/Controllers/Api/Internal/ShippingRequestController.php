@@ -107,13 +107,14 @@ class ShippingRequestController extends Controller
      * POST /shipping-requests/sync — 선언형 재동기화. board 가 "원하는 묶음 전체(desired)" 전송 → diff.
      * ⚠️ 부분 전송 = 빠진 requested 차 자동취소(footgun). board 는 반드시 전체 desired 전송.
      * diff: 생성 / 갱신(requested) / 자동취소(requested·desired 미포함) / 잠금(in_progress).
+     * ⚠️ 빈 배열(bundles:[]) = 마지막 묶음 취소 = 본인 requested 전체 자동취소 (present·min:1 제거).
      */
     public function sync(Request $request): JsonResponse
     {
         $salesman = $this->salesman($request);
 
         $data = $request->validate([
-            'bundles' => ['required', 'array', 'min:1'],
+            'bundles' => ['present', 'array'],
             'bundles.*.buyer_id' => ['nullable', 'integer'],
             'bundles.*.consignee_id' => ['nullable', 'integer'],
             'bundles.*.shipping_method' => ['required', 'in:RORO,CONTAINER'],

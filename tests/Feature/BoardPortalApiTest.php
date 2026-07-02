@@ -397,6 +397,29 @@ class BoardPortalApiTest extends TestCase
         $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $a->id, 'shipping_method' => 'CONTAINER']);
     }
 
+    public function test_sync_empty_bundles_cancels_all_requested_and_keeps_in_progress_locked(): void
+    {
+        // 마지막 묶음 취소 = board 가 bundles:[] 전송 → 본인 requested 전체 자동취소.
+        // (present·min:1 제거 전엔 422 로 거부돼 조용히 실패하던 회귀 방지.)
+        $me = $this->salesman('me@a.com');
+        $a = $this->exportVehicle($me->id, '11가1111');
+        $c = $this->exportVehicle($me->id, '33다3333');
+
+        ShippingRequest::create(['batch_id' => 'ba', 'vehicle_id' => $a->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now()]);
+        ShippingRequest::create(['batch_id' => 'bc', 'vehicle_id' => $c->id, 'shipping_method' => 'RORO', 'requested_by_email' => 'me@a.com', 'status' => 'in_progress', 'requested_at' => now()]);
+
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => 'me@a.com',
+            'bundles' => [],
+        ])->assertOk();
+
+        $res->assertJsonPath('cancelled.0', $a->id);
+        $res->assertJsonCount(0, 'created');
+        $res->assertJsonCount(0, 'updated');
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $a->id, 'status' => 'cancelled']);
+        $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $c->id, 'status' => 'in_progress']);
+    }
+
     public function test_bundle_fx_missing_is_not_fake_fully_paid(): void
     {
         // ⚠️ cash_audit 교훈 — 환율 미입력(cache null)을 0 완납으로 coerce 금지.
