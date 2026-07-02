@@ -98,11 +98,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
     }
 
+    /** 대상 비용 전환 시 미리보기 초기화 — 탁송비(차량번호)↔면허비(신고번호) 파서 포맷이 달라 잔여 미리보기 혼선 방지. */
+    public function updatedCostImportColumn(): void
+    {
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
+    }
+
     /** 붙여넣은 명세서 파싱 — 줄 단위. */
     public function parseCostImport(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
-        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
+        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
 
         $rows = [];
         foreach (preg_split('/\r\n|\r|\n/', trim($this->costImportRaw)) as $line) {
@@ -126,8 +132,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function parseCostImportFile(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
-        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_FIELDS, true), 422);
+        abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
         $this->validate(['costImportFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
+
+        // 면허비는 포맷이 달라(2행 1레코드 · 수출신고번호 묶음 n/1) 전용 파서로 분기.
+        if ($this->costImportColumn === 'cost_license') {
+            $this->parseLicenseFile();
+
+            return;
+        }
 
         try {
             $rows = [];
@@ -200,6 +213,110 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         if (empty($matched) && empty($unmatched)) {
             $this->dispatch('notify', message: __('vehicle.cost_import.parse_empty'), type: 'warning');
+        }
+    }
+
+    /**
+     * 면허비 명세서 파싱 — 통관 면허비 시트(2행 1레코드) → 수출신고번호로 ERP 차량 묶음 매칭 → 합계 n/1 분배.
+     *   레코드 = 홀수행(신고번호 B·품명 E) + 짝수행(수량 E·합계 J). 합계 = 수수료+부가세(통관 면허비 총액).
+     *   n/1 분모 = 파일 수량(짝수행 E). 매칭수 ≠ 수량이면 미리보기에 경고(수량 기준 분배 유지 — 개별 몫 왜곡 방지).
+     */
+    private function parseLicenseFile(): void
+    {
+        try {
+            $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
+            $records = $this->extractLicenseRecords($ss->getSheet(0));
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
+
+            return;
+        }
+        $this->applyLicenseRecordsToPreview($records);
+    }
+
+    /** 면허비 시트에서 레코드 추출 — B열 숫자 10자리 이상 = 신고번호 행(홀수), 다음 행(짝수)에서 수량(E)·합계(J). */
+    private function extractLicenseRecords(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet): array
+    {
+        $records = [];
+        $highest = $sheet->getHighestRow();
+        for ($r = 1; $r <= $highest; $r++) {
+            $decl = trim((string) $sheet->getCell('B'.$r)->getCalculatedValue());
+            // 신고번호 판별: 숫자 10자리 이상(날짜 8자리·헤더 텍스트와 구분).
+            if (strlen(preg_replace('/\D/', '', $decl)) < 10) {
+                continue;
+            }
+            $qty = (int) preg_replace('/\D/', '', (string) $sheet->getCell('E'.($r + 1))->getCalculatedValue());
+            $total = (int) str_replace(',', '', (string) $sheet->getCell('J'.($r + 1))->getCalculatedValue());
+            if ($total <= 0) {
+                continue;
+            }
+            $records[] = [
+                'decl' => $decl,
+                'car_name' => trim((string) $sheet->getCell('E'.$r)->getCalculatedValue()),
+                'qty' => $qty,
+                'total' => $total,
+            ];
+        }
+
+        return $records;
+    }
+
+    /** 추출 레코드 → 수출신고번호 정규화 매칭 → 수량 n/1 → 미리보기(matched 평탄화 + groups 요약 + unmatched). */
+    private function applyLicenseRecordsToPreview(array $records): void
+    {
+        $matched = [];
+        $unmatched = [];
+        $groups = [];
+        foreach ($records as $rec) {
+            $norm = strtoupper(preg_replace('/[^0-9A-Za-z]/', '', $rec['decl']));
+            if ($norm === '') {
+                continue;
+            }
+            // 저장 포맷 변동(대시·공백·끝문자) 흡수 — 정규화 후 비교.
+            $vehicles = \App\Models\Vehicle::whereRaw(
+                "UPPER(REPLACE(REPLACE(REPLACE(export_declaration_number,'-',''),' ',''),'.','')) = ?",
+                [$norm]
+            )->get();
+
+            $count = $vehicles->count();
+            // 분모 = 파일 수량 우선(진짜 대수), 없으면 매칭수. 매칭 0 이면 미매칭 처리.
+            $divisor = $rec['qty'] > 0 ? $rec['qty'] : $count;
+            if ($count === 0 || $divisor === 0) {
+                $unmatched[] = ['number' => $rec['decl'], 'amount' => $rec['total']];
+
+                continue;
+            }
+
+            $per = intdiv($rec['total'], $divisor);
+            $remainder = $rec['total'] - $per * $count;   // 매칭 차량들에 실제 배정되는 합의 나머지(첫 차량)
+            $i = 0;
+            foreach ($vehicles as $v) {
+                $matched[] = [
+                    'id' => $v->id,
+                    'number' => $v->vehicle_number,
+                    'model' => trim(($v->brand ?? '').' '.($v->model_type ?? '')),
+                    'current' => (int) $v->cost_license,
+                    'amount' => $per + ($i === 0 ? $remainder : 0),
+                    'finalized' => $v->settlements()->where('secondary_status', 'closed')->exists(),
+                    'decl' => $rec['decl'],
+                ];
+                $i++;
+            }
+            $groups[] = [
+                'decl' => $rec['decl'],
+                'car_name' => $rec['car_name'],
+                'qty' => $rec['qty'],
+                'matched' => $count,
+                'total' => $rec['total'],
+                'per' => $per,
+                'mismatch' => $rec['qty'] > 0 && $rec['qty'] !== $count,
+            ];
+        }
+
+        $this->costImportParsed = ['matched' => $matched, 'unmatched' => $unmatched, 'mode' => 'license', 'groups' => $groups];
+
+        if (empty($matched) && empty($unmatched)) {
+            $this->dispatch('notify', message: __('vehicle.cost_import.lic_parse_empty'), type: 'warning');
         }
     }
 
@@ -5852,17 +5969,17 @@ function vehicleColumnsToggle() {
             <div class="mb-3 flex flex-wrap items-end gap-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.cost_import.target_col') }}</label>
-                    <select wire:model="costImportColumn" class="input-base">
-                        @foreach(\App\Models\Vehicle::BULK_COST_FIELDS as $col)
+                    <select wire:model.live="costImportColumn" class="input-base">
+                        @foreach(\App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS as $col)
                         <option value="{{ $col }}">{{ __('vehicle.field.'.$col) }}</option>
                         @endforeach
                     </select>
                 </div>
-                <p class="flex-1 text-[11px] text-gray-500">{{ __('vehicle.cost_import.col_hint') }}</p>
+                <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : __('vehicle.cost_import.col_hint') }}</p>
             </div>
 
             {{-- ① 엑셀 파일 업로드 (권장) — 눈에 띄는 선택 버튼 + 파일명 --}}
-            <label class="label-base">{{ __('vehicle.cost_import.file_label') }}</label>
+            <label class="label-base">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_file_label') : __('vehicle.cost_import.file_label') }}</label>
             <div class="flex flex-wrap items-center gap-2">
                 <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-primary bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary-text hover:brightness-95">
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
@@ -5884,7 +6001,8 @@ function vehicleColumnsToggle() {
             </div>
             @error('costImportFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
-            {{-- ② 또는 붙여넣기 --}}
+            {{-- ② 또는 붙여넣기 (탁송비만 — 면허비는 2행 1레코드 구조라 파일 업로드 전용) --}}
+            @if($costImportColumn !== 'cost_license')
             <div class="mt-3 border-t border-gray-100 pt-3">
                 <label class="label-base">{{ __('vehicle.cost_import.paste_label') }}</label>
                 <textarea wire:model="costImportRaw" rows="4" class="input-base font-mono text-xs"
@@ -5896,6 +6014,7 @@ function vehicleColumnsToggle() {
                     </button>
                 </div>
             </div>
+            @endif
 
             {{-- 미리보기 --}}
             @php $matched = $costImportParsed['matched'] ?? []; $unmatched = $costImportParsed['unmatched'] ?? []; @endphp
@@ -5911,6 +6030,41 @@ function vehicleColumnsToggle() {
                 <span class="font-semibold text-red-600">{{ __('vehicle.cost_import.unmatched', ['count' => count($unmatched)]) }}</span>
                 @endif
             </div>
+
+            {{-- 면허비: 수출신고번호별 묶음 요약 (수량 대조 + n/1 분배) --}}
+            @if(($costImportParsed['mode'] ?? '') === 'license' && count($costImportParsed['groups'] ?? []) > 0)
+            <div class="mb-3 overflow-hidden rounded-lg border border-gray-200">
+                <table class="w-full text-xs">
+                    <thead class="bg-gray-50 text-gray-500">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.cost_import.lic_decl') }}</th>
+                            <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.cost_import.lic_carname') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.lic_qty') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.lic_matched') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.lic_total') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.lic_per') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach($costImportParsed['groups'] as $g)
+                        <tr @class(['bg-amber-50/60' => $g['mismatch']])>
+                            <td class="px-3 py-1.5 font-mono text-gray-800">{{ $g['decl'] }}</td>
+                            <td class="px-3 py-1.5 text-gray-600">{{ $g['car_name'] }}</td>
+                            <td class="px-3 py-1.5 text-right text-gray-500">{{ $g['qty'] }}</td>
+                            <td class="px-3 py-1.5 text-right {{ $g['mismatch'] ? 'font-semibold text-amber-700' : 'text-gray-700' }}">
+                                {{ $g['matched'] }}@if($g['mismatch']) ⚠@endif
+                            </td>
+                            <td class="px-3 py-1.5 text-right text-gray-700">{{ number_format($g['total']) }}</td>
+                            <td class="px-3 py-1.5 text-right font-medium text-primary-text">{{ number_format($g['per']) }}</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @if(collect($costImportParsed['groups'])->firstWhere('mismatch', true))
+            <p class="mb-2 text-[11px] text-amber-700">{{ __('vehicle.cost_import.lic_mismatch_hint') }}</p>
+            @endif
+            @endif
 
             @if(count($matched) > 0)
             <div class="overflow-hidden rounded-lg border border-gray-200">
@@ -5950,7 +6104,7 @@ function vehicleColumnsToggle() {
 
             @if(count($unmatched) > 0)
             <div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                <p class="mb-1 text-[11px] font-semibold text-red-700">{{ __('vehicle.cost_import.unmatched_title') }}</p>
+                <p class="mb-1 text-[11px] font-semibold text-red-700">{{ ($costImportParsed['mode'] ?? '') === 'license' ? __('vehicle.cost_import.lic_unmatched_title') : __('vehicle.cost_import.unmatched_title') }}</p>
                 <div class="flex flex-wrap gap-1.5">
                     @foreach($unmatched as $u)
                     <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] text-red-600">{{ $u['number'] }} ({{ number_format($u['amount']) }})</span>
