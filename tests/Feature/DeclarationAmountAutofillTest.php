@@ -57,31 +57,46 @@ class DeclarationAmountAutofillTest extends TestCase
         $this->assertSame(9999, (int) $v->fresh()->export_declaration_amount);
     }
 
-    public function test_sync_command_fixes_unlocked_and_skips_confirmed_locked(): void
+    public function test_sync_command_fixes_unlocked_and_safe_locked_but_skips_suspect(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true, 'country_id' => null]);
 
-        // 미잠금 — 면장이 총판매가와 다름(수기 sale_price 값)
+        // 미잠금 — 면장이 총판매가와 다름 → 보정
         $unlocked = Vehicle::create([
             'vehicle_number' => '33다3333', 'sales_channel' => 'export', 'currency' => 'USD',
             'exchange_rate' => 1300, 'sale_price' => 10000, 'sale_date' => '2026-06-01',
             'buyer_id' => $buyer->id, 'transport_fee' => 500, 'export_declaration_amount' => 10000,
         ]);
+        // 총판매가 10500
 
-        // 잠금 — confirmed 잔금 존재 → 완료 차량으로 스킵돼야
-        $locked = Vehicle::create([
-            'vehicle_number' => '44라4444', 'sales_channel' => 'export', 'currency' => 'USD',
+        // 완료-safe — 면장=sale_price(구 자동복사, 수동 아님) → 보정
+        $lockedSafe = Vehicle::create([
+            'vehicle_number' => '55마5555', 'sales_channel' => 'export', 'currency' => 'USD',
             'exchange_rate' => 1300, 'sale_price' => 20000, 'sale_date' => '2026-06-01',
             'buyer_id' => $buyer->id, 'transport_fee' => 1000, 'export_declaration_amount' => 20000,
         ]);
         FinalPayment::create([
-            'vehicle_id' => $locked->id, 'amount' => 1, 'payment_date' => '2026-06-01',
+            'vehicle_id' => $lockedSafe->id, 'amount' => 1, 'payment_date' => '2026-06-01',
             'confirmed_at' => now(), 'type' => 'balance',
         ]);
+        // 총판매가 21000, 면장 20000(=sale_price) → safe
+
+        // 완료-suspect — 면장이 제3의 값(수동수정 의심) → 스킵
+        $lockedSuspect = Vehicle::create([
+            'vehicle_number' => '66바6666', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'sale_price' => 30000, 'sale_date' => '2026-06-01',
+            'buyer_id' => $buyer->id, 'transport_fee' => 1500, 'export_declaration_amount' => 99999,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $lockedSuspect->id, 'amount' => 1, 'payment_date' => '2026-06-01',
+            'confirmed_at' => now(), 'type' => 'balance',
+        ]);
+        // 총판매가 31500, 면장 99999(제3값) → suspect
 
         $this->artisan('vehicles:sync-declaration-amount --apply')->assertSuccessful();
 
-        $this->assertSame(10500, (int) $unlocked->fresh()->export_declaration_amount);   // 미잠금 보정
-        $this->assertSame(20000, (int) $locked->fresh()->export_declaration_amount);     // 완료 차량 그대로
+        $this->assertSame(10500, (int) $unlocked->fresh()->export_declaration_amount);      // 미잠금 보정
+        $this->assertSame(21000, (int) $lockedSafe->fresh()->export_declaration_amount);    // 완료-safe 보정
+        $this->assertSame(99999, (int) $lockedSuspect->fresh()->export_declaration_amount); // 완료-suspect 스킵
     }
 }
