@@ -464,6 +464,20 @@ class Vehicle extends Model
     // ⚠️ 봉인 화이트리스트는 BULK_COST_FIELDS(9개) 그대로 — 이건 UI 노출/파서 분기용 축소 목록.
     public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license'];
 
+    // 명세서 기입 — 대상비용별 거래처(서식) 목록. 회사마다 엑셀 서식이 달라 좌표 파서를 분기한다.
+    //   탁송비: wika(기존 범용) / gucheonyuk / hyundai_a1  — 면허비: mutual(기존 xlsx n/1) / seongji(→선적요청 딥링크)
+    public const COST_IMPORT_COMPANIES = [
+        'cost_towing' => ['wika', 'gucheonyuk', 'hyundai_a1'],
+        'cost_license' => ['mutual', 'seongji'],
+    ];
+
+    // 탁송비 회사별 좌표 고정 파서 맵 — start=데이터 시작행, plate=차량번호열, amount=합산할 금액 성분열.
+    //   (범용 '마지막 숫자' 파서는 차종 숫자[아우디 Q5→5]·비고 오염 위험 → 좌표 고정. wika 는 좌표 미검증이라 기존 범용 유지.)
+    public const TOWING_IMPORT_LAYOUTS = [
+        'gucheonyuk' => ['start' => 2, 'plate' => 'J', 'amount' => ['F', 'G']],   // 탁송비 F + 주유 G = 총액
+        'hyundai_a1' => ['start' => 13, 'plate' => 'M', 'amount' => ['I', 'J']],  // 탁송 I + 추가 J = 총액
+    ];
+
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {

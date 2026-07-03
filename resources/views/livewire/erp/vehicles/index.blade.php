@@ -77,6 +77,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $costImportColumn = 'cost_towing';
 
+    public string $costImportCompany = 'wika';   // 거래처(서식) — 회사별 좌표 파서 분기
+
     public string $costImportRaw = '';
 
     public $costImportFile = null;   // xlsx 직접 업로드 (위카 등 업체 명세서 파일)
@@ -89,6 +91,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
         $this->costImportColumn = 'cost_towing';
+        $this->costImportCompany = 'wika';
         $this->showCostImport = true;
     }
 
@@ -98,10 +101,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
     }
 
-    /** 대상 비용 전환 시 미리보기 초기화 — 탁송비(차량번호)↔면허비(신고번호) 파서 포맷이 달라 잔여 미리보기 혼선 방지. */
+    /** 대상 비용 전환 시 미리보기 초기화 + 거래처를 해당 비용의 기본값으로 리셋(현대A1 선택 후 면허 전환 시 stale 방지). */
     public function updatedCostImportColumn(): void
     {
+        $this->costImportCompany = $this->costImportColumn === 'cost_license' ? 'mutual' : 'wika';
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
+    }
+
+    /** 거래처(서식) 전환 시 미리보기 초기화 — 회사별 파서 포맷이 달라 잔여 미리보기 혼선 방지. */
+    public function updatedCostImportCompany(): void
+    {
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
+    }
+
+    /** 거래처 화이트리스트 검증 — costImportCompany 는 wire:model 이라 클라 주입 가능(IDOR 방어, SKILLS #26). */
+    private function assertCostCompanyValid(): void
+    {
+        $valid = \App\Models\Vehicle::COST_IMPORT_COMPANIES[$this->costImportColumn] ?? [];
+        abort_unless(in_array($this->costImportCompany, $valid, true), 422);
     }
 
     /** 붙여넣은 명세서 파싱 — 줄 단위. */
@@ -109,6 +126,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
+        // 붙여넣기는 위카(범용 파서)만 — 좌표 파서 회사는 셀 위치 고정이라 xlsx 전용(차종 숫자 오파싱 방지).
+        abort_unless($this->costImportColumn === 'cost_towing' && $this->costImportCompany === 'wika', 422);
 
         $rows = [];
         foreach (preg_split('/\r\n|\r|\n/', trim($this->costImportRaw)) as $line) {
@@ -133,36 +152,79 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
+        $this->assertCostCompanyValid();
         $this->validate(['costImportFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
 
-        // 면허비는 포맷이 달라(2행 1레코드 · 수출신고번호 묶음 n/1) 전용 파서로 분기.
+        // 면허비 — 뮤추얼만 xlsx 파서(2행 1레코드·수출신고번호 n/1). 성지는 선적요청 딥링크라 업로드 없음.
         if ($this->costImportColumn === 'cost_license') {
+            abort_if($this->costImportCompany === 'seongji', 422);
             $this->parseLicenseFile();
 
             return;
         }
 
+        // 탁송비 — 구천육·현대A1 은 좌표 고정 파서, 위카는 기존 범용 파서.
+        if (isset(\App\Models\Vehicle::TOWING_IMPORT_LAYOUTS[$this->costImportCompany])) {
+            $rows = $this->parseTowingByLayout(\App\Models\Vehicle::TOWING_IMPORT_LAYOUTS[$this->costImportCompany]);
+        } else {
+            try {
+                $rows = [];
+                $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
+                foreach ($ss->getSheet(0)->getRowIterator() as $row) {
+                    $cells = [];
+                    $it = $row->getCellIterator();
+                    $it->setIterateOnlyExistingCells(false);
+                    foreach ($it as $cell) {
+                        $cells[] = trim((string) $cell->getCalculatedValue());
+                    }
+                    $parsed = $this->parseCostLine(implode(' ', $cells));
+                    if ($parsed) {
+                        $rows[] = $parsed;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
+
+                return;
+            }
+        }
+        $this->applyCostRowsToPreview($rows);
+    }
+
+    /**
+     * 회사별 좌표 고정 탁송비 파서 — 지정 시작행부터 차량번호열·금액 성분열을 직접 읽는다.
+     * 범용 '마지막 숫자' 파서의 차종 숫자(아우디 Q5→5)·비고 오파싱을 피한다. 금액=성분열 합(수식셀 의존 X).
+     */
+    private function parseTowingByLayout(array $layout): array
+    {
+        $rows = [];
         try {
-            $rows = [];
             $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
-            foreach ($ss->getSheet(0)->getRowIterator() as $row) {
-                $cells = [];
-                $it = $row->getCellIterator();
-                $it->setIterateOnlyExistingCells(false);
-                foreach ($it as $cell) {
-                    $cells[] = trim((string) $cell->getCalculatedValue());
+            $sheet = $ss->getSheet(0);
+            $highest = $sheet->getHighestRow();
+            for ($r = $layout['start']; $r <= $highest; $r++) {
+                // 차량번호 — 앞뒤·내부 공백 제거 후 정규식 검증(합계행·빈행·헤더 skip).
+                $plate = preg_replace('/\s+/u', '', (string) $sheet->getCell($layout['plate'].$r)->getCalculatedValue());
+                if (! preg_match('/^\d{2,3}[가-힣]\d{4}$/u', $plate)) {
+                    continue;
                 }
-                $parsed = $this->parseCostLine(implode(' ', $cells));
-                if ($parsed) {
-                    $rows[] = $parsed;
+                // 금액 = 성분열 합(구천육 F+G, 현대A1 I+J) — 총액 정의를 코드에 명시, 계산엔진 의존 제거.
+                $amount = 0;
+                foreach ($layout['amount'] as $col) {
+                    $amount += (int) str_replace(',', '', (string) $sheet->getCell($col.$r)->getCalculatedValue());
                 }
+                if ($amount <= 0) {
+                    continue;
+                }
+                $rows[] = ['plate' => $plate, 'amount' => $amount];
             }
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
 
-            return;
+            return [];
         }
-        $this->applyCostRowsToPreview($rows);
+
+        return $rows;
     }
 
     /** 한 줄에서 차량번호(2~3숫자+한글+4숫자) + 금액(차량번호 제외 마지막 숫자=합계) 추출. */
@@ -184,28 +246,34 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 추출 행(plate/amount) → 차량번호 매칭 → 미리보기(matched/unmatched). 같은 차량번호 첫 줄만. */
     private function applyCostRowsToPreview(array $rows): void
     {
+        // 같은 차량번호가 여러 줄(취소 후 재진행 등)이면 금액 합산 (jin 2026-07-03). 등장 순서 유지.
+        $sums = [];
+        $order = [];
+        foreach ($rows as $r) {
+            if (! isset($sums[$r['plate']])) {
+                $order[] = $r['plate'];
+                $sums[$r['plate']] = 0;
+            }
+            $sums[$r['plate']] += $r['amount'];
+        }
+
         $matched = [];
         $unmatched = [];
-        $seen = [];
-        foreach ($rows as $r) {
-            if (isset($seen[$r['plate']])) {
-                continue;
-            }
-            $seen[$r['plate']] = true;
-
-            $vehicle = \App\Models\Vehicle::where('vehicle_number', $r['plate'])->first();
+        foreach ($order as $plate) {
+            $amount = $sums[$plate];
+            $vehicle = \App\Models\Vehicle::where('vehicle_number', $plate)->first();
             if ($vehicle) {
                 $matched[] = [
                     'id' => $vehicle->id,
                     'number' => $vehicle->vehicle_number,
                     'model' => trim(($vehicle->brand ?? '').' '.($vehicle->model_type ?? '')),
                     'current' => (int) $vehicle->{$this->costImportColumn},
-                    'amount' => $r['amount'],
+                    'amount' => $amount,
                     // 2차 정산 마감 차량 = 재업로드로 안 건드림(보호). 미리보기에서 회색 '마감' 표시.
                     'finalized' => $vehicle->settlements()->where('secondary_status', 'closed')->exists(),
                 ];
             } else {
-                $unmatched[] = ['number' => $r['plate'], 'amount' => $r['amount']];
+                $unmatched[] = ['number' => $plate, 'amount' => $amount];
             }
         }
 
@@ -5963,7 +6031,7 @@ function vehicleColumnsToggle() {
         </div>
 
         <div class="max-h-[70vh] overflow-y-auto px-5 py-4">
-            {{-- 대상 비용 컬럼 --}}
+            {{-- 대상 비용 컬럼 + 거래처(서식) --}}
             <div class="mb-3 flex flex-wrap items-end gap-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.cost_import.target_col') }}</label>
@@ -5973,9 +6041,28 @@ function vehicleColumnsToggle() {
                         @endforeach
                     </select>
                 </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.cost_import.company_label') }}</label>
+                    <select wire:model.live="costImportCompany" class="input-base">
+                        @foreach(\App\Models\Vehicle::COST_IMPORT_COMPANIES[$costImportColumn] ?? [] as $co)
+                        <option value="{{ $co }}">{{ __('vehicle.cost_import.company.'.$co) }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : __('vehicle.cost_import.col_hint') }}</p>
             </div>
 
+            @if($costImportColumn === 'cost_license' && $costImportCompany === 'seongji')
+            {{-- 성지 면허비 = 서류 매핑 안 함(연 1~2회). 선적요청 「2차 비용」 탭에서 총액 n/1 로 진행. --}}
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p class="text-sm leading-relaxed text-amber-800">{{ __('vehicle.cost_import.seongji_notice') }}</p>
+                <a href="{{ route('erp.shipping-requests.index', ['tab' => 'cost']) }}" wire:navigate
+                   class="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover">
+                    {{ __('vehicle.cost_import.seongji_goto') }}
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                </a>
+            </div>
+            @else
             {{-- ① 엑셀 파일 업로드 (권장) — 눈에 띄는 선택 버튼 + 파일명 --}}
             <label class="label-base">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_file_label') : __('vehicle.cost_import.file_label') }}</label>
             <div class="flex flex-wrap items-center gap-2">
@@ -5999,8 +6086,8 @@ function vehicleColumnsToggle() {
             </div>
             @error('costImportFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
-            {{-- ② 또는 붙여넣기 (탁송비만 — 면허비는 2행 1레코드 구조라 파일 업로드 전용) --}}
-            @if($costImportColumn !== 'cost_license')
+            {{-- ② 또는 붙여넣기 (위카 탁송비만 — 좌표 파서 회사·면허비는 셀 위치 고정이라 파일 전용) --}}
+            @if($costImportColumn === 'cost_towing' && $costImportCompany === 'wika')
             <div class="mt-3 border-t border-gray-100 pt-3">
                 <label class="label-base">{{ __('vehicle.cost_import.paste_label') }}</label>
                 <textarea wire:model="costImportRaw" rows="4" class="input-base font-mono text-xs"
@@ -6012,6 +6099,7 @@ function vehicleColumnsToggle() {
                     </button>
                 </div>
             </div>
+            @endif
             @endif
 
             {{-- 미리보기 --}}

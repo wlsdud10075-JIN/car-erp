@@ -103,6 +103,10 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Url]
     public string $focus = '';
 
+    /** 성지 면허비 딥링크(차량목록 「명세서 기입」→면허비→성지) — 특정 묶음 없이 2차 비용 탭만 연다. */
+    #[Url]
+    public string $tab = '';
+
     public function mount(): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
@@ -111,6 +115,8 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($this->focus !== '' && auth()->user()?->canApprove()) {
             $this->viewTab = 'cost';
             $this->licenseBatch = $this->focus;
+        } elseif ($this->tab === 'cost' && auth()->user()?->canApprove()) {
+            $this->viewTab = 'cost';
         }
     }
 
