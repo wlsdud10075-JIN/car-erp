@@ -478,6 +478,17 @@ return [
         'lic_per' => 'n/1 (each)',
         'lic_mismatch_hint' => '⚠ File qty differs from ERP matches. Per-vehicle amount is split by the file qty (applied only to matched vehicles). Check for missing declaration numbers.',
         'lic_unmatched_title' => '⚠ Declaration numbers not in ERP (number not entered on the vehicle — enter during customs stage)',
+        // Vendor (form layout) — each company uses a different Excel layout, so parsers branch by coordinates.
+        'company_label' => 'Vendor',
+        'company' => [
+            'wika' => 'Wika',
+            'gucheonyuk' => 'Gucheonyuk',
+            'hyundai_a1' => 'Hyundai A1',
+            'mutual' => 'Mutual',
+            'seongji' => 'Seongji',
+        ],
+        'seongji_notice' => 'Seongji license fees are infrequent (1-2/year), so instead of document mapping, enter the total in the shipping request "Secondary cost" tab to split n/1 across the bundle. (Handled from bundles pending secondary settlement.)',
+        'seongji_goto' => 'Go to shipping requests',
     ],
 
     // Modals

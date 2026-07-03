@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Volt\Volt;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -93,7 +94,7 @@ class CostStatementImportTest extends TestCase
             ['', '', '', '', '차량번호', '차종', '공급가', '유류비', '합계'],
             ['1', '2026-06-01', '부천', '시흥', '393어3064', 'SM6', 25000, 10000, 35000],
         ], null, 'A1');
-        \Illuminate\Support\Facades\Storage::fake('livewire-tmp');
+        Storage::fake('livewire-tmp');
         $path = tempnam(sys_get_temp_dir(), 'wika').'.xlsx';
         (new Xlsx($ss))->save($path);
         $file = UploadedFile::fake()->createWithContent('wika.xlsx', file_get_contents($path));
@@ -118,5 +119,121 @@ class CostStatementImportTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->call('openCostImport')
             ->assertStatus(403);
+    }
+
+    /** xlsx 배열 → 업로드 파일 헬퍼. */
+    private function uploadXlsx(array $rows): UploadedFile
+    {
+        $ss = new Spreadsheet;
+        $ss->getActiveSheet()->fromArray($rows, null, 'A1');
+        Storage::fake('livewire-tmp');
+        $path = tempnam(sys_get_temp_dir(), 'stmt').'.xlsx';
+        (new Xlsx($ss))->save($path);
+        $file = UploadedFile::fake()->createWithContent('stmt.xlsx', file_get_contents($path));
+        @unlink($path);
+
+        return $file;
+    }
+
+    /** 구천육 서식(R2~, 번호 J열, 금액 F+G) — 앞공백 plate 매칭 + 중복 차번호 합산 + 비고 오염 차단. */
+    public function test_gucheonyuk_layout_sums_duplicates_and_handles_whitespace_plate(): void
+    {
+        $this->actingAs($this->admin());
+        $this->makeVehicle('134수1302');
+        $this->makeVehicle('222머2974');
+
+        $file = $this->uploadXlsx([
+            ['NO', '날짜', '고객', '출발', '경유', '탁송비', '주유', '합계', '차종', '차량번호', '비고'],
+            [1, '2026-06-15', '내수', 'x', 'y', 60000, 20000, '=SUM(F2:G2)', '레이', ' 134수1302', ''],   // 앞 공백 plate
+            [2, '2026-06-15', '내수', 'x', 'y', 40000, 20000, '=SUM(F3:G3)', 'K3', '222머2974', ''],
+            [3, '2026-06-16', '경매', 'x', 'y', 25000, 0, '=SUM(F4:G4)', '팰리', '134수1302', '312로4687 로교환'],  // 중복 + 비고 차번호꼴
+        ]);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_towing')
+            ->set('costImportCompany', 'gucheonyuk')
+            ->set('costImportFile', $file);
+
+        $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
+        $this->assertSame(105000, (int) $amounts['134수1302']);   // (60000+20000) + (25000+0) 합산
+        $this->assertSame(60000, (int) $amounts['222머2974']);    // 공백 plate 매칭
+        $this->assertArrayNotHasKey('312로4687', $amounts->toArray());  // 비고 차번호꼴 오염 없음
+    }
+
+    /** 현대A1 서식(R13~, 번호 M열, 금액 I+J) — 차종 숫자(Q5→5) 오파싱 차단 + 취소/재진행 2행 합산. */
+    public function test_hyundai_a1_layout_ignores_model_digits_and_sums_cancel_row(): void
+    {
+        $this->actingAs($this->admin());
+        $this->makeVehicle('303보2774');
+        $this->makeVehicle('64러4771');
+
+        $rows = array_fill(0, 12, array_fill(0, 14, ''));   // R1~R12 요약/헤더 (start=13이라 무시돼야)
+        $rows[0][1] = '싼카 탁송내역';
+        // A번호 B요청ID C요청일 D배정 E발주 F출발 G경유 H도착 I탁송 J추가 K합계 L내용 M차량번호 N차종
+        $rows[] = [1, '56681781054246', '2026-06-10', '2026-06-10', '싼카', '대구', '', '시흥', 125000, 60000, '=SUM(I13:J13)', '주유비', '303보2774', '아우디 Q5'];
+        $rows[] = [23, 'x', '2026-06-19', '2026-06-19', '싼카', '서울', '', '시흥', 0, 10000, '', '취소비', '64러4771', '폭스바겐'];
+        $rows[] = [26, 'y', '2026-06-19', '2026-06-19', '싼카', '서울', '', '시흥', 31000, 0, '', '', '64러4771', '폭스바겐'];
+
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_towing')
+            ->set('costImportCompany', 'hyundai_a1')
+            ->set('costImportFile', $file = $this->uploadXlsx($rows));
+
+        $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
+        $this->assertSame(185000, (int) $amounts['303보2774']);   // I+J, 차종 'Q5'의 5 안 잡힘
+        $this->assertSame(41000, (int) $amounts['64러4771']);     // (0+10000) + (31000+0) 합산
+        $this->assertCount(2, $c->get('costImportParsed')['matched']);  // 요약행 오파싱 없음
+    }
+
+    /** 좌표 파서 회사는 붙여넣기 금지(422) — 셀 위치 고정이라 xlsx 전용. */
+    public function test_coordinate_company_rejects_paste(): void
+    {
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_towing')
+            ->set('costImportCompany', 'gucheonyuk')
+            ->set('costImportRaw', '134수1302 50000')
+            ->call('parseCostImport')
+            ->assertStatus(422);
+    }
+
+    /** 대상비용을 면허비로 전환하면 거래처가 기본값(뮤추얼)으로 리셋 — 현대A1 stale 방지. */
+    public function test_switching_column_resets_company_default(): void
+    {
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportCompany', 'hyundai_a1')
+            ->set('costImportColumn', 'cost_license')
+            ->assertSet('costImportCompany', 'mutual');
+    }
+
+    /** 성지 면허비는 업로드/붙여넣기 대신 선적요청 딥링크만 노출. */
+    public function test_seongji_license_shows_deeplink_and_blocks_paste(): void
+    {
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_license')
+            ->set('costImportCompany', 'seongji')
+            ->assertSee(__('vehicle.cost_import.seongji_goto'))
+            ->set('costImportRaw', '134수1302 50000')
+            ->call('parseCostImport')
+            ->assertStatus(422);
+    }
+
+    /** 성지 딥링크(tab=cost)로 선적요청 진입 시 2차 비용 탭이 열린다. */
+    public function test_shipping_request_tab_deeplink_opens_cost_tab(): void
+    {
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index', ['tab' => 'cost'])
+            ->assertSet('viewTab', 'cost');
     }
 }
