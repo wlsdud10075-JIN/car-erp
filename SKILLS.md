@@ -469,6 +469,7 @@ extension=zip    # 주석 제거
 - **재업로드 안전(2중)**: ① 2차 마감(`secondary_status='closed'`) 차량은 절대 안 건드림(skip=`settlement_closed`, 값 달라도) — 소급 변경은 개별 🔓로만. ② 값 동일이면 잠금해제·감사 없이 skip(`unchanged`).
 - **면허비 뷰(선적요청 「2차 비용」 탭)**: `secondary=pending` 묶음만, **월 그룹=정산 `created_at`(귀속월)** — 지급월(`paid_at`) 아님. 정산 화면 monthFilter와 동일 축("5월분→6/10 지급"). n/1=첫 차량에 나머지 원.
 - **탁송비 도구(차량목록 「명세서 기입」)**: xlsx 업로드(`updatedCostImportFile` 자동 파싱) + 붙여넣기. `parseCostLine`(차량번호 `\d{2,3}[가-힣]\d{4}` + 차량번호 제외 마지막 숫자=합계). 차량번호 매칭, 미매칭은 빨강 표시만(기입 X, 유령데이터 방지).
+- **거래처별 서식 파서 (2026-07-03, ✅운영배포 e1d434c)**: 「명세서 기입」에 **거래처 선택** — 탁송 위카/구천육/현대A1, 면허 뮤추얼/성지. 회사마다 xlsx 열 위치가 달라 **좌표 고정 파서**로 분기(`Vehicle::TOWING_IMPORT_LAYOUTS`: 구천육 R2~·번호 J·금액 F+G / 현대A1 R13~·번호 M·금액 I+J). ⚠️ 범용 `parseCostLine`(마지막 숫자)은 **차종 숫자(아우디 Q5→5)·비고 차번호꼴 오염** 위험 → 좌표회사는 붙여넣기 금지·xlsx 전용, 금액=성분열 직접 합(수식셀 의존 X). **성지 면허비**=서류 매핑 대신 선적요청 2차비용 탭 딥링크(`erp.shipping-requests.index?tab=cost`, `#[Url] $tab`). **같은 차번호 여러 줄→금액 합산**(취소 후 재진행, `applyCostRowsToPreview`). 거래처 화이트리스트 검증(`assertCostCompanyValid`, IDOR)·차량번호 공백 정규화. `Vehicle::COST_IMPORT_COMPANIES`. [[project_declaration_total_price]]
 - **정산 연동**: 마진 computed라 비용 저장 즉시 정산처리 자동 재계산. 2차 완료(closeSecondarySettlement)만 수동. 상세=[[project_settlement_cost_bulk]] 메모리.
 
 ### 29. 판매계약서(sales_contract) + fillMulti `aggregates` 훅 (2026-07-01)
