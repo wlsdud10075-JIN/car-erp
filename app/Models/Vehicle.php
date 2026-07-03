@@ -489,14 +489,15 @@ class Vehicle extends Model
                 $vehicle->exchange_rate = 1;
             }
 
-            // 2026-05-21 사용자 결정 — 면장금액 = sale_price 자동 복사 (미입력 시).
-            // 통상 인보이스 금액 = 면장 신고가. 사용자가 별도 입력 안 해도 sale_price 그대로 적용.
-            // 명시 입력 시 (CIF/FOB 인코텀즈 차이 등) 그 값 우선 — 현재 값이 빈 경우만 자동 채움.
+            // 2026-07-03 사용자 결정 — 면장금액 = 총판매가(sale_total_amount) 자동 복사 (미입력 시).
+            //   (2026-05-21 최초엔 sale_price 였으나 jin "면장금액=총판매가가 맞다" → 부대비용 포함 총액으로 교체.)
+            //   총판매가 = sale_price + transport_fee + sale_other_costs + commission + auto_loading - tax_dc.
+            //   통상 인보이스/면장 신고가 = 총판매가. 명시 입력 시 그 값 우선 — 현재 값이 빈 경우만 자동 채움.
             if (
                 (float) ($vehicle->export_declaration_amount ?? 0) <= 0
                 && (float) ($vehicle->sale_price ?? 0) > 0
             ) {
-                $vehicle->export_declaration_amount = $vehicle->sale_price;
+                $vehicle->export_declaration_amount = $vehicle->sale_total_amount;
             }
 
             // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).
