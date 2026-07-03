@@ -37,6 +37,8 @@ class ExchangeRateService
 {
     private const CACHE_KEY = 'exchange_rates';
 
+    private const FETCHED_AT_KEY = 'exchange_rates_fetched_at';
+
     private const CACHE_TTL_SECONDS = 3600;   // 1시간
 
     private const SUPPORTED_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY'];
@@ -81,6 +83,15 @@ class ExchangeRateService
     }
 
     /**
+     * 마지막으로 네이버에서 긁은 시각 ('Y-m-d H:i') — 없으면 null.
+     * board 연동(/rates)의 신선도 표시용. rates 캐시와 동일 TTL 로 함께 기록.
+     */
+    public function fetchedAt(): ?string
+    {
+        return Cache::get(self::FETCHED_AT_KEY);
+    }
+
+    /**
      * 네이버 marketindex 상세페이지에서 통화별 '송금 받으실 때'(전신환 매입률) 추출.
      * 통화별 detail 페이지 5회 호출. HTML 구조 변경 시 silent fail (Log warning + null 반환).
      *
@@ -102,7 +113,14 @@ class ExchangeRateService
                 }
             }
 
-            return empty($rates) ? null : $rates;
+            if (empty($rates)) {
+                return null;
+            }
+
+            // 긁은 시각 기록 (rates 캐시와 동일 TTL) — board /rates 신선도 표시용.
+            Cache::put(self::FETCHED_AT_KEY, now()->format('Y-m-d H:i'), self::CACHE_TTL_SECONDS);
+
+            return $rates;
         } catch (\Throwable $e) {
             Log::warning('ExchangeRateService fetch failed', ['error' => $e->getMessage()]);
 

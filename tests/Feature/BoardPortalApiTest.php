@@ -9,6 +9,7 @@ use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -513,5 +514,30 @@ class BoardPortalApiTest extends TestCase
         // 관리 발급(issued) 후 = 무름 불가 409
         ShippingRequest::where('batch_id', 'bd')->update(['bl_status' => 'issued']);
         $this->signedPost('/api/internal/board/bundles/bd/bl-cancel', ['salesman_email' => 'me@a.com'])->assertStatus(409);
+    }
+
+    // ── 환율 read (/rates) — board 가 car-erp 값 받아쓰기 ──────────────────
+
+    public function test_rates_returns_car_erp_rates_without_scope(): void
+    {
+        // 캐시 프라임 → getRates 는 네이버 호출 없이 캐시값 반환 (전신환 매입률 원본 그대로).
+        Cache::put('exchange_rates', ['USD' => 1518.4, 'JPY' => 943.0, 'EUR' => 1738.8], 60);
+        Cache::put('exchange_rates_fetched_at', '2026-07-03 15:00', 60);
+
+        // salesman_email 없이(스코프 없음) 호출 → 200
+        $res = $this->signedGet('/api/internal/board/rates', [])->assertOk();
+
+        $res->assertJsonPath('rates.USD', 1518.4);
+        $res->assertJsonPath('rates.EUR', 1738.8);   // board 가 쓰는 USD/EUR
+        $res->assertJsonPath('fetched_at', '2026-07-03 15:00');
+        $res->assertJsonPath('source', 'naver_전신환매입률');
+    }
+
+    public function test_rates_requires_valid_hmac(): void
+    {
+        Cache::put('exchange_rates', ['USD' => 1518.4], 60);
+
+        // 서명 없이 → 401 (전역값이라도 인증은 필수)
+        $this->get('/api/internal/board/rates?')->assertStatus(401);
     }
 }

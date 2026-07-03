@@ -57,6 +57,19 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 - **환율0 외화**: `sale_unpaid_amount_krw_cache`가 `NULL`이면 그대로 `null` 반환 + `currency`·`exchange_rate` 동봉. board는 `null`을 "환율 미입력"으로 표시(절대 `0`/완납 coerce 금지).
 - N+1 방지: `with(['finalPayments','purchaseBalancePayments','receivableHistories'])`.
 
+### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)
+
+> 인계 = board `meetings/handoff-car-erp-exchange-rate.md`. 결정 B: board 가 독자 스크래핑(Frankfurter/ECB) 대신 **car-erp 값을 그대로 받음** — 같은 소스를 각자 긁으면 시점차로 어긋나므로 단일 소스(car-erp)로 통일해야 100% 일치.
+
+| 메서드·경로 | 반환 | 비고 |
+|---|---|---|
+| `GET /rates` | `{rates:{USD,JPY,EUR,GBP,CNY}, fetched_at, source}` | ⚠️ **스코프 없음**(환율은 전역값, `salesman_email` 불필요). HMAC 인증만. |
+
+- `rates.{CUR}` = **car-erp 가 실제 계산·저장에 쓰는 네이버 전신환 매입률(송금받을때) 원본 그대로** (`ExchangeRateService::getRates`). ⚠️ **반올림 금지** — 정수화하면 board 값과 어긋나 통일 목적이 무너짐(소수 그대로). JPY 는 **100엔 기준**(car-erp 관례). 조회 실패 통화는 키 생략 → board 는 없는 통화는 자체 폴백(마지막 캐시→config) 유지.
+- `fetched_at` = car-erp 가 마지막으로 네이버에서 긁은 시각(`Y-m-d H:i`, 신선도 표시용, null 가능). `source` = `naver_전신환매입률`.
+- car-erp 는 이미 이 환율을 1h 캐시로 저장/조회 중 → **그 값을 노출만** 함(새 스크래핑 없음, 부하 무시). board 는 lazy `refreshIfStale`(1h)로 호출 → car-erp 부하 1시간 1회.
+- **배포 순서**: car-erp `/rates` 먼저 배포 → board 소스 전환. (엔드포인트 없으면 board 는 폴백으로 도니 안전.)
+
 ## 5. ③ 선적·B/L 묶음 (bundle) — 영속 그룹 + 선언형 sync + 재무 집계
 > **v2 묶음 모델 (2026-06-30, jin 4턴 설계).** 구 단발 선적요청(1 POST=1 batch, 판매완료서 자연소멸, car-erp만 취소)을 **영속 묶음**으로 확장. 핵심 통찰 = **1 묶음 = 1 선적 = 1 B/L = 1 오리지널/써랜더.** 묶음은 선적단계→B/L단계까지 살아있고 board에서 안 사라짐(같은 묶음을 B/L요청으로 재사용). 회의록 = `docs/meetings/2026-06-18-board-portal-api.md` + `docs/meetings/2026-06-30-bl-shipment-bundle-v2.md`(풀회의 조건부 GO) + 본 절.
 >
