@@ -4870,26 +4870,42 @@ function vehicleColumnsToggle() {
                         @endif
                     </div>
                 </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.unpaid_ratio') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
-                    @if($panelUnpaidRatio === null)
-                        <div class="input-base bg-gray-50 text-gray-400">—</div>
-                    @elseif($panelUnpaidRatio <= 0)
-                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">{{ __('vehicle.panel.fully_paid') }}</div>
-                    @else
-                        <div class="input-base bg-gray-50 font-medium text-gray-800">{{ number_format($panelUnpaidRatio * 100, 1) }}%</div>
-                    @endif
+            </div>
+
+            {{-- 판매 미입금 요약 (매입 미지급 요약과 동일 스타일, 저장 후 반영 스냅샷) — 미입금률·잔여잔금 통합 --}}
+            <div class="mt-3 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+                <div class="mb-1.5 flex items-center gap-2">
+                    <span class="text-xs font-semibold text-purple-700">{{ __('vehicle.panel.sale_unpaid_summary') }}</span>
+                    <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span>
                 </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.remaining_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
-                    @if($panelSaleUnpaid === null)
-                        <div class="input-base bg-gray-50 text-gray-400">—</div>
-                    @elseif($panelSaleUnpaid <= 0)
-                        <div class="input-base bg-emerald-50 text-emerald-700 font-medium">{{ $currency }} 0</div>
-                    @else
-                        <div class="input-base bg-amber-50 font-medium text-amber-800">{{ $currency }} {{ number_format($panelSaleUnpaid) }}</div>
-                    @endif
-                </div>
+                @if($panelSaleTotal === null)
+                    <div class="text-sm text-gray-400">—</div>
+                @else
+                @php $salePaid = (float) $panelSaleTotal - (float) $panelSaleUnpaid; @endphp
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between text-gray-600">
+                            <span>{{ __('vehicle.panel.sale_total') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.sale_total_sub') }}</span></span>
+                            <span>{{ $currency }} {{ number_format($panelSaleTotal) }}</span>
+                        </div>
+                        <div class="flex justify-between text-gray-600">
+                            <span>{{ __('vehicle.panel.sale_paid') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.sale_paid_sub') }}</span></span>
+                            <span>{{ $currency }} {{ number_format($salePaid) }}</span>
+                        </div>
+                        <hr class="border-purple-100" />
+                        <div class="flex justify-between font-semibold">
+                            <span class="text-gray-700">{{ __('vehicle.panel.sale_unpaid') }}
+                                @if($panelUnpaidRatio !== null && $panelUnpaidRatio > 0)
+                                <span class="text-[10px] font-normal text-gray-400">({{ number_format($panelUnpaidRatio * 100, 1) }}%)</span>
+                                @endif
+                            </span>
+                            @if($panelSaleUnpaid <= 0)
+                            <span class="text-emerald-700">{{ $currency }} 0 · {{ __('vehicle.panel.fully_paid') }}</span>
+                            @else
+                            <span class="text-amber-800">{{ $currency }} {{ number_format($panelSaleUnpaid) }}</span>
+                            @endif
+                        </div>
+                    </div>
+                @endif
             </div>
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
