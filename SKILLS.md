@@ -439,9 +439,12 @@ extension=zip    # 주석 제거
 **원인**: `vendor/bin/pint <파일.blade.php>` 실행 시 PHP-CS-Fixer가 Volt 단일파일의 `<?php ?>` 클래스를 전면 재배치 → 실측 `vehicles/index.blade.php`에 **1356줄 변경(783+/573−) + 테스트 깨짐**. 이 프로젝트 blade는 pint 스타일이 아님 = 팀이 blade에 pint 안 돌림(pint.json 없음=기본).
 **해결**: blade 변경은 pint 제외하고 커밋. 실수로 돌렸으면 `git checkout -- <blade>`로 pint분 되돌리고 기능 수정만 재적용. `.php`만 `pint --dirty`. (CLAUDE.md 핵심주의 #5)
 
-### 23. 매입 자동 PBP Draft phantom 중복 (2026-06-01)
-**원인**: `Vehicle::saved` 훅이 매입가 저장 시 **전액·confirmed_at=NULL 자동 잔금 Draft**를 만드는데($vehicle->update 시점, 폼 동기화 前), 같은 저장에서 계약금/잔금 확정 행이 추가되면 자동 Draft(전액, 대기)가 **중복**으로 재무처리 대기에 잔존 → 확정 시 이중 계상. (salesman.type은 거래완료 시 default 채움에만 쓰이고, 정산 계산은 settlement 자체 type만 봄 — 사내직원을 비율제로 바꾸면 그대로 비율 계산되며 서류비·환차도 ratio 기준으로 따라옴.)
-**해결**: 폼 동기화 직후 `canConfirmFinance` 사용자면 자동 Draft를 확정 입금 합과 대조 → 전액 커버 시 삭제, 일부면 남은 미지급으로 축소, 확정 0(순수 Draft)이면 대기 유지. 합산 필터는 미지급 accessor(§13: `payment_date <= now() AND confirmed_at IS NOT NULL`)와 정합. (`vehicles/index::save()`)
+### 23. 매입 자동 PBP Draft — ⚠️ **폐기됨 (jin 2026-07-03)**
+> **자동 PBP Draft 생성 제거**: `Vehicle::saved` 훅이 매입가 저장 시 만들던 **전액·confirmed_at=NULL 자동 잔금 Draft**를 없앴다. 이유 = 단순 저장(매입가/매도비 입력)이 **재무처리 큐로 자동 유입**되는 게 board 연동·실무상 부담(더 복잡). 이제 **단순 저장은 PBP 0건** — 매입 미지급은 accessor(`getPurchaseUnpaidAmountAttribute`, 확정 PBP 기준 §13)로 대시보드 매입 미지급 KPI·매입 미지급 요약 박스에 그대로 노출되고, **재무는 실제 지급 시 transfers 매입 잔금 탭 '신규 입력'(`createNewPbp`, 즉시확정)으로 직접 기록**한다. 훅엔 매입일 변경 시 미확정 PBP `payment_date` 동기화만 남김.
+> - `AUTO_DRAFT_NOTE` 상수 + `vehicles/index::save()`의 reconcile 가드(`->where('note', AUTO_DRAFT_NOTE)->first()`, null-safe no-op)는 **운영 레거시 Draft 대비 존치**(과거 생성분이 확정 입금과 대조돼 정리됨). ⚠️ 운영 DB의 기존 auto-Draft 는 코드 제거로 안 사라짐 — 정리는 별건(미확정만 삭제 안전, 확정은 실지급 기록이라 금지).
+> - 테스트: `AutoPbpDraftReconcileTest`(확정만·단순저장 0건·부분확정) + `WorkflowGapTest`(22c no-auto-draft·payment_date sync).
+>
+> (구 기록 — phantom 중복 fix 2026-06-01) 자동 Draft 존재 시절, 같은 저장에서 확정 행 추가 시 자동 Draft가 중복 잔존 → 이중 계상하던 버그를 reconcile로 해소했었음. 자동 Draft 폐기로 근본 원인 소멸.
 
 ### 24. 판매당사자 자동전파 × C5/C4 게이트 회귀 (2026-06-01)
 **원인**: 판매 바이어+컨사이니 둘 다 지정 시 `propagateSaleParty()`가 통관(export) 당사자까지 자동 전파했는데, **`export_buyer_id`는 `guardStageOrderForExport`의 `$hasExportInput`(통관 진입 신호)** 이라 — 판매 시점 자동 채움이 <50% 입금 차량의 판매 저장을 C5로 통째 차단(`ManagementWorkflowChecklistTest:375`가 export_buyer_id 단독으로 C4 발동 검증).
