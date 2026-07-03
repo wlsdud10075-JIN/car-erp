@@ -95,6 +95,28 @@
 
 테스트 = `PurchaseSyncReceiverTest` v3 6케이스(purchase_price_krw 우선·fallback·sale prefill 환율유무·buyer/consignee 검증·소속불일치).
 
+## 연동 B v4 — 매도비 계좌 분리 (2026-07-03)
+
+> 발신 권위 = board `SKILLS.md §12` (`contract_version: 4`). 인계 = board `meetings/handoff-car-erp-purchase-two-accounts.md`. 배경: 매입 정산계좌를 **금액과 같은 축으로 2개로 분리** — 매입가 계좌(판매자, 기존 `payee_*`) + **매도비 계좌(별도 주체, 신규)**. 매도비 계좌는 판매자와 다른 대상이라 board 에서 영업이 직접 기입(자동 도출 없음).
+
+**payload 확장** (v4, 기존 v1/v2/v3 필드 전부 유지·전방호환. 신규 3개 모두 nullable):
+```json
+"selling_fee_payee_name": null,     // 매도비 예금주 → purchase_fee_holder
+"selling_fee_payee_bank": null,     // 매도비 은행   → purchase_fee_bank
+"selling_fee_payee_account": null   // 매도비 계좌   → purchase_fee_account (모델 cast 자동 암호화 = payee_account 패턴)
+```
+
+**수신 규칙** (`PurchaseSyncController`):
+1. **`contract_version: 4` 수용** (1·2·3·4). 미지원 → 422 유지.
+2. **매도비 계좌 3필드**: 값 있으면 `purchase_fee_holder/bank/account` 에 채움. 없으면 null(v3 이하는 필드 자체가 없음 → 매도비 계좌 미보유로 정상).
+3. **`purchase_fee_account` 암호화**: `purchase_seller_account` 와 동일 encrypted cast. `AuditLog::MASKED_COLUMNS` 에 등록(마스킹 저장). 감사 대상(`Vehicle::AUDITED_COLUMNS`).
+4. **금액/정산 미변경** — 이번 변경은 계좌 3필드 추가뿐(매입가 `purchase_price`·매도비 `selling_fee` 컬럼은 v3 그대로).
+5. **멱등(기존 vehicle 200)**: 신규 필드도 스킵(push-once, 기존행 갱신 안 함) — `payee_*` 정책과 동일.
+
+**배포 순서 (중요)**: ⚠️ **car-erp v4 master 먼저 배포**(수신 컬럼·매핑) → board `contract_version:4` 송신 전환. (미배포 상태로 v4 오면 422 로 sync 전체 거부.)
+
+테스트 = `PurchaseSyncReceiverTest` v4 케이스(매도비 계좌 3필드 수신·암호화 저장·마스킹).
+
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|

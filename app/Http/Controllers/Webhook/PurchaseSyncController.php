@@ -39,8 +39,9 @@ class PurchaseSyncController extends Controller
      * v2 = attachments[] 추가(전방호환, v1 도 계속 수용).
      * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee·
      *      sale_price·sale_currency·sale_exchange_rate·buyer_id·consignee_id (모두 optional).
+     * v4 = 매도비 계좌 3필드 — selling_fee_payee_name/bank/account (매도비 별도 계좌, 모두 optional).
      */
-    private const SUPPORTED_VERSIONS = [1, 2, 3];
+    private const SUPPORTED_VERSIONS = [1, 2, 3, 4];
 
     /** sale_currency 허용 enum (vehicles.currency 와 동일). */
     private const SALE_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
@@ -72,6 +73,10 @@ class PurchaseSyncController extends Controller
             'payee_name' => ['nullable', 'string', 'max:100'],
             'payee_bank' => ['nullable', 'string', 'max:100'],
             'payee_account' => ['nullable', 'string', 'max:255'],
+            // 연동 B v4 — 매도비 계좌 (매입가 계좌와 별도 주체, 모두 optional/전방호환).
+            'selling_fee_payee_name' => ['nullable', 'string', 'max:100'],
+            'selling_fee_payee_bank' => ['nullable', 'string', 'max:100'],
+            'selling_fee_payee_account' => ['nullable', 'string', 'max:255'],
             // 연동 B v3 — 금액/바이어/컨사이니 확장 (모두 optional, 전방호환).
             'purchase_price_krw' => ['nullable', 'integer', 'min:0'],   // 구입금액(차값−할인)만 — final_price 부풀림 교정
             'selling_fee_krw' => ['nullable', 'integer', 'min:0'],      // 매도비 (별도 컬럼)
@@ -182,6 +187,11 @@ class PurchaseSyncController extends Controller
         $vehicle->purchase_seller_holder = $data['payee_name'] ?? null;
         $vehicle->purchase_seller_bank = $data['payee_bank'] ?? null;
         $vehicle->purchase_seller_account = $data['payee_account'] ?? null;
+
+        // v4 — 매도비 계좌 (별도 주체, purchase_fee_account 도 모델 cast 자동 암호화).
+        $vehicle->purchase_fee_holder = $data['selling_fee_payee_name'] ?? null;
+        $vehicle->purchase_fee_bank = $data['selling_fee_payee_bank'] ?? null;
+        $vehicle->purchase_fee_account = $data['selling_fee_payee_account'] ?? null;
 
         // ── NICE 차량조회로 VIN·차량정보 채우기 ─────────────────────────
         // owner_name 없으면 NICE 불가 → vehicle_number 로만 생성(VIN 수동/후속, graceful).
