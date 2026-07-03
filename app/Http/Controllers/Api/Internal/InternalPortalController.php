@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Services\ExchangeRateService;
 use App\Services\SalesmanResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +32,24 @@ class InternalPortalController extends Controller
     private function ownVehicles(int $salesmanId)
     {
         return Vehicle::query()->whereNull('deleted_at')->where('salesman_id', $salesmanId);
+    }
+
+    /**
+     * 환율 read — board 가 car-erp 값을 그대로 받아 씀 (인계 handoff-car-erp-exchange-rate).
+     * ⚠️ 스코프 없음 (환율은 전역값, salesman_email 불필요). HMAC 인증만.
+     * car-erp 가 실제 계산·저장에 쓰는 네이버 전신환 매입률(송금받을때) 그대로 노출.
+     * 값은 car-erp 원본 그대로(소수 가능) — 반올림하면 board 값과 어긋나 통일 목적 무너짐.
+     * JPY 는 100엔 기준(car-erp 관례). board 는 필요한 통화만 사용, 없는 키는 board 폴백.
+     */
+    public function rates(): JsonResponse
+    {
+        $service = app(ExchangeRateService::class);
+
+        return response()->json([
+            'rates' => $service->getRates() ?? [],
+            'fetched_at' => $service->fetchedAt(),
+            'source' => 'naver_전신환매입률',
+        ]);
     }
 
     public function receivables(Request $request): JsonResponse

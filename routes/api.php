@@ -30,6 +30,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
     ->prefix('internal/board')
     ->name('api.internal.board.')
     ->group(function () {
+        // 환율 read (스코프 없음 — 전역값). board 가 car-erp 전신환매입률을 그대로 받아 씀.
+        Route::get('rates', [InternalPortalController::class, 'rates'])->name('rates');
         Route::get('finance', [InternalPortalController::class, 'finance'])->name('finance');
         Route::get('receivables', [InternalPortalController::class, 'receivables'])->name('receivables');
         Route::get('sales', [InternalPortalController::class, 'sales'])->name('sales');
