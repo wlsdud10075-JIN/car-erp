@@ -18,7 +18,7 @@ return [
     'salesman_missing_sub' => 'Ask an administrator to link a salesman to your account.',
 
     'fx_title' => 'Live Exchange Rates',
-    'fx_sub' => '(per KRW · 1h cache)',
+    'fx_sub' => '(T/T buying · per KRW · 1h cache)',
     'fx_refresh' => 'Refresh',
     'fx_fail' => '⚠ Live rate lookup failed — enter manually when adding balance payments.',
     'fx_refreshed' => 'Exchange rates refreshed',

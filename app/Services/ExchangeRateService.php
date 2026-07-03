@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use DOMDocument;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,10 +14,18 @@ use Illuminate\Support\Facades\Log;
  *   "[관리]대시보드에 띄우고 잔금N+ 할때 그 시간에 떠 있는 환율을 자동으로 기입"
  *   "그게 안될 시나 실패시에만 수동 기입으로 되고"
  *
- * 결정 (2026-05-22):
- *   - 네이버 finance.naver.com/marketindex/ HTML 스크래핑 (메인 페이지 4종 USD/JPY/EUR/CNY)
- *   - GBP 만 detail 페이지 (exchangeDetail.naver?marketindexCd=FX_GBPKRW) 별도 호출
- *   - Cache::remember 1h TTL — 외부 호출 부담 최소화 + 사용자 환율 변동 한 시간 단위 충분
+ * ⚠️ 환율 종류 = **송금 받으실 때(전신환 매입률, T/T buying)** — 2026-07-03 jin 결정.
+ *   회사가 외화를 받을 때 실제 적용되는 환율. 매매기준율(mid)보다 낮음(전 통화 실측:
+ *   USD 1516 vs 기준 1531, JPY100 941 vs 950 등). 구 버전은 매매기준율을 긁었으나
+ *   "송금받을 때"라는 라벨과 실제 값이 불일치 → 송금받을때(전신환 매입률)로 정정.
+ *   ※ 자동환율만 변경 — 정산 마진 기준(차량 exchange_rate, 관리 판매시점 지정)은 불변(재무 무영향).
+ *
+ * 결정 (2026-07-03):
+ *   - 통화별 detail 페이지(exchangeDetail.naver?marketindexCd=FX_{CUR}KRW) 5회 호출
+ *   - 각 페이지 tbl_exchange 의 th_ex5 행(= 송금 받으실 때) 값 파싱 (클래스 기반 → EUC-KR 라벨 무관)
+ *     행 순서: th_ex2 현찰살때 / th_ex3 현찰팔때 / th_ex4 송금보낼때 / th_ex5 송금받을때
+ *   - JPY 는 100엔 기준(네이버 관례 그대로, 단위 불변)
+ *   - Cache::remember 1h TTL — 외부 호출 부담 최소화 + 환율 변동 한 시간 단위 충분
  *   - 실패 시 null 반환 — 호출자가 수동 입력 fallback 처리
  *   - HTML 변경 가능성 — try/catch 로 silent fail
  *
@@ -33,8 +40,6 @@ class ExchangeRateService
     private const CACHE_TTL_SECONDS = 3600;   // 1시간
 
     private const SUPPORTED_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY'];
-
-    private const NAVER_MAIN_URL = 'https://finance.naver.com/marketindex/';
 
     private const NAVER_DETAIL_URL = 'https://finance.naver.com/marketindex/exchangeDetail.naver';
 
@@ -76,8 +81,8 @@ class ExchangeRateService
     }
 
     /**
-     * 네이버 marketindex 페이지에서 환율 추출.
-     * HTML 구조 변경 시 silent fail (Log warning + null 반환).
+     * 네이버 marketindex 상세페이지에서 통화별 '송금 받으실 때'(전신환 매입률) 추출.
+     * 통화별 detail 페이지 5회 호출. HTML 구조 변경 시 silent fail (Log warning + null 반환).
      *
      * @return array<string, float>|null
      */
@@ -86,23 +91,14 @@ class ExchangeRateService
         try {
             $rates = [];
 
-            // 메인 페이지: USD/JPY/EUR/CNY 4종
-            $mainHtml = $this->fetchHtml(self::NAVER_MAIN_URL);
-            if ($mainHtml !== null) {
-                foreach (['USD', 'JPY', 'EUR', 'CNY'] as $cur) {
-                    $rate = $this->parseMainRate($mainHtml, $cur);
-                    if ($rate !== null) {
-                        $rates[$cur] = $rate;
-                    }
+            foreach (self::SUPPORTED_CURRENCIES as $cur) {
+                $html = $this->fetchHtml(self::NAVER_DETAIL_URL.'?marketindexCd=FX_'.$cur.'KRW');
+                if ($html === null) {
+                    continue;   // 통화별 graceful — 실패한 통화만 빠지고 나머지 유지
                 }
-            }
-
-            // GBP 만 detail 페이지 별도 호출
-            $gbpHtml = $this->fetchHtml(self::NAVER_DETAIL_URL.'?marketindexCd=FX_GBPKRW');
-            if ($gbpHtml !== null) {
-                $gbpRate = $this->parseDetailRate($gbpHtml);
-                if ($gbpRate !== null) {
-                    $rates['GBP'] = $gbpRate;
+                $rate = $this->parseTtBuyingRate($html);
+                if ($rate !== null) {
+                    $rates[$cur] = $rate;
                 }
             }
 
@@ -133,41 +129,17 @@ class ExchangeRateService
     }
 
     /**
-     * 메인 페이지 HTML 에서 통화별 환율 추출.
-     * 구조: <a class="head {currency_lower}">...<span class="value">1,367.50</span>...</a>
+     * 상세페이지 tbl_exchange 에서 '송금 받으실 때'(전신환 매입률) 값 추출.
+     * 행 구조: <th class="th_ex5"><span>송금 받으실 때</span></th><td> 1,516.00 </td>
+     *   th_ex2 현찰살때 / th_ex3 현찰팔때 / th_ex4 송금보낼때 / th_ex5 송금받을때.
+     * 클래스(th_ex5) 기반 매칭 → EUC-KR 라벨 인코딩 무관, 자리수 span 분리도 없음.
      */
-    private function parseMainRate(string $html, string $currency): ?float
+    private function parseTtBuyingRate(string $html): ?float
     {
-        $lower = strtolower($currency);
-        // 통화 코드 anchor 안 첫 .value span 매칭 (간단한 regex — DOMDocument 대비 fragile 하지만 충분히 robust)
-        if (preg_match('/<a[^>]*class="[^"]*head\s+'.$lower.'[^"]*"[^>]*>.*?<span[^>]*class="value"[^>]*>([\d,\.]+)<\/span>/is', $html, $m)) {
+        if (preg_match('/th_ex5[^>]*>.*?<td[^>]*>\s*([\d,]+(?:\.\d+)?)\s*<\/td>/is', $html, $m)) {
             return (float) str_replace(',', '', $m[1]);
         }
 
         return null;
-    }
-
-    /**
-     * Detail 페이지 HTML 에서 환율 추출 (GBP 용).
-     *
-     * 네이버 detail 구조 — 환율을 자리수별 span 분리:
-     *   <p class="no_today">...<span class="no2">2</span><span class="shim">,</span><span class="no0">0</span>
-     *   <span class="no3">3</span><span class="no6">6</span><span class="jum">.</span>
-     *   <span class="no1">1</span><span class="no1">1</span>...</p>
-     *
-     * 메인 페이지 .value span 과 다른 구조 — 자리수 합치기.
-     */
-    private function parseDetailRate(string $html): ?float
-    {
-        if (! preg_match('/<p[^>]*class="no_today"[^>]*>(.*?)<\/p>/is', $html, $m)) {
-            return null;
-        }
-        $block = $m[1];
-
-        // HTML 태그 제거 후 숫자·점만 남김 (shim=',' 자동 제거됨)
-        $plain = strip_tags($block);
-        $plain = preg_replace('/[^\d.]/', '', $plain);
-
-        return is_numeric($plain) ? (float) $plain : null;
     }
 }
