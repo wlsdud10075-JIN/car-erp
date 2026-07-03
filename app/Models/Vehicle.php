@@ -36,6 +36,8 @@ class Vehicle extends Model
         'purchase_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
+        // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
+        'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
@@ -81,6 +83,7 @@ class Vehicle extends Model
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
+        'purchase_fee_account' => 'encrypted',
     ];
 
     /**
@@ -428,6 +431,8 @@ class Vehicle extends Model
         // 큐 22-C-light (2026-05-20) Security 해소조건 — 매입처 계좌 4컬럼 변경 audit.
         // purchase_seller_account는 AuditLog::MASKED_COLUMNS 통해 마스킹 저장.
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
+        // 2026-07-03 — 매도비 계좌 3컬럼 변경 audit (purchase_fee_account 는 MASKED_COLUMNS 마스킹).
+        'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
     ];
 
     /**

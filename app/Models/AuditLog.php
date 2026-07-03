@@ -22,6 +22,8 @@ class AuditLog extends Model
         'nice_reg_owner_rrn' => '[ENCRYPTED RRN — value not logged]',
         // 큐 20-A — 매입처 계좌번호 (개인정보)
         'purchase_seller_account' => '[ENCRYPTED ACCOUNT — value not logged]',
+        // 2026-07-03 — 매도비 계좌번호 (개인정보)
+        'purchase_fee_account' => '[ENCRYPTED ACCOUNT — value not logged]',
     ];
 
     public function user(): BelongsTo

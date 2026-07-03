@@ -536,4 +536,47 @@ class PurchaseSyncReceiverTest extends TestCase
         $res2->assertStatus(201);
         $this->assertNull(Vehicle::find($res2->json('vehicle_id'))->buyer_id);
     }
+
+    public function test_v4_selling_fee_payee_account_is_received_and_encrypted(): void
+    {
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 4,
+            'vehicle_number' => '77아7700',
+            'salesman_email' => 'nobody@car-erp.test',
+            'selling_fee_payee_name' => '박매도',
+            'selling_fee_payee_bank' => '신한은행',
+            'selling_fee_payee_account' => '987-654-321000',
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        // 매도비 계좌 = 신규 컬럼
+        $this->assertSame('박매도', $v->purchase_fee_holder);
+        $this->assertSame('신한은행', $v->purchase_fee_bank);
+        $this->assertSame('987-654-321000', $v->purchase_fee_account);
+        // 매입가 계좌(판매자)와 별도 유지 — validPayload 의 payee_* 그대로
+        $this->assertSame('김예금', $v->purchase_seller_holder);
+        $this->assertSame('123-456-789012', $v->purchase_seller_account);
+
+        // at-rest 암호화 (purchase_seller_account 와 동일 패턴)
+        $raw = DB::table('vehicles')->where('id', $v->id)->value('purchase_fee_account');
+        $this->assertNotEquals('987-654-321000', $raw);
+        $this->assertSame('987-654-321000', Crypt::decryptString($raw));
+    }
+
+    public function test_v4_without_fee_account_leaves_null(): void
+    {
+        // v3 이하는 매도비 계좌 필드 자체가 없음 → null 정상 (전방호환).
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 4,
+            'vehicle_number' => '78자7800',
+            'salesman_email' => 'nobody@car-erp.test',
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertNull($v->purchase_fee_holder);
+        $this->assertNull($v->purchase_fee_bank);
+        $this->assertNull($v->purchase_fee_account);
+    }
 }
