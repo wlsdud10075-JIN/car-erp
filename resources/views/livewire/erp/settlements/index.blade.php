@@ -1124,6 +1124,44 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
         @endif
 
+        {{-- 적용 비용 내역 (cost_total 분해) — read-only. 2차 정산에서 반영된 실측 비용을 투명화. --}}
+        @if($this->selectedVehicle)
+        @php
+            $sv = $this->selectedVehicle;
+            $costRows = [
+                'cost_deregistration' => (int) $sv->cost_deregistration,
+                'cost_license'        => (int) $sv->cost_license,
+                'cost_towing'         => (int) $sv->cost_towing,
+                'cost_carry'          => (int) $sv->cost_carry,
+                'cost_shoring'        => (int) $sv->cost_shoring,
+                'cost_insurance'      => (int) $sv->cost_insurance,
+                'cost_transfer'       => (int) $sv->cost_transfer,
+                'cost_extra1'         => (int) $sv->cost_extra1,
+                'cost_extra2'         => (int) $sv->cost_extra2,
+            ];
+            $costTotalSum = array_sum($costRows);
+        @endphp
+        <div>
+            <div class="section-header">
+                <span class="section-dot bg-blue-400"></span>
+                <span class="section-title">{{ __('settlement.section_costs') }}</span>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
+                @foreach($costRows as $col => $amt)
+                <div class="flex justify-between {{ $amt === 0 ? 'text-gray-300' : 'text-gray-600' }}">
+                    <span>{{ __('vehicle.field.'.$col) }}</span>
+                    <span>₩{{ number_format($amt) }}</span>
+                </div>
+                @endforeach
+                <hr class="border-gray-200" />
+                <div class="flex justify-between font-semibold text-gray-800">
+                    <span>{{ __('settlement.costs_total') }} <span class="text-xs text-gray-400 font-normal">{{ __('settlement.costs_total_sub') }}</span></span>
+                    <span>₩{{ number_format($costTotalSum) }}</span>
+                </div>
+            </div>
+        </div>
+        @endif
+
         {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 정산 KRW 명세 (1차·입금·2차·환차). --}}
         @if(! empty($this->krwBreakdown))
         @php $kb = $this->krwBreakdown; @endphp

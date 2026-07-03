@@ -551,6 +551,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_seller_account = '';
     public string $purchase_seller_holder  = '';
     public string $purchase_bank_memo      = '';
+    // 매도비 계좌 (매입가 계좌와 별도 주체, 2026-07-03)
+    public string $purchase_fee_bank    = '';
+    public string $purchase_fee_account = '';
+    public string $purchase_fee_holder  = '';
     public string $purchase_price_str    = '';
     public string $selling_fee_str       = '';
     public string $cost_deregistration_str = '';
@@ -606,6 +610,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   null = 판매 전 (sale_total_amount <= 0) → "—"
     public ?float $panelSaleTotal = null;   // sale_total_amount (SKILLS §13 미수율 분모, 통화 단위)
     public ?float $panelSaleUnpaid = null;  // sale_unpaid_amount (남은 잔금, 통화 단위)
+
+    // 매입탭 미지급 요약 (판매탭 미러링, openEdit 스냅샷). null = 매입 전 (purchase_price <= 0) → "—"
+    //   총매입액 = purchase_price + selling_fee / 미지급 = purchase_unpaid_amount(SKILLS §13, KRW)
+    public ?int $panelPurchaseTotal = null;
+    public ?int $panelPurchasePaid = null;
+    public ?int $panelPurchaseUnpaid = null;
 
     // "저장하고 계속" — 저장 후 패널을 닫지 않고 재로드(스냅샷 즉시 갱신). 확정 모달 바운스 넘어서 유지되도록 프로퍼티.
     public bool $keepPanelOpen = false;
@@ -1558,6 +1568,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
         $this->purchase_seller_holder  = $v->purchase_seller_holder  ?? '';
         $this->purchase_bank_memo      = $v->purchase_bank_memo      ?? '';
+        $this->purchase_fee_bank       = $v->purchase_fee_bank       ?? '';
+        $this->purchase_fee_account    = $v->purchase_fee_account    ?? '';
+        $this->purchase_fee_holder     = $v->purchase_fee_holder     ?? '';
         $this->purchase_price_str  = $v->purchase_price ? number_format($v->purchase_price) : '';
         $this->selling_fee_str     = $v->selling_fee    ? number_format($v->selling_fee)    : '';
         $this->cost_deregistration_str = $v->cost_deregistration ? number_format($v->cost_deregistration) : '';
@@ -1716,6 +1729,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $saleTotal = (float) $v->sale_total_amount;
         $this->panelSaleTotal = $saleTotal > 0 ? $saleTotal : null;
         $this->panelSaleUnpaid = $saleTotal > 0 ? (float) $v->sale_unpaid_amount : null;
+
+        // 매입탭 미지급 요약 스냅샷 (KRW). 총매입액 = 매입가 + 매도비. 미지급 = purchase_unpaid_amount(§13 단일 출처).
+        $purchaseTotal = (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0);
+        if ($purchaseTotal > 0) {
+            $this->panelPurchaseTotal = $purchaseTotal;
+            $this->panelPurchaseUnpaid = (int) $v->purchase_unpaid_amount;
+            $this->panelPurchasePaid = $purchaseTotal - $this->panelPurchaseUnpaid;
+        } else {
+            $this->panelPurchaseTotal = $this->panelPurchasePaid = $this->panelPurchaseUnpaid = null;
+        }
 
         // 큐 21 — Ledger 잠금 상태 갱신
         $this->refreshLedgerLockState($v);
@@ -2362,6 +2385,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
             'purchase_seller_holder'  => $this->purchase_seller_holder  ?: null,
             'purchase_bank_memo'      => $this->purchase_bank_memo      ?: null,
+            'purchase_fee_bank'       => $this->purchase_fee_bank       ?: null,
+            'purchase_fee_account'    => $this->purchase_fee_account    ?: null,
+            'purchase_fee_holder'     => $this->purchase_fee_holder     ?: null,
             'purchase_price'   => $toInt($this->purchase_price_str),
             'selling_fee'      => $toInt($this->selling_fee_str),
             'cost_deregistration' => $toInt($this->cost_deregistration_str),
@@ -3482,6 +3508,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
             'purchase_date','salesman_id_str','purchase_from',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
+            'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
@@ -4442,6 +4469,35 @@ function vehicleColumnsToggle() {
                 </div>
             </div>
 
+            {{-- 매도비 계좌 (매입가 계좌와 별도 주체, 2026-07-03) — 기존 매입처 계좌 UX 미러 --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-blue-400"></span>
+                <span class="section-title">{{ __('vehicle.panel.sec.fee_account') }}</span>
+            </div>
+            <div class="mb-2 text-[11px] text-gray-400">{{ __('vehicle.panel.fee_account_hint') }}</div>
+            <div x-data class="grid grid-cols-2 gap-3 sm:grid-cols-2">
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.bank_name') }}</label>
+                    <input x-ref="feeBankInput" wire:model.blur="purchase_fee_bank" type="text" list="korean-banks-list"
+                           class="input-base" placeholder="{{ __('vehicle.ph.bank_name') }}" maxlength="100" autocomplete="off"
+                           x-on:input="$refs.feeAccountInput.value = $store.koreanBanks.applyMask($el.value, $refs.feeAccountInput.value)" />
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.account_holder') }}</label>
+                    <input wire:model="purchase_fee_holder" type="text" class="input-base" placeholder="{{ __('vehicle.ph.account_holder') }}" maxlength="100" />
+                </div>
+                <div class="col-span-2">
+                    <label class="label-base flex items-center gap-1">
+                        {{ __('vehicle.field.account_no') }} <span class="text-[10px] font-normal text-violet-600">{{ __('vehicle.panel.encrypted_note') }}</span>
+                        <span class="text-[10px] font-normal text-gray-400">{{ __('vehicle.panel.auto_hyphen') }}</span>
+                    </label>
+                    <input x-ref="feeAccountInput" wire:model.blur="purchase_fee_account" type="text"
+                           class="input-base font-mono" placeholder="123-456-789012" autocomplete="off"
+                           x-on:input="$el.value = $store.koreanBanks.applyMask($refs.feeBankInput.value, $el.value)" />
+                </div>
+            </div>
+
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-300"></span>
@@ -4551,6 +4607,37 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
                 @endforeach
+            </div>
+
+            {{-- 매입 미지급 요약 (판매탭 미러링, 저장 후 반영 스냅샷) — 매입가·매도비 입금 시 차감 --}}
+            <div class="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                <div class="mb-1.5 flex items-center gap-2">
+                    <span class="text-xs font-semibold text-indigo-700">{{ __('vehicle.panel.purchase_unpaid_summary') }}</span>
+                    <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span>
+                </div>
+                @if($panelPurchaseTotal === null)
+                    <div class="text-sm text-gray-400">—</div>
+                @else
+                    <div class="space-y-1 text-sm">
+                        <div class="flex justify-between text-gray-600">
+                            <span>{{ __('vehicle.panel.purchase_total') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.purchase_total_sub') }}</span></span>
+                            <span>₩{{ number_format($panelPurchaseTotal) }}</span>
+                        </div>
+                        <div class="flex justify-between text-gray-600">
+                            <span>{{ __('vehicle.panel.purchase_paid') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.purchase_paid_sub') }}</span></span>
+                            <span>₩{{ number_format($panelPurchasePaid) }}</span>
+                        </div>
+                        <hr class="border-indigo-100" />
+                        <div class="flex justify-between font-semibold">
+                            <span class="text-gray-700">{{ __('vehicle.panel.purchase_unpaid') }}</span>
+                            @if($panelPurchaseUnpaid <= 0)
+                            <span class="text-emerald-700">₩0 · {{ __('vehicle.panel.fully_paid') }}</span>
+                            @else
+                            <span class="text-amber-800">₩{{ number_format($panelPurchaseUnpaid) }}</span>
+                            @endif
+                        </div>
+                    </div>
+                @endif
             </div>
 
             <hr class="section-divider">
@@ -5768,6 +5855,13 @@ function vehicleColumnsToggle() {
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bank') }}</dt><dd class="font-medium">{{ $purchase_seller_bank ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.holder') }}</dt><dd class="font-medium">{{ $purchase_seller_holder ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.account') }}</dt><dd class="font-mono font-medium">{{ $purchase_seller_account ?: __('vehicle.save.val_empty') }}</dd></div>
+                    @if($purchase_fee_bank || $purchase_fee_holder || $purchase_fee_account)
+                    <hr class="border-blue-200 my-1">
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.panel.sec.fee_account') }}</dt><dd></dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bank') }}</dt><dd class="font-medium">{{ $purchase_fee_bank ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.holder') }}</dt><dd class="font-medium">{{ $purchase_fee_holder ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.account') }}</dt><dd class="font-mono font-medium">{{ $purchase_fee_account ?: __('vehicle.save.val_empty') }}</dd></div>
+                    @endif
                 </dl>
             </div>
             @elseif($activeTabForSave === 'sale')
