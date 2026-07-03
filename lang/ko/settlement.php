@@ -87,6 +87,9 @@ return [
     'vehicle_search_ph' => '차량번호 입력 (2자 이상)...',
 
     'section_margin' => '마진 산출내역',
+    'section_costs' => '적용 비용 내역',
+    'costs_total' => '비용 합계',
+    'costs_total_sub' => '(= cost_total, 총마진에 반영)',
     'margin_sales_krw' => '판매금원화',
     'margin_sales_krw_formula' => '(판매가+커미션+자동하역비-TAX/DC)×환율',
     'margin_settle_sales_krw' => '정산판매금원화',
