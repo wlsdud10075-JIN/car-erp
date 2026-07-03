@@ -973,13 +973,13 @@ class WorkflowGapTest extends TestCase
 
     // ── 2026-05-20 큐 22-C-light — 매입 자동 PBP Draft 생성 ──
 
-    public function test_22c_auto_pbp_draft_created_on_purchase_price_input(): void
+    public function test_22c_no_auto_pbp_draft_on_purchase_price_input(): void
     {
+        // jin 2026-07-03 — 자동 PBP Draft 제거. 매입가 입력 단순 저장은 PBP 를 만들지 않는다
+        //   (재무처리 큐 자동 유입 방지). 미지급은 accessor 로 노출.
         $admin = User::factory()->create(['permission' => 'admin']);
         $this->actingAs($admin);
 
-        // 영업 매입가 입력 → 자동 PBP Draft 1건 생성
-        // 큐 22-C-E (2026-05-20) — down_payment 컬럼 DROP. 자동 Draft amount = price + fee.
         $v = Vehicle::create([
             'vehicle_number' => '22C-AUTO-1',
             'sales_channel' => 'export',
@@ -990,16 +990,13 @@ class WorkflowGapTest extends TestCase
             'dhl_request' => false,
         ]);
 
-        $pbps = $v->purchaseBalancePayments()->get();   // fresh query
-        $this->assertCount(1, $pbps, '자동 PBP Draft 1건 생성');
-        $this->assertSame(5500000, (int) $pbps->first()->amount, 'amount = price + fee = 5000000 + 500000');
-        $this->assertNull($pbps->first()->payment_date, 'Draft: payment_date NULL');
-        $this->assertNull($pbps->first()->confirmed_at, 'Draft: confirmed_at NULL');
-        $this->assertSame($admin->id, $pbps->first()->created_by_user_id);
+        $this->assertCount(0, $v->purchaseBalancePayments()->get(), '자동 PBP Draft 생성 안 됨');
+        $this->assertSame(5500000, $v->fresh()->purchase_unpaid_amount, '미지급은 accessor 로 전액(price+fee)');
     }
 
-    public function test_22c_auto_pbp_skipped_when_pbp_exists(): void
+    public function test_22c_simple_save_never_creates_pbp_even_on_price_change(): void
     {
+        // jin 2026-07-03 — 최초 저장/매입가 변경 모두 PBP 0건 유지.
         $admin = User::factory()->create(['permission' => 'admin']);
         $this->actingAs($admin);
 
@@ -1011,12 +1008,11 @@ class WorkflowGapTest extends TestCase
             'purchase_price' => 5000000,
             'dhl_request' => false,
         ]);
-        $this->assertSame(1, $v->purchaseBalancePayments()->count(), '1차 자동 생성');
+        $this->assertSame(0, $v->purchaseBalancePayments()->count(), '단순 저장 PBP 0건');
 
-        // 매입가 변경 → 자동 재생성 X (PO 우려 회피)
         $v->purchase_price = 7000000;
         $v->save();
-        $this->assertSame(1, $v->purchaseBalancePayments()->count(), '매입가 변경 시 PBP 재생성 X');
+        $this->assertSame(0, $v->purchaseBalancePayments()->count(), '매입가 변경도 PBP 0건');
     }
 
     public function test_22c_auto_pbp_skipped_when_paid_settlement_exists(): void
@@ -1406,9 +1402,10 @@ class WorkflowGapTest extends TestCase
 
     // ── 2026-05-20 사용자 정정 — 자동 PBP Draft payment_date = 매입일 동기화 ──
 
-    public function test_22c_auto_pbp_payment_date_equals_purchase_date(): void
+    public function test_22c_purchase_date_change_syncs_unconfirmed_pbp_payment_date(): void
     {
-        // 사용자 정정 2026-05-20 — 자동 PBP Draft 생성 시 payment_date 가 vehicle.purchase_date 와 동기화.
+        // 매입일 변경 시 미확정(대기) 매입 잔금 payment_date 동기화 (자동 Draft 제거 후에도 유지되는 훅).
+        // 자동 Draft 는 이제 안 만들어지므로 수동 미확정 PBP 로 검증. confirmed PBP 는 sync 대상 X.
         $admin = User::factory()->create(['permission' => 'admin']);
         $this->actingAs($admin);
 
@@ -1416,32 +1413,20 @@ class WorkflowGapTest extends TestCase
             'purchase_price' => 5_000_000,
             'purchase_date' => '2026-05-15',
         ]);
+        $this->assertSame(0, $v->purchaseBalancePayments()->count(), '자동 Draft 없음');
 
-        $autoPbp = $v->purchaseBalancePayments()->first();
-        $this->assertNotNull($autoPbp);
-        $this->assertEquals('2026-05-15', $autoPbp->payment_date->toDateString());
-    }
-
-    public function test_22c_purchase_date_change_syncs_draft_pbp_payment_date(): void
-    {
-        // 사용자 정정 2026-05-20 — 매입일 변경 시 Draft PBP payment_date 자동 동기화.
-        // confirmed PBP 는 잠금되어 sync 대상 X.
-        $admin = User::factory()->create(['permission' => 'admin']);
-        $this->actingAs($admin);
-
-        $v = $this->makeVehicle([
-            'purchase_price' => 5_000_000,
-            'purchase_date' => '2026-05-15',
+        // 재무가 대기(미확정) 매입 잔금 1건을 직접 등록했다고 가정.
+        $pending = $v->purchaseBalancePayments()->create([
+            'amount' => 3_000_000, 'type' => 'balance',
+            'payment_date' => '2026-05-15', 'confirmed_at' => null,
         ]);
-        $autoPbp = $v->purchaseBalancePayments()->first();
-        $this->assertEquals('2026-05-15', $autoPbp->payment_date->toDateString());
 
-        // 매입일 변경 → Draft PBP date 동기화
+        // 매입일 변경 → 미확정 PBP payment_date 동기화
         $v->purchase_date = '2026-05-20';
         $v->save();
 
-        $autoPbp->refresh();
-        $this->assertEquals('2026-05-20', $autoPbp->payment_date->toDateString());
+        $pending->refresh();
+        $this->assertEquals('2026-05-20', $pending->payment_date->toDateString());
     }
 
     // ── 2026-05-20 큐 22-C-F — type별 분자 정합 + 권한 매트릭스 + schema 검증 ──
@@ -1540,27 +1525,6 @@ class WorkflowGapTest extends TestCase
         ]);
         // SQLite/MySQL — enum default 'balance' 는 DB schema 레벨 적용. fresh() 로 재로드 후 확인.
         $this->assertSame('balance', $pbp->fresh()->type);
-    }
-
-    public function test_22cf_auto_pbp_draft_type_is_balance(): void
-    {
-        // Vehicle::saved 자동 PBP Draft 의 type = 'balance' default (잔금 의미).
-        $admin = User::factory()->create(['permission' => 'admin']);
-        $this->actingAs($admin);
-
-        $v = Vehicle::create([
-            'vehicle_number' => '22CF-AUTO',
-            'sales_channel' => 'export',
-            'currency' => 'KRW',
-            'exchange_rate' => 1,
-            'purchase_price' => 5_000_000,
-            'selling_fee' => 500_000,
-            'dhl_request' => false,
-        ]);
-
-        $pbps = $v->purchaseBalancePayments()->get();
-        $this->assertCount(1, $pbps);
-        $this->assertSame('balance', $pbps->first()->type, '자동 Draft type=balance (잔금)');
     }
 
     public function test_22cf_paid_settlement_blocks_2_types_via_creating_hook(): void
@@ -2140,13 +2104,12 @@ class WorkflowGapTest extends TestCase
         $this->assertSame(0, $count, '거래완료 차량은 activeOnly 로 제외');
     }
 
-    // ── 2026-05-20 22-C-light 후속 fix — 자동 PBP Draft sync 삭제 버그 회귀 ──
+    // ── jin 2026-07-03 — 자동 PBP Draft 제거: 영업 신규 등록도 PBP 0건 (재무처리 큐 유입 없음) ──
 
-    public function test_22c_auto_pbp_draft_survives_new_vehicle_save(): void
+    public function test_22c_no_auto_pbp_draft_on_sales_new_vehicle_save(): void
     {
-        // 사용자 버그 보고 (2026-05-20): 영업이 신규 차량 등록 시 Vehicle::saved 자동 PBP Draft 가
-        // 매입 잔금 sync 의 array_diff 로 삭제되어 재무에게 토스 안 되는 버그.
-        // fix: Vehicle save 전에 PBP existing id 캡처 (자동 생성 후 캡처하면 자동 PBP 가 삭제 대상에 포함됨).
+        // 영업이 신규 차량 등록(매입가 입력) 해도 자동 PBP Draft 안 생김.
+        // 미지급은 accessor 로 노출 → 재무가 매입 잔금 탭에서 지급 시 직접 확정.
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         Salesman::create(['name' => 'TEST-AUTO-TOSS', 'is_active' => true, 'user_id' => $sales->id]);
         $this->actingAs($sales);
@@ -2161,10 +2124,8 @@ class WorkflowGapTest extends TestCase
 
         $v = Vehicle::where('vehicle_number', 'AUTO-TOSS-1')->first();
         $this->assertNotNull($v, '차량 저장 완료');
-        $pbps = $v->purchaseBalancePayments()->get();
-        $this->assertCount(1, $pbps, '자동 PBP Draft 1건 살아 있어야 (sync 삭제 차단)');
-        $this->assertNull($pbps->first()->confirmed_at, 'Draft 상태 (재무 확정 전)');
-        $this->assertSame(5000000, (int) $pbps->first()->amount);
+        $this->assertCount(0, $v->purchaseBalancePayments()->get(), '자동 PBP Draft 없음');
+        $this->assertSame(5000000, $v->fresh()->purchase_unpaid_amount, '미지급 accessor 로 노출');
     }
 
     // ── 2026-05-20 안건 J 본격 — v3 거래완료 trigger 단순화 ──
