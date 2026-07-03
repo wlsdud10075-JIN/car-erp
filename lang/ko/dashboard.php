@@ -18,7 +18,7 @@ return [
     'salesman_missing_sub' => '관리자에게 본 계정의 salesman 연결을 요청하세요.',
 
     'fx_title' => '실시간 환율',
-    'fx_sub' => '(KRW 기준 · 1h 캐시)',
+    'fx_sub' => '(송금받을때 · KRW 기준 · 1h 캐시)',
     'fx_refresh' => '새로고침',
     'fx_fail' => '⚠ 실시간 환율 조회 실패 — 잔금N+ 추가 시 수동 입력하세요.',
     'fx_refreshed' => '환율 새로고침 완료',

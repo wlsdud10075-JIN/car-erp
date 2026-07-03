@@ -31,36 +31,24 @@ class ExchangeRateServiceTest extends TestCase
 
     private function fakeNaverHtml(): array
     {
-        $mainHtml = '
-            <html>
-                <a href="..." class="head usd">
-                    <span class="value">1,367.50</span>
-                </a>
-                <a href="..." class="head jpy">
-                    <span class="value">9.05</span>
-                </a>
-                <a href="..." class="head eur">
-                    <span class="value">1,470.20</span>
-                </a>
-                <a href="..." class="head cny">
-                    <span class="value">189.30</span>
-                </a>
-            </html>
-        ';
-        // 네이버 detail 페이지 — 자리수별 span 분리 (실제 구조)
-        $gbpHtml = '
-            <html>
-                <p class="no_today">
-                    <em class="no_up">
-                        <span class="no1">1</span><span class="shim">,</span><span class="no7">7</span><span class="no2">2</span><span class="no0">0</span><span class="jum">.</span><span class="no4">4</span><span class="no0">0</span>
-                    </em>
-                </p>
-            </html>
-        ';
+        // 상세페이지 tbl_exchange 구조 — th_ex5 = 송금 받으실 때(전신환 매입률).
+        // th_ex2(현찰살때)에 다른 값을 넣어 셀렉터가 엉뚱한 셀을 안 잡는지 검증.
+        $detail = fn (string $ttBuying) => Http::response(
+            '<table class="tbl_exchange"><tbody>'
+            .'<tr><th class="th_ex2"><span>현찰 사실 때</span></th><td> 9,999.99 </td></tr>'
+            .'<tr><th class="th_ex3"><span>현찰 파실 때</span></th><td> 8,888.88 </td></tr>'
+            .'<tr><th class="th_ex4"><span>송금 보내실 때</span></th><td> 7,777.77 </td></tr>'
+            .'<tr><th class="th_ex5"><span>송금 받으실 때</span></th><td> '.$ttBuying.' </td></tr>'
+            .'</tbody></table>',
+            200
+        );
 
         return [
-            'https://finance.naver.com/marketindex/' => Http::response($mainHtml, 200),
-            'https://finance.naver.com/marketindex/exchangeDetail.naver*' => Http::response($gbpHtml, 200),
+            '*marketindexCd=FX_USDKRW*' => $detail('1,367.50'),
+            '*marketindexCd=FX_JPYKRW*' => $detail('9.05'),
+            '*marketindexCd=FX_EURKRW*' => $detail('1,470.20'),
+            '*marketindexCd=FX_GBPKRW*' => $detail('1,720.40'),
+            '*marketindexCd=FX_CNYKRW*' => $detail('189.30'),
         ];
     }
 
