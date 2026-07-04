@@ -4144,6 +4144,7 @@ function vehicleColumnsToggle() {
     openLightbox(url, name, kind) { this.lightbox = { open: true, url: url, name: name, kind: kind }; },
     closeLightbox() { this.lightbox.open = false; },
     attemptClose() {
+        if ($wire.showMailModal) { $wire.closeMailModal(); return; }   // 메일 모달이 최상위 — ESC는 그것부터 닫음
         if (this.lightbox.open) { this.lightbox.open = false; return; }
         if (this.confirmOpen) { this.confirmOpen = false; return; }
         if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
@@ -5832,7 +5833,7 @@ function vehicleColumnsToggle() {
 {{-- 메일 발송 모달 (서류 탭) — 바이어에게 업로드 문서 전달.
      ⚠️ 슬라이드 패널 stacking context 밖에 배치 (@if($showPanel) 래퍼 안에 두면 패널 뒤로 감). --}}
 @if ($showMailModal)
-<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" wire:key="mail-modal">
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" wire:key="mail-modal" wire:click.self="closeMailModal">
     <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div class="mb-3 flex items-center justify-between">
             <h3 class="text-base font-bold text-gray-800">{{ __('vehicle.mail.modal_title') }}</h3>
