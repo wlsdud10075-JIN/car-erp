@@ -179,6 +179,11 @@ function applyDashPattern(value, pattern) {
         out += digits.substring(pos, pos + len);
         pos += len;
     }
+    // 패턴 자릿수 초과분은 버리지 않고 뒤에 이어붙임 — 법인계좌 등 표준 형식과 자릿수가
+    // 다른 계좌가 잘려서 "다 기입 안 됨" 되는 것 방지 (신한 3-3-6 등 개인계좌 기준 패턴).
+    if (pos < digits.length) {
+        out += (out !== '' ? '-' : '') + digits.substring(pos);
+    }
     return out;
 }
 
