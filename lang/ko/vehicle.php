@@ -680,6 +680,7 @@ return [
         'file_bl' => 'B/L 문서',
         'gen_hint' => '자동생성 서류는 발송 시점에 최신 차량 정보로 새로 만들어 xlsx로 첨부됩니다.',
         'gen_failed' => '서류 생성 중 오류가 발생했습니다. 차량 정보를 확인하세요.',
+        'body_default' => "Dear Customer,\n\nPlease find the attached document(s) for your vehicle.\nThank you for doing business with :company — it was a pleasure serving you, and we look forward to working with you again.\n\nBest regards,\n:company Team",
     ],
 
     // 같은 바이어 미수 배너 (판매 탭)
