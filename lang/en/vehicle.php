@@ -146,8 +146,16 @@ return [
         'g1' => [
             'no_price' => '⚠ Sell price missing — enter sale info (sell price) before issuing B/L',
             'override' => '⚠ Unpaid :ratio% — management/admin unpaid-bypass approval (B/L issuance) applied → B/L can be issued',
-            'locked' => '🔒 B/L issuance locked — unpaid :ratio% (balance not 100% paid). Issue after full payment, or needs management/admin unpaid-bypass approval (shipping).',
+            'locked' => '🔒 B/L issuance locked — unpaid :ratio% (balance not 100% paid). Issue after full payment, or needs management/admin unpaid-bypass approval (B/L issuance stage).',
             'ok' => '✓ B/L can be issued — balance 100% paid',
+        ],
+        // C5 entry gate (clearance/shipping entry 50%) — shipping & clearance tab banner
+        'c5' => [
+            'rate_missing' => '⚠ Exchange rate missing — enter the rate to allow clearance/shipping entry for foreign-currency vehicles',
+            'blocked' => '🔒 Clearance/shipping entry locked — paid :paid% (under 50%). Pay 50%+, or needs management/admin unpaid-bypass approval (clearance/shipping entry).',
+            'override' => '⚠ Paid :paid% — management/admin unpaid-bypass approval (entry) applied → clearance/shipping entry allowed',
+            'ok' => '✓ Clearance/shipping entry allowed — paid :paid% (50%+)',
+            'bl_note' => 'B/L issuance requires 100% full payment (issue on the B/L tab).',
         ],
 
         // Sale tab misc
