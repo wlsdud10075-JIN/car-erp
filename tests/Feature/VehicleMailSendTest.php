@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
+use App\Support\CompanyMailConfig;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
 use Livewire\Volt\Volt;
@@ -84,6 +85,24 @@ class VehicleMailSendTest extends TestCase
         $log = MailDeliveryLog::first();
         $this->assertSame('sent', $log->status);
         $this->assertCount(1, $log->document_names);
+    }
+
+    public function test_open_modal_prefills_body_with_company_name(): void
+    {
+        $this->configureSes();
+        $this->actingAs($this->super());
+        $vehicle = Vehicle::create(['vehicle_number' => '99마0011', 'sales_channel' => 'export']);
+
+        $company = CompanyMailConfig::active()->companyLabel();
+        $expected = __('vehicle.mail.body_default', ['company' => $company]);
+
+        Volt::test('erp.vehicles.index')
+            ->set('editingId', $vehicle->id)
+            ->call('openMailModal')
+            ->assertSet('showMailModal', true)
+            ->assertSet('mailBody', $expected);
+
+        $this->assertStringContainsString($company, $expected);
     }
 
     public function test_invalid_recipient_blocks_send(): void

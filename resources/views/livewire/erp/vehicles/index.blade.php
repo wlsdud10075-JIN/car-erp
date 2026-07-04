@@ -842,7 +842,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $company = \App\Support\CompanyMailConfig::active();
         $this->mailSubject = $company->companyLabel().' - '.$vehicle->vehicle_number;
-        $this->mailBody = '';
+        $this->mailBody = __('vehicle.mail.body_default', ['company' => $company->companyLabel()]);
         $this->mailNotice = $company->isConfigured() ? null : __('vehicle.mail.not_configured');
         $this->resetErrorBag(['mailTo']);
         $this->showMailModal = true;

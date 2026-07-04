@@ -680,6 +680,7 @@ return [
         'file_bl' => 'B/L document',
         'gen_hint' => 'Auto-generated documents are freshly created from the latest vehicle data and attached as xlsx at send time.',
         'gen_failed' => 'An error occurred while generating a document. Check the vehicle data.',
+        'body_default' => "Dear Customer,\n\nPlease find the attached document(s) for your vehicle.\nThank you for doing business with :company — it was a pleasure serving you, and we look forward to working with you again.\n\nBest regards,\n:company Team",
     ],
 
     // Same-buyer outstanding banner (sale tab)
