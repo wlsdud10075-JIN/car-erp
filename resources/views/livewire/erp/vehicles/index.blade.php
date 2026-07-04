@@ -1258,6 +1258,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    // 미입금 게이트 상태 — 선적·통관·B/L 탭 배너 공유. export 채널만, 그 외/미편집 null.
+    #[Computed]
+    public function exportGateStatus(): ?array
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+        $v = Vehicle::with('unpaidExportOverrides')->find($this->editingId);
+        if (! $v || $v->sales_channel !== 'export') {
+            return null;
+        }
+        $ratio = $v->unpaid_ratio;
+
+        return [
+            'ratio' => $ratio,   // null = 환율 미입력
+            'paid_pct' => $ratio === null ? null : round((1 - $ratio) * 100, 1),
+            'ratio_pct' => $ratio === null ? null : round($ratio * 100, 1),
+            'entry_override' => $v->hasEntryUnpaidOverride(),
+            'has_bl' => ! empty($v->bl_document),
+        ];
+    }
+
     public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; unset($this->consigneesForSale); }
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
@@ -5400,6 +5422,26 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.clearance') }}</span>
             </div>
+
+            {{-- 미입금 진입 게이트(C5 50%) 안내 — 선적·통관 공유 (2026-07-04) --}}
+            @php $gateC = $this->exportGateStatus; @endphp
+            @if($gateC && ! $gateC['has_bl'])
+            <div class="mb-3 rounded-md border px-3 py-2 text-xs
+                {{ $gateC['ratio'] === null ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : ($gateC['ratio'] > 0.5
+                        ? ($gateC['entry_override'] ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
+                @if($gateC['ratio'] === null)
+                    {{ __('vehicle.panel.c5.rate_missing') }}
+                @elseif($gateC['ratio'] > 0.5)
+                    {{ $gateC['entry_override'] ? __('vehicle.panel.c5.override', ['paid' => $gateC['paid_pct']]) : __('vehicle.panel.c5.blocked', ['paid' => $gateC['paid_pct']]) }}
+                @else
+                    {{ __('vehicle.panel.c5.ok', ['paid' => $gateC['paid_pct']]) }}
+                @endif
+                <span class="mt-0.5 block text-[11px] opacity-80">{{ __('vehicle.panel.c5.bl_note') }}</span>
+            </div>
+            @endif
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <div class="flex items-center justify-between">
@@ -5516,6 +5558,26 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.shipping') }}</span>
             </div>
+
+            {{-- 미입금 진입 게이트(C5 50%) 안내 — 선적·통관 공유 (2026-07-04) --}}
+            @php $gate = $this->exportGateStatus; @endphp
+            @if($gate && ! $gate['has_bl'])
+            <div class="mb-3 rounded-md border px-3 py-2 text-xs
+                {{ $gate['ratio'] === null ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : ($gate['ratio'] > 0.5
+                        ? ($gate['entry_override'] ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
+                @if($gate['ratio'] === null)
+                    {{ __('vehicle.panel.c5.rate_missing') }}
+                @elseif($gate['ratio'] > 0.5)
+                    {{ $gate['entry_override'] ? __('vehicle.panel.c5.override', ['paid' => $gate['paid_pct']]) : __('vehicle.panel.c5.blocked', ['paid' => $gate['paid_pct']]) }}
+                @else
+                    {{ __('vehicle.panel.c5.ok', ['paid' => $gate['paid_pct']]) }}
+                @endif
+                <span class="mt-0.5 block text-[11px] opacity-80">{{ __('vehicle.panel.c5.bl_note') }}</span>
+            </div>
+            @endif
+
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <div class="flex items-center justify-between">
