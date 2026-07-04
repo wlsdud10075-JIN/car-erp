@@ -5811,7 +5811,26 @@ function vehicleColumnsToggle() {
     </div>
 </div>
 
-{{-- 메일 발송 모달 (서류 탭) — 바이어에게 업로드 문서 전달 --}}
+{{-- 큐 18: close confirm 모달 (.card) --}}
+<div x-show="confirmOpen" x-cloak x-transition.opacity
+     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+     @click.self="confirmOpen = false">
+    <div class="card max-w-sm mx-4 shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.close_title') }}</h3>
+        <p class="mt-2 text-sm text-gray-600">{{ __('vehicle.modal.close_body') }}</p>
+        <div class="mt-5 flex justify-end gap-2">
+            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.modal.close_discard') }}</button>
+        </div>
+    </div>
+</div>
+
+
+</div>{{-- /x-data --}}
+@endif
+
+{{-- 메일 발송 모달 (서류 탭) — 바이어에게 업로드 문서 전달.
+     ⚠️ 슬라이드 패널 stacking context 밖에 배치 (@if($showPanel) 래퍼 안에 두면 패널 뒤로 감). --}}
 @if ($showMailModal)
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" wire:key="mail-modal">
     <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -5857,24 +5876,6 @@ function vehicleColumnsToggle() {
         </div>
     </div>
 </div>
-@endif
-
-{{-- 큐 18: close confirm 모달 (.card) --}}
-<div x-show="confirmOpen" x-cloak x-transition.opacity
-     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
-     @click.self="confirmOpen = false">
-    <div class="card max-w-sm mx-4 shadow-2xl">
-        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.close_title') }}</h3>
-        <p class="mt-2 text-sm text-gray-600">{{ __('vehicle.modal.close_body') }}</p>
-        <div class="mt-5 flex justify-end gap-2">
-            <button @click="confirmOpen = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
-            <button @click="confirmDiscard()" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.modal.close_discard') }}</button>
-        </div>
-    </div>
-</div>
-
-
-</div>{{-- /x-data --}}
 @endif
 
 {{-- 큐 21 후속 — 말소·수출통관 체크↔서류 mismatch 확인 모달 (사용자 결정 2026-05-18).
