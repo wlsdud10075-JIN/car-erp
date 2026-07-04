@@ -1172,7 +1172,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
-     * 매입 / 말소 / 판매 / 입금 / 통관 / 선적 / DHL.
+     * 매입 / 말소 / 판매 / 입금 / 선적(반입) / 통관 / B/L. (DHL 흐름 제외 2026-07-04)
      * 상태: done(✓) / warn(!) / progress(진행중) / pending(-).
      * 큐 17 — 폐기 컨셉 제거. disabled 상태 사용처 없어짐.
      * 큐 6 잔여 H13 — warn/pending/progress 노드에 reason 텍스트 부착 (tooltip 안내).
@@ -1232,29 +1232,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             default => null,
         };
 
-        // 선적
+        // 선적(반입) — 반입지 입력 = 완료 (B/L 발급과 분리, 2026-07-04)
+        $shippingStatus = $v->bl_loading_location ? 'done' : 'pending';
+        $shippingReason = $shippingStatus === 'pending' ? __('vehicle.reason.shipping_pending') : null;
+
+        // B/L — 문서 업로드 = 완료(거래완료). 통관완료 + 반입지 있으면 진행중.
         $blStatus = $v->bl_document ? 'done'
-            : ($v->bl_loading_location ? 'progress' : 'pending');
+            : ($v->bl_loading_location && $v->is_export_cleared ? 'progress' : 'pending');
         $blReason = match (true) {
             $blStatus === 'progress' => __('vehicle.reason.bl_progress'),
             $blStatus === 'pending' => __('vehicle.reason.bl_pending'),
             default => null,
         };
 
-        // DHL
-        $dhlStatus = $v->dhl_request ? 'done' : 'pending';
-        $dhlReason = $dhlStatus === 'pending' ? __('vehicle.reason.dhl_pending') : null;
-
+        // 실제 업무 순서: 매입 → 말소 → 판매 → 입금 → 선적(반입) → 통관 → B/L(최종).
+        // DHL 은 흐름도에서 제외(사용 불명확, 탭은 유지, jin 2026-07-04).
         return [
             ['key' => 'purchase',       'label' => __('vehicle.panel.flow.purchase'),       'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
             ['key' => 'deregistration', 'label' => __('vehicle.panel.flow.deregistration'), 'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
             ['key' => 'sale',           'label' => __('vehicle.panel.flow.sale'),           'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
             ['key' => 'payment',        'label' => __('vehicle.panel.flow.payment'),        'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
-            // 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 통관.
-            // 라벨 '통관' 보존 (단계 약자) — role 명칭 '수출통관'과 분리. 7노드 흐름도 박스 폭 좁아짐 방지.
-            ['key' => 'bl',             'label' => __('vehicle.panel.flow.bl'),        'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
+            ['key' => 'shipping',       'label' => __('vehicle.panel.flow.shipping'),  'tab' => 'shipping',  'status' => $shippingStatus,  'reason' => $shippingReason],
             ['key' => 'clearance',      'label' => __('vehicle.panel.flow.clearance'), 'tab' => 'clearance', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
-            ['key' => 'dhl',            'label' => __('vehicle.panel.flow.dhl'),       'tab' => 'dhl',       'status' => $dhlStatus,       'reason' => $dhlReason],
+            ['key' => 'bl',             'label' => __('vehicle.panel.flow.bl'),        'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
         ];
     }
 
@@ -4376,7 +4376,7 @@ function vehicleColumnsToggle() {
     {{-- Tab Nav --}}
     {{-- 회의확장씬 #1 v4 (2026-05-21) — 워크플로우 순서 swap: 선적 → 수출통관 --}}
     <div class="flex overflow-x-auto border-b border-gray-200 px-5">
-        @foreach(['basic', 'purchase', 'sale', 'bl', 'clearance', 'dhl', 'docs'] as $key)
+        @foreach(['basic', 'purchase', 'sale', 'shipping', 'clearance', 'bl', 'dhl', 'docs'] as $key)
         <button @click="tab = '{{ $key }}'"
                 :class="tab === '{{ $key }}' ? 'border-b-2 border-violet-600 text-violet-600' : 'text-gray-500 hover:text-gray-700'"
                 class="flex-shrink-0 px-4 py-3 text-sm font-medium transition">
@@ -5510,6 +5510,57 @@ function vehicleColumnsToggle() {
         </div>
 
         {{-- ─── B/L 탭 ────────────────────────────────────── --}}
+        {{-- ─── 선적 탭 (반입) — B/L 발급과 분리 (2026-07-04). 반입지·선박·컨테이너·선적당사자 --}}
+        <div x-show="tab === 'shipping'" x-cloak>
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ __('vehicle.panel.sec.shipping') }}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">{{ __('vehicle.field.bl_buyer') }}</label>
+                        <button type="button" wire:click="openQuickAdd('buyer','bl')"
+                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
+                    </div>
+                    <select wire:model.live="bl_buyer_id_str" class="input-base">
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                        @foreach($this->buyers as $b)
+                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label class="label-base">{{ __('vehicle.field.bl_consignee') }}</label>
+                        <button type="button" wire:click="openQuickAdd('consignee','bl')"
+                                @if($bl_buyer_id_str === '') disabled @endif
+                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
+                    </div>
+                    <select wire:model="bl_consignee_id_str" class="input-base"
+                            @if($bl_buyer_id_str === '') disabled @endif>
+                        <option value="">{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
+                        @foreach($this->consigneesForBl as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.loading_location') }}</label>
+                    <select wire:model="bl_loading_location" class="input-base">
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                        @foreach($this->unloadingPorts as $p)
+                        <option value="{{ $p->name }}">{{ $p->display_name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
+            </div>
+        </div>
+
+        {{-- ─── B/L 탭 (발급) — 수출통관 다음, 실제 업무 최종 단계 (2026-07-04) --}}
         <div x-show="tab === 'bl'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-emerald-500"></span>
@@ -5547,47 +5598,7 @@ function vehicleColumnsToggle() {
             @endif
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.bl_buyer') }}</label>
-                        <button type="button" wire:click="openQuickAdd('buyer','bl')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <select wire:model.live="bl_buyer_id_str" class="input-base">
-                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach($this->buyers as $b)
-                        <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.bl_consignee') }}</label>
-                        <button type="button" wire:click="openQuickAdd('consignee','bl')"
-                                @if($bl_buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <select wire:model="bl_consignee_id_str" class="input-base"
-                            @if($bl_buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
-                        @foreach($this->consigneesForBl as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
                 <div><label class="label-base">{{ __('vehicle.field.bl_number') }}</label><input wire:model="bl_number" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
-                {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.loading_location') }}</label>
-                    <select wire:model="bl_loading_location" class="input-base">
-                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach($this->unloadingPorts as $p)
-                        <option value="{{ $p->name }}">{{ $p->display_name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
                 {{-- B/L 방식(오리지널/써랜더) + 이중가드 — 영업 요청(shipping_requests.bl_type) vs 관리 확인(vehicles.bl_type) --}}
                 @php
