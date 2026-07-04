@@ -728,11 +728,22 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $mailBody = '';
 
-    public array $mailDocIds = [];       // 선택된 업로드 문서 id
+    public array $mailDocIds = [];       // 선택된 첨부 key ('photo:{id}' | 'file:{col}' | 'gen:{type}')
 
-    public array $mailDocs = [];         // 후보 첨부 [['id'=>, 'name'=>], ...]
+    public array $mailDocsUpload = [];   // 업로드 사진·첨부 [['key'=>, 'name'=>], ...]
+
+    public array $mailDocsFile = [];     // 단계 업로드 파일(말소·수출신고서·B/L)
+
+    public array $mailDocsGen = [];      // 자동생성 서류(서류 탭)
 
     public ?string $mailNotice = null;   // 발신 설정 미완 등 안내
+
+    // 메일 첨부 후보 — 단계 업로드 파일 컬럼 / 자동생성 서류 type (VehicleDocumentController 와 정합)
+    private const MAIL_STAGE_FILES = ['deregistration_document', 'export_declaration_document', 'bl_document'];
+
+    private const MAIL_GEN_ALL = ['deregistration', 'deregistration_contract', 'poa', 'clearance'];
+
+    private const MAIL_GEN_EXPORT = ['invoice', 'sales_contract', 'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'];
 
     public function mount(): void
     {
@@ -763,7 +774,40 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
-    // 메일 발송 모달 열기 — 편집 중 차량의 업로드 문서 목록 + 바이어 이메일 프리필.
+    // 자동생성 서류 type → 서류 탭 라벨(vehicle.docs.*) 매핑
+    private function mailGenLabel(string $type): string
+    {
+        $map = [
+            'deregistration' => 'deregistration', 'deregistration_contract' => 'derg_contract', 'poa' => 'poa',
+            'invoice' => 'invoice', 'sales_contract' => 'sales_contract',
+            'container_invoice_packing' => 'container_invoice_packing', 'container_contract' => 'container_contract',
+            'roro_invoice_packing' => 'roro_invoice_packing', 'roro_contract' => 'roro_contract',
+            'clearance' => 'clearance_set',
+        ];
+
+        return __('vehicle.docs.'.($map[$type] ?? $type));
+    }
+
+    private function mailStageLabel(string $col): string
+    {
+        return match ($col) {
+            'deregistration_document' => __('vehicle.mail.file_deregistration'),
+            'export_declaration_document' => __('vehicle.mail.file_export_declaration'),
+            'bl_document' => __('vehicle.mail.file_bl'),
+            default => $col,
+        };
+    }
+
+    private function mailGenAllowed(\App\Models\Vehicle $v, string $type): bool
+    {
+        if (in_array($type, self::MAIL_GEN_ALL, true)) {
+            return true;
+        }
+
+        return in_array($type, self::MAIL_GEN_EXPORT, true) && $v->sales_channel === 'export';
+    }
+
+    // 메일 발송 모달 열기 — 첨부 후보 3그룹(업로드/단계파일/자동생성) + 바이어 이메일 프리필.
     public function openMailModal(): void
     {
         if ($this->editingId === null) {
@@ -774,7 +818,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             abort(403, __('vehicle.toast.edit_own_only'));
         }
 
-        $this->mailDocs = $vehicle->photos->map(fn ($p) => ['id' => $p->id, 'name' => $p->filename])->values()->all();
+        // ① 업로드 사진·첨부
+        $this->mailDocsUpload = $vehicle->photos->map(fn ($p) => ['key' => 'photo:'.$p->id, 'name' => $p->filename])->values()->all();
+
+        // ② 단계 업로드 파일 (있는 것만)
+        $stage = [];
+        foreach (self::MAIL_STAGE_FILES as $col) {
+            if (! empty($vehicle->$col)) {
+                $stage[] = ['key' => 'file:'.$col, 'name' => $this->mailStageLabel($col).' ('.basename($vehicle->$col).')'];
+            }
+        }
+        $this->mailDocsFile = $stage;
+
+        // ③ 자동생성 서류 (채널별)
+        $genTypes = self::MAIL_GEN_ALL;
+        if ($vehicle->sales_channel === 'export') {
+            $genTypes = array_merge($genTypes, self::MAIL_GEN_EXPORT);
+        }
+        $this->mailDocsGen = array_map(fn ($t) => ['key' => 'gen:'.$t, 'name' => $this->mailGenLabel($t)], $genTypes);
+
         $this->mailDocIds = [];
         $this->mailTo = $vehicle->buyer?->contact_email ?? '';
 
@@ -791,7 +853,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showMailModal = false;
     }
 
-    // 발송 — 회사 방식(Gmail/SES)대로. 선택 문서는 이 차량 소속만 첨부(IDOR 방지). 결과는 로그 기록.
+    // 발송 — 회사 방식(Gmail/SES)대로. 선택 첨부는 이 차량 소속만(IDOR 방지). 결과는 로그 기록.
     public function sendVehicleMail(): void
     {
         if ($this->editingId === null) {
@@ -816,13 +878,53 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        // 선택 문서 — 이 차량 소속만(IDOR 방지)
-        $selected = $vehicle->photos->whereIn('id', $this->mailDocIds);
-        $files = $selected->map(fn ($p) => ['path' => $p->path, 'name' => $p->filename])->values()->all();
-        $docNames = $selected->pluck('filename')->values()->all();
+        // 선택 key 해석 — 이 차량 소속만(IDOR 방지)
+        $storedFiles = [];   // 업로드 사진·단계 파일
+        $genTypes = [];      // 자동생성 서류 type
+        $docNames = [];
+        foreach ($this->mailDocIds as $key) {
+            if (str_starts_with($key, 'photo:')) {
+                $p = $vehicle->photos->firstWhere('id', (int) substr($key, 6));
+                if ($p) {
+                    $storedFiles[] = ['path' => $p->path, 'name' => $p->filename];
+                    $docNames[] = $p->filename;
+                }
+            } elseif (str_starts_with($key, 'file:')) {
+                $col = substr($key, 5);
+                if (in_array($col, self::MAIL_STAGE_FILES, true) && ! empty($vehicle->$col)) {
+                    $storedFiles[] = ['path' => $vehicle->$col, 'name' => basename($vehicle->$col)];
+                    $docNames[] = basename($vehicle->$col);
+                }
+            } elseif (str_starts_with($key, 'gen:')) {
+                $type = substr($key, 4);
+                if ($this->mailGenAllowed($vehicle, $type)) {
+                    $genTypes[] = $type;
+                }
+            }
+        }
+
+        // 자동생성 서류 → xlsx 바이너리 (실패 시 발송 중단)
+        $dataFiles = [];
+        try {
+            foreach ($genTypes as $type) {
+                $filler = new \App\Services\Documents\DocumentFiller($vehicle);
+                $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($filler->spreadsheet($type));
+                $writer->setPreCalculateFormulas(false);
+                ob_start();
+                $writer->save('php://output');
+                $binary = ob_get_clean();
+                $name = $filler->filename($type);
+                $dataFiles[] = ['data' => $binary, 'name' => $name, 'mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+                $docNames[] = $name;
+            }
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: __('vehicle.mail.gen_failed'), type: 'error');
+
+            return;
+        }
 
         $subject = trim($this->mailSubject) !== '' ? trim($this->mailSubject) : $company->companyLabel();
-        $mailable = (new \App\Mail\VehicleDocumentMail($subject, (string) $this->mailBody, $files))->to($to);
+        $mailable = (new \App\Mail\VehicleDocumentMail($subject, (string) $this->mailBody, $storedFiles, $dataFiles))->to($to);
 
         $logBase = [
             'vehicle_id' => $vehicle->id,
@@ -5855,15 +5957,30 @@ function vehicleColumnsToggle() {
         <textarea wire:model="mailBody" rows="5" class="input-base w-full" placeholder="{{ __('vehicle.mail.body_ph') }}"></textarea>
 
         <label class="label-base mt-3">{{ __('vehicle.mail.docs_label') }}</label>
-        @if (count($mailDocs))
-            <div class="mt-1 space-y-1 rounded-md border border-gray-100 p-2">
-                @foreach ($mailDocs as $doc)
-                    <label class="flex items-center gap-2 text-sm text-gray-700">
-                        <input type="checkbox" wire:model="mailDocIds" value="{{ $doc['id'] }}" class="rounded border-gray-300" />
-                        <span class="truncate">{{ $doc['name'] }}</span>
-                    </label>
+        @php $mailGroups = [
+            ['label' => __('vehicle.mail.group_generated'), 'items' => $mailDocsGen],
+            ['label' => __('vehicle.mail.group_file'),      'items' => $mailDocsFile],
+            ['label' => __('vehicle.mail.group_upload'),    'items' => $mailDocsUpload],
+        ]; @endphp
+        @if (count($mailDocsGen) + count($mailDocsFile) + count($mailDocsUpload) > 0)
+            <div class="mt-1 space-y-3 rounded-md border border-gray-100 p-2">
+                @foreach ($mailGroups as $grp)
+                    @if (count($grp['items']))
+                        <div>
+                            <div class="mb-1 text-[11px] font-semibold text-gray-500">{{ $grp['label'] }}</div>
+                            <div class="space-y-1">
+                                @foreach ($grp['items'] as $doc)
+                                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                                        <input type="checkbox" wire:model="mailDocIds" value="{{ $doc['key'] }}" class="rounded border-gray-300" />
+                                        <span class="truncate">{{ $doc['name'] }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
                 @endforeach
             </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.mail.gen_hint') }}</p>
         @else
             <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.mail.no_docs') }}</p>
         @endif

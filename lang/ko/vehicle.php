@@ -672,6 +672,14 @@ return [
         'send_failed' => '메일 발송에 실패했습니다. 발신 설정(기능설정)을 확인하세요.',
         'to_invalid' => '올바른 이메일 주소를 입력하세요.',
         'not_configured' => '발신 메일이 설정되지 않았습니다. 시스템관리자가 기능설정 → 메일 발송에서 먼저 설정해야 합니다.',
+        'group_generated' => '자동생성 서류 (서류 탭)',
+        'group_file' => '단계 업로드 파일',
+        'group_upload' => '업로드 사진·첨부 (기본정보)',
+        'file_deregistration' => '말소 서류',
+        'file_export_declaration' => '수출신고서',
+        'file_bl' => 'B/L 문서',
+        'gen_hint' => '자동생성 서류는 발송 시점에 최신 차량 정보로 새로 만들어 xlsx로 첨부됩니다.',
+        'gen_failed' => '서류 생성 중 오류가 발생했습니다. 차량 정보를 확인하세요.',
     ],
 
     // 같은 바이어 미수 배너 (판매 탭)
