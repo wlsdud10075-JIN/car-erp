@@ -19,6 +19,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    // 메일 발송 설정 (Gmail / AWS SES) — 현재 회사(companyTemplateSet) 기준. 앱 비밀번호는 암호화 저장.
+    public string $mailChannel = 'gmail';
+
+    public string $mailFromAddress = '';
+
+    public string $mailFromName = '';
+
+    public string $mailGmailPassword = '';   // 신규 입력용 — 저장된 비밀번호는 로드하지 않음(비밀 보호)
+
+    public bool $mailGmailPasswordSet = false;
+
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
@@ -47,6 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        $this->loadMailSettings();
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
         }
@@ -84,6 +96,73 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         \App\Models\Settlement::flushParamMemo();
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    // 현재 회사 표시명 (메일 설정 라벨용).
+    public function currentCompanyLabel(): string
+    {
+        $set = Setting::companyTemplateSet();
+
+        return $this->companyTemplateSetOptions()[$set] ?? $set;
+    }
+
+    // 메일 발송 설정 로드 — 현재 회사(set) 기준. 저장된 앱 비밀번호는 값 대신 존재여부만.
+    private function loadMailSettings(): void
+    {
+        $set = Setting::companyTemplateSet();
+        $this->mailChannel = Setting::get("mail_channel_{$set}", 'gmail') ?: 'gmail';
+        $this->mailFromAddress = Setting::get("mail_from_address_{$set}", '') ?: '';
+        $this->mailFromName = Setting::get("mail_from_name_{$set}", '') ?: '';
+        $this->mailGmailPasswordSet = (bool) Setting::get("mail_gmail_app_password_{$set}");
+        $this->mailGmailPassword = '';
+    }
+
+    // 메일 발송 설정 저장 — super 전용. 앱 비밀번호는 신규 입력이 있을 때만 암호화 갱신(공백=기존 유지).
+    public function saveMail(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $channel = in_array($this->mailChannel, ['gmail', 'ses'], true) ? $this->mailChannel : 'gmail';
+        $from = trim($this->mailFromAddress);
+        $name = trim($this->mailFromName);
+        $newPassword = str_replace(' ', '', trim($this->mailGmailPassword));
+
+        if ($from === '') {
+            $this->addError('mailFromAddress', __('feature_settings.mail_from_required'));
+
+            return;
+        }
+        if (! filter_var($from, FILTER_VALIDATE_EMAIL)) {
+            $this->addError('mailFromAddress', __('feature_settings.mail_from_invalid'));
+
+            return;
+        }
+        // Gmail 방식 + 저장된 비번 없음 + 신규 입력도 없음 → 요구
+        if ($channel === 'gmail' && ! $this->mailGmailPasswordSet && $newPassword === '') {
+            $this->addError('mailGmailPassword', __('feature_settings.mail_password_required'));
+
+            return;
+        }
+
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "mail_channel_{$set}"], ['value' => $channel, 'type' => 'string', 'description' => "메일 발송 방식 ({$set}) — gmail/ses"]);
+        Setting::updateOrCreate(['key' => "mail_from_address_{$set}"], ['value' => $from, 'type' => 'string', 'description' => "메일 발신 주소 ({$set})"]);
+        Setting::updateOrCreate(['key' => "mail_from_name_{$set}"], ['value' => $name, 'type' => 'string', 'description' => "메일 발신 표시명 ({$set})"]);
+
+        if ($newPassword !== '') {
+            Setting::updateOrCreate(
+                ['key' => "mail_gmail_app_password_{$set}"],
+                ['value' => \Illuminate\Support\Facades\Crypt::encryptString($newPassword), 'type' => 'string', 'description' => "Gmail 앱 비밀번호(암호화) ({$set})"],
+            );
+        }
+
+        $this->mailChannel = $channel;
+        $this->mailFromAddress = $from;
+        $this->mailFromName = $name;
+        $this->loadMailSettings();
+        $this->dispatch('notify', message: __('feature_settings.mail_saved'), type: 'success');
     }
 
     // 현재 template_set(=회사) — 기능설정 토글(company_template_set) 따라감. 도장도 선택 회사 기준.
@@ -408,6 +487,74 @@ new #[Layout('components.layouts.app')] class extends Component
                     <option value="{{ $value }}">{{ $label }}</option>
                 @endforeach
             </select>
+        </div>
+    </div>
+
+    {{-- 메일 발송 (Gmail / AWS SES) 그룹 — 현재 회사 발신 설정. super 전용 --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('feature_settings.mail_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.mail_hint') }}</p>
+            <div class="rounded-md border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700">
+                {{ __('feature_settings.mail_company_current', ['company' => $this->currentCompanyLabel()]) }}
+            </div>
+
+            {{-- 발송 방식 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.mail_channel_label') }}</label>
+                <select wire:model.live="mailChannel" class="input-base mt-1 w-full">
+                    <option value="gmail">{{ __('feature_settings.mail_channel_gmail') }}</option>
+                    <option value="ses">{{ __('feature_settings.mail_channel_ses') }}</option>
+                </select>
+            </div>
+
+            {{-- 발신 주소 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.mail_from_address_label') }}</label>
+                <input wire:model="mailFromAddress" type="email" class="input-base mt-1 w-full" placeholder="name@company.com" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-500">
+                    {{ $mailChannel === 'ses' ? __('feature_settings.mail_from_address_hint_ses') : __('feature_settings.mail_from_address_hint_gmail') }}
+                </p>
+                @error('mailFromAddress') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            {{-- 발신 표시명 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.mail_from_name_label') }}</label>
+                <input wire:model="mailFromName" type="text" maxlength="60" class="input-base mt-1 w-full" placeholder="{{ $this->currentCompanyLabel() }}" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.mail_from_name_hint') }}</p>
+            </div>
+
+            {{-- Gmail 앱 비밀번호 (gmail 방식만) / SES 안내 --}}
+            @if ($mailChannel === 'gmail')
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        {{ __('feature_settings.mail_gmail_password_label') }}
+                        @if ($mailGmailPasswordSet)
+                            <span class="badge badge-green">{{ __('feature_settings.mail_gmail_password_set') }}</span>
+                        @endif
+                    </label>
+                    <input wire:model="mailGmailPassword" type="password" class="input-base mt-1 w-full font-mono" placeholder="xxxx xxxx xxxx xxxx" autocomplete="new-password" />
+                    <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.mail_gmail_password_hint') }}</p>
+                    @error('mailGmailPassword') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                    <div class="mt-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">{{ __('feature_settings.mail_gmail_2fa_note') }}</div>
+                </div>
+            @else
+                <div class="rounded-md border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">{{ __('feature_settings.mail_ses_note') }}</div>
+            @endif
+
+            <div class="flex justify-end pt-1">
+                <button wire:click="saveMail" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
         </div>
     </div>
 
