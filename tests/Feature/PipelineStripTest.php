@@ -232,10 +232,30 @@ class PipelineStripTest extends TestCase
         $this->assertSame('done', $flow[1]['status']); // 말소
         $this->assertSame('done', $flow[2]['status']); // 판매
         $this->assertSame('done', $flow[3]['status']); // 입금
-        // 회의확장씬 #1 v4 (2026-05-21) — 순서 swap: 선적 → 통관
+        // 2026-07-04 — 선적/B/L 분리, DHL 흐름 제외. 순서: 선적 → 통관 → B/L
         $this->assertSame('pending', $flow[4]['status']); // 선적 (bl_loading_location 없음)
         $this->assertSame('done', $flow[5]['status']);    // 통관 (export_declaration_document 있음)
-        $this->assertSame('pending', $flow[6]['status']); // DHL
+        $this->assertSame('pending', $flow[6]['status']); // B/L (bl_document 없음)
+        $this->assertSame('shipping', $flow[4]['key']);
+        $this->assertSame('clearance', $flow[5]['key']);
+        $this->assertSame('bl', $flow[6]['key']);
+        $this->assertNotContains('dhl', array_column($flow, 'key')); // DHL 노드 제거됨
+    }
+
+    public function test_progress_flow_splits_shipping_and_bl(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
+        $this->actingAs($admin);
+
+        // 반입지 입력 → 선적 done / B/L 문서 없음 → B/L pending (분리 검증)
+        $v = $this->makeVehicle([
+            'sales_channel' => 'export',
+            'bl_loading_location' => 'INCHEON',
+        ]);
+        $flow = collect(Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->get('progressFlow'));
+
+        $this->assertSame('done', $flow->firstWhere('key', 'shipping')['status']);
+        $this->assertSame('pending', $flow->firstWhere('key', 'bl')['status']);
     }
 
     // 큐 16 — test_progress_flow_disables_export_only_nodes_for_heyman_channel 삭제
