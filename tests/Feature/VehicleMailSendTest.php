@@ -49,7 +49,7 @@ class VehicleMailSendTest extends TestCase
             ->set('mailTo', 'buyer@example.com')
             ->set('mailSubject', 'HEYMAN - 99마0001')
             ->set('mailBody', 'Please find attached.')
-            ->set('mailDocIds', [$p1->id, $pOther->id])   // 남의 차량 문서 섞어도 무시돼야
+            ->set('mailDocIds', ['photo:'.$p1->id, 'photo:'.$pOther->id])   // 남의 차량 문서 섞어도 무시돼야
             ->call('sendVehicleMail')
             ->assertHasNoErrors();
 
@@ -62,6 +62,28 @@ class VehicleMailSendTest extends TestCase
         $this->assertSame((int) $vehicle->id, (int) $log->vehicle_id);
         // IDOR: 남의 차량 문서(secret.pdf)는 제외 — 자기 차량 1건만
         $this->assertSame(['bl.pdf'], $log->document_names);
+    }
+
+    public function test_attaches_generated_document(): void
+    {
+        Mail::fake();
+        $this->configureSes();
+        $this->actingAs($this->super());
+
+        $vehicle = Vehicle::create(['vehicle_number' => '99마0009', 'sales_channel' => 'export']);
+
+        Volt::test('erp.vehicles.index')
+            ->set('editingId', $vehicle->id)
+            ->set('mailTo', 'buyer@example.com')
+            ->set('mailDocIds', ['gen:deregistration'])   // 자동생성 서류(전 채널)
+            ->call('sendVehicleMail')
+            ->assertHasNoErrors();
+
+        Mail::assertSent(VehicleDocumentMail::class, fn ($m) => count($m->dataFiles) === 1 && $m->storedFiles === []);
+
+        $log = MailDeliveryLog::first();
+        $this->assertSame('sent', $log->status);
+        $this->assertCount(1, $log->document_names);
     }
 
     public function test_invalid_recipient_blocks_send(): void

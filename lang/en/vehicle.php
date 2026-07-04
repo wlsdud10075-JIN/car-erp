@@ -672,6 +672,14 @@ return [
         'send_failed' => 'Failed to send email. Check the sender settings (Feature Settings).',
         'to_invalid' => 'Enter a valid email address.',
         'not_configured' => 'Sender email is not configured. A super admin must set it up in Feature Settings → Mail delivery first.',
+        'group_generated' => 'Auto-generated documents (Documents tab)',
+        'group_file' => 'Stage-uploaded files',
+        'group_upload' => 'Uploaded photos/attachments (Basic Info)',
+        'file_deregistration' => 'Deregistration document',
+        'file_export_declaration' => 'Export declaration',
+        'file_bl' => 'B/L document',
+        'gen_hint' => 'Auto-generated documents are freshly created from the latest vehicle data and attached as xlsx at send time.',
+        'gen_failed' => 'An error occurred while generating a document. Check the vehicle data.',
     ],
 
     // Same-buyer outstanding banner (sale tab)

@@ -17,11 +17,15 @@ class VehicleDocumentMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    /** @param  array<int, array{path: string, name: string}>  $attachmentFiles  vehicle_docs_disk 경로 + 표시 파일명 */
+    /**
+     * @param  array<int, array{path: string, name: string}>  $storedFiles  vehicle_docs_disk 저장 파일(업로드 사진·단계 파일)
+     * @param  array<int, array{data: string, name: string, mime?: string}>  $dataFiles  즉석 생성 문서(서류 탭 xlsx 등)
+     */
     public function __construct(
         public string $subjectLine,
         public string $bodyText,
-        public array $attachmentFiles = [],
+        public array $storedFiles = [],
+        public array $dataFiles = [],
     ) {}
 
     public function envelope(): Envelope
@@ -38,9 +42,20 @@ class VehicleDocumentMail extends Mailable
     public function attachments(): array
     {
         $disk = config('filesystems.vehicle_docs_disk');
+        $out = [];
 
-        return collect($this->attachmentFiles)
-            ->map(fn (array $f) => Attachment::fromStorageDisk($disk, $f['path'])->as($f['name']))
-            ->all();
+        foreach ($this->storedFiles as $f) {
+            $out[] = Attachment::fromStorageDisk($disk, $f['path'])->as($f['name']);
+        }
+        foreach ($this->dataFiles as $f) {
+            $data = $f['data'];
+            $att = Attachment::fromData(fn () => $data, $f['name']);
+            if (! empty($f['mime'])) {
+                $att = $att->withMime($f['mime']);
+            }
+            $out[] = $att;
+        }
+
+        return $out;
     }
 }
