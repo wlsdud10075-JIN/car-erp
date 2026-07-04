@@ -708,7 +708,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <input type="checkbox" wire:model="alimtalkToggles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" title="{{ __('feature_settings.alimtalk_toggle_title') }}" />
                             <div class="w-28 shrink-0">
                                 <div class="text-xs font-medium text-gray-700">{{ $meta['name'] }}</div>
-                                <div class="text-[10px] text-gray-400">{{ $meta['recipient'] === 'admin' ? __('feature_settings.alimtalk_recipient_admin') : __('feature_settings.alimtalk_recipient_manage') }} · <span class="font-mono">{{ $code }}</span></div>
+                                <div class="text-[10px] text-gray-400">{{ $meta['recipient'] === 'admin' ? __('feature_settings.alimtalk_recipient_admin') : ($meta['recipient'] === 'buyer' ? __('feature_settings.alimtalk_recipient_buyer') : __('feature_settings.alimtalk_recipient_manage')) }} · <span class="font-mono">{{ $code }}</span></div>
                             </div>
                             <input wire:model="alimtalkTmplIds.{{ $code }}" type="text" class="input-base w-full font-mono text-xs" placeholder="BizM tmplId" autocomplete="off" />
                         </div>

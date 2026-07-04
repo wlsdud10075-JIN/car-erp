@@ -706,6 +706,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $export_declaration_document_path = '';
     public string $bl_document_path                 = '';
 
+    // 국내 바이어 말소등록증 알림톡 전달용 번호 (openEdit 에서 판매 바이어 연락처 프리필, 수정 가능)
+    public string $deregistrationBuyerPhone         = '';
+
     // "기존 파일 삭제" 액션 플래그 (UI 버튼 → save 시 컬럼 null + 디스크 삭제)
     public bool $clearDeregistrationDoc    = false;
     public bool $clearExportDeclarationDoc = false;
@@ -1934,6 +1937,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
         $this->bl_document_path                 = $v->bl_document                 ?? '';
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
+        $this->deregistrationBuyerPhone         = $v->buyer?->contact_phone ?? '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
         // 차량 사진 로드 (편집 패널 갤러리)
@@ -2147,6 +2151,44 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearDeregistrationDoc = true;
         $this->deregistrationDocFile = null;
         $this->deregistration_document_path = '';
+    }
+
+    // 국내 바이어에게 말소등록증 전달 알림톡 발송 (수동 버튼). 만료 서명 링크(3일)를 본문에 담아 보낸다.
+    // 발송 안전(fire-and-forget)은 BizmAlimtalkService 가 보장 — 여기선 결과 상태만 토스트.
+    public function sendDeregistrationAlimtalk(): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        if (blank($vehicle->deregistration_document)) {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.no_doc'), type: 'error');
+
+            return;
+        }
+        $phone = trim($this->deregistrationBuyerPhone);
+        if ($phone === '') {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.no_phone'), type: 'error');
+
+            return;
+        }
+
+        $link = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'buyer.deregistration', now()->addDays(3), ['vehicle' => $vehicle->id],
+        );
+
+        $log = \App\Services\BizmAlimtalkService::active()->send('erp_deregistration_notice', $phone, [
+            '차량번호' => $vehicle->vehicle_number,
+            '링크' => $link,
+        ], ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()]);
+
+        if ($log->status === 'sent') {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.sent'), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        }
     }
 
     public function removeExportDeclarationDoc(): void
@@ -4891,6 +4933,19 @@ function vehicleColumnsToggle() {
                     </div>
                     @endif
                 </div>
+                {{-- 국내 바이어 말소등록증 알림톡 전달 (수동) — 말소증 저장 후에만 노출 --}}
+                @if($deregistration_document_path)
+                <div class="col-span-2">
+                    <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
+                        <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
+                        <p class="mt-0.5 text-[11px] text-yellow-700">{{ __('vehicle.deregnotice.hint') }}</p>
+                        <div class="mt-2 flex gap-2">
+                            <input wire:model="deregistrationBuyerPhone" type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
+                        </div>
+                    </div>
+                </div>
+                @endif
                 @endif
                 <div class="col-span-2">
                     <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>

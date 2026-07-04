@@ -83,6 +83,7 @@ return [
     'alimtalk_toggle_title' => 'Turn this notification on/off',
     'alimtalk_recipient_admin' => 'Owner',
     'alimtalk_recipient_manage' => 'Manage',
+    'alimtalk_recipient_buyer' => 'Domestic buyer',
     'alimtalk_saved' => 'AlimTalk settings saved.',
     'alimtalk_test_label' => 'Test send',
     'alimtalk_test_hint' => "Sends the 'Daily summary' template to the number below to verify credentials and template approval. (Sends even if the master switch is off.)",

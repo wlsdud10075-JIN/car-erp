@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehicleExportController;
@@ -13,6 +14,12 @@ use Livewire\Volt\Volt;
 // NICE 게이트웨이 (Django ssancar-erp 이식) — ssancarerp 박스(heymancar.com)에서 NICE 직접 2단계 호출.
 // heymanerp 등 다른 박스는 NICE IP 화이트리스트 밖이라 이 경로를 그대로 경유. 인증·토큰 없음(Django @csrf_exempt 동일, CSRF 제외=bootstrap/app.php).
 Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class);
+
+// 국내 바이어 말소등록증 전달 링크 (2026-07-04) — 알림톡으로 보낸 만료 서명 링크. 로그인 없음(signed 서명이 인가).
+// 차량 id + 고정 문서(말소등록증)만 서명 → 파일 경로는 URL 에 안 실림(IDOR/traversal 차단). 3일 만료(발급측 지정).
+Route::get('d/deregistration/{vehicle}', [BuyerDocumentController::class, 'deregistration'])
+    ->middleware('signed')
+    ->name('buyer.deregistration');
 
 // 사내 ERP — 별도 소개(랜딩) 화면 없이 첫 접속은 로그인으로. 로그인 상태면 대시보드로.
 Route::get('/', function () {
