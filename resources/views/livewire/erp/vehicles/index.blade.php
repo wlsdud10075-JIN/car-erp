@@ -719,6 +719,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
     public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
 
+    // 메일 발송 (서류 탭 → 바이어에게 업로드 문서 전달)
+    public bool $showMailModal = false;
+
+    public string $mailTo = '';
+
+    public string $mailSubject = '';
+
+    public string $mailBody = '';
+
+    public array $mailDocIds = [];       // 선택된 업로드 문서 id
+
+    public array $mailDocs = [];         // 후보 첨부 [['id'=>, 'name'=>], ...]
+
+    public ?string $mailNotice = null;   // 발신 설정 미완 등 안내
+
     public function mount(): void
     {
         // 정산 등에서 ?openVehicle=ID 진입 → 해당 차량 편집 패널 자동 오픈 + 매입 탭(기타비용 수정 동선).
@@ -746,6 +761,91 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         unset($this->vehicles);
         $this->resetPage();
+    }
+
+    // 메일 발송 모달 열기 — 편집 중 차량의 업로드 문서 목록 + 바이어 이메일 프리필.
+    public function openMailModal(): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::with(['buyer', 'photos'])->find($this->editingId);
+        if (! $vehicle || ! auth()->user()?->canScopeVehicle($vehicle)) {
+            abort(403, __('vehicle.toast.edit_own_only'));
+        }
+
+        $this->mailDocs = $vehicle->photos->map(fn ($p) => ['id' => $p->id, 'name' => $p->filename])->values()->all();
+        $this->mailDocIds = [];
+        $this->mailTo = $vehicle->buyer?->contact_email ?? '';
+
+        $company = \App\Support\CompanyMailConfig::active();
+        $this->mailSubject = $company->companyLabel().' - '.$vehicle->vehicle_number;
+        $this->mailBody = '';
+        $this->mailNotice = $company->isConfigured() ? null : __('vehicle.mail.not_configured');
+        $this->resetErrorBag(['mailTo']);
+        $this->showMailModal = true;
+    }
+
+    public function closeMailModal(): void
+    {
+        $this->showMailModal = false;
+    }
+
+    // 발송 — 회사 방식(Gmail/SES)대로. 선택 문서는 이 차량 소속만 첨부(IDOR 방지). 결과는 로그 기록.
+    public function sendVehicleMail(): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::with('photos')->find($this->editingId);
+        if (! $vehicle || ! auth()->user()?->canScopeVehicle($vehicle)) {
+            abort(403, __('vehicle.toast.edit_own_only'));
+        }
+
+        $to = trim($this->mailTo);
+        if (! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            $this->addError('mailTo', __('vehicle.mail.to_invalid'));
+
+            return;
+        }
+
+        $company = \App\Support\CompanyMailConfig::active();
+        if (! $company->isConfigured()) {
+            $this->dispatch('notify', message: __('vehicle.mail.not_configured'), type: 'warning');
+
+            return;
+        }
+
+        // 선택 문서 — 이 차량 소속만(IDOR 방지)
+        $selected = $vehicle->photos->whereIn('id', $this->mailDocIds);
+        $files = $selected->map(fn ($p) => ['path' => $p->path, 'name' => $p->filename])->values()->all();
+        $docNames = $selected->pluck('filename')->values()->all();
+
+        $subject = trim($this->mailSubject) !== '' ? trim($this->mailSubject) : $company->companyLabel();
+        $mailable = (new \App\Mail\VehicleDocumentMail($subject, (string) $this->mailBody, $files))->to($to);
+
+        $logBase = [
+            'vehicle_id' => $vehicle->id,
+            'user_id' => auth()->id(),
+            'channel' => $company->channel,
+            'from_address' => $company->fromAddress,
+            'to_email' => $to,
+            'subject' => $subject,
+            'document_names' => $docNames,
+        ];
+
+        try {
+            $company->send($mailable);
+        } catch (\Throwable $e) {
+            \App\Models\MailDeliveryLog::create($logBase + ['status' => 'failed', 'error' => mb_substr($e->getMessage(), 0, 500)]);
+            $this->dispatch('notify', message: __('vehicle.mail.send_failed'), type: 'error');
+
+            return;
+        }
+
+        \App\Models\MailDeliveryLog::create($logBase + ['status' => 'sent', 'error' => null]);
+        $this->showMailModal = false;
+        $this->dispatch('notify', message: __('vehicle.mail.sent'), type: 'success');
     }
 
     public function updatedChannelFilter(): void
@@ -5593,6 +5693,19 @@ function vehicleColumnsToggle() {
                 {{ __('vehicle.docs.note_pdf') }}<br>
                 {{ __('vehicle.docs.note_empty') }}
             </div>
+
+            {{-- 메일 발송 — 업로드 문서를 바이어에게 전달 --}}
+            <hr class="section-divider mt-5">
+            <div class="section-header">
+                <span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('vehicle.mail.section') }}</span>
+            </div>
+            <p class="mb-2 text-[11px] text-gray-500">{{ __('vehicle.mail.section_hint') }}</p>
+            <button type="button" wire:click="openMailModal"
+                    class="btn-primary {{ $hasId ? '' : 'pointer-events-none opacity-50' }}"
+                    @disabled(! $hasId)>
+                {{ __('vehicle.mail.open_btn') }}
+            </button>
         </div>
 
         {{-- ─── 메모 (공통) ──────────────────────────────── --}}
@@ -5697,6 +5810,54 @@ function vehicleColumnsToggle() {
         </template>
     </div>
 </div>
+
+{{-- 메일 발송 모달 (서류 탭) — 바이어에게 업로드 문서 전달 --}}
+@if ($showMailModal)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" wire:key="mail-modal">
+    <div class="card w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">{{ __('vehicle.mail.modal_title') }}</h3>
+            <button type="button" wire:click="closeMailModal" class="text-xl leading-none text-gray-400 hover:text-gray-600">×</button>
+        </div>
+
+        @if ($mailNotice)
+            <div class="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ $mailNotice }}</div>
+        @endif
+
+        <label class="label-base">{{ __('vehicle.mail.to_label') }}</label>
+        <input wire:model="mailTo" type="email" class="input-base w-full" placeholder="buyer@example.com" autocomplete="off" />
+        @error('mailTo') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+
+        <label class="label-base mt-3">{{ __('vehicle.mail.subject_label') }}</label>
+        <input wire:model="mailSubject" type="text" maxlength="150" class="input-base w-full" />
+
+        <label class="label-base mt-3">{{ __('vehicle.mail.body_label') }}</label>
+        <textarea wire:model="mailBody" rows="5" class="input-base w-full" placeholder="{{ __('vehicle.mail.body_ph') }}"></textarea>
+
+        <label class="label-base mt-3">{{ __('vehicle.mail.docs_label') }}</label>
+        @if (count($mailDocs))
+            <div class="mt-1 space-y-1 rounded-md border border-gray-100 p-2">
+                @foreach ($mailDocs as $doc)
+                    <label class="flex items-center gap-2 text-sm text-gray-700">
+                        <input type="checkbox" wire:model="mailDocIds" value="{{ $doc['id'] }}" class="rounded border-gray-300" />
+                        <span class="truncate">{{ $doc['name'] }}</span>
+                    </label>
+                @endforeach
+            </div>
+        @else
+            <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.mail.no_docs') }}</p>
+        @endif
+
+        <div class="mt-4 flex items-center justify-end gap-2">
+            <button type="button" wire:click="closeMailModal" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.footer.cancel') }}</button>
+            <button type="button" wire:click="sendVehicleMail" class="btn-primary" wire:loading.attr="disabled" wire:target="sendVehicleMail">
+                <span wire:loading.remove wire:target="sendVehicleMail">{{ __('vehicle.mail.send_btn') }}</span>
+                <span wire:loading wire:target="sendVehicleMail">{{ __('vehicle.mail.sending') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- 큐 18: close confirm 모달 (.card) --}}
 <div x-show="confirmOpen" x-cloak x-transition.opacity

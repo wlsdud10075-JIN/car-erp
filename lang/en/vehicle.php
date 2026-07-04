@@ -654,6 +654,26 @@ return [
         'sub_roro' => 'RORO shipping · .xlsx',
     ],
 
+    // Mail delivery (Documents tab → send uploaded documents to buyer)
+    'mail' => [
+        'section' => 'Send mail',
+        'section_hint' => 'Email documents uploaded to this vehicle to the buyer. Configure the sender account in Feature Settings.',
+        'open_btn' => 'Send mail',
+        'modal_title' => 'Email documents to buyer',
+        'to_label' => 'Recipient (buyer email)',
+        'subject_label' => 'Subject',
+        'body_label' => 'Message',
+        'body_ph' => 'Enter the message to send to the buyer.',
+        'docs_label' => 'Attachments (choose from uploaded documents)',
+        'no_docs' => 'No documents uploaded for this vehicle. Upload in the Basic Info tab first.',
+        'send_btn' => 'Send',
+        'sending' => 'Sending…',
+        'sent' => 'Email sent.',
+        'send_failed' => 'Failed to send email. Check the sender settings (Feature Settings).',
+        'to_invalid' => 'Enter a valid email address.',
+        'not_configured' => 'Sender email is not configured. A super admin must set it up in Feature Settings → Mail delivery first.',
+    ],
+
     // Same-buyer outstanding banner (sale tab)
     'overlap' => [
         'title' => ':count vehicle(s) outstanding for this buyer (₩:amount)',
