@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 
 class FinalPayment extends Model
 {
@@ -15,6 +16,12 @@ class FinalPayment extends Model
         'amount_krw',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
     ];
+
+    /**
+     * 정산 재설계 선행결함2 (2026-07-06, c-2) — 재무확정 잔금의 사후 정정을 감사 추적하는 컬럼.
+     * 확정(confirmed_at≠null) 후 잠금해제 토큰으로 정정 시 updated 훅이 old→new 를 AuditLog 기록.
+     */
+    public const AUDITED_LEDGER_COLUMNS = ['amount', 'exchange_rate', 'payment_date', 'amount_krw'];
 
     protected $casts = [
         'payment_date' => 'date',
@@ -78,17 +85,23 @@ class FinalPayment extends Model
             }
 
             // 큐 20-D — confirmed_at SET 후 retroactive UPDATE 차단 (회계 무결성).
-            // confirmed_at → confirmed_at 이외 변경은 허용 (예: PaymentConfirmationService에서 SET 자체).
-            // 2026-07-06 (정산 재설계 선행결함1) — exchange_rate/amount_krw 도 잠금 대상 추가.
-            //   신 2차정산분이 잔금별 환율(amount_krw)에 의존하는데, 이 둘이 잠금 목록에서 빠져
-            //   재무확정 후 무단수정 가능하던 갭. c-2 잠금해제(VehicleLedgerUnlockService::unlockForFinalPayment)만
-            //   $allowConfirmedMutation 로 우회.
+            // 2026-07-06 (정산 재설계) — 선행결함1: exchange_rate/amount_krw 잠금 추가.
+            //   선행결함2(c-2): 금액·날짜·환율 정정은 관리 승인 잠금해제 토큰 1회 소비 시 허용
+            //   (확정 해제·이체 링크는 토큰으로도 불가 — 절대 보호). $allowConfirmedMutation 는 시스템 우회.
             $originalConfirmedAt = $p->getOriginal('confirmed_at');
             if ($originalConfirmedAt !== null && ! self::$allowConfirmedMutation) {
-                // confirmed_at 자체를 변경하는 경우만 차단 (re-confirm 또는 unlock 시도)
-                if ($p->isDirty('confirmed_at') || $p->isDirty('amount') || $p->isDirty('payment_date')
-                    || $p->isDirty('transfer_id') || $p->isDirty('exchange_rate') || $p->isDirty('amount_krw')) {
-                    throw new \DomainException('재무 확정된 잔금의 amount / payment_date / exchange_rate / confirmed_at / transfer_id 는 수정할 수 없습니다 (회계 무결성). 수정하려면 잠금해제(관리 승인)가 필요합니다.');
+                // 구조적 변경(확정 해제·이체 링크)은 c-2 잠금해제로도 불가.
+                if ($p->isDirty('confirmed_at') || $p->isDirty('transfer_id')) {
+                    throw new \DomainException('재무 확정된 잔금의 confirmed_at / transfer_id 는 수정할 수 없습니다 (회계 무결성).');
+                }
+                // 금액·날짜·환율 정정 = 잠금해제 토큰(c-2) 1회 소비 시에만 통과.
+                //   토큰 발급 = VehicleLedgerUnlockService::unlockForFinalPayment(관리 승인 + 사유 10자 + AuditLog).
+                //   실제 old→new 변경 기록은 updated 훅.
+                if ($p->isDirty('amount') || $p->isDirty('payment_date')
+                    || $p->isDirty('exchange_rate') || $p->isDirty('amount_krw')) {
+                    if ($p->consumeLedgerUnlockToken() === null) {
+                        throw new \DomainException('재무 확정된 잔금의 amount / payment_date / exchange_rate 는 수정할 수 없습니다 (회계 무결성). 수정하려면 관리 승인 잠금해제가 필요합니다.');
+                    }
                 }
             }
         });
@@ -99,6 +112,20 @@ class FinalPayment extends Model
             // 큐 20-D — confirmed_at SET 후 DELETE 차단.
             if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation) {
                 throw new \DomainException('재무 확정된 잔금은 삭제할 수 없습니다 (회계 무결성).');
+            }
+        });
+
+        // 선행결함2 (2026-07-06, c-2) — 재무확정 잔금의 사후 정정(금액·환율·날짜) old→new AuditLog.
+        //   확정 후 변경은 잠금해제 토큰 경유로만 도달 → "잠금해제 사유"(서비스 기록) + "실제 변경값"(여기) 2단 추적.
+        //   미확정 잔금의 일상 수정은 감사 대상 아님(getOriginal('confirmed_at') null → skip).
+        static::updated(function (FinalPayment $p) {
+            if ($p->getOriginal('confirmed_at') === null) {
+                return;
+            }
+            foreach (self::AUDITED_LEDGER_COLUMNS as $col) {
+                if ($p->wasChanged($col)) {
+                    AuditLog::recordChange($p, $col, $p->getOriginal($col), $p->getAttribute($col));
+                }
             }
         });
 
@@ -118,6 +145,28 @@ class FinalPayment extends Model
                 'note' => '판매 잔금 자동 미러링',
             ]);
         });
+    }
+
+    /**
+     * 선행결함2 (2026-07-06, c-2) — 잔금 row 단위 잠금해제 cache key 단일 출처.
+     * Vehicle::ledgerUnlockCacheKey(차량 단위)와 별개 네임스페이스 — 잔금 개별 정정용.
+     */
+    public static function ledgerUnlockCacheKey(int $finalPaymentId): string
+    {
+        return "final_payment_ledger_unlock:{$finalPaymentId}";
+    }
+
+    /**
+     * 잠금해제 토큰 1회 소비 (읽기 + 즉시 삭제) — 정정 저장 1회 후 자동 재잠금.
+     * VehicleLedgerUnlockService::unlockForFinalPayment 로 발급된 토큰을 updating 훅이 소비.
+     */
+    public function consumeLedgerUnlockToken(): ?array
+    {
+        if (! $this->id) {
+            return null;
+        }
+
+        return Cache::pull(self::ledgerUnlockCacheKey($this->id));
     }
 
     public function vehicle(): BelongsTo
