@@ -104,4 +104,66 @@ class VehiclePhotoTest extends TestCase
             ->call('save')
             ->assertHasErrors('photoFiles.*');
     }
+
+    /** 선적 탭 선박 사진 — category='shipping' + ship-photos 경로 저장 (기본정보 차량사진과 분리). */
+    public function test_ship_photo_upload_creates_shipping_category_rows(): void
+    {
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->set('vehicle_number', '12가2323')
+            ->set('sales_channel', 'export')
+            ->set('shipPhotoFiles', [
+                UploadedFile::fake()->image('vessel1.jpg'),
+                UploadedFile::fake()->image('vessel2.png'),
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $vehicle = Vehicle::where('vehicle_number', '12가2323')->firstOrFail();
+        $ship = $vehicle->photos->where('category', 'shipping');
+        $this->assertCount(2, $ship);
+        foreach ($ship as $p) {
+            $this->assertStringStartsWith("vehicles/{$vehicle->id}/ship-photos", $p->path);
+            Storage::disk('public')->assertExists($p->path);
+        }
+    }
+
+    /** 두 갤러리 격리 — 기본정보(existingPhotos)엔 차량사진만, 선적(existingShipPhotos)엔 선박사진만. */
+    public function test_ship_photos_separated_from_basic_gallery(): void
+    {
+        $this->actingAs($this->admin());
+        $vehicle = Vehicle::create(['vehicle_number' => '12가3434', 'sales_channel' => 'export']);
+
+        $carPath = UploadedFile::fake()->image('car.jpg')->store("vehicles/{$vehicle->id}/photos", 'public');
+        $car = VehiclePhoto::create(['vehicle_id' => $vehicle->id, 'path' => $carPath, 'sort_order' => 1]);
+        $shipPath = UploadedFile::fake()->image('vessel.jpg')->store("vehicles/{$vehicle->id}/ship-photos", 'public');
+        $ship = VehiclePhoto::create(['vehicle_id' => $vehicle->id, 'path' => $shipPath, 'category' => 'shipping', 'sort_order' => 1]);
+
+        $component = Volt::test('erp.vehicles.index')->call('openEdit', $vehicle->id);
+
+        $basicIds = collect($component->get('existingPhotos'))->pluck('id')->all();
+        $shipIds = collect($component->get('existingShipPhotos'))->pluck('id')->all();
+
+        $this->assertSame([$car->id], $basicIds, '기본정보 갤러리엔 차량사진만');
+        $this->assertSame([$ship->id], $shipIds, '선적 갤러리엔 선박사진만');
+    }
+
+    public function test_remove_existing_ship_photo_deletes_row_and_file(): void
+    {
+        $this->actingAs($this->admin());
+        $vehicle = Vehicle::create(['vehicle_number' => '12가4545', 'sales_channel' => 'export']);
+        $path = UploadedFile::fake()->image('v.jpg')->store("vehicles/{$vehicle->id}/ship-photos", 'public');
+        $photo = VehiclePhoto::create(['vehicle_id' => $vehicle->id, 'path' => $path, 'category' => 'shipping', 'sort_order' => 1]);
+        Storage::disk('public')->assertExists($path);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->call('removeExistingShipPhoto', $photo->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseMissing('vehicle_photos', ['id' => $photo->id]);
+        Storage::disk('public')->assertMissing($path);
+    }
 }

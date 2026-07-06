@@ -722,6 +722,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
     public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
 
+    // ── 선적 탭 선박 사진 (vehicle_photos category='shipping', 최대 10건) ──
+    // 기본정보 탭 차량사진과 같은 machinery, 별도 갤러리로 분리 (2026-07-06 jin).
+    public array $shipPhotoFiles = [];
+    public array $shipPhotoUpload = [];
+    public array $existingShipPhotos = [];
+    public array $deleteShipPhotoIds = [];
+
     // 메일 발송 (서류 탭 → 바이어에게 업로드 문서 전달)
     public bool $showMailModal = false;
 
@@ -733,7 +740,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public array $mailDocIds = [];       // 선택된 첨부 key ('photo:{id}' | 'file:{col}' | 'gen:{type}')
 
-    public array $mailDocsUpload = [];   // 업로드 사진·첨부 [['key'=>, 'name'=>], ...]
+    public array $mailDocsUpload = [];   // 기본정보 탭 업로드 사진·첨부 (category != shipping) [['key'=>, 'name'=>], ...]
+
+    public array $mailDocsShip = [];     // 선적 탭 선박 사진·첨부 (category = shipping)
 
     public array $mailDocsFile = [];     // 단계 업로드 파일(말소·수출신고서·B/L)
 
@@ -822,7 +831,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // ① 업로드 사진·첨부
-        $this->mailDocsUpload = $vehicle->photos->map(fn ($p) => ['key' => 'photo:'.$p->id, 'name' => $p->filename])->values()->all();
+        // 업로드 사진첨부 = 기본정보(category != shipping) / 선적(category = shipping) 그룹 분리 (jin 2026-07-06)
+        $this->mailDocsUpload = $vehicle->photos->where('category', '!=', 'shipping')
+            ->map(fn ($p) => ['key' => 'photo:'.$p->id, 'name' => $p->filename])->values()->all();
+        $this->mailDocsShip = $vehicle->photos->where('category', 'shipping')
+            ->map(fn ($p) => ['key' => 'photo:'.$p->id, 'name' => $p->filename])->values()->all();
 
         // ② 단계 업로드 파일 (있는 것만)
         $stage = [];
@@ -1942,17 +1955,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistrationBuyerPhone         = $v->buyer?->contact_phone ?? '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
-        // 차량 사진 로드 (편집 패널 갤러리)
-        $this->photoFiles = [];
-        $this->photoUpload = [];
-        $this->deletePhotoIds = [];
-        $this->existingPhotos = $v->photos->map(fn ($p) => [
+        // 차량 사진 로드 (편집 패널 갤러리) — 탭별 분리: 기본정보=차량사진(category != 'shipping'), 선적=선박사진.
+        $mapPhoto = fn ($p) => [
             'id'       => $p->id,
             'url'      => $p->url,
             'is_image' => $p->is_image,
             'filename' => $p->filename,
             'ext'      => $p->extension,
-        ])->all();
+        ];
+        $this->photoFiles = [];
+        $this->photoUpload = [];
+        $this->deletePhotoIds = [];
+        $this->existingPhotos = $v->photos->where('category', '!=', 'shipping')->map($mapPhoto)->values()->all();
+
+        // 선적 탭 선박 사진
+        $this->shipPhotoFiles = [];
+        $this->shipPhotoUpload = [];
+        $this->deleteShipPhotoIds = [];
+        $this->existingShipPhotos = $v->photos->where('category', 'shipping')->map($mapPhoto)->values()->all();
 
         $this->panelUnpaidRatio = $v->unpaid_ratio;
         // 판매 전(분모 0) 이면 null → "—" (unpaid_ratio 와 동일 게이팅)
@@ -2248,6 +2268,41 @@ new #[Layout('components.layouts.app')] class extends Component {
         ));
     }
 
+    /** 선적 탭 선박 사진 — 파일 선택 누적(기본정보 사진과 동일 방식, 별도 버퍼·10건 한도). */
+    public function updatedShipPhotoUpload(): void
+    {
+        $this->validate([
+            'shipPhotoUpload.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+        ]);
+
+        foreach ($this->shipPhotoUpload as $file) {
+            if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) >= self::MAX_PHOTOS) {
+                $this->dispatch('notify', message: __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]), type: 'warning');
+                break;
+            }
+            $this->shipPhotoFiles[] = $file;
+        }
+
+        $this->shipPhotoUpload = [];
+    }
+
+    public function removeNewShipPhoto(int $idx): void
+    {
+        unset($this->shipPhotoFiles[$idx]);
+        $this->shipPhotoFiles = array_values($this->shipPhotoFiles);
+    }
+
+    public function removeExistingShipPhoto(int $id): void
+    {
+        if (! in_array($id, $this->deleteShipPhotoIds, true)) {
+            $this->deleteShipPhotoIds[] = $id;
+        }
+        $this->existingShipPhotos = array_values(array_filter(
+            $this->existingShipPhotos,
+            fn ($p) => $p['id'] !== $id,
+        ));
+    }
+
     // 버그 2 fix (2026-05-18) — 새 파일 업로드 시 clear flag reset (safety net).
     // [삭제] → 새 파일 업로드 흐름에서 clearBlDoc stale 상태로 인한 save 사이클 충돌 방지.
     public function updatedDeregistrationDocFile(): void
@@ -2364,6 +2419,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 차량 첨부 — 사진(jpg/png/gif/webp/bmp) + 사무 파일(pdf·xlsx·xls·csv·docx·doc·hwp·hwpx·pptx·ppt·txt·zip), 건당 10MB.
             // 총 건수 제한은 아래 별도 가드. .exe / .php 같은 실행 파일은 mimes 화이트리스트로 자연 차단.
             'photoFiles.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+            'shipPhotoFiles.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
 
             // H9 — RRN(주민/법인등록번호) 형식 검증. 000000-0000000 패턴 강제.
             // 말소신청서·등록증재발급·양도증명서 PDF에 RRN 정확한 입력 필수.
@@ -2443,6 +2499,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (count($this->existingPhotos) + count($this->photoFiles) > self::MAX_PHOTOS) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'photoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]),
+            ]);
+        }
+        // 선박 사진(선적 탭)도 별도 갤러리라 자체 10건 한도.
+        if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) > self::MAX_PHOTOS) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'shipPhotoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]),
             ]);
         }
     }
@@ -2795,6 +2857,31 @@ new #[Layout('components.layouts.app')] class extends Component {
                             'vehicle_id' => $vehicle->id,
                             'path' => $photoPath,
                             'sort_order' => ++$nextOrder,
+                        ]);
+                    }
+                }
+
+                // 선적 탭 선박 사진 (category='shipping') — 기본정보 사진과 동일 흐름, 별도 갤러리.
+                if ($this->deleteShipPhotoIds) {
+                    $delShip = \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)
+                        ->where('category', 'shipping')
+                        ->whereIn('id', $this->deleteShipPhotoIds)->get();
+                    foreach ($delShip as $photo) {
+                        $pathsToDelete[] = $photo->path;
+                    }
+                    \App\Models\VehiclePhoto::whereIn('id', $delShip->pluck('id'))->delete();
+                }
+                if ($this->shipPhotoFiles) {
+                    $nextShipOrder = (int) \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)
+                        ->where('category', 'shipping')->max('sort_order');
+                    foreach ($this->shipPhotoFiles as $photo) {
+                        $photoPath = $photo->store("vehicles/{$vehicle->id}/ship-photos", config('filesystems.vehicle_docs_disk'));
+                        $newlyStoredPaths[] = $photoPath;
+                        \App\Models\VehiclePhoto::create([
+                            'vehicle_id' => $vehicle->id,
+                            'path' => $photoPath,
+                            'category' => 'shipping',
+                            'sort_order' => ++$nextShipOrder,
                         ]);
                     }
                 }
@@ -3805,6 +3892,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
         $this->photoFiles = $this->photoUpload = $this->existingPhotos = $this->deletePhotoIds = [];
+        $this->shipPhotoFiles = $this->shipPhotoUpload = $this->existingShipPhotos = $this->deleteShipPhotoIds = [];
     }
 
     private function unsetComputedProperties(): void
@@ -4631,51 +4719,51 @@ function vehicleColumnsToggle() {
 
                 @if(count($existingPhotos) || count($photoFiles))
                 <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
-                    @foreach($existingPhotos as $p)
-                    <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
-                        @if($p['is_image'])
-                            <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
-                                 alt="{{ $p['filename'] }}"
-                                 @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
-                        @elseif($p['ext'] === 'pdf')
-                            <button type="button"
-                                    @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
-                                    class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
-                                <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
-                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
-                            </button>
-                        @else
-                            <a href="{{ $p['url'] }}" target="_blank" rel="noopener"
-                               class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
-                                <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">{{ strtoupper($p['ext']) ?: 'FILE' }}</span>
-                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
-                            </a>
-                        @endif
-                        <button type="button" wire:click="removeExistingPhoto({{ $p['id'] }})"
-                                class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
-                    </div>
-                    @endforeach
-                    @foreach($photoFiles as $idx => $photo)
-                    @php
-                        $_ext = strtolower($photo->getClientOriginalExtension());
-                        $_isImg = in_array($_ext, \App\Models\VehiclePhoto::IMAGE_EXTENSIONS, true);
-                    @endphp
-                    <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
-                        @if($_isImg)
-                            <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
-                                 alt="{{ __('vehicle.panel.new') }}"
-                                 @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
-                        @else
-                            <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
-                                <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
-                                <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $photo->getClientOriginalName() }}</span>
-                            </div>
-                        @endif
-                        <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">{{ __('vehicle.panel.new') }}</span>
-                        <button type="button" wire:click="removeNewPhoto({{ $idx }})"
-                                class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
-                    </div>
-                    @endforeach
+                        @foreach($existingPhotos as $p)
+                        <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
+                            @if($p['is_image'])
+                                <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
+                                     alt="{{ $p['filename'] }}"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
+                            @elseif($p['ext'] === 'pdf')
+                                <button type="button"
+                                        @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
+                                        class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                    <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                                </button>
+                            @else
+                                <a href="{{ $p['url'] }}" target="_blank" rel="noopener"
+                                   class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                    <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">{{ strtoupper($p['ext']) ?: 'FILE' }}</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                                </a>
+                            @endif
+                            <button type="button" wire:click="removeExistingPhoto({{ $p['id'] }})"
+                                    class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                        </div>
+                        @endforeach
+                        @foreach($photoFiles as $idx => $photo)
+                        @php
+                            $_ext = strtolower($photo->getClientOriginalExtension());
+                            $_isImg = in_array($_ext, \App\Models\VehiclePhoto::IMAGE_EXTENSIONS, true);
+                        @endphp
+                        <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
+                            @if($_isImg)
+                                <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
+                                     alt="{{ __('vehicle.panel.new') }}"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
+                            @else
+                                <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
+                                    <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $photo->getClientOriginalName() }}</span>
+                                </div>
+                            @endif
+                            <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">{{ __('vehicle.panel.new') }}</span>
+                            <button type="button" wire:click="removeNewPhoto({{ $idx }})"
+                                    class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                        </div>
+                        @endforeach
                 </div>
                 @endif
                 <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_count', ['count' => count($existingPhotos) + count($photoFiles)]) }}</p>
@@ -5677,6 +5765,69 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
             </div>
+
+            {{-- 선박 사진/첨부 (category='shipping' · 최대 10건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}
+            <div class="mt-4">
+                <label class="label-base">{{ __('vehicle.panel.sec.ship_photos') }}</label>
+                <input type="file" wire:model="shipPhotoUpload" multiple
+                       accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
+                       class="input-base text-sm" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
+                <div wire:loading wire:target="shipPhotoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                @error('shipPhotoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                @error('shipPhotoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+
+                @if(count($existingShipPhotos) || count($shipPhotoFiles))
+                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                        @foreach($existingShipPhotos as $p)
+                        <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
+                            @if($p['is_image'])
+                                <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
+                                     alt="{{ $p['filename'] }}"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
+                            @elseif($p['ext'] === 'pdf')
+                                <button type="button"
+                                        @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
+                                        class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                    <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                                </button>
+                            @else
+                                <a href="{{ $p['url'] }}" target="_blank" rel="noopener"
+                                   class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
+                                    <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">{{ strtoupper($p['ext']) ?: 'FILE' }}</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
+                                </a>
+                            @endif
+                            <button type="button" wire:click="removeExistingShipPhoto({{ $p['id'] }})"
+                                    class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                        </div>
+                        @endforeach
+                        @foreach($shipPhotoFiles as $idx => $photo)
+                        @php
+                            $_ext = strtolower($photo->getClientOriginalExtension());
+                            $_isImg = in_array($_ext, \App\Models\VehiclePhoto::IMAGE_EXTENSIONS, true);
+                        @endphp
+                        <div class="relative aspect-square overflow-hidden rounded border border-violet-300">
+                            @if($_isImg)
+                                <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
+                                     alt="{{ __('vehicle.panel.new') }}"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
+                            @else
+                                <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
+                                    <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
+                                    <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $photo->getClientOriginalName() }}</span>
+                                </div>
+                            @endif
+                            <span class="absolute left-1 top-1 rounded bg-violet-600 px-1 text-[10px] text-white">{{ __('vehicle.panel.new') }}</span>
+                            <button type="button" wire:click="removeNewShipPhoto({{ $idx }})"
+                                    class="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs leading-none text-white hover:bg-red-600">×</button>
+                        </div>
+                        @endforeach
+                </div>
+                @endif
+                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_count', ['count' => count($existingShipPhotos) + count($shipPhotoFiles)]) }}</p>
+            </div>
         </div>
 
         {{-- ─── B/L 탭 (발급) — 수출통관 다음, 실제 업무 최종 단계 (2026-07-04) --}}
@@ -6087,18 +6238,27 @@ function vehicleColumnsToggle() {
         <textarea wire:model="mailBody" rows="5" class="input-base w-full" placeholder="{{ __('vehicle.mail.body_ph') }}"></textarea>
 
         <label class="label-base mt-3">{{ __('vehicle.mail.docs_label') }}</label>
+        {{-- 그룹별 개별 접기 (jin 2026-07-06): 자동생성=펼침 / 단계파일·기본정보사진·선박사진=접힘 --}}
         @php $mailGroups = [
-            ['label' => __('vehicle.mail.group_generated'), 'items' => $mailDocsGen],
-            ['label' => __('vehicle.mail.group_file'),      'items' => $mailDocsFile],
-            ['label' => __('vehicle.mail.group_upload'),    'items' => $mailDocsUpload],
+            ['label' => __('vehicle.mail.group_generated'), 'items' => $mailDocsGen,    'open' => true],
+            ['label' => __('vehicle.mail.group_file'),      'items' => $mailDocsFile,   'open' => false],
+            ['label' => __('vehicle.mail.group_upload'),    'items' => $mailDocsUpload, 'open' => false],
+            ['label' => __('vehicle.mail.group_ship'),      'items' => $mailDocsShip,   'open' => false],
         ]; @endphp
-        @if (count($mailDocsGen) + count($mailDocsFile) + count($mailDocsUpload) > 0)
-            <div class="mt-1 space-y-3 rounded-md border border-gray-100 p-2">
+        @if (count($mailDocsGen) + count($mailDocsFile) + count($mailDocsUpload) + count($mailDocsShip) > 0)
+            <div class="mt-1 space-y-2">
                 @foreach ($mailGroups as $grp)
                     @if (count($grp['items']))
-                        <div>
-                            <div class="mb-1 text-[11px] font-semibold text-gray-500">{{ $grp['label'] }}</div>
-                            <div class="space-y-1">
+                        <div class="rounded-md border border-gray-100" x-data="{ open: {{ $grp['open'] ? 'true' : 'false' }} }">
+                            <button type="button" @click="open = !open"
+                                    class="flex w-full items-center justify-between gap-1.5 px-2 py-1.5 text-[11px] font-semibold text-gray-500 hover:bg-gray-50">
+                                <span class="flex items-center gap-1.5">
+                                    <span class="text-[10px]" x-text="open ? '▼' : '▶'"></span>
+                                    {{ $grp['label'] }}
+                                </span>
+                                <span class="rounded-full bg-gray-100 px-1.5 text-[10px] font-normal text-gray-500">{{ count($grp['items']) }}</span>
+                            </button>
+                            <div x-show="open" x-cloak class="space-y-1 px-2 pb-2">
                                 @foreach ($grp['items'] as $doc)
                                     <label class="flex items-center gap-2 text-sm text-gray-700">
                                         <input type="checkbox" wire:model="mailDocIds" value="{{ $doc['key'] }}" class="rounded border-gray-300" />
