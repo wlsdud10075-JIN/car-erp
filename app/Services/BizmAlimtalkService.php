@@ -61,10 +61,11 @@ class BizmAlimtalkService
         }
 
         $message = AlimtalkTemplates::render($code, $vars);
-        $title = AlimtalkTemplates::renderTitle($code, $vars);
         $base['message'] = $message;
 
         try {
+            // 1차 롤아웃 = 전부 기본형(선택안함)으로 BizM 등록 → emphasis title 은 안 보낸다.
+            // (강조표기형은 강조문구+보조문구 필수라 검수 마찰. 추후 특정 알림만 승격 시 title 재도입.)
             $item = [
                 'message_type' => 'AT',
                 'phn' => $phone,
@@ -72,9 +73,6 @@ class BizmAlimtalkService
                 'tmplId' => $this->config->tmplId($code),
                 'msg' => $message,
             ];
-            if ($title !== '') {
-                $item['title'] = $title;
-            }
 
             $response = Http::timeout(15)
                 ->withHeaders(['userid' => $this->config->userid])
