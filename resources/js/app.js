@@ -253,3 +253,54 @@ document.addEventListener('alpine:init', () => {
         },
     });
 });
+
+// ──────────────────────────────────────────────────────────────────────────
+// 금액 input([data-money]) — 실시간 콤마 + 넘패드 +/- 로 000 추가/제거 (jin 2026-07-06)
+//   문서 위임(wire:navigate·morph 견딤, §8 #21). 정수부만 콤마 · 소수점(외화 cents) 보존.
+//   +/- 키(넘패드/일반) = 정수부 ×1000 / ÷1000 → 5,000,000원 빠른 입력.
+//   저장부 save()가 str_replace(',','') 로 콤마 제거하므로 콤마 포함 표시값도 저장 호환.
+// ──────────────────────────────────────────────────────────────────────────
+function moneyFormat(raw) {
+    let s = String(raw ?? '').replace(/[^0-9.]/g, '');
+    if (s === '') return '';
+    const dot = s.indexOf('.');
+    let intp = dot === -1 ? s : s.slice(0, dot);
+    const dec = dot === -1 ? '' : '.' + s.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+    intp = intp.replace(/^0+(?=\d)/, '');
+    intp = intp === '' ? '0' : Number(intp).toLocaleString('en-US');
+    return intp + dec;
+}
+
+function applyMoneyFormat(el) {
+    const f = moneyFormat(el.value);
+    if (f !== el.value) el.value = f;
+}
+
+document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el && el.matches && el.matches('input[data-money]')) applyMoneyFormat(el);
+});
+
+document.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (!el || !el.matches || !el.matches('input[data-money]')) return;
+    if (e.key !== '+' && e.key !== '-') return;
+    e.preventDefault();
+    const d = String(el.value).replace(/[^0-9]/g, ''); // 정수부만 (넘패드 000)
+    let n = d === '' ? 0 : Number(d);
+    n = e.key === '+' ? n * 1000 : Math.floor(n / 1000);
+    el.value = n ? n.toLocaleString('en-US') : '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+});
+
+function formatAllMoney() {
+    document.querySelectorAll('input[data-money]').forEach(applyMoneyFormat);
+}
+document.addEventListener('DOMContentLoaded', formatAllMoney);
+document.addEventListener('livewire:navigated', formatAllMoney);
+if (window.Livewire) {
+    window.Livewire.hook('morph.updated', ({ el }) => {
+        if (el && el.matches && el.matches('input[data-money]')) applyMoneyFormat(el);
+    });
+}
