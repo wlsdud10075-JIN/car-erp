@@ -12,7 +12,9 @@ use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
+use App\Services\BizmAlimtalkService;
 use App\Services\NiceApiService;
+use App\Support\AlimtalkRecipients;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -216,6 +218,22 @@ class PurchaseSyncController extends Controller
         // ── 매입 도착 알람 ([관리] 대상 — "신규 매입차 도착, 계약금 진행") ──
         // 201(신규) 경로에서만 발화. 멱등 스킵(200)은 위에서 이미 return → 재전송 스팸 없음.
         $this->createArrivalAlarm($vehicle);
+
+        // ── 신규 차량 등록 알림톡 (erp_vehicle_new) → 관리 ──
+        // board 경유 신규(201)만 발화(수동 등록 스팸 방지, jin). 서비스는 fire-and-forget·게이트 내장(inert).
+        try {
+            $svc = BizmAlimtalkService::active();
+            $newVars = [
+                '차량번호' => (string) $vehicle->vehicle_number,
+                '바이어' => (string) ($vehicle->buyer?->name ?? '-'),
+                '매입가' => number_format((int) $vehicle->purchase_price).'원',
+            ];
+            foreach (AlimtalkRecipients::managers() as $phone) {
+                $svc->send('erp_vehicle_new', $phone, $newVars, ['vehicle_id' => $vehicle->id]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[purchase-sync] vehicle_new 알림톡 실패', ['error' => $e->getMessage()]);
+        }
 
         Log::info('[purchase-sync] vehicle 생성', [
             'vehicle_id' => $vehicle->id,
