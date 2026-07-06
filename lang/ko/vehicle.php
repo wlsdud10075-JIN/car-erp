@@ -19,7 +19,7 @@ return [
     'export_do' => '엑셀 내려받기',
     'export_pick_col' => '컬럼을 1개 이상 선택하세요.',
 
-    'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리)',
+    'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리) · 선박명 · 컨테이너번호',
     'search_btn' => '조회',
     'all_salesmen' => '담당자 전체',
     'all_buyers' => '바이어 전체',
