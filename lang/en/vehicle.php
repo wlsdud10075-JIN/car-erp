@@ -697,12 +697,12 @@ return [
 
     // Deregistration certificate AlimTalk delivery to domestic buyer (purchase tab)
     'deregnotice' => [
-        'label' => 'Deregistration cert. AlimTalk (domestic buyer)',
+        'label' => 'Deregistration cert. AlimTalk (domestic dealer)',
         'hint' => 'Sends a link to the deregistration certificate via KakaoTalk AlimTalk. (Link expires in 3 days · configure AlimTalk in Feature Settings)',
         'send_btn' => 'Send AlimTalk',
         'sent' => 'Deregistration AlimTalk sent.',
         'no_doc' => 'Upload and save the deregistration certificate first.',
-        'no_phone' => 'Enter the buyer phone number.',
+        'no_phone' => 'Enter the dealer phone number.',
         'failed' => 'AlimTalk send failed: :reason (check Feature Settings → AlimTalk)',
     ],
 

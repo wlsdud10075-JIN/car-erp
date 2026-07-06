@@ -33,8 +33,8 @@ class AlimtalkServiceTest extends TestCase
 
     public function test_render_substitutes_variables(): void
     {
-        $msg = AlimtalkTemplates::render('erp_deal_done', [
-            '차량번호' => '19더9065', '바이어' => 'ABC', '판매금액' => 'USD 12,500', '마진' => '3,200,000원',
+        $msg = AlimtalkTemplates::render('erp_sale_unpaid', [
+            '차량번호' => '19더9065', '바이어' => 'ABC', '미수금액' => 'USD 4,200',
         ]);
 
         $this->assertStringContainsString('19더9065', $msg);
@@ -97,11 +97,11 @@ class AlimtalkServiceTest extends TestCase
 
     public function test_missing_tmplid_cannot_send(): void
     {
-        $this->configure('erp_daily_summary');   // deal_done tmplId 는 안 채움
+        $this->configure('erp_daily_summary');   // vehicle_new tmplId 는 안 채움
         $cfg = AlimtalkConfig::active();
 
         $this->assertTrue($cfg->canSend('erp_daily_summary'));
-        $this->assertFalse($cfg->canSend('erp_deal_done'));
+        $this->assertFalse($cfg->canSend('erp_vehicle_new'));
         $this->assertTrue($cfg->isConfigured());   // userkey 없어도 발송 계정은 설정됨
     }
 
@@ -128,14 +128,14 @@ class AlimtalkServiceTest extends TestCase
             ->set('alimtalkUserid', 'heyman')
             ->set('alimtalkProfile', 'PROFILE_KEY')
             ->set('alimtalkUserkey', 'SECRET_KEY')
-            ->set('alimtalkTmplIds.erp_deal_done', 'TMPL_DEAL')
+            ->set('alimtalkTmplIds.erp_vehicle_new', 'TMPL_NEW')
             ->set('alimtalkToggles.erp_sale_unpaid', false)
             ->call('saveAlimtalk')
             ->assertHasNoErrors();
 
         $this->assertTrue((bool) Setting::get("alimtalk_enabled_{$set}"));
         $this->assertSame('heyman', Setting::get("alimtalk_userid_{$set}"));
-        $this->assertSame('TMPL_DEAL', Setting::get("alimtalk_tmpl_erp_deal_done_{$set}"));
+        $this->assertSame('TMPL_NEW', Setting::get("alimtalk_tmpl_erp_vehicle_new_{$set}"));
         $this->assertFalse((bool) Setting::get("alimtalk_toggle_erp_sale_unpaid_{$set}"));
         $this->assertSame('SECRET_KEY', Crypt::decryptString(Setting::get("alimtalk_userkey_{$set}")));
     }
