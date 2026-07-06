@@ -165,12 +165,17 @@ class DocValue
         return self::niceValidPeriodDates($v)[1];
     }
 
-    /** 목적국 — 컨사이니 국가 우선, 없으면 바이어 국가. (Country.name = 한글명) */
+    /**
+     * 목적국 — 컨사이니 국가 우선, 없으면 바이어 국가.
+     * 영문 수출서류라 한글 name 대신 영문명(Country::name_en, code→영문 맵) 사용 (jin 2026-07-06 quick win ⑤).
+     * 통관을 건너뛰고 선적만 해서 목적항(dischargePort) 미입력일 때 dischargeDestination이 이 값으로
+     * fallback 하므로, 한글 국가명이 서류에 박히던 문제를 근본 해결.
+     */
     public static function destinationCountry(Vehicle $v): ?string
     {
         $country = self::invoiceConsignee($v)?->country ?: self::invoiceBuyer($v)?->country;
 
-        return $country?->name;
+        return $country?->name_en;
     }
 
     /**

@@ -48,8 +48,9 @@ class DischargeDestinationTest extends TestCase
     {
         $v = $this->makeVehicle(null);
 
-        // 목적항 없으면 기존 동작(목적국명) 유지 — 빈칸 방지.
-        $this->assertSame('코소보', DocValue::dischargeDestination($v));
+        // 목적항 없으면 목적국명으로 fallback — 단 영문 수출서류라 영문명(Country::name_en, code→영문 맵).
+        // jin 2026-07-06 quick win ⑤: 통관 건너뛰고 선적만 할 때 한글 국가명("코소보")이 박히던 문제 근본 해결.
+        $this->assertSame('Kosovo', DocValue::dischargeDestination($v));
     }
 
     public function test_roro_invoice_e16_uses_discharge_port(): void
