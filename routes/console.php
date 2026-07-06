@@ -12,6 +12,11 @@ Artisan::command('inspire', function () {
 // 서버에서 cron 1줄 필요: * * * * * cd /path && php artisan schedule:run >> /dev/null 2>&1
 Schedule::command('db:backup')->dailyAt('03:00')->withoutOverlapping();
 
+// 전 차량 캐시 야간 재계산 (2026-07-06) — progress_status_cache·receivable_risk·sale_unpaid_amount_krw_cache.
+// 시간기반 조건(잔금 payment_date 도래, 판매 후 경과일 등)은 저장 이벤트 없이 넘어가 캐시가 drift 하므로
+// 매일 재계산으로 보정. alarms:scan(06:00) 전인 05:00 에 돌려 알람·대시보드가 최신 캐시를 보게 함.
+Schedule::command('vehicles:rebuild-caches')->dailyAt('05:00')->withoutOverlapping();
+
 // ETA 영구 알람 일일 스캔 (2026-06-18) — 도착 임박 통관서류 알람 생성/갱신/자동해소.
 // Setting('alarm_enabled')=false 면 내부에서 건너뜀(배포 ≠ 작동). 업무 시작 전 06:00.
 Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
