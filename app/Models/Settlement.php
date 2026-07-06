@@ -2,9 +2,13 @@
 
 namespace App\Models;
 
+use App\Services\BizmAlimtalkService;
+use App\Support\AlimtalkRecipients;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class Settlement extends Model
@@ -87,6 +91,25 @@ class Settlement extends Model
             if (abs($unconsumed) >= 0.01) {
                 $s->carryover_in_krw = $unconsumed;
             }
+        });
+
+        // 정산 확정 대기 알림톡 (erp_settle_pending) — 신규 pending 정산 생성 시 관리에게 "확정 대기 N건".
+        //   거래완료 Vehicle::saved 훅이 자동 생성 → afterCommit(롤백 시 미발송) + fire-and-forget(서비스가 예외 흡수).
+        static::created(function (Settlement $s) {
+            if ($s->settlement_status !== 'pending') {
+                return;
+            }
+            DB::afterCommit(function () {
+                try {
+                    $count = self::where('settlement_status', 'pending')->count();
+                    $svc = BizmAlimtalkService::active();
+                    foreach (AlimtalkRecipients::managers() as $phone) {
+                        $svc->send('erp_settle_pending', $phone, ['건수' => number_format($count)]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('alimtalk settle_pending 실패', ['error' => $e->getMessage()]);
+                }
+            });
         });
 
         // Review.md #1 (2026-06-09) — 회계 잠금 정산의 무가드 삭제 차단.

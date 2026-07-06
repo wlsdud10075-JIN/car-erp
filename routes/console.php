@@ -20,3 +20,15 @@ Schedule::command('vehicles:rebuild-caches')->dailyAt('05:00')->withoutOverlappi
 // ETA 영구 알람 일일 스캔 (2026-06-18) — 도착 임박 통관서류 알람 생성/갱신/자동해소.
 // Setting('alarm_enabled')=false 면 내부에서 건너뜀(배포 ≠ 작동). 업무 시작 전 06:00.
 Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
+
+// 카카오 알림톡 자동발송 (2026-07-06) — 캐시 재계산(05:00) 후 최신 grace/미수 기준.
+//   전부 BizmAlimtalkService 게이트 내장 = Setting alimtalk_enabled off 면 자동 skip(배포 ≠ 작동, inert).
+//   대표 요약(일일 09:00 / 주간 금 18:00 / 월결산 10일) · 관리·영업 아침 배치.
+Schedule::command('alimtalk:pickup')->dailyAt('08:00')->withoutOverlapping();
+Schedule::command('alimtalk:purchase-unpaid')->dailyAt('08:00')->withoutOverlapping();
+Schedule::command('alimtalk:sale-unpaid')->dailyAt('08:10')->withoutOverlapping();
+Schedule::command('alimtalk:eta-balance')->dailyAt('08:20')->withoutOverlapping();
+Schedule::command('alimtalk:shipping-due')->dailyAt('08:20')->withoutOverlapping();
+Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
+Schedule::command('alimtalk:monthly-closing')->monthlyOn(10, '09:00')->withoutOverlapping();
