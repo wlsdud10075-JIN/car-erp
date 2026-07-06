@@ -319,6 +319,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('sale_price', '>', 0)
             ->whereNotNull('sale_unpaid_amount_krw_cache')
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
+            ->excludeReceivableGrace()
             ->sum('sale_unpaid_amount_krw_cache') ?? 0);
 
         $today = now()->toDateString();

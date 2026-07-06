@@ -97,6 +97,8 @@ return [
     // 채권 탭
     'recv_total_unpaid' => '총 미수금',
     'recv_total_unpaid_note' => '환율 미입력 외화 제외',
+    'recv_grace' => '결제대기 (채권 제외)',
+    'recv_grace_note' => ':count건 · 판매일+10일 후 채권 전환',
     'recv_before' => '선적전 미수금',
     'recv_before_note' => ':count대 · 매입~판매완료 단계',
     'recv_after' => '선적후 미수금',

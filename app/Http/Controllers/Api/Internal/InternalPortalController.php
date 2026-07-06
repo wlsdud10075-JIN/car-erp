@@ -216,7 +216,11 @@ class InternalPortalController extends Controller
 
         return response()->json([
             // NULL(환율 미입력)은 합산서 제외(?? 0 금지 — cash_audit 교훈). fx_missing_count 로 별도 노출.
-            'unpaid_total_krw' => (int) $vehicles->whereNotNull('sale_unpaid_amount_krw_cache')
+            // 결제대기(grace) 제외 — board 도 같은 DB·같은 채권 정의를 봄(jin 2026-07-06). scopeExcludeReceivableGrace
+            //   단일 출처(=채권관리·대시보드와 동일 fresh 기준). 컬렉션($vehicles) 대신 fresh 쿼리로 스코프 적용.
+            'unpaid_total_krw' => (int) $this->ownVehicles($sid)
+                ->whereNotNull('sale_unpaid_amount_krw_cache')
+                ->excludeReceivableGrace()
                 ->sum('sale_unpaid_amount_krw_cache'),
             'purchase_unpaid_total' => (int) $vehicles->where('purchase_price', '>', 0)->sum->purchase_unpaid_amount,
             'fx_missing_count' => $vehicles->where('sale_price', '>', 0)

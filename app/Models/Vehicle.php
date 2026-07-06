@@ -1370,11 +1370,8 @@ class Vehicle extends Model
                     ->where('sale_unpaid_amount_krw_cache', '>', 0)
                     ->orWhereNull('sale_unpaid_amount_krw_cache'))
                 // 결제대기 유예 — 선적 전(bl_loading_location 없음)은 판매일+10일 지난 것만 알림 대상.
-                //   grace(유예 중)는 제외. 선적 후는 즉시. (Vehicle::RECEIVABLE_GRACE_DAYS)
-                ->where(fn ($q3) => $q3
-                    ->whereNotNull('bl_loading_location')
-                    ->orWhereNull('sale_date')
-                    ->orWhere('sale_date', '<=', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString())),
+                //   grace(유예 중)는 제외. 선적 후는 즉시. (scopeExcludeReceivableGrace 단일 출처)
+                ->excludeReceivableGrace(),
             'clearance_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
@@ -1507,7 +1504,9 @@ class Vehicle extends Model
             //              AND sale_unpaid_amount > 0
             'receivable_before_shipping' => $q
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
-                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
+                ->excludeReceivableGrace(),
 
             // 안건 1 v4 (2026-05-21) — 단계명 swap: 수출통관중/완료 → 통관중/완료.
             // 선적후 미수: progress_status_cache ∈ {선적중, 선적완료, 통관중, 통관완료}
@@ -1522,5 +1521,33 @@ class Vehicle extends Model
 
             default => $q,
         };
+    }
+
+    /**
+     * 결제대기(grace) 차량을 채권 집계에서 제외 — grace = 선적 전(반입지 없음) + 판매일+유예일 미경과 미수.
+     * jin 2026-07-06: "결제대기는 아직 채권 아님". 채권금액 총액(채권관리·관리자/업무 대시보드)에서 빠져야 함.
+     *
+     * 판정은 캐시(receivable_risk) 대신 sale_date 로 = fresh(야간 rebuild 대기 없이 판매일+10일 정확 flip),
+     * scopeAction('sale_unpaid')·채권관리 before_shipping 탭과 동일 단일 기준(SKILLS §13). grace 는 선적
+     * 전에만 성립하므로, 선적 후(반입지 입력) 미수는 이 스코프로 절대 제외되지 않는다(즉시 채권). sale_date
+     * NULL(판매가 있으나 날짜 미상 — chk_sale_required 상 실질 없음)은 grace 아님으로 간주해 유지한다.
+     */
+    public function scopeExcludeReceivableGrace(Builder $q): Builder
+    {
+        return $q->whereNot(fn ($q2) => $q2
+            ->whereNull('bl_loading_location')
+            ->whereNotNull('sale_date')
+            ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString()));
+    }
+
+    /**
+     * 결제대기(grace)만 — scopeExcludeReceivableGrace 의 정확한 여집합(선적 전·판매일+유예일 미경과).
+     * 대시보드/채권관리 "결제대기" 카드(제외된 미수를 따로 표시)용. 호출측에서 미수>0 필터 추가.
+     */
+    public function scopeOnlyReceivableGrace(Builder $q): Builder
+    {
+        return $q->whereNull('bl_loading_location')
+            ->whereNotNull('sale_date')
+            ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString());
     }
 }

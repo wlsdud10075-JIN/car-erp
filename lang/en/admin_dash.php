@@ -91,6 +91,8 @@ return [
 
     'recv_total_unpaid' => 'Total outstanding',
     'recv_total_unpaid_note' => 'Excludes foreign currency without exchange rate',
+    'recv_grace' => 'Payment grace (excl. from receivables)',
+    'recv_grace_note' => ':count vehicle(s) · becomes receivable at sale date +10d',
     'recv_before' => 'Pre-shipment outstanding',
     'recv_before_note' => ':count vehicles · purchase–sold stage',
     'recv_after' => 'Post-shipment outstanding',

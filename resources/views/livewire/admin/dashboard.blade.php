@@ -105,7 +105,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $cashReceivedKrw = (clone $base)->where('sale_price', '>', 0)->get()->sum(function ($v) {
             return (int) $v->sale_received_krw_accumulated;
         });
-        $unpaidKrw = (int) (clone $base)->where('sale_price', '>', 0)->sum('sale_unpaid_amount_krw_cache');
+        // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
+        //   발생 매출(saleKrw)·현금 회수는 grace 포함 유지(grace 도 실제 판매). 미수금 KPI 만 제외.
+        $unpaidKrw = (int) (clone $base)->where('sale_price', '>', 0)->excludeReceivableGrace()->sum('sale_unpaid_amount_krw_cache');
 
         // 큐 16 — by_channel 집계 제거 (채널 단일).
         $byProgress = (clone $base)
@@ -409,6 +411,8 @@ new #[Layout('components.layouts.app')] class extends Component
         Vehicle::query()
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            // 결제대기(grace) 제외 — 채권 KPI(총미수·담당자별·바이어별·선적전/후 분류) 전부 grace 미포함 (jin 2026-07-06).
+            ->excludeReceivableGrace()
             ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
@@ -461,6 +465,16 @@ new #[Layout('components.layouts.app')] class extends Component
                 }
             });
 
+        // 결제대기(grace) — 위 메인 쿼리는 grace 제외본이라 별도 집계. 채권 총액에서 뺀 금액을 카드로 표시(정합, jin 2026-07-06).
+        $graceStats = Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->onlyReceivableGrace()
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            ->selectRaw('COUNT(*) as cnt, SUM(sale_unpaid_amount_krw_cache) as total_unpaid')
+            ->first();
+
         // 큐 10 확장 — 디파짓(savings_used > 0)은 별도 query (sale_unpaid 무관, 적립금 사용 차량 모두).
         $depositStats = Vehicle::query()
             ->where('savings_used', '>', 0)
@@ -506,6 +520,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'total_unpaid' => array_sum(array_column($bySalesman, 'unpaid')),
             // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18)
             'classification' => $classification,
+            // 결제대기(grace) — 채권 총액 제외분 별도 표시 (jin 2026-07-06)
+            'grace_unpaid' => (int) ($graceStats->total_unpaid ?? 0),
+            'grace_count' => (int) ($graceStats->cnt ?? 0),
         ];
     }
 
@@ -882,6 +899,14 @@ new #[Layout('components.layouts.app')] class extends Component
                     @krw($this->receivableKpis['total_unpaid'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_total_unpaid_note') }}</p>
+            </div>
+            {{-- 결제대기(grace) — 총미수에서 제외된 금액 별도 표시 (jin 2026-07-06) --}}
+            <div class="card min-w-[180px] flex-1 border-gray-200 bg-gray-50/50">
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_grace') }}</div>
+                <div class="mt-1 text-2xl font-bold text-gray-500">
+                    @krw($this->receivableKpis['grace_unpaid'])<span class="ml-1 text-sm font-normal text-gray-400">{{ __('admin_dash.unit_won') }}</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_grace_note', ['count' => $this->receivableKpis['grace_count']]) }}</p>
             </div>
             {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅 --}}
             @foreach (['safe' => [__('receivable.risk.safe'), 'green'], 'caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])

@@ -18,6 +18,8 @@ return [
         'total_sale' => 'Total sales (KRW)',
         'total_paid' => 'Total received',
         'total_unpaid' => 'Total outstanding',
+        'grace' => 'Payment grace (excl. from receivables)',
+        'grace_hint' => ':count vehicle(s) · becomes receivable at sale date +10d',
         'risk_count' => 'At-risk count (danger + critical)',
     ],
     'unit_won' => 'KRW',
