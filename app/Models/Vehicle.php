@@ -1263,6 +1263,9 @@ class Vehicle extends Model
      *
      * 코드: safe / caution / danger / critical / none
      */
+    /** 결제대기(grace) 유예 일수 — 선적 전 미수는 판매일+이 일수 지나야 채권 (jin 2026-07-06 A안). */
+    public const RECEIVABLE_GRACE_DAYS = 10;
+
     public function getReceivableRiskComputedAttribute(): string
     {
         $total = $this->sale_total_amount;
@@ -1281,6 +1284,14 @@ class Vehicle extends Model
             return 'safe';
         }
 
+        // 결제대기 유예 (jin 2026-07-06, A안) — 선적 전(반입 전 = bl_loading_location 없음) 미수는
+        //   판매일 + RECEIVABLE_GRACE_DAYS 지나야 채권. 그 전엔 'grace'(정상 결제 대기, 채권 아님).
+        //   선적 후는 유예 없이 즉시 위험. ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
+        if (blank($this->bl_loading_location) && $this->sale_date
+            && $this->sale_date->copy()->addDays(self::RECEIVABLE_GRACE_DAYS)->startOfDay()->isFuture()) {
+            return 'grace';
+        }
+
         $ratio = ($unpaid / $total) * 100;
 
         return match (true) {
@@ -1296,6 +1307,7 @@ class Vehicle extends Model
     public function getReceivableRiskLabelAttribute(): string
     {
         return match ($this->receivable_risk) {
+            'grace' => '결제대기',
             'safe' => '안전',
             'caution' => '주의',
             'danger' => '위험',
@@ -1356,7 +1368,13 @@ class Vehicle extends Model
                 ->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2
                     ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                    ->orWhereNull('sale_unpaid_amount_krw_cache')),
+                    ->orWhereNull('sale_unpaid_amount_krw_cache'))
+                // 결제대기 유예 — 선적 전(bl_loading_location 없음)은 판매일+10일 지난 것만 알림 대상.
+                //   grace(유예 중)는 제외. 선적 후는 즉시. (Vehicle::RECEIVABLE_GRACE_DAYS)
+                ->where(fn ($q3) => $q3
+                    ->whereNotNull('bl_loading_location')
+                    ->orWhereNull('sale_date')
+                    ->orWhere('sale_date', '<=', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString())),
             'clearance_needed' => $q->where('sale_price', '>', 0)
                 ->whereNotNull('sale_unpaid_amount_krw_cache')
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)

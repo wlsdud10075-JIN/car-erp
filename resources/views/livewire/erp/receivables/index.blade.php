@@ -297,7 +297,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 10 확장 — G3 미수 분류 탭 (Vehicle::scopeAction과 동일 SQL 출처).
             ->when($this->classification === 'before_shipping', fn ($q) => $q
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
-                ->where('sale_unpaid_amount_krw_cache', '>', 0))
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                // 결제대기 유예 — 선적전 채권은 판매일+10일 지난 것만(그 전=grace 제외). jin 2026-07-06 A안.
+                ->where('sale_date', '<=', now()->subDays(\App\Models\Vehicle::RECEIVABLE_GRACE_DAYS)->toDateString()))
             ->when($this->classification === 'after_shipping', fn ($q) => $q
                 ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0))
@@ -318,6 +320,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'before_shipping' => (clone $base)
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                ->where('sale_date', '<=', now()->subDays(\App\Models\Vehicle::RECEIVABLE_GRACE_DAYS)->toDateString())
                 ->count(),
             'after_shipping' => (clone $base)
                 ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])

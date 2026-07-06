@@ -32,6 +32,7 @@ return [
     'ratio_min' => ':percent%+',
 
     'risk' => [
+        'grace' => 'Payment pending',
         'safe' => 'Safe',
         'caution' => 'Caution',
         'danger' => 'Danger',

@@ -32,6 +32,7 @@ return [
     'ratio_min' => ':percent%↑',
 
     'risk' => [
+        'grace' => '결제대기',
         'safe' => '안전',
         'caution' => '주의',
         'danger' => '위험',
