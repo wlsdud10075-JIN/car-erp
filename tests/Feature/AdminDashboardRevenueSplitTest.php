@@ -50,7 +50,8 @@ class AdminDashboardRevenueSplitTest extends TestCase
             'vehicle_number' => 'RS-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
             'dhl_request' => false,
-            'sale_price' => 10_000_000, 'sale_date' => now()->format('Y-m-d'),
+            // 판매일 15일 전(결제대기 유예 10일 경과) — 미수금 KPI 는 grace 제외라, 유예 경과 채권이어야 집계됨.
+            'sale_price' => 10_000_000, 'sale_date' => now()->subDays(15)->format('Y-m-d'),
             'purchase_date' => now()->subMonth()->format('Y-m-d'),
             'purchase_price' => 5_000_000,
         ]);

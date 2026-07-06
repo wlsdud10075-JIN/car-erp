@@ -58,8 +58,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $vehicles = $this->vehicles;
 
+        // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
+        //   관리자/업무 대시보드·채권관리 총액과 동일 정책. 컬렉션이라 fresh accessor 로 판정(scope 와 동일 기준).
         $saleUnpaidByCurrency = $vehicles
             ->where('sale_price', '>', 0)
+            ->reject(fn(Vehicle $v) => $v->receivable_risk_computed === 'grace')
             ->groupBy('currency')
             ->map(fn($g) => $g->sum('sale_unpaid_amount'))
             ->filter(fn($v) => $v > 0)

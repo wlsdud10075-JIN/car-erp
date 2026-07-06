@@ -18,6 +18,8 @@ return [
         'total_sale' => '총 매출 (KRW 환산)',
         'total_paid' => '총 입금',
         'total_unpaid' => '총 미수금',
+        'grace' => '결제대기 (채권 제외)',
+        'grace_hint' => ':count건 · 판매일+10일 후 채권 전환',
         'risk_count' => '위험 건수 (위험 + 심각)',
     ],
     'unit_won' => '원',

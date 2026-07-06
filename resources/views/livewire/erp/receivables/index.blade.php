@@ -84,7 +84,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function summary(): array
     {
-        $base = $this->buildQuery();
+        // 결제대기(grace) 제외 — 총 채권금액(총판매액·총입금·총미수)은 grace 미포함 (jin 2026-07-06).
+        //   목록(vehicles)에는 grace 차량이 결제대기 뱃지로 계속 보이되, 채권 총액 집계에서만 빠진다.
+        //   총미수만 빼면 total_paid = 총판매-총미수 가 grace 만큼 부풀어 안 맞으므로 base 전체에서 제외.
+        $base = $this->buildQuery()->excludeReceivableGrace();
 
         // 다중통화: 행 단위 KRW 환산 후 합산.
         $totalSaleKrw = (clone $base)->get()->sum(function ($v) {
@@ -96,11 +99,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $totalPaidKrw = max(0, (int) $totalSaleKrw - $totalUnpaidKrw);
         $riskCount = (clone $base)->whereIn('receivable_risk', ['danger', 'critical'])->count();
 
+        // 결제대기(grace) — 채권 총액에선 제외됐지만 별도 카드로 보여줘 정합 확인 (jin 2026-07-06).
+        //   base 는 grace 제외본이라, grace 는 buildQuery(목록·grace 포함) 에서 따로 집계.
+        $graceQuery = $this->buildQuery()->onlyReceivableGrace()->where('sale_unpaid_amount_krw_cache', '>', 0);
+        $graceUnpaidKrw = (int) (clone $graceQuery)->sum('sale_unpaid_amount_krw_cache');
+        $graceCount = (clone $graceQuery)->count();
+
         return [
             'total_sale_krw' => (int) $totalSaleKrw,
             'total_paid_krw' => (int) $totalPaidKrw,
             'total_unpaid_krw' => $totalUnpaidKrw,
             'risk_count' => $riskCount,
+            'grace_unpaid_krw' => $graceUnpaidKrw,
+            'grace_count' => $graceCount,
         ];
     }
 
@@ -298,8 +309,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->classification === 'before_shipping', fn ($q) => $q
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                // 결제대기 유예 — 선적전 채권은 판매일+10일 지난 것만(그 전=grace 제외). jin 2026-07-06 A안.
-                ->where('sale_date', '<=', now()->subDays(\App\Models\Vehicle::RECEIVABLE_GRACE_DAYS)->toDateString()))
+                // 결제대기(grace) 제외 — 선적전 채권은 판매일+10일 지난 것만(scopeExcludeReceivableGrace 단일 출처).
+                ->excludeReceivableGrace())
             ->when($this->classification === 'after_shipping', fn ($q) => $q
                 ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0))
@@ -320,7 +331,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'before_shipping' => (clone $base)
                 ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                ->where('sale_date', '<=', now()->subDays(\App\Models\Vehicle::RECEIVABLE_GRACE_DAYS)->toDateString())
+                ->excludeReceivableGrace()
                 ->count(),
             'after_shipping' => (clone $base)
                 ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
@@ -374,8 +385,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
-    {{-- KPI 4개 --}}
-    <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    {{-- KPI 5개 (미수는 결제대기 제외, 결제대기는 별도 카드로 정합 표시 — jin 2026-07-06) --}}
+    <div class="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_sale') }}</div>
             <div class="mt-1 text-2xl font-bold text-gray-800">@krw($this->summary['total_sale_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
@@ -387,6 +398,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_unpaid') }}</div>
             <div class="mt-1 text-2xl font-bold text-red-600">@krw($this->summary['total_unpaid_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+        </div>
+        <div class="card">
+            <div class="text-xs text-gray-500">{{ __('receivable.kpi.grace') }}</div>
+            <div class="mt-1 text-2xl font-bold text-gray-500">@krw($this->summary['grace_unpaid_krw'])<span class="ml-1 text-sm font-normal text-gray-400">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-0.5 text-[11px] text-gray-400">{{ __('receivable.kpi.grace_hint', ['count' => $this->summary['grace_count']]) }}</div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.risk_count') }}</div>
