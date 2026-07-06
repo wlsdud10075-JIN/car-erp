@@ -1077,8 +1077,44 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $q->action($this->action);
     }
 
+    // jin 2026-07-06 quick win ⑦ — 차량편집 바이어 드롭다운도 [관리]/영업 팀 스코프로 솔팅.
+    //   buyersForFilter/buyers/index 와 동일 규칙: admin=전체 / 영업=본인(직접 salesman_id + 차량 간접) / 관리=subordinate.
+    //   ⚠ 편집 중 차량의 현재 바이어(판매/통관/B-L)는 스코프 밖이어도 항상 포함 — 드롭다운에서 사라져
+    //     저장 시 선택이 소실되는 것 방지. (buyer 없으면 salesman 매칭 필수 = 운영 규칙, jin 수용.)
     #[Computed]
-    public function buyers() { return Buyer::where('is_active', true)->orderBy('name')->get(); }
+    public function buyers()
+    {
+        $user = auth()->user();
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
+        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
+
+        $selectedIds = array_values(array_filter([
+            (int) ($this->buyer_id_str ?: 0),
+            (int) ($this->export_buyer_id_str ?: 0),
+            (int) ($this->bl_buyer_id_str ?: 0),
+        ]));
+
+        return Buyer::query()
+            ->where(function ($outer) use ($restrictToOwnSalesman, $restrictToManagerScope, $user, $managerScopeSalesmanIds, $selectedIds) {
+                $outer->where(function ($q) use ($restrictToOwnSalesman, $restrictToManagerScope, $user, $managerScopeSalesmanIds) {
+                    $q->where('is_active', true);
+                    if ($restrictToOwnSalesman) {
+                        $ownId = $user->salesman->id;
+                        $q->where(fn ($s) => $s->where('salesman_id', $ownId)
+                            ->orWhereHas('vehicles', fn ($v) => $v->where('salesman_id', $ownId)));
+                    } elseif ($restrictToManagerScope) {
+                        $q->where(fn ($s) => $s->whereIn('salesman_id', $managerScopeSalesmanIds)
+                            ->orWhereHas('vehicles', fn ($v) => $v->whereIn('salesman_id', $managerScopeSalesmanIds)));
+                    }
+                });
+                if (! empty($selectedIds)) {
+                    $outer->orWhereIn('id', $selectedIds);
+                }
+            })
+            ->orderBy('name')
+            ->get();
+    }
 
     // 작업2 (2026-05-27) — quick-add 폼 국가 드롭다운용.
     #[Computed]
