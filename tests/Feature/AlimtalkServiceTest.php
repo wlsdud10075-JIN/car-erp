@@ -48,7 +48,9 @@ class AlimtalkServiceTest extends TestCase
         Http::fake(['*' => Http::response([['msgid' => 'BIZM-123', 'code' => 'success']], 200)]);
 
         $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-1234-5678', [
-            '날짜' => '2026-07-04', '매입건수' => '3', '판매건수' => '2', '완료건수' => '1', '미수총액' => '0원',
+            '날짜' => '2026-07-06', '판매건수' => '12', '매출액' => '4억 2,000만원',
+            '선적전건수' => '5', '선적전금액' => '3,200만원', '선적후건수' => '3', '선적후금액' => '8,500만원',
+            '미수합계' => '1억 1,700만원',
         ]);
 
         $this->assertSame('sent', $log->status);

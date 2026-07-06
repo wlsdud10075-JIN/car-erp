@@ -141,10 +141,13 @@ class BizmAlimtalkService
 
         return (new self($testConfig))->send('erp_daily_summary', $phone, [
             '날짜' => now()->toDateString(),
-            '매입건수' => '0',
             '판매건수' => '0',
-            '완료건수' => '0',
-            '미수총액' => '0원',
+            '매출액' => '0원',
+            '선적전건수' => '0',
+            '선적전금액' => '0원',
+            '선적후건수' => '0',
+            '선적후금액' => '0원',
+            '미수합계' => '0원',
         ], ['user_id' => auth()->id()]);
     }
 
