@@ -79,11 +79,16 @@ class FinalPayment extends Model
 
             // 큐 20-D — confirmed_at SET 후 retroactive UPDATE 차단 (회계 무결성).
             // confirmed_at → confirmed_at 이외 변경은 허용 (예: PaymentConfirmationService에서 SET 자체).
+            // 2026-07-06 (정산 재설계 선행결함1) — exchange_rate/amount_krw 도 잠금 대상 추가.
+            //   신 2차정산분이 잔금별 환율(amount_krw)에 의존하는데, 이 둘이 잠금 목록에서 빠져
+            //   재무확정 후 무단수정 가능하던 갭. c-2 잠금해제(VehicleLedgerUnlockService::unlockForFinalPayment)만
+            //   $allowConfirmedMutation 로 우회.
             $originalConfirmedAt = $p->getOriginal('confirmed_at');
             if ($originalConfirmedAt !== null && ! self::$allowConfirmedMutation) {
                 // confirmed_at 자체를 변경하는 경우만 차단 (re-confirm 또는 unlock 시도)
-                if ($p->isDirty('confirmed_at') || $p->isDirty('amount') || $p->isDirty('payment_date') || $p->isDirty('transfer_id')) {
-                    throw new \DomainException('재무 확정된 잔금의 amount / payment_date / confirmed_at / transfer_id 는 수정할 수 없습니다 (회계 무결성).');
+                if ($p->isDirty('confirmed_at') || $p->isDirty('amount') || $p->isDirty('payment_date')
+                    || $p->isDirty('transfer_id') || $p->isDirty('exchange_rate') || $p->isDirty('amount_krw')) {
+                    throw new \DomainException('재무 확정된 잔금의 amount / payment_date / exchange_rate / confirmed_at / transfer_id 는 수정할 수 없습니다 (회계 무결성). 수정하려면 잠금해제(관리 승인)가 필요합니다.');
                 }
             }
         });
