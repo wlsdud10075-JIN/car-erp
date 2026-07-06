@@ -417,6 +417,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </select>
         <select wire:model.live="riskFilter" class="input-filter">
             <option value="">{{ __('receivable.all_risk') }}</option>
+            <option value="grace">{{ __('receivable.risk.grace') }}</option>
             <option value="safe">{{ __('receivable.risk.safe') }}</option>
             <option value="caution">{{ __('receivable.risk.caution') }}</option>
             <option value="danger">{{ __('receivable.risk.danger') }}</option>

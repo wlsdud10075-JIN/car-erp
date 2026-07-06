@@ -315,36 +315,50 @@ if (window.Livewire) {
 //   allowInput=true 로 직접 타이핑 + 달력 클릭 선택 병행. 저장부는 Y-m-d 문자열 그대로 받음.
 //   flatpickr 는 요소별 init → 라이프사이클마다 미init 요소 스캔 + morph 재init(잔금 행 추가 등).
 // ──────────────────────────────────────────────────────────────────────────
+const fpConfig = {
+    dateFormat: 'Y-m-d',
+    allowInput: true,
+    disableMobile: true, // 모바일도 flatpickr(네이티브 date 폴백 방지 — 타이핑 일관)
+    locale: Korean,
+    parseDate: (str) => {
+        const d = String(str).replace(/\D/g, '');
+        if (d.length === 8) {
+            const dt = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8));
+            return isNaN(dt.getTime()) ? undefined : dt;
+        }
+        const t = Date.parse(str);
+        return isNaN(t) ? undefined : new Date(t);
+    },
+    onChange: (sel, dateStr, inst) => {
+        // wire:model 동기화 (deferred — 값은 DOM 에 이미 반영, dirty 표시용)
+        inst.input.dispatchEvent(new Event('input', { bubbles: true }));
+    },
+};
+
+// 요소 1개 init. 이미 붙었으면 false, 새로 붙였으면 true.
+function fpInit(el) {
+    if (!el || el._flatpickr) return false;
+    flatpickr(el, fpConfig);
+    return true;
+}
+
 function initFlatpickr(root) {
     const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('input[data-date]').forEach((el) => {
-        if (el._flatpickr) return; // 이미 init(morph 로 노드 보존 시)
-        flatpickr(el, {
-            dateFormat: 'Y-m-d',
-            allowInput: true,
-            disableMobile: true, // 모바일도 flatpickr(네이티브 date 폴백 방지 — 타이핑 일관)
-            locale: Korean,
-            parseDate: (str) => {
-                const d = String(str).replace(/\D/g, '');
-                if (d.length === 8) {
-                    const dt = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8));
-                    return isNaN(dt.getTime()) ? undefined : dt;
-                }
-                const t = Date.parse(str);
-                return isNaN(t) ? undefined : new Date(t);
-            },
-            onChange: (sel, dateStr, inst) => {
-                // wire:model 동기화 (deferred — 값은 DOM 에 이미 반영, dirty 표시용)
-                inst.input.dispatchEvent(new Event('input', { bubbles: true }));
-            },
-        });
-    });
+    scope.querySelectorAll('input[data-date]').forEach(fpInit);
 }
+
+// ★ 핵심 — focus 시 지연 init(문서 위임). 슬라이드 패널이 나중에 렌더돼도 클릭하는 순간 붙는다.
+//   라이프사이클 스캔(아래)이 놓쳐도 이 focusin 이 보장. 새로 붙인 경우 바로 달력 open.
+document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (el && el.matches && el.matches('input[data-date]')) {
+        if (fpInit(el)) el._flatpickr.open();
+    }
+});
+
+// 로드/네비/morph 시 미init 요소 사전 스캔(값 표시·잔금 행 추가 대비). morph 는 문서 전체 재스캔.
 document.addEventListener('DOMContentLoaded', () => initFlatpickr());
 document.addEventListener('livewire:navigated', () => initFlatpickr());
 if (window.Livewire) {
-    window.Livewire.hook('morph.updated', ({ el }) => {
-        if (el && el.querySelectorAll) initFlatpickr(el);
-        else if (el && el.matches && el.matches('input[data-date]')) initFlatpickr(el.parentElement || document);
-    });
+    window.Livewire.hook('morph.updated', () => initFlatpickr());
 }
