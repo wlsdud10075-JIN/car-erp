@@ -1,3 +1,7 @@
+import flatpickr from 'flatpickr';
+import { Korean } from 'flatpickr/dist/l10n/ko.js';
+import 'flatpickr/dist/flatpickr.min.css';
+
 // ──────────────────────────────────────────────────────────────────────────
 // 차량 미납 게이지 (행 배경 + 호버 툴팁)
 //
@@ -302,5 +306,45 @@ document.addEventListener('livewire:navigated', formatAllMoney);
 if (window.Livewire) {
     window.Livewire.hook('morph.updated', ({ el }) => {
         if (el && el.matches && el.matches('input[data-money]')) applyMoneyFormat(el);
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 날짜 input([data-date]) — flatpickr (타이핑 + 달력). jin 2026-07-06
+//   20260717 처럼 8자리 숫자를 타이핑하면 parseDate 가 2026-07-17 로 변환(TAB 불필요).
+//   allowInput=true 로 직접 타이핑 + 달력 클릭 선택 병행. 저장부는 Y-m-d 문자열 그대로 받음.
+//   flatpickr 는 요소별 init → 라이프사이클마다 미init 요소 스캔 + morph 재init(잔금 행 추가 등).
+// ──────────────────────────────────────────────────────────────────────────
+function initFlatpickr(root) {
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('input[data-date]').forEach((el) => {
+        if (el._flatpickr) return; // 이미 init(morph 로 노드 보존 시)
+        flatpickr(el, {
+            dateFormat: 'Y-m-d',
+            allowInput: true,
+            disableMobile: true, // 모바일도 flatpickr(네이티브 date 폴백 방지 — 타이핑 일관)
+            locale: Korean,
+            parseDate: (str) => {
+                const d = String(str).replace(/\D/g, '');
+                if (d.length === 8) {
+                    const dt = new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8));
+                    return isNaN(dt.getTime()) ? undefined : dt;
+                }
+                const t = Date.parse(str);
+                return isNaN(t) ? undefined : new Date(t);
+            },
+            onChange: (sel, dateStr, inst) => {
+                // wire:model 동기화 (deferred — 값은 DOM 에 이미 반영, dirty 표시용)
+                inst.input.dispatchEvent(new Event('input', { bubbles: true }));
+            },
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', () => initFlatpickr());
+document.addEventListener('livewire:navigated', () => initFlatpickr());
+if (window.Livewire) {
+    window.Livewire.hook('morph.updated', ({ el }) => {
+        if (el && el.querySelectorAll) initFlatpickr(el);
+        else if (el && el.matches && el.matches('input[data-date]')) initFlatpickr(el.parentElement || document);
     });
 }

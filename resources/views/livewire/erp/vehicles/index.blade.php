@@ -3875,9 +3875,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
             <option value="bl">{{ __('vehicle.date_type.bl') }}</option>
         </select>
-        <input wire:model="dateFrom" type="date" class="input-filter" />
+        <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
-        <input wire:model="dateTo" type="date" class="input-filter" />
+        <input wire:model="dateTo" type="text" data-date class="input-filter" />
         <select wire:model.live="salesmanId" class="input-filter">
             <option value="">{{ __('vehicle.all_salesmen') }}</option>
             @foreach($this->salesmen as $s)
@@ -4548,8 +4548,8 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.fuel_type') }}</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.fuel_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.use_type') }}</label><input wire:model="nice_reg_use_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.use_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
                     <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" />
@@ -4690,7 +4690,7 @@ function vehicleColumnsToggle() {
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="text" data-date class="input-base input-required" /></div>
                 {{-- 영업담당자 select 는 기본정보 탭(색상 옆)으로 이동 (2026-06-04). --}}
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">{{ __('vehicle.field.purchase_from') }} </label>
@@ -4850,7 +4850,7 @@ function vehicleColumnsToggle() {
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 96px; flex: none;"
                            placeholder="{{ __('vehicle.ph.amount_won') }}" @if(!$canConfirmFinance) disabled @endif />
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date"
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="text" data-date
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 112px; flex: none;"
                            @if(!$canConfirmFinance) disabled @endif />
@@ -4960,7 +4960,7 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.deregistration_date') }}</label>
-                    <input type="date" wire:model="deregistration_date" class="input-base" />
+                    <input type="text" data-date wire:model="deregistration_date" class="input-base" />
                     <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.deregistration_date_hint') }}</p>
                 </div>
             </div>
@@ -5044,7 +5044,7 @@ function vehicleColumnsToggle() {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="text" data-date class="input-base input-required" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.currency') }} </label>
                     <select wire:model.live="currency" class="input-base input-required">
@@ -5274,7 +5274,7 @@ function vehicleColumnsToggle() {
                            value="{{ $rowAmt > 0 && $rowRate > 0 ? '₩'.number_format($rowKrw) : '' }}"
                            placeholder="₩0" title="{{ __('vehicle.panel.krw_converted') }}" />
                     @endif
-                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base"
+                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="text" data-date class="input-base"
                            style="width: 112px; flex: none;" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1"
                            style="min-width: 0;" placeholder="{{ __('vehicle.ph.note') }}" />
@@ -5544,8 +5544,8 @@ function vehicleColumnsToggle() {
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_decl_amount_note') }}</p>
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.export_decl_number') }}</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.shipping_method') }}</label>
                     <select wire:model="shipping_method" class="input-base">
@@ -5718,7 +5718,7 @@ function vehicleColumnsToggle() {
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">{{ __('vehicle.field.bl_number') }}</label><input wire:model="bl_number" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="text" data-date class="input-base" /></div>
                 {{-- B/L 방식(오리지널/써랜더) + 이중가드 — 영업 요청(shipping_requests.bl_type) vs 관리 확인(vehicles.bl_type) --}}
                 @php
                     $reqBlType = $editingId
