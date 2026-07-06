@@ -19,7 +19,7 @@ return [
     'export_do' => '엑셀 내려받기',
     'export_pick_col' => '컬럼을 1개 이상 선택하세요.',
 
-    'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리)',
+    'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리) · 선박명 · 컨테이너번호',
     'search_btn' => '조회',
     'all_salesmen' => '담당자 전체',
     'all_buyers' => '바이어 전체',
@@ -693,6 +693,17 @@ return [
         'gen_hint' => '자동생성 서류는 발송 시점에 최신 차량 정보로 새로 만들어 xlsx로 첨부됩니다.',
         'gen_failed' => '서류 생성 중 오류가 발생했습니다. 차량 정보를 확인하세요.',
         'body_default' => "Dear Customer,\n\nPlease find the attached document(s) for your vehicle.\nThank you for doing business with :company — it was a pleasure serving you, and we look forward to working with you again.\n\nBest regards,\n:company Team",
+    ],
+
+    // 국내 바이어 말소등록증 알림톡 전달 (매입 탭 · 말소증 업로드 후)
+    'deregnotice' => [
+        'label' => '말소등록증 알림톡 전달 (국내 딜러)',
+        'hint' => '이 번호로 말소등록증 확인 링크를 카카오 알림톡으로 보냅니다. (링크 3일 만료 · 알림톡 설정은 기능설정에서)',
+        'send_btn' => '알림톡 발송',
+        'sent' => '말소등록증 알림톡을 발송했습니다.',
+        'no_doc' => '먼저 말소등록증을 업로드·저장해야 합니다.',
+        'no_phone' => '딜러 전화번호를 입력하세요.',
+        'failed' => '알림톡 발송 실패: :reason (기능설정 → 알림톡을 확인하세요)',
     ],
 
     // 같은 바이어 미수 배너 (판매 탭)

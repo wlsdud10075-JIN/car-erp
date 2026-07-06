@@ -706,6 +706,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $export_declaration_document_path = '';
     public string $bl_document_path                 = '';
 
+    // 국내 바이어 말소등록증 알림톡 전달용 번호 (openEdit 에서 판매 바이어 연락처 프리필, 수정 가능)
+    public string $deregistrationBuyerPhone         = '';
+
     // "기존 파일 삭제" 액션 플래그 (UI 버튼 → save 시 컬럼 null + 디스크 삭제)
     public bool $clearDeregistrationDoc    = false;
     public bool $clearExportDeclarationDoc = false;
@@ -1036,6 +1039,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
                 ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")   // 차대번호 — 끝 6자리 등 부분 검색
+                ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
+                ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
             ))
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
@@ -1934,6 +1939,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
         $this->bl_document_path                 = $v->bl_document                 ?? '';
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
+        $this->deregistrationBuyerPhone         = $v->buyer?->contact_phone ?? '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
         // 차량 사진 로드 (편집 패널 갤러리)
@@ -2147,6 +2153,44 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearDeregistrationDoc = true;
         $this->deregistrationDocFile = null;
         $this->deregistration_document_path = '';
+    }
+
+    // 국내 바이어에게 말소등록증 전달 알림톡 발송 (수동 버튼). 만료 서명 링크(3일)를 본문에 담아 보낸다.
+    // 발송 안전(fire-and-forget)은 BizmAlimtalkService 가 보장 — 여기선 결과 상태만 토스트.
+    public function sendDeregistrationAlimtalk(): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        if (blank($vehicle->deregistration_document)) {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.no_doc'), type: 'error');
+
+            return;
+        }
+        $phone = trim($this->deregistrationBuyerPhone);
+        if ($phone === '') {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.no_phone'), type: 'error');
+
+            return;
+        }
+
+        $link = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'buyer.deregistration', now()->addDays(3), ['vehicle' => $vehicle->id],
+        );
+
+        $log = \App\Services\BizmAlimtalkService::active()->send('erp_deregistration_notice', $phone, [
+            '차량번호' => $vehicle->vehicle_number,
+            '링크' => $link,
+        ], ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()]);
+
+        if ($log->status === 'sent') {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.sent'), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        }
     }
 
     public function removeExportDeclarationDoc(): void
@@ -3831,9 +3875,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
             <option value="bl">{{ __('vehicle.date_type.bl') }}</option>
         </select>
-        <input wire:model="dateFrom" type="date" class="input-filter" />
+        <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
-        <input wire:model="dateTo" type="date" class="input-filter" />
+        <input wire:model="dateTo" type="text" data-date class="input-filter" />
         <select wire:model.live="salesmanId" class="input-filter">
             <option value="">{{ __('vehicle.all_salesmen') }}</option>
             @foreach($this->salesmen as $s)
@@ -4504,8 +4548,8 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.fuel_type') }}</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.fuel_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.use_type') }}</label><input wire:model="nice_reg_use_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.use_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
                     <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" />
@@ -4646,14 +4690,14 @@ function vehicleColumnsToggle() {
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="text" data-date class="input-base input-required" /></div>
                 {{-- 영업담당자 select 는 기본정보 탭(색상 옆)으로 이동 (2026-06-04). --}}
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">{{ __('vehicle.field.purchase_from') }} </label>
                     <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="{{ __('vehicle.ph.purchase_from') }}" />
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
             </div>
 
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
@@ -4748,15 +4792,15 @@ function vehicleColumnsToggle() {
             @endif
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_shoring') }}</label><input wire:model="cost_shoring_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_shoring') }}</label><input wire:model="cost_shoring_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" data-money class="input-base" placeholder="0" /></div>
             </div>
 
             <hr class="section-divider">
@@ -4774,13 +4818,13 @@ function vehicleColumnsToggle() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.down_payment') }}</label>
-                    <input wire:model="down_payment_str" type="text"
+                    <input wire:model="down_payment_str" type="text" data-money
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.selling_fee_payment') }}</label>
-                    <input wire:model="selling_fee_payment_str" type="text"
+                    <input wire:model="selling_fee_payment_str" type="text" data-money
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
@@ -4802,11 +4846,11 @@ function vehicleColumnsToggle() {
                     $pbpRowBg = $isPbpConfirmed ? 'bg-emerald-50/40 border-emerald-200' : (!empty($row['id']) ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text"
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text" data-money
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 96px; flex: none;"
                            placeholder="{{ __('vehicle.ph.amount_won') }}" @if(!$canConfirmFinance) disabled @endif />
-                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="date"
+                    <input wire:model="purchaseBalancePayments.{{ $idx }}.payment_date" type="text" data-date
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 112px; flex: none;"
                            @if(!$canConfirmFinance) disabled @endif />
@@ -4891,6 +4935,19 @@ function vehicleColumnsToggle() {
                     </div>
                     @endif
                 </div>
+                {{-- 국내 바이어 말소등록증 알림톡 전달 (수동) — 말소증 저장 후에만 노출 --}}
+                @if($deregistration_document_path)
+                <div class="col-span-2">
+                    <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
+                        <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
+                        <p class="mt-0.5 text-[11px] text-yellow-700">{{ __('vehicle.deregnotice.hint') }}</p>
+                        <div class="mt-2 flex gap-2">
+                            <input wire:model="deregistrationBuyerPhone" type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
+                        </div>
+                    </div>
+                </div>
+                @endif
                 @endif
                 <div class="col-span-2">
                     <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>
@@ -4903,7 +4960,7 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.deregistration_date') }}</label>
-                    <input type="date" wire:model="deregistration_date" class="input-base" />
+                    <input type="text" data-date wire:model="deregistration_date" class="input-base" />
                     <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.deregistration_date_hint') }}</p>
                 </div>
             </div>
@@ -4987,7 +5044,7 @@ function vehicleColumnsToggle() {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="date" class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="text" data-date class="input-base input-required" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.currency') }} </label>
                     <select wire:model.live="currency" class="input-base input-required">
@@ -5025,12 +5082,12 @@ function vehicleColumnsToggle() {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" class="input-base input-required" placeholder="0" /></div>
-                <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.transport_fee') }}</label><input wire:model="transport_fee_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.auto_loading') }}</label><input wire:model="auto_loading_str" type="text" class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.sale_other_costs') }}</label><input wire:model="sale_other_costs_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
+                <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.transport_fee') }}</label><input wire:model="transport_fee_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.auto_loading') }}</label><input wire:model="auto_loading_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_other_costs') }}</label><input wire:model="sale_other_costs_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.sale_total_display') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
                     @if($panelSaleTotal === null)
@@ -5054,34 +5111,34 @@ function vehicleColumnsToggle() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.deposit_down') }}</label>
-                    <input wire:model="deposit_down_payment_str" type="text"
+                    <input wire:model="deposit_down_payment_str" type="text" data-money
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.interim') }}</label>
-                    <input wire:model="interim_payment_str" type="text"
+                    <input wire:model="interim_payment_str" type="text" data-money
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.advance1') }}</label>
-                    <input wire:model="advance_payment1_str" type="text"
+                    <input wire:model="advance_payment1_str" type="text" data-money
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.fee') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.fee_note') }}</span></label>
-                    <input wire:model="fee_str" type="text"
+                    <input wire:model="fee_str" type="text" data-money
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.savings_used') }}</label><input wire:model="savings_used_str" type="text" class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.savings_used') }}</label><input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
                 @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
                 <div>
                     <label class="label-base">{{ __('vehicle.field.savings_deposit') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_deposit_note') }}</span></label>
-                    <input wire:model="savings_deposit_str" type="text"
+                    <input wire:model="savings_deposit_str" type="text" data-money
                            class="input-base {{ $canConfirmFinanceLocal ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinanceLocal) disabled @endif />
                 </div>
@@ -5199,7 +5256,7 @@ function vehicleColumnsToggle() {
                     $rowBg = $isConfirmed ? 'bg-emerald-50/40 border-emerald-200' : ($row['id'] ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
-                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" class="input-base"
+                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" data-money class="input-base"
                            style="width: 96px; flex: none;" placeholder="{{ __('vehicle.ph.amount') }}" />
                     {{-- 회의확장씬 #7 (2026-05-22) — 잔금 row 별 환율 (외화만, 자동 기입 + 수정 가능) --}}
                     @if($currency !== 'KRW')
@@ -5217,7 +5274,7 @@ function vehicleColumnsToggle() {
                            value="{{ $rowAmt > 0 && $rowRate > 0 ? '₩'.number_format($rowKrw) : '' }}"
                            placeholder="₩0" title="{{ __('vehicle.panel.krw_converted') }}" />
                     @endif
-                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="date" class="input-base"
+                    <input wire:model="finalPayments.{{ $idx }}.payment_date" type="text" data-date class="input-base"
                            style="width: 112px; flex: none;" />
                     <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1"
                            style="min-width: 0;" placeholder="{{ __('vehicle.ph.note') }}" />
@@ -5483,12 +5540,12 @@ function vehicleColumnsToggle() {
                 {{-- 2026-05-21 — 면장금액 미입력 시 sale_price 자동 복사 (Vehicle::saving 훅). 인코텀즈 차이 등 명시 입력 시 그 값 우선 --}}
                 <div>
                     <label class="label-base">{{ __('vehicle.field.export_decl_amount') }}</label>
-                    <input wire:model="export_declaration_amount_str" type="text" class="input-base" placeholder="{{ __('vehicle.ph.export_decl_amount') }}" />
+                    <input wire:model="export_declaration_amount_str" type="text" data-money class="input-base" placeholder="{{ __('vehicle.ph.export_decl_amount') }}" />
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_decl_amount_note') }}</p>
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.export_decl_number') }}</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="date" class="input-base" /></div>
-                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.shipping_method') }}</label>
                     <select wire:model="shipping_method" class="input-base">
@@ -5661,7 +5718,7 @@ function vehicleColumnsToggle() {
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">{{ __('vehicle.field.bl_number') }}</label><input wire:model="bl_number" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="date" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.bl_issue_date') }}</label><input wire:model="bl_issue_date" type="text" data-date class="input-base" /></div>
                 {{-- B/L 방식(오리지널/써랜더) + 이중가드 — 영업 요청(shipping_requests.bl_type) vs 관리 확인(vehicles.bl_type) --}}
                 @php
                     $reqBlType = $editingId

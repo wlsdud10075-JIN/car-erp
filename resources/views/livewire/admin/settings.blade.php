@@ -30,6 +30,23 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $mailGmailPasswordSet = false;
 
+    // 카카오 알림톡(BizM) 설정 — 현재 회사(set) 기준. userkey 는 암호화 저장.
+    public bool $alimtalkEnabled = false;              // 회사 마스터 on/off
+
+    public string $alimtalkUserid = '';
+
+    public string $alimtalkProfile = '';
+
+    public string $alimtalkUserkey = '';               // 신규 입력용 — 저장값은 로드 안 함
+
+    public bool $alimtalkUserkeySet = false;
+
+    public array $alimtalkTmplIds = [];                // code => BizM 템플릿ID
+
+    public array $alimtalkToggles = [];                // code => bool (개별 on/off)
+
+    public string $alimtalkTestPhone = '';             // 테스트 발송 번호
+
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
@@ -59,6 +76,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
         $this->loadMailSettings();
+        $this->loadAlimtalkSettings();
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
         }
@@ -163,6 +181,82 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->mailFromName = $name;
         $this->loadMailSettings();
         $this->dispatch('notify', message: __('feature_settings.mail_saved'), type: 'success');
+    }
+
+    /** 알림톡 11종 메타 (blade foreach — code/이름/수신자). */
+    public function alimtalkTemplateMeta(): array
+    {
+        $meta = [];
+        foreach (\App\Support\AlimtalkTemplates::TEMPLATES as $code => $t) {
+            $meta[$code] = ['name' => $t['name'], 'recipient' => $t['recipient']];
+        }
+
+        return $meta;
+    }
+
+    // 알림톡 설정 로드 — 현재 회사(set) 기준. userkey 는 값 대신 존재여부만.
+    private function loadAlimtalkSettings(): void
+    {
+        $set = Setting::companyTemplateSet();
+        $this->alimtalkEnabled = (bool) Setting::get("alimtalk_enabled_{$set}", false);
+        $this->alimtalkUserid = Setting::get("alimtalk_userid_{$set}", '') ?: '';
+        $this->alimtalkProfile = Setting::get("alimtalk_profile_{$set}", '') ?: '';
+        $this->alimtalkUserkeySet = (bool) Setting::get("alimtalk_userkey_{$set}");
+        $this->alimtalkUserkey = '';
+        $this->alimtalkTmplIds = [];
+        $this->alimtalkToggles = [];
+        foreach (array_keys(\App\Support\AlimtalkTemplates::TEMPLATES) as $code) {
+            $this->alimtalkTmplIds[$code] = Setting::get("alimtalk_tmpl_{$code}_{$set}", '') ?: '';
+            $this->alimtalkToggles[$code] = (bool) Setting::get("alimtalk_toggle_{$code}_{$set}", true);
+        }
+    }
+
+    // 알림톡 설정 저장 — super 전용. userkey 는 신규 입력이 있을 때만 암호화 갱신(공백=기존 유지).
+    public function saveAlimtalk(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $set = Setting::companyTemplateSet();
+        $userid = trim($this->alimtalkUserid);
+        $profile = trim($this->alimtalkProfile);
+        $newUserkey = trim($this->alimtalkUserkey);
+
+        Setting::updateOrCreate(['key' => "alimtalk_enabled_{$set}"], ['value' => $this->alimtalkEnabled ? '1' : '0', 'type' => 'boolean', 'description' => "알림톡 사용 ({$set})"]);
+        Setting::updateOrCreate(['key' => "alimtalk_userid_{$set}"], ['value' => $userid, 'type' => 'string', 'description' => "알림톡 BizM userid ({$set})"]);
+        Setting::updateOrCreate(['key' => "alimtalk_profile_{$set}"], ['value' => $profile, 'type' => 'string', 'description' => "알림톡 발신프로필키 ({$set})"]);
+
+        if ($newUserkey !== '') {
+            Setting::updateOrCreate(
+                ['key' => "alimtalk_userkey_{$set}"],
+                ['value' => \Illuminate\Support\Facades\Crypt::encryptString($newUserkey), 'type' => 'string', 'description' => "알림톡 userkey(암호화) ({$set})"],
+            );
+        }
+
+        foreach (array_keys(\App\Support\AlimtalkTemplates::TEMPLATES) as $code) {
+            Setting::updateOrCreate(['key' => "alimtalk_tmpl_{$code}_{$set}"], ['value' => trim($this->alimtalkTmplIds[$code] ?? ''), 'type' => 'string', 'description' => "알림톡 템플릿ID {$code} ({$set})"]);
+            Setting::updateOrCreate(['key' => "alimtalk_toggle_{$code}_{$set}"], ['value' => ! empty($this->alimtalkToggles[$code]) ? '1' : '0', 'type' => 'boolean', 'description' => "알림톡 {$code} on/off ({$set})"]);
+        }
+
+        $this->loadAlimtalkSettings();
+        $this->dispatch('notify', message: __('feature_settings.alimtalk_saved'), type: 'success');
+    }
+
+    // 테스트 발송 — 일일요약 템플릿을 입력 번호로. 결과 상태를 토스트로 안내.
+    public function sendTestAlimtalk(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $log = \App\Services\BizmAlimtalkService::active()->sendTest($this->alimtalkTestPhone);
+
+        if ($log->status === 'sent') {
+            $this->dispatch('notify', message: __('feature_settings.alimtalk_test_sent'), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('feature_settings.alimtalk_test_failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        }
     }
 
     // 현재 template_set(=회사) — 기능설정 토글(company_template_set) 따라감. 도장도 선택 회사 기준.
@@ -554,6 +648,86 @@ new #[Layout('components.layouts.app')] class extends Component
 
             <div class="flex justify-end pt-1">
                 <button wire:click="saveMail" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- 카카오 알림톡 (BizM) 그룹 — 현재 회사 발신 설정. super 전용 --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-yellow-400"></span>
+                <span class="section-title">{{ __('feature_settings.alimtalk_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.alimtalk_hint') }}</p>
+            <div class="rounded-md border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                {{ __('feature_settings.mail_company_current', ['company' => $this->currentCompanyLabel()]) }}
+            </div>
+
+            {{-- 마스터 on/off --}}
+            <label class="flex items-center justify-between rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                <span class="text-sm font-medium text-gray-700">{{ __('feature_settings.alimtalk_enabled_label') }}
+                    <span class="text-xs font-normal text-gray-400">{{ __('feature_settings.alimtalk_enabled_sub') }}</span>
+                </span>
+                <input type="checkbox" wire:model="alimtalkEnabled" class="h-4 w-4 rounded border-gray-300" />
+            </label>
+
+            {{-- 계정 (userid / 발신프로필 / userkey) --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.alimtalk_userid_label') }}</label>
+                <input wire:model="alimtalkUserid" type="text" class="input-base mt-1 w-full font-mono" autocomplete="off" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.alimtalk_profile_label') }}</label>
+                <input wire:model="alimtalkProfile" type="text" class="input-base mt-1 w-full font-mono" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.alimtalk_profile_hint') }}</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    {{ __('feature_settings.alimtalk_userkey_label') }}
+                    @if ($alimtalkUserkeySet)
+                        <span class="badge badge-green">{{ __('feature_settings.mail_gmail_password_set') }}</span>
+                    @endif
+                </label>
+                <input wire:model="alimtalkUserkey" type="password" class="input-base mt-1 w-full font-mono" autocomplete="new-password" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.alimtalk_userkey_hint') }}</p>
+            </div>
+
+            {{-- 11종 템플릿ID + 개별 on/off --}}
+            <div class="rounded-md border border-gray-100">
+                <div class="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-600">{{ __('feature_settings.alimtalk_templates_label') }}</div>
+                <div class="divide-y divide-gray-50">
+                    @foreach ($this->alimtalkTemplateMeta() as $code => $meta)
+                        <div class="flex items-center gap-2 px-3 py-2">
+                            <input type="checkbox" wire:model="alimtalkToggles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" title="{{ __('feature_settings.alimtalk_toggle_title') }}" />
+                            <div class="w-28 shrink-0">
+                                <div class="text-xs font-medium text-gray-700">{{ $meta['name'] }}</div>
+                                <div class="text-[10px] text-gray-400">{{ $meta['recipient'] === 'admin' ? __('feature_settings.alimtalk_recipient_admin') : ($meta['recipient'] === '영업' ? __('feature_settings.alimtalk_recipient_sales') : ($meta['recipient'] === 'dealer' ? __('feature_settings.alimtalk_recipient_dealer') : __('feature_settings.alimtalk_recipient_manage'))) }} · <span class="font-mono">{{ $code }}</span></div>
+                            </div>
+                            <input wire:model="alimtalkTmplIds.{{ $code }}" type="text" class="input-base w-full font-mono text-xs" placeholder="BizM tmplId" autocomplete="off" />
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-1">
+                <button wire:click="saveAlimtalk" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+
+            {{-- 테스트 발송 --}}
+            <div class="mt-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2.5">
+                <div class="text-xs font-semibold text-amber-800">{{ __('feature_settings.alimtalk_test_label') }}</div>
+                <p class="mt-0.5 text-[11px] text-amber-700">{{ __('feature_settings.alimtalk_test_hint') }}</p>
+                <div class="mt-2 flex gap-2">
+                    <input wire:model="alimtalkTestPhone" type="tel" class="input-base w-full text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                    <button wire:click="sendTestAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('feature_settings.alimtalk_test_btn') }}</button>
+                </div>
             </div>
         </div>
     </div>

@@ -19,7 +19,7 @@ return [
     'export_do' => 'Download Excel',
     'export_pick_col' => 'Select at least one column.',
 
-    'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6)',
+    'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6) · vessel · container no.',
     'search_btn' => 'Search',
     'all_salesmen' => 'All Salesmen',
     'all_buyers' => 'All Buyers',
@@ -693,6 +693,17 @@ return [
         'gen_hint' => 'Auto-generated documents are freshly created from the latest vehicle data and attached as xlsx at send time.',
         'gen_failed' => 'An error occurred while generating a document. Check the vehicle data.',
         'body_default' => "Dear Customer,\n\nPlease find the attached document(s) for your vehicle.\nThank you for doing business with :company — it was a pleasure serving you, and we look forward to working with you again.\n\nBest regards,\n:company Team",
+    ],
+
+    // Deregistration certificate AlimTalk delivery to domestic buyer (purchase tab)
+    'deregnotice' => [
+        'label' => 'Deregistration cert. AlimTalk (domestic dealer)',
+        'hint' => 'Sends a link to the deregistration certificate via KakaoTalk AlimTalk. (Link expires in 3 days · configure AlimTalk in Feature Settings)',
+        'send_btn' => 'Send AlimTalk',
+        'sent' => 'Deregistration AlimTalk sent.',
+        'no_doc' => 'Upload and save the deregistration certificate first.',
+        'no_phone' => 'Enter the dealer phone number.',
+        'failed' => 'AlimTalk send failed: :reason (check Feature Settings → AlimTalk)',
     ],
 
     // Same-buyer outstanding banner (sale tab)
