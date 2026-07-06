@@ -105,6 +105,23 @@ class VehicleMailSendTest extends TestCase
         $this->assertStringContainsString($company, $expected);
     }
 
+    public function test_mail_modal_splits_basic_and_shipping_photos(): void
+    {
+        // 메일 첨부 후보 = 기본정보(mailDocsUpload) / 선적(mailDocsShip) 그룹 분리 (jin 2026-07-06).
+        $this->configureSes();
+        $this->actingAs($this->super());
+        $vehicle = Vehicle::create(['vehicle_number' => '99마0022', 'sales_channel' => 'export']);
+        $basic = VehiclePhoto::create(['vehicle_id' => $vehicle->id, 'path' => 'vehicles/1/car.jpg', 'sort_order' => 1]);
+        $ship = VehiclePhoto::create(['vehicle_id' => $vehicle->id, 'path' => 'vehicles/1/ship-photos/v.jpg', 'category' => 'shipping', 'sort_order' => 1]);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('editingId', $vehicle->id)
+            ->call('openMailModal');
+
+        $this->assertSame(['photo:'.$basic->id], collect($c->get('mailDocsUpload'))->pluck('key')->all(), '기본정보 그룹엔 차량사진만');
+        $this->assertSame(['photo:'.$ship->id], collect($c->get('mailDocsShip'))->pluck('key')->all(), '선적 그룹엔 선박사진만');
+    }
+
     public function test_invalid_recipient_blocks_send(): void
     {
         Mail::fake();

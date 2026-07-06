@@ -14,7 +14,8 @@ class VehiclePhoto extends Model
 {
     public const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
 
-    protected $fillable = ['vehicle_id', 'path', 'sort_order'];
+    // category: null/'basic' = 기본정보 탭 차량 사진, 'shipping' = 선적 탭 선박 사진 (2026-07-06 탭별 갤러리 분리).
+    protected $fillable = ['vehicle_id', 'path', 'category', 'sort_order'];
 
     public function vehicle(): BelongsTo
     {
