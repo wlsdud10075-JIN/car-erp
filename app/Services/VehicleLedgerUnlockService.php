@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\FinalPayment;
 use App\Models\User;
 use App\Models\Vehicle;
 use DomainException;
@@ -96,6 +97,57 @@ class VehicleLedgerUnlockService
         }
 
         $this->putToken($vehicle, $by, $reasonTrimmed);
+    }
+
+    /**
+     * 선행결함2 (2026-07-06, c-2) — 재무확정 잔금(FinalPayment) 개별 정정 잠금해제.
+     *
+     * 정정 대상 = 금액·환율·날짜(FinalPayment::AUDITED_LEDGER_COLUMNS). 확정 해제·이체 링크는 대상 아님.
+     * 권한 = canApprove(관리/admin/super, jin 2026-07-06). 사유 10자 이상.
+     * 토큰 1회 소비 = FinalPayment::updating 이 consumeLedgerUnlockToken 으로 pull → 저장 1회 통과 후 재잠금.
+     * AuditLog(ledger_field_unlocked, auditable=FinalPayment)로 누가·언제·왜. 실제 old→new 는 FinalPayment::updated 훅.
+     *
+     * @throws AuthorizationException canApprove 아닐 때
+     * @throws DomainException 사유 10자 미만 또는 신규 잔금
+     */
+    public function unlockForFinalPayment(FinalPayment $payment, User $by, string $reason): void
+    {
+        if (! $by->canApprove()) {
+            throw new AuthorizationException('잔금 잠금 해제 권한 없음 (관리/admin 전용)');
+        }
+
+        $reasonTrimmed = trim($reason);
+        if (mb_strlen($reasonTrimmed) < self::MIN_REASON_LENGTH) {
+            throw new DomainException('잠금 해제 사유는 '.self::MIN_REASON_LENGTH.'자 이상 필수');
+        }
+
+        if (! $payment->exists) {
+            throw new DomainException('신규 잔금은 잠금 대상 외 (자유 입력 가능)');
+        }
+
+        DB::transaction(function () use ($payment, $by, $reasonTrimmed) {
+            Cache::put(
+                FinalPayment::ledgerUnlockCacheKey($payment->id),
+                [
+                    'unlocked_by' => $by->id,
+                    'reason' => $reasonTrimmed,
+                    'issued_at' => now()->toIso8601String(),
+                ],
+                now()->addMinutes(self::TOKEN_SAFETY_TTL_MINUTES),
+            );
+
+            AuditLog::create([
+                'user_id' => $by->id,
+                'approval_request_id' => null,
+                'auditable_type' => FinalPayment::class,
+                'auditable_id' => $payment->id,
+                'action' => 'ledger_field_unlocked',
+                'column_name' => 'unlock_reason',
+                'old_value' => null,
+                'new_value' => $reasonTrimmed,
+                'ip_address' => request()?->ip(),
+            ]);
+        });
     }
 
     /**
