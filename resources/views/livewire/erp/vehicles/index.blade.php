@@ -683,6 +683,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $vessel_name         = '';
     public string $bl_type             = '';   // 오리지널/써랜더 — 이중가드 관리 확인값(영업 요청 = shipping_requests.bl_type)
     public string $bl_issue_date       = '';
+    public string $document_deadline_date = '';   // item 6 — 선적 서류마감일 (5일전 알람 트리거)
 
     // ── DHL ───────────────────────────────────────────────────────
     public string $dhl_recipient_name    = '';
@@ -1974,6 +1975,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->vessel_name         = $v->vessel_name         ?? '';
         $this->bl_type             = $v->bl_type             ?? '';
         $this->bl_issue_date       = $v->bl_issue_date ? $v->bl_issue_date->format('Y-m-d') : '';
+        $this->document_deadline_date = $v->document_deadline_date ? $v->document_deadline_date->format('Y-m-d') : '';
 
         // DHL
         $this->dhl_recipient_name    = $v->dhl_recipient_name    ?? '';
@@ -2439,6 +2441,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'shipping_date'       => ['nullable', 'date'],
             'eta_date'            => ['nullable', 'date'],
             'bl_issue_date'       => ['nullable', 'date'],
+            'document_deadline_date' => ['nullable', 'date'],
             'nice_reg_first_date' => ['nullable', 'date'],
             'nice_reg_date'       => ['nullable', 'date'],
 
@@ -2818,6 +2821,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'vessel_name'         => $this->vessel_name         ?: null,
             'bl_type'             => $this->bl_type             ?: null,
             'bl_issue_date'       => $toDate($this->bl_issue_date),
+            'document_deadline_date' => $toDate($this->document_deadline_date),
             // DHL
             'dhl_recipient_name'    => $this->dhl_recipient_name    ?: null,
             'dhl_recipient_address' => $this->dhl_recipient_address ?: null,
@@ -3922,7 +3926,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
             'incoterms','discharge_port_id_str',
             'bl_buyer_id_str','bl_consignee_id_str','bl_number','container_number',
-            'bl_loading_location','vessel_name','bl_issue_date',
+            'bl_loading_location','vessel_name','bl_issue_date','document_deadline_date',
             'dhl_recipient_name','dhl_recipient_address','dhl_recipient_phone',
             'dhl_sender_name','dhl_sender_address','dhl_weight_str','dhl_dimensions','memo',
         ];
@@ -5823,6 +5827,7 @@ function vehicleColumnsToggle() {
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.document_deadline') }}</label><input wire:model="document_deadline_date" type="text" data-date class="input-base" /><p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.document_deadline_hint') }}</p></div>
             </div>
 
             {{-- 선박 사진/첨부 (category='shipping' · 최대 10건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}

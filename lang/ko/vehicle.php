@@ -322,6 +322,8 @@ return [
         'loading_location' => '반입지',
         'vessel' => 'VSL (선박명)',
         'bl_issue_date' => 'B/L 발행일',
+        'document_deadline' => '서류마감',
+        'document_deadline_hint' => '이 날짜 5일 전부터 관리 알림',
         'bl_doc' => 'B/L 문서',
         'dhl_recipient_name' => '수취인 성명',
         'dhl_recipient_phone' => '수취인 연락처',

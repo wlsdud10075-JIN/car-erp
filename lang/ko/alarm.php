@@ -10,6 +10,8 @@ return [
     'task_shipping' => '선적 요청',
     'task_arrival' => '신규 매입차 도착',
     'arrival_action' => '계약금 진행',
+    'task_document_deadline' => '선적 서류마감',
+    'doc_deadline_action' => '서류마감 임박',
     'badge_new' => 'NEW',
     'toast_arrival' => '🚚 board에서 신규 매입차 도착 :n건 — 확인하세요',
     'toast_new' => '🔔 새 알림 :n건 도착',

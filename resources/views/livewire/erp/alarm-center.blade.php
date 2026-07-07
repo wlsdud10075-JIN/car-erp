@@ -126,6 +126,7 @@ new class extends Component
                             $type = $a->type ?? '';
                             $isShip = $type === 'shipping_requested';
                             $isArrival = $type === 'purchase_arrival';
+                            $isDocDeadline = $type === 'document_deadline';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
@@ -144,13 +145,15 @@ new class extends Component
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : __('alarm.task_clearance')) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : __('alarm.task_clearance'))) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
                                 @if ($isShip)
                                     <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>
                                 @elseif ($isArrival)
                                     <span class="text-[11.5px] font-semibold text-blue-700">{{ __('alarm.arrival_action') }}</span>
+                                @elseif ($isDocDeadline)
+                                    <span class="text-[11.5px] font-semibold text-amber-700">{{ __('alarm.doc_deadline_action') }}</span>
                                 @else
                                     <span class="text-[11.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
                                         @if ($unpaid)

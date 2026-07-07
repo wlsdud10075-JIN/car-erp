@@ -322,6 +322,8 @@ return [
         'loading_location' => 'Loading Location',
         'vessel' => 'Vessel (VSL)',
         'bl_issue_date' => 'B/L Date',
+        'document_deadline' => 'Doc Deadline',
+        'document_deadline_hint' => 'Alerts [Management] from 5 days before',
         'bl_doc' => 'B/L Document',
         'dhl_recipient_name' => 'Recipient Name',
         'dhl_recipient_phone' => 'Recipient Phone',
