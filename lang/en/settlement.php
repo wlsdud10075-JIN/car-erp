@@ -2,6 +2,14 @@
 
 // i18n — Settlement management (erp/settlements). progress=domain.progress reused.
 return [
+    'batch' => [
+        'submit' => 'Submit Monthly Batch',
+        'queue_link' => 'Approval Queue',
+        'confirm_submit' => 'Submit :month confirmed settlements as a monthly batch? (Paid after Manager → Representative approval)',
+        'submitted' => 'Monthly batch submitted (:count items). Proceeds in the approval queue.',
+        'no_permission' => 'No permission to submit a payout batch.',
+        'select_month' => 'Select a settlement month first.',
+    ],
     'title' => 'Settlements',
     'total' => ':count records',
     'add' => 'Add Settlement',

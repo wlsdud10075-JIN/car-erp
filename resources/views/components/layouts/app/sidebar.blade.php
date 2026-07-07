@@ -59,6 +59,13 @@
         ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
         : 0;
 
+    // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월배치 지급 대기 건수.
+    $pendingPayoutBatches = $user->canApprove()
+        ? \App\Models\SettlementPayoutBatch::where('status', 'pending')
+            ->when(! $user->isSuperAdmin(), fn ($q) => $q->where('current_level', $user->approvalRank()))
+            ->count()
+        : 0;
+
     // 2026-05-20 #1 피드백 — 수출통관 사이드바 카운트는 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
     // link 도 clearance_candidates 액션 필터로 변경 (link ↔ badge 100% 일치).
     $clearanceBadge = $user->canAccessClearance()
@@ -250,6 +257,14 @@
                     'active' => request()->routeIs('erp.approvals.*'),
                     'show' => $user->canApprove(),
                     'badge' => $pendingApprovals > 0 ? $pendingApprovals : null,
+                ],
+                [
+                    'label' => __('nav.menu.payout_batches'),
+                    'href' => $user->canApprove() ? route('erp.payout-batches.index') : '#',
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.payout-batches.*'),
+                    'show' => $user->canApprove(),
+                    'badge' => $pendingPayoutBatches > 0 ? $pendingPayoutBatches : null,
                 ],
                 [
                     'label' => __('nav.menu.transfers'),

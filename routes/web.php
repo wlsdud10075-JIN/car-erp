@@ -80,9 +80,11 @@ Route::middleware(['auth', 'verified', 'sales'])->prefix('erp')->name('erp.')->g
     Volt::route('salesmen/{id}/cashflow', 'erp.salesmen.cashflow')->name('salesmen.cashflow');
 });
 
-// 승인 큐 — canApprove() (super/admin/관리)
+// 승인 큐 — canApprove() (super/admin/관리/업무관리자)
 Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('approvals', 'erp.approvals.index')->name('approvals.index');
+    // Phase 2 — 월배치 정산지급 승인큐 (제출자 [관리]/업무관리자 상태확인 + 승인자 결정)
+    Volt::route('payout-batches', 'erp.payout-batches.index')->name('payout-batches.index');
 });
 
 // 정산 — settlement role 이상

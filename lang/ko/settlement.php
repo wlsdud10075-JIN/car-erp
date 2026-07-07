@@ -2,6 +2,14 @@
 
 // i18n — 정산 관리 (erp/settlements). progress=domain.progress 재사용.
 return [
+    'batch' => [
+        'submit' => '월배치 제출',
+        'queue_link' => '승인큐',
+        'confirm_submit' => ':month 확정 정산을 월배치로 제출합니까? (업무관리자→대표 승인 후 일괄 지급)',
+        'submitted' => '월배치 제출됨 (:count건). 승인큐에서 진행됩니다.',
+        'no_permission' => '월배치 제출 권한이 없습니다.',
+        'select_month' => '먼저 정산 월(귀속월)을 선택하세요.',
+    ],
     'title' => '정산 관리',
     'total' => '총 :count건',
     'add' => '정산 추가',
