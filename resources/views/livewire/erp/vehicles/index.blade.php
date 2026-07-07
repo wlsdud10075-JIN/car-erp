@@ -1036,12 +1036,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
         // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
 
         // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업의 차량만.
         // admin/super 전체. 영업은 위 restrictToOwnSalesman 우선. [관리]만 subordinates 의 salesman.
         // subordinates 0명 → whereIn([]) → 빈 결과 (의도. /admin/users 에서 배정 안내 필요).
-        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Vehicle::query()
@@ -1088,8 +1088,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function buyers()
     {
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
-        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         $selectedIds = array_values(array_filter([
@@ -1187,7 +1187,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $q = Salesman::where('is_active', true)->orderBy('name');
 
         $user = auth()->user();
-        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());
         }
 
@@ -1206,7 +1206,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $q = Buyer::orderBy('name');
         $user = auth()->user();
 
-        if (! $user || $user->isAdmin()) {
+        if (! $user || $user->isAdmin() || $user->isManager()) {
             return $q->get();
         }
 
@@ -1759,9 +1759,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 관리 role은 본인 팀(부하 영업담당) 차량만 — 목록 스코프(managerScopeSalesmanIds)와 동일 기준.
         // admin/super, 통관/재무는 우회. (claudereview B — openEdit 관리 미스코핑 보정)
         $user = auth()->user();
-        if (! $user->isAdmin() && $user->role === '영업') {
+        if (! $user->isAdmin() && ! $user->isManager() && $user->role === '영업') {
             abort_unless($v->salesman_id === $user->salesman?->id, 403, __('vehicle.toast.edit_own_only'));
-        } elseif (! $user->isAdmin() && $user->role === '관리') {
+        } elseif (! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, __('vehicle.toast.edit_team_only'));
         }
 

@@ -197,8 +197,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   - 운영자가 UI 에서 buyer.salesman_id 일괄 입력하면 자연스럽게 직접 관계로 수렴
         // admin/super: 전체 (분기 X)
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
-        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Buyer::query()
@@ -231,7 +231,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $q = \App\Models\Salesman::where('is_active', true)->orderBy('name');
 
         $user = auth()->user();
-        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());
         }
 
@@ -292,7 +292,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 영업 role 신규 등록 시 본인 salesman 자동 채움 (vehicles/index L1240~1241 패턴 대칭).
         $user = auth()->user();
         if ($this->salesman_id_str === '' && ! $this->editingId
-            && $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman) {
+            && $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman) {
             $this->salesman_id_str = (string) $user->salesman->id;
         }
 

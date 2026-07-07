@@ -23,7 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         $user = auth()->user();
-        if (! $user->isAdmin()) {
+        if (! $user->isAdmin() && ! $user->isManager()) {
             $salesman = $user->salesman;
             if ($salesman) {
                 $this->selectedSalesmanId = $salesman->id;
@@ -43,7 +43,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedViewMode(): void
     {
         $user = auth()->user();
-        $canToggle = $user->isAdmin() || $user->role === '관리';
+        $canToggle = $user->isAdmin() || $user->isManager() || $user->role === '관리';
         if (! $canToggle) {
             $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
 
@@ -55,8 +55,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->viewMode === 'salesman') {
             $this->roleView = '영업';
         } else {
-            // 'role' 모드 — admin/관리는 selectedSalesmanId 비움 (전체 차량 시각)
-            if ($user->isAdmin() || $user->role === '관리') {
+            // 'role' 모드 — admin/업무관리자/관리는 selectedSalesmanId 비움 (전체 차량 시각)
+            if ($user->isAdmin() || $user->isManager() || $user->role === '관리') {
                 $this->selectedSalesmanId = 0;
             }
         }
@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedSelectedSalesmanId(): void
     {
         $user = auth()->user();
-        if (! $user->isAdmin() && $user->role !== '관리') {
+        if (! $user->isAdmin() && ! $user->isManager() && $user->role !== '관리') {
             $this->selectedSalesmanId = $user->salesman?->id ?? 0;
         }
     }
@@ -76,7 +76,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedRoleView(): void
     {
         $user = auth()->user();
-        $canToggle = $user->isAdmin() || $user->role === '관리';
+        $canToggle = $user->isAdmin() || $user->isManager() || $user->role === '관리';
         if (! $canToggle) {
             $this->roleView = in_array($user->role, ['영업', '수출통관', '재무', '관리'], true) ? $user->role : '영업';
 
@@ -97,8 +97,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $user = auth()->user();
 
-        // admin/super: selectedSalesmanId 자유 선택 (전체 영업)
-        if ($user->isAdmin()) {
+        // admin/super/업무관리자: selectedSalesmanId 자유 선택 (전체 영업)
+        if ($user->isAdmin() || $user->isManager()) {
             return $this->selectedSalesmanId ?: null;
         }
 
@@ -140,7 +140,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업만 select 옵션 노출.
         $user = auth()->user();
-        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());
         }
 
@@ -476,7 +476,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     roleView: @entangle('roleView').live,
     viewMode: @entangle('viewMode').live,
     initView() {
-        @if(auth()->user()->isAdmin() || auth()->user()->role === '관리')
+        @if(auth()->user()->isAdmin() || auth()->user()->isManager() || auth()->user()->role === '관리')
         const savedRole = localStorage.getItem('erp_dashboard_role_view');
         if (savedRole && ['영업','수출통관','재무','관리'].includes(savedRole)) {
             this.roleView = savedRole;
@@ -499,7 +499,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 @php
     $user = auth()->user();
-    $canToggleView = $user->isAdmin() || $user->role === '관리';
+    $canToggleView = $user->isAdmin() || $user->isManager() || $user->role === '관리';
     $viewLabel = __('dashboard.view_label.'.(in_array($roleView, ['수출통관','재무','관리'], true) ? $roleView : '영업'));
     $viewBadge = match($roleView) {
         '수출통관' => 'badge-amber',
@@ -507,7 +507,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         '관리' => 'badge-purple',
         default => 'badge-purple',
     };
-    $salesmanMissing = $user->role === '영업' && ! $user->isAdmin() && ! $user->salesman;
+    $salesmanMissing = $user->role === '영업' && ! $user->isAdmin() && ! $user->isManager() && ! $user->salesman;
 @endphp
 
 {{-- 헤더 --}}
@@ -548,7 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
 
         {{-- 담당자 드롭다운 — 담당자별 모드 + admin/관리만 노출 (영업 시각 고정) --}}
-        @if($user->isAdmin() || $user->role === '관리')
+        @if($user->isAdmin() || $user->isManager() || $user->role === '관리')
         <div class="flex items-center gap-2" x-show="viewMode === 'salesman'" x-cloak>
             <span class="text-xs text-gray-500">{{ __('dashboard.salesman') }}</span>
             <select wire:model.live="selectedSalesmanId" class="input-filter">
@@ -578,9 +578,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 큐 2번 — 11단계 파이프라인 카운트 스트립 --}}
 @php
     $stripSubtitle = match(true) {
-        $user->isAdmin() && $this->selectedSalesmanId && $roleView === '영업'
+        ($user->isAdmin() || $user->isManager()) && $this->selectedSalesmanId && $roleView === '영업'
             => __('dashboard.subtitle_only', ['name' => $this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? __('dashboard.salesman')]),
-        $roleView === '영업' && ! $user->isAdmin()
+        $roleView === '영업' && ! $user->isAdmin() && ! $user->isManager()
             => $user->salesman?->name ? __('dashboard.subtitle_only', ['name' => $user->salesman->name]) : null,
         default => __('dashboard.subtitle_all'),
     };

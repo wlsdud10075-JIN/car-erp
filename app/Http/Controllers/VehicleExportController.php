@@ -25,8 +25,8 @@ class VehicleExportController extends Controller
     {
         $user = $request->user();
 
-        $restrictOwn = ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
-        $restrictMgr = ! $user->isAdmin() && $user->role === '관리';
+        $restrictOwn = ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictMgr = ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $subIds = $restrictMgr ? $user->getSubordinateSalesmanIds() : [];
 
         // 정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 — 영업·통관은 마진 export 불가.

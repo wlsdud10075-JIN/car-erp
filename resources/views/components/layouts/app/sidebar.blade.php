@@ -281,7 +281,7 @@
                 ],
             ],
         ],
-        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹 (admin/super 전용).
+        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹 (canAccessAdmin: super/admin/업무관리자).
         [
             'key' => 'log',
             'label' => __('nav.group.log'),

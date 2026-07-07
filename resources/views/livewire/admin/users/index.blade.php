@@ -42,12 +42,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function users()
     {
         $authUser = auth()->user();
-        // 2026-06-30 — 관리는 본인 팀 영업만 (escalation 방지). 검색/필터보다 먼저 무조건 스코프.
-        $isManager = ! $authUser->isAdmin() && $authUser->role === '관리';
+        // 2026-06-30 — role='관리'는 본인 팀 영업만 (escalation 방지). 검색/필터보다 먼저 무조건 스코프.
+        //   ⚠️ 업무관리자(permission='manager')는 제외 — admin 등가로 super 외 전체 노출(팀 한정 아님).
+        $isTeamManager = ! $authUser->isAdmin() && ! $authUser->isManager() && $authUser->role === '관리';
 
         return User::query()
             ->when(! $authUser->isSuperAdmin(), fn($q) => $q->where('permission', '!=', 'super'))
-            ->when($isManager, fn($q) => $q
+            ->when($isTeamManager, fn($q) => $q
                 ->whereIn('id', $authUser->getManagedSalesmanUserIds())
                 ->where('role', '영업')
                 ->where('permission', 'user'))
@@ -102,16 +103,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         // 2026-06-30 — 인가 먼저 (validate 전). jin: 관리는 super/admin 변경·생성 절대 불가(escalation 차단).
         $actor = auth()->user();
-        $actorIsManager = ! $actor->isAdmin() && $actor->role === '관리';
+        // role='관리'(팀 관리자). permission='manager'(업무관리자)와 구분 — 후자는 클램프 대상 아님.
+        $actorIsTeamManager = ! $actor->isAdmin() && ! $actor->isManager() && $actor->role === '관리';
         if ($this->editingId) {
             // 편집 대상 계정별 재인가 — editingId 클라이언트 주입 방어 (SKILLS #26 IDOR).
             $target = \App\Models\User::findOrFail($this->editingId);
             abort_unless($actor->canManageUserAccount($target), 403);
         } else {
-            abort_unless($actor->canManageUsers(), 403);   // 신규: 관리는 일반 영업만 생성
+            abort_unless($actor->canManageUsers(), 403);   // 신규: role='관리'는 일반 영업만 생성
         }
-        if ($actorIsManager) {
-            // 관리는 일반 영업만 — 권한·role 서버 강제 (폼 변조로 super/admin 승격 무력화).
+        if ($actorIsTeamManager) {
+            // role='관리'는 일반 영업만 — 권한·role 서버 강제 (폼 변조로 super/admin 승격 무력화).
             $this->permission = 'user';
             $this->role = '영업';
         }
@@ -120,7 +122,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name'       => 'required|string|max:100',
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
             'phone'      => 'nullable|string|max:20',
-            'permission' => 'required|in:super,admin,user',
+            'permission' => 'required|in:super,admin,manager,user',
             // 회의확장씬 #11 별건 fix (2026-05-22) — 옛 role 명('전체','통관','정산')이 stale 이었음.
             // ROLES const 변경(2026-05-20 안건 I — 정산→재무 / 통관→수출통관) 동기화 누락 — 재무·수출통관 user 편집 시 validation fail.
             'role'       => 'required|in:'.implode(',', \App\Models\User::ROLES),
@@ -146,6 +148,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // admin은 super 권한 부여 불가
         if (! auth()->user()->isSuperAdmin() && $this->permission === 'super') {
+            $this->addError('permission', __('user.no_super'));
+            return;
+        }
+        // 업무관리자(manager)는 super/admin 권한 부여 불가 (자기 등급 이하 user/manager 만).
+        if ($actor->isManager() && in_array($this->permission, ['super', 'admin'], true)) {
             $this->addError('permission', __('user.no_super'));
             return;
         }
@@ -202,7 +209,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 2026-06-30 — 다중 관리 배정 pivot sync (영업만; 그 외 role 은 비움).
         // 관리가 저장 시 본인은 항상 포함 — 자기 팀 보장 + 실수로 본인 access 제거 방지.
-        if ($actorIsManager) {
+        if ($actorIsTeamManager) {
             $managerIds = array_values(array_unique(array_merge($managerIds, [$actor->id])));
         }
         $user->managers()->sync($managerIds);
@@ -215,8 +222,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        // 2026-06-30 — 삭제는 super/admin 만 (관리는 본인 팀 영업이라도 삭제 불가).
-        abort_unless(auth()->user()->isAdmin(), 403);
+        // 2026-06-30 — 삭제는 super/admin (+ 업무관리자 item 1). role='관리'는 팀 영업이라도 삭제 불가.
+        $actor = auth()->user();
+        abort_unless($actor->isAdmin() || $actor->isManager(), 403);
 
         $target = User::findOrFail($id);
 
@@ -225,8 +233,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             session()->flash('error', __('user.self_delete'));
             return;
         }
-        // admin은 super 삭제 불가
-        if (! auth()->user()->isSuperAdmin() && $target->isSuperAdmin()) {
+        // admin/manager는 super 삭제 불가 / 업무관리자는 admin 삭제도 불가.
+        if (! $actor->isSuperAdmin() && $target->isSuperAdmin()) {
+            return;
+        }
+        if ($actor->isManager() && in_array($target->permission, ['super', 'admin'], true)) {
             return;
         }
 
@@ -298,6 +309,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <option value="super">{{ __('nav.permission.super') }}</option>
         @endif
         <option value="admin">{{ __('nav.permission.admin') }}</option>
+        <option value="manager">{{ __('nav.permission.manager') }}</option>
         <option value="user">{{ __('nav.permission.user') }}</option>
     </select>
 </div>
@@ -319,7 +331,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @forelse($this->users as $u)
             @php
                 $permBadge = match($u->permission) {
-                    'super' => 'badge-purple', 'admin' => 'badge-blue', default => 'badge-gray',
+                    'super' => 'badge-purple', 'admin' => 'badge-blue', 'manager' => 'badge-teal', default => 'badge-gray',
                 };
                 $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
             @endphp
@@ -341,8 +353,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}
                 </td>
                 <td class="py-3 text-right">
-                    {{-- 삭제는 super/admin 만 (관리는 팀 영업이라도 삭제 불가) --}}
-                    @if($u->id !== auth()->id() && auth()->user()->isAdmin())
+                    {{-- 삭제는 super/admin + 업무관리자(super/admin 대상 제외). role='관리'는 삭제 불가 --}}
+                    @if($u->id !== auth()->id() && (auth()->user()->isAdmin() || (auth()->user()->isManager() && ! in_array($u->permission, ['super', 'admin'], true))))
                     <button wire:click.stop="delete({{ $u->id }})"
                             wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
                             class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
@@ -360,7 +372,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="block sm:hidden space-y-2">
     @forelse($this->users as $u)
     @php
-        $permBadge = match($u->permission) { 'super' => 'badge-purple', 'admin' => 'badge-blue', default => 'badge-gray' };
+        $permBadge = match($u->permission) { 'super' => 'badge-purple', 'admin' => 'badge-blue', 'manager' => 'badge-teal', default => 'badge-gray' };
         $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
     @endphp
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $u->id }})">
@@ -445,7 +457,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if(auth()->user()->isSuperAdmin())
                     <option value="super">{{ __('user.perm_opt.super') }}</option>
                     @endif
+                    {{-- admin 부여는 super/admin 만 (업무관리자는 admin 못 만듦) --}}
+                    @if(auth()->user()->isAdmin())
                     <option value="admin">{{ __('user.perm_opt.admin') }}</option>
+                    @endif
+                    <option value="manager">{{ __('user.perm_opt.manager') }}</option>
                     <option value="user">{{ __('user.perm_opt.user') }}</option>
                 </select>
                 @error('permission')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror

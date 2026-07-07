@@ -21,6 +21,11 @@ class User extends Authenticatable
     // admin/super는 role 무관 (permission 기반)이라 임의 값 가능 — 시더에서 '관리'로 통일.
     public const ROLES = ['영업', '수출통관', '재무', '관리'];
 
+    // item 1 (jin 2026-07-07) — 권한 등급. super > admin(대표) > manager(업무관리자) > user.
+    //   manager = admin 등가 권한에서 [기능설정·단계강제·super/admin 계정관리]만 제외.
+    //   Phase 2 정산지급 월배치 승인 사다리의 중간 계단([관리]→manager→대표).
+    public const PERMISSIONS = ['super', 'admin', 'manager', 'user'];
+
     // 2026-05-21 — 정산 분류 (role='영업' 일 때만 사용).
     // 사용자 결정: Salesman.type 단일 관리 → User.type 으로 이동. /admin/users 폼에서 입력.
     // 저장 시 연결된 Salesman.type 미러링 (Vehicle::saved 훅 호환 위해).
@@ -74,14 +79,22 @@ class User extends Authenticatable
         return $this->permission === 'user';
     }
 
+    // item 1 — 업무관리자(중간 관리 등급). isAdmin(super|admin)과 별개.
+    //   canX() 그랜트 위치에 admin과 함께 들어가 관리자대시보드·로그·사용자관리·ERP 전반을 얻는다.
+    //   예외(manager 제외): canToggleFeatures·canForceStageJump(super 전용), super/admin 계정관리.
+    public function isManager(): bool
+    {
+        return $this->permission === 'manager';
+    }
+
     public function canAccessAdmin(): bool
     {
-        return $this->isAdmin();
+        return $this->isAdmin() || $this->isManager();
     }
 
     public function canAccessErp(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -90,7 +103,7 @@ class User extends Authenticatable
 
     public function canAccessSales(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -100,7 +113,7 @@ class User extends Authenticatable
 
     public function canAccessClearance(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -109,7 +122,7 @@ class User extends Authenticatable
 
     public function canAccessSettlement(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -128,7 +141,7 @@ class User extends Authenticatable
      */
     public function canConfirmFinanceTransfer(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -157,7 +170,7 @@ class User extends Authenticatable
      */
     public function canManagePaymentBreakdown(): bool
     {
-        if ($this->isAdmin()) {
+        if ($this->isAdmin() || $this->isManager()) {
             return true;
         }
 
@@ -182,7 +195,7 @@ class User extends Authenticatable
      */
     public function canApprove(): bool
     {
-        return $this->isAdmin() || $this->role === '관리';
+        return $this->isAdmin() || $this->isManager() || $this->role === '관리';
     }
 
     /**
@@ -208,7 +221,7 @@ class User extends Authenticatable
      */
     public function canManageUsers(): bool
     {
-        return $this->isAdmin() || $this->role === '관리';
+        return $this->isAdmin() || $this->isManager() || $this->role === '관리';
     }
 
     /**
@@ -222,6 +235,13 @@ class User extends Authenticatable
         if ($this->isAdmin()) {
             return true;   // super/admin — 전체 (단 admin은 super 편집 불가 가드는 컴포넌트에서 별도)
         }
+
+        // 업무관리자(manager) — super/admin 계정만 제외, 그 외 전부 관리 (jin item 1 "super/admin만 못 건드림").
+        //   ⚠️ manager 가 다른 manager 계정도 관리 가능 — jin 명세. admin/super 로의 승격은 컴포넌트 검증에서 차단.
+        if ($this->isManager()) {
+            return ! in_array($target->permission, ['super', 'admin'], true);
+        }
+
         if ($this->role !== '관리') {
             return false;
         }
@@ -261,7 +281,7 @@ class User extends Authenticatable
      */
     public function canViewAdminDashboard(): bool
     {
-        return $this->isAdmin();
+        return $this->isAdmin() || $this->isManager();
     }
 
     /**
@@ -271,7 +291,7 @@ class User extends Authenticatable
      */
     public function canViewReceivables(): bool
     {
-        return $this->isAdmin() || in_array($this->role, ['재무', '관리'], true);
+        return $this->isAdmin() || $this->isManager() || in_array($this->role, ['재무', '관리'], true);
     }
 
     /**
@@ -283,7 +303,7 @@ class User extends Authenticatable
      */
     public function canApproveUnpaidExport(): bool
     {
-        return $this->isAdmin() || $this->role === '관리';
+        return $this->isAdmin() || $this->isManager() || $this->role === '관리';
     }
 
     /**
@@ -302,7 +322,7 @@ class User extends Authenticatable
      */
     public function canEditVehicleFinancialFields(): bool
     {
-        return $this->isAdmin() || in_array($this->role, ['영업', '관리'], true);
+        return $this->isAdmin() || $this->isManager() || in_array($this->role, ['영업', '관리'], true);
     }
 
     /**
@@ -312,7 +332,7 @@ class User extends Authenticatable
      */
     public function canManagePorts(): bool
     {
-        return $this->isAdmin() || $this->role === '관리';
+        return $this->isAdmin() || $this->isManager() || $this->role === '관리';
     }
 
     /**
@@ -339,7 +359,7 @@ class User extends Authenticatable
      */
     public function canHandleDeregistration(): bool
     {
-        return $this->isAdmin() || in_array($this->role, ['영업', '수출통관', '관리'], true);
+        return $this->isAdmin() || $this->isManager() || in_array($this->role, ['영업', '수출통관', '관리'], true);
     }
 
     public function salesman(): HasOne
@@ -410,8 +430,8 @@ class User extends Authenticatable
      */
     public function canScopeVehicle(Vehicle $vehicle): bool
     {
-        if ($this->isAdmin()) {
-            return true;
+        if ($this->isAdmin() || $this->isManager()) {
+            return true;   // 업무관리자도 전 차량 (admin 등가 broad access)
         }
 
         if ($this->role === '영업') {
@@ -434,7 +454,7 @@ class User extends Authenticatable
     {
         // 매입 도착 알람(purchase_arrival, target_role='관리') — admin 전체 / 관리 본인 팀.
         if ($alarm->target_role === '관리') {
-            if ($this->isAdmin()) {
+            if ($this->isAdmin() || $this->isManager()) {
                 return true;
             }
             if ($this->role === '관리') {
@@ -448,7 +468,7 @@ class User extends Authenticatable
         if ($alarm->target_role !== '수출통관' || ! $this->canAccessClearance()) {
             return false;
         }
-        if ($this->isAdmin() || $this->role === '수출통관') {
+        if ($this->isAdmin() || $this->isManager() || $this->role === '수출통관') {
             return true;
         }
 

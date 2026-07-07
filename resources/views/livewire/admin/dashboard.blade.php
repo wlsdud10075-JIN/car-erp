@@ -69,7 +69,8 @@ new #[Layout('components.layouts.app')] class extends Component
     private function managerScopeSalesmanIds(): ?array
     {
         $user = auth()->user();
-        if (! $user || $user->isAdmin() || $user->role !== '관리') {
+        // 업무관리자(manager)는 admin 등가 전체 스코프 → team 스코프 아님(null=전체).
+        if (! $user || $user->isAdmin() || $user->isManager() || $user->role !== '관리') {
             return null;
         }
 

@@ -66,6 +66,7 @@ return [
     'permission' => [
         'super' => 'System Admin',
         'admin' => 'Administrator',
+        'manager' => 'Manager',
         'user' => 'User',
     ],
 
