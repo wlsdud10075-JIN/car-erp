@@ -30,6 +30,7 @@ return [
         'sale' => 'Sale Date',
         'shipping' => 'Shipping Date',
         'bl' => 'B/L Date',
+        'all' => 'All (any date)',
     ],
 
     'columns' => 'Columns',
@@ -45,6 +46,9 @@ return [
         'sale_date' => 'Sold',
         'shipping_date' => 'Shipped',
         'bl_issue_date' => 'B/L Date',
+        'deregistration_date' => 'Deregistration',
+        'export_declaration_number' => 'Export Decl. No.',
+        'container_number' => 'Container',
         'salesman' => 'Salesman',
         'buyer' => 'Buyer',
         'channel' => 'Channel',

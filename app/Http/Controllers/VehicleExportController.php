@@ -44,12 +44,15 @@ class VehicleExportController extends Controller
         $salesmanId = $mirror ? (string) $request->query('salesmanId', '') : '';
         $dateFrom = $mirror ? (string) $request->query('dateFrom', '') : '';
         $dateTo = $mirror ? (string) $request->query('dateTo', '') : '';
-        $dateCol = match ((string) $request->query('dateType', 'purchase')) {
+        $dateType = (string) $request->query('dateType', 'purchase');
+        $dateCol = match ($dateType) {
             'sale' => 'sale_date',
             'shipping' => 'shipping_date',
             'bl' => 'bl_issue_date',
             default => 'purchase_date',
         };
+        // dateType='all' → 날짜 무관 전체조회 (화면 목록과 정합)
+        $applyDateFilter = $mirror && $dateType !== 'all';
 
         $vehicles = Vehicle::query()
             ->with(['salesman', 'buyer', 'consignee', 'settlements'])
@@ -58,8 +61,8 @@ class VehicleExportController extends Controller
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
-            ->when($dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
-            ->when($dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
+            ->when($applyDateFilter && $dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
+            ->when($applyDateFilter && $dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('vehicle_number', 'like', "%{$search}%")
                 ->orWhere('brand', 'like', "%{$search}%")

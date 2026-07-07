@@ -776,7 +776,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
+        $this->dateFrom = $this->dateFrom ?: now()->subYear()->format('Y-m-d');
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
     }
 
@@ -1029,6 +1029,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl'       => 'bl_issue_date',
             default    => 'purchase_date',
         };
+        // dateType='all' → 날짜 무관 전체조회 (기간 필터 skip)
+        $applyDateFilter = $this->dateType !== 'all';
 
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
         // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
@@ -1061,8 +1063,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
-            ->when($this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
+            ->when($applyDateFilter && $this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
+            ->when($applyDateFilter && $this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
             ->orderBy($this->sortColumn, $this->sortDirection)
             ->paginate($this->perPage);
     }
@@ -3998,6 +4000,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="sale">{{ __('vehicle.date_type.sale') }}</option>
             <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
             <option value="bl">{{ __('vehicle.date_type.bl') }}</option>
+            <option value="all">{{ __('vehicle.date_type.all') }}</option>
         </select>
         <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
@@ -4137,6 +4140,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('vehicle.col.shipping_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>
@@ -4192,6 +4198,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>
@@ -4232,7 +4241,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="17" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
+            <tr><td colspan="20" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
             @endforelse
         </tbody>
         </table>
@@ -4246,6 +4255,7 @@ function vehicleColumnsToggle() {
     const defaultVisible = {
         brand_model: true, vin: true, purchase_date: true, sale_price: false, sale_total: true,
         sale_date: false, shipping_date: false, bl_issue_date: false,
+        deregistration_date: true, export_declaration_number: true, container_number: true,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, sales_channel: false,
@@ -4260,6 +4270,9 @@ function vehicleColumnsToggle() {
             { key: 'sale_date',      label: @json(__('vehicle.col.sale_date')) },
             { key: 'shipping_date',  label: @json(__('vehicle.col.shipping_date')) },
             { key: 'bl_issue_date',  label: @json(__('vehicle.col.bl_issue_date')) },
+            { key: 'deregistration_date',       label: @json(__('vehicle.col.deregistration_date')) },
+            { key: 'export_declaration_number', label: @json(__('vehicle.col.export_declaration_number')) },
+            { key: 'container_number',          label: @json(__('vehicle.col.container_number')) },
             { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
             { key: 'sales_channel',  label: @json(__('vehicle.col.channel')) },
             { key: 'currency_rate',  label: @json(__('vehicle.col.currency_rate')) },

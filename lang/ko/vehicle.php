@@ -30,6 +30,7 @@ return [
         'sale' => '판매일',
         'shipping' => '선적일',
         'bl' => 'B/L발행일',
+        'all' => '전체(기간무관)',
     ],
 
     'columns' => '컬럼',
@@ -45,6 +46,9 @@ return [
         'sale_date' => '판매일',
         'shipping_date' => '선적일',
         'bl_issue_date' => 'B/L발행일',
+        'deregistration_date' => '말소일',
+        'export_declaration_number' => '수출신고번호',
+        'container_number' => '컨테이너',
         'salesman' => '담당자',
         'buyer' => '바이어',
         'channel' => '채널',
