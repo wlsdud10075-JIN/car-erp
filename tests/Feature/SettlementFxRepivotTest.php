@@ -55,13 +55,19 @@ class SettlementFxRepivotTest extends TestCase
 
     private function paidPendingSettlement(Vehicle $v): Settlement
     {
-        return Settlement::create([
-            'vehicle_id' => $v->id,
-            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
-            'settlement_status' => 'paid',
-            'secondary_status' => 'pending',
-            'confirmed_at' => now(), 'paid_at' => now(),
-        ]);
+        // Phase 2 — setup 이 이미 지급된 상태를 만드는 것이므로 paid 가드(대표/배치) 우회.
+        Settlement::$allowBatchPayout = true;
+        try {
+            return Settlement::create([
+                'vehicle_id' => $v->id,
+                'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+                'settlement_status' => 'paid',
+                'secondary_status' => 'pending',
+                'confirmed_at' => now(), 'paid_at' => now(),
+            ]);
+        } finally {
+            Settlement::$allowBatchPayout = false;
+        }
     }
 
     /** exchange_rate_at_close 컬럼은 물리 삭제하지 않고 유지 (기존 closed 감사행 판독용, nullable-deprecate). */

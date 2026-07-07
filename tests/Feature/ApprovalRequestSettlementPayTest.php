@@ -36,7 +36,7 @@ class ApprovalRequestSettlementPayTest extends TestCase
         $s = $this->makeSettlement('confirmed');
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('정산 지급(paid) 전환은 승인 권한자만 직접');
+        $this->expectExceptionMessage('월배치 승인으로만');   // Phase 2 — 직접 paid=대표만, 나머지 배치
         $s->settlement_status = 'paid';
         $s->save();
     }

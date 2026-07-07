@@ -19,7 +19,7 @@ class Settlement extends Model
 
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
-        'per_unit_amount', 'other_deduction', 'settlement_status',
+        'per_unit_amount', 'other_deduction', 'settlement_status', 'payout_batch_id',
         'secondary_status', 'secondary_closed_at',
         // 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시 환차 (현재 환율 vs 입금 시점 평균)
         'exchange_difference_krw',
@@ -61,6 +61,10 @@ class Settlement extends Model
         'pending' => '2차 정산 대기',
         'closed' => '최종 마무리',
     ];
+
+    // Phase 2 — 월배치 execute() 가 paid 일괄 전환 시 saving 가드 우회 플래그(try/finally).
+    //   직접 paid 는 대표(admin/super)만, manager·[관리] 는 배치로만 → 이 플래그가 유일한 배치 통로.
+    public static bool $allowBatchPayout = false;
 
     /**
      * 큐 10 H3·H4 — 정산 saving 시 검증 + snapshot 캡처.
@@ -141,14 +145,13 @@ class Settlement extends Model
         });
 
         static::saving(function (Settlement $s) {
-            // 큐 14-4-2 — paid 전환은 canApprove user(관리/admin/super)만 직접 가능.
-            // 비-canApprove는 ApprovalRequest 흐름(인라인 [승인 요청] 버튼)으로 진행.
-            // auth 미존재 시(시드·artisan)는 우회.
+            // Phase 2 (jin 2026-07-07) — paid 직접 전환은 대표(admin/super)만. manager·[관리]는 월배치 승인으로만.
+            //   배치 execute()는 $allowBatchPayout 플래그로 통과(대표 최종 승인 결과). auth 미존재(시드·artisan) 우회.
             $becamePaid = $s->settlement_status === 'paid'
                 && $s->getOriginal('settlement_status') !== 'paid';
-            if ($becamePaid && auth()->check() && ! auth()->user()->canApprove()) {
+            if ($becamePaid && ! self::$allowBatchPayout && auth()->check() && ! auth()->user()->isAdmin()) {
                 throw ValidationException::withMessages([
-                    'settlement_status' => '정산 지급(paid) 전환은 승인 권한자만 직접 가능합니다. 정산 목록의 [지급 승인 요청] 버튼을 사용하세요.',
+                    'settlement_status' => '정산 지급(paid)은 대표(최고관리자) 직접 또는 월배치 승인으로만 가능합니다.',
                 ]);
             }
 
@@ -240,6 +243,12 @@ class Settlement extends Model
     public function salesman(): BelongsTo
     {
         return $this->belongsTo(Salesman::class);
+    }
+
+    // Phase 2 — 소속 월배치(정산지급 승인).
+    public function payoutBatch(): BelongsTo
+    {
+        return $this->belongsTo(SettlementPayoutBatch::class, 'payout_batch_id');
     }
 
     /**

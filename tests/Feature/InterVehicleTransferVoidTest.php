@@ -150,6 +150,7 @@ class InterVehicleTransferVoidTest extends TestCase
     public function test_approve_void_blocked_when_source_has_paid_settlement(): void
     {
         $c = $this->executeTransferScenario();
+        Settlement::$allowBatchPayout = true;   // Phase 2 — setup paid 가드 우회
         Settlement::create([
             'vehicle_id' => $c['source']->id,
             'settlement_type' => 'ratio',
@@ -158,6 +159,7 @@ class InterVehicleTransferVoidTest extends TestCase
             'confirmed_at' => now(),
             'paid_at' => now(),
         ]);
+        Settlement::$allowBatchPayout = false;
 
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('paid 정산');

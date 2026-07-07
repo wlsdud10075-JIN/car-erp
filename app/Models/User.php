@@ -183,6 +183,27 @@ class User extends Authenticatable
     }
 
     /**
+     * Phase 2 — 월배치 정산지급 승인 사다리 순위.
+     *   super(4) > 대표=admin(3) > 업무관리자=manager(2) > [관리]=role관리(1) > 그 외(0).
+     *   제출자보다 위 계단이 순서대로 서명(current_level 정확 일치). 대표(3)=고객사 사다리 최상단.
+     */
+    public function approvalRank(): int
+    {
+        return match ($this->permission) {
+            'super' => 4,
+            'admin' => 3,
+            'manager' => 2,
+            default => $this->role === '관리' ? 1 : 0,
+        };
+    }
+
+    /** 월배치 정산지급 제출 권한 — [관리](1)·업무관리자(2). 재무·영업·통관·대표는 제출자 아님. */
+    public function canSubmitPayoutBatch(): bool
+    {
+        return in_array($this->approvalRank(), [1, 2], true);
+    }
+
+    /**
      * 큐 14-2 — 4 승인 액션 권한 (회의록 v5.1 §9-2 + 2026-05-14 회의 합의안).
      *
      * 대상 4 액션:

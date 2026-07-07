@@ -163,9 +163,15 @@ class ApprovalRequest extends Model
         if ($settlement->settlement_status !== 'confirmed') {
             throw new \DomainException('정산 상태가 confirmed가 아닙니다 (현재: '.$settlement->settlement_status.').');
         }
-        $settlement->settlement_status = 'paid';
-        $settlement->paid_at = now();
-        $settlement->save();
+        // Phase 2 — 승인된 지급이므로 paid 가드(대표만 직접) 우회. 레거시 개별 승인 경로 호환(월배치로 대체 중).
+        Settlement::$allowBatchPayout = true;
+        try {
+            $settlement->settlement_status = 'paid';
+            $settlement->paid_at = now();
+            $settlement->save();
+        } finally {
+            Settlement::$allowBatchPayout = false;
+        }
     }
 
     /**
