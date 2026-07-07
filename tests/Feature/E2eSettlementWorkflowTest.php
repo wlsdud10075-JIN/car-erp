@@ -71,20 +71,20 @@ class E2eSettlementWorkflowTest extends TestCase
         $this->assertNotEmpty($st->confirmed_snapshot, 'paid 시점 스냅샷 누락');
     }
 
-    /** 2차: 마감 환율 선저장 → closeSecondarySettlement (환차 계산·확정). */
-    private function closeSecondaryWithRate(Settlement $st, float $closeRate): void
+    /** 2차: closeSecondarySettlement (2026-07-06 재피벗 — 잔금 수령환율 vs 판매환율 차이 = 환차). */
+    private function closeSecondary(Settlement $st): void
     {
-        $st->update(['exchange_rate_at_close' => $closeRate]);
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $st->id);
         $st->refresh();
         $this->assertSame('closed', $st->secondary_status, '2차 closed 실패');
     }
 
     /** USD 3종(이익/손실/0) 공통 — 1차 금액 + 환차 + 2차 실지급액 손계산 대조. */
-    private function runUsdCase(string $name, float $closeRate, int $expectedDiff, int $expectedPayout2nd): void
+    private function runUsdCase(string $name, float $collectRate, int $expectedDiff, int $expectedPayout2nd): void
     {
         $s = $this->salesman($name, 'freelance');
-        $v = $this->driveToTradeComplete($s, 'USD', 1300.0, ['purchase_price' => 15_000_000, 'sale_price' => 20_000]);
+        // 잔금을 $collectRate 에 수령 (판매환율 1300 과의 차이가 2차 환차).
+        $v = $this->driveToTradeComplete($s, 'USD', 1300.0, ['purchase_price' => 15_000_000, 'sale_price' => 20_000], '', $collectRate);
         $st = Settlement::where('vehicle_id', $v->id)->firstOrFail();
         $this->assertSame('ratio', $st->settlement_type);
 
@@ -100,10 +100,10 @@ class E2eSettlementWorkflowTest extends TestCase
         $this->assertSame(5_507_500, $st->actual_payout, "$name 1차 actual_payout");
 
         $this->confirmAndPay($st);
-        $this->closeSecondaryWithRate($st, $closeRate);
+        $this->closeSecondary($st);
 
         $st->refresh();
-        //  환차 = 20,000×close − 20,000×1300(입금시점 누적) / 2차 payout = 1차 + 환차
+        //  환차 = 20,000×collectRate(실수령KRW) − 20,000×1300(판매환율 baseline) / 2차 payout = 1차 + 환차
         $this->assertSame($expectedDiff, (int) $st->exchange_difference_krw, "$name 환차 불일치");
         $this->assertSame($expectedPayout2nd, $st->actual_payout, "$name 2차 실지급액 불일치");
     }
@@ -117,7 +117,7 @@ class E2eSettlementWorkflowTest extends TestCase
      * 차량 1대를 매입→말소→판매입금(완납)→통관→선적→B/L→거래완료 까지 구동.
      * 각 단계 진행상태를 검증(누락 점검). 거래완료 시 정산 자동 생성.
      */
-    private function driveToTradeComplete(Salesman $s, string $currency, float $rate, array $fin, string $tag = ''): Vehicle
+    private function driveToTradeComplete(Salesman $s, string $currency, float $rate, array $fin, string $tag = '', ?float $paymentRate = null): Vehicle
     {
         // 1) 매입 단계 — 차량 등록
         $v = Vehicle::create([
@@ -149,6 +149,7 @@ class E2eSettlementWorkflowTest extends TestCase
             'amount' => $fin['sale_price'],   // sale_total = sale_price (부대비용 0) → 완납
             'type' => 'balance',
             'payment_date' => '2026-05-10',
+            'exchange_rate' => $paymentRate ?? $rate,   // 실제 수령 환율 (판매환율과 다르면 2차 환차 발생)
             'confirmed_at' => now(),
         ]);
         $v->refresh();
@@ -210,7 +211,7 @@ class E2eSettlementWorkflowTest extends TestCase
         $v = $this->driveToTradeComplete($s, 'EUR', 1400.0, [
             'purchase_price' => 8_000_000,
             'sale_price' => 10_000,
-        ]);
+        ], '', 1450.0);   // 잔금 1450 에 수령 → 2차 환차익 10,000×(1450−1400)=+500,000
         $st = Settlement::where('vehicle_id', $v->id)->firstOrFail();
         $this->assertSame('ratio', $st->settlement_type, '프리랜서 → ratio 자동분기 실패');
 
@@ -227,7 +228,7 @@ class E2eSettlementWorkflowTest extends TestCase
         $this->assertSame(2_974_000, $st->actual_payout, 'EUR 1차 실지급액 불일치');
 
         $this->confirmAndPay($st);
-        $this->closeSecondaryWithRate($st, 1450.0);   // 환차익: 10,000×1450 − 10,000×1400 = +500,000
+        $this->closeSecondary($st);   // 환차익: 10,000×1450(수령) − 10,000×1400(판매환율) = +500,000
 
         $st->refresh();
         $this->assertSame(500_000, (int) $st->exchange_difference_krw, 'EUR 환차익 불일치');
@@ -262,9 +263,9 @@ class E2eSettlementWorkflowTest extends TestCase
     {
         $s = $this->salesman('S6 이월검증', 'freelance');
 
-        // ── 차량 A: USD, 환차익 +500,000 (입금 1300 → 마감 1350, 10,000 USD) ──
+        // ── 차량 A: USD, 환차익 +500,000 (판매환율 1300 → 잔금 1350 수령, 10,000 USD) ──
         $vA = $this->driveToTradeComplete($s, 'USD', 1300.0,
-            ['purchase_price' => 8_000_000, 'sale_price' => 10_000], 'A');
+            ['purchase_price' => 8_000_000, 'sale_price' => 10_000], 'A', 1350.0);
         $stA = Settlement::where('vehicle_id', $vA->id)->firstOrFail();
 
         // 1차 실지급(= 1차 정산금액, 환차 없음) 손계산:
@@ -279,7 +280,7 @@ class E2eSettlementWorkflowTest extends TestCase
         $this->assertSame($payout1st, (int) ($stA->fresh()->confirmed_snapshot['actual_payout'] ?? -1),
             '1차 paid 스냅샷이 환차 없는 1차 정산금액이어야');
 
-        $this->closeSecondaryWithRate($stA, 1350.0);   // 환차 +500,000
+        $this->closeSecondary($stA);   // 환차 +500,000 (10,000×1350 − 10,000×1300)
         $stA->refresh();
 
         // 핵심 ①: 2차 closed 시 환차(+500,000)가 carryover_out 으로 '이월' 표시 (2차에 재지급 X)

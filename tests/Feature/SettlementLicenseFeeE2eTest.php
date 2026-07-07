@@ -117,9 +117,9 @@ class SettlementLicenseFeeE2eTest extends TestCase
         // 정산액 감소 = 80,100 × 50% = 40,050.
         $this->assertSame((int) round(($marginBefore - 80_100) * 0.5), $s1->settlement_amount);
 
-        // ── 2차 마감 @1350 → 환차 +500,000(10,000×(1350-1300)) ──
-        $s1->exchange_rate_at_close = 1350;
-        Settlement::withoutEvents(fn () => $s1->save());
+        // ── 2차 마감 (2026-07-06 재피벗): 잔금을 판매환율 1300 보다 높은 1350 에 수령 → 환차 +500,000 ──
+        //   (쿼리빌더 update 로 확정 잔금 lock 우회 — 실제로는 수령 시점에 1350 으로 기입된 상황을 재현)
+        $vehicles[0]->finalPayments()->update(['exchange_rate' => 1350]);
 
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $s1->id);
 

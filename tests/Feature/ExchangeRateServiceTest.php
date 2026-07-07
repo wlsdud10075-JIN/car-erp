@@ -91,8 +91,7 @@ class ExchangeRateServiceTest extends TestCase
 
     public function test_close_secondary_settlement_captures_exchange_difference(): void
     {
-        // 환차익 시나리오: 입금 시점 환율 1350 → 정산 시점 1380 → +30 × foreign 차이
-        Cache::put('exchange_rates', ['USD' => 1380.0], 60);
+        // 환차익 시나리오 (2026-07-06 재피벗): 판매환율 1350 → 잔금 1380 에 수령 → +30 × foreign 차이
 
         $manager = User::factory()->create([
             'permission' => 'user', 'role' => '관리',
@@ -102,15 +101,15 @@ class ExchangeRateServiceTest extends TestCase
             'vehicle_number' => 'EXC-'.++$this->counter,
             'sales_channel' => 'export',
             'currency' => 'USD',
-            'exchange_rate' => 1350,
+            'exchange_rate' => 1350,   // 판매환율 (baseline)
             'dhl_request' => false,
             'sale_price' => 400,
             'sale_date' => '2026-05-01',
             'purchase_date' => '2026-04-01',
         ]);
-        // 잔금 4건 — 각각 다른 환율로 입금 (회의확장씬 예시 단순화: 400 한 번에)
+        // 잔금을 판매환율보다 높은 1380 에 수령 → 2차 환차익
         $v->finalPayments()->create([
-            'amount' => 400, 'exchange_rate' => 1350,
+            'amount' => 400, 'exchange_rate' => 1380,
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $manager->id,
         ]);

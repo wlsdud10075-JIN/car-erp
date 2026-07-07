@@ -6,7 +6,6 @@ use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -68,17 +67,15 @@ class SettlementKrwBreakdownTest extends TestCase
 
         $this->assertFalse($kb['is_krw_vehicle']);
         $this->assertSame('closed', $kb['status']);
-        $this->assertSame(12000.0, $kb['exchange_diff']);
+        $this->assertSame(12000.0, $kb['exchange_diff']);   // 저장된 확정 환차 (그대로 표시)
         $this->assertFalse($kb['is_preview']);
         $this->assertSame(540000, $kb['received_krw']);   // 400 × 1350
-        $this->assertSame(552000, $kb['secondary_krw']);  // received + diff
+        $this->assertSame(540000, $kb['baseline_krw']);   // sale_total 400 × 판매환율 1350
     }
 
     public function test_krw_breakdown_pending_settlement_shows_live_preview(): void
     {
-        // 현재 환율 1380 — 입금 시점 1350 보다 +30 차이
-        Cache::put('exchange_rates', ['USD' => 1380.0], 60);
-
+        // 2026-07-06 재피벗 — 판매환율 1350, 잔금을 1380 에 수령 → 환차 +30/USD.
         $manager = $this->makeManager();
         $v = Vehicle::create([
             'vehicle_number' => 'KB-PENDING-'.++$this->counter,
@@ -90,7 +87,7 @@ class SettlementKrwBreakdownTest extends TestCase
             'purchase_date' => '2026-04-01',
         ]);
         $v->finalPayments()->create([
-            'amount' => 400, 'exchange_rate' => 1350,
+            'amount' => 400, 'exchange_rate' => 1380,   // 수령 환율 1380 (판매환율 1350 보다 +30)
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $manager->id,
         ]);
@@ -111,8 +108,8 @@ class SettlementKrwBreakdownTest extends TestCase
         $this->assertFalse($kb['is_krw_vehicle']);
         $this->assertSame('pending', $kb['status']);
         $this->assertTrue($kb['is_preview']);
-        $this->assertSame(540000, $kb['received_krw']);     // 400 × 1350
-        $this->assertSame(552000, $kb['secondary_krw']);    // 400 × 1380
+        $this->assertSame(552000, $kb['received_krw']);     // 400 × 1380(수령환율)
+        $this->assertSame(540000, $kb['baseline_krw']);     // 400 × 1350(판매환율)
         $this->assertSame(12000.0, $kb['exchange_diff']);   // 552000 - 540000
     }
 
@@ -147,28 +144,21 @@ class SettlementKrwBreakdownTest extends TestCase
 
         $this->assertTrue($kb['is_krw_vehicle']);
         $this->assertArrayNotHasKey('exchange_diff', $kb);
-        $this->assertArrayNotHasKey('secondary_krw', $kb);
+        $this->assertArrayNotHasKey('baseline_krw', $kb);
     }
 
     public function test_krw_breakdown_rate_unavailable_marks_explicitly(): void
     {
-        // Cache 비움 → ExchangeRateService getRate null fallback
-        Cache::flush();
-
+        // 2026-07-06 재피벗 — baseline = 판매환율. 판매환율(exchange_rate)이 0/null 이면 계산 불가.
         $manager = $this->makeManager();
         $v = Vehicle::create([
             'vehicle_number' => 'KB-NORATE-'.++$this->counter,
             'sales_channel' => 'export',
             'currency' => 'USD',
-            'exchange_rate' => 1350,
+            'exchange_rate' => 0,   // 판매환율 미입력 → baseline 계산 불가
             'dhl_request' => false,
-            'sale_price' => 400, 'sale_date' => '2026-05-01',
+            'sale_price' => 400,
             'purchase_date' => '2026-04-01',
-        ]);
-        $v->finalPayments()->create([
-            'amount' => 400, 'exchange_rate' => 1350,
-            'payment_date' => '2026-05-01',
-            'confirmed_at' => now(), 'confirmed_by_user_id' => $manager->id,
         ]);
         $s = Settlement::create([
             'vehicle_id' => $v->id,
@@ -179,23 +169,13 @@ class SettlementKrwBreakdownTest extends TestCase
         ]);
 
         $this->actingAs($manager);
-        // ExchangeRateService null 반환 위해 Http 가짜 응답 차단 — 캐시 비웠으니 실제 호출 시 실패하거나 cache hit X.
-        // 안전을 위해 service mock 또는 cache에 명시적 null 대신, currency='ZZZ' 같이 없는 통화로 우회 — 그러나 enum 차단.
-        // 가장 단순: Service 호출이 실제 HTTP 시도 → 테스트 환경 외부 차단 → null 가능.
-        // 여기선 rate_unavailable 키 존재만 검증 (또는 secondary_krw 미존재).
         $component = Volt::test('erp.settlements.index')
             ->call('openEdit', $s->id);
 
         $kb = $component->instance()->krwBreakdown;
 
-        // rate_unavailable 또는 secondary_krw 둘 중 하나여야 — Cache 비웠을 때 service가 null 반환
-        // (실제 HTTP 호출이 차단된 환경 가정)
-        if (! empty($kb['rate_unavailable'])) {
-            $this->assertTrue($kb['rate_unavailable']);
-            $this->assertArrayNotHasKey('secondary_krw', $kb);
-        } else {
-            // HTTP 호출 성공 시 (테스트 환경 외부 가능) → preview 분기
-            $this->assertArrayHasKey('secondary_krw', $kb);
-        }
+        $this->assertTrue($kb['rate_unavailable']);
+        $this->assertArrayNotHasKey('baseline_krw', $kb);
+        $this->assertArrayNotHasKey('exchange_diff', $kb);
     }
 }

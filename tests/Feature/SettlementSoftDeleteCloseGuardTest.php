@@ -79,11 +79,12 @@ class SettlementSoftDeleteCloseGuardTest extends TestCase
         $s->delete();   // deleting 가드는 SoftDeletes 후에도 confirmed/paid/closed 차단
     }
 
-    // ── E — 외화 환율 실패 시 close 차단 ──────────────────────────
+    // ── E — 재피벗(2026-07-06): 외화 마감은 외부 환율 서비스에 의존하지 않음 ──
 
-    public function test_close_blocked_when_foreign_rate_unavailable(): void
+    public function test_close_succeeds_for_foreign_without_rate_service(): void
     {
-        // 자동 환율 조회 실패 시뮬레이션
+        // 2026-07-06 재피벗 — baseline = 판매환율(차량 저장값)이라 ExchangeRateService 호출 없음.
+        // 서비스가 null 을 줘도 마감이 차단되지 않아야 한다 (구 모델의 '환율 조회 실패 차단' 폐기).
         $this->mock(ExchangeRateService::class, function ($mock) {
             $mock->shouldReceive('getRate')->andReturn(null);
         });
@@ -102,8 +103,8 @@ class SettlementSoftDeleteCloseGuardTest extends TestCase
 
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $s->id);
 
-        $this->assertSame('pending', $s->fresh()->secondary_status, '환율 없으면 close 차단(여전히 pending)');
-        $this->assertNull($s->fresh()->exchange_difference_krw, 'null 환차로 잠기지 않아야');
+        $this->assertSame('closed', $s->fresh()->secondary_status, '외화도 판매환율 baseline 으로 외부 서비스 없이 마감');
+        $this->assertNotNull($s->fresh()->exchange_difference_krw, '환차(0 포함) 확정 기록');
     }
 
     public function test_close_succeeds_for_krw_without_rate(): void

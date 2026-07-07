@@ -187,8 +187,7 @@ class IntegrationRegressionTest extends TestCase
 
     public function test_case04_exchange_diff_profit_scenario(): void
     {
-        // 회의확장씬 #7 — 입금 시점 환율 1300, close 시점 1380 → 환차익 양수
-        Cache::put('exchange_rates', ['USD' => 1380.0], 60);
+        // 2026-07-06 재피벗 — 판매환율 1300, 잔금 1380 수령 → 환차익 양수
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
@@ -201,7 +200,7 @@ class IntegrationRegressionTest extends TestCase
             'purchase_date' => '2026-04-01',
         ]);
         $v->finalPayments()->create([
-            'amount' => 500, 'exchange_rate' => 1300,
+            'amount' => 500, 'exchange_rate' => 1380,   // 수령 환율 1380 (판매환율 1300 보다 높음)
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);
@@ -445,12 +444,11 @@ class IntegrationRegressionTest extends TestCase
 
     public function test_case12_mixed_usd_eur_exchange_diff_scenarios(): void
     {
-        // USD 환차익 + EUR 환차손 동시 시나리오 — 통화별 분리 검증
-        Cache::put('exchange_rates', ['USD' => 1380.0, 'EUR' => 1400.0], 60);
+        // USD 환차익 + EUR 환차손 동시 시나리오 — 통화별 분리 검증 (2026-07-06 재피벗)
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
-        // USD 차량 — 입금 1300, close 1380 → 환차익 +
+        // USD 차량 — 판매환율 1300, 잔금 1380 수령 → 환차익 +
         $vUsd = Vehicle::create([
             'vehicle_number' => 'IR-MX-USD-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1300,
@@ -459,7 +457,7 @@ class IntegrationRegressionTest extends TestCase
             'purchase_date' => '2026-04-01',
         ]);
         $vUsd->finalPayments()->create([
-            'amount' => 500, 'exchange_rate' => 1300,
+            'amount' => 500, 'exchange_rate' => 1380,   // 수령 1380 > 판매환율 1300
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);
@@ -470,7 +468,7 @@ class IntegrationRegressionTest extends TestCase
             'confirmed_at' => now(), 'paid_at' => now(),
         ]);
 
-        // EUR 차량 — 입금 1450, close 1400 → 환차손 -
+        // EUR 차량 — 판매환율 1450, 잔금 1400 수령 → 환차손 -
         $vEur = Vehicle::create([
             'vehicle_number' => 'IR-MX-EUR-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1450,
@@ -479,7 +477,7 @@ class IntegrationRegressionTest extends TestCase
             'purchase_date' => '2026-04-01',
         ]);
         $vEur->finalPayments()->create([
-            'amount' => 400, 'exchange_rate' => 1450,
+            'amount' => 400, 'exchange_rate' => 1400,   // 수령 1400 < 판매환율 1450
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);
@@ -549,8 +547,7 @@ class IntegrationRegressionTest extends TestCase
 
     public function test_case14_foreign_currency_full_secondary_integration(): void
     {
-        // 외화 + 1차 환차 + 2차 기타비용 변경 통합 — case04·5·13 통합
-        Cache::put('exchange_rates', ['USD' => 1380.0], 60);
+        // 외화 + 1차 환차 + 2차 기타비용 변경 통합 — case04·5·13 통합 (2026-07-06 재피벗)
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
@@ -564,7 +561,7 @@ class IntegrationRegressionTest extends TestCase
             'cost_deregistration' => 24_000, 'cost_license' => 11_000, 'cost_towing' => 30_000,
         ]);
         $v->finalPayments()->create([
-            'amount' => 10_000, 'exchange_rate' => 1300,
+            'amount' => 10_000, 'exchange_rate' => 1380,   // 수령 1380 > 판매환율 1300 → 환차익
             'payment_date' => '2026-05-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);

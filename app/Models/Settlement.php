@@ -325,7 +325,7 @@ class Settlement extends Model
 
     public const FREELANCE_DOCUMENT_FEE = 50_000;       // 프리랜서 서류비 5만원
 
-    public const EMPLOYEE_HIGH_THRESHOLD = 100_000_000; // 사내직원 고율 트리거 = 매입금액 ≥ 1억
+    public const EMPLOYEE_HIGH_THRESHOLD = 100_000_000; // 사내직원 고율 트리거 = 매입합계(구입금액+매도비) ≥ 1억 (엑셀 BX)
 
     public const EMPLOYEE_HIGH_RATE = 25;               // 사내직원 고율 % (총마진 × 25%)
 
@@ -381,26 +381,27 @@ class Settlement extends Model
             return (int) $this->per_unit_amount;
         }
 
-        // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입금액·총마진 기준.
+        // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
         return self::employeePerUnitTier(
             $this->total_margin,
-            (int) ($this->vehicle->purchase_price ?? 0)
+            (int) ($this->vehicle->purchase_price ?? 0) + (int) ($this->vehicle->selling_fee ?? 0)
         );
     }
 
     /**
      * 사내직원(per_unit) 차등 정산액 — 2026-06-22 jin 확정 (엑셀 CF).
      *
-     *   매입금액(purchase_price) ≥ 1억  → 총마진 × 25%   (1억 트리거 최우선, 단 음수면 0 바닥 — jin 2026-06-22)
+     *   매입합계(구입금액+매도비) ≥ 1억 → 총마진 × 25%   (1억 트리거 최우선, 단 음수면 0 바닥 — jin 2026-06-22)
      *   총마진 < 0                       → 0
      *   총마진 < 100만                   → 100,000
      *   그 외(총마진 ≥ 100만)            → 200,000        (상한 없음, 100만 정확히=20만)
      *
-     * 엑셀 IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))) — 단 1억+ 손해차량은 0 바닥(jin 확정).
+     * 엑셀 CF = IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))). BX=매입합계(R열=구입금액+매도비, jin 2026-07-07).
+     * 우리 보정: 1억+ 손해차량은 0 바닥(jin), CD≥1000만(엑셀 else 누락)은 20만.
      */
-    public static function employeePerUnitTier(int $totalMargin, int $purchasePrice): int
+    public static function employeePerUnitTier(int $totalMargin, int $purchaseTotal): int
     {
-        if ($purchasePrice >= self::param('settlement_employee_high_threshold')) {
+        if ($purchaseTotal >= self::param('settlement_employee_high_threshold')) {
             return max(0, (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100));
         }
         if ($totalMargin < 0) {
