@@ -71,16 +71,16 @@ class TaskAlarm extends Model
             if ($user->canAccessClearance()) {
                 $outer->orWhere(function (Builder $q2) use ($user) {
                     $q2->where('target_role', '수출통관');
-                    if (! ($user->isAdmin() || $user->role === '수출통관')) {
+                    if (! ($user->isAdmin() || $user->isManager() || $user->role === '수출통관')) {
                         $q2->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
                     }
                 });
             }
-            // 매입 도착 알람 (관리/admin)
-            if ($user->isAdmin() || $user->role === '관리') {
+            // 매입 도착 알람 (관리/업무관리자/admin)
+            if ($user->isAdmin() || $user->isManager() || $user->role === '관리') {
                 $outer->orWhere(function (Builder $q3) use ($user) {
                     $q3->where('target_role', '관리');
-                    if (! $user->isAdmin()) {
+                    if (! ($user->isAdmin() || $user->isManager())) {
                         $q3->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
                     }
                 });

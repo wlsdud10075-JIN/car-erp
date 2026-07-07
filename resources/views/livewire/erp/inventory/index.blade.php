@@ -42,8 +42,8 @@ new #[Layout('components.layouts.app')] class extends Component
     public function inventoryVehicles()
     {
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && $user->role === '영업' && $user->salesman;
-        $restrictToManagerScope = $user && ! $user->isAdmin() && $user->role === '관리';
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Vehicle::query()
@@ -70,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $q = Salesman::where('is_active', true)->orderBy('name');
         $user = auth()->user();
-        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());
         }
 
@@ -85,7 +85,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $user = auth()->user();
         $q = Vehicle::query()->whereIn('progress_status_cache', self::STOCK_STATUSES);
-        if ($user && ! $user->isAdmin() && $user->role === '관리') {
+        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
         }
 

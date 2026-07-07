@@ -90,7 +90,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 데이터 보정 — 선적했는데 ETA 없는 차량 (관리는 본인 팀만).
         $cq = \App\Models\Vehicle::query()->whereNull('deleted_at')->action('eta_missing')->with('salesman');
-        if (! $user->isAdmin() && $user->role === '관리') {
+        if (! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $cq->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
         }
         $correctionVehicles = $cq->orderBy('shipping_date')->limit(50)->get();

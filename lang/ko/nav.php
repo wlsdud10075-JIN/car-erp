@@ -66,6 +66,7 @@ return [
     'permission' => [
         'super' => '시스템관리자',
         'admin' => '최고관리자',
+        'manager' => '업무관리자',
         'user' => '일반사용자',
     ],
 

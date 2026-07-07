@@ -43,6 +43,7 @@ return [
     'perm_opt' => [
         'super' => 'System Admin (super)',
         'admin' => 'Administrator (admin)',
+        'manager' => 'Manager (manager)',
         'user' => 'User (user)',
     ],
 

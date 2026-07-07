@@ -44,6 +44,7 @@ return [
     'perm_opt' => [
         'super' => '시스템관리자 (super)',
         'admin' => '최고관리자 (admin)',
+        'manager' => '업무관리자 (manager)',
         'user' => '일반사용자 (user)',
     ],
 
