@@ -28,7 +28,7 @@ class AlimtalkTriggerTest extends TestCase
     {
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
-        Http::fake(['*bizmsg.kr*' => Http::response([['msgid' => 'MSG-TEST']], 200)]);
+        Http::fake(['*bizmsg.kr*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'MSG-TEST'], 'message' => 'K000']], 200)]);
     }
 
     /** 알림톡 계정·게이트 켜기 (현재 회사 set). 전달한 코드의 tmplId 세팅. */

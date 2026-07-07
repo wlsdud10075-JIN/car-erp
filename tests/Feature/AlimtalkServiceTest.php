@@ -45,7 +45,8 @@ class AlimtalkServiceTest extends TestCase
     public function test_configured_send_hits_bizm_and_logs_msgid(): void
     {
         $this->configure();
-        Http::fake(['*' => Http::response([['msgid' => 'BIZM-123', 'code' => 'success']], 200)]);
+        // BizM v2 실응답 형식(2026-07-07 실측) — msgid 는 data 하위 중첩.
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'BIZM-123', 'phn' => '01012345678', 'type' => 'AT'], 'message' => 'K000']], 200)]);
 
         $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-1234-5678', [
             '날짜' => '2026-07-06', '판매건수' => '12', '매출액' => '4억 2,000만원',

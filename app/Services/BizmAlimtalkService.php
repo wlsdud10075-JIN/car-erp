@@ -87,7 +87,9 @@ class BizmAlimtalkService
 
             $body = $response->json();
             $first = is_array($body) ? ($body[0] ?? $body) : [];
-            $msgid = is_array($first) ? ($first['msgid'] ?? null) : null;
+            // BizM v2 실응답(2026-07-07 실측): [{"code":"success","data":{"msgid":"WEB..."},"message":"K000"}].
+            // msgid 는 data 하위 → data.msgid 우선, 최상위 msgid 는 fallback(테스트 fake 호환).
+            $msgid = is_array($first) ? ($first['data']['msgid'] ?? $first['msgid'] ?? null) : null;
 
             if ($msgid) {
                 return AlimtalkLog::create($base + ['status' => 'sent', 'msgid' => (string) $msgid]);
