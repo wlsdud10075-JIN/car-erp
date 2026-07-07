@@ -1352,6 +1352,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   <50% 입금 차량의 판매 저장이 통째로 막히는 회귀가 발생. 통관 바이어는 실제 통관 단계에서
     //   입력(말소+50% 충족 시점) — 게이트 의도와 정합. B/L 당사자는 게이트 트리거가 아니라 전파 유지.
     public function updatedConsigneeIdStr(): void { $this->propagateSaleParty(); }
+    public function updatedBlConsigneeIdStr(): void { $this->propagateBlToExport(); }
 
     private function propagateSaleParty(): void
     {
@@ -1362,6 +1363,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->bl_buyer_id_str = $this->buyer_id_str;
             $this->bl_consignee_id_str = $this->consignee_id_str;
             unset($this->consigneesForBl);
+        }
+    }
+
+    // item 8 (jin 2026-07-07) — 선적(bl) 당사자 지정 시 수출통관(export) 당사자도 동일 적용.
+    //   근거: 50% 진입 우회가 선적·수출통관 통합(clearance∪shipping) → 선적탭에서 통관 당사자 채움이 도메인상 정합.
+    //   ⚠️ export 가 비어있을 때만(명시 통관 당사자 보존). updated 훅은 클라 편집에서만 발화 →
+    //      sale→bl 서버 전파가 bl→export 로 연쇄되지 않음(SKILLS #24 판매탭 회귀 회피).
+    //   ⚠️ export_buyer_id 는 guardStageOrderForExport 의 통관 진입 신호 — <50% 미우회 차량은 저장이
+    //      C5 로 차단되며 이는 의도된 게이트(선적탭에서 통관 당사자 = 통관 진입).
+    private function propagateBlToExport(): void
+    {
+        if ($this->bl_buyer_id_str === '' || $this->bl_consignee_id_str === '') {
+            return;
+        }
+        if ($this->export_buyer_id_str === '' && $this->export_consignee_id_str === '') {
+            $this->export_buyer_id_str = $this->bl_buyer_id_str;
+            $this->export_consignee_id_str = $this->bl_consignee_id_str;
+            unset($this->consigneesForExport);
         }
     }
 
@@ -5211,12 +5230,9 @@ function vehicleColumnsToggle() {
                         <button type="button" wire:click="openQuickAdd('buyer','sale')"
                                 class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model.live="buyer_id_str" class="input-base input-required">
-                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach($this->buyers as $b)
-                        <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="buyer_id_str" :options="$this->buyers" :selected="$buyer_id_str"
+                        :required="true" placeholder="{{ __('vehicle.panel.select_placeholder') }}"
+                        wire:key="cbx-buyer-sale-{{ $buyer_id_str }}" />
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
@@ -5225,13 +5241,10 @@ function vehicleColumnsToggle() {
                                 @if($buyer_id_str === '') disabled @endif
                                 class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model.live="consignee_id_str" class="input-base input-required"
-                            @if($buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
-                        @foreach($this->consigneesForSale as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="consignee_id_str" :options="$this->consigneesForSale" :selected="$consignee_id_str"
+                        :required="true" :disabled="$buyer_id_str === ''"
+                        placeholder="{{ $buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
+                        wire:key="cbx-cons-sale-{{ $buyer_id_str }}-{{ $consignee_id_str }}" />
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" data-money class="input-base" placeholder="0" /></div>
@@ -5657,12 +5670,9 @@ function vehicleColumnsToggle() {
                         <button type="button" wire:click="openQuickAdd('buyer','export')"
                                 class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model.live="export_buyer_id_str" class="input-base">
-                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach($this->buyers as $b)
-                        <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="export_buyer_id_str" :options="$this->buyers" :selected="$export_buyer_id_str"
+                        placeholder="{{ __('vehicle.panel.select_placeholder') }}"
+                        wire:key="cbx-buyer-export-{{ $export_buyer_id_str }}" />
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
@@ -5671,13 +5681,10 @@ function vehicleColumnsToggle() {
                                 @if($export_buyer_id_str === '') disabled @endif
                                 class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model="export_consignee_id_str" class="input-base"
-                            @if($export_buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $export_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
-                        @foreach($this->consigneesForExport as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="export_consignee_id_str" :options="$this->consigneesForExport" :selected="$export_consignee_id_str"
+                        :disabled="$export_buyer_id_str === ''"
+                        placeholder="{{ $export_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
+                        wire:key="cbx-cons-export-{{ $export_buyer_id_str }}-{{ $export_consignee_id_str }}" />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.forwarder') }}</label>
@@ -5793,12 +5800,9 @@ function vehicleColumnsToggle() {
                         <button type="button" wire:click="openQuickAdd('buyer','bl')"
                                 class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model.live="bl_buyer_id_str" class="input-base">
-                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach($this->buyers as $b)
-                        <option value="{{ $b->id }}">{{ $b->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="bl_buyer_id_str" :options="$this->buyers" :selected="$bl_buyer_id_str"
+                        placeholder="{{ __('vehicle.panel.select_placeholder') }}"
+                        wire:key="cbx-buyer-bl-{{ $bl_buyer_id_str }}" />
                 </div>
                 <div>
                     <div class="flex items-center justify-between">
@@ -5807,13 +5811,10 @@ function vehicleColumnsToggle() {
                                 @if($bl_buyer_id_str === '') disabled @endif
                                 class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
                     </div>
-                    <select wire:model="bl_consignee_id_str" class="input-base"
-                            @if($bl_buyer_id_str === '') disabled @endif>
-                        <option value="">{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}</option>
-                        @foreach($this->consigneesForBl as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-erp.combobox model="bl_consignee_id_str" :options="$this->consigneesForBl" :selected="$bl_consignee_id_str"
+                        :disabled="$bl_buyer_id_str === ''"
+                        placeholder="{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
+                        wire:key="cbx-cons-bl-{{ $bl_buyer_id_str }}-{{ $bl_consignee_id_str }}" />
                 </div>
                 {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
                 <div>

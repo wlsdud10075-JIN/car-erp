@@ -167,6 +167,7 @@ return [
         // Sale tab misc
         'add_new' => '+ New',
         'buyer_first' => 'Select a buyer first',
+        'no_match' => 'No match',
         'fee_note' => '(seller pays)',
         'savings_deposit_note' => '(accumulates on save, resets)',
         'savings_balance_note' => '(SavingsStatus by buyer×currency)',

@@ -167,6 +167,7 @@ return [
         // 판매 탭 기타
         'add_new' => '+ 신규',
         'buyer_first' => '바이어 먼저 선택',
+        'no_match' => '일치 없음',
         'fee_note' => '(셀러 부담)',
         'savings_deposit_note' => '(저장 시 누적, reset)',
         'savings_balance_note' => '(바이어×통화 SavingsStatus)',
