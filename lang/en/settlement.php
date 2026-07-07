@@ -135,7 +135,7 @@ return [
     'extra_strong_2' => 'total margin / settlement amount / actual payout are auto-recalculated',
     'extra_body_3' => '.',
     'btn_vehicle_edit' => '→ Go to vehicle edit',
-    'btn_close_secondary_full' => 'Finalize secondary settlement (lock at current rate)',
+    'btn_close_secondary_full' => 'Finalize secondary settlement',
     'confirm_close_secondary_rate' => 'Finalize the secondary settlement? It will be locked at rate :rate and accounting locked afterward.',
     'krw_closed_rate' => 'Confirmed rate',
     'krw_closed_rate_sub' => '(at finalize)',

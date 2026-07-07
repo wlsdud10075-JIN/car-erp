@@ -1196,16 +1196,6 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="text-gray-500">{{ __('settlement.diff_same') }}</span>
                     @endif
                 </div>
-                {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 반영 실지급액 안내 (프리랜서만, 1:1 적용). --}}
-                @if($settlement_type === 'ratio')
-                <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
-                    <strong>{{ __('settlement.freelance_exchange_strong') }}</strong>{{ __('settlement.freelance_exchange_note') }}
-                </div>
-                @elseif($settlement_type === 'per_unit')
-                <div class="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-[11px] text-gray-500">
-                    {{ __('settlement.employee_exchange_note') }}
-                </div>
-                @endif
                 @endif
             </div>
             @endif

@@ -26,7 +26,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── 목록 필터 ─────────────────────────────────────────────────
     #[Url] public string $search = '';
-    #[Url] public string $dateType = 'purchase';
+    #[Url] public string $dateType = 'all';
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
     // 큐 16 — channelFilter Url 파라미터 제거 (채널 단일).
@@ -4251,11 +4251,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 회의확장씬 #10 Phase 2-3 (2026-05-23) — 컬럼 토글 Alpine 컴포넌트 (localStorage 캐시). --}}
 <script>
 function vehicleColumnsToggle() {
-    const STORAGE_KEY = 'car_erp_vehicles_columns_v2';   // v2: 판매가 기본 off, 판매총액 기본 on (2026-06-11)
+    const STORAGE_KEY = 'car_erp_vehicles_columns_v3';   // v3: 기본=브랜드/차종·매입일·말소일·판매총액 (jin 2026-07-07)
     const defaultVisible = {
-        brand_model: true, vin: true, purchase_date: true, sale_price: false, sale_total: true,
+        brand_model: true, purchase_date: true, deregistration_date: true, sale_total: true,
+        vin: false, sale_price: false,
         sale_date: false, shipping_date: false, bl_issue_date: false,
-        deregistration_date: true, export_declaration_number: true, container_number: true,
+        export_declaration_number: false, container_number: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, sales_channel: false,
@@ -5383,7 +5384,7 @@ function vehicleColumnsToggle() {
                     <span class="w-24 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
                     <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
                     <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
-                    <a href="{{ route('erp.receivables.index') }}" wire:navigate
+                    <a href="{{ route('erp.receivables.index', ['openVehicle' => $this->editingId]) }}" wire:navigate
                        class="text-xs text-violet-500 hover:underline whitespace-nowrap">{{ __('vehicle.panel.edit_in_receivables') }}</a>
                 </div>
                 @else

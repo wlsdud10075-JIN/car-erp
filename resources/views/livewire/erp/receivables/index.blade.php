@@ -31,6 +31,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Url] public int $perPage = 10;
 
+    // 판매탭 잠금 잔금 '채권관리에서 수정' 진입 시 해당 차량 패널 자동 오픈 (jin 2026-07-07).
+    #[Url] public ?int $openVehicle = null;
+
     // ── 슬라이드 패널 (회수 이력) ──────────────────────────
     public bool $showPanel = false;
     public ?int $selectedVehicleId = null;
@@ -55,6 +58,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dateFrom = $this->dateFrom ?: now()->subMonths(3)->format('Y-m-d');
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+
+        // 판매탭 잠금 잔금 → '채권관리에서 수정' 진입: 해당 차량 수정 패널 바로 오픈 (재검색 불필요).
+        if ($this->openVehicle) {
+            try {
+                $this->openPanel($this->openVehicle);
+            } catch (\Throwable $e) {
+            }
+        }
     }
 
     public function search(): void
