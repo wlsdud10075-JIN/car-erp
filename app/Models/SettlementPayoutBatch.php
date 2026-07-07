@@ -58,6 +58,10 @@ class SettlementPayoutBatch extends Model
         if (! $submitter->canSubmitPayoutBatch()) {
             throw new \DomainException('월배치 제출 권한이 없습니다.');
         }
+        // 월당 진행중(pending) 배치 1개 — 동시 제출로 정산이 재지목돼 phantom 배치가 되는 것 방지.
+        if (self::where('month', $month)->where('status', self::STATUS_PENDING)->exists()) {
+            throw new \DomainException('해당 월에 이미 승인 대기 중인 배치가 있습니다.');
+        }
         [$start, $end] = SettlementCkBatch::monthRange($month);
 
         $ids = Settlement::query()
