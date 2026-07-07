@@ -89,6 +89,7 @@ class DefaultCostTest extends TestCase
             'cost_towing' => 30_000,
         ]);
 
+        Settlement::$allowBatchPayout = true;   // Phase 2 — setup paid 가드 우회
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',
@@ -97,6 +98,7 @@ class DefaultCostTest extends TestCase
             'confirmed_at' => now(),
             'paid_at' => now(),
         ]);
+        Settlement::$allowBatchPayout = false;
         // saving 훅 자동으로 secondary='pending' set
 
         // [관리] 가 cost_deregistration 50,000 으로 수정 (한 달 뒤 실측)

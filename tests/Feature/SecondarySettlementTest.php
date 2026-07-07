@@ -156,6 +156,7 @@ class SecondarySettlementTest extends TestCase
         $this->actingAs($manager);
 
         $v = $this->makeVehicle(['purchase_price' => 1_000_000, 'salesman_id' => $salesman->id]);
+        Settlement::$allowBatchPayout = true;   // Phase 2 — setup paid 가드 우회
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',
@@ -164,6 +165,7 @@ class SecondarySettlementTest extends TestCase
             'confirmed_at' => now(),
             'paid_at' => now(),
         ]);
+        Settlement::$allowBatchPayout = false;
         // saving 훅이 자동으로 secondary='pending' set
 
         Volt::test('erp.vehicles.index')
