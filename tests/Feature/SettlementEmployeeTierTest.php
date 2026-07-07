@@ -13,7 +13,7 @@ use Tests\TestCase;
 
 /**
  * 사내직원 차등 정산 tier (2026-06-22 jin 확정) + Setting override 검증.
- *   매입금액 ≥ 1억 → 총마진×25% / 총마진<0 → 0 / 총마진<100만 → 10만 / 그 외 → 20만
+ *   매입합계(구입금액+매도비) ≥ 1억 → 총마진×25% / 총마진<0 → 0 / 총마진<100만 → 10만 / 그 외 → 20만 (엑셀 BX, jin 2026-07-07)
  */
 class SettlementEmployeeTierTest extends TestCase
 {
@@ -48,6 +48,29 @@ class SettlementEmployeeTierTest extends TestCase
         $this->assertSame(2_500_000, Settlement::employeePerUnitTier(10_000_000, 250_000_000));
         // 1억 이상 + 음수 마진 → 0 바닥 (jin 2026-06-22 확정)
         $this->assertSame(0, Settlement::employeePerUnitTier(-1_000_000, 120_000_000));
+    }
+
+    public function test_high_threshold_uses_purchase_plus_selling_fee(): void
+    {
+        // 엑셀 BX = 매입합계(구입금액+매도비). 구입금액만으론 1억 미만이지만 매도비 포함 시 ≥1억 → 25% (jin 2026-07-07).
+        $v = Vehicle::create([
+            'vehicle_number' => 'ET-BX-1',
+            'sales_channel' => 'heyman', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'dhl_request' => false,
+            'purchase_price' => 99_800_000, 'selling_fee' => 300_000,   // 매입합계 100,100,000 ≥ 1억
+            'sale_price' => 120_000_000, 'sale_date' => '2026-05-01',
+            'purchase_date' => '2026-04-01',
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'per_unit',   // per_unit_amount null → 자동 tier
+            'settlement_status' => 'pending',
+        ]);
+
+        // 총마진 = ((120,000,000 − 100,100,000) + 99,800,000×0.09) × 0.9 = (19,900,000 + 8,982,000) × 0.9 = 25,993,800
+        $this->assertSame(25_993_800, $s->total_margin);
+        // 매입합계 100,100,000 ≥ 1억 → 25% = 6,498,450. (구입금액 99.8M 만이면 1억 미만 → flat 20만이었을 것)
+        $this->assertSame(6_498_450, $s->effective_per_unit_amount);
     }
 
     public function test_setting_override_reflected(): void

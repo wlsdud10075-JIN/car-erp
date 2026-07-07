@@ -1176,26 +1176,37 @@ class Vehicle extends Model
     }
 
     /**
-     * 회의확장씬 #7 (2026-05-22) — 실제 받은 KRW 누적 (잔금 row 별 입금 시점 환율 합산).
+     * 회의확장씬 #7 (2026-05-22) — 실제 받은 KRW 누적 (입금 시점 환율 반영).
      *
      * 사용자 명세: "당시 실시간 환율로 계산되어진 한국 금액을 옆에 표시"
-     * 회계: 각 confirmed 잔금 row 의 amount × exchange_rate 합산 (row 별).
-     * 환율 없으면 vehicle.exchange_rate fallback (구 데이터 호환).
+     * 회계 (SKILLS §13 실입금 단일출처 — 2026-07-06 재피벗 규칙 #2):
+     *   ① 잔금(final_payments, confirmed) = Σ(amount × row 환율). 환율 없으면 판매환율 fallback.
+     *   ② 기타회수(receivable_histories, method≠deposit) = Σ(amount) × 판매환율.
+     *      ReceivableHistory 엔 환율 컬럼이 없고, 기타회수는 소액·소수점 잔차의 회사 자체흡수분이라
+     *      baseline 과 동일한 판매환율로 평가 → FX 중립(환차 0 기여). 프리랜서 2차 환차분에 새지 않음.
      *
+     * 2차 정산 환차(재피벗) = 이 값(실입금KRW) − (sale_total_amount × 판매환율) baseline.
      * sale_unpaid_amount (외화) 와 별개 — KPI 분모 단일 출처 (SKILLS §13) 위반 없음.
-     * Step C-4 (Settlement 2차 정산 환차 계산) 의 입력 = 이 값 vs (sale_total × 현재 환율) 차이.
      */
     public function getSaleReceivedKrwAccumulatedAttribute(): int
     {
-        $fallbackRate = (float) ($this->exchange_rate ?? 1);
+        $saleRate = (float) ($this->exchange_rate ?? 1);
 
-        return (int) $this->finalPayments
+        // ① 잔금 — row 별 입금 시점 환율
+        $finalKrw = $this->finalPayments
             ->whereNotNull('confirmed_at')
-            ->sum(function ($p) use ($fallbackRate) {
-                $rate = $p->exchange_rate !== null ? (float) $p->exchange_rate : $fallbackRate;
+            ->sum(function ($p) use ($saleRate) {
+                $rate = $p->exchange_rate !== null ? (float) $p->exchange_rate : $saleRate;
 
                 return (float) $p->amount * $rate;
             });
+
+        // ② 기타회수 — 판매환율 평가 (FX 중립)
+        $receivableKrw = (float) $this->receivableHistories
+            ->where('method', '!=', 'deposit')
+            ->sum('amount') * $saleRate;
+
+        return (int) ($finalKrw + $receivableKrw);
     }
 
     // ── Computed: 매입 미지급액 ─────────────────────────────────────

@@ -55,9 +55,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $note = '';
 
-    // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 환율 (수동 입력 또는 자동 fetch 저장).
-    public string $exchange_rate_at_close_str = '';
-
     public function search(): void
     {
         $this->resetPage();
@@ -325,44 +322,27 @@ new #[Layout('components.layouts.app')] class extends Component
             return $base;
         }
 
-        // closed: 저장된 환차 사용 (확정값)
-        if ($settlement && $secondaryStatus === 'closed' && $settlement->exchange_difference_krw !== null) {
-            $storedDiff = (float) $settlement->exchange_difference_krw;
+        // 2026-07-06 재피벗 — baseline = 총판매가(외화) × 판매환율. close_rate 제거.
+        // 환차 = 실입금KRW − baseline. 프리뷰·확정 동일 공식이라 괴리 없음.
+        $saleRate = (float) ($v->exchange_rate ?? 0);
+        if ($saleRate <= 0) {
+            return array_merge($base, ['rate_unavailable' => true]);
+        }
+        $baselineKrw = (int) ((float) $v->sale_total_amount * $saleRate);
 
+        // closed: 저장된 환차 사용 (확정값). baseline 은 판매환율 불변이라 재계산해도 동일.
+        if ($settlement && $secondaryStatus === 'closed' && $settlement->exchange_difference_krw !== null) {
             return array_merge($base, [
-                'secondary_krw' => (int) ($receivedKrw + $storedDiff),
-                'exchange_diff' => $storedDiff,
+                'baseline_krw' => $baselineKrw,
+                'exchange_diff' => (float) $settlement->exchange_difference_krw,
                 'is_preview' => false,
             ]);
         }
 
-        // pending / null: 사용자 입력 환율 우선, 없으면 자동 fetch (회의확장씬 #6+7 보강 2026-05-23)
-        // 사용자가 input에 입력 중인 환율 ($exchange_rate_at_close_str) 라이브 미리보기.
-        // 입력 비었으면 settlements 저장값, 그것도 없으면 ExchangeRateService 자동 fetch.
-        $inputRate = (float) str_replace(',', '', $this->exchange_rate_at_close_str ?: '0');
-        if ($inputRate > 0) {
-            $currentRate = $inputRate;
-            $rateSource = 'manual';
-        } elseif ($settlement && $settlement->exchange_rate_at_close !== null) {
-            $currentRate = (float) $settlement->exchange_rate_at_close;
-            $rateSource = 'stored';
-        } else {
-            $currentRate = app(\App\Services\ExchangeRateService::class)->getRate($v->currency);
-            $rateSource = 'auto';
-        }
-
-        if ($currentRate === null) {
-            return array_merge($base, ['rate_unavailable' => true]);
-        }
-
-        $foreignReceived = (float) $v->finalPayments->whereNotNull('confirmed_at')->sum('amount');
-        $secondaryKrw = (int) ($foreignReceived * $currentRate);
-
+        // pending / null: 실입금 − baseline 미리보기 (마감 시 확정될 값과 동일).
         return array_merge($base, [
-            'secondary_krw' => $secondaryKrw,
-            'exchange_diff' => (float) ($secondaryKrw - $receivedKrw),
-            'current_rate' => $currentRate,
-            'rate_source' => $rateSource,
+            'baseline_krw' => $baselineKrw,
+            'exchange_diff' => (float) ($receivedKrw - $baselineKrw),
             'is_preview' => true,
         ]);
     }
@@ -401,58 +381,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->vehicleSearch = '';
         $this->showPanel = true;
 
-        // 회의확장씬 #6+7 보강 (2026-05-23) — secondary='pending' 외화 차량 환율 default 채움.
-        // 저장값 우선, 없으면 ExchangeRateService 자동 fetch (default).
-        $this->exchange_rate_at_close_str = '';
-        $v = $s->vehicle;
-        if ($s->secondary_status === 'pending' && $v && $v->currency !== 'KRW') {
-            if ($s->exchange_rate_at_close !== null) {
-                $this->exchange_rate_at_close_str = (string) $s->exchange_rate_at_close;
-            } else {
-                $auto = app(\App\Services\ExchangeRateService::class)->getRate($v->currency);
-                if ($auto !== null) {
-                    $this->exchange_rate_at_close_str = (string) $auto;
-                }
-            }
-        }
-
         unset($this->selectedVehicle, $this->marginData, $this->krwBreakdown);
-    }
-
-    /**
-     * 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 환율 수동 저장 (수정 가능).
-     *
-     * secondary='pending' 동안 [재무]/[관리]/admin 만 호출 가능.
-     * 저장 후 패널의 KRW 명세 라이브 미리보기 자동 갱신.
-     * closed 후엔 호출 차단 (회계 무결성).
-     */
-    public function saveExchangeRate(int $id): void
-    {
-        $s = Settlement::findOrFail($id);
-
-        abort_unless(
-            auth()->user()?->isAdmin()
-                || in_array(auth()->user()?->role, ['재무', '관리'], true),
-            403,
-            __('settlement.forbidden_rate')
-        );
-
-        if ($s->secondary_status !== 'pending') {
-            $this->dispatch('notify', message: __('settlement.notify.rate_only_pending'), type: 'warning');
-
-            return;
-        }
-
-        $rate = (float) str_replace(',', '', $this->exchange_rate_at_close_str);
-        if ($rate <= 0) {
-            $this->dispatch('notify', message: __('settlement.notify.rate_positive'), type: 'error');
-
-            return;
-        }
-
-        $s->update(['exchange_rate_at_close' => $rate]);
-        unset($this->krwBreakdown);
-        $this->dispatch('notify', message: __('settlement.notify.rate_saved', ['rate' => number_format($rate, 2)]), type: 'success');
     }
 
     public function close(): void
@@ -579,10 +508,13 @@ new #[Layout('components.layouts.app')] class extends Component
      * paid → secondary_pending (자동) 후 [관리]/[재무] 가 기타비용 수정 → 최종 마무리.
      * closed 이후 회계 잠금 (Vehicle 측 가드 Step B-2 에서 처리).
      *
-     * 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시점 환차 계산.
-     *   환차 = (current_rate × Σ foreign_amount) − sale_received_krw_accumulated
+     * 2026-07-06 재피벗 (실현손익) — close_rate 제거.
+     *   환차(2차분) = 실입금KRW − baseline
+     *     실입금KRW = sale_received_krw_accumulated (잔금 row환율 + 기타 판매환율)
+     *     baseline  = sale_total_amount(총판매가 외화) × 판매환율(vehicle.exchange_rate)
      *   +이면 환차익 → 프리랜서 정산금 +, -이면 환차손 → -.
-     *   KRW 차량 또는 ExchangeRateService 실패 → 0 (환차 없음).
+     *   완납게이트(sale_unpaid_amount ≤ 0) 하에서 기타 term 상쇄 → 순수 실현환차 보장.
+     *   KRW 차량 또는 판매환율 없음 → 0/null (환차 없음).
      */
     public function closeSecondarySettlement(int $id): void
     {
@@ -600,13 +532,21 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        // Step C-4: 환차 계산 (회의확장씬 #7) — 저장된 사용자 입력 환율 우선.
-        // 회의확장씬 #6+7 보강 (2026-05-23): saveExchangeRate 로 저장된 값 있으면 그 값 사용 (수동 override).
+        // 완납 게이트 (2026-07-06 재피벗 #3) — 외화 차량은 원금 완납(sale_unpaid_amount ≤ 0) 후에만 2차 마감.
+        // 미완납 상태로 마감하면 Σ잔금외화 < 총판매가외화 라 원금 미수가 "환차손"으로 둔갑함.
+        // 완납 시에만 2차분 = 순수 실현환차 보장 (SKILLS §13, [[project_settlement_v2_groupware_design]]).
+        // KRW 차량은 환차 개념이 없어 게이트 제외 — 기존 마감 동작 유지.
+        $vehicle = $settlement->vehicle;
+        if ($vehicle && $vehicle->currency !== 'KRW' && $vehicle->sale_unpaid_amount > 0) {
+            $this->dispatch('notify', message: __('settlement.notify.close_needs_full_payment'), type: 'error');
+
+            return;
+        }
+
+        // 환차 계산 (2026-07-06 재피벗) — 실입금KRW − baseline(총판매가×판매환율).
         [$exchangeDiff, $usedRate] = $this->calculateExchangeDifference($settlement);
 
-        // Review2 항목 E (2026-06-09) — 외화 차량인데 환율을 못 구하면(저장값 없고 자동조회 실패) 마감 차단.
-        // 그냥 닫으면 exchange_difference_krw=null 로 잠겨 환차익/손이 영구 누락됨.
-        // 사용자는 상단 '2차 정산 환율' 입력(saveExchangeRate)으로 수동 환율 넣은 뒤 다시 마감.
+        // 방어 — 판매환율이 0/null 이면 환차 계산 불가 (chk_sale_required 상 판매차량은 사실상 불가).
         if ($exchangeDiff === null) {
             $this->dispatch('notify', message: __('settlement.notify.close_needs_rate'), type: 'error');
 
@@ -661,22 +601,18 @@ new #[Layout('components.layouts.app')] class extends Component
             return [0.0, null];   // KRW 차량은 환차 없음
         }
 
-        // 사용자 저장 환율 우선, 없으면 자동 fetch fallback.
-        $currentRate = $settlement->exchange_rate_at_close !== null
-            ? (float) $settlement->exchange_rate_at_close
-            : app(\App\Services\ExchangeRateService::class)->getRate($vehicle->currency);
-
-        if ($currentRate === null) {
-            return [null, null];   // 환율 조회 실패 — 환차 계산 불가
+        // 2026-07-06 재피벗 — close_rate 제거, baseline = 판매환율 고정.
+        $saleRate = (float) ($vehicle->exchange_rate ?? 0);
+        if ($saleRate <= 0) {
+            return [null, null];   // 판매환율 없음 — 계산 불가 (chk_sale_required 상 사실상 불가)
         }
 
-        $foreignReceived = (float) $vehicle->finalPayments
-            ->whereNotNull('confirmed_at')
-            ->sum('amount');
-        $krwAtNow = $foreignReceived * $currentRate;
-        $krwAtPaymentTimes = (float) $vehicle->sale_received_krw_accumulated;
+        // 환차 = 실입금KRW − baseline. baseline = 총판매가 외화 × 판매환율.
+        $receivedKrw = (float) $vehicle->sale_received_krw_accumulated;
+        $baselineKrw = (float) $vehicle->sale_total_amount * $saleRate;
 
-        return [$krwAtNow - $krwAtPaymentTimes, $currentRate];
+        // 두 번째 반환값 null → exchange_rate_at_close 미기록 (컬럼 deprecate, closed 감사행만 보존).
+        return [$receivedKrw - $baselineKrw, null];
     }
 
     private function resetForm(): void
@@ -690,7 +626,6 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->other_deduction = 0;
         $this->settlement_status = 'pending';
         $this->note = '';
-        $this->exchange_rate_at_close_str = '';
     }
 }; ?>
 
@@ -1197,35 +1132,15 @@ new #[Layout('components.layouts.app')] class extends Component
                     {{ __('settlement.krw_rate_unavailable') }}
                 </div>
                 @elseif(! empty($kb['is_preview']))
-                {{-- pending — 환율 수동 입력 + 라이브 미리보기 (회의확장씬 #6+7 보강 2026-05-23) --}}
+                {{-- pending — 실입금 − baseline 라이브 미리보기 (2026-07-06 재피벗, 마감 시 확정값과 동일) --}}
                 <hr class="border-gray-200">
                 @php
                     $canEditRate = auth()->user()?->isAdmin()
                         || in_array(auth()->user()?->role, ['재무', '관리'], true);
-                    $rateSourceLabel = __('settlement.rate_source.'.($kb['rate_source'] ?? 'auto'));
                 @endphp
-                <div class="space-y-1.5">
-                    <div class="text-xs font-medium text-gray-600">{{ __('settlement.krw_rate_input_label') }}</div>
-                    <div class="flex gap-2 items-center">
-                        <input wire:model.live.debounce.400ms="exchange_rate_at_close_str"
-                               type="text"
-                               class="input-base text-right"
-                               style="width: 130px; flex: none;"
-                               placeholder="{{ __('settlement.krw_rate_input_ph') }}"
-                               title="{{ __('settlement.krw_rate_input_title') }}"
-                               @if(!$canEditRate) disabled @endif />
-                        <span class="text-[10px] text-gray-400">{{ $rateSourceLabel }}</span>
-                        @if($canEditRate)
-                        <button type="button" wire:click="saveExchangeRate({{ $this->editingId }})"
-                                class="ml-auto rounded border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50">
-                            {{ __('settlement.btn_save_rate') }}
-                        </button>
-                        @endif
-                    </div>
-                </div>
                 <div class="flex justify-between text-xs">
-                    <span class="text-gray-500">{{ __('settlement.krw_secondary_krw') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_secondary_krw_sub') }}</span></span>
-                    <span class="text-gray-700">₩{{ number_format($kb['secondary_krw']) }}</span>
+                    <span class="text-gray-500">{{ __('settlement.krw_baseline') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_baseline_sub') }}</span></span>
+                    <span class="text-gray-700">₩{{ number_format($kb['baseline_krw']) }}</span>
                 </div>
                 <div class="flex justify-between text-xs">
                     <span class="text-gray-500">{{ __('settlement.krw_expected_diff') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_expected_diff_sub') }}</span></span>
@@ -1259,27 +1174,17 @@ new #[Layout('components.layouts.app')] class extends Component
                 @if($canEditRate)
                 <button type="button"
                         wire:click="closeSecondarySettlement({{ $this->editingId }})"
-                        wire:confirm="{{ __('settlement.confirm_close_secondary_rate', ['rate' => number_format($kb['current_rate'], 2)]) }}"
+                        wire:confirm="{{ __('settlement.confirm_close_secondary') }}"
                         class="mt-2 w-full rounded bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700">
                     {{ __('settlement.btn_close_secondary_full') }}
                 </button>
                 @endif
                 @else
-                {{-- closed — 저장된 확정값 --}}
+                {{-- closed — 저장된 확정값 (2026-07-06 재피벗: baseline=판매환율) --}}
                 <hr class="border-gray-200">
-                @php
-                    $closedSettlement = Settlement::find($this->editingId);
-                    $closedRate = $closedSettlement?->exchange_rate_at_close;
-                @endphp
-                @if($closedRate !== null)
-                <div class="flex justify-between text-gray-600 text-xs">
-                    <span>{{ __('settlement.krw_closed_rate') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_closed_rate_sub') }}</span></span>
-                    <span class="font-medium text-gray-700">{{ number_format((float) $closedRate, 4) }}</span>
-                </div>
-                @endif
                 <div class="flex justify-between text-gray-700">
-                    <span>{{ __('settlement.krw_secondary_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_secondary_closed_sub') }}</span></span>
-                    <span class="font-medium">₩{{ number_format($kb['secondary_krw']) }}</span>
+                    <span>{{ __('settlement.krw_baseline') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_baseline_sub') }}</span></span>
+                    <span class="font-medium">₩{{ number_format($kb['baseline_krw']) }}</span>
                 </div>
                 <div class="flex justify-between font-semibold">
                     <span class="text-gray-800">{{ __('settlement.krw_diff_confirmed') }}</span>
