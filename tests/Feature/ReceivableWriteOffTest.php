@@ -108,4 +108,16 @@ class ReceivableWriteOffTest extends TestCase
             ->set('showPanel', true)
             ->assertSee('2,876,000');
     }
+
+    public function test_open_vehicle_param_auto_opens_panel(): void
+    {
+        // 판매탭 잠금 잔금 '채권관리에서 수정' 딥링크 → 해당 차량 패널 자동 오픈 (jin 2026-07-07).
+        $buyer = Buyer::create(['name' => 'OV BUYER', 'is_active' => true]);
+        $v = $this->saleVehicle($buyer->id);
+        $this->actingAs(User::factory()->create(['role' => '재무']));
+
+        Volt::test('erp.receivables.index', ['openVehicle' => $v->id])
+            ->assertSet('showPanel', true)
+            ->assertSet('selectedVehicleId', $v->id);
+    }
 }

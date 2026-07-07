@@ -135,7 +135,7 @@ return [
     'extra_strong_2' => '총마진·정산액·실지급액이 자동 재계산',
     'extra_body_3' => '됩니다.',
     'btn_vehicle_edit' => '→ 차량 편집으로 이동',
-    'btn_close_secondary_full' => '2차 정산 완료 (현재 환율 확정)',
+    'btn_close_secondary_full' => '2차 정산 완료',
     'confirm_close_secondary_rate' => '2차 정산을 최종 마무리하시겠습니까? 환율 :rate 기준으로 확정되며 이후 회계 잠금됩니다.',
     'krw_closed_rate' => '확정 환율',
     'krw_closed_rate_sub' => '(2차 완료 시점)',
