@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
@@ -153,6 +154,28 @@ class AlimtalkTriggerTest extends TestCase
         $this->assertNotNull($log, '정산 pending 생성 시 관리 알림');
         $this->assertSame('sent', $log->status);
         $this->assertSame('01022220000', $log->phone);
+    }
+
+    public function test_sale_unpaid_sends_one_list_message_not_per_vehicle(): void
+    {
+        $this->manager('010-2222-0000');
+        $this->enableAlimtalk(['erp_sale_unpaid']);
+        $buyer = Buyer::create(['name' => 'DONI', 'is_active' => true]);
+        foreach (['11가1111', '22나2222'] as $no) {
+            Vehicle::create([
+                'vehicle_number' => $no, 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+                'sale_price' => 10_000_000, 'sale_date' => now()->subDays(30)->toDateString(),
+                'currency' => 'KRW', 'exchange_rate' => 1,
+            ]);
+        }
+
+        $this->artisan('alimtalk:sale-unpaid')->assertSuccessful();
+
+        $logs = AlimtalkLog::where('template_code', 'erp_sale_unpaid')->get();
+        $this->assertCount(1, $logs, '차량 2대여도 목록형 1건(건건이 아님)');
+        $this->assertStringContainsString('11가1111', $logs[0]->message);
+        $this->assertStringContainsString('22나2222', $logs[0]->message);
+        $this->assertStringContainsString('채권관리', $logs[0]->message, 'ERP 위치 안내 포함');
     }
 
     public function test_all_trigger_template_codes_exist(): void
