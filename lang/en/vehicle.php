@@ -27,6 +27,7 @@ return [
 
     'date_type' => [
         'purchase' => 'Purchase Date',
+        'deregistration' => 'Deregistration Date',
         'sale' => 'Sale Date',
         'shipping' => 'Shipping Date',
         'bl' => 'B/L Date',

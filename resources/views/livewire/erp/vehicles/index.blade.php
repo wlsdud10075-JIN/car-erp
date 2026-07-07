@@ -1024,10 +1024,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function vehicles()
     {
         $dateColumn = match ($this->dateType) {
-            'sale'     => 'sale_date',
-            'shipping' => 'shipping_date',
-            'bl'       => 'bl_issue_date',
-            default    => 'purchase_date',
+            'sale'           => 'sale_date',
+            'deregistration' => 'deregistration_date',
+            'shipping'       => 'shipping_date',
+            'bl'             => 'bl_issue_date',
+            default          => 'purchase_date',
         };
         // dateType='all' → 날짜 무관 전체조회 (기간 필터 skip)
         $applyDateFilter = $this->dateType !== 'all';
@@ -2619,14 +2620,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 큐 14-4-4 후속 — 신규 등록 시 누락된 핵심 메타 자동 채움.
         // A) 영업 role이 본인 담당자 미지정으로 등록 → 자동으로 본인 salesman 적용.
         //    (영업 외 role/admin은 명시적 선택 필요 — 다른 영업 대신 등록할 수 있어 자동 set X)
-        // B) 매입일 미지정 → 오늘로 채움. 차량목록 디폴트 날짜필터(매입일 2개월~오늘)에서 누락 방지.
-        //    명시적으로 다른 날짜 원하면 사용자가 입력 후 저장.
+        // B) 매입가/판매가가 입력됐는데 해당 날짜가 비면 오늘로 채움 (신규 저장 한정, jin 2026-07-07).
+        //    - "해당 가격 있을 때만" — 매입가>0 → 매입일, 판매가>0 → 판매일. 가격 없으면 날짜 안 채움.
+        //    - 편집·import 는 isNew 가드로 제외 → 과거행 날짜 오염·dateType 필터 왜곡 방지.
+        //    - 판매일은 chk_sale_required(판매가>0 시 판매일 required) 검증 前에 채워야 통과.
         if ($this->editingId === null) {
             if ($this->salesman_id_str === '' && $user->role === '영업' && $user->salesman) {
                 $this->salesman_id_str = (string) $user->salesman->id;
             }
-            if ($this->purchase_date === '') {
+            $purchasePrice = (float) str_replace(',', '', $this->purchase_price_str ?: '0');
+            $salePrice = (float) str_replace(',', '', $this->sale_price_str ?: '0');
+            if ($this->purchase_date === '' && $purchasePrice > 0) {
                 $this->purchase_date = now()->format('Y-m-d');
+            }
+            if ($this->sale_date === '' && $salePrice > 0) {
+                $this->sale_date = now()->format('Y-m-d');
             }
         }
 
@@ -3997,6 +4005,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                class="input-filter w-52" />
         <select wire:model="dateType" class="input-filter">
             <option value="purchase">{{ __('vehicle.date_type.purchase') }}</option>
+            <option value="deregistration">{{ __('vehicle.date_type.deregistration') }}</option>
             <option value="sale">{{ __('vehicle.date_type.sale') }}</option>
             <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
             <option value="bl">{{ __('vehicle.date_type.bl') }}</option>

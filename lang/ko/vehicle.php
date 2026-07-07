@@ -27,6 +27,7 @@ return [
 
     'date_type' => [
         'purchase' => '매입일',
+        'deregistration' => '말소일',
         'sale' => '판매일',
         'shipping' => '선적일',
         'bl' => 'B/L발행일',
