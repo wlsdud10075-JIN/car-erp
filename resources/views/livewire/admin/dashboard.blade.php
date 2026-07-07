@@ -373,6 +373,77 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 회사이익 (2026-07-06 재피벗 ④) — type별 환차귀속.
+     *
+     * 회사몫(per settlement) = total_margin − actual_payout + (exchange_difference_krw ?? 0)
+     *   - 프리랜서(ratio): actual_payout 에 환차가 이미 포함 → 상쇄 → 총마진 − 정산금 (환차 회사 무영향).
+     *   - 사내직원(per_unit): actual_payout=건당(환차 미포함) → 총마진 − 건당 + 환차 (회사가 환차 흡수).
+     * paid 정산 대상(paid_at 기간). computed(total_margin·actual_payout) 라 SQL 집계 불가 → 컬렉션 chunk.
+     */
+    #[Computed]
+    public function companyProfit(): array
+    {
+        $ids = $this->managerScopeSalesmanIds();
+
+        $companyNet = 0;
+        $marginSum = 0;
+        $payoutSum = 0;
+        $fxAbsorbed = 0;   // 사내직원 회사흡수 환차 (정보용, 부호 그대로)
+        $byPerson = [];
+
+        Settlement::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+            ->where('settlement_status', 'paid')
+            ->whereNotNull('paid_at')
+            ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
+            ->with('vehicle')
+            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson) {
+                foreach ($rows as $s) {
+                    $margin = (int) ($s->total_margin ?? 0);
+                    $payout = (int) ($s->actual_payout ?? 0);
+                    $fx = (int) ($s->exchange_difference_krw ?? 0);
+                    $share = $margin - $payout + $fx;
+
+                    $companyNet += $share;
+                    $marginSum += $margin;
+                    $payoutSum += $payout;
+                    if ($s->settlement_type === 'per_unit') {
+                        $fxAbsorbed += $fx;
+                    }
+
+                    if ($id = $s->salesman_id) {
+                        if (! isset($byPerson[$id])) {
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0];
+                        }
+                        $byPerson[$id]['contribution'] += $share;
+                        $byPerson[$id]['count']++;
+                    }
+                }
+            });
+
+        uasort($byPerson, fn ($a, $b) => $b['contribution'] <=> $a['contribution']);
+        $topIds = array_slice(array_keys($byPerson), 0, 10);
+        $names = Salesman::whereIn('id', $topIds)->pluck('name', 'id')->toArray();
+        $ranking = [];
+        foreach ($topIds as $id) {
+            $ranking[] = [
+                'name' => $names[$id] ?? __('admin_dash.salesman_fallback', ['id' => $id]),
+                'contribution' => $byPerson[$id]['contribution'],
+                'count' => $byPerson[$id]['count'],
+            ];
+        }
+
+        return [
+            'company_net' => $companyNet,
+            'margin_sum' => $marginSum,
+            'payout_sum' => $payoutSum,
+            'fx_absorbed' => $fxAbsorbed,
+            'ranking' => $ranking,
+        ];
+    }
+
+    /**
      * 큐 4 8-6 — 채권 탭 KPI.
      * 회의록 결정:
      * - 미납률 = SUM(미수금 KRW) / SUM(총판매액 KRW). 환율 0 외화는 둘 다 제외.
@@ -834,10 +905,55 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('admin_dash.settle_monthly_title_pre') }}<span x-text="chartData.settlement.year"></span>{{ __('admin_dash.settle_monthly_title_post') }}</span>
             </div>
-            <div class="mt-3 h-72">
+            <div wire:ignore class="mt-3 h-72">
                 <canvas x-ref="settlementMonthlyCanvas"></canvas>
             </div>
             <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.settle_monthly_note') }}</p>
+        </div>
+
+        {{-- 회사이익 (2026-07-06 재피벗 ④) — 회사순이익 + type별 환차귀속 --}}
+        @php $cp = $this->companyProfit; @endphp
+        <div class="flex flex-wrap gap-3">
+            <div class="card min-w-[260px] flex-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.company_net') }}</span>
+                    <span class="text-xs text-emerald-500">{{ __('admin_dash.company_net_badge') }}</span>
+                </div>
+                <div class="mt-1 text-2xl font-bold {{ $cp['company_net'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">
+                    @krw($cp['company_net'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">
+                    {{ __('admin_dash.company_net_breakdown', ['margin' => number_format($cp['margin_sum']), 'payout' => number_format($cp['payout_sum'])]) }}
+                </p>
+                @if($cp['fx_absorbed'] !== 0)
+                <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
+                @endif
+            </div>
+        </div>
+
+        {{-- 인원별 회사기여 랭킹 (회사몫 = 총마진 − 실지급 + 환차) --}}
+        <div class="card">
+            <div class="section-header">
+                <span class="section-dot bg-teal-500"></span>
+                <span class="section-title">{{ __('admin_dash.company_contrib_title') }}</span>
+            </div>
+            @if(count($cp['ranking']) === 0)
+            <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.company_contrib_empty') }}</p>
+            @else
+            <ul class="mt-3 divide-y divide-gray-100">
+                @foreach($cp['ranking'] as $i => $row)
+                <li class="flex items-center justify-between py-2">
+                    <span class="flex items-center gap-2 text-sm text-gray-700">
+                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-700">{{ $i + 1 }}</span>
+                        {{ $row['name'] }}
+                        <span class="text-[11px] text-gray-400">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</span>
+                    </span>
+                    <span class="font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</span>
+                </li>
+                @endforeach
+            </ul>
+            @endif
+            <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.company_contrib_note') }}</p>
         </div>
     </div>
 
@@ -848,7 +964,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-purple-500"></span>
                 <span class="section-title">{{ __('admin_dash.salesman_count_title') }}</span>
             </div>
-            <div class="mt-3 h-64">
+            <div wire:ignore class="mt-3 h-64">
                 <canvas x-ref="salesmanCountCanvas"></canvas>
             </div>
             <p class="mt-2 text-[11px] text-gray-400">{{ $dateTypeLabel }} {{ $dateFrom }} ~ {{ $dateTo }} {{ __('admin_dash.salesman_count_note') }}</p>
@@ -858,7 +974,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('admin_dash.salesman_krw_title') }}</span>
             </div>
-            <div class="mt-3 h-64">
+            <div wire:ignore class="mt-3 h-64">
                 <canvas x-ref="salesmanKrwCanvas"></canvas>
             </div>
             <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.salesman_krw_note') }}</p>
@@ -872,7 +988,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-violet-500"></span>
                 <span class="section-title">{{ __('admin_dash.monthly_count_title_pre') }}<span x-text="chartData.year"></span>{{ __('admin_dash.monthly_count_title_post') }}</span>
             </div>
-            <div class="mt-3 h-64">
+            <div wire:ignore class="mt-3 h-64">
                 <canvas x-ref="monthlyCountsCanvas"></canvas>
             </div>
             <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.monthly_count_note') }}</p>
@@ -882,7 +998,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-blue-500"></span>
                 <span class="section-title">{{ __('admin_dash.monthly_sales_title_pre') }}<span x-text="chartData.year"></span>{{ __('admin_dash.monthly_sales_title_post') }}</span>
             </div>
-            <div class="mt-3 h-64">
+            <div wire:ignore class="mt-3 h-64">
                 <canvas x-ref="monthlySalesCanvas"></canvas>
             </div>
             <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.monthly_sales_note') }}</p>

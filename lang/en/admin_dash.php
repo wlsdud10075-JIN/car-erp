@@ -77,6 +77,15 @@ return [
     'settle_monthly_title_post' => ')',
     'settle_monthly_note' => 'Paid settlements only. Top 8 stacked. Snapshot priority (prevents retroactive drift).',
 
+    // Company profit (repivot ④)
+    'company_net' => 'Company net profit',
+    'company_net_badge' => 'Paid basis',
+    'company_net_breakdown' => 'Total margin ₩:margin − salesman payout ₩:payout (+ employee FX)',
+    'company_fx_absorbed' => 'Employee FX absorbed by company: ₩:fx',
+    'company_contrib_title' => 'Company contribution by person (top 10)',
+    'company_contrib_empty' => 'No paid settlements in this period.',
+    'company_contrib_note' => 'Company share = total margin − payout + FX. Freelancer FX nets out (company neutral); employee FX absorbed by company.',
+
     'salesman_count_title' => 'Sales count by salesman (top 10)',
     'salesman_count_note' => 'basis',
     'salesman_krw_title' => 'Sales amount KRW by salesman (top 10)',

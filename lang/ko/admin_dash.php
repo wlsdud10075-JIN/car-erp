@@ -80,6 +80,15 @@ return [
     'settle_monthly_title_post' => '년)',
     'settle_monthly_note' => '지급완료 정산만 집계. 상위 8명 누적. 스냅샷 우선 (소급 보정 방지).',
 
+    // 회사이익 (재피벗 ④)
+    'company_net' => '회사 순이익',
+    'company_net_badge' => '지급완료 기준',
+    'company_net_breakdown' => '총마진 ₩:margin − 영업 실지급 ₩:payout (+ 사내직원 환차)',
+    'company_fx_absorbed' => '사내직원 환차 회사 흡수: ₩:fx',
+    'company_contrib_title' => '인원별 회사기여 (상위 10명)',
+    'company_contrib_empty' => '기간 내 지급완료 정산이 없습니다.',
+    'company_contrib_note' => '회사몫 = 총마진 − 실지급 + 환차. 프리랜서는 환차 상쇄(회사 무영향), 사내직원은 회사가 환차 흡수.',
+
     // 담당자 성과
     'salesman_count_title' => '담당자별 판매 대수 (상위 10명)',
     'salesman_count_note' => '기준',
