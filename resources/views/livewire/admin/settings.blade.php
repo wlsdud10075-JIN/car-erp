@@ -19,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    // item 9 — 알람 항목별 리드데이("며칠 전"). 항목 추가는 alarmLeadMeta() 에만.
+    public array $alarmLeadDays = [];
+
     // 메일 발송 설정 (Gmail / AWS SES) — 현재 회사(companyTemplateSet) 기준. 앱 비밀번호는 암호화 저장.
     public string $mailChannel = 'gmail';
 
@@ -75,6 +78,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        foreach ($this->alarmLeadMeta() as $k => $m) {
+            $this->alarmLeadDays[$k] = (int) Setting::get($m['key'], $m['default']);
+        }
         $this->loadMailSettings();
         $this->loadAlimtalkSettings();
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
@@ -482,6 +488,31 @@ new #[Layout('components.layouts.app')] class extends Component
             ['key' => 'alarm_enabled'],
             ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => 'ETA 통관서류 알람 활성화'],
         );
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    // item 9 — 알람 항목별 리드데이 메타(라벨·Setting 키·기본값). 새 알람 종류는 여기 한 줄만 추가.
+    public function alarmLeadMeta(): array
+    {
+        return [
+            'eta' => ['key' => 'alarm_eta_lead_days', 'default' => 10, 'label' => __('feature_settings.alarm_lead_eta')],
+            'document' => ['key' => 'alarm_doc_deadline_lead_days', 'default' => 5, 'label' => __('feature_settings.alarm_lead_document')],
+        ];
+    }
+
+    public function saveAlarmParams(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        foreach ($this->alarmLeadMeta() as $k => $m) {
+            $val = max(0, (int) ($this->alarmLeadDays[$k] ?? $m['default']));
+            Setting::updateOrCreate(
+                ['key' => $m['key']],
+                ['value' => (string) $val, 'type' => 'integer', 'description' => '알람 리드데이 — '.$m['label']],
+            );
+            $this->alarmLeadDays[$k] = $val;
+        }
 
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
@@ -814,6 +845,23 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                              after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
             </label>
+
+            {{-- item 9 — 알람 항목별 "며칠 전" 리드데이 --}}
+            <div class="space-y-2 rounded-md border border-gray-100 px-3 py-2">
+                <p class="text-xs font-medium text-gray-600">{{ __('feature_settings.alarm_lead_title') }}</p>
+                @foreach($this->alarmLeadMeta() as $k => $m)
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm text-gray-700">{{ $m['label'] }}</span>
+                    <div class="flex items-center gap-1">
+                        <input type="number" min="0" wire:model="alarmLeadDays.{{ $k }}" class="input-base w-20 text-right" />
+                        <span class="text-xs text-gray-400">{{ __('feature_settings.alarm_lead_unit') }}</span>
+                    </div>
+                </div>
+                @endforeach
+                <div class="flex justify-end pt-1">
+                    <button wire:click="saveAlarmParams" class="btn-primary text-xs" wire:loading.attr="disabled" wire:target="saveAlarmParams">{{ __('common.save') }}</button>
+                </div>
+            </div>
         </div>
     </div>
 

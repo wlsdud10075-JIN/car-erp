@@ -29,6 +29,10 @@ return [
     'alarm_hint' => 'Export vehicles 10 days before arrival (ETA) get a "prepare clearance documents" alarm. Run `php artisan alarms:scan --dry-run` first to check how many will fire.',
     'alarm_label' => 'Enable ETA clearance alarm',
     'alarm_sub' => '(off = no alarms generated)',
+    'alarm_lead_title' => 'Lead days per alarm type',
+    'alarm_lead_unit' => 'days before',
+    'alarm_lead_eta' => 'ETA clearance docs',
+    'alarm_lead_document' => 'Shipping doc deadline',
 
     'stamp_section' => 'Stamp · Signature',
     'stamp_hint' => 'Company stamp/signature is auto-overlaid at the fixed position when generating documents. If not uploaded, the template default image is used. (Transparent PNG recommended, max 2MB)',
