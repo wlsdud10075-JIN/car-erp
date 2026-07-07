@@ -56,7 +56,7 @@ class Vehicle extends Model
         'export_declaration_document', 'export_declaration_number', 'is_export_cleared',
         'forwarding_email_sent',
         'bl_buyer_id', 'bl_consignee_id', 'bl_number', 'container_number',
-        'bl_loading_location', 'vessel_name', 'bl_document', 'bl_type', 'bl_issue_date',
+        'bl_loading_location', 'vessel_name', 'bl_document', 'bl_type', 'bl_issue_date', 'document_deadline_date',
         'dhl_recipient_name', 'dhl_recipient_address', 'dhl_recipient_phone',
         'dhl_sender_name', 'dhl_sender_address', 'dhl_weight', 'dhl_dimensions',
         'dhl_request', 'memo',
@@ -80,6 +80,7 @@ class Vehicle extends Model
         'shipping_date' => 'date',
         'eta_date' => 'date',
         'bl_issue_date' => 'date',
+        'document_deadline_date' => 'date',
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
@@ -1352,6 +1353,8 @@ class Vehicle extends Model
             'exchange_rate_missing', 'clearance_stuck',
             // 2026-06-18 ETA 영구 알람 — 알람 생성/자동해소 + 보정 섹션 (단일출처)
             'eta_clearance_reminder', 'eta_missing',
+            // item 6 (2026-07-07) 서류마감 임박 알람 — 거래완료 시 자동해소
+            'document_deadline_reminder',
             // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합)
             'clearance_candidates',
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
@@ -1444,6 +1447,12 @@ class Vehicle extends Model
                 ->whereNotNull('eta_date')
                 ->where('eta_date', '<=', now()->addDays((int) Setting::get('alarm_eta_lead_days', 10))->toDateString())
                 ->whereNull('export_declaration_document'),
+
+            // item 6 (2026-07-07) 선적 서류마감 임박 — 마감일 N일 이내(기본 5). '관리' 대상 알람.
+            //   active 한정(거래완료 제외, $activeOnly). 서류마감일 입력된 차량만. 마감 지나도 유지(overdue 표시).
+            'document_deadline_reminder' => $q
+                ->whereNotNull('document_deadline_date')
+                ->where('document_deadline_date', '<=', now()->addDays((int) Setting::get('alarm_doc_deadline_lead_days', 5))->toDateString()),
 
             // 2026-06-18 데이터 보정 — 선적(반입)됐는데 도착일(ETA) 미입력 (수출통관 보드 보정 섹션).
             //   '알림' 아닌 '데이터 품질' — 벨 알람으로 안 띄움. ETA 채우면 자동으로 목록에서 빠짐.

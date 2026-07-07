@@ -10,6 +10,8 @@ return [
     'task_shipping' => 'Shipping requested',
     'task_arrival' => 'New purchase vehicle arrived',
     'arrival_action' => 'Proceed with deposit',
+    'task_document_deadline' => 'Shipping doc deadline',
+    'doc_deadline_action' => 'Deadline approaching',
     'badge_new' => 'NEW',
     'toast_arrival' => '🚚 :n new vehicle(s) arrived from board — please check',
     'toast_new' => '🔔 :n new alert(s)',
