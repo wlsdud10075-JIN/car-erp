@@ -723,8 +723,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
     public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
 
-    // ── 선적 탭 선박 사진 (vehicle_photos category='shipping', 최대 10건) ──
+    // ── 선적 탭 선박 사진 (vehicle_photos category='shipping', 최대 30건) ──
     // 기본정보 탭 차량사진과 같은 machinery, 별도 갤러리로 분리 (2026-07-06 jin).
+    // 선적 사진은 여러 컷이 필요해 별도 한도 30건 (2026-07-07 jin, 기본정보 갤러리는 10건 유지).
+    public const MAX_SHIP_PHOTOS = 30;
+
     public array $shipPhotoFiles = [];
     public array $shipPhotoUpload = [];
     public array $existingShipPhotos = [];
@@ -2328,7 +2331,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ));
     }
 
-    /** 선적 탭 선박 사진 — 파일 선택 누적(기본정보 사진과 동일 방식, 별도 버퍼·10건 한도). */
+    /** 선적 탭 선박 사진 — 파일 선택 누적(기본정보 사진과 동일 방식, 별도 버퍼·30건 한도). */
     public function updatedShipPhotoUpload(): void
     {
         $this->validate([
@@ -2336,8 +2339,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]);
 
         foreach ($this->shipPhotoUpload as $file) {
-            if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) >= self::MAX_PHOTOS) {
-                $this->dispatch('notify', message: __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]), type: 'warning');
+            if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) >= self::MAX_SHIP_PHOTOS) {
+                $this->dispatch('notify', message: __('vehicle.toast.max_photos', ['max' => self::MAX_SHIP_PHOTOS]), type: 'warning');
                 break;
             }
             $this->shipPhotoFiles[] = $file;
@@ -2562,10 +2565,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'photoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]),
             ]);
         }
-        // 선박 사진(선적 탭)도 별도 갤러리라 자체 10건 한도.
-        if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) > self::MAX_PHOTOS) {
+        // 선박 사진(선적 탭)도 별도 갤러리라 자체 30건 한도.
+        if (count($this->existingShipPhotos) + count($this->shipPhotoFiles) > self::MAX_SHIP_PHOTOS) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'shipPhotoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_PHOTOS]),
+                'shipPhotoFiles' => __('vehicle.toast.max_photos', ['max' => self::MAX_SHIP_PHOTOS]),
             ]);
         }
     }
@@ -5840,7 +5843,7 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.document_deadline') }}</label><input wire:model="document_deadline_date" type="text" data-date class="input-base" /><p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.document_deadline_hint') }}</p></div>
             </div>
 
-            {{-- 선박 사진/첨부 (category='shipping' · 최대 10건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}
+            {{-- 선박 사진/첨부 (category='shipping' · 최대 30건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}
             <div class="mt-4">
                 <label class="label-base">{{ __('vehicle.panel.sec.ship_photos') }}</label>
                 <input type="file" wire:model="shipPhotoUpload" multiple

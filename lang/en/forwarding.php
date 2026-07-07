@@ -13,6 +13,8 @@ return [
     'no_fee' => 'No fee',
     'no_shipment' => 'No shipments in period',
     'col_ship_date' => 'Ship Date',
+    'col_shipping' => 'Container/RORO',
+    'roro_label' => 'RORO',
     'col_transport_fee' => 'Transport Fee',
     'col_name' => 'Name',
     'delete_confirm' => 'Delete :name?',
