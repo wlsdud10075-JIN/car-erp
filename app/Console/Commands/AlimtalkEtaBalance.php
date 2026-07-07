@@ -9,9 +9,9 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * ETA 잔금 완납 필요 알림톡 (erp_eta_balance_due) — 매일, 관리에게 차량 단위.
+ * ETA 잔금 완납 필요 알림톡 (erp_eta_balance_due) — 매일, 관리에게 목록형 1건.
  * 조건 = 도착(eta_date) 7일 이내 & 잔금 미완납(sale_unpaid_amount_krw_cache > 0) & B/L 미발급.
- *   도착 전 마지막 100% 완납 재촉 (jin: 선적일 알림과 별개 유지).
+ *   도착 전 마지막 100% 완납 재촉(선적일 알림과 별개 유지). 차량 여러 대 한 통에, 상세는 채권관리.
  */
 class AlimtalkEtaBalance extends Command
 {
@@ -45,23 +45,28 @@ class AlimtalkEtaBalance extends Command
                 return self::SUCCESS;
             }
 
-            $svc = BizmAlimtalkService::active();
-            $sent = 0;
-            foreach ($rows as $v) {
+            $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한. 초과분은 "외 N건", 상세는 채권관리.
+            $lines = $rows->take($cap)->map(function (Vehicle $v) use ($today) {
                 $daysLeft = max(0, $today->diffInDays($v->eta_date, false));
-                $vars = [
-                    '차량번호' => (string) $v->vehicle_number,
-                    '바이어' => (string) ($v->buyer?->name ?? '-'),
-                    '도착일' => optional($v->eta_date)->format('Y-m-d') ?? '-',
-                    '남은일수' => (string) $daysLeft,
-                    '미수금액' => number_format((int) $v->sale_unpaid_amount_krw_cache).'원',
-                ];
-                foreach ($recipients as $phone) {
-                    $svc->send('erp_eta_balance_due', $phone, $vars, ['vehicle_id' => $v->id]);
-                    $sent++;
-                }
+
+                return sprintf(
+                    '▶ %s · %s · 도착 %s(D-%d) · %s원',
+                    $v->vehicle_number,
+                    $v->buyer?->name ?? '-',
+                    optional($v->eta_date)->format('Y-m-d') ?? '-',
+                    $daysLeft,
+                    number_format((int) $v->sale_unpaid_amount_krw_cache)
+                );
+            })->implode("\n");
+            if ($rows->count() > $cap) {
+                $lines .= "\n▶ 외 ".($rows->count() - $cap).'건';
             }
-            $this->info("eta-balance: {$rows->count()}대, {$sent}건 발송 시도.");
+
+            $svc = BizmAlimtalkService::active();
+            foreach ($recipients as $phone) {
+                $svc->send('erp_eta_balance_due', $phone, ['잔금목록' => $lines]);
+            }
+            $this->info("eta-balance: {$rows->count()}대 목록 → ".count($recipients).'명 발송 시도.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

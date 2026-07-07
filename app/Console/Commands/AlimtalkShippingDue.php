@@ -45,7 +45,8 @@ class AlimtalkShippingDue extends Command
                 return self::SUCCESS;
             }
 
-            $lines = $rows->map(function (Vehicle $v) use ($today) {
+            $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한. 초과분은 "외 N건", 상세는 채권관리.
+            $lines = $rows->take($cap)->map(function (Vehicle $v) use ($today) {
                 $dday = max(0, $today->diffInDays($v->shipping_date, false));
                 $ratio = $v->unpaid_ratio;
                 $pct = $ratio !== null ? round($ratio * 100) : null;
@@ -65,6 +66,9 @@ class AlimtalkShippingDue extends Command
 
                 return $line;
             })->implode("\n");
+            if ($rows->count() > $cap) {
+                $lines .= "\n▶ 외 ".($rows->count() - $cap).'건';
+            }
 
             $vars = ['선적미수목록' => $lines];
 

@@ -33,8 +33,8 @@ class AlimtalkServiceTest extends TestCase
 
     public function test_render_substitutes_variables(): void
     {
-        $msg = AlimtalkTemplates::render('erp_sale_unpaid', [
-            '차량번호' => '19더9065', '바이어' => 'ABC', '미수금액' => 'USD 4,200',
+        $msg = AlimtalkTemplates::render('erp_vehicle_new', [
+            '차량번호' => '19더9065', '바이어' => 'ABC', '매입가' => '9,540,000원',
         ]);
 
         $this->assertStringContainsString('19더9065', $msg);
