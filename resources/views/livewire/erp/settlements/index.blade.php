@@ -466,6 +466,31 @@ new #[Layout('components.layouts.app')] class extends Component
      * canApprove user는 직접 paid 변경 가능 (Settlement::saving 가드 통과).
      * 그 외 user는 이 메서드로 ApprovalRequest 생성 → /erp/approvals 큐로 진입.
      */
+    // Phase 2 (jin 2026-07-07) — 선택한 귀속월의 confirmed 정산을 월배치로 제출 → 승인 사다리.
+    //   [관리]/업무관리자만. 제출자보다 위 계단(업무관리자→대표) 순서대로 승인 → 대표 최종 시 일괄 paid.
+    public function submitPayoutBatch(): void
+    {
+        if (! auth()->user()->canSubmitPayoutBatch()) {
+            $this->dispatch('notify', message: __('settlement.batch.no_permission'), type: 'error');
+
+            return;
+        }
+        if ($this->monthFilter === '') {
+            $this->dispatch('notify', message: __('settlement.batch.select_month'), type: 'warning');
+
+            return;
+        }
+        try {
+            $batch = \App\Models\SettlementPayoutBatch::submitForMonth(auth()->user(), $this->monthFilter);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+        unset($this->settlements, $this->salesmanSummaries);
+        $this->dispatch('notify', message: __('settlement.batch.submitted', ['count' => $batch->settlement_count]), type: 'success');
+    }
+
     public function requestPayApproval(int $id): void
     {
         $settlement = Settlement::findOrFail($id);
@@ -689,6 +714,11 @@ new #[Layout('components.layouts.app')] class extends Component
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
     <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+    @if(auth()->user()->canSubmitPayoutBatch() && $monthFilter !== '')
+    <button wire:click="submitPayoutBatch" wire:confirm="{{ __('settlement.batch.confirm_submit', ['month' => $monthFilter]) }}"
+            class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
+    <a href="{{ route('erp.payout-batches.index') }}" wire:navigate class="text-xs text-primary-text hover:underline">{{ __('settlement.batch.queue_link') }}</a>
+    @endif
 </div>
 
 {{-- 2026-05-20 #2 피드백 — 영업담당자별 합계 카드 (인원별 솔팅 + 합계). --}}
