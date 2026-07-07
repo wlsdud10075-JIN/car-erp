@@ -715,9 +715,9 @@ new #[Layout('components.layouts.app')] class extends Component
     <input wire:model="dateTo" type="date" class="input-filter" />
     <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
     @if(auth()->user()->canSubmitPayoutBatch() && $monthFilter !== '')
+    {{-- 승인큐 이동링크 제거 (2026-07-07 jin) — 사이드바 정산그룹 「승인큐」 메뉴로 접근. 여기선 헷갈림만 유발. --}}
     <button wire:click="submitPayoutBatch" wire:confirm="{{ __('settlement.batch.confirm_submit', ['month' => $monthFilter]) }}"
             class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
-    <a href="{{ route('erp.payout-batches.index') }}" wire:navigate class="text-xs text-primary-text hover:underline">{{ __('settlement.batch.queue_link') }}</a>
     @endif
 </div>
 
@@ -958,7 +958,8 @@ new #[Layout('components.layouts.app')] class extends Component
     @endforelse
 </div>
 
-<div>{{ $this->settlements->links() }}</div>
+{{-- 하단 여백(pb-28) — 우하단 고정 통관서류 알람 위젯과 페이지네이션 화살표가 겹쳐 클릭 방해되던 문제 해소 (2026-07-07 jin). --}}
+<div class="pb-28">{{ $this->settlements->links() }}</div>
 
 </div>
 
