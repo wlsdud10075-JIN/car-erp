@@ -2674,6 +2674,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validateVehicleForm();
 
+        // item 8 (jin 2026-07-07) — 선적(bl) 당사자 → 통관(export) 당사자 저장 시 확정 전파.
+        //   라이브 훅(updatedBlConsigneeIdStr)이 UI 경로에서 놓쳐도 저장은 항상 전파. export 비었을 때만.
+        //   guard 前 배치 → 전파된 export_buyer_id 를 C5 게이트가 함께 평가(선적탭 당사자 = 통관 진입,
+        //   <50% 미우회는 차단 = 50% 통합 우회로 커버, 의도된 게이트).
+        $this->propagateBlToExport();
+
         // C4·C5 — UI 저장 시점에 단계 의존성 검증 (시드/raw create는 우회).
         // 임시 Vehicle 인스턴스에 현재 form 값을 채워 guardStageOrderForExport 호출.
         $previewVehicle = $this->editingId
