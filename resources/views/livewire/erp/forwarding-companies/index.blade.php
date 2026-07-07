@@ -1,28 +1,26 @@
 <?php
 
 use App\Models\ForwardingCompany;
+use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
-use Livewire\WithPagination;
 
 new #[Layout('components.layouts.app')] class extends Component {
-    use WithPagination;
 
-    public string $search    = '';
-    #[Url] public int $perPage = 10;
-    public bool   $showPanel = false;
-    public ?int   $editingId = null;
+    // item 7 (jin 2026-07-07) — 마스터 CRUD → "포워딩사별 선적 현황" 개편.
+    //   기간(선적일/BL발행일) 필터 + 운임비 통화별 합산 + 선박명/컨테이너/수출신고번호 검색.
+    //   CRUD(추가/편집/삭제)는 슬라이드 패널로 보존.
+    public string $search = '';
+    #[Url] public string $dateType = 'shipping';   // shipping = shipping_date / bl = bl_issue_date
+    #[Url] public string $dateFrom = '';
+    #[Url] public string $dateTo = '';
 
-    public function updatedPerPage(): void
-    {
-        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
-            $this->perPage = 10;
-        }
-        $this->resetPage();
-    }
+    public bool $showPanel = false;
+    public ?int $editingId = null;
 
+    // CRUD 폼
     public string $name         = '';
     public string $contact_name = '';
     public string $email        = '';
@@ -31,17 +29,48 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $memo         = '';
     public bool   $is_active    = true;
 
+    public function searchNow(): void
+    {
+        unset($this->shipments, $this->companies);
+    }
+
+    /** 필터된 선적 차량 → forwarding_company_id 별 그룹. 통화별 합산·목록의 단일 출처. */
+    #[Computed]
+    public function shipments()
+    {
+        $col = $this->dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
+        $term = trim($this->search);
+
+        return Vehicle::query()
+            ->whereNotNull('forwarding_company_id')
+            ->whereNull('deleted_at')
+            ->when($this->dateFrom !== '', fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo !== '', fn ($q) => $q->where($col, '<=', $this->dateTo))
+            ->when($term !== '', fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('vehicle_number', 'like', "%{$term}%")
+                ->orWhere('vessel_name', 'like', "%{$term}%")
+                ->orWhere('container_number', 'like', "%{$term}%")
+                ->orWhere('export_declaration_number', 'like', "%{$term}%")))
+            ->orderByDesc($col)
+            ->get(['id', 'forwarding_company_id', 'vehicle_number', 'shipping_date', 'bl_issue_date',
+                'vessel_name', 'container_number', 'export_declaration_number', 'transport_fee', 'currency'])
+            ->groupBy('forwarding_company_id');
+    }
+
+    /** 표시할 포워딩사 — 차량 필터(검색/기간)가 있으면 매칭 선적이 있는 곳만. 없으면 전체. */
     #[Computed]
     public function companies()
     {
-        return ForwardingCompany::query()
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', "%{$this->search}%")
-                   ->orWhere('contact_name', 'like', "%{$this->search}%")
-                   ->orWhere('email', 'like', "%{$this->search}%")
-            ))
-            ->orderBy('name')
-            ->paginate($this->perPage);
+        $companies = ForwardingCompany::query()->orderBy('name')->get();
+        $hasVehicleFilter = $this->search !== '' || $this->dateFrom !== '' || $this->dateTo !== '';
+
+        if ($hasVehicleFilter) {
+            $shipments = $this->shipments;
+
+            return $companies->filter(fn ($fc) => $shipments->has($fc->id))->values();
+        }
+
+        return $companies;
     }
 
     public function openCreate(): void
@@ -64,11 +93,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->memo         = $fc->memo         ?? '';
         $this->is_active    = $fc->is_active;
         $this->showPanel    = true;
-    }
-
-    public function search(): void
-    {
-        $this->resetPage();
     }
 
     public function close(): void
@@ -99,13 +123,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         unset($this->companies);
+        $this->close();
         session()->flash('success', __('forwarding.saved'));
     }
 
     public function delete(int $id): void
     {
         ForwardingCompany::findOrFail($id)->delete();
-        unset($this->companies);
+        unset($this->companies, $this->shipments);
         session()->flash('success', __('forwarding.deleted'));
     }
 
@@ -116,7 +141,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-<div wire:poll.30s>
+<div wire:poll.60s>
 @if(session('success'))
 <div x-data="{show:true}" x-show="show" x-init="setTimeout(()=>show=false,3000)"
      class="fixed top-4 right-4 z-50 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg">
@@ -130,89 +155,99 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex items-center justify-between">
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ __('forwarding.title') }}</h1>
-        <p class="mt-0.5 text-xs text-gray-500">{{ __('common.total', ['count' => $this->companies->total()]) }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">{{ __('common.total', ['count' => $this->companies->count()]) }}</p>
     </div>
-    <div class="flex items-center gap-2">
-        <select wire:model.live="perPage" class="input-filter">
-            <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
-            <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
-            <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
-            <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
-        </select>
-        <button wire:click="openCreate" class="btn-primary">
-            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            {{ __('forwarding.add') }}
-        </button>
-    </div>
+    <button wire:click="openCreate" class="btn-primary">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        {{ __('forwarding.add') }}
+    </button>
 </div>
 
-{{-- 검색 --}}
+{{-- 필터바: 기간 + 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('forwarding.search_ph') }}"
+    <select wire:model.live="dateType" class="input-filter">
+        <option value="shipping">{{ __('forwarding.date_shipping') }}</option>
+        <option value="bl">{{ __('forwarding.date_bl') }}</option>
+    </select>
+    <input wire:model.live="dateFrom" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_from') }}" />
+    <span class="text-gray-400 text-sm">~</span>
+    <input wire:model.live="dateTo" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_to') }}" />
+    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('forwarding.search_ph') }}"
            class="input-filter w-64" />
-    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
-{{-- 테이블 (데스크탑) --}}
-<div class="hidden sm:block overflow-x-auto">
-    <table class="w-full text-sm">
-        <thead>
-            <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('forwarding.col_name') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.contact') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
-                <th class="pb-2 font-medium"></th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-            @forelse($this->companies as $fc)
-            <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $fc->id }})">
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $fc->name }}</td>
-                <td class="py-3 pr-4 text-gray-500">{{ $fc->contact_name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500">{{ $fc->email ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500">{{ $fc->phone ?? '-' }}</td>
-                <td class="py-3 pr-4">
-                    <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">
-                        {{ $fc->is_active ? __('common.active') : __('common.inactive') }}
-                    </span>
-                </td>
-                <td class="py-3 text-right">
-                    <button wire:click.stop="delete({{ $fc->id }})"
-                            wire:confirm="{{ __('forwarding.delete_confirm', ['name' => $fc->name]) }}"
-                            class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
-                </td>
-            </tr>
-            @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</td></tr>
-            @endforelse
-        </tbody>
-    </table>
-</div>
-
-{{-- 모바일 카드 --}}
-<div class="block sm:hidden space-y-2">
+{{-- 포워딩사별 선적 현황 카드 --}}
+<div class="space-y-2">
     @forelse($this->companies as $fc)
-    <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $fc->id }})">
-        <div>
-            <div class="font-medium text-gray-800">{{ $fc->name }}</div>
-            <div class="text-xs text-gray-500">{{ $fc->contact_name ?? '' }}{{ $fc->email ? ' · '.$fc->email : '' }}</div>
+        @php
+            $ships = $this->shipments[$fc->id] ?? collect();
+            $feeByCurrency = $ships->groupBy('currency')->map(fn ($g) => (int) $g->sum('transport_fee'))->filter();
+            $dcol = $dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
+        @endphp
+        <div class="card-tight" x-data="{ open: false }">
+            {{-- 헤더 행 --}}
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button type="button" @click="open = !open" class="flex flex-1 items-center gap-2 text-left">
+                    <svg class="h-4 w-4 text-gray-400 transition-transform" :class="open ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <span class="font-semibold text-gray-800">{{ $fc->name }}</span>
+                    <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? __('common.active') : __('common.inactive') }}</span>
+                    <span class="pill-count">{{ __('forwarding.shipment_count', ['count' => $ships->count()]) }}</span>
+                </button>
+                {{-- 운임비 통화별 합계 --}}
+                <div class="flex flex-wrap items-center gap-1.5">
+                    @forelse($feeByCurrency as $cur => $sum)
+                        <span class="badge badge-blue">{{ $cur }} {{ number_format($sum) }}</span>
+                    @empty
+                        <span class="text-xs text-gray-400">{{ __('forwarding.no_fee') }}</span>
+                    @endforelse
+                </div>
+                <div class="flex items-center gap-2">
+                    <button wire:click="openEdit({{ $fc->id }})" class="text-xs text-gray-500 hover:text-violet-700">{{ __('common.edit') }}</button>
+                    <button wire:click="delete({{ $fc->id }})" wire:confirm="{{ __('forwarding.delete_confirm', ['name' => $fc->name]) }}" class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
+                </div>
+            </div>
+            {{-- 선적 차량 목록 (아코디언) --}}
+            <div x-show="open" x-cloak class="mt-3 overflow-x-auto border-t border-gray-100 pt-3">
+                @if($ships->isEmpty())
+                    <p class="py-3 text-center text-xs text-gray-400">{{ __('forwarding.no_shipment') }}</p>
+                @else
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="border-b border-gray-200 text-left text-[11px] text-gray-500">
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.number') }}</th>
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_ship_date') }}</th>
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.field.vessel') }}</th>
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.container_number') }}</th>
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.export_declaration_number') }}</th>
+                                <th class="pb-1.5 pr-3 text-right font-medium">{{ __('forwarding.col_transport_fee') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            @foreach($ships as $v)
+                            <tr class="hover:bg-gray-50">
+                                <td class="py-2 pr-3 font-medium text-gray-700"><a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a></td>
+                                <td class="py-2 pr-3 text-gray-500">{{ $v->$dcol?->format('Y-m-d') ?? '-' }}</td>
+                                <td class="py-2 pr-3 text-gray-500">{{ $v->vessel_name ?: '-' }}</td>
+                                <td class="py-2 pr-3 font-mono text-gray-600">{{ $v->container_number ?: '-' }}</td>
+                                <td class="py-2 pr-3 font-mono text-gray-600">{{ $v->export_declaration_number ?: '-' }}</td>
+                                <td class="py-2 pr-3 text-right tabular-nums text-gray-700">{{ $v->transport_fee ? $v->currency.' '.number_format($v->transport_fee) : '-' }}</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @endif
+            </div>
         </div>
-        <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? __('common.active') : __('common.inactive') }}</span>
-    </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</div>
+        <div class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</div>
     @endforelse
 </div>
 
-<div>{{ $this->companies->links() }}</div>
-
 </div>
 
-{{-- ══ 슬라이드 패널 ══ --}}
+{{-- ══ 슬라이드 패널 (CRUD 보존) ══ --}}
 @if($showPanel)
-{{-- 큐 18: close confirm — dirty 추적 + .card 모달. 인라인 x-data, 패널별 동일 패턴 --}}
 <div x-data="{
     dirty: false,
     confirmOpen: false,
@@ -226,7 +261,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[480px]"
      @input="dirty = true" @change="dirty = true">
 
-    {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
         <h2 class="text-base font-bold text-gray-800">{{ $editingId ? __('forwarding.panel_edit') : __('forwarding.add') }}</h2>
         <button @click="attemptClose()" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
@@ -234,7 +268,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
-    {{-- 폼 --}}
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-3">
         <div>
             <label class="label-base">{{ __('forwarding.field_name') }} <span class="text-red-500">*</span></label>
@@ -270,7 +303,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
     </div>
 
-    {{-- 푸터 --}}
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
         <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
@@ -280,7 +312,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 </div>
 
-{{-- 큐 18: close confirm 모달 (.card 디자인) --}}
 <div x-show="confirmOpen" x-cloak x-transition.opacity
      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
      @click.self="confirmOpen = false">
@@ -296,5 +327,4 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 </div>
 @endif
-
 </div>
