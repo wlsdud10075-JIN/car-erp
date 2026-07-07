@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\BizmAlimtalkService;
+use App\Support\AlimtalkRecipients;
 use App\Support\SettlementCkBatch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -77,7 +79,7 @@ class SettlementPayoutBatch extends Model
 
         $rank = $submitter->approvalRank();
 
-        return DB::transaction(function () use ($submitter, $month, $rank, $ids) {
+        $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids) {
             $settlements = Settlement::whereIn('id', $ids)->get();
             $batch = self::create([
                 'month' => $month,
@@ -93,6 +95,11 @@ class SettlementPayoutBatch extends Model
 
             return $batch;
         });
+
+        // 커밋 후 fire-and-forget — 첫 승인 계단에게 '승인 요청 도착' 알림톡.
+        $batch->notifyPayoutRequest();
+
+        return $batch;
     }
 
     /** 현재 단계에서 이 사용자가 승인/반려할 수 있나 — rank 정확 일치 또는 super override. */
@@ -108,7 +115,8 @@ class SettlementPayoutBatch extends Model
             throw new \DomainException('이 배치의 현재 승인 단계 권한이 없습니다.');
         }
 
-        DB::transaction(function () use ($u, $note) {
+        $becameFinal = false;
+        DB::transaction(function () use ($u, $note, &$becameFinal) {
             $this->approvals()->create([
                 'approver_id' => $u->id, 'approver_rank' => $u->approvalRank(),
                 'action' => 'approved', 'note' => $note ?: null, 'created_at' => now(),
@@ -120,11 +128,23 @@ class SettlementPayoutBatch extends Model
                 $this->decided_at = now();
                 $this->save();
                 $this->execute();
+                $becameFinal = true;
             } else {
                 $this->current_level++;
                 $this->save();
             }
         });
+
+        // 커밋 후 fire-and-forget 알림톡 — 최종 승인=제출자에게 완료, 전진=다음 계단에게 요청.
+        if ($becameFinal) {
+            $this->sendPayoutAlimtalk('erp_payout_done', $this->submitterPhones(), [
+                '귀속월' => $this->month,
+                '건수' => (string) $this->settlement_count,
+                '총액' => number_format($this->total_payout).'원',
+            ]);
+        } else {
+            $this->notifyPayoutRequest();
+        }
     }
 
     public function rejectBy(User $u, string $reason): void
@@ -146,6 +166,44 @@ class SettlementPayoutBatch extends Model
             // 멤버 정산 배치 해제 → 재배치 가능 (settlement_status=confirmed 유지)
             $this->settlements()->update(['payout_batch_id' => null]);
         });
+
+        // 커밋 후 fire-and-forget — 제출자에게 반려 통보(사유 포함).
+        $this->sendPayoutAlimtalk('erp_payout_rejected', $this->submitterPhones(), [
+            '귀속월' => $this->month,
+            '건수' => (string) $this->settlement_count,
+            '사유' => $reason,
+        ]);
+    }
+
+    /** 현재 계단(current_level) 승인자에게 '승인 요청 도착' 알림톡. */
+    public function notifyPayoutRequest(): void
+    {
+        $this->sendPayoutAlimtalk('erp_payout_request', AlimtalkRecipients::payoutApprovers($this->current_level), [
+            '귀속월' => $this->month,
+            '건수' => (string) $this->settlement_count,
+            '총액' => number_format($this->total_payout).'원',
+            '제출자' => $this->submitter?->name ?? '-',
+        ]);
+    }
+
+    /** 제출자 전화번호(있으면 1건). */
+    private function submitterPhones(): array
+    {
+        $phone = trim((string) ($this->submitter?->phone ?? ''));
+
+        return $phone !== '' ? [$phone] : [];
+    }
+
+    /** 알림톡 발송 — fire-and-forget(BizmAlimtalkService 가 예외 흡수·게이트 off 시 skipped). */
+    private function sendPayoutAlimtalk(string $code, array $phones, array $vars): void
+    {
+        if (empty($phones)) {
+            return;
+        }
+        $svc = BizmAlimtalkService::active();
+        foreach ($phones as $phone) {
+            $svc->send($code, $phone, $vars);
+        }
     }
 
     /** 대표 최종 승인 시 — 배치 전 confirmed 정산을 paid 일괄 전환(상태만, 실제 이체는 별건). */

@@ -6,6 +6,7 @@ use App\Models\AlimtalkLog;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Support\AlimtalkRecipients;
@@ -57,10 +58,13 @@ class AlimtalkTriggerTest extends TestCase
         $this->admin('010-1111-0000');
         User::factory()->create(['permission' => 'super', 'phone' => '010-9999-0000', 'email_verified_at' => now()]);  // super 제외
         $this->manager('010-2222-0000');
+        User::factory()->create(['permission' => 'manager', 'phone' => '010-4444-0000', 'email_verified_at' => now()]);  // 업무관리자
         User::factory()->create(['permission' => 'user', 'role' => '영업', 'phone' => '010-3333-0000', 'email_verified_at' => now()]);
 
         $this->assertSame(['010-1111-0000'], AlimtalkRecipients::admins(), '대표=admin만(super 제외)');
-        $this->assertSame(['010-2222-0000'], AlimtalkRecipients::managers(), '관리 role만');
+        $this->assertEqualsCanonicalizing(['010-2222-0000', '010-4444-0000'], AlimtalkRecipients::managers(), '관리 role + 업무관리자(manager)');
+        $this->assertSame(['010-4444-0000'], AlimtalkRecipients::payoutApprovers(2), '배치 level2 = 업무관리자');
+        $this->assertSame(['010-1111-0000'], AlimtalkRecipients::payoutApprovers(3), '배치 level3 = 대표');
     }
 
     public function test_recipients_override_setting_wins(): void
@@ -158,8 +162,64 @@ class AlimtalkTriggerTest extends TestCase
             'erp_daily_summary', 'erp_weekly_summary', 'erp_monthly_closing',
             'erp_purchase_unpaid', 'erp_sale_unpaid', 'erp_eta_balance_due',
             'erp_shipping_due', 'erp_pickup_reminder', 'erp_vehicle_new', 'erp_settle_pending',
+            'erp_payout_request', 'erp_payout_done', 'erp_payout_rejected',
         ] as $code) {
             $this->assertArrayHasKey($code, AlimtalkTemplates::TEMPLATES, $code.' 템플릿 존재');
         }
+    }
+
+    /** 월배치 정산지급 — 제출→계단 전진→최종 승인마다 상대측에 알림톡. */
+    public function test_payout_batch_flow_notifies_each_party(): void
+    {
+        $submitter = User::factory()->create(['permission' => 'user', 'role' => '관리', 'name' => '김제출', 'phone' => '010-1000-0000', 'email_verified_at' => now()]);
+        $mgr = User::factory()->create(['permission' => 'manager', 'phone' => '010-2000-0000', 'email_verified_at' => now()]);
+        $adm = User::factory()->create(['permission' => 'admin', 'phone' => '010-3000-0000', 'email_verified_at' => now()]);
+        $this->enableAlimtalk(['erp_payout_request', 'erp_payout_done']);
+
+        $sm = Salesman::create(['name' => '제출영업', 'type' => 'employee', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => '99가9999', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 100_000,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-06-15 10:00:00',
+        ]);
+
+        // 제출 → level2(업무관리자)에게 요청.
+        $batch = SettlementPayoutBatch::submitForMonth($submitter, '2026-06');
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_payout_request')->where('phone', '01020000000')->where('status', 'sent')->count(), '제출→업무관리자 요청');
+
+        // 업무관리자 승인 → level3(대표)에게 요청.
+        $batch->approveBy($mgr);
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_payout_request')->where('phone', '01030000000')->where('status', 'sent')->count(), '전진→대표 요청');
+
+        // 대표 최종 승인 → 제출자에게 완료.
+        $batch->approveBy($adm);
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_payout_done')->where('phone', '01010000000')->where('status', 'sent')->count(), '최종→제출자 완료');
+        $this->assertSame('approved', $batch->fresh()->status);
+    }
+
+    /** 반려 → 제출자에게 사유 포함 알림톡. */
+    public function test_payout_batch_reject_notifies_submitter(): void
+    {
+        $submitter = User::factory()->create(['permission' => 'user', 'role' => '관리', 'name' => '박제출', 'phone' => '010-1000-0000', 'email_verified_at' => now()]);
+        $mgr = User::factory()->create(['permission' => 'manager', 'phone' => '010-2000-0000', 'email_verified_at' => now()]);
+        $this->enableAlimtalk(['erp_payout_request', 'erp_payout_rejected']);
+
+        $sm = Salesman::create(['name' => '반려영업', 'type' => 'employee', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => '88나8888', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 100_000,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-06-15 10:00:00',
+        ]);
+
+        $batch = SettlementPayoutBatch::submitForMonth($submitter, '2026-06');
+        $batch->rejectBy($mgr, '금액 오류');
+
+        $log = AlimtalkLog::where('template_code', 'erp_payout_rejected')->first();
+        $this->assertNotNull($log);
+        $this->assertSame('01010000000', $log->phone, '반려는 제출자에게');
+        $this->assertStringContainsString('금액 오류', $log->message, '사유 포함');
+        $this->assertSame('rejected', $batch->fresh()->status);
     }
 }
