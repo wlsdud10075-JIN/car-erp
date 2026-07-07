@@ -145,9 +145,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-1 text-[11px] text-red-500">{{ __('payout_batch.rejected_reason', ['reason' => $b->reject_reason]) }}</div>
                 @endif
 
-                {{-- 드릴다운: 사람별 → 차량별 --}}
+                {{-- 드릴다운: 사람별 → 차량별. max-w-md 로 내역↔금액 간격 축소(카드 전폭 양끝 벌어짐 방지, jin 2026-07-07) --}}
                 @if($expandedId === $b->id)
-                <div class="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                <div class="mt-3 max-w-md space-y-2 border-t border-gray-100 pt-3">
                     @foreach($bySalesman as $name => $group)
                     <div>
                         <div class="flex items-center justify-between text-xs font-medium text-gray-700">
