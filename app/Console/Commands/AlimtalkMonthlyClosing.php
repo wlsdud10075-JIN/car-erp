@@ -71,6 +71,9 @@ class AlimtalkMonthlyClosing extends Command
 
         $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
         $totalPayout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout);
+        // 회사이익(회사순이익) = 총마진 − 실지급 + 환차. 관리자 대시보드 companyProfit 과 동일 공식(같은 정산셋 기준).
+        $fxSum = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
+        $companyProfit = $totalMargin - $totalPayout + $fxSum;
 
         $perSalesman = $settlements->groupBy(fn (Settlement $s) => $s->salesman?->name ?? '미지정')
             ->map(fn ($g) => (int) $g->sum(fn (Settlement $s) => (int) $s->actual_payout))
@@ -86,6 +89,7 @@ class AlimtalkMonthlyClosing extends Command
             '총매출' => number_format($revenue).'원',
             '총마진' => number_format($totalMargin).'원',
             '지급총액' => number_format($totalPayout).'원',
+            '회사이익' => number_format($companyProfit).'원',
             '인원별지급' => $perSalesman,
         ];
     }

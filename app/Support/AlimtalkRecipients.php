@@ -27,12 +27,28 @@ class AlimtalkRecipients
         );
     }
 
-    /** 관리 role 번호들. */
+    /**
+     * 관리 알림 수신자 — role='관리'(rank1) + 업무관리자(permission='manager', rank2).
+     * (jin 2026-07-07: 업무관리자도 대표에 준하는 운영 권한이라 관리 6종 알림을 함께 받는다.)
+     */
     public static function managers(): array
     {
         return self::override('manager') ?? self::phones(
-            User::query()->where('role', '관리')
+            User::query()->where(fn ($q) => $q->where('role', '관리')->orWhere('permission', 'manager'))
         );
+    }
+
+    /**
+     * 월배치 정산지급 승인 사다리 — 특정 계단(current_level)의 승인자 번호.
+     * level 2 = 업무관리자(manager) / level 3 = 대표(admin). super(4)는 업무알림 제외.
+     */
+    public static function payoutApprovers(int $level): array
+    {
+        return match ($level) {
+            2 => self::phones(User::query()->where('permission', 'manager')),
+            3 => self::phones(User::query()->where('permission', 'admin')),
+            default => [],
+        };
     }
 
     /** 픽업 재촉 — 그 차량 담당 영업 번호(있으면 1건). */
