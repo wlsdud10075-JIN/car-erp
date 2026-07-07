@@ -163,7 +163,12 @@ class ApprovalRequest extends Model
         if ($settlement->settlement_status !== 'confirmed') {
             throw new \DomainException('정산 상태가 confirmed가 아닙니다 (현재: '.$settlement->settlement_status.').');
         }
-        // Phase 2 — 승인된 지급이므로 paid 가드(대표만 직접) 우회. 레거시 개별 승인 경로 호환(월배치로 대체 중).
+        // Phase 2 (jin 2026-07-07) — 개별 지급 승인의 최종 실행도 대표(admin/super)만.
+        //   manager·[관리] 승인으로는 paid 불가(월배치로 유도) → 대표 미경유 지급(이중경로) 차단.
+        //   레거시 pending 개별요청은 대표 승인 시에만 실행. decide()가 예외를 롤백·토스트 처리.
+        if (auth()->check() && ! auth()->user()->isAdmin()) {
+            throw new \DomainException('정산 지급은 대표(최고관리자) 승인 또는 월배치 승인으로만 가능합니다.');
+        }
         Settlement::$allowBatchPayout = true;
         try {
             $settlement->settlement_status = 'paid';

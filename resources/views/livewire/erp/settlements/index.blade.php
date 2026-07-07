@@ -907,13 +907,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 text-right">
                     <div class="flex justify-end gap-2">
-                        {{-- 큐 14-4-2 — confirmed + 대기중 요청 없음 + 비-canApprove user만 버튼 노출 --}}
-                        @if($s->settlement_status === 'confirmed' && ! auth()->user()->canApprove()
-                            && (! $pa || $pa->status !== 'pending'))
-                        <button wire:click.stop="requestPayApproval({{ $s->id }})"
-                                wire:confirm="{{ __('settlement.confirm_request_pay') }}"
-                                class="text-xs text-violet-600 hover:text-violet-800">{{ __('settlement.btn_request_pay') }}</button>
-                        @endif
+                        {{-- Phase 2 (2026-07-07) — 개별 지급 승인요청 은퇴. [관리]/업무관리자가 '월배치 제출'로 진행.
+                             (레거시 requestPayApproval 메서드/executeSettlementPay 는 기존 pending 처리용 존치, 대표만 실행) --}}
                         {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 액션 ([재무]/[관리]/admin) --}}
                         @if($canCloseSecondary)
                         <button wire:click.stop="closeSecondarySettlement({{ $s->id }})"

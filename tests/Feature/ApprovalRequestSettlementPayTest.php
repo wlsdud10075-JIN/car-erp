@@ -57,7 +57,8 @@ class ApprovalRequestSettlementPayTest extends TestCase
     public function test_approval_request_execute_transitions_settlement_to_paid(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
-        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        // Phase 2 — 개별 지급 최종 실행은 대표(admin/super)만.
+        $rep = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
 
         $s = $this->makeSettlement('confirmed');
 
@@ -70,13 +71,39 @@ class ApprovalRequestSettlementPayTest extends TestCase
             'reason' => 'paid 전환 요청',
         ]);
 
-        // 관리자 컨텍스트에서 execute()
-        $this->actingAs($manager);
-        $req->update(['status' => ApprovalRequest::STATUS_APPROVED, 'approver_id' => $manager->id, 'decided_at' => now()]);
+        // 대표(admin) 컨텍스트에서 execute()
+        $this->actingAs($rep);
+        $req->update(['status' => ApprovalRequest::STATUS_APPROVED, 'approver_id' => $rep->id, 'decided_at' => now()]);
         $req->execute();
 
         $this->assertSame('paid', $s->fresh()->settlement_status);
         $this->assertNotNull($s->fresh()->paid_at);
+    }
+
+    public function test_manager_cannot_execute_individual_pay_bypassing_representative(): void
+    {
+        // Phase 2 SoD — manager 가 개별 지급 승인으로 대표 미경유 paid 하는 이중경로 차단.
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
+        $manager = User::factory()->create(['permission' => 'manager', 'role' => '관리']);
+        $s = $this->makeSettlement('confirmed');
+
+        $req = ApprovalRequest::create([
+            'requester_id' => $sales->id,
+            'action_type' => ApprovalRequest::TYPE_SETTLEMENT_PAY,
+            'target_type' => Settlement::class,
+            'target_id' => $s->id,
+            'status' => ApprovalRequest::STATUS_PENDING,
+            'reason' => 'paid 전환 요청',
+        ]);
+
+        $this->actingAs($manager);
+        try {
+            $req->execute();
+            $this->fail('manager 개별 지급 실행은 차단돼야 한다');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('대표', $e->getMessage());
+        }
+        $this->assertSame('confirmed', $s->fresh()->settlement_status, '대표 미경유 paid 불가');
     }
 
     public function test_approval_request_execute_blocks_non_confirmed_settlement(): void
@@ -106,7 +133,7 @@ class ApprovalRequestSettlementPayTest extends TestCase
     public function test_audit_logs_link_approval_request_id_on_settlement_pay(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
-        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리']);
+        $rep = User::factory()->create(['permission' => 'admin', 'role' => '관리']);   // Phase 2 — 실행=대표
 
         $s = $this->makeSettlement('confirmed');
 
@@ -116,11 +143,11 @@ class ApprovalRequestSettlementPayTest extends TestCase
             'target_type' => Settlement::class,
             'target_id' => $s->id,
             'status' => ApprovalRequest::STATUS_APPROVED,
-            'approver_id' => $manager->id,
+            'approver_id' => $rep->id,
             'decided_at' => now(),
         ]);
 
-        $this->actingAs($manager);
+        $this->actingAs($rep);
         $req->execute();
 
         $log = AuditLog::where('auditable_type', Settlement::class)
