@@ -29,6 +29,10 @@ return [
     'alarm_hint' => '도착(ETA) 10일 전 수출 차량에 "통관서류 작업" 알람이 뜹니다. 켜기 전 `php artisan alarms:scan --dry-run` 으로 대상 건수를 먼저 확인하세요.',
     'alarm_label' => 'ETA 통관서류 알람 사용',
     'alarm_sub' => '(끄면 알람 생성 안 함)',
+    'alarm_lead_title' => '항목별 "며칠 전"부터 알람',
+    'alarm_lead_unit' => '일 전',
+    'alarm_lead_eta' => 'ETA 통관서류',
+    'alarm_lead_document' => '선적 서류마감',
 
     'stamp_section' => '도장 · 서명',
     'stamp_hint' => '서류 생성 시 양식의 정해진 위치에 회사 도장/서명을 자동으로 얹습니다. 업로드하지 않으면 양식 기본 이미지가 그대로 쓰입니다. (PNG 투명배경 권장, 최대 2MB)',
