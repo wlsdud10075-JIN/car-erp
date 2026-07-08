@@ -78,32 +78,40 @@ new #[Layout('components.layouts.app')] class extends Component
     //   앵커=confirmed_at: 거래완료 아니어도 완납되면 정산 진행하므로 '확정 시점'이 귀속월 결정 (jin).
     //   pending(confirmed_at=null)은 created_at 로 잠정 배치. import 백데이트분은 confirmed_at=created_at 로 정렬됨.
     // DATE_FORMAT 은 MySQL 전용 → 테스트 SQLite 호환 위해 PHP 에서 포맷 (project_db_tier_mismatch).
+    // A-3 (2026-07-08) — 귀속월 = attributed_month(완납월, 달력 1일~말일) 우선. NULL(백필 전)은 payrollMonthOf fallback.
     #[Computed]
     public function availableMonths(): array
     {
         return Settlement::query()
-            ->get(['confirmed_at', 'created_at'])
-            ->map(fn ($s) => \App\Support\SettlementCkBatch::payrollMonthOf($s->confirmed_at ?? $s->created_at))
+            ->get(['attributed_month', 'confirmed_at', 'created_at'])
+            ->map(fn ($s) => $s->attributed_month
+                ? $s->attributed_month->format('Y-m')
+                : \App\Support\SettlementCkBatch::payrollMonthOf($s->confirmed_at ?? $s->created_at))
             ->unique()
             ->sortDesc()
             ->values()
             ->toArray();
     }
 
-    // monthFilter('YYYY-MM') → 귀속월 범위 [M/10, (M+1)/10) 클로저 (크로스 DB 안전, 목록·카드 공용).
-    // 앵커 = COALESCE(confirmed_at, created_at). 10일 cutoff: 1~9일 확정분은 전달 귀속 (jin 2026-07-02).
+    // monthFilter('YYYY-MM') → attributed_month 우선. NULL 은 기존 COALESCE 앵커[M/10,(M+1)/10) fallback (submitForMonth 와 동일).
     private function monthScope(): \Closure
     {
-        // when($this->monthFilter, ...) 이 이 메서드를 항상 즉시 평가하므로 빈 값 방어 (기존 array_pad 대체).
         if ($this->monthFilter === '') {
             return fn ($q) => $q;
         }
+        $monthStart = $this->monthFilter.'-01';
         [$start, $end] = \App\Support\SettlementCkBatch::monthRange($this->monthFilter);
         $s = $start->format('Y-m-d H:i:s');
         $e = $end->format('Y-m-d H:i:s');
 
-        return fn ($q) => $q->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$s])
-            ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$e]);
+        return fn ($q) => $q->where(function ($q2) use ($monthStart, $s, $e) {
+            $q2->whereDate('attributed_month', $monthStart)
+                ->orWhere(function ($q3) use ($s, $e) {
+                    $q3->whereNull('attributed_month')
+                        ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$s])
+                        ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$e]);
+                });
+        });
     }
 
     // ── 목록 ──────────────────────────────────────────────────────
@@ -702,12 +710,12 @@ new #[Layout('components.layouts.app')] class extends Component
         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
     </select>
-    {{-- 2026-06-24 — 정산 월(월급 귀속월) 솔팅. created_at 기준, 다음달 10일 지급 라벨 병기. --}}
+    {{-- 정산 귀속월(attributed_month=완납월, 1일~말일) 솔팅 + 익월 10일 지급 라벨 (A-3 2026-07-08). --}}
     <select wire:model.live="monthFilter" class="input-filter" title="{{ __('settlement.filter_month_title') }}">
         <option value="">{{ __('settlement.filter_all_month') }}</option>
         @foreach($this->availableMonths as $ym)
         @php $payDate = \Carbon\Carbon::parse($ym.'-01')->addMonthNoOverflow()->format('Y-m').'-10'; @endphp
-        <option value="{{ $ym }}">{{ $ym }} → {{ $payDate }} {{ __('settlement.filter_month_pay') }}</option>
+        <option value="{{ $ym }}">{{ $ym }} {{ __('settlement.filter_month_label') }} → {{ $payDate }} {{ __('settlement.filter_month_pay') }}</option>
         @endforeach
     </select>
     <input wire:model="dateFrom" type="date" class="input-filter" />

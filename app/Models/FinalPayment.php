@@ -63,7 +63,15 @@ class FinalPayment extends Model
             }
         });
 
-        static::saved(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
+        static::saved(function (FinalPayment $p) {
+            $p->vehicle?->refreshCaches();
+            // A-3 (2026-07-08) — 판매완료(완납) 진입 시 정산 자동 생성. 완납은 잔금 저장으로 일어나고
+            //   차량 캐시는 refreshCaches()=raw update 라 Vehicle::saved 가 안 뜸 → 여기서 트리거.
+            //   auth 가드 = 시드·artisan 대량 유입 차단(import 등은 정산 자동생성 안 함).
+            if (auth()->check()) {
+                $p->vehicle?->createSettlementIfComplete('자동 생성 — 판매완료(완납) 진입 시');
+            }
+        });
         static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
 
         // 큐 22-A-2 — paid Settlement 후 신규 FP 차단 (PBP creating 훅과 대칭).

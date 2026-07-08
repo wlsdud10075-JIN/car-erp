@@ -21,7 +21,8 @@ return [
     'filter_all_status' => 'All statuses',
     'filter_all_salesman' => 'All salesmen',
     'filter_all_month' => 'All months',
-    'filter_month_title' => 'Payroll month — based on deal-complete / settlement creation time',
+    'filter_month_title' => 'Attribution month (full-payment month, 1st–last) — paid on the 10th of next month',
+    'filter_month_label' => 'settlement',
     'filter_month_pay' => 'pay',
 
     'status' => [

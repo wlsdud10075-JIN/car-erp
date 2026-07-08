@@ -28,10 +28,13 @@ class Settlement extends Model
         // 새회의 #8 보강 (2026-05-23) — 정산 캐리오버 (영업담당자별 이월)
         'carryover_in_krw', 'carryover_out_krw',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
+        // A-3 (2026-07-08) — 귀속월 고정 (완납월 1일). submitForMonth 앵커.
+        'attributed_month',
     ];
 
     protected $casts = [
         'confirmed_at' => 'datetime',
+        'attributed_month' => 'date',
         'paid_at' => 'datetime',
         'secondary_closed_at' => 'datetime',
         'exchange_difference_krw' => 'decimal:2',
