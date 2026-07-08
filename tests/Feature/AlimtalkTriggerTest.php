@@ -46,7 +46,8 @@ class AlimtalkTriggerTest extends TestCase
 
     private function admin(string $phone): User
     {
-        return User::factory()->create(['permission' => 'admin', 'phone' => $phone, 'email_verified_at' => now()]);
+        // 운영 최고관리자처럼 role='관리'도 겸함 — 그래도 관리 알림엔 안 잡혀야(대표=요약만).
+        return User::factory()->create(['permission' => 'admin', 'role' => '관리', 'phone' => $phone, 'email_verified_at' => now()]);
     }
 
     private function manager(string $phone): User
@@ -57,13 +58,14 @@ class AlimtalkTriggerTest extends TestCase
     public function test_recipients_resolver_by_role(): void
     {
         $this->admin('010-1111-0000');
-        User::factory()->create(['permission' => 'super', 'phone' => '010-9999-0000', 'email_verified_at' => now()]);  // super 제외
+        User::factory()->create(['permission' => 'super', 'role' => '관리', 'phone' => '010-9999-0000', 'email_verified_at' => now()]);  // super 제외(role='관리' 겸해도)
         $this->manager('010-2222-0000');
         User::factory()->create(['permission' => 'manager', 'phone' => '010-4444-0000', 'email_verified_at' => now()]);  // 업무관리자
         User::factory()->create(['permission' => 'user', 'role' => '영업', 'phone' => '010-3333-0000', 'email_verified_at' => now()]);
 
         $this->assertSame(['010-1111-0000'], AlimtalkRecipients::admins(), '대표=admin만(super 제외)');
-        $this->assertEqualsCanonicalizing(['010-2222-0000', '010-4444-0000'], AlimtalkRecipients::managers(), '관리 role + 업무관리자(manager)');
+        // 대표(admin)·super 가 role='관리'를 겸해도 관리 알림엔 제외 — 관리 6종은 순수 관리/업무관리자만.
+        $this->assertEqualsCanonicalizing(['010-2222-0000', '010-4444-0000'], AlimtalkRecipients::managers(), '관리 role + 업무관리자(manager), 대표·super 제외');
         $this->assertSame(['010-4444-0000'], AlimtalkRecipients::payoutApprovers(2), '배치 level2 = 업무관리자');
         $this->assertSame(['010-1111-0000'], AlimtalkRecipients::payoutApprovers(3), '배치 level3 = 대표');
     }
