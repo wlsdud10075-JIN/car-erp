@@ -18,7 +18,7 @@
     $sidebarBrand = \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR';
 
     // 업무 워크프로세스 Notion 가이드 (전 직원 공통). URL 은 Setting 으로 교체 가능 — 기본값은 현재 Notion 페이지.
-    $workGuideUrl = \App\Models\Setting::get('work_guide_url', 'https://app.notion.com/p/37345d82bd838108a418c76a210f1854') ?: '';
+    $workGuideUrl = \App\Models\Setting::get('work_guide_url', 'https://dashing-stick-008.notion.site/37345d82bd838108a418c76a210f1854') ?: '';
 
     // i18n Phase 0 — 영어 활성 시에만 상단바 언어 전환 노출
     $localeEnEnabled = (bool) \App\Models\Setting::get('locale_en_enabled', false);

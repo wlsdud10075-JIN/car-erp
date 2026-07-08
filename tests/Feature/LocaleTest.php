@@ -46,6 +46,15 @@ class LocaleTest extends TestCase
             ->assertDontSee('Logout');
     }
 
+    public function test_sidebar_work_guide_uses_public_notion_url(): void
+    {
+        $this->actingAs($this->localeUser('ko'))
+            ->get(route('erp.dashboard'))
+            ->assertOk()
+            ->assertSee('https://dashing-stick-008.notion.site/37345d82bd838108a418c76a210f1854', false)
+            ->assertDontSee('https://app.notion.com/p/37345d82bd838108a418c76a210f1854', false);
+    }
+
     public function test_forces_korean_when_english_disabled_even_if_user_locale_is_en(): void
     {
         $this->enableEnglish(false);
