@@ -20,7 +20,8 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $statusFilter = '';
 
     // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 보기(재무 대시보드 딥링크 ?held=1).
-    #[Url] public bool $heldOnly = false;
+    //   URL 파라미터명 = 'held' (as 별칭). 재무 대시보드 '미수로 지급보류' 클릭 → ?held=1.
+    #[Url(as: 'held')] public bool $heldOnly = false;
 
     public int $salesmanFilter = 0;
 
@@ -115,6 +116,14 @@ new #[Layout('components.layouts.app')] class extends Component
                         ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$e]);
                 });
         });
+    }
+
+    public function mount(): void
+    {
+        // 재무 대시보드 '미수로 지급보류' 딥링크(?held=1) 진입 시 = 전체담당자 + 지급보류만.
+        if ($this->heldOnly) {
+            $this->salesmanFilter = 0;
+        }
     }
 
     // ── 목록 ──────────────────────────────────────────────────────

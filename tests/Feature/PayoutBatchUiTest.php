@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
@@ -74,6 +75,36 @@ class PayoutBatchUiTest extends TestCase
             ->call('toggleHeld')
             ->assertSet('heldOnly', true)
             ->assertSee('HELD1')
+            ->assertDontSee($paid->vehicle->vehicle_number);
+    }
+
+    public function test_dashboard_held_deeplink_all_salesmen_held_only(): void
+    {
+        $buyer = Buyer::create(['name' => 'DL', 'is_active' => true]);
+        foreach ([['HELDA', 'employee'], ['HELDB', 'freelance']] as [$no, $type]) {
+            $sm = Salesman::create(['name' => "SM-$no", 'is_active' => true, 'type' => $type]);
+            $v = Vehicle::create([
+                'vehicle_number' => $no, 'sales_channel' => 'export', 'currency' => 'KRW',
+                'exchange_rate' => 1, 'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
+                'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
+            ]);
+            Settlement::create([
+                'vehicle_id' => $v->id, 'salesman_id' => $sm->id,
+                'settlement_type' => $type === 'employee' ? 'per_unit' : 'ratio',
+                'per_unit_amount' => $type === 'employee' ? 100_000 : null,
+                'settlement_ratio' => $type === 'freelance' ? 50 : null,
+                'settlement_status' => 'confirmed', 'confirmed_at' => '2026-05-15', 'attributed_month' => '2026-05-01',
+            ]);
+        }
+        $paid = $this->confirmed('2026-05-15');   // 완납(미수 0) — 안 보여야
+
+        $this->actingAs($this->user('user', '재무'));
+
+        // 재무 대시보드 딥링크 ?held=1 → 전체담당자 지급보류만
+        $this->get(route('erp.settlements.index', ['held' => 1]))
+            ->assertOk()
+            ->assertSee('HELDA')
+            ->assertSee('HELDB')
             ->assertDontSee($paid->vehicle->vehicle_number);
     }
 
