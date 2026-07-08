@@ -815,8 +815,12 @@ class Vehicle extends Model
      */
     public function guardStageOrderForExport(): void
     {
-        $hasExportInput = $this->export_buyer_id
-            || $this->shipping_date
+        // 2026-07-08 (방향1) — 당사자 배정(export_buyer_id)은 게이트 트리거에서 제외.
+        //   바이어 이름 배정/전파(item8 propagateBlToExport 포함)는 "통관 행위"가 아니라 데이터일 뿐인데,
+        //   트리거에 있으면 배정만으로 C4(말소완료 강제)/C5(50% 입금)가 오발동해 판매/말소 저장이 통째 차단됨
+        //   (말소 도중이면 "말소 완료 후 통관 진입" 닭-달걀). 실제 통관/선적 행위 5개에만 게이트 발동.
+        //   에러 메시지의 'export_buyer_id' 키는 사용자 표시 앵커로 존치. (SKILLS §8 #24 근본 해소)
+        $hasExportInput = $this->shipping_date
             || $this->export_declaration_document
             || $this->bl_loading_location
             || $this->bl_document
