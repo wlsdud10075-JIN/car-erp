@@ -166,6 +166,28 @@ class ErpShippingBundleTest extends TestCase
             ->assertDontSee('22나2222');
     }
 
+    public function test_reset_filters_returns_to_entry_state(): void
+    {
+        $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
+        $v = Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.vehicles.index')
+            ->set('search', '아무거나')
+            ->set('progressFilter', '판매중')
+            ->set('dateType', 'sale')
+            ->set('accumSearchTerm', '33다3333')
+            ->call('addToAccumulation')
+            ->assertSet('shipDocIds', [$v->id])
+            ->call('resetFilters')
+            ->assertSet('search', '')
+            ->assertSet('progressFilter', '')
+            ->assertSet('dateType', 'all')
+            ->assertSet('shipDocIds', [])
+            ->assertSet('sortColumn', 'created_at');
+    }
+
     public function test_date_type_balance_filters_by_final_payment_date(): void
     {
         $buyer = Buyer::create(['name' => '바이어', 'is_active' => true]);

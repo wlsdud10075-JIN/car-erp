@@ -21,6 +21,8 @@ return [
 
     'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리) · 선박명 · 컨테이너번호',
     'search_btn' => '조회',
+    'reset_btn' => '초기화',
+    'reset_hint' => '검색·기간·필터·누적을 차량관리 진입 상태로 되돌립니다.',
     'all_salesmen' => '담당자 전체',
     'all_buyers' => '바이어 전체',
     'filter_all' => '전체',

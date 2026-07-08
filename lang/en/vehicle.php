@@ -21,6 +21,8 @@ return [
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6) · vessel · container no.',
     'search_btn' => 'Search',
+    'reset_btn' => 'Reset',
+    'reset_hint' => 'Restore search, dates, filters and accumulation to the initial state.',
     'all_salesmen' => 'All Salesmen',
     'all_buyers' => 'All Buyers',
     'filter_all' => 'All',

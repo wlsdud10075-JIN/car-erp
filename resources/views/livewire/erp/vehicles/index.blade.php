@@ -947,6 +947,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /** 초기화 — 차량관리 진입 직후 상태로 원복(검색·기간·진행·담당·바이어·누적·정렬 전부 리셋). */
+    public function resetFilters(): void
+    {
+        $this->reset([
+            'search', 'dateType', 'progressFilter', 'excludeStatuses', 'action',
+            'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
+            'sortColumn', 'sortDirection',
+        ]);
+        // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
+        $this->dateFrom = now()->subYear()->format('Y-m-d');
+        $this->dateTo = now()->format('Y-m-d');
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     // 자동생성 서류 type → 서류 탭 라벨(vehicle.docs.*) 매핑
     private function mailGenLabel(string $type): string
     {
@@ -4232,6 +4247,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforeach
         </select>
         <button wire:click="applyFilters" class="btn-search">{{ __('vehicle.search_btn') }}</button>
+        <button type="button" wire:click="resetFilters"
+                class="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                title="{{ __('vehicle.reset_hint') }}">{{ __('vehicle.reset_btn') }}</button>
     </div>
     {{-- 빠른 탭 필터 — 큐 16: 채널 pill 제거 (단일 채널) --}}
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
