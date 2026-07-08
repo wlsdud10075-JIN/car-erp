@@ -98,10 +98,14 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
     Volt::route('transfers', 'erp.transfers.index')->name('transfers.index');
 });
 
-// 관리자 — super/admin만 (포워딩사·영업담당자)
+// 관리자 — super/admin만 (영업담당자)
 Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
-    Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');
     Volt::route('salesmen', 'erp.salesmen.index')->name('salesmen.index');
+});
+
+// 포워딩사(선적현황) — admin + [관리] (canManageForwarding). mount 가드로 검증 (2026-07-08 jin, 항구와 동일).
+Route::middleware(['auth', 'verified'])->prefix('erp')->name('erp.')->group(function () {
+    Volt::route('forwarding-companies', 'erp.forwarding-companies.index')->name('forwarding-companies.index');
 });
 
 // 채권관리 — admin + 정산/관리 role (큐 14-2 보강: 채권 위험 모니터링 광범위 허용)

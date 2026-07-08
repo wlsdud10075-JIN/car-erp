@@ -9,6 +9,8 @@ use App\Models\ForwardingCompany;
 use App\Models\InterVehicleTransfer;
 use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
+use App\Models\ShippingRequest;
+use App\Models\TaskAlarm;
 use App\Models\Vehicle;
 use App\Services\InterVehicleTransferService;
 use App\Services\NiceApiService;
@@ -64,11 +66,178 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (empty($this->shipDocIds)) {
             return null;
         }
-        $batches = \App\Models\ShippingRequest::whereIn('vehicle_id', $this->shipDocIds)
-            ->where('status', '!=', \App\Models\ShippingRequest::STATUS_CANCELLED)
+        $batches = ShippingRequest::whereIn('vehicle_id', $this->shipDocIds)
+            ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
             ->pluck('batch_id')->unique()->values();
 
         return $batches->count() === 1 ? (string) $batches->first() : null;
+    }
+
+    // ── 누적검색 (차량번호로 하나씩 검색 → 선택셋 shipDocIds 에 누적) ──────────
+    //   접이식 검색란. 목록 검색·페이지를 바꿔도 shipDocIds 는 유지되므로(리셋 없음) 여러 검색에 걸쳐 누적된다.
+    //   누적된 셋이 곧 「선적요청으로 묶기」 대상. (jin 2026-07-08 — board 지연 대비 ERP 자체 묶음.)
+    public bool $accumSearchOpen = false;
+
+    public string $accumSearchTerm = '';
+
+    public function toggleAccumSearch(): void
+    {
+        $this->accumSearchOpen = ! $this->accumSearchOpen;
+    }
+
+    /** 차량번호로 검색해 매칭 차량을 누적셋(shipDocIds)에 추가. 스코프 밖·중복은 조용히 무시, 결과 토스트. */
+    public function addToAccumulation(): void
+    {
+        $user = auth()->user();
+        $term = trim($this->accumSearchTerm);
+        if ($term === '') {
+            return;
+        }
+
+        $matches = Vehicle::query()
+            ->where('vehicle_number', 'like', "%{$term}%")
+            ->orderByDesc('id')
+            ->limit(20)
+            ->get(['id', 'vehicle_number', 'salesman_id']);
+
+        $added = 0;
+        $current = array_map('intval', $this->shipDocIds);
+        foreach ($matches as $v) {
+            if (! $user?->canScopeVehicle($v)) {
+                continue;   // 본인 스코프 밖 (IDOR 방지)
+            }
+            if (in_array($v->id, $current, true)) {
+                continue;   // 이미 누적됨
+            }
+            $current[] = $v->id;
+            $added++;
+        }
+        $this->shipDocIds = array_values(array_unique($current));
+        $this->accumSearchTerm = '';
+
+        if ($added === 0) {
+            $this->dispatch('notify', message: __('vehicle.accum.none', ['term' => $term]), type: 'warning');
+        } elseif ($added === 1) {
+            $this->dispatch('notify', message: __('vehicle.accum.added_one'), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('vehicle.accum.added_many', ['count' => $added]), type: 'success');
+        }
+    }
+
+    public function removeFromAccumulation(int $id): void
+    {
+        $this->shipDocIds = array_values(array_filter(
+            array_map('intval', $this->shipDocIds),
+            fn ($x) => $x !== $id
+        ));
+    }
+
+    /** 누적셋 상세(칩 표시용) — id 순서 유지, 스코프 안전. */
+    #[Computed]
+    public function accumVehicles()
+    {
+        if (empty($this->shipDocIds)) {
+            return collect();
+        }
+
+        return Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
+            ->get(['id', 'vehicle_number', 'sales_channel', 'export_buyer_id', 'shipping_method'])
+            ->sortBy(fn ($v) => array_search($v->id, array_map('intval', $this->shipDocIds), true))
+            ->values();
+    }
+
+    /**
+     * 누적/선택한 차량을 하나의 선적요청 묶음(batch)으로 생성 → 「선적요청」 화면으로 이동.
+     * board 지연 대비 ERP 자체 묶음(jin 2026-07-08). board 발과 동일 파이프라인 — 이후 씬은 동일.
+     *  - 권한 = canAccessClearance (관리·수출통관·admin·manager). 차량별 canScopeVehicle 재인가(IDOR).
+     *  - export 채널만. 이미 open 묶음(requested/in_progress)인 차량은 skip(이중 묶음 방지).
+     *  - 값 = 각 차량 export 값 그대로(buyer/consignee/method). method 미지정이면 RORO(컬럼 NOT NULL). status=requested.
+     */
+    public function bundleToShipping(): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canAccessClearance(), 403);
+
+        $ids = array_values(array_unique(array_map('intval', $this->shipDocIds)));
+        if (empty($ids)) {
+            $this->dispatch('notify', message: __('vehicle.accum.bundle_empty'), type: 'error');
+
+            return;
+        }
+
+        $vehicles = Vehicle::whereIn('id', $ids)->get();
+        $batchId = (string) \Illuminate\Support\Str::uuid();
+        $created = [];
+        $skipped = [];
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($vehicles, $user, $batchId, &$created, &$skipped) {
+            foreach ($vehicles as $vehicle) {
+                if (! $user->canScopeVehicle($vehicle)) {
+                    $skipped[] = $vehicle->vehicle_number;   // 스코프 밖
+
+                    continue;
+                }
+                if ($vehicle->sales_channel !== 'export') {
+                    $skipped[] = $vehicle->vehicle_number;   // 수출 채널만
+
+                    continue;
+                }
+                $inOpen = ShippingRequest::where('vehicle_id', $vehicle->id)
+                    ->whereIn('status', ShippingRequest::OPEN_STATUSES)
+                    ->exists();
+                if ($inOpen) {
+                    $skipped[] = $vehicle->vehicle_number;   // 이미 진행중 묶음 있음
+
+                    continue;
+                }
+
+                ShippingRequest::create([
+                    'batch_id' => $batchId,
+                    'vehicle_id' => $vehicle->id,
+                    'buyer_id' => $vehicle->export_buyer_id ?: null,
+                    'consignee_id' => $vehicle->export_consignee_id ?: null,
+                    // 컬럼 NOT NULL — 미지정 차량은 RORO 기본값(선적요청 화면/차량편집에서 정정 가능)
+                    'shipping_method' => in_array($vehicle->shipping_method, ShippingRequest::METHODS, true)
+                        ? $vehicle->shipping_method : ShippingRequest::METHODS[0],
+                    'requested_by_email' => $user->email,
+                    'status' => ShippingRequest::STATUS_REQUESTED,
+                    'requested_at' => now(),
+                ]);
+                $this->fireShippingRequestAlarm($vehicle);
+                $created[] = $vehicle->id;
+            }
+        });
+
+        if (empty($created)) {
+            $this->dispatch('notify', message: __('vehicle.accum.bundle_all_skipped', ['skipped' => implode(', ', $skipped)]), type: 'error');
+
+            return;
+        }
+
+        $this->shipDocIds = [];
+        $this->accumSearchOpen = false;
+
+        session()->flash('bundle_created', [
+            'count' => count($created),
+            'skipped' => $skipped,
+        ]);
+
+        $this->redirect(route('erp.shipping-requests.index', ['search' => $batchId]), navigate: true);
+    }
+
+    /** 선적요청 알람 — 수출통관(board store() 와 동일). 관리도 scopeVisibleTo 로 가시. */
+    private function fireShippingRequestAlarm(Vehicle $vehicle): void
+    {
+        $alarm = TaskAlarm::firstOrNew([
+            'type' => 'shipping_requested', 'vehicle_id' => $vehicle->id, 'resolved_at' => null,
+        ]);
+        $alarm->target_role = '수출통관';
+        $alarm->due_date = now();
+        $alarm->message_meta = TaskAlarm::sanitizeMeta([
+            'vehicle_number' => $vehicle->vehicle_number,
+            'shipping_method' => $vehicle->shipping_method,
+        ]);
+        $alarm->save();
     }
 
     // ── 탁송비 명세서 일괄 기입 (건바이건 비용 — 위카 등 업체 명세서 붙여넣기 → 차량번호 매칭) ──
@@ -4088,6 +4257,54 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
+{{-- ── 누적검색 — 차량번호로 하나씩 검색해 선적 묶음 셋에 누적 (jin 2026-07-08, board 지연 대비 ERP 자체 묶음) ── --}}
+<div class="mb-2">
+    <button type="button" wire:click="toggleAccumSearch"
+            class="flex w-full items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 hover:bg-indigo-100">
+        <span class="flex items-center gap-2">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+            {{ __('vehicle.accum.title') }}
+            @if(count($shipDocIds) > 0)
+                <span class="pill-count">{{ count($shipDocIds) }}</span>
+            @endif
+        </span>
+        <svg class="h-4 w-4 transition-transform {{ $accumSearchOpen ? 'rotate-180' : '' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+    </button>
+
+    @if($accumSearchOpen)
+    <div class="mt-1 space-y-3 rounded-lg border border-indigo-200 bg-white p-3">
+        <p class="text-xs text-gray-500">{{ __('vehicle.accum.hint') }}</p>
+        <div class="flex flex-wrap items-center gap-2">
+            <input wire:model="accumSearchTerm" wire:keydown.enter.prevent="addToAccumulation" type="text"
+                   placeholder="{{ __('vehicle.accum.placeholder') }}" class="input-filter w-52" />
+            <button type="button" wire:click="addToAccumulation" class="btn-search">{{ __('vehicle.accum.add_btn') }}</button>
+        </div>
+
+        @if(count($shipDocIds) > 0)
+        {{-- 누적된 차량 칩 (수출 아닌 차량은 회색 표시 — 묶기 시 skip) --}}
+        <div class="flex flex-wrap gap-1.5">
+            @foreach($this->accumVehicles as $av)
+            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs {{ $av->sales_channel === 'export' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-gray-50 text-gray-400' }}">
+                {{ $av->vehicle_number }}
+                @if($av->sales_channel !== 'export')<span class="text-[10px] text-red-400">{{ __('vehicle.accum.non_export') }}</span>@endif
+                <button type="button" wire:click="removeFromAccumulation({{ $av->id }})" class="text-gray-400 hover:text-red-500">&times;</button>
+            </span>
+            @endforeach
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
+            @if(auth()->user()?->canAccessClearance())
+            <button type="button" wire:click="bundleToShipping" wire:confirm="{{ __('vehicle.accum.bundle_confirm') }}"
+                    class="ml-auto rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                {{ __('vehicle.accum.bundle_btn') }}
+            </button>
+            @endif
+        </div>
+        @endif
+    </div>
+    @endif
+</div>
+
 {{-- #3 다중차량 선적 서류 — 체크박스 선택(export 차량) 시 노출. 선택 N대를 1서류에 자동 기입(최대 30대). --}}
 @if(count($shipDocIds) > 0)
 @php
@@ -4104,6 +4321,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
     </div>
     <div class="flex flex-wrap gap-2">
+        {{-- ⓪ 선적요청으로 묶기 — 선택 N대를 새 batch 로 선적요청 생성(관리·통관). board 발과 동일 파이프라인. --}}
+        @if(auth()->user()?->canAccessClearance())
+            <button type="button" wire:click="bundleToShipping" wire:confirm="{{ __('vehicle.accum.bundle_confirm') }}"
+                    class="rounded border border-indigo-300 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
+                → {{ __('vehicle.accum.bundle_btn') }}
+            </button>
+        @endif
         {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
         @if(auth()->user()?->canApprove() && $this->selectedBundle)
             <a href="{{ route('erp.shipping-requests.index', ['focus' => $this->selectedBundle]) }}" wire:navigate

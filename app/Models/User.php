@@ -357,6 +357,15 @@ class User extends Authenticatable
     }
 
     /**
+     * 포워딩사(선적현황) 열람/편집 — admin + [관리] (2026-07-08 jin, 항구 마스터와 동일 정책).
+     * 라우트 'auth, verified' + Volt mount 가드로 검증.
+     */
+    public function canManageForwarding(): bool
+    {
+        return $this->isAdmin() || $this->isManager() || $this->role === '관리';
+    }
+
+    /**
      * 큐 2.6 — 단계 역행/skip 강제 진행 권한 (Security 제안).
      * 단계 의존성(C4·C5·H1·H2) 자체를 우회 — super 전용.
      * admin은 미입금 우회만 가능, 단계 자체 skip은 불가.

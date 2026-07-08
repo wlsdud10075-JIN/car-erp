@@ -29,6 +29,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $memo         = '';
     public bool   $is_active    = true;
 
+    // 포워딩사(선적현황) — admin + [관리] (canManageForwarding). 라우트 'auth, verified' + mount 가드 (2026-07-08 jin).
+    public function mount(): void
+    {
+        abort_unless(auth()->user()?->canManageForwarding(), 403);
+    }
+
     public function searchNow(): void
     {
         unset($this->shipments, $this->companies);

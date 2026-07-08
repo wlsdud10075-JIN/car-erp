@@ -225,10 +225,10 @@
                 ],
                 [
                     'label' => __('nav.menu.forwarding'),
-                    'href' => $user->canAccessAdmin() ? route('erp.forwarding-companies.index') : '#',
+                    'href' => $user->canManageForwarding() ? route('erp.forwarding-companies.index') : '#',
                     'icon' => 'building',
                     'active' => request()->routeIs('erp.forwarding-companies.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canManageForwarding(),
                 ],
                 [
                     'label' => __('nav.menu.ports'),
