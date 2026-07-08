@@ -90,6 +90,8 @@ return [
     'saved_edit' => 'Collection updated.',
     'saved_add' => 'Collection added.',
     'deleted' => 'Collection deleted.',
+    'delete_failed' => 'This collection record cannot be deleted — it is linked to a finance-confirmed payment.',
+    'save_failed' => 'Failed to save the collection record. Please check the amount and method.',
     'err_paid_no_deposit' => "This vehicle's settlement is paid; the 'Deposit' method can't be used. Choose cash, offset, other, or write-off.",
     'list_title' => 'Collection history (latest first)',
     'list_empty' => 'No collection history.',

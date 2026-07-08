@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\FinalPayment;
+use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -243,5 +245,55 @@ class LockGuardVerificationTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertNull(Vehicle::find($v->id), '업무관리자는 사유 입력 후 삭제 가능');
+    }
+
+    // ── Phase 2 — 채권 500 방어 + 잔차 처리 ──────────────────────────
+    public function test_receivable_delete_of_confirmed_mirror_is_friendly_not_500(): void
+    {
+        // 확정 FP에 연결된 채권 deposit 삭제 → DomainException. deleteHistory try/catch 없으면 500(jin 실측).
+        $buyer = Buyer::create(['name' => 'RCV BUYER', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'RCV-1', 'sales_channel' => 'heyman', 'buyer_id' => $buyer->id,
+            'currency' => 'KRW', 'exchange_rate' => 1, 'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
+        ]);
+        $admin = $this->admin();
+        $rh = ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'collected_at' => '2026-05-02', 'collector_id' => $admin->id,
+            'method' => 'deposit', 'amount' => 500_000,
+        ]);
+        $fp = FinalPayment::find($rh->fresh()->final_payment_id);
+        $fp->confirmed_at = now();
+        $fp->saveQuietly();
+
+        $this->actingAs($admin);
+        Volt::test('erp.receivables.index')
+            ->call('openPanel', $v->id)
+            ->call('deleteHistory', $rh->id)
+            ->assertHasNoErrors();   // 500 대신 정상 처리
+
+        $this->assertNotNull(ReceivableHistory::find($rh->id), '확정 연결 이력은 삭제 안 됨(친절 차단)');
+    }
+
+    public function test_small_remainder_cleared_by_other_method(): void
+    {
+        // 998 입금 + 2 남은 잔차 → 채권 「기타(other)」 2 입력 → 미수 0(완납).
+        $buyer = Buyer::create(['name' => 'REM BUYER', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'REM-1', 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'currency' => 'USD', 'exchange_rate' => 1300, 'sale_price' => 1000, 'sale_date' => '2026-05-01',
+        ]);
+        $v->finalPayments()->create([
+            'amount' => 998, 'exchange_rate' => 1300, 'payment_date' => '2026-05-02',
+            'confirmed_at' => now(), 'confirmed_by_user_id' => $this->admin()->id,
+        ]);
+        $v->refreshCaches();
+        $this->assertSame(2, (int) $v->fresh()->sale_unpaid_amount, '잔차 2 남음');
+
+        ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'collected_at' => '2026-05-03', 'collector_id' => $this->admin()->id,
+            'method' => 'other', 'amount' => 2,
+        ]);
+        $v->refreshCaches();
+        $this->assertSame(0, (int) $v->fresh()->sale_unpaid_amount, '기타 처리로 완납');
     }
 }
