@@ -167,6 +167,17 @@ class SettlementPayoutBatch extends Model
             throw new \DomainException('해당 월에 제출할 확정 정산이 없습니다.');
         }
 
+        // 지급 게이트 (jin 2026-07-08) — 미수 있는 차량의 정산은 배치에서 제외(지급보류).
+        //   근거: 받을 돈(미수)을 다 못 받았는데 영업 정산을 지급하면 회사 리스크 + 수금 동기 약화.
+        //   완납 기준 A-3로 생성돼도, 운임비 후입력 등으로 완납 후 미수가 재발하면 지급 시점에 재차단.
+        //   비파괴적 — 정산은 유지(귀속월·스냅샷 보존), 지급만 보류. 완납되면 다음 배치에 자동 재진입.
+        $ids = Settlement::whereIn('id', $ids)->with('vehicle')->get()
+            ->reject(fn ($s) => (int) ($s->vehicle?->sale_unpaid_amount ?? 0) > 0)
+            ->pluck('id');
+        if ($ids->isEmpty()) {
+            throw new \DomainException('지급 가능한 정산이 없습니다 (해당 월 확정 정산이 전부 미수 있는 차량이라 지급보류됨. 완납 후 지급).');
+        }
+
         $rank = $submitter->approvalRank();
 
         $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids) {

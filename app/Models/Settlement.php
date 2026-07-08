@@ -248,6 +248,26 @@ class Settlement extends Model
         return $this->belongsTo(Salesman::class);
     }
 
+    /**
+     * 지급보류 — confirmed 인데 차량에 미수(받을 돈)가 남아 월배치·지급에서 제외되는 상태.
+     * (jin 2026-07-08: 받을 돈 다 못 받았으면 영업 정산 지급 보류 — 회사 리스크·수금 동기.)
+     * 완납되면 자동 해소돼 다음 배치에 재진입.
+     */
+    public function isPayoutHeldByUnpaid(): bool
+    {
+        return $this->settlement_status === 'confirmed'
+            && $this->payout_batch_id === null
+            && (int) ($this->vehicle?->sale_unpaid_amount ?? 0) > 0;
+    }
+
+    /** SQL 스코프 — 지급보류(confirmed·미배치·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
+    public function scopePayoutHeldByUnpaid($query)
+    {
+        return $query->where('settlement_status', 'confirmed')
+            ->whereNull('payout_batch_id')
+            ->whereHas('vehicle', fn ($v) => $v->where('sale_unpaid_amount_krw_cache', '>', 0));
+    }
+
     // Phase 2 — 소속 월배치(정산지급 승인).
     public function payoutBatch(): BelongsTo
     {

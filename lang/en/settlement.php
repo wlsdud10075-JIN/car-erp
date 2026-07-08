@@ -19,6 +19,11 @@ return [
 
     'search_ph' => 'Plate',
     'filter_all_status' => 'All statuses',
+    'held' => [
+        'badge' => 'Payout held',
+        'filter' => 'Held only',
+        'tooltip' => 'Receivable remaining (₩:amount) — payout held until fully paid; auto-included in a batch once collected.',
+    ],
     'filter_all_salesman' => 'All salesmen',
     'filter_all_month' => 'All months',
     'filter_month_title' => 'Attribution month (full-payment month, 1st–last) — paid on the 10th of next month',
