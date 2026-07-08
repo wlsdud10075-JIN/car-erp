@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -245,6 +246,45 @@ class LockGuardVerificationTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertNull(Vehicle::find($v->id), '업무관리자는 사유 입력 후 삭제 가능');
+    }
+
+    // ── Phase 1 — 워크플로우 락 문구에 "어느 탭" 안내 포함 ────────────
+    public function test_workflow_lock_messages_carry_tab_guidance(): void
+    {
+        $buyer = Buyer::create(['name' => 'TAB BUYER', 'is_active' => true]);
+        $sm = Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']);
+
+        // C4 — 말소 미완료 + 통관 행위(선적일) → "매입 탭"
+        $v = Vehicle::create(['vehicle_number' => 'TAB-C4', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id]);
+        $v->shipping_date = '2026-05-05';
+        try {
+            $v->guardStageOrderForExport();
+            $this->fail('C4 발동 안 함');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('매입 탭', $e->getMessage());
+        }
+
+        // 컨사이니 — 말소완료 + 반입지 + 컨사이니 없음 → "판매 탭"
+        $v2 = Vehicle::create([
+            'vehicle_number' => 'TAB-CONS', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
+            'is_deregistered' => true, 'deregistration_document' => 'x.pdf', 'bl_loading_location' => 'PUSAN',
+        ]);
+        try {
+            $v2->guardStageOrderForExport();
+            $this->fail('컨사이니 락 발동 안 함');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('판매 탭', $e->getMessage());
+        }
+
+        // H3 — B/L 문서 + 반입지 없음 → "선적 탭"
+        $v3 = Vehicle::create(['vehicle_number' => 'TAB-H3', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id]);
+        $v3->bl_document = 'bl.pdf';
+        try {
+            $v3->guardAttachmentDeps();
+            $this->fail('H3 발동 안 함');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('선적 탭', $e->getMessage());
+        }
     }
 
     // ── Phase 2 — 채권 500 방어 + 잔차 처리 ──────────────────────────
