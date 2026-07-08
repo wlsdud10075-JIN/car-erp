@@ -38,9 +38,11 @@ class BizmAlimtalkService
      * @param  string  $phone  수신 번호(하이픈 무관 — 숫자만 정규화)
      * @param  array  $vars  `#{변수}` 치환값 (예: ['차량번호' => '19더9065'])
      * @param  array  $context  ['vehicle_id'=>, 'user_id'=>] 로그 맥락(선택)
+     * @param  array  $buttons  웹링크 버튼 배열(선택) — [['name'=>,'type'=>'WL','url_mobile'=>,'url_pc'=>], ...].
+     *                          BizM 템플릿에 등록된 버튼과 일치해야 발송됨(발송 시 URL 만 주입). 정산 승인 링크 등.
      * @return AlimtalkLog status: sent|failed|skipped
      */
-    public function send(string $code, string $phone, array $vars = [], array $context = []): AlimtalkLog
+    public function send(string $code, string $phone, array $vars = [], array $context = [], array $buttons = []): AlimtalkLog
     {
         $phone = $this->normalizePhone($phone);
         $base = [
@@ -73,6 +75,10 @@ class BizmAlimtalkService
                 'tmplId' => $this->config->tmplId($code),
                 'msg' => $message,
             ];
+            // 웹링크 버튼(정산 승인 링크 등) — 등록된 버튼에 발송 시점 URL 주입.
+            if (! empty($buttons)) {
+                $item['button'] = array_values($buttons);
+            }
 
             $response = Http::timeout(15)
                 ->withHeaders(['userid' => $this->config->userid])

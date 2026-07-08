@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BuyerDocumentController;
+use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehicleExportController;
@@ -20,6 +21,16 @@ Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class);
 Route::get('d/deregistration/{vehicle}', [BuyerDocumentController::class, 'deregistration'])
     ->middleware('signed')
     ->name('buyer.deregistration');
+
+// 월배치 정산지급 — 대표가 카톡 알림톡 버튼으로 바로 승인/반려 (2026-07-08). 로그인 없음(signed 서명이 인가).
+//   서명 = 배치 id + 승인자 u(권한 바인딩) + 5일 만료. show(GET)=내역만 표시(자동처리 X, 카톡 프리페치 방어),
+//   decide(POST)=실제 승인/반려(canDecide 재검증=1회용·계단·상태 가드). CSRF 제외=bootstrap/app.php(a/payout/*).
+Route::get('a/payout/{batch}', [PayoutApprovalController::class, 'show'])
+    ->middleware('signed')
+    ->name('payout.approve.show');
+Route::post('a/payout/{batch}/decide', [PayoutApprovalController::class, 'decide'])
+    ->middleware('signed')
+    ->name('payout.approve.decide');
 
 // 사내 ERP — 별도 소개(랜딩) 화면 없이 첫 접속은 로그인으로. 로그인 상태면 대시보드로.
 Route::get('/', function () {
