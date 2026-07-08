@@ -30,11 +30,15 @@ class AlimtalkRecipients
     /**
      * 관리 알림 수신자 — role='관리'(rank1) + 업무관리자(permission='manager', rank2).
      * (jin 2026-07-07: 업무관리자도 대표에 준하는 운영 권한이라 관리 6종 알림을 함께 받는다.)
+     * ⚠️ 대표(admin)·super 는 제외 — 대표는 요약(admins())만, super(진)는 업무알림 제외.
+     *    (jin 2026-07-08: 최고관리자가 role='관리'도 겸해 관리 알림을 오수신하던 버그 fix.)
      */
     public static function managers(): array
     {
         return self::override('manager') ?? self::phones(
-            User::query()->where(fn ($q) => $q->where('role', '관리')->orWhere('permission', 'manager'))
+            User::query()
+                ->where(fn ($q) => $q->where('role', '관리')->orWhere('permission', 'manager'))
+                ->whereNotIn('permission', ['admin', 'super'])
         );
     }
 
