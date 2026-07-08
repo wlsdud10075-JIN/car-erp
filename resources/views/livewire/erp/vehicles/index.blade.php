@@ -2791,6 +2791,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validate($rules, $messages, $attributes);
 
+        // 외화 환율 필수 — 판매가 있는 외화(비-KRW) 차량에 환율 미입력 시 차단.
+        //   근거: 환율 0/빈값이면 정산 판매금원화=0 → 마이너스 정산(jin 2026-07-08 실측). chk_sale_required(DB)
+        //   500 을 선제해 "환율 입력 — 판매 탭" 친절 메시지로 안내. KRW는 saving 훅이 자동 1 normalize 라 무관.
+        $salePriceNum = (float) str_replace(',', '', $this->sale_price_str ?: '0');
+        $rateNum = (float) str_replace(',', '', $this->exchange_rate_str ?: '0');
+        if ($salePriceNum > 0 && $this->currency !== 'KRW' && $rateNum <= 0) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'exchange_rate_str' => __('vehicle.valmsg.exchange_rate_required'),
+            ]);
+        }
+
         // 차량 첨부 총 건수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
         if (count($this->existingPhotos) + count($this->photoFiles) > self::MAX_PHOTOS) {
             throw \Illuminate\Validation\ValidationException::withMessages([
@@ -3551,6 +3562,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         return null;
     }
 
+    // ── 삭제 사유 모달 (2026-07-08 jin) — 회계 연관 차량 삭제 시 사유 입력·AuditLog 강제 ──
+    public bool $showDeleteGate = false;
+
+    public ?int $deleteTargetId = null;
+
+    public array $deleteTargetInfo = [];   // ['number','reason_ctx']
+
+    public string $deleteReason = '';
+
     public function delete(int $id): void
     {
         $vehicle = Vehicle::findOrFail($id);
@@ -3560,6 +3580,58 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, __('vehicle.toast.edit_own_only'));
         $this->assertEditable($id); // 동시 편집 잠금 — 누군가 편집 중인 차량은 삭제 차단
 
+        // 회계 연관 차량(확정 잔금·정산) → 사유 모달. 권한을 모달 前에 검사(헛수고 방지).
+        if ($vehicle->requiresDeleteReason()) {
+            if ($vehicle->hasConfirmedPaymentLock() && ! auth()->user()->canAccessAdmin()) {
+                $this->dispatch('notify', message: __('vehicle.delete_gate.admin_only'), type: 'error');
+
+                return;
+            }
+            $this->deleteTargetId = $id;
+            $this->deleteTargetInfo = [
+                'number' => $vehicle->vehicle_number,
+                'ctx' => $vehicle->hasConfirmedPaymentLock() ? __('vehicle.delete_gate.ctx_locked') : __('vehicle.delete_gate.ctx_settlement'),
+            ];
+            $this->deleteReason = '';
+            $this->resetErrorBag(['deleteReason']);
+            $this->showDeleteGate = true;
+
+            return;
+        }
+
+        // 일반 차량 — 즉시 삭제 (사유 불필요).
+        $this->performVehicleDelete($vehicle, null);
+    }
+
+    /** 회계 연관 차량 삭제 확정 — 사유 필수 + AuditLog. */
+    public function confirmDeleteWithReason(): void
+    {
+        if (! $this->deleteTargetId) {
+            return;
+        }
+        $this->validate(['deleteReason' => ['required', 'string', 'min:5', 'max:500']], [], [
+            'deleteReason' => __('vehicle.delete_gate.reason'),
+        ]);
+        $vehicle = Vehicle::findOrFail($this->deleteTargetId);
+        abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, __('vehicle.toast.edit_own_only'));
+        $this->assertEditable($this->deleteTargetId);
+
+        $this->performVehicleDelete($vehicle, $this->deleteReason);
+    }
+
+    public function cancelDeleteGate(): void
+    {
+        $this->showDeleteGate = false;
+        $this->deleteTargetId = null;
+        $this->deleteReason = '';
+        $this->deleteTargetInfo = [];
+        $this->resetErrorBag(['deleteReason']);
+    }
+
+    private function performVehicleDelete(Vehicle $vehicle, ?string $reason): void
+    {
+        $vehicleId = $vehicle->id;
+        $vehicleNumber = $vehicle->vehicle_number;
         try {
             $vehicle->delete();
         } catch (\DomainException $e) {
@@ -3568,6 +3640,24 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
+
+        // 회계 연관 삭제는 사유·행위자 영구 기록.
+        if ($reason !== null) {
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(),
+                'auditable_type' => Vehicle::class,
+                'auditable_id' => $vehicleId,
+                'action' => 'vehicle_deleted_with_reason',
+                'column_name' => $vehicleNumber,
+                'new_value' => $reason,
+                'ip_address' => request()->ip(),
+            ]);
+        }
+
+        $this->showDeleteGate = false;
+        $this->deleteTargetId = null;
+        $this->deleteReason = '';
+        $this->deleteTargetInfo = [];
         $this->unsetComputedProperties();
         session()->flash('success', __('vehicle.deleted'));
     }
@@ -5563,7 +5653,7 @@ function vehicleColumnsToggle() {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.exchange_rate') }} @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.exchange_rate') }} @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" />@error('exchange_rate_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
                 <div>
                     <div class="flex items-center justify-between">
                         <label class="label-base">{{ __('vehicle.field.buyer') }} </label>
@@ -7140,6 +7230,41 @@ function vehicleColumnsToggle() {
             <button type="button" wire:click="approvePurchaseGate" wire:loading.attr="disabled"
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.purchase_gate.approve_btn') }}</button>
             @endif
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- ══ 삭제 사유 모달 (2026-07-08) — 회계 연관 차량(확정 잔금·정산) 삭제 시 사유+로그 ══
+     리스트 행에서 뜨므로 패널 attemptClose 밖 = 자체 ESC/backdrop 닫기. --}}
+@if($showDeleteGate)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" wire:key="delete-gate-modal"
+     x-data @keyup.escape.window="$wire.cancelDeleteGate()">
+    <div class="fixed inset-0" @click="$wire.cancelDeleteGate()"></div>
+    <div class="relative w-full max-w-md rounded-xl bg-white shadow-2xl">
+        <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
+            <span class="mt-0.5 text-2xl">🗑️</span>
+            <div>
+                <h3 class="text-base font-bold text-gray-900">{{ __('vehicle.delete_gate.title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ $deleteTargetInfo['ctx'] ?? '' }}</p>
+            </div>
+        </div>
+        <div class="px-5 py-4">
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                {{ __('vehicle.delete_gate.target', ['number' => $deleteTargetInfo['number'] ?? '']) }}
+            </div>
+            <div class="mt-4">
+                <label class="label-base">{{ __('vehicle.delete_gate.reason') }} <span class="text-red-500">*</span></label>
+                <textarea wire:model="deleteReason" rows="2" class="input-base"
+                          placeholder="{{ __('vehicle.delete_gate.reason_ph') }}"></textarea>
+                @error('deleteReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" wire:click="cancelDeleteGate"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button type="button" wire:click="confirmDeleteWithReason" wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.delete_gate.confirm_btn') }}</button>
         </div>
     </div>
 </div>

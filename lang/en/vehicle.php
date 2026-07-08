@@ -506,6 +506,18 @@ return [
         'approve_btn' => 'Approve & register',
     ],
 
+    // Delete-reason modal (2026-07-08) — finance-linked vehicles require a reason + audit log
+    'delete_gate' => [
+        'title' => 'Delete finance-linked vehicle',
+        'ctx_locked' => 'This vehicle has confirmed balance payments (accounting lock).',
+        'ctx_settlement' => 'This vehicle has settlement records.',
+        'target' => 'About to delete :number. Your reason will be recorded.',
+        'reason' => 'Reason for deletion',
+        'reason_ph' => 'e.g. Duplicate registration error; not a real purchase.',
+        'confirm_btn' => 'Record reason & delete',
+        'admin_only' => 'Only a super admin can delete a vehicle with confirmed balance payments.',
+    ],
+
     // Per-vehicle cost statement bulk entry (towing etc., matched by vehicle no.)
     'cost_import' => [
         'btn' => 'Import Statement',
@@ -846,5 +858,7 @@ return [
         'party_required' => 'New registration requires a salesman (Basic tab) and a buyer (Sale tab).',
         'salesman_required' => 'Select a salesman — Basic tab.',
         'buyer_required' => 'Select a buyer — Sale tab.',
+        // Foreign-currency vehicles require an exchange rate — otherwise settlement miscalculates.
+        'exchange_rate_required' => 'Foreign-currency vehicles require an exchange rate — Sale tab. (Settlement miscalculates without it.)',
     ],
 ];
