@@ -2791,15 +2791,27 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validate($rules, $messages, $attributes);
 
-        // 외화 환율 필수 — 판매가 있는 외화(비-KRW) 차량에 환율 미입력 시 차단.
-        //   근거: 환율 0/빈값이면 정산 판매금원화=0 → 마이너스 정산(jin 2026-07-08 실측). chk_sale_required(DB)
-        //   500 을 선제해 "환율 입력 — 판매 탭" 친절 메시지로 안내. KRW는 saving 훅이 자동 1 normalize 라 무관.
+        // 판매 필수 3종 — chk_sale_required(DB CHECK: 판매가>0 → 판매일·바이어·환율>0) 선제.
+        //   신규·편집 모두. DB 위반 raw 500(SQLSTATE 노출)을 "무엇을·어느 탭에서" 친절 메시지로 대체.
+        //   근거: 환율 0/빈값이면 정산 판매금원화=0 → 마이너스 정산(jin 2026-07-08 실측). KRW는 saving 훅이 1 normalize.
         $salePriceNum = (float) str_replace(',', '', $this->sale_price_str ?: '0');
         $rateNum = (float) str_replace(',', '', $this->exchange_rate_str ?: '0');
-        if ($salePriceNum > 0 && $this->currency !== 'KRW' && $rateNum <= 0) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'exchange_rate_str' => __('vehicle.valmsg.exchange_rate_required'),
-            ]);
+        if ($salePriceNum > 0) {
+            if ($this->sale_date === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'sale_date' => __('vehicle.valmsg.sale_date_required'),
+                ]);
+            }
+            if ($this->buyer_id_str === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'buyer_id_str' => __('vehicle.valmsg.sale_buyer_required'),
+                ]);
+            }
+            if ($this->currency !== 'KRW' && $rateNum <= 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'exchange_rate_str' => __('vehicle.valmsg.exchange_rate_required'),
+                ]);
+            }
         }
 
         // 차량 첨부 총 건수 가드 — 유지될 기존(existingPhotos) + 신규(photoFiles) ≤ MAX_PHOTOS.
@@ -3470,6 +3482,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
             }
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        } catch (\Illuminate\Database\QueryException $e) {
+            // 안전망 (2026-07-08) — chk_sale_required 등 DB 제약 위반이 앞단 검증을 뚫고 온 경우.
+            //   SQLSTATE/SQL 이 그대로 노출되는 500 Ignition 대신 친절 토스트 + 실제 원인은 로그.
+            foreach ($newlyStoredPaths as $p) {
+                Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
+            }
+            \Log::warning('Vehicle save QueryException', ['vehicle_id' => $this->editingId, 'sqlstate' => $e->getCode(), 'msg' => $e->getMessage()]);
+            $this->dispatch('notify', message: __('vehicle.toast.db_constraint'), type: 'error');
 
             return;
         } catch (\Throwable $e) {
@@ -5644,7 +5666,7 @@ function vehicleColumnsToggle() {
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="text" data-date class="input-base input-required" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.sale_date') }} </label><input wire:model="sale_date" type="text" data-date class="input-base input-required" />@error('sale_date')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.currency') }} </label>
                     <select wire:model.live="currency" class="input-base input-required">
