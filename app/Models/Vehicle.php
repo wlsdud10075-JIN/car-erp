@@ -143,79 +143,9 @@ class Vehicle extends Model
         $this->attributes['nice_reg_owner_rrn_encrypted_at'] = now();
     }
 
-    /**
-     * 큐 14-4-4 — 같은 바이어 미수 + 신규 거래 검사 (G2).
-     *
-     * buyer_id 동일 + 미수 잔존(sale_unpaid_amount_krw_cache > 0) 차량 있는 상태에서
-     * 신규 차량 등록 시 차단. 영업은 [신규 거래 승인 요청] → 관리 승인 후 등록 재시도.
-     *
-     * "1 승인 = 1 차량" — 승인은 payload['new_vehicle_number']에 바인딩됨.
-     * 승인받은 차량번호와 다른 번호로 저장 시 차단 (보안 결함 수정).
-     *
-     * 호출 위치: Vehicle::saving 가드. 시드·artisan은 auth()->check() false로 우회.
-     */
-    public function guardSameBuyerOverlap(): void
-    {
-        if (! auth()->check() || auth()->user()->canApprove()) {
-            return;   // 시드/canApprove는 우회
-        }
-        if (! $this->buyer_id) {
-            return;   // buyer 미지정 — 일반 신규 등록 흐름
-        }
-        if ($this->exists) {
-            return;   // 기존 차량 수정 — 신규 등록만 검사
-        }
-
-        $hasOverlap = self::where('buyer_id', $this->buyer_id)
-            ->where('sale_unpaid_amount_krw_cache', '>', 0)
-            ->whereNull('deleted_at')
-            ->exists();
-
-        if (! $hasOverlap) {
-            return;
-        }
-
-        $currentVehicleNumber = trim((string) $this->vehicle_number);
-
-        // 활성(approved + unused) inter_buyer_overlap 승인 — 차량번호까지 매칭되는 것만
-        $activeApproval = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
-            ->where('target_type', Buyer::class)
-            ->where('target_id', $this->buyer_id)
-            ->where('status', ApprovalRequest::STATUS_APPROVED)
-            ->whereNull('used_at')
-            ->latest('id')
-            ->get()
-            ->first(function (ApprovalRequest $req) use ($currentVehicleNumber) {
-                $boundNumber = trim((string) ($req->payload['new_vehicle_number'] ?? ''));
-
-                return $boundNumber !== '' && $boundNumber === $currentVehicleNumber;
-            });
-
-        if (! $activeApproval) {
-            // 같은 buyer로 다른 차량번호에 묶인 승인이 있는지 확인 — 메시지 분기용
-            $mismatchApproval = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
-                ->where('target_type', Buyer::class)
-                ->where('target_id', $this->buyer_id)
-                ->where('status', ApprovalRequest::STATUS_APPROVED)
-                ->whereNull('used_at')
-                ->latest('id')
-                ->first();
-
-            if ($mismatchApproval) {
-                $bound = $mismatchApproval->payload['new_vehicle_number'] ?? '(미지정)';
-                throw ValidationException::withMessages([
-                    'buyer_id' => "이 승인은 차량번호 '{$bound}'에 대한 것입니다. 현재 '{$currentVehicleNumber}'로 저장 시도. 차량번호를 일치시키거나 새 승인 요청을 보내세요.",
-                ]);
-            }
-
-            throw ValidationException::withMessages([
-                'buyer_id' => '이 바이어는 미수 잔존 차량이 있습니다. 신규 거래는 관리자 승인이 필요합니다. [신규 거래 승인 요청] 버튼을 사용하세요.',
-            ]);
-        }
-
-        // 승인 소진 — 차량 saving 직전에 used_at 마킹 (saved 훅에서 처리하면 트랜잭션 분리됨)
-        $activeApproval->update(['used_at' => now()]);
-    }
+    // 2026-07-09 — 옛 G2 guardSameBuyerOverlap 제거(ERP 죽은 락). 미수 바이어 신규거래 차단은
+    //   UI save() 의 미수 매입 게이트(②, Buyer::computeReceivableGauge 미수율>50%)가 단일 담당.
+    //   ApprovalRequest::TYPE_INTER_BUYER_OVERLAP 상수·실행핸들러는 과거기록 보존 위해 존치(신규 생성 없음).
 
     /**
      * G1 — B/L 100% 발급 게이트 (2026-05-26 외부리뷰 감사 회의 §사용자결정 1).
@@ -537,9 +467,9 @@ class Vehicle extends Model
             // bl_document 신규 첨부 시 unpaid_ratio > 0(미완납)면 차단. grandfather + 관리/관리자 우회 분기.
             $vehicle->guardBlFiftyPercentRuleOnSaving();
 
-            // 큐 14-4-4 — G2 같은 바이어 미수 + 신규 거래 가드.
-            // 신규 등록 시 같은 buyer + 미수 잔존 차량 있으면 ApprovalRequest 필요.
-            $vehicle->guardSameBuyerOverlap();
+            // 2026-07-09 — 옛 G2(guardSameBuyerOverlap) 제거. ERP 신규 등록자(관리·업무관리자·admin)는
+            //   전부 canApprove 라 이 가드를 늘 우회 = ERP에선 죽은 락. 미수 바이어 신규거래 차단은
+            //   UI save() 의 미수 매입 게이트(②, Buyer 미수율>50%)가 단일 담당. 영업 경로는 추후 board.
 
             // 캐시 자동 갱신 — 시드·UI 저장 모두 발동.
             // C4·C5 단계 의존성 검증은 saving 이벤트가 아닌 UI save() 흐름에서만
