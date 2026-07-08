@@ -373,7 +373,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // FAIL
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         try {
             $v->guardStageOrderForExport();
             $this->fail('C4 락이 말소 미완료 통관 진입을 막아야 한다');
@@ -387,7 +387,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // 재통과
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         $v->guardStageOrderForExport();
         $this->assertTrue(true, '말소 완료 후 통관 진입 통과');
     }
@@ -444,7 +444,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // FAIL — 통관 진입 시도 (clearance 단계)
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         try {
             $v->guardStageOrderForExport();
             $this->fail('C5 락이 입금률 < 50% 통관 진입을 막아야 한다');
@@ -462,7 +462,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // 재통과
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         $v->guardStageOrderForExport();
         $this->assertTrue(true, '입금 50% 이상 → 통관 진입 통과');
     }
@@ -485,7 +485,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // FAIL — 환율 미입력 → 미수율 평가 불가
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         try {
             $v->guardStageOrderForExport();
             $this->fail('C5 락이 환율 미입력 외화 통관 진입을 막아야 한다');
@@ -506,9 +506,35 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // 재통과 — 우회 승인이 모든 시나리오 통과
         $v = Vehicle::find($v->id);
-        $v->export_buyer_id = $buyer->id;
+        $v->shipping_date = '2026-05-05';   // 방향1: 게이트 트리거는 실제 통관 행위(당사자 배정 아님)
         $v->guardStageOrderForExport();
         $this->assertTrue(true, 'admin 미입금 우회 승인 → 통관 진입 통과');
+    }
+
+    /**
+     * 방향1 회귀 (2026-07-08) — 당사자 배정만으론 통관 게이트 미발동.
+     * 말소 미완료 + 입금 0%(미수율 100%) 차량에 export_buyer_id(통관 바이어)만 채워도,
+     * 실제 통관 행위(반입지·수출신고서·선적일·B/L·DHL)가 없으면 게이트 통과해야 한다.
+     * (이전엔 export_buyer_id 단독으로 C4/C5가 오발동해 판매·말소 저장을 통째 막았음.)
+     */
+    public function test_party_assignment_alone_does_not_trigger_export_gate(): void
+    {
+        $admin = $this->admin();
+        $this->actingAs($admin);
+        $sm = $this->sales[0]['salesman'];
+        $buyer = $this->buyer('PARTY ONLY');
+
+        // 말소 미완료 + 판매가 200만 + 입금 0 → 예전 C4·C5 둘 다 걸리던 조합
+        $v = $this->baseVehicle($sm->id, [
+            'buyer_id' => $buyer->id,
+            'sale_price' => 2_000_000, 'sale_date' => '2026-05-01',
+        ]);
+
+        // 당사자(통관 바이어)만 배정 — 실제 통관 행위 없음 → throw 하면 실패
+        $v = Vehicle::find($v->id);
+        $v->export_buyer_id = $buyer->id;
+        $v->guardStageOrderForExport();
+        $this->assertTrue(true, '당사자 배정만으론 게이트 미발동 (방향1)');
     }
 
     /** 락 H3 — B/L 문서 업로드 전 선적 반입지 입력 필수 (UI save()). */
