@@ -383,6 +383,16 @@ class Vehicle extends Model
     }
 
     /**
+     * 삭제 시 사유 모달 + AuditLog 필요 대상 — 회계 연관 차량 (2026-07-08 jin).
+     * 확정 잔금(회계잠금) 또는 정산 이력이 있으면 "그냥 삭제" 대신 사유 입력·기록을 강제.
+     * (권한 자체는 Vehicle::deleting 가드가 별도 판정 — confirmed 잔금은 admin/super 전용.)
+     */
+    public function requiresDeleteReason(): bool
+    {
+        return $this->hasConfirmedPaymentLock() || $this->settlements()->exists();
+    }
+
+    /**
      * 큐 21 — Ledger unlock 토큰 1회 소비 (저장 1회 후 즉시 재잠금).
      * VehicleLedgerUnlockService::unlock 으로 발급된 cache key를 pull (읽기 + 즉시 삭제).
      * 동일 차량을 추가 수정하려면 다시 잠금 해제 필요.
