@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
@@ -191,59 +190,8 @@ class ManagementWorkflowChecklistTest extends TestCase
     // 축 ②③ 각 락 fail → 해결·재통과 매트릭스
     // ══════════════════════════════════════════════════════════════
 
-    /** 락 G2 — 같은 바이어 미수 잔존 + 신규 거래 (saving 훅, 영업 actor). */
-    public function test_lock_g2_same_buyer_overlap_blocks_then_approval_passes(): void
-    {
-        $salesUser = $this->sales[0]['user'];   // 영업 — canApprove() false → G2 발동
-        $sm = $this->sales[0]['salesman'];
-        $this->actingAs($salesUser);
-
-        $buyer = $this->buyer('G2 BUYER');
-
-        // 미수 잔존 차량 1대 (판매가만, 입금 0 → 미수 100%)
-        $this->baseVehicle($sm->id, [
-            'buyer_id' => $buyer->id,
-            'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
-        ]);
-
-        // FAIL — 같은 바이어로 신규 거래 시도
-        $blockedNumber = $this->vnum('G2NEW');
-        try {
-            Vehicle::create([
-                'vehicle_number' => $blockedNumber,
-                'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
-                'dhl_request' => false, 'salesman_id' => $sm->id, 'buyer_id' => $buyer->id,
-            ]);
-            $this->fail('G2 락이 신규 거래를 막아야 한다');
-        } catch (ValidationException $e) {
-            $this->assertStringContainsString('미수 잔존 차량', $e->getMessage());
-            $this->assertStringContainsString('관리자 승인', $e->getMessage());
-        }
-
-        // 해결 — 관리가 inter_buyer_overlap 승인 발급 (차량번호 바인딩)
-        ApprovalRequest::create([
-            'requester_id' => $salesUser->id,
-            'approver_id' => $this->manager->id,
-            'target_type' => Buyer::class,
-            'target_id' => $buyer->id,
-            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
-            'payload' => ['new_vehicle_number' => $blockedNumber],
-            'status' => ApprovalRequest::STATUS_APPROVED,
-            'decided_at' => now(),
-        ]);
-
-        // 재통과 — 승인받은 차량번호로 재시도
-        $v = Vehicle::create([
-            'vehicle_number' => $blockedNumber,
-            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
-            'dhl_request' => false, 'salesman_id' => $sm->id, 'buyer_id' => $buyer->id,
-        ]);
-        $this->assertNotNull($v->id, '승인 후 신규 거래 통과');
-        $this->assertNotNull(
-            ApprovalRequest::where('target_id', $buyer->id)->first()->used_at,
-            '승인은 1회 소진(used_at 마킹)'
-        );
-    }
+    // 2026-07-09 — 옛 G2(guardSameBuyerOverlap) 제거로 이 테스트 삭제. 미수 바이어 신규거래 차단은
+    //   미수 매입 게이트(②, PurchaseReceivableGateTest)가 단일 담당.
 
     /** 락 G1 — 100% B/L 게이트 (saving 훅). 미완납(미수율 > 0) 시 B/L 발행 차단. */
     public function test_lock_g1_bl_full_payment_blocks_then_payment_passes(): void

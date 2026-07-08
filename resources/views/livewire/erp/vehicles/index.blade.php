@@ -2303,9 +2303,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editingId = null;
         $this->justCreatedId = null;
         $this->panelUnpaidRatio = null;
-        // 큐 14-4-4 — 패널 닫힐 때 overlap 모달도 함께 정리 (열린 채 남아 있으면 어색)
-        $this->showOverlapRequestModal = false;
-        $this->overlapRequestReason = '';
         // 큐 19-C — 자금 이체 모달도 동일 정리
         $this->resetTransferRequestForm();
         // 큐 21 — Ledger 잠금 모달도 정리
@@ -3684,107 +3681,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('success', __('vehicle.deleted'));
     }
 
-    // 큐 14-4-4 G2 — 승인 요청 모달 상태
-    public bool $showOverlapRequestModal = false;
-
-    public string $overlapRequestReason = '';
-
-    public function openOverlapRequestModal(): void
-    {
-        $vehicleNumber = trim((string) $this->vehicle_number);
-        if ($vehicleNumber === '') {
-            $this->dispatch('notify', message: __('vehicle.toast.enter_vnum_first_lock'), type: 'warning');
-
-            return;
-        }
-        if ($this->buyer_id_str === '') {
-            $this->dispatch('notify', message: __('vehicle.toast.select_buyer_first'), type: 'warning');
-
-            return;
-        }
-        $this->overlapRequestReason = '';
-        $this->resetErrorBag('overlapRequestReason');
-        $this->showOverlapRequestModal = true;
-    }
-
-    public function closeOverlapRequestModal(): void
-    {
-        $this->showOverlapRequestModal = false;
-        $this->overlapRequestReason = '';
-        $this->resetErrorBag('overlapRequestReason');
-    }
-
-    /**
-     * 큐 14-4-4 — 같은 바이어 미수 + 신규 거래 승인 요청 (G2).
-     * 영업이 buyer 선택 + 차량번호 입력 후 모달에서 사유 작성 → ApprovalRequest 생성.
-     * 승인은 (buyer_id × vehicle_number) 쌍에 바인딩 — 1 승인 = 1 차량 보장.
-     */
-    public function requestSameBuyerOverlapApproval(): void
-    {
-        $vehicleNumber = trim((string) $this->vehicle_number);
-        if ($vehicleNumber === '') {
-            $this->dispatch('notify', message: __('vehicle.toast.enter_vnum_first'), type: 'warning');
-
-            return;
-        }
-        if ($this->buyer_id_str === '') {
-            $this->dispatch('notify', message: __('vehicle.toast.select_buyer_first'), type: 'warning');
-
-            return;
-        }
-
-        $this->validate([
-            'overlapRequestReason' => ['required', 'string', 'min:5'],
-        ], [
-            'overlapRequestReason.required' => __('vehicle.valmsg.approval_reason_required'),
-            'overlapRequestReason.min' => __('vehicle.valmsg.reason_min5'),
-        ]);
-
-        $buyerId = (int) $this->buyer_id_str;
-        $buyer = Buyer::find($buyerId);
-        if (! $buyer) {
-            return;
-        }
-
-        // 같은 (buyer × vehicle_number)에 대해 이미 대기중인 요청 있는지 — 차량번호까지 매칭
-        $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
-            ->where('target_type', Buyer::class)
-            ->where('target_id', $buyerId)
-            ->where('status', ApprovalRequest::STATUS_PENDING)
-            ->get()
-            ->first(fn (ApprovalRequest $req) => trim((string) ($req->payload['new_vehicle_number'] ?? '')) === $vehicleNumber);
-
-        if ($existing) {
-            $this->dispatch('notify', message: __('vehicle.toast.pending_request_exists'), type: 'warning');
-            $this->closeOverlapRequestModal();
-
-            return;
-        }
-
-        $overlap = Vehicle::where('buyer_id', $buyerId)
-            ->where('sale_unpaid_amount_krw_cache', '>', 0)
-            ->whereNull('deleted_at')
-            ->get(['id', 'vehicle_number', 'sale_unpaid_amount_krw_cache']);
-
-        ApprovalRequest::create([
-            'requester_id' => auth()->id(),
-            'action_type' => ApprovalRequest::TYPE_INTER_BUYER_OVERLAP,
-            'target_type' => Buyer::class,
-            'target_id' => $buyerId,
-            'payload' => [
-                'buyer_name' => $buyer->name,
-                'new_vehicle_number' => $vehicleNumber,
-                'overlap_count' => $overlap->count(),
-                'overlap_amount_krw' => (int) $overlap->sum('sale_unpaid_amount_krw_cache'),
-                'overlap_vehicle_numbers' => $overlap->pluck('vehicle_number')->take(5)->values()->all(),
-            ],
-            'reason' => trim($this->overlapRequestReason),
-            'status' => ApprovalRequest::STATUS_PENDING,
-        ]);
-
-        $this->dispatch('notify', message: __('vehicle.toast.overlap_sent'), type: 'success');
-        $this->closeOverlapRequestModal();
-    }
+    // 2026-07-09 — 옛 G2 승인요청 모달/메서드 제거(ERP 죽은 락). 미수 바이어 신규거래는 미수 매입 게이트(②)가 담당.
 
     // 큐 19-C — 차량 간 자금 이체 요청 ────────────────────────────────
 
@@ -4152,90 +4049,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $base;
     }
 
-    /**
-     * 큐 14-4-4 — buyer 선택 + editingId=null + 비-canApprove user일 때
-     * 미수 잔존 감지. 신규 등록 폼 상단 배너 분기 데이터.
-     *
-     * 5상태 (배너 분기):
-     *   - 'nothing'           — 승인 이력 없음 (요청 가능)
-     *   - 'pending'           — 동일 차량번호 대기중
-     *   - 'approved_match'    — 동일 차량번호 승인됨 (저장 가능, green)
-     *   - 'approved_mismatch' — 다른 차량번호로 승인됨 (차량번호 일치 또는 새 요청 필요)
-     *   - 'rejected'          — 최근 거부됨 (사유 노출 + 새 요청 가능)
-     */
-    #[Computed]
-    public function sameBuyerOverlap(): ?array
-    {
-        if ($this->editingId !== null || $this->buyer_id_str === '') {
-            return null;
-        }
-        $user = auth()->user();
-        if (! $user || $user->canApprove()) {
-            return null;
-        }
-        $buyerId = (int) $this->buyer_id_str;
-        $overlap = Vehicle::where('buyer_id', $buyerId)
-            ->where('sale_unpaid_amount_krw_cache', '>', 0)
-            ->whereNull('deleted_at')
-            ->get(['vehicle_number', 'sale_unpaid_amount_krw_cache']);
-        if ($overlap->isEmpty()) {
-            return null;
-        }
-
-        $currentNumber = trim((string) $this->vehicle_number);
-
-        // 같은 buyer에 대한 모든 요청 (최신 우선)
-        $allRequests = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
-            ->where('target_type', Buyer::class)
-            ->where('target_id', $buyerId)
-            ->orderByDesc('id')
-            ->get(['id', 'status', 'payload', 'decision_note', 'used_at', 'reason', 'decided_at']);
-
-        $extractNumber = fn (ApprovalRequest $req) => trim((string) ($req->payload['new_vehicle_number'] ?? ''));
-
-        // 동일 차량번호로 대기중 / 승인된 / 거부된 요청
-        $pendingForThis = $currentNumber !== ''
-            ? $allRequests->first(fn ($r) => $r->status === ApprovalRequest::STATUS_PENDING && $extractNumber($r) === $currentNumber)
-            : null;
-        $approvedForThis = $currentNumber !== ''
-            ? $allRequests->first(fn ($r) => $r->status === ApprovalRequest::STATUS_APPROVED && $r->used_at === null && $extractNumber($r) === $currentNumber)
-            : null;
-        // 다른 차량번호로 승인된 (활성)
-        $approvedForOther = $allRequests->first(fn ($r) => $r->status === ApprovalRequest::STATUS_APPROVED && $r->used_at === null && $extractNumber($r) !== $currentNumber);
-        // 최신 결정 (rejected 노출용 — 동일 차량번호 한정, 이후 새 pending/approved 없을 때만)
-        $latestRejected = $currentNumber !== ''
-            ? $allRequests->first(fn ($r) => $r->status === ApprovalRequest::STATUS_REJECTED && $extractNumber($r) === $currentNumber)
-            : null;
-
-        $state = 'nothing';
-        $approvedVehicleNumber = null;
-        $rejectedNote = null;
-        $rejectedReason = null;
-
-        if ($approvedForThis) {
-            $state = 'approved_match';
-        } elseif ($pendingForThis) {
-            $state = 'pending';
-        } elseif ($approvedForOther) {
-            $state = 'approved_mismatch';
-            $approvedVehicleNumber = $extractNumber($approvedForOther);
-        } elseif ($latestRejected) {
-            $state = 'rejected';
-            $rejectedNote = $latestRejected->decision_note;
-            $rejectedReason = $latestRejected->reason;
-        }
-
-        return [
-            'count' => $overlap->count(),
-            'amount_krw' => (int) $overlap->sum('sale_unpaid_amount_krw_cache'),
-            'vehicle_numbers' => $overlap->pluck('vehicle_number')->take(5)->all(),
-            'state' => $state,
-            'current_vehicle_number' => $currentNumber,
-            'approved_vehicle_number' => $approvedVehicleNumber,
-            'rejected_note' => $rejectedNote,
-            'rejected_reason' => $rejectedReason,
-        ];
-    }
+    // 2026-07-09 — 옛 G2 배너 computed(sameBuyerOverlap) 제거. 미수 바이어 신규거래는 미수 매입 게이트(②)가 담당.
 
     public function lookupNiceApi(): void
     {
@@ -5595,74 +5409,7 @@ function vehicleColumnsToggle() {
                 <span class="section-title">{{ __('vehicle.panel.sec.sale_basic') }}</span>
             </div>
 
-            {{-- 큐 14-4-4 — 같은 바이어 미수 잔존 안내 배너 (신규 등록 + 비-canApprove user만, 5상태) — 다음 chunk에서 번역 --}}
-            @php
-                $overlap = $this->sameBuyerOverlap;
-                $state = $overlap['state'] ?? null;
-                $bannerColor = match($state) {
-                    'approved_match' => ['border' => 'border-emerald-200', 'bg' => 'bg-emerald-50', 'title' => 'text-emerald-800', 'body' => 'text-emerald-700', 'icon' => 'text-emerald-600'],
-                    'rejected' => ['border' => 'border-red-200', 'bg' => 'bg-red-50', 'title' => 'text-red-800', 'body' => 'text-red-700', 'icon' => 'text-red-600'],
-                    default => ['border' => 'border-amber-200', 'bg' => 'bg-amber-50', 'title' => 'text-amber-800', 'body' => 'text-amber-700', 'icon' => 'text-amber-600'],
-                };
-            @endphp
-            @if($overlap)
-            <div class="rounded-lg border {{ $bannerColor['border'] }} {{ $bannerColor['bg'] }} px-3 py-2.5 text-xs">
-                <div class="flex items-start gap-2">
-                    <svg class="mt-0.5 h-4 w-4 flex-shrink-0 {{ $bannerColor['icon'] }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-                    <div class="flex-1">
-                        <p class="font-semibold {{ $bannerColor['title'] }}">
-                            {{ __('vehicle.overlap.title', ['count' => $overlap['count'], 'amount' => number_format($overlap['amount_krw'])]) }}
-                            @if(! empty($overlap['vehicle_numbers']))
-                            <span class="font-normal {{ $bannerColor['body'] }}"> · {{ implode(', ', $overlap['vehicle_numbers']) }}</span>
-                            @endif
-                        </p>
-
-                        @if($state === 'approved_match')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">{!! __('vehicle.overlap.approved_match', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}</p>
-
-                        @elseif($state === 'pending')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">{!! __('vehicle.overlap.pending', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}</p>
-
-                        @elseif($state === 'approved_mismatch')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">
-                            {!! __('vehicle.overlap.mismatch_approved', ['number' => '<strong>'.e($overlap['approved_vehicle_number']).'</strong>']) !!}
-                            @if($overlap['current_vehicle_number'])
-                            {!! __('vehicle.overlap.mismatch_blocked', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}
-                            @endif
-                            {{ __('vehicle.overlap.mismatch_hint') }}
-                        </p>
-                        <button type="button" wire:click="openOverlapRequestModal"
-                                class="mt-2 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600">
-                            {{ __('vehicle.overlap.req_new_number') }}
-                        </button>
-
-                        @elseif($state === 'rejected')
-                        <p class="mt-1 {{ $bannerColor['body'] }}">
-                            {!! __('vehicle.overlap.rejected', ['number' => '<strong>'.e($overlap['current_vehicle_number']).'</strong>']) !!}
-                        </p>
-                        @if($overlap['rejected_reason'])
-                        <p class="mt-1 text-[11px] text-red-600">{{ __('vehicle.overlap.req_reason') }} {{ $overlap['rejected_reason'] }}</p>
-                        @endif
-                        @if($overlap['rejected_note'])
-                        <p class="mt-1 text-[11px] text-red-600">{{ __('vehicle.overlap.reject_note') }} <strong>{{ $overlap['rejected_note'] }}</strong></p>
-                        @endif
-                        <button type="button" wire:click="openOverlapRequestModal"
-                                class="mt-2 rounded bg-red-500 px-3 py-1 text-xs font-medium text-white hover:bg-red-600">
-                            {{ __('vehicle.overlap.resend') }}
-                        </button>
-
-                        @else
-                        {{-- nothing — 요청 가능 --}}
-                        <p class="mt-1 {{ $bannerColor['body'] }}">{{ __('vehicle.overlap.need_approval') }}</p>
-                        <button type="button" wire:click="openOverlapRequestModal"
-                                class="mt-2 rounded bg-amber-500 px-3 py-1 text-xs font-medium text-white hover:bg-amber-600">
-                            {{ __('vehicle.overlap.req_new') }}
-                        </button>
-                        @endif
-                    </div>
-                </div>
-            </div>
-            @endif
+            {{-- 2026-07-09 — 옛 G2 미수 잔존 안내 배너 제거(ERP 죽은 락). 미수 매입 게이트(②)가 담당. --}}
 
             {{-- UX #1 (2026-05-20) — 판매 필수 입력란 노랑 배경 (KRW 환율은 자동 1 normalize 라 강조 X). --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -6887,48 +6634,7 @@ function vehicleColumnsToggle() {
 </div>
 @endif
 
-{{-- 큐 14-4-4 G2: 같은 바이어 미수+신규 거래 승인 요청 모달
-     ⚠️ 슬라이드 패널 stacking context 밖에 배치 — 패널 dirty 추적/backdrop 클릭과 분리.
-     showPanel과 독립적으로 표시되지만 close()가 showOverlapRequestModal도 false로 리셋. --}}
-@if($showOverlapRequestModal)
-@php $overlapForModal = $this->sameBuyerOverlap; @endphp
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
-     wire:click.self="closeOverlapRequestModal"
-     wire:key="overlap-request-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.overlap_title') }}</h3>
-        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.overlap_desc') }}</p>
-
-        @if($overlapForModal)
-        <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800 space-y-0.5">
-            <div><span class="text-amber-600">{{ __('vehicle.modal.overlap_vnum') }}</span> <strong>{{ $overlapForModal['current_vehicle_number'] ?: __('vehicle.modal.not_entered') }}</strong></div>
-            <div><span class="text-amber-600">{{ __('vehicle.modal.overlap_buyer_unpaid') }}</span> <strong>{{ $overlapForModal['count'] }}{{ __('vehicle.modal.overlap_unit') }}</strong> · ₩{{ number_format($overlapForModal['amount_krw']) }}</div>
-            @if(! empty($overlapForModal['vehicle_numbers']))
-            <div class="text-amber-700">{{ __('vehicle.modal.overlap_unpaid_vehicles') }} {{ implode(', ', $overlapForModal['vehicle_numbers']) }}</div>
-            @endif
-        </div>
-        @endif
-
-        <div class="mt-3">
-            <label class="label-base">{{ __('vehicle.modal.overlap_reason_label') }} <span class="text-red-500">*</span></label>
-            <textarea wire:model="overlapRequestReason" rows="4"
-                      class="input-base"
-                      placeholder="{{ __('vehicle.modal.overlap_reason_ph') }}"></textarea>
-            @error('overlapRequestReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-        </div>
-
-        <div class="mt-5 flex justify-end gap-2">
-            <button type="button" wire:click="closeOverlapRequestModal"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
-            <button type="button" wire:click="requestSameBuyerOverlapApproval"
-                    wire:loading.attr="disabled"
-                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-                {{ __('vehicle.modal.overlap_send') }}
-            </button>
-        </div>
-    </div>
-</div>
-@endif
+{{-- 2026-07-09 — 옛 G2 승인요청 모달 제거(ERP 죽은 락). 미수 매입 게이트(②)가 담당. --}}
 
 {{-- UX #3 (2026-05-20) — 영업 저장 확인 모달.
      매입+판매 필수 항목 미리보기 → [확인] 시 save() 실행. 영업이 입력 누락 마지막 검증. --}}
