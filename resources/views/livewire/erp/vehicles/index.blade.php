@@ -5509,24 +5509,25 @@ function vehicleColumnsToggle() {
                 {{ __('vehicle.panel.breakdown_banner') }}
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.deposit_down') }}</label>
-                    <input wire:model="deposit_down_payment_str" type="text" data-money
-                           class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
+                {{-- 계약금·중도금·선수금1 = 판매탭 신규입력 중단 (jin 2026-07-06 확정 — 잔금으로 일원화). --}}
+                {{-- 레거시(과거 입력) 값만 read-only 표시. 미수계산은 §13 타입무관 그대로 반영. props 불변이라 저장 시 no-op. --}}
+                @php
+                    $legacyPay = array_filter([
+                        __('vehicle.field.deposit_down') => (int) str_replace(',', '', (string) ($deposit_down_payment_str ?: '0')),
+                        __('vehicle.field.interim') => (int) str_replace(',', '', (string) ($interim_payment_str ?: '0')),
+                        __('vehicle.field.advance1') => (int) str_replace(',', '', (string) ($advance_payment1_str ?: '0')),
+                    ], fn ($v) => $v > 0);
+                @endphp
+                @if(!empty($legacyPay))
+                <div class="col-span-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 sm:col-span-3">
+                    <div class="mb-1 text-[10px] font-semibold uppercase text-gray-400">{{ __('vehicle.panel.legacy_breakdown') }}</div>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                        @foreach($legacyPay as $label => $amt)
+                            <span>{{ $label }} <b class="text-gray-800">{{ number_format($amt) }}</b></span>
+                        @endforeach
+                    </div>
                 </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.interim') }}</label>
-                    <input wire:model="interim_payment_str" type="text" data-money
-                           class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
-                </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.advance1') }}</label>
-                    <input wire:model="advance_payment1_str" type="text" data-money
-                           class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
-                </div>
+                @endif
                 <div>
                     <label class="label-base">{{ __('vehicle.field.fee') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.fee_note') }}</span></label>
                     <input wire:model="fee_str" type="text" data-money
