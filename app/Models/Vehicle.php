@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -672,31 +673,13 @@ class Vehicle extends Model
             if (! auth()->check()) {
                 return;
             }
-            if ($vehicle->progress_status_cache !== '거래완료') {
+            // A-3 (2026-07-08) — 정산은 판매완료(완납) 시 FinalPayment::saved 에서 우선 생성.
+            //   거래완료 훅은 안전망(완납+거래완료 동시 저장 등 완납 트리거 못 탄 경우).
+            //   createSettlementIfComplete 가 완납·담당자·정산없음(재귀속 금지) 가드.
+            if ($vehicle->progress_status_cache !== '거래완료' || ! $vehicle->wasChanged('progress_status_cache')) {
                 return;
             }
-            if (! $vehicle->wasChanged('progress_status_cache')) {
-                return;
-            }
-            if ($vehicle->settlements()->exists()) {
-                return;
-            }
-            $salesman = $vehicle->salesman;
-            if (! $salesman) {
-                return;
-            }
-            $settlementType = $salesman->defaultSettlementType();
-            $vehicle->settlements()->create([
-                'salesman_id' => $salesman->id,
-                'settlement_type' => $settlementType,
-                // 2026-06-22 — null 저장 = 정산 파라미터(Setting) 기반 자동 산정에 위임.
-                //   ratio   → effective_ratio = settlement_freelance_ratio (기본 50%)
-                //   per_unit → 차등 tier(매입금액·총마진 기준). 재무 필요 시 컬럼 명시로 override.
-                'settlement_ratio' => null,
-                'per_unit_amount' => null,
-                'settlement_status' => 'pending',
-                'note' => '자동 생성 — 거래완료 진입 시',
-            ]);
+            $vehicle->createSettlementIfComplete('자동 생성 — 거래완료 진입 시');
         });
 
         // 2026-06-18 ETA 알람 즉시 자동해소 (Hybrid — 매일 alarms:scan 보정과 별개).
@@ -891,6 +874,50 @@ class Vehicle extends Model
      * 잔금 / 회수 이력 변경으로 잔액 의존 캐시가 바뀌었을 때 호출.
      * Eloquent saving 이벤트를 우회하고 컬럼만 직접 갱신해 무한 루프 방지.
      */
+    /**
+     * A-3 (2026-07-08) — 판매완료(완납) 또는 거래완료 시 pending 정산 자동 생성.
+     *   조건: sale_price>0 && 미입금≤0(완납) && 담당자 있음 && 정산 없음(재귀속 금지).
+     *   귀속월(attributed_month) = 완납월 1일 고정 — 이후 거래완료돼도 불변.
+     *   type default(ratio/per_unit)는 null 위임(Setting 기반 자동 산정).
+     *   ⚠️ 호출부는 auth()->check() 가드 필수 — 시드·artisan 대량 유입 차단(기존 거래완료 훅과 동일 정책).
+     */
+    public function createSettlementIfComplete(string $note): void
+    {
+        if ((float) ($this->sale_price ?? 0) <= 0) {
+            return;
+        }
+        if ($this->sale_unpaid_amount > 0) {
+            return;   // 아직 미완납
+        }
+        if (! $this->salesman_id || $this->settlements()->exists()) {
+            return;   // 담당자 없음 또는 이미 정산(재귀속 금지)
+        }
+        $salesman = $this->salesman;
+        if (! $salesman) {
+            return;
+        }
+        $this->settlements()->create([
+            'salesman_id' => $salesman->id,
+            'settlement_type' => $salesman->defaultSettlementType(),
+            'settlement_ratio' => null,
+            'per_unit_amount' => null,
+            'settlement_status' => 'pending',
+            'attributed_month' => $this->fullPaymentMonth(),
+            'note' => $note,
+        ]);
+    }
+
+    /** A-3 — 완납월(그 달 1일). 완납일 ≈ 최근 확정 잔금(입금)일, 없으면 sale_date, 그것도 없으면 오늘. */
+    public function fullPaymentMonth(): string
+    {
+        $last = $this->finalPayments()->whereNotNull('confirmed_at')->max('payment_date')
+            ?: $this->finalPayments()->max('payment_date')
+            ?: $this->sale_date;
+        $date = $last ? Carbon::parse($last) : now();
+
+        return $date->copy()->startOfMonth()->format('Y-m-d');
+    }
+
     public function refreshCaches(): void
     {
         $this->refresh();

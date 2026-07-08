@@ -145,13 +145,21 @@ class SettlementPayoutBatch extends Model
         if (self::where('month', $month)->where('status', self::STATUS_PENDING)->exists()) {
             throw new \DomainException('해당 월에 이미 승인 대기 중인 배치가 있습니다.');
         }
+        // A-3 (2026-07-08) — 귀속월 앵커 = attributed_month(완납월, 달력 1일~말일). NULL(백필 전/누락)은 기존 앵커 fallback.
         [$start, $end] = SettlementCkBatch::monthRange($month);
+        $monthStart = $month.'-01';
 
         $ids = Settlement::query()
             ->where('settlement_status', 'confirmed')
             ->whereNull('payout_batch_id')
-            ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$start])
-            ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$end])
+            ->where(function ($q) use ($monthStart, $start, $end) {
+                $q->whereDate('attributed_month', $monthStart)
+                    ->orWhere(function ($q2) use ($start, $end) {
+                        $q2->whereNull('attributed_month')
+                            ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$start])
+                            ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$end]);
+                    });
+            })
             ->pluck('id');
 
         if ($ids->isEmpty()) {
