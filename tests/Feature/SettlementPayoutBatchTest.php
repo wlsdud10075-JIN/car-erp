@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
@@ -34,6 +35,22 @@ class SettlementPayoutBatchTest extends TestCase
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio', 'settlement_ratio' => 50,
             'settlement_status' => 'confirmed', 'confirmed_at' => $confirmedAt,
+        ]);
+    }
+
+    /** 미수(받을 돈) 남은 차량의 확정 정산 — 지급 게이트로 배치 제외 대상. */
+    private function unpaidConfirmedSettlement(string $month): Settlement
+    {
+        $v = Vehicle::create([
+            'vehicle_number' => 'UP'.++$this->c, 'sales_channel' => 'export', 'currency' => 'KRW',
+            'exchange_rate' => 1, 'sale_price' => 1_000_000, 'sale_date' => $month.'-01',
+            'buyer_id' => Buyer::create(['name' => 'B'.$this->c, 'is_active' => true])->id,
+        ]);   // 입금 없음 → 미수 100만
+
+        return Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => $month.'-15', 'attributed_month' => $month.'-01',
         ]);
     }
 
@@ -141,5 +158,38 @@ class SettlementPayoutBatchTest extends TestCase
         $gwanri = $this->user('user', '관리');
         $this->expectException(\DomainException::class);
         SettlementPayoutBatch::submitForMonth($gwanri, '2026-05');
+    }
+
+    public function test_unpaid_vehicle_settlement_excluded_from_batch(): void
+    {
+        $held = $this->unpaidConfirmedSettlement('2026-05');   // 미수 → 제외
+        $this->confirmedSettlement('2026-05-15')->update(['attributed_month' => '2026-05-01']);   // 완납 → 포함
+
+        $batch = SettlementPayoutBatch::submitForMonth($this->user('user', '관리'), '2026-05');
+
+        $this->assertSame(1, $batch->settlement_count, '미수 차량 정산은 배치 제외, 완납 1건만');
+        $this->assertNull($held->fresh()->payout_batch_id, '미수 차량 정산은 미배치(지급보류)');
+        $this->assertTrue($held->fresh()->isPayoutHeldByUnpaid());
+    }
+
+    public function test_all_unpaid_month_throws_held(): void
+    {
+        $this->unpaidConfirmedSettlement('2026-05');
+
+        $this->expectException(\DomainException::class);   // 전부 미수 → 지급 가능 정산 없음
+        SettlementPayoutBatch::submitForMonth($this->user('user', '관리'), '2026-05');
+    }
+
+    public function test_held_resolves_when_fully_paid(): void
+    {
+        $held = $this->unpaidConfirmedSettlement('2026-05');
+        $v = $held->vehicle;
+        // 잔금 완납 처리 → 미수 해소
+        $v->finalPayments()->create(['amount' => 1_000_000, 'type' => 'balance', 'payment_date' => '2026-05-20', 'confirmed_at' => now()]);
+        $v->refreshCaches();
+
+        $this->assertFalse($held->fresh()->isPayoutHeldByUnpaid());
+        $batch = SettlementPayoutBatch::submitForMonth($this->user('user', '관리'), '2026-05');
+        $this->assertSame(1, $batch->settlement_count, '완납되면 배치 재진입');
     }
 }

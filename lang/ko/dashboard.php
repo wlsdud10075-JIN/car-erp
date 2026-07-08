@@ -109,6 +109,7 @@ return [
             'settlement_create_needed' => ['l' => '정산 생성 필요', 'd' => '거래완료 → settlement 없음'],
             'settlement_confirm_needed' => ['l' => '정산 확정 필요', 'd' => 'settlement = pending'],
             'settlement_pay_needed' => ['l' => '정산 지급 필요', 'd' => 'settlement = confirmed'],
+            'payout_held' => ['l' => '미수로 지급보류', 'd' => '확정됐지만 미수 있어 지급 보류 → 완납 후 지급'],
             'receivable_risk' => ['l' => '채권 위험', 'd' => '회수 위험·심각 등급'],
         ],
         'management' => [

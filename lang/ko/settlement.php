@@ -19,6 +19,11 @@ return [
 
     'search_ph' => '차량번호',
     'filter_all_status' => '전체 상태',
+    'held' => [
+        'badge' => '미수 지급보류',
+        'filter' => '지급보류만',
+        'tooltip' => '받을 돈(미수 ₩:amount)이 남아 지급 보류 중 — 완납되면 월배치에 자동 포함됩니다.',
+    ],
     'filter_all_salesman' => '전체 담당자',
     'filter_all_month' => '전체 월',
     'filter_month_title' => '정산 귀속월(완납월, 1일~말일) — 익월 10일 지급',

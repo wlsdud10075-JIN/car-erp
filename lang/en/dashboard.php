@@ -108,6 +108,7 @@ return [
             'settlement_create_needed' => ['l' => 'Settlement Creation Needed', 'd' => 'completed → no settlement'],
             'settlement_confirm_needed' => ['l' => 'Settlement Confirmation Needed', 'd' => 'settlement = pending'],
             'settlement_pay_needed' => ['l' => 'Settlement Payment Needed', 'd' => 'settlement = confirmed'],
+            'payout_held' => ['l' => 'Payout Held (unpaid)', 'd' => 'confirmed but receivable remains → paid after collection'],
             'receivable_risk' => ['l' => 'Receivable Risk', 'd' => 'danger / critical grade'],
         ],
         'management' => [

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
@@ -49,6 +50,31 @@ class PayoutBatchUiTest extends TestCase
         $this->assertNotNull($batch);
         $this->assertSame(2, $batch->settlement_count);
         $this->assertSame('pending', $batch->status);
+    }
+
+    public function test_held_only_filter_shows_unpaid_settlements(): void
+    {
+        // 완납 정산 1건
+        $paid = $this->confirmed('2026-05-15');
+        // 미수 차량 확정 정산 1건(지급보류)
+        $buyer = Buyer::create(['name' => 'HB', 'is_active' => true]);
+        $vUnpaid = Vehicle::create([
+            'vehicle_number' => 'HELD1', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'exchange_rate' => 1, 'sale_price' => 1_000_000, 'sale_date' => '2026-05-01', 'buyer_id' => $buyer->id,
+        ]);
+        Settlement::create([
+            'vehicle_id' => $vUnpaid->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-05-15', 'attributed_month' => '2026-05-01',
+        ]);
+
+        $this->actingAs($this->user('user', '재무'));
+
+        // 지급보류만 → 미수 차량만 노출
+        Volt::test('erp.settlements.index')
+            ->call('toggleHeld')
+            ->assertSet('heldOnly', true)
+            ->assertSee('HELD1')
+            ->assertDontSee($paid->vehicle->vehicle_number);
     }
 
     public function test_queue_approve_chain_and_reject(): void

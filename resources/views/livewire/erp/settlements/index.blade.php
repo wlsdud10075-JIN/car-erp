@@ -19,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $statusFilter = '';
 
+    // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 보기(재무 대시보드 딥링크 ?held=1).
+    #[Url] public bool $heldOnly = false;
+
     public int $salesmanFilter = 0;
 
     public string $dateFrom = '';
@@ -124,6 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->search, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('vehicle_number', 'like', "%{$this->search}%")
             ))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
@@ -140,6 +144,13 @@ new #[Layout('components.layouts.app')] class extends Component
         return Salesman::orderBy('name')->get(['id', 'name']);
     }
 
+    /** 지급보류(미수)만 보기 토글 — 재무 대시보드 딥링크와 동일 필터. */
+    public function toggleHeld(): void
+    {
+        $this->heldOnly = ! $this->heldOnly;
+        $this->resetPage();
+    }
+
     // 2026-05-20 #2 피드백 — 영업담당자별 합계 (인원별 솔팅 + 합계 KPI).
     // 현재 statusFilter / monthFilter / dateFrom / dateTo 동일 적용 (목록 SQL 과 일치).
     // computed accessor (total_margin / settlement_amount / actual_payout) 사용 → PHP 집계.
@@ -149,6 +160,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $all = Settlement::query()
             ->with(['vehicle', 'salesman:id,name'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
             ))
@@ -704,6 +716,11 @@ new #[Layout('components.layouts.app')] class extends Component
         <option value="confirmed">{{ __('settlement.status.confirmed') }}</option>
         <option value="paid">{{ __('settlement.status.paid') }}</option>
     </select>
+    {{-- 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 --}}
+    <button type="button" wire:click="toggleHeld"
+            class="rounded border px-2.5 py-1.5 text-sm font-medium {{ $heldOnly ? 'border-red-300 bg-red-50 text-red-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+        {{ __('settlement.held.filter') }}
+    </button>
     <select wire:model="salesmanFilter" class="input-filter">
         <option value="0">{{ __('settlement.filter_all_salesman') }}</option>
         @foreach($this->salesmen as $sm)
@@ -899,6 +916,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
+                    {{-- 지급 게이트 (jin 2026-07-08) — 미수 있어 월배치·지급에서 제외되는 확정 정산 표시 --}}
+                    @if($s->isPayoutHeldByUnpaid())
+                    <span class="badge badge-red ml-1" title="{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}">{{ __('settlement.held.badge') }}</span>
+                    @endif
                     {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
                     @if($secondaryLabel)
                     <span class="badge {{ $secondaryBadge }} ml-1" title="{{ __('settlement.col.status') }}">{{ $secondaryLabel }}</span>

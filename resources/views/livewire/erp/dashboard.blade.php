@@ -371,6 +371,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $t = fn (string $k, string $f) => __("dashboard.act.settlement.$k.$f");
 
+        // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산. 클릭 시 정산처리 ?held=1 딥링크.
+        $heldCount = Settlement::query()->payoutHeldByUnpaid()->count();
+
         return [
             $this->row($t('purchase_unpaid', 'l'),           $t('purchase_unpaid', 'd'),           $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
             $this->row($t('sale_unpaid', 'l'),               $t('sale_unpaid', 'd'),               $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
@@ -378,6 +381,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('settlement_create_needed', 'l'),  $t('settlement_create_needed', 'd'),  $c('settlement_create_needed'),  'bg-blue-500',   'settlement_create_needed'),
             $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
+            $this->row($t('payout_held', 'l'),               $t('payout_held', 'd'),               $heldCount,                      'bg-red-500',    '',                          true, route('erp.settlements.index').'?held=1'),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
         ];
     }
