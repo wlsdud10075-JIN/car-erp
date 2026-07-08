@@ -753,19 +753,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-semibold text-gray-700">{{ __('buyer.receivable.title') }}</span>
                     <span>{{ __('buyer.receivable.summary', ['count' => $br['vehicle_count'], 'amount' => number_format($br['total_krw'])]) }}</span>
                 </div>
+                {{-- 2026-07-08 jin — 목록/차량관리 행 게이지와 동일하게 통일: '입금률' 채움(반대방향)은 헷갈려서
+                     미수 비율만큼 채우고 app.js ratioToColor 와 같은 신호색(초록→노랑→빨강)으로 표시. --}}
+                @php
+                    $r = max(0, min(1, $br['ratio']));
+                    $hue = $r <= 0.5 ? 120 - ($r / 0.5) * 70 : 50 - (($r - 0.5) / 0.5) * 50;   // app.js ratioToColor 동일
+                @endphp
                 <div class="h-3 bg-white rounded-full overflow-hidden border border-gray-200">
                     @if($br['unpaid_krw'] <= 0)
-                    <div class="h-full bg-emerald-500" style="width: 100%"></div>
+                    <div class="h-full" style="width:100%; background: hsla(120,65%,50%,.45)"></div>
                     @else
-                    <div class="h-full bg-amber-500" style="width: {{ $br['paid_pct'] }}%"></div>
+                    <div class="h-full" style="width: {{ number_format($r * 100, 2, '.', '') }}%; background: hsla({{ round($hue) }},65%,50%,.6)"></div>
                     @endif
                 </div>
                 <div class="mt-1.5 flex items-center justify-between text-xs">
                     @if($br['unpaid_krw'] <= 0)
                     <span class="font-medium text-emerald-700">{{ __('buyer.receivable.fully_paid') }}</span>
                     @else
-                    <span class="font-medium text-amber-700">{{ __('buyer.receivable.paid_pct', ['pct' => number_format($br['paid_pct'], 1)]) }}</span>
-                    <span class="text-red-600 font-medium">{{ __('buyer.receivable.unpaid', ['amount' => number_format($br['unpaid_krw'])]) }}</span>
+                    <span class="font-medium text-gray-800">{{ __('buyer.receivable.unpaid', ['amount' => number_format($br['unpaid_krw'])]) }}</span>
+                    <span class="font-medium" style="color: hsl({{ round($hue) }},70%,38%)">{{ __('buyer.receivable.unpaid_ratio', ['pct' => number_format($r * 100, 1)]) }}</span>
                     @endif
                 </div>
             </div>
