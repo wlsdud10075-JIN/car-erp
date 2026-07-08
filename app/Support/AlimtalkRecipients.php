@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use Illuminate\Support\Collection;
 
 /**
  * 알림톡 수신자 해석 — 역할 기반 하이브리드 (users.phone) + 회사(set)별 기능설정 override.
@@ -53,6 +54,26 @@ class AlimtalkRecipients
             3 => self::phones(User::query()->where('permission', 'admin')),
             default => [],
         };
+    }
+
+    /**
+     * 승인 사다리 계단별 승인자 User 목록(전화 있는 사람만) — 정산 승인 알림톡 버튼을
+     * 사용자별 서명 링크로 바인딩하려고 phone 이 아닌 User 를 반환.
+     *
+     * @return Collection<int, User>
+     */
+    public static function payoutApproverUsers(int $level): Collection
+    {
+        $query = match ($level) {
+            2 => User::query()->where('permission', 'manager'),
+            3 => User::query()->where('permission', 'admin'),
+            default => null,
+        };
+        if ($query === null) {
+            return collect();
+        }
+
+        return $query->whereNotNull('phone')->where('phone', '!=', '')->get();
     }
 
     /** 픽업 재촉 — 그 차량 담당 영업 번호(있으면 1건). */

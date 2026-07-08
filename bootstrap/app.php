@@ -27,7 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [SetLocale::class]);
 
         // NICE 게이트웨이(이식) — 외부 박스(heymanerp 등)가 CSRF 토큰 없이 POST. Django @csrf_exempt 동일.
-        $middleware->validateCsrfTokens(except: ['provide/*']);
+        $middleware->validateCsrfTokens(except: ['provide/*', 'a/payout/*']);
 
         $middleware->alias([
             'admin' => AdminMiddleware::class,

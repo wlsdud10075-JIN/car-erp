@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Phase 2 (jin 2026-07-07) — 월배치 정산지급 승인 사다리.
@@ -264,14 +265,33 @@ class SettlementPayoutBatch extends Model
         ]);
     }
 
-    /** 현재 계단(current_level) 승인자에게 '승인 요청 도착' 알림톡. */
+    /**
+     * 현재 계단(current_level) 승인자에게 '승인 요청 도착' 알림톡 — 승인자별 서명 링크 버튼 포함.
+     * 버튼 = 그 승인자·이 배치로 바인딩된 만료 서명 URL(5일). 카톡에서 바로 승인/반려 페이지로.
+     */
     public function notifyPayoutRequest(): void
     {
-        $this->sendPayoutAlimtalk('erp_payout_request', AlimtalkRecipients::payoutApprovers($this->current_level), [
+        $svc = BizmAlimtalkService::active();
+        $vars = [
             '귀속월' => $this->month,
             '건수' => (string) $this->settlement_count,
             '총액' => number_format($this->total_payout).'원',
             '제출자' => $this->submitter?->name ?? '-',
+        ];
+        foreach (AlimtalkRecipients::payoutApproverUsers($this->current_level) as $user) {
+            $url = $this->approvalLinkFor($user);
+            $svc->send('erp_payout_request', (string) $user->phone, $vars, ['user_id' => $user->id], [
+                ['name' => '승인/반려 바로가기', 'type' => 'WL', 'url_mobile' => $url, 'url_pc' => $url],
+            ]);
+        }
+    }
+
+    /** 이 배치 × 승인자에 바인딩된 만료 서명 승인 링크(5일). 카톡 버튼 URL 로 주입. */
+    public function approvalLinkFor(User $user): string
+    {
+        return URL::temporarySignedRoute('payout.approve.show', now()->addDays(5), [
+            'batch' => $this->id,
+            'u' => $user->id,
         ]);
     }
 
