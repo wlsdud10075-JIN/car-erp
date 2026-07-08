@@ -23,12 +23,12 @@ Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
 
 // 카카오 알림톡 자동발송 (2026-07-06) — 캐시 재계산(05:00) 후 최신 grace/미수 기준.
 //   전부 BizmAlimtalkService 게이트 내장 = Setting alimtalk_enabled off 면 자동 skip(배포 ≠ 작동, inert).
-//   대표 요약(일일 09:00 / 주간 금 18:00 / 월결산 10일) · 관리·영업 아침 배치.
-Schedule::command('alimtalk:pickup')->dailyAt('08:00')->withoutOverlapping();
-Schedule::command('alimtalk:purchase-unpaid')->dailyAt('08:00')->withoutOverlapping();
-Schedule::command('alimtalk:sale-unpaid')->dailyAt('08:10')->withoutOverlapping();
-Schedule::command('alimtalk:eta-balance')->dailyAt('08:20')->withoutOverlapping();
-Schedule::command('alimtalk:shipping-due')->dailyAt('08:20')->withoutOverlapping();
+//   일일 알림 전부 09:00(jin 2026-07-08) · 주간 금 18:00 · 월결산 익월 1일 09:00(정산 마감=말일이라 전월 결산을 다음달 1일 발송).
+Schedule::command('alimtalk:pickup')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('alimtalk:purchase-unpaid')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('alimtalk:sale-unpaid')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->withoutOverlapping();
 Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->withoutOverlapping();
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
-Schedule::command('alimtalk:monthly-closing')->monthlyOn(10, '09:00')->withoutOverlapping();
+Schedule::command('alimtalk:monthly-closing')->monthlyOn(1, '09:00')->withoutOverlapping();
