@@ -31,6 +31,7 @@ return [
         'sale' => 'Sale Date',
         'shipping' => 'Shipping Date',
         'bl' => 'B/L Date',
+        'balance' => 'Balance Paid',
         'all' => 'All (any date)',
     ],
 
@@ -85,10 +86,11 @@ return [
 
     // ── Cumulative search + bundle to shipping request (jin 2026-07-08) ──
     'accum' => [
-        'title' => 'Cumulative search (add one by plate no.)',
-        'hint' => 'Search by plate number to add vehicles one at a time; they accumulate below and persist across searches and pages. When done, bundle them into a shipping request.',
-        'placeholder' => 'Plate no., then Add',
+        'title' => 'Cumulative search (add one by plate no. / VIN)',
+        'hint' => 'Search by plate number or VIN to add vehicles one at a time; they accumulate below and persist across searches and pages. When done, bundle them into a shipping request.',
+        'placeholder' => 'Plate no. / VIN, then Add',
         'add_btn' => 'Add',
+        'list_title' => ':count vehicle(s) added',
         'non_export' => 'Not export',
         'none' => 'No vehicle (in your scope) matches ":term".',
         'added_one' => 'Added 1 vehicle.',

@@ -85,7 +85,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->accumSearchOpen = ! $this->accumSearchOpen;
     }
 
-    /** 차량번호로 검색해 매칭 차량을 누적셋(shipDocIds)에 추가. 스코프 밖·중복은 조용히 무시, 결과 토스트. */
+    /** 차량번호 또는 차대번호(VIN)로 검색해 매칭 차량을 누적셋(shipDocIds)에 추가. 스코프 밖·중복은 조용히 무시, 결과 토스트. */
     public function addToAccumulation(): void
     {
         $user = auth()->user();
@@ -95,7 +95,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $matches = Vehicle::query()
-            ->where('vehicle_number', 'like', "%{$term}%")
+            ->where(fn ($q) => $q
+                ->where('vehicle_number', 'like', "%{$term}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$term}%"))   // 차대번호(끝 6자리 등 부분검색)
             ->orderByDesc('id')
             ->limit(20)
             ->get(['id', 'vehicle_number', 'salesman_id']);
@@ -141,7 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
-            ->get(['id', 'vehicle_number', 'sales_channel', 'export_buyer_id', 'shipping_method'])
+            ->get(['id', 'vehicle_number', 'brand', 'model_type', 'sales_channel', 'export_buyer_id', 'shipping_method'])
             ->sortBy(fn ($v) => array_search($v->id, array_map('intval', $this->shipDocIds), true))
             ->values();
     }
@@ -1204,7 +1206,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             default          => 'purchase_date',
         };
         // dateType='all' → 날짜 무관 전체조회 (기간 필터 skip)
-        $applyDateFilter = $this->dateType !== 'all';
+        // dateType='balance' → 잔금입금(판매 잔금 final_payments.payment_date) 기준, 아래 whereHas 로 별도 처리
+        $applyDateFilter = $this->dateType !== 'all' && $this->dateType !== 'balance';
 
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
         // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
@@ -1239,6 +1242,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
             ->when($applyDateFilter && $this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
             ->when($applyDateFilter && $this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
+            // 잔금입금 모드 — 선택 기간에 판매 잔금(final_payments)이 입금된 차량만 (날짜별 잔금입금내역 조회)
+            ->when($this->dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
+                ->when($this->dateFrom, fn ($x) => $x->whereDate('payment_date', '>=', $this->dateFrom))
+                ->when($this->dateTo, fn ($x) => $x->whereDate('payment_date', '<=', $this->dateTo))))
             ->orderBy($this->sortColumn, $this->sortDirection)
             ->paginate($this->perPage);
     }
@@ -4213,6 +4220,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="sale">{{ __('vehicle.date_type.sale') }}</option>
             <option value="shipping">{{ __('vehicle.date_type.shipping') }}</option>
             <option value="bl">{{ __('vehicle.date_type.bl') }}</option>
+            <option value="balance">{{ __('vehicle.date_type.balance') }}</option>
             <option value="all">{{ __('vehicle.date_type.all') }}</option>
         </select>
         <input wire:model="dateFrom" type="text" data-date class="input-filter" />
@@ -4279,31 +4287,31 @@ new #[Layout('components.layouts.app')] class extends Component {
                    placeholder="{{ __('vehicle.accum.placeholder') }}" class="input-filter w-52" />
             <button type="button" wire:click="addToAccumulation" class="btn-search">{{ __('vehicle.accum.add_btn') }}</button>
         </div>
-
-        @if(count($shipDocIds) > 0)
-        {{-- 누적된 차량 칩 (수출 아닌 차량은 회색 표시 — 묶기 시 skip) --}}
-        <div class="flex flex-wrap gap-1.5">
-            @foreach($this->accumVehicles as $av)
-            <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs {{ $av->sales_channel === 'export' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-gray-50 text-gray-400' }}">
-                {{ $av->vehicle_number }}
-                @if($av->sales_channel !== 'export')<span class="text-[10px] text-red-400">{{ __('vehicle.accum.non_export') }}</span>@endif
-                <button type="button" wire:click="removeFromAccumulation({{ $av->id }})" class="text-gray-400 hover:text-red-500">&times;</button>
-            </span>
-            @endforeach
-        </div>
-        <div class="flex items-center gap-2">
-            <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
-            @if(auth()->user()?->canAccessClearance())
-            <button type="button" wire:click="bundleToShipping" wire:confirm="{{ __('vehicle.accum.bundle_confirm') }}"
-                    class="ml-auto rounded bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
-                {{ __('vehicle.accum.bundle_btn') }}
-            </button>
-            @endif
-        </div>
-        @endif
     </div>
     @endif
 </div>
+
+{{-- 누적된 차량 리스트 — 접힘 여부와 무관하게 항상 표시(메인화면), 차량번호·브랜드/차종 행으로 누적 (jin 2026-07-08, 구 칩 대체) --}}
+@if(count($shipDocIds) > 0)
+<div class="card-tight mb-2">
+    <div class="mb-1.5 flex items-center justify-between">
+        <span class="text-sm font-semibold text-gray-700">{{ __('vehicle.accum.list_title', ['count' => count($shipDocIds)]) }}</span>
+        <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
+    </div>
+    <div class="divide-y divide-gray-100">
+        @foreach($this->accumVehicles as $av)
+        <div class="flex items-center justify-between gap-2 py-1">
+            <div class="flex items-center gap-2 {{ $av->sales_channel !== 'export' ? 'text-gray-400' : 'text-gray-800' }}">
+                <span class="text-sm font-medium">{{ $av->vehicle_number }}</span>
+                <span class="text-xs text-gray-500">{{ trim(($av->brand ?? '').' / '.($av->model_type ?? ''), ' /') }}</span>
+                @if($av->sales_channel !== 'export')<span class="rounded bg-red-50 px-1 text-[10px] text-red-400">{{ __('vehicle.accum.non_export') }}</span>@endif
+            </div>
+            <button type="button" wire:click="removeFromAccumulation({{ $av->id }})" class="shrink-0 px-1 text-gray-400 hover:text-red-500" title="{{ __('vehicle.clear_selection') }}">&times;</button>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
 
 {{-- #3 다중차량 선적 서류 — 체크박스 선택(export 차량) 시 노출. 선택 N대를 1서류에 자동 기입(최대 30대). --}}
 @if(count($shipDocIds) > 0)
