@@ -27,6 +27,7 @@ return [
         'fully_paid' => '✓ 완납',
         'paid_pct' => '입금률 :pct%',
         'unpaid' => '미수금 ₩:amount',
+        'unpaid_ratio' => '미수율 :pct%',
     ],
     'fees' => [
         'title' => '💸 누적 셀러부담액 (수수료·손실)',

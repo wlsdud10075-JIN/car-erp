@@ -27,6 +27,7 @@ return [
         'fully_paid' => '✓ Paid',
         'paid_pct' => 'Paid :pct%',
         'unpaid' => 'Outstanding ₩:amount',
+        'unpaid_ratio' => 'Unpaid :pct%',
     ],
     'fees' => [
         'title' => '💸 Cumulative Seller-Absorbed Amount (fees · write-offs)',
