@@ -495,15 +495,26 @@ class Vehicle extends Model
                 $vehicle->exchange_rate = 1;
             }
 
-            // 2026-07-03 사용자 결정 — 면장금액 = 총판매가(sale_total_amount) 자동 복사 (미입력 시).
+            // 2026-07-03 사용자 결정 — 면장금액 = 총판매가(sale_total_amount) 자동 추종.
             //   (2026-05-21 최초엔 sale_price 였으나 jin "면장금액=총판매가가 맞다" → 부대비용 포함 총액으로 교체.)
             //   총판매가 = sale_price + transport_fee + sale_other_costs + commission + auto_loading - tax_dc.
-            //   통상 인보이스/면장 신고가 = 총판매가. 명시 입력 시 그 값 우선 — 현재 값이 빈 경우만 자동 채움.
-            if (
-                (float) ($vehicle->export_declaration_amount ?? 0) <= 0
-                && (float) ($vehicle->sale_price ?? 0) > 0
-            ) {
-                $vehicle->export_declaration_amount = $vehicle->sale_total_amount;
+            //   추종 규칙(2026-07-08 jin 버그신고 "총판매가 바꿔도 면장 안 변함"):
+            //     ① 면장 비었으면 채움  ② 면장이 (구)총판매가와 일치 = 자동복사분이면 신 총판매가로 갱신(추종)
+            //     ③ 이번 저장에 면장 직접 편집(수동) or 총판매가와 다른 값(CIF/FOB 수기)이면 보존.
+            if ((float) ($vehicle->sale_price ?? 0) > 0) {
+                $newTotal = (float) $vehicle->sale_total_amount;
+                $curDecl = (float) ($vehicle->export_declaration_amount ?? 0);
+                $oldTotal = (float) (
+                    $vehicle->getOriginal('sale_price') + $vehicle->getOriginal('transport_fee')
+                    + $vehicle->getOriginal('sale_other_costs') + $vehicle->getOriginal('commission')
+                    + $vehicle->getOriginal('auto_loading') - $vehicle->getOriginal('tax_dc')
+                );
+                if ($curDecl <= 0) {
+                    $vehicle->export_declaration_amount = $newTotal;                              // ① 미입력
+                } elseif (! $vehicle->isDirty('export_declaration_amount') && abs($curDecl - $oldTotal) < 0.01) {
+                    $vehicle->export_declaration_amount = $newTotal;                              // ② 자동복사분 → 추종
+                }
+                // ③ else 보존 (수동 CIF/FOB 또는 이번 저장에 면장 직접 편집)
             }
 
             // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).
