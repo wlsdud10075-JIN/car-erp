@@ -359,11 +359,15 @@ class PipelineStripTest extends TestCase
     public function test_h14_new_vehicle_save_dispatches_switch_tab_to_first_pending_node(): void
     {
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
+        $sm = Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']);
+        $buyer = Buyer::create(['name' => 'H14 BUYER', 'is_active' => true]);
         $this->actingAs($admin);
 
         Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->set('vehicle_number', 'NEW-H14-1')
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->call('save')
             ->assertDispatched('switch-tab', tab: 'purchase')
             ->assertDispatched('notify');

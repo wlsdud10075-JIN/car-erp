@@ -78,4 +78,52 @@ class Buyer extends Model
     {
         return $this->hasMany(Vehicle::class);
     }
+
+    /** 신규 매입 게이트 임계 — 바이어 미수율이 이 값 초과면 신규 차량 등록 차단(관리 승인 우회). */
+    public const RECEIVABLE_GATE_THRESHOLD = 0.5;
+
+    /**
+     * 바이어 미수금 게이지 — 목록·드로어·매입 게이트 단일 출처 (숫자 일치 보장).
+     * 분모: Σ(sale_total_amount × exchange_rate), total>0 && rate>0 인 차량만.
+     * 분자: Σ(sale_unpaid_amount_krw_cache). 환율 미입력 외화는 분모·분자 양쪽 자동 제외.
+     * 반환 null = 판매 이력 없음(분모 0) → 게이지·게이트 미적용.
+     *
+     * @param  iterable  $vehicles  sale_total_amount 접근에 필요한 컬럼이 로드된 Vehicle 컬렉션
+     */
+    public static function computeReceivableGauge(iterable $vehicles): ?array
+    {
+        $totalKrw = 0;
+        $unpaidKrw = 0;
+        $count = 0;
+        foreach ($vehicles as $v) {
+            $count++;
+            $rate = (float) ($v->exchange_rate ?? 0);
+            $total = (float) ($v->sale_total_amount ?? 0);
+            if ($total > 0 && $rate > 0) {
+                $totalKrw += (int) ($total * $rate);
+            }
+            $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+        }
+
+        if ($totalKrw <= 0) {
+            return null;
+        }
+
+        $paidKrw = max(0, $totalKrw - $unpaidKrw);
+
+        return [
+            'total_krw' => $totalKrw,
+            'unpaid_krw' => $unpaidKrw,
+            'paid_krw' => $paidKrw,
+            'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
+            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/총)
+            'vehicle_count' => $count,
+        ];
+    }
+
+    /** 이 바이어의 미수 게이지 (자기 차량 로딩). 매입 게이트가 사용. */
+    public function receivableGauge(): ?array
+    {
+        return static::computeReceivableGauge($this->vehicles()->get());
+    }
 }
