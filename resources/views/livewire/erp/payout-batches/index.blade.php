@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Salesman;
 use App\Models\SettlementPayoutBatch;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -14,14 +15,81 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $rejectReason = '';
 
+    // 월배치 수동 조정란 (jin 2026-07-08) — pending 배치에 담당자별 +/− 조정 기입.
+    public ?int $adjustingId = null;
+
+    public string $adjSalesmanId = '';
+
+    public string $adjAmount = '';
+
+    public string $adjReason = '';
+
     #[Computed]
     public function batches()
     {
-        return SettlementPayoutBatch::with(['submitter', 'approvals.approver', 'settlements.vehicle', 'settlements.salesman'])
+        return SettlementPayoutBatch::with([
+            'submitter', 'approvals.approver', 'settlements.vehicle', 'settlements.salesman',
+            'adjustments.salesman', 'adjustments.creator',
+        ])
             ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
             ->orderByDesc('id')
             ->limit(60)
             ->get();
+    }
+
+    #[Computed]
+    public function salesmen()
+    {
+        return Salesman::orderBy('name')->get(['id', 'name']);
+    }
+
+    public function startAdjust(int $id): void
+    {
+        $this->adjustingId = $id;
+        $this->adjSalesmanId = '';
+        $this->adjAmount = '';
+        $this->adjReason = '';
+    }
+
+    public function cancelAdjust(): void
+    {
+        $this->adjustingId = null;
+        $this->adjSalesmanId = $this->adjAmount = $this->adjReason = '';
+    }
+
+    public function addAdjustment(int $batchId): void
+    {
+        $amount = (int) str_replace(',', '', trim($this->adjAmount));
+        if ($this->adjSalesmanId === '' || $amount === 0 || trim($this->adjReason) === '') {
+            $this->dispatch('notify', message: __('payout_batch.adjust.invalid'), type: 'warning');
+
+            return;
+        }
+        $batch = SettlementPayoutBatch::findOrFail($batchId);
+        try {
+            $batch->addAdjustment(auth()->user(), (int) $this->adjSalesmanId, $amount, trim($this->adjReason));
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+        $this->adjSalesmanId = $this->adjAmount = $this->adjReason = '';
+        unset($this->batches);
+        $this->dispatch('notify', message: __('payout_batch.adjust.added'), type: 'success');
+    }
+
+    public function removeAdjustment(int $batchId, int $adjId): void
+    {
+        $batch = SettlementPayoutBatch::findOrFail($batchId);
+        try {
+            $batch->removeAdjustment(auth()->user(), $adjId);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+        unset($this->batches);
+        $this->dispatch('notify', message: __('payout_batch.adjust.removed'), type: 'success');
     }
 
     public function levelLabel(int $level): string
@@ -164,6 +232,42 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                     </div>
                     @endforeach
+
+                    {{-- 월배치 수동 조정 (과지급 환수·특별지급 등 — 배치 총액에 +/− 반영, 개별 정산 무손상) --}}
+                    @php $canAdjust = $b->status === 'pending' && (auth()->user()?->canSubmitPayoutBatch() ?? false); @endphp
+                    @if($b->adjustments->isNotEmpty() || $canAdjust)
+                    <div class="mt-2 border-t border-dashed border-gray-200 pt-2">
+                        <div class="mb-1 text-[10px] font-semibold uppercase text-gray-400">{{ __('payout_batch.adjust.title') }}</div>
+                        @foreach($b->adjustments as $adj)
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-gray-600">{{ $adj->salesman?->name ?? '-' }} · {{ $adj->reason }}</span>
+                            <span class="flex items-center gap-1.5">
+                                <span class="tabular-nums font-medium {{ $adj->amount < 0 ? 'text-red-600' : 'text-green-600' }}">{{ $adj->amount < 0 ? '−' : '+' }}₩{{ number_format(abs($adj->amount)) }}</span>
+                                @if($canAdjust)
+                                <button type="button" wire:click="removeAdjustment({{ $b->id }}, {{ $adj->id }})" class="text-gray-400 hover:text-red-500">×</button>
+                                @endif
+                            </span>
+                        </div>
+                        @endforeach
+                        @if($canAdjust)
+                            @if($adjustingId === $b->id)
+                            <div class="mt-2 flex flex-wrap items-center gap-1.5 rounded-md border border-indigo-100 bg-indigo-50 px-2 py-2">
+                                <select wire:model="adjSalesmanId" class="input-base text-xs" style="width:auto">
+                                    <option value="">{{ __('payout_batch.adjust.salesman') }}</option>
+                                    @foreach($this->salesmen as $sm)<option value="{{ $sm->id }}">{{ $sm->name }}</option>@endforeach
+                                </select>
+                                <input type="text" wire:model="adjAmount" placeholder="{{ __('payout_batch.adjust.amount') }}" class="input-base w-28 text-xs" />
+                                <input type="text" wire:model="adjReason" placeholder="{{ __('payout_batch.adjust.reason') }}" class="input-base flex-1 text-xs" />
+                                <button type="button" wire:click="addAdjustment({{ $b->id }})" class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('payout_batch.adjust.add') }}</button>
+                                <button type="button" wire:click="cancelAdjust" class="text-xs text-gray-500">{{ __('common.cancel') }}</button>
+                            </div>
+                            @else
+                            <button type="button" wire:click="startAdjust({{ $b->id }})" class="mt-1 text-[11px] font-medium text-indigo-600 hover:underline">+ {{ __('payout_batch.adjust.add_line') }}</button>
+                            @endif
+                            <p class="mt-1 text-[10px] text-gray-400">{{ __('payout_batch.adjust.hint') }}</p>
+                        @endif
+                    </div>
+                    @endif
                 </div>
                 @endif
             </div>

@@ -26,4 +26,18 @@ return [
         'rejected' => 'Rejected. Settlements can be re-batched.',
         'reason_required' => 'Enter a reject reason.',
     ],
+
+    // Monthly batch manual adjustment (jin 2026-07-08)
+    'adjust' => [
+        'title' => 'Manual adjustment (clawback / special pay)',
+        'salesman' => 'Salesman',
+        'amount' => 'Amount (- for negative)',
+        'reason' => 'Reason (required)',
+        'add' => 'Add',
+        'add_line' => 'Add adjustment',
+        'hint' => 'Negative = clawback/deduction, positive = special pay. Affects the batch total only; individual settlements are untouched. Approved together with the batch.',
+        'invalid' => 'Enter salesman, a non-zero amount, and a reason.',
+        'added' => 'Adjustment added.',
+        'removed' => 'Adjustment removed.',
+    ],
 ];

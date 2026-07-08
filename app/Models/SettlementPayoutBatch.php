@@ -54,6 +54,87 @@ class SettlementPayoutBatch extends Model
         return $this->hasMany(Settlement::class, 'payout_batch_id');
     }
 
+    /** 월배치 수동 조정 (jin 2026-07-08) — 담당자별 +/− 조정, 배치 총액에만 반영. */
+    public function adjustments(): HasMany
+    {
+        return $this->hasMany(SettlementPayoutAdjustment::class, 'batch_id');
+    }
+
+    /** 배치 총액 재계산 — 정산 실지급 합 + 조정 합(음수 포함). 조정 변경 시 호출. */
+    public function recomputeTotal(): void
+    {
+        $settleSum = (int) $this->settlements()->get()->sum(fn ($s) => $s->actual_payout);
+        $adjSum = (int) $this->adjustments()->sum('amount');
+        $this->total_payout = max(0, $settleSum + $adjSum);
+        $this->save();
+    }
+
+    /** 조정 추가 — pending 배치 + 관리 권한. 사유 필수. 총액 재계산 + 감사로그. */
+    public function addAdjustment(User $by, int $salesmanId, int $amount, string $reason): SettlementPayoutAdjustment
+    {
+        if ($this->status !== self::STATUS_PENDING) {
+            throw new \DomainException('승인 대기 중인 배치에만 조정을 추가할 수 있습니다.');
+        }
+        if (! $by->canSubmitPayoutBatch()) {
+            throw new \DomainException('조정 입력 권한이 없습니다.');
+        }
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \DomainException('조정 사유는 필수입니다.');
+        }
+        if ($amount === 0) {
+            throw new \DomainException('조정 금액은 0이 될 수 없습니다.');
+        }
+
+        return DB::transaction(function () use ($by, $salesmanId, $amount, $reason) {
+            $adj = $this->adjustments()->create([
+                'salesman_id' => $salesmanId,
+                'amount' => $amount,
+                'reason' => $reason,
+                'created_by' => $by->id,
+            ]);
+            $this->recomputeTotal();
+            AuditLog::create([
+                'user_id' => $by->id, 'approval_request_id' => null,
+                'auditable_type' => self::class, 'auditable_id' => $this->id,
+                'action' => 'payout_adjustment_added', 'column_name' => 'amount',
+                'old_value' => null, 'new_value' => $amount.' ('.$reason.')',
+                'ip_address' => request()?->ip(),
+            ]);
+
+            return $adj;
+        });
+    }
+
+    /** 조정 삭제 — pending 배치 + 관리 권한. 총액 재계산 + 감사로그. */
+    public function removeAdjustment(User $by, int $adjustmentId): void
+    {
+        if ($this->status !== self::STATUS_PENDING) {
+            throw new \DomainException('승인 대기 중인 배치에서만 조정을 삭제할 수 있습니다.');
+        }
+        if (! $by->canSubmitPayoutBatch()) {
+            throw new \DomainException('조정 삭제 권한이 없습니다.');
+        }
+        $adj = $this->adjustments()->find($adjustmentId);
+        if (! $adj) {
+            return;
+        }
+
+        DB::transaction(function () use ($by, $adj) {
+            $amount = $adj->amount;
+            $reason = $adj->reason;
+            $adj->delete();
+            $this->recomputeTotal();
+            AuditLog::create([
+                'user_id' => $by->id, 'approval_request_id' => null,
+                'auditable_type' => self::class, 'auditable_id' => $this->id,
+                'action' => 'payout_adjustment_removed', 'column_name' => 'amount',
+                'old_value' => $amount.' ('.$reason.')', 'new_value' => null,
+                'ip_address' => request()?->ip(),
+            ]);
+        });
+    }
+
     /** 제출 — 해당 귀속월(confirmed_at+10일 앵커)의 confirmed & 미배치 정산을 묶어 배치 생성. */
     public static function submitForMonth(User $submitter, string $month): self
     {
