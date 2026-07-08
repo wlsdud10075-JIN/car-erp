@@ -831,6 +831,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $qaContactName  = '';
     public string $qaContactPhone = '';
 
+    // ── 미수 매입 게이트 (2026-07-08) — 바이어 미수율 초과 시 신규 등록 차단 + 관리 인라인 승인 ──
+    //   게이트는 등록 시점(신규 or 바이어 교체)만 발동 → 지속 우회 토큰 불필요. (가)=그 차 1건만 통과 자동충족.
+    public bool   $showPurchaseGate     = false;
+    public array  $purchaseGateInfo     = [];   // ['buyer','ratio','unpaid','count']
+    public string $purchaseGateReason   = '';
+    public bool   $purchaseGateApproved = false;
+
     // ── 선적 (B/L) ────────────────────────────────────────────────
     public string $bl_buyer_id_str     = '';
     public string $bl_consignee_id_str = '';
@@ -1708,6 +1715,48 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->qaContactName = '';
         $this->qaContactPhone = '';
         $this->resetErrorBag(['qaName', 'qaCountryId', 'qaSalesmanId']);
+    }
+
+    // ── 미수 매입 게이트 (2026-07-08) ────────────────────────────────
+    private function purchaseGateBuyerId(): int
+    {
+        return (int) ($this->buyer_id_str ?: 0);
+    }
+
+    /** 게이트 발동 대상? 신규 등록 OR 편집 중 바이어를 다른 바이어로 교체할 때만 (레거시 무바이어 편집은 미발동). */
+    private function shouldCheckPurchaseGate(): bool
+    {
+        if ($this->purchaseGateBuyerId() <= 0) {
+            return false;
+        }
+        if ($this->editingId === null) {
+            return true;
+        }
+        $original = \App\Models\Vehicle::find($this->editingId);
+
+        return $original && (int) $original->buyer_id !== $this->purchaseGateBuyerId();
+    }
+
+    /** 관리/admin 인라인 승인 → 사유 기록 후 이 저장 1회 통과. */
+    public function approvePurchaseGate(): void
+    {
+        abort_unless(auth()->user()?->canApproveUnpaidExport(), 403);
+        $this->validate([
+            'purchaseGateReason' => ['required', 'string', 'min:5', 'max:500'],
+        ], [], [
+            'purchaseGateReason' => __('vehicle.purchase_gate.reason'),
+        ]);
+        $this->purchaseGateApproved = true;
+        $this->showPurchaseGate = false;
+        $this->save();   // 재진입 — 게이트 통과 + save() 내에서 AuditLog 기록
+    }
+
+    public function cancelPurchaseGate(): void
+    {
+        $this->showPurchaseGate = false;
+        $this->purchaseGateReason = '';
+        $this->purchaseGateApproved = false;
+        $this->resetErrorBag(['purchaseGateReason']);
     }
 
     // C1 — 통화가 KRW로 변경되면 환율 reset (KRW 차량에 환율값 dirty 방지).
@@ -2846,6 +2895,38 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        // ① 신규 등록 시 영업담당자·바이어 필수 (미수 게이트 전제 + 당사자 정본).
+        //   import(ImportVehicles)·board(PurchaseSyncController)는 Vehicle::create 직접 호출 = save() 미경유라 자동 면제.
+        //   기존(레거시) 무바이어 차량 편집은 editingId 있어 미적용 — 편집이 막히지 않음.
+        if ($this->editingId === null) {
+            $this->validate([
+                'salesman_id_str' => ['required'],
+                'buyer_id_str' => ['required'],
+            ], [], [
+                'salesman_id_str' => __('vehicle.field.salesman'),
+                'buyer_id_str' => __('vehicle.field.buyer'),
+            ]);
+        }
+
+        // ② 미수 매입 게이트 — 신규 등록(또는 편집 중 바이어 교체) 시 바이어 총미수율 > 임계면 차단.
+        //   관리/admin 이 모달에서 사유 입력·승인하면 이 저장 1회 통과((가) — 다음 차는 또 발동). 지속 토큰 없음.
+        if (! $this->purchaseGateApproved && $this->shouldCheckPurchaseGate()) {
+            $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
+            $gauge = $buyer?->receivableGauge();
+            if ($gauge && $gauge['ratio'] > \App\Models\Buyer::RECEIVABLE_GATE_THRESHOLD) {
+                $this->purchaseGateInfo = [
+                    'buyer' => $buyer->name,
+                    'ratio' => round($gauge['ratio'] * 100, 1),
+                    'unpaid' => $gauge['unpaid_krw'],
+                    'count' => $gauge['vehicle_count'],
+                ];
+                $this->purchaseGateReason = '';
+                $this->showPurchaseGate = true;
+
+                return;   // 저장 중단 — 차단/승인 모달 표시
+            }
+        }
+
         // C7-a — 회계 민감 컬럼 (매입가·판매가·환율·면장금액·비용9개) 변경 권한.
         // 정산/통관/관리 role이 변경 시도하면 silent restore + 토스트 안내.
         if ($this->editingId && ! $user->canEditVehicleFinancialFields()) {
@@ -3351,6 +3432,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
 
+            // ② 미수 매입 게이트 관리 승인 감사 기록 — 어떤 바이어·미수율 몇 %에 누가 왜 승인했는지 영구 보존.
+            if ($this->purchaseGateApproved) {
+                \App\Models\AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'auditable_type' => Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'purchase_gate_override',
+                    'column_name' => 'buyer:'.($this->purchaseGateInfo['buyer'] ?? ''),
+                    'old_value' => '미수율 '.($this->purchaseGateInfo['ratio'] ?? '').'% / 미수 ₩'.number_format((int) ($this->purchaseGateInfo['unpaid'] ?? 0)).' / '.($this->purchaseGateInfo['count'] ?? 0).'대',
+                    'new_value' => $this->purchaseGateReason,
+                    'ip_address' => request()->ip(),
+                ]);
+            }
+
             // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
             $vehicle->refreshCaches();
             });
@@ -3379,6 +3474,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearDeregistrationDoc = false;
         $this->clearExportDeclarationDoc = false;
         $this->clearBlDoc = false;
+
+        // ② 미수 게이트 승인 플래그·정보 리셋 (다음 저장 시 재평가).
+        $this->purchaseGateApproved = false;
+        $this->purchaseGateReason = '';
+        $this->purchaseGateInfo = [];
 
         // 큐 21 후속 — mismatch confirm flag 리셋 (다음 save 진입 시 재검사)
         $this->userConfirmedDocCheckMismatch = false;
@@ -4716,6 +4816,7 @@ function vehicleColumnsToggle() {
     openLightbox(url, name, kind) { this.lightbox = { open: true, url: url, name: name, kind: kind }; },
     closeLightbox() { this.lightbox.open = false; },
     attemptClose() {
+        if ($wire.showPurchaseGate) { $wire.cancelPurchaseGate(); return; }   // 미수 게이트 모달이 최상위(z-110)
         if ($wire.quickAddOpen) { $wire.cancelQuickAdd(); return; }     // 바이어/컨사이니 quick-add 모달이 최상위 — ESC는 그것부터 닫음
         if ($wire.showMailModal) { $wire.closeMailModal(); return; }   // 메일 모달이 최상위 — ESC는 그것부터 닫음
         if (this.lightbox.open) { this.lightbox.open = false; return; }
@@ -6986,6 +7087,54 @@ function vehicleColumnsToggle() {
                     class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
             <button type="button" wire:click="saveQuickAdd" wire:loading.attr="disabled"
                     class="btn-primary px-4 py-2 text-sm">{{ __('vehicle.modal.qa_save') }}</button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- ══ 미수 매입 게이트 모달 (2026-07-08) — 바이어 미수율 초과 시 신규 등록 차단/승인 ══
+     z-[110] + 패널(z-50) 바깥에 렌더 — 새 stacking context에 안 갇히게(뒤로 감 방지, a3cdc30 교훈). --}}
+@if($showPurchaseGate)
+@php $pg = $this->purchaseGateInfo; $canApprovePg = auth()->user()?->canApproveUnpaidExport(); @endphp
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" wire:key="purchase-gate-modal">
+    <div class="w-full max-w-md rounded-xl bg-white shadow-2xl" @click.stop>
+        <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
+            <span class="mt-0.5 text-2xl">🚫</span>
+            <div>
+                <h3 class="text-base font-bold text-gray-900">{{ __('vehicle.purchase_gate.title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.purchase_gate.subtitle') }}</p>
+            </div>
+        </div>
+
+        <div class="px-5 py-4">
+            {{-- 미수 현황 요약 (드로어/목록 게이지와 동일 수치) --}}
+            <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+                <div class="font-semibold text-red-800">{{ $pg['buyer'] ?? '' }}</div>
+                <div class="mt-1 flex items-center justify-between text-red-700">
+                    <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
+                    <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
+                </div>
+            </div>
+
+            @if($canApprovePg)
+            <div class="mt-4">
+                <label class="label-base">{{ __('vehicle.purchase_gate.reason') }} <span class="text-red-500">*</span></label>
+                <textarea wire:model="purchaseGateReason" rows="2" class="input-base"
+                          placeholder="{{ __('vehicle.purchase_gate.reason_ph') }}"></textarea>
+                @error('purchaseGateReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            @else
+            <p class="mt-4 text-xs text-gray-500">{{ __('vehicle.purchase_gate.need_manager') }}</p>
+            @endif
+        </div>
+
+        <div class="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" wire:click="cancelPurchaseGate"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            @if($canApprovePg)
+            <button type="button" wire:click="approvePurchaseGate" wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.purchase_gate.approve_btn') }}</button>
+            @endif
         </div>
     </div>
 </div>

@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
@@ -31,13 +33,25 @@ class VehiclePhotoTest extends TestCase
         return User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
     }
 
+    /** ① 신규 등록 필수 — 담당자·바이어. 신규 바이어라 미수 게이트 미발동. */
+    private function party(): array
+    {
+        return [
+            Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']),
+            Buyer::create(['name' => 'PHOTO BUYER '.uniqid(), 'is_active' => true]),
+        ];
+    }
+
     public function test_upload_creates_photo_rows_and_files(): void
     {
         $this->actingAs($this->admin());
+        [$sm, $buyer] = $this->party();
 
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가7777')
             ->set('sales_channel', 'export')
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('photoFiles', [
                 UploadedFile::fake()->image('a.jpg'),
                 UploadedFile::fake()->image('b.png'),
@@ -75,6 +89,7 @@ class VehiclePhotoTest extends TestCase
     public function test_max_photos_guard(): void
     {
         $this->actingAs($this->admin());
+        [$sm, $buyer] = $this->party();
 
         $files = [];
         for ($i = 0; $i < 11; $i++) {
@@ -84,6 +99,8 @@ class VehiclePhotoTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가9999')
             ->set('sales_channel', 'export')
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('photoFiles', $files)
             ->call('save')
             ->assertHasErrors('photoFiles');
@@ -96,10 +113,13 @@ class VehiclePhotoTest extends TestCase
         // 2026-05-29 — 첨부 허용 18종(PDF·Excel·HWP 등)으로 확대. PDF는 이제 허용.
         // 실행파일(.exe 등)만 mimes 화이트리스트로 차단됨 (index.blade.php:1514).
         $this->actingAs($this->admin());
+        [$sm, $buyer] = $this->party();
 
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가1212')
             ->set('sales_channel', 'export')
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('photoFiles', [UploadedFile::fake()->create('evil.exe', 100, 'application/octet-stream')])
             ->call('save')
             ->assertHasErrors('photoFiles.*');
@@ -109,10 +129,13 @@ class VehiclePhotoTest extends TestCase
     public function test_ship_photo_upload_creates_shipping_category_rows(): void
     {
         $this->actingAs($this->admin());
+        [$sm, $buyer] = $this->party();
 
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가2323')
             ->set('sales_channel', 'export')
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('shipPhotoFiles', [
                 UploadedFile::fake()->image('vessel1.jpg'),
                 UploadedFile::fake()->image('vessel2.png'),

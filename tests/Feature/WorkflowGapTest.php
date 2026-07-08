@@ -2112,12 +2112,14 @@ class WorkflowGapTest extends TestCase
         // 미지급은 accessor 로 노출 → 재무가 매입 잔금 탭에서 지급 시 직접 확정.
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         Salesman::create(['name' => 'TEST-AUTO-TOSS', 'is_active' => true, 'user_id' => $sales->id]);
+        $buyer = Buyer::create(['name' => 'AUTO-TOSS BUYER', 'is_active' => true]);
         $this->actingAs($sales);
 
         Volt::test('erp.vehicles.index')
             ->set('vehicle_number', 'AUTO-TOSS-1')
             ->set('sales_channel', 'export')
             ->set('currency', 'KRW')
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('purchase_date', '2026-05-20')
             ->set('purchase_price_str', '5000000')
             ->call('save');

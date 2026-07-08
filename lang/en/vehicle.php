@@ -494,6 +494,18 @@ return [
         'approve_btn' => 'Record Approval',
     ],
 
+    // Receivable purchase gate (2026-07-08) — block new registration when buyer's unpaid ratio is too high
+    'purchase_gate' => [
+        'title' => 'Outstanding too high — registration blocked',
+        'subtitle' => 'This buyer still owes a large amount, so new vehicle registration is blocked.',
+        'unpaid' => 'Outstanding ₩:amount · :count vehicles',
+        'ratio' => 'Unpaid :pct%',
+        'reason' => 'Approval reason',
+        'reason_ph' => 'e.g. L/C confirmed. Balance payment expected 5/20.',
+        'need_manager' => 'Manager approval is required to proceed. Collect the outstanding amount and retry.',
+        'approve_btn' => 'Approve & register',
+    ],
+
     // Per-vehicle cost statement bulk entry (towing etc., matched by vehicle no.)
     'cost_import' => [
         'btn' => 'Import Statement',

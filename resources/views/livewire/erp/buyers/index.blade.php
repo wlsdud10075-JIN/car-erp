@@ -83,48 +83,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
 
-        return $this->computeReceivableGauge($buyer->vehicles()->get());
-    }
-
-    /**
-     * 바이어 미수금 게이지 계산 — 패널(buyerReceivable)·목록(receivableGauges) 공유 단일 출처.
-     * 분모: Σ(sale_total_amount × exchange_rate), total>0 && rate>0 인 차량만.
-     * 분자: Σ(sale_unpaid_amount_krw_cache). 환율 미입력 외화차량은 분모·분자 양쪽 자동 제외.
-     */
-    private function computeReceivableGauge($vehicles): ?array
-    {
-        $totalKrw = 0;
-        $unpaidKrw = 0;
-        foreach ($vehicles as $v) {
-            $rate = (float) ($v->exchange_rate ?? 0);
-            $total = (float) ($v->sale_total_amount ?? 0);
-            if ($total > 0 && $rate > 0) {
-                $totalKrw += (int) ($total * $rate);
-            }
-            $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
-        }
-
-        if ($totalKrw <= 0) {
-            return null;
-        }
-
-        $paidKrw = max(0, $totalKrw - $unpaidKrw);
-        $paidPct = max(0, min(100, $paidKrw / $totalKrw * 100));
-
-        return [
-            'total_krw' => $totalKrw,
-            'unpaid_krw' => $unpaidKrw,
-            'paid_krw' => $paidKrw,
-            'paid_pct' => $paidPct,
-            // 게이지 JS(app.js)용 미납 비율 (차량 목록 data-ratio 와 동일 정의: 미납/총)
-            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),
-            'vehicle_count' => is_countable($vehicles) ? count($vehicles) : $vehicles->count(),
-        ];
+        // 단일 출처 — Buyer::computeReceivableGauge (매입 게이트와 동일 로직·임계, 숫자 일치 보장).
+        return Buyer::computeReceivableGauge($buyer->vehicles()->get());
     }
 
     /**
      * 2026-07-08 — 바이어 목록 행 배경 게이지(차량관리 동일 방식). 현재 페이지 바이어만 배치 로딩(N+1 방지).
-     * 반환: [buyer_id => computeReceivableGauge()] (미수 데이터 있는 바이어만).
+     * 반환: [buyer_id => Buyer::computeReceivableGauge()] (미수 데이터 있는 바이어만).
      */
     #[Computed]
     public function receivableGauges(): array
@@ -143,7 +108,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
-            $gauge = $this->computeReceivableGauge($group);
+            $gauge = Buyer::computeReceivableGauge($group);
             if ($gauge !== null) {
                 $out[(int) $bid] = $gauge;
             }

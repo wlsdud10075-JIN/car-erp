@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Buyer;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,11 +36,16 @@ class AutoPbpDraftReconcileTest extends TestCase
     private function createVehicleViaPanel(User $actor, string $purchasePriceStr, string $downStr = ''): Vehicle
     {
         $number = 'PHTM-'.++$this->counter;
+        // ① 신규 등록 필수 — 담당자·바이어. 신규 바이어라 미수 게이트 미발동.
+        $sm = Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']);
+        $buyer = Buyer::create(['name' => 'PHTM BUYER-'.$this->counter, 'is_active' => true]);
         $this->actingAs($actor);
 
         Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->set('vehicle_number', $number)
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('purchase_price_str', $purchasePriceStr)
             ->set('down_payment_str', $downStr)
             ->call('save')

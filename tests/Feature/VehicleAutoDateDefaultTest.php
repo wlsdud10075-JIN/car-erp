@@ -46,14 +46,26 @@ class VehicleAutoDateDefaultTest extends TestCase
         return now()->format('Y-m-d');
     }
 
+    /** ① 신규 등록 필수 — 담당자·바이어. 신규 바이어라 미수 게이트 미발동. */
+    private function party(): array
+    {
+        return [
+            Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']),
+            Buyer::create(['name' => 'AD BUYER-'.++$this->counter, 'is_active' => true]),
+        ];
+    }
+
     public function test_purchase_price_autofills_purchase_date_today(): void
     {
+        [$sm, $buyer] = $this->party();
         $this->actingAs($this->manager());
         $number = 'AD-'.++$this->counter;
 
         Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->set('vehicle_number', $number)
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->set('purchase_price_str', '10,000,000')
             ->call('save')
             ->assertHasNoErrors();
@@ -64,12 +76,15 @@ class VehicleAutoDateDefaultTest extends TestCase
 
     public function test_no_purchase_price_leaves_purchase_date_null(): void
     {
+        [$sm, $buyer] = $this->party();
         $this->actingAs($this->manager());
         $number = 'AD-'.++$this->counter;
 
         Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->set('vehicle_number', $number)
+            ->set('salesman_id_str', (string) $sm->id)
+            ->set('buyer_id_str', (string) $buyer->id)
             ->call('save')
             ->assertHasNoErrors();
 
@@ -104,6 +119,7 @@ class VehicleAutoDateDefaultTest extends TestCase
 
     public function test_explicit_dates_are_preserved(): void
     {
+        $sm = Salesman::create(['name' => '영업', 'is_active' => true, 'type' => 'freelance']);
         $buyer = Buyer::create(['name' => 'AD BUYER2', 'is_active' => true]);
         $this->actingAs($this->manager());
         $number = 'AD-'.++$this->counter;
@@ -113,6 +129,7 @@ class VehicleAutoDateDefaultTest extends TestCase
             ->set('vehicle_number', $number)
             ->set('currency', 'KRW')
             ->set('exchange_rate_str', '1')
+            ->set('salesman_id_str', (string) $sm->id)
             ->set('purchase_price_str', '5,000,000')
             ->set('purchase_date', '2026-01-10')
             ->set('buyer_id_str', (string) $buyer->id)

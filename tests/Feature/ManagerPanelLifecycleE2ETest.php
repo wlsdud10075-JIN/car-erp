@@ -64,6 +64,7 @@ class ManagerPanelLifecycleE2ETest extends TestCase
             ->set('currency', 'KRW')
             ->set('exchange_rate_str', '1')
             ->set('salesman_id_str', (string) $salesman->id)
+            ->set('buyer_id_str', (string) $buyer->id)   // ① 신규 등록 필수 (신규 바이어라 게이트 미발동)
             ->set('purchase_date', '2026-04-01')
             ->set('purchase_price_str', '10,000,000')
             ->set('cost_deregistration_str', '0')   // 정산 결정성 위해 default 비용 0
