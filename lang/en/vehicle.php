@@ -83,6 +83,24 @@ return [
     ],
     'sales_contract_homogeneous_hint' => 'Only vehicles with the same buyer and currency can be issued together.',
 
+    // ── Cumulative search + bundle to shipping request (jin 2026-07-08) ──
+    'accum' => [
+        'title' => 'Cumulative search (add one by plate no.)',
+        'hint' => 'Search by plate number to add vehicles one at a time; they accumulate below and persist across searches and pages. When done, bundle them into a shipping request.',
+        'placeholder' => 'Plate no., then Add',
+        'add_btn' => 'Add',
+        'non_export' => 'Not export',
+        'none' => 'No vehicle (in your scope) matches ":term".',
+        'added_one' => 'Added 1 vehicle.',
+        'added_many' => 'Added :count vehicles.',
+        'bundle_btn' => 'Bundle to shipping request',
+        'bundle_confirm' => 'Create one shipping-request bundle from the accumulated vehicles and open it in Shipping Requests. Continue?',
+        'bundle_empty' => 'Add some vehicles first.',
+        'bundle_all_skipped' => 'No eligible vehicles (export channel and not already in progress only). Skipped: :skipped',
+        'bundle_created' => 'Shipping-request bundle created — :count vehicle(s). Proceed as usual in Shipping Requests.',
+        'bundle_created_skipped' => 'Shipping-request bundle created — :count vehicle(s). Skipped :skip (not export / already in progress).',
+    ],
+
     // ── Slide panel ─────────────────────────────────────────
     'panel' => [
         'created_badge' => 'Created',

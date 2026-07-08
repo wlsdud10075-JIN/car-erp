@@ -467,6 +467,18 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
+    {{-- 차량관리에서 「선적요청으로 묶기」로 방금 생성된 묶음 안내 (jin 2026-07-08) --}}
+    @if(session()->has('bundle_created'))
+        @php $bc = session('bundle_created'); @endphp
+        <div class="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+            @if(!empty($bc['skipped']))
+                {{ __('vehicle.accum.bundle_created_skipped', ['count' => $bc['count'], 'skip' => count($bc['skipped'])]) }}
+            @else
+                {{ __('vehicle.accum.bundle_created', ['count' => $bc['count']]) }}
+            @endif
+        </div>
+    @endif
+
     {{-- 상단 탭: 선적/발급 ↔ 2차 비용(면허비 n/1). 2차 비용은 승인 권한자만. --}}
     <div class="mb-4 flex gap-2 border-b border-gray-200">
         <button type="button" wire:click="setViewTab('shipping')"
