@@ -295,14 +295,18 @@ class User extends Authenticatable
      *   - 관리자 = permission ∈ {super, admin} (최고관리자)
      *
      * 부수 효과:
-     *   - AdminDashboardMiddleware 가 [관리] 차단 → /admin/dashboard 403
-     *   - 사이드바 '관리자 대시보드' 메뉴 [관리] 에게 자동 숨김 (show 가 canViewAdminDashboard)
+     *   - AdminDashboardMiddleware 가 [관리]·업무관리자(manager) 차단 → /admin/dashboard 403
+     *   - 사이드바 '관리자 대시보드' 메뉴 [관리]·업무관리자 에게 자동 숨김 (show 가 canViewAdminDashboard)
      *   - admin/dashboard.blade.php 의 managerScopeSalesmanIds() 분기는 코드 보존
      *     (defensive — 추후 권한 재확장 시 자동 동작, 현재 dead code 아님 — 영업 role 분기 흐름 유지)
+     *
+     * 2026-07-08 jin — 관리자 대시보드(회사이익 등 결과중심 KPI)는 최고관리자(super/admin) 전용.
+     *   업무관리자(manager)는 admin 등가지만 이 대시보드만 제외(회사 순이익 노출 최소화).
+     *   manager 는 로그인 시 erp.dashboard(업무 대시보드)로 진입하므로 랜딩 문제 없음.
      */
     public function canViewAdminDashboard(): bool
     {
-        return $this->isAdmin() || $this->isManager();
+        return $this->isAdmin();   // super/admin 만 (업무관리자·[관리] 제외)
     }
 
     /**
