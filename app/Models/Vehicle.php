@@ -265,7 +265,7 @@ class Vehicle extends Model
         if ($ratio === null) {
             // 판매가 미입력 (sale_total_amount ≤ 0) — 미수율 평가 불가
             throw ValidationException::withMessages([
-                'bl_document' => 'B/L 발행 전 판매 정보(판매가) 입력 필수입니다. 판매가 미입력으로 미수율 평가 불가.',
+                'bl_document' => 'B/L 발행 전 판매가 입력이 필요합니다 — 판매 탭. (판매가 미입력으로 미수율 평가 불가.)',
             ]);
         }
 
@@ -799,14 +799,14 @@ class Vehicle extends Model
         // 큐 2.6 H3 — B/L 문서는 반입지 입력 후 (v4: 선적 → 통관 → B/L)
         if ($this->bl_document && empty($this->bl_loading_location)) {
             throw ValidationException::withMessages([
-                'bl_document' => 'B/L 문서를 업로드하려면 선적 반입지 입력이 먼저 필요합니다.',
+                'bl_document' => 'B/L 문서를 업로드하려면 반입지 입력이 먼저 필요합니다 — 선적 탭.',
             ]);
         }
 
         // H1 — DHL 발송 신청 시 B/L 문서 강제
         if ($this->dhl_request && empty($this->bl_document)) {
             throw ValidationException::withMessages([
-                'dhl_request' => 'DHL 발송 신청을 하려면 B/L 문서 업로드가 먼저 필요합니다.',
+                'dhl_request' => 'DHL 발송 신청을 하려면 B/L 문서 업로드가 먼저 필요합니다 — B/L 탭.',
             ]);
         }
     }
@@ -843,7 +843,7 @@ class Vehicle extends Model
         // C4 — 말소 완료 강제
         if (! $this->is_deregistered || ! $this->deregistration_document) {
             throw ValidationException::withMessages([
-                'export_buyer_id' => '말소 처리(체크 + 서류 업로드)를 완료한 후 통관 진입이 가능합니다.',
+                'export_buyer_id' => '말소 처리(체크 + 서류 업로드)를 완료해야 통관·선적 진입이 가능합니다 — 매입 탭.',
             ]);
         }
 
@@ -852,7 +852,7 @@ class Vehicle extends Model
         // 사용자 결정 A (2026-05-22 세션): consignee_id (판매 단계). export/bl 컨사이니는 별도 단계.
         if ($this->bl_loading_location && ! $this->consignee_id) {
             throw ValidationException::withMessages([
-                'consignee_id' => '선적 진입 전 판매 컨사이니를 지정해야 합니다 (판매 단계).',
+                'consignee_id' => '선적 진입 전 판매 컨사이니를 지정해야 합니다 — 판매 탭.',
             ]);
         }
 
@@ -870,7 +870,7 @@ class Vehicle extends Model
             // 외화 환율 미입력 → 미수율 평가 불가
             if ($this->currency !== 'KRW' && ((float) $this->exchange_rate <= 0)) {
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => '환율 미입력 외화 차량은 통관 진입 불가. 환율 입력 또는 관리자 승인(미입금 우회) 후 진행하세요.',
+                    'export_buyer_id' => '환율 미입력 외화 차량은 통관·선적 진입 불가 — 판매 탭에서 환율을 입력하세요. (또는 관리자 미입금 우회 승인.)',
                 ]);
             }
 

@@ -207,7 +207,7 @@ class G1BlLockTest extends TestCase
         $v2->bl_document = 'bl/test.pdf';
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('판매 정보(판매가) 입력 필수');
+        $this->expectExceptionMessage('판매가 입력이 필요합니다');
         $v2->save();
     }
 

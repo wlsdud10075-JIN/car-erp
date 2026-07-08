@@ -421,7 +421,7 @@ return [
         'nice_success' => 'NICE lookup done — :count registration/spec fields auto-filled. (Save to apply)',
         'paid_locked' => "Accounting columns of a 'paid' settlement vehicle cannot be changed (attempted: :fields). Cancel the settlement and retry.",
         'max_photos' => 'Up to :max attachments can be added.',
-        'rrn_required' => 'Deregistration requires the owner resident/corp registration number.',
+        'rrn_required' => 'Deregistration requires the owner resident/corp registration number — Basic Info tab.',
         'dup_vehicle' => 'Vehicle number (:value) is already registered as vehicle #:id.:hint',
         'dup_hint' => ' (this may be the vehicle you just saved — check the vehicle list)',
         'rrn_format' => 'Resident/corp registration number must be in 000000-0000000 format.',

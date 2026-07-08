@@ -551,7 +551,7 @@ class ManagementWorkflowChecklistTest extends TestCase
             $v->guardAttachmentDeps();
             $this->fail('H3 락이 반입지 없는 B/L 업로드를 막아야 한다');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('선적 반입지 입력', $e->getMessage());
+            $this->assertStringContainsString('반입지 입력', $e->getMessage());
         }
 
         // 해결·재통과 — 반입지 입력

@@ -655,7 +655,7 @@ class WorkflowGapTest extends TestCase
         ]);
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('선적 반입지');
+        $this->expectExceptionMessage('반입지 입력');
         $v->guardAttachmentDeps();
     }
 
