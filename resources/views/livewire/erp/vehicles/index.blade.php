@@ -6128,7 +6128,6 @@ function vehicleColumnsToggle() {
                         @endforeach
                 </div>
                 @endif
-                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_count', ['count' => count($existingShipPhotos) + count($shipPhotoFiles)]) }}</p>
             </div>
         </div>
 
