@@ -842,5 +842,9 @@ return [
         'transfer_target_required' => 'Select a target vehicle for the transfer.',
         'transfer_amount_required' => 'Enter the transfer amount.',
         'void_reason_required' => 'Enter a reason for voiding the transfer.',
+        // ① new registration required — which tab (salesman = Basic / buyer = Sale)
+        'party_required' => 'New registration requires a salesman (Basic tab) and a buyer (Sale tab).',
+        'salesman_required' => 'Select a salesman — Basic tab.',
+        'buyer_required' => 'Select a buyer — Sale tab.',
     ],
 ];
