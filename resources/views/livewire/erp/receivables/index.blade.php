@@ -259,6 +259,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->addError('hMethod', $e->getMessage());
 
             return;
+        } catch (\Illuminate\Database\QueryException $e) {
+            // DB 제약(금액 overflow 등)이 미러링을 뚫고 온 경우 — 500 대신 친절 안내.
+            \Log::warning('ReceivableHistory save QueryException', ['msg' => $e->getMessage()]);
+            $this->addError('hMethod', __('receivable.save_failed'));
+
+            return;
         }
 
         session()->flash('panel_success', $this->historyEditId ? __('receivable.saved_edit') : __('receivable.saved_add'));
@@ -273,7 +279,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $h->delete();   // saved/deleted 이벤트가 final_payment 미러링 + 캐시 갱신 처리
+        // 미러 삭제 cascade — 연결된 final_payment 가 재무확정(confirmed)이면 FinalPayment::deleting 이
+        //   DomainException 을 던진다. try/catch 없으면 500 Ignition(jin 2026-07-08 채권 500 정체).
+        //   ⚠️ RH::deleted 훅은 RH 삭제 後 FP 삭제 → 트랜잭션으로 감싸야 FP 실패 시 RH 도 롤백(고아 방지).
+        try {
+            DB::transaction(function () use ($h) {
+                $h->delete();   // saved/deleted 이벤트가 final_payment 미러링 + 캐시 갱신 처리
+            });
+        } catch (\DomainException $e) {
+            session()->flash('panel_error', $e->getMessage());
+
+            return;
+        } catch (\Illuminate\Database\QueryException $e) {
+            \Log::warning('ReceivableHistory delete QueryException', ['id' => $historyId, 'msg' => $e->getMessage()]);
+            session()->flash('panel_error', __('receivable.delete_failed'));
+
+            return;
+        }
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
         session()->flash('panel_success', __('receivable.deleted'));
     }
@@ -640,6 +662,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         @if (session('panel_success'))
         <div class="mx-5 mt-3 rounded border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{{ session('panel_success') }}</div>
+        @endif
+        @if (session('panel_error'))
+        <div class="mx-5 mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ session('panel_error') }}</div>
         @endif
 
         {{-- 채권담당자 지정 --}}
