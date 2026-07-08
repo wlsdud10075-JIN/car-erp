@@ -149,6 +149,23 @@ class ErpShippingBundleTest extends TestCase
             ->assertSet('shipDocIds', [$v->id]);
     }
 
+    public function test_accumulated_vehicles_show_in_main_list_only(): void
+    {
+        $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
+        $inSet = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+
+        $this->actingAs($this->clearanceUser());
+
+        // 담으면 메인 목록이 담긴 차량만 보여줌(별도 패널 아님)
+        Volt::test('erp.vehicles.index')
+            ->set('accumSearchTerm', '11가1111')
+            ->call('addToAccumulation')
+            ->assertSet('shipDocIds', [$inSet->id])
+            ->assertSee('11가1111')
+            ->assertDontSee('22나2222');
+    }
+
     public function test_date_type_balance_filters_by_final_payment_date(): void
     {
         $buyer = Buyer::create(['name' => '바이어', 'is_active' => true]);
