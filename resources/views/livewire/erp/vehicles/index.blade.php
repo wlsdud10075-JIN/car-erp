@@ -134,20 +134,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         ));
     }
 
-    /** 누적셋 상세(칩 표시용) — id 순서 유지, 스코프 안전. */
-    #[Computed]
-    public function accumVehicles()
-    {
-        if (empty($this->shipDocIds)) {
-            return collect();
-        }
-
-        return Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
-            ->get(['id', 'vehicle_number', 'brand', 'model_type', 'sales_channel', 'export_buyer_id', 'shipping_method'])
-            ->sortBy(fn ($v) => array_search($v->id, array_map('intval', $this->shipDocIds), true))
-            ->values();
-    }
-
     /**
      * 누적/선택한 차량을 하나의 선적요청 묶음(batch)으로 생성 → 「선적요청」 화면으로 이동.
      * board 지연 대비 ERP 자체 묶음(jin 2026-07-08). board 발과 동일 파이프라인 — 이후 씬은 동일.
@@ -1205,9 +1191,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl'             => 'bl_issue_date',
             default          => 'purchase_date',
         };
+        // 누적검색(shipDocIds) 활성 시 = 담긴 차량만 메인 목록에 그대로 표시(진행상태 등 정상 행).
+        //   브라우즈 필터(검색·날짜·진행 등)는 무시 → 담긴 차량 전량 노출(기본 날짜범위에 안 걸림).
+        $accumIds = array_values(array_filter(array_map('intval', $this->shipDocIds)));
+        $accumMode = ! empty($accumIds);
         // dateType='all' → 날짜 무관 전체조회 (기간 필터 skip)
         // dateType='balance' → 잔금입금(판매 잔금 final_payments.payment_date) 기준, 아래 whereHas 로 별도 처리
-        $applyDateFilter = $this->dateType !== 'all' && $this->dateType !== 'balance';
+        $applyDateFilter = ! $accumMode && $this->dateType !== 'all' && $this->dateType !== 'balance';
 
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
         // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
@@ -1224,7 +1214,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
+            // 누적모드 = 담긴 차량만 (브라우즈 필터 무시). 스코프 가드는 위에서 유지.
+            ->when($accumMode, fn ($q) => $q->whereIn('id', $accumIds))
+            ->when(! $accumMode && $this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('model_type', 'like', "%{$this->search}%")
@@ -1234,16 +1226,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
                 ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
             ))
-            ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
-            ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
-            ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
-            ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
-            ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
-            ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
+            ->when(! $accumMode && $this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
+            ->when(! $accumMode && $this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
+            ->when(! $accumMode && $this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
+            ->when(! $accumMode && $this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
+            ->when(! $accumMode && $this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
+            ->when(! $accumMode && $this->action !== '', fn ($q) => $this->applyActionFilter($q))
             ->when($applyDateFilter && $this->dateFrom, fn ($q) => $q->where($dateColumn, '>=', $this->dateFrom))
             ->when($applyDateFilter && $this->dateTo, fn ($q) => $q->where($dateColumn, '<=', $this->dateTo))
             // 잔금입금 모드 — 선택 기간에 판매 잔금(final_payments)이 입금된 차량만 (날짜별 잔금입금내역 조회)
-            ->when($this->dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
+            ->when(! $accumMode && $this->dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
                 ->when($this->dateFrom, fn ($x) => $x->whereDate('payment_date', '>=', $this->dateFrom))
                 ->when($this->dateTo, fn ($x) => $x->whereDate('payment_date', '<=', $this->dateTo))))
             ->orderBy($this->sortColumn, $this->sortDirection)
@@ -4291,27 +4283,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 </div>
 
-{{-- 누적된 차량 리스트 — 접힘 여부와 무관하게 항상 표시(메인화면), 차량번호·브랜드/차종 행으로 누적 (jin 2026-07-08, 구 칩 대체) --}}
-@if(count($shipDocIds) > 0)
-<div class="card-tight mb-2">
-    <div class="mb-1.5 flex items-center justify-between">
-        <span class="text-sm font-semibold text-gray-700">{{ __('vehicle.accum.list_title', ['count' => count($shipDocIds)]) }}</span>
-        <button type="button" wire:click="clearShipDocSelection" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.clear_selection') }}</button>
-    </div>
-    <div class="divide-y divide-gray-100">
-        @foreach($this->accumVehicles as $av)
-        <div class="flex items-center justify-between gap-2 py-1">
-            <div class="flex items-center gap-2 {{ $av->sales_channel !== 'export' ? 'text-gray-400' : 'text-gray-800' }}">
-                <span class="text-sm font-medium">{{ $av->vehicle_number }}</span>
-                <span class="text-xs text-gray-500">{{ trim(($av->brand ?? '').' / '.($av->model_type ?? ''), ' /') }}</span>
-                @if($av->sales_channel !== 'export')<span class="rounded bg-red-50 px-1 text-[10px] text-red-400">{{ __('vehicle.accum.non_export') }}</span>@endif
-            </div>
-            <button type="button" wire:click="removeFromAccumulation({{ $av->id }})" class="shrink-0 px-1 text-gray-400 hover:text-red-500" title="{{ __('vehicle.clear_selection') }}">&times;</button>
-        </div>
-        @endforeach
-    </div>
-</div>
-@endif
+{{-- 담긴 차량은 아래 메인 목록에 그대로 누적 표시(진행상태 등 정상 행). 별도 칩/패널 없음 (jin 2026-07-08). --}}
 
 {{-- #3 다중차량 선적 서류 — 체크박스 선택(export 차량) 시 노출. 선택 N대를 1서류에 자동 기입(최대 30대). --}}
 @if(count($shipDocIds) > 0)
