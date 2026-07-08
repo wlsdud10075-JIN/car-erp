@@ -83,11 +83,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
 
-        $vehicles = $buyer->vehicles()->get();
-        if ($vehicles->isEmpty()) {
-            return null;
-        }
+        return $this->computeReceivableGauge($buyer->vehicles()->get());
+    }
 
+    /**
+     * 바이어 미수금 게이지 계산 — 패널(buyerReceivable)·목록(receivableGauges) 공유 단일 출처.
+     * 분모: Σ(sale_total_amount × exchange_rate), total>0 && rate>0 인 차량만.
+     * 분자: Σ(sale_unpaid_amount_krw_cache). 환율 미입력 외화차량은 분모·분자 양쪽 자동 제외.
+     */
+    private function computeReceivableGauge($vehicles): ?array
+    {
         $totalKrw = 0;
         $unpaidKrw = 0;
         foreach ($vehicles as $v) {
@@ -111,8 +116,40 @@ new #[Layout('components.layouts.app')] class extends Component {
             'unpaid_krw' => $unpaidKrw,
             'paid_krw' => $paidKrw,
             'paid_pct' => $paidPct,
-            'vehicle_count' => $vehicles->count(),
+            // 게이지 JS(app.js)용 미납 비율 (차량 목록 data-ratio 와 동일 정의: 미납/총)
+            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),
+            'vehicle_count' => is_countable($vehicles) ? count($vehicles) : $vehicles->count(),
         ];
+    }
+
+    /**
+     * 2026-07-08 — 바이어 목록 행 배경 게이지(차량관리 동일 방식). 현재 페이지 바이어만 배치 로딩(N+1 방지).
+     * 반환: [buyer_id => computeReceivableGauge()] (미수 데이터 있는 바이어만).
+     */
+    #[Computed]
+    public function receivableGauges(): array
+    {
+        $buyerIds = collect($this->buyers->items())->pluck('id')->all();
+        if (empty($buyerIds)) {
+            return [];
+        }
+
+        $vehicles = \App\Models\Vehicle::whereIn('buyer_id', $buyerIds)
+            ->get([
+                'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
+                'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
+                'sale_unpaid_amount_krw_cache',
+            ]);
+
+        $out = [];
+        foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
+            $gauge = $this->computeReceivableGauge($group);
+            if ($gauge !== null) {
+                $out[(int) $bid] = $gauge;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -608,8 +645,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
+            @php $gauges = $this->receivableGauges; @endphp
             @forelse($this->buyers as $b)
-            <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $b->id }})">
+            @php $bg = $gauges[$b->id] ?? null; @endphp
+            {{-- 2026-07-08 — 바이어별 미수금 행 배경 게이지 (차량관리와 동일: app.js tr[data-ratio]). --}}
+            <tr class="cursor-pointer {{ $bg ? '' : 'hover:bg-gray-50' }}" wire:click="openEdit({{ $b->id }})"
+                @if($bg)
+                    data-ratio="{{ number_format($bg['ratio'], 6, '.', '') }}"
+                    data-unpaid="{{ $bg['unpaid_krw'] }}"
+                    data-total="{{ $bg['total_krw'] }}"
+                    data-currency="원"
+                @endif
+            >
                 <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}</td>
                 <td class="py-3 pr-4 text-gray-500">
                     @if($b->salesman)

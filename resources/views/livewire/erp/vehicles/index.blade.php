@@ -4716,6 +4716,7 @@ function vehicleColumnsToggle() {
     openLightbox(url, name, kind) { this.lightbox = { open: true, url: url, name: name, kind: kind }; },
     closeLightbox() { this.lightbox.open = false; },
     attemptClose() {
+        if ($wire.quickAddOpen) { $wire.cancelQuickAdd(); return; }     // 바이어/컨사이니 quick-add 모달이 최상위 — ESC는 그것부터 닫음
         if ($wire.showMailModal) { $wire.closeMailModal(); return; }   // 메일 모달이 최상위 — ESC는 그것부터 닫음
         if (this.lightbox.open) { this.lightbox.open = false; return; }
         if (this.confirmOpen) { this.confirmOpen = false; return; }
@@ -6953,12 +6954,8 @@ function vehicleColumnsToggle() {
             </div>
             <div>
                 <label class="label-base">{{ __('vehicle.modal.qa_country') }}</label>
-                <select wire:model="qaCountryId" class="input-base">
-                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                    @foreach($this->countries as $c)
-                    <option value="{{ $c->id }}">{{ $c->name }}</option>
-                    @endforeach
-                </select>
+                {{-- 바이어탭과 동일 — 드롭다운 + 자동완성 타이핑 겸용 (2026-07-08). --}}
+                <x-country-picker name="qaCountryId" :value="$qaCountryId" wire:key="qa-country-{{ $quickAddType }}-{{ $quickAddContext }}" />
             </div>
             @if($quickAddType === 'buyer')
             <div>
