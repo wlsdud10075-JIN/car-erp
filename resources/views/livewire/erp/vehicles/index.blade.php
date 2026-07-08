@@ -2898,14 +2898,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         // ① 신규 등록 시 영업담당자·바이어 필수 (미수 게이트 전제 + 당사자 정본).
         //   import(ImportVehicles)·board(PurchaseSyncController)는 Vehicle::create 직접 호출 = save() 미경유라 자동 면제.
         //   기존(레거시) 무바이어 차량 편집은 editingId 있어 미적용 — 편집이 막히지 않음.
-        if ($this->editingId === null) {
-            $this->validate([
-                'salesman_id_str' => ['required'],
-                'buyer_id_str' => ['required'],
-            ], [], [
-                'salesman_id_str' => __('vehicle.field.salesman'),
-                'buyer_id_str' => __('vehicle.field.buyer'),
-            ]);
+        //   안내: 담당자=기본정보 탭 / 바이어=판매 탭 — 어느 탭에서 지정하는지 토스트(어느 탭이든 보임)+인라인 에러.
+        if ($this->editingId === null && ($this->salesman_id_str === '' || $this->buyer_id_str === '')) {
+            $this->dispatch('notify', message: __('vehicle.valmsg.party_required'), type: 'warning');
+            if ($this->salesman_id_str === '') {
+                $this->addError('salesman_id_str', __('vehicle.valmsg.salesman_required'));
+            }
+            if ($this->buyer_id_str === '') {
+                $this->addError('buyer_id_str', __('vehicle.valmsg.buyer_required'));
+            }
+
+            return;
         }
 
         // ② 미수 매입 게이트 — 신규 등록(또는 편집 중 바이어 교체) 시 바이어 총미수율 > 임계면 차단.
@@ -5040,6 +5043,7 @@ function vehicleColumnsToggle() {
                         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                         @endforeach
                     </select>
+                    @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
             </div>
 
@@ -5569,6 +5573,7 @@ function vehicleColumnsToggle() {
                     <x-erp.combobox model="buyer_id_str" :options="$this->buyers" :selected="$buyer_id_str"
                         :required="true" placeholder="{{ __('vehicle.panel.select_placeholder') }}"
                         wire:key="cbx-buyer-sale-{{ $buyer_id_str }}" />
+                    @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 <div>
                     <div class="flex items-center justify-between">

@@ -842,5 +842,9 @@ return [
         'transfer_target_required' => '이체 대상 차량을 선택하세요.',
         'transfer_amount_required' => '이체 금액을 입력하세요.',
         'void_reason_required' => '이체 취소 사유를 입력하세요.',
+        // ① 신규 등록 필수 — 어느 탭에서 지정하는지 안내 (담당자=기본정보 / 바이어=판매)
+        'party_required' => '신규 등록에는 담당자(기본정보 탭)와 바이어(판매 탭)를 지정해야 합니다.',
+        'salesman_required' => '담당자를 지정하세요 — 기본정보 탭.',
+        'buyer_required' => '바이어를 지정하세요 — 판매 탭.',
     ],
 ];
