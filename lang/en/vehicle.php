@@ -386,6 +386,7 @@ return [
 
     // PHP toasts / flash / validation messages
     'toast' => [
+        'db_constraint' => 'A data constraint error occurred while saving. Please check your inputs (sale date, buyer, exchange rate, amounts).',
         'buyer_first' => 'Select a buyer first',
         'buyer_created' => 'New buyer created',
         'consignee_created' => 'New consignee created',
@@ -860,5 +861,8 @@ return [
         'buyer_required' => 'Select a buyer — Sale tab.',
         // Foreign-currency vehicles require an exchange rate — otherwise settlement miscalculates.
         'exchange_rate_required' => 'Foreign-currency vehicles require an exchange rate — Sale tab. (Settlement miscalculates without it.)',
+        // Sale required trio (pre-empts chk_sale_required DB CHECK)
+        'sale_date_required' => 'A sale date is required when a sale price is entered — Sale tab.',
+        'sale_buyer_required' => 'A buyer is required when a sale price is entered — Sale tab.',
     ],
 ];

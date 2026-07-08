@@ -105,6 +105,39 @@ class LockGuardVerificationTest extends TestCase
             ->assertHasNoErrors();
     }
 
+    public function test_edit_sale_price_without_date_is_friendly_not_500(): void
+    {
+        // 편집: 판매가 넣고 판매일 비우면 chk_sale_required(DB) 500 대신 "판매일 필수 — 판매 탭".
+        [$sm, $buyer] = $this->party();
+        $car = Vehicle::create(['vehicle_number' => 'SALE-D', 'sales_channel' => 'heyman', 'salesman_id' => $sm->id]);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $car->id)
+            ->set('currency', 'KRW')
+            ->set('buyer_id_str', (string) $buyer->id)
+            ->set('sale_price_str', '5,000,000')
+            ->set('sale_date', '')
+            ->call('save')
+            ->assertHasErrors('sale_date');
+    }
+
+    public function test_edit_sale_price_without_buyer_is_friendly(): void
+    {
+        [$sm] = $this->party();
+        $car = Vehicle::create(['vehicle_number' => 'SALE-B', 'sales_channel' => 'heyman', 'salesman_id' => $sm->id]);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $car->id)
+            ->set('currency', 'KRW')
+            ->set('buyer_id_str', '')
+            ->set('sale_price_str', '5,000,000')
+            ->set('sale_date', '2026-05-01')
+            ->call('save')
+            ->assertHasErrors('buyer_id_str');
+    }
+
     // ── (b) 비용 검증 에러메시지 한글화 ───────────────────────────────
     public function test_negative_cost_error_message_is_korean_not_raw(): void
     {

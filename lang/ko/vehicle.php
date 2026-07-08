@@ -386,6 +386,7 @@ return [
 
     // PHP 토스트 / 플래시 / 검증 메시지
     'toast' => [
+        'db_constraint' => '저장 중 데이터 제약 오류가 발생했습니다. 입력값(판매일·바이어·환율·금액)을 확인해주세요.',
         'buyer_first' => '바이어 먼저 선택',
         'buyer_created' => '신규 바이어 등록 완료',
         'consignee_created' => '신규 컨사이니 등록 완료',
@@ -860,5 +861,8 @@ return [
         'buyer_required' => '바이어를 지정하세요 — 판매 탭.',
         // 외화(USD 등) 차량 판매 시 환율 필수 — 미입력 시 정산이 잘못 계산됨(마이너스).
         'exchange_rate_required' => '외화 차량은 환율을 입력해야 합니다 — 판매 탭. (미입력 시 정산이 잘못 계산됩니다.)',
+        // 판매 필수 3종 (chk_sale_required DB CHECK 선제 — 판매가 입력 시 동반 필수)
+        'sale_date_required' => '판매가를 입력하면 판매일도 필수입니다 — 판매 탭.',
+        'sale_buyer_required' => '판매가를 입력하면 바이어도 필수입니다 — 판매 탭.',
     ],
 ];
