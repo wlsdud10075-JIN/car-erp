@@ -57,6 +57,44 @@ class DeclarationAmountAutofillTest extends TestCase
         $this->assertSame(9999, (int) $v->fresh()->export_declaration_amount);
     }
 
+    public function test_declaration_follows_sale_total_when_previously_autofilled(): void
+    {
+        $buyer = Buyer::create(['name' => '바이어3', 'is_active' => true, 'country_id' => null]);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '77사7777', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'sale_price' => 10000, 'sale_date' => '2026-06-01',
+            'buyer_id' => $buyer->id, 'transport_fee' => 500,
+        ]);
+        $this->assertSame(10500, (int) $v->fresh()->export_declaration_amount);  // 자동복사
+
+        // 총판매가 변경(sale_price 12000, 면장 직접 안 건드림) → 면장이 추종해야
+        $v = $v->fresh();
+        $v->sale_price = 12000;
+        $v->save();
+
+        $this->assertSame(12500, (int) $v->fresh()->export_declaration_amount);  // 12000 + 500
+    }
+
+    public function test_manual_declaration_not_overwritten_when_sale_total_changes(): void
+    {
+        $buyer = Buyer::create(['name' => '바이어4', 'is_active' => true, 'country_id' => null]);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '88아8888', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'sale_price' => 10000, 'sale_date' => '2026-06-01',
+            'buyer_id' => $buyer->id, 'transport_fee' => 500, 'export_declaration_amount' => 9999,
+        ]);
+        $this->assertSame(9999, (int) $v->fresh()->export_declaration_amount);   // 수동값(총판매가 10500과 다름)
+
+        // 총판매가 변경돼도 수동 면장은 보존
+        $v = $v->fresh();
+        $v->sale_price = 12000;
+        $v->save();
+
+        $this->assertSame(9999, (int) $v->fresh()->export_declaration_amount);
+    }
+
     public function test_sync_command_fixes_unlocked_and_safe_locked_but_skips_suspect(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true, 'country_id' => null]);
