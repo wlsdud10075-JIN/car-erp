@@ -41,8 +41,9 @@ class ManagerPermissionTierTest extends TestCase
 
         $this->assertTrue($m->isManager());
         $this->assertFalse($m->isAdmin(), 'manager 는 isAdmin(super|admin) 아님');
+        // 관리자 대시보드는 최고관리자(super/admin) 전용 — manager 제외 (jin 2026-07-08)
+        $this->assertFalse($m->canViewAdminDashboard(), '관리자 대시보드는 super/admin 전용');
         // 얻는 권한 (admin 등가)
-        $this->assertTrue($m->canViewAdminDashboard());
         $this->assertTrue($m->canAccessAdmin());
         $this->assertTrue($m->canManageUsers());
         $this->assertTrue($m->canApprove());
@@ -76,7 +77,7 @@ class ManagerPermissionTierTest extends TestCase
     {
         $this->actingAs($this->user('manager'));
 
-        $this->get(route('admin.dashboard'))->assertOk();
+        $this->get(route('admin.dashboard'))->assertForbidden();   // 관리자 대시보드 super/admin 전용 (jin 2026-07-08)
         $this->get(route('admin.audit-logs.index'))->assertOk();
         $this->get(route('admin.document-access-logs.index'))->assertOk();
         $this->get(route('admin.users.index'))->assertOk();
