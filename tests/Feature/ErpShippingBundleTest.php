@@ -132,6 +132,49 @@ class ErpShippingBundleTest extends TestCase
             ->assertSet('shipDocIds', [$mine->id]);
     }
 
+    public function test_accumulation_matches_by_vin(): void
+    {
+        $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
+        $v = Vehicle::create([
+            'vehicle_number' => '12가3456', 'sales_channel' => 'export',
+            'salesman_id' => $sm->id, 'nice_reg_vin' => 'KMHAB00CDEF123456',
+        ]);
+
+        $this->actingAs($this->clearanceUser());
+
+        // 차대번호 끝 6자리로 검색해도 누적됨
+        Volt::test('erp.vehicles.index')
+            ->set('accumSearchTerm', '123456')
+            ->call('addToAccumulation')
+            ->assertSet('shipDocIds', [$v->id]);
+    }
+
+    public function test_date_type_balance_filters_by_final_payment_date(): void
+    {
+        $buyer = Buyer::create(['name' => '바이어', 'is_active' => true]);
+        $paid = Vehicle::create([
+            'vehicle_number' => '77바7777', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'exchange_rate' => 1, 'sale_price' => 10_000_000, 'sale_date' => '2026-07-01', 'buyer_id' => $buyer->id,
+        ]);
+        $paid->finalPayments()->create(['amount' => 5_000_000, 'type' => 'balance', 'payment_date' => '2026-07-05', 'confirmed_at' => now()]);
+
+        $june = Vehicle::create([
+            'vehicle_number' => '55다5555', 'sales_channel' => 'export', 'currency' => 'KRW',
+            'exchange_rate' => 1, 'sale_price' => 8_000_000, 'sale_date' => '2026-06-01', 'buyer_id' => $buyer->id,
+        ]);
+        $june->finalPayments()->create(['amount' => 3_000_000, 'type' => 'balance', 'payment_date' => '2026-06-10', 'confirmed_at' => now()]);
+
+        $this->actingAs($this->clearanceUser());
+
+        // 잔금입금 모드 + 7월 선택 → 7월에 잔금 입금된 차량만
+        Volt::test('erp.vehicles.index')
+            ->set('dateType', 'balance')
+            ->set('dateFrom', '2026-07-01')
+            ->set('dateTo', '2026-07-31')
+            ->assertSee('77바7777')
+            ->assertDontSee('55다5555');
+    }
+
     public function test_manager_role_can_open_forwarding_but_sales_forbidden(): void
     {
         $manager = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);

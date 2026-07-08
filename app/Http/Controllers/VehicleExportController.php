@@ -52,7 +52,8 @@ class VehicleExportController extends Controller
             default => 'purchase_date',
         };
         // dateType='all' → 날짜 무관 전체조회 (화면 목록과 정합)
-        $applyDateFilter = $mirror && $dateType !== 'all';
+        // dateType='balance' → 잔금입금(final_payments.payment_date) whereHas 로 별도 처리 (화면과 정합)
+        $applyDateFilter = $mirror && $dateType !== 'all' && $dateType !== 'balance';
 
         $vehicles = Vehicle::query()
             ->with(['salesman', 'buyer', 'consignee', 'settlements'])
@@ -63,6 +64,9 @@ class VehicleExportController extends Controller
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
             ->when($applyDateFilter && $dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
             ->when($applyDateFilter && $dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
+            ->when($mirror && $dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
+                ->when($dateFrom !== '', fn ($x) => $x->whereDate('payment_date', '>=', $dateFrom))
+                ->when($dateTo !== '', fn ($x) => $x->whereDate('payment_date', '<=', $dateTo))))
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('vehicle_number', 'like', "%{$search}%")
                 ->orWhere('brand', 'like', "%{$search}%")
