@@ -260,6 +260,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('sale_unpaid', 'l'),      $t('sale_unpaid', 'd'),      $base('sale_unpaid')->count(),      'bg-amber-500', 'sale_unpaid',      true),
             $this->row($t('clearance_needed', 'l'), $t('clearance_needed', 'd'), $base('clearance_needed')->count(), 'bg-blue-500',  'clearance_needed'),
             $this->row($t('shipping_needed', 'l'),  $t('shipping_needed', 'd'),  $base('shipping_needed')->count(),  'bg-green-500', 'shipping_needed'),
+            // 운임/인코텀즈 확정 대기 (jin 2026-07-09) — 완납이지만 정산 게이트에 막힌 차량. amber(정보 누락).
+            $this->row($t('freight_confirm', 'l'), $t('freight_confirm', 'd'), $base('freight_confirm_pending')->count(), 'bg-amber-500', 'freight_confirm_pending'),
             // DHL 할일 뱃지 제거 (jin 2026-07-06 — DHL 흐름 축소, 수동 입력만). scopeAction 'dhl_needed' 는 존치.
             // 정산 대기는 settlements 라우트로 직접 이동
             ['label' => $t('settlement_wait', 'l'), 'desc' => $t('settlement_wait', 'd'),
