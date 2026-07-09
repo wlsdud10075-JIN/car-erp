@@ -6,6 +6,7 @@ use App\Models\DocumentAccessLog;
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -67,6 +68,35 @@ class VehicleDocumentController extends Controller
         ]);
 
         return $response;
+    }
+
+    /**
+     * 업로드된 말소신청서 원본 파일 개별 다운로드 (선적요청 묶음 → 버튼 1개로 N개 개별 다운로드).
+     *
+     * 생성 서류(show)와 달리 차량이 업로드한 deregistration_document 파일을 그대로 첨부 다운로드한다.
+     * GET /erp/vehicles/{id}/deregistration-file
+     */
+    public function deregistrationFile(int $id, Request $request): StreamedResponse
+    {
+        $vehicle = Vehicle::findOrFail($id);
+        abort_unless(auth()->user()->canScopeVehicle($vehicle), 403, '접근 권한이 없는 차량입니다.');
+        abort_if(blank($vehicle->deregistration_document), 404, '말소신청서가 업로드되지 않았습니다.');
+
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $path = $vehicle->deregistration_document;
+        abort_unless($disk->exists($path), 404, '파일을 찾을 수 없습니다.');
+
+        DocumentAccessLog::create([
+            'user_id' => auth()->id(),
+            'vehicle_id' => $vehicle->id,
+            'document_type' => 'deregistration_upload',
+            'ip_address' => $request->ip(),
+        ]);
+
+        $ext = pathinfo($path, PATHINFO_EXTENSION);
+        $filename = '말소신청서_'.$vehicle->vehicle_number.($ext ? '.'.$ext : '');
+
+        return $disk->download($path, $filename);
     }
 
     /**
