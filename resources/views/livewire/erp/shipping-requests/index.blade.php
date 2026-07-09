@@ -565,7 +565,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
                                 {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
                             </a>
-                            {{-- 말소신청서 개별 다운로드 (묶음 차량 중 업로드된 것만, 버튼 1개 → N개 개별) --}}
+                            {{-- 말소신청서 개별 다운로드 (버튼 1개 → 업로드된 것 N개 개별). 항상 표시, 없으면 비활성. --}}
                             @php $deregUrls = collect($b['vehicles'])->where('has_dereg', true)->map(fn ($v) => route('erp.vehicles.deregistration-file', ['id' => $v['id']]))->values()->all(); @endphp
                             @if (count($deregUrls) > 0)
                                 <button type="button"
@@ -573,6 +573,11 @@ new #[Layout('components.layouts.app')] class extends Component
                                         @click="urls.forEach(u => { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); })"
                                         class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
                                     {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
+                                </button>
+                            @else
+                                <button type="button" disabled title="{{ __('shipping.action.no_dereg') }}"
+                                        class="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-400">
+                                    {{ __('shipping.action.download_dereg', ['count' => 0]) }}
                                 </button>
                             @endif
                             @if ($b['status'] === 'requested')

@@ -55,6 +55,7 @@ return [
         'cancel' => 'Cancel',
         'open_in_vehicles' => 'Open :count in Vehicles',
         'download_dereg' => 'Download :count Deregistration Docs',
+        'no_dereg' => 'No deregistration docs uploaded in this bundle',
     ],
 
     'confirm' => [

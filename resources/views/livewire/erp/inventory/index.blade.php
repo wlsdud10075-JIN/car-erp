@@ -212,7 +212,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         default => 'badge-gray',
                     };
                 @endphp
-                <tr class="hover:bg-gray-50 cursor-pointer"
+                <tr wire:key="inv-row-{{ $v->id }}" class="hover:bg-gray-50 cursor-pointer"
                     wire:click="$dispatch('navigate-to-vehicle', { id: {{ $v->id }} })">
                     <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
                     <td class="py-3 pr-4 text-gray-500">
@@ -231,7 +231,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                     <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4" @click.stop>
-                        <input type="date" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
+                        <input type="date" wire:key="inv-out-{{ $v->id }}" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
                                wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
                                class="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
                     </td>
@@ -264,7 +264,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 default => 'badge-gray',
             };
         @endphp
-        <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}" wire:navigate class="card-tight block">
+        <a wire:key="inv-card-{{ $v->id }}" href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}" wire:navigate class="card-tight block">
             <div class="flex items-center justify-between">
                 <span class="font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</span>
                 <span class="badge {{ $statusBadgeM }}">{{ __('domain.progress.'.$v->progress_status_cache) }}</span>
@@ -277,7 +277,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             <div class="mt-1.5 flex items-center gap-1.5 text-xs text-gray-500" @click.stop.prevent>
                 <span>{{ __('inventory.col_warehouse_out') }}</span>
-                <input type="date" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
+                <input type="date" wire:key="inv-out-m-{{ $v->id }}" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
                        wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
                        class="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
             </div>
