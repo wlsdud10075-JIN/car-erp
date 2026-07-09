@@ -558,6 +558,101 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * jin 2026-07-09 — 정산 행 인라인 확정 (pending/calculating → confirmed).
+     *   기존엔 편집 모달을 열어 상태를 바꿔야 했음. 모델 save 로 confirmed_at·H3 가드 그대로 통과.
+     *   권한 = canConfirmFinance (admin / 업무관리자 / 재무 / 관리). attributed_month(완납월 고정)라 월 안 밀림.
+     */
+    public function confirmSettlement(int $id): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+
+        $settlement = Settlement::findOrFail($id);
+        if (! in_array($settlement->settlement_status, ['pending', 'calculating'], true)) {
+            $this->dispatch('notify', message: __('settlement.notify.confirm_not_pending'), type: 'warning');
+
+            return;
+        }
+
+        try {
+            $this->confirmOne($settlement);
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        unset($this->settlements, $this->salesmanSummaries);
+        $this->dispatch('notify', message: __('settlement.notify.confirmed'), type: 'success');
+    }
+
+    /**
+     * pending/calculating → confirmed 단건 처리 (인라인·일괄 공용).
+     * confirmed_at 세팅 전 attributed_month(귀속월) 가 비었으면 현재 버킷으로 고정 —
+     * 백필 안 된 레거시 정산이 확정 시점(now) 앵커로 밀려 다른 월로 새는 것을 방지 (서버 데이터 상태 무관).
+     */
+    private function confirmOne(Settlement $s): void
+    {
+        if ($s->attributed_month === null) {
+            $ym = \App\Support\SettlementCkBatch::payrollMonthOf($s->confirmed_at ?? $s->created_at);
+            $s->attributed_month = $ym.'-01';
+        }
+        $s->settlement_status = 'confirmed';
+        if (! $s->confirmed_at) {
+            $s->confirmed_at = now();
+        }
+        $s->save();
+    }
+
+    /**
+     * jin 2026-07-09 — 선택 귀속월의 미확정(pending/calculating) 정산 일괄 확정.
+     *   "다 정확하면" 한 번에 confirmed 로. 각 행을 개별 save 로 처리 → confirmed_at·H3 정상.
+     *   ⚠ bulk update(whereIn->update) 금지 — 모델 이벤트 안 떠서 confirmed_at 누락 (SKILLS §2).
+     *   현재 화면 필터(status/salesman/held/month)와 동일 스코프 → 보이는 대기 정산만 확정.
+     */
+    public function confirmMonth(): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+
+        if ($this->monthFilter === '') {
+            $this->dispatch('notify', message: __('settlement.batch.select_month'), type: 'warning');
+
+            return;
+        }
+
+        $targets = Settlement::query()
+            ->whereIn('settlement_status', ['pending', 'calculating'])
+            ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->when($this->monthFilter, $this->monthScope())
+            ->get();
+
+        if ($targets->isEmpty()) {
+            $this->dispatch('notify', message: __('settlement.batch.confirm_none'), type: 'warning');
+
+            return;
+        }
+
+        $ok = 0;
+        $fail = 0;
+        foreach ($targets as $s) {
+            try {
+                $this->confirmOne($s);
+                $ok++;
+            } catch (\Throwable $e) {
+                $fail++;
+            }
+        }
+
+        unset($this->settlements, $this->salesmanSummaries);
+        if ($fail > 0) {
+            $this->dispatch('notify', message: __('settlement.batch.confirm_partial', ['ok' => $ok, 'fail' => $fail]), type: 'warning');
+        } else {
+            $this->dispatch('notify', message: __('settlement.batch.confirmed', ['count' => $ok]), type: 'success');
+        }
+    }
+
+    /**
      * 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 (secondary_status='closed').
      * paid → secondary_pending (자동) 후 [관리]/[재무] 가 기타비용 수정 → 최종 마무리.
      * closed 이후 회계 잠금 (Vehicle 측 가드 Step B-2 에서 처리).
@@ -748,6 +843,12 @@ new #[Layout('components.layouts.app')] class extends Component
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
     <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+    {{-- jin 2026-07-09 — 선택 월 미확정 정산 일괄 확정 (확정 → 이후 월배치 제출). --}}
+    @if(auth()->user()->canConfirmFinance() && $monthFilter !== '')
+    <button wire:click="confirmMonth" wire:confirm="{{ __('settlement.batch.confirm_month_prompt', ['month' => $monthFilter]) }}"
+            class="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50">
+        {{ __('settlement.batch.confirm_month') }}</button>
+    @endif
     @if(auth()->user()->canSubmitPayoutBatch() && $monthFilter !== '')
     {{-- 승인큐 이동링크 제거 (2026-07-07 jin) — 사이드바 정산그룹 「승인큐」 메뉴로 접근. 여기선 헷갈림만 유발. --}}
     <button wire:click="submitPayoutBatch" wire:confirm="{{ __('settlement.batch.confirm_submit', ['month' => $monthFilter]) }}"
@@ -945,6 +1046,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 text-right">
                     <div class="flex justify-end gap-2">
+                        {{-- jin 2026-07-09 — 행 인라인 확정 (pending/calculating → confirmed). 편집모달 안 열고 바로. --}}
+                        @if(in_array($s->settlement_status, ['pending', 'calculating'], true) && auth()->user()->canConfirmFinance())
+                        <button wire:click.stop="confirmSettlement({{ $s->id }})"
+                                wire:confirm="{{ __('settlement.confirm_confirm') }}"
+                                class="text-xs font-medium text-emerald-600 hover:text-emerald-800">{{ __('settlement.btn_confirm') }}</button>
+                        @endif
                         {{-- Phase 2 (2026-07-07) — 개별 지급 승인요청 은퇴. [관리]/업무관리자가 '월배치 제출'로 진행.
                              (레거시 requestPayApproval 메서드/executeSettlementPay 는 기존 pending 처리용 존치, 대표만 실행) --}}
                         {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 액션 ([재무]/[관리]/admin) --}}
@@ -990,6 +1097,12 @@ new #[Layout('components.layouts.app')] class extends Component
             <div>{{ __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->total_margin) }}</div>
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>
+        @if(in_array($s->settlement_status, ['pending', 'calculating'], true) && auth()->user()->canConfirmFinance())
+        <button wire:click.stop="confirmSettlement({{ $s->id }})"
+                wire:confirm="{{ __('settlement.confirm_confirm') }}"
+                class="mt-3 w-full rounded-md border border-emerald-500 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50">
+            {{ __('settlement.btn_confirm') }}</button>
+        @endif
     </div>
     @empty
     <div class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</div>
