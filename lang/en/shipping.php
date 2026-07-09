@@ -54,6 +54,7 @@ return [
         'done' => 'Mark done',
         'cancel' => 'Cancel',
         'open_in_vehicles' => 'Open :count in Vehicles',
+        'download_dereg' => 'Download :count Deregistration Docs',
     ],
 
     'confirm' => [

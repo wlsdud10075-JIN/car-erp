@@ -84,6 +84,12 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Route::get('vehicles/documents/{type}', [VehicleDocumentController::class, 'showMulti'])
         ->name('vehicles.documents.multi')
         ->middleware('throttle:vehicle-docs-multi');
+
+    // 업로드된 말소신청서 원본 파일 개별 다운로드 (선적요청 묶음 다운로드용)
+    Route::get('vehicles/{id}/deregistration-file', [VehicleDocumentController::class, 'deregistrationFile'])
+        ->name('vehicles.deregistration-file')
+        ->middleware('throttle:vehicle-docs')
+        ->whereNumber('id');
 });
 
 // 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증

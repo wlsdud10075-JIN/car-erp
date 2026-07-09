@@ -54,6 +54,7 @@ return [
         'done' => '완료 처리',
         'cancel' => '취소',
         'open_in_vehicles' => '차량관리에서 :count대 보기',
+        'download_dereg' => '말소신청서 :count건 다운로드',
     ],
 
     'confirm' => [

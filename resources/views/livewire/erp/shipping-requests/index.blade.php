@@ -365,6 +365,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     'vehicles' => $items->map(fn ($r) => [
                         'id' => $r->vehicle_id,
                         'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
+                        'has_dereg' => filled($r->vehicle?->deregistration_document),
                     ])->values()->all(),
                     'count' => $items->count(),
                     'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
@@ -564,6 +565,16 @@ new #[Layout('components.layouts.app')] class extends Component
                                class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
                                 {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
                             </a>
+                            {{-- 말소신청서 개별 다운로드 (묶음 차량 중 업로드된 것만, 버튼 1개 → N개 개별) --}}
+                            @php $deregUrls = collect($b['vehicles'])->where('has_dereg', true)->map(fn ($v) => route('erp.vehicles.deregistration-file', ['id' => $v['id']]))->values()->all(); @endphp
+                            @if (count($deregUrls) > 0)
+                                <button type="button"
+                                        x-data="{ urls: @js($deregUrls) }"
+                                        @click="urls.forEach(u => { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); })"
+                                        class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
+                                    {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
+                                </button>
+                            @endif
                             @if ($b['status'] === 'requested')
                                 <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
                                         class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
