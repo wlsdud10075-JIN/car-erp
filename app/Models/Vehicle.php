@@ -34,7 +34,7 @@ class Vehicle extends Model
         'nice_spec_transmission', 'nice_spec_drive_type', 'nice_spec_length',
         'nice_spec_width', 'nice_spec_height', 'nice_spec_wheelbase',
         'nice_spec_curb_weight', 'nice_spec_fuel_efficiency',
-        'purchase_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
+        'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -77,6 +77,7 @@ class Vehicle extends Model
         'deregistration_date' => 'date',
         'nice_raw' => 'array',
         'purchase_date' => 'date',
+        'warehouse_out_date' => 'date',
         'sale_date' => 'date',
         'shipping_date' => 'date',
         'eta_date' => 'date',
@@ -1198,8 +1199,11 @@ class Vehicle extends Model
     }
 
     // ── Computed: 판매 미입금액 ─────────────────────────────────────
-    // 적립금 사용(savings_used)은 미납 차감에 포함하지 않는다.
-    // 적립금은 별도 관리 항목 (Buyer×currency 잔액 추적은 Vehicle::saved 훅에서 유지).
+    // 적립금 사용(savings_used)도 이 차량 잔금 결제로 반영한다 (jin 2026-07-09).
+    //   적립금은 원 차량 초과분/선수금을 옮겨둔 buyer×currency 크레딧 풀 — 이미 원 차량 입금에서
+    //   빠진 돈이라, 이 차량에 쓰면(savings_used) 그만큼 잔금(미수)이 줄어야 회계가 맞다(이중계상 없음).
+    //   savings_used 는 이 차량 통화 기준(Vehicle::saved 가 currency 매칭 USED 거래) → 미수도 동일 통화.
+    //   ⚠️ 미수 단일 출처(SKILLS §13) — 게이지·채권·진행상태(판매완료)·지급보류·운임게이트 전부 여기 따라옴.
     //
     // 큐 20-B — 분자 A안 필터: finalPayments 중 confirmed_at IS NOT NULL 행만 합산.
     // SAP/Odoo Draft/Posted 정석 — 영업 입력 = Draft, 재무 확정(confirmed_at SET) = Posted.
@@ -1210,8 +1214,10 @@ class Vehicle extends Model
             + $this->commission + $this->auto_loading - $this->tax_dc;
 
         // 큐 22-A-3 (2026-05-20) — 4컬럼 합산 제거. 단일 출처 = finalPayments(confirmed_at IS NOT NULL).
+        // + 적립금 사용(savings_used) = 크레딧으로 잔금 결제 (2026-07-09).
         $totalReceived = $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
-            + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount');
+            + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount')
+            + (float) ($this->savings_used ?? 0);
 
         $unpaid = $totalSale - $totalReceived;
 
@@ -1253,7 +1259,12 @@ class Vehicle extends Model
             ->where('method', '!=', 'deposit')
             ->sum('amount') * $saleRate;
 
-        return (int) ($finalKrw + $receivableKrw);
+        // ③ 적립금 사용 — 크레딧이라 사용 시점 새 FX 없음 → 판매환율 평가(FX 중립).
+        //   미수 accessor 가 savings_used 를 실입금으로 잡으므로(2026-07-09), 환차 baseline 과 대칭 맞춤.
+        //   빠지면 적립금 결제분이 실입금KRW 에서 누락돼 환차가 거짓 손실로 계산됨.
+        $savingsKrw = (float) ($this->savings_used ?? 0) * $saleRate;
+
+        return (int) ($finalKrw + $receivableKrw + $savingsKrw);
     }
 
     // ── Computed: 매입 미지급액 ─────────────────────────────────────
@@ -1271,6 +1282,40 @@ class Vehicle extends Model
             ->sum('amount');
 
         return (int) ($totalPurchase - $totalPaid);
+    }
+
+    /**
+     * 입고일 (재고관리, jin 2026-07-09) = 매입 완납일. 미완납/미등록이면 null(입고 전).
+     * 완납일 ≈ 매입잔금을 0으로 만든 마지막 확정 지급일(payment_date ≤ today).
+     */
+    public function getWarehouseInDateAttribute(): ?Carbon
+    {
+        if ($this->purchase_price <= 0 || $this->purchase_unpaid_amount > 0) {
+            return null;
+        }
+        $last = $this->purchaseBalancePayments()
+            ->whereNotNull('confirmed_at')
+            ->whereNotNull('payment_date')
+            ->where('payment_date', '<=', now()->toDateString())
+            ->max('payment_date');
+
+        return $last ? Carbon::parse($last) : null;
+    }
+
+    /**
+     * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음. 진행상태 무관.
+     *   미완납 = 입고 전(제외) / 출고일 찍힘 = 출고됨(제외).
+     *   매입 미지급 식은 scopeAction('purchase_unpaid') 와 동일 단일 출처(≤ 0 반전).
+     */
+    public function scopeInStock($query)
+    {
+        return $query->where('purchase_price', '>', 0)
+            ->whereNull('warehouse_out_date')
+            ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                         - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                      WHERE vehicle_id = vehicles.id
+                                      AND payment_date IS NOT NULL AND payment_date <= ?
+                                      AND confirmed_at IS NOT NULL), 0)) <= 0', [now()->toDateString()]);
     }
 
     // ── Computed: 채권기준금액 (판매합계 — 통화 단위) ───────────────

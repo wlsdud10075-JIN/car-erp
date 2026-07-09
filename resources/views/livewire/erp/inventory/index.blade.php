@@ -36,8 +36,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 20;
 
-    private const STOCK_STATUSES = ['매입중', '매입완료', '말소완료', '판매중', '판매완료'];
-
     #[Computed]
     public function inventoryVehicles()
     {
@@ -48,7 +46,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         return Vehicle::query()
             ->with(['salesman', 'buyer'])
-            ->whereIn('progress_status_cache', self::STOCK_STATUSES)
+            ->inStock()
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
@@ -84,7 +82,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function stockCountsBySalesman(): array
     {
         $user = auth()->user();
-        $q = Vehicle::query()->whereIn('progress_status_cache', self::STOCK_STATUSES);
+        $q = Vehicle::query()->inStock();
         if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
         }
@@ -98,6 +96,23 @@ new #[Layout('components.layouts.app')] class extends Component
     public function search(): void
     {
         $this->resetPage();
+    }
+
+    /**
+     * 출고일 인라인 저장 (jin 2026-07-09) — 재고 목록에서 바로 기입. 찍으면 재고 제외, 비우면 복귀.
+     * 스코프 인증 필수(영업=본인/관리=팀/그외=전체). warehouse_out_date 는 회계잠금 필드 아님.
+     */
+    public function setWarehouseOut(int $vehicleId, ?string $date): void
+    {
+        $vehicle = Vehicle::find($vehicleId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        $vehicle->warehouse_out_date = filled($date) ? $date : null;
+        $vehicle->save();
+
+        unset($this->inventoryVehicles, $this->stockCountsBySalesman);
+        $this->dispatch('notify', message: $vehicle->warehouse_out_date
+            ? __('inventory.out_saved') : __('inventory.out_cleared'), type: 'success');
     }
 
     public function resetFilters(): void
@@ -156,7 +171,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </select>
         <select wire:model.live="statusFilter" class="input-filter">
             <option value="">{{ __('inventory.all_status') }}</option>
-            @foreach(['매입중','매입완료','말소완료','판매중','판매완료'] as $st)
+            @foreach(['매입중','매입완료','말소완료','판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $st)
             <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>
             @endforeach
         </select>
@@ -179,7 +194,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.salesman') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.brand_model') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.purchase_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_in') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
                     <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_owner') }}</th>
                     <th class="pb-2 font-medium"></th>
@@ -191,6 +207,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     $statusBadge = match($v->progress_status_cache) {
                         '매입중', '매입완료', '말소완료' => 'badge-blue',
                         '판매중', '판매완료' => 'badge-purple',
+                        '선적중', '선적완료' => 'badge-amber',
+                        '통관중', '통관완료' => 'badge-green',
                         default => 'badge-gray',
                     };
                 @endphp
@@ -211,7 +229,12 @@ new #[Layout('components.layouts.app')] class extends Component
                         {{ $v->brand }} {{ $v->model_type }}
                         @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                     </td>
-                    <td class="py-3 pr-4 text-gray-500">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4" @click.stop>
+                        <input type="date" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
+                               wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
+                               class="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
+                    </td>
                     <td class="py-3 pr-4 text-right text-gray-700">
                         @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
                     </td>
@@ -223,7 +246,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">
+                <tr><td colspan="9" class="py-12 text-center text-sm text-gray-400">
                     {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse
@@ -249,8 +272,14 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-1 grid grid-cols-2 gap-x-3 text-xs text-gray-500">
                 <div>{{ __('inventory.m_salesman') }} {{ $v->salesman?->name ?? __('common.unassigned') }}</div>
                 <div>{{ $v->brand }} {{ $v->model_type }}</div>
-                <div>{{ __('inventory.m_purchase') }} {{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</div>
+                <div>{{ __('inventory.m_warehouse_in') }} {{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</div>
                 <div class="text-right">@if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif</div>
+            </div>
+            <div class="mt-1.5 flex items-center gap-1.5 text-xs text-gray-500" @click.stop.prevent>
+                <span>{{ __('inventory.col_warehouse_out') }}</span>
+                <input type="date" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
+                       wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
+                       class="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
             </div>
         </a>
         @empty

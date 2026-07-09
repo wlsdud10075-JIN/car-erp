@@ -586,24 +586,31 @@ class IntegrationRegressionTest extends TestCase
         $this->assertGreaterThan($s->settlement_amount, $s->actual_payout, '환차 가산으로 base 초과');
     }
 
-    public function test_case15_inventory_per_manager_excludes_shipped(): void
+    public function test_case15_inventory_per_manager_scope(): void
     {
-        // 관리A 부하 영업의 재고 (매입중·매입완료·말소완료·판매중·판매완료) — 선적중 제외
+        // 재고(jin 2026-07-09) = 매입 완납 AND 미출고. 진행상태 무관 — 선적중이어도 미출고면 잔존.
         $mgrA = $this->makeManager();
         $mgrB = $this->makeManager();
         [, $smA] = $this->makeSalesUser($mgrA);
         [, $smB] = $this->makeSalesUser($mgrB);
 
-        // 관리A — 재고 차량 (매입중)
+        $pay = function (Vehicle $v) {
+            $v->purchaseBalancePayments()->create([
+                'amount' => 1_000_000, 'payment_date' => '2026-04-10', 'confirmed_at' => now(),
+            ]);
+            $v->refreshCaches();
+        };
+
+        // 관리A — 매입완납 재고 차량
         $vA = Vehicle::create([
             'vehicle_number' => 'IR-INV-A-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
             'dhl_request' => false, 'salesman_id' => $smA->id,
             'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
         ]);
-        $vA->refreshCaches();   // → 매입중
+        $pay($vA);
 
-        // 관리A — 선적중 차량 (재고 X)
+        // 관리A — 선적중 + 매입완납 + 미출고 → 재고 잔존 (새 동작)
         $vAShip = Vehicle::create([
             'vehicle_number' => 'IR-INV-A-S-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
@@ -612,22 +619,22 @@ class IntegrationRegressionTest extends TestCase
             'sale_price' => 2_000_000, 'sale_date' => '2026-05-01',
             'bl_loading_location' => 'PUSAN',
         ]);
-        $vAShip->refreshCaches();   // → 선적중
+        $pay($vAShip);
 
-        // 관리B — 재고 차량
+        // 관리B — 매입완납 재고 차량 (스코프 격리 대상)
         $vB = Vehicle::create([
             'vehicle_number' => 'IR-INV-B-'.++$this->counter,
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
             'dhl_request' => false, 'salesman_id' => $smB->id,
             'purchase_date' => '2026-04-01', 'purchase_price' => 1_000_000,
         ]);
-        $vB->refreshCaches();
+        $pay($vB);
 
         $this->actingAs($mgrA);
         $listA = Volt::test('erp.inventory.index')->instance()->inventoryVehicles->pluck('id')->toArray();
 
         $this->assertContains($vA->id, $listA, '관리A 부하 재고 포함');
-        $this->assertNotContains($vAShip->id, $listA, '선적중 차량 재고 제외');
+        $this->assertContains($vAShip->id, $listA, '선적중이어도 미출고면 재고 잔존');
         $this->assertNotContains($vB->id, $listA, '관리B 부하 차량 격리');
     }
 
