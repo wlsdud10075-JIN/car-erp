@@ -310,6 +310,45 @@ if (window.Livewire) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 전화번호 input([data-phone]) — 숫자만 입력해도 하이픈 자동 (jin 2026-07-09)
+//   문서 위임(wire:navigate·morph 견딤). 발송부 BizmAlimtalkService 가 숫자만 정규화하므로
+//   하이픈 포함 표시값도 발송 호환. 한국 번호꼴: 010-XXXX-XXXX / 0XX-XXX(X)-XXXX / 02-XXX(X)-XXXX.
+// ──────────────────────────────────────────────────────────────────────────
+function phoneFormat(raw) {
+    const d = String(raw ?? '').replace(/[^0-9]/g, '').slice(0, 11);
+    if (d.length < 4) return d;
+    if (d.startsWith('02')) {
+        if (d.length <= 5) return d.replace(/(\d{2})(\d+)/, '$1-$2');
+        if (d.length <= 9) return d.replace(/(\d{2})(\d{3})(\d+)/, '$1-$2-$3');
+        return d.replace(/(\d{2})(\d{4})(\d{4})/, '$1-$2-$3');
+    }
+    if (d.length <= 7) return d.replace(/(\d{3})(\d+)/, '$1-$2');
+    if (d.length <= 10) return d.replace(/(\d{3})(\d{3})(\d+)/, '$1-$2-$3');
+    return d.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+}
+
+function applyPhoneFormat(el) {
+    const f = phoneFormat(el.value);
+    if (f !== el.value) el.value = f;
+}
+
+document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el && el.matches && el.matches('input[data-phone]')) applyPhoneFormat(el);
+});
+
+function formatAllPhone() {
+    document.querySelectorAll('input[data-phone]').forEach(applyPhoneFormat);
+}
+document.addEventListener('DOMContentLoaded', formatAllPhone);
+document.addEventListener('livewire:navigated', formatAllPhone);
+if (window.Livewire) {
+    window.Livewire.hook('morph.updated', ({ el }) => {
+        if (el && el.matches && el.matches('input[data-phone]')) applyPhoneFormat(el);
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // 날짜 input([data-date]) — flatpickr (타이핑 + 달력). jin 2026-07-06
 //   20260717 처럼 8자리 숫자를 타이핑하면 parseDate 가 2026-07-17 로 변환(TAB 불필요).
 //   allowInput=true 로 직접 타이핑 + 달력 클릭 선택 병행. 저장부는 Y-m-d 문자열 그대로 받음.
