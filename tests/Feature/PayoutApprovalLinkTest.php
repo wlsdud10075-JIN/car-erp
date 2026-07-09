@@ -7,6 +7,7 @@ use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -92,6 +93,17 @@ class PayoutApprovalLinkTest extends TestCase
         // 재클릭 → 이미 처리됨(canDecide 가드)
         $this->post($this->decideUrl($batch, $admin), ['action' => 'approve'])->assertOk()->assertSee('처리');
         $this->assertSame('approved', $batch->fresh()->status);
+    }
+
+    public function test_payout_request_message_includes_company_profit(): void
+    {
+        // 카톡 메시지 본문에 회사이익 줄이 렌더되는지 (jin 2026-07-09) — 대표가 누르기 전에 미리 봄.
+        $body = AlimtalkTemplates::render('erp_payout_request', [
+            '귀속월' => '2026-07', '건수' => '8', '총액' => '2,850,000원',
+            '회사이익' => '4,890,000원', '제출자' => '황진영',
+        ]);
+        $this->assertStringContainsString('회사이익: 4,890,000원', $body);
+        $this->assertStringContainsString('지급 총액: 2,850,000원', $body);
     }
 
     public function test_non_approver_cannot_decide(): void

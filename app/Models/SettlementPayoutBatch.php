@@ -280,6 +280,26 @@ class SettlementPayoutBatch extends Model
      * 현재 계단(current_level) 승인자에게 '승인 요청 도착' 알림톡 — 승인자별 서명 링크 버튼 포함.
      * 버튼 = 그 승인자·이 배치로 바인딩된 만료 서명 URL(5일). 카톡에서 바로 승인/반려 페이지로.
      */
+    /**
+     * 회사이익 요약 (승인 화면·알림톡 공용 단일 출처) — jin 2026-07-09.
+     * 공식 = 총마진(Σ total_margin) − 지급총액(배치 total_payout, 조정 포함) + 환차(Σ exchange_difference_krw).
+     * 관리자 대시보드 companyProfit / 월결산 알림톡과 동일 공식. 손실이면 음수.
+     */
+    public function profitStats(): array
+    {
+        $settlements = $this->settlements()->get();
+        $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
+        $fx = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
+        $payout = (int) $this->total_payout;
+
+        return [
+            'total_margin' => $totalMargin,
+            'payout' => $payout,
+            'fx' => $fx,
+            'company_profit' => $totalMargin - $payout + $fx,
+        ];
+    }
+
     public function notifyPayoutRequest(): void
     {
         $svc = BizmAlimtalkService::active();
@@ -287,6 +307,7 @@ class SettlementPayoutBatch extends Model
             '귀속월' => $this->month,
             '건수' => (string) $this->settlement_count,
             '총액' => number_format($this->total_payout).'원',
+            '회사이익' => number_format($this->profitStats()['company_profit']).'원',
             '제출자' => $this->submitter?->name ?? '-',
         ];
         foreach (AlimtalkRecipients::payoutApproverUsers($this->current_level) as $user) {
