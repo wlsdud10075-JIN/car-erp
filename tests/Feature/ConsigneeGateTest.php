@@ -15,7 +15,7 @@ use Tests\TestCase;
  * 회의확장씬 #4 회귀 — Consignee ID 2컬럼 + 선적 진입 가드.
  *
  * - consignees.id_type / id_value 컬럼 + Consignee::ID_TYPES 상수
- * - Vehicle::guardStageOrderForExport — bl_loading_location 입력 시 consignee_id 필수 (판매 단계 컨사이니)
+ * - Vehicle::guardStageOrderForExport — bl_loading_location 입력 시 bl_consignee_id 필수 (선적 단계 컨사이니, jin 2026-07-09 당사자 축소)
  *
  * 가드는 vehicles/index::save() 가 명시 호출 (Vehicle::saving 자동 호출 X) —
  * 테스트에서 Vehicle::create 후 $v->guardStageOrderForExport() 직접 호출.
@@ -95,20 +95,20 @@ class ConsigneeGateTest extends TestCase
 
     public function test_shipping_entry_blocked_without_consignee(): void
     {
-        // bl_loading_location 입력 + consignee_id 없음 → 가드 차단
+        // bl_loading_location 입력 + bl_consignee_id 없음 → 가드 차단 (선적 탭 컨사이니)
         $v = $this->makeVehicle([
             'bl_loading_location' => '부산항',
         ]);
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('선적 진입 전 판매 컨사이니를 지정해야 합니다');
+        $this->expectExceptionMessage('선적하려면 컨사이니를 지정해야 합니다');
 
         $v->guardStageOrderForExport();
     }
 
     public function test_shipping_entry_passes_with_consignee(): void
     {
-        // bl_loading_location 입력 + consignee_id 있음 → 가드 통과
+        // bl_loading_location 입력 + bl_consignee_id 있음 → 가드 통과 (선적 단계 컨사이니)
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
         $c = Consignee::create([
             'buyer_id' => $buyer->id,
@@ -117,7 +117,7 @@ class ConsigneeGateTest extends TestCase
         ]);
         $v = $this->makeVehicle([
             'buyer_id' => $buyer->id,
-            'consignee_id' => $c->id,
+            'bl_consignee_id' => $c->id,
             'bl_loading_location' => '부산항',
         ]);
 

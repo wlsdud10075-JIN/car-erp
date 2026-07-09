@@ -71,11 +71,11 @@ class VehicleLifecycleE2ETest extends TestCase
         $v->refreshCaches();
         $this->assertSame('말소완료', $v->fresh()->progress_status);
 
-        // ── 4) 판매중 — 판매가 + 바이어 + 컨사이니(선적 선행) ──
+        // ── 4) 판매중 — 판매가 + 바이어 + 선적 컨사이니(선적 선행, jin 2026-07-09 당사자 축소) ──
         $v = Vehicle::find($v->id);
         $v->update([
             'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
-            'buyer_id' => $buyer->id, 'consignee_id' => $consignee->id,
+            'buyer_id' => $buyer->id, 'bl_consignee_id' => $consignee->id,
         ]);
         $v->refreshCaches();
         $this->assertSame('판매중', $v->fresh()->progress_status);

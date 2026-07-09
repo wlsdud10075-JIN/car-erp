@@ -264,7 +264,7 @@ class LockGuardVerificationTest extends TestCase
             $this->assertStringContainsString('매입 탭', $e->getMessage());
         }
 
-        // 컨사이니 — 말소완료 + 반입지 + 컨사이니 없음 → "판매 탭"
+        // 컨사이니 — 말소완료 + 반입지 + 선적 컨사이니 없음 → "선적 탭" (jin 2026-07-09 당사자 축소)
         $v2 = Vehicle::create([
             'vehicle_number' => 'TAB-CONS', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
             'is_deregistered' => true, 'deregistration_document' => 'x.pdf', 'bl_loading_location' => 'PUSAN',
@@ -273,7 +273,7 @@ class LockGuardVerificationTest extends TestCase
             $v2->guardStageOrderForExport();
             $this->fail('컨사이니 락 발동 안 함');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('판매 탭', $e->getMessage());
+            $this->assertStringContainsString('선적 탭', $e->getMessage());
         }
 
         // H3 — B/L 문서 + 반입지 없음 → "선적 탭"

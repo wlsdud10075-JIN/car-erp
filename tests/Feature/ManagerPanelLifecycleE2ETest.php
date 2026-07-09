@@ -120,13 +120,13 @@ class ManagerPanelLifecycleE2ETest extends TestCase
         $this->assertSame(0, (int) $v->sale_unpaid_amount, '판매 미입금 0 (완납)');
         $this->assertSame('판매완료', $v->progress_status);
 
-        // ─── 4) 컨사이니 지정 (100% 완납 후 → export 전파돼도 C5 통과) ───
+        // ─── 4) 선적 컨사이니 지정 (jin 2026-07-09 당사자 축소 — 선적 탭 bl_consignee_id) ───
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
-            ->set('consignee_id_str', (string) $consignee->id)
+            ->set('bl_consignee_id_str', (string) $consignee->id)
             ->call('save')
             ->assertHasNoErrors();
-        $this->assertSame((int) $consignee->id, (int) $v->fresh()->consignee_id);
+        $this->assertSame((int) $consignee->id, (int) $v->fresh()->bl_consignee_id);
 
         // ─── 5) 선적(반입지) → 6) 수출신고서 → 7) 통관 → 8) B/L → 거래완료 ───
         //     100% 완납이므로 C5(50%)·G1(100%) 게이트 모두 통과.
