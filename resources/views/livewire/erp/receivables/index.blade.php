@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\User;
@@ -298,6 +300,116 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
         session()->flash('panel_success', __('receivable.deleted'));
+    }
+
+    /**
+     * 과입금 → 적립금 전환 (jin 2026-07-09).
+     *
+     * 과입금(음수 미수)된 차량의 초과분을 바이어 적립금(EARNED)으로 옮기고 미수를 0으로 만든다.
+     *   ① 초과분만큼 확정 잔금(FinalPayment) 감액 → received 감소 → 미수 0.
+     *      정산 paid 여부와 무관하게 회계 잠금을 시스템 우회($allowConfirmedMutation)로 감액한다.
+     *      감액 자체(amount old→new)는 FinalPayment::updated 훅이 AuditLog 로 자동 기록.
+     *   ② 초과분을 buyer×currency 적립금 풀에 EARNED +초과분 (syncSavingsDeposit).
+     *   ③ 전환 사실을 Vehicle 단위 AuditLog(overpay_converted_to_savings)로 기록.
+     *
+     * 권한 = canConfirmFinance (관리·재무·업무관리자·admin/super) — 채권관리 진입 권한과 동일 범위.
+     * 메모: 정산 마진은 판매가 기준이라 과입금 전환은 이미 지급된 정산금에 영향 없음.
+     * 안전장치: 초과분이 확정 잔금 총액을 넘으면(기타회수 등 다른 출처 과입금) 자동 처리 대신 차단(수동 확인).
+     */
+    public function convertOverpayToSavings(): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canConfirmFinance(), 403);
+
+        $vehicle = $this->selectedVehicle;
+        if (! $vehicle) {
+            return;
+        }
+
+        $isForeign = $vehicle->currency !== 'KRW';
+        $excess = round(-$vehicle->sale_unpaid_amount, $isForeign ? 2 : 0);
+
+        if ($excess <= 0) {
+            session()->flash('panel_error', __('receivable.overpay.not_overpaid'));
+
+            return;
+        }
+        if (! $vehicle->buyer_id) {
+            session()->flash('panel_error', __('receivable.overpay.no_buyer'));
+
+            return;
+        }
+
+        // 2차 정산 마감(secondary closed) 차량은 소급 변경 금지 (SKILLS §28) — 환차·이월이 이미
+        //   산정·지급된 뒤라 확정 잔금 감액이 지급값과 어긋난다. 개별 잠금해제로만 정정.
+        if ($vehicle->settlements()->where('secondary_status', 'closed')->exists()) {
+            session()->flash('panel_error', __('receivable.overpay.secondary_closed'));
+
+            return;
+        }
+
+        // 확정 잔금(최근 입력분부터)으로 초과분 커버 — 마지막 입금이 초과분인 게 일반적.
+        //   초과분이 확정 잔금 총액을 넘으면(기타회수/이체 등 다른 출처) 안전 차단.
+        //   transfer 연결 잔금(append-only)은 감액 대상 제외 — 커버 못 하면 exceeds_confirmed 로 걸림.
+        $confirmedFps = $vehicle->finalPayments()
+            ->whereNotNull('confirmed_at')
+            ->whereNull('transfer_id')
+            ->where('amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+        if ($excess > (float) $confirmedFps->sum('amount') + 0.001) {
+            session()->flash('panel_error', __('receivable.overpay.exceeds_confirmed'));
+
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($vehicle, $confirmedFps, $excess, $user) {
+                // ① 초과분만큼 확정 잔금 감액 (큰 것부터, 회계 잠금 시스템 우회)
+                $remaining = $excess;
+                FinalPayment::$allowConfirmedMutation = true;
+                try {
+                    foreach ($confirmedFps as $fp) {
+                        if ($remaining <= 0.001) {
+                            break;
+                        }
+                        $cut = min((float) $fp->amount, $remaining);
+                        $newAmount = (float) $fp->amount - $cut;
+                        $fp->update(['amount' => $newAmount]);
+                        // 미러 deposit 회수이력 금액도 동기화 (query builder — 이벤트/루프 없음, 목록 표시 정합).
+                        ReceivableHistory::where('final_payment_id', $fp->id)
+                            ->where('method', 'deposit')
+                            ->update(['amount' => $newAmount]);
+                        $remaining -= $cut;
+                    }
+                } finally {
+                    FinalPayment::$allowConfirmedMutation = false;
+                }
+
+                // ② 바이어 적립금 EARNED +초과분
+                $vehicle->syncSavingsDeposit($excess);
+
+                // ③ 전환 사실 감사로그 (잔금 감액 old→new 는 FinalPayment::updated 가 별도 기록)
+                AuditLog::create([
+                    'user_id' => $user->id,
+                    'auditable_type' => Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'overpay_converted_to_savings',
+                    'column_name' => 'savings_earned',
+                    'old_value' => null,
+                    'new_value' => $vehicle->currency.' '.$excess,
+                    'ip_address' => request()?->ip(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning('convertOverpayToSavings failed', ['vehicle' => $vehicle->id, 'msg' => $e->getMessage()]);
+            session()->flash('panel_error', __('receivable.overpay.failed'));
+
+            return;
+        }
+
+        unset($this->selectedVehicle, $this->vehicles, $this->summary);
+        session()->flash('panel_success', __('receivable.overpay.done', ['amount' => $vehicle->currency.' '.number_format($excess, $isForeign ? 2 : 0)]));
     }
 
     public function resetHistoryForm(): void
@@ -665,6 +777,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
         @if (session('panel_error'))
         <div class="mx-5 mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ session('panel_error') }}</div>
+        @endif
+
+        {{-- 과입금 → 적립금 전환 (음수 미수 = 과입금 시에만, 재무 권한) --}}
+        @if ($sv->sale_unpaid_amount < 0 && auth()->user()?->canConfirmFinance())
+        @php $overpayLabel = $sv->currency.' '.number_format(-$sv->sale_unpaid_amount, $sv->currency === 'KRW' ? 0 : 2); @endphp
+        <div class="mx-5 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <div class="text-xs font-semibold text-amber-800">{{ __('receivable.overpay.title') }} <span class="font-bold">{{ $overpayLabel }}</span></div>
+                    <div class="mt-0.5 text-[11px] text-amber-600">{{ __('receivable.overpay.hint') }}</div>
+                </div>
+                <button type="button" wire:click="convertOverpayToSavings"
+                        wire:confirm="{{ __('receivable.overpay.confirm', ['amount' => $overpayLabel]) }}"
+                        class="shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                    {{ __('receivable.overpay.btn') }}
+                </button>
+            </div>
+        </div>
         @endif
 
         {{-- 채권담당자 지정 --}}

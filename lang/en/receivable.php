@@ -93,6 +93,20 @@ return [
     'delete_failed' => 'This collection record cannot be deleted — it is linked to a finance-confirmed payment.',
     'save_failed' => 'Failed to save the collection record. Please check the amount and method.',
     'err_paid_no_deposit' => "This vehicle's settlement is paid; the 'Deposit' method can't be used. Choose cash, offset, other, or write-off.",
+
+    // Overpayment → savings credit conversion
+    'overpay' => [
+        'title' => 'Overpaid',
+        'hint' => 'Move the excess to the buyer savings credit and set this vehicle receivable to 0.',
+        'btn' => 'Convert to savings',
+        'confirm' => 'Convert overpayment :amount to buyer savings credit and set this vehicle receivable to 0. Proceed?',
+        'done' => 'Overpayment :amount converted to buyer savings credit.',
+        'not_overpaid' => 'Not overpaid (receivable ≥ 0).',
+        'no_buyer' => 'No sale buyer assigned; cannot convert to savings.',
+        'exceeds_confirmed' => 'Excess exceeds total confirmed balance payments. Check the overpayment source and correct manually.',
+        'secondary_closed' => 'Cannot auto-convert: the 2nd settlement is closed (FX/carryover already finalized). Correct via individual unlock.',
+        'failed' => 'Overpayment-to-savings conversion failed.',
+    ],
     'list_title' => 'Collection history (latest first)',
     'list_empty' => 'No collection history.',
     'mirror_title' => 'Mirrored with final_payments',
