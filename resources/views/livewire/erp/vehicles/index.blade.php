@@ -6705,7 +6705,7 @@ function vehicleColumnsToggle() {
                             {{ $fc?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
-                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.decl_amount') }}</dt><dd class="font-medium">{{ ($export_declaration_amount_str ?? '') !== '' ? number_format((float) str_replace(',', '', $export_declaration_amount_str)).' USD' : __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.decl_amount') }}</dt><dd class="font-medium">{{ ($export_declaration_amount_str ?? '') !== '' ? number_format((float) str_replace(',', '', $export_declaration_amount_str)).' '.$currency : __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.decl_doc') }}</dt><dd class="font-medium">{{ ($export_declaration_document_path ?? '') || ($exportDeclarationDocFile ?? null) ? __('vehicle.save.val_attached') : __('vehicle.save.val_not_attached') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.cleared_check') }}</dt><dd class="font-medium">{{ ($is_export_cleared ?? false) ? __('vehicle.save.val_checked') : __('vehicle.save.val_unchecked') }}</dd></div>
                 </dl>
