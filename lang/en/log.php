@@ -20,6 +20,7 @@ return [
     // Audit log
     'audit_title' => 'Audit Log',
     'audit_subtitle' => 'Change tracking (since queue 11-4 — earlier actions not recorded).',
+    'audit_search' => 'Vehicle no. · actor name',
     'total' => ':count total',
     'all_users' => 'All users',
     'all_actions' => 'All actions',
