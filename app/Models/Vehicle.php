@@ -792,12 +792,13 @@ class Vehicle extends Model
             ]);
         }
 
-        // 회의확장씬 #4 (2026-05-22) — 선적 진입(bl_loading_location) 시 판매 컨사이니 필수.
-        // 사용자 명세: "판매에서 바이어나 컨사이니를 추가... 추가/선택 안 하면 선적으로 진입 불가"
-        // 사용자 결정 A (2026-05-22 세션): consignee_id (판매 단계). export/bl 컨사이니는 별도 단계.
-        if ($this->bl_loading_location && ! $this->consignee_id) {
+        // 선적 진입(bl_loading_location) 시 선적 컨사이니(bl_consignee_id) 필수.
+        //   당사자 축소 (jin 2026-07-09) — 판매탭 컨사이니 입력칸 제거로 옛 consignee_id 가 항상 비어
+        //   오발동("판매 탭에서 컨사이니 등록" 데드엔드)하던 것을, 실제 입력 필드(선적 탭 bl_consignee_id)로 전환.
+        //   컨사이니는 선적에서 입력 → 통관 이어받음(export_consignee_id). B/L·선적서류에 필요.
+        if ($this->bl_loading_location && ! $this->bl_consignee_id) {
             throw ValidationException::withMessages([
-                'consignee_id' => '선적 진입 전 판매 컨사이니를 지정해야 합니다 — 판매 탭.',
+                'bl_consignee_id_str' => '선적하려면 컨사이니를 지정해야 합니다 — 선적 탭.',
             ]);
         }
 

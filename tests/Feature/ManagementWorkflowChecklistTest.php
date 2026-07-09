@@ -157,7 +157,7 @@ class ManagementWorkflowChecklistTest extends TestCase
 
         // 4) 판매중 — 판매 컨사이니 지정(선적 가드 선행조건)
         $v = $v->fresh();
-        $v->update(['sale_price' => 2_000_000, 'sale_date' => '2026-05-01', 'consignee_id' => $cons->id]);
+        $v->update(['sale_price' => 2_000_000, 'sale_date' => '2026-05-01', 'bl_consignee_id' => $cons->id]);
         $v->refreshCaches();
         $this->assertSame('판매중', $v->fresh()->progress_status);
 
@@ -340,7 +340,7 @@ class ManagementWorkflowChecklistTest extends TestCase
         $this->assertTrue(true, '말소 완료 후 통관 진입 통과');
     }
 
-    /** 락 컨사이니 — 선적 진입(반입지) 전 판매 컨사이니 필수 (UI save()). */
+    /** 락 컨사이니 — 선적 진입(반입지) 전 선적 컨사이니(bl_consignee_id) 필수 (UI save(), jin 2026-07-09 당사자 축소). */
     public function test_lock_consignee_required_for_shipping_blocks_then_passes(): void
     {
         $admin = $this->admin();
@@ -348,7 +348,7 @@ class ManagementWorkflowChecklistTest extends TestCase
         $sm = $this->sales[0]['salesman'];
         $buyer = $this->buyer('CONS BUYER');
 
-        // 말소 완료(C4 통과) + 판매가 0(C5 skip) + 반입지 입력, 컨사이니 없음
+        // 말소 완료(C4 통과) + 판매가 0(C5 skip) + 반입지 입력, 선적 컨사이니 없음
         $v = $this->baseVehicle($sm->id, [
             'buyer_id' => $buyer->id,
             'is_deregistered' => true, 'deregistration_document' => 'fake/dereg.pdf',
@@ -361,18 +361,18 @@ class ManagementWorkflowChecklistTest extends TestCase
             $v->guardStageOrderForExport();
             $this->fail('컨사이니 락이 선적 진입을 막아야 한다');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('판매 컨사이니', $e->getMessage());
+            $this->assertStringContainsString('선적하려면 컨사이니', $e->getMessage());
         }
 
-        // 해결 — 판매 컨사이니 지정
+        // 해결 — 선적 컨사이니 지정 (선적 탭)
         $cons = $this->consignee($buyer, 'CONS A');
         $v = Vehicle::find($v->id);
-        $v->update(['consignee_id' => $cons->id]);
+        $v->update(['bl_consignee_id' => $cons->id]);
 
         // 재통과
         $v = Vehicle::find($v->id);
         $v->guardStageOrderForExport();
-        $this->assertTrue(true, '판매 컨사이니 지정 후 선적 진입 통과');
+        $this->assertTrue(true, '선적 컨사이니 지정 후 선적 진입 통과');
     }
 
     /** 락 C5 — 입금률 < 50% 통관/선적 진입 차단 (UI save()). 50% 입금으로 해결. */

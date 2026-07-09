@@ -2976,6 +2976,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $previewVehicle->shipping_date = $this->shipping_date ?: null;
         $previewVehicle->export_declaration_document = $this->export_declaration_document_path ?: ($this->exportDeclarationDocFile ? 'pending' : null);
         $previewVehicle->bl_loading_location = $this->bl_loading_location ?: null;
+        // 당사자 축소 (jin 2026-07-09) — 선적 컨사이니 가드가 form 입력값을 보도록 반영
+        //   (미반영 시 replicate()의 DB 옛값/신규 null 로 판정돼 방금 입력한 선적 컨사이니가 무시됨).
+        $previewVehicle->bl_consignee_id = $this->bl_consignee_id_str !== '' ? (int) $this->bl_consignee_id_str : null;
         $previewVehicle->bl_document = $this->bl_document_path ?: ($this->blDocFile ? 'pending' : null);
         $previewVehicle->dhl_request = $this->dhl_request;
         $previewVehicle->is_export_cleared = $this->is_export_cleared;
