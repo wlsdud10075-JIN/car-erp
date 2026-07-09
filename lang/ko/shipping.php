@@ -55,6 +55,7 @@ return [
         'cancel' => '취소',
         'open_in_vehicles' => '차량관리에서 :count대 보기',
         'download_dereg' => '말소신청서 :count건 다운로드',
+        'no_dereg' => '이 묶음에 업로드된 말소신청서가 없습니다',
     ],
 
     'confirm' => [
