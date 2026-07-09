@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -39,6 +40,7 @@ class PayoutApprovalController extends Controller
             'decidable' => $decidable,
             'decideUrl' => $decideUrl,
             'breakdown' => $this->breakdown($batch),
+            'profit' => $this->profitStats($batch),
             'error' => null,
         ]);
     }
@@ -63,6 +65,7 @@ class PayoutApprovalController extends Controller
             return view('payout-approval.show', [
                 'batch' => $batch, 'user' => $user, 'decidable' => $batch->canDecide($user),
                 'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
+                'profit' => $this->profitStats($batch),
                 'error' => '반려하려면 사유를 입력해 주세요.',
             ]);
         }
@@ -106,5 +109,25 @@ class PayoutApprovalController extends Controller
         arsort($rows);
 
         return $rows;
+    }
+
+    /**
+     * 회사이익 요약(표시용) — 대표가 "직원 지급 대비 회사이익"을 한눈에 보게 (jin 2026-07-09).
+     * 공식 = 총마진(Σ total_margin) − 지급총액(배치 total_payout, 조정 포함) + 환차(Σ exchange_difference_krw).
+     * 관리자 대시보드 companyProfit / 월결산 알림톡과 동일 공식(같은 정산셋 기준). 손실이면 음수.
+     */
+    private function profitStats(SettlementPayoutBatch $batch): array
+    {
+        $settlements = $batch->settlements()->get();
+        $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
+        $fx = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
+        $payout = (int) $batch->total_payout;
+
+        return [
+            'total_margin' => $totalMargin,
+            'payout' => $payout,
+            'fx' => $fx,
+            'company_profit' => $totalMargin - $payout + $fx,
+        ];
     }
 }
