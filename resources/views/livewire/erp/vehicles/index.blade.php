@@ -1531,9 +1531,26 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
-    public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; unset($this->consigneesForSale); }
+    // 당사자 축소 (jin 2026-07-09) — 판매 바이어 = 단일 소스 → 선적·통관 바이어 이어받기(라이브).
+    //   바이어 바뀌면 선적 컨사이니도 리셋(consignee.buyer_id 종속 무결성).
+    public function updatedBuyerIdStr(): void { $this->consignee_id_str = ''; $this->bl_consignee_id_str = ''; $this->inheritParties(); unset($this->consigneesForSale); }
     public function updatedExportBuyerIdStr(): void { $this->export_consignee_id_str = ''; unset($this->consigneesForExport); }
     public function updatedBlBuyerIdStr(): void { $this->bl_consignee_id_str = ''; unset($this->consigneesForBl); }
+
+    /**
+     * 당사자 이어받기 (jin 2026-07-09) — 바이어: 판매 → 선적·통관 / 컨사이니: 선적 → 통관.
+     * 판매=바이어만·선적=컨사이니만·통관=이어받기만 정책의 단일 authoritative 전파.
+     * 방향1(2026-07-08)로 export_buyer_id 는 C5 게이트 트리거가 아니므로 자유 세팅 안전.
+     */
+    private function inheritParties(): void
+    {
+        if ($this->buyer_id_str !== '') {
+            $this->bl_buyer_id_str = $this->buyer_id_str;
+            $this->export_buyer_id_str = $this->buyer_id_str;
+        }
+        $this->export_consignee_id_str = $this->bl_consignee_id_str;
+        unset($this->consigneesForBl, $this->consigneesForExport);
+    }
 
     // 판매 바이어/컨사이니 둘 다 set 된 순간, 선적(B/L) 쌍이 비어있으면 동일 값 자동 전파.
     // 이미 선적에 값이 있으면 존중(덮어쓰지 않음). 쌍 단위 판정 — buyer/consignee 한쪽만
@@ -1545,7 +1562,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   <50% 입금 차량의 판매 저장이 통째로 막히는 회귀가 발생. 통관 바이어는 실제 통관 단계에서
     //   입력(말소+50% 충족 시점) — 게이트 의도와 정합. B/L 당사자는 게이트 트리거가 아니라 전파 유지.
     public function updatedConsigneeIdStr(): void { $this->propagateSaleParty(); }
-    public function updatedBlConsigneeIdStr(): void { $this->propagateBlToExport(); }
+    public function updatedBlConsigneeIdStr(): void { $this->inheritParties(); }
 
     private function propagateSaleParty(): void
     {
@@ -2964,14 +2981,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->validateVehicleForm();
 
-        // item 8 (jin 2026-07-07) — 선적(bl) 당사자 → 통관(export) 당사자 저장 시 확정 전파.
-        //   ⚠️ 반입지(bl_loading_location) 입력 = 실제 선적 진입일 때만. 판매 저장 시 propagateSaleParty 가
-        //   sale→bl 를 서버전파하는데, 그걸 bl→export 로 연쇄하면 export_buyer_id 가 세팅돼 <50% 판매
-        //   저장이 C5 로 오차단됨(SKILLS #24 회귀). 반입지 있으면 C5 는 이미 반입지로 평가되므로 신규 트립 없음.
-        //   라이브 훅(updatedBlConsigneeIdStr)은 명시적 bl 컨사이니 편집 시 별도 전파(판매전파와 무관).
-        if ($this->bl_loading_location !== '') {
-            $this->propagateBlToExport();
-        }
+        // 당사자 축소 (jin 2026-07-09) — 저장 시 authoritative 이어받기.
+        //   바이어: 판매 → 선적·통관 / 컨사이니: 선적 → 통관. 방향1로 export_buyer_id 는 게이트 트리거 아님.
+        $this->inheritParties();
 
         // C4·C5 — UI 저장 시점에 단계 의존성 검증 (시드/raw create는 우회).
         // 임시 Vehicle 인스턴스에 현재 form 값을 채워 guardStageOrderForExport 호출.
@@ -5434,18 +5446,7 @@ function vehicleColumnsToggle() {
                         wire:key="cbx-buyer-sale-{{ $buyer_id_str }}" />
                     @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
-                <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.consignee') }} </label>
-                        <button type="button" wire:click="openQuickAdd('consignee','sale')"
-                                @if($buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <x-erp.combobox model="consignee_id_str" :options="$this->consigneesForSale" :selected="$consignee_id_str"
-                        :required="true" :disabled="$buyer_id_str === ''"
-                        placeholder="{{ $buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
-                        wire:key="cbx-cons-sale-{{ $buyer_id_str }}-{{ $consignee_id_str }}" />
-                </div>
+                {{-- 당사자 축소 (jin 2026-07-09) — 판매=바이어만. 컨사이니는 선적 탭에서 입력. --}}
                 <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">Commission</label><input wire:model="commission_str" type="text" data-money class="input-base" placeholder="0" /></div>
@@ -5865,27 +5866,16 @@ function vehicleColumnsToggle() {
             @endif
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {{-- 당사자 축소 (jin 2026-07-09) — 통관 당사자는 이어받기만(읽기전용): 바이어=판매 / 컨사이니=선적. --}}
                 <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.export_buyer') }}</label>
-                        <button type="button" wire:click="openQuickAdd('buyer','export')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <x-erp.combobox model="export_buyer_id_str" :options="$this->buyers" :selected="$export_buyer_id_str"
-                        placeholder="{{ __('vehicle.panel.select_placeholder') }}"
-                        wire:key="cbx-buyer-export-{{ $export_buyer_id_str }}" />
+                    <label class="label-base">{{ __('vehicle.field.export_buyer') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.inherit_from_sale') }}</span></label>
+                    @php $expBuyerName = $this->buyers->firstWhere('id', (int) ($buyer_id_str ?: 0))?->name; @endphp
+                    <div class="input-base bg-gray-50 text-gray-600">{{ $expBuyerName ?: '—' }}</div>
                 </div>
                 <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.export_consignee') }}</label>
-                        <button type="button" wire:click="openQuickAdd('consignee','export')"
-                                @if($export_buyer_id_str === '') disabled @endif
-                                class="mb-1 text-[11px] text-primary-text hover:underline disabled:cursor-not-allowed disabled:text-gray-300 disabled:no-underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <x-erp.combobox model="export_consignee_id_str" :options="$this->consigneesForExport" :selected="$export_consignee_id_str"
-                        :disabled="$export_buyer_id_str === ''"
-                        placeholder="{{ $export_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
-                        wire:key="cbx-cons-export-{{ $export_buyer_id_str }}-{{ $export_consignee_id_str }}" />
+                    <label class="label-base">{{ __('vehicle.field.export_consignee') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.inherit_from_bl') }}</span></label>
+                    @php $expConsName = $this->consigneesForBl->firstWhere('id', (int) ($bl_consignee_id_str ?: 0))?->name; @endphp
+                    <div class="input-base bg-gray-50 text-gray-600">{{ $expConsName ?: '—' }}</div>
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.forwarder') }}</label>
@@ -5995,15 +5985,11 @@ function vehicleColumnsToggle() {
             @endif
 
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {{-- 당사자 축소 (jin 2026-07-09) — 선적 바이어는 판매에서 이어받기(읽기전용). 선적=컨사이니만 입력. --}}
                 <div>
-                    <div class="flex items-center justify-between">
-                        <label class="label-base">{{ __('vehicle.field.bl_buyer') }}</label>
-                        <button type="button" wire:click="openQuickAdd('buyer','bl')"
-                                class="mb-1 text-[11px] text-primary-text hover:underline">{{ __('vehicle.panel.add_new') }}</button>
-                    </div>
-                    <x-erp.combobox model="bl_buyer_id_str" :options="$this->buyers" :selected="$bl_buyer_id_str"
-                        placeholder="{{ __('vehicle.panel.select_placeholder') }}"
-                        wire:key="cbx-buyer-bl-{{ $bl_buyer_id_str }}" />
+                    <label class="label-base">{{ __('vehicle.field.bl_buyer') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.inherit_from_sale') }}</span></label>
+                    @php $blBuyerName = $this->buyers->firstWhere('id', (int) ($buyer_id_str ?: 0))?->name; @endphp
+                    <div class="input-base bg-gray-50 text-gray-600">{{ $blBuyerName ?: '—' }}</div>
                 </div>
                 <div>
                     <div class="flex items-center justify-between">

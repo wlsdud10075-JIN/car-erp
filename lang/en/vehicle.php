@@ -188,6 +188,8 @@ return [
         // Sale tab misc
         'add_new' => '+ New',
         'buyer_first' => 'Select a buyer first',
+        'inherit_from_sale' => '(auto from sale buyer)',
+        'inherit_from_bl' => '(auto from B/L consignee)',
         'no_match' => 'No match',
         'fee_note' => '(seller pays)',
         'savings_deposit_note' => '(accumulates on save, resets)',

@@ -188,6 +188,8 @@ return [
         // 판매 탭 기타
         'add_new' => '+ 신규',
         'buyer_first' => '바이어 먼저 선택',
+        'inherit_from_sale' => '(판매 바이어 자동)',
+        'inherit_from_bl' => '(선적 컨사이니 자동)',
         'no_match' => '일치 없음',
         'fee_note' => '(셀러 부담)',
         'savings_deposit_note' => '(저장 시 누적, reset)',
