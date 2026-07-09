@@ -781,8 +781,11 @@ sale_unpaid_amount = sale_total_amount
                    - Σ finalPayments(type='fee').amount             (송금 수수료 — 셀러 부담, 2026-05-28 구 'advance_2' 재용도화)
                    - Σ finalPayments(type='balance').amount         (잔금 N건)
                    - Σ receivableHistories(method ≠ 'deposit').amount
+                   - savings_used (적립금 사용 — 크레딧으로 잔금 결제, 2026-07-09 jin)
                    (Vehicle::getSaleUnpaidAmountAttribute)  ← 분자
-                   ⚠️ savings_used(적립금 사용)는 차감하지 않음 — 별도 관리
+                   ✅ savings_used(적립금 사용) = 이 차량 통화 크레딧으로 잔금 결제 → 미수 차감(2026-07-09).
+                      실입금KRW(getSaleReceivedKrwAccumulated)에도 판매환율(FX중립)로 포함 → 2차 환차 대칭.
+                      구: "차감 안 함(별도 관리)"이었으나 적립금 돈이 어느 차량 입금에도 안 잡히는 빈틈이라 반영으로 전환.
 
 unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
                    sale_total_amount ≤ 0 → null (게이지 비표시)
@@ -816,7 +819,7 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
         ↑
         Vehicle::getSaleUnpaidAmountAttribute (분자)
 ```
-⚠️ `savings_used`(적립금 사용)는 **총입금액에서 제외** — 별도 관리. Buyer×currency 잔액 추적(SavingsStatus USED/REFUND 자동 거래)은 `Vehicle::saved` 훅에서 그대로 유지.
+✅ `savings_used`(적립금 사용) = **총입금액에 포함**(잔금 결제, 2026-07-09). Buyer×currency 잔액 추적(SavingsStatus USED/REFUND 자동 거래)은 `Vehicle::saved` 훅에서 그대로 유지 — 잔액 차감 + 미수 반영 둘 다 됨.
 
 ### 매입 미지급액
 ```
@@ -857,7 +860,28 @@ USED                  → balance -= savings  (음수 검증 — DB CHECK)
 ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 ```
 
-## 14. 외부 연동 — 상태 요약
+## 14. 최근 UX/업무 규칙 (2026-07-06)
+
+### 금액 입력 공통 UX
+- `resources/js/app.js` 의 `input[data-money]` 문서 위임 핸들러가 금액칸에 실시간 콤마를 붙인다. Livewire morph/wire:navigate 뒤에도 동작해야 하므로 개별 input init 대신 문서 위임 유지.
+- 금액칸에서 `+` 키는 정수부를 `×1000`, `-` 키는 `÷1000`(floor) 처리한다. 즉 5,000 → `+` → 5,000,000, 5,000,000 → `-` → 5,000.
+- 적용 대상은 실제 금액 필드(`*_str`, 잔금 `amount`)만이다. 연식·주행거리·cc·환율·ID 같은 숫자 입력에 `data-money`를 붙이지 말 것.
+
+### 날짜 입력 공통 UX
+- 차량 편집의 날짜칸은 `input[data-date]` + flatpickr이다. `20260717`처럼 8자리 입력 후 Enter/blur 하면 `2026-07-17`로 정규화되고, 달력 선택도 가능하다.
+- 슬라이드 패널/동적 잔금 행은 나중에 렌더되므로 `focusin` 지연 init + `morph.updated` 재스캔 패턴을 유지한다.
+
+### 차량목록 검색
+- 차량목록 검색은 차량번호·브랜드·차종·소유자·수출신고번호·차대번호 끝 6자리와 함께 `vessel_name`, `container_number`도 검색한다. 선적 문의는 VSL/컨테이너 번호로도 찾을 수 있어야 한다.
+
+### 채권 결제대기 10일 유예
+- `Vehicle::RECEIVABLE_GRACE_DAYS = 10`.
+- 선적 전(반입 전, `bl_loading_location` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
+- 선적 후 미수는 유예 없이 즉시 채권이다.
+- 시간 경과에 따른 `grace` → 채권 전환은 야간 `vehicles:rebuild-caches`(05:00)로 반영된다. 배포 직후 기존 데이터는 1회 cache rebuild가 필요할 수 있다.
+- 채권관리 위험도 필터에 `grace` 옵션이 있으므로 결제대기 차량만 따로 확인 가능하다.
+
+## 15. 외부 연동 — 상태 요약
 
 - **NICE API** ✅ 완료 (`698f0c9`, 2026-05-25) — ssancar-erp 미들웨어 경유, `app/Services/NiceApiService.php`. fallback: API 실패해도 모든 NICE 필드 수동 입력 가능. 캐싱 5분. `.env NICE_PROVIDE_URL/TOKEN`. 미구현 2건(기통수·검사종료)은 nice_raw 에서 서류 생성 시 파싱.
 - **포워딩사 이메일** ❌ 영구 제거 (사용자 결정). 옛 구현 패턴은 archive `SKILLS.md.full` §14 참조.
