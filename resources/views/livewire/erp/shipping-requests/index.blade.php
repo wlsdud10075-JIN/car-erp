@@ -25,6 +25,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public array $blForm = ['bl_number' => '', 'container_number' => '', 'vessel_name' => '', 'bl_type' => 'original'];
 
+    /** 수출신고번호 일괄 기입 인라인 폼 — 현재 기입 중인 batch_id + 공유 신고번호. */
+    public string $declBatch = '';
+
+    public string $declNumber = '';
+
     /** 상단 탭 — 'shipping'(선적/발급, 기본) | 'cost'(2차 비용: 면허비 n/1). */
     public string $viewTab = 'shipping';
 
@@ -271,6 +276,56 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('shipping.toast.bl_issued'), type: 'success');
     }
 
+    /** 수출신고번호 일괄 기입 폼 열기 — 통관 데이터라 canAccessClearance. 첫 차량 기존값 prefill. */
+    public function openDeclNumber(string $batchId): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+
+        $this->declBatch = $batchId;
+        $existing = ShippingRequest::where('batch_id', $batchId)->with('vehicle')->get()
+            ->map->vehicle->filter()->pluck('export_declaration_number')->filter()->first();
+        $this->declNumber = $existing ?? '';
+    }
+
+    public function cancelDeclNumber(): void
+    {
+        $this->declBatch = '';
+        $this->declNumber = '';
+    }
+
+    /**
+     * 수출신고번호 bulk-apply — 공유 신고번호를 묶음 멤버 차량 전체에 일괄 기입 (B/L 일괄 기입과 동일 패턴).
+     * - 통관 단계 데이터 필드(export_declaration_number)만 채움 — 진행상태 cascade(export_declaration_document·
+     *   is_export_cleared)엔 영향 없음. 순수 데이터 입력이라 완납 게이트 등 무관.
+     * - per-vehicle update() → Vehicle::saving 훅 정상 발동(캐시 갱신), bulk SQL 우회 없음.
+     */
+    public function applyDeclNumber(): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+
+        $number = trim($this->declNumber);
+        if ($number === '') {
+            $this->dispatch('notify', message: __('shipping.decl.invalid'), type: 'error');
+
+            return;
+        }
+
+        $rows = ShippingRequest::where('batch_id', $this->declBatch)->with('vehicle')->get();
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        DB::transaction(function () use ($rows, $number) {
+            foreach ($rows as $r) {
+                $r->vehicle?->update(['export_declaration_number' => $number]);   // 멤버 차량 일괄(saving 훅 발동)
+            }
+        });
+
+        $count = $rows->map->vehicle->filter()->unique('id')->count();
+        $this->cancelDeclNumber();
+        $this->dispatch('notify', message: __('shipping.toast.decl_applied', ['count' => $count]), type: 'success');
+    }
+
     /** 변경요청 수락 = 묶음 행 해제(취소) → 영업 재구성 가능 + 연동 알람 resolve. */
     public function acceptChange(int $id): void
     {
@@ -403,6 +458,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'counts' => $counts,
             'costBatches' => $costBatches,
             'canApprove' => (bool) auth()->user()?->canApprove(),
+            'canAccessClearance' => (bool) auth()->user()?->canAccessClearance(),
         ];
     }
 
@@ -586,6 +642,13 @@ new #[Layout('components.layouts.app')] class extends Component
                                     {{ __('shipping.action.start') }}
                                 </button>
                             @endif
+                            {{-- 수출신고번호 일괄 기입 (통관 권한) --}}
+                            @if ($canAccessClearance)
+                                <button type="button" wire:click="openDeclNumber('{{ $b['batch_id'] }}')"
+                                        class="rounded-md border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100">
+                                    {{ __('shipping.decl.enter') }}
+                                </button>
+                            @endif
                             {{-- B/L 발급 (승인 권한 + 아직 미발급) --}}
                             @if ($canApprove && $b['bl_status'] !== 'issued')
                                 <button type="button" wire:click="openIssue('{{ $b['batch_id'] }}')"
@@ -690,6 +753,26 @@ new #[Layout('components.layouts.app')] class extends Component
                                         class="btn-primary text-[11px]">{{ __('shipping.bl.apply') }}</button>
                                 <button type="button" wire:click="cancelIssue"
                                         class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">{{ __('shipping.bl.cancel') }}</button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- 수출신고번호 일괄 기입 인라인 폼 (묶음 공유 1개 → 전체) --}}
+                    @if ($declBatch === $b['batch_id'])
+                        <div class="mt-3 rounded-md border border-green-200 bg-green-50/60 p-3">
+                            <div class="mb-2 text-xs font-bold text-green-800">{{ __('shipping.decl.title', ['n' => $b['count']]) }}</div>
+                            <div class="flex flex-wrap items-end gap-2">
+                                <div>
+                                    <label class="label-base">{{ __('shipping.decl.field_number') }}</label>
+                                    <input wire:model="declNumber" type="text" class="input-base w-56" placeholder="{{ __('shipping.decl.placeholder') }}" />
+                                </div>
+                                <div class="text-[11px] text-green-700">{{ __('shipping.decl.hint') }}</div>
+                            </div>
+                            <div class="mt-2 flex gap-2">
+                                <button type="button" wire:click="applyDeclNumber"
+                                        class="btn-primary text-[11px]">{{ __('shipping.decl.apply') }}</button>
+                                <button type="button" wire:click="cancelDeclNumber"
+                                        class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">{{ __('shipping.decl.cancel') }}</button>
                             </div>
                         </div>
                     @endif
