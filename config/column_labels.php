@@ -233,5 +233,48 @@ return [
         'deleted' => '삭제',
         'restored' => '복원',
         'force_deleted' => '완전 삭제',
+        // 커스텀 액션 — 최고관리자가 바로 알아보는 업무 용어로 (2026-07-09 한글화 보강, jin)
+        'approved' => '승인',
+        'rejected' => '반려',
+        'ledger_field_unlocked' => '확정금액 수정 허용',
+        'payment_type_converted' => '결제 유형 변경',
+        'payout_adjustment_added' => '정산 지급액 조정 추가',
+        'payout_adjustment_removed' => '정산 지급액 조정 취소',
+        'payout_approved_via_link' => '정산 지급 승인(카톡)',
+        'payout_rejected_via_link' => '정산 지급 반려(카톡)',
+        'inbound_purchase_sync' => '매입 자동 등록(board)',
     ],
+
+    // ─── 감사 로그 '변경' 열 값 한글화 (2026-07-09 jin — 최고관리자가 값도 알아보게) ──────
+    // 테이블.컬럼 별 enum 원문값 → 한글. 매핑 없으면 원문 그대로.
+    'value_maps' => [
+        'settlements' => [
+            'settlement_status' => ['pending' => '대기', 'calculating' => '계산중', 'confirmed' => '확정', 'paid' => '지급'],
+            'secondary_status' => ['pending' => '2차 대기', 'closed' => '2차 마감'],
+            'settlement_type' => ['ratio' => '비율제(프리랜서)', 'per_unit' => '건당(사내직원)'],
+        ],
+        'final_payments' => [
+            'type' => ['deposit_down' => '계약금', 'interim' => '중도금', 'advance_1' => '선수금1', 'fee' => '송금 수수료', 'balance' => '잔금'],
+        ],
+        'purchase_balance_payments' => [
+            'type' => ['down' => '계약금', 'balance' => '잔금'],
+        ],
+        'savings_statuses' => [
+            'transaction_type' => ['EARNED' => '적립', 'USED' => '사용', 'REFUND' => '반환', 'ADJUSTMENT' => '조정', 'CANCELLED' => '취소'],
+        ],
+        'users' => [
+            'permission' => ['super' => '시스템관리자', 'admin' => '최고관리자', 'manager' => '업무관리자', 'user' => '일반사용자'],
+            'type' => ['employee' => '사내직원', 'freelance' => '프리랜서'],
+        ],
+        'approval_requests' => [
+            'status' => ['pending' => '대기', 'approved' => '승인', 'rejected' => '반려'],
+        ],
+        'vehicles' => [
+            'sales_channel' => ['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'],
+            'shipping_method' => ['RORO' => 'RORO', 'CONTAINER' => '컨테이너'],
+        ],
+    ],
+
+    // boolean 컬럼 (1/0 → 예/아니오) — 감사 로그 값 표시용
+    'boolean_columns' => ['is_deregistered', 'is_export_cleared', 'dhl_request', 'is_active'],
 ];

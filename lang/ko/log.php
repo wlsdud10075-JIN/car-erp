@@ -20,6 +20,7 @@ return [
     // 감사 로그
     'audit_title' => '감사 로그',
     'audit_subtitle' => '변경 추적 (큐 11-4 도입 이후 — 그 이전 액션은 미기록).',
+    'audit_search' => '차량번호 · 처리자 이름',
     'total' => '총 :count 건',
     'all_users' => '사용자 전체',
     'all_actions' => '액션 전체',
