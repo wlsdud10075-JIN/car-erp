@@ -151,6 +151,42 @@ class ShippingRequestsScreenTest extends TestCase
         $this->assertNull(Vehicle::find($v->id)->bl_type);
     }
 
+    public function test_declaration_number_bulk_applies_to_members(): void
+    {
+        $this->batch('batch-D', ['11가1111', '22나2222']);
+
+        // 통관 권한(canAccessClearance)이면 발급 권한 없이도 신고번호 일괄 기입 가능
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openDeclNumber', 'batch-D')
+            ->set('declNumber', '12345-67-890123X')
+            ->call('applyDeclNumber');
+
+        $this->assertSame(2, Vehicle::where('export_declaration_number', '12345-67-890123X')->count());
+    }
+
+    public function test_declaration_number_prefills_existing_value(): void
+    {
+        $this->batch('batch-P', ['33다3333']);
+        Vehicle::where('vehicle_number', '33다3333')->update(['export_declaration_number' => 'EXIST-99']);
+
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openDeclNumber', 'batch-P')
+            ->assertSet('declNumber', 'EXIST-99');
+    }
+
+    public function test_declaration_number_sales_user_forbidden(): void
+    {
+        $this->batch('batch-S', ['44라4444']);
+
+        // 영업 = 화면 진입부터 차단(canAccessClearance false) → mount 403
+        $this->actingAs($this->salesUser());
+        Volt::test('erp.shipping-requests.index')->assertStatus(403);
+    }
+
     public function test_clearance_non_approver_cannot_issue_bl(): void
     {
         $this->batch('batch-A', ['11가1111']);

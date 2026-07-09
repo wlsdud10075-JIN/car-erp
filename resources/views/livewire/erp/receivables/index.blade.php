@@ -300,7 +300,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         session()->flash('panel_success', __('receivable.deleted'));
     }
 
-    private function resetHistoryForm(): void
+    public function resetHistoryForm(): void
     {
         $this->historyEditId = null;
         $this->hCollectedAt = now()->format('Y-m-d');

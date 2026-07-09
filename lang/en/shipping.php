@@ -72,6 +72,7 @@ return [
         'updated' => 'Shipping request status updated.',
         'cancelled' => 'Shipping request cancelled.',
         'bl_issued' => 'B/L issued (bulk-applied) to bundle vehicles.',
+        'decl_applied' => 'Export declaration number bulk-applied to :count bundle vehicles.',
         'change_accepted' => 'Change request accepted; bundle released for re-planning by sales.',
         'change_rejected' => 'Change request rejected.',
     ],
@@ -94,6 +95,18 @@ return [
         'not_fully_paid' => 'Fully-paid required before issuing (bundle has unpaid)',
         'requested_hint' => 'Sales-requested type',
         'guard_mismatch' => '⚠ Double-guard — sales requested :req but :cur is selected. Verify before uploading the B/L document.',
+    ],
+
+    // Export declaration number bulk apply (one shared number → whole bundle)
+    'decl' => [
+        'enter' => 'Enter export decl. no',
+        'title' => 'Export declaration no — bulk apply to :n vehicles',
+        'field_number' => 'Export declaration no',
+        'placeholder' => 'e.g. 12345-67-890123X',
+        'hint' => 'The same number is applied to every vehicle in the bundle.',
+        'apply' => 'Bulk apply',
+        'cancel' => 'Close',
+        'invalid' => 'Enter an export declaration number.',
     ],
 
     'fin' => [
