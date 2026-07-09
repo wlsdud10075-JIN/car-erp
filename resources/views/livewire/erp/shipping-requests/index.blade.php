@@ -570,7 +570,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             @if (count($deregUrls) > 0)
                                 <button type="button"
                                         x-data="{ urls: @js($deregUrls) }"
-                                        @click="urls.forEach(u => { const a = document.createElement('a'); a.href = u; document.body.appendChild(a); a.click(); a.remove(); })"
+                                        @click="urls.forEach((u, i) => setTimeout(() => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 400))"
                                         class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
                                     {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
                                 </button>
