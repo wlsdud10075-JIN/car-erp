@@ -48,6 +48,8 @@ return [
     ],
 
     'cons' => [
+        'saved' => 'Consignee saved.',
+        'deleted' => 'Consignee deleted.',
         'save_first' => 'Save the basic info first to add consignees.',
         'empty' => 'No consignees.',
         'add' => '+ Add Consignee',
@@ -75,6 +77,8 @@ return [
         'col_date' => 'Date',
         'col_amount' => 'Amount',
         'col_balance' => 'Balance',
+        'added' => 'Savings transaction added.',
+        'cancelled' => 'Savings transaction cancelled.',
         'cancel_confirm' => 'Cancel this transaction?',
         'cancel_title' => 'Cancel',
         'no_history' => 'No history.',

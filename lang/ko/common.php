@@ -30,4 +30,5 @@ return [
     'unsaved_body' => '저장하지 않고 닫으면 변경 내용이 사라집니다.',
     'country_search_ph' => '국가 검색 (예: 리투, 독일, LTU)',
     'country_no_match' => '일치하는 국가가 없습니다',
+    'error_box_title' => '입력값을 확인해주세요',
 ];

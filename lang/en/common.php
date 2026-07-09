@@ -30,4 +30,5 @@ return [
     'unsaved_body' => 'Closing without saving discards your changes.',
     'country_search_ph' => 'Search country (e.g. LTU, Germany)',
     'country_no_match' => 'No matching country',
+    'error_box_title' => 'Please check your input',
 ];

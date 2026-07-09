@@ -318,14 +318,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         unset($this->buyers);
-        session()->flash('success', __('buyer.saved'));
+        // 2026-07-09 jin — 등록/저장 시 시각 피드백 + 패널 자동 닫기 (사용자등록 패턴 대칭, session flash 불안정 제거).
+        $this->close();
+        $this->dispatch('notify', message: __('buyer.saved'), type: 'success');
     }
 
     public function delete(int $id): void
     {
         Buyer::findOrFail($id)->delete();
         unset($this->buyers);
-        session()->flash('success', __('buyer.deleted'));
+        $this->dispatch('notify', message: __('buyer.deleted'), type: 'success');
     }
 
     // ── 컨사이니 ──────────────────────────────────────────────────
@@ -420,12 +422,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->loadConsignees($this->editingId);
         $this->closeConsigneeForm();
+        $this->dispatch('notify', message: __('buyer.cons.saved'), type: 'success');
     }
 
     public function deleteConsignee(int $id): void
     {
         Consignee::findOrFail($id)->delete();
         if ($this->editingId) $this->loadConsignees($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cons.deleted'), type: 'success');
     }
 
     // ── 적립금 ────────────────────────────────────────────────────
@@ -463,8 +467,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (!$this->editingId) return;
 
         $amount = (float) $this->txn_amount;
+        $ok = false;
 
-        DB::transaction(function () use ($amount) {
+        DB::transaction(function () use ($amount, &$ok) {
             $latest = SavingsStatus::where('buyer_id', $this->editingId)
                 ->where('currency', $this->txn_currency)
                 ->lockForUpdate()
@@ -488,11 +493,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'balance'          => $newBalance,
                 'note'             => $this->txn_note ?: null,
             ]);
+            $ok = true;
         });
+
+        if (! $ok) {
+            return;
+        }
 
         $this->txn_amount = '';
         $this->txn_note   = '';
         $this->loadSavings($this->editingId);
+        $this->dispatch('notify', message: __('buyer.savings.added'), type: 'success');
     }
 
     public function cancelSavingsTransaction(int $id): void
@@ -500,8 +511,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (!$this->editingId) return;
 
         $original = SavingsStatus::where('buyer_id', $this->editingId)->findOrFail($id);
+        $ok = false;
 
-        DB::transaction(function () use ($original) {
+        DB::transaction(function () use ($original, &$ok) {
             $latest = SavingsStatus::where('buyer_id', $this->editingId)
                 ->where('currency', $original->currency)
                 ->lockForUpdate()
@@ -512,7 +524,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $newBalance = ($latest?->balance ?? 0) + $cancelledSavings;
 
             if ($newBalance < 0) {
-                session()->flash('error', __('buyer.savings.neg_balance'));
+                $this->dispatch('notify', message: __('buyer.savings.neg_balance'), type: 'error');
                 return;
             }
 
@@ -525,9 +537,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'original_transaction_id' => $original->id,
                 'note'                   => '취소: ' . ($original->note ?? "#{$original->id}"),
             ]);
+            $ok = true;
         });
 
+        if (! $ok) {
+            return;
+        }
+
         $this->loadSavings($this->editingId);
+        $this->dispatch('notify', message: __('buyer.savings.cancelled'), type: 'success');
     }
 
     private function resetForm(): void
@@ -546,18 +564,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 <div wire:poll.30s>
-@if(session('success'))
-<div x-data="{show:true}" x-show="show" x-init="setTimeout(()=>show=false,3000)"
-     class="fixed top-4 right-4 z-50 rounded-lg bg-green-600 px-4 py-3 text-sm text-white shadow-lg">
-    {{ session('success') }}
-</div>
-@endif
-@if(session('error'))
-<div x-data="{show:true}" x-show="show" x-init="setTimeout(()=>show=false,4000)"
-     class="fixed top-4 right-4 z-50 rounded-lg bg-red-600 px-4 py-3 text-sm text-white shadow-lg">
-    {{ session('error') }}
-</div>
-@endif
+{{-- 토스트 = 전역 @notify.window 리스너 (sidebar.blade.php) 사용 — dispatch('notify') --}}
 
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
@@ -694,6 +701,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
+
+    {{-- 검증 에러 요약 (2026-07-09 jin — 저장 눌러도 반응 없어 보이던 문제: 실은 검증 실패라 상단에 노출) --}}
+    @if($errors->any())
+    <div class="border-b border-red-200 bg-red-50 px-5 py-3">
+        <p class="text-xs font-semibold text-red-700">{{ __('common.error_box_title') }}</p>
+        <ul class="mt-1 space-y-0.5 text-xs text-red-600">
+            @foreach($errors->all() as $msg)
+            <li>· {{ $msg }}</li>
+            @endforeach
+        </ul>
+    </div>
+    @endif
 
     {{-- 탭 --}}
     <div class="flex border-b px-5">
