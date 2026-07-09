@@ -53,7 +53,10 @@ class PayoutApprovalLinkTest extends TestCase
     {
         [$batch, $admin] = $this->pendingBatchWithAdmin();
 
-        $this->get($batch->approvalLinkFor($admin))->assertOk()->assertSee('지급 총액');
+        $this->get($batch->approvalLinkFor($admin))->assertOk()
+            ->assertSee('지급 총액')
+            ->assertSee('담당자별 실지급')   // 누가 얼마 가져가는지
+            ->assertSee('회사이익');          // 직원 지급 대비 회사 몫 (jin 2026-07-09)
         // 서명 없는 접근은 차단
         $this->get(route('payout.approve.show', ['batch' => $batch->id, 'u' => $admin->id]))->assertForbidden();
     }

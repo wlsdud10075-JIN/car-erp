@@ -24,6 +24,10 @@
         .err { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:8px; padding:10px; font-size:14px; margin-bottom:12px; }
         .notice { background:#f9fafb; color:#6b7280; border-radius:8px; padding:14px; font-size:14px; text-align:center; }
         .bd { font-size:14px; color:#374151; }
+        .profit .row.big { font-size:17px; padding-top:10px; }
+        .profit .row.big .v { color:#047857; }
+        .profit .row.big .v.loss { color:#dc2626; }
+        .profit .cap { color:#9ca3af; font-size:12px; margin-top:8px; line-height:1.5; }
     </style>
 </head>
 <body>
@@ -44,6 +48,19 @@
         @endforeach
     </div>
     @endif
+
+    @isset($profit)
+    <div class="card profit">
+        <div class="sub" style="margin-bottom:8px;">회사이익</div>
+        <div class="row"><span class="k">총마진</span><span class="v">{{ number_format($profit['total_margin']) }}원</span></div>
+        <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
+        @if($profit['fx'] !== 0)
+        <div class="row"><span class="k">환차</span><span class="v">{{ $profit['fx'] >= 0 ? '+' : '−' }} {{ number_format(abs($profit['fx'])) }}원</span></div>
+        @endif
+        <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>
+        <div class="cap">총마진에서 직원 실지급{{ $profit['fx'] !== 0 ? '·환차' : '' }}을(를) 뺀 회사 몫입니다.</div>
+    </div>
+    @endisset
 
     @if($decidable && $decideUrl)
     <div class="card">
