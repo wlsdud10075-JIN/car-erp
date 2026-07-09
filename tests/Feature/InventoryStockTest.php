@@ -76,15 +76,21 @@ class InventoryStockTest extends TestCase
         $this->assertSame('2026-05-10', $v->warehouse_in_date?->format('Y-m-d'), '입고일 = 매입 완납일');
     }
 
-    public function test_inline_set_warehouse_out(): void
+    public function test_apply_warehouse_out_batch(): void
     {
+        // 즉시저장 아님 — draft(warehouseOut) 지정 후 「적용」으로 일괄 저장 (오클릭 방지).
         $this->actingAs($this->admin());
         $v = $this->purchased();
 
-        Volt::test('erp.inventory.index')->call('setWarehouseOut', $v->id, '2026-06-15');
-        $this->assertSame('2026-06-15', $v->fresh()->warehouse_out_date?->format('Y-m-d'));
+        Volt::test('erp.inventory.index')
+            ->set('warehouseOut', [$v->id => '2026-06-15'])
+            ->call('applyWarehouseOut');
+        $this->assertSame('2026-06-15', $v->fresh()->warehouse_out_date?->format('Y-m-d'), '출고일 적용');
 
-        Volt::test('erp.inventory.index')->call('setWarehouseOut', $v->id, '');
-        $this->assertNull($v->fresh()->warehouse_out_date, '빈 값 → 출고일 제거(재고 복귀)');
+        // 비우면 재고 복귀
+        Volt::test('erp.inventory.index')
+            ->set('warehouseOut', [$v->id => ''])
+            ->call('applyWarehouseOut');
+        $this->assertNull($v->fresh()->warehouse_out_date, '출고일 제거 → 재고 복귀');
     }
 }

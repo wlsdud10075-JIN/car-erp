@@ -36,6 +36,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 20;
 
+    /** 출고일 draft (vehicle_id => 'Y-m-d' | ''). 즉시저장 아님 — 여러 차량 지정 후 「적용」으로 일괄 저장. */
+    public array $warehouseOut = [];
+
     #[Computed]
     public function inventoryVehicles()
     {
@@ -44,7 +47,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
-        return Vehicle::query()
+        $result = Vehicle::query()
             ->with(['salesman', 'buyer'])
             ->inStock()
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
@@ -61,6 +64,15 @@ new #[Layout('components.layouts.app')] class extends Component
             ->orderBy('salesman_id')
             ->orderBy('purchase_date')
             ->paginate($this->perPage);
+
+        // 출고일 draft 초기화 — 현재 페이지 차량 중 draft 없는 것만 DB값으로 채움(사용자 편집 보존).
+        foreach ($result as $v) {
+            if (! array_key_exists($v->id, $this->warehouseOut)) {
+                $this->warehouseOut[$v->id] = $v->warehouse_out_date?->format('Y-m-d') ?? '';
+            }
+        }
+
+        return $result;
     }
 
     #[Computed]
@@ -99,20 +111,37 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
-     * 출고일 인라인 저장 (jin 2026-07-09) — 재고 목록에서 바로 기입. 찍으면 재고 제외, 비우면 복귀.
-     * 스코프 인증 필수(영업=본인/관리=팀/그외=전체). warehouse_out_date 는 회계잠금 필드 아님.
+     * 출고일 일괄 적용 (jin 2026-07-09) — 여러 차량 출고일을 지정한 뒤 「적용」 버튼으로 한 번에 저장.
+     * 즉시저장(오클릭 위험) 대신 draft(warehouseOut) 편집 → 적용. DB와 다른 것만 저장.
+     * 스코프 인증(영업=본인/관리=팀/그외=전체). 출고일 있으면 재고 제외, 비우면 복귀.
      */
-    public function setWarehouseOut(int $vehicleId, ?string $date): void
+    public function applyWarehouseOut(): void
     {
-        $vehicle = Vehicle::find($vehicleId);
-        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+        $user = auth()->user();
+        $ids = array_values(array_filter(array_map('intval', array_keys($this->warehouseOut))));
+        if (empty($ids)) {
+            return;
+        }
 
-        $vehicle->warehouse_out_date = filled($date) ? $date : null;
-        $vehicle->save();
+        $applied = 0;
+        foreach (Vehicle::whereIn('id', $ids)->get() as $v) {
+            if (! $user->canScopeVehicle($v)) {
+                continue;   // 스코프 밖 (IDOR 방지)
+            }
+            $draft = trim((string) ($this->warehouseOut[$v->id] ?? ''));
+            $new = $draft !== '' ? $draft : null;
+            if ($new === $v->warehouse_out_date?->format('Y-m-d')) {
+                continue;   // 변경 없음
+            }
+            $v->warehouse_out_date = $new;
+            $v->save();
+            $applied++;
+        }
 
         unset($this->inventoryVehicles, $this->stockCountsBySalesman);
-        $this->dispatch('notify', message: $vehicle->warehouse_out_date
-            ? __('inventory.out_saved') : __('inventory.out_cleared'), type: 'success');
+        $this->dispatch('notify',
+            message: $applied > 0 ? __('inventory.out_applied', ['count' => $applied]) : __('inventory.out_nochange'),
+            type: $applied > 0 ? 'success' : 'info');
     }
 
     public function resetFilters(): void
@@ -185,6 +214,12 @@ new #[Layout('components.layouts.app')] class extends Component
         </select>
     </div>
 
+    {{-- 출고일 일괄 적용 (jin 2026-07-09) — 여러 차량 출고일을 지정한 뒤 한 번에 저장(오클릭 방지). --}}
+    <div class="mt-2 flex items-center justify-end gap-2">
+        <span class="text-xs text-gray-400">{{ __('inventory.out_apply_hint') }}</span>
+        <button type="button" wire:click="applyWarehouseOut" class="btn-primary text-xs">{{ __('inventory.out_apply_btn') }}</button>
+    </div>
+
     {{-- 데스크탑 테이블 --}}
     <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm">
@@ -231,9 +266,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                     <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4" @click.stop>
-                        <input type="date" wire:key="inv-out-{{ $v->id }}" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
-                               wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
-                               class="rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
+                        <input type="text" data-date wire:key="inv-out-{{ $v->id }}" wire:model="warehouseOut.{{ $v->id }}"
+                               placeholder="YYYY-MM-DD"
+                               class="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
                     </td>
                     <td class="py-3 pr-4 text-right text-gray-700">
                         @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
@@ -277,9 +312,9 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             <div class="mt-1.5 flex items-center gap-1.5 text-xs text-gray-500" @click.stop.prevent>
                 <span>{{ __('inventory.col_warehouse_out') }}</span>
-                <input type="date" wire:key="inv-out-m-{{ $v->id }}" value="{{ $v->warehouse_out_date?->format('Y-m-d') }}"
-                       wire:change="setWarehouseOut({{ $v->id }}, $event.target.value)"
-                       class="rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
+                <input type="text" data-date wire:key="inv-out-m-{{ $v->id }}" wire:model="warehouseOut.{{ $v->id }}"
+                       placeholder="YYYY-MM-DD"
+                       class="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
             </div>
         </a>
         @empty
