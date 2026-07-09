@@ -409,6 +409,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
+    {{-- 검증 에러 요약 (2026-07-09 jin — 저장 눌러도 반응 없어 보이던 문제: 실은 검증 실패라 상단에 노출) --}}
+    @if($errors->any())
+    <div class="border-b border-red-200 bg-red-50 px-5 py-3">
+        <p class="text-xs font-semibold text-red-700">{{ __('common.error_box_title') }}</p>
+        <ul class="mt-1 space-y-0.5 text-xs text-red-600">
+            @foreach($errors->all() as $msg)
+            <li>· {{ $msg }}</li>
+            @endforeach
+        </ul>
+    </div>
+    @endif
+
     {{-- 폼 --}}
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-4">
 

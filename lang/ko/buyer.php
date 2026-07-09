@@ -48,6 +48,8 @@ return [
     ],
 
     'cons' => [
+        'saved' => '컨사이니가 저장됐습니다.',
+        'deleted' => '컨사이니가 삭제됐습니다.',
         'save_first' => '기본정보를 먼저 저장한 후 컨사이니를 추가할 수 있습니다.',
         'empty' => '컨사이니가 없습니다.',
         'add' => '+ 컨사이니 추가',
@@ -75,6 +77,8 @@ return [
         'col_date' => '일시',
         'col_amount' => '금액',
         'col_balance' => '잔액',
+        'added' => '적립금 거래가 추가됐습니다.',
+        'cancelled' => '적립금 거래가 취소됐습니다.',
         'cancel_confirm' => '이 거래를 취소하시겠습니까?',
         'cancel_title' => '취소',
         'no_history' => '내역이 없습니다.',
