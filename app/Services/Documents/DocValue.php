@@ -25,16 +25,22 @@ class DocValue
         ));
     }
 
-    /** 수출 서류 바이어 — 수출 바이어 우선, 없으면 일반 바이어. */
+    /**
+     * 수출 서류 바이어 — 수출(통관) → 선적(B/L) → 판매 순 fallback (jin 2026-07-09 당사자 축소).
+     * 바이어는 판매에서 입력, 통관이 이어받음(export_buyer_id). 어느 단계에서 채워지든 서류가 잡도록 3단 fallback.
+     */
     public static function invoiceBuyer(Vehicle $v): ?Buyer
     {
-        return $v->exportBuyer ?: $v->buyer;
+        return $v->exportBuyer ?: $v->blBuyer ?: $v->buyer;
     }
 
-    /** 수출 서류 컨사이니(Client) — 수출 컨사이니 우선. */
+    /**
+     * 수출 서류 컨사이니(Client) — 수출(통관) → 선적(B/L) → 판매 순 fallback.
+     * 컨사이니는 선적에서 입력, 통관이 이어받음(export_consignee_id). 3단 fallback 으로 단계 무관 안전.
+     */
     public static function invoiceConsignee(Vehicle $v): ?Consignee
     {
-        return $v->exportConsignee ?: $v->consignee;
+        return $v->exportConsignee ?: $v->blConsignee ?: $v->consignee;
     }
 
     /** 컨사이니 ID(여권/주민) — 신규 id_value 우선, 없으면 legacy passport. */

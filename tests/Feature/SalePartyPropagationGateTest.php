@@ -41,7 +41,8 @@ class SalePartyPropagationGateTest extends TestCase
 
         $this->actingAs($manager);
 
-        // 판매가 + 바이어 + 컨사이니 입력, 입금 0% → 회귀 전엔 C5 게이트로 저장 차단됐음.
+        // 판매가 + 바이어 입력, 입금 0% → 당사자 이어받기(export_buyer 세팅)에도 C5 차단 없어야 함(방향1).
+        //   당사자 축소(jin 2026-07-09): 컨사이니는 선적(bl_consignee)에서 입력.
         $c = Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->set('vehicle_number', 'PROP-1')
@@ -51,21 +52,19 @@ class SalePartyPropagationGateTest extends TestCase
             ->set('purchase_price_str', '5,000,000')
             ->set('sale_date', '2026-05-01')
             ->set('buyer_id_str', (string) $buyer->id)
-            ->set('consignee_id_str', (string) $consignee->id)   // ← propagateSaleParty 발동
+            ->set('bl_consignee_id_str', (string) $consignee->id)
             ->set('sale_price_str', '5,000,000')
             ->call('save')
-            ->assertHasNoErrors();
+            ->assertHasNoErrors();   // ← 핵심: 0% 입금 + export 이어받기여도 저장 차단 없음
 
-        // 통관 당사자는 자동 전파되지 않아야 한다 (게이트 트리거 회피).
-        $c->assertSet('export_buyer_id_str', '');
-        $c->assertSet('export_consignee_id_str', '');
-        // B/L 당사자는 전파 유지 (게이트 무관).
+        // 당사자 이어받기 — 바이어=판매 → 선적·통관, 컨사이니=선적 → 통관.
+        $c->assertSet('export_buyer_id_str', (string) $buyer->id);
         $c->assertSet('bl_buyer_id_str', (string) $buyer->id);
-        $c->assertSet('bl_consignee_id_str', (string) $consignee->id);
+        $c->assertSet('export_consignee_id_str', (string) $consignee->id);
 
         $v = Vehicle::where('vehicle_number', 'PROP-1')->firstOrFail();
         $this->assertSame('판매중', $v->progress_status, '0% 입금이라도 판매 입력은 저장돼 판매중');
-        $this->assertNull($v->export_buyer_id, '통관 바이어 미전파 (DB)');
-        $this->assertSame((int) $buyer->id, (int) $v->bl_buyer_id, 'B/L 바이어 전파 유지 (DB)');
+        $this->assertSame((int) $buyer->id, (int) $v->export_buyer_id, '통관 바이어 = 판매 바이어(이어받기)');
+        $this->assertSame((int) $buyer->id, (int) $v->bl_buyer_id, 'B/L 바이어 = 판매 바이어(이어받기)');
     }
 }
