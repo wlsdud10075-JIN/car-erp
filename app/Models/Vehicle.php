@@ -622,6 +622,20 @@ class Vehicle extends Model
             $vehicle->createSettlementIfComplete('자동 생성 — 거래완료 진입 시');
         });
 
+        // 운임 확정 게이트 재트리거 (jin 2026-07-09) — 완납이지만 운임 미확정으로 대기하던 차량이
+        //   인코텀즈(FOB/CFR) 또는 운임비 입력으로 확정되면 그 저장 시점에 정산 자동 생성.
+        //   createSettlementIfComplete 가 완납·담당자·정산없음·운임확정 전부 재가드 → 조건 미달이면 no-op.
+        //   (FinalPayment 로 완납되는 경로는 FinalPayment::saved 가 이미 담당 — 여긴 차량 필드 변경 경로.)
+        static::saved(function (Vehicle $vehicle) {
+            if (! auth()->check()) {
+                return;
+            }
+            if (! $vehicle->wasChanged('incoterms') && ! $vehicle->wasChanged('transport_fee')) {
+                return;
+            }
+            $vehicle->createSettlementIfComplete('자동 생성 — 운임/인코텀즈 확정 시');
+        });
+
         // 2026-06-18 ETA 알람 즉시 자동해소 (Hybrid — 매일 alarms:scan 보정과 별개).
         //   수출신고서 업로드/거래완료 시 24h 기다리지 않고 즉시 해소 → obsolete 알람 노출 방지.
         static::saved(function (Vehicle $vehicle) {
@@ -836,6 +850,9 @@ class Vehicle extends Model
         if (! $this->salesman_id || $this->settlements()->exists()) {
             return;   // 담당자 없음 또는 이미 정산(재귀속 금지)
         }
+        if (! $this->isFreightConfirmedForSettlement()) {
+            return;   // 운임 미확정 — 대기 (인코텀즈/운임비 확정 시 재트리거)
+        }
         $salesman = $this->salesman;
         if (! $salesman) {
             return;
@@ -849,6 +866,53 @@ class Vehicle extends Model
             'attributed_month' => $this->fullPaymentMonth(),
             'note' => $note,
         ]);
+    }
+
+    /**
+     * 정산 자동생성 운임 확정 게이트 (jin 2026-07-09).
+     *   KRW(원화 정산) → 국제 운임/인코텀즈 개념 없음 → 완납 즉시 통과 (국내판매 동결 방지).
+     *   FOB          → 운임비 0원이 정상 → 통과.
+     *   CFR + 운임비>0 → 운임비 기입+수금(미수 분모 포함) 완료 → 통과.
+     *   그 외(외화 + (CFR+운임0 · incoterms 미입력)) → 대기 (사람이 인코텀즈/운임비 확정 시 재트리거).
+     * 전 차량 export 단일채널이라 채널 분기 없음. 구분은 currency(원화 vs 외화).
+     * ⚠️ 아래 scopeAwaitingFreightConfirm 의 SQL 부정조건과 동일 정의 — 함께 유지.
+     */
+    public function isFreightConfirmedForSettlement(): bool
+    {
+        if ($this->currency === 'KRW') {
+            return true;
+        }
+        if ($this->incoterms === 'FOB') {
+            return true;
+        }
+
+        return $this->incoterms === 'CFR' && (float) ($this->transport_fee ?? 0) > 0;
+    }
+
+    /**
+     * 운임/인코텀즈 확정 대기 큐 — 완납인데 운임 게이트에 막혀 정산이 안 뜬 차량 (jin 2026-07-09).
+     * isFreightConfirmedForSettlement()의 SQL 부정형. 대시보드 카드·목록 필터·카운트 단일 출처.
+     *   완납 = sale_unpaid_amount_krw_cache <= 0 (환율 미입력 NULL 은 완납 판정 불가 → 제외).
+     *   외화만 대상 (KRW 는 게이트 자동통과 → 대기 아님). currency 는 NOT NULL(default USD).
+     *   freight 미확정 = incoterms NULL  OR  (CFR AND 운임비 ≤ 0).  (FOB / CFR+운임>0 은 정산됨)
+     */
+    public function scopeAwaitingFreightConfirm($query)
+    {
+        return $query->where('sale_price', '>', 0)
+            ->whereNotNull('sale_unpaid_amount_krw_cache')
+            ->where('sale_unpaid_amount_krw_cache', '<=', 0)
+            ->whereNotNull('salesman_id')
+            ->where('currency', '!=', 'KRW')
+            ->whereDoesntHave('settlements')
+            ->where(function ($w) {
+                $w->whereNull('incoterms')
+                    ->orWhere(function ($c) {
+                        $c->where('incoterms', 'CFR')
+                            ->where(function ($t) {
+                                $t->whereNull('transport_fee')->orWhere('transport_fee', '<=', 0);
+                            });
+                    });
+            });
     }
 
     /** A-3 — 완납월(그 달 1일). 완납일 ≈ 최근 확정 잔금(입금)일, 없으면 sale_date, 그것도 없으면 오늘. */
@@ -1375,6 +1439,10 @@ class Vehicle extends Model
             'shipping_needed' => $q->whereNotNull('export_declaration_document')
                 ->whereNull('bl_document'),
             'dhl_needed' => $q->whereNotNull('bl_document'),
+
+            // 운임/인코텀즈 확정 대기 (jin 2026-07-09) — 완납이지만 운임 게이트에 막혀 정산 미생성.
+            //   activeOnly 아님: 거래완료여도 운임 미확정이면 정산 안 떠서 여기 남아야 함.
+            'freight_confirm_pending' => $q->awaitingFreightConfirm(),
 
             // 2026-05-20 사용자 요청 — 매입 완료(미지급 ≤ 0) AND 말소 미처리 차량.
             // canHandleDeregistration 사용자(영업·수출통관·관리·admin)의 액션 큐.

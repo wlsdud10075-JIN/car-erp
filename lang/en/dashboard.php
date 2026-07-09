@@ -89,6 +89,7 @@ return [
             'shipping_needed' => ['l' => 'Shipment Needed', 'd' => 'clearance done → B/L not processed'],
             'dhl_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'loaded → DHL not requested'],
             'settlement_wait' => ['l' => 'Settlement Pending', 'd' => 'method not set or needs review'],
+            'freight_confirm' => ['l' => 'Incoterms Needed', 'd' => 'fully paid but incoterms (FOB/CFR) / freight not set → settlement held'],
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => 'Deregistration Needed', 'd' => 'purchase done → not deregistered'],

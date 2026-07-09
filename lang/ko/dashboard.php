@@ -90,6 +90,7 @@ return [
             'shipping_needed' => ['l' => '선적 처리 필요', 'd' => '수출통관 완료 → B/L 미처리'],
             'dhl_needed' => ['l' => 'DHL 발송 대기', 'd' => '선적 완료 → DHL 미신청'],
             'settlement_wait' => ['l' => '정산 대기', 'd' => '정산 방식 미입력 또는 확인 필요'],
+            'freight_confirm' => ['l' => '인코텀즈 확정 필요', 'd' => '완납했으나 인코텀즈(FOB/CFR)·운임비 미확정 → 정산 대기'],
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => '말소 처리 필요', 'd' => '매입 완료 → 말소 미처리'],

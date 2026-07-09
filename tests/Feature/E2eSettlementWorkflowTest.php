@@ -123,6 +123,7 @@ class E2eSettlementWorkflowTest extends TestCase
         $v = Vehicle::create([
             'vehicle_number' => 'E2E-'.$s->id.$tag,
             'sales_channel' => 'export',
+            'incoterms' => 'FOB',
             'salesman_id' => $s->id,
             'buyer_id' => $this->buyer->id,
             'purchase_date' => '2026-05-01',
