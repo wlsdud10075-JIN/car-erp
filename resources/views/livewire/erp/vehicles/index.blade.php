@@ -5378,7 +5378,7 @@ function vehicleColumnsToggle() {
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
                         <p class="mt-0.5 text-[11px] text-yellow-700">{{ __('vehicle.deregnotice.hint') }}</p>
                         <div class="mt-2 flex gap-2">
-                            <input wire:model="deregistrationBuyerPhone" type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            <input wire:model="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
                         </div>
                     </div>
