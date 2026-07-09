@@ -110,60 +110,59 @@ class ErpShippingBundleTest extends TestCase
         $this->assertSame(0, ShippingRequest::count());
     }
 
-    public function test_accumulation_add_scopes_to_own_salesman(): void
+    public function test_search_accum_filters_list_not_adds(): void
     {
-        [$user, $salesman] = $this->salesUserWithSalesman();
-        $mine = Vehicle::create(['vehicle_number' => '88아8888', 'sales_channel' => 'export', 'salesman_id' => $salesman->id]);
+        // (a)안 (jin 2026-07-09) — 누적검색 = 목록 검색(담기 아님). 검색만 하고 선택은 체크박스.
+        $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
+        Vehicle::create(['vehicle_number' => '88아8888', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
 
-        $other = Salesman::create(['name' => '남영업', 'is_active' => true, 'type' => 'employee']);
-        $theirs = Vehicle::create(['vehicle_number' => '99자9999', 'sales_channel' => 'export', 'salesman_id' => $other->id]);
+        $this->actingAs($this->clearanceUser());
 
-        $this->actingAs($user);
-
-        // 남의 차 → 스코프 밖, 누적 안 됨
         Volt::test('erp.vehicles.index')
-            ->set('accumSearchTerm', '99자9999')
-            ->call('addToAccumulation')
-            ->assertSet('shipDocIds', [])
-            ->assertDispatched('notify')
-            // 내 차 → 누적됨
             ->set('accumSearchTerm', '88아8888')
-            ->call('addToAccumulation')
-            ->assertSet('shipDocIds', [$mine->id]);
+            ->call('searchAccum')
+            ->assertSet('search', '88아8888')   // 목록 검색으로 반영
+            ->assertSet('shipDocIds', [])        // 검색은 담지 않음
+            ->assertSee('88아8888')
+            ->assertDontSee('22나2222');
     }
 
-    public function test_accumulation_matches_by_vin(): void
+    public function test_search_matches_by_vin(): void
     {
         $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
-        $v = Vehicle::create([
+        Vehicle::create([
             'vehicle_number' => '12가3456', 'sales_channel' => 'export',
             'salesman_id' => $sm->id, 'nice_reg_vin' => 'KMHAB00CDEF123456',
         ]);
 
         $this->actingAs($this->clearanceUser());
 
-        // 차대번호 끝 6자리로 검색해도 누적됨
+        // 차대번호 끝 6자리 검색으로도 목록에 뜸
         Volt::test('erp.vehicles.index')
             ->set('accumSearchTerm', '123456')
-            ->call('addToAccumulation')
-            ->assertSet('shipDocIds', [$v->id]);
+            ->call('searchAccum')
+            ->assertSee('12가3456');
     }
 
-    public function test_accumulated_vehicles_show_in_main_list_only(): void
+    public function test_selected_vehicles_persist_as_chips_across_search(): void
     {
+        // (a)안 — 선택(shipDocIds)은 칩으로 누적, 검색을 바꿔도 유지. X로 개별 제거.
         $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
-        $inSet = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
-        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        $v1 = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        $v2 = Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
 
         $this->actingAs($this->clearanceUser());
 
-        // 담으면 메인 목록이 담긴 차량만 보여줌(별도 패널 아님)
-        Volt::test('erp.vehicles.index')
-            ->set('accumSearchTerm', '11가1111')
-            ->call('addToAccumulation')
-            ->assertSet('shipDocIds', [$inSet->id])
-            ->assertSee('11가1111')
-            ->assertDontSee('22나2222');
+        $c = Volt::test('erp.vehicles.index')->set('shipDocIds', [$v1->id, $v2->id]);
+        $c->assertSee('11가1111')->assertSee('22나2222');   // 칩 표시
+
+        // 검색을 바꿔도 선택 칩은 유지
+        $c->set('accumSearchTerm', '없는차999')->call('searchAccum')
+            ->assertSet('shipDocIds', [$v1->id, $v2->id]);
+
+        // 칩 X 로 개별 제거
+        $c->call('removeFromAccumulation', $v1->id)->assertSet('shipDocIds', [$v2->id]);
     }
 
     public function test_reset_filters_returns_to_entry_state(): void
@@ -177,9 +176,7 @@ class ErpShippingBundleTest extends TestCase
             ->set('search', '아무거나')
             ->set('progressFilter', '판매중')
             ->set('dateType', 'sale')
-            ->set('accumSearchTerm', '33다3333')
-            ->call('addToAccumulation')
-            ->assertSet('shipDocIds', [$v->id])
+            ->set('shipDocIds', [$v->id])
             ->call('resetFilters')
             ->assertSet('search', '')
             ->assertSet('progressFilter', '')

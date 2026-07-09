@@ -89,9 +89,10 @@ return [
     // ── Cumulative search + bundle to shipping request (jin 2026-07-08) ──
     'accum' => [
         'title' => 'Cumulative search (add one by plate no. / VIN)',
-        'hint' => 'Search by plate number or VIN to add vehicles one at a time; they accumulate directly in the list below. When done, bundle them into a shipping request or print documents. Use “Clear selection” to return to the full list.',
-        'placeholder' => 'Plate no. / VIN, then Add',
+        'hint' => 'Search the list by plate number / VIN and check vehicles in the results. Selected vehicles pile up as tags above and persist even when you change the search. When done, bundle them into a shipping request or print documents.',
+        'placeholder' => 'Search by plate no. / VIN',
         'add_btn' => 'Add',
+        'search_btn' => 'Search',
         'non_export' => 'Not export',
         'none' => 'No vehicle (in your scope) matches ":term".',
         'added_one' => 'Added 1 vehicle.',
