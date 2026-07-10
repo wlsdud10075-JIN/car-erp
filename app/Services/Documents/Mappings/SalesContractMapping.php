@@ -44,11 +44,13 @@ class SalesContractMapping
                 'C12' => fn (Vehicle $v) => 'SC'.now()->format('ym').'-'.str_pad((string) ($v->id ?? 0), 5, '0', STR_PAD_LEFT), // Contract No
                 'C55' => fn (Vehicle $v) => $v->currency === 'USD' ? DocValue::money($v->exchange_rate) : null,   // Dollar Rate
                 'C56' => fn (Vehicle $v) => $v->currency === 'EUR' ? DocValue::money($v->exchange_rate) : null,   // Euro Rate
+                // 바이어 블록 = ERP 바이어(erp/buyers) 데이터와 일치 (jin 2026-07-10).
+                //   passport/ID·Tel·Email·Address 모두 Buyer 레코드에서. (구: 컨사이니 우선 + Email 은 존재않는 ->email 참조 버그)
                 'E66' => fn (Vehicle $v) => DocValue::invoiceBuyer($v)?->name,                                    // Buyer 상호
-                'E68' => fn (Vehicle $v) => 'Passport/ID number : '.(DocValue::consigneeIdValue($v) ?? ''),       // 여권/ID
-                'E69' => fn (Vehicle $v) => 'Tel: '.(DocValue::invoiceConsignee($v)?->contact_phone ?: DocValue::invoiceBuyer($v)?->contact_phone ?? '')
-                    .'     Email: '.(DocValue::invoiceConsignee($v)?->email ?: DocValue::invoiceBuyer($v)?->email ?? ''),  // 전화·이메일
-                'E70' => fn (Vehicle $v) => 'Address : '.(DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address ?? ''),  // 주소
+                'E68' => fn (Vehicle $v) => 'Passport/ID number : '.(DocValue::invoiceBuyer($v)?->passport_id ?? ''),  // 여권/ID (바이어)
+                'E69' => fn (Vehicle $v) => 'Tel: '.(DocValue::invoiceBuyer($v)?->contact_phone ?? '')
+                    .'     Email: '.(DocValue::invoiceBuyer($v)?->contact_email ?? ''),                          // 전화·이메일 (바이어)
+                'E70' => fn (Vehicle $v) => 'Address : '.(DocValue::invoiceBuyer($v)?->address ?? ''),           // 주소 (바이어)
             ],
             'multi' => [
                 'first' => 23,

@@ -14,7 +14,7 @@ class Buyer extends Model
     protected $fillable = [
         'name', 'country_id', 'salesman_id',
         'contact_name', 'contact_email',
-        'contact_phone', 'address', 'memo', 'is_active',
+        'contact_phone', 'passport_id', 'address', 'memo', 'is_active',
     ];
 
     protected $casts = ['is_active' => 'boolean'];
