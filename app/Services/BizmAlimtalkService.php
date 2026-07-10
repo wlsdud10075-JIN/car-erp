@@ -75,23 +75,19 @@ class BizmAlimtalkService
                 'tmplId' => $this->config->tmplId($code),
                 'msg' => $message,
             ];
-            // 웹링크 버튼(정산 승인 링크 등) — bizmsg 등록 버튼 스키마로 변환.
-            // ⚠️ bizmsg 실제 버튼 필드 = ordering/name/linkType/linkMo/linkPc (2026-07-10 /v2/template/list
-            //    조회 실측). 구 type/url_mobile/url_pc 는 bizmsg 가 URL 로 인식 못 해 K108
-            //    (NoMatchedTemplateButtonException). 호출측은 ['name'=>,'url'=>]만 넘기고 여기서 맞춘다.
-            if (! empty($buttons)) {
-                $ordered = array_values($buttons);
-                $item['button'] = array_map(function (array $b, int $i) {
-                    $url = $b['url'] ?? $b['url_mobile'] ?? '';
-
-                    return [
-                        'ordering' => $i + 1,
-                        'name' => $b['name'] ?? '',
-                        'linkType' => 'WL',
-                        'linkMo' => $url,
-                        'linkPc' => $b['url_pc'] ?? $url,
-                    ];
-                }, $ordered, array_keys($ordered));
+            // 웹링크 버튼(정산 승인 링크 등) — bizmsg 발송 API 형식.
+            // ⚠️ bizmsg 발송 버튼 = button 배열이 아니라 button1~button5 개별 필드(각 JSON object),
+            //    키 = name/type(WL)/url_mobile/url_pc (bizmsg 공식 안내 + 실측 K000, 2026-07-10).
+            //    ※ linkType/linkMo/linkPc 는 템플릿 '저장' 스키마라 발송엔 안 먹힘(K108). button 배열도 인식 안 됨.
+            //    #{url} 변수는 실제 URL 로 치환해 보낸다(호출측이 넘긴 실 URL). 호출측은 ['name'=>,'url'=>]만 전달.
+            foreach (array_values($buttons) as $i => $b) {
+                $url = $b['url'] ?? $b['url_mobile'] ?? '';
+                $item['button'.($i + 1)] = [
+                    'name' => $b['name'] ?? '',
+                    'type' => 'WL',
+                    'url_mobile' => $url,
+                    'url_pc' => $b['url_pc'] ?? $url,
+                ];
             }
 
             $response = Http::timeout(15)

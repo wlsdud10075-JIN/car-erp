@@ -62,10 +62,10 @@ class AlimtalkServiceTest extends TestCase
             && $req->data()[0]['profile'] === 'PROFILE_KEY');
     }
 
-    public function test_button_sent_in_bizmsg_link_schema(): void
+    public function test_button_sent_in_bizmsg_button1_schema(): void
     {
-        // bizmsg 실제 버튼 필드 = ordering/name/linkType/linkMo/linkPc (2026-07-10 /v2/template/list 실측).
-        // 호출측이 넘긴 ['name'=>,'url'=>] 를 이 스키마로 변환해야 K108(NoMatchedTemplateButton) 회피.
+        // bizmsg 발송 버튼 = button1~buttonN 개별 필드(각 JSON object), 키 name/type(WL)/url_mobile/url_pc.
+        // (bizmsg 공식 안내 + 실측 K000, 2026-07-10. button 배열·linkType/linkMo 는 발송에서 K108.)
         $this->configure();
         Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'BIZM-BTN']]], 200)]);
 
@@ -75,15 +75,14 @@ class AlimtalkServiceTest extends TestCase
 
         $this->assertSame('sent', $log->status);
         Http::assertSent(function ($req) {
-            $btn = $req->data()[0]['button'][0] ?? [];
+            $item = $req->data()[0];
+            $btn = $item['button1'] ?? [];
 
-            return ($btn['linkType'] ?? null) === 'WL'
-                && ($btn['ordering'] ?? null) === 1
+            return ($btn['type'] ?? null) === 'WL'
                 && ($btn['name'] ?? null) === '승인/반려 바로가기'
-                && ($btn['linkMo'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
-                && ($btn['linkPc'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
-                && ! array_key_exists('url_mobile', $btn)   // 구 필드 안 나감
-                && ! array_key_exists('type', $btn);
+                && ($btn['url_mobile'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
+                && ($btn['url_pc'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
+                && ! array_key_exists('button', $item);   // 구 button 배열 안 나감
         });
     }
 
