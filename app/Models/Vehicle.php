@@ -446,14 +446,20 @@ class Vehicle extends Model
             if ((float) ($vehicle->sale_price ?? 0) > 0) {
                 $newTotal = (float) $vehicle->sale_total_amount;
                 $curDecl = (float) ($vehicle->export_declaration_amount ?? 0);
+                $oldDecl = (float) $vehicle->getOriginal('export_declaration_amount');
                 $oldTotal = (float) (
                     $vehicle->getOriginal('sale_price') + $vehicle->getOriginal('transport_fee')
                     + $vehicle->getOriginal('sale_other_costs') + $vehicle->getOriginal('commission')
                     + $vehicle->getOriginal('auto_loading') - $vehicle->getOriginal('tax_dc')
                 );
+                // ⚠️ isDirty('export_declaration_amount') 는 쓰지 말 것 — decimal 컬럼은 DB가 "5200.00"(문자열)로
+                //   반환하는데 폼 float 5200.0 은 (string) 변환 시 "5200" 이라 Laravel originalIsEquivalent 의
+                //   strcmp("5200","5200.00")≠0 → 값이 같아도 항상 dirty 오탐 → 추종(②)이 절대 안 걸림
+                //   (2026-07-10 jin 버그신고 "기타비용 넣어도 면장 안 따라옴"). 대신 면장 값의 실제 숫자 변화로 판정.
+                $declManuallyChanged = abs($curDecl - $oldDecl) >= 0.01;
                 if ($curDecl <= 0) {
                     $vehicle->export_declaration_amount = $newTotal;                              // ① 미입력
-                } elseif (! $vehicle->isDirty('export_declaration_amount') && abs($curDecl - $oldTotal) < 0.01) {
+                } elseif (! $declManuallyChanged && abs($oldDecl - $oldTotal) < 0.01) {
                     $vehicle->export_declaration_amount = $newTotal;                              // ② 자동복사분 → 추종
                 }
                 // ③ else 보존 (수동 CIF/FOB 또는 이번 저장에 면장 직접 편집)
