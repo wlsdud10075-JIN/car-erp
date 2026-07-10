@@ -668,63 +668,68 @@ new #[Layout('components.layouts.app')] class extends Component
                         {{-- 상태 전환 액션 --}}
                         @php $idsCsv = implode(',', array_column($b['vehicles'], 'id')); @endphp
                         <div class="flex shrink-0 flex-wrap gap-1.5">
-                            <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
-                               class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
-                                {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
-                            </a>
-                            {{-- 말소신청서 개별 다운로드 (버튼 1개 → 업로드된 것 N개 개별). 항상 표시, 없으면 비활성. --}}
-                            @php $deregUrls = collect($b['vehicles'])->where('has_dereg', true)->map(fn ($v) => route('erp.vehicles.deregistration-file', ['id' => $v['id']]))->values()->all(); @endphp
-                            @if (count($deregUrls) > 0)
-                                <button type="button"
-                                        x-data="{ urls: @js($deregUrls) }"
-                                        @click="urls.forEach((u, i) => setTimeout(() => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 400))"
-                                        class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
-                                    {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
-                                </button>
-                            @else
-                                <button type="button" disabled title="{{ __('shipping.action.no_dereg') }}"
-                                        class="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-400">
-                                    {{ __('shipping.action.download_dereg', ['count' => 0]) }}
-                                </button>
-                            @endif
-                            @if ($b['status'] === 'requested')
-                                @if (! empty($b['entry_blockers']))
-                                    {{-- 🔒 (나)+(a) — 묶음 내 50% 미달 차 있으면 착수 불가(빨간불). 미달 차 완납·관리 승인 또는 빼고 재묶음. --}}
-                                    <span title="{{ __('shipping.action.entry_locked_tip', ['vehicles' => implode(', ', $b['entry_blockers'])]) }}"
-                                          class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
-                                        🔒 {{ __('shipping.action.entry_locked') }}
-                                    </span>
-                                @else
-                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
-                                            class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
-                                        {{ __('shipping.action.start') }}
-                                    </button>
-                                @endif
-                            @endif
-                            {{-- 수출신고번호 일괄 기입 (통관 권한) --}}
-                            @if ($canAccessClearance)
-                                <button type="button" wire:click="openDeclNumber('{{ $b['batch_id'] }}')"
-                                        class="rounded-md border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100">
-                                    {{ __('shipping.decl.enter') }}
-                                </button>
-                            @endif
-                            {{-- B/L 발급 (승인 권한 + 아직 미발급) --}}
-                            @if ($canApprove && $b['bl_status'] !== 'issued')
-                                <button type="button" wire:click="openIssue('{{ $b['batch_id'] }}')"
-                                        class="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
-                                    {{ __('shipping.bl.issue') }}
-                                </button>
-                            @endif
-                            @if (in_array($b['status'], ['requested', 'in_progress'], true))
-                                <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'done')"
-                                        class="rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100">
-                                    {{ __('shipping.action.done') }}
-                                </button>
+                            @if ($b['status'] === 'requested' && ! empty($b['entry_blockers']))
+                                {{-- 🔒 (나)+(a) 착수 불가 — 50% 미달 차 있으면 진행 원천 차단. 착수불가 + 취소만 노출. --}}
+                                <span title="{{ __('shipping.action.entry_locked_tip', ['vehicles' => implode(', ', $b['entry_blockers'])]) }}"
+                                      class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+                                    🔒 {{ __('shipping.action.entry_locked') }}
+                                </span>
                                 <button type="button" wire:click="cancel('{{ $b['batch_id'] }}')"
                                         wire:confirm="{{ __('shipping.confirm.cancel', ['n' => $b['count']]) }}"
                                         class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">
                                     {{ __('shipping.action.cancel') }}
                                 </button>
+                            @else
+                                <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
+                                   class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
+                                    {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
+                                </a>
+                                {{-- 말소신청서 개별 다운로드 (버튼 1개 → 업로드된 것 N개 개별). 항상 표시, 없으면 비활성. --}}
+                                @php $deregUrls = collect($b['vehicles'])->where('has_dereg', true)->map(fn ($v) => route('erp.vehicles.deregistration-file', ['id' => $v['id']]))->values()->all(); @endphp
+                                @if (count($deregUrls) > 0)
+                                    <button type="button"
+                                            x-data="{ urls: @js($deregUrls) }"
+                                            @click="urls.forEach((u, i) => setTimeout(() => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 400))"
+                                            class="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
+                                        {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
+                                    </button>
+                                @else
+                                    <button type="button" disabled title="{{ __('shipping.action.no_dereg') }}"
+                                            class="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-400">
+                                        {{ __('shipping.action.download_dereg', ['count' => 0]) }}
+                                    </button>
+                                @endif
+                                @if ($b['status'] === 'requested')
+                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
+                                            class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
+                                        {{ __('shipping.action.start') }}
+                                    </button>
+                                @endif
+                                {{-- 수출신고번호 일괄 기입 (통관 권한) --}}
+                                @if ($canAccessClearance)
+                                    <button type="button" wire:click="openDeclNumber('{{ $b['batch_id'] }}')"
+                                            class="rounded-md border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100">
+                                        {{ __('shipping.decl.enter') }}
+                                    </button>
+                                @endif
+                                {{-- B/L 발급 (승인 권한 + 아직 미발급) --}}
+                                @if ($canApprove && $b['bl_status'] !== 'issued')
+                                    <button type="button" wire:click="openIssue('{{ $b['batch_id'] }}')"
+                                            class="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
+                                        {{ __('shipping.bl.issue') }}
+                                    </button>
+                                @endif
+                                @if (in_array($b['status'], ['requested', 'in_progress'], true))
+                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'done')"
+                                            class="rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100">
+                                        {{ __('shipping.action.done') }}
+                                    </button>
+                                    <button type="button" wire:click="cancel('{{ $b['batch_id'] }}')"
+                                            wire:confirm="{{ __('shipping.confirm.cancel', ['n' => $b['count']]) }}"
+                                            class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">
+                                        {{ __('shipping.action.cancel') }}
+                                    </button>
+                                @endif
                             @endif
                         </div>
                     </div>
