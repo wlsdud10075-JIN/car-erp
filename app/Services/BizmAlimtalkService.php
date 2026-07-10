@@ -38,8 +38,8 @@ class BizmAlimtalkService
      * @param  string  $phone  수신 번호(하이픈 무관 — 숫자만 정규화)
      * @param  array  $vars  `#{변수}` 치환값 (예: ['차량번호' => '19더9065'])
      * @param  array  $context  ['vehicle_id'=>, 'user_id'=>] 로그 맥락(선택)
-     * @param  array  $buttons  웹링크 버튼 배열(선택) — [['name'=>,'type'=>'WL','url_mobile'=>,'url_pc'=>], ...].
-     *                          BizM 템플릿에 등록된 버튼과 일치해야 발송됨(발송 시 URL 만 주입). 정산 승인 링크 등.
+     * @param  array  $buttons  웹링크 버튼(선택) — [['name'=>'라벨','url'=>'https://...'], ...].
+     *                          bizmsg 등록 버튼 스키마(ordering/name/linkType/linkMo/linkPc)로 자동 변환된다.
      * @return AlimtalkLog status: sent|failed|skipped
      */
     public function send(string $code, string $phone, array $vars = [], array $context = [], array $buttons = []): AlimtalkLog
@@ -75,9 +75,23 @@ class BizmAlimtalkService
                 'tmplId' => $this->config->tmplId($code),
                 'msg' => $message,
             ];
-            // 웹링크 버튼(정산 승인 링크 등) — 등록된 버튼에 발송 시점 URL 주입.
+            // 웹링크 버튼(정산 승인 링크 등) — bizmsg 등록 버튼 스키마로 변환.
+            // ⚠️ bizmsg 실제 버튼 필드 = ordering/name/linkType/linkMo/linkPc (2026-07-10 /v2/template/list
+            //    조회 실측). 구 type/url_mobile/url_pc 는 bizmsg 가 URL 로 인식 못 해 K108
+            //    (NoMatchedTemplateButtonException). 호출측은 ['name'=>,'url'=>]만 넘기고 여기서 맞춘다.
             if (! empty($buttons)) {
-                $item['button'] = array_values($buttons);
+                $ordered = array_values($buttons);
+                $item['button'] = array_map(function (array $b, int $i) {
+                    $url = $b['url'] ?? $b['url_mobile'] ?? '';
+
+                    return [
+                        'ordering' => $i + 1,
+                        'name' => $b['name'] ?? '',
+                        'linkType' => 'WL',
+                        'linkMo' => $url,
+                        'linkPc' => $b['url_pc'] ?? $url,
+                    ];
+                }, $ordered, array_keys($ordered));
             }
 
             $response = Http::timeout(15)
@@ -93,18 +107,20 @@ class BizmAlimtalkService
 
             $body = $response->json();
             $first = is_array($body) ? ($body[0] ?? $body) : [];
-            // BizM v2 실응답(2026-07-07 실측): [{"code":"success","data":{"msgid":"WEB..."},"message":"K000"}].
-            // msgid 는 data 하위 → data.msgid 우선, 최상위 msgid 는 fallback(테스트 fake 호환).
+            // BizM v2 실응답: [{"code":"success","data":{"msgid":"WEB..."},"message":"K000"}].
+            $code = is_array($first) ? ($first['code'] ?? null) : null;
             $msgid = is_array($first) ? ($first['data']['msgid'] ?? $first['msgid'] ?? null) : null;
 
-            if ($msgid) {
+            // ⚠️ bizmsg 는 실패(K108 NoMatchedTemplateButton 등)여도 data.msgid 를 반환한다(2026-07-10 실측).
+            //    msgid 존재만으로 성공 처리하면 거부된 발송이 'sent' 로 오기록됨 → 반드시 code==='success' 확인.
+            if ($code === 'success' && $msgid) {
                 return AlimtalkLog::create($base + ['status' => 'sent', 'msgid' => (string) $msgid]);
             }
 
-            // msgid 없음 = BizM 이 접수 실패(코드/사유 body 에). 원문 일부를 error 로 남겨 진단.
+            // 실패 — message(예 K108:NoMatchedTemplateButtonException)를 error 로 남겨 진단.
             return AlimtalkLog::create($base + [
                 'status' => 'failed',
-                'error' => Str::limit('no msgid — '.json_encode($body, JSON_UNESCAPED_UNICODE), 480, ''),
+                'error' => Str::limit('bizmsg fail — '.($first['message'] ?? '').' — '.json_encode($body, JSON_UNESCAPED_UNICODE), 480, ''),
             ]);
         } catch (\Throwable $e) {
             // cron/훅 무음 실패 방지 — 반드시 로그. 예외는 여기서 흡수(호출측 안 깨짐).
