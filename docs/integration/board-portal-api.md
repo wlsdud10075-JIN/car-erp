@@ -172,3 +172,50 @@ fully_paid        = (unpaid_total_krw <= 0) AND (fx_missing_count === 0)
 - board가 `vehicles`/정산/회계 컬럼 **쓰기**(읽기 + 선적요청 지시만).
 - 마진 raw·RRN·계좌 노출.
 - 선적요청을 vehicles 상태 컬럼에 적재(게이트 회귀).
+
+---
+
+## 10. 판매계약서 전자서명 세션 발급 (2026-07-10 풀회의 — ERP 직접호스팅)
+> 회의록 = `docs/meetings/2026-07-10-sales-contract-e-signature.md`(6부서+Codex/Gemini 조건부 GO). 인계 패킷 = `docs/integration/handoff-board-esignature.md`.
+> **핵심 아키텍처**: 서명 페이지·서명본·증거 전부 **ERP가 직접 호스팅·완결**. board = **서명 URL을 바이어 1:1 채널(카톡/SNS)로 전달하는 창구만**.
+> ⇒ **board는 계약서 바이트를 받지 않는다**(§6 프록시와 다름). 여권ID·주소 등 바이어 PII는 ERP-호스팅 서명 페이지에만 노출 → **§3/§29 화이트리스트 확장 불필요**(board 노출면 0). 서명본 회신 HMAC·board 프록시 PII·queue worker 문제 전부 회피.
+
+### 10-1. `POST /internal/board/signing-requests` — 서명 세션 발급 후 서명 URL 반환
+prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board-read]` (§1 HMAC 동일 — POST라 canonical BODY = raw JSON).
+
+**요청 (JSON body)**:
+```json
+{ "salesman_email": "sales@heyman.com",
+  "vehicle_ids": [1215, 1216],
+  "recipient_email": "buyer@example.com" }
+```
+- `salesman_email` (필수) — §2 IDOR 스코프(`SalesmanResolver::resolveActiveOrFail`). 매칭 실패/퇴사 = 403.
+- `vehicle_ids` (필수, 1~30) — **all-or-nothing 계약 묶음**. 검증: 전부 `sales_channel='export'` + 전부 그 영업 소유(`salesman_id`) + **동일 바이어** + **동일 통화**(sales_contract 동질성 가드, §VehicleDocumentController::showMulti 재사용). 위반 시 422.
+- `recipient_email` (선택) — 미전송 시 ERP가 **바이어 `contact_email`로 기본 설정**. 서명 완료 시 바이어가 페이지에서 최종 확정 입력.
+
+**응답 (200)**:
+```json
+{ "signed_url": "https://heysellcar.com/sign/<token>?expires=...&signature=...",
+  "contract_no": "SC2607-01215",
+  "buyer": { "id": 42, "name": "ABC TRADING" },
+  "currency": "USD",
+  "vehicle_count": 2,
+  "status": "pending",
+  "expires_at": "2026-07-17T09:00:00+09:00" }
+```
+- `signed_url` = **Laravel `temporarySignedRoute`**(APP_KEY 서명 + 만료 임베드) + DB `sign_token`(추측불가 핸들). 이 URL 자체가 인가 — board는 **그대로 바이어에게 전달만**(파싱·재서명 금지).
+- **멱등/단일활성 불변식**: 같은 `vehicle_ids` 묶음으로 재발급하면 ERP가 **그 묶음의 기존 `pending`/`viewed` 세션을 자동 `revoked`** 처리하고 새 세션 발급(활성 세션 항상 1개). 이미 `signed`된 묶음은 재발급 거부(`409 already_signed`) — 재계약은 차량 구성 변경 후.
+
+### 10-2. (선택) `GET /internal/board/signing-requests?salesman_email=` — 서명 상태 조회
+board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시하고 싶을 때. 반환 = 본인 영업 세션들의 `{contract_no, buyer:{id,name}, status, vehicle_count, sent_at, viewed_at, signed_at}`. **PII·서명본 파일·서명이미지 미포함**(상태 메타만). 미구현 시 board는 상태표시 없이 "전송함"만 노출(graceful).
+
+### 10-3. board 측 작업 (board repo·board 세션 — 복사 금지)
+1. `CarErpReadService`에 `requestSigningSession(vehicleIds, recipientEmail?)` 추가(POST HMAC, §1 canonical BODY 포함). 401/5xx/미설정 → "발급 불가" degrade.
+2. board 판매계약서 화면에 **「전자서명 요청」** 버튼 → 위 호출 → 응답 `signed_url`을 **바이어에게 카톡/SNS/이메일로 전달**(board가 이미 가진 바이어 채널 사용). ERP는 전달을 대행하지 않음.
+3. (선택) `GET`으로 상태 폴링해 "열람됨/서명완료" 뱃지 표시.
+4. **board는 서명 페이지를 호스팅하지 않는다** — URL만 전달. 서명·서명본·증거메일은 전부 ERP.
+
+### 10-4. 흡수 금지 (서명)
+- board가 서명 페이지 호스팅·서명본 보관·CoC 생성(전부 ERP 완결).
+- 서명 URL을 board가 재서명·변조·프록시(그대로 전달만).
+- 계약서 바이트·바이어 PII를 board로 끌어오기(URL 전달만이라 애초에 불필요).
