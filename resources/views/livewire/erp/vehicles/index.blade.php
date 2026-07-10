@@ -2463,6 +2463,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistration_document_path = '';
     }
 
+    // 딜러 번호 blur 시 서버에서 하이픈 정규화 — 클라 JS(실시간 미리보기)의 morph 타이밍과
+    // 무관하게 확정 포맷을 반영(jin 2026-07-10 — 저장 직후 3-3-5 잔상 방지).
+    public function updatedDeregistrationBuyerPhone(): void
+    {
+        $this->deregistrationBuyerPhone = \App\Support\PhoneFormat::format($this->deregistrationBuyerPhone) ?? '';
+    }
+
     // 국내 바이어에게 말소등록증 전달 알림톡 발송 (수동 버튼). 만료 서명 링크(3일)를 본문에 담아 보낸다.
     // 발송 안전(fire-and-forget)은 BizmAlimtalkService 가 보장 — 여기선 결과 상태만 토스트.
     public function sendDeregistrationAlimtalk(): void
@@ -3096,7 +3103,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'registration_number' => $this->registration_number ?: null,
             'reg_cert_number' => $this->reg_cert_number ?: null,
             'is_deregistered'  => $this->is_deregistered,
-            'deregistration_notice_phone' => trim($this->deregistrationBuyerPhone) ?: null,
+            'deregistration_notice_phone' => \App\Support\PhoneFormat::format($this->deregistrationBuyerPhone),
             'deregistration_date' => $toDate($this->deregistration_date),
             // 판매
             'sale_date'    => $toDate($this->sale_date),
@@ -5385,7 +5392,7 @@ function vehicleColumnsToggle() {
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
                         <p class="mt-0.5 text-[11px] text-yellow-700">{{ __('vehicle.deregnotice.hint') }}</p>
                         <div class="mt-2 flex gap-2">
-                            <input wire:model="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            <input wire:model.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
                         </div>
                     </div>
