@@ -51,6 +51,8 @@ return [
 
     'action' => [
         'start' => 'Mark in progress',
+        'entry_locked' => 'Start locked',
+        'entry_locked_tip' => 'Vehicles under 50% paid: :vehicles — need full payment / manager approval, or remove them and re-bundle',
         'done' => 'Mark done',
         'cancel' => 'Cancel',
         'open_in_vehicles' => 'Open :count in Vehicles',
@@ -93,8 +95,14 @@ return [
         'apply' => 'Bulk apply',
         'cancel' => 'Close',
         'not_fully_paid' => 'Fully-paid required before entry (bundle has unpaid)',
+        'blocked_vehicles' => 'B/L blocked — unpaid vehicles: :vehicles. Pay 100% or get manager B/L approval before issuing.',
         'requested_hint' => 'Sales-requested type',
         'guard_mismatch' => '⚠ Double-guard — sales requested :req but :cur is selected. Verify before uploading the B/L document.',
+    ],
+
+    // 🔒 (나)+(a) shipping entry lock — bundle start blocked
+    'lock' => [
+        'entry_blocked' => 'Cannot start shipping — vehicles under 50% paid: :vehicles. Pay 50%+ or get manager approval. (Whole bundle waits — to proceed, remove the unpaid vehicles and re-bundle.)',
     ],
 
     // Export declaration number bulk apply (one shared number → whole bundle)
