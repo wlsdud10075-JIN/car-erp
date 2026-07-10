@@ -23,12 +23,23 @@ Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
 
 // 카카오 알림톡 자동발송 (2026-07-06) — 캐시 재계산(05:00) 후 최신 grace/미수 기준.
 //   전부 BizmAlimtalkService 게이트 내장 = Setting alimtalk_enabled off 면 자동 skip(배포 ≠ 작동, inert).
-//   일일 알림 전부 09:00(jin 2026-07-08) · 주간 금 18:00 · 월결산 익월 1일 09:00(정산 마감=말일이라 전월 결산을 다음달 1일 발송).
-Schedule::command('alimtalk:pickup')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('alimtalk:purchase-unpaid')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('alimtalk:sale-unpaid')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->withoutOverlapping();
-Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->withoutOverlapping();
+//   일일 알림 전부 09:00(jin 2026-07-08) · 주간 금 18:00 · 월결산 = 익월 첫 영업일 09:00.
+//   ⚠️ 주말 발송 금지(jin 2026-07-10): 정기 자동발송은 평일(월~금)만. weekly 는 금요일이라 무관.
+//      (이벤트 발동 알림 — 정산승인·말소증 등 — 은 사용자 액션 시점이라 스케줄 무관, 별도.)
+Schedule::command('alimtalk:pickup')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:purchase-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:sale-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
-Schedule::command('alimtalk:monthly-closing')->monthlyOn(1, '09:00')->withoutOverlapping();
+// 월결산 = 익월 첫 영업일 09:00 (1일이 주말이면 다음 평일). monthlyOn(1)+weekdays 는 1일이 주말인 달을
+//   통째 건너뛰므로, 매일 평가하되 "이번 달 첫 영업일" 에만 발송하는 when 가드로 안전하게.
+Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->when(function () {
+    $firstBusinessDay = now()->startOfMonth();
+    while ($firstBusinessDay->isWeekend()) {
+        $firstBusinessDay->addDay();
+    }
+
+    return now()->isSameDay($firstBusinessDay);
+})->withoutOverlapping();
