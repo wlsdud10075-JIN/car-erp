@@ -894,7 +894,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="mt-0.5 block text-xs text-gray-400">{{ $m['sub'] }}</span>
                 </span>
                 <input type="checkbox" wire:model.live="lockToggles.{{ $lock }}" class="peer sr-only">
-                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-rose-500
+                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                              after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
             </label>
             @endforeach
