@@ -28,6 +28,8 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
+            # 서류 PDF 변환용 LibreOffice + 한글폰트 (멱등 — 이미 설치면 즉시 통과). 실패해도 배포 계속(PDF만 불가, xlsx 정상).
+            command -v soffice >/dev/null 2>&1 || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libreoffice-calc fonts-nanum; } || echo "::warning::libreoffice 설치 실패 — 서류 PDF 변환 불가(xlsx 다운로드는 정상)"
             # Review.md #7 (2026-06-09) — 코드·의존성·빌드는 점검모드 진입 전에 수행.
             # 빌드(composer/npm) 실패는 set -e 로 여기서 종료 → 사이트는 안 내려감(갇힘 방지).
             git fetch origin master
@@ -72,6 +74,8 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
+            # 서류 PDF 변환용 LibreOffice + 한글폰트 (멱등). 실패해도 배포 계속(PDF만 불가, xlsx 정상).
+            command -v soffice >/dev/null 2>&1 || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libreoffice-calc fonts-nanum; } || echo "::warning::libreoffice 설치 실패 — 서류 PDF 변환 불가(xlsx 정상)"
             git fetch origin master
             git reset --hard origin/master
             composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
@@ -109,6 +113,8 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH }}
+            # 서류 PDF 변환용 LibreOffice + 한글폰트 (멱등). 실패해도 배포 계속(PDF만 불가, xlsx 정상).
+            command -v soffice >/dev/null 2>&1 || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libreoffice-calc fonts-nanum; } || echo "::warning::libreoffice 설치 실패 — 서류 PDF 변환 불가(xlsx 정상)"
             php artisan db:backup || echo "::warning::pre-deploy db:backup failed — proceeding"
             git fetch origin master
             git reset --hard origin/master
