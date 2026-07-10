@@ -5375,8 +5375,9 @@ function vehicleColumnsToggle() {
                     </div>
                     @endif
                 </div>
-                {{-- 국내 바이어 말소등록증 알림톡 전달 (수동) — 말소증 저장 후에만 노출 --}}
-                @if($deregistration_document_path)
+                {{-- 국내 바이어 말소등록증 알림톡 전달 (수동) — 편집 모드에선 항상 노출(번호 미리 입력).
+                     발송은 말소증·번호가 있어야 가능 (sendDeregistrationAlimtalk 가드가 토스트로 안내). --}}
+                @if($editingId !== null)
                 <div class="col-span-2">
                     <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
