@@ -86,6 +86,24 @@ class AlimtalkServiceTest extends TestCase
         });
     }
 
+    public function test_local_env_overrides_recipient_to_test_phone(): void
+    {
+        // 로컬 안전장치 — local 환경 + ALIMTALK_TEST_PHONE 설정 시 실수신자와 무관하게 그 번호로만 발송.
+        $this->app['env'] = 'local';
+        config(['services.alimtalk.test_phone' => '010-4613-6834']);
+        $this->configure();
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'X']]], 200)]);
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-9999-0000', [
+            '날짜' => '2026-07-10', '판매건수' => '0', '매출액' => '0원', '선적전건수' => '0',
+            '선적전금액' => '0원', '선적후건수' => '0', '선적후금액' => '0원', '미수합계' => '0원',
+        ]);
+
+        $this->assertSame('sent', $log->status);
+        $this->assertSame('01046136834', $log->phone);   // 실수신자(9999) 아닌 override 번호
+        Http::assertSent(fn ($req) => ($req->data()[0]['phn'] ?? null) === '01046136834');
+    }
+
     public function test_bizmsg_fail_with_msgid_logs_failed_not_sent(): void
     {
         // ⚠️ bizmsg 는 실패(K108 등)여도 data.msgid 를 반환 → msgid 만으로 성공 판단 금지, code==='success' 확인.
