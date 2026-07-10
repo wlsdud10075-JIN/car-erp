@@ -95,4 +95,16 @@ return [
     'alimtalk_test_btn' => '테스트 발송',
     'alimtalk_test_sent' => '테스트 알림톡을 발송했습니다. 수신 여부를 확인하세요.',
     'alimtalk_test_failed' => '테스트 발송 실패: :reason',
+
+    // 🔒 락 관제 — 돈 흐름 진행 잠금 토글 (시스템관리자 전용)
+    'lock_section' => '🔒 락 관제',
+    'lock_hint' => '돈에 관련된 진행 잠금(락)을 켜고 끕니다. 끄면 해당 단계가 미수와 무관하게 자유롭게 진행됩니다. 관리/관리자 승인 우회는 그대로 유지되며, 토글 변경 이력은 감사로그에 남습니다.',
+    'lock_purchase_registration' => '매입 등록 락',
+    'lock_purchase_registration_sub' => '바이어 총 미수율 50% 초과 시 신규 차량 등록 차단',
+    'lock_purchase_payment' => '매입 지급 락',
+    'lock_purchase_payment_sub' => '그 차량 판매금 50% 미입금이면 2번째 매입 잔금 지급부터 차단 (신규 · 기본 꺼짐)',
+    'lock_shipping_entry' => '선적 진입 락',
+    'lock_shipping_entry_sub' => '판매 입금률 50% 미만 차량은 통관·선적 진입 차단',
+    'lock_bl_issue' => 'B/L 발행 락',
+    'lock_bl_issue_sub' => '잔금 100% 미완납 차량은 B/L 발행 차단',
 ];

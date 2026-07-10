@@ -19,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
+    public array $lockToggles = [];
+
     // item 9 — 알람 항목별 리드데이("며칠 전"). 항목 추가는 alarmLeadMeta() 에만.
     public array $alarmLeadDays = [];
 
@@ -78,6 +81,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
+            $this->lockToggles[$lock] = Setting::lockEnabled($lock);
+        }
         foreach ($this->alarmLeadMeta() as $k => $m) {
             $this->alarmLeadDays[$k] = (int) Setting::get($m['key'], $m['default']);
         }
@@ -491,6 +497,49 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
+    // 🔒 락 관제 — 토글 즉시 저장(회사별 {set}) + 변경 감사로그. 게이트 코드는 Setting::lockEnabled 로만 읽음.
+    public function updatedLockToggles(mixed $value, string $key): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        if (! array_key_exists($key, Setting::LOCK_DEFAULTS)) {
+            return;
+        }
+
+        $set = Setting::companyTemplateSet();
+        $enabled = (bool) $value;
+        $setting = Setting::updateOrCreate(
+            ['key' => 'lock_'.$key.'_'.$set],
+            ['value' => $enabled ? '1' : '0', 'type' => 'boolean', 'description' => '돈 흐름 락 '.$key.' ('.$set.')'],
+        );
+
+        // 돈 게이트 해제/설정은 민감 — 누가 언제 어느 락을 바꿨나 감사로그(Setting 행에 부착).
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'lock_toggle_changed',
+            'column_name' => 'lock_'.$key,
+            'old_value' => $enabled ? '0' : '1',
+            'new_value' => $enabled ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
+
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    // 🔒 락 관제 화면 메타(라벨/설명) — blade foreach. 순서 = 매입등록·매입지급·선적진입·B/L.
+    public function lockMeta(): array
+    {
+        return [
+            'purchase_registration' => ['label' => __('feature_settings.lock_purchase_registration'), 'sub' => __('feature_settings.lock_purchase_registration_sub')],
+            'purchase_payment' => ['label' => __('feature_settings.lock_purchase_payment'), 'sub' => __('feature_settings.lock_purchase_payment_sub')],
+            'shipping_entry' => ['label' => __('feature_settings.lock_shipping_entry'), 'sub' => __('feature_settings.lock_shipping_entry_sub')],
+            'bl_issue' => ['label' => __('feature_settings.lock_bl_issue'), 'sub' => __('feature_settings.lock_bl_issue_sub')],
+        ];
+    }
+
     // item 9 — 알람 항목별 리드데이 메타(라벨·Setting 키·기본값). 새 알람 종류는 여기 한 줄만 추가.
     public function alarmLeadMeta(): array
     {
@@ -822,6 +871,33 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-violet-600
                              after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
             </label>
+        </div>
+    </div>
+
+    {{-- 🔒 락 관제 그룹 — 돈 흐름 진행 잠금 토글 (super 전용) --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-rose-500"></span>
+                <span class="section-title">{{ __('feature_settings.lock_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-2">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.lock_hint') }}</p>
+            @foreach($this->lockMeta() as $lock => $m)
+            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
+                <span class="text-sm text-gray-700">{{ $m['label'] }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ $m['sub'] }}</span>
+                </span>
+                <input type="checkbox" wire:model.live="lockToggles.{{ $lock }}" class="peer sr-only">
+                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-rose-500
+                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+            @endforeach
         </div>
     </div>
 

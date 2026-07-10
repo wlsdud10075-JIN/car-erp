@@ -3034,7 +3034,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // ② 미수 매입 게이트 — 신규 등록(또는 편집 중 바이어 교체) 시 바이어 총미수율 > 임계면 차단.
         //   관리/admin 이 모달에서 사유 입력·승인하면 이 저장 1회 통과((가) — 다음 차는 또 발동). 지속 토큰 없음.
-        if (! $this->purchaseGateApproved && $this->shouldCheckPurchaseGate()) {
+        //   🔒 락 관제 — 매입 등록 락 OFF(super 토글) 시 게이트 skip.
+        if (! $this->purchaseGateApproved && \App\Models\Setting::lockEnabled('purchase_registration') && $this->shouldCheckPurchaseGate()) {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
             if ($gauge && $gauge['ratio'] > \App\Models\Buyer::RECEIVABLE_GATE_THRESHOLD) {
