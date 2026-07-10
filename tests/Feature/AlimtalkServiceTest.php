@@ -62,6 +62,47 @@ class AlimtalkServiceTest extends TestCase
             && $req->data()[0]['profile'] === 'PROFILE_KEY');
     }
 
+    public function test_button_sent_in_bizmsg_link_schema(): void
+    {
+        // bizmsg 실제 버튼 필드 = ordering/name/linkType/linkMo/linkPc (2026-07-10 /v2/template/list 실측).
+        // 호출측이 넘긴 ['name'=>,'url'=>] 를 이 스키마로 변환해야 K108(NoMatchedTemplateButton) 회피.
+        $this->configure();
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'BIZM-BTN']]], 200)]);
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '01000000000', [], [], [
+            ['name' => '승인/반려 바로가기', 'url' => 'https://heysellcar.com/a/payout/1?x=1'],
+        ]);
+
+        $this->assertSame('sent', $log->status);
+        Http::assertSent(function ($req) {
+            $btn = $req->data()[0]['button'][0] ?? [];
+
+            return ($btn['linkType'] ?? null) === 'WL'
+                && ($btn['ordering'] ?? null) === 1
+                && ($btn['name'] ?? null) === '승인/반려 바로가기'
+                && ($btn['linkMo'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
+                && ($btn['linkPc'] ?? null) === 'https://heysellcar.com/a/payout/1?x=1'
+                && ! array_key_exists('url_mobile', $btn)   // 구 필드 안 나감
+                && ! array_key_exists('type', $btn);
+        });
+    }
+
+    public function test_bizmsg_fail_with_msgid_logs_failed_not_sent(): void
+    {
+        // ⚠️ bizmsg 는 실패(K108 등)여도 data.msgid 를 반환 → msgid 만으로 성공 판단 금지, code==='success' 확인.
+        $this->configure();
+        Http::fake(['*' => Http::response([['code' => 'fail', 'data' => ['msgid' => 'WEB-FAIL'], 'message' => 'K108:NoMatchedTemplateButtonException']], 200)]);
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '01000000000', [
+            '날짜' => '2026-07-10', '판매건수' => '0', '매출액' => '0원', '선적전건수' => '0',
+            '선적전금액' => '0원', '선적후건수' => '0', '선적후금액' => '0원', '미수합계' => '0원',
+        ]);
+
+        $this->assertSame('failed', $log->status);
+        $this->assertNull($log->msgid);
+        $this->assertStringContainsString('K108', (string) $log->error);
+    }
+
     public function test_master_gate_off_skips_without_http(): void
     {
         $this->configure();
@@ -110,7 +151,7 @@ class AlimtalkServiceTest extends TestCase
     {
         $this->configure();
         Setting::updateOrCreate(['key' => 'alimtalk_enabled_'.Setting::companyTemplateSet()], ['value' => '0', 'type' => 'boolean']);
-        Http::fake(['*' => Http::response([['msgid' => 'BIZM-TEST']], 200)]);
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'BIZM-TEST']]], 200)]);
 
         $log = BizmAlimtalkService::active()->sendTest('010-9999-8888');
 

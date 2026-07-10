@@ -313,7 +313,7 @@ class SettlementPayoutBatch extends Model
         foreach (AlimtalkRecipients::payoutApproverUsers($this->current_level) as $user) {
             $url = $this->approvalLinkFor($user);
             $svc->send('erp_payout_request', (string) $user->phone, $vars, ['user_id' => $user->id], [
-                ['name' => '승인/반려 바로가기', 'type' => 'WL', 'url_mobile' => $url, 'url_pc' => $url],
+                ['name' => '승인/반려 바로가기', 'url' => $url],
             ]);
         }
     }
