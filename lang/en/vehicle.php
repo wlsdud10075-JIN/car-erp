@@ -713,6 +713,13 @@ return [
     // Documents tab
     'docs' => [
         'save_first' => 'Save the vehicle first to generate documents.',
+        // PDF/print output modal (Excel stays as card downloads below)
+        'output_pdf' => 'Get PDF',
+        'output_print' => 'Print',
+        'output_hint' => 'Excel = download from cards below · here = PDF/print',
+        'output_modal_pdf' => 'Select a document for PDF',
+        'output_modal_print' => 'Select a document to print',
+        'output_generating' => 'Generating PDF… please wait (about 10-20s)',
         'sec_purchase' => 'Purchase Documents (3)',
         'sec_sale' => 'Sale Documents (export)',
         'sec_shipping' => 'Shipping Documents (4, export)',

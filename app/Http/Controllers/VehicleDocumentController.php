@@ -5,9 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\DocumentAccessLog;
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
+use App\Services\Documents\PdfConverter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\HeaderUtils;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class VehicleDocumentController extends Controller
@@ -44,7 +47,7 @@ class VehicleDocumentController extends Controller
      *
      * 감사 로그(개인정보보호법 §29): 다운로드 성공 시 document_access_logs에 1행 기록.
      */
-    public function show(int $id, string $type, Request $request): StreamedResponse
+    public function show(int $id, string $type, Request $request): Response|StreamedResponse
     {
         $vehicle = Vehicle::findOrFail($id);
 
@@ -58,7 +61,7 @@ class VehicleDocumentController extends Controller
             abort_unless($vehicle->sales_channel === 'export', 403, '수출 채널 차량에서만 발급 가능한 서류입니다.');
         }
 
-        $response = $this->streamXlsx($vehicle, $type);
+        $response = $this->stream(new DocumentFiller($vehicle), $type, $this->reqFormat($request), $request->boolean('inline'));
 
         DocumentAccessLog::create([
             'user_id' => auth()->id(),
@@ -153,7 +156,7 @@ class VehicleDocumentController extends Controller
             );
         }
 
-        $response = $this->stream(new DocumentFiller($vehicles), $type);
+        $response = $this->stream(new DocumentFiller($vehicles), $type, $this->reqFormat($request), $request->boolean('inline'));
 
         foreach ($vehicles as $vehicle) {
             DocumentAccessLog::create([
@@ -167,22 +170,40 @@ class VehicleDocumentController extends Controller
         return $response;
     }
 
-    private function streamXlsx(Vehicle $vehicle, string $type): StreamedResponse
+    /** ?format=pdf 면 pdf, 그 외 xlsx(기본). */
+    private function reqFormat(Request $request): string
     {
-        return $this->stream(new DocumentFiller($vehicle), $type);
+        return $request->query('format') === 'pdf' ? 'pdf' : 'xlsx';
     }
 
-    private function stream(DocumentFiller $filler, string $type): StreamedResponse
+    /**
+     * DocumentFiller 로 채운 서류를 xlsx(기본) 또는 pdf 로 응답.
+     *   pdf: PdfConverter(LibreOffice) 변환. inline=true → 브라우저 뷰어(인쇄용) / false → 다운로드.
+     *   xlsx: preCalc=false → Excel 이 열 때 재계산(통관SET cascade). PDF 는 soffice 가 재계산(PdfConverter).
+     */
+    private function stream(DocumentFiller $filler, string $type, string $format = 'xlsx', bool $inline = false): Response|StreamedResponse
     {
         $spreadsheet = $filler->spreadsheet($type);
         $filename = $filler->filename($type);
 
+        if ($format === 'pdf') {
+            $pdf = app(PdfConverter::class)->fromSpreadsheet($spreadsheet);
+            $pdfName = preg_replace('/\.xlsx$/i', '.pdf', $filename);
+            $disposition = HeaderUtils::makeDisposition(
+                $inline ? HeaderUtils::DISPOSITION_INLINE : HeaderUtils::DISPOSITION_ATTACHMENT,
+                $pdfName,
+                'document.pdf',
+            );
+
+            return response($pdf, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => $disposition,
+            ]);
+        }
+
         return response()->streamDownload(
             function () use ($spreadsheet) {
                 $writer = new Xlsx($spreadsheet);
-                // preCalc=false → fullCalcOnLoad=1: Excel 이 열 때 전체 재계산. 통관SET 은 크로스시트
-                // cascade + 고급함수(TEXTJOIN/UNIQUE/SUBSTITUTE) 라 PhpSpreadsheet 계산엔진에 맡기면
-                // 문자열 참조·합계 캐시가 비어 빈칸으로 보임 → Excel 네이티브 계산에 위임(jin 실측).
                 $writer->setPreCalculateFormulas(false);
                 $writer->save('php://output');
             },
