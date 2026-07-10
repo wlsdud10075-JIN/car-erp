@@ -197,6 +197,11 @@ return [
         'savings_balance_note' => '(SavingsStatus by buyer×currency)',
         'after_save_note' => '(updates after save)',
         'fully_paid' => '✓ Paid',
+        'overpaid' => 'Overpaid · check',
+        'overpay_correct' => 'Correct overpay',
+        'overpay_correct_hint' => 'Correct to fully-paid (if mis-entry)',
+        'overpay_reason_ph' => 'Reason (required)',
+        'sale_overpay_hint' => 'Convert to savings in Receivables',
         'fee_account_hint' => 'Enter only if different from the purchase-price account. Leave blank to use the purchase-price account.',
         'purchase_unpaid_summary' => 'Purchase Balance Due',
         'purchase_total' => 'Total Purchase',
@@ -388,6 +393,14 @@ return [
     ],
 
     // PHP toasts / flash / validation messages
+    'overpay' => [
+        'reason_required' => 'Please enter a correction reason.',
+        'not_overpaid' => 'Not an overpayment.',
+        'exceeds_confirmed' => 'Overpayment exceeds total confirmed purchase balance. Please check individually in Finance.',
+        'failed' => 'Overpayment correction failed.',
+        'done' => 'Corrected overpayment of :amount (marked fully paid).',
+    ],
+
     'toast' => [
         'db_constraint' => 'A data constraint error occurred while saving. Please check your inputs (sale date, buyer, exchange rate, amounts).',
         'buyer_first' => 'Select a buyer first',

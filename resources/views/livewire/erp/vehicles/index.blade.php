@@ -757,6 +757,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $panelPurchasePaid = null;
     public ?int $panelPurchaseUnpaid = null;
 
+    // 매입 과입금 정정 사유 (인라인, 재무 권한 · 사유 필수). correctPurchaseOverpay 에서 소비.
+    public string $purchaseOverpayReason = '';
+
     // "저장하고 계속" — 저장 후 패널을 닫지 않고 재로드(스냅샷 즉시 갱신). 확정 모달 바운스 넘어서 유지되도록 프로퍼티.
     public bool $keepPanelOpen = false;
 
@@ -984,6 +987,101 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return in_array($type, self::MAIL_GEN_EXPORT, true) && $v->sales_channel === 'export';
+    }
+
+    /**
+     * 매입 과입금 인라인 정정 (jin 2026-07-10) — 국내 지급이라 실과지급은 거의 없고 99% 단순 오기입.
+     * 판매(적립금 전환)와 달리 매입엔 크레딧 개념이 없어, 초과분만큼 확정 PBP 를 깎아 완납으로 정정하고
+     * 사유를 남긴다. 매입 PBP 는 정산 마진·환차·이월과 무관(마진=purchase_price 기준)이라 secondary-closed
+     * 가드 불필요(판매 convertOverpayToSavings 와 이 점이 다름).
+     *   권한 = canConfirmFinance(관리·업무관리자·재무·admin) + canScopeVehicle 재인가(IDOR #26). 사유 필수.
+     *   초과분이 확정 PBP 총액을 넘으면 차단(다른 출처 과지급 — 개별 확인). PBP saved 훅이 캐시 자동 갱신(매입완료 flip).
+     */
+    public function correctPurchaseOverpay(): void
+    {
+        if ($this->editingId === null) {
+            return;
+        }
+        $user = auth()->user();
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        if (! $vehicle || ! $user?->canScopeVehicle($vehicle)) {
+            abort(403, __('vehicle.toast.edit_own_only'));
+        }
+        abort_unless((bool) $user->canConfirmFinance(), 403);
+
+        $reason = trim($this->purchaseOverpayReason);
+        if ($reason === '') {
+            $this->dispatch('notify', message: __('vehicle.overpay.reason_required'), type: 'warning');
+
+            return;
+        }
+
+        $excess = -1 * (int) $vehicle->purchase_unpaid_amount;   // 과입금 = 음수 미지급의 절대값 (매입=KRW 정수)
+        if ($excess <= 0) {
+            $this->dispatch('notify', message: __('vehicle.overpay.not_overpaid'), type: 'warning');
+
+            return;
+        }
+
+        // 확정 PBP(최근분부터)로 초과분 커버. 초과분이 확정 PBP 총액 초과 시 차단(다른 출처 과지급).
+        $confirmedPbps = $vehicle->purchaseBalancePayments()
+            ->whereNotNull('confirmed_at')
+            ->where('amount', '>', 0)
+            ->orderByDesc('id')
+            ->get();
+        if ($excess > (int) $confirmedPbps->sum('amount')) {
+            $this->dispatch('notify', message: __('vehicle.overpay.exceeds_confirmed'), type: 'warning');
+
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($vehicle, $confirmedPbps, $excess, $user, $reason) {
+                $remaining = $excess;
+                \App\Models\PurchaseBalancePayment::$allowConfirmedMutation = true;
+                try {
+                    foreach ($confirmedPbps as $pbp) {
+                        if ($remaining <= 0) {
+                            break;
+                        }
+                        $cut = min((int) $pbp->amount, $remaining);
+                        // 사유를 finance_note 에 append — 재무가 transfers 매입 잔금에서 "왜 줄었나" 바로 확인.
+                        $note = trim(($pbp->finance_note ? $pbp->finance_note."\n" : '')
+                            .'[과입금정정 '.now()->format('Y-m-d').'] '.$reason.' (−'.number_format($cut).')');
+                        $pbp->update(['amount' => (int) $pbp->amount - $cut, 'finance_note' => $note]);
+                        $remaining -= $cut;
+                    }
+                } finally {
+                    \App\Models\PurchaseBalancePayment::$allowConfirmedMutation = false;
+                }
+
+                \App\Models\AuditLog::create([
+                    'user_id' => $user->id,
+                    'auditable_type' => \App\Models\Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'purchase_overpay_corrected',
+                    'column_name' => 'purchase_balance_payments',
+                    'old_value' => '과입금 '.number_format($excess),
+                    'new_value' => $reason,
+                    'ip_address' => request()?->ip(),
+                ]);
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('correctPurchaseOverpay failed', ['vehicle' => $vehicle->id, 'msg' => $e->getMessage()]);
+            $this->dispatch('notify', message: __('vehicle.overpay.failed'), type: 'error');
+
+            return;
+        }
+
+        // 매입 요약 스냅샷 갱신 (openEdit 매입 파트와 동일 규칙).
+        $v = $vehicle->fresh();
+        $purchaseTotal = (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0);
+        $this->panelPurchaseTotal = $purchaseTotal > 0 ? $purchaseTotal : null;
+        $this->panelPurchaseUnpaid = $purchaseTotal > 0 ? (int) $v->purchase_unpaid_amount : null;
+        $this->panelPurchasePaid = $purchaseTotal > 0 ? $purchaseTotal - $this->panelPurchaseUnpaid : null;
+        $this->purchaseOverpayReason = '';
+
+        $this->dispatch('notify', message: __('vehicle.overpay.done', ['amount' => number_format($excess)]), type: 'success');
     }
 
     // 메일 발송 모달 열기 — 첨부 후보 3그룹(업로드/단계파일/자동생성) + 바이어 이메일 프리필.
@@ -5348,12 +5446,27 @@ function vehicleColumnsToggle() {
                         <hr class="border-indigo-100" />
                         <div class="flex justify-between font-semibold">
                             <span class="text-gray-700">{{ __('vehicle.panel.purchase_unpaid') }}</span>
-                            @if($panelPurchaseUnpaid <= 0)
-                            <span class="text-emerald-700">₩0 · {{ __('vehicle.panel.fully_paid') }}</span>
-                            @else
+                            @if($panelPurchaseUnpaid > 0)
                             <span class="text-amber-800">₩{{ number_format($panelPurchaseUnpaid) }}</span>
+                            @elseif($panelPurchaseUnpaid < 0)
+                            <span class="text-red-600">+₩{{ number_format(abs($panelPurchaseUnpaid)) }} · {{ __('vehicle.panel.overpaid') }}</span>
+                            @else
+                            <span class="text-emerald-700">₩0 · {{ __('vehicle.panel.fully_paid') }}</span>
                             @endif
                         </div>
+                        {{-- 매입 과입금 인라인 정정 (오기입 정정 — 재무 권한 · 사유 필수). jin 2026-07-10. 판매와 달리 적립금 아님. --}}
+                        @if($panelPurchaseUnpaid !== null && $panelPurchaseUnpaid < 0 && auth()->user()?->canConfirmFinance())
+                        <div class="mt-2 rounded border border-red-200 bg-red-50 p-2">
+                            <div class="mb-1 text-[11px] text-red-700">{{ __('vehicle.panel.overpay_correct_hint') }}</div>
+                            <div class="flex gap-2">
+                                <input type="text" wire:model="purchaseOverpayReason" class="input-base flex-1 text-xs" placeholder="{{ __('vehicle.panel.overpay_reason_ph') }}" />
+                                <button type="button" wire:click="correctPurchaseOverpay"
+                                        class="whitespace-nowrap rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700">
+                                    {{ __('vehicle.panel.overpay_correct') }}
+                                </button>
+                            </div>
+                        </div>
+                        @endif
                     </div>
                 @endif
             </div>
@@ -5548,12 +5661,19 @@ function vehicleColumnsToggle() {
                                 <span class="text-[10px] font-normal text-gray-400">({{ number_format($panelUnpaidRatio * 100, 1) }}%)</span>
                                 @endif
                             </span>
-                            @if($panelSaleUnpaid <= 0)
-                            <span class="text-emerald-700">{{ $currency }} 0 · {{ __('vehicle.panel.fully_paid') }}</span>
-                            @else
+                            @if($panelSaleUnpaid > 0)
                             <span class="text-amber-800">{{ $currency }} {{ number_format($panelSaleUnpaid) }}</span>
+                            @elseif($panelSaleUnpaid <= -1)
+                            {{-- 음수 epsilon 대칭: 외화 반올림 잔차(-1<x<0)는 완납으로, ≤-1 만 과입금 플래그(거짓 과입금 방지). --}}
+                            <span class="text-red-600">+{{ $currency }} {{ number_format(abs($panelSaleUnpaid)) }} · {{ __('vehicle.panel.overpaid') }}</span>
+                            @else
+                            <span class="text-emerald-700">{{ $currency }} 0 · {{ __('vehicle.panel.fully_paid') }}</span>
                             @endif
                         </div>
+                        {{-- 판매 과입금 = 플래그만. 정정은 채권관리 「적립금 전환」(convertOverpayToSavings). jin 2026-07-10. --}}
+                        @if($panelSaleUnpaid !== null && $panelSaleUnpaid <= -1)
+                        <div class="mt-1 text-right text-[10px] text-gray-400">{{ __('vehicle.panel.sale_overpay_hint') }}</div>
+                        @endif
                     </div>
                 @endif
             </div>
