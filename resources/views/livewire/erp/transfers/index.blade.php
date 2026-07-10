@@ -87,6 +87,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public bool $newPbpImmediateConfirm = true;
 
+    // 🔒 매입 지급 락 (#2) — 2번째 지급~ && 그 차 판매금 <50% 입금 시 차단. 관리 승인 우회(1회).
+    public bool $showPaymentGate = false;
+
+    public array $paymentGateInfo = [];
+
+    public string $paymentGateReason = '';
+
+    public bool $paymentGateApproved = false;
+
     public function mount(): void
     {
         if (! auth()->user()?->canConfirmFinanceTransfer()) {
@@ -361,6 +370,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->newPbpDate = now()->toDateString();
         $this->newPbpNote = '';
         $this->newPbpImmediateConfirm = true;
+        $this->resetPaymentGate();
     }
 
     public function closeNewPbpModal(): void
@@ -371,6 +381,49 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->newPbpDate = '';
         $this->newPbpNote = '';
         $this->newPbpImmediateConfirm = true;
+        $this->resetPaymentGate();
+    }
+
+    private function resetPaymentGate(): void
+    {
+        $this->showPaymentGate = false;
+        $this->paymentGateInfo = [];
+        $this->paymentGateReason = '';
+        $this->paymentGateApproved = false;
+    }
+
+    /**
+     * 🔒 매입 지급 락 (#2) — 첫 매입 지급(계약금 성격)은 허용, 기존 PBP 1건 이상일 때(2번째~)
+     * 그 차 판매 미수율 > 50% 면 게이트. 판매 전(ratio null)은 게이트 안 함.
+     */
+    private function shouldGatePurchasePayment(\App\Models\Vehicle $vehicle): bool
+    {
+        if ($vehicle->purchaseBalancePayments()->count() < 1) {
+            return false;   // 첫 지급(계약금) — 자유
+        }
+        $ratio = $vehicle->unpaid_ratio;
+
+        return $ratio !== null && $ratio > 0.5;
+    }
+
+    public function approvePaymentGate(): void
+    {
+        abort_unless(auth()->user()?->canApproveUnpaidExport(), 403);
+        if (trim($this->paymentGateReason) === '') {
+            $this->addError('paymentGateReason', __('transfer.pbp_gate.reason_required'));
+
+            return;
+        }
+        $this->paymentGateApproved = true;
+        $this->showPaymentGate = false;
+        $this->createNewPbp();   // 재실행 — 게이트 통과 + override 감사
+    }
+
+    public function cancelPaymentGate(): void
+    {
+        $this->showPaymentGate = false;
+        $this->paymentGateReason = '';
+        $this->paymentGateApproved = false;
     }
 
     public function createNewPbp(): void
@@ -387,6 +440,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             'newPbpNote' => __('transfer.attr.memo'),
         ]);
 
+        // 🔒 매입 지급 락 (#2) — 락 ON + 2번째 지급~ + 그 차 판매금 <50% 입금 → 차단, 관리 승인 우회.
+        $vehicle = \App\Models\Vehicle::find((int) $this->newPbpVehicleId);
+        if (! $this->paymentGateApproved
+            && $vehicle
+            && \App\Models\Setting::lockEnabled('purchase_payment')
+            && $this->shouldGatePurchasePayment($vehicle)) {
+            $this->paymentGateInfo = [
+                'vehicle' => $vehicle->vehicle_number,
+                'ratio' => round(($vehicle->unpaid_ratio ?? 0) * 100, 1),
+            ];
+            $this->paymentGateReason = '';
+            $this->showPaymentGate = true;
+
+            return;   // 차단 — 승인 모달
+        }
+
         try {
             $pbp = PurchaseBalancePayment::create([
                 'vehicle_id' => (int) $this->newPbpVehicleId,
@@ -395,6 +464,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'note' => $this->newPbpNote ?: null,
                 'created_by_user_id' => auth()->id(),
             ]);
+
+            // 미수 우회 승인 기록 — 누가 언제 <50% 차량 매입 지급을 승인했나 (감사).
+            if ($this->paymentGateApproved && $vehicle) {
+                \App\Models\AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'auditable_type' => \App\Models\Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'purchase_payment_gate_override',
+                    'column_name' => 'purchase_balance_payments',
+                    'old_value' => '판매 미수율 '.round(($vehicle->unpaid_ratio ?? 0) * 100, 1).'%',
+                    'new_value' => '매입 지급 승인: '.$this->paymentGateReason,
+                    'ip_address' => request()?->ip(),
+                ]);
+            }
 
             if ($this->newPbpImmediateConfirm) {
                 app(PaymentConfirmationService::class)
@@ -1023,6 +1106,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span wire:loading wire:target="createNewPbp">{{ __('transfer.new_pbp_modal.processing') }}</span>
             </button>
         </div>
+    </div>
+</div>
+@endif
+
+{{-- 🔒 매입 지급 락 (#2) 승인 모달 — 2번째 지급~ && 그 차 판매금 <50% 입금. 관리/관리자만 승인. --}}
+@if($showPaymentGate)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60"
+     wire:click.self="cancelPaymentGate" wire:key="pbp-gate-modal">
+    <div class="card max-w-md mx-4 shadow-2xl border-rose-200" @click.stop>
+        <h3 class="text-base font-semibold text-rose-700">🔒 {{ __('transfer.pbp_gate.title') }}</h3>
+        <p class="mt-2 text-sm text-gray-700">
+            {{ __('transfer.pbp_gate.body', ['vehicle' => $paymentGateInfo['vehicle'] ?? '', 'ratio' => $paymentGateInfo['ratio'] ?? 0]) }}
+        </p>
+        @if(auth()->user()?->canApproveUnpaidExport())
+            <div class="mt-3">
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.pbp_gate.reason_label') }}</label>
+                <textarea wire:model="paymentGateReason" rows="2" class="input-base"
+                          placeholder="{{ __('transfer.pbp_gate.reason_ph') }}"></textarea>
+                @error('paymentGateReason') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button wire:click="cancelPaymentGate" type="button"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+                <button wire:click="approvePaymentGate" wire:loading.attr="disabled" wire:target="approvePaymentGate"
+                        class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">{{ __('transfer.pbp_gate.approve') }}</button>
+            </div>
+        @else
+            <p class="mt-3 rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ __('transfer.pbp_gate.need_manager') }}</p>
+            <div class="mt-4 flex justify-end">
+                <button wire:click="cancelPaymentGate" type="button"
+                        class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            </div>
+        @endif
     </div>
 </div>
 @endif

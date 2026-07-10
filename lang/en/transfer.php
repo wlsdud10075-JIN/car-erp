@@ -165,4 +165,15 @@ return [
         'submit' => 'Add',
         'processing' => 'Processing...',
     ],
+
+    // 🔒 Purchase payment lock (#2) approval modal
+    'pbp_gate' => [
+        'title' => 'Purchase payment lock — buyer unpaid',
+        'body' => 'Vehicle :vehicle has a sale unpaid ratio of :ratio%. After the first payment (deposit), the purchase balance can only be paid once the buyer has paid at least 50% of the sale. Manager/admin approval is required to proceed.',
+        'reason_label' => 'Approval reason (required)',
+        'reason_ph' => 'e.g. L/C confirmed · balance due 5/20',
+        'reason_required' => 'Enter an approval reason.',
+        'approve' => 'Approve & record payment',
+        'need_manager' => 'Purchase payment for this vehicle is blocked due to buyer non-payment. Manager/admin approval is required.',
+    ],
 ];
