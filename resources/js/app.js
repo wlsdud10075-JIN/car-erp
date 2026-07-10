@@ -191,6 +191,52 @@ function applyDashPattern(value, pattern) {
     return out;
 }
 
+// ── 서류 PDF·인쇄 출력 모달 (서류 탭) ──────────────────────────────────
+//   docs = [{label, url}]. PDF=다운로드 / 인쇄=숨은 iframe 로 inline PDF 로드 후 print().
+//   변환(~15초) 중 busy=true → 모달 스피너. (인라인 x-data 는 속성 이스케이프가 깨져 컴포넌트로 분리)
+document.addEventListener('alpine:init', () => {
+    Alpine.data('docOutput', (docs) => ({
+        show: false,
+        mode: 'pdf',
+        busy: false,
+        docs: docs || [],
+        openModal(m) {
+            this.mode = m;
+            this.show = true;
+        },
+        closeModal() {
+            if (this.busy) return;
+            this.show = false;
+        },
+        pick(d) {
+            if (this.mode === 'pdf') {
+                window.location.href = d.url + '?format=pdf';
+                this.show = false;
+            } else {
+                this.printDoc(d.url);
+            }
+        },
+        printDoc(url) {
+            this.busy = true;
+            const ifr = document.createElement('iframe');
+            ifr.style.display = 'none';
+            ifr.onload = () => {
+                try {
+                    ifr.contentWindow.focus();
+                    ifr.contentWindow.print();
+                } catch (e) {
+                    window.open(url + '?format=pdf&inline=1', '_blank');
+                }
+                this.busy = false;
+                this.show = false;
+                setTimeout(() => ifr.remove(), 60000);
+            };
+            ifr.src = url + '?format=pdf&inline=1';
+            document.body.appendChild(ifr);
+        },
+    }));
+});
+
 document.addEventListener('alpine:init', () => {
     Alpine.store('koreanBanks', {
         // 주요 한국 은행 13개 + 표준 mask 패턴 (사용자 메모리 2026-05-20)

@@ -714,6 +714,13 @@ return [
     // 서류 탭
     'docs' => [
         'save_first' => '차량을 먼저 저장한 뒤 서류를 생성할 수 있습니다.',
+        // PDF·인쇄 출력 모달 (Excel 은 아래 카드 다운로드 유지)
+        'output_pdf' => 'PDF 받기',
+        'output_print' => '인쇄',
+        'output_hint' => 'Excel은 아래 카드에서 다운로드 · 여기선 PDF/인쇄',
+        'output_modal_pdf' => 'PDF로 받을 서류 선택',
+        'output_modal_print' => '인쇄할 서류 선택',
+        'output_generating' => 'PDF 생성 중… 잠시만요 (약 10~20초)',
         'sec_purchase' => '매입 서류 (3종)',
         'sec_sale' => '판매 서류 (수출)',
         'sec_shipping' => '선적 서류 (4종, 수출)',

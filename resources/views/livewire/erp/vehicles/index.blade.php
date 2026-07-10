@@ -6323,6 +6323,22 @@ function vehicleColumnsToggle() {
                 $url = fn (string $type) => $hasId
                     ? route('erp.vehicles.documents.show', ['id' => $editingId, 'type' => $type])
                     : '#';
+                // PDF·인쇄 모달용 서류 목록 (엑셀 카드와 동일 세트). export 단일 채널이라 전 서류 노출.
+                $pdfDocs = [
+                    ['type' => 'deregistration', 'label' => __('vehicle.docs.deregistration')],
+                    ['type' => 'deregistration_contract', 'label' => __('vehicle.docs.derg_contract')],
+                    ['type' => 'poa', 'label' => __('vehicle.docs.poa')],
+                    ['type' => 'invoice', 'label' => __('vehicle.docs.invoice')],
+                    ['type' => 'sales_contract', 'label' => __('vehicle.docs.sales_contract')],
+                    ['type' => 'container_invoice_packing', 'label' => __('vehicle.docs.container_invoice_packing')],
+                    ['type' => 'container_contract', 'label' => __('vehicle.docs.container_contract')],
+                    ['type' => 'roro_invoice_packing', 'label' => __('vehicle.docs.roro_invoice_packing')],
+                    ['type' => 'roro_contract', 'label' => __('vehicle.docs.roro_contract')],
+                    ['type' => 'clearance', 'label' => __('vehicle.docs.clearance_set')],
+                ];
+                $pdfDocsJs = $hasId
+                    ? collect($pdfDocs)->map(fn ($d) => ['label' => $d['label'], 'url' => $url($d['type'])])->values()->all()
+                    : [];
             @endphp
 
             @unless ($hasId)
@@ -6330,6 +6346,48 @@ function vehicleColumnsToggle() {
                     {{ __('vehicle.docs.save_first') }}
                 </div>
             @endunless
+
+            {{-- 📄 PDF · 🖨 인쇄 — 서류 선택 모달. 엑셀은 아래 카드에서 다운로드(현행). 인쇄=숨은 iframe→인쇄창. --}}
+            @if ($hasId)
+            <div class="mb-4" x-data="docOutput(@js($pdfDocsJs))">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button" @click="openModal('pdf')"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
+                        📄 {{ __('vehicle.docs.output_pdf') }}
+                    </button>
+                    <button type="button" @click="openModal('print')"
+                            class="inline-flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100">
+                        🖨 {{ __('vehicle.docs.output_print') }}
+                    </button>
+                    <span class="text-[11px] text-gray-400">{{ __('vehicle.docs.output_hint') }}</span>
+                </div>
+
+                {{-- 서류 선택 모달 --}}
+                <div x-show="show" x-cloak @keydown.escape.window="closeModal()"
+                     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" @click.self="closeModal()">
+                    <div class="card w-full max-w-sm mx-4 shadow-2xl" @click.stop>
+                        <h3 class="text-sm font-semibold text-gray-900">
+                            <span x-show="mode==='pdf'">{{ __('vehicle.docs.output_modal_pdf') }}</span>
+                            <span x-show="mode==='print'" x-cloak>{{ __('vehicle.docs.output_modal_print') }}</span>
+                        </h3>
+                        <div class="mt-3 max-h-[55vh] space-y-1 overflow-y-auto">
+                            <template x-for="d in docs" :key="d.url">
+                                <button type="button" @click="pick(d)" :disabled="busy"
+                                        class="flex w-full items-center justify-between rounded-md border border-gray-100 px-3 py-2 text-left text-sm text-gray-700 hover:border-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50">
+                                    <span x-text="d.label"></span>
+                                    <span class="text-xs text-gray-400" x-text="mode==='print' ? '🖨' : '↓'"></span>
+                                </button>
+                            </template>
+                        </div>
+                        <p x-show="busy" x-cloak class="mt-3 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">{{ __('vehicle.docs.output_generating') }}</p>
+                        <div class="mt-4 flex justify-end">
+                            <button type="button" @click="closeModal()" :disabled="busy"
+                                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50">{{ __('common.close') }}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            @endif
 
             {{-- 매입 서류 (전 채널) — system xlsx 자동기입 (노란칸만 채우고 노란 제거) --}}
             <div class="section-header">
