@@ -854,7 +854,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $export_declaration_document_path = '';
     public string $bl_document_path                 = '';
 
-    // 국내 바이어 말소등록증 알림톡 전달용 번호 (openEdit 에서 판매 바이어 연락처 프리필, 수정 가능)
+    // 국내 딜러 말소등록증 알림톡 전달용 번호. 사용자가 직접 입력·저장하며 deregistration_notice_phone
+    // 컬럼에 유지된다(바이어 번호 아님 — 국내 딜러 대상, jin 2026-07-10).
     public string $deregistrationBuyerPhone         = '';
 
     // "기존 파일 삭제" 액션 플래그 (UI 버튼 → save 시 컬럼 null + 디스크 삭제)
@@ -2242,7 +2243,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
         $this->bl_document_path                 = $v->bl_document                 ?? '';
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
-        $this->deregistrationBuyerPhone         = $v->buyer?->contact_phone ?? '';
+        $this->deregistrationBuyerPhone         = $v->deregistration_notice_phone ?? '';
         $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
 
         // 차량 사진 로드 (편집 패널 갤러리) — 탭별 분리: 기본정보=차량사진(category != 'shipping'), 선적=선박사진.
@@ -3095,6 +3096,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'registration_number' => $this->registration_number ?: null,
             'reg_cert_number' => $this->reg_cert_number ?: null,
             'is_deregistered'  => $this->is_deregistered,
+            'deregistration_notice_phone' => trim($this->deregistrationBuyerPhone) ?: null,
             'deregistration_date' => $toDate($this->deregistration_date),
             // 판매
             'sale_date'    => $toDate($this->sale_date),

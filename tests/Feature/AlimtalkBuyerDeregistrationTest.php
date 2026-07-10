@@ -114,4 +114,31 @@ class AlimtalkBuyerDeregistrationTest extends TestCase
         Http::assertNothingSent();
         $this->assertSame(0, AlimtalkLog::count());
     }
+
+    // jin 2026-07-10 — 딜러 번호는 사용자가 입력·저장하면 유지된다(바이어 번호 프리필 아님).
+    public function test_notice_phone_is_saved_and_reloaded_not_prefilled_from_buyer(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        // 판매 바이어는 다른 번호 — 프리필되면 안 됨.
+        $buyer = Buyer::create(['name' => '수출바이어', 'contact_phone' => '010-0000-0000', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => '88가1212', 'sales_channel' => 'export',
+            'purchase_date' => '2026-06-01', 'dhl_request' => false, 'buyer_id' => $buyer->id,
+        ]);
+
+        // 사용자가 딜러 번호 입력 후 저장 → 컬럼에 유지
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('deregistrationBuyerPhone', '010-9999-8888')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame('010-9999-8888', $v->fresh()->deregistration_notice_phone);
+
+        // 재편집 시 저장값 로드 (바이어 010-0000-0000 이 아니라 저장한 010-9999-8888)
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSet('deregistrationBuyerPhone', '010-9999-8888');
+    }
 }
