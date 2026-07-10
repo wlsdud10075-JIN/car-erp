@@ -669,11 +669,16 @@ new #[Layout('components.layouts.app')] class extends Component
                         @php $idsCsv = implode(',', array_column($b['vehicles'], 'id')); @endphp
                         <div class="flex shrink-0 flex-wrap gap-1.5">
                             @if ($b['status'] === 'requested' && ! empty($b['entry_blockers']))
-                                {{-- 🔒 (나)+(a) 착수 불가 — 50% 미달 차 있으면 진행 원천 차단. 착수불가 + 취소만 노출. --}}
+                                {{-- 🔒 (나)+(a) 착수 불가 — 50% 미달 차 있으면 진행 원천 차단. 착수불가 + 차량관리에서 보기 + 취소만. --}}
                                 <span title="{{ __('shipping.action.entry_locked_tip', ['vehicles' => implode(', ', $b['entry_blockers'])]) }}"
                                       class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
                                     🔒 {{ __('shipping.action.entry_locked') }}
                                 </span>
+                                {{-- 왜 착수 불가인지(미달 차) 확인하러 차량관리로 --}}
+                                <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
+                                   class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
+                                    {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
+                                </a>
                                 <button type="button" wire:click="cancel('{{ $b['batch_id'] }}')"
                                         wire:confirm="{{ __('shipping.confirm.cancel', ['n' => $b['count']]) }}"
                                         class="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100">
