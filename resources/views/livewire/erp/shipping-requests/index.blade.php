@@ -143,6 +143,35 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 🔒 (나)+(a) — 묶음 내 각 차량이 임계 미달인지 검사, 미달 차량번호 리스트 반환.
+     *   각 차 개별 판정((나)) + 관리 승인 우회(unpaid_export_override) 제외. 미달 1대면 호출부가 묶음 통째 차단((a)).
+     *   shipping: 미수율 > 50% (hasEntryUnpaidOverride 우회) / bl: 미완납 >0% (hasUnpaidOverride('bl') 우회).
+     */
+    private function bundleBlockers($rows, string $stage): array
+    {
+        $blockers = [];
+        foreach ($rows as $r) {
+            $v = $r->vehicle;
+            if (! $v || (int) $v->sale_price <= 0) {
+                continue;   // 판매 없음 — 게이트 대상 아님
+            }
+            $ratio = $v->unpaid_ratio;
+            if ($stage === 'shipping') {
+                $violates = $ratio === null || $ratio > 0.5;
+                $overridden = $v->hasEntryUnpaidOverride();
+            } else {   // bl — 100% 완납
+                $violates = $ratio === null || $ratio > 0;
+                $overridden = $v->hasUnpaidOverride('bl');
+            }
+            if ($violates && ! $overridden) {
+                $blockers[] = $v->vehicle_number;
+            }
+        }
+
+        return $blockers;
+    }
+
+    /**
      * 배치 단위 상태 전환 — mutating endpoint 이므로 매번 재인가(SKILLS §8 #26).
      * done 전환 시 연동된 shipping_requested 알람을 resolve(벨/알림 카운트 정합).
      */
@@ -154,9 +183,19 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        $rows = ShippingRequest::where('batch_id', $batchId)->get();
+        $rows = ShippingRequest::where('batch_id', $batchId)->with('vehicle')->get();
         if ($rows->isEmpty()) {
             return;
+        }
+
+        // 🔒 (나)+(a) 선적 진입 락 — 착수 시 묶음 내 각 차량 50%+ 입금 필수. 미달 1대면 묶음 통째 대기.
+        if ($to === ShippingRequest::STATUS_IN_PROGRESS && \App\Models\Setting::lockEnabled('shipping_entry')) {
+            $blockers = $this->bundleBlockers($rows, 'shipping');
+            if (! empty($blockers)) {
+                $this->dispatch('notify', message: __('shipping.lock.entry_blocked', ['vehicles' => implode(', ', $blockers)]), type: 'error');
+
+                return;
+            }
         }
 
         foreach ($rows as $r) {
@@ -251,12 +290,14 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        // 완납 가드 — 미완납(환율 미입력 포함) 묶음 발급 차단
-        $fin = ShippingRequest::financeForVehicles($rows->map->vehicle->filter());
-        if (! $fin['fully_paid']) {
-            $this->dispatch('notify', message: __('shipping.bl.not_fully_paid'), type: 'error');
+        // 🔒 (나)+(a) B/L 발행 락 — 묶음 내 각 차량 100% 완납 필수. 미달 1대면 묶음 통째 차단(관리 'bl' 승인 우회).
+        if (\App\Models\Setting::lockEnabled('bl_issue')) {
+            $blockers = $this->bundleBlockers($rows, 'bl');
+            if (! empty($blockers)) {
+                $this->dispatch('notify', message: __('shipping.bl.blocked_vehicles', ['vehicles' => implode(', ', $blockers)]), type: 'error');
 
-            return;
+                return;
+            }
         }
 
         DB::transaction(function () use ($rows) {
@@ -407,6 +448,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 $memberVehicles = $items->map->vehicle->filter();
                 $fin = ShippingRequest::financeForVehicles($memberVehicles);
 
+                // 🔒 (나)+(a) 선적 진입 락 — 각 차 50% 미달(우회 없음) 여부. 미달 1대면 묶음 착수 불가.
+                $entryLockOn = \App\Models\Setting::lockEnabled('shipping_entry');
+                $isEntryBlocked = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
+                    && ($v->unpaid_ratio === null || $v->unpaid_ratio > 0.5)
+                    && ! $v->hasEntryUnpaidOverride();
+                $entryBlockers = $memberVehicles->filter($isEntryBlocked)->map->vehicle_number->values()->all();
+
                 return array_merge([
                     'batch_id' => (string) $f->batch_id,
                     'buyer' => $f->buyer?->name,
@@ -421,8 +469,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         'id' => $r->vehicle_id,
                         'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
                         'has_dereg' => filled($r->vehicle?->deregistration_document),
+                        'unpaid_pct' => $r->vehicle?->unpaid_ratio === null ? null : round($r->vehicle->unpaid_ratio * 100, 1),
+                        'entry_blocked' => $isEntryBlocked($r->vehicle),
                     ])->values()->all(),
                     'count' => $items->count(),
+                    'entry_blockers' => $entryBlockers,
                     'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
                     'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
                         ->map(fn ($r) => [
@@ -637,10 +688,18 @@ new #[Layout('components.layouts.app')] class extends Component
                                 </button>
                             @endif
                             @if ($b['status'] === 'requested')
-                                <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
-                                        class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
-                                    {{ __('shipping.action.start') }}
-                                </button>
+                                @if (! empty($b['entry_blockers']))
+                                    {{-- 🔒 (나)+(a) — 묶음 내 50% 미달 차 있으면 착수 불가(빨간불). 미달 차 완납·관리 승인 또는 빼고 재묶음. --}}
+                                    <span title="{{ __('shipping.action.entry_locked_tip', ['vehicles' => implode(', ', $b['entry_blockers'])]) }}"
+                                          class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+                                        🔒 {{ __('shipping.action.entry_locked') }}
+                                    </span>
+                                @else
+                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
+                                            class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
+                                        {{ __('shipping.action.start') }}
+                                    </button>
+                                @endif
                             @endif
                             {{-- 수출신고번호 일괄 기입 (통관 권한) --}}
                             @if ($canAccessClearance)
@@ -719,8 +778,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     <div class="mt-2 flex flex-wrap gap-1.5">
                         @foreach ($b['vehicles'] as $veh)
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $veh['id']]) }}" wire:navigate
-                               class="rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-medium text-gray-700 hover:border-primary hover:text-primary-text">
-                                {{ $veh['number'] }}
+                               class="rounded-md border px-2 py-0.5 text-[11px] font-medium hover:border-primary hover:text-primary-text {{ $veh['entry_blocked'] ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-700' }}">
+                                {{ $veh['number'] }}@if ($veh['entry_blocked'] && $veh['unpaid_pct'] !== null) <span class="ml-0.5 font-semibold">· {{ $veh['unpaid_pct'] }}%</span>@endif
                             </a>
                         @endforeach
                     </div>

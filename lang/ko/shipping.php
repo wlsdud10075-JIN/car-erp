@@ -51,6 +51,8 @@ return [
 
     'action' => [
         'start' => '진행중으로',
+        'entry_locked' => '착수 불가',
+        'entry_locked_tip' => '입금 50% 미달 차량: :vehicles — 완납·관리 승인 또는 미달 차 빼고 재묶음 필요',
         'done' => '완료 처리',
         'cancel' => '취소',
         'open_in_vehicles' => '차량관리에서 :count대 보기',
@@ -94,8 +96,14 @@ return [
         'apply' => '일괄 기입',
         'cancel' => '닫기',
         'not_fully_paid' => '완납 후 기입 가능 (미완납 묶음)',
+        'blocked_vehicles' => 'B/L 발행 불가 — 미완납 차량: :vehicles. 100% 완납 또는 관리 승인(B/L 발행) 후 발행하세요.',
         'requested_hint' => '영업 요청 방식',
         'guard_mismatch' => '⚠ 이중가드 — 영업 요청은 :req 인데 현재 :cur 로 선택됨. B/L 문서 업로드 전 확인하세요.',
+    ],
+
+    // 🔒 (나)+(a) 선적 진입 락 — 묶음 착수 차단
+    'lock' => [
+        'entry_blocked' => '선적 착수 불가 — 입금 50% 미달 차량: :vehicles. 50% 이상 입금 또는 관리 승인 후 착수하세요. (묶음 전체 대기 — 급하면 미달 차량을 빼고 다시 묶으세요.)',
     ],
 
     // 수출신고번호 일괄 기입 (묶음 공유 1개 → 전체)
