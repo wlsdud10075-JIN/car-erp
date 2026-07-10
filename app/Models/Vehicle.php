@@ -173,6 +173,9 @@ class Vehicle extends Model
         if (! auth()->check()) {
             return;   // 시드/artisan
         }
+        if (! Setting::lockEnabled('bl_issue')) {
+            return;   // 🔒 락 관제 — B/L 발행 락 OFF (super 토글). grandfather·우회는 락 ON일 때만 평가.
+        }
         if (! $this->isDirty('bl_document')) {
             return;   // bl_document 변경 없음
         }
@@ -809,7 +812,8 @@ class Vehicle extends Model
         }
 
         // C5 + G 완화 (2026-05-20) — 입금률 < 50% 시만 차단. admin 우회 인프라 그대로 재사용.
-        if ($this->sale_price > 0 && $this->exists) {
+        //   🔒 락 관제 — 선적 진입 락 OFF 시 이 블록(50%·환율 평가) 전체 skip. C4 말소완료·컨사이니 필수는 구조라 유지.
+        if ($this->sale_price > 0 && $this->exists && Setting::lockEnabled('shipping_entry')) {
             // C5(50%) 진입 게이트 — 통관·선적은 동일 50% 관문이므로 진입 우회 1건(clearance∪shipping)이면 통과.
             //   (2026-07-01 jin: 입력 순서에 따라 stage 라벨이 clearance↔shipping 으로 갈려
             //    같은 미수·같은 50% 인데 우회를 2번 해야 하던 마찰 제거. 서버 실증 = 145나1447.)

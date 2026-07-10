@@ -95,4 +95,16 @@ return [
     'alimtalk_test_btn' => 'Send test',
     'alimtalk_test_sent' => 'Test AlimTalk sent. Check whether it was received.',
     'alimtalk_test_failed' => 'Test send failed: :reason',
+
+    // 🔒 Progress locks — money-flow gate toggles (system admin only)
+    'lock_section' => '🔒 Progress Locks',
+    'lock_hint' => 'Turn money-related progress locks on/off. When off, that step proceeds freely regardless of unpaid balance. Manager/admin approval overrides still apply, and toggle changes are recorded in the audit log.',
+    'lock_purchase_registration' => 'Purchase registration lock',
+    'lock_purchase_registration_sub' => 'Block new vehicle registration when the buyer total unpaid ratio exceeds 50%',
+    'lock_purchase_payment' => 'Purchase payment lock',
+    'lock_purchase_payment_sub' => 'Block the 2nd+ purchase balance payment when the vehicle sale is under 50% paid (new · off by default)',
+    'lock_shipping_entry' => 'Shipping entry lock',
+    'lock_shipping_entry_sub' => 'Block clearance/shipping entry for vehicles under 50% paid',
+    'lock_bl_issue' => 'B/L issuance lock',
+    'lock_bl_issue_sub' => 'Block B/L issuance for vehicles not fully paid (100%)',
 ];
