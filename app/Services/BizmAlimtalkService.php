@@ -45,6 +45,16 @@ class BizmAlimtalkService
     public function send(string $code, string $phone, array $vars = [], array $context = [], array $buttons = []): AlimtalkLog
     {
         $phone = $this->normalizePhone($phone);
+
+        // 🚨 로컬 테스트 안전장치 (jin 2026-07-10) — local 환경에서 ALIMTALK_TEST_PHONE 설정 시 모든
+        //   발송 수신자를 그 번호로 강제. 운영 크리덴셜을 로컬에서 쓰는 구조라, 로컬 테스트(시더·배치 등)가
+        //   실수신자에게 실제 카톡을 보내는 사고를 원천 차단한다. ⚠️ production 은 절대 override 안 함.
+        if (app()->environment('local')) {
+            $override = preg_replace('/[^0-9]/', '', (string) config('services.alimtalk.test_phone', ''));
+            if ($override !== '') {
+                $phone = $override;
+            }
+        }
         $base = [
             'vehicle_id' => $context['vehicle_id'] ?? null,
             'user_id' => $context['user_id'] ?? null,

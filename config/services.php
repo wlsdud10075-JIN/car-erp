@@ -65,4 +65,12 @@ return [
         'hmac_secret' => env('CAR_ERP_READ_HMAC_SECRET'),
     ],
 
+    // 카카오 알림톡 — 발신 계정(userid·profile·tmplId)은 기능설정(admin/settings) DB 저장.
+    // ⚠️ 로컬 테스트 안전장치(jin 2026-07-10): 운영 크리덴셜을 로컬에서 쓰는 구조라, 로컬 테스트가
+    //    실수신자에게 실제 카톡을 보내는 사고를 막는다. local 환경에서 ALIMTALK_TEST_PHONE 설정 시
+    //    모든 알림톡 수신자를 그 번호로 강제(BizmAlimtalkService). production 은 environment 가드로 무시.
+    'alimtalk' => [
+        'test_phone' => env('ALIMTALK_TEST_PHONE', ''),
+    ],
+
 ];
