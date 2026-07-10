@@ -197,6 +197,11 @@ return [
         'savings_balance_note' => '(바이어×통화 SavingsStatus)',
         'after_save_note' => '(저장 후 갱신)',
         'fully_paid' => '✓ 완납',
+        'overpaid' => '과입금 · 확인요',
+        'overpay_correct' => '과입금 정정',
+        'overpay_correct_hint' => '완납으로 정정 (오기입일 때)',
+        'overpay_reason_ph' => '정정 사유 (필수)',
+        'sale_overpay_hint' => '채권관리에서 적립금 전환',
         'fee_account_hint' => '매입가 계좌와 다른 대상이면 별도 입력. 비우면 매입가 계좌만 사용.',
         'purchase_unpaid_summary' => '매입 미지급 요약',
         'purchase_total' => '총 매입액',
@@ -385,6 +390,15 @@ return [
         'locked_by' => ':name 님이 수정 중이라 변경할 수 없습니다.',
         'banner' => ':name 님이 이 차량을 수정 중입니다 — 읽기 전용으로 열렸습니다 (자리를 비우면 잠시 후 자동 해제).',
         'now_editable' => '편집 잠금이 풀려 이제 수정할 수 있습니다.',
+    ],
+
+    // 매입 과입금 정정 (인라인, 사유 필수)
+    'overpay' => [
+        'reason_required' => '정정 사유를 입력해 주세요.',
+        'not_overpaid' => '과입금이 아닙니다.',
+        'exceeds_confirmed' => '과입금이 확정 매입 잔금 총액을 초과합니다. 재무에서 개별 확인해 주세요.',
+        'failed' => '과입금 정정에 실패했습니다.',
+        'done' => '과입금 :amount원을 정정했습니다 (완납 처리).',
     ],
 
     // PHP 토스트 / 플래시 / 검증 메시지
