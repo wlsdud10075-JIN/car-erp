@@ -33,6 +33,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $contact_name  = '';
     public string $contact_email = '';
     public string $contact_phone = '';
+    public string $passport_id   = '';
     public string $address       = '';
     public string $memo          = '';
     public bool   $is_active     = true;
@@ -265,6 +266,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->contact_name  = $buyer->contact_name  ?? '';
         $this->contact_email = $buyer->contact_email ?? '';
         $this->contact_phone = $buyer->contact_phone ?? '';
+        $this->passport_id   = $buyer->passport_id   ?? '';
         $this->address       = $buyer->address       ?? '';
         $this->memo          = $buyer->memo          ?? '';
         $this->is_active     = $buyer->is_active;
@@ -305,6 +307,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'contact_name'  => $this->contact_name  ?: null,
             'contact_email' => $this->contact_email ?: null,
             'contact_phone' => $this->contact_phone ?: null,
+            'passport_id'   => $this->passport_id   ?: null,
             'address'       => $this->address       ?: null,
             'memo'          => $this->memo           ?: null,
             'is_active'     => $this->is_active,
@@ -551,7 +554,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function resetForm(): void
     {
         $this->name = $this->country_id_str = $this->salesman_id_str = $this->contact_name
-            = $this->contact_email = $this->contact_phone
+            = $this->contact_email = $this->contact_phone = $this->passport_id
             = $this->address = $this->memo = '';
         $this->is_active = true;
         $this->consigneeList = $this->balances = $this->txnList = [];
@@ -817,6 +820,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <label class="label-base">{{ __('common.email') }}</label>
                     <input wire:model="contact_email" type="email" class="input-base" />
+                </div>
+                <div>
+                    <label class="label-base">{{ __('buyer.field.passport_id') }}</label>
+                    <input wire:model="passport_id" type="text" class="input-base" maxlength="50" placeholder="{{ __('buyer.field.passport_id_ph') }}" />
+                    <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.passport_id_hint') }}</p>
                 </div>
                 <div>
                     <label class="label-base">{{ __('common.address') }}</label>
