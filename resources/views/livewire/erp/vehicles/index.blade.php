@@ -57,6 +57,40 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->selectedShipVehicles);
     }
 
+    // 전자서명 요청 (2026-07-10) — 선택 export 차량(동일 바이어·통화)으로 서명 세션 발급 후 링크 표시(복사→바이어 전달).
+    public bool $showSignModal = false;
+
+    public ?string $signUrl = null;
+
+    public ?string $signContractNo = null;
+
+    public function requestSignature(): void
+    {
+        $ids = collect($this->shipDocIds)->map(fn ($x) => (int) $x)->filter()->unique()->values();
+        $byId = \App\Models\Vehicle::whereIn('id', $ids)->get()->keyBy('id');
+        $vehicles = $ids->map(fn (int $id) => $byId->get($id))->filter()->values();
+
+        $user = auth()->user();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+
+        try {
+            $result = app(\App\Services\Documents\SigningSessionService::class)->issue($vehicles, null, $user->id);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->dispatch('notify', message: $e->validator->errors()->first(), type: 'warning');
+
+            return;
+        }
+
+        $this->signUrl = $result['url'];
+        $this->signContractNo = $result['contract']->contract_no;
+        $this->showSignModal = true;
+        $this->dispatch('notify', message: __('signed_contract.notify.issued'), type: 'success');
+    }
+
     /**
      * ② 하이브리드 — 선택한 export 차량들이 "한 선적 묶음(batch)"에 온전히 속하면 그 batch_id 반환.
      * 여러 묶음에 걸치거나 묶음 없으면 null → 면허비 딥링크 비노출(완전묶음만 허용, 부분/혼합 실수 차단).
@@ -4493,7 +4527,38 @@ new #[Layout('components.layouts.app')] class extends Component {
            class="rounded border border-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 {{ (! $scOk || $shipCnt > 30) ? 'pointer-events-none opacity-50' : '' }}">
             ↓ {{ __('vehicle.shipdoc.sales_contract') }}
         </a>
+        {{-- 전자서명 요청 — 판매계약서와 동일 조건(동일 바이어·통화·export). 발급 후 링크 모달. --}}
+        <button type="button" wire:click="requestSignature"
+                title="{{ $scOk ? '' : __('vehicle.sales_contract_homogeneous_hint') }}"
+                @disabled(! $scOk || $shipCnt > 30)
+                class="rounded border border-purple-400 bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 {{ (! $scOk || $shipCnt > 30) ? 'opacity-50 cursor-not-allowed' : '' }}">
+            ✍ {{ __('signed_contract.request_btn') }}
+        </button>
     </div>
+    </div>
+</div>
+@endif
+
+{{-- 전자서명 링크 발급 모달 — 발급된 signed URL 복사(바이어에게 카톡/이메일로 전달). --}}
+@if($showSignModal)
+<div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" x-data="{ copied: false }">
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
+            <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <p class="mb-2 text-sm text-gray-600">{{ __('signed_contract.modal.hint') }}</p>
+        <div class="flex gap-2">
+            <input type="text" readonly value="{{ $signUrl }}" x-ref="signUrl"
+                   class="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-700" />
+            <button type="button"
+                    @click="$refs.signUrl.select(); navigator.clipboard.writeText($refs.signUrl.value); copied = true; setTimeout(() => copied = false, 1500)"
+                    class="shrink-0 rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+                <span x-show="!copied">{{ __('signed_contract.modal.copy') }}</span>
+                <span x-show="copied" x-cloak>✓</span>
+            </button>
+        </div>
+        <p class="mt-3 text-xs text-gray-400">{{ __('signed_contract.modal.expire') }}</p>
     </div>
 </div>
 @endif
