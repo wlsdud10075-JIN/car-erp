@@ -504,8 +504,11 @@ new #[Layout('components.layouts.app')] class extends Component
             ->get()
             ->groupBy('batch_id');
 
-        // 전자서명 상태 — 가시 batch 의 바이어 세션만 프리로드(N+1 회피), pickForSet 로 batch 차량 set 매칭.
-        $signBuyerIds = $grouped->map(fn ($items) => $items->first()->buyer_id)->filter()->unique()->values()->all();
+        // 전자서명 상태 — 가시 batch 차량들의 바이어 세션만 프리로드(N+1 회피), pickForSet 로 batch 차량 set 매칭.
+        //   ⚠️ ShippingRequest.buyer_id 는 NULL 일 수 있음(board/묶기 미기입) → 세션 buyer_id 의 출처인
+        //      차량의 buyer_id 로 프리로드해야 매칭됨.
+        $signBuyerIds = $grouped->flatMap(fn ($items) => $items->map(fn ($r) => $r->vehicle?->buyer_id))
+            ->filter()->unique()->values()->all();
         $signSessions = \App\Models\SignedContract::whereIn('buyer_id', $signBuyerIds)
             ->whereIn('status', [
                 \App\Models\SignedContract::STATUS_SIGNED,

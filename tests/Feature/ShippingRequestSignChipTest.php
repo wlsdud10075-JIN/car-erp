@@ -44,8 +44,9 @@ class ShippingRequestSignChipTest extends TestCase
             'sale_date' => '2026-06-01', 'sale_price' => 5000, 'buyer_id' => $buyer->id, 'purchase_date' => '2026-06-01',
         ]));
         foreach ($vehicles as $v) {
+            // ⚠️ batch buyer_id 는 실제로 NULL 인 경우가 있음(board/묶기 미기입). 세션 매칭은 차량 buyer_id 기준이어야 함.
             ShippingRequest::create([
-                'batch_id' => 'BATCH1', 'vehicle_id' => $v->id, 'buyer_id' => $buyer->id,
+                'batch_id' => 'BATCH1', 'vehicle_id' => $v->id, 'buyer_id' => null,
                 'shipping_method' => 'RORO', 'status' => 'requested', 'requested_at' => now(),
                 'requested_by_email' => 'ops@ssancar.test',
             ]);
