@@ -2,6 +2,12 @@
 
 return [
     'request_btn' => 'Request e-signature',
+    'esign_label' => 'E-signature',
+    'chip' => [
+        'signed' => 'Signed · view copy',
+        'waiting' => 'Awaiting signature · copy link',
+        'viewed' => 'Viewed · copy link',
+    ],
     'modal' => [
         'hint' => 'Send the signing link below to the buyer (KakaoTalk, email, etc.). The buyer reviews the contract and signs on the linked page.',
         'copy' => 'Copy',

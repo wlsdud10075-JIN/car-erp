@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\URL;
 
 /**
  * 판매계약서 전자서명 세션 (2026-07-10 풀회의 — ERP 직접호스팅 + Certificate of Completion).
@@ -80,6 +82,35 @@ class SignedContract extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** 서명 링크(temporarySignedRoute) 재생성 — 복사 UI 용(발급 URL 미저장, 토큰+만료로 재생성). */
+    public function signingUrl(): string
+    {
+        return URL::temporarySignedRoute(
+            'sign.show',
+            $this->token_expires_at ?? now()->addDays(7),
+            ['token' => $this->sign_token],
+        );
+    }
+
+    /**
+     * 세션 컬렉션에서 주어진 차량 set 과 **정확히 일치**하는 현 세션 선택.
+     * signed 우선(증거) → 없으면 최신 active(pending/viewed). 차량 구성 바뀌면 매칭 안 됨(=미발송, 의도).
+     *
+     * @param  Collection<int, self>  $sessions
+     */
+    public static function pickForSet(Collection $sessions, array $vehicleIds): ?self
+    {
+        $set = collect($vehicleIds)->map(fn ($x) => (int) $x)->unique()->sort()->values()->all();
+        if ($set === []) {
+            return null;
+        }
+        $matches = $sessions->filter(
+            fn (self $c) => collect($c->vehicle_ids ?? [])->map(fn ($x) => (int) $x)->unique()->sort()->values()->all() === $set
+        );
+
+        return $matches->firstWhere('status', self::STATUS_SIGNED) ?? $matches->sortByDesc('id')->first();
     }
 
     public function isSigned(): bool
