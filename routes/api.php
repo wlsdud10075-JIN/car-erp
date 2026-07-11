@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
+use App\Http\Controllers\Api\Internal\SigningRequestController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
@@ -52,4 +53,6 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::post('shipping-request', [ShippingRequestController::class, 'store'])->name('shipping-request');
         // ①② 서류 다운로드 (선적 4종만, 프록시)
         Route::get('documents/{type}', [InternalDocumentController::class, 'show'])->name('documents');
+        // 판매계약서 전자서명 세션 발급 (2026-07-10) — signed_url 반환, board 는 바이어에게 전달만. 권위 §10.
+        Route::post('signing-requests', [SigningRequestController::class, 'store'])->name('signing-requests');
     });
