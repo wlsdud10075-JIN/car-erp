@@ -68,7 +68,7 @@ class ShippingRequestSignChipTest extends TestCase
 
         Volt::test('erp.shipping-requests.index')
             ->assertSee('전자서명 요청')
-            ->assertSee('더보기')            // 작업줄 축약 — 보조 액션 드롭다운
+            ->assertSee('차량관리에서')      // 차량관리 열기 = 항상 인라인(jin)
             ->assertSee('진행중으로')        // 주 워크플로우 버튼은 인라인 유지
             ->call('requestSignatureForBatch', 'BATCH1')
             ->assertSet('showSignModal', true);
