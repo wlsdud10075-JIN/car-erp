@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Internal;
 
 use App\Http\Controllers\Controller;
+use App\Models\SignedContract;
 use App\Models\Vehicle;
 use App\Services\Documents\SigningSessionService;
 use App\Services\SalesmanResolver;
@@ -54,6 +55,44 @@ class SigningRequestController extends Controller
             'vehicle_count' => (int) data_get($c->snapshot_data, 'vehicle_count', $vehicles->count()),
             'status' => $c->status,
             'expires_at' => optional($c->token_expires_at)->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * §10-2 — board 폴링용 서명 상태 조회 (그 묶음 차량 set 의 현 세션).
+     *   status: none(미발송) / pending / viewed / signed. 3전이 타임스탬프만.
+     *   ⚠️ 서명본 파일·서명이미지·바이어 PII 미포함(상태 메타만). board 는 이걸로 칩 갱신.
+     */
+    public function status(Request $request): JsonResponse
+    {
+        $salesman = SalesmanResolver::resolveActiveOrFail((string) $request->query('salesman_email', ''));
+
+        $ids = collect(explode(',', (string) $request->query('vehicle_ids', '')))
+            ->map(fn ($x) => (int) trim($x))->filter()->unique()->values();
+        abort_if($ids->isEmpty(), 400, 'No vehicles');
+
+        $vehicles = Vehicle::whereIn('id', $ids)->get();
+        abort_if($vehicles->isEmpty(), 404, 'Not found');
+        // IDOR — 본인 차만
+        abort_unless($vehicles->every(fn (Vehicle $v) => $v->salesman_id === $salesman->id), 403, 'Forbidden');
+
+        // 그 set 의 현 세션(signed 우선, 없으면 active). revoked 제외.
+        $sessions = SignedContract::where('buyer_id', $vehicles->first()->buyer_id)
+            ->whereIn('status', [SignedContract::STATUS_SIGNED, SignedContract::STATUS_VIEWED, SignedContract::STATUS_PENDING])
+            ->latest('id')->get();
+        $c = SignedContract::pickForSet($sessions, $ids->all());
+
+        if (! $c) {
+            return response()->json(['status' => 'none']);
+        }
+
+        return response()->json([
+            'status' => $c->status,
+            'contract_no' => $c->contract_no,
+            'vehicle_count' => (int) data_get($c->snapshot_data, 'vehicle_count', $vehicles->count()),
+            'sent_at' => optional($c->sent_at)->toIso8601String(),
+            'viewed_at' => optional($c->viewed_at)->toIso8601String(),
+            'signed_at' => optional($c->signed_at)->toIso8601String(),
         ]);
     }
 }

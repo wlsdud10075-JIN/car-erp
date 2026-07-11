@@ -18,7 +18,10 @@ ERP가 판매계약서 전자서명 세션을 발급하고 **서명 URL**을 반
    - 응답의 `signed_url`을 **바이어에게 전달**: board가 이미 가진 바이어 채널(카톡/SNS/이메일)로 링크 전송. **ERP는 전달 대행 안 함.**
    - `recipient_email`은 선택 — 안 보내면 ERP가 바이어 `contact_email`로 기본 설정.
 
-3. (선택) **상태 뱃지** — `GET /api/internal/board/signing-requests?salesman_email=` 폴링해 "발송됨/열람됨/서명완료" 표시. 미구현 시 "전송함"만 노출해도 됨.
+3. **상태 뱃지/칩** (ERP처럼 서명받으면 색 바뀌게 — jin 요청) — `GET {CAR_ERP_BASE_URL}/api/internal/board/signing-requests?salesman_email=&vehicle_ids=1,2` 폴링(그 묶음 차량 set).
+   - HMAC = 읽기 GET canonical(빈 바디). 응답 `{status: none|pending|viewed|signed, contract_no, sent_at, viewed_at, signed_at}`.
+   - board 칩: `none`=✍전자서명 요청 / `pending`·`viewed`=⏳서명 대기 / `signed`=**✓서명완료(녹색)**. = ERP 묶음 칩과 동일 그림.
+   - 폴링 시점: 화면 진입/새로고침 시 각 묶음 조회(바이어 서명은 별도 페이지라 실시간 push 없음 — ERP도 새로고침 기준). 미구현 시 "전송함"만 노출(graceful).
 
 ## 요청/응답 계약
 **요청 body**:

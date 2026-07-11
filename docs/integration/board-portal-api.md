@@ -208,8 +208,21 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
 
 > ✅ **ERP측 구현 완료 (2026-07-10, dev f9e686d·이 커밋)** — 엔드포인트·서명 페이지(ERP 호스팅)·서명본(Certificate of Completion, 옵션 A 단일 PDF)·증거메일 전부 동작. **board측(§10-3)은 미착수** — board 세션에서 이 스펙대로 client·버튼 구현.
 
-### 10-2. (선택) `GET /internal/board/signing-requests?salesman_email=` — 서명 상태 조회
-board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시하고 싶을 때. 반환 = 본인 영업 세션들의 `{contract_no, buyer:{id,name}, status, vehicle_count, sent_at, viewed_at, signed_at}`. **PII·서명본 파일·서명이미지 미포함**(상태 메타만). 미구현 시 board는 상태표시 없이 "전송함"만 노출(graceful).
+### 10-2. `GET /internal/board/signing-requests?salesman_email=&vehicle_ids=1,2` — 서명 상태 조회 (✅ ERP 구현됨)
+board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시할 때 — **그 묶음 차량 set 을 넘겨 폴링**한다.
+- 쿼리: `salesman_email`(§2 IDOR) + `vehicle_ids`(그 묶음 차량, 콤마구분). 본인 차 아니면 403.
+- 매칭: 그 set 의 현 세션(signed 우선, 없으면 active pending/viewed, revoked 제외). ERP 칩과 동일 규칙(`SignedContract::pickForSet`).
+- 응답(200):
+```json
+{ "status": "signed",              // none | pending | viewed | signed
+  "contract_no": "SC2607-01215",
+  "vehicle_count": 2,
+  "sent_at": "...", "viewed_at": "...", "signed_at": "..." }
+```
+  미발송이면 `{ "status": "none" }`.
+- **⚠️ PII·서명본 파일·서명이미지 미포함**(상태 메타만). 서명본 열람은 ERP 내부에서만(canScopeVehicle).
+- board 는 이 status 로 칩 색/문구 갱신: none=`✍요청` / pending·viewed=`⏳대기` / signed=`✓서명완료`(녹색). ERP 와 동일한 그림.
+- HMAC = 읽기 GET canonical(§1, 빈 바디). 미구현/degrade 시 board 는 "전송함"만 노출(graceful).
 
 ### 10-3. board 측 작업 (board repo·board 세션 — 복사 금지)
 1. `CarErpReadService`에 `requestSigningSession(vehicleIds, recipientEmail?)` 추가(POST HMAC, §1 canonical BODY 포함). 401/5xx/미설정 → "발급 불가" degrade.

@@ -55,4 +55,6 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('documents/{type}', [InternalDocumentController::class, 'show'])->name('documents');
         // 판매계약서 전자서명 세션 발급 (2026-07-10) — signed_url 반환, board 는 바이어에게 전달만. 권위 §10.
         Route::post('signing-requests', [SigningRequestController::class, 'store'])->name('signing-requests');
+        // §10-2 — board 폴링용 서명 상태 조회(?vehicle_ids=1,2). board 칩 갱신용. 상태 메타만(PII·파일 X).
+        Route::get('signing-requests', [SigningRequestController::class, 'status'])->name('signing-requests.status');
     });
