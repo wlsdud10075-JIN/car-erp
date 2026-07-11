@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\SignedContract;
 use App\Models\Vehicle;
 use App\Services\Documents\PdfConverter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,6 +52,18 @@ class BoardSigningRequestTest extends TestCase
         ]);
     }
 
+    private function signedGet(string $path, array $query)
+    {
+        ksort($query);
+        $ts = now()->timestamp;
+        $canonical = "GET\n".$path.'?'.http_build_query($query)."\n".$ts."\n";
+        $sig = hash_hmac('sha256', $canonical, $this->secret);
+
+        return $this->get($path.'?'.http_build_query($query), [
+            'X-Board-Signature' => 'sha256='.$sig, 'X-Timestamp' => (string) $ts, 'X-Nonce' => (string) Str::uuid(),
+        ]);
+    }
+
     private function exportVehicle(int $salesmanId, int $buyerId, string $vn): Vehicle
     {
         return Vehicle::create([
@@ -91,6 +104,44 @@ class BoardSigningRequestTest extends TestCase
         ])->assertStatus(403);
 
         $this->assertDatabaseCount('signed_contracts', 0);
+    }
+
+    public function test_board_polls_status_none_then_signed(): void
+    {
+        $me = Salesman::create(['name' => 'ME', 'email' => 'me@a.com', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true]);
+        $v = $this->exportVehicle($me->id, $buyer->id, '44라4444');
+        $path = '/api/internal/board/signing-requests';
+
+        // 미발송 → none
+        $this->signedGet($path, ['salesman_email' => 'me@a.com', 'vehicle_ids' => (string) $v->id])
+            ->assertOk()->assertJsonPath('status', 'none');
+
+        // 서명 완료 세션 → signed (PII·파일 미포함)
+        SignedContract::create([
+            'buyer_id' => $buyer->id, 'vehicle_ids' => [$v->id],
+            'contract_no' => 'SC2607-00044', 'currency' => 'USD',
+            'snapshot_path' => 'signed-contracts/z.xlsx', 'source_hash' => str_repeat('c', 64),
+            'snapshot_data' => ['vehicle_count' => 1], 'status' => 'signed',
+            'sign_token' => bin2hex(random_bytes(16)), 'signed_pdf_path' => 'signed-contracts/z.signed.pdf', 'signed_at' => now(),
+        ]);
+
+        $this->signedGet($path, ['salesman_email' => 'me@a.com', 'vehicle_ids' => (string) $v->id])
+            ->assertOk()
+            ->assertJsonPath('status', 'signed')
+            ->assertJsonPath('contract_no', 'SC2607-00044')
+            ->assertJsonMissingPath('signed_pdf_path');
+    }
+
+    public function test_status_forbidden_for_other_salesman(): void
+    {
+        $me = Salesman::create(['name' => 'ME', 'email' => 'me@a.com', 'is_active' => true]);
+        $other = Salesman::create(['name' => 'OTHER', 'email' => 'other@a.com', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true]);
+        $v = $this->exportVehicle($other->id, $buyer->id, '55마5555');
+
+        $this->signedGet('/api/internal/board/signing-requests', ['salesman_email' => 'me@a.com', 'vehicle_ids' => (string) $v->id])
+            ->assertStatus(403);
     }
 
     public function test_bad_hmac_rejected(): void
