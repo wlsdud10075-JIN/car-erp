@@ -62,6 +62,8 @@ class SignController extends Controller
     public function preview(string $token)
     {
         $contract = $this->resolve($token);
+        // revoked/expired 세션은 미리보기도 차단(활성이거나 서명완료일 때만).
+        abort_unless($contract->isSignable() || $contract->isSigned(), 410);
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
         $path = $contract->previewPdfPath();
         abort_unless($disk->exists($path), 404);
@@ -100,12 +102,9 @@ class SignController extends Controller
             ], 422);
         }
 
-        // ① 서명 이미지 저장 + 서명본 렌더 → ② status=signed 먼저 커밋(증거 확정) → ③ 메일은 별도 시도.
-        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        // 서명자 캡처를 in-memory 반영(렌더 CoC 가 읽음) — 아직 persist 안 함.
         $sigPath = preg_replace('/\.xlsx$/i', '.signature.png', $contract->snapshot_path);
-        $disk->put($sigPath, $png);
-
-        // 서명자 캡처를 먼저 반영(렌더 CoC 가 읽음)
+        $signedPath = preg_replace('/\.xlsx$/i', '.signed.pdf', $contract->snapshot_path);
         $contract->forceFill([
             'signer_name' => $validated['signer_name'] ?? null,
             'recipient_email' => $validated['recipient_email'],
@@ -113,12 +112,27 @@ class SignController extends Controller
             'signer_ua' => substr((string) $request->userAgent(), 0, 1000),
             'signature_path' => $sigPath,
             'signed_at' => now(),
-        ])->save();
+        ]);
 
-        $signedPdf = app(SignedContractRenderer::class)->render($contract, $png);
-        $signedPath = preg_replace('/\.xlsx$/i', '.signed.pdf', $contract->snapshot_path);
+        // ① 서명본 렌더 먼저(soffice, throw 가능) — 실패 시 아무것도 persist 안 함(반쪽 상태 방지).
+        //    옵션 A 는 서명=soffice 의존이 본질이라 이 경로가 500 나면 안 됨 → 친절한 재시도 안내(503).
+        try {
+            $signedPdf = app(SignedContractRenderer::class)->render($contract, $png);
+        } catch (\Throwable $e) {
+            Log::warning('signed contract render failed', ['id' => $contract->id, 'error' => $e->getMessage()]);
+
+            return response()->view('sign.show', [
+                'contract' => $contract->fresh(),   // in-memory 변경 버리고 원본(status=viewed) 유지
+                'previewUrl' => URL::temporarySignedRoute('sign.preview', now()->addHours(2), ['token' => $token]),
+                'submitUrl' => URL::temporarySignedRoute('sign.submit', now()->addHours(2), ['token' => $token]),
+                'error' => __('signed_contract.sign.render_failed'),
+            ], 503);
+        }
+
+        // ② 렌더 성공 → 파일 저장 + 단일 save 로 서명 상태 원자적 확정.
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $disk->put($sigPath, $png);
         $disk->put($signedPath, $signedPdf);
-
         $contract->forceFill([
             'status' => SignedContract::STATUS_SIGNED,
             'signed_pdf_path' => $signedPath,

@@ -121,6 +121,34 @@ class SignedContractFlowTest extends TestCase
         Mail::assertSent(VehicleDocumentMail::class);
     }
 
+    public function test_render_failure_leaves_no_half_state(): void
+    {
+        $v = $this->vehicle();
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $c = app(SigningSessionService::class)->issue(collect([$v]), null, $user->id)['contract'];
+
+        // 서명본 렌더(submit 시점 soffice)만 throw — 발급 preview 는 이미 성공.
+        $this->app->instance(PdfConverter::class, new class extends PdfConverter
+        {
+            public function fromSpreadsheet(Spreadsheet $spreadsheet): string
+            {
+                throw new \RuntimeException('soffice down');
+            }
+        });
+
+        $submitUrl = URL::temporarySignedRoute('sign.submit', now()->addHours(2), ['token' => $c->sign_token]);
+        $this->post($submitUrl, [
+            'signature' => $this->pngDataUri(),
+            'recipient_email' => 'buy@tokyo.jp',
+        ])->assertStatus(503);
+
+        // 반쪽 상태 없어야 — status 미변경(pending/viewed), 서명 필드 null
+        $c->refresh();
+        $this->assertNotSame(SignedContract::STATUS_SIGNED, $c->status);
+        $this->assertNull($c->signed_at);
+        $this->assertNull($c->signed_pdf_path);
+    }
+
     public function test_already_signed_is_idempotent(): void
     {
         $v = $this->vehicle();
