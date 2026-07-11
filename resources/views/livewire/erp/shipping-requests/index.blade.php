@@ -764,13 +764,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     {{ __('shipping.action.cancel') }}
                                 </button>
                             @else
-                                {{-- 주 워크플로우 (진행 → 수출신고 → B/L → 완료) 만 인라인 --}}
-                                @if ($b['status'] === 'requested')
-                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
-                                            class="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100">
-                                        {{ __('shipping.action.start') }}
-                                    </button>
-                                @endif
+                                {{-- 기본 인라인 — 수출신고번호·B/L번호 기입 + 차량 N대 보기 (진행/완료는 ⋯더보기) --}}
                                 @if ($canAccessClearance)
                                     <button type="button" wire:click="openDeclNumber('{{ $b['batch_id'] }}')"
                                             class="rounded-md border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] font-semibold text-green-700 hover:bg-green-100">
@@ -781,12 +775,6 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <button type="button" wire:click="openIssue('{{ $b['batch_id'] }}')"
                                             class="rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-100">
                                         {{ __('shipping.bl.issue') }}
-                                    </button>
-                                @endif
-                                @if (in_array($b['status'], ['requested', 'in_progress'], true))
-                                    <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'done')"
-                                            class="rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100">
-                                        {{ __('shipping.action.done') }}
                                     </button>
                                 @endif
                                 {{-- 차량관리 N대 보기 — 항상 인라인(jin: 무조건 보이게) --}}
@@ -802,6 +790,22 @@ new #[Layout('components.layouts.app')] class extends Component
                                             :class="open && 'bg-gray-100'">⋯</button>
                                     <div x-show="open" x-cloak x-transition
                                          class="absolute right-0 z-30 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-1 shadow-lg ring-1 ring-black/5">
+                                        {{-- 상태 전환 — 진행중으로·완료처리 --}}
+                                        @if ($b['status'] === 'requested')
+                                            <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'in_progress')"
+                                                    class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-amber-700 hover:bg-amber-50">
+                                                <span class="w-4 shrink-0 text-center text-sm">▶</span>
+                                                <span class="flex-1">{{ __('shipping.action.start') }}</span>
+                                            </button>
+                                        @endif
+                                        @if (in_array($b['status'], ['requested', 'in_progress'], true))
+                                            <button type="button" wire:click="changeStatus('{{ $b['batch_id'] }}', 'done')"
+                                                    class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-gray-700 hover:bg-gray-50">
+                                                <span class="w-4 shrink-0 text-center text-sm text-emerald-500">✓</span>
+                                                <span class="flex-1">{{ __('shipping.action.done') }}</span>
+                                            </button>
+                                            <div class="my-1 h-px bg-gray-100"></div>
+                                        @endif
                                         @if (count($deregUrls) > 0)
                                             <button type="button"
                                                     @click="@js($deregUrls).forEach((u, i) => setTimeout(() => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 400)); open = false"
