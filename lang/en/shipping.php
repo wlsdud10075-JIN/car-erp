@@ -26,7 +26,7 @@ return [
 
     'tab' => [
         'shipping' => 'Shipping / B/L',
-        'cost' => '2nd-stage Cost (License)',
+        'cost' => '2nd-stage Cost (Seongji License)',
     ],
 
     // 2nd-stage cost tab — license fee n/1 across bundle
