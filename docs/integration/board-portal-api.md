@@ -203,8 +203,10 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
   "status": "pending",
   "expires_at": "2026-07-17T09:00:00+09:00" }
 ```
-- `signed_url` = **Laravel `temporarySignedRoute`**(APP_KEY 서명 + 만료 임베드) + DB `sign_token`(추측불가 핸들). 이 URL 자체가 인가 — board는 **그대로 바이어에게 전달만**(파싱·재서명 금지).
-- **멱등/단일활성 불변식**: 같은 `vehicle_ids` 묶음으로 재발급하면 ERP가 **그 묶음의 기존 `pending`/`viewed` 세션을 자동 `revoked`** 처리하고 새 세션 발급(활성 세션 항상 1개). 이미 `signed`된 묶음은 재발급 거부(`409 already_signed`) — 재계약은 차량 구성 변경 후.
+- `signed_url` = **Laravel `temporarySignedRoute`**(APP_KEY 서명 + 만료 7일 임베드) + DB `sign_token`(추측불가 핸들). 이 URL 자체가 인가 — board는 **그대로 바이어에게 전달만**(파싱·재서명 금지).
+- **단일활성 불변식 (재발급 = 항상 성공, 409 없음)**: 재발급하면 ERP가 **선택 차량과 겹치는(공유 차량 1대 이상) 기존 `pending`/`viewed` 세션을 자동 `revoked`** 처리하고 새 세션 발급(한 차량이 두 미서명 계약에 안 묶임). 이미 `signed`된 세션은 **법적 증거물이라 보존**(revoke·삭제 안 됨)되지만 새 발급을 막지 않는다 — **가격 정정 후 재서명**(중고차 실무) 등을 위해 재발급은 항상 새 pending 세션을 만든다. ⇒ `409` 없음.
+
+> ✅ **ERP측 구현 완료 (2026-07-10, dev f9e686d·이 커밋)** — 엔드포인트·서명 페이지(ERP 호스팅)·서명본(Certificate of Completion, 옵션 A 단일 PDF)·증거메일 전부 동작. **board측(§10-3)은 미착수** — board 세션에서 이 스펙대로 client·버튼 구현.
 
 ### 10-2. (선택) `GET /internal/board/signing-requests?salesman_email=` — 서명 상태 조회
 board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시하고 싶을 때. 반환 = 본인 영업 세션들의 `{contract_no, buyer:{id,name}, status, vehicle_count, sent_at, viewed_at, signed_at}`. **PII·서명본 파일·서명이미지 미포함**(상태 메타만). 미구현 시 board는 상태표시 없이 "전송함"만 노출(graceful).

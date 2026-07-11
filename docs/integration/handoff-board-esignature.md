@@ -32,7 +32,7 @@ ERP가 판매계약서 전자서명 세션을 발급하고 **서명 URL**을 반
   "currency": "USD", "vehicle_count": 2, "status": "pending",
   "expires_at": "2026-07-17T09:00:00+09:00" }
 ```
-**에러**: `403`(영업 스코프/퇴사) · `422`(차량 혼합 바이어/통화·non-export·타 영업) · `409 already_signed`(이미 서명된 묶음 재발급) · `401`(HMAC).
+**에러**: `403`(영업 스코프/퇴사·타 영업 차량) · `422`(차량 혼합 바이어/통화·non-export·바이어 미지정) · `401`(HMAC). ⚠️ **`409` 없음** — 재발급은 항상 성공(겹치는 활성세션 revoke + 새 pending, signed 세션은 증거 보존). 가격정정 후 재서명 대응.
 
 ## board가 반드시 지킬 것
 - `signed_url`은 **그대로 전달만** — 파싱·재서명·프록시·변조 금지(URL 자체가 인가).
@@ -44,5 +44,6 @@ ERP가 판매계약서 전자서명 세션을 발급하고 **서명 URL**을 반
 ① ERP가 §10 엔드포인트 구현·배포(진행 중) → ② board가 이 패킷대로 client·버튼 구현·board repo 커밋 → ③ e2e(발급→전달→바이어 서명→ERP 증거메일).
 
 ## 상태
-- **ERP측**: 서명 세션 발급 API·서명 페이지·CoC·증거메일 = 구현 중(2026-07-10). 배포되면 이 패킷 갱신.
-- **board측**: 미착수 — board 세션에서 이 패킷 받아 진행.
+- **ERP측**: ✅ **구현 완료 (2026-07-10, dev f9e686d / board API dev)** — `POST /internal/board/signing-requests` 엔드포인트(HMAC+본인격리)·서명 페이지(ERP 호스팅)·서명본(Certificate of Completion, 옵션 A 단일 PDF)·증거메일 전부 동작·테스트 통과. **⚠️ master 미배포**(dev). 배포 후 board e2e 가능.
+- **board측**: 미착수 — board 세션에서 이 패킷 받아 진행. board가 만들 것 = 위 「board가 할 일 (딱 3개)」.
+- **연동 순서**: ERP master 배포 → board client·버튼 구현(board repo 커밋) → e2e(발급→전달→바이어 서명→ERP 증거메일).
