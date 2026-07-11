@@ -3,6 +3,7 @@
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
+use App\Http\Controllers\SignController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehicleExportController;
 use App\Http\Controllers\VehicleTemplateController;
@@ -31,6 +32,13 @@ Route::get('a/payout/{batch}', [PayoutApprovalController::class, 'show'])
 Route::post('a/payout/{batch}/decide', [PayoutApprovalController::class, 'decide'])
     ->middleware('signed')
     ->name('payout.approve.decide');
+
+// 판매계약서 전자서명 (2026-07-10 풀회의, ERP 직접호스팅). 로그인 없음(signed 서명이 인가 — 만료·변조불가).
+//   sign_token(추측불가 DB 핸들) + signed 미들웨어 병행. show(GET)=계약 PDF 미리보기 + 서명패드 + 이메일칸,
+//   preview(GET)=발급시 캐시한 PDF inline(iframe src), submit(POST)=서명 확정(멱등). CSRF 제외=bootstrap/app.php(sign/*).
+Route::get('sign/{token}', [SignController::class, 'show'])->middleware('signed')->name('sign.show');
+Route::get('sign/{token}/preview', [SignController::class, 'preview'])->middleware('signed')->name('sign.preview');
+Route::post('sign/{token}/submit', [SignController::class, 'submit'])->middleware('signed')->name('sign.submit');
 
 // 사내 ERP — 별도 소개(랜딩) 화면 없이 첫 접속은 로그인으로. 로그인 상태면 대시보드로.
 Route::get('/', function () {

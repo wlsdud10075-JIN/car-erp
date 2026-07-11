@@ -61,6 +61,17 @@ class SignedContract extends Model
         });
     }
 
+    /** 발급 시 캐시한 미리보기 PDF 경로 — 스냅샷 xlsx 옆(같은 uuid). 서명 페이지가 재렌더 없이 서빙. */
+    public static function previewPathFor(string $snapshotXlsxPath): string
+    {
+        return preg_replace('/\.xlsx$/i', '.preview.pdf', $snapshotXlsxPath);
+    }
+
+    public function previewPdfPath(): string
+    {
+        return self::previewPathFor($this->snapshot_path);
+    }
+
     public function buyer(): BelongsTo
     {
         return $this->belongsTo(Buyer::class);
