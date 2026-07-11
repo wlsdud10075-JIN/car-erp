@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\Setting;
 use App\Models\ShippingRequest;
 use App\Models\SignedContract;
 use App\Models\User;
@@ -26,6 +27,11 @@ class ShippingRequestSignChipTest extends TestCase
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
         App::setLocale('ko');
+        // 착수 락 off — 미납 차량이 entry-locked 브랜치로 안 가고 정상 작업줄(더보기 포함) 렌더.
+        Setting::updateOrCreate(
+            ['key' => 'lock_shipping_entry_'.Setting::companyTemplateSet()],
+            ['value' => '0', 'type' => 'boolean'],
+        );
         Storage::fake(config('filesystems.vehicle_docs_disk'));
         $this->app->instance(PdfConverter::class, new class extends PdfConverter
         {
@@ -62,6 +68,8 @@ class ShippingRequestSignChipTest extends TestCase
 
         Volt::test('erp.shipping-requests.index')
             ->assertSee('전자서명 요청')
+            ->assertSee('더보기')            // 작업줄 축약 — 보조 액션 드롭다운
+            ->assertSee('진행중으로')        // 주 워크플로우 버튼은 인라인 유지
             ->call('requestSignatureForBatch', 'BATCH1')
             ->assertSet('showSignModal', true);
 

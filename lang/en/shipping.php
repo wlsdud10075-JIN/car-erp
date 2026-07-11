@@ -55,6 +55,7 @@ return [
         'entry_locked_tip' => 'Vehicles under 50% paid: :vehicles — need full payment / manager approval, or remove them and re-bundle',
         'done' => 'Mark done',
         'cancel' => 'Cancel',
+        'more' => 'More',
         'open_in_vehicles' => 'Open :count in Vehicles',
         'download_dereg' => 'Download :count Deregistration Docs',
         'no_dereg' => 'No deregistration docs uploaded in this bundle',

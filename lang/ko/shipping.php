@@ -55,6 +55,7 @@ return [
         'entry_locked_tip' => '입금 50% 미달 차량: :vehicles — 완납·관리 승인 또는 미달 차 빼고 재묶음 필요',
         'done' => '완료 처리',
         'cancel' => '취소',
+        'more' => '더보기',
         'open_in_vehicles' => '차량관리에서 :count대 보기',
         'download_dereg' => '말소신청서 :count건 다운로드',
         'no_dereg' => '이 묶음에 업로드된 말소신청서가 없습니다',
