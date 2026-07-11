@@ -22,6 +22,7 @@ return [
     ],
     'sign' => [
         'invalid' => 'Invalid signature, please sign again.',
+        'render_failed' => 'Could not generate the signed copy, please try again shortly.',
     ],
     'mail' => [
         'subject' => '[Signed] :no',

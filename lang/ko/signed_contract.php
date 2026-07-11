@@ -22,6 +22,7 @@ return [
     ],
     'sign' => [
         'invalid' => '서명 이미지가 올바르지 않습니다. 다시 서명해 주세요. · Invalid signature, please sign again.',
+        'render_failed' => '서명본 생성에 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요. · Could not generate the signed copy, please try again shortly.',
     ],
     'mail' => [
         'subject' => '[전자서명 확인 / Signed] :no',
