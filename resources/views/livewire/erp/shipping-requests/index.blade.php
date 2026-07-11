@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ShippingRequest;
+use App\Models\SignedContract;
 use App\Models\TaskAlarm;
 use App\Models\Vehicle;
+use App\Services\Documents\SigningSessionService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -406,6 +408,63 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('shipping.toast.change_rejected'), type: 'success');
     }
 
+    // ── 전자서명 (묶음서류 행 칩) ──────────────────────────────
+    public bool $showSignModal = false;
+
+    public ?string $signUrl = null;
+
+    public ?string $signContractNo = null;
+
+    /** batch 차량으로 서명 세션 발급 → 링크 모달. 묶음=단일 바이어·통화라 그대로 발급(서비스가 재검증). */
+    public function requestSignatureForBatch(string $batchId): void
+    {
+        $ids = ShippingRequest::where('batch_id', $batchId)->pluck('vehicle_id')->all();
+        $byId = Vehicle::whereIn('id', $ids)->get()->keyBy('id');
+        $vehicles = collect($ids)->map(fn ($id) => $byId->get($id))->filter()->values();
+
+        $user = auth()->user();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+
+        try {
+            $result = app(SigningSessionService::class)->issue($vehicles, null, $user->id);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->dispatch('notify', message: $e->validator->errors()->first(), type: 'warning');
+
+            return;
+        }
+
+        $this->openSignModal($result['contract']->contract_no, $result['url']);
+        $this->dispatch('notify', message: __('signed_contract.notify.issued'), type: 'success');
+    }
+
+    /** 활성 세션 링크 재표시(복사) — 발급 URL 미저장이라 토큰+만료로 재생성. */
+    public function showSignLink(int $contractId): void
+    {
+        $c = SignedContract::find($contractId);
+        if (! $c || $c->isSigned()) {
+            return;
+        }
+        $user = auth()->user();
+        $vehicles = Vehicle::whereIn('id', $c->vehicle_ids ?? [])->get();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+        $this->openSignModal($c->contract_no, $c->signingUrl());
+    }
+
+    private function openSignModal(string $contractNo, string $url): void
+    {
+        $this->signContractNo = $contractNo;
+        $this->signUrl = $url;
+        $this->showSignModal = true;
+    }
+
     public function with(): array
     {
         // ── 선적/발급 탭 — batch 단위 페이지네이션 + 검색 (탭 진입 시만) ──
@@ -439,11 +498,22 @@ new #[Layout('components.layouts.app')] class extends Component
         $batchIds = collect($batchPage->items())->pluck('batch_id')->all();
         $order = array_flip($batchIds);
 
-        $batches = ShippingRequest::query()
+        $grouped = ShippingRequest::query()
             ->with(['vehicle', 'buyer', 'consignee'])
             ->whereIn('batch_id', $batchIds)
             ->get()
-            ->groupBy('batch_id')->map(function ($items) {
+            ->groupBy('batch_id');
+
+        // 전자서명 상태 — 가시 batch 의 바이어 세션만 프리로드(N+1 회피), pickForSet 로 batch 차량 set 매칭.
+        $signBuyerIds = $grouped->map(fn ($items) => $items->first()->buyer_id)->filter()->unique()->values()->all();
+        $signSessions = \App\Models\SignedContract::whereIn('buyer_id', $signBuyerIds)
+            ->whereIn('status', [
+                \App\Models\SignedContract::STATUS_SIGNED,
+                \App\Models\SignedContract::STATUS_VIEWED,
+                \App\Models\SignedContract::STATUS_PENDING,
+            ])->latest('id')->get();
+
+        $batches = $grouped->map(function ($items) use ($signSessions) {
                 $f = $items->first();
                 $memberVehicles = $items->map->vehicle->filter();
                 $fin = ShippingRequest::financeForVehicles($memberVehicles);
@@ -455,10 +525,16 @@ new #[Layout('components.layouts.app')] class extends Component
                     && ! $v->hasEntryUnpaidOverride();
                 $entryBlockers = $memberVehicles->filter($isEntryBlocked)->map->vehicle_number->values()->all();
 
+                $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());
+
                 return array_merge([
                     'batch_id' => (string) $f->batch_id,
                     'buyer' => $f->buyer?->name,
+                    'buyer_id' => $f->buyer_id,
                     'consignee' => $f->consignee?->name,
+                    'sign' => $signContract
+                        ? ['status' => $signContract->status, 'id' => $signContract->id]
+                        : ['status' => 'none'],
                     'shipping_method' => $f->shipping_method,
                     'bl_type' => $f->bl_type,
                     'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
@@ -861,6 +937,16 @@ new #[Layout('components.layouts.app')] class extends Component
                                 ⬇ {{ $b['shipping_method'] }} {{ $label }}
                             </a>
                         @endforeach
+                        {{-- 판매계약서 다운로드 + 전자서명 칩 (묶음=단일 바이어·통화라 그대로) --}}
+                        <a href="{{ route('erp.vehicles.documents.multi', ['type' => 'sales_contract', 'ids' => $idsCsv]) }}" target="_blank" rel="noopener"
+                           class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100">
+                            ⬇ {{ __('vehicle.shipdoc.sales_contract') }}
+                        </a>
+                        <x-erp.esign-chip
+                            :status="$b['sign']['status']"
+                            :contract-id="$b['sign']['id'] ?? null"
+                            request-click="requestSignatureForBatch('{{ $b['batch_id'] }}')"
+                            link-click="showSignLink({{ $b['sign']['id'] ?? 0 }})" />
                     </div>
                 </div>
             @endforeach
@@ -958,5 +1044,29 @@ new #[Layout('components.layouts.app')] class extends Component
             @endforeach
         </div>
     @endif
+    @endif
+
+    {{-- 전자서명 링크 발급 모달 — 발급/재표시된 signed URL 복사(바이어에게 전달) --}}
+    @if($showSignModal)
+    <div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
+        <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" x-data="{ copied: false }">
+            <div class="mb-3 flex items-center justify-between">
+                <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
+                <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <p class="mb-2 text-sm text-gray-600">{{ __('signed_contract.modal.hint') }}</p>
+            <div class="flex gap-2">
+                <input type="text" readonly value="{{ $signUrl }}" x-ref="signUrl"
+                       class="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-700" />
+                <button type="button"
+                        @click="$refs.signUrl.select(); navigator.clipboard.writeText($refs.signUrl.value); copied = true; setTimeout(() => copied = false, 1500)"
+                        class="shrink-0 rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+                    <span x-show="!copied">{{ __('signed_contract.modal.copy') }}</span>
+                    <span x-show="copied" x-cloak>✓</span>
+                </button>
+            </div>
+            <p class="mt-3 text-xs text-gray-400">{{ __('signed_contract.modal.expire') }}</p>
+        </div>
+    </div>
     @endif
 </div>

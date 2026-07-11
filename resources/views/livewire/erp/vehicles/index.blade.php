@@ -91,6 +91,71 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('signed_contract.notify.issued'), type: 'success');
     }
 
+    /** 서류탭 — 편집 중인 차량 1대의 현 서명 상태(칩). */
+    #[Computed]
+    public function editingSign(): array
+    {
+        if (! $this->editingId) {
+            return ['status' => 'none'];
+        }
+        $v = \App\Models\Vehicle::find($this->editingId);
+        if (! $v) {
+            return ['status' => 'none'];
+        }
+        $sessions = \App\Models\SignedContract::where('buyer_id', $v->buyer_id)
+            ->whereIn('status', [
+                \App\Models\SignedContract::STATUS_SIGNED,
+                \App\Models\SignedContract::STATUS_VIEWED,
+                \App\Models\SignedContract::STATUS_PENDING,
+            ])->latest('id')->get();
+        $c = \App\Models\SignedContract::pickForSet($sessions, [$this->editingId]);
+
+        return $c ? ['status' => $c->status, 'id' => $c->id] : ['status' => 'none'];
+    }
+
+    /** 서류탭 — 편집 중인 차량 1대로 서명 세션 발급. */
+    public function requestSignatureForVehicle(): void
+    {
+        $v = \App\Models\Vehicle::find($this->editingId);
+        $user = auth()->user();
+        if (! $v || ! $user->canScopeVehicle($v)) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+        try {
+            $result = app(\App\Services\Documents\SigningSessionService::class)->issue(collect([$v]), null, $user->id);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->dispatch('notify', message: $e->validator->errors()->first(), type: 'warning');
+
+            return;
+        }
+        $this->signUrl = $result['url'];
+        $this->signContractNo = $result['contract']->contract_no;
+        $this->showSignModal = true;
+        unset($this->editingSign);
+        $this->dispatch('notify', message: __('signed_contract.notify.issued'), type: 'success');
+    }
+
+    /** 활성 세션 링크 재표시(복사) — batch/서류탭 공용. */
+    public function showSignLink(int $contractId): void
+    {
+        $c = \App\Models\SignedContract::find($contractId);
+        if (! $c || $c->isSigned()) {
+            return;
+        }
+        $user = auth()->user();
+        $vehicles = \App\Models\Vehicle::whereIn('id', $c->vehicle_ids ?? [])->get();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+        $this->signContractNo = $c->contract_no;
+        $this->signUrl = $c->signingUrl();
+        $this->showSignModal = true;
+    }
+
     /**
      * ② 하이브리드 — 선택한 export 차량들이 "한 선적 묶음(batch)"에 온전히 속하면 그 batch_id 반환.
      * 여러 묶음에 걸치거나 묶음 없으면 null → 면허비 딥링크 비노출(완전묶음만 허용, 부분/혼합 실수 차단).
@@ -6511,6 +6576,17 @@ function vehicleColumnsToggle() {
                     </div>
                     <span class="text-xs text-emerald-600">↓</span>
                 </a>
+                {{-- 전자서명 — 이 차량 1대 계약 서명 상태/요청 (묶음은 선적요청 화면) --}}
+                @if($hasId)
+                    <div class="mt-1 flex items-center gap-2 px-1">
+                        <span class="text-[11px] font-semibold text-gray-400">{{ __('signed_contract.esign_label') }}</span>
+                        <x-erp.esign-chip
+                            :status="$this->editingSign['status']"
+                            :contract-id="$this->editingSign['id'] ?? null"
+                            request-click="requestSignatureForVehicle"
+                            link-click="showSignLink({{ $this->editingSign['id'] ?? 0 }})" />
+                    </div>
+                @endif
             </div>
 
             {{-- 선적 서류 (컨테이너/RORO × Invoice&Packing·Contract). 이 버튼은 이 차량 1대. 여러 대 → 1서류는 차량목록 체크박스. --}}

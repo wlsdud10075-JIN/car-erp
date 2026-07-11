@@ -4,6 +4,7 @@ use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\SignController;
+use App\Http\Controllers\SignedContractController;
 use App\Http\Controllers\VehicleDocumentController;
 use App\Http\Controllers\VehicleExportController;
 use App\Http\Controllers\VehicleTemplateController;
@@ -92,6 +93,11 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Route::get('vehicles/documents/{type}', [VehicleDocumentController::class, 'showMulti'])
         ->name('vehicles.documents.multi')
         ->middleware('throttle:vehicle-docs-multi');
+
+    // 전자서명 서명본 열람 (ERP 내부, canScopeVehicle 가드). 바이어용 공개 signed URL 과 별개.
+    Route::get('signed-contracts/{signedContract}/pdf', [SignedContractController::class, 'pdf'])
+        ->name('signed-contracts.pdf')
+        ->whereNumber('signedContract');
 
     // 업로드된 말소신청서 원본 파일 개별 다운로드 (선적요청 묶음 다운로드용)
     Route::get('vehicles/{id}/deregistration-file', [VehicleDocumentController::class, 'deregistrationFile'])
