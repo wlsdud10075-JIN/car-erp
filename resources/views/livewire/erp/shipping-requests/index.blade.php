@@ -789,35 +789,39 @@ new #[Layout('components.layouts.app')] class extends Component
                                         {{ __('shipping.action.done') }}
                                     </button>
                                 @endif
-                                {{-- 보조 액션(차량관리 열기·말소신청서 다운로드·취소) → ⋯ 더보기 로 축약 --}}
+                                {{-- 차량관리 N대 보기 — 항상 인라인(jin: 무조건 보이게) --}}
+                                <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
+                                   class="rounded-md border border-primary bg-primary-light px-2.5 py-1 text-[11px] font-semibold text-primary-text hover:opacity-90">
+                                    {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
+                                </a>
+                                {{-- 보조 액션(말소신청서 다운로드·취소) → ⋯ 더보기 --}}
                                 @php $deregUrls = collect($b['vehicles'])->where('has_dereg', true)->map(fn ($v) => route('erp.vehicles.deregistration-file', ['id' => $v['id']]))->values()->all(); @endphp
                                 <div class="relative" x-data="{ open: false }" @click.outside="open = false">
-                                    <button type="button" @click="open = ! open"
-                                            class="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50">
-                                        ⋯ {{ __('shipping.action.more') }}
-                                    </button>
+                                    <button type="button" @click="open = ! open" title="{{ __('shipping.action.more') }}"
+                                            class="rounded-md border border-gray-300 bg-white px-2 py-1 text-[13px] font-bold leading-none text-gray-500 hover:bg-gray-50"
+                                            :class="open && 'bg-gray-100'">⋯</button>
                                     <div x-show="open" x-cloak x-transition
-                                         class="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg">
-                                        <a href="{{ route('erp.vehicles.index', ['ids' => $idsCsv]) }}" wire:navigate
-                                           class="block px-3 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-gray-50">
-                                            {{ __('shipping.action.open_in_vehicles', ['count' => $b['count']]) }}
-                                        </a>
+                                         class="absolute right-0 z-30 mt-1 w-52 rounded-lg border border-gray-200 bg-white p-1 shadow-lg ring-1 ring-black/5">
                                         @if (count($deregUrls) > 0)
                                             <button type="button"
                                                     @click="@js($deregUrls).forEach((u, i) => setTimeout(() => { const a = document.createElement('a'); a.href = u; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }, i * 400)); open = false"
-                                                    class="block w-full px-3 py-1.5 text-left text-[11px] font-medium text-blue-700 hover:bg-blue-50">
-                                                {{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}
+                                                    class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-gray-700 hover:bg-gray-50">
+                                                <span class="w-4 shrink-0 text-center text-sm text-blue-500">⬇</span>
+                                                <span class="flex-1">{{ __('shipping.action.download_dereg', ['count' => count($deregUrls)]) }}</span>
                                             </button>
                                         @else
-                                            <span class="block px-3 py-1.5 text-[11px] font-medium text-gray-400">
-                                                {{ __('shipping.action.download_dereg', ['count' => 0]) }}
-                                            </span>
+                                            <div class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] font-medium text-gray-300">
+                                                <span class="w-4 shrink-0 text-center text-sm">⬇</span>
+                                                <span class="flex-1">{{ __('shipping.action.download_dereg', ['count' => 0]) }}</span>
+                                            </div>
                                         @endif
                                         @if (in_array($b['status'], ['requested', 'in_progress'], true))
+                                            <div class="my-1 h-px bg-gray-100"></div>
                                             <button type="button" wire:click="cancel('{{ $b['batch_id'] }}')"
                                                     wire:confirm="{{ __('shipping.confirm.cancel', ['n' => $b['count']]) }}"
-                                                    class="block w-full border-t border-gray-100 px-3 py-1.5 text-left text-[11px] font-medium text-red-600 hover:bg-red-50">
-                                                {{ __('shipping.action.cancel') }}
+                                                    class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12px] font-medium text-red-600 hover:bg-red-50">
+                                                <span class="w-4 shrink-0 text-center text-sm">✕</span>
+                                                <span class="flex-1">{{ __('shipping.action.cancel') }}</span>
                                             </button>
                                         @endif
                                     </div>
