@@ -107,8 +107,9 @@ class ScanTaskAlarms extends Command
             //   due_date = 계약금(down PBP) 최초일 + 10. 잔금 완납/거래완료 시 자동해소(reconcile + PBP saved 훅).
             $balCreated = 0;
             $balUpdated = 0;
+            $balanceLeadDays = (int) Setting::get('alarm_balance_due_days', 10);
             foreach ($balanceMatched as $v) {
-                $due = optional($v->contract_down_date)->copy()->addDays(10);
+                $due = optional($v->contract_down_date)->copy()->addDays($balanceLeadDays);
                 $alarm = TaskAlarm::firstOrNew([
                     'type' => 'purchase_balance_due',
                     'vehicle_id' => $v->id,
