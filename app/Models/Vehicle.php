@@ -1358,8 +1358,9 @@ class Vehicle extends Model
         if (! $down) {
             return null;
         }
+        $leadDays = (int) Setting::get('alarm_balance_due_days', 10);
 
-        return (int) now()->startOfDay()->diffInDays($down->copy()->addDays(10)->startOfDay(), false);
+        return (int) now()->startOfDay()->diffInDays($down->copy()->addDays($leadDays)->startOfDay(), false);
     }
 
     /**

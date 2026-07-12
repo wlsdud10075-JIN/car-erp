@@ -548,6 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'eta' => ['key' => 'alarm_eta_lead_days', 'default' => 10, 'label' => __('feature_settings.alarm_lead_eta')],
             'document' => ['key' => 'alarm_doc_deadline_lead_days', 'default' => 5, 'label' => __('feature_settings.alarm_lead_document')],
+            'balance_due' => ['key' => 'alarm_balance_due_days', 'default' => 10, 'label' => __('feature_settings.alarm_lead_balance_due')],
         ];
     }
 

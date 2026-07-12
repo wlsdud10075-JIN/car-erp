@@ -103,4 +103,20 @@ class KarabaBalanceAlarmTest extends TestCase
 
         Volt::test('erp.vehicles.index')->assertSee('D-10 잔금');
     }
+
+    public function test_lead_days_setting_overrides_deadline(): void
+    {
+        Setting::updateOrCreate(['key' => 'alarm_balance_due_days'], ['value' => '20', 'type' => 'integer']);
+        $v = $this->dealerVehicle();
+        $this->addDown($v);   // 계약금 오늘 → 마감 오늘+20
+
+        $this->assertSame(20, $v->fresh()->purchase_balance_due_days);
+    }
+
+    public function test_feature_settings_shows_balance_due_alarm_config(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        Volt::test('admin.settings')->assertSee('매매상 잔금 (계약금 후)');
+    }
 }
