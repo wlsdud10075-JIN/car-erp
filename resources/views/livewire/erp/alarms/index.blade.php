@@ -160,6 +160,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             $isShip = $type === 'shipping_requested';
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
+                            $isBalanceDue = $type === 'purchase_balance_due';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
@@ -181,6 +182,15 @@ new #[Layout('components.layouts.app')] class extends Component
                                     </span>
                                 @endif
                                 <span class="text-[12px] font-semibold text-amber-700">{{ __('alarm.doc_deadline_action') }}</span>
+                            @elseif ($isBalanceDue)
+                                @if ($dday !== null)
+                                    <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
+                                        {{ $dday >= 0 ? __('alarm.balance_dday', ['d' => $dday]) : __('alarm.balance_overdue') }}
+                                    </span>
+                                @endif
+                                <span class="text-[12px] font-semibold text-red-700">
+                                    {{ $unpaid ? __('alarm.balance_due_action', ['amt' => number_format($unpaid)]) : __('alarm.balance_due_short') }}
+                                </span>
                             @else
                                 @if ($dday !== null)
                                     <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">

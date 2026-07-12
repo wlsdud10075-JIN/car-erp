@@ -51,6 +51,17 @@ class PurchaseBalancePayment extends Model
                     ->whereNull('resolved_at')
                     ->update(['resolved_at' => now(), 'resolved_reason' => 'down_payment']);
             }
+
+            // 잔금 완납 → 매매상 잔금 10일 알림 즉시 해소 (jin 2026-07-12, scan 보정 전 반응성).
+            //   open 알람 있을 때만 fresh 미지급 계산 (non-karaba·무알람은 exists() 에서 short-circuit).
+            if (Schema::hasTable('task_alarms')
+                && TaskAlarm::where('type', 'purchase_balance_due')->where('vehicle_id', $p->vehicle_id)->whereNull('resolved_at')->exists()
+                && (int) ($p->vehicle?->fresh()?->purchase_unpaid_amount ?? 1) <= 0) {
+                TaskAlarm::where('type', 'purchase_balance_due')
+                    ->where('vehicle_id', $p->vehicle_id)
+                    ->whereNull('resolved_at')
+                    ->update(['resolved_at' => now(), 'resolved_reason' => 'balance_paid']);
+            }
         });
         static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
 
