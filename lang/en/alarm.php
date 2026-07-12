@@ -12,6 +12,12 @@ return [
     'arrival_action' => 'Proceed with deposit',
     'task_document_deadline' => 'Shipping doc deadline',
     'doc_deadline_action' => 'Deadline approaching',
+    // Dealer (매매상) balance 10-day alarm (karaba)
+    'task_balance_due' => 'Dealer balance',
+    'balance_dday' => 'Balance D-:d',
+    'balance_overdue' => 'Balance overdue',
+    'balance_due_action' => 'Purchase balance ₩:amt · collect',
+    'balance_due_short' => 'Collect purchase balance',
     'badge_new' => 'NEW',
     'toast_arrival' => '🚚 :n new vehicle(s) arrived from board — please check',
     'toast_new' => '🔔 :n new alert(s)',

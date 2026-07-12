@@ -785,6 +785,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_date = '';
     public string $salesman_id_str = '';
     public string $purchase_from  = '';
+    // karaba 전용 매입 기본 (Setting::isKaraba() 게이팅) — 매입증빙 자유입력 / 거래처구분 드롭박스
+    public string $purchase_evidence_type = '';
+    public string $purchase_partner_type  = '';
     // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 cast로 자동 암호화)
     public string $purchase_seller_bank    = '';
     public string $purchase_seller_account = '';
@@ -855,6 +858,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $panelPurchaseTotal = null;
     public ?int $panelPurchasePaid = null;
     public ?int $panelPurchaseUnpaid = null;
+    // karaba 요약 항목별 완납 (구입금액 / 매도비 각각 owed vs paid) — A3
+    public ?int $panelPurchasePriceTotal = null;   // 구입금액 owed = purchase_price
+    public ?int $panelPurchasePricePaid = null;    // 구입금액 paid = 계약금 + 확정 잔금(PBP)
+    public ?int $panelSellingFeeTotal = null;       // 매도비 owed = selling_fee
+    public ?int $panelSellingFeePaid = null;        // 매도비 paid = 매도비 지급
 
     // 매입 과입금 정정 사유 (인라인, 재무 권한 · 사유 필수). correctPurchaseOverpay 에서 소비.
     public string $purchaseOverpayReason = '';
@@ -1178,6 +1186,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->panelPurchaseTotal = $purchaseTotal > 0 ? $purchaseTotal : null;
         $this->panelPurchaseUnpaid = $purchaseTotal > 0 ? (int) $v->purchase_unpaid_amount : null;
         $this->panelPurchasePaid = $purchaseTotal > 0 ? $purchaseTotal - $this->panelPurchaseUnpaid : null;
+        // karaba 항목별 (구입금액/매도비) — 매도비 paid=selling_fee_payment, 구입금액 paid=총지급-매도비지급
+        $this->panelPurchasePriceTotal = $purchaseTotal > 0 ? (int) $v->purchase_price : null;
+        $this->panelSellingFeeTotal = $purchaseTotal > 0 ? (int) $v->selling_fee : null;
+        $this->panelSellingFeePaid = $purchaseTotal > 0 ? (int) $v->selling_fee_payment : null;
+        $this->panelPurchasePricePaid = $purchaseTotal > 0 ? $this->panelPurchasePaid - (int) $v->selling_fee_payment : null;
         $this->purchaseOverpayReason = '';
 
         $this->dispatch('notify', message: __('vehicle.overpay.done', ['amount' => number_format($excess)]), type: 'success');
@@ -1971,9 +1984,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 회의확장씬 #9 (2026-05-22) — 신규 차량 기타비용 기본기재 (사용자 명세).
         // 운영자가 수정 가능 (또는 0 으로 비움). 2차 정산 단계에서 [관리]/[재무] 가
         // 한 달 뒤 측정된 실제 비용으로 정정 (Phase 1-3 흐름).
-        $this->cost_deregistration_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_deregistration']);
-        $this->cost_license_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_license']);
-        $this->cost_towing_str = number_format(Vehicle::DEFAULT_PURCHASE_COSTS['cost_towing']);
+        // 회사 프로파일별 기본비용 (karaba=말소 17,300·면허 0·탁송 0 / 그 외=24,000·11,000·30,000)
+        $defaultCosts = Vehicle::defaultPurchaseCosts();
+        $this->cost_deregistration_str = number_format($defaultCosts['cost_deregistration']);
+        $this->cost_license_str = number_format($defaultCosts['cost_license']);
+        $this->cost_towing_str = number_format($defaultCosts['cost_towing']);
         $this->showPanel = true;
     }
 
@@ -2292,6 +2307,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_date       = $v->purchase_date ? $v->purchase_date->format('Y-m-d') : '';
         $this->salesman_id_str     = $v->salesman_id   ? (string)$v->salesman_id : '';
         $this->purchase_from       = $v->purchase_from ?? '';
+        $this->purchase_evidence_type = $v->purchase_evidence_type ?? '';
+        $this->purchase_partner_type  = $v->purchase_partner_type  ?? '';
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -2474,8 +2491,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->panelPurchaseTotal = $purchaseTotal;
             $this->panelPurchaseUnpaid = (int) $v->purchase_unpaid_amount;
             $this->panelPurchasePaid = $purchaseTotal - $this->panelPurchaseUnpaid;
+            // karaba 항목별 (구입금액/매도비)
+            $this->panelPurchasePriceTotal = (int) $v->purchase_price;
+            $this->panelSellingFeeTotal = (int) $v->selling_fee;
+            $this->panelSellingFeePaid = (int) $v->selling_fee_payment;
+            $this->panelPurchasePricePaid = $this->panelPurchasePaid - (int) $v->selling_fee_payment;
         } else {
             $this->panelPurchaseTotal = $this->panelPurchasePaid = $this->panelPurchaseUnpaid = null;
+            $this->panelPurchasePriceTotal = $this->panelPurchasePricePaid = null;
+            $this->panelSellingFeeTotal = $this->panelSellingFeePaid = null;
         }
 
         // 큐 21 — Ledger 잠금 상태 갱신
@@ -3276,6 +3300,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_date'    => $toDate($this->purchase_date),
             'salesman_id'      => $toId($this->salesman_id_str),
             'purchase_from'    => $this->purchase_from ?: null,
+            'purchase_evidence_type' => $this->purchase_evidence_type ?: null,
+            'purchase_partner_type'  => $this->purchase_partner_type  ?: null,
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -4354,7 +4380,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from',
+            'purchase_date','salesman_id_str','purchase_from','purchase_evidence_type','purchase_partner_type',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -4724,7 +4750,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_title') }}" />
                     @endif
                 </td>
-                <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
+                <td class="py-3 pr-4 font-mono font-medium text-gray-800">
+                    {{ $v->vehicle_number }}
+                    {{-- karaba(2026-07-12): 매매상 잔금 10일 임박 배지 (거래처구분 매매상 + 계약금 + 미납) --}}
+                    @php $balDays = $v->purchase_balance_due_days; @endphp
+                    @if($balDays !== null)
+                        <span class="ml-1 whitespace-nowrap rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700" title="{{ __('vehicle.field.purchase_partner_type') }}: 매매상">
+                            {{ $balDays >= 0 ? __('vehicle.balance_badge', ['d' => $balDays]) : __('vehicle.balance_badge_overdue') }}
+                        </span>
+                    @endif
+                </td>
                 <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
@@ -4861,7 +4896,15 @@ function vehicleColumnsToggle() {
                        class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_title') }}" />
             @endif
         <div class="space-y-0.5">
-            <div class="font-mono font-semibold text-gray-800">{{ $v->vehicle_number }}</div>
+            <div class="font-mono font-semibold text-gray-800">
+                {{ $v->vehicle_number }}
+                @php $balDaysM = $v->purchase_balance_due_days; @endphp
+                @if($balDaysM !== null)
+                    <span class="ml-1 whitespace-nowrap rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700">
+                        {{ $balDaysM >= 0 ? __('vehicle.balance_badge', ['d' => $balDaysM]) : __('vehicle.balance_badge_overdue') }}
+                    </span>
+                @endif
+            </div>
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
             <div class="flex items-center gap-1.5">
                 <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
@@ -5362,22 +5405,48 @@ function vehicleColumnsToggle() {
 
         {{-- ─── 매입 탭 ──────────────────────────────────── --}}
         <div x-show="tab === 'purchase'" x-cloak>
+            @php $isKaraba = \App\Models\Setting::isKaraba(); @endphp
             <div class="section-header">
                 <span class="section-dot bg-blue-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.purchase_basic') }}</span>
             </div>
             {{-- UX #1 (2026-05-20) — 매입 필수 입력란 노랑 배경. 영업이 입력 누락 방지. --}}
+            {{-- karaba(2026-07-12): 구입처 자유텍스트 → 거래처구분 드롭박스로 대체 + 매입증빙(자유입력). 매도비 옆 배치. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">{{ __('vehicle.field.purchase_date') }} </label><input wire:model="purchase_date" type="text" data-date class="input-base input-required" /></div>
                 {{-- 영업담당자 select 는 기본정보 탭(색상 옆)으로 이동 (2026-06-04). --}}
+                @unless($isKaraba)
                 <div class="col-span-2 sm:col-span-1">
                     <label class="label-base">{{ __('vehicle.field.purchase_from') }} </label>
                     <input wire:model="purchase_from" type="text" class="input-base input-required" placeholder="{{ __('vehicle.ph.purchase_from') }}" />
                 </div>
+                @endunless
                 <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
+                @if($isKaraba)
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.purchase_evidence_type') }}</label>
+                    <select wire:model="purchase_evidence_type" class="input-base">
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                        @foreach(\App\Models\Vehicle::KARABA_EVIDENCE_TYPES as $ev)
+                        <option value="{{ $ev }}">{{ $ev }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.purchase_partner_type') }}</label>
+                    <select wire:model="purchase_partner_type" class="input-base">
+                        <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                        @foreach(\App\Models\Vehicle::KARABA_PARTNER_TYPES as $pt)
+                        <option value="{{ $pt }}">{{ $pt }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endif
             </div>
 
+            {{-- karaba(2026-07-12): 계좌란(예금주/은행/계좌번호 + 계좌메모) 전체 숨김 — 입금계좌 사진 첨부로 대체. --}}
+            @unless($isKaraba)
             {{-- 큐 20-A/C — 매입처 계좌 4컬럼 (계좌번호 자동 암호화 + AuditLog 마스킹) --}}
             {{-- UX #5 (2026-05-20) — 은행명 datalist 자동완성 (13개) + 계좌번호 동적 mask ($store.koreanBanks) --}}
             <hr class="section-divider">
@@ -5444,6 +5513,7 @@ function vehicleColumnsToggle() {
                            x-on:input="$el.value = $store.koreanBanks.applyMask($refs.feeBankInput.value, $el.value)" />
                 </div>
             </div>
+            @endunless
 
             <hr class="section-divider">
             <div class="section-header">
@@ -5566,6 +5636,24 @@ function vehicleColumnsToggle() {
                     <div class="text-sm text-gray-400">—</div>
                 @else
                     <div class="space-y-1 text-sm">
+                        @if($isKaraba)
+                        {{-- karaba(2026-07-12): 항목별 완납 표시 — 구입금액·매도비 각각 owed vs paid. --}}
+                        @foreach([
+                            ['label' => __('vehicle.panel.item_purchase_price'), 'owed' => $panelPurchasePriceTotal, 'paid' => $panelPurchasePricePaid],
+                            ['label' => __('vehicle.panel.item_selling_fee'),    'owed' => $panelSellingFeeTotal,    'paid' => $panelSellingFeePaid],
+                        ] as $item)
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">{{ $item['label'] }}
+                                <span class="text-[10px] text-gray-400">₩{{ number_format($item['owed']) }} · {{ __('vehicle.panel.item_paid') }} ₩{{ number_format($item['paid']) }}</span>
+                            </span>
+                            @if($item['paid'] >= $item['owed'])
+                            <span class="font-medium text-emerald-700">{{ __('vehicle.panel.fully_paid') }}</span>
+                            @else
+                            <span class="font-medium text-amber-800">{{ __('vehicle.panel.item_unpaid') }} ₩{{ number_format($item['owed'] - $item['paid']) }}</span>
+                            @endif
+                        </div>
+                        @endforeach
+                        @else
                         <div class="flex justify-between text-gray-600">
                             <span>{{ __('vehicle.panel.purchase_total') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.purchase_total_sub') }}</span></span>
                             <span>₩{{ number_format($panelPurchaseTotal) }}</span>
@@ -5574,6 +5662,7 @@ function vehicleColumnsToggle() {
                             <span>{{ __('vehicle.panel.purchase_paid') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.purchase_paid_sub') }}</span></span>
                             <span>₩{{ number_format($panelPurchasePaid) }}</span>
                         </div>
+                        @endif
                         <hr class="border-indigo-100" />
                         <div class="flex justify-between font-semibold">
                             <span class="text-gray-700">{{ __('vehicle.panel.purchase_unpaid') }}</span>
@@ -5643,10 +5732,13 @@ function vehicleColumnsToggle() {
                 </div>
                 @endif
                 @endif
+                {{-- karaba(2026-07-12): 메모 3→1 — 계좌메모·송금메모 숨김. 맨 아래 '메모(공통·내부메모)'만 남김. --}}
+                @unless($isKaraba)
                 <div class="col-span-2">
                     <label class="label-base">{{ __('vehicle.field.remittance_memo') }}</label>
                     <textarea wire:model="purchase_remittance_memo" class="input-base" rows="2"></textarea>
                 </div>
+                @endunless
                 <div>
                     <label class="label-base">{{ __('vehicle.field.registration_number') }}</label>
                     <input type="text" wire:model="registration_number" class="input-base" placeholder="{{ __('vehicle.field.registration_number_ph') }}" />

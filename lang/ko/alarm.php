@@ -12,6 +12,12 @@ return [
     'arrival_action' => '계약금 진행',
     'task_document_deadline' => '선적 서류마감',
     'doc_deadline_action' => '서류마감 임박',
+    // 매매상 잔금 10일 알림 (karaba)
+    'task_balance_due' => '매매상 잔금',
+    'balance_dday' => '잔금 D-:d',
+    'balance_overdue' => '잔금 기한 지남',
+    'balance_due_action' => '매입 잔금 ₩:amt · 수금 필요',
+    'balance_due_short' => '매입 잔금 수금 필요',
     'badge_new' => 'NEW',
     'toast_arrival' => '🚚 board에서 신규 매입차 도착 :n건 — 확인하세요',
     'toast_new' => '🔔 새 알림 :n건 도착',

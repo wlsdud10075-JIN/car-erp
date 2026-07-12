@@ -30,12 +30,16 @@ class ScanTaskAlarms extends Command
         try {
             $matched = Vehicle::query()->action('eta_clearance_reminder')->get();
             $docMatched = Vehicle::query()->action('document_deadline_reminder')->get();
+            // 매매상 잔금 10일 알림 (karaba) — 계약금일 산정 위해 purchaseBalancePayments eager load.
+            $balanceMatched = Vehicle::query()->with('purchaseBalancePayments')->action('purchase_balance_due')->get();
 
             if ($dryRun) {
                 $existingOpen = TaskAlarm::where('type', 'eta_clearance')->open()->count();
                 $docOpen = TaskAlarm::where('type', 'document_deadline')->open()->count();
+                $balanceOpen = TaskAlarm::where('type', 'purchase_balance_due')->open()->count();
                 $this->info("[dry-run] ETA 통관서류 알람 대상 = {$matched->count()}대 (현재 미해소 알람 {$existingOpen}건)");
                 $this->info("[dry-run] 서류마감 알람 대상 = {$docMatched->count()}대 (현재 미해소 알람 {$docOpen}건)");
+                $this->info("[dry-run] 매매상 잔금 알람 대상 = {$balanceMatched->count()}대 (현재 미해소 알람 {$balanceOpen}건)");
 
                 return self::SUCCESS;
             }
@@ -98,6 +102,33 @@ class ScanTaskAlarms extends Command
                 ->update(['resolved_at' => now(), 'resolved_reason' => 'auto_resolved']);
 
             $this->info("서류마감 알람 — 신규 {$docCreated} · 갱신 {$docUpdated} · 자동해소 {$docResolved}");
+
+            // 매매상 잔금 10일 알림 (karaba, jin 2026-07-12) — type 'purchase_balance_due', target_role '관리'.
+            //   due_date = 계약금(down PBP) 최초일 + 10. 잔금 완납/거래완료 시 자동해소(reconcile + PBP saved 훅).
+            $balCreated = 0;
+            $balUpdated = 0;
+            foreach ($balanceMatched as $v) {
+                $due = optional($v->contract_down_date)->copy()->addDays(10);
+                $alarm = TaskAlarm::firstOrNew([
+                    'type' => 'purchase_balance_due',
+                    'vehicle_id' => $v->id,
+                    'resolved_at' => null,
+                ]);
+                $alarm->target_role = '관리';
+                $alarm->due_date = $due;   // 계약금일 변경 시 매 스캔 갱신
+                $alarm->message_meta = TaskAlarm::sanitizeMeta([
+                    'vehicle_number' => $v->vehicle_number,
+                    'unpaid_amount_krw' => (int) $v->purchase_unpaid_amount,
+                ]);
+                $alarm->exists ? $balUpdated++ : $balCreated++;
+                $alarm->save();
+            }
+            $balResolved = TaskAlarm::where('type', 'purchase_balance_due')
+                ->open()
+                ->whereNotIn('vehicle_id', $balanceMatched->pluck('id'))
+                ->update(['resolved_at' => now(), 'resolved_reason' => 'auto_resolved']);
+
+            $this->info("매매상 잔금 알람 — 신규 {$balCreated} · 갱신 {$balUpdated} · 자동해소 {$balResolved}");
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

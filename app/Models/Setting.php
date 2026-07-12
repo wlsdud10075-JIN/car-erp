@@ -54,4 +54,13 @@ class Setting extends Model
     {
         return static::get('company_template_set') ?: config('company.template_set', 'system');
     }
+
+    /**
+     * 회사 프로파일 = companyTemplateSet() (서버 1개 = 회사 1개). 값: system(ssancar)/heyman/karaba.
+     * karaba 전용 커스터마이징(매입 UI·정산 등) 게이팅 단일 출처. heyman/ssancar는 공통 동작.
+     */
+    public static function isKaraba(): bool
+    {
+        return static::companyTemplateSet() === 'karaba';
+    }
 }

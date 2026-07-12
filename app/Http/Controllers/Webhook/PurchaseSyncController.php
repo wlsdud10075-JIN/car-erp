@@ -173,9 +173,9 @@ class PurchaseSyncController extends Controller
             ]);
         }
 
-        // 신규 매입 기본 기타비용(말소·면허·탁송) — UI 신규등록과 동일 단일 출처.
+        // 신규 매입 기본 기타비용(말소·면허·탁송) — UI 신규등록과 동일 단일 출처(회사 프로파일 반영).
         // 운영자가 추후 수정/0 가능, 2차 정산에서 실측치로 정정.
-        foreach (Vehicle::DEFAULT_PURCHASE_COSTS as $col => $amount) {
+        foreach (Vehicle::defaultPurchaseCosts() as $col => $amount) {
             $vehicle->{$col} = $amount;
         }
 

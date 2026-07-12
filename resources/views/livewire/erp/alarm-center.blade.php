@@ -127,6 +127,7 @@ new class extends Component
                             $isShip = $type === 'shipping_requested';
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
+                            $isBalanceDue = $type === 'purchase_balance_due';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
@@ -139,13 +140,17 @@ new class extends Component
                                         <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ $meta['shipping_method'] ?? '' }}</span>
                                     @elseif ($isArrival)
                                         <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">{{ __('alarm.badge_new') }}</span>
+                                    @elseif ($isBalanceDue && $dday !== null)
+                                        <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
+                                            {{ $dday >= 0 ? __('alarm.balance_dday', ['d' => $dday]) : __('alarm.balance_overdue') }}
+                                        </span>
                                     @elseif ($dday !== null)
                                         <span class="rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $soon ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800' }}">
                                             {{ $dday >= 0 ? __('alarm.dday', ['d' => $dday]) : __('alarm.overdue') }}
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : __('alarm.task_clearance'))) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance')))) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
                                 @if ($isShip)
@@ -154,6 +159,8 @@ new class extends Component
                                     <span class="text-[11.5px] font-semibold text-blue-700">{{ __('alarm.arrival_action') }}</span>
                                 @elseif ($isDocDeadline)
                                     <span class="text-[11.5px] font-semibold text-amber-700">{{ __('alarm.doc_deadline_action') }}</span>
+                                @elseif ($isBalanceDue)
+                                    <span class="text-[11.5px] font-semibold text-red-700">{{ $unpaid ? __('alarm.balance_due_action', ['amt' => number_format($unpaid)]) : __('alarm.balance_due_short') }}</span>
                                 @else
                                     <span class="text-[11.5px] font-semibold {{ $unpaid ? 'text-red-700' : ($unpaid === 0 ? 'text-emerald-700' : 'text-gray-400') }}">
                                         @if ($unpaid)

@@ -35,6 +35,7 @@ class Vehicle extends Model
         'nice_spec_width', 'nice_spec_height', 'nice_spec_wheelbase',
         'nice_spec_curb_weight', 'nice_spec_fuel_efficiency',
         'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
+        'purchase_evidence_type', 'purchase_partner_type',   // karaba 전용 UI (매입증빙 자유입력 / 거래처구분 드롭박스)
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -98,6 +99,38 @@ class Vehicle extends Model
         'cost_deregistration' => 24000,
         'cost_license' => 11000,
         'cost_towing' => 30000,
+    ];
+
+    /**
+     * karaba 전용 매입 기본비용 (jin 2026-07-12) — 말소비 17,300 자동 default,
+     * 면허비·탁송비 0(엑셀 명세서 업로드로 나중 기입). heyman/ssancar 는 위 기본값 유지.
+     */
+    public const DEFAULT_PURCHASE_COSTS_KARABA = [
+        'cost_deregistration' => 17300,
+        'cost_license' => 0,
+        'cost_towing' => 0,
+    ];
+
+    /** 회사 프로파일별 매입 기본비용 단일 출처 — karaba면 karaba 세트, 그 외 공통 세트. */
+    public static function defaultPurchaseCosts(): array
+    {
+        return Setting::isKaraba() ? self::DEFAULT_PURCHASE_COSTS_KARABA : self::DEFAULT_PURCHASE_COSTS;
+    }
+
+    /**
+     * karaba 거래처구분 드롭박스 옵션 (purchase_partner_type). 도메인 고정값 —
+     * ⚠️ '매매상'은 잔금 10일 알림(purchase_balance_due)이 감지하므로 문자열 고정.
+     */
+    public const KARABA_PARTNER_TYPES = ['매매상', '경매장', '헤이딜러', '매매상딜러', '수출회사', '국내바이어', '개인'];
+
+    /** karaba 매입증빙 드롭박스 옵션 (purchase_evidence_type). jin 2026-07-12 확정값. */
+    public const KARABA_EVIDENCE_TYPES = [
+        '계산서',
+        '개인(계약서)',
+        '개인(비사업용사실확인서)',
+        '리스,캐피탈(승계내역서/계산서)',
+        '구매대행(구매사실확인서)',
+        '선적대행(서류미필요)',
     ];
 
     // ── RRN 암호화 (개인정보보호법 §29) ─────────────────────────────
@@ -1296,6 +1329,40 @@ class Vehicle extends Model
     }
 
     /**
+     * 매매상 잔금 10일 알림 앵커 (karaba, jin 2026-07-12) — 계약금(down PBP) 최초 payment_date.
+     * 계약금 미입력이면 null. 알림/목록 배지 단일 출처.
+     */
+    public function getContractDownDateAttribute(): ?Carbon
+    {
+        $dates = $this->purchaseBalancePayments
+            ->filter(fn ($p) => $p->type === 'down' && (int) $p->amount > 0 && $p->payment_date)
+            ->pluck('payment_date');
+
+        return $dates->isEmpty() ? null : $dates->min();
+    }
+
+    /**
+     * 매매상 잔금 마감까지 남은 일수 (계약금일 + 10). 음수 = 마감 지남. null = 알림 대상 아님.
+     * 대상 = 거래처구분 '매매상'(karaba) + 매입가>0 + 매입 미지급>0 + 계약금 입력됨.
+     * scopeAction('purchase_balance_due') 와 동일 조건(단일 출처).
+     */
+    public function getPurchaseBalanceDueDaysAttribute(): ?int
+    {
+        if ($this->purchase_partner_type !== '매매상') {
+            return null;
+        }
+        if ($this->purchase_price <= 0 || $this->purchase_unpaid_amount <= 0) {
+            return null;
+        }
+        $down = $this->contract_down_date;
+        if (! $down) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($down->copy()->addDays(10)->startOfDay(), false);
+    }
+
+    /**
      * 입고일 (재고관리, jin 2026-07-09) = 매입 완납일. 미완납/미등록이면 null(입고 전).
      * 완납일 ≈ 매입잔금을 0으로 만든 마지막 확정 지급일(payment_date ≤ today).
      */
@@ -1449,7 +1516,7 @@ class Vehicle extends Model
         // 안건 J 본격 (2026-05-20) — dhl_request=false 직접 참조 폐기. v2/v3 cascade 결과가 progress_status_cache 에 string 저장됨.
         $activeOnly = [
             'purchase_unpaid', 'sale_unpaid', 'clearance_needed', 'shipping_needed', 'dhl_needed',
-            'deregistration_needed',
+            'deregistration_needed', 'purchase_balance_due',
             'clearance_request_needed', 'clearance_info_missing', 'forwarding_missing',
             'export_declaration_upload_needed', 'shipping_process_needed', 'bl_upload_needed', 'dhl_dispatch_needed',
             'exchange_rate_missing', 'clearance_stuck',
@@ -1480,6 +1547,22 @@ class Vehicle extends Model
                                           WHERE vehicle_id = vehicles.id
                                           AND payment_date IS NOT NULL AND payment_date <= ?
                                           AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()]),
+            // 매매상 잔금 10일 알림 (karaba, jin 2026-07-12) — 거래처구분 '매매상' + 계약금 입력 + 잔금 미납.
+            //   purchase_partner_type 은 karaba 만 채워 자연 격리. due_date = 계약금일+10 (scan 에서 산정).
+            //   getPurchaseBalanceDueDaysAttribute 와 동일 조건(단일 출처). alarms:scan 이 생성/자동해소.
+            'purchase_balance_due' => $q
+                ->where('purchase_partner_type', '매매상')
+                ->where('purchase_price', '>', 0)
+                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                          WHERE vehicle_id = vehicles.id
+                                          AND payment_date IS NOT NULL AND payment_date <= ?
+                                          AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()])
+                ->whereExists(function ($sub) {
+                    $sub->select(DB::raw(1))->from('purchase_balance_payments')
+                        ->whereColumn('purchase_balance_payments.vehicle_id', 'vehicles.id')
+                        ->where('type', 'down')->where('amount', '>', 0)->whereNotNull('payment_date');
+                }),
             'sale_unpaid' => $q
                 ->where('sale_price', '>', 0)
                 ->where(fn ($q2) => $q2
