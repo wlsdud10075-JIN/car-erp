@@ -305,7 +305,7 @@ return [
         'selling_fee_payment' => '매도비 지급',
         'balance' => '잔금',
         'deregistered' => '말소완료',
-        'derg_doc' => '말소신청서',
+        'derg_doc' => '말소증명서',
         'remittance_memo' => '송금메모',
         'registration_number' => '등록번호',
         'registration_number_ph' => '예: 2024-12345',

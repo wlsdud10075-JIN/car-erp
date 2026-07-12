@@ -305,7 +305,7 @@ return [
         'selling_fee_payment' => 'Dealer Fee Paid',
         'balance' => 'Balance',
         'deregistered' => 'Deregistered',
-        'derg_doc' => 'Deregistration Form',
+        'derg_doc' => 'Deregistration Certificate',
         'remittance_memo' => 'Remittance Memo',
         'registration_number' => 'Registration No.',
         'registration_number_ph' => 'e.g. 2024-12345',
