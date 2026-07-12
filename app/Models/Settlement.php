@@ -330,23 +330,25 @@ class Settlement extends Model
     }
 
     /**
-     * 부가세마진 = purchase_price × 0.09
+     * 부가세마진 = purchase_price × 부가세마진율(기본 9%)
      *   - 엑셀 CG = T × 0.09 (구입금액만, 매도비 제외).
      *   - car-erp purchase_price = 구입금액(매도비 selling_fee 별도) → 변경 불필요.
+     *   - 비율은 기능설정 파라미터 settlement_vat_margin_rate(%)로 조정 (기본 9, 2026-07-12).
      */
     public function getVatMarginAttribute(): int
     {
-        return (int) (($this->vehicle?->purchase_price ?? 0) * 0.09);
+        return (int) (($this->vehicle?->purchase_price ?? 0) * self::param('settlement_vat_margin_rate') / 100);
     }
 
     /**
-     * 총마진 = (판매마진 + 부가세마진) × 0.9
+     * 총마진 = (판매마진 + 부가세마진) × (1 − 부가세차감율, 기본 10% → × 0.9)
      *   - 엑셀 CH = (CF + CG) × 0.9. × 0.9 의 의미: 부가세 10% 차감 (계산 전 부가세 제외).
      *   - 사용자 확정 2026-05-21.
+     *   - 차감율은 기능설정 파라미터 settlement_total_margin_vat_deduct(%)로 조정 (기본 10, 2026-07-12).
      */
     public function getTotalMarginAttribute(): int
     {
-        return (int) (($this->sales_margin + $this->vat_margin) * 0.9);
+        return (int) (($this->sales_margin + $this->vat_margin) * (100 - self::param('settlement_total_margin_vat_deduct')) / 100);
     }
 
     // ── 정산 파라미터 (2026-06-22) — super admin 기능설정에서 Setting override 가능 ─────────
@@ -365,6 +367,10 @@ class Settlement extends Model
 
     public const EMPLOYEE_AMOUNT_HIGH = 200_000;        // 사내직원 건당(총마진 기준 이상) 20만원
 
+    public const VAT_MARGIN_RATE = 9;                   // 부가세마진율 % — 구입금액 × 9% (엑셀 CG). 2026-07-12 파라미터화
+
+    public const TOTAL_MARGIN_VAT_DEDUCT = 10;          // 총마진 부가세 차감율 % — 총마진 × (100−10)/100 = ×0.9 (엑셀 CH)
+
     /** Setting key ↔ 기본 상수 매핑 (super admin 기능설정 입력 대상). */
     public const PARAM_DEFAULTS = [
         'settlement_freelance_ratio' => self::FREELANCE_RATIO_DEFAULT,
@@ -374,6 +380,8 @@ class Settlement extends Model
         'settlement_employee_margin_threshold' => self::EMPLOYEE_MARGIN_THRESHOLD,
         'settlement_employee_amount_low' => self::EMPLOYEE_PER_UNIT_DEFAULT,
         'settlement_employee_amount_high' => self::EMPLOYEE_AMOUNT_HIGH,
+        'settlement_vat_margin_rate' => self::VAT_MARGIN_RATE,
+        'settlement_total_margin_vat_deduct' => self::TOTAL_MARGIN_VAT_DEDUCT,
     ];
 
     /** @var array<string,int> 요청 단위 메모 (정산 목록에서 per-row Setting 쿼리 폭주 방지) */

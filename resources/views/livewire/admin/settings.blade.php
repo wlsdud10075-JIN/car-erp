@@ -107,6 +107,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'settlement_employee_margin_threshold' => ['label' => '사내직원 건당 분기 — 총마진 (원)', 'hint' => '총마진이 이 값 미만/이상으로 건당액 분기. 기본 1,000,000(100만)'],
             'settlement_employee_amount_low' => ['label' => '사내직원 건당 — 총마진 기준 미만 (원)', 'hint' => '기본 100,000'],
             'settlement_employee_amount_high' => ['label' => '사내직원 건당 — 총마진 기준 이상 (원)', 'hint' => '기본 200,000'],
+            'settlement_vat_margin_rate' => ['label' => '부가세마진율 (%)', 'hint' => '구입금액 × 이 비율 = 부가세마진. 기본 9'],
+            'settlement_total_margin_vat_deduct' => ['label' => '총마진 부가세 차감율 (%)', 'hint' => '총마진에서 부가세 차감 (총마진 × (100−이 값)/100). 기본 10 (= ×0.9)'],
         ];
     }
 
