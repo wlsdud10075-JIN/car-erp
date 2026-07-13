@@ -39,4 +39,35 @@ return [
         'ip' => 'IP',
         'approval' => 'Approval',
     ],
+
+    // Alimtalk send log (2026-07-13)
+    'at_title' => 'Alimtalk Send Log',
+    'at_subtitle' => 'KakaoTalk alimtalk send & delivery results. :count total',
+    'at_search' => 'Phone · template · vehicle no.',
+    'at_all_status' => 'All send statuses',
+    'at_all_report' => 'All delivery results',
+    'at_only_attention' => 'Needs attention only',
+    'at_empty' => 'No alimtalk send logs.',
+    'at_ack' => 'Acknowledge',
+    'at_ack_all' => 'Acknowledge all undelivered',
+    'at_acked' => 'Acknowledged',
+    'at_col' => [
+        'time' => 'Sent at',
+        'template' => 'Template',
+        'phone' => 'Phone',
+        'status' => 'Send',
+        'report' => 'Delivery',
+        'vehicle' => 'Vehicle',
+        'detail' => 'Detail/Error',
+    ],
+    'at_status' => [
+        'sent' => 'Accepted',
+        'failed' => 'Failed',
+        'skipped' => 'Skipped',
+    ],
+    'at_report' => [
+        'delivered' => 'Delivered',
+        'undelivered' => 'Undelivered',
+        'pending' => 'Checking',
+    ],
 ];

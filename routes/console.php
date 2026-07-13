@@ -43,3 +43,7 @@ Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->when(function (
 
     return now()->isSameDay($firstBusinessDay);
 })->withoutOverlapping();
+
+// 알림톡 전송결과 폴링 (2026-07-13) — 발송된 msgid 의 실제 도달/미도달을 BizM /v2/sender/report 로 조회.
+//   read-only 조회라 매시간(주말 포함 — 금요일 발송분이 주말에 도달 확정될 수 있음). 미설정 시 내부 skip(inert).
+Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();

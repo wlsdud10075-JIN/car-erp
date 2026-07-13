@@ -36,6 +36,7 @@ return [
         'settings' => 'Settings',
         'doc_logs' => 'Document Access Logs',
         'audit_logs' => 'Audit Logs',
+        'alimtalk_logs' => 'Alimtalk Logs',
     ],
 
     'crumb' => [
@@ -46,6 +47,7 @@ return [
         'settings' => 'Settings',
         'doc_logs' => 'Document Access Logs',
         'audit_logs' => 'Audit Logs',
+        'alimtalk_logs' => 'Alimtalk Logs',
         'erp_dashboard' => 'ERP Dashboard',
         'vehicles' => 'Vehicles',
         'inventory' => 'Inventory',

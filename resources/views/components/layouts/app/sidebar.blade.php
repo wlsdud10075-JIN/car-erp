@@ -32,6 +32,7 @@
         $routeName === 'admin.settings' => __('nav.crumb.settings'),
         $routeName === 'admin.document-access-logs.index' => __('nav.crumb.doc_logs'),
         $routeName === 'admin.audit-logs.index' => __('nav.crumb.audit_logs'),
+        $routeName === 'admin.alimtalk-logs.index' => __('nav.crumb.alimtalk_logs'),
         $routeName === 'erp.dashboard' => __('nav.crumb.erp_dashboard'),
         $routeName === 'erp.vehicles.index' => __('nav.crumb.vehicles'),
         $routeName === 'erp.inventory.index' => __('nav.crumb.inventory'),
@@ -104,6 +105,11 @@
     } else {
         $pendingFinanceConfirmations = 0;
     }
+
+    // 2026-07-13 — 알림톡 미도달(+발송실패) 미확인 건수. canAccessAdmin 만 계산(배지 ↔ 메뉴 게이트 일치).
+    $alimtalkFailBadge = $user->canAccessAdmin()
+        ? \App\Models\AlimtalkLog::query()->needsAttention()->count()
+        : 0;
 
     // 2026-06-19 — 사이드바 트리 재편. role 게이트는 항목별 'show' 단일출처, 그룹은 'key'(접기 localStorage)+빈그룹 자동숨김(렌더에서 visible 항목 0이면 헤더 미출력).
     $menuGroups = [
@@ -315,6 +321,15 @@
                     'icon' => 'check-circle',
                     'active' => request()->routeIs('admin.audit-logs.*'),
                     'show' => $user->canAccessAdmin(),
+                ],
+                [
+                    'label' => __('nav.menu.alimtalk_logs'),
+                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-logs.index')
+                        ? route('admin.alimtalk-logs.index') : '#',
+                    'icon' => 'bell',
+                    'active' => request()->routeIs('admin.alimtalk-logs.*'),
+                    'show' => $user->canAccessAdmin(),
+                    'badge' => $alimtalkFailBadge > 0 ? $alimtalkFailBadge : null,
                 ],
             ],
         ],
