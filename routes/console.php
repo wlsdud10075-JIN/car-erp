@@ -47,3 +47,7 @@ Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->when(function (
 // 알림톡 전송결과 폴링 (2026-07-13) — 발송된 msgid 의 실제 도달/미도달을 BizM /v2/sender/report 로 조회.
 //   read-only 조회라 매시간(주말 포함 — 금요일 발송분이 주말에 도달 확정될 수 있음). 미설정 시 내부 skip(inert).
 Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();
+
+// 일별 마감환율 스냅샷 (2026-07-13) — 매일 09:00 네이버 현재값을 "전날 마감"으로 daily_exchange_rates 저장.
+//   ⚠️ 매일(주말 포함) — 금요일 마감이 토요일 09:00 에 정확히 잡히게. 잔금 날짜별 환율 자동기입 소스.
+Schedule::command('exchange:snapshot-daily')->dailyAt('09:00')->withoutOverlapping();

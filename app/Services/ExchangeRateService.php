@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DailyExchangeRate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -70,6 +71,16 @@ class ExchangeRateService
         $rates = $this->getRates();
 
         return $rates[$currency] ?? null;
+    }
+
+    /**
+     * 특정 날짜의 마감환율(과거 포함) — daily_exchange_rates 조회(주말·공휴일은 직전 영업일 carry-forward).
+     * 없으면(데이터 이전·미보유 통화) null → 호출자 수기입력 fallback. 잔금 날짜 지정 자동기입용.
+     * ⚠️ 오늘/미래 날짜는 이력에 아직 없을 수 있으니(스냅샷은 전날까지) 호출자가 today 는 getRate() 우선 사용.
+     */
+    public function getRateForDate(string $currency, string $date): ?float
+    {
+        return DailyExchangeRate::rateForDate($currency, $date);
     }
 
     /**
