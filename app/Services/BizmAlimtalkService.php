@@ -24,6 +24,8 @@ class BizmAlimtalkService
 {
     private const SEND_URL = 'https://alimtalk-api.bizmsg.kr/v2/sender/send';
 
+    private const REPORT_URL = 'https://alimtalk-api.bizmsg.kr/v2/sender/report';
+
     public function __construct(private AlimtalkConfig $config) {}
 
     public static function active(): self
@@ -177,6 +179,44 @@ class BizmAlimtalkService
             '선적후금액' => '0원',
             '미수합계' => '0원',
         ], ['user_id' => auth()->id()]);
+    }
+
+    /**
+     * BizM 전송결과 조회 — msgid 1건의 최종 도달 결과를 조회한다(GET /v2/sender/report).
+     *   응답(단일 객체)을 그대로 반환. 분류는 AlimtalkLog::classifyReport() 가 담당한다.
+     *   실패(미설정·네트워크·HTTP 오류)면 null → 호출측(폴링 커맨드)은 미확정으로 두고 재조회.
+     *   fire-and-forget: 예외를 던지지 않는다(send() 와 동일 원칙).
+     */
+    public function fetchReport(string $msgid): ?array
+    {
+        if ($msgid === '' || ! $this->config->isConfigured()) {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(15)
+                ->withHeaders(['userid' => $this->config->userid])
+                ->get(self::REPORT_URL, [
+                    'profile' => $this->config->profile,
+                    'msgid' => $msgid,
+                ]);
+
+            if ($response->failed()) {
+                return null;
+            }
+
+            $body = $response->json();
+            // report 응답은 단일 객체. 혹시 배열(list)로 오면 첫 요소를 쓴다(방어).
+            if (is_array($body) && array_is_list($body)) {
+                $body = $body[0] ?? null;
+            }
+
+            return is_array($body) ? $body : null;
+        } catch (\Throwable $e) {
+            Log::warning('alimtalk report fetch failed', ['msgid' => $msgid, 'error' => $e->getMessage()]);
+
+            return null;
+        }
     }
 
     private function normalizePhone(string $phone): string

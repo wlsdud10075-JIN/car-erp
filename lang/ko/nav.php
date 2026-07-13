@@ -36,6 +36,7 @@ return [
         'settings' => '기능 설정',
         'doc_logs' => '문서 접근 로그',
         'audit_logs' => '감사 로그',
+        'alimtalk_logs' => '알림톡 로그',
     ],
 
     'crumb' => [
@@ -46,6 +47,7 @@ return [
         'settings' => '기능 설정',
         'doc_logs' => '문서 접근 로그',
         'audit_logs' => '감사 로그',
+        'alimtalk_logs' => '알림톡 로그',
         'erp_dashboard' => 'ERP 대시보드',
         'vehicles' => '차량 관리',
         'inventory' => '재고관리',

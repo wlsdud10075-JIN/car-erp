@@ -39,4 +39,35 @@ return [
         'ip' => 'IP',
         'approval' => '승인',
     ],
+
+    // 알림톡 발송 로그 (2026-07-13)
+    'at_title' => '알림톡 발송 로그',
+    'at_subtitle' => '카카오 알림톡 발송·도달 결과. 총 :count건',
+    'at_search' => '수신번호 · 템플릿 · 차량번호',
+    'at_all_status' => '전체 발송상태',
+    'at_all_report' => '전체 도달결과',
+    'at_only_attention' => '주의 필요만',
+    'at_empty' => '알림톡 발송 로그가 없습니다.',
+    'at_ack' => '확인',
+    'at_ack_all' => '미도달 전체 확인',
+    'at_acked' => '확인됨',
+    'at_col' => [
+        'time' => '발송시각',
+        'template' => '템플릿',
+        'phone' => '수신번호',
+        'status' => '발송',
+        'report' => '도달',
+        'vehicle' => '차량',
+        'detail' => '내용/오류',
+    ],
+    'at_status' => [
+        'sent' => '접수',
+        'failed' => '실패',
+        'skipped' => '건너뜀',
+    ],
+    'at_report' => [
+        'delivered' => '도달',
+        'undelivered' => '미도달',
+        'pending' => '확인중',
+    ],
 ];
