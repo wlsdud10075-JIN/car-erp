@@ -67,10 +67,17 @@ class VehicleExportController extends Controller
             ->when($mirror && $dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
                 ->when($dateFrom !== '', fn ($x) => $x->whereDate('payment_date', '>=', $dateFrom))
                 ->when($dateTo !== '', fn ($x) => $x->whereDate('payment_date', '<=', $dateTo))))
+            // 검색 정합 — vehicles/index 목록 검색과 동일 필드셋 유지(화면↔export 일치).
             ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('vehicle_number', 'like', "%{$search}%")
                 ->orWhere('brand', 'like', "%{$search}%")
-                ->orWhere('model_type', 'like', "%{$search}%")))
+                ->orWhere('model_type', 'like', "%{$search}%")
+                ->orWhere('nice_reg_owner_name', 'like', "%{$search}%")
+                ->orWhere('export_declaration_number', 'like', "%{$search}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$search}%")
+                ->orWhere('vessel_name', 'like', "%{$search}%")
+                ->orWhere('container_number', 'like', "%{$search}%")
+                ->orWhere('purchase_from', 'like', "%{$search}%")))
             ->orderBy('id')
             ->get();
 
