@@ -530,6 +530,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
                 $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());
 
+                // 판매계약서 사전검증 — 컨트롤러 가드(showMulti HOMOGENEOUS_TYPES)와 동일: 단일 바이어·단일 통화만 발급.
+                //   혼합 묶음이면 링크를 비활성해 raw 422 노출을 막는다(차량목록 액션바와 정합).
+                $salesContractOk = $memberVehicles->pluck('buyer_id')->unique()->count() <= 1
+                    && $memberVehicles->pluck('currency')->unique()->count() <= 1;
+
                 return array_merge([
                     'batch_id' => (string) $f->batch_id,
                     'buyer' => $f->buyer?->name,
@@ -552,6 +557,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         'entry_blocked' => $isEntryBlocked($r->vehicle),
                     ])->values()->all(),
                     'count' => $items->count(),
+                    'sales_contract_ok' => $salesContractOk,
                     'entry_blockers' => $entryBlockers,
                     'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
                     'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
@@ -956,16 +962,23 @@ new #[Layout('components.layouts.app')] class extends Component
                                 ⬇ {{ $b['shipping_method'] }} {{ $label }}
                             </a>
                         @endforeach
-                        {{-- 판매계약서 다운로드 + 전자서명 칩 (묶음=단일 바이어·통화라 그대로) --}}
-                        <a href="{{ route('erp.vehicles.documents.multi', ['type' => 'sales_contract', 'ids' => $idsCsv]) }}" target="_blank" rel="noopener"
-                           class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100">
-                            ⬇ {{ __('vehicle.shipdoc.sales_contract') }}
-                        </a>
-                        <x-erp.esign-chip
-                            :status="$b['sign']['status']"
-                            :contract-id="$b['sign']['id'] ?? null"
-                            request-click="requestSignatureForBatch('{{ $b['batch_id'] }}')"
-                            link-click="showSignLink({{ $b['sign']['id'] ?? 0 }})" />
+                        {{-- 판매계약서 다운로드 + 전자서명 칩 — 단일 바이어·통화 묶음만(혼합이면 컨트롤러 422라 비활성) --}}
+                        @if ($b['sales_contract_ok'])
+                            <a href="{{ route('erp.vehicles.documents.multi', ['type' => 'sales_contract', 'ids' => $idsCsv]) }}" target="_blank" rel="noopener"
+                               class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100">
+                                ⬇ {{ __('vehicle.shipdoc.sales_contract') }}
+                            </a>
+                            <x-erp.esign-chip
+                                :status="$b['sign']['status']"
+                                :contract-id="$b['sign']['id'] ?? null"
+                                request-click="requestSignatureForBatch('{{ $b['batch_id'] }}')"
+                                link-click="showSignLink({{ $b['sign']['id'] ?? 0 }})" />
+                        @else
+                            <span title="{{ __('shipping.doc.sc_mixed') }}"
+                                  class="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
+                                ⬇ {{ __('vehicle.shipdoc.sales_contract') }} ⚠
+                            </span>
+                        @endif
                     </div>
                 </div>
             @endforeach

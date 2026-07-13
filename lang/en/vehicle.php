@@ -49,6 +49,7 @@ return [
         'purchase_date' => 'Purchased',
         'sale_date' => 'Sold',
         'shipping_date' => 'Shipped',
+        'eta_date' => 'ETA',
         'bl_issue_date' => 'B/L Date',
         'deregistration_date' => 'Deregistration',
         'export_declaration_number' => 'Export Decl. No.',

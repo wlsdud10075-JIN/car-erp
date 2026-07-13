@@ -49,6 +49,7 @@ return [
         'purchase_date' => '매입일',
         'sale_date' => '판매일',
         'shipping_date' => '선적일',
+        'eta_date' => '도착일',
         'bl_issue_date' => 'B/L발행일',
         'deregistration_date' => '말소일',
         'export_declaration_number' => '수출신고번호',

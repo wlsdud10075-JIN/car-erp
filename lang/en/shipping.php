@@ -69,6 +69,7 @@ return [
         'label' => 'Batch documents',
         'invoice_packing' => 'Invoice & Packing',
         'contract' => 'Contract',
+        'sc_mixed' => 'A batch with mixed buyers/currencies cannot issue a sales contract (same buyer & currency only).',
     ],
 
     'toast' => [
