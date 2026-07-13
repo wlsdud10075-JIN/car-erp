@@ -99,4 +99,27 @@ class ShippingRequestSignChipTest extends TestCase
             ->assertSee('서명완료')
             ->assertDontSee('전자서명 요청');
     }
+
+    public function test_sales_contract_disabled_for_mixed_buyer_batch(): void
+    {
+        // 바이어가 섞인 묶음 → 판매계약서 링크 비활성(컨트롤러 422 방지) + 서명칩 미노출. (ssancar 에러 fix)
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        $b1 = Buyer::create(['name' => 'TOKYO', 'is_active' => true]);
+        $b2 = Buyer::create(['name' => 'OSAKA', 'is_active' => true]);
+        foreach ([[$b1, 'MX1'], [$b2, 'MX2']] as [$buyer, $vn]) {
+            $v = Vehicle::create([
+                'vehicle_number' => $vn, 'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1300,
+                'sale_date' => '2026-06-01', 'sale_price' => 5000, 'buyer_id' => $buyer->id, 'purchase_date' => '2026-06-01',
+            ]);
+            ShippingRequest::create([
+                'batch_id' => 'MIX1', 'vehicle_id' => $v->id, 'buyer_id' => null,
+                'shipping_method' => 'RORO', 'status' => 'requested', 'requested_at' => now(),
+                'requested_by_email' => 'ops@ssancar.test',
+            ]);
+        }
+
+        Volt::test('erp.shipping-requests.index')
+            ->assertSee('섞인')                // 비활성 사유 툴팁(shipping.doc.sc_mixed)
+            ->assertDontSee('전자서명 요청');   // 혼합 묶음이면 판매계약서·서명칩 미노출
+    }
 }

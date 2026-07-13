@@ -69,6 +69,7 @@ return [
         'label' => '묶음 서류',
         'invoice_packing' => 'Invoice & Packing',
         'contract' => '계약서',
+        'sc_mixed' => '바이어·통화가 섞인 묶음은 판매계약서를 함께 발급할 수 없습니다 (동일 바이어·통화만).',
     ],
 
     'toast' => [
