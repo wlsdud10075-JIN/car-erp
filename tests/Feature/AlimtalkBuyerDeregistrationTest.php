@@ -77,7 +77,8 @@ class AlimtalkBuyerDeregistrationTest extends TestCase
     public function test_manual_send_builds_signed_link_and_logs(): void
     {
         $this->configureAlimtalk();
-        Http::fake(['*' => Http::response([['msgid' => 'BIZM-DEREG']], 200)]);
+        // BizM v2 실응답 형식 = code 'success' + data.msgid (2026-07-10 code===success 가드에 맞춤).
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'BIZM-DEREG']]], 200)]);
         $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
 
         $buyer = Buyer::create(['name' => '국내바이어', 'contact_phone' => '010-5555-6666', 'is_active' => true]);
