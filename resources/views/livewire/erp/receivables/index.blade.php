@@ -49,6 +49,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $hCollectorId = '';
     public string $hMethod = 'deposit';
     public string $hAmount = '';
+    public string $hExchangeRate = '';   // 입금(deposit) 환율 편집 (Phase 3, 외화만)
     public string $hNote = '';
 
     public function mount(): void
@@ -207,6 +208,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->hCollectorId = (string) $h->collector_id;
         $this->hMethod = $h->method;
         $this->hAmount = (string) $h->amount;
+        $this->hExchangeRate = $h->exchange_rate !== null ? (string) (float) $h->exchange_rate : '';
         $this->hNote = $h->note ?? '';
     }
 
@@ -217,12 +219,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             'hCollectorId' => ['required', 'exists:users,id'],
             'hMethod' => ['required', 'in:deposit,cash,offset,other,write_off'],
             'hAmount' => ['required', 'numeric', 'min:0'],
+            'hExchangeRate' => ['nullable', 'numeric', 'min:0'],
             'hNote' => ['nullable', 'string', 'max:500'],
         ], [], [
             'hCollectedAt' => __('receivable.field.date'),
             'hCollectorId' => __('receivable.field.collector'),
             'hMethod' => __('receivable.field.method'),
             'hAmount' => __('receivable.field.amount_attr'),
+            'hExchangeRate' => __('receivable.field.rate'),
             'hNote' => __('receivable.field.memo'),
         ]);
 
@@ -237,6 +241,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'collector_id' => (int) $this->hCollectorId,
             'method' => $this->hMethod,
             'amount' => (float) $this->hAmount,
+            'exchange_rate' => $this->hExchangeRate !== '' ? (float) $this->hExchangeRate : null,
             'note' => $this->hNote ?: null,
         ];
 
@@ -246,6 +251,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->addError('hMethod', __('receivable.err_paid_no_deposit'));
 
             return;
+        }
+
+        // 2차 마감(closed) 정산 차량은 환율 소급 변경 차단 — 프리랜서(ratio) 환차가 이미 확정됐을 수 있음(회계 무결성).
+        //   per_unit 사내직원은 환차 미반영이라 실질 영향은 없으나, 프리랜서 대비 방어 가드(2차 마감 차량만 막음).
+        if ($this->historyEditId && $this->hMethod === 'deposit'
+            && $vehicle->settlements()->where('secondary_status', 'closed')->exists()) {
+            $origRate = (float) (ReceivableHistory::find($this->historyEditId)?->exchange_rate ?? 0);
+            $newRate = $this->hExchangeRate !== '' ? (float) $this->hExchangeRate : 0.0;
+            if (abs($newRate - $origRate) > 0.0001) {
+                $this->addError('hExchangeRate', __('receivable.err_closed_no_rate_edit'));
+
+                return;
+            }
         }
 
         // 미러링(saved 훅 → FinalPayment 생성)이 가드 예외를 던지면 RH 도 함께 롤백 → 고아 RH 방지.
@@ -419,6 +437,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->hCollectorId = (string) (auth()->id() ?? '');
         $this->hMethod = 'deposit';
         $this->hAmount = '';
+        $this->hExchangeRate = '';
         $this->hNote = '';
         $this->resetValidation();
     }
@@ -851,6 +870,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input type="number" step="0.01" wire:model="hAmount" class="input-base" placeholder="0" />
                     @error('hAmount')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
                 </div>
+                @if($sv->currency !== 'KRW')
+                <div>
+                    <label class="label-base">{{ __('receivable.field.rate') }}</label>
+                    <input type="number" step="0.0001" wire:model="hExchangeRate" class="input-base" placeholder="0" />
+                    @error('hExchangeRate')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                @endif
                 <div class="col-span-2">
                     <label class="label-base">{{ __('receivable.field.memo') }}</label>
                     <textarea wire:model="hNote" rows="2" class="input-base" placeholder="{{ __('receivable.memo_ph') }}"></textarea>

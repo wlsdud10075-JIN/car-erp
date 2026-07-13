@@ -73,6 +73,7 @@ return [
         'method' => 'Method',
         'amount' => 'Amount',
         'amount_attr' => 'Collection amount',
+        'rate' => 'Rate',
         'memo' => 'Memo',
         'select' => 'Select',
     ],
@@ -93,6 +94,7 @@ return [
     'delete_failed' => 'This collection record cannot be deleted — it is linked to a finance-confirmed payment.',
     'save_failed' => 'Failed to save the collection record. Please check the amount and method.',
     'err_paid_no_deposit' => "This vehicle's settlement is paid; the 'Deposit' method can't be used. Choose cash, offset, other, or write-off.",
+    'err_closed_no_rate_edit' => 'The exchange rate cannot be edited for a vehicle whose secondary settlement is closed (prevents retroactive FX-difference changes).',
 
     // Overpayment → savings credit conversion
     'overpay' => [

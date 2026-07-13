@@ -9,12 +9,13 @@ class ReceivableHistory extends Model
 {
     protected $fillable = [
         'vehicle_id', 'final_payment_id', 'collected_at',
-        'collector_id', 'method', 'amount', 'note',
+        'collector_id', 'method', 'amount', 'exchange_rate', 'note',
     ];
 
     protected $casts = [
         'collected_at' => 'date',
         'amount' => 'decimal:2',
+        'exchange_rate' => 'decimal:4',
     ];
 
     protected static function booted(): void
@@ -46,8 +47,14 @@ class ReceivableHistory extends Model
     public function syncFinalPayment(): void
     {
         if ($this->method === 'deposit') {
+            // 환율 편집 반영 (Phase 3, 2026-07-13) — raw update 라 FinalPayment::saving 훅이 안 뜨므로
+            //   amount_krw 를 훅과 동일 공식으로 직접 계산해 넣는다(rate!==null && amount>0 ? round(amt×rate,2) : null).
+            $rate = $this->exchange_rate !== null ? (float) $this->exchange_rate : null;
+            $amt = (float) ($this->amount ?? 0);
             $payload = [
                 'amount' => $this->amount,
+                'exchange_rate' => $this->exchange_rate,
+                'amount_krw' => ($rate !== null && $amt > 0) ? round($amt * $rate, 2) : null,
                 'payment_date' => $this->collected_at,
                 'note' => '회수: '.($this->note ?? ''),
             ];
