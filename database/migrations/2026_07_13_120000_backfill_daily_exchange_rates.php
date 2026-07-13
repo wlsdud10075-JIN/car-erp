@@ -12,6 +12,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // 테스트 DB 는 각 테스트가 자체 환율 데이터를 심으므로 백필 제외(daily_exchange_rates 오염 방지).
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
         $now = now()->toDateTimeString();
         $rows = array_map(
             fn ($r) => $r + ['source' => 'history', 'created_at' => $now, 'updated_at' => $now],
