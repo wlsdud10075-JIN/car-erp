@@ -1186,14 +1186,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->panelPurchaseTotal = $purchaseTotal > 0 ? $purchaseTotal : null;
         $this->panelPurchaseUnpaid = $purchaseTotal > 0 ? (int) $v->purchase_unpaid_amount : null;
         $this->panelPurchasePaid = $purchaseTotal > 0 ? $purchaseTotal - $this->panelPurchaseUnpaid : null;
-        // karaba 항목별 (구입금액/매도비) — 매도비 paid=selling_fee_payment, 구입금액 paid=총지급-매도비지급
+        // karaba 항목별 (구입금액/매도비) — 매도비 paid = confirmed·기일도래 PBP type='selling_fee' 합.
+        $sellingFeePaid = $this->confirmedSellingFeePaid($v);
         $this->panelPurchasePriceTotal = $purchaseTotal > 0 ? (int) $v->purchase_price : null;
         $this->panelSellingFeeTotal = $purchaseTotal > 0 ? (int) $v->selling_fee : null;
-        $this->panelSellingFeePaid = $purchaseTotal > 0 ? (int) $v->selling_fee_payment : null;
-        $this->panelPurchasePricePaid = $purchaseTotal > 0 ? $this->panelPurchasePaid - (int) $v->selling_fee_payment : null;
+        $this->panelSellingFeePaid = $purchaseTotal > 0 ? $sellingFeePaid : null;
+        $this->panelPurchasePricePaid = $purchaseTotal > 0 ? $this->panelPurchasePaid - $sellingFeePaid : null;
         $this->purchaseOverpayReason = '';
 
         $this->dispatch('notify', message: __('vehicle.overpay.done', ['amount' => number_format($excess)]), type: 'success');
+    }
+
+    /**
+     * 매도비 지급액 = confirmed·기일도래 PBP type='selling_fee' 합.
+     * 구 selling_fee_payment 컬럼은 22-C-E 에서 DROP(PBP type enum 통합)됐으므로 그 컬럼을
+     * 읽으면 항상 0 → karaba 항목별 매도비 paid 가 안 빠지던 버그. §13 미지급 필터와 대칭(jin 2026-07-14).
+     */
+    private function confirmedSellingFeePaid(Vehicle $v): int
+    {
+        return (int) $v->purchaseBalancePayments
+            ->filter(fn ($p) => $p->confirmed_at !== null
+                && $p->payment_date !== null
+                && $p->payment_date->lte(now())
+                && $p->type === 'selling_fee')
+            ->sum('amount');
     }
 
     // 메일 발송 모달 열기 — 첨부 후보 3그룹(업로드/단계파일/자동생성) + 바이어 이메일 프리필.
@@ -2492,11 +2508,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->panelPurchaseTotal = $purchaseTotal;
             $this->panelPurchaseUnpaid = (int) $v->purchase_unpaid_amount;
             $this->panelPurchasePaid = $purchaseTotal - $this->panelPurchaseUnpaid;
-            // karaba 항목별 (구입금액/매도비)
+            // karaba 항목별 (구입금액/매도비) — 매도비 paid = confirmed·기일도래 PBP type='selling_fee' 합.
+            $sellingFeePaid = $this->confirmedSellingFeePaid($v);
             $this->panelPurchasePriceTotal = (int) $v->purchase_price;
             $this->panelSellingFeeTotal = (int) $v->selling_fee;
-            $this->panelSellingFeePaid = (int) $v->selling_fee_payment;
-            $this->panelPurchasePricePaid = $this->panelPurchasePaid - (int) $v->selling_fee_payment;
+            $this->panelSellingFeePaid = $sellingFeePaid;
+            $this->panelPurchasePricePaid = $this->panelPurchasePaid - $sellingFeePaid;
         } else {
             $this->panelPurchaseTotal = $this->panelPurchasePaid = $this->panelPurchaseUnpaid = null;
             $this->panelPurchasePriceTotal = $this->panelPurchasePricePaid = null;
