@@ -792,6 +792,7 @@ return [
         'sent' => 'Deregistration AlimTalk sent.',
         'no_doc' => 'Upload and save the deregistration certificate first.',
         'no_phone' => 'Enter the dealer phone number.',
+        'save_first' => 'Save the vehicle first, then you can send the AlimTalk.',
         'failed' => 'AlimTalk send failed: :reason (check Feature Settings → AlimTalk)',
     ],
 

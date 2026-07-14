@@ -116,6 +116,23 @@ class AlimtalkBuyerDeregistrationTest extends TestCase
         $this->assertSame(0, AlimtalkLog::count());
     }
 
+    // jin 2026-07-14 — 차량등록(미저장) 화면에서도 블록 노출. 발송은 저장 후만 가능 → 미저장 클릭 시 경고 토스트·발송 없음.
+    public function test_manual_send_on_unsaved_vehicle_warns_and_sends_nothing(): void
+    {
+        $this->configureAlimtalk();
+        Http::fake();
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        Volt::test('erp.vehicles.index')
+            ->set('editingId', null)
+            ->set('deregistrationBuyerPhone', '010-1111-2222')
+            ->call('sendDeregistrationAlimtalk')
+            ->assertDispatched('notify', type: 'warning');
+
+        Http::assertNothingSent();
+        $this->assertSame(0, AlimtalkLog::count());
+    }
+
     // jin 2026-07-10 — 딜러 번호는 사용자가 입력·저장하면 유지된다(바이어 번호 프리필 아님).
     public function test_notice_phone_is_saved_and_reloaded_not_prefilled_from_buyer(): void
     {

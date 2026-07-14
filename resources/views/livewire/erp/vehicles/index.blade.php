@@ -2696,7 +2696,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 발송 안전(fire-and-forget)은 BizmAlimtalkService 가 보장 — 여기선 결과 상태만 토스트.
     public function sendDeregistrationAlimtalk(): void
     {
+        // 신규 등록(미저장) 상태에선 서명 링크를 만들 차량 id·저장된 말소증이 없어 발송 불가.
+        // 블록은 등록 화면에도 노출(번호 미리 입력)하되, 발송은 최초 저장 후 재열람에서만 — 조용한 no-op 대신 안내.
         if ($this->editingId === null) {
+            $this->dispatch('notify', message: __('vehicle.deregnotice.save_first'), type: 'warning');
+
             return;
         }
         $vehicle = \App\Models\Vehicle::find($this->editingId);
@@ -5752,9 +5756,8 @@ function vehicleColumnsToggle() {
                     </div>
                     @endif
                 </div>
-                {{-- 국내 바이어 말소등록증 알림톡 전달 (수동) — 편집 모드에선 항상 노출(번호 미리 입력).
-                     발송은 말소증·번호가 있어야 가능 (sendDeregistrationAlimtalk 가드가 토스트로 안내). --}}
-                @if($editingId !== null)
+                {{-- 국내 딜러 말소등록증 알림톡 전달 (수동) — 차량등록 화면 포함 항상 노출(번호 미리 입력, jin 2026-07-14).
+                     발송은 저장된 말소증 링크가 필요해 최초 저장 후 가능. 미저장 클릭 시 '저장 먼저' 토스트로 안내. --}}
                 <div class="col-span-2">
                     <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
@@ -5765,7 +5768,6 @@ function vehicleColumnsToggle() {
                         </div>
                     </div>
                 </div>
-                @endif
                 @endif
                 {{-- karaba(2026-07-12): 메모 3→1 — 계좌메모·송금메모 숨김. 맨 아래 '메모(공통·내부메모)'만 남김. --}}
                 @unless($isKaraba)
