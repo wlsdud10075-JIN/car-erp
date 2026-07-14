@@ -35,9 +35,10 @@ return [
         'reason' => 'Reason (required)',
         'add' => 'Add',
         'add_line' => 'Add adjustment',
-        'hint' => 'Negative = clawback/deduction, positive = special pay. Affects the batch total only; individual settlements are untouched. Approved together with the batch.',
+        'hint' => 'Negative = clawback/deduction, positive = special pay. Reflected in the salesman subtotal and the batch total (the underlying settlements are untouched). Approved together with the batch.',
         'invalid' => 'Enter salesman, a non-zero amount, and a reason.',
         'added' => 'Adjustment added.',
         'removed' => 'Adjustment removed.',
+        'reflected' => 'adj. applied',
     ],
 ];

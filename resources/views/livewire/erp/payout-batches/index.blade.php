@@ -166,6 +166,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $statusBadge = ['pending' => 'badge-amber', 'approved' => 'badge-green', 'rejected' => 'badge-red', 'cancelled' => 'badge-gray'][$b->status] ?? 'badge-gray';
                 $canDecide = $b->canDecide(auth()->user());
                 $bySalesman = $b->settlements->groupBy(fn ($s) => $s->salesman?->name ?? __('payout_batch.no_salesman'));
+                // 담당자별 조정 합(음수 포함) — 개인 소계에 반영 (jin 2026-07-14). 배치 총액은 recomputeTotal 이 이미 반영.
+                $adjBySalesman = $b->adjustments->groupBy(fn ($a) => $a->salesman?->name ?? __('payout_batch.no_salesman'))->map(fn ($g) => (int) $g->sum('amount'));
             @endphp
             <div class="card-tight">
                 {{-- 헤더 --}}
@@ -217,10 +219,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @if($expandedId === $b->id)
                 <div class="mt-3 max-w-md space-y-2 border-t border-gray-100 pt-3">
                     @foreach($bySalesman as $name => $group)
+                    @php
+                        $payoutSum = (int) $group->sum(fn ($s) => $s->actual_payout);
+                        $adjSum = (int) ($adjBySalesman[$name] ?? 0);
+                        $netSum = $payoutSum + $adjSum;
+                    @endphp
                     <div>
                         <div class="flex items-center justify-between text-xs font-medium text-gray-700">
                             <span>{{ $name }}</span>
-                            <span>{{ __('payout_batch.count', ['n' => $group->count()]) }} · ₩{{ number_format($group->sum(fn ($s) => $s->actual_payout)) }}</span>
+                            <span>{{ __('payout_batch.count', ['n' => $group->count()]) }} · ₩{{ number_format($netSum) }}@if($adjSum !== 0) <span class="text-[10px] {{ $adjSum < 0 ? 'text-red-500' : 'text-green-600' }}">({{ $adjSum < 0 ? '−' : '+' }}₩{{ number_format(abs($adjSum)) }} {{ __('payout_batch.adjust.reflected') }})</span>@endif</span>
                         </div>
                         <div class="mt-1 space-y-0.5 pl-3">
                             @foreach($group as $s)
