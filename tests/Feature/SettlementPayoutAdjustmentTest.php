@@ -124,6 +124,20 @@ class SettlementPayoutAdjustmentTest extends TestCase
         }
     }
 
+    // jin 2026-07-14 — 조정이 배치 총액뿐 아니라 담당자 개인 소계에도 반영돼 표시된다.
+    public function test_ui_person_subtotal_reflects_adjustment(): void
+    {
+        [$batch, $salesman, $gwanri] = $this->pendingBatch();   // 김영업 2건 × 10만 = 20만
+        $batch->addAdjustment($gwanri, $salesman->id, -50_000, '환수');   // net 15만
+        $this->actingAs($gwanri);
+
+        Volt::test('erp.payout-batches.index')
+            ->call('toggle', $batch->id)                       // 드릴다운 펼침
+            ->assertSee('150,000')                             // 개인 소계 = net (20만 − 5만)
+            ->assertSee(__('payout_batch.adjust.reflected'))   // 조정 반영 표식
+            ->assertDontSee('200,000');                        // 더 이상 gross 소계 아님
+    }
+
     public function test_ui_add_adjustment_through_component(): void
     {
         [$batch, $salesman, $gwanri] = $this->pendingBatch();
