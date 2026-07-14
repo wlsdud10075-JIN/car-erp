@@ -4422,7 +4422,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
-            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date',
+            'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
@@ -4436,6 +4436,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             'dhl_sender_name','dhl_sender_address','dhl_weight_str','dhl_dimensions','memo',
         ];
         foreach ($defaults as $prop) $this->$prop = '';
+
+        // 저장 후 표시용 요약 스냅샷(수정 불가 박스) — openEdit 에서만 채워지므로 신규 등록 전 초기화 필수.
+        // 누락 시 직전 편집 차량의 총매입액·총판매가·미지급이 신규 등록 화면에 잔존(jin 2026-07-14).
+        // openEdit 은 매번 panel* 전부 재대입하므로 편집 표시엔 영향 없음.
+        $this->panelUnpaidRatio = $this->panelSaleTotal = $this->panelSaleUnpaid = null;
+        $this->panelPurchaseTotal = $this->panelPurchasePaid = $this->panelPurchaseUnpaid = null;
+        $this->panelPurchasePriceTotal = $this->panelPurchasePricePaid = null;
+        $this->panelSellingFeeTotal = $this->panelSellingFeePaid = null;
 
         $this->niceRaw = [];
         $this->sales_channel = 'export';
