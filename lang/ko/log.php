@@ -70,4 +70,31 @@ return [
         'undelivered' => '미도달',
         'pending' => '확인중',
     ],
+
+    // 바이어 문서 메일 발송 로그 (2026-07-15)
+    'md_title' => '메일 발송 로그',
+    'md_subtitle' => '바이어에게 차량 문서를 메일로 보낸 기록. 총 :count건',
+    'md_search' => '수신 이메일 · 제목 · 차량번호 · 보낸사람',
+    'md_all_status' => '전체 발송상태',
+    'md_all_channel' => '전체 발송방식',
+    'md_empty' => '메일 발송 로그가 없습니다.',
+    'md_doc_unit' => '건',
+    'md_col' => [
+        'time' => '발송시각',
+        'sender' => '보낸사람',
+        'vehicle' => '차량',
+        'to' => '수신 이메일',
+        'channel' => '방식',
+        'subject' => '제목',
+        'documents' => '첨부 문서',
+        'status' => '발송',
+    ],
+    'md_status' => [
+        'sent' => '성공',
+        'failed' => '실패',
+    ],
+    'md_channel' => [
+        'gmail' => 'Gmail',
+        'ses' => 'AWS SES',
+    ],
 ];

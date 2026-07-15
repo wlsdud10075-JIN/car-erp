@@ -161,6 +161,8 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Volt::route('audit-logs', 'admin.audit-logs.index')->name('audit-logs.index');
     // 알림톡 발송·도달 로그 (2026-07-13) — 전송결과 폴링 결과 + 미도달 확인.
     Volt::route('alimtalk-logs', 'admin.alimtalk-logs.index')->name('alimtalk-logs.index');
+    // 바이어 문서 메일전달 로그 (2026-07-15) — 누가·언제·어떤 문서를 누구에게 보냈는지.
+    Volt::route('mail-delivery-logs', 'admin.mail-delivery-logs.index')->name('mail-delivery-logs.index');
 });
 
 // 회의확장씬 2026-05-22 — 항구 마스터는 admin + [관리] (canManagePorts).
