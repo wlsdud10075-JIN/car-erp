@@ -70,4 +70,31 @@ return [
         'undelivered' => 'Undelivered',
         'pending' => 'Checking',
     ],
+
+    // Buyer document mail send log (2026-07-15)
+    'md_title' => 'Mail Send Log',
+    'md_subtitle' => 'Records of vehicle documents mailed to buyers. :count total',
+    'md_search' => 'Recipient email · subject · vehicle no. · sender',
+    'md_all_status' => 'All send statuses',
+    'md_all_channel' => 'All send channels',
+    'md_empty' => 'No mail send logs.',
+    'md_doc_unit' => '',
+    'md_col' => [
+        'time' => 'Sent at',
+        'sender' => 'Sender',
+        'vehicle' => 'Vehicle',
+        'to' => 'Recipient',
+        'channel' => 'Channel',
+        'subject' => 'Subject',
+        'documents' => 'Attachments',
+        'status' => 'Send',
+    ],
+    'md_status' => [
+        'sent' => 'Sent',
+        'failed' => 'Failed',
+    ],
+    'md_channel' => [
+        'gmail' => 'Gmail',
+        'ses' => 'AWS SES',
+    ],
 ];
