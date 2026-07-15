@@ -87,6 +87,16 @@ class BizmAlimtalkService
                 'tmplId' => $this->config->tmplId($code),
                 'msg' => $message,
             ];
+            // 🟦 아이템리스트형 9종 — msg 는 짧은 승인본, 숫자 데이터는 header+items 카드로 함께 발송.
+            //    (등록형식과 안 맞으면 형식불일치 반려 → AlimtalkTemplates::ITEMLIST 가 승인 등록본과 일치해야 함)
+            //    회사 게이트(config->itemlist) 필수 — 아이템리스트 프로필로 교체된 회사만 payload 전송.
+            if ($this->config->itemlist) {
+                $itemList = AlimtalkTemplates::itemListPayload($code, $vars);
+                if ($itemList !== null) {
+                    $item['header'] = $itemList['header'];
+                    $item['items'] = $itemList['items'];
+                }
+            }
             // 웹링크 버튼(정산 승인 링크 등) — bizmsg 발송 API 형식.
             // ⚠️ bizmsg 발송 버튼 = button 배열이 아니라 button1~button5 개별 필드(각 JSON object),
             //    키 = name/type(WL)/url_mobile/url_pc (bizmsg 공식 안내 + 실측 K000, 2026-07-10).
@@ -167,6 +177,7 @@ class BizmAlimtalkService
             $this->config->userkey, true,
             $this->config->tmplIds,
             ['erp_daily_summary' => true] + $this->config->toggles,
+            $this->config->itemlist,
         );
 
         return (new self($testConfig))->send('erp_daily_summary', $phone, [
