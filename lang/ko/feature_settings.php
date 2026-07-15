@@ -74,6 +74,19 @@ return [
     'mail_from_invalid' => '올바른 이메일 주소 형식이 아닙니다.',
     'mail_password_required' => 'Gmail 방식은 앱 비밀번호가 필요합니다. 16자리를 입력하세요.',
 
+    // 원부조회 (carmodoo)
+    'carmodoo_section' => '원부조회 (조합 제시매도시스템)',
+    'carmodoo_hint' => '차량관리에서 차량번호로 자동차 등록원부(압류·저당·구조 + 제원)를 실시간 조회할 때 쓰는 로그인 계정입니다.',
+    'carmodoo_ip_note' => '⚠️ 조합에 등록된 사무실 회선에서만 조회됩니다. 운영 서버는 그 회선에 둔 프록시를 경유해야 합니다(미설정 시 조회 불가).',
+    'carmodoo_id_label' => '아이디',
+    'carmodoo_password_label' => '비밀번호',
+    'carmodoo_password_set' => '저장됨',
+    'carmodoo_dno_label' => '담당사원 코드 (dNo)',
+    'carmodoo_dno_hint' => '조회 시 담당사원으로 고정할 코드. 비워두면 담당사원 없이 조회합니다. (예: 89617 = 조태신)',
+    'carmodoo_saved' => '원부조회 계정을 저장했습니다.',
+    'carmodoo_id_required' => '아이디를 입력하세요.',
+    'carmodoo_password_required' => '비밀번호를 입력하세요.',
+
     // 카카오 알림톡 (BizM)
     'alimtalk_section' => '카카오 알림톡 (BizM)',
     'alimtalk_hint' => '직원·국내 거래처에게 업무 알림을 카카오 알림톡으로 보냅니다. BizM 발신프로필키와 승인된 11종 템플릿ID를 입력하세요. (해외 바이어는 이메일로 별도 발송)',

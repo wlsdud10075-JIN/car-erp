@@ -991,6 +991,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $existingShipPhotos = [];
     public array $deleteShipPhotoIds = [];
 
+    // 원부조회 (carmodoo) — 차량번호로 등록원부(압류/저당/구조+제원) on-demand 조회. 저장 안 함.
+    public bool $showWonbuModal = false;
+
+    public ?array $wonbuResult = null;
+
+    public string $wonbuError = '';
+
     // 메일 발송 (서류 탭 → 바이어에게 업로드 문서 전달)
     public bool $showMailModal = false;
 
@@ -1210,6 +1217,44 @@ new #[Layout('components.layouts.app')] class extends Component {
                 && $p->payment_date->lte(now())
                 && $p->type === 'selling_fee')
             ->sum('amount');
+    }
+
+    // 원부조회 — 현재 폼의 차량번호로 등록원부 조회(압류/저당/구조+제원). 결과는 모달 표시, 저장 안 함.
+    // 유료 아님(무료 조회) + on-demand: 클릭 시에만 1건 조회(자동발동/일괄조회 없음).
+    public function openWonbuLookup(): void
+    {
+        $plate = trim($this->vehicle_number);
+        if ($plate === '') {
+            $this->dispatch('notify', message: __('vehicle.wonbu.need_plate'), type: 'warning');
+
+            return;
+        }
+
+        // 편집 모드면 스코프 재인가 (영업 본인/관리 팀/통관·재무·admin 전체) — IDOR 방지.
+        if ($this->editingId !== null) {
+            $vehicle = \App\Models\Vehicle::find($this->editingId);
+            if (! $vehicle || ! auth()->user()?->canScopeVehicle($vehicle)) {
+                abort(403, __('vehicle.toast.edit_own_only'));
+            }
+        }
+
+        $this->wonbuError = '';
+        $this->wonbuResult = null;
+        $result = \App\Services\CarmodooService::fromConfig()->lookup($plate);
+
+        if (($result['success'] ?? false) !== true) {
+            $this->wonbuError = $result['message'] ?? __('vehicle.wonbu.failed');
+        } else {
+            $this->wonbuResult = $result;
+        }
+        $this->showWonbuModal = true;
+    }
+
+    public function closeWonbuModal(): void
+    {
+        $this->showWonbuModal = false;
+        $this->wonbuResult = null;
+        $this->wonbuError = '';
     }
 
     // 메일 발송 모달 열기 — 첨부 후보 3그룹(업로드/단계파일/자동생성) + 바이어 이메일 프리필.
@@ -5276,6 +5321,13 @@ function vehicleColumnsToggle() {
                                placeholder="{{ __('vehicle.panel.owner_name_ph') }}" />
                     @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    {{-- 원부조회 — 차량번호로 등록원부(압류/저당/구조+제원) 실시간 조회. 결과는 모달, 저장 안 함. --}}
+                    <button type="button" wire:click="openWonbuLookup"
+                            wire:loading.attr="disabled" wire:target="openWonbuLookup"
+                            class="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50">
+                        <span wire:loading.remove wire:target="openWonbuLookup">🔎 {{ __('vehicle.wonbu.button') }}</span>
+                        <span wire:loading wire:target="openWonbuLookup">{{ __('vehicle.wonbu.loading') }}</span>
+                    </button>
                 </div>
                 {{-- 큐 16 — 판매채널 select 제거. sales_channel은 hidden 'export' 고정. --}}
                 <input type="hidden" wire:model="sales_channel" />
@@ -7014,6 +7066,80 @@ function vehicleColumnsToggle() {
                 <span wire:loading.remove wire:target="sendVehicleMail">{{ __('vehicle.mail.send_btn') }}</span>
                 <span wire:loading wire:target="sendVehicleMail">{{ __('vehicle.mail.sending') }}</span>
             </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 원부조회 결과 모달 — 등록원부(제원 + 압류/저당/구조). on-demand, 저장 안 함.
+     슬라이드 패널 stacking context 밖에 배치. --}}
+@if ($showWonbuModal)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" wire:key="wonbu-modal" wire:click.self="closeWonbuModal">
+    <div class="card w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">🔎 {{ __('vehicle.wonbu.modal_title') }}</h3>
+            <button type="button" wire:click="closeWonbuModal" class="text-xl leading-none text-gray-400 hover:text-gray-600">×</button>
+        </div>
+
+        @if ($wonbuError)
+            <div class="rounded-md border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700">{{ $wonbuError }}</div>
+        @elseif ($wonbuResult)
+            {{-- 요약 뱃지 --}}
+            <div class="flex flex-wrap items-center gap-2">
+                @foreach (['압류' => 'seizure', '저당' => 'mortgage', '구조' => 'structure'] as $k => $_)
+                    @php $cnt = (int) ($wonbuResult['summary'][$k] ?? 0); @endphp
+                    <span class="badge {{ $cnt > 0 ? 'badge-red' : 'badge-gray' }}">{{ __('vehicle.wonbu.'.$_) }} {{ $cnt }}</span>
+                @endforeach
+            </div>
+
+            @if (! empty($wonbuResult['note']))
+                <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ $wonbuResult['note'] }}</div>
+            @endif
+
+            {{-- 저당/압류/구조 상세 (있을 때만) --}}
+            @if (! empty($wonbuResult['liens']))
+                <div class="mt-3">
+                    <div class="section-header"><span class="section-dot bg-rose-500"></span><span class="section-title">{{ __('vehicle.wonbu.liens') }}</span></div>
+                    <div class="mt-1 overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="border-b border-gray-200 text-left text-gray-500">
+                                    <th class="pb-1 pr-3 font-medium">{{ __('vehicle.wonbu.lien_type') }}</th>
+                                    <th class="pb-1 pr-3 font-medium">{{ __('vehicle.wonbu.lien_date') }}</th>
+                                    <th class="pb-1 font-medium">{{ __('vehicle.wonbu.lien_info') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @foreach ($wonbuResult['liens'] as $lien)
+                                <tr>
+                                    <td class="py-1.5 pr-3 whitespace-nowrap font-medium text-rose-600">{{ $lien['type'] }}</td>
+                                    <td class="py-1.5 pr-3 whitespace-nowrap text-gray-600">{{ $lien['date'] }}</td>
+                                    <td class="py-1.5 text-gray-700 break-all">{{ $lien['info'] }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @endif
+
+            {{-- 제원 상세 --}}
+            <div class="mt-3">
+                <div class="section-header"><span class="section-dot bg-indigo-500"></span><span class="section-title">{{ __('vehicle.wonbu.detail') }}</span></div>
+                <dl class="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+                    @foreach ($wonbuResult['detail'] as $label => $value)
+                        <div class="flex justify-between gap-2 border-b border-gray-50 py-1 text-xs">
+                            <dt class="shrink-0 text-gray-500">{{ trim($label, ': ') }}</dt>
+                            <dd class="text-right font-medium text-gray-800">{{ $value !== '' ? $value : '-' }}</dd>
+                        </div>
+                    @endforeach
+                </dl>
+            </div>
+            <p class="mt-3 text-[11px] text-gray-400">{{ __('vehicle.wonbu.disclaimer') }}</p>
+        @endif
+
+        <div class="mt-4 flex items-center justify-end">
+            <button type="button" wire:click="closeWonbuModal" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.footer.close') }}</button>
         </div>
     </div>
 </div>

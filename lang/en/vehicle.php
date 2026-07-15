@@ -496,6 +496,7 @@ return [
     // Panel footer / save bar
     'footer' => [
         'cancel' => 'Cancel',
+        'close' => 'Close',
         'save_edit' => 'Save Changes',
         'save_continue' => 'Save & Keep Open',
         'save_create' => 'Create',
@@ -752,6 +753,24 @@ return [
         'sub_sale' => 'Sale · .xlsx',
         'sub_container' => 'Container shipping · .xlsx',
         'sub_roro' => 'RORO shipping · .xlsx',
+    ],
+
+    // Vehicle registry lookup (carmodoo)
+    'wonbu' => [
+        'button' => 'Registry lookup',
+        'loading' => 'Looking up…',
+        'modal_title' => 'Vehicle Registration Record',
+        'need_plate' => 'Enter a vehicle number first.',
+        'failed' => 'Registry lookup failed.',
+        'seizure' => 'Seizure',
+        'mortgage' => 'Mortgage',
+        'structure' => 'Structural',
+        'liens' => 'Seizure · Mortgage · Structural details',
+        'lien_type' => 'Type',
+        'lien_date' => 'Registered',
+        'lien_info' => 'Details (mgmt no. / creditor / claim amount)',
+        'detail' => 'Registration record specs',
+        'disclaimer' => 'Real-time lookup from the dealer association system. May differ from the registration authority; use as reference only. Not stored.',
     ],
 
     // Mail delivery (Documents tab → send uploaded documents to buyer)

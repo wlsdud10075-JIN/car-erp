@@ -52,6 +52,16 @@ return [
         ],
     ],
 
+    // 자동차 원부조회 (경기도자동차매매사업조합 sh.carmodoo.com) — 압류/저당/구조 + 제원.
+    // ⚠️ IP 화이트리스트: 조합에 등록된 사무실 회선에서만 조회 가능. 운영서버(AWS) 직접 호출은
+    //    "등록 외 장소 조회"로 잡혀 계정 정지 위험 → 등록 IP(사무실)에 둔 포워드 프록시 경유 필수.
+    //    CARMODOO_PROXY 빈값=직접 연결(dev, 등록 회선에서 직접). 값 세팅=프록시 경유(운영).
+    // 로그인 id/passwd/담당사원(dNo)은 기능설정(admin/settings) DB 암호화 저장. 하드코딩 금지.
+    'carmodoo' => [
+        'base_url' => env('CARMODOO_BASE_URL', 'https://sh.carmodoo.com'),
+        'proxy' => env('CARMODOO_PROXY', ''),   // 예: http://user:pass@office-ip:3128 (빈값=직접)
+    ],
+
     // 연동 B 수신 — board(매입보드)와 공유하는 HMAC 비밀키.
     // 미설정 시 수신 엔드포인트는 모든 요청을 401 로 거부(안전밸브).
     // 수신 스펙(권위) = docs/integration/purchase-sync-receiver.md.
