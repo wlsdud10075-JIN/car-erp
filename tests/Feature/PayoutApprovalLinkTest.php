@@ -97,13 +97,14 @@ class PayoutApprovalLinkTest extends TestCase
 
     public function test_payout_request_message_includes_company_profit(): void
     {
-        // 카톡 메시지 본문에 회사이익 줄이 렌더되는지 (jin 2026-07-09) — 대표가 누르기 전에 미리 봄.
-        $body = AlimtalkTemplates::render('erp_payout_request', [
+        // 회사이익·총액은 아이템리스트형 카드(payload)로 이동 (jin 2026-07-15) — 대표가 카드에서 미리 봄.
+        $il = AlimtalkTemplates::itemListPayload('erp_payout_request', [
             '귀속월' => '2026-07', '건수' => '8', '총액' => '2,850,000원',
             '회사이익' => '4,890,000원', '제출자' => '황진영',
         ]);
-        $this->assertStringContainsString('회사이익: 4,890,000원', $body);
-        $this->assertStringContainsString('지급 총액: 2,850,000원', $body);
+        $flat = json_encode($il, JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('4,890,000원', $flat);   // 회사이익 항목
+        $this->assertStringContainsString('2,850,000원', $flat);   // 총액 하이라이트
     }
 
     public function test_non_approver_cannot_decide(): void
