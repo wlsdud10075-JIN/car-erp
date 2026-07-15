@@ -74,6 +74,19 @@ return [
     'mail_from_invalid' => 'Not a valid email address format.',
     'mail_password_required' => 'Gmail method needs an app password. Enter the 16 digits.',
 
+    // Vehicle registry lookup (carmodoo)
+    'carmodoo_section' => 'Registry Lookup (dealer association system)',
+    'carmodoo_hint' => 'Login account used to look up a vehicle registration record (liens/mortgages/structural + specs) in real time from the vehicle list.',
+    'carmodoo_ip_note' => '⚠️ Only works from the office line registered with the association. Production servers must route through a proxy on that line (lookup fails if unset).',
+    'carmodoo_id_label' => 'ID',
+    'carmodoo_password_label' => 'Password',
+    'carmodoo_password_set' => 'Saved',
+    'carmodoo_dno_label' => 'Staff code (dNo)',
+    'carmodoo_dno_hint' => 'Staff code to fix as the lookup owner. Leave blank to query without a staff member. (e.g. 89617)',
+    'carmodoo_saved' => 'Registry lookup account saved.',
+    'carmodoo_id_required' => 'Enter an ID.',
+    'carmodoo_password_required' => 'Enter a password.',
+
     // KakaoTalk AlimTalk (BizM)
     'alimtalk_section' => 'KakaoTalk AlimTalk (BizM)',
     'alimtalk_hint' => 'Send work notifications to staff and domestic partners via KakaoTalk AlimTalk. Enter your BizM sender profile key and the 11 approved template IDs. (Overseas buyers are handled separately by email.)',

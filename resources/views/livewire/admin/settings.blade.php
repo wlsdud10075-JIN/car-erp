@@ -36,6 +36,15 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $mailGmailPasswordSet = false;
 
+    // 원부조회(carmodoo) 설정 — 로그인 id/담당사원(dNo)·비밀번호(암호화). 서버 1개=회사 1개라 단일 키.
+    public string $carmodooId = '';
+
+    public string $carmodooDno = '';
+
+    public string $carmodooPasswd = '';   // 신규 입력용 — 저장값은 로드 안 함
+
+    public bool $carmodooPasswdSet = false;
+
     // 카카오 알림톡(BizM) 설정 — 현재 회사(set) 기준. userkey 는 암호화 저장.
     public bool $alimtalkEnabled = false;              // 회사 마스터 on/off
 
@@ -88,6 +97,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->alarmLeadDays[$k] = (int) Setting::get($m['key'], $m['default']);
         }
         $this->loadMailSettings();
+        $this->loadCarmodooSettings();
         $this->loadAlimtalkSettings();
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
@@ -195,6 +205,49 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->mailFromName = $name;
         $this->loadMailSettings();
         $this->dispatch('notify', message: __('feature_settings.mail_saved'), type: 'success');
+    }
+
+    private function loadCarmodooSettings(): void
+    {
+        $this->carmodooId = (string) (Setting::get('carmodoo_id', '') ?: '');
+        $this->carmodooDno = (string) (Setting::get('carmodoo_dno', '') ?: '');
+        $this->carmodooPasswdSet = (bool) Setting::get('carmodoo_passwd');
+        $this->carmodooPasswd = '';
+    }
+
+    // 원부조회 계정 저장 — super 전용. 비밀번호는 신규 입력이 있을 때만 암호화 갱신(공백=기존 유지).
+    public function saveCarmodoo(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $id = trim($this->carmodooId);
+        $dno = preg_replace('/\D/', '', (string) $this->carmodooDno);
+        $newPassword = trim($this->carmodooPasswd);
+
+        if ($id === '') {
+            $this->addError('carmodooId', __('feature_settings.carmodoo_id_required'));
+
+            return;
+        }
+        if (! $this->carmodooPasswdSet && $newPassword === '') {
+            $this->addError('carmodooPasswd', __('feature_settings.carmodoo_password_required'));
+
+            return;
+        }
+
+        Setting::updateOrCreate(['key' => 'carmodoo_id'], ['value' => $id, 'type' => 'string', 'description' => '원부조회(carmodoo) 로그인 아이디']);
+        Setting::updateOrCreate(['key' => 'carmodoo_dno'], ['value' => $dno, 'type' => 'string', 'description' => '원부조회 담당사원 코드(dNo)']);
+        if ($newPassword !== '') {
+            Setting::updateOrCreate(
+                ['key' => 'carmodoo_passwd'],
+                ['value' => \Illuminate\Support\Facades\Crypt::encryptString($newPassword), 'type' => 'string', 'description' => '원부조회 비밀번호(암호화)'],
+            );
+        }
+
+        $this->loadCarmodooSettings();
+        $this->dispatch('notify', message: __('feature_settings.carmodoo_saved'), type: 'success');
     }
 
     /** 알림톡 11종 메타 (blade foreach — code/이름/수신자). */
@@ -731,6 +784,54 @@ new #[Layout('components.layouts.app')] class extends Component
 
             <div class="flex justify-end pt-1">
                 <button wire:click="saveMail" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- 원부조회 (carmodoo) 그룹 — 로그인 계정. super 전용 --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-indigo-500"></span>
+                <span class="section-title">{{ __('feature_settings.carmodoo_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.carmodoo_hint') }}</p>
+            <div class="rounded-md border border-amber-100 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">{{ __('feature_settings.carmodoo_ip_note') }}</div>
+
+            {{-- 아이디 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.carmodoo_id_label') }}</label>
+                <input wire:model="carmodooId" type="text" class="input-base mt-1 w-full" autocomplete="off" />
+                @error('carmodooId') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            {{-- 비밀번호 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">
+                    {{ __('feature_settings.carmodoo_password_label') }}
+                    @if ($carmodooPasswdSet)
+                        <span class="badge badge-green">{{ __('feature_settings.carmodoo_password_set') }}</span>
+                    @endif
+                </label>
+                <input wire:model="carmodooPasswd" type="password" class="input-base mt-1 w-full" autocomplete="new-password" placeholder="••••" />
+                @error('carmodooPasswd') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            {{-- 담당사원 코드 --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.carmodoo_dno_label') }}</label>
+                <input wire:model="carmodooDno" type="text" inputmode="numeric" class="input-base mt-1 w-full" autocomplete="off" placeholder="89617" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.carmodoo_dno_hint') }}</p>
+            </div>
+
+            <div class="flex justify-end pt-1">
+                <button wire:click="saveCarmodoo" class="btn-primary">{{ __('common.save') }}</button>
             </div>
         </div>
     </div>
