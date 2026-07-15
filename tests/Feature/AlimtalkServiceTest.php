@@ -33,13 +33,21 @@ class AlimtalkServiceTest extends TestCase
 
     public function test_render_substitutes_variables(): void
     {
-        $msg = AlimtalkTemplates::render('erp_vehicle_new', [
+        // 기본형 body 치환 — 날짜는 본문에 남아있음
+        $body = AlimtalkTemplates::render('erp_daily_summary', ['날짜' => '2026-07-15']);
+        $this->assertStringContainsString('2026-07-15', $body);
+        $this->assertStringNotContainsString('#{', $body);
+
+        // 아이템리스트형 — 숫자 데이터는 카드(payload)로 이동, 그 안에서 치환된다.
+        $il = AlimtalkTemplates::itemListPayload('erp_vehicle_new', [
             '차량번호' => '19더9065', '바이어' => 'ABC', '매입가' => '9,540,000원',
         ]);
-
-        $this->assertStringContainsString('19더9065', $msg);
-        $this->assertStringContainsString('바이어: ABC', $msg);
-        $this->assertStringNotContainsString('#{', $msg);   // 미치환 자리표시자 없음
+        $this->assertNotNull($il);
+        $flat = json_encode($il, JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('19더9065', $flat);   // highlight title
+        $this->assertStringContainsString('ABC', $flat);        // item description
+        $this->assertStringContainsString('9,540,000원', $flat);
+        $this->assertStringNotContainsString('#{', $flat);      // 미치환 자리표시자 없음
     }
 
     public function test_configured_send_hits_bizm_and_logs_msgid(): void

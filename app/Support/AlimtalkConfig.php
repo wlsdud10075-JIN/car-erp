@@ -27,6 +27,10 @@ class AlimtalkConfig
         public bool $enabled,
         public array $tmplIds,
         public array $toggles,
+        // 이 회사의 발신프로필 템플릿이 아이템리스트형인가(마이그레이션 게이트).
+        // false(기본)=기본형 평문 발송 / true=아이템리스트형 9종에 header+items payload 발송.
+        // 프로필 교체와 함께 켜야 안전(옛 기본형 프로필에 item-list payload 쏘면 형식불일치 반려).
+        public bool $itemlist = false,
     ) {}
 
     public static function active(): self
@@ -35,6 +39,7 @@ class AlimtalkConfig
         $userid = (string) (Setting::get("alimtalk_userid_{$set}", '') ?: '');
         $profile = (string) (Setting::get("alimtalk_profile_{$set}", '') ?: '');
         $enabled = (bool) Setting::get("alimtalk_enabled_{$set}", false);
+        $itemlist = (bool) Setting::get("alimtalk_itemlist_{$set}", false);
 
         $userkey = null;
         if ($enc = Setting::get("alimtalk_userkey_{$set}")) {
@@ -52,7 +57,7 @@ class AlimtalkConfig
             $toggles[$code] = (bool) Setting::get("alimtalk_toggle_{$code}_{$set}", true);   // 기본 켜짐
         }
 
-        return new self($set, $userid, $profile, $userkey, $enabled, $tmplIds, $toggles);
+        return new self($set, $userid, $profile, $userkey, $enabled, $tmplIds, $toggles, $itemlist);
     }
 
     /** 발송 계정 설정 여부 — userid + profile 필수(userkey 는 잔액조회 전용이라 발송엔 불필요). */

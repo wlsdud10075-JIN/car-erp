@@ -37,6 +37,7 @@ class AlimtalkTriggerTest extends TestCase
     {
         $set = Setting::companyTemplateSet();
         Setting::updateOrCreate(['key' => "alimtalk_enabled_{$set}"], ['value' => '1', 'type' => 'boolean']);
+        Setting::updateOrCreate(['key' => "alimtalk_itemlist_{$set}"], ['value' => '1', 'type' => 'boolean']);   // 아이템리스트형 게이트 on
         Setting::updateOrCreate(['key' => "alimtalk_userid_{$set}"], ['value' => 'uid', 'type' => 'string']);
         Setting::updateOrCreate(['key' => "alimtalk_profile_{$set}"], ['value' => 'prof', 'type' => 'string']);
         foreach ($codes as $c) {
@@ -244,7 +245,9 @@ class AlimtalkTriggerTest extends TestCase
         $log = AlimtalkLog::where('template_code', 'erp_payout_rejected')->first();
         $this->assertNotNull($log);
         $this->assertSame('01010000000', $log->phone, '반려는 제출자에게');
-        $this->assertStringContainsString('금액 오류', $log->message, '사유 포함');
+        // 사유는 아이템리스트형 카드(items)로 이동 — 발송 payload 로 확인(body 아님).
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'bizmsg.kr')
+            && str_contains(json_encode($req->data()[0], JSON_UNESCAPED_UNICODE), '금액 오류'));
         $this->assertSame('rejected', $batch->fresh()->status);
     }
 }
