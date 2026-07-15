@@ -51,9 +51,11 @@ class CarmodooService
             }
         }
 
+        // 접속주소·우회프록시는 기능설정(Setting) 우선, 없으면 config/.env fallback.
+        // 프록시 비었으면 null → 서버 OS 라우팅(WireGuard 터널) 사용.
         return new self(
-            baseUrl: rtrim((string) config('services.carmodoo.base_url', 'https://sh.carmodoo.com'), '/'),
-            proxy: (string) config('services.carmodoo.proxy', '') ?: null,
+            baseUrl: rtrim((string) (Setting::get('carmodoo_base_url') ?: config('services.carmodoo.base_url', 'https://sh.carmodoo.com')), '/'),
+            proxy: ((string) (Setting::get('carmodoo_proxy') ?: config('services.carmodoo.proxy', ''))) ?: null,
             id: (string) (Setting::get('carmodoo_id', '') ?: ''),
             passwd: $passwd,
             dNo: (string) (Setting::get('carmodoo_dno', '') ?: ''),

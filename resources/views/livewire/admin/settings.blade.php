@@ -45,6 +45,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $carmodooPasswdSet = false;
 
+    // 접속주소·우회프록시 — 회사 추가/경로 변경 시 SSH 없이 여기서 조정. 프록시 비우면 서버 WG 터널 사용.
+    public string $carmodooBaseUrl = '';
+
+    public string $carmodooProxy = '';
+
     // 카카오 알림톡(BizM) 설정 — 현재 회사(set) 기준. userkey 는 암호화 저장.
     public bool $alimtalkEnabled = false;              // 회사 마스터 on/off
 
@@ -213,6 +218,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->carmodooDno = (string) (Setting::get('carmodoo_dno', '') ?: '');
         $this->carmodooPasswdSet = (bool) Setting::get('carmodoo_passwd');
         $this->carmodooPasswd = '';
+        $this->carmodooBaseUrl = (string) (Setting::get('carmodoo_base_url') ?: config('services.carmodoo.base_url', 'https://sh.carmodoo.com'));
+        $this->carmodooProxy = (string) (Setting::get('carmodoo_proxy', '') ?: '');
     }
 
     // 원부조회 계정 저장 — super 전용. 비밀번호는 신규 입력이 있을 때만 암호화 갱신(공백=기존 유지).
@@ -225,6 +232,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $id = trim($this->carmodooId);
         $dno = preg_replace('/\D/', '', (string) $this->carmodooDno);
         $newPassword = trim($this->carmodooPasswd);
+        $baseUrl = rtrim(trim($this->carmodooBaseUrl), '/');
+        $proxy = trim($this->carmodooProxy);
 
         if ($id === '') {
             $this->addError('carmodooId', __('feature_settings.carmodoo_id_required'));
@@ -236,9 +245,16 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return;
         }
+        if ($baseUrl !== '' && ! filter_var($baseUrl, FILTER_VALIDATE_URL)) {
+            $this->addError('carmodooBaseUrl', __('feature_settings.carmodoo_base_url_invalid'));
+
+            return;
+        }
 
         Setting::updateOrCreate(['key' => 'carmodoo_id'], ['value' => $id, 'type' => 'string', 'description' => '원부조회(carmodoo) 로그인 아이디']);
         Setting::updateOrCreate(['key' => 'carmodoo_dno'], ['value' => $dno, 'type' => 'string', 'description' => '원부조회 담당사원 코드(dNo)']);
+        Setting::updateOrCreate(['key' => 'carmodoo_base_url'], ['value' => $baseUrl, 'type' => 'string', 'description' => '원부조회 접속 주소']);
+        Setting::updateOrCreate(['key' => 'carmodoo_proxy'], ['value' => $proxy, 'type' => 'string', 'description' => '원부조회 우회 프록시(비우면 서버 WG 터널)']);
         if ($newPassword !== '') {
             Setting::updateOrCreate(
                 ['key' => 'carmodoo_passwd'],
@@ -828,6 +844,20 @@ new #[Layout('components.layouts.app')] class extends Component
                 <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.carmodoo_dno_label') }}</label>
                 <input wire:model="carmodooDno" type="text" inputmode="numeric" class="input-base mt-1 w-full" autocomplete="off" placeholder="89617" />
                 <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.carmodoo_dno_hint') }}</p>
+            </div>
+
+            {{-- 접속 주소 / 우회 프록시 — 회사 추가·경로 변경 시 SSH 없이 조정 --}}
+            <hr class="my-1 border-gray-100">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.carmodoo_base_url_label') }}</label>
+                <input wire:model="carmodooBaseUrl" type="text" class="input-base mt-1 w-full font-mono text-xs" placeholder="https://sh.carmodoo.com" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.carmodoo_base_url_hint') }}</p>
+                @error('carmodooBaseUrl') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.carmodoo_proxy_label') }}</label>
+                <input wire:model="carmodooProxy" type="text" class="input-base mt-1 w-full font-mono text-xs" placeholder="(비우면 서버 터널 사용)" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.carmodoo_proxy_hint') }}</p>
             </div>
 
             <div class="flex justify-end pt-1">
