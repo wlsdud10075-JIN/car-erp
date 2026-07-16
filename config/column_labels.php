@@ -237,6 +237,7 @@ return [
         'approved' => '승인',
         'rejected' => '반려',
         'ledger_field_unlocked' => '확정금액 수정 허용',
+        'unpaid_override_approved' => '미수 우회 승인',
         'payment_type_converted' => '결제 유형 변경',
         'payout_adjustment_added' => '정산 지급액 조정 추가',
         'payout_adjustment_removed' => '정산 지급액 조정 취소',
