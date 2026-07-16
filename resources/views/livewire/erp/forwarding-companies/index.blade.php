@@ -25,6 +25,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $invForm = [];                    // [fkey => ['amount'=>, 'currency'=>, 'memo'=>]]
     public bool $hideSettled = false;              // 지급완료 묶음 숨기고 미지급만 보기
 
+    // ── 스케줄 달력 (③) — jin 2026-07-16. 선적일→도착일 기간 막대, 같은 묶음 동일 색. 기본 접힘. ──
+    public bool $showCalendar = false;
+    #[Url] public string $calMonth = '';           // 'YYYY-MM' (기본=이번 달)
+
     public bool $showPanel = false;
     public ?int $editingId = null;
 
@@ -41,6 +45,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function mount(): void
     {
         abort_unless(auth()->user()?->canManageForwarding(), 403);
+        if ($this->calMonth === '') {
+            $this->calMonth = now()->format('Y-m');
+        }
     }
 
     public function searchNow(): void
@@ -260,6 +267,81 @@ new #[Layout('components.layouts.app')] class extends Component {
             'ip_address' => request()->ip(),
         ]);
     }
+
+    // ── 스케줄 달력 로직 (③) ───────────────────────────────────────────────
+    public function shiftMonth(int $delta): void
+    {
+        $this->calMonth = \Illuminate\Support\Carbon::createFromFormat('Y-m', $this->calMonth ?: now()->format('Y-m'))
+            ->addMonths($delta)->format('Y-m');
+    }
+
+    /** 묶음 구분 색(절제된 8색). group_key 해시로 안정 배정, 미분류=회색. */
+    private const CAL_COLORS = ['#7c6fcd', '#2b9d8f', '#e08a3c', '#4a89dc', '#c65b7c', '#5aa469', '#b08968', '#8367c7'];
+
+    private function eventColor(string $key): string
+    {
+        return $key === '' ? '#9ca3af' : self::CAL_COLORS[crc32($key) % count(self::CAL_COLORS)];
+    }
+
+    /** 선적일·도착일 둘 다 있는 선적 건(전 포워딩사, 필터 반영) — 달력 막대 원천. */
+    #[Computed]
+    public function calendarEvents(): \Illuminate\Support\Collection
+    {
+        return $this->shipments->flatten(1)
+            ->filter(fn ($v) => $v->shipping_date && $v->eta_date)
+            ->map(function ($v) {
+                [, $key] = $this->groupKeyOf($v);
+
+                return [
+                    'vehicle_number' => $v->vehicle_number,
+                    'start' => $v->shipping_date->copy()->startOfDay(),
+                    'end' => $v->eta_date->copy()->startOfDay(),
+                    'group_key' => $key,
+                    'color' => $this->eventColor($key),
+                ];
+            })->values();
+    }
+
+    /** 월간 6주 그리드 + 주별 막대 세그먼트(월 넘는 건 좌우 화살표). */
+    #[Computed]
+    public function calendarGrid(): array
+    {
+        $first = \Illuminate\Support\Carbon::createFromFormat('Y-m', $this->calMonth ?: now()->format('Y-m'))->startOfMonth();
+        $gridStart = $first->copy()->startOfWeek(\Carbon\CarbonInterface::SUNDAY);
+        $events = $this->calendarEvents;
+        $weeks = [];
+
+        for ($w = 0; $w < 6; $w++) {
+            $weekStart = $gridStart->copy()->addWeeks($w);
+            $weekEndDay = $weekStart->copy()->addDays(6);
+            $days = [];
+            for ($d = 0; $d < 7; $d++) {
+                $day = $weekStart->copy()->addDays($d);
+                $days[] = ['day' => (int) $day->format('j'), 'inMonth' => $day->format('Y-m') === $first->format('Y-m')];
+            }
+            $bars = [];
+            foreach ($events as $ev) {
+                if ($ev['end']->lt($weekStart) || $ev['start']->gt($weekEndDay)) {
+                    continue;
+                }
+                $segStart = $ev['start']->gt($weekStart) ? $ev['start'] : $weekStart;
+                $segEnd = $ev['end']->lt($weekEndDay) ? $ev['end'] : $weekEndDay;
+                $col = (int) $segStart->dayOfWeek + 1;                   // 1..7
+                $span = min((int) $segStart->diffInDays($segEnd) + 1, 7 - $col + 1);
+                $bars[] = [
+                    'col' => $col, 'span' => $span,
+                    'label' => $ev['vehicle_number'], 'color' => $ev['color'],
+                    'arrowL' => $ev['start']->lt($weekStart),
+                    'arrowR' => $ev['end']->gt($weekEndDay),
+                    'title' => $ev['vehicle_number'].' · '.$ev['start']->format('n/j').'→'.$ev['end']->format('n/j')
+                        .($ev['group_key'] !== '' ? ' · '.$ev['group_key'] : ''),
+                ];
+            }
+            $weeks[] = ['days' => $days, 'bars' => $bars];
+        }
+
+        return $weeks;
+    }
 }; ?>
 
 <div wire:poll.60s>
@@ -300,6 +382,51 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input type="checkbox" wire:model.live="hideSettled" class="rounded border-gray-300" />
         {{ __('forwarding.hide_settled') }}
     </label>
+</div>
+
+{{-- 스케줄 달력 (③) — 접이식. 선적일→도착일 기간 막대, 같은 묶음 동일 색. 기본 접힘. --}}
+<div class="card-tight">
+    <button type="button" wire:click="$toggle('showCalendar')" class="flex w-full items-center gap-2 text-left">
+        <svg class="h-4 w-4 text-gray-400 transition-transform {{ $showCalendar ? 'rotate-90' : '' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        <span class="font-semibold text-gray-700">{{ __('forwarding.calendar') }}</span>
+        <span class="text-[11px] text-gray-400">{{ __('forwarding.calendar_hint') }}</span>
+    </button>
+    @if($showCalendar)
+    @php $cm = \Illuminate\Support\Carbon::createFromFormat('Y-m', $calMonth ?: now()->format('Y-m')); @endphp
+    <div class="mt-3">
+        {{-- 월 네비 --}}
+        <div class="mb-2 flex items-center justify-center gap-4">
+            <button wire:click="shiftMonth(-1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">‹</button>
+            <span class="text-sm font-semibold text-gray-700">{{ $cm->format('Y') }}.{{ $cm->format('m') }}</span>
+            <button wire:click="shiftMonth(1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">›</button>
+        </div>
+        {{-- 요일 --}}
+        <div class="grid grid-cols-7 border-b border-gray-100 pb-1 text-center text-[10px] text-gray-400">
+            @foreach(['일','월','화','수','목','금','토'] as $wd)<div>{{ $wd }}</div>@endforeach
+        </div>
+        {{-- 6주 --}}
+        @foreach($this->calendarGrid as $week)
+        <div class="border-b border-gray-50 py-1">
+            <div class="grid grid-cols-7 text-center text-[10px]">
+                @foreach($week['days'] as $d)<div class="{{ $d['inMonth'] ? 'text-gray-600' : 'text-gray-300' }}">{{ $d['day'] }}</div>@endforeach
+            </div>
+            <div class="mt-0.5 space-y-0.5">
+                @foreach($week['bars'] as $bar)
+                <div class="grid grid-cols-7">
+                    <div style="grid-column: {{ $bar['col'] }} / span {{ $bar['span'] }}; background-color: {{ $bar['color'] }};"
+                         class="flex items-center gap-0.5 truncate rounded px-1 text-[9px] leading-4 text-white" title="{{ $bar['title'] }}">
+                        @if($bar['arrowL'])<span class="opacity-70">‹</span>@endif
+                        <span class="truncate">{{ $bar['label'] }}</span>
+                        @if($bar['arrowR'])<span class="ml-auto opacity-70">›</span>@endif
+                    </div>
+                </div>
+                @endforeach
+            </div>
+        </div>
+        @endforeach
+        <p class="mt-1 text-center text-[10px] text-gray-400">{{ __('forwarding.calendar_legend') }}</p>
+    </div>
+    @endif
 </div>
 
 {{-- 포워딩사별 선적 현황 카드 --}}
