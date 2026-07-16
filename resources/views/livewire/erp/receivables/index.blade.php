@@ -31,6 +31,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
     #[Url] public string $classification = '';
 
+    // KPI 카드 통화 표시 — '' 전체(₩ 환산 합계) / 'USD'·'JPY'·'KRW'… 그 통화 차량만 판매시점 원금액 합계(재환산 없음).
+    //   목록은 그대로 두고 상단 KPI 카드만 통화별로 본다 (jin 2026-07-16).
+    #[Url] public string $displayCurrency = '';
+
     #[Url] public int $perPage = 10;
 
     // 판매탭 잠금 잔금 '채권관리에서 수정' 진입 시 해당 차량 패널 자동 오픈 (jin 2026-07-07).
@@ -102,31 +106,75 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   목록(vehicles)에는 grace 차량이 결제대기 뱃지로 계속 보이되, 채권 총액 집계에서만 빠진다.
         //   총미수만 빼면 total_paid = 총판매-총미수 가 grace 만큼 부풀어 안 맞으므로 base 전체에서 제외.
         $base = $this->buildQuery()->excludeReceivableGrace();
+        $cur = $this->displayCurrency;   // '' = 전체(₩ 환산) / 통화코드 = 그 통화 차량만 원금액
 
-        // 다중통화: 행 단위 KRW 환산 후 합산.
-        $totalSaleKrw = (clone $base)->get()->sum(function ($v) {
-            $total = $v->sale_total_amount;
+        // 통화별 보기: 재환산 없이 그 통화 차량의 판매시점 원금액 합산 (jin 2026-07-16 — "그때 찍힌 금액 그대로").
+        //   전체 보기: 기존대로 행 단위 KRW 환산 후 합산.
+        if ($cur !== '') {
+            $base = (clone $base)->where('currency', $cur);
+            $rows = (clone $base)->get();
+            $totalSale = $rows->sum(fn ($v) => $v->sale_total_amount);
+            $totalUnpaid = $rows->sum(fn ($v) => $v->sale_unpaid_amount);
+        } else {
+            $totalSale = (clone $base)->get()->sum(function ($v) {
+                $total = $v->sale_total_amount;
 
-            return $v->currency === 'KRW' ? $total : $total * ($v->exchange_rate ?: 0);
-        });
-        $totalUnpaidKrw = (int) (clone $base)->sum('sale_unpaid_amount_krw_cache');
-        $totalPaidKrw = max(0, (int) $totalSaleKrw - $totalUnpaidKrw);
+                return $v->currency === 'KRW' ? $total : $total * ($v->exchange_rate ?: 0);
+            });
+            $totalUnpaid = (int) (clone $base)->sum('sale_unpaid_amount_krw_cache');
+        }
+        $totalPaid = max(0, (int) $totalSale - (int) $totalUnpaid);
         $riskCount = (clone $base)->whereIn('receivable_risk', ['danger', 'critical'])->count();
 
         // 결제대기(grace) — 채권 총액에선 제외됐지만 별도 카드로 보여줘 정합 확인 (jin 2026-07-06).
         //   base 는 grace 제외본이라, grace 는 buildQuery(목록·grace 포함) 에서 따로 집계.
         $graceQuery = $this->buildQuery()->onlyReceivableGrace()->where('sale_unpaid_amount_krw_cache', '>', 0);
-        $graceUnpaidKrw = (int) (clone $graceQuery)->sum('sale_unpaid_amount_krw_cache');
-        $graceCount = (clone $graceQuery)->count();
+        if ($cur !== '') {
+            $graceRows = (clone $graceQuery)->where('currency', $cur)->get();
+            $graceUnpaid = $graceRows->sum(fn ($v) => $v->sale_unpaid_amount);
+            $graceCount = $graceRows->count();
+        } else {
+            $graceUnpaid = (int) (clone $graceQuery)->sum('sale_unpaid_amount_krw_cache');
+            $graceCount = (clone $graceQuery)->count();
+        }
 
+        // 키 이름은 하위호환(_krw) 유지 — 전체 모드는 KRW 값(테스트·기존 동작), 통화 모드는 원금액.
+        //   'currency' 로 카드 포맷을 분기한다(fmtSummaryMoney).
         return [
-            'total_sale_krw' => (int) $totalSaleKrw,
-            'total_paid_krw' => (int) $totalPaidKrw,
-            'total_unpaid_krw' => $totalUnpaidKrw,
+            'currency' => $cur !== '' ? $cur : 'KRW',
+            'total_sale_krw' => (int) $totalSale,
+            'total_paid_krw' => (int) $totalPaid,
+            'total_unpaid_krw' => (int) $totalUnpaid,
             'risk_count' => $riskCount,
-            'grace_unpaid_krw' => $graceUnpaidKrw,
+            'grace_unpaid_krw' => (int) $graceUnpaid,
             'grace_count' => $graceCount,
         ];
+    }
+
+    /** 채권관리 KPI 카드에 나타나는 통화 옵션(실제 데이터에 존재하는 통화만, 전체 pill 은 blade). */
+    #[Computed]
+    public function currencyOptions(): array
+    {
+        return (clone $this->buildQuery())
+            ->select('currency')->distinct()->pluck('currency')
+            ->filter()->sort()->values()->all();
+    }
+
+    /**
+     * KPI 카드 금액 표시 — displayCurrency 에 따라 포맷.
+     *   전체('')·KRW → 기존 @krw 축약(억/만) + '원'. 그 외 통화 → 통화코드 + 정확 금액.
+     */
+    public function fmtSummaryMoney(int|float $amount): \Illuminate\Support\HtmlString
+    {
+        $cur = $this->displayCurrency;
+        if ($cur === '' || $cur === 'KRW') {
+            $tag = \App\Support\Money::krwTag($amount);
+
+            return new \Illuminate\Support\HtmlString($tag.'<span class="ml-1 text-sm font-normal text-gray-500">'.e(__('receivable.unit_won')).'</span>');
+        }
+        $decimals = $cur === 'JPY' ? 0 : 2;
+
+        return new \Illuminate\Support\HtmlString('<span>'.e($cur.' '.number_format($amount, $decimals)).'</span>');
     }
 
     #[Computed]
@@ -549,23 +597,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
+    {{-- 통화 선택 — 재환산 없이 그 통화 차량의 판매시점 원금액 (전체=₩ 환산). 목록은 그대로 (jin 2026-07-16). --}}
+    @if(count($this->currencyOptions) > 1)
+    <div class="mb-2 flex flex-wrap items-center gap-1.5">
+        <span class="mr-1 text-xs text-gray-500">{{ __('receivable.currency_label') }}</span>
+        <button wire:click="$set('displayCurrency', '')"
+                class="tab-pill {{ $displayCurrency === '' ? 'is-active' : '' }}">{{ __('receivable.currency_all') }}</button>
+        @foreach ($this->currencyOptions as $c)
+        <button wire:click="$set('displayCurrency', '{{ $c }}')"
+                class="tab-pill {{ $displayCurrency === $c ? 'is-active' : '' }}">{{ $c }}</button>
+        @endforeach
+    </div>
+    @endif
+
     {{-- KPI 5개 (미수는 결제대기 제외, 결제대기는 별도 카드로 정합 표시 — jin 2026-07-06) --}}
     <div class="grid grid-cols-2 gap-3 xl:grid-cols-5">
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_sale') }}</div>
-            <div class="mt-1 text-2xl font-bold text-gray-800">@krw($this->summary['total_sale_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-gray-800">{!! $this->fmtSummaryMoney($this->summary['total_sale_krw']) !!}</div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_paid') }}</div>
-            <div class="mt-1 text-2xl font-bold text-blue-600">@krw($this->summary['total_paid_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-blue-600">{!! $this->fmtSummaryMoney($this->summary['total_paid_krw']) !!}</div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_unpaid') }}</div>
-            <div class="mt-1 text-2xl font-bold text-red-600">@krw($this->summary['total_unpaid_krw'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-red-600">{!! $this->fmtSummaryMoney($this->summary['total_unpaid_krw']) !!}</div>
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.grace') }}</div>
-            <div class="mt-1 text-2xl font-bold text-gray-500">@krw($this->summary['grace_unpaid_krw'])<span class="ml-1 text-sm font-normal text-gray-400">{{ __('receivable.unit_won') }}</span></div>
+            <div class="mt-1 text-2xl font-bold text-gray-500">{!! $this->fmtSummaryMoney($this->summary['grace_unpaid_krw']) !!}</div>
             <div class="mt-0.5 text-[11px] text-gray-400">{{ __('receivable.kpi.grace_hint', ['count' => $this->summary['grace_count']]) }}</div>
         </div>
         <div class="card">
@@ -618,6 +679,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.no') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.vehicle_no') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.vin') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.salesman') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.buyer') }}</th>
                     <th class="py-2 pr-3 text-right">{{ __('receivable.col.sale_total') }}</th>
@@ -664,6 +726,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif>
                     <td class="py-2 pr-3 text-gray-500">{{ $v->id }}</td>
                     <td class="py-2 pr-3 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
+                    <td class="py-2 pr-3 font-mono text-xs text-gray-500">{{ $v->nice_reg_vin ?: '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $primaryBuyer?->name ?? '-' }}</td>
                     <td class="py-2 pr-3 text-right text-gray-700">{{ $v->currency }} {{ number_format($v->sale_total_amount, $v->currency === 'KRW' ? 0 : 2) }}</td>
@@ -677,7 +740,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="11" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
+                    <td colspan="12" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
                 </tr>
                 @endforelse
             </tbody>
@@ -711,11 +774,16 @@ new #[Layout('components.layouts.app')] class extends Component {
              class="cursor-pointer rounded-lg border px-3 py-3 transition hover:bg-violet-50 {{ $rowBg }}">
             {{-- 상단: 차량번호 + 위험도 --}}
             <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-400">#{{ $v->id }}</span>
-                    <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-400">#{{ $v->id }}</span>
+                        <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span>
+                    </div>
+                    @if($v->nice_reg_vin)
+                    <span class="block truncate font-mono text-[11px] text-gray-400">{{ $v->nice_reg_vin }}</span>
+                    @endif
                 </div>
-                <span class="badge {{ $riskBadge }}">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span>
+                <span class="badge {{ $riskBadge }} shrink-0">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span>
             </div>
             {{-- 중간: 바이어 + 담당자 --}}
             <div class="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
