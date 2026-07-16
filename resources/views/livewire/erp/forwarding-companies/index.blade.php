@@ -287,60 +287,78 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function calendarEvents(): \Illuminate\Support\Collection
     {
-        return $this->shipments->flatten(1)
+        $events = $this->shipments->flatten(1)
             ->filter(fn ($v) => $v->shipping_date && $v->eta_date)
-            ->map(function ($v) {
-                [, $key] = $this->groupKeyOf($v);
+            ->values();
 
-                return [
-                    'vehicle_number' => $v->vehicle_number,
-                    'start' => $v->shipping_date->copy()->startOfDay(),
-                    'end' => $v->eta_date->copy()->startOfDay(),
-                    'group_key' => $key,
-                    'color' => $this->eventColor($key),
-                ];
-            })->values();
+        // 묶음별 색 — 등장 순서대로 팔레트 순환(crc32 몰림 방지, 인접 묶음이 확실히 다른 색).
+        $colorMap = [];
+        $idx = 0;
+        foreach ($events as $v) {
+            $key = $this->groupKeyOf($v)[1];
+            if (! array_key_exists($key, $colorMap)) {
+                $colorMap[$key] = $key === '' ? '#9ca3af' : self::CAL_COLORS[$idx++ % count(self::CAL_COLORS)];
+            }
+        }
+
+        return $events->map(function ($v) use ($colorMap) {
+            [$type, $key] = $this->groupKeyOf($v);
+            $groupLabel = match ($type) {
+                'container' => __('forwarding.grp_container'),
+                'declaration' => __('forwarding.grp_declaration'),
+                'vessel' => __('forwarding.grp_vessel'),
+                default => __('forwarding.grp_none'),
+            };
+            $inv = $this->invoices[$v->forwarding_company_id.'|'.$type.'|'.$key] ?? null;
+
+            return [
+                'vehicle_number' => $v->vehicle_number,
+                'start' => $v->shipping_date->copy()->startOfDay(),
+                'end' => $v->eta_date->copy()->startOfDay(),
+                'group_key' => $key,
+                'color' => $colorMap[$key],
+                'tip' => [
+                    'vehicle' => $v->vehicle_number,
+                    'ship_date' => $v->shipping_date->format('Y-m-d'),
+                    'eta_date' => $v->eta_date->format('Y-m-d').' ('.((int) $v->shipping_date->diffInDays($v->eta_date) + 1).__('forwarding.tip_days').')',
+                    'group' => $key !== '' ? $groupLabel.' '.$key : $groupLabel,
+                    'vessel' => $v->vessel_name ?: '-',
+                    'company' => optional($this->companies->firstWhere('id', $v->forwarding_company_id))->name ?? '-',
+                    'paid' => $inv && $inv->paid_at ? __('forwarding.paid') : __('forwarding.tip_unpaid'),
+                ],
+            ];
+        })->values();
     }
 
-    /** 월간 6주 그리드 + 주별 막대 세그먼트(월 넘는 건 좌우 화살표). */
+    /** 월간 42칸(6주) — 각 날짜의 선적(ship)·도착(arrive) 이벤트 점. */
     #[Computed]
-    public function calendarGrid(): array
+    public function calendarDays(): array
     {
         $first = \Illuminate\Support\Carbon::createFromFormat('Y-m', $this->calMonth ?: now()->format('Y-m'))->startOfMonth();
         $gridStart = $first->copy()->startOfWeek(\Carbon\CarbonInterface::SUNDAY);
         $events = $this->calendarEvents;
-        $weeks = [];
+        $out = [];
 
-        for ($w = 0; $w < 6; $w++) {
-            $weekStart = $gridStart->copy()->addWeeks($w);
-            $weekEndDay = $weekStart->copy()->addDays(6);
-            $days = [];
-            for ($d = 0; $d < 7; $d++) {
-                $day = $weekStart->copy()->addDays($d);
-                $days[] = ['day' => (int) $day->format('j'), 'inMonth' => $day->format('Y-m') === $first->format('Y-m')];
-            }
-            $bars = [];
+        for ($n = 0; $n < 42; $n++) {
+            $day = $gridStart->copy()->addDays($n);
+            $dstr = $day->format('Y-m-d');
+            $items = [];
             foreach ($events as $ev) {
-                if ($ev['end']->lt($weekStart) || $ev['start']->gt($weekEndDay)) {
-                    continue;
+                if ($ev['start']->format('Y-m-d') === $dstr) {
+                    $items[] = ['type' => 'ship', 'label' => $ev['vehicle_number'], 'color' => $ev['color'], 'tip' => $ev['tip']];
                 }
-                $segStart = $ev['start']->gt($weekStart) ? $ev['start'] : $weekStart;
-                $segEnd = $ev['end']->lt($weekEndDay) ? $ev['end'] : $weekEndDay;
-                $col = (int) $segStart->dayOfWeek + 1;                   // 1..7
-                $span = min((int) $segStart->diffInDays($segEnd) + 1, 7 - $col + 1);
-                $bars[] = [
-                    'col' => $col, 'span' => $span,
-                    'label' => $ev['vehicle_number'], 'color' => $ev['color'],
-                    'arrowL' => $ev['start']->lt($weekStart),
-                    'arrowR' => $ev['end']->gt($weekEndDay),
-                    'title' => $ev['vehicle_number'].' · '.$ev['start']->format('n/j').'→'.$ev['end']->format('n/j')
-                        .($ev['group_key'] !== '' ? ' · '.$ev['group_key'] : ''),
-                ];
+                if ($ev['end']->format('Y-m-d') === $dstr) {
+                    $items[] = ['type' => 'arrive', 'label' => $ev['vehicle_number'], 'color' => $ev['color'], 'tip' => $ev['tip']];
+                }
             }
-            $weeks[] = ['days' => $days, 'bars' => $bars];
+            $out[] = [
+                'day' => (int) $day->format('j'),
+                'inMonth' => $day->format('Y-m') === $first->format('Y-m'),
+                'items' => $items,
+            ];
         }
 
-        return $weeks;
+        return $out;
     }
 }; ?>
 
@@ -393,7 +411,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </button>
     @if($showCalendar)
     @php $cm = \Illuminate\Support\Carbon::createFromFormat('Y-m', $calMonth ?: now()->format('Y-m')); @endphp
-    <div class="mt-3">
+    <div class="mt-3" x-data="{ tip: null, ttype: '', tx: 0, ty: 0 }">
         {{-- 월 네비 --}}
         <div class="mb-2 flex items-center justify-center gap-4">
             <button wire:click="shiftMonth(-1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">‹</button>
@@ -401,30 +419,52 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button wire:click="shiftMonth(1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">›</button>
         </div>
         {{-- 요일 --}}
-        <div class="grid grid-cols-7 border-b border-gray-100 pb-1 text-center text-[10px] text-gray-400">
-            @foreach(['일','월','화','수','목','금','토'] as $wd)<div>{{ $wd }}</div>@endforeach
+        <div class="grid grid-cols-7 text-center text-[11px] font-medium text-gray-400">
+            @foreach(['일','월','화','수','목','금','토'] as $i => $wd)<div class="py-1 {{ $i === 0 ? 'text-red-400' : ($i === 6 ? 'text-blue-400' : '') }}">{{ $wd }}</div>@endforeach
         </div>
-        {{-- 6주 --}}
-        @foreach($this->calendarGrid as $week)
-        <div class="border-b border-gray-50 py-1">
-            <div class="grid grid-cols-7 text-center text-[10px]">
-                @foreach($week['days'] as $d)<div class="{{ $d['inMonth'] ? 'text-gray-600' : 'text-gray-300' }}">{{ $d['day'] }}</div>@endforeach
-            </div>
-            <div class="mt-0.5 space-y-0.5">
-                @foreach($week['bars'] as $bar)
-                <div class="grid grid-cols-7">
-                    <div style="grid-column: {{ $bar['col'] }} / span {{ $bar['span'] }}; background-color: {{ $bar['color'] }};"
-                         class="flex items-center gap-0.5 truncate rounded px-1 text-[9px] leading-4 text-white" title="{{ $bar['title'] }}">
-                        @if($bar['arrowL'])<span class="opacity-70">‹</span>@endif
-                        <span class="truncate">{{ $bar['label'] }}</span>
-                        @if($bar['arrowR'])<span class="ml-auto opacity-70">›</span>@endif
+        {{-- 6주 그리드 — 각 날짜에 선적(● 채운 점)·도착(○ 빈 점) + 차량번호 --}}
+        <div class="grid grid-cols-7 overflow-hidden rounded-lg border border-gray-200">
+            @foreach($this->calendarDays as $i => $d)
+            <div class="min-h-[88px] border-b border-r border-gray-100 p-1 {{ $d['inMonth'] ? '' : 'bg-gray-50/50' }}">
+                <div class="text-[11px] {{ ! $d['inMonth'] ? 'text-gray-300' : ($i % 7 === 0 ? 'text-red-400' : ($i % 7 === 6 ? 'text-blue-400' : 'text-gray-500')) }}">{{ $d['day'] }}</div>
+                <div class="mt-0.5 space-y-0.5">
+                    @foreach(array_slice($d['items'], 0, 4) as $it)
+                    <div class="flex cursor-pointer items-center gap-1 truncate leading-tight"
+                         @mouseenter="tip = {{ \Illuminate\Support\Js::from($it['tip']) }}; ttype = '{{ $it['type'] }}'; tx = $event.clientX; ty = $event.clientY"
+                         @mousemove="tx = $event.clientX; ty = $event.clientY" @mouseleave="tip = null">
+                        @if($it['type'] === 'ship')
+                        <span class="h-2 w-2 shrink-0 rounded-full" style="background-color: {{ $it['color'] }};"></span>
+                        @else
+                        <span class="h-2 w-2 shrink-0 rounded-full border-2 bg-white" style="border-color: {{ $it['color'] }};"></span>
+                        @endif
+                        <span class="truncate text-[10px] text-gray-600">{{ $it['label'] }}</span>
                     </div>
+                    @endforeach
+                    @if(count($d['items']) > 4)
+                    <div class="pl-1 text-[9px] text-gray-400">+{{ count($d['items']) - 4 }}{{ __('forwarding.more_count') }}</div>
+                    @endif
                 </div>
-                @endforeach
+            </div>
+            @endforeach
+        </div>
+        <p class="mt-1.5 text-center text-[11px] text-gray-400">{{ __('forwarding.calendar_legend') }}</p>
+
+        {{-- 커스텀 호버 툴팁 (막대 위 마우스) --}}
+        <div x-show="tip" x-cloak class="pointer-events-none fixed z-50 w-60 rounded-lg bg-gray-900/95 px-3 py-2 text-[11px] text-white shadow-xl"
+             :style="`left: ${Math.min(tx + 14, window.innerWidth - 250)}px; top: ${ty + 14}px`">
+            <div class="mb-1 flex items-center gap-1.5 border-b border-white/15 pb-1">
+                <span class="text-sm font-bold" x-text="tip?.vehicle"></span>
+                <span class="rounded px-1 text-[10px]" :class="ttype === 'ship' ? 'bg-emerald-500' : 'bg-sky-500'" x-text="ttype === 'ship' ? '{{ __('forwarding.ship') }}' : '{{ __('forwarding.arrive') }}'"></span>
+            </div>
+            <div class="space-y-0.5">
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('forwarding.tip_ship') }}</span><span x-text="tip?.ship_date"></span></div>
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('forwarding.tip_arrive') }}</span><span x-text="tip?.eta_date"></span></div>
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('forwarding.tip_group') }}</span><span x-text="tip?.group"></span></div>
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('vehicle.field.vessel') }}</span><span x-text="tip?.vessel"></span></div>
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('forwarding.tip_company') }}</span><span x-text="tip?.company"></span></div>
+                <div class="flex gap-1.5"><span class="w-14 shrink-0 text-gray-400">{{ __('forwarding.tip_pay') }}</span><span class="font-medium" x-text="tip?.paid"></span></div>
             </div>
         </div>
-        @endforeach
-        <p class="mt-1 text-center text-[10px] text-gray-400">{{ __('forwarding.calendar_legend') }}</p>
     </div>
     @endif
 </div>
