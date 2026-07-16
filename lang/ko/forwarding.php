@@ -13,6 +13,7 @@ return [
     'no_fee' => '운임비 없음',
     'no_shipment' => '기간 내 선적 없음',
     'col_ship_date' => '선적일',
+    'col_eta' => '도착일',
     'col_shipping' => '컨테이너/로로',
     'roro_label' => '로로',
     'col_transport_fee' => '운임비',

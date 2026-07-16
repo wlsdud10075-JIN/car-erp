@@ -58,7 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('container_number', 'like', "%{$term}%")
                 ->orWhere('export_declaration_number', 'like', "%{$term}%")))
             ->orderByDesc($col)
-            ->get(['id', 'forwarding_company_id', 'vehicle_number', 'shipping_date', 'bl_issue_date',
+            ->get(['id', 'forwarding_company_id', 'vehicle_number', 'shipping_date', 'bl_issue_date', 'eta_date',
                 'vessel_name', 'shipping_method', 'container_number', 'export_declaration_number', 'transport_fee', 'currency'])
             ->groupBy('forwarding_company_id');
     }
@@ -223,6 +223,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <tr class="border-b border-gray-200 text-left text-[11px] text-gray-500">
                                 <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.number') }}</th>
                                 <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_ship_date') }}</th>
+                                <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_eta') }}</th>
                                 <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.field.vessel') }}</th>
                                 <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_shipping') }}</th>
                                 <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.export_declaration_number') }}</th>
@@ -234,6 +235,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <tr class="hover:bg-gray-50">
                                 <td class="py-2 pr-3 font-medium text-gray-700"><a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a></td>
                                 <td class="py-2 pr-3 text-gray-500">{{ $v->$dcol?->format('Y-m-d') ?? '-' }}</td>
+                                <td class="py-2 pr-3 text-gray-500">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
                                 <td class="py-2 pr-3 text-gray-500">{{ $v->vessel_name ?: '-' }}</td>
                                 <td class="py-2 pr-3 text-gray-600">
                                     @if($v->shipping_method === 'RORO')
