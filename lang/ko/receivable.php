@@ -46,6 +46,7 @@ return [
     'col' => [
         'no' => '번호',
         'vehicle_no' => '차량번호',
+        'brand_type' => '브랜드/차종',
         'vin' => '차대번호',
         'salesman' => '담당자',
         'buyer' => '바이어',
