@@ -155,9 +155,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function currencyOptions(): array
     {
+        // KRW 는 '전체(₩)' 가 기본 환산 기준이라 제외 — 외화만 pill 로 (jin 2026-07-16).
         return (clone $this->buildQuery())
             ->select('currency')->distinct()->pluck('currency')
-            ->filter()->sort()->values()->all();
+            ->filter(fn ($c) => $c && $c !== 'KRW')->sort()->values()->all();
     }
 
     /**
