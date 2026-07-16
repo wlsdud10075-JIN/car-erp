@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\ForwardingCompany;
+use App\Models\ForwardingInvoice;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -16,6 +18,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $dateType = 'shipping';   // shipping = shipping_date / bl = bl_issue_date
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
+
+    // ── 운임 인보이스(지급 청산) — jin 2026-07-16 ──────────────────────────
+    //   포워딩사가 준 인보이스 실금액 기입 + "줬나/안줬나" 청산. 통화는 재환산 없이 그대로.
+    #[Url] public string $displayCurrency = '';   // '' 전체(통화별 병렬) / 통화코드(그 통화 원금액만)
+    public array $invForm = [];                    // [fkey => ['amount'=>, 'currency'=>, 'memo'=>]]
 
     public bool $showPanel = false;
     public ?int $editingId = null;
@@ -145,6 +152,113 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->name = $this->contact_name = $this->email = $this->phone = $this->address = $this->memo = '';
         $this->is_active = true;
     }
+
+    // ── 운임 인보이스 로직 ────────────────────────────────────────────────
+
+    /** 차량 → [group_type, group_key]. 우선순위 container › declaration › vessel (데이터로 자동 분류). */
+    private function groupKeyOf($v): array
+    {
+        if (! empty($v->container_number)) {
+            return ['container', $v->container_number];
+        }
+        if (! empty($v->export_declaration_number)) {
+            return ['declaration', $v->export_declaration_number];
+        }
+        if (! empty($v->vessel_name)) {
+            return ['vessel', $v->vessel_name];
+        }
+
+        return ['none', ''];
+    }
+
+    /** 화면에 뜬 포워딩사들의 인보이스 [companyId|type|key => ForwardingInvoice]. paid_at 이 지급여부 단일 출처. */
+    #[Computed]
+    public function invoices()
+    {
+        return ForwardingInvoice::query()
+            ->whereIn('forwarding_company_id', $this->companies->pluck('id'))
+            ->get()
+            ->keyBy(fn ($i) => $i->forwarding_company_id.'|'.$i->group_type.'|'.$i->group_key);
+    }
+
+    /** 포워딩사별 → 묶음(그룹)별 소분류 + 통화별 예상운임. UI 렌더용. */
+    #[Computed]
+    public function groupedShipments()
+    {
+        return $this->shipments->map(function ($ships) {
+            return $ships->groupBy(function ($v) {
+                [$t, $k] = $this->groupKeyOf($v);
+
+                return $t.'|'.$k;
+            })->map(function ($group, $composite) {
+                [$type, $key] = explode('|', $composite, 2);
+
+                return [
+                    'type' => $type,
+                    'key' => $key,
+                    'vehicles' => $group,
+                    'feeByCurrency' => $group->groupBy('currency')->map(fn ($g) => (int) $g->sum('transport_fee'))->filter(),
+                ];
+            })->values();
+        });
+    }
+
+    /** 그룹 인보이스 저장(+선택 청산) — 그룹당 1건 upsert. 재인가 매번(SKILLS #26). */
+    public function saveInvoice(int $companyId, string $groupType, string $groupKey, bool $settle = false): void
+    {
+        abort_unless(auth()->user()?->canManageForwarding(), 403);
+        abort_unless(in_array($groupType, ForwardingInvoice::GROUP_TYPES, true) && $groupKey !== '', 422);
+
+        $fkey = md5($companyId.'|'.$groupType.'|'.$groupKey);   // wire:model 키 안전화(선박명 공백·한글 대비)
+        $f = $this->invForm[$fkey] ?? [];
+        $inv = ForwardingInvoice::firstOrNew([
+            'forwarding_company_id' => $companyId, 'group_type' => $groupType, 'group_key' => $groupKey,
+        ]);
+        $inv->amount = (float) ($f['amount'] ?? $inv->amount ?? 0);
+        $inv->currency = $f['currency'] ?? $inv->currency ?? 'USD';
+        $inv->memo = ($f['memo'] ?? $inv->memo) ?: null;
+        $inv->created_by = $inv->created_by ?? auth()->id();
+
+        $justSettled = false;
+        if ($settle && $inv->paid_at === null) {
+            $inv->paid_at = now();
+            $justSettled = true;
+        }
+        $inv->save();
+
+        if ($justSettled) {
+            $this->logPaid($inv, true);
+        }
+        unset($this->invoices);
+        session()->flash('success', __($justSettled ? 'forwarding.inv_paid' : 'forwarding.inv_saved'));
+    }
+
+    /** 청산 취소 — paid_at 해제(금액 기록은 유지). 감사로그 남김. */
+    public function unsettleInvoice(int $invoiceId): void
+    {
+        abort_unless(auth()->user()?->canManageForwarding(), 403);
+        $inv = ForwardingInvoice::findOrFail($invoiceId);
+        if ($inv->paid_at !== null) {
+            $inv->paid_at = null;
+            $inv->save();
+            $this->logPaid($inv, false);
+        }
+        unset($this->invoices);
+        session()->flash('success', __('forwarding.inv_unpaid'));
+    }
+
+    /** 청산/취소 감사로그 — 관리자 화면 한글(column_labels). */
+    private function logPaid(ForwardingInvoice $inv, bool $paid): void
+    {
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => ForwardingInvoice::class,
+            'auditable_id' => $inv->id,
+            'action' => $paid ? 'forwarding_invoice_paid' : 'forwarding_invoice_unpaid',
+            'new_value' => $paid ? $inv->currency.' '.number_format((float) $inv->amount, 2).' 지급' : '청산 취소',
+            'ip_address' => request()->ip(),
+        ]);
+    }
 }; ?>
 
 <div wire:poll.60s>
@@ -213,45 +327,86 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button wire:click="delete({{ $fc->id }})" wire:confirm="{{ __('forwarding.delete_confirm', ['name' => $fc->name]) }}" class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
                 </div>
             </div>
-            {{-- 선적 차량 목록 (아코디언) --}}
-            <div x-show="open" x-cloak class="mt-3 overflow-x-auto border-t border-gray-100 pt-3">
-                @if($ships->isEmpty())
+            {{-- 선적 차량 목록 (아코디언) — 묶음(컨테이너/신고번호/선박)별 그룹 + 운임 인보이스 청산 --}}
+            <div x-show="open" x-cloak class="mt-3 border-t border-gray-100 pt-3">
+                @php $groups = $this->groupedShipments[$fc->id] ?? collect(); @endphp
+                @if($groups->isEmpty())
                     <p class="py-3 text-center text-xs text-gray-400">{{ __('forwarding.no_shipment') }}</p>
                 @else
-                    <table class="w-full text-xs">
-                        <thead>
-                            <tr class="border-b border-gray-200 text-left text-[11px] text-gray-500">
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.number') }}</th>
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_ship_date') }}</th>
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_eta') }}</th>
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.field.vessel') }}</th>
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('forwarding.col_shipping') }}</th>
-                                <th class="pb-1.5 pr-3 font-medium">{{ __('vehicle.col.export_declaration_number') }}</th>
-                                <th class="pb-1.5 pr-3 text-right font-medium">{{ __('forwarding.col_transport_fee') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-50">
-                            @foreach($ships as $v)
-                            <tr class="hover:bg-gray-50">
-                                <td class="py-2 pr-3 font-medium text-gray-700"><a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a></td>
-                                <td class="py-2 pr-3 text-gray-500">{{ $v->$dcol?->format('Y-m-d') ?? '-' }}</td>
-                                <td class="py-2 pr-3 text-gray-500">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
-                                <td class="py-2 pr-3 text-gray-500">{{ $v->vessel_name ?: '-' }}</td>
-                                <td class="py-2 pr-3 text-gray-600">
-                                    @if($v->shipping_method === 'RORO')
-                                        <span class="badge badge-teal">{{ __('forwarding.roro_label') }}</span>
-                                    @elseif($v->container_number)
-                                        <span class="font-mono">{{ $v->container_number }}</span>
-                                    @else
-                                        -
-                                    @endif
-                                </td>
-                                <td class="py-2 pr-3 font-mono text-gray-600">{{ $v->export_declaration_number ?: '-' }}</td>
-                                <td class="py-2 pr-3 text-right tabular-nums text-gray-700">{{ $v->transport_fee ? $v->currency.' '.number_format($v->transport_fee) : '-' }}</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                <div class="space-y-2.5">
+                    @foreach($groups as $grp)
+                    @php
+                        $fkey = md5($fc->id.'|'.$grp['type'].'|'.$grp['key']);
+                        $inv = $this->invoices[$fc->id.'|'.$grp['type'].'|'.$grp['key']] ?? null;
+                        $grpLabel = match($grp['type']) {
+                            'container' => __('forwarding.grp_container'),
+                            'declaration' => __('forwarding.grp_declaration'),
+                            'vessel' => __('forwarding.grp_vessel'),
+                            default => __('forwarding.grp_none'),
+                        };
+                        $isPaid = $inv && $inv->paid_at;
+                    @endphp
+                    <div class="overflow-x-auto rounded-lg border {{ $isPaid ? 'border-green-200 bg-green-50/40' : 'border-gray-200' }} p-2.5">
+                        {{-- 그룹 헤더: 묶음 · 예상운임(통화별) · 인보이스 실금액 청산 --}}
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <div class="flex items-center gap-1.5">
+                                <span class="badge badge-gray text-[10px]">{{ $grpLabel }}</span>
+                                <span class="font-mono text-xs font-medium text-gray-700">{{ $grp['key'] ?: __('forwarding.grp_unassigned') }}</span>
+                                <span class="text-[11px] text-gray-400">{{ __('forwarding.shipment_count', ['count' => $grp['vehicles']->count()]) }}</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] text-gray-400">{{ __('forwarding.expected_fee') }}</span>
+                                @forelse($grp['feeByCurrency'] as $cur => $sum)
+                                    <span class="badge badge-blue text-[10px]">{{ $cur }} {{ number_format($sum) }}</span>
+                                @empty
+                                    <span class="text-[11px] text-gray-300">-</span>
+                                @endforelse
+                            </div>
+                            @if($grp['key'] !== '')
+                            <div class="ml-auto flex items-center gap-1.5">
+                                @if($isPaid)
+                                    <span class="badge badge-green text-[10px]">{{ __('forwarding.paid') }} · {{ $inv->currency }} {{ number_format($inv->amount) }}</span>
+                                    <button wire:click="unsettleInvoice({{ $inv->id }})" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('forwarding.unsettle') }}</button>
+                                @else
+                                    <select wire:model="invForm.{{ $fkey }}.currency" class="input-filter h-7 w-20 text-xs">
+                                        @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $c)
+                                            <option value="{{ $c }}">{{ $c }}</option>
+                                        @endforeach
+                                    </select>
+                                    <input wire:model="invForm.{{ $fkey }}.amount" type="text" data-money
+                                           placeholder="{{ __('forwarding.inv_amount_ph') }}" class="input-filter h-7 w-28 text-right text-xs" />
+                                    <button wire:click="saveInvoice({{ $fc->id }}, '{{ $grp['type'] }}', @js($grp['key']), true)"
+                                            class="btn-primary h-7 px-2 text-[11px]">{{ __('forwarding.settle') }}</button>
+                                @endif
+                            </div>
+                            @endif
+                        </div>
+                        {{-- 그룹 차량 --}}
+                        <table class="mt-2 w-full text-xs">
+                            <thead>
+                                <tr class="border-b border-gray-100 text-left text-[11px] text-gray-400">
+                                    <th class="pb-1 pr-3 font-medium">{{ __('vehicle.col.number') }}</th>
+                                    <th class="pb-1 pr-3 font-medium">{{ __('forwarding.col_ship_date') }}</th>
+                                    <th class="pb-1 pr-3 font-medium">{{ __('forwarding.col_eta') }}</th>
+                                    <th class="pb-1 pr-3 font-medium">{{ __('vehicle.field.vessel') }}</th>
+                                    <th class="pb-1 pr-3 text-right font-medium">{{ __('forwarding.col_transport_fee') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                @foreach($grp['vehicles'] as $v)
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-1.5 pr-3 font-medium text-gray-700"><a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a></td>
+                                    <td class="py-1.5 pr-3 text-gray-500">{{ $v->$dcol?->format('Y-m-d') ?? '-' }}</td>
+                                    <td class="py-1.5 pr-3 text-gray-500">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
+                                    <td class="py-1.5 pr-3 text-gray-500">{{ $v->vessel_name ?: '-' }}</td>
+                                    <td class="py-1.5 pr-3 text-right tabular-nums text-gray-700">{{ $v->transport_fee ? $v->currency.' '.number_format($v->transport_fee) : '-' }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @endforeach
+                </div>
                 @endif
             </div>
         </div>
