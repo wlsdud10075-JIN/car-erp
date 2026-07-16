@@ -23,6 +23,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   포워딩사가 준 인보이스 실금액 기입 + "줬나/안줬나" 청산. 통화는 재환산 없이 그대로.
     #[Url] public string $displayCurrency = '';   // '' 전체(통화별 병렬) / 통화코드(그 통화 원금액만)
     public array $invForm = [];                    // [fkey => ['amount'=>, 'currency'=>, 'memo'=>]]
+    public bool $hideSettled = false;              // 지급완료 묶음 숨기고 미지급만 보기
 
     public bool $showPanel = false;
     public ?int $editingId = null;
@@ -295,6 +296,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('forwarding.search_ph') }}"
            class="input-filter w-64" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    <label class="ml-2 flex items-center gap-1 text-xs text-gray-500">
+        <input type="checkbox" wire:model.live="hideSettled" class="rounded border-gray-300" />
+        {{ __('forwarding.hide_settled') }}
+    </label>
 </div>
 
 {{-- 포워딩사별 선적 현황 카드 --}}
@@ -304,6 +309,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             $ships = $this->shipments[$fc->id] ?? collect();
             $feeByCurrency = $ships->groupBy('currency')->map(fn ($g) => (int) $g->sum('transport_fee'))->filter();
             $dcol = $dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
+            // 지급 집계 — 묶음(청산 단위) 기준. key 없는(미분류) 묶음은 청산 대상 아니라 제외.
+            $grps = $this->groupedShipments[$fc->id] ?? collect();
+            $settledCount = 0; $unpaidCount = 0;
+            foreach ($grps as $g) {
+                if ($g['key'] === '') { continue; }
+                $iv = $this->invoices[$fc->id.'|'.$g['type'].'|'.$g['key']] ?? null;
+                if ($iv && $iv->paid_at) { $settledCount++; } else { $unpaidCount++; }
+            }
         @endphp
         <div class="card-tight" x-data="{ open: false }">
             {{-- 헤더 행 --}}
@@ -313,6 +326,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-semibold text-gray-800">{{ $fc->name }}</span>
                     <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? __('common.active') : __('common.inactive') }}</span>
                     <span class="pill-count">{{ __('forwarding.shipment_count', ['count' => $ships->count()]) }}</span>
+                    @if($unpaidCount > 0)<span class="badge badge-red text-[10px]">{{ __('forwarding.unpaid_count', ['count' => $unpaidCount]) }}</span>@endif
+                    @if($settledCount > 0)<span class="badge badge-green text-[10px]">{{ __('forwarding.settled_count', ['count' => $settledCount]) }}</span>@endif
                 </button>
                 {{-- 운임비 통화별 합계 --}}
                 <div class="flex flex-wrap items-center gap-1.5">
@@ -333,8 +348,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @if($groups->isEmpty())
                     <p class="py-3 text-center text-xs text-gray-400">{{ __('forwarding.no_shipment') }}</p>
                 @else
+                @php
+                    // 미지급 먼저, 지급완료는 아래로.
+                    $sortedGroups = $groups->sortBy(function ($g) use ($fc) {
+                        $iv = $this->invoices[$fc->id.'|'.$g['type'].'|'.$g['key']] ?? null;
+
+                        return ($iv && $iv->paid_at) ? 1 : 0;
+                    })->values();
+                @endphp
                 <div class="space-y-2.5">
-                    @foreach($groups as $grp)
+                    @foreach($sortedGroups as $grp)
                     @php
                         $fkey = md5($fc->id.'|'.$grp['type'].'|'.$grp['key']);
                         $inv = $this->invoices[$fc->id.'|'.$grp['type'].'|'.$grp['key']] ?? null;
@@ -346,14 +369,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         };
                         $isPaid = $inv && $inv->paid_at;
                     @endphp
-                    <div class="overflow-x-auto rounded-lg border {{ $isPaid ? 'border-green-200 bg-green-50/40' : 'border-gray-200' }} p-2.5">
-                        {{-- 그룹 헤더: 묶음 · 예상운임(통화별) · 인보이스 실금액 청산 --}}
+                    @if($hideSettled && $isPaid) @continue @endif
+                    <div class="rounded-lg border {{ $isPaid ? 'border-green-200 bg-green-50/40' : 'border-gray-200' }} p-2.5" x-data="{ gopen: false }">
+                        {{-- 그룹 헤더: 묶음(클릭=차량 펼침) · 예상운임(통화별) · 인보이스 실금액 청산 --}}
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                            <div class="flex items-center gap-1.5">
+                            <button type="button" @click="gopen = !gopen" class="flex items-center gap-1.5 text-left">
+                                <svg class="h-3.5 w-3.5 text-gray-400 transition-transform" :class="gopen ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                                 <span class="badge badge-gray text-[10px]">{{ $grpLabel }}</span>
                                 <span class="font-mono text-xs font-medium text-gray-700">{{ $grp['key'] ?: __('forwarding.grp_unassigned') }}</span>
                                 <span class="text-[11px] text-gray-400">{{ __('forwarding.shipment_count', ['count' => $grp['vehicles']->count()]) }}</span>
-                            </div>
+                            </button>
                             <div class="flex items-center gap-1">
                                 <span class="text-[10px] text-gray-400">{{ __('forwarding.expected_fee') }}</span>
                                 @forelse($grp['feeByCurrency'] as $cur => $sum)
@@ -381,8 +406,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </div>
                             @endif
                         </div>
-                        {{-- 그룹 차량 --}}
-                        <table class="mt-2 w-full text-xs">
+                        {{-- 그룹 차량 (헤더 클릭 시 펼침 — 대량 나열 방지) --}}
+                        <div x-show="gopen" x-cloak class="mt-2 overflow-x-auto">
+                        <table class="w-full text-xs">
                             <thead>
                                 <tr class="border-b border-gray-100 text-left text-[11px] text-gray-400">
                                     <th class="pb-1 pr-3 font-medium">{{ __('vehicle.col.number') }}</th>
@@ -404,6 +430,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endforeach
                             </tbody>
                         </table>
+                        </div>
                     </div>
                     @endforeach
                 </div>
