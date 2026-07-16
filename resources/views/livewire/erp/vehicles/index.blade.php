@@ -2194,15 +2194,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]);
 
         // 중앙 감사로그 미러링 — 전용 테이블(unpaid_export_overrides)과 별개로, 관리자 감사로그 화면
-        // (AuditLog 단일 소스)에도 노출되게 한다. 잠금해제(ledger_field_unlocked)와 동일 패턴 —
-        // column_name=우회 단계, new_value=승인 사유.
+        // (AuditLog 단일 소스)에도 노출되게 한다. 잠금해제(ledger_field_unlocked)와 동일 패턴.
+        //   관리자가 영문 없이 읽게: column_name=논리 라벨키(config 한글), new_value=단계 한글 + 사유.
+        $stageLabel = match ($this->overrideStage) {
+            'clearance' => '통관 진입(50%)',
+            'shipping' => '선적 진입(50%)',
+            'bl' => 'B/L 발행(100%)',
+            default => $this->overrideStage,
+        };
         \App\Models\AuditLog::create([
             'user_id' => auth()->id(),
             'auditable_type' => Vehicle::class,
             'auditable_id' => $v->id,
             'action' => 'unpaid_override_approved',
-            'column_name' => $this->overrideStage,
-            'new_value' => $this->overrideReason,
+            'column_name' => 'unpaid_override_stage',
+            'new_value' => $stageLabel.' · 사유: '.$this->overrideReason,
             'ip_address' => request()->ip(),
         ]);
 
