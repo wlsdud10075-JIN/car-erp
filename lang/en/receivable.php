@@ -24,6 +24,8 @@ return [
     ],
     'unit_won' => 'KRW',
     'unit_count' => '',
+    'currency_label' => 'Currency',
+    'currency_all' => 'All (₩)',
 
     'search_ph' => 'Search plate · brand',
     'all_salesman' => 'All salesmen',
@@ -44,6 +46,7 @@ return [
     'col' => [
         'no' => 'No.',
         'vehicle_no' => 'Plate',
+        'vin' => 'VIN',
         'salesman' => 'Salesman',
         'buyer' => 'Buyer',
         'sale_total' => 'Sale total',

@@ -24,6 +24,8 @@ return [
     ],
     'unit_won' => '원',
     'unit_count' => '대',
+    'currency_label' => '통화',
+    'currency_all' => '전체(₩)',
 
     'search_ph' => '차량번호·브랜드 검색',
     'all_salesman' => '담당자 전체',
@@ -44,6 +46,7 @@ return [
     'col' => [
         'no' => '번호',
         'vehicle_no' => '차량번호',
+        'vin' => '차대번호',
         'salesman' => '담당자',
         'buyer' => '바이어',
         'sale_total' => '판매합계',
