@@ -5475,9 +5475,9 @@ function vehicleColumnsToggle() {
                     {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3). 여러 건 한 번에 선택. --}}
                     <div>
                         <label class="label-base">{{ __('vehicle.panel.sec.photos') }}</label>
-                        <input type="file" wire:model="photoUpload" multiple
-                               accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                               class="input-base text-sm" />
+                        <x-erp.file-drop model="photoUpload" multiple
+                            accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
+                            label="사진을 여기로 드래그하거나 선택 (여러 장)" />
                         <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
                         <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                         @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -5838,9 +5838,8 @@ function vehicleColumnsToggle() {
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.derg_doc') }}</label>
-                    <input wire:model="deregistrationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                           class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-violet-50 file:px-2 file:py-1 file:text-xs file:text-violet-700" />
-                    <div wire:loading wire:target="deregistrationDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                    <x-erp.file-drop model="deregistrationDocFile"
+                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($deregistrationDocFile)
                     <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $deregistrationDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($deregistration_document_path)
@@ -5851,6 +5850,7 @@ function vehicleColumnsToggle() {
                                 class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
+                    </x-erp.file-drop>
                 </div>
                 {{-- 국내 딜러 말소등록증 알림톡 전달 (수동) — 차량등록 화면 포함 항상 노출(번호 미리 입력, jin 2026-07-14).
                      발송은 저장된 말소증 링크가 필요해 최초 저장 후 가능. 미저장 클릭 시 '저장 먼저' 토스트로 안내. --}}
@@ -6505,9 +6505,9 @@ function vehicleColumnsToggle() {
             {{-- 선박 사진/첨부 (category='shipping' · 최대 30건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}
             <div class="mt-4">
                 <label class="label-base">{{ __('vehicle.panel.sec.ship_photos') }}</label>
-                <input type="file" wire:model="shipPhotoUpload" multiple
-                       accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                       class="input-base text-sm" />
+                <x-erp.file-drop model="shipPhotoUpload" multiple
+                    accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
+                    label="선적 사진을 여기로 드래그하거나 선택 (여러 장)" />
                 <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
                 <div wire:loading wire:target="shipPhotoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                 @error('shipPhotoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -6630,9 +6630,8 @@ function vehicleColumnsToggle() {
                 @endif
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
-                    <input wire:model="blDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                           class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-emerald-50 file:px-2 file:py-1 file:text-xs file:text-emerald-700" />
-                    <div wire:loading wire:target="blDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                    <x-erp.file-drop model="blDocFile"
+                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($blDocFile)
                     <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $blDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($bl_document_path)
@@ -6643,6 +6642,7 @@ function vehicleColumnsToggle() {
                                 class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
+                    </x-erp.file-drop>
                 </div>
             </div>
         </div>
@@ -7662,10 +7662,14 @@ function vehicleColumnsToggle() {
             {{-- ① 엑셀 파일 업로드 (권장) — 눈에 띄는 선택 버튼 + 파일명 --}}
             <label class="label-base">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_file_label') : __('vehicle.cost_import.file_label') }}</label>
             <div class="flex flex-wrap items-center gap-2">
-                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-primary bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary-text hover:brightness-95">
+                <label x-data
+                    x-on:dragover.prevent="$el.classList.add('brightness-95')"
+                    x-on:dragleave.prevent="$el.classList.remove('brightness-95')"
+                    x-on:drop.prevent="$el.classList.remove('brightness-95'); if ($event.dataTransfer?.files?.length) { $refs.ci.files = $event.dataTransfer.files; $refs.ci.dispatchEvent(new Event('change', { bubbles: true })); }"
+                    class="inline-flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-primary bg-primary-light px-4 py-2.5 text-sm font-semibold text-primary-text hover:brightness-95">
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
                     {{ __('vehicle.cost_import.file_choose') }}
-                    <input type="file" wire:model="costImportFile" accept=".xlsx,.xls" class="hidden" />
+                    <input x-ref="ci" type="file" wire:model="costImportFile" accept=".xlsx,.xls" class="hidden" />
                 </label>
                 @if($costImportFile)
                     <span class="inline-flex items-center gap-1 text-xs text-gray-700">

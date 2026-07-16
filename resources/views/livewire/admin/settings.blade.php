@@ -1111,10 +1111,14 @@ new #[Layout('components.layouts.app')] class extends Component
                     @endif
 
                     <div class="mt-3 flex flex-wrap items-center gap-2">
-                        <label class="btn-primary cursor-pointer text-sm">
+                        <label x-data
+                            x-on:dragover.prevent="$el.classList.add('brightness-95')"
+                            x-on:dragleave.prevent="$el.classList.remove('brightness-95')"
+                            x-on:drop.prevent="$el.classList.remove('brightness-95'); if ($event.dataTransfer?.files?.length) { $refs.st.files = $event.dataTransfer.files; $refs.st.dispatchEvent(new Event('change', { bubbles: true })); }"
+                            class="btn-primary cursor-pointer text-sm">
                             <span wire:loading.remove wire:target="{{ $slot['prop'] }}">{{ __('feature_settings.stamp_upload_btn') }}</span>
                             <span wire:loading wire:target="{{ $slot['prop'] }}">…</span>
-                            <input type="file" wire:model="{{ $slot['prop'] }}" accept="image/png,image/jpeg" class="hidden">
+                            <input x-ref="st" type="file" wire:model="{{ $slot['prop'] }}" accept="image/png,image/jpeg" class="hidden">
                         </label>
                         @if (($stampPaths[$slot['role']] ?? null))
                             <button type="button" wire:click="removeStamp('{{ $slot['role'] }}')" class="text-sm text-gray-500 underline hover:text-rose-600">
