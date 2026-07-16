@@ -6424,9 +6424,8 @@ function vehicleColumnsToggle() {
                 </div>
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">{{ __('vehicle.field.export_decl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
-                    <input wire:model="exportDeclarationDocFile" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                           class="block w-full text-xs text-gray-500 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2 file:py-1 file:text-xs file:text-amber-700" />
-                    <div wire:loading wire:target="exportDeclarationDocFile" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
+                    <x-erp.file-drop model="exportDeclarationDocFile"
+                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($exportDeclarationDocFile)
                     <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $exportDeclarationDocFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
                     @elseif($export_declaration_document_path)
@@ -6437,6 +6436,7 @@ function vehicleColumnsToggle() {
                                 class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
                     </div>
                     @endif
+                    </x-erp.file-drop>
                 </div>
             </div>
         </div>
