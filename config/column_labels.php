@@ -109,6 +109,9 @@ return [
         'salesman_id' => '영업담당자',
         'receivable_manager_id' => '채권 담당자',
         'progress_status_rule_version' => '진행상태 규칙 버전',
+        // 감사 로그용 논리 라벨(실제 vehicles 컬럼 아님) — 관리자가 영문 없이 읽게.
+        'unpaid_override_stage' => '미수 우회 단계',
+        'unlock_reason' => '잠금해제 사유',
     ],
 
     // ─── final_payments / purchase_balance_payments ─────────────────────
