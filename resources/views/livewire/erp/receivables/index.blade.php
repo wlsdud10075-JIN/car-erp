@@ -680,6 +680,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.no') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.vehicle_no') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.brand_type') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.vin') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.salesman') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.buyer') }}</th>
@@ -727,6 +728,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif>
                     <td class="py-2 pr-3 text-gray-500">{{ $v->id }}</td>
                     <td class="py-2 pr-3 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
+                    <td class="py-2 pr-3 text-gray-600">{{ trim(($v->brand ?? '').' '.($v->model_type ?? '')) ?: '-' }}</td>
                     <td class="py-2 pr-3 font-mono text-xs text-gray-500">{{ $v->nice_reg_vin ?: '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $primaryBuyer?->name ?? '-' }}</td>
@@ -741,7 +743,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="12" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
+                    <td colspan="13" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
                 </tr>
                 @endforelse
             </tbody>

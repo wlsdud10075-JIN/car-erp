@@ -46,6 +46,7 @@ return [
     'col' => [
         'no' => 'No.',
         'vehicle_no' => 'Plate',
+        'brand_type' => 'Brand/Model',
         'vin' => 'VIN',
         'salesman' => 'Salesman',
         'buyer' => 'Buyer',
