@@ -88,4 +88,18 @@ class ForwardingInvoiceTest extends TestCase
 
         Volt::actingAs($sales)->test('erp.forwarding-companies.index')->assertStatus(403);
     }
+
+    public function test_calendar_renders_including_multi_month_bar(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD CAL', 'is_active' => true]);
+        // 한 달 내
+        $this->shipVehicle($fc->id, ['container_number' => 'C1', 'shipping_method' => 'CONTAINER', 'shipping_date' => '2026-05-10', 'eta_date' => '2026-05-20']);
+        // 2달 걸침(5월→7월) — 좌우 화살표 세그먼트 케이스
+        $this->shipVehicle($fc->id, ['container_number' => 'C2', 'shipping_method' => 'CONTAINER', 'shipping_date' => '2026-05-25', 'eta_date' => '2026-07-05']);
+
+        Volt::actingAs($this->admin())->test('erp.forwarding-companies.index')
+            ->set('calMonth', '2026-05')
+            ->set('showCalendar', true)
+            ->assertOk();
+    }
 }
