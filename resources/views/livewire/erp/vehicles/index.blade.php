@@ -2193,6 +2193,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             'sale_unpaid_amount_snapshot' => $v->sale_unpaid_amount_krw_cache,
         ]);
 
+        // 중앙 감사로그 미러링 — 전용 테이블(unpaid_export_overrides)과 별개로, 관리자 감사로그 화면
+        // (AuditLog 단일 소스)에도 노출되게 한다. 잠금해제(ledger_field_unlocked)와 동일 패턴 —
+        // column_name=우회 단계, new_value=승인 사유.
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Vehicle::class,
+            'auditable_id' => $v->id,
+            'action' => 'unpaid_override_approved',
+            'column_name' => $this->overrideStage,
+            'new_value' => $this->overrideReason,
+            'ip_address' => request()->ip(),
+        ]);
+
         $this->overrideStage = '';
         $this->overrideReason = '';
 
@@ -7302,7 +7315,7 @@ function vehicleColumnsToggle() {
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.loading') }}</dt><dd class="font-medium">{{ $bl_loading_location ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bl_number') }}</dt><dd class="font-medium">{{ $bl_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.container') }}</dt><dd class="font-medium">{{ $container_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.vsl') }}</dt><dd class="font-medium">{{ $bl_vsl ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.vsl') }}</dt><dd class="font-medium">{{ $vessel_name ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bl_doc') }}</dt><dd class="font-medium">{{ ($bl_document_path ?? '') || ($blDocFile ?? null) ? __('vehicle.save.val_attached') : __('vehicle.save.val_not_attached') }}</dd></div>
                 </dl>
             </div>
