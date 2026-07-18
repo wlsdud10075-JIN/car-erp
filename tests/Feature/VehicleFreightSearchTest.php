@@ -33,6 +33,8 @@ class VehicleFreightSearchTest extends TestCase
         // 전체 운임비 합 = 800k + 1.2M + 800k = 2.8M / 3대
         $this->assertSame(2_800_000, $c->instance()->freightTotals['sum']);
         $this->assertSame(3, $c->instance()->freightTotals['count']);
+        // 판매총액 합 — sale_price 등 미입력이라 운임비만 = 2.8M (sale_total = sale_price+운임+...−tax_dc)
+        $this->assertSame(2_800_000, $c->instance()->freightTotals['sale_total_sum']);
 
         // 운임비 정확검색 800,000 (콤마 포함 입력) → 2대만
         $c->set('freightExact', '800,000')->call('applyFilters');

@@ -76,6 +76,7 @@ return [
     'delete_confirm' => '차량 :number을(를) 삭제하시겠습니까?',
     'empty' => '차량이 없습니다.',
     'freight_total' => '운임비 합 ₩:amount',
+    'sale_total_sum' => '판매총액 합 ₩:amount',
     'freight_ph' => '운임비 검색',
 
     'shipdoc_select_title' => '선적 서류 다중 선택 (수출 차량)',
