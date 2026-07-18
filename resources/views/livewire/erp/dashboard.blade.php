@@ -365,6 +365,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $settlementBlockedCount = (clone $settlementBlockedQuery)->count();
         $settlementBlockedAmount = (int) ((clone $settlementBlockedQuery)->sum('sale_unpaid_amount_krw_cache') ?? 0);
 
+        // 매입취소 (jin 2026-07-18) — 취소완료·미수·마감 모두. 정산차단 카드 옆 KPI 로 항상 표시.
+        $cancelTotal = (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', '!=', Vehicle::CANCEL_NONE)->count();
+
         $t = fn (string $k, string $f) => __("dashboard.kpi.settlement.$k.$f");
 
         return [
@@ -375,6 +378,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 2026-05-20 #2 피드백 — 거래완료 미수금 차량 (정산 진행 차단)
             ['label' => $t('blocked', 'l'),     'value' => $settlementBlockedCount, 'suffix' => __('dashboard.unit_vehicle'),
              'hint' => __('dashboard.kpi.settlement.blocked.h', ['amount' => $this->formatKrw($settlementBlockedAmount)])],
+            // 매입취소 KPI (취소완료·미수 모두) — 정산차단 옆 상시 표시
+            ['label' => $t('cancel', 'l'),      'value' => $cancelTotal,            'suffix' => __('dashboard.unit_vehicle'),
+             'hint' => $t('cancel', 'h')],
         ];
     }
 

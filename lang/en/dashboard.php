@@ -72,6 +72,7 @@ return [
             'wait' => ['l' => 'Settlement Pending', 'h' => 'pending status'],
             'fx_missing' => ['l' => 'FX Rate Missing', 'h' => 'foreign sale → no rate'],
             'blocked' => ['l' => 'Settlement Blocked (Unpaid)', 'h' => 'completed but unpaid → collect :amount to settle'],
+            'cancel' => ['l' => 'Cancellations', 'h' => 'all cancellations (completed & unpaid) — details in Receivables cancel filter'],
         ],
         'management' => [
             'appr_wait' => ['l' => 'Approvals Pending', 'h' => '4 actions combined (enabled in queue 14-3)'],
