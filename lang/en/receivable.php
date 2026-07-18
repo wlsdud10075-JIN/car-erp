@@ -33,7 +33,7 @@ return [
     'all_progress' => 'All statuses',
     'all_risk' => 'All risk levels',
     'cancel' => [
-        'all' => 'All (incl. cancelled)',
+        'all' => 'All',
         'only' => 'Cancelled only',
         'normal' => 'Normal only',
     ],

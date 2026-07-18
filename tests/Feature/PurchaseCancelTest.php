@@ -232,6 +232,22 @@ class PurchaseCancelTest extends TestCase
         $this->assertSame(2_000_000, $kpis['unpaid_krw'], '미수금은 취소차 포함');
     }
 
+    public function test_panel_shows_done_label_when_paid(): void
+    {
+        // 222나4513 케이스 — 취소 + 위약금 완납 → 매입 탭 패널에 '취소완료' 표시.
+        $this->actingAs($this->admin());
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'PD1', 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'sale_price' => 500, 'sale_date' => '2026-05-01', 'buyer_id' => $buyer->id, 'cancel_status' => Vehicle::CANCEL_ACTIVE,
+        ]);
+        $v->finalPayments()->create(['amount' => 500, 'type' => 'balance', 'payment_date' => '2026-05-02', 'confirmed_at' => now()]);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSet('cancelStatusLabel', '취소완료');
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
