@@ -818,6 +818,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array  $purchaseBalancePayments = [];
     public string $cancelStatus = 'none';   // 매입취소 상태(표시용) — 실변경은 서버 액션(mark/unmark/close)만
     public int    $cancelShortfallKrw = 0;  // 미수 마감 동결 부족분(표시용)
+    public string $cancelStatusLabel = '';  // 매입취소/취소완료/미수마감 계산 라벨(표시용)
 
     // ── 판매 ──────────────────────────────────────────────────────
     public string $sale_date    = '';
@@ -1123,6 +1124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v->cancelled_at = $v->cancelled_at ?? now();
         $v->save();
         $this->cancelStatus = $v->cancel_status;
+        $this->cancelStatusLabel = $v->cancel_status_label ?? '';
         $this->dispatch('notify', message: __('vehicle.cancel.marked'), type: 'success');
     }
 
@@ -1141,6 +1143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v->cancelled_at = null;
         $v->save();
         $this->cancelStatus = $v->cancel_status;
+        $this->cancelStatusLabel = '';
         $this->dispatch('notify', message: __('vehicle.cancel.unmarked'), type: 'success');
     }
 
@@ -1183,6 +1186,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->cancelStatus = $v->cancel_status;
         $this->cancelShortfallKrw = $shortfallKrw;
+        $this->cancelStatusLabel = $v->cancel_status_label ?? '';
         $this->dispatch('notify', message: __('vehicle.cancel.closed', ['amount' => number_format($shortfallKrw)]), type: 'success');
     }
 
@@ -2522,6 +2526,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_deregistered = $v->is_deregistered;
         $this->cancelStatus = $v->cancel_status ?? 'none';
         $this->cancelShortfallKrw = (int) ($v->cancel_shortfall_krw ?? 0);
+        $this->cancelStatusLabel = $v->cancel_status_label ?? '';
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
@@ -4632,6 +4637,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_deregistered = $this->is_export_cleared = false;
         $this->cancelStatus = 'none';
         $this->cancelShortfallKrw = 0;
+        $this->cancelStatusLabel = '';
         $this->dhl_request = false;
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
@@ -4993,7 +4999,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                 </td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>
-                <td class="py-3 pr-4"><span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span></td>
+                <td class="py-3 pr-4">
+                    <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                    @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                </td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
@@ -5138,6 +5147,7 @@ function vehicleColumnsToggle() {
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
             <div class="flex items-center gap-1.5">
                 <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                 @if($v->sale_price > 0)
                     <span class="text-xs font-medium text-gray-700">{{ number_format($v->sale_price) }} {{ $v->currency }}</span>
                 @endif
@@ -5689,10 +5699,8 @@ function vehicleColumnsToggle() {
                     <div class="flex items-center gap-2">
                         <span class="section-dot bg-rose-500"></span>
                         <span class="text-sm font-semibold text-gray-700">{{ __('vehicle.cancel.section_title') }}</span>
-                        @if($cancelStatus === 'cancelled')
-                            <span class="badge badge-red">{{ __('vehicle.cancel.badge_active') }}</span>
-                        @elseif($cancelStatus === 'cancelled_closed')
-                            <span class="badge badge-gray">{{ __('vehicle.cancel.badge_closed') }}</span>
+                        @if($cancelStatus !== 'none' && $cancelStatusLabel)
+                            <span class="badge {{ ($cancelStatus === 'cancelled_closed' || $cancelStatusLabel === '취소완료') ? 'badge-gray' : 'badge-red' }}">{{ $cancelStatusLabel }}</span>
                         @endif
                     </div>
                     <div class="flex items-center gap-2">

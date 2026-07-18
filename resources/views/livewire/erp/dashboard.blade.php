@@ -397,6 +397,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
             $this->row($t('payout_held', 'l'),               $t('payout_held', 'd'),               $heldCount,                      'bg-red-500',    '',                          true, route('erp.settlements.index').'?held=1'),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
+            // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(미수 마감/손실 처리). 채권관리(취소필터)로.
+            ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
+             'count' => (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0)->count(),
+             'dot' => 'bg-rose-500', 'urgent' => false,
+             'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
         ];
     }
 

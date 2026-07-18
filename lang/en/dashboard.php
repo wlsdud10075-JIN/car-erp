@@ -112,6 +112,7 @@ return [
             'settlement_pay_needed' => ['l' => 'Settlement Payment Needed', 'd' => 'settlement = confirmed'],
             'payout_held' => ['l' => 'Payout Held (unpaid)', 'd' => 'confirmed but receivable remains → paid after collection'],
             'receivable_risk' => ['l' => 'Receivable Risk', 'd' => 'danger / critical grade'],
+            'cancel_unpaid' => ['l' => 'Cancelled Unpaid', 'd' => 'penalty not collected — close / loss handling'],
         ],
         'management' => [
             'approval_wait' => ['l' => 'Approval Items', 'd' => 'to be enabled in queue 14-3'],

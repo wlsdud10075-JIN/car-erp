@@ -113,6 +113,7 @@ return [
             'settlement_pay_needed' => ['l' => '정산 지급 필요', 'd' => 'settlement = confirmed'],
             'payout_held' => ['l' => '미수로 지급보류', 'd' => '확정됐지만 미수 있어 지급 보류 → 완납 후 지급'],
             'receivable_risk' => ['l' => '채권 위험', 'd' => '회수 위험·심각 등급'],
+            'cancel_unpaid' => ['l' => '매입취소 미수', 'd' => '위약금 미수령 취소건 — 미수 마감/손실 처리'],
         ],
         'management' => [
             'approval_wait' => ['l' => '승인 대기 항목', 'd' => '큐 14-3 활성화 예정'],
