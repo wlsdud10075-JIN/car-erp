@@ -28,6 +28,8 @@ class DeregistrationSetDocTest extends TestCase
         $names = $ss->getSheetNames();
         $this->assertContains('1.차량말소신청서', $names, '탭1 = 말소신청서');
         $this->assertContains('2.계약서', $names, '탭2 = 계약서(graft)');
+        $this->assertNotContains('Sheet1', $names, '템플릿 기본 Sheet1 은 제거');
+        $this->assertCount(2, $names, '탭 2개(말소신청서·계약서)만');
 
         // 탭1 셀
         $this->assertSame('11가1111', $ss->getSheetByName('1.차량말소신청서')->getCell('A11')->getValue());

@@ -125,6 +125,15 @@ class DocumentFiller
             $this->applyBrandHeader($spreadsheet, $config['brandHeader']);
         }
 
+        // 5) removeSheets (item 8, 2026-07-18) — 템플릿 기본 'Sheet1' 등 잔여 시트 제거 (병합본에서 노출 방지).
+        foreach ($config['removeSheets'] ?? [] as $rm) {
+            $target = $spreadsheet->getSheetByName($rm);
+            if ($target && $spreadsheet->getSheetCount() > 1) {
+                $spreadsheet->removeSheetByIndex($spreadsheet->getIndex($target));
+            }
+        }
+        $spreadsheet->setActiveSheetIndex(0);   // 첫 탭(말소신청서)으로 열리게
+
         return $spreadsheet;
     }
 
