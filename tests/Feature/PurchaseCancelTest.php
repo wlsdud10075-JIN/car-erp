@@ -248,6 +248,30 @@ class PurchaseCancelTest extends TestCase
             ->assertSet('cancelStatusLabel', '취소완료');
     }
 
+    public function test_vehicle_list_cancel_filter_splits_active_done_closed(): void
+    {
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $base = fn (string $plate, string $cancel) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'sale_price' => 500_000, 'sale_date' => '2026-05-01', 'buyer_id' => $buyer->id, 'cancel_status' => $cancel,
+        ]);
+        $base('CA1', Vehicle::CANCEL_ACTIVE);                        // 미납 → cache>0 (매입취소 미수)
+        $done = $base('CD1', Vehicle::CANCEL_ACTIVE);
+        $done->finalPayments()->create(['amount' => 500_000, 'type' => 'balance', 'payment_date' => '2026-05-02', 'confirmed_at' => now()]);  // 완납 → cache 0 (취소완료)
+        $base('CC1', Vehicle::CANCEL_CLOSED);
+        $base('CN1', Vehicle::CANCEL_NONE);
+
+        // 차량목록 필터 WHERE 재현
+        $activeQ = Vehicle::query()->where('cancel_status', Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0)->pluck('vehicle_number');
+        $doneQ = Vehicle::query()->where('cancel_status', Vehicle::CANCEL_ACTIVE)
+            ->where(fn ($q) => $q->where('sale_unpaid_amount_krw_cache', '<=', 0)->orWhereNull('sale_unpaid_amount_krw_cache'))->pluck('vehicle_number');
+        $closedQ = Vehicle::query()->where('cancel_status', Vehicle::CANCEL_CLOSED)->pluck('vehicle_number');
+
+        $this->assertTrue($activeQ->contains('CA1') && ! $activeQ->contains('CD1'), '매입취소(미수)=CA1만');
+        $this->assertTrue($doneQ->contains('CD1') && ! $doneQ->contains('CA1'), '취소완료=CD1만');
+        $this->assertTrue($closedQ->contains('CC1'), '미수마감=CC1');
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);

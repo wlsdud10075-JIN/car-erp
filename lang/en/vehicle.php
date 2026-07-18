@@ -429,6 +429,14 @@ return [
         'closed_loss' => 'Closed unpaid · loss :amount confirmed (freelancer half deducted in monthly batch loss summary)',
     ],
 
+    'cancel_filter' => [
+        'all' => 'Cancel: all',
+        'active' => 'Cancelled (unpaid)',
+        'done' => 'Cancel done',
+        'closed' => 'Closed unpaid',
+        'normal' => 'Normal only',
+    ],
+
     'toast' => [
         'db_constraint' => 'A data constraint error occurred while saving. Please check your inputs (sale date, buyer, exchange rate, amounts).',
         'buyer_first' => 'Select a buyer first',

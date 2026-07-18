@@ -36,6 +36,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 진행상태 pill 3상태 순환: 미선택(회색) → 이것만(보라, progressFilter) → 제외(빨강, excludeStatuses).
     // 전체 유지 + 완료건 제외 같은 다중 제외 지원. progress_status_cache 인덱스로 whereNotIn.
     #[Url(as: 'exclude')] public array $excludeStatuses = [];
+    // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
+    #[Url] public string $cancelFilter = '';
     // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
@@ -1062,7 +1064,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function resetFilters(): void
     {
         $this->reset([
-            'search', 'dateType', 'progressFilter', 'excludeStatuses', 'action',
+            'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
             'sortColumn', 'sortDirection',
         ]);
@@ -1551,6 +1553,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function updatedCancelFilter(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
@@ -1604,6 +1612,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
+            // 매입취소 필터 — 진행(미수)/완료(미수0)/마감/정상 구분 (jin 2026-07-18)
+            ->when($this->cancelFilter === 'active', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0))
+            ->when($this->cancelFilter === 'done', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)
+                ->where(fn ($q2) => $q2->where('sale_unpaid_amount_krw_cache', '<=', 0)->orWhereNull('sale_unpaid_amount_krw_cache')))
+            ->when($this->cancelFilter === 'closed', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_CLOSED))
+            ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_NONE))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -4733,6 +4747,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             @foreach($this->buyersForFilter as $b)
                 <option value="{{ $b->id }}">{{ $b->name }}</option>
             @endforeach
+        </select>
+        {{-- 매입취소 필터 (jin 2026-07-18) — 취소/취소완료 구분 솔팅 --}}
+        <select wire:model.live="cancelFilter" class="input-filter">
+            <option value="">{{ __('vehicle.cancel_filter.all') }}</option>
+            <option value="active">{{ __('vehicle.cancel_filter.active') }}</option>
+            <option value="done">{{ __('vehicle.cancel_filter.done') }}</option>
+            <option value="closed">{{ __('vehicle.cancel_filter.closed') }}</option>
+            <option value="normal">{{ __('vehicle.cancel_filter.normal') }}</option>
         </select>
         <button wire:click="applyFilters" class="btn-search">{{ __('vehicle.search_btn') }}</button>
         <button type="button" wire:click="resetFilters"
