@@ -966,11 +966,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public $deregistrationDocFile    = null;
     public $exportDeclarationDocFile = null;
     public $blDocFile                = null;
+    public $checkbillFile            = null;   // 체크빌(B/L 발급 전 확인용, jin 2026-07-18)
 
     // 기존 파일 경로 (수정 시 표시용)
     public string $deregistration_document_path     = '';
     public string $export_declaration_document_path = '';
     public string $bl_document_path                 = '';
+    public string $checkbill_document_path          = '';
 
     // 국내 딜러 말소등록증 알림톡 전달용 번호. 사용자가 직접 입력·저장하며 deregistration_notice_phone
     // 컬럼에 유지된다(바이어 번호 아님 — 국내 딜러 대상, jin 2026-07-10).
@@ -980,6 +982,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $clearDeregistrationDoc    = false;
     public bool $clearExportDeclarationDoc = false;
     public bool $clearBlDoc                = false;
+    public bool $clearCheckbill            = false;
 
     // ── 차량 첨부 (사진·PDF·Excel·Word·HWP 등, 최대 10건 — vehicle_photos 테이블) ──────
     public const MAX_PHOTOS = 10;
@@ -2664,9 +2667,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistration_document_path     = $v->deregistration_document     ?? '';
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
         $this->bl_document_path                 = $v->bl_document                 ?? '';
-        $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
+        $this->checkbill_document_path          = $v->checkbill_document          ?? '';
+        $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = $this->checkbillFile = null;
         $this->deregistrationBuyerPhone         = $v->deregistration_notice_phone ?? '';
-        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
+        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = $this->clearCheckbill = false;
 
         // 차량 사진 로드 (편집 패널 갤러리) — 탭별 분리: 기본정보=차량사진(category != 'shipping'), 선적=선박사진.
         $mapPhoto = fn ($p) => [
@@ -2956,6 +2960,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bl_document_path = '';
     }
 
+    public function removeCheckbill(): void
+    {
+        $this->clearCheckbill = true;
+        $this->checkbillFile = null;
+        $this->checkbill_document_path = '';
+    }
+
     /**
      * 파일 선택 시 photoFiles 버퍼에 누적.
      * Livewire 는 input 재선택 시 바인딩을 교체하므로, 한 번에 여러 개 선택하거나
@@ -3055,6 +3066,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    public function updatedCheckbillFile(): void
+    {
+        if ($this->checkbillFile !== null) {
+            $this->clearCheckbill = false;
+        }
+    }
+
     private function validateVehicleForm(): void
     {
         $nonNegativeNumeric = function (string $attribute, mixed $value, \Closure $fail) {
@@ -3145,6 +3163,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'deregistrationDocFile'    => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
             'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
             'blDocFile'                => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+            'checkbillFile'            => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
 
             // 차량 첨부 — 사진(jpg/png/gif/webp/bmp) + 사무 파일(pdf·xlsx·xls·csv·docx·doc·hwp·hwpx·pptx·ppt·txt·zip), 건당 10MB.
             // 총 건수 제한은 아래 별도 가드. .exe / .php 같은 실행 파일은 mimes 화이트리스트로 자연 차단.
@@ -3206,6 +3225,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'deregistrationDocFile'    => __('vehicle.attr.derg_doc'),
             'exportDeclarationDocFile' => __('vehicle.attr.export_decl_doc'),
             'blDocFile'                => __('vehicle.attr.bl_doc'),
+            'checkbillFile'            => __('vehicle.attr.checkbill_doc'),
             'year_str' => __('vehicle.attr.year'), 'cc_str' => __('vehicle.attr.cc'),
             'weight_kg_str' => __('vehicle.attr.weight'), 'mileage_str' => __('vehicle.attr.mileage'),
             'purchase_price_str' => __('vehicle.attr.purchase_price'), 'selling_fee_str' => __('vehicle.attr.selling_fee'),
@@ -3606,6 +3626,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['col' => 'deregistration_document',     'fileProp' => 'deregistrationDocFile',    'clearProp' => 'clearDeregistrationDoc'],
             ['col' => 'export_declaration_document', 'fileProp' => 'exportDeclarationDocFile', 'clearProp' => 'clearExportDeclarationDoc'],
             ['col' => 'bl_document',                 'fileProp' => 'blDocFile',                'clearProp' => 'clearBlDoc'],
+            ['col' => 'checkbill_document',          'fileProp' => 'checkbillFile',            'clearProp' => 'clearCheckbill'],
         ];
 
         $wasCreating = $this->editingId === null;
@@ -3946,6 +3967,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearDeregistrationDoc = false;
         $this->clearExportDeclarationDoc = false;
         $this->clearBlDoc = false;
+        $this->clearCheckbill = false;
 
         // ② 미수 게이트 승인 플래그·정보 리셋 (다음 저장 시 재평가).
         $this->purchaseGateApproved = false;
@@ -4662,9 +4684,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cancelStatusLabel = '';
         $this->dhl_request = false;
         $this->finalPayments = $this->purchaseBalancePayments = [];
-        $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
-        $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = '';
-        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = false;
+        $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = $this->checkbillFile = null;
+        $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = $this->checkbill_document_path = '';
+        $this->clearDeregistrationDoc = $this->clearExportDeclarationDoc = $this->clearBlDoc = $this->clearCheckbill = false;
         $this->photoFiles = $this->photoUpload = $this->existingPhotos = $this->deletePhotoIds = [];
         $this->shipPhotoFiles = $this->shipPhotoUpload = $this->existingShipPhotos = $this->deleteShipPhotoIds = [];
     }
@@ -6805,6 +6827,7 @@ function vehicleColumnsToggle() {
                         <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         <option value="original">{{ __('shipping.bl.type.original') }}</option>
                         <option value="surrender">{{ __('shipping.bl.type.surrender') }}</option>
+                        <option value="seawaybill">{{ __('shipping.bl.type.seawaybill') }}</option>
                     </select>
                 </div>
                 @if($reqBlType && $bl_type && $reqBlType !== $bl_type)
@@ -6812,6 +6835,23 @@ function vehicleColumnsToggle() {
                     {{ __('shipping.bl.guard_mismatch', ['req' => __('shipping.bl.type.'.$reqBlType), 'cur' => __('shipping.bl.type.'.$bl_type)]) }}
                 </div>
                 @endif
+                {{-- 체크빌 (B/L 발급 전 확인용 draft, jin 2026-07-18) — 최종 bl_document 와 별개 --}}
+                <div class="col-span-2 sm:col-span-3">
+                    <label class="label-base">{{ __('vehicle.field.checkbill_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.field.checkbill_note') }}</span></label>
+                    <x-erp.file-drop model="checkbillFile"
+                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
+                    @if($checkbillFile)
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $checkbillFile->getClientOriginalName() }} <span class="text-gray-400">{{ __('vehicle.panel.before_save') }}</span></p>
+                    @elseif($checkbill_document_path)
+                    <div class="mt-1 flex items-center gap-3">
+                        <a href="{{ \App\Support\VehicleDocUrl::for($checkbill_document_path) }}" target="_blank"
+                           class="break-all text-xs text-violet-600 hover:underline">📄 {{ basename($checkbill_document_path) }}</a>
+                        <button type="button" wire:click="removeCheckbill"
+                                class="text-xs text-red-500 hover:underline">{{ __('vehicle.delete') }}</button>
+                    </div>
+                    @endif
+                    </x-erp.file-drop>
+                </div>
                 <div class="col-span-2 sm:col-span-3">
                     <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <x-erp.file-drop model="blDocFile"
