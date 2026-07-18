@@ -104,7 +104,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->get([
                 'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
                 'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
-                'sale_unpaid_amount_krw_cache',
+                'sale_unpaid_amount_krw_cache', 'progress_status_cache',
             ]);
 
         $out = [];
@@ -761,6 +761,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-medium" style="color: hsl({{ round($hue) }},70%,38%)">{{ __('buyer.receivable.unpaid_ratio', ['pct' => number_format($r * 100, 1)]) }}</span>
                     @endif
                 </div>
+                {{-- 거래완료 분리 (jin 2026-07-18) — 위 미수/총액은 '진행중'만. 거래완료는 별도 표기(미수율 희석 방지). --}}
+                @if(($br['completed_count'] ?? 0) > 0)
+                <div class="mt-1.5 flex items-center justify-between border-t border-gray-200 pt-1.5 text-xs text-gray-400">
+                    <span>{{ __('buyer.receivable.completed_label') }}</span>
+                    <span>{{ __('buyer.receivable.completed_value', ['count' => $br['completed_count'], 'amount' => number_format($br['completed_krw'])]) }}</span>
+                </div>
+                @endif
             </div>
             @endif
 

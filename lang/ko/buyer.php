@@ -23,11 +23,13 @@ return [
 
     'receivable' => [
         'title' => '바이어 미수금 현황',
-        'summary' => ':count대 · 총 ₩:amount',
+        'summary' => '진행중 :count대 · 총 ₩:amount',
         'fully_paid' => '✓ 완납',
         'paid_pct' => '입금률 :pct%',
         'unpaid' => '미수금 ₩:amount',
         'unpaid_ratio' => '미수율 :pct%',
+        'completed_label' => '거래완료 (별도)',
+        'completed_value' => ':count대 · ₩:amount',
     ],
     'fees' => [
         'title' => '💸 누적 셀러부담액 (수수료·손실)',
