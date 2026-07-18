@@ -23,6 +23,9 @@ return [
     'field' => [
         'name' => '이름',
         'name_ph' => '김영업',
+        'initials' => '이니셜',
+        'initials_ph' => '예: JK',
+        'initials_note' => 'Proforma Invoice 번호 접두에 사용 — {이니셜}MU{차대번호 숫자}',
         'account' => '연결 계정',
         'account_none' => '-- 연결 안 함 --',
         'linked_none' => '연결 안 됨',

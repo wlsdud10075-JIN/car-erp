@@ -25,6 +25,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     public string $name        = '';
+    public string $initials    = '';   // 영업담당자 이니셜 (Invoice No. 접두, item 7)
     public string $user_id_str = '';
     public string $phone       = '';
     public string $email       = '';
@@ -66,6 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $sm = Salesman::findOrFail($id);
         $this->editingId   = $id;
         $this->name        = $sm->name;
+        $this->initials    = $sm->initials ?? '';
         $this->user_id_str = $sm->user_id ? (string) $sm->user_id : '';
         $this->phone       = $sm->phone ?? '';
         $this->email       = $sm->email ?? '';
@@ -90,6 +92,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $sm = Salesman::findOrFail($this->editingId);
             // 보충 필드만 update — name/email/user_id/type 은 손대지 않음 (User 마스터 보호).
             $sm->update([
+                'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
                 'phone'     => $this->phone ?: null,
                 'memo'      => $this->memo  ?: null,
                 'is_active' => $this->is_active,
@@ -99,6 +102,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
             $data = [
                 'name'      => $this->name,
+                'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
                 'user_id'   => $this->user_id_str !== '' ? (int) $this->user_id_str : null,
                 'phone'     => $this->phone ?: null,
                 'email'     => $this->email ?: null,
@@ -134,7 +138,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
-        $this->name = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
+        $this->name = $this->initials = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
         $this->is_active = true;
     }
 }; ?>
@@ -286,6 +290,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="name" type="text" class="input-base" placeholder="{{ __('salesman.field.name_ph') }}" />
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             @endif
+        </div>
+        {{-- 영업담당자 이니셜 (item 7) — Proforma Invoice No. 접두 {이니셜}MU{차대번호숫자} --}}
+        <div>
+            <label class="label-base">{{ __('salesman.field.initials') }} <span class="text-xs text-gray-400">{{ __('common.optional') }}</span></label>
+            <input wire:model="initials" type="text" maxlength="10" class="input-base uppercase" placeholder="{{ __('salesman.field.initials_ph') }}" />
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.field.initials_note') }}</p>
         </div>
         <div>
             <label class="label-base">{{ __('salesman.field.account') }} @if(! $editingId)<span class="text-xs text-gray-400">{{ __('common.optional') }}</span>@endif</label>
