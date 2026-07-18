@@ -43,11 +43,24 @@ class Vehicle extends Model
         };
     }
 
+    /**
+     * 미수 마감 시 담당자(프리랜서) 부담 몫 = 동결 부족분(cancel_shortfall_krw)의 절반.
+     * 사내직원(employee) / 미마감 / 미동결 = 0 (회사 전액 부담). 월배치 조정 입력 기준값.
+     */
+    public function getCancelFreelancerLossKrwAttribute(): int
+    {
+        if ($this->cancel_status !== self::CANCEL_CLOSED || $this->cancel_shortfall_krw === null) {
+            return 0;
+        }
+
+        return $this->salesman?->type === 'freelance' ? intdiv((int) $this->cancel_shortfall_krw, 2) : 0;
+    }
+
     protected $fillable = [
         'vehicle_number', 'sales_channel', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
-        'cancel_status', 'cancelled_at',
+        'cancel_status', 'cancelled_at', 'cancel_shortfall_krw',
         // 큐 16 — 헤이맨/카풀 5컬럼 drop (tax_invoice_1·2_date·amount, agency_fee).
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
@@ -110,6 +123,7 @@ class Vehicle extends Model
         'document_deadline_date' => 'date',
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'cancel_shortfall_krw' => 'integer',
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
         'purchase_fee_account' => 'encrypted',

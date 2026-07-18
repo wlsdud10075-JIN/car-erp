@@ -817,6 +817,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
     public string $cancelStatus = 'none';   // 매입취소 상태(표시용) — 실변경은 서버 액션(mark/unmark/close)만
+    public int    $cancelShortfallKrw = 0;  // 미수 마감 동결 부족분(표시용)
 
     // ── 판매 ──────────────────────────────────────────────────────
     public string $sale_date    = '';
@@ -1141,6 +1142,48 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v->save();
         $this->cancelStatus = $v->cancel_status;
         $this->dispatch('notify', message: __('vehicle.cancel.unmarked'), type: 'success');
+    }
+
+    /**
+     * 매입취소 미수 마감 (jin 2026-07-18) — 위약금 수금 포기 확정.
+     * cancelled → cancelled_closed + 부족분(미수 KRW @판매환율) 동결(cancel_shortfall_krw).
+     * 프리랜서 부담 몫(부족분/2)은 월배치 손실요약에서 담당자별 소계로 노출 → 재무가 월배치 조정에 수기 입력.
+     * 권한 = canConfirmFinance(재무·관리·업무관리자·admin) + canScopeVehicle 재인가(IDOR #26). payout 영향.
+     */
+    public function closePurchaseCancelUnpaid(): void
+    {
+        $v = $this->scopedEditingVehicle();
+        if (! $v) {
+            return;
+        }
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        if ($v->cancel_status !== Vehicle::CANCEL_ACTIVE) {
+            $this->dispatch('notify', message: __('vehicle.cancel.close_only_active'), type: 'warning');
+
+            return;
+        }
+        if ($v->sale_unpaid_amount <= 0) {
+            $this->dispatch('notify', message: __('vehicle.cancel.close_no_unpaid'), type: 'warning');
+
+            return;
+        }
+
+        $shortfallKrw = (int) round($v->sale_unpaid_amount * ($v->exchange_rate ?: 1));
+        $v->cancel_status = Vehicle::CANCEL_CLOSED;
+        $v->cancel_shortfall_krw = $shortfallKrw;
+        $v->save();
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Vehicle::class, 'auditable_id' => $v->id,
+            'action' => 'purchase_cancel_closed', 'column_name' => 'cancel_shortfall_krw',
+            'old_value' => null, 'new_value' => (string) $shortfallKrw,
+            'ip_address' => request()?->ip(),
+        ]);
+
+        $this->cancelStatus = $v->cancel_status;
+        $this->cancelShortfallKrw = $shortfallKrw;
+        $this->dispatch('notify', message: __('vehicle.cancel.closed', ['amount' => number_format($shortfallKrw)]), type: 'success');
     }
 
     /** editingId 차량을 스코프 재인가하여 반환(IDOR #26). editingId 없으면 null, 스코프 밖이면 abort(403). */
@@ -2478,6 +2521,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reg_cert_number = $v->reg_cert_number ?? '';
         $this->is_deregistered = $v->is_deregistered;
         $this->cancelStatus = $v->cancel_status ?? 'none';
+        $this->cancelShortfallKrw = (int) ($v->cancel_shortfall_krw ?? 0);
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
@@ -4587,6 +4631,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
         $this->cancelStatus = 'none';
+        $this->cancelShortfallKrw = 0;
         $this->dhl_request = false;
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
@@ -5650,13 +5695,20 @@ function vehicleColumnsToggle() {
                             <span class="badge badge-gray">{{ __('vehicle.cancel.badge_closed') }}</span>
                         @endif
                     </div>
-                    <div>
+                    <div class="flex items-center gap-2">
                         @if($cancelStatus === 'none')
                             <button type="button" wire:click="markPurchaseCancelled"
                                     class="rounded border border-rose-300 bg-white px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
                                 {{ __('vehicle.cancel.mark_btn') }}
                             </button>
                         @elseif($cancelStatus === 'cancelled')
+                            @if(auth()->user()?->canConfirmFinance())
+                            <button type="button" wire:click="closePurchaseCancelUnpaid"
+                                    wire:confirm="{{ __('vehicle.cancel.close_confirm') }}"
+                                    class="rounded border border-rose-400 bg-rose-500 px-3 py-1 text-xs font-medium text-white hover:bg-rose-600">
+                                {{ __('vehicle.cancel.close_btn') }}
+                            </button>
+                            @endif
                             <button type="button" wire:click="unmarkPurchaseCancelled"
                                     class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-500 hover:bg-gray-50">
                                 {{ __('vehicle.cancel.unmark_btn') }}
@@ -5664,7 +5716,11 @@ function vehicleColumnsToggle() {
                         @endif
                     </div>
                 </div>
-                @if($cancelStatus !== 'none')
+                @if($cancelStatus === 'cancelled_closed')
+                    <p class="mt-1.5 text-[11px] text-rose-600">
+                        {{ __('vehicle.cancel.closed_loss', ['amount' => number_format($cancelShortfallKrw)]) }}
+                    </p>
+                @elseif($cancelStatus !== 'none')
                     <p class="mt-1.5 text-[11px] text-gray-500">{{ __('vehicle.cancel.hint') }}</p>
                 @endif
             </div>
