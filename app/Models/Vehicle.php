@@ -60,7 +60,7 @@ class Vehicle extends Model
         'vehicle_number', 'sales_channel', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
-        'cancel_status', 'cancelled_at', 'cancel_shortfall_krw',
+        'cancel_status', 'cancelled_at', 'cancel_shortfall_krw', 'cancel_loss_settled_at',
         // 큐 16 — 헤이맨/카풀 5컬럼 drop (tax_invoice_1·2_date·amount, agency_fee).
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
@@ -124,6 +124,7 @@ class Vehicle extends Model
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'cancel_shortfall_krw' => 'integer',
+        'cancel_loss_settled_at' => 'datetime',
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
         'purchase_fee_account' => 'encrypted',

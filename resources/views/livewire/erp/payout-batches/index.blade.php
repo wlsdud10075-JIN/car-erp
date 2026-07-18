@@ -2,6 +2,7 @@
 
 use App\Models\Salesman;
 use App\Models\SettlementPayoutBatch;
+use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -23,6 +24,84 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $adjAmount = '';
 
     public string $adjReason = '';
+
+    // 매입취소 손실 요약 필터 (jin 2026-07-18) — 마감(cancelled_closed) 손실을 마감일(cancelled_at) 기간으로.
+    public string $lossFrom = '';
+
+    public string $lossTo = '';
+
+    public function mount(): void
+    {
+        $this->lossFrom = now()->startOfMonth()->format('Y-m-d');
+        $this->lossTo = now()->endOfMonth()->format('Y-m-d');
+    }
+
+    /**
+     * 매입취소 미수마감 손실 요약 (Option A 수기 반영용) — 담당자(프리랜서)별 소계 + 전체 합계.
+     * 사내직원(몫 0)·이미 반영(cancel_loss_settled_at)·기간 밖 제외. 관리자가 소계를 월배치 조정에 −금액으로 수기 입력.
+     */
+    #[Computed]
+    public function cancelLosses(): array
+    {
+        $rows = Vehicle::query()
+            ->where('cancel_status', Vehicle::CANCEL_CLOSED)
+            ->whereNull('cancel_loss_settled_at')
+            ->whereNotNull('cancel_shortfall_krw')
+            ->when($this->lossFrom, fn ($q) => $q->whereDate('cancelled_at', '>=', $this->lossFrom))
+            ->when($this->lossTo, fn ($q) => $q->whereDate('cancelled_at', '<=', $this->lossTo))
+            ->with('salesman:id,name,type')
+            ->get(['id', 'vehicle_number', 'salesman_id', 'cancel_status', 'cancel_shortfall_krw', 'cancelled_at']);
+
+        $groups = [];
+        $grand = 0;
+        foreach ($rows as $v) {
+            $half = $v->cancel_freelancer_loss_krw;   // 프리랜서만 > 0
+            if ($half <= 0) {
+                continue;   // 사내직원 = 회사 전액 부담, 청구 대상 아님
+            }
+            $sid = (int) $v->salesman_id;
+            if (! isset($groups[$sid])) {
+                $groups[$sid] = ['salesman_id' => $sid, 'name' => $v->salesman?->name ?? '#'.$sid, 'items' => [], 'subtotal' => 0];
+            }
+            $groups[$sid]['items'][] = ['plate' => $v->vehicle_number, 'shortfall' => (int) $v->cancel_shortfall_krw, 'half' => $half];
+            $groups[$sid]['subtotal'] += $half;
+            $grand += $half;
+        }
+
+        return ['groups' => array_values($groups), 'grand_total' => $grand];
+    }
+
+    /** 담당자 손실 소계를 조정 폼에 −금액으로 프리필 (배치 조정모드 필요). */
+    public function prefillCancelLoss(int $salesmanId): void
+    {
+        if ($this->adjustingId === null) {
+            $this->dispatch('notify', message: __('payout_batch.cancel_loss.pick_batch'), type: 'warning');
+
+            return;
+        }
+        $group = collect($this->cancelLosses['groups'])->firstWhere('salesman_id', $salesmanId);
+        if (! $group) {
+            return;
+        }
+        $plates = collect($group['items'])->pluck('plate')->implode(', ');
+        $this->adjSalesmanId = (string) $salesmanId;
+        $this->adjAmount = (string) (-1 * (int) $group['subtotal']);
+        $this->adjReason = __('payout_batch.cancel_loss.reason', ['plates' => $plates]);
+    }
+
+    /** 담당자의 (기간 내·미반영) 손실을 '반영됨' 처리 → 요약에서 제외(이중청구 방지). */
+    public function markCancelLossSettled(int $salesmanId): void
+    {
+        abort_unless((bool) auth()->user()?->canSubmitPayoutBatch(), 403);
+        Vehicle::where('cancel_status', Vehicle::CANCEL_CLOSED)
+            ->whereNull('cancel_loss_settled_at')
+            ->where('salesman_id', $salesmanId)
+            ->when($this->lossFrom, fn ($q) => $q->whereDate('cancelled_at', '>=', $this->lossFrom))
+            ->when($this->lossTo, fn ($q) => $q->whereDate('cancelled_at', '<=', $this->lossTo))
+            ->update(['cancel_loss_settled_at' => now()]);
+        unset($this->cancelLosses);
+        $this->dispatch('notify', message: __('payout_batch.cancel_loss.settled'), type: 'success');
+    }
 
     #[Computed]
     public function batches()
@@ -158,6 +237,61 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="mb-4">
         <h1 class="text-xl font-bold text-gray-800">{{ __('payout_batch.title') }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">{{ __('payout_batch.subtitle') }}</p>
+    </div>
+
+    {{-- 매입취소 손실 요약 (jin 2026-07-18) — 마감 손실 담당자(프리랜서)별 소계/총계. 월배치 조정 수기 입력 참고. --}}
+    <div class="card mb-4 border-rose-200 bg-rose-50/30">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-gray-700">{{ __('payout_batch.cancel_loss.title') }}</h2>
+            <div class="flex items-center gap-1.5 text-xs">
+                <input type="date" wire:model.live="lossFrom" class="rounded border-gray-300 text-xs" />
+                <span class="text-gray-400">~</span>
+                <input type="date" wire:model.live="lossTo" class="rounded border-gray-300 text-xs" />
+            </div>
+        </div>
+        @php $cl = $this->cancelLosses; @endphp
+        @if(empty($cl['groups']))
+            <p class="mt-2 text-xs text-gray-400">{{ __('payout_batch.cancel_loss.empty') }}</p>
+        @else
+        <div class="mt-2 overflow-x-auto">
+            <table class="w-full text-xs">
+                <thead>
+                    <tr class="border-b text-left text-gray-400">
+                        <th class="py-1 pr-3">{{ __('payout_batch.cancel_loss.salesman') }}</th>
+                        <th class="py-1 pr-3">{{ __('payout_batch.cancel_loss.vehicles') }}</th>
+                        <th class="py-1 pr-3 text-right">{{ __('payout_batch.cancel_loss.subtotal') }}</th>
+                        <th class="py-1"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($cl['groups'] as $g)
+                    <tr class="border-b border-gray-100 align-top">
+                        <td class="py-1.5 pr-3 font-medium text-gray-700">{{ $g['name'] }}</td>
+                        <td class="py-1.5 pr-3 text-gray-500">
+                            @foreach($g['items'] as $it)
+                                <span class="mr-1.5 inline-block whitespace-nowrap">{{ $it['plate'] }} <span class="text-gray-400">({{ number_format($it['half']) }})</span></span>
+                            @endforeach
+                        </td>
+                        <td class="py-1.5 pr-3 text-right font-semibold text-rose-600">-{{ number_format($g['subtotal']) }}</td>
+                        <td class="py-1.5 text-right whitespace-nowrap">
+                            <button type="button" wire:click="prefillCancelLoss({{ $g['salesman_id'] }})"
+                                    class="rounded border border-rose-300 bg-white px-2 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50">{{ __('payout_batch.cancel_loss.prefill') }}</button>
+                            <button type="button" wire:click="markCancelLossSettled({{ $g['salesman_id'] }})"
+                                    wire:confirm="{{ __('payout_batch.cancel_loss.settle_confirm') }}"
+                                    class="rounded border border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-50">{{ __('payout_batch.cancel_loss.settle') }}</button>
+                        </td>
+                    </tr>
+                    @endforeach
+                    <tr>
+                        <td class="py-1.5 pr-3 font-semibold text-gray-700" colspan="2">{{ __('payout_batch.cancel_loss.grand_total') }}</td>
+                        <td class="py-1.5 pr-3 text-right font-bold text-rose-700">-{{ number_format($cl['grand_total']) }}</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">{{ __('payout_batch.cancel_loss.note') }}</p>
+        @endif
     </div>
 
     <div class="space-y-3">

@@ -3,6 +3,21 @@
 // Phase 2 — monthly settlement payout batch approval queue i18n.
 return [
     'title' => 'Monthly Payout Approval',
+    'cancel_loss' => [
+        'title' => 'Purchase cancellation loss (freelancer share)',
+        'empty' => 'No unsettled cancellation losses in this period.',
+        'salesman' => 'Salesperson',
+        'vehicles' => 'Vehicles (share)',
+        'subtotal' => 'Share subtotal',
+        'grand_total' => 'Grand total',
+        'prefill' => 'Fill adjustment',
+        'settle' => 'Mark settled',
+        'settle_confirm' => "Mark this salesperson's losses as settled and hide from the summary. Proceed?",
+        'note' => 'Enter the subtotal (negative) as the batch adjustment for the salesperson, then click "Mark settled" to prevent double charging. Freelancers only (employee losses borne by the company).',
+        'reason' => 'Purchase cancellation loss share: :plates',
+        'pick_batch' => 'Click "Add adjustment" on the target batch first.',
+        'settled' => 'Marked as settled.',
+    ],
     'subtitle' => 'Bundle a month of confirmed settlements through the approval ladder (Manager → Representative)',
     'status' => [
         'pending' => 'Pending',
