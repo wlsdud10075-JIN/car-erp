@@ -88,6 +88,7 @@ return [
         'type' => [
             'original' => '오리지널',
             'surrender' => '써랜더',
+            'seawaybill' => 'Sea Waybill',
         ],
         'issue' => 'B/L번호·선박명 기입',
         'issue_title' => 'B/L번호·선박명 — 묶음 :n대 일괄 기입',

@@ -87,6 +87,7 @@ return [
         'type' => [
             'original' => 'Original',
             'surrender' => 'Surrender',
+            'seawaybill' => 'Sea Waybill',
         ],
         'issue' => 'Enter B/L no · vessel',
         'issue_title' => 'B/L no · vessel — bulk apply to :n vehicles',
