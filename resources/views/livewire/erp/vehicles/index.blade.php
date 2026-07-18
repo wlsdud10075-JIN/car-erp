@@ -816,6 +816,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_deregistered = false;
     public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
+    public string $cancelStatus = 'none';   // 매입취소 상태(표시용) — 실변경은 서버 액션(mark/unmark/close)만
 
     // ── 판매 ──────────────────────────────────────────────────────
     public string $sale_date    = '';
@@ -1101,6 +1102,60 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return in_array($type, self::MAIL_GEN_EXPORT, true) && $v->sales_channel === 'export';
+    }
+
+    /**
+     * 매입취소 전환/해제 (jin 2026-07-18) — 위약금은 판매 탭 sale_price 로 입력(채권 배관 재사용).
+     * 이 액션은 cancel_status 마커만 즉시 변경(none↔cancelled). 판매통계 제외·정산 자동생성 가드가 마커에 걸림.
+     * 미수 마감(cancelled_closed)은 별도(Layer 5). 권한 = canScopeVehicle(편집 스코프) 재인가(IDOR #26).
+     */
+    public function markPurchaseCancelled(): void
+    {
+        $v = $this->scopedEditingVehicle();
+        if (! $v) {
+            return;
+        }
+        if ($v->cancel_status === Vehicle::CANCEL_CLOSED) {
+            return;   // 마감건은 되돌리지 않음(수금 포기 확정)
+        }
+        $v->cancel_status = Vehicle::CANCEL_ACTIVE;
+        $v->cancelled_at = $v->cancelled_at ?? now();
+        $v->save();
+        $this->cancelStatus = $v->cancel_status;
+        $this->dispatch('notify', message: __('vehicle.cancel.marked'), type: 'success');
+    }
+
+    public function unmarkPurchaseCancelled(): void
+    {
+        $v = $this->scopedEditingVehicle();
+        if (! $v) {
+            return;
+        }
+        if ($v->cancel_status === Vehicle::CANCEL_CLOSED) {
+            $this->dispatch('notify', message: __('vehicle.cancel.closed_no_unmark'), type: 'warning');
+
+            return;
+        }
+        $v->cancel_status = Vehicle::CANCEL_NONE;
+        $v->cancelled_at = null;
+        $v->save();
+        $this->cancelStatus = $v->cancel_status;
+        $this->dispatch('notify', message: __('vehicle.cancel.unmarked'), type: 'success');
+    }
+
+    /** editingId 차량을 스코프 재인가하여 반환(IDOR #26). editingId 없으면 null, 스코프 밖이면 abort(403). */
+    private function scopedEditingVehicle(): ?Vehicle
+    {
+        if ($this->editingId === null) {
+            return null;
+        }
+        $user = auth()->user();
+        $v = Vehicle::find($this->editingId);
+        if (! $v || ! $user?->canScopeVehicle($v)) {
+            abort(403, __('vehicle.toast.edit_own_only'));
+        }
+
+        return $v;
     }
 
     /**
@@ -2422,6 +2477,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->registration_number = $v->registration_number ?? '';
         $this->reg_cert_number = $v->reg_cert_number ?? '';
         $this->is_deregistered = $v->is_deregistered;
+        $this->cancelStatus = $v->cancel_status ?? 'none';
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
@@ -4530,6 +4586,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->sales_channel = 'export';
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
+        $this->cancelStatus = 'none';
         $this->dhl_request = false;
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = null;
@@ -5579,6 +5636,39 @@ function vehicleColumnsToggle() {
                 </div>
                 @endif
             </div>
+
+            {{-- 매입취소 (jin 2026-07-18) — 위약금은 판매 탭 판매가로 입력, 여기선 상태 마커만. 저장된 차량만. --}}
+            @if($editingId)
+            <div class="mt-4 rounded-md border border-rose-200 bg-rose-50/40 px-3 py-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="section-dot bg-rose-500"></span>
+                        <span class="text-sm font-semibold text-gray-700">{{ __('vehicle.cancel.section_title') }}</span>
+                        @if($cancelStatus === 'cancelled')
+                            <span class="badge badge-red">{{ __('vehicle.cancel.badge_active') }}</span>
+                        @elseif($cancelStatus === 'cancelled_closed')
+                            <span class="badge badge-gray">{{ __('vehicle.cancel.badge_closed') }}</span>
+                        @endif
+                    </div>
+                    <div>
+                        @if($cancelStatus === 'none')
+                            <button type="button" wire:click="markPurchaseCancelled"
+                                    class="rounded border border-rose-300 bg-white px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
+                                {{ __('vehicle.cancel.mark_btn') }}
+                            </button>
+                        @elseif($cancelStatus === 'cancelled')
+                            <button type="button" wire:click="unmarkPurchaseCancelled"
+                                    class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-500 hover:bg-gray-50">
+                                {{ __('vehicle.cancel.unmark_btn') }}
+                            </button>
+                        @endif
+                    </div>
+                </div>
+                @if($cancelStatus !== 'none')
+                    <p class="mt-1.5 text-[11px] text-gray-500">{{ __('vehicle.cancel.hint') }}</p>
+                @endif
+            </div>
+            @endif
 
             {{-- karaba(2026-07-12): 계좌란(예금주/은행/계좌번호 + 계좌메모) 전체 숨김 — 입금계좌 사진 첨부로 대체. --}}
             @unless($isKaraba)

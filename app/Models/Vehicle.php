@@ -23,9 +23,7 @@ class Vehicle extends Model
     /** 매입취소 상태 (jin 2026-07-18) — 위약금은 sale_price·채권 배관 재사용, progress 오염만 이 마커로 분리. */
     public const CANCEL_NONE = 'none';
 
-    public const CANCEL_ACTIVE = 'cancelled';        // 매입취소 — 위약금 미수 추적 중
-
-    public const CANCEL_DONE = 'cancelled_done';     // 취소완료 — 위약금 완납
+    public const CANCEL_ACTIVE = 'cancelled';        // 매입취소 — 위약금 채권 추적(미수>0=진행, 미수0=취소완료 표시)
 
     public const CANCEL_CLOSED = 'cancelled_closed'; // 미수 마감 — 못 받고 종료(프리랜서 손실 절반 부담)
 
@@ -35,12 +33,11 @@ class Vehicle extends Model
         return ($this->cancel_status ?? self::CANCEL_NONE) !== self::CANCEL_NONE;
     }
 
-    /** 매입취소 상태 한글 라벨 (배지·목록용). null=정상. */
+    /** 매입취소 상태 한글 라벨 (배지·목록용). null=정상. '취소완료'는 미수0에서 계산(별도 저장 안 함). */
     public function getCancelStatusLabelAttribute(): ?string
     {
         return match ($this->cancel_status) {
-            self::CANCEL_ACTIVE => '매입취소',
-            self::CANCEL_DONE => '취소완료',
+            self::CANCEL_ACTIVE => $this->sale_unpaid_amount <= 0 ? '취소완료' : '매입취소',
             self::CANCEL_CLOSED => '미수마감',
             default => null,
         };
