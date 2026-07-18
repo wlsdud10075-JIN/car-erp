@@ -254,10 +254,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('settlement_status', 'pending')
             ->count();
 
-        // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(수금 or 미수마감 필요).
-        $cancelUnpaid = (int) Vehicle::query()->whereNull('deleted_at')
-            ->where('cancel_status', Vehicle::CANCEL_ACTIVE)
-            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+        // 매입취소 (jin 2026-07-18) — 취소완료·미수·마감 모두 카운트(같이 표시). 클릭 시 채권관리(취소필터).
+        $cancelTotal = (int) Vehicle::query()->whereNull('deleted_at')
+            ->where('cancel_status', '!=', Vehicle::CANCEL_NONE)
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
             ->count();
 
@@ -275,9 +274,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['label' => $t('settlement_wait', 'l'), 'desc' => $t('settlement_wait', 'd'),
              'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
              'href' => route('erp.settlements.index')],
-            // 매입취소 미수 → 채권관리(취소 필터)로. 위약금 수금 또는 미수 마감 처리.
+            // 매입취소 → 채권관리(취소 필터)로. 취소완료·미수 모두 표시.
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
-             'count' => $cancelUnpaid, 'dot' => 'bg-rose-500', 'urgent' => false,
+             'count' => $cancelTotal, 'dot' => 'bg-rose-500', 'urgent' => false,
              'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
         ];
     }
@@ -399,7 +398,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
             // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(미수 마감/손실 처리). 채권관리(취소필터)로.
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
-             'count' => (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0)->count(),
+             'count' => (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', '!=', Vehicle::CANCEL_NONE)->count(),
              'dot' => 'bg-rose-500', 'urgent' => false,
              'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
         ];
