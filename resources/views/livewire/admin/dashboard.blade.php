@@ -474,12 +474,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $bySalesman = [];
         $byBuyer = [];
         $riskCounts = ['safe' => 0, 'caution' => 0, 'danger' => 0, 'critical' => 0, 'none' => 0];
-        // 큐 10 확장 — G3 분류별 미수금 합산 (회의록 v5 §G3).
-        // 안건 1 v4 (2026-05-21) — 단계명 swap: 수출통관중/완료 → 통관중/완료.
-        // 선적전: 매입중·매입완료·말소완료·판매중·판매완료 + unpaid > 0
-        // 선적후: 선적중·선적완료·통관중·통관완료 + unpaid > 0 (v3 호환 라벨 포함 — 운영 데이터 0이지만 안전망)
-        $beforeShippingStages = ['매입중', '매입완료', '말소완료', '판매중', '판매완료'];
-        $afterShippingStages = ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'];
+        // 미수 분류 — pivot=출고일 (jin 2026-07-18, 구 pivot=progress_status).
+        //   선적전 = 출고일 없음(항구 주차장 대기), 선적후 = 출고일 있음(출항). 진행단계·반입지 무관.
         $classification = [
             'before_shipping' => ['unpaid' => 0, 'count' => 0],
             'after_shipping' => ['unpaid' => 0, 'count' => 0],
@@ -496,10 +492,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
                 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
                 'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache',
-                'receivable_risk', 'progress_status_cache')
+                'receivable_risk', 'warehouse_out_date')
             ->chunk(1000, function ($rows) use (
-                &$bySalesman, &$byBuyer, &$riskCounts, &$classification,
-                $beforeShippingStages, $afterShippingStages
+                &$bySalesman, &$byBuyer, &$riskCounts, &$classification
             ) {
                 foreach ($rows as $r) {
                     // SKILLS §13 — sale_total_amount accessor와 동일 공식 (부대비용 포함).
@@ -532,11 +527,11 @@ new #[Layout('components.layouts.app')] class extends Component
                     $risk = $r->receivable_risk ?? 'none';
                     $riskCounts[$risk] = ($riskCounts[$risk] ?? 0) + 1;
 
-                    // 큐 10 확장 — G3 분류 합산 (회의록 v5 §G3, 사용자 결정 2026-05-18).
-                    if (in_array($r->progress_status_cache, $beforeShippingStages, true)) {
+                    // 미수 분류 — 출고일 pivot (jin 2026-07-18). 출고 전=선적전, 출고 후=선적후.
+                    if (blank($r->warehouse_out_date)) {
                         $classification['before_shipping']['unpaid'] += $unpaid;
                         $classification['before_shipping']['count']++;
-                    } elseif (in_array($r->progress_status_cache, $afterShippingStages, true)) {
+                    } else {
                         $classification['after_shipping']['unpaid'] += $unpaid;
                         $classification['after_shipping']['count']++;
                     }

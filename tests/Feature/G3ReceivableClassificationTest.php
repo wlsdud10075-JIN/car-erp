@@ -13,11 +13,9 @@ use Tests\TestCase;
  * 큐 10 확장 — G3 미수 분류 테스트.
  * 회의록 docs/meetings/2026-05-14-3way-workflow-policy.md §G3 + 사용자 결정 2026-05-18.
  *
- * 분류 정의:
- * - 선적전 미수: progress_status_cache ∈ {매입중, 매입완료, 말소완료, 판매중, 판매완료}
- *                AND sale_unpaid_amount_krw_cache > 0
- * - 선적후 미수: progress_status_cache ∈ {수출통관중, 수출통관완료, 선적중, 선적완료}
- *                AND sale_unpaid_amount_krw_cache > 0
+ * 분류 정의 (pivot=출고일, jin 2026-07-18 — 구 pivot=progress_status):
+ * - 선적전 미수: warehouse_out_date IS NULL (항구 대기) AND sale_unpaid_amount_krw_cache > 0 (grace 제외)
+ * - 선적후 미수: warehouse_out_date IS NOT NULL (출항) AND sale_unpaid_amount_krw_cache > 0
  * - 디파짓: savings_used > 0
  *
  * 검증:
@@ -124,28 +122,24 @@ class G3ReceivableClassificationTest extends TestCase
         return $v;
     }
 
-    public function test_before_shipping_classification_includes_purchase_to_sale_complete_stages(): void
+    public function test_before_shipping_is_unpaid_without_warehouse_out(): void
     {
-        // 선적전: 판매중·판매완료 + 미수
-        $v1 = $this->makeVehicle();   // 판매중
-        $v1->progress_status_cache = '판매중';
+        // 선적전 = 출고일 없음(항구 대기) + 미수. 진행단계 무관.
+        $v1 = $this->makeVehicle();
         $v1->sale_unpaid_amount_krw_cache = 500000;
         $v1->saveQuietly();
 
         $v2 = $this->makeVehicle();
-        $v2->progress_status_cache = '매입완료';
         $v2->sale_unpaid_amount_krw_cache = 300000;
         $v2->saveQuietly();
 
-        // 선적후 — 제외
-        $v3 = $this->makeVehicle();
-        $v3->progress_status_cache = '수출통관완료';
+        // 출고됨(선적후) — 제외
+        $v3 = $this->makeVehicle(['warehouse_out_date' => now()->toDateString()]);
         $v3->sale_unpaid_amount_krw_cache = 700000;
         $v3->saveQuietly();
 
         // 미수 0 — 제외
         $v4 = $this->makeVehicle();
-        $v4->progress_status_cache = '판매중';
         $v4->sale_unpaid_amount_krw_cache = 0;
         $v4->saveQuietly();
 
@@ -156,28 +150,25 @@ class G3ReceivableClassificationTest extends TestCase
         $this->assertNotContains($v4->id, $ids);
     }
 
-    public function test_after_shipping_classification_includes_clearance_to_shipping_complete_stages(): void
+    public function test_after_shipping_is_unpaid_with_warehouse_out(): void
     {
-        $v1 = $this->makeVehicle();
-        $v1->progress_status_cache = '수출통관중';
+        // 선적후 = 출고일 있음(출항) + 미수.
+        $v1 = $this->makeVehicle(['warehouse_out_date' => now()->toDateString()]);
         $v1->sale_unpaid_amount_krw_cache = 100000;
         $v1->saveQuietly();
 
-        $v2 = $this->makeVehicle();
-        $v2->progress_status_cache = '선적완료';
+        $v2 = $this->makeVehicle(['warehouse_out_date' => now()->subDay()->toDateString()]);
         $v2->sale_unpaid_amount_krw_cache = 50000;
         $v2->saveQuietly();
 
-        // 선적전 — 제외
+        // 출고 전(선적전) — 제외
         $v3 = $this->makeVehicle();
-        $v3->progress_status_cache = '판매완료';
         $v3->sale_unpaid_amount_krw_cache = 200000;
         $v3->saveQuietly();
 
-        // 거래완료 — 둘 다 제외 (after_shipping에 거래완료 미포함)
-        $v4 = $this->makeVehicle();
-        $v4->progress_status_cache = '거래완료';
-        $v4->sale_unpaid_amount_krw_cache = 80000;
+        // 미수 0 — 제외 (출고됐어도 미수 없으면 채권 아님)
+        $v4 = $this->makeVehicle(['warehouse_out_date' => now()->toDateString()]);
+        $v4->sale_unpaid_amount_krw_cache = 0;
         $v4->saveQuietly();
 
         $ids = Vehicle::query()->action('receivable_after_shipping')->pluck('id')->toArray();
@@ -201,14 +192,12 @@ class G3ReceivableClassificationTest extends TestCase
 
     public function test_classification_sql_matches_receivables_page_query(): void
     {
-        // 채권관리 페이지의 buildQuery + classification 분기와 동일 결과 검증
-        $v1 = $this->makeVehicle();
-        $v1->progress_status_cache = '판매중';
+        // 채권관리 페이지의 buildQuery + classification 분기와 동일 결과 검증 (pivot=출고일)
+        $v1 = $this->makeVehicle();   // 출고 전
         $v1->sale_unpaid_amount_krw_cache = 100;
         $v1->saveQuietly();
 
-        $v2 = $this->makeVehicle();
-        $v2->progress_status_cache = '선적중';
+        $v2 = $this->makeVehicle(['warehouse_out_date' => now()->toDateString()]);   // 출고 후
         $v2->sale_unpaid_amount_krw_cache = 200;
         $v2->saveQuietly();
 
@@ -216,15 +205,16 @@ class G3ReceivableClassificationTest extends TestCase
         $scopeBefore = Vehicle::query()->action('receivable_before_shipping')->pluck('id')->sort()->values()->toArray();
         $scopeAfter = Vehicle::query()->action('receivable_after_shipping')->pluck('id')->sort()->values()->toArray();
 
-        // receivables/index 페이지 SQL (동일 출처)
+        // receivables/index 페이지 SQL (동일 출처 — 출고일 pivot + grace 제외)
         $pageBefore = Vehicle::query()
             ->where('sale_price', '>', 0)
-            ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+            ->whereNull('warehouse_out_date')
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->excludeReceivableGrace()
             ->pluck('id')->sort()->values()->toArray();
         $pageAfter = Vehicle::query()
             ->where('sale_price', '>', 0)
-            ->whereIn('progress_status_cache', ['수출통관중', '수출통관완료', '선적중', '선적완료'])
+            ->whereNotNull('warehouse_out_date')
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
             ->pluck('id')->sort()->values()->toArray();
 

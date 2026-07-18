@@ -523,14 +523,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
             ->when($this->unpaidRatioMin === '50', fn ($q) => $q->whereIn('receivable_risk', ['danger', 'critical']))
             ->when($this->unpaidRatioMin === '70', fn ($q) => $q->where('receivable_risk', 'critical'))
-            // 큐 10 확장 — G3 미수 분류 탭 (Vehicle::scopeAction과 동일 SQL 출처).
+            // 미수 분류 탭 — pivot=출고일 (jin 2026-07-18, Vehicle::scopeAction과 동일 SQL 출처).
+            //   선적전 = 출고일 없음(항구 대기), 선적후 = 출고일 있음(출항). 진행단계·반입지 무관.
             ->when($this->classification === 'before_shipping', fn ($q) => $q
-                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->whereNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 // 결제대기(grace) 제외 — 선적전 채권은 판매일+10일 지난 것만(scopeExcludeReceivableGrace 단일 출처).
                 ->excludeReceivableGrace())
             ->when($this->classification === 'after_shipping', fn ($q) => $q
-                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
+                ->whereNotNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0))
             ->when($this->classification === 'deposit', fn ($q) => $q
                 ->where('savings_used', '>', 0));
@@ -547,12 +548,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'all' => (clone $base)->count(),
             'before_shipping' => (clone $base)
-                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->whereNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->excludeReceivableGrace()
                 ->count(),
             'after_shipping' => (clone $base)
-                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
+                ->whereNotNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->count(),
             'deposit' => (clone $base)->where('savings_used', '>', 0)->count(),

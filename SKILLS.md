@@ -874,12 +874,21 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 ### 차량목록 검색
 - 차량목록 검색은 차량번호·브랜드·차종·소유자·수출신고번호·차대번호 끝 6자리와 함께 `vessel_name`, `container_number`도 검색한다. 선적 문의는 VSL/컨테이너 번호로도 찾을 수 있어야 한다.
 
-### 채권 결제대기 10일 유예
+### 채권 결제대기 10일 유예 + 선적전/후 미수 pivot=출고일 (jin 2026-07-18)
 - `Vehicle::RECEIVABLE_GRACE_DAYS = 10`.
-- 선적 전(반입 전, `bl_loading_location` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
-- 선적 후 미수는 유예 없이 즉시 채권이다.
-- 시간 경과에 따른 `grace` → 채권 전환은 야간 `vehicles:rebuild-caches`(05:00)로 반영된다. 배포 직후 기존 데이터는 1회 cache rebuild가 필요할 수 있다.
+- **선적전/후 미수 pivot = `warehouse_out_date`(출고일)** — 구 pivot=`bl_loading_location`(반입지). 사용자 규칙: 반입지 입력했어도 출고 전이면 **항구 주차장 대기 = 선적전 미수**. 실제 출항(출고일 찍힘) = 선적후 미수.
+- 선적 전(출고 전, `warehouse_out_date` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
+- 선적 후(출고 = 출항) 미수는 유예 없이 즉시 채권이다.
+- **단일출처 반영 지점(전부 출고일 pivot)**: `Vehicle::getReceivableRiskComputedAttribute` · `scopeExcludeReceivableGrace` · `scopeOnlyReceivableGrace` · `scopeAction('receivable_before_shipping'/'receivable_after_shipping')` · 채권관리 `receivables/index`(classification 인라인) · 관리자 대시보드 `receivableKpis`(classification 인라인). 알림톡 daily/weekly·InternalPortal은 scope 경유(자동).
+- 시간 경과에 따른 `grace` → 채권 전환은 야간 `vehicles:rebuild-caches`(05:00)로 반영된다. **⚠️ pivot 변경 배포 직후 = 기존 데이터 1회 cache rebuild 필요**(`receivable_risk` 캐시가 옛 pivot 기준). 또한 이미 출항했지만 `warehouse_out_date` 미입력인 기존 차량은 출고일을 채워야 선적후로 잡힌다(미입력이면 선적전으로 표시 — 규칙상 정상).
 - 채권관리 위험도 필터에 `grace` 옵션이 있으므로 결제대기 차량만 따로 확인 가능하다.
+
+### 재고 2분류 (jin 2026-07-18)
+- `erp/inventory` = `Vehicle::scopeInStock`(매입완납 + 출고일 없음) 기반. 카테고리 필터:
+  - **일반재고**(`scopeGeneralStock`) = 재고 중 미판매(`sale_price ≤ 0`) — 바이어 미정 투기매입. 등록=바이어 없이 매입만(A안, chk_sale_required는 sale_price>0일 때만 buyer 강제라 자연 통과). `?create=1`로 신규 매입 등록 패널 진입.
+  - **선적전 재고**(`scopePreShippingStock`) = 재고 중 판매됨(`sale_price > 0`) — 항구 대기, 출고 전.
+  - 판매 시 sale_price>0 되면 일반→선적전 자동 편입. 출고일 찍히면 재고 이탈.
+- 표시: 입고일(매입완납일 computed)·선적일(`shipping_date`)·출고일(`warehouse_out_date`) 컬럼. 일반재고 권장 초과 뱃지(표시만): `GENERAL_STOCK_PRICE_CAP`=2억 초과 / `GENERAL_STOCK_SELL_MONTHS`=입고 3개월 경과.
 
 ## 15. 외부 연동 — 상태 요약
 

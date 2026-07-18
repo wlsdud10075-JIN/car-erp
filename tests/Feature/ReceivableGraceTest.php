@@ -13,6 +13,7 @@ use Tests\TestCase;
 /**
  * 결제대기(grace) 10일 유예 규칙 (jin 2026-07-06 A안).
  * 선적 전 미수는 판매일+10일 지나야 채권, 그 전엔 grace. 선적 후는 즉시.
+ * pivot=출고일(warehouse_out_date, jin 2026-07-18) — 출고 전이면 선적전(항구 대기), 출고 후면 선적후.
  */
 class ReceivableGraceTest extends TestCase
 {
@@ -31,7 +32,8 @@ class ReceivableGraceTest extends TestCase
             'buyer_id' => $buyer->id,
             'currency' => 'KRW',
             'exchange_rate' => 1,
-            'bl_loading_location' => $shipped ? '부산항' : null,
+            // 선적 후 = 출고일 있음(출항). pivot=출고일 (jin 2026-07-18).
+            'warehouse_out_date' => $shipped ? now()->toDateString() : null,
         ]);
     }
 
@@ -58,7 +60,7 @@ class ReceivableGraceTest extends TestCase
 
     public function test_post_shipping_is_receivable_immediately(): void
     {
-        $v = $this->sold(0, true, '33다3333');   // 선적 후(반입지 있음), 오늘 판매, 미수
+        $v = $this->sold(0, true, '33다3333');   // 선적 후(출고일 있음), 오늘 판매, 미수
 
         $this->assertNotSame('grace', $v->receivable_risk_computed);   // 유예 없음
         $this->assertContains($v->receivable_risk_computed, ['caution', 'danger', 'critical']);
