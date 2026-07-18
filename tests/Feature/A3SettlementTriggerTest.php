@@ -92,6 +92,26 @@ class A3SettlementTriggerTest extends TestCase
         $this->assertSame(0, Settlement::count(), '부분입금 → 미완납 → 정산 없음');
     }
 
+    public function test_cancelled_vehicle_no_auto_settlement_even_when_paid(): void
+    {
+        // 매입취소 차량은 위약금 완납(KRW·인코텀즈 무관)해도 정산 자동생성 안 됨 (jin 2026-07-18 명시 가드).
+        $this->actingAs($this->admin());
+        $v = $this->soldVehicle(600_000);
+        $v->update(['cancel_status' => Vehicle::CANCEL_ACTIVE]);
+        $v->finalPayments()->create([
+            'amount' => 600_000, 'type' => 'balance', 'payment_date' => '2026-06-15', 'confirmed_at' => now(),
+        ]);
+        $this->assertSame(0, Settlement::count(), '매입취소 차량 완납 → 정산 없음(가드)');
+
+        // 대조군 — 동일 조건 정상차(KRW)는 정산 생성됨.
+        //   KRW 는 freight 게이트를 통과하므로, 취소차를 막은 유일한 요인이 cancel_status 임을 입증.
+        $v2 = $this->soldVehicle(600_000);
+        $v2->finalPayments()->create([
+            'amount' => 600_000, 'type' => 'balance', 'payment_date' => '2026-06-15', 'confirmed_at' => now(),
+        ]);
+        $this->assertSame(1, Settlement::count(), '정상차(KRW) 완납 → 정산 생성 — 취소차만 가드로 차단');
+    }
+
     public function test_submit_for_month_uses_attributed_month(): void
     {
         $salesman = Salesman::create(['name' => 'SM', 'is_active' => true, 'type' => 'employee']);

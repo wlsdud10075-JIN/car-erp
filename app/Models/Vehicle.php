@@ -20,10 +20,37 @@ class Vehicle extends Model
 {
     use SoftDeletes;
 
+    /** 매입취소 상태 (jin 2026-07-18) — 위약금은 sale_price·채권 배관 재사용, progress 오염만 이 마커로 분리. */
+    public const CANCEL_NONE = 'none';
+
+    public const CANCEL_ACTIVE = 'cancelled';        // 매입취소 — 위약금 미수 추적 중
+
+    public const CANCEL_DONE = 'cancelled_done';     // 취소완료 — 위약금 완납
+
+    public const CANCEL_CLOSED = 'cancelled_closed'; // 미수 마감 — 못 받고 종료(프리랜서 손실 절반 부담)
+
+    /** 매입취소(진행/완료/마감 어느 단계든) 여부. progress·정산·판매KPI 분기 단일 출처. */
+    public function isPurchaseCancelled(): bool
+    {
+        return ($this->cancel_status ?? self::CANCEL_NONE) !== self::CANCEL_NONE;
+    }
+
+    /** 매입취소 상태 한글 라벨 (배지·목록용). null=정상. */
+    public function getCancelStatusLabelAttribute(): ?string
+    {
+        return match ($this->cancel_status) {
+            self::CANCEL_ACTIVE => '매입취소',
+            self::CANCEL_DONE => '취소완료',
+            self::CANCEL_CLOSED => '미수마감',
+            default => null,
+        };
+    }
+
     protected $fillable = [
         'vehicle_number', 'sales_channel', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
         'receivable_risk', 'sale_unpaid_amount_krw_cache', 'receivable_manager_id',
+        'cancel_status', 'cancelled_at',
         // 큐 16 — 헤이맨/카풀 5컬럼 drop (tax_invoice_1·2_date·amount, agency_fee).
         'brand', 'model_type', 'year', 'cc', 'weight_kg', 'mileage', 'color',
         'nice_reg_vin', 'nice_reg_engine_no', 'nice_reg_fuel_type', 'nice_reg_use_type',
@@ -85,6 +112,7 @@ class Vehicle extends Model
         'bl_issue_date' => 'date',
         'document_deadline_date' => 'date',
         'nice_reg_owner_rrn_encrypted_at' => 'datetime',
+        'cancelled_at' => 'datetime',
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
         'purchase_fee_account' => 'encrypted',
@@ -886,6 +914,11 @@ class Vehicle extends Model
      */
     public function createSettlementIfComplete(string $note): void
     {
+        // 매입취소 차량은 정산 대상 아님 — 위약금을 sale_price 로 넣어도 정산 자동생성 원천 차단.
+        //   (통화·인코텀즈 무관 명시 가드. 이전엔 외화+인코텀즈 미입력 우연 차단에만 의존 — jin 2026-07-18)
+        if ($this->isPurchaseCancelled()) {
+            return;
+        }
         if ((float) ($this->sale_price ?? 0) <= 0) {
             return;
         }
