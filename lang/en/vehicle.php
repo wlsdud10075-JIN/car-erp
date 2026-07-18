@@ -78,6 +78,12 @@ return [
     'freight_total' => 'Freight total ₩:amount',
     'sale_total_sum' => 'Sell total ₩:amount',
     'freight_ph' => 'Freight amount',
+    'stat' => [
+        'count' => 'Vehicles',
+        'unit' => '',
+        'freight' => 'Freight total',
+        'sale_total' => 'Sell total',
+    ],
 
     'shipdoc_select_title' => 'Multi-select for shipping docs (export vehicles)',
     'selected' => ':count selected',
