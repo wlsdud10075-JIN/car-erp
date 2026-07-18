@@ -56,6 +56,18 @@ class DocumentFiller
         $path = resource_path('templates/'.$set.'/'.$config['template']);
         $spreadsheet = IOFactory::load($path);
 
+        // 0) appendSheets (item 8, 2026-07-18) — 다른 템플릿의 시트를 이 워크북에 graft.
+        //    말소신청서(1시트) + 말소계약서(2시트)를 한 파일로 병합(탭1/탭2). 매핑은 Sheet!Cell 로 각 시트 기입.
+        //    graft 를 clearYellow/applyStamps/fill 전에 해야 grafted 시트도 동일 처리됨.
+        foreach ($config['appendSheets'] ?? [] as $append) {
+            $srcPath = resource_path('templates/'.$set.'/'.$append['template']);
+            $src = IOFactory::load($srcPath);
+            $srcSheet = $src->getSheetByName($append['sheet']);
+            if ($srcSheet && ! $spreadsheet->sheetNameExists($append['sheet'])) {
+                $spreadsheet->addExternalSheet($srcSheet);   // 부모 재지정 + 셀·스타일 이관
+            }
+        }
+
         // 1) 모든 visible 시트의 노란 fill 제거 (수식·공란 포함 전부)
         foreach ($spreadsheet->getWorksheetIterator() as $sheet) {
             if ($sheet->getSheetState() !== Worksheet::SHEETSTATE_VISIBLE) {
@@ -471,6 +483,8 @@ class DocumentFiller
             // Phase 1 — 매입 3종
             'deregistration' => Mappings\DeregistrationMapping::class,
             'deregistration_contract' => Mappings\DeregistrationContractMapping::class,
+            // item 8 (2026-07-18) — 말소신청서+계약서 1파일 2시트 병합본
+            'deregistration_set' => Mappings\DeregistrationSetMapping::class,
             'poa' => Mappings\PowerOfAttorneyMapping::class,
             // Phase 2 — 판매 인보이스
             'invoice' => Mappings\SalesInvoiceMapping::class,

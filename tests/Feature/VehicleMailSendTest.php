@@ -76,7 +76,7 @@ class VehicleMailSendTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->set('editingId', $vehicle->id)
             ->set('mailTo', 'buyer@example.com')
-            ->set('mailDocIds', ['gen:deregistration'])   // 자동생성 서류(전 채널)
+            ->set('mailDocIds', ['gen:deregistration_set'])   // 자동생성 서류(전 채널, item 8 병합본)
             ->call('sendVehicleMail')
             ->assertHasNoErrors();
 

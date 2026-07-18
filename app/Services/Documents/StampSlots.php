@@ -59,6 +59,10 @@ class StampSlots
                 // clearAnchors: 양식 baked 서명(A60)을 업로드본 추가 전 제거 → 이중 서명 방지.
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
+            // item 8 (2026-07-18) — 병합본. 계약서 시트('2.계약서')는 graft 되므로 슬롯 동일.
+            'deregistration_set' => [
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
+            ],
             'invoice' => [
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'Invoice', 'anchor' => 'A1', 'width' => 333, 'height' => 72],
@@ -109,6 +113,9 @@ class StampSlots
     {
         return [
             'deregistration_contract' => [
+                ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
+            ],
+            'deregistration_set' => [
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
             'invoice' => [

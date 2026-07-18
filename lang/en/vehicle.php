@@ -769,6 +769,8 @@ return [
         'note_empty' => '※ For blank items, fill in the vehicle info and regenerate.',
         'deregistration' => 'Vehicle Deregistration Form',
         'deregistration_sub' => 'Form No. 17 · .xlsx',
+        'deregistration_set' => 'Deregistration Form + Contract',
+        'deregistration_set_sub' => '1 file, 2 tabs (form · contract) · .xlsx',
         'derg_contract' => 'Deregistration Contract',
         'poa' => 'Power of Attorney',
         'invoice' => 'Proforma Invoice',
