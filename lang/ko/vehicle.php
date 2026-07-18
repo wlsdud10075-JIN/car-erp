@@ -78,6 +78,12 @@ return [
     'freight_total' => '운임비 합 ₩:amount',
     'sale_total_sum' => '판매총액 합 ₩:amount',
     'freight_ph' => '운임비 검색',
+    'stat' => [
+        'count' => '총 차량',
+        'unit' => '대',
+        'freight' => '운임비 합',
+        'sale_total' => '판매총액 합',
+    ],
 
     'shipdoc_select_title' => '선적 서류 다중 선택 (수출 차량)',
     'selected' => ':count대 선택',
