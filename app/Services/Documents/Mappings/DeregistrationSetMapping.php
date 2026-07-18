@@ -22,6 +22,8 @@ class DeregistrationSetMapping
             'appendSheets' => [
                 ['template' => 'deregistration_contract.xlsx', 'sheet' => '2.계약서'],
             ],
+            // 신청서 템플릿의 기본 잔여 시트 'Sheet1' 제거 → 탭 2개(말소신청서·계약서)만 남김.
+            'removeSheets' => ['Sheet1'],
             'label' => '말소신청서_계약서',
             'cells' => [
                 // ── 탭1: 차량말소신청서 (기본 sheet) ──
