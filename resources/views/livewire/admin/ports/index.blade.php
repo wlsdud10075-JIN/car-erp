@@ -21,6 +21,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $name      = '';
     public string $code      = '';
     public bool   $is_active = true;
+    // 선적대기 허용 항로 (jin 2026-07-18, item 2) — discharge(목적항)에만 의미. RORO 차량 C5(50%) 우회.
+    public bool   $allow_shipping_wait = false;
 
     // 회의확장씬 2026-05-22 — [관리] 도 접근/편집 가능 (canManagePorts).
     // 라우트 'auth, verified' 만 — Volt mount 가드로 권한 검증.
@@ -66,6 +68,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->name      = $p->name;
         $this->code      = $p->code ?? '';
         $this->is_active = $p->is_active;
+        $this->allow_shipping_wait = $p->allow_shipping_wait;
         $this->showPanel = true;
     }
 
@@ -93,6 +96,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name'      => $this->name,
             'code'      => $this->code ?: null,
             'is_active' => $this->is_active,
+            // 선적대기 허용은 목적항(discharge)에만 유효 — 그 외 타입은 강제 false.
+            'allow_shipping_wait' => $this->type === 'discharge' ? $this->allow_shipping_wait : false,
         ];
 
         if ($this->editingId) {
@@ -130,6 +135,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->type = 'loading';
         $this->name = $this->code = '';
         $this->is_active = true;
+        $this->allow_shipping_wait = false;
     }
 }; ?>
 
@@ -191,7 +197,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4">
                     <span class="badge {{ $typeBadge }}">{{ __('port.type.'.$p->type) }}</span>
                 </td>
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $p->name }}</td>
+                <td class="py-3 pr-4 font-medium text-gray-800">
+                    {{ $p->name }}
+                    @if($p->allow_shipping_wait)<span class="badge badge-amber ml-1 text-[10px]">{{ __('port.badge.shipping_wait') }}</span>@endif
+                </td>
                 <td class="py-3 pr-4 text-gray-500 font-mono text-xs">{{ $p->code ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $p->is_active ? 'badge-green' : 'badge-gray' }}">
@@ -256,7 +265,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-4">
         <div>
             <label class="label-base">{{ __('port.field.type') }} <span class="text-red-500">*</span></label>
-            <select wire:model="type" class="input-base">
+            <select wire:model.live="type" class="input-base">
                 @foreach(\App\Models\Port::TYPES as $key => $label)
                 <option value="{{ $key }}">{{ __('port.type.'.$key) }}</option>
                 @endforeach
@@ -279,6 +288,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('port.field.active_note') }}
             </label>
         </div>
+        {{-- 선적대기 허용 (jin 2026-07-18, item 2) — 목적항(discharge)에만 노출 --}}
+        @if($type === 'discharge')
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <label class="flex items-center gap-2 text-sm font-medium text-amber-800 cursor-pointer">
+                <input wire:model="allow_shipping_wait" type="checkbox" class="rounded" /> {{ __('port.field.allow_shipping_wait') }}
+            </label>
+            <p class="mt-1 text-[11px] text-amber-600">{{ __('port.field.allow_shipping_wait_note') }}</p>
+        </div>
+        @endif
     </div>
 
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
