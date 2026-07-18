@@ -1447,6 +1447,28 @@ class Vehicle extends Model
         return $last ? Carbon::parse($last) : null;
     }
 
+    /** 일반재고 권장 매입 상한 — 초과 시 뱃지 표시만(하드 차단 아님, jin 2026-07-18). */
+    public const GENERAL_STOCK_PRICE_CAP = 200_000_000;
+
+    /** 일반재고 권장 판매 기한(입고일 기준 개월) — 경과 시 뱃지 표시만. */
+    public const GENERAL_STOCK_SELL_MONTHS = 3;
+
+    /**
+     * 재고 2분류 (jin 2026-07-18):
+     *   일반재고(general)   = 재고 중 미판매(투기매입, 바이어 미정) = sale_price ≤ 0.
+     *   선적전 재고(pre_ship) = 재고 중 판매됨(항구 대기, 출고 전)   = sale_price > 0.
+     * 둘 다 inStock() 기반(매입완납 + 출고 전).
+     */
+    public function scopeGeneralStock($query)
+    {
+        return $query->inStock()->where(fn ($q) => $q->whereNull('sale_price')->orWhere('sale_price', '<=', 0));
+    }
+
+    public function scopePreShippingStock($query)
+    {
+        return $query->inStock()->where('sale_price', '>', 0);
+    }
+
     /**
      * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음. 진행상태 무관.
      *   미완납 = 입고 전(제외) / 출고일 찍힘 = 출고됨(제외).
@@ -1532,10 +1554,11 @@ class Vehicle extends Model
             return 'safe';
         }
 
-        // 결제대기 유예 (jin 2026-07-06, A안) — 선적 전(반입 전 = bl_loading_location 없음) 미수는
+        // 결제대기 유예 (jin 2026-07-06, A안) — 선적 전(출고 전 = warehouse_out_date 없음) 미수는
         //   판매일 + RECEIVABLE_GRACE_DAYS 지나야 채권. 그 전엔 'grace'(정상 결제 대기, 채권 아님).
-        //   선적 후는 유예 없이 즉시 위험. ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
-        if (blank($this->bl_loading_location) && $this->sale_date
+        //   선적 후(출고 = 출항)는 유예 없이 즉시 위험. ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
+        //   pivot=출고일(jin 2026-07-18): 반입지 입력돼도 출고 전이면 항구 주차장=선적전. (구 pivot=bl_loading_location)
+        if (blank($this->warehouse_out_date) && $this->sale_date
             && $this->sale_date->copy()->addDays(self::RECEIVABLE_GRACE_DAYS)->startOfDay()->isFuture()) {
             return 'grace';
         }
@@ -1775,21 +1798,17 @@ class Vehicle extends Model
             'has_sale' => $q->where('sale_price', '>', 0),
             'has_purchase' => $q->where('purchase_price', '>', 0),
 
-            // ── 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 2026-05-18 사용자 결정) ──
-            // 선적전 미수: progress_status_cache ∈ {매입중, 매입완료, 말소완료, 판매중, 판매완료}
-            //              AND sale_unpaid_amount > 0
+            // ── 미수 분류 — pivot=출고일 (jin 2026-07-18, 구 pivot=progress_status) ──
+            // 선적전 미수: 출고일 없음(항구 주차장 대기) AND sale_unpaid_amount > 0. 반입지·진행단계 무관.
+            //   결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
             'receivable_before_shipping' => $q
-                ->whereIn('progress_status_cache', ['매입중', '매입완료', '말소완료', '판매중', '판매완료'])
+                ->whereNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
                 ->excludeReceivableGrace(),
 
-            // 안건 1 v4 (2026-05-21) — 단계명 swap: 수출통관중/완료 → 통관중/완료.
-            // 선적후 미수: progress_status_cache ∈ {선적중, 선적완료, 통관중, 통관완료}
-            //              AND sale_unpaid_amount > 0
-            // v3 호환 라벨도 포함 (운영 데이터 0이지만 안전망).
+            // 선적후 미수: 출고일 있음(출항) AND sale_unpaid_amount > 0. 유예 없이 즉시 채권.
             'receivable_after_shipping' => $q
-                ->whereIn('progress_status_cache', ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'])
+                ->whereNotNull('warehouse_out_date')
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
             // 디파짓: savings_used > 0 (적립금 사용분)
@@ -1800,18 +1819,19 @@ class Vehicle extends Model
     }
 
     /**
-     * 결제대기(grace) 차량을 채권 집계에서 제외 — grace = 선적 전(반입지 없음) + 판매일+유예일 미경과 미수.
+     * 결제대기(grace) 차량을 채권 집계에서 제외 — grace = 선적 전(출고 전) + 판매일+유예일 미경과 미수.
      * jin 2026-07-06: "결제대기는 아직 채권 아님". 채권금액 총액(채권관리·관리자/업무 대시보드)에서 빠져야 함.
      *
      * 판정은 캐시(receivable_risk) 대신 sale_date 로 = fresh(야간 rebuild 대기 없이 판매일+10일 정확 flip),
      * scopeAction('sale_unpaid')·채권관리 before_shipping 탭과 동일 단일 기준(SKILLS §13). grace 는 선적
-     * 전에만 성립하므로, 선적 후(반입지 입력) 미수는 이 스코프로 절대 제외되지 않는다(즉시 채권). sale_date
-     * NULL(판매가 있으나 날짜 미상 — chk_sale_required 상 실질 없음)은 grace 아님으로 간주해 유지한다.
+     * 전에만 성립하므로, 선적 후(출고일 입력 = 출항) 미수는 이 스코프로 절대 제외되지 않는다(즉시 채권).
+     * pivot=출고일(jin 2026-07-18, 구 pivot=bl_loading_location). sale_date NULL(판매가 있으나 날짜 미상 —
+     * chk_sale_required 상 실질 없음)은 grace 아님으로 간주해 유지한다.
      */
     public function scopeExcludeReceivableGrace(Builder $q): Builder
     {
         return $q->whereNot(fn ($q2) => $q2
-            ->whereNull('bl_loading_location')
+            ->whereNull('warehouse_out_date')
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString()));
     }
@@ -1822,7 +1842,7 @@ class Vehicle extends Model
      */
     public function scopeOnlyReceivableGrace(Builder $q): Builder
     {
-        return $q->whereNull('bl_loading_location')
+        return $q->whereNull('warehouse_out_date')
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString());
     }

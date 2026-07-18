@@ -32,6 +32,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public string $statusFilter = '';
 
+    /** 재고 카테고리 필터 (jin 2026-07-18): '' 전체 / general 일반재고(미판매) / pre_ship 선적전 재고(판매됨·출고전). */
+    #[Url] public string $category = '';
+
     public string $search = '';
 
     #[Url] public int $perPage = 20;
@@ -50,6 +53,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $result = Vehicle::query()
             ->with(['salesman', 'buyer'])
             ->inStock()
+            ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
+            ->when($this->category === 'pre_ship', fn ($q) => $q->where('sale_price', '>', 0))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
@@ -103,6 +108,34 @@ new #[Layout('components.layouts.app')] class extends Component
             ->groupBy('salesman_id')
             ->pluck('cnt', 'salesman_id')
             ->toArray();
+    }
+
+    /** 재고 2분류 카운트 (스코프 반영, 담당자 스코프 존중). */
+    #[Computed]
+    public function categoryCounts(): array
+    {
+        $user = auth()->user();
+        $scoped = function ($q) use ($user) {
+            if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman) {
+                $q->where('salesman_id', $user->salesman->id);
+            } elseif ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
+                $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
+            }
+
+            return $q;
+        };
+
+        return [
+            'general' => $scoped(Vehicle::query()->generalStock())->count(),
+            'pre_ship' => $scoped(Vehicle::query()->preShippingStock())->count(),
+        ];
+    }
+
+    public function setCategory(string $cat): void
+    {
+        $this->category = $cat;
+        unset($this->inventoryVehicles);
+        $this->resetPage();
     }
 
     public function search(): void
@@ -160,7 +193,35 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{ __('inventory.subtitle') }}
             </p>
         </div>
-        <span class="text-xs text-gray-400">{{ __('inventory.total', ['count' => number_format($this->inventoryVehicles->total())]) }}</span>
+        <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-400">{{ __('inventory.total', ['count' => number_format($this->inventoryVehicles->total())]) }}</span>
+            <a href="{{ route('erp.vehicles.index') }}?create=1" wire:navigate class="btn-primary text-xs">
+                {{ __('inventory.new_purchase') }}
+            </a>
+        </div>
+    </div>
+
+    {{-- 재고 2분류 탭 (jin 2026-07-18) — 일반재고(미판매) / 선적전 재고(판매됨·출고전) --}}
+    @php $cc = $this->categoryCounts; @endphp
+    <div class="flex flex-wrap items-center gap-2">
+        <button wire:click="setCategory('')"
+                class="tab-pill {{ $category === '' ? 'is-active' : '' }}">
+            {{ __('inventory.cat_all') }}
+            <span class="pill-count">{{ number_format($cc['general'] + $cc['pre_ship']) }}</span>
+        </button>
+        <button wire:click="setCategory('general')"
+                class="tab-pill {{ $category === 'general' ? 'is-active' : '' }}">
+            {{ __('inventory.cat_general') }}
+            <span class="pill-count">{{ number_format($cc['general']) }}</span>
+        </button>
+        <button wire:click="setCategory('pre_ship')"
+                class="tab-pill {{ $category === 'pre_ship' ? 'is-active' : '' }}">
+            {{ __('inventory.cat_pre_ship') }}
+            <span class="pill-count">{{ number_format($cc['pre_ship']) }}</span>
+        </button>
+        @if($category === 'general')
+            <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_general_hint') }}</span>
+        @endif
     </div>
 
     {{-- 영업담당자별 재고 카운트 스트립 --}}
@@ -230,6 +291,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.brand_model') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_in') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_shipping') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
                     <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_owner') }}</th>
@@ -246,10 +308,18 @@ new #[Layout('components.layouts.app')] class extends Component
                         '통관중', '통관완료' => 'badge-green',
                         default => 'badge-gray',
                     };
+                    $isGeneral = ($v->sale_price ?? 0) <= 0;
+                    $overCap = $isGeneral && $v->purchase_price > \App\Models\Vehicle::GENERAL_STOCK_PRICE_CAP;
+                    $overAge = $isGeneral && $v->warehouse_in_date
+                        && $v->warehouse_in_date->copy()->addMonths(\App\Models\Vehicle::GENERAL_STOCK_SELL_MONTHS)->isPast();
                 @endphp
                 <tr wire:key="inv-row-{{ $v->id }}" class="hover:bg-gray-50 cursor-pointer"
                     wire:click="$dispatch('navigate-to-vehicle', { id: {{ $v->id }} })">
-                    <td class="py-3 pr-4 font-mono font-medium text-gray-800">{{ $v->vehicle_number }}</td>
+                    <td class="py-3 pr-4 font-mono font-medium text-gray-800">
+                        {{ $v->vehicle_number }}
+                        @if($overCap)<span class="badge badge-red ml-1 text-[10px]">{{ __('inventory.badge_over_cap') }}</span>@endif
+                        @if($overAge)<span class="badge badge-amber ml-1 text-[10px]">{{ __('inventory.badge_over_age') }}</span>@endif
+                    </td>
                     <td class="py-3 pr-4 text-gray-500">
                         @if($v->salesman)
                             <span class="badge badge-blue">{{ $v->salesman->name }}</span>
@@ -265,6 +335,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                     </td>
                     <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4" @click.stop>
                         <input type="text" data-date wire:key="inv-out-{{ $v->id }}" wire:model="warehouseOut.{{ $v->id }}"
                                placeholder="YYYY-MM-DD"
@@ -281,7 +352,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="9" class="py-12 text-center text-sm text-gray-400">
+                <tr><td colspan="10" class="py-12 text-center text-sm text-gray-400">
                     {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse

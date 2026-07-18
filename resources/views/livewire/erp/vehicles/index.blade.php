@@ -46,6 +46,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $ids = '';
     // 정산 등 외부 화면에서 ?openVehicle=ID 로 진입 → 해당 차량 편집 패널 자동 오픈.
     #[Url] public ?int $openVehicle = null;
+
+    // 재고관리(일반재고) 등에서 ?create=1 로 진입 → 신규 매입 등록 패널 자동 오픈 (jin 2026-07-18).
+    #[Url] public bool $create = false;
     // 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select.
     #[Url] public string $buyerId = '';
     #[Url] public int $perPage = 10;
@@ -1041,6 +1044,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             } catch (\Throwable $e) {
                 // 접근 불가(스코프/미존재) — 조용히 목록만 표시
             }
+        }
+
+        // 재고관리 일반재고에서 ?create=1 진입 → 신규 매입 등록 패널 (바이어 없이 매입만 등록 = 일반재고, A안).
+        if ($this->create) {
+            $this->openCreate();
         }
 
         // 대시보드에서 진입한 경우 — action(처리 필요 카드) 또는 progressFilter(파이프라인 스트립):
