@@ -1591,15 +1591,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->paginate($this->perPage);
     }
 
-    /** 필터 결과 운임비 합계·건수 (item 6, jin 2026-07-18) — 헤더 총계. 페이지 무관 전체 필터 결과. */
+    /**
+     * 필터 결과 금액 총계 (item 6, jin 2026-07-18) — 헤더. 페이지 무관 전체 필터 결과.
+     *   sum = 운임비 합, sale_total_sum = 판매총액 합(sale_price+운임+기타+commission+auto_loading−tax_dc).
+     *   ⚠ 통화별 환산 없이 컬럼 표시값 원단위 그대로 합산 — 다중통화 혼재 시 참고용(대개 단일통화 필터로 봄).
+     */
     #[Computed]
     public function freightTotals(): array
     {
         $q = $this->filteredVehicleQuery();
+        $saleTotal = (clone $q)->selectRaw(
+            'COALESCE(SUM(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
+            .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)),0) AS t'
+        )->value('t');
 
         return [
             'count' => (clone $q)->count(),
             'sum' => (int) (clone $q)->sum('transport_fee'),
+            'sale_total_sum' => (int) $saleTotal,
         ];
     }
 
@@ -4742,9 +4751,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex items-center justify-between">
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ __('vehicle.title') }}</h1>
-        <p class="mt-0.5 text-xs text-gray-500">
-            {{ __('vehicle.total', ['count' => $this->vehicles->total()]) }}
-            <span class="ml-1.5 text-gray-400">· {{ __('vehicle.freight_total', ['amount' => number_format($this->freightTotals['sum'])]) }}</span>
+        <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
+            <span>{{ __('vehicle.total', ['count' => $this->vehicles->total()]) }}</span>
+            <span class="text-gray-300">·</span>
+            <span class="font-medium text-gray-600">{{ __('vehicle.freight_total', ['amount' => number_format($this->freightTotals['sum'])]) }}</span>
+            <span class="text-gray-300">·</span>
+            <span class="font-medium text-gray-600">{{ __('vehicle.sale_total_sum', ['amount' => number_format($this->freightTotals['sale_total_sum'])]) }}</span>
         </p>
     </div>
     <div class="flex items-center gap-2">

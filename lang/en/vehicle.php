@@ -76,6 +76,7 @@ return [
     'delete_confirm' => 'Delete vehicle :number?',
     'empty' => 'No vehicles.',
     'freight_total' => 'Freight total ₩:amount',
+    'sale_total_sum' => 'Sell total ₩:amount',
     'freight_ph' => 'Freight amount',
 
     'shipdoc_select_title' => 'Multi-select for shipping docs (export vehicles)',
