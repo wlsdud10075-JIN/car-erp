@@ -91,6 +91,7 @@ return [
             'dhl_needed' => ['l' => 'DHL 발송 대기', 'd' => '선적 완료 → DHL 미신청'],
             'settlement_wait' => ['l' => '정산 대기', 'd' => '정산 방식 미입력 또는 확인 필요'],
             'freight_confirm' => ['l' => '인코텀즈 확정 필요', 'd' => '완납했으나 인코텀즈(FOB/CFR)·운임비 미확정 → 정산 대기'],
+            'cancel_unpaid' => ['l' => '매입취소 미수', 'd' => '위약금 미수령 취소건 — 수금 또는 미수 마감'],
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => '말소 처리 필요', 'd' => '매입 완료 → 말소 미처리'],

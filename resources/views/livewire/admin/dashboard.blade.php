@@ -559,6 +559,14 @@ new #[Layout('components.layouts.app')] class extends Component
             'count' => (int) ($depositStats->cnt ?? 0),
         ];
 
+        // 매입취소 (jin 2026-07-18) — 진행(cancelled)·마감(cancelled_closed) 카운트. DB 3-tier 안전한 단순 count.
+        $cancelBase = fn () => Vehicle::query()
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo));
+        $cancelActive = (int) $cancelBase()->where('cancel_status', Vehicle::CANCEL_ACTIVE)->count();
+        $cancelClosed = (int) $cancelBase()->where('cancel_status', Vehicle::CANCEL_CLOSED)->count();
+
         // 담당자/바이어 미수금 내림차순 TOP 10 + 이름 매핑
         $sortFn = fn ($a, $b) => $b['unpaid'] <=> $a['unpaid'];
         uasort($bySalesman, $sortFn);
@@ -595,6 +603,9 @@ new #[Layout('components.layouts.app')] class extends Component
             // 결제대기(grace) — 채권 총액 제외분 별도 표시 (jin 2026-07-06)
             'grace_unpaid' => (int) ($graceStats->total_unpaid ?? 0),
             'grace_count' => (int) ($graceStats->cnt ?? 0),
+            // 매입취소 (jin 2026-07-18) — 진행/마감 카운트
+            'cancel_active' => $cancelActive,
+            'cancel_closed' => $cancelClosed,
         ];
     }
 
@@ -1025,6 +1036,15 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_grace_note', ['count' => $this->receivableKpis['grace_count']]) }}</p>
             </div>
+            {{-- 매입취소 (jin 2026-07-18) — 진행/마감 카운트, 채권관리 취소필터로 --}}
+            <a href="{{ route('erp.receivables.index').'?cancelFilter=cancelled' }}" wire:navigate
+               class="card min-w-[180px] flex-1 border-rose-200 bg-rose-50/40 transition hover:bg-rose-50">
+                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_cancel') }}</div>
+                <div class="mt-1 text-2xl font-bold text-rose-600">
+                    {{ number_format($this->receivableKpis['cancel_active']) }}<span class="ml-1 text-sm font-normal text-gray-400">{{ __('admin_dash.recv_cancel_unit') }}</span>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_cancel_note', ['closed' => $this->receivableKpis['cancel_closed']]) }}</p>
+            </a>
             {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅 --}}
             @foreach (['safe' => [__('receivable.risk.safe'), 'green'], 'caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
             <a href="{{ $this->vehiclesUrl(['action' => 'receivable_'.$key]) }}" wire:navigate

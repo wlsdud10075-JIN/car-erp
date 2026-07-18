@@ -101,6 +101,28 @@ class PurchaseCancelTest extends TestCase
         $this->assertFalse($normalOnly->contains('CXLCAR'));
     }
 
+    public function test_admin_dashboard_receivable_kpis_count_cancels(): void
+    {
+        $this->actingAs($this->admin());
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $mk = fn (string $plate, string $cancel) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export',
+            'currency' => 'KRW', 'exchange_rate' => 1, 'sale_price' => 1_000_000,
+            'sale_date' => now()->format('Y-m-d'), 'purchase_date' => now()->format('Y-m-d'),
+            'buyer_id' => $buyer->id, 'cancel_status' => $cancel,
+        ]);
+        $mk('AC1', Vehicle::CANCEL_ACTIVE);
+        $mk('AC2', Vehicle::CANCEL_CLOSED);
+        $mk('AC3', Vehicle::CANCEL_NONE);
+
+        $kpis = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2000-01-01')->set('dateTo', '2100-01-01')
+            ->instance()->receivableKpis();
+
+        $this->assertSame(1, $kpis['cancel_active']);
+        $this->assertSame(1, $kpis['cancel_closed']);
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);

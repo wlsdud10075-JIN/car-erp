@@ -253,6 +253,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('settlement_status', 'pending')
             ->count();
 
+        // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(수금 or 미수마감 필요).
+        $cancelUnpaid = (int) Vehicle::query()->whereNull('deleted_at')
+            ->where('cancel_status', Vehicle::CANCEL_ACTIVE)
+            ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->count();
+
         $t = fn (string $k, string $f) => __("dashboard.act.sales.$k.$f");
 
         return [
@@ -267,6 +274,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['label' => $t('settlement_wait', 'l'), 'desc' => $t('settlement_wait', 'd'),
              'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
              'href' => route('erp.settlements.index')],
+            // 매입취소 미수 → 채권관리(취소 필터)로. 위약금 수금 또는 미수 마감 처리.
+            ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
+             'count' => $cancelUnpaid, 'dot' => 'bg-rose-500', 'urgent' => false,
+             'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
         ];
     }
 
