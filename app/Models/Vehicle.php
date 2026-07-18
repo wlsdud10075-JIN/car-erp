@@ -920,7 +920,8 @@ class Vehicle extends Model
     /**
      * A-3 (2026-07-08) — 판매완료(완납) 또는 거래완료 시 pending 정산 자동 생성.
      *   조건: sale_price>0 && 미입금≤0(완납) && 담당자 있음 && 정산 없음(재귀속 금지).
-     *   귀속월(attributed_month) = 완납월 1일 고정 — 이후 거래완료돼도 불변.
+     *   귀속월(attributed_month) = settlementAttributionMonth() — 완납월 기준, 단 완납월이 이미
+     *     마감된 달이면 현재 열린 달로 이월 (jin 2026-07-18 "마감된 달은 동결" 규칙).
      *   type default(ratio/per_unit)는 null 위임(Setting 기반 자동 산정).
      *   ⚠️ 호출부는 auth()->check() 가드 필수 — 시드·artisan 대량 유입 차단(기존 거래완료 훅과 동일 정책).
      */
@@ -953,7 +954,7 @@ class Vehicle extends Model
             'settlement_ratio' => null,
             'per_unit_amount' => null,
             'settlement_status' => 'pending',
-            'attributed_month' => $this->fullPaymentMonth(),
+            'attributed_month' => $this->settlementAttributionMonth(),
             'note' => $note,
         ]);
     }
@@ -1014,6 +1015,26 @@ class Vehicle extends Model
         $date = $last ? Carbon::parse($last) : now();
 
         return $date->copy()->startOfMonth()->format('Y-m-d');
+    }
+
+    /**
+     * 정산 귀속월 (jin 2026-07-18) — 완납월 기준. 단 완납월이 이미 마감된 달(승인된 배치 존재)이면
+     *   현재 열린 달로 이월한다. 사용자 규칙: "6월 마감되면 그 순간 끝. 6월자 잔금이 7월에 뒤늦게
+     *   들어와도 6월에 우겨넣지 않고, 완성된 달(현재 열린 달)에 포함." 현재 달도 마감이면 다음 열린 달로.
+     */
+    public function settlementAttributionMonth(): string
+    {
+        $natural = $this->fullPaymentMonth();   // 'Y-m-01'
+        if (! SettlementPayoutBatch::isMonthClosed(substr($natural, 0, 7))) {
+            return $natural;
+        }
+        // 완납월이 마감됨 → 현재 열린 달로 이월 (이번 달부터 마감 안 된 첫 달).
+        $cursor = now()->startOfMonth();
+        while (SettlementPayoutBatch::isMonthClosed($cursor->format('Y-m'))) {
+            $cursor->addMonth();
+        }
+
+        return $cursor->format('Y-m-d');
     }
 
     public function refreshCaches(): void

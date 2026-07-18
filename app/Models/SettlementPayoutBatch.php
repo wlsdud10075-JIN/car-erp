@@ -40,6 +40,16 @@ class SettlementPayoutBatch extends Model
         'decided_at' => 'datetime',
     ];
 
+    /**
+     * 해당 월(Y-m)이 마감됐나 — 승인(지급)된 배치가 1건이라도 있으면 닫힘 (jin 2026-07-18).
+     * "6월 마감되면 그 순간 끝. 늦게 완성된 건은 완성된 달(현재 열린 달)에 포함" 규칙의 기준.
+     * pending/rejected/cancelled 배치는 마감 아님 (approved = execute()로 실지급 상태만).
+     */
+    public static function isMonthClosed(string $ym): bool
+    {
+        return self::where('month', $ym)->where('status', self::STATUS_APPROVED)->exists();
+    }
+
     public function submitter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitter_id');
