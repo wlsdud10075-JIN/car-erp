@@ -12,7 +12,7 @@ class Salesman extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id', 'name', 'phone', 'email', 'memo', 'is_active',
+        'user_id', 'name', 'initials', 'phone', 'email', 'memo', 'is_active',
         // 2026-05-20 #2-2+2-4 — type 분기 (employee 건당 / freelance 비율)
         'type',
     ];

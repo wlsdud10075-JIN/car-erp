@@ -51,6 +51,27 @@ class DocValue
         return $c?->id_value ?: $c?->passport;
     }
 
+    /** 차대번호(nice_reg_vin)에서 숫자만 추출 — Invoice No. 접미 (item 7, jin 2026-07-18). */
+    public static function chassisDigits(Vehicle $v): string
+    {
+        return preg_replace('/\D+/', '', (string) ($v->nice_reg_vin ?? ''));
+    }
+
+    /**
+     * Proforma Invoice No. = {영업담당자 이니셜}MU{차대번호 숫자} (item 7, jin 2026-07-18).
+     * 이니셜 또는 차대번호 미입력 시 기존 SC{연월}-{id} 포맷으로 fallback.
+     */
+    public static function invoiceNo(Vehicle $v): string
+    {
+        $initials = strtoupper(trim((string) ($v->salesman?->initials ?? '')));
+        $digits = self::chassisDigits($v);
+        if ($initials !== '' && $digits !== '') {
+            return $initials.'MU'.$digits;
+        }
+
+        return 'SC'.now()->format('ym').'-'.str_pad((string) ($v->id ?? 0), 5, '0', STR_PAD_LEFT);
+    }
+
     /** 확정 입금 합(= 인보이스 DEPOSIT). 22-A 통합으로 모든 입금유형이 confirmed FP. 판매통화 기준. */
     public static function confirmedReceived(Vehicle $v): float
     {

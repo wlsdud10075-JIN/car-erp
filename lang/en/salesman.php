@@ -23,6 +23,9 @@ return [
     'field' => [
         'name' => 'Name',
         'name_ph' => 'e.g. John Kim',
+        'initials' => 'Initials',
+        'initials_ph' => 'e.g. JK',
+        'initials_note' => 'Used as Proforma Invoice No. prefix — {initials}MU{VIN digits}',
         'account' => 'Linked Account',
         'account_none' => '-- Not linked --',
         'linked_none' => 'Not linked',

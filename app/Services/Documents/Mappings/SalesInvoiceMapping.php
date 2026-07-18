@@ -9,7 +9,8 @@ use App\Services\Documents\DocValue;
  * 판매 — Proforma Invoice. 단일차량. 수출 채널 전용(컨트롤러 EXPORT_ONLY 가드).
  *
  * 사용자 결정(2026-05-24): "엑셀 예시대로". DEPOSIT 은 확정 입금 합을 양수로 기입
- * (BALANCE MONEY 는 양식 수식 그대로). Invoice No 는 SC{연월}-{차량ID} 자동 생성.
+ * (BALANCE MONEY 는 양식 수식 그대로). Invoice No = {영업담당자 이니셜}MU{차대번호 숫자}
+ * (item 7, jin 2026-07-18. 이니셜/차대번호 미입력 시 SC{연월}-{id} fallback). Name(E5)=바이어, Client(E6)=컨사이니.
  * SUB TOTAL/TOTAL/BALANCE(E27/E31/E34) 는 수식 — 엔진이 자동 보존·재계산.
  */
 class SalesInvoiceMapping
@@ -27,7 +28,7 @@ class SalesInvoiceMapping
             'clearCells' => ['C28', 'C29'],
             'cells' => [
                 'E3' => fn (Vehicle $v) => $v->sale_date ?: now(),                                   // Date
-                'E4' => fn (Vehicle $v) => 'SC'.now()->format('ym').'-'.str_pad((string) ($v->id ?? 0), 5, '0', STR_PAD_LEFT), // Invoice No.
+                'E4' => fn (Vehicle $v) => DocValue::invoiceNo($v),                                   // Invoice No. = {이니셜}MU{차대번호숫자} (item 7)
                 'E5' => fn (Vehicle $v) => DocValue::invoiceBuyer($v)?->name,                          // Buyer Name
                 'E6' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->name,                      // Client Name
                 'E7' => fn (Vehicle $v) => DocValue::consigneeIdValue($v),                             // Passport
