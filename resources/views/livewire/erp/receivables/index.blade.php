@@ -30,6 +30,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18).
     // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
     #[Url] public string $classification = '';
+    // 매입취소 필터 (jin 2026-07-18) — '' 전체 / 'cancelled' 매입취소만 / 'normal' 정상만
+    #[Url] public string $cancelFilter = '';
 
     // KPI 카드 통화 표시 — '' 전체(₩ 환산 합계) / 'USD'·'JPY'·'KRW'… 그 통화 차량만 판매시점 원금액 합계(재환산 없음).
     //   목록은 그대로 두고 상단 KPI 카드만 통화별로 본다 (jin 2026-07-16).
@@ -513,6 +515,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             }))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->riskFilter, fn ($q) => $q->where('receivable_risk', $this->riskFilter))
+            // 매입취소 필터 — 취소차도 위약금(sale_price)이 채권으로 잡히므로 기본은 함께 노출, 필터로 분리.
+            ->when($this->cancelFilter === 'cancelled', fn ($q) => $q->where('cancel_status', '!=', Vehicle::CANCEL_NONE))
+            ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', Vehicle::CANCEL_NONE))
             // 미납률 30/50/70%↑ 필터는 receivable_risk 캐시 컬럼 매핑으로 대신.
             // 정확한 ratio 슬라이더 필요 시 raw SQL로 확장 가능 (현재는 카테고리 매핑으로 충분).
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
@@ -665,6 +670,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="danger">{{ __('receivable.risk.danger') }}</option>
             <option value="critical">{{ __('receivable.risk.critical') }}</option>
         </select>
+        <select wire:model.live="cancelFilter" class="input-filter">
+            <option value="">{{ __('receivable.cancel.all') }}</option>
+            <option value="cancelled">{{ __('receivable.cancel.only') }}</option>
+            <option value="normal">{{ __('receivable.cancel.normal') }}</option>
+        </select>
         <select wire:model.live="unpaidRatioMin" class="input-filter">
             <option value="">{{ __('receivable.ratio_all') }}</option>
             <option value="30">{{ __('receivable.ratio_min', ['percent' => 30]) }}</option>
@@ -735,7 +745,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-2 pr-3 text-right text-gray-700">{{ $v->currency }} {{ number_format($v->sale_total_amount, $v->currency === 'KRW' ? 0 : 2) }}</td>
                     <td class="py-2 pr-3 text-right font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, $v->currency === 'KRW' ? 0 : 2) }}</td>
                     <td class="py-2 pr-3 text-right text-gray-700">{{ $unpaidRatio }}%</td>
-                    <td class="py-2 pr-3"><span class="badge badge-gray">{{ $v->progress_status_cache ? __('domain.progress.'.$v->progress_status_cache) : '-' }}</span></td>
+                    <td class="py-2 pr-3">
+                        <span class="badge badge-gray">{{ $v->progress_status_cache ? __('domain.progress.'.$v->progress_status_cache) : '-' }}</span>
+                        @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                    </td>
                     <td class="py-2 pr-3 text-center text-xs">{{ $v->bl_document ? '✓' : '-' }}</td>
                     <td class="py-2 pr-3"><span class="badge {{ $riskBadge }}">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span></td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->receivableManager?->name ?? '-' }}</td>

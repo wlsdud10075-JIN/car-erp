@@ -32,6 +32,11 @@ return [
     'all_buyer' => '바이어 전체',
     'all_progress' => '진행상태 전체',
     'all_risk' => '위험도 전체',
+    'cancel' => [
+        'all' => '매입취소 전체',
+        'only' => '매입취소만',
+        'normal' => '정상만',
+    ],
     'ratio_all' => '미납률 ALL',
     'ratio_min' => ':percent%↑',
 
