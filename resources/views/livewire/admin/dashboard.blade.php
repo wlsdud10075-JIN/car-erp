@@ -95,10 +95,13 @@ new #[Layout('components.layouts.app')] class extends Component
         $purchaseTotal = (int) (clone $base)->sum('purchase_price');
 
         // 판매가 KRW 환산 합계 (발생주의 — 판매 등록 총액)
-        $saleKrw = (clone $base)->where('sale_price', '>', 0)->get()->sum(function ($v) {
+        // 매입취소 제외 (jin 2026-07-18) — 취소차의 sale_price 는 위약금이라 판매실적(매출·판매량)에서 뺀다.
+        //   (현금회수·미수·채권은 위약금도 실제 돈이라 포함 유지 — 아래 별도.)
+        $salesBase = fn () => (clone $base)->where('sale_price', '>', 0)->where('cancel_status', Vehicle::CANCEL_NONE);
+        $saleKrw = $salesBase()->get()->sum(function ($v) {
             return $v->currency === 'KRW' ? $v->sale_price : $v->sale_price * ($v->exchange_rate ?: 0);
         });
-        $saleCount = (clone $base)->where('sale_price', '>', 0)->count();
+        $saleCount = $salesBase()->count();
 
         // 새회의.txt #7 + 3-B (2026-05-23) — 발생 매출 vs 현금 회수 분리.
         // 현금 회수 = sale_received_krw_accumulated accessor 합 (row 별 환율 합산, SKILLS §13)
@@ -112,6 +115,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 큐 16 — by_channel 집계 제거 (채널 단일).
         $byProgress = (clone $base)
+            ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 파이프라인 오염 방지 (jin 2026-07-18)
             ->selectRaw('progress_status_cache, COUNT(*) as cnt')
             ->groupBy('progress_status_cache')
             ->pluck('cnt', 'progress_status_cache')
@@ -193,6 +197,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereYear('sale_date', $year)
             ->whereNotNull('sale_date')
             ->where('sale_price', '>', 0)
+            ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 판매실적 오염 방지 (jin 2026-07-18)
             ->select('sale_date', 'sale_price', 'currency', 'exchange_rate')
             ->orderBy('sale_date')
             ->chunk(1000, function ($rows) use (&$salesBuckets) {
@@ -237,6 +242,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->whereNotNull('salesman_id')
             ->where('sale_price', '>', 0)
+            ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 인원별 판매실적 오염 방지 (jin 2026-07-18)
             ->select('salesman_id', 'sale_price', 'currency', 'exchange_rate')
             ->chunk(1000, function ($rows) use (&$aggregates) {
                 foreach ($rows as $r) {

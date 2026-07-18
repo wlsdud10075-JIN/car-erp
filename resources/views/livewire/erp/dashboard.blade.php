@@ -197,6 +197,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Vehicle::query()
             ->whereNull('deleted_at')
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 파이프라인 오염 방지 (jin 2026-07-18)
             ->selectRaw('progress_status_cache, COUNT(*) as cnt')
             ->groupBy('progress_status_cache')
             ->pluck('cnt', 'progress_status_cache')

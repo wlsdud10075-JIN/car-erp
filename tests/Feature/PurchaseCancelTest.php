@@ -208,6 +208,30 @@ class PurchaseCancelTest extends TestCase
         $this->assertEmpty($c->instance()->cancelLosses()['groups']);
     }
 
+    public function test_sales_stats_exclude_cancels_receivable_includes(): void
+    {
+        $this->actingAs($this->admin());
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $mk = fn (string $plate, string $cancel) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'sale_price' => 1_000_000, 'sale_date' => now()->subDays(30)->format('Y-m-d'),
+            'purchase_date' => now()->subDays(30)->format('Y-m-d'), 'buyer_id' => $buyer->id, 'cancel_status' => $cancel,
+        ]);
+        $mk('SR1', Vehicle::CANCEL_NONE);      // 실판매
+        $mk('SR2', Vehicle::CANCEL_ACTIVE);    // 매입취소(위약금)
+
+        $kpis = Volt::test('admin.dashboard')
+            ->set('dateFrom', '2000-01-01')->set('dateTo', '2100-01-01')
+            ->instance()->kpis();
+
+        // 판매실적 = 취소차 제외
+        $this->assertSame(1, $kpis['sale_count'], '판매량은 취소차 제외');
+        $this->assertSame(1_000_000, $kpis['sale_total_krw'], '매출은 취소차 제외');
+        $this->assertSame(1, $kpis['by_progress']['판매중'] ?? 0, '파이프라인은 취소차 제외');
+        // 미수(채권) = 취소차 포함 (위약금도 실제 미수)
+        $this->assertSame(2_000_000, $kpis['unpaid_krw'], '미수금은 취소차 포함');
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);

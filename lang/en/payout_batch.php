@@ -13,7 +13,7 @@ return [
         'prefill' => 'Fill adjustment',
         'settle' => 'Mark settled',
         'settle_confirm' => "Mark this salesperson's losses as settled and hide from the summary. Proceed?",
-        'note' => 'Enter the subtotal (negative) as the batch adjustment for the salesperson, then click "Mark settled" to prevent double charging. Freelancers only (employee losses borne by the company).',
+        'note' => 'Enter the subtotal (negative) as the batch adjustment, then click "Mark settled" ONLY after that batch is finally approved (do not mark if it is rejected — avoids losing the charge). "Mark settled" prevents double charging. Freelancers only (employee losses borne by the company).',
         'reason' => 'Purchase cancellation loss share: :plates',
         'pick_batch' => 'Click "Add adjustment" on the target batch first.',
         'settled' => 'Marked as settled.',
