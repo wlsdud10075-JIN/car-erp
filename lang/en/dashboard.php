@@ -90,6 +90,7 @@ return [
             'dhl_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'loaded → DHL not requested'],
             'settlement_wait' => ['l' => 'Settlement Pending', 'd' => 'method not set or needs review'],
             'freight_confirm' => ['l' => 'Incoterms Needed', 'd' => 'fully paid but incoterms (FOB/CFR) / freight not set → settlement held'],
+            'cancel_unpaid' => ['l' => 'Cancelled Unpaid', 'd' => 'penalty not collected — collect or close'],
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => 'Deregistration Needed', 'd' => 'purchase done → not deregistered'],
