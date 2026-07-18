@@ -4767,29 +4767,25 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- 필터 결과 요약 카드 (item 6, jin 2026-07-18) — 검색·필터·정렬 결과 기준 합계 --}}
+{{-- 필터 결과 요약 (item 6, jin 2026-07-18) — 한 카드에 3지표 나란히. 검색·필터·정렬 결과 기준 --}}
 @php $ft = $this->freightTotals; @endphp
-<div class="grid grid-cols-3 gap-2 sm:gap-3 md:max-w-3xl">
-    <div class="card-tight flex items-center gap-2.5 sm:gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-50 text-base">🚗</div>
-        <div class="min-w-0">
-            <div class="text-[11px] text-gray-500">{{ __('vehicle.stat.count') }}</div>
-            <div class="truncate text-base font-bold text-gray-800 sm:text-lg">{{ number_format($this->vehicles->total()) }}<span class="ml-0.5 text-xs font-normal text-gray-400">{{ __('vehicle.stat.unit') }}</span></div>
-        </div>
+<div class="card-tight inline-flex flex-wrap items-center gap-x-5 gap-y-2">
+    <div class="flex items-baseline gap-1.5">
+        <span class="text-sm">🚗</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.count') }}</span>
+        <span class="text-sm font-bold text-gray-800">{{ number_format($this->vehicles->total()) }}<span class="ml-0.5 text-xs font-normal text-gray-400">{{ __('vehicle.stat.unit') }}</span></span>
     </div>
-    <div class="card-tight flex items-center gap-2.5 sm:gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-base">🚢</div>
-        <div class="min-w-0">
-            <div class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</div>
-            <div class="truncate text-base font-bold text-gray-800 sm:text-lg">₩{{ number_format($ft['sum']) }}</div>
-        </div>
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex items-baseline gap-1.5">
+        <span class="text-sm">🚢</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</span>
+        <span class="text-sm font-bold text-gray-800">₩{{ number_format($ft['sum']) }}</span>
     </div>
-    <div class="card-tight flex items-center gap-2.5 sm:gap-3">
-        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-base">💰</div>
-        <div class="min-w-0">
-            <div class="text-[11px] text-gray-500">{{ __('vehicle.stat.sale_total') }}</div>
-            <div class="truncate text-base font-bold text-gray-800 sm:text-lg">₩{{ number_format($ft['sale_total_sum']) }}</div>
-        </div>
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex items-baseline gap-1.5">
+        <span class="text-sm">💰</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.sale_total') }}</span>
+        <span class="text-sm font-bold text-gray-800">₩{{ number_format($ft['sale_total_sum']) }}</span>
     </div>
 </div>
 
