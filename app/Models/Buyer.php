@@ -84,24 +84,37 @@ class Buyer extends Model
 
     /**
      * 바이어 미수금 게이지 — 목록·드로어·매입 게이트 단일 출처 (숫자 일치 보장).
-     * 분모: Σ(sale_total_amount × exchange_rate), total>0 && rate>0 인 차량만.
+     * 분모: Σ(sale_total_amount × exchange_rate), total>0 && rate>0 인 진행중 차량만.
      * 분자: Σ(sale_unpaid_amount_krw_cache). 환율 미입력 외화는 분모·분자 양쪽 자동 제외.
-     * 반환 null = 판매 이력 없음(분모 0) → 게이지·게이트 미적용.
+     * 반환 null = 진행중 판매 이력 없음(분모 0) → 게이지·게이트 미적용.
      *
-     * @param  iterable  $vehicles  sale_total_amount 접근에 필요한 컬럼이 로드된 Vehicle 컬렉션
+     * ⚠️ 거래완료(progress_status_cache='거래완료', B/L 발급·완납)는 분모·분자·건수에서 제외 (jin 2026-07-18).
+     *   근거: 거래완료 총액이 분모에 섞이면 미수율이 희석돼 "진행중 실제 미수"를 정확히 못 본다.
+     *   미수/게이트는 진행중 총액 기준. 거래완료 총액·건수는 completed_krw/completed_count 로 별도 반환(표기용).
+     *
+     * @param  iterable  $vehicles  sale_total_amount + progress_status_cache 로드된 Vehicle 컬렉션
      */
     public static function computeReceivableGauge(iterable $vehicles): ?array
     {
         $totalKrw = 0;
         $unpaidKrw = 0;
         $count = 0;
+        $completedKrw = 0;
+        $completedCount = 0;
         foreach ($vehicles as $v) {
-            $count++;
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
-            if ($total > 0 && $rate > 0) {
-                $totalKrw += (int) ($total * $rate);
+            $rowKrw = ($total > 0 && $rate > 0) ? (int) ($total * $rate) : 0;
+
+            if (($v->progress_status_cache ?? null) === '거래완료') {
+                $completedKrw += $rowKrw;
+                $completedCount++;
+
+                continue;   // 진행중 미수 기준에서 분리
             }
+
+            $count++;
+            $totalKrw += $rowKrw;
             $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
         }
 
@@ -112,12 +125,14 @@ class Buyer extends Model
         $paidKrw = max(0, $totalKrw - $unpaidKrw);
 
         return [
-            'total_krw' => $totalKrw,
+            'total_krw' => $totalKrw,               // 진행중 총액 (거래완료 제외)
             'unpaid_krw' => $unpaidKrw,
             'paid_krw' => $paidKrw,
             'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
-            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/총)
-            'vehicle_count' => $count,
+            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총)
+            'vehicle_count' => $count,              // 진행중 건수
+            'completed_krw' => $completedKrw,       // 거래완료 총액 (분리 표기)
+            'completed_count' => $completedCount,
         ];
     }
 
