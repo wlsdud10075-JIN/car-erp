@@ -570,3 +570,13 @@ cherry-pick(.md 제외). 마이그 없음.
 
 > ⚠️ heyman 운영 적용 잔여: 기능설정에서 회사=HEYMAN 선택 + heyman 직인/서명/로고 업로드·XY조정
 >   (회사 토글·도장은 DB 데이터라 서버별 — 로컬 설정 운영 미전파).
+
+## 29. ssancar·karaba PHP 업로드 한도 2M→40M 소급 (2026-07-18, 배포 아님·서버 설정)
+
+**증상**: karaba(karaba-erp.com)에서 수출신고서·차량사진 업로드가 될 때 안 될 때 반복 + "미첨부" 모달. §21(heyman 2026-06-19)과 **동일 원인**.
+
+**원인**: §21 fix가 heyman 서버에만 수동 적용됐고 **ssancar·karaba 로 전파 안 됨**(karaba 2026-06-14·ssancar 2026-06-27 구축, §21은 6/19). 읽기전용 확인 결과 **ssancar·karaba 둘 다 `upload_max_filesize=2M`·`post_max_size=8M`**(우분투 기본). heyman 은 40M(정상). 2MB↑ 파일이 PHP-FPM 레벨에서 잘려 Livewire 훅 미발동 → 앱은 "미첨부"로 정직 표시(코드 버그 아님).
+
+**조치 (2대)**: `/etc/php/8.4/fpm/php.ini` → `40M/40M` (백업 `.bak-20260718`) → `sudo systemctl restart php8.4-fpm.service`(정확 유닛명) → **HTTPS phpinfo 프로브로 런타임 실측 검증**(`upload=40M post=40M` 확인) → 프로브 삭제. 두 대 모두 성공.
+
+**재발방지**: `scripts/karaba-1-stack.sh` 에 php.ini 40M sed 추가(신규 서버 자동) + 본 체크리스트에 항목 추가. ssancar(대물량) 정식 배포 시에도 이 스크립트 경로면 자동 반영.

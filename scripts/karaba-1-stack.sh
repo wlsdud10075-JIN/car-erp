@@ -28,6 +28,12 @@ sudo apt-get install -y \
   php8.4-dom php8.4-simplexml
 sudo update-alternatives --set php /usr/bin/php8.4 || true
 
+# PHP-FPM 업로드 한도 상향 — 기본 2M/8M 이면 서류·사진(2MB↑) 업로드가 PHP 레벨에서 잘림.
+#   (heyman 2026-06-19 사고 → ssancar·karaba 2026-07-18 소급. aws-deployment-record §21/§23)
+#   ⚠️ 반드시 정확 유닛명으로 재시작(glob no-op 함정) — 아래 [6/7] enable --now 가 커버.
+FPM_INI=/etc/php/8.4/fpm/php.ini
+sudo sed -i -E 's/^(upload_max_filesize[[:space:]]*=[[:space:]]*).*/\140M/; s/^(post_max_size[[:space:]]*=[[:space:]]*).*/\140M/' "$FPM_INI"
+
 echo "===== [4/7] nginx + MySQL + Node ====="
 sudo apt-get install -y nginx mysql-server nodejs
 

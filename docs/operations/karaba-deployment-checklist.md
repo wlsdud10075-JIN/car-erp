@@ -46,7 +46,9 @@
    sudo apt install -y php8.4-fpm php8.4-mysql php8.4-gd php8.4-zip \
      php8.4-mbstring php8.4-xml php8.4-curl php8.4-bcmath php8.4-intl \
      php8.4-dom php8.4-simplexml          # ← dom/zip 누락 주의(heyman 배포 실패 사례)
-   sudo systemctl restart php8.4-fpm
+   # 업로드 한도 40M — 기본 2M/8M 이면 2MB↑ 서류·사진 업로드 실패(§21/§29 사고). karaba-1-stack.sh 자동 반영.
+   sudo sed -i -E 's/^(upload_max_filesize[[:space:]]*=[[:space:]]*).*/\140M/; s/^(post_max_size[[:space:]]*=[[:space:]]*).*/\140M/' /etc/php/8.4/fpm/php.ini
+   sudo systemctl restart php8.4-fpm.service   # ← 정확 유닛명(glob no-op 함정)
    # zip CLI 미인식 시: sudo phpenmod zip && sudo systemctl restart php8.4-fpm
    sudo apt install -y nginx mysql-server composer
    # node: nvm 또는 nodesource로 LTS
