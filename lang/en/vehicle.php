@@ -410,6 +410,19 @@ return [
         'done' => 'Corrected overpayment of :amount (marked fully paid).',
     ],
 
+    'cancel' => [
+        'section_title' => 'Purchase Cancellation',
+        'hint' => 'Enter the penalty as the sale price on the Sale tab. Fully paid = cancellation complete; unpaid = close as receivable loss.',
+        'mark_btn' => 'Mark as cancelled',
+        'unmark_btn' => 'Undo cancellation',
+        'badge_active' => 'Cancelled',
+        'badge_done' => 'Cancel complete',
+        'badge_closed' => 'Closed unpaid',
+        'marked' => 'Marked as purchase cancellation. Enter the penalty as sale price on the Sale tab.',
+        'unmarked' => 'Purchase cancellation undone.',
+        'closed_no_unmark' => 'A closed (unpaid) cancellation cannot be undone.',
+    ],
+
     'toast' => [
         'db_constraint' => 'A data constraint error occurred while saving. Please check your inputs (sale date, buyer, exchange rate, amounts).',
         'buyer_first' => 'Select a buyer first',
