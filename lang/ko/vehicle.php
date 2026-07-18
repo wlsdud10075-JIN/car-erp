@@ -772,6 +772,8 @@ return [
         'note_empty' => '※ 양식이 비어있는 항목은 차량 등록 정보를 채운 후 다시 생성하세요.',
         'deregistration' => '자동차말소등록신청서',
         'deregistration_sub' => '별지 제17호 · .xlsx',
+        'deregistration_set' => '말소신청서 + 계약서',
+        'deregistration_set_sub' => '1파일 2탭 (신청서·계약서) · .xlsx',
         'derg_contract' => '말소 계약서',
         'poa' => '위임장',
         'invoice' => 'Proforma Invoice',

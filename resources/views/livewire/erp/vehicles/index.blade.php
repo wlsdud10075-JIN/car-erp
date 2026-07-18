@@ -1033,7 +1033,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 메일 첨부 후보 — 단계 업로드 파일 컬럼 / 자동생성 서류 type (VehicleDocumentController 와 정합)
     private const MAIL_STAGE_FILES = ['deregistration_document', 'export_declaration_document', 'bl_document'];
 
-    private const MAIL_GEN_ALL = ['deregistration', 'deregistration_contract', 'poa', 'clearance'];
+    private const MAIL_GEN_ALL = ['deregistration_set', 'poa', 'clearance'];
 
     private const MAIL_GEN_EXPORT = ['invoice', 'sales_contract', 'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'];
 
@@ -1090,6 +1090,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function mailGenLabel(string $type): string
     {
         $map = [
+            'deregistration_set' => 'deregistration_set',
             'deregistration' => 'deregistration', 'deregistration_contract' => 'derg_contract', 'poa' => 'poa',
             'invoice' => 'invoice', 'sales_contract' => 'sales_contract',
             'container_invoice_packing' => 'container_invoice_packing', 'container_contract' => 'container_contract',
@@ -6910,8 +6911,7 @@ function vehicleColumnsToggle() {
                     : '#';
                 // PDF·인쇄 모달용 서류 목록 (엑셀 카드와 동일 세트). export 단일 채널이라 전 서류 노출.
                 $pdfDocs = [
-                    ['type' => 'deregistration', 'label' => __('vehicle.docs.deregistration')],
-                    ['type' => 'deregistration_contract', 'label' => __('vehicle.docs.derg_contract')],
+                    ['type' => 'deregistration_set', 'label' => __('vehicle.docs.deregistration_set')],
                     ['type' => 'poa', 'label' => __('vehicle.docs.poa')],
                     ['type' => 'invoice', 'label' => __('vehicle.docs.invoice')],
                     ['type' => 'sales_contract', 'label' => __('vehicle.docs.sales_contract')],
@@ -6980,19 +6980,12 @@ function vehicleColumnsToggle() {
                 <span class="section-title">{{ __('vehicle.docs.sec_purchase') }}</span>
             </div>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <a href="{{ $url('deregistration') }}"
+                {{-- item 8 (2026-07-18) — 말소신청서+계약서 1파일 2시트 병합본 (구 2버튼 통합) --}}
+                <a href="{{ $url('deregistration_set') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
-                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.deregistration') }}</div>
-                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.deregistration_sub') }}</div>
-                    </div>
-                    <span class="text-xs text-violet-600">↓</span>
-                </a>
-                <a href="{{ $url('deregistration_contract') }}"
-                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
-                    <div>
-                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.derg_contract') }}</div>
-                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_purchase') }}</div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.deregistration_set') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.deregistration_set_sub') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>
