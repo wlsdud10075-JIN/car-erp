@@ -430,7 +430,7 @@ return [
     ],
 
     'cancel_filter' => [
-        'all' => 'Cancel: all',
+        'all' => 'All',
         'active' => 'Cancelled (unpaid)',
         'done' => 'Cancel done',
         'closed' => 'Closed unpaid',

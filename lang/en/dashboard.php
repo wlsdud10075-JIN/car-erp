@@ -90,7 +90,7 @@ return [
             'dhl_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'loaded → DHL not requested'],
             'settlement_wait' => ['l' => 'Settlement Pending', 'd' => 'method not set or needs review'],
             'freight_confirm' => ['l' => 'Incoterms Needed', 'd' => 'fully paid but incoterms (FOB/CFR) / freight not set → settlement held'],
-            'cancel_unpaid' => ['l' => 'Cancelled Unpaid', 'd' => 'penalty not collected — collect or close'],
+            'cancel_unpaid' => ['l' => 'Cancellations', 'd' => 'completed & unpaid cancellations (opens Receivables)'],
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => 'Deregistration Needed', 'd' => 'purchase done → not deregistered'],
@@ -112,7 +112,7 @@ return [
             'settlement_pay_needed' => ['l' => 'Settlement Payment Needed', 'd' => 'settlement = confirmed'],
             'payout_held' => ['l' => 'Payout Held (unpaid)', 'd' => 'confirmed but receivable remains → paid after collection'],
             'receivable_risk' => ['l' => 'Receivable Risk', 'd' => 'danger / critical grade'],
-            'cancel_unpaid' => ['l' => 'Cancelled Unpaid', 'd' => 'penalty not collected — close / loss handling'],
+            'cancel_unpaid' => ['l' => 'Cancellations', 'd' => 'completed & unpaid cancellations (unpaid → close / loss)'],
         ],
         'management' => [
             'approval_wait' => ['l' => 'Approval Items', 'd' => 'to be enabled in queue 14-3'],
