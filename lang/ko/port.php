@@ -26,6 +26,12 @@ return [
         'code_ph' => '예: 020-77-002',
         'code_note' => '부두 코드. 괄호 안 숫자 — 없는 항구는 비워둠',
         'active_note' => '활성 (드롭다운에 노출)',
+        'allow_shipping_wait' => '선적대기 허용 항로',
+        'allow_shipping_wait_note' => 'RORO 차량은 이 목적항으로 저장 시 통관·선적 진입 50% 게이트를 우회 없이 통과(항구 대기 서류작업). 미수는 선적전으로 유지되며, 출고일 입력 시 선적후로 전환됩니다.',
+    ],
+
+    'badge' => [
+        'shipping_wait' => '선적대기 허용',
     ],
 
     'type' => [

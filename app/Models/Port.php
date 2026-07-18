@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class Port extends Model
 {
-    protected $fillable = ['type', 'name', 'code', 'is_active'];
+    protected $fillable = ['type', 'name', 'code', 'is_active', 'allow_shipping_wait'];
 
     protected $casts = [
         'is_active' => 'boolean',
+        // 선적대기 허용 항로 (jin 2026-07-18) — discharge 타입에만 의미. RORO 차량 C5 우회.
+        'allow_shipping_wait' => 'boolean',
     ];
 
     public const TYPES = [

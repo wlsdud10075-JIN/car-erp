@@ -896,6 +896,16 @@ class Vehicle extends Model
                 return;   // 진입 우회 승인 — 통관·선적 모두 통과
             }
 
+            // 가드1 (jin 2026-07-18, item 2) — 선적대기 허용 항로: shipping_method=RORO + 도착항 마스터
+            //   allow_shipping_wait 플래그. 해당 항로는 우회 없이 통관·선적 진입(선적대기 서류작업) 허용 →
+            //   C5(50%) 게이트 skip. 하드코딩('알바니아 두레스') 대신 항구 마스터 데이터로 지정(관리자 편집).
+            //   ⚠ 선적된 게 아니라 항구 주차장 대기 = 선적전 미수(warehouse_out_date pivot, item 3)로 유지.
+            if ($this->shipping_method === 'RORO'
+                && $this->discharge_port_id
+                && $this->dischargePort?->allow_shipping_wait) {
+                return;
+            }
+
             // 외화 환율 미입력 → 미수율 평가 불가
             if ($this->currency !== 'KRW' && ((float) $this->exchange_rate <= 0)) {
                 throw ValidationException::withMessages([
