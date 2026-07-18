@@ -38,6 +38,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url(as: 'exclude')] public array $excludeStatuses = [];
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
     #[Url] public string $cancelFilter = '';
+    // 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지). transport_fee = 입력값.
+    #[Url] public string $freightExact = '';
     // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
@@ -692,7 +694,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private const SORTABLE_COLUMNS = [
         'vehicle_number', 'brand', 'progress_status_cache',
         'purchase_date', 'sale_date', 'shipping_date', 'bl_issue_date',
-        'salesman_id', 'sale_price', 'purchase_price',
+        'salesman_id', 'sale_price', 'purchase_price', 'transport_fee',
         'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'created_at',
     ];
 
@@ -1077,7 +1079,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset([
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
-            'sortColumn', 'sortDirection',
+            'sortColumn', 'sortDirection', 'freightExact',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
         $this->dateFrom = now()->subYear()->format('Y-m-d');
@@ -1583,6 +1585,30 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function vehicles()
     {
+        return $this->filteredVehicleQuery()
+            ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+            ->orderBy($this->sortColumn, $this->sortDirection)
+            ->paginate($this->perPage);
+    }
+
+    /** 필터 결과 운임비 합계·건수 (item 6, jin 2026-07-18) — 헤더 총계. 페이지 무관 전체 필터 결과. */
+    #[Computed]
+    public function freightTotals(): array
+    {
+        $q = $this->filteredVehicleQuery();
+
+        return [
+            'count' => (clone $q)->count(),
+            'sum' => (int) (clone $q)->sum('transport_fee'),
+        ];
+    }
+
+    /**
+     * 목록 필터 체인 — vehicles(페이지) · freightTotals(합계) 공용 단일 출처 (item 6, jin 2026-07-18).
+     * 정렬·페이지네이션·eager load 는 호출부에서.
+     */
+    private function filteredVehicleQuery()
+    {
         $dateColumn = match ($this->dateType) {
             'sale'           => 'sale_date',
             'deregistration' => 'deregistration_date',
@@ -1590,24 +1616,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl'             => 'bl_issue_date',
             default          => 'purchase_date',
         };
-        // 선적 묶기(jin 2026-07-09 (a)안): 검색과 선택 분리 — 목록은 항상 검색/필터 결과를 보여주고,
-        //   선택(shipDocIds)은 위쪽 칩(태그)으로 별도 표시. 목록을 담긴 것만으로 하이재킹하지 않는다.
         // dateType='all' → 날짜 무관 전체조회 (기간 필터 skip). 'balance' → 잔금입금 whereHas 별도.
         $applyDateFilter = $this->dateType !== 'all' && $this->dateType !== 'balance';
 
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
-        // 편집 권한 (L590~) 과 정합 — 본 사용자 차량만 노출 → 다른 영업 차량 클릭 시도 자체 차단.
         $user = auth()->user();
         $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
 
         // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업의 차량만.
-        // admin/super 전체. 영업은 위 restrictToOwnSalesman 우선. [관리]만 subordinates 의 salesman.
-        // subordinates 0명 → whereIn([]) → 빈 결과 (의도. /admin/users 에서 배정 안내 필요).
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Vehicle::query()
-            ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
@@ -1639,8 +1659,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
                 ->when($this->dateFrom, fn ($x) => $x->whereDate('payment_date', '>=', $this->dateFrom))
                 ->when($this->dateTo, fn ($x) => $x->whereDate('payment_date', '<=', $this->dateTo))))
-            ->orderBy($this->sortColumn, $this->sortDirection)
-            ->paginate($this->perPage);
+            // 운임비 정확검색 (item 6) — 입력 시 transport_fee = 값. 콤마 제거 후 정수 비교.
+            ->when($this->freightExact !== '', fn ($q) => $q->where('transport_fee', (int) preg_replace('/\D/', '', $this->freightExact)));
     }
 
     /**
@@ -4722,7 +4742,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex items-center justify-between">
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ __('vehicle.title') }}</h1>
-        <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.total', ['count' => $this->vehicles->total()]) }}</p>
+        <p class="mt-0.5 text-xs text-gray-500">
+            {{ __('vehicle.total', ['count' => $this->vehicles->total()]) }}
+            <span class="ml-1.5 text-gray-400">· {{ __('vehicle.freight_total', ['amount' => number_format($this->freightTotals['sum'])]) }}</span>
+        </p>
     </div>
     <div class="flex items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
@@ -4787,6 +4810,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="closed">{{ __('vehicle.cancel_filter.closed') }}</option>
             <option value="normal">{{ __('vehicle.cancel_filter.normal') }}</option>
         </select>
+        {{-- 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지) --}}
+        <input wire:model="freightExact" wire:keydown.enter="applyFilters" type="text" data-money
+               placeholder="{{ __('vehicle.freight_ph') }}" title="{{ __('vehicle.freight_ph') }}"
+               class="input-filter w-32" />
         <button wire:click="applyFilters" class="btn-search">{{ __('vehicle.search_btn') }}</button>
         <button type="button" wire:click="resetFilters"
                 class="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
@@ -5000,6 +5027,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>
                 <th class="pb-2 font-medium"></th>
@@ -5088,6 +5116,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @else -
                     @endif
                 </td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
+                    @if($v->transport_fee > 0)₩{{ number_format($v->transport_fee) }}@else -@endif
+                </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
                     @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
                 </td>
@@ -5104,7 +5135,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="20" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
+            <tr><td colspan="21" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
             @endforelse
         </tbody>
         </table>
@@ -5117,6 +5148,7 @@ function vehicleColumnsToggle() {
     const STORAGE_KEY = 'car_erp_vehicles_columns_v3';   // v3: 기본=브랜드/차종·매입일·말소일·판매총액 (jin 2026-07-07)
     const defaultVisible = {
         brand_model: true, purchase_date: true, deregistration_date: true, sale_total: true,
+        transport_fee: true,
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
         export_declaration_number: false, container_number: false,
@@ -5144,6 +5176,7 @@ function vehicleColumnsToggle() {
             { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
             { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
             { key: 'sale_total',     label: @json(__('vehicle.col.sale_total')) },
+            { key: 'transport_fee',  label: @json(__('vehicle.col.transport_fee')) },
             { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
             { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
         ],

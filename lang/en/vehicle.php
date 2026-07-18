@@ -61,6 +61,7 @@ return [
         'purchase_price' => 'Buy Price',
         'sale_price' => 'Sell Price',
         'sale_total' => 'Sell Total',
+        'transport_fee' => 'Freight',
         'unpaid_amount' => 'Outstanding',
         'unpaid_ratio' => 'Paid %',
         'unpaid_purchase' => 'Purchase unpaid',
@@ -74,6 +75,8 @@ return [
     'delete' => 'Delete',
     'delete_confirm' => 'Delete vehicle :number?',
     'empty' => 'No vehicles.',
+    'freight_total' => 'Freight total ₩:amount',
+    'freight_ph' => 'Freight amount',
 
     'shipdoc_select_title' => 'Multi-select for shipping docs (export vehicles)',
     'selected' => ':count selected',
