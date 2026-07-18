@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -121,6 +122,62 @@ class PurchaseCancelTest extends TestCase
 
         $this->assertSame(1, $kpis['cancel_active']);
         $this->assertSame(1, $kpis['cancel_closed']);
+    }
+
+    private function cancelledUnpaidVehicle(string $plate, string $smType): Vehicle
+    {
+        $buyer = Buyer::create(['name' => 'B'.$plate, 'is_active' => true]);
+        $sm = Salesman::create(['name' => 'S'.$plate, 'is_active' => true, 'type' => $smType]);
+
+        return Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export',
+            'currency' => 'EUR', 'exchange_rate' => 1746, 'sale_price' => 600,
+            'sale_date' => '2026-05-25', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
+            'cancel_status' => Vehicle::CANCEL_ACTIVE,
+        ]);
+    }
+
+    public function test_close_freezes_shortfall_freelancer_half(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('CL1', 'freelance');   // 600 EUR 미수 × 1746 = 1,047,600
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->call('closePurchaseCancelUnpaid')
+            ->assertSet('cancelStatus', Vehicle::CANCEL_CLOSED);
+
+        $v->refresh();
+        $this->assertSame(Vehicle::CANCEL_CLOSED, $v->cancel_status);
+        $this->assertSame(1_047_600, (int) $v->cancel_shortfall_krw);
+        $this->assertSame(523_800, $v->cancel_freelancer_loss_krw);   // 프리랜서 절반
+    }
+
+    public function test_close_employee_bears_no_loss(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('CL2', 'employee');
+
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->call('closePurchaseCancelUnpaid');
+
+        $v->refresh();
+        $this->assertSame(1_047_600, (int) $v->cancel_shortfall_krw);
+        $this->assertSame(0, $v->cancel_freelancer_loss_krw);   // 사내직원 = 회사 전액 부담
+    }
+
+    public function test_close_blocked_when_fully_paid(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('CL3', 'freelance');
+        $v->finalPayments()->create([
+            'amount' => 600, 'type' => 'balance', 'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);   // 완납
+
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->call('closePurchaseCancelUnpaid');
+
+        $v->refresh();
+        $this->assertSame(Vehicle::CANCEL_ACTIVE, $v->cancel_status);   // 마감 안 됨
+        $this->assertNull($v->cancel_shortfall_krw);
     }
 
     public function test_label_computes_done_from_unpaid(): void

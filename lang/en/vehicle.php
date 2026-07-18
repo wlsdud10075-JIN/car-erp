@@ -421,6 +421,12 @@ return [
         'marked' => 'Marked as purchase cancellation. Enter the penalty as sale price on the Sale tab.',
         'unmarked' => 'Purchase cancellation undone.',
         'closed_no_unmark' => 'A closed (unpaid) cancellation cannot be undone.',
+        'close_btn' => 'Close unpaid',
+        'close_confirm' => 'Give up collecting the penalty and close. The shortfall becomes a confirmed loss and the freelancer bears half. Proceed?',
+        'close_only_active' => 'Only an active cancellation can be closed.',
+        'close_no_unpaid' => 'No unpaid amount. A fully-paid cancellation cannot be closed.',
+        'closed' => 'Closed unpaid. Loss of :amount confirmed (freelancer bears half).',
+        'closed_loss' => 'Closed unpaid · loss :amount confirmed (freelancer half deducted in monthly batch loss summary)',
     ],
 
     'toast' => [
