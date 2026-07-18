@@ -180,6 +180,34 @@ class PurchaseCancelTest extends TestCase
         $this->assertNull($v->cancel_shortfall_krw);
     }
 
+    public function test_payout_batch_cancel_loss_summary(): void
+    {
+        // 월배치 제출자(관리 role, approvalRank 1·2) — markCancelLossSettled 권한 canSubmitPayoutBatch 필요.
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]));
+        $fm = Salesman::create(['name' => 'Free', 'is_active' => true, 'type' => 'freelance']);
+        $em = Salesman::create(['name' => 'Emp', 'is_active' => true, 'type' => 'employee']);
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $mkClosed = fn (string $plate, Salesman $sm, int $shortfall) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'sale_price' => $shortfall, 'sale_date' => '2026-07-05', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
+            'cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => $shortfall, 'cancelled_at' => '2026-07-10',
+        ]);
+        $mkClosed('F1', $fm, 1_000_000);   // 몫 500,000
+        $mkClosed('F2', $fm, 600_000);     // 몫 300,000
+        $mkClosed('E1', $em, 800_000);     // 사내직원 → 제외
+
+        $c = Volt::test('erp.payout-batches.index')->set('lossFrom', '2026-07-01')->set('lossTo', '2026-07-31');
+        $cl = $c->instance()->cancelLosses();
+
+        $this->assertCount(1, $cl['groups']);                    // 프리랜서 1명만
+        $this->assertSame(800_000, $cl['groups'][0]['subtotal']); // 500k + 300k
+        $this->assertSame(800_000, $cl['grand_total']);
+
+        // 반영 표시 → 요약에서 제외(이중청구 방지)
+        $c->call('markCancelLossSettled', $fm->id);
+        $this->assertEmpty($c->instance()->cancelLosses()['groups']);
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
