@@ -32,6 +32,11 @@ return [
     'all_buyer' => 'All buyers',
     'all_progress' => 'All statuses',
     'all_risk' => 'All risk levels',
+    'cancel' => [
+        'all' => 'All (incl. cancelled)',
+        'only' => 'Cancelled only',
+        'normal' => 'Normal only',
+    ],
     'ratio_all' => 'Unpaid % ALL',
     'ratio_min' => ':percent%+',
 

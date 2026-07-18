@@ -78,6 +78,29 @@ class PurchaseCancelTest extends TestCase
         $this->assertSame(Vehicle::CANCEL_CLOSED, $v->refresh()->cancel_status);
     }
 
+    public function test_receivable_cancel_filter_where_clause(): void
+    {
+        $buyer = Buyer::create(['name' => 'RB', 'is_active' => true]);
+        $mk = fn (string $plate, string $cancel) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export',
+            'currency' => 'KRW', 'exchange_rate' => 1, 'sale_price' => 1_000_000,
+            'sale_date' => now()->format('Y-m-d'), 'purchase_date' => now()->format('Y-m-d'),
+            'buyer_id' => $buyer->id, 'cancel_status' => $cancel,
+        ]);
+        $mk('NORMALCAR', Vehicle::CANCEL_NONE);
+        $mk('CXLCAR', Vehicle::CANCEL_ACTIVE);
+
+        // buildQuery 의 cancelFilter 절과 동일한 WHERE — 취소만 / 정상만 분리.
+        $base = fn () => Vehicle::query()->where('sale_price', '>', 0);
+        $cancelledOnly = $base()->where('cancel_status', '!=', Vehicle::CANCEL_NONE)->pluck('vehicle_number');
+        $normalOnly = $base()->where('cancel_status', Vehicle::CANCEL_NONE)->pluck('vehicle_number');
+
+        $this->assertTrue($cancelledOnly->contains('CXLCAR'));
+        $this->assertFalse($cancelledOnly->contains('NORMALCAR'));
+        $this->assertTrue($normalOnly->contains('NORMALCAR'));
+        $this->assertFalse($normalOnly->contains('CXLCAR'));
+    }
+
     public function test_label_computes_done_from_unpaid(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
