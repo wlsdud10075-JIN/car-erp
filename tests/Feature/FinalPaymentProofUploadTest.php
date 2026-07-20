@@ -68,6 +68,25 @@ class FinalPaymentProofUploadTest extends TestCase
         Storage::disk($disk)->assertMissing($path);
     }
 
+    public function test_proof_filename_visible_on_locked_payment(): void
+    {
+        // jin 발견 버그 — 저장된 잔금은 채권관리 미러링으로 locked 렌더. 전시문 다운로드가 locked 행에도 보여야.
+        $disk = config('filesystems.vehicle_docs_disk');
+        Storage::fake($disk);
+        $v = Vehicle::create(['vehicle_number' => 'PRF4', 'sales_channel' => 'export']);
+        $path = "vehicles/{$v->id}/payment-proofs/9/송금증_wire.pdf";
+        Storage::disk($disk)->put($path, 'dummy');
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'amount' => 700_000, 'type' => 'balance',
+            'payment_date' => '2026-05-05', 'proof_path' => $path,
+        ]);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSee('송금증_wire.pdf');   // locked 행 아래 전시문 파일명 노출
+    }
+
     public function test_proof_path_not_ledger_locked_on_confirmed_payment(): void
     {
         // proof_path 는 회계 잠금 대상 아님 — 재무 확정된 잔금에도 첨부 가능(amount/date/rate 만 잠금).
