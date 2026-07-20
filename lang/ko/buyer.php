@@ -32,6 +32,10 @@ return [
         'completed_value' => ':count대 · ₩:amount',
         'shipped_label' => '선적 후 (별도)',
         'shipped_value' => ':count대 · ₩:amount',
+        'deposit_title' => '보증금 여력 (선적 전 :pct%)',
+        'deposit_available' => '남은 ₩:amount',
+        'deposit_limit' => '한도 ₩:amount',
+        'deposit_used' => '사용중(미수) ₩:amount',
     ],
     'fees' => [
         'title' => '💸 누적 셀러부담액 (수수료·손실)',

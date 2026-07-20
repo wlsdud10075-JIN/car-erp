@@ -107,9 +107,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
             ]);
 
+        $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
-            $gauge = Buyer::computeReceivableGauge($group);
+            $gauge = Buyer::computeReceivableGauge($group, $depositThreshold);
             if ($gauge !== null) {
                 $out[(int) $bid] = $gauge;
             }
@@ -761,6 +762,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-medium" style="color: hsl({{ round($hue) }},70%,38%)">{{ __('buyer.receivable.unpaid_ratio', ['pct' => number_format($r * 100, 1)]) }}</span>
                     @endif
                 </div>
+                {{-- 보증금 여력 (jin 2026-07-20) — 선적 전 총액의 N%까지 신규 매입에 쓸 수 있는 한도. 표시용(락은 미수율 판정). --}}
+                @if(($br['limit_krw'] ?? 0) > 0)
+                <div class="mt-2 rounded-md border border-violet-200 bg-violet-50/70 px-2.5 py-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-violet-800">{{ __('buyer.receivable.deposit_title', ['pct' => $br['deposit_pct']]) }}</span>
+                        <span class="text-sm font-bold {{ $br['available_krw'] > 0 ? 'text-violet-900' : 'text-red-600' }}">
+                            {{ __('buyer.receivable.deposit_available', ['amount' => number_format($br['available_krw'])]) }}
+                        </span>
+                    </div>
+                    <div class="mt-1 flex items-center justify-between text-[11px] text-violet-500">
+                        <span>{{ __('buyer.receivable.deposit_limit', ['amount' => number_format($br['limit_krw'])]) }}</span>
+                        <span>{{ __('buyer.receivable.deposit_used', ['amount' => number_format($br['used_krw'])]) }}</span>
+                    </div>
+                </div>
+                @endif
                 {{-- 거래완료 분리 (jin 2026-07-18) — 위 미수/총액은 '진행중'만. 거래완료는 별도 표기(미수율 희석 방지). --}}
                 @if(($br['completed_count'] ?? 0) > 0)
                 <div class="mt-1.5 flex items-center justify-between border-t border-gray-200 pt-1.5 text-xs text-gray-400">

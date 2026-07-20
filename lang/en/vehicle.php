@@ -573,6 +573,7 @@ return [
         'subtitle' => 'This buyer still owes a large amount, so new vehicle registration is blocked.',
         'unpaid' => 'Outstanding ₩:amount · :count vehicles',
         'ratio' => 'Unpaid :pct%',
+        'deposit' => 'Deposit limit ₩:limit (:pct% of pre-ship total ₩:total) exceeded — unpaid over limit, registration blocked',
         'reason' => 'Approval reason',
         'reason_ph' => 'e.g. L/C confirmed. Balance payment expected 5/20.',
         'need_manager' => 'Manager approval is required to proceed. Collect the outstanding amount and retry.',

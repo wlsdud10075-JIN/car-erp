@@ -97,10 +97,15 @@ class Buyer extends Model
      *   신규 매입 한도에 안 잡는다(선적전/후 미수 pivot=출고일, SKILLS §14 와 동일 축). 선적 후 총액·건수는
      *   shipped_krw/shipped_count 로 별도 반환(표기용). 거래완료가 우선 — 거래완료면 completed 버킷.
      *
+     * 보증금 여력(jin 2026-07-20): 선적 전 총액 × 매입등록락 임계 = 한도(낼 수 있는 미수 상한).
+     *   남은 여력 = 한도 − 현재 미수. "이 바이어한테 앞으로 얼마까지 더 태울 수 있나"를 숫자로 노출(락 로직 동일).
+     *   $depositThreshold 미지정 시 Setting::lockThreshold('purchase_registration')(기본 0.5). 배치는 1회 계산해 전달(N+1 방지).
+     *
      * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date 로드된 Vehicle 컬렉션
      */
-    public static function computeReceivableGauge(iterable $vehicles): ?array
+    public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null): ?array
     {
+        $depositThreshold ??= Setting::lockThreshold('purchase_registration');
         $totalKrw = 0;
         $unpaidKrw = 0;
         $count = 0;
@@ -137,14 +142,20 @@ class Buyer extends Model
         }
 
         $paidKrw = max(0, $totalKrw - $unpaidKrw);
+        $limitKrw = (int) ($totalKrw * $depositThreshold);      // 보증금 한도 = 선적 전 총액 × 임계
 
         return [
-            'total_krw' => $totalKrw,               // 진행중 총액 (거래완료 제외)
+            'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
             'unpaid_krw' => $unpaidKrw,
             'paid_krw' => $paidKrw,
             'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
             'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총)
             'vehicle_count' => $count,              // 진행중·선적 전 건수
+            // 보증금 여력 (jin 2026-07-20) — 표시용. 락 판정은 ratio 그대로.
+            'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
+            'limit_krw' => $limitKrw,               // 보증금 한도 (낼 수 있는 미수 상한)
+            'used_krw' => $unpaidKrw,               // 사용중 = 현재 미수
+            'available_krw' => max(0, $limitKrw - $unpaidKrw),      // 남은 여력
             'completed_krw' => $completedKrw,       // 거래완료 총액 (분리 표기)
             'completed_count' => $completedCount,
             'shipped_krw' => $shippedKrw,           // 선적 후(출고) 총액 (분리 표기)

@@ -3471,6 +3471,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'ratio' => round($gauge['ratio'] * 100, 1),
                     'unpaid' => $gauge['unpaid_krw'],
                     'count' => $gauge['vehicle_count'],
+                    // 보증금 여력 (jin 2026-07-20) — 한도 초과 상태라 available 은 0
+                    'deposit_pct' => $gauge['deposit_pct'],
+                    'limit' => $gauge['limit_krw'],
+                    'total' => $gauge['total_krw'],
                 ];
                 $this->purchaseGateReason = '';
                 $this->showPurchaseGate = true;
@@ -7991,6 +7995,10 @@ function vehicleColumnsToggle() {
                 <div class="mt-1 flex items-center justify-between text-red-700">
                     <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
                     <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
+                </div>
+                {{-- 보증금 여력 (jin 2026-07-20) — 한도 대비 미수가 초과라 차단됨 --}}
+                <div class="mt-1.5 border-t border-red-200 pt-1.5 text-xs text-red-600">
+                    {{ __('vehicle.purchase_gate.deposit', ['pct' => $pg['deposit_pct'] ?? 50, 'limit' => number_format((int) ($pg['limit'] ?? 0)), 'total' => number_format((int) ($pg['total'] ?? 0))]) }}
                 </div>
             </div>
 

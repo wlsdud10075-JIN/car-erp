@@ -32,6 +32,10 @@ return [
         'completed_value' => ':count vehicles · ₩:amount',
         'shipped_label' => 'Shipped out (separate)',
         'shipped_value' => ':count vehicles · ₩:amount',
+        'deposit_title' => 'Deposit room (pre-ship :pct%)',
+        'deposit_available' => '₩:amount left',
+        'deposit_limit' => 'Limit ₩:amount',
+        'deposit_used' => 'Used (unpaid) ₩:amount',
     ],
     'fees' => [
         'title' => '💸 Cumulative Seller-Absorbed Amount (fees · write-offs)',
