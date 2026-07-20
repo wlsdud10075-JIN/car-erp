@@ -441,6 +441,19 @@ document.addEventListener('focusin', (e) => {
     }
 });
 
+// ★ 1970 버그 방어 (jin 2026-07-20) — 20260717 타이핑 후 Enter 없이 저장 시 1970으로 저장되던 문제.
+//   원인: flatpickr blur 재포맷은 triggerChange=false 라 onChange('input') 미발생 → Livewire deferred 모델이
+//         타이핑 중 들어간 raw "20260717" 을 그대로 전송 → Eloquent date 캐스트가 순수 숫자를 Unix 타임스탬프로 오인.
+//   해결: focus 벗어날 때(focusout, 버블) 8자리 숫자를 Y-m-d 로 정규화 + 'input' 재발행으로 Livewire 동기화.
+//        타이밍 독립 — flatpickr 가 이미 "2026-07-17" 로 바꿔놨어도 정규식 미매치라 값은 그대로, 동기화만 보장.
+document.addEventListener('focusout', (e) => {
+    const el = e.target;
+    if (!(el && el.matches && el.matches('input[data-date]'))) return;
+    const m = el.value.trim().match(/^(\d{4})(\d{2})(\d{2})$/);
+    if (m) el.value = `${m[1]}-${m[2]}-${m[3]}`;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
 // 로드/네비/morph 시 미init 요소 사전 스캔(값 표시·잔금 행 추가 대비). morph 는 문서 전체 재스캔.
 document.addEventListener('DOMContentLoaded', () => initFlatpickr());
 document.addEventListener('livewire:navigated', () => initFlatpickr());

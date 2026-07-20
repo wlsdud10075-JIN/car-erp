@@ -3560,7 +3560,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');
-        $toDate = fn(string $v): ?string => $v !== '' ? $v : null;
+        // 8자리 숫자(YYYYMMDD)는 Y-m-d 로 정규화 — flatpickr 미포맷 raw 입력 방어(jin 2026-07-20).
+        //   순수 숫자를 그대로 두면 Eloquent date 캐스트가 Unix 타임스탬프로 오인 → 1970 저장.
+        $toDate = function (string $v): ?string {
+            $v = trim($v);
+            if ($v === '') {
+                return null;
+            }
+            if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $v, $m)) {
+                return "{$m[1]}-{$m[2]}-{$m[3]}";
+            }
+
+            return $v;
+        };
         $toId = fn(string $v): ?int => $v !== '' ? (int)$v : null;
 
         $data = [
@@ -5272,7 +5284,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
-                    @if($v->transport_fee > 0)₩{{ number_format($v->transport_fee) }}@else -@endif
+                    @if($v->transport_fee > 0){{ number_format($v->transport_fee) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>@else -@endif
                 </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
                     @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
