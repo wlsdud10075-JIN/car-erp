@@ -30,6 +30,8 @@ return [
         'unpaid_ratio' => 'Unpaid :pct%',
         'completed_label' => 'Completed (separate)',
         'completed_value' => ':count vehicles · ₩:amount',
+        'shipped_label' => 'Shipped out (separate)',
+        'shipped_value' => ':count vehicles · ₩:amount',
     ],
     'fees' => [
         'title' => '💸 Cumulative Seller-Absorbed Amount (fees · write-offs)',

@@ -30,6 +30,8 @@ return [
         'unpaid_ratio' => '미수율 :pct%',
         'completed_label' => '거래완료 (별도)',
         'completed_value' => ':count대 · ₩:amount',
+        'shipped_label' => '선적 후 (별도)',
+        'shipped_value' => ':count대 · ₩:amount',
     ],
     'fees' => [
         'title' => '💸 누적 셀러부담액 (수수료·손실)',
