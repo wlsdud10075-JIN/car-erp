@@ -32,6 +32,7 @@ class InterVehicleTransfer extends Model
     protected $fillable = [
         'source_vehicle_id', 'target_vehicle_id', 'buyer_id',
         'amount', 'currency',
+        'kind', 'target_payment_type',
         'approval_request_id',
         'status',
         'executed_at', 'voided_at', 'void_reason',
@@ -50,6 +51,11 @@ class InterVehicleTransfer extends Model
         'finance_rejected_at' => 'datetime',
         'void_finance_rejected_at' => 'datetime',
     ];
+
+    /** 이체 종류 — standard(기존 요청→관리→재무) / deposit_apply(보증금 적용: 기안→최고관리자 승인=즉시적용). */
+    public const KIND_STANDARD = 'standard';
+
+    public const KIND_DEPOSIT_APPLY = 'deposit_apply';
 
     public const STATUS_PENDING = 'pending';
 

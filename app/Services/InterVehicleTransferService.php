@@ -134,6 +134,152 @@ class InterVehicleTransferService
     }
 
     /**
+     * 보증금 적용 (jin 2026-07-20) — [관리]/업무관리자 기안. status=pending(결제 대기중) + ApprovalRequest(deposit_apply).
+     *   기존 request()와 방향 동일(source=끌어올 차, target=신규 차)이나, 승인=최고관리자 → 즉시 적용(executeDepositApply).
+     *   $paymentType: 타겟 입금 유형 — deposit_down(계약금) / balance(잔금).
+     *
+     * @throws DomainException 가드 위반·유형 오류 시
+     */
+    public function applyDeposit(
+        Vehicle $source,
+        Vehicle $target,
+        float $amount,
+        User $drafter,
+        string $paymentType,
+        ?string $reason = null,
+    ): InterVehicleTransfer {
+        if (! in_array($paymentType, ['deposit_down', 'balance'], true)) {
+            throw new DomainException('입금 유형은 계약금(deposit_down) 또는 잔금(balance) 이어야 합니다.');
+        }
+        $this->assertGuards($source, $target, $amount);
+
+        // 중복 차단 — 소스 기준 미처리 이체(활성 ApprovalRequest) 있으면 차단 (request() 동일 정책).
+        $inProgress = InterVehicleTransfer::where('source_vehicle_id', $source->id)
+            ->whereIn('status', [
+                InterVehicleTransfer::STATUS_PENDING,
+                InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])
+            ->whereHas('approvalRequest', fn ($q) => $q->whereIn('status', [
+                ApprovalRequest::STATUS_PENDING,
+                ApprovalRequest::STATUS_APPROVED,
+            ]))
+            ->first();
+        if ($inProgress) {
+            $label = InterVehicleTransfer::STATUSES[$inProgress->status] ?? $inProgress->status;
+            throw new DomainException("이 차량에 미처리 자금 이체가 있습니다 (현재 상태: {$label}). 처리 완료/거부 후 재시도하세요.");
+        }
+
+        return DB::transaction(function () use ($source, $target, $amount, $drafter, $paymentType, $reason) {
+            $approvalReq = ApprovalRequest::create([
+                'requester_id' => $drafter->id,
+                'action_type' => ApprovalRequest::TYPE_INTER_VEHICLE_DEPOSIT_APPLY,
+                'target_type' => Vehicle::class,
+                'target_id' => $target->id,   // 타겟(신규 차) 기준
+                'status' => ApprovalRequest::STATUS_PENDING,
+                'reason' => $reason,
+                'payload' => [
+                    'source_vehicle_id' => $source->id,
+                    'source_vehicle_number' => $source->vehicle_number,
+                    'target_vehicle_id' => $target->id,
+                    'target_vehicle_number' => $target->vehicle_number,
+                    'buyer_id' => $source->buyer_id,
+                    'amount' => $amount,
+                    'currency' => $source->currency,
+                    'payment_type' => $paymentType,
+                ],
+            ]);
+
+            return InterVehicleTransfer::create([
+                'source_vehicle_id' => $source->id,
+                'target_vehicle_id' => $target->id,
+                'buyer_id' => $source->buyer_id,
+                'amount' => $amount,
+                'currency' => $source->currency,
+                'kind' => InterVehicleTransfer::KIND_DEPOSIT_APPLY,
+                'target_payment_type' => $paymentType,
+                'approval_request_id' => $approvalReq->id,
+                'status' => InterVehicleTransfer::STATUS_PENDING,
+                'requester_id' => $drafter->id,
+            ]);
+        });
+    }
+
+    /**
+     * 보증금 적용 승인 = 즉시 적용 (jin 2026-07-20). 최고관리자(admin) 승인 시 ApprovalRequest.execute() 경유 호출.
+     *   pending → executed. FinalPayment 페어 즉시 생성(source −amount / target +amount, 유형=target_payment_type).
+     *   재무 확정 단계 없음(기존 standard 이체와 분리).
+     *
+     * 가드: 최고관리자(isAdmin) 승인 + SoD(승인자 ≠ 기안자) + assertGuards 재검증 + atomic 상태전이.
+     *
+     * @throws DomainException 위 가드 위반 시
+     */
+    public function executeDepositApply(InterVehicleTransfer $transfer, User $approver): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->kind !== InterVehicleTransfer::KIND_DEPOSIT_APPLY) {
+            throw new DomainException('보증금 적용 이체가 아닙니다.');
+        }
+        if (! $approver->isAdmin()) {
+            throw new DomainException('보증금 적용은 최고관리자만 승인할 수 있습니다.');
+        }
+        // SoD — 기안자 ≠ 승인자.
+        if ($transfer->requester_id !== null && $transfer->requester_id === $approver->id) {
+            throw new DomainException('기안자와 승인자는 다른 사용자여야 합니다 (SoD).');
+        }
+
+        $this->assertGuards($transfer->sourceVehicle, $transfer->targetVehicle, (float) $transfer->amount);
+
+        DB::transaction(function () use ($transfer, $approver) {
+            $confirmedAt = now();
+
+            // atomic 상태전이 — pending 1건만 executed 로. 동시/중복 승인 시 결제쌍 중복 방지.
+            $affected = InterVehicleTransfer::whereKey($transfer->id)
+                ->where('status', InterVehicleTransfer::STATUS_PENDING)
+                ->update([
+                    'status' => InterVehicleTransfer::STATUS_EXECUTED,
+                    'executed_at' => $confirmedAt,
+                    'approver_id' => $approver->id,
+                    'confirmed_by_user_id' => $approver->id,
+                    'confirmed_at' => $confirmedAt,
+                ]);
+            if ($affected !== 1) {
+                throw new DomainException('이미 처리됐거나 상태가 변경된 이체입니다 (동시 승인 방지).');
+            }
+
+            $today = now()->toDateString();
+            $amount = (float) $transfer->amount;
+            $type = $transfer->target_payment_type ?: 'balance';
+            $marker = "보증금 적용 #{$transfer->id} (최고관리자 승인 #{$approver->id})";
+
+            // source (음수, 잔금 성격) — 그 차 보증금을 뺌
+            FinalPayment::create([
+                'vehicle_id' => $transfer->source_vehicle_id,
+                'transfer_id' => $transfer->id,
+                'amount' => -$amount,
+                'type' => 'balance',
+                'payment_date' => $today,
+                'note' => "→ 차량 #{$transfer->target_vehicle_id} 보증금 적용 ({$marker})",
+                'confirmed_by_user_id' => $approver->id,
+                'confirmed_at' => $confirmedAt,
+            ]);
+            // target (양수, 선택 유형=계약금/잔금)
+            FinalPayment::create([
+                'vehicle_id' => $transfer->target_vehicle_id,
+                'transfer_id' => $transfer->id,
+                'amount' => $amount,
+                'type' => $type,
+                'payment_date' => $today,
+                'note' => "← 차량 #{$transfer->source_vehicle_id} 보증금 적용 ({$marker})",
+                'confirmed_by_user_id' => $approver->id,
+                'confirmed_at' => $confirmedAt,
+            ]);
+        });
+
+        $transfer->refresh();
+    }
+
+    /**
      * 큐 19-F — 관리 승인 (의사결정만, final_payment 미생성).
      *
      * pending → approved_awaiting_finance.
