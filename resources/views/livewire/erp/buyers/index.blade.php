@@ -104,7 +104,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->get([
                 'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
                 'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
-                'sale_unpaid_amount_krw_cache', 'progress_status_cache',
+                'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
             ]);
 
         $out = [];
@@ -766,6 +766,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-1.5 flex items-center justify-between border-t border-gray-200 pt-1.5 text-xs text-gray-400">
                     <span>{{ __('buyer.receivable.completed_label') }}</span>
                     <span>{{ __('buyer.receivable.completed_value', ['count' => $br['completed_count'], 'amount' => number_format($br['completed_krw'])]) }}</span>
+                </div>
+                @endif
+                {{-- 선적 후(출고) 분리 (jin 2026-07-20) — 매입 락은 선적 전(국내) 총액 기준. 선적 후는 별도 표기. --}}
+                @if(($br['shipped_count'] ?? 0) > 0)
+                <div class="mt-1 flex items-center justify-between text-xs text-gray-400">
+                    <span>{{ __('buyer.receivable.shipped_label') }}</span>
+                    <span>{{ __('buyer.receivable.shipped_value', ['count' => $br['shipped_count'], 'amount' => number_format($br['shipped_krw'])]) }}</span>
                 </div>
                 @endif
             </div>

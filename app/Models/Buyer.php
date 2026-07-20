@@ -92,7 +92,12 @@ class Buyer extends Model
      *   근거: 거래완료 총액이 분모에 섞이면 미수율이 희석돼 "진행중 실제 미수"를 정확히 못 본다.
      *   미수/게이트는 진행중 총액 기준. 거래완료 총액·건수는 completed_krw/completed_count 로 별도 반환(표기용).
      *
-     * @param  iterable  $vehicles  sale_total_amount + progress_status_cache 로드된 Vehicle 컬렉션
+     * ⚠️ 선적 후(warehouse_out_date 채워짐=출고 완료)도 분모·분자·건수에서 제외 (jin 2026-07-20).
+     *   근거: 매입 등록 락은 "국내(선적 전) 총금액의 50%" 기준 — 이미 출고돼 운송 중인 차의 미수는
+     *   신규 매입 한도에 안 잡는다(선적전/후 미수 pivot=출고일, SKILLS §14 와 동일 축). 선적 후 총액·건수는
+     *   shipped_krw/shipped_count 로 별도 반환(표기용). 거래완료가 우선 — 거래완료면 completed 버킷.
+     *
+     * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date 로드된 Vehicle 컬렉션
      */
     public static function computeReceivableGauge(iterable $vehicles): ?array
     {
@@ -101,6 +106,8 @@ class Buyer extends Model
         $count = 0;
         $completedKrw = 0;
         $completedCount = 0;
+        $shippedKrw = 0;
+        $shippedCount = 0;
         foreach ($vehicles as $v) {
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
@@ -111,6 +118,13 @@ class Buyer extends Model
                 $completedCount++;
 
                 continue;   // 진행중 미수 기준에서 분리
+            }
+
+            if (filled($v->warehouse_out_date)) {
+                $shippedKrw += $rowKrw;
+                $shippedCount++;
+
+                continue;   // 선적 후(출고) — 국내 미수 기준에서 분리
             }
 
             $count++;
@@ -130,9 +144,11 @@ class Buyer extends Model
             'paid_krw' => $paidKrw,
             'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
             'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총)
-            'vehicle_count' => $count,              // 진행중 건수
+            'vehicle_count' => $count,              // 진행중·선적 전 건수
             'completed_krw' => $completedKrw,       // 거래완료 총액 (분리 표기)
             'completed_count' => $completedCount,
+            'shipped_krw' => $shippedKrw,           // 선적 후(출고) 총액 (분리 표기)
+            'shipped_count' => $shippedCount,
         ];
     }
 
