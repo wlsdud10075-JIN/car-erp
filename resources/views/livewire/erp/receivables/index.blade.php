@@ -175,9 +175,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return new \Illuminate\Support\HtmlString($tag.'<span class="ml-1 text-sm font-normal text-gray-500">'.e(__('receivable.unit_won')).'</span>');
         }
-        $decimals = $cur === 'JPY' ? 0 : 2;
-
-        return new \Illuminate\Support\HtmlString('<span>'.e($cur.' '.number_format($amount, $decimals)).'</span>');
+        // 판매탭과 정합 — 소수점 버림(0자리) 표시 (jin 2026-07-20). KRW·외화 동일.
+        return new \Illuminate\Support\HtmlString('<span>'.e($cur.' '.number_format($amount, 0)).'</span>');
     }
 
     #[Computed]
@@ -743,8 +742,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-2 pr-3 font-mono text-xs text-gray-500">{{ $v->nice_reg_vin ?: '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $primaryBuyer?->name ?? '-' }}</td>
-                    <td class="py-2 pr-3 text-right text-gray-700">{{ $v->currency }} {{ number_format($v->sale_total_amount, $v->currency === 'KRW' ? 0 : 2) }}</td>
-                    <td class="py-2 pr-3 text-right font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, $v->currency === 'KRW' ? 0 : 2) }}</td>
+                    <td class="py-2 pr-3 text-right text-gray-700">{{ $v->currency }} {{ number_format($v->sale_total_amount, 0) }}</td>
+                    <td class="py-2 pr-3 text-right font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, 0) }}</td>
                     <td class="py-2 pr-3 text-right text-gray-700">{{ $unpaidRatio }}%</td>
                     <td class="py-2 pr-3">
                         <span class="badge badge-gray">{{ $v->progress_status_cache ? __('domain.progress.'.$v->progress_status_cache) : '-' }}</span>
@@ -810,7 +809,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             {{-- 하단: 미납금 + 미납률 --}}
             <div class="mt-2 flex items-end justify-between gap-2">
                 <div class="text-xs text-gray-500">
-                    {{ __('receivable.mobile_unpaid') }} <span class="font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, $v->currency === 'KRW' ? 0 : 2) }}</span>
+                    {{ __('receivable.mobile_unpaid') }} <span class="font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, 0) }}</span>
                 </div>
                 <div class="text-xs text-gray-700">{{ $unpaidRatio }}%</div>
             </div>
@@ -863,11 +862,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mt-3 grid grid-cols-3 gap-2">
                 <div class="card-sm">
                     <div class="text-xs text-gray-500">{{ __('receivable.col.sale_total') }}</div>
-                    <div class="mt-0.5 text-sm font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($sv->sale_total_amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                    <div class="mt-0.5 text-sm font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($sv->sale_total_amount, 0) }}</div>
                 </div>
                 <div class="card-sm">
                     <div class="text-xs text-gray-500">{{ __('receivable.col.unpaid') }}</div>
-                    <div class="mt-0.5 text-sm font-semibold text-red-600">{{ $sv->currency }} {{ number_format($sv->sale_unpaid_amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                    <div class="mt-0.5 text-sm font-semibold text-red-600">{{ $sv->currency }} {{ number_format($sv->sale_unpaid_amount, 0) }}</div>
                 </div>
                 <div class="card-sm">
                     <div class="text-xs text-gray-500">{{ __('receivable.col.risk') }}</div>
@@ -885,7 +884,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         {{-- 과입금 → 적립금 전환 (음수 미수 = 과입금 시에만, 재무 권한) --}}
         @if ($sv->sale_unpaid_amount < 0 && auth()->user()?->canConfirmFinance())
-        @php $overpayLabel = $sv->currency.' '.number_format(-$sv->sale_unpaid_amount, $sv->currency === 'KRW' ? 0 : 2); @endphp
+        @php $overpayLabel = $sv->currency.' '.number_format(-$sv->sale_unpaid_amount, 0); @endphp
         <div class="mx-5 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1013,7 +1012,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="text-xs text-blue-500" title="{{ __('receivable.mirror_title') }}">↔ #{{ $h->final_payment_id }}</span>
                                 @endif
                             </div>
-                            <div class="mt-1 text-base font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($h->amount, $sv->currency === 'KRW' ? 0 : 2) }}</div>
+                            <div class="mt-1 text-base font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($h->amount, 0) }}</div>
                             @if ($h->note)
                             <div class="mt-0.5 text-xs text-gray-500">{{ $h->note }}</div>
                             @endif
