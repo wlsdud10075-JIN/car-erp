@@ -145,9 +145,31 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
+     * 🔒 선적 진입 락 = 묶음 총금액 aggregate 50% (jin 2026-07-20, item4 — 개별(나) 되돌림).
+     *   묶은 것의 총 입금률 기준. 예) 1억(완납)+1천만(미납) → aggregate 91% > 50% 통과(큰 차가 입금되면 묶음 넘어감).
+     *   관리 승인 우회(hasEntryUnpaidOverride) 차량은 집계에서 제외(escape 유지).
+     *   반환 ['blocked'=>bool, 'unpaid_pct'=>?float]. denom 0(가격·환율 없음) → 미차단(개별 C5가 반입지 저장 시 처리).
+     *   ⚠️ 개별 차량 C5(guardStageOrderForExport)는 그대로 개별 50% 유지 — 묶음 착수 통과해도 미달 개별차의
+     *      반입지 저장은 개별로 막힘(그 차 stage=shipping 승인 우회 필요). 두 게이트는 분리(jin 확정).
+     */
+    private function entryAggregate($vehicles): array
+    {
+        $active = collect($vehicles)->filter(
+            fn ($v) => $v && (int) $v->sale_price > 0 && ! $v->hasEntryUnpaidOverride()
+        );
+        $fin = ShippingRequest::financeForVehicles($active);
+        $ratio = $fin['unpaid_ratio'];
+
+        return [
+            'blocked' => $ratio !== null && $ratio > 0.5,
+            'unpaid_pct' => $ratio === null ? null : round($ratio * 100, 1),
+        ];
+    }
+
+    /**
      * 🔒 (나)+(a) — 묶음 내 각 차량이 임계 미달인지 검사, 미달 차량번호 리스트 반환.
-     *   각 차 개별 판정((나)) + 관리 승인 우회(unpaid_export_override) 제외. 미달 1대면 호출부가 묶음 통째 차단((a)).
-     *   shipping: 미수율 > 50% (hasEntryUnpaidOverride 우회) / bl: 미완납 >0% (hasUnpaidOverride('bl') 우회).
+     *   B/L 발행(stage='bl', 100% 완납) 전용. 선적 진입(shipping)은 entryAggregate() 로 이관(2026-07-20).
+     *   각 차 개별 판정 + 관리 승인 우회(hasUnpaidOverride('bl')) 제외. 미달 1대면 호출부가 묶음 통째 차단.
      */
     private function bundleBlockers($rows, string $stage): array
     {
@@ -190,11 +212,11 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        // 🔒 (나)+(a) 선적 진입 락 — 착수 시 묶음 내 각 차량 50%+ 입금 필수. 미달 1대면 묶음 통째 대기.
+        // 🔒 선적 진입 락 — 착수 시 묶음 총금액 50%+ 입금 필수(aggregate, jin 2026-07-20). 미달이면 묶음 대기.
         if ($to === ShippingRequest::STATUS_IN_PROGRESS && \App\Models\Setting::lockEnabled('shipping_entry')) {
-            $blockers = $this->bundleBlockers($rows, 'shipping');
-            if (! empty($blockers)) {
-                $this->dispatch('notify', message: __('shipping.lock.entry_blocked', ['vehicles' => implode(', ', $blockers)]), type: 'error');
+            $agg = $this->entryAggregate($rows->map->vehicle);
+            if ($agg['blocked']) {
+                $this->dispatch('notify', message: __('shipping.lock.entry_blocked_aggregate', ['pct' => $agg['unpaid_pct']]), type: 'error');
 
                 return;
             }
@@ -521,12 +543,15 @@ new #[Layout('components.layouts.app')] class extends Component
                 $memberVehicles = $items->map->vehicle->filter();
                 $fin = ShippingRequest::financeForVehicles($memberVehicles);
 
-                // 🔒 (나)+(a) 선적 진입 락 — 각 차 50% 미달(우회 없음) 여부. 미달 1대면 묶음 착수 불가.
+                // 🔒 선적 진입 락 — 묶음 총금액 aggregate 50% 로 착수 판정(jin 2026-07-20, item4).
                 $entryLockOn = \App\Models\Setting::lockEnabled('shipping_entry');
-                $isEntryBlocked = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
+                $entryAgg = $this->entryAggregate($memberVehicles);
+                $entryBundleBlocked = $entryLockOn && $entryAgg['blocked'];
+                // 개별 차량 경고(빨간 칩) — 개별 C5 는 그대로 개별 50% 유지. 묶음 착수 통과해도 이 차들은
+                //   반입지 저장 시 개별로 막힘(그 차 승인 우회 필요). aggregate 차단과 별개의 안내 표시.
+                $isEntryUnder = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
                     && ($v->unpaid_ratio === null || $v->unpaid_ratio > 0.5)
                     && ! $v->hasEntryUnpaidOverride();
-                $entryBlockers = $memberVehicles->filter($isEntryBlocked)->map->vehicle_number->values()->all();
 
                 $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());
 
@@ -554,11 +579,12 @@ new #[Layout('components.layouts.app')] class extends Component
                         'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
                         'has_dereg' => filled($r->vehicle?->deregistration_document),
                         'unpaid_pct' => $r->vehicle?->unpaid_ratio === null ? null : round($r->vehicle->unpaid_ratio * 100, 1),
-                        'entry_blocked' => $isEntryBlocked($r->vehicle),
+                        'entry_blocked' => $isEntryUnder($r->vehicle),   // 개별 C5 경고(빨간 칩) — 묶음 착수와 별개
                     ])->values()->all(),
                     'count' => $items->count(),
                     'sales_contract_ok' => $salesContractOk,
-                    'entry_blockers' => $entryBlockers,
+                    'entry_bundle_blocked' => $entryBundleBlocked,       // 묶음 aggregate 착수 차단(jin 2026-07-20)
+                    'entry_unpaid_pct' => $entryAgg['unpaid_pct'],
                     'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
                     'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
                         ->map(fn ($r) => [
@@ -753,9 +779,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         {{-- 상태 전환 액션 --}}
                         @php $idsCsv = implode(',', array_column($b['vehicles'], 'id')); @endphp
                         <div class="flex shrink-0 flex-wrap gap-1.5">
-                            @if ($b['status'] === 'requested' && ! empty($b['entry_blockers']))
-                                {{-- 🔒 (나)+(a) 착수 불가 — 50% 미달 차 있으면 진행 원천 차단. 착수불가 + 차량관리에서 보기 + 취소만. --}}
-                                <span title="{{ __('shipping.action.entry_locked_tip', ['vehicles' => implode(', ', $b['entry_blockers'])]) }}"
+                            @if ($b['status'] === 'requested' && $b['entry_bundle_blocked'])
+                                {{-- 🔒 착수 불가 — 묶음 총 입금률 50% 미만(aggregate, jin 2026-07-20). 착수불가 + 차량관리에서 보기 + 취소만. --}}
+                                <span title="{{ __('shipping.action.entry_locked_tip_aggregate', ['pct' => $b['entry_unpaid_pct']]) }}"
                                       class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
                                     🔒 {{ __('shipping.action.entry_locked') }}
                                 </span>

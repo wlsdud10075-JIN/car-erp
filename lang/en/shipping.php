@@ -53,6 +53,7 @@ return [
         'start' => 'Mark in progress',
         'entry_locked' => 'Start locked',
         'entry_locked_tip' => 'Vehicles under 50% paid: :vehicles — need full payment / manager approval, or remove them and re-bundle',
+        'entry_locked_tip_aggregate' => 'Bundle total paid ratio is under 50% (unpaid :pct%) — increase payment or remove unpaid vehicles and re-bundle',
         'done' => 'Mark done',
         'cancel' => 'Cancel',
         'more' => 'More',
@@ -106,6 +107,7 @@ return [
     // 🔒 (나)+(a) shipping entry lock — bundle start blocked
     'lock' => [
         'entry_blocked' => 'Cannot start shipping — vehicles under 50% paid: :vehicles. Pay 50%+ or get manager approval. (Whole bundle waits — to proceed, remove the unpaid vehicles and re-bundle.)',
+        'entry_blocked_aggregate' => 'Cannot start shipping — bundle total paid ratio is under 50% (unpaid :pct%). Increase payment or remove unpaid vehicles and re-bundle.',
     ],
 
     // Export declaration number bulk apply (one shared number → whole bundle)
