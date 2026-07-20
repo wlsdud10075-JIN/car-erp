@@ -588,6 +588,8 @@ return [
         'title' => '💳 보증금 적용',
         'btn' => '보증금 적용',
         'usable' => '사용 가능 보증금 :amount :currency',
+        'rate_word' => '환율',
+        'rate_needed' => '환율 입력 시 원화 환산',
         'source_count' => '끌어올 수 있는 선적 전 차량 :count대',
         'save_first' => '차량을 먼저 저장하세요.',
         'need_buyer' => '바이어를 먼저 지정하세요.',

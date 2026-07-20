@@ -585,6 +585,8 @@ return [
         'title' => '💳 Apply deposit',
         'btn' => 'Apply deposit',
         'usable' => 'Usable deposit :amount :currency',
+        'rate_word' => 'rate',
+        'rate_needed' => 'KRW shown once rate is entered',
         'source_count' => ':count pre-shipping vehicle(s) to pull from',
         'save_first' => 'Save the vehicle first.',
         'need_buyer' => 'Assign a buyer first.',

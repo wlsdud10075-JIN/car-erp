@@ -6244,10 +6244,31 @@ function vehicleColumnsToggle() {
             @if($canDraftDepositP)
                 @php $adcP = $this->applyDepositContext; @endphp
                 @if($adcP['eligible'])
-                <button type="button" wire:click="openApplyDepositModal"
-                        class="mb-2 inline-flex items-center gap-1 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100">
-                    💳 {{ __('vehicle.deposit_apply.btn') }}
-                </button>
+                @php
+                    // 매입탭은 국내(원화 사용) — 판매 통화 보증금을 판매 환율로 원화 환산 표시 (jin 2026-07-20)
+                    $depAmt = $adcP['total_available'] ?? 0;
+                    $depRate = (float) str_replace(',', '', $exchange_rate_str ?: '0');
+                    $depKrw = ($currency !== 'KRW' && $depRate > 0) ? (int) round($depAmt * $depRate) : null;
+                @endphp
+                <div class="mb-2 rounded-md border border-teal-200 bg-teal-50 p-2.5 text-[11px] text-teal-900">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="space-y-0.5">
+                            @if($currency === 'KRW')
+                            <div class="text-sm font-bold text-teal-800">{{ __('vehicle.deposit_apply.usable', ['amount' => number_format($depAmt), 'currency' => '원']) }}</div>
+                            @elseif($depKrw !== null)
+                            <div class="text-sm font-bold text-teal-800">≈ ₩{{ number_format($depKrw) }}</div>
+                            <div class="text-teal-600">{{ number_format($depAmt) }} {{ $currency }} × {{ number_format($depRate) }} {{ __('vehicle.deposit_apply.rate_word') }}</div>
+                            @else
+                            <div class="text-sm font-bold text-teal-800">{{ number_format($depAmt) }} {{ $currency }}</div>
+                            <div class="text-teal-600">{{ __('vehicle.deposit_apply.rate_needed') }}</div>
+                            @endif
+                        </div>
+                        <button type="button" wire:click="openApplyDepositModal"
+                                class="rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700">
+                            💳 {{ __('vehicle.deposit_apply.btn') }}
+                        </button>
+                    </div>
+                </div>
                 @else
                 <div class="mb-2 text-[11px] text-gray-400">💳 {{ __('vehicle.deposit_apply.title') }} — {{ $adcP['reason'] ?: __('vehicle.deposit_apply.not_eligible') }}</div>
                 @endif
