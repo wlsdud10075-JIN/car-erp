@@ -2663,6 +2663,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 전시문(전신환 송금증) — 잔금 금액별 증빙 (jin 2026-07-20)
                 'proof_path' => $p->proof_path,
                 'proof_url' => $p->proof_path ? \App\Support\VehicleDocUrl::for($p->proof_path) : null,
+                'proof_name' => $p->proof_path ? basename($p->proof_path) : null,
             ];
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
@@ -4708,10 +4709,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $file = $this->finalPaymentProofFiles[$idx] ?? null;
         if ($file) {
-            $path = $file->store("vehicles/{$vehicleId}/payment-proofs", config('filesystems.vehicle_docs_disk'));
+            // 원본 파일명 보존(사용자가 무엇을 올렸는지 목록에서 바로 보이도록). fpId 폴더로 격리.
+            $safeName = preg_replace('/[^\p{L}\p{N}._-]+/u', '_', basename($file->getClientOriginalName())) ?: 'proof';
+            $path = $file->storeAs("vehicles/{$vehicleId}/payment-proofs/{$fpId}", $safeName, config('filesystems.vehicle_docs_disk'));
             $newlyStoredPaths[] = $path;
-            if ($existingPath) {
-                $pathsToDelete[] = $existingPath;   // 교체 시 옛 파일 정리
+            if ($existingPath && $existingPath !== $path) {
+                $pathsToDelete[] = $existingPath;   // 교체(이름 다름) 시 옛 파일 정리. 같은 이름=덮어씀이라 삭제 안 함.
             }
             FinalPayment::where('id', $fpId)->update(['proof_path' => $path]);
         }
@@ -6533,22 +6536,44 @@ function vehicleColumnsToggle() {
                         </span>
                         @endif
                     @endif
-                    {{-- 전시문(전신환 송금증) — 이 잔금 금액의 증빙 (jin 2026-07-20) --}}
-                    <div class="flex items-center gap-1 whitespace-nowrap">
-                        @if(!empty($row['proof_url']) && empty($clearFinalPaymentProofs[$idx]))
-                            <a href="{{ $row['proof_url'] }}" target="_blank" class="text-[11px] text-primary-text underline">{{ __('vehicle.panel.proof') }}</a>
-                            <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-400 hover:text-red-600" title="{{ __('vehicle.panel.proof_remove') }}">×</button>
-                        @elseif(!empty($finalPaymentProofFiles[$idx]))
-                            <span class="text-[11px] font-medium text-emerald-600" wire:loading.class="opacity-50" wire:target="finalPaymentProofFiles.{{ $idx }}">{{ __('vehicle.panel.proof_staged') }}</span>
-                            <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
-                        @else
-                            <label class="cursor-pointer text-sm text-gray-400 hover:text-primary-text" title="{{ __('vehicle.panel.proof_upload') }}">
-                                📎
-                                <input type="file" wire:model="finalPaymentProofFiles.{{ $idx }}" class="hidden">
-                            </label>
-                        @endif
-                    </div>
                     <button type="button" wire:click="removeFinalPayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
+                </div>
+                @endif
+
+                {{-- 전시문(전신환 송금증) 줄 — 이체행 제외 모든 잔금 아래 공통(저장돼 locked 여도 보이게). jin 2026-07-20 --}}
+                @if(empty($row['transfer']))
+                @php
+                    $proofCleared = !empty($clearFinalPaymentProofs[$idx]);
+                    $stagedFile = $finalPaymentProofFiles[$idx] ?? null;
+                    $stagedName = $stagedFile ? $stagedFile->getClientOriginalName() : null;
+                @endphp
+                <div class="ml-6 -mt-0.5 mb-1 flex items-center gap-2 text-xs">
+                    <span class="text-gray-400">{{ __('vehicle.panel.proof') }}</span>
+                    @if($stagedName)
+                        {{-- 업로드 대기(저장 전) --}}
+                        <span class="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700" wire:loading.class="opacity-40" wire:target="finalPaymentProofFiles.{{ $idx }}">
+                            📎 {{ $stagedName }} <span class="text-[10px] text-emerald-500">{{ __('vehicle.panel.proof_pending_save') }}</span>
+                        </span>
+                        <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-500 hover:underline">{{ __('vehicle.panel.proof_cancel') }}</button>
+                    @elseif(!empty($row['proof_url']) && !$proofCleared)
+                        {{-- 저장된 전시문 — 파일명 + 다운로드 --}}
+                        <a href="{{ $row['proof_url'] }}" target="_blank"
+                           class="inline-flex items-center gap-1 rounded border border-violet-200 bg-primary-light px-2 py-0.5 font-medium text-primary-text hover:opacity-90">
+                            📄 {{ $row['proof_name'] }}
+                            <span class="text-[10px] text-primary-text/70">↓</span>
+                        </a>
+                        <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-500 hover:underline">{{ __('vehicle.panel.proof_remove') }}</button>
+                    @else
+                        {{-- 미첨부 — 업로드 버튼 --}}
+                        <label class="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-gray-300 px-2 py-0.5 text-gray-500 hover:border-primary hover:text-primary-text"
+                               wire:loading.class="opacity-40" wire:target="finalPaymentProofFiles.{{ $idx }}">
+                            📎 {{ __('vehicle.panel.proof_attach') }}
+                            <input type="file" wire:model="finalPaymentProofFiles.{{ $idx }}" class="hidden">
+                        </label>
+                        @if($proofCleared && !empty($row['proof_name']))
+                            <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.proof_will_remove') }}</span>
+                        @endif
+                    @endif
                 </div>
                 @endif
                 @endforeach
