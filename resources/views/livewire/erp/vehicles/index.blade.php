@@ -994,6 +994,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $existingPhotos = [];  // 저장된 사진 [['id'=>, 'url'=>], ...] (편집 시 표시)
     public array $deletePhotoIds = [];  // 개별 삭제 staged → save 시 DB row + 디스크 제거
 
+    // ── 전시문(전신환 송금증) — 판매 잔금 금액별 증빙 (jin 2026-07-20) ──
+    //   finalPayments 배열 idx 로 키. save 시 해당 잔금 row 의 proof_path 로 저장(회계 잠금 대상 아님).
+    public array $finalPaymentProofFiles = [];   // idx => 업로드 파일 (staged)
+    public array $clearFinalPaymentProofs = [];  // idx => true (기존 전시문 삭제 staged)
+
     // ── 선적 탭 선박 사진 (vehicle_photos category='shipping', 최대 30건) ──
     // 기본정보 탭 차량사진과 같은 machinery, 별도 갤러리로 분리 (2026-07-06 jin).
     // 선적 사진은 여러 컷이 필요해 별도 한도 30건 (2026-07-07 jin, 기본정보 갤러리는 10건 유지).
@@ -2655,6 +2660,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 큐 20-C — 분자 A안 시각화: confirmed_at 유무로 row 색 분기
                 'confirmed_at' => $p->confirmed_at?->format('Y-m-d H:i'),
                 'finance_confirmer' => $p->financeConfirmer?->name,
+                // 전시문(전신환 송금증) — 잔금 금액별 증빙 (jin 2026-07-20)
+                'proof_path' => $p->proof_path,
+                'proof_url' => $p->proof_path ? \App\Support\VehicleDocUrl::for($p->proof_path) : null,
             ];
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
@@ -2742,6 +2750,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->photoUpload = [];
         $this->deletePhotoIds = [];
         $this->existingPhotos = $v->photos->where('category', '!=', 'shipping')->map($mapPhoto)->values()->all();
+
+        // 전시문 staged 버퍼 초기화 (편집 진입마다)
+        $this->finalPaymentProofFiles = [];
+        $this->clearFinalPaymentProofs = [];
 
         // 선적 탭 선박 사진
         $this->shipPhotoFiles = [];
@@ -3791,7 +3803,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'confirmed_by_user_id' => $authUser->id,
             ] : [];
 
-            foreach ($this->finalPayments as $row) {
+            foreach ($this->finalPayments as $idx => $row) {
                 if (!empty($row['locked'])) continue;
                 if ($row['amount'] === '' && $row['payment_date'] === '') continue;
                 $amt = $toFloat($row['amount'] ?? '');
@@ -3807,12 +3819,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'note' => $row['note'] ?? null,
                     ]);
                 } else {
-                    $vehicle->finalPayments()->create(array_merge([
+                    $newFp = $vehicle->finalPayments()->create(array_merge([
                         'amount' => $amt,
                         'exchange_rate' => $rateVal,
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
                     ], $autoConfirmFields));
+                    $this->finalPayments[$idx]['id'] = $newFp->id;   // 아래 전시문 패스가 새 id 를 찾도록
+                }
+            }
+
+            // 전시문(전신환 송금증) sync — locked 포함 모든 저장된 잔금 (proof_path 는 회계 잠금과 무관, jin 2026-07-20).
+            //   query-builder update 라 모델 잠금 이벤트도 안 탐. 위 루프에서 신규행은 id 를 채워둠.
+            foreach ($this->finalPayments as $idx => $row) {
+                $fpId = $this->finalPayments[$idx]['id'] ?? ($row['id'] ?? null);
+                if ($fpId) {
+                    $this->syncFinalPaymentProof((int) $fpId, $idx, $row['proof_path'] ?? null, $vehicle->id, $newlyStoredPaths, $pathsToDelete);
                 }
             }
 
@@ -4652,6 +4674,47 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         unset($this->finalPayments[$idx]);
         $this->finalPayments = array_values($this->finalPayments);
+        // 전시문 staged 버퍼도 같은 idx 축으로 재정렬 (행 삭제 후 idx 어긋남 방지, jin 2026-07-20).
+        unset($this->finalPaymentProofFiles[$idx], $this->clearFinalPaymentProofs[$idx]);
+        $this->finalPaymentProofFiles = array_values($this->finalPaymentProofFiles);
+        $this->clearFinalPaymentProofs = array_values($this->clearFinalPaymentProofs);
+    }
+
+    /** 전시문 업로드 검증 (선택 즉시) — 이미지·PDF·문서, 최대 10MB. */
+    public function updatedFinalPaymentProofFiles(): void
+    {
+        $this->validate([
+            'finalPaymentProofFiles.*' => ['file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,txt', 'max:10240'],
+        ]);
+    }
+
+    /** 기존 전시문 삭제 staged (save 시 실제 삭제). */
+    public function removeFinalPaymentProof(int $idx): void
+    {
+        $this->clearFinalPaymentProofs[$idx] = true;
+        unset($this->finalPaymentProofFiles[$idx]);
+    }
+
+    /** 잔금 row 전시문 sync — save 트랜잭션 내부 호출. proof_path 는 회계 잠금 대상 아님. */
+    private function syncFinalPaymentProof(int $fpId, int $idx, ?string $existingPath, int $vehicleId, array &$newlyStoredPaths, array &$pathsToDelete): void
+    {
+        if (! empty($this->clearFinalPaymentProofs[$idx])) {
+            if ($existingPath) {
+                $pathsToDelete[] = $existingPath;
+                FinalPayment::where('id', $fpId)->update(['proof_path' => null]);
+            }
+
+            return;
+        }
+        $file = $this->finalPaymentProofFiles[$idx] ?? null;
+        if ($file) {
+            $path = $file->store("vehicles/{$vehicleId}/payment-proofs", config('filesystems.vehicle_docs_disk'));
+            $newlyStoredPaths[] = $path;
+            if ($existingPath) {
+                $pathsToDelete[] = $existingPath;   // 교체 시 옛 파일 정리
+            }
+            FinalPayment::where('id', $fpId)->update(['proof_path' => $path]);
+        }
     }
 
     /**
@@ -6470,6 +6533,21 @@ function vehicleColumnsToggle() {
                         </span>
                         @endif
                     @endif
+                    {{-- 전시문(전신환 송금증) — 이 잔금 금액의 증빙 (jin 2026-07-20) --}}
+                    <div class="flex items-center gap-1 whitespace-nowrap">
+                        @if(!empty($row['proof_url']) && empty($clearFinalPaymentProofs[$idx]))
+                            <a href="{{ $row['proof_url'] }}" target="_blank" class="text-[11px] text-primary-text underline">{{ __('vehicle.panel.proof') }}</a>
+                            <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-400 hover:text-red-600" title="{{ __('vehicle.panel.proof_remove') }}">×</button>
+                        @elseif(!empty($finalPaymentProofFiles[$idx]))
+                            <span class="text-[11px] font-medium text-emerald-600" wire:loading.class="opacity-50" wire:target="finalPaymentProofFiles.{{ $idx }}">{{ __('vehicle.panel.proof_staged') }}</span>
+                            <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
+                        @else
+                            <label class="cursor-pointer text-sm text-gray-400 hover:text-primary-text" title="{{ __('vehicle.panel.proof_upload') }}">
+                                📎
+                                <input type="file" wire:model="finalPaymentProofFiles.{{ $idx }}" class="hidden">
+                            </label>
+                        @endif
+                    </div>
                     <button type="button" wire:click="removeFinalPayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
                 </div>
                 @endif

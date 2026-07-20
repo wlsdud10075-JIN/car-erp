@@ -15,6 +15,8 @@ class FinalPayment extends Model
         // 회의확장씬 #6 보강 (2026-05-23) — KRW 환산 snapshot (amount × exchange_rate). saving 훅 자동 계산.
         'amount_krw',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
+        // 전시문(전신환 송금증) 경로 — 잔금 금액별 증빙 (jin 2026-07-20). 회계 잠금 대상 아님.
+        'proof_path',
     ];
 
     /**
