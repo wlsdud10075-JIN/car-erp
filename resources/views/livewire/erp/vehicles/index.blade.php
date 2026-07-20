@@ -1613,6 +1613,34 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 필터 결과 통화별 합산 (jin 2026-07-20) — 운임비합·판매총액합을 통화(USD/JPY/…)별로 쪼개 표시.
+     *   다중통화 혼재 시 단일 원단위 합산은 의미 없으므로 통화별 소계를 카드에 함께 노출.
+     *   운임비·판매총액 컴포넌트는 각 차량 currency 단위 값(SKILLS §13). 환율 환산 없이 통화별 그대로 합산.
+     *   반환: [['currency'=>'USD','freight'=>..,'sale_total'=>..,'cnt'=>..], ...] (건수 많은 통화 우선).
+     */
+    #[Computed]
+    public function freightTotalsByCurrency(): array
+    {
+        return $this->filteredVehicleQuery()
+            ->selectRaw(
+                "COALESCE(currency,'KRW') AS cur, "
+                .'COALESCE(SUM(COALESCE(transport_fee,0)),0) AS freight, '
+                .'COALESCE(SUM(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
+                .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)),0) AS sale_total, '
+                .'COUNT(*) AS cnt'
+            )
+            ->groupBy('cur')
+            ->orderByDesc('cnt')
+            ->get()
+            ->map(fn ($r) => [
+                'currency' => $r->cur ?: 'KRW',
+                'freight' => (int) $r->freight,
+                'sale_total' => (int) $r->sale_total,
+                'cnt' => (int) $r->cnt,
+            ])->all();
+    }
+
+    /**
      * 목록 필터 체인 — vehicles(페이지) · freightTotals(합계) 공용 단일 출처 (item 6, jin 2026-07-18).
      * 정렬·페이지네이션·eager load 는 호출부에서.
      */
@@ -4768,24 +4796,57 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 {{-- 필터 결과 요약 (item 6, jin 2026-07-18) — 한 카드에 3지표 나란히. 검색·필터·정렬 결과 기준 --}}
-@php $ft = $this->freightTotals; @endphp
-<div class="card-tight inline-flex flex-wrap items-center gap-x-5 gap-y-2">
+@php
+    $ft = $this->freightTotals;
+    $ftc = collect($this->freightTotalsByCurrency);
+    $freightCurs = $ftc->filter(fn ($c) => $c['freight'] !== 0)->values();
+    $saleCurs = $ftc->filter(fn ($c) => $c['sale_total'] !== 0)->values();
+@endphp
+<div class="card-tight inline-flex flex-wrap items-start gap-x-5 gap-y-2">
     <div class="flex items-baseline gap-1.5">
         <span class="text-sm">🚗</span>
         <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.count') }}</span>
         <span class="text-sm font-bold text-gray-800">{{ number_format($this->vehicles->total()) }}<span class="ml-0.5 text-xs font-normal text-gray-400">{{ __('vehicle.stat.unit') }}</span></span>
     </div>
     <span class="h-4 w-px bg-gray-200"></span>
-    <div class="flex items-baseline gap-1.5">
-        <span class="text-sm">🚢</span>
-        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</span>
-        <span class="text-sm font-bold text-gray-800">₩{{ number_format($ft['sum']) }}</span>
+    {{-- 운임비합 — 단일 통화면 통화 prefix, 다중 통화면 합계 + 통화별 소계 (jin 2026-07-20) --}}
+    <div class="flex flex-col gap-0.5">
+        <div class="flex items-baseline gap-1.5">
+            <span class="text-sm">🚢</span>
+            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</span>
+            <span class="text-sm font-bold text-gray-800">
+                @if($freightCurs->count() === 1)
+                    {{ $freightCurs->first()['currency'] }} {{ number_format($freightCurs->first()['freight']) }}
+                @else
+                    {{ number_format($ft['sum']) }}
+                @endif
+            </span>
+        </div>
+        @if($freightCurs->count() > 1)
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ $freightCurs->map(fn ($c) => $c['currency'].' '.number_format($c['freight']))->implode(' · ') }}
+        </div>
+        @endif
     </div>
     <span class="h-4 w-px bg-gray-200"></span>
-    <div class="flex items-baseline gap-1.5">
-        <span class="text-sm">💰</span>
-        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.sale_total') }}</span>
-        <span class="text-sm font-bold text-gray-800">₩{{ number_format($ft['sale_total_sum']) }}</span>
+    {{-- 판매총액합 — 통화별 (jin 2026-07-20) --}}
+    <div class="flex flex-col gap-0.5">
+        <div class="flex items-baseline gap-1.5">
+            <span class="text-sm">💰</span>
+            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.sale_total') }}</span>
+            <span class="text-sm font-bold text-gray-800">
+                @if($saleCurs->count() === 1)
+                    {{ $saleCurs->first()['currency'] }} {{ number_format($saleCurs->first()['sale_total']) }}
+                @else
+                    {{ number_format($ft['sale_total_sum']) }}
+                @endif
+            </span>
+        </div>
+        @if($saleCurs->count() > 1)
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ $saleCurs->map(fn ($c) => $c['currency'].' '.number_format($c['sale_total']))->implode(' · ') }}
+        </div>
+        @endif
     </div>
 </div>
 
