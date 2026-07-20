@@ -588,6 +588,7 @@ return [
         'save_first' => 'Save the vehicle first.',
         'need_buyer' => 'Assign a buyer first.',
         'no_source' => 'No pre-shipping vehicle to pull from (same buyer/currency, with payment).',
+        'not_eligible' => 'No eligible source vehicle.',
         'no_permission' => 'No permission to draft a deposit apply ([관리]/manager).',
         'modal_title' => 'Apply deposit — move payment to this vehicle',
         'modal_desc' => "Move the buyer's payment from another pre-shipping vehicle to this one. Applied immediately on top-manager approval.",

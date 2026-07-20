@@ -6240,11 +6240,16 @@ function vehicleColumnsToggle() {
                 $uP = auth()->user();
                 $canDraftDepositP = $uP && ($uP->role === '관리' || $uP->isManager() || $uP->isSuperAdmin());
             @endphp
-            @if($canDraftDepositP && $this->applyDepositContext['eligible'])
-            <button type="button" wire:click="openApplyDepositModal"
-                    class="mb-2 inline-flex items-center gap-1 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100">
-                💳 {{ __('vehicle.deposit_apply.btn') }}
-            </button>
+            @if($canDraftDepositP)
+                @php $adcP = $this->applyDepositContext; @endphp
+                @if($adcP['eligible'])
+                <button type="button" wire:click="openApplyDepositModal"
+                        class="mb-2 inline-flex items-center gap-1 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100">
+                    💳 {{ __('vehicle.deposit_apply.btn') }}
+                </button>
+                @else
+                <div class="mb-2 text-[11px] text-gray-400">💳 {{ __('vehicle.deposit_apply.title') }} — {{ $adcP['reason'] ?: __('vehicle.deposit_apply.not_eligible') }}</div>
+                @endif
             @endif
             {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
             @php $canConfirmFinance = auth()->user()?->canConfirmFinance() ?? false; @endphp
@@ -6917,19 +6922,27 @@ function vehicleColumnsToggle() {
                         $canDraftDeposit = $u && ($u->role === '관리' || $u->isManager() || $u->isSuperAdmin());
                         $adc = $canDraftDeposit ? $this->applyDepositContext : ['eligible' => false, 'candidates' => collect(), 'reason' => ''];
                     @endphp
-                    @if($canDraftDeposit && $adc['eligible'])
-                    <div class="mt-2 rounded-md border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
-                        <div class="flex flex-wrap items-center justify-between gap-2">
-                            <div class="space-y-0.5">
-                                <div class="font-semibold">{{ __('vehicle.deposit_apply.title') }}</div>
-                                <div class="text-teal-700">{{ __('vehicle.deposit_apply.source_count', ['count' => $adc['candidates']->count()]) }}</div>
+                    @if($canDraftDeposit)
+                        @if($adc['eligible'])
+                        <div class="mt-2 rounded-md border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <div class="space-y-0.5">
+                                    <div class="font-semibold">{{ __('vehicle.deposit_apply.title') }}</div>
+                                    <div class="text-teal-700">{{ __('vehicle.deposit_apply.source_count', ['count' => $adc['candidates']->count()]) }}</div>
+                                </div>
+                                <button type="button" wire:click="openApplyDepositModal"
+                                        class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
+                                    {{ __('vehicle.deposit_apply.btn') }}
+                                </button>
                             </div>
-                            <button type="button" wire:click="openApplyDepositModal"
-                                    class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
-                                {{ __('vehicle.deposit_apply.btn') }}
-                            </button>
                         </div>
-                    </div>
+                        @else
+                        {{-- 자격 미충족이어도 위치를 알 수 있게 이유 표시(버튼 비활성) --}}
+                        <div class="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-[11px] text-gray-500">
+                            <span class="font-semibold text-gray-600">{{ __('vehicle.deposit_apply.title') }}</span>
+                            — {{ $adc['reason'] ?: __('vehicle.deposit_apply.not_eligible') }}
+                        </div>
+                        @endif
                     @endif
                 @endif
             </div>
