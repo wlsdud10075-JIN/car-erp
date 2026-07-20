@@ -4375,7 +4375,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return array_merge($base, ['reason' => __('vehicle.deposit_apply.no_source')]);
         }
 
-        return ['eligible' => true, 'reason' => '', 'candidates' => $out];
+        // 사용 가능 보증금 = 소스 후보들의 available 합 (판매 통화 단위, 같은 통화 가드라 환산 불필요).
+        return ['eligible' => true, 'reason' => '', 'candidates' => $out, 'total_available' => (int) $out->sum('available')];
     }
 
     public function openApplyDepositModal(): void
@@ -6928,7 +6929,8 @@ function vehicleColumnsToggle() {
                             <div class="flex flex-wrap items-center justify-between gap-2">
                                 <div class="space-y-0.5">
                                     <div class="font-semibold">{{ __('vehicle.deposit_apply.title') }}</div>
-                                    <div class="text-teal-700">{{ __('vehicle.deposit_apply.source_count', ['count' => $adc['candidates']->count()]) }}</div>
+                                    <div class="text-sm font-bold text-teal-800">{{ __('vehicle.deposit_apply.usable', ['amount' => number_format($adc['total_available'] ?? 0), 'currency' => $currency ?: 'KRW']) }}</div>
+                                    <div class="text-teal-600">{{ __('vehicle.deposit_apply.source_count', ['count' => $adc['candidates']->count()]) }}</div>
                                 </div>
                                 <button type="button" wire:click="openApplyDepositModal"
                                         class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
@@ -7941,19 +7943,27 @@ function vehicleColumnsToggle() {
                             {{ $selectedBuyer?->name ?: __('vehicle.save.val_unselected') }}
                         </dd>
                     </div>
-                    <div class="flex justify-between">
-                        <dt class="text-gray-500">{{ __('vehicle.save.f.consignee') }}</dt>
-                        <dd class="font-medium">
-                            @php $selectedConsignee = $this->consigneesForSale->firstWhere('id', (int) $consignee_id_str); @endphp
-                            {{ $selectedConsignee?->name ?: __('vehicle.save.val_unselected') }}
-                        </dd>
-                    </div>
+                    {{-- 컨사이니는 판매탭에서 제거됨(당사자 축소: 판매=바이어, 선적=컨사이니). 판매 프리뷰에서 제외. --}}
                 </dl>
             </div>
             @elseif($activeTabForSave === 'bl')
             <div class="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
                 <h4 class="mb-2 text-xs font-semibold text-amber-900">{{ __('vehicle.save.preview_bl') }}</h4>
                 <dl class="space-y-1 text-xs text-gray-700">
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">{{ __('vehicle.save.f.bl_buyer') }}</dt>
+                        <dd class="font-medium">
+                            @php $blBuyer = $this->buyers->firstWhere('id', (int) ($bl_buyer_id_str ?: 0)); @endphp
+                            {{ $blBuyer?->name ?: __('vehicle.save.val_unselected') }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between">
+                        <dt class="text-gray-500">{{ __('vehicle.save.f.consignee') }}</dt>
+                        <dd class="font-medium">
+                            @php $blCons = ($this->consigneesForBl ?? collect())->firstWhere('id', (int) ($bl_consignee_id_str ?: 0)); @endphp
+                            {{ $blCons?->name ?: __('vehicle.save.val_unselected') }}
+                        </dd>
+                    </div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.loading') }}</dt><dd class="font-medium">{{ $bl_loading_location ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.bl_number') }}</dt><dd class="font-medium">{{ $bl_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-gray-500">{{ __('vehicle.save.f.container') }}</dt><dd class="font-medium">{{ $container_number ?? '' ?: __('vehicle.save.val_empty') }}</dd></div>
@@ -8074,6 +8084,10 @@ function vehicleColumnsToggle() {
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.deposit_apply.modal_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.deposit_apply.modal_desc') }}</p>
 
+        <div class="mt-3 rounded-md border border-teal-200 bg-teal-50 p-2.5 text-sm font-bold text-teal-800">
+            {{ __('vehicle.deposit_apply.usable', ['amount' => number_format($adcM['total_available'] ?? 0), 'currency' => $currency ?: 'KRW']) }}
+        </div>
+
         <div class="mt-3 space-y-2">
             <div>
                 <label class="label-base">{{ __('vehicle.deposit_apply.source_label') }} <span class="text-red-500">*</span></label>
@@ -8090,15 +8104,16 @@ function vehicleColumnsToggle() {
                 <input wire:model="applyDepositAmountStr" type="text" class="input-base" placeholder="0" />
                 @error('applyDepositAmountStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
-            <div>
+            <div x-data="{ t: @entangle('applyDepositType') }">
                 <label class="label-base">{{ __('vehicle.deposit_apply.type_label') }} <span class="text-red-500">*</span></label>
+                {{-- Alpine 즉시 토글(서버 왕복 없이) — 선택 스타일 client-side. 값은 @entangle 로 Livewire 동기. --}}
                 <div class="flex gap-2">
-                    <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs {{ $applyDepositType === 'deposit_down' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600' }}">
-                        <input type="radio" wire:model="applyDepositType" value="deposit_down" class="sr-only">{{ __('vehicle.deposit_apply.type_deposit') }}
-                    </label>
-                    <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs {{ $applyDepositType === 'balance' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600' }}">
-                        <input type="radio" wire:model="applyDepositType" value="balance" class="sr-only">{{ __('vehicle.deposit_apply.type_balance') }}
-                    </label>
+                    <button type="button" @click="t = 'deposit_down'"
+                            :class="t === 'deposit_down' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600'"
+                            class="flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs">{{ __('vehicle.deposit_apply.type_deposit') }}</button>
+                    <button type="button" @click="t = 'balance'"
+                            :class="t === 'balance' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600'"
+                            class="flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs">{{ __('vehicle.deposit_apply.type_balance') }}</button>
                 </div>
             </div>
             <div>

@@ -584,6 +584,7 @@ return [
     'deposit_apply' => [
         'title' => '💳 Apply deposit',
         'btn' => 'Apply deposit',
+        'usable' => 'Usable deposit :amount :currency',
         'source_count' => ':count pre-shipping vehicle(s) to pull from',
         'save_first' => 'Save the vehicle first.',
         'need_buyer' => 'Assign a buyer first.',
@@ -776,6 +777,7 @@ return [
             'rate' => 'Rate',
             'sale_price' => 'Sell Price',
             'buyer' => 'Buyer',
+            'bl_buyer' => 'B/L buyer',
             'consignee' => 'Consignee',
             'loading' => 'Loading Location',
             'bl_number' => 'B/L No.',
