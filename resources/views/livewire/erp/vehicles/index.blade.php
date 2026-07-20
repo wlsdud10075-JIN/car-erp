@@ -3424,7 +3424,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->purchaseGateApproved && \App\Models\Setting::lockEnabled('purchase_registration') && $this->shouldCheckPurchaseGate()) {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
-            if ($gauge && $gauge['ratio'] > \App\Models\Buyer::RECEIVABLE_GATE_THRESHOLD) {
+            if ($gauge && $gauge['ratio'] > \App\Models\Setting::lockThreshold('purchase_registration')) {
                 $this->purchaseGateInfo = [
                     'buyer' => $buyer->name,
                     'ratio' => round($gauge['ratio'] * 100, 1),

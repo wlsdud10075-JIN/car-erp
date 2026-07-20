@@ -403,7 +403,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $ratio = $vehicle->unpaid_ratio;
 
-        return $ratio !== null && $ratio > 0.5;
+        return $ratio !== null && $ratio > \App\Models\Setting::lockThreshold('purchase_payment');
     }
 
     public function approvePaymentGate(): void

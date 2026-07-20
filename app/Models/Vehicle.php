@@ -276,8 +276,8 @@ class Vehicle extends Model
             ]);
         }
 
-        if ($ratio <= 0) {
-            return;   // 완납 — 발행 가능
+        if ($ratio <= Setting::lockThreshold('bl_issue')) {
+            return;   // 필요 입금률 충족(기본 100%=완납) — 발행 가능
         }
 
         // 100% 미완납 — 미입금 우회 승인 확인 ('bl'(B/L 발행) 단계, 관리/관리자)
@@ -914,10 +914,11 @@ class Vehicle extends Model
             }
 
             $ratio = $this->unpaid_ratio;
-            if ($ratio !== null && $ratio > 0.5) {
+            if ($ratio !== null && $ratio > Setting::lockThreshold('shipping_entry')) {
                 $percent = number_format($ratio * 100, 1);
+                $needPaid = Setting::lockRequiredPaidPct('shipping_entry');
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => "판매 입금률 < 50% (미수율 {$percent}%) 차량은 통관·선적 진입 불가. 50% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
+                    'export_buyer_id' => "판매 입금률 < {$needPaid}% (미수율 {$percent}%) 차량은 통관·선적 진입 불가. {$needPaid}% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
                 ]);
             }
         }
@@ -1543,7 +1544,10 @@ class Vehicle extends Model
      *
      * 코드: safe / caution / danger / critical / none
      */
-    /** 결제대기(grace) 유예 일수 — 선적 전 미수는 판매일+이 일수 지나야 채권 (jin 2026-07-06 A안). */
+    /**
+     * 결제대기(grace) 유예 일수 기본값 — 선적 전 미수는 판매일+이 일수 지나야 채권 (jin 2026-07-06 A안).
+     * ⚠️ 실제 판정은 Setting::graceDays()(super 조정, 회사별). 이 상수는 기본값 참조용(2026-07-20).
+     */
     public const RECEIVABLE_GRACE_DAYS = 10;
 
     public function getReceivableRiskComputedAttribute(): string
@@ -1569,7 +1573,7 @@ class Vehicle extends Model
         //   선적 후(출고 = 출항)는 유예 없이 즉시 위험. ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
         //   pivot=출고일(jin 2026-07-18): 반입지 입력돼도 출고 전이면 항구 주차장=선적전. (구 pivot=bl_loading_location)
         if (blank($this->warehouse_out_date) && $this->sale_date
-            && $this->sale_date->copy()->addDays(self::RECEIVABLE_GRACE_DAYS)->startOfDay()->isFuture()) {
+            && $this->sale_date->copy()->addDays(Setting::graceDays())->startOfDay()->isFuture()) {
             return 'grace';
         }
 
@@ -1843,7 +1847,7 @@ class Vehicle extends Model
         return $q->whereNot(fn ($q2) => $q2
             ->whereNull('warehouse_out_date')
             ->whereNotNull('sale_date')
-            ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString()));
+            ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString()));
     }
 
     /**
@@ -1854,6 +1858,6 @@ class Vehicle extends Model
     {
         return $q->whereNull('warehouse_out_date')
             ->whereNotNull('sale_date')
-            ->where('sale_date', '>', now()->subDays(self::RECEIVABLE_GRACE_DAYS)->toDateString());
+            ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString());
     }
 }

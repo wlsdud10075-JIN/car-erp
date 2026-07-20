@@ -22,6 +22,12 @@ new #[Layout('components.layouts.app')] class extends Component
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
     public array $lockToggles = [];
 
+    // 🔒 락 수치 — 락별 "필요 입금률(%)". lock 키 => int. 기본값 = Setting::LOCK_PAID_DEFAULTS.
+    public array $lockThresholds = [];
+
+    // 채권 유예일(선적 전 미수 유예). 기본값 = Setting::RECEIVABLE_GRACE_DEFAULT.
+    public int $graceDays = 10;
+
     // item 9 — 알람 항목별 리드데이("며칠 전"). 항목 추가는 alarmLeadMeta() 에만.
     public array $alarmLeadDays = [];
 
@@ -98,6 +104,10 @@ new #[Layout('components.layouts.app')] class extends Component
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
         }
+        foreach (Setting::LOCK_PAID_DEFAULTS as $lock => $default) {
+            $this->lockThresholds[$lock] = Setting::lockRequiredPaidPct($lock);
+        }
+        $this->graceDays = Setting::graceDays();
         foreach ($this->alarmLeadMeta() as $k => $m) {
             $this->alarmLeadDays[$k] = (int) Setting::get($m['key'], $m['default']);
         }
@@ -600,6 +610,59 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
+    // 🔒 락 수치 저장 — 락별 필요 입금률(%) + 채권 유예일. 회사별 {set}. 돈 게이트 수치라 변경 감사로그.
+    public function saveLockParams(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $set = Setting::companyTemplateSet();
+
+        foreach (Setting::LOCK_PAID_DEFAULTS as $lock => $default) {
+            $val = max(0, min(100, (int) ($this->lockThresholds[$lock] ?? $default)));
+            $old = Setting::lockRequiredPaidPct($lock);
+            $setting = Setting::updateOrCreate(
+                ['key' => 'lock_threshold_'.$lock.'_'.$set],
+                ['value' => (string) $val, 'type' => 'integer', 'description' => '락 필요 입금률 % '.$lock.' ('.$set.')'],
+            );
+            $this->lockThresholds[$lock] = $val;
+            if ($old !== $val) {
+                \App\Models\AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'auditable_type' => Setting::class,
+                    'auditable_id' => $setting->id,
+                    'action' => 'lock_threshold_changed',
+                    'column_name' => 'lock_threshold_'.$lock,
+                    'old_value' => (string) $old,
+                    'new_value' => (string) $val,
+                    'ip_address' => request()?->ip(),
+                ]);
+            }
+        }
+
+        $graceOld = Setting::graceDays();
+        $graceVal = max(0, (int) $this->graceDays);
+        $graceSetting = Setting::updateOrCreate(
+            ['key' => 'receivable_grace_days_'.$set],
+            ['value' => (string) $graceVal, 'type' => 'integer', 'description' => '채권 유예일 ('.$set.')'],
+        );
+        $this->graceDays = $graceVal;
+        if ($graceOld !== $graceVal) {
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(),
+                'auditable_type' => Setting::class,
+                'auditable_id' => $graceSetting->id,
+                'action' => 'lock_threshold_changed',
+                'column_name' => 'receivable_grace_days',
+                'old_value' => (string) $graceOld,
+                'new_value' => (string) $graceVal,
+                'ip_address' => request()?->ip(),
+            ]);
+        }
+
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
     // 🔒 락 관제 화면 메타(라벨/설명) — blade foreach. 순서 = 매입등록·매입지급·선적진입·B/L.
     public function lockMeta(): array
     {
@@ -1023,15 +1086,39 @@ new #[Layout('components.layouts.app')] class extends Component
         <div x-show="open" x-transition class="mt-3 space-y-2">
             <p class="text-xs text-gray-500">{{ __('feature_settings.lock_hint') }}</p>
             @foreach($this->lockMeta() as $lock => $m)
-            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
-                <span class="text-sm text-gray-700">{{ $m['label'] }}
-                    <span class="mt-0.5 block text-xs text-gray-400">{{ $m['sub'] }}</span>
-                </span>
-                <input type="checkbox" wire:model.live="lockToggles.{{ $lock }}" class="peer sr-only">
-                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
-                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-            </label>
+            <div class="rounded-md border border-gray-100 px-3 py-2">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ $m['label'] }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ $m['sub'] }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="lockToggles.{{ $lock }}" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+                {{-- 필요 입금률(%) — 이 락이 풀리려면 최소 몇 % 입금돼야 하는가 (jin 2026-07-20) --}}
+                <div class="mt-2 flex items-center gap-2 border-t border-gray-100 pt-2">
+                    <span class="text-xs text-gray-500">{{ __('feature_settings.lock_required_paid') }}</span>
+                    <input type="number" min="0" max="100" wire:model="lockThresholds.{{ $lock }}"
+                           class="input-base w-20 py-1 text-sm">
+                    <span class="text-xs text-gray-400">%</span>
+                </div>
+            </div>
             @endforeach
+
+            {{-- 채권 유예일 — 선적 전 미수는 판매일+이 일수 지나야 채권 (jin 2026-07-20) --}}
+            <div class="flex items-center gap-2 rounded-md border border-gray-100 px-3 py-2">
+                <span class="text-sm text-gray-700">{{ __('feature_settings.grace_days_label') }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.grace_days_sub') }}</span>
+                </span>
+                <input type="number" min="0" wire:model="graceDays" class="input-base ml-auto w-20 py-1 text-sm">
+                <span class="text-xs text-gray-400">{{ __('feature_settings.days_unit') }}</span>
+            </div>
+
+            <div class="flex justify-end pt-1">
+                <button type="button" wire:click="saveLockParams" class="btn-primary px-4 py-1.5 text-sm">
+                    {{ __('feature_settings.save_thresholds') }}
+                </button>
+            </div>
         </div>
     </div>
 

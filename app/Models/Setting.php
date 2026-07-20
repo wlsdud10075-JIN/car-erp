@@ -21,6 +21,22 @@ class Setting extends Model
         'bl_issue' => true,
     ];
 
+    /**
+     * 락별 "필요 입금률(%)" 기본값 (jin 2026-07-20 — super 가 기능설정에서 조정).
+     * 값 = "락이 풀리려면 최소 몇 % 입금돼야 하는가". 게이트는 미수율 cutoff = (100-필요%)/100 로 판정.
+     *   매입 등록·지급·선적 진입 = 50%(미수 cutoff 0.5) / B/L = 100%(미수 cutoff 0 = 완납).
+     * 회사별 {set} 접미로 저장(lock_threshold_{lock}_{set}). 미설정 시 아래 기본값.
+     */
+    public const LOCK_PAID_DEFAULTS = [
+        'purchase_registration' => 50,
+        'purchase_payment' => 50,
+        'shipping_entry' => 50,
+        'bl_issue' => 100,
+    ];
+
+    /** 채권 유예일 기본값(선적 전 미수 유예 — Vehicle::RECEIVABLE_GRACE_DAYS 와 동기). super 조정 가능. */
+    public const RECEIVABLE_GRACE_DEFAULT = 10;
+
     public static function get(string $key, mixed $default = null): mixed
     {
         $setting = static::where('key', $key)->first();
@@ -44,6 +60,33 @@ class Setting extends Model
         $default = self::LOCK_DEFAULTS[$lock] ?? false;
 
         return (bool) self::get('lock_'.$lock.'_'.self::companyTemplateSet(), $default);
+    }
+
+    /**
+     * 락별 "필요 입금률(%)" — super 가 기능설정에서 조정한 값(회사별). 미설정 시 LOCK_PAID_DEFAULTS.
+     * 0~100 로 클램프. 게이트 표시(입금 X% 필요)·역변환 공용.
+     */
+    public static function lockRequiredPaidPct(string $lock): int
+    {
+        $default = self::LOCK_PAID_DEFAULTS[$lock] ?? 50;
+
+        return (int) max(0, min(100, self::get('lock_threshold_'.$lock.'_'.self::companyTemplateSet(), $default)));
+    }
+
+    /**
+     * 락 미수율 cutoff (단일 출처). 게이트 코드는 이 헬퍼로만 판단 → UI 수치와 항상 일치.
+     * 반환값 = 이 값 "초과" 미수율이면 차단. 필요 입금률 P% → cutoff = (100-P)/100.
+     *   예) 필요 50% → 0.5 초과 차단 / 필요 100% → 0 초과 차단(완납) / 필요 70% → 0.3 초과 차단.
+     */
+    public static function lockThreshold(string $lock): float
+    {
+        return max(0.0, min(1.0, (100 - self::lockRequiredPaidPct($lock)) / 100));
+    }
+
+    /** 채권 유예일 — super 조정값(회사별). 미설정 시 RECEIVABLE_GRACE_DEFAULT(10). 0 이상. */
+    public static function graceDays(): int
+    {
+        return (int) max(0, self::get('receivable_grace_days_'.self::companyTemplateSet(), self::RECEIVABLE_GRACE_DEFAULT));
     }
 
     /**

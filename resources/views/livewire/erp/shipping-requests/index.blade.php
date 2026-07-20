@@ -161,7 +161,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $ratio = $fin['unpaid_ratio'];
 
         return [
-            'blocked' => $ratio !== null && $ratio > 0.5,
+            'blocked' => $ratio !== null && $ratio > \App\Models\Setting::lockThreshold('shipping_entry'),
             'unpaid_pct' => $ratio === null ? null : round($ratio * 100, 1),
         ];
     }
@@ -181,10 +181,10 @@ new #[Layout('components.layouts.app')] class extends Component
             }
             $ratio = $v->unpaid_ratio;
             if ($stage === 'shipping') {
-                $violates = $ratio === null || $ratio > 0.5;
+                $violates = $ratio === null || $ratio > \App\Models\Setting::lockThreshold('shipping_entry');
                 $overridden = $v->hasEntryUnpaidOverride();
-            } else {   // bl — 100% 완납
-                $violates = $ratio === null || $ratio > 0;
+            } else {   // bl — 필요 입금률(기본 100% 완납)
+                $violates = $ratio === null || $ratio > \App\Models\Setting::lockThreshold('bl_issue');
                 $overridden = $v->hasUnpaidOverride('bl');
             }
             if ($violates && ! $overridden) {
@@ -549,8 +549,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 $entryBundleBlocked = $entryLockOn && $entryAgg['blocked'];
                 // 개별 차량 경고(빨간 칩) — 개별 C5 는 그대로 개별 50% 유지. 묶음 착수 통과해도 이 차들은
                 //   반입지 저장 시 개별로 막힘(그 차 승인 우회 필요). aggregate 차단과 별개의 안내 표시.
+                $entryCutoff = \App\Models\Setting::lockThreshold('shipping_entry');
                 $isEntryUnder = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
-                    && ($v->unpaid_ratio === null || $v->unpaid_ratio > 0.5)
+                    && ($v->unpaid_ratio === null || $v->unpaid_ratio > $entryCutoff)
                     && ! $v->hasEntryUnpaidOverride();
 
                 $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());
