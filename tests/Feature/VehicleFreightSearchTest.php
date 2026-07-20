@@ -44,4 +44,23 @@ class VehicleFreightSearchTest extends TestCase
         $ids = $c->instance()->vehicles->pluck('transport_fee')->all();
         $this->assertSame([800000, 800000], array_map('intval', $ids));
     }
+
+    public function test_freight_totals_by_currency_groups(): void
+    {
+        // jin 2026-07-20 — 운임비합·판매총액합을 통화별로 쪼개 표시.
+        $this->actingAs($this->admin());
+        Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'currency' => 'USD', 'transport_fee' => 1000]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'currency' => 'USD', 'transport_fee' => 2000]);
+        Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'currency' => 'JPY', 'transport_fee' => 50000]);
+
+        $c = Volt::test('erp.vehicles.index')->set('dateType', 'all');
+        $rows = $c->instance()->freightTotalsByCurrency;
+        $byCur = collect($rows)->keyBy('currency');
+
+        $this->assertSame(3000, $byCur['USD']['freight'], 'USD 운임 합 1000+2000');
+        $this->assertSame(2, $byCur['USD']['cnt']);
+        $this->assertSame(50000, $byCur['JPY']['freight']);
+        $this->assertSame(1, $byCur['JPY']['cnt']);
+        $this->assertSame('USD', $rows[0]['currency'], '건수 많은 통화 우선 정렬');
+    }
 }
