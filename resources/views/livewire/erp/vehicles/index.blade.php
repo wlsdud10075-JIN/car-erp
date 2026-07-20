@@ -891,6 +891,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $transferNotes = '';
 
+    // 보증금 적용 모달 상태 (jin 2026-07-20) — 이 차(target)로 그 바이어 다른 선적전 차(source) 입금 이동
+    public bool $showApplyDepositModal = false;
+
+    public string $applyDepositSourceId = '';
+
+    public string $applyDepositAmountStr = '';
+
+    public string $applyDepositType = 'deposit_down';   // deposit_down(계약금) / balance(잔금)
+
+    public string $applyDepositReason = '';
+
     // 큐 19-E — 이체 취소(void) 요청 모달 상태
     public bool $showTransferVoidModal = false;
 
@@ -4315,6 +4326,140 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetTransferRequestForm();
     }
 
+    // ── 보증금 적용 (jin 2026-07-20) — 이 차(target)로 그 바이어 다른 선적전 차(source) 입금 이동 ──
+
+    /** 기안 권한 — [관리] role / 업무관리자(manager) / super(개발). 승인자(최고관리자)와 분리. */
+    private function canApplyDeposit(): bool
+    {
+        $u = auth()->user();
+
+        return $u && ($u->role === '관리' || $u->isManager() || $u->isSuperAdmin());
+    }
+
+    /** 이 차(target) 기준 — 그 바이어의 선적 전 소스 후보(끌어올 수 있는 available>0). */
+    #[Computed]
+    public function applyDepositContext(): array
+    {
+        $base = ['eligible' => false, 'reason' => '', 'candidates' => collect()];
+        if ($this->editingId === null) {
+            return array_merge($base, ['reason' => __('vehicle.deposit_apply.save_first')]);
+        }
+        $target = \App\Models\Vehicle::find($this->editingId);
+        if (! $target || ! $target->buyer_id) {
+            return array_merge($base, ['reason' => __('vehicle.deposit_apply.need_buyer')]);
+        }
+
+        $service = app(\App\Services\InterVehicleTransferService::class);
+        $cands = \App\Models\Vehicle::where('buyer_id', $target->buyer_id)
+            ->where('currency', $target->currency)
+            ->where('id', '!=', $target->id)
+            ->whereNull('deleted_at')
+            ->whereNull('warehouse_out_date')   // 선적 전(출고 전)만
+            ->where('sale_price', '>', 0)
+            ->whereDoesntHave('settlements', fn ($q) => $q->where('settlement_status', 'paid'))
+            ->orderBy('vehicle_number')
+            ->get();
+
+        $out = $cands->map(function ($v) use ($service) {
+            $ratio = $v->unpaid_ratio;
+
+            return [
+                'id' => $v->id,
+                'number' => $v->vehicle_number,
+                'available' => $service->available($v),
+                'ratio_ok' => $ratio !== null && $ratio <= 0.5,
+            ];
+        })->filter(fn ($c) => $c['ratio_ok'] && $c['available'] > 0)->values();
+
+        if ($out->isEmpty()) {
+            return array_merge($base, ['reason' => __('vehicle.deposit_apply.no_source')]);
+        }
+
+        return ['eligible' => true, 'reason' => '', 'candidates' => $out];
+    }
+
+    public function openApplyDepositModal(): void
+    {
+        if (! $this->canApplyDeposit()) {
+            $this->dispatch('notify', message: __('vehicle.deposit_apply.no_permission'), type: 'warning');
+
+            return;
+        }
+        $ctx = $this->applyDepositContext;
+        if (! $ctx['eligible']) {
+            $this->dispatch('notify', message: $ctx['reason'], type: 'warning');
+
+            return;
+        }
+        $this->applyDepositSourceId = '';
+        $this->applyDepositAmountStr = '';
+        $this->applyDepositType = 'deposit_down';
+        $this->applyDepositReason = '';
+        $this->resetErrorBag(['applyDepositSourceId', 'applyDepositAmountStr', 'applyDepositReason']);
+        $this->showApplyDepositModal = true;
+    }
+
+    public function closeApplyDepositModal(): void
+    {
+        $this->resetApplyDepositForm();
+    }
+
+    private function resetApplyDepositForm(): void
+    {
+        $this->showApplyDepositModal = false;
+        $this->applyDepositSourceId = '';
+        $this->applyDepositAmountStr = '';
+        $this->applyDepositType = 'deposit_down';
+        $this->applyDepositReason = '';
+    }
+
+    /** 보증금 적용 기안 제출 → InterVehicleTransferService::applyDeposit(). 승인(최고관리자) 시 즉시 적용. */
+    public function submitApplyDeposit(\App\Services\InterVehicleTransferService $service): void
+    {
+        if (! $this->canApplyDeposit() || $this->editingId === null) {
+            abort(403);
+        }
+        $this->validate([
+            'applyDepositSourceId' => ['required', 'integer'],
+            'applyDepositAmountStr' => ['required', 'string'],
+            'applyDepositType' => ['required', 'in:deposit_down,balance'],
+            'applyDepositReason' => ['required', 'string', 'min:5'],
+        ], [
+            'applyDepositSourceId.required' => __('vehicle.deposit_apply.source_required'),
+            'applyDepositAmountStr.required' => __('vehicle.valmsg.transfer_amount_required'),
+            'applyDepositReason.required' => __('vehicle.valmsg.approval_reason_required'),
+            'applyDepositReason.min' => __('vehicle.valmsg.reason_min5'),
+        ]);
+
+        $source = \App\Models\Vehicle::find((int) $this->applyDepositSourceId);
+        $target = \App\Models\Vehicle::find($this->editingId);
+        $amount = (float) str_replace(',', '', $this->applyDepositAmountStr);
+
+        if (! $source || ! $target) {
+            $this->dispatch('notify', message: __('vehicle.toast.transfer_vehicle_not_found'), type: 'warning');
+
+            return;
+        }
+
+        try {
+            $service->applyDeposit(
+                source: $source,
+                target: $target,
+                amount: $amount,
+                drafter: auth()->user(),
+                paymentType: $this->applyDepositType,
+                reason: trim($this->applyDepositReason),
+            );
+        } catch (\DomainException $e) {
+            $this->addError('applyDepositAmountStr', $e->getMessage());
+
+            return;
+        }
+
+        $this->dispatch('notify', message: __('vehicle.deposit_apply.sent'), type: 'success');
+        $this->resetApplyDepositForm();
+    }
+
     // 큐 19-E — 이체 취소(void) 요청 ────────────────────────────────
 
     public function openTransferVoidModal(int $transferId): void
@@ -6090,6 +6235,17 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-indigo-400"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.purchase_payment') }}</span>
             </div>
+            {{-- 보증금 적용 (jin 2026-07-20) — 매입탭에서도 진입. 실제 적용은 판매측 입금으로 landing(같은 모달). --}}
+            @php
+                $uP = auth()->user();
+                $canDraftDepositP = $uP && ($uP->role === '관리' || $uP->isManager() || $uP->isSuperAdmin());
+            @endphp
+            @if($canDraftDepositP && $this->applyDepositContext['eligible'])
+            <button type="button" wire:click="openApplyDepositModal"
+                    class="mb-2 inline-flex items-center gap-1 rounded-md border border-teal-300 bg-teal-50 px-2.5 py-1 text-[11px] font-medium text-teal-700 hover:bg-teal-100">
+                💳 {{ __('vehicle.deposit_apply.btn') }}
+            </button>
+            @endif
             {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
             @php $canConfirmFinance = auth()->user()?->canConfirmFinance() ?? false; @endphp
             @unless($canConfirmFinance)
@@ -6752,6 +6908,27 @@ function vehicleColumnsToggle() {
                     @else
                     <div class="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
                         {{ $transferCtx['reason'] ?: __('vehicle.transfer.not_eligible') }}
+                    </div>
+                    @endif
+
+                    {{-- 보증금 적용 (jin 2026-07-20) — 그 바이어 다른 선적전 차 입금을 이 차로 이동. [관리]/업무관리자 기안 → 최고관리자 승인 즉시 적용. --}}
+                    @php
+                        $u = auth()->user();
+                        $canDraftDeposit = $u && ($u->role === '관리' || $u->isManager() || $u->isSuperAdmin());
+                        $adc = $canDraftDeposit ? $this->applyDepositContext : ['eligible' => false, 'candidates' => collect(), 'reason' => ''];
+                    @endphp
+                    @if($canDraftDeposit && $adc['eligible'])
+                    <div class="mt-2 rounded-md border border-teal-200 bg-teal-50 p-3 text-xs text-teal-900">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="space-y-0.5">
+                                <div class="font-semibold">{{ __('vehicle.deposit_apply.title') }}</div>
+                                <div class="text-teal-700">{{ __('vehicle.deposit_apply.source_count', ['count' => $adc['candidates']->count()]) }}</div>
+                            </div>
+                            <button type="button" wire:click="openApplyDepositModal"
+                                    class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
+                                {{ __('vehicle.deposit_apply.btn') }}
+                            </button>
+                        </div>
                     </div>
                     @endif
                 @endif
@@ -7868,6 +8045,63 @@ function vehicleColumnsToggle() {
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50">
                 {{ __('vehicle.modal.overlap_send') }}
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 보증금 적용 모달 (jin 2026-07-20) — 그 바이어 다른 선적전 차(source) 입금을 이 차(target)로 이동. --}}
+@if($showApplyDepositModal)
+@php $adcM = $this->applyDepositContext; @endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closeApplyDepositModal"
+     wire:key="apply-deposit-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.deposit_apply.modal_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.deposit_apply.modal_desc') }}</p>
+
+        <div class="mt-3 space-y-2">
+            <div>
+                <label class="label-base">{{ __('vehicle.deposit_apply.source_label') }} <span class="text-red-500">*</span></label>
+                <select wire:model="applyDepositSourceId" class="input-base">
+                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                    @foreach($adcM['candidates'] as $cand)
+                    <option value="{{ $cand['id'] }}">{{ $cand['number'] }} ({{ __('vehicle.deposit_apply.can_pull') }} {{ number_format($cand['available']) }} {{ $currency ?: 'KRW' }})</option>
+                    @endforeach
+                </select>
+                @error('applyDepositSourceId')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.modal.transfer_amount_label') }} <span class="text-red-500">*</span></label>
+                <input wire:model="applyDepositAmountStr" type="text" class="input-base" placeholder="0" />
+                @error('applyDepositAmountStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.deposit_apply.type_label') }} <span class="text-red-500">*</span></label>
+                <div class="flex gap-2">
+                    <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs {{ $applyDepositType === 'deposit_down' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600' }}">
+                        <input type="radio" wire:model="applyDepositType" value="deposit_down" class="sr-only">{{ __('vehicle.deposit_apply.type_deposit') }}
+                    </label>
+                    <label class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-xs {{ $applyDepositType === 'balance' ? 'border-teal-500 bg-teal-50 font-semibold text-teal-700' : 'border-gray-200 text-gray-600' }}">
+                        <input type="radio" wire:model="applyDepositType" value="balance" class="sr-only">{{ __('vehicle.deposit_apply.type_balance') }}
+                    </label>
+                </div>
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.modal.overlap_reason_label') }} <span class="text-red-500">*</span></label>
+                <textarea wire:model="applyDepositReason" rows="2" class="input-base" placeholder="{{ __('vehicle.deposit_apply.reason_ph') }}"></textarea>
+                @error('applyDepositReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <p class="text-[11px] text-gray-400">{{ __('vehicle.deposit_apply.approval_note') }}</p>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="closeApplyDepositModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button type="button" wire:click="submitApplyDeposit" wire:loading.attr="disabled"
+                    class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
+                {{ __('vehicle.deposit_apply.submit') }}
             </button>
         </div>
     </div>

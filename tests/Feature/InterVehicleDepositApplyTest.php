@@ -11,6 +11,7 @@ use App\Models\Vehicle;
 use App\Services\InterVehicleTransferService;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -115,6 +116,42 @@ class InterVehicleDepositApplyTest extends TestCase
 
         $this->expectException(DomainException::class);
         $this->service->executeDepositApply($transfer, $adminDrafter);
+    }
+
+    public function test_volt_submit_creates_request(): void
+    {
+        ['source' => $source, 'target' => $target] = $this->ctx();
+        // 기안 권한 + 전체 스코프(담당자 없는 차량 openEdit 가능)인 super 로 UI 흐름 검증.
+        $drafter = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $this->actingAs($drafter);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $target->id)
+            ->set('applyDepositSourceId', (string) $source->id)
+            ->set('applyDepositAmountStr', '20,000,000')
+            ->set('applyDepositType', 'deposit_down')
+            ->set('applyDepositReason', '완납분 일부 이전')
+            ->call('submitApplyDeposit')
+            ->assertHasNoErrors();
+
+        $transfer = InterVehicleTransfer::where('kind', InterVehicleTransfer::KIND_DEPOSIT_APPLY)->first();
+        $this->assertNotNull($transfer);
+        $this->assertSame($source->id, $transfer->source_vehicle_id);
+        $this->assertSame($target->id, $transfer->target_vehicle_id);
+        $this->assertSame(InterVehicleTransfer::STATUS_PENDING, $transfer->status);
+    }
+
+    public function test_approval_request_execute_routes_to_deposit_apply(): void
+    {
+        ['drafter' => $drafter, 'admin' => $admin, 'source' => $source, 'target' => $target] = $this->ctx();
+        $transfer = $this->service->applyDeposit($source, $target, 15_000_000, $drafter, 'balance');
+
+        // 최고관리자 컨텍스트에서 ApprovalRequest.execute() → executeDepositApply 즉시 적용
+        $this->actingAs($admin);
+        $transfer->approvalRequest->execute();
+
+        $this->assertSame(InterVehicleTransfer::STATUS_EXECUTED, $transfer->fresh()->status);
+        $this->assertSame(2, FinalPayment::where('transfer_id', $transfer->id)->count());
     }
 
     public function test_guard_source_over_50_percent_unpaid_blocks(): void

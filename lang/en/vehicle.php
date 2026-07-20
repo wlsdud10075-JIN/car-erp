@@ -580,6 +580,29 @@ return [
         'approve_btn' => 'Approve & register',
     ],
 
+    // Deposit apply (jin 2026-07-20)
+    'deposit_apply' => [
+        'title' => '💳 Apply deposit',
+        'btn' => 'Apply deposit',
+        'source_count' => ':count pre-shipping vehicle(s) to pull from',
+        'save_first' => 'Save the vehicle first.',
+        'need_buyer' => 'Assign a buyer first.',
+        'no_source' => 'No pre-shipping vehicle to pull from (same buyer/currency, with payment).',
+        'no_permission' => 'No permission to draft a deposit apply ([관리]/manager).',
+        'modal_title' => 'Apply deposit — move payment to this vehicle',
+        'modal_desc' => "Move the buyer's payment from another pre-shipping vehicle to this one. Applied immediately on top-manager approval.",
+        'source_label' => 'Source vehicle to pull from',
+        'can_pull' => 'up to',
+        'type_label' => 'Payment type on this vehicle',
+        'type_deposit' => 'Down payment',
+        'type_balance' => 'Balance',
+        'reason_ph' => 'e.g. move part of 145부1234 payment to this deposit',
+        'approval_note' => 'Applied when the top manager approves (payment pending).',
+        'submit' => 'Draft apply',
+        'sent' => 'Deposit apply drafted. Applied on top-manager approval.',
+        'source_required' => 'Select a source vehicle.',
+    ],
+
     // Delete-reason modal (2026-07-08) — finance-linked vehicles require a reason + audit log
     'delete_gate' => [
         'title' => 'Delete finance-linked vehicle',
