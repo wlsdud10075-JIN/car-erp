@@ -45,7 +45,7 @@ return [
         'name_ph' => 'TOKYO AUTO TRADING',
         'salesman' => 'Salesman',
         'salesman_unassigned' => '-- Unassigned --',
-        'salesman_note' => 'When [Management] logs in, only their own salesmen\'s buyers show. If unassigned, falls back to the indirect relation via vehicles.',
+        'salesman_note' => '[Management] accounts see only the buyers of the salesmen they manage.',
         'contact_name' => 'Contact Name',
         'passport_id' => 'Passport/ID No.',
         'passport_id_ph' => 'e.g. M12345678',

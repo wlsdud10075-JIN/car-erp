@@ -8017,7 +8017,9 @@ function vehicleColumnsToggle() {
      패널 안 닫고 즉석 등록 → 자동 선택. 슬라이드 패널 stacking context 밖(z-100)에 배치. --}}
 @if($quickAddOpen)
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="quick-add-modal">
-    <div class="card w-full max-w-md mx-4 shadow-2xl" @click.stop>
+    {{-- @click.stop 제거 (jin 2026-07-21): 카드가 클릭 전파를 막으면 내부 country-picker 의 @click.outside 가
+         document 까지 못 가서 나라 드롭다운이 안 닫힘. 이 모달은 배경 클릭 닫기가 없어 @click.stop 불필요. --}}
+    <div class="card w-full max-w-md mx-4 shadow-2xl">
         <h3 class="text-base font-semibold text-gray-900">
             {{ $quickAddType === 'buyer' ? __('vehicle.modal.qa_buyer_title') : __('vehicle.modal.qa_consignee_title') }}
             <span class="ml-1 text-xs font-normal text-gray-400">
