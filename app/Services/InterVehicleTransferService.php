@@ -354,6 +354,10 @@ class InterVehicleTransferService
         if ($transfer->status !== InterVehicleTransfer::STATUS_PENDING) {
             throw new DomainException("이미 처리된 이체입니다 (현재 상태: {$transfer->status}).");
         }
+        // SoD — 기안자 ≠ 관리 승인자 (기안≠관리≠재무 3자 분리, 보안팀 요구).
+        if ($transfer->requester_id !== null && $transfer->requester_id === $approver->id) {
+            throw new DomainException('기안자와 승인자는 다른 사용자여야 합니다 (SoD).');
+        }
 
         $this->assertPurchaseFundingGuards($transfer->sourceVehicle, $transfer->targetVehicle, (float) $transfer->amount_krw);
 
@@ -656,6 +660,11 @@ class InterVehicleTransferService
         $transfer = $transfer->fresh();
         if ($transfer->status !== InterVehicleTransfer::STATUS_EXECUTED) {
             throw new DomainException("실행 완료된 이체만 취소할 수 있습니다 (현재 상태: {$transfer->status}).");
+        }
+        // 매입 funding 은 target 이 매입 PBP(FinalPayment 아님)라 void 역거래(−FinalPayment on target)가 ledger 오염.
+        // v1 은 void 미지원 — 정정은 별도 처리(개별 잠금해제/반대 PBP). standard/deposit_apply 는 정상.
+        if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+            throw new DomainException('보증금 매입 funding 은 이체 취소(void)를 지원하지 않습니다. 정정은 재무에 문의하세요.');
         }
         $existing = ApprovalRequest::where('action_type', ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
             ->where('status', ApprovalRequest::STATUS_PENDING)

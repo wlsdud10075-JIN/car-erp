@@ -189,4 +189,55 @@ class PurchaseFundingTest extends TestCase
         $this->assertSame(InterVehicleTransfer::STATUS_PENDING, $t->status);
         $this->assertEquals(30_000_000, (int) $t->amount_krw);
     }
+
+    public function test_approvals_page_approve_routes(): void
+    {
+        ['drafter' => $drafter, 'manager' => $manager, 'source' => $source, 'target' => $target] = $this->ctx();
+        $t = $this->service->applyPurchaseFunding($source, $target, 20_000_000, $drafter);
+
+        // 관리자(≠기안자)가 승인 페이지에서 승인 → approved_awaiting_finance.
+        $this->actingAs($manager);
+        \Livewire\Volt\Volt::test('erp.approvals.index')
+            ->call('openApproveModal', $t->approvalRequest->id)
+            ->call('decide')
+            ->assertHasNoErrors();
+
+        $this->assertSame(InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE, $t->fresh()->status);
+        // 관리 승인만 — 재무 확정 전이라 ledger 없음
+        $this->assertSame(0, FinalPayment::where('transfer_id', $t->id)->count());
+    }
+
+    public function test_transfers_page_confirm_executes_green(): void
+    {
+        ['drafter' => $drafter, 'manager' => $manager, 'finance' => $finance,
+            'source' => $source, 'target' => $target] = $this->ctx();
+        $t = $this->service->applyPurchaseFunding($source, $target, 30_000_000, $drafter);
+        $this->service->approvePurchaseFunding($t, $manager);
+
+        // 재무(≠승인자)가 이체 페이지에서 실물확정 → executed + 매입 PBP + GREEN.
+        $this->actingAs($finance);
+        \Livewire\Volt\Volt::test('erp.transfers.index')
+            ->call('openModal', $t->id, 'confirm')
+            ->set('financeNote', '은행이체 완료')
+            ->call('confirm')
+            ->assertHasNoErrors();
+
+        $t->refresh();
+        $this->assertSame(InterVehicleTransfer::STATUS_EXECUTED, $t->status);
+        $this->assertNotNull($t->purchase_balance_payment_id, '매입 PBP 생성');
+        $this->assertSame('매입완료', $target->fresh()->progress_status_cache, '대상 매입 GREEN');
+    }
+
+    public function test_purchase_funding_void_blocked(): void
+    {
+        ['drafter' => $drafter, 'manager' => $manager, 'finance' => $finance,
+            'source' => $source, 'target' => $target] = $this->ctx();
+        $t = $this->service->applyPurchaseFunding($source, $target, 30_000_000, $drafter);
+        $this->service->approvePurchaseFunding($t, $manager);
+        $this->service->confirmPurchaseFundingByFinance($t, $finance);
+
+        // 매입 funding 은 void 미지원 (target=PBP 라 역거래가 ledger 오염) → 차단.
+        $this->expectException(DomainException::class);
+        $this->service->voidRequest($t->fresh(), $drafter, '취소 시도');
+    }
 }

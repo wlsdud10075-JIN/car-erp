@@ -71,6 +71,7 @@ return [
     'confirmed' => 'Confirmed',
     'empty_payment' => 'No matching balances.',
     'unit_won' => 'KRW',
+    'purchase_funding_tag' => 'purchase funding',
 
     'msg' => [
         'only_awaiting_sale' => 'Only sale balances awaiting confirmation can be processed.',
