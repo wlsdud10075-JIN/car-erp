@@ -241,6 +241,32 @@ class PurchaseFundingTest extends TestCase
         $this->service->voidRequest($t->fresh(), $drafter, '취소 시도');
     }
 
+    public function test_drafter_can_finance_confirm_after_admin_approves(): void
+    {
+        // jin 워크플로우 (2026-07-21): [관리]/업무관리자 기안 → 최고관리자 승인 → 그 기안자가 입금+재무확정.
+        //   SoD = 기안≠승인, 승인≠재무확정. 기안자=재무확정자는 허용이라 통과해야 함.
+        ['drafter' => $drafter, 'source' => $source, 'target' => $target] = $this->ctx();
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $t = $this->service->applyPurchaseFunding($source, $target, 30_000_000, $drafter);
+        $this->service->approvePurchaseFunding($t, $admin);
+
+        $this->service->confirmPurchaseFundingByFinance($t, $drafter);   // 기안자 재무확정 — 통과
+        $this->assertSame(InterVehicleTransfer::STATUS_EXECUTED, $t->fresh()->status);
+        $this->assertSame('매입완료', $target->fresh()->progress_status_cache);
+    }
+
+    public function test_approver_cannot_also_finance_confirm(): void
+    {
+        // 승인한 최고관리자가 그대로 재무확정 시도 = SoD 차단 (jin이 본 "걸림"의 정체).
+        ['drafter' => $drafter, 'source' => $source, 'target' => $target] = $this->ctx();
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $t = $this->service->applyPurchaseFunding($source, $target, 30_000_000, $drafter);
+        $this->service->approvePurchaseFunding($t, $admin);
+
+        $this->expectException(DomainException::class);
+        $this->service->confirmPurchaseFundingByFinance($t, $admin);   // 승인자===재무확정자 → 차단
+    }
+
     public function test_in_progress_banner_shows_on_both_vehicles(): void
     {
         ['drafter' => $drafter, 'source' => $source, 'target' => $target] = $this->ctx();
