@@ -6354,44 +6354,13 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-indigo-400"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.purchase_payment') }}</span>
             </div>
-            {{-- 보증금 적용 (jin 2026-07-20) — 매입탭에서도 진입. 실제 적용은 판매측 입금으로 landing(같은 모달). --}}
+            {{-- 매입탭 자금 기안 권한 (jin 2026-07-21) — 매입탭은 「보증금 매입 선지급」만 노출.
+                 판매탭 「보증금 적용」(판매 입금 이동)과 역할이 갈려 혼동 방지: 매입탭=매입대금 선지급, 판매탭=판매 입금 보충. --}}
             @php
                 $uP = auth()->user();
                 $canDraftDepositP = $uP && ($uP->role === '관리' || $uP->isManager() || $uP->isSuperAdmin());
             @endphp
-            @if($canDraftDepositP)
-                @php $adcP = $this->applyDepositContext; @endphp
-                @if($adcP['eligible'])
-                @php
-                    // 매입탭은 국내(원화 사용) — 판매 통화 보증금을 판매 환율로 원화 환산 표시 (jin 2026-07-20)
-                    $depAmt = $adcP['total_available'] ?? 0;
-                    $depRate = (float) str_replace(',', '', $exchange_rate_str ?: '0');
-                    $depKrw = ($currency !== 'KRW' && $depRate > 0) ? (int) round($depAmt * $depRate) : null;
-                @endphp
-                <div class="mb-2 rounded-md border border-teal-200 bg-teal-50 p-2.5 text-[11px] text-teal-900">
-                    <div class="flex flex-wrap items-center justify-between gap-2">
-                        <div class="space-y-0.5">
-                            @if($currency === 'KRW')
-                            <div class="text-sm font-bold text-teal-800">{{ __('vehicle.deposit_apply.usable', ['amount' => number_format($depAmt), 'currency' => '원']) }}</div>
-                            @elseif($depKrw !== null)
-                            <div class="text-sm font-bold text-teal-800">≈ ₩{{ number_format($depKrw) }}</div>
-                            <div class="text-teal-600">{{ number_format($depAmt) }} {{ $currency }} × {{ number_format($depRate) }} {{ __('vehicle.deposit_apply.rate_word') }}</div>
-                            @else
-                            <div class="text-sm font-bold text-teal-800">{{ number_format($depAmt) }} {{ $currency }}</div>
-                            <div class="text-teal-600">{{ __('vehicle.deposit_apply.rate_needed') }}</div>
-                            @endif
-                        </div>
-                        <button type="button" wire:click="openApplyDepositModal"
-                                class="rounded-md bg-teal-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-teal-700">
-                            💳 {{ __('vehicle.deposit_apply.btn') }}
-                        </button>
-                    </div>
-                </div>
-                @else
-                <div class="mb-2 text-[11px] text-gray-400">💳 {{ __('vehicle.deposit_apply.title') }} — {{ $adcP['reason'] ?: __('vehicle.deposit_apply.not_eligible') }}</div>
-                @endif
-            @endif
-            {{-- 보증금 매입 funding (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) funding → 매입 GREEN.
+            {{-- 보증금 매입 선지급 (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) 선지급 → 매입 GREEN.
                  [관리]/업무관리자 기안 → 관리 승인 → 재무 실물확정. 여력(바이어 aggregate KRW) 한도. --}}
             @if($canDraftDepositP)
                 @php $pfAvail = $this->purchaseFundingAvailableKrw; $pfElig = $this->applyDepositContext['eligible'] && ($pfAvail ?? 0) > 0; @endphp

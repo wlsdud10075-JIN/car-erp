@@ -51,7 +51,7 @@ class ApprovalRequest extends Model
         self::TYPE_INTER_VEHICLE_TRANSFER => '차량 간 자금 이체',
         self::TYPE_INTER_VEHICLE_TRANSFER_VOID => '자금 이체 취소',
         self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => '보증금 적용',
-        self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => '보증금 매입 funding',
+        self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => '보증금 매입 선지급',
     ];
 
     public const STATUS_PENDING = 'pending';
