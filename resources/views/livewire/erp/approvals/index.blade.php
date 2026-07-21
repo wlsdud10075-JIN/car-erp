@@ -52,8 +52,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 큐 19-F — 자금 이체 / 이체 취소 행에 transfer.status 일괄 매핑 (N+1 회피).
         // approved 상태이지만 transfer 가 approved_awaiting_finance 면 '재무 처리 대기' 라벨 표시.
         $reqs = $page->getCollection();
+        // 자금 이체 + 보증금 매입 선지급 모두 approval_request_id 로 transfer.status 매핑 (재무 대기 배지용).
+        $financeStepTypes = [ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER, ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING];
         $transferApprovalIds = $reqs
-            ->filter(fn ($r) => $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
+            ->filter(fn ($r) => in_array($r->action_type, $financeStepTypes, true))
             ->pluck('id');
         $voidTransferIds = $reqs
             ->filter(fn ($r) => $r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID)
@@ -72,8 +74,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->get(['id', 'status', 'void_finance_rejected_at'])
                 ->keyBy('id');
 
-        $reqs->each(function ($r) use ($byApprovalReq, $voidTransferMap) {
-            if ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER) {
+        $reqs->each(function ($r) use ($byApprovalReq, $voidTransferMap, $financeStepTypes) {
+            if (in_array($r->action_type, $financeStepTypes, true)) {
                 $r->setAttribute('related_transfer_status', $byApprovalReq[$r->id] ?? null);
                 $r->setAttribute('related_transfer_void_rejected', false);
             } elseif ($r->action_type === ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID) {
@@ -91,6 +93,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function pendingCount(): int
     {
         return ApprovalRequest::where('status', 'pending')->count();
+    }
+
+    /** 결정 모달에 표시할 요청 요약 (내용 먼저 보고 승인/거부, jin 2026-07-21). */
+    #[Computed]
+    public function decisionRequest(): ?ApprovalRequest
+    {
+        return $this->decisionId ? ApprovalRequest::with('requester')->find($this->decisionId) : null;
     }
 
     public function openApproveModal(int $id): void
@@ -274,6 +283,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                                 </div>
                             </div>
+                        @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
+                            @php $p = $r->payload ?? []; @endphp
+                            <div class="space-y-0.5">
+                                <div>
+                                    <span class="text-gray-400">{{ __('approval.t.source') }}</span>
+                                    <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                                    →
+                                    <span class="text-gray-400">{{ __('approval.t.target') }}</span>
+                                    <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                                </div>
+                                <div class="font-semibold text-indigo-700">
+                                    ₩{{ number_format($p['amount_krw'] ?? 0) }}
+                                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? '' }} · {{ __('approval.t.purchase_funding') }})</span>
+                                </div>
+                            </div>
                         @elseif($r->target_type && $r->target_id)
                             <span class="font-mono">{{ class_basename($r->target_type) }} #{{ $r->target_id }}</span>
                         @else - @endif
@@ -286,6 +310,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $isTransferRow = in_array($r->action_type, [
                                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
                                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
+                                ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
                             ], true);
                         @endphp
                         @php $voidRejected = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
@@ -343,6 +368,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $isTransferRowMobile = in_array($r->action_type, [
                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
+                ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
             ], true);
         @endphp
         <div class="card-tight">
@@ -397,6 +423,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-0.5 text-xs font-semibold text-red-600">
                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                 </div>
+            @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
+                @php $p = $r->payload ?? []; @endphp
+                <div class="mt-1 text-xs text-gray-700">
+                    <span class="text-gray-400">{{ __('approval.t.source') }}</span> <span class="font-mono">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
+                    →
+                    <span class="text-gray-400">{{ __('approval.t.target') }}</span> <span class="font-mono">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
+                </div>
+                <div class="mt-0.5 text-xs font-semibold text-indigo-700">
+                    ₩{{ number_format($p['amount_krw'] ?? 0) }}
+                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? '' }})</span>
+                </div>
             @endif
             @if($r->reason)
             <div class="mt-1 text-xs text-gray-600">{{ $r->reason }}</div>
@@ -427,6 +464,27 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h3 class="text-base font-semibold text-gray-900">
             {{ $decisionMode === 'approve' ? __('approval.modal.approve_title') : __('approval.modal.reject_title') }}
         </h3>
+
+        {{-- 요청 요약 — 내용 먼저 보고 결정 (jin 2026-07-21) --}}
+        @php $dr = $this->decisionRequest; $dp = $dr?->payload ?? []; @endphp
+        @if($dr)
+        <div class="mt-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs space-y-1">
+            <div class="font-semibold text-gray-800">{{ $dr->action_label }}</div>
+            @if(isset($dp['source_vehicle_number']) || isset($dp['target_vehicle_number']))
+            <div class="text-gray-700">
+                <span class="text-gray-400">{{ __('approval.t.source') }}</span> <span class="font-mono">{{ $dp['source_vehicle_number'] ?? '?' }}</span>
+                → <span class="text-gray-400">{{ __('approval.t.target') }}</span> <span class="font-mono">{{ $dp['target_vehicle_number'] ?? '?' }}</span>
+            </div>
+            @endif
+            @if($dr->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
+            <div class="font-semibold text-indigo-700">₩{{ number_format($dp['amount_krw'] ?? 0) }} <span class="text-[10px] font-normal text-gray-400">({{ number_format($dp['amount'] ?? 0) }} {{ $dp['currency'] ?? '' }} · {{ __('approval.t.purchase_funding') }})</span></div>
+            @elseif(isset($dp['amount']))
+            <div class="font-semibold text-gray-800">{{ number_format($dp['amount']) }} {{ $dp['currency'] ?? '' }}</div>
+            @endif
+            <div class="text-gray-500">{{ $dr->requester?->name ?? '-' }}@if($dr->reason) · {{ $dr->reason }}@endif</div>
+        </div>
+        @endif
+
         <p class="mt-2 text-sm text-gray-600">
             @if($decisionMode === 'approve')
                 {{ __('approval.modal.approve_desc') }}

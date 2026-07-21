@@ -32,6 +32,7 @@ return [
         'overlap_vehicles' => '미수 차량:',
         'void' => '⊘ 이체 #:id 취소',
         'restore' => '원상복구',
+        'purchase_funding' => '매입 선지급',
     ],
     'tstatus' => [
         'approved_awaiting' => '관리 승인 (재무 처리 대기)',
