@@ -745,6 +745,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $userConfirmedDocCheckMismatch = false;
     public array $docCheckMismatches = [];
 
+    // 미래 날짜 확인 모달 (jin 2026-07-21) — 매입일/판매일이 오늘보다 미래면 저장 전 확인
+    public bool $showFutureDateModal = false;
+    public bool $userConfirmedFutureDates = false;
+    public array $futureDates = [];
+
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $vehicle_number = '';
     public string $sales_channel = 'export';
@@ -2834,6 +2839,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 큐 21 후속 — 말소·수출통관 mismatch 모달 정리
         $this->showDocCheckModal = false;
         $this->userConfirmedDocCheckMismatch = false;
+        // 미래 날짜 확인 모달 정리 (jin 2026-07-21)
+        $this->showFutureDateModal = false;
+        $this->userConfirmedFutureDates = false;
+        $this->futureDates = [];
         $this->docCheckMismatches = [];
     }
 
@@ -2876,6 +2885,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->userConfirmedDocCheckMismatch = true;
         $this->showDocCheckModal = false;
         $this->save();
+    }
+
+    /** 미래 날짜 확인 모달 — "맞습니다, 저장" → 확인 플래그 set 후 save 재호출. */
+    public function confirmSaveWithFutureDates(): void
+    {
+        $this->userConfirmedFutureDates = true;
+        $this->showFutureDateModal = false;
+        $this->save();
+    }
+
+    /** 미래 날짜 확인 모달 — "날짜 수정" → 모달 닫고 저장 보류(사용자가 날짜 고침). */
+    public function dismissFutureDateModal(): void
+    {
+        $this->showFutureDateModal = false;
+        $this->futureDates = [];
+        $this->userConfirmedFutureDates = false;
     }
 
     public function dismissDocCheckModal(string $jumpToTab = ''): void
@@ -3582,6 +3607,36 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        // 미래 날짜 확인 (jin 2026-07-21) — 매입일/판매일이 오늘보다 미래면 확인 모달.
+        //   매입/판매 시점에 따라 금액(미수·미지급·정산) 적용 시점이 달라져 오입력(연도 오타 등) 방지.
+        if (! $this->userConfirmedFutureDates) {
+            $today = now()->startOfDay();
+            $future = [];
+            foreach (['purchase_date' => __('vehicle.field.purchase_date'), 'sale_date' => __('vehicle.field.sale_date')] as $field => $label) {
+                $val = trim((string) $this->{$field});
+                if ($val === '') {
+                    continue;
+                }
+                if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $val, $m)) {
+                    $val = "{$m[1]}-{$m[2]}-{$m[3]}";
+                }
+                try {
+                    $d = \Illuminate\Support\Carbon::parse($val)->startOfDay();
+                } catch (\Throwable $e) {
+                    continue;   // 파싱 실패는 날짜 validation 이 처리
+                }
+                if ($d->gt($today)) {
+                    $future[] = ['label' => $label, 'date' => $d->format('Y-m-d')];
+                }
+            }
+            if (! empty($future)) {
+                $this->futureDates = $future;
+                $this->showFutureDateModal = true;
+
+                return;   // save 보류 — 확인 모달 후 confirmSaveWithFutureDates 에서 재호출
+            }
+        }
+
         $toInt = fn(?string $v): int => (int) str_replace(',', '', $v ?? '');
         $toFloat = fn(?string $v): float => (float) str_replace(',', '', $v ?? '');
         // 8자리 숫자(YYYYMMDD)는 Y-m-d 로 정규화 — flatpickr 미포맷 raw 입력 방어(jin 2026-07-20).
@@ -4093,6 +4148,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 큐 21 후속 — mismatch confirm flag 리셋 (다음 save 진입 시 재검사)
         $this->userConfirmedDocCheckMismatch = false;
+        // 미래 날짜 확인 flag 리셋 (다음 save 진입 시 재검사, jin 2026-07-21)
+        $this->userConfirmedFutureDates = false;
+        $this->futureDates = [];
 
         $this->unsetComputedProperties();
 
@@ -7971,6 +8029,39 @@ function vehicleColumnsToggle() {
             <button wire:click="confirmSaveWithDocMismatch" type="button"
                     class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
                 {{ __('vehicle.modal.doc_save_anyway') }}
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 미래 날짜 확인 모달 (jin 2026-07-21) — 매입일/판매일이 오늘보다 미래일 때 --}}
+@if($showFutureDateModal && ! empty($futureDates))
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:key="future-date-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.future_date_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.future_date_today', ['today' => now()->format('Y-m-d')]) }}</p>
+
+        <div class="mt-3 space-y-1.5">
+            @foreach($futureDates as $f)
+            <div class="flex items-center justify-between rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
+                <span class="font-semibold text-amber-800">{{ $f['label'] }}</span>
+                <span class="font-mono text-amber-700">{{ $f['date'] }}</span>
+            </div>
+            @endforeach
+        </div>
+
+        <div class="mt-3 rounded-md bg-gray-50 border border-gray-200 p-2.5 text-[11px] text-gray-600">
+            {{ __('vehicle.modal.future_date_note') }}
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button wire:click="dismissFutureDateModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.future_date_fix') }}</button>
+            <button wire:click="confirmSaveWithFutureDates" type="button"
+                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                {{ __('vehicle.modal.future_date_confirm') }}
             </button>
         </div>
     </div>

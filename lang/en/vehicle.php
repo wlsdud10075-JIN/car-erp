@@ -712,6 +712,12 @@ return [
         'doc_note' => 'On save, the above steps stay at the current step. Fill in the check/document and save again to progress.',
         'doc_cancel' => 'Cancel (go fix it)',
         'doc_save_anyway' => 'Save as is (aware steps not progressed)',
+        // Future-date confirmation (jin 2026-07-21)
+        'future_date_title' => 'Confirm future date',
+        'future_date_today' => 'Today is :today. Are the dates below correct?',
+        'future_date_note' => 'Purchase/sale dates change when amounts (receivable, payable, settlement) take effect. Please confirm the future date is correct (e.g. year typo).',
+        'future_date_fix' => 'Fix date',
+        'future_date_confirm' => 'Yes, save',
         // Ledger unlock
         'ledger_title' => '🔓 Ledger Unlock',
         'ledger_desc' => 'Buy/sell price, rate, license amount, 9 costs, buyer, salesman can be changed once. Auto re-locks right after save.',
