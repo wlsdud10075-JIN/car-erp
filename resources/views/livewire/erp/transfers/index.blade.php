@@ -509,7 +509,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $note = trim($this->financeNote) !== '' ? trim($this->financeNote) : null;
 
             if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
-                $service->confirmByFinance($transfer, auth()->user(), $note);
+                if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+                    $service->confirmPurchaseFundingByFinance($transfer, auth()->user(), $note);
+                } else {
+                    $service->confirmByFinance($transfer, auth()->user(), $note);
+                }
                 $msg = __('transfer.msg.transfer_confirmed');
             } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
                 $service->confirmVoidByFinance($transfer, auth()->user(), $note);

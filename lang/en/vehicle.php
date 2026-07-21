@@ -607,6 +607,23 @@ return [
         'source_required' => 'Select a source vehicle.',
     ],
 
+    // Purchase funding via deposit (C2, jin 2026-07-21) — fund this car's KRW purchase cost with the buyer's deposit
+    'purchase_funding' => [
+        'title' => '🏦 Purchase funding',
+        'btn' => 'Purchase funding',
+        'hint' => "Prepay this car's purchase cost (KRW) with the buyer's deposit",
+        'not_eligible' => 'No eligible source or headroom for purchase funding.',
+        'modal_title' => "Purchase funding — prepay purchase with the buyer's deposit",
+        'modal_desc' => "Prepay this car's purchase cost (KRW) using the buyer's deposit (foreign) from a pre-shipping vehicle. On manager approval + finance confirmation, purchase is marked complete (GREEN) and the source car's receivable rises accordingly.",
+        'available_krw' => 'Usable deposit headroom ₩:amount',
+        'source_label' => 'Source vehicle for the deposit',
+        'amount_label' => 'Purchase funding amount (KRW)',
+        'reason_ph' => 'e.g. prepay 145부1234 purchase on buyer credit',
+        'approval_note' => 'Draft → manager approval → finance confirmation (after bank transfer) marks purchase GREEN.',
+        'submit' => 'Draft funding',
+        'sent' => 'Purchase funding drafted. Applied on manager approval + finance confirmation.',
+    ],
+
     // Delete-reason modal (2026-07-08) — finance-linked vehicles require a reason + audit log
     'delete_gate' => [
         'title' => 'Delete finance-linked vehicle',

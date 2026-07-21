@@ -902,6 +902,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $applyDepositReason = '';
 
+    // 보증금 매입 funding 모달 상태 (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) funding → 매입 GREEN
+    public bool $showPurchaseFundingModal = false;
+
+    public string $pfSourceId = '';
+
+    public string $pfAmountKrwStr = '';
+
+    public string $pfReason = '';
+
     // 큐 19-E — 이체 취소(void) 요청 모달 상태
     public bool $showTransferVoidModal = false;
 
@@ -4473,6 +4482,103 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetApplyDepositForm();
     }
 
+    // ─── 보증금 매입 funding (C2, jin 2026-07-21) ───────────────────
+    //   소스 후보는 보증금 적용과 동일(그 바이어 선적전·available>0) → applyDepositContext 재사용.
+    //   차이: 금액을 KRW(매입 원화)로 받고, 승인 흐름=기안→관리승인→재무 실물확정(applyPurchaseFunding).
+
+    /** 이 차(target) 바이어의 보증금 여력(KRW, 매입 funding 상한). null=진행중 판매이력 없음. */
+    #[Computed]
+    public function purchaseFundingAvailableKrw(): ?int
+    {
+        if ($this->editingId === null) {
+            return null;
+        }
+        $target = \App\Models\Vehicle::find($this->editingId);
+        if (! $target || ! $target->buyer_id) {
+            return null;
+        }
+        $gauge = $target->buyer?->receivableGauge();
+
+        return $gauge['available_krw'] ?? null;
+    }
+
+    public function openPurchaseFundingModal(): void
+    {
+        if (! $this->canApplyDeposit()) {
+            $this->dispatch('notify', message: __('vehicle.deposit_apply.no_permission'), type: 'warning');
+
+            return;
+        }
+        if (! $this->applyDepositContext['eligible'] || ($this->purchaseFundingAvailableKrw ?? 0) <= 0) {
+            $this->dispatch('notify', message: __('vehicle.purchase_funding.not_eligible'), type: 'warning');
+
+            return;
+        }
+        $this->pfSourceId = '';
+        $this->pfAmountKrwStr = '';
+        $this->pfReason = '';
+        $this->resetErrorBag(['pfSourceId', 'pfAmountKrwStr', 'pfReason']);
+        $this->showPurchaseFundingModal = true;
+    }
+
+    public function closePurchaseFundingModal(): void
+    {
+        $this->resetPurchaseFundingForm();
+    }
+
+    private function resetPurchaseFundingForm(): void
+    {
+        $this->showPurchaseFundingModal = false;
+        $this->pfSourceId = '';
+        $this->pfAmountKrwStr = '';
+        $this->pfReason = '';
+    }
+
+    /** 매입 funding 기안 제출 → InterVehicleTransferService::applyPurchaseFunding(). 관리 승인 → 재무 실물확정 시 매입 GREEN. */
+    public function submitPurchaseFunding(\App\Services\InterVehicleTransferService $service): void
+    {
+        if (! $this->canApplyDeposit() || $this->editingId === null) {
+            abort(403);
+        }
+        $this->validate([
+            'pfSourceId' => ['required', 'integer'],
+            'pfAmountKrwStr' => ['required', 'string'],
+            'pfReason' => ['required', 'string', 'min:5'],
+        ], [
+            'pfSourceId.required' => __('vehicle.deposit_apply.source_required'),
+            'pfAmountKrwStr.required' => __('vehicle.valmsg.transfer_amount_required'),
+            'pfReason.required' => __('vehicle.valmsg.approval_reason_required'),
+            'pfReason.min' => __('vehicle.valmsg.reason_min5'),
+        ]);
+
+        $source = \App\Models\Vehicle::find((int) $this->pfSourceId);
+        $target = \App\Models\Vehicle::find($this->editingId);
+        $amountKrw = (float) str_replace(',', '', $this->pfAmountKrwStr);
+
+        if (! $source || ! $target) {
+            $this->dispatch('notify', message: __('vehicle.toast.transfer_vehicle_not_found'), type: 'warning');
+
+            return;
+        }
+
+        try {
+            $service->applyPurchaseFunding(
+                source: $source,
+                target: $target,
+                amountKrw: $amountKrw,
+                drafter: auth()->user(),
+                reason: trim($this->pfReason),
+            );
+        } catch (\DomainException $e) {
+            $this->addError('pfAmountKrwStr', $e->getMessage());
+
+            return;
+        }
+
+        $this->dispatch('notify', message: __('vehicle.purchase_funding.sent'), type: 'success');
+        $this->resetPurchaseFundingForm();
+    }
+
     // 큐 19-E — 이체 취소(void) 요청 ────────────────────────────────
 
     public function openTransferVoidModal(int $transferId): void
@@ -6283,6 +6389,26 @@ function vehicleColumnsToggle() {
                 </div>
                 @else
                 <div class="mb-2 text-[11px] text-gray-400">💳 {{ __('vehicle.deposit_apply.title') }} — {{ $adcP['reason'] ?: __('vehicle.deposit_apply.not_eligible') }}</div>
+                @endif
+            @endif
+            {{-- 보증금 매입 funding (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) funding → 매입 GREEN.
+                 [관리]/업무관리자 기안 → 관리 승인 → 재무 실물확정. 여력(바이어 aggregate KRW) 한도. --}}
+            @if($canDraftDepositP)
+                @php $pfAvail = $this->purchaseFundingAvailableKrw; $pfElig = $this->applyDepositContext['eligible'] && ($pfAvail ?? 0) > 0; @endphp
+                @if($pfElig)
+                <div class="mb-2 rounded-md border border-indigo-200 bg-indigo-50 p-2.5 text-[11px] text-indigo-900">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="space-y-0.5">
+                            <div class="font-semibold">{{ __('vehicle.purchase_funding.title') }}</div>
+                            <div class="text-sm font-bold text-indigo-800">₩{{ number_format($pfAvail) }}</div>
+                            <div class="text-indigo-600">{{ __('vehicle.purchase_funding.hint') }}</div>
+                        </div>
+                        <button type="button" wire:click="openPurchaseFundingModal"
+                                class="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700">
+                            🏦 {{ __('vehicle.purchase_funding.btn') }}
+                        </button>
+                    </div>
+                </div>
                 @endif
             @endif
             {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
@@ -8163,6 +8289,56 @@ function vehicleColumnsToggle() {
             <button type="button" wire:click="submitApplyDeposit" wire:loading.attr="disabled"
                     class="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
                 {{ __('vehicle.deposit_apply.submit') }}
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 보증금 매입 funding 모달 (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) funding. --}}
+@if($showPurchaseFundingModal)
+@php $pfM = $this->applyDepositContext; $pfAvailM = $this->purchaseFundingAvailableKrw; @endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+     wire:click.self="closePurchaseFundingModal"
+     wire:key="purchase-funding-modal">
+    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.purchase_funding.modal_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.purchase_funding.modal_desc') }}</p>
+
+        <div class="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-2.5 text-sm font-bold text-indigo-800">
+            {{ __('vehicle.purchase_funding.available_krw', ['amount' => number_format($pfAvailM ?? 0)]) }}
+        </div>
+
+        <div class="mt-3 space-y-2">
+            <div>
+                <label class="label-base">{{ __('vehicle.purchase_funding.source_label') }} <span class="text-red-500">*</span></label>
+                <select wire:model="pfSourceId" class="input-base">
+                    <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
+                    @foreach($pfM['candidates'] as $cand)
+                    <option value="{{ $cand['id'] }}">{{ $cand['number'] }} ({{ __('vehicle.deposit_apply.can_pull') }} {{ number_format($cand['available']) }} {{ $currency ?: 'KRW' }})</option>
+                    @endforeach
+                </select>
+                @error('pfSourceId')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.purchase_funding.amount_label') }} <span class="text-red-500">*</span></label>
+                <input wire:model="pfAmountKrwStr" type="text" data-money class="input-base" placeholder="0" />
+                @error('pfAmountKrwStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.modal.overlap_reason_label') }} <span class="text-red-500">*</span></label>
+                <textarea wire:model="pfReason" rows="2" class="input-base" placeholder="{{ __('vehicle.purchase_funding.reason_ph') }}"></textarea>
+                @error('pfReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            <p class="text-[11px] text-gray-400">{{ __('vehicle.purchase_funding.approval_note') }}</p>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="closePurchaseFundingModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button type="button" wire:click="submitPurchaseFunding" wire:loading.attr="disabled"
+                    class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+                {{ __('vehicle.purchase_funding.submit') }}
             </button>
         </div>
     </div>

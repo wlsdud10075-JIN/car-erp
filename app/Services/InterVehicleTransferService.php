@@ -3,8 +3,10 @@
 namespace App\Services;
 
 use App\Models\ApprovalRequest;
+use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
+use App\Models\PurchaseBalancePayment;
 use App\Models\User;
 use App\Models\Vehicle;
 use DomainException;
@@ -277,6 +279,229 @@ class InterVehicleTransferService
         });
 
         $transfer->refresh();
+    }
+
+    /**
+     * 보증금 매입 funding (C2, jin 2026-07-21) — [관리]/업무관리자 기안. status=pending + ApprovalRequest.
+     *   소스 차(그 바이어 선적전, 여유) 보증금(외화)으로 대상 차 매입대금(원화 $amountKrw)을 funding.
+     *   승인 흐름 = standard 3단(기안→관리승인→재무 실물확정). 재무확정 시 소스 −FinalPayment(외화, 미수↑) +
+     *   대상 매입 PBP(원화, confirmed, marker) → 매입 GREEN. amount=소스 차감 외화(=amount_krw÷소스환율), 스냅샷 보존.
+     *
+     * @param  float  $amountKrw  대상 매입 funding 원화액
+     *
+     * @throws DomainException 가드 위반 시
+     */
+    public function applyPurchaseFunding(
+        Vehicle $source,
+        Vehicle $target,
+        float $amountKrw,
+        User $drafter,
+        ?string $reason = null,
+    ): InterVehicleTransfer {
+        $this->assertPurchaseFundingGuards($source, $target, $amountKrw);
+        $this->assertNoInProgressTransfer($source);
+
+        $sourceRate = (float) $source->exchange_rate;
+        $sourceForeign = round($amountKrw / $sourceRate, 2);
+
+        return DB::transaction(function () use ($source, $target, $amountKrw, $sourceForeign, $sourceRate, $drafter, $reason) {
+            $approvalReq = ApprovalRequest::create([
+                'requester_id' => $drafter->id,
+                'action_type' => ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
+                'target_type' => Vehicle::class,
+                'target_id' => $target->id,
+                'status' => ApprovalRequest::STATUS_PENDING,
+                'reason' => $reason,
+                'payload' => [
+                    'source_vehicle_id' => $source->id,
+                    'source_vehicle_number' => $source->vehicle_number,
+                    'target_vehicle_id' => $target->id,
+                    'target_vehicle_number' => $target->vehicle_number,
+                    'buyer_id' => $source->buyer_id,
+                    'amount' => $sourceForeign,
+                    'amount_krw' => $amountKrw,
+                    'currency' => $source->currency,
+                    'source_exchange_rate' => $sourceRate,
+                ],
+            ]);
+
+            return InterVehicleTransfer::create([
+                'source_vehicle_id' => $source->id,
+                'target_vehicle_id' => $target->id,
+                'buyer_id' => $source->buyer_id,
+                'amount' => $sourceForeign,
+                'amount_krw' => $amountKrw,
+                'currency' => $source->currency,
+                'kind' => InterVehicleTransfer::KIND_PURCHASE_FUNDING,
+                'source_exchange_rate' => $sourceRate,
+                'approval_request_id' => $approvalReq->id,
+                'status' => InterVehicleTransfer::STATUS_PENDING,
+                'requester_id' => $drafter->id,
+            ]);
+        });
+    }
+
+    /**
+     * 매입 funding 관리 승인 (의사결정만, ledger 미생성). pending → approved_awaiting_finance.
+     * ApprovalRequest.execute() 경유. 재무 실물확정(confirmPurchaseFundingByFinance)으로 이연.
+     */
+    public function approvePurchaseFunding(InterVehicleTransfer $transfer, User $approver): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->kind !== InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+            throw new DomainException('보증금 매입 funding 이체가 아닙니다.');
+        }
+        if ($transfer->status !== InterVehicleTransfer::STATUS_PENDING) {
+            throw new DomainException("이미 처리된 이체입니다 (현재 상태: {$transfer->status}).");
+        }
+
+        $this->assertPurchaseFundingGuards($transfer->sourceVehicle, $transfer->targetVehicle, (float) $transfer->amount_krw);
+
+        $transfer->update([
+            'status' => InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            'approver_id' => $approver->id,
+        ]);
+    }
+
+    /**
+     * 매입 funding 재무 실물확정 (은행이체 후). approved_awaiting_finance → executed.
+     *   소스 차: FinalPayment −(amount 외화) [소스 판매 미수↑, 소스환율 스냅샷 = 회수 환차 baseline]
+     *   대상 차: PurchaseBalancePayment +(amount_krw 원화, confirmed, "바이어 funding" marker) → 매입 GREEN
+     *
+     * 가드: kind·SoD(관리승인자≠재무확정자)·paid 정산 없음. atomic 상태전이(동시 확정 시 ledger 이중생성 차단).
+     * PBP creating 가드(canConfirmFinance)가 재무 권한 자연 강제.
+     */
+    public function confirmPurchaseFundingByFinance(InterVehicleTransfer $transfer, User $financeUser, ?string $note = null): void
+    {
+        $transfer = $transfer->fresh();
+        if ($transfer->kind !== InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+            throw new DomainException('보증금 매입 funding 이체가 아닙니다.');
+        }
+        if ($transfer->approver_id !== null && $transfer->approver_id === $financeUser->id) {
+            throw new DomainException('관리 승인자와 재무 확정자는 다른 사용자여야 합니다 (SoD).');
+        }
+        $this->assertPaidSettlementGuard($transfer->sourceVehicle, $transfer->targetVehicle);
+
+        DB::transaction(function () use ($transfer, $financeUser, $note) {
+            $confirmedAt = now();
+
+            $affected = InterVehicleTransfer::whereKey($transfer->id)
+                ->where('status', InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE)
+                ->update([
+                    'status' => InterVehicleTransfer::STATUS_EXECUTED,
+                    'executed_at' => $confirmedAt,
+                    'confirmed_by_user_id' => $financeUser->id,
+                    'confirmed_at' => $confirmedAt,
+                    'finance_note' => $note,
+                ]);
+            if ($affected !== 1) {
+                throw new DomainException('이미 처리됐거나 상태가 변경된 이체입니다 (동시 확정 방지).');
+            }
+
+            $today = now()->toDateString();
+            $sourceForeign = (float) $transfer->amount;
+            $amountKrw = (float) $transfer->amount_krw;
+            $sourceRate = (float) $transfer->source_exchange_rate;
+            $marker = "보증금 매입 funding #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
+
+            // 소스 차 — 음수 FinalPayment (외화, 소스 판매 미수↑). 소스환율 스냅샷 보존.
+            FinalPayment::create([
+                'vehicle_id' => $transfer->source_vehicle_id,
+                'transfer_id' => $transfer->id,
+                'amount' => -$sourceForeign,
+                'type' => 'balance',
+                'payment_date' => $today,
+                'exchange_rate' => $sourceRate,
+                'note' => "→ 차량 #{$transfer->target_vehicle_id} 매입 funding ({$marker})",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
+            ]);
+
+            // 대상 차 — 매입 PBP (원화, confirmed, 바이어 funding marker) → 매입 GREEN.
+            $pbp = PurchaseBalancePayment::create([
+                'vehicle_id' => $transfer->target_vehicle_id,
+                'amount' => $amountKrw,
+                'type' => 'balance',
+                'payment_date' => $today,
+                'note' => "바이어 보증금 funding ← 차량 #{$transfer->source_vehicle_id} ({$marker})",
+                'confirmed_by_user_id' => $financeUser->id,
+                'confirmed_at' => $confirmedAt,
+                'finance_note' => $note,
+            ]);
+
+            InterVehicleTransfer::whereKey($transfer->id)->update(['purchase_balance_payment_id' => $pbp->id]);
+        });
+
+        $transfer->refresh();
+    }
+
+    /**
+     * 매입 funding 전용 가드 (C2). standard assertGuards 와 별개 — amount 의미가 원화라 재사용 불가.
+     *   같은 바이어 · source 환율>0 · source 미수율 ≤ 0.5 · source 차감 외화 ≤ available(source) ·
+     *   바이어 보증금 여력(computeReceivableGauge available_krw) ≥ amountKrw · source/target paid 정산 없음.
+     */
+    private function assertPurchaseFundingGuards(Vehicle $source, Vehicle $target, float $amountKrw): void
+    {
+        if ($source->id === $target->id) {
+            throw new DomainException('funding 출처와 대상 차량이 동일할 수 없습니다.');
+        }
+        if ($source->buyer_id === null || $target->buyer_id === null || $source->buyer_id !== $target->buyer_id) {
+            throw new DomainException('funding 출처/대상 차량의 바이어가 동일해야 합니다.');
+        }
+        if ($amountKrw <= 0) {
+            throw new DomainException('funding 금액은 0보다 커야 합니다.');
+        }
+        $sourceRate = (float) ($source->exchange_rate ?? 0);
+        if ($sourceRate <= 0) {
+            throw new DomainException('출처 차량의 판매 환율이 입력되어야 합니다 (원화↔외화 환산).');
+        }
+
+        $ratio = $source->unpaid_ratio;
+        if ($ratio === null) {
+            throw new DomainException('출처 차량의 미수율을 계산할 수 없습니다 (판매가 미입력).');
+        }
+        if ($ratio > 0.5) {
+            $pct = round($ratio * 100, 1);
+            throw new DomainException("출처 차량에 50% 이상 입금되어야 funding 가능합니다 (현재 미수율 {$pct}%).");
+        }
+
+        $sourceForeign = $amountKrw / $sourceRate;
+        $limit = $this->available($source);
+        if ($sourceForeign > $limit + 0.005) {
+            throw new DomainException('출처 차량 한도를 초과했습니다 (받은 금액의 50%까지, 한도: '.number_format($limit, 2).' '.$source->currency.').');
+        }
+
+        // 바이어 aggregate 보증금 여력 캡 (단일출처 Buyer::computeReceivableGauge).
+        $available = Buyer::find($source->buyer_id)?->receivableGauge()['available_krw'] ?? null;
+        if ($available === null) {
+            throw new DomainException('바이어 보증금 여력을 계산할 수 없습니다 (진행중 판매 이력 없음).');
+        }
+        if ($amountKrw > $available + 1) {
+            throw new DomainException('바이어 보증금 여력을 초과했습니다 (여력: '.number_format($available).'원).');
+        }
+
+        $this->assertPaidSettlementGuard($source, $target);
+    }
+
+    /** 소스 기준 미처리 이체 중복 차단 (request()/applyDeposit 동일 정책). */
+    private function assertNoInProgressTransfer(Vehicle $source): void
+    {
+        $inProgress = InterVehicleTransfer::where('source_vehicle_id', $source->id)
+            ->whereIn('status', [
+                InterVehicleTransfer::STATUS_PENDING,
+                InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])
+            ->whereHas('approvalRequest', fn ($q) => $q->whereIn('status', [
+                ApprovalRequest::STATUS_PENDING,
+                ApprovalRequest::STATUS_APPROVED,
+            ]))
+            ->first();
+        if ($inProgress) {
+            $label = InterVehicleTransfer::STATUSES[$inProgress->status] ?? $inProgress->status;
+            throw new DomainException("이 차량에 미처리 자금 이체가 있습니다 (현재 상태: {$label}). 처리 완료/거부 후 재시도하세요.");
+        }
     }
 
     /**

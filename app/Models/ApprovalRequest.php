@@ -40,6 +40,9 @@ class ApprovalRequest extends Model
     /** 보증금 적용 (jin 2026-07-20) — [관리]/업무관리자 기안, 최고관리자 승인=즉시 적용. */
     public const TYPE_INTER_VEHICLE_DEPOSIT_APPLY = 'inter_vehicle_deposit_apply';
 
+    /** 보증금 매입 funding (C2, jin 2026-07-21) — [관리]/업무관리자 기안 → 관리 승인 → 재무 실물확정. */
+    public const TYPE_INTER_VEHICLE_PURCHASE_FUNDING = 'inter_vehicle_purchase_funding';
+
     public const TYPES = [
         self::TYPE_INTER_BUYER_OVERLAP => '같은 바이어 미수+신규 거래',
         self::TYPE_SETTLEMENT_PAY => '정산 지급',
@@ -48,6 +51,7 @@ class ApprovalRequest extends Model
         self::TYPE_INTER_VEHICLE_TRANSFER => '차량 간 자금 이체',
         self::TYPE_INTER_VEHICLE_TRANSFER_VOID => '자금 이체 취소',
         self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => '보증금 적용',
+        self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => '보증금 매입 funding',
     ];
 
     public const STATUS_PENDING = 'pending';
@@ -115,6 +119,7 @@ class ApprovalRequest extends Model
                     self::TYPE_INTER_VEHICLE_TRANSFER => $this->executeInterVehicleTransfer(),
                     self::TYPE_INTER_VEHICLE_TRANSFER_VOID => $this->executeInterVehicleTransferVoid(),
                     self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => $this->executeInterVehicleDepositApply(),
+                    self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => $this->executeInterVehiclePurchaseFunding(),
                     self::TYPE_SENSITIVE_ACTION => $this->executeSensitiveAction(),
                     self::TYPE_UNPAID_EXPORT_OVERRIDE => $this->executeUnpaidExportOverride(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
@@ -154,6 +159,18 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
         $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
         app(InterVehicleTransferService::class)->executeDepositApply($transfer, $approver);
+    }
+
+    /**
+     * 보증금 매입 funding 승인 = 관리 의사결정만 통과 (C2, jin 2026-07-21).
+     * service->approvePurchaseFunding() 호출 — transfer.status = approved_awaiting_finance.
+     * 소스 −FinalPayment + 대상 매입 PBP 생성은 재무 실물확정(confirmPurchaseFundingByFinance)으로 이연.
+     */
+    private function executeInterVehiclePurchaseFunding(): void
+    {
+        $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
+        $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
+        app(InterVehicleTransferService::class)->approvePurchaseFunding($transfer, $approver);
     }
 
     /**

@@ -610,6 +610,23 @@ return [
         'source_required' => '끌어올 소스 차량을 선택하세요.',
     ],
 
+    // 보증금 매입 funding (C2, jin 2026-07-21) — 소스 보증금(외화)으로 이 차 매입대금(원화) funding → 매입 GREEN
+    'purchase_funding' => [
+        'title' => '🏦 보증금 매입 funding',
+        'btn' => '매입 funding',
+        'hint' => '바이어 보증금으로 이 차 매입대금(원화) 선지급',
+        'not_eligible' => '매입 funding 가능한 소스·여력이 없습니다.',
+        'modal_title' => '보증금 매입 funding — 바이어 보증금으로 매입대금 선지급',
+        'modal_desc' => '그 바이어의 선적 전 차 보증금(외화)으로 이 차 매입대금(원화)을 선지급합니다. 관리 승인 → 재무 실물확정 시 매입완료(GREEN) 처리되고, 소스 차 미수가 그만큼 늘어납니다.',
+        'available_krw' => '사용 가능 보증금 여력 ₩:amount',
+        'source_label' => '보증금 끌어올 소스 차량',
+        'amount_label' => '매입 funding 금액 (원화)',
+        'reason_ph' => '예: 바이어 신용으로 145부1234 매입대금 선지급',
+        'approval_note' => '기안 → 관리 승인 → 재무 실물확정(은행이체 후) 시 매입 GREEN 처리됩니다.',
+        'submit' => 'funding 기안',
+        'sent' => '매입 funding을 기안했습니다. 관리 승인 → 재무 실물확정 시 적용됩니다.',
+    ],
+
     // 삭제 사유 모달 (2026-07-08) — 회계 연관 차량(확정 잔금·정산) 삭제 시 사유+로그
     'delete_gate' => [
         'title' => '회계 연관 차량 삭제',
