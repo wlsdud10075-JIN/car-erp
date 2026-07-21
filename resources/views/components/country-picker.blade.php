@@ -52,6 +52,7 @@
             x-model="query"
             @focus="open = true"
             @input="open = true; if (query.trim() === '') selectedId = ''"
+            @keydown.tab="open = false"
             placeholder="{{ $placeholder ?? __('common.country_search_ph') }}"
             class="input-base w-full pr-8"
             autocomplete="off"

@@ -49,7 +49,7 @@ return [
         'name_ph' => 'TOKYO AUTO TRADING',
         'salesman' => '영업담당자',
         'salesman_unassigned' => '-- 미배정 --',
-        'salesman_note' => '[관리] 로그인 시 본인 담당 영업의 바이어만 노출됩니다. 미배정 시 vehicles 통한 간접 관계로 fallback',
+        'salesman_note' => '[관리] 계정은 본인이 담당하는 영업의 바이어만 볼 수 있습니다.',
         'contact_name' => '담당자명',
         'passport_id' => '여권/ID 번호',
         'passport_id_ph' => '예: M12345678',
