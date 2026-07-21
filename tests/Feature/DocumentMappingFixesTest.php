@@ -81,11 +81,11 @@ class DocumentMappingFixesTest extends TestCase
         $this->assertStringContainsString('82-10-9009-9977', (string) $ci->getSheetByName('INVOICE')->getCell('B3')->getValue());
         $this->assertStringContainsString('FAX:82-505-366-9977', (string) $ci->getSheetByName('INVOICE')->getCell('B3')->getValue());
 
-        // 말소계약서 E5 fax(heyman) + D50 incoterms
+        // 말소계약서 E5 fax(heyman) + D50 incoterms. FAX 서식 정규화(2026-07-21 jin): 공백 제거 82-505-366-9977.
         $dc = (new DocumentFiller($v))->spreadsheet('deregistration_contract');
         $e5 = $dc->getSheetByName('2.계약서')->getCell('E5')->getValue();
         $e5txt = $e5 instanceof RichText ? $e5->getPlainText() : (string) $e5;
-        $this->assertStringContainsString('82 - 505 - 366 - 9977', $e5txt);
+        $this->assertStringContainsString('82-505-366-9977', $e5txt);
         $this->assertStringNotContainsString('031 - 499 - 1989', $e5txt);
         $this->assertSame('CFR INCHOEN PORT', $dc->getSheetByName('2.계약서')->getCell('D50')->getValue());
     }

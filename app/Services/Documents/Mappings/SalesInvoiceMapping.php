@@ -28,13 +28,14 @@ class SalesInvoiceMapping
             'clearCells' => ['C28', 'C29'],
             'cells' => [
                 'E3' => fn (Vehicle $v) => $v->sale_date ?: now(),                                   // Date
-                'E4' => fn (Vehicle $v) => DocValue::invoiceNo($v),                                   // Invoice No. = {이니셜}MU{차대번호숫자} (item 7)
+                'E4' => fn (Vehicle $v) => DocValue::invoiceNo($v),                                   // Invoice No. = {이니셜}{차대번호 끝자리숫자} (item 7)
                 'E5' => fn (Vehicle $v) => DocValue::invoiceBuyer($v)?->name,                          // Buyer Name
                 'E6' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->name,                      // Client Name
                 'E7' => fn (Vehicle $v) => DocValue::consigneeIdValue($v),                             // Passport
                 'E8' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address, // Address
                 'E9' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->contact_phone ?: DocValue::invoiceBuyer($v)?->contact_phone, // Phone
-                'E10' => fn (Vehicle $v) => DocValue::money($v->exchange_rate),                        // Dollar Rate
+                'E10' => fn (Vehicle $v) => DocValue::invoiceBuyer($v)?->contact_email,                // Email (바이어 이메일, A안 신규행 — jin 2026-07-21)
+                'E11' => fn (Vehicle $v) => DocValue::money($v->exchange_rate),                        // Dollar Rate (Email 행 추가로 E10→E11 이동)
                 'A18' => fn (Vehicle $v) => $v->vehicle_number,                                        // Code
                 'B18' => fn (Vehicle $v) => $v->brand,                                                 // Maker
                 'C18' => fn (Vehicle $v) => DocValue::carName($v),                                     // Model

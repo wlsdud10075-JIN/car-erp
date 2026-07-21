@@ -52,7 +52,8 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         $fmt = $sheet->getStyle('E18')->getNumberFormat()->getFormatCode();
         $this->assertStringContainsString('€', $fmt);
         $this->assertStringNotContainsString('$', $fmt);
-        $this->assertSame('EUR Rate', (string) $sheet->getCell('D10')->getValue());
+        // Rate 라벨 D10→D11 이동 (Email 행 추가, A안 jin 2026-07-21)
+        $this->assertSame('EUR Rate', (string) $sheet->getCell('D11')->getValue());
     }
 
     public function test_usd_keeps_dollar(): void
@@ -60,7 +61,8 @@ class SalesInvoiceCurrencyDepositTest extends TestCase
         $sheet = $this->invoiceSheet($this->invoiceVehicle('USD'));
 
         $this->assertStringContainsString('$', $sheet->getStyle('E18')->getNumberFormat()->getFormatCode());
-        $this->assertSame('Dollar Rate', (string) $sheet->getCell('D10')->getValue());
+        // Rate 라벨 D10→D11 이동 (Email 행 추가, A안 jin 2026-07-21)
+        $this->assertSame('Dollar Rate', (string) $sheet->getCell('D11')->getValue());
     }
 
     public function test_deposit_removed_no_double_count(): void
