@@ -51,14 +51,19 @@ class DocValue
         return $c?->id_value ?: $c?->passport;
     }
 
-    /** 차대번호(nice_reg_vin)에서 숫자만 추출 — Invoice No. 접미 (item 7, jin 2026-07-18). */
+    /**
+     * 차대번호(nice_reg_vin) 끝자리 숫자 — Invoice No. 접미 (item 7, jin 2026-07-18/21).
+     * VIN 은 알파벳이 끝난 뒤 숫자로 끝남 → 마지막 연속 숫자 묶음(보통 6~7자리)만.
+     * 중간 숫자는 제외(구: 전체 숫자 → 예 KMHJ581ABGU108491 이 581108491 로 잘못 뽑힘).
+     */
     public static function chassisDigits(Vehicle $v): string
     {
-        return preg_replace('/\D+/', '', (string) ($v->nice_reg_vin ?? ''));
+        return preg_match('/(\d+)$/', (string) ($v->nice_reg_vin ?? ''), $m) ? $m[1] : '';
     }
 
     /**
-     * Proforma Invoice No. = {영업담당자 이니셜}MU{차대번호 숫자} (item 7, jin 2026-07-18).
+     * Proforma Invoice No. = {영업담당자 이니셜}{차대번호 끝자리 숫자} (item 7, jin 2026-07-18/21).
+     * 이니셜 자체가 회사 코드(예: 무사백=MU) — 리터럴 접두 없음(구: 리터럴 'MU' 가 이니셜과 겹쳐 MUMU 중복).
      * 이니셜 또는 차대번호 미입력 시 기존 SC{연월}-{id} 포맷으로 fallback.
      */
     public static function invoiceNo(Vehicle $v): string
@@ -66,7 +71,7 @@ class DocValue
         $initials = strtoupper(trim((string) ($v->salesman?->initials ?? '')));
         $digits = self::chassisDigits($v);
         if ($initials !== '' && $digits !== '') {
-            return $initials.'MU'.$digits;
+            return $initials.$digits;
         }
 
         return 'SC'.now()->format('ym').'-'.str_pad((string) ($v->id ?? 0), 5, '0', STR_PAD_LEFT);
