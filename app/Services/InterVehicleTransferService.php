@@ -406,7 +406,7 @@ class InterVehicleTransferService
             $sourceForeign = (float) $transfer->amount;
             $amountKrw = (float) $transfer->amount_krw;
             $sourceRate = (float) $transfer->source_exchange_rate;
-            $marker = "보증금 매입 funding #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
+            $marker = "보증금 매입 선지급 #{$transfer->id} (관리 승인 #{$transfer->approval_request_id}, 재무 확정 #{$financeUser->id})";
 
             // 소스 차 — 음수 FinalPayment (외화, 소스 판매 미수↑). 소스환율 스냅샷 보존.
             FinalPayment::create([
@@ -416,7 +416,7 @@ class InterVehicleTransferService
                 'type' => 'balance',
                 'payment_date' => $today,
                 'exchange_rate' => $sourceRate,
-                'note' => "→ 차량 #{$transfer->target_vehicle_id} 매입 funding ({$marker})",
+                'note' => "→ 차량 #{$transfer->target_vehicle_id} 매입 선지급 ({$marker})",
                 'confirmed_by_user_id' => $financeUser->id,
                 'confirmed_at' => $confirmedAt,
                 'finance_note' => $note,
@@ -428,7 +428,7 @@ class InterVehicleTransferService
                 'amount' => $amountKrw,
                 'type' => 'balance',
                 'payment_date' => $today,
-                'note' => "바이어 보증금 funding ← 차량 #{$transfer->source_vehicle_id} ({$marker})",
+                'note' => "바이어 보증금 선지급 ← 차량 #{$transfer->source_vehicle_id} ({$marker})",
                 'confirmed_by_user_id' => $financeUser->id,
                 'confirmed_at' => $confirmedAt,
                 'finance_note' => $note,
