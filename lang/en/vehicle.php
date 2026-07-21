@@ -612,6 +612,7 @@ return [
         'title' => '🏦 Purchase funding',
         'btn' => 'Purchase funding',
         'hint' => "Prepay this car's purchase cost (KRW) with the buyer's deposit",
+        'usable_label' => 'Usable deposit',
         'not_eligible' => 'No eligible source or headroom for purchase funding.',
         'modal_title' => "Purchase funding — prepay purchase with the buyer's deposit",
         'modal_desc' => "Prepay this car's purchase cost (KRW) using the buyer's deposit (foreign) from a pre-shipping vehicle. On manager approval + finance confirmation, purchase is marked complete (GREEN) and the source car's receivable rises accordingly.",

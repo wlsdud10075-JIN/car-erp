@@ -6369,7 +6369,7 @@ function vehicleColumnsToggle() {
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="space-y-0.5">
                             <div class="font-semibold">{{ __('vehicle.purchase_funding.title') }}</div>
-                            <div class="text-sm font-bold text-indigo-800">₩{{ number_format($pfAvail) }}</div>
+                            <div class="text-sm font-bold text-indigo-800">{{ __('vehicle.purchase_funding.usable_label') }} : ₩{{ number_format($pfAvail) }}</div>
                             <div class="text-indigo-600">{{ __('vehicle.purchase_funding.hint') }}</div>
                         </div>
                         <button type="button" wire:click="openPurchaseFundingModal"
