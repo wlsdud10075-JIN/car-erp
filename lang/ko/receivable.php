@@ -93,7 +93,7 @@ return [
         'other' => '기타',
         'write_off' => '손실(셀러부담)',
     ],
-    'method_deposit_full' => '입금 (final_payment 자동 생성)',
+    'method_deposit_full' => '입금 (판매 잔금 자동 생성)',
     'memo_ph' => '회수 경위·연락 이력 등',
     'btn_edit_save' => '수정 저장',
     'btn_add' => '추가',
@@ -120,6 +120,6 @@ return [
     ],
     'list_title' => '회수 이력 목록 (최신순)',
     'list_empty' => '회수 이력이 없습니다.',
-    'mirror_title' => 'final_payments와 미러링됨',
+    'mirror_title' => '판매 잔금과 연동됨',
     'delete_confirm' => '이 회수 이력을 삭제하시겠습니까? 미러링된 입금 기록도 함께 삭제됩니다.',
 ];
