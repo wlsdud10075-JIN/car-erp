@@ -509,7 +509,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $note = trim($this->financeNote) !== '' ? trim($this->financeNote) : null;
 
             if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
-                $service->confirmByFinance($transfer, auth()->user(), $note);
+                if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+                    $service->confirmPurchaseFundingByFinance($transfer, auth()->user(), $note);
+                } else {
+                    $service->confirmByFinance($transfer, auth()->user(), $note);
+                }
                 $msg = __('transfer.msg.transfer_confirmed');
             } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
                 $service->confirmVoidByFinance($transfer, auth()->user(), $note);
@@ -680,7 +684,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </td>
                     <td class="py-3 pr-4 text-gray-700 text-xs">{{ $t->buyer?->name ?? '#'.$t->buyer_id }}</td>
                     <td class="py-3 pr-4 text-right font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
-                        {{ number_format($t->amount, 0) }} {{ $t->currency }}
+                        @if($t->kind === \App\Models\InterVehicleTransfer::KIND_PURCHASE_FUNDING)
+                            ₩{{ number_format($t->amount_krw, 0) }}
+                            <span class="block text-[10px] font-normal text-gray-400">{{ number_format($t->amount, 0) }} {{ $t->currency }} · {{ __('transfer.purchase_funding_tag') }}</span>
+                        @else
+                            {{ number_format($t->amount, 0) }} {{ $t->currency }}
+                        @endif
                     </td>
                     <td class="py-3 pr-4">
                         <span class="badge {{ $t->status_badge }}">{{ __('transfer.status.'.$t->status) }}</span>
@@ -769,7 +778,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $t->buyer?->name ?? '#'.$t->buyer_id }} · {{ __('transfer.col.approver') }} {{ $t->approver?->name ?? '-' }}
             </div>
             <div class="mt-1 text-sm font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
-                {{ number_format($t->amount, 0) }} {{ $t->currency }}
+                @if($t->kind === \App\Models\InterVehicleTransfer::KIND_PURCHASE_FUNDING)
+                    ₩{{ number_format($t->amount_krw, 0) }}
+                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($t->amount, 0) }} {{ $t->currency }} · {{ __('transfer.purchase_funding_tag') }})</span>
+                @else
+                    {{ number_format($t->amount, 0) }} {{ $t->currency }}
+                @endif
             </div>
             @if($isAwaiting)
             <div class="mt-2 flex flex-col gap-1">

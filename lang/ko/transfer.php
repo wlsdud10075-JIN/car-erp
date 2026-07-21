@@ -72,6 +72,7 @@ return [
     'confirmed' => '확정',
     'empty_payment' => '조건에 맞는 잔금이 없습니다.',
     'unit_won' => '원',
+    'purchase_funding_tag' => '매입 선지급',
 
     'msg' => [
         'only_awaiting_sale' => '확정 대기 상태의 판매 잔금만 처리할 수 있습니다.',

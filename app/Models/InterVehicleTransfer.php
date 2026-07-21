@@ -32,6 +32,9 @@ class InterVehicleTransfer extends Model
     protected $fillable = [
         'source_vehicle_id', 'target_vehicle_id', 'buyer_id',
         'amount', 'currency',
+        'kind', 'target_payment_type',
+        // 보증금 매입 funding (C2, jin 2026-07-21) — amount_krw=대상 매입 원화, source_exchange_rate=소스 환율 스냅샷.
+        'amount_krw', 'source_exchange_rate', 'purchase_balance_payment_id',
         'approval_request_id',
         'status',
         'executed_at', 'voided_at', 'void_reason',
@@ -44,12 +47,22 @@ class InterVehicleTransfer extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'amount_krw' => 'decimal:2',
+        'source_exchange_rate' => 'decimal:4',
         'executed_at' => 'datetime',
         'voided_at' => 'datetime',
         'confirmed_at' => 'datetime',
         'finance_rejected_at' => 'datetime',
         'void_finance_rejected_at' => 'datetime',
     ];
+
+    /** 이체 종류 — standard(기존 요청→관리→재무) / deposit_apply(보증금 적용: 기안→최고관리자 승인=즉시적용). */
+    public const KIND_STANDARD = 'standard';
+
+    public const KIND_DEPOSIT_APPLY = 'deposit_apply';
+
+    /** 보증금 매입 funding (C2, jin 2026-07-21) — 소스 보증금(외화)으로 대상 매입대금(원화) funding → 매입 GREEN. */
+    public const KIND_PURCHASE_FUNDING = 'purchase_funding';
 
     public const STATUS_PENDING = 'pending';
 
@@ -124,6 +137,12 @@ class InterVehicleTransfer extends Model
     public function finalPayments(): HasMany
     {
         return $this->hasMany(FinalPayment::class, 'transfer_id');
+    }
+
+    /** 보증금 매입 funding 이 생성한 대상 차 매입 PBP (C2). */
+    public function purchaseBalancePayment(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseBalancePayment::class, 'purchase_balance_payment_id');
     }
 
     public function getStatusLabelAttribute(): string

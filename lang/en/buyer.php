@@ -32,6 +32,10 @@ return [
         'completed_value' => ':count vehicles · ₩:amount',
         'shipped_label' => 'Shipped out (separate)',
         'shipped_value' => ':count vehicles · ₩:amount',
+        'deposit_title' => 'Deposit room',
+        'deposit_used_limit' => 'Deposit used ₩:used · Limit ₩:limit',
+        'deposit_note' => 'When room runs out (pre-ship unpaid over :pct%), new vehicle registration is blocked.',
+        'deposit_note_full' => '⚠ Deposit room used up — new registration blocked (needs manager approval).',
     ],
     'fees' => [
         'title' => '💸 Cumulative Seller-Absorbed Amount (fees · write-offs)',

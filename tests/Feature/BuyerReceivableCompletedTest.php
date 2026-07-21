@@ -92,6 +92,34 @@ class BuyerReceivableCompletedTest extends TestCase
         $this->assertEqualsWithDelta(0.6, $g['ratio'], 0.001, '미수율 = 6000/10000 (선적 전 기준)');
     }
 
+    /** 보증금 여력 (jin 2026-07-20) — 한도 = 선적 전 총액 × 임계, 남은 여력 = 한도 − 미수. 표시용. */
+    public function test_deposit_room_computed(): void
+    {
+        $buyer = Buyer::create(['name' => '딜러F', 'is_active' => true]);
+        $this->vehicle($buyer, 100_000_000, '판매완료', 0, '10가1000');          // 완납 선적 전 — 분모에 포함
+        $this->vehicle($buyer, 100_000_000, '판매중', 40_000_000, '20나2000');   // 미수 4천만
+
+        $g = Buyer::computeReceivableGauge($buyer->vehicles()->get());
+
+        $this->assertSame(200_000_000, $g['total_krw'], '선적 전 총액 2억(완납차 포함)');
+        $this->assertSame(50, $g['deposit_pct'], '기본 임계 50%');
+        $this->assertSame(100_000_000, $g['limit_krw'], '보증금 한도 = 2억 × 50%');
+        $this->assertSame(40_000_000, $g['used_krw'], '사용중 = 미수 4천만');
+        $this->assertSame(60_000_000, $g['available_krw'], '남은 여력 = 1억 − 4천만');
+    }
+
+    /** 여력 한도는 임계 파라미터를 따른다 — 필요 입금률 70%(cutoff 0.3)면 한도 = 총액 × 30%. */
+    public function test_deposit_room_follows_threshold(): void
+    {
+        $buyer = Buyer::create(['name' => '딜러G', 'is_active' => true]);
+        $this->vehicle($buyer, 100_000_000, '판매중', 10_000_000, '30다3000');
+
+        $g = Buyer::computeReceivableGauge($buyer->vehicles()->get(), 0.3);   // 필요 입금률 70%
+        $this->assertSame(30, $g['deposit_pct']);
+        $this->assertSame(30_000_000, $g['limit_krw'], '1억 × 30%');
+        $this->assertSame(20_000_000, $g['available_krw'], '3천만 − 1천만 미수');
+    }
+
     /** 거래완료가 선적 후보다 우선 — 출고됐어도 거래완료면 completed 버킷(shipped 아님). */
     public function test_completed_takes_priority_over_shipped(): void
     {
