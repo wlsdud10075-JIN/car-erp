@@ -4560,6 +4560,40 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $gauge['available_krw'] ?? null;
     }
 
+    /**
+     * 이 차량이 소스/대상으로 걸린 진행 중(관리 승인 대기·재무 확정 대기) 매입 선지급 — 양쪽 차량 패널 배너용.
+     * jin 2026-07-21 — 승인큐뿐 아니라 신청한 차(대상)·보증금 주는 차(소스)에도 진행 중임을 표시.
+     */
+    #[Computed]
+    public function inProgressPurchaseFundings(): array
+    {
+        if ($this->editingId === null) {
+            return [];
+        }
+
+        return \App\Models\InterVehicleTransfer::query()
+            ->where('kind', \App\Models\InterVehicleTransfer::KIND_PURCHASE_FUNDING)
+            ->whereIn('status', [
+                \App\Models\InterVehicleTransfer::STATUS_PENDING,
+                \App\Models\InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+            ])
+            ->where(fn ($q) => $q->where('source_vehicle_id', $this->editingId)
+                ->orWhere('target_vehicle_id', $this->editingId))
+            ->with(['sourceVehicle:id,vehicle_number', 'targetVehicle:id,vehicle_number'])
+            ->get()
+            ->map(function ($t) {
+                $isTarget = (int) $t->target_vehicle_id === (int) $this->editingId;
+
+                return [
+                    'id' => $t->id,
+                    'role' => $isTarget ? 'target' : 'source',   // 대상=매입 받는 / 소스=보증금 주는
+                    'counterpart' => $isTarget ? $t->sourceVehicle?->vehicle_number : $t->targetVehicle?->vehicle_number,
+                    'amount_krw' => (int) $t->amount_krw,
+                    'status' => $t->status,
+                ];
+            })->all();
+    }
+
     public function openPurchaseFundingModal(): void
     {
         if (! $this->canApplyDeposit()) {
@@ -5920,6 +5954,24 @@ function vehicleColumnsToggle() {
                 @endforeach
             </div>
         </div>
+    </div>
+    @endif
+
+    {{-- 진행 중 매입 선지급 배너 (jin 2026-07-21) — 이 차가 소스/대상으로 걸린 승인 진행 중이면 양쪽 차 패널에 표시 --}}
+    @php $pfInProgress = $this->inProgressPurchaseFundings; @endphp
+    @if(! empty($pfInProgress))
+    <div class="space-y-1 border-b border-indigo-100 bg-indigo-50 px-5 py-2.5">
+        @foreach($pfInProgress as $pf)
+        <div class="flex flex-wrap items-center gap-2 text-xs text-indigo-900">
+            <span class="text-sm">🏦</span>
+            <span class="font-semibold">{{ __('vehicle.purchase_funding.in_progress_'.$pf['role']) }}</span>
+            <span class="font-mono text-indigo-800">{{ $pf['counterpart'] ?? '?' }}</span>
+            <span class="font-bold">₩{{ number_format($pf['amount_krw']) }}</span>
+            <span class="badge {{ $pf['status'] === 'approved_awaiting_finance' ? 'badge-blue' : 'badge-amber' }}">
+                {{ $pf['status'] === 'approved_awaiting_finance' ? __('vehicle.purchase_funding.status_finance_wait') : __('vehicle.purchase_funding.status_mgr_wait') }}
+            </span>
+        </div>
+        @endforeach
     </div>
     @endif
 

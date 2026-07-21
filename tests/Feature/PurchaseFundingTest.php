@@ -240,4 +240,25 @@ class PurchaseFundingTest extends TestCase
         $this->expectException(DomainException::class);
         $this->service->voidRequest($t->fresh(), $drafter, '취소 시도');
     }
+
+    public function test_in_progress_banner_shows_on_both_vehicles(): void
+    {
+        ['drafter' => $drafter, 'source' => $source, 'target' => $target] = $this->ctx();
+        $this->service->applyPurchaseFunding($source, $target, 20_000_000, $drafter);   // pending
+
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $this->actingAs($super);
+
+        // 대상 차(신청한 차) 패널 — 진행 중 배너 + 소스 차번호
+        \Livewire\Volt\Volt::test('erp.vehicles.index')
+            ->call('openEdit', $target->id)
+            ->assertSee('관리 승인 대기')
+            ->assertSee($source->vehicle_number);
+
+        // 소스 차(보증금 주는 차) 패널 — 진행 중 배너 + 대상 차번호
+        \Livewire\Volt\Volt::test('erp.vehicles.index')
+            ->call('openEdit', $source->id)
+            ->assertSee('관리 승인 대기')
+            ->assertSee($target->vehicle_number);
+    }
 }

@@ -623,6 +623,11 @@ return [
         'approval_note' => 'Draft → manager approval → finance confirmation (after bank transfer) marks purchase GREEN.',
         'submit' => 'Draft funding',
         'sent' => 'Purchase funding drafted. Applied on manager approval + finance confirmation.',
+        // In-progress banner (both vehicle panels)
+        'in_progress_target' => 'Purchase funding in progress · source',
+        'in_progress_source' => 'Deposit in use (purchase funding) · target',
+        'status_mgr_wait' => 'Awaiting manager approval',
+        'status_finance_wait' => 'Awaiting finance confirmation',
     ],
 
     // Delete-reason modal (2026-07-08) — finance-linked vehicles require a reason + audit log
