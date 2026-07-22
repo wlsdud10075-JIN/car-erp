@@ -525,6 +525,12 @@ class Settlement extends Model
         return (int) (floor($profit * $pct / 100 / 10) * 10);
     }
 
+    /** 화면 표시용 마진 — karaba=영업이익 / 그 외=총마진 (요약·목록·모바일 라벨과 세트, Phase 3 UI). */
+    public function getDisplayMarginAttribute(): int
+    {
+        return Setting::isKaraba() ? $this->karaba_operating_profit : $this->total_margin;
+    }
+
     /**
      * 정산액 = type 별 분기.
      *   ratio (프리랜서)    = 총마진 × (effective_ratio / 100)
