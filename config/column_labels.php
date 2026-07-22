@@ -57,6 +57,11 @@ return [
         'cost_transfer' => '이전비',
         'cost_extra1' => '기타비1',
         'cost_extra2' => '기타비2',
+        'cost_inspection' => '점검비',
+        'cost_performance' => '성능비',
+        'cost_repair' => '정비비용',
+        'cost_advertising' => '광고비용',
+        'parts_amount' => '부품',
         'deregistration_document' => '말소신청서',
 
         // 판매

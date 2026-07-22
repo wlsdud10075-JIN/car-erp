@@ -830,6 +830,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cost_transfer_str  = '';
     public string $cost_extra1_str    = '';
     public string $cost_extra2_str    = '';
+    public string $cost_inspection_str = '';    // karaba 비용 4개 (Phase 2)
+    public string $cost_performance_str = '';
+    public string $cost_repair_str    = '';
+    public string $cost_advertising_str = '';
+    public string $parts_amount_str   = '';     // karaba 부품(기록만·미추적)
     public string $down_payment_str        = '';
     public string $selling_fee_payment_str = '';
     public string $purchase_remittance_memo = '';
@@ -2303,6 +2308,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         'cost_transfer_str' => 'cost_transfer',
         'cost_extra1_str' => 'cost_extra1',
         'cost_extra2_str' => 'cost_extra2',
+        'cost_inspection_str' => 'cost_inspection',
+        'cost_performance_str' => 'cost_performance',
+        'cost_repair_str' => 'cost_repair',
+        'cost_advertising_str' => 'cost_advertising',
     ];
 
     private function restoreFinancialFieldsFromOriginal(): void
@@ -2635,6 +2644,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cost_transfer_str   = $v->cost_transfer  ? number_format($v->cost_transfer)  : '';
         $this->cost_extra1_str     = $v->cost_extra1    ? number_format($v->cost_extra1)    : '';
         $this->cost_extra2_str     = $v->cost_extra2    ? number_format($v->cost_extra2)    : '';
+        $this->cost_inspection_str  = $v->cost_inspection  ? number_format($v->cost_inspection)  : '';
+        $this->cost_performance_str = $v->cost_performance ? number_format($v->cost_performance) : '';
+        $this->cost_repair_str      = $v->cost_repair      ? number_format($v->cost_repair)      : '';
+        $this->cost_advertising_str = $v->cost_advertising ? number_format($v->cost_advertising) : '';
+        $this->parts_amount_str     = $v->parts_amount     ? number_format($v->parts_amount)     : '';
         // 22-C-E (2026-05-20) — 2 _str = type별 confirmed PBP 합산 (down/selling_fee).
         $confirmedPbp = $v->purchaseBalancePayments->whereNotNull('confirmed_at');
         $sumPbpByType = function (string $type) use ($confirmedPbp): string {
@@ -3236,6 +3250,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_deregistration_str', 'cost_license_str', 'cost_towing_str',
             'cost_carry_str', 'cost_shoring_str', 'cost_insurance_str',
             'cost_transfer_str', 'cost_extra1_str', 'cost_extra2_str',
+            'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str',
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
             'commission_str', 'transport_fee_str', 'auto_loading_str',
@@ -3728,6 +3743,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_transfer'    => $toInt($this->cost_transfer_str),
             'cost_extra1'      => $toInt($this->cost_extra1_str),
             'cost_extra2'      => $toInt($this->cost_extra2_str),
+            'cost_inspection'  => $toInt($this->cost_inspection_str),
+            'cost_performance' => $toInt($this->cost_performance_str),
+            'cost_repair'      => $toInt($this->cost_repair_str),
+            'cost_advertising' => $toInt($this->cost_advertising_str),
+            'parts_amount'     => $this->parts_amount_str !== '' ? $toInt($this->parts_amount_str) : null,   // karaba 기록만
             // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
             // _str ↔ PBP type='down'/'selling_fee' confirmed row 동기화는 vehicle save 이후 별도 처리.
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
@@ -5148,6 +5168,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
+            'cost_inspection_str','cost_performance_str','cost_repair_str','cost_advertising_str','parts_amount_str',
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
@@ -6468,6 +6489,23 @@ function vehicleColumnsToggle() {
             </div>
             @endif
 
+            @if($isKaraba)
+            {{-- karaba 비용 12개 (Phase 2, 2026-07-22): 쇼링 숨김 + 점검·성능·정비·광고 추가. 순서=매입탭.png --}}
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_inspection') }}</label><input wire:model="cost_inspection_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_performance') }}</label><input wire:model="cost_performance_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_repair') }}</label><input wire:model="cost_repair_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_advertising') }}</label><input wire:model="cost_advertising_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" data-money class="input-base" placeholder="0" /></div>
+            </div>
+            @else
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" data-money class="input-base" placeholder="0" /></div>
@@ -6479,6 +6517,7 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" data-money class="input-base" placeholder="0" /></div>
             </div>
+            @endif
 
             <hr class="section-divider">
             <div class="section-header">
@@ -6744,6 +6783,10 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.transport_fee') }}</label><input wire:model="transport_fee_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.auto_loading') }}</label><input wire:model="auto_loading_str" type="text" data-money class="input-base" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.sale_other_costs') }}</label><input wire:model="sale_other_costs_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                @if($isKaraba)
+                {{-- karaba 부품 (Phase 2, 2026-07-22): 기록만 — 미수·정산·매출 계산 전부 제외 --}}
+                <div><label class="label-base">{{ __('vehicle.field.parts_amount') }}</label><input wire:model="parts_amount_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                @endif
                 <div>
                     <label class="label-base">{{ __('vehicle.field.sale_total_display') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.after_save_note') }}</span></label>
                     @if($panelSaleTotal === null)
