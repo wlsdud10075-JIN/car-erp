@@ -334,6 +334,7 @@ return [
         'cost_repair' => '정비비용',
         'cost_advertising' => '광고비용',
         'parts_amount' => '부품',
+        'purchase_vat_amount' => '매입세액',
         'down_payment' => '계약금 지급',
         'selling_fee_payment' => '매도비 지급',
         'balance' => '잔금',
