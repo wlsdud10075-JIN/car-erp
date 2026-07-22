@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Setting;
 use App\Models\Settlement;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -85,5 +87,15 @@ class KarabaSettlementTest extends TestCase
         $s->settlement_status = 'confirmed';
         $s->save();
         $this->assertSame('confirmed', $s->fresh()->settlement_status);
+    }
+
+    public function test_display_margin_is_operating_profit_and_page_shows_label(): void
+    {
+        $s = $this->make();
+        $this->assertSame($s->karaba_operating_profit, $s->display_margin);
+
+        // 정산 화면이 karaba 라벨(영업이익)로 렌더 — 총마진 표기 아님
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        Volt::test('erp.settlements.index')->assertSee('영업이익');
     }
 }

@@ -51,6 +51,7 @@ return [
     'summary_unassigned' => 'Unassigned',
     'summary_count' => ':count',
     'summary_total_margin' => 'Total margin',
+    'label_operating_profit' => 'Operating profit',
     'summary_settlement_amount' => 'Settlement amount',
     'summary_actual_payout' => 'Actual payout',
     'summary_carryover' => 'Unconsumed carryover',

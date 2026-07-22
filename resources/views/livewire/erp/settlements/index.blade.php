@@ -184,7 +184,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'salesman_id' => $salesmanId,
                 'salesman_name' => $first->salesman?->name ?? __('settlement.summary_unassigned'),
                 'count' => $group->count(),
-                'total_margin_sum' => (int) $group->sum('total_margin'),
+                'total_margin_sum' => (int) $group->sum('display_margin'),   // karaba=영업이익 / 그 외=총마진
                 'settlement_amount_sum' => (int) $group->sum('settlement_amount'),
                 'actual_payout_sum' => (int) $group->sum('actual_payout'),
                 // 미청산 이월 — Salesman accessor(단일 출처). 필터 무관 현재 잔액. 재무 사각지대 보완.
@@ -253,9 +253,23 @@ new #[Layout('components.layouts.app')] class extends Component
         $vatMargin = (int) (($v->purchase_price ?? 0) * 0.09);
         $totalMargin = (int) (($salesMargin + $vatMargin) * 0.9);   // × 0.9 = 부가세 10% 차감
 
-        // 정산액 — type 별 자동 분기 + NULL fallback default
+        // karaba 이익율 정산 (Phase 3) — Settlement::karaba_* accessor 와 동일 공식 (미리보기 정합).
+        //   판매가 = 차대금(sale_price) × 환율 (운임·부품 제외) / 영업이익 = 판매가 − (구매가 + 부대비용 − 매입세액).
+        $isKaraba = \App\Models\Setting::isKaraba();
+        $karabaSalesKrw = (int) round((float) ($v->sale_price ?? 0) * $rate);
+        $karabaCosts = (int) ($v->cost_total ?? 0);
+        $karabaVat = (int) ($v->purchase_vat_amount ?? 0);
+        $operatingProfit = $karabaSalesKrw - ($purchaseTotal + $karabaCosts - $karabaVat);
+        $profitRate = $karabaSalesKrw > 0 ? round($operatingProfit / $karabaSalesKrw * 100, 1) : null;
+
+        // 정산액 — karaba=이익율 tier / 그 외=type 별 자동 분기 + NULL fallback default
         $settlementAmount = 0;
-        if ($this->settlement_type === 'ratio') {
+        if ($isKaraba) {
+            if ($operatingProfit > 0 && $profitRate !== null) {
+                $pct = $profitRate >= 6 ? 20 : ($profitRate >= 5 ? 15 : 10);
+                $settlementAmount = (int) (floor($operatingProfit * $pct / 100 / 10) * 10);
+            }
+        } elseif ($this->settlement_type === 'ratio') {
             $ratio = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
                 ? (float) $this->settlement_ratio
                 : \App\Models\Settlement::FREELANCE_RATIO_DEFAULT;
@@ -302,7 +316,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
             'documentFee', 'actualPayout', 'exchangeDiff',
-            'carryoverIn', 'carryoverOut'
+            'carryoverIn', 'carryoverOut',
+            // karaba 이익율 정산 표시용 (Phase 3)
+            'isKaraba', 'operatingProfit', 'profitRate', 'karabaSalesKrw', 'purchaseTotal', 'karabaCosts', 'karabaVat'
         );
     }
 
@@ -874,7 +890,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             <div class="mt-2 space-y-1 text-[11px]">
                 <div class="flex items-center justify-between text-gray-500">
-                    <span>{{ __('settlement.summary_total_margin') }}</span>
+                    <span>{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.summary_total_margin') }}</span>
                     <span class="font-mono text-gray-700">{{ number_format($summary['total_margin_sum']) }}</span>
                 </div>
                 <div class="flex items-center justify-between text-gray-500">
@@ -911,7 +927,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.type') }}</th>
                 {{-- 매입가 — 사내직원 차등 tier 트리거(≥1억→총마진×25%). 방식↔총마진 사이 기준값. --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.purchase_price') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.total_margin') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.col.total_margin') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
@@ -998,8 +1014,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-right {{ ($s->vehicle?->purchase_price ?? 0) >= 100000000 ? 'font-semibold text-primary-text' : 'text-gray-500' }}">
                     ₩{{ number_format($s->vehicle?->purchase_price ?? 0) }}
                 </td>
-                <td class="py-3 pr-4 text-right {{ $s->total_margin < 0 ? 'text-red-500' : 'text-gray-700' }}">
-                    ₩{{ number_format($s->total_margin) }}
+                <td class="py-3 pr-4 text-right {{ $s->display_margin < 0 ? 'text-red-500' : 'text-gray-700' }}">
+                    ₩{{ number_format($s->display_margin) }}
                 </td>
                 <td class="py-3 pr-4 text-right text-gray-700">
                     ₩{{ number_format($s->settlement_amount) }}
@@ -1094,7 +1110,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div>{{ __('settlement.mobile_salesman') }}: {{ $s->salesman?->name ?? '-' }}</div>
             <div>{{ __('settlement.mobile_type') }}: {{ $s->settlement_type === 'ratio' ? number_format($s->settlement_ratio, 1).'%' : __('settlement.mobile_type_per_unit') }}</div>
             <div>{{ __('settlement.mobile_purchase_price') }}: ₩{{ number_format($s->vehicle?->purchase_price ?? 0) }}</div>
-            <div>{{ __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->total_margin) }}</div>
+            <div>{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->display_margin) }}</div>
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>
         @if(in_array($s->settlement_status, ['pending', 'calculating'], true) && auth()->user()->canConfirmFinance())
@@ -1210,6 +1226,18 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('settlement.section_margin') }}</span>
             </div>
+            @if($this->marginData['isKaraba'] ?? false)
+            {{-- karaba 이익율 정산 (Phase 3) — 영업이익 = 판매가 − (구매가 + 부대비용 − 매입세액VAT) --}}
+            <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
+                <div class="flex justify-between text-gray-600"><span>판매가 <span class="text-xs text-gray-400">(차대금 × 환율)</span></span><span>₩{{ number_format($this->marginData['karabaSalesKrw']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>구매가 <span class="text-xs text-gray-400">(매입가 + 매도비)</span></span><span>₩{{ number_format($this->marginData['purchaseTotal']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>부대비용</span><span>₩{{ number_format($this->marginData['karabaCosts']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>매입세액 (VAT)</span><span>₩{{ number_format($this->marginData['karabaVat']) }}</span></div>
+                <hr class="border-gray-200" />
+                <div class="flex justify-between font-semibold text-gray-800"><span>영업이익 <span class="text-xs font-normal text-gray-400">(판매가 − (구매가 + 부대비용 − VAT))</span></span><span class="{{ $this->marginData['operatingProfit'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['operatingProfit']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>이익율 <span class="text-xs text-gray-400">(≥6% 20% / 5~6% 15% / &lt;5% 10%)</span></span><span>{{ $this->marginData['profitRate'] !== null ? $this->marginData['profitRate'].'%' : '-' }}</span></div>
+            </div>
+            @else
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600">
                     <span>{{ __('settlement.margin_sales_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_sales_krw_formula') }}</span></span>
@@ -1233,6 +1261,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="{{ $this->marginData['totalMargin'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['totalMargin']) }}</span>
                 </div>
             </div>
+            @endif
         </div>
         @endif
 
@@ -1240,7 +1269,20 @@ new #[Layout('components.layouts.app')] class extends Component
         @if($this->selectedVehicle)
         @php
             $sv = $this->selectedVehicle;
-            $costRows = [
+            $costRows = \App\Models\Setting::isKaraba() ? [
+                'cost_deregistration' => (int) $sv->cost_deregistration,
+                'cost_transfer'       => (int) $sv->cost_transfer,
+                'cost_license'        => (int) $sv->cost_license,
+                'cost_towing'         => (int) $sv->cost_towing,
+                'cost_carry'          => (int) $sv->cost_carry,
+                'cost_insurance'      => (int) $sv->cost_insurance,
+                'cost_inspection'     => (int) $sv->cost_inspection,
+                'cost_performance'    => (int) $sv->cost_performance,
+                'cost_repair'         => (int) $sv->cost_repair,
+                'cost_advertising'    => (int) $sv->cost_advertising,
+                'cost_extra1'         => (int) $sv->cost_extra1,
+                'cost_extra2'         => (int) $sv->cost_extra2,
+            ] : [
                 'cost_deregistration' => (int) $sv->cost_deregistration,
                 'cost_license'        => (int) $sv->cost_license,
                 'cost_towing'         => (int) $sv->cost_towing,

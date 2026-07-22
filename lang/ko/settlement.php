@@ -51,6 +51,7 @@ return [
     'summary_unassigned' => '미지정',
     'summary_count' => ':count건',
     'summary_total_margin' => '총마진',
+    'label_operating_profit' => '영업이익',
     'summary_settlement_amount' => '정산액',
     'summary_actual_payout' => '실지급액',
     'summary_carryover' => '미청산 이월',
