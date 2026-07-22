@@ -122,4 +122,41 @@ class KarabaPurchaseTabTest extends TestCase
         $this->assertSame('세금계산서', $v->purchase_evidence_subtype);
         $this->assertTrue((bool) $v->is_dealer_purchase);
     }
+
+    public function test_karaba_cost_grid_shows_new_costs_and_parts(): void
+    {
+        $this->karaba();
+        $this->actingAs($this->admin());
+        $v = $this->makeVehicle();
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSee('점검비')
+            ->assertSee('성능비')
+            ->assertSee('정비비용')
+            ->assertSee('광고비용')
+            ->assertSee('부품');   // 판매탭 부품 기록칸
+    }
+
+    public function test_karaba_new_costs_in_cost_total_parts_untracked(): void
+    {
+        $this->karaba();
+        $this->actingAs($this->admin());
+        $v = $this->makeVehicle();
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('cost_inspection_str', '80,000')
+            ->set('cost_performance_str', '30,000')
+            ->set('cost_repair_str', '50,000')
+            ->set('cost_advertising_str', '20,000')
+            ->set('parts_amount_str', '500,000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $v->refresh();
+        $this->assertSame(500000, (int) $v->parts_amount);
+        $this->assertSame(180000, $v->cost_total);          // 신규 4개 합 cost_total 반영
+        $this->assertSame(0, (int) $v->sale_total_amount);  // 부품 미추적 — 총판매가(미수) 무영향(판매가 0)
+    }
 }

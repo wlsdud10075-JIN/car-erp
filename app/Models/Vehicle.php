@@ -80,6 +80,8 @@ class Vehicle extends Model
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',   // karaba 비용 4개 (Phase 2, 2026-07-22)
+        'parts_amount',   // karaba 부품 기록(미추적 — 미수·정산·매출 제외)
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
         // 2컬럼은 purchase_balance_payments.type enum (down/selling_fee) 로 통합.
         'purchase_remittance_memo',
@@ -447,6 +449,7 @@ class Vehicle extends Model
         'export_declaration_amount',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',
         'buyer_id', 'salesman_id',
         // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).
         'is_deregistered', 'deregistration_document',
@@ -471,6 +474,7 @@ class Vehicle extends Model
         'export_declaration_amount',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',
         // Tier 2 — 관계 식별
         'buyer_id', 'salesman_id',
     ];
@@ -1318,7 +1322,8 @@ class Vehicle extends Model
         return (int) (
             $this->cost_deregistration + $this->cost_license + $this->cost_towing +
             $this->cost_carry + $this->cost_shoring + $this->cost_insurance +
-            $this->cost_transfer + $this->cost_extra1 + $this->cost_extra2
+            $this->cost_transfer + $this->cost_extra1 + $this->cost_extra2 +
+            $this->cost_inspection + $this->cost_performance + $this->cost_repair + $this->cost_advertising
         );
     }
 
