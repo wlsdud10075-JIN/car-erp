@@ -170,6 +170,14 @@ class Settlement extends Model
                         'settlement_ratio' => '정산 확정·지급 시 정산비율(ratio) 또는 건당 정산액(per_unit) 중 하나가 설정되어야 합니다.',
                     ]);
                 }
+
+                // karaba 이익율 정산 — 매입세액(VAT) 미입력이면 영업이익 부정확 → 확정 차단 (jin 2026-07-22).
+                //   null=미입력(차단) / 0=명시입력(불공제, 통과). "정산 전에만 채우면 됨"의 강제 지점.
+                if (Setting::isKaraba() && $s->vehicle && $s->vehicle->purchase_vat_amount === null) {
+                    throw ValidationException::withMessages([
+                        'purchase_vat_amount' => '매입세액(세금계산서 세액)을 먼저 입력해야 정산을 확정할 수 있습니다 — 차량 매입탭.',
+                    ]);
+                }
             }
 
             // 회의확장씬 #8 (2026-05-22) — paid 전환 시 secondary_status='pending' 자동 set.
@@ -463,6 +471,60 @@ class Settlement extends Model
         return $this->settlement_type === 'ratio' ? self::param('settlement_freelance_document_fee') : 0;
     }
 
+    // ── karaba 이익율 정산 (Phase 3, 2026-07-22) — Setting::isKaraba() 전역 분기 시 사용. 엑셀 매입대장 실측 ──
+
+    /**
+     * karaba 영업이익 = 판매가 − (구매가 + 부대비용 − 매입세액VAT). 엑셀 DX = DQ−(DO+DP−DT).
+     *   판매가 = sale_price × exchange_rate (차대금만 — 운임·부품 제외, 엑셀 DQ=AQ).
+     *   구매가 = purchase_price + selling_fee (엑셀 DO=W).
+     *   부대비용 = cost_total (karaba 12개 비용 — 쇼링·선적운임 미포함이 자연, 엑셀 DP=부대−선적−쇼링).
+     *   매입세액 = purchase_vat_amount (수기, 엑셀 DT=AG).
+     */
+    public function getKarabaOperatingProfitAttribute(): int
+    {
+        $v = $this->vehicle;
+        if (! $v) {
+            return 0;
+        }
+        $salesKrw = (int) round((float) ($v->sale_price ?? 0) * (float) ($v->exchange_rate ?? 0));
+        $purchaseTotal = (int) ($v->purchase_price ?? 0) + (int) ($v->selling_fee ?? 0);
+        $costs = (int) ($v->cost_total ?? 0);
+        $vat = (int) ($v->purchase_vat_amount ?? 0);
+
+        return $salesKrw - ($purchaseTotal + $costs - $vat);
+    }
+
+    /** karaba 이익율(%) = 영업이익 / 판매가 × 100. 판매가 ≤ 0(환율 미입력 등) → null. 엑셀 DY. */
+    public function getKarabaProfitRateAttribute(): ?float
+    {
+        $v = $this->vehicle;
+        $salesKrw = (int) round((float) ($v?->sale_price ?? 0) * (float) ($v?->exchange_rate ?? 0));
+        if ($salesKrw <= 0) {
+            return null;
+        }
+
+        return $this->karaba_operating_profit / $salesKrw * 100;
+    }
+
+    /**
+     * karaba 정산액 = tier(이익율) × 영업이익, 10원 절사. 음수 영업이익 → 0 바닥 (jin 2026-07-08).
+     *   ≥6% → ×20% / 5% ≤ r < 6% → ×15% / < 5% → ×10%   (6% 배타경계 — 엑셀 6% 중복카운트 버그 배제).
+     */
+    public function getKarabaSettlementAmountAttribute(): int
+    {
+        $profit = $this->karaba_operating_profit;
+        if ($profit <= 0) {
+            return 0;
+        }
+        $rate = $this->karaba_profit_rate;
+        if ($rate === null) {
+            return 0;
+        }
+        $pct = $rate >= 6 ? 20 : ($rate >= 5 ? 15 : 10);
+
+        return (int) (floor($profit * $pct / 100 / 10) * 10);
+    }
+
     /**
      * 정산액 = type 별 분기.
      *   ratio (프리랜서)    = 총마진 × (effective_ratio / 100)
@@ -470,6 +532,10 @@ class Settlement extends Model
      */
     public function getSettlementAmountAttribute(): int
     {
+        // karaba = 이익율 tier 정산 (Setting 프로파일 전역 분기). heyman/ssancar 는 아래 총마진 방식.
+        if (Setting::isKaraba()) {
+            return $this->karaba_settlement_amount;
+        }
         if ($this->settlement_type === 'ratio') {
             return (int) ($this->total_margin * ($this->effective_ratio / 100));
         }

@@ -835,6 +835,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cost_repair_str    = '';
     public string $cost_advertising_str = '';
     public string $parts_amount_str   = '';     // karaba 부품(기록만·미추적)
+    public string $purchase_vat_amount_str = ''; // karaba 매입세액VAT (Phase 3 정산용, 수기)
     public string $down_payment_str        = '';
     public string $selling_fee_payment_str = '';
     public string $purchase_remittance_memo = '';
@@ -2312,6 +2313,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         'cost_performance_str' => 'cost_performance',
         'cost_repair_str' => 'cost_repair',
         'cost_advertising_str' => 'cost_advertising',
+        'purchase_vat_amount_str' => 'purchase_vat_amount',
     ];
 
     private function restoreFinancialFieldsFromOriginal(): void
@@ -2649,6 +2651,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cost_repair_str      = $v->cost_repair      ? number_format($v->cost_repair)      : '';
         $this->cost_advertising_str = $v->cost_advertising ? number_format($v->cost_advertising) : '';
         $this->parts_amount_str     = $v->parts_amount     ? number_format($v->parts_amount)     : '';
+        $this->purchase_vat_amount_str = $v->purchase_vat_amount !== null ? number_format($v->purchase_vat_amount) : '';
         // 22-C-E (2026-05-20) — 2 _str = type별 confirmed PBP 합산 (down/selling_fee).
         $confirmedPbp = $v->purchaseBalancePayments->whereNotNull('confirmed_at');
         $sumPbpByType = function (string $type) use ($confirmedPbp): string {
@@ -3250,7 +3253,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_deregistration_str', 'cost_license_str', 'cost_towing_str',
             'cost_carry_str', 'cost_shoring_str', 'cost_insurance_str',
             'cost_transfer_str', 'cost_extra1_str', 'cost_extra2_str',
-            'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str',
+            'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str', 'purchase_vat_amount_str',
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
             'commission_str', 'transport_fee_str', 'auto_loading_str',
@@ -3748,6 +3751,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_repair'      => $toInt($this->cost_repair_str),
             'cost_advertising' => $toInt($this->cost_advertising_str),
             'parts_amount'     => $this->parts_amount_str !== '' ? $toInt($this->parts_amount_str) : null,   // karaba 기록만
+            'purchase_vat_amount' => $this->purchase_vat_amount_str !== '' ? $toInt($this->purchase_vat_amount_str) : null,   // karaba VAT (null=미입력→정산 가드)
             // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
             // _str ↔ PBP type='down'/'selling_fee' confirmed row 동기화는 vehicle save 이후 별도 처리.
             'purchase_remittance_memo' => $this->purchase_remittance_memo ?: null,
@@ -5168,7 +5172,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
             'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
-            'cost_inspection_str','cost_performance_str','cost_repair_str','cost_advertising_str','parts_amount_str',
+            'cost_inspection_str','cost_performance_str','cost_repair_str','cost_advertising_str','parts_amount_str','purchase_vat_amount_str',
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
@@ -6323,6 +6327,11 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 @if($isKaraba)
+                {{-- karaba 매입세액VAT (Phase 3): 정산 영업이익 계산용. 미입력 시 정산 확정 차단(가드). --}}
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.purchase_vat_amount') }}</label>
+                    <input wire:model="purchase_vat_amount_str" type="text" data-money class="input-base" placeholder="0" />
+                </div>
                 {{-- karaba 2단 캐스케이드 (Phase 1, 2026-07-22): 매입등록(1단) → 증빙유형(2단, wire:model.live 서버 필터) + 매매상 체크 --}}
                 <div>
                     <label class="label-base">{{ __('vehicle.field.purchase_registration_type') }}</label>

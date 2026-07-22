@@ -334,6 +334,7 @@ return [
         'cost_repair' => 'Maintenance',
         'cost_advertising' => 'Advertising',
         'parts_amount' => 'Parts',
+        'purchase_vat_amount' => 'Purchase VAT',
         'down_payment' => 'Down Payment',
         'selling_fee_payment' => 'Dealer Fee Paid',
         'balance' => 'Balance',

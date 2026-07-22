@@ -62,6 +62,7 @@ return [
         'cost_repair' => '정비비용',
         'cost_advertising' => '광고비용',
         'parts_amount' => '부품',
+        'purchase_vat_amount' => '매입세액',
         'deregistration_document' => '말소신청서',
 
         // 판매
