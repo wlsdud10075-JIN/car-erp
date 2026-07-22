@@ -72,7 +72,8 @@ class Vehicle extends Model
         'nice_spec_width', 'nice_spec_height', 'nice_spec_wheelbase',
         'nice_spec_curb_weight', 'nice_spec_fuel_efficiency',
         'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
-        'purchase_evidence_type', 'purchase_partner_type',   // karaba 전용 UI (매입증빙 자유입력 / 거래처구분 드롭박스)
+        'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
+        'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -108,6 +109,7 @@ class Vehicle extends Model
         'is_export_cleared' => 'boolean',
         'forwarding_email_sent' => 'boolean',
         'dhl_request' => 'boolean',
+        'is_dealer_purchase' => 'boolean',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
         'nice_reg_first_date' => 'date',
@@ -158,19 +160,20 @@ class Vehicle extends Model
     }
 
     /**
-     * karaba 거래처구분 드롭박스 옵션 (purchase_partner_type). 도메인 고정값 —
-     * ⚠️ '매매상'은 잔금 10일 알림(purchase_balance_due)이 감지하므로 문자열 고정.
+     * karaba 매입탭 2단 캐스케이드 (Phase 1, 2026-07-22, jin 확정 — 매입탭.png).
+     *   1단 매입등록(purchase_registration_type) → 2단 증빙유형(purchase_evidence_subtype) 자동 필터.
+     *   매매상은 별도 체크박스(is_dealer_purchase)로 분리 — 캐스케이드와 독립, 잔금 10일 알림 트리거.
+     *   ⚠️ 맵은 정본 그대로 — 임의 변경 금지. 구매대행·선적대행은 2단 없음.
      */
-    public const KARABA_PARTNER_TYPES = ['매매상', '경매장', '헤이딜러', '매매상딜러', '수출회사', '국내바이어', '개인'];
+    public const KARABA_REGISTRATION_TYPES = ['일반매입', '의제매입', '혼합매입', '리스/캐피탈', '구매대행', '선적대행'];
 
-    /** karaba 매입증빙 드롭박스 옵션 (purchase_evidence_type). jin 2026-07-12 확정값. */
-    public const KARABA_EVIDENCE_TYPES = [
-        '계산서',
-        '개인(계약서)',
-        '개인(비사업용사실확인서)',
-        '리스,캐피탈(승계내역서/계산서)',
-        '구매대행(구매사실확인서)',
-        '선적대행(서류미필요)',
+    public const KARABA_EVIDENCE_CASCADE = [
+        '일반매입' => ['세금계산서', '대체서류', '영세율 및 기타'],
+        '의제매입' => ['개인', '개인사업자(비사업용 차량확인서)', '간이과세자'],
+        '혼합매입' => ['의제매입+세금계산서', '의제매입+대체서류', '세금계산서+대체서류'],
+        '리스/캐피탈' => ['세금계산서+의제매입', '승계서+의제매입', '불공제'],
+        '구매대행' => [],
+        '선적대행' => [],
     ];
 
     // ── RRN 암호화 (개인정보보호법 §29) ─────────────────────────────
@@ -1425,7 +1428,7 @@ class Vehicle extends Model
      */
     public function getPurchaseBalanceDueDaysAttribute(): ?int
     {
-        if ($this->purchase_partner_type !== '매매상') {
+        if (! $this->is_dealer_purchase) {
             return null;
         }
         if ($this->purchase_price <= 0 || $this->purchase_unpaid_amount <= 0) {
@@ -1651,11 +1654,12 @@ class Vehicle extends Model
                                           WHERE vehicle_id = vehicles.id
                                           AND payment_date IS NOT NULL AND payment_date <= ?
                                           AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()]),
-            // 매매상 잔금 10일 알림 (karaba, jin 2026-07-12) — 거래처구분 '매매상' + 계약금 입력 + 잔금 미납.
-            //   purchase_partner_type 은 karaba 만 채워 자연 격리. due_date = 계약금일+10 (scan 에서 산정).
+            // 매매상 잔금 10일 알림 (karaba) — 매매상 체크(is_dealer_purchase) + 계약금 입력 + 잔금 미납.
+            //   is_dealer_purchase 는 karaba 만 채워 자연 격리. due_date = 계약금일+10 (scan 에서 산정).
             //   getPurchaseBalanceDueDaysAttribute 와 동일 조건(단일 출처). alarms:scan 이 생성/자동해소.
+            //   (2026-07-22 Phase 1 — 트리거를 구 purchase_partner_type='매매상' 에서 체크박스로 이관.)
             'purchase_balance_due' => $q
-                ->where('purchase_partner_type', '매매상')
+                ->where('is_dealer_purchase', true)
                 ->where('purchase_price', '>', 0)
                 ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
                              - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments

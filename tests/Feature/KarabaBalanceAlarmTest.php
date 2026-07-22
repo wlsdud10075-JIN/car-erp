@@ -28,7 +28,7 @@ class KarabaBalanceAlarmTest extends TestCase
         $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
     }
 
-    private function dealerVehicle(string $partner = '매매상'): Vehicle
+    private function dealerVehicle(bool $isDealer = true): Vehicle
     {
         return Vehicle::create([
             'vehicle_number' => '77허8888',
@@ -36,7 +36,7 @@ class KarabaBalanceAlarmTest extends TestCase
             'currency' => 'KRW',
             'exchange_rate' => 1,
             'purchase_price' => 10000000,
-            'purchase_partner_type' => $partner,
+            'is_dealer_purchase' => $isDealer,   // 매매상 체크박스 (2026-07-22 트리거 이관)
             'dhl_request' => false,
         ]);
     }
@@ -60,7 +60,7 @@ class KarabaBalanceAlarmTest extends TestCase
 
     public function test_scope_excludes_non_dealer(): void
     {
-        $v = $this->dealerVehicle('경매장');   // 매매상 아님
+        $v = $this->dealerVehicle(false);   // 매매상 체크 안 함
         $this->addDown($v);
 
         $this->assertSame(0, Vehicle::query()->action('purchase_balance_due')->count());

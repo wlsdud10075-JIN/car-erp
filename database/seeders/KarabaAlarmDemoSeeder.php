@@ -48,8 +48,9 @@ class KarabaAlarmDemoSeeder extends Seeder
                 'exchange_rate' => 1,
                 'purchase_date' => $downDate->toDateString(),
                 'purchase_price' => 10_000_000,
-                'purchase_partner_type' => '매매상',
-                'purchase_evidence_type' => '계산서',
+                'is_dealer_purchase' => true,   // 매매상 체크 (알림 트리거, 2026-07-22 이관)
+                'purchase_registration_type' => '일반매입',
+                'purchase_evidence_subtype' => '세금계산서',
                 'dhl_request' => false,
             ]);
 
