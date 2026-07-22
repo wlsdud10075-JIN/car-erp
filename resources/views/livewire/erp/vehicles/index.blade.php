@@ -797,9 +797,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_date = '';
     public string $salesman_id_str = '';
     public string $purchase_from  = '';
-    // karaba 전용 매입 기본 (Setting::isKaraba() 게이팅) — 매입증빙 자유입력 / 거래처구분 드롭박스
-    public string $purchase_evidence_type = '';
-    public string $purchase_partner_type  = '';
+    // karaba 전용 매입탭 2단 캐스케이드 (Phase 1, 2026-07-22) — 매입등록(1단) → 증빙유형(2단) + 매매상 체크
+    public string $purchase_registration_type = '';
+    public string $purchase_evidence_subtype  = '';
+    public bool $is_dealer_purchase = false;
+
+    /** 1단(매입등록) 변경 시 2단(증빙유형)이 새 캐스케이드에 없으면 리셋. */
+    public function updatedPurchaseRegistrationType(): void
+    {
+        $opts = \App\Models\Vehicle::KARABA_EVIDENCE_CASCADE[$this->purchase_registration_type] ?? [];
+        if (! in_array($this->purchase_evidence_subtype, $opts, true)) {
+            $this->purchase_evidence_subtype = '';
+        }
+    }
     // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 cast로 자동 암호화)
     public string $purchase_seller_bank    = '';
     public string $purchase_seller_account = '';
@@ -2603,8 +2613,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_date       = $v->purchase_date ? $v->purchase_date->format('Y-m-d') : '';
         $this->salesman_id_str     = $v->salesman_id   ? (string)$v->salesman_id : '';
         $this->purchase_from       = $v->purchase_from ?? '';
-        $this->purchase_evidence_type = $v->purchase_evidence_type ?? '';
-        $this->purchase_partner_type  = $v->purchase_partner_type  ?? '';
+        $this->purchase_registration_type = $v->purchase_registration_type ?? '';
+        $this->purchase_evidence_subtype  = $v->purchase_evidence_subtype  ?? '';
+        $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -3695,8 +3706,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_date'    => $toDate($this->purchase_date),
             'salesman_id'      => $toId($this->salesman_id_str),
             'purchase_from'    => $this->purchase_from ?: null,
-            'purchase_evidence_type' => $this->purchase_evidence_type ?: null,
-            'purchase_partner_type'  => $this->purchase_partner_type  ?: null,
+            'purchase_registration_type' => $this->purchase_registration_type ?: null,
+            'purchase_evidence_subtype'  => $this->purchase_evidence_subtype  ?: null,
+            'is_dealer_purchase' => $this->is_dealer_purchase,
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -5130,7 +5142,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_evidence_type','purchase_partner_type',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -5585,7 +5597,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{-- karaba(2026-07-12): 매매상 잔금 10일 임박 배지 (거래처구분 매매상 + 계약금 + 미납) --}}
                     @php $balDays = $v->purchase_balance_due_days; @endphp
                     @if($balDays !== null)
-                        <span class="ml-1 whitespace-nowrap rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700" title="{{ __('vehicle.field.purchase_partner_type') }}: 매매상">
+                        <span class="ml-1 whitespace-nowrap rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700" title="{{ __('vehicle.field.is_dealer_purchase') }}">
                             {{ $balDays >= 0 ? __('vehicle.balance_badge', ['d' => $balDays]) : __('vehicle.balance_badge_overdue') }}
                         </span>
                     @endif
@@ -6290,23 +6302,32 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.purchase_price') }} </label><input wire:model="purchase_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.selling_fee') }} </label><input wire:model="selling_fee_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 @if($isKaraba)
+                {{-- karaba 2단 캐스케이드 (Phase 1, 2026-07-22): 매입등록(1단) → 증빙유형(2단, wire:model.live 서버 필터) + 매매상 체크 --}}
                 <div>
-                    <label class="label-base">{{ __('vehicle.field.purchase_evidence_type') }}</label>
-                    <select wire:model="purchase_evidence_type" class="input-base">
+                    <label class="label-base">{{ __('vehicle.field.purchase_registration_type') }}</label>
+                    <select wire:model.live="purchase_registration_type" class="input-base">
                         <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach(\App\Models\Vehicle::KARABA_EVIDENCE_TYPES as $ev)
-                        <option value="{{ $ev }}">{{ $ev }}</option>
+                        @foreach(\App\Models\Vehicle::KARABA_REGISTRATION_TYPES as $rt)
+                        <option value="{{ $rt }}">{{ $rt }}</option>
                         @endforeach
                     </select>
                 </div>
+                @php $subOpts = \App\Models\Vehicle::KARABA_EVIDENCE_CASCADE[$purchase_registration_type] ?? []; @endphp
+                {{-- 증빙유형은 항상 표시(jin 2026-07-22): 구매대행·선적대행은 선택지가 없어 비활성으로 남겨둠. --}}
                 <div>
-                    <label class="label-base">{{ __('vehicle.field.purchase_partner_type') }}</label>
-                    <select wire:model="purchase_partner_type" class="input-base">
+                    <label class="label-base">{{ __('vehicle.field.purchase_evidence_subtype') }}</label>
+                    <select wire:model="purchase_evidence_subtype" class="input-base" @disabled(count($subOpts) === 0)>
                         <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
-                        @foreach(\App\Models\Vehicle::KARABA_PARTNER_TYPES as $pt)
-                        <option value="{{ $pt }}">{{ $pt }}</option>
+                        @foreach($subOpts as $opt)
+                        <option value="{{ $opt }}">{{ $opt }}</option>
                         @endforeach
                     </select>
+                </div>
+                <div class="flex items-end">
+                    <label class="inline-flex items-center gap-2 pb-1.5 text-sm text-gray-700">
+                        <input type="checkbox" wire:model="is_dealer_purchase" class="rounded border-gray-300 text-primary focus:ring-primary" />
+                        {{ __('vehicle.field.is_dealer_purchase') }}
+                    </label>
                 </div>
                 @endif
             </div>

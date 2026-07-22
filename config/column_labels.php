@@ -41,6 +41,9 @@ return [
         'purchase_remittance_memo' => '송금 메모',
         'purchase_price' => '매입가',
         'selling_fee' => '매도비',
+        'purchase_registration_type' => '매입등록',
+        'purchase_evidence_subtype' => '증빙유형',
+        'is_dealer_purchase' => '매매상',
         'nice_reg_owner_name' => '소유자',
         'nice_reg_owner_rrn' => '주민(법인)등록번호',
 
