@@ -109,7 +109,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $e = $end->format('Y-m-d H:i:s');
 
         return fn ($q) => $q->where(function ($q2) use ($monthStart, $s, $e) {
-            $q2->whereDate('attributed_month', $monthStart)
+            // 성능(jin 2026-07-23): attributed_month 인덱스 유지 위해 whereDate(DATE())→시간경계 범위.
+            //   ⚠ SQLite(테스트)는 date 를 'Y-m-d 00:00:00' 저장 → plain where 불일치. 명시 경계로 양쪽 DB 안전.
+            //   (ssancar 504 교훈 패턴② / DB tier 불일치 대응)
+            $q2->whereBetween('attributed_month', [$monthStart.' 00:00:00', $monthStart.' 23:59:59'])
                 ->orWhere(function ($q3) use ($s, $e) {
                     $q3->whereNull('attributed_month')
                         ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$s])

@@ -62,8 +62,10 @@ class VehicleExportController extends Controller
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
-            ->when($applyDateFilter && $dateFrom !== '', fn ($q) => $q->whereDate($dateCol, '>=', $dateFrom))
-            ->when($applyDateFilter && $dateTo !== '', fn ($q) => $q->whereDate($dateCol, '<=', $dateTo))
+            // 성능(jin 2026-07-23): $dateCol(purchase/sale/shipping/bl_issue_date) 전부 인덱스 → whereDate(DATE())가
+            //   인덱스 죽임. 시간경계 범위로 인덱스 유지 + 양쪽 DB(SQLite 'Y-m-d 00:00:00' 저장) 안전.
+            ->when($applyDateFilter && $dateFrom !== '', fn ($q) => $q->where($dateCol, '>=', $dateFrom.' 00:00:00'))
+            ->when($applyDateFilter && $dateTo !== '', fn ($q) => $q->where($dateCol, '<=', $dateTo.' 23:59:59'))
             ->when($mirror && $dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
                 ->when($dateFrom !== '', fn ($x) => $x->whereDate('payment_date', '>=', $dateFrom))
                 ->when($dateTo !== '', fn ($x) => $x->whereDate('payment_date', '<=', $dateTo))))
