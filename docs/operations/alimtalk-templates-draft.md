@@ -325,6 +325,11 @@ ERP에서 내용을 확인하고 정산을 확정해 주세요.
 | 14 | 정산지급 반려 | 제출자 | `erp_payout_rejected` | 008002 |
 | 16 | 보증금매입독촉 | 담당 영업 + 관리 | `erp_deposit_cash_due` | 008002 |
 | 17 | 보증금매입초과-대표 | 대표 | `erp_deposit_cash_overdue` | 008002 |
+| 18 | 보증금선지급 승인요청 | 관리(기안 시)/재무(관리승인 시) | `erp_deposit_funding_request` | 008002 |
+| 19 | 보증금선지급 완료 | 기안자 | `erp_deposit_funding_done` | 008002 |
+| 20 | 보증금선지급 반려 | 기안자 | `erp_deposit_funding_rejected` | 008002 |
+
+> **보증금 매입 선지급 승인 알림 3종 (2026-07-23, jin)**: 정산 지급 승인 사다리와 동일 패턴. **요청** = 기안(applyPurchaseFunding) 시 관리(승인자) / 관리 승인(approvePurchaseFunding) 시 재무(role='재무', `financeConfirmers`). **결과** = 재무 확정(confirmPurchaseFundingByFinance) 시 기안자 완료 / 관리 반려·재무 거부 시 기안자 반려. 전부 fire-and-forget(`InterVehicleTransferService::notifyFundingRequest/notifyFundingResult`). BizM 등록 = 회사폴더 xlsx row22~24. karaba 미적용.
 
 > **보증금 매입 바이어 입금 독촉 2종 (2026-07-23, jin)**: 보증금으로 매입한 차의 바이어가 선적 기준(Setting `shipping_entry` 필요입금률) 미달일 때. 도장(`deposit_purchase_at`) 후 **D+5~10 = 독촉**(담당 영업 본인 차 + 관리 전체 목록, `erp_deposit_cash_due`), **D+10 초과 = 대표 처분요청**(`erp_deposit_cash_overdue`, 독촉 대상 제외). 기본형 목록형(가변 `#{보증금목록}`/`#{초과목록}`). **자동 중단** = 매 실행 시 미수율 재계산해 기준 넘긴 차 제외. 커맨드 `alimtalk:deposit-cash`(09:00 평일). BizM 등록 = 회사폴더 xlsx row20/21(헤이맨·싼카). karaba 미적용. (15번 `erp_dealer_balance_due`는 karaba 매매상 잔금 — 별도.)
 

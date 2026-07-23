@@ -150,6 +150,11 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->first();
         if ($transfer && $transfer->status === InterVehicleTransfer::STATUS_PENDING) {
             $transfer->update(['status' => InterVehicleTransfer::STATUS_REJECTED]);
+
+            // 보증금 선지급 반려 → 기안자에게 통보 (fire-and-forget, 2026-07-23).
+            if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+                app(InterVehicleTransferService::class)->notifyFundingResult($transfer->fresh(), 'rejected', $this->decision_note);
+            }
         }
     }
 

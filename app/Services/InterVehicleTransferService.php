@@ -9,6 +9,7 @@ use App\Models\InterVehicleTransfer;
 use App\Models\PurchaseBalancePayment;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\AlimtalkRecipients;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -304,7 +305,7 @@ class InterVehicleTransferService
         $sourceRate = (float) $source->exchange_rate;
         $sourceForeign = round($amountKrw / $sourceRate, 2);
 
-        return DB::transaction(function () use ($source, $target, $amountKrw, $sourceForeign, $sourceRate, $drafter, $reason) {
+        $transfer = DB::transaction(function () use ($source, $target, $amountKrw, $sourceForeign, $sourceRate, $drafter, $reason) {
             $approvalReq = ApprovalRequest::create([
                 'requester_id' => $drafter->id,
                 'action_type' => ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
@@ -339,6 +340,11 @@ class InterVehicleTransferService
                 'requester_id' => $drafter->id,
             ]);
         });
+
+        // 기안 → 관리(승인자)에게 승인 요청 알림 (fire-and-forget, 2026-07-23).
+        $this->notifyFundingRequest($transfer, AlimtalkRecipients::managers());
+
+        return $transfer;
     }
 
     /**
@@ -365,6 +371,9 @@ class InterVehicleTransferService
             'status' => InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
             'approver_id' => $approver->id,
         ]);
+
+        // 관리 승인 → 재무(확정자)에게 확정 요청 알림 (fire-and-forget, 2026-07-23).
+        $this->notifyFundingRequest($transfer->fresh(), AlimtalkRecipients::financeConfirmers());
     }
 
     /**
@@ -445,6 +454,9 @@ class InterVehicleTransferService
         });
 
         $transfer->refresh();
+
+        // 재무 확정 완료 → 기안자에게 완료 통보 (fire-and-forget, 2026-07-23).
+        $this->notifyFundingResult($transfer, 'done');
     }
 
     /**
@@ -656,6 +668,9 @@ class InterVehicleTransferService
             'finance_rejected_at' => now(),
             'finance_reject_reason' => $reason,
         ]);
+
+        // 재무 거부 → 기안자에게 반려 통보 (fire-and-forget, 2026-07-23).
+        $this->notifyFundingResult($transfer->fresh(), 'rejected', $reason);
     }
 
     /**
@@ -877,6 +892,54 @@ class InterVehicleTransferService
             if ($v && $v->settlements()->where('settlement_status', 'paid')->exists()) {
                 throw new DomainException("{$label} 차량에 paid 정산이 있어 자금 이체를 처리할 수 없습니다.");
             }
+        }
+    }
+
+    /**
+     * 보증금 선지급 승인 요청 알림 (2026-07-23) — 기안 시 관리, 관리승인 시 재무.
+     * fire-and-forget: BizmAlimtalkService 가 게이트/미설정이면 자동 skip, 예외 안 던짐.
+     * purchase_funding 전용(다른 kind 는 무시).
+     */
+    public function notifyFundingRequest(InterVehicleTransfer $transfer, array $recipients): void
+    {
+        if ($transfer->kind !== InterVehicleTransfer::KIND_PURCHASE_FUNDING || empty($recipients)) {
+            return;
+        }
+        $vars = [
+            '차량번호' => (string) ($transfer->targetVehicle?->vehicle_number ?? '-'),
+            '금액' => number_format((int) $transfer->amount_krw),
+            '기안자' => (string) ($transfer->requester?->name ?? '-'),
+        ];
+        $svc = BizmAlimtalkService::active();
+        foreach ($recipients as $phone) {
+            $svc->send('erp_deposit_funding_request', $phone, $vars, ['vehicle_id' => $transfer->target_vehicle_id]);
+        }
+    }
+
+    /**
+     * 보증금 선지급 결과 통보 (2026-07-23) — 재무 확정=done / 관리반려·재무거부=rejected. 기안자 수신.
+     */
+    public function notifyFundingResult(InterVehicleTransfer $transfer, string $event, ?string $reason = null): void
+    {
+        if ($transfer->kind !== InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
+            return;
+        }
+        $phone = trim((string) ($transfer->requester?->phone ?? ''));
+        if ($phone === '') {
+            return;
+        }
+        $svc = BizmAlimtalkService::active();
+        $plate = (string) ($transfer->targetVehicle?->vehicle_number ?? '-');
+        if ($event === 'done') {
+            $svc->send('erp_deposit_funding_done', $phone, [
+                '차량번호' => $plate,
+                '금액' => number_format((int) $transfer->amount_krw),
+            ], ['vehicle_id' => $transfer->target_vehicle_id]);
+        } else {
+            $svc->send('erp_deposit_funding_rejected', $phone, [
+                '차량번호' => $plate,
+                '사유' => (string) ($reason !== null && $reason !== '' ? $reason : '-'),
+            ], ['vehicle_id' => $transfer->target_vehicle_id]);
         }
     }
 }
