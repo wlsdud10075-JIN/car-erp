@@ -284,6 +284,54 @@ class AlimtalkTemplates
         ],
     ];
 
+    /**
+     * 발송 시점 설명 (2026-07-23) — 알림톡 안내 화면용. code => 언제 발송되나(사람 설명).
+     * 값·수신자·시점 변경은 재승인 불필요(고정문구 아님) — 여기서 관리.
+     */
+    public const WHEN = [
+        'erp_daily_summary' => '매일 09:00 (평일) — 대표 일일 매출·미수 요약',
+        'erp_weekly_summary' => '매주 금요일 18:00 — 대표 주간 요약',
+        'erp_monthly_closing' => '매월 1일 09:00 — 전월 결산 요약',
+        'erp_vehicle_new' => 'board 경유 신규 차량 등록 시',
+        'erp_purchase_unpaid' => '매일 09:00 (평일) — 매입 미지급 있으면',
+        'erp_sale_unpaid' => '매일 09:00 (평일) — 판매 미입금 있으면 (결제대기 10일 유예 제외)',
+        'erp_settle_pending' => '거래완료로 새 정산 생성 시',
+        'erp_eta_balance_due' => '매일 09:00 (평일) — 도착 7일 전 & 잔금 미완납',
+        'erp_shipping_due' => '매일 09:00 (평일) — 선적 5일 전 & 미완납',
+        'erp_dealer_balance_due' => '매일 09:00 (평일) — 매매상 잔금 기한 임박 (karaba)',
+        'erp_deposit_cash_due' => '매일 09:00 (평일) — 보증금 매입 도장 D+5~10 & 바이어 입금 기준 미달',
+        'erp_deposit_cash_overdue' => '매일 09:00 (평일) — 보증금 매입 도장 D+10 초과 & 미달',
+        'erp_deposit_funding_request' => '보증금 선지급 기안 시(→관리) / 관리 승인 시(→재무)',
+        'erp_deposit_funding_done' => '보증금 선지급 재무 확정 시(→기안자)',
+        'erp_deposit_funding_rejected' => '보증금 선지급 관리 반려·재무 거부 시(→기안자)',
+        'erp_pickup_reminder' => '매일 09:00 (평일) — 매입일 +2일 & 매입 미완납',
+        'erp_deregistration_notice' => '말소등록증 업로드 후 담당자가 수동 발송',
+        'erp_payout_request' => '월배치 정산 지급 제출·전진 시 (→다음 계단 승인자)',
+        'erp_payout_done' => '월배치 정산 지급 최종 승인 시 (→제출자)',
+        'erp_payout_rejected' => '월배치 정산 지급 반려 시 (→제출자)',
+    ];
+
+    /**
+     * 알림톡 안내 카탈로그 (2026-07-23) — 화면용. 각 템플릿의 이름·수신자·발송시점·본문.
+     *
+     * @return array<int, array{code:string, name:string, recipient:string, when:string, body:string}>
+     */
+    public static function catalog(): array
+    {
+        $rows = [];
+        foreach (self::TEMPLATES as $code => $t) {
+            $rows[] = [
+                'code' => $code,
+                'name' => $t['name'] ?? $code,
+                'recipient' => $t['recipient'] ?? '-',
+                'when' => self::WHEN[$code] ?? '-',
+                'body' => $t['body'] ?? '',
+            ];
+        }
+
+        return $rows;
+    }
+
     /** 본문 렌더 — `#{변수}` 치환. 없는 코드면 빈 문자열. */
     public static function render(string $code, array $vars = []): string
     {

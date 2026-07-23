@@ -33,6 +33,7 @@
         $routeName === 'admin.document-access-logs.index' => __('nav.crumb.doc_logs'),
         $routeName === 'admin.audit-logs.index' => __('nav.crumb.audit_logs'),
         $routeName === 'admin.alimtalk-logs.index' => __('nav.crumb.alimtalk_logs'),
+        $routeName === 'admin.alimtalk-catalog.index' => __('nav.crumb.alimtalk_catalog'),
         $routeName === 'admin.mail-delivery-logs.index' => __('nav.crumb.mail_logs'),
         $routeName === 'erp.dashboard' => __('nav.crumb.erp_dashboard'),
         $routeName === 'erp.vehicles.index' => __('nav.crumb.vehicles'),
@@ -331,6 +332,14 @@
                     'active' => request()->routeIs('admin.alimtalk-logs.*'),
                     'show' => $user->canAccessAdmin(),
                     'badge' => $alimtalkFailBadge > 0 ? $alimtalkFailBadge : null,
+                ],
+                [
+                    'label' => __('nav.menu.alimtalk_catalog'),
+                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-catalog.index')
+                        ? route('admin.alimtalk-catalog.index') : '#',
+                    'icon' => 'bell',
+                    'active' => request()->routeIs('admin.alimtalk-catalog.*'),
+                    'show' => $user->canAccessAdmin(),
                 ],
                 [
                     'label' => __('nav.menu.mail_logs'),

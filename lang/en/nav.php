@@ -37,6 +37,7 @@ return [
         'doc_logs' => 'Document Access Logs',
         'audit_logs' => 'Audit Logs',
         'alimtalk_logs' => 'Alimtalk Logs',
+        'alimtalk_catalog' => 'Alimtalk Guide',
         'mail_logs' => 'Mail Send Logs',
     ],
 
@@ -49,6 +50,7 @@ return [
         'doc_logs' => 'Document Access Logs',
         'audit_logs' => 'Audit Logs',
         'alimtalk_logs' => 'Alimtalk Logs',
+        'alimtalk_catalog' => 'Alimtalk Guide',
         'mail_logs' => 'Mail Send Logs',
         'erp_dashboard' => 'ERP Dashboard',
         'vehicles' => 'Vehicles',
