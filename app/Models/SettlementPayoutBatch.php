@@ -164,7 +164,8 @@ class SettlementPayoutBatch extends Model
             ->where('settlement_status', 'confirmed')
             ->whereNull('payout_batch_id')
             ->where(function ($q) use ($monthStart, $start, $end) {
-                $q->whereDate('attributed_month', $monthStart)
+                // 성능(jin 2026-07-23): attributed_month 인덱스 유지 위해 whereDate→시간경계 범위(DB tier 불일치 대응).
+                $q->whereBetween('attributed_month', [$monthStart.' 00:00:00', $monthStart.' 23:59:59'])
                     ->orWhere(function ($q2) use ($start, $end) {
                         $q2->whereNull('attributed_month')
                             ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$start])
