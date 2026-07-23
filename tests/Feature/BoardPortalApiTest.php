@@ -89,6 +89,7 @@ class BoardPortalApiTest extends TestCase
         $res = $this->signedGet('/api/internal/board/receivables', ['salesman_email' => 'me@a.com'])->assertOk();
         $res->assertJsonPath('data.0.unpaid_krw', null);   // 환율0 = null (완납 아님)
         $res->assertJsonPath('data.0.currency', 'USD');
+        $res->assertJsonPath('data.0.unpaid_ratio', 1);  // 통화 비의존 — 환율0이어도 미납률은 100% (board 게이지용). JSON 직렬화로 1.0→1
     }
 
     public function test_response_never_leaks_rrn_account_or_margin(): void
