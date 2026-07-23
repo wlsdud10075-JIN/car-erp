@@ -44,6 +44,17 @@ class AlimtalkRecipients
     }
 
     /**
+     * 재무 확정자 — 보증금 선지급 '재무 확정 대기' 알림 수신 (2026-07-23).
+     * role='재무' 사용자만(전화 있는). 없으면 빈 목록 → 관리가 /erp/transfers 에서 직접 확인.
+     */
+    public static function financeConfirmers(): array
+    {
+        return self::phones(
+            User::query()->where('role', '재무')->whereNotIn('permission', ['super'])
+        );
+    }
+
+    /**
      * 월배치 정산지급 승인 사다리 — 특정 계단(current_level)의 승인자 번호.
      * level 2 = 업무관리자(manager) / level 3 = 대표(admin). super(4)는 업무알림 제외.
      */
