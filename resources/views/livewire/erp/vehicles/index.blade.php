@@ -5204,6 +5204,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->sales_channel = 'export';
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
+        $this->deposit_purchase_state = null;   // 신규 등록 패널에 이전 편집 차의 보증금 마커 잔상 방지 (2026-07-23)
         $this->cancelStatus = 'none';
         $this->cancelShortfallKrw = 0;
         $this->cancelStatusLabel = '';
@@ -5957,8 +5958,8 @@ function vehicleColumnsToggle() {
                 @if($vehicle_number)
                 <p class="text-xs {{ $justCreated ? 'text-emerald-600' : 'text-gray-400' }} font-mono mt-0.5">
                     {{ $vehicle_number }}
-                    {{-- 보증금 매입 마커 (2026-07-23) — 판매완료=초록 / 미완납=주황 --}}
-                    @if($deposit_purchase_state !== null)
+                    {{-- 보증금 매입 마커 (2026-07-23) — 판매완료=초록 / 미완납=주황. 신규 등록(editingId=null)엔 비노출 --}}
+                    @if($editingId !== null && $deposit_purchase_state !== null)
                         <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $deposit_purchase_state === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' }}"
                               title="{{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_purchase_paid') : __('vehicle.deposit_purchase_waiting') }}">
                             {{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
