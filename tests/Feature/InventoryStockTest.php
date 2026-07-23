@@ -70,6 +70,19 @@ class InventoryStockTest extends TestCase
         $this->assertContains($v->id, Vehicle::inStock()->pluck('id')->all(), '선적중+미출고 → 재고 잔존');
     }
 
+    public function test_completed_excluded_from_stock_even_without_out_date(): void
+    {
+        // jin 2026-07-23: 거래완료(출항)는 출고일 미입력이어도 재고 제외. 확실히 나간 것이므로.
+        $v = $this->purchased();
+        $v->update(['sale_price' => 10_000_000, 'sale_date' => '2026-05-15', 'buyer_id' => Buyer::create(['name' => 'bc', 'is_active' => true])->id, 'exchange_rate' => 1, 'bl_loading_location' => '부산항', 'bl_document' => 'bl.pdf']);
+        $v->finalPayments()->create(['amount' => 10_000_000, 'type' => 'balance', 'payment_date' => '2026-05-20', 'confirmed_at' => now()]);
+        $v->refreshCaches();
+        $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
+        $this->assertNull($v->fresh()->warehouse_out_date, '출고일 미입력 상태');
+        $this->assertNotContains($v->id, Vehicle::inStock()->pluck('id')->all(), '거래완료 → 출고일 없어도 재고 제외');
+        $this->assertNotContains($v->id, Vehicle::preShippingStock()->pluck('id')->all(), '거래완료 → 선적전 재고에서도 제외');
+    }
+
     public function test_warehouse_in_date_is_purchase_full_payment_date(): void
     {
         $v = $this->purchased();
