@@ -40,6 +40,7 @@ class AlimtalkRecipients
     public const DEFAULT_ROLES = [
         'erp_daily_summary' => ['admin'],
         'erp_weekly_summary' => ['admin'],
+        'erp_capital_weekly' => ['admin'],   // 자본·손익 기밀 — 대표(admin) 전용
         'erp_monthly_closing' => ['admin'],
         'erp_vehicle_new' => ['관리', 'manager'],
         'erp_purchase_unpaid' => ['관리', 'manager'],

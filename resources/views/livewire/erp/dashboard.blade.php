@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\CashSnapshot;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Services\CapitalStatusService;
 use App\Services\ExchangeRateService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -20,6 +22,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   'role'     = 역할별 보기 (역할 탭 영업/통관/정산 + 전체 차량)
     public string $viewMode = 'salesman';
 
+    // 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용.
+    public string $cashDate = '';   // 기준일 (기본 오늘, 소급 입력 허용)
+    public string $cashKrw = '';
+    public string $cashUsd = '';
+    public string $cashEur = '';
+    public ?string $cashSavedAt = null;
+
     public function mount(): void
     {
         $user = auth()->user();
@@ -35,6 +44,48 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 비-admin: viewMode는 본인 role로 자연 결정 (영업이면 salesman, 그 외엔 role)
             $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
         }
+
+        // 자금 현황 입력 카드 — 최신 스냅샷 프리필 (권한자만)
+        if ($user->canEnterCashBalance()) {
+            $this->cashDate = now()->toDateString();
+            $latest = CashSnapshot::orderByDesc('snapshot_date')->first();
+            if ($latest) {
+                $trim = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+                $this->cashKrw = (string) (int) $latest->balance_krw;
+                $this->cashUsd = $trim($latest->balance_usd);
+                $this->cashEur = $trim($latest->balance_eur);
+                $this->cashSavedAt = $latest->snapshot_date->format('Y-m-d');
+            }
+        }
+    }
+
+    /** 통장 마감잔액 저장 → 그 시점 재고·미수·미지급 자동 캡처 (하루 1건 upsert). */
+    public function saveCashBalance(): void
+    {
+        $user = auth()->user();
+        abort_unless($user->canEnterCashBalance(), 403);
+
+        $clean = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
+        $krw = $clean($this->cashKrw);
+        $usd = $clean($this->cashUsd);
+        $eur = $clean($this->cashEur);
+        if ($krw < 0 || $usd < 0 || $eur < 0) {
+            $this->dispatch('notify', message: '잔액은 0 이상이어야 합니다.', type: 'error');
+
+            return;
+        }
+
+        // 기준일 — 기본 오늘, 미래일 금지 (소급 입력만 허용)
+        $date = $this->cashDate ?: now()->toDateString();
+        if (\Illuminate\Support\Carbon::parse($date)->gt(now())) {
+            $this->dispatch('notify', message: '미래 날짜는 입력할 수 없습니다.', type: 'error');
+
+            return;
+        }
+
+        app(CapitalStatusService::class)->capture(['krw' => $krw, 'usd' => $usd, 'eur' => $eur], $user, $date);
+        $this->cashSavedAt = $date;
+        $this->dispatch('notify', message: $date.' 통장 잔액을 저장했습니다.', type: 'success');
     }
 
     // 큐 5 — viewMode 변경 시 동기화.
@@ -660,6 +711,41 @@ new #[Layout('components.layouts.app')] class extends Component {
 @else
 <div class="card mt-3 bg-amber-50">
     <p class="text-xs text-amber-700">{{ __('dashboard.fx_fail') }} <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button></p>
+</div>
+@endif
+
+{{-- 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용. --}}
+@if(auth()->user()->canEnterCashBalance())
+<div class="card mt-3">
+    <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <span class="section-dot bg-blue-500"></span>
+            <span class="text-sm font-semibold text-gray-800">{{ __('cash.input_title') }}</span>
+        </div>
+        @if($cashSavedAt)<span class="text-xs text-gray-400">{{ __('cash.last_input') }} {{ $cashSavedAt }}</span>@endif
+    </div>
+    <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div>
+            <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
+            <input type="date" wire:model="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
+        </div>
+        <div>
+            <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
+            <input type="text" wire:model="cashKrw" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
+        </div>
+        <div>
+            <label class="text-xs text-gray-500">{{ __('cash.usd') }}</label>
+            <input type="text" wire:model="cashUsd" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
+        </div>
+        <div>
+            <label class="text-xs text-gray-500">{{ __('cash.eur') }}</label>
+            <input type="text" wire:model="cashEur" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
+        </div>
+        <div class="flex items-end">
+            <button type="button" wire:click="saveCashBalance" class="btn-primary w-full">{{ __('cash.save') }}</button>
+        </div>
+    </div>
+    <p class="mt-2 text-[11px] text-gray-400">{{ __('cash.input_note') }}</p>
 </div>
 @endif
 

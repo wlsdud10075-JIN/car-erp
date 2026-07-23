@@ -5,6 +5,7 @@ use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Services\CapitalStatusService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -75,6 +76,44 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         return $user->getSubordinateSalesmanIds();
+    }
+
+    /**
+     * 자금 현황 (jin 2026-07-23) — super/대표만. 통장현금(수동)+재고·미수·미지급(ERP)+원금 → 손익.
+     *   최신 CashSnapshot 기준. 통장 미입력이면 has_data=false.
+     */
+    #[Computed]
+    public function capitalStatus(): array
+    {
+        if (! auth()->user()->canViewCapital()) {
+            return ['has_data' => false, 'denied' => true];
+        }
+        $svc = app(CapitalStatusService::class);
+
+        return $svc->derive($svc->latest());
+    }
+
+    /** 자금 추이 (스냅샷 시계열) — 차트용. */
+    #[Computed]
+    public function capitalTrend(): array
+    {
+        if (! auth()->user()->canViewCapital()) {
+            return [];
+        }
+        $svc = app(CapitalStatusService::class);
+        $principal = $svc->principal();
+
+        return $svc->history(120)->map(function ($s) use ($principal) {
+            $liq = $s->cash_krw + (int) $s->inventory_krw - (int) $s->payable_krw;
+
+            return [
+                'date' => $s->snapshot_date->format('Y-m-d'),
+                'cash' => $s->cash_krw,
+                'liquidation' => $liq,
+                'working' => $liq + (int) $s->receivable_krw,
+                'profit' => $principal === null ? null : $liq - $principal,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -768,6 +807,60 @@ new #[Layout('components.layouts.app')] class extends Component
         @endforeach
     </div>
 
+    {{-- 자금 현황 (jin 2026-07-23) — super/대표 전용. 관리자 대시보드는 이미 super/admin gated. --}}
+    @if(auth()->user()->canViewCapital())
+    @php
+        $cap = $this->capitalStatus;
+        $eok = function ($n) {
+            if ($n === null) { return '—'; }
+            $v = $n / 1e8;
+            return (abs($v) >= 10 ? number_format($v, 1) : number_format($v, 2)).'억';
+        };
+    @endphp
+    <div class="card">
+        <div class="mb-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <span class="section-dot bg-violet-500"></span>
+                <span class="text-sm font-bold text-gray-800">{{ __('cash.widget_title') }}</span>
+                @if($cap['has_data'] ?? false)<span class="text-xs text-gray-400">{{ __('cash.as_of') }} {{ \Illuminate\Support\Carbon::parse($cap['date'])->format('Y-m-d') }}</span>@endif
+            </div>
+        </div>
+        @if(! ($cap['has_data'] ?? false))
+            <p class="text-sm text-gray-400">{{ __('cash.no_data') }}</p>
+        @else
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div class="rounded-xl border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">{{ __('cash.cash') }}</p>
+                <p class="mt-1 text-2xl font-extrabold text-gray-800">{{ $eok($cap['cash_krw']) }}</p>
+                <p class="mt-1 text-[11px] text-gray-400">KRW {{ number_format($cap['balance_krw']) }} · USD {{ number_format($cap['balance_usd'], 2) }} · EUR {{ number_format($cap['balance_eur'], 2) }}</p>
+            </div>
+            <div class="rounded-xl border border-gray-200 p-4">
+                <p class="text-xs text-gray-500">{{ __('cash.working_capital') }}</p>
+                <p class="mt-1 text-2xl font-extrabold text-gray-800">{{ $eok($cap['working_capital_krw']) }}</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }} · {{ __('cash.receivable') }} {{ $eok($cap['receivable_krw']) }} · {{ __('cash.payable') }} −{{ $eok($cap['payable_krw']) }}</p>
+            </div>
+            <div class="rounded-xl border p-4 {{ ($cap['profit_krw'] ?? null) === null ? 'border-gray-200' : (($cap['profit_krw'] >= 0) ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40') }}">
+                <p class="text-xs text-gray-500">{{ __('cash.profit') }}</p>
+                @if(($cap['profit_krw'] ?? null) === null)
+                    <p class="mt-1 text-lg font-bold text-gray-400">—</p>
+                    <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.no_principal') }}</p>
+                @else
+                    <p class="mt-1 text-2xl font-extrabold {{ $cap['profit_krw'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ $cap['profit_krw'] >= 0 ? '+' : '−' }}{{ $eok(abs($cap['profit_krw'])) }}</p>
+                    <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.liquidation') }} {{ $eok($cap['liquidation_krw']) }} − {{ __('cash.principal') }} {{ $eok($cap['principal_krw']) }}</p>
+                @endif
+            </div>
+        </div>
+        @php $trend = $this->capitalTrend; @endphp
+        @if(count($trend) >= 2)
+        <div class="mt-4">
+            <p class="mb-1 text-xs text-gray-500">{{ __('cash.trend_title') }}</p>
+            <canvas id="capitalTrendChart" height="90" data-trend='@json($trend)'></canvas>
+        </div>
+        @endif
+        @endif
+    </div>
+    @endif
+
     {{-- 매출 KPI — 차량/매입 (2 박스) + 발생/회수/미수 (3 박스) + 채권 링크 (1 박스).
          새회의.txt #7 + 3-B (2026-05-23) — 매출 vs 현금흐름 분리 (회계 표준). --}}
     <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="space-y-3">
@@ -1428,5 +1521,38 @@ new #[Layout('components.layouts.app')] class extends Component
                 },
             };
         }
+    </script>
+
+    {{-- 자금 추이 스파크라인 (vanilla canvas — Chart.js 인스턴스와 독립, jin 2026-07-23) --}}
+    <script>
+    (function () {
+        function drawCapitalTrend() {
+            const cv = document.getElementById('capitalTrendChart');
+            if (! cv || ! cv.dataset.trend) return;
+            let data; try { data = JSON.parse(cv.dataset.trend); } catch (e) { return; }
+            if (! data || data.length < 2) return;
+            const dpr = window.devicePixelRatio || 1;
+            const w = cv.clientWidth || cv.parentElement.clientWidth || 600, h = 90;
+            cv.width = w * dpr; cv.height = h * dpr;
+            const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, w, h);
+            const vals = data.map(d => d.liquidation);
+            const min = Math.min(...vals), max = Math.max(...vals), pad = 8, span = (max - min) || 1;
+            const x = i => pad + i * (w - 2 * pad) / (data.length - 1);
+            const y = v => (h - pad) - (v - min) / span * (h - 2 * pad);
+            ctx.beginPath();
+            data.forEach((d, i) => { const px = x(i), py = y(d.liquidation); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+            ctx.strokeStyle = '#7c6fcd'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.lineTo(x(data.length - 1), h - pad); ctx.lineTo(x(0), h - pad); ctx.closePath();
+            ctx.fillStyle = 'rgba(124,111,205,0.10)'; ctx.fill();
+            const li = data.length - 1;
+            ctx.beginPath(); ctx.arc(x(li), y(data[li].liquidation), 3, 0, 6.29); ctx.fillStyle = '#6b5dbd'; ctx.fill();
+        }
+        document.addEventListener('DOMContentLoaded', drawCapitalTrend);
+        document.addEventListener('livewire:navigated', drawCapitalTrend);
+        document.addEventListener('livewire:updated', () => setTimeout(drawCapitalTrend, 50));
+        window.addEventListener('resize', () => setTimeout(drawCapitalTrend, 100));
+        setTimeout(drawCapitalTrend, 120);
+    })();
     </script>
 </div>

@@ -171,6 +171,16 @@ class AlimtalkTemplates
             'body' => "[말소등록증 발급 안내] #{차량번호}\n\n구매하신 차량의 자동차 말소등록증이 발급되었습니다.\n\n▶ 차량번호: #{차량번호}\n\n아래 링크에서 말소등록증을 확인·다운로드하실 수 있습니다.\n#{링크}\n\n(보안을 위해 링크는 3일 후 만료됩니다.)",
         ],
 
+        // ── 대표 주간 자금/손익 보고 1종 (jin 2026-07-23) — 통장현금+재고·미수·미지급+손익 ──
+        // 수신자 = 대표(admin). 자본·손익 기밀이라 admin 전용. 최신 CashSnapshot 기준.
+        'erp_capital_weekly' => [
+            'name' => '주간자금보고',
+            'recipient' => 'admin',
+            'vars' => ['기준일', '통장현금', '재고', '미수', '미지급', '굴리는자금', '손익'],
+            'title' => '',
+            'body' => "[주간 자금 현황] #{기준일}\n\n회사 자금 현황 요약입니다.\n관리자 대시보드에서 자세히 확인하실 수 있습니다.",
+        ],
+
         // ── 월배치 정산지급 승인 사다리 3종 (jin 2026-07-07) ──
         // 수신자는 트리거 단계에서 rank 해석: 요청=다음 계단 승인자(업무관리자→대표) / 결과=제출자.
         'erp_payout_request' => [
@@ -282,6 +292,17 @@ class AlimtalkTemplates
                 ['title' => '반려 사유', 'description' => '#{사유}'],
             ],
         ],
+        'erp_capital_weekly' => [
+            'header' => '주간 자금 현황',
+            'highlight' => ['title' => '#{굴리는자금}', 'description' => '굴리는 총 자금 · #{기준일}'],
+            'items' => [
+                ['title' => '통장 현금', 'description' => '#{통장현금}'],
+                ['title' => '재고', 'description' => '#{재고}'],
+                ['title' => '미수', 'description' => '#{미수}'],
+                ['title' => '미지급', 'description' => '#{미지급}'],
+            ],
+            'summary' => ['title' => '원금 대비 손익', 'description' => '#{손익}'],
+        ],
     ];
 
     /**
@@ -291,6 +312,7 @@ class AlimtalkTemplates
     public const WHEN = [
         'erp_daily_summary' => '매일 09:00 (평일) — 대표 일일 매출·미수 요약',
         'erp_weekly_summary' => '매주 금요일 18:00 — 대표 주간 요약',
+        'erp_capital_weekly' => '매주 월요일 09:00 — 대표 주간 자금/손익 보고 (통장현금·재고·미수·미지급·손익)',
         'erp_monthly_closing' => '매월 1일 09:00 — 전월 결산 요약',
         'erp_vehicle_new' => 'board 경유 신규 차량 등록 시',
         'erp_purchase_unpaid' => '매일 09:00 (평일) — 매입 미지급 있으면',

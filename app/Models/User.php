@@ -130,6 +130,29 @@ class User extends Authenticatable
     }
 
     /**
+     * 통장 마감잔액 입력 권한 (자금 현황, jin 2026-07-23).
+     *   재무·[관리]·업무관리자(+super/admin). 업무 대시보드 입력 카드 노출·capture 액션 가드.
+     *   ⚠️ 입력만 — 손익·원금·재고총액은 안 보임(canViewCapital 별개).
+     */
+    public function canEnterCashBalance(): bool
+    {
+        if ($this->isAdmin() || $this->isManager()) {
+            return true;
+        }
+
+        return in_array($this->role, ['재무', '관리'], true);
+    }
+
+    /**
+     * 자금 손익 열람 권한 (jin 2026-07-23) — 회사 자본·손익 = 대표 기밀.
+     *   super/대표(admin)만. 업무관리자·[관리]·재무 제외 (canViewAdminDashboard 와 동일 게이트).
+     */
+    public function canViewCapital(): bool
+    {
+        return $this->isAdmin();   // super/admin 만
+    }
+
+    /**
      * 큐 19-F — 자금 이체 재무 확정 권한 (회의록 2026-05-16).
      *
      * 2026-05-21 사용자 결정 — 19-F SoD 정책 직접 변경 ('회의 하지 마, 중간 관리자라 그래'):
