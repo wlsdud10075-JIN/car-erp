@@ -1509,14 +1509,21 @@ class Vehicle extends Model
     }
 
     /**
-     * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음. 진행상태 무관.
+     * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음 AND 거래완료 아님.
      *   미완납 = 입고 전(제외) / 출고일 찍힘 = 출고됨(제외).
+     *   거래완료(출항) = 출고일 미입력이어도 제외 (jin 2026-07-23) — 거래완료는 확실히 나간 것.
+     *     선적중 등 그 외 진행상태는 미출고면 재고 잔존(진행상태 무관 원칙 유지, 거래완료만 예외).
+     *     progress_status_cache NULL 은 판정 불가라 재고 잔존(orWhereNull).
      *   매입 미지급 식은 scopeAction('purchase_unpaid') 와 동일 단일 출처(≤ 0 반전).
      */
     public function scopeInStock($query)
     {
         return $query->where('purchase_price', '>', 0)
             ->whereNull('warehouse_out_date')
+            ->where(function ($q) {
+                $q->where('progress_status_cache', '!=', '거래완료')
+                    ->orWhereNull('progress_status_cache');
+            })
             ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
                          - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
                                       WHERE vehicle_id = vehicles.id
