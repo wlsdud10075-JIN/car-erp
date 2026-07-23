@@ -68,9 +68,19 @@ class ExchangeRateService
         if ($currency === 'KRW') {
             return 1.0;
         }
-        $rates = $this->getRates();
+        if (! in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
+            return null;
+        }
+        // 전체 캐시(getRates·대시보드 위젯이 채움) 히트면 즉시.
+        $all = Cache::get(self::CACHE_KEY);
+        if (is_array($all) && isset($all[$currency])) {
+            return $all[$currency];
+        }
 
-        return $rates[$currency] ?? null;
+        // 미스 → 필요한 통화 1개만 조회 (성능: 5개 순차 스크래핑 회피, jin 2026-07-23). 개별 1h 캐시.
+        return Cache::remember(self::CACHE_KEY.'_'.$currency, self::CACHE_TTL_SECONDS, function () use ($currency) {
+            return $this->fetchOneFromNaver($currency);
+        });
     }
 
     /**
@@ -114,11 +124,7 @@ class ExchangeRateService
             $rates = [];
 
             foreach (self::SUPPORTED_CURRENCIES as $cur) {
-                $html = $this->fetchHtml(self::NAVER_DETAIL_URL.'?marketindexCd=FX_'.$cur.'KRW');
-                if ($html === null) {
-                    continue;   // 통화별 graceful — 실패한 통화만 빠지고 나머지 유지
-                }
-                $rate = $this->parseTtBuyingRate($html);
+                $rate = $this->fetchOneFromNaver($cur);   // 통화별 graceful — 실패한 통화만 빠짐
                 if ($rate !== null) {
                     $rates[$cur] = $rate;
                 }
@@ -139,11 +145,19 @@ class ExchangeRateService
         }
     }
 
+    /** 단일 통화 네이버 조회 (getRate 미스·getRates 루프 공용). */
+    private function fetchOneFromNaver(string $currency): ?float
+    {
+        $html = $this->fetchHtml(self::NAVER_DETAIL_URL.'?marketindexCd=FX_'.$currency.'KRW');
+
+        return $html === null ? null : $this->parseTtBuyingRate($html);
+    }
+
     private function fetchHtml(string $url): ?string
     {
         try {
             $response = Http::withHeaders(['User-Agent' => 'Mozilla/5.0'])
-                ->timeout(5)
+                ->timeout(3)
                 ->get($url);
             if (! $response->successful()) {
                 return null;

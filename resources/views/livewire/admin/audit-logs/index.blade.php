@@ -41,8 +41,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->userFilter !== '', fn ($q) => $q->where('user_id', $this->userFilter))
             ->when($this->actionFilter !== '', fn ($q) => $q->where('action', $this->actionFilter))
             ->when($this->columnFilter !== '', fn ($q) => $q->where('column_name', $this->columnFilter))
-            ->when($this->dateFrom !== '', fn ($q) => $q->whereDate('created_at', '>=', $this->dateFrom))
-            ->when($this->dateTo !== '', fn ($q) => $q->whereDate('created_at', '<=', $this->dateTo))
+            // 성능(jin 2026-07-23): whereDate 는 DATE(created_at) 로 index 무효 → 범위조건으로 created_at 인덱스 유지.
+            //   audit_logs 는 무한 증가 테이블이라 풀스캔 방지 중요. (ssancar 504 교훈 패턴②)
+            ->when($this->dateFrom !== '', fn ($q) => $q->where('created_at', '>=', $this->dateFrom.' 00:00:00'))
+            ->when($this->dateTo !== '', fn ($q) => $q->where('created_at', '<=', $this->dateTo.' 23:59:59'))
             ->latest('created_at')
             ->paginate($this->perPage);
     }
