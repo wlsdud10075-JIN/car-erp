@@ -45,7 +45,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | 메서드·경로 | 반환 | 비고 |
 |---|---|---|
 | `GET /finance` | 영업 본인 요약(미수금 합·매입미지급 합·정산 대기 건수) | 통화별+KRW |
-| `GET /receivables` | 차량별 미수금 — `sale_unpaid_amount_krw_cache`·`currency`·`exchange_rate`·바이어 | **NULL=환율 미입력**(완납 아님) |
+| `GET /receivables` | 차량별 미수금 — `sale_total`·`unpaid_krw`(`sale_unpaid_amount_krw_cache`)·`unpaid_ratio`·`currency`·`exchange_rate`·바이어 | **`unpaid_krw` NULL=환율 미입력**(완납 아님). **`unpaid_ratio`**(0~1|`0.0`완납|`null`판매가 미입력) = `Vehicle::unpaid_ratio` accessor 그대로, 통화 비의존(환율 무관). board 미납률 게이지용 |
 | `GET /purchases` | 매입 차 — `purchase_price`·비용9 합·매입일·매입 미지급(`PurchaseBalancePayment`) | |
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /settlements` | 정산 — `status`·`actual_payout`·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |

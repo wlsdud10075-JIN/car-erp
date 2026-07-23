@@ -63,6 +63,7 @@ class InternalPortalController extends Controller
                 'exchange_rate' => $v->exchange_rate !== null ? (float) $v->exchange_rate : null,
                 'sale_total' => (float) $v->sale_total_amount,
                 'unpaid_krw' => $v->sale_unpaid_amount_krw_cache,   // null = 환율 미입력 (완납 아님)
+                'unpaid_ratio' => $v->unpaid_ratio,                 // 0~1(미납률)|0.0(완납)|null(판매가 미입력). 통화 비의존 accessor
             ])->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);
