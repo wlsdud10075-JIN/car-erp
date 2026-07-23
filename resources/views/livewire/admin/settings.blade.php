@@ -76,6 +76,9 @@ new #[Layout('components.layouts.app')] class extends Component
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
+    // 자금 현황 — 투입 원금(밑천). 대표 손익 기준선. super만 입력, 추후 통장 정리 후 기입. (jin 2026-07-23)
+    public string $capitalPrincipal = '';
+
     // 도장/서명/로고 역할 3종 — signature(서명), seal(직인), logo(상호 로고). 회사당 1장씩, 슬롯에 재사용.
     public array $stampRoles = ['signature', 'seal', 'logo'];
 
@@ -117,6 +120,8 @@ new #[Layout('components.layouts.app')] class extends Component
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
         }
+        $cp = Setting::get(\App\Services\CapitalStatusService::PRINCIPAL_KEY);
+        $this->capitalPrincipal = ($cp === null || $cp === '') ? '' : (string) $cp;
         $this->refreshStamps();
         $this->loadStampPositions();
     }
@@ -152,6 +157,29 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->settlementParams[$key] = $val;
         }
         \App\Models\Settlement::flushParamMemo();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /** 투입 원금(밑천) 저장 — super만. 대표 손익 기준선. (jin 2026-07-23) */
+    public function saveCapitalPrincipal(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $raw = str_replace([',', ' '], '', $this->capitalPrincipal);
+        if ($raw === '') {
+            Setting::where('key', \App\Services\CapitalStatusService::PRINCIPAL_KEY)->delete();
+            $this->capitalPrincipal = '';
+            $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+
+            return;
+        }
+        $val = max(0, (int) $raw);
+        Setting::updateOrCreate(
+            ['key' => \App\Services\CapitalStatusService::PRINCIPAL_KEY],
+            ['value' => (string) $val, 'type' => 'integer', 'description' => '자금 현황 — 투입 원금(밑천, KRW). 대표 손익 기준선'],
+        );
+        $this->capitalPrincipal = (string) $val;
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
@@ -1036,6 +1064,30 @@ new #[Layout('components.layouts.app')] class extends Component
             @endforeach
             <div class="flex justify-end pt-1">
                 <button wire:click="saveSettlementParams" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- 자금 현황 — 투입 원금(밑천) (jin 2026-07-23). super 전용. 대표 손익 기준선 --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-violet-500"></span>
+                <span class="section-title">자금 현황 — 투입 원금</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">회사에 넣은 총 밑천(자본금 + 대표 가수금 누적 − 상환), 원 단위. 관리자 대시보드 손익 = 청산가치 − 이 원금. 비워두면 손익 미표시. 추후 통장 정리 후 기입.</p>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">투입 원금 (원)</label>
+                <input wire:model="capitalPrincipal" type="text" data-money inputmode="numeric" placeholder="예: 2,500,000,000" class="input-base mt-1 w-full text-right" />
+                <p class="mt-1 text-xs text-gray-400">손익 = (통장현금 + 재고 − 미지급) − 이 원금. 미수는 제외(대표 정책).</p>
+            </div>
+            <div class="flex justify-end pt-1">
+                <button wire:click="saveCapitalPrincipal" class="btn-primary">{{ __('common.save') }}</button>
             </div>
         </div>
     </div>
