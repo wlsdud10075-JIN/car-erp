@@ -802,6 +802,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $purchase_evidence_subtype  = '';
     public bool $is_dealer_purchase = false;
 
+    // 보증금 매입 마커 (2026-07-23) — 편집 패널 헤더 뱃지용. null/'waiting'/'paid'. openEdit 시 로드.
+    public ?string $deposit_purchase_state = null;
+
     /** 1단(매입등록) 변경 시 2단(증빙유형)이 새 캐스케이드에 없으면 리셋. */
     public function updatedPurchaseRegistrationType(): void
     {
@@ -2627,6 +2630,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_registration_type = $v->purchase_registration_type ?? '';
         $this->purchase_evidence_subtype  = $v->purchase_evidence_subtype  ?? '';
         $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
+        $this->deposit_purchase_state = $v->deposit_purchase_state;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -5626,6 +5630,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $balDays >= 0 ? __('vehicle.balance_badge', ['d' => $balDays]) : __('vehicle.balance_badge_overdue') }}
                         </span>
                     @endif
+                    {{-- 보증금 매입 마커 (2026-07-23) — 판매완료(완납)=초록 / 미완납=주황. 표시 전용 --}}
+                    @php $depState = $v->deposit_purchase_state; @endphp
+                    @if($depState !== null)
+                        <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $depState === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' }}"
+                              title="{{ $depState === 'paid' ? __('vehicle.deposit_purchase_paid') : __('vehicle.deposit_purchase_waiting') }}">
+                            {{ $depState === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
+                        </span>
+                    @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
@@ -5943,7 +5955,16 @@ function vehicleColumnsToggle() {
                     @endif
                 </h2>
                 @if($vehicle_number)
-                <p class="text-xs {{ $justCreated ? 'text-emerald-600' : 'text-gray-400' }} font-mono mt-0.5">{{ $vehicle_number }}</p>
+                <p class="text-xs {{ $justCreated ? 'text-emerald-600' : 'text-gray-400' }} font-mono mt-0.5">
+                    {{ $vehicle_number }}
+                    {{-- 보증금 매입 마커 (2026-07-23) — 판매완료=초록 / 미완납=주황 --}}
+                    @if($deposit_purchase_state !== null)
+                        <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $deposit_purchase_state === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' }}"
+                              title="{{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_purchase_paid') : __('vehicle.deposit_purchase_waiting') }}">
+                            {{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
+                        </span>
+                    @endif
+                </p>
                 @endif
             </div>
         </div>

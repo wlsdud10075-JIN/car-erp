@@ -74,6 +74,7 @@ class Vehicle extends Model
         'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
         'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
+        'is_deposit_purchase',   // 보증금 매입 마커 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -113,6 +114,7 @@ class Vehicle extends Model
         'forwarding_email_sent' => 'boolean',
         'dhl_request' => 'boolean',
         'is_dealer_purchase' => 'boolean',
+        'is_deposit_purchase' => 'boolean',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
         'nice_reg_first_date' => 'date',
@@ -1356,6 +1358,22 @@ class Vehicle extends Model
         // 진행상태(판매완료)·위험도가 전부 일관되게 완납 처리됨 (jin 2026-07-02).
         // 음수(과입금)는 건드리지 않음 — 환급 표시 보존. KRW는 정수라 영향 없음.
         return ($unpaid > 0 && $unpaid < 1) ? 0.0 : $unpaid;
+    }
+
+    /**
+     * 보증금 매입 마커 뱃지 상태 (2026-07-23, jin). 표시 전용 — 게이트와 무관.
+     *   null     = 보증금 매입 아님 (뱃지 없음)
+     *   'waiting' = 보증금으로 산 차이나 바이어 판매입금 미완납 (주황 — "바이어 입금 대기")
+     *   'paid'    = 보증금 매입 + 판매완료(미수 0) (초록 — "완납"). jin: 판매완료=미수금 없음 → 자동 green.
+     * ⚠️ 이 상태는 '바이어 미수' 기준일 뿐 — 매입 미지급([!매입], 셀러 채무)은 실제 지급 기준 별개로 유지.
+     */
+    public function getDepositPurchaseStateAttribute(): ?string
+    {
+        if (! $this->is_deposit_purchase) {
+            return null;
+        }
+
+        return ($this->sale_price > 0 && $this->sale_unpaid_amount <= 0) ? 'paid' : 'waiting';
     }
 
     /**
