@@ -323,6 +323,10 @@ ERP에서 내용을 확인하고 정산을 확정해 주세요.
 | 12 | 정산지급 승인요청 | 다음 계단 승인자 | `erp_payout_request` | 008002 |
 | 13 | 정산지급 승인완료 | 제출자 | `erp_payout_done` | 008002 |
 | 14 | 정산지급 반려 | 제출자 | `erp_payout_rejected` | 008002 |
+| 16 | 보증금매입독촉 | 담당 영업 + 관리 | `erp_deposit_cash_due` | 008002 |
+| 17 | 보증금매입초과-대표 | 대표 | `erp_deposit_cash_overdue` | 008002 |
+
+> **보증금 매입 바이어 입금 독촉 2종 (2026-07-23, jin)**: 보증금으로 매입한 차의 바이어가 선적 기준(Setting `shipping_entry` 필요입금률) 미달일 때. 도장(`deposit_purchase_at`) 후 **D+5~10 = 독촉**(담당 영업 본인 차 + 관리 전체 목록, `erp_deposit_cash_due`), **D+10 초과 = 대표 처분요청**(`erp_deposit_cash_overdue`, 독촉 대상 제외). 기본형 목록형(가변 `#{보증금목록}`/`#{초과목록}`). **자동 중단** = 매 실행 시 미수율 재계산해 기준 넘긴 차 제외. 커맨드 `alimtalk:deposit-cash`(09:00 평일). BizM 등록 = 회사폴더 xlsx row20/21(헤이맨·싼카). karaba 미적용. (15번 `erp_dealer_balance_due`는 karaba 매매상 잔금 — 별도.)
 
 > **관리 6종 수신자 확장 (2026-07-07)**: 4~9번 관리 알림은 이제 **role='관리' + 업무관리자(permission='manager')** 둘 다 수신(문구 변경 없음, ERP 수신자 코드만). BizM 재등록 불필요.
 > 제거된 6종(구): 거래완료·정산지급승인요청·미입금우회승인요청·정산확정·통관서류준비·B/L발급.

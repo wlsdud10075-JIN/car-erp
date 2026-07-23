@@ -75,6 +75,7 @@ class DepositPurchaseMarkerTest extends TestCase
 
         $target->refresh();
         $this->assertTrue((bool) $target->is_deposit_purchase, '재무 확정 시 도장 자동 set');
+        $this->assertNotNull($target->deposit_purchase_at, '도장 일시(알림 타이머 기산점)도 기록');
         // 판매 미입력(sale_price=0) → 완납 아님 → 대기(주황)
         $this->assertSame('waiting', $target->deposit_purchase_state);
     }
