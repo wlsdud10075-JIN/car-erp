@@ -55,6 +55,7 @@ return [
         'export_declaration_number' => '수출신고번호',
         'container_number' => '컨테이너',
         'salesman' => '담당자',
+        'purchase_from' => '구입처',
         'buyer' => '바이어',
         'channel' => '채널',
         'currency_rate' => '통화/환율',

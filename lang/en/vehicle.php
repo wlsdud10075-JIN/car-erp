@@ -55,6 +55,7 @@ return [
         'export_declaration_number' => 'Export Decl. No.',
         'container_number' => 'Container',
         'salesman' => 'Salesman',
+        'purchase_from' => 'Purchase Source',
         'buyer' => 'Buyer',
         'channel' => 'Channel',
         'currency_rate' => 'Currency/Rate',
