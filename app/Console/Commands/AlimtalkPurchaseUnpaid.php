@@ -21,7 +21,7 @@ class AlimtalkPurchaseUnpaid extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::managers();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_purchase_unpaid');
             if (empty($recipients)) {
                 $this->info('purchase-unpaid: 수신자(관리) 없음 — skip.');
 

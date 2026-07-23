@@ -83,7 +83,7 @@ class AlimtalkDepositCash extends Command
             // ① 독촉 (D+5~10) — 관리 전체 + 담당 영업 본인
             if ($due->isNotEmpty()) {
                 $mgrList = $listOf($due->all(), true);
-                foreach (AlimtalkRecipients::managers() as $phone) {
+                foreach (AlimtalkRecipients::forBroadcast('erp_deposit_cash_due') as $phone) {
                     $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $mgrList]);
                     $sent++;
                 }
@@ -103,7 +103,7 @@ class AlimtalkDepositCash extends Command
             // ② 초과 (D+10~) — 대표 처분 요청
             if ($overdue->isNotEmpty()) {
                 $ovList = $listOf($overdue->all(), false);
-                foreach (AlimtalkRecipients::admins() as $phone) {
+                foreach (AlimtalkRecipients::forBroadcast('erp_deposit_cash_overdue') as $phone) {
                     $svc->send('erp_deposit_cash_overdue', $phone, ['초과목록' => $ovList]);
                     $sent++;
                 }

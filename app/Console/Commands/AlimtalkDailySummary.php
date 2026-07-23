@@ -23,7 +23,7 @@ class AlimtalkDailySummary extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::admins();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_daily_summary');
             if (empty($recipients)) {
                 $this->info('daily-summary: 수신자(대표) 없음 — skip.');
 

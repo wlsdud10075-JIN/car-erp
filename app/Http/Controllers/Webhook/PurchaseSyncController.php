@@ -228,7 +228,7 @@ class PurchaseSyncController extends Controller
                 '바이어' => (string) ($vehicle->buyer?->name ?? '-'),
                 '매입가' => number_format((int) $vehicle->purchase_price).'원',
             ];
-            foreach (AlimtalkRecipients::managers() as $phone) {
+            foreach (AlimtalkRecipients::forBroadcast('erp_vehicle_new') as $phone) {
                 $svc->send('erp_vehicle_new', $phone, $newVars, ['vehicle_id' => $vehicle->id]);
             }
         } catch (\Throwable $e) {
