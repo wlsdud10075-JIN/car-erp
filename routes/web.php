@@ -161,6 +161,8 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Volt::route('audit-logs', 'admin.audit-logs.index')->name('audit-logs.index');
     // 알림톡 발송·도달 로그 (2026-07-13) — 전송결과 폴링 결과 + 미도달 확인.
     Volt::route('alimtalk-logs', 'admin.alimtalk-logs.index')->name('alimtalk-logs.index');
+    // 알림톡 안내 카탈로그 (2026-07-23) — 누가·언제·어떤 내용을 받는지 한눈에 (읽기 전용).
+    Volt::route('alimtalk-catalog', 'admin.alimtalk-catalog.index')->name('alimtalk-catalog.index');
     // 바이어 문서 메일전달 로그 (2026-07-15) — 누가·언제·어떤 문서를 누구에게 보냈는지.
     Volt::route('mail-delivery-logs', 'admin.mail-delivery-logs.index')->name('mail-delivery-logs.index');
 });

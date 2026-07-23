@@ -37,6 +37,7 @@ return [
         'doc_logs' => '문서 접근 로그',
         'audit_logs' => '감사 로그',
         'alimtalk_logs' => '알림톡 로그',
+        'alimtalk_catalog' => '알림톡 안내',
         'mail_logs' => '메일 발송 로그',
     ],
 
@@ -49,6 +50,7 @@ return [
         'doc_logs' => '문서 접근 로그',
         'audit_logs' => '감사 로그',
         'alimtalk_logs' => '알림톡 로그',
+        'alimtalk_catalog' => '알림톡 안내',
         'mail_logs' => '메일 발송 로그',
         'erp_dashboard' => 'ERP 대시보드',
         'vehicles' => '차량 관리',
