@@ -129,6 +129,31 @@ class ApprovalRequest extends Model
     }
 
     /**
+     * 반려 시 후속 처리 (2026-07-23) — /erp/approvals decide() 의 reject 분기에서 호출.
+     * 차량간 이체 생성 계열(이체/보증금적용/보증금매입선지급)은 반려되면 승인요청만 rejected 되고
+     * 연결된 이체가 pending 에 orphan 으로 남아 차량 패널 "관리 승인 대기" 배너가 안 사라지던 빈틈을
+     * 막는다 — 연결 이체(approval_request_id)가 pending 이면 함께 STATUS_REJECTED 로 종료.
+     * ⚠️ 이체 취소(void) 반려는 이체가 executed 로 유지돼야 하므로 대상 아님(default no-op).
+     */
+    public function onReject(): void
+    {
+        match ($this->action_type) {
+            self::TYPE_INTER_VEHICLE_TRANSFER,
+            self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY,
+            self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => $this->cancelLinkedPendingTransfer(),
+            default => null,
+        };
+    }
+
+    private function cancelLinkedPendingTransfer(): void
+    {
+        $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->first();
+        if ($transfer && $transfer->status === InterVehicleTransfer::STATUS_PENDING) {
+            $transfer->update(['status' => InterVehicleTransfer::STATUS_REJECTED]);
+        }
+    }
+
+    /**
      * 큐 14-4-4 — inter_buyer_overlap 승인은 no-op.
      * 실제 액션은 영업이 다음 차량 등록 시도 시 Vehicle::guardSameBuyerOverlap()에서
      * 이 승인을 발견 → used_at 마킹 + 통과. execute()는 호출만 안전.
