@@ -48,6 +48,7 @@ return [
         'voided_awaiting_finance' => 'Void approved (awaiting finance)',
         'voided' => 'Voided',
         'finance_rejected' => 'Finance rejected',
+        'rejected' => 'Mgmt rejected',
     ],
 
     'sod_block' => 'SoD blocked',

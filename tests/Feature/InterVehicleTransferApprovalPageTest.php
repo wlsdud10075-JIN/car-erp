@@ -126,9 +126,9 @@ class InterVehicleTransferApprovalPageTest extends TestCase
         $req = ApprovalRequest::findOrFail($transfer->approval_request_id);
         $this->assertEquals('rejected', $req->status);
 
-        // Transfer는 그대로 pending (executed 안 됨, voided도 아님)
+        // 반려 시 이체도 종료 (2026-07-23 fix) — pending orphan 방지, 차량 패널 배너 사라짐. ledger 미생성.
         $transfer->refresh();
-        $this->assertEquals(InterVehicleTransfer::STATUS_PENDING, $transfer->status);
+        $this->assertEquals(InterVehicleTransfer::STATUS_REJECTED, $transfer->status);
         $this->assertEquals(0, FinalPayment::where('transfer_id', $transfer->id)->count());
     }
 }

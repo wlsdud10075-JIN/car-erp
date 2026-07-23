@@ -162,6 +162,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 큐 14-4-2 — approve 시 실제 액션 실행 (settlement paid 전환 등).
                 if ($this->decisionMode === 'approve') {
                     $req->execute();
+                } else {
+                    // 반려 시 후속 처리 — 이체 생성 계열은 연결 이체를 종료(pending orphan 방지, 2026-07-23).
+                    $req->onReject();
                 }
             });
         } catch (\Throwable $e) {

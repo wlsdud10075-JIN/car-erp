@@ -49,6 +49,7 @@ return [
         'voided_awaiting_finance' => '취소 승인 (재무 처리 대기)',
         'voided' => '취소',
         'finance_rejected' => '재무 거부',
+        'rejected' => '관리 반려',
     ],
 
     'sod_block' => 'SoD 차단',

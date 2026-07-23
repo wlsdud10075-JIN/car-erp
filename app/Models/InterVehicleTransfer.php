@@ -79,6 +79,9 @@ class InterVehicleTransfer extends Model
 
     public const STATUS_FINANCE_REJECTED = 'finance_rejected';
 
+    /** 관리 단계 반려 (pending → 종료). 승인큐에서 관리가 반려 시 이체도 함께 종료(orphan 방지, 2026-07-23). */
+    public const STATUS_REJECTED = 'rejected';
+
     public const STATUSES = [
         self::STATUS_PENDING => '대기',
         self::STATUS_APPROVED => '승인',  // legacy
@@ -87,6 +90,7 @@ class InterVehicleTransfer extends Model
         self::STATUS_VOIDED_AWAITING_FINANCE => '취소 승인 (재무 처리 대기)',
         self::STATUS_VOIDED => '취소',
         self::STATUS_FINANCE_REJECTED => '재무 거부',
+        self::STATUS_REJECTED => '관리 반려',
     ];
 
     public function sourceVehicle(): BelongsTo
@@ -159,6 +163,7 @@ class InterVehicleTransfer extends Model
             self::STATUS_VOIDED_AWAITING_FINANCE => 'badge-amber',
             self::STATUS_VOIDED => 'badge-gray',
             self::STATUS_FINANCE_REJECTED => 'badge-red',
+            self::STATUS_REJECTED => 'badge-gray',
             default => 'badge-gray',
         };
     }
