@@ -24,7 +24,7 @@ class AlimtalkMonthlyClosing extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::admins();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_monthly_closing');
             if (empty($recipients)) {
                 $this->info('monthly-closing: 수신자(대표) 없음 — skip.');
 

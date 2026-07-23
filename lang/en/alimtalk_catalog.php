@@ -17,5 +17,12 @@ return [
     'hide' => 'Hide',
     'sending' => 'Active',
     'off' => 'Inactive',
-    'footnote' => "'Active' = actually sent for this company (master ON + template code registered). 'Inactive' = master OFF or template not registered. Recipients and timing depend on feature settings and staff phone numbers.",
+    'recipient_roles' => 'Recipient roles',
+    'now_count' => ':n recipient(s) now',
+    'save' => 'Save',
+    'saved' => 'Recipient roles saved.',
+    'auto_prefix' => 'also to',
+    'auto_suffix' => 'automatically',
+    'auto_fixed' => 'This alert is sent automatically to the responsible person (no role selection).',
+    'footnote' => "Users with a checked role AND a registered phone number receive it — by role, not by individual. 'Active' = master ON + template code registered. Person-targeted alerts (pickup, funding result, payout, deregistration) go to the responsible person automatically.",
 ];

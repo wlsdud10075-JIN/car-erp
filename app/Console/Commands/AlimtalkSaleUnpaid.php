@@ -22,7 +22,7 @@ class AlimtalkSaleUnpaid extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::managers();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_sale_unpaid');
             if (empty($recipients)) {
                 $this->info('sale-unpaid: 수신자(관리) 없음 — skip.');
 

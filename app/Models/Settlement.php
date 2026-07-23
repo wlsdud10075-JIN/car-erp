@@ -110,7 +110,7 @@ class Settlement extends Model
                 try {
                     $count = self::where('settlement_status', 'pending')->count();
                     $svc = BizmAlimtalkService::active();
-                    foreach (AlimtalkRecipients::managers() as $phone) {
+                    foreach (AlimtalkRecipients::forBroadcast('erp_settle_pending') as $phone) {
                         $svc->send('erp_settle_pending', $phone, ['건수' => number_format($count)]);
                     }
                 } catch (\Throwable $e) {

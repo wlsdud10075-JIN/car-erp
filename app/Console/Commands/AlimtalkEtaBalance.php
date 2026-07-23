@@ -22,7 +22,7 @@ class AlimtalkEtaBalance extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::managers();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_eta_balance_due');
             if (empty($recipients)) {
                 $this->info('eta-balance: 수신자(관리) 없음 — skip.');
 

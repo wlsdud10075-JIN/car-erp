@@ -23,7 +23,7 @@ class AlimtalkShippingDue extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::managers();
+            $recipients = AlimtalkRecipients::forBroadcast('erp_shipping_due');
             if (empty($recipients)) {
                 $this->info('shipping-due: 수신자(관리) 없음 — skip.');
 

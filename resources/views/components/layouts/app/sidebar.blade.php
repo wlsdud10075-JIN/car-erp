@@ -335,11 +335,11 @@
                 ],
                 [
                     'label' => __('nav.menu.alimtalk_catalog'),
-                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-catalog.index')
+                    'href' => $user->isSuperAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-catalog.index')
                         ? route('admin.alimtalk-catalog.index') : '#',
                     'icon' => 'bell',
                     'active' => request()->routeIs('admin.alimtalk-catalog.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->isSuperAdmin(),
                 ],
                 [
                     'label' => __('nav.menu.mail_logs'),

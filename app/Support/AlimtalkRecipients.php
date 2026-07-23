@@ -20,6 +20,104 @@ use Illuminate\Support\Collection;
  */
 class AlimtalkRecipients
 {
+    /**
+     * 브로드캐스트 역할 그룹 (2026-07-23, jin) — 알림톡 안내 화면에서 알림별로 선택.
+     * key => 화면 라벨. 선택된 그룹의 (전화 있는) 사용자가 받는다.
+     */
+    public const BROADCAST_GROUPS = [
+        'admin' => '최고관리자',
+        'manager' => '업무관리자',
+        '관리' => '관리',
+        '영업' => '영업',
+        '수출통관' => '수출통관',
+        '재무' => '재무',
+    ];
+
+    /**
+     * 브로드캐스트형 알림별 기본 수신 역할 (미설정 시 사용 — 현행 동작 보존).
+     * 여기 없는 코드 = 자동(본인/기안자/계단) 대상 = 역할 선택 불가(TARGETED_LABELS).
+     */
+    public const DEFAULT_ROLES = [
+        'erp_daily_summary' => ['admin'],
+        'erp_weekly_summary' => ['admin'],
+        'erp_monthly_closing' => ['admin'],
+        'erp_vehicle_new' => ['관리', 'manager'],
+        'erp_purchase_unpaid' => ['관리', 'manager'],
+        'erp_sale_unpaid' => ['관리', 'manager'],
+        'erp_settle_pending' => ['관리', 'manager'],
+        'erp_eta_balance_due' => ['관리', 'manager'],
+        'erp_shipping_due' => ['관리', 'manager'],
+        'erp_dealer_balance_due' => ['관리', 'manager'],
+        'erp_deposit_cash_due' => ['관리', 'manager'],
+        'erp_deposit_cash_overdue' => ['admin'],
+    ];
+
+    /** 자동 대상(역할 선택 불가) 알림 — 안내 화면 고정 라벨. */
+    public const TARGETED_LABELS = [
+        'erp_deposit_funding_request' => '관리(승인) → 재무(확정)',
+        'erp_deposit_funding_done' => '기안자 본인',
+        'erp_deposit_funding_rejected' => '기안자 본인',
+        'erp_pickup_reminder' => '담당 영업 본인',
+        'erp_deregistration_notice' => '국내 딜러(수동 발송)',
+        'erp_payout_request' => '승인 계단 담당자',
+        'erp_payout_done' => '제출자 본인',
+        'erp_payout_rejected' => '제출자 본인',
+    ];
+
+    /** 브로드캐스트형이면서 자동 대상도 함께 가는 혼합 알림 — 안내 화면 부가 표시. */
+    public const AUTO_EXTRA = [
+        'erp_deposit_cash_due' => '담당 영업 본인',
+    ];
+
+    /** 역할 선택형 알림인가 (DEFAULT_ROLES 에 있으면). */
+    public static function isBroadcast(string $code): bool
+    {
+        return isset(self::DEFAULT_ROLES[$code]);
+    }
+
+    /**
+     * 이 알림의 현재 선택 역할 (회사별). 미설정 = 기본값 / 명시 저장 = 그 값(빈=아무도 안 받음).
+     *
+     * @return string[] 그룹 key 배열
+     */
+    public static function selectedRoles(string $code): array
+    {
+        $set = Setting::companyTemplateSet();
+        $raw = Setting::get("alimtalk_roles_{$code}_{$set}", '__unset__');
+        if ($raw === '__unset__') {
+            return self::DEFAULT_ROLES[$code] ?? [];
+        }
+
+        return collect(explode(',', (string) $raw))->map(fn ($g) => trim($g))->filter()->unique()->values()->all();
+    }
+
+    /** 브로드캐스트형 알림 수신자 번호 — 선택된 역할 그룹 사용자 phone (중복 제거). */
+    public static function forBroadcast(string $code): array
+    {
+        $phones = [];
+        foreach (self::selectedRoles($code) as $group) {
+            $phones = array_merge($phones, self::groupPhones($group));
+        }
+
+        return collect($phones)->map(fn ($p) => trim((string) $p))->filter()->unique()->values()->all();
+    }
+
+    /** 한 역할 그룹의 (전화 있는) 사용자 번호. */
+    private static function groupPhones(string $group): array
+    {
+        $query = match ($group) {
+            'admin' => User::query()->where('permission', 'admin'),
+            'manager' => User::query()->where('permission', 'manager'),
+            '관리' => User::query()->where('permission', 'user')->where('role', '관리'),
+            '영업' => User::query()->where('permission', 'user')->where('role', '영업'),
+            '수출통관' => User::query()->where('permission', 'user')->where('role', '수출통관'),
+            '재무' => User::query()->where('permission', 'user')->where('role', '재무'),
+            default => null,
+        };
+
+        return $query === null ? [] : self::phones($query->whereNotIn('permission', ['super']));
+    }
+
     /** 대표(회사 최고관리자) 번호들. */
     public static function admins(): array
     {
