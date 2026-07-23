@@ -74,7 +74,7 @@ class Vehicle extends Model
         'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
         'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
-        'is_deposit_purchase',   // 보증금 매입 마커 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
+        'is_deposit_purchase', 'deposit_purchase_at',   // 보증금 매입 마커 + 도장 일시 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -115,6 +115,7 @@ class Vehicle extends Model
         'dhl_request' => 'boolean',
         'is_dealer_purchase' => 'boolean',
         'is_deposit_purchase' => 'boolean',
+        'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
         'nice_reg_first_date' => 'date',
@@ -1576,6 +1577,11 @@ class Vehicle extends Model
      * ⚠️ 실제 판정은 Setting::graceDays()(super 조정, 회사별). 이 상수는 기본값 참조용(2026-07-20).
      */
     public const RECEIVABLE_GRACE_DAYS = 10;
+
+    /** 보증금 매입 바이어 입금 독촉 알림 — 도장 후 N일부터 독촉(영업·관리), M일 초과 시 대표 처분요청 (2026-07-23, jin). */
+    public const DEPOSIT_CASH_DUE_DAYS = 5;
+
+    public const DEPOSIT_CASH_OVERDUE_DAYS = 10;
 
     public function getReceivableRiskComputedAttribute(): string
     {

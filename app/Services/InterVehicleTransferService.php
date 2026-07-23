@@ -438,6 +438,9 @@ class InterVehicleTransferService
 
             // 보증금 매입 도장 (2026-07-23, jin) — 이 차 매입대금이 바이어 보증금으로 선지급됨을 영구 표시.
             //   차량 목록·편집 패널 뱃지(판매완료=초록/미완납=주황)로 노출. 플래그 전용이라 progress cache 무영향.
+            //   deposit_purchase_at = 바이어 60% 독촉 알림 타이머 기산점(최초 1회만 — 재선지급해도 첫 도장일 보존).
+            Vehicle::whereKey($transfer->target_vehicle_id)->whereNull('deposit_purchase_at')
+                ->update(['deposit_purchase_at' => $confirmedAt]);
             Vehicle::whereKey($transfer->target_vehicle_id)->update(['is_deposit_purchase' => true]);
         });
 
