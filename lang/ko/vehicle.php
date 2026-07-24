@@ -326,6 +326,7 @@ return [
         'bank_name' => '은행명',
         'account_holder' => '예금주',
         'account_no' => '계좌번호',
+        'gate_hint' => '입력 시 단계 진행',
         'account_memo' => '계좌 메모',
         'cost_deregistration' => '말소비',
         'cost_license' => '면허비',

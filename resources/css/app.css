@@ -285,6 +285,12 @@ select:focus[data-flux-control] {
     background-color: #fef3c7;  /* amber-100 */
 }
 
+/* 2026-07-24 게이트 트리거 필드 — 입력하면 진행상태가 진행되고 단계 게이트/락이 걸리는 칸(선적일·반입지·통관·B/L 등).
+   계좌(필수)와 동일 노란 톤이되, 라벨의 ⚠ '입력 시 단계 진행' 힌트로 의미(필수 아님, 입력 주의)를 구분한다. */
+.input-base.input-gated {
+    background-color: #fef3c7;  /* amber-100 */
+}
+
 /* 필터 바 전용 — w-full 없음, inline 크기 */
 .input-filter {
     border: 1px solid #d1d5db;
