@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Assistant\OllamaClient;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\RateLimiter;
@@ -14,7 +15,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // 사내 업무 도우미 — Ollama 클라이언트를 config(.env) 기반으로 바인딩 (이식성).
+        $this->app->bind(OllamaClient::class,
+            fn () => OllamaClient::fromConfig());
     }
 
     /**

@@ -153,6 +153,17 @@ class User extends Authenticatable
     }
 
     /**
+     * 사내 업무 도우미(로컬 LLM 챗봇) 사용 권한 (jin 2026-07-24).
+     *   기본 B(인원별·바이어별 미수·채권관리 내역) = 관리/재무 tier. A(업무가이드)도 동일 게이트.
+     *   자금현황·회사 이익 심화는 canViewCapital(super/admin)로 별도 2단계.
+     *   영업/수출통관 v1 제외(본인격리 미적용 상태라 전체 미수 노출 방지 — 확장 시 canScopeVehicle 경유).
+     */
+    public function canUseAssistant(): bool
+    {
+        return $this->canAccessAdmin() || $this->isManager() || in_array($this->role, ['관리', '재무'], true);
+    }
+
+    /**
      * 큐 19-F — 자금 이체 재무 확정 권한 (회의록 2026-05-16).
      *
      * 2026-05-21 사용자 결정 — 19-F SoD 정책 직접 변경 ('회의 하지 마, 중간 관리자라 그래'):

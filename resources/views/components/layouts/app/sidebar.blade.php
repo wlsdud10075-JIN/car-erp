@@ -590,6 +590,11 @@
     <livewire:erp.alarm-center />
 @endif
 
+{{-- 사내 업무 도우미 (로컬 LLM 챗봇, jin 2026-07-24) — enabled(.env) + canUseAssistant --}}
+@if(config('assistant.enabled') && $user->canUseAssistant())
+    <livewire:assistant.widget />
+@endif
+
 @fluxScripts
 </body>
 </html>
