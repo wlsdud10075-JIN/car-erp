@@ -109,8 +109,11 @@ class FinalPayment extends Model
                 //   실제 old→new 변경 기록은 updated 훅.
                 if ($p->isDirty('amount') || $p->isDirty('payment_date')
                     || $p->isDirty('exchange_rate') || $p->isDirty('amount_krw')) {
-                    if ($p->consumeLedgerUnlockToken() === null) {
-                        throw new \DomainException('재무 확정된 잔금의 amount / payment_date / exchange_rate 는 수정할 수 없습니다 (회계 무결성). 수정하려면 관리 승인 잠금해제가 필요합니다.');
+                    // 정산 락 개편 (jin 2026-07-24) — 2차 정산 마감(closed) 전엔 자유 정정(정산이 carryover 로 흡수),
+                    //   마감 후엔 잠금해제 토큰(c-2) 1회 소비 시에만 통과. confirmed 잔금만으론 더 이상 안 막힘.
+                    if ($p->vehicle?->hasClosedSecondarySettlement()
+                        && $p->consumeLedgerUnlockToken() === null) {
+                        throw new \DomainException('2차 정산 마감된 차량의 확정 잔금 amount / payment_date / exchange_rate 는 잠금 해제(관리 승인) 후에만 수정할 수 있습니다 (회계 무결성).');
                     }
                 }
             }
@@ -119,9 +122,11 @@ class FinalPayment extends Model
             if ($p->transfer_id !== null && ! self::$allowTransferLinkedMutation) {
                 throw new \DomainException('차량 간 자금 이체로 생성된 잔금은 삭제할 수 없습니다. 이체 취소(void)는 별도 승인 흐름을 사용하세요.');
             }
-            // 큐 20-D — confirmed_at SET 후 DELETE 차단.
-            if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation) {
-                throw new \DomainException('재무 확정된 잔금은 삭제할 수 없습니다 (회계 무결성).');
+            // 정산 락 개편 (jin 2026-07-24) — 2차 정산 마감(closed) 후에만 확정 잔금 삭제 차단.
+            //   마감 전엔 자유 삭제(정산이 흡수). $allowConfirmedMutation 는 시스템(void 페어) 우회.
+            if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation
+                && $p->vehicle?->hasClosedSecondarySettlement()) {
+                throw new \DomainException('2차 정산 마감된 차량의 재무 확정 잔금은 삭제할 수 없습니다 (회계 무결성).');
             }
         });
 

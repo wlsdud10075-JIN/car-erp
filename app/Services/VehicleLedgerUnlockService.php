@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\FinalPayment;
+use App\Models\PurchaseBalancePayment;
 use App\Models\User;
 use App\Models\Vehicle;
 use DomainException;
@@ -140,6 +141,56 @@ class VehicleLedgerUnlockService
                 'user_id' => $by->id,
                 'approval_request_id' => null,
                 'auditable_type' => FinalPayment::class,
+                'auditable_id' => $payment->id,
+                'action' => 'ledger_field_unlocked',
+                'column_name' => 'unlock_reason',
+                'old_value' => null,
+                'new_value' => $reasonTrimmed,
+                'ip_address' => request()?->ip(),
+            ]);
+        });
+    }
+
+    /**
+     * 정산 락 개편 (jin 2026-07-24) — 재무확정 매입 잔금(PBP) 개별 정정 잠금해제 (unlockForFinalPayment 대칭).
+     *
+     * 2차 정산 마감(closed) 후 매입 잔금 금액·날짜 정정 대상. 권한 = canApprove(관리/admin/super). 사유 10자 이상.
+     * 토큰 1회 소비 = PurchaseBalancePayment::updating 이 consumeLedgerUnlockToken 으로 pull → 저장 1회 통과 후 재잠금.
+     * AuditLog(ledger_field_unlocked, auditable=PurchaseBalancePayment). 실제 old→new 는 PBP::updated 훅.
+     *
+     * @throws AuthorizationException canApprove 아닐 때
+     * @throws DomainException 사유 10자 미만 또는 신규 잔금
+     */
+    public function unlockForPurchasePayment(PurchaseBalancePayment $payment, User $by, string $reason): void
+    {
+        if (! $by->canApprove()) {
+            throw new AuthorizationException('매입 잔금 잠금 해제 권한 없음 (관리/admin 전용)');
+        }
+
+        $reasonTrimmed = trim($reason);
+        if (mb_strlen($reasonTrimmed) < self::MIN_REASON_LENGTH) {
+            throw new DomainException('잠금 해제 사유는 '.self::MIN_REASON_LENGTH.'자 이상 필수');
+        }
+
+        if (! $payment->exists) {
+            throw new DomainException('신규 잔금은 잠금 대상 외 (자유 입력 가능)');
+        }
+
+        DB::transaction(function () use ($payment, $by, $reasonTrimmed) {
+            Cache::put(
+                PurchaseBalancePayment::ledgerUnlockCacheKey($payment->id),
+                [
+                    'unlocked_by' => $by->id,
+                    'reason' => $reasonTrimmed,
+                    'issued_at' => now()->toIso8601String(),
+                ],
+                now()->addMinutes(self::TOKEN_SAFETY_TTL_MINUTES),
+            );
+
+            AuditLog::create([
+                'user_id' => $by->id,
+                'approval_request_id' => null,
+                'auditable_type' => PurchaseBalancePayment::class,
                 'auditable_id' => $payment->id,
                 'action' => 'ledger_field_unlocked',
                 'column_name' => 'unlock_reason',

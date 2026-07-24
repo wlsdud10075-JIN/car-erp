@@ -96,9 +96,10 @@ class PurchasePaymentAfterPaidSettlementTest extends TestCase
         ]);
     }
 
-    public function test_confirmed_purchase_payment_still_cannot_be_deleted_after_paid(): void
+    public function test_confirmed_purchase_payment_cannot_be_deleted_after_closed(): void
     {
-        // 소급 변경 방어(updating/deleting)는 그대로 — 완화한 건 creating(신규 지급)뿐.
+        // 정산 락 개편(2026-07-24) — 소급 삭제 방어는 2차 정산 마감(closed) 후에만.
+        //   마감 전엔 confirmed 여도 삭제 자유(정산이 흡수).
         $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
         $vehicle = Vehicle::create([
             'vehicle_number' => '54가6192',
@@ -116,8 +117,20 @@ class PurchasePaymentAfterPaidSettlementTest extends TestCase
         ]);
         app(PaymentConfirmationService::class)->confirmPurchasePayment($pbp, $finance);
 
+        // 2차 정산 마감(closed) → 삭제 잠금. finance 컨텍스트라 paid 전환 가드를 $allowBatchPayout 우회.
+        Settlement::$allowBatchPayout = true;
+        try {
+            Settlement::create([
+                'vehicle_id' => $vehicle->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+                'settlement_status' => 'paid', 'paid_at' => now(),
+                'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+            ]);
+        } finally {
+            Settlement::$allowBatchPayout = false;
+        }
+
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('재무 확정된 매입 잔금은 삭제할 수 없습니다');
+        $this->expectExceptionMessage('삭제할 수 없습니다');
         $pbp->fresh()->delete();
     }
 }

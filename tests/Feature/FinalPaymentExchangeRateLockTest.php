@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\FinalPayment;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\VehicleLedgerUnlockService;
@@ -30,10 +31,20 @@ class FinalPaymentExchangeRateLockTest extends TestCase
             'purchase_date' => '2026-05-01', 'dhl_request' => false,
         ]);
 
-        return $v->finalPayments()->create([
+        $fp = $v->finalPayments()->create([
             'amount' => 4000, 'type' => 'balance', 'exchange_rate' => 1400,
             'payment_date' => '2026-06-10', 'confirmed_at' => now(),
         ]);
+
+        // 정산 락 개편 (jin 2026-07-24) — 2차 정산 마감(closed)이 잔금 소급 잠금 트리거.
+        //   (auth 없는 시점이라 paid 전환 승인 가드 자동 우회.)
+        Settlement::create([
+            'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
+
+        return $fp;
     }
 
     public function test_confirmed_payment_exchange_rate_change_is_blocked(): void

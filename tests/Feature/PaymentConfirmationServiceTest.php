@@ -219,12 +219,19 @@ class PaymentConfirmationServiceTest extends TestCase
         ]);
         $this->service->confirmPayment($payment, $c['finance']);
 
-        // 확정된 잔금의 amount 변경 시도
+        // 2차 정산 마감(closed) → 소급 수정 잠금 (정산 락 개편 2026-07-24)
+        Settlement::create([
+            'vehicle_id' => $c['vehicle']->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
+
+        // 마감 후 확정 잔금 amount 변경 시도 → 차단
         $payment->refresh();
         $payment->amount = 20_000_000;
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('재무 확정된 잔금');
+        $this->expectExceptionMessage('잠금 해제');
         $payment->save();
     }
 
@@ -238,8 +245,14 @@ class PaymentConfirmationServiceTest extends TestCase
         ]);
         $this->service->confirmPayment($payment, $c['finance']);
 
+        Settlement::create([
+            'vehicle_id' => $c['vehicle']->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
+
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('재무 확정된 잔금');
+        $this->expectExceptionMessage('삭제할 수 없습니다');
         $payment->fresh()->delete();
     }
 
@@ -253,8 +266,14 @@ class PaymentConfirmationServiceTest extends TestCase
         ]);
         $this->service->confirmPurchasePayment($payment, $c['finance']);
 
+        Settlement::create([
+            'vehicle_id' => $c['vehicle']->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
+
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('재무 확정된 매입 잔금');
+        $this->expectExceptionMessage('삭제할 수 없습니다');
         $payment->fresh()->delete();
     }
 }
