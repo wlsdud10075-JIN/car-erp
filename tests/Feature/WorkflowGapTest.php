@@ -1271,10 +1271,16 @@ class WorkflowGapTest extends TestCase
             'type' => 'deposit_down',
             'confirmed_at' => now(),
         ]);
+        // 정산 락 개편(2026-07-24) — 소급 수정 잠금은 2차 마감(closed) 후.
+        Settlement::create([
+            'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
 
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('재무 확정된 잔금');
-        $fp->update(['amount' => 4_000_000]);   // confirmed 후 amount 변경 차단
+        $this->expectExceptionMessage('잠금 해제');
+        $fp->update(['amount' => 4_000_000]);   // 마감 후 confirmed 잔금 변경 차단
     }
 
     public function test_22a3b_allow_confirmed_mutation_flag_unlocks_temporarily(): void
@@ -1569,6 +1575,18 @@ class WorkflowGapTest extends TestCase
             'payment_date' => now()->toDateString(),
             'confirmed_at' => now(),
         ]);
+        // 정산 락 개편(2026-07-24) — 소급 수정 잠금은 2차 마감(closed) 후. flag 우회 검증 위해 closed 셋업.
+        //   finance 컨텍스트라 paid 전환 승인 가드를 $allowBatchPayout 로 우회(월배치 패턴).
+        Settlement::$allowBatchPayout = true;
+        try {
+            Settlement::create([
+                'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+                'settlement_status' => 'paid', 'paid_at' => now(),
+                'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+            ]);
+        } finally {
+            Settlement::$allowBatchPayout = false;
+        }
 
         // flag 없이 amount 변경 시도 → 차단
         try {

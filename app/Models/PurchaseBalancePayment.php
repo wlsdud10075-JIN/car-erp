@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 
 class PurchaseBalancePayment extends Model
@@ -38,6 +39,12 @@ class PurchaseBalancePayment extends Model
      * 생성부(Vehicle::saved)와 재조정부(vehicles/index save) 가 같은 문자열을 참조하도록 단일 출처화.
      */
     public const AUTO_DRAFT_NOTE = '자동 생성 — 영업 매입 정보 저장 시';
+
+    /**
+     * 정산 락 개편 (jin 2026-07-24) — 마감(closed) 후 토큰 정정 시 감사 추적 대상 (FinalPayment 대칭).
+     * confirmed 후 잠금해제 토큰으로 정정 시 updated 훅이 old→new 를 AuditLog 기록.
+     */
+    public const AUDITED_LEDGER_COLUMNS = ['amount', 'payment_date'];
 
     protected static function booted(): void
     {
@@ -86,20 +93,58 @@ class PurchaseBalancePayment extends Model
             }
         });
 
-        // 큐 20-D — confirmed_at SET 후 retroactive UPDATE 차단 (회계 무결성).
+        // 큐 20-D + 정산 락 개편(2026-07-24) — confirmed_at SET 후 소급 UPDATE 가드.
+        //   구조적(확정 해제)은 절대 차단. 금액·날짜 정정은 2차 정산 마감(closed) 전 자유(정산이 흡수),
+        //   마감 후엔 잠금해제 토큰(unlockForPurchasePayment) 1회 소비 시에만 통과. old→new 는 updated 훅 감사.
         static::updating(function (PurchaseBalancePayment $p) {
             $originalConfirmedAt = $p->getOriginal('confirmed_at');
             if ($originalConfirmedAt !== null && ! self::$allowConfirmedMutation) {
-                if ($p->isDirty('confirmed_at') || $p->isDirty('amount') || $p->isDirty('payment_date')) {
-                    throw new \DomainException('재무 확정된 매입 잔금의 amount / payment_date / confirmed_at 은 수정할 수 없습니다 (회계 무결성).');
+                if ($p->isDirty('confirmed_at')) {
+                    throw new \DomainException('재무 확정된 매입 잔금의 confirmed_at 은 수정할 수 없습니다 (회계 무결성).');
+                }
+                if ($p->isDirty('amount') || $p->isDirty('payment_date')) {
+                    if ($p->vehicle?->hasClosedSecondarySettlement()
+                        && $p->consumeLedgerUnlockToken() === null) {
+                        throw new \DomainException('2차 정산 마감된 차량의 확정 매입 잔금 amount / payment_date 는 잠금 해제(관리 승인) 후에만 수정할 수 있습니다 (회계 무결성).');
+                    }
                 }
             }
         });
         static::deleting(function (PurchaseBalancePayment $p) {
-            if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation) {
-                throw new \DomainException('재무 확정된 매입 잔금은 삭제할 수 없습니다 (회계 무결성).');
+            // 정산 락 개편(2026-07-24) — 2차 정산 마감(closed) 후에만 확정 매입 잔금 삭제 차단.
+            if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation
+                && $p->vehicle?->hasClosedSecondarySettlement()) {
+                throw new \DomainException('2차 정산 마감된 차량의 재무 확정 매입 잔금은 삭제할 수 없습니다 (회계 무결성).');
             }
         });
+
+        // 정산 락 개편(2026-07-24) — 마감 후 토큰 정정(금액·날짜) old→new AuditLog (FinalPayment 대칭).
+        static::updated(function (PurchaseBalancePayment $p) {
+            if ($p->getOriginal('confirmed_at') === null) {
+                return;
+            }
+            foreach (self::AUDITED_LEDGER_COLUMNS as $col) {
+                if ($p->wasChanged($col)) {
+                    AuditLog::recordChange($p, $col, $p->getOriginal($col), $p->getAttribute($col));
+                }
+            }
+        });
+    }
+
+    /** 정산 락 개편(2026-07-24) — 매입 잔금 개별 정정 잠금해제 cache key (FinalPayment 대칭). */
+    public static function ledgerUnlockCacheKey(int $pbpId): string
+    {
+        return "purchase_balance_payment_ledger_unlock:{$pbpId}";
+    }
+
+    /** 잠금해제 토큰 1회 소비 (읽기 + 즉시 삭제). unlockForPurchasePayment 발급분을 updating 이 소비. */
+    public function consumeLedgerUnlockToken(): ?array
+    {
+        if (! $this->id) {
+            return null;
+        }
+
+        return Cache::pull(self::ledgerUnlockCacheKey($this->id));
     }
 
     public function vehicle(): BelongsTo

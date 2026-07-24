@@ -6,6 +6,7 @@ use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -304,6 +305,14 @@ class LockGuardVerificationTest extends TestCase
         $fp = FinalPayment::find($rh->fresh()->final_payment_id);
         $fp->confirmed_at = now();
         $fp->saveQuietly();
+
+        // 정산 락 개편(2026-07-24) — 확정 잔금 삭제 차단은 2차 마감(closed) 후. 차단+500방지 검증 위해 closed.
+        //   (auth 없는 시점이라 paid 전환 승인 가드 자동 우회.)
+        Settlement::create([
+            'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
 
         $this->actingAs($admin);
         Volt::test('erp.receivables.index')
