@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\UnpaidExportOverride;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -234,21 +235,26 @@ class ManagementWorkflowChecklistTest extends TestCase
         $this->assertSame('bl/test.pdf', $v->fresh()->bl_document, '완납 → B/L 발행 통과');
     }
 
-    /** 락 Ledger — 재무 확정 잔금 후 회계 영향 필드 잠금 (saving 훅). admin 잠금 해제로 1회 통과. */
+    /** 락 Ledger — 2차 정산 마감(closed) 후 회계 영향 필드 잠금 (saving 훅). admin 잠금 해제로 1회 통과. */
     public function test_lock_ledger_field_blocks_then_admin_unlock_passes(): void
     {
         $admin = $this->admin();
         $this->actingAs($admin);
         $sm = $this->sales[2]['salesman'];
 
-        // 매입가 set + 매입 잔금 confirmed → 잠금 트리거
+        // 매입가 set + 2차 정산 마감(closed) → 잠금 트리거 (정산 락 개편 2026-07-24)
         $v = $this->baseVehicle($sm->id, ['purchase_price' => 1_000_000]);
         $v->purchaseBalancePayments()->create([
             'amount' => 1_000_000, 'payment_date' => '2026-04-01',
             'confirmed_at' => now(), 'confirmed_by_user_id' => $admin->id,
         ]);
+        Settlement::create([
+            'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+            'secondary_status' => 'closed', 'secondary_closed_at' => now(),
+        ]);
         $v->refreshCaches();
-        $this->assertTrue($v->fresh()->hasConfirmedPaymentLock());
+        $this->assertTrue($v->fresh()->hasClosedSecondarySettlement());
 
         // FAIL — 매입가(LEDGER_LOCK_FIELDS) 소급 변경 차단
         $v = Vehicle::find($v->id);

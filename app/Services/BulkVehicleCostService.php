@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -78,12 +79,20 @@ class BulkVehicleCostService
                     continue;
                 }
 
-                // 잠긴 차량만 토큰 발급 (안 잠긴 차량은 saving 가드가 자유 통과).
-                if ($vehicle->hasConfirmedPaymentLock()) {
-                    $this->unlockService->unlockForCostBulk($vehicle, $by, $reason, $fleetWide);
-                }
-
+                // 정산 락 개편(2026-07-24) — 마감(closed) 전 차량은 회계컬럼 락이 없어 토큰 불필요(직접 update).
+                //   (closed 는 위에서 skip.) 값 변경(old→new)은 Vehicle updated 훅 recordChange 가 자동 감사하고,
+                //   일괄 기입 출처(명세서 사유)는 아래 bulk_cost_applied 감사로 별도 보존.
                 $vehicle->update([$column => $newValue]);
+                AuditLog::create([
+                    'user_id' => $by->id,
+                    'auditable_type' => Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'bulk_cost_applied',
+                    'column_name' => $column,
+                    'old_value' => null,
+                    'new_value' => $reason,
+                    'ip_address' => request()?->ip(),
+                ]);
                 $applied++;
             }
         });

@@ -107,7 +107,7 @@ class SettlementLicenseFeeE2eTest extends TestCase
         // 감사로그 — 차량별 잠금해제 사유 기록(전량 기록 확인).
         foreach ($vehicles as $v) {
             $this->assertDatabaseHas('audit_logs', [
-                'auditable_id' => $v->id, 'action' => 'ledger_field_unlocked',
+                'auditable_id' => $v->id, 'action' => 'bulk_cost_applied',
             ]);
         }
 
@@ -154,7 +154,7 @@ class SettlementLicenseFeeE2eTest extends TestCase
         $this->assertSame(227_000, (int) $vehicles[1]->fresh()->cost_towing);
         $this->assertSame(42_000, (int) $vehicles[2]->fresh()->cost_towing);
         // 전 차량 감사로그 기록.
-        $this->assertSame(3, AuditLog::where('action', 'ledger_field_unlocked')
+        $this->assertSame(3, AuditLog::where('action', 'bulk_cost_applied')
             ->whereIn('auditable_id', $vehicles->pluck('id'))->count());
     }
 }

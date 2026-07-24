@@ -2980,7 +2980,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $this->isLedgerLocked = $v->hasConfirmedPaymentLock();
+        // 정산 락 개편 (jin 2026-07-24) — 편집 패널 락 UI도 2차 정산 마감(closed) 기준.
+        //   confirmed 잔금만 있는 차량은 마감 전이라 회계필드 자유 편집(백엔드 guardLedgerLockOnSaving 과 정합).
+        $this->isLedgerLocked = $v->hasClosedSecondarySettlement();
         $this->hasLedgerUnlockToken = \Illuminate\Support\Facades\Cache::has(
             Vehicle::ledgerUnlockCacheKey($v->id)
         );

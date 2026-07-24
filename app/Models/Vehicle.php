@@ -370,8 +370,8 @@ class Vehicle extends Model
             return;   // 잠금 컬럼 변경 없음
         }
 
-        if (! $this->hasConfirmedPaymentLock()) {
-            return;   // confirmed 잔금 없음 — 자유 수정
+        if (! $this->hasClosedSecondarySettlement()) {
+            return;   // 2차 정산 마감(closed) 전 — 자유 수정 (정산이 차익으로 흡수, jin 2026-07-24)
         }
 
         // unlock 토큰 1회 소비 시도
@@ -389,13 +389,27 @@ class Vehicle extends Model
     }
 
     /**
-     * 큐 21 — confirmed 잔금 존재 여부 (잠금 트리거).
+     * 큐 21 — confirmed 잔금 존재 여부.
      * finalPayments OR purchaseBalancePayments 중 confirmed_at IS NOT NULL 1건이라도 있으면 true.
+     * 2026-07-24 정산 락 개편 이후: 차량 회계컬럼 락(guardLedgerLockOnSaving)의 트리거에서는 제외되고,
+     *   차량 삭제 가드(파괴적 액션)·삭제 모달 판정에만 사용된다. 금액 수정 락은 hasClosedSecondarySettlement.
      */
     public function hasConfirmedPaymentLock(): bool
     {
         return $this->finalPayments()->whereNotNull('confirmed_at')->exists()
             || $this->purchaseBalancePayments()->whereNotNull('confirmed_at')->exists();
+    }
+
+    /**
+     * 정산 락 개편 (jin 2026-07-24) — 차량 회계컬럼·잔금 소급 수정 락의 단일 트리거.
+     * 2차 정산이 secondary_status='closed'(이월·환차 확정·동결)된 차량만 잠근다.
+     *   근거: 마진은 computed라 마감(closed) 전 앞단 수정은 carryover_out 으로 자동 흡수됨.
+     *   closed 시점이 이월 확정·동결 지점이라 흡수할 다음 단계가 없어 여기가 최종 락 경계.
+     *   confirmed 잔금만 있고 정산이 없거나 아직 안 닫힌 차량은 자유 수정(정산이 차익으로 걸러냄).
+     */
+    public function hasClosedSecondarySettlement(): bool
+    {
+        return $this->settlements()->where('secondary_status', 'closed')->exists();
     }
 
     /**
