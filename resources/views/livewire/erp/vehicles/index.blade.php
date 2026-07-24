@@ -40,6 +40,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $cancelFilter = '';
     // 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지). transport_fee = 입력값.
     #[Url] public string $freightExact = '';
+    // 차대번호(VIN) 검색 (item 3, jin 2026-07-24) — 메인 검색과 분리(차번호·수출신고번호 등 숫자/코드 충돌 방지).
+    //   nice_reg_vin 부분검색(끝 6자리 등). 메인 통합검색에서 분리해 "코드성 식별자" 혼선 제거.
+    #[Url] public string $vinSearch = '';
     // 대시보드 처리 필요 액션 카드에서 진입 시 동일 산정 로직으로 필터링.
     // 값: purchase_unpaid / sale_unpaid / clearance_needed / shipping_needed / dhl_needed
     #[Url] public string $action = '';
@@ -198,7 +201,9 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function searchAccum(): void
     {
-        $this->search = trim($this->accumSearchTerm);
+        $term = trim($this->accumSearchTerm);
+        $this->search = $term;
+        $this->vinSearch = $term;   // 선적요청 검색은 차대번호(VIN)로도 찾음 (item 3 분리 후에도 accum은 통합 유지)
         $this->resetPage();
     }
 
@@ -1128,7 +1133,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset([
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
-            'sortColumn', 'sortDirection', 'freightExact',
+            'sortColumn', 'sortDirection', 'freightExact', 'vinSearch',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
         $this->dateFrom = now()->subYear()->format('Y-m-d');
@@ -1716,17 +1721,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Vehicle::query()
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('vehicle_number', 'like', "%{$this->search}%")
-                ->orWhere('brand', 'like', "%{$this->search}%")
-                ->orWhere('model_type', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
-                ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")   // 차대번호 — 끝 6자리 등 부분 검색
-                ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
-                ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
-                ->orWhere('purchase_from', 'like', "%{$this->search}%")     // 구입처(매입처)
-            ))
+            // 통합검색(차번호·브랜드·차종·소유자·수출신고·선박·컨테이너·구입처) + 차대번호(VIN) OR 그룹.
+            //   차량관리 UI는 search / vinSearch 를 별도 칸으로 노출(item 3, 숫자·코드 충돌 방지)하지만,
+            //   선적요청 검색(searchAccum)은 둘 다 세팅해 '차번호 OR VIN' 통합검색을 유지한다.
+            ->when($this->search !== '' || $this->vinSearch !== '', fn ($q) => $q->where(function ($q2) {
+                if ($this->search !== '') {
+                    $q2->where('vehicle_number', 'like', "%{$this->search}%")
+                        ->orWhere('brand', 'like', "%{$this->search}%")
+                        ->orWhere('model_type', 'like', "%{$this->search}%")
+                        ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
+                        ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
+                        ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
+                        ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
+                        ->orWhere('purchase_from', 'like', "%{$this->search}%");    // 구입처(매입처)
+                }
+                if ($this->vinSearch !== '') {
+                    $q2->orWhere('nice_reg_vin', 'like', "%{$this->vinSearch}%");   // 차대번호(끝 6자리 등)
+                }
+            }))
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
@@ -5376,6 +5388,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지) --}}
         <input wire:model="freightExact" wire:keydown.enter="applyFilters" type="text" data-money
                placeholder="{{ __('vehicle.freight_ph') }}" title="{{ __('vehicle.freight_ph') }}"
+               class="input-filter w-32" />
+        {{-- 차대번호(VIN) 검색 (item 3, jin 2026-07-24) — 메인 검색과 분리(숫자/코드 충돌 방지) --}}
+        <input wire:model="vinSearch" wire:keydown.enter="applyFilters" type="text"
+               placeholder="{{ __('vehicle.vin_ph') }}" title="{{ __('vehicle.vin_ph') }}"
                class="input-filter w-32" />
         <button wire:click="applyFilters" class="btn-search">{{ __('vehicle.search_btn') }}</button>
         <button type="button" wire:click="resetFilters"
