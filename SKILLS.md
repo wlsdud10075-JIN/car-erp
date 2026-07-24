@@ -273,6 +273,8 @@ static::creating(function (Settlement $s) {
 
 ### 5-6. 회계 무결성 lock (큐 20-D + Gemini Lock)
 
+> ⚠️ **2026-07-24 정산 락 개편 — 락 트리거 변경 (jin).** 아래 "`confirmed_at SET` 후 차단"·차량 회계컬럼 락은 이제 트리거가 **"2차 정산 마감(`secondary_status='closed'`) 후"**로 바뀌었다. **confirmed 잔금만으론 더 이상 안 잠긴다** — 마감 전엔 매입가·판매가·환율·비용·잔금 자유 수정(전부 감사 로그), 정산이 carryover 로 +/− 흡수. 정산 없이 confirmed 잔금만 있는 차량(딜러 대금 지급한 재고차 등)은 완전 편집 가능. 단일 트리거 `Vehicle::hasClosedSecondarySettlement()`. **잠금 해제 UI는 정산 화면 closed 행 [🔓 회계 재조정]으로 이동**(차량 패널 🔓 제거). 유지: snapshot 박제·`Settlement::deleting` 차단·per_unit 동결·`transfer_id`/`confirmed_at` 구조적 차단·차량 삭제 가드(confirmed). ⚠️ 함정 = post-close 재조정은 **record-only**(지급 재정산 안 됨, 3차 없음). **상세 = 메모리 `project_settlement_lock_redesign`.** (아래 원문은 개편 전 서술 — 트리거만 closed 로 치환해 읽을 것.)
+
 paid 전환 시 `confirmed_snapshot` 캡처되는 항목들 — 사후 retroactive 변경 차단:
 - vehicle 회계 컬럼 (exchange_rate·purchase_price·cost_total 등)
 - 마진 (sales_margin·vat_margin·total_margin)
@@ -466,7 +468,7 @@ extension=zip    # 주석 제거
 
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
-- **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — 차량별 잠금해제 토큰 자동발급(`VehicleLedgerUnlockService::unlockForCostBulk`)→`update`→saving 훅이 토큰 소비→즉시 재잠금. 차량별 `AuditLog(ledger_field_unlocked)`. 반환 `[applied, unchanged, skipped]`.
+- **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
 - **비용컬럼 봉인**: `Vehicle::BULK_COST_FIELDS`(비용 9개) 화이트리스트 — **fleet-wide여도 판매가·환율 등 민감 21필드 못 건드림**. `$column` 미포함이면 `InvalidArgumentException`.
 - **권한 2축**: 면허비=`canUnlockLedger`(팀, `fleetWide=false`) / 탁송비=`canApprove`(전체, `fleetWide=true`, 명세서 한 장이 전 차량이라). 단일 🔓 버튼은 팀 스코프 그대로(안 건드림).
 - **재업로드 안전(2중)**: ① 2차 마감(`secondary_status='closed'`) 차량은 절대 안 건드림(skip=`settlement_closed`, 값 달라도) — 소급 변경은 개별 🔓로만. ② 값 동일이면 잠금해제·감사 없이 skip(`unchanged`).
