@@ -45,17 +45,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
         }
 
-        // 자금 현황 입력 카드 — 최신 스냅샷 프리필 (권한자만)
+        // 자금 현황 입력 카드 — 입력칸은 항상 빈칸으로 시작 (jin 2026-07-24).
+        // 최근 입력 날짜만 컨텍스트로 표시하고, 금액은 프리필하지 않음(매일 새 잔액 입력).
         if ($user->canEnterCashBalance()) {
             $this->cashDate = now()->toDateString();
             $latest = CashSnapshot::orderByDesc('snapshot_date')->first();
-            if ($latest) {
-                $trim = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
-                $this->cashKrw = (string) (int) $latest->balance_krw;
-                $this->cashUsd = $trim($latest->balance_usd);
-                $this->cashEur = $trim($latest->balance_eur);
-                $this->cashSavedAt = $latest->snapshot_date->format('Y-m-d');
-            }
+            $this->cashSavedAt = $latest?->snapshot_date->format('Y-m-d');
         }
     }
 

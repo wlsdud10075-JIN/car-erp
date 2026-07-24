@@ -137,6 +137,14 @@ class CapitalStatusTest extends TestCase
         $svc->capture(['krw' => 25_000_000, 'usd' => 0, 'eur' => 0], $admin, '2026-07-23');   // 추이 2점
         Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
 
+        // 입력칸은 스냅샷이 있어도 항상 빈칸으로 시작 (jin 2026-07-24) — 최근 입력 날짜만 표시
+        $this->actingAs($finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]));
+        Volt::test('erp.dashboard')
+            ->assertSet('cashKrw', '')
+            ->assertSet('cashUsd', '')
+            ->assertSet('cashEur', '')
+            ->assertSet('cashSavedAt', '2026-07-23');
+
         $this->actingAs($admin);
         Volt::test('admin.dashboard')
             ->assertOk()
