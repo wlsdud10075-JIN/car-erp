@@ -11,6 +11,7 @@ use App\Models\Vehicle;
 use App\Services\PaymentConfirmationService;
 use DomainException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -132,5 +133,41 @@ class PurchasePaymentAfterPaidSettlementTest extends TestCase
         $this->expectException(DomainException::class);
         $this->expectExceptionMessage('삭제할 수 없습니다');
         $pbp->fresh()->delete();
+    }
+
+    public function test_purchase_price_edit_before_close_flows_into_carryover(): void
+    {
+        // 정산 락 개편 흡수 증명 (advisor 2026-07-24) — paid 후 마감 전 매입가 인상 →
+        //   마진 감소 → 2차 close 시 carryover_out 에 델타(회수) 반영. "정산이 차익으로 걸러낸다"의 실증.
+        $salesman = Salesman::create(['name' => '홍길동', 'is_active' => true, 'type' => 'freelance']);
+        $buyer = Buyer::create(['name' => 'FLOW BUYER', 'is_active' => true]);
+        $vehicle = Vehicle::create([
+            'vehicle_number' => 'RDJ-FLOW', 'sales_channel' => 'export',
+            'salesman_id' => $salesman->id, 'buyer_id' => $buyer->id,
+            'sale_date' => '2026-05-01', 'sale_price' => 20_000_000,
+            'purchase_price' => 10_000_000, 'currency' => 'KRW', 'exchange_rate' => 1,
+        ]);
+
+        // paid 전환(auth 없어 승인 가드 우회) → secondary pending 자동 + snapshot payout 캡처.
+        $settlement = Settlement::create([
+            'vehicle_id' => $vehicle->id, 'salesman_id' => $salesman->id,
+            'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'paid', 'paid_at' => now(),
+        ]);
+        $snapshotPayout = (int) ($settlement->fresh()->confirmed_snapshot['actual_payout'] ?? 0);
+        $this->assertGreaterThan(0, $snapshotPayout);
+
+        // 마감 전 매입가 인상 (락 없음 — closed 아님) → 마진 감소.
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+        $vehicle->update(['purchase_price' => 12_000_000]);
+
+        // 2차 마감 → carryover_out = closed payout − snapshot payout (매입가↑ → payout↓ → 음수 회수).
+        Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $settlement->id);
+
+        $settlement->refresh();
+        $this->assertSame('closed', $settlement->secondary_status);
+        $this->assertNotNull($settlement->carryover_out_krw);
+        $this->assertLessThan(0, (float) $settlement->carryover_out_krw, '매입가 인상분이 carryover 로 흡수(회수)되어야 함');
     }
 }
