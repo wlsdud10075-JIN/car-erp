@@ -7314,7 +7314,7 @@ function vehicleColumnsToggle() {
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_decl_amount_note') }}</p>
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.export_decl_number') }}</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.shipping_date') }}</label><input wire:model="shipping_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base flex items-center gap-1">{{ __('vehicle.field.shipping_date') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span></label><input wire:model="shipping_date" type="text" data-date class="input-base input-gated" /></div>
                 <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.shipping_method') }}</label>
@@ -7356,11 +7356,11 @@ function vehicleColumnsToggle() {
                 </div>
                 <div class="flex items-end">
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }}
+                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
                     </label>
                 </div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">{{ __('vehicle.field.export_decl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
+                    <label class="label-base">{{ __('vehicle.field.export_decl_doc') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <x-erp.file-drop model="exportDeclarationDocFile"
                         accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($exportDeclarationDocFile)
@@ -7426,8 +7426,8 @@ function vehicleColumnsToggle() {
                 </div>
                 {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
                 <div>
-                    <label class="label-base">{{ __('vehicle.field.loading_location') }}</label>
-                    <select wire:model="bl_loading_location" class="input-base">
+                    <label class="label-base flex items-center gap-1">{{ __('vehicle.field.loading_location') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span></label>
+                    <select wire:model="bl_loading_location" class="input-base input-gated">
                         <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                         @foreach($this->unloadingPorts as $p)
                         <option value="{{ $p->name }}">{{ $p->display_name }}</option>
@@ -7584,7 +7584,7 @@ function vehicleColumnsToggle() {
                     </x-erp.file-drop>
                 </div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-xs text-gray-400">{{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
+                    <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <x-erp.file-drop model="blDocFile"
                         accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($blDocFile)
@@ -7625,7 +7625,7 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.dhl_dimensions') }}</label><input wire:model="dhl_dimensions" type="text" class="input-base" placeholder="30x20x10" /></div>
                 <div class="col-span-2 flex items-center gap-2">
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="dhl_request" type="checkbox" class="rounded" /> {{ __('vehicle.field.dhl_request_done') }}
+                        <input wire:model="dhl_request" type="checkbox" class="rounded" /> {{ __('vehicle.field.dhl_request_done') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
                     </label>
                 </div>
             </div>

@@ -326,6 +326,7 @@ return [
         'bank_name' => 'Bank',
         'account_holder' => 'Account Holder',
         'account_no' => 'Account No.',
+        'gate_hint' => 'Advances stage on input',
         'account_memo' => 'Account Memo',
         'cost_deregistration' => 'Deregistration',
         'cost_license' => 'License',
