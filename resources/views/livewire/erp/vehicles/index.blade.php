@@ -1745,8 +1745,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->dateType === 'balance', fn ($q) => $q->whereHas('finalPayments', fn ($fp) => $fp
                 ->when($this->dateFrom, fn ($x) => $x->whereDate('payment_date', '>=', $this->dateFrom))
                 ->when($this->dateTo, fn ($x) => $x->whereDate('payment_date', '<=', $this->dateTo))))
-            // 운임비 정확검색 (item 6) — 입력 시 transport_fee = 값. 콤마 제거 후 정수 비교.
-            ->when($this->freightExact !== '', fn ($q) => $q->where('transport_fee', (int) preg_replace('/\D/', '', $this->freightExact)));
+            // 운임비 앞자리 부분검색 (item 6 / jin 2026-07-24) — 콤마·소수점 제거 후 prefix LIKE.
+            // 전체 자리 입력 = 사실상 정확일치, 앞 4자리만 입력 = 그 값으로 시작하는 것 전부. FLOOR로 decimal(.00) 무시.
+            ->when($this->freightExact !== '', function ($q) {
+                $digits = preg_replace('/\D/', '', $this->freightExact);
+
+                return $digits === '' ? $q : $q->whereRaw('CAST(FLOOR(transport_fee) AS CHAR) LIKE ?', [$digits.'%']);
+            });
     }
 
     /**
