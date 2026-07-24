@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Vehicle;
 use Livewire\Attributes\Computed;
@@ -32,6 +34,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public string $statusFilter = '';
 
+    /** 바이어/컨사이니 필터 (jin 2026-07-24) — 출고일 지정 시점엔 당사자가 정해져 있어 검색 편의. combobox(검색 드롭다운). */
+    #[Url] public string $buyerFilter = '';
+
+    #[Url] public string $consigneeFilter = '';
+
     /** 재고 카테고리 필터 (jin 2026-07-18): '' 전체 / general 일반재고(미판매) / pre_ship 선적전 재고(판매됨·출고전). */
     #[Url] public string $category = '';
 
@@ -58,6 +65,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->when($this->buyerFilter !== '', fn ($q) => $q->where('buyer_id', $this->buyerFilter))
+            ->when($this->consigneeFilter !== '', fn ($q) => $q->where('consignee_id', $this->consigneeFilter))
             ->when($this->statusFilter !== '', fn ($q) => $q->where('progress_status_cache', $this->statusFilter))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
@@ -91,6 +100,56 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         return $q->get();
+    }
+
+    /** 바이어 옵션 (스코프별 — buyersForFilter 규칙: admin=전체 / 영업=본인 / 관리=부하). combobox 검색용. */
+    #[Computed]
+    public function buyers()
+    {
+        $q = Buyer::orderBy('name');
+        $user = auth()->user();
+        if (! $user || $user->isAdmin() || $user->isManager()) {
+            return $q->get();
+        }
+        if ($user->role === '관리') {
+            $subIds = $user->getSubordinateSalesmanIds();
+            $q->where(fn ($q2) => $q2->whereIn('salesman_id', $subIds)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $subIds)));
+        } elseif ($user->role === '영업' && $user->salesman) {
+            $ownId = $user->salesman->id;
+            $q->where(fn ($q2) => $q2->where('salesman_id', $ownId)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $ownId)));
+        }
+
+        return $q->get();
+    }
+
+    /** 컨사이니 옵션 — 선택 바이어 종속(Consignee.buyer_id). 바이어 미선택 시 빈 목록. */
+    #[Computed]
+    public function consignees()
+    {
+        if ($this->buyerFilter === '') {
+            return collect();
+        }
+
+        return Consignee::where('buyer_id', $this->buyerFilter)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    /** 바이어 변경 → 컨사이니 리셋 + 재조회. combobox $wire.set 이 발화. */
+    public function updatedBuyerFilter(): void
+    {
+        $this->consigneeFilter = '';
+        unset($this->inventoryVehicles, $this->consignees);
+        $this->resetPage();
+    }
+
+    public function updatedConsigneeFilter(): void
+    {
+        unset($this->inventoryVehicles);
+        $this->resetPage();
     }
 
     /**
@@ -180,7 +239,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['salesmanFilter', 'statusFilter', 'search']);
+        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter']);
         $this->resetPage();
     }
 }; ?>
@@ -260,6 +319,11 @@ new #[Layout('components.layouts.app')] class extends Component
                 <option value="{{ $sm->id }}">{{ $sm->name }}</option>
             @endforeach
         </select>
+        {{-- 바이어/컨사이니 검색 드롭다운 (jin 2026-07-24) — 출고일 지정 시점엔 당사자 확정. combobox 타이핑 검색. --}}
+        <x-erp.combobox wire:key="inv-buyer-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
+            :selected="$buyerFilter" placeholder="{{ __('inventory.buyer_ph') }}" class="w-44" />
+        <x-erp.combobox wire:key="inv-consignee-{{ $buyerFilter }}-{{ $consigneeFilter }}" model="consigneeFilter"
+            :options="$this->consignees" :selected="$consigneeFilter" placeholder="{{ __('inventory.consignee_ph') }}" class="w-44" />
         <select wire:model.live="statusFilter" class="input-filter">
             <option value="">{{ __('inventory.all_status') }}</option>
             @foreach(['매입중','매입완료','말소완료','판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $st)

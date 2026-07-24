@@ -9,6 +9,8 @@ return [
     'unassigned_strip' => '미배정 :count',
     'search_ph' => '차량번호 · 브랜드 · 차종 · 소유자 · 차대번호',
     'all_salesmen' => '담당자 전체',
+    'buyer_ph' => '바이어 검색',
+    'consignee_ph' => '컨사이니 검색',
     'all_status' => '상태 전체',
     'col_owner' => '소유자',
     'col_warehouse_in' => '입고일',
