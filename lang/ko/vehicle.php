@@ -83,6 +83,7 @@ return [
     'freight_total' => '운임비 합 ₩:amount',
     'sale_total_sum' => '판매총액 합 ₩:amount',
     'freight_ph' => '운임비 검색',
+    'vin_ph' => '차대번호 검색',
     'stat' => [
         'count' => '총 차량',
         'unit' => '대',
