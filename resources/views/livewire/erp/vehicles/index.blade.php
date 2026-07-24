@@ -741,8 +741,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $hasLedgerUnlockToken = false;
     // 잠금 해제 권한 = super/admin(전체) + role '관리'(본인 팀). refreshLedgerLockState 에서 편집 차량 기준 갱신.
     public bool $canUnlockLedger = false;
-    public bool $showLedgerUnlockModal = false;
-    public string $ledgerUnlockReason = '';
 
     // ── 큐 21 후속 — 말소·수출통관 체크/문서 mismatch 확인 모달 (사용자 결정 2026-05-18) ──
     // 운영 흐름상 체크와 서류 업로드 순서가 비순차적. 강제 차단 대신 모달로 인지 강제.
@@ -2881,9 +2879,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->panelUnpaidRatio = null;
         // 큐 19-C — 자금 이체 모달도 동일 정리
         $this->resetTransferRequestForm();
-        // 큐 21 — Ledger 잠금 모달도 정리
-        $this->showLedgerUnlockModal = false;
-        $this->ledgerUnlockReason = '';
+        // 큐 21 — Ledger 잠금 상태 정리 (해제 모달은 정산 화면으로 이동, 2026-07-24)
         $this->isLedgerLocked = false;
         $this->hasLedgerUnlockToken = false;
         // 큐 21 후속 — 말소·수출통관 mismatch 모달 정리
@@ -2989,55 +2985,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->canUnlockLedger = auth()->user()?->canUnlockLedger($v) ?? false;
     }
 
-    public function openLedgerUnlockModal(): void
-    {
-        if (! $this->editingId) {
-            return;
-        }
-        // 권한 재확인 — super/admin(전체) + role '관리'(본인 팀). editingId 는 클라이언트 주입 가능 → 매번 차량 기준 재인가.
-        $v = Vehicle::find($this->editingId);
-        if (! $v || ! auth()->user()?->canUnlockLedger($v)) {
-            $this->dispatch('notify', message: __('vehicle.toast.unlock_no_perm'), type: 'error');
-
-            return;
-        }
-        $this->ledgerUnlockReason = '';
-        $this->showLedgerUnlockModal = true;
-    }
-
-    public function closeLedgerUnlockModal(): void
-    {
-        $this->showLedgerUnlockModal = false;
-        $this->ledgerUnlockReason = '';
-    }
-
-    public function submitLedgerUnlock(): void
-    {
-        $this->validate(
-            ['ledgerUnlockReason' => ['required', 'string', 'min:10']],
-            ['ledgerUnlockReason.required' => __('vehicle.valmsg.unlock_reason_required'),
-                'ledgerUnlockReason.min' => __('vehicle.valmsg.unlock_reason_min')]
-        );
-
-        try {
-            $v = Vehicle::findOrFail($this->editingId);
-            app(\App\Services\VehicleLedgerUnlockService::class)->unlock(
-                $v,
-                auth()->user(),
-                $this->ledgerUnlockReason
-            );
-        } catch (\Throwable $e) {
-            $this->dispatch('notify', message: __('vehicle.toast.unlock_failed', ['error' => $e->getMessage()]), type: 'error');
-
-            return;
-        }
-
-        $this->refreshLedgerLockState();
-        $this->closeLedgerUnlockModal();
-        $this->dispatch('notify',
-            message: __('vehicle.toast.unlock_done'),
-            type: 'success');
-    }
+    // 정산 락 개편 (jin 2026-07-24) — Ledger 잠금 해제 UI는 정산 화면(회계 재조정)으로 이동.
+    //   해제는 settlements/index openReadjustModal 에서만 시작(토큰 발급→이 패널로 딥링크).
+    //   옛 openLedgerUnlockModal/submitLedgerUnlock(차량 패널 발급)은 제거 — RPC 호출 경로까지 봉인.
 
     private function resetTransferRequestForm(): void
     {
@@ -8241,41 +8191,8 @@ function vehicleColumnsToggle() {
 </div>
 @endif
 
-{{-- 큐 21 — Ledger 잠금 해제 모달 (회의록 2026-05-18 + 2026-06-22 jin override = super/admin + 본인 팀 관리).
-     슬라이드 패널 stacking context 밖에 배치. close()에서 정리됨. --}}
-@if($showLedgerUnlockModal)
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
-     wire:click.self="closeLedgerUnlockModal"
-     wire:key="ledger-unlock-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
-        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.ledger_title') }}</h3>
-        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.ledger_desc') }}</p>
-
-        <div class="mt-3 rounded-md bg-amber-50 border border-amber-200 p-2.5 text-xs text-amber-800">
-            <p>{{ __('vehicle.modal.ledger_warn') }}</p>
-        </div>
-
-        <div class="mt-3">
-            <label class="label-base">{{ __('vehicle.modal.ledger_reason_label') }} <span class="text-red-500">*</span> <span class="text-gray-400">{{ __('vehicle.modal.ledger_reason_hint') }}</span></label>
-            <textarea wire:model="ledgerUnlockReason" rows="4"
-                      class="input-base"
-                      placeholder="{{ __('vehicle.modal.ledger_reason_ph') }}"></textarea>
-            @error('ledgerUnlockReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-        </div>
-
-        <div class="mt-4 flex justify-end gap-2">
-            <button wire:click="closeLedgerUnlockModal" type="button"
-                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
-            <button wire:click="submitLedgerUnlock" type="button"
-                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-                    wire:loading.attr="disabled" wire:target="submitLedgerUnlock">
-                <span wire:loading.remove wire:target="submitLedgerUnlock">{{ __('vehicle.modal.ledger_submit') }}</span>
-                <span wire:loading wire:target="submitLedgerUnlock">{{ __('vehicle.footer.processing') }}</span>
-            </button>
-        </div>
-    </div>
-</div>
-@endif
+{{-- 정산 락 개편 (jin 2026-07-24) — Ledger 잠금 해제 모달은 정산 화면(settlements/index 회계 재조정)으로 이동.
+     차량 패널 발급 모달 제거. 딥링크로 온 토큰이 있으면 잠금 배너가 🔓 로 뜨고 그대로 편집됨. --}}
 
 {{-- 2026-07-09 — 옛 G2 승인요청 모달 제거(ERP 죽은 락). 미수 매입 게이트(②)가 담당. --}}
 
