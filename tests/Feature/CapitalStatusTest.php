@@ -113,7 +113,12 @@ class CapitalStatusTest extends TestCase
             ->set('cashUsd', '29001.71')
             ->set('cashEur', '53169.73')
             ->call('saveCashBalance')
-            ->assertHasNoErrors();
+            ->assertHasNoErrors()
+            // 저장 후 입력칸 비움 (jin 2026-07-24)
+            ->assertSet('cashKrw', '')
+            ->assertSet('cashUsd', '')
+            ->assertSet('cashEur', '')
+            ->assertSet('cashDate', now()->toDateString());
 
         $snap = CashSnapshot::whereDate('snapshot_date', '2026-07-23')->first();
         $this->assertNotNull($snap);
@@ -133,7 +138,12 @@ class CapitalStatusTest extends TestCase
         Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
 
         $this->actingAs($admin);
-        Volt::test('admin.dashboard')->assertOk();
+        Volt::test('admin.dashboard')
+            ->assertOk()
+            ->assertSeeHtml('id="capitalTrendChart"')
+            // 자금추이 재렌더 fix (jin 2026-07-24): morph.updated 훅 사용, 구 non-firing 'livewire:updated' 제거
+            ->assertSeeHtml("Livewire.hook('morph.updated'")
+            ->assertDontSeeHtml("'livewire:updated'");
     }
 
     public function test_sales_cannot_save_balance(): void
