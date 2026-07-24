@@ -36,7 +36,8 @@ new class extends Component
     }
 }; ?>
 
-<div x-data="{ open: false }" class="fixed bottom-5 right-5 z-50 print:hidden">
+{{-- 통관 알람(alarm-center, bottom-4 우하단)과 겹치지 않게 위로 띄움 (jin 2026-07-24) --}}
+<div x-data="{ open: false }" class="fixed bottom-24 right-5 z-50 print:hidden">
     {{-- 플로팅 버튼 --}}
     <button type="button" @click="open = !open"
             class="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition hover:bg-primary-hover"
