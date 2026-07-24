@@ -45,6 +45,30 @@ class VehicleFreightSearchTest extends TestCase
         $this->assertSame([800000, 800000], array_map('intval', $ids));
     }
 
+    public function test_freight_prefix_partial_search(): void
+    {
+        // jin 2026-07-24 — 앞자리 부분검색: 앞 몇 자리만 입력해도 그 값으로 시작하는 운임비 전부.
+        $this->actingAs($this->admin());
+        Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'transport_fee' => 800000]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'transport_fee' => 850000]);
+        Vehicle::create(['vehicle_number' => '33다3333', 'sales_channel' => 'export', 'transport_fee' => 1200000]);
+
+        $c = Volt::test('erp.vehicles.index')->set('dateType', 'all');
+
+        // 앞 2자리 '80' → 800000 (80으로 시작하는 1대). 850000은 '85'라 제외.
+        $c->set('freightExact', '80')->call('applyFilters');
+        $this->assertSame(1, $c->instance()->freightTotals['count']);
+
+        // 앞 1자리 '8' → 800000·850000 2대 (1200000 제외).
+        $c->set('freightExact', '8')->call('applyFilters');
+        $this->assertSame(2, $c->instance()->freightTotals['count']);
+
+        // 전체 자리 '850,000' (콤마 포함) → 850000 1대만.
+        $c->set('freightExact', '850,000')->call('applyFilters');
+        $this->assertSame(1, $c->instance()->freightTotals['count']);
+        $this->assertSame(850000, (int) $c->instance()->vehicles->first()->transport_fee);
+    }
+
     public function test_freight_totals_by_currency_groups(): void
     {
         // jin 2026-07-20 — 운임비합·판매총액합을 통화별로 쪼개 표시.
