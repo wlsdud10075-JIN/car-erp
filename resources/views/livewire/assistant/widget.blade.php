@@ -53,7 +53,7 @@ new class extends Component
     <div x-show="open" x-cloak x-transition
          class="absolute bottom-16 right-0 flex h-[520px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div class="border-b border-gray-100 bg-gray-50 px-4 py-3">
-            <p class="text-sm font-bold text-gray-800">SSANCAR 업무 도우미</p>
+            <p class="text-sm font-bold text-gray-800">{{ \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR' }} 업무 도우미</p>
             <p class="text-[11px] text-gray-400">로컬 LLM · 미수·채권·자금·업무가이드</p>
         </div>
 
