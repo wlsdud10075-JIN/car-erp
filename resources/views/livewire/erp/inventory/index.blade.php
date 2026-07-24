@@ -64,6 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('model_type', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")   // 차대번호 — 끝 6자리 등 부분 검색
             ))
             ->orderByRaw('salesman_id IS NULL ASC')
             ->orderBy('salesman_id')
@@ -290,6 +291,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.salesman') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.brand_model') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.vin') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_in') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_shipping') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
@@ -334,6 +336,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         {{ $v->brand }} {{ $v->model_type }}
                         @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                     </td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-600">{{ $v->nice_reg_vin ?: '-' }}</td>
                     <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4 text-gray-500">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4" @click.stop>
@@ -352,7 +355,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="10" class="py-12 text-center text-sm text-gray-400">
+                <tr><td colspan="11" class="py-12 text-center text-sm text-gray-400">
                     {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse
@@ -380,6 +383,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div>{{ $v->brand }} {{ $v->model_type }}</div>
                 <div>{{ __('inventory.m_warehouse_in') }} {{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</div>
                 <div class="text-right">@if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif</div>
+                <div class="col-span-2 font-mono text-[11px] text-gray-400">{{ __('vehicle.col.vin') }}: {{ $v->nice_reg_vin ?: '-' }}</div>
             </div>
             <div class="mt-1.5 flex items-center gap-1.5 text-xs text-gray-500" @click.stop.prevent>
                 <span>{{ __('inventory.col_warehouse_out') }}</span>

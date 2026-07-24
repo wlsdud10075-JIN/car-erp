@@ -7,7 +7,7 @@ return [
     'total' => '총 :count 대',
     'by_salesman' => '담당자별:',
     'unassigned_strip' => '미배정 :count',
-    'search_ph' => '차량번호 · 브랜드 · 차종 · 소유자',
+    'search_ph' => '차량번호 · 브랜드 · 차종 · 소유자 · 차대번호',
     'all_salesmen' => '담당자 전체',
     'all_status' => '상태 전체',
     'col_owner' => '소유자',

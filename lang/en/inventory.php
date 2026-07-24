@@ -7,7 +7,7 @@ return [
     'total' => ':count vehicles',
     'by_salesman' => 'By salesman:',
     'unassigned_strip' => 'Unassigned :count',
-    'search_ph' => 'Vehicle no. · brand · model · owner',
+    'search_ph' => 'Vehicle no. · brand · model · owner · VIN',
     'all_salesmen' => 'All Salesmen',
     'all_status' => 'All statuses',
     'col_owner' => 'Owner',
