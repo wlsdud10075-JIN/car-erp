@@ -590,8 +590,10 @@
     <livewire:erp.alarm-center />
 @endif
 
-{{-- 사내 업무 도우미 (로컬 LLM 챗봇, jin 2026-07-24) — enabled(.env) + canUseAssistant --}}
-@if(config('assistant.enabled') && $user->canUseAssistant())
+{{-- 사내 업무 도우미 (로컬 LLM 챗봇, jin 2026-07-24) —
+     .env(인프라: LLM 연결 준비) AND 기능설정 토글(super) AND canUseAssistant 모두 충족 시 노출.
+     config 게이트를 앞에 둬 인프라 off 서버는 Setting 조회조차 안 함(성능). --}}
+@if(config('assistant.enabled') && $user->canUseAssistant() && \App\Models\Setting::get('assistant_enabled', false))
     <livewire:assistant.widget />
 @endif
 

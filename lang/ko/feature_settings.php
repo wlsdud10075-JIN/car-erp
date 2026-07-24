@@ -25,6 +25,13 @@ return [
     'en_label' => 'English',
     'en_sub' => '(영어)',
 
+    // 사내 업무 도우미 (로컬 LLM 챗봇, jin 2026-07-24)
+    'assistant_section' => '사내 업무 도우미',
+    'assistant_hint' => '우하단 로컬 LLM 챗봇 위젯. 미수·채권·자금 조회 + 사내 업무 가이드. 관리·재무 이상 사용, 자금·이익은 대표·최고관리자만.',
+    'assistant_label' => '업무 도우미 위젯',
+    'assistant_sub' => '켜면 우하단에 표시',
+    'assistant_infra_warn' => '⚠️ 이 서버는 LLM 연결(.env)이 아직 준비되지 않아, 켜도 위젯이 표시되지 않습니다.',
+
     'alarm_section' => '업무 알람',
     'alarm_hint' => 'ETA 통관서류(도착 전)·선적 서류마감(마감 전)·매매상 잔금(계약금 후) 알람이 사이드바 벨/알림함에 뜹니다. 켜기 전 `php artisan alarms:scan --dry-run` 으로 대상 건수를 먼저 확인하세요.',
     'alarm_label' => '업무 알람 사용',

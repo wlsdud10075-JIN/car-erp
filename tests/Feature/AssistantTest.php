@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Assistant\AssistantService;
@@ -193,5 +194,28 @@ class AssistantTest extends TestCase
             ->set('q', '전체 미수 보여줘')
             ->call('send')
             ->assertStatus(403);
+    }
+
+    public function test_super_toggles_assistant_enabled_setting(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        Volt::actingAs($super)->test('admin.settings')
+            ->set('assistantEnabled', true)
+            ->assertHasNoErrors();
+        $this->assertTrue((bool) Setting::get('assistant_enabled'));
+    }
+
+    public function test_widget_layout_gated_by_env_and_setting(): void
+    {
+        config(['assistant.enabled' => true]);
+        $admin = $this->admin();
+
+        // 기능설정 토글 off → 위젯 미노출
+        Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '0', 'type' => 'boolean']);
+        $this->actingAs($admin)->get('/admin/dashboard')->assertOk()->assertDontSee('SSANCAR 업무 도우미', false);
+
+        // 토글 on → 노출
+        Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '1', 'type' => 'boolean']);
+        $this->actingAs($admin)->get('/admin/dashboard')->assertOk()->assertSee('SSANCAR 업무 도우미', false);
     }
 }
