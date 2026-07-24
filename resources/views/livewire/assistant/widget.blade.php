@@ -33,13 +33,16 @@ new class extends Component
             'text' => $res['answer'],
             'sources' => collect($res['sources'] ?? [])->pluck('title')->all(),
         ];
+        $this->dispatch('assistant-scroll');   // 새 답변 후 하단으로 스크롤
     }
 }; ?>
 
 {{-- 통관 알람(alarm-center, bottom-4 우하단)과 겹치지 않게 위로 띄움 (jin 2026-07-24) --}}
-<div x-data="{ open: false }" class="fixed bottom-24 right-5 z-50 print:hidden">
+<div x-data="{ open: false, toBottom() { this.$nextTick(() => { const m = this.$refs.msgs; if (m) m.scrollTop = m.scrollHeight; }); } }"
+     x-on:assistant-scroll.window="toBottom()"
+     class="fixed bottom-24 right-5 z-50 print:hidden">
     {{-- 플로팅 버튼 --}}
-    <button type="button" @click="open = !open"
+    <button type="button" @click="open = !open; if (open) toBottom()"
             class="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition hover:bg-primary-hover"
             :aria-expanded="open" aria-label="업무 도우미 열기">
         <span x-show="!open" class="text-2xl">💬</span>
@@ -54,7 +57,7 @@ new class extends Component
             <p class="text-[11px] text-gray-400">로컬 LLM · 미수·채권·자금·업무가이드</p>
         </div>
 
-        <div class="flex-1 space-y-3 overflow-y-auto p-4" id="assistant-msgs">
+        <div class="flex-1 space-y-3 overflow-y-auto p-4" x-ref="msgs">
             @forelse($messages as $m)
                 @if($m['role'] === 'me')
                     <div class="ml-auto max-w-[85%] rounded-xl rounded-br-sm bg-primary px-3 py-2 text-sm text-white">{{ $m['text'] }}</div>
