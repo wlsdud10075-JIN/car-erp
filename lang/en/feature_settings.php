@@ -25,6 +25,13 @@ return [
     'en_label' => 'English',
     'en_sub' => '(English)',
 
+    // in-house assistant (local LLM chatbot, jin 2026-07-24)
+    'assistant_section' => 'Work Assistant',
+    'assistant_hint' => 'Bottom-right local LLM chatbot: receivables/capital lookups + work guide. Manager/finance and up; capital/profit for owner/admin only.',
+    'assistant_label' => 'Assistant widget',
+    'assistant_sub' => 'shows bottom-right when on',
+    'assistant_infra_warn' => '⚠️ This server has no LLM connection (.env) yet, so the widget stays hidden even if enabled.',
+
     'alarm_section' => 'Task Alarms',
     'alarm_hint' => 'ETA clearance docs (before arrival), shipping doc deadline (before due), and dealer balance (after deposit) alarms appear in the sidebar bell / inbox. Run `php artisan alarms:scan --dry-run` first to check how many will fire.',
     'alarm_label' => 'Enable task alarms',

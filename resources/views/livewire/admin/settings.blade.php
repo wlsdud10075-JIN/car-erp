@@ -19,6 +19,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    public bool $assistantEnabled = false;
+
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
     public array $lockToggles = [];
 
@@ -104,6 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
         }
@@ -602,6 +605,21 @@ new #[Layout('components.layouts.app')] class extends Component
         Setting::updateOrCreate(
             ['key' => 'alarm_enabled'],
             ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => 'ETA 통관서류 알람 활성화'],
+        );
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    // 사내 업무 도우미(로컬 LLM 챗봇) on/off (jin 2026-07-24). 배포 ≠ 노출 —
+    //   위젯은 .env ASSISTANT_ENABLED(인프라: LLM 연결 준비) AND 이 토글 둘 다 켜져야 뜸.
+    public function updatedAssistantEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        Setting::updateOrCreate(
+            ['key' => 'assistant_enabled'],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => '사내 업무 도우미(로컬 LLM 챗봇) 활성화'],
         );
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
@@ -1171,6 +1189,31 @@ new #[Layout('components.layouts.app')] class extends Component
                     {{ __('feature_settings.save_thresholds') }}
                 </button>
             </div>
+        </div>
+    </div>
+
+    {{-- 사내 업무 도우미 그룹 (jin 2026-07-24) --}}
+    <div class="card max-w-xl" x-data="{ open: true }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-violet-500"></span>
+                <span class="section-title">{{ __('feature_settings.assistant_section') }}</span>
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.assistant_hint') }}</p>
+            <label class="flex cursor-pointer items-center justify-between rounded-md border border-gray-100 px-3 py-2">
+                <span class="text-sm text-gray-700">{{ __('feature_settings.assistant_label') }} <span class="text-xs text-gray-400">{{ __('feature_settings.assistant_sub') }}</span></span>
+                <input type="checkbox" wire:model.live="assistantEnabled" class="peer sr-only">
+                <span class="relative h-5 w-9 rounded-full bg-gray-300 transition-colors peer-checked:bg-violet-500
+                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
+            @unless(config('assistant.enabled'))
+                <p class="text-[11px] text-amber-600">{{ __('feature_settings.assistant_infra_warn') }}</p>
+            @endunless
         </div>
     </div>
 
