@@ -222,8 +222,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $inv = ForwardingInvoice::firstOrNew([
             'forwarding_company_id' => $companyId, 'group_type' => $groupType, 'group_key' => $groupKey,
         ]);
-        $inv->amount = (float) ($f['amount'] ?? $inv->amount ?? 0);
+        $num = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
+        $inv->amount = isset($f['amount']) ? $num($f['amount']) : ($inv->amount ?? 0);
         $inv->currency = $f['currency'] ?? $inv->currency ?? 'USD';
+        // 차액 정산 3필드 (jin 2026-07-24) — 격리(정산·미수 무연결)
+        $inv->manual_rate = isset($f['manual_rate']) ? ($num($f['manual_rate']) ?: null) : $inv->manual_rate;
+        $inv->actual_paid_krw = isset($f['actual_paid_krw']) ? ($num($f['actual_paid_krw']) ?: null) : $inv->actual_paid_krw;
+        $inv->write_off_krw = isset($f['write_off_krw']) ? $num($f['write_off_krw']) : ($inv->write_off_krw ?? 0);
         $inv->memo = ($f['memo'] ?? $inv->memo) ?: null;
         $inv->created_by = $inv->created_by ?? auth()->id();
 
@@ -239,6 +244,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         unset($this->invoices);
         session()->flash('success', __($justSettled ? 'forwarding.inv_paid' : 'forwarding.inv_saved'));
+    }
+
+    /** 버림 — 환산KRW − 실송금KRW 우수리(±)를 write_off 로 잡아 차액 0 맞춤 (jin 2026-07-24). 저장 전 미리보기용. */
+    public function truncateInvoice(int $companyId, string $groupType, string $groupKey): void
+    {
+        abort_unless(auth()->user()?->canManageForwarding(), 403);
+        $fkey = md5($companyId.'|'.$groupType.'|'.$groupKey);
+        $f = $this->invForm[$fkey] ?? [];
+        $inv = $this->invoices[$companyId.'|'.$groupType.'|'.$groupKey] ?? null;
+        $num = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
+
+        $amount = isset($f['amount']) ? $num($f['amount']) : (float) ($inv->amount ?? 0);
+        $currency = $f['currency'] ?? ($inv->currency ?? 'USD');
+        $rate = isset($f['manual_rate']) ? $num($f['manual_rate']) : (float) ($inv->manual_rate ?? 0);
+        $paid = isset($f['actual_paid_krw']) ? $num($f['actual_paid_krw']) : (float) ($inv->actual_paid_krw ?? 0);
+
+        $converted = $currency === 'KRW' ? (int) floor($amount) : (int) floor($amount * $rate);
+        $this->invForm[$fkey]['write_off_krw'] = (string) ($converted - (int) round($paid));   // 우수리(±) 그대로
     }
 
     /** 청산 취소 — paid_at 해제(금액 기록은 유지). 감사로그 남김. */
@@ -555,20 +578,72 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endforelse
                             </div>
                             @if($grp['key'] !== '')
-                            <div class="ml-auto flex items-center gap-1.5">
+                            <div class="ml-auto">
                                 @if($isPaid)
-                                    <span class="badge badge-green text-[10px]">{{ __('forwarding.paid') }} · {{ $inv->currency }} {{ number_format($inv->amount) }}</span>
-                                    <button wire:click="unsettleInvoice({{ $inv->id }})" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('forwarding.unsettle') }}</button>
+                                    <div class="flex flex-wrap items-center justify-end gap-1.5">
+                                        <span class="badge badge-green text-[10px]">{{ __('forwarding.paid') }} · {{ $inv->currency }} {{ number_format($inv->amount) }}</span>
+                                        @if($inv->currency !== 'KRW' && $inv->manual_rate)
+                                            <span class="text-[10px] text-gray-400">→ ₩{{ number_format($inv->converted_krw) }}</span>
+                                        @endif
+                                        @if($inv->actual_paid_krw !== null)
+                                            <span class="text-[10px] text-gray-500">{{ __('forwarding.rec_paid') }} ₩{{ number_format((int) $inv->actual_paid_krw) }}</span>
+                                        @endif
+                                        @if((int) $inv->write_off_krw !== 0)
+                                            <span class="badge badge-gray text-[10px]">{{ __('forwarding.rec_writeoff') }} {{ number_format((int) $inv->write_off_krw) }}</span>
+                                        @endif
+                                        <button wire:click="unsettleInvoice({{ $inv->id }})" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('forwarding.unsettle') }}</button>
+                                    </div>
+                                    @if($inv->memo)<p class="mt-1 text-right text-[10px] text-gray-400">{{ $inv->memo }}</p>@endif
                                 @else
-                                    <select wire:model="invForm.{{ $fkey }}.currency" class="input-filter h-7 w-20 text-xs">
-                                        @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $c)
-                                            <option value="{{ $c }}">{{ $c }}</option>
-                                        @endforeach
-                                    </select>
-                                    <input wire:model="invForm.{{ $fkey }}.amount" type="text" data-money
-                                           placeholder="{{ __('forwarding.inv_amount_ph') }}" class="input-filter h-7 w-28 text-right text-xs" />
-                                    <button wire:click="saveInvoice({{ $fc->id }}, '{{ $grp['type'] }}', @js($grp['key']), true)"
-                                            class="btn-primary h-7 px-2 text-[11px]">{{ __('forwarding.settle') }}</button>
+                                    @php
+                                        $fv = $invForm[$fkey] ?? [];
+                                        $num = fn ($v) => (float) str_replace([',', ' '], '', (string) ($v ?? '0'));
+                                        $amt = $num($fv['amount'] ?? 0);
+                                        $curSel = $fv['currency'] ?? 'USD';
+                                        $rate = $num($fv['manual_rate'] ?? 0);
+                                        $paid = $num($fv['actual_paid_krw'] ?? 0);
+                                        $woff = $num($fv['write_off_krw'] ?? 0);
+                                        $converted = $curSel === 'KRW' ? (int) floor($amt) : (int) floor($amt * $rate);
+                                        $diff = $converted - (int) round($paid) - (int) round($woff);
+                                    @endphp
+                                    <div class="flex flex-col items-end gap-1.5">
+                                        {{-- 1행: 통화 + 인보이스금액 (× 수기환율 = 환산KRW) --}}
+                                        <div class="flex flex-wrap items-center justify-end gap-1.5">
+                                            <select wire:model.live="invForm.{{ $fkey }}.currency" class="input-filter h-7 w-16 text-xs">
+                                                @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $c)
+                                                    <option value="{{ $c }}" @selected($curSel === $c)>{{ $c }}</option>
+                                                @endforeach
+                                            </select>
+                                            <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.amount" type="text" data-money
+                                                   placeholder="{{ __('forwarding.inv_amount_ph') }}" class="input-filter h-7 w-24 text-right text-xs" />
+                                            @if($curSel !== 'KRW')
+                                                <span class="text-[10px] text-gray-400">×</span>
+                                                <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.manual_rate" type="text" inputmode="decimal"
+                                                       placeholder="{{ __('forwarding.rec_rate') }}" class="input-filter h-7 w-16 text-right text-xs" />
+                                                <span class="text-[10px] text-gray-600">= ₩{{ number_format($converted) }}</span>
+                                            @endif
+                                        </div>
+                                        {{-- 2행: 실송금KRW + 차액 (+버림) + 청산 --}}
+                                        <div class="flex flex-wrap items-center justify-end gap-1.5">
+                                            <span class="text-[10px] text-gray-400">{{ __('forwarding.rec_paid') }}</span>
+                                            <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.actual_paid_krw" type="text" data-money
+                                                   placeholder="₩" class="input-filter h-7 w-24 text-right text-xs" />
+                                            <span class="text-[10px] {{ $diff === 0 ? 'text-gray-400' : 'text-amber-600' }}">
+                                                {{ __('forwarding.rec_diff') }} {{ $diff > 0 ? '+' : '' }}{{ number_format($diff) }}
+                                            </span>
+                                            @if($diff !== 0)
+                                                <button wire:click="truncateInvoice({{ $fc->id }}, '{{ $grp['type'] }}', @js($grp['key']))"
+                                                        class="badge badge-amber text-[10px] hover:opacity-80">{{ __('forwarding.rec_truncate') }}</button>
+                                            @elseif((int) $woff !== 0)
+                                                <span class="badge badge-gray text-[10px]">{{ __('forwarding.rec_writeoff') }} {{ number_format((int) $woff) }}</span>
+                                            @endif
+                                            <button wire:click="saveInvoice({{ $fc->id }}, '{{ $grp['type'] }}', @js($grp['key']), true)"
+                                                    class="btn-primary h-7 px-2 text-[11px]">{{ __('forwarding.settle') }}</button>
+                                        </div>
+                                        {{-- 비고 --}}
+                                        <input wire:model="invForm.{{ $fkey }}.memo" type="text"
+                                               placeholder="{{ __('forwarding.rec_memo') }}" class="input-filter h-7 w-56 text-xs" />
+                                    </div>
                                 @endif
                             </div>
                             @endif
