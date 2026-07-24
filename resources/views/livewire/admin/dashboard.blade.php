@@ -1523,16 +1523,23 @@ new #[Layout('components.layouts.app')] class extends Component
         }
     </script>
 
-    {{-- 자금 추이 스파크라인 (vanilla canvas — Chart.js 인스턴스와 독립, jin 2026-07-23) --}}
+    {{-- 자금 추이 스파크라인 (vanilla canvas — Chart.js 인스턴스와 독립, jin 2026-07-23)
+         재렌더 트리거: livewire:navigated + morph.updated 훅 + 조회(charts-refresh) + resize.
+         구 'livewire:updated' 는 Livewire 4 에 없는 이벤트라 morph 후 재drawing 이 안 떠 그래프가 사라졌음(jin 2026-07-24 fix). --}}
     <script>
     (function () {
-        function drawCapitalTrend() {
+        let raf = 0;
+        function drawCapitalTrend(retry) {
             const cv = document.getElementById('capitalTrendChart');
             if (! cv || ! cv.dataset.trend) return;
             let data; try { data = JSON.parse(cv.dataset.trend); } catch (e) { return; }
             if (! data || data.length < 2) return;
             const dpr = window.devicePixelRatio || 1;
-            const w = cv.clientWidth || cv.parentElement.clientWidth || 600, h = 90;
+            const w = cv.clientWidth || cv.parentElement.clientWidth || 0, h = 90;
+            if (w <= 0) {   // 레이아웃 미안착(폭 0) → 다음 프레임 재시도 (탭 전환·morph 직후)
+                if ((retry || 0) < 12) { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => drawCapitalTrend((retry || 0) + 1)); }
+                return;
+            }
             cv.width = w * dpr; cv.height = h * dpr;
             const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, w, h);
@@ -1548,11 +1555,15 @@ new #[Layout('components.layouts.app')] class extends Component
             const li = data.length - 1;
             ctx.beginPath(); ctx.arc(x(li), y(data[li].liquidation), 3, 0, 6.29); ctx.fillStyle = '#6b5dbd'; ctx.fill();
         }
-        document.addEventListener('DOMContentLoaded', drawCapitalTrend);
-        document.addEventListener('livewire:navigated', drawCapitalTrend);
-        document.addEventListener('livewire:updated', () => setTimeout(drawCapitalTrend, 50));
-        window.addEventListener('resize', () => setTimeout(drawCapitalTrend, 100));
-        setTimeout(drawCapitalTrend, 120);
+        const kick = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => drawCapitalTrend(0)); };
+        document.addEventListener('DOMContentLoaded', kick);
+        document.addEventListener('livewire:navigated', kick);
+        document.addEventListener('livewire:init', function () {
+            if (window.Livewire && Livewire.hook) { Livewire.hook('morph.updated', () => setTimeout(kick, 30)); }
+            if (window.Livewire && Livewire.on) { Livewire.on('charts-refresh', () => setTimeout(kick, 30)); }
+        });
+        window.addEventListener('resize', () => setTimeout(kick, 120));
+        setTimeout(kick, 150);
     })();
     </script>
 </div>

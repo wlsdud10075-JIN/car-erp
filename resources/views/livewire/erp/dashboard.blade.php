@@ -85,6 +85,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         app(CapitalStatusService::class)->capture(['krw' => $krw, 'usd' => $usd, 'eur' => $eur], $user, $date);
         $this->cashSavedAt = $date;
+        // 저장 후 입력칸 비움 — 다음 입력을 빈칸에서 시작 (jin 2026-07-24). 날짜는 오늘로 리셋.
+        $this->reset(['cashKrw', 'cashUsd', 'cashEur']);
+        $this->cashDate = now()->toDateString();
         $this->dispatch('notify', message: $date.' 통장 잔액을 저장했습니다.', type: 'success');
     }
 
