@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\VehicleLedgerUnlockService;
@@ -139,16 +140,33 @@ class VehicleLedgerLockTest extends TestCase
         ]);
     }
 
+    /**
+     * 정산 락 개편 (jin 2026-07-24) — 차량 회계컬럼 락의 새 트리거 = 2차 정산 마감(closed).
+     * auth 없이 생성해 Settlement paid 전환 승인 가드 우회(시드/artisan 패턴).
+     */
+    private function makeClosedSettlement(Vehicle $v): Settlement
+    {
+        return Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+            'secondary_status' => 'closed',
+            'secondary_closed_at' => now(),
+        ]);
+    }
+
     // ── 잠금 발동 케이스 ───────────────────────────────────────────
 
-    public function test_confirmed_final_payment_locks_ledger_fields(): void
+    public function test_closed_settlement_locks_ledger_fields(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle();
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
-        $this->assertTrue($v->fresh()->hasConfirmedPaymentLock());
+        $this->assertTrue($v->fresh()->hasClosedSecondarySettlement());
 
         $v2 = Vehicle::find($v->id);
         $v2->purchase_price = 2000000;
@@ -157,7 +175,25 @@ class VehicleLedgerLockTest extends TestCase
         $v2->save();
     }
 
-    public function test_confirmed_purchase_balance_payment_also_locks(): void
+    public function test_confirmed_payment_alone_does_not_lock(): void
+    {
+        // 정산 락 개편 (jin 2026-07-24) — confirmed 잔금만으론 더 이상 차량 회계컬럼을 잠그지 않는다.
+        // 2차 정산 마감(closed) 전이라 정산이 차익으로 흡수 → 앞단 자유 수정.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle();
+        $this->makeConfirmedFinalPayment($v);   // confirmed 잔금 있음, 정산은 없음
+        $this->actingAs($admin);
+
+        $this->assertFalse($v->fresh()->hasClosedSecondarySettlement());
+
+        $v2 = Vehicle::find($v->id);
+        $v2->purchase_price = 2000000;
+        $v2->save();   // 통과 — 마감 전이라 자유
+
+        $this->assertSame(2000000, (int) $v2->fresh()->purchase_price);
+    }
+
+    public function test_closed_settlement_locks_via_purchase_context(): void
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         // sale_price 초기값 set — 변경 시도 시 lock 발동 검증 (빈값→첫입력은 통과 정책 회피)
@@ -169,6 +205,7 @@ class VehicleLedgerLockTest extends TestCase
             'confirmed_at' => now(),
             'confirmed_by_user_id' => $admin->id,
         ]);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
         $v2 = Vehicle::find($v->id);
@@ -191,6 +228,7 @@ class VehicleLedgerLockTest extends TestCase
             'confirmed_at' => now(),
             'confirmed_by_user_id' => $admin->id,
         ]);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
         $v2 = Vehicle::find($v->id);
@@ -224,7 +262,7 @@ class VehicleLedgerLockTest extends TestCase
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle();
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
         // unlock 토큰 발급
@@ -280,7 +318,7 @@ class VehicleLedgerLockTest extends TestCase
         $super = User::factory()->create(['permission' => 'super']);
 
         $v1 = $this->makeVehicle();
-        $this->makeConfirmedFinalPayment($v1);
+        $this->makeClosedSettlement($v1);
         app(VehicleLedgerUnlockService::class)->unlock(
             $v1,
             $admin,
@@ -289,7 +327,7 @@ class VehicleLedgerLockTest extends TestCase
         $this->assertTrue(Cache::has(Vehicle::ledgerUnlockCacheKey($v1->id)));
 
         $v2 = $this->makeVehicle();
-        $this->makeConfirmedFinalPayment($v2);
+        $this->makeClosedSettlement($v2);
         app(VehicleLedgerUnlockService::class)->unlock(
             $v2,
             $super,
@@ -302,7 +340,7 @@ class VehicleLedgerLockTest extends TestCase
     {
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle();
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
 
         $reason = '운영 사고 복구 — 매입가 오기 5,000,000 → 50,000,000 정정';
         app(VehicleLedgerUnlockService::class)->unlock($v, $admin, $reason);
@@ -351,7 +389,7 @@ class VehicleLedgerLockTest extends TestCase
         $buyerA = Buyer::create(['name' => 'Buyer A', 'is_active' => true]);
         $buyerB = Buyer::create(['name' => 'Buyer B', 'is_active' => true]);
         $v = $this->makeVehicle(['buyer_id' => $buyerA->id]);
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
         $v2 = Vehicle::find($v->id);
@@ -366,7 +404,7 @@ class VehicleLedgerLockTest extends TestCase
         $buyerA = Buyer::create(['name' => 'Buyer A', 'is_active' => true]);
         $buyerB = Buyer::create(['name' => 'Buyer B', 'is_active' => true]);
         $v = $this->makeVehicle(['buyer_id' => $buyerA->id]);
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
         $this->actingAs($admin);
 
         app(VehicleLedgerUnlockService::class)->unlock(
@@ -395,7 +433,7 @@ class VehicleLedgerLockTest extends TestCase
             'email' => 'ts'.$this->counter.'@t.test', 'type' => 'freelance', 'is_active' => true,
         ]);
         $v = $this->makeVehicle(array_merge(['salesman_id' => $salesman->id], $overrides));
-        $this->makeConfirmedFinalPayment($v);
+        $this->makeClosedSettlement($v);
 
         return $v;
     }

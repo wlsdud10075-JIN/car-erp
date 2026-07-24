@@ -250,6 +250,7 @@ return [
         'approved' => '승인',
         'rejected' => '반려',
         'ledger_field_unlocked' => '확정금액 수정 허용',
+        'bulk_cost_applied' => '비용 일괄 기입',
         'lock_toggle_changed' => '락 켜기/끄기',
         'lock_threshold_changed' => '락 수치 변경',
         'unpaid_override_approved' => '미수 우회 승인',

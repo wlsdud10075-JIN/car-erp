@@ -60,8 +60,8 @@ class VehicleLedgerUnlockService
             throw new DomainException('신규 차량은 잠금 대상 외 (자유 입력 가능)');
         }
 
-        if (! $vehicle->hasConfirmedPaymentLock()) {
-            throw new DomainException('재무 확정 잔금이 없는 차량은 잠금 해제할 필요가 없습니다');
+        if (! $vehicle->hasClosedSecondarySettlement()) {
+            throw new DomainException('2차 정산이 마감(closed)되지 않은 차량은 잠금 해제할 필요가 없습니다 (마감 전 자유 수정).');
         }
 
         $this->putToken($vehicle, $by, $reasonTrimmed);

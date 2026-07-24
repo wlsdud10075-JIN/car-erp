@@ -83,7 +83,7 @@ class BulkVehicleCostTest extends TestCase
         // 감사로그 — 잠금해제 사유 기록
         $this->assertDatabaseHas('audit_logs', [
             'auditable_id' => $v->id,
-            'action' => 'ledger_field_unlocked',
+            'action' => 'bulk_cost_applied',
             'new_value' => '위카 탁송비 명세서 일괄 (2026-06)',
         ]);
     }
@@ -99,7 +99,7 @@ class BulkVehicleCostTest extends TestCase
         $r1 = $this->service()->apply('cost_towing', [$v->id => 35_000], $admin, '위카 탁송비 명세서 1차 일괄', true);
         $this->assertSame(1, $r1['applied']);
         $this->assertSame(0, $r1['unchanged']);
-        $auditCount = AuditLog::where('auditable_id', $v->id)->where('action', 'ledger_field_unlocked')->count();
+        $auditCount = AuditLog::where('auditable_id', $v->id)->where('action', 'bulk_cost_applied')->count();
 
         // 같은 값 재적용 → unchanged, 감사로그 증가 없음.
         $r2 = $this->service()->apply('cost_towing', [$v->id => 35_000], $admin, '위카 탁송비 명세서 재업로드 일괄', true);
@@ -107,7 +107,7 @@ class BulkVehicleCostTest extends TestCase
         $this->assertSame(1, $r2['unchanged']);
         $this->assertSame(
             $auditCount,
-            AuditLog::where('auditable_id', $v->id)->where('action', 'ledger_field_unlocked')->count()
+            AuditLog::where('auditable_id', $v->id)->where('action', 'bulk_cost_applied')->count()
         );
         $this->assertSame(35_000, (int) $v->fresh()->cost_towing);
     }
