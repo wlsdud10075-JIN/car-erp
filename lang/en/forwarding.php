@@ -28,6 +28,13 @@ return [
     'settle' => 'Settle',
     'unsettle' => 'Undo',
     'inv_amount_ph' => 'Invoice amount',
+    // reconciliation (jin 2026-07-24)
+    'rec_rate' => 'Rate',
+    'rec_paid' => 'Paid',
+    'rec_diff' => 'Diff',
+    'rec_truncate' => 'Truncate',
+    'rec_writeoff' => 'Written off',
+    'rec_memo' => 'Memo (optional)',
     'unpaid_count' => 'Unpaid :count',
     'settled_count' => 'Paid :count',
     'hide_settled' => 'Hide settled',

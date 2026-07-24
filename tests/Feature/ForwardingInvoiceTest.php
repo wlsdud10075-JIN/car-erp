@@ -82,6 +82,73 @@ class ForwardingInvoiceTest extends TestCase
         $this->assertSame('900.00', (string) $inv->amount, '취소해도 금액 기록은 유지');
     }
 
+    public function test_reconciliation_converted_and_difference(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD REC', 'is_active' => true]);
+        // jin 예시: 1000 EUR × 1300 = 1,300,000, 실송금 1,299,999 → 차액 +1
+        $inv = ForwardingInvoice::create([
+            'forwarding_company_id' => $fc->id, 'group_type' => 'container', 'group_key' => 'R1',
+            'currency' => 'EUR', 'amount' => 1000, 'manual_rate' => 1300,
+            'actual_paid_krw' => 1299999, 'write_off_krw' => 0,
+        ]);
+        $this->assertSame(1_300_000, $inv->converted_krw, '환산 KRW = floor(금액×환율)');
+        $this->assertSame(1, $inv->difference_krw, '차액 = 환산 − 실송금 − 버림');
+
+        // 버림 반영 → 차액 0
+        $inv->write_off_krw = 1;
+        $inv->save();
+        $this->assertSame(0, $inv->fresh()->difference_krw, '우수리 버림 후 0');
+    }
+
+    public function test_reconciliation_krw_invoice_ignores_rate(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD KRW', 'is_active' => true]);
+        $inv = ForwardingInvoice::create([
+            'forwarding_company_id' => $fc->id, 'group_type' => 'vessel', 'group_key' => 'K1',
+            'currency' => 'KRW', 'amount' => 500000, 'manual_rate' => null, 'actual_paid_krw' => 500000,
+        ]);
+        $this->assertSame(500_000, $inv->converted_krw, 'KRW 청구는 금액 그대로(환율 무시)');
+        $this->assertSame(0, $inv->difference_krw);
+    }
+
+    public function test_truncate_sets_writeoff_to_zero_diff(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD TRUNC', 'is_active' => true]);
+        $this->shipVehicle($fc->id, ['container_number' => 'RC1', 'shipping_method' => 'CONTAINER', 'transport_fee' => 1000, 'currency' => 'EUR']);
+        $fkey = md5("{$fc->id}|container|RC1");
+
+        $comp = Volt::actingAs($this->admin())->test('erp.forwarding-companies.index')
+            ->set('invForm', [$fkey => ['currency' => 'EUR', 'amount' => '1000', 'manual_rate' => '1300', 'actual_paid_krw' => '1,299,999']])
+            ->call('truncateInvoice', $fc->id, 'container', 'RC1')
+            ->assertHasNoErrors();
+
+        $this->assertSame('1', $comp->get('invForm')[$fkey]['write_off_krw'], '버림 = 우수리(+1)');
+
+        $comp->call('saveInvoice', $fc->id, 'container', 'RC1', true)->assertHasNoErrors();
+        $inv = ForwardingInvoice::where('group_key', 'RC1')->first();
+        $this->assertSame(0, $inv->difference_krw, '버림 후 차액 0');
+        $this->assertNotNull($inv->paid_at);
+    }
+
+    public function test_saveinvoice_persists_reconciliation_and_memo(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD SAVE', 'is_active' => true]);
+        $this->shipVehicle($fc->id, ['container_number' => 'RS1', 'shipping_method' => 'CONTAINER', 'transport_fee' => 2000, 'currency' => 'USD']);
+        $fkey = md5("{$fc->id}|container|RS1");
+
+        Volt::actingAs($this->admin())->test('erp.forwarding-companies.index')
+            ->set('invForm', [$fkey => ['currency' => 'USD', 'amount' => '2000', 'manual_rate' => '1350', 'actual_paid_krw' => '2,700,000', 'memo' => '6월 운임 정산']])
+            ->call('saveInvoice', $fc->id, 'container', 'RS1', false)
+            ->assertHasNoErrors();
+
+        $inv = ForwardingInvoice::where('group_key', 'RS1')->first();
+        $this->assertSame('1350.0000', (string) $inv->manual_rate);
+        $this->assertSame('2700000.00', (string) $inv->actual_paid_krw);
+        $this->assertSame('6월 운임 정산', $inv->memo);
+        $this->assertSame(2_700_000, $inv->converted_krw, 'USD 2000 × 1350');
+        $this->assertSame(0, $inv->difference_krw);
+    }
+
     public function test_non_manager_cannot_open_screen(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);

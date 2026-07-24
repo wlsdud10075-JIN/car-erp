@@ -28,6 +28,13 @@ return [
     'settle' => '청산',
     'unsettle' => '취소',
     'inv_amount_ph' => '인보이스 금액',
+    // 차액 정산 (jin 2026-07-24)
+    'rec_rate' => '환율',
+    'rec_paid' => '실송금',
+    'rec_diff' => '차액',
+    'rec_truncate' => '버림',
+    'rec_writeoff' => '버림액',
+    'rec_memo' => '비고 (선택)',
     'unpaid_count' => '미지급 :count',
     'settled_count' => '완료 :count',
     'hide_settled' => '지급완료 숨기기',

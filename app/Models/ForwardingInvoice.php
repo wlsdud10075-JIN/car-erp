@@ -14,11 +14,15 @@ class ForwardingInvoice extends Model
 {
     protected $fillable = [
         'forwarding_company_id', 'group_type', 'group_key',
-        'currency', 'amount', 'invoice_date', 'paid_at', 'memo', 'created_by',
+        'currency', 'amount', 'manual_rate', 'actual_paid_krw', 'write_off_krw',
+        'invoice_date', 'paid_at', 'memo', 'created_by',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'manual_rate' => 'decimal:4',
+        'actual_paid_krw' => 'decimal:2',
+        'write_off_krw' => 'decimal:2',
         'invoice_date' => 'date',
         'paid_at' => 'datetime',
     ];
@@ -39,5 +43,24 @@ class ForwardingInvoice extends Model
     public function getIsPaidAttribute(): bool
     {
         return $this->paid_at !== null;
+    }
+
+    /**
+     * 환산 KRW = 인보이스 금액 → KRW. floor 로 원 미만 절사(환산 절사).
+     *   KRW 청구면 금액 그대로, 그 외 통화면 amount × manual_rate.
+     */
+    public function getConvertedKrwAttribute(): int
+    {
+        if ($this->currency === 'KRW') {
+            return (int) floor((float) $this->amount);
+        }
+
+        return (int) floor((float) $this->amount * (float) ($this->manual_rate ?? 0));
+    }
+
+    /** 표시 차액 = 환산 KRW − 실송금 KRW − 버림액. 버림 처리 후 0 이 되도록(우수리 write-off). */
+    public function getDifferenceKrwAttribute(): int
+    {
+        return $this->converted_krw - (int) round((float) ($this->actual_paid_krw ?? 0)) - (int) round((float) $this->write_off_krw);
     }
 }
