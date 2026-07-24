@@ -124,7 +124,7 @@ class AssistantTest extends TestCase
             ['source' => '정산 가이드', 'text' => '정산은 재무가 확정한다.', 'embedding' => [1.0, 0.0]],
             ['source' => '기타', 'text' => '무관한 내용', 'embedding' => [0.0, 1.0]],
         ]));
-        config(['assistant.index_path' => $idx]);
+        config(['assistant.index_path' => $idx, 'assistant.index_scope' => '']);
 
         $this->app->bind(OllamaClient::class, fn () => new class extends OllamaClient
         {
@@ -148,6 +148,41 @@ class AssistantTest extends TestCase
         $this->assertSame('guide', $res['kind']);
         $this->assertStringContainsString('재무', $res['answer']);
         $this->assertContains('정산 가이드', collect($res['sources'])->pluck('title')->all());
+        @unlink($idx);
+    }
+
+    public function test_guide_scope_excludes_out_of_scope_chunks(): void
+    {
+        // board 청크가 질문에 더 가까워도, ERP 스코프면 검색 대상에서 제외 (jin 2026-07-24)
+        $idx = tempnam(sys_get_temp_dir(), 'idx').'.json';
+        file_put_contents($idx, json_encode([
+            ['source' => '사내 업무 가이드 › 🛒 매입보드 (BOARD) › 선적', 'text' => 'board 선적 계획 탭에서 동기화', 'embedding' => [1.0, 0.0]],
+            ['source' => '사내 업무 가이드 › 🏢 ERP (car-erp) › 수출통관', 'text' => 'ERP 선적요청 절차', 'embedding' => [0.9, 0.1]],
+        ]));
+        config(['assistant.index_path' => $idx, 'assistant.index_scope' => 'ERP (car-erp)']);
+
+        $this->app->bind(OllamaClient::class, fn () => new class extends OllamaClient
+        {
+            public function __construct()
+            {
+                parent::__construct('http://fake', 1);
+            }
+
+            public function embed(string $m, string $t): array
+            {
+                return [1.0, 0.0];
+            }  // board 청크와 정확 일치하지만 스코프에서 제외돼야
+
+            public function chat(string $m, string $s, string $u): string
+            {
+                return '(답변)';
+            }
+        });
+
+        $res = app(AssistantService::class)->ask('선적요청은 어떻게 해?', $this->admin());
+        $titles = collect($res['sources'])->pluck('title')->all();
+        $this->assertContains('사내 업무 가이드 › 🏢 ERP (car-erp) › 수출통관', $titles, 'ERP 청크만 검색');
+        $this->assertNotContains('사내 업무 가이드 › 🛒 매입보드 (BOARD) › 선적', $titles, 'board 청크 제외');
         @unlink($idx);
     }
 

@@ -156,6 +156,11 @@ class AssistantService
             return ['kind' => 'guide', 'answer' => '업무 가이드 색인이 아직 준비되지 않았습니다. 관리자에게 문의해 주세요.'];
         }
         $kb = json_decode(file_get_contents($path), true) ?: [];
+        // 스코프 필터 — ERP 챗봇은 ERP 가이드 청크만 (board 내용 혼입 방지, jin 2026-07-24).
+        $scope = (string) config('assistant.index_scope');
+        if ($scope !== '') {
+            $kb = array_values(array_filter($kb, fn ($d) => mb_strpos((string) ($d['source'] ?? ''), $scope) !== false));
+        }
         if (! $kb) {
             return ['kind' => 'guide', 'answer' => '업무 가이드 색인이 비어 있습니다.'];
         }
