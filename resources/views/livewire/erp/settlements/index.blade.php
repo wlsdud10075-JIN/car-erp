@@ -59,6 +59,14 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $note = '';
 
+    // 정산 락 개편 (jin 2026-07-24) — 마감(closed) 정산 회계 재조정(잠금 해제) 모달.
+    //   잠금 원인이 2차 정산 마감이므로 잠금 해제도 정산 화면에서 시작 → 차량 편집으로 이동해 수정.
+    public bool $showReadjustModal = false;
+
+    public string $readjustReason = '';
+
+    public ?int $readjustVehicleId = null;
+
     public function search(): void
     {
         $this->resetPage();
@@ -684,6 +692,61 @@ new #[Layout('components.layouts.app')] class extends Component
      *   완납게이트(sale_unpaid_amount ≤ 0) 하에서 기타 term 상쇄 → 순수 실현환차 보장.
      *   KRW 차량 또는 판매환율 없음 → 0/null (환차 없음).
      */
+    /**
+     * 정산 락 개편 (jin 2026-07-24) — 마감(closed)된 정산의 회계 재조정 진입.
+     * 잠금 원인이 2차 정산 마감이므로 잠금 해제도 정산 화면에서 시작한다.
+     * 사유 입력 → 차량 잠금 토큰 발급 → 해당 차량 편집 패널로 이동해 실제 수정.
+     */
+    public function openReadjustModal(int $settlementId): void
+    {
+        $settlement = Settlement::with('vehicle')->findOrFail($settlementId);
+        $vehicle = $settlement->vehicle;
+        if (! $vehicle || ! auth()->user()?->canUnlockLedger($vehicle)) {
+            $this->dispatch('notify', message: __('settlement.readjust.no_perm'), type: 'error');
+
+            return;
+        }
+        $this->readjustVehicleId = $vehicle->id;
+        $this->readjustReason = '';
+        $this->showReadjustModal = true;
+    }
+
+    public function closeReadjustModal(): void
+    {
+        $this->showReadjustModal = false;
+        $this->readjustReason = '';
+        $this->readjustVehicleId = null;
+    }
+
+    public function submitReadjust()
+    {
+        $this->validate(
+            ['readjustReason' => ['required', 'string', 'min:10']],
+            ['readjustReason.required' => __('settlement.readjust.reason_required'),
+                'readjustReason.min' => __('settlement.readjust.reason_min')]
+        );
+
+        $vehicle = Vehicle::find($this->readjustVehicleId);
+        if (! $vehicle || ! auth()->user()?->canUnlockLedger($vehicle)) {
+            $this->dispatch('notify', message: __('settlement.readjust.no_perm'), type: 'error');
+
+            return;
+        }
+
+        try {
+            app(\App\Services\VehicleLedgerUnlockService::class)->unlock(
+                $vehicle, auth()->user(), $this->readjustReason
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: __('settlement.readjust.failed', ['error' => $e->getMessage()]), type: 'error');
+
+            return;
+        }
+
+        // 토큰 발급됨 → 차량 편집 패널로 이동해 회계필드 수정.
+        return redirect()->route('erp.vehicles.index', ['openVehicle' => $vehicle->id]);
+    }
+
     public function closeSecondarySettlement(int $id): void
     {
         $user = auth()->user();
@@ -1079,6 +1142,12 @@ new #[Layout('components.layouts.app')] class extends Component
                                 wire:confirm="{{ __('settlement.confirm_close_secondary') }}"
                                 class="text-xs text-violet-600 hover:text-violet-800">{{ __('settlement.btn_close_secondary') }}</button>
                         @endif
+                        {{-- 정산 락 개편 (jin 2026-07-24) — 마감된 정산 회계 재조정(잠금 해제 → 차량 편집) --}}
+                        @if($s->secondary_status === 'closed' && $s->vehicle && auth()->user()->canUnlockLedger($s->vehicle))
+                        <button wire:click.stop="openReadjustModal({{ $s->id }})"
+                                class="text-xs text-amber-600 hover:text-amber-800"
+                                title="{{ __('settlement.readjust.title') }}">🔓 {{ __('settlement.btn_readjust') }}</button>
+                        @endif
                         <button wire:click.stop="delete({{ $s->id }})"
                                 wire:confirm="{{ __('settlement.confirm_delete') }}"
                                 class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
@@ -1132,6 +1201,24 @@ new #[Layout('components.layouts.app')] class extends Component
 <div class="pb-28">{{ $this->settlements->links() }}</div>
 
 </div>
+
+{{-- 정산 락 개편 (jin 2026-07-24) — 마감(closed) 정산 회계 재조정(잠금 해제) 모달 --}}
+@if($showReadjustModal)
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" wire:click.self="closeReadjustModal">
+    <div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+        <h3 class="text-sm font-bold text-gray-800">🔓 {{ __('settlement.readjust.title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('settlement.readjust.desc') }}</p>
+        <textarea wire:model="readjustReason" rows="4"
+                  placeholder="{{ __('settlement.readjust.reason_ph') }}"
+                  class="input-base mt-3 w-full text-sm"></textarea>
+        @error('readjustReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        <div class="mt-4 flex justify-end gap-2">
+            <button wire:click="closeReadjustModal" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button wire:click="submitReadjust" class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">{{ __('settlement.readjust.submit_btn') }}</button>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- ══ 슬라이드 패널 ══ --}}
 @if($showPanel)

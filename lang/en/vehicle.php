@@ -272,9 +272,10 @@ return [
         'ledger' => [
             'unlocked_title' => 'Unlocked — auto re-locks after one save',
             'unlocked_desc' => 'Buy/sell price, rate, license amount, costs, buyer, salesman editable. Locks immediately on save.',
-            'locked_title' => 'Finance-confirmed balance exists — accounting columns locked',
-            'locked_desc' => 'Buy/sell price, rate, license amount, 9 costs, buyer, salesman not editable. super/admin or owning-team manager can unlock after entering a reason.',
+            'locked_title' => '2nd settlement finalized — accounting columns locked',
+            'locked_desc' => 'The 2nd settlement is finalized, so buy/sell price, rate, license amount, 9 costs, buyer, salesman are locked. To correct them, unlock via [🔓 Readjust] on the settlement screen.',
             'unlock_btn' => 'Unlock',
+            'readjust_hint' => 'Settlement screen → 🔓 Readjust',
         ],
     ],
 

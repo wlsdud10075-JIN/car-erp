@@ -6077,12 +6077,11 @@ function vehicleColumnsToggle() {
             <p class="text-xs text-amber-700">
                 {{ $hasLedgerUnlockToken ? __('vehicle.panel.ledger.unlocked_desc') : __('vehicle.panel.ledger.locked_desc') }}
             </p>
-            @if(! $hasLedgerUnlockToken && $canUnlockLedger)
-            <button type="button" wire:click="openLedgerUnlockModal"
-                    class="flex-shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-                🔓 {{ __('vehicle.panel.ledger.unlock_btn') }}
-            </button>
-            @endif
+            {{-- 정산 락 개편 (jin 2026-07-24) — 잠금 해제는 정산 화면(회계 재조정)에서 시작.
+                 정산에서 토큰 발급 → 이 패널로 딥링크 이동 → hasLedgerUnlockToken 상태로 편집. 여기선 안내만. --}}
+            @unless($hasLedgerUnlockToken)
+            <span class="flex-shrink-0 text-xs font-medium text-amber-700">{{ __('vehicle.panel.ledger.readjust_hint') }}</span>
+            @endunless
         </div>
     </div>
     @endif
