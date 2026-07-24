@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\FinalPayment;
 use App\Models\PurchaseBalancePayment;
 use App\Models\User;
@@ -84,7 +85,13 @@ class PaymentConfirmationService
 
         $payment = $payment->fresh();
 
-        $this->assertPaidSettlementGuard($payment->vehicle);
+        // ⚠️ 매입은 '정산 후 지급'이 정상 업무 흐름이라 paid 정산이어도 매입 잔금 지급 확정을 허용한다
+        //   (jin 2026-07-24, 54가6191). PBP는 정산 마진(purchase_price 기반)·confirmed_snapshot 에 영향 없이
+        //   purchase_unpaid_amount(현금흐름)만 갱신 → 회계 무결성 안 깨짐. 추적 위해 AuditLog 기록.
+        //   판매(confirmPayment)는 assertPaidSettlementGuard 유지 — 입금은 정산 전 완료 전제.
+        $vehicle = $payment->vehicle;
+        $afterPaidSettlement = $vehicle
+            && $vehicle->settlements()->where('settlement_status', 'paid')->exists();
 
         // claudefinalreview C — 행 잠금으로 동시/중복 확정 직렬화 + 재확인 (감사오염 방지, 캐시 이벤트 보존).
         DB::transaction(function () use ($payment, $financeUser, $note) {
@@ -100,6 +107,20 @@ class PaymentConfirmationService
         });
 
         $payment->refresh();
+
+        // paid 정산 후 매입 잔금 지급 — 추적 가능한 허용 (purchase_payment_gate_override 패턴).
+        if ($afterPaidSettlement) {
+            AuditLog::create([
+                'user_id' => $financeUser->id,
+                'auditable_type' => Vehicle::class,
+                'auditable_id' => $vehicle->id,
+                'action' => 'purchase_payment_after_paid',
+                'column_name' => 'purchase_balance_payments',
+                'old_value' => 'paid 정산 후 매입 잔금 지급',
+                'new_value' => '금액 '.number_format((float) $payment->amount).' / 확정 '.$financeUser->name,
+                'ip_address' => request()?->ip(),
+            ]);
+        }
     }
 
     /**

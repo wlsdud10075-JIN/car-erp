@@ -65,20 +65,19 @@ class PurchaseBalancePayment extends Model
         });
         static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());
 
-        // 큐 22-C-light (2026-05-20) Spec-F 권고 — paid Settlement 후 신규 PBP 차단.
-        // FinalPayment·PBP updating 잠금과 같은 시점에 creating도 동일 잠금.
-        // 시드·artisan(auth 없음) 우회 — assertPaidSettlementGuard Service에서 별도 보장.
-        //
-        // 큐 22-C 핵심 (2026-05-20) — Defense-in-depth: canConfirmFinance() 가드 추가.
+        // 큐 22-C 핵심 (2026-05-20) — Defense-in-depth: canConfirmFinance() 가드.
         // 영업이 transfers·Livewire 우회로 직접 PBP::create 시도 시 모델 레이어 차단.
         // Vehicle::saved 자동 PBP Draft 생성 흐름은 $skipCreatingGuard flag 로 우회.
+        //
+        // ⚠️ paid 정산 차량 creating 차단은 제거됨 (jin 2026-07-24, 54가6191 케이스).
+        //   이 회사는 '정산 후 매입 잔금 지급'이 정상 업무 흐름이라 기존 paid creating 차단이 정당한
+        //   업무(매입 완납 기록)를 영영 막던 과잉가드였음. PBP는 정산 마진(purchase_price 기반)·
+        //   confirmed_snapshot 에 영향 없이 purchase_unpaid_amount(현금흐름)만 갱신 → 회계 무결성 안 깨짐.
+        //   진짜 소급 변경 방어는 updating/deleting(확정 후 amount·삭제 차단)으로 유지, paid 후 지급은
+        //   confirmPurchasePayment 에서 AuditLog(purchase_payment_after_paid)로 추적한다.
         static::creating(function (PurchaseBalancePayment $p) {
             if (! auth()->check()) {
                 return;
-            }
-            $vehicle = $p->vehicle;
-            if ($vehicle && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
-                throw new \DomainException('정산이 paid 상태인 차량에 신규 매입 잔금을 추가할 수 없습니다 (회계 무결성).');
             }
 
             // 큐 22-C 핵심 — canConfirmFinance 가드 (자동 생성 우회 flag)
