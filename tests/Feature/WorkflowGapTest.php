@@ -1048,9 +1048,12 @@ class WorkflowGapTest extends TestCase
         $this->assertCount(0, $v->purchaseBalancePayments, 'paid Settlement 차량은 자동 PBP 생성 차단');
     }
 
-    public function test_22c_pbp_creating_blocks_new_row_after_paid(): void
+    public function test_22c_pbp_creating_allows_new_row_after_paid(): void
     {
-        // PBP::creating 훅 — paid Settlement 후 신규 PBP 직접 생성 차단
+        // PBP::creating 훅 — paid Settlement 후에도 신규 매입 잔금 생성 '허용' (jin 2026-07-24, 54가6191).
+        //   '정산 후 매입 잔금 지급'이 이 회사의 정상 업무라 구 paid creating 차단은 제거됨.
+        //   정산 회계 무영향(total_margin/snapshot 불변) 불변식은 PurchasePaymentAfterPaidSettlementTest 에서 증명.
+        //   ⚠️ 판매(FinalPayment) paid 차단은 유지(test_22a3b) — 매입만 완화.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['purchase_price' => 5000000]);
         Settlement::create([
@@ -1063,13 +1066,13 @@ class WorkflowGapTest extends TestCase
 
         $this->actingAs($admin);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('paid 상태');
-        PurchaseBalancePayment::create([
+        $pbp = PurchaseBalancePayment::create([
             'vehicle_id' => $v->id,
             'amount' => 1000000,
-            'payment_date' => null,
+            'payment_date' => now()->toDateString(),
         ]);
+
+        $this->assertNotNull($pbp->id);
     }
 
     // ── 2026-05-20 큐 22-A-2 — FinalPayment::creating 훅 (해석 B 정정 / 매입 22-C-light 대칭) ──
@@ -1527,9 +1530,10 @@ class WorkflowGapTest extends TestCase
         $this->assertSame('balance', $pbp->fresh()->type);
     }
 
-    public function test_22cf_paid_settlement_blocks_2_types_via_creating_hook(): void
+    public function test_22cf_paid_settlement_allows_pbp_types_via_creating_hook(): void
     {
-        // paid Settlement 후 'down'·'selling_fee' type 직접 INSERT 도 차단 (22-A-3b 패턴).
+        // paid Settlement 후 'down' 등 type 매입 잔금도 생성 '허용' (jin 2026-07-24, 매입은 정산 후 지급이 정상).
+        //   구 22-A-3b 대칭 차단은 매입에서만 제거 — 판매(FinalPayment)는 test_22a3b 로 차단 유지.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['purchase_price' => 10_000_000]);
         Settlement::create([
@@ -1542,13 +1546,13 @@ class WorkflowGapTest extends TestCase
 
         $this->actingAs($admin);
 
-        $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('paid 상태');
-        PurchaseBalancePayment::create([
+        $pbp = PurchaseBalancePayment::create([
             'vehicle_id' => $v->id,
             'amount' => 1_000_000,
             'type' => 'down',
         ]);
+
+        $this->assertNotNull($pbp->id);
     }
 
     public function test_22cf_allow_confirmed_mutation_flag_unlocks_temporarily(): void
