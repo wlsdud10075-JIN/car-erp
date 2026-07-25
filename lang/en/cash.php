@@ -25,4 +25,10 @@ return [
     'profit_up' => 'gain',
     'profit_down' => 'loss',
     'trend_title' => 'Capital Trend',
+    'trend_range' => 'range',
+    'trend_accumulating' => 'Accumulating data — the trend appears as more balances are recorded.',
+    'grain_day' => 'D',
+    'grain_week' => 'W',
+    'grain_month' => 'M',
+    'grain_year' => 'Y',
 ];

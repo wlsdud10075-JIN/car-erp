@@ -149,9 +149,44 @@ class CapitalStatusTest extends TestCase
         Volt::test('admin.dashboard')
             ->assertOk()
             ->assertSeeHtml('id="capitalTrendChart"')
-            // 자금추이 재렌더 fix (jin 2026-07-24): morph.updated 훅 사용, 구 non-firing 'livewire:updated' 제거
-            ->assertSeeHtml("Livewire.hook('morph.updated'")
-            ->assertDontSeeHtml("'livewire:updated'");
+            // 자금추이 재렌더 fix (jin 2026-07-25): 그리기·재렌더 배선을 app.js 공용 registerChart 로 이관.
+            //   컴포넌트 blade 는 더 이상 인라인 morph/livewire:init 스크립트를 갖지 않는다(소멸 버그 근본원인 제거).
+            ->assertDontSeeHtml("Livewire.hook('morph.updated'")
+            ->assertDontSeeHtml("'livewire:updated'")
+            // 집계 단위 토글(일/주/월/년) 노출
+            ->assertSeeHtml('wire:click="setTrendGrain');
+    }
+
+    public function test_capital_trend_grain_aggregates_to_period_end(): void
+    {
+        // day = 원본 일별 / month = 기간 말 스냅샷만. 같은 달 2점 → month 는 1점으로 축약.
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $svc = app(CapitalStatusService::class);
+        $svc->capture(['krw' => 20_000_000, 'usd' => 0, 'eur' => 0], $admin, '2026-07-22');
+        $svc->capture(['krw' => 25_000_000, 'usd' => 0, 'eur' => 0], $admin, '2026-07-23');
+
+        $this->assertCount(2, $svc->history(120, 'day'));
+        $month = $svc->history(120, 'month');
+        $this->assertCount(1, $month);                                   // 같은 달 → 1점
+        $this->assertSame('2026-07-23', $month->first()->snapshot_date->format('Y-m-d')); // 기간 말(마지막) 잔액
+
+        // 토글 전환 시 capitalTrend 재계산 (month → 1점이라 <2 → 안내 문구)
+        $this->actingAs($admin);
+        Volt::test('admin.dashboard')
+            ->call('setTrendGrain', 'month')
+            ->assertSet('trendGrain', 'month')
+            ->assertDontSeeHtml('id="capitalTrendChart"')          // 1점이면 캔버스 미표시
+            ->assertSeeHtml(__('cash.trend_accumulating'));
+    }
+
+    public function test_chart_render_registry_lives_in_app_js(): void
+    {
+        // 소멸 버그 근본원인 = 컴포넌트 인라인 스크립트의 livewire:init 래퍼. 재렌더 배선은
+        //   반드시 app.js(세션당 1회 로드)의 공용 registerChart 에 있어야 한다(SKILLS §8 #21).
+        $appJs = file_get_contents(resource_path('js/app.js'));
+        $this->assertStringContainsString('window.registerChart', $appJs);
+        $this->assertStringContainsString("registerChart('capitalTrendChart'", $appJs);
+        $this->assertStringContainsString("window.Livewire.hook('morph.updated', () => runAllCharts())", $appJs);
     }
 
     public function test_sales_cannot_save_balance(): void

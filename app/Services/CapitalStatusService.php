@@ -165,10 +165,33 @@ class CapitalStatusService
         ];
     }
 
-    /** 추이 (최근 N개 스냅샷, 오래된→최신). */
-    public function history(int $limit = 90): Collection
+    /**
+     * 추이 (최근 N개 스냅샷, 오래된→최신).
+     *
+     * grain: 'day'(원본 일별) / 'week' / 'month' / 'year'.
+     *   day 외에는 기간별로 묶어 **마지막 스냅샷**(기간 말 시점 잔액)만 남김 — 잔액은 시점값이라
+     *   합계·평균이 아니라 "기간 말 잔액"이 맞다. 반환은 항상 오래된→최신, 최근 $limit 개.
+     */
+    public function history(int $limit = 90, string $grain = 'day'): Collection
     {
-        return CashSnapshot::orderByDesc('snapshot_date')->limit($limit)->get()
-            ->sortBy('snapshot_date')->values();
+        $raw = CashSnapshot::orderBy('snapshot_date')->get();
+
+        if ($grain === 'day') {
+            return $raw->values()->take(-$limit)->values();
+        }
+
+        $keyFn = match ($grain) {
+            'week' => fn ($s) => $s->snapshot_date->copy()->startOfWeek()->format('Y-m-d'),
+            'month' => fn ($s) => $s->snapshot_date->format('Y-m'),
+            'year' => fn ($s) => $s->snapshot_date->format('Y'),
+            default => fn ($s) => $s->snapshot_date->format('Y-m-d'),
+        };
+
+        return $raw->groupBy($keyFn)
+            ->map(fn (Collection $group) => $group->sortBy('snapshot_date')->last())   // 기간 말 잔액
+            ->sortKeys()
+            ->values()
+            ->take(-$limit)
+            ->values();
     }
 }

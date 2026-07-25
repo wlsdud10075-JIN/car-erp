@@ -27,4 +27,10 @@ return [
     'profit_up' => '벌었음',
     'profit_down' => '손실',
     'trend_title' => '자금 추이',
+    'trend_range' => '범위',
+    'trend_accumulating' => '데이터 누적 중 — 통장 잔액이 더 쌓이면 추이가 그려집니다.',
+    'grain_day' => '일',
+    'grain_week' => '주',
+    'grain_month' => '월',
+    'grain_year' => '년',
 ];

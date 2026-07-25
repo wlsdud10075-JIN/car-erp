@@ -460,3 +460,102 @@ document.addEventListener('livewire:navigated', () => initFlatpickr());
 if (window.Livewire) {
     window.Livewire.hook('morph.updated', () => initFlatpickr());
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// 공용 차트 재렌더 등록기 — window.registerChart(id, drawFn) (jin 2026-07-25)
+//
+// ⚠️ 새 vanilla-canvas 차트는 반드시 이 등록기로 등록하고, 절대 컴포넌트 blade 안에서
+//    livewire:navigated / morph.updated / livewire:init 을 직접 배선하지 말 것.
+//    인라인 <script> 는 wire:navigate SPA 이동마다 재실행되는데 livewire:init 은 세션당
+//    1회뿐 → morph 훅이 등록되지 않아 wire:poll 재렌더가 canvas width 속성을 벗겨낸 뒤
+//    영구히 다시 안 그려짐(자금추이 소멸 버그의 근본원인, SKILLS §8 #21).
+//    app.js 는 <head> 에서 세션당 1회만 로드 → 여기 배선이 안전한 유일한 위치.
+//
+//   drawFn(id) 규약: 자기 캔버스가 현재 페이지에 없으면(다른 화면) 조용히 return.
+//   navigated / morph.updated / resize 에 등록된 모든 drawFn 을 rAF 로 재실행.
+// ──────────────────────────────────────────────────────────────────────────
+const chartDrawFns = new Map();
+let chartRaf = 0;
+
+function runAllCharts() {
+    cancelAnimationFrame(chartRaf);
+    chartRaf = requestAnimationFrame(() => {
+        chartDrawFns.forEach((fn, id) => {
+            try {
+                fn(id);
+            } catch (e) {
+                /* 개별 차트 실패가 나머지를 막지 않게 */
+            }
+        });
+    });
+}
+
+window.registerChart = function (id, drawFn) {
+    chartDrawFns.set(id, drawFn);
+    runAllCharts(); // 등록 즉시 1회 draw
+};
+
+document.addEventListener('DOMContentLoaded', runAllCharts);
+document.addEventListener('livewire:navigated', runAllCharts);
+if (window.Livewire) {
+    window.Livewire.hook('morph.updated', () => runAllCharts());
+}
+let chartResizeTimer = 0;
+window.addEventListener('resize', () => {
+    clearTimeout(chartResizeTimer);
+    chartResizeTimer = setTimeout(runAllCharts, 120);
+});
+
+// 자금 추이 스파크라인 (admin 대시보드, super/대표) — canvas#capitalTrendChart[data-trend].
+//   data-trend = [{ liquidation, ... }] JSON. vanilla 2D 라인+영역. 수치는 blade 요약줄에서 표시.
+function drawCapitalTrend(id) {
+    const cv = document.getElementById(id);
+    if (!cv || !cv.dataset.trend) return; // 다른 페이지 → 스킵
+    let data;
+    try {
+        data = JSON.parse(cv.dataset.trend);
+    } catch (e) {
+        return;
+    }
+    if (!data || data.length < 2) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth || (cv.parentElement && cv.parentElement.clientWidth) || 0;
+    const h = 90;
+    if (w <= 0) {
+        // 레이아웃 미안착(폭 0, 탭 전환·morph 직후) → 다음 프레임 재시도
+        requestAnimationFrame(() => drawCapitalTrend(id));
+        return;
+    }
+    cv.width = w * dpr;
+    cv.height = h * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const vals = data.map((d) => d.liquidation);
+    const min = Math.min(...vals),
+        max = Math.max(...vals),
+        pad = 8,
+        span = max - min || 1;
+    const x = (i) => pad + (i * (w - 2 * pad)) / (data.length - 1);
+    const y = (v) => h - pad - ((v - min) / span) * (h - 2 * pad);
+    ctx.beginPath();
+    data.forEach((d, i) => {
+        const px = x(i),
+            py = y(d.liquidation);
+        i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.strokeStyle = '#7c6fcd';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.lineTo(x(data.length - 1), h - pad);
+    ctx.lineTo(x(0), h - pad);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(124,111,205,0.10)';
+    ctx.fill();
+    const li = data.length - 1;
+    ctx.beginPath();
+    ctx.arc(x(li), y(data[li].liquidation), 3, 0, 6.29);
+    ctx.fillStyle = '#6b5dbd';
+    ctx.fill();
+}
+window.registerChart('capitalTrendChart', drawCapitalTrend);
