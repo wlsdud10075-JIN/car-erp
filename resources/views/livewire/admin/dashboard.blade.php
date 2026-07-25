@@ -21,6 +21,15 @@ new #[Layout('components.layouts.app')] class extends Component
     // TODO: 추후 transaction_completed_at 컬럼 도입 시 매핑 변경.
     #[Url] public string $dateType = 'purchase';
 
+    /** 자금추이 집계 단위 (jin 2026-07-25): day 일 / week 주 / month 월 / year 년. */
+    #[Url] public string $trendGrain = 'day';
+
+    public function setTrendGrain(string $grain): void
+    {
+        $this->trendGrain = in_array($grain, ['day', 'week', 'month', 'year'], true) ? $grain : 'day';
+        unset($this->capitalTrend);
+    }
+
     /** 기준일 코드 → DB 컬럼 매핑 (kpis·차트 공용) */
     private const DATE_COLUMN_MAP = [
         'purchase'  => 'purchase_date',
@@ -103,11 +112,17 @@ new #[Layout('components.layouts.app')] class extends Component
         $svc = app(CapitalStatusService::class);
         $principal = $svc->principal();
 
-        return $svc->history(120)->map(function ($s) use ($principal) {
+        return $svc->history(120, $this->trendGrain)->map(function ($s) use ($principal) {
             $liq = $s->cash_krw + (int) $s->inventory_krw - (int) $s->payable_krw;
+            $date = $s->snapshot_date;
 
             return [
-                'date' => $s->snapshot_date->format('Y-m-d'),
+                'date' => $date->format('Y-m-d'),
+                'label' => match ($this->trendGrain) {   // 축·툴팁 표시용 라벨(집계 단위별)
+                    'year'  => $date->format('Y'),
+                    'month' => $date->format('Y-m'),
+                    default => $date->format('Y-m-d'),
+                },
                 'cash' => $s->cash_krw,
                 'liquidation' => $liq,
                 'working' => $liq + (int) $s->receivable_krw,
@@ -850,13 +865,42 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endif
             </div>
         </div>
-        @php $trend = $this->capitalTrend; @endphp
-        @if(count($trend) >= 2)
+        @php
+            $trend = $this->capitalTrend;
+            $liqVals = array_column($trend, 'liquidation');
+            $latest = count($liqVals) ? end($liqVals) : null;
+            $minV = count($liqVals) ? min($liqVals) : null;
+            $maxV = count($liqVals) ? max($liqVals) : null;
+            $firstLabel = count($trend) ? $trend[0]['label'] : null;
+            $lastLabel = count($trend) ? $trend[count($trend) - 1]['label'] : null;
+        @endphp
         <div class="mt-4">
-            <p class="mb-1 text-xs text-gray-500">{{ __('cash.trend_title') }}</p>
-            <canvas id="capitalTrendChart" height="90" data-trend='@json($trend)'></canvas>
+            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs text-gray-500">{{ __('cash.trend_title') }}</p>
+                {{-- 집계 단위 토글 (일/주/월/년). 잔액 시점값이라 기간 말 스냅샷만 표시. --}}
+                <div class="inline-flex rounded-md border border-gray-200 p-0.5">
+                    @foreach(['day', 'week', 'month', 'year'] as $g)
+                    <button type="button" wire:click="setTrendGrain('{{ $g }}')"
+                        class="rounded px-2 py-0.5 text-[11px] font-medium transition-colors {{ $trendGrain === $g ? 'bg-violet-100 text-violet-700' : 'text-gray-500 hover:text-gray-700' }}">
+                        {{ __('cash.grain_'.$g) }}
+                    </button>
+                    @endforeach
+                </div>
+            </div>
+            @if(count($trend) >= 2)
+                <canvas id="capitalTrendChart" height="90" data-trend='@json($trend)'></canvas>
+                <p class="mt-1 text-[11px] text-gray-500">
+                    {{ __('cash.liquidation') }} <span class="font-semibold text-gray-700">{{ $eok($latest) }}</span>
+                    <span class="text-gray-400">· {{ __('cash.trend_range') }} {{ $eok($minV) }}~{{ $eok($maxV) }} · {{ $firstLabel }}~{{ $lastLabel }} ({{ count($trend) }})</span>
+                </p>
+            @elseif(count($trend) === 1)
+                <p class="text-sm font-bold text-gray-700">{{ __('cash.liquidation') }} {{ $eok($latest) }}
+                    <span class="text-[11px] font-normal text-gray-400">· {{ $lastLabel }}</span></p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.trend_accumulating') }}</p>
+            @else
+                <p class="text-[11px] text-gray-400">{{ __('cash.trend_accumulating') }}</p>
+            @endif
         </div>
-        @endif
         @endif
     </div>
     @endif
@@ -1523,47 +1567,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
     </script>
 
-    {{-- 자금 추이 스파크라인 (vanilla canvas — Chart.js 인스턴스와 독립, jin 2026-07-23)
-         재렌더 트리거: livewire:navigated + morph.updated 훅 + 조회(charts-refresh) + resize.
-         구 'livewire:updated' 는 Livewire 4 에 없는 이벤트라 morph 후 재drawing 이 안 떠 그래프가 사라졌음(jin 2026-07-24 fix). --}}
-    <script>
-    (function () {
-        let raf = 0;
-        function drawCapitalTrend(retry) {
-            const cv = document.getElementById('capitalTrendChart');
-            if (! cv || ! cv.dataset.trend) return;
-            let data; try { data = JSON.parse(cv.dataset.trend); } catch (e) { return; }
-            if (! data || data.length < 2) return;
-            const dpr = window.devicePixelRatio || 1;
-            const w = cv.clientWidth || cv.parentElement.clientWidth || 0, h = 90;
-            if (w <= 0) {   // 레이아웃 미안착(폭 0) → 다음 프레임 재시도 (탭 전환·morph 직후)
-                if ((retry || 0) < 12) { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => drawCapitalTrend((retry || 0) + 1)); }
-                return;
-            }
-            cv.width = w * dpr; cv.height = h * dpr;
-            const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            ctx.clearRect(0, 0, w, h);
-            const vals = data.map(d => d.liquidation);
-            const min = Math.min(...vals), max = Math.max(...vals), pad = 8, span = (max - min) || 1;
-            const x = i => pad + i * (w - 2 * pad) / (data.length - 1);
-            const y = v => (h - pad) - (v - min) / span * (h - 2 * pad);
-            ctx.beginPath();
-            data.forEach((d, i) => { const px = x(i), py = y(d.liquidation); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
-            ctx.strokeStyle = '#7c6fcd'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.lineTo(x(data.length - 1), h - pad); ctx.lineTo(x(0), h - pad); ctx.closePath();
-            ctx.fillStyle = 'rgba(124,111,205,0.10)'; ctx.fill();
-            const li = data.length - 1;
-            ctx.beginPath(); ctx.arc(x(li), y(data[li].liquidation), 3, 0, 6.29); ctx.fillStyle = '#6b5dbd'; ctx.fill();
-        }
-        const kick = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => drawCapitalTrend(0)); };
-        document.addEventListener('DOMContentLoaded', kick);
-        document.addEventListener('livewire:navigated', kick);
-        document.addEventListener('livewire:init', function () {
-            if (window.Livewire && Livewire.hook) { Livewire.hook('morph.updated', () => setTimeout(kick, 30)); }
-            if (window.Livewire && Livewire.on) { Livewire.on('charts-refresh', () => setTimeout(kick, 30)); }
-        });
-        window.addEventListener('resize', () => setTimeout(kick, 120));
-        setTimeout(kick, 150);
-    })();
-    </script>
+    {{-- 자금 추이 스파크라인: 그리기·재렌더는 resources/js/app.js 의 공용 registerChart('capitalTrendChart', …) 로 이관.
+         (구 인라인 <script> 는 livewire:init 안에 morph 훅을 넣었는데, 이 스크립트가 컴포넌트 인라인이라
+          SPA 이동마다 재실행되지만 livewire:init 은 세션당 1회뿐 → 훅 미등록 → poll 후 canvas 영구 소멸. SKILLS §8 #21.) --}}
 </div>
