@@ -58,7 +58,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         $result = Vehicle::query()
-            ->with(['salesman', 'buyer'])
+            ->with(['salesman', 'buyer', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
             ->inStock()
             ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
             ->when($this->category === 'pre_ship', fn ($q) => $q->where('sale_price', '>', 0))
@@ -73,7 +73,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('model_type', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")   // 차대번호 — 끝 6자리 등 부분 검색
+                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")           // 차대번호 — 끝 6자리 등 부분 검색
+                ->orWhere('export_declaration_number', 'like', "%{$this->search}%") // 수출신고번호
+                ->orWhere('vessel_name', 'like', "%{$this->search}%")            // 선박명(VSL)
+                ->orWhere('container_number', 'like', "%{$this->search}%")        // 컨테이너번호
             ))
             ->orderByRaw('salesman_id IS NULL ASC')
             ->orderBy('salesman_id')
