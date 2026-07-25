@@ -1651,16 +1651,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function freightTotals(): array
     {
-        $q = $this->filteredVehicleQuery();
-        $saleTotal = (clone $q)->selectRaw(
-            'COALESCE(SUM(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
-            .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)),0) AS t'
-        )->value('t');
+        // 통화별 소계(freightTotalsByCurrency, GROUP BY 1쿼리)를 재사용해 grand total 을 PHP 합산.
+        //   #[Computed] 캐시로 byCurrency 는 요청당 1회만 실행 — 예전 count/sum/selectRaw 3쿼리 제거.
+        //   GROUP BY currency 는 전체 행을 분할하므로 소계 합 = 전체 합(NULL currency→'KRW' 포함).
+        $byCurrency = $this->freightTotalsByCurrency;
 
         return [
-            'count' => (clone $q)->count(),
-            'sum' => (int) (clone $q)->sum('transport_fee'),
-            'sale_total_sum' => (int) $saleTotal,
+            'count' => array_sum(array_column($byCurrency, 'cnt')),
+            'sum' => array_sum(array_column($byCurrency, 'freight')),
+            'sale_total_sum' => array_sum(array_column($byCurrency, 'sale_total')),
         ];
     }
 

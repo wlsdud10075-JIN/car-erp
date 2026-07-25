@@ -1491,10 +1491,13 @@ class Vehicle extends Model
         if ($this->purchase_price <= 0 || $this->purchase_unpaid_amount > 0) {
             return null;
         }
-        $last = $this->purchaseBalancePayments()
-            ->whereNotNull('confirmed_at')
-            ->whereNotNull('payment_date')
-            ->where('payment_date', '<=', now()->toDateString())
+        // 로드된 컬렉션(프로퍼티)에서 계산 — 관계 메서드 호출(매행 새 SQL, N+1)을 피함.
+        //   getPurchaseUnpaidAmountAttribute 와 동일 패턴. 재고 목록은 purchaseBalancePayments eager load.
+        $today = now();
+        $last = $this->purchaseBalancePayments
+            ->filter(fn ($p) => $p->confirmed_at !== null
+                && $p->payment_date !== null
+                && $p->payment_date->lte($today))
             ->max('payment_date');
 
         return $last ? Carbon::parse($last) : null;
