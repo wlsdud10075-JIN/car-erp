@@ -44,8 +44,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function consignees()
     {
+        $scope = $this->buyerScope();
+
         return Consignee::query()
             ->with(['buyer', 'country'])
+            ->when($scope !== null, fn($q) => $q->whereHas('buyer', $scope))
             ->when($this->search, fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', "%{$this->search}%")
                    ->orWhere('contact_email', 'like', "%{$this->search}%")
@@ -58,13 +61,72 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
-        return Buyer::where('is_active', true)->orderBy('name')->get();
+        $scope = $this->buyerScope();
+
+        return Buyer::where('is_active', true)
+            ->when($scope !== null, fn($q) => $scope($q))
+            ->orderBy('name')->get();
     }
 
     #[Computed]
     public function countries()
     {
         return Country::orderBy('name')->get();
+    }
+
+    /**
+     * 바이어 스코프 — buyers/index 패턴 미러 (IDOR 차단, SKILLS §8 #26).
+     * 영업 = 본인 salesman (buyer.salesman_id 직접 또는 vehicles 간접) / 관리 = 본인 팀 /
+     * admin·업무관리자·수출통관·재무·super = 전체(null 반환 = 제약 없음).
+     * 반환 클로저를 Buyer 쿼리(직접 또는 whereHas('buyer'))에 적용하면 볼 수 있는 바이어만 남는다.
+     */
+    private function buyerScope(): ?\Closure
+    {
+        $user = auth()->user();
+        if (! $user || $user->isAdmin() || $user->isManager()) {
+            return null;
+        }
+        if ($user->role === '영업' && $user->salesman) {
+            $sid = $user->salesman->id;
+
+            return fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('salesman_id', $sid)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $sid)));
+        }
+        if ($user->role === '관리') {
+            $ids = $user->getSubordinateSalesmanIds();
+
+            return fn ($q) => $q->where(fn ($q2) => $q2
+                ->whereIn('salesman_id', $ids)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $ids)));
+        }
+
+        return null;   // 수출통관·재무 등 = 전체
+    }
+
+    /** 컨사이니 열람·변경 재인가 — 대상 buyer 가 스코프 밖이면 403 (mutating/열람 IDOR 차단). */
+    private function authorizeConsignee(Consignee $c): void
+    {
+        $scope = $this->buyerScope();
+        if ($scope === null) {
+            return;
+        }
+        abort_unless(
+            Consignee::whereKey($c->id)->whereHas('buyer', $scope)->exists(),
+            403
+        );
+    }
+
+    /** 지정하려는 바이어가 스코프 안인지 (영업/관리가 남 바이어에 컨사이니 못 붙이게). */
+    private function isBuyerInScope(int $buyerId): bool
+    {
+        $scope = $this->buyerScope();
+        $q = Buyer::whereKey($buyerId);
+        if ($scope !== null) {
+            $scope($q);
+        }
+
+        return $q->exists();
     }
 
     public function search(): void
@@ -83,6 +145,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openEdit(int $id): void
     {
         $c = Consignee::findOrFail($id);
+        $this->authorizeConsignee($c);
         $this->editingId      = $id;
         $this->name           = $c->name;
         $this->buyer_id_str   = $c->buyer_id   ? (string)$c->buyer_id   : '';
@@ -109,11 +172,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $this->validate(['name' => 'required|string|max:100']);
+        $this->validate([
+            'name'         => 'required|string|max:100',
+            'buyer_id_str' => 'required',
+        ], [], ['buyer_id_str' => __('consignee.field.buyer')]);
+
+        $buyerId = (int) $this->buyer_id_str;
+        abort_unless($this->isBuyerInScope($buyerId), 403);
 
         $data = [
             'name'          => $this->name,
-            'buyer_id'      => $this->buyer_id_str   !== '' ? (int)$this->buyer_id_str   : null,
+            'buyer_id'      => $buyerId,
             'country_id'    => $this->country_id_str !== '' ? (int)$this->country_id_str : null,
             'id_type'       => in_array($this->id_type, array_keys(\App\Models\Consignee::ID_TYPES), true) ? $this->id_type : null,
             'id_value'      => $this->id_value      ?: null,
@@ -128,7 +197,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         if ($this->editingId) {
-            Consignee::findOrFail($this->editingId)->update($data);
+            $c = Consignee::findOrFail($this->editingId);
+            $this->authorizeConsignee($c);
+            $c->update($data);
         } else {
             Consignee::create($data);
         }
@@ -140,7 +211,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
-        Consignee::findOrFail($id)->delete();
+        $c = Consignee::findOrFail($id);
+        $this->authorizeConsignee($c);
+        $c->delete();
         unset($this->consignees);
         session()->flash('success', __('consignee.deleted'));
     }
@@ -279,13 +352,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
-            <label class="label-base">{{ __('consignee.field.buyer') }}</label>
+            <label class="label-base">{{ __('consignee.field.buyer') }} <span class="text-red-500">*</span></label>
             <select wire:model="buyer_id_str" class="input-base">
                 <option value="">{{ __('common.select') }}</option>
                 @foreach($this->buyers as $b)
                 <option value="{{ $b->id }}">{{ $b->name }}</option>
                 @endforeach
             </select>
+            @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
             <label class="label-base">{{ __('common.country') }}</label>
