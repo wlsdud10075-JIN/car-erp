@@ -483,6 +483,10 @@ extension=zip    # 주석 제거
 ### 30. dev→master cherry-pick 후 auto-merge 가 상대세션 삭제분 조용히 드롭 (2026-07-01)
 병렬 세션 A(배포)가 master 에서 세션 B의 미완성 코드(버튼·lang)를 제거 커밋한 뒤, B가 완성본을 dev 커밋→master cherry-pick 하면 **3-way auto-merge 가 "A가 지운 줄"을 지운 채로 유지** → B의 추가분이 조용히 누락(충돌 표시 없이). **교훈: cherry-pick 성공해도 push 전 `grep`/`git diff HEAD..dev -- <파일>` 로 반드시 재검증.** 누락 시 `git checkout dev -- <파일>`(dev 완전판) + `--amend`. (실측: 판매계약서 다중선택바 버튼·shipdoc lang 드롭 → 복원 후 배포.)
 
+### 31. `Builder::when()` 에 Closure 를 조건으로 넘기면 그 클로저를 현재 빌더에 실행 (2026-07-26)
+**원인**: Laravel 9+ 의 `when($value, $cb)` 는 **`$value` 가 Closure 면 조건값을 얻으려고 그 클로저를 `$value($query)` 로 호출**한다. 스코프 클로저(예: `fn($q)=>$q->orWhereHas('vehicles',...)`)를 `when()` 의 **조건 자리**에 그대로 넘기면, 엉뚱한 빌더(예: Consignee)에서 실행돼 `Consignee::vehicles() undefined` 같은 런타임 에러(뷰 렌더 시점 ViewException). 실측: 컨사이니 목록 바이어 스코프 IDOR fix 중.
+**해결**: 클로저는 **콜백 안에서만** 쓰고 조건은 boolean 으로 — `->when($scope !== null, fn($q)=>$q->whereHas('buyer', $scope))`. (컨사이니 IDOR fix `a22ac9b`: 독립 컨사이니 목록에 소속 바이어 스코프 재인가(§8 #26 패턴) — `buyerScope()` 단일출처를 목록·드롭다운·openEdit/save/delete 에 적용, buyer 필수 검증 추가. 테스트 `ConsigneeIdorScopeTest`.)
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
@@ -895,6 +899,8 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 ## 15. 외부 연동 — 상태 요약
 
 - **NICE API** ✅ 완료 (`698f0c9`, 2026-05-25) — ssancar-erp 미들웨어 경유, `app/Services/NiceApiService.php`. fallback: API 실패해도 모든 NICE 필드 수동 입력 가능. 캐싱 5분. `.env NICE_PROVIDE_URL/TOKEN`. 미구현 2건(기통수·검사종료)은 nice_raw 에서 서류 생성 시 파싱.
+  - **게이트웨이 컷오버(PHP)**: 3사 ERP `NICE_PROVIDE_URL` 전부 `https://heymancar.com/provide/api/nice-lookup/` → `54.116.7.83` 박스 `ProvideNiceLookupController` → `NiceDirectClient`. Django 대체(트래픽 0). CSRF 예외 `provide/*`(bootstrap/app.php).
+  - **전역 동시 조회 상한**(`ce48448`, 2026-07-26): 조회 1건이 워커를 55~90초 점유 → `ProvideNiceLookupController` 에 슬롯 락 세마포어(cache_locks, DB 원자적). 기본 동시 4(`NICE_MAX_CONCURRENT`, `config services.nice.max_concurrent`), 초과 시 즉시 429(워커 반납), TTL 120s(락 누수 방지). board 가 ERP 경유 조회 시 429 = 재시도 신호. 상세 인프라 = `docs/operations/carerp-infra-2026-07-26.md`.
 - **포워딩사 이메일** ❌ 영구 제거 (사용자 결정). 옛 구현 패턴은 archive `SKILLS.md.full` §14 참조.
 - **DHL API** — 1단계 스코프 외 (수동 입력만).
 - **S3** ✅ 완료 — 버킷 `heysellcar-erp-docs`, IAM, `league/flysystem-aws-s3-v3`, 서명URL. 차량 사진(`vehicle_photos`) + 서류 파일 저장.
