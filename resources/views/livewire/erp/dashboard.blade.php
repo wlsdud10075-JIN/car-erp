@@ -514,6 +514,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $t = fn (string $k, string $f) => __("dashboard.act.management.$k.$f");
 
         $pendingApprovals = ApprovalRequest::where('status', ApprovalRequest::STATUS_PENDING)->count();
+        // 재고 감독 (jin 2026-07-26) — 관리/업무관리자 몫. 일반재고(투기·장기) 건수 신호 + 재고관리 딥링크.
+        $generalStock = Vehicle::query()->generalStock()->count();
 
         return [
             // 승인 대기 → /erp/approvals (차량간이체·보증금 선지급·미수 우회 승인). 카운트 = 승인화면 단일출처.
@@ -521,6 +523,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk', true),
+            $this->row($t('inventory', 'l'),                 $t('inventory', 'd'),                 $generalStock,                   'bg-amber-500',  '',                false, route('erp.inventory.index').'?category=general'),
             $this->row($t('clearance_stuck', 'l'),           $t('clearance_stuck', 'd'),           $c('clearance_stuck'),           'bg-amber-500',  'clearance_stuck', true),
         ];
     }
