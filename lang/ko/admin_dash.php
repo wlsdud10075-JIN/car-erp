@@ -83,6 +83,12 @@ return [
     // 회사이익 (재피벗 ④)
     'company_net' => '회사 순이익',
     'company_net_badge' => '지급완료 기준',
+    'company_net_lens' => '거래 손익 관점',
+    'secondary_pending' => '2차 정산 마감 대기',
+    'secondary_carryover' => '미소비 이월 순잔액 ₩:amount',
+    'inventory_split' => '재고 2분류 (원가)',
+    'inv_general' => '일반재고',
+    'inv_preship' => '선적전',
     'company_net_breakdown' => '총마진 ₩:margin − 영업 실지급 ₩:payout (+ 사내직원 환차)',
     'company_fx_absorbed' => '사내직원 환차 회사 흡수: ₩:fx',
     'company_contrib_title' => '인원별 회사기여 (상위 10명)',

@@ -80,6 +80,12 @@ return [
     // Company profit (repivot ④)
     'company_net' => 'Company net profit',
     'company_net_badge' => 'Paid basis',
+    'company_net_lens' => 'Trading P&L view',
+    'secondary_pending' => 'Secondary settlement pending',
+    'secondary_carryover' => 'Unconsumed carryover net ₩:amount',
+    'inventory_split' => 'Inventory split (cost)',
+    'inv_general' => 'General',
+    'inv_preship' => 'Pre-shipping',
     'company_net_breakdown' => 'Total margin ₩:margin − salesman payout ₩:payout (+ employee FX)',
     'company_fx_absorbed' => 'Employee FX absorbed by company: ₩:fx',
     'company_contrib_title' => 'Company contribution by person (top 10)',

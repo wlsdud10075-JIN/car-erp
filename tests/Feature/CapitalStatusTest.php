@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Console\Commands\AlimtalkCapitalWeekly;
 use App\Models\Buyer;
 use App\Models\CashSnapshot;
+use App\Models\ForwardingCompany;
+use App\Models\ForwardingInvoice;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -52,6 +54,25 @@ class CapitalStatusTest extends TestCase
         $svc->capture(['krw' => 2_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
         $this->assertEquals(1, CashSnapshot::whereDate('snapshot_date', '2026-07-23')->count());
         $this->assertEquals(2_000_000, CashSnapshot::whereDate('snapshot_date', '2026-07-23')->first()->balance_krw);
+    }
+
+    public function test_payable_includes_unpaid_forwarding_invoice(): void
+    {
+        // jin 2026-07-26 — 미지급 완결성: 매입 미지급 + 포워딩 운임 미지급(+정산 지급대기).
+        $this->seedErp();
+        $svc = app(CapitalStatusService::class);
+        $base = $svc->payableKrw();   // 매입 미지급만 = 7,000,000
+
+        $fc = ForwardingCompany::create(['name' => 'FWD CAP', 'is_active' => true]);
+        $inv = ForwardingInvoice::create([
+            'forwarding_company_id' => $fc->id, 'group_type' => 'container', 'group_key' => 'CAP1',
+            'currency' => 'KRW', 'amount' => 500_000, 'invoice_date' => '2026-07-20',
+        ]);
+        $this->assertSame($base + 500_000, $svc->payableKrw(), '미지급 = 매입 + 미지급 운임');
+
+        // 지급 완료 → 미지급에서 빠짐
+        $inv->update(['paid_at' => now(), 'actual_paid_krw' => 500_000]);
+        $this->assertSame($base, $svc->payableKrw(), '운임 지급 완료 → 미지급 제외');
     }
 
     public function test_derive_liquidation_working_and_profit(): void

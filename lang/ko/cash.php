@@ -26,6 +26,7 @@ return [
     'no_principal' => '원금 미설정 (기능설정에서 입력)',
     'profit_up' => '벌었음',
     'profit_down' => '손실',
+    'profit_lens' => '자산(청산) 관점',
     'trend_title' => '자금 추이',
     'trend_range' => '범위',
     'trend_accumulating' => '데이터 누적 중 — 통장 잔액이 더 쌓이면 추이가 그려집니다.',
