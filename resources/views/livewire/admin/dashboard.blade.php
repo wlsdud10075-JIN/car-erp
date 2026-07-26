@@ -504,6 +504,31 @@ new #[Layout('components.layouts.app')] class extends Component
         ];
     }
 
+    /** 재고 2분류 (jin 2026-07-26) — 일반재고(투기·미판매) vs 선적전재고(판매·출고전). 원가(purchase_price) 기준. */
+    #[Computed]
+    public function inventorySplit(): array
+    {
+        return [
+            'general_count' => Vehicle::query()->generalStock()->count(),
+            'general_krw' => (int) Vehicle::query()->generalStock()->sum('purchase_price'),
+            'preship_count' => Vehicle::query()->preShippingStock()->count(),
+            'preship_krw' => (int) Vehicle::query()->preShippingStock()->sum('purchase_price'),
+        ];
+    }
+
+    /** 2차 정산 현황 (jin 2026-07-26) — 마감 대기(secondary=pending) 건수 + 미소비 이월 순잔액. */
+    #[Computed]
+    public function secondarySettlement(): array
+    {
+        $out = (float) Settlement::where('secondary_status', 'closed')->whereNotNull('carryover_out_krw')->sum('carryover_out_krw');
+        $in = (float) Settlement::whereNotNull('carryover_in_krw')->sum('carryover_in_krw');
+
+        return [
+            'pending' => Settlement::where('secondary_status', 'pending')->count(),
+            'carryover_net' => (int) round($out - $in),
+        ];
+    }
+
     /**
      * 큐 4 8-6 — 채권 탭 KPI.
      * 회의록 결정:
@@ -855,7 +880,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }} · {{ __('cash.receivable') }} {{ $eok($cap['receivable_krw']) }} · {{ __('cash.payable') }} −{{ $eok($cap['payable_krw']) }}</p>
             </div>
             <div class="rounded-xl border p-4 {{ ($cap['profit_krw'] ?? null) === null ? 'border-gray-200' : (($cap['profit_krw'] >= 0) ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40') }}">
-                <p class="text-xs text-gray-500">{{ __('cash.profit') }}</p>
+                <p class="text-xs text-gray-500">{{ __('cash.profit') }} <span class="text-[10px] text-gray-400">· {{ __('cash.profit_lens') }}</span></p>
                 @if(($cap['profit_krw'] ?? null) === null)
                     <p class="mt-1 text-lg font-bold text-gray-400">—</p>
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.no_principal') }}</p>
@@ -1066,7 +1091,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex flex-wrap gap-3">
             <div class="card min-w-[260px] flex-1">
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">{{ __('admin_dash.company_net') }}</span>
+                    <span class="text-xs text-gray-500">{{ __('admin_dash.company_net') }} <span class="text-[10px] text-gray-400">· {{ __('admin_dash.company_net_lens') }}</span></span>
                     <span class="text-xs text-emerald-500">{{ __('admin_dash.company_net_badge') }}</span>
                 </div>
                 <div class="mt-1 text-2xl font-bold {{ $cp['company_net'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">
@@ -1078,6 +1103,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 @if($cp['fx_absorbed'] !== 0)
                 <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
                 @endif
+            </div>
+        </div>
+
+        {{-- 2차 정산 마감 대기 + 재고 2분류 (jin 2026-07-26) — 회계 마감 지연·자본 묶임 가시성 --}}
+        @php $sec = $this->secondarySettlement; $inv = $this->inventorySplit; @endphp
+        <div class="flex flex-wrap gap-3">
+            <div class="card min-w-[240px] flex-1">
+                <span class="text-xs text-gray-500">{{ __('admin_dash.secondary_pending') }}</span>
+                <div class="mt-1 text-2xl font-bold text-violet-600">{{ $sec['pending'] }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.secondary_carryover', ['amount' => number_format($sec['carryover_net'])]) }}</p>
+            </div>
+            <div class="card min-w-[240px] flex-1">
+                <span class="text-xs text-gray-500">{{ __('admin_dash.inventory_split') }}</span>
+                <div class="mt-1 flex gap-6">
+                    <div>
+                        <div class="text-lg font-bold text-amber-600">{{ $inv['general_count'] }}<span class="ml-0.5 text-xs font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
+                        <p class="text-[11px] text-gray-400">{{ __('admin_dash.inv_general') }} @krw($inv['general_krw']){{ __('admin_dash.unit_won') }}</p>
+                    </div>
+                    <div>
+                        <div class="text-lg font-bold text-blue-600">{{ $inv['preship_count'] }}<span class="ml-0.5 text-xs font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
+                        <p class="text-[11px] text-gray-400">{{ __('admin_dash.inv_preship') }} @krw($inv['preship_krw']){{ __('admin_dash.unit_won') }}</p>
+                    </div>
+                </div>
             </div>
         </div>
 

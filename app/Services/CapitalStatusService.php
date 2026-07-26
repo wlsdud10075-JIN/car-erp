@@ -3,7 +3,9 @@
 namespace App\Services;
 
 use App\Models\CashSnapshot;
+use App\Models\ForwardingInvoice;
 use App\Models\Setting;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
@@ -57,7 +59,11 @@ class CapitalStatusService
             ->sum('purchase_price');
     }
 
-    /** 매입 미지급 합 (딜러 줄 돈, 양수만). */
+    /**
+     * 미지급 합 = 회사가 갚아야 할 돈 (청산가치에서 차감, 양수만).
+     *   ① 매입 미지급 (딜러 줄 돈) + ② 포워딩 운임 미지급 + ③ 정산 지급대기(confirmed, 영업 줄 돈).
+     *   ②③은 computed accessor 라 SQL sum 불가 → 소량이라 반복 합산. (jin 2026-07-26 완결성 보강)
+     */
     public function payableKrw(): int
     {
         $total = 0;
@@ -71,6 +77,14 @@ class CapitalStatusService
                     }
                 }
             });
+
+        // ② 포워딩 운임 미지급 (paid_at NULL = 미지급 단일출처) — 전액 환산 KRW.
+        $total += (int) ForwardingInvoice::whereNull('paid_at')->get()
+            ->sum(fn ($i) => max(0, (int) $i->converted_krw));
+
+        // ③ 정산 지급대기 (settlement_status=confirmed, 지급 전) — 영업에게 줄 실지급액.
+        $total += (int) Settlement::where('settlement_status', 'confirmed')->get()
+            ->sum(fn ($s) => max(0, (int) $s->actual_payout));
 
         return $total;
     }

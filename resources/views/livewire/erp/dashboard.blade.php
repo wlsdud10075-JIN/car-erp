@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ApprovalRequest;
 use App\Models\CashSnapshot;
 use App\Models\Salesman;
 use App\Models\Settlement;
@@ -441,15 +442,20 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산. 클릭 시 정산처리 ?held=1 딥링크.
         $heldCount = Settlement::query()->payoutHeldByUnpaid()->count();
+        // 2차 정산 마감 대기 (jin 2026-07-26) — paid 후 secondary_status=pending. 비용·환차 정정 후 마감.
+        $secondaryPending = Settlement::query()->where('secondary_status', 'pending')->count();
 
         return [
             $this->row($t('purchase_unpaid', 'l'),           $t('purchase_unpaid', 'd'),           $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
             $this->row($t('sale_unpaid', 'l'),               $t('sale_unpaid', 'd'),               $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
             $this->row($t('exchange_rate_missing', 'l'),     $t('exchange_rate_missing', 'd'),     $c('exchange_rate_missing'),     'bg-red-500',    'exchange_rate_missing',     true),
+            // 운임(인코텀즈) 미확정 = 정산 생성 게이트. 재무가 "왜 정산이 안 생기지"를 여기서 인지 (영업 role 과 동일 출처).
+            $this->row($t('freight_confirm', 'l'),           $t('freight_confirm', 'd'),           $c('freight_confirm_pending'),   'bg-amber-500',  'freight_confirm_pending'),
             $this->row($t('settlement_create_needed', 'l'),  $t('settlement_create_needed', 'd'),  $c('settlement_create_needed'),  'bg-blue-500',   'settlement_create_needed'),
             $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
             $this->row($t('payout_held', 'l'),               $t('payout_held', 'd'),               $heldCount,                      'bg-red-500',    '',                          true, route('erp.settlements.index').'?held=1'),
+            $this->row($t('secondary_close', 'l'),           $t('secondary_close', 'd'),           $secondaryPending,               'bg-violet-500', '',                          false, route('erp.settlements.index')),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
             // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(미수 마감/손실 처리). 채권관리(취소필터)로.
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
@@ -464,9 +470,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 회의록 2026-05-14-management-role-dashboard.md §2 4 KPI 합의안.
     private function buildManagementKpis(): array
     {
-        // approval_requests는 큐 14-3에서 신설 — 14-2 시점엔 카운트 0으로 표시.
-        // 14-3 완료 후 ApprovalRequest::where('status','pending')->count()로 교체.
-        $pendingApprovals = 0;
+        // 승인 대기 = 차량간이체·보증금 선지급·미수 우회 등 (/erp/approvals 와 동일 출처).
+        $pendingApprovals = ApprovalRequest::where('status', ApprovalRequest::STATUS_PENDING)->count();
 
         $pendingSettlements = Settlement::query()
             ->whereIn('settlement_status', ['pending', 'confirmed'])
@@ -508,11 +513,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $t = fn (string $k, string $f) => __("dashboard.act.management.$k.$f");
 
+        $pendingApprovals = ApprovalRequest::where('status', ApprovalRequest::STATUS_PENDING)->count();
+
         return [
-            // 승인 대기는 별도 화면 /erp/approvals — 큐 14-3에서 활성화 (현재 카운트만 표시)
-            ['label' => $t('approval_wait', 'l'), 'desc' => $t('approval_wait', 'd'), 'count' => 0,
-             'dot' => 'bg-violet-500', 'urgent' => false,
-             'href' => '#'],
+            // 승인 대기 → /erp/approvals (차량간이체·보증금 선지급·미수 우회 승인). 카운트 = 승인화면 단일출처.
+            $this->row($t('approval_wait', 'l'), $t('approval_wait', 'd'), $pendingApprovals, 'bg-violet-500', '', $pendingApprovals > 0, route('erp.approvals.index')),
             $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk', true),

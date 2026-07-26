@@ -24,6 +24,7 @@ return [
     'no_principal' => 'Principal not set (enter in Settings)',
     'profit_up' => 'gain',
     'profit_down' => 'loss',
+    'profit_lens' => 'Asset (liquidation) view',
     'trend_title' => 'Capital Trend',
     'trend_range' => 'range',
     'trend_accumulating' => 'Accumulating data — the trend appears as more balances are recorded.',
