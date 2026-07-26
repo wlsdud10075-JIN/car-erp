@@ -120,6 +120,7 @@ return [
         ],
         'management' => [
             'approval_wait' => ['l' => '승인 대기 항목', 'd' => '차량간이체·보증금 선지급·미수 우회 등 승인 대기 → 승인 화면'],
+            'inventory' => ['l' => '재고 점검', 'd' => '일반재고(투기·장기)·선적전 재고 → 재고관리'],
             'settlement_confirm_needed' => ['l' => '정산 확정 필요', 'd' => 'settlement = pending → 승인 후 paid'],
             'settlement_pay_needed' => ['l' => '정산 지급 필요', 'd' => 'settlement = confirmed → 승인 후 paid'],
             'receivable_risk' => ['l' => '채권 위험', 'd' => '회수 위험·심각 → 추가 한도 승인 검토'],

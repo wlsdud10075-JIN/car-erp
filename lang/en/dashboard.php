@@ -119,6 +119,7 @@ return [
         ],
         'management' => [
             'approval_wait' => ['l' => 'Approval Items', 'd' => 'inter-vehicle transfer / deposit prepay / unpaid override pending → approvals screen'],
+            'inventory' => ['l' => 'Inventory Check', 'd' => 'general (speculative/aged) & pre-shipping stock → inventory'],
             'settlement_confirm_needed' => ['l' => 'Settlement Confirmation Needed', 'd' => 'settlement = pending → paid after approval'],
             'settlement_pay_needed' => ['l' => 'Settlement Payment Needed', 'd' => 'settlement = confirmed → paid after approval'],
             'receivable_risk' => ['l' => 'Receivable Risk', 'd' => 'danger/critical → review credit limit'],
