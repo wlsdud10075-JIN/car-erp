@@ -27,6 +27,7 @@ return [
         'approvals' => 'Approvals',
         'payout_batches' => 'Payout Batches',
         'transfers' => 'Finance',
+        'deposits' => 'Deposits & Advances',
         'forwarding' => 'Forwarders',
         'salesmen' => 'Salesmen',
         'cashflow' => 'My Cashflow',

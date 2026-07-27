@@ -282,6 +282,13 @@
                     'show' => $user->canConfirmFinanceTransfer(),
                     'badge' => $pendingFinanceConfirmations > 0 ? $pendingFinanceConfirmations : null,
                 ],
+                [
+                    'label' => __('nav.menu.deposits'),
+                    'href' => $user->canEnterCashBalance() ? route('erp.deposits.index') : '#',
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.deposits.*'),
+                    'show' => $user->canEnterCashBalance(),
+                ],
             ],
         ],
         [

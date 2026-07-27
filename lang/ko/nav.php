@@ -27,6 +27,7 @@ return [
         'approvals' => '승인 큐',
         'payout_batches' => '월배치 지급',
         'transfers' => '재무 처리',
+        'deposits' => '예치·가수금',
         'forwarding' => '포워딩사',
         'salesmen' => '영업담당자',
         'cashflow' => '내 캐시플로우',
