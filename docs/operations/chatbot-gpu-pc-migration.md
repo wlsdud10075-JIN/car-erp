@@ -3,6 +3,12 @@
 > 대상: 로컬 LLM 챗봇(A=Notion 가이드 RAG / B=DB 조회)의 **Ollama 호스트**를 회사 데스크톱(RTX 2070 8GB)으로 옮긴다.
 > 작성 2026-07-27. 관련 = 메모리 `project_local_llm_chatbot`, `docs/operations/carerp-infra-2026-07-26.md`.
 
+## ⏱️ 크리티컬 패스 (여기서 막히면 며칠 샌다)
+
+**1-4의 Tailscale 계정 로그인**과 **key expiry 비활성화** 두 가지. 둘 다 사람 손이 필요하고
+브라우저 인증이라 대신 못 한다. 나머지는 전부 자동화되거나 되돌릴 수 있으니, 이 둘을
+"5번 항목"이 아니라 **가장 먼저 처리할 것**으로 취급한다.
+
 ## 핵심 원칙 — 역할 2개를 분리해서 순서대로
 
 | 역할 | 내용 | GPU 필요 | 컷오버 방법 |
@@ -39,11 +45,10 @@ nvidia-smi
 
 ### 1-1. Ollama 설치 + 모델
 ```powershell
-# https://ollama.com/download 설치 후
+winget install Ollama.Ollama
 ollama pull qwen3:8b
 ollama pull bge-m3
 ```
-> 회선이 느리면 노트북 `C:\Users\User\.ollama\models` 폴더를 통째 복사해도 된다(pull 불필요).
 
 ### 1-2. User 환경변수 3개 (시스템 속성 → 환경 변수 → 사용자 변수)
 | 이름 | 값 | 용도 |
@@ -63,11 +68,14 @@ ollama pull bge-m3
 - ⚠️ **Tailscale 관리 콘솔에서 이 노드의 key expiry 를 비활성화**(Disable key expiry).
   기본 ~180일 만료라 그냥 두면 **몇 달 뒤 A가 조용히 죽는다.** 이제 인프라 취급.
 
-### 1-5. 상주 워밍업
+### 1-5. 상주 워밍업 + **외부 바인딩 확인**
 ```powershell
-ollama run qwen3:8b "안녕" ; ollama ps
+ollama run qwen3:8b "안녕" ; ollama ps        # → §0 합격 기준과 비교
+curl http://<이 PC의 TS IP>:11434/api/tags    # ⚠️ localhost 아님, 자기 Tailscale IP 로
 ```
-→ §0 합격 기준과 비교.
+**두 번째 줄이 이 이관의 핵심 검증이다.** `localhost` 로만 응답하고 TS IP 로는 안 되면
+`OLLAMA_HOST=0.0.0.0` 이 안 먹은 것(= 트레이 앱 완전 재시작 누락). 여기서 잡지 않으면
+2단계에서 서버가 못 붙는 걸로 나타나 원인이 헷갈린다.
 
 ---
 
