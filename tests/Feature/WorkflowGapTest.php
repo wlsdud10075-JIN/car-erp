@@ -161,6 +161,26 @@ class WorkflowGapTest extends TestCase
         $v->guardStageOrderForExport();
     }
 
+    /**
+     * C4 — 말소 체크만 돼 있으면 서류 업로드 전이어도 선적 진입 가능 (jin 2026-07-27).
+     * 실무는 말소 처리 후 서류 파일을 나중에 올린다. 서류까지 요구하면 말소를 실제로 마친
+     * 차량이 미완료로 판정돼 판매 탭 잔금 저장까지 막혔다(운영 83대). 막을 것은 "말소 없이 선적".
+     */
+    public function test_c4_allows_export_entry_when_deregistered_without_document(): void
+    {
+        $v = new Vehicle([
+            'sales_channel' => 'export',
+            'is_deregistered' => true,
+            'deregistration_document' => null,   // 서류는 아직 미업로드
+            'sale_price' => 0,                   // C5 평가 제외(말소 조건만 검증)
+            'export_buyer_id' => 1,
+            'shipping_date' => '2026-05-01',
+        ]);
+
+        $v->guardStageOrderForExport();
+        $this->assertTrue(true, 'C4는 말소 체크만으로 통과해야 한다');
+    }
+
     public function test_c5_blocks_export_entry_when_unpaid_ratio_over_50_percent(): void
     {
         // G 완화 (2026-05-20) — 미수율 > 50% 시만 C5 차단.

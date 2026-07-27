@@ -865,7 +865,7 @@ class Vehicle extends Model
 
     /**
      * C4·C5 — 단계 의존성 검증. 수출 정보 입력 시점에 선행 단계 강제.
-     * - C4: 말소(is_deregistered + deregistration_document)가 완료돼야 통관 진입 가능
+     * - C4: 말소(is_deregistered)가 완료돼야 통관 진입 가능 (2026-07-27 서류 요구 제외 — 아래 주석)
      * - C5: 판매 입금률 < 50% (unpaid_ratio > 0.5) 시 통관 진입 불가
      *
      * G 완화 (2026-05-20 회의록 §G, Q4 해석 A) — 입금 100% 임계값을 50%로 완화.
@@ -892,10 +892,16 @@ class Vehicle extends Model
             return;
         }
 
-        // C4 — 말소 완료 강제
-        if (! $this->is_deregistered || ! $this->deregistration_document) {
+        // C4 — 말소 강제 (선적 전 말소 원칙)
+        //   ⚠️ 2026-07-27 jin — 판정 기준에서 서류 업로드(deregistration_document) 제외, 말소 체크만 본다.
+        //   실무는 말소를 먼저 처리하고 서류 파일은 나중에 올린다(운영 실측: 선적 진입 차량 중
+        //   '체크됨+서류없음' 83대 / '체크 안 됨' 0대). 서류까지 요구하면 말소를 실제로 마친 차량이
+        //   미완료로 판정돼, 이미 선적 정보가 있는 차량은 판매 탭 잔금 저장까지 통째로 막혔다.
+        //   막아야 할 것은 "말소도 안 하고 배에 태우는 것"이지 "서류 업로드가 늦는 것"이 아니다.
+        //   서류 자체는 진행상태 cascade('말소완료')와 서류 탭에서 계속 추적된다.
+        if (! $this->is_deregistered) {
             throw ValidationException::withMessages([
-                'export_buyer_id' => '말소 처리(체크 + 서류 업로드)를 완료해야 통관·선적 진입이 가능합니다 — 매입 탭.',
+                'export_buyer_id' => '말소 처리를 완료해야 통관·선적 진입이 가능합니다 — 매입 탭.',
             ]);
         }
 
