@@ -19,6 +19,8 @@ return [
     'inventory' => 'Inventory',
     'receivable' => 'Receivables',
     'payable' => 'Payables',
+    'advance' => 'Advances',
+    'auction_deposit' => 'Auction deposits',
     'as_of' => 'As of',
     'no_data' => 'No bank balance entered yet. Enter it on the work dashboard.',
     'no_principal' => 'Principal not set (enter in Settings)',

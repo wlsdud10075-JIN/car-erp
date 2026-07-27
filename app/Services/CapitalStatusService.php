@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\AdvanceReceipt;
+use App\Models\AuctionDeposit;
 use App\Models\CashSnapshot;
 use App\Models\ForwardingInvoice;
 use App\Models\Setting;
@@ -19,7 +21,7 @@ use Illuminate\Support\Collection;
  *   - 투입 원금(밑천) = Setting capital_principal_krw (super가 기능설정에서).
  *
  * 파생:
- *   청산가치 = 통장현금 + 재고 − 미지급        (미수 제외 — 대표 정책, 국내 청산 기준)
+ *   청산가치 = 통장현금 + 재고 + 경매보증금 − 미지급 − 가수금   (미수 제외 — 대표 정책, 국내 청산 기준)
  *   굴리는 자금 = 청산가치 + 미수               (운전자본 전체)
  *   손익 = 청산가치 − 투입원금                  (원금 미설정 시 null)
  */
@@ -137,6 +139,10 @@ class CapitalStatusService
             'inventory_krw' => $this->inventoryKrw(),
             'receivable_krw' => $this->receivableKrw($fx),
             'payable_krw' => $this->payableKrw(),
+            // 예치·가수금 (안건4 2단계) — 실시간이 아니라 이 시점 값을 박는다.
+            //   통장잔액과 같은 시점이어야 짝이 맞는다(§derive 주석 참조).
+            'advance_krw' => AdvanceReceipt::totalKrw(),
+            'auction_deposit_krw' => AuctionDeposit::totalKrw(),
             'fx_usd' => $fx['USD'],
             'fx_eur' => $fx['EUR'],
             'entered_by' => $user?->id,
@@ -158,7 +164,13 @@ class CapitalStatusService
             return ['has_data' => false];
         }
         $cash = $s->cash_krw;
-        $liquidation = $cash + $s->inventory_krw - $s->payable_krw;   // 미수 제외
+        $advance = (int) $s->advance_krw;                 // 가수금 = 갚는 돈(부채)
+        $auctionDeposit = (int) $s->auction_deposit_krw;  // 경매보증금 = 예치한 우리 돈(자산)
+
+        // 청산가치 = 통장현금 + 재고 + 경매보증금 − 미지급 − 가수금   (미수 제외 — 대표 정책)
+        //   보증금·가수금은 "형태만 바뀌는" 거래라 반영 후에는 청산가치가 안 움직인다:
+        //   보증금 예치 = 현금↓ 보증금↑ / 가수금 입금 = 현금↑ 부채↑. 그게 정상이다.
+        $liquidation = $cash + $s->inventory_krw + $auctionDeposit - $s->payable_krw - $advance;
         $working = $liquidation + $s->receivable_krw;
         $principal = $this->principal();
 
@@ -172,6 +184,8 @@ class CapitalStatusService
             'inventory_krw' => (int) $s->inventory_krw,
             'receivable_krw' => (int) $s->receivable_krw,
             'payable_krw' => (int) $s->payable_krw,
+            'advance_krw' => $advance,
+            'auction_deposit_krw' => $auctionDeposit,
             'liquidation_krw' => $liquidation,
             'working_capital_krw' => $working,
             'principal_krw' => $principal,

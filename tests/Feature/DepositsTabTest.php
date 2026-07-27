@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AdvanceReceipt;
 use App\Models\AuctionDeposit;
 use App\Models\User;
+use App\Services\CapitalStatusService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -115,4 +116,39 @@ class DepositsTabTest extends TestCase
      *    (영업으로는 mount 에서 막혀 컴포넌트 자체가 안 열린다 = test_sales_role_cannot_open 이 커버.)
      *    → 가드는 코드에 유지하되 이 케이스는 테스트하지 않는다. 가드를 지우지 말 것.
      */
+
+    /**
+     * 안건4 2단계 — 예치·가수금이 자금현황에 반영된다.
+     *   경매보증금 = 자산(+), 가수금 = 부채(−). 둘 다 "형태만 바뀌는" 거래라
+     *   통장잔액 변동과 함께 반영되면 청산가치는 제자리여야 한다.
+     */
+    public function test_capital_status_adds_auction_deposit_and_subtracts_advance(): void
+    {
+        AuctionDeposit::create(['deposited_date' => '2026-07-01', 'auction_house' => 'A', 'amount' => 50_000_000]);
+        AdvanceReceipt::create(['received_date' => '2026-07-01', 'company_name' => 'B', 'amount' => 100_000_000]);
+
+        $svc = app(CapitalStatusService::class);
+        $snap = $svc->capture(['krw' => 1_000_000_000, 'usd' => 0, 'eur' => 0]);
+
+        // capture 시점 값이 스냅샷에 박힌다(실시간 합산이면 옛 통장잔액과 짝이 안 맞는다).
+        $this->assertSame(50_000_000, (int) $snap->auction_deposit_krw);
+        $this->assertSame(100_000_000, (int) $snap->advance_krw);
+
+        $d = $svc->derive($snap);
+        // 청산가치 = 현금 10억 + 재고 0 + 보증금 0.5억 − 미지급 0 − 가수금 1억
+        $this->assertSame(950_000_000, $d['liquidation_krw']);
+    }
+
+    /** 회수하면(행 삭제) 다음 캡처부터 빠진다. */
+    public function test_removed_deposit_drops_out_of_next_snapshot(): void
+    {
+        $dep = AuctionDeposit::create(['deposited_date' => '2026-07-01', 'auction_house' => 'A', 'amount' => 50_000_000]);
+        $svc = app(CapitalStatusService::class);
+
+        $svc->capture(['krw' => 0, 'usd' => 0, 'eur' => 0], null, '2026-07-01');
+        $dep->delete();
+        $snap = $svc->capture(['krw' => 0, 'usd' => 0, 'eur' => 0], null, '2026-07-02');
+
+        $this->assertSame(0, (int) $snap->auction_deposit_krw);
+    }
 }
