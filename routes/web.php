@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BuyerDocumentController;
+use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\SignController;
@@ -23,6 +24,12 @@ Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class);
 Route::get('d/deregistration/{vehicle}', [BuyerDocumentController::class, 'deregistration'])
     ->middleware('signed')
     ->name('buyer.deregistration');
+
+// 대표 자금 보고 (2026-07-27, 안건4 3단계) — 로그인 없이 서명 링크로 열람. 주간·월간 공용(기준일만 다름).
+//   ⚠️ 회사 재무 전부가 담긴 화면이라 발급측에서 만료(7일)를 걸고, 열람 시 감사 로그를 남긴다.
+Route::get('a/capital/{date}', [CapitalReportController::class, 'show'])
+    ->middleware('signed')
+    ->name('capital.report');
 
 // 월배치 정산지급 — 대표가 카톡 알림톡 버튼으로 바로 승인/반려 (2026-07-08). 로그인 없음(signed 서명이 인가).
 //   서명 = 배치 id + 승인자 u(권한 바인딩) + 5일 만료. show(GET)=내역만 표시(자동처리 X, 카톡 프리페치 방어),

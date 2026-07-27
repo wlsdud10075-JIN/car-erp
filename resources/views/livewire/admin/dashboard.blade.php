@@ -87,6 +87,30 @@ new #[Layout('components.layouts.app')] class extends Component
         return $user->getSubordinateSalesmanIds();
     }
 
+    /** 대표에게 보낼 자금 보고 링크(서명·만료). 버튼 누르면 채워진다. */
+    public string $reportLink = '';
+
+    /**
+     * 자금 보고 링크 발급 (안건4 3단계) — 로그인 없이 열리는 서명 링크.
+     *   ⚠️ 회사 재무 전부가 담긴 화면이라 canViewCapital(super/대표)만 발급할 수 있고 만료를 건다.
+     */
+    public function copyReportLink(): void
+    {
+        abort_unless(auth()->user()?->canViewCapital(), 403);
+
+        $svc = app(CapitalStatusService::class);
+        $snap = $svc->latest();
+        if (! $snap) {
+            return;
+        }
+
+        $this->reportLink = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'capital.report',
+            now()->addDays(\App\Http\Controllers\CapitalReportController::LINK_TTL_DAYS),
+            ['date' => $snap->snapshot_date->format('Y-m-d')],
+        );
+    }
+
     /**
      * 자금 현황 (jin 2026-07-23) — super/대표만. 통장현금(수동)+재고·미수·미지급(ERP)+원금 → 손익.
      *   최신 CashSnapshot 기준. 통장 미입력이면 has_data=false.
@@ -866,7 +890,19 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="text-sm font-bold text-gray-800">{{ __('cash.widget_title') }}</span>
                 @if($cap['has_data'] ?? false)<span class="text-xs text-gray-400">{{ __('cash.as_of') }} {{ \Illuminate\Support\Carbon::parse($cap['date'])->format('Y-m-d') }}</span>@endif
             </div>
+            {{-- 대표에게 보낼 보고서 링크 (안건4 3단계) — 로그인 없이 열리는 서명 링크, 7일 만료. --}}
+            @if($cap['has_data'] ?? false)
+                <button type="button" wire:click="copyReportLink"
+                        class="text-xs text-violet-600 hover:underline">{{ __('cash.report_link') }}</button>
+            @endif
         </div>
+        @if($reportLink !== '')
+            <div class="mb-3 rounded border border-violet-200 bg-violet-50 px-3 py-2">
+                <p class="mb-1 text-[11px] text-violet-700">{{ __('cash.report_link_hint', ['days' => \App\Http\Controllers\CapitalReportController::LINK_TTL_DAYS]) }}</p>
+                <input type="text" readonly value="{{ $reportLink }}" onclick="this.select()"
+                       class="w-full rounded border border-violet-200 bg-white px-2 py-1 font-mono text-[11px] text-gray-700">
+            </div>
+        @endif
         @if(! ($cap['has_data'] ?? false))
             <p class="text-sm text-gray-400">{{ __('cash.no_data') }}</p>
         @else

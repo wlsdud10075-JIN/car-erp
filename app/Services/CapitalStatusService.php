@@ -186,6 +186,8 @@ class CapitalStatusService
             'payable_krw' => (int) $s->payable_krw,
             'advance_krw' => $advance,
             'auction_deposit_krw' => $auctionDeposit,
+            'fx_usd' => (float) $s->fx_usd,
+            'fx_eur' => (float) $s->fx_eur,
             'liquidation_krw' => $liquidation,
             'working_capital_krw' => $working,
             'principal_krw' => $principal,

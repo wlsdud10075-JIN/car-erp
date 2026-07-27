@@ -21,6 +21,8 @@ return [
     'payable' => 'Payables',
     'advance' => 'Advances',
     'auction_deposit' => 'Auction deposits',
+    'report_link' => 'Report link',
+    'report_link_hint' => 'Link to send to the CEO. Opens without login, expires in :days days.',
     'as_of' => 'As of',
     'no_data' => 'No bank balance entered yet. Enter it on the work dashboard.',
     'no_principal' => 'Principal not set (enter in Settings)',
