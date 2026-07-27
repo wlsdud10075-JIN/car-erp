@@ -12,7 +12,7 @@ return [
     'buyer_ph' => 'Search buyer',
     'consignee_ph' => 'Search consignee',
     'all_status' => 'All statuses',
-    'col_owner' => 'Owner',
+    'col_buyer' => 'Buyer',
     'col_warehouse_in' => 'Warehoused In',
     'col_shipping' => 'Shipping Date',
     'col_warehouse_out' => 'Warehoused Out',
