@@ -13,7 +13,9 @@ class CashSnapshot extends Model
 {
     protected $fillable = [
         'snapshot_date', 'balance_krw', 'balance_usd', 'balance_eur',
-        'inventory_krw', 'receivable_krw', 'payable_krw', 'fx_usd', 'fx_eur', 'entered_by',
+        'inventory_krw', 'receivable_krw', 'payable_krw',
+        'advance_krw', 'auction_deposit_krw',
+        'fx_usd', 'fx_eur', 'entered_by',
     ];
 
     protected $casts = [
