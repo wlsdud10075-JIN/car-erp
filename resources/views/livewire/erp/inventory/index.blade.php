@@ -363,7 +363,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_shipping') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
                     <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_owner') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_buyer') }}</th>
                     <th class="pb-2 font-medium"></th>
                 </tr>
             </thead>
@@ -414,7 +414,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td class="py-3 pr-4 text-right text-gray-700">
                         @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
                     </td>
-                    <td class="py-3 pr-4 text-gray-500 text-xs">{{ $v->nice_reg_owner_name ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500">{{ $v->buyer?->name ?? '-' }}</td>
                     <td class="py-3 text-right">
                         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}"
                            wire:navigate

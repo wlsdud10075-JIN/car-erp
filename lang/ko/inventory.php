@@ -12,7 +12,7 @@ return [
     'buyer_ph' => '바이어 검색',
     'consignee_ph' => '컨사이니 검색',
     'all_status' => '상태 전체',
-    'col_owner' => '소유자',
+    'col_buyer' => '바이어',
     'col_warehouse_in' => '입고일',
     'col_shipping' => '선적일',
     'col_warehouse_out' => '출고일',
