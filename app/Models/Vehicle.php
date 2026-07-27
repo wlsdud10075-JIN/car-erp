@@ -531,6 +531,12 @@ class Vehicle extends Model
     protected static function booted(): void
     {
         static::saving(function (Vehicle $vehicle) {
+            // 차량번호 앞뒤 공백 제거 (jin 2026-07-27) — 엑셀 적재·복붙에서 " 239수1388" / "114마1731  "
+            //   처럼 공백이 섞여 들어와 검색·중복판정이 어긋났다. 진입점 통합(UI·시드·import 전부).
+            if (is_string($vehicle->vehicle_number)) {
+                $vehicle->vehicle_number = trim($vehicle->vehicle_number);
+            }
+
             // 2026-05-20 사용자 정정 — KRW 통화 시 환율 자동 1 normalize.
             // "한국돈인데 환율 쓸 필요 없음" 직관 보존 + DB CHECK (sale_price > 0 시 exchange_rate > 0) 통과.
             // 진입점 통합 (UI 폼·시드·factory·tinker 모두 동일 정책).
@@ -600,6 +606,35 @@ class Vehicle extends Model
             }
             if ($vehicle->hasConfirmedPaymentLock()) {
                 throw new \DomainException('재무 확정 잔금이 있는 차량은 admin/super만 삭제할 수 있습니다.');
+            }
+        });
+
+        /*
+         * 정산 동반 삭제 (jin 2026-07-27) — 차량만 지우고 정산이 남아 **고아 정산**이 되는 걸 막는다.
+         *   실사고: 2026-07-23 heymanerp 에서 차량 3대를 지우고 같은 번호로 재등록 → 옛 정산 3건이 그대로
+         *   남아 정산 목록에 "차량번호 없는 행"으로 뜨고 같은 차가 두 번 계상됐다.
+         *
+         * ⚠️ 위 가드와 **별도 리스너**로 등록한다 — 위 훅은 시드·admin 에서 early return 하는데,
+         *   이번 사고를 낸 것도 admin 이다. 동반 삭제는 누가 지우든 항상 돌아야 한다.
+         *
+         * 잠긴 정산(confirmed/paid/closed)이 하나라도 있으면 **아무것도 지우지 않고** 중단한다
+         * (부분 삭제 방지 — soft delete 는 트랜잭션으로 안 묶여 있어 검사를 먼저 끝낸다).
+         * 조건은 Settlement::deleting 가드와 동일하게 유지할 것.
+         *
+         * restore() 는 정산을 되살리지 않는다 — 거래완료 시 자동 재생성되므로 의도적으로 둔다.
+         */
+        static::deleting(function (Vehicle $vehicle) {
+            $settlements = $vehicle->settlements()->get();
+
+            foreach ($settlements as $s) {
+                if (in_array($s->settlement_status, ['confirmed', 'paid'], true)
+                    || $s->secondary_status === 'closed') {
+                    throw new \DomainException('정산이 확정·지급된 차량은 삭제할 수 없습니다. 정산을 먼저 정리하세요.');
+                }
+            }
+
+            foreach ($settlements as $s) {
+                $s->delete();
             }
         });
 
