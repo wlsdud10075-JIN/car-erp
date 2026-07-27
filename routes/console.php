@@ -36,6 +36,11 @@ Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->weekdays()->witho
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
 // 대표 주간 자금/손익 보고 (2026-07-23) — 월요일 09:00. 최신 통장 스냅샷 기준. 미설정/미입력 시 내부 skip(inert).
 Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
+// 월말 마감 보고 (jin 2026-07-27) — 재무가 16~17시에 마무리하므로 18:00 발송. 템플릿은 주간과 동일
+//   (erp_capital_weekly 공용, 링크 버튼으로 상세 열람).
+//   ⚠️ monthlyOn(31) 은 31일 없는 달(2·4·6·9·11월)을 통째로 건너뛴다 → 매일 18:00 에 돌리되 말일에만 실행.
+Schedule::command('alimtalk:capital-weekly')->dailyAt('18:00')->withoutOverlapping()
+    ->when(fn () => now()->isLastOfMonth());
 // 월결산 = 익월 첫 영업일 09:00 (1일이 주말이면 다음 평일). monthlyOn(1)+weekdays 는 1일이 주말인 달을
 //   통째 건너뛰므로, 매일 평가하되 "이번 달 첫 영업일" 에만 발송하는 when 가드로 안전하게.
 Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->when(function () {

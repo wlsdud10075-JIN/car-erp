@@ -2,12 +2,14 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\CapitalReportController;
 use App\Services\BizmAlimtalkService;
 use App\Services\CapitalStatusService;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 
 /**
  * 대표 주간 자금/손익 보고 알림톡 (erp_capital_weekly) — 매주 월요일 09:00.
@@ -37,9 +39,24 @@ class AlimtalkCapitalWeekly extends Command
                 return self::SUCCESS;
             }
 
+            // 보고서 링크 버튼 (안건4 3단계) — 대표가 로그인 없이 눌러 항목을 펼쳐 본다.
+            //   스냅샷 기준일로 서명, 만료는 CapitalReportController::LINK_TTL_DAYS.
+            //   payout 승인 버튼과 동일 형식(button1 = name/type WL/url_mobile/url_pc).
+            $buttons = [];
+            if ($snap = app(CapitalStatusService::class)->latest()) {
+                $buttons[] = [
+                    'name' => '자금 보고 보기',
+                    'url' => URL::temporarySignedRoute(
+                        'capital.report',
+                        now()->addDays(CapitalReportController::LINK_TTL_DAYS),
+                        ['date' => $snap->snapshot_date->format('Y-m-d')],
+                    ),
+                ];
+            }
+
             $svc = BizmAlimtalkService::active();
             foreach ($recipients as $phone) {
-                $svc->send('erp_capital_weekly', $phone, $vars);
+                $svc->send('erp_capital_weekly', $phone, $vars, [], $buttons);
             }
             $this->info('capital-weekly: '.count($recipients).'명 발송 시도.');
 
