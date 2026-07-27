@@ -72,7 +72,6 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('model_type', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
                 ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")           // 차대번호 — 끝 6자리 등 부분 검색
                 ->orWhere('export_declaration_number', 'like', "%{$this->search}%") // 수출신고번호
                 ->orWhere('vessel_name', 'like', "%{$this->search}%")            // 선박명(VSL)

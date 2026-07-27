@@ -7,7 +7,7 @@ return [
     'total' => '총 :count 대',
     'by_salesman' => '담당자별:',
     'unassigned_strip' => '미배정 :count',
-    'search_ph' => '차량번호 · 브랜드 · 차종 · 소유자 · 차대번호 · 수출신고번호 · 선박명 · 컨테이너',
+    'search_ph' => '차량번호 · 브랜드 · 차종 · 차대번호 · 수출신고번호 · 선박명 · 컨테이너',
     'all_salesmen' => '담당자 전체',
     'buyer_ph' => '바이어 검색',
     'consignee_ph' => '컨사이니 검색',
