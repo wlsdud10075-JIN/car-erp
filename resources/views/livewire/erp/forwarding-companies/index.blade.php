@@ -163,17 +163,23 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── 운임 인보이스 로직 ────────────────────────────────────────────────
 
-    /** 차량 → [group_type, group_key]. 우선순위 container › declaration › vessel (데이터로 자동 분류). */
+    /**
+     * 차량 → [group_type, group_key]. 우선순위 container › vessel › declaration (데이터로 자동 분류).
+     *
+     * ⚠️ 2026-07-27 jin: vessel 을 declaration 위로 승격. 운임은 배 단위로 청구되는데
+     *    수출신고번호는 차량 1~2대 단위라 묶음이 잘게 쪼개졌다. declaration 은 선박명이
+     *    아직 안 들어온 차량의 폴백으로만 남는다.
+     */
     private function groupKeyOf($v): array
     {
         if (! empty($v->container_number)) {
             return ['container', $v->container_number];
         }
-        if (! empty($v->export_declaration_number)) {
-            return ['declaration', $v->export_declaration_number];
-        }
         if (! empty($v->vessel_name)) {
             return ['vessel', $v->vessel_name];
+        }
+        if (! empty($v->export_declaration_number)) {
+            return ['declaration', $v->export_declaration_number];
         }
 
         return ['none', ''];

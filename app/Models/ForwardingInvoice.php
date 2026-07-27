@@ -27,7 +27,7 @@ class ForwardingInvoice extends Model
         'paid_at' => 'datetime',
     ];
 
-    /** 묶음 기준 — 우선순위: container › declaration › vessel (Vehicle 데이터로 자동 분류). */
+    /** 묶음 기준 — 우선순위: container › vessel › declaration (Vehicle 데이터로 자동 분류, 2026-07-27 vessel 승격). */
     public const GROUP_TYPES = ['container', 'declaration', 'vessel'];
 
     public function forwardingCompany(): BelongsTo
