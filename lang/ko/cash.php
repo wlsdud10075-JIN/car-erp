@@ -23,6 +23,8 @@ return [
     'payable' => '미지급',
     'advance' => '가수금',
     'auction_deposit' => '경매보증금',
+    'report_link' => '보고서 링크',
+    'report_link_hint' => '대표에게 보낼 링크입니다. 로그인 없이 열리며 :days일 후 만료됩니다.',
     'as_of' => '기준일',
     'no_data' => '통장 잔액이 아직 입력되지 않았습니다. 업무 대시보드에서 입력하세요.',
     'no_principal' => '원금 미설정 (기능설정에서 입력)',
