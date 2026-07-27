@@ -62,6 +62,9 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     // 회의확장씬 큐 15 / G5 (2026-05-23) — 영업담당자별 재고관리.
     Volt::route('inventory', 'erp.inventory.index')->name('inventory.index');
 
+    // 예치·가수금 (jin 2026-07-27, 안건4 1단계) — mount 에서 canEnterCashBalance 가드.
+    Volt::route('deposits', 'erp.deposits.index')->name('deposits.index');
+
     // ETA 통관서류 알림함 (2026-06-18) — 컴포넌트 mount 에서 canAccessClearance 가드.
     Volt::route('alarms', 'erp.alarms.index')->name('alarms.index');
 
