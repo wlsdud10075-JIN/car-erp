@@ -5550,6 +5550,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
@@ -5631,6 +5632,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
@@ -5675,7 +5677,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="21" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
+            <tr><td colspan="26" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
             @endforelse
         </tbody>
         </table>
@@ -5691,7 +5693,7 @@ function vehicleColumnsToggle() {
         transport_fee: true, purchase_from: false,
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
-        export_declaration_number: false, container_number: false,
+        export_declaration_number: false, container_number: false, bl_number: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, sales_channel: false,
@@ -5710,6 +5712,7 @@ function vehicleColumnsToggle() {
             { key: 'deregistration_date',       label: @json(__('vehicle.col.deregistration_date')) },
             { key: 'export_declaration_number', label: @json(__('vehicle.col.export_declaration_number')) },
             { key: 'container_number',          label: @json(__('vehicle.col.container_number')) },
+            { key: 'bl_number',                 label: @json(__('vehicle.col.bl_number')) },
             { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },
             { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
             { key: 'sales_channel',  label: @json(__('vehicle.col.channel')) },

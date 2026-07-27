@@ -54,6 +54,7 @@ return [
         'deregistration_date' => 'Deregistration',
         'export_declaration_number' => 'Export Decl. No.',
         'container_number' => 'Container',
+        'bl_number' => 'B/L No.',
         'salesman' => 'Salesman',
         'purchase_from' => 'Purchase Source',
         'buyer' => 'Buyer',
