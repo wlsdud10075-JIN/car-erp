@@ -54,6 +54,7 @@ return [
         'deregistration_date' => '말소일',
         'export_declaration_number' => '수출신고번호',
         'container_number' => '컨테이너',
+        'bl_number' => 'B/L 번호',
         'salesman' => '담당자',
         'purchase_from' => '구입처',
         'buyer' => '바이어',
