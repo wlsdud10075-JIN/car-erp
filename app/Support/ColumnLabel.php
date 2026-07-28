@@ -39,7 +39,10 @@ class ColumnLabel
             return $columnName;
         }
 
-        return config("column_labels.$table.$columnName", $columnName);
+        $label = config("column_labels.$table.$columnName", $columnName);
+
+        // 방어 — 사전에 중첩 구조가 들어와도 500 대신 영문 fallback (columnAny 와 동일 정책).
+        return is_string($label) ? $label : $columnName;
     }
 
     /**
@@ -79,11 +82,16 @@ class ColumnLabel
         if ($columnName === null || $columnName === '') {
             return '-';
         }
+        // ⚠️ 'value_maps' 제외 필수 (2026-07-28 운영 500 수정).
+        //   value_maps 는 "컬럼→라벨" 이 아니라 "테이블→(컬럼→값매핑)" 2단 구조라 값이 배열이다.
+        //   그래서 column_name 이 테이블명과 겹치면(예: purchase_payment_after_paid 이벤트가
+        //   column_name 에 'purchase_balance_payments' 를 넣음) 배열을 반환해 감사로그 화면이 500 났다.
+        //   is_string 방어도 함께 — 사전에 새 2단 그룹이 추가돼도 화면이 죽지 않게.
         foreach (config('column_labels', []) as $key => $group) {
-            if (in_array($key, ['models', 'actions'], true) || ! is_array($group)) {
+            if (in_array($key, ['models', 'actions', 'value_maps'], true) || ! is_array($group)) {
                 continue;
             }
-            if (isset($group[$columnName])) {
+            if (isset($group[$columnName]) && is_string($group[$columnName])) {
                 return $group[$columnName];
             }
         }
