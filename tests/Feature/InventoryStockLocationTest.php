@@ -144,6 +144,21 @@ class InventoryStockLocationTest extends TestCase
             ->assertDontSeeText('11가1001');
     }
 
+    public function test_column_picker_offers_vehicle_list_columns(): void
+    {
+        // 차량관리 리스트의 컬럼들을 재고관리에서도 표시컬럼으로 고를 수 있어야 한다(jin 2026-07-28).
+        // 토글 자체는 Alpine+localStorage 라, 서버는 컬럼과 선택 UI 를 내려주는 것까지 책임진다.
+        $this->admin();
+        $this->stockVehicle('11가1001');
+
+        $page = Volt::test('erp.inventory.index');
+
+        $page->assertSeeText('표시 컬럼');
+        foreach (['선박명', '컨사이니', '판매일', '수출신고번호', 'B/L 번호', '구입처'] as $label) {
+            $page->assertSeeText($label);
+        }
+    }
+
     public function test_multiple_locations_can_be_selected_together(): void
     {
         // 홈플+화물 처럼 여러 곳을 동시에 (jin 2026-07-28).

@@ -16,6 +16,8 @@ return [
     'col_warehouse_in' => 'Warehoused In',
     'col_shipping' => 'Shipping Date',
     'col_warehouse_out' => 'Warehoused Out',
+    'col_vessel' => 'Vessel',
+    'col_consignee' => 'Consignee',
     'col_location' => 'Location',
     'location_note_ph' => 'Note',
     'location_none' => 'Unset',

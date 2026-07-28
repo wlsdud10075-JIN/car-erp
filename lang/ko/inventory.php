@@ -16,6 +16,8 @@ return [
     'col_warehouse_in' => '입고일',
     'col_shipping' => '선적일',
     'col_warehouse_out' => '출고일',
+    'col_vessel' => '선박명',
+    'col_consignee' => '컨사이니',
     'col_location' => '보관 위치',
     'location_note_ph' => '비고',
     'location_none' => '미지정',
