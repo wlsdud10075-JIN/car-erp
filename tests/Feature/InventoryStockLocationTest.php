@@ -74,6 +74,22 @@ class InventoryStockLocationTest extends TestCase
         $this->assertNull($v->fresh()->stock_location);
     }
 
+    public function test_clicking_same_location_clears_it_even_when_draft_not_loaded(): void
+    {
+        // draft 는 목록 렌더 때 채워진다. 페이지 이동 직후처럼 아직 안 채워진 차량도
+        // DB 값 기준으로 해제돼야 한다(렌더 순서에 기대지 않는다).
+        $this->admin();
+        $v = $this->stockVehicle('11가1001');
+        $v->update(['stock_location' => '야드']);
+
+        Volt::test('erp.inventory.index')
+            ->set('stockLocation', [])         // draft 비우기 = 아직 안 실린 상태 재현
+            ->call('setLocation', $v->id, '야드')
+            ->call('applyWarehouseOut');
+
+        $this->assertNull($v->fresh()->stock_location);
+    }
+
     public function test_note_is_saved_with_apply(): void
     {
         $this->admin();

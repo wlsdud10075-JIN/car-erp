@@ -79,4 +79,13 @@ class VehicleListCountOnlyTest extends TestCase
 
         Volt::test('erp.vehicles.index')->set('perPage', 7)->assertSet('perPage', 10);
     }
+
+    public function test_invalid_per_page_from_url_is_normalized_at_mount(): void
+    {
+        // #[Url] 이라 ?perPage=… 로 직접 들어올 수 있다. 0(건수만) 이 의미를 가진 뒤로는
+        // 잘못된 값이 빈 목록으로 새면 이유를 알 수 없다.
+        $this->admin();
+
+        Volt::test('erp.vehicles.index', ['perPage' => 999])->assertSet('perPage', 10);
+    }
 }

@@ -244,7 +244,11 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($location !== '' && ! in_array($location, Vehicle::STOCK_LOCATIONS, true)) {
             return;   // 화이트리스트 밖 값은 무시
         }
-        $current = (string) ($this->stockLocation[$vehicleId] ?? '');
+        // draft 는 목록 렌더(inventoryVehicles) 때 DB 값으로 채워진다. 아직 안 채워진 차량(페이지 이동 직후 등)은
+        // DB 값을 기준으로 판단한다 — 렌더 순서에 기대면 "이미 그 위치인 차를 다시 눌러도 해제가 안 되는" 버그가 난다.
+        $current = array_key_exists($vehicleId, $this->stockLocation)
+            ? (string) $this->stockLocation[$vehicleId]
+            : (string) (Vehicle::whereKey($vehicleId)->value('stock_location') ?? '');
         $this->stockLocation[$vehicleId] = $current === $location ? '' : $location;
     }
 

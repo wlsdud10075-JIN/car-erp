@@ -1110,6 +1110,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        // perPage 는 #[Url] 이라 ?perPage=… 로 직접 들어온다. 0 이 「건수만」이라는 의미를 갖게 된 뒤로는
+        // 잘못된 값이 그대로 paginate() 에 새면 빈 목록의 이유를 알 수 없다 → 진입 시 한 번 정규화.
+        if (! in_array($this->perPage, [self::PER_PAGE_COUNT_ONLY, 10, 30, 50, 100], true)) {
+            $this->perPage = 10;
+        }
+
         // 정산 등에서 ?openVehicle=ID 진입 → 해당 차량 편집 패널 자동 오픈 + 매입 탭(기타비용 수정 동선).
         if ($this->openVehicle) {
             try {
