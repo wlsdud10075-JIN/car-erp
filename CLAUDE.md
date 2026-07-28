@@ -49,8 +49,9 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 **미들웨어 매핑**:
 | alias | 메서드 | 보호 대상 |
 |---|---|---|
-| `admin` | `canAccessAdmin()` = super+admin | /admin/* |
-| `super-admin` | `isSuperAdmin()` = super만 | 기능설정 |
+| `admin` | `canAccessAdmin()` = super+admin+업무관리자 | /admin/* |
+| `super-admin` | `isSuperAdmin()` = super만 | 기능설정 · **알림톡 로그 · 알림톡 안내** |
+| `operation-logs` | `canViewOperationLogs()` = super+admin+업무관리자+role`관리` (= "[관리] 이상") | **문서접근로그 · 감사로그 · 메일발송로그** |
 | `erp` | `canAccessErp()` = super/admin ∪ role 전체 | /erp/* |
 | `sales` | role∈{전체,영업} | /erp/salesmen/{id}/cashflow (본인) |
 | `clearance` | role∈{수출통관,관리} | /erp/forwardings, /erp/vehicles 통관 탭 |
