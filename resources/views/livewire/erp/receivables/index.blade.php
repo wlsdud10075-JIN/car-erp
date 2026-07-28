@@ -77,7 +77,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
-    public function search(): void
+    /**
+     * 검색어 변경 시 페이지 리셋 (Livewire 자동 훅 — 이 화면은 wire:model.live 바인딩).
+     * ⚠️ 이름을 search() 로 두면 $search 프로퍼티와 충돌해 호출조차 안 된다(wire:click 도 죽음).
+     *    상세 = tests/Feature/VoltPropertyMethodCollisionTest.
+     */
+    public function updatedSearch(): void
     {
         $this->resetPage();
     }
