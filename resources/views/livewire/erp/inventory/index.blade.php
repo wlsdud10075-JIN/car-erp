@@ -76,7 +76,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $isShippedOut = $this->category === 'shipped_out';
 
         $result = Vehicle::query()
-            ->with(['salesman', 'buyer', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
+            ->with(['salesman', 'buyer', 'consignee', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
             ->when($isShippedOut,
                 fn ($q) => $q->whereNotNull('warehouse_out_date'),
                 fn ($q) => $q->inStock()
@@ -471,22 +471,55 @@ new #[Layout('components.layouts.app')] class extends Component
         <button type="button" wire:click="applyWarehouseOut" class="btn-primary text-xs">{{ __('inventory.out_apply_btn') }}</button>
     </div>
 
-    {{-- 데스크탑 테이블 --}}
-    <div class="hidden sm:block overflow-x-auto">
+    {{-- 데스크탑 테이블 — 표시컬럼 토글(차량관리와 같은 Alpine + localStorage 방식, jin 2026-07-28) --}}
+    <div class="hidden sm:block" x-data="inventoryColumnsToggle()" x-init="init()">
+        <div class="mb-2 flex justify-end relative">
+            <button type="button" @click="open = !open"
+                    class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
+                {{ __('vehicle.columns') }} <span x-text="open ? '▲' : '▼'"></span>
+            </button>
+            <div x-show="open" x-cloak @click.outside="open = false"
+                 class="absolute right-0 top-8 z-20 max-h-80 w-56 overflow-y-auto rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
+                <div class="px-3 pb-1 text-[10px] font-semibold uppercase text-gray-400">{{ __('vehicle.show_columns') }}</div>
+                <template x-for="col in togglableColumns" :key="col.key">
+                    <label class="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 cursor-pointer">
+                        <input type="checkbox" :checked="visible[col.key]" @change="toggle(col.key)" class="rounded" />
+                        <span x-text="col.label"></span>
+                    </label>
+                </template>
+                <div class="border-t border-gray-100 mt-1 px-3 py-1">
+                    <button @click="resetDefaults()" class="text-[11px] text-violet-600 hover:underline">{{ __('vehicle.reset_defaults') }}</button>
+                </div>
+            </div>
+        </div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.number') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.salesman') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.brand_model') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.vin') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_in') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_shipping') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{{ __('vehicle.col.brand_model') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{{ __('vehicle.col.vin') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['warehouse_in']">{{ __('inventory.col_warehouse_in') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{{ __('vehicle.col.purchase_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{{ __('vehicle.col.deregistration_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{{ __('vehicle.col.sale_date') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{{ __('inventory.col_shipping') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{{ __('vehicle.col.eta_date') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_location') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_buyer') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{{ __('inventory.col_vessel') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{{ __('vehicle.col.purchase_from') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{{ __('vehicle.col.purchase_price') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{{ __('vehicle.col.sale_price') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{{ __('vehicle.col.channel') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{{ __('inventory.col_buyer') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{{ __('inventory.col_consignee') }}</th>
                     <th class="pb-2 font-medium"></th>
                 </tr>
             </thead>
@@ -522,13 +555,17 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td class="py-3 pr-4">
                         <span class="badge {{ $statusBadge }}">{{ __('domain.progress.'.$v->progress_status_cache) }}</span>
                     </td>
-                    <td class="py-3 pr-4 text-gray-700">
+                    <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                         {{ $v->brand }} {{ $v->model_type }}
                         @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
                     </td>
-                    <td class="py-3 pr-4 font-mono text-xs text-gray-600">{{ $v->nice_reg_vin ?: '-' }}</td>
-                    <td class="py-3 pr-4 text-gray-500">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
-                    <td class="py-3 pr-4 text-gray-500">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['warehouse_in']">{{ $v->warehouse_in_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['eta_date']">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4" @click.stop>
                         <input type="text" data-date wire:key="inv-out-{{ $v->id }}" wire:model="warehouseOut.{{ $v->id }}"
                                placeholder="YYYY-MM-DD"
@@ -550,10 +587,25 @@ new #[Layout('components.layouts.app')] class extends Component
                                    class="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
                         </div>
                     </td>
-                    <td class="py-3 pr-4 text-right text-gray-700">
+                    <td class="py-3 pr-4 text-xs text-gray-600" x-show="visible['vessel_name']">{{ $v->vessel_name ?: '-' }}</td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
+                    <td class="py-3 pr-4 text-right text-gray-700" x-show="visible['purchase_price']">
                         @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
                     </td>
-                    <td class="py-3 pr-4 text-gray-500">{{ $v->buyer?->name ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-right text-gray-700" x-show="visible['sale_price']">
+                        @if($v->sale_price > 0){{ number_format($v->sale_price) }} {{ $v->currency }}@else -@endif
+                    </td>
+                    <td class="py-3 pr-4 text-right text-xs text-gray-500" x-show="visible['currency_rate']">
+                        {{ $v->currency }} @if($v->exchange_rate > 0)/ {{ number_format($v->exchange_rate) }}@endif
+                    </td>
+                    <td class="py-3 pr-4" x-show="visible['sales_channel']">
+                        <span class="badge {{ $v->sales_channel === 'export' ? 'badge-blue' : ($v->sales_channel === 'heyman' ? 'badge-teal' : 'badge-purple') }}">{{ $v->sales_channel }}</span>
+                    </td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->consignee?->name ?? '-' }}</td>
                     <td class="py-3 text-right">
                         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}"
                            wire:navigate
@@ -561,13 +613,68 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="12" class="py-12 text-center text-sm text-gray-400">
+                <tr><td colspan="24" class="py-12 text-center text-sm text-gray-400">
                     {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
+
+    {{-- 표시컬럼 토글 (차량관리와 같은 방식) — 선택은 localStorage 에 남아 다음에도 유지된다. --}}
+    <script>
+    function inventoryColumnsToggle() {
+        const STORAGE_KEY = 'car_erp_inventory_columns_v1';
+        const defaultVisible = {
+            brand_model: true, vin: true, warehouse_in: true, shipping_date: true,
+            purchase_price: true, buyer: true,
+            purchase_date: false, deregistration_date: false, sale_date: false, eta_date: false,
+            vessel_name: false, container_number: false, export_declaration_number: false, bl_number: false,
+            purchase_from: false, sale_price: false, currency_rate: false, sales_channel: false, consignee: false,
+        };
+        return {
+            open: false,
+            visible: {},
+            togglableColumns: [
+                { key: 'brand_model',   label: @json(__('vehicle.col.brand_model')) },
+                { key: 'vin',           label: @json(__('vehicle.col.vin')) },
+                { key: 'warehouse_in',  label: @json(__('inventory.col_warehouse_in')) },
+                { key: 'purchase_date', label: @json(__('vehicle.col.purchase_date')) },
+                { key: 'deregistration_date', label: @json(__('vehicle.col.deregistration_date')) },
+                { key: 'sale_date',     label: @json(__('vehicle.col.sale_date')) },
+                { key: 'shipping_date', label: @json(__('inventory.col_shipping')) },
+                { key: 'eta_date',      label: @json(__('vehicle.col.eta_date')) },
+                { key: 'vessel_name',   label: @json(__('inventory.col_vessel')) },
+                { key: 'container_number', label: @json(__('vehicle.col.container_number')) },
+                { key: 'export_declaration_number', label: @json(__('vehicle.col.export_declaration_number')) },
+                { key: 'bl_number',     label: @json(__('vehicle.col.bl_number')) },
+                { key: 'purchase_from', label: @json(__('vehicle.col.purchase_from')) },
+                { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
+                { key: 'sale_price',    label: @json(__('vehicle.col.sale_price')) },
+                { key: 'currency_rate', label: @json(__('vehicle.col.currency_rate')) },
+                { key: 'sales_channel', label: @json(__('vehicle.col.channel')) },
+                { key: 'buyer',         label: @json(__('inventory.col_buyer')) },
+                { key: 'consignee',     label: @json(__('inventory.col_consignee')) },
+            ],
+            init() {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                const parsed = saved ? JSON.parse(saved) : {};
+                for (const key in defaultVisible) {
+                    this.visible[key] = parsed[key] !== undefined ? parsed[key] : defaultVisible[key];
+                }
+            },
+            toggle(key) {
+                this.visible[key] = !this.visible[key];
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+            },
+            resetDefaults() {
+                this.visible = { ...defaultVisible };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+            },
+        };
+    }
+    </script>
 
     {{-- 모바일 카드 --}}
     <div class="block sm:hidden space-y-2">
