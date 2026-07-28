@@ -109,6 +109,32 @@ class BulkVehicleShippingDateTest extends TestCase
         $this->assertSame('GMT 선적분', $batch->new_value);
     }
 
+    public function test_eight_digit_date_is_normalized(): void
+    {
+        // 20260801 이 그대로 새면 Eloquent date 캐스트가 Unix 타임스탬프로 읽어 1970 이 된다
+        // (2026-07-20 실측). 화면(app.js focusout)뿐 아니라 서버에서도 막는다.
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', 'GMT');
+
+        app(BulkVehicleShippingDateService::class)->apply(
+            Vehicle::query(), ['shipping_date' => '20260801'], $user, 'GMT'
+        );
+
+        $this->assertSame('2026-08-01', $v->fresh()->shipping_date->format('Y-m-d'));
+    }
+
+    public function test_rejects_malformed_date(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+
+        $this->expectException(\InvalidArgumentException::class);
+        app(BulkVehicleShippingDateService::class)->apply(
+            Vehicle::query(), ['shipping_date' => '8월 1일'], $user, 'GMT'
+        );
+    }
+
     public function test_rejects_user_without_clearance_access(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);

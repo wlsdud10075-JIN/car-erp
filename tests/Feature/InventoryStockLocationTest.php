@@ -144,14 +144,51 @@ class InventoryStockLocationTest extends TestCase
             ->assertDontSeeText('11가1001');
     }
 
+    public function test_multiple_locations_can_be_selected_together(): void
+    {
+        // 홈플+화물 처럼 여러 곳을 동시에 (jin 2026-07-28).
+        $this->admin();
+        $home = $this->stockVehicle('11가1001');
+        $cargo = $this->stockVehicle('22나2002');
+        $yard = $this->stockVehicle('33다3003');
+        $home->update(['stock_location' => '홈플']);
+        $cargo->update(['stock_location' => '화물']);
+        $yard->update(['stock_location' => '야드']);
+
+        Volt::test('erp.inventory.index')
+            ->call('toggleLocationFilter', '홈플')
+            ->call('toggleLocationFilter', '화물')
+            ->assertSet('locationFilters', ['홈플', '화물'])
+            ->assertSeeText('11가1001')
+            ->assertSeeText('22나2002')
+            ->assertDontSeeText('33다3003');
+    }
+
+    public function test_selected_locations_can_include_unset(): void
+    {
+        $this->admin();
+        $yard = $this->stockVehicle('11가1001');
+        $this->stockVehicle('22나2002');   // 미지정
+        $cargo = $this->stockVehicle('33다3003');
+        $yard->update(['stock_location' => '야드']);
+        $cargo->update(['stock_location' => '화물']);
+
+        Volt::test('erp.inventory.index')
+            ->call('toggleLocationFilter', '야드')
+            ->call('toggleLocationFilter', '__none')
+            ->assertSeeText('11가1001')
+            ->assertSeeText('22나2002')
+            ->assertDontSeeText('33다3003');
+    }
+
     public function test_toggling_same_filter_clears_it(): void
     {
         $this->admin();
 
         Volt::test('erp.inventory.index')
             ->call('toggleLocationFilter', '야드')
-            ->assertSet('locationFilter', '야드')
+            ->assertSet('locationFilters', ['야드'])
             ->call('toggleLocationFilter', '야드')
-            ->assertSet('locationFilter', '');
+            ->assertSet('locationFilters', []);
     }
 }

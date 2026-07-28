@@ -46,8 +46,12 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 20;
 
-    /** 보관 위치 필터 (jin 2026-07-28) — 담당자 + 위치로 좁혀 본다. */
-    #[Url] public string $locationFilter = '';
+    /**
+     * 보관 위치 필터 (jin 2026-07-28) — 담당자 + 위치로 좁혀 본다.
+     * 다중 선택 — 홈플+화물 처럼 여러 곳을 동시에 볼 수 있다. 빈 배열 = 전체.
+     * '__none' 은 위치 미지정 차량(다른 위치와 함께 고를 수 있다).
+     */
+    #[Url(as: 'loc')] public array $locationFilters = [];
 
     /** 출고일 draft (vehicle_id => 'Y-m-d' | ''). 즉시저장 아님 — 여러 차량 지정 후 「적용」으로 일괄 저장. */
     public array $warehouseOut = [];
@@ -85,9 +89,18 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->buyerFilter !== '', fn ($q) => $q->where('buyer_id', $this->buyerFilter))
             ->when($this->consigneeFilter !== '', fn ($q) => $q->where('consignee_id', $this->consigneeFilter))
             ->when($this->statusFilter !== '', fn ($q) => $q->where('progress_status_cache', $this->statusFilter))
-            ->when($this->locationFilter !== '', fn ($q) => $this->locationFilter === '__none'
-                ? $q->where(fn ($q2) => $q2->whereNull('stock_location')->orWhere('stock_location', ''))
-                : $q->where('stock_location', $this->locationFilter))
+            ->when($this->locationFilters !== [], function ($q) {
+                $picked = array_values(array_diff($this->locationFilters, ['__none']));
+                $wantNone = in_array('__none', $this->locationFilters, true);
+                $q->where(function ($q2) use ($picked, $wantNone) {
+                    if ($picked !== []) {
+                        $q2->whereIn('stock_location', $picked);
+                    }
+                    if ($wantNone) {
+                        $q2->orWhereNull('stock_location')->orWhere('stock_location', '');
+                    }
+                });
+            })
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
@@ -316,14 +329,20 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilter']);
+        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilters']);
         $this->resetPage();
     }
 
-    /** 위치 필터 pill 클릭 — 같은 값을 다시 누르면 해제(전체). */
+    /** 위치 필터 pill 클릭 — 누를 때마다 추가/해제(다중). 전부 해제하면 전체. */
     public function toggleLocationFilter(string $location): void
     {
-        $this->locationFilter = $this->locationFilter === $location ? '' : $location;
+        if (in_array($location, $this->locationFilters, true)) {
+            $this->locationFilters = array_values(array_filter(
+                $this->locationFilters, fn ($l) => $l !== $location
+            ));
+        } else {
+            $this->locationFilters[] = $location;
+        }
         unset($this->inventoryVehicles);
         $this->resetPage();
     }
@@ -427,12 +446,12 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex items-center gap-1">
             @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
                 <button type="button" wire:click="toggleLocationFilter('{{ $loc }}')"
-                        class="rounded-full border px-2.5 py-1 text-xs {{ $locationFilter === $loc ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                        class="rounded-full border px-2.5 py-1 text-xs {{ in_array($loc, $locationFilters, true) ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
                     {{ $loc }}
                 </button>
             @endforeach
             <button type="button" wire:click="toggleLocationFilter('__none')"
-                    class="rounded-full border px-2.5 py-1 text-xs {{ $locationFilter === '__none' ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-400 hover:bg-gray-50' }}">
+                    class="rounded-full border px-2.5 py-1 text-xs {{ in_array('__none', $locationFilters, true) ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-400 hover:bg-gray-50' }}">
                 {{ __('inventory.location_none') }}
             </button>
         </div>
