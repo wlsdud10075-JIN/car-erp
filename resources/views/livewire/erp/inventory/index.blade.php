@@ -46,8 +46,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 20;
 
+    /** 보관 위치 필터 (jin 2026-07-28) — 담당자 + 위치로 좁혀 본다. */
+    #[Url] public string $locationFilter = '';
+
     /** 출고일 draft (vehicle_id => 'Y-m-d' | ''). 즉시저장 아님 — 여러 차량 지정 후 「적용」으로 일괄 저장. */
     public array $warehouseOut = [];
+
+    /** 보관 위치 draft (vehicle_id => '홈플'|'화물'|'야드'|''). 출고일과 같은 「적용」으로 함께 저장. */
+    public array $stockLocation = [];
+
+    /** 위치 비고 draft (vehicle_id => 자유 텍스트). */
+    public array $stockLocationNote = [];
 
     #[Computed]
     public function inventoryVehicles()
@@ -76,6 +85,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->buyerFilter !== '', fn ($q) => $q->where('buyer_id', $this->buyerFilter))
             ->when($this->consigneeFilter !== '', fn ($q) => $q->where('consignee_id', $this->consigneeFilter))
             ->when($this->statusFilter !== '', fn ($q) => $q->where('progress_status_cache', $this->statusFilter))
+            ->when($this->locationFilter !== '', fn ($q) => $this->locationFilter === '__none'
+                ? $q->where(fn ($q2) => $q2->whereNull('stock_location')->orWhere('stock_location', ''))
+                : $q->where('stock_location', $this->locationFilter))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
@@ -96,6 +108,12 @@ new #[Layout('components.layouts.app')] class extends Component
         foreach ($result as $v) {
             if (! array_key_exists($v->id, $this->warehouseOut)) {
                 $this->warehouseOut[$v->id] = $v->warehouse_out_date?->format('Y-m-d') ?? '';
+            }
+            if (! array_key_exists($v->id, $this->stockLocation)) {
+                $this->stockLocation[$v->id] = (string) ($v->stock_location ?? '');
+            }
+            if (! array_key_exists($v->id, $this->stockLocationNote)) {
+                $this->stockLocationNote[$v->id] = (string) ($v->stock_location_note ?? '');
             }
         }
 
@@ -218,14 +236,29 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
-     * 출고일 일괄 적용 (jin 2026-07-09) — 여러 차량 출고일을 지정한 뒤 「적용」 버튼으로 한 번에 저장.
-     * 즉시저장(오클릭 위험) 대신 draft(warehouseOut) 편집 → 적용. DB와 다른 것만 저장.
+     * 보관 위치 선택 (jin 2026-07-28) — 버튼 클릭으로 draft 에 찍는다. 같은 값을 다시 누르면 해제.
+     * 저장은 출고일과 함께 「적용」에서 (즉시저장 아님 — 오클릭 방지 원칙 유지).
+     */
+    public function setLocation(int $vehicleId, string $location): void
+    {
+        if ($location !== '' && ! in_array($location, Vehicle::STOCK_LOCATIONS, true)) {
+            return;   // 화이트리스트 밖 값은 무시
+        }
+        $current = (string) ($this->stockLocation[$vehicleId] ?? '');
+        $this->stockLocation[$vehicleId] = $current === $location ? '' : $location;
+    }
+
+    /**
+     * 출고일·보관위치 일괄 적용 (jin 2026-07-09 / 위치 2026-07-28) — 여러 차량을 지정한 뒤 「적용」으로 한 번에 저장.
+     * 즉시저장(오클릭 위험) 대신 draft 편집 → 적용. DB와 다른 것만 저장.
      * 스코프 인증(영업=본인/관리=팀/그외=전체). 출고일 있으면 재고 제외, 비우면 복귀.
      */
     public function applyWarehouseOut(): void
     {
         $user = auth()->user();
-        $ids = array_values(array_filter(array_map('intval', array_keys($this->warehouseOut))));
+        $ids = array_values(array_unique(array_filter(array_map('intval', array_merge(
+            array_keys($this->warehouseOut), array_keys($this->stockLocation), array_keys($this->stockLocationNote)
+        )))));
         if (empty($ids)) {
             return;
         }
@@ -235,12 +268,38 @@ new #[Layout('components.layouts.app')] class extends Component
             if (! $user->canScopeVehicle($v)) {
                 continue;   // 스코프 밖 (IDOR 방지)
             }
-            $draft = trim((string) ($this->warehouseOut[$v->id] ?? ''));
-            $new = $draft !== '' ? $draft : null;
-            if ($new === $v->warehouse_out_date?->format('Y-m-d')) {
+            $dirty = false;
+
+            if (array_key_exists($v->id, $this->warehouseOut)) {
+                $draft = trim((string) $this->warehouseOut[$v->id]);
+                $new = $draft !== '' ? $draft : null;
+                if ($new !== $v->warehouse_out_date?->format('Y-m-d')) {
+                    $v->warehouse_out_date = $new;
+                    $dirty = true;
+                }
+            }
+
+            if (array_key_exists($v->id, $this->stockLocation)) {
+                $loc = trim((string) $this->stockLocation[$v->id]);
+                $loc = in_array($loc, Vehicle::STOCK_LOCATIONS, true) ? $loc : null;
+                if ($loc !== $v->stock_location) {
+                    $v->stock_location = $loc;
+                    $dirty = true;
+                }
+            }
+
+            if (array_key_exists($v->id, $this->stockLocationNote)) {
+                $note = trim((string) $this->stockLocationNote[$v->id]);
+                $note = $note !== '' ? mb_substr($note, 0, 255) : null;
+                if ($note !== $v->stock_location_note) {
+                    $v->stock_location_note = $note;
+                    $dirty = true;
+                }
+            }
+
+            if (! $dirty) {
                 continue;   // 변경 없음
             }
-            $v->warehouse_out_date = $new;
             $v->save();
             $applied++;
         }
@@ -253,7 +312,15 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter']);
+        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilter']);
+        $this->resetPage();
+    }
+
+    /** 위치 필터 pill 클릭 — 같은 값을 다시 누르면 해제(전체). */
+    public function toggleLocationFilter(string $location): void
+    {
+        $this->locationFilter = $this->locationFilter === $location ? '' : $location;
+        unset($this->inventoryVehicles);
         $this->resetPage();
     }
 }; ?>
@@ -352,6 +419,19 @@ new #[Layout('components.layouts.app')] class extends Component
             <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>
             @endforeach
         </select>
+        {{-- 보관 위치 필터 (jin 2026-07-28) — 담당자 선택 후 위치를 눌러 좁힌다. 다시 누르면 해제. --}}
+        <div class="flex items-center gap-1">
+            @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+                <button type="button" wire:click="toggleLocationFilter('{{ $loc }}')"
+                        class="rounded-full border px-2.5 py-1 text-xs {{ $locationFilter === $loc ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                    {{ $loc }}
+                </button>
+            @endforeach
+            <button type="button" wire:click="toggleLocationFilter('__none')"
+                    class="rounded-full border px-2.5 py-1 text-xs {{ $locationFilter === '__none' ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-400 hover:bg-gray-50' }}">
+                {{ __('inventory.location_none') }}
+            </button>
+        </div>
         <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
         <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('common.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
@@ -381,6 +461,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_in') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_shipping') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_location') }}</th>
                     <th class="pb-2 pr-4 font-medium text-right">{{ __('vehicle.col.purchase_price') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_buyer') }}</th>
                     <th class="pb-2 font-medium"></th>
@@ -430,6 +511,22 @@ new #[Layout('components.layouts.app')] class extends Component
                                placeholder="YYYY-MM-DD"
                                class="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
                     </td>
+                    {{-- 보관 위치 (jin 2026-07-28) — 버튼으로 찍고 옆칸에 비고. 저장은 출고일과 같은 「적용」. --}}
+                    <td class="py-3 pr-4" @click.stop>
+                        <div class="flex items-center gap-1">
+                            @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+                                @php $on = ($this->stockLocation[$v->id] ?? '') === $loc; @endphp
+                                <button type="button" wire:key="inv-loc-{{ $v->id }}-{{ $loc }}"
+                                        wire:click="setLocation({{ $v->id }}, '{{ $loc }}')"
+                                        class="rounded border px-1.5 py-0.5 text-xs {{ $on ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                                    {{ $loc }}
+                                </button>
+                            @endforeach
+                            <input type="text" wire:key="inv-locnote-{{ $v->id }}" wire:model="stockLocationNote.{{ $v->id }}"
+                                   placeholder="{{ __('inventory.location_note_ph') }}" maxlength="255"
+                                   class="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-700 focus:border-primary" />
+                        </div>
+                    </td>
                     <td class="py-3 pr-4 text-right text-gray-700">
                         @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
                     </td>
@@ -441,7 +538,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="11" class="py-12 text-center text-sm text-gray-400">
+                <tr><td colspan="12" class="py-12 text-center text-sm text-gray-400">
                     {{ __('inventory.empty') }}
                 </td></tr>
                 @endforelse
@@ -476,6 +573,20 @@ new #[Layout('components.layouts.app')] class extends Component
                 <input type="text" data-date wire:key="inv-out-m-{{ $v->id }}" wire:model="warehouseOut.{{ $v->id }}"
                        placeholder="YYYY-MM-DD"
                        class="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
+            </div>
+            <div class="mt-1.5 flex flex-wrap items-center gap-1 text-xs" @click.stop.prevent>
+                <span class="text-gray-500">{{ __('inventory.col_location') }}</span>
+                @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+                    @php $onM = ($this->stockLocation[$v->id] ?? '') === $loc; @endphp
+                    <button type="button" wire:key="inv-loc-m-{{ $v->id }}-{{ $loc }}"
+                            wire:click="setLocation({{ $v->id }}, '{{ $loc }}')"
+                            class="rounded border px-1.5 py-0.5 {{ $onM ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500' }}">
+                        {{ $loc }}
+                    </button>
+                @endforeach
+                <input type="text" wire:key="inv-locnote-m-{{ $v->id }}" wire:model="stockLocationNote.{{ $v->id }}"
+                       placeholder="{{ __('inventory.location_note_ph') }}" maxlength="255"
+                       class="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-xs" />
             </div>
         </a>
         @empty

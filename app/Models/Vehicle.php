@@ -71,7 +71,8 @@ class Vehicle extends Model
         'nice_spec_transmission', 'nice_spec_drive_type', 'nice_spec_length',
         'nice_spec_width', 'nice_spec_height', 'nice_spec_wheelbase',
         'nice_spec_curb_weight', 'nice_spec_fuel_efficiency',
-        'purchase_date', 'warehouse_out_date', 'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
+        'purchase_date', 'warehouse_out_date', 'stock_location', 'stock_location_note',
+        'salesman_id', 'purchase_from', 'purchase_source', 'c_no', 'purchase_price', 'selling_fee',
         'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
         'is_deposit_purchase', 'deposit_purchase_at',   // 보증금 매입 마커 + 도장 일시 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
@@ -479,6 +480,9 @@ class Vehicle extends Model
         // 2026-07-28 (jin) — 출고일. 찍는 순간 차량이 재고에서 빠지고(scopeInStock) 선적전/후 미수
         //   분류 pivot 도 바뀌는데 누가 언제 처리했는지 기록이 없었다. 되돌림(비우기)도 추적 대상.
         'warehouse_out_date',
+        // 2026-07-28 (jin) — 선적일·ETA. 묶음 단위로 수백 대를 한 번에 바꾸는 일괄 지정이 생겨서,
+        //   누가 언제 어느 값으로 돌렸는지 개별 추적이 필요해졌다. (일괄 출처는 bulk_shipping_date_applied 로 별도 기록.)
+        'shipping_date', 'eta_date',
     ];
 
     /**
@@ -1590,6 +1594,12 @@ class Vehicle extends Model
 
     /** 일반재고 권장 판매 기한(입고일 기준 개월) — 경과 시 뱃지 표시만. */
     public const GENERAL_STOCK_SELL_MONTHS = 3;
+
+    /**
+     * 재고 보관 위치 (jin 2026-07-28) — 재고관리 화면에서 버튼으로 찍는다.
+     * 야적장이 늘면 여기에 추가하면 화면 버튼·필터가 함께 늘어난다(컬럼은 string 이라 마이그 불필요).
+     */
+    public const STOCK_LOCATIONS = ['홈플', '화물', '야드'];
 
     /**
      * 재고 2분류 (jin 2026-07-18):

@@ -56,6 +56,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public bool $create = false;
     // 회의확장씬 #3 Phase 2-4 (2026-05-23) — 필터바 바이어 select.
     #[Url] public string $buyerId = '';
+    /** perPage 특수값 — 목록을 렌더하지 않고 건수만 표시(대량 필터 → 엑셀 흐름용). */
+    public const PER_PAGE_COUNT_ONLY = 0;
+
+    // 선적일·ETA 일괄 지정 (jin 2026-07-28) — 현재 필터에 걸린 차량 전체가 대상.
+    public bool $bulkDateOpen = false;
+
+    public string $bulkShipDate = '';
+
+    public string $bulkEtaDate = '';
+
+    public string $bulkDateReason = '';
+
     #[Url] public int $perPage = 10;
 
     // #3 다중차량 선적 서류 — 체크박스로 선택한 차량 id (export 차량만). 선택 N대 → 1서류.
@@ -1632,7 +1644,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedPerPage(): void
     {
-        if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
+        if (! in_array($this->perPage, [self::PER_PAGE_COUNT_ONLY, 10, 30, 50, 100], true)) {
             $this->perPage = 10;
         }
         unset($this->vehicles);
@@ -1642,6 +1654,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function vehicles()
     {
+        // 건수만 모드 (jin 2026-07-28) — 선박명 등으로 수백 대를 걸러 엑셀로 받을 때, 화면은 건수만 알면 된다.
+        //   행을 안 불러오면 eager load 5종 + 행마다 도는 computed(progress_status·unpaid_ratio 등)가 통째로 빠진다.
+        //   빈 paginator 를 돌려주므로 total()·links() 를 쓰는 기존 뷰가 그대로 동작한다.
+        if ($this->perPage === self::PER_PAGE_COUNT_ONLY) {
+            return new \Illuminate\Pagination\LengthAwarePaginator(
+                [], $this->filteredVehicleQuery()->count(), 10, 1, ['path' => request()->url()]
+            );
+        }
+
         return $this->filteredVehicleQuery()
             ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->orderBy($this->sortColumn, $this->sortDirection)
@@ -1700,6 +1721,49 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 목록 필터 체인 — vehicles(페이지) · freightTotals(합계) 공용 단일 출처 (item 6, jin 2026-07-18).
      * 정렬·페이지네이션·eager load 는 호출부에서.
      */
+    /**
+     * 선적일·ETA 일괄 지정 모달 열기 — 대상 건수를 확인시킨 뒤 적용(확인 1단계, jin 2026-07-28).
+     */
+    public function openBulkDate(): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        $this->bulkShipDate = '';
+        $this->bulkEtaDate = '';
+        $this->bulkDateReason = '';
+        $this->bulkDateOpen = true;
+    }
+
+    /**
+     * 현재 필터에 걸린 차량 전체에 선적일·ETA 적용.
+     * ⚠️ 대상은 화면이 넘긴 ID 가 아니라 filteredVehicleQuery() 로 서버에서 다시 도출한다(SKILLS §8 #26).
+     */
+    public function applyBulkDate(): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canAccessClearance(), 403);
+
+        try {
+            $result = app(\App\Services\BulkVehicleShippingDateService::class)->apply(
+                $this->filteredVehicleQuery(),
+                ['shipping_date' => $this->bulkShipDate, 'eta_date' => $this->bulkEtaDate],
+                $user,
+                $this->bulkDateReason !== '' ? $this->bulkDateReason : __('vehicle.bulk_date.reason_default'),
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        $this->bulkDateOpen = false;
+        unset($this->vehicles);
+        $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_date.done', [
+            'applied' => $result['applied'],
+            'unchanged' => $result['unchanged'],
+            'skipped' => count($result['skipped']),
+        ]));
+    }
+
     private function filteredVehicleQuery()
     {
         $dateColumn = match ($this->dateType) {
@@ -5272,6 +5336,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="30">{{ __('vehicle.per_page', ['count' => 30]) }}</option>
             <option value="50">{{ __('vehicle.per_page', ['count' => 50]) }}</option>
             <option value="100">{{ __('vehicle.per_page', ['count' => 100]) }}</option>
+            <option value="0">{{ __('vehicle.per_page_count_only') }}</option>
         </select>
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -5725,7 +5790,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="26" class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</td></tr>
+            <tr><td colspan="26" class="py-12 text-center text-sm text-gray-400">
+                @if ($this->perPage === 0)
+                    {{ __('vehicle.count_only_hint', ['count' => $this->vehicles->total()]) }}
+                @else
+                    {{ __('vehicle.empty') }}
+                @endif
+            </td></tr>
             @endforelse
         </tbody>
         </table>
@@ -5838,7 +5909,13 @@ function vehicleColumnsToggle() {
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">{{ __('vehicle.empty') }}</div>
+    <div class="py-12 text-center text-sm text-gray-400">
+        @if ($this->perPage === 0)
+            {{ __('vehicle.count_only_hint', ['count' => $this->vehicles->total()]) }}
+        @else
+            {{ __('vehicle.empty') }}
+        @endif
+    </div>
     @endforelse
 </div>
 
@@ -5852,6 +5929,14 @@ function vehicleColumnsToggle() {
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
             {{ __('vehicle.import_template_btn') }}
         </a>
+        @endif
+        @if(auth()->user()->canAccessClearance())
+        {{-- 선적일·ETA 일괄 지정 (jin 2026-07-28) — 한 선박에 실린 차량을 필터로 추린 뒤 날짜를 한 번에. --}}
+        <button type="button" wire:click="openBulkDate"
+                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            {{ __('vehicle.bulk_date.btn') }}
+        </button>
         @endif
         {{-- 데이터 내려받기 팝오버 (전 ERP role — canScopeVehicle 스코핑). 범위(현재필터/전체) + 컬럼 선택.
              정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 노출·허용. 선택 컬럼은 서버 화이트리스트 교집합. --}}
@@ -8620,6 +8705,45 @@ function vehicleColumnsToggle() {
 
 {{-- 작업2 (2026-05-27) — 차량 등록/수정 중 바이어·컨사이니 인라인 quick-add.
      패널 안 닫고 즉석 등록 → 자동 선택. 슬라이드 패널 stacking context 밖(z-100)에 배치. --}}
+@if($bulkDateOpen)
+{{-- 선적일·ETA 일괄 지정 확인 모달 (jin 2026-07-28) — 대상 건수를 보여주고 1단계 확인 후 적용. --}}
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-date-modal">
+    <div class="card w-full max-w-md mx-4 shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_date.title') }}</h3>
+        <p class="mt-1 text-xs font-medium text-primary-text">
+            {{ __('vehicle.bulk_date.target', ['count' => number_format($this->vehicles->total())]) }}
+        </p>
+
+        <div class="mt-4 space-y-3">
+            <div>
+                <label class="label-base">{{ __('vehicle.bulk_date.ship') }}</label>
+                <input wire:model="bulkShipDate" type="date" class="input-base" />
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.bulk_date.eta') }}</label>
+                <input wire:model="bulkEtaDate" type="date" class="input-base" />
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.bulk_date.reason') }}</label>
+                <input wire:model="bulkDateReason" type="text" class="input-base"
+                       placeholder="{{ __('vehicle.bulk_date.reason_ph') }}" />
+            </div>
+            <p class="text-xs text-gray-500">{{ __('vehicle.bulk_date.hint') }}</p>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="$set('bulkDateOpen', false)"
+                    class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                {{ __('common.cancel') }}
+            </button>
+            <button type="button" wire:click="applyBulkDate" wire:loading.attr="disabled" class="btn-primary">
+                {{ __('vehicle.bulk_date.apply', ['count' => number_format($this->vehicles->total())]) }}
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
 @if($quickAddOpen)
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="quick-add-modal">
     {{-- @click.stop 제거 (jin 2026-07-21): 카드가 클릭 전파를 막으면 내부 country-picker 의 @click.outside 가
