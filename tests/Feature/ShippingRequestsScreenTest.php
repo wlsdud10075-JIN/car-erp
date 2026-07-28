@@ -166,6 +166,60 @@ class ShippingRequestsScreenTest extends TestCase
         $this->assertSame(2, Vehicle::where('export_declaration_number', '12345-67-890123X')->count());
     }
 
+    /**
+     * 컨테이너 번호 일괄 기입 (jin 2026-07-28) — 반입 단계 정보라 B/L 발급(100% 완납 게이트)까지
+     * 기다리지 않고 신고번호와 같은 폼에서 채운다.
+     */
+    public function test_container_number_bulk_applies_with_declaration(): void
+    {
+        $this->batch('batch-C1', ['44라4444', '55마5555']);
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openDeclNumber', 'batch-C1')
+            ->set('declNumber', '12345-67-890123X')
+            ->set('declContainer', 'TEMU1234567')
+            ->call('applyDeclNumber');
+
+        $this->assertSame(2, Vehicle::where('container_number', 'TEMU1234567')->count());
+        $this->assertSame(2, Vehicle::where('export_declaration_number', '12345-67-890123X')->count());
+    }
+
+    /** 컨테이너만 채우고 신고번호는 비워도 반영 — 빈 칸은 기존값 보존. */
+    public function test_container_only_applies_and_blank_keeps_existing_declaration(): void
+    {
+        $this->batch('batch-C2', ['66바6666']);
+        Vehicle::where('vehicle_number', '66바6666')->update(['export_declaration_number' => 'KEEP-77']);
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openDeclNumber', 'batch-C2')
+            ->set('declNumber', '')
+            ->set('declContainer', 'MSKU7654321')
+            ->call('applyDeclNumber');
+
+        $v = Vehicle::where('vehicle_number', '66바6666')->first();
+        $this->assertSame('MSKU7654321', $v->container_number);
+        $this->assertSame('KEEP-77', $v->export_declaration_number, '빈 칸은 기존 신고번호를 덮지 않는다');
+    }
+
+    /** 둘 다 비면 아무것도 안 바뀐다. */
+    public function test_both_blank_is_rejected(): void
+    {
+        $this->batch('batch-C3', ['77사7777']);
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openDeclNumber', 'batch-C3')
+            ->set('declNumber', '')
+            ->set('declContainer', '')
+            ->call('applyDeclNumber');
+
+        $v = Vehicle::where('vehicle_number', '77사7777')->first();
+        $this->assertNull($v->container_number);
+        $this->assertNull($v->export_declaration_number);
+    }
+
     public function test_declaration_number_prefills_existing_value(): void
     {
         $this->batch('batch-P', ['33다3333']);
