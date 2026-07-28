@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public ?int $readjustVehicleId = null;
 
-    public function search(): void
+    public function searchNow(): void
     {
         $this->resetPage();
     }
@@ -893,7 +893,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
 {{-- 필터 바 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('settlement.search_ph') }}"
+    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('settlement.search_ph') }}"
            class="input-filter w-36" />
     <select wire:model="statusFilter" class="input-filter">
         <option value="">{{ __('settlement.filter_all_status') }}</option>
@@ -924,7 +924,7 @@ new #[Layout('components.layouts.app')] class extends Component
     <input wire:model="dateFrom" type="date" class="input-filter" />
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
-    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
     {{-- jin 2026-07-09 — 선택 월 미확정 정산 일괄 확정 (확정 → 이후 월배치 제출). --}}
     @if(auth()->user()->canConfirmFinance() && $monthFilter !== '')
     <button wire:click="confirmMonth" wire:confirm="{{ __('settlement.batch.confirm_month_prompt', ['month' => $monthFilter]) }}"

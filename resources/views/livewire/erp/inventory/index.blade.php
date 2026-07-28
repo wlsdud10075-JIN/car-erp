@@ -200,7 +200,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
-    public function search(): void
+    public function searchNow(): void
     {
         $this->resetPage();
     }
@@ -312,7 +312,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
-        <input wire:model="search" wire:keydown.enter="search" type="text"
+        <input wire:model="search" wire:keydown.enter="searchNow" type="text"
                placeholder="{{ __('inventory.search_ph') }}"
                class="input-filter w-64" />
         <select wire:model.live="salesmanFilter" class="input-filter">
@@ -332,7 +332,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>
             @endforeach
         </select>
-        <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+        <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
         <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('common.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
             <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>

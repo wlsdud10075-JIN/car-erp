@@ -129,7 +129,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $q->exists();
     }
 
-    public function search(): void
+    public function searchNow(): void
     {
         $this->resetPage();
     }
@@ -257,7 +257,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="search" type="text" placeholder="{{ __('consignee.search_ph') }}"
+    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('consignee.search_ph') }}"
            class="input-filter w-52" />
     <select wire:model="buyerFilter" class="input-filter">
         <option value="">{{ __('consignee.all_buyers') }}</option>
@@ -265,7 +265,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <option value="{{ $b->id }}">{{ $b->name }}</option>
         @endforeach
     </select>
-    <button wire:click="search" class="btn-search">{{ __('common.search') }}</button>
+    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
 <div class="hidden sm:block overflow-x-auto">
