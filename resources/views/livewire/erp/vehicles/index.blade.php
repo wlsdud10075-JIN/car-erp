@@ -8721,13 +8721,14 @@ function vehicleColumnsToggle() {
         </p>
 
         <div class="mt-4 space-y-3">
+            {{-- 날짜칸은 프로젝트 표준 data-date(flatpickr) — 20260728 8자리 타이핑·달력 둘 다 됨(SKILLS §14). --}}
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.ship') }}</label>
-                <input wire:model="bulkShipDate" type="date" class="input-base" />
+                <input wire:model="bulkShipDate" type="text" data-date placeholder="YYYY-MM-DD" class="input-base" />
             </div>
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.eta') }}</label>
-                <input wire:model="bulkEtaDate" type="date" class="input-base" />
+                <input wire:model="bulkEtaDate" type="text" data-date placeholder="YYYY-MM-DD" class="input-base" />
             </div>
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.reason') }}</label>

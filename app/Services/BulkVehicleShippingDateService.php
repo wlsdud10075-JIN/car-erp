@@ -51,9 +51,17 @@ class BulkVehicleShippingDateService
             if (! in_array($column, self::FIELDS, true)) {
                 throw new InvalidArgumentException("일괄 지정 불가 컬럼: {$column}");
             }
-            if ($value !== null && $value !== '') {
-                $payload[$column] = $value;
+            $value = trim((string) ($value ?? ''));
+            if ($value === '') {
+                continue;
             }
+            // 8자리 타이핑(20260728)이 그대로 오면 Eloquent date 캐스트가 Unix 타임스탬프로 읽어 1970 이 된다.
+            //   화면은 focusout 에서 정규화하지만(app.js), 수백 대를 바꾸는 입구라 서버에서도 막는다.
+            $value = preg_replace('/^(\d{4})(\d{2})(\d{2})$/', '$1-$2-$3', $value);
+            if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                throw new InvalidArgumentException("날짜 형식이 올바르지 않습니다: {$value}");
+            }
+            $payload[$column] = $value;
         }
         if ($payload === []) {
             throw new InvalidArgumentException('선적일·ETA 중 최소 하나는 입력해야 합니다.');
