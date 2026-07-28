@@ -13,7 +13,10 @@
     $optList = collect($options)->map(fn ($o) => ['id' => (string) $o->id, 'name' => (string) $o->name])->values();
     $selectedName = collect($options)->firstWhere('id', (int) $selected)?->name ?? '';
 @endphp
-<div {{ $attributes }}
+{{-- ⚠️ class 는 반드시 merge — 예전엔 {{ $attributes }} 와 class="relative" 를 따로 찍었다.
+     호출측이 class 를 주면(재고관리 w-44) 같은 속성이 두 번 렌더돼 뒤엣것(relative)이 무시되고,
+     드롭다운의 absolute 가 엉뚱한 조상을 기준으로 잡혀 화면 밖까지 벌어졌다(jin 2026-07-28 제보). --}}
+<div {{ $attributes->merge(['class' => 'relative']) }}
      x-data="{
         open: false,
         query: @js($selectedName),
@@ -34,7 +37,6 @@
         },
         syncBack() { this.query = this.selectedName; },
      }"
-     class="relative"
      @click.outside="open = false; syncBack()">
     <div class="relative">
         <input type="text" x-model="query"
