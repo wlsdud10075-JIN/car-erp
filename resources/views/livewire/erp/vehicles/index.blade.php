@@ -850,6 +850,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_deregistered = false;
     public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
+    /**
+     * 2026-07-28 — type별 이체(보증금 적용) 유입액. 4항목 박스가 "수기 입력분"만 보여주게 되면서
+     * 박스 옆에 "+ 보증금 적용 N" 을 표시하기 위한 읽기 전용 데이터. 표시 전용이라 저장에 안 쓰임.
+     */
+    public array  $transferAppliedByType = [];
     public string $cancelStatus = 'none';   // 매입취소 상태(표시용) — 실변경은 서버 액션(mark/unmark/close)만
     public int    $cancelShortfallKrw = 0;  // 미수 마감 동결 부족분(표시용)
     public string $cancelStatusLabel = '';  // 매입취소/취소완료/미수마감 계산 라벨(표시용)
@@ -2694,6 +2699,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 20-C — 분자 A안 시각화
             'confirmed_at' => $p->confirmed_at?->format('Y-m-d H:i'),
             'finance_confirmer' => $p->financeConfirmer?->name,
+            // 2026-07-28 — 매입 선지급(이체) 링크 행은 append-only → 읽기전용 렌더 (판매 잔금 대칭).
+            //   save 도 $lockedPurchaseIds 로 동일하게 제외한다(읽기·쓰기 목록 일치).
+            'transfer_locked' => $p->transfer_id !== null,
         ])->toArray();
 
         // 판매
@@ -2709,9 +2717,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->auto_loading_str     = $v->auto_loading     ? (string)$v->auto_loading     : '';
         $this->sale_other_costs_str = $v->sale_other_costs ? (string)$v->sale_other_costs : '';
         // 22-A-3a 사용자 정정 (2026-05-20) — 4 _str = type별 confirmed FP 합산.
+        // ⚠️ 2026-07-28 — 이체 링크 행(transfer_id≠null)은 제외. 박스는 "수기 입력분"만 뜻하며,
+        //    이체분은 아래 $transferSumByType 로 박스 옆에 별도 표시한다(save 의 4항목 sync 와 짝).
         $confirmedFp = $v->finalPayments->whereNotNull('confirmed_at');
         $sumByType = function (string $type) use ($confirmedFp): string {
-            $sum = $confirmedFp->where('type', $type)->sum('amount');
+            $sum = $confirmedFp->where('type', $type)->whereNull('transfer_id')->sum('amount');
 
             return $sum > 0 ? (string) (int) $sum : '';
         };
@@ -2719,6 +2729,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->interim_payment_str = $sumByType('interim');
         $this->advance_payment1_str = $sumByType('advance_1');
         $this->fee_str               = $sumByType('fee');
+        // 박스 옆 보조표시용 — type별 이체(보증금 적용) 유입액. 0 이면 표시 안 함.
+        //   이게 없으면 사용자가 박스에서 사라진 금액을 은행 명세와 맞추며 총액으로 다시 타이핑 →
+        //   그게 정확히 링크를 파괴하던 편집이라, 이 표시는 필수(코스메틱 아님).
+        $this->transferAppliedByType = $v->finalPayments
+            ->whereNotNull('confirmed_at')
+            ->whereNotNull('transfer_id')
+            ->groupBy('type')
+            ->map(fn ($rows) => (float) $rows->sum('amount'))
+            ->filter(fn ($sum) => abs($sum) >= 0.01)
+            ->toArray();
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
         $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
         $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
@@ -3889,6 +3909,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 채권 화면에서 생성된 잔금(locked)은 이 패널에서 수정/삭제 불가 — 채권관리가 원천
             $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $vehicle->id)
                 ->whereNotNull('final_payment_id')->pluck('final_payment_id')->toArray();
+            // 큐 19-C — 자금 이체(보증금 적용)로 생성된 잔금은 append-only. openEdit 과 동일 계산.
+            //   ⚠️ 2026-07-28 fix: 여기가 빠져 있어 openEdit(:2585~2590)은 잠그는데 save 는 안 잠그는
+            //      비대칭이었음 → 아래 bulk delete/update 가 모델 이벤트를 안 태워 transfer_id 절대차단을
+            //      우회, 이체 링크 잔금이 소멸(이체 원장 desync + void 영구 불가 + 감사 로그 0).
+            //      읽기(openEdit)와 쓰기(save)의 잠금 목록은 반드시 같이 유지할 것.
+            $lockedFinalIds = array_values(array_unique(array_merge(
+                $lockedFinalIds,
+                FinalPayment::where('vehicle_id', $vehicle->id)
+                    ->whereNotNull('transfer_id')->pluck('id')->toArray(),
+            )));
             $existingFinalIds = $vehicle->finalPayments->pluck('id')->toArray();
             $submittedFinalIds = collect($this->finalPayments)->pluck('id')->filter()->toArray();
             $toDeleteIds = array_diff($existingFinalIds, $submittedFinalIds);
@@ -3952,9 +3982,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 foreach ($typeStrMap as $type => $str) {
                     // 콤마 제거 후 파싱 — 매입 2항목(down/selling_fee)과 동일. '4,000,000' → 4 절단 방지.
                     $newAmount = $str === '' ? 0.0 : (float) str_replace(',', '', $str);
+                    // ⚠️ 2026-07-28 — whereNull('transfer_id') 필수. 보증금 적용은 기본 유형이
+                    //    deposit_down(계약금)이라 이체 링크 잔금이 이 sync 범위에 들어오는데,
+                    //    아래 delete 가 bulk(이벤트 미발화)라 그대로 지워지고 transfer_id 없는 행으로
+                    //    재생성 → 이체 원장 링크 절단(void 불가). 링크 행은 sync 대상에서 통째 제외하고
+                    //    박스(_str)는 "수기 입력분"만 뜻하게 한다 (openEdit sumByType 도 동일 필터).
                     $existingSum = (float) $vehicle->finalPayments()
                         ->where('type', $type)
                         ->whereNotNull('confirmed_at')
+                        ->whereNull('transfer_id')
                         ->sum('amount');
                     if (abs($newAmount - $existingSum) < 0.01) {
                         continue;   // 변경 없음
@@ -3964,6 +4000,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $vehicle->finalPayments()
                             ->where('type', $type)
                             ->whereNotNull('confirmed_at')
+                            ->whereNull('transfer_id')
                             ->delete();
                     } finally {
                         FinalPayment::$allowConfirmedMutation = false;
@@ -4014,9 +4051,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ];
                 foreach ($pbpTypeStrMap as $type => $str) {
                     $newAmount = $str === '' ? 0.0 : (float) str_replace(',', '', $str);
+                    // 2026-07-28 — 판매 4항목과 동일하게 이체 링크 행 제외 (현재 매입 선지급은
+                    //   type='balance' 라 이 경로에 안 걸리지만, 유형이 바뀌어도 안전하도록 대칭 유지).
                     $existingSum = (float) $vehicle->purchaseBalancePayments()
                         ->where('type', $type)
                         ->whereNotNull('confirmed_at')
+                        ->whereNull('transfer_id')
                         ->sum('amount');
                     if (abs($newAmount - $existingSum) < 0.01) {
                         continue;
@@ -4026,6 +4066,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $vehicle->purchaseBalancePayments()
                             ->where('type', $type)
                             ->whereNotNull('confirmed_at')
+                            ->whereNull('transfer_id')
                             ->delete();
                     } finally {
                         PurchaseBalancePayment::$allowConfirmedMutation = false;
@@ -4050,12 +4091,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 22-C-light 후속 fix — Vehicle save 전 캡처한 $existingPurchaseIdsBefore 사용.
             // Vehicle::saved 자동 PBP Draft 는 existing 에 없으므로 삭제 대상 X (보호).
             $submittedPurchaseIds = collect($this->purchaseBalancePayments)->pluck('id')->filter()->toArray();
-            PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIdsBefore, $submittedPurchaseIds))->delete();
+            // 2026-07-28 — 매입 선지급(이체)으로 생성된 매입 잔금은 append-only (판매 잔금 대칭).
+            //   PBP 도 아래가 bulk 라 모델 가드를 안 태우므로 여기서 목록으로 제외해야 한다.
+            $lockedPurchaseIds = PurchaseBalancePayment::where('vehicle_id', $vehicle->id)
+                ->whereNotNull('transfer_id')->pluck('id')->toArray();
+            PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIdsBefore, $submittedPurchaseIds, $lockedPurchaseIds))->delete();
             foreach ($this->purchaseBalancePayments as $row) {
                 if (($row['amount'] ?? '') === '' && ($row['payment_date'] ?? '') === '') continue;
                 $amt = $toInt($row['amount'] ?? '');
                 $dt  = $toDate($row['payment_date'] ?? '');
                 if (isset($row['id']) && $row['id']) {
+                    if (in_array($row['id'], $lockedPurchaseIds)) continue;
                     PurchaseBalancePayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
                 } else {
                     // 회의확장씬 #6 (2026-05-22) — canConfirmFinance 직접 추가 시 즉시 확정 (판매 잔금과 동일 정책).
@@ -5170,6 +5216,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->panelSellingFeeTotal = $this->panelSellingFeePaid = null;
 
         $this->niceRaw = [];
+        // 2026-07-28 — 이체 유입 보조표시는 openEdit 에서만 채워짐. 신규 등록 화면에 직전 차량분 잔존 방지.
+        $this->transferAppliedByType = [];
         $this->sales_channel = 'export';
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
@@ -6596,6 +6644,16 @@ function vehicleColumnsToggle() {
                     $isPbpConfirmed = !empty($row['confirmed_at']);
                     $pbpRowBg = $isPbpConfirmed ? 'bg-emerald-50/40 border-emerald-200' : (!empty($row['id']) ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
+                @if(!empty($row['transfer_locked']))
+                {{-- 2026-07-28 — 매입 선지급(보증금)으로 생성된 잔금: append-only 라 읽기전용. 판매 잔금 이체행과 동일 취급. --}}
+                <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                    <span class="text-xs text-gray-400">🔒</span>
+                    <span class="w-24 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
+                    <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
+                    <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
+                    <span class="text-[10px] font-semibold text-indigo-600 whitespace-nowrap">{{ __('vehicle.panel.transfer_locked_pbp') }}</span>
+                </div>
+                @else
                 <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text" data-money
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
@@ -6626,6 +6684,7 @@ function vehicleColumnsToggle() {
                     <button type="button" wire:click="removePurchasePayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
                     @endif
                 </div>
+                @endif
                 @endforeach
             </div>
 
@@ -6825,6 +6884,16 @@ function vehicleColumnsToggle() {
                         __('vehicle.field.interim') => (int) str_replace(',', '', (string) ($interim_payment_str ?: '0')),
                         __('vehicle.field.advance1') => (int) str_replace(',', '', (string) ($advance_payment1_str ?: '0')),
                     ], fn ($v) => $v > 0);
+                    // 2026-07-28 — 위 합계는 이제 "수기 입력분"만이다(이체 링크 행 제외, openEdit sumByType).
+                    //   빠진 이체 유입분을 여기서 명시하지 않으면 사용자가 은행 명세와 맞추다 총액을 되쓰게 되고,
+                    //   그 편집이 정확히 이체 링크를 파괴하던 경로 → 이 표시는 안전장치의 일부(코스메틱 아님).
+                    $transferPayLabels = [
+                        'deposit_down' => __('vehicle.field.deposit_down'),
+                        'interim' => __('vehicle.field.interim'),
+                        'advance_1' => __('vehicle.field.advance1'),
+                        'fee' => __('vehicle.field.fee'),
+                        'balance' => __('vehicle.field.balance'),
+                    ];
                 @endphp
                 @if(!empty($legacyPay))
                 <div class="col-span-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 sm:col-span-3">
@@ -6834,6 +6903,18 @@ function vehicleColumnsToggle() {
                             <span>{{ $label }} <b class="text-gray-800">{{ number_format($amt) }}</b></span>
                         @endforeach
                     </div>
+                </div>
+                @endif
+                @if(!empty($transferAppliedByType))
+                <div class="col-span-2 rounded border border-indigo-200 bg-indigo-50/50 px-3 py-2 sm:col-span-3">
+                    <div class="mb-1 text-[10px] font-semibold uppercase text-indigo-500">{{ __('vehicle.panel.transfer_applied') }}</div>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-indigo-800">
+                        @foreach($transferAppliedByType as $tType => $tAmt)
+                            <span>{{ $transferPayLabels[$tType] ?? $tType }}
+                                <b>{{ $currency }} {{ number_format($tAmt) }}</b></span>
+                        @endforeach
+                    </div>
+                    <div class="mt-1 text-[10px] text-indigo-500">{{ __('vehicle.panel.transfer_applied_note') }}</div>
                 </div>
                 @endif
                 <div>

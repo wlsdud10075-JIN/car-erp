@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 class PurchaseBalancePayment extends Model
 {
     protected $fillable = [
-        'vehicle_id', 'amount', 'payment_date', 'note',
+        'vehicle_id', 'transfer_id', 'amount', 'payment_date', 'note',
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
         // 큐 22-C-light — 자동 생성 PBP의 actor 추적 (Spec-E 해소조건)
         'created_by_user_id',
@@ -27,6 +27,13 @@ class PurchaseBalancePayment extends Model
      * 큐 20-D — confirmed_at SET 후 UPDATE/DELETE 차단 lock 우회 플래그.
      */
     public static bool $allowConfirmedMutation = false;
+
+    /**
+     * 2026-07-28 — 매입 선지급(보증금 purchase_funding)으로 생성된 PBP(transfer_id≠null)는 append-only.
+     * FinalPayment::$allowTransferLinkedMutation 대칭. 정정은 이체 흐름에서만(현재 purchase_funding 은
+     * void 미지원이라 사실상 불변) — 차량 패널 저장이 링크를 끊는 것을 구조적으로 막는 게 목적.
+     */
+    public static bool $allowTransferLinkedMutation = false;
 
     /**
      * 큐 22-C 핵심 (2026-05-20) — Vehicle::saved 자동 PBP Draft 생성 시 canConfirmFinance 가드 우회 flag.
@@ -97,6 +104,11 @@ class PurchaseBalancePayment extends Model
         //   구조적(확정 해제)은 절대 차단. 금액·날짜 정정은 2차 정산 마감(closed) 전 자유(정산이 흡수),
         //   마감 후엔 잠금해제 토큰(unlockForPurchasePayment) 1회 소비 시에만 통과. old→new 는 updated 훅 감사.
         static::updating(function (PurchaseBalancePayment $p) {
+            // 2026-07-28 — 매입 선지급(이체)으로 만들어진 매입 잔금은 직접 수정 불가 (FinalPayment 대칭).
+            if ($p->getOriginal('transfer_id') !== null && ! self::$allowTransferLinkedMutation) {
+                throw new \DomainException('바이어 보증금 매입 선지급으로 생성된 매입 잔금은 수정할 수 없습니다. 정정은 재무에 문의하세요.');
+            }
+
             $originalConfirmedAt = $p->getOriginal('confirmed_at');
             if ($originalConfirmedAt !== null && ! self::$allowConfirmedMutation) {
                 if ($p->isDirty('confirmed_at')) {
@@ -111,6 +123,11 @@ class PurchaseBalancePayment extends Model
             }
         });
         static::deleting(function (PurchaseBalancePayment $p) {
+            // 2026-07-28 — 매입 선지급(이체) 링크 매입 잔금은 삭제 불가 (FinalPayment 대칭).
+            if ($p->transfer_id !== null && ! self::$allowTransferLinkedMutation) {
+                throw new \DomainException('바이어 보증금 매입 선지급으로 생성된 매입 잔금은 삭제할 수 없습니다. 정정은 재무에 문의하세요.');
+            }
+
             // 정산 락 개편(2026-07-24) — 2차 정산 마감(closed) 후에만 확정 매입 잔금 삭제 차단.
             if ($p->confirmed_at !== null && ! self::$allowConfirmedMutation
                 && $p->vehicle?->hasClosedSecondarySettlement()) {
@@ -155,5 +172,11 @@ class PurchaseBalancePayment extends Model
     public function financeConfirmer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'confirmed_by_user_id');
+    }
+
+    /** 2026-07-28 — 매입 선지급 원천 이체 (FinalPayment::transfer 대칭). */
+    public function transfer(): BelongsTo
+    {
+        return $this->belongsTo(InterVehicleTransfer::class, 'transfer_id');
     }
 }
