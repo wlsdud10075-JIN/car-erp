@@ -432,8 +432,11 @@ class InterVehicleTransferService
             ]);
 
             // 대상 차 — 매입 PBP (원화, confirmed, 바이어 funding marker) → 매입 GREEN.
+            //   transfer_id (2026-07-28) = 역방향 링크. 이게 있어야 PBP 모델 가드(append-only)가
+            //   차량 패널의 bulk 저장으로부터 이 행을 지킨다. transfer->purchase_balance_payment_id 와 쌍.
             $pbp = PurchaseBalancePayment::create([
                 'vehicle_id' => $transfer->target_vehicle_id,
+                'transfer_id' => $transfer->id,
                 'amount' => $amountKrw,
                 'type' => 'balance',
                 'payment_date' => $today,
