@@ -14,6 +14,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $typeFilter = '';
     #[Url] public int $perPage = 30;
 
+    /**
+     * 운영 로그 열람 가드 (jin 2026-07-28) — [관리] 이상.
+     * 라우트 'operation-logs' 미들웨어와 이중 방어 (구조상 미들웨어만 믿지 않는다, SKILLS §8 #26).
+     */
+    public function mount(): void
+    {
+        abort_unless(auth()->user()?->canViewOperationLogs(), 403);
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {

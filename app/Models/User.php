@@ -254,6 +254,17 @@ class User extends Authenticatable
     }
 
     /**
+     * 운영 로그 열람 권한 (jin 2026-07-28) — 문서접근로그 / 감사로그 / 메일발송로그.
+     * 허용: 시스템관리자 · 최고관리자 · 업무관리자 · role='관리' (= "[관리] 이상").
+     *
+     * ⚠️ 알림톡 로그·알림톡 안내는 여기 해당 없음 — 그 둘은 isSuperAdmin() 전용(jin 확정).
+     */
+    public function canViewOperationLogs(): bool
+    {
+        return $this->canAccessAdmin() || $this->role === '관리';
+    }
+
+    /**
      * 큐 21 — 차량 Ledger(회계 영향 필드: 환율·판매가 등 21컬럼) 잠금 해제 권한.
      *
      * 2026-06-22 jin 결정: 등록 후 환율·판매가 정정이 비일비재해 admin/super 외 role='관리'도 허용

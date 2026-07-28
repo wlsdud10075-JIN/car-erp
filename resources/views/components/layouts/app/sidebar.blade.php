@@ -108,8 +108,10 @@
         $pendingFinanceConfirmations = 0;
     }
 
-    // 2026-07-13 — 알림톡 미도달(+발송실패) 미확인 건수. canAccessAdmin 만 계산(배지 ↔ 메뉴 게이트 일치).
-    $alimtalkFailBadge = $user->canAccessAdmin()
+    // 2026-07-13 — 알림톡 미도달(+발송실패) 미확인 건수. 배지 ↔ 메뉴 게이트 일치 필수
+    //   (2026-07-28 jin: 메뉴를 super 전용으로 좁히면서 배지 계산도 같이 좁힘 — 안 그러면
+    //    admin 에게 메뉴 없이 배지 숫자만 뜨는 유령 알림이 된다).
+    $alimtalkFailBadge = $user->isSuperAdmin()
         ? \App\Models\AlimtalkLog::query()->needsAttention()->count()
         : 0;
 
@@ -311,33 +313,35 @@
                 ],
             ],
         ],
-        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹 (canAccessAdmin: super/admin/업무관리자).
+        // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹.
+        //   2026-07-28 (jin) 게이트 2종: 운영 로그 3종=canViewOperationLogs([관리] 이상) / 알림톡 2종=isSuperAdmin.
         [
             'key' => 'log',
             'label' => __('nav.group.log'),
             'items' => [
                 [
                     'label' => __('nav.menu.doc_logs'),
-                    'href' => $user->canAccessAdmin() ? route('admin.document-access-logs.index') : '#',
+                    'href' => $user->canViewOperationLogs() ? route('admin.document-access-logs.index') : '#',
                     'icon' => 'identification',
                     'active' => request()->routeIs('admin.document-access-logs.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canViewOperationLogs(),
                 ],
                 [
                     'label' => __('nav.menu.audit_logs'),
-                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.audit-logs.index')
+                    'href' => $user->canViewOperationLogs() && \Illuminate\Support\Facades\Route::has('admin.audit-logs.index')
                         ? route('admin.audit-logs.index') : '#',
                     'icon' => 'check-circle',
                     'active' => request()->routeIs('admin.audit-logs.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canViewOperationLogs(),
                 ],
                 [
                     'label' => __('nav.menu.alimtalk_logs'),
-                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-logs.index')
+                    // 2026-07-28 (jin) — 알림톡 로그는 시스템관리자 전용 (카탈로그와 동일 게이트).
+                    'href' => $user->isSuperAdmin() && \Illuminate\Support\Facades\Route::has('admin.alimtalk-logs.index')
                         ? route('admin.alimtalk-logs.index') : '#',
                     'icon' => 'bell',
                     'active' => request()->routeIs('admin.alimtalk-logs.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->isSuperAdmin(),
                     'badge' => $alimtalkFailBadge > 0 ? $alimtalkFailBadge : null,
                 ],
                 [
@@ -350,11 +354,11 @@
                 ],
                 [
                     'label' => __('nav.menu.mail_logs'),
-                    'href' => $user->canAccessAdmin() && \Illuminate\Support\Facades\Route::has('admin.mail-delivery-logs.index')
+                    'href' => $user->canViewOperationLogs() && \Illuminate\Support\Facades\Route::has('admin.mail-delivery-logs.index')
                         ? route('admin.mail-delivery-logs.index') : '#',
                     'icon' => 'envelope',
                     'active' => request()->routeIs('admin.mail-delivery-logs.*'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canViewOperationLogs(),
                 ],
             ],
         ],

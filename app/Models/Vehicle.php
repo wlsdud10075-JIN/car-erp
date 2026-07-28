@@ -476,6 +476,9 @@ class Vehicle extends Model
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 변경 audit (purchase_fee_account 는 MASKED_COLUMNS 마스킹).
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
+        // 2026-07-28 (jin) — 출고일. 찍는 순간 차량이 재고에서 빠지고(scopeInStock) 선적전/후 미수
+        //   분류 pivot 도 바뀌는데 누가 언제 처리했는지 기록이 없었다. 되돌림(비우기)도 추적 대상.
+        'warehouse_out_date',
     ];
 
     /**

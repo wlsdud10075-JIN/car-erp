@@ -17,7 +17,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        abort_unless(auth()->user()?->canAccessAdmin(), 403);
+        abort_unless(auth()->user()?->canViewOperationLogs(), 403);
     }
 
     public function updatedPerPage(): void

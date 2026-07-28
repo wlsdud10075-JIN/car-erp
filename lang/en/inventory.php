@@ -20,6 +20,8 @@ return [
     'cat_general' => 'General Stock',
     'cat_pre_ship' => 'Pre-shipping Stock',
     'cat_general_hint' => 'Speculative purchase, no buyer yet (recommended: ≤200M each · sell within 3 months of intake)',
+    'cat_shipped_out' => 'Released',
+    'cat_shipped_out_hint' => 'Vehicles that left stock once a release date was set (newest first). Clearing the release date returns them to stock.',
     'badge_over_cap' => 'Over 200M',
     'badge_over_age' => '3mo+ held',
     'out_apply_btn' => 'Apply Out Dates',
