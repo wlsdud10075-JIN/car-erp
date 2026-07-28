@@ -18,14 +18,29 @@ class ReceivableHistory extends Model
         'exchange_rate' => 'decimal:4',
     ];
 
+    /**
+     * 적립금(method=savings) 행이 vehicles.savings_used 를 갱신하는 걸 건너뛰는 플래그 (2026-07-28).
+     * 판매탭에서 savings_used 가 바뀌면 Vehicle H6 가 기록용 미러 행을 만드는데, 그 행이 다시
+     * savings_used 를 더하면 이중 반영된다 → Vehicle 이 이 플래그를 try/finally 로 세운다.
+     * (deposit ↔ final_payments 미러의 FinalPayment::$skipReceivableSync 와 같은 패턴.)
+     */
+    public static bool $skipSavingsSync = false;
+
     protected static function booted(): void
     {
         static::saved(function (ReceivableHistory $h) {
             $h->syncFinalPayment();
+            $h->syncSavingsUsed();
             $h->vehicle?->refreshCaches();
         });
 
         static::deleted(function (ReceivableHistory $h) {
+            if ($h->method === 'savings') {
+                // 적립금 행 삭제 = 사용 취소 → savings_used 되돌림(음수 delta → SavingsStatus REFUND).
+                $h->applySavingsUsedDelta(-(float) $h->amount);
+
+                return;   // applySavingsUsedDelta 안의 vehicle save → refreshCaches 연쇄
+            }
             if ($h->final_payment_id) {
                 FinalPayment::find($h->final_payment_id)?->delete();
 
@@ -34,6 +49,56 @@ class ReceivableHistory extends Model
             }
             $h->vehicle?->refreshCaches();
         });
+    }
+
+    /**
+     * 적립금 회수(method=savings) ↔ vehicles.savings_used 동기화 (2026-07-28, jin).
+     *
+     * 채권관리 드로어에서 "적립금"으로 회수를 기록하면 그 금액만큼 savings_used 를 증감시킨다.
+     * 잔액 차감(SavingsStatus USED/REFUND)·미수 반영은 전부 Vehicle H6 가 delta 를 보고 처리하므로
+     * 여기서는 컬럼만 옮기면 된다 — 적립금 잔액 로직을 두 벌 만들지 않는 게 핵심.
+     *
+     * - 신규(savings) → +amount
+     * - 금액 수정      → +(new - old)
+     * - 방법 변경(savings → 다른 것) → 이전 금액만큼 되돌림
+     */
+    public function syncSavingsUsed(): void
+    {
+        if (self::$skipSavingsSync) {
+            return;   // Vehicle H6 가 만든 미러 행 — 이미 savings_used 에 반영된 값이다
+        }
+
+        $wasSavings = $this->getOriginal('method') === 'savings';
+        $isSavings = $this->method === 'savings';
+        if (! $wasSavings && ! $isSavings) {
+            return;
+        }
+
+        $oldAmount = $wasSavings && $this->exists ? (float) ($this->getOriginal('amount') ?? 0) : 0.0;
+        $newAmount = $isSavings ? (float) ($this->amount ?? 0) : 0.0;
+        $delta = $newAmount - $oldAmount;
+
+        $this->applySavingsUsedDelta($delta);
+    }
+
+    /** savings_used 에 delta 적용 — Vehicle H6 가 잔액(SavingsStatus)·미수를 이어서 처리한다. */
+    private function applySavingsUsedDelta(float $delta): void
+    {
+        if (abs($delta) < 0.01) {
+            return;
+        }
+        $vehicle = $this->vehicle;
+        if (! $vehicle) {
+            return;
+        }
+
+        Vehicle::$skipSavingsHistory = true;   // 미러 행 재생성 방지 (이 행이 곧 그 기록)
+        try {
+            $vehicle->savings_used = (float) ($vehicle->savings_used ?? 0) + $delta;
+            $vehicle->save();
+        } finally {
+            Vehicle::$skipSavingsHistory = false;
+        }
     }
 
     /**
