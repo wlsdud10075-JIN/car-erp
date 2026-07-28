@@ -434,11 +434,6 @@ function fpInit(el) {
     return true;
 }
 
-function initFlatpickr(root) {
-    const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('input[data-date]').forEach(fpInit);
-}
-
 // 주인(input)이 문서에서 떨어져 나간 인스턴스를 destroy — 달력 컨테이너까지 함께 제거된다.
 function pruneOrphanPickers() {
     livePickers.forEach((fp) => {
@@ -463,8 +458,13 @@ function queuePrune() {
     });
 }
 
-// ★ 핵심 — focus 시 지연 init(문서 위임). 슬라이드 패널이 나중에 렌더돼도 클릭하는 순간 붙는다.
-//   라이프사이클 스캔(아래)이 놓쳐도 이 focusin 이 보장. 새로 붙인 경우 바로 달력 open.
+// ★ 유일한 init 경로 — focus 시 지연 생성(문서 위임). 슬라이드 패널이 나중에 렌더돼도 클릭하는 순간 붙는다.
+//   새로 붙인 경우 바로 달력 open → 사용자가 보기엔 "칸 누르면 달력이 뜬다" 로 동일.
+//   ⚠️ 2026-07-28 — 사전 일괄 생성(구 initFlatpickr 문서 스캔)을 없앴다. 재고관리는 행마다 출고일
+//     날짜칸이 있고 데스크탑 표 + 모바일 카드가 둘 다 DOM 에 있어 차량 1대당 2개(100개 보기 = 200개).
+//     달력 1개가 날짜셀 42개 등 수십 노드라 미리 만들면 목록 로드·검색마다 수천 노드를 조립하느라
+//     멈춘다. 실제로 여는 건 보통 한두 칸뿐 → 클릭 순간에만 만든다. (값 표시는 서버가 이미 Y-m-d
+//     문자열로 내려주고, 8자리 타이핑 정규화는 아래 focusout 이 담당하므로 사전 생성이 불필요.)
 document.addEventListener('focusin', (e) => {
     const el = e.target;
     if (el && el.matches && el.matches('input[data-date]')) {
@@ -485,27 +485,12 @@ document.addEventListener('focusout', (e) => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
-// 로드/네비 시 미init 요소 사전 스캔(값 표시·잔금 행 추가 대비).
-document.addEventListener('DOMContentLoaded', () => initFlatpickr());
-document.addEventListener('livewire:navigated', () => {
-    pruneOrphanPickers();   // 페이지 교체 — 이전 화면 달력 일괄 정리
-    initFlatpickr();
-});
+// 라이프사이클 훅은 이제 "정리"만 한다 — 생성은 위 focusin 이 전담(사전 일괄 생성 제거).
+//   구현이 문서 전체 재스캔이었고 morph.updated 는 바뀐 요소마다 발생해서,
+//   검색 1회에 (morph 이벤트 수 × 날짜칸 수) 만큼 훑던 것이 재고관리 체감 지연의 주원인이었다.
+document.addEventListener('livewire:navigated', () => pruneOrphanPickers());   // 페이지 교체 — 이전 화면 달력 일괄 정리
 if (window.Livewire) {
-    // ⚠️ 2026-07-28 성능 fix — 여기서 문서 전체를 재스캔하면 안 된다.
-    //   morph.updated 는 "바뀐 요소마다" 발생한다. 재고관리는 행마다 출고일 날짜칸이 있고
-    //   데스크탑 표 + 모바일 카드가 둘 다 DOM 에 있어 차량 1대당 2개(100개 보기 = 200개) →
-    //   구현이 document 전체 스캔이라 검색 1회에 (morph 이벤트 수 × 200) 만큼 훑어 체감이 크게 느려졌다.
-    //   data-money·data-phone 훅과 동일하게 el 스코프로 한정한다. 미init 요소는 focusin 위임이 보장.
-    window.Livewire.hook('morph.updated', ({ el }) => {
-        if (!el) return;
-        if (el.matches && el.matches('input[data-date]')) {
-            fpInit(el);
-        } else if (el.querySelectorAll) {
-            initFlatpickr(el);   // 바뀐 subtree 안에서만
-        }
-        queuePrune();
-    });
+    window.Livewire.hook('morph.updated', () => queuePrune());
 }
 
 // ──────────────────────────────────────────────────────────────────────────
