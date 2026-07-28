@@ -496,6 +496,24 @@ extension=zip    # 주석 제거
 **이력**: 2026-05 차량목록에서 겪고 `applyFilters` 로 고쳤으나 **나머지 화면을 안 훑어** 7곳(재고관리·바이어·컨사이니·영업담당·정산·관리자항구·채권관리)에 남아 재발. fix 커밋 `311ee3a`.
 **🧭 진단 교훈**: "느리다" 제보를 성능 문제로 단정하지 말 것. **서버 실측이 멀쩡한데 체감이 느리면, 성능이 아니라 배선(동작 안 함)을 먼저 의심.** 확인 순서 = ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②**Network 탭에 요청이 뜨긴 하나** ③뜬다면 그 Time. 요청 자체가 없으면 성능 얘기는 무의미하다.
 
+### 33. Blade 컴포넌트 루트에 `{{ $attributes }}` + `class="..."` 를 따로 찍으면 뒤엣것이 통째로 죽는다 (2026-07-28)
+**원인**: `<div {{ $attributes }} class="relative">` 처럼 두 번 찍으면, 호출측이 `class` 를 넘길 때 **같은 div 에 class 속성이 2개** 렌더된다. HTML 규칙상 **앞엣것만 적용**되므로 컴포넌트가 스스로 붙인 class 가 사라진다.
+**증상**: `x-erp.combobox` 를 `class="w-44"` 로 부른 재고관리에서 `relative` 가 죽어 → 드롭다운의 `absolute` 가 엉뚱한 조상 기준으로 잡혀 **폭·위치가 화면 밖까지 벌어짐**(jin 제보 "엄청 큰데 버그같아"). class 를 안 넘기던 차량관리 호출부는 멀쩡해서 **호출부에 따라 되고 안 되는** 형태로 위장된다.
+**해결**: 항상 `{{ $attributes->merge(['class' => 'relative']) }}`. merge 는 기본값을 앞에 붙여 `class="relative w-44"` 하나로 만든다.
+**🔒 가드 = `tests/Feature/ComboboxAttributeMergeTest`** — 루트 class 속성이 정확히 1개 + 그 안에 기본 class 생존. **새 Blade 컴포넌트를 만들 때마다 이 형태인지 확인**(combobox 외 컴포넌트도 동일 위험).
+
+### 34. Carbon 3 `diffInDays` 는 부호 있는 값 — 방향 뒤집으면 음수가 조용히 나간다 (2026-07-28)
+**원인**: `$a->diffInDays($b)` = **`$b − $a`**. Carbon 2 까지는 기본 절대값이었으나 **Carbon 3(Laravel 11+)에서 부호 있는 값**으로 바뀌었다. 예전 감각으로 `now()->diffInDays($과거일)` 을 쓰면 **음수**가 나오는데 예외도 경고도 없다.
+**증상**: 픽업 알림톡(`AlimtalkPickup`)이 `"-42일 경과 · 미완납"` 으로 발송. **실패건이 아니라 정상 발송 295건 전부**에 찍혀 나갔다 — 로그상 `sent` 라 아무도 못 봤다.
+**해결**: 기준→대상 방향으로 쓰고 `(int)` 캐스팅(Carbon 3 은 float 반환). `$v->purchase_date->copy()->startOfDay()->diffInDays(now()->startOfDay())`.
+**⚠️ 구분**: `diffInDays($x, false)` 처럼 **`false` 를 명시**해 부호를 의도적으로 쓰는 곳(알람 D-day 3곳)은 정상이다. 인자 없이 쓰면서 양수를 기대하는 코드만 버그.
+
+### 35. 알림톡 아이템리스트 description 은 규격 초과 시 **발송 자체가 반려**된다 (2026-07-28)
+**원인**: 카카오 아이템리스트의 description 길이를 넘기면 BizM 이 `K137:ExceedMaxItemDescriptionLength`(list) / `K140:InvalidItemSummaryDescription`(summary) 로 **접수 거부**한다. `AlimtalkTemplates::itemListPayload` 가 차량 데이터를 자르지 않고 그대로 넘기고 있었다.
+**증상**: 픽업 알림톡 61건 반려. 구입처가 `업체명/담당자 010-…`(25~30자)인 **오래된 매입 건에서만** 실패 → 정작 독촉이 필요한 차만 알림이 안 갔다. 운영 실측 경계 = **20자 성공 / 25자 실패**.
+**해결**: 조립 지점(`itemListPayload`)에서 `mb_substr(…, 0, 20)` 일괄 컷 — 전 템플릿이 통과하는 단일 지점이라 여기만 막으면 된다. 상수 `AlimtalkTemplates::ITEM_DESC_MAX`.
+**⚠️ 값 길이를 예측할 수 없는 필드(구입처·바이어명 등)를 새 템플릿에 넣을 때 주의.** 템플릿 정의의 **리터럴**이 20자를 넘으면 잘 나가던 메시지가 잘리므로, 리터럴은 20자 이하로 유지할 것.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
@@ -904,6 +922,23 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
   - **선적전 재고**(`scopePreShippingStock`) = 재고 중 판매됨(`sale_price > 0`) — 항구 대기, 출고 전.
   - 판매 시 sale_price>0 되면 일반→선적전 자동 편입. 출고일 찍히면 재고 이탈.
 - 표시: 입고일(매입완납일 computed)·선적일(`shipping_date`)·출고일(`warehouse_out_date`) 컬럼. 일반재고 권장 초과 뱃지(표시만): `GENERAL_STOCK_PRICE_CAP`=2억 초과 / `GENERAL_STOCK_SELL_MONTHS`=입고 3개월 경과.
+- **출고완료**(`category=shipped_out`, 2026-07-28) = `whereNotNull('warehouse_out_date')`. `inStock()` 과 배타적이라 스코프를 분기한다(매입완납 조건 없음 — 이미 재고를 떠난 차).
+
+### 재고 보관위치 + 표시컬럼 (jin 2026-07-28)
+- **보관위치** = `vehicles.stock_location`(string 20, indexed) + `stock_location_note`. 값은 `Vehicle::STOCK_LOCATIONS = ['홈플','화물','야드']` — **enum 아님**(야적장은 늘어난다, §8 #4). 추가는 상수 한 줄이면 화면 버튼·필터가 함께 늘어난다.
+- **저장은 출고일과 같은 「적용」 1회** (`applyWarehouseOut` — 이름은 출고일 시절 그대로). 즉시저장 아님 = 오클릭 방지 원칙 유지. 위치·비고·출고일이 한 트랜잭션.
+- ⚠️ **draft 폴백 필수**: 위치 draft(`stockLocation[$id]`)는 목록 렌더(`inventoryVehicles` computed)에서 DB 값으로 채워진다. 클릭 판정을 draft 만 보면 **2페이지 이후처럼 아직 안 채워진 차량에서 해제가 안 된다**(이미 '야드'인 차의 [야드]를 눌러도 다시 야드로 설정됨). 키가 없으면 DB 값을 조회해 판단할 것. **같은 구조의 draft 를 새로 만들 때도 동일 주의.**
+- **필터는 다중선택** — `#[Url(as:'loc')] array $locationFilters`. 고른 위치들의 OR + `'__none'`(미지정)도 함께 선택 가능. 전부 해제 = 전체.
+- **표시컬럼 선택** = 차량관리와 같은 방식(Alpine + `localStorage`, 키 `car_erp_inventory_columns_v1`). 차량관리 리스트 컬럼 대부분을 이식했고 기본 표시는 종전과 동일, 나머지는 off. **차량번호·담당자·진행상태·출고일·보관위치는 항상 표시**(작업 대상이라 끌 이유 없음). ⚠️ 판매총액·미수금액·미수율은 **일부러 제외** — 행마다 무거운 accessor 라 목록 렌더가 잦은 재고관리에 부적합.
+
+### 차량목록 「건수만」 + 선적일·ETA 일괄 (jin 2026-07-28)
+- **건수만** = `perPage = 0`(`PER_PAGE_COUNT_ONLY`). 빈 `LengthAwarePaginator([], $count, …)` 를 돌려줘 `total()`·`links()` 쓰는 기존 뷰가 그대로 동작하고, 행 로드·eager load 5종·행별 computed 가 통째로 빠진다. 용도 = **선박 300대를 필터로 추려 엑셀로 받는 흐름**(화면은 건수만 알면 됨).
+  - ⚠️ `perPage` 는 `#[Url]` 이라 `?perPage=999` 로 직접 들어온다. **mount 에서도 정규화**할 것 — `updatedPerPage` 는 화면 조작 때만 돈다. 0 이 의미를 가진 뒤로는 잘못된 값이 "이유 없는 빈 목록"이 된다.
+  - 엑셀 내보내기는 원래부터 **필터 전체**를 내보낸다(페이지 무관). 단 범위를 「전체」로 바꾸면 `$mirror=false` 라 **검색어·기간·담당자가 전부 무시**되므로 「현재 조건」 유지가 필수.
+- **선적일·ETA 일괄** = `BulkVehicleShippingDateService`. 대상은 화면이 준 ID 가 아니라 **`filteredVehicleQuery()` 로 서버에서 재도출**(§8 #26 — 수백 건이라 IDOR 피해가 큼) + 차량별 `canScopeVehicle` 재인가 + 컬럼 화이트리스트(`FIELDS`).
+  - `shipping_date`·`eta_date` 를 **`AUDITED_COLUMNS` 에 추가**했다(수백 대를 한 번에 바꾸는데 추적이 없었다). 일괄 출처는 `AuditLog(bulk_shipping_date_applied)` 로 별도 보존.
+  - 두 컬럼은 v4 cascade 에 없으므로 `progress_status_cache` 불변. 그래도 bulk update 대신 **모델 update** 를 쓴다(감사·캐시 훅 정상 경로).
+  - **8자리(20260801) 서버 정규화 필수** — 그대로 새면 Eloquent date 캐스트가 Unix 타임스탬프로 읽어 **1970** 이 된다. 화면(app.js focusout)만 믿지 말 것. 날짜 입력칸은 프로젝트 표준 `data-date`(§14) 를 쓸 것.
 
 ## 15. 외부 연동 — 상태 요약
 
