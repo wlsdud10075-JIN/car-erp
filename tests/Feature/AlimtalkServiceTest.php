@@ -50,6 +50,23 @@ class AlimtalkServiceTest extends TestCase
         $this->assertStringNotContainsString('#{', $flat);      // 미치환 자리표시자 없음
     }
 
+    public function test_item_description_is_truncated_to_kakao_limit(): void
+    {
+        // 구입처처럼 길이를 예측할 수 없는 차량 데이터가 규격을 넘으면 BizM 이 발송 자체를 반려한다
+        // (K137 — 2026-07-28 운영 61건). 조립 지점에서 잘라 보낸다.
+        $long = '주식회사 모던카/과장 오승우 010 8519 1624';   // 29자
+        $il = AlimtalkTemplates::itemListPayload('erp_pickup_reminder', [
+            '차량번호' => '391두7094', '구입처' => $long,
+            '미지급금액' => '25,500,000원', '매입일' => '2026-06-16', '경과일' => '42',
+        ]);
+
+        $descriptions = array_column($il['items']['item']['list'], 'description');
+        $this->assertContains(mb_substr($long, 0, 20), $descriptions);
+        foreach ($descriptions as $d) {
+            $this->assertLessThanOrEqual(20, mb_strlen($d));
+        }
+    }
+
     public function test_configured_send_hits_bizm_and_logs_msgid(): void
     {
         $this->configure();

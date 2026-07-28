@@ -46,7 +46,9 @@ class AlimtalkPickup extends Command
                 if (empty($recipients)) {
                     continue;   // 담당 영업 전화 없음 — skip
                 }
-                $elapsed = now()->startOfDay()->diffInDays($v->purchase_date);
+                // ⚠️ Carbon 3 의 diffInDays 는 부호 있는 값($대상 - $기준). now()->diffInDays(과거) = 음수라
+                //    "-42일 경과" 로 발송됐었다(2026-07-28 발견). 매입일 기준 → 오늘 방향으로 계산.
+                $elapsed = (int) $v->purchase_date->copy()->startOfDay()->diffInDays(now()->startOfDay());
                 $vars = [
                     '차량번호' => (string) $v->vehicle_number,
                     '구입처' => (string) ($v->purchase_from ?? '-'),

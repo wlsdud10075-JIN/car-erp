@@ -126,6 +126,27 @@ class AlimtalkTriggerTest extends TestCase
         $this->assertSame('01055550000', $log->phone);
     }
 
+    public function test_pickup_elapsed_days_is_positive(): void
+    {
+        // Carbon 3 의 diffInDays 는 부호 있는 값이라 방향을 뒤집으면 음수가 나간다.
+        // 실제로 "-42일 경과" 로 295건 발송됐었다(2026-07-28 발견).
+        $this->enableAlimtalk(['erp_pickup_reminder']);
+        $sm = Salesman::create(['name' => '최영업', 'phone' => '010-7777-0000', 'is_active' => true]);
+        Vehicle::create([
+            'vehicle_number' => '33다3456', 'sales_channel' => 'export',
+            'purchase_price' => 5_000_000, 'purchase_date' => now()->subDays(42)->toDateString(),
+            'salesman_id' => $sm->id,
+        ]);
+
+        $this->artisan('alimtalk:pickup')->assertSuccessful();
+
+        Http::assertSent(function ($request) {
+            $highlight = $request->data()[0]['items']['itemHighlight']['description'] ?? '';
+
+            return $highlight === '42일 경과 · 미완납';
+        });
+    }
+
     public function test_pickup_skips_when_purchase_paid(): void
     {
         $this->enableAlimtalk(['erp_pickup_reminder']);

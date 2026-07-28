@@ -375,6 +375,16 @@ class AlimtalkTemplates
     }
 
     /**
+     * 아이템리스트 description 상한 — 초과분은 잘라서 보낸다.
+     *
+     * 카카오 규격 초과 시 BizM 이 발송 자체를 반려한다(K137:ExceedMaxItemDescriptionLength /
+     * K140:InvalidItemSummaryDescription). 2026-07-28 운영 실측 = 20자 성공 / 25자 실패
+     * (erp_pickup_reminder 61건 반려 — 구입처에 담당자·전화번호가 붙어 25~30자였다).
+     * 값은 차량 데이터라 길이를 예측할 수 없으므로 조립 지점에서 일괄 컷한다.
+     */
+    private const ITEM_DESC_MAX = 20;
+
+    /**
      * 아이템리스트 발송 payload — `#{변수}` 치환 후 BizM v2 send 형식으로 반환.
      *   ['header'=>..., 'items'=>['item'=>['list'=>[...], 'summary'=>...], 'itemHighlight'=>...]]
      *   아이템리스트형 아니면 null.
@@ -386,15 +396,16 @@ class AlimtalkTemplates
             return null;
         }
         $sub = fn (string $t): string => self::substitute($t, $vars);
+        $desc = fn (string $t): string => mb_substr($sub($t), 0, self::ITEM_DESC_MAX);
 
         $item = [
             'list' => array_map(
-                fn (array $it): array => ['title' => $sub($it['title']), 'description' => $sub($it['description'])],
+                fn (array $it): array => ['title' => $sub($it['title']), 'description' => $desc($it['description'])],
                 $il['items'],
             ),
         ];
         if (isset($il['summary'])) {
-            $item['summary'] = ['title' => $sub($il['summary']['title']), 'description' => $sub($il['summary']['description'])];
+            $item['summary'] = ['title' => $sub($il['summary']['title']), 'description' => $desc($il['summary']['description'])];
         }
 
         $payload = ['header' => $sub($il['header']), 'items' => ['item' => $item]];
