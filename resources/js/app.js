@@ -420,16 +420,47 @@ const fpConfig = {
     },
 };
 
+// 살아있는 flatpickr 인스턴스 레지스트리 (2026-07-28) — 고아 정리(prune)용.
+//   flatpickr 는 input 당 달력 컨테이너를 document.body 에 붙이는데, Livewire morph 로 input 이
+//   사라져도 그 컨테이너는 자동으로 안 지워진다. 재고관리처럼 행마다 날짜칸이 있는 목록에서
+//   검색을 반복하면 주인 없는 달력이 계속 쌓여(= DOM 누적) 이후 스캔·렌더가 점점 느려진다.
+const livePickers = new Set();
+
 // 요소 1개 init. 이미 붙었으면 false, 새로 붙였으면 true.
 function fpInit(el) {
     if (!el || el._flatpickr) return false;
-    flatpickr(el, fpConfig);
+    const fp = flatpickr(el, fpConfig);
+    if (fp && ! Array.isArray(fp)) livePickers.add(fp);
     return true;
 }
 
 function initFlatpickr(root) {
     const scope = root && root.querySelectorAll ? root : document;
     scope.querySelectorAll('input[data-date]').forEach(fpInit);
+}
+
+// 주인(input)이 문서에서 떨어져 나간 인스턴스를 destroy — 달력 컨테이너까지 함께 제거된다.
+function pruneOrphanPickers() {
+    livePickers.forEach((fp) => {
+        if (fp.input && fp.input.isConnected) return;
+        try {
+            fp.destroy();
+        } catch (e) {
+            /* 이미 정리된 인스턴스 — 무시 */
+        }
+        livePickers.delete(fp);
+    });
+}
+
+// morph 는 요소마다 발생 → 정리는 프레임당 1회로 합침(정리 자체가 O(n) 이라 매번 돌리면 같은 병목 재현).
+let prunePending = false;
+function queuePrune() {
+    if (prunePending) return;
+    prunePending = true;
+    requestAnimationFrame(() => {
+        prunePending = false;
+        pruneOrphanPickers();
+    });
 }
 
 // ★ 핵심 — focus 시 지연 init(문서 위임). 슬라이드 패널이 나중에 렌더돼도 클릭하는 순간 붙는다.
@@ -454,11 +485,27 @@ document.addEventListener('focusout', (e) => {
     el.dispatchEvent(new Event('input', { bubbles: true }));
 });
 
-// 로드/네비/morph 시 미init 요소 사전 스캔(값 표시·잔금 행 추가 대비). morph 는 문서 전체 재스캔.
+// 로드/네비 시 미init 요소 사전 스캔(값 표시·잔금 행 추가 대비).
 document.addEventListener('DOMContentLoaded', () => initFlatpickr());
-document.addEventListener('livewire:navigated', () => initFlatpickr());
+document.addEventListener('livewire:navigated', () => {
+    pruneOrphanPickers();   // 페이지 교체 — 이전 화면 달력 일괄 정리
+    initFlatpickr();
+});
 if (window.Livewire) {
-    window.Livewire.hook('morph.updated', () => initFlatpickr());
+    // ⚠️ 2026-07-28 성능 fix — 여기서 문서 전체를 재스캔하면 안 된다.
+    //   morph.updated 는 "바뀐 요소마다" 발생한다. 재고관리는 행마다 출고일 날짜칸이 있고
+    //   데스크탑 표 + 모바일 카드가 둘 다 DOM 에 있어 차량 1대당 2개(100개 보기 = 200개) →
+    //   구현이 document 전체 스캔이라 검색 1회에 (morph 이벤트 수 × 200) 만큼 훑어 체감이 크게 느려졌다.
+    //   data-money·data-phone 훅과 동일하게 el 스코프로 한정한다. 미init 요소는 focusin 위임이 보장.
+    window.Livewire.hook('morph.updated', ({ el }) => {
+        if (!el) return;
+        if (el.matches && el.matches('input[data-date]')) {
+            fpInit(el);
+        } else if (el.querySelectorAll) {
+            initFlatpickr(el);   // 바뀐 subtree 안에서만
+        }
+        queuePrune();
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
