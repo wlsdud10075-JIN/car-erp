@@ -31,6 +31,8 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $declBatch = '';
 
     public string $declNumber = '';
+    /** 컨테이너 번호 일괄 기입 (jin 2026-07-28) — 신고번호와 같은 폼에서 함께. 빈 값이면 미반영. */
+    public string $declContainer = '';
 
     /** 상단 탭 — 'shipping'(선적/발급, 기본) | 'cost'(2차 비용: 면허비 n/1). */
     public string $viewTab = 'shipping';
@@ -347,29 +349,34 @@ new #[Layout('components.layouts.app')] class extends Component
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
 
         $this->declBatch = $batchId;
-        $existing = ShippingRequest::where('batch_id', $batchId)->with('vehicle')->get()
-            ->map->vehicle->filter()->pluck('export_declaration_number')->filter()->first();
-        $this->declNumber = $existing ?? '';
+        $members = ShippingRequest::where('batch_id', $batchId)->with('vehicle')->get()->map->vehicle->filter();
+        $this->declNumber = $members->pluck('export_declaration_number')->filter()->first() ?? '';
+        // 컨테이너 번호 (jin 2026-07-28) — 반입 단계에 알게 되는 정보라 B/L 발급(100% 완납 게이트)까지
+        //   기다릴 이유가 없어 여기서도 일괄 기입한다. B/L 발급 폼에도 같은 컬럼이 있고 나중 기입이 이김.
+        $this->declContainer = $members->pluck('container_number')->filter()->first() ?? '';
     }
 
     public function cancelDeclNumber(): void
     {
         $this->declBatch = '';
         $this->declNumber = '';
+        $this->declContainer = '';
     }
 
     /**
-     * 수출신고번호 bulk-apply — 공유 신고번호를 묶음 멤버 차량 전체에 일괄 기입 (B/L 일괄 기입과 동일 패턴).
-     * - 통관 단계 데이터 필드(export_declaration_number)만 채움 — 진행상태 cascade(export_declaration_document·
-     *   is_export_cleared)엔 영향 없음. 순수 데이터 입력이라 완납 게이트 등 무관.
+     * 수출신고번호·컨테이너번호 bulk-apply — 공유 값을 묶음 멤버 차량 전체에 일괄 기입 (B/L 일괄 기입과 동일 패턴).
+     * - 통관/반입 단계 데이터 필드만 채움 — 진행상태 cascade(export_declaration_document·
+     *   is_export_cleared·bl_loading_location)엔 영향 없음. 순수 데이터 입력이라 완납 게이트 등 무관.
      * - per-vehicle update() → Vehicle::saving 훅 정상 발동(캐시 갱신), bulk SQL 우회 없음.
+     * - 둘 중 채운 것만 반영(빈 칸은 기존값 보존) — 신고번호만, 컨테이너만 넣는 운영을 둘 다 허용.
      */
     public function applyDeclNumber(): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
 
         $number = trim($this->declNumber);
-        if ($number === '') {
+        $container = trim($this->declContainer);
+        if ($number === '' && $container === '') {
             $this->dispatch('notify', message: __('shipping.decl.invalid'), type: 'error');
 
             return;
@@ -380,9 +387,14 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        DB::transaction(function () use ($rows, $number) {
+        $payload = array_filter([
+            'export_declaration_number' => $number !== '' ? $number : null,
+            'container_number' => $container !== '' ? $container : null,
+        ], fn ($v) => $v !== null);
+
+        DB::transaction(function () use ($rows, $payload) {
             foreach ($rows as $r) {
-                $r->vehicle?->update(['export_declaration_number' => $number]);   // 멤버 차량 일괄(saving 훅 발동)
+                $r->vehicle?->update($payload);   // 멤버 차량 일괄(saving 훅 발동)
             }
         });
 
@@ -962,6 +974,10 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <div>
                                     <label class="label-base">{{ __('shipping.decl.field_number') }}</label>
                                     <input wire:model="declNumber" type="text" class="input-base w-56" placeholder="{{ __('shipping.decl.placeholder') }}" />
+                                </div>
+                                <div>
+                                    <label class="label-base">{{ __('shipping.decl.field_container') }}</label>
+                                    <input wire:model="declContainer" type="text" class="input-base w-48" placeholder="{{ __('shipping.decl.container_placeholder') }}" />
                                 </div>
                                 <div class="text-[11px] text-green-700">{{ __('shipping.decl.hint') }}</div>
                             </div>

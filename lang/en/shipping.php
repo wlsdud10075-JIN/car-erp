@@ -77,7 +77,7 @@ return [
         'updated' => 'Shipping request status updated.',
         'cancelled' => 'Shipping request cancelled.',
         'bl_issued' => 'B/L no · vessel bulk-applied to bundle vehicles.',
-        'decl_applied' => 'Export declaration number bulk-applied to :count bundle vehicles.',
+        'decl_applied' => 'Bulk-applied to :count bundle vehicles.',
         'change_accepted' => 'Change request accepted; bundle released for re-planning by sales.',
         'change_rejected' => 'Change request rejected.',
     ],
@@ -112,14 +112,16 @@ return [
 
     // Export declaration number bulk apply (one shared number → whole bundle)
     'decl' => [
-        'enter' => 'Enter export decl. no',
-        'title' => 'Export declaration no — bulk apply to :n vehicles',
+        'enter' => 'Enter decl. no / container',
+        'title' => 'Export declaration no & container no — bulk apply to :n vehicles',
         'field_number' => 'Export declaration no',
+        'field_container' => 'Container no',
         'placeholder' => 'e.g. 12345-67-890123X',
-        'hint' => 'The same number is applied to every vehicle in the bundle.',
+        'container_placeholder' => 'e.g. TEMU1234567',
+        'hint' => 'The same values are applied to every vehicle in the bundle. Only filled fields are applied; blanks keep the existing value.',
         'apply' => 'Bulk apply',
         'cancel' => 'Close',
-        'invalid' => 'Enter an export declaration number.',
+        'invalid' => 'Enter an export declaration number or a container number.',
     ],
 
     'fin' => [
