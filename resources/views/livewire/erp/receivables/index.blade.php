@@ -267,7 +267,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'hCollectedAt' => ['required', 'date'],
             'hCollectorId' => ['required', 'exists:users,id'],
-            'hMethod' => ['required', 'in:deposit,cash,offset,other,write_off'],
+            'hMethod' => ['required', 'in:deposit,cash,offset,other,write_off,savings'],
             'hAmount' => ['required', 'numeric', 'min:0'],
             'hExchangeRate' => ['nullable', 'numeric', 'min:0'],
             'hNote' => ['nullable', 'string', 'max:500'],
@@ -301,6 +301,32 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->addError('hMethod', __('receivable.err_paid_no_deposit'));
 
             return;
+        }
+
+        // 적립금 회수 (2026-07-28) — 바이어 잔액 초과 사용 차단. DB CHECK 로도 막히지만 그건 QueryException
+        //   일반 메시지라, 여기서 남은 잔액을 알려준다. 수정 시엔 기존 금액만큼은 이미 빠져 있으므로 되돌려 계산.
+        if ($this->hMethod === 'savings') {
+            if (! $vehicle->buyer_id) {
+                $this->addError('hMethod', __('receivable.savings.no_buyer'));
+
+                return;
+            }
+            $balance = (float) (\App\Models\SavingsStatus::where('buyer_id', $vehicle->buyer_id)
+                ->where('currency', $vehicle->currency)
+                ->orderByDesc('id')->first()?->balance ?? 0);
+            $prev = $this->historyEditId
+                ? (float) (ReceivableHistory::find($this->historyEditId)?->method === 'savings'
+                    ? ReceivableHistory::find($this->historyEditId)?->amount ?? 0
+                    : 0)
+                : 0.0;
+            if ((float) $this->hAmount - $prev > $balance + 0.01) {
+                $this->addError('hAmount', __('receivable.savings.insufficient', [
+                    'balance' => number_format($balance, 2),
+                    'currency' => $vehicle->currency,
+                ]));
+
+                return;
+            }
         }
 
         // 2차 마감(closed) 정산 차량은 환율 소급 변경 차단 — 프리랜서(ratio) 환차가 이미 확정됐을 수 있음(회계 무결성).
@@ -946,8 +972,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="offset">{{ __('receivable.method.offset') }}</option>
                         <option value="other">{{ __('receivable.method.other') }}</option>
                         <option value="write_off">{{ __('receivable.method.write_off') }}</option>
+                        <option value="savings">{{ __('receivable.method.savings') }}</option>
                     </select>
                     @error('hMethod')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                    @if ($hMethod === 'savings')
+                        @php
+                            $savBal = (float) (\App\Models\SavingsStatus::where('buyer_id', $sv->buyer_id)
+                                ->where('currency', $sv->currency)->orderByDesc('id')->first()?->balance ?? 0);
+                        @endphp
+                        <div class="mt-1 text-[11px] text-violet-600">
+                            {{ __('receivable.savings.balance_hint', ['balance' => number_format($savBal, 2), 'currency' => $sv->currency]) }}
+                        </div>
+                    @endif
                 </div>
                 <div>
                     <label class="label-base">{{ __('receivable.field.amount') }} ({{ $sv->currency }}) *</label>
@@ -998,6 +1034,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $methodBadge = match ($h->method) {
                         'deposit' => 'badge-blue',
                         'write_off' => 'badge-red',
+                        'savings' => 'badge-purple',
                         default => 'badge-gray',
                     };
                 @endphp

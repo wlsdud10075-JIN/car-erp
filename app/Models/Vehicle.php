@@ -498,6 +498,22 @@ class Vehicle extends Model
     ];
 
     /**
+     * 회수이력 중 **미수 합산에서 빼야 하는** 방법들 (2026-07-28).
+     * 둘 다 다른 컬럼으로 이미 미수에 반영되는 "미러" 기록이라, 회수이력 합에 또 넣으면 이중 차감된다.
+     *   - deposit  → final_payments 로 미러 (ReceivableHistory::syncFinalPayment)
+     *   - savings  → vehicles.savings_used 로 미러 (ReceivableHistory::syncSavingsUsed)
+     * 미수 accessor 와 실입금KRW(환차 baseline) 양쪽이 이 상수를 공유한다 — 새 미러 방법이 생기면 여기만 추가.
+     */
+    public const MIRRORED_RECEIVABLE_METHODS = ['deposit', 'savings'];
+
+    /**
+     * 판매탭發 savings_used 변경 시 회수이력 미러 행 생성을 건너뛰는 플래그 (2026-07-28).
+     * 채권관리에서 적립금 행을 만들면 그 행이 savings_used 를 갱신하는데, 그때 H6 가 또 미러 행을
+     * 만들면 이력이 2배가 된다 → ReceivableHistory 가 이 플래그를 try/finally 로 세운다.
+     */
+    public static bool $skipSavingsHistory = false;
+
+    /**
      * 2차 정산 비용 일괄 기입 대상 컬럼 화이트리스트 (9개 비용만).
      * 면허비 묶음 n/1·탁송비 명세서 매칭 도구는 **이 컬럼만** 건드릴 수 있음.
      * → fleet-wide(전체 차량) 권한이어도 판매가·환율·매입가·바이어·담당자 등 민감 21필드는 봉인.
@@ -724,6 +740,25 @@ class Vehicle extends Model
                 return;
             }
             $vehicle->syncSavingsUsage($delta);
+
+            // 2026-07-28 (jin) — 적립금 사용을 채권관리에서도 쓰게 되면서, 판매탭에서 바뀐 분도
+            //   회수이력에 남긴다. 안 남기면 "이력 합 ≠ savings_used" 가 되고, 판매탭 사용분은
+            //   지금처럼 누가 언제 썼는지 추적이 안 된다. 채권관리發 변경은 이미 자기 행이 있으므로 skip.
+            if (! self::$skipSavingsHistory) {
+                ReceivableHistory::$skipSavingsSync = true;   // 이 행이 savings_used 를 또 건드리면 이중 반영
+                try {
+                    ReceivableHistory::create([
+                        'vehicle_id' => $vehicle->id,
+                        'collected_at' => now()->toDateString(),
+                        'collector_id' => auth()->id(),
+                        'method' => 'savings',
+                        'amount' => $delta,
+                        'note' => __('receivable.savings.auto_note'),
+                    ]);
+                } finally {
+                    ReceivableHistory::$skipSavingsSync = false;
+                }
+            }
         });
 
         // 매입 저장 훅 — 미확정 매입 잔금 payment_date 동기화 (매입일 변경 시).
@@ -1403,8 +1438,11 @@ class Vehicle extends Model
 
         // 큐 22-A-3 (2026-05-20) — 4컬럼 합산 제거. 단일 출처 = finalPayments(confirmed_at IS NOT NULL).
         // + 적립금 사용(savings_used) = 크레딧으로 잔금 결제 (2026-07-09).
+        // ⚠️ 회수이력에서 'savings' 도 제외 (2026-07-28) — 적립금 회수이력은 savings_used 컬럼을 갱신하는
+        //    기록용 행이라, 여기서 또 더하면 같은 돈이 두 번 차감된다(deposit 이 final_payments 로
+        //    반영되므로 제외되는 것과 같은 이유). 미수 반영은 savings_used 단일 출처로만.
         $totalReceived = $this->finalPayments->whereNotNull('confirmed_at')->sum('amount')
-            + $this->receivableHistories->where('method', '!=', 'deposit')->sum('amount')
+            + $this->receivableHistories->whereNotIn('method', self::MIRRORED_RECEIVABLE_METHODS)->sum('amount')
             + (float) ($this->savings_used ?? 0);
 
         $unpaid = $totalSale - $totalReceived;
@@ -1458,9 +1496,9 @@ class Vehicle extends Model
                 return (float) $p->amount * $rate;
             });
 
-        // ② 기타회수 — 판매환율 평가 (FX 중립)
+        // ② 기타회수 — 판매환율 평가 (FX 중립). 미수 accessor 와 동일하게 미러 방식(deposit·savings) 제외.
         $receivableKrw = (float) $this->receivableHistories
-            ->where('method', '!=', 'deposit')
+            ->whereNotIn('method', self::MIRRORED_RECEIVABLE_METHODS)
             ->sum('amount') * $saleRate;
 
         // ③ 적립금 사용 — 크레딧이라 사용 시점 새 FX 없음 → 판매환율 평가(FX 중립).
