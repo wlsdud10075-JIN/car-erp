@@ -18,7 +18,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
-        abort_unless(auth()->user()?->canAccessAdmin(), 403);
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
     }
 
     public function updatedPerPage(): void
@@ -52,7 +52,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 미도달/실패 1건 확인 처리 — 확인 전까지 사이드바 배지에 남는다. */
     public function acknowledge(int $id): void
     {
-        abort_unless(auth()->user()?->canAccessAdmin(), 403);
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
 
         $log = AlimtalkLog::whereKey($id)->needsAttention()->first();
         if ($log) {
@@ -64,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 주의 필요(미도달·실패) 전체 확인 처리. */
     public function acknowledgeAll(): void
     {
-        abort_unless(auth()->user()?->canAccessAdmin(), 403);
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
 
         AlimtalkLog::query()->needsAttention()->update([
             'acknowledged_at' => now(),

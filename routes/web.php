@@ -164,17 +164,21 @@ Route::middleware(['auth', 'verified', 'manage-users'])->prefix('admin')->name('
     Volt::route('users', 'admin.users.index')->name('users.index');
 });
 
-// /admin 그 외 — super/admin만 (document-access-logs, audit-logs)
-Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+// 운영 로그 — [관리] 이상 (시스템관리자·최고관리자·업무관리자·role='관리'). jin 2026-07-28.
+Route::middleware(['auth', 'verified', 'operation-logs'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('document-access-logs', 'admin.document-access-logs.index')->name('document-access-logs.index');
     // 회의확장씬 Phase 3-1 (d-2) (2026-05-23) — 별건3 흡수: 감사 로그 UI.
     Volt::route('audit-logs', 'admin.audit-logs.index')->name('audit-logs.index');
+    // 바이어 문서 메일전달 로그 (2026-07-15) — 누가·언제·어떤 문서를 누구에게 보냈는지.
+    Volt::route('mail-delivery-logs', 'admin.mail-delivery-logs.index')->name('mail-delivery-logs.index');
+});
+
+// 알림톡 계열 — 시스템관리자 전용 (jin 2026-07-28). 위 운영 로그와 게이트가 다르다.
+Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('admin.')->group(function () {
     // 알림톡 발송·도달 로그 (2026-07-13) — 전송결과 폴링 결과 + 미도달 확인.
     Volt::route('alimtalk-logs', 'admin.alimtalk-logs.index')->name('alimtalk-logs.index');
     // 알림톡 안내 카탈로그 (2026-07-23) — 누가·언제·어떤 내용을 받는지 한눈에 (읽기 전용).
     Volt::route('alimtalk-catalog', 'admin.alimtalk-catalog.index')->name('alimtalk-catalog.index');
-    // 바이어 문서 메일전달 로그 (2026-07-15) — 누가·언제·어떤 문서를 누구에게 보냈는지.
-    Volt::route('mail-delivery-logs', 'admin.mail-delivery-logs.index')->name('mail-delivery-logs.index');
 });
 
 // 회의확장씬 2026-05-22 — 항구 마스터는 admin + [관리] (canManagePorts).

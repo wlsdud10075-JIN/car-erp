@@ -93,4 +93,52 @@ class InventoryCategoryTest extends TestCase
         $this->assertContains($unsold->id, $generalIds);
         $this->assertNotContains($sold->id, $generalIds);
     }
+
+    /**
+     * 출고완료 탭 (jin 2026-07-28) — 출고일이 찍히면 재고에서 빠져 어디서도 못 보던 차량 조회용.
+     * inStock() 은 whereNull(warehouse_out_date) 라 이 탭만 스코프가 배타적으로 분기한다.
+     */
+    public function test_shipped_out_tab_lists_released_vehicles_only(): void
+    {
+        $inStock = $this->stockVehicle(true, '88아8888');
+        $released = $this->stockVehicle(true, '99자9999', shippedOut: true);
+
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        $ids = Volt::test('erp.inventory.index')->set('category', 'shipped_out')
+            ->instance()->inventoryVehicles->pluck('id')->all();
+
+        $this->assertContains($released->id, $ids, '출고된 차량이 출고완료 탭에 없다');
+        $this->assertNotContains($inStock->id, $ids, '재고 중인 차량이 출고완료 탭에 섞였다');
+    }
+
+    /** 출고완료 카운트는 재고 합계(cat_all)와 별개로 집계된다. */
+    public function test_shipped_out_count_is_separate_from_stock_counts(): void
+    {
+        $this->stockVehicle(true, '10가1010');
+        $this->stockVehicle(true, '20나2020', shippedOut: true);
+
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        $counts = Volt::test('erp.inventory.index')->instance()->categoryCounts;
+        $this->assertSame(1, $counts['pre_ship'], '출고분은 재고 카운트에서 빠져야 한다');
+        $this->assertSame(1, $counts['shipped_out']);
+    }
+
+    /** 출고일 변경이 감사로그에 남아야 한다 (누가 언제 출고 처리했는지 추적). */
+    public function test_warehouse_out_date_is_audited(): void
+    {
+        $this->assertContains('warehouse_out_date', Vehicle::AUDITED_COLUMNS);
+
+        $v = $this->stockVehicle(true, '30다3030');
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        $v->update(['warehouse_out_date' => now()->toDateString()]);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_type' => Vehicle::class,
+            'auditable_id' => $v->id,
+            'column_name' => 'warehouse_out_date',
+        ]);
+    }
 }

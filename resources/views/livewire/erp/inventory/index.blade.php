@@ -57,9 +57,17 @@ new #[Layout('components.layouts.app')] class extends Component
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
+        // 출고완료(jin 2026-07-28) — 출고일이 찍히면 재고에서 빠져 어디서도 못 보던 문제.
+        //   inStock() 은 whereNull(warehouse_out_date) 라 이 카테고리와 배타적 → 스코프를 분기한다.
+        //   재고 이력 조회용이라 매입완납 조건은 걸지 않는다(출고된 차는 이미 재고를 떠난 것).
+        $isShippedOut = $this->category === 'shipped_out';
+
         $result = Vehicle::query()
             ->with(['salesman', 'buyer', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
-            ->inStock()
+            ->when($isShippedOut,
+                fn ($q) => $q->whereNotNull('warehouse_out_date'),
+                fn ($q) => $q->inStock()
+            )
             ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
             ->when($this->category === 'pre_ship', fn ($q) => $q->where('sale_price', '>', 0))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
@@ -77,9 +85,11 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->orWhere('vessel_name', 'like', "%{$this->search}%")            // 선박명(VSL)
                 ->orWhere('container_number', 'like', "%{$this->search}%")        // 컨테이너번호
             ))
-            ->orderByRaw('salesman_id IS NULL ASC')
-            ->orderBy('salesman_id')
-            ->orderBy('purchase_date')
+            // 출고완료는 "언제 나갔나"가 관심사 → 최근 출고순. 재고는 기존 담당자·매입일 순 유지.
+            ->when($isShippedOut,
+                fn ($q) => $q->orderByDesc('warehouse_out_date')->orderByDesc('id'),
+                fn ($q) => $q->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')
+            )
             ->paginate($this->perPage);
 
         // 출고일 draft 초기화 — 현재 페이지 차량 중 draft 없는 것만 DB값으로 채움(사용자 편집 보존).
@@ -190,6 +200,8 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'general' => $scoped(Vehicle::query()->generalStock())->count(),
             'pre_ship' => $scoped(Vehicle::query()->preShippingStock())->count(),
+            // 출고완료는 재고가 아니라 "나간 이력" — 전체 합계(cat_all)에는 더하지 않는다.
+            'shipped_out' => $scoped(Vehicle::query()->whereNotNull('warehouse_out_date'))->count(),
         ];
     }
 
@@ -281,8 +293,16 @@ new #[Layout('components.layouts.app')] class extends Component
             {{ __('inventory.cat_pre_ship') }}
             <span class="pill-count">{{ number_format($cc['pre_ship']) }}</span>
         </button>
+        {{-- 출고완료 (jin 2026-07-28) — 출고일이 찍히면 재고에서 빠져 어디서도 못 보던 차량 조회용. --}}
+        <button wire:click="setCategory('shipped_out')"
+                class="tab-pill {{ $category === 'shipped_out' ? 'is-active' : '' }}">
+            {{ __('inventory.cat_shipped_out') }}
+            <span class="pill-count">{{ number_format($cc['shipped_out']) }}</span>
+        </button>
         @if($category === 'general')
             <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_general_hint') }}</span>
+        @elseif($category === 'shipped_out')
+            <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_shipped_out_hint') }}</span>
         @endif
     </div>
 

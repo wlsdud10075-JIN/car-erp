@@ -20,6 +20,7 @@ return [
     // ─── vehicles ───────────────────────────────────────────────────────
     'vehicles' => [
         'vehicle_number' => '차량번호',
+        'warehouse_out_date' => '출고일',
         'brand' => '브랜드',
         'model_type' => '차종',
         'year' => '연식',

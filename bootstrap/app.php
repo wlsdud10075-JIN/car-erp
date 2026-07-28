@@ -6,6 +6,7 @@ use App\Http\Middleware\ApproveMiddleware;
 use App\Http\Middleware\ClearanceMiddleware;
 use App\Http\Middleware\ErpMiddleware;
 use App\Http\Middleware\ManageUsersMiddleware;
+use App\Http\Middleware\OperationLogsMiddleware;
 use App\Http\Middleware\ReceivableMiddleware;
 use App\Http\Middleware\SalesMiddleware;
 use App\Http\Middleware\SetLocale;
@@ -34,6 +35,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin-dashboard' => AdminDashboardMiddleware::class,
             'manage-users' => ManageUsersMiddleware::class,
             'approve' => ApproveMiddleware::class,
+            'operation-logs' => OperationLogsMiddleware::class,
             'receivable' => ReceivableMiddleware::class,
             'super-admin' => SuperAdminMiddleware::class,
             'erp' => ErpMiddleware::class,

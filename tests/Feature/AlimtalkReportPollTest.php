@@ -134,28 +134,28 @@ class AlimtalkReportPollTest extends TestCase
     }
 
     // ── 로그 화면 + 확인(acknowledge) ──────────────────────────────────
-    public function test_admin_can_acknowledge_undelivered(): void
+    public function test_super_can_acknowledge_undelivered(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
         $log = AlimtalkLog::create(['template_code' => 'erp_daily_summary', 'phone' => '01000000000', 'status' => 'sent', 'msgid' => 'M', 'report_status' => 'undelivered']);
 
-        Volt::actingAs($admin)->test('admin.alimtalk-logs.index')
+        Volt::actingAs($super)->test('admin.alimtalk-logs.index')
             ->assertOk()
             ->call('acknowledge', $log->id);
 
         $log->refresh();
         $this->assertNotNull($log->acknowledged_at);
-        $this->assertSame($admin->id, $log->acknowledged_by);
+        $this->assertSame($super->id, $log->acknowledged_by);
         $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
     }
 
     public function test_acknowledge_all_clears_attention(): void
     {
-        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
         AlimtalkLog::create(['template_code' => 'a', 'phone' => '010', 'status' => 'failed']);
         AlimtalkLog::create(['template_code' => 'b', 'phone' => '011', 'status' => 'sent', 'msgid' => 'M', 'report_status' => 'undelivered']);
 
-        Volt::actingAs($admin)->test('admin.alimtalk-logs.index')
+        Volt::actingAs($super)->test('admin.alimtalk-logs.index')
             ->call('acknowledgeAll');
 
         $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
