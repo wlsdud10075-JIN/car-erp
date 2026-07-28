@@ -140,6 +140,8 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감. **면장금액 미입력 시 `Vehicle::saving` 훅이 총판매가(`sale_total_amount`)를 자동복사(2026-07-03, 구 sale_price override) — 비었을 때만, 명시값(CIF/FOB) 보존. 면장은 정산 공식 미포함이라 재무 무영향. 기존 차량 보정 = `vehicles:sync-declaration-amount`**
 12. **총마진은 마지막에 × 0.9** — 부가세 10% 차감. 사용자 확정 (2026-05-21)
 13. **정산 default 자동 채움** — `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50` (프리랜서) 또는 `per_unit_amount=100000` (사내직원) 자동. 코드 상수는 `Settlement::FREELANCE_RATIO_DEFAULT / EMPLOYEE_PER_UNIT_DEFAULT / FREELANCE_DOCUMENT_FEE`
+14. 🚨 **Volt public 프로퍼티와 메서드에 같은 이름 금지** — `public string $search` + `public function search()` 면 `wire:click="search"` 가 **요청조차 안 보내고 조용히 죽는다**(에러 없음). 화면은 `wire:poll.30s` 때만 갱신돼 **"검색이 느리다"로 위장**된다. 메서드는 `searchNow()`/`applyFilters()`, `wire:model.live` 바인딩이면 `updatedSearch()`. 가드 = `VoltPropertyMethodCollisionTest`(정적 스캔, 단위 테스트로는 못 잡음). 2026-05 발생 → 2026-07-28 7개 화면 재발. 상세 = `SKILLS.md §8 #32`
+15. 🧭 **"느리다" 제보 = 성능 문제로 단정 금지** — 서버 실측(쿼리·렌더)이 멀쩡한데 체감이 느리면 **배선(동작 안 함)을 먼저 의심**. 확인 순서 = ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②Network 탭에 **요청이 뜨긴 하나** ③뜬다면 Time. 요청이 없으면 성능 논의는 무의미. (2026-07-28 실제로 성능만 파다 배포 1회 헛돌았음.) ⚠️ **JS/CSS 만 바뀐 배포는 `Ctrl+Shift+R` 전엔 체감 검증 불가** — Livewire 업데이트는 자산을 다시 안 받아서 열린 탭이 옛 JS 로 계속 돈다.
 
 ## Git 브랜치 전략
 

@@ -487,6 +487,15 @@ extension=zip    # 주석 제거
 **원인**: Laravel 9+ 의 `when($value, $cb)` 는 **`$value` 가 Closure 면 조건값을 얻으려고 그 클로저를 `$value($query)` 로 호출**한다. 스코프 클로저(예: `fn($q)=>$q->orWhereHas('vehicles',...)`)를 `when()` 의 **조건 자리**에 그대로 넘기면, 엉뚱한 빌더(예: Consignee)에서 실행돼 `Consignee::vehicles() undefined` 같은 런타임 에러(뷰 렌더 시점 ViewException). 실측: 컨사이니 목록 바이어 스코프 IDOR fix 중.
 **해결**: 클로저는 **콜백 안에서만** 쓰고 조건은 boolean 으로 — `->when($scope !== null, fn($q)=>$q->whereHas('buyer', $scope))`. (컨사이니 IDOR fix `a22ac9b`: 독립 컨사이니 목록에 소속 바이어 스코프 재인가(§8 #26 패턴) — `buyerScope()` 단일출처를 목록·드롭다운·openEdit/save/delete 에 적용, buyer 필수 검증 추가. 테스트 `ConsigneeIdorScopeTest`.)
 
+### 32. 🚨 Volt public 프로퍼티 ↔ 메서드 **이름 충돌** = 버튼이 조용히 죽음 (2026-05 최초, 2026-07-28 재발)
+**원인**: `public string $search` 와 `public function search()` 가 같은 이름이면, 브라우저에서 `$wire.search` 가 **메서드가 아니라 프로퍼티 값(문자열)** 로 잡힌다. → `wire:click="search"` · `wire:keydown.enter="search"` 가 **요청을 아예 안 보내고 실패**한다. **JS 에러도, PHP 예외도 없다.**
+**증상 위장**: 화면은 `wire:poll.30s` 가 돌 때만 갱신되므로 **"검색이 30초 걸린다 = 느리다"** 로 보인다. 실제로 서버는 무관(실측 쿼리 3ms·컴포넌트 렌더 55ms·요청 73ms).
+**결정적 단서**: 충돌 없는 버튼(초기화 `resetFilters` 등)은 멀쩡하다 → **"초기화는 빠른데 검색만 느리다"** 가 나오면 성능이 아니라 이 버그다.
+**해결**: 메서드를 다른 이름으로. Enter·버튼 방식 = `searchNow()` / 필터형 = `applyFilters()` / **`wire:model.live` 바인딩이면 Livewire 표준 훅 `updatedSearch()`** (이 경우 `search()` 는 아무도 안 부르는 죽은 코드라 페이지 리셋도 안 되고 있었음 — 훅으로 바꾸면 함께 해소).
+**🔒 재발 방지 = `tests/Feature/VoltPropertyMethodCollisionTest`** — `resources/views/livewire` 전체 정적 스캔으로 충돌 0건 강제. ⚠️ **이 부류는 일반 단위 테스트로 못 잡는다**(테스트는 PHP 메서드를 직접 호출해 통과해버림). 육안 점검도 놓친다 — 실제로 사람이 5개 찾고 이 테스트가 2개를 더 찾았다.
+**이력**: 2026-05 차량목록에서 겪고 `applyFilters` 로 고쳤으나 **나머지 화면을 안 훑어** 7곳(재고관리·바이어·컨사이니·영업담당·정산·관리자항구·채권관리)에 남아 재발. fix 커밋 `311ee3a`.
+**🧭 진단 교훈**: "느리다" 제보를 성능 문제로 단정하지 말 것. **서버 실측이 멀쩡한데 체감이 느리면, 성능이 아니라 배선(동작 안 함)을 먼저 의심.** 확인 순서 = ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②**Network 탭에 요청이 뜨긴 하나** ③뜬다면 그 Time. 요청 자체가 없으면 성능 얘기는 무의미하다.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
