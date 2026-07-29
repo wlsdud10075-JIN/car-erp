@@ -193,20 +193,28 @@ class SavingsFifoLedgerTest extends TestCase
         $this->assertEquals(1500, (float) SavingsStatus::where('buyer_id', $buyer->id)->first()->exchange_rate);
     }
 
-    public function test_screen_shows_krw_and_next_out_without_a_lot_list(): void
+    public function test_screen_shows_which_batch_was_used_and_what_is_left(): void
     {
-        // jin 2026-07-29 — lot 을 줄줄이 나열했더니 "보기 되게 복잡"하고 아래 거래내역 표와 겹쳤다.
-        //   → 잔액 줄에 **원화 + 다음 차감 한 줄**만. 날짜별 내역은 거래내역 표가 담당.
+        // jin 2026-07-29 — "사용한 기록이 언제꺼를 사용했고, 나머지가 얼마 남았고 이래야 되지 않나".
+        //   별도 목록을 늘어놓는 대신 **거래내역 각 행**에 선입선출 내역을 붙인다.
         $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
         $b = Buyer::create(['name' => 'B', 'is_active' => true]);
         $this->row($b, 'EARNED', 1500, 1487, 'USD');
         $this->row($b, 'EARNED', 1500, 1487, 'USD');
+        $this->row($b, 'USED', -800, 1487, 'USD');
 
         $page = Volt::test('erp.buyers.index')->call('openEdit', $b->id);
 
-        $page->assertSeeText('4,461,000');                       // 3,000 × 1,487 원화 병기
-        $page->assertSeeText('다음 차감');                        // 선입선출 안내 한 줄
-        $page->assertDontSeeText('선입선출 잔여 적립분');           // 별도 목록 블록은 없어야 한다
+        // 원화 병기 — 잔여 2,200 × 1,487
+        $page->assertSeeText(number_format(2200 * 1487));
+        // 사용 행: 어느 적립분에서 얼마 나갔고, 그 적립분에 얼마 남았는지
+        $page->assertSeeText('적립분에서 800.00 사용');
+        $page->assertSeeText('남은 700.00');
+        // 적립 행: 환율이 환율이라고 쓰여 있어야 한다 ("@1487 이게 환율인가?" — jin)
+        $page->assertSeeText('환율 1,487.00');
+        // 다음 차감에 금액이 있어야 잔액이 줄어드는 게 보인다
+        $page->assertSeeText('다음 차감');
+        $page->assertSeeText('남은 700.00');
     }
 
     public function test_krw_currency_defaults_rate_to_one(): void
