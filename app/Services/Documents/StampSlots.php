@@ -83,10 +83,12 @@ class StampSlots
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
-            // 판매 계약서 — SELLER 서명칸(B71) 직인. 양식 baked 도장(343×187 @ B71)과 동일 박스.
+            // 판매 계약서 — SELLER 서명칸 직인. 양식 baked 도장(361×203 @ C70)과 **동일 박스여야 한다**:
+            //   removeDrawingsAt 이 "정확히 같은 앵커"만 지우므로, 어긋나면 baked 와 업로드본이 겹쳐
+            //   **이중 도장**이 된다. 2026-07-29 새 레이아웃에서 baked 가 B71 → C70 으로 옮겨졌다.
             //   fillMulti removeRow 前 오버레이라 트림된 위치로 함께 이동(선적 계약서와 동일).
             'sales_contract' => [
-                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'CONTRACT', 'anchor' => 'B71', 'width' => 343, 'height' => 187],
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'CONTRACT', 'anchor' => 'C70', 'width' => 361, 'height' => 203],
             ],
             // ⚠ 한글/영문등록증·말소증의 빨간 직인은 "대한민국(시장·도지사) 공인 직인" = 정부 인장.
             //   회사 도장으로 덮으면 안 됨 → 슬롯에서 제외. 회사 도장/서명은 인보이스·팩킹·Travel 만.
@@ -136,9 +138,9 @@ class StampSlots
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'HBB340.', 'anchor' => 'B59', 'width' => 266, 'height' => 141],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'HBB340.', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
-            // 판매 계약서 — 직인=계약서(heyman 정책). SELLER 서명칸(B71).
+            // 판매 계약서 — 직인=계약서(heyman 정책). SELLER 서명칸. baked 도장과 동일 박스 유지(위 주석 참조).
             'sales_contract' => [
-                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'CONTRACT', 'anchor' => 'B71', 'width' => 343, 'height' => 187],
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'CONTRACT', 'anchor' => 'C70', 'width' => 361, 'height' => 203],
             ],
             // 등록증·말소증 정부직인은 슬롯에서 제외. 회사 직인은 차량인보이스·팩킹·Travel 만.
             'clearance' => [
