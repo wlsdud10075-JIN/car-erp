@@ -272,7 +272,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'hCollectedAt' => ['required', 'date'],
             'hCollectorId' => ['required', 'exists:users,id'],
-            'hMethod' => ['required', 'in:deposit,cash,offset,other,write_off,savings'],
+            'hMethod' => ['required', 'in:'.implode(',', ReceivableHistory::METHODS)],
             'hAmount' => ['required', 'numeric', 'min:0'],
             'hExchangeRate' => ['nullable', 'numeric', 'min:0'],
             'hNote' => ['nullable', 'string', 'max:500'],
