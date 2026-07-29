@@ -27,7 +27,7 @@ return [
     'currency_label' => '통화',
     'currency_all' => '전체(₩)',
 
-    'search_ph' => '차량번호·브랜드 검색',
+    'search_ph' => '차량번호·브랜드·선박명(VSL)·컨테이너번호',
     'all_salesman' => '담당자 전체',
     'all_buyer' => '바이어 전체',
     'all_progress' => '진행상태 전체',

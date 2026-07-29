@@ -27,7 +27,7 @@ return [
     'currency_label' => 'Currency',
     'currency_all' => 'All (₩)',
 
-    'search_ph' => 'Search plate · brand',
+    'search_ph' => 'Plate · brand · vessel (VSL) · container',
     'all_salesman' => 'All salesmen',
     'all_buyer' => 'All buyers',
     'all_progress' => 'All statuses',
