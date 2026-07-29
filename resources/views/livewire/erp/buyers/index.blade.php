@@ -1057,14 +1057,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </span>
                     </div>
-                    {{-- 다음에 나갈 적립분 — 금액까지 보여야 쓸 때마다 줄어드는 게 보인다(jin 2026-07-29). --}}
+                    {{-- 다음에 나갈 적립분 — 금액까지 보여야 쓸 때마다 줄어드는 게 보인다(jin 2026-07-29).
+                         잘 안 보인다는 피드백으로 10px 회색 → 칩 형태로 키움. --}}
                     @if($next)
-                    <div class="pl-12 text-[10px] text-gray-400">
-                        {{ __('buyer.savings.next_out_line', [
-                            'date'   => $next['at'],
-                            'amount' => number_format($next['remaining'], 2),
-                            'rate'   => $next['exchange_rate'] ? __('buyer.savings.rate_label', ['rate' => number_format($next['exchange_rate'], 2)]) : __('buyer.savings.rate_none'),
-                        ]) }}
+                    <div class="mt-1 pl-12">
+                        <span class="inline-flex items-center gap-1.5 rounded-md border border-primary-light bg-primary-light/50 px-2 py-1 text-xs font-medium text-primary-text">
+                            <span class="text-[13px] leading-none">↓</span>
+                            {{ __('buyer.savings.next_out_line', [
+                                'date'   => $next['at'],
+                                'amount' => number_format($next['remaining'], 2),
+                                'rate'   => $next['exchange_rate'] ? __('buyer.savings.rate_label', ['rate' => number_format($next['exchange_rate'], 2)]) : __('buyer.savings.rate_none'),
+                            ]) }}
+                        </span>
                     </div>
                     @endif
                     @if(!empty($k['unrated']))

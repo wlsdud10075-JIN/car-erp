@@ -64,6 +64,9 @@ class VehicleExportService
             'transport_fee' => ['운임비', 'num', fn (Vehicle $v) => $v->transport_fee, '판매'],
             'sale_total_amount' => ['판매총액', 'num', fn (Vehicle $v) => $v->sale_total_amount, '판매'],     // accessor
             'sale_unpaid_amount' => ['미입금액', 'num', fn (Vehicle $v) => $v->sale_unpaid_amount, '판매'],   // accessor
+            // 적립금 사용 (jin 2026-07-29) — 이 차량 잔금을 바이어 크레딧으로 결제한 금액(판매통화 기준).
+            //   미입금액 계산에 이미 반영돼 있어(SKILLS §13) 별도 컬럼이 없으면 "왜 미수가 줄었지?" 가 안 보였다.
+            'savings_used' => ['적립금사용', 'num', fn (Vehicle $v) => $v->savings_used, '판매'],
             // 선적/통관
             'shipping_date' => ['선적일ETD', 'date', fn (Vehicle $v) => $v->shipping_date, '선적'],
             'eta_date' => ['도착일ETA', 'date', fn (Vehicle $v) => $v->eta_date, '선적'],

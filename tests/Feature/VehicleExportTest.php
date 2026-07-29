@@ -117,6 +117,21 @@ class VehicleExportTest extends TestCase
         $this->assertStringNotContainsString('주민/법인번호(마스킹)', $flat, '선택 안 한 PII 컬럼 노출');
     }
 
+    /** 적립금 사용액도 엑셀로 받을 수 있어야 한다 (jin 2026-07-29). 미입금액에 이미 반영된 값이라 근거가 보여야 함. */
+    public function test_export_includes_savings_used(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->vehicle();
+        $v->update(['savings_used' => 500]);
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'vehicle_number,savings_used']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('적립금사용', $flat);
+        $this->assertStringContainsString('500', $flat);
+    }
+
     /** 알 수 없는 컬럼 key 는 화이트리스트 교집합에서 제외(클라이언트 우회 차단) */
     public function test_export_ignores_unknown_columns(): void
     {
