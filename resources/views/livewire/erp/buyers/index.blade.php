@@ -1034,62 +1034,43 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $barColor = $isNeg ? 'bg-red-400' : ($bal > 0 ? 'bg-emerald-400' : 'bg-gray-300');
                     $textColor = $isNeg ? 'text-red-600' : ($bal > 0 ? 'text-emerald-700' : 'text-gray-500');
                 @endphp
-                <div class="flex items-center gap-2 text-xs">
-                    <span class="w-10 font-mono font-semibold text-gray-600">{{ $cur }}</span>
-                    <div class="flex-1 h-3 bg-white rounded-full overflow-hidden border border-gray-200">
-                        <div class="h-full {{ $barColor }}" style="width: {{ $pct }}%"></div>
+                @php
+                    $k    = $balancesKrw[$cur] ?? null;
+                    $next = $lots[$cur][0] ?? null;   // 선입선출로 다음에 나갈 적립분
+                @endphp
+                <div>
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="w-10 shrink-0 font-mono font-semibold text-gray-600">{{ $cur }}</span>
+                        <div class="h-3 flex-1 overflow-hidden rounded-full border border-gray-200 bg-white">
+                            <div class="h-full {{ $barColor }}" style="width: {{ $pct }}%"></div>
+                        </div>
+                        <span class="w-28 shrink-0 text-right font-medium tabular-nums {{ $textColor }}">{{ number_format($bal, 2) }}</span>
+                        {{-- 원화 병기 (jin 2026-07-29) — 적립 시점 환율 × 선입선출 잔여분 --}}
+                        <span class="w-32 shrink-0 text-right text-[11px] tabular-nums text-gray-500">
+                            @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))
+                                ≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}
+                            @else
+                                —
+                            @endif
+                        </span>
                     </div>
-                    <span class="w-32 text-right font-medium {{ $textColor }}">{{ number_format($bal, 2) }}</span>
-                    {{-- 원화 병기 (jin 2026-07-29) — 적립 시점 환율 × 선입선출 잔여 lot --}}
-                    @php $k = $balancesKrw[$cur] ?? null; @endphp
-                    <span class="w-32 text-right text-[11px] text-gray-500">
-                        @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))
-                            ≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}
-                        @else
-                            —
-                        @endif
-                    </span>
+                    {{-- 선입선출 = 다음에 나갈 적립분만 한 줄. 날짜별 내역은 아래 거래내역 표에 이미 있다. --}}
+                    @if($next)
+                    <div class="pl-12 text-[10px] text-gray-400">
+                        {{ __('buyer.savings.next_out_line', [
+                            'date' => $next['at'],
+                            'rate' => $next['exchange_rate'] ? '@'.number_format($next['exchange_rate'], 2) : '—',
+                        ]) }}
+                    </div>
+                    @endif
+                    @if(!empty($k['unrated']))
+                    <div class="pl-12 text-[10px] text-amber-600">
+                        {{ __('buyer.savings.unrated_note', ['amount' => number_format($k['unrated'], 2), 'currency' => $cur]) }}
+                    </div>
+                    @endif
                 </div>
-                @if(!empty($k['unrated']))
-                <div class="pl-12 text-[10px] text-amber-600">
-                    {{ __('buyer.savings.unrated_note', ['amount' => number_format($k['unrated'], 2), 'currency' => $cur]) }}
-                </div>
-                @endif
                 @endforeach
             </div>
-
-            {{-- 선입선출 잔여 적립분 (jin 2026-07-29) — 쓰면 위(오래된 것)부터 빠진다 --}}
-            @php $hasLots = collect($lots)->flatten(1)->isNotEmpty(); @endphp
-            @if($hasLots)
-            <div class="mb-4 rounded-lg border border-gray-200 bg-white p-3">
-                <div class="mb-2 text-[10px] font-semibold uppercase text-gray-400">
-                    {{ __('buyer.savings.lots_title') }}
-                    <span class="ml-1 normal-case font-normal text-gray-400">{{ __('buyer.savings.lots_hint') }}</span>
-                </div>
-                <div class="space-y-1">
-                    @foreach($lots as $cur => $curLots)
-                        @foreach($curLots as $i => $lot)
-                        <div class="flex items-center gap-2 text-xs {{ $i === 0 ? 'font-medium text-gray-800' : 'text-gray-500' }}">
-                            @if($i === 0)
-                                <span class="rounded bg-primary-light px-1 text-[9px] font-semibold text-primary-text">{{ __('buyer.savings.next_out') }}</span>
-                            @else
-                                <span class="w-[34px]"></span>
-                            @endif
-                            <span class="w-20 font-mono text-[11px]">{{ $lot['at'] }}</span>
-                            <span class="w-10 font-mono">{{ $cur }}</span>
-                            <span class="w-24 text-right">{{ number_format($lot['remaining'], 2) }}</span>
-                            <span class="w-24 text-right text-[11px] text-gray-400">
-                                @if($lot['exchange_rate']) @ {{ number_format($lot['exchange_rate'], 2) }} @else — @endif
-                            </span>
-                            <span class="w-28 text-right text-[11px]">
-                                @if($lot['krw'] !== null) {{ number_format($lot['krw']) }}{{ __('buyer.savings.won') }} @else — @endif
-                            </span>
-                        </div>
-                        @endforeach
-                    @endforeach
-                </div>
-            </div>
-            @endif
             @else
             <p class="mb-4 text-xs text-gray-400">{{ __('buyer.savings.no_balance') }}</p>
             @endif
