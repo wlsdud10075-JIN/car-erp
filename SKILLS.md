@@ -514,6 +514,13 @@ extension=zip    # 주석 제거
 **해결**: 조립 지점(`itemListPayload`)에서 `mb_substr(…, 0, 20)` 일괄 컷 — 전 템플릿이 통과하는 단일 지점이라 여기만 막으면 된다. 상수 `AlimtalkTemplates::ITEM_DESC_MAX`.
 **⚠️ 값 길이를 예측할 수 없는 필드(구입처·바이어명 등)를 새 템플릿에 넣을 때 주의.** 템플릿 정의의 **리터럴**이 20자를 넘으면 잘 나가던 메시지가 잘리므로, 리터럴은 20자 이하로 유지할 것.
 
+### 36. 🚨 enum 컬럼에 값을 추가하는 코드는 **로컬·CI 를 100% 통과하고 운영에서만 죽는다** (2026-07-29)
+**원인**: 테스트는 **SQLite**, 운영은 **MySQL**([[project_db_tier_mismatch]]). **SQLite 는 enum 을 강제하지 않아** 코드 화이트리스트에 새 값을 넣고 DB enum 을 안 늘려도 테스트가 전부 초록으로 통과한다. 운영 MySQL 은 `SQLSTATE[01000] 1265 Data truncated for column 'x'` 를 낸다.
+**실측 사고**: 2026-07-28 "적립금 채권관리 회수방법" 배포가 `ReceivableHistory` 코드에만 `'savings'` 를 넣고 `receivable_histories.method` enum(`deposit,cash,offset,other,write_off`)을 안 늘렸다 → **3사 전부 적립금 사용 전면 불능**. `Vehicle::saved` H6 가 만드는 `method='savings'` 회수이력 insert 가 실패하며 **차량 저장이 통째로 롤백**돼 `savings_used` 가 0 으로 남았다. 차량관리 판매탭·채권관리 양쪽 동일.
+**위장**: 에러 토스트가 안 뜨고 값만 안 들어간다 → 사용자에겐 "적립금이 안 써진다"로 보인다. **로그(`storage/logs/laravel.log`)에만 남는다** — 이런 제보를 받으면 재현보다 **서버 로그 grep 이 빠르다**(실측: 로그 1줄로 3시간짜리 가설 3개가 정리됨).
+**해결**: 값 목록을 모델 상수로 단일출처화(`ReceivableHistory::METHODS`) + 같은 커밋에 `ALTER TABLE … MODIFY COLUMN … ENUM(…)` 마이그레이션.
+**🔒 가드 = `tests/Feature/ReceivableMethodEnumTest`** — DB 에 넣어보는 대신 **마이그레이션 파일의 enum 문자열을 정적으로 파싱해** 코드 상수와 대조한다(드라이버 무관이라 SQLite 에서도 잡힘). ⚠️ **다른 enum 컬럼에 값을 추가할 때도 같은 형태의 가드를 만들 것** — 기능 테스트로는 원리상 못 잡는다.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
