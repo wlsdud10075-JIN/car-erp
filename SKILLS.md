@@ -480,6 +480,14 @@ extension=zip    # 주석 제거
 ### 29. 판매계약서(sales_contract) + fillMulti `aggregates` 훅 (2026-07-01)
 신규 서류 `sales_contract`(export 다중차량, 1바이어·단일통화 컨트롤러 가드). **fillMulti 에 `aggregates` 키 신설** — `header`(primary 1대만)·`footerAggregates`(per-row 컬럼 SUM 수식)로는 표현 불가한 **"선택 차량 전체 합산 스칼라 푸터"**(운임·기타·입금·합계·잔금 = 표에 없는 필드의 컬렉션 집계)용. resolver 가 `Collection` 받음. removeRow 前 footer 좌표에 **값**으로 기입(수식이면 cross-cell ref 가 removeRow 로 깨짐 — Subtotal 만 SUM 수식). ⚠**외국인 계약서 = 한글 금지**: Code=`romanizePlate`·Brand=`brandEn`·목적항=영문 `dischargePort`만(한글 국가명 fallback X). 상세=[[project_sales_contract_doc]].
 
+> **2026-07-29 레이아웃 전면 개편** (jin 새 디자인, 3사 배포 `dc8e916`). 구 8열(A~H)·슬롯 23~52·푸터 53~59 → **신 26열(A~Z)·슬롯 22~51·푸터 52~57**. 재작성 = `scripts/build-sales-contract-template.php`(원본 `Sales Contract_Sample.xlsx`, git 미추적) → `generate-sales-contract-tenants.php`. 채택 시 밟은 함정 3종은 §8 #37.
+> - **슬롯 컬럼(병합 앵커)**: A Code / E Brand / I Model / M Chassis / R FOB / U **SHIPPING** / X **TOTAL**(`=SUM(R:W)` per-row 수식). 운임비가 푸터 집계 → **차량별 컬럼**으로 내려왔다.
+> - **푸터**: 52 Sub Total(R·U·X 3열 SUM = footerAggregates) / 53 Other Charge / 54 Total Amount(=Sub+Other) / 55 Received / 56 **Deposit** / 57 Balance. 53~57 은 `aggregates` 값 기입.
+> - ⚠️ **Deposit = 적립금(`savings_used`)이지 계약금이 아니다.** 계약금은 확정 FP 라 Received 에 이미 들어간다 — Deposit 에 넣으면 이중계상. 원본 샘플의 `Balance = Total − Received + Deposit`(더하기)도 오류라 **빼기**로 교정.
+> - **회사정보 좌표(테넌트 치환)**: Beneficiary E15 / Bank Name R15 / Swift E16 / Bank Address R16 / Account E17 / **Beneficiary Address R17** / 셀러 상호 B64 · 사업자 B66 · Tel·Email B67 · 주소 B68. 바이어 블록(매핑) P64·P66·P67·P68.
+> - **Contract No = `DocValue::invoiceNo()`**(이니셜+차대번호 끝자리 숫자) — 인보이스와 같은 규칙(jin). 환율 행(USD/Euro Rate)은 **삭제**.
+> - ⚠️ **Balance ≠ ERP 미수금**: 계약서 Total 엔 `sale_other_costs` 가 없고, Received 는 **확정 FP 만**(채권관리 회수이력 cash/offset/other/write_off 미포함). jin 2026-07-29 **현행 유지 결정** — 손실처리액을 바이어 계약서에 노출하지 않기 위함. 실측 heymanerp 215대 중 회수이력 보유 18대만 차이.
+
 ### 30. dev→master cherry-pick 후 auto-merge 가 상대세션 삭제분 조용히 드롭 (2026-07-01)
 병렬 세션 A(배포)가 master 에서 세션 B의 미완성 코드(버튼·lang)를 제거 커밋한 뒤, B가 완성본을 dev 커밋→master cherry-pick 하면 **3-way auto-merge 가 "A가 지운 줄"을 지운 채로 유지** → B의 추가분이 조용히 누락(충돌 표시 없이). **교훈: cherry-pick 성공해도 push 전 `grep`/`git diff HEAD..dev -- <파일>` 로 반드시 재검증.** 누락 시 `git checkout dev -- <파일>`(dev 완전판) + `--amend`. (실측: 판매계약서 다중선택바 버튼·shipdoc lang 드롭 → 복원 후 배포.)
 
@@ -520,6 +528,18 @@ extension=zip    # 주석 제거
 **위장**: 에러 토스트가 안 뜨고 값만 안 들어간다 → 사용자에겐 "적립금이 안 써진다"로 보인다. **로그(`storage/logs/laravel.log`)에만 남는다** — 이런 제보를 받으면 재현보다 **서버 로그 grep 이 빠르다**(실측: 로그 1줄로 3시간짜리 가설 3개가 정리됨).
 **해결**: 값 목록을 모델 상수로 단일출처화(`ReceivableHistory::METHODS`) + 같은 커밋에 `ALTER TABLE … MODIFY COLUMN … ENUM(…)` 마이그레이션.
 **🔒 가드 = `tests/Feature/ReceivableMethodEnumTest`** — DB 에 넣어보는 대신 **마이그레이션 파일의 enum 문자열을 정적으로 파싱해** 코드 상수와 대조한다(드라이버 무관이라 SQLite 에서도 잡힘). ⚠️ **다른 enum 컬럼에 값을 추가할 때도 같은 형태의 가드를 만들 것** — 기능 테스트로는 원리상 못 잡는다.
+
+### 37. 양식 xlsx 를 새로 받을 때 — 통화 로케일 서식 · 유령값 · 도장 앵커 (2026-07-29 판매계약서 개편)
+사람이 엑셀에서 만든 양식을 그대로 템플릿으로 채택하면 터지는 3가지. **새 양식을 받을 때마다 확인할 것.**
+
+**① `[$€-2]` 류 통화 로케일 서식은 `applyCurrency` 를 깨뜨린다.** 치환 정규식이 `/\$(?!-)/` 라 `[$€-2]` 의 `$`(뒤가 `€`)를 잡아간다 → EUR 은 `[€€-2]`, JPY 는 `[¥€-2]` 라는 **깨진 서식**이 되고, USD 는 조기반환이라 **달러 계약서가 €로 인쇄**된다. 양식 제작자는 자기 통화로 셀서식을 잡기 마련이니 거의 항상 들어온다.
+→ **금액칸은 `\$\ #,##0;[Red]\-\$\ #,##0` 형태로 통일**할 것. `\$` 여야 치환 후 백슬래시 제거까지 정상 동작(`€ 62,000`). 6통화 실측 = `$/€/¥/£/₩` 전부 정상.
+
+**② 병합 안쪽 유령값.** 사람이 레이아웃을 바꾸면 옛 좌표의 값이 **병합에 가려진 채 남는다**(실측 12개). 화면에선 안 보여서 그냥 지나친다. 테넌트 파생 스크립트는 **앵커에만 쓰므로**, 안 지우면 heyman/karaba 양식 안쪽에 ssancar 은행정보가 박제된다. → build 스크립트에서 명시적으로 `setValue(null)`.
+
+**③ baked 도장 앵커.** `DocumentFiller::removeDrawingsAt` 은 **정확히 같은 앵커**의 도장만 지운다. 양식에 박힌 도장 좌표가 바뀌었는데 `StampSlots` 앵커를 안 고치면 업로드 직인이 그 위에 겹쳐 **이중 도장**이 된다(판매계약서 B71 → C70). → 가드 = `SalesContractLayoutTest::test_stamp_anchor_matches_baked_drawing_in_every_tenant` (3사 양식의 실제 drawing 좌표 ↔ StampSlots 앵커 정적 대조, GD 불필요).
+
+**🔒 검증은 매핑 배열이 아니라 생성물로.** `config()` 배열만 검사하는 테스트는 **푸터 좌표가 틀려도 통과한다**. `fillMulti` 는 footerAggregate 를 removeRow **전에** 쓰고 미사용 슬롯을 트림하므로, 푸터는 **(슬롯수 − 실제대수)만큼 위로 올라온다** — 템플릿 좌표를 그대로 단언하면 만차일 때만 맞는다. `SalesContractLayoutTest` 는 실제 생성 시트의 셀을 읽고 트림 시프트를 계산해 비교한다.
 
 ## 9. 구현 패턴
 
