@@ -193,6 +193,22 @@ class SavingsFifoLedgerTest extends TestCase
         $this->assertEquals(1500, (float) SavingsStatus::where('buyer_id', $buyer->id)->first()->exchange_rate);
     }
 
+    public function test_screen_shows_krw_and_next_out_without_a_lot_list(): void
+    {
+        // jin 2026-07-29 — lot 을 줄줄이 나열했더니 "보기 되게 복잡"하고 아래 거래내역 표와 겹쳤다.
+        //   → 잔액 줄에 **원화 + 다음 차감 한 줄**만. 날짜별 내역은 거래내역 표가 담당.
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        $b = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $this->row($b, 'EARNED', 1500, 1487, 'USD');
+        $this->row($b, 'EARNED', 1500, 1487, 'USD');
+
+        $page = Volt::test('erp.buyers.index')->call('openEdit', $b->id);
+
+        $page->assertSeeText('4,461,000');                       // 3,000 × 1,487 원화 병기
+        $page->assertSeeText('다음 차감');                        // 선입선출 안내 한 줄
+        $page->assertDontSeeText('선입선출 잔여 적립분');           // 별도 목록 블록은 없어야 한다
+    }
+
     public function test_krw_currency_defaults_rate_to_one(): void
     {
         $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
