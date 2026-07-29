@@ -60,9 +60,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 적립금 탭 ──────────────────────────────────────────────────
     public array  $balances = [];   // ['USD' => 500.00, ...]
     public array  $txnList  = [];   // recent transactions (array)
+    // 통화별 원화 환산 (FIFO 잔여 lot × 적립 시점 환율) — ['USD' => ['krw'=>..,'unrated'=>..], ...]
+    public array  $balancesKrw = [];
+    // 통화별 잔여 적립분 lot (선입선출 소진 반영) — ['USD' => [[at, remaining, exchange_rate, krw], ...]]
+    public array  $lots = [];
     public string $txn_currency = 'USD';
     public string $txn_type     = 'EARNED';
     public string $txn_amount   = '';
+    public string $txn_rate     = '';   // 적립 시점 환율 (수기 거래용, 선택)
     public string $txn_note     = '';
 
     // ─────────────────────────────────────────────────────────────
@@ -458,22 +463,42 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'transaction_type' => $t->transaction_type,
                 'savings'          => $t->savings,
                 'balance'          => $t->balance,
+                'exchange_rate'    => $t->exchange_rate !== null ? (float) $t->exchange_rate : null,
                 'note'             => $t->note ?? '',
                 'created_at'       => $t->created_at->format('Y-m-d H:i'),
             ])
             ->toArray();
+
+        // 선입선출 잔여 lot + 원화 환산 (jin 2026-07-29). 환율은 적립 시점 값 — SavingsLedger 단일 출처.
+        $ledger = app(\App\Services\SavingsLedger::class);
+        $this->balancesKrw = [];
+        $this->lots = [];
+        foreach (array_keys($this->balances) as $cur) {
+            $this->balancesKrw[$cur] = $ledger->balanceKrw($buyerId, $cur);
+            $this->lots[$cur] = $ledger->lots($buyerId, $cur)
+                ->reject(fn ($l) => $l['consumed'])          // 다 쓴 적립분은 숨김
+                ->values()
+                ->all();
+        }
     }
 
     public function addSavingsTransaction(): void
     {
-        $this->validate(['txn_amount' => 'required|numeric|min:0.01']);
+        $this->validate([
+            'txn_amount' => 'required|numeric|min:0.01',
+            'txn_rate'   => 'nullable|numeric|min:0',
+        ]);
 
         if (!$this->editingId) return;
 
         $amount = (float) $this->txn_amount;
+        // 적립 시점 환율 — KRW 는 자명하게 1. 미입력이면 null(화면에 "환율 미입력"으로 표시).
+        $rate = $this->txn_currency === 'KRW'
+            ? 1.0
+            : (($this->txn_rate !== '' && (float) $this->txn_rate > 0) ? (float) $this->txn_rate : null);
         $ok = false;
 
-        DB::transaction(function () use ($amount, &$ok) {
+        DB::transaction(function () use ($amount, $rate, &$ok) {
             $latest = SavingsStatus::where('buyer_id', $this->editingId)
                 ->where('currency', $this->txn_currency)
                 ->lockForUpdate()
@@ -492,6 +517,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             SavingsStatus::create([
                 'buyer_id'         => $this->editingId,
                 'currency'         => $this->txn_currency,
+                'exchange_rate'    => $rate,
                 'transaction_type' => $this->txn_type,
                 'savings'          => $savings,
                 'balance'          => $newBalance,
@@ -505,6 +531,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->txn_amount = '';
+        $this->txn_rate   = '';
         $this->txn_note   = '';
         $this->loadSavings($this->editingId);
         $this->dispatch('notify', message: __('buyer.savings.added'), type: 'success');
@@ -532,9 +559,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 return;
             }
 
+            // 사용(−)을 취소하면 이 행이 양수 = 다시 유입 lot 이 된다 → 원거래의 적립 시점 환율을 승계.
             SavingsStatus::create([
                 'buyer_id'                => $this->editingId,
                 'currency'               => $original->currency,
+                'exchange_rate'          => $original->exchange_rate,
                 'transaction_type'       => 'CANCELLED',
                 'savings'                => $cancelledSavings,
                 'balance'                => $newBalance,
@@ -1011,9 +1040,56 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="h-full {{ $barColor }}" style="width: {{ $pct }}%"></div>
                     </div>
                     <span class="w-32 text-right font-medium {{ $textColor }}">{{ number_format($bal, 2) }}</span>
+                    {{-- 원화 병기 (jin 2026-07-29) — 적립 시점 환율 × 선입선출 잔여 lot --}}
+                    @php $k = $balancesKrw[$cur] ?? null; @endphp
+                    <span class="w-32 text-right text-[11px] text-gray-500">
+                        @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))
+                            ≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}
+                        @else
+                            —
+                        @endif
+                    </span>
                 </div>
+                @if(!empty($k['unrated']))
+                <div class="pl-12 text-[10px] text-amber-600">
+                    {{ __('buyer.savings.unrated_note', ['amount' => number_format($k['unrated'], 2), 'currency' => $cur]) }}
+                </div>
+                @endif
                 @endforeach
             </div>
+
+            {{-- 선입선출 잔여 적립분 (jin 2026-07-29) — 쓰면 위(오래된 것)부터 빠진다 --}}
+            @php $hasLots = collect($lots)->flatten(1)->isNotEmpty(); @endphp
+            @if($hasLots)
+            <div class="mb-4 rounded-lg border border-gray-200 bg-white p-3">
+                <div class="mb-2 text-[10px] font-semibold uppercase text-gray-400">
+                    {{ __('buyer.savings.lots_title') }}
+                    <span class="ml-1 normal-case font-normal text-gray-400">{{ __('buyer.savings.lots_hint') }}</span>
+                </div>
+                <div class="space-y-1">
+                    @foreach($lots as $cur => $curLots)
+                        @foreach($curLots as $i => $lot)
+                        <div class="flex items-center gap-2 text-xs {{ $i === 0 ? 'font-medium text-gray-800' : 'text-gray-500' }}">
+                            @if($i === 0)
+                                <span class="rounded bg-primary-light px-1 text-[9px] font-semibold text-primary-text">{{ __('buyer.savings.next_out') }}</span>
+                            @else
+                                <span class="w-[34px]"></span>
+                            @endif
+                            <span class="w-20 font-mono text-[11px]">{{ $lot['at'] }}</span>
+                            <span class="w-10 font-mono">{{ $cur }}</span>
+                            <span class="w-24 text-right">{{ number_format($lot['remaining'], 2) }}</span>
+                            <span class="w-24 text-right text-[11px] text-gray-400">
+                                @if($lot['exchange_rate']) @ {{ number_format($lot['exchange_rate'], 2) }} @else — @endif
+                            </span>
+                            <span class="w-28 text-right text-[11px]">
+                                @if($lot['krw'] !== null) {{ number_format($lot['krw']) }}{{ __('buyer.savings.won') }} @else — @endif
+                            </span>
+                        </div>
+                        @endforeach
+                    @endforeach
+                </div>
+            </div>
+            @endif
             @else
             <p class="mb-4 text-xs text-gray-400">{{ __('buyer.savings.no_balance') }}</p>
             @endif
@@ -1043,6 +1119,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <label class="label-base">{{ __('buyer.savings.amount') }}</label>
                         <input wire:model="txn_amount" type="text" class="input-base" placeholder="0.00" />
                         @error('txn_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        {{-- 적립 시점 환율 (jin 2026-07-29) — 원화 병기의 근거값. 차량 판매탭發 적립은 자동. --}}
+                        <label class="label-base">
+                            {{ __('buyer.savings.rate') }}
+                            <span class="text-[10px] text-gray-400">{{ __('buyer.savings.rate_note') }}</span>
+                        </label>
+                        <input wire:model="txn_rate" type="text" class="input-base" placeholder="0"
+                               @if($txn_currency === 'KRW') disabled @endif />
+                        @error('txn_rate')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                     </div>
                     <div>
                         <label class="label-base">{{ __('common.memo') }}</label>
