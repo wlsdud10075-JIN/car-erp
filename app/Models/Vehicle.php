@@ -859,10 +859,14 @@ class Vehicle extends Model
             $savings = -$delta;
             $newBalance = $currentBalance + $savings;
 
+            // 환율 = 이 차량 판매환율. 사용(USED) 행의 원화 가치는 FIFO 로 소진되는 **적립분의 환율**로
+            // 정해지므로(SavingsLedger) 여기 값은 참고용이다. REFUND(delta<0)는 되돌아온 크레딧이
+            // 다시 유입 lot 이 되는데, 그 원화 가치는 이 차량 환율이 맞다.
             SavingsStatus::create([
                 'buyer_id' => $this->buyer_id,
                 'vehicle_id' => $this->id,
                 'currency' => $this->currency,
+                'exchange_rate' => ($this->exchange_rate > 0) ? $this->exchange_rate : null,
                 'transaction_type' => $delta > 0 ? 'USED' : 'REFUND',
                 'savings' => $savings,
                 'balance' => $newBalance,
@@ -895,10 +899,13 @@ class Vehicle extends Model
             $currentBalance = (float) ($latest?->balance ?? 0);
             $newBalance = $currentBalance + $amount;
 
+            // ⭐ 적립 시점 판매환율을 박제한다 (jin 2026-07-29) — 바이어탭 원화 병기의 근거값이고,
+            //    나중에 이 lot 이 FIFO 로 소진될 때의 원화 가치도 이 환율로 정해진다.
             SavingsStatus::create([
                 'buyer_id' => $this->buyer_id,
                 'vehicle_id' => $this->id,
                 'currency' => $this->currency,
+                'exchange_rate' => ($this->exchange_rate > 0) ? $this->exchange_rate : null,
                 'transaction_type' => 'EARNED',
                 'savings' => $amount,
                 'balance' => $newBalance,
