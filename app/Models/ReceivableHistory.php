@@ -19,6 +19,16 @@ class ReceivableHistory extends Model
     ];
 
     /**
+     * 회수방법 단일 출처 — 검증·UI·DB enum 이 전부 이 목록을 따른다.
+     *
+     * 🚨 값을 추가하면 **반드시 마이그레이션으로 DB enum 도 같이 늘릴 것.** 2026-07-28 적립금 배포가
+     *    이걸 빠뜨려 3사에서 적립금 사용이 통째로 죽었다(1265 Data truncated → 차량 저장 롤백).
+     *    로컬 SQLite 는 enum 을 강제하지 않아 테스트로도 안 잡힌다([[project_db_tier_mismatch]]).
+     *    가드 = ReceivableMethodEnumTest (이 상수 ↔ 마이그레이션 enum 문자열 대조).
+     */
+    public const METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings'];
+
+    /**
      * 적립금(method=savings) 행이 vehicles.savings_used 를 갱신하는 걸 건너뛰는 플래그 (2026-07-28).
      * 판매탭에서 savings_used 가 바뀌면 Vehicle H6 가 기록용 미러 행을 만드는데, 그 행이 다시
      * savings_used 를 더하면 이중 반영된다 → Vehicle 이 이 플래그를 try/finally 로 세운다.
