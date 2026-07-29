@@ -1977,6 +1977,23 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 매입 탭에 띄우는 이 차 바이어의 매입 가능 금액 (jin 2026-07-29).
+     *   "여기서 매입비를 더 써도 되나"를 판단하는 자리가 매입 탭이라 바이어 화면에만 있으면 소용이 없다.
+     *   신규 등록 중이면 폼에서 고른 바이어, 저장된 차량이면 그 차량의 바이어를 본다.
+     *   ⚠️ 표시 전용 — 저장을 막지 않는다(매입등록 락은 C5 게이트가 ratio 로 별도 판정).
+     */
+    #[Computed]
+    public function purchasingRoom(): ?array
+    {
+        $buyerId = (int) ($this->buyer_id_str ?: 0);
+        if ($buyerId <= 0) {
+            return null;   // 일반재고(바이어 미정 투기매입) — 표시할 기준이 없다
+        }
+
+        return \App\Models\Buyer::find($buyerId)?->receivableGauge();
+    }
+
+    /**
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
      * 매입 / 말소 / 판매 / 입금 / 선적(반입) / 통관 / B/L. (DHL 흐름 제외 2026-07-04)
      * 상태: done(✓) / warn(!) / progress(진행중) / pending(-).
@@ -6370,6 +6387,35 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-indigo-400"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.purchase_payment') }}</span>
             </div>
+            {{-- 매입 가능 금액 (jin 2026-07-29) — 매입비를 더 써도 되는지 판단하는 자리가 여기다.
+                 바이어 화면과 같은 단일출처(Buyer::receivableGauge). 표시 전용이라 저장을 막지 않는다. --}}
+            @php $room = $this->purchasingRoom; @endphp
+            @if($room && ($room['limit_krw'] ?? 0) >= 0 && ($room['paid_krw'] ?? 0) > 0)
+            @php $roomAvail = $room['available_krw']; @endphp
+            <div class="mb-2 rounded-md border {{ $roomAvail > 0 ? 'border-violet-200 bg-violet-50' : 'border-red-200 bg-red-50' }} px-3 py-2">
+                <div class="space-y-1 text-[11px]">
+                    <div class="flex items-center justify-between {{ $roomAvail > 0 ? 'text-violet-700' : 'text-red-700' }}">
+                        <span>{{ __('buyer.receivable.room_received', ['pct' => $room['deposit_pct']]) }}</span>
+                        <span class="font-mono">₩{{ number_format($room['limit_krw']) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between {{ $roomAvail > 0 ? 'text-violet-700' : 'text-red-700' }}">
+                        <span>{{ __('buyer.receivable.room_spent') }}</span>
+                        <span class="font-mono">− ₩{{ number_format($room['used_krw']) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between border-t {{ $roomAvail > 0 ? 'border-violet-200' : 'border-red-200' }} pt-1">
+                        <span class="text-xs font-semibold {{ $roomAvail > 0 ? 'text-violet-800' : 'text-red-700' }}">
+                            {{ __('buyer.receivable.deposit_title') }}
+                        </span>
+                        <span class="font-mono text-sm font-bold {{ $roomAvail > 0 ? 'text-violet-900' : 'text-red-600' }}">₩{{ number_format($roomAvail) }}</span>
+                    </div>
+                </div>
+                <div class="mt-1.5 text-[11px] {{ $roomAvail > 0 ? 'text-violet-500' : 'font-medium text-red-600' }}">
+                    {{ $roomAvail > 0
+                        ? __('buyer.receivable.room_basis', ['paid' => number_format($room['paid_krw']), 'count' => $room['vehicle_count']])
+                        : __('buyer.receivable.deposit_note_full') }}
+                </div>
+            </div>
+            @endif
             {{-- 큐 22-C 핵심 (2026-05-20) — 자금 영역 권한 분기. 영업은 read-only, 재무·admin 만 입력. SoD 회의록 정합. --}}
             @php $canConfirmFinance = auth()->user()?->canConfirmFinance() ?? false; @endphp
             @unless($canConfirmFinance)
