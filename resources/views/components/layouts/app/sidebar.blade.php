@@ -88,10 +88,12 @@
     // 큐 19-F / 20-C — 재무 처리 대기 건수 합산 (자금 이체 + 매입 잔금 + 판매 잔금)
     // 단일 사용자(canConfirmFinanceTransfer)만 계산. 비-재무 사용자는 0.
     if ($user->canConfirmFinanceTransfer()) {
-        $pendingTransferCount = \App\Models\InterVehicleTransfer::whereIn('status', [
-            \App\Models\InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
-            \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
-        ])->count();
+        $pendingTransferCount = \App\Models\InterVehicleTransfer::query()
+            ->whereNotIn('kind', \App\Models\InterVehicleTransfer::RETIRED_KINDS)   // 폐기 kind 는 목록에도 안 뜨므로 배지에서도 뺀다(유령 알림 방지)
+            ->whereIn('status', [
+                \App\Models\InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                \App\Models\InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])->count();
         // 큐 20-C — 영업 직접 입력 잔금 중 미확정 (transfer_id IS NULL AND confirmed_at IS NULL)
         // 회의확장씬 (2026-05-22) — vehicle soft delete 시 자동 제외 (whereHas('vehicle')).
         $pendingFinalPaymentCount = \App\Models\FinalPayment::query()

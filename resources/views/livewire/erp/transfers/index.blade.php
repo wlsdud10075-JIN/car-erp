@@ -126,6 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function transfers()
     {
         return InterVehicleTransfer::query()
+            ->whereNotIn('kind', InterVehicleTransfer::RETIRED_KINDS)   // 보증금 계열 제거(2026-07-29) — 잔존 행이 standard 로 오인 처리되지 않게
             ->with(['sourceVehicle', 'targetVehicle', 'buyer', 'requester', 'approver', 'financeConfirmer'])
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereIn('status', [
                 InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
@@ -141,10 +142,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function awaitingCount(): int
     {
-        return InterVehicleTransfer::whereIn('status', [
-            InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
-            InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
-        ])->count();
+        return InterVehicleTransfer::whereNotIn('kind', InterVehicleTransfer::RETIRED_KINDS)
+            ->whereIn('status', [
+                InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE,
+                InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
+            ])->count();
     }
 
     /** 큐 20-C — 판매 잔금 (영업 직접 입력 = transfer_id IS NULL).
@@ -508,12 +510,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $service = app(InterVehicleTransferService::class);
             $note = trim($this->financeNote) !== '' ? trim($this->financeNote) : null;
 
+            if (in_array($transfer->kind, InterVehicleTransfer::RETIRED_KINDS, true)) {
+                throw new \DomainException('보증금 적용·매입 선지급은 더 이상 지원하지 않습니다.');
+            }
             if ($transfer->status === InterVehicleTransfer::STATUS_APPROVED_AWAITING_FINANCE) {
-                if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
-                    $service->confirmPurchaseFundingByFinance($transfer, auth()->user(), $note);
-                } else {
-                    $service->confirmByFinance($transfer, auth()->user(), $note);
-                }
+                $service->confirmByFinance($transfer, auth()->user(), $note);
                 $msg = __('transfer.msg.transfer_confirmed');
             } elseif ($transfer->status === InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE) {
                 $service->confirmVoidByFinance($transfer, auth()->user(), $note);
@@ -684,12 +685,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </td>
                     <td class="py-3 pr-4 text-gray-700 text-xs">{{ $t->buyer?->name ?? '#'.$t->buyer_id }}</td>
                     <td class="py-3 pr-4 text-right font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
-                        @if($t->kind === \App\Models\InterVehicleTransfer::KIND_PURCHASE_FUNDING)
-                            ₩{{ number_format($t->amount_krw, 0) }}
-                            <span class="block text-[10px] font-normal text-gray-400">{{ number_format($t->amount, 0) }} {{ $t->currency }} · {{ __('transfer.purchase_funding_tag') }}</span>
-                        @else
-                            {{ number_format($t->amount, 0) }} {{ $t->currency }}
-                        @endif
+                        {{ number_format($t->amount, 0) }} {{ $t->currency }}
                     </td>
                     <td class="py-3 pr-4">
                         <span class="badge {{ $t->status_badge }}">{{ __('transfer.status.'.$t->status) }}</span>
@@ -778,12 +774,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $t->buyer?->name ?? '#'.$t->buyer_id }} · {{ __('transfer.col.approver') }} {{ $t->approver?->name ?? '-' }}
             </div>
             <div class="mt-1 text-sm font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
-                @if($t->kind === \App\Models\InterVehicleTransfer::KIND_PURCHASE_FUNDING)
-                    ₩{{ number_format($t->amount_krw, 0) }}
-                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($t->amount, 0) }} {{ $t->currency }} · {{ __('transfer.purchase_funding_tag') }})</span>
-                @else
-                    {{ number_format($t->amount, 0) }} {{ $t->currency }}
-                @endif
+                {{ number_format($t->amount, 0) }} {{ $t->currency }}
             </div>
             @if($isAwaiting)
             <div class="mt-2 flex flex-col gap-1">

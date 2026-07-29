@@ -47,6 +47,7 @@ class ApprovalRejectCancelsTransferTest extends TestCase
 
         $target = Vehicle::create([
             'vehicle_number' => 'T3', 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'currency' => 'USD',   // standard 이체는 통화 일치를 요구한다
             'purchase_date' => '2026-05-10', 'purchase_price' => 30_000_000,
         ]);
 
@@ -60,11 +61,12 @@ class ApprovalRejectCancelsTransferTest extends TestCase
         $req->onReject();
     }
 
-    public function test_reject_purchase_funding_cancels_transfer(): void
+    /** 보증금 선지급은 제거됐다(2026-07-29) — 같은 반려 로직을 standard 이체로 검증한다. */
+    public function test_reject_transfer_cancels_linked_pending_transfer(): void
     {
         ['drafter' => $drafter, 'manager' => $manager, 'source' => $source, 'target' => $target] = $this->ctx();
 
-        $t = $this->service->applyPurchaseFunding($source, $target, 30_000_000, $drafter);
+        $t = $this->service->request($source, $target, 10_000, $drafter);
         $this->assertSame(InterVehicleTransfer::STATUS_PENDING, $t->fresh()->status);
 
         $this->rejectByManager($t->approvalRequest, $manager);
@@ -77,7 +79,7 @@ class ApprovalRejectCancelsTransferTest extends TestCase
             InterVehicleTransfer::STATUS_VOIDED_AWAITING_FINANCE,
         ]);
         // ledger 미생성(반려라 실행 안 됨)
-        $this->assertSame(0, $target->fresh()->purchaseBalancePayments()->count());
+        $this->assertSame(0, $target->fresh()->finalPayments()->whereNotNull('transfer_id')->count());
     }
 
     public function test_reject_of_non_transfer_type_is_noop(): void

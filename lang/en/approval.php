@@ -32,7 +32,6 @@ return [
         'overlap_vehicles' => 'Outstanding vehicles:',
         'void' => '⊘ Void transfer #:id',
         'restore' => 'reversal',
-        'purchase_funding' => 'purchase funding',
     ],
     'tstatus' => [
         'approved_awaiting' => 'Approved (awaiting finance)',

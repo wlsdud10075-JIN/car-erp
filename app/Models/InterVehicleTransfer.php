@@ -56,13 +56,23 @@ class InterVehicleTransfer extends Model
         'void_finance_rejected_at' => 'datetime',
     ];
 
-    /** 이체 종류 — standard(기존 요청→관리→재무) / deposit_apply(보증금 적용: 기안→최고관리자 승인=즉시적용). */
+    /** 이체 종류 — 현재 살아 있는 흐름은 standard(요청→관리→재무) 하나뿐. */
     public const KIND_STANDARD = 'standard';
 
+    /**
+     * ⚠️ 아래 2종은 2026-07-29 폐기(jin) — 생성·승인·실행 경로 전부 제거됨.
+     * 상수를 남기는 이유:
+     *   ① 운영 DB 에 이 값을 가진 행이 실재한다(ssancarerp deposit_apply 2건, 전부 pending·장부 미반영).
+     *   ② 마이그레이션 2026_07_23_000002 가 KIND_PURCHASE_FUNDING 을 참조한다 —
+     *      지우면 신규 설치·CI 의 migrate 가 fatal 난다.
+     * 즉 이건 기능 코드가 아니라 **기존 행을 읽기 위한 데이터 어휘**다. 재도입 금지.
+     */
     public const KIND_DEPOSIT_APPLY = 'deposit_apply';
 
-    /** 보증금 매입 funding (C2, jin 2026-07-21) — 소스 보증금(외화)으로 대상 매입대금(원화) funding → 매입 GREEN. */
     public const KIND_PURCHASE_FUNDING = 'purchase_funding';
+
+    /** 폐기된 종류 — 목록·승인 큐에서 제외해 standard 로 오인 처리되는 걸 막는다. */
+    public const RETIRED_KINDS = [self::KIND_DEPOSIT_APPLY, self::KIND_PURCHASE_FUNDING];
 
     public const STATUS_PENDING = 'pending';
 

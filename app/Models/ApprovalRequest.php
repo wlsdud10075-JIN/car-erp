@@ -54,6 +54,15 @@ class ApprovalRequest extends Model
         self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => '보증금 매입 선지급',
     ];
 
+    /**
+     * 폐기된 액션 (2026-07-29 jin) — 승인 큐에서 제외. 상수·라벨은 기존 행 판독용으로 남긴다.
+     * 잔존 pending 요청이 목록에 뜨면 승인 가능한 것처럼 보이는데, 실행 경로는 이미 없다.
+     */
+    public const RETIRED_TYPES = [
+        self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY,
+        self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
+    ];
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_APPROVED = 'approved';
@@ -118,8 +127,10 @@ class ApprovalRequest extends Model
                     self::TYPE_INTER_BUYER_OVERLAP => $this->executeInterBuyerOverlap(),
                     self::TYPE_INTER_VEHICLE_TRANSFER => $this->executeInterVehicleTransfer(),
                     self::TYPE_INTER_VEHICLE_TRANSFER_VOID => $this->executeInterVehicleTransferVoid(),
-                    self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => $this->executeInterVehicleDepositApply(),
-                    self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => $this->executeInterVehiclePurchaseFunding(),
+                    // 보증금 적용·매입 선지급은 2026-07-29 제거(jin). 기존 pending 행이 남아 있어도
+                    // 실행 경로가 없어야 한다 — 없애기 전엔 standard 로 오인 실행될 위험이 있었다.
+                    self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY,
+                    self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => throw new \DomainException('보증금 적용·매입 선지급은 더 이상 지원하지 않습니다.'),
                     self::TYPE_SENSITIVE_ACTION => $this->executeSensitiveAction(),
                     self::TYPE_UNPAID_EXPORT_OVERRIDE => $this->executeUnpaidExportOverride(),
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
@@ -150,11 +161,6 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->first();
         if ($transfer && $transfer->status === InterVehicleTransfer::STATUS_PENDING) {
             $transfer->update(['status' => InterVehicleTransfer::STATUS_REJECTED]);
-
-            // 보증금 선지급 반려 → 기안자에게 통보 (fire-and-forget, 2026-07-23).
-            if ($transfer->kind === InterVehicleTransfer::KIND_PURCHASE_FUNDING) {
-                app(InterVehicleTransferService::class)->notifyFundingResult($transfer->fresh(), 'rejected', $this->decision_note);
-            }
         }
     }
 
@@ -178,29 +184,6 @@ class ApprovalRequest extends Model
         $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
         $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
         app(InterVehicleTransferService::class)->approve($transfer, $approver);
-    }
-
-    /**
-     * 보증금 적용 승인 = 즉시 적용 (jin 2026-07-20).
-     * service->executeDepositApply() 호출 — 최고관리자 승인 시 FinalPayment 페어 즉시 생성(재무 단계 없음).
-     */
-    private function executeInterVehicleDepositApply(): void
-    {
-        $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
-        $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
-        app(InterVehicleTransferService::class)->executeDepositApply($transfer, $approver);
-    }
-
-    /**
-     * 보증금 매입 funding 승인 = 관리 의사결정만 통과 (C2, jin 2026-07-21).
-     * service->approvePurchaseFunding() 호출 — transfer.status = approved_awaiting_finance.
-     * 소스 −FinalPayment + 대상 매입 PBP 생성은 재무 실물확정(confirmPurchaseFundingByFinance)으로 이연.
-     */
-    private function executeInterVehiclePurchaseFunding(): void
-    {
-        $transfer = InterVehicleTransfer::where('approval_request_id', $this->id)->firstOrFail();
-        $approver = auth()->user() ?? throw new \LogicException('승인자 사용자 컨텍스트가 필요합니다.');
-        app(InterVehicleTransferService::class)->approvePurchaseFunding($transfer, $approver);
     }
 
     /**

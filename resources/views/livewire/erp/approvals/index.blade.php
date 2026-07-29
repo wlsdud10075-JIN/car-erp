@@ -41,6 +41,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function requests()
     {
         $page = ApprovalRequest::query()
+            // 보증금 적용·매입 선지급 제거(2026-07-29) — 잔존 pending 요청이 승인 가능한 채로 뜨면 안 된다.
+            ->whereNotIn('action_type', ApprovalRequest::RETIRED_TYPES)
             ->with(['requester', 'approver', 'target'])
             ->when($this->statusFilter !== 'all',
                 fn ($q) => $q->where('status', $this->statusFilter))
@@ -53,7 +55,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // approved 상태이지만 transfer 가 approved_awaiting_finance 면 '재무 처리 대기' 라벨 표시.
         $reqs = $page->getCollection();
         // 자금 이체 + 보증금 매입 선지급 모두 approval_request_id 로 transfer.status 매핑 (재무 대기 배지용).
-        $financeStepTypes = [ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER, ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING];
+        $financeStepTypes = [ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER];
         $transferApprovalIds = $reqs
             ->filter(fn ($r) => in_array($r->action_type, $financeStepTypes, true))
             ->pluck('id');
@@ -286,21 +288,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                                 </div>
                             </div>
-                        @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
-                            @php $p = $r->payload ?? []; @endphp
-                            <div class="space-y-0.5">
-                                <div>
-                                    <span class="text-gray-400">{{ __('approval.t.source') }}</span>
-                                    <span class="font-mono text-gray-800">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
-                                    →
-                                    <span class="text-gray-400">{{ __('approval.t.target') }}</span>
-                                    <span class="font-mono text-gray-800">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
-                                </div>
-                                <div class="font-semibold text-indigo-700">
-                                    ₩{{ number_format($p['amount_krw'] ?? 0) }}
-                                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? '' }} · {{ __('approval.t.purchase_funding') }})</span>
-                                </div>
-                            </div>
                         @elseif($r->target_type && $r->target_id)
                             <span class="font-mono">{{ class_basename($r->target_type) }} #{{ $r->target_id }}</span>
                         @else - @endif
@@ -313,7 +300,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $isTransferRow = in_array($r->action_type, [
                                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
                                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
-                                ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
                             ], true);
                         @endphp
                         @php $voidRejected = $r->getAttributeValue('related_transfer_void_rejected'); @endphp
@@ -371,7 +357,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             $isTransferRowMobile = in_array($r->action_type, [
                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER,
                 ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER_VOID,
-                ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
             ], true);
         @endphp
         <div class="card-tight">
@@ -426,17 +411,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-0.5 text-xs font-semibold text-red-600">
                     {{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? 'KRW' }} {{ __('approval.t.restore') }}
                 </div>
-            @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
-                @php $p = $r->payload ?? []; @endphp
-                <div class="mt-1 text-xs text-gray-700">
-                    <span class="text-gray-400">{{ __('approval.t.source') }}</span> <span class="font-mono">{{ $p['source_vehicle_number'] ?? '#'.($p['source_vehicle_id'] ?? '?') }}</span>
-                    →
-                    <span class="text-gray-400">{{ __('approval.t.target') }}</span> <span class="font-mono">{{ $p['target_vehicle_number'] ?? '#'.($p['target_vehicle_id'] ?? '?') }}</span>
-                </div>
-                <div class="mt-0.5 text-xs font-semibold text-indigo-700">
-                    ₩{{ number_format($p['amount_krw'] ?? 0) }}
-                    <span class="text-[10px] font-normal text-gray-400">({{ number_format($p['amount'] ?? 0) }} {{ $p['currency'] ?? '' }})</span>
-                </div>
             @endif
             @if($r->reason)
             <div class="mt-1 text-xs text-gray-600">{{ $r->reason }}</div>
@@ -479,9 +453,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 → <span class="text-gray-400">{{ __('approval.t.target') }}</span> <span class="font-mono">{{ $dp['target_vehicle_number'] ?? '?' }}</span>
             </div>
             @endif
-            @if($dr->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_PURCHASE_FUNDING)
-            <div class="font-semibold text-indigo-700">₩{{ number_format($dp['amount_krw'] ?? 0) }} <span class="text-[10px] font-normal text-gray-400">({{ number_format($dp['amount'] ?? 0) }} {{ $dp['currency'] ?? '' }} · {{ __('approval.t.purchase_funding') }})</span></div>
-            @elseif(isset($dp['amount']))
+            @if(isset($dp['amount']))
             <div class="font-semibold text-gray-800">{{ number_format($dp['amount']) }} {{ $dp['currency'] ?? '' }}</div>
             @endif
             <div class="text-gray-500">{{ $dr->requester?->name ?? '-' }}@if($dr->reason) · {{ $dr->reason }}@endif</div>
