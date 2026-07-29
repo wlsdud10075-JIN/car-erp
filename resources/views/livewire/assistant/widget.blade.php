@@ -37,6 +37,29 @@ new class extends Component
     }
 }; ?>
 
+@php
+    $assistantUser = auth()->user();
+    // 인원별 매출은 대표 전용이 아니라 관리 라인(업무관리자·[관리])까지 — 스코프만 좁아진다 (jin 2026-07-29)
+    $assistantHint = $assistantUser?->canUseSystemAssistant()
+        ? '시스템 운영 · 자금 · 매출 · 업무가이드'
+        : ($assistantUser?->canUseExecutiveAssistant()
+            ? '자금 · 손익 · 인원별 매출 · 업무가이드'
+            : ($assistantUser?->canUseSalesPerformanceAssistant()
+                ? '미수 · 채권 · 인원별 매출 · 업무가이드'
+                : ($assistantUser?->canUseFinanceAssistant()
+                    ? '미수 · 채권 · 정산 · 업무가이드'
+                    : '사내 업무가이드')));
+    $assistantExample = $assistantUser?->canUseSystemAssistant()
+        ? '"알림톡 로그 어디서 봐?", "자금 현황"'
+        : ($assistantUser?->canUseExecutiveAssistant()
+            ? '"손익분기 넘었어?", "이번 달 인원별 매출"'
+            : ($assistantUser?->canUseSalesPerformanceAssistant()
+                ? '"이번 달 인원별 매출", "바이어별 미수 현황"'
+                : ($assistantUser?->canUseFinanceAssistant()
+                    ? '"바이어별 미수 현황", "정산은 누가 확정해?"'
+                    : '"차량은 어떻게 등록해?", "선적요청은 어떻게 해?"')));
+@endphp
+
 {{-- 통관 알람(alarm-center, bottom-4 우하단)과 겹치지 않게 위로 띄움 (jin 2026-07-24) --}}
 <div x-data="{ open: false, toBottom() { this.$nextTick(() => { const m = this.$refs.msgs; if (m) m.scrollTop = m.scrollHeight; }); } }"
      x-on:assistant-scroll.window="toBottom()"
@@ -54,7 +77,7 @@ new class extends Component
          class="absolute bottom-16 right-0 flex h-[520px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div class="border-b border-gray-100 bg-gray-50 px-4 py-3">
             <p class="text-sm font-bold text-gray-800">{{ \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR' }} 업무 도우미</p>
-            <p class="text-[11px] text-gray-400">로컬 LLM · 미수·채권·자금·업무가이드</p>
+            <p class="text-[11px] text-gray-400">로컬 LLM · {{ $assistantHint }}</p>
         </div>
 
         <div class="flex-1 space-y-3 overflow-y-auto p-4" x-ref="msgs">
@@ -69,8 +92,8 @@ new class extends Component
                 @endif
             @empty
                 <div class="mr-auto max-w-[90%] rounded-xl rounded-bl-sm bg-gray-100 px-3 py-2 text-sm text-gray-600">
-                    안녕하세요. 미수 현황·채권 요약·자금 현황이나 사내 업무 가이드를 물어보세요.
-                    <span class="mt-1 block text-[11px] text-gray-400">예: "바이어별 미수 현황", "채권 요약", "정산은 누가 확정해?"</span>
+                    안녕하세요. 현재 계정 권한에 맞는 업무 정보와 가이드를 물어보세요.
+                    <span class="mt-1 block text-[11px] text-gray-400">예: {{ $assistantExample }}</span>
                 </div>
             @endforelse
             <div wire:loading wire:target="send" class="mr-auto rounded-xl bg-gray-100 px-3 py-2 text-sm text-gray-400">⏳ 조회 중…</div>

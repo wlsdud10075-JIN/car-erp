@@ -70,6 +70,52 @@ class AssistantQueries
         ])->all();
     }
 
+    /**
+     * 인원별 매출 현황.
+     * 관리자 대시보드 salesmanPerformance와 같은 판매일·환율·매입취소 제외 기준을 사용한다.
+     *
+     * @param  array<int>|null  $salesmanIds  null = 전체(최고관리자·업무관리자) / 배열 = [관리] 담당 영업만
+     */
+    public function salesBySalesman(string $dateFrom, string $dateTo, ?array $salesmanIds = null, int $limit = 10): array
+    {
+        if ($salesmanIds !== null && ! $salesmanIds) {
+            return [];   // 담당 영업 0명 — whereIn([]) 로 전량 스캔하지 않는다
+        }
+        $aggregates = [];
+
+        Vehicle::query()
+            ->when($salesmanIds !== null, fn ($q) => $q->whereIn('salesman_id', $salesmanIds))
+            ->whereBetween('sale_date', [$dateFrom, $dateTo])
+            ->whereNotNull('salesman_id')
+            ->where('sale_price', '>', 0)
+            ->where('cancel_status', Vehicle::CANCEL_NONE)
+            ->select('id', 'salesman_id', 'sale_price', 'currency', 'exchange_rate')
+            ->orderBy('id')   // chunk 은 limit/offset — 정렬이 없으면 1000건 초과 시 행 누락·중복이 난다
+            ->chunk(1000, function ($rows) use (&$aggregates) {
+                foreach ($rows as $vehicle) {
+                    $krw = $vehicle->currency === 'KRW'
+                        ? (int) $vehicle->sale_price
+                        : ($vehicle->exchange_rate > 0 ? (int) ($vehicle->sale_price * $vehicle->exchange_rate) : 0);
+                    $id = $vehicle->salesman_id;
+                    if (! isset($aggregates[$id])) {
+                        $aggregates[$id] = ['count' => 0, 'sales_krw' => 0];
+                    }
+                    $aggregates[$id]['count']++;
+                    $aggregates[$id]['sales_krw'] += $krw;
+                }
+            });
+
+        uasort($aggregates, fn ($a, $b) => $b['sales_krw'] <=> $a['sales_krw']);
+        $topIds = array_slice(array_keys($aggregates), 0, $limit);
+        $names = Salesman::whereIn('id', $topIds)->pluck('name', 'id');
+
+        return collect($topIds)->map(fn ($id) => [
+            'name' => $names[$id] ?? "#{$id}",
+            'sales_krw' => $aggregates[$id]['sales_krw'],
+            'count' => $aggregates[$id]['count'],
+        ])->all();
+    }
+
     /** 채권관리 요약 — 총 미수 + 선적전/후 분류(출고일 pivot) + 결제대기(grace). */
     public function receivableSummary(): array
     {

@@ -18,6 +18,8 @@ use Illuminate\Support\Carbon;
  */
 class AssistantService
 {
+    private const RAG_AUDIENCES = ['staff', 'finance', 'executive', 'system'];
+
     public function __construct(
         private OllamaClient $ollama,
         private AssistantQueries $queries,
@@ -54,10 +56,18 @@ class AssistantService
     {
         $has = fn (array $kw) => (bool) array_filter($kw, fn ($k) => mb_strpos($q, $k) !== false);
 
-        // 자금·이익 심화 (super/admin) — 미수보다 먼저
-        if ($has(['자금', '현금', '통장', '굴리', '순이익', '손익', '이익', '자본', '밑천', '원금'])) {
+        // 대표 전용 실적·자금. 구체적인 의도를 일반 자금보다 먼저 검사한다.
+        if ($has(['매출', '판매실적', '판매 실적'])
+            && $has(['인원', '담당자', '영업', '사원', '직원', '사람별'])) {
+            return 'sales_by_salesman';
+        }
+        if ($has(['손익분기', '손익 분기', '본전', '원금 회복', '원금회복'])) {
+            return 'break_even';
+        }
+        if ($has(['자금', '현금', '통장', '굴리', '순이익', '손익', '이익', '자본', '밑천', '원금', '청산가치', '청산 가치'])) {
             return 'capital_status';
         }
+
         $isReceivable = $has(['미수', '채권', '미수금', '받을 돈', '받을돈', '외상']);
         if ($isReceivable && $has(['인원', '담당자', '영업', '사원', '직원'])) {
             return 'receivable_by_salesman';
@@ -68,6 +78,9 @@ class AssistantService
         if ($isReceivable) {
             return 'receivable_summary';
         }
+        if ($has(['기능설정', '기능 설정', '시스템관리자', '시스템 관리자', '알림톡 로그', '알림톡 안내', 'Ollama', '챗봇 색인', '서버 로그'])) {
+            return 'system_guide';
+        }
 
         return 'guide';   // 그 외 = 업무 가이드 RAG
     }
@@ -76,10 +89,15 @@ class AssistantService
     {
         return match ($intent) {
             'capital_status' => $this->capital($user),
-            'receivable_by_salesman' => $this->bySalesman(),
-            'receivable_by_buyer' => $this->byBuyer(),
-            'receivable_summary' => $this->summary(),
-            default => $this->guide($question),
+            'break_even' => $this->breakEven($user),
+            'sales_by_salesman' => $this->salesBySalesman($question, $user),
+            'receivable_by_salesman' => $this->bySalesman($user),
+            'receivable_by_buyer' => $this->byBuyer($user),
+            'receivable_summary' => $this->summary($user),
+            'system_guide' => $user->canUseSystemAssistant()
+                ? $this->guide($question, $user)
+                : $this->denied('시스템 운영 정보'),
+            default => $this->guide($question, $user),
         };
     }
 
@@ -87,9 +105,8 @@ class AssistantService
 
     private function capital(User $user): array
     {
-        if (! $user->canViewCapital()) {
-            return ['kind' => 'denied', 'denied' => true,
-                'answer' => '자금 현황·회사 이익은 대표·최고관리자만 조회할 수 있습니다.'];
+        if (! $user->canUseExecutiveAssistant()) {
+            return $this->denied('자금 현황·회사 이익');
         }
         $d = $this->queries->capitalStatus();
         if (! ($d['has_data'] ?? false)) {
@@ -105,14 +122,71 @@ class AssistantService
             $sign = $d['profit_krw'] >= 0 ? '+' : '−';
             $lines[] = '· 손익: '.$sign.$this->won(abs($d['profit_krw'])).' (청산가치 − 투입원금)';
         } else {
-            $lines[] = '· 손익: 투입원금 미설정 (기능설정에서 원금 입력 시 표시)';
+            $lines[] = '· 손익: 투입원금 미설정 (시스템관리자에게 원금 설정 요청)';
         }
 
         return ['kind' => 'capital', 'answer' => implode("\n", $lines)];
     }
 
-    private function bySalesman(): array
+    private function breakEven(User $user): array
     {
+        if (! $user->canUseExecutiveAssistant()) {
+            return $this->denied('손익분기 현황');
+        }
+        $d = $this->queries->capitalStatus();
+        if (! ($d['has_data'] ?? false)) {
+            return ['kind' => 'capital', 'answer' => '통장 마감잔액이 없어 손익분기 현황을 계산할 수 없습니다.'];
+        }
+        if ($d['principal_krw'] === null) {
+            return ['kind' => 'capital', 'answer' => '투입원금이 설정되지 않아 손익분기를 계산할 수 없습니다. 시스템관리자에게 투입원금 설정을 요청해 주세요.'];
+        }
+
+        $difference = (int) $d['profit_krw'];
+        $status = $difference >= 0
+            ? '손익분기점을 '.$this->won($difference).' 초과했습니다.'
+            : '손익분기점까지 '.$this->won(abs($difference)).' 부족합니다.';
+
+        return ['kind' => 'capital', 'answer' => implode("\n", [
+            '⚖️ 손익분기 현황 ('.Carbon::parse($d['date'])->format('Y-m-d').' 기준)',
+            '· 기준: 청산가치 = 투입원금',
+            '· 청산가치: '.$this->won($d['liquidation_krw']),
+            '· 투입원금: '.$this->won($d['principal_krw']),
+            '· '.$status,
+        ])];
+    }
+
+    /**
+     * 인원별 매출 — 거부가 아니라 스코프다 (jin 2026-07-29).
+     *   최고관리자·업무관리자 = 전사 / [관리] = 본인이 담당하는 영업만 / 그 외 = 거부.
+     */
+    private function salesBySalesman(string $question, User $user): array
+    {
+        if (! $user->canUseSalesPerformanceAssistant()) {
+            return $this->denied('인원별 매출 현황');
+        }
+        $scopeIds = $user->assistantSalesScopeIds();
+        $period = $this->salesPeriod($question);
+        $rows = $this->queries->salesBySalesman($period['from'], $period['to'], $scopeIds);
+        $scopeLabel = $scopeIds === null ? '전사' : '담당 영업';
+        if (! $rows) {
+            return ['kind' => 'sales', 'answer' => "{$period['label']} {$scopeLabel} 인원별 매출이 없습니다."];
+        }
+        $body = collect($rows)->map(fn ($row, $i) => sprintf(
+            '%d. %s — %s (%d대)',
+            $i + 1,
+            $row['name'],
+            $this->won($row['sales_krw']),
+            $row['count'],
+        ))->implode("\n");
+
+        return ['kind' => 'sales', 'answer' => "📈 {$period['label']} {$scopeLabel} 인원별 매출 현황\n".$body];
+    }
+
+    private function bySalesman(User $user): array
+    {
+        if (! $user->canUseFinanceAssistant()) {
+            return $this->denied('인원별 미수 현황');
+        }
         $rows = $this->queries->receivableBySalesman();
         if (! $rows) {
             return ['kind' => 'receivable', 'answer' => '현재 결제대기(유예)를 제외한 인원별 미수가 없습니다.'];
@@ -122,8 +196,11 @@ class AssistantService
         return ['kind' => 'receivable', 'answer' => "👤 인원별 미수 현황 (결제대기 제외)\n".$body];
     }
 
-    private function byBuyer(): array
+    private function byBuyer(User $user): array
     {
+        if (! $user->canUseFinanceAssistant()) {
+            return $this->denied('바이어별 미수 현황');
+        }
         $rows = $this->queries->receivableByBuyer();
         if (! $rows) {
             return ['kind' => 'receivable', 'answer' => '현재 결제대기(유예)를 제외한 바이어별 미수가 없습니다.'];
@@ -133,8 +210,11 @@ class AssistantService
         return ['kind' => 'receivable', 'answer' => "🏢 바이어별 미수 현황 (결제대기 제외)\n".$body];
     }
 
-    private function summary(): array
+    private function summary(User $user): array
     {
+        if (! $user->canUseFinanceAssistant()) {
+            return $this->denied('채권관리 요약');
+        }
         $s = $this->queries->receivableSummary();
         $lines = [
             '📋 채권관리 요약 (결제대기 제외)',
@@ -149,7 +229,7 @@ class AssistantService
 
     // ── A: 업무 가이드 RAG (LLM) ─────────────────────────────────
 
-    private function guide(string $question): array
+    private function guide(string $question, User $user): array
     {
         $path = (string) config('assistant.index_path');
         if ($path === '' || ! is_file($path)) {
@@ -161,8 +241,24 @@ class AssistantService
         if ($scope !== '') {
             $kb = array_values(array_filter($kb, fn ($d) => mb_strpos((string) ($d['source'] ?? ''), $scope) !== false));
         }
+        // 권한 필터를 임베딩 검색보다 먼저 적용한다. LLM에는 허용된 청크만 전달된다.
+        // 색인에 audience가 하나라도 있으면 새 형식으로 보고, 미표기 청크는 누락 사고 방지를 위해 제외한다.
+        $usesAudienceMetadata = (bool) array_filter($kb, fn ($doc) => array_key_exists('audience', $doc));
+        $allowedAudiences = $user->assistantAudiences();
+        $kb = array_values(array_filter($kb, function ($doc) use ($allowedAudiences, $usesAudienceMetadata) {
+            if (! array_key_exists('audience', $doc) && $usesAudienceMetadata) {
+                return false;
+            }
+            $audience = $doc['audience'] ?? 'staff'; // audience가 전혀 없는 구 색인만 staff로 하위 호환
+            $required = is_array($audience) ? $audience : [$audience];
+            if (! $required || array_diff($required, self::RAG_AUDIENCES)) {
+                return false; // 알 수 없는 등급은 fail-closed
+            }
+
+            return (bool) array_intersect($required, $allowedAudiences);
+        }));
         if (! $kb) {
-            return ['kind' => 'guide', 'answer' => '업무 가이드 색인이 비어 있습니다.'];
+            return ['kind' => 'guide', 'answer' => '현재 권한으로 조회할 수 있는 업무 가이드가 없습니다.'];
         }
 
         try {
@@ -193,6 +289,45 @@ class AssistantService
         } catch (\Throwable $e) {
             return ['kind' => 'error', 'answer' => '업무 가이드 조회 중 오류가 발생했습니다. 로컬 LLM(Ollama)이 실행 중인지 확인해 주세요.'];
         }
+    }
+
+    /** @return array{from:string,to:string,label:string} */
+    private function salesPeriod(string $question): array
+    {
+        $today = Carbon::today();
+        if (str_contains($question, '지난달') || str_contains($question, '지난 달') || str_contains($question, '전월')) {
+            $start = $today->copy()->subMonthNoOverflow()->startOfMonth();
+            $end = $start->copy()->endOfMonth();
+            $label = '지난달';
+        } elseif (str_contains($question, '지난 분기')) {
+            $start = $today->copy()->subQuarter()->startOfQuarter();
+            $end = $start->copy()->endOfQuarter();
+            $label = '지난 분기';
+        } elseif (str_contains($question, '이번 분기')) {
+            $start = $today->copy()->startOfQuarter();
+            $end = $today->copy()->endOfQuarter();
+            $label = '이번 분기';
+        } elseif (str_contains($question, '올해') || str_contains($question, '금년')) {
+            $start = $today->copy()->startOfYear();
+            $end = $today->copy()->endOfYear();
+            $label = '올해';
+        } else {
+            $start = $today->copy()->startOfMonth();
+            $end = $today->copy()->endOfMonth();
+            $label = '이번 달';
+        }
+
+        return ['from' => $start->toDateString(), 'to' => $end->toDateString(), 'label' => $label];
+    }
+
+    /** @return array{kind:string,answer:string,denied:true} */
+    private function denied(string $subject): array
+    {
+        return [
+            'kind' => 'denied',
+            'denied' => true,
+            'answer' => "{$subject} 정보는 현재 계정 권한으로 조회할 수 없습니다.",
+        ];
     }
 
     private function cosine(array $a, array $b): float
