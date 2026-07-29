@@ -18,31 +18,35 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 const SYS = __DIR__.'/../resources/templates/system/sales_contract.xlsx';
 
-// 회사정보 셀(system 최종 좌표): 은행블록 C16~E18 / SELLER 블록 B66·B68·B69·B70.
+// 회사정보 셀 — ⚠️ 2026-07-29 레이아웃 개편으로 좌표가 전부 바뀌었다.
+//   은행블록: Beneficiary E15 / Bank Name R15 / Swift E16 / Bank Address R16 / Account E17 / Beneficiary Address R17
+//   SELLER 블록: 상호 B64 / 사업자번호 B66 / Tel·Email B67 / 주소 B68
+//   (구 좌표 C16~E18 · B66·B68·B69·B70 은 폐기 — 그대로 두면 엉뚱한 칸에 회사정보가 박힌다.)
+// ⚠️ 병합 안쪽 유령값은 build 스크립트가 이미 비웠다. 여기서는 앵커에만 쓴다.
 $tenants = [
     'heyman' => [
-        'C16' => 'HEYMAN LTD',                                    // Beneficiary
-        'E16' => 'SHINHAN BANK',                                  // Bank Name (동일 은행)
-        'C17' => 'SHBKKRSE',                                      // Swift (신한)
-        'E17' => '20,Sejong-Daero9-Gil,Jung-Gu Seoul South Korea', // Bank Address (신한 본점)
-        'C18' => '180-012-458342',                               // Account (heyman)
-        'E18' => "#513, THE PARK 365, 50 Seonyudong1-ro,\nYeongdeungpo-gu, Seoul, Korea", // Beneficiary Address
-        'B66' => 'HEYMAN CO., LTD',                              // SELLER 상호
-        'B68' => 'Registration Number : 535-87-01734',          // 사업자번호
-        'B69' => 'Tel: +82-10-9009-9977         Email: heyman99888@gmail.com',
-        'B70' => 'Address : #513, THE PARK 365, 50 Seonyudong1-ro, Yeongdeungpo-gu, Seoul, Korea',
+        'E15' => 'HEYMAN LTD',                                    // Beneficiary
+        'R15' => 'SHINHAN BANK',                                  // Bank Name (동일 은행)
+        'E16' => 'SHBKKRSE',                                      // Swift (신한)
+        'R16' => '20,Sejong-Daero9-Gil,Jung-Gu Seoul South Korea', // Bank Address (신한 본점)
+        'E17' => '180-012-458342',                               // Account (heyman)
+        'R17' => '#513, THE PARK 365, 50 Seonyudong1-ro, Yeongdeungpo-gu, Seoul, Korea', // Beneficiary Address
+        'B64' => 'HEYMAN CO., LTD',                              // SELLER 상호
+        'B66' => 'Registration Number : 535-87-01734',          // 사업자번호
+        'B67' => 'Tel: +82-10-9009-9977         Email: heyman99888@gmail.com',
+        'B68' => 'Address : #513, THE PARK 365, 50 Seonyudong1-ro, Yeongdeungpo-gu, Seoul, Korea',
     ],
     'karaba' => [
-        'C16' => 'KARABA CO., LTD',
-        'E16' => 'KEB Hana Bank',
-        'C17' => 'KOEXKRSEXXX',
-        'E17' => '216-55, Hogupo-ro, Namdong-gu, Incheon, South Korea',
-        'C18' => '433 910007 14938',
-        'E18' => "#303, 178 Injung-ro, Jung-gu,\nIncheon, Korea",
-        'B66' => 'KARABA CO., LTD',
-        'B68' => 'Registration Number : 801-81-01696',
-        'B69' => 'Tel: +82-32-710-7979         Email: sales@karaba.co.kr',
-        'B70' => 'Address : #303, 178 Injung-ro, Jung-gu, Incheon, Korea',
+        'E15' => 'KARABA CO., LTD',
+        'R15' => 'KEB Hana Bank',
+        'E16' => 'KOEXKRSEXXX',
+        'R16' => '216-55, Hogupo-ro, Namdong-gu, Incheon, South Korea',
+        'E17' => '433 910007 14938',
+        'R17' => '#303, 178 Injung-ro, Jung-gu, Incheon, Korea',
+        'B64' => 'KARABA CO., LTD',
+        'B66' => 'Registration Number : 801-81-01696',
+        'B67' => 'Tel: +82-32-710-7979         Email: sales@karaba.co.kr',
+        'B68' => 'Address : #303, 178 Injung-ro, Jung-gu, Incheon, Korea',
     ],
 ];
 

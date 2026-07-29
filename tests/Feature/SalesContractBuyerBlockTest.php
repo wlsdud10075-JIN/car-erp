@@ -59,10 +59,11 @@ class SalesContractBuyerBlockTest extends TestCase
 
         $header = SalesContractMapping::config()['header'];
 
-        $this->assertSame('TOKYO AUTO', $header['E66']($v));
-        $this->assertSame('Passport/ID number : M12345678', $header['E68']($v));
-        $this->assertStringContainsString('Tel: +81-3-1234', $header['E69']($v));
-        $this->assertStringContainsString('Email: buy@tokyo.jp', $header['E69']($v));   // 구 ->email 버그였으면 빈값
-        $this->assertSame('Address : 1-2-3 Chuo, Tokyo', $header['E70']($v));
+        // 좌표는 2026-07-29 레이아웃 개편으로 E66/E68/E69/E70 → P64/P66/P67/P68.
+        $this->assertSame('TOKYO AUTO', $header['P64']($v));
+        $this->assertSame('Passport/ID number : M12345678', $header['P66']($v));
+        $this->assertStringContainsString('Tel: +81-3-1234', $header['P67']($v));
+        $this->assertStringContainsString('Email: buy@tokyo.jp', $header['P67']($v));   // 구 ->email 버그였으면 빈값
+        $this->assertSame('Address : 1-2-3 Chuo, Tokyo', $header['P68']($v));
     }
 }
