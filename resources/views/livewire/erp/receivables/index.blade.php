@@ -532,9 +532,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 큐 16 — sales_channel 단일화로 채널 필터 제거.
             // 채권관리는 판매단계 이후 차량만 (sale_price > 0)
             ->where('sale_price', '>', 0)
+            // 선박명(VSL)·컨테이너번호로도 찾을 수 있어야 한다 (jin 2026-07-29) —
+            // "그 배에 실린 차들 미수" 처럼 선적 단위로 채권을 묻는 흐름. 차량목록 검색과 같은 기준.
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
+                ->orWhere('vessel_name', 'like', "%{$this->search}%")
+                ->orWhere('container_number', 'like', "%{$this->search}%")
             ))
             ->when($this->dateFrom, fn ($q) => $q->where('purchase_date', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('purchase_date', '<=', $this->dateTo))
