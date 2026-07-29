@@ -53,20 +53,35 @@ class TransferLinkedPaymentProtectionTest extends TestCase
 
         $target = Vehicle::create([
             'vehicle_number' => 'T3', 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'currency' => 'USD',   // standard 이체는 통화 일치를 요구한다
             'purchase_date' => '2026-05-10', 'purchase_price' => 30_000_000,
         ]);
 
         return compact('buyer', 'drafter', 'manager', 'finance', 'source', 'target');
     }
 
-    /** 매입 선지급 실행 → 대상 차 PBP 반환 (transfer 링크 포함). */
+    /**
+     * 이체 링크 PBP 생성.
+     *
+     * ⚠️ 이 행을 만들던 「매입 선지급」은 2026-07-29 제거됐다. 그래도 **가드는 남긴다** —
+     * transfer_id 를 가진 PBP 가 운영에 남아 있을 수 있고, 가드가 지키는 대상은 kind 와 무관하다.
+     * 따라서 생성 경로 대신 행을 직접 만들어 가드 자체를 검증한다.
+     */
     private function executePurchaseFunding(array $ctx): array
     {
-        $t = $this->service->applyPurchaseFunding($ctx['source'], $ctx['target'], 30_000_000, $ctx['drafter']);
-        $this->service->approvePurchaseFunding($t, $ctx['manager']);
-        $this->service->confirmPurchaseFundingByFinance($t, $ctx['finance'], '은행이체 완료');
+        $t = $this->service->request($ctx['source'], $ctx['target'], 10_000, $ctx['drafter']);
+        $pbp = PurchaseBalancePayment::withoutEvents(fn () => PurchaseBalancePayment::create([
+            'vehicle_id' => $ctx['target']->id,
+            'transfer_id' => $t->id,
+            'amount' => 30_000_000,
+            'type' => 'balance',
+            'payment_date' => '2026-05-20',
+            'confirmed_by_user_id' => $ctx['finance']->id,
+            'confirmed_at' => now(),
+        ]));
+        $t->update(['purchase_balance_payment_id' => $pbp->id]);
 
-        return [$t->fresh(), PurchaseBalancePayment::where('transfer_id', $t->id)->firstOrFail()];
+        return [$t->fresh(), $pbp->fresh()];
     }
 
     // ── ② 매입 선지급 PBP ─────────────────────────────────────────────
@@ -154,16 +169,16 @@ class TransferLinkedPaymentProtectionTest extends TestCase
             'sale_date' => '2026-05-20', 'sale_price' => 50_000, 'exchange_rate' => 1300,
         ]);
 
-        $t = $this->service->applyDeposit(
-            source: $ctx['source'],
-            target: $ctx['target']->fresh(),
-            amount: 10_000,
-            drafter: $ctx['drafter'],
-            paymentType: $paymentType,
-        );
-        $this->service->executeDepositApply($t, $ctx['finance']);
+        // 보증금 적용은 제거됐다(2026-07-29). 이체 링크 FinalPayment 는 standard 이체가 그대로 만든다 —
+        // 가드가 지키는 대상은 kind 가 아니라 transfer_id 라 검증력은 동일하다.
+        $t = $this->service->request($ctx['source'], $ctx['target']->fresh(), 10_000, $ctx['drafter']);
+        $this->service->approve($t, $ctx['manager']);
+        $this->service->confirmByFinance($t, $ctx['finance'], '은행이체 완료');
+        $fp = FinalPayment::where('transfer_id', $t->id)->where('vehicle_id', $ctx['target']->id)->firstOrFail();
+        // 4항목 sync 사정권(deposit_down 등)에 들어가는지가 회귀 지점이라 유형을 명시한다.
+        FinalPayment::withoutEvents(fn () => $fp->forceFill(['type' => $paymentType])->saveQuietly());
 
-        return [$t->fresh(), FinalPayment::where('transfer_id', $t->id)->where('vehicle_id', $ctx['target']->id)->firstOrFail()];
+        return [$t->fresh(), $fp->fresh()];
     }
 
     /**
