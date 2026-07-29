@@ -3588,9 +3588,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'ratio' => round($gauge['ratio'] * 100, 1),
                     'unpaid' => $gauge['unpaid_krw'],
                     'count' => $gauge['vehicle_count'],
-                    // 보증금 여력 (jin 2026-07-20) — 한도 초과 상태라 available 은 0
+                    // 락 문구용 — 게이트 기준은 '선적 전 총액 × 임계'다.
+                    //   ⚠️ gauge['limit_krw'] 는 2026-07-29 부터 '입금액 × 50%'(매입 가능 금액)로 의미가 바뀌었으므로
+                    //   여기서 쓰면 안 된다. 락 기준선은 total 로 직접 계산한다.
                     'deposit_pct' => $gauge['deposit_pct'],
-                    'limit' => $gauge['limit_krw'],
+                    'limit' => (int) ($gauge['total_krw'] * \App\Models\Setting::lockThreshold('purchase_registration')),
                     'total' => $gauge['total_krw'],
                 ];
                 $this->purchaseGateReason = '';

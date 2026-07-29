@@ -1526,18 +1526,24 @@ class Vehicle extends Model
     // ── Computed: 매입 미지급액 ─────────────────────────────────────
     // 큐 20-B — 분자 A안 필터: purchaseBalancePayments 중 confirmed_at IS NOT NULL 행만 합산.
     // payment_date <= today AND confirmed_at IS NOT NULL 동시 만족해야 ledger 반영.
-    public function getPurchaseUnpaidAmountAttribute(): int
+    /**
+     * 매입 지급액 (확정분) — SKILLS §13 총지급액의 단일 출처.
+     * 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
+     * type 무관 confirmed PBP rows 만 합산 (22-A-3 FP 분자와 대칭).
+     * payment_date <= today AND confirmed_at IS NOT NULL 동시 만족해야 ledger 반영.
+     */
+    public function getPurchasePaidAmountAttribute(): int
     {
-        // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
-        // type 무관 confirmed PBP rows 만 합산 (22-A-3 FP 분자와 대칭).
-        $totalPurchase = $this->purchase_price + $this->selling_fee;
-        $totalPaid = $this->purchaseBalancePayments
+        return (int) $this->purchaseBalancePayments
             ->filter(fn ($p) => $p->payment_date !== null
                 && $p->payment_date->lte(now())
                 && $p->confirmed_at !== null)
             ->sum('amount');
+    }
 
-        return (int) ($totalPurchase - $totalPaid);
+    public function getPurchaseUnpaidAmountAttribute(): int
+    {
+        return (int) (($this->purchase_price + $this->selling_fee) - $this->purchase_paid_amount);
     }
 
     /**

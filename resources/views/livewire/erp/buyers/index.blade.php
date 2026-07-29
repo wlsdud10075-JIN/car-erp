@@ -90,7 +90,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 단일 출처 — Buyer::computeReceivableGauge (매입 게이트와 동일 로직·임계, 숫자 일치 보장).
-        return Buyer::computeReceivableGauge($buyer->vehicles()->get());
+        return Buyer::computeReceivableGauge($buyer->vehicles()->with('purchaseBalancePayments')->get());
     }
 
     /**
@@ -106,6 +106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $vehicles = \App\Models\Vehicle::whereIn('buyer_id', $buyerIds)
+            ->with('purchaseBalancePayments')   // 여력의 '사용' 분자 — 없으면 차량당 1쿼리
             ->get([
                 'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
                 'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
@@ -794,8 +795,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="font-medium" style="color: hsl({{ round($hue) }},70%,38%)">{{ __('buyer.receivable.unpaid_ratio', ['pct' => number_format($r * 100, 1)]) }}</span>
                     @endif
                 </div>
-                {{-- 보증금 여력 (jin 2026-07-20) — 선적 전 총액의 N%까지 신규 매입에 쓸 수 있는 한도. 표시용(락은 미수율 판정).
-                     헤드라인=여력(사용중 까인 순액) / 사용중 보증금 + 한도 / 소진 시 신규 매입 제한 안내(미수금 반복 대신). --}}
+                {{-- 매입 가능 금액 (jin 2026-07-29) — 입금액 × 50% 중 매입 지급으로 쓰고 남은 액수.
+                     순수 표시용이라 아무것도 차단하지 않는다(매입등록 락은 ratio 로 별도 판정). --}}
                 @if(($br['limit_krw'] ?? 0) > 0)
                 @php $depAvail = $br['available_krw']; @endphp
                 <div class="mt-2 rounded-md border border-violet-200 bg-violet-50/70 px-2.5 py-2">
@@ -804,10 +805,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="text-sm font-bold {{ $depAvail > 0 ? 'text-violet-900' : 'text-red-600' }}">₩{{ number_format($depAvail) }}</span>
                     </div>
                     <div class="mt-1 text-[11px] text-violet-500">
-                        {{ __('buyer.receivable.deposit_used_limit', ['used' => number_format($br['used_krw']), 'limit' => number_format($br['limit_krw'])]) }}
+                        {{ __('buyer.receivable.deposit_used_limit', [
+                            'paid' => number_format($br['paid_krw']),
+                            'pct' => $br['deposit_pct'],
+                            'limit' => number_format($br['limit_krw']),
+                            'used' => number_format($br['used_krw']),
+                        ]) }}
                     </div>
                     <div class="mt-1 text-[11px] {{ $depAvail > 0 ? 'text-violet-600' : 'font-medium text-red-600' }}">
-                        {{ $depAvail > 0 ? __('buyer.receivable.deposit_note', ['pct' => $br['deposit_pct']]) : __('buyer.receivable.deposit_note_full') }}
+                        {{ $depAvail > 0 ? __('buyer.receivable.deposit_note') : __('buyer.receivable.deposit_note_full') }}
                     </div>
                 </div>
                 @endif

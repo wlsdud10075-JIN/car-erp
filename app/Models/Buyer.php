@@ -97,17 +97,24 @@ class Buyer extends Model
      *   신규 매입 한도에 안 잡는다(선적전/후 미수 pivot=출고일, SKILLS §14 와 동일 축). 선적 후 총액·건수는
      *   shipped_krw/shipped_count 로 별도 반환(표기용). 거래완료가 우선 — 거래완료면 completed 버킷.
      *
-     * 보증금 여력(jin 2026-07-20): 선적 전 총액 × 매입등록락 임계 = 한도(낼 수 있는 미수 상한).
-     *   남은 여력 = 한도 − 현재 미수. "이 바이어한테 앞으로 얼마까지 더 태울 수 있나"를 숫자로 노출(락 로직 동일).
+     * 보증금 여력(jin 2026-07-29 재정의) — **순수 표시용. 아무것도 차단하지 않는다.**
+     *   한도 = 선적 전 진행중 차량의 **입금액** × 임계(기본 50%)
+     *   사용 = 그 차량들의 **매입 지급**(확정 PBP, Vehicle::purchase_paid_amount 단일출처)
+     *   여력 = 한도 − 사용 → "이만큼 더 매입할 수 있다"
+     *   판매 잔금이 더 들어오면 한도가 늘어 여력이 회복된다.
+     *   ⚠️ 구 정의(선적전 총액 × 50% − 미수)와 분모·분자가 둘 다 다르다. 미수 개념이 아니다.
+     *   ⚠️ 매입등록 게이트(C5)는 여기가 아니라 ratio 를 본다 — limit/used/available 을 고쳐도 락은 안 움직인다.
      *   $depositThreshold 미지정 시 Setting::lockThreshold('purchase_registration')(기본 0.5). 배치는 1회 계산해 전달(N+1 방지).
      *
-     * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date 로드된 Vehicle 컬렉션
+     * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date
+     *                              + purchaseBalancePayments 가 로드된 Vehicle 컬렉션
      */
     public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null): ?array
     {
         $depositThreshold ??= Setting::lockThreshold('purchase_registration');
         $totalKrw = 0;
         $unpaidKrw = 0;
+        $purchasePaidKrw = 0;   // 선적 전 진행중 차량에 이미 나간 매입 지급 (여력 소진분)
         $count = 0;
         $completedKrw = 0;
         $completedCount = 0;
@@ -135,6 +142,7 @@ class Buyer extends Model
             $count++;
             $totalKrw += $rowKrw;
             $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+            $purchasePaidKrw += $v->purchase_paid_amount;   // 매입은 원화 — 환율 환산 불필요
         }
 
         if ($totalKrw <= 0) {
@@ -142,20 +150,24 @@ class Buyer extends Model
         }
 
         $paidKrw = max(0, $totalKrw - $unpaidKrw);
-        $limitKrw = (int) ($totalKrw * $depositThreshold);      // 보증금 한도 = 선적 전 총액 × 임계
+        // 보증금 여력 (jin 2026-07-29 재정의) — 한도 = **입금액** × 50%.
+        //   구: 선적전 총액 × 50% − 미수. 팔리기만 하고 돈이 안 들어와도 여력이 잡히던 게 문제였다.
+        //   신: 실제로 받은 돈의 절반까지 매입에 쓸 수 있고, 매입 지급이 나가면 그만큼 줄고,
+        //       판매 잔금이 더 들어오면 한도가 늘어 여력이 회복된다.
+        //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
+        $limitKrw = (int) ($paidKrw * $depositThreshold);
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
             'unpaid_krw' => $unpaidKrw,
             'paid_krw' => $paidKrw,
             'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
-            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총)
+            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총) — 변경 금지
             'vehicle_count' => $count,              // 진행중·선적 전 건수
-            // 보증금 여력 (jin 2026-07-20) — 표시용. 락 판정은 ratio 그대로.
             'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
-            'limit_krw' => $limitKrw,               // 보증금 한도 (낼 수 있는 미수 상한)
-            'used_krw' => $unpaidKrw,               // 사용중 = 현재 미수
-            'available_krw' => max(0, $limitKrw - $unpaidKrw),      // 남은 여력
+            'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 입금액 × 50%
+            'used_krw' => $purchasePaidKrw,         // 이미 쓴 금액 = 매입 지급(계약금·잔금 확정분)
+            'available_krw' => max(0, $limitKrw - $purchasePaidKrw),   // 남은 여력 = 이만큼 더 매입 가능
             'completed_krw' => $completedKrw,       // 거래완료 총액 (분리 표기)
             'completed_count' => $completedCount,
             'shipped_krw' => $shippedKrw,           // 선적 후(출고) 총액 (분리 표기)
@@ -166,6 +178,7 @@ class Buyer extends Model
     /** 이 바이어의 미수 게이지 (자기 차량 로딩). 매입 게이트가 사용. */
     public function receivableGauge(): ?array
     {
-        return static::computeReceivableGauge($this->vehicles()->get());
+        // purchaseBalancePayments = 여력의 '사용' 분자. eager load 안 하면 차량당 1쿼리.
+        return static::computeReceivableGauge($this->vehicles()->with('purchaseBalancePayments')->get());
     }
 }

@@ -93,31 +93,37 @@ class BuyerReceivableCompletedTest extends TestCase
     }
 
     /** 보증금 여력 (jin 2026-07-20) — 한도 = 선적 전 총액 × 임계, 남은 여력 = 한도 − 미수. 표시용. */
+    /**
+     * 매입 가능 금액 (jin 2026-07-29 재정의) — 한도는 **입금액** 기준이다.
+     * 구 정의(선적전 총액 × 50% − 미수)와 분모·분자가 둘 다 다르다. 상세 = BuyerPurchasingRoomTest.
+     */
     public function test_deposit_room_computed(): void
     {
         $buyer = Buyer::create(['name' => '딜러F', 'is_active' => true]);
-        $this->vehicle($buyer, 100_000_000, '판매완료', 0, '10가1000');          // 완납 선적 전 — 분모에 포함
-        $this->vehicle($buyer, 100_000_000, '판매중', 40_000_000, '20나2000');   // 미수 4천만
+        $this->vehicle($buyer, 100_000_000, '판매완료', 0, '10가1000');          // 완납 = 입금 1억
+        $this->vehicle($buyer, 100_000_000, '판매중', 40_000_000, '20나2000');   // 미수 4천만 = 입금 6천만
 
         $g = Buyer::computeReceivableGauge($buyer->vehicles()->get());
 
         $this->assertSame(200_000_000, $g['total_krw'], '선적 전 총액 2억(완납차 포함)');
+        $this->assertSame(160_000_000, $g['paid_krw'], '입금 = 2억 − 미수 4천만');
         $this->assertSame(50, $g['deposit_pct'], '기본 임계 50%');
-        $this->assertSame(100_000_000, $g['limit_krw'], '보증금 한도 = 2억 × 50%');
-        $this->assertSame(40_000_000, $g['used_krw'], '사용중 = 미수 4천만');
-        $this->assertSame(60_000_000, $g['available_krw'], '남은 여력 = 1억 − 4천만');
+        $this->assertSame(80_000_000, $g['limit_krw'], '한도 = 입금 1.6억 × 50%');
+        $this->assertSame(0, $g['used_krw'], '매입 지급 없음');
+        $this->assertSame(80_000_000, $g['available_krw'], '쓴 게 없으니 한도 전액');
     }
 
-    /** 여력 한도는 임계 파라미터를 따른다 — 필요 입금률 70%(cutoff 0.3)면 한도 = 총액 × 30%. */
+    /** 한도는 임계 파라미터를 따른다 — cutoff 0.3 이면 한도 = 입금액 × 30%. */
     public function test_deposit_room_follows_threshold(): void
     {
         $buyer = Buyer::create(['name' => '딜러G', 'is_active' => true]);
-        $this->vehicle($buyer, 100_000_000, '판매중', 10_000_000, '30다3000');
+        $this->vehicle($buyer, 100_000_000, '판매중', 10_000_000, '30다3000');   // 입금 9천만
 
-        $g = Buyer::computeReceivableGauge($buyer->vehicles()->get(), 0.3);   // 필요 입금률 70%
+        $g = Buyer::computeReceivableGauge($buyer->vehicles()->get(), 0.3);
         $this->assertSame(30, $g['deposit_pct']);
-        $this->assertSame(30_000_000, $g['limit_krw'], '1억 × 30%');
-        $this->assertSame(20_000_000, $g['available_krw'], '3천만 − 1천만 미수');
+        $this->assertSame(90_000_000, $g['paid_krw']);
+        $this->assertSame(27_000_000, $g['limit_krw'], '9천만 × 30%');
+        $this->assertSame(27_000_000, $g['available_krw']);
     }
 
     /** 거래완료가 선적 후보다 우선 — 출고됐어도 거래완료면 completed 버킷(shipped 아님). */
