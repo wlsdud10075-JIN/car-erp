@@ -452,7 +452,21 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->pluck('balance', 'currency')
             ->toArray();
 
-        // 최근 50건 거래내역
+        // 선입선출 원장 (jin 2026-07-29) — 환율은 적립 시점 값. SavingsLedger 단일 출처.
+        $ledger = app(\App\Services\SavingsLedger::class);
+        $this->balancesKrw = [];
+        $this->lots = [];
+        $details = [];
+        foreach (array_keys($this->balances) as $cur) {
+            $this->balancesKrw[$cur] = $ledger->balanceKrw($buyerId, $cur);
+            $this->lots[$cur] = $ledger->lots($buyerId, $cur)
+                ->reject(fn ($l) => $l['consumed'])          // 다 쓴 적립분은 다음 차감 안내에서 제외
+                ->values()
+                ->all();
+            $details += $ledger->rowDetails($buyerId, $cur);   // row_id 는 전역 유일이라 통화별 병합 안전
+        }
+
+        // 최근 50건 거래내역 — 각 행에 "어느 적립분을 얼마 썼고 그 적립분 잔여는 얼마"를 붙인다.
         $this->txnList = SavingsStatus::where('buyer_id', $buyerId)
             ->orderByDesc('id')
             ->limit(50)
@@ -466,20 +480,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'exchange_rate'    => $t->exchange_rate !== null ? (float) $t->exchange_rate : null,
                 'note'             => $t->note ?? '',
                 'created_at'       => $t->created_at->format('Y-m-d H:i'),
+                'fifo'             => $details[$t->id] ?? null,
             ])
             ->toArray();
-
-        // 선입선출 잔여 lot + 원화 환산 (jin 2026-07-29). 환율은 적립 시점 값 — SavingsLedger 단일 출처.
-        $ledger = app(\App\Services\SavingsLedger::class);
-        $this->balancesKrw = [];
-        $this->lots = [];
-        foreach (array_keys($this->balances) as $cur) {
-            $this->balancesKrw[$cur] = $ledger->balanceKrw($buyerId, $cur);
-            $this->lots[$cur] = $ledger->lots($buyerId, $cur)
-                ->reject(fn ($l) => $l['consumed'])          // 다 쓴 적립분은 숨김
-                ->values()
-                ->all();
-        }
     }
 
     public function addSavingsTransaction(): void
@@ -1054,12 +1057,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </span>
                     </div>
-                    {{-- 선입선출 = 다음에 나갈 적립분만 한 줄. 날짜별 내역은 아래 거래내역 표에 이미 있다. --}}
+                    {{-- 다음에 나갈 적립분 — 금액까지 보여야 쓸 때마다 줄어드는 게 보인다(jin 2026-07-29). --}}
                     @if($next)
                     <div class="pl-12 text-[10px] text-gray-400">
                         {{ __('buyer.savings.next_out_line', [
-                            'date' => $next['at'],
-                            'rate' => $next['exchange_rate'] ? '@'.number_format($next['exchange_rate'], 2) : '—',
+                            'date'   => $next['at'],
+                            'amount' => number_format($next['remaining'], 2),
+                            'rate'   => $next['exchange_rate'] ? __('buyer.savings.rate_label', ['rate' => number_format($next['exchange_rate'], 2)]) : __('buyer.savings.rate_none'),
                         ]) }}
                     </div>
                     @endif
@@ -1129,6 +1133,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="pb-1.5 pr-3">{{ __('buyer.savings.type') }}</th>
                             <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_amount') }}</th>
                             <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_balance') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_fifo') }}</th>
                             <th class="pb-1.5">{{ __('common.memo') }}</th>
                             <th class="pb-1.5"></th>
                         </tr>
@@ -1156,6 +1161,43 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 {{ $t['savings'] >= 0 ? '+' : '' }}{{ number_format($t['savings'], 2) }}
                             </td>
                             <td class="py-1.5 pr-3 text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
+                            {{-- 선입선출 — 적립분은 "환율·잔여", 사용분은 "어느 적립분에서 얼마 나갔고 그 적립분 잔여" (jin 2026-07-29) --}}
+                            <td class="py-1.5 pr-3 whitespace-nowrap text-[11px]">
+                                @php $f = $t['fifo'] ?? null; @endphp
+                                @if(!$f)
+                                    <span class="text-gray-300">—</span>
+                                @elseif($f['kind'] === 'in')
+                                    <span class="text-gray-500">
+                                        @if(!empty($f['exchange_rate'])){{ __('buyer.savings.rate_label', ['rate' => number_format($f['exchange_rate'], 2)]) }}@else<span class="text-amber-600">{{ __('buyer.savings.rate_none') }}</span>@endif
+                                    </span>
+                                    <span class="ml-1 {{ ($f['remaining'] ?? 0) > 0.004 ? 'text-emerald-700' : 'text-gray-400' }}">
+                                        @if(($f['remaining'] ?? 0) > 0.004)
+                                            · {{ __('buyer.savings.lot_left', ['amount' => number_format($f['remaining'], 2)]) }}
+                                        @else
+                                            · {{ __('buyer.savings.lot_spent') }}
+                                        @endif
+                                    </span>
+                                @elseif($f['kind'] === 'out')
+                                    @forelse($f['takes'] as $tk)
+                                    <div class="text-gray-600">
+                                        {{ __('buyer.savings.take_line', [
+                                            'date'   => $tk['at'],
+                                            'amount' => number_format($tk['take'], 2),
+                                            'left'   => number_format($tk['lot_left'], 2),
+                                        ]) }}
+                                    </div>
+                                    @empty
+                                    <span class="text-gray-300">—</span>
+                                    @endforelse
+                                @elseif($f['kind'] === 'back')
+                                    @foreach($f['backs'] as $bk)
+                                    <div class="text-blue-600">
+                                        {{ __('buyer.savings.back_line', ['date' => $bk['at'], 'amount' => number_format($bk['amount'], 2)]) }}
+                                    </div>
+                                    @endforeach
+                                    @if(empty($f['backs']))<span class="text-gray-300">—</span>@endif
+                                @endif
+                            </td>
                             <td class="py-1.5 text-gray-400 max-w-[120px] truncate">{{ $t['note'] }}</td>
                             <td class="py-1.5 pl-2">
                                 @if($t['transaction_type'] !== 'CANCELLED')
@@ -1166,7 +1208,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                         </tr>
                         @empty
-                        <tr><td colspan="7" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
+                        <tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>

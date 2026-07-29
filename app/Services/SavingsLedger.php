@@ -9,84 +9,174 @@ use Illuminate\Support\Collection;
  * 적립금 선입선출(FIFO) 원장 (jin 2026-07-29).
  *
  * 적립금은 `savings_statuses` 에 **유입(+)/사용(−) 이 섞인 단일 원장**으로 쌓인다(잔액은 행마다의
- * 러닝 스냅샷). jin 요구 = ① 사용 시 **먼저 적립된 것부터 차감** ② 적립 시점 환율로 **원화 병기**.
+ * 러닝 스냅샷). jin 요구:
+ *   ① 사용 시 **먼저 적립된 것부터 차감**
+ *   ② 적립 시점 환율로 **원화 병기**
+ *   ③ 사용 기록에 **"언제 적립분을 얼마 썼고, 그 적립분에 얼마 남았는지"** 가 보일 것
  *
- * ⚠️ 소진량을 컬럼으로 들고 있지 않고 **매번 원장에서 계산**한다. 이유:
- *    REFUND·ADJUSTMENT·CANCELLED 로 유출이 되돌려지면 소진 컬럼은 되감기(unwind) 로직이 필요한데,
- *    그게 틀리면 조용히 어긋난 채 남는다. 총유출을 오래된 유입부터 흡수시키는 계산식은
- *    되돌림이 자동으로 반영되고(유출 총합이 줄면 최신 lot 부터 다시 차오름) 상태가 하나뿐이라 드리프트가 없다.
+ * ③ 때문에 최종 잔여만 계산해서는 부족하고 **거래별 소진 내역(allocation)** 을 남겨야 한다.
+ * 그래서 원장을 처음부터 순서대로 시뮬레이션한다.
+ *
+ * ⚠️ 소진량을 DB 컬럼으로 들고 있지 않고 매번 원장에서 재현한다. 되감기(REFUND·CANCELLED) 로직이
+ *    틀리면 컬럼은 조용히 어긋난 채 남지만, 재현식은 상태가 원장 하나뿐이라 드리프트가 없다.
  *    행 수가 바이어당 수십 건 규모라 비용도 무의미하다.
  *
- * 환율은 **유입 시점에 고정**된다 — 크레딧의 원화 가치는 적립될 때 정해지므로, 사용 시점 환율이 아니다.
- * 그래서 "어느 적립분이 나갔는가"(FIFO)가 곧 원화 환산을 좌우한다. 두 요구가 한 몸인 이유.
+ * ⚠️ 환율은 **유입 시점에 고정**된다 — 크레딧의 원화 가치는 적립될 때 정해지므로 사용 시점 환율이 아니다.
+ *    그래서 "어느 적립분이 나갔는가"(FIFO)가 곧 원화 환산을 좌우한다.
+ *
+ * ⚠️ 되돌림(REFUND·CANCELLED 의 양수)은 **새 크레딧이 아니라 나갔던 것의 되감기**다. 마지막에 소진된
+ *    적립분부터(LIFO) **원래 환율 그대로** 되차오른다. 새 lot 으로 만들면 되돌아온 돈이 되돌림 행의
+ *    환율을 갖게 돼 원화 가치가 바뀐다.
  */
 class SavingsLedger
 {
+    /** @var array<string, array> 같은 요청 안에서 재계산 방지 */
+    private array $memo = [];
+
     /**
-     * (바이어 × 통화) 유입 lot 을 오래된 순으로, FIFO 소진을 반영한 잔여와 함께 반환.
+     * 원장을 순서대로 시뮬레이션해 lot 잔여와 거래별 소진 내역을 만든다.
      *
-     * @return Collection<int, array{
-     *   id:int, at:string, type:string, amount:float, remaining:float,
-     *   exchange_rate:float|null, krw:int|null, vehicle_id:int|null, note:string|null, consumed:bool
-     * }>
+     * @return array{lots: array<int, array>, rows: array<int, array>}
      */
-    public function lots(int $buyerId, string $currency): Collection
+    private function simulate(int $buyerId, string $currency): array
     {
-        $rows = SavingsStatus::where('buyer_id', $buyerId)
+        $key = $buyerId.'|'.$currency;
+        if (isset($this->memo[$key])) {
+            return $this->memo[$key];
+        }
+
+        $records = SavingsStatus::where('buyer_id', $buyerId)
             ->where('currency', $currency)
             ->orderBy('id')
             ->get();
 
-        // ── 1단계: 행을 유입 lot / 유출 로 분류 ────────────────────────────
-        // ⚠️ REFUND·CANCELLED 의 양수는 **새 크레딧이 아니라 나갔던 것의 되감기**다. 유출 총합을
-        //    줄이는 쪽으로 처리해야 마지막에 소진됐던 lot 이 **원래 환율 그대로** 되차오른다.
-        //    새 lot 으로 만들면 되돌아온 돈이 엉뚱한 환율을 갖게 된다(실측으로 잡은 버그).
-        $lots = [];
-        $outflow = 0.0;
-        foreach ($rows as $r) {
-            $amount = (float) $r->savings;
+        $lots = [];          // 유입 lot (선입선출 대상)
+        $rows = [];          // row_id => 표시용 소진/적립 정보
+        $consumed = [];      // 되감기용 스택 — [lotIdx, amount] 소진 순서
 
-            if ($amount < 0) {
-                $outflow += abs($amount);
-
-                continue;
-            }
-            if (in_array($r->transaction_type, ['REFUND', 'CANCELLED'], true)) {
-                $unwind = min($amount, $outflow);
-                $outflow -= $unwind;
-                $leftover = round($amount - $unwind, 2);
-                // 되돌릴 유출이 없는 초과분은 실제 새 크레딧이다 → lot 으로 남긴다
-                // (이래야 Σ잔여 = 러닝 잔액 불변식이 유지된다).
-                if ($leftover > 0.004) {
-                    $lots[] = [$r, $leftover];
-                }
-
-                continue;
-            }
-            $lots[] = [$r, $amount];
-        }
-
-        // ── 2단계: 남은 유출을 오래된 lot 부터 흡수 (FIFO) ──────────────────
-        return collect($lots)->map(function (array $pair) use (&$outflow) {
-            [$r, $amount] = $pair;
-            $eaten = min($outflow, $amount);
-            $outflow -= $eaten;
-            $remaining = round($amount - $eaten, 2);
-            $rate = $r->exchange_rate !== null ? (float) $r->exchange_rate : null;
-
-            return [
+        $newLot = function (SavingsStatus $r, float $amount) use (&$lots): int {
+            $lots[] = [
                 'id' => $r->id,
                 'at' => $r->created_at?->format('Y-m-d') ?? '',
-                'type' => $r->transaction_type,
                 'amount' => $amount,
-                'remaining' => $remaining,
-                'exchange_rate' => $rate,
-                'krw' => ($rate !== null && $rate > 0) ? (int) round($remaining * $rate) : null,
+                'remaining' => $amount,
+                'exchange_rate' => $r->exchange_rate !== null ? (float) $r->exchange_rate : null,
                 'vehicle_id' => $r->vehicle_id,
-                'note' => $r->note,
-                'consumed' => $remaining <= 0.004,   // 통화 소수 2자리 기준
+            ];
+
+            return array_key_last($lots);
+        };
+
+        foreach ($records as $r) {
+            $amount = (float) $r->savings;
+            $isUnwind = in_array($r->transaction_type, ['REFUND', 'CANCELLED'], true);
+
+            // ── 유입: 새 적립분 ──────────────────────────────────────────
+            if ($amount > 0 && ! $isUnwind) {
+                $idx = $newLot($r, $amount);
+                $rows[$r->id] = ['kind' => 'in', 'lot_index' => $idx, 'takes' => []];
+
+                continue;
+            }
+
+            // ── 되감기: 마지막에 나간 적립분부터 되돌린다 (LIFO) ──────────
+            if ($amount > 0 && $isUnwind) {
+                $left = $amount;
+                $backs = [];
+                while ($left > 0.004 && $consumed !== []) {
+                    $top = &$consumed[array_key_last($consumed)];
+                    $give = min($left, $top['amount']);
+                    $lots[$top['lot_index']]['remaining'] = round($lots[$top['lot_index']]['remaining'] + $give, 2);
+                    $top['amount'] = round($top['amount'] - $give, 2);
+                    $left = round($left - $give, 2);
+                    $backs[] = ['lot_index' => $top['lot_index'], 'amount' => $give];
+                    if ($top['amount'] <= 0.004) {
+                        array_pop($consumed);
+                    }
+                    unset($top);
+                }
+                // 되돌릴 소진이 없는 초과분은 실제 새 크레딧 (Σ잔여 = 잔액 불변식 유지)
+                $extraIdx = null;
+                if ($left > 0.004) {
+                    $extraIdx = $newLot($r, $left);
+                }
+                $rows[$r->id] = ['kind' => 'back', 'backs' => $backs, 'lot_index' => $extraIdx, 'takes' => []];
+
+                continue;
+            }
+
+            // ── 유출: 오래된 적립분부터 차감 (FIFO) ───────────────────────
+            $left = abs($amount);
+            $takes = [];
+            foreach ($lots as $i => &$lot) {
+                if ($left <= 0.004) {
+                    break;
+                }
+                if ($lot['remaining'] <= 0.004) {
+                    continue;
+                }
+                $take = min($left, $lot['remaining']);
+                $lot['remaining'] = round($lot['remaining'] - $take, 2);
+                $left = round($left - $take, 2);
+                $consumed[] = ['lot_index' => $i, 'amount' => $take];
+                $takes[] = [
+                    'lot_index' => $i,
+                    'at' => $lot['at'],
+                    'take' => $take,
+                    'lot_left' => $lot['remaining'],       // 그 적립분에 남은 액수 (jin 요구 ③)
+                    'exchange_rate' => $lot['exchange_rate'],
+                ];
+            }
+            unset($lot);
+            $rows[$r->id] = ['kind' => 'out', 'takes' => $takes, 'shortfall' => max(0, $left)];
+        }
+
+        return $this->memo[$key] = ['lots' => $lots, 'rows' => $rows];
+    }
+
+    /**
+     * (바이어 × 통화) 유입 적립분을 오래된 순으로, FIFO 소진 반영 잔여와 함께.
+     *
+     * @return Collection<int, array{id:int, at:string, amount:float, remaining:float, exchange_rate:float|null, krw:int|null, consumed:bool}>
+     */
+    public function lots(int $buyerId, string $currency): Collection
+    {
+        return collect($this->simulate($buyerId, $currency)['lots'])->map(function (array $l) {
+            $rate = $l['exchange_rate'];
+
+            return $l + [
+                'krw' => ($rate !== null && $rate > 0) ? (int) round($l['remaining'] * $rate) : null,
+                'consumed' => $l['remaining'] <= 0.004,
             ];
         })->values();
+    }
+
+    /**
+     * 거래(row) 별 선입선출 내역 — 화면 표에 "언제 적립분을 얼마 썼고 그 적립분 잔여는 얼마"를 찍기 위함.
+     *
+     * @return array<int, array> row_id => ['kind'=>'in'|'out'|'back', 'takes'=>[...], ...]
+     */
+    public function rowDetails(int $buyerId, string $currency): array
+    {
+        $sim = $this->simulate($buyerId, $currency);
+        $lots = $sim['lots'];
+
+        // lot_index 를 화면이 바로 쓸 수 있는 값으로 풀어준다.
+        foreach ($sim['rows'] as $rowId => &$row) {
+            if ($row['kind'] === 'in' && $row['lot_index'] !== null) {
+                $lot = $lots[$row['lot_index']];
+                $row['remaining'] = $lot['remaining'];
+                $row['exchange_rate'] = $lot['exchange_rate'];
+            }
+            if ($row['kind'] === 'back') {
+                $row['backs'] = array_map(fn ($b) => [
+                    'at' => $lots[$b['lot_index']]['at'],
+                    'amount' => $b['amount'],
+                ], $row['backs']);
+            }
+        }
+
+        return $sim['rows'];
     }
 
     /**
@@ -115,10 +205,9 @@ class SavingsLedger
     }
 
     /**
-     * 지금 `$amount` 를 쓰면 어느 lot 이 얼마씩 나가는지 (표시·검증용, 저장 안 함).
+     * 지금 `$amount` 를 쓰면 어느 적립분이 얼마씩 나가는지 (표시·검증용, 저장 안 함).
      *
      * @return array{lots:array<int,array{id:int,at:string,take:float,exchange_rate:float|null,krw:int|null}>, krw:int, shortfall:float}
-     *                                                                                                                                   shortfall > 0 이면 잔액 부족분
      */
     public function plan(int $buyerId, string $currency, float $amount): array
     {
