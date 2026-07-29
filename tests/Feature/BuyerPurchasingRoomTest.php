@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Setting;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -151,6 +153,37 @@ class BuyerPurchasingRoomTest extends TestCase
 
         $this->assertSame(20_000_000, $g['paid_krw'], '출고 차량 입금은 한도에 안 들어간다');
         $this->assertSame(3_000_000, $g['used_krw'], '출고 차량 매입지급도 사용에 안 잡힌다');
+    }
+
+    // -- 매입 탭 노출 (jin 2026-07-29) --
+
+    /** 매입비를 더 써도 되는지 판단하는 자리가 매입 탭이라 거기에도 같은 숫자가 떠야 한다. */
+    public function test_purchase_tab_shows_the_room_for_the_selected_buyer(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        $b = $this->buyer();
+        $v = $this->vehicle($b, 100_000_000, 20_000_000, purchasePaid: 4_000_000);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSet('purchasingRoom.limit_krw', 10_000_000)
+            ->assertSet('purchasingRoom.used_krw', 4_000_000)
+            ->assertSet('purchasingRoom.available_krw', 6_000_000);
+    }
+
+    /** 일반재고(바이어 미정 투기매입)는 기준이 없으므로 아예 안 띄운다 - 0원으로 오해시키지 않는다. */
+    public function test_purchase_tab_shows_nothing_without_a_buyer(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        $v = Vehicle::create([
+            'vehicle_number' => 'NOBUYER1', 'sales_channel' => 'export',
+            'currency' => 'KRW', 'exchange_rate' => 1,
+            'purchase_date' => '2026-06-01', 'purchase_price' => 50_000_000,
+        ]);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSet('purchasingRoom', null);
     }
 
     /**

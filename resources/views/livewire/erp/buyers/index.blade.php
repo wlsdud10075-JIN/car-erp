@@ -799,18 +799,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                      순수 표시용이라 아무것도 차단하지 않는다(매입등록 락은 ratio 로 별도 판정). --}}
                 @if(($br['limit_krw'] ?? 0) > 0)
                 @php $depAvail = $br['available_krw']; @endphp
+                {{-- 계산 과정을 그대로 보여준다 — 한 줄에 숫자를 몰아넣으면 '사용'이 뭘 뜻하는지 안 보인다(jin 2026-07-29). --}}
                 <div class="mt-2 rounded-md border border-violet-200 bg-violet-50/70 px-2.5 py-2">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs font-semibold text-violet-800">{{ __('buyer.receivable.deposit_title') }}</span>
-                        <span class="text-sm font-bold {{ $depAvail > 0 ? 'text-violet-900' : 'text-red-600' }}">₩{{ number_format($depAvail) }}</span>
+                    <div class="space-y-1 text-[11px]">
+                        <div class="flex items-center justify-between text-violet-700">
+                            <span>{{ __('buyer.receivable.room_received', ['pct' => $br['deposit_pct']]) }}</span>
+                            <span class="font-mono">₩{{ number_format($br['limit_krw']) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between text-violet-700">
+                            <span>{{ __('buyer.receivable.room_spent') }}</span>
+                            <span class="font-mono">− ₩{{ number_format($br['used_krw']) }}</span>
+                        </div>
+                        <div class="flex items-center justify-between border-t border-violet-200 pt-1">
+                            <span class="text-xs font-semibold text-violet-800">{{ __('buyer.receivable.deposit_title') }}</span>
+                            <span class="font-mono text-sm font-bold {{ $depAvail > 0 ? 'text-violet-900' : 'text-red-600' }}">₩{{ number_format($depAvail) }}</span>
+                        </div>
                     </div>
-                    <div class="mt-1 text-[11px] text-violet-500">
-                        {{ __('buyer.receivable.deposit_used_limit', [
-                            'paid' => number_format($br['paid_krw']),
-                            'pct' => $br['deposit_pct'],
-                            'limit' => number_format($br['limit_krw']),
-                            'used' => number_format($br['used_krw']),
-                        ]) }}
+                    <div class="mt-1.5 text-[11px] text-violet-400">
+                        {{ __('buyer.receivable.room_basis', ['paid' => number_format($br['paid_krw']), 'count' => $br['vehicle_count']]) }}
                     </div>
                     <div class="mt-1 text-[11px] {{ $depAvail > 0 ? 'text-violet-600' : 'font-medium text-red-600' }}">
                         {{ $depAvail > 0 ? __('buyer.receivable.deposit_note') : __('buyer.receivable.deposit_note_full') }}
