@@ -153,14 +153,77 @@ class User extends Authenticatable
     }
 
     /**
+     * 챗봇 재무·채권 등급.
+     * 대표·시스템관리자·업무관리자·[관리]·재무가 회사 전체 채권/정산 질문을 조회한다.
+     */
+    public function canUseFinanceAssistant(): bool
+    {
+        return $this->canAccessAdmin() || in_array($this->role, ['관리', '재무'], true);
+    }
+
+    /** 대표용 챗봇 등급 — 자금·청산가치·손익. 물어봐도 답하지 않는다(jin 2026-07-29). */
+    public function canUseExecutiveAssistant(): bool
+    {
+        return $this->canViewCapital();
+    }
+
+    /**
+     * 인원별 매출 조회 권한 — 관리 라인만 (jin 2026-07-29).
+     *   최고관리자·업무관리자 = 전체 / [관리] = 본인이 담당하는 영업만.
+     *   재무·수출통관·영업은 거부 — 담당 영업이 없어 스코프를 주면 "매출 0원"이 되어 버그로 보인다.
+     */
+    public function canUseSalesPerformanceAssistant(): bool
+    {
+        return $this->canAccessAdmin() || $this->role === '관리';
+    }
+
+    /**
+     * 인원별 매출의 조회 범위. null = 전체, 배열 = 해당 Salesman.id 만.
+     * 스코프는 [[getSubordinateSalesmanIds]] 단일출처 — 차량·바이어·재고·export 와 같은 범위가 된다.
+     *
+     * @return array<int>|null
+     */
+    public function assistantSalesScopeIds(): ?array
+    {
+        return $this->canAccessAdmin() ? null : $this->getSubordinateSalesmanIds();
+    }
+
+    /** 시스템 운영용 챗봇 등급 — 기능설정·연동·시스템 로그. */
+    public function canUseSystemAssistant(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
+    /** @return array<int,string> 로그인 사용자가 검색할 수 있는 RAG 청크 등급. */
+    public function assistantAudiences(): array
+    {
+        $audiences = ['staff'];
+
+        if ($this->canUseFinanceAssistant()) {
+            $audiences[] = 'finance';
+        }
+        if ($this->canUseExecutiveAssistant()) {
+            $audiences[] = 'executive';
+        }
+        if ($this->canUseSystemAssistant()) {
+            $audiences[] = 'system';
+        }
+
+        return $audiences;
+    }
+
+    /**
      * 사내 업무 도우미(로컬 LLM 챗봇) 사용 권한 (jin 2026-07-24).
-     *   기본 B(인원별·바이어별 미수·채권관리 내역) = 관리/재무 tier. A(업무가이드)도 동일 게이트.
+     *   모든 ERP role은 staff 가이드 사용 가능.
+     *   B(인원별·바이어별 미수·채권관리 내역)는 canUseFinanceAssistant()에서 다시 차단.
      *   자금현황·회사 이익 심화는 canViewCapital(super/admin)로 별도 2단계.
-     *   영업/수출통관 v1 제외(본인격리 미적용 상태라 전체 미수 노출 방지 — 확장 시 canScopeVehicle 경유).
+     *   audience 색인 배포 전에는 ASSISTANT_STAFF_ENABLED=false로 기존 재무·관리 tier만 노출한다.
      */
     public function canUseAssistant(): bool
     {
-        return $this->canAccessAdmin() || $this->isManager() || in_array($this->role, ['관리', '재무'], true);
+        return config('assistant.staff_enabled', false)
+            ? $this->canAccessErp()
+            : $this->canUseFinanceAssistant();
     }
 
     /**

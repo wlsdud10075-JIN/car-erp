@@ -11,6 +11,7 @@ use App\Models\Vehicle;
 use App\Services\Assistant\AssistantService;
 use App\Services\Assistant\OllamaClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -53,9 +54,12 @@ class AssistantTest extends TestCase
         $svc = app(AssistantService::class);
         $this->assertSame('capital_status', $svc->classify('회사 자금 현황 알려줘'));
         $this->assertSame('capital_status', $svc->classify('이번 분기 순이익 얼마야'));
+        $this->assertSame('break_even', $svc->classify('지금 손익분기 넘었어?'));
+        $this->assertSame('sales_by_salesman', $svc->classify('이번 달 인원별 매출 현황'));
         $this->assertSame('receivable_by_salesman', $svc->classify('담당자별 미수 현황'));
         $this->assertSame('receivable_by_buyer', $svc->classify('바이어별 미수금 보여줘'));
         $this->assertSame('receivable_summary', $svc->classify('채권 요약'));
+        $this->assertSame('system_guide', $svc->classify('알림톡 로그 어디서 봐?'));
         $this->assertSame('guide', $svc->classify('정산은 누가 확정해?'));
     }
 
@@ -98,10 +102,101 @@ class AssistantTest extends TestCase
         $res = app(AssistantService::class)->ask('회사 자금 현황', $finance);
 
         $this->assertSame('denied', $res['kind']);
-        $this->assertStringContainsString('대표·최고관리자만', $res['answer']);
+        $this->assertStringContainsString('현재 계정 권한으로 조회할 수 없습니다', $res['answer']);
         // 감사에 denied 기록
         $this->assertTrue(AuditLog::where('action', 'assistant_query')
             ->where('column_name', 'capital_status(denied)')->exists());
+    }
+
+    /** 판매일 기준 이번 달 집계 + 전사 스코프(최고관리자). */
+    public function test_sales_by_salesman_uses_current_month_for_admin(): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-29 12:00:00'));
+        $this->salesVehicle('김대표실적', '11가7777', 20_000_000);
+
+        $res = app(AssistantService::class)->ask('이번 달 인원별 매출 현황', $this->admin());
+
+        $this->assertSame('sales', $res['kind']);
+        $this->assertStringContainsString('전사', $res['answer']);
+        $this->assertStringContainsString('김대표실적', $res['answer']);
+        $this->assertStringContainsString('20,000,000원', $res['answer']);
+    }
+
+    /**
+     * 🚩 jin 2026-07-29 — 인원별 매출은 "대표 전용 거부"가 아니라 **스코프**다.
+     *   업무관리자 = 전사 / [관리] = 본인이 담당하는 영업만 / 재무·수출통관 = 거부(매출은 관리 라인만).
+     */
+    public function test_sales_by_salesman_is_scoped_not_denied_for_management_line(): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-29 12:00:00'));
+        $mine = $this->salesVehicle('내담당영업', '11가1111', 10_000_000);
+        $this->salesVehicle('남의영업', '11가2222', 90_000_000);
+
+        // 업무관리자 — 전사(둘 다 보인다)
+        $manager = User::factory()->create(['permission' => 'manager', 'email_verified_at' => now()]);
+        $managerRes = app(AssistantService::class)->ask('이번 달 인원별 매출 현황', $manager);
+        $this->assertSame('sales', $managerRes['kind']);
+        $this->assertStringContainsString('전사', $managerRes['answer']);
+        $this->assertStringContainsString('내담당영업', $managerRes['answer']);
+        $this->assertStringContainsString('남의영업', $managerRes['answer']);
+
+        // [관리] — 본인이 담당하는 영업만. 남의 담당은 이름도 금액도 새면 안 된다.
+        $govern = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+        $mine->user->managers()->sync([$govern->id]);
+        $governRes = app(AssistantService::class)->ask('이번 달 인원별 매출 현황', $govern);
+        $this->assertSame('sales', $governRes['kind']);
+        $this->assertStringContainsString('담당 영업', $governRes['answer']);
+        $this->assertStringContainsString('내담당영업', $governRes['answer']);
+        $this->assertStringNotContainsString('남의영업', $governRes['answer'], '[관리] 에 타 담당 매출 노출');
+        $this->assertStringNotContainsString('90,000,000', $governRes['answer']);
+    }
+
+    /** 재무·수출통관은 담당 영업이 없다 — 0원이 아니라 거부여야 한다(0원은 버그로 읽힌다). */
+    public function test_sales_by_salesman_denied_outside_management_line(): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-29 12:00:00'));
+        $this->salesVehicle('아무영업', '11가3333', 5_000_000);
+
+        foreach (['재무', '수출통관'] as $role) {
+            $u = User::factory()->create(['permission' => 'user', 'role' => $role, 'email_verified_at' => now()]);
+            $res = app(AssistantService::class)->ask('이번 달 인원별 매출 현황', $u);
+            $this->assertSame('denied', $res['kind'], "{$role} 에 인원별 매출 노출");
+            $this->assertStringNotContainsString('아무영업', $res['answer']);
+        }
+        $this->assertDatabaseHas('audit_logs', ['column_name' => 'sales_by_salesman(denied)']);
+    }
+
+    /** 담당 영업 0명인 [관리] — 전량 스캔으로 빠지지 않고 빈 결과여야 한다. */
+    public function test_sales_by_salesman_empty_scope_returns_nothing(): void
+    {
+        $this->travelTo(Carbon::parse('2026-07-29 12:00:00'));
+        $this->salesVehicle('남의영업만', '11가4444', 7_000_000);
+
+        $govern = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+        $res = app(AssistantService::class)->ask('이번 달 인원별 매출 현황', $govern);
+
+        $this->assertSame('sales', $res['kind']);
+        $this->assertStringNotContainsString('남의영업만', $res['answer']);
+    }
+
+    /** 매출 집계용 차량 1대 + 그 영업의 user 를 함께 만든다. */
+    private function salesVehicle(string $name, string $plate, int $salePrice): Salesman
+    {
+        $user = User::factory()->create([
+            'name' => $name, 'permission' => 'user', 'role' => '영업', 'email_verified_at' => now(),
+        ]);
+        $salesman = Salesman::create(['user_id' => $user->id, 'name' => $name, 'is_active' => true]);
+        Vehicle::create([
+            'vehicle_number' => $plate,
+            'sales_channel' => 'export',
+            'salesman_id' => $salesman->id,
+            'sale_date' => '2026-07-10',
+            'sale_price' => $salePrice,
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+        ]);
+
+        return $salesman;
     }
 
     public function test_query_is_audited(): void
@@ -187,13 +282,80 @@ class AssistantTest extends TestCase
         @unlink($idx);
     }
 
-    public function test_widget_requires_permission(): void
+    public function test_guide_filters_chunks_by_logged_in_user_audience_before_rag(): void
+    {
+        $idx = tempnam(sys_get_temp_dir(), 'idx').'.json';
+        file_put_contents($idx, json_encode([
+            ['source' => 'ERP 공통', 'text' => '실무자 공개 절차', 'audience' => 'staff', 'embedding' => [0.0, 1.0]],
+            ['source' => 'ERP 대표', 'text' => '대표 전용 청산가치', 'audience' => 'executive', 'embedding' => [1.0, 0.0]],
+            ['source' => 'ERP 시스템', 'text' => '시스템관리자 전용 설정', 'audience' => 'system', 'embedding' => [1.0, 0.0]],
+            ['source' => 'ERP 잘못된등급', 'text' => '잘못된 접근등급', 'audience' => 'unknown', 'embedding' => [1.0, 0.0]],
+            ['source' => 'ERP 누락', 'text' => '등급 누락 민감자료', 'embedding' => [1.0, 0.0]],
+        ], JSON_UNESCAPED_UNICODE));
+        config(['assistant.index_path' => $idx, 'assistant.index_scope' => '', 'assistant.rag_topk' => 3]);
+
+        $this->app->bind(OllamaClient::class, fn () => new class extends OllamaClient
+        {
+            public function __construct()
+            {
+                parent::__construct('http://fake', 1);
+            }
+
+            public function embed(string $m, string $t): array
+            {
+                return [1.0, 0.0];
+            }
+
+            public function chat(string $m, string $s, string $u): string
+            {
+                return $u;
+            }
+        });
+
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
+        $staffResult = app(AssistantService::class)->ask('회사 운영 절차 알려줘', $finance);
+        $this->assertStringContainsString('실무자 공개 절차', $staffResult['answer']);
+        $this->assertStringNotContainsString('대표 전용 청산가치', $staffResult['answer']);
+        $this->assertStringNotContainsString('시스템관리자 전용 설정', $staffResult['answer']);
+        $this->assertStringNotContainsString('잘못된 접근등급', $staffResult['answer']);
+        $this->assertStringNotContainsString('등급 누락 민감자료', $staffResult['answer']);
+
+        $executiveResult = app(AssistantService::class)->ask('회사 운영 절차 알려줘', $this->admin());
+        $this->assertStringContainsString('실무자 공개 절차', $executiveResult['answer']);
+        $this->assertStringContainsString('대표 전용 청산가치', $executiveResult['answer']);
+        $this->assertStringNotContainsString('시스템관리자 전용 설정', $executiveResult['answer']);
+        $this->assertStringNotContainsString('잘못된 접근등급', $executiveResult['answer']);
+        $this->assertStringNotContainsString('등급 누락 민감자료', $executiveResult['answer']);
+        @unlink($idx);
+    }
+
+    public function test_system_guide_is_super_only(): void
+    {
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
+        $res = app(AssistantService::class)->ask('알림톡 로그 어디서 봐?', $finance);
+
+        $this->assertSame('denied', $res['kind']);
+        $this->assertDatabaseHas('audit_logs', ['column_name' => 'system_guide(denied)']);
+    }
+
+    public function test_staff_can_use_widget_but_finance_query_is_denied(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+
+        config(['assistant.staff_enabled' => false]);
         Volt::actingAs($sales)->test('assistant.widget')
             ->set('q', '전체 미수 보여줘')
             ->call('send')
             ->assertStatus(403);
+
+        config(['assistant.staff_enabled' => true]);
+        Volt::actingAs($sales)->test('assistant.widget')
+            ->set('q', '전체 미수 보여줘')
+            ->call('send')
+            ->assertStatus(200)
+            ->assertSet('messages.1.text', '채권관리 요약 정보는 현재 계정 권한으로 조회할 수 없습니다.');
+
+        $this->assertSame(['staff'], $sales->assistantAudiences());
     }
 
     public function test_super_toggles_assistant_enabled_setting(): void

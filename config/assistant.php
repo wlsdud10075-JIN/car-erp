@@ -19,6 +19,8 @@
 
 return [
     'enabled' => filter_var(env('ASSISTANT_ENABLED', false), FILTER_VALIDATE_BOOL),
+    // 권한 메타데이터가 포함된 새 색인 배포 후에만 true. false면 기존 재무·관리 tier만 위젯 노출.
+    'staff_enabled' => filter_var(env('ASSISTANT_STAFF_ENABLED', false), FILTER_VALIDATE_BOOL),
 
     'ollama' => rtrim(env('ASSISTANT_OLLAMA_URL', 'http://localhost:11434'), '/'),
     'llm_model' => env('ASSISTANT_LLM_MODEL', 'qwen3:8b'),
@@ -31,6 +33,8 @@ return [
     // 색인 스코프 필터 — source(페이지 경로)에 이 문자열이 포함된 청크만 검색.
     //   index.json 은 board+erp 공용이지만 ERP 챗봇은 ERP 가이드만 답하도록.
     //   비우면 전체. car-erp = 'ERP (car-erp)' 권장. (board 미사용이라 혼동 방지)
+    // 각 청크는 audience=staff|finance|executive|system 을 가질 수 있다.
+    // 구 색인(전체 누락)은 staff 호환. 새 색인(하나라도 표기)은 누락·알 수 없는 값을 검색에서 제외한다.
     'index_scope' => env('ASSISTANT_INDEX_SCOPE', ''),
 
     'timeout' => (int) env('ASSISTANT_TIMEOUT', 180),
