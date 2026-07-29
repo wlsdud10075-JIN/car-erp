@@ -103,6 +103,9 @@ cd /var/www/car-erp && php artisan config:cache
 - **`config:cache` 를 빼먹으면 값이 안 먹는다**(캐시된 옛 IP 유지).
 - 서버 간 간격을 둔다(SSH rate limit).
 - **롤백** = 옛 IP(`100.75.178.19`)로 되돌리고 `config:cache`. 노트북이 켜져 있는 한 즉시 복구.
+  - ⚠️ **2026-07-29 부로 이 롤백은 더 이상 안 된다** — 노트북 Ollama·모델을 제거했다(5단계 완료).
+    지금 회사 PC가 죽으면 A(가이드)는 3사 전부 degrade 되고, 복구하려면 어느 PC든 Ollama·모델을
+    다시 설치해 그 Tailscale IP를 넣어야 한다. **B(DB 조회)는 영향 없음.**
 
 ### 검증 (브라우저, jin)
 회사별 1건씩: **A 질문**("정산은 누가 확정해?" 류) → 답변 + 출처 표기 확인 / **B 질문**("이번달 미수금") → 숫자 확인.
@@ -142,13 +145,29 @@ $php = 'C:\xampp\php\php.exe'   # PHP 설치 위치에 맞게
 
 ---
 
-## 5단계 — 구 호스트(노트북) 정리
+## 5단계 — 구 호스트(노트북) 정리 ✅ 완료 (2026-07-29)
 
-A/B 모두 며칠 정상 확인된 뒤에:
-1. 스케줄러 작업 Disable (4-5에서 이미)
-2. Ollama 트레이 종료 + 자동시작 해제 (원하면 모델 삭제로 디스크 회수)
-3. User 환경변수 `OLLAMA_HOST` / `OLLAMA_KEEP_ALIVE` 제거 (선택)
-4. Tailscale 노드 `laptop-8egn35ec` 는 **바로 지우지 말고** 1~2주 롤백용으로 남길 것
+**착수 전제 = 회사 PC 색인기의 자동(수동 아님) 실행 실증.** 서버 3사 `index-erp.json` 의 mtime 이
+`2026-07-28 18:01:17 / :19 / :20 UTC`(= 07-29 03:01 KST, scp 순차 흔적)로 찍혔고 크기가
+`2758338` bytes 로 셋 다 일치 — 부분 푸시(한 대만 최신)가 아님까지 확인한 뒤 실행했다.
+크기 일치는 청크수 검증도 겸한다(board 오배포면 다르고, 통합본이면 훨씬 크다).
+
+실행한 것:
+1. 작업 스케줄러 `SSANCAR LLM Notion Sync` **삭제**(Disable 아님 — 대상 경로를 지우므로 함께 정리)
+2. Ollama 제거 + `~/.ollama` 삭제 (**5.94GB** 회수). ⚠️ winget 이 관리자 권한에서 user-scope 패키지를
+   못 지운다(`exit 125`) → `%LOCALAPPDATA%\Programs\Ollama\unins000.exe /VERYSILENT` 로 우회.
+3. User 환경변수 `OLLAMA_HOST` / `OLLAMA_KEEP_ALIVE` 제거
+4. `C:\Users\User\llm-poc\` 삭제 — **바탕화면 `llm-poc.zip`(소스 전량 포함) 확인 후에만.** git 미추적이라
+   이 zip 과 회사 PC 사본이 유일본이다.
+
+**남긴 것**: `NOTION_TOKEN` 환경변수(car-erp `scripts/notion-*.php` 가 같은 토큰을 쓴다 — 지우면 무관한
+Notion 발행 작업이 깨진다) · Tailscale 노드 `laptop-8egn35ec` · `car_erp_key`.
+
+**노트북 로컬 개발 `.env`** 는 회사 PC를 그대로 보도록 전환했다 —
+`ASSISTANT_OLLAMA_URL=http://100.110.133.112:11434`,
+`ASSISTANT_INDEX_PATH=...\car-erp\storage\app\index-erp.json`(llm-poc 사본을 옮겨둠, 07-27 스냅샷).
+제거 **후** `OllamaClient::embed()` → `dim=1024` + A(RAG) 실질의 응답까지 재확인했다
+(제거 전 테스트는 로컬 Ollama 가 살아있어 결정적이지 않다 — 반드시 제거 후 다시 볼 것).
 
 ---
 
