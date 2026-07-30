@@ -180,7 +180,8 @@ php scripts/notion-workflow-lock-guide.php --verify
 
 - **발행(`--apply`)은 Codex 몫**이다. jin 이 "Notion 반영해줘" 하면 Codex 가 위 `--verify` 로 대상을 찾아 반영한다(전달문서 불필요). Claude 는 repo 만 고치고 푸시한다.
 - 🚨 **`audience` 없이 발행하면 다음 03:00 색인이 fail-closed 로 통째 멈춘다.** 전량 미표기면 하위호환으로 전 청크가 `staff` 취급되어 **영업이 대표·시스템 자료를 검색**하게 된다.
-- 가드 = `tests/Feature/NotionGuideAudienceTest`(audience 무결성 · 발행 함수의 마커 생성 · `--verify` 존재를 정적 검사). 상세 = 메모리 `project_chatbot_cards_single_source`.
+- 🗑️ **기능을 없앴으면 `NotionGuideAudienceTest::RETIRED_TERMS` 에 그 화면 용어를 한 줄 추가**한다. 그러면 가이드·카드에 남은 설명을 테스트가 잡는다(2026-07-30 실사고 재발 방지).
+- 가드 = `tests/Feature/NotionGuideAudienceTest`(audience 무결성 · 발행 함수의 마커 생성 · `--verify` 존재 · 폐기 용어 잔존을 정적 검사). `scripts/notion-*` 이 없는 브랜치(master)에서는 자동 skip — 배포 게이트를 막지 않는다. 상세 = 메모리 `project_chatbot_cards_single_source`.
 
 ## Git 브랜치 전략
 

@@ -28,6 +28,23 @@ class NotionGuideAudienceTest extends TestCase
         'scripts/notion-workflow-lock-guide.php',
     ];
 
+    /**
+     * ⚠️ `scripts/notion-*` 는 개발 도구라 master 에 없다(2026-07-30 실측: dev 63개 / master 16개, notion-* 은 0개).
+     * 이 테스트는 .php 라 master 로 cherry-pick 되고 CI 배포 게이트에서 도는데,
+     * 파일이 없으면 red → **3사 배포가 통째로 막힌다**. 그래서 없는 브랜치에서는 건너뛴다.
+     * 가드의 목적은 개발 중 실수 차단이고, dev push 마다 tests 워크플로가 독립 실행되므로 dev 에서 잡힌다.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        foreach (array_merge([self::CARDS_JSON], self::BUILDERS) as $f) {
+            if (! file_exists(base_path($f))) {
+                $this->markTestSkipped("개발 도구가 없는 브랜치입니다({$f} 없음). Notion 발행 스크립트는 dev 전용입니다.");
+            }
+        }
+    }
+
     public function test_every_chatbot_card_has_a_valid_audience(): void
     {
         $cards = json_decode(file_get_contents(base_path(self::CARDS_JSON)), true);
@@ -148,5 +165,43 @@ class NotionGuideAudienceTest extends TestCase
             $this->assertStringContainsString("'--verify'", file_get_contents(base_path($file)),
                 "$file 에 --verify 모드가 없습니다.");
         }
+    }
+
+    /**
+     * 폐기된 기능의 화면 용어 => 언제·왜 없어졌나.
+     *
+     * ⚠️ **기능을 삭제할 때 여기에 한 줄 추가한다.** 그러면 가이드·카드에 남은 설명을 이 테스트가 잡는다.
+     *
+     * 자동 판정(상수 참조 여부로 죽은 타입 추론)은 시도했다가 버렸다 — 살아있는
+     * `TYPE_UNPAID_EXPORT_OVERRIDE`('50% 룰 예외')가 상수명 대신 값으로만 쓰여 죽은 것으로 오판했다.
+     * **오탐이 나는 가드는 무시당해 결국 안 보게 되므로**, 사람이 명시하는 목록으로 간다.
+     */
+    private const RETIRED_TERMS = [
+        '보증금 매입 선지급' => '2026-07-29 삭제 — 매입 선지급 승인 사다리',
+        '보증금 사용 가능 금액' => '2026-07-29 삭제 — 매입 탭 「매입 가능 금액」으로 대체',
+    ];
+
+    public function test_guides_do_not_describe_retired_features(): void
+    {
+        /*
+         * 2026-07-30 실사고: 07-29 에 삭제한 「보증금 매입 선지급」이 재무·관리 가이드(각 5블록)와
+         * 챗봇 카드 3장에 그대로 남아, 직원이 챗봇에 물으면 존재하지 않는 메뉴를 안내받았다.
+         * 예외 0·테스트 0·로그 0 이라 코드만 봐서는 절대 드러나지 않는다.
+         */
+        $sources = array_merge(self::BUILDERS, [self::CARDS_JSON, 'scripts/notion-cards/publish.php']);
+        $violations = [];
+        foreach ($sources as $f) {
+            $text = file_get_contents(base_path($f));
+            foreach (self::RETIRED_TERMS as $term => $why) {
+                if (str_contains($text, $term)) {
+                    $violations[] = "{$f} — '{$term}' ({$why})";
+                }
+            }
+        }
+
+        $this->assertSame([], $violations,
+            "폐기된 기능 설명이 사내 가이드·챗봇 카드에 남아 있습니다.\n".
+            "직원이 챗봇에 물으면 존재하지 않는 메뉴를 안내받습니다. 해당 설명을 지우고 대체 안내를 넣으세요.\n  · ".
+            implode("\n  · ", $violations));
     }
 }
