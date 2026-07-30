@@ -13,7 +13,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 🚨 배포 게이트 (2026-07-30) — 테스트가 통과해야만 3사 배포가 시작된다.
+  #   이전엔 tests 워크플로와 deploy 가 **병렬**로 돌아서, 테스트가 깨져도 3사에 그대로 나갔다.
+  #   master push 1회 = 3개 라이브 회사 동시배포라 이게 마지막 방어선인데 비어 있었다.
+  #   tests.yml 을 재사용 호출(workflow_call)하므로 정의는 한 곳뿐이고,
+  #   같은 워크플로 실행 안에서 **동일 SHA** 를 검증한다(cross-workflow SHA 어긋남 없음).
+  #   ci(전체 스위트) + mysql-check(운영 MySQL 8 마이그·CHECK) 둘 다 통과해야 한다.
+  tests:
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
   deploy:
+    needs: tests
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -104,6 +115,7 @@ jobs:
   # 2번째 회사 karaba 서버 (멀티회사, 2026-06-14). heyman 잡과 동일 스크립트 —
   # environment=karaba 로 DEPLOY_* 시크릿만 분리. 한 잡 실패해도 다른 잡은 영향 없음.
   deploy-karaba:
+    needs: tests
     runs-on: ubuntu-latest
     environment: karaba
     steps:
@@ -145,6 +157,7 @@ jobs:
   # co-location → artisan down 시 heyman NICE 조회까지 멈춤. 그래서 이 잡만 '무중단'(down 없음).
   # 추가형 마이그(create table 등)는 안전. 파괴적/대형 마이그는 ssancar 수동배포(런북) 권장.
   deploy-ssancar:
+    needs: tests
     runs-on: ubuntu-latest
     environment: ssancar
     steps:

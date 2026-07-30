@@ -361,6 +361,12 @@ ADJUSTMENT / CANCELLED → balance += savings  (savings 양/음수 모두 가능
 **원인**: `email_verified_at`이 NULL이면 `verified` 미들웨어 차단
 **해결**: 사용자 생성 시 `'email_verified_at' => now()` 필수. Seeder도 동일
 
+> ⚠️ **2026-07-30 실측 정정 — 지금은 `verified` 가 아무것도 안 막는다.** Laravel `EnsureEmailIsVerified` 는
+> `$user instanceof MustVerifyEmail` 일 때만 차단하는데 `App\Models\User` 는 그 인터페이스를 **구현하지 않는다**.
+> 실측: `email_verified_at=NULL` 인 admin 이 `/admin/dashboard` 에서 **200**. 위 증상은 과거 구성 기준이다.
+> → `email_verified_at => now()` 관행은 그대로 둬도 무해하지만(향후 인터페이스 도입 대비),
+> **이걸 접근 차단 수단으로 믿지 말 것.** 실제 게이트는 `permission` + `role` 미들웨어(`erp`/`admin`/…)뿐이다.
+
 ### 7. 다른 PC에서 접속 불가
 **해결**: `php artisan serve --host=0.0.0.0 --port=8001`
 
