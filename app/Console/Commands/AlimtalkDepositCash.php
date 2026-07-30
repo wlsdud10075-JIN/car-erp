@@ -11,8 +11,10 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * 보증금 매입 바이어 입금 독촉 알림톡 (2026-07-23, jin) — 매일 아침.
- *   대상 = 보증금으로 매입(is_deposit_purchase)한 차 중 아직 선적 진입 전(bl_loading_location NULL·거래완료 아님)
+ *   대상 = 보증금으로 매입(is_deposit_purchase)한 차 중 아직 출고 전(warehouse_out_date NULL·거래완료 아님)
  *          이고 판매 입금이 선적 기준(Setting::lockThreshold('shipping_entry'))에 미달해 선적 보류 중인 차.
+ *          ⚠️ 반입지(bl_loading_location)가 아니라 **출고일** 이 기준이다 — 항구 주차장 대기(RORO
+ *             선적대기 허용 항로)는 반입지가 먼저 찍히지만 아직 출항 전이라 독촉이 계속돼야 한다.
  *   ⏱ 도장(deposit_purchase_at) 후 경과일 분기:
  *     - D+5 ~ D+10 (독촉)  → erp_deposit_cash_due : 담당 영업(본인 차) + 관리(전체 목록).
  *     - D+10 초과 (에스컬)  → erp_deposit_cash_overdue : 대표(처분 판단 요청). 독촉 대상에선 제외.
@@ -35,7 +37,14 @@ class AlimtalkDepositCash extends Command
             $candidates = Vehicle::query()
                 ->where('is_deposit_purchase', true)
                 ->whereNotNull('deposit_purchase_at')
-                ->whereNull('bl_loading_location')   // 아직 선적 진입 안 함 = 보류 중
+                // ⚠️ 출고일 pivot (jin 2026-07-30) — 구: whereNull('bl_loading_location').
+                //   RORO 알바니아(DURRESS)처럼 「선적대기 허용 항로」는 항구 주차장에 세워두려고
+                //   반입지를 먼저 찍는다. 반입지 기준이면 돈이 한 푼도 안 들어온 차의 독촉이
+                //   주차했다는 이유로 조용히 꺼진다(실측 heymanerp 7대, 그중 5대가 입금 0%).
+                //   2026-07-18 에 채권 선적전/후 pivot 을 이미 출고일로 통일했는데(SKILLS §14,
+                //   Port::allow_shipping_wait 안내문) 이 cron 만 옛 기준으로 남아 있었다.
+                //   승인된 알림톡 문구("선적이 보류 중인 차량")도 출고 전에만 참이다.
+                ->whereNull('warehouse_out_date')   // 아직 출고(출항) 안 함 = 선적 보류 중
                 ->where(fn ($q) => $q->where('progress_status_cache', '!=', '거래완료')
                     ->orWhereNull('progress_status_cache'))
                 ->with(['buyer', 'salesman'])
