@@ -125,30 +125,18 @@ class AlimtalkTemplates
             'body' => "[보증금 매입 · 처분 판단 요청]\n\n보증금으로 매입한 차량 중 바이어 판매입금 기한이 초과됐으나 아직 기준에 미달한 건입니다.\n아래 차량의 처분 방향(회수·연장·취소 등)을 검토해 주세요.\n\n#{초과목록}\n\n상세는 ERP 「채권관리」에서 확인하실 수 있습니다.",
         ],
 
-        // 보증금 매입 선지급 승인 알림 3종 (2026-07-23, jin) — 정산 지급 승인 사다리와 동일 패턴.
-        //   요청=기안 시 관리(승인) / 관리승인 시 재무(확정) · 결과=재무확정 시 기안자 완료 / 반려 시 기안자.
-        //   ⚠️ BizM 승인본(회사폴더 xlsx row22~24)과 글자 하나까지 동일 유지. 기본형. 카테고리 008002.
-        'erp_deposit_funding_request' => [
-            'name' => '보증금선지급 승인요청',
-            'recipient' => '관리/재무',
-            'vars' => ['차량번호', '금액', '기안자'],
-            'title' => '',
-            'body' => "[보증금 선지급 승인 요청]\n\n보증금 매입 선지급 건이 승인 대기 중입니다.\nERP 승인/이체 화면에서 확인 후 처리해 주세요.\n\n▶ 대상 차량: #{차량번호}\n▶ 선지급액: #{금액}원\n▶ 기안자: #{기안자}",
-        ],
-        'erp_deposit_funding_done' => [
-            'name' => '보증금선지급 완료',
-            'recipient' => '기안자',
-            'vars' => ['차량번호', '금액'],
-            'title' => '',
-            'body' => "[보증금 선지급 완료]\n\n기안하신 보증금 매입 선지급이 최종 확정(지급) 처리되었습니다.\n\n▶ 대상 차량: #{차량번호}\n▶ 선지급액: #{금액}원",
-        ],
-        'erp_deposit_funding_rejected' => [
-            'name' => '보증금선지급 반려',
-            'recipient' => '기안자',
-            'vars' => ['차량번호', '사유'],
-            'title' => '',
-            'body' => "[보증금 선지급 반려]\n\n기안하신 보증금 매입 선지급이 반려되었습니다.\n내용을 확인해 주세요.\n\n▶ 대상 차량: #{차량번호}\n▶ 사유: #{사유}",
-        ],
+        /*
+         * 보증금 매입 선지급 승인 3종(request/done/rejected) 제거 — 2026-07-30 (jin).
+         *
+         * 발송 트리거였던 승인 사다리(InterVehicleTransferService::applyPurchaseFunding →
+         * approve → confirmPurchaseFundingByFinance)가 2026-07-29 에 통째로 폐기되면서
+         * 보낼 이벤트 자체가 사라졌다. 본문이 "ERP 승인/이체 화면에서", "기안하신" 으로
+         * 그 흐름을 직접 가리켜 다른 용도로 재활용할 수도 없다(문구 변경 = BizM 재승인).
+         *
+         * ⚠️ 독촉 2종(erp_deposit_cash_due/overdue)은 그대로 살아 있다 — 본문이 승인 사다리를
+         *   전제하지 않고 사실만 서술해서 재승인 없이 계속 쓴다. 트리거만 차량 매입 탭
+         *   「보증금으로 매입」 체크박스로 옮겼다(Vehicle::saving 이 deposit_purchase_at 도장).
+         */
 
         // ── 영업(role=영업) 1종 — 픽업 재촉 ──
         'erp_pickup_reminder' => [
@@ -330,11 +318,8 @@ class AlimtalkTemplates
         'erp_eta_balance_due' => '매일 09:00 (평일) — 도착 7일 전 & 잔금 미완납',
         'erp_shipping_due' => '매일 09:00 (평일) — 선적 5일 전 & 미완납',
         'erp_dealer_balance_due' => '매일 09:00 (평일) — 매매상 잔금 기한 임박 (karaba)',
-        'erp_deposit_cash_due' => '매일 09:00 (평일) — 보증금 매입 도장 D+5~10 & 바이어 입금 기준 미달',
-        'erp_deposit_cash_overdue' => '매일 09:00 (평일) — 보증금 매입 도장 D+10 초과 & 미달',
-        'erp_deposit_funding_request' => '보증금 선지급 기안 시(→관리) / 관리 승인 시(→재무)',
-        'erp_deposit_funding_done' => '보증금 선지급 재무 확정 시(→기안자)',
-        'erp_deposit_funding_rejected' => '보증금 선지급 관리 반려·재무 거부 시(→기안자)',
+        'erp_deposit_cash_due' => '매일 09:00 (평일) — 매입 탭 「보증금으로 매입」 체크 후 5~10일 & 바이어 입금 기준 미달',
+        'erp_deposit_cash_overdue' => '매일 09:00 (평일) — 「보증금으로 매입」 체크 후 10일 초과 & 미달 (독촉 대상에선 제외)',
         'erp_pickup_reminder' => '매일 09:00 (평일) — 매입일 +2일 & 매입 미완납',
         'erp_deregistration_notice' => '말소등록증 업로드 후 담당자가 수동 발송',
         'erp_payout_request' => '월배치 정산 지급 제출·전진 시 (→다음 계단 승인자)',

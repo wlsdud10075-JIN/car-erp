@@ -340,6 +340,8 @@ return [
         'purchase_registration_type' => '매입등록',
         'purchase_evidence_subtype' => '증빙유형',
         'is_dealer_purchase' => '매매상',
+        'is_deposit_purchase' => '보증금으로 매입 (바이어 보증금으로 매입대금 지급)',
+        'is_deposit_purchase_hint' => '체크하면 바이어 입금 독촉 알림톡이 시작됩니다 (5일 후 담당 영업·관리, 10일 초과 시 대표). 바이어가 기준 입금률을 넘기면 자동으로 멈춥니다.',
         'purchase_price' => '매입가 (원)',
         'selling_fee' => '매도비 (원)',
         'bank_name' => '은행명',

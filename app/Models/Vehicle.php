@@ -483,6 +483,9 @@ class Vehicle extends Model
         // 2026-07-28 (jin) — 선적일·ETA. 묶음 단위로 수백 대를 한 번에 바꾸는 일괄 지정이 생겨서,
         //   누가 언제 어느 값으로 돌렸는지 개별 추적이 필요해졌다. (일괄 출처는 bulk_shipping_date_applied 로 별도 기록.)
         'shipping_date', 'eta_date',
+        // 2026-07-30 (jin) — 보증금 매입 마커. 켜는 순간 바이어 입금 독촉 알림톡 타이머가 돌기 시작하고,
+        //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
+        'is_deposit_purchase',
     ];
 
     /**
@@ -593,6 +596,25 @@ class Vehicle extends Model
                     $vehicle->export_declaration_amount = $newTotal;                              // ② 자동복사분 → 추종
                 }
                 // ③ else 보존 (수동 CIF/FOB 또는 이번 저장에 면장 직접 편집)
+            }
+
+            /*
+             * 보증금 매입 도장 (jin 2026-07-30) — 독촉 알림톡(erp_deposit_cash_due/overdue) 타이머 기산점.
+             *
+             * 구 트리거였던 재무 '매입 선지급 확정'(confirmPurchaseFundingByFinance)이 2026-07-29 에
+             * 제거되면서 이 마커를 찍는 코드가 사라져 독촉 대상이 영구 0건이 돼 있었다. 이제 매입 탭
+             * 체크박스가 유일한 진입점이고, 도장 시각은 여기서 찍는다(진입점 통합 — UI·시드·tinker 동일).
+             *
+             * ⚠️ 최초 1회만 — 껐다 켜는 게 아니라 계속 켜져 있는 한 첫 도장일을 보존한다(구 훅과 같은 규칙).
+             *   D+5/D+10 을 세는 기준이라 저장할 때마다 갱신되면 독촉이 영원히 안 온다.
+             * 해제하면 시각도 비운다 — "플래그가 켜져 있을 때만 시각이 있다"는 단순 불변식 유지.
+             *   (AlimtalkDepositCash 는 둘 다 요구하므로 잔재가 남아도 오발송은 없지만, 재체크 시
+             *    옛 날짜로 즉시 초과 독촉이 나가는 걸 막는다.)
+             */
+            if ($vehicle->is_deposit_purchase) {
+                $vehicle->deposit_purchase_at ??= now();
+            } else {
+                $vehicle->deposit_purchase_at = null;
             }
 
             // 큐 21 — Ledger 영향 컬럼 잠금 가드 (캐시 갱신 전 최우선 검사).

@@ -340,6 +340,8 @@ return [
         'purchase_registration_type' => 'Purchase Registration',
         'purchase_evidence_subtype' => 'Evidence Type',
         'is_dealer_purchase' => 'Dealer',
+        'is_deposit_purchase' => 'Deposit purchase (paid with buyer deposit)',
+        'is_deposit_purchase_hint' => 'Enabling this starts the buyer payment reminder alerts (day 5 to sales/management, past day 10 to the executive). They stop automatically once the buyer meets the required payment ratio.',
         'purchase_price' => 'Buy Price (KRW)',
         'selling_fee' => 'Dealer Fee (KRW)',
         'bank_name' => 'Bank',

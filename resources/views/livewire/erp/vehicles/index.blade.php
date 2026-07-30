@@ -820,6 +820,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 보증금 매입 마커 (2026-07-23) — 편집 패널 헤더 뱃지용. null/'waiting'/'paid'. openEdit 시 로드.
     public ?string $deposit_purchase_state = null;
 
+    // 보증금 매입 체크 (jin 2026-07-30) — "이 차 매입대금을 바이어 보증금으로 냈다".
+    //   켜는 순간 Vehicle::saving 이 deposit_purchase_at 을 찍고 독촉 알림톡 타이머가 시작된다.
+    //   ⚠️ 저장 권한은 canConfirmFinance 만 — save() 에서 재검사한다(체크박스 disabled 는 UI 편의일 뿐).
+    public bool $is_deposit_purchase = false;
+
     /** 1단(매입등록) 변경 시 2단(증빙유형)이 새 캐스케이드에 없으면 리셋. */
     public function updatedPurchaseRegistrationType(): void
     {
@@ -2718,6 +2723,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->purchase_evidence_subtype  = $v->purchase_evidence_subtype  ?? '';
         $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
         $this->deposit_purchase_state = $v->deposit_purchase_state;
+        $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -3745,6 +3751,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         };
         $toId = fn(string $v): ?int => $v !== '' ? (int)$v : null;
 
+        // 보증금 매입 마커 (jin 2026-07-30) — 재무 권한(canConfirmFinance)만 변경 가능.
+        //   권한 없는 사용자가 UI 우회로 값을 보내면 무시하고 DB 현재값을 그대로 쓴다
+        //   (체크박스 disabled 는 편의일 뿐 — 이 알림톡은 바이어 독촉 실무 지시라 오조작 비용이 크다).
+        $depositMarker = $user->canConfirmFinance()
+            ? $this->is_deposit_purchase
+            : (bool) (($editingVehicle ?? null)?->is_deposit_purchase ?? false);
+
         $data = [
             'vehicle_number' => $this->vehicle_number,
             'sales_channel'  => $this->sales_channel,
@@ -3789,6 +3802,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_registration_type' => $this->purchase_registration_type ?: null,
             'purchase_evidence_subtype'  => $this->purchase_evidence_subtype  ?: null,
             'is_dealer_purchase' => $this->is_dealer_purchase,
+            'is_deposit_purchase' => $depositMarker,   // 도장 시각(deposit_purchase_at)은 Vehicle::saving 이 찍는다
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -4988,7 +5002,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -6423,6 +6437,21 @@ function vehicleColumnsToggle() {
                 {{ __('vehicle.panel.finance_area_desc') }}
             </div>
             @endunless
+            {{-- 보증금 매입 체크 (jin 2026-07-30) — "이 차 매입대금을 바이어 보증금으로 냈다".
+                 켜면 바이어 입금 독촉 알림톡 타이머 시작(D+5 영업·관리 / D+10 대표), 바이어가 기준
+                 입금률을 넘기면 자동으로 멈춘다. 구 트리거(재무 매입 선지급 확정)가 제거돼 이게 유일한 진입점.
+                 여력 차감은 별도 기계가 아니라 위 「매입 가능 금액」이 확정 매입 지급으로 자동 반영한다. --}}
+            <div class="mb-3 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+                <label class="flex items-center gap-2 text-xs font-medium {{ $canConfirmFinance ? 'text-amber-900' : 'text-gray-500' }}">
+                    <input type="checkbox" wire:model="is_deposit_purchase"
+                           class="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                           @if(!$canConfirmFinance) disabled @endif />
+                    {{ __('vehicle.field.is_deposit_purchase') }}
+                </label>
+                <div class="mt-1 pl-6 text-[11px] {{ $canConfirmFinance ? 'text-amber-700' : 'text-gray-400' }}">
+                    {{ __('vehicle.field.is_deposit_purchase_hint') }}
+                </div>
+            </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.down_payment') }}</label>
