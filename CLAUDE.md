@@ -155,10 +155,37 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 14. 🚨 **Volt public 프로퍼티와 메서드에 같은 이름 금지** — `public string $search` + `public function search()` 면 `wire:click="search"` 가 **요청조차 안 보내고 조용히 죽는다**(에러 없음). 화면은 `wire:poll.30s` 때만 갱신돼 **"검색이 느리다"로 위장**된다. 메서드는 `searchNow()`/`applyFilters()`, `wire:model.live` 바인딩이면 `updatedSearch()`. 가드 = `VoltPropertyMethodCollisionTest`(정적 스캔, 단위 테스트로는 못 잡음). 2026-05 발생 → 2026-07-28 7개 화면 재발. 상세 = `SKILLS.md §8 #32`
 15. 🧭 **"느리다" 제보 = 성능 문제로 단정 금지** — 서버 실측(쿼리·렌더)이 멀쩡한데 체감이 느리면 **배선(동작 안 함)을 먼저 의심**. 확인 순서 = ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②Network 탭에 **요청이 뜨긴 하나** ③뜬다면 Time. 요청이 없으면 성능 논의는 무의미. (2026-07-28 실제로 성능만 파다 배포 1회 헛돌았음.) ⚠️ **JS/CSS 만 바뀐 배포는 `Ctrl+Shift+R` 전엔 체감 검증 불가** — Livewire 업데이트는 자산을 다시 안 받아서 열린 탭이 옛 JS 로 계속 돈다.
 
+## 📖 사내 업무가이드·챗봇 동기화 (개발할 때마다)
+
+> 🚨 **사용자에게 보이는 동작을 추가·변경·삭제했으면 같은 커밋에 가이드 소스도 고친다.**
+> 안 고치면 챗봇이 **없는 기능의 사용법을 안내**한다. 2026-07-30 실제 발생 — 07-29 에 삭제한
+> 「보증금 매입 선지급」이 재무·관리 가이드와 카드 3장에 그대로 살아 있었다.
+
+**원본은 repo, Notion 은 발행물.** 세 주체가 각자 한 곳에만 쓴다 —
+**Claude=repo** / **Codex=Notion**(repo 를 읽음) / **회사 GPU PC=색인**(Notion 을 읽음).
+🚫 Notion 을 손으로 고치지 말 것(다음 발행 때 되돌아가 조용히 사라진다).
+
+| 무엇 | 소스 | 비고 |
+|---|---|---|
+| 챗봇 기능 카드 43장 | `scripts/notion-cards/cards.json` | 카드마다 `audience` **필수** |
+| 부서 가이드 4페이지(공통·수출통관·재무·관리) | `scripts/notion-guide-publish.php` `blocks_*()` | `$PAGE_AUDIENCE` |
+| 워크플로우·에러 2페이지 | `scripts/notion-workflow-lock-guide.php` | `$PAGE_AUDIENCE` |
+
+```bash
+# 대조 — 읽기 전용이라 언제든 안전. 무엇이 어긋났는지 그 줄이 그대로 나온다.
+php scripts/notion-cards/publish.php --verify
+php scripts/notion-guide-publish.php --verify
+php scripts/notion-workflow-lock-guide.php --verify
+```
+
+- **발행(`--apply`)은 Codex 몫**이다. jin 이 "Notion 반영해줘" 하면 Codex 가 위 `--verify` 로 대상을 찾아 반영한다(전달문서 불필요). Claude 는 repo 만 고치고 푸시한다.
+- 🚨 **`audience` 없이 발행하면 다음 03:00 색인이 fail-closed 로 통째 멈춘다.** 전량 미표기면 하위호환으로 전 청크가 `staff` 취급되어 **영업이 대표·시스템 자료를 검색**하게 된다.
+- 가드 = `tests/Feature/NotionGuideAudienceTest`(audience 무결성 · 발행 함수의 마커 생성 · `--verify` 존재를 정적 검사). 상세 = 메모리 `project_chatbot_cards_single_source`.
+
 ## Git 브랜치 전략
 
 > 🚨🚨 **master push 1회 = 3개 라이브 회사 동시배포 (heymanerp·ssancarerp·karabaerp). 깨지면 세 회사가 동시에 다운/오작동 → 사업 마비. jin 2026-07-12 "엎어지는 순간 우리 망해".**
-> **master 배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick은 의도한 커밋 SHA만(미배포 대기 esign 등 쓸어담기 금지) ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지(RRN 전량 손실) ⑦push 후 **deploy 런의 잡 5개**(`tests / ci` · `tests / mysql-check` · `deploy` · `deploy-ssancar` · `deploy-karaba`) **전부 green** 확인 ⑧위험 배포는 업무시간 외. 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지. 상세 = 메모리 `feedback_three_company_deploy_safety`.
+> **master 배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick은 의도한 커밋 SHA만(미배포 대기 esign 등 쓸어담기 금지) ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지(RRN 전량 손실) ⑦push 후 **deploy 런의 잡 5개**(`tests / ci` · `tests / mysql-check` · `deploy` · `deploy-ssancar` · `deploy-karaba`) **전부 green** 확인 ⑧위험 배포는 업무시간 외 ⑨**사용자 가시 동작이 바뀌었으면 가이드 소스도 같이 갔나** — `--verify` 3줄(위 「📖 사내 업무가이드·챗봇 동기화」). 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지. 상세 = 메모리 `feedback_three_company_deploy_safety`.
 >
 > 🔒 **CI 배포 게이트 (2026-07-30 도입, master `0ba2f09`)** — `deploy.yml` 이 `tests.yml` 을 `workflow_call` 로 호출하고 3개 배포 잡이 `needs: tests` 라, **테스트가 통과해야만 3사 배포가 시작**된다(이전엔 병렬이라 깨져도 나갔다).
 > - ⚠️ **master 엔 독립 `tests` 워크플로 런이 없다**(중복 방지로 push 트리거 제거). 목록에 안 보인다고 "테스트가 안 돌았다"고 오판 말 것. 확인 = `gh run view <deploy run> --json jobs`. dev push 는 종전대로 독립 `tests` 런이 뜬다.
