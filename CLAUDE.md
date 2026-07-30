@@ -21,7 +21,7 @@
 > - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp(heyman) 재고 전환**. 현재 **heyman만 연동**.
 > - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
 > - ⚠️ **크로스 레포 규칙**: 레포 X 관련 결정/변경은 **X의 *커밋된 파일*에 남기고 X 세션에서 커밋**한다. 메모리는 레포별·PC별이라 안 따라옴 — **git 커밋된 파일만** 모든 세션·PC에 전파. (board 수정 = board 세션·board repo에 커밋.)
-> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(`heymancar.com` 운영, 2026-06-27 배포). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project-deployment-naming`.
+> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(`heymancar.com` 운영, 2026-06-27 배포). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project_deployment_naming`.
 > - **🏷️ 명칭 규칙 (혼동 방지 — 항상 이대로, jin 2026-06-27 박제)**: 회사 3사 = **ssancar · heyman · karaba**(karaba board는 추후 설치), 앱 2종 = **erp**(이 car-erp) · **board**(형제 앞단 앱). 지칭은 반드시 **{회사}{앱}** 한 토큰으로: `ssancarerp` · `ssancarboard` · `heymanerp` · `heymanboard` · `karabaerp` · `karababoard`. 막연히 "ssancar"·"car-erp"·"board"만 쓰지 말 것. 매핑: `ssancarerp`=`heymancar.com` / `heymanerp`=`heysellcar.com` / `karabaerp`=`karaba-erp.com`. (car-erp·board 양 레포·전 세션 공통 — board 세션에도 동일 규칙.)
 
 SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
@@ -46,16 +46,27 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 
 **role**: `영업 / 수출통관 / 재무 / 관리` (2026-05-19 풀회의 안건 I — 정산→재무 / 통관→수출통관 명칭 확정). 기본값 `관리`. super/admin은 role 무관 전체 접근.
 
-**미들웨어 매핑**:
-| alias | 메서드 | 보호 대상 |
-|---|---|---|
-| `admin` | `canAccessAdmin()` = super+admin+업무관리자 | /admin/* |
-| `super-admin` | `isSuperAdmin()` = super만 | 기능설정 · **알림톡 로그 · 알림톡 안내** |
-| `operation-logs` | `canViewOperationLogs()` = super+admin+업무관리자+role`관리` (= "[관리] 이상") | **문서접근로그 · 감사로그 · 메일발송로그** |
-| `erp` | `canAccessErp()` = super/admin ∪ role 전체 | /erp/* |
-| `sales` | role∈{전체,영업} | /erp/salesmen/{id}/cashflow (본인) |
-| `clearance` | role∈{수출통관,관리} | /erp/forwardings, /erp/vehicles 통관 탭 |
-| `settlement` | role∈{재무,관리} | /erp/settlements |
+**미들웨어 매핑** (2026-07-30 코드 실검증 — 아래가 현재 정의):
+> 전부 **super/admin/업무관리자는 무조건 통과**하고, 그 아래에서 role 로 갈린다.
+
+| alias | 메서드 | 통과 조건 (admin·manager 제외분) | 보호 대상 |
+|---|---|---|---|
+| `admin` | `canAccessAdmin()` | — (super+admin+업무관리자만) | /admin/* |
+| `super-admin` | `isSuperAdmin()` | — (super만) | 기능설정 · **알림톡 로그 · 알림톡 안내** |
+| `operation-logs` | `canViewOperationLogs()` | role`관리` (= "[관리] 이상") | **문서접근로그 · 감사로그 · 메일발송로그** |
+| `erp` | `canAccessErp()` | `permission='user'` **AND** role ∈ `ROLES` | /erp/* |
+| `sales` | `canAccessSales()` | role ∈ {영업, **관리**} | /erp/salesmen/{id}/cashflow (본인) |
+| `clearance` | `canAccessClearance()` | role ∈ {수출통관, 관리} | /erp/forwardings, /erp/vehicles 통관 탭 |
+| `settlement` | `canAccessSettlement()` | role ∈ {재무, 관리} | /erp/settlements |
+
+> ⚠️ **레거시 role `'전체'` 는 코드에서 이미 제거됨**(큐 14-1). `User::ROLES = ['영업','수출통관','재무','관리']`.
+> 그런데 **`users.role` DB 기본값은 아직 `'전체'`** 다 — ROLES 밖 값이라 `canAccessErp()` 가 false 가 되어
+> "권한 없는 계정" 으로 떨어진다. 이게 우연한 안전망 역할을 하므로 **기본값을 유효 role 로 "정리" 하지 말 것**
+> (가드 = `PublicRegistrationDisabledTest`). 공개 회원가입 라우트는 2026-07-30 제거됨.
+>
+> 🚨 **`verified` 미들웨어는 접근 방어가 아니다** — `App\Models\User` 가 `MustVerifyEmail` 을 구현하지 않아
+> `EnsureEmailIsVerified` 가 그냥 통과시킨다(실측: `email_verified_at=NULL` 인 admin 이 `/admin/dashboard` 200).
+> 실제 게이트는 위 표의 permission+role 뿐. 상세 = `SKILLS.md §8 #6`.
 
 **리다이렉션**: `/dashboard` 진입 시 super/admin → `/admin/dashboard`, role=영업 → `/erp/salesmen/{id}/cashflow`(본인 ID), 그 외 → `/erp/dashboard`.
 
@@ -147,7 +158,12 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 ## Git 브랜치 전략
 
 > 🚨🚨 **master push 1회 = 3개 라이브 회사 동시배포 (heymanerp·ssancarerp·karabaerp). 깨지면 세 회사가 동시에 다운/오작동 → 사업 마비. jin 2026-07-12 "엎어지는 순간 우리 망해".**
-> **master 배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick은 의도한 커밋 SHA만(미배포 대기 esign 등 쓸어담기 금지) ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지(RRN 전량 손실) ⑦push 후 `gh run watch`로 deploy/deploy-ssancar/deploy-karaba **셋 다 green** 확인 ⑧위험 배포는 업무시간 외. 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지. 상세 = 메모리 `feedback_three_company_deploy_safety`.
+> **master 배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick은 의도한 커밋 SHA만(미배포 대기 esign 등 쓸어담기 금지) ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지(RRN 전량 손실) ⑦push 후 **deploy 런의 잡 5개**(`tests / ci` · `tests / mysql-check` · `deploy` · `deploy-ssancar` · `deploy-karaba`) **전부 green** 확인 ⑧위험 배포는 업무시간 외. 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지. 상세 = 메모리 `feedback_three_company_deploy_safety`.
+>
+> 🔒 **CI 배포 게이트 (2026-07-30 도입, master `0ba2f09`)** — `deploy.yml` 이 `tests.yml` 을 `workflow_call` 로 호출하고 3개 배포 잡이 `needs: tests` 라, **테스트가 통과해야만 3사 배포가 시작**된다(이전엔 병렬이라 깨져도 나갔다).
+> - ⚠️ **master 엔 독립 `tests` 워크플로 런이 없다**(중복 방지로 push 트리거 제거). 목록에 안 보인다고 "테스트가 안 돌았다"고 오판 말 것. 확인 = `gh run view <deploy run> --json jobs`. dev push 는 종전대로 독립 `tests` 런이 뜬다.
+> - 테스트 실패 시 배포 잡은 **skipped** — master 에 코드는 있고 서버엔 안 나간 상태이므로 **고쳐서 다시 push**(revert 불필요).
+> - `linter` 는 게이트 아님(스타일 실패로 배포를 막지 않음).
 
 - `dev` — 작업 브랜치 (기본)
 - `master` — 프로덕션 (push 시 자동 SSH 배포 — `artisan down` 1~3분, 업무시간 외 권장). **⚠️ 3사 동시배포 — 위 경고 필독.**
@@ -294,23 +310,21 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 
 대부분의 큐(0~13)는 완료 상태. 운영 배포(`52.79.200.151`)·자동 SSH 배포 검증·NICE 연동·S3·DB백업 cron 전부 dev/master 반영. 완료된 큐 표 상세는 `docs/archive/md-2026-05-29/CLAUDE.md.full` 참조.
 
-**현재 시점 (2026-05-29)**:
-- 통관 SET 다중차량 — ⏸️ 보류 (선적 4종 충분, 추후 인보이스 3시트만 N대)
-- 별건 3 (사이드바 '로그' 그룹 + document-access-logs + audit_logs UI) — ✅ **완료** (회의확장씬 Phase 3-1 흡수, 커밋 `fdb02b8`/`55514bd`. 라우트 `routes/web.php` document-access-logs/audit-logs)
-- 도메인 + HTTPS — ✅ **완료 (2026-06-11, `https://heysellcar.com` + www 라이브)**. Lightsail 도메인 이전 + certbot + APP_URL https + config:cache.
+> 📦 옛 마일스톤(큐 0~13 · 별건 3 · 도메인/HTTPS 2026-06-11 · 통관 SET 다중차량 보류)은 전부 종결.
+> 상세는 `docs/archive/md-2026-05-29/CLAUDE.md.full` 과 메모리 `_ARCHIVE.md` 참조.
 
 ## ⏭️ 다음 세션 작업 순서
 
-> **세션 시작 시 읽을 메모리**: `project-deployment` (배포 현황 — 가장 중요) · `project-seeder-contract` · `project-db-tier-mismatch` · `project-document-mapping`. 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
+> **세션 시작 시 읽을 것**: 메모리 `MEMORY.md`(인덱스 — 여기서 필요한 `project_*.md` 만 열람).
+> ⚠️ 메모리 파일명은 **언더스코어**다(`project_deployment.md` 등). 하이픈으로 찾으면 안 나온다.
+> 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태**: AWS Lightsail 운영 배포 완료 + **도메인/HTTPS 라이브(`https://heysellcar.com`, 2026-06-11)** + 헤이맨 실데이터 149대 적재 완료. 560+ 테스트 통과.
+**현재 상태 (2026-07-30)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master == dev, 미배포 기능코드 0. 테스트 **1382 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+**CI 배포 게이트 적용됨** — 테스트가 통과해야 3사 배포가 시작된다(위 Git 브랜치 전략 참조).
 
-**남은 작업**:
-1. **기능 안정화 검증** (서버 브라우저): NICE 조회 숫자 정상(4840 등)·통관서류 기통수/검사종료·사진있는 차량 force-delete FK cascade·다중차량 선적 Excel 시각·cron 익일 03:00 백업 1건.
-2. ✅ **도메인 + HTTPS 완료** (2026-06-11). 상세 = 메모리 `project-deployment` 2026-06-11 섹션 / 배포기록 §14-1.
-3. **(선택)** 통관 SET 다중차량(인보이스 3시트만 N대) / extension-scene 2-2 잔금 layout 코스메틱.
-   (별건 3 = ✅ 완료, 회의확장씬 Phase 3-1 흡수)
-   (말소 주소 필수가드 = ❌ 안 함, jin 2026-06-23 — RRN 가드 H10 있고 NICE 조회로 주소 자동기입돼 불필요. NICE키 env = ✅ 이미 .env 설정됨.)
+**남은 작업**: 코드 착수 대기 **0건**. 진행 중인 안건은 전부 jin 운영 몫이거나 board 세션 몫이라
+`MEMORY.md` 의 「jin 운영 몫」·「외부·타 세션 병목」 섹션을 볼 것.
 
 ## 대시보드 명칭 및 설계 원칙 (확정)
 

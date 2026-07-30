@@ -547,6 +547,20 @@ extension=zip    # 주석 제거
 
 **🔒 검증은 매핑 배열이 아니라 생성물로.** `config()` 배열만 검사하는 테스트는 **푸터 좌표가 틀려도 통과한다**. `fillMulti` 는 footerAggregate 를 removeRow **전에** 쓰고 미사용 슬롯을 트림하므로, 푸터는 **(슬롯수 − 실제대수)만큼 위로 올라온다** — 템플릿 좌표를 그대로 단언하면 만차일 때만 맞는다. `SalesContractLayoutTest` 는 실제 생성 시트의 셀을 읽고 트림 시프트를 계산해 비교한다.
 
+### 38. 🧹 기능을 지우면 그 훅이 **찍던 값**에 매달린 다른 기능이 조용히 죽는다 (2026-07-30)
+**원인**: 2026-07-29 에 보증금 매입 선지급 승인 사다리를 제거하면서, 그 재무 확정 훅
+(`confirmPurchaseFundingByFinance`)이 **유일하게 세팅하던** `vehicles.is_deposit_purchase` 도장 코드가 함께 사라졌다.
+컬럼·모델·뱃지·cron·스케줄·테스트는 전부 그대로 살아 있었지만 **아무도 값을 안 찍으니 대상이 영구 0건**.
+**증상**: 예외 0·로그 0·테스트 전부 초록. cron 은 매일 정상 실행되고 `대상 0건 — skip` 만 남긴다.
+운영 실측으로 `is_deposit_purchase=true` 인 차량이 **0대(삭제분 포함)** 인 걸 확인하고서야 드러났다.
+**해결**: 트리거를 사람 조작(매입 탭 「보증금으로 매입」 체크박스)으로 옮기고, 도장 시각은 `Vehicle::saving` 에서
+찍어 진입점을 통합(UI·시드·tinker 동일). 가드 = `DepositPurchaseMarkerTest`(체크→도장→cron→발송 end-to-end 포함).
+**🧭 교훈 — 삭제 PR 체크리스트**: 지우는 코드가 **write** 하던 컬럼·플래그·설정키를 `grep` 해서
+**읽는 쪽이 남아 있는지** 확인할 것. 읽는 쪽은 대개 조용히 실패한다(빈 목록·0건 skip).
+같은 커밋에서 소비자도 정리하거나, 대체 트리거를 함께 넣어야 한다.
+> ⚠️ 도장류 플래그는 **최초 1회만** 찍고 이후 저장에서 갱신하지 말 것 — 경과일(D+N) 타이머의 기산점이면
+> 저장할 때마다 갱신돼 **알림이 영원히 안 나간다**. 해제 시엔 시각도 비워 "플래그 ON 일 때만 시각 존재" 불변식 유지.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
@@ -945,7 +959,8 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - **선적전/후 미수 pivot = `warehouse_out_date`(출고일)** — 구 pivot=`bl_loading_location`(반입지). 사용자 규칙: 반입지 입력했어도 출고 전이면 **항구 주차장 대기 = 선적전 미수**. 실제 출항(출고일 찍힘) = 선적후 미수.
 - 선적 전(출고 전, `warehouse_out_date` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
 - 선적 후(출고 = 출항) 미수는 유예 없이 즉시 채권이다.
-- **단일출처 반영 지점(전부 출고일 pivot)**: `Vehicle::getReceivableRiskComputedAttribute` · `scopeExcludeReceivableGrace` · `scopeOnlyReceivableGrace` · `scopeAction('receivable_before_shipping'/'receivable_after_shipping')` · 채권관리 `receivables/index`(classification 인라인) · 관리자 대시보드 `receivableKpis`(classification 인라인). 알림톡 daily/weekly·InternalPortal은 scope 경유(자동).
+- **단일출처 반영 지점(전부 출고일 pivot)**: `Vehicle::getReceivableRiskComputedAttribute` · `scopeExcludeReceivableGrace` · `scopeOnlyReceivableGrace` · `scopeAction('receivable_before_shipping'/'receivable_after_shipping')` · 채권관리 `receivables/index`(classification 인라인) · 관리자 대시보드 `receivableKpis`(classification 인라인) · **`AlimtalkDepositCash`(보증금 독촉 대상, 2026-07-30 합류)**. 알림톡 daily/weekly·InternalPortal은 scope 경유(자동).
+- 🚢 **"선적됐나"를 `bl_loading_location`(반입지)으로 판정하지 말 것 — 돈 관점에선 항상 출고일.** 반입지는 **항구 주차장에 세우려고 먼저 찍는다**(RORO 「선적대기 허용 항로」 = `Port::allow_shipping_wait`, 현재 DURRESS/ALBANIA). 2026-07-23 에 만든 `AlimtalkDepositCash` 가 `whereNull('bl_loading_location')` 을 써서 **입금 0원인 차의 독촉이 "주차했다"는 이유로 조용히 꺼져 있었다**(실측 heymanerp 9대 중 7대, 5대가 입금 0%). 2026-07-30 출고일로 교정. ⚠️ **pivot 을 07-18 에 정했는데 5일 뒤 만든 코드가 안 따라온 사례** — 새 쿼리를 쓸 때 이 목록을 먼저 볼 것. 반입지는 **진행상태(v4 cascade)** 판정에만 쓴다.
 - 시간 경과에 따른 `grace` → 채권 전환은 야간 `vehicles:rebuild-caches`(05:00)로 반영된다. **⚠️ pivot 변경 배포 직후 = 기존 데이터 1회 cache rebuild 필요**(`receivable_risk` 캐시가 옛 pivot 기준). 또한 이미 출항했지만 `warehouse_out_date` 미입력인 기존 차량은 출고일을 채워야 선적후로 잡힌다(미입력이면 선적전으로 표시 — 규칙상 정상).
 - 채권관리 위험도 필터에 `grace` 옵션이 있으므로 결제대기 차량만 따로 확인 가능하다.
 
