@@ -55,9 +55,8 @@ class AlimtalkRecipients
 
     /** 자동 대상(역할 선택 불가) 알림 — 안내 화면 고정 라벨. */
     public const TARGETED_LABELS = [
-        'erp_deposit_funding_request' => '관리(승인) → 재무(확정)',
-        'erp_deposit_funding_done' => '기안자 본인',
-        'erp_deposit_funding_rejected' => '기안자 본인',
+        // 보증금 선지급 3종(request/done/rejected)은 2026-07-30 제거 — 승인 사다리 자체가
+        // 2026-07-29 에 폐기돼 발송할 이벤트가 없어졌다. 안내 화면에 "절대 안 오는 알림"을 남기지 않는다.
         'erp_pickup_reminder' => '담당 영업 본인',
         'erp_deregistration_notice' => '국내 딜러(수동 발송)',
         'erp_payout_request' => '승인 계단 담당자',
@@ -142,16 +141,8 @@ class AlimtalkRecipients
         );
     }
 
-    /**
-     * 재무 확정자 — 보증금 선지급 '재무 확정 대기' 알림 수신 (2026-07-23).
-     * role='재무' 사용자만(전화 있는). 없으면 빈 목록 → 관리가 /erp/transfers 에서 직접 확인.
-     */
-    public static function financeConfirmers(): array
-    {
-        return self::phones(
-            User::query()->where('role', '재무')->whereNotIn('permission', ['super'])
-        );
-    }
+    // financeConfirmers() 제거 (2026-07-30) — 유일한 호출처였던 보증금 선지급 알림이
+    // 승인 사다리와 함께 폐기돼 호출처 0인 죽은 코드로 남아 있었다.
 
     /**
      * 월배치 정산지급 승인 사다리 — 특정 계단(current_level)의 승인자 번호.
