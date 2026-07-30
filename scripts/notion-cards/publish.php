@@ -15,8 +15,13 @@
  * 사용:
  *   php publish.php                        요약 + cards.json 자체 검증 (쓰기 없음)
  *   php publish.php --verify               라이브 Notion ↔ cards.json 대조 (읽기 전용)
- *   php publish.php --card "제목" --apply   카드 1장 제자리 갱신 (권장 — 나머지 카드 무손상)
+ *   php publish.php --card "제목" --apply   카드 1장 갱신 — 라이브에 있으면 제자리 교체,
+ *                                          없으면 그 그룹 끝에 신규 추가 (둘 다 나머지 카드 무손상)
  *   php publish.php --force --apply        전체 아카이브 후 재생성 (최후수단 — 페이지 ID 가 전부 바뀐다)
+ *
+ * ⚠️ --card --apply 는 "기존 본문 삭제 → 새 본문 삽입" 순서다. 삽입 단계에서 실패하면 그 카드가
+ *    제목만 남고 마커가 없는 상태가 된다(= 색인 중단 조건). 그럴 땐 같은 명령을 다시 실행하면
+ *    cards.json 에서 복원된다. 끝나면 항상 --verify 로 확인한다.
  */
 $token = getenv('NOTION_TOKEN') ?: '';
 if ($token === '') {
@@ -314,18 +319,39 @@ if ($cardArg !== null) {
         fwrite(STDERR, "❌ 라이브에서 그룹 페이지를 못 찾음: {$group}\n");
         exit(1);
     }
+    $liveGroup = liveCards($tree['groups'][$group], $token, $V);
     $target = null;
-    foreach (liveCards($tree['groups'][$group], $token, $V) as $lc) {
+    foreach ($liveGroup as $lc) {
         if ($lc['title'] === $cardArg) {
             $target = $lc;
         }
     }
+
+    // ── 신규 카드 = 그룹 페이지 끝에 추가 (--force 없이) ──
     if (! $target) {
-        fwrite(STDERR, "❌ 라이브 「{$group}」 에 카드가 없음: {$cardArg}\n   (신규 카드는 아직 --force 재생성으로만 추가됩니다)\n");
-        exit(1);
+        $new = cardBlocks($card);   // h2 포함
+        $last = end($liveGroup) ?: null;
+        // 마지막 카드의 최종 블록 뒤에 붙인다. 그룹이 비었으면 after 없이 append.
+        $after = $last ? (end($last['blockIds']) ?: $last['h2id']) : null;
+        echo ($apply ? '▶ APPLY' : '▶ DRY-RUN')." — 「{$group}」 / {$cardArg}  ★신규 추가\n";
+        echo '   그룹 끝에 '.count($new)."블록 추가 (audience={$card['audience']})\n";
+        if (! $apply) {
+            echo "\n(쓰기 없음. 실제 추가: --apply)\n";
+            exit(0);
+        }
+        $body = ['children' => $new];
+        if ($after !== null) {
+            $body['after'] = $after;
+        }
+        notion('PATCH', "https://api.notion.com/v1/blocks/{$tree['groups'][$group]}/children", $body, $token, $V);
+        echo "✅ 추가 완료. 다음 03:00 색인에 반영됩니다(긴급하면 색인 세션에 재색인 요청).\n";
+        echo "   확인: php publish.php --verify\n";
+        exit(0);
     }
+
+    // ── 기존 카드 = 본문만 제자리 교체 (h2 유지 → 페이지 내 위치 보존) ──
     $new = cardBlocks($card);
-    array_shift($new);   // h2 는 유지(제자리) — 본문만 교체
+    array_shift($new);
     echo ($apply ? '▶ APPLY' : '▶ DRY-RUN')." — 「{$group}」 / {$cardArg}\n";
     echo '   기존 본문 '.count($target['blockIds']).'블록 삭제 → 새 본문 '.count($new)."블록 삽입 (audience={$card['audience']})\n";
     if (! $apply) {
