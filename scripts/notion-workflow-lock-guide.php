@@ -13,6 +13,7 @@
  */
 $token = getenv('NOTION_TOKEN') ?: '여기에_토큰_붙여넣기';
 $apply = in_array('--apply', $argv, true);
+$verify = in_array('--verify', $argv, true);   // 라이브 ↔ 빌더 대조 (읽기 전용)
 $HUB_TITLE = '사내 업무 가이드';
 $V = '2022-06-28';
 $BASE = 'https://api.notion.com/v1';
@@ -255,9 +256,89 @@ function appendBlocks(string $pid, array $blocks, string $t, string $v): void
         notion('PATCH', "https://api.notion.com/v1/blocks/$pid/children", ['children' => $chunk], $t, $v);
     }
 }
-// 신규/갱신: parent 밑에 title 자식 있으면 clear+append, 없으면 생성. 페이지 id 반환(apply 아니면 기존 id 또는 null).
-function upsertPage(string $parentId, string $title, string $emoji, array $blocks, string $t, string $v, bool $apply, string $BASE): ?string
+/**
+ * 🚨 챗봇 색인 등급 마커 — 페이지 맨 끝 = 그 페이지 기본 등급.
+ * 없으면 다음 03:00 색인이 fail-closed 로 통째 멈춘다. (2026-07-30 신설)
+ */
+function marker(string $audience): array
 {
+    return ['object' => 'block', 'type' => 'paragraph', 'paragraph' => ['rich_text' => tx('ASSISTANT_AUDIENCE='.$audience)]];
+}
+
+/** 블록 평문. divider 처럼 rich_text 가 없는 타입도 안전하게 빈 문자열. */
+function blkText(array $blk): string
+{
+    $node = $blk[$blk['type'] ?? ''] ?? null;
+    if (! is_array($node)) {
+        return '';
+    }
+    $s = '';
+    foreach ($node['rich_text'] ?? [] as $r) {
+        $s .= ($r['plain_text'] ?? $r['text']['content'] ?? '');
+    }
+
+    return trim($s);
+}
+
+/** 페이지의 살아있는 블록(child_page 제외)을 순서대로 */
+function liveBlocks(string $pid, string $t, string $v): array
+{
+    $out = [];
+    $cursor = null;
+    do {
+        $url = "https://api.notion.com/v1/blocks/$pid/children?page_size=100".($cursor ? "&start_cursor=$cursor" : '');
+        $r = notion('GET', $url, [], $t, $v);
+        foreach ($r['results'] as $blk) {
+            if (($blk['archived'] ?? false) || ($blk['in_trash'] ?? false) || ($blk['type'] ?? '') === 'child_page') {
+                continue;
+            }
+            $out[] = $blk;
+        }
+        $cursor = $r['has_more'] ? $r['next_cursor'] : null;
+    } while ($cursor);
+
+    return $out;
+}
+
+/** running log = 마지막 footer 뒤의 마커 아닌 블록. 재생성하면 블록 ID 가 바뀌므로 발행을 건너뛴다. */
+function findRunningLog(array $blocks): array
+{
+    $lastFooter = -1;
+    foreach ($blocks as $i => $b) {
+        if (($b['type'] ?? '') === 'callout' && str_contains(blkText($b), 'SSANCAR 사내 업무 가이드 ·')) {
+            $lastFooter = $i;
+        }
+    }
+    if ($lastFooter < 0) {
+        return [];
+    }
+    $log = [];
+    foreach (array_slice($blocks, $lastFooter + 1) as $b) {
+        if (! str_starts_with(blkText($b), 'ASSISTANT_AUDIENCE=')) {
+            $log[] = $b;
+        }
+    }
+
+    return $log;
+}
+
+/** 라이브/빌더 블록 → 대조용 정규화 */
+function normalize(array $blocks): array
+{
+    $out = [];
+    foreach ($blocks as $b) {
+        $out[] = ($b['type'] ?? '').'|'.preg_replace('/\s+/u', ' ', blkText($b));
+    }
+
+    return $out;
+}
+
+// 신규/갱신: parent 밑에 title 자식 있으면 갱신, 없으면 생성. 페이지 id 반환(apply 아니면 기존 id 또는 null).
+// 갱신은 "새 블록 먼저 붙이고 → 옛 블록 삭제" 순서다. Notion 에 트랜잭션이 없어서,
+// 삭제를 먼저 하면 중간 실패 시 페이지가 비고 마커까지 사라져 색인이 무너진다.
+function upsertPage(string $parentId, string $title, string $emoji, array $blocks, string $t, string $v, bool $apply, string $BASE, string $audience = 'staff'): ?string
+{
+    $blocks = array_merge($blocks, [marker($audience)]);
     $existing = null;
     foreach (childPages($parentId, $t, $v) as $ti => $id) {
         if ($ti === $title) {
@@ -266,12 +347,22 @@ function upsertPage(string $parentId, string $title, string $emoji, array $block
         }
     }
     if ($existing) {
-        $del = clearBlocks($existing, $t, $v, $apply);
+        $live = liveBlocks($existing, $t, $v);
+        $log = findRunningLog($live);
+        if ($log) {
+            echo "   ⛔ '$title' — running log ".count($log)."건 발견, 자동 발행 건너뜀.\n";
+            echo "      (직원이 적은 메모라 재생성하면 블록 ID 가 바뀝니다. Notion 에서 직접 옮긴 뒤 다시 실행하세요.)\n";
+
+            return $existing;
+        }
         if ($apply) {
-            appendBlocks($existing, $blocks, $t, $v);
-            echo "   ✔ '$title' — 기존 {$del}블록 삭제 + ".count($blocks)."블록 발행 (id=$existing)\n";
+            appendBlocks($existing, $blocks, $t, $v);        // ① 먼저 붙이고
+            foreach ($live as $b) {                          // ② 옛것만 지운다
+                notion('DELETE', "https://api.notion.com/v1/blocks/{$b['id']}", [], $t, $v);
+            }
+            echo "   ✔ '$title' — ".count($blocks).'블록 발행 + 기존 '.count($live)."블록 삭제 (마커 $audience, id=$existing)\n";
         } else {
-            echo "   + '$title' — 기존 있음, {$del}블록 삭제 + ".count($blocks)."블록 재발행 예정 (id=$existing)\n";
+            echo "   + '$title' — ".count($blocks).'블록 발행 예정, 기존 '.count($live)."블록 삭제 예정 (마커 $audience, id=$existing)\n";
         }
 
         return $existing;
@@ -346,11 +437,10 @@ foreach ($erpKids as $ti => $id) {
 }
 echo '   • 링크 대상 — 재무='.($finId ?: '없음').' / 수출통관='.($cleId ?: '없음').' / 관리='.($mgrId ?: '없음')."\n";
 
-echo "\n▶ ".($apply ? "발행 시작...\n" : "[확인 모드] 발행 계획 (실제 변경 X):\n");
-
 // 카탈로그 먼저 upsert (workflow 가 링크로 참조). 상호 링크: 2회차 실행부터 양방향 완성.
 $catalogTitle = '⚠️ 에러 & 잠금(락) 찾아보기';
 $workflowTitle = '🔄 전체 워크플로우 (한눈에)';
+$PAGE_AUDIENCE = [$catalogTitle => 'staff', $workflowTitle => 'staff'];   // 2026-07-30 라이브 실측값
 
 // 기존 workflow id 미리 조회(카탈로그가 역링크할 수 있게)
 $existingWorkflowId = null;
@@ -360,9 +450,62 @@ foreach ($erpKids as $ti => $id) {
     }
 }
 
-$catalogId = upsertPage($erpId, $catalogTitle, '⚠️', buildLockCatalog($existingWorkflowId), $token, $V, $apply, $BASE);
-$workflowId = upsertPage($erpId, $workflowTitle, '🔄', buildWorkflow($finId, $cleId, $mgrId, $catalogId), $token, $V, $apply, $BASE);
+// ── --verify : 라이브 ↔ 빌더 대조 (읽기 전용) ───────────────
+if ($verify) {
+    echo "\n🔎 대조 — 라이브 Notion ↔ 빌더\n";
+    $catalogIdLive = $erpKids[$catalogTitle] ?? null;
+    $plan = [
+        $catalogTitle => [$catalogIdLive, buildLockCatalog($existingWorkflowId)],
+        $workflowTitle => [$erpKids[$workflowTitle] ?? null, buildWorkflow($finId, $cleId, $mgrId, $catalogIdLive)],
+    ];
+    $problems = 0;
+    foreach ($plan as $title => [$pid, $blocks]) {
+        if (! $pid) {
+            echo "\n   ⚠ '$title' — 페이지 없음\n";
+            $problems++;
+
+            continue;
+        }
+        $live = liveBlocks($pid, $token, $V);
+        $expected = normalize(array_merge($blocks, [marker($PAGE_AUDIENCE[$title])]));
+        $actual = normalize($live);
+        $lastText = $live ? blkText($live[count($live) - 1]) : '';
+        $markerOk = $lastText === 'ASSISTANT_AUDIENCE='.$PAGE_AUDIENCE[$title];
+        echo "\n   ■ $title — 라이브 ".count($live).'블록 / 빌더 '.count($expected)."블록\n";
+        echo '     마커: '.($markerOk ? "✅ 맨 끝 {$PAGE_AUDIENCE[$title]}" : '❌ '.($lastText ?: '없음'))."\n";
+        if (! $markerOk) {
+            $problems++;
+        }
+        if ($log = findRunningLog($live)) {
+            echo '     📝 running log '.count($log)."건 — 발행하면 위치가 어긋납니다(자동 발행 중단 대상)\n";
+        }
+        if ($expected === $actual) {
+            echo "     본문: ✅ 일치\n";
+
+            continue;
+        }
+        $problems++;
+        $onlyLive = array_diff($actual, $expected);
+        $onlyRepo = array_diff($expected, $actual);
+        echo '     본문: ❌ 불일치 (라이브만 '.count($onlyLive).'줄 / 빌더만 '.count($onlyRepo)."줄)\n";
+        foreach (array_slice($onlyLive, 0, 5) as $x) {
+            echo '        ＋라이브만: '.mb_substr($x, 0, 95)."\n";
+        }
+        foreach (array_slice($onlyRepo, 0, 5) as $x) {
+            echo '        －빌더만  : '.mb_substr($x, 0, 95)."\n";
+        }
+    }
+    echo "\n".($problems === 0
+        ? "✅ 정합 — 라이브와 빌더가 같습니다.\n"
+        : "⚠️ 불일치 {$problems}건.\n");
+    exit($problems === 0 ? 0 : 1);
+}
+
+echo "\n▶ ".($apply ? "발행 시작...\n" : "[확인 모드] 발행 계획 (실제 변경 X):\n");
+
+$catalogId = upsertPage($erpId, $catalogTitle, '⚠️', buildLockCatalog($existingWorkflowId), $token, $V, $apply, $BASE, $PAGE_AUDIENCE[$catalogTitle]);
+$workflowId = upsertPage($erpId, $workflowTitle, '🔄', buildWorkflow($finId, $cleId, $mgrId, $catalogId), $token, $V, $apply, $BASE, $PAGE_AUDIENCE[$workflowTitle]);
 
 echo "\n".($apply
-    ? "✅ 발행 완료.\n   ※ 상호 링크(카탈로그↔워크플로우) 완성하려면 한 번 더 --apply 실행하세요(멱등).\n"
-    : "ℹ️  확인만 했습니다. 실제 발행:  php scripts/notion-workflow-lock-guide.php --apply\n");
+    ? "✅ 발행 완료.\n   ※ 상호 링크(카탈로그↔워크플로우) 완성하려면 한 번 더 --apply 실행하세요(멱등).\n   확인: php scripts/notion-workflow-lock-guide.php --verify\n"
+    : "ℹ️  확인만 했습니다. 대조=--verify · 실제 발행=--apply\n");

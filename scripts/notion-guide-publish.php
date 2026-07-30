@@ -7,12 +7,35 @@
  * 동작: 각 페이지의 기존 블록을 모두 삭제(archive) 후, 가이드 내용 블록을 새로 append.
  *       페이지는 삭제/재생성하지 않고, 기존 ERP 섹션 하위 페이지의 본문만 갱신.
  *
+ * ⭐ 단일 출처는 이 파일의 blocks_*() 다. Notion 은 발행물이므로 손으로 고치지 않는다.
+ *    (고치면 다음 발행 때 되돌아가 조용히 사라진다.)
+ *
  * 확인(dry-run):   php scripts/notion-guide-publish.php
+ * 대조(읽기전용):   php scripts/notion-guide-publish.php --verify      ← 라이브가 빌더와 같은지
  * 실제 발행:        php scripts/notion-guide-publish.php --apply
+ * 특정 부서만:      php scripts/notion-guide-publish.php --apply 재무
+ *
+ * 🚨 발행은 페이지 맨 끝에 ASSISTANT_AUDIENCE 마커를 반드시 함께 찍는다($PAGE_AUDIENCE).
+ *    마커가 없으면 다음 03:00 챗봇 색인이 fail-closed 로 통째 멈춘다.
+ * 📝 직원이 footer 아래 적은 running log 가 있으면 그 페이지는 자동 발행을 건너뛴다
+ *    (재생성하면 블록 ID 가 바뀌어 댓글·링크가 끊기므로 사람이 판단해야 한다).
  */
 $token = getenv('NOTION_TOKEN') ?: '여기에_토큰_붙여넣기';
 $apply = in_array('--apply', $argv, true);
+$verify = in_array('--verify', $argv, true);   // 라이브 ↔ 빌더 대조 (읽기 전용)
 $only = array_values(array_intersect($argv, ['영업', '공통', '수출통관', '재무', '관리'])); // 비어있으면 전체
+
+/**
+ * 페이지별 챗봇 색인 등급. 발행 시 페이지 맨 끝에 마커로 찍힌다.
+ * 값은 staff|finance|executive|system — 2026-07-30 라이브 실측값을 그대로 이관했다.
+ */
+$PAGE_AUDIENCE = [
+    '공통' => 'staff',
+    '영업' => 'staff',
+    '수출통관' => 'staff',
+    '재무' => 'finance',
+    '관리' => 'finance',
+];
 $HUB_TITLE = '사내 업무 가이드';
 $V = '2022-06-28';
 $BASE = 'https://api.notion.com/v1';
@@ -771,6 +794,112 @@ function footer(string $dept): array
     return callout('🕒', "SSANCAR 사내 업무 가이드 · $dept · 2026-07-24 갱신. 이 아래에는 현장에서 발견한 메모를 매일 1~2줄씩 남기세요.", 'gray_background');
 }
 
+/**
+ * 🚨 챗봇 색인 등급 마커 — 페이지 맨 끝 = 그 페이지 기본 등급.
+ * 이게 없으면 다음 03:00 색인이 fail-closed 로 통째 멈추거나,
+ * 전량 미표기 시 하위호환으로 전 청크가 staff 취급되어 권한 격리가 풀린다.
+ * (2026-07-30 이전 빌더는 이걸 안 만들어서, 발행하면 마커가 사라지는 상태였다.)
+ */
+function marker(string $audience): array
+{
+    return ['object' => 'block', 'type' => 'paragraph', 'paragraph' => ['rich_text' => [['type' => 'text', 'text' => ['content' => 'ASSISTANT_AUDIENCE='.$audience]]]]];
+}
+
+/** 페이지가 footer callout 인가 (running log 경계 판정용) */
+function isFooter(array $blk): bool
+{
+    if (($blk['type'] ?? '') !== 'callout') {
+        return false;
+    }
+    $s = '';
+    foreach ($blk['callout']['rich_text'] ?? [] as $r) {
+        $s .= $r['plain_text'] ?? '';
+    }
+
+    return str_contains($s, 'SSANCAR 사내 업무 가이드 ·');
+}
+
+/** 블록 평문. divider 처럼 rich_text 가 없는 타입(값이 stdClass)도 안전하게 빈 문자열. */
+function blkText(array $blk): string
+{
+    $node = $blk[$blk['type'] ?? ''] ?? null;
+    if (! is_array($node)) {
+        return '';
+    }
+    $s = '';
+    foreach ($node['rich_text'] ?? [] as $r) {
+        $s .= ($r['plain_text'] ?? $r['text']['content'] ?? '');
+    }
+
+    return trim($s);
+}
+
+/** 페이지의 살아있는 블록(child_page 제외)을 순서대로 */
+function liveBlocks(string $pid, string $t, string $v): array
+{
+    $out = [];
+    $cursor = null;
+    do {
+        $url = "https://api.notion.com/v1/blocks/$pid/children?page_size=100".($cursor ? "&start_cursor=$cursor" : '');
+        $r = notion('GET', $url, [], $t, $v);
+        foreach ($r['results'] as $blk) {
+            if (($blk['archived'] ?? false) || ($blk['in_trash'] ?? false)) {
+                continue;
+            }
+            if (($blk['type'] ?? '') === 'child_page') {
+                continue;
+            }
+            $out[] = $blk;
+        }
+        $cursor = $r['has_more'] ? $r['next_cursor'] : null;
+    } while ($cursor);
+
+    return $out;
+}
+
+/**
+ * running log = 마지막 footer 뒤에 있는, 마커가 아닌 블록.
+ * 직원이 직접 적은 것이라 재생성하면 블록 ID 가 바뀐다(댓글·링크가 끊김).
+ * 발견되면 자동 발행을 중단하고 사람이 판단하게 한다.
+ */
+function findRunningLog(array $blocks): array
+{
+    $lastFooter = -1;
+    foreach ($blocks as $i => $b) {
+        if (isFooter($b)) {
+            $lastFooter = $i;
+        }
+    }
+    if ($lastFooter < 0) {
+        return [];
+    }
+    $log = [];
+    foreach (array_slice($blocks, $lastFooter + 1) as $b) {
+        if (str_starts_with(blkText($b), 'ASSISTANT_AUDIENCE=')) {
+            continue;
+        }
+        $log[] = $b;
+    }
+
+    return $log;
+}
+
+/** 라이브 블록 → 대조용 정규화 문자열 배열 */
+function normalize(array $blocks): array
+{
+    $out = [];
+    foreach ($blocks as $b) {
+        $type = is_array($b) && isset($b['object']) ? $b['type'] : ($b['type'] ?? '');
+        $text = blkText($b);
+        if ($type === 'divider') {
+            $text = '';
+        }
+        $out[] = $type.'|'.preg_replace('/\s+/u', ' ', $text);
+    }
+
+    return $out;
+}
+
 // ── 페이지 트리 탐색 ────────────────────────────────────────
 function childPages(string $pid, string $t, string $v): array
 {
@@ -871,49 +1000,131 @@ if (! $managerId) {
     }
 }
 
-// ── 2. 발행 계획 ────────────────────────────────────────────
+// ── 2. 발행 대상 ────────────────────────────────────────────
 $targets = [
-    '공통' => ['id' => $erpKids['공통'] ?? null, 'fn' => 'blocks_common'],
-    '영업' => ['id' => $erpKids['영업'] ?? null, 'fn' => 'blocks_sales'],
-    '수출통관' => ['id' => $clearanceId, 'fn' => 'blocks_clearance'],
-    '재무' => ['id' => $financeId, 'fn' => 'blocks_finance'],
+    '공통' => ['id' => $erpKids['공통'] ?? null, 'blocks' => fn () => blocks_common()],
+    '영업' => ['id' => $erpKids['영업'] ?? null, 'blocks' => fn () => blocks_sales()],
+    '수출통관' => ['id' => $clearanceId, 'blocks' => fn () => blocks_clearance()],
+    '재무' => ['id' => $financeId, 'blocks' => fn () => blocks_finance()],
+    '관리' => ['id' => $managerId, 'blocks' => fn () => blocks_manager($financeId, $clearanceId)],
 ];
 
+// ── 2-A. --verify : 라이브 ↔ 빌더 대조 (읽기 전용) ──────────
+if ($verify) {
+    echo "\n🔎 대조 — 라이브 Notion ↔ 빌더(blocks_*)\n";
+    $problems = 0;
+    foreach ($targets as $name => $cfg) {
+        if ($only && ! in_array($name, $only, true)) {
+            continue;
+        }
+        if (! $cfg['id']) {
+            echo "\n   ⚠ $name — 페이지 없음(건너뜀)\n";
+
+            continue;
+        }
+        $live = liveBlocks($cfg['id'], $token, $V);
+        $expected = normalize(array_merge(($cfg['blocks'])(), [marker($PAGE_AUDIENCE[$name])]));
+        $actual = normalize($live);
+        $log = findRunningLog($live);
+
+        // 마커 상태 (색인 안전의 핵심)
+        $liveMarkers = [];
+        foreach ($live as $i => $b) {
+            if (str_starts_with(blkText($b), 'ASSISTANT_AUDIENCE=')) {
+                $liveMarkers[$i] = substr(blkText($b), strlen('ASSISTANT_AUDIENCE='));
+            }
+        }
+        $lastIdx = count($live) - 1;
+        $markerOk = $liveMarkers && array_key_last($liveMarkers) === $lastIdx
+            && end($liveMarkers) === $PAGE_AUDIENCE[$name];
+
+        echo "\n   ■ $name — 라이브 ".count($live).'블록 / 빌더 '.count($expected)."블록\n";
+        echo '     마커: '.($markerOk
+            ? "✅ 맨 끝 {$PAGE_AUDIENCE[$name]}"
+            : '❌ '.($liveMarkers ? '위치·값 불일치 '.json_encode($liveMarkers, JSON_UNESCAPED_UNICODE) : '없음'))."\n";
+        if (! $markerOk) {
+            $problems++;
+        }
+        if ($log) {
+            echo '     📝 running log '.count($log)."건 — 발행하면 위치가 어긋납니다(자동 발행 중단 대상)\n";
+        }
+        if ($expected === $actual) {
+            echo "     본문: ✅ 일치\n";
+
+            continue;
+        }
+        $problems++;
+        $onlyLive = array_diff($actual, $expected);
+        $onlyRepo = array_diff($expected, $actual);
+        echo '     본문: ❌ 불일치 (라이브만 '.count($onlyLive).'줄 / 빌더만 '.count($onlyRepo)."줄)\n";
+        foreach (array_slice($onlyLive, 0, 5) as $x) {
+            echo '        ＋라이브만: '.mb_substr($x, 0, 95)."\n";
+        }
+        foreach (array_slice($onlyRepo, 0, 5) as $x) {
+            echo '        －빌더만  : '.mb_substr($x, 0, 95)."\n";
+        }
+        if (count($onlyLive) + count($onlyRepo) > 10) {
+            echo "        … (앞 5줄씩만 표시)\n";
+        }
+    }
+    echo "\n".($problems === 0
+        ? "✅ 정합 — 라이브와 빌더가 같습니다.\n"
+        : "⚠️ 불일치 {$problems}건. 빌더가 최신이면 --apply 로 발행, 라이브가 맞으면 빌더를 고치세요.\n");
+    exit($problems === 0 ? 0 : 1);
+}
+
+// ── 3. 발행 — 삽입 먼저, 삭제 나중 ──────────────────────────
+/*
+ * 순서를 뒤집은 이유(2026-07-30): 예전엔 "전부 삭제 → 재append" 였다.
+ * Notion 에는 트랜잭션이 없어서 삭제 후 append 가 실패하면 페이지가 통째로 비고
+ * 마커까지 사라진다 = 다음 색인이 무너진다.
+ * 새 블록을 먼저 붙이면 중간에 실패해도 옛 블록과 마커가 그대로 남아 색인이 안전하다.
+ * (그 상태로 재실행하면 옛것+중간것이 모두 "옛 블록"으로 잡혀 정리된다.)
+ */
+function publishPage(string $name, string $pid, array $blocks, string $audience, string $t, string $v, bool $apply): bool
+{
+    $live = liveBlocks($pid, $t, $v);
+    $log = findRunningLog($live);
+    if ($log) {
+        echo "   ⛔ $name — running log ".count($log)."건 발견. 자동 발행을 건너뜁니다.\n";
+        echo "      (직원이 적은 메모라 재생성하면 블록 ID 가 바뀝니다. Notion 에서 직접 옮긴 뒤 다시 실행하세요.)\n";
+        foreach (array_slice($log, 0, 3) as $b) {
+            echo '        · '.mb_substr(blkText($b), 0, 70)."\n";
+        }
+
+        return false;
+    }
+    $new = array_merge($blocks, [marker($audience)]);
+    if (! $apply) {
+        echo "   + $name — ".count($new).'블록 발행 예정 (기존 '.count($live)."블록 삭제, 마커 $audience)\n";
+
+        return true;
+    }
+    appendBlocks($pid, $new, $t, $v);          // ① 먼저 붙이고
+    foreach ($live as $b) {                    // ② 옛것만 지운다
+        deleteBlockIfActive($b['id'], $t, $v);
+    }
+    echo "   ✔ $name — ".count($new).'블록 발행 + 기존 '.count($live)."블록 삭제 (마커 $audience)\n";
+
+    return true;
+}
+
 echo "\n▶ ".($apply ? "발행 시작...\n" : "[확인 모드] 발행 계획 (실제 변경 X):\n");
+$done = 0;
 foreach ($targets as $name => $cfg) {
     if ($only && ! in_array($name, $only, true)) {
         continue;
-    } // 지정 부서만
+    }
     if (! $cfg['id']) {
         echo "   ⚠ $name — 페이지 없음(건너뜀)\n";
 
         continue;
     }
-    $blocks = $cfg['fn']();
-    $del = clearBlocks($cfg['id'], $token, $V, $apply);
-    if ($apply) {
-        appendBlocks($cfg['id'], $blocks, $token, $V);
-        echo "   ✔ $name — 기존 {$del}블록 삭제 + ".count($blocks)."블록 발행\n";
-    } else {
-        echo "   + $name — 기존 {$del}블록 삭제 예정 + ".count($blocks)."블록 발행 예정\n";
+    if (publishPage($name, $cfg['id'], ($cfg['blocks'])(), $PAGE_AUDIENCE[$name], $token, $V, $apply)) {
+        $done++;
     }
 }
 
-// ── 3. 관리(통합) — ERP 섹션 하위 기존 페이지 본문 갱신 ─────
-if (! $only || in_array('관리', $only, true)) {
-    $mgrBlocks = blocks_manager($financeId, $clearanceId);
-
-    if ($managerId) {
-        $del = clearBlocks($managerId, $token, $V, $apply);
-        if ($apply) {
-            appendBlocks($managerId, $mgrBlocks, $token, $V);
-            echo "   ✔ 관리(통합) — 기존 {$del}블록 삭제 + ".count($mgrBlocks)."블록 발행\n";
-        } else {
-            echo "   + 관리(통합) — 기존 {$del}블록 삭제 예정 + ".count($mgrBlocks)."블록 발행 예정\n";
-        }
-    } else {
-        echo "   ⚠ 관리(통합) — 페이지 없음(건너뜀)\n";
-    }
-}
-
-echo "\n".($apply ? "✅ 발행 완료.\n" : "ℹ️  확인만 했습니다. 실제 발행:  php scripts/notion-guide-publish.php --apply\n");
+echo "\n".($apply
+    ? "✅ 발행 완료 ({$done}페이지). 확인:  php scripts/notion-guide-publish.php --verify\n"
+    : "ℹ️  확인만 했습니다. 대조=--verify · 실제 발행=--apply\n");
