@@ -59,3 +59,9 @@ Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();
 // 일별 마감환율 스냅샷 (2026-07-13) — 매일 09:00 네이버 현재값을 "전날 마감"으로 daily_exchange_rates 저장.
 //   ⚠️ 매일(주말 포함) — 금요일 마감이 토요일 09:00 에 정확히 잡히게. 잔금 날짜별 환율 자동기입 소스.
 Schedule::command('exchange:snapshot-daily')->dailyAt('09:00')->withoutOverlapping();
+
+// 챗봇 호스트 감시 (2026-07-30, 색인 세션 요청) — 사내 GPU PC 는 자기가 죽었다고 알릴 통로가 없다.
+//   죽어도 챗봇은 에러 없이 옛 답변만 계속 내므로 티가 안 난다. Ollama 응답 + 색인 mtime 두 지표를
+//   캐시에 적어두고 사이드바(시스템관리자 전용)가 읽는다. 캐시 TTL 30분 → 스케줄러가 죽으면 화면이
+//   "감시 미작동" 으로 분기한다(그래서 forever 를 쓰지 않는다).
+Schedule::command('assistant:health-check')->everyFiveMinutes()->withoutOverlapping();

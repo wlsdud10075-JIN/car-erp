@@ -603,6 +603,42 @@
     <livewire:erp.alarm-center />
 @endif
 
+{{-- 챗봇 호스트 감시 배너 (2026-07-30, 색인 세션 요청) — 시스템관리자 전용.
+     사내 GPU PC 가 죽어도 챗봇은 에러를 내지 않고 옛 답변만 계속 내므로 티가 안 난다.
+     assistant:health-check(5분 주기)가 캐시에 적어둔 판정을 읽어 이상일 때만 띄운다.
+     ⚠️ 게이트 = isSuperAdmin. 배지↔메뉴 게이트 일치 원칙(위 113~115행 주석)과 같은 이유로,
+        「Ollama · 챗봇 색인 운영」과 주인을 맞춘다. 넓히면 조치할 수 없는 사람에게 유령 경고가 된다.
+     ⚠️ 캐시가 아예 없으면(TTL 30분 만료) 감시 자체가 안 돌고 있다는 뜻이라 그것도 이상으로 띄운다. --}}
+@if(config('assistant.enabled') && $user->isSuperAdmin())
+    @php
+        $assistantHealth = \Illuminate\Support\Facades\Cache::get(\App\Console\Commands\AssistantHealthCheck::CACHE_KEY);
+        $assistantProblems = $assistantHealth === null
+            ? ['챗봇 감시가 30분 넘게 실행되지 않았습니다 — 서버 스케줄러(cron schedule:run)를 확인하세요.']
+            : ($assistantHealth['problems'] ?? []);
+    @endphp
+    @if($assistantProblems)
+        <div x-data="{ show: true }" x-show="show" x-cloak
+             class="fixed left-1/2 top-3 z-[60] w-[min(92vw,600px)] -translate-x-1/2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg">
+            <div class="flex items-start gap-3">
+                <span class="text-lg leading-none">⚠️</span>
+                <div class="min-w-0 flex-1">
+                    <div class="text-sm font-semibold text-amber-900">사내 업무 도우미(챗봇) 이상</div>
+                    <ul class="mt-1 space-y-0.5 text-xs text-amber-800">
+                        @foreach($assistantProblems as $p)
+                            <li>· {{ $p }}</li>
+                        @endforeach
+                    </ul>
+                    <div class="mt-1.5 text-[11px] text-amber-700">
+                        챗봇은 멈추지 않고 예전 답변을 계속 낼 수 있습니다. 사내 GPU PC 상태를 확인하세요.
+                    </div>
+                </div>
+                <button type="button" @click="show = false"
+                        class="shrink-0 rounded px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-100">닫기</button>
+            </div>
+        </div>
+    @endif
+@endif
+
 {{-- 사내 업무 도우미 (로컬 LLM 챗봇, jin 2026-07-24) —
      .env(인프라: LLM 연결 준비) AND 기능설정 토글(super) AND canUseAssistant 모두 충족 시 노출.
      config 게이트를 앞에 둬 인프라 off 서버는 Setting 조회조차 안 함(성능). --}}
