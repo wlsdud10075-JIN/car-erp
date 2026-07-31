@@ -34,6 +34,9 @@ class ColumnLabel
         if ($columnName === null || $columnName === '') {
             return '-';
         }
+        if (($dynamic = self::dynamicKey($columnName)) !== null) {
+            return $dynamic;
+        }
         $table = self::resolveTable($modelOrTable);
         if ($table === null) {
             return $columnName;
@@ -67,9 +70,33 @@ class ColumnLabel
             'SavingsStatus' => 'savings_statuses',
             'User' => 'users',
             'ApprovalRequest' => 'approval_requests',
+            // 2026-07-31 — 감사로그에 실제로 쌓이는데 표가 없어 컬럼명이 영문으로 새던 것들.
+            'CashSnapshot' => 'cash_snapshots',
+            'Setting' => 'settings',
+            'SettlementPayoutBatch' => 'settlement_payout_batches',
+            'SignedContract' => 'signed_contracts',
         ];
 
         return $map[$short] ?? null;
+    }
+
+    /**
+     * 챗봇 질문 유형(intent) → 한글 (2026-07-31).
+     *
+     * action='assistant_query' 감사로그는 column_name 에 컬럼이 아니라 intent 를 넣는다.
+     * 권한 밖 질문은 '{intent}(denied)' 로 저장되므로 접미사를 떼고 조회한 뒤 「(권한없음)」을 붙인다.
+     */
+    public static function assistantIntent(?string $raw): string
+    {
+        if ($raw === null || $raw === '') {
+            return '-';
+        }
+        $denied = str_ends_with($raw, '(denied)');
+        $intent = $denied ? substr($raw, 0, -strlen('(denied)')) : $raw;
+        $label = config("column_labels.assistant_intents.$intent", $intent);
+        $label = is_string($label) ? $label : $intent;
+
+        return $denied ? $label.' (권한없음)' : $label;
     }
 
     /**
@@ -77,10 +104,30 @@ class ColumnLabel
      * 전 테이블 그룹을 순회하며 첫 매칭을 반환. 없으면 영문 컬럼명 fallback.
      * (감사 로그 필터 드롭다운은 auditable_type 없이 column_name distinct 만 가지므로 테이블 특정 불가.)
      */
+    /**
+     * 값이 박힌 동적 키 → 한글 (2026-07-31).
+     *
+     * 일부 이벤트는 column_name 에 고정 컬럼이 아니라 대상 이름을 붙여 쓴다(예: 'buyer:AUTO SCOUT').
+     * 사전에 바이어를 하나씩 넣을 수는 없으므로 **접두사 패턴**으로 처리한다. 해당 없으면 null.
+     */
+    private static function dynamicKey(string $columnName): ?string
+    {
+        if (str_starts_with($columnName, 'buyer:')) {
+            $name = trim(substr($columnName, strlen('buyer:')));
+
+            return $name === '' ? '바이어' : "바이어 ({$name})";
+        }
+
+        return null;
+    }
+
     public static function columnAny(?string $columnName): string
     {
         if ($columnName === null || $columnName === '') {
             return '-';
+        }
+        if (($dynamic = self::dynamicKey($columnName)) !== null) {
+            return $dynamic;
         }
         // ⚠️ 'value_maps' 제외 필수 (2026-07-28 운영 500 수정).
         //   value_maps 는 "컬럼→라벨" 이 아니라 "테이블→(컬럼→값매핑)" 2단 구조라 값이 배열이다.

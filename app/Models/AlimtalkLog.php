@@ -30,6 +30,50 @@ class AlimtalkLog extends Model
     ];
 
     /**
+     * 내부 skip 사유 코드 → 한글 (2026-07-31).
+     * error 컬럼은 로그 화면에 **원문 그대로** 찍히므로, 코드로 넣던 것들을 사람 말로 바꿔 보여준다.
+     * (신규 코드는 처음부터 한글 문장으로 넣는다 — 여기 표는 옛 코드 호환용.)
+     */
+    private const SKIP_REASONS = [
+        'disabled_or_unconfigured' => '알림톡이 꺼져 있거나 설정이 안 되어 있어 보내지 않음',
+        'no_phone' => '수신자 전화번호가 없어 보내지 않음',
+        'unknown_template' => '알 수 없는 템플릿이라 보내지 않음',
+        'unconfigured' => 'BizM 계정 설정이 없어 보내지 않음',
+        'no_test_tmplid' => '테스트용 템플릿 ID가 없어 보내지 않음',
+    ];
+
+    /** BizM 오류코드 뜻 — 코드는 진단에 필요하므로 지우지 않고 뒤에 설명을 붙인다. */
+    private const BIZM_CODES = [
+        'K108' => '등록된 버튼과 다름',
+        'K135' => '강조 문구가 너무 김',
+        'K137' => '항목 설명이 너무 김',
+        'K138' => '등록된 요약정보와 다름',
+        'K140' => '요약정보 형식 위반(금액만 가능)',
+        'K208' => '항목 제목이 너무 김(6자 초과)',
+    ];
+
+    /**
+     * 로그 화면에 보여줄 사유 — 영문 코드를 한글로, BizM 오류는 코드 + 뜻으로.
+     * 매핑이 없으면 원문 그대로(진단 정보를 삼키지 않는다).
+     */
+    public function errorLabel(): ?string
+    {
+        $raw = $this->error;
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        if (isset(self::SKIP_REASONS[$raw])) {
+            return self::SKIP_REASONS[$raw];
+        }
+        // 'bizmsg fail — K140:InvalidItemSummaryDescriptionException — [{...}]' 형태에서 코드만 뽑아 설명 부착.
+        if (preg_match('/\b(K\d{3})\b/', $raw, $m) && isset(self::BIZM_CODES[$m[1]])) {
+            return '발송 거부 '.$m[1].' — '.self::BIZM_CODES[$m[1]];
+        }
+
+        return $raw;
+    }
+
+    /**
      * BizM /v2/sender/report 응답 1건을 도달 상태로 분류한다.
      *
      * @return string|null 'delivered' | 'undelivered' | null(미확정 — 재조회)

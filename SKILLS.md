@@ -596,6 +596,24 @@ extension=zip    # 주석 제거
 **🔒 가드 = `tests/Feature/AlimtalkItemListSpecTest`** — 전 템플릿의 title/헤더 길이 + 카드가 쓰는 `#{변수}` 가 실제 vars 에 있는지 정적 검사.
 **🧭 교훈**: 카드 문구를 건드리기 전에 **그 회사 승인본 xlsx 를 먼저 열어본다**(RichText 라 평문 덤프 필요). 상세·열 매핑 = 메모리 `reference_alimtalk_approved_templates`.
 
+### 41. 🇰🇷 로그 화면은 DB 값을 **원문 그대로** 찍는다 — 새 액션·사유를 만들면 사전도 같이 (2026-07-31)
+**원인**: 감사로그는 `action`·`column_name`·`auditable_type` 을, 알림톡 로그는 `error` 를 화면에 그대로 출력한다.
+그래서 새 이벤트(`AuditLog::recordEvent($x,'foo_bar')`)나 새 skip 사유를 넣고 `config/column_labels.php` 를 안 고치면
+**관리자 화면에 영문 식별자가 그대로 노출**된다. 예외도 로그도 안 나므로 아무도 모른다.
+**실측(운영 heymanerp)**: 액션 6종(`assistant_query`·`purchase_gate_override`·`capital_report_viewed` …), 모델 3종
+(`CashSnapshot`·`Setting`·`SettlementPayoutBatch`), 컬럼 20종, 알림톡 `disabled_or_unconfigured` 113건이 영문이었다.
+**jin 이 같은 지적을 4번 했다** — 사람 기억으로는 못 막는다.
+**규칙**:
+- `recordEvent`/`recordChange` 로 **새 action 을 만들면 같은 커밋에 `column_labels.actions`** 에 한글 라벨을 넣는다.
+- 새 모델을 감사 대상으로 삼으면 `models` + `ColumnLabel::resolveTable()` 의 표 매핑 + 그 테이블 컬럼 사전까지 3곳.
+- 알림톡 skip 사유는 **처음부터 한글 문장**으로 넣는다(`'error' => '통장 잔액 미입력'`). 옛 영문 코드는 `AlimtalkLog::SKIP_REASONS` 가 번역한다.
+- ⚠️ **BizM 오류코드(`K140` 등)는 지우지 말 것** — 코드를 남기고 뜻을 덧붙인다. 2026-07-31 에 반려 3건을 그 코드로 진단했다.
+- `column_name` 에 컬럼이 아닌 값이 들어가는 자리가 있다 — 챗봇은 **질문 유형**(`assistant_intents` 사전), 바이어 변경은 `buyer:{이름}`(접두사 패턴 `ColumnLabel::dynamicKey`). 컬럼 사전에 넣으려 하지 말 것.
+- 업무 용어라 영문이 맞는 것(`TAX D/C`·`B/L`·`ETA` …)은 `AdminUiKoreanLabelTest::ALLOWED_NON_HANGUL` 에만 추가한다.
+**🔒 가드 = `tests/Feature/AdminUiKoreanLabelTest`** — `app/` 을 정적 스캔해 기록되는 모든 action 이 한글 라벨을 갖는지,
+알림톡 사유가 한글로 렌더되는지, 사전 값 자체가 한글인지 검사한다. **기능 테스트로는 원리상 못 잡는다**(영문이어도 화면은 정상 렌더).
+⚠️ 스캔 정규식은 범위를 좁힐 것 — `'error' => '...'` 를 전 파일에서 찾으면 API 응답까지 잡아 오탐이 난다(실제로 났다).
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
