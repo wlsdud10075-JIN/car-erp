@@ -944,17 +944,48 @@ new #[Layout('components.layouts.app')] class extends Component
         @if(! ($cap['has_data'] ?? false))
             <p class="text-sm text-gray-400">{{ __('cash.no_data') }}</p>
         @else
+        {{-- 자금 카드 3종 — 큰 숫자 아래에 구성 내역을 라벨/값 정렬로 편다(jin 2026-07-31).
+             한 줄로 붙이면 길어서 안 읽힌다. 숫자는 tabular-nums 로 자릿수를 맞춘다. --}}
+        @php
+            // 내역 한 줄. $sign: '+'|'-'|null(중립)
+            $capRow = function (string $label, string $value, ?string $sign = null) {
+                $color = $sign === '-' ? 'text-red-500' : ($sign === '+' ? 'text-gray-700' : 'text-gray-700');
+                return '<div class="flex items-baseline justify-between gap-2"><span class="text-gray-400">'.e($label).'</span>'
+                    .'<span class="tabular-nums font-medium '.$color.'">'.($sign === '-' ? '−' : '').e($value).'</span></div>';
+            };
+        @endphp
         <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {{-- ① 통장 현금 --}}
             <div class="rounded-xl border border-gray-200 p-4">
                 <p class="text-xs text-gray-500">{{ __('cash.cash') }}</p>
                 <p class="mt-1 text-2xl font-extrabold text-gray-800">{{ $eok($cap['cash_krw']) }}</p>
-                <p class="mt-1 text-[11px] text-gray-400">KRW {{ number_format($cap['balance_krw']) }} · USD {{ number_format($cap['balance_usd'], 2) }} · EUR {{ number_format($cap['balance_eur'], 2) }}</p>
+                <div class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-[11px]">
+                    {!! $capRow('KRW', number_format($cap['balance_krw'])) !!}
+                    {!! $capRow('USD', number_format($cap['balance_usd'], 2)) !!}
+                    {!! $capRow('EUR', number_format($cap['balance_eur'], 2)) !!}
+                </div>
             </div>
+
+            {{-- ② 굴리는 총 자금(순자산) — 미판매 재고 + 미수 기준.
+                 ⚠️ 계산은 unsold_inventory 인데 화면에 inventory(선적 전)를 찍고 있었다(2026-07-31 수정). --}}
             <div class="rounded-xl border border-gray-200 p-4">
                 <p class="text-xs text-gray-500">{{ __('cash.working_capital') }}</p>
                 <p class="mt-1 text-2xl font-extrabold text-gray-800">{{ $eok($cap['working_capital_krw']) }}</p>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }} · {{ __('cash.receivable') }} {{ $eok($cap['receivable_krw']) }} · {{ __('cash.payable') }} −{{ $eok($cap['payable_krw']) }}@if(($cap['auction_deposit_krw'] ?? 0) > 0) · {{ __('cash.auction_deposit') }} {{ $eok($cap['auction_deposit_krw']) }}@endif @if(($cap['advance_krw'] ?? 0) > 0)· {{ __('cash.advance') }} −{{ $eok($cap['advance_krw']) }}@endif @if(($cap['advance_payment_krw'] ?? 0) > 0)· {{ __('cash.advance_payment') }} −{{ $eok($cap['advance_payment_krw']) }}@endif</p>
+                <div class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-[11px]">
+                    {!! $capRow(__('cash.cash'), $eok($cap['cash_krw'])) !!}
+                    {!! $capRow(__('cash.inventory'), $eok($cap['unsold_inventory_krw'] ?? $cap['inventory_krw'])) !!}
+                    {!! $capRow(__('cash.receivable'), $eok($cap['receivable_krw'])) !!}
+                    @if(($cap['auction_deposit_krw'] ?? 0) > 0)
+                        {!! $capRow(__('cash.auction_deposit'), $eok($cap['auction_deposit_krw'])) !!}
+                    @endif
+                    {!! $capRow(__('cash.payable'), $eok($cap['payable_krw']), '-') !!}
+                    @if(($cap['advance_krw'] ?? 0) > 0)
+                        {!! $capRow(__('cash.advance'), $eok($cap['advance_krw']), '-') !!}
+                    @endif
+                </div>
             </div>
+
+            {{-- ③ 원금 대비 손익 --}}
             <div class="rounded-xl border p-4 {{ ($cap['profit_krw'] ?? null) === null ? 'border-gray-200' : (($cap['profit_krw'] >= 0) ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40') }}">
                 <p class="text-xs text-gray-500">{{ __('cash.profit') }} <span class="text-[10px] text-gray-400">· {{ __('cash.profit_lens') }}</span></p>
                 @if(($cap['profit_krw'] ?? null) === null)
@@ -962,10 +993,33 @@ new #[Layout('components.layouts.app')] class extends Component
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.no_principal') }}</p>
                 @else
                     <p class="mt-1 text-2xl font-extrabold {{ $cap['profit_krw'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ $cap['profit_krw'] >= 0 ? '+' : '−' }}{{ $eok(abs($cap['profit_krw'])) }}</p>
-                    <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.liquidation') }} {{ $eok($cap['liquidation_krw']) }} − {{ __('cash.principal') }} {{ $eok($cap['principal_krw']) }}</p>
+                    <div class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-[11px]">
+                        {!! $capRow(__('cash.liquidation'), $eok($cap['liquidation_krw'])) !!}
+                        {!! $capRow(__('cash.principal'), $eok($cap['principal_krw']), '-') !!}
+                        {{-- 대표 자산성 가수금은 원금에 합산된다 — 안 보여주면 "설정값과 다르다"고 오해한다. --}}
+                        @if(($cap['principal_breakdown']['owner_advance_krw'] ?? 0) > 0)
+                            <div class="flex items-baseline justify-between gap-2 pl-2 text-[10px] text-gray-400">
+                                <span>{{ __('cash.principal_base') }}</span>
+                                <span class="tabular-nums">{{ $eok($cap['principal_breakdown']['base_krw']) }}</span>
+                            </div>
+                            <div class="flex items-baseline justify-between gap-2 pl-2 text-[10px] text-gray-400">
+                                <span>{{ __('cash.principal_owner') }}</span>
+                                <span class="tabular-nums">{{ $eok($cap['principal_breakdown']['owner_advance_krw']) }}</span>
+                            </div>
+                        @endif
+                    </div>
                 @endif
             </div>
         </div>
+        {{-- 청산가치 구성은 카드가 길어져 아래 한 줄로 — 선수금은 이중계상 제거 항목이라 보여야 한다. --}}
+        <p class="mt-2 text-[10px] text-gray-400">
+            {{ __('cash.liquidation') }} = {{ __('cash.cash') }} {{ $eok($cap['cash_krw']) }}
+            + {{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }}
+            @if(($cap['advance_payment_krw'] ?? 0) > 0) − {{ __('cash.advance_payment') }} {{ $eok($cap['advance_payment_krw']) }}@endif
+            @if(($cap['auction_deposit_krw'] ?? 0) > 0) + {{ __('cash.auction_deposit') }} {{ $eok($cap['auction_deposit_krw']) }}@endif
+            − {{ __('cash.payable') }} {{ $eok($cap['payable_krw']) }}
+            @if(($cap['advance_krw'] ?? 0) > 0) − {{ __('cash.advance') }} {{ $eok($cap['advance_krw']) }}@endif
+        </p>
         @php
             $trend = $this->capitalTrend;
             $liqVals = array_column($trend, 'liquidation');

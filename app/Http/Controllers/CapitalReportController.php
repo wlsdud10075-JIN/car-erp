@@ -53,7 +53,13 @@ class CapitalReportController extends Controller
             'asOf' => $date,
             'd' => $d,
             'stale' => $stale,
-            'advances' => $d['has_data'] ? AdvanceReceipt::orderByDesc('amount')->get() : collect(),
+            // 갚아야 할 돈만 — 대표 자산성(equity)은 부채가 아니라 투입원금으로 잡힌다(jin 2026-07-31).
+            'advances' => $d['has_data']
+                ? AdvanceReceipt::where('nature', AdvanceReceipt::NATURE_LIABILITY)->orderByDesc('amount')->get()
+                : collect(),
+            'ownerAdvances' => $d['has_data']
+                ? AdvanceReceipt::where('nature', AdvanceReceipt::NATURE_EQUITY)->orderByDesc('amount')->get()
+                : collect(),
             'deposits' => $d['has_data'] ? AuctionDeposit::orderByDesc('amount')->get() : collect(),
         ]);
     }

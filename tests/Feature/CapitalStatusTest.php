@@ -169,6 +169,43 @@ class CapitalStatusTest extends TestCase
         $this->assertSame(0, CashSnapshot::count());
     }
 
+    public function test_owner_advance_is_added_to_the_principal(): void
+    {
+        /*
+         * 대표 돈을 부채에서 빼면 청산가치가 그만큼 올라간다. 그 돈도 대표가 넣은 밑천이므로
+         * 원금에도 더해야 한다. 한쪽만 반영하면 **차액이 통째로 이익으로 잡힌다**(jin 2026-07-31).
+         */
+        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY],
+            ['value' => '65000000', 'type' => 'integer']);
+        AdvanceReceipt::create(['received_date' => '2026-07-01', 'company_name' => '대표이사',
+            'amount' => 300_000_000, 'nature' => AdvanceReceipt::NATURE_EQUITY]);
+        AdvanceReceipt::create(['received_date' => '2026-07-01', 'company_name' => '김진숙',
+            'amount' => 50_000_000, 'nature' => AdvanceReceipt::NATURE_LIABILITY]);
+
+        $svc = app(CapitalStatusService::class);
+
+        $this->assertSame(365_000_000, $svc->principal(), '원금 = 설정 6,500만 + 대표 가수금 3억');
+        $b = $svc->principalBreakdown();
+        $this->assertSame(65_000_000, $b['base_krw']);
+        $this->assertSame(300_000_000, $b['owner_advance_krw']);
+
+        // 청산가치에서는 갚을 돈(5천만)만 빠진다.
+        $d = $svc->derive($svc->capture(['krw' => 365_000_000], null, '2026-07-31'));
+        $this->assertSame(50_000_000, (int) $d['advance_krw']);
+        $this->assertSame(315_000_000, (int) $d['liquidation_krw']);
+        $this->assertSame(-50_000_000, (int) $d['profit_krw'],
+            '대표 돈을 원금에 안 더하면 손익이 +2.5억으로 부풀려집니다.');
+    }
+
+    public function test_principal_stays_null_without_a_base_setting(): void
+    {
+        // 비교 기준이 없으면 손익을 말할 수 없다. 대표 가수금만으로 원금을 만들어내면 안 된다.
+        AdvanceReceipt::create(['received_date' => '2026-07-01', 'company_name' => '대표이사',
+            'amount' => 100_000_000, 'nature' => AdvanceReceipt::NATURE_EQUITY]);
+
+        $this->assertNull(app(CapitalStatusService::class)->principal());
+    }
+
     public function test_recapture_button_lives_on_the_admin_dashboard(): void
     {
         // 잔고 기입은 업무 대시보드, 보는 건 관리자 대시보드 — 버튼도 보는 쪽에 둔다(jin 2026-07-31).

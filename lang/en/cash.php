@@ -21,6 +21,8 @@ return [
     'liquidation' => 'Liquidation Value',
     'profit' => 'Profit vs Principal',
     'principal' => 'Invested Principal',
+    'principal_base' => 'Base principal',
+    'principal_owner' => 'Owner advance',
     'inventory' => 'Inventory',
     'receivable' => 'Receivables',
     'payable' => 'Payables',
