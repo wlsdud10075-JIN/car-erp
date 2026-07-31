@@ -118,6 +118,7 @@ return [
         'roro_invoice_packing' => 'RORO Invoice&Packing',
         'roro_contract' => 'RORO Contract',
         'sales_contract' => '판매계약서',
+        'invoice' => 'Proforma Invoice',
     ],
     'sales_contract_homogeneous_hint' => '동일 바이어·통화 차량만 함께 발급할 수 있습니다.',
 

@@ -30,14 +30,15 @@ class VehicleDocumentController extends Controller
         'clearance',                                          // 통관 (8시트 SET)
     ];
 
-    // 다중차량(여러 대 → 1서류) 발급. 선적 4종 + 판매계약서. 30대까지 슬롯 자동 트림.
+    // 다중차량(여러 대 → 1서류) 발급. 선적 4종 + 판매계약서 + 인보이스. 30대까지 슬롯 자동 트림.
     private const MULTI_TYPES = [
         'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract',
-        'sales_contract',
+        'sales_contract', 'invoice',
     ];
 
     // 1바이어·단일통화 계약서 — 선택 차량이 동일 바이어·통화여야 하는 type (매핑이 primary 로만 채움).
-    private const HOMOGENEOUS_TYPES = ['sales_contract'];
+    //   인보이스도 헤더(바이어·컨사이니·환율·Invoice No)를 primary 로만 채우므로 동질성 필수. (jin 2026-07-31)
+    private const HOMOGENEOUS_TYPES = ['sales_contract', 'invoice'];
 
     private const MULTI_MAX = 30;
 
@@ -142,18 +143,18 @@ class VehicleDocumentController extends Controller
             '접근 권한이 없는 차량이 포함되어 있습니다.',
         );
 
-        // 판매계약서 = 1바이어·단일통화. 매핑이 바이어블록·환율을 primary 로만 채우고 통화 합산하므로,
+        // 판매계약서·인보이스 = 1바이어·단일통화. 매핑이 바이어블록·환율을 primary 로만 채우고 통화 합산하므로,
         // 혼합 선택 시 한 바이어 정보가 타 차량 위에 인쇄되거나 통화 다른 FOB 가 무의미하게 합산됨 → 차단.
         if (in_array($type, self::HOMOGENEOUS_TYPES, true)) {
             abort_if(
                 $vehicles->pluck('buyer_id')->unique()->count() > 1,
                 422,
-                '판매계약서는 동일 바이어의 차량만 함께 발급할 수 있습니다.',
+                '이 서류는 동일 바이어의 차량만 함께 발급할 수 있습니다.',
             );
             abort_if(
                 $vehicles->pluck('currency')->unique()->count() > 1,
                 422,
-                '판매계약서는 동일 통화의 차량만 함께 발급할 수 있습니다.',
+                '이 서류는 동일 통화의 차량만 함께 발급할 수 있습니다.',
             );
         }
 

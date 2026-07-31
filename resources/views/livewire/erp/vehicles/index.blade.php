@@ -5354,6 +5354,13 @@ new #[Layout('components.layouts.app')] class extends Component {
            class="rounded border border-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 {{ (! $scOk || $shipCnt > 30) ? 'pointer-events-none opacity-50' : '' }}">
             ↓ {{ __('vehicle.shipdoc.sales_contract') }}
         </a>
+        {{-- Proforma Invoice (다중차량, jin 2026-07-31) — 판매계약서와 동일하게 1바이어·단일통화 조건($scOk). --}}
+        <a href="{{ ($scOk && $shipCnt <= 30) ? route('erp.vehicles.documents.multi', ['type' => 'invoice', 'ids' => $shipIds]) : '#' }}"
+           target="_blank"
+           title="{{ $scOk ? '' : __('vehicle.sales_contract_homogeneous_hint') }}"
+           class="rounded border border-purple-300 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 {{ (! $scOk || $shipCnt > 30) ? 'pointer-events-none opacity-50' : '' }}">
+            ↓ {{ __('vehicle.shipdoc.invoice') }}
+        </a>
         {{-- 전자서명 요청 — 판매계약서와 동일 조건(동일 바이어·통화·export). 발급 후 링크 모달. --}}
         <button type="button" wire:click="requestSignature"
                 title="{{ $scOk ? '' : __('vehicle.sales_contract_homogeneous_hint') }}"
