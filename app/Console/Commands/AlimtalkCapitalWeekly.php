@@ -85,7 +85,10 @@ class AlimtalkCapitalWeekly extends Command
         return [
             '기준일' => Carbon::parse($d['date'])->format('Y-m-d'),
             '통장현금' => $eok($d['cash_krw']),
-            '재고' => $eok($d['inventory_krw']),
+            // ⚠️ 굴리는자금(순자산)의 구성요소인 **미판매 재고**를 쓴다 (jin 2026-07-31).
+            //   선적 전 재고(inventory_krw)를 찍으면 "통장+재고+미수−미지급"이 굴리는자금과 안 맞아
+            //   대표가 카톡에서 항목을 더해봤을 때 계산이 틀린 것처럼 보인다. 구 스냅샷은 폴백.
+            '재고' => $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']),
             '미수' => $eok($d['receivable_krw']),
             '미지급' => $eok($d['payable_krw']),
             '굴리는자금' => $eok($d['working_capital_krw']),
