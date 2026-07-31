@@ -84,17 +84,30 @@
                     </div>
                 @endforeach
             @endif
-            <div class="row"><span class="k">지금 가치 (청산가치)</span><span class="v">{{ $won($d['liquidation_krw']) }}</span></div>
+            <div class="row"><span class="k">받을 돈까지 합친 가치</span><span class="v">{{ $won($d['working_capital_krw']) }}</span></div>
             <hr class="hr">
+            {{-- 주 지표 = 받을 돈을 정상 회수했을 때. 청산 기준만 보여주면 "미수 전액 손실" 가정이라
+                 실제보다 훨씬 나쁘게 읽힌다(jin 2026-07-31). --}}
+            @php $netProfit = $d['net_profit_krw'] ?? $profit; @endphp
             <div class="row">
                 <span class="k">번 돈</span>
-                <span class="big {{ ($profit ?? 0) >= 0 ? 'pos' : 'neg' }}">
-                    @if ($profit === null) 원금 미설정 @else {{ $eok($profit) }} @endif
+                <span class="big {{ ($netProfit ?? 0) >= 0 ? 'pos' : 'neg' }}">
+                    @if ($netProfit === null) 원금 미설정 @else {{ $eok($netProfit) }} @endif
                 </span>
             </div>
-            @if ($principal !== null && $principal > 0 && $profit !== null)
-                <div style="color:#9ca3af;font-size:12px;margin-top:6px;">
-                    원금의 {{ number_format($d['liquidation_krw'] / $principal, 1) }}배
+            @if ($netProfit !== null)
+                <div style="color:#9ca3af;font-size:12px;margin-top:4px;">받을 돈을 다 받았을 때 기준입니다.</div>
+            @endif
+            @if ($profit !== null)
+                <div style="margin-top:10px;padding:8px 10px;background:#f9fafb;border-radius:6px;">
+                    <div class="row" style="font-size:13px;">
+                        <span class="k" style="color:#9ca3af;">지금 접으면 (받을 돈 못 받는다고 보면)</span>
+                        <span class="v {{ $profit >= 0 ? '' : 'neg' }}">{{ $eok($profit) }}</span>
+                    </div>
+                    <div style="color:#9ca3af;font-size:11.5px;margin-top:3px;">
+                        한국에 있는 것만 세고 바이어에게 받을 돈은 0으로 본 값입니다.
+                        차이 {{ $eok(abs($netProfit - $profit)) }} 이 바이어에게 걸린 몫입니다.
+                    </div>
                 </div>
             @endif
         </div>

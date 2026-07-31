@@ -318,7 +318,12 @@ class CapitalStatusService
             'working_capital_krw' => $working,
             'principal_krw' => $principal,
             'principal_breakdown' => $injected ? null : $this->principalBreakdown(),
+            // 손익 두 가지 (jin 2026-07-31) — 하나만 보여주면 실제 상태를 오해한다.
+            //   profit_krw     = 청산가치 − 원금 : **미수를 한 푼도 못 받는다는 최악 가정**.
+            //   net_profit_krw = 순자산 − 원금   : 받을 돈을 정상 회수했을 때. 평소 보는 값.
+            //   두 값의 차이 = 바이어에게 걸린 위험(미수 규모)이다.
             'profit_krw' => $principal === null ? null : $liquidation - $principal,
+            'net_profit_krw' => $principal === null ? null : $working - $principal,
         ];
     }
 
