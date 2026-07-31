@@ -169,6 +169,25 @@ class CapitalStatusTest extends TestCase
         $this->assertSame(0, CashSnapshot::count());
     }
 
+    public function test_two_profit_figures_are_reported(): void
+    {
+        /*
+         * 손익을 청산 기준 하나만 내면 "미수 전액 손실" 가정이라 실제보다 훨씬 나쁘게 읽힌다.
+         * 실측(heymanerp 2026-07-31): 청산 기준 -5.02억 vs 정상 회수 기준 +0.46억 — 5.48억 차이.
+         */
+        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY],
+            ['value' => '10000000', 'type' => 'integer']);
+        $this->soldVehicle('CAP-2P', 8_000_000, 12_000_000, 0);   // 팔림 + 미수 1200
+
+        $svc = app(CapitalStatusService::class);
+        $d = $svc->derive($svc->capture(['krw' => 0], null, '2026-07-31'));
+
+        $this->assertSame((int) $d['liquidation_krw'] - 10_000_000, (int) $d['profit_krw']);
+        $this->assertSame((int) $d['working_capital_krw'] - 10_000_000, (int) $d['net_profit_krw']);
+        $this->assertGreaterThan((int) $d['profit_krw'], (int) $d['net_profit_krw'],
+            '미수가 있으면 정상 회수 기준이 더 커야 합니다.');
+    }
+
     public function test_owner_advance_is_added_to_the_principal(): void
     {
         /*

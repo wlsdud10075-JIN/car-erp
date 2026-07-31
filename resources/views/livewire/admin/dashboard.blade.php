@@ -992,8 +992,20 @@ new #[Layout('components.layouts.app')] class extends Component
                     <p class="mt-1 text-lg font-bold text-gray-400">—</p>
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.no_principal') }}</p>
                 @else
-                    <p class="mt-1 text-2xl font-extrabold {{ $cap['profit_krw'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ $cap['profit_krw'] >= 0 ? '+' : '−' }}{{ $eok(abs($cap['profit_krw'])) }}</p>
+                    {{-- 주 지표 = 받을 돈을 정상 회수했을 때(jin 2026-07-31).
+                         청산 기준만 보여주면 "미수 전액 손실" 가정이라 실제보다 훨씬 나쁘게 읽힌다. --}}
+                    @php $netProfit = $cap['net_profit_krw'] ?? $cap['profit_krw']; @endphp
+                    <p class="mt-1 text-2xl font-extrabold {{ $netProfit >= 0 ? 'text-emerald-600' : 'text-red-600' }}">{{ $netProfit >= 0 ? '+' : '−' }}{{ $eok(abs($netProfit)) }}</p>
+                    <p class="text-[10px] text-gray-400">{{ __('cash.profit_normal') }}</p>
+                    <div class="mt-2 rounded-md bg-gray-50 px-2 py-1.5">
+                        <div class="flex items-baseline justify-between gap-2 text-[11px]">
+                            <span class="text-gray-400">{{ __('cash.profit_worst') }}</span>
+                            <span class="tabular-nums font-medium {{ $cap['profit_krw'] >= 0 ? 'text-gray-700' : 'text-red-500' }}">{{ $cap['profit_krw'] >= 0 ? '+' : '−' }}{{ $eok(abs($cap['profit_krw'])) }}</span>
+                        </div>
+                        <p class="mt-0.5 text-[10px] leading-tight text-gray-400">{{ __('cash.profit_worst_note') }}</p>
+                    </div>
                     <div class="mt-3 space-y-1 border-t border-gray-100 pt-2 text-[11px]">
+                        {!! $capRow(__('cash.working_capital'), $eok($cap['working_capital_krw'])) !!}
                         {!! $capRow(__('cash.liquidation'), $eok($cap['liquidation_krw'])) !!}
                         {!! $capRow(__('cash.principal'), $eok($cap['principal_krw']), '-') !!}
                         {{-- 대표 자산성 가수금은 원금에 합산된다 — 안 보여주면 "설정값과 다르다"고 오해한다. --}}
