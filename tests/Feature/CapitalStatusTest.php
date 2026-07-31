@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Console\Commands\AlimtalkCapitalWeekly;
 use App\Models\AdvanceReceipt;
+use App\Models\AlimtalkLog;
 use App\Models\Buyer;
 use App\Models\CashSnapshot;
 use App\Models\ForwardingCompany;
@@ -502,7 +503,16 @@ class CapitalStatusTest extends TestCase
         $this->assertLessThan(0, (int) $svc->derive($svc->latest())['net_profit_krw']);
 
         $this->assertEmpty(AlimtalkCapitalWeekly::buildVars(), '손실이면 발송하지 않아야 한다');
+
+        // 🚨 보류 사실이 **알림톡 로그 화면**에 남아야 한다. laravel.log 에만 남기면 대표 보고가
+        //    조용히 멈춘 걸 아무도 모른다(SKILLS §8 #38 의 반복 사고 형태).
+        User::factory()->create(['permission' => 'admin', 'phone' => '01011112222', 'email_verified_at' => now()]);
         $this->artisan('alimtalk:capital-weekly')->assertExitCode(0);
+
+        $log = AlimtalkLog::where('template_code', 'erp_capital_weekly')->latest('id')->first();
+        $this->assertNotNull($log, '보류해도 로그 행은 남겨야 한다');
+        $this->assertSame('skipped', $log->status);
+        $this->assertStringContainsString('마이너스', (string) $log->error, '사유는 한글로 — 화면에 그대로 찍힌다');
     }
 
     /** 원금 미설정이면 손익 칸이 비므로 발송하지 않는다(옛 코드의 '원금 미설정' 한글은 규격 위반이라 반려됐다). */

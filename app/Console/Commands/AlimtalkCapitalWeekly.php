@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Http\Controllers\CapitalReportController;
+use App\Models\AlimtalkLog;
 use App\Services\BizmAlimtalkService;
 use App\Services\CapitalStatusService;
 use App\Support\AlimtalkRecipients;
@@ -34,7 +35,18 @@ class AlimtalkCapitalWeekly extends Command
 
             $vars = self::buildVars();
             if (empty($vars)) {
-                $this->info('capital-weekly: 통장 스냅샷 없음 — skip.');
+                // 🚨 안 보낸 이유를 **알림톡 로그 화면에 남긴다**. laravel.log 에만 남기면 아무도 못 본다 —
+                //    대표 보고가 조용히 멈추는 게 이 프로젝트의 반복 사고 형태다(SKILLS §8 #38).
+                $reason = self::$lastSkipReason ?? '통장 잔액 미입력';
+                foreach ($recipients as $phone) {
+                    AlimtalkLog::create([
+                        'template_code' => 'erp_capital_weekly',
+                        'phone' => preg_replace('/[^0-9]/', '', $phone),
+                        'status' => 'skipped',
+                        'error' => $reason,
+                    ]);
+                }
+                $this->info("capital-weekly: {$reason} — skip.");
 
                 return self::SUCCESS;
             }
@@ -69,12 +81,18 @@ class AlimtalkCapitalWeekly extends Command
         }
     }
 
-    /** 최신 스냅샷 → 템플릿 변수(억 단위 포맷). 스냅샷 없으면 빈 배열. 테스트 재사용. */
+    /** 직전 buildVars() 가 빈 배열을 돌려준 이유(사람이 읽는 한글) — handle() 이 로그 화면에 남긴다. */
+    public static ?string $lastSkipReason = null;
+
+    /** 최신 스냅샷 → 템플릿 변수(억 단위 포맷). 보낼 수 없으면 빈 배열 + $lastSkipReason. 테스트 재사용. */
     public static function buildVars(): array
     {
+        self::$lastSkipReason = null;
         $svc = app(CapitalStatusService::class);
         $d = $svc->derive($svc->latest());
         if (! ($d['has_data'] ?? false)) {
+            self::$lastSkipReason = '통장 잔액 미입력';
+
             return [];
         }
 
@@ -93,6 +111,7 @@ class AlimtalkCapitalWeekly extends Command
         // 그건 요약정보 규격 위반이라 **발송 자체가 반려**된다 → 애초에 보내지 않고 이유를 남긴다.
         if ($profit === null) {
             Log::warning('alimtalk:capital-weekly — 투입원금 미설정으로 손익을 보고할 수 없어 발송하지 않음.');
+            self::$lastSkipReason = '투입원금 미설정 — 손익을 계산할 수 없음';
 
             return [];
         }
@@ -104,6 +123,7 @@ class AlimtalkCapitalWeekly extends Command
             Log::error('alimtalk:capital-weekly — 손익이 음수라 요약정보 규격상 표기 불가. 오보고 방지로 발송 보류.', [
                 'net_profit_krw' => $profit,
             ]);
+            self::$lastSkipReason = '손익이 마이너스 — 카카오 요약정보에 음수를 넣을 수 없어 보류(등록본 수정 필요)';
 
             return [];
         }
