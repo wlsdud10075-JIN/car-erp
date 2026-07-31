@@ -23,6 +23,8 @@ return [
     'liquidation' => '청산가치',
     'profit' => '원금 대비 손익',
     'principal' => '투입 원금',
+    'principal_base' => '설정 원금',
+    'principal_owner' => '대표 가수금',
     'inventory' => '재고',
     'receivable' => '미수',
     'payable' => '미지급',

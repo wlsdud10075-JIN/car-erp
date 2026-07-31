@@ -162,12 +162,34 @@ class CapitalStatusService
         return $total;
     }
 
-    /** 투입 원금 (Setting, 미설정 시 null). */
+    /**
+     * 투입 원금 = 기본 원금(Setting) + **대표 자산성 가수금** (jin 2026-07-31).
+     *
+     * 가수금을 equity 로 잡으면 갚을 의무가 없어 청산가치가 그만큼 올라간다. 그런데 그 돈도
+     * 대표가 회사에 넣은 밑천이므로 원금에도 더해야 한다. 한쪽만 반영하면 **차액이 통째로 이익으로 잡힌다**.
+     *   예) 원금 0.65억 + 대표 가수금 3억 → 청산 3.65억인데 원금이 0.65억이면 손익 +3억(거짓).
+     *       원금을 3.65억으로 보면 손익 0(본전) = 맞는 값.
+     * 회수 시에도 대칭이다 — 대표가 빼가면 청산 −3억, 원금 −3억이라 손익이 안 움직인다.
+     *
+     * ⚠️ 기본 원금이 미설정이면 null 을 유지한다(비교 기준이 없으면 손익을 말할 수 없다).
+     */
     public function principal(): ?int
     {
         $v = Setting::get(self::PRINCIPAL_KEY);
+        if ($v === null || $v === '') {
+            return null;
+        }
 
-        return ($v === null || $v === '') ? null : (int) $v;
+        return (int) $v + AdvanceReceipt::equityKrw();
+    }
+
+    /** 원금 구성 분해 — 화면에서 "왜 원금이 설정값보다 큰가"를 보여주기 위함. */
+    public function principalBreakdown(): array
+    {
+        $v = Setting::get(self::PRINCIPAL_KEY);
+        $base = ($v === null || $v === '') ? null : (int) $v;
+
+        return ['base_krw' => $base, 'owner_advance_krw' => AdvanceReceipt::equityKrw()];
     }
 
     /**
@@ -271,6 +293,9 @@ class CapitalStatusService
         $working = $unsold === null
             ? $liquidation + $s->receivable_krw                                                   // 구 스냅샷 폴백
             : $cash + (int) $unsold + (int) $s->receivable_krw + $auctionDeposit - $s->payable_krw - $advance;
+
+        // 원금이 주입됐다 = 추이처럼 여러 건을 도는 중 → 분해 정보는 만들지 않는다(쿼리 N배 방지).
+        $injected = $principal !== null;
         $principal ??= $this->principal();
 
         return [
@@ -292,6 +317,7 @@ class CapitalStatusService
             'liquidation_krw' => $liquidation,
             'working_capital_krw' => $working,
             'principal_krw' => $principal,
+            'principal_breakdown' => $injected ? null : $this->principalBreakdown(),
             'profit_krw' => $principal === null ? null : $liquidation - $principal,
         ];
     }

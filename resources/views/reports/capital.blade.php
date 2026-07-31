@@ -73,6 +73,17 @@
         <div class="card">
             <div class="cap">내 돈이 얼마나 불었나</div>
             <div class="row"><span class="k">넣은 돈 (투입원금)</span><span class="v">{{ $won($principal) }}</span></div>
+            {{-- 대표가 나중에 넣은 돈(자산성 가수금)도 밑천이라 원금에 합산된다 — 안 보여주면 설정값과 달라 보인다. --}}
+            @if ((int) ($d['principal_breakdown']['owner_advance_krw'] ?? 0) > 0)
+                <div class="row" style="padding-left:10px;font-size:12.5px;color:#9ca3af;">
+                    <span>처음 넣은 돈</span><span class="dv">{{ $won($d['principal_breakdown']['base_krw']) }}</span>
+                </div>
+                @foreach ($ownerAdvances as $a)
+                    <div class="row" style="padding-left:10px;font-size:12.5px;color:#9ca3af;">
+                        <span>{{ $a->company_name }} (나중에 넣음)</span><span class="dv">{{ $won($a->amount) }}</span>
+                    </div>
+                @endforeach
+            @endif
             <div class="row"><span class="k">지금 가치 (청산가치)</span><span class="v">{{ $won($d['liquidation_krw']) }}</span></div>
             <hr class="hr">
             <div class="row">
@@ -106,9 +117,19 @@
             <details>
                 <summary><span class="k">차에 묶인 돈 (재고)</span><span class="v">{{ $eok($d['inventory_krw']) }}</span></summary>
                 <div class="detail">
-                    <div class="drow"><span>아직 안 나간 차들의 매입가 합계입니다.</span><span></span></div>
+                    <div class="drow"><span>아직 배를 타지 않아 한국에 있는 차들의 매입가 합계입니다.</span><span></span></div>
                 </div>
             </details>
+
+            {{-- 선적 전인데 이미 받은 대금 — 차를 되팔면 돌려줘야 하므로 자산에서 뺀다(2026-07-31). --}}
+            @if ((int) ($d['advance_payment_krw'] ?? 0) > 0)
+                <details>
+                    <summary><span class="k">미리 받은 차값</span><span class="v neg">−{{ $eok($d['advance_payment_krw']) }}</span></summary>
+                    <div class="detail">
+                        <div class="drow"><span>아직 안 실은 차의 대금을 먼저 받은 금액입니다. 차를 되팔면 돌려줘야 해서 뺍니다.</span><span></span></div>
+                    </div>
+                </details>
+            @endif
 
             @if ((int) $d['auction_deposit_krw'] > 0)
                 <details>
@@ -144,6 +165,9 @@
             <div class="row" style="margin-top:6px;">
                 <span class="k">다 받으면 굴리는 자금</span>
                 <span class="v">{{ $eok($d['working_capital_krw']) }}</span>
+            </div>
+            <div style="color:#9ca3af;font-size:12px;margin-top:4px;">
+                통장 + 아직 안 팔린 차 + 받을 돈 − 갚을 돈
             </div>
         </div>
 
