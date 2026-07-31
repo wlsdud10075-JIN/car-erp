@@ -20,6 +20,7 @@ return [
     'receivable' => 'Receivables',
     'payable' => 'Payables',
     'advance' => 'Advances',
+    'advance_payment' => 'Advance received',
     'auction_deposit' => 'Auction deposits',
     'report_link' => 'Report link',
     'report_link_hint' => 'Link to send to the CEO. Opens without login, expires in :days days.',

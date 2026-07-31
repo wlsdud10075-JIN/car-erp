@@ -22,6 +22,7 @@ return [
     'receivable' => '미수',
     'payable' => '미지급',
     'advance' => '가수금',
+    'advance_payment' => '선적전 기수령',
     'auction_deposit' => '경매보증금',
     'report_link' => '보고서 링크',
     'report_link_hint' => '대표에게 보낼 링크입니다. 로그인 없이 열리며 :days일 후 만료됩니다.',
