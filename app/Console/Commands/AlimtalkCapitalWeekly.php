@@ -80,7 +80,10 @@ class AlimtalkCapitalWeekly extends Command
 
         $eok = fn ($n) => $n === null ? '—'
             : (abs($n / 1e8) >= 10 ? number_format($n / 1e8, 1) : number_format($n / 1e8, 2)).'억';
-        $profit = $d['profit_krw'];
+        // 「원금 대비 손익」은 **정상 회수 기준**으로 보낸다 (jin 2026-07-31).
+        //   청산 기준(profit_krw)은 "바이어가 한 명도 안 갚는다"는 파산 가정이라, 카톡에 그 값만 찍히면
+        //   매주 큰 마이너스가 와서 실제 상태를 오해하게 된다. 구 스냅샷은 청산 기준으로 폴백.
+        $profit = $d['net_profit_krw'] ?? $d['profit_krw'];
 
         return [
             '기준일' => Carbon::parse($d['date'])->format('Y-m-d'),

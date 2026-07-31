@@ -474,8 +474,12 @@ class CapitalStatusTest extends TestCase
         Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
 
         $vars = AlimtalkCapitalWeekly::buildVars();
+        $d = $svc->derive($svc->latest());
         $this->assertEquals('2026-07-23', $vars['기준일']);
-        $this->assertStringStartsWith('−', $vars['손익'], '청산 −1백 − 원금 1천 = 손익 음수');
+        // 「손익」은 **정상 회수 기준**(순자산 − 원금)이다 — 청산 기준은 파산 가정이라
+        // 카톡에 그것만 찍히면 매주 큰 마이너스가 와서 실제 상태를 오해한다(jin 2026-07-31).
+        $this->assertStringStartsWith('+', $vars['손익'], '미수 2천만이 있으므로 정상 회수 기준은 양수');
+        $this->assertLessThan(0, (int) $d['profit_krw'], '청산 기준은 여전히 음수여야 한다(대비 확인)');
         $this->assertArrayHasKey('굴리는자금', $vars);
         $this->assertArrayHasKey('미지급', $vars);
     }

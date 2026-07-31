@@ -36,7 +36,6 @@ return [
     'no_principal' => 'Principal not set (enter in Settings)',
     'profit_up' => 'gain',
     'profit_down' => 'loss',
-    'profit_lens' => 'Asset (liquidation) view',
     'profit_normal' => 'with receivables collected',
     'profit_worst' => 'Worst case',
     'profit_worst_note' => 'assumes no receivable is ever collected',
