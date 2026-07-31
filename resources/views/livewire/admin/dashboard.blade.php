@@ -987,7 +987,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
             {{-- ③ 원금 대비 손익 --}}
             <div class="rounded-xl border p-4 {{ ($cap['profit_krw'] ?? null) === null ? 'border-gray-200' : (($cap['profit_krw'] >= 0) ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40') }}">
-                <p class="text-xs text-gray-500">{{ __('cash.profit') }} <span class="text-[10px] text-gray-400">· {{ __('cash.profit_lens') }}</span></p>
+                {{-- "자산(청산) 관점" 꼬리표는 제거 — 주 지표가 정상 회수 기준으로 바뀌어 모순됐다(jin 2026-07-31). --}}
+                <p class="text-xs text-gray-500">{{ __('cash.profit') }}</p>
                 @if(($cap['profit_krw'] ?? null) === null)
                     <p class="mt-1 text-lg font-bold text-gray-400">—</p>
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.no_principal') }}</p>
