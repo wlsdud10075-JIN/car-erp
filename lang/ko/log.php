@@ -25,6 +25,7 @@ return [
     'all_users' => '사용자 전체',
     'all_actions' => '액션 전체',
     'all_columns' => '컬럼 전체',
+    'all_types' => '대상 전체',
     'reset_filters' => '필터 초기화',
     'system' => '시스템',
     'audit_empty_filtered' => '조회 조건에 일치하는 감사 로그가 없습니다.',

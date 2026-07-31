@@ -30,6 +30,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public string $columnFilter = '';
 
+    /** 대상(모델) 필터 — 「통장 잔액」처럼 종류로 찾는 진입점. 종전엔 없어서 컬럼명을 알아야만 찾을 수 있었다. */
+    #[Url] public string $typeFilter = '';
+
     #[Url] public string $dateFrom = '';
 
     #[Url] public string $dateTo = '';
@@ -49,7 +52,11 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->search !== '', fn ($q) => $this->applySearch($q))
             ->when($this->userFilter !== '', fn ($q) => $q->where('user_id', $this->userFilter))
             ->when($this->actionFilter !== '', fn ($q) => $q->where('action', $this->actionFilter))
-            ->when($this->columnFilter !== '', fn ($q) => $q->where('column_name', $this->columnFilter))
+            ->when($this->typeFilter !== '', fn ($q) => $q->where('auditable_type', $this->typeFilter))
+            // 'buyer:*' = 바이어 변경 전체(값이 바이어명이라 개별 나열하면 드롭다운이 바이어 수만큼 늘어난다).
+            ->when($this->columnFilter === self::BUYER_ANY, fn ($q) => $q->where('column_name', 'like', 'buyer:%'))
+            ->when($this->columnFilter !== '' && $this->columnFilter !== self::BUYER_ANY,
+                fn ($q) => $q->where('column_name', $this->columnFilter))
             // 성능(jin 2026-07-23): whereDate 는 DATE(created_at) 로 index 무효 → 범위조건으로 created_at 인덱스 유지.
             //   audit_logs 는 무한 증가 테이블이라 풀스캔 방지 중요. (ssancar 504 교훈 패턴②)
             ->when($this->dateFrom !== '', fn ($q) => $q->where('created_at', '>=', $this->dateFrom.' 00:00:00'))
@@ -150,21 +157,80 @@ new #[Layout('components.layouts.app')] class extends Component
         return User::orderBy('name')->get(['id', 'name']);
     }
 
+    /** 바이어 변경(buyer:{이름})을 한 항목으로 접는 sentinel. */
+    public const BUYER_ANY = 'buyer:*';
+
+    /** 액션 — 값=원문, 라벨=한글. **한글 라벨 기준 정렬**(영문 순으로 두면 화면 순서가 뒤죽박죽으로 보인다). */
     #[Computed]
     public function distinctActions(): array
     {
-        return AuditLog::query()->distinct()->orderBy('action')->pluck('action')->toArray();
+        $rows = AuditLog::query()->distinct()->pluck('action')->filter()->all();
+        $out = [];
+        foreach ($rows as $a) {
+            $out[$a] = ColumnLabel::action($a);
+        }
+        asort($out, SORT_LOCALE_STRING);
+
+        return $out;
     }
 
+    /** 대상(모델) — 「통장 잔액」·「전자서명 계약」처럼 종류로 고르는 필터. */
+    #[Computed]
+    public function distinctTypes(): array
+    {
+        $rows = AuditLog::query()->whereNotNull('auditable_type')->distinct()->pluck('auditable_type')->filter()->all();
+        $out = [];
+        foreach ($rows as $t) {
+            $out[$t] = ColumnLabel::model($t);
+        }
+        asort($out, SORT_LOCALE_STRING);
+
+        return $out;
+    }
+
+    /**
+     * 컬럼 — 값=원문, 라벨=한글. 두 가지를 걸러낸다:
+     *   ① 챗봇 질문(action='assistant_query')의 column_name 은 **컬럼이 아니라 질문 유형**이다.
+     *      컬럼 목록에 'guide'·'capital_status(denied)' 가 섞이는 게 이 때문이었다(액션 필터로 고르면 된다).
+     *   ② 'buyer:{바이어명}' 은 값이 박힌 동적 키라 바이어 수만큼 늘어난다 → 한 항목으로 접는다.
+     * 라벨은 (대상, 컬럼) 쌍으로 만든다 — columnAny 는 테이블을 몰라 다른 표의 라벨을 집어올 수 있다.
+     */
     #[Computed]
     public function distinctColumns(): array
     {
-        return AuditLog::query()->whereNotNull('column_name')->distinct()->orderBy('column_name')->pluck('column_name')->toArray();
+        $rows = AuditLog::query()
+            ->whereNotNull('column_name')
+            ->where(fn ($q) => $q->where('action', '!=', 'assistant_query')->orWhereNull('action'))
+            ->distinct()
+            ->get(['auditable_type', 'column_name']);
+
+        $out = [];
+        $hasBuyer = false;
+        foreach ($rows as $r) {
+            $name = (string) $r->column_name;
+            if ($name === '') {
+                continue;
+            }
+            if (str_starts_with($name, 'buyer:')) {
+                $hasBuyer = true;
+
+                continue;
+            }
+            $out[$name] = $r->auditable_type
+                ? ColumnLabel::column($r->auditable_type, $name)
+                : ColumnLabel::columnAny($name);
+        }
+        if ($hasBuyer) {
+            $out[self::BUYER_ANY] = '바이어 변경';
+        }
+        asort($out, SORT_LOCALE_STRING);
+
+        return $out;
     }
 
     public function resetFilters(): void
     {
-        $this->reset(['search', 'userFilter', 'actionFilter', 'columnFilter', 'dateFrom', 'dateTo']);
+        $this->reset(['search', 'userFilter', 'actionFilter', 'typeFilter', 'columnFilter', 'dateFrom', 'dateTo']);
         $this->resetPage();
     }
 }; ?>
@@ -190,14 +256,20 @@ new #[Layout('components.layouts.app')] class extends Component
         </select>
         <select wire:model.live="actionFilter" class="input-filter">
             <option value="">{{ __('log.all_actions') }}</option>
-            @foreach($this->distinctActions as $a)
-                <option value="{{ $a }}">{{ \App\Support\ColumnLabel::action($a) }}</option>
+            @foreach($this->distinctActions as $value => $label)
+                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
+            @endforeach
+        </select>
+        <select wire:model.live="typeFilter" class="input-filter">
+            <option value="">{{ __('log.all_types') }}</option>
+            @foreach($this->distinctTypes as $value => $label)
+                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
             @endforeach
         </select>
         <select wire:model.live="columnFilter" class="input-filter">
             <option value="">{{ __('log.all_columns') }}</option>
-            @foreach($this->distinctColumns as $c)
-                <option value="{{ $c }}" title="{{ $c }}">{{ \App\Support\ColumnLabel::columnAny($c) }}</option>
+            @foreach($this->distinctColumns as $value => $label)
+                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
             @endforeach
         </select>
         <input wire:model.live.debounce.400ms="dateFrom" type="date" class="input-filter" />
