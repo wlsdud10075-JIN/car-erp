@@ -2,6 +2,7 @@
 
 namespace App\Services\Documents;
 
+use App\Models\AuditLog;
 use App\Models\SignedContract;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
@@ -127,6 +128,35 @@ class SigningSessionService
                 'vin' => $v->nice_reg_vin,
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * 발급한 서명 세션을 사람이 직접 무른다 (jin 2026-07-31).
+     *
+     * 종전엔 **재발급할 때만** 옛 세션이 자동으로 무릎어서, 잘못 눌렀을 때 화면에서 되돌릴 방법이 없었다
+     * (실제로 발급 3분 뒤 서버에서 수동으로 무른 건이 있다). 바이어에게 링크가 이미 나갔을 수 있으므로
+     * 무르는 즉시 링크가 죽는 것이 요점이다.
+     *
+     * ⚠️ 서명완료(signed)는 법적 증거물이라 절대 무를 수 없다 — 삭제 가드(모델 booted)와 같은 정책.
+     *
+     * @throws \DomainException 서명완료거나 이미 무름/만료된 세션
+     */
+    public function revoke(SignedContract $contract): void
+    {
+        if ($contract->isSigned()) {
+            throw new \DomainException(__('signed_contract.revoke.signed_locked'));
+        }
+        if (! in_array($contract->status, SignedContract::ACTIVE_STATUSES, true)) {
+            throw new \DomainException(__('signed_contract.revoke.not_active'));
+        }
+
+        $contract->update([
+            'status' => SignedContract::STATUS_REVOKED,
+            'revoked_at' => now(),
+        ]);
+
+        // 바이어에게 나간 링크를 죽인 행위라 흔적을 남긴다(누가·언제).
+        AuditLog::recordEvent($contract, 'signing_session_revoked');
     }
 
     /** 겹치는(공유 차량) 활성세션 revoke — 한 차량이 두 개의 미서명 계약에 묶이지 않게. */
