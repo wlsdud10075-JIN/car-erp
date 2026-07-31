@@ -178,6 +178,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showSignModal = true;
     }
 
+    /** 활성 세션 무르기 — 잘못 발급했을 때 되돌린다. 서명완료는 서비스가 막는다. */
+    public function revokeSignature(int $contractId): void
+    {
+        $c = \App\Models\SignedContract::find($contractId);
+        if (! $c) {
+            return;
+        }
+        // §8 #26 — mutating 액션은 매번 재인가(contractId 는 클라이언트가 주입 가능).
+        $user = auth()->user();
+        $vehicles = \App\Models\Vehicle::whereIn('id', $c->vehicle_ids ?? [])->get();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+        try {
+            app(\App\Services\Documents\SigningSessionService::class)->revoke($c);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+        $this->showSignModal = false;
+        unset($this->editingSign);
+        $this->dispatch('notify', message: __('signed_contract.notify.revoked'), type: 'success');
+    }
+
     /**
      * ② 하이브리드 — 선택한 export 차량들이 "한 선적 묶음(batch)"에 온전히 속하면 그 batch_id 반환.
      * 여러 묶음에 걸치거나 묶음 없으면 null → 면허비 딥링크 비노출(완전묶음만 허용, 부분/혼합 실수 차단).
@@ -7654,7 +7681,8 @@ function vehicleColumnsToggle() {
                             :status="$this->editingSign['status']"
                             :contract-id="$this->editingSign['id'] ?? null"
                             request-click="requestSignatureForVehicle"
-                            link-click="showSignLink({{ $this->editingSign['id'] ?? 0 }})" />
+                            link-click="showSignLink({{ $this->editingSign['id'] ?? 0 }})"
+                            revoke-click="revokeSignature({{ $this->editingSign['id'] ?? 0 }})" />
                     </div>
                 @endif
             </div>

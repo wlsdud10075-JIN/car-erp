@@ -492,6 +492,32 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->openSignModal($c->contract_no, $c->signingUrl());
     }
 
+    /** 활성 세션 무르기 — 잘못 발급했을 때 되돌린다. 서명완료는 서비스가 막는다. */
+    public function revokeSignature(int $contractId): void
+    {
+        $c = SignedContract::find($contractId);
+        if (! $c) {
+            return;
+        }
+        // §8 #26 — mutating 액션은 매번 재인가(contractId 는 클라이언트가 주입 가능).
+        $user = auth()->user();
+        $vehicles = Vehicle::whereIn('id', $c->vehicle_ids ?? [])->get();
+        if ($vehicles->isEmpty() || ! $vehicles->every(fn ($v) => $user->canScopeVehicle($v))) {
+            $this->dispatch('notify', message: __('signed_contract.notify.scope_denied'), type: 'error');
+
+            return;
+        }
+        try {
+            app(\App\Services\Documents\SigningSessionService::class)->revoke($c);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+        $this->showSignModal = false;
+        $this->dispatch('notify', message: __('signed_contract.notify.revoked'), type: 'success');
+    }
+
     private function openSignModal(string $contractNo, string $url): void
     {
         $this->signContractNo = $contractNo;
@@ -1015,7 +1041,8 @@ new #[Layout('components.layouts.app')] class extends Component
                                 :status="$b['sign']['status']"
                                 :contract-id="$b['sign']['id'] ?? null"
                                 request-click="requestSignatureForBatch('{{ $b['batch_id'] }}')"
-                                link-click="showSignLink({{ $b['sign']['id'] ?? 0 }})" />
+                                link-click="showSignLink({{ $b['sign']['id'] ?? 0 }})"
+                                revoke-click="revokeSignature({{ $b['sign']['id'] ?? 0 }})" />
                         @else
                             <span title="{{ __('shipping.doc.sc_mixed') }}"
                                   class="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-400">
