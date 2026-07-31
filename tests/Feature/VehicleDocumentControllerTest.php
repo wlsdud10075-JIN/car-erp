@@ -147,9 +147,10 @@ class VehicleDocumentControllerTest extends TestCase
 
         $vehicle = Vehicle::create(['vehicle_number' => '12가0001', 'sales_channel' => 'export']);
 
-        // invoice/clearance 는 다중차량 미지원 (단일 전용)
+        // clearance(통관 SET) 는 다중차량 미지원 (마스터 수식 구조라 선적/판매 서류와 별개 — SKILLS §12).
+        //   ⚠️ invoice 는 2026-07-31 부터 다중차량 지원이라 더 이상 이 케이스가 아니다.
         $response = $this->get(route('erp.vehicles.documents.multi', [
-            'type' => 'invoice',
+            'type' => 'clearance',
             'ids' => (string) $vehicle->id,
         ]));
 

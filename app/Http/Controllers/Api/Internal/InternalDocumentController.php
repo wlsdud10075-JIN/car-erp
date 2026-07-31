@@ -15,14 +15,23 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * board 영업 포털 ①② 서류 다운로드 — 프록시 스트림 (car-erp 동적 생성 xlsx 를 바이트로 반환).
  * 권위 = docs/integration/board-portal-api.md §6.
  *
- * ⚠️ board 허용 서류 = 선적 4종만. 말소서류(RRN·성명·주소 포함)·위임장·인보이스·통관SET 차단(§29).
+ * ⚠️ board 허용 서류 = 선적 4종 + 판매계약서·인보이스(2026-07-31 개방).
+ *    말소서류(RRN·성명·주소 포함)·위임장·통관SET 은 계속 차단(§29 — RRN).
  * 본인 차만(IDOR) + document_access_logs(source='board_api', actor_email) 감사.
  */
 class InternalDocumentController extends Controller
 {
     private const BOARD_ALLOWED_TYPES = [
         'roro_invoice_packing', 'roro_contract', 'container_invoice_packing', 'container_contract',
+        // 2026-07-31 (jin) — 판매계약서·인보이스 개방. 영업이 board 에서 많이 쓰게 될 서류.
+        //   §29 판단: 둘 다 **RRN 없음**(바이어/컨사이니 여권·연락처·주소뿐). 선적 4종 제한의 원래 이유는
+        //   말소서류의 주민번호였다. 영업은 ERP 화면에서 본인 차의 같은 서류를 이미 받을 수 있고,
+        //   여기도 본인 차 한정 + export only + document_access_logs 감사가 걸려 있다.
+        'sales_contract', 'invoice',
     ];
+
+    /** 1바이어·단일통화여야 하는 type — VehicleDocumentController::HOMOGENEOUS_TYPES 와 lockstep 유지. */
+    private const HOMOGENEOUS_TYPES = ['sales_contract', 'invoice'];
 
     private const MAX = 30;
 
@@ -45,6 +54,14 @@ class InternalDocumentController extends Controller
         // IDOR — export 채널 + 본인 차만
         abort_unless($vehicles->every(fn (Vehicle $v) => $v->sales_channel === 'export'), 403, 'Export only');
         abort_unless($vehicles->every(fn (Vehicle $v) => $v->salesman_id === $salesman->id), 403, 'Forbidden');
+
+        // 판매계약서·인보이스 = 1바이어·단일통화 (ERP 화면 showMulti 와 같은 가드). 매핑이 바이어블록·환율을
+        //   primary 로만 채우므로 혼합 묶음이면 **조용히 틀린 서류**가 나간다 → 422 로 차단.
+        //   board 는 422 를 "동일 바이어·단일 통화" 안내로 분기한다(board 인계문서 §3).
+        if (in_array($type, self::HOMOGENEOUS_TYPES, true)) {
+            abort_if($vehicles->pluck('buyer_id')->unique()->count() > 1, 422, 'Mixed buyers');
+            abort_if($vehicles->pluck('currency')->unique()->count() > 1, 422, 'Mixed currencies');
+        }
 
         $filler = new DocumentFiller($vehicles);
         $spreadsheet = $filler->spreadsheet($type);

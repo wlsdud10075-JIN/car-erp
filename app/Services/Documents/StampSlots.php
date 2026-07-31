@@ -64,7 +64,9 @@ class StampSlots
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
             'invoice' => [
-                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
+                // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
+                //   앵커가 어긋나면 removeDrawingsAt 이 원본을 못 지워 업로드 직인과 **이중 도장**이 된다(§8 #37 ③).
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B65', 'width' => 323, 'height' => 192],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'Invoice', 'anchor' => 'A1', 'width' => 333, 'height' => 72],
             ],
             'container_invoice_packing' => [
@@ -121,7 +123,9 @@ class StampSlots
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
             'invoice' => [
-                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B36', 'width' => 323, 'height' => 192],
+                // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
+                //   앵커가 어긋나면 removeDrawingsAt 이 원본을 못 지워 업로드 직인과 **이중 도장**이 된다(§8 #37 ③).
+                ['key' => 'seal', 'role' => 'seal', 'sheet' => 'Invoice', 'anchor' => 'B65', 'width' => 323, 'height' => 192],
                 ['key' => 'logo', 'role' => 'logo', 'sheet' => 'Invoice', 'anchor' => 'A1', 'width' => 333, 'height' => 72],
             ],
             'container_invoice_packing' => [
