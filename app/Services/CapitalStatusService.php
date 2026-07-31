@@ -141,7 +141,9 @@ class CapitalStatusService
             'payable_krw' => $this->payableKrw(),
             // 예치·가수금 (안건4 2단계) — 실시간이 아니라 이 시점 값을 박는다.
             //   통장잔액과 같은 시점이어야 짝이 맞는다(§derive 주석 참조).
-            'advance_krw' => AdvanceReceipt::totalKrw(),
+            // ⚠️ **갚아야 할 돈(liability)만** 담는다 (jin 2026-07-31). 대표 본인 돈(equity)은
+            //   갚을 의무가 없어 청산가치에서 빼지 않는다. 기본값이 liability 라 분류 전에는 현행과 동일.
+            'advance_krw' => AdvanceReceipt::liabilityKrw(),
             'auction_deposit_krw' => AuctionDeposit::totalKrw(),
             'fx_usd' => $fx['USD'],
             'fx_eur' => $fx['EUR'],

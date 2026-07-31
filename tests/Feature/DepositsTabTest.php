@@ -31,18 +31,18 @@ class DepositsTabTest extends TestCase
     {
         $this->actingAs($this->user('재무'));
 
+        // 담당자(person) 칸은 2026-07-31 제거, 대신 성격(nature)을 받는다.
         Volt::test('erp.deposits.index')
             ->set('date', '2026-07-10')
             ->set('party', 'OO상사')
-            ->set('person', '김담당')
             ->set('amount', '5,000,000')
             ->call('add')
             ->assertHasNoErrors();
 
         $row = AdvanceReceipt::sole();
         $this->assertSame('OO상사', $row->company_name);
-        $this->assertSame('김담당', $row->person_name);
         $this->assertSame(5000000, (int) $row->amount);
+        $this->assertSame(AdvanceReceipt::NATURE_LIABILITY, $row->nature, '기본값은 갚아야 할 돈이어야 합니다.');
     }
 
     public function test_auction_tab_saves_to_auction_deposits(): void
