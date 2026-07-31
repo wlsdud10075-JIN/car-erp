@@ -44,21 +44,72 @@ class CapitalStatusService
         return $fx;
     }
 
+    /** 거래완료(B/L 발급 = 소유권 이전) 전 차량만 — 세 재고 계산의 공통 조건. */
+    private function notHandedOver($q)
+    {
+        return $q->where(function ($q2) {
+            $q2->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache');
+        });
+    }
+
     /**
-     * 재고 원가 합 = 차에 묶인 자본 (미출고 AND 거래완료 아님).
-     * ⚠️ 완납 여부 무관 — 미지급을 별도로 빼므로(현금+재고−미지급), 완납만 세면 자산-부채 비대칭.
-     *   재고 화면(scopeInStock, 완납 요구)과 정의가 다름: 여기는 회계상 "묶인 자본" 관점.
-     *   대표 승인 프로토타입(31.87억)과 동일 정의. null-safe(orWhereNull → 상태 불명은 재고 잔존).
+     * 재고 원가 합 = **선적 전**(한국에 남아 있는) 차에 묶인 자본. 청산가치용.
+     *
+     * ⚠️ 2026-07-31 기준 변경: `warehouse_out_date`(출고일) → `shipping_date`(선적일).
+     *   출고일은 **위치 이동**(우리 야드 → 항구 야드)이지 소유권 이동이 아니다. 한국을 떠나는 건 선적일이고,
+     *   배 타기 전이면 돈을 못 받았을 때 안 보내고 되팔 수 있으므로 청산 시 자산으로 친다(jin).
+     *   실제로 07-29 출고일 소급 입력만으로 손익이 +9.85억 → -5.01억으로 뒤집혔다.
+     * ⚠️ 완납 여부 무관 — 미지급을 별도로 빼므로 완납만 세면 자산-부채 비대칭.
+     *   재고 화면(scopeInStock)과 정의가 다르다: 그쪽은 "어디 있나", 여기는 "아직 우리 것인가".
      */
     public function inventoryKrw(): int
     {
-        return (int) Vehicle::whereNull('warehouse_out_date')
-            ->where('purchase_price', '>', 0)
-            ->where(function ($q) {
-                $q->where('progress_status_cache', '!=', '거래완료')
-                    ->orWhereNull('progress_status_cache');
-            })
-            ->sum('purchase_price');
+        return (int) $this->notHandedOver(
+            Vehicle::whereNull('shipping_date')->where('purchase_price', '>', 0)
+        )->sum('purchase_price');
+    }
+
+    /**
+     * 선수금 = **선적 전인데 이미 받은 판매대금**. 청산가치에서 차감한다.
+     *
+     * 차를 팔고 돈은 받았는데 아직 안 실었다면, 회사를 정리할 때 그 차를 되팔아도 **받은 돈은 반환**해야 한다.
+     * 이걸 안 빼면 차(재고)와 현금(통장)을 둘 다 자산으로 세는 이중계상이 된다.
+     * 실측(2026-07-31): 선적 전 재고 7.63억 중 7.13억이 이미 팔린 차, 그중 받은 돈 2.67억.
+     */
+    public function advancePaymentKrw(array $fx): int
+    {
+        $total = 0;
+        $this->notHandedOver(
+            Vehicle::whereNull('shipping_date')->where('purchase_price', '>', 0)->where('sale_price', '>', 0)
+        )->with(['finalPayments', 'receivableHistories'])
+            ->chunkById(200, function ($chunk) use (&$total, $fx) {
+                foreach ($chunk as $v) {
+                    $got = (float) $v->sale_total_amount - (float) $v->sale_unpaid_amount;
+                    if ($got <= 0) {
+                        continue;
+                    }
+                    $c = $v->currency ?: 'KRW';
+                    $total += (int) round($c === 'KRW' ? $got : $got * ($fx[$c] ?? 0));
+                }
+            });
+
+        return $total;
+    }
+
+    /**
+     * 안 팔린 차의 매입가 — **순자산(굴리는 자금)** 계산용.
+     *
+     * 차를 파는 순간 그 가치는 "차"에서 "받을 돈(미수)" 또는 "받은 돈(현금)"으로 형태가 바뀐다.
+     * 순자산은 미수를 자산에 넣으므로, 팔린 차를 재고로 또 세면 이중계상이다.
+     * (청산가치는 반대로 미수를 안 세는 대신 선적 전 차를 재고로 세고 선수금을 뺀다.)
+     */
+    public function unsoldInventoryKrw(): int
+    {
+        return (int) $this->notHandedOver(
+            Vehicle::where('purchase_price', '>', 0)
+                ->where(fn ($q) => $q->where('sale_price', '<=', 0)->orWhereNull('sale_price'))
+        )->sum('purchase_price');
     }
 
     /**
@@ -137,6 +188,8 @@ class CapitalStatusService
             'balance_usd' => round((float) ($balances['usd'] ?? 0), 2),
             'balance_eur' => round((float) ($balances['eur'] ?? 0), 2),
             'inventory_krw' => $this->inventoryKrw(),
+            'advance_payment_krw' => $this->advancePaymentKrw($fx),
+            'unsold_inventory_krw' => $this->unsoldInventoryKrw(),
             'receivable_krw' => $this->receivableKrw($fx),
             'payable_krw' => $this->payableKrw(),
             // 예치·가수금 (안건4 2단계) — 실시간이 아니라 이 시점 값을 박는다.
@@ -160,7 +213,13 @@ class CapitalStatusService
     }
 
     /** 스냅샷 → 파생 지표 (청산가치·굴리는자금·손익). */
-    public function derive(?CashSnapshot $s): array
+    /**
+     * 스냅샷 → 파생값. **청산가치·순자산 공식의 단일 출처다.**
+     *
+     * @param  int|null  $principal  투입원금. 추이처럼 여러 건을 돌 때 밖에서 한 번만 조회해 넘기면
+     *                               Setting 조회가 N번 반복되지 않는다. null 이면 여기서 조회한다.
+     */
+    public function derive(?CashSnapshot $s, ?int $principal = null): array
     {
         if (! $s) {
             return ['has_data' => false];
@@ -169,12 +228,26 @@ class CapitalStatusService
         $advance = (int) $s->advance_krw;                 // 가수금 = 갚는 돈(부채)
         $auctionDeposit = (int) $s->auction_deposit_krw;  // 경매보증금 = 예치한 우리 돈(자산)
 
-        // 청산가치 = 통장현금 + 재고 + 경매보증금 − 미지급 − 가수금   (미수 제외 — 대표 정책)
-        //   보증금·가수금은 "형태만 바뀌는" 거래라 반영 후에는 청산가치가 안 움직인다:
-        //   보증금 예치 = 현금↓ 보증금↑ / 가수금 입금 = 현금↑ 부채↑. 그게 정상이다.
-        $liquidation = $cash + $s->inventory_krw + $auctionDeposit - $s->payable_krw - $advance;
-        $working = $liquidation + $s->receivable_krw;
-        $principal = $this->principal();
+        /*
+         * 청산가치 = 통장현금 + 선적전재고 − 선수금 + 경매보증금 − 미지급 − 가수금(갚을 돈)
+         *   "지금 접으면 확실히 손에 쥐는 돈". 미수는 받을지 모르므로 제외한다(대표 정책).
+         *   선수금 = 선적 전인데 이미 받은 대금 → 되팔면 돌려줘야 하므로 차감(이중계상 제거, 2026-07-31).
+         *   보증금·가수금은 "형태만 바뀌는" 거래라 반영 후에는 청산가치가 안 움직인다:
+         *   보증금 예치 = 현금↓ 보증금↑ / 가수금 입금 = 현금↑ 부채↑. 그게 정상이다.
+         *
+         * 순자산(working) = 통장현금 + 미판매재고 + 미수 + 경매보증금 − 미지급 − 가수금
+         *   회계적 실체. 팔린 차의 가치는 이미 현금·미수로 옮겨갔으므로 재고에서 뺀다.
+         *
+         * ⚠️ 새 컬럼이 없는 과거 스냅샷은 **옛 방식으로 폴백**한다(그 시점 기록을 그대로 읽기 위함).
+         */
+        $advancePayment = (int) ($s->advance_payment_krw ?? 0);
+        $liquidation = $cash + $s->inventory_krw - $advancePayment + $auctionDeposit - $s->payable_krw - $advance;
+
+        $unsold = $s->unsold_inventory_krw;
+        $working = $unsold === null
+            ? $liquidation + $s->receivable_krw                                                   // 구 스냅샷 폴백
+            : $cash + (int) $unsold + (int) $s->receivable_krw + $auctionDeposit - $s->payable_krw - $advance;
+        $principal ??= $this->principal();
 
         return [
             'has_data' => true,
@@ -184,6 +257,8 @@ class CapitalStatusService
             'balance_usd' => (float) $s->balance_usd,
             'balance_eur' => (float) $s->balance_eur,
             'inventory_krw' => (int) $s->inventory_krw,
+            'advance_payment_krw' => $advancePayment,
+            'unsold_inventory_krw' => $unsold === null ? null : (int) $unsold,
             'receivable_krw' => (int) $s->receivable_krw,
             'payable_krw' => (int) $s->payable_krw,
             'advance_krw' => $advance,

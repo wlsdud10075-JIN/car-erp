@@ -56,6 +56,127 @@ class CapitalStatusTest extends TestCase
         $this->assertEquals(2_000_000, CashSnapshot::whereDate('snapshot_date', '2026-07-23')->first()->balance_krw);
     }
 
+    // ── 재고 정의 · 이중계상 (jin 2026-07-31) ─────────────────
+    /*
+     * 2026-07-29 에 출고일 60건을 소급 입력했더니 재고가 17.8억 → 4.97억으로 떨어져
+     * 원금대비손익이 +9.85억에서 -5.01억으로 뒤집혔다. 실측하니 그 재고의 92%가 이미 팔린 차였다.
+     * 아래 테스트들이 그 사고의 재발을 막는다.
+     */
+
+    /**
+     * 판매까지 끝난 차 한 대 — 대금 일부 수령.
+     * ⚠️ 매입은 **완납 처리**한다. 미지급이 섞이면 아래 테스트들이 재고·선수금이 아니라
+     *    미지급 때문에 흔들려서, 무엇을 검증하는지 흐려진다(미지급은 별도 테스트가 있다).
+     */
+    private function soldVehicle(string $no, int $purchase, int $sale, int $received): Vehicle
+    {
+        $buyer = Buyer::firstOrCreate(['name' => 'CAP-B'], ['is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => $no, 'sales_channel' => 'export', 'purchase_date' => '2026-05-01',
+            'purchase_price' => $purchase, 'buyer_id' => $buyer->id, 'sale_date' => '2026-06-01',
+            'sale_price' => $sale, 'currency' => 'KRW', 'exchange_rate' => 1,
+        ]);
+        $v->purchaseBalancePayments()->create(['amount' => $purchase, 'type' => 'balance', 'payment_date' => '2026-05-05', 'confirmed_at' => now()]);
+        if ($received > 0) {
+            $v->finalPayments()->create(['amount' => $received, 'type' => 'balance', 'payment_date' => '2026-06-10', 'confirmed_at' => now()]);
+        }
+
+        return $v->fresh();
+    }
+
+    public function test_warehouse_out_date_no_longer_moves_the_liquidation_value(): void
+    {
+        // 출고일은 위치 이동(우리 야드 → 항구)일 뿐 소유권 이동이 아니다. 자산이 흔들리면 안 된다.
+        $v = $this->soldVehicle('CAP-OUT', 8_000_000, 12_000_000, 0);
+        $svc = app(CapitalStatusService::class);
+
+        $before = $svc->capture(['krw' => 0], null, '2026-07-30');
+        $v->update(['warehouse_out_date' => '2026-07-15']);
+        $after = $svc->capture(['krw' => 0], null, '2026-07-31');
+
+        $this->assertSame((int) $before->inventory_krw, (int) $after->inventory_krw,
+            '출고일을 찍었다고 재고가 줄면 07-29 사고가 되풀이됩니다.');
+    }
+
+    public function test_shipping_date_removes_the_car_from_inventory(): void
+    {
+        // 한국을 떠나는 건 선적일이다. 그때는 되팔 수 없으므로 청산 자산에서 빠진다.
+        $v = $this->soldVehicle('CAP-SHIP', 8_000_000, 12_000_000, 0);
+        $svc = app(CapitalStatusService::class);
+
+        $before = $svc->capture(['krw' => 0], null, '2026-07-30');
+        $this->assertSame(8_000_000, (int) $before->inventory_krw);
+
+        $v->update(['shipping_date' => '2026-07-20']);
+        $after = $svc->capture(['krw' => 0], null, '2026-07-31');
+        $this->assertSame(0, (int) $after->inventory_krw);
+    }
+
+    public function test_advance_payment_is_deducted_so_the_same_deal_is_not_counted_twice(): void
+    {
+        // 선적 전인데 대금을 받았다 → 차(재고)와 현금(통장)이 둘 다 자산으로 잡힌다.
+        // 청산 시 되팔면 받은 돈은 반환해야 하므로 선수금으로 빼야 한다.
+        $this->soldVehicle('CAP-ADV', 8_000_000, 12_000_000, 12_000_000);
+
+        $snap = app(CapitalStatusService::class)->capture(['krw' => 12_000_000], null, '2026-07-31');
+        $d = app(CapitalStatusService::class)->derive($snap);
+
+        $this->assertSame(12_000_000, (int) $snap->advance_payment_krw);
+        // 현금 1200 + 재고 800 − 선수금 1200 = 800만 (차 원가만 남는 게 맞다)
+        $this->assertSame(8_000_000, (int) $d['liquidation_krw'],
+            '선수금을 안 빼면 같은 거래가 두 번 세어집니다.');
+    }
+
+    public function test_net_worth_uses_unsold_inventory_plus_receivable(): void
+    {
+        // 팔린 차의 가치는 이미 미수로 옮겨갔다. 재고로 또 세면 이중계상.
+        $this->soldVehicle('CAP-NW1', 8_000_000, 12_000_000, 0);          // 팔림 + 미수 1200
+        $unsold = Vehicle::create(['vehicle_number' => 'CAP-NW2', 'sales_channel' => 'export',
+            'purchase_date' => '2026-05-01', 'purchase_price' => 3_000_000]);  // 안 팔림
+        $unsold->purchaseBalancePayments()->create(['amount' => 3_000_000, 'type' => 'balance', 'payment_date' => '2026-05-05', 'confirmed_at' => now()]);
+
+        $svc = app(CapitalStatusService::class);
+        $d = $svc->derive($svc->capture(['krw' => 0], null, '2026-07-31'));
+
+        $this->assertSame(3_000_000, (int) $d['unsold_inventory_krw'], '안 팔린 차만 재고로 셉니다.');
+        // 순자산 = 미판매재고 300 + 미수 1200 = 1500만
+        $this->assertSame(15_000_000, (int) $d['working_capital_krw']);
+    }
+
+    public function test_dashboard_does_not_redefine_the_liquidation_formula(): void
+    {
+        /*
+         * 카드(derive)와 추이 그래프가 각자 계산하면 반드시 어긋난다.
+         * 실제로 2026-07-31 선수금 차감을 넣었을 때, 대시보드가 옛 공식을 인라인으로 들고 있어
+         * 카드와 그래프가 다른 값을 그렸다. 공식은 derive() 한 곳에만 있어야 한다.
+         *
+         * ⚠️ 값 비교로는 못 잡는다 — 두 공식이 우연히 같은 값을 낼 수 있고,
+         *    실제로 오늘 그런 상태였다가 항목이 하나 늘면서 갈라졌다. 그래서 정적으로 본다.
+         */
+        $src = file_get_contents(resource_path('views/livewire/admin/dashboard.blade.php'));
+
+        $this->assertStringContainsString('$svc->derive($s', $src,
+            '추이는 derive() 를 호출해야 합니다(공식 단일 출처).');
+        $this->assertDoesNotMatchRegularExpression('/\$s->cash_krw\s*\+.*inventory_krw/s', $src,
+            '대시보드가 청산가치 공식을 다시 정의하고 있습니다. derive() 를 쓰세요.');
+    }
+
+    public function test_old_snapshots_fall_back_to_the_previous_formula(): void
+    {
+        // 과거 스냅샷에는 새 컬럼이 없다. 그 시점 기록을 그대로 읽어야 추적이 깨지지 않는다.
+        $s = CashSnapshot::create([
+            'snapshot_date' => '2026-07-01', 'balance_krw' => 1_000_000,
+            'inventory_krw' => 5_000_000, 'receivable_krw' => 2_000_000, 'payable_krw' => 0,
+            'advance_krw' => 0, 'auction_deposit_krw' => 0, 'fx_usd' => 1400, 'fx_eur' => 1600,
+        ]);
+
+        $d = app(CapitalStatusService::class)->derive($s);
+
+        $this->assertSame(6_000_000, (int) $d['liquidation_krw'], '선수금 컬럼이 없으면 0으로 본다.');
+        $this->assertSame(8_000_000, (int) $d['working_capital_krw'], '구 스냅샷은 청산+미수 로 폴백.');
+        $this->assertNull($d['unsold_inventory_krw']);
+    }
+
     public function test_payable_includes_unpaid_forwarding_invoice(): void
     {
         // jin 2026-07-26 — 미지급 완결성: 매입 미지급 + 포워딩 운임 미지급(+정산 지급대기).

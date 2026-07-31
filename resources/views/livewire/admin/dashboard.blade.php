@@ -136,10 +136,11 @@ new #[Layout('components.layouts.app')] class extends Component
         $svc = app(CapitalStatusService::class);
         $principal = $svc->principal();
 
-        return $svc->history(120, $this->trendGrain)->map(function ($s) use ($principal) {
-            // ⚠️ derive() 의 청산가치 공식과 동일하게 유지할 것 — 어긋나면 카드 숫자와 추이 그래프가 따로 논다.
-            $liq = $s->cash_krw + (int) $s->inventory_krw + (int) $s->auction_deposit_krw
-                - (int) $s->payable_krw - (int) $s->advance_krw;
+        return $svc->history(120, $this->trendGrain)->map(function ($s) use ($svc, $principal) {
+            // 공식을 여기에 다시 쓰지 말 것 — derive() 가 단일 출처다.
+            //   (2026-07-31 이전엔 여기서 따로 계산해, 선수금 차감이 추가됐을 때 카드와 그래프가 어긋났다.)
+            //   $principal 을 넘겨 Setting 조회가 스냅샷 수만큼 반복되지 않게 한다.
+            $d = $svc->derive($s, $principal);
             $date = $s->snapshot_date;
 
             return [
@@ -150,9 +151,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     default => $date->format('Y-m-d'),
                 },
                 'cash' => $s->cash_krw,
-                'liquidation' => $liq,
-                'working' => $liq + (int) $s->receivable_krw,
-                'profit' => $principal === null ? null : $liq - $principal,
+                'liquidation' => $d['liquidation_krw'],
+                'working' => $d['working_capital_krw'],
+                'profit' => $d['profit_krw'],
             ];
         })->values()->all();
     }
@@ -915,7 +916,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="rounded-xl border border-gray-200 p-4">
                 <p class="text-xs text-gray-500">{{ __('cash.working_capital') }}</p>
                 <p class="mt-1 text-2xl font-extrabold text-gray-800">{{ $eok($cap['working_capital_krw']) }}</p>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }} · {{ __('cash.receivable') }} {{ $eok($cap['receivable_krw']) }} · {{ __('cash.payable') }} −{{ $eok($cap['payable_krw']) }}@if(($cap['auction_deposit_krw'] ?? 0) > 0) · {{ __('cash.auction_deposit') }} {{ $eok($cap['auction_deposit_krw']) }}@endif @if(($cap['advance_krw'] ?? 0) > 0)· {{ __('cash.advance') }} −{{ $eok($cap['advance_krw']) }}@endif</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.inventory') }} {{ $eok($cap['inventory_krw']) }} · {{ __('cash.receivable') }} {{ $eok($cap['receivable_krw']) }} · {{ __('cash.payable') }} −{{ $eok($cap['payable_krw']) }}@if(($cap['auction_deposit_krw'] ?? 0) > 0) · {{ __('cash.auction_deposit') }} {{ $eok($cap['auction_deposit_krw']) }}@endif @if(($cap['advance_krw'] ?? 0) > 0)· {{ __('cash.advance') }} −{{ $eok($cap['advance_krw']) }}@endif @if(($cap['advance_payment_krw'] ?? 0) > 0)· {{ __('cash.advance_payment') }} −{{ $eok($cap['advance_payment_krw']) }}@endif</p>
             </div>
             <div class="rounded-xl border p-4 {{ ($cap['profit_krw'] ?? null) === null ? 'border-gray-200' : (($cap['profit_krw'] >= 0) ? 'border-emerald-200 bg-emerald-50/40' : 'border-red-200 bg-red-50/40') }}">
                 <p class="text-xs text-gray-500">{{ __('cash.profit') }} <span class="text-[10px] text-gray-400">· {{ __('cash.profit_lens') }}</span></p>
