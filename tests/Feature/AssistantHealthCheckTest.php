@@ -22,13 +22,24 @@ class AssistantHealthCheckTest extends TestCase
         parent::setUp();
         $this->indexPath = storage_path('framework/testing/index-erp-test.json');
         @mkdir(dirname($this->indexPath), 0777, true);
-        file_put_contents($this->indexPath, '{}');
+        $this->writeIndex([
+            ['source' => 'ERP (car-erp) › 공통', 'audience' => 'staff'],
+            ['source' => 'ERP (car-erp) › 재무', 'audience' => 'finance'],
+        ]);
 
         config()->set('assistant.enabled', true);
         config()->set('assistant.ollama', 'http://127.0.0.1:11434');
         config()->set('assistant.index_path', $this->indexPath);
+        config()->set('assistant.index_scope', '');
 
         Cache::flush();
+    }
+
+    /** 색인 파일을 쓰고 mtime 을 1시간 전으로 맞춘다(신선도 경고와 분리해서 보기 위해). */
+    private function writeIndex(array $chunks): void
+    {
+        file_put_contents($this->indexPath, json_encode($chunks));
+        touch($this->indexPath, time() - 3600);
     }
 
     protected function tearDown(): void
@@ -144,5 +155,97 @@ class AssistantHealthCheckTest extends TestCase
 
         $this->assertNull($this->health());
         Http::assertNothingSent();
+    }
+
+    // ── 색인 등급 표기 무결성 (2026-07-31 추가) ──────────────
+    // 색인 세션이 매번 수동으로 보던 "청크 수 == audience 수" 를 자동화한 것.
+    // 전량 미표기 = 전 직원이 대표 자료를 검색 / 부분 표기 = 미표기 청크가 통째로 사라짐. 둘 다 무증상이다.
+
+    public function test_fully_tagged_index_passes(): void
+    {
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $this->assertSame([], $this->health()['problems']);
+    }
+
+    public function test_completely_untagged_index_is_reported(): void
+    {
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        $this->writeIndex([['source' => 'a'], ['source' => 'b']]);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $problems = $this->health()['problems'];
+        $this->assertCount(1, $problems);
+        $this->assertStringContainsString('전부 등급 미표기', $problems[0]);
+    }
+
+    public function test_partially_tagged_index_is_reported(): void
+    {
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        $this->writeIndex([
+            ['source' => 'a', 'audience' => 'staff'],
+            ['source' => 'b'],
+        ]);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $this->assertStringContainsString('1/2', $this->health()['problems'][0]);
+    }
+
+    public function test_unknown_audience_value_is_reported(): void
+    {
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        $this->writeIndex([['source' => 'a', 'audience' => 'ceo']]);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $this->assertStringContainsString('알 수 없는 등급', $this->health()['problems'][0]);
+    }
+
+    public function test_scope_filter_matches_what_the_chatbot_actually_uses(): void
+    {
+        // guide() 는 스코프를 먼저 걸러낸다. board 청크가 미표기여도 ERP 챗봇에는 영향이 없어야 한다.
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        config()->set('assistant.index_scope', 'ERP (car-erp)');
+        $this->writeIndex([
+            ['source' => 'ERP (car-erp) › 공통', 'audience' => 'staff'],
+            ['source' => '매입보드 (BOARD) › 영업'],
+        ]);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $this->assertSame([], $this->health()['problems'], '스코프 밖 청크는 판정에 넣지 않아야 합니다.');
+    }
+
+    public function test_index_is_not_reparsed_when_mtime_is_unchanged(): void
+    {
+        // 2.6MB 파싱이라 매 5분 돌리면 낭비다. mtime 이 같으면 캐시된 판정을 재사용해야 한다.
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        $this->writeIndex([['source' => 'a']]);
+        $mtime = filemtime($this->indexPath);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+        $this->assertStringContainsString('전부 등급 미표기', $this->health()['problems'][0]);
+
+        // 내용을 고쳐도 mtime 이 그대로면 재검사하지 않는다(캐시 적중 확인).
+        file_put_contents($this->indexPath, json_encode([['source' => 'a', 'audience' => 'staff']]));
+        touch($this->indexPath, $mtime);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+        $this->assertStringContainsString('전부 등급 미표기', $this->health()['problems'][0]);
+    }
+
+    public function test_corrupt_index_is_reported(): void
+    {
+        Http::fake(['*/api/tags' => Http::response(['models' => []], 200)]);
+        file_put_contents($this->indexPath, '{not json');
+        touch($this->indexPath, time() - 3600);
+
+        $this->artisan('assistant:health-check')->assertSuccessful();
+
+        $this->assertStringContainsString('JSON 손상', $this->health()['problems'][0]);
     }
 }

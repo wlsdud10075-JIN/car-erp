@@ -18,7 +18,8 @@ use Illuminate\Support\Carbon;
  */
 class AssistantService
 {
-    private const RAG_AUDIENCES = ['staff', 'finance', 'executive', 'system'];
+    /** 색인 청크가 가질 수 있는 등급. 감시(AssistantHealthCheck)도 이 목록을 단일출처로 쓴다. */
+    public const RAG_AUDIENCES = ['staff', 'finance', 'executive', 'system'];
 
     public function __construct(
         private OllamaClient $ollama,
