@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\Internal\InternalDocumentController;
+use App\Http\Controllers\VehicleDocumentController;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
@@ -305,6 +307,85 @@ class BoardPortalApiTest extends TestCase
 
         $this->signedGet('/api/internal/board/documents/roro_contract', ['salesman_email' => 'me@a.com', 'ids' => (string) $theirs->id])
             ->assertStatus(403);
+    }
+
+    /** 2026-07-31 (jin) — 판매계약서·인보이스 개방. board 영업이 많이 쓰는 서류. */
+    public function test_documents_allows_sales_contract_and_invoice(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'GYSII AUTO', 'is_active' => true]);
+        $v = $this->exportVehicle($me->id, '77사7777');
+        $v->update(['buyer_id' => $buyer->id, 'currency' => 'USD']);
+
+        foreach (['sales_contract', 'invoice'] as $type) {
+            $this->signedGet('/api/internal/board/documents/'.$type, ['salesman_email' => 'me@a.com', 'ids' => (string) $v->id])
+                ->assertOk();
+
+            $this->assertDatabaseHas('document_access_logs', [
+                'vehicle_id' => $v->id, 'document_type' => $type, 'source' => 'board_api', 'actor_email' => 'me@a.com',
+            ]);
+        }
+    }
+
+    /**
+     * 동질성 가드 — 혼합 묶음이면 매핑이 primary 로만 헤더를 채워 **조용히 틀린 서류**가 나간다.
+     * board 는 422 를 "동일 바이어·단일 통화" 안내로 분기한다(board 인계문서 §3).
+     */
+    public function test_documents_rejects_mixed_buyer_or_currency_for_homogeneous_type(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $a = Buyer::create(['name' => 'BUYER A', 'is_active' => true]);
+        $b = Buyer::create(['name' => 'BUYER B', 'is_active' => true]);
+
+        $v1 = $this->exportVehicle($me->id, '88아8881');
+        $v1->update(['buyer_id' => $a->id, 'currency' => 'USD']);
+        $v2 = $this->exportVehicle($me->id, '88아8882');
+        $v2->update(['buyer_id' => $b->id, 'currency' => 'USD']);       // 바이어 다름
+        $v3 = $this->exportVehicle($me->id, '88아8883');
+        $v3->update(['buyer_id' => $a->id, 'currency' => 'EUR']);       // 통화 다름
+
+        foreach (['sales_contract', 'invoice'] as $type) {
+            $this->signedGet('/api/internal/board/documents/'.$type,
+                ['salesman_email' => 'me@a.com', 'ids' => $v1->id.','.$v2->id])->assertStatus(422);
+
+            $this->signedGet('/api/internal/board/documents/'.$type,
+                ['salesman_email' => 'me@a.com', 'ids' => $v1->id.','.$v3->id])->assertStatus(422);
+        }
+
+        // 선적 4종은 동질성 대상이 아니다 — 혼합이어도 그대로 발급.
+        $this->signedGet('/api/internal/board/documents/roro_contract',
+            ['salesman_email' => 'me@a.com', 'ids' => $v1->id.','.$v2->id])->assertOk();
+    }
+
+    /** 개방 범위가 새지 않았나 — 위임장·통관SET 은 계속 차단이어야 한다. */
+    public function test_documents_still_rejects_non_opened_types(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $v = $this->exportVehicle($me->id, '99자9999');
+
+        foreach (['poa', 'clearance', 'deregistration_contract'] as $type) {
+            $this->signedGet('/api/internal/board/documents/'.$type, ['salesman_email' => 'me@a.com', 'ids' => (string) $v->id])
+                ->assertStatus(403);
+        }
+    }
+
+    /**
+     * HOMOGENEOUS_TYPES 가 두 컨트롤러에 복제돼 있다. 한쪽에만 type 을 추가하면
+     * board 경로에서 조용히 틀린 서류가 나가므로 lockstep 을 강제한다.
+     */
+    public function test_homogeneous_types_match_between_controllers(): void
+    {
+        $read = function (string $class) {
+            $c = new \ReflectionClass($class);
+
+            return $c->getConstant('HOMOGENEOUS_TYPES');
+        };
+
+        $this->assertSame(
+            $read(VehicleDocumentController::class),
+            $read(InternalDocumentController::class),
+            'ERP 화면과 board 프록시의 동질성 대상이 어긋났다',
+        );
     }
 
     // ── 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프) ──────
