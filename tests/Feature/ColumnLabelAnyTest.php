@@ -21,8 +21,10 @@ class ColumnLabelAnyTest extends TestCase
     {
         foreach (array_keys(config('column_labels.value_maps', [])) as $tableKey) {
             $label = ColumnLabel::columnAny($tableKey);
+            // 이 테스트가 막는 것은 **배열 유출**이다. 라벨이 원문인지 한글인지는 상관없다 —
+            // 실제로 2026-07-31 에 'purchase_balance_payments' 에 한글 라벨('매입 잔금')이 붙으면서
+            // "원문 fallback" 을 단언하던 옛 코드가 깨졌다. 단언을 계약(문자열)에 맞춰 좁힌다.
             $this->assertIsString($label, "columnAny('{$tableKey}') 가 문자열이 아님");
-            $this->assertSame($tableKey, $label, '매핑이 없으므로 영문 그대로 fallback 해야 한다');
         }
     }
 

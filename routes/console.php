@@ -41,16 +41,12 @@ Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverl
 //   ⚠️ monthlyOn(31) 은 31일 없는 달(2·4·6·9·11월)을 통째로 건너뛴다 → 매일 18:00 에 돌리되 말일에만 실행.
 Schedule::command('alimtalk:capital-weekly')->dailyAt('18:00')->withoutOverlapping()
     ->when(fn () => now()->isLastOfMonth());
-// 월결산 = 익월 첫 영업일 09:00 (1일이 주말이면 다음 평일). monthlyOn(1)+weekdays 는 1일이 주말인 달을
-//   통째 건너뛰므로, 매일 평가하되 "이번 달 첫 영업일" 에만 발송하는 when 가드로 안전하게.
-Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->when(function () {
-    $firstBusinessDay = now()->startOfMonth();
-    while ($firstBusinessDay->isWeekend()) {
-        $firstBusinessDay->addDay();
-    }
-
-    return now()->isSameDay($firstBusinessDay);
-})->withoutOverlapping();
+// 월결산 = **월배치 정산이 최종 승인된 때** 발송한다 (jin 2026-07-31).
+//   구: 익월 첫 영업일 무조건 발송 → 그때는 전월 정산이 아직 확정 전이라 마진·지급이 통째로 과소보고됐다.
+//   실제 발송 트리거는 SettlementPayoutBatch::approveBy 이고, 이 스케줄은 **재시도**다 —
+//   승인 시점에 알림톡이 실패했거나(미설정·게이트 off) 마감이 늦어진 달을 매일 따라잡는다.
+//   커맨드 자체가 "마감됐나 + 이미 보냈나"를 검사하므로 매일 돌아도 중복 발송되지 않는다.
+Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->withoutOverlapping();
 
 // 알림톡 전송결과 폴링 (2026-07-13) — 발송된 msgid 의 실제 도달/미도달을 BizM /v2/sender/report 로 조회.
 //   read-only 조회라 매시간(주말 포함 — 금요일 발송분이 주말에 도달 확정될 수 있음). 미설정 시 내부 skip(inert).

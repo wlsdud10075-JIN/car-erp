@@ -8,7 +8,9 @@ use App\Support\SettlementCkBatch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 
 /**
@@ -254,6 +256,15 @@ class SettlementPayoutBatch extends Model
                 '건수' => (string) $this->settlement_count,
                 '총액' => number_format($this->total_payout).'원',
             ]);
+
+            // 🚨 최종 승인 = "그 달 정산이 끝났다"는 확정 신호 → 대표 월 결산 보고를 이때 보낸다(jin 2026-07-31).
+            //    종전엔 익월 첫 영업일에 무조건 나가서, 아직 확정 전인 정산이 통째로 빠진 채 보고됐다.
+            //    fire-and-forget — 결산 알림 실패가 지급 승인을 깨면 안 된다(스케줄이 다음 날 재시도).
+            try {
+                Artisan::call('alimtalk:monthly-closing', ['month' => $this->month]);
+            } catch (\Throwable $e) {
+                Log::warning('월 결산 알림톡 트리거 실패', ['month' => $this->month, 'error' => $e->getMessage()]);
+            }
         } else {
             $this->notifyPayoutRequest();
         }
