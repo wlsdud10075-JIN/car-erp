@@ -291,14 +291,19 @@ class AlimtalkTemplates
         ],
         'erp_capital_weekly' => [
             'header' => '사내 자금 현황 보고',   // 16자 제한. 반려 대응으로 '사내' 명시(2026-07-30)
-            'highlight' => ['title' => '#{굴리는자금}', 'description' => '굴리는 총 자금 · #{기준일}'],
+            // ⚠️ highlight description 은 **19자 제한** — '굴리는 총 자금 · #{기준일}'(치환 후 21자)로
+            //    보냈다가 K135 반려(2026-07-31 실측). 승인 등록본(upload_erp_헤이맨_자금보고_재등록.xlsx
+            //    P6)이 띄어쓰기를 뺀 '굴리는총자금·#{기준일}'(17자)이라 여기도 등록본과 글자단위로 맞춘다.
+            'highlight' => ['title' => '#{굴리는자금}', 'description' => '굴리는총자금·#{기준일}'],
             'items' => [
                 ['title' => '통장 현금', 'description' => '#{통장현금}'],
                 ['title' => '재고', 'description' => '#{재고}'],
                 ['title' => '미수', 'description' => '#{미수}'],
                 ['title' => '미지급', 'description' => '#{미지급}'],
             ],
-            'summary' => ['title' => '원금 대비 손익', 'description' => '#{손익}'],
+            // ⚠️ title 은 **6자 제한** — '원금 대비 손익'(공백 포함 8자)로 보냈다가 K208 반려(2026-07-31 실측).
+            //    jin 이 BizM 등록본에서 띄어쓰기를 뺀 '원금대비손익'(6자)으로 맞춰, 여기도 동일하게 유지한다.
+            'summary' => ['title' => '원금대비손익', 'description' => '#{손익}'],
         ],
     ];
 
