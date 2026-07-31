@@ -278,4 +278,43 @@ class ShippingRequestsScreenTest extends TestCase
         $this->assertSame('in_progress', $fresh->status);   // 묶음 유지
         $this->assertNull($fresh->change_requested_at);     // 플래그만 클리어
     }
+
+    /**
+     * 페이지당 묶음 수 (jin 2026-07-31) — 선택한 수만큼만 렌더.
+     */
+    public function test_per_page_limits_batches(): void
+    {
+        foreach (range(1, 12) as $i) {
+            $this->batch('batch-'.$i, [sprintf('%02d가%04d', $i, $i)]);
+        }
+
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->assertViewHas('batches', fn ($b) => $b->count() === 12)   // 기본 20 → 12개 전부
+            ->set('perPage', 10)
+            ->assertViewHas('batches', fn ($b) => $b->count() === 10);
+    }
+
+    /**
+     * ⚠️ perPage 는 #[Url] 이라 ?perPage=999 로 직접 들어온다. 화이트리스트 밖 값이
+     * 그대로 새면 "이유 없는 빈 목록"이 된다(SKILLS §14 차량목록 선례).
+     * mount(URL 진입) 와 렌더(속성 주입) 양쪽에서 기본값으로 되돌아가야 한다.
+     */
+    public function test_out_of_range_per_page_falls_back_to_default(): void
+    {
+        $this->batch('batch-A', ['11가1111']);
+        $this->actingAs($this->clearanceUser());
+
+        // ① URL 진입 — mount 정규화
+        Volt::test('erp.shipping-requests.index', ['perPage' => 999])
+            ->assertSet('perPage', 20)
+            ->assertSee('11가1111');
+
+        // ② 속성 직접 주입 — 렌더 시점 정규화
+        Volt::test('erp.shipping-requests.index')
+            ->set('perPage', 7)
+            ->assertSet('perPage', 20)
+            ->assertSee('11가1111');
+    }
 }
