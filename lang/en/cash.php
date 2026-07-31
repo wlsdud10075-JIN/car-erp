@@ -9,6 +9,9 @@ return [
     'eur' => 'EUR',
     'save' => 'Save',
     'input_note' => 'Enter the 3 account balances; inventory, receivables and payables are captured automatically. (Capital & profit shown on the executive dashboard.)',
+    'recapture' => 'Recalculate with current data',
+    'recapture_confirm' => 'Keeps the bank balance and recalculates inventory, receivables, payables and advances. Continue?',
+    'recapture_note' => 'Use after changing advance types or vehicle data — no need to re-enter the balance.',
 
     'widget_title' => 'Capital Status',
     'cash' => 'Cash (Bank)',
