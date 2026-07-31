@@ -606,10 +606,11 @@
 {{-- 챗봇 호스트 감시 배너 (2026-07-30, 색인 세션 요청) — 시스템관리자 전용.
      사내 GPU PC 가 죽어도 챗봇은 에러를 내지 않고 옛 답변만 계속 내므로 티가 안 난다.
      assistant:health-check(5분 주기)가 캐시에 적어둔 판정을 읽어 이상일 때만 띄운다.
-     ⚠️ 게이트 = isSuperAdmin. 배지↔메뉴 게이트 일치 원칙(위 113~115행 주석)과 같은 이유로,
-        「Ollama · 챗봇 색인 운영」과 주인을 맞춘다. 넓히면 조치할 수 없는 사람에게 유령 경고가 된다.
+     ⚠️ 게이트 = **위젯과 같은 조건 + isSuperAdmin**. 배지↔메뉴 게이트 일치 원칙(위 113~115행 주석)과
+        같은 이유다. 챗봇을 끈 회사(또는 로컬)에서는 색인이 낡아도 아무 영향이 없으므로 띄우지 않는다.
+        (2026-07-31 수정 — 처음엔 Setting 토글을 안 봐서, 챗봇을 꺼도 배너가 계속 떴다.)
      ⚠️ 캐시가 아예 없으면(TTL 30분 만료) 감시 자체가 안 돌고 있다는 뜻이라 그것도 이상으로 띄운다. --}}
-@if(config('assistant.enabled') && $user->isSuperAdmin())
+@if(config('assistant.enabled') && $user->isSuperAdmin() && \App\Models\Setting::get('assistant_enabled', false))
     @php
         $assistantHealth = \Illuminate\Support\Facades\Cache::get(\App\Console\Commands\AssistantHealthCheck::CACHE_KEY);
         $assistantProblems = $assistantHealth === null
@@ -617,7 +618,11 @@
             : ($assistantHealth['problems'] ?? []);
     @endphp
     @if($assistantProblems)
-        <div x-data="{ show: true }" x-show="show" x-cloak
+        {{-- 닫으면 '같은 문제'에 한해 계속 숨긴다. 문제 내용이 달라지면 키가 바뀌어 다시 뜬다.
+             (x-data 만 쓰면 페이지를 옮길 때마다 되살아나 성가시다 — jin 2026-07-31) --}}
+        @php $assistantHealthKey = md5(implode('|', $assistantProblems)); @endphp
+        <div x-data="{ show: localStorage.getItem('assistant_health_dismissed') !== '{{ $assistantHealthKey }}' }"
+             x-show="show" x-cloak
              class="fixed left-1/2 top-3 z-[60] w-[min(92vw,600px)] -translate-x-1/2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 shadow-lg">
             <div class="flex items-start gap-3">
                 <span class="text-lg leading-none">⚠️</span>
@@ -632,7 +637,8 @@
                         챗봇은 멈추지 않고 예전 답변을 계속 낼 수 있습니다. 사내 GPU PC 상태를 확인하세요.
                     </div>
                 </div>
-                <button type="button" @click="show = false"
+                <button type="button"
+                        @click="show = false; localStorage.setItem('assistant_health_dismissed', '{{ $assistantHealthKey }}')"
                         class="shrink-0 rounded px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-100">닫기</button>
             </div>
         </div>
