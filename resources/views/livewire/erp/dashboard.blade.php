@@ -87,6 +87,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: $date.' 통장 잔액을 저장했습니다.', type: 'success');
     }
 
+    /**
+     * 통장잔액은 그대로 두고 ERP 값만 다시 계산 (jin 2026-07-31).
+     * 가수금 성격을 바꾸거나 차량을 고친 뒤, 잔액을 다시 치지 않고 자금현황에 반영하려는 용도.
+     */
+    public function recaptureCash(): void
+    {
+        $user = auth()->user();
+        abort_unless($user->canEnterCashBalance(), 403);
+
+        $date = $this->cashDate ?: now()->toDateString();
+        $snap = app(CapitalStatusService::class)->recapture($user, $date);
+
+        if (! $snap) {
+            $this->dispatch('notify', message: $date.' 통장 잔액 기록이 없어 다시 계산할 수 없습니다. 먼저 잔액을 입력하세요.', type: 'error');
+
+            return;
+        }
+
+        $this->cashSavedAt = $date;
+        $this->dispatch('notify', message: $date.' 자금현황을 다시 계산했습니다.', type: 'success');
+    }
+
     // 큐 5 — viewMode 변경 시 동기화.
     //   'salesman'으로 전환: roleView='영업' 강제 (담당자별 = 영업 시각 고정 정책)
     //   'role'로 전환: selectedSalesmanId 비움 (전체 차량 시각)
@@ -751,7 +773,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="saveCashBalance" class="btn-primary w-full">{{ __('cash.save') }}</button>
         </div>
     </div>
-    <p class="mt-2 text-[11px] text-gray-400">{{ __('cash.input_note') }}</p>
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-[11px] text-gray-400">{{ __('cash.input_note') }}</p>
+        {{-- 잔액은 그대로 두고 ERP 값만 다시 계산 — 가수금 성격·차량 데이터를 고친 뒤 쓴다(jin 2026-07-31). --}}
+        <button type="button" wire:click="recaptureCash"
+                wire:confirm="{{ __('cash.recapture_confirm') }}"
+                class="rounded border border-gray-300 px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50">
+            {{ __('cash.recapture') }}
+        </button>
+    </div>
+    <p class="mt-1 text-[11px] text-gray-400">{{ __('cash.recapture_note') }}</p>
 </div>
 @endif
 

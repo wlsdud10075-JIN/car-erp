@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\AlimtalkCapitalWeekly;
+use App\Models\AdvanceReceipt;
 use App\Models\Buyer;
 use App\Models\CashSnapshot;
 use App\Models\ForwardingCompany;
@@ -141,6 +142,39 @@ class CapitalStatusTest extends TestCase
         $this->assertSame(3_000_000, (int) $d['unsold_inventory_krw'], '안 팔린 차만 재고로 셉니다.');
         // 순자산 = 미판매재고 300 + 미수 1200 = 1500만
         $this->assertSame(15_000_000, (int) $d['working_capital_krw']);
+    }
+
+    public function test_recapture_keeps_the_balance_and_refreshes_erp_values(): void
+    {
+        // 가수금 성격을 바꾼 뒤 잔액을 다시 치지 않고도 반영되어야 한다(jin 2026-07-31).
+        $adv = AdvanceReceipt::create([
+            'received_date' => '2026-07-01', 'company_name' => '대표', 'amount' => 5_000_000,
+        ]);
+        $svc = app(CapitalStatusService::class);
+        $svc->capture(['krw' => 9_000_000, 'usd' => 12.5, 'eur' => 0], null, '2026-07-31');
+
+        $adv->update(['nature' => AdvanceReceipt::NATURE_EQUITY]);
+        $after = $svc->recapture(null, '2026-07-31');
+
+        $this->assertSame(9_000_000, (int) $after->balance_krw, '통장 잔액은 유지되어야 합니다.');
+        $this->assertSame(12.5, (float) $after->balance_usd);
+        $this->assertSame(0, (int) $after->advance_krw, '성격 변경이 반영되어야 합니다.');
+        $this->assertSame(1, CashSnapshot::whereDate('snapshot_date', '2026-07-31')->count(), '행이 늘면 안 됩니다.');
+    }
+
+    public function test_recapture_does_nothing_without_an_existing_snapshot(): void
+    {
+        // 잔액 기록이 없는 날짜를 0 으로 지어내면 자금현황이 거짓이 된다.
+        $this->assertNull(app(CapitalStatusService::class)->recapture(null, '2026-07-01'));
+        $this->assertSame(0, CashSnapshot::count());
+    }
+
+    public function test_sales_cannot_recapture(): void
+    {
+        app(CapitalStatusService::class)->capture(['krw' => 1_000_000], null, now()->toDateString());
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+
+        Volt::actingAs($sales)->test('erp.dashboard')->call('recaptureCash')->assertStatus(403);
     }
 
     public function test_dashboard_does_not_redefine_the_liquidation_formula(): void

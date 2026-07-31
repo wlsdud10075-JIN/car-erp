@@ -206,6 +206,30 @@ class CapitalStatusService
         return $snap;
     }
 
+    /**
+     * 통장잔액은 그대로 두고 ERP 값만 다시 캡처한다 (jin 2026-07-31).
+     *
+     * 스냅샷은 "그 시점 값을 박는" 구조라, 가수금 성격을 바꾸거나 차량 데이터를 고쳐도
+     * 자금현황이 그대로다. 그때마다 통장잔액을 다시 치게 하는 건 번거롭고, 잘못 치면 잔액이 틀어진다.
+     * → 이미 입력된 잔액을 재사용해 재고·미수·미지급·가수금만 다시 계산한다.
+     *
+     * 오늘 스냅샷이 없으면 재계산할 대상이 없으므로 null 을 돌려준다(잔액을 지어내지 않는다).
+     */
+    public function recapture(?User $user = null, ?string $date = null): ?CashSnapshot
+    {
+        $date ??= now()->toDateString();
+        $s = CashSnapshot::whereDate('snapshot_date', $date)->first();
+        if (! $s) {
+            return null;
+        }
+
+        return $this->capture([
+            'krw' => (float) $s->balance_krw,
+            'usd' => (float) $s->balance_usd,
+            'eur' => (float) $s->balance_eur,
+        ], $user, $date);
+    }
+
     /** 최신 스냅샷. */
     public function latest(): ?CashSnapshot
     {
