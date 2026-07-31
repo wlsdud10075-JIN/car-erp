@@ -240,6 +240,31 @@ class SalesInvoiceLayoutTest extends TestCase
         }
     }
 
+    /**
+     * 🚨 도장이 트림과 **함께 올라오는지** — 인보이스는 이번에 처음 removeRow 경로에 들어갔다.
+     *    applyStamps 는 fillMulti 앞에서 돌아 직인을 B65 에 놓고, 그 뒤 트림이 (30−n)행을 지운다.
+     *    함께 안 움직이면 인쇄물에서 직인만 저 아래 빈 칸에 남는다.
+     *    baked 직인이 이미 양식에 있으므로 업로드(GD) 없이 생성만 해서 좌표를 잴 수 있다.
+     */
+    public function test_baked_seal_moves_up_with_trim(): void
+    {
+        foreach ([1, 3, 30] as $count) {
+            $sheet = $this->sheet($this->makeVehicles($count));
+
+            $coords = [];
+            foreach ($sheet->getDrawingCollection() as $d) {
+                $coords[] = $d->getCoordinates();
+            }
+
+            $expected = 'B'.$this->row(65, $count);   // 템플릿 B65 → 트림만큼 위로
+            $this->assertContains(
+                $expected,
+                $coords,
+                "{$count}대: 직인이 트림과 함께 이동하지 않았다(기대 {$expected}, 실제 ".implode(',', $coords).')'
+            );
+        }
+    }
+
     /** 양식 3사가 같은 기하를 유지하는지 — 한 곳만 재확장되면 좌표가 어긋난다. */
     public function test_every_tenant_template_has_thirty_slots(): void
     {
