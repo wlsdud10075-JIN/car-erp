@@ -25,6 +25,7 @@ return [
     'all_users' => 'All users',
     'all_actions' => 'All actions',
     'all_columns' => 'All columns',
+    'all_types' => 'All targets',
     'reset_filters' => 'Reset filters',
     'system' => 'System',
     'audit_empty_filtered' => 'No audit logs match the filters.',
