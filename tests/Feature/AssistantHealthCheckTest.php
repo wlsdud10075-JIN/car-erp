@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\AssistantHealthCheck;
+use App\Models\Setting;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -15,6 +18,8 @@ use Tests\TestCase;
  */
 class AssistantHealthCheckTest extends TestCase
 {
+    use RefreshDatabase;
+
     private string $indexPath;
 
     protected function setUp(): void
@@ -247,5 +252,53 @@ class AssistantHealthCheckTest extends TestCase
         $this->artisan('assistant:health-check')->assertSuccessful();
 
         $this->assertStringContainsString('JSON 손상', $this->health()['problems'][0]);
+    }
+
+    // ── 배너 게이트 (2026-07-31) ──────────────────────────────
+    // 처음엔 Setting 토글을 안 봐서, 챗봇을 끈 로컬에서도 배너가 계속 떴다(jin 제보).
+    // 챗봇을 안 쓰는 회사·환경에서는 색인이 낡아도 영향이 없으므로 띄우면 안 된다.
+
+    private const BANNER_TEXT = '사내 업무 도우미(챗봇) 이상';
+
+    private function seedProblem(): void
+    {
+        Cache::put(AssistantHealthCheck::CACHE_KEY, [
+            'checked_at' => time(), 'ollama_ok' => false, 'ollama_down_since' => time() - 9999,
+            'index_mtime' => time() - 3600, 'problems' => ['테스트 문제'],
+        ], AssistantHealthCheck::CACHE_TTL);
+    }
+
+    public function test_banner_is_hidden_when_chatbot_toggle_is_off(): void
+    {
+        $this->seedProblem();
+        Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '0', 'type' => 'boolean']);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $this->actingAs($super)->get('/admin/dashboard')
+            ->assertOk()
+            ->assertDontSee(self::BANNER_TEXT);
+    }
+
+    public function test_banner_shows_for_super_when_chatbot_is_on(): void
+    {
+        $this->seedProblem();
+        Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '1', 'type' => 'boolean']);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $this->actingAs($super)->get('/admin/dashboard')
+            ->assertOk()
+            ->assertSee(self::BANNER_TEXT);
+    }
+
+    public function test_banner_is_hidden_from_non_super(): void
+    {
+        // 조치할 수 없는 사람에게 띄우면 유령 경고가 된다(배지↔게이트 일치 원칙).
+        $this->seedProblem();
+        Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '1', 'type' => 'boolean']);
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+
+        $this->actingAs($admin)->get('/admin/dashboard')
+            ->assertOk()
+            ->assertDontSee(self::BANNER_TEXT);
     }
 }
