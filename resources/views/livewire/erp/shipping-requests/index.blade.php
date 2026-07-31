@@ -22,6 +22,19 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Url]
     public string $search = '';
 
+    /** 페이지당 묶음 수 선택지 (jin 2026-07-31 — 완료·전체가 누적돼 아래로 길어지는 문제). */
+    public const PER_PAGE_OPTIONS = [10, 20, 30, 50, 100];
+
+    /**
+     * 페이지당 batch 수. 기본 20(종전 고정값 유지).
+     * ⚠️ #[Url] 이라 ?perPage=999 로 직접 들어온다 — mount 와 with() 양쪽에서 정규화한다
+     *    (updatedPerPage 는 화면 조작 때만 돈다. SKILLS §14 차량목록 선례).
+     * ⚠️ 이 화면은 batch 로 페이지네이션한 뒤 그 batch 의 요청을 전량 로드하므로
+     *    실제 비용은 perPage × (batch 당 차량 수)다. 100 은 무거울 수 있다.
+     */
+    #[Url]
+    public int $perPage = 20;
+
     /** B/L 발급 인라인 폼 — 현재 발급 중인 batch_id. */
     public string $issuingBatch = '';
 
@@ -120,6 +133,8 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
 
+        $this->normalizePerPage();
+
         // 딥링크 진입 — 승인 권한자면 2차 비용 탭 열고 해당 묶음 면허비 폼 자동 오픈.
         if ($this->focus !== '' && auth()->user()?->canApprove()) {
             $this->viewTab = 'cost';
@@ -143,6 +158,20 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function updatingSearch(): void
     {
+        $this->resetPage();
+    }
+
+    /** 화이트리스트 밖 값(직접 주입 포함)은 기본값으로 — 잘못된 값이 "이유 없는 빈 목록"이 되지 않게. */
+    private function normalizePerPage(): void
+    {
+        if (! in_array($this->perPage, self::PER_PAGE_OPTIONS, true)) {
+            $this->perPage = 20;
+        }
+    }
+
+    public function updatedPerPage(): void
+    {
+        $this->normalizePerPage();
         $this->resetPage();
     }
 
@@ -548,12 +577,14 @@ new #[Layout('components.layouts.app')] class extends Component
         };
 
         // batch 단위로 페이지네이션 (최신 요청 desc) → 그 페이지의 batch 만 전체 로드.
+        //   perPage 는 #[Url] 이라 렌더 직전에도 다시 정규화한다(mount 를 안 거치는 갱신 경로 대비).
+        $this->normalizePerPage();
         $batchPage = ShippingRequest::query()
             ->tap($applyFilters)
             ->groupBy('batch_id')
             ->selectRaw('batch_id, MAX(requested_at) as latest_req')
             ->orderByDesc('latest_req')
-            ->paginate(20);
+            ->paginate($this->perPage);
 
         $batchIds = collect($batchPage->items())->pluck('batch_id')->all();
         $order = array_flip($batchIds);
@@ -657,6 +688,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'batches' => $batches,
             'batchPage' => $batchPage,
             'counts' => $counts,
+            'perPageOptions' => self::PER_PAGE_OPTIONS,
             'costBatches' => $costBatches,
             'canApprove' => (bool) auth()->user()?->canApprove(),
             'canAccessClearance' => (bool) auth()->user()?->canAccessClearance(),
@@ -772,9 +804,15 @@ new #[Layout('components.layouts.app')] class extends Component
         @endforeach
         <input wire:model.live.debounce.400ms="search" type="text"
                placeholder="{{ __('shipping.search_ph') }}" class="input-filter ml-auto w-56" />
+        {{-- 페이지당 묶음 수 — 완료·전체가 누적돼 아래로 길어지는 걸 끊는다 (jin 2026-07-31). --}}
+        <select wire:model.live="perPage" class="input-filter">
+            @foreach ($perPageOptions as $n)
+                <option value="{{ $n }}">{{ __('common.per_page', ['count' => $n]) }}</option>
+            @endforeach
+        </select>
     </div>
 
-    {{-- 배치 카드 (batch 단위 페이지네이션 20개) --}}
+    {{-- 배치 카드 (batch 단위 페이지네이션 — 페이지당 수는 위 select) --}}
     @if ($batches->isEmpty())
         <div class="card text-center text-sm text-gray-400">{{ $search !== '' ? __('shipping.empty_search') : __('shipping.empty') }}</div>
     @else
