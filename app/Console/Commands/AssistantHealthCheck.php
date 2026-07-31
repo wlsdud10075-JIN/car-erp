@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Assistant\AssistantService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -42,6 +43,9 @@ class AssistantHealthCheck extends Command
 
     /** Ollama 연속 실패를 이상으로 볼 최소 시간. 재부팅 복구가 약 1분 50초라 5분이면 오탐이 없다. */
     public const OLLAMA_GRACE_SECONDS = 300;
+
+    /** 색인 무결성 검사 결과 캐시. mtime 이 같으면 재파싱하지 않는다. */
+    private const AUDIT_KEY = 'assistant.health.index_audit';
 
     private const DOWN_SINCE_KEY = 'assistant.health.ollama_down_since';
 
@@ -89,6 +93,12 @@ class AssistantHealthCheck extends Command
             if ($ageHours >= self::INDEX_STALE_HOURS) {
                 $problems[] = sprintf('챗봇 색인이 %d시간째 그대로 — 색인이 멈췄거나 Notion 마커 오류로 중단됐을 수 있음', (int) $ageHours);
             }
+
+            // ── ③ 색인 등급 표기 무결성 ────────────────────
+            // 색인 파일이 바뀐 날에만 검사한다(2.6MB 파싱이라 5분마다 돌릴 일이 아니다).
+            foreach ($this->auditIndexAudiences($path, $mtime) as $p) {
+                $problems[] = $p;
+            }
         }
 
         Cache::put(self::CACHE_KEY, [
@@ -112,6 +122,69 @@ class AssistantHealthCheck extends Command
         $this->info(sprintf('정상 — Ollama OK, 색인 %.1f시간 전', $mtime ? ($now - $mtime) / 3600 : 0));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * 색인 등급 표기 무결성 — 색인 세션이 매번 수동으로 보던 "청크 수 == audience 수" 를 자동화한다.
+     *
+     * 🚨 이게 가장 조용한 사고다. `AssistantService::guide()` 는
+     *   - **전량 미표기**면 구 색인으로 보고 전 청크를 staff 취급한다 → 영업이 대표·시스템 자료를 검색하게 된다.
+     *   - **부분 표기**면 미표기 청크를 통째로 버린다 → 챗봇이 "자료가 없다"고만 답한다.
+     *   둘 다 예외도 로그도 없이 벌어진다.
+     *
+     * 판정 기준은 `guide()` 와 같은 순서(스코프 필터 → 등급 확인)로 맞춘다. 실제로 챗봇이 쓰는 집합만 본다.
+     * 2.6MB 파싱이라 **mtime 이 바뀐 경우에만** 다시 검사하고, 결과는 캐시에 남겨 매 실행마다 재사용한다.
+     *
+     * @return string[]
+     */
+    private function auditIndexAudiences(string $path, int $mtime): array
+    {
+        $cached = Cache::get(self::AUDIT_KEY);
+        if (is_array($cached) && ($cached['mtime'] ?? null) === $mtime) {
+            return $cached['problems'];
+        }
+
+        $problems = [];
+        $kb = json_decode((string) file_get_contents($path), true);
+
+        if (! is_array($kb)) {
+            $problems[] = '챗봇 색인 파일을 읽을 수 없음 (JSON 손상)';
+        } else {
+            // guide() 와 동일하게 스코프를 먼저 적용한다 — board 청크는 ERP 챗봇이 쓰지 않는다.
+            $scope = (string) config('assistant.index_scope');
+            if ($scope !== '') {
+                $kb = array_values(array_filter($kb, fn ($d) => mb_strpos((string) ($d['source'] ?? ''), $scope) !== false));
+            }
+
+            $total = count($kb);
+            $tagged = 0;
+            $invalid = 0;
+            foreach ($kb as $doc) {
+                if (! array_key_exists('audience', $doc)) {
+                    continue;
+                }
+                $tagged++;
+                $required = is_array($doc['audience']) ? $doc['audience'] : [$doc['audience']];
+                if (! $required || array_diff($required, AssistantService::RAG_AUDIENCES)) {
+                    $invalid++;
+                }
+            }
+
+            if ($total === 0) {
+                $problems[] = '챗봇 색인에 이 회사(ERP) 청크가 하나도 없음 — 색인 스코프나 배포를 확인하세요';
+            } elseif ($tagged === 0) {
+                $problems[] = sprintf('🚨 챗봇 색인 %d청크가 전부 등급 미표기 — 전 직원이 대표·시스템 자료까지 검색하게 됩니다', $total);
+            } elseif ($tagged < $total) {
+                $problems[] = sprintf('🚨 챗봇 색인 등급이 일부만 표기됨 (%d/%d) — 미표기 청크는 검색에서 통째로 제외됩니다', $tagged, $total);
+            }
+            if ($invalid > 0) {
+                $problems[] = sprintf('챗봇 색인에 알 수 없는 등급이 %d건 — 해당 청크는 검색에서 제외됩니다', $invalid);
+            }
+        }
+
+        Cache::put(self::AUDIT_KEY, ['mtime' => $mtime, 'problems' => $problems], 7 * 86400);
+
+        return $problems;
     }
 
     private function pingOllama(): bool
