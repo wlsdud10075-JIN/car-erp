@@ -169,12 +169,31 @@ class CapitalStatusTest extends TestCase
         $this->assertSame(0, CashSnapshot::count());
     }
 
-    public function test_sales_cannot_recapture(): void
+    public function test_recapture_button_lives_on_the_admin_dashboard(): void
     {
-        app(CapitalStatusService::class)->capture(['krw' => 1_000_000], null, now()->toDateString());
-        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+        // 잔고 기입은 업무 대시보드, 보는 건 관리자 대시보드 — 버튼도 보는 쪽에 둔다(jin 2026-07-31).
+        $adminSrc = file_get_contents(resource_path('views/livewire/admin/dashboard.blade.php'));
+        $workSrc = file_get_contents(resource_path('views/livewire/erp/dashboard.blade.php'));
 
-        Volt::actingAs($sales)->test('erp.dashboard')->call('recaptureCash')->assertStatus(403);
+        $this->assertStringContainsString('recaptureCash', $adminSrc);
+        $this->assertStringNotContainsString('recaptureCash', $workSrc,
+            '업무 대시보드에는 잔고 기입만 둡니다.');
+    }
+
+    public function test_recapture_from_admin_dashboard_refreshes_values(): void
+    {
+        $adv = AdvanceReceipt::create(['received_date' => '2026-07-01', 'company_name' => '대표', 'amount' => 4_000_000]);
+        $svc = app(CapitalStatusService::class);
+        $svc->capture(['krw' => 7_000_000], null, now()->toDateString());
+        $adv->update(['nature' => AdvanceReceipt::NATURE_EQUITY]);
+
+        Volt::actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]))
+            ->test('admin.dashboard')
+            ->call('recaptureCash');
+
+        $latest = $svc->latest();
+        $this->assertSame(7_000_000, (int) $latest->balance_krw, '잔액은 유지되어야 합니다.');
+        $this->assertSame(0, (int) $latest->advance_krw, '성격 변경이 반영되어야 합니다.');
     }
 
     public function test_dashboard_does_not_redefine_the_liquidation_formula(): void

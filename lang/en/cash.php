@@ -12,6 +12,8 @@ return [
     'recapture' => 'Recalculate with current data',
     'recapture_confirm' => 'Keeps the bank balance and recalculates inventory, receivables, payables and advances. Continue?',
     'recapture_note' => 'Use after changing advance types or vehicle data — no need to re-enter the balance.',
+    'recapture_done' => 'Recalculated.',
+    'recapture_no_data' => 'No balance record yet. Enter the balance on the work dashboard first.',
 
     'widget_title' => 'Capital Status',
     'cash' => 'Cash (Bank)',

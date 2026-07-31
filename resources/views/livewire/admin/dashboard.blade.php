@@ -94,6 +94,32 @@ new #[Layout('components.layouts.app')] class extends Component
      * 자금 보고 링크 발급 (안건4 3단계) — 로그인 없이 열리는 서명 링크.
      *   ⚠️ 회사 재무 전부가 담긴 화면이라 canViewCapital(super/대표)만 발급할 수 있고 만료를 건다.
      */
+    /**
+     * 통장잔액은 그대로 두고 ERP 값(재고·미수·미지급·가수금)만 다시 계산 (jin 2026-07-31).
+     *
+     * 스냅샷은 "그 시점 값을 박는" 구조라, 가수금 성격을 바꾸거나 차량을 고쳐도 자금현황이 그대로다.
+     * 그때마다 잔액을 다시 치게 하면 번거롭고 잘못 치면 잔액이 틀어진다.
+     * 잔고 기입은 업무 대시보드, **보는 건 여기**라서 버튼도 여기 둔다.
+     */
+    public function recaptureCash(): void
+    {
+        $user = auth()->user();
+        abort_unless($user?->canEnterCashBalance(), 403);
+
+        $svc = app(CapitalStatusService::class);
+        $latest = $svc->latest();
+        if (! $latest) {
+            $this->dispatch('notify', message: __('cash.recapture_no_data'), type: 'error');
+
+            return;
+        }
+
+        // 최신 스냅샷 날짜 기준으로 재계산 — 오늘 잔액을 아직 안 넣었어도 마지막 기록을 갱신한다.
+        $svc->recapture($user, substr((string) $latest->snapshot_date, 0, 10));
+        unset($this->capitalStatus, $this->capitalTrend);
+        $this->dispatch('notify', message: __('cash.recapture_done'), type: 'success');
+    }
+
     public function copyReportLink(): void
     {
         abort_unless(auth()->user()?->canViewCapital(), 403);
@@ -893,8 +919,19 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             {{-- 대표에게 보낼 보고서 링크 (안건4 3단계) — 로그인 없이 열리는 서명 링크, 7일 만료. --}}
             @if($cap['has_data'] ?? false)
-                <button type="button" wire:click="copyReportLink"
-                        class="text-xs text-violet-600 hover:underline">{{ __('cash.report_link') }}</button>
+                <div class="flex items-center gap-3">
+                    {{-- 잔액은 그대로 두고 ERP 값만 다시 계산 — 가수금 성격·차량 데이터를 고친 뒤 쓴다.
+                         업무 대시보드는 잔고 기입만 담당하고, 보는 건 여기라서 버튼도 여기 둔다(jin 2026-07-31). --}}
+                    @if(auth()->user()->canEnterCashBalance())
+                        <button type="button" wire:click="recaptureCash"
+                                wire:confirm="{{ __('cash.recapture_confirm') }}"
+                                class="rounded border border-gray-300 px-2.5 py-1 text-[11px] text-gray-600 hover:bg-gray-50">
+                            {{ __('cash.recapture') }}
+                        </button>
+                    @endif
+                    <button type="button" wire:click="copyReportLink"
+                            class="text-xs text-violet-600 hover:underline">{{ __('cash.report_link') }}</button>
+                </div>
             @endif
         </div>
         @if($reportLink !== '')
