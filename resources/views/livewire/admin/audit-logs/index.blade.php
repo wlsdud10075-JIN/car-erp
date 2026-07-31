@@ -230,7 +230,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 @forelse($this->logs as $log)
                 @php
                     $modelLabel = \App\Support\ColumnLabel::model($log->auditable_type);
-                    $columnLabel = \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
+                    {{-- 챗봇 질문은 column_name 에 컬럼이 아니라 질문 유형이 들어간다(2026-07-31). --}}
+                    $columnLabel = $log->action === 'assistant_query'
+                        ? \App\Support\ColumnLabel::assistantIntent($log->column_name)
+                        : \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
                     $actionLabel = \App\Support\ColumnLabel::action($log->action);
                     $vnum = $this->vehicleNumbers[$log->id] ?? null;
                 @endphp
@@ -296,7 +299,9 @@ new #[Layout('components.layouts.app')] class extends Component
         @forelse($this->logs as $log)
         @php
             $modelLabelM = \App\Support\ColumnLabel::model($log->auditable_type);
-            $columnLabelM = \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
+            $columnLabelM = $log->action === 'assistant_query'
+                ? \App\Support\ColumnLabel::assistantIntent($log->column_name)
+                : \App\Support\ColumnLabel::column($log->auditable_type, $log->column_name);
             $actionLabelM = \App\Support\ColumnLabel::action($log->action);
             $vnumM = $this->vehicleNumbers[$log->id] ?? null;
         @endphp

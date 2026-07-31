@@ -91,6 +91,15 @@ return [
         'export_declaration_amount' => '면장금액',
         'shipping_date' => '선적일',
         'arrival_date' => '도착일자',
+        // 2026-07-31 — 감사로그에 쌓이는데 매핑이 없어 영문으로 노출되던 것들.
+        'eta_date' => '도착 예정일(ETA)',
+        'c_no' => '컨테이너 번호',
+        'savings_earned' => '적립금 적립액',
+        'purchase_fee_holder' => '매도비 예금주',
+        'purchase_fee_bank' => '매도비 은행',
+        'purchase_fee_account' => '매도비 계좌번호',
+        // 이벤트가 column_name 자리에 테이블명을 넣는 경우(purchase_payment_after_paid).
+        'purchase_balance_payments' => '매입 잔금',
         'shipping_method' => '운송 방식',
         'port_of_loading' => 'Port of Loading',
         'discharge_port_id' => '도착 항구',
@@ -219,6 +228,49 @@ return [
         'decided_at' => '결정 시각',
     ],
 
+    // ─── cash_snapshots (통장 마감잔액 — 자금현황 입력 이력, 2026-07-31) ──────
+    'cash_snapshots' => [
+        'snapshot_date' => '기준일',
+        'balance_krw' => '통장 잔액(원화)',
+        'balance_usd' => '통장 잔액(달러)',
+        'balance_eur' => '통장 잔액(유로)',
+        'inventory_krw' => '재고(선적 전)',
+        'receivable_krw' => '미수',
+        'payable_krw' => '매입 미지급',
+        'advance_krw' => '가수금(갚을 돈)',
+        'auction_deposit_krw' => '경매 보증금',
+        'advance_payment_krw' => '선수금(선적 전 수령)',
+        'unsold_inventory_krw' => '미판매 재고',
+        'fx_usd' => '적용 환율(달러)',
+        'fx_eur' => '적용 환율(유로)',
+        'entered_by' => '입력자',
+    ],
+
+    // ─── settings (기능 설정) ────────────────────────────────────────────
+    'settings' => [
+        'value' => '설정값',
+        'lock_shipping_entry' => '선적 진입 락',
+        'capital_principal' => '투입 원금',
+    ],
+
+    // ─── settlement_payout_batches (정산 지급 배치) ───────────────────────
+    'settlement_payout_batches' => [
+        'month' => '귀속월',
+        'status' => '배치 상태',
+        'amount' => '조정 금액',
+        'total_payout' => '지급 총액',
+        'settlement_count' => '정산 건수',
+        'current_level' => '현재 승인 단계',
+    ],
+
+    // ─── signed_contracts (전자서명) ─────────────────────────────────────
+    'signed_contracts' => [
+        'status' => '서명 상태',
+        'contract_no' => '계약번호',
+        'recipient_email' => '수신 이메일',
+        'revoked_at' => '무름 시각',
+    ],
+
     // ─── 모델 클래스명 → 한글 ─────────────────────────────────────────────
     // audit_logs.auditable_type 표시에 사용
     'models' => [
@@ -238,6 +290,11 @@ return [
         'User' => '사용자',
         'Country' => '국가',
         'Port' => '항구',
+        // 2026-07-31 — 운영 감사로그에 실제로 쌓여 있는데 매핑이 없어 영문으로 노출되던 것들.
+        'CashSnapshot' => '통장 잔액',
+        'Setting' => '기능 설정',
+        'SettlementPayoutBatch' => '정산 지급 배치',
+        'SignedContract' => '전자서명 계약',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -263,6 +320,34 @@ return [
         'payout_approved_via_link' => '정산 지급 승인(카톡)',
         'payout_rejected_via_link' => '정산 지급 반려(카톡)',
         'inbound_purchase_sync' => '매입 자동 등록(board)',
+        // 2026-07-31 — 운영 감사로그 실측으로 확인된 미매핑 액션(영문 노출분).
+        'assistant_query' => '챗봇 질문',
+        'purchase_gate_override' => '매입 게이트 예외 승인',
+        'vehicle_deleted_with_reason' => '차량 삭제(사유 기재)',
+        'capital_report_viewed' => '자금 보고서 열람',
+        'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
+        'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
+        'bulk_shipping_date_applied' => '선적일·도착일 일괄 기입',
+        'signing_session_revoked' => '전자서명 요청 무름',
+        'cash_balance_entered' => '통장 잔액 입력',
+        'capital_recaptured' => '자금현황 재계산',
+    ],
+
+    /*
+     * ─── 챗봇 질문 유형 (2026-07-31) ───────────────────────────────────
+     * ⚠️ action='assistant_query' 인 감사로그는 column_name 에 **컬럼이 아니라 질문 유형(intent)** 을 넣는다
+     *   (AssistantService::classify). auditable_type 은 User 라 vehicles/users 사전으로는 절대 안 풀린다.
+     *   권한 밖 질문은 '{intent}(denied)' 로 저장되므로 접미사를 떼고 조회한다.
+     */
+    'assistant_intents' => [
+        'guide' => '업무 가이드',
+        'system_guide' => '시스템 안내',
+        'capital_status' => '자금 현황',
+        'break_even' => '손익분기',
+        'sales_by_salesman' => '담당자별 매출',
+        'receivable_by_salesman' => '담당자별 미수',
+        'receivable_by_buyer' => '바이어별 미수',
+        'receivable_summary' => '미수 요약',
     ],
 
     // ─── 감사 로그 '변경' 열 값 한글화 (2026-07-09 jin — 최고관리자가 값도 알아보게) ──────

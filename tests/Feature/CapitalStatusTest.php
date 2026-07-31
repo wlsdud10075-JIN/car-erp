@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\AlimtalkCapitalWeekly;
 use App\Models\AdvanceReceipt;
 use App\Models\AlimtalkLog;
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\CashSnapshot;
 use App\Models\ForwardingCompany;
@@ -465,6 +466,41 @@ class CapitalStatusTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertEquals('2500000000', Setting::get(CapitalStatusService::PRINCIPAL_KEY));
+    }
+
+    /**
+     * 통장 마감잔액 입력 이력 (jin 2026-07-31).
+     * 종전엔 입력만 하고 과거에 뭘 넣었는지 볼 데가 없었다 → 감사로그에 남겨 로그 화면에서 조회한다.
+     */
+    public function test_cash_balance_entry_is_recorded_in_the_audit_log(): void
+    {
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($user);
+        $svc = app(CapitalStatusService::class);
+
+        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], $user, '2026-07-30');
+
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_type' => CashSnapshot::class,
+            'column_name' => 'balance_krw',
+            'new_value' => '1000000',
+        ]);
+
+        // 같은 날 다시 입력 → 바뀐 항목만 old→new 로 남는다.
+        $svc->capture(['krw' => 2_000_000, 'usd' => 0, 'eur' => 0], $user, '2026-07-30');
+        $this->assertDatabaseHas('audit_logs', [
+            'column_name' => 'balance_krw', 'old_value' => '1000000', 'new_value' => '2000000',
+        ]);
+
+        // 안 바뀐 통화는 로그를 만들지 않는다(잡음 방지).
+        $usdLogs = AuditLog::where('column_name', 'balance_usd')->count();
+        $this->assertSame(1, $usdLogs, '값이 그대로면 로그를 남기지 않아야 합니다.');
+
+        // 재계산은 잔액이 그대로라 컬럼 로그 없이 이벤트 한 줄만.
+        $svc->recapture($user, '2026-07-30');
+        $this->assertDatabaseHas('audit_logs', ['action' => 'capital_recaptured']);
+        $this->assertSame(2, AuditLog::where('column_name', 'balance_krw')->count(),
+            '재계산은 잔액을 안 바꾸므로 잔액 로그가 늘면 안 됩니다.');
     }
 
     public function test_alimtalk_capital_weekly_vars(): void

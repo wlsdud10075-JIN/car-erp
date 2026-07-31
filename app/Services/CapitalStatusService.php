@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AdvanceReceipt;
 use App\Models\AuctionDeposit;
+use App\Models\AuditLog;
 use App\Models\CashSnapshot;
 use App\Models\ForwardingInvoice;
 use App\Models\Setting;
@@ -205,6 +206,13 @@ class CapitalStatusService
         // date 캐스트가 'Y-m-d 00:00:00' 로 저장돼 updateOrCreate 의 정확매칭이 실패 → whereDate 로 조회.
         $snap = CashSnapshot::whereDate('snapshot_date', $date)->first()
             ?? new CashSnapshot(['snapshot_date' => $date]);
+        // 통장 잔액 3종의 직전 값 — 감사로그에 "무엇을 얼마에서 얼마로 바꿨나"를 남긴다(jin 2026-07-31).
+        //   종전엔 입력 이력을 볼 데가 없어 과거에 뭘 넣었는지 확인이 불가능했다.
+        $before = [
+            'balance_krw' => $snap->exists ? (int) $snap->balance_krw : null,
+            'balance_usd' => $snap->exists ? (float) $snap->balance_usd : null,
+            'balance_eur' => $snap->exists ? (float) $snap->balance_eur : null,
+        ];
         $snap->fill([
             'balance_krw' => (int) round($balances['krw'] ?? 0),
             'balance_usd' => round((float) ($balances['usd'] ?? 0), 2),
@@ -224,6 +232,15 @@ class CapitalStatusService
             'fx_eur' => $fx['EUR'],
             'entered_by' => $user?->id,
         ])->save();
+
+        // 잔액이 실제로 바뀐 항목만 기록한다 — ERP 캡처값(재고·미수 등)은 자동 산출이라 남기지 않는다
+        // (남기면 「지금 값으로 다시 계산」 한 번에 로그가 열 줄씩 쌓여 정작 입력 이력이 묻힌다).
+        foreach ($before as $col => $old) {
+            $new = $snap->{$col};
+            if ($old === null || (float) $old !== (float) $new) {
+                AuditLog::recordChange($snap, $col, $old, $new);
+            }
+        }
 
         return $snap;
     }
@@ -245,11 +262,16 @@ class CapitalStatusService
             return null;
         }
 
-        return $this->capture([
+        $snap = $this->capture([
             'krw' => (float) $s->balance_krw,
             'usd' => (float) $s->balance_usd,
             'eur' => (float) $s->balance_eur,
         ], $user, $date);
+
+        // 잔액은 그대로라 컬럼 변경 로그가 안 남는다 → 재계산했다는 사실만 한 줄로 남긴다.
+        AuditLog::recordEvent($snap, 'capital_recaptured');
+
+        return $snap;
     }
 
     /** 최신 스냅샷. */
