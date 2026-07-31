@@ -315,7 +315,7 @@ class AlimtalkTemplates
         'erp_daily_summary' => '매일 09:00 (평일) — 대표 일일 매출·미수 요약',
         'erp_weekly_summary' => '매주 금요일 18:00 — 대표 주간 요약',
         'erp_capital_weekly' => '매주 월요일 09:00 — 대표 주간 자금/손익 보고 (통장현금·재고·미수·미지급·손익)',
-        'erp_monthly_closing' => '매월 1일 09:00 — 전월 결산 요약',
+        'erp_monthly_closing' => '월배치 정산이 최종 승인된 때 (2026-07-31 변경 — 구: 익월 첫 영업일. 정산 확정 전에 나가 마진·지급이 과소보고됐다)',
         'erp_vehicle_new' => 'board 경유 신규 차량 등록 시',
         'erp_purchase_unpaid' => '매일 09:00 (평일) — 매입 미지급 있으면',
         'erp_sale_unpaid' => '매일 09:00 (평일) — 판매 미입금 있으면 (결제대기 10일 유예 제외)',
