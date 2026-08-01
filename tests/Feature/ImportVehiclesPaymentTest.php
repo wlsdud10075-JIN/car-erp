@@ -43,11 +43,11 @@ class ImportVehiclesPaymentTest extends TestCase
     {
         Salesman::create(['name' => 'TESTMAN', 'type' => 'employee', 'is_active' => true]);
 
-        // EUR 차, 환율 1430, 정산1 입금 31,832,300(원화) — 외화슬롯에 원화
+        // EUR 차, 환율 1430, 입금 31,832,300(원화) — 외화슬롯에 원화 (2026-08-01 입금열 AO/AP → AP/AQ)
         $path = $this->fixture([
             'D' => 'EUR-1', 'I' => 'EURVIN1', 'AB' => 'EUR BUYER',
             'AE' => 'EUR', 'AF' => 26223.78, 'AG' => 1430,
-            'AO' => 31832300, 'AP' => '2026-02-11',
+            'AP' => 31832300, 'AQ' => '2026-02-11',
         ]);
         $this->artisan('vehicles:import', ['path' => $path, '--force' => true, '--with-payments' => true])->assertExitCode(0);
         @unlink($path);
@@ -81,7 +81,7 @@ class ImportVehiclesPaymentTest extends TestCase
         $path = $this->fixture([
             'D' => 'DUP-1', 'I' => 'DUPVIN1', 'AB' => 'M BUYER',
             'AE' => 'EUR', 'AF' => 5200, 'AG' => 1430,
-            'AO' => 5200, 'AP' => '2026-02-11',
+            'AP' => 5200, 'AQ' => '2026-02-11',
         ]);
         $this->artisan('vehicles:import', ['path' => $path, '--force' => true, '--with-payments' => true])->assertExitCode(0);
         @unlink($path);

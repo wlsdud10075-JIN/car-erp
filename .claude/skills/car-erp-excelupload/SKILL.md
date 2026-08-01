@@ -1,11 +1,18 @@
 ---
 name: car-erp-excelupload
-description: 헤이맨 수출차량현황표(xlsx)를 car-erp에 차량 일괄 import한다. 사용자가 "수출차량현황표 엑셀 import", "헤이맨 엑셀 업로드", "차량 일괄 등록", "vehicles:import 이어서" 같은 요청을 하거나, 수출차량현황표 xlsx 경로(특히 바탕화면 *수출차량현황표*.xlsx)를 가리킬 때 활성화. car-erp 전용.
+description: 차량 적재양식(xlsx)을 car-erp에 차량 일괄 import한다. 사용자가 "적재양식 import", "차량적재양식 업로드", "차량 일괄 등록", "vehicles:import 이어서" 같은 요청을 하거나, 적재양식 xlsx 경로(특히 바탕화면 *차량적재양식*.xlsx)를 가리킬 때 활성화. car-erp 전용.
 ---
 
-# car-erp 수출차량현황표 엑셀 업로드
+# car-erp 차량 적재양식 엑셀 업로드
 
-헤이맨 `수출차량현황표.xlsx`(= 정산 공식 출처 엑셀)를 받아 car-erp에 **차량 일괄 import**한다.
+`차량적재양식.xlsx`를 받아 car-erp에 **차량 일괄 import**한다.
+빈 양식은 `php artisan vehicles:export-template` 또는 차량관리 「적재 양식」 버튼으로 받는다.
+
+> ⚠️ **2026-08-01 (jin) 레이아웃 교체.** 기준이 **ssancar 적재양식**으로 바뀌었다.
+> 선적 4열 = `W 비엘 · X 컨테이너/VSL · Y 선적일자ETD · Z 도착일자ETA`, 입금 = `AP 금액 / AQ 입금일`.
+> 구 헤이맨 수출차량현황표는 이 4열과 입금열이 달라 **그대로는 못 읽는다**(1열만 에러가 나고 나머지 3열은
+> 조용히 틀린 값으로 들어간다). 그 파일을 올리려면 새 레이아웃으로 옮겨서 올릴 것.
+> 레이아웃 단일 출처 = `ImportVehicles::MAP` + `PAYMENT_SLOTS` + `HEADER_ONLY_COLUMNS`, 가드 = `VehicleTemplateLayoutTest`.
 명령은 이미 구현돼 dev에 커밋됨(`app/Console/Commands/ImportVehicles.php`). 상세 맥락은 메모리 `project_vehicle_import` 참조.
 
 ## 명령
@@ -16,13 +23,13 @@ php artisan vehicles:import "<엑셀경로>" --with-payments --force   # 본 적
 php artisan vehicles:import "<엑셀경로>" --force                   # 1단계만(마스터+재무, 입금/정산 제외)
 ```
 
-- 시트 `수출차량매입-2026`, 2행=컬럼명, 3행부터 데이터. **한 행 = 차량 한 대.**
+- 시트 `수출차량매입`, 1행=형식 힌트, 2행=컬럼명, 3행부터 데이터. **한 행 = 차량 한 대.**
 - 멱등: **차대번호(VIN) 우선 매칭**, 없으면 차량번호. 재실행 안전(중복 생성 안 함).
 
 ## 호출 절차
 
 ### 1. 파일 경로 확인
-사용자가 경로를 안 주면 묻는다 (예: `C:\Users\User\Desktop\0. 헤이맨 수출차량현황표.xlsx`).
+사용자가 경로를 안 주면 묻는다 (예: `C:\Users\User\Desktop\ssancarerpDB\차량적재양식.xlsx`).
 
 ### 2. dry-run 데이터 품질 리포트
 ```powershell
@@ -52,12 +59,12 @@ php artisan vehicles:import "<경로>" --with-payments --dry-run
 ## 범위 / 데이터 정책
 
 - **1단계(기본)**: 차량 마스터 + 매입(가/매도비/비용9/RRN/소유자/구입처) + 판매(판매가/통화/환율/커미션/면장 등) + 당사자.
-- **2단계(`--with-payments`)**: 정산1~5(AO~AX) → confirmed 입금 + 완료정산(`type=ratio·50%·서류비5만·paid·secondary=closed`) + B/L번호 → bl_document 마커 → 거래완료.
+- **2단계(`--with-payments`)**: 입금(AP/AQ) → confirmed 입금 + 완료정산(`type=ratio·50%·서류비5만·paid·secondary=closed`) + B/L번호 → bl_document 마커 → 거래완료.
 - **과거 정산은 엑셀대로 프리50% 재현**(담당자 현재 type 무관 — 신규 정산부터 type 적용).
 - 수식/계산 컬럼(R·AD·AM·BG·BH·BV·BX~CF·CI) import 제외 — car-erp 자동 계산.
 - 손상값: 못 읽는 날짜→null, 금액칸 텍스트→0(경고), 부분 RRN→그대로. 차량은 전부 import, 리포트로 추적.
 - **선수금/예치금(BA·BD·BE·BF) 미구현** — 해당 행은 미수 일부 차이 가능. (필요 시 후속)
-- sale_date: 엑셀에 없음 → 선적일(W), 없으면 구입일(B). chk_sale_required 충족용. 불충족 시 판매 보류(매입만).
+- sale_date: 엑셀에 없음 → 선적일(Y), 없으면 구입일(B). chk_sale_required 충족용. 불충족 시 판매 보류(매입만).
 
 ## 실무자 배포 문서
 

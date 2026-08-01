@@ -40,8 +40,9 @@ class VehicleImportTemplateTest extends TestCase
         $set = fn (string $c, string $v) => $sh->setCellValueExplicit($c.'3', $v, DataType::TYPE_STRING);
         $set('B', '26.05.10정산');   // 구입일자 — 혼합 → 2026-05-10 (연도추정 기준)
         $set('T', '5월 예정');        // 말소일자 — 미발생 → null
-        $set('W', '05-10');           // 선적일자 — 연도없음 → 구입연도 추정 2026-05-10
-        $set('Y', '2026년 6월 7일');  // 도착일자 — 한국식 → 2026-06-07
+        // 2026-08-01 열 재배정 — 선적일자 W→Y, 도착일자 Y→Z.
+        $set('Y', '05-10');           // 선적일자 — 연도없음 → 구입연도 추정 2026-05-10
+        $set('Z', '2026년 6월 7일');  // 도착일자 — 한국식 → 2026-06-07
 
         $path = sys_get_temp_dir().'/import_messy_'.uniqid().'.xlsx';
         (new Xlsx($ss))->save($path);
@@ -90,7 +91,7 @@ class VehicleImportTemplateTest extends TestCase
         $sh->setCellValue('J3', 'TESTMAN');
         $sh->setCellValue('P3', 4_000_000);
         // 구입일자(B) 비움 → 추정 기준 없음
-        $sh->setCellValueExplicit('W3', '05-10', DataType::TYPE_STRING);
+        $sh->setCellValueExplicit('Y3', '05-10', DataType::TYPE_STRING);   // 선적일자(2026-08-01 W→Y)
 
         $path = sys_get_temp_dir().'/import_noyear_'.uniqid().'.xlsx';
         (new Xlsx($ss))->save($path);
