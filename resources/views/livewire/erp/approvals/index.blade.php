@@ -42,7 +42,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $page = ApprovalRequest::query()
             // 보증금 적용·매입 선지급 제거(2026-07-29) — 잔존 pending 요청이 승인 가능한 채로 뜨면 안 된다.
-            ->whereNotIn('action_type', ApprovalRequest::RETIRED_TYPES)
+            ->actionable()
             ->with(['requester', 'approver', 'target'])
             ->when($this->statusFilter !== 'all',
                 fn ($q) => $q->where('status', $this->statusFilter))
@@ -94,7 +94,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function pendingCount(): int
     {
-        return ApprovalRequest::where('status', 'pending')->count();
+        return ApprovalRequest::actionable()->where('status', 'pending')->count();
     }
 
     /** 결정 모달에 표시할 요청 요약 (내용 먼저 보고 승인/거부, jin 2026-07-21). */

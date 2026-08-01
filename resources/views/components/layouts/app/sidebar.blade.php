@@ -59,7 +59,7 @@
 
     // 큐 14-3 — 승인 대기 건수 (canApprove user만 계산)
     $pendingApprovals = $user->canApprove()
-        ? \App\Models\ApprovalRequest::where('status', 'pending')->count()
+        ? \App\Models\ApprovalRequest::actionable()->where('status', 'pending')->count()
         : 0;
 
     // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월배치 지급 대기 건수.
