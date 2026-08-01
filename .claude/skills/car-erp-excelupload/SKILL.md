@@ -12,7 +12,8 @@ description: 차량 적재양식(xlsx)을 car-erp에 차량 일괄 import한다.
 > 선적 4열 = `W 비엘 · X 컨테이너/VSL · Y 선적일자ETD · Z 도착일자ETA`, 입금 = `AP 금액 / AQ 입금일`.
 > 구 헤이맨 수출차량현황표는 이 4열과 입금열이 달라 **그대로는 못 읽는다**(1열만 에러가 나고 나머지 3열은
 > 조용히 틀린 값으로 들어간다). 그 파일을 올리려면 새 레이아웃으로 옮겨서 올릴 것.
-> 레이아웃 단일 출처 = `ImportVehicles::MAP` + `PAYMENT_SLOTS` + `HEADER_ONLY_COLUMNS`, 가드 = `VehicleTemplateLayoutTest`.
+> 레이아웃 단일 출처 = `ImportVehicles::MAP` + `PAYMENT_SLOTS` + `SAVINGS_EARNED_SLOT` + `SAVINGS_USED_DATE`, 가드 = `VehicleTemplateLayoutTest`.
+> 적립금(AR 적립 / AT 사용)은 **적립일·사용일 시간순**으로 원장에 기록된다.
 명령은 이미 구현돼 dev에 커밋됨(`app/Console/Commands/ImportVehicles.php`). 상세 맥락은 메모리 `project_vehicle_import` 참조.
 
 ## 명령
