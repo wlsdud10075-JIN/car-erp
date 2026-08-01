@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\InterVehicleTransferService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -58,6 +59,18 @@ class ApprovalRequest extends Model
      * 폐기된 액션 (2026-07-29 jin) — 승인 큐에서 제외. 상수·라벨은 기존 행 판독용으로 남긴다.
      * 잔존 pending 요청이 목록에 뜨면 승인 가능한 것처럼 보이는데, 실행 경로는 이미 없다.
      */
+    /**
+     * 승인큐가 **실제로 다룰 수 있는** 요청만 — 폐기 유형 제외.
+     *
+     * 🚨 목록·사이드바 뱃지·화면 헤더 카운트가 **같은 집합**을 봐야 한다.
+     *    2026-07-29 보증금 선지급 삭제 후, 화면은 걸러내는데 뱃지만 안 걸러서
+     *    ssancarerp 에 **눌러도 아무것도 없는 「2」** 가 영구히 떠 있었다(2026-08-01 발견).
+     */
+    public function scopeActionable(Builder $q): Builder
+    {
+        return $q->whereNotIn('action_type', self::RETIRED_TYPES);
+    }
+
     public const RETIRED_TYPES = [
         self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY,
         self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING,
