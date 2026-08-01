@@ -16,7 +16,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * 차량 일괄적재 표준 양식(xlsx) 빌더 — vehicles:export-template 커맨드와 UI 다운로드 버튼의 단일 출처.
  *
  * 데이터 없는 빈 양식(PII·회계 0). 컬럼 위치·헤더 = ImportVehicles 의 MAP + PAYMENT_SLOTS +
- * SAVINGS_EARNED_SLOT + HEADER_ONLY_COLUMNS 를 그대로 재사용 → 생성한 양식을 vehicles:import 가
+ * SAVINGS_EARNED_SLOT + SAVINGS_USED_DATE 를 그대로 재사용 → 생성한 양식을 vehicles:import 가
  * 무수정으로 읽는다. 기준 레이아웃 = ssancar 적재양식 (jin 2026-08-01).
  * Excel 데이터 유효성 검사로 입력 단계에서 서식 강제(날짜형/통화·담당자 드롭다운/금액 숫자만).
  */
@@ -57,12 +57,12 @@ class VehicleTemplateExporter
             }
         }
 
-        // 1-3) 아직 적재하지 않는 열 — 헤더만(사용자가 채워도 무시되므로 힌트로 알린다).
-        foreach (ImportVehicles::HEADER_ONLY_COLUMNS as $col => $label) {
-            $maxColIndex = max($maxColIndex, Coordinate::columnIndexFromString($col));
-            $sheet->setCellValue($col.self::HEADER_ROW, $label);
-            $sheet->setCellValue($col.'1', '(미적재)');
-        }
+        // 1-3) 적립금 사용일 — 금액은 MAP(AT)이 받고 이 열은 원장 정렬용이라 따로 낸다.
+        $usedDate = ImportVehicles::SAVINGS_USED_DATE;
+        $maxColIndex = max($maxColIndex, Coordinate::columnIndexFromString($usedDate['col']));
+        $sheet->setCellValue($usedDate['col'].self::HEADER_ROW, $usedDate['label']);
+        $sheet->setCellValue($usedDate['col'].'1', $this->hint('', 'date'));
+        $this->applyColumn($sheet, '', 'date', $usedDate['col'], $maxRow);
 
         // 2) 헤더(노란 강조) + 힌트 행 스타일.
         $lastCol = Coordinate::stringFromColumnIndex($maxColIndex);
@@ -78,14 +78,14 @@ class VehicleTemplateExporter
         $sheet->getRowDimension(self::HEADER_ROW)->setRowHeight(28);
 
         // 3) gap 컬럼(어느 상수에도 없는) 숨김.
-        //    ⚠️ 입금·미적재 열을 여기 포함하지 않으면 **헤더는 냈는데 열이 숨겨진** 양식이 나간다.
+        //    ⚠️ 슬롯 열을 여기 포함하지 않으면 **헤더는 냈는데 열이 숨겨진** 양식이 나간다.
         $mappedCols = array_merge(
             array_map(fn ($d) => $d['col'], $map),
             array_merge(...array_map(
                 fn ($s) => [$s['amount'], $s['date']],
                 array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]),
             )),
-            array_keys(ImportVehicles::HEADER_ONLY_COLUMNS),
+            [ImportVehicles::SAVINGS_USED_DATE['col']],
         );
         for ($i = 1; $i <= $maxColIndex; $i++) {
             $letter = Coordinate::stringFromColumnIndex($i);

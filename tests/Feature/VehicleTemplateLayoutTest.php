@@ -79,7 +79,7 @@ class VehicleTemplateLayoutTest extends TestCase
         $sheet = IOFactory::load($path)->getSheetByName('수출차량매입');
         @unlink($path);
 
-        $cols = array_keys(ImportVehicles::HEADER_ONLY_COLUMNS);
+        $cols = [ImportVehicles::SAVINGS_USED_DATE['col']];
         foreach (array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]) as $slot) {
             $cols[] = $slot['amount'];
             $cols[] = $slot['date'];
@@ -98,7 +98,7 @@ class VehicleTemplateLayoutTest extends TestCase
             $cols[] = $slot['amount'];
             $cols[] = $slot['date'];
         }
-        $cols = array_merge($cols, array_keys(ImportVehicles::HEADER_ONLY_COLUMNS));
+        $cols[] = ImportVehicles::SAVINGS_USED_DATE['col'];
 
         $dupes = array_keys(array_filter(array_count_values($cols), fn ($n) => $n > 1));
         $this->assertSame([], $dupes, '같은 열에 두 항목이 배정됨: '.implode(',', $dupes));
@@ -190,11 +190,13 @@ class VehicleTemplateLayoutTest extends TestCase
     }
 
     /**
-     * 🔒 적립금 원장 — **적립(EARNED)이 사용(USED)보다 먼저** 들어가야 잔액이 음수가 안 된다.
-     *    실데이터 그대로: 차 3대가 254 씩 적립하고, 4번째 차가 그 합 762 을 쓴다.
-     *    차량 순서대로 처리하면 4번째에서 잔액 음수로 터진다(2패스가 아니면 실패).
+     * 🔒 적립금 원장은 **적립일·사용일 시간순**으로 들어간다.
+     *
+     * 행 순서가 시간순이라는 보장이 없으므로, 여기서는 **쓰는 차를 맨 앞 행**에 두고 사용일만
+     * 뒤(5월)로 잡는다. 행 순서대로 처리하면 첫 행에서 잔액이 음수가 되어 실패한다.
+     * 실데이터 그대로: 254×3 적립(2월) → 762 사용(5월).
      */
-    public function test_savings_earned_is_recorded_before_used(): void
+    public function test_savings_ledger_follows_dates_not_row_order(): void
     {
         Salesman::create(['name' => 'TESTMAN', 'type' => 'employee', 'is_active' => true]);
         $buyer = Buyer::create(['name' => 'Auto MVE', 'is_active' => true]);
@@ -203,9 +205,15 @@ class VehicleTemplateLayoutTest extends TestCase
         $book = IOFactory::createReaderForFile($path)->load($path);
         $sheet = $book->getSheetByName('수출차량매입');
 
-        // 3행~5행 = 적립 254 씩 / 6행 = 사용 762 (양식상 '사용' 차가 뒤에 온다)
-        foreach ([[3, 254, 0], [4, 254, 0], [5, 254, 0], [6, 0, 762]] as [$r, $earned, $used]) {
-            $sheet->setCellValue('B'.$r, '2026-02-03');
+        // 3행 = 사용(5월) — 적립 행들보다 **앞**에 온다. 4~6행 = 적립(2월).
+        $plan = [
+            [3, 'used', 762, '2026-05-06'],
+            [4, 'earned', 254, '2026-02-04'],
+            [5, 'earned', 254, '2026-02-10'],
+            [6, 'earned', 254, '2026-02-11'],
+        ];
+        foreach ($plan as [$r, $kind, $amount, $date]) {
+            $sheet->setCellValue('B'.$r, '2026-01-15');
             $sheet->setCellValue('D'.$r, '11가000'.$r);
             $sheet->setCellValue('I'.$r, 'SAVEVIN000000'.$r);
             $sheet->setCellValue('J'.$r, 'TESTMAN');
@@ -213,11 +221,12 @@ class VehicleTemplateLayoutTest extends TestCase
             $sheet->setCellValue('AE'.$r, 'EUR');
             $sheet->setCellValue('AF'.$r, 10_000);
             $sheet->setCellValue('AG'.$r, 1_700);
-            if ($earned > 0) {
-                $sheet->setCellValue('AR'.$r, $earned);
-            }
-            if ($used > 0) {
-                $sheet->setCellValue('AT'.$r, $used);
+            if ($kind === 'earned') {
+                $sheet->setCellValue('AR'.$r, $amount);
+                $sheet->setCellValue('AS'.$r, $date);
+            } else {
+                $sheet->setCellValue('AT'.$r, $amount);
+                $sheet->setCellValue(ImportVehicles::SAVINGS_USED_DATE['col'].$r, $date);
             }
         }
         (new Xlsx($book))->save($path);
@@ -230,7 +239,7 @@ class VehicleTemplateLayoutTest extends TestCase
         $this->assertSame(
             ['EARNED', 'EARNED', 'EARNED', 'USED'],
             $ledger->pluck('transaction_type')->all(),
-            '적립이 사용보다 먼저 기록돼야 한다',
+            '원장이 행 순서가 아니라 적립일·사용일 시간순으로 들어가야 한다',
         );
         $this->assertEquals(0, (float) $ledger->last()->balance, '762 적립 → 762 사용 = 잔액 0');
         $this->assertEquals(-762, (float) $ledger->last()->savings, 'USED 는 음수로 기록');

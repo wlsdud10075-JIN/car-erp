@@ -19,7 +19,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 /**
  * 차량 적재양식(xlsx) → car-erp 차량 일괄 import.
  *
- * 레이아웃 단일 출처 = MAP + PAYMENT_SLOTS + HEADER_ONLY_COLUMNS.
+ * 레이아웃 단일 출처 = MAP + PAYMENT_SLOTS + SAVINGS_EARNED_SLOT + SAVINGS_USED_DATE.
  * VehicleTemplateExporter 가 같은 상수로 빈 양식을 내므로, 내려받아 채운 양식을 무수정으로 읽는다.
  * ⚠️ 2026-08-01 (jin) 부터 기준 레이아웃은 **ssancar 적재양식**이다. 구 헤이맨 수출차량현황표는
  *    선적 4열(W~Z)과 입금열이 달라 그대로는 못 읽는다 — 필요하면 그 파일을 새 레이아웃으로 옮겨서 올린다.
@@ -127,19 +127,18 @@ class ImportVehicles extends Command
     /**
      * 적립금 **발생**(EARNED) 슬롯 — 잔금에서 남은 돈이 바이어 크레딧으로 적립된다 (jin 2026-08-01:
      * "deposit 은 적립금, use deposit 은 적립금 사용한 것").
-     *
-     * 실측 검산: 3·4·5행 적립 254×3 = 762 = 6행의 사용액. 그래서 **적립이 사용보다 먼저** 기록돼야
-     * 잔액이 음수가 되지 않는다(DB CHECK) → import 는 차량 순서가 아니라 2패스로 처리한다.
+     * 실측 검산: 3·4·5행 적립 254×3 = 762 = 6행의 사용액(2026-05-06).
      */
     public const SAVINGS_EARNED_SLOT = ['amount' => 'AR', 'date' => 'AS', 'amount_label' => 'deposit', 'date_label' => '입금일'];
 
     /**
-     * 양식에는 있으나 적재하지 않는 열 — exporter 가 헤더만 낸다.
-     * AU 사용일 : AT(적립금 사용)의 사용일. vehicles 에 대응 컬럼이 없어 보관만.
+     * 적립금 **사용일**. 금액은 MAP 의 `savings_used`(AT) 가 차량 컬럼으로 받고, 이 열은
+     * 원장 기록을 **시간순으로 정렬**하는 데만 쓴다(vehicles 에 저장 컬럼 없음).
+     *
+     * 시간순으로 넣으면 "돈이 있어야 쓴다"가 자연히 보장돼 잔액 음수(DB CHECK)를 안 밟고,
+     * 원장의 balance 이력도 실제와 같아진다. 적립금 원장은 FIFO + 적립시점 환율 박제라 순서가 의미를 갖는다.
      */
-    public const HEADER_ONLY_COLUMNS = [
-        'AU' => '사용일',
-    ];
+    public const SAVINGS_USED_DATE = ['col' => 'AU', 'label' => '사용일'];
 
     public const VALID_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
 
@@ -361,15 +360,18 @@ class ImportVehicles extends Command
                     }
                     $touchedIds[] = $vehicle->id;
 
-                    // 적립금 원장 — 루프에서 만들지 않고 큐에 쌓는다. **적립(EARNED)이 사용(USED)보다
-                    // 먼저** 들어가야 잔액이 음수가 안 된다(DB CHECK). 실측: 3·4·5행의 적립 254×3 을
-                    // 6행이 762 로 사용한다 → 차량 순서대로 처리하면 6행에서 잔액 음수로 터진다.
+                    // 적립금 원장 — 루프에서 만들지 않고 큐에 쌓았다가 **적립일·사용일 시간순**으로 기록한다.
+                    // 행 순서가 시간순이라는 보장이 없고(차량번호 정렬 등), 원장 balance 는 러닝 이력이라
+                    // 실제 순서대로 들어가야 한다. 시간순이면 "돈이 있어야 쓴다"도 자연히 보장된다.
                     if ($vehicle->buyer_id) {
-                        $savingsQueue[] = [
-                            'vehicle' => $vehicle,
-                            'earned' => (float) ($row['_savings_earned'] ?? 0),
-                            'used' => (float) ($vehicle->savings_used ?? 0),
-                        ];
+                        foreach ([
+                            ['earned', (float) ($row['_savings_earned'] ?? 0), $row['_savings_earned_date'] ?? null],
+                            ['used', (float) ($vehicle->savings_used ?? 0), $row['_savings_used_date'] ?? null],
+                        ] as [$kind, $amount, $date]) {
+                            if ($amount > 0) {
+                                $savingsQueue[] = ['vehicle' => $vehicle, 'kind' => $kind, 'amount' => $amount, 'date' => $date];
+                            }
+                        }
                     }
 
                     // 2단계 — 입금이력(PAYMENT_SLOTS) confirmed + 완료정산(paid, 엑셀 프리50% 재현).
@@ -434,12 +436,9 @@ class ImportVehicles extends Command
                 }
             });
 
-            // 적립금 원장 — **2패스**. 전 차량의 적립(EARNED)을 먼저 다 넣고, 그다음 사용(USED).
-            //   실측: 3·4·5행이 254 씩 적립하고 6행이 762 를 쓴다. 차량 순서대로 처리하면 6행에서
-            //   잔액이 음수가 되어 DB CHECK 에 걸린다.
+            // 적립금 원장 — 적립일·사용일 시간순 1패스.
             //   withoutEvents 밖에서 돌린다 — SavingsStatus 는 Vehicle 훅이 아니라 명시 호출이라 정상 경로.
-            $stats['savings'] += $this->applySavings($savingsQueue, 'earned');
-            $stats['savings'] += $this->applySavings($savingsQueue, 'used');
+            $stats['savings'] += $this->applySavings($savingsQueue);
         });
 
         // 캐시 재계산 (saving 훅을 우회했으므로 명시 호출)
@@ -464,25 +463,25 @@ class ImportVehicles extends Command
     }
 
     /**
-     * 적립금 원장 1패스 기록. `$phase` = 'earned'(AR) | 'used'(AT).
+     * 적립금 원장 기록 — **적립일·사용일 시간순** 1패스.
+     *
+     * 행 순서가 시간순이라는 보장이 없고(차량번호·판매일 정렬 등), SavingsStatus.balance 는
+     * 러닝 이력이라 실제 순서대로 들어가야 한다. 시간순이면 "돈이 있어야 쓴다"가 자연히 보장돼
+     * 잔액 음수(DB CHECK)도 안 밟는다. 날짜 없는 항목은 맨 뒤로 보낸다.
      *
      * 멱등: 같은 차량·같은 종류의 import 행이 이미 있으면 건너뛴다. **삭제 후 재생성하지 않는다** —
-     * SavingsStatus.balance 는 러닝 스냅샷이라 중간 행을 지우면 뒤 행들의 잔액이 통째로 어긋난다.
+     * balance 가 러닝 스냅샷이라 중간 행을 지우면 뒤 행들의 잔액이 통째로 어긋난다.
      *
-     * @param  array<int,array{vehicle:Vehicle,earned:float,used:float}>  $queue
+     * @param  array<int,array{vehicle:Vehicle,kind:string,amount:float,date:?string}>  $queue
      */
-    private function applySavings(array $queue, string $phase): int
+    private function applySavings(array $queue): int
     {
-        $type = $phase === 'earned' ? 'EARNED' : 'USED';
-        $note = "import 적립금 {$type}";
-        $done = 0;
+        usort($queue, fn ($a, $b) => [$a['date'] === null, $a['date'] ?? ''] <=> [$b['date'] === null, $b['date'] ?? '']);
 
+        $done = 0;
         foreach ($queue as $item) {
             $vehicle = $item['vehicle'];
-            $amount = (float) $item[$phase];
-            if ($amount <= 0) {
-                continue;
-            }
+            $type = $item['kind'] === 'earned' ? 'EARNED' : 'USED';
 
             $already = SavingsStatus::where('vehicle_id', $vehicle->id)
                 ->where('transaction_type', $type)
@@ -493,20 +492,20 @@ class ImportVehicles extends Command
             }
 
             try {
-                if ($phase === 'earned') {
-                    $vehicle->syncSavingsDeposit($amount);
+                if ($item['kind'] === 'earned') {
+                    $vehicle->syncSavingsDeposit($item['amount']);
                 } else {
-                    $vehicle->syncSavingsUsage($amount);   // delta>0 → USED(잔액 차감)
+                    $vehicle->syncSavingsUsage($item['amount']);   // delta>0 → USED(잔액 차감)
                 }
                 SavingsStatus::where('vehicle_id', $vehicle->id)
                     ->where('transaction_type', $type)
                     ->whereNull('original_transaction_id')
                     ->orderByDesc('id')->limit(1)
-                    ->update(['note' => $note]);
+                    ->update(['note' => "import 적립금 {$type} ".($item['date'] ?? '일자없음')]);
                 $done++;
             } catch (\Throwable $e) {
-                // 잔액 부족 등 — 그 차량만 건너뛰고 나머지는 계속. 사람이 보고 판단한다.
-                $this->warn("  적립금 {$type} 기록 실패({$vehicle->vehicle_number}, {$amount}): ".$e->getMessage());
+                // 잔액 부족 등 — 그 항목만 건너뛰고 나머지는 계속. 사람이 보고 판단한다.
+                $this->warn("  적립금 {$type} 기록 실패({$vehicle->vehicle_number}, {$item['amount']}): ".$e->getMessage());
             }
         }
 
@@ -662,9 +661,11 @@ class ImportVehicles extends Command
             }
             $row['_payments'] = $pays;
 
-            // 적립금 발생(EARNED) — 금액만 쓴다(일자는 원장 note 용도 외 저장처 없음).
+            // 적립금 발생(EARNED) — 금액 + 적립일(원장 정렬용).
             [$earned, $ew] = $this->parseNum($this->cell($sheet, self::SAVINGS_EARNED_SLOT['amount'], $r));
             $row['_savings_earned'] = ($ew === null && $earned !== null && $earned > 0) ? $earned : 0.0;
+            [$row['_savings_earned_date']] = $this->parseDate($this->cell($sheet, self::SAVINGS_EARNED_SLOT['date'], $r));
+            [$row['_savings_used_date']] = $this->parseDate($this->cell($sheet, self::SAVINGS_USED_DATE['col'], $r));
 
             // 담당자/바이어 신규 집계
             if (($row['salesman'] ?? '') !== '' && ! isset($salesmanByName[$row['salesman']])) {
