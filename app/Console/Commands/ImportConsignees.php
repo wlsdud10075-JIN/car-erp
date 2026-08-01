@@ -15,12 +15,17 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * 컨사이니 일괄 업로드 양식 → 바이어 + 컨사이니 일괄 import.
  * deep-interview 2026-05-28 결정 사항 구현.
  *
- * 양식 12컬럼 (컨사이니_업로드양식_v2.xlsx):
- *   A:바이어명* B:컨사이니명* C:국가 D:EORI E:TAX F:ID종류 G:ID번호
- *   H:전화 I:이메일 J:영업담당자 K:주소 L:메모
+ * 양식 18컬럼 (컨사이니_업로드양식.xlsx):
+ *   [컨사이니] A:바이어명* B:컨사이니명* C:국가 D:EORI E:TAX F:ID종류 G:ID번호
+ *              H:전화 I:이메일 J:영업담당자 K:주소 L:메모
+ *   [바이어]   M:바이어국가 N:바이어담당자명 O:바이어전화 P:바이어이메일 Q:바이어여권ID R:바이어주소
+ *              └ 2026-08-01 (jin) 신설. 서류가 바이어에서 읽는 칸이라 없으면 Invoice·판매계약서가 공란.
+ *                같은 바이어가 여러 줄이면 **첫 등장 값**, 뒤 행이 다르면 경고만.
  *
  * 동작:
- *   - 바이어: name 으로 find or create (없으면 신규, name + salesman_id 만 채움)
+ *   - 바이어: name 으로 find or create.
+ *       · 신규 → M~R 을 함께 채운다.
+ *       · 기존 → **빈 칸만** 채운다(운영에 이미 들어간 값을 양식이 조용히 덮지 않게).
  *   - 컨사이니: 매 행 신규 create (중복 검사 안 함 — 같은 이름 다른 행 = 다른 컨사이니로 간주)
  *   - 국가: countries.name lookup, 실패 시 경고 (country_id = null)
  *   - 영업담당자: salesmen.name lookup, 실패 시 에러 차단
@@ -40,7 +45,8 @@ class ImportConsignees extends Command
 
     protected $description = '컨사이니 양식 xlsx → 바이어 + 컨사이니 일괄 import';
 
-    private const EXPECTED_HEADERS = [
+    /** 양식 헤더 계약 — exporter(양식 배포본)·테스트와 공유. */
+    public const EXPECTED_HEADERS = [
         'A' => '바이어명*',
         'B' => '컨사이니명*',
         'C' => '국가',
@@ -53,6 +59,22 @@ class ImportConsignees extends Command
         'J' => '영업담당자',
         'K' => '주소',
         'L' => '메모',
+        // 바이어 상세 (jin 2026-08-01) — 서류가 바이어에서 읽는 칸. 없으면 Invoice·판매계약서가 공란으로 나온다.
+        'M' => '바이어국가',
+        'N' => '바이어담당자명',
+        'O' => '바이어전화',
+        'P' => '바이어이메일',
+        'Q' => '바이어여권ID',
+        'R' => '바이어주소',
+    ];
+
+    /** 바이어 상세 열 → Buyer 컬럼. 같은 바이어가 여러 줄이면 **첫 등장 값**을 쓴다. */
+    private const BUYER_FIELDS = [
+        'buyer_contact_name' => 'contact_name',
+        'buyer_phone' => 'contact_phone',
+        'buyer_email' => 'contact_email',
+        'buyer_passport_id' => 'passport_id',
+        'buyer_address' => 'address',
     ];
 
     public function handle(): int
@@ -91,6 +113,7 @@ class ImportConsignees extends Command
         $errors = [];
         $warnings = [];
         $buyerSalesmen = []; // 바이어명 → salesman_id (일관성 검증용)
+        $buyerDetails = [];  // 바이어명 → 상세값 첫 등장분 (여러 줄 엇갈림 검출용)
 
         foreach ($rows as $i => $row) {
             $rNum = $i + 2; // 1행이 헤더라 +2
@@ -139,7 +162,26 @@ class ImportConsignees extends Command
                 $errors[] = "R{$rNum}: ID종류 '{$row['id_type']}' 잘못됨 (rrn/passport/business 중 하나)";
             }
 
+            // 바이어 국가 lookup (컨사이니 국가와 별개 — 바이어 소재국)
+            if (! empty($row['buyer_country']) && ! isset($countryByName[$row['buyer_country']])) {
+                $warnings[] = "R{$rNum}: 바이어국가 '{$row['buyer_country']}' 미등록 → 비움";
+            }
+
+            // 같은 바이어가 여러 줄일 때 상세값이 엇갈리면 **첫 줄 값을 쓰고 경고**(차단은 과함).
+            foreach (array_merge(array_keys(self::BUYER_FIELDS), ['buyer_country']) as $k) {
+                if ($row[$k] === '') {
+                    continue;
+                }
+                if (isset($buyerDetails[$bn][$k]) && $buyerDetails[$bn][$k] !== $row[$k]) {
+                    $warnings[] = "R{$rNum}: 바이어 '{$bn}' 의 {$k} 가 앞 행과 다름 → 첫 행 값 사용";
+
+                    continue;
+                }
+                $buyerDetails[$bn][$k] ??= $row[$k];
+            }
+
             $rows[$i]['country_id'] = $countryByName[$row['country']] ?? null;
+            $rows[$i]['buyer_country_id'] = $countryByName[$row['buyer_country']] ?? null;
             $rows[$i]['salesman_id'] = $salesmanId;
         }
 
@@ -175,7 +217,7 @@ class ImportConsignees extends Command
         }
 
         // 6. import
-        $stats = ['buyer_new' => 0, 'buyer_reuse' => 0, 'consignee_new' => 0];
+        $stats = ['buyer_new' => 0, 'buyer_reuse' => 0, 'buyer_filled' => 0, 'consignee_new' => 0];
         DB::transaction(function () use ($rows, &$stats) {
             $buyerCache = [];
             foreach ($rows as $row) {
@@ -188,15 +230,35 @@ class ImportConsignees extends Command
                     $buyer = Buyer::where('name', $bn)->first();
                     if ($buyer) {
                         $stats['buyer_reuse']++;
+                        // ⚠️ 기존 바이어는 **빈 칸만** 채운다. 운영에 이미 들어간 값을 양식이 조용히
+                        //    덮어쓰면 안 된다(양식은 보통 "빠진 것 채우기" 용도로 온다).
+                        $fill = [];
                         if (! $buyer->salesman_id && $row['salesman_id']) {
-                            $buyer->update(['salesman_id' => $row['salesman_id']]);
+                            $fill['salesman_id'] = $row['salesman_id'];
+                        }
+                        if (! $buyer->country_id && $row['buyer_country_id']) {
+                            $fill['country_id'] = $row['buyer_country_id'];
+                        }
+                        foreach (self::BUYER_FIELDS as $key => $col) {
+                            if (blank($buyer->{$col}) && $row[$key] !== '') {
+                                $fill[$col] = $row[$key];
+                            }
+                        }
+                        if ($fill !== []) {
+                            $buyer->update($fill);
+                            $stats['buyer_filled'] += count($fill);
                         }
                     } else {
-                        $buyer = Buyer::create([
+                        $attrs = [
                             'name' => $bn,
                             'salesman_id' => $row['salesman_id'],
+                            'country_id' => $row['buyer_country_id'] ?: null,
                             'is_active' => true,
-                        ]);
+                        ];
+                        foreach (self::BUYER_FIELDS as $key => $col) {
+                            $attrs[$col] = $row[$key] ?: null;
+                        }
+                        $buyer = Buyer::create($attrs);
                         $stats['buyer_new']++;
                     }
                     $buyerCache[$bn] = $buyer;
@@ -262,6 +324,12 @@ class ImportConsignees extends Command
                 'salesman' => $this->cellStr($sheet, 'J', $r),
                 'address' => $this->cellStr($sheet, 'K', $r),
                 'memo' => $this->cellStr($sheet, 'L', $r),
+                'buyer_country' => $this->cellStr($sheet, 'M', $r),
+                'buyer_contact_name' => $this->cellStr($sheet, 'N', $r),
+                'buyer_phone' => $this->cellStr($sheet, 'O', $r),
+                'buyer_email' => $this->cellStr($sheet, 'P', $r),
+                'buyer_passport_id' => $this->cellStr($sheet, 'Q', $r),
+                'buyer_address' => $this->cellStr($sheet, 'R', $r),
             ];
             // 완전 빈 행은 스킵
             if (count(array_filter($row, fn ($v) => $v !== '' && $v !== null)) === 0) {

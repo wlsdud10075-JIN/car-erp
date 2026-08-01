@@ -9,14 +9,28 @@ description: 컨사이니 일괄 업로드 양식(xlsx) 파일을 받아 바이�
 
 deep-interview 2026-05-28 결정사항을 기반으로 한다. 자세한 결정 근거는 본 SKILL.md 끝의 "Background" 참조.
 
-## 양식 (12컬럼)
+## 양식 (18컬럼)
 
 ```
-A:바이어명*  B:컨사이니명*  C:국가  D:EORI NUMBER  E:TAX NUMBER  F:ID종류
-G:ID번호  H:전화  I:이메일  J:영업담당자  K:주소  L:메모
+[컨사이니] A:바이어명*  B:컨사이니명*  C:국가  D:EORI NUMBER  E:TAX NUMBER  F:ID종류
+           G:ID번호  H:전화  I:이메일  J:영업담당자  K:주소  L:메모
+[바이어]   M:바이어국가  N:바이어담당자명  O:바이어전화  P:바이어이메일
+           Q:바이어여권ID  R:바이어주소
 ```
 
-표준 양식: `C:\Users\User\Desktop\컨사이니_업로드양식_v2.xlsx` (생성된 위치)
+표준 양식: `C:\Users\User\Desktop\컨사이니_업로드양식.xlsx`
+헤더 계약 단일출처 = `ImportConsignees::EXPECTED_HEADERS`, 가드 = `ConsigneeImportBuyerFieldsTest`.
+
+### 바이어 열(M~R) — 2026-08-01 (jin) 신설
+차량 적재양식도 이 양식도 종전엔 바이어를 **이름만** 만들어서, 서류의 바이어 칸이 전부 공란이었다.
+- `P 바이어이메일` → **Invoice 의 Email** (⚠️ 이 칸은 바이어 것만 쓴다 — 컨사이니로 대체 안 됨)
+- `Q 바이어여권ID` → 판매계약서 `Passport/ID number` / `R 바이어주소` → `Address` / `O 바이어전화` → `Tel`
+- `M 바이어국가` → 선적서류 `Country`(ISO3)
+
+동작:
+- 같은 바이어가 여러 줄이면 **첫 등장 값**을 쓰고, 뒤 행이 다르면 **경고만**(차단 아님).
+- **기존 바이어는 빈 칸만 채운다** — 운영에 이미 들어간 값을 양식이 조용히 덮지 않는다.
+- M~R 은 전부 선택. 안 채우면 종전과 동일하게 동작한다(구 12열 양식 하위호환).
 
 ## 호출 절차
 
