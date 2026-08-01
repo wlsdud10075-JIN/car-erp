@@ -45,6 +45,24 @@ class VehicleTemplateExporter
             $this->applyColumn($sheet, $field, $def['type'], $col, $maxRow);
         }
 
+        // 1-2) 입금 슬롯(금액/날짜) — MAP 필드가 아니라 PAYMENT_SLOTS 이므로 따로 낸다.
+        //      importer 와 같은 상수를 쓰므로 열이 어긋날 수 없다.
+        foreach (ImportVehicles::PAYMENT_SLOTS as $slot) {
+            foreach ([[$slot['amount'], $slot['amount_label'], 'num'], [$slot['date'], $slot['date_label'], 'date']] as [$col, $label, $type]) {
+                $maxColIndex = max($maxColIndex, Coordinate::columnIndexFromString($col));
+                $sheet->setCellValue($col.self::HEADER_ROW, $label);
+                $sheet->setCellValue($col.'1', $this->hint('', $type));
+                $this->applyColumn($sheet, '', $type, $col, $maxRow);
+            }
+        }
+
+        // 1-3) 아직 적재하지 않는 열 — 헤더만(사용자가 채워도 무시되므로 힌트로 알린다).
+        foreach (ImportVehicles::HEADER_ONLY_COLUMNS as $col => $label) {
+            $maxColIndex = max($maxColIndex, Coordinate::columnIndexFromString($col));
+            $sheet->setCellValue($col.self::HEADER_ROW, $label);
+            $sheet->setCellValue($col.'1', '(미적재)');
+        }
+
         // 2) 헤더(노란 강조) + 힌트 행 스타일.
         $lastCol = Coordinate::stringFromColumnIndex($maxColIndex);
         $sheet->getStyle('A'.self::HEADER_ROW.':'.$lastCol.self::HEADER_ROW)->applyFromArray([
@@ -58,8 +76,13 @@ class VehicleTemplateExporter
         ]);
         $sheet->getRowDimension(self::HEADER_ROW)->setRowHeight(28);
 
-        // 3) gap 컬럼(MAP 에 없는) 숨김.
-        $mappedCols = array_map(fn ($d) => $d['col'], $map);
+        // 3) gap 컬럼(어느 상수에도 없는) 숨김.
+        //    ⚠️ 입금·미적재 열을 여기 포함하지 않으면 **헤더는 냈는데 열이 숨겨진** 양식이 나간다.
+        $mappedCols = array_merge(
+            array_map(fn ($d) => $d['col'], $map),
+            array_merge(...array_map(fn ($s) => [$s['amount'], $s['date']], ImportVehicles::PAYMENT_SLOTS)),
+            array_keys(ImportVehicles::HEADER_ONLY_COLUMNS),
+        );
         for ($i = 1; $i <= $maxColIndex; $i++) {
             $letter = Coordinate::stringFromColumnIndex($i);
             if (in_array($letter, $mappedCols, true)) {

@@ -16,10 +16,15 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 /**
- * 헤이맨 수출차량현황표(xlsx) → car-erp 차량 일괄 import.
+ * 차량 적재양식(xlsx) → car-erp 차량 일괄 import.
+ *
+ * 레이아웃 단일 출처 = MAP + PAYMENT_SLOTS + HEADER_ONLY_COLUMNS.
+ * VehicleTemplateExporter 가 같은 상수로 빈 양식을 내므로, 내려받아 채운 양식을 무수정으로 읽는다.
+ * ⚠️ 2026-08-01 (jin) 부터 기준 레이아웃은 **ssancar 적재양식**이다. 구 헤이맨 수출차량현황표는
+ *    선적 4열(W~Z)과 입금열이 달라 그대로는 못 읽는다 — 필요하면 그 파일을 새 레이아웃으로 옮겨서 올린다.
  *
  * 범위 = Option A (2026-06-01 사용자 결정): 차량 마스터 + 핵심 재무 + 당사자 + 진행 관련 입력값.
- *   - 입금 이력(AO~AX)·완료 정산(paid) 재현은 2단계로 분리 (미포함).
+ *   - 입금 이력(PAYMENT_SLOTS)·완료 정산(paid) 재현은 2단계로 분리 (미포함).
  *   - 수식/계산 컬럼(R·AD·AM·BG·BH·BV·BX·BY·CA~CD·CE·CF·CI)은 import 제외 — car-erp 자동 계산.
  *
  * 데이터 정책 (2026-06-01 사용자 결정):
@@ -31,9 +36,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * 적재 방식: 완료·정산된 과거 데이터라 모델 이벤트를 끈 채(withoutEvents) 최종 상태를 기입하고
  *   이후 캐시(progress_status_cache / 미수 / 리스크)를 명시 재계산한다. (의도적 가드 우회 — 마이그레이션)
  *
- * 원본 시트: '수출차량매입-2026', R1=그룹헤더, R2=컬럼명, R3+=데이터. vehicle_number(D) = 멱등 키.
+ * 시트 구조: R1=형식 힌트, R2=컬럼명, R3+=데이터. 차대번호(I) 우선, 없으면 vehicle_number(D) 가 멱등 키.
  *
- *   php artisan vehicles:import "C:/Users/User/Desktop/0. 헤이맨 수출차량현황표.xlsx" --dry-run
+ *   php artisan vehicles:export-template   # 빈 양식 받기
+ *   php artisan vehicles:import "차량적재양식.xlsx" --dry-run
  *   php artisan vehicles:import "..."            # 실제 import (확인 프롬프트)
  */
 class ImportVehicles extends Command
@@ -45,11 +51,11 @@ class ImportVehicles extends Command
         {--data-start=3 : 데이터 시작 행 번호}
         {--dry-run : 검증 + 리포트만 (DB 수정 없음)}
         {--force : 검증 통과 후 확인 프롬프트 생략}
-        {--with-payments : 2단계 — 입금이력(정산1~5) confirmed + 완료정산(paid, 프리50%) 재현 + B/L번호→거래완료}
+        {--with-payments : 2단계 — 입금이력(PAYMENT_SLOTS) confirmed + 완료정산(paid, 프리50%) 재현 + B/L번호→거래완료}
         {--only= : 특정 차량번호만 import (쉼표구분). 신규 추가용 — 미지정 시 전체(기존 갱신 포함)}
         {--samples=5 : 이슈 유형별 표시 샘플 수}';
 
-    protected $description = '헤이맨 수출차량현황표 xlsx → 차량 일괄 import (Option A: 마스터+핵심재무)';
+    protected $description = '차량 적재양식 xlsx → 차량 일괄 import (마스터+핵심재무). 레이아웃 = MAP·PAYMENT_SLOTS';
 
     /**
      * Option A 컬럼맵. type = str|int|num|date|rrn. 수식/계산 컬럼은 제외.
@@ -92,11 +98,43 @@ class ImportVehicles extends Command
         'export_declaration_amount' => ['col' => 'AA', 'type' => 'num', 'label' => '면장금액'],
         'buyer' => ['col' => 'AB', 'type' => 'str', 'label' => '바이어'],
         'consignee' => ['col' => 'AC', 'type' => 'str', 'label' => '컨사이니'],
-        'shipping_date' => ['col' => 'W', 'type' => 'date', 'label' => '선적일자ETD'],
-        'eta_date' => ['col' => 'Y', 'type' => 'date', 'label' => '도착일자ETA'],
-        'bl_number' => ['col' => 'X', 'type' => 'str', 'label' => '비엘'],
-        'vessel_name' => ['col' => 'Z', 'type' => 'str', 'label' => '컨테이너/VSL'],
+        // 2026-08-01 (jin) — 선적 4열 재배정. 구 배정(W=ETD·X=비엘·Y=ETA·Z=VSL)은 헤이맨 수출차량현황표
+        //   기준이었고, 앞으로 올릴 파일은 전부 아래 배정(ssancar 적재양식)을 쓴다.
+        'bl_number' => ['col' => 'W', 'type' => 'str', 'label' => '비엘'],
+        'vessel_name' => ['col' => 'X', 'type' => 'str', 'label' => '컨테이너/VSL'],
+        'shipping_date' => ['col' => 'Y', 'type' => 'date', 'label' => '선적일자ETD'],
+        'eta_date' => ['col' => 'Z', 'type' => 'date', 'label' => '도착일자ETA'],
+        'export_declaration_number' => ['col' => 'V', 'type' => 'str', 'label' => '면장'],
+        // 적립금 사용액 — 잔금을 적립금으로 결제한 분. 미수 계산에 직접 반영된다(SKILLS §13).
+        //   ⚠️ import 는 Model::withoutEvents 안이라 H6(SavingsStatus USED 자동생성)이 안 뜬다.
+        //      즉 미수는 맞고 적립금 **원장은 비어 있다**. 원장 생성은 AR(적립 발생) 의미 확정 후 별건.
+        'savings_used' => ['col' => 'AT', 'type' => 'num', 'label' => 'USE DEPOSIT(적립금)'],
         'memo' => ['col' => 'CK', 'type' => 'str', 'label' => '비고'],
+    ];
+
+    /**
+     * 확정 입금 슬롯 — [금액열, 날짜열]. `--with-payments` 에서 FinalPayment(confirmed) 로 적재.
+     * exporter 도 이 상수로 헤더·서식을 낸다(레이아웃 단일 출처).
+     *
+     * 2026-08-01 (jin) — 구 헤이맨 배정(정산1~5 = AO/AP·AQ/AR·AS/AT·AU/AV·AW/AX)에서
+     * ssancar 적재양식(입금 = AP/AQ)으로 교체. 한 칸 밀려 있어 그대로 두면 **입금일이 금액으로,
+     * deposit 금액이 날짜로** 조용히 들어갔다.
+     */
+    public const PAYMENT_SLOTS = [
+        ['amount' => 'AP', 'date' => 'AQ', 'amount_label' => '입금', 'date_label' => '입금일'],
+    ];
+
+    /**
+     * 양식에는 있으나 **아직 적재하지 않는** 열 — exporter 가 헤더만 낸다.
+     *
+     * - AR deposit / AS 입금일 : 의미 미확정. 실측상 완납 3건에만, 그것도 전부 동일한 254 라
+     *   "잔금 잉여 적립"(EARNED) 가설과 안 맞는다. 추측으로 적립금 원장에 넣지 않는다(jin 확인 대기).
+     * - AU 사용일 : AT(적립금 사용)의 사용일. vehicles 에 대응 컬럼이 없어 보관만.
+     */
+    public const HEADER_ONLY_COLUMNS = [
+        'AR' => 'deposit',
+        'AS' => '입금일',
+        'AU' => '사용일',
     ];
 
     public const VALID_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
@@ -110,7 +148,7 @@ class ImportVehicles extends Command
         'cost_carry', 'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1',
         'cost_extra2', 'currency', 'sale_price', 'exchange_rate', 'commission', 'auto_loading',
         'tax_dc', 'transport_fee', 'export_declaration_amount', 'shipping_date', 'eta_date',
-        'bl_number', 'vessel_name', 'memo',
+        'bl_number', 'vessel_name', 'export_declaration_number', 'savings_used', 'memo',
     ];
 
     public function handle(): int
@@ -318,7 +356,7 @@ class ImportVehicles extends Command
                     }
                     $touchedIds[] = $vehicle->id;
 
-                    // 2단계 — 입금이력(정산1~5) confirmed + 완료정산(paid, 엑셀 프리50% 재현).
+                    // 2단계 — 입금이력(PAYMENT_SLOTS) confirmed + 완료정산(paid, 엑셀 프리50% 재현).
                     if ($withPay && (float) ($vehicle->sale_price ?? 0) > 0) {
                         // 재실행 멱등: 기존 import 입금/정산 제거 후 재생성.
                         FinalPayment::where('vehicle_id', $vehicle->id)->where('note', 'import 입금')->forceDelete();
@@ -532,9 +570,9 @@ class ImportVehicles extends Command
                 }
             }
 
-            // 입금 슬롯 (2단계용) — 정산1~5 + 입금일. '취소'/비숫자/0 은 제외.
+            // 입금 슬롯 (2단계용) — PAYMENT_SLOTS 단일 출처. '취소'/비숫자/0 은 제외.
             $pays = [];
-            foreach ([['AO', 'AP'], ['AQ', 'AR'], ['AS', 'AT'], ['AU', 'AV'], ['AW', 'AX']] as [$ac, $dc]) {
+            foreach (self::PAYMENT_SLOTS as ['amount' => $ac, 'date' => $dc]) {
                 $amtRaw = $this->cell($sheet, $ac, $r);
                 if ($amtRaw === '') {
                     continue;
