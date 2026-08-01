@@ -6,6 +6,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\FinalPayment;
 use App\Models\Salesman;
+use App\Models\SavingsStatus;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use Illuminate\Console\Command;
@@ -106,8 +107,7 @@ class ImportVehicles extends Command
         'eta_date' => ['col' => 'Z', 'type' => 'date', 'label' => '도착일자ETA'],
         'export_declaration_number' => ['col' => 'V', 'type' => 'str', 'label' => '면장'],
         // 적립금 사용액 — 잔금을 적립금으로 결제한 분. 미수 계산에 직접 반영된다(SKILLS §13).
-        //   ⚠️ import 는 Model::withoutEvents 안이라 H6(SavingsStatus USED 자동생성)이 안 뜬다.
-        //      즉 미수는 맞고 적립금 **원장은 비어 있다**. 원장 생성은 AR(적립 발생) 의미 확정 후 별건.
+        //   원장(SavingsStatus USED)은 H6 가 아니라 import 가 직접 만든다 — withoutEvents 안이라 훅이 안 뜬다.
         'savings_used' => ['col' => 'AT', 'type' => 'num', 'label' => 'USE DEPOSIT(적립금)'],
         'memo' => ['col' => 'CK', 'type' => 'str', 'label' => '비고'],
     ];
@@ -125,15 +125,19 @@ class ImportVehicles extends Command
     ];
 
     /**
-     * 양식에는 있으나 **아직 적재하지 않는** 열 — exporter 가 헤더만 낸다.
+     * 적립금 **발생**(EARNED) 슬롯 — 잔금에서 남은 돈이 바이어 크레딧으로 적립된다 (jin 2026-08-01:
+     * "deposit 은 적립금, use deposit 은 적립금 사용한 것").
      *
-     * - AR deposit / AS 입금일 : 의미 미확정. 실측상 완납 3건에만, 그것도 전부 동일한 254 라
-     *   "잔금 잉여 적립"(EARNED) 가설과 안 맞는다. 추측으로 적립금 원장에 넣지 않는다(jin 확인 대기).
-     * - AU 사용일 : AT(적립금 사용)의 사용일. vehicles 에 대응 컬럼이 없어 보관만.
+     * 실측 검산: 3·4·5행 적립 254×3 = 762 = 6행의 사용액. 그래서 **적립이 사용보다 먼저** 기록돼야
+     * 잔액이 음수가 되지 않는다(DB CHECK) → import 는 차량 순서가 아니라 2패스로 처리한다.
+     */
+    public const SAVINGS_EARNED_SLOT = ['amount' => 'AR', 'date' => 'AS', 'amount_label' => 'deposit', 'date_label' => '입금일'];
+
+    /**
+     * 양식에는 있으나 적재하지 않는 열 — exporter 가 헤더만 낸다.
+     * AU 사용일 : AT(적립금 사용)의 사용일. vehicles 에 대응 컬럼이 없어 보관만.
      */
     public const HEADER_ONLY_COLUMNS = [
-        'AR' => 'deposit',
-        'AS' => '입금일',
         'AU' => '사용일',
     ];
 
@@ -242,12 +246,13 @@ class ImportVehicles extends Command
      */
     private function import(array $rows, array $salesmanByName): int
     {
-        $stats = ['new' => 0, 'updated' => 0, 'restored' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0, 'payments' => 0, 'settlements' => 0];
+        $stats = ['new' => 0, 'updated' => 0, 'restored' => 0, 'buyer_new' => 0, 'consignee_new' => 0, 'sale_held' => 0, 'payments' => 0, 'settlements' => 0, 'savings' => 0];
         $touchedIds = [];
+        $savingsQueue = [];
         $withPay = (bool) $this->option('with-payments');
 
-        DB::transaction(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds) {
-            Model::withoutEvents(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds) {
+        DB::transaction(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds, &$savingsQueue) {
+            Model::withoutEvents(function () use ($rows, $salesmanByName, $withPay, &$stats, &$touchedIds, &$savingsQueue) {
                 $buyerCache = [];
                 foreach ($rows as $row) {
                     if (($row['vehicle_number'] ?? '') === '') {
@@ -356,6 +361,17 @@ class ImportVehicles extends Command
                     }
                     $touchedIds[] = $vehicle->id;
 
+                    // 적립금 원장 — 루프에서 만들지 않고 큐에 쌓는다. **적립(EARNED)이 사용(USED)보다
+                    // 먼저** 들어가야 잔액이 음수가 안 된다(DB CHECK). 실측: 3·4·5행의 적립 254×3 을
+                    // 6행이 762 로 사용한다 → 차량 순서대로 처리하면 6행에서 잔액 음수로 터진다.
+                    if ($vehicle->buyer_id) {
+                        $savingsQueue[] = [
+                            'vehicle' => $vehicle,
+                            'earned' => (float) ($row['_savings_earned'] ?? 0),
+                            'used' => (float) ($vehicle->savings_used ?? 0),
+                        ];
+                    }
+
                     // 2단계 — 입금이력(PAYMENT_SLOTS) confirmed + 완료정산(paid, 엑셀 프리50% 재현).
                     if ($withPay && (float) ($vehicle->sale_price ?? 0) > 0) {
                         // 재실행 멱등: 기존 import 입금/정산 제거 후 재생성.
@@ -417,6 +433,13 @@ class ImportVehicles extends Command
                     }
                 }
             });
+
+            // 적립금 원장 — **2패스**. 전 차량의 적립(EARNED)을 먼저 다 넣고, 그다음 사용(USED).
+            //   실측: 3·4·5행이 254 씩 적립하고 6행이 762 를 쓴다. 차량 순서대로 처리하면 6행에서
+            //   잔액이 음수가 되어 DB CHECK 에 걸린다.
+            //   withoutEvents 밖에서 돌린다 — SavingsStatus 는 Vehicle 훅이 아니라 명시 호출이라 정상 경로.
+            $stats['savings'] += $this->applySavings($savingsQueue, 'earned');
+            $stats['savings'] += $this->applySavings($savingsQueue, 'used');
         });
 
         // 캐시 재계산 (saving 훅을 우회했으므로 명시 호출)
@@ -427,6 +450,9 @@ class ImportVehicles extends Command
         $this->info('✅ import 완료');
         $this->line("  차량 신규 {$stats['new']} / 갱신 {$stats['updated']}".($stats['restored'] > 0 ? " (그중 소프트삭제 복구 {$stats['restored']})" : ''));
         $this->line("  바이어 신규 {$stats['buyer_new']} / 컨사이니 신규 {$stats['consignee_new']}");
+        if ($stats['savings'] > 0) {
+            $this->line("  적립금 원장 {$stats['savings']}건 (적립 EARNED → 사용 USED 순)");
+        }
         if ($withPay) {
             $this->line("  입금 {$stats['payments']}건 / 완료정산(paid) {$stats['settlements']}건 (엑셀 프리50% 재현)");
             $this->warn('  ⚠️ 선수금/예치금(BA·BD·BE·BF)은 1차 제외 — 해당 행은 미수 일부 차이 가능.');
@@ -435,6 +461,56 @@ class ImportVehicles extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * 적립금 원장 1패스 기록. `$phase` = 'earned'(AR) | 'used'(AT).
+     *
+     * 멱등: 같은 차량·같은 종류의 import 행이 이미 있으면 건너뛴다. **삭제 후 재생성하지 않는다** —
+     * SavingsStatus.balance 는 러닝 스냅샷이라 중간 행을 지우면 뒤 행들의 잔액이 통째로 어긋난다.
+     *
+     * @param  array<int,array{vehicle:Vehicle,earned:float,used:float}>  $queue
+     */
+    private function applySavings(array $queue, string $phase): int
+    {
+        $type = $phase === 'earned' ? 'EARNED' : 'USED';
+        $note = "import 적립금 {$type}";
+        $done = 0;
+
+        foreach ($queue as $item) {
+            $vehicle = $item['vehicle'];
+            $amount = (float) $item[$phase];
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $already = SavingsStatus::where('vehicle_id', $vehicle->id)
+                ->where('transaction_type', $type)
+                ->where('note', 'like', 'import 적립금%')
+                ->exists();
+            if ($already) {
+                continue;
+            }
+
+            try {
+                if ($phase === 'earned') {
+                    $vehicle->syncSavingsDeposit($amount);
+                } else {
+                    $vehicle->syncSavingsUsage($amount);   // delta>0 → USED(잔액 차감)
+                }
+                SavingsStatus::where('vehicle_id', $vehicle->id)
+                    ->where('transaction_type', $type)
+                    ->whereNull('original_transaction_id')
+                    ->orderByDesc('id')->limit(1)
+                    ->update(['note' => $note]);
+                $done++;
+            } catch (\Throwable $e) {
+                // 잔액 부족 등 — 그 차량만 건너뛰고 나머지는 계속. 사람이 보고 판단한다.
+                $this->warn("  적립금 {$type} 기록 실패({$vehicle->vehicle_number}, {$amount}): ".$e->getMessage());
+            }
+        }
+
+        return $done;
     }
 
     /**
@@ -585,6 +661,10 @@ class ImportVehicles extends Command
                 $pays[] = ['amount' => $amt, 'date' => $dt];
             }
             $row['_payments'] = $pays;
+
+            // 적립금 발생(EARNED) — 금액만 쓴다(일자는 원장 note 용도 외 저장처 없음).
+            [$earned, $ew] = $this->parseNum($this->cell($sheet, self::SAVINGS_EARNED_SLOT['amount'], $r));
+            $row['_savings_earned'] = ($ew === null && $earned !== null && $earned > 0) ? $earned : 0.0;
 
             // 담당자/바이어 신규 집계
             if (($row['salesman'] ?? '') !== '' && ! isset($salesmanByName[$row['salesman']])) {

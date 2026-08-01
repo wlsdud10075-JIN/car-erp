@@ -15,8 +15,9 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 /**
  * 차량 일괄적재 표준 양식(xlsx) 빌더 — vehicles:export-template 커맨드와 UI 다운로드 버튼의 단일 출처.
  *
- * 데이터 없는 빈 양식(PII·회계 0). 컬럼 위치·헤더 = ImportVehicles::MAP 를 그대로 재사용 →
- * 생성한 양식을 vehicles:import 가 무수정으로 읽는다(heyman 수출차량현황표와 동일 레이아웃).
+ * 데이터 없는 빈 양식(PII·회계 0). 컬럼 위치·헤더 = ImportVehicles 의 MAP + PAYMENT_SLOTS +
+ * SAVINGS_EARNED_SLOT + HEADER_ONLY_COLUMNS 를 그대로 재사용 → 생성한 양식을 vehicles:import 가
+ * 무수정으로 읽는다. 기준 레이아웃 = ssancar 적재양식 (jin 2026-08-01).
  * Excel 데이터 유효성 검사로 입력 단계에서 서식 강제(날짜형/통화·담당자 드롭다운/금액 숫자만).
  */
 class VehicleTemplateExporter
@@ -45,9 +46,9 @@ class VehicleTemplateExporter
             $this->applyColumn($sheet, $field, $def['type'], $col, $maxRow);
         }
 
-        // 1-2) 입금 슬롯(금액/날짜) — MAP 필드가 아니라 PAYMENT_SLOTS 이므로 따로 낸다.
+        // 1-2) 금액/날짜 쌍 — MAP 필드가 아니라 슬롯 상수(입금·적립금)라 따로 낸다.
         //      importer 와 같은 상수를 쓰므로 열이 어긋날 수 없다.
-        foreach (ImportVehicles::PAYMENT_SLOTS as $slot) {
+        foreach (array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]) as $slot) {
             foreach ([[$slot['amount'], $slot['amount_label'], 'num'], [$slot['date'], $slot['date_label'], 'date']] as [$col, $label, $type]) {
                 $maxColIndex = max($maxColIndex, Coordinate::columnIndexFromString($col));
                 $sheet->setCellValue($col.self::HEADER_ROW, $label);
@@ -80,7 +81,10 @@ class VehicleTemplateExporter
         //    ⚠️ 입금·미적재 열을 여기 포함하지 않으면 **헤더는 냈는데 열이 숨겨진** 양식이 나간다.
         $mappedCols = array_merge(
             array_map(fn ($d) => $d['col'], $map),
-            array_merge(...array_map(fn ($s) => [$s['amount'], $s['date']], ImportVehicles::PAYMENT_SLOTS)),
+            array_merge(...array_map(
+                fn ($s) => [$s['amount'], $s['date']],
+                array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]),
+            )),
             array_keys(ImportVehicles::HEADER_ONLY_COLUMNS),
         );
         for ($i = 1; $i <= $maxColIndex; $i++) {

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\ImportVehicles;
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\SavingsStatus;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -79,7 +80,7 @@ class VehicleTemplateLayoutTest extends TestCase
         @unlink($path);
 
         $cols = array_keys(ImportVehicles::HEADER_ONLY_COLUMNS);
-        foreach (ImportVehicles::PAYMENT_SLOTS as $slot) {
+        foreach (array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]) as $slot) {
             $cols[] = $slot['amount'];
             $cols[] = $slot['date'];
         }
@@ -93,7 +94,7 @@ class VehicleTemplateLayoutTest extends TestCase
     public function test_no_duplicate_column_assignment(): void
     {
         $cols = array_column(ImportVehicles::MAP, 'col');
-        foreach (ImportVehicles::PAYMENT_SLOTS as $slot) {
+        foreach (array_merge(ImportVehicles::PAYMENT_SLOTS, [ImportVehicles::SAVINGS_EARNED_SLOT]) as $slot) {
             $cols[] = $slot['amount'];
             $cols[] = $slot['date'];
         }
@@ -131,7 +132,8 @@ class VehicleTemplateLayoutTest extends TestCase
         $sheet->setCellValue('AF3', 11_385);
         $sheet->setCellValue('AG3', 1_695);
         $sheet->setCellValue('AK3', 1_161);
-        $sheet->setCellValue('AT3', 762);                      // USE DEPOSIT(적립금)
+        $sheet->setCellValue('AR3', 762);                      // deposit — 적립금 발생
+        $sheet->setCellValue('AT3', 762);                      // USE DEPOSIT — 적립금 사용
         (new Xlsx($book))->save($path);
 
         $this->artisan('vehicles:import', ['path' => $path, '--force' => true])->assertExitCode(0);
@@ -185,6 +187,80 @@ class VehicleTemplateLayoutTest extends TestCase
         $this->assertNotNull($payment, '입금이 적재되지 않았다');
         $this->assertEquals(14_646, (int) $payment->amount, '금액 열이 어긋났다');
         $this->assertSame('2026-02-10', $payment->payment_date?->format('Y-m-d'), '날짜 열이 어긋났다');
+    }
+
+    /**
+     * 🔒 적립금 원장 — **적립(EARNED)이 사용(USED)보다 먼저** 들어가야 잔액이 음수가 안 된다.
+     *    실데이터 그대로: 차 3대가 254 씩 적립하고, 4번째 차가 그 합 762 을 쓴다.
+     *    차량 순서대로 처리하면 4번째에서 잔액 음수로 터진다(2패스가 아니면 실패).
+     */
+    public function test_savings_earned_is_recorded_before_used(): void
+    {
+        Salesman::create(['name' => 'TESTMAN', 'type' => 'employee', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'Auto MVE', 'is_active' => true]);
+
+        $path = $this->buildTemplate();
+        $book = IOFactory::createReaderForFile($path)->load($path);
+        $sheet = $book->getSheetByName('수출차량매입');
+
+        // 3행~5행 = 적립 254 씩 / 6행 = 사용 762 (양식상 '사용' 차가 뒤에 온다)
+        foreach ([[3, 254, 0], [4, 254, 0], [5, 254, 0], [6, 0, 762]] as [$r, $earned, $used]) {
+            $sheet->setCellValue('B'.$r, '2026-02-03');
+            $sheet->setCellValue('D'.$r, '11가000'.$r);
+            $sheet->setCellValue('I'.$r, 'SAVEVIN000000'.$r);
+            $sheet->setCellValue('J'.$r, 'TESTMAN');
+            $sheet->setCellValue('AB'.$r, 'Auto MVE');
+            $sheet->setCellValue('AE'.$r, 'EUR');
+            $sheet->setCellValue('AF'.$r, 10_000);
+            $sheet->setCellValue('AG'.$r, 1_700);
+            if ($earned > 0) {
+                $sheet->setCellValue('AR'.$r, $earned);
+            }
+            if ($used > 0) {
+                $sheet->setCellValue('AT'.$r, $used);
+            }
+        }
+        (new Xlsx($book))->save($path);
+
+        $this->artisan('vehicles:import', ['path' => $path, '--force' => true])->assertExitCode(0);
+        @unlink($path);
+
+        $ledger = SavingsStatus::where('buyer_id', $buyer->id)->orderBy('id')->get();
+
+        $this->assertSame(
+            ['EARNED', 'EARNED', 'EARNED', 'USED'],
+            $ledger->pluck('transaction_type')->all(),
+            '적립이 사용보다 먼저 기록돼야 한다',
+        );
+        $this->assertEquals(0, (float) $ledger->last()->balance, '762 적립 → 762 사용 = 잔액 0');
+        $this->assertEquals(-762, (float) $ledger->last()->savings, 'USED 는 음수로 기록');
+    }
+
+    /** 재실행해도 적립금 원장이 불어나지 않는다(러닝 잔액이라 삭제·재생성이 불가). */
+    public function test_savings_ledger_is_idempotent_on_reimport(): void
+    {
+        Salesman::create(['name' => 'TESTMAN', 'type' => 'employee', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'Auto MVE', 'is_active' => true]);
+
+        $path = $this->buildTemplate();
+        $book = IOFactory::createReaderForFile($path)->load($path);
+        $sheet = $book->getSheetByName('수출차량매입');
+        $sheet->setCellValue('B3', '2026-02-03');
+        $sheet->setCellValue('D3', '11가0001');
+        $sheet->setCellValue('I3', 'SAVEIDEM000001');
+        $sheet->setCellValue('J3', 'TESTMAN');
+        $sheet->setCellValue('AB3', 'Auto MVE');
+        $sheet->setCellValue('AE3', 'EUR');
+        $sheet->setCellValue('AF3', 10_000);
+        $sheet->setCellValue('AG3', 1_700);
+        $sheet->setCellValue('AR3', 254);
+        (new Xlsx($book))->save($path);
+
+        $this->artisan('vehicles:import', ['path' => $path, '--force' => true])->assertExitCode(0);
+        $this->artisan('vehicles:import', ['path' => $path, '--force' => true])->assertExitCode(0);
+        @unlink($path);
+
+        $this->assertSame(1, SavingsStatus::where('buyer_id', $buyer->id)->count(), '재실행에 원장이 중복 생성됐다');
     }
 
     /** 힌트 행(1행)이 열 성격과 맞는지 — 재배정 후 B/L 칸에 날짜 힌트가 남으면 안 된다. */
