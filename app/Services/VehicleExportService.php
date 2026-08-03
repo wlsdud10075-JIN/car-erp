@@ -26,6 +26,13 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 class VehicleExportService
 {
     /**
+     * 식별 열 — 어떤 컬럼을 골라도 항상 포함(jin 2026-08-03).
+     * 정산 열만 남기고 나머지를 끄면 "어느 차량의 정산인지" 알 수 없어 엑셀 대조가 불가능했다.
+     * 차량번호는 재발급으로 바뀌므로 차대번호(VIN)까지 둘 다 고정한다.
+     */
+    public const IDENTITY_COLUMNS = ['vehicle_number', 'chassis_number'];
+
+    /**
      * 고정 화이트리스트. [label, type(str|num|date), fn(Vehicle), group].
      * fn 은 반드시 accessor/마스킹 경유. 원본 PII 컬럼 직접 노출 금지.
      *
@@ -35,6 +42,9 @@ class VehicleExportService
     {
         return [
             'vehicle_number' => ['차량번호', 'str', fn (Vehicle $v) => $v->vehicle_number, '기본'],
+            // 차대번호(VIN) — 물리 차량 영구 고유키(번호판은 재발급으로 바뀐다). 정산 엑셀 대조의 매칭 키라
+            //   식별 열로 고정된다(IDENTITY_COLUMNS). PII 아님(평문 컬럼, 마스킹 대상 아님).
+            'chassis_number' => ['차대번호', 'str', fn (Vehicle $v) => $v->nice_reg_vin, '기본'],
             'brand' => ['브랜드', 'str', fn (Vehicle $v) => $v->brand, '기본'],
             'model_type' => ['차명', 'str', fn (Vehicle $v) => $v->model_type, '기본'],
             'year' => ['년식', 'num', fn (Vehicle $v) => $v->year, '기본'],
@@ -103,6 +113,26 @@ class VehicleExportService
         return array_keys(array_filter(
             $this->whitelist(),
             fn ($def) => $allowSettlement || $def[3] !== '정산',
+        ));
+    }
+
+    /**
+     * 선택 컬럼에 식별 열을 강제 포함 — 서버측 단일 관문(클라이언트 cols 파라미터를 신뢰하지 않음).
+     * 빈 배열은 "전체 export" 를 뜻하므로 그대로 돌려준다(호출부가 columnKeys 로 대체).
+     * 반환 순서는 화이트리스트 정의 순서 — 사용자가 고른 순서와 무관하게 열 순서를 일정하게 유지.
+     *
+     * @param  list<string>  $selected
+     * @return list<string>
+     */
+    public function pinIdentityColumns(array $selected, bool $allowSettlement = true): array
+    {
+        if ($selected === []) {
+            return [];
+        }
+
+        return array_values(array_intersect(
+            $this->columnKeys($allowSettlement),
+            array_unique(array_merge(self::IDENTITY_COLUMNS, $selected)),
         ));
     }
 

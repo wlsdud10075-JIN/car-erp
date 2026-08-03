@@ -5733,8 +5733,10 @@ function vehicleColumnsToggle() {
         <div class="relative" x-data="{
                 open: false, scope: 'current', showCols: false,
                 cols: Object.fromEntries(@js($exportAllKeys).map(k => [k, true])),
+                {{-- 식별 열(차량번호·차대번호)은 못 끈다 — 서버도 되돌리므로 화면만 꺼두면 거짓말이 된다. --}}
+                pinned: @js(\App\Services\VehicleExportService::IDENTITY_COLUMNS),
                 allChecked(keys) { return keys.every(k => this.cols[k]); },
-                setGroup(keys, v) { keys.forEach(k => this.cols[k] = v); },
+                setGroup(keys, v) { keys.forEach(k => { if (v || !this.pinned.includes(k)) this.cols[k] = v; }); },
                 download() {
                     const sel = Object.keys(this.cols).filter(k => this.cols[k]);
                     if (!sel.length) { alert(@js(__('vehicle.export_pick_col'))); return; }
@@ -5767,6 +5769,7 @@ function vehicleColumnsToggle() {
                     <label class="flex items-center gap-1"><input type="radio" value="all" x-model="scope"> {{ __('vehicle.export_scope_all') }}</label>
                 </div>
                 <p class="mb-2 text-[11px] leading-snug text-gray-400">{{ __('vehicle.export_scope_hint') }}</p>
+                <p class="mb-2 text-[11px] leading-snug text-gray-400">{{ __('vehicle.export_pinned_hint') }}</p>
                 <hr class="my-2 border-gray-100">
                 {{-- 그룹 + 개별 컬럼 --}}
                 <div class="max-h-64 space-y-1 overflow-y-auto">
@@ -5780,8 +5783,10 @@ function vehicleColumnsToggle() {
                         </label>
                         <div x-show="showCols" class="ml-5 space-y-0.5">
                             @foreach($colmap as $key => $label)
-                                <label class="flex items-center gap-2 text-xs text-gray-600">
-                                    <input type="checkbox" x-model="cols['{{ $key }}']"> {{ $label }}
+                                @php $isPinned = in_array($key, \App\Services\VehicleExportService::IDENTITY_COLUMNS, true); @endphp
+                                <label class="flex items-center gap-2 text-xs {{ $isPinned ? 'text-gray-400' : 'text-gray-600' }}">
+                                    <input type="checkbox" x-model="cols['{{ $key }}']" @if($isPinned) disabled @endif> {{ $label }}
+                                    @if($isPinned)<span class="text-[10px] text-gray-400">({{ __('vehicle.export_col_pinned') }})</span>@endif
                                 </label>
                             @endforeach
                         </div>
