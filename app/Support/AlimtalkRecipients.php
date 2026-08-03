@@ -31,6 +31,10 @@ class AlimtalkRecipients
         '영업' => '영업',
         '수출통관' => '수출통관',
         '재무' => '재무',
+        // 시스템관리자(super)는 평소 업무알림 대상이 아니지만, 개발자가 실제 발송물을 눈으로 봐야
+        // 카드·문구 이상을 잡을 수 있어 **명시 선택 시에만** 수신한다(jin 2026-08-03).
+        // ⚠️ DEFAULT_ROLES 에는 절대 넣지 말 것 — 넣으면 전 알림이 자동으로 super 에게도 간다.
+        'super' => '시스템관리자',
     ];
 
     /**
@@ -108,14 +112,23 @@ class AlimtalkRecipients
         $query = match ($group) {
             'admin' => User::query()->where('permission', 'admin'),
             'manager' => User::query()->where('permission', 'manager'),
+            'super' => User::query()->where('permission', 'super'),
             '관리' => User::query()->where('permission', 'user')->where('role', '관리'),
             '영업' => User::query()->where('permission', 'user')->where('role', '영업'),
             '수출통관' => User::query()->where('permission', 'user')->where('role', '수출통관'),
             '재무' => User::query()->where('permission', 'user')->where('role', '재무'),
             default => null,
         };
+        if ($query === null) {
+            return [];
+        }
+        // super 는 'super' 그룹을 직접 고른 경우에만 받는다 — 다른 그룹(role='관리' 겸직 등)으로
+        // 딸려 들어오면 안 된다(2026-07-08 대표 오수신 fix 와 같은 취지).
+        if ($group !== 'super') {
+            $query->whereNotIn('permission', ['super']);
+        }
 
-        return $query === null ? [] : self::phones($query->whereNotIn('permission', ['super']));
+        return self::phones($query);
     }
 
     /** 대표(회사 최고관리자) 번호들. */
