@@ -31,6 +31,8 @@ return [
     ],
     'filter_all_salesman' => '전체 담당자',
     'filter_all_month' => '전체 월',
+    'export_btn' => '엑셀 내려받기',
+    'export_hint' => '현재 화면 조건 그대로 내려받습니다. 영업담당자별로 시트가 나뉘고 첫 시트는 요약입니다. 실지급액은 확정 전이면 예정값이며, 월배치 조정은 배치 단위라 여기 반영되지 않습니다.',
     'filter_month_title' => '정산 귀속월(완납월, 1일~말일) — 익월 10일 지급',
     'filter_month_label' => '정산',
     'filter_month_pay' => '지급',

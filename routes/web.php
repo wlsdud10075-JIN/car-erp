@@ -4,6 +4,7 @@ use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
+use App\Http\Controllers\SettlementExportController;
 use App\Http\Controllers\SignController;
 use App\Http\Controllers\SignedContractController;
 use App\Http\Controllers\VehicleDocumentController;
@@ -131,6 +132,12 @@ Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')-
 // 정산 — settlement role 이상
 Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
+
+    // 정산 export (귀속월 기준·영업담당자별 시트) — 화면 필터 그대로 미러. 'export' 리터럴이라 충돌 없음.
+    //   회계 민감값이라 컬럼은 전량 고정(선택 UI 없음), 권한은 화면과 동일(settlement 미들웨어) + rate limit.
+    Route::get('settlements/export', [SettlementExportController::class, 'download'])
+        ->name('settlements.export')
+        ->middleware('throttle:data-export');
 });
 
 // 큐 19-F — 자금 이체 재무 확정 (settlement 미들웨어 통과 후 컴포넌트 mount 에서

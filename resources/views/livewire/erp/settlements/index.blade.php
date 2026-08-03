@@ -925,6 +925,25 @@ new #[Layout('components.layouts.app')] class extends Component
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    {{-- 엑셀 내려받기 (jin 2026-08-03) — 화면 필터 그대로. 영업담당자별 시트로 나뉘고 첫 시트가 요약.
+         "전체(필터 무시)" 범위는 일부러 안 만든다 — 화면에서 본 것과 다른 게 나오면 대조가 무의미(SKILLS §14). --}}
+    <button type="button" title="{{ __('settlement.export_hint') }}"
+            x-data
+            @click="(() => {
+                const p = new URLSearchParams();
+                if ($wire.search) p.set('q', $wire.search);
+                if ($wire.statusFilter) p.set('status', $wire.statusFilter);
+                if ($wire.heldOnly) p.set('held', '1');
+                if ($wire.salesmanFilter) p.set('salesmanId', $wire.salesmanFilter);
+                if ($wire.monthFilter) p.set('month', $wire.monthFilter);
+                if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
+                if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
+                window.location.href = '{{ route('erp.settlements.export') }}?' + p.toString();
+            })()"
+            class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+        {{ __('settlement.export_btn') }}
+    </button>
     {{-- jin 2026-07-09 — 선택 월 미확정 정산 일괄 확정 (확정 → 이후 월배치 제출). --}}
     @if(auth()->user()->canConfirmFinance() && $monthFilter !== '')
     <button wire:click="confirmMonth" wire:confirm="{{ __('settlement.batch.confirm_month_prompt', ['month' => $monthFilter]) }}"

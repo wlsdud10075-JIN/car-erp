@@ -31,6 +31,8 @@ return [
     ],
     'filter_all_salesman' => 'All salesmen',
     'filter_all_month' => 'All months',
+    'export_btn' => 'Download Excel',
+    'export_hint' => 'Exports exactly what the current filters show. One sheet per salesperson, with a summary sheet first. Payout is a preview until confirmed, and batch-level adjustments are not reflected per row.',
     'filter_month_title' => 'Attribution month (full-payment month, 1st–last) — paid on the 10th of next month',
     'filter_month_label' => 'settlement',
     'filter_month_pay' => 'pay',

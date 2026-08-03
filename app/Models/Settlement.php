@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\SettlementCkBatch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -274,6 +275,37 @@ class Settlement extends Model
         return $query->where('settlement_status', 'confirmed')
             ->whereNull('payout_batch_id')
             ->whereHas('vehicle', fn ($v) => $v->where('sale_unpaid_amount_krw_cache', '>', 0));
+    }
+
+    /**
+     * 귀속월 스코프 — 'YYYY-MM'. A-3(2026-07-08) 기준 attributed_month(완납월, 달력 1일~말일) 우선,
+     * NULL(백필 전/누락)만 기존 앵커 [M/10, (M+1)/10) 로 fallback.
+     *
+     * ⚠️ 같은 규칙이 세 곳에 있다 — 정산관리 화면 monthScope() · SettlementPayoutBatch::submitForMonth()
+     *    · 이 스코프(정산 export). 지급 대상 판정이라 셋이 어긋나면 "화면엔 있는데 지급이 안 된" 사고가 난다.
+     *    동치는 SettlementAttributedMonthScopeTest 가 강제한다.
+     *
+     * 성능(jin 2026-07-23): attributed_month 인덱스 유지 위해 whereDate(DATE()) 대신 시간경계 범위.
+     *   ⚠ SQLite(테스트)는 date 를 'Y-m-d 00:00:00' 로 저장 → plain where 불일치. 명시 경계로 양쪽 DB 안전.
+     */
+    public function scopeAttributedMonth($query, string $ym)
+    {
+        if ($ym === '') {
+            return $query;
+        }
+        $monthStart = $ym.'-01';
+        [$start, $end] = SettlementCkBatch::monthRange($ym);
+        $s = $start->format('Y-m-d H:i:s');
+        $e = $end->format('Y-m-d H:i:s');
+
+        return $query->where(function ($q2) use ($monthStart, $s, $e) {
+            $q2->whereBetween('attributed_month', [$monthStart.' 00:00:00', $monthStart.' 23:59:59'])
+                ->orWhere(function ($q3) use ($s, $e) {
+                    $q3->whereNull('attributed_month')
+                        ->whereRaw('COALESCE(confirmed_at, created_at) >= ?', [$s])
+                        ->whereRaw('COALESCE(confirmed_at, created_at) < ?', [$e]);
+                });
+        });
     }
 
     // Phase 2 — 소속 월배치(정산지급 승인).
