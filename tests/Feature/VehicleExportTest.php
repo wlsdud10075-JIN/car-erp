@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\VehicleExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -199,5 +200,68 @@ class VehicleExportTest extends TestCase
         ['flat' => $flat] = $this->loadCells($res->streamedContent());
 
         $this->assertStringContainsString('총마진', $flat, '관리에 정산 미노출');
+    }
+
+    /** 차대번호(VIN) 열 — 정산 엑셀 대조의 매칭 키 (jin 2026-08-03) */
+    public function test_export_includes_chassis_number(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle(['nice_reg_vin' => 'KMHD141CBEU123456']);
+
+        $res = $this->actingAs($admin)->get(route('erp.vehicles.export'))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차대번호', $flat, '차대번호 헤더 누락');
+        $this->assertStringContainsString('KMHD141CBEU123456', $flat, '차대번호 값 누락');
+    }
+
+    /**
+     * 🔒 식별 열 고정 — 정산 컬럼만 골라도 차량번호·차대번호가 강제로 따라온다.
+     * 이게 요청의 본질: 정산만 받으면 "어느 차량의 정산인지" 알 수 없어 대조가 불가능했다.
+     */
+    public function test_settlement_only_export_still_carries_identifiers(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle(['nice_reg_vin' => 'KMHD141CBEU123456']);
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'settlement_status,total_margin,actual_payout']))
+            ->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat, '정산 전용 export 에 차량번호 누락');
+        $this->assertStringContainsString('차대번호', $flat, '정산 전용 export 에 차대번호 누락');
+        $this->assertStringContainsString('88가1234', $flat);
+        $this->assertStringContainsString('KMHD141CBEU123456', $flat);
+        $this->assertStringContainsString('총마진', $flat);
+        // 고르지 않은 열은 여전히 안 나온다(핀이 전체 export 로 번지지 않음).
+        $this->assertStringNotContainsString('브랜드', $flat, '핀이 선택 필터를 무력화함');
+    }
+
+    /** 식별 열은 서버가 되돌린다 — 클라이언트가 cols 에서 빼도 무시 */
+    public function test_identity_columns_cannot_be_dropped_via_url(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->vehicle(['nice_reg_vin' => 'KMHD141CBEU123456']);
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'brand']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('차량번호', $flat);
+        $this->assertStringContainsString('차대번호', $flat);
+    }
+
+    /** 열 순서는 사용자가 고른 순서와 무관하게 화이트리스트 정의 순서 */
+    public function test_pinned_columns_keep_whitelist_order(): void
+    {
+        $svc = new VehicleExportService;
+
+        $this->assertSame(
+            ['vehicle_number', 'chassis_number', 'brand', 'total_margin'],
+            $svc->pinIdentityColumns(['total_margin', 'brand']),
+        );
+        // 빈 배열 = 전체 export 신호라 그대로 통과(호출부가 columnKeys 로 대체).
+        $this->assertSame([], $svc->pinIdentityColumns([]));
     }
 }

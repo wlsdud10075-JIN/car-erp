@@ -35,6 +35,8 @@ class VehicleExportController extends Controller
         // 컬럼 선택 — 화이트리스트 교집합만(보안: 알 수 없는 key·권한 밖 정산 컬럼 무시).
         $selected = array_values(array_filter(explode(',', (string) $request->query('cols', ''))));
         $selected = array_values(array_intersect($selected, $exporter->columnKeys($allowSettlement)));
+        // 식별 열(차량번호·차대번호)은 클라이언트가 빼도 서버가 되돌린다 — 정산 열만 받아도 대조 가능하게.
+        $selected = $exporter->pinIdentityColumns($selected, $allowSettlement);
 
         // 범위 — current(화면 필터 미러) / all(전 기간 전체, 필터 무시).
         $mirror = $request->query('scope', 'current') !== 'all';

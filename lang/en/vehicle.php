@@ -33,6 +33,8 @@ return [
     'export_cols_collapse' => 'Collapse columns',
     'export_do' => 'Download Excel',
     'export_pick_col' => 'Select at least one column.',
+    'export_col_pinned' => 'always',
+    'export_pinned_hint' => '· Vehicle no. and VIN are always included, so settlement-only exports stay traceable.',
 
     'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6) · vessel · container no.',
     'search_btn' => 'Search',

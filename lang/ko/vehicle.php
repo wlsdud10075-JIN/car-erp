@@ -33,6 +33,8 @@ return [
     'export_cols_collapse' => '개별 컬럼 접기',
     'export_do' => '엑셀 내려받기',
     'export_pick_col' => '컬럼을 1개 이상 선택하세요.',
+    'export_col_pinned' => '고정',
+    'export_pinned_hint' => '· 차량번호·차대번호는 항상 포함됩니다(정산 열만 받아도 어느 차량인지 대조 가능).',
 
     'search_placeholder' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 차대번호(끝 6자리) · 선박명 · 컨테이너번호',
     'search_btn' => '조회',
