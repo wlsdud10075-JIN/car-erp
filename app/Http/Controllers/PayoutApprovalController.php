@@ -97,15 +97,42 @@ class PayoutApprovalController extends Controller
         }
     }
 
-    /** 담당자별 실지급 합계(표시용). computed actual_payout 를 PHP 로 합산. */
+    /**
+     * 담당자별 드릴다운(표시용) — ERP 정산지급 승인큐 화면과 같은 구조 (jin 2026-08-03).
+     *   [담당자 => ['count','payout','adjust','net','vehicles'=>[['number','amount'], ...]]]
+     *
+     * ⚠️ 조정(월배치 +/−)을 반드시 함께 반영한다. `total_payout` 은 recomputeTotal 이 조정을 더한 값이라,
+     *    정산 합만 보여주면 **담당자별을 다 더해도 지급 총액과 안 맞는다**(2026-06 배치에 −729,250 선례).
+     *    조정만 있고 정산이 없는 담당자도 행으로 남겨야 합계가 닫힌다.
+     * computed actual_payout 이 vehicle 을 참조하므로 vehicle 까지 eager load(N+1 방지).
+     */
     private function breakdown(SettlementPayoutBatch $batch): array
     {
+        $blank = ['count' => 0, 'payout' => 0, 'adjust' => 0, 'net' => 0, 'vehicles' => []];
         $rows = [];
-        foreach ($batch->settlements()->with('salesman')->get() as $s) {
-            $name = $s->salesman?->name ?? '-';
-            $rows[$name] = ($rows[$name] ?? 0) + (int) $s->actual_payout;
+
+        foreach ($batch->settlements()->with(['salesman', 'vehicle'])->get() as $s) {
+            $name = $s->salesman?->name ?? __('payout_batch.no_salesman');
+            $rows[$name] ??= $blank;
+            $amount = (int) $s->actual_payout;
+            $rows[$name]['payout'] += $amount;
+            $rows[$name]['vehicles'][] = [
+                'number' => $s->vehicle?->vehicle_number ?: '#'.$s->vehicle_id,
+                'amount' => $amount,
+            ];
         }
-        arsort($rows);
+
+        foreach ($batch->adjustments()->with('salesman')->get() as $adj) {
+            $name = $adj->salesman?->name ?? __('payout_batch.no_salesman');
+            $rows[$name] ??= $blank;
+            $rows[$name]['adjust'] += (int) $adj->amount;
+        }
+
+        foreach ($rows as $name => $row) {
+            $rows[$name]['count'] = count($row['vehicles']);
+            $rows[$name]['net'] = $row['payout'] + $row['adjust'];
+        }
+        uasort($rows, fn (array $a, array $b): int => $b['net'] <=> $a['net']);
 
         return $rows;
     }
