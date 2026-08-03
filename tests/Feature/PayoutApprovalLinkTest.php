@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\PayoutApprovalController;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
@@ -105,6 +106,43 @@ class PayoutApprovalLinkTest extends TestCase
         $flat = json_encode($il, JSON_UNESCAPED_UNICODE);
         $this->assertStringContainsString('4,890,000원', $flat);   // 회사이익 항목
         $this->assertStringContainsString('2,850,000원', $flat);   // 총액 하이라이트
+    }
+
+    /** 승인 페이지가 ERP 화면처럼 담당자 밑 차량 내역까지 보여준다 (jin 2026-08-03). */
+    public function test_breakdown_drills_down_to_vehicle_rows(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+
+        $this->get($batch->approvalLinkFor($admin))->assertOk()
+            ->assertSee('김영업')
+            ->assertSee('11가1111');   // 차량번호 — 종전엔 담당자 합계만 나왔다
+    }
+
+    /**
+     * 🚨 조정이 붙어도 담당자별 합계가 지급 총액과 닫혀야 한다.
+     * 종전 breakdown 은 정산 합만 더해서, 조정이 있으면 화면 숫자가 총액과 안 맞았다.
+     */
+    public function test_breakdown_reflects_adjustment_and_sums_to_total(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+        $manager = User::where('permission', 'manager')->first();
+        $sm = Salesman::first();
+        $batch->addAdjustment($manager, $sm->id, -30_000, '과지급 환수');
+        $batch->refresh();
+
+        $rows = $this->app->call(function () use ($batch) {
+            $ref = new \ReflectionMethod(PayoutApprovalController::class, 'breakdown');
+
+            return $ref->invoke(new PayoutApprovalController, $batch);
+        });
+
+        $this->assertSame(-30_000, $rows['김영업']['adjust']);
+        $this->assertSame(70_000, $rows['김영업']['net']);        // 100,000 − 30,000
+        $this->assertSame($batch->total_payout, array_sum(array_column($rows, 'net')));
+
+        $this->get($batch->approvalLinkFor($admin))->assertOk()
+            ->assertSee('과지급 환수')    // 조정 사유
+            ->assertSee('70,000원');
     }
 
     public function test_non_approver_cannot_decide(): void

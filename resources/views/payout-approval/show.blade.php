@@ -24,6 +24,21 @@
         .err { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:8px; padding:10px; font-size:14px; margin-bottom:12px; }
         .notice { background:#f9fafb; color:#6b7280; border-radius:8px; padding:14px; font-size:14px; text-align:center; }
         .bd { font-size:14px; color:#374151; }
+        .drill { border-bottom:1px dashed #eee; }
+        .drill:last-child { border-bottom:0; }
+        .drill > summary { display:flex; justify-content:space-between; align-items:center; gap:8px;
+            padding:9px 0; font-size:14px; cursor:pointer; list-style:none; }
+        .drill > summary::-webkit-details-marker { display:none; }
+        .drill > summary::before { content:"▸"; color:#9ca3af; font-size:11px; margin-right:6px; }
+        .drill[open] > summary::before { content:"▾"; }
+        .drill > summary .k { color:#374151; font-weight:600; flex:1; }
+        .drill > summary .v { color:#111827; font-weight:600; white-space:nowrap; }
+        .drill .adj { font-size:11px; font-weight:600; margin-left:4px; }
+        .drill .adj.minus { color:#dc2626; } .drill .adj.plus { color:#059669; }
+        .veh { padding:2px 0 10px 18px; }
+        .veh .row { padding:4px 0; border-bottom:0; font-size:13px; }
+        .veh .row .k { color:#6b7280; } .veh .row .v { color:#4b5563; font-weight:500; }
+        .loss { color:#dc2626; }
         .profit .row.big { font-size:17px; padding-top:10px; }
         .profit .row.big .v { color:#047857; }
         .profit .row.big .v.loss { color:#dc2626; }
@@ -42,9 +57,38 @@
 
     @if(!empty($breakdown))
     <div class="card">
-        <div class="sub" style="margin-bottom:8px;">담당자별 실지급</div>
-        @foreach($breakdown as $name => $amt)
-        <div class="row bd"><span class="k">{{ $name }}</span><span class="v">{{ number_format($amt) }}원</span></div>
+        <div class="sub" style="margin-bottom:8px;">담당자별 실지급 <span style="color:#9ca3af;font-weight:400;">— 이름을 누르면 차량 내역</span></div>
+        @foreach($breakdown as $name => $row)
+        <details class="drill">
+            <summary>
+                <span class="k">{{ $name }}</span>
+                <span class="v">
+                    {{ number_format($row['count']) }}건 · {{ number_format($row['net']) }}원
+                    @if($row['adjust'] !== 0)
+                    <span class="adj {{ $row['adjust'] < 0 ? 'minus' : 'plus' }}">{{ $row['adjust'] < 0 ? '−' : '+' }}{{ number_format(abs($row['adjust'])) }} 조정</span>
+                    @endif
+                </span>
+            </summary>
+            <div class="veh">
+                @forelse($row['vehicles'] as $v)
+                <div class="row bd"><span class="k">{{ $v['number'] }}</span><span class="v">{{ number_format($v['amount']) }}원</span></div>
+                @empty
+                <div class="row bd"><span class="k">정산 없음 (조정만)</span><span class="v">-</span></div>
+                @endforelse
+            </div>
+        </details>
+        @endforeach
+    </div>
+    @endif
+
+    @if($batch->adjustments->isNotEmpty())
+    <div class="card">
+        <div class="sub" style="margin-bottom:8px;">월배치 조정</div>
+        @foreach($batch->adjustments as $adj)
+        <div class="row bd">
+            <span class="k">{{ $adj->salesman?->name ?? '-' }} · {{ $adj->reason }}</span>
+            <span class="v {{ $adj->amount < 0 ? 'loss' : '' }}">{{ $adj->amount < 0 ? '−' : '+' }}{{ number_format(abs($adj->amount)) }}원</span>
+        </div>
         @endforeach
     </div>
     @endif
