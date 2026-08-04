@@ -34,7 +34,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-05-21 — Salesman.type 입력 제거. User.type 단일 관리로 이동 (/admin/users 폼).
     // Salesman.type 컬럼은 user.type 미러링 결과로만 채워짐 (Vehicle::saved 훅 호환).
 
-    // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. 정산 금액 직결이라 canApprove(관리·대표)만 수정 가능.
+    // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. 정산 금액 직결이라 canApprove() 만 수정 가능
+    //   ([관리] 이상 = role 관리 · 업무관리자 · 최고관리자 · 시스템관리자).
     public bool   $per_unit_tier_enabled = false;
 
     #[Computed]
@@ -365,7 +366,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <p class="mt-1 text-[11px] text-gray-500">{!! __('salesman.type_note', ['link' => '<a href="'.route('admin.users.index').'" wire:navigate class="text-violet-600 hover:underline">'.e(__('salesman.users_link')).'</a>']) !!}</p>
         </div>
-        {{-- 차등정산(tier) — 사내직원 한정. 정산 금액 직결이라 [관리]·대표만 --}}
+        {{-- 차등정산(tier) — 사내직원 한정. 정산 금액 직결이라 [관리] 이상만 --}}
         @if($linkedUserType === 'employee' && auth()->user()?->canApprove())
         <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
             <label class="flex items-start gap-2 cursor-pointer">

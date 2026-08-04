@@ -9,11 +9,12 @@ use App\Support\ColumnLabel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
  * 차등정산 on/off · 승계 바이어 — 화면 배선 + 권한 (jin 2026-08-04).
- * 둘 다 정산 금액을 바꾸므로 canApprove(관리·대표) 만 수정 가능해야 한다.
+ * 둘 다 정산 금액을 바꾸므로 canApprove() — [관리] 이상(role 관리 · 업무관리자 · 최고관리자 · 시스템관리자) — 만 수정 가능해야 한다.
  */
 class SettlementTierScreenTest extends TestCase
 {
@@ -39,6 +40,37 @@ class SettlementTierScreenTest extends TestCase
             'name' => '영업', 'email' => 'sales@t.test', 'password' => bcrypt('x'),
             'permission' => 'user', 'role' => '영업', 'email_verified_at' => now(),
         ]);
+    }
+
+    /**
+     * 「[관리] 이상」 = role 관리 · 업무관리자(manager) · 최고관리자(admin) · 시스템관리자(super).
+     * jin 2026-08-04 지적 — 최고관리자는 당연히 되고 업무관리자도 포함이다. 넷 다 되는지 박제한다.
+     */
+    public static function approverProvider(): array
+    {
+        return [
+            '시스템관리자(super)' => ['super', null],
+            '최고관리자(admin)' => ['admin', null],
+            '업무관리자(manager)' => ['manager', null],
+            'role 관리' => ['user', '관리'],
+        ];
+    }
+
+    #[DataProvider('approverProvider')]
+    public function test_every_management_level_can_toggle_tier(string $permission, ?string $role): void
+    {
+        $u = User::create([
+            'name' => '관리자'.$permission, 'email' => $permission.'@t.test', 'password' => bcrypt('x'),
+            'permission' => $permission, 'role' => $role ?? '관리', 'email_verified_at' => now(),
+        ]);
+        $sm = Salesman::create(['name' => '무사백', 'type' => 'employee', 'is_active' => true]);
+
+        Volt::actingAs($u)->test('erp.salesmen.index')
+            ->call('openEdit', $sm->id)
+            ->set('per_unit_tier_enabled', true)
+            ->call('save');
+
+        $this->assertTrue((bool) $sm->fresh()->per_unit_tier_enabled, $permission.' 은 tier 를 켤 수 있어야 한다');
     }
 
     public function test_admin_can_toggle_tier_and_change_is_audited(): void

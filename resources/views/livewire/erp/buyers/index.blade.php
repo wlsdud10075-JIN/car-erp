@@ -38,7 +38,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $memo          = '';
     public bool   $is_active     = true;
     // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
-    //   정산 금액 직결이라 저장 시 canApprove(관리·대표) 재인가.
+    //   정산 금액 직결이라 저장 시 canApprove() 재인가 — [관리] 이상(role 관리·업무관리자·최고관리자·시스템관리자).
     public bool   $is_inherited  = false;
     public string $inherited_from_salesman_id_str = '';
     public string $inherited_at  = '';
@@ -908,7 +908,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
-                {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리]·대표만 --}}
+                {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리] 이상만 --}}
                 @if(auth()->user()?->canApprove())
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
                     <label class="flex items-start gap-2 cursor-pointer">

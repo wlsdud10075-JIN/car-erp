@@ -32,7 +32,26 @@
       "Skill(deep-interview)",
       "Bash(xargs -I {} wc -l {})",
       "Bash(git push *)",
-      "Bash(vendor/bin/sail test *)"
+      "Bash(vendor/bin/sail test *)",
+      "Bash(gh run *)",
+      "Bash(curl -s -o /dev/null -w \"heymanerp \\(heysellcar.com\\): %{http_code}\\\\n\" --max-time 15 https://heysellcar.com/)",
+      "Bash(curl -s -o /dev/null -w \"karabaerp \\(karaba-erp.com\\): %{http_code}\\\\n\" --max-time 15 https://karaba-erp.com/)",
+      "Bash(curl -s -w \" |HTTP%{http_code}\" --max-time 15 -X POST \"https://heymancar.com/provide/api/nice-lookup/\" -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(C:/xampp/php/php.exe \"/c/Users/User/AppData/Local/Temp/claude/C--xampp-htdocs-car-erp/580ee253-092e-4ad2-8237-67d891971e78/scratchpad/inspect2.php\")",
+      "Bash(php -r 'echo ini_get\\(\"memory_limit\"\\),\"\\\\n\";')",
+      "Bash(echo \"exit=$?\")",
+      "Read(//c/Users/User/.claude/projects/C--xampp-htdocs-car-erp/memory/**)",
+      "Bash(head -20 project_remaining_tasks.md)",
+      "Bash(head -12 project_heyman_doc_cleanup.md)",
+      "Bash(ssh *)",
+      "Bash(xargs grep -ln \"Auth::attempt\\\\|authenticate\")",
+      "Bash(php dump_mapping.php \"C:/Users/User/Desktop/system/0. 매핑한것/매입/2. 말소 계약서_HEYMAN_매핑표시.xlsx\" \"C:/Users/User/Desktop/system/0. 매핑한것/매입/3. 위임장_HEYMAN_매핑표시.xlsx\" \"C:/Users/User/Desktop/system/0. 매핑한것/매입/1. 말소 신청서_[v]수출 예정\\(bold처리부탁\\).xlsx\")",
+      "Bash(php dump_mapping.php '__TRACKED_VAR__/매입/2. 말소 계약서_HEYMAN_매핑표시.xlsx')",
+      "Bash(php dump_mapping.php '__TRACKED_VAR__/매입/3. 위임장_HEYMAN_매핑표시.xlsx')",
+      "Bash(php dump_mapping.php __TRACKED_VAR__/판매/인보이스_HEYMAN_매핑표시.xlsx)",
+      "WebSearch",
+      "Bash(base64 -w0)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }

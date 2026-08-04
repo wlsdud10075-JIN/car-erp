@@ -36,7 +36,8 @@
 ## 4. 구현
 
 - `salesmen.per_unit_tier_enabled` — 영업담당자 편집의 「차등 정산(tier) 적용」 체크박스.
-  **사내직원(`user.type=employee`)일 때만** 노출, **`canApprove()`(관리·대표)만** 수정.
+  **사내직원(`user.type=employee`)일 때만** 노출, **`canApprove()` = 「[관리] 이상」만** 수정
+  (role `관리` · 업무관리자(manager) · 최고관리자(admin) · 시스템관리자(super)).
 - `buyers.is_inherited` + `inherited_from_salesman_id` + `inherited_at` — 바이어 편집의 「승계받은 바이어」.
   같은 권한. 해제 시 부속 2필드도 함께 비운다(ON 일 때만 부속 정보 존재).
 - 계산은 `Settlement::employeePerUnitTier($totalMargin, $purchaseTotal, $tierEnabled = true, $inheritedBuyer = false)`.
