@@ -30,6 +30,15 @@ return new class extends Migration
             $table->boolean('per_unit_tier_enabled')->default(false)->after('type');
         });
 
+        // karaba 는 이익율 정산(Setting::isKaraba())이라 tier 자체를 안 쓴다. 그런데 Settlement::saving 이
+        // effective_per_unit_amount 를 무조건 materialize 하는 탓에 20만 동결값이 남아 있어(실측 홍승환 1명),
+        // 그대로 두면 쓰이지도 않는 플래그가 켜져 다음 사람을 헷갈리게 한다 → 자동 ON 자체를 건너뛴다.
+        $profile = DB::table('settings')->where('key', 'company_template_set')->value('value')
+            ?: config('company.template_set', 'system');
+        if ($profile === 'karaba') {
+            return;
+        }
+
         $ids = DB::table('settlements')
             ->where('settlement_type', 'per_unit')
             ->whereNotNull('salesman_id')
