@@ -39,6 +39,10 @@
         .veh .row { padding:4px 0; border-bottom:0; font-size:13px; }
         .veh .row .k { color:#6b7280; } .veh .row .v { color:#4b5563; font-weight:500; }
         .loss { color:#dc2626; }
+        .veh .row .k .meta { display:block; color:#9ca3af; font-weight:400; font-size:11px; margin-top:2px; }
+        .xlsx { display:block; margin-top:10px; padding:11px 12px; border:1px solid #d1d5db; border-radius:8px;
+                text-align:center; color:#374151; font-size:13px; font-weight:600; text-decoration:none; }
+        .xlsx:hover { background:#f9fafb; }
         .profit .row.big { font-size:17px; padding-top:10px; }
         .profit .row.big .v { color:#047857; }
         .profit .row.big .v.loss { color:#dc2626; }
@@ -71,13 +75,24 @@
             </summary>
             <div class="veh">
                 @forelse($row['vehicles'] as $v)
-                <div class="row bd"><span class="k">{{ $v['number'] }}</span><span class="v">{{ number_format($v['amount']) }}원</span></div>
+                <div class="row bd">
+                    <span class="k">
+                        {{ $v['number'] }}
+                        {{-- 승인 판단용 3항목 (jin 2026-08-04) — 총마진·정산방식·실지급액 --}}
+                        <span class="meta">총마진 {{ number_format($v['margin']) }} · {{ $v['type'] }}</span>
+                    </span>
+                    <span class="v">{{ number_format($v['amount']) }}원</span>
+                </div>
                 @empty
                 <div class="row bd"><span class="k">정산 없음 (조정만)</span><span class="v">-</span></div>
                 @endforelse
             </div>
         </details>
         @endforeach
+        {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
+        @isset($exportUrl)
+        <a class="xlsx" href="{{ $exportUrl }}">📄 전체 내역 엑셀 내려받기</a>
+        @endisset
     </div>
     @endif
 

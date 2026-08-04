@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\ExportLog;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
+use App\Services\SettlementExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * 월배치 정산지급 — 대표가 카카오 알림톡 버튼으로 바로 승인/반려 (2026-07-08, jin).
@@ -40,7 +44,60 @@ class PayoutApprovalController extends Controller
             'decideUrl' => $decideUrl,
             'breakdown' => $this->breakdown($batch),
             'profit' => $batch->profitStats(),
+            'exportUrl' => $this->exportUrl($batch, $user),
             'error' => null,
+        ]);
+    }
+
+    /**
+     * 이 배치의 정산 엑셀 (jin 2026-08-04) — 카톡에서 연 승인 페이지에서 바로 받는다.
+     *
+     * 알림톡 카드엔 규격상(제목 6자·설명 20자) 상세를 못 싣는다. 페이지엔 승인 판단용 3항목만 두고,
+     * 25열 전체가 필요하면 여기서 받는다. 인가 = show 와 동일한 서명 URL(로그인 없음).
+     * ⚠️ 이 배치의 정산만 — 화면 export 처럼 필터를 받지 않는다(서명 링크에 필터를 실으면 범위가 새어난다).
+     */
+    public function export(Request $request, SettlementPayoutBatch $batch, SettlementExportService $exporter): StreamedResponse
+    {
+        $user = User::find((int) $request->query('u'));
+
+        $settlements = $batch->settlements()
+            ->with(['vehicle', 'salesman'])
+            ->orderBy('salesman_id')->orderBy('id')
+            ->get();
+
+        $spreadsheet = $exporter->build($settlements);
+
+        ExportLog::create([
+            'user_id' => $user?->id,
+            'ip_address' => $request->ip(),
+            'target' => 'settlements',
+            'scope' => 'payout_batch',
+            'row_count' => $settlements->count(),
+            'columns' => $exporter->columnLabels(),
+            'filters' => ['batch' => (string) $batch->id, 'month' => (string) $batch->month],
+        ]);
+
+        $filename = '정산_'.$batch->month.'_배치'.$batch->id.'.xlsx';
+
+        return response()->streamDownload(
+            function () use ($spreadsheet) {
+                (new Xlsx($spreadsheet))->save('php://output');
+            },
+            $filename,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        );
+    }
+
+    /** 승인 페이지 진입 시 새로 발급하는 엑셀 다운로드 링크(60분) — decideUrl 과 같은 수명. */
+    private function exportUrl(SettlementPayoutBatch $batch, ?User $user): ?string
+    {
+        if ($user === null) {
+            return null;
+        }
+
+        return URL::temporarySignedRoute('payout.approve.export', now()->addMinutes(60), [
+            'batch' => $batch->id,
+            'u' => $user->id,
         ]);
     }
 
@@ -65,6 +122,7 @@ class PayoutApprovalController extends Controller
                 'batch' => $batch, 'user' => $user, 'decidable' => $batch->canDecide($user),
                 'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
                 'profit' => $batch->profitStats(),
+                'exportUrl' => $this->exportUrl($batch, $user),
                 'error' => '반려하려면 사유를 입력해 주세요.',
             ]);
         }
@@ -119,6 +177,11 @@ class PayoutApprovalController extends Controller
             $rows[$name]['vehicles'][] = [
                 'number' => $s->vehicle?->vehicle_number ?: '#'.$s->vehicle_id,
                 'amount' => $amount,
+                // 승인 판단에 실제로 쓰는 3개만 (jin 2026-08-04) — 엑셀 25열을 폰에 다 띄울 순 없다.
+                'margin' => (int) $s->total_margin,
+                'type' => $s->settlement_type === 'ratio'
+                    ? __('payout_batch.type_ratio', ['ratio' => $s->effective_ratio])
+                    : __('payout_batch.type_per_unit'),
             ];
         }
 

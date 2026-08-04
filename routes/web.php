@@ -41,6 +41,11 @@ Route::get('a/payout/{batch}', [PayoutApprovalController::class, 'show'])
 Route::post('a/payout/{batch}/decide', [PayoutApprovalController::class, 'decide'])
     ->middleware('signed')
     ->name('payout.approve.decide');
+// 이 배치의 정산 엑셀 (jin 2026-08-04) — 알림톡 카드엔 규격상 상세를 못 실어, 승인 페이지에서 받게 한다.
+//   show 와 같은 서명 인가. 배치가 URL 에 바인딩돼 다른 배치는 못 받는다.
+Route::get('a/payout/{batch}/export', [PayoutApprovalController::class, 'export'])
+    ->middleware('signed')
+    ->name('payout.approve.export');
 
 // 판매계약서 전자서명 (2026-07-10 풀회의, ERP 직접호스팅). 로그인 없음(signed 서명이 인가 — 만료·변조불가).
 //   sign_token(추측불가 DB 핸들) + signed 미들웨어 병행. show(GET)=계약 PDF 미리보기 + 서명패드 + 이메일칸,

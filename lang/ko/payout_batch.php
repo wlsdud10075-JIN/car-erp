@@ -35,6 +35,8 @@ return [
     'reject_confirm' => '반려',
     'rejected_reason' => '반려 사유: :reason',
     'no_salesman' => '담당자 미지정',
+    'type_ratio' => '프리랜서 :ratio%',
+    'type_per_unit' => '사내직원 건당',
     'empty' => '배치가 없습니다.',
     'notify' => [
         'approved' => '승인 처리됐습니다.',

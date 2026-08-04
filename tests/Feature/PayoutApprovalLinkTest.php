@@ -119,6 +119,42 @@ class PayoutApprovalLinkTest extends TestCase
     }
 
     /**
+     * 차량 줄에 승인 판단용 3항목(총마진·정산방식·실지급액)이 함께 나온다 (jin 2026-08-04).
+     * 알림톡 카드엔 규격상(제목 6자·설명 20자) 못 싣는 정보라 이 페이지가 유일한 경로다.
+     */
+    public function test_vehicle_row_shows_margin_and_settlement_type(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+
+        $this->get($batch->approvalLinkFor($admin))->assertOk()
+            ->assertSee('총마진')
+            ->assertSee('사내직원 건당')      // per_unit 정산방식
+            ->assertSee('전체 내역 엑셀 내려받기');
+    }
+
+    /** 엑셀 다운로드 — 서명 링크로만. 서명 없으면 403(로그인 없이 여는 경로라 유일한 방어). */
+    public function test_batch_excel_download_requires_signature(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+
+        // 서명 없는 생 URL → 403
+        $this->get('/a/payout/'.$batch->id.'/export')->assertForbidden();
+
+        // 서명 링크 → xlsx 스트림
+        $url = URL::temporarySignedRoute('payout.approve.export', now()->addHour(), [
+            'batch' => $batch->id, 'u' => $admin->id,
+        ]);
+        $res = $this->get($url);
+        $res->assertOk();
+        $this->assertStringContainsString('spreadsheetml', (string) $res->headers->get('Content-Type'));
+
+        // 감사 기록 — 누가 어느 배치를 받았는지 남는다.
+        $this->assertDatabaseHas('export_logs', [
+            'user_id' => $admin->id, 'target' => 'settlements', 'scope' => 'payout_batch',
+        ]);
+    }
+
+    /**
      * 🚨 조정이 붙어도 담당자별 합계가 지급 총액과 닫혀야 한다.
      * 종전 breakdown 은 정산 합만 더해서, 조정이 있으면 화면 숫자가 총액과 안 맞았다.
      */

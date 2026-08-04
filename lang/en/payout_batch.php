@@ -35,6 +35,8 @@ return [
     'reject_confirm' => 'Reject',
     'rejected_reason' => 'Reject reason: :reason',
     'no_salesman' => 'No salesman',
+    'type_ratio' => 'Freelance :ratio%',
+    'type_per_unit' => 'Employee per-unit',
     'empty' => 'No batches.',
     'notify' => [
         'approved' => 'Approved.',
