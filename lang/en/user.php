@@ -9,6 +9,8 @@ return [
     'all_perm' => 'All permissions',
     'me' => '(me)',
     'no_login' => 'Never',
+    'phone_missing' => 'Not set',
+    'phone_missing_hint' => 'Without a phone number this user receives no KakaoTalk notifications (and no log entry is created).',
     'empty' => 'No users.',
     'delete_confirm' => 'Delete user :name?',
     'edit_title' => 'Edit User',

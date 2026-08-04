@@ -40,6 +40,28 @@ class ManagerUserManagementTest extends TestCase
         return $u;
     }
 
+    /**
+     * 사용자관리 목록에 전화번호가 보인다 (jin 2026-08-04).
+     * 미입력이면 「미입력」으로 눈에 띄게 — phone 이 비면 알림톡이 **로그도 없이 조용히 skip** 되므로,
+     * 목록에서 누락을 바로 발견할 수 있어야 한다(실제로 영업 4명 번호 누락으로 픽업 알림이 안 나간 적 있음).
+     */
+    public function test_user_list_shows_phone_and_flags_missing(): void
+    {
+        $admin = $this->user('어드민', 'admin', '관리');
+        User::factory()->create([
+            'name' => '번호있음', 'permission' => 'user', 'role' => '영업',
+            'phone' => '010-1234-5678', 'email_verified_at' => now(),
+        ]);
+        User::factory()->create([
+            'name' => '번호없음', 'permission' => 'user', 'role' => '영업',
+            'phone' => null, 'email_verified_at' => now(),
+        ]);
+
+        Volt::actingAs($admin)->test('admin.users.index')
+            ->assertSee('010-1234-5678')
+            ->assertSee(__('user.phone_missing'));
+    }
+
     // ── 권한 게이트 ──────────────────────────────────────────
     public function test_manager_can_manage_users_admin_can_too(): void
     {
