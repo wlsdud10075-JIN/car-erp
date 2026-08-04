@@ -921,7 +921,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </span>
                     </label>
                     @if($is_inherited)
-                    <div class="mt-3 grid grid-cols-2 gap-3">
+                    <p class="mt-3 text-[11px] leading-relaxed text-gray-500">{{ __('buyer.field.inherited_optional_note') }}</p>
+                    <div class="mt-2 grid grid-cols-2 gap-3">
                         <div>
                             <label class="label-base">{{ __('buyer.field.inherited_from') }}</label>
                             <select wire:model="inherited_from_salesman_id_str" class="input-base">

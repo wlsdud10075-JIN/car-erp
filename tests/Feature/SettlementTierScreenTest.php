@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Support\ColumnLabel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -129,6 +131,45 @@ class SettlementTierScreenTest extends TestCase
         $this->assertDatabaseHas('audit_logs', [
             'auditable_type' => Buyer::class, 'column_name' => 'is_inherited', 'new_value' => '1',
         ]);
+    }
+
+    /**
+     * 🚨 승계 전 담당자·승계일 없이 **체크만** 해도 5만원이 적용돼야 한다 (jin 2026-08-04).
+     * 퇴사자가 salesmen 에 아예 없거나(등록 전 퇴사) 누군지 모르는 경우가 실제로 있다.
+     * 이 둘을 필수로 바꾸면 그런 바이어를 등록할 수 없게 되므로 nullable 을 테스트로 고정한다.
+     */
+    public function test_checkbox_alone_is_enough_without_previous_salesman_or_date(): void
+    {
+        $buyer = Buyer::create(['name' => '퇴사정보없는승계']);
+
+        Volt::actingAs($this->admin())->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->set('is_inherited', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $fresh = $buyer->fresh();
+        $this->assertTrue((bool) $fresh->is_inherited, '체크만으로 저장돼야 한다');
+        $this->assertNull($fresh->inherited_from_salesman_id);
+        $this->assertNull($fresh->inherited_at);
+
+        // 그리고 실제로 5만원이 적용되는지 — 체크 하나가 금액을 결정한다.
+        $sm = Salesman::create([
+            'name' => '사내직원', 'type' => 'employee',
+            'per_unit_tier_enabled' => true, 'is_active' => true,
+        ]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'INH-ONLY-1',
+            'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1, 'dhl_request' => false,
+            'purchase_price' => 20_000_000, 'selling_fee' => 0,
+            'sale_price' => 22_000_000, 'sale_date' => '2026-05-01', 'purchase_date' => '2026-04-01',
+            'buyer_id' => $buyer->id,
+        ]);
+        $s = Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => null, 'settlement_status' => 'pending',
+        ]);
+        $this->assertSame(50_000, $s->effective_per_unit_amount);
     }
 
     /** 승계 해제 시 원담당자·승계일도 함께 비워진다 — "ON 일 때만 부속 정보 존재" 불변식. */
