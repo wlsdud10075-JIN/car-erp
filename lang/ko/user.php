@@ -9,6 +9,8 @@ return [
     'all_perm' => '전체 권한',
     'me' => '(나)',
     'no_login' => '없음',
+    'phone_missing' => '미입력',
+    'phone_missing_hint' => '전화번호가 없으면 이 사용자에게는 알림톡이 발송되지 않습니다(로그도 남지 않음).',
     'empty' => '사용자가 없습니다.',
     'delete_confirm' => ':name 사용자를 삭제하시겠습니까?',
     'edit_title' => '사용자 수정',

@@ -321,6 +321,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                 <th class="pb-2 pr-4 font-medium">{{ __('user.col.name') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('user.col.perm') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('user.col.role') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('user.col.last_login') }}</th>
@@ -343,6 +344,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $u->email }}</td>
+                {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
+                <td class="py-3 pr-4 text-gray-500">
+                    @if(filled($u->phone))
+                        {{ $u->phone }}
+                    @else
+                        <span class="text-amber-600" title="{{ __('user.phone_missing_hint') }}">{{ __('user.phone_missing') }}</span>
+                    @endif
+                </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
                 </td>
@@ -362,7 +371,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</td></tr>
+            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -379,6 +388,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <div class="font-medium text-gray-800">{{ $u->name }}{{ $u->id === auth()->id() ? ' '.__('user.me') : '' }}</div>
             <div class="text-xs text-gray-500">{{ $u->email }}</div>
+            <div class="text-xs {{ filled($u->phone) ? 'text-gray-500' : 'text-amber-600' }}">
+                {{ filled($u->phone) ? $u->phone : __('user.phone_missing') }}
+            </div>
         </div>
         <div class="flex items-center gap-2">
             <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
