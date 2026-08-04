@@ -31,6 +31,8 @@ return [
         'linked_none' => 'Not linked',
         'settlement_type' => 'Settlement Type',
         'type_unset' => 'Not set — enter in User management',
+        'per_unit_tier' => 'Apply tiered settlement',
+        'per_unit_tier_hint' => 'When on: 200,000 KRW for total margin ≥ 1M, or 25% of total margin when purchase total ≥ 100M. When off: flat 100,000 KRW per unit (0 for loss-making vehicles). Inherited-buyer deals are always 50,000 KRW regardless of this setting.',
         'type_no_account' => 'No login account linked',
     ],
 

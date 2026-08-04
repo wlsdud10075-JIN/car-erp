@@ -15,9 +15,15 @@ class Buyer extends Model
         'name', 'country_id', 'salesman_id',
         'contact_name', 'contact_email',
         'contact_phone', 'passport_id', 'address', 'memo', 'is_active',
+        // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
+        'is_inherited', 'inherited_from_salesman_id', 'inherited_at',
     ];
 
-    protected $casts = ['is_active' => 'boolean'];
+    protected $casts = [
+        'is_active' => 'boolean',
+        'is_inherited' => 'boolean',
+        'inherited_at' => 'date',
+    ];
 
     /**
      * 대량 임포트/시더에서 바이어→컨사이니 자동생성을 끄는 플래그 (안전판).
@@ -62,6 +68,12 @@ class Buyer extends Model
     public function salesman(): BelongsTo
     {
         return $this->belongsTo(Salesman::class);
+    }
+
+    /** 승계 전 담당자(퇴사자) — 기록용. 정산 계산엔 `is_inherited` 만 쓴다 (jin 2026-08-04). */
+    public function inheritedFromSalesman(): BelongsTo
+    {
+        return $this->belongsTo(Salesman::class, 'inherited_from_salesman_id');
     }
 
     public function consignees(): HasMany

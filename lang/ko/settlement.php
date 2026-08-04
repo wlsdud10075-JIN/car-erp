@@ -193,6 +193,7 @@ return [
     'field_other_deduction' => '기타공제 (원)',
 
     'result_settlement_amount' => '정산액',
+    'inherited_buyer' => '승계',
     'result_ratio_formula' => '총마진 × :ratio%',
     'result_per_unit_formula' => '건당 고정',
     'result_document_fee' => '서류비',

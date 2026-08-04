@@ -37,6 +37,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $address       = '';
     public string $memo          = '';
     public bool   $is_active     = true;
+    // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
+    //   정산 금액 직결이라 저장 시 canApprove(관리·대표) 재인가.
+    public bool   $is_inherited  = false;
+    public string $inherited_from_salesman_id_str = '';
+    public string $inherited_at  = '';
 
     // ── 컨사이니 탭 ────────────────────────────────────────────────
     public array  $consigneeList      = [];
@@ -277,6 +282,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->address       = $buyer->address       ?? '';
         $this->memo          = $buyer->memo          ?? '';
         $this->is_active     = $buyer->is_active;
+        $this->is_inherited  = (bool) $buyer->is_inherited;
+        $this->inherited_from_salesman_id_str = $buyer->inherited_from_salesman_id ? (string) $buyer->inherited_from_salesman_id : '';
+        $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
 
         $this->loadConsignees($id);
         $this->loadSavings($id);
@@ -298,6 +306,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'name' => 'required|string|max:100',
             // 회의확장씬 #5-1 (2026-05-22) — 영업담당자 nullable + exists 검증.
             'salesman_id_str' => 'nullable|integer|exists:salesmen,id',
+            'inherited_from_salesman_id_str' => 'nullable|integer|exists:salesmen,id',
+            'inherited_at' => 'nullable|date',
         ]);
 
         // 영업 role 신규 등록 시 본인 salesman 자동 채움 (vehicles/index L1240~1241 패턴 대칭).
@@ -320,8 +330,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             'is_active'     => $this->is_active,
         ];
 
+        // 승계 표시는 정산액(건당 5만)을 바꾸므로 화면 노출과 별개로 저장 시점 재인가 (SKILLS §8 #26).
+        if ($user?->canApprove()) {
+            $data['is_inherited'] = $this->is_inherited;
+            $data['inherited_from_salesman_id'] = $this->is_inherited && $this->inherited_from_salesman_id_str !== ''
+                ? (int) $this->inherited_from_salesman_id_str : null;
+            // 해제 시 부속 정보도 함께 비운다 — "승계 ON 일 때만 원담당자·승계일 존재" 불변식.
+            $data['inherited_at'] = $this->is_inherited && $this->inherited_at !== '' ? $this->inherited_at : null;
+        }
+
         if ($this->editingId) {
-            Buyer::findOrFail($this->editingId)->update($data);
+            $buyer = Buyer::findOrFail($this->editingId);
+            $wasInherited = (bool) $buyer->is_inherited;
+            $buyer->update($data);
+            // 승계 표시는 정산액(건당 5만)을 바꾸므로 변경 이력을 남긴다 (Buyer 엔 감사 훅이 없어 여기서 직접).
+            if (array_key_exists('is_inherited', $data) && $wasInherited !== $this->is_inherited) {
+                \App\Models\AuditLog::recordChange($buyer, 'is_inherited', $wasInherited, $this->is_inherited);
+            }
         } else {
             $buyer = Buyer::create($data);
             $this->editingId = $buyer->id;
@@ -883,6 +908,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
+                {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리]·대표만 --}}
+                @if(auth()->user()?->canApprove())
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input wire:model.live="is_inherited" type="checkbox" class="mt-0.5 rounded" />
+                        <span class="text-sm text-gray-800">
+                            {{ __('buyer.field.inherited') }}
+                            <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">
+                                {{ __('buyer.field.inherited_hint') }}
+                            </span>
+                        </span>
+                    </label>
+                    @if($is_inherited)
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="label-base">{{ __('buyer.field.inherited_from') }}</label>
+                            <select wire:model="inherited_from_salesman_id_str" class="input-base">
+                                <option value="">-</option>
+                                @foreach($this->salesmen as $s)
+                                <option value="{{ $s->id }}">{{ $s->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('inherited_from_salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="label-base">{{ __('buyer.field.inherited_at') }}</label>
+                            <input wire:model="inherited_at" type="text" data-date class="input-base" placeholder="2026-08-04" />
+                            @error('inherited_at')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                    </div>
+                    @endif
+                </div>
+                @endif
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="label-base">{{ __('buyer.field.contact_name') }}</label>

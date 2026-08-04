@@ -108,9 +108,16 @@ class E2eSettlementWorkflowTest extends TestCase
         $this->assertSame($expectedPayout2nd, $st->actual_payout, "$name 2차 실지급액 불일치");
     }
 
-    private function salesman(string $name, string $type): Salesman
+    /**
+     * @param  bool  $tier  차등 정산(tier) 적용 — 2026-08-04 부터 담당자별 on/off.
+     *                      사내직원 20만·25% 를 검증하는 케이스는 ON 이어야 한다(OFF 면 10만 고정).
+     */
+    private function salesman(string $name, string $type, bool $tier = false): Salesman
     {
-        return Salesman::create(['name' => $name, 'type' => $type, 'is_active' => true]);
+        return Salesman::create([
+            'name' => $name, 'type' => $type, 'is_active' => true,
+            'per_unit_tier_enabled' => $tier,
+        ]);
     }
 
     /**
@@ -174,7 +181,7 @@ class E2eSettlementWorkflowTest extends TestCase
 
     public function test_krw_employee_settlement_amounts_exact(): void
     {
-        $s = $this->salesman('S1 한화 사내', 'employee');
+        $s = $this->salesman('S1 한화 사내', 'employee', tier: true);
         $v = $this->driveToTradeComplete($s, 'KRW', 1.0, [
             'purchase_price' => 10_000_000,
             'selling_fee' => 1_000_000,

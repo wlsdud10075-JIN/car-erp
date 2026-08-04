@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\User;
@@ -24,6 +25,18 @@ class SettlementEmployeeTierTest extends TestCase
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
         Settlement::flushParamMemo();
+    }
+
+    /**
+     * tier 를 타는 사내직원 (jin 2026-08-04 — tier 는 담당자별 on/off 가 됐다).
+     * 담당자 없는 정산은 보수적으로 tier OFF(10만 고정)라, 공식 자체를 검증하려면 ON 인 담당자가 필요하다.
+     */
+    private function tierSalesman(): Salesman
+    {
+        return Salesman::create([
+            'name' => 'tier직원', 'type' => 'employee',
+            'per_unit_tier_enabled' => true, 'is_active' => true,
+        ]);
     }
 
     public function test_tier_branches_with_defaults(): void
@@ -63,6 +76,7 @@ class SettlementEmployeeTierTest extends TestCase
         ]);
         $s = Settlement::create([
             'vehicle_id' => $v->id,
+            'salesman_id' => $this->tierSalesman()->id,   // 2026-08-04 — tier 는 담당자 속성이 됐다
             'settlement_type' => 'per_unit',   // per_unit_amount null → 자동 tier
             'settlement_status' => 'pending',
         ]);
@@ -134,6 +148,7 @@ class SettlementEmployeeTierTest extends TestCase
 
         $s = Settlement::create([
             'vehicle_id' => $v->id,
+            'salesman_id' => $this->tierSalesman()->id,   // 2026-08-04 — tier 는 담당자 속성이 됐다
             'settlement_type' => 'per_unit', 'per_unit_amount' => null,
             'settlement_status' => 'confirmed',
         ]);

@@ -75,6 +75,8 @@ class ColumnLabel
             'Setting' => 'settings',
             'SettlementPayoutBatch' => 'settlement_payout_batches',
             'SignedContract' => 'signed_contracts',
+            // 2026-08-04 — 차등정산 on/off 가 감사로그에 쌓이기 시작(정산 금액 직결).
+            'Salesman' => 'salesmen',
         ];
 
         return $map[$short] ?? null;

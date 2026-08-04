@@ -1104,6 +1104,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4 text-right text-gray-700">
                     ₩{{ number_format($s->settlement_amount) }}
+                    {{-- 왜 이 금액인지 — 승계 바이어면 건당 5만 고정이라, 표시 없으면 재무가 이유를 못 찾는다 (jin 2026-08-04) --}}
+                    @if($s->settlement_type === 'per_unit' && $s->isInheritedBuyerDeal())
+                        <span class="badge badge-amber ml-1">{{ __('settlement.inherited_buyer') }}</span>
+                    @endif
                 </td>
                 <td class="py-3 pr-4 text-right font-semibold {{ $s->actual_payout < 0 ? 'text-red-600' : 'text-gray-800' }}">
                     ₩{{ number_format($s->actual_payout) }}
