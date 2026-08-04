@@ -26,6 +26,10 @@ class SettlementTierScreenTest extends TestCase
     {
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
+        // 🚨 Settlement::$paramMemo 는 static 이라 RefreshDatabase 로도 안 지워진다.
+        //    앞 테스트 클래스가 Setting 을 바꿔놓으면(예: 승계액 70,000) 그 값이 그대로 새어들어와
+        //    이 클래스의 기대값(50,000)이 깨진다 — 실제로 CI 에서만 터졌다(로컬 --filter 로는 재현 안 됨).
+        Settlement::flushParamMemo();
     }
 
     private function admin(): User
