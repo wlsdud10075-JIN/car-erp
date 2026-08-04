@@ -193,6 +193,7 @@ return [
     'field_other_deduction' => 'Other deduction (KRW)',
 
     'result_settlement_amount' => 'Settlement amount',
+    'inherited_buyer' => 'Inherited',
     'result_ratio_formula' => 'Total margin × :ratio%',
     'result_per_unit_formula' => 'Per-unit fixed',
     'result_document_fee' => 'Document fee',

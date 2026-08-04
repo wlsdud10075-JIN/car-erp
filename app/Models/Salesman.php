@@ -15,9 +15,11 @@ class Salesman extends Model
         'user_id', 'name', 'initials', 'phone', 'email', 'memo', 'is_active',
         // 2026-05-20 #2-2+2-4 — type 분기 (employee 건당 / freelance 비율)
         'type',
+        // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. OFF=10만원 고정.
+        'per_unit_tier_enabled',
     ];
 
-    protected $casts = ['is_active' => 'boolean'];
+    protected $casts = ['is_active' => 'boolean', 'per_unit_tier_enabled' => 'boolean'];
 
     public const TYPES = [
         'employee' => '사내직원',

@@ -34,6 +34,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-05-21 — Salesman.type 입력 제거. User.type 단일 관리로 이동 (/admin/users 폼).
     // Salesman.type 컬럼은 user.type 미러링 결과로만 채워짐 (Vehicle::saved 훅 호환).
 
+    // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. 정산 금액 직결이라 canApprove() 만 수정 가능
+    //   ([관리] 이상 = role 관리 · 업무관리자 · 최고관리자 · 시스템관리자).
+    public bool   $per_unit_tier_enabled = false;
+
     #[Computed]
     public function salesmen()
     {
@@ -73,6 +77,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->email       = $sm->email ?? '';
         $this->memo        = $sm->memo  ?? '';
         $this->is_active   = $sm->is_active;
+        $this->per_unit_tier_enabled = (bool) $sm->per_unit_tier_enabled;
         $this->showPanel   = true;
     }
 
@@ -91,12 +96,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
             $sm = Salesman::findOrFail($this->editingId);
             // 보충 필드만 update — name/email/user_id/type 은 손대지 않음 (User 마스터 보호).
-            $sm->update([
+            $data = [
                 'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
                 'phone'     => $this->phone ?: null,
                 'memo'      => $this->memo  ?: null,
                 'is_active' => $this->is_active,
-            ]);
+            ];
+            // tier 는 정산 금액을 바꾸므로 화면 노출과 별개로 저장 시점에 재인가한다 (SKILLS §8 #26).
+            if (auth()->user()?->canApprove()) {
+                $data['per_unit_tier_enabled'] = $this->per_unit_tier_enabled;
+            }
+            $wasTier = (bool) $sm->per_unit_tier_enabled;
+            $sm->update($data);
+            // 돈을 바꾸는 스위치라 누가 언제 켰는지 남긴다 (Salesman 엔 감사 훅이 없어 여기서 직접).
+            if (array_key_exists('per_unit_tier_enabled', $data) && $wasTier !== $this->per_unit_tier_enabled) {
+                \App\Models\AuditLog::recordChange($sm, 'per_unit_tier_enabled', $wasTier, $this->per_unit_tier_enabled);
+            }
         } else {
             // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
             $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
@@ -351,6 +366,20 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <p class="mt-1 text-[11px] text-gray-500">{!! __('salesman.type_note', ['link' => '<a href="'.route('admin.users.index').'" wire:navigate class="text-violet-600 hover:underline">'.e(__('salesman.users_link')).'</a>']) !!}</p>
         </div>
+        {{-- 차등정산(tier) — 사내직원 한정. 정산 금액 직결이라 [관리] 이상만 --}}
+        @if($linkedUserType === 'employee' && auth()->user()?->canApprove())
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <label class="flex items-start gap-2 cursor-pointer">
+                <input wire:model="per_unit_tier_enabled" type="checkbox" class="mt-0.5 rounded" />
+                <span class="text-sm text-gray-800">
+                    {{ __('salesman.field.per_unit_tier') }}
+                    <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">
+                        {{ __('salesman.field.per_unit_tier_hint') }}
+                    </span>
+                </span>
+            </label>
+        </div>
+        @endif
         @endif
         <div>
             <label class="label-base">{{ __('common.memo') }}</label>

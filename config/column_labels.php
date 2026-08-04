@@ -174,6 +174,17 @@ return [
     ],
 
     // ─── buyers / consignees ────────────────────────────────────────────
+    'salesmen' => [
+        'name' => '영업담당자명',
+        'type' => '정산 분류',
+        'per_unit_tier_enabled' => '차등 정산(tier) 적용',
+        'is_active' => '활성 상태',
+        'phone' => '전화번호',
+        'email' => '이메일',
+        'initials' => '이니셜',
+        'memo' => '메모',
+    ],
+
     'buyers' => [
         'name' => '바이어명',
         'country_id' => '국가',
@@ -184,6 +195,9 @@ return [
         'address' => '주소',
         'memo' => '메모',
         'is_active' => '활성 상태',
+        'is_inherited' => '승계받은 바이어',
+        'inherited_from_salesman_id' => '승계 전 담당자',
+        'inherited_at' => '승계일',
     ],
 
     'consignees' => [

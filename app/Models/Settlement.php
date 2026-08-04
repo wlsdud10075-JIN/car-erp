@@ -407,6 +407,8 @@ class Settlement extends Model
 
     public const EMPLOYEE_AMOUNT_HIGH = 200_000;        // 사내직원 건당(총마진 기준 이상) 20만원
 
+    public const EMPLOYEE_INHERITED_AMOUNT = 50_000;    // 사내직원 건당 — 퇴사자 승계 바이어 건 (jin 2026-08-04)
+
     public const VAT_MARGIN_RATE = 9;                   // 부가세마진율 % — 구입금액 × 9% (엑셀 CG). 2026-07-12 파라미터화
 
     public const TOTAL_MARGIN_VAT_DEDUCT = 10;          // 총마진 부가세 차감율 % — 총마진 × (100−10)/100 = ×0.9 (엑셀 CH)
@@ -420,12 +422,16 @@ class Settlement extends Model
         'settlement_employee_margin_threshold' => self::EMPLOYEE_MARGIN_THRESHOLD,
         'settlement_employee_amount_low' => self::EMPLOYEE_PER_UNIT_DEFAULT,
         'settlement_employee_amount_high' => self::EMPLOYEE_AMOUNT_HIGH,
+        'settlement_employee_inherited_amount' => self::EMPLOYEE_INHERITED_AMOUNT,
         'settlement_vat_margin_rate' => self::VAT_MARGIN_RATE,
         'settlement_total_margin_vat_deduct' => self::TOTAL_MARGIN_VAT_DEDUCT,
     ];
 
     /** @var array<string,int> 요청 단위 메모 (정산 목록에서 per-row Setting 쿼리 폭주 방지) */
     private static array $paramMemo = [];
+
+    /** @var array<int,bool> 요청 단위 메모 — 바이어 승계 여부 (정산 목록 per-row 쿼리 방지) */
+    private static array $inheritedBuyerMemo = [];
 
     /** 정산 파라미터 읽기 — Setting override 있으면 그 값, 없으면 기본 상수. 요청 단위 캐시. */
     public static function param(string $key): int
@@ -441,6 +447,7 @@ class Settlement extends Model
     public static function flushParamMemo(): void
     {
         self::$paramMemo = [];
+        self::$inheritedBuyerMemo = [];
     }
 
     /**
@@ -464,28 +471,68 @@ class Settlement extends Model
         // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
         return self::employeePerUnitTier(
             $this->total_margin,
-            (int) ($this->vehicle->purchase_price ?? 0) + (int) ($this->vehicle->selling_fee ?? 0)
+            (int) ($this->vehicle->purchase_price ?? 0) + (int) ($this->vehicle->selling_fee ?? 0),
+            (bool) ($this->salesman?->per_unit_tier_enabled),
+            $this->isInheritedBuyerDeal(),
         );
     }
 
     /**
-     * 사내직원(per_unit) 차등 정산액 — 2026-06-22 jin 확정 (엑셀 CF).
+     * 이 정산의 차량이 **승계 바이어** 건인가 (jin 2026-08-04).
      *
-     *   매입합계(구입금액+매도비) ≥ 1억 → 총마진 × 25%   (1억 트리거 최우선, 단 음수면 0 바닥 — jin 2026-06-22)
-     *   총마진 < 0                       → 0
+     * ⚠️ 판매 바이어(`vehicle.buyer_id`)만 본다 — 정산은 판매 건에 대한 것이라
+     *    통관(`export_buyer_id`)·B/L(`bl_buyer_id`) 당사자와는 무관하다.
+     * ⚠️ `Buyer` 는 SoftDeletes 라 바이어가 삭제되면 관계가 null → 조용히 5만원이 아닌
+     *    10만원/tier 로 떨어진다. 그래서 withTrashed 로 읽는다(값이 조용히 틀리는 부류 방지).
+     */
+    public function isInheritedBuyerDeal(): bool
+    {
+        $buyerId = $this->vehicle?->buyer_id;
+        if (! $buyerId) {
+            return false;
+        }
+        // 정산 목록이 행마다 부르므로 요청 단위 메모 (바이어 종류는 적어 쿼리가 종류 수로 수렴).
+        if (! array_key_exists($buyerId, self::$inheritedBuyerMemo)) {
+            self::$inheritedBuyerMemo[$buyerId] = (bool) Buyer::withTrashed()->whereKey($buyerId)->value('is_inherited');
+        }
+
+        return self::$inheritedBuyerMemo[$buyerId];
+    }
+
+    /**
+     * 사내직원(per_unit) 차등 정산액 — 2026-06-22 jin 확정 (엑셀 CF) + 2026-08-04 담당자별 on/off·승계.
+     *
+     * 우선순위 (위에서부터 첫 매칭):
+     *   총마진 < 0                       → 0               (손해차량은 승계·tier 무관하게 0 — jin 2026-08-04)
+     *   승계 바이어 건                   → 50,000          (신규 개척 아님. tier·1억보다 우선, 영구)
+     *   tier 미적용 담당자               → 100,000         (특정 인원 한정 규칙 — 나머지는 고정)
+     *   매입합계(구입금액+매도비) ≥ 1억  → 총마진 × 25%
      *   총마진 < 100만                   → 100,000
-     *   그 외(총마진 ≥ 100만)            → 200,000        (상한 없음, 100만 정확히=20만)
+     *   그 외(총마진 ≥ 100만)            → 200,000         (상한 없음, 100만 정확히=20만)
      *
      * 엑셀 CF = IF(BX>=1억, CD*0.25, IF(CD<0,0, IF(CD<100만,10만, 20만))). BX=매입합계(R열=구입금액+매도비, jin 2026-07-07).
      * 우리 보정: 1억+ 손해차량은 0 바닥(jin), CD≥1000만(엑셀 else 누락)은 20만.
+     *
+     * ⚠️ 음수 바닥을 맨 위로 올렸지만 동작은 종전과 같다 — 종전 1억 분기의 `max(0, …)` 가 같은 일을 했다.
+     *    기본 인자(tier ON·승계 아님)로 부르면 2026-06-22 공식 그대로다(기존 호출·테스트 하위호환).
      */
-    public static function employeePerUnitTier(int $totalMargin, int $purchaseTotal): int
-    {
-        if ($purchaseTotal >= self::param('settlement_employee_high_threshold')) {
-            return max(0, (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100));
-        }
+    public static function employeePerUnitTier(
+        int $totalMargin,
+        int $purchaseTotal,
+        bool $tierEnabled = true,
+        bool $inheritedBuyer = false,
+    ): int {
         if ($totalMargin < 0) {
             return 0;
+        }
+        if ($inheritedBuyer) {
+            return self::param('settlement_employee_inherited_amount');
+        }
+        if (! $tierEnabled) {
+            return self::param('settlement_employee_amount_low');
+        }
+        if ($purchaseTotal >= self::param('settlement_employee_high_threshold')) {
+            return max(0, (int) ($totalMargin * self::param('settlement_employee_high_rate') / 100));
         }
         if ($totalMargin < self::param('settlement_employee_margin_threshold')) {
             return self::param('settlement_employee_amount_low');
