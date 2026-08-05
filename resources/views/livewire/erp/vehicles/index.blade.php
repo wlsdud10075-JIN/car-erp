@@ -95,9 +95,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $current = array_values(array_unique(array_map('intval', $this->shipDocIds)));
 
-        $this->shipDocIds = array_diff($pageIds, $current) === []
+        $next = array_diff($pageIds, $current) === []
             ? array_values(array_diff($current, $pageIds))
             : array_values(array_unique(array_merge($current, $pageIds)));
+
+        // ⚠️ 반드시 **문자열**로 되돌려 저장한다. 행 체크박스는 wire:model.live + value="{id}" 라
+        //    브라우저가 문자열을 담고, JS 비교는 엄격해서 [12] 에는 "12" 가 안 걸린다
+        //    → 전체선택 뒤 행 체크박스가 안 눌린 것처럼 보이고, 다시 누르면 같은 차량이
+        //    12 와 "12" 두 벌로 쌓여 선택 수가 부푼다(jin 2026-08-05 제보). 비교는 정수, 저장은 문자열.
+        $this->shipDocIds = array_map('strval', $next);
 
         unset($this->selectedShipVehicles);
     }
@@ -281,10 +287,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function removeFromAccumulation(int $id): void
     {
-        $this->shipDocIds = array_values(array_filter(
+        // 저장은 문자열 — 행 체크박스(wire:model.live + value="{id}")와 타입이 어긋나면
+        // 남은 차량이 안 눌린 것처럼 보이고, 다시 누를 때 두 벌로 쌓인다(toggleAllShipDocs 와 동일 규칙).
+        $this->shipDocIds = array_map('strval', array_values(array_filter(
             array_map('intval', $this->shipDocIds),
             fn ($x) => $x !== $id
-        ));
+        )));
         unset($this->selectedShipVehicles);
     }
 

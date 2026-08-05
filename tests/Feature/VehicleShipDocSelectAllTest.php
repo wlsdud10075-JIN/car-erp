@@ -87,4 +87,53 @@ class VehicleShipDocSelectAllTest extends TestCase
 
         $this->assertSame([], array_map('intval', $c->get('shipDocIds')));
     }
+
+    /**
+     * 선택값은 **문자열**로 저장돼야 한다 (jin 2026-08-05 제보 회귀).
+     * 행 체크박스는 wire:model.live + value="{id}" 라 브라우저가 문자열을 담고 JS 비교는 엄격하다.
+     * 헤더 토글이 정수를 넣으면 [12] 에 "12" 가 안 걸려 체크 표시가 어긋나고,
+     * 사용자가 다시 누르면 같은 차량이 12 와 "12" 두 벌로 쌓여 선택 수가 부푼다.
+     */
+    public function test_selection_is_stored_as_strings(): void
+    {
+        $this->actingAs($this->admin());
+        $this->vehicle('88가8888');
+
+        $c = Volt::test('erp.vehicles.index')->call('toggleAllShipDocs');
+
+        $this->assertNotSame([], $c->get('shipDocIds'));
+        foreach ($c->get('shipDocIds') as $id) {
+            $this->assertIsString($id, '정수로 저장되면 행 체크박스가 안 눌린 것처럼 보인다');
+        }
+    }
+
+    /** 개별 체크(문자열) ↔ 헤더 토글을 섞어도 같은 차량이 두 벌로 쌓이지 않는다. */
+    public function test_no_duplicate_when_row_checkbox_and_header_toggle_mix(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->vehicle('99가9999');
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $v->id])   // 사용자가 행에서 직접 체크한 상태
+            ->call('toggleAllShipDocs');             // 이미 전부 선택 → 해제로 동작
+
+        $this->assertSame([], $c->get('shipDocIds'));
+
+        $c->call('toggleAllShipDocs');               // 다시 전체선택
+        $this->assertCount(1, $c->get('shipDocIds'), '같은 차량이 두 벌로 쌓였다');
+    }
+
+    /** 칩의 X(누적 제거)도 남은 선택을 문자열로 유지해야 한다 — 같은 타입 혼재 버그. */
+    public function test_remove_from_accumulation_keeps_string_type(): void
+    {
+        $this->actingAs($this->admin());
+        $a = $this->vehicle('12가1212');
+        $b = $this->vehicle('34가3434');
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $a->id, (string) $b->id])
+            ->call('removeFromAccumulation', $a->id);
+
+        $this->assertSame([(string) $b->id], $c->get('shipDocIds'));
+    }
 }
