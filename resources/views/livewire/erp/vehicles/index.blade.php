@@ -5490,7 +5490,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endphp
                 <th class="w-6 pb-2 pr-2 font-medium">
                     @if($pageExportIds !== [])
+                        {{-- wire:key 에 상태를 넣어 morph 가 엘리먼트를 교체하게 한다 —
+                             checked 는 DOM property 라 attribute 만 바뀌면 화면에 반영되지 않는다
+                             ("해제됐는데 다시 누르면 전체선택으로 동작", jin 2026-08-05). --}}
                         <input type="checkbox" wire:click="toggleAllShipDocs" @checked($allPageSelected)
+                               wire:key="shipcb-all-{{ $allPageSelected ? 'on' : 'off' }}"
                                class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_all') }}" />
                     @endif
                 </th>
@@ -5540,7 +5544,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $unpaidRatio = $v->unpaid_ratio;
                 $unpaidAmount = $v->sale_unpaid_amount;
             @endphp
-            <tr class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
+            {{-- wire:key 필수 (jin 2026-08-05) — 없으면 morph 가 행을 순서로만 매칭해서
+                 체크박스 checked 가 엉뚱한 행에 남는다("선택해제했는데 체크가 그대로"). --}}
+            <tr wire:key="vrow-{{ $v->id }}"
+                class="cursor-pointer transition {{ $unpaidRatio === null ? 'hover:bg-gray-50' : '' }}"
                 wire:click="openEdit({{ $v->id }})"
                 @if($unpaidRatio !== null)
                     data-ratio="{{ number_format($unpaidRatio, 6, '.', '') }}"
@@ -5723,7 +5730,7 @@ function vehicleColumnsToggle() {
             default                                            => 'badge-gray',
         };
     @endphp
-    <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $v->id }})">
+    <div wire:key="vcard-{{ $v->id }}" class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $v->id }})">
         <div class="flex items-center gap-2">
             @if($v->sales_channel === 'export')
                 <input type="checkbox" wire:model.live="shipDocIds" value="{{ $v->id }}" @click.stop
