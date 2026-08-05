@@ -73,7 +73,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhere('container_number', 'like', "%{$term}%")
                 ->orWhere('export_declaration_number', 'like', "%{$term}%")))
             ->orderByDesc($col)
-            ->get(['id', 'forwarding_company_id', 'vehicle_number', 'shipping_date', 'bl_issue_date', 'eta_date',
+            ->get(['id', 'forwarding_company_id', 'vehicle_number', 'nice_reg_vin', 'shipping_date', 'bl_issue_date', 'eta_date',
                 'vessel_name', 'shipping_method', 'container_number', 'export_declaration_number', 'transport_fee', 'currency'])
             ->groupBy('forwarding_company_id');
     }
@@ -669,7 +669,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <tbody class="divide-y divide-gray-50">
                                 @foreach($grp['vehicles'] as $v)
                                 <tr class="hover:bg-gray-50">
-                                    <td class="py-1.5 pr-3 font-medium text-gray-700"><a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a></td>
+                                    <td class="py-1.5 pr-3 font-medium text-gray-700">
+                                        <a href="{{ route('erp.vehicles.index', ['openVehicle' => $v->id]) }}" wire:navigate class="hover:text-violet-700">{{ $v->vehicle_number }}</a>
+                                        {{-- 차대번호 — 번호판은 재발급으로 바뀌므로 포워딩사와 대조할 땐 이쪽이 식별키(jin 2026-08-05) --}}
+                                        @if($v->nice_reg_vin)
+                                            <div class="font-mono text-[10px] font-normal text-gray-400">{{ $v->nice_reg_vin }}</div>
+                                        @endif
+                                    </td>
                                     <td class="py-1.5 pr-3 text-gray-500">{{ $v->$dcol?->format('Y-m-d') ?? '-' }}</td>
                                     <td class="py-1.5 pr-3 text-gray-500">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
                                     <td class="py-1.5 pr-3 text-gray-500">{{ $v->vessel_name ?: '-' }}</td>
