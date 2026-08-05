@@ -276,4 +276,41 @@ class TransfersIndexTest extends TestCase
         // final_payment 페어 그대로 유지 (역 페어 미생성)
         $this->assertEquals(2, FinalPayment::where('transfer_id', $c['transfer']->id)->count());
     }
+
+    /**
+     * 재무 처리 잔금 목록에 차대번호(VIN) 노출 (jin 2026-08-05).
+     * eager load 가 select 를 컬럼 지정으로 걸고 있어 nice_reg_vin 을 빼먹으면
+     * 예외 없이 그냥 안 보인다(조용한 실패) — 그래서 화면 문자열로 검증한다.
+     */
+    public function test_payment_tabs_show_chassis_number(): void
+    {
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $buyer = Buyer::create(['name' => 'VIN BUYER', 'is_active' => true]);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '77가7777',
+            'sales_channel' => 'export',
+            'buyer_id' => $buyer->id,
+            'sale_date' => '2026-08-01',
+            'sale_price' => 10_000_000,
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+            'purchase_price' => 5_000_000,
+            'nice_reg_vin' => 'KMHVINTEST000001',
+        ]);
+        $v->finalPayments()->create(['amount' => 1_000_000, 'type' => 'balance', 'payment_date' => '2026-08-02']);
+        $v->purchaseBalancePayments()->create(['amount' => 2_000_000, 'type' => 'balance', 'payment_date' => '2026-08-02']);
+
+        $this->actingAs($finance);
+
+        Volt::test('erp.transfers.index')
+            ->set('tabType', 'sale_payment')
+            ->assertSee('77가7777')
+            ->assertSee('KMHVINTEST000001');
+
+        Volt::test('erp.transfers.index')
+            ->set('tabType', 'purchase_payment')
+            ->assertSee('77가7777')
+            ->assertSee('KMHVINTEST000001');
+    }
 }
