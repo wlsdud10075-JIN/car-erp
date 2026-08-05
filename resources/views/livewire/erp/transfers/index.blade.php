@@ -361,7 +361,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->whereDoesntHave('settlements', fn ($q) => $q->where('settlement_status', 'paid'))
             ->orderByDesc('id')
             ->limit(50)
-            ->get(['id', 'vehicle_number', 'purchase_from']);
+            ->get(['id', 'vehicle_number', 'nice_reg_vin', 'purchase_from']);
     }
 
     public function openNewPbpModal(): void
@@ -676,10 +676,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div>
                                 <span class="text-gray-400">{{ __('transfer.col.source') }}</span>
                                 <span class="font-mono text-gray-800">{{ $t->sourceVehicle?->vehicle_number ?? '#'.$t->source_vehicle_id }}</span>
+                                @if($t->sourceVehicle?->nice_reg_vin)
+                                    <span class="font-mono text-[10px] text-gray-400">{{ $t->sourceVehicle->nice_reg_vin }}</span>
+                                @endif
                             </div>
                             <div>
                                 <span class="text-gray-400">{{ __('transfer.col.target') }}</span>
                                 <span class="font-mono text-gray-800">{{ $t->targetVehicle?->vehicle_number ?? '#'.$t->target_vehicle_id }}</span>
+                                @if($t->targetVehicle?->nice_reg_vin)
+                                    <span class="font-mono text-[10px] text-gray-400">{{ $t->targetVehicle->nice_reg_vin }}</span>
+                                @endif
                             </div>
                         </div>
                     </td>
@@ -773,6 +779,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mt-1 text-xs text-gray-600">
                 {{ $t->buyer?->name ?? '#'.$t->buyer_id }} · {{ __('transfer.col.approver') }} {{ $t->approver?->name ?? '-' }}
             </div>
+            {{-- 차대번호 — 좁은 화면이라 출발→도착 줄에 붙이면 넘쳐서 별도 줄로 뺀다(jin 2026-08-05). --}}
+            @if($t->sourceVehicle?->nice_reg_vin || $t->targetVehicle?->nice_reg_vin)
+            <div class="mt-0.5 break-all font-mono text-[10px] text-gray-400">
+                {{ $t->sourceVehicle?->nice_reg_vin ?? '-' }} → {{ $t->targetVehicle?->nice_reg_vin ?? '-' }}
+            </div>
+            @endif
             <div class="mt-1 text-sm font-semibold {{ $isVoid ? 'text-red-600' : 'text-violet-700' }}">
                 {{ number_format($t->amount, 0) }} {{ $t->currency }}
             </div>
@@ -1083,7 +1095,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <select wire:model="newPbpVehicleId" class="input-base">
                     <option value="">{{ __('transfer.new_pbp_modal.vehicle_select') }}</option>
                     @foreach($this->purchaseEligibleVehicles as $v)
-                    <option value="{{ $v->id }}">{{ $v->vehicle_number }} ({{ $v->purchase_from ?: __('transfer.new_pbp_modal.vehicle_unassigned') }})</option>
+                    <option value="{{ $v->id }}">{{ $v->vehicle_number }}{{ $v->nice_reg_vin ? ' · '.$v->nice_reg_vin : '' }} ({{ $v->purchase_from ?: __('transfer.new_pbp_modal.vehicle_unassigned') }})</option>
                     @endforeach
                 </select>
                 @error('newPbpVehicleId') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
