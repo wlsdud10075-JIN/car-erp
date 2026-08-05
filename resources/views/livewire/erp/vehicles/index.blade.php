@@ -79,6 +79,39 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->selectedShipVehicles);
     }
 
+    /**
+     * 표 헤더 전체선택 (jin 2026-08-05) — **이 페이지의 export 차량**만 대상.
+     *   행 체크박스가 export 에만 붙으므로 같은 기준으로 맞춘다(다른 채널을 담으면 서류 발급에서 튕긴다).
+     *   필터 전체가 아니라 현재 페이지인 이유 = shipDocIds 는 검색을 바꿔도 유지되는 누적 셋이라
+     *   수백 건을 한 번에 담으면 되돌리기 어렵고, 서류는 어차피 30대 상한이다.
+     *   이미 이 페이지가 다 선택돼 있으면 해제로 동작(토글). 다른 페이지에서 고른 건 건드리지 않는다.
+     */
+    public function toggleAllShipDocs(): void
+    {
+        $pageIds = $this->pageExportVehicleIds();
+        if ($pageIds === []) {
+            return;
+        }
+
+        $current = array_values(array_unique(array_map('intval', $this->shipDocIds)));
+
+        $this->shipDocIds = array_diff($pageIds, $current) === []
+            ? array_values(array_diff($current, $pageIds))
+            : array_values(array_unique(array_merge($current, $pageIds)));
+
+        unset($this->selectedShipVehicles);
+    }
+
+    /** 현재 페이지에서 체크 가능한(export) 차량 id — 헤더 체크박스 표시·토글 공용 단일출처. */
+    public function pageExportVehicleIds(): array
+    {
+        return $this->vehicles->getCollection()
+            ->where('sales_channel', 'export')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
     // 전자서명 요청 (2026-07-10) — 선택 export 차량(동일 바이어·통화)으로 서명 세션 발급 후 링크 표시(복사→바이어 전달).
     public bool $showSignModal = false;
 
@@ -5441,7 +5474,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 };
             @endphp
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="w-6 pb-2 pr-2 font-medium" title="{{ __('vehicle.shipdoc_select_title') }}"></th>
+                {{-- 전체선택 — 이 페이지의 export 차량만(행 체크박스와 같은 기준). jin 2026-08-05 --}}
+                @php
+                    $pageExportIds = $this->pageExportVehicleIds();
+                    $allPageSelected = $pageExportIds !== []
+                        && array_diff($pageExportIds, array_map('intval', $shipDocIds)) === [];
+                @endphp
+                <th class="w-6 pb-2 pr-2 font-medium">
+                    @if($pageExportIds !== [])
+                        <input type="checkbox" wire:click="toggleAllShipDocs" @checked($allPageSelected)
+                               class="rounded border-gray-300" title="{{ __('vehicle.shipdoc_select_all') }}" />
+                    @endif
+                </th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', __('vehicle.col.brand_model')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('nice_reg_vin', __('vehicle.col.vin')) !!}</th>

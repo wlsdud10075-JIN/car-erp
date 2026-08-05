@@ -111,6 +111,7 @@ return [
     ],
 
     'shipdoc_select_title' => 'Multi-select for shipping docs (export vehicles)',
+    'shipdoc_select_all' => 'Select/clear all export vehicles on this page',
     'selected' => ':count selected',
     'max30' => 'Up to 30 vehicles per document',
     'clear_selection' => 'Clear selection',
