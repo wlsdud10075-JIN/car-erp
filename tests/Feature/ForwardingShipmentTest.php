@@ -82,4 +82,26 @@ class ForwardingShipmentTest extends TestCase
             ->assertSee('USD 1,000')
             ->assertDontSee('7,000');   // 5월 밖 선적 제외
     }
+
+    /**
+     * 포워딩사 펼침(컨테이너/RORO) 안의 차량 행에 차대번호가 보인다 (jin 2026-08-05).
+     * ⚠️ 목록 쿼리가 select 를 컬럼 지정으로 걸고 있어 nice_reg_vin 을 빼먹으면
+     * 예외 없이 그냥 안 보인다 — 화면 문자열로 검증한다.
+     */
+    public function test_shipment_rows_show_chassis_number(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD VIN', 'is_active' => true]);
+        $this->shipVehicle($fc->id, [
+            'vehicle_number' => '19더9065',
+            'nice_reg_vin' => 'KMHFWDVIN0000001',
+            'currency' => 'USD',
+            'transport_fee' => 700,
+        ]);
+
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.forwarding-companies.index')
+            ->assertSee('19더9065')
+            ->assertSee('KMHFWDVIN0000001');
+    }
 }
