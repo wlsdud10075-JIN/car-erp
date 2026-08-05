@@ -11,6 +11,8 @@ return [
     'date_to' => 'To',
     'shipment_count' => ':count shipments',
     'no_fee' => 'No fee',
+    'fee_all_settled' => 'Freight settled',
+    'fee_outstanding_hint' => 'Outstanding freight only — settled groups are excluded.',
     'no_shipment' => 'No shipments in period',
     'col_ship_date' => 'Ship Date',
     'col_eta' => 'ETA',
