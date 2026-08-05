@@ -144,6 +144,17 @@ class User extends Authenticatable
     }
 
     /**
+     * 예치·가수금 열람·기입 (jin 2026-08-05) — 대표가 회사에 넣고 뺀 돈이라 자금 기밀 축.
+     *   super/대표(admin)/업무관리자만. **[관리]·재무 제외.**
+     *   ⚠️ 통장 마감잔액 입력(canEnterCashBalance)과 **분리된 게이트**다 — 그쪽은 매일 치는 운영 업무라
+     *   재무·[관리]도 계속 입력한다. 한 함수로 합치지 말 것(합치면 통장 기입이 같이 막힌다).
+     */
+    public function canAccessDeposits(): bool
+    {
+        return $this->isAdmin() || $this->isManager();
+    }
+
+    /**
      * 자금 손익 열람 권한 (jin 2026-07-23) — 회사 자본·손익 = 대표 기밀.
      *   super/대표(admin)만. 업무관리자·[관리]·재무 제외 (canViewAdminDashboard 와 동일 게이트).
      */

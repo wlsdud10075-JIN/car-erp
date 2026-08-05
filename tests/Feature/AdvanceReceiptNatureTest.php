@@ -26,7 +26,8 @@ class AdvanceReceiptNatureTest extends TestCase
 
     private function finance(): User
     {
-        // canEnterCashBalance = 재무·관리·업무관리자·대표
+        // 예치·가수금 게이트 = canAccessDeposits(대표·업무관리자만, jin 2026-08-05).
+        // ⚠️ 이름은 finance 지만 실제로는 대표(admin) 계정이다 — role '재무' 로 바꾸면 403 이 난다.
         return User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
     }
 

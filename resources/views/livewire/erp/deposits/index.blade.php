@@ -23,7 +23,8 @@ use Livewire\Volt\Component;
  *
  * 🗑️ 담당자(person_name) 칸은 2026-07-31 화면에서 제거했다(jin). 컬럼은 기존 데이터 보존을 위해 남겨둠.
  *
- * 권한 = canEnterCashBalance(재무·관리·업무관리자·대표) — 통장 마감잔액 입력과 같은 축.
+ * 권한 = canAccessDeposits(대표·업무관리자 = 「업무관리자 이상」, jin 2026-08-05). [관리]·재무는 못 본다.
+ *   구 canEnterCashBalance(재무·관리 포함)에서 분리 — 통장 마감잔액 입력은 그쪽 게이트로 종전대로 열려 있다.
  * 2단계(자금현황 반영)·3단계(월보고)는 별도.
  */
 new #[Layout('components.layouts.app')] class extends Component
@@ -39,7 +40,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(): void
     {
-        abort_unless(auth()->user()?->canEnterCashBalance(), 403);
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
         $this->date = now()->format('Y-m-d');
     }
 
@@ -82,7 +83,7 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 기존 행의 성격 변경 — 분류를 나중에 정하므로 목록에서 바로 바꿀 수 있어야 한다. */
     public function setNature(int $id, string $nature): void
     {
-        abort_unless(auth()->user()?->canEnterCashBalance(), 403);
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
         abort_unless(array_key_exists($nature, AdvanceReceipt::NATURES), 422);
 
         AdvanceReceipt::findOrFail($id)->update(['nature' => $nature]);
@@ -92,7 +93,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function add(): void
     {
-        abort_unless(auth()->user()?->canEnterCashBalance(), 403);
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
 
         $amount = (float) str_replace(',', '', $this->amount);
         $this->validate([
@@ -138,7 +139,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function remove(int $id): void
     {
-        abort_unless(auth()->user()?->canEnterCashBalance(), 403);
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
 
         if ($this->tab === 'auction') {
             AuctionDeposit::findOrFail($id)->delete();
