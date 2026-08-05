@@ -779,7 +779,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private const SORTABLE_COLUMNS = [
         'vehicle_number', 'brand', 'progress_status_cache',
         'purchase_date', 'sale_date', 'shipping_date', 'bl_issue_date',
-        'salesman_id', 'sale_price', 'purchase_price', 'transport_fee',
+        'salesman_id', 'sale_price', 'purchase_price', 'transport_fee', 'transport_fee_usd',
         'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'consignee_id', 'created_at',
     ];
 
@@ -5521,6 +5521,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee_usd']">{!! $sortBtn('transport_fee_usd', __('vehicle.col.transport_fee_usd'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>
                 <th class="pb-2 font-medium"></th>
@@ -5626,6 +5627,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
                     @if($v->transport_fee > 0){{ number_format($v->transport_fee) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>@else -@endif
                 </td>
+                {{-- 운임비(USD) — 기록칸(계산 미포함). 판매통화 운임비와 헷갈리지 않게 USD 를 붙여 찍는다. --}}
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee_usd']">
+                    @if($v->transport_fee_usd > 0){{ number_format($v->transport_fee_usd) }} <span class="text-xs text-gray-400">USD</span>@else -@endif
+                </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
                     @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
                 </td>
@@ -5661,7 +5666,7 @@ function vehicleColumnsToggle() {
     const STORAGE_KEY = 'car_erp_vehicles_columns_v3';   // v3: 기본=브랜드/차종·매입일·말소일·판매총액 (jin 2026-07-07)
     const defaultVisible = {
         brand_model: true, purchase_date: true, deregistration_date: true, sale_total: true,
-        transport_fee: true, purchase_from: false,
+        transport_fee: true, transport_fee_usd: false, purchase_from: false,
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
         export_declaration_number: false, container_number: false, bl_number: false,
@@ -5693,6 +5698,7 @@ function vehicleColumnsToggle() {
             { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
             { key: 'sale_total',     label: @json(__('vehicle.col.sale_total')) },
             { key: 'transport_fee',  label: @json(__('vehicle.col.transport_fee')) },
+            { key: 'transport_fee_usd', label: @json(__('vehicle.col.transport_fee_usd')) },
             { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
             { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
         ],
