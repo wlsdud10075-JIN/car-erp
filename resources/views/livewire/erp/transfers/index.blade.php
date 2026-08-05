@@ -157,7 +157,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function salePayments()
     {
         return FinalPayment::query()
-            ->with(['vehicle:id,vehicle_number,buyer_id', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
+            ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
             ->whereHas('vehicle')
             ->whereNull('transfer_id')
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
@@ -180,7 +180,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function purchasePayments()
     {
         return PurchaseBalancePayment::query()
-            ->with(['vehicle:id,vehicle_number,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
+            ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
             ->whereHas('vehicle')
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
             ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
@@ -842,7 +842,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @forelse($payments as $p)
                 @php $isAwaiting = $p->confirmed_at === null; @endphp
                 <tr class="border-b border-gray-100 hover:bg-gray-50">
-                    <td class="py-3 pr-4 font-mono text-xs text-gray-800">{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</td>
+                    <td class="py-3 pr-4 font-mono text-xs text-gray-800">
+                        <div>{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</div>
+                        {{-- 차대번호(VIN) — 번호판은 재발급으로 바뀌므로 재무가 지급 대상을 확정할 때 실제 식별키(jin 2026-08-05) --}}
+                        @if($p->vehicle?->nice_reg_vin)
+                            <div class="text-[10px] font-normal text-gray-400">{{ $p->vehicle->nice_reg_vin }}</div>
+                        @endif
+                    </td>
                     <td class="py-3 pr-4 text-xs text-gray-700">
                         @if($isSale)
                             {{ $p->vehicle?->buyer?->name ?? '-' }}
@@ -890,7 +896,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         @php $isAwaiting = $p->confirmed_at === null; @endphp
         <div class="card-tight">
             <div class="flex items-center justify-between">
-                <div class="font-mono text-xs text-gray-800">{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</div>
+                <div class="font-mono text-xs text-gray-800">
+                    {{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}
+                    @if($p->vehicle?->nice_reg_vin)
+                        <span class="ml-1 text-[10px] font-normal text-gray-400">{{ $p->vehicle->nice_reg_vin }}</span>
+                    @endif
+                </div>
                 <span class="badge {{ $isAwaiting ? 'badge-amber' : 'badge-green' }}">{{ $isAwaiting ? __('transfer.pending') : __('transfer.confirmed') }}</span>
             </div>
             <div class="mt-1 text-xs text-gray-600">
