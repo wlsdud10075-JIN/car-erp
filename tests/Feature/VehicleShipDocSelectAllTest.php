@@ -136,4 +136,35 @@ class VehicleShipDocSelectAllTest extends TestCase
 
         $this->assertSame([(string) $b->id], $c->get('shipDocIds'));
     }
+
+    /** 「선택 해제」 후에는 헤더가 다시 "추가" 로 동작해야 한다(해제로 동작하면 눌러도 아무 일이 없다). */
+    public function test_clear_selection_then_select_all_adds_again(): void
+    {
+        $this->actingAs($this->admin());
+        $this->vehicle('10가1010');
+
+        $c = Volt::test('erp.vehicles.index')->call('toggleAllShipDocs');
+        $this->assertCount(1, $c->get('shipDocIds'));
+
+        $c->call('clearShipDocSelection');
+        $this->assertSame([], $c->get('shipDocIds'));
+
+        $c->call('toggleAllShipDocs');
+        $this->assertCount(1, $c->get('shipDocIds'), '선택 해제 뒤 전체선택이 다시 동작하지 않는다');
+    }
+
+    /**
+     * 🔒 morph 가드 (jin 2026-08-05 제보) — 체크박스 checked 는 DOM property 라
+     * Livewire morph 가 attribute 만 바꾸면 화면에 반영되지 않는다. 반복 행에 wire:key 가 없으면
+     * morph 가 행을 순서로만 매칭해 "선택 해제했는데 체크가 그대로 남는" 현상이 난다.
+     * **이 부류는 기능 테스트로 원리상 못 잡는다**(서버 상태는 정상이고 화면만 어긋남) → 정적 검사.
+     */
+    public function test_list_rows_and_header_checkbox_have_wire_keys(): void
+    {
+        $blade = file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php'));
+
+        $this->assertStringContainsString('wire:key="vrow-', $blade, '표 행에 wire:key 가 없다');
+        $this->assertStringContainsString('wire:key="vcard-', $blade, '모바일 카드에 wire:key 가 없다');
+        $this->assertStringContainsString('wire:key="shipcb-all-', $blade, '헤더 전체선택 체크박스에 상태 wire:key 가 없다');
+    }
 }
