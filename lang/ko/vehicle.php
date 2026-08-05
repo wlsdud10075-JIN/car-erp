@@ -111,6 +111,7 @@ return [
     ],
 
     'shipdoc_select_title' => '선적 서류 다중 선택 (수출 차량)',
+    'shipdoc_select_all' => '이 페이지의 수출 차량 전체 선택/해제',
     'selected' => ':count대 선택',
     'max30' => '최대 30대까지 발급 가능',
     'clear_selection' => '선택 해제',
