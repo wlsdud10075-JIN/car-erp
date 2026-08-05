@@ -12,6 +12,7 @@ use Tests\TestCase;
 
 /**
  * 예치·가수금 (jin 2026-07-27, 안건4 1단계) — 가수금 + 경매보증금 2탭.
+ * 권한 = canAccessDeposits(대표·업무관리자만, jin 2026-08-05). [관리]·재무 차단.
  * 회수/반제 = 행 삭제(softDelete) → 목록 합계 = 현재 잔액.
  */
 class DepositsTabTest extends TestCase
@@ -27,9 +28,9 @@ class DepositsTabTest extends TestCase
         ]);
     }
 
-    public function test_finance_role_can_add_advance_receipt(): void
+    public function test_manager_can_add_advance_receipt(): void
     {
-        $this->actingAs($this->user('재무'));
+        $this->actingAs($this->user('관리', 'manager'));
 
         // 담당자(person) 칸은 2026-07-31 제거, 대신 성격(nature)을 받는다.
         Volt::test('erp.deposits.index')
@@ -47,7 +48,7 @@ class DepositsTabTest extends TestCase
 
     public function test_auction_tab_saves_to_auction_deposits(): void
     {
-        $this->actingAs($this->user('재무'));
+        $this->actingAs($this->user('관리', 'manager'));
 
         Volt::test('erp.deposits.index')
             ->call('setTab', 'auction')
@@ -64,7 +65,7 @@ class DepositsTabTest extends TestCase
     /** 회수하면 행을 지운다 → 목록 합계가 곧 현재 잔액. 단 softDelete 라 DB 에는 남는다. */
     public function test_remove_soft_deletes_and_drops_from_total(): void
     {
-        $this->actingAs($this->user('재무'));
+        $this->actingAs($this->user('관리', 'manager'));
         $keep = AuctionDeposit::create(['deposited_date' => '2026-07-01', 'auction_house' => 'A', 'amount' => 5000000]);
         $gone = AuctionDeposit::create(['deposited_date' => '2026-07-02', 'auction_house' => 'B', 'amount' => 3000000]);
 
@@ -81,7 +82,7 @@ class DepositsTabTest extends TestCase
 
     public function test_amount_must_be_positive(): void
     {
-        $this->actingAs($this->user('재무'));
+        $this->actingAs($this->user('관리', 'manager'));
 
         Volt::test('erp.deposits.index')
             ->set('date', '2026-07-10')
@@ -100,17 +101,40 @@ class DepositsTabTest extends TestCase
         $this->get('/erp/deposits')->assertStatus(403);
     }
 
-    /** 관리·업무관리자·대표도 접근 가능(canEnterCashBalance = 통장잔액 입력과 같은 축). */
-    public function test_management_and_admin_can_open(): void
+    /** 업무관리자·대표(admin)·super 만 접근 (canAccessDeposits, jin 2026-08-05). */
+    public function test_manager_and_admin_can_open(): void
     {
-        foreach ([['관리', 'user'], ['관리', 'admin']] as [$role, $permission]) {
+        foreach ([['관리', 'manager'], ['관리', 'admin'], ['관리', 'super']] as [$role, $permission]) {
             $this->actingAs($this->user($role, $permission));
             $this->get('/erp/deposits')->assertOk();
         }
     }
 
+    /**
+     * ⚠️ 정책 변경 (jin 2026-08-05) — 예치·가수금은 **[관리]·재무도 못 본다.**
+     * 대표가 회사에 넣고 뺀 돈이라 자금 기밀 축으로 올렸다.
+     * 통장 마감잔액 입력(canEnterCashBalance)은 별개 게이트로 두 role 모두 종전대로 가능 —
+     * 여기를 canEnterCashBalance 로 되돌리면 그 분리가 무너진다.
+     */
+    public function test_management_and_finance_roles_blocked(): void
+    {
+        foreach (['관리', '재무'] as $role) {
+            $this->actingAs($this->user($role));
+            $this->get('/erp/deposits')->assertStatus(403);
+        }
+    }
+
+    /** 분리 증명 — 예치는 막혀도 통장 마감잔액 입력 권한은 재무·[관리]에 그대로 남아야 한다. */
+    public function test_cash_balance_entry_still_allowed_for_finance_and_management(): void
+    {
+        foreach (['관리', '재무'] as $role) {
+            $this->assertTrue($this->user($role)->canEnterCashBalance(), "{$role} 의 통장잔액 입력이 같이 막혔다");
+            $this->assertFalse($this->user($role)->canAccessDeposits());
+        }
+    }
+
     /*
-     * ⚠️ add()·remove() 에도 abort_unless(canEnterCashBalance) 가 들어 있다(SKILLS §8 #26 —
+     * ⚠️ add()·remove() 에도 abort_unless(canAccessDeposits) 가 들어 있다(SKILLS §8 #26 —
      *    mount 1회 인가에만 의존하면 IDOR). 다만 그 재인가를 테스트로 재현하려면 컴포넌트를 연 뒤
      *    계정을 바꿔야 하는데, Livewire 테스트는 세션 중간 계정 전환 시 스냅샷이 깨져 검증이 불가능하다.
      *    (영업으로는 mount 에서 막혀 컴포넌트 자체가 안 열린다 = test_sales_role_cannot_open 이 커버.)
