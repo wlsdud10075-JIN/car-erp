@@ -133,6 +133,21 @@ class VehicleExportTest extends TestCase
         $this->assertStringContainsString('500', $flat);
     }
 
+    /** 운임비(USD) — 판매탭 기록칸(jin 2026-08-05). 판매통화 '운임비'와 별개 열로 나간다. */
+    public function test_export_includes_transport_fee_usd(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->vehicle();
+        $v->update(['transport_fee_usd' => 1250]);
+
+        $res = $this->actingAs($admin)
+            ->get(route('erp.vehicles.export', ['cols' => 'vehicle_number,transport_fee_usd']))->assertOk();
+        ['flat' => $flat] = $this->loadCells($res->streamedContent());
+
+        $this->assertStringContainsString('운임비(USD)', $flat);
+        $this->assertStringContainsString('1250', $flat);
+    }
+
     /** 알 수 없는 컬럼 key 는 화이트리스트 교집합에서 제외(클라이언트 우회 차단) */
     public function test_export_ignores_unknown_columns(): void
     {

@@ -739,7 +739,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         'vehicle_number', 'brand', 'progress_status_cache',
         'purchase_date', 'sale_date', 'shipping_date', 'bl_issue_date',
         'salesman_id', 'sale_price', 'purchase_price', 'transport_fee',
-        'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'created_at',
+        'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'consignee_id', 'created_at',
     ];
 
     public function setSort(string $col): void
@@ -885,6 +885,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cost_repair_str    = '';
     public string $cost_advertising_str = '';
     public string $parts_amount_str   = '';     // karaba 부품(기록만·미추적)
+    public string $transport_fee_usd_str = '';  // 운임비 USD 기록칸(순수 메모 — 계산 미포함)
     public string $purchase_vat_amount_str = ''; // karaba 매입세액VAT (Phase 3 정산용, 수기)
     public string $down_payment_str        = '';
     public string $selling_fee_payment_str = '';
@@ -1682,7 +1683,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return $this->filteredVehicleQuery()
-            ->with(['buyer', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+            ->with(['buyer', 'consignee', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->orderBy($this->sortColumn, $this->sortDirection)
             ->paginate($this->perPage);
     }
@@ -2775,6 +2776,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cost_repair_str      = $v->cost_repair      ? number_format($v->cost_repair)      : '';
         $this->cost_advertising_str = $v->cost_advertising ? number_format($v->cost_advertising) : '';
         $this->parts_amount_str     = $v->parts_amount     ? number_format($v->parts_amount)     : '';
+        $this->transport_fee_usd_str = $v->transport_fee_usd ? number_format($v->transport_fee_usd) : '';
         $this->purchase_vat_amount_str = $v->purchase_vat_amount !== null ? number_format($v->purchase_vat_amount) : '';
         // 22-C-E (2026-05-20) — 2 _str = type별 confirmed PBP 합산 (down/selling_fee).
         $confirmedPbp = $v->purchaseBalancePayments->whereNotNull('confirmed_at');
@@ -3349,7 +3351,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str', 'purchase_vat_amount_str',
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
-            'commission_str', 'transport_fee_str', 'auto_loading_str',
+            'commission_str', 'transport_fee_str', 'transport_fee_usd_str', 'auto_loading_str',
             'sale_other_costs_str', 'savings_used_str',
             // 22-A-3a 사용자 정정 — 4 _str 복귀 (재무·관리자 입력)
             'deposit_down_payment_str', 'interim_payment_str',
@@ -3873,6 +3875,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'tax_dc'           => $toFloat($this->tax_dc_str),
             'commission'       => $toFloat($this->commission_str),
             'transport_fee'    => $toFloat($this->transport_fee_str),
+            // 운임비 USD — 기록 전용. 총판매가·미수·정산 어디에도 안 들어간다(jin 2026-08-05).
+            'transport_fee_usd' => $this->transport_fee_usd_str !== '' ? $toInt($this->transport_fee_usd_str) : null,
             'auto_loading'     => $toFloat($this->auto_loading_str),
             'sale_other_costs' => $toFloat($this->sale_other_costs_str),
             // 큐 22-A-3 — 4컬럼 save 라인 제거. final_payments rows 로 통합.
@@ -5038,7 +5042,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_inspection_str','cost_performance_str','cost_repair_str','cost_advertising_str','parts_amount_str','purchase_vat_amount_str',
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
-            'sale_price_str','tax_dc_str','commission_str','transport_fee_str','auto_loading_str',
+            'sale_price_str','tax_dc_str','commission_str','transport_fee_str','transport_fee_usd_str','auto_loading_str',
             'sale_other_costs_str','savings_used_str','savings_deposit_str',
             'deposit_down_payment_str','interim_payment_str','advance_payment1_str','fee_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
@@ -5454,6 +5458,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee_id', __('vehicle.col.consignee')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
@@ -5536,6 +5541,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->consignee?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>
                 <td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
                     {{ $v->currency }}
@@ -5602,7 +5608,7 @@ function vehicleColumnsToggle() {
         export_declaration_number: false, container_number: false, bl_number: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
-        buyer: false, sales_channel: false,
+        buyer: false, consignee: false, sales_channel: false,
     };
     return {
         open: false,
@@ -5621,6 +5627,7 @@ function vehicleColumnsToggle() {
             { key: 'bl_number',                 label: @json(__('vehicle.col.bl_number')) },
             { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },
             { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
+            { key: 'consignee',      label: @json(__('vehicle.col.consignee')) },
             { key: 'sales_channel',  label: @json(__('vehicle.col.channel')) },
             { key: 'currency_rate',  label: @json(__('vehicle.col.currency_rate')) },
             { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
@@ -6739,6 +6746,14 @@ function vehicleColumnsToggle() {
                     @else
                         <div class="input-base bg-purple-50 font-medium text-purple-800">{{ $currency }} {{ number_format($panelSaleTotal) }}</div>
                     @endif
+                </div>
+                {{-- 운임비(USD) — 순수 기록칸. 총판매가·미수·정산 어디에도 미포함(jin 2026-08-05).
+                     판매통화 기준 운임비는 위 '운임비'(transport_fee) 로 별개. --}}
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.transport_fee_usd') }}
+                        <span class="text-[10px] text-gray-400">{{ __('vehicle.field.transport_fee_usd_hint') }}</span>
+                    </label>
+                    <input wire:model="transport_fee_usd_str" type="text" data-money class="input-base" placeholder="0" />
                 </div>
             </div>
 

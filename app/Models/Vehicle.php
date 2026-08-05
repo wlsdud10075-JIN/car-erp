@@ -84,6 +84,7 @@ class Vehicle extends Model
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',   // karaba 비용 4개 (Phase 2, 2026-07-22)
         'parts_amount',   // karaba 부품 기록(미추적 — 미수·정산·매출 제외)
+        'transport_fee_usd',   // 운임비 USD 기록칸(순수 메모 — 어떤 계산에도 미포함, jin 2026-08-05)
         'purchase_vat_amount',   // karaba 매입세액VAT (Phase 3 — 이익율 정산 영업이익 계산)
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
         // 2컬럼은 purchase_balance_payments.type enum (down/selling_fee) 로 통합.

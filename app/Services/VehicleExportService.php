@@ -72,6 +72,9 @@ class VehicleExportService
             'auto_loading' => ['Auto Loading', 'num', fn (Vehicle $v) => $v->auto_loading, '판매'],
             'tax_dc' => ['TAX/D.C', 'num', fn (Vehicle $v) => $v->tax_dc, '판매'],
             'transport_fee' => ['운임비', 'num', fn (Vehicle $v) => $v->transport_fee, '판매'],
+            // 운임비(USD) — 판매탭 기록칸(jin 2026-08-05). 위 '운임비'(판매통화, 판매총액·미수에 반영)와 달리
+            //   어떤 계산에도 안 들어가는 참고값이라 판매총액과 안 맞아도 정상이다.
+            'transport_fee_usd' => ['운임비(USD)', 'num', fn (Vehicle $v) => $v->transport_fee_usd, '판매'],
             'sale_total_amount' => ['판매총액', 'num', fn (Vehicle $v) => $v->sale_total_amount, '판매'],     // accessor
             'sale_unpaid_amount' => ['미입금액', 'num', fn (Vehicle $v) => $v->sale_unpaid_amount, '판매'],   // accessor
             // 적립금 사용 (jin 2026-07-29) — 이 차량 잔금을 바이어 크레딧으로 결제한 금액(판매통화 기준).
