@@ -82,6 +82,7 @@ return [
         'sale_price' => 'Sell Price',
         'sale_total' => 'Sell Total',
         'transport_fee' => 'Freight',
+        'transport_fee_usd' => 'Freight (USD)',
         'unpaid_amount' => 'Outstanding',
         'unpaid_ratio' => 'Paid %',
         'unpaid_purchase' => 'Purchase unpaid',
