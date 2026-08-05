@@ -503,16 +503,25 @@ new #[Layout('components.layouts.app')] class extends Component {
     @forelse($this->companies as $fc)
         @php
             $ships = $this->shipments[$fc->id] ?? collect();
-            $feeByCurrency = $ships->groupBy('currency')->map(fn ($g) => (int) $g->sum('transport_fee'))->filter();
             $dcol = $dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
-            // 지급 집계 — 묶음(청산 단위) 기준. key 없는(미분류) 묶음은 청산 대상 아니라 제외.
+            // 지급 집계 — 묶음(청산 단위) 기준. key 없는(미분류) 묶음은 청산 대상 아니라 건수에서 제외.
+            // 헤더 금액 = **미청산 잔금만** (jin 2026-08-05) — 지급해서 턴 묶음은 통째로 빠진다.
+            //   미분류(key='') 묶음은 아직 청산할 수 없는 상태이므로 잔금에 남긴다(숨기면 돈이 사라져 보인다).
             $grps = $this->groupedShipments[$fc->id] ?? collect();
             $settledCount = 0; $unpaidCount = 0;
+            $feeByCurrency = [];
             foreach ($grps as $g) {
-                if ($g['key'] === '') { continue; }
-                $iv = $this->invoices[$fc->id.'|'.$g['type'].'|'.$g['key']] ?? null;
-                if ($iv && $iv->paid_at) { $settledCount++; } else { $unpaidCount++; }
+                $iv = $g['key'] === '' ? null : ($this->invoices[$fc->id.'|'.$g['type'].'|'.$g['key']] ?? null);
+                $isPaid = $iv && $iv->paid_at;
+                if ($g['key'] !== '') { $isPaid ? $settledCount++ : $unpaidCount++; }
+                if ($isPaid) { continue; }
+                foreach ($g['feeByCurrency'] as $cur => $sum) {
+                    $feeByCurrency[$cur] = ($feeByCurrency[$cur] ?? 0) + (int) $sum;
+                }
             }
+            $feeByCurrency = array_filter($feeByCurrency);
+            // 운임비가 아예 없는 포워딩사와 "전액 청산" 을 구분하기 위한 판정.
+            $hasAnyFee = (int) $ships->sum('transport_fee') > 0;
         @endphp
         <div class="card-tight" x-data="{ open: false }">
             {{-- 헤더 행 --}}
@@ -525,12 +534,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($unpaidCount > 0)<span class="badge badge-red text-[10px]">{{ __('forwarding.unpaid_count', ['count' => $unpaidCount]) }}</span>@endif
                     @if($settledCount > 0)<span class="badge badge-green text-[10px]">{{ __('forwarding.settled_count', ['count' => $settledCount]) }}</span>@endif
                 </button>
-                {{-- 운임비 통화별 합계 --}}
+                {{-- 운임비 통화별 합계 — 청산 안 한 잔금만 (jin 2026-08-05) --}}
                 <div class="flex flex-wrap items-center gap-1.5">
                     @forelse($feeByCurrency as $cur => $sum)
-                        <span class="badge badge-blue">{{ $cur }} {{ number_format($sum) }}</span>
+                        <span class="badge badge-blue" title="{{ __('forwarding.fee_outstanding_hint') }}">{{ $cur }} {{ number_format($sum) }}</span>
                     @empty
-                        <span class="text-xs text-gray-400">{{ __('forwarding.no_fee') }}</span>
+                        @if($hasAnyFee)
+                            <span class="badge badge-green">{{ __('forwarding.fee_all_settled') }}</span>
+                        @else
+                            <span class="text-xs text-gray-400">{{ __('forwarding.no_fee') }}</span>
+                        @endif
                     @endforelse
                 </div>
                 <div class="flex items-center gap-2">

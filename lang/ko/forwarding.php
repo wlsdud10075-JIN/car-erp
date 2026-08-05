@@ -11,6 +11,8 @@ return [
     'date_to' => '종료일',
     'shipment_count' => ':count대 선적',
     'no_fee' => '운임비 없음',
+    'fee_all_settled' => '운임 청산완료',
+    'fee_outstanding_hint' => '아직 지급 안 한 운임비(잔금)만 합산합니다. 청산한 묶음은 빠집니다.',
     'no_shipment' => '기간 내 선적 없음',
     'col_ship_date' => '선적일',
     'col_eta' => '도착일',

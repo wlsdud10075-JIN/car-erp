@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ForwardingCompany;
+use App\Models\ForwardingInvoice;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -103,5 +104,63 @@ class ForwardingShipmentTest extends TestCase
         Volt::test('erp.forwarding-companies.index')
             ->assertSee('19더9065')
             ->assertSee('KMHFWDVIN0000001');
+    }
+
+    /**
+     * 헤더 금액은 **미청산 잔금만** 보여준다 (jin 2026-08-05).
+     * "지급해서 0원으로 털면 청산 안 한 금액만 남는다" — 청산한 묶음은 통째로 빠져야 한다.
+     */
+    public function test_header_total_shows_only_unsettled_freight(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD SETTLE', 'is_active' => true]);
+        // 컨테이너 2묶음 — 하나만 청산한다.
+        $this->shipVehicle($fc->id, ['container_number' => 'CONT-A', 'currency' => 'USD', 'transport_fee' => 1000]);
+        $this->shipVehicle($fc->id, ['container_number' => 'CONT-B', 'currency' => 'USD', 'transport_fee' => 300]);
+
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.forwarding-companies.index')->assertSee('USD 1,300');   // 청산 전 = 전액
+
+        ForwardingInvoice::create([
+            'forwarding_company_id' => $fc->id,
+            'group_type' => 'container', 'group_key' => 'CONT-A',
+            'currency' => 'USD', 'amount' => 1000, 'paid_at' => now(),
+        ]);
+
+        Volt::test('erp.forwarding-companies.index')
+            ->assertSee('USD 300')            // 남은 잔금만
+            ->assertDontSee('USD 1,300');
+    }
+
+    /** 전액 청산하면 금액이 사라지는 대신 「운임 청산완료」로 구분된다(운임비 없음과 혼동 방지). */
+    public function test_fully_settled_company_shows_settled_label(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD DONE', 'is_active' => true]);
+        $this->shipVehicle($fc->id, ['container_number' => 'CONT-C', 'currency' => 'USD', 'transport_fee' => 500]);
+
+        ForwardingInvoice::create([
+            'forwarding_company_id' => $fc->id,
+            'group_type' => 'container', 'group_key' => 'CONT-C',
+            'currency' => 'USD', 'amount' => 500, 'paid_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin());
+
+        // 헤더에 잔금 뱃지 대신 「운임 청산완료」가 뜬다.
+        //   ⚠️ assertDontSee('USD 500') 은 못 쓴다 — 같은 금액이 아래 청산 기록 상세에도 렌더된다
+        //   (아코디언이 접혀 있어도 Alpine x-show 라 DOM 에는 있다).
+        Volt::test('erp.forwarding-companies.index')
+            ->assertSee(__('forwarding.fee_all_settled'));
+    }
+
+    /** 묶음 키가 없는(미분류) 선적은 아직 청산할 수 없으므로 잔금에 남아야 한다. */
+    public function test_ungrouped_shipment_stays_in_outstanding(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD NOKEY', 'is_active' => true]);
+        $this->shipVehicle($fc->id, ['currency' => 'USD', 'transport_fee' => 700]);   // 컨테이너·선박·신고번호 없음
+
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.forwarding-companies.index')->assertSee('USD 700');
     }
 }
