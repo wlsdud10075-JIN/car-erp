@@ -313,4 +313,30 @@ class TransfersIndexTest extends TestCase
             ->assertSee('77가7777')
             ->assertSee('KMHVINTEST000001');
     }
+
+    /** 이체 탭(출발→도착)과 매입 잔금 「신규 입력」 드롭다운에도 차대번호가 보인다 (jin 2026-08-05). */
+    public function test_transfer_tab_and_new_pbp_dropdown_show_chassis_number(): void
+    {
+        $c = $this->makeAwaitingTransfer();
+        $c['transfer']->sourceVehicle->update(['nice_reg_vin' => 'VINSOURCE0000001']);
+        $c['transfer']->targetVehicle->update(['nice_reg_vin' => 'VINTARGET0000002']);
+
+        $this->actingAs($c['finance']);
+
+        Volt::test('erp.transfers.index')
+            ->assertSee('VINSOURCE0000001')
+            ->assertSee('VINTARGET0000002');
+
+        Vehicle::create([
+            'vehicle_number' => '55가5555',
+            'sales_channel' => 'export',
+            'purchase_price' => 3_000_000,
+            'nice_reg_vin' => 'VINDROPDOWN00001',
+        ]);
+
+        Volt::test('erp.transfers.index')
+            ->set('tabType', 'purchase_payment')
+            ->call('openNewPbpModal')
+            ->assertSee('VINDROPDOWN00001');
+    }
 }
