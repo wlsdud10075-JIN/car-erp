@@ -489,9 +489,19 @@ new #[Layout('components.layouts.app')] class extends Component
     /**
      * 회사이익 (2026-07-06 재피벗 ④) — type별 환차귀속.
      *
-     * 회사몫(per settlement) = total_margin − actual_payout + (exchange_difference_krw ?? 0)
-     *   - 프리랜서(ratio): actual_payout 에 환차가 이미 포함 → 상쇄 → 총마진 − 정산금 (환차 회사 무영향).
-     *   - 사내직원(per_unit): actual_payout=건당(환차 미포함) → 총마진 − 건당 + 환차 (회사가 환차 흡수).
+     * 회사몫(per settlement) = total_margin − actual_payout
+     *
+     * 🚨 2026-08-06 (jin) — **`+ exchange_difference_krw` 항을 제거했다.**
+     *   그 항은 구 모델에서 actual_payout 에 1:1 로 더해지던 환차를 **상쇄**하려고 있던 것이다.
+     *   이제 환차는 총마진의 환율(실효 입금환율)을 통해 들어오고 payout 엔 안 더해지므로,
+     *   그대로 두면 회사이익이 환차만큼 **부풀려진다**(있지도 않은 수익).
+     *   총마진 − 실지급액 하나로 회사 몫이 정확히 나온다.
+     *
+     * 환차 귀속(신 모델):
+     *   - 프리랜서(ratio): 환차가 총마진을 거쳐 ×0.9×비율 만큼만 담당자에게 간다.
+     *     **나머지는 회사 몫** — 구 모델의 "환차 회사 무영향"은 더 이상 참이 아니다(company_net 에 자연 반영).
+     *   - 사내직원(per_unit): 정산액이 건당 고정이라 환차가 통째로 회사에 남는다.
+     *
      * paid 정산 대상(paid_at 기간). computed(total_margin·actual_payout) 라 SQL 집계 불가 → 컬렉션 chunk.
      */
     #[Computed]
@@ -502,7 +512,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $companyNet = 0;
         $marginSum = 0;
         $payoutSum = 0;
-        $fxAbsorbed = 0;   // 사내직원 회사흡수 환차 (정보용, 부호 그대로)
+        $fxAbsorbed = 0;   // 사내직원 정산건의 실현 환차 — 전액 회사 귀속 (정보용. company_net 에 이미 포함)
         $byPerson = [];
 
         Settlement::query()
@@ -517,7 +527,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     $margin = (int) ($s->total_margin ?? 0);
                     $payout = (int) ($s->actual_payout ?? 0);
                     $fx = (int) ($s->exchange_difference_krw ?? 0);
-                    $share = $margin - $payout + $fx;
+                    $share = $margin - $payout;
 
                     $companyNet += $share;
                     $marginSum += $margin;

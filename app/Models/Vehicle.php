@@ -59,6 +59,46 @@ class Vehicle extends Model
         return $this->salesman?->type === 'freelance' ? intdiv((int) $this->cancel_shortfall_krw, 2) : 0;
     }
 
+    /**
+     * 미반영 매입취소 손실 — 담당자별 프리랜서 부담 몫 (jin 2026-08-06).
+     *
+     * 정산관리 담당자 카드에 "필터 무관 현재 잔액"으로 노출한다(unconsumed_carryover 와 같은 성격).
+     * 실무자가 정산관리만 보고 있어서 월배치 지급 화면의 손실 요약을 놓친다는 제보에서 나왔다.
+     *
+     * ⚠️ **표시 전용이다.** 실제 차감은 「월배치 지급」의 담당자 조정에서 한 번만 하고,
+     *    거기서 「반영 표시」를 누르면 cancel_loss_settled_at 이 찍혀 이 목록에서 빠진다.
+     *    정산 합계(actual_payout_sum)에 더하면 월배치와 **이중 청구**가 된다.
+     *
+     * 기간 필터를 받지 않는다 — 월배치 쪽은 cancelled_at 기간(지급 실행 축)으로 거르지만,
+     * 여기는 "지금 남아 있는 미반영 잔액"이 알고 싶은 값이라 축이 다르다.
+     *
+     * @return array<int, array{sum: int, plates: array<int, string>}>
+     */
+    public static function unsettledCancelLossBySalesman(): array
+    {
+        $rows = static::query()
+            ->where('cancel_status', self::CANCEL_CLOSED)
+            ->whereNull('cancel_loss_settled_at')
+            ->whereNotNull('cancel_shortfall_krw')
+            ->whereNotNull('salesman_id')
+            ->with('salesman:id,type')
+            ->get(['id', 'vehicle_number', 'salesman_id', 'cancel_status', 'cancel_shortfall_krw']);
+
+        $out = [];
+        foreach ($rows as $v) {
+            $half = $v->cancel_freelancer_loss_krw;   // 사내직원 = 0 (회사 전액 부담)
+            if ($half <= 0) {
+                continue;
+            }
+            $sid = (int) $v->salesman_id;
+            $out[$sid] ??= ['sum' => 0, 'plates' => []];
+            $out[$sid]['sum'] += $half;
+            $out[$sid]['plates'][] = $v->vehicle_number;
+        }
+
+        return $out;
+    }
+
     protected $fillable = [
         'vehicle_number', 'sales_channel', 'progress_status_cache',
         'progress_status_rule_version', 'is_override_active',
@@ -1508,6 +1548,38 @@ class Vehicle extends Model
         }
 
         return ($this->sale_price > 0 && $this->sale_unpaid_amount <= 0) ? 'paid' : 'waiting';
+    }
+
+    /**
+     * 정산 적용 환율 (jin 2026-08-06) — 1차 정산을 **실제 입금된 환율**로 계산한다.
+     *
+     * 구: 1차는 판매환율로 계산하고, 실입금과의 차이는 2차 마감에서 환차로 실지급액에 1:1 가산.
+     * 신: 1차 정산 자체를 실효 입금환율로 계산 → 환차가 마진공식(×0.9×비율)을 그대로 통과한다.
+     *     2차 정산은 명세서 기입(탁송비·면허비 등 비용 9개) 변동분만 다음달로 이월(carryover).
+     *
+     * 실효환율 = 실입금KRW ÷ 총판매가(외화) — 전 회수경로의 가중평균.
+     *   · 기타회수·적립금은 sale_received_krw_accumulated 가 판매환율로 평가(FX 중립)하므로
+     *     그 몫만큼 실효환율이 판매환율 쪽으로 당겨진다. 의도된 동작 — 그 돈엔 FX 사건이 없다.
+     *   · 분모가 총판매가(운임비 포함)라 운임비의 환차익·손은 정산 base(운임비 제외)를 안 거친다.
+     *     = 운임비 환차는 회사 몫. jin 2026-08-06 확인.
+     *
+     * ⚠️ **미완납이면 판매환율을 쓴다.** 절반만 입금된 상태에서 나누면 실효환율이 실제의 절반으로
+     *    나와 판매금원화가 반토막 난다 — 원금 미수가 환율로 둔갑한다. 2차 마감 완납 게이트와 같은 이유.
+     */
+    public function getSettlementExchangeRateAttribute(): float
+    {
+        $saleRate = (float) ($this->exchange_rate ?? 0);
+
+        if ($this->currency === 'KRW' || $saleRate <= 0) {
+            return $saleRate;
+        }
+
+        $totalFx = (float) $this->sale_total_amount;
+        if ($totalFx <= 0 || $this->sale_unpaid_amount > 0) {
+            return $saleRate;
+        }
+
+        return (float) $this->sale_received_krw_accumulated / $totalFx;
     }
 
     /**

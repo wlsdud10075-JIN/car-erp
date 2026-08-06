@@ -220,9 +220,10 @@ class IntegrationRegressionTest extends TestCase
         $this->assertSame(40000.0, (float) $fresh->exchange_difference_krw);
     }
 
-    public function test_case05_freelance_payout_adds_exchange_diff(): void
+    public function test_case05_freelance_payout_does_not_re_add_exchange_diff(): void
     {
-        // 회의확장씬 #6+7 보강 — closed + ratio + 환차 양수 → actual_payout += diff
+        // 2026-08-06 (jin) — 환차는 1차 정산(판매금원화의 환율)에 이미 반영된다.
+        //   actual_payout 에 다시 더하면 이중계상이므로 가산 로직을 제거했다.
         $admin = $this->makeAdmin();
         $this->actingAs($admin);
 
@@ -244,7 +245,7 @@ class IntegrationRegressionTest extends TestCase
         ]);
         $base = $s->settlement_amount - $s->document_fee;
 
-        $this->assertSame($base + 15000, $s->actual_payout);
+        $this->assertSame($base, $s->actual_payout, '환차가 실지급액에 재가산됐다(이중계상)');
     }
 
     public function test_case06_per_unit_payout_ignores_exchange_diff(): void
@@ -580,10 +581,24 @@ class IntegrationRegressionTest extends TestCase
         $s = $s->fresh();
 
         $this->assertSame('closed', $s->secondary_status);
-        // 환차 = 10,000 × (1380 - 1300) = +800,000
+        // 환차(기록) = 10,000 × (1380 - 1300) = +800,000
         $this->assertSame(800_000.0, (float) $s->exchange_difference_krw, '환차익 +800,000');
-        // actual_payout 에 환차 +800,000 가산 (프리랜서 1:1) — 단순 부등식 검증
-        $this->assertGreaterThan($s->settlement_amount, $s->actual_payout, '환차 가산으로 base 초과');
+
+        // 2026-08-06 (jin) — 1차 정산이 수령환율 1380 으로 계산되므로 환차는 이미 마진 안에 있다.
+        //  sales_amount_krw=10,000×1380=13,800,000 / cost_total=265,000(보험·이전비 추가 후)
+        //  settlement_sales=13,535,000 / sales_margin=13,535,000-5,100,000=8,435,000
+        //  vat_margin=450,000 / total_margin=(8,435,000+450,000)×0.9=7,996,500
+        //  settlement_amount=3,998,250 / actual_payout=3,998,250-50,000=3,948,250
+        $this->assertSame(3_998_250, $s->settlement_amount);
+        $this->assertSame(
+            $s->settlement_amount - 50_000,
+            $s->actual_payout,
+            '환차가 실지급액에 재가산됐다(이중계상)'
+        );
+
+        // 2차가 이월하는 것은 **비용 변동분**이다 — 보험 150,000 + 이전비 50,000 = 200,000
+        //  → total_margin −180,000 → settlement_amount −90,000 → payout −90,000
+        $this->assertSame(-90_000, (int) $s->carryover_out_krw, '2차 이월 = 비용 변동분');
     }
 
     public function test_case15_inventory_per_manager_scope(): void
