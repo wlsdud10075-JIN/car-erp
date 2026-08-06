@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkTemplates;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -74,16 +75,28 @@ class AlimtalkWeeklySummary extends Command
 
         $beforeQ = Vehicle::query()->action('receivable_before_shipping');
         $afterQ = Vehicle::query()->action('receivable_after_shipping');
+        $beforeSum = (int) (clone $beforeQ)->sum('sale_unpaid_amount_krw_cache');
+        $afterSum = (int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache');
+
+        // 미수율 % (jin 2026-08-06) — 일일 요약과 동일 규칙(SKILLS §13 집계식). 대상 0건이면 표기 생략.
+        //   본문은 정확한 원 단위, 카드는 억 단위 축약 — 카드 description 20자 컷 때문(SKILLS §8 #35).
+        $beforePct = Vehicle::aggregateUnpaidRatioPct($beforeQ);
+        $afterPct = Vehicle::aggregateUnpaidRatioPct($afterQ);
+        $pct = fn (?float $p): string => $p === null ? '' : ' ('.round($p).'%)';
 
         return [
             '주간' => $start->format('Y-m-d').' ~ '.$end->format('m-d'),
             '판매건수' => number_format($saleCount),
             '매출액' => number_format($revenue).'원',
             '선적전건수' => number_format((clone $beforeQ)->count()),
-            '선적전금액' => number_format((int) (clone $beforeQ)->sum('sale_unpaid_amount_krw_cache')).'원',
+            '선적전금액' => number_format($beforeSum).'원'.$pct($beforePct),
             '선적후건수' => number_format((clone $afterQ)->count()),
-            '선적후금액' => number_format((int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache')).'원',
+            '선적후금액' => number_format($afterSum).'원'.$pct($afterPct),
             '담당자실적' => $perSalesman,
+            AlimtalkTemplates::CARD_VARS_KEY => [
+                '선적전금액' => AlimtalkTemplates::cardMoney($beforeSum).$pct($beforePct),
+                '선적후금액' => AlimtalkTemplates::cardMoney($afterSum).$pct($afterPct),
+            ],
         ];
     }
 }

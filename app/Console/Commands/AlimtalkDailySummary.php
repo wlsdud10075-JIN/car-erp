@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkTemplates;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -71,15 +72,28 @@ class AlimtalkDailySummary extends Command
         $afterCount = (clone $afterQ)->count();
         $afterSum = (int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache');
 
+        // 미수율 % (jin 2026-08-06) — SKILLS §13 집계식(분모 = Σ 판매총액 × 환율). 대상 0건이면 null → 표기 생략.
+        $beforePct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_before_shipping'));
+        $afterPct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_after_shipping'));
+        $pct = fn (?float $p): string => $p === null ? '' : ' ('.round($p).'%)';
+
+        // 카드(아이템리스트)는 description 20자 컷이라 본문과 같은 문자열을 쓰면 % 가 잘린다.
+        //   → 본문은 정확한 원 단위, 카드는 억 단위 축약. 등록본 고정 문구는 그대로라 재등록 불필요.
+        //   (요약칸 '미수합계' 는 **금액 표기만** 허용이라 % 를 넣지 않는다 — K140 반려. SKILLS §8 #40)
+
         return [
             '날짜' => now()->format('Y-m-d'),
             '판매건수' => number_format($saleCount),
             '매출액' => number_format($revenue).'원',
             '선적전건수' => number_format($beforeCount),
-            '선적전금액' => number_format($beforeSum).'원',
+            '선적전금액' => number_format($beforeSum).'원'.$pct($beforePct),
             '선적후건수' => number_format($afterCount),
-            '선적후금액' => number_format($afterSum).'원',
+            '선적후금액' => number_format($afterSum).'원'.$pct($afterPct),
             '미수합계' => number_format($beforeSum + $afterSum).'원',
+            AlimtalkTemplates::CARD_VARS_KEY => [
+                '선적전금액' => AlimtalkTemplates::cardMoney($beforeSum).$pct($beforePct),
+                '선적후금액' => AlimtalkTemplates::cardMoney($afterSum).$pct($afterPct),
+            ],
         ];
     }
 }

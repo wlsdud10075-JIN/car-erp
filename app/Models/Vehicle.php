@@ -1704,6 +1704,35 @@ class Vehicle extends Model
         return max(0.0, min(1.0, $unpaid / $total));
     }
 
+    /**
+     * 집계 미수율 % (KRW 기준, 0~100) — 여러 대를 묶어서 볼 때 쓴다. 대상 없으면 null.
+     *
+     * ⚠️ SKILLS §13 「집계 미수율」 규칙 그대로다. 분자·분모를 다르게 조합하면 의미 없는 비율이 된다:
+     *   분자 = Σ sale_unpaid_amount_krw_cache
+     *   분모 = Σ (sale_total_amount × 환율)   ← sale_price 가 아니라 **판매총액**(부대비용 포함)
+     *   환율 미입력 외화(캐시 null)는 분자·분모 **양쪽에서** 뺀다 — 한쪽만 빼면 비율이 왜곡된다.
+     * 단일 차량이면 이걸 쓰지 말고 `unpaid_ratio` accessor 를 쓸 것.
+     *
+     * @param  Builder  $query  대상 차량 쿼리(예: scopeAction('receivable_after_shipping'))
+     */
+    public static function aggregateUnpaidRatioPct($query): ?float
+    {
+        $numer = 0.0;
+        $denom = 0.0;
+
+        foreach ((clone $query)->get() as $v) {
+            $cache = $v->sale_unpaid_amount_krw_cache;
+            if ($cache === null) {
+                continue;   // 환율 미입력 — 완납 판정 불가라 양쪽에서 제외
+            }
+            $total = (float) $v->sale_total_amount;
+            $numer += (float) $cache;
+            $denom += $v->currency === 'KRW' ? $total : $total * (float) ($v->exchange_rate ?: 0);
+        }
+
+        return $denom > 0 ? round($numer / $denom * 100, 1) : null;
+    }
+
     // ── Computed: 미납액 원화 환산 (KPI 합산용) ─────────────────────
     public function getSaleUnpaidAmountKrwAttribute(): ?float
     {

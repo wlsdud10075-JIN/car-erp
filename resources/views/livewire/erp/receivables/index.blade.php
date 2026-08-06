@@ -155,6 +155,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             'risk_count' => $riskCount,
             'grace_unpaid_krw' => (int) $graceUnpaid,
             'grace_count' => $graceCount,
+            // 미수율·입금률 (jin 2026-08-06) — 위에서 이미 구한 합계를 나누기만 한다.
+            //   ⚠️ 분모를 새로 만들지 말 것. $totalSale 은 SKILLS §13 집계식(Σ sale_total_amount × 환율,
+            //   환율 0 이면 0 기여 = 사실상 제외)이고 $totalUnpaid 는 그 짝(캐시 null 은 SUM 에서 자동 제외)이라
+            //   분자·분모 모집단이 이미 맞춰져 있다. 다른 조합으로 계산하면 의미 없는 비율이 된다.
+            //   ⚠️ grace_unpaid_krw 는 base(=grace 제외) 밖의 별도 모수라 이 분모로 나누면 안 된다 → % 없음.
+            'unpaid_ratio_pct' => $totalSale > 0 ? round($totalUnpaid / $totalSale * 100, 1) : null,
+            'paid_ratio_pct' => $totalSale > 0 ? round($totalPaid / $totalSale * 100, 1) : null,
         ];
     }
 
@@ -639,7 +646,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 통화 선택 — 재환산 없이 그 통화 차량의 판매시점 원금액 (전체=₩ 환산). 목록은 그대로 (jin 2026-07-16). --}}
-    @if(count($this->currencyOptions) > 1)
+    {{-- 외화가 1종이어도 「전체(₩) ↔ 그 통화」는 서로 다른 값이라 고를 이유가 있다(jin 2026-08-06).
+         구 조건은 > 1(외화 2종 이상)이라 USD 만 쓰는 회사에서는 줄 자체가 안 보였다. --}}
+    @if(count($this->currencyOptions) >= 1)
     <div class="mb-2 flex flex-wrap items-center gap-1.5">
         <span class="mr-1 text-xs text-gray-500">{{ __('receivable.currency_label') }}</span>
         <button wire:click="$set('displayCurrency', '')"
@@ -657,13 +666,26 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_sale') }}</div>
             <div class="mt-1 text-2xl font-bold text-gray-800">{!! $this->fmtSummaryMoney($this->summary['total_sale_krw']) !!}</div>
         </div>
+        @php
+            // 통화 필터를 걸면 KPI 가 원화 환산이 아니라 그 통화 원금액이라(위 summary 주석),
+            // % 도 "그 통화끼리" 의 비율이 된다. 숫자는 맞지만 원화 기준으로 오해하지 않게 기준을 붙인다(jin 2026-08-06).
+            $ratioBasis = $this->summary['currency'] !== 'KRW'
+                ? ' '.__('receivable.kpi.ratio_basis', ['cur' => $this->summary['currency']])
+                : '';
+        @endphp
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_paid') }}</div>
             <div class="mt-1 text-2xl font-bold text-blue-600">{!! $this->fmtSummaryMoney($this->summary['total_paid_krw']) !!}</div>
+            @if($this->summary['paid_ratio_pct'] !== null)
+                <div class="mt-0.5 text-[11px] text-gray-400">{{ __('receivable.kpi.paid_ratio', ['pct' => $this->summary['paid_ratio_pct']]) }}{{ $ratioBasis }}</div>
+            @endif
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_unpaid') }}</div>
             <div class="mt-1 text-2xl font-bold text-red-600">{!! $this->fmtSummaryMoney($this->summary['total_unpaid_krw']) !!}</div>
+            @if($this->summary['unpaid_ratio_pct'] !== null)
+                <div class="mt-0.5 text-[11px] font-medium text-red-400">{{ __('receivable.kpi.unpaid_ratio', ['pct' => $this->summary['unpaid_ratio_pct']]) }}{{ $ratioBasis }}</div>
+            @endif
         </div>
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.grace') }}</div>
@@ -846,7 +868,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500">
                     {{ __('receivable.mobile_unpaid') }} <span class="font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, 0) }}</span>
                 </div>
-                <div class="text-xs text-gray-700">{{ $unpaidRatio }}%</div>
+                {{-- 데스크탑엔 컬럼 헤더가 있어 무슨 숫자인지 알지만 모바일엔 없어서 라벨을 붙인다 --}}
+                <div class="text-xs text-gray-700">
+                    <span class="text-gray-400">{{ __('receivable.col.unpaid_ratio') }}</span> {{ $unpaidRatio }}%
+                </div>
             </div>
         </div>
         @empty
@@ -901,7 +926,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <div class="card-sm">
                     <div class="text-xs text-gray-500">{{ __('receivable.col.unpaid') }}</div>
-                    <div class="mt-0.5 text-sm font-semibold text-red-600">{{ $sv->currency }} {{ number_format($sv->sale_unpaid_amount, 0) }}</div>
+                    <div class="mt-0.5 text-sm font-semibold text-red-600">
+                        {{ $sv->currency }} {{ number_format($sv->sale_unpaid_amount, 0) }}
+                        {{-- 차량 1대라 §13 accessor 를 그대로 쓴다(집계 분모 계산 불필요). null = 판매가 미입력 --}}
+                        @if($sv->unpaid_ratio !== null)
+                            <span class="ml-1 text-[11px] font-normal text-red-400">{{ round($sv->unpaid_ratio * 100, 1) }}%</span>
+                        @endif
+                    </div>
                 </div>
                 <div class="card-sm">
                     <div class="text-xs text-gray-500">{{ __('receivable.col.risk') }}</div>
