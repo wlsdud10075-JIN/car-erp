@@ -49,6 +49,10 @@ class Buyer extends Model
             $buyer->consignees()->create([
                 'name' => $buyer->name,
                 'country_id' => $buyer->country_id,
+                // ID 번호도 함께 넘긴다 (jin 2026-08-06) — 바이어 본인이 수령하는 경우가 많아
+                //   같은 번호를 컨사이니에 다시 적게 되던 것을 없앤다. 서류(Invoice E7)가 이 값을 쓴다.
+                //   ⚠️ id_value 는 모델 cast 로 암호화 저장된다(바이어 passport_id 는 평문) — 여기 대입만으로 처리됨.
+                'id_value' => $buyer->passport_id ?: null,
                 'contact_name' => $buyer->contact_name,
                 'contact_email' => $buyer->contact_email,
                 'contact_phone' => $buyer->contact_phone,

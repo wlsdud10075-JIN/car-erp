@@ -30,6 +30,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $name           = '';
     public string $buyer_id_str   = '';
     public string $country_id_str = '';
+    // ⚠️ 입력칸은 없앴지만(jin 2026-08-06) 프로퍼티는 남긴다 — openEdit 가 기존 값을 담고 save 가
+    //    그대로 되쓰므로, 지우면 이미 저장된 ID 종류가 null 로 덮인다. 일괄업로드 양식도 이 값을 넣는다.
     public string $id_type        = '';      // rrn/passport/business
     public string $id_value       = '';      // 암호화 저장
     public string $eori_number    = '';      // 평문 (deep-interview 2026-05-28 Q1)
@@ -377,20 +379,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="tax_number" type="text" class="input-base" placeholder="{{ __('consignee.field.tax_ph') }}" />
             </div>
         </div>
-        <div class="grid grid-cols-3 gap-3">
-            <div>
-                <label class="label-base">{{ __('consignee.field.id_type') }}</label>
-                <select wire:model="id_type" class="input-base">
-                    <option value="">{{ __('common.select') }}</option>
-                    @foreach(\App\Models\Consignee::ID_TYPES as $key => $label)
-                    <option value="{{ $key }}">{{ __('consignee.id_type.'.$key) }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="col-span-2">
-                <label class="label-base">{{ __('consignee.field.id_value') }} <span class="text-[10px] text-gray-400">{{ __('consignee.field.id_value_note') }}</span></label>
-                <input wire:model="id_value" type="text" class="input-base" />
-            </div>
+        {{-- ID 종류 선택 제거(jin 2026-08-06) — 실무에서 구분할 일이 없었고 서류도 id_value 만 쓴다
+             (DocValue::consigneeIdValue). 컬럼·상수는 기존 데이터·일괄업로드 양식 때문에 남겨둔다. --}}
+        <div>
+            <label class="label-base">{{ __('consignee.field.id_value') }} <span class="text-[10px] text-gray-400">{{ __('consignee.field.id_value_note') }}</span></label>
+            <input wire:model="id_value" type="text" class="input-base" />
         </div>
 
         <div class="grid grid-cols-2 gap-3">

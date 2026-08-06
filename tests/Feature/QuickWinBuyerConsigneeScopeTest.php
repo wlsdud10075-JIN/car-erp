@@ -7,7 +7,6 @@ use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\Salesman;
 use App\Models\User;
-use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -43,6 +42,35 @@ class QuickWinBuyerConsigneeScopeTest extends TestCase
         $this->assertSame($country->id, $cons->first()->country_id);
         $this->assertSame('b@x.com', $cons->first()->contact_email);
         $this->assertSame('ADDR 1', $cons->first()->address);
+    }
+
+    /**
+     * 바이어의 ID 번호가 자동 컨사이니에도 그대로 넘어가야 한다 (jin 2026-08-06).
+     * 바이어 본인이 수령하는 경우가 많아 같은 번호를 두 번 적게 되던 것을 없앤다.
+     * ⚠️ 컨사이니 id_value 는 암호화 저장(cast)이라 평문 비교가 되는지까지 확인한다.
+     */
+    public function test_auto_consignee_carries_over_the_buyer_id_number(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'admin']));
+
+        $buyer = Buyer::create([
+            'name' => 'ID CARRY BUYER',
+            'passport_id' => 'M12345678',
+            'is_active' => true,
+        ]);
+
+        $cons = Consignee::where('buyer_id', $buyer->id)->sole();
+        $this->assertSame('M12345678', $cons->id_value, '바이어 ID 번호가 컨사이니로 안 넘어갔다');
+    }
+
+    /** ID 번호가 없는 바이어면 컨사이니 ID 도 비어 있어야 한다(빈 문자열 아님). */
+    public function test_auto_consignee_id_is_null_when_buyer_has_none(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'admin']));
+
+        $buyer = Buyer::create(['name' => 'NO ID BUYER', 'is_active' => true]);
+
+        $this->assertNull(Consignee::where('buyer_id', $buyer->id)->sole()->id_value);
     }
 
     public function test_unauthenticated_buyer_create_skips_auto_consignee(): void
