@@ -11,10 +11,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class SettlementPayoutAdjustment extends Model
 {
-    protected $fillable = ['batch_id', 'salesman_id', 'amount', 'reason', 'created_by'];
+    protected $fillable = ['batch_id', 'salesman_id', 'amount', 'reason', 'cancel_vehicle_ids', 'created_by'];
 
     protected $casts = [
         'amount' => 'integer',
+        // 매입취소 손실 조정이 덮는 차량 id 목록 (jin 2026-08-06). NULL = 일반 수동 조정.
+        // 배치 최종 승인 시 이 차량들의 cancel_loss_settled_at 을 찍는다.
+        'cancel_vehicle_ids' => 'array',
     ];
 
     public function batch(): BelongsTo

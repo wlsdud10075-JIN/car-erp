@@ -138,21 +138,22 @@ class SettlementPayoutAdjustmentTest extends TestCase
             ->assertDontSee('200,000');                        // 더 이상 gross 소계 아님
     }
 
-    public function test_ui_add_adjustment_through_component(): void
+    /**
+     * 조정 입력은 **정산관리 제출 모달** 하나다 (jin 2026-08-06).
+     * 월배치 화면엔 입력 UI가 없다 — 있으면 카톡 발송 뒤에 총액이 바뀌어 승인자가 본 숫자와 어긋난다.
+     */
+    public function test_payout_batch_screen_has_no_adjustment_input(): void
     {
-        [$batch, $salesman, $gwanri] = $this->pendingBatch();
+        [$batch, , $gwanri] = $this->pendingBatch();
         $this->actingAs($gwanri);
 
-        Volt::test('erp.payout-batches.index')
-            ->call('toggle', $batch->id)
-            ->call('startAdjust', $batch->id)
-            ->set('adjSalesmanId', (string) $salesman->id)
-            ->set('adjAmount', '-729,250')
-            ->set('adjReason', '62두1461 6월 과지급 환수')
-            ->call('addAdjustment', $batch->id)
-            ->assertDispatched('notify');
+        $component = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id);
 
-        $this->assertSame(1, $batch->adjustments()->count());
-        $this->assertSame(-729_250, (int) $batch->adjustments()->first()->amount);   // 콤마·음수 파싱
+        foreach (['startAdjust', 'addAdjustment', 'removeAdjustment', 'prefillCancelLoss', 'markCancelLossSettled'] as $method) {
+            $this->assertFalse(
+                method_exists($component->instance(), $method),
+                "월배치 화면에 조정 입력 경로가 남아 있다: {$method}()"
+            );
+        }
     }
 }

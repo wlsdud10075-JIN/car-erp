@@ -534,6 +534,147 @@ new #[Layout('components.layouts.app')] class extends Component
      * canApprove user는 직접 paid 변경 가능 (Settlement::saving 가드 통과).
      * 그 외 user는 이 메서드로 ApprovalRequest 생성 → /erp/approvals 큐로 진입.
      */
+    // ── 월배치 제출 확인 모달 (jin 2026-08-06) ────────────────────────────────
+    //   조정을 **제출 전에** 확정한다. 구조상 조정은 배치에 종속(batch_id)이라 예전엔
+    //   "제출 → 카톡 → 그제서야 조정" 순서였고, 승인자가 본 총액과 실제 지급액이 어긋났다.
+    //   이제 여기서 차감을 정하고 넘기므로 카톡 총액이 정확하다. 월배치 화면엔 조정 입력이 없다.
+
+    public bool $showSubmitModal = false;
+
+    /** 차감할 매입취소 손실 담당자 — 체크박스 바인딩이라 **문자열** 배열이다(비교 시 캐스팅). */
+    public array $submitLossChecked = [];
+
+    /** 제출과 함께 만들 수동 조정 draft — [['salesman_id','amount','reason'], ...] */
+    public array $submitAdjustments = [];
+
+    public string $newAdjSalesmanId = '';
+
+    public string $newAdjAmount = '';
+
+    public string $newAdjReason = '';
+
+    public function openSubmitModal(): void
+    {
+        if (! auth()->user()->canSubmitPayoutBatch()) {
+            $this->dispatch('notify', message: __('settlement.batch.no_permission'), type: 'error');
+
+            return;
+        }
+        if ($this->monthFilter === '') {
+            $this->dispatch('notify', message: __('settlement.batch.select_month'), type: 'warning');
+
+            return;
+        }
+
+        unset($this->submitPreview);
+        $preview = $this->submitPreview;
+        if ($preview['count'] === 0) {
+            $this->dispatch('notify', message: __('settlement.batch.none_eligible'), type: 'warning');
+
+            return;
+        }
+
+        // 기본 = 차감 가능한 손실 전부 체크. 이번 달 지급이 없는 담당자는 뺄 곳이 없어 제외.
+        $this->submitLossChecked = collect($preview['losses'])
+            ->where('payable', true)
+            ->pluck('salesman_id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+        $this->submitAdjustments = [];
+        $this->newAdjSalesmanId = '';
+        $this->newAdjAmount = '';
+        $this->newAdjReason = '';
+        $this->showSubmitModal = true;
+    }
+
+    public function closeSubmitModal(): void
+    {
+        $this->showSubmitModal = false;
+    }
+
+    /**
+     * 제출 미리보기 — 대상 정산·매입취소 손실·수동 조정·최종 총액.
+     * 대상 정산은 SettlementPayoutBatch::eligibleSettlementIds 단일 출처(실제 제출과 동일 목록).
+     */
+    #[Computed]
+    public function submitPreview(): array
+    {
+        if ($this->monthFilter === '') {
+            return ['count' => 0, 'payout_sum' => 0, 'losses' => []];
+        }
+
+        $ids = \App\Models\SettlementPayoutBatch::eligibleSettlementIds($this->monthFilter);
+        $settlements = Settlement::whereIn('id', $ids)->with('salesman:id,name')->get();
+        $payoutBySalesman = $settlements->groupBy('salesman_id')
+            ->map(fn ($g) => (int) $g->sum('actual_payout'));
+
+        $names = Salesman::whereIn('id', array_keys(Vehicle::unsettledCancelLossBySalesman()))
+            ->pluck('name', 'id');
+
+        $losses = [];
+        foreach (Vehicle::unsettledCancelLossBySalesman() as $sid => $row) {
+            $payable = ($payoutBySalesman[$sid] ?? 0) > 0;
+            $losses[] = [
+                'salesman_id' => $sid,
+                'name' => $names[$sid] ?? '#'.$sid,
+                'sum' => $row['sum'],
+                'plates' => $row['plates'],
+                'vehicle_ids' => $row['vehicle_ids'],
+                'payable' => $payable,   // 이번 배치에 그 담당자 지급이 있어야 차감 의미가 있다
+            ];
+        }
+
+        return [
+            'count' => $settlements->count(),
+            'payout_sum' => (int) $settlements->sum('actual_payout'),
+            'losses' => $losses,
+        ];
+    }
+
+    /** 모달 하단 합계 — 체크된 손실 + 수동 조정 반영. */
+    #[Computed]
+    public function submitTotals(): array
+    {
+        $preview = $this->submitPreview;
+        $checked = array_map('intval', $this->submitLossChecked);
+        $lossSum = collect($preview['losses'])
+            ->whereIn('salesman_id', $checked)
+            ->sum('sum');
+        $adjSum = collect($this->submitAdjustments)->sum('amount');
+
+        return [
+            'loss_sum' => (int) $lossSum,
+            'adj_sum' => (int) $adjSum,
+            'final' => max(0, $preview['payout_sum'] - (int) $lossSum + (int) $adjSum),
+        ];
+    }
+
+    public function addSubmitAdjustment(): void
+    {
+        $amount = (int) preg_replace('/[^\-0-9]/', '', $this->newAdjAmount);
+        if ($this->newAdjSalesmanId === '' || $amount === 0 || trim($this->newAdjReason) === '') {
+            $this->dispatch('notify', message: __('settlement.batch.adjust_invalid'), type: 'warning');
+
+            return;
+        }
+        $this->submitAdjustments[] = [
+            'salesman_id' => (int) $this->newAdjSalesmanId,
+            'amount' => $amount,
+            'reason' => trim($this->newAdjReason),
+        ];
+        $this->newAdjSalesmanId = '';
+        $this->newAdjAmount = '';
+        $this->newAdjReason = '';
+        unset($this->submitTotals);
+    }
+
+    public function removeSubmitAdjustment(int $idx): void
+    {
+        unset($this->submitAdjustments[$idx]);
+        $this->submitAdjustments = array_values($this->submitAdjustments);
+        unset($this->submitTotals);
+    }
+
     // Phase 2 (jin 2026-07-07) — 선택한 귀속월의 confirmed 정산을 월배치로 제출 → 승인 사다리.
     //   [관리]/업무관리자만. 제출자보다 위 계단(업무관리자→대표) 순서대로 승인 → 대표 최종 시 일괄 paid.
     public function submitPayoutBatch(): void
@@ -548,14 +689,39 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return;
         }
+
+        // 체크된 매입취소 손실 → 담당자별 −조정. 차량 id 를 함께 박아둬야 최종 승인 시 도장이 찍힌다.
+        $checked = array_map('intval', $this->submitLossChecked);
+        $adjustments = [];
+        foreach ($this->submitPreview['losses'] as $loss) {
+            if (! in_array($loss['salesman_id'], $checked, true) || ! $loss['payable']) {
+                continue;
+            }
+            $adjustments[] = [
+                'salesman_id' => $loss['salesman_id'],
+                'amount' => -1 * (int) $loss['sum'],
+                'reason' => __('settlement.batch.cancel_loss_reason', ['plates' => implode(', ', $loss['plates'])]),
+                'cancel_vehicle_ids' => $loss['vehicle_ids'],
+            ];
+        }
+        foreach ($this->submitAdjustments as $a) {
+            $adjustments[] = [
+                'salesman_id' => (int) $a['salesman_id'],
+                'amount' => (int) $a['amount'],
+                'reason' => (string) $a['reason'],
+            ];
+        }
+
         try {
-            $batch = \App\Models\SettlementPayoutBatch::submitForMonth(auth()->user(), $this->monthFilter);
+            $batch = \App\Models\SettlementPayoutBatch::submitForMonth(auth()->user(), $this->monthFilter, $adjustments);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
 
             return;
         }
-        unset($this->settlements, $this->salesmanSummaries);
+
+        $this->showSubmitModal = false;
+        unset($this->settlements, $this->salesmanSummaries, $this->submitPreview, $this->submitTotals);
         $this->dispatch('notify', message: __('settlement.batch.submitted', ['count' => $batch->settlement_count]), type: 'success');
     }
 
@@ -970,10 +1136,97 @@ new #[Layout('components.layouts.app')] class extends Component
     @endif
     @if(auth()->user()->canSubmitPayoutBatch() && $monthFilter !== '')
     {{-- 승인큐 이동링크 제거 (2026-07-07 jin) — 사이드바 정산그룹 「승인큐」 메뉴로 접근. 여기선 헷갈림만 유발. --}}
-    <button wire:click="submitPayoutBatch" wire:confirm="{{ __('settlement.batch.confirm_submit', ['month' => $monthFilter]) }}"
-            class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
+    {{-- jin 2026-08-06 — wire:confirm 한 줄에서 확인 모달로. 조정(매입취소 손실 차감·수동)을
+         제출 전에 확정해야 카톡 총액과 실제 지급액이 어긋나지 않는다. --}}
+    <button wire:click="openSubmitModal" class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
     @endif
 </div>
+
+{{-- ── 월배치 제출 확인 모달 (jin 2026-08-06) ─────────────────────────────── --}}
+@if($showSubmitModal)
+@php $pv = $this->submitPreview; $tt = $this->submitTotals; @endphp
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:key="submit-modal">
+    <div class="card max-h-[90vh] w-full max-w-2xl overflow-y-auto">
+        <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-gray-800">{{ __('settlement.batch.modal_title', ['month' => $monthFilter]) }}</h3>
+            <button type="button" wire:click="closeSubmitModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+
+        {{-- 대상 정산 --}}
+        <div class="mt-3 flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-xs">
+            <span class="text-gray-600">{{ __('settlement.batch.modal_target', ['count' => $pv['count']]) }}</span>
+            <span class="font-mono font-semibold text-gray-800">₩{{ number_format($pv['payout_sum']) }}</span>
+        </div>
+
+        {{-- 매입취소 손실 차감 --}}
+        @if(!empty($pv['losses']))
+        <div class="mt-3">
+            <div class="section-header"><span class="section-dot bg-rose-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_cancel_loss') }}</span></div>
+            <div class="mt-1 space-y-1">
+                @foreach($pv['losses'] as $loss)
+                <label wire:key="loss-{{ $loss['salesman_id'] }}"
+                       class="flex items-start gap-2 rounded px-1.5 py-1 text-xs {{ $loss['payable'] ? 'hover:bg-rose-50' : 'opacity-60' }}">
+                    <input type="checkbox" wire:model.live="submitLossChecked" value="{{ $loss['salesman_id'] }}"
+                           @disabled(! $loss['payable']) class="mt-0.5" />
+                    <span class="flex-1">
+                        <span class="font-medium text-gray-700">{{ $loss['name'] }}</span>
+                        <span class="ml-1 text-gray-400">{{ implode(', ', $loss['plates']) }}</span>
+                        @unless($loss['payable'])
+                            <span class="ml-1 text-[10px] text-amber-600">{{ __('settlement.batch.modal_no_payout') }}</span>
+                        @endunless
+                    </span>
+                    <span class="font-mono text-rose-600">−{{ number_format($loss['sum']) }}</span>
+                </label>
+                @endforeach
+            </div>
+        </div>
+        @endif
+
+        {{-- 수동 조정 --}}
+        <div class="mt-3">
+            <div class="section-header"><span class="section-dot bg-indigo-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_adjust') }}</span></div>
+            @foreach($submitAdjustments as $i => $adj)
+            <div wire:key="adj-{{ $i }}" class="flex items-center gap-2 px-1.5 py-1 text-xs">
+                <span class="font-medium text-gray-700">{{ $this->salesmen->firstWhere('id', $adj['salesman_id'])?->name }}</span>
+                <span class="flex-1 text-gray-400">{{ $adj['reason'] }}</span>
+                <span class="font-mono {{ $adj['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">
+                    {{ $adj['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($adj['amount'])) }}</span>
+                <button type="button" wire:click="removeSubmitAdjustment({{ $i }})" class="text-gray-400 hover:text-red-500">&times;</button>
+            </div>
+            @endforeach
+            <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                <select wire:model="newAdjSalesmanId" class="input-base w-32 text-xs">
+                    <option value="">{{ __('settlement.batch.adjust_salesman') }}</option>
+                    @foreach($this->salesmen as $sm)
+                        <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+                    @endforeach
+                </select>
+                <input type="text" wire:model="newAdjAmount" data-money placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
+                <input type="text" wire:model="newAdjReason" placeholder="{{ __('settlement.batch.adjust_reason') }}" class="input-base flex-1 text-xs" />
+                <button type="button" wire:click="addSubmitAdjustment"
+                        class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>
+            </div>
+        </div>
+
+        {{-- 최종 총액 --}}
+        <div class="mt-3 border-t border-gray-200 pt-2">
+            <div class="flex items-center justify-between text-sm">
+                <span class="font-semibold text-gray-700">{{ __('settlement.batch.modal_final') }}</span>
+                <span class="font-mono text-base font-bold text-violet-700">₩{{ number_format($tt['final']) }}</span>
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.modal_hint') }}</p>
+        </div>
+
+        <div class="mt-3 flex items-center justify-end gap-2">
+            <button type="button" wire:click="closeSubmitModal"
+                    class="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button type="button" wire:click="submitPayoutBatch" class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- 2026-05-20 #2 피드백 — 영업담당자별 합계 카드 (인원별 솔팅 + 합계). --}}
 {{-- 클릭 시 해당 담당자 필터 토글. statusFilter / dateFrom/To 와 동일 컨텍스트. --}}

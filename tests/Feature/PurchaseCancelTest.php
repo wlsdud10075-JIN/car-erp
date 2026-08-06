@@ -180,9 +180,15 @@ class PurchaseCancelTest extends TestCase
         $this->assertNull($v->cancel_shortfall_krw);
     }
 
-    public function test_payout_batch_cancel_loss_summary(): void
+    /**
+     * 미반영 매입취소 손실 집계 — 프리랜서만, 부족분의 절반.
+     *
+     * 🔀 2026-08-06 (jin) — 집계 위치가 월배치 화면 computed 에서 `Vehicle::unsettledCancelLossBySalesman()`
+     *   단일 출처로 옮겨졌다(정산관리 카드 + 제출 모달 공용). 「반영 표시」 수동 버튼은 사라지고
+     *   배치 최종 승인 시 자동으로 찍힌다 — 상세 = SettlementBatchSubmitModalTest.
+     */
+    public function test_unsettled_cancel_loss_by_salesman(): void
     {
-        // 월배치 제출자(관리 role, approvalRank 1·2) — markCancelLossSettled 권한 canSubmitPayoutBatch 필요.
         $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]));
         $fm = Salesman::create(['name' => 'Free', 'is_active' => true, 'type' => 'freelance']);
         $em = Salesman::create(['name' => 'Emp', 'is_active' => true, 'type' => 'employee']);
@@ -192,20 +198,21 @@ class PurchaseCancelTest extends TestCase
             'sale_price' => $shortfall, 'sale_date' => '2026-07-05', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
             'cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => $shortfall, 'cancelled_at' => '2026-07-10',
         ]);
-        $mkClosed('F1', $fm, 1_000_000);   // 몫 500,000
-        $mkClosed('F2', $fm, 600_000);     // 몫 300,000
-        $mkClosed('E1', $em, 800_000);     // 사내직원 → 제외
+        $f1 = $mkClosed('F1', $fm, 1_000_000);   // 몫 500,000
+        $mkClosed('F2', $fm, 600_000);           // 몫 300,000
+        $mkClosed('E1', $em, 800_000);           // 사내직원 → 회사 전액 부담, 제외
 
-        $c = Volt::test('erp.payout-batches.index')->set('lossFrom', '2026-07-01')->set('lossTo', '2026-07-31');
-        $cl = $c->instance()->cancelLosses();
+        $map = Vehicle::unsettledCancelLossBySalesman();
 
-        $this->assertCount(1, $cl['groups']);                    // 프리랜서 1명만
-        $this->assertSame(800_000, $cl['groups'][0]['subtotal']); // 500k + 300k
-        $this->assertSame(800_000, $cl['grand_total']);
+        $this->assertCount(1, $map, '프리랜서 1명만');
+        $this->assertSame(800_000, $map[$fm->id]['sum']);          // 500k + 300k
+        $this->assertArrayNotHasKey($em->id, $map);
+        // 차량번호가 아니라 id 로 준다 — 같은 차량번호가 여러 행일 수 있다.
+        $this->assertContains($f1->id, $map[$fm->id]['vehicle_ids']);
 
-        // 반영 표시 → 요약에서 제외(이중청구 방지)
-        $c->call('markCancelLossSettled', $fm->id);
-        $this->assertEmpty($c->instance()->cancelLosses()['groups']);
+        // 반영 도장이 찍히면 집계에서 빠진다 (이중청구 방지).
+        Vehicle::where('salesman_id', $fm->id)->update(['cancel_loss_settled_at' => now()]);
+        $this->assertSame([], Vehicle::unsettledCancelLossBySalesman());
     }
 
     public function test_sales_stats_exclude_cancels_receivable_includes(): void
