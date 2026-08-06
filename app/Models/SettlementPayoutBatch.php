@@ -304,8 +304,13 @@ class SettlementPayoutBatch extends Model
      */
     /**
      * 회사이익 요약 (승인 화면·알림톡 공용 단일 출처) — jin 2026-07-09.
-     * 공식 = 총마진(Σ total_margin) − 지급총액(배치 total_payout, 조정 포함) + 환차(Σ exchange_difference_krw).
+     * 공식 = 총마진(Σ total_margin) − 지급총액(배치 total_payout, 조정 포함).
      * 관리자 대시보드 companyProfit / 월결산 알림톡과 동일 공식. 손실이면 음수.
+     *
+     * 🚨 2026-08-06 (jin) — **`+ 환차` 항 제거.** 그 항은 구 모델에서 actual_payout 에
+     *   1:1 로 더해지던 환차를 상쇄하려던 것이다. 이제 환차는 총마진의 환율(실효 입금환율)로
+     *   들어오고 payout 엔 안 더해지므로, 그대로 두면 회사이익이 환차만큼 부풀려진다.
+     *   'fx' 는 실현 환차 총액의 **정보 표시용**으로만 남긴다(company_profit 에 이미 반영됨).
      */
     public function profitStats(): array
     {
@@ -318,7 +323,7 @@ class SettlementPayoutBatch extends Model
             'total_margin' => $totalMargin,
             'payout' => $payout,
             'fx' => $fx,
-            'company_profit' => $totalMargin - $payout + $fx,
+            'company_profit' => $totalMargin - $payout,
         ];
     }
 

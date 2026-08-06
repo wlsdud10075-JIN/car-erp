@@ -54,6 +54,33 @@ class SettlementPayoutBatchTest extends TestCase
         ]);
     }
 
+    /**
+     * 회사이익 = 총마진 − 지급총액. **환차를 다시 더하지 않는다** (jin 2026-08-06).
+     *
+     * 이 숫자는 승인 페이지와 알림톡 카드로 대표에게 그대로 나간다.
+     * 구 모델의 `+ 환차` 항을 안 지웠으면 환차만큼 부풀려진 회사이익이 매달 보고됐을 것이다.
+     */
+    public function test_profit_stats_does_not_re_add_exchange_diff(): void
+    {
+        $gwanri = $this->user('user', '관리');
+        $s = $this->confirmedSettlement('2026-05-10');
+        $s->update([
+            'attributed_month' => '2026-05-01',
+            'secondary_status' => 'closed',
+            'exchange_difference_krw' => 300_000,
+        ]);
+
+        $batch = SettlementPayoutBatch::submitForMonth($gwanri, '2026-05');
+        $p = $batch->profitStats();
+
+        $this->assertSame(300_000, $p['fx'], '환차는 정보로 계속 보인다');
+        $this->assertSame(
+            $p['total_margin'] - $p['payout'],
+            $p['company_profit'],
+            '회사이익에 환차가 재가산됐다 — 대표에게 부풀려진 숫자가 나간다'
+        );
+    }
+
     public function test_rank_ladder(): void
     {
         $this->assertSame(4, $this->user('super')->approvalRank());

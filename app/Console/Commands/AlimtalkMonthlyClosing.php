@@ -174,9 +174,10 @@ class AlimtalkMonthlyClosing extends Command
 
         $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
         $totalPayout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout);
-        // 회사이익(회사순이익) = 총마진 − 실지급 + 환차. 관리자 대시보드 companyProfit 과 동일 공식(같은 정산셋 기준).
-        $fxSum = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
-        $companyProfit = $totalMargin - $totalPayout + $fxSum;
+        // 회사이익(회사순이익) = 총마진 − 실지급. 관리자 대시보드 companyProfit 과 동일 공식(같은 정산셋 기준).
+        // 🚨 2026-08-06 (jin) — `+ 환차` 제거. 환차는 총마진의 환율(실효 입금환율)로 이미 들어와 있어
+        //   다시 더하면 대표에게 가는 월결산 회사이익이 환차만큼 부풀려진다.
+        $companyProfit = $totalMargin - $totalPayout;
 
         $perSalesman = $settlements->groupBy(fn (Settlement $s) => $s->salesman?->name ?? '미지정')
             ->map(fn ($g) => (int) $g->sum(fn (Settlement $s) => (int) $s->actual_payout))
