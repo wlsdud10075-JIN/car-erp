@@ -56,6 +56,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cons_memo          = '';
     public bool   $cons_is_active     = true;
     // 회의확장씬 #4 (2026-05-22) — Consignee ID 2컬럼 입력
+    // ⚠️ cons_id_type 은 입력칸을 없앤 뒤에도 남겨둔다(jin 2026-08-06) — openConsignee 가 기존 값을
+    //    읽어 담고 save 가 그대로 되쓰기 때문에, 지우면 기존에 저장된 ID 종류가 null 로 덮인다.
     public string $cons_id_type       = '';
     public string $cons_id_value      = '';
     // deep-interview 2026-05-28 Q1 — EORI/TAX 식별번호.
@@ -419,12 +421,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function saveConsignee(): void
     {
-        // 회의확장씬 #4 (2026-05-22) — id_type 선택 시 id_value 필수.
+        // ID 종류 선택은 화면에서 제거(jin 2026-08-06) — 검증도 id_value 만 본다.
         // attribute 라벨은 lang/{ko,en}/validation.php attributes 전역 맵에서 해석 (양쪽 언어 대응).
         $this->validate([
             'cons_name' => 'required|string|max:100',
-            'cons_id_type' => 'nullable|in:'.implode(',', array_keys(\App\Models\Consignee::ID_TYPES)),
-            'cons_id_value' => 'nullable|string|max:50|required_with:cons_id_type',
+            'cons_id_value' => 'nullable|string|max:50',
         ]);
 
         if (! $this->editingId) {
@@ -1016,23 +1017,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input wire:model="cons_name" type="text" class="input-base" />
                     @error('cons_name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
-                {{-- 회의확장씬 #4 (2026-05-22) — ID 2컬럼. id_type 선택 시 id_value 필수 --}}
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="label-base">{{ __('buyer.cons.id_type') }}</label>
-                        <select wire:model="cons_id_type" class="input-base">
-                            <option value="">{{ __('common.select') }}</option>
-                            @foreach(\App\Models\Consignee::ID_TYPES as $key => $label)
-                            <option value="{{ $key }}">{{ __('consignee.id_type.'.$key) }}</option>
-                            @endforeach
-                        </select>
-                        @error('cons_id_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label class="label-base">{{ __('buyer.cons.id_value') }}</label>
-                        <input wire:model="cons_id_value" type="text" class="input-base" maxlength="50" />
-                        @error('cons_id_value')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-                    </div>
+                {{-- ID 종류 선택은 제거(jin 2026-08-06) — 실무에서 구분할 일이 없었고, 서류도
+                     id_value 만 쓴다(DocValue::consigneeIdValue). 컬럼·기존 데이터는 그대로 둔다. --}}
+                <div>
+                    <label class="label-base">{{ __('buyer.cons.id_value') }}</label>
+                    <input wire:model="cons_id_value" type="text" class="input-base" maxlength="50" />
+                    @error('cons_id_value')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 <div>
                     <label class="label-base">{{ __('common.country') }}</label>
