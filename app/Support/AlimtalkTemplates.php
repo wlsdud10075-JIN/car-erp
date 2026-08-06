@@ -381,6 +381,31 @@ class AlimtalkTemplates
      */
     private const ITEM_DESC_MAX = 20;
 
+    /** $vars 안에서 "카드에만 쓸 값" 을 담는 키. 본문 렌더는 이 키를 무시한다(substitute 가 배열을 건너뜀). */
+    public const CARD_VARS_KEY = '__card';
+
+    /**
+     * 카드(아이템리스트) description 전용 금액 축약 — 20자 컷 안에 다른 정보와 같이 들어가야 한다.
+     *
+     * ⚠️ `Money::krwShort()` 를 쓰면 안 된다. 그건 `4억 8,334만`(9자)라 앞에 건수·뒤에 % 를 붙이면
+     *    22자가 되어 잘린다. 여기서는 소수 2자리 억(`4.83억`, 6자)으로 줄인다.
+     *    1억 미만은 `0.05억` 이 읽히지 않으므로 만 단위로, 0 은 `0.00억` 대신 `0원`.
+     * 본문(msg)은 길이 여유가 있으므로 이걸 쓰지 말고 정확한 원 단위를 보낼 것.
+     */
+    public static function cardMoney(int $amount): string
+    {
+        if ($amount === 0) {
+            return '0원';
+        }
+        if (abs($amount) < 100_000_000) {
+            return number_format((int) round($amount / 10_000)).'만';
+        }
+
+        $eok = $amount / 1e8;
+
+        return (abs($eok) >= 10 ? number_format($eok, 1) : number_format($eok, 2)).'억';
+    }
+
     /**
      * 아이템리스트 발송 payload — `#{변수}` 치환 후 BizM v2 send 형식으로 반환.
      *   ['header'=>..., 'items'=>['item'=>['list'=>[...], 'summary'=>...], 'itemHighlight'=>...]]
@@ -392,6 +417,11 @@ class AlimtalkTemplates
         if ($il === null) {
             return null;
         }
+        // 카드 전용 값 오버라이드 — 본문(msg)엔 정확한 금액을, 카드엔 축약형을 넣기 위한 장치(jin 2026-08-06).
+        //   카드 description 은 20자 컷이라 본문과 같은 문자열을 쓰면 뒤가 잘린다. 등록본의 고정 문구
+        //   (`#{선적전건수}건 · #{선적전금액}`)는 그대로이고 **값만** 달라지므로 BizM 재등록은 필요 없다.
+        $vars = array_merge($vars, is_array($vars[self::CARD_VARS_KEY] ?? null) ? $vars[self::CARD_VARS_KEY] : []);
+
         $sub = fn (string $t): string => self::substitute($t, $vars);
         $desc = fn (string $t): string => mb_substr($sub($t), 0, self::ITEM_DESC_MAX);
 
@@ -419,6 +449,9 @@ class AlimtalkTemplates
             return '';
         }
         foreach ($vars as $key => $value) {
+            if (is_array($value)) {
+                continue;   // 카드 전용 오버라이드(CARD_VARS_KEY) 등 — 치환 대상 아님
+            }
             $text = str_replace('#{'.$key.'}', (string) $value, $text);
         }
 
