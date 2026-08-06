@@ -499,6 +499,26 @@ extension=zip    # 주석 제거
 - **거래처별 서식 파서 (2026-07-03, ✅운영배포 e1d434c)**: 「명세서 기입」에 **거래처 선택** — 탁송 위카/구천육/현대A1, 면허 뮤추얼/성지. 회사마다 xlsx 열 위치가 달라 **좌표 고정 파서**로 분기(`Vehicle::TOWING_IMPORT_LAYOUTS`: 구천육 R2~·번호 J·금액 F+G / 현대A1 R13~·번호 M·금액 I+J). ⚠️ 범용 `parseCostLine`(마지막 숫자)은 **차종 숫자(아우디 Q5→5)·비고 차번호꼴 오염** 위험 → 좌표회사는 붙여넣기 금지·xlsx 전용, 금액=성분열 직접 합(수식셀 의존 X). **성지 면허비**=서류 매핑 대신 선적요청 2차비용 탭 딥링크(`erp.shipping-requests.index?tab=cost`, `#[Url] $tab`). **같은 차번호 여러 줄→금액 합산**(취소 후 재진행, `applyCostRowsToPreview`). 거래처 화이트리스트 검증(`assertCostCompanyValid`, IDOR)·차량번호 공백 정규화. `Vehicle::COST_IMPORT_COMPANIES`. [[project_declaration_total_price]]
 - **정산 연동**: 마진 computed라 비용 저장 즉시 정산처리 자동 재계산. 2차 완료(closeSecondarySettlement)만 수동. 상세=[[project_settlement_cost_bulk]] 메모리.
 
+### 28-2. 월배치 조정은 「정산관리 제출 모달」 한 곳에서만 (jin 2026-08-06)
+
+**구조적 함정**: `SettlementPayoutAdjustment` 는 `batch_id` 필수라 **배치가 있어야 조정을 만들 수 있다**.
+그래서 예전엔 「제출 → 배치 생성 → **카톡 발송** → 그제서야 월배치 화면에서 조정」 순서였다.
+- 카톡에 찍힌 총액은 **제출 시점 값** → 조정하면 **승인자가 본 숫자 ≠ 실제 지급액**.
+- 승인자가 바로 승인하면 조정 기회 자체가 소멸.
+- 매입취소 손실은 「반영 표시」를 사람이 눌러야 했다 — **반려된 배치에 잘못 누르면 차감하지도 않은 손실이 반영됨으로 사라져 영영 청구 불가**.
+
+**현행**: 정산관리 「월배치 제출」 = 확인 모달. 매입취소 손실 체크박스 + 수동 조정을 여기서 확정하고,
+`submitForMonth($user, $month, $adjustments)` 가 배치+조정을 **한 트랜잭션**으로 만든 뒤 그 총액으로 카톡을 보낸다.
+- **월배치 화면엔 조정 입력이 없다**(읽기 전용). 고치려면 반려 → 정산관리에서 재제출.
+- 최종 승인 시 `markCancelLossesSettled()` 가 도장을 찍는다. **반려면 안 찍힌다.**
+- ⚠️ 도장 대상은 조정 행의 `cancel_vehicle_ids`(json)다. 승인 시점에 "그 담당자의 미반영 손실 전부"로
+  다시 계산하면 **제출~승인 사이에 생긴 새 취소건까지 반영됨으로 찍혀 조용히 누락**된다.
+- ⚠️ `unsettledCancelLossBySalesman()` 은 `vehicle_ids` 를 함께 준다 — **차량번호로 id 를 되찾지 말 것**
+  (운영에 같은 차량번호가 여러 행 존재: 18누0304 실측 2행).
+- 대상 정산 목록은 `eligibleSettlementIds()` **단일 출처** — 미리보기와 실제 제출이 갈리지 않게.
+- 가드 = `SettlementBatchSubmitModalTest`(미리보기·차감·체크해제·지급없음·수동조정·최종승인 도장·반려 미도장)
+  + `SettlementPayoutAdjustmentTest::test_payout_batch_screen_has_no_adjustment_input`(입력 경로 재유입 차단).
+
 ### 29. 판매계약서(sales_contract) + fillMulti `aggregates` 훅 (2026-07-01)
 신규 서류 `sales_contract`(export 다중차량, 1바이어·단일통화 컨트롤러 가드). **fillMulti 에 `aggregates` 키 신설** — `header`(primary 1대만)·`footerAggregates`(per-row 컬럼 SUM 수식)로는 표현 불가한 **"선택 차량 전체 합산 스칼라 푸터"**(운임·기타·입금·합계·잔금 = 표에 없는 필드의 컬렉션 집계)용. resolver 가 `Collection` 받음. removeRow 前 footer 좌표에 **값**으로 기입(수식이면 cross-cell ref 가 removeRow 로 깨짐 — Subtotal 만 SUM 수식). ⚠**외국인 계약서 = 한글 금지**: Code=`romanizePlate`·Brand=`brandEn`·목적항=영문 `dischargePort`만(한글 국가명 fallback X). 상세=[[project_sales_contract_doc]].
 

@@ -72,7 +72,10 @@ class Vehicle extends Model
      * 기간 필터를 받지 않는다 — 월배치 쪽은 cancelled_at 기간(지급 실행 축)으로 거르지만,
      * 여기는 "지금 남아 있는 미반영 잔액"이 알고 싶은 값이라 축이 다르다.
      *
-     * @return array<int, array{sum: int, plates: array<int, string>}>
+     * ⚠️ `vehicle_ids` 를 함께 준다 — 호출부가 차량번호로 id 를 되찾으면 안 된다.
+     *    운영에 **같은 차량번호가 여러 행** 존재한다(재등록·중복입력). 번호로 조회하면 엉뚱한 차에 도장이 찍힌다.
+     *
+     * @return array<int, array{sum: int, plates: array<int, string>, vehicle_ids: array<int, int>}>
      */
     public static function unsettledCancelLossBySalesman(): array
     {
@@ -91,9 +94,10 @@ class Vehicle extends Model
                 continue;
             }
             $sid = (int) $v->salesman_id;
-            $out[$sid] ??= ['sum' => 0, 'plates' => []];
+            $out[$sid] ??= ['sum' => 0, 'plates' => [], 'vehicle_ids' => []];
             $out[$sid]['sum'] += $half;
             $out[$sid]['plates'][] = $v->vehicle_number;
+            $out[$sid]['vehicle_ids'][] = (int) $v->id;
         }
 
         return $out;
