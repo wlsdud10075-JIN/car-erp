@@ -18,6 +18,9 @@ use Illuminate\Validation\ValidationException;
 
 class Vehicle extends Model
 {
+    // 문자열 앞뒤 공백 자동 제거 (jin 2026-08-06) — '19더9065' 와 '19더9065 ' 가 두 값으로 갈려
+    //   검색이 나뉘던 문제. 저장 경로(화면·엑셀 import·purchase-sync API) 전부에 걸린다.
+    use Concerns\TrimsStringAttributes;
     use SoftDeletes;
 
     /** 매입취소 상태 (jin 2026-07-18) — 위약금은 sale_price·채권 배관 재사용, progress 오염만 이 마커로 분리. */
