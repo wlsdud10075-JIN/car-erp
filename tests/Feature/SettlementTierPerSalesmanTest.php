@@ -179,4 +179,29 @@ class SettlementTierPerSalesmanTest extends TestCase
         $s = $this->settlement($this->vehicle('INH-SET', 20_000_000, 22_000_000, $inherited->id), $on);
         $this->assertSame(70_000, $s->effective_per_unit_amount);
     }
+
+    /**
+     * 🚨 salesman 관계를 컬럼 제한해서 eager load 하면 tier 가 조용히 꺼진다 (jin 2026-08-06 실측).
+     *
+     * `with('salesman:id,name')` 은 per_unit_tier_enabled 를 안 실어서 `(bool) null` = false 가 되고,
+     * 차등정산 담당자의 정산액이 **10만 고정**으로 계산된다. 실측 20,430,000 → 100,000 (20배 오차).
+     * 예외도 경고도 없다 — 화면 합계만 조용히 틀린다.
+     *
+     * 정산액을 계산하는 쿼리에서는 salesman 컬럼을 제한하지 말 것.
+     */
+    public function test_constrained_salesman_eager_load_would_break_tier(): void
+    {
+        $on = $this->salesman(true);
+        $v = $this->vehicle('EAGER-1', 120_000_000, 150_000_000);   // 매입합계 1억↑ → 고율 tier
+        $s = $this->settlement($v, $on);
+
+        $expected = Settlement::with(['vehicle', 'salesman'])->find($s->id)->settlement_amount;
+        $this->assertGreaterThan(100_000, $expected, 'tier 가 실제로 적용되는 표본이어야 의미가 있다');
+
+        // 정산관리 담당자 카드가 쓰는 경로 — 여기서 값이 갈리면 화면 합계가 틀린다.
+        $viaSummary = Settlement::with(['vehicle', 'salesman'])->get()
+            ->groupBy('salesman_id')->map(fn ($g) => (int) $g->sum('settlement_amount'))->first();
+
+        $this->assertSame($expected, $viaSummary);
+    }
 }

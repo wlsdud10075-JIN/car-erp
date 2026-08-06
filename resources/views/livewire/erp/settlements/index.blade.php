@@ -178,7 +178,9 @@ new #[Layout('components.layouts.app')] class extends Component
     public function salesmanSummaries(): array
     {
         $all = Settlement::query()
-            ->with(['vehicle', 'salesman:id,name'])
+            // ⚠️ salesman 컬럼을 제한하지 말 것 — per_unit_tier_enabled 가 안 실리면
+            //    차등정산(tier) 담당자의 정산액이 10만 고정으로 계산돼 합계가 통째로 틀린다(실측 20,430,000→100,000).
+            ->with(['vehicle', 'salesman'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->monthFilter, $this->monthScope())
@@ -604,7 +606,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         $ids = \App\Models\SettlementPayoutBatch::eligibleSettlementIds($this->monthFilter);
-        $settlements = Settlement::whereIn('id', $ids)->with('salesman:id,name')->get();
+        $settlements = Settlement::whereIn('id', $ids)->with(['vehicle', 'salesman'])->get();   // salesman 컬럼 제한 금지 (tier)
         $payoutBySalesman = $settlements->groupBy('salesman_id')
             ->map(fn ($g) => (int) $g->sum('actual_payout'));
 
