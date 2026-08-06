@@ -1705,32 +1705,50 @@ class Vehicle extends Model
     }
 
     /**
-     * 집계 미수율 % (KRW 기준, 0~100) — 여러 대를 묶어서 볼 때 쓴다. 대상 없으면 null.
+     * 집계 판매총액(KRW) — 미수율의 **분모**. SKILLS §13 「집계 미수율」 규칙.
+     *   Σ (sale_total_amount × 환율)  ← sale_price 가 아니라 **판매총액**(부대비용 포함)
+     *   환율 미입력 외화(캐시 null)는 제외 — 분자와 같은 기준이어야 비율이 안 왜곡된다.
      *
-     * ⚠️ SKILLS §13 「집계 미수율」 규칙 그대로다. 분자·분모를 다르게 조합하면 의미 없는 비율이 된다:
-     *   분자 = Σ sale_unpaid_amount_krw_cache
-     *   분모 = Σ (sale_total_amount × 환율)   ← sale_price 가 아니라 **판매총액**(부대비용 포함)
-     *   환율 미입력 외화(캐시 null)는 분자·분모 **양쪽에서** 뺀다 — 한쪽만 빼면 비율이 왜곡된다.
-     * 단일 차량이면 이걸 쓰지 말고 `unpaid_ratio` accessor 를 쓸 것.
-     *
-     * @param  Builder  $query  대상 차량 쿼리(예: scopeAction('receivable_after_shipping'))
+     * @param  Builder  $query
      */
-    public static function aggregateUnpaidRatioPct($query): ?float
+    public static function aggregateSaleTotalKrw($query): int
     {
-        $numer = 0.0;
         $denom = 0.0;
 
         foreach ((clone $query)->get() as $v) {
-            $cache = $v->sale_unpaid_amount_krw_cache;
-            if ($cache === null) {
-                continue;   // 환율 미입력 — 완납 판정 불가라 양쪽에서 제외
+            if ($v->sale_unpaid_amount_krw_cache === null) {
+                continue;
             }
             $total = (float) $v->sale_total_amount;
-            $numer += (float) $cache;
             $denom += $v->currency === 'KRW' ? $total : $total * (float) ($v->exchange_rate ?: 0);
         }
 
-        return $denom > 0 ? round($numer / $denom * 100, 1) : null;
+        return (int) round($denom);
+    }
+
+    /** 집계 미수액(KRW) — 미수율의 **분자**. 환율 미입력(null)은 SUM 에서 자동 제외된다. */
+    public static function aggregateUnpaidKrw($query): int
+    {
+        return (int) (clone $query)->sum('sale_unpaid_amount_krw_cache');
+    }
+
+    /**
+     * 집계 미수율 % (KRW 기준, 0~100) — 여러 대를 묶어서 볼 때. 대상 없으면 null.
+     * 단일 차량이면 이걸 쓰지 말고 `unpaid_ratio` accessor 를 쓸 것.
+     *
+     * ⚠️ `$denominatorKrw` 를 주면 **그 분모로** 계산한다 — 여러 그룹의 비율을 나란히 보여줄 때
+     *    분모를 통일하기 위한 것이다. 통일하지 않으면 그룹마다 모수가 달라 **더할 수 없는 숫자**가 되는데,
+     *    나란히 놓이면 사람은 자연히 더해서 읽는다(jin 2026-08-06 — 선적전 31% + 선적후 60% = 91% 로 오독).
+     *    같은 분모를 주면 각 % 의 합이 곧 전체 미수율이 되어 그 오독이 정답이 된다.
+     *
+     * @param  Builder  $query
+     * @param  int|null  $denominatorKrw  공유 분모. null 이면 그 쿼리 자체의 판매총액.
+     */
+    public static function aggregateUnpaidRatioPct($query, ?int $denominatorKrw = null): ?float
+    {
+        $denom = $denominatorKrw ?? self::aggregateSaleTotalKrw($query);
+
+        return $denom > 0 ? round(self::aggregateUnpaidKrw($query) / $denom * 100, 1) : null;
     }
 
     // ── Computed: 미납액 원화 환산 (KPI 합산용) ─────────────────────

@@ -46,14 +46,36 @@ class AlimtalkSummaryUnpaidRatioTest extends TestCase
         return $v->fresh();
     }
 
+    /** 선적전(출고일 없음) 미수 차량 — grace(판매일+10일) 를 지나야 채권으로 잡힌다. */
+    private function preShippingUnpaid(string $num, int $sale, int $paid): Vehicle
+    {
+        $buyer = Buyer::create(['name' => 'P'.$num, 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => $num,
+            'sales_channel' => 'export',
+            'sale_price' => $sale,
+            'sale_date' => now()->subDays(60)->toDateString(),
+            'buyer_id' => $buyer->id,
+            'currency' => 'KRW',
+            'exchange_rate' => 1,
+        ]);
+        if ($paid > 0) {
+            $v->finalPayments()->create(['amount' => $paid, 'type' => 'balance', 'payment_date' => now()->toDateString(), 'confirmed_at' => now()]);
+        }
+        $v->refreshCaches();
+
+        return $v->fresh();
+    }
+
     public function test_body_shows_exact_amount_with_percent(): void
     {
         $this->shippedUnpaid('11가1111', 10_000_000, 2_500_000);
 
         $vars = app(AlimtalkDailySummary::class)->buildVars();
 
+        // 선적전이 없으므로 공유 분모 = 선적후 판매총액 → 75%
         $this->assertSame('7,500,000원 (75%)', $vars['선적후금액']);
-        $this->assertStringContainsString('%', AlimtalkTemplates::render('erp_daily_summary', $vars).$vars['선적후금액']);
+        $this->assertSame('7,500,000원 (75%)', $vars['미수합계'], '합계에도 전체 미수율이 붙어야 한다');
     }
 
     /** 카드는 축약형이라 20자 컷에 안 걸린다. 본문 값을 그대로 썼다면 잘렸을 것. */
@@ -118,5 +140,36 @@ class AlimtalkSummaryUnpaidRatioTest extends TestCase
         $this->assertArrayHasKey(AlimtalkTemplates::CARD_VARS_KEY, $vars);
         $this->assertStringNotContainsString('Array', $body);
         $this->assertStringNotContainsString(AlimtalkTemplates::CARD_VARS_KEY, $body);
+    }
+
+    /**
+     * 🔑 핵심 — 선적전·선적후 % 의 **분모가 통일**되어 합이 전체 미수율이 되어야 한다.
+     * 각자 분모로 내면 모수가 달라 더할 수 없는 숫자인데, 카톡에 나란히 찍히면 사람은 더해서 읽는다
+     * (jin 2026-08-06: "9%가 비는데 이건 뭐지?" — 31%+60%=91% 로 오독).
+     */
+    public function test_before_and_after_percentages_share_one_denominator(): void
+    {
+        // 선적전: 판매 1,000만 / 미수 200만    선적후: 판매 1,000만 / 미수 600만
+        //   공유 분모 2,000만 → 선적전 10%, 선적후 30%, 합 40% = 전체 미수율(800만/2,000만)
+        $this->preShippingUnpaid('66가6666', 10_000_000, 8_000_000);
+        $this->shippedUnpaid('77가7777', 10_000_000, 4_000_000);
+
+        $vars = app(AlimtalkDailySummary::class)->buildVars();
+
+        $this->assertStringContainsString('(10%)', $vars['선적전금액']);
+        $this->assertStringContainsString('(30%)', $vars['선적후금액']);
+        $this->assertStringContainsString('(40%)', $vars['미수합계'], '합계 % 가 두 값의 합과 달라졌다');
+    }
+
+    /** 카드 요약칸에는 % 가 절대 들어가면 안 된다(금액 전용 — K140). 본문에만 붙는다. */
+    public function test_total_percent_is_in_body_but_not_in_card_summary(): void
+    {
+        $this->shippedUnpaid('88가8888', 10_000_000, 0);
+
+        $vars = app(AlimtalkDailySummary::class)->buildVars();
+        $payload = AlimtalkTemplates::itemListPayload('erp_daily_summary', $vars);
+
+        $this->assertStringContainsString('%', $vars['미수합계']);
+        $this->assertStringNotContainsString('%', $payload['items']['item']['summary']['description']);
     }
 }
