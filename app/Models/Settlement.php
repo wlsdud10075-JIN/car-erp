@@ -331,10 +331,14 @@ class Settlement extends Model
     /**
      * 2026-05-21 정산 공식 재구조 — 엑셀(수출차량매입-2026) 실측 기준.
      *
-     * 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+     * 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × 정산환율
      *   - 면장(export_declaration_amount)은 매출 검증용. 정산 공식엔 안 들어감.
      *   - 운임비(transport_fee)는 sale_total_amount(미수율 분모)엔 들어가지만 정산엔 제외.
      *   - 엑셀 AH 셀 공식 = SUM(AJ + AM + AN - AO) × AL.
+     *
+     * 2026-08-06 (jin) — 환율이 **판매환율 → 실효 입금환율**로 바뀌었다.
+     *   완납 외화차량은 실제 입금된 환율로 1차 정산이 계산된다(= 환차가 1차에 반영).
+     *   미완납·KRW 는 판매환율 그대로. 단일 출처 = Vehicle::settlement_exchange_rate.
      */
     public function getSalesAmountKrwAttribute(): int
     {
@@ -348,7 +352,7 @@ class Settlement extends Model
             + (float) ($v->auto_loading ?? 0)
             - (float) ($v->tax_dc ?? 0);
 
-        return (int) ($base * (float) ($v->exchange_rate ?? 0));
+        return (int) ($base * $v->settlement_exchange_rate);
     }
 
     public function getSettlementSalesKrwAttribute(): int
@@ -629,25 +633,25 @@ class Settlement extends Model
     }
 
     /**
-     * 실지급액 = 정산액 − 서류비 − 기타공제 (+ 환차, 2차 정산 closed + 프리랜서일 때) + 전월 이월액.
+     * 실지급액 = 정산액 − 서류비 − 기타공제 + 전월 이월액.
      *   - 엑셀 CM = CJ − CL. CJ = CH/2 − 50,000 (서류비 박혀있음).
      *   - 사내직원은 서류비 0 → per_unit − other_deduction.
-     *   - 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서(ratio) 시 환차 1:1 반영.
-     *     사용자 결정: 사내직원(per_unit)은 고정액이라 환차 미반영 (회사가 환차익·환차손 부담).
      *   - 새회의 #8 보강 (2026-05-23) — 영업담당자별 캐리오버. creating 훅이 이전 정산의 미적용
      *     carryover_out_krw 합산 → carryover_in_krw set. 본 accessor 가 +로 반영 (음수면 차감).
+     *
+     * 🚨 2026-08-06 (jin) — **환차 1:1 가산을 여기서 제거했다.**
+     *   환차는 이제 판매금원화의 환율(Vehicle::settlement_exchange_rate)로 1차 정산에 들어간다.
+     *   여기서 또 더하면 이중계상이다. `exchange_difference_krw` 는 실현 환차 총액을 남기는
+     *   **감사·정보용 기록**으로만 유지된다(지급액에 직접 관여하지 않음).
+     *   사내직원(per_unit)이 고정액이라 환율 영향을 안 받는 성질은 그대로다 — 정산액이 총마진과
+     *   무관하므로 환율이 바뀌어도 값이 안 움직인다(별도 분기 불필요).
+     *   2차 정산은 명세서 기입(비용 9개) 변동분만 carryover 로 다음달 이월.
      */
     public function getActualPayoutAttribute(): int
     {
         $base = $this->settlement_amount - $this->document_fee - (int) ($this->other_deduction ?? 0);
 
-        if ($this->settlement_type === 'ratio'
-            && $this->secondary_status === 'closed'
-            && $this->exchange_difference_krw !== null) {
-            $base += (int) $this->exchange_difference_krw;
-        }
-
-        // 캐리오버 — 전월 이월액 가산 (양수 환차익 누적 / 음수 환차손 차감)
+        // 캐리오버 — 전월 이월액 가산 (양수면 추가 지급 / 음수면 차감)
         if ($this->carryover_in_krw !== null) {
             $base += (int) $this->carryover_in_krw;
         }

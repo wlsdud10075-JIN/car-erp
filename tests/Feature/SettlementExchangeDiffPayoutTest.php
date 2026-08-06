@@ -3,19 +3,20 @@
 namespace Tests\Feature;
 
 use App\Models\Settlement;
-use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * 회의확장씬 #6+7 보강 (2026-05-23) — 환차 자동 정산금 반영 검증.
+ * 환차는 실지급액에 **재가산하지 않는다** (jin 2026-08-06).
  *
- * 사용자 결정:
- *   - 대상: 프리랜서(ratio)만. 사내직원(per_unit)은 미반영 (회사 부담).
- *   - 계산: 1:1 직접 가산 (actual_payout + exchange_difference_krw).
- *   - 표시: 기존 actual_payout 컬럼에 반영.
+ * 구(2026-05-23 회의확장씬 #6+7): 2차 마감 + 프리랜서면 exchange_difference_krw 를 1:1 가산.
+ * 신: 환차는 판매금원화의 환율(Vehicle::settlement_exchange_rate)로 **1차 정산에 이미 반영**된다.
+ *     여기서 또 더하면 이중계상이므로 가산 로직을 제거했다.
+ *     exchange_difference_krw 컬럼은 실현 환차 총액의 감사·참고 기록으로 남는다.
+ *
+ * 1차 반영 자체의 검증은 SettlementReceiptRateTest.
  */
 class SettlementExchangeDiffPayoutTest extends TestCase
 {
@@ -29,14 +30,7 @@ class SettlementExchangeDiffPayoutTest extends TestCase
         DB::statement('PRAGMA foreign_keys = OFF');
     }
 
-    private function makeManager(): User
-    {
-        return User::factory()->create([
-            'permission' => 'user', 'role' => '관리',
-            'email_verified_at' => now(),
-        ]);
-    }
-
+    /** 미완납 차량 — 실효환율이 안 잡히므로 판매환율 그대로. 환차 가산 여부만 격리해서 본다. */
     private function makeSettlement(string $type, array $extra = []): Settlement
     {
         $v = Vehicle::create([
@@ -61,26 +55,28 @@ class SettlementExchangeDiffPayoutTest extends TestCase
         ], $extra));
     }
 
-    public function test_ratio_closed_with_positive_diff_adds_to_payout(): void
+    public function test_ratio_closed_positive_diff_is_not_added_to_payout(): void
     {
         $s = $this->makeSettlement('ratio', [
             'secondary_status' => 'closed',
             'exchange_difference_krw' => 12000,
         ]);
-        $basePayout = $s->settlement_amount - $s->document_fee;
 
-        $this->assertSame($basePayout + 12000, $s->actual_payout);
+        $this->assertSame(
+            $s->settlement_amount - $s->document_fee,
+            $s->actual_payout,
+            '환차가 실지급액에 다시 더해졌다 — 1차 반영분과 이중계상이다'
+        );
     }
 
-    public function test_ratio_closed_with_negative_diff_subtracts_from_payout(): void
+    public function test_ratio_closed_negative_diff_is_not_subtracted_from_payout(): void
     {
         $s = $this->makeSettlement('ratio', [
             'secondary_status' => 'closed',
             'exchange_difference_krw' => -8000,
         ]);
-        $basePayout = $s->settlement_amount - $s->document_fee;
 
-        $this->assertSame($basePayout - 8000, $s->actual_payout);
+        $this->assertSame($s->settlement_amount - $s->document_fee, $s->actual_payout);
     }
 
     public function test_per_unit_closed_with_diff_does_not_change_payout(): void
@@ -89,20 +85,19 @@ class SettlementExchangeDiffPayoutTest extends TestCase
             'secondary_status' => 'closed',
             'exchange_difference_krw' => 12000,
         ]);
-        // per_unit: actual_payout = per_unit_amount - 0(document_fee) - 0(other_deduction)
-        $basePayout = $s->settlement_amount;
 
-        $this->assertSame($basePayout, $s->actual_payout);   // 환차 미반영
+        $this->assertSame($s->settlement_amount, $s->actual_payout);
     }
 
-    public function test_ratio_pending_without_stored_diff_does_not_change_payout(): void
+    /** 이월(carryover)은 그대로 살아 있어야 한다 — 2차가 넘기는 건 이제 비용 변동분이다. */
+    public function test_carryover_in_still_applies(): void
     {
         $s = $this->makeSettlement('ratio', [
-            'secondary_status' => 'pending',
-            'exchange_difference_krw' => null,
+            'secondary_status' => 'closed',
+            'exchange_difference_krw' => 12000,
+            'carryover_in_krw' => 30000,
         ]);
-        $basePayout = $s->settlement_amount - $s->document_fee;
 
-        $this->assertSame($basePayout, $s->actual_payout);
+        $this->assertSame($s->settlement_amount - $s->document_fee + 30000, $s->actual_payout);
     }
 }

@@ -117,14 +117,20 @@ public function removeFinalPayment(int $idx): void
 
 마진은 `settlements` 테이블에 **저장하지 않고 PHP property로 매번 계산**. 환율·매입가 변경 시 갱신 로직 불필요.
 
+> 🔀 **2026-08-06 (jin) — 정산환율 전환.** 아래 판매금원화의 환율이 `exchange_rate`(판매환율) 에서
+> `settlement_exchange_rate`(**실효 입금환율**) 로 바뀌었다. 상세 = `CLAUDE.md` 「정산 마진 공식」 상단 박스.
+> 요점 3줄: ①환차가 2차 1:1 가산 → **1차 마진공식 통과**로 이동(`actual_payout` 의 환차 가산 제거).
+> ②**미완납이면 판매환율 폴백**(안 하면 원금 미수가 환율로 둔갑). ③운임비 환차는 회사 몫(정산 base 밖).
+
 ```php
-// 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+// 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × 정산환율
+//   ※ 정산환율 = Vehicle::settlement_exchange_rate (완납 외화 = 실입금KRW ÷ 총판매가, 그 외 = 판매환율)
 //   ※ 면장(export_declaration_amount)은 매출 검증용. 정산 공식엔 미포함 (엑셀 AH = SUM(AJ+AM+AN-AO)×AL)
 public function getSalesAmountKrwAttribute(): int
 {
     $v = $this->vehicle;
     $base = ($v->sale_price ?? 0) + ($v->commission ?? 0) + ($v->auto_loading ?? 0) - ($v->tax_dc ?? 0);
-    return (int) ($base * ($v->exchange_rate ?? 0));
+    return (int) ($base * $v->settlement_exchange_rate);
 }
 
 public function getSettlementSalesKrwAttribute(): int
@@ -202,6 +208,9 @@ paid → secondary='pending' (자동, 한 달 대기)
 
 **closed 시점 자동 계산 (2가지 값)**:
 
+> 🔀 **2026-08-06 (jin)** — ①환차는 계속 계산·저장되지만 **지급액에 가산하지 않는다**(1차에 이미 반영, §5-4 박스).
+> 실현 환차 총액의 감사·참고 기록이다. ②이월(carryover)이 넘기는 것은 이제 **명세서 기입(비용 9개) 변동분**이다.
+
 ```php
 // ① 환차 (exchange_difference_krw)
 //    환차 = (2차 정산 환율 × Σ외화입금) - 입금 시점 누적 KRW
@@ -215,6 +224,13 @@ $carryoverOut = $closedPayout - (int) ($settlement->confirmed_snapshot['actual_p
 ```
 
 ### 5-4. 환차 반영 정책 — 영업담당자 타입별 (중요)
+
+> 🔀 **2026-08-06 (jin) 개편으로 아래 원문은 폐기됐다.** `getActualPayoutAttribute` 의 환차 1:1 가산
+> 블록은 **제거**됐고, 환차는 판매금원화의 환율(`Vehicle::settlement_exchange_rate`)을 통해 **1차 정산**에
+> 들어간다. 결과적으로 표의 결론(프리랜서만 환차를 가져가고 사내직원은 회사 부담)은 **그대로 유지**되지만
+> 경로가 다르다 — 사내직원은 "제외 분기"가 아니라 **정산액이 총마진과 무관해서** 자동으로 안 움직인다.
+> ⚠️ 배율도 다르다: 구 = 환차 전액(운임비 포함) 1:1 / 신 = 정산 base(운임비 제외) × 0.9 × 비율.
+> 아래 코드는 **역사 기록**이다. 현행은 `CLAUDE.md` 「정산 마진 공식」 상단 박스를 볼 것.
 
 ```php
 // Settlement::getActualPayoutAttribute

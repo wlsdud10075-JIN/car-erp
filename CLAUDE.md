@@ -107,8 +107,22 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 
 ### 정산 마진 공식 (엑셀 v2 — 수출차량현황표.xlsm 실측 / 2026-05-21 확정)
 
+> 🔀 **2026-08-06 (jin) — 1차 정산 환율이 「판매환율」에서 「실제 입금환율」로 바뀌었다.**
+> 구: 1차는 판매환율로 계산 → 실입금과의 차이는 2차 마감에서 환차로 실지급액에 **1:1 가산**.
+> 신: **판매금원화의 환율 자체가 실효 입금환율** → 환차가 마진공식(×0.9×비율)을 그대로 통과한다.
+> 2차 정산이 다음달로 이월하는 것은 이제 **명세서 기입(탁송비·면허비 등 비용 9개) 변동분**뿐이다.
+> - 단일 출처 = `Vehicle::settlement_exchange_rate` = `실입금KRW ÷ 총판매가(외화)`.
+>   **미완납·KRW·판매환율 0 이면 판매환율로 폴백**(미완납에 나누면 원금 미수가 환율로 둔갑 — 반토막 난다).
+> - `Settlement::actual_payout` 의 환차 1:1 가산은 **제거**됐다. `exchange_difference_krw` 는 실현 환차 총액의 **감사·참고 기록**으로만 남는다(지급액 미관여).
+> - ⚠️ 두 숫자는 크기가 다르다 — 기록된 환차는 **총판매가(운임비 포함)** 기준 총액이고, 1차에 실제 반영되는 몫은 **정산 base(운임비 제외) × 0.9 × 비율**이다. ⇒ **운임비의 환차는 회사 몫**(jin 확인).
+> - 사내직원(per_unit)은 정산액이 총마진과 무관해 자동으로 영향 없음(별도 분기 없음). karaba 는 tier 공식(`karaba_settlement_amount`)이라 `sales_amount_krw` 를 안 써서 **무관**.
+> - 🧹 **곁다리로 반드시 같이 고칠 것 — 회사이익 대시보드**(`admin/dashboard` `companyProfit`). 회사몫 공식에 있던 `+ exchange_difference_krw` 는 **구 모델에서 payout 에 더해지던 환차를 상쇄**하려던 항이라, 안 지우면 회사이익이 환차만큼 **부풀려진다**. 지금은 `총마진 − 실지급액` 하나다. (SKILLS §8 #38 의 그 패턴 — 없앤 값에 매달린 소비자.)
+> - 💡 **환차의 행방** — 실현 환차 중 `× 0.9`(부가세 차감) 만 총마진에 들어오고, 그중 비율만큼만 담당자에게 간다. 나머지(부가세 차감분 + 운임비분)는 **총마진 밖 회사 현금**이라 `company_net` 에도 안 잡힌다. 가드 = `AdminDashboardCompanyProfitTest::test_fx_split_between_salesman_and_company`.
+> - 기준값 = 운영 실차 18누0304(`SettlementReceiptRateTest`). 가드 = 그 테스트 + `SettlementExchangeDiffPayoutTest`(재가산 금지).
+
 ```
-판매금원화        = (sale_price + commission + auto_loading - tax_dc) × exchange_rate
+판매금원화        = (sale_price + commission + auto_loading - tax_dc) × 정산환율
+                                                              ← 정산환율 = 실효 입금환율(완납 외화) / 판매환율(그 외)
                                                               ← 면장(export_declaration_amount)은 매출 검증용 (정산 공식엔 미포함)
                                                               ← 운임비(transport_fee)는 sale_total_amount(미수율 분모) 에만 들어감
 정산판매금원화    = 판매금원화 - cost_total

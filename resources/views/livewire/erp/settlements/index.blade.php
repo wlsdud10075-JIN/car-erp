@@ -188,8 +188,13 @@ new #[Layout('components.layouts.app')] class extends Component
             ))
             ->get();
 
-        return $all->groupBy('salesman_id')->map(function ($group, $salesmanId) {
+        // 미반영 매입취소 손실 (jin 2026-08-06) — 실무자가 정산관리만 보다가 월배치 손실 요약을 놓쳐서 추가.
+        //   ⚠️ 표시 전용. 실제 차감은 「월배치 지급」 조정 1곳에서만 — 여기 합계에 더하면 이중 청구.
+        $cancelLoss = Vehicle::unsettledCancelLossBySalesman();
+
+        return $all->groupBy('salesman_id')->map(function ($group, $salesmanId) use ($cancelLoss) {
             $first = $group->first();
+            $loss = $cancelLoss[(int) $salesmanId] ?? null;
 
             return [
                 'salesman_id' => $salesmanId,
@@ -200,6 +205,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 'actual_payout_sum' => (int) $group->sum('actual_payout'),
                 // 미청산 이월 — Salesman accessor(단일 출처). 필터 무관 현재 잔액. 재무 사각지대 보완.
                 'unconsumed_carryover' => (int) ($first->salesman?->unconsumed_carryover ?? 0),
+                // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월배치에서 차감).
+                'cancel_loss' => (int) ($loss['sum'] ?? 0),
+                'cancel_loss_plates' => $loss['plates'] ?? [],
             ];
         })->sortByDesc('actual_payout_sum')->values()->toArray();
     }
@@ -247,13 +255,16 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         // 2026-05-21 정산 공식 재구조 — 엑셀 v2 기준 (Settlement 모델 accessor 와 동일 공식).
-        // 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × exchange_rate (면장 미포함)
+        // 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × 정산환율 (면장 미포함)
+        // 2026-08-06 (jin) — 정산환율 = 실효 입금환율(완납 외화) / 판매환율(그 외).
+        //   ⚠️ karaba 이익율 정산은 아래에서 판매환율($rate)을 그대로 쓴다 — tier 공식이라 무관.
         $saleBase = (float) ($v->sale_price ?? 0)
             + (float) ($v->commission ?? 0)
             + (float) ($v->auto_loading ?? 0)
             - (float) ($v->tax_dc ?? 0);
         $rate = (float) ($v->exchange_rate ?? 0);
-        $salesAmountKrw = (int) ($saleBase * $rate);
+        $settleRate = $v->settlement_exchange_rate;
+        $salesAmountKrw = (int) ($saleBase * $settleRate);
 
         $settlementSalesKrw = $salesAmountKrw - (int) ($v->cost_total ?? 0);
 
@@ -298,7 +309,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $actualPayout = $settlementAmount - $documentFee - (int) ($this->other_deduction ?? 0);
 
-        // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 closed + 프리랜서 시 환차 1:1 반영.
+        // 2026-08-06 (jin) — 환차는 판매금원화의 환율로 **1차 정산에 이미 반영**된다.
+        //   여기서 다시 더하면 이중계상. 아래 $exchangeDiff 는 실현 환차 총액 **표시 전용**이다.
         // Settlement::getActualPayoutAttribute 와 동일 정책 — 편집 패널 미리보기 정합.
         $exchangeDiff = 0;
         $carryoverIn = 0;
@@ -306,11 +318,9 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($this->editingId) {
             $settlement = Settlement::find($this->editingId);
             if ($settlement) {
-                if ($this->settlement_type === 'ratio'
-                    && $settlement->secondary_status === 'closed'
+                if ($settlement->secondary_status === 'closed'
                     && $settlement->exchange_difference_krw !== null) {
                     $exchangeDiff = (int) $settlement->exchange_difference_krw;
-                    $actualPayout += $exchangeDiff;
                 }
                 // 새회의 #8 보강 (2026-05-23) — 캐리오버 표시.
                 if ($settlement->carryover_in_krw !== null) {
@@ -339,7 +349,9 @@ new #[Layout('components.layouts.app')] class extends Component
      * 사용자 명세: "1차정산·2차정산·환차익 계산 로직 그대로 화면에 나와야".
      *
      * 흐름:
-     *   - 1차 정산금원화 = (sale_price + commission + auto_loading - tax_dc) × vehicle.exchange_rate
+     *   - 판매환율 기준 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × vehicle.exchange_rate
+     *     ⚠️ 2026-08-06 (jin) 개편 후 이 값은 **환차 비교용 기준선**이다. 실제 1차 정산 판매금원화는
+     *        정산환율(실효 입금환율)로 계산된다 — marginData['salesAmountKrw'] 를 볼 것.
      *   - 입금 시점 KRW 합 = Σ(잔금 row × row 환율) = sale_received_krw_accumulated accessor (단일 출처)
      *   - 2차 정산 시점 KRW 합:
      *       · closed → vehicle 입금 시점 + exchange_difference_krw 저장값 역산
@@ -688,9 +700,15 @@ new #[Layout('components.layouts.app')] class extends Component
      *   환차(2차분) = 실입금KRW − baseline
      *     실입금KRW = sale_received_krw_accumulated (잔금 row환율 + 기타 판매환율)
      *     baseline  = sale_total_amount(총판매가 외화) × 판매환율(vehicle.exchange_rate)
-     *   +이면 환차익 → 프리랜서 정산금 +, -이면 환차손 → -.
      *   완납게이트(sale_unpaid_amount ≤ 0) 하에서 기타 term 상쇄 → 순수 실현환차 보장.
      *   KRW 차량 또는 판매환율 없음 → 0/null (환차 없음).
+     *
+     * 🚨 2026-08-06 (jin) — **이 값은 더 이상 지급액에 가산되지 않는다.**
+     *   환차는 판매금원화의 환율(Vehicle::settlement_exchange_rate)로 1차 정산에 이미 들어갔다.
+     *   여기 기록은 실현 환차 총액의 **감사·참고용**이다. 2차 마감이 이월(carryover)로 넘기는 것은
+     *   명세서 기입(탁송비·면허비 등 비용 9개) 변동분이다.
+     *   ⚠️ 두 숫자는 크기가 다르다 — 여기 환차는 총판매가(운임비 포함) 기준 총액이고,
+     *      1차에 반영된 몫은 정산 base(운임비 제외) × 0.9 × 비율 만큼이다.
      */
     /**
      * 정산 락 개편 (jin 2026-07-24) — 마감(closed)된 정산의 회계 재조정 진입.
@@ -990,6 +1008,14 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div class="flex items-center justify-between border-t border-gray-100 pt-1">
                     <span class="{{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ __('settlement.summary_carryover') }}</span>
                     <span class="font-mono font-semibold {{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['unconsumed_carryover'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['unconsumed_carryover'])) }}</span>
+                </div>
+                @endif
+                {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월배치 지급」 조정에서. --}}
+                @if(($summary['cancel_loss'] ?? 0) > 0)
+                <div class="flex items-center justify-between border-t border-gray-100 pt-1"
+                     title="{{ __('settlement.summary_cancel_loss_hint', ['plates' => implode(', ', $summary['cancel_loss_plates'] ?? [])]) }}">
+                    <span class="text-rose-600">{{ __('settlement.summary_cancel_loss') }}</span>
+                    <span class="font-mono font-semibold text-rose-600">−{{ number_format($summary['cancel_loss']) }}</span>
                 </div>
                 @endif
             </div>
@@ -1617,7 +1643,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span>{{ __('settlement.result_other_deduction') }}</span>
                 <span class="text-red-500">- ₩{{ number_format((int) ($other_deduction ?? 0)) }}</span>
             </div>
-            {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 자동 반영 라인 (프리랜서 closed 일 때만). --}}
+            {{-- 2026-08-06 (jin) — 실현 환차 참고 라인. 1차 정산에 이미 반영돼 있어 여기서 재가산하지 않는다. --}}
             @if(! empty($this->marginData['exchangeDiff']))
             <div class="flex justify-between text-gray-600">
                 <span>{{ __('settlement.result_exchange') }} <span class="text-xs text-gray-400">{{ __('settlement.result_exchange_sub') }}</span></span>
