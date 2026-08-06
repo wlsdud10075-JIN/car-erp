@@ -72,10 +72,16 @@ class AlimtalkDailySummary extends Command
         $afterCount = (clone $afterQ)->count();
         $afterSum = (int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache');
 
-        // 미수율 % (jin 2026-08-06) — SKILLS §13 집계식(분모 = Σ 판매총액 × 환율). 대상 0건이면 null → 표기 생략.
-        $beforePct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_before_shipping'));
-        $afterPct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_after_shipping'));
-        $pct = fn (?float $p): string => $p === null ? '' : ' ('.round($p).'%)';
+        // 미수율 % (jin 2026-08-06) — SKILLS §13 집계식. ⚠️ **분모를 선적전·선적후 합계로 통일**한다.
+        //   각자 분모로 내면 모수가 달라 더할 수 없는 숫자인데, 카톡에 나란히 찍히면 사람은 더해서 읽는다
+        //   (실제로 31%+60%=91% 로 오독됐다). 통일하면 두 % 의 합이 곧 전체 미수율이라 그 읽기가 맞아떨어진다.
+        //   소수 1자리 유지 — 정수로 반올림하면 합이 전체율과 어긋난다(7.8+44.8=52.6 vs 8+45=53).
+        $denomKrw = Vehicle::aggregateSaleTotalKrw(Vehicle::query()->action('receivable_before_shipping'))
+            + Vehicle::aggregateSaleTotalKrw(Vehicle::query()->action('receivable_after_shipping'));
+        $beforePct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_before_shipping'), $denomKrw);
+        $afterPct = Vehicle::aggregateUnpaidRatioPct(Vehicle::query()->action('receivable_after_shipping'), $denomKrw);
+        $totalPct = $denomKrw > 0 ? round(($beforeSum + $afterSum) / $denomKrw * 100, 1) : null;
+        $pct = fn (?float $p): string => $p === null ? '' : ' ('.$p.'%)';
 
         // 카드(아이템리스트)는 description 20자 컷이라 본문과 같은 문자열을 쓰면 % 가 잘린다.
         //   → 본문은 정확한 원 단위, 카드는 억 단위 축약. 등록본 고정 문구는 그대로라 재등록 불필요.
@@ -89,10 +95,13 @@ class AlimtalkDailySummary extends Command
             '선적전금액' => number_format($beforeSum).'원'.$pct($beforePct),
             '선적후건수' => number_format($afterCount),
             '선적후금액' => number_format($afterSum).'원'.$pct($afterPct),
-            '미수합계' => number_format($beforeSum + $afterSum).'원',
+            // 합계에 전체 미수율을 붙여 "두 % 를 더하면 이 값" 임을 눈으로 확인시킨다.
+            '미수합계' => number_format($beforeSum + $afterSum).'원'.$pct($totalPct),
             AlimtalkTemplates::CARD_VARS_KEY => [
                 '선적전금액' => AlimtalkTemplates::cardMoney($beforeSum).$pct($beforePct),
                 '선적후금액' => AlimtalkTemplates::cardMoney($afterSum).$pct($afterPct),
+                // 🚫 카드 요약칸은 **금액 표기만** 허용 — % 가 들어가면 K140 으로 발송 반려된다(SKILLS §8 #40).
+                '미수합계' => number_format($beforeSum + $afterSum).'원',
             ],
         ];
     }
