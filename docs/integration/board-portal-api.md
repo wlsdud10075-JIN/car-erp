@@ -234,3 +234,106 @@ board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시할 때 �
 - board가 서명 페이지 호스팅·서명본 보관·CoC 생성(전부 ERP 완결).
 - 서명 URL을 board가 재서명·변조·프록시(그대로 전달만).
 - 계약서 바이트·바이어 PII를 board로 끌어오기(URL 전달만이라 애초에 불필요).
+
+---
+
+## 11. 요청·확인 신호 (카톡 대체) — `board_requests` (2026-08-07 jin 범위 확정)
+
+> 상태: **스펙 확정 · ERP 미구현.** 계약을 먼저 고정하고 양쪽이 병행 개발한다.
+> ERP 계획서 = `docs/design/board-erp-request-ack.md`. 결정 배경 = 그 문서 §1·§6.
+> ⚠️ **board 변경은 board repo/세션에서 커밋**한다(복사 금지=drift). 본 절이 권위.
+
+### 11-1. 무엇인가 — "두 마디"만 옮긴다
+
+실무자가 카톡으로 주고받던 **"해주세요" / "했습니다"** 를 시스템 안으로 넣는다.
+데이터(금액·상태)는 이미 §4 읽기 API 로 흐르고 있으므로 **새로 실어 보낼 게 없다**.
+
+| 신호 | `type` | 단위 | 뜻 | 닫히는 방법 |
+|---|---|---|---|---|
+| **입금요청** | `purchase_payment` | 차량 1대 | "이 차 입금해주세요" | **ERP 자동** — 매입 미지급 0 이면 소멸 |
+| **판매대금확인** | `sale_payment_confirm` | 바이어 1 + 차량 N대 | "이 바이어 차 N대 대금 넣었으니 확인해주세요" | **ERP 재무 수동** — 차량별 체크(부분확인) |
+
+### 11-2. 🚫 금액을 주고받지 않는다 (최중요)
+
+- 요청 body·응답 어디에도 **금액 필드가 없다**. board 가 금액을 보내도 ERP 는 **무시**한다.
+- 매입 지급액·판매 N잔금 기입은 **전부 ERP 관리 이상**의 일이다. 신호는 "누구의 어느 차"까지만 지목한다.
+- 근거 = jin 2026-08-07: "금액을 넣어서 그 금액이 반영되게는 하지말자. 진짜 단순한 신호수준."
+- 은행 API 연동 시 입금요청이 "계약금/잔금 얼마" 로 확장될 예정 — **그때 이 절을 개정**한다. 지금 필드를 선점하지 말 것.
+
+### 11-3. 엔드포인트
+
+prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `throttle:board-read`.
+인증·서명 canonical·replay 방지는 **§1 그대로**(POST 는 raw body 포함). 스코프는 **§2 그대로**(`salesman_email`).
+
+#### `POST /requests` — 신호 보내기
+
+```jsonc
+{
+  "salesman_email": "sales@example.com",   // 쿼리·서명 포함 (§2)
+  "type": "sale_payment_confirm",
+  "vehicle_ids": [12, 34, 56],
+  "buyer_id": 7,          // sale_payment_confirm 필수 / purchase_payment 는 생략
+  "note": "5/12 송금분"    // 선택, 200자
+}
+```
+
+응답 `201`:
+```jsonc
+{
+  "batch_id": "9f1c…",                     // purchase_payment 도 1행짜리 묶음으로 발급
+  "created": ["18누0304", "19더49065"],
+  "skipped": [{ "vehicle_number": "21모1234", "reason": "already_open" }]
+}
+```
+
+- **멱등**: 같은 `(vehicle_id, type)` 에 `open` 이 있으면 새로 만들지 않고 `skipped` 로 돌려준다.
+  board 가 재전송해도 안전 — 중복 뱃지가 안 생긴다.
+- **스코프 재인가**: `vehicle_ids` 는 §2 로 매칭된 영업 것만 통과. 남의 차량 id 는 `skipped(reason: forbidden)`.
+  (전량 거부 대신 부분 성공 — 한 대 때문에 묶음 전체가 죽지 않게.)
+- `sale_payment_confirm` 은 **모든 차량이 `buyer_id` 소속**이어야 한다. 아니면 `422 buyer_mismatch`(오배치 방지).
+- `purchase_payment` 에 `vehicle_ids` 를 2개 이상 보내면 **각각 별개 요청**으로 생성된다(단위가 1대라서).
+
+#### `GET /requests` — 상태 폴링 (칩 갱신)
+
+`?salesman_email=…&status=open|all` (기본 `open`)
+
+```jsonc
+{
+  "requests": [{
+    "batch_id": "9f1c…",
+    "type": "sale_payment_confirm",
+    "status": "partial",                   // open | partial | done | cancelled
+    "buyer_name": "ABC TRADING",
+    "requested_at": "2026-08-07T10:00:00+09:00",
+    "vehicles": [
+      { "vehicle_number": "18누0304", "status": "done", "confirmed_at": "2026-08-07T14:20:00+09:00" },
+      { "vehicle_number": "22가1111", "status": "open", "confirmed_at": null }
+    ]
+  }]
+}
+```
+
+- `status` 는 라인 집계 — 전부 done = `done` / 일부 done = `partial` / 하나도 안 됐으면 `open`.
+- **금액·마진·PII 없음**(§3 화이트리스트 유지). 차량번호·상태·시각뿐.
+
+#### `POST /requests/{batch_id}/cancel` — 오클릭 취소 (선택 구현)
+
+`open` 라인만 `cancelled`. 이미 `done` 인 라인은 남긴다(회신 기록 보존). 없으면 `409`.
+
+### 11-4. board 측 작업 (board repo·board 세션 — 복사 금지)
+
+1. `CarErpReadService` 에 `sendBoardRequest(type, vehicleIds, buyerId?, note?)` + `fetchBoardRequests(status?)` 추가.
+   HMAC 은 §1 canonical **바이트 단위 일치**(POST 는 body 포함).
+2. **[입금요청] 버튼** — 차량 1대 화면/행에서. 누르면 그 차 1대만 전송.
+3. **[판매대금확인] 버튼** — 바이어를 고르고 그 바이어 차량 N대를 **체크해서** 전송(선적요청 UI 와 같은 감각).
+   ⚠️ 서로 다른 바이어의 차를 한 묶음에 담지 못하게 board 에서 먼저 막는다(ERP 도 `422` 로 이중 방어).
+4. **상태 칩** — `GET /requests` 폴링. `partial` 이면 `3/5` 처럼 보여준다.
+   ERP 값 **그대로** 표시(재계산·완료 coerce 금지 — §8 degrade 원칙 동일).
+5. **degrade** — 401/5xx/미설정이면 "**전송 불가**" 표시. 성공한 척하지 말 것(영업이 보냈다고 착각하면 카톡보다 나쁘다).
+6. **금액 입력칸을 만들지 않는다** — §11-2. 만들어도 ERP 가 버린다.
+
+### 11-5. 흡수 금지 (신호)
+
+- board 가 금액을 실어 보내거나, ERP 회계 컬럼(`final_payments`·`purchase_balance_payments`)에 **간접적으로라도 쓰기**.
+- board 가 요청을 **스스로 done 처리**(확인은 ERP 재무의 행위다 — 그게 이 기능의 존재 이유).
+- 신호를 `vehicles` 상태 컬럼에 적재(§9 와 동일 — 게이트 회귀).
