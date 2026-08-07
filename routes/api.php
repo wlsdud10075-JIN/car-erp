@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\BoardRequestController;
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
@@ -57,4 +58,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::post('signing-requests', [SigningRequestController::class, 'store'])->name('signing-requests');
         // §10-2 — board 폴링용 서명 상태 조회(?vehicle_ids=1,2). board 칩 갱신용. 상태 메타만(PII·파일 X).
         Route::get('signing-requests', [SigningRequestController::class, 'status'])->name('signing-requests.status');
+        // §11 요청·확인 신호(카톡 대체) — 입금요청/판매대금확인. 🚫금액 미수신(§11-2).
+        Route::post('requests', [BoardRequestController::class, 'store'])->name('requests.store');
+        Route::get('requests', [BoardRequestController::class, 'index'])->name('requests.index');
+        Route::post('requests/{batch}/cancel', [BoardRequestController::class, 'cancel'])->name('requests.cancel');
     });
