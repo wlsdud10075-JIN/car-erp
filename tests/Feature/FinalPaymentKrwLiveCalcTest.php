@@ -74,6 +74,29 @@ class FinalPaymentKrwLiveCalcTest extends TestCase
         );
     }
 
+    /**
+     * 🚨 잔금 행 3분기 전부에 `wire:key` 가 있어야 한다.
+     *
+     * `removeFinalPayment` 가 `array_values()` 로 재인덱싱하므로(SKILLS §4) 키가 없으면
+     * morph 가 행을 **위치로만** 맞춘다. KRW 환산칸은 `wire:model` 이 없는 순수 DOM 값이라
+     * 서버가 되돌려줄 근거가 없어서, 중간 행을 지우면 환산액이 한 칸 밀려 남는다.
+     */
+    public function test_final_payment_rows_are_keyed(): void
+    {
+        $blade = $this->panel();
+        $loop = strpos($blade, '@foreach($finalPayments as $idx => $row)');
+        $this->assertNotFalse($loop);
+
+        // 루프 시작 ~ 그 루프의 @endforeach 까지만 본다.
+        $end = strpos($blade, '@endforeach', $loop);
+        $this->assertNotFalse($end);
+        $body = substr($blade, $loop, $end - $loop);
+        $keyed = substr_count($body, 'wire:key="fp-');
+
+        $this->assertGreaterThanOrEqual(3, $keyed, '잔금 행 3분기(이체·잠금·편집) 전부에 wire:key 가 필요하다');
+        $this->assertSame(0, substr_count($body, 'wire:key="fp-{{ $idx }}"'), 'idx 단독 키는 삭제 시 전 행이 재생성된다 — id 우선 키를 쓸 것');
+    }
+
     /** 서버 렌더값도 남아 있어야 한다 — 패널을 처음 열었을 때(입력 전) 환산액이 보여야 하므로. */
     public function test_server_still_renders_the_initial_value(): void
     {
