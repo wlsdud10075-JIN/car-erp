@@ -909,6 +909,53 @@ class Vehicle extends Model
                 ->whereNull('resolved_at')
                 ->update(['resolved_at' => now(), 'resolved_reason' => 'document_uploaded']);
         });
+
+        /**
+         * board [입금요청] 자동 해소 — 매입 미지급 0 이면 신호가 스스로 꺼진다.
+         *
+         * 권위 = docs/integration/board-portal-api.md §11. **완료 버튼을 만들지 않는 것이 핵심**이다
+         * (누를 사람이 있으면 결국 카톡으로 돌아간다 — jin 2026-08-07).
+         * 매입 잔금은 `PurchaseBalancePayment::saved` → `refreshCaches()` → 저장을 타므로 여기서 잡힌다.
+         */
+        static::saved(function (Vehicle $vehicle) {
+            static $hasBoardRequestTable = null;
+            if ($hasBoardRequestTable === null) {
+                $hasBoardRequestTable = Schema::hasTable('board_requests');
+            }
+            if (! $hasBoardRequestTable) {
+                return;
+            }
+            $vehicle->resolveOpenPurchasePaymentRequests();
+        });
+    }
+
+    /**
+     * 매입 미지급이 0 이하면 열린 [입금요청] 을 닫는다. 사람이 안 누른다(confirmed_by = null).
+     * 야간 보정 없이 즉시 반영 — 재무가 지급을 기입하는 순간 뱃지가 사라져야 자연스럽다.
+     */
+    public function resolveOpenPurchasePaymentRequests(): void
+    {
+        $open = BoardRequest::query()
+            ->where('vehicle_id', $this->id)
+            ->ofType(BoardRequest::TYPE_PURCHASE_PAYMENT)
+            ->open()
+            ->get();
+
+        // 열린 요청이 없는 게 대부분 — 인덱스 조회 1회로 끝내고 미지급 계산조차 하지 않는다.
+        if ($open->isEmpty()) {
+            return;
+        }
+
+        // ⚠️ 관계 리로드 필수 — 이 훅은 `PurchaseBalancePayment::saved` → `refreshCaches()` 경로로도
+        //    불리는데, 그때 $this 에 이미 로드된 purchaseBalancePayments 는 **방금 만든 잔금을 모른다**.
+        //    리로드를 빼면 "전액 지급했는데 뱃지가 안 꺼진다"가 된다(실측으로 밟음).
+        $this->load('purchaseBalancePayments');
+
+        if ($this->purchase_unpaid_amount > 0) {
+            return;
+        }
+
+        $open->each(fn (BoardRequest $r) => $r->markDone());
     }
 
     /**
