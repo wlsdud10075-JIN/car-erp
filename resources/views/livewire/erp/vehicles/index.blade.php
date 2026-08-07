@@ -6963,7 +6963,7 @@ function vehicleColumnsToggle() {
                     $textMutedClass = $isVoided ? 'text-gray-500' : ($pendingVoid ? 'text-amber-800' : 'text-violet-800');
                     $textMetaClass = $isVoided ? 'text-gray-400' : ($pendingVoid ? 'text-amber-600' : 'text-violet-600');
                 @endphp
-                <div class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
                     <span class="text-xs">{{ $isVoided ? '⊘' : ($pendingVoid ? '⏳' : '🔁') }}</span>
                     <span class="w-24 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
                         {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
@@ -6995,10 +6995,27 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
                 @elseif(!empty($row['locked']))
-                <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                @php
+                    $lockedAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
+                    $lockedRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '');
+                @endphp
                     <span class="text-xs text-gray-400">🔒</span>
-                    <span class="w-24 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
                     <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
+                    {{-- 환율·원화 환산 (외화만) — 이 행은 채권관리에서 만들어져 여기선 못 고치지만,
+                         **얼마의 환율로 들어왔는지는 보여야 한다**(jin 2026-08-07). 안 보이던 탓에
+                         환율 1 로 굳은 잔금(52머6628·63루6484)을 아무도 못 봤다. --}}
+                    @if($currency !== 'KRW')
+                    <span class="w-16 text-sm text-gray-600" title="{{ __('vehicle.panel.rate_at_payment') }}">
+                        {{ $lockedRate > 0 ? number_format($lockedRate, 2) : '—' }}
+                    </span>
+                    @endif
+                    <span class="w-24 text-sm text-gray-600">{{ number_format($lockedAmt) }}</span>
+                    @if($currency !== 'KRW')
+                    <span class="w-28 text-sm text-gray-600" title="{{ __('vehicle.panel.krw_converted') }}">
+                        {{ $lockedRate > 0 && $lockedAmt > 0 ? '₩'.number_format($lockedAmt * $lockedRate) : '' }}
+                    </span>
+                    @endif
                     <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
                     <a href="{{ route('erp.receivables.index', ['openVehicle' => $this->editingId]) }}" wire:navigate
                        class="text-xs text-violet-500 hover:underline whitespace-nowrap">{{ __('vehicle.panel.edit_in_receivables') }}</a>
@@ -7011,7 +7028,10 @@ function vehicleColumnsToggle() {
                 @endphp
                 {{-- data-fp-row = KRW 환산칸 즉시 갱신용 (app.js 문서 위임). 금액·환율이 wire:model(deferred)
                      이라 서버 왕복을 기다리면 blur 전까지 환산액이 안 변한다 — 그게 "느리다"로 보였다. --}}
-                <div data-fp-row class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
+                {{-- wire:key 필수 — removeFinalPayment 가 array_values() 로 재인덱싱하므로(§4) 키가 없으면
+                     morph 가 행을 위치로만 맞춘다. KRW 환산칸은 wire:model 이 없는 순수 DOM 값이라
+                     되돌려줄 근거가 없어, 중간 행을 지우면 환산액이 한 칸 밀려 남는다. --}}
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" data-fp-row class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     {{-- 순서: 날짜 / 환율 / 금액 / 환율변환금액 / 비고 (jin 2026-07-13). --}}
                     {{-- 날짜 = wire:model.live → 그 날짜 마감환율 자동기입(updatedFinalPayments, 미확정·외화만). --}}
                     <input wire:model.live="finalPayments.{{ $idx }}.payment_date" type="text" data-date class="input-base"
