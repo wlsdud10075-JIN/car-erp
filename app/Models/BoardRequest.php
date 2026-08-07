@@ -116,7 +116,14 @@ class BoardRequest extends Model
         ]);
     }
 
-    /** 확인 처리 — 재무가 체크(수동) 또는 자동 해소. $user 없으면 시스템 자동 해소. */
+    /**
+     * 확인 처리 — 재무가 체크(수동) 또는 자동 해소. $user 없으면 시스템 자동 해소.
+     *
+     * ⚠️ **일방향이다(의도).** 자동 해소 뒤 잔금이 삭제돼 미지급이 다시 생겨도 이 요청은 안 열린다.
+     *    되열림을 만들지 말 것 — 지급/취소가 오갈 때마다 뱃지가 깜빡여 신호의 신뢰가 깨진다.
+     *    다시 필요하면 board 가 재전송하면 되고, 멱등 가드는 done 이후 재요청을 허용한다
+     *    (`BoardRequestModelTest::test_can_reopen_after_done`).
+     */
     public function markDone(?User $user = null): void
     {
         if ($this->status !== self::STATUS_OPEN) {

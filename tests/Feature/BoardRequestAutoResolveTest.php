@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\BoardRequest;
+use App\Models\PurchaseBalancePayment;
+use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\PaymentConfirmationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -100,5 +103,37 @@ class BoardRequestAutoResolveTest extends TestCase
         $v->fresh()->resolveOpenPurchasePaymentRequests();
 
         $this->assertSame(BoardRequest::STATUS_DONE, $req->fresh()->status);
+    }
+
+    /**
+     * 🔒 **운영 경로** 검증 — 재무가 실제로 쓰는 흐름(신규 입력 + 재무 확정)에서도 닫히는가.
+     *
+     * 위 테스트들은 관계로 PBP 를 직접 만든다. 운영은 `transfers::createNewPbp` 가
+     * `PurchaseBalancePayment::create()` 후 `PaymentConfirmationService::confirmPurchasePayment()`
+     * 로 확정하고, **미지급은 확정 시점에야 줄어든다**. 그 경로가 훅을 안 타면
+     * 테스트만 초록이고 운영에선 뱃지가 영영 안 꺼진다(완료 버튼이 없으니 탈출구도 없다).
+     */
+    public function test_closes_through_real_finance_confirmation_path(): void
+    {
+        $finance = User::factory()->create([
+            'permission' => 'user', 'role' => '재무', 'email_verified_at' => now(),
+        ]);
+        $v = $this->vehicle(1_000_000);
+        $req = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+
+        // ① 재무가 지급 행을 만든다 — 아직 미확정이라 미지급은 그대로다.
+        $pbp = PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id, 'amount' => 1_000_000, 'payment_date' => '2026-08-05',
+        ]);
+        $this->assertSame(BoardRequest::STATUS_OPEN, $req->fresh()->status, '미확정 지급인데 신호가 꺼졌다');
+
+        // ② 재무 확정 → 미지급 0 → 신호 자동 소멸
+        app(PaymentConfirmationService::class)->confirmPurchasePayment($pbp, $finance);
+
+        $this->assertSame(
+            BoardRequest::STATUS_DONE,
+            $req->fresh()->status,
+            '재무 확정 경로가 자동 해소를 안 태웠다 — 운영에서 뱃지가 안 꺼진다'
+        );
     }
 }

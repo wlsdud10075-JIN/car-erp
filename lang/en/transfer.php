@@ -68,6 +68,21 @@ return [
 
     'new_pbp_hint' => 'When a separate purchase balance entry is needed beyond the auto PBP draft (split payments, extra costs, etc.)',
     'new_pbp_btn' => '+ Add purchase balance',
+
+    'board' => [
+        'purchase_title' => 'board payment requests',
+        'purchase_hint' => 'Sales asked for payment on these vehicles. They disappear automatically once the unpaid balance reaches zero.',
+        'sale_title' => 'board payment confirmation requests',
+        'sale_hint' => 'Sales reported incoming payments. Check only the vehicles you verified in the bank account.',
+        'requested_by' => 'By',
+        'pay_btn' => 'Record payment',
+        'confirm_btn' => 'Confirm',
+        'confirmed' => 'Confirmed',
+        'progress' => ':done/:total confirmed',
+        'empty' => 'No pending requests.',
+        'confirm_done' => 'Confirmed.',
+        'no_permission' => 'You are not allowed to confirm sale payments.',
+    ],
     'pending' => 'Pending',
     'confirmed' => 'Confirmed',
     'empty_payment' => 'No matching balances.',
