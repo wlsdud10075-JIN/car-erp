@@ -277,6 +277,15 @@ return [
         'current_level' => '현재 승인 단계',
     ],
 
+    // ─── user_delegations (휴가 대리 위임) ───────────────────────────────
+    'user_delegations' => [
+        'from_user_id' => '위임한 사람',
+        'to_user_id' => '대리인',
+        'is_active' => '위임 중',
+        'ends_at' => '복귀 예정일',
+        'reason' => '사유',
+    ],
+
     // ─── signed_contracts (전자서명) ─────────────────────────────────────
     'signed_contracts' => [
         'status' => '서명 상태',
@@ -309,6 +318,7 @@ return [
         'Setting' => '기능 설정',
         'SettlementPayoutBatch' => '정산 지급 배치',
         'SignedContract' => '전자서명 계약',
+        'UserDelegation' => '업무 위임',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -345,6 +355,9 @@ return [
         'signing_session_revoked' => '전자서명 요청 무름',
         'cash_balance_entered' => '통장 잔액 입력',
         'capital_recaptured' => '자금현황 재계산',
+        // 2026-08-07 — 휴가 대리 위임(담당 영업 스코프). 켜고 끄는 건 본인.
+        'delegation_activated' => '담당 영업 위임 시작',
+        'delegation_deactivated' => '담당 영업 위임 종료',
     ],
 
     /*

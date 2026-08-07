@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 class User extends Authenticatable
@@ -311,6 +312,36 @@ class User extends Authenticatable
         return in_array($this->approvalRank(), [1, 2], true);
     }
 
+    /** 요청 수명 동안만 유효한 memo — 위임을 켜고 끈 직후엔 `forgetDelegationMemo()` 로 비운다. */
+    private $delegatorsMemo = null;
+
+    /**
+     * 휴가 대리 위임 (jin 2026-08-07) — 지금 나에게 담당 영업을 맡긴 사람들.
+     *
+     * 효력 있는 위임만(만료는 조회 시점 판정). 넘어오는 건 **담당 영업 스코프뿐**이다 —
+     * 승인 계단·권한 등급은 그대로다(jin: 승인은 며칠이면 다녀와서 처리하면 된다).
+     *
+     * 요청당 1회만 조회하고 memo — `getSubordinateSalesmanIds()` 는 한 화면에서 4~5번씩 불린다.
+     *
+     * @return Collection<int, User>
+     */
+    public function activeDelegators()
+    {
+        return $this->delegatorsMemo ??= UserDelegation::query()
+            ->effective()
+            ->where('to_user_id', $this->id)
+            ->with('fromUser')
+            ->get()
+            ->pluck('fromUser')
+            ->filter()
+            ->values();
+    }
+
+    public function forgetDelegationMemo(): void
+    {
+        $this->delegatorsMemo = null;
+    }
+
     /**
      * 큐 14-2 — 4 승인 액션 권한 (회의록 v5.1 §9-2 + 2026-05-14 회의 합의안).
      *
@@ -392,8 +423,23 @@ class User extends Authenticatable
             && in_array($target->id, $this->getManagedSalesmanUserIds(), true);
     }
 
-    /** 이 관리가 담당하는 영업 user id 배열 (pivot ∪ 레거시 manager_user_id — getSubordinateSalesmanIds 와 동일 출처군). */
+    /**
+     * 이 관리가 담당하는 영업 user id 배열 (pivot ∪ 레거시 manager_user_id — getSubordinateSalesmanIds 와 동일 출처군).
+     * 휴가 대리 위임(2026-08-07)을 받았으면 위임자의 팀도 합쳐진다 — 대리인이 그 팀 계정을 실제로 관리해야 하므로.
+     */
     public function getManagedSalesmanUserIds(): array
+    {
+        $ids = $this->ownManagedSalesmanUserIds();
+
+        foreach ($this->activeDelegators() as $delegator) {
+            $ids = array_merge($ids, $delegator->ownManagedSalesmanUserIds());
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /** 위임을 뺀 본인 팀만 — 위임 연쇄(A→B→C)를 막는 원본. */
+    public function ownManagedSalesmanUserIds(): array
     {
         return $this->managedSalesmanUsers()->pluck('users.id')
             ->merge($this->subordinates()->pluck('id'))
@@ -539,6 +585,18 @@ class User extends Authenticatable
         return $this->belongsToMany(User::class, 'manager_salesman', 'manager_user_id', 'salesman_user_id');
     }
 
+    /** 내가 남에게 맡긴 위임 (휴가 갈 때 켜는 쪽). */
+    public function delegationsGiven(): HasMany
+    {
+        return $this->hasMany(UserDelegation::class, 'from_user_id');
+    }
+
+    /** 나에게 맡겨진 위임 (대신 해주는 쪽). */
+    public function delegationsReceived(): HasMany
+    {
+        return $this->hasMany(UserDelegation::class, 'to_user_id');
+    }
+
     /** 이 영업 user 를 담당하는 [관리] user 들 (사용자관리 다중 배정 UI). */
     public function managers(): BelongsToMany
     {
@@ -559,6 +617,20 @@ class User extends Authenticatable
      * @return array<int>
      */
     public function getSubordinateSalesmanIds(): array
+    {
+        $ids = $this->ownSubordinateSalesmanIds();
+
+        // 휴가 대리 위임 (2026-08-07 jin) — 나에게 업무를 맡긴 사람의 팀을 함께 본다.
+        //   위임은 1단만 — 위임자의 `own...` 을 쓰므로 A→B→C 연쇄도, A→B→A 순환도 안 생긴다.
+        foreach ($this->activeDelegators() as $delegator) {
+            $ids = array_merge($ids, $delegator->ownSubordinateSalesmanIds());
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /** 위임을 뺀 본인 팀만. */
+    public function ownSubordinateSalesmanIds(): array
     {
         // 2026-06-30 — 다대다 pivot(주 출처) ∪ 레거시 단일 manager_user_id(이관 전·구 코드 호환).
         // UI 저장 시 manager_user_id = pivot 첫 멤버로 유지 → 항상 pivot ⊇ {manager_user_id} →

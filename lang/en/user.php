@@ -49,6 +49,22 @@ return [
         'user' => 'User (user)',
     ],
 
+    'delegation' => [
+        'my_title' => 'Delegate my salespeople',
+        'my_note' => 'While you are away, hand over all of your assigned salespeople at once. It releases automatically after the return date.',
+        'to_ph' => '— Stand-in —',
+        'until_ph' => 'Return date',
+        'start' => 'Start',
+        'stop' => 'Stop',
+        'on' => 'Active · until :date',
+        'handed_to' => ':name also sees your :count assigned salespeople.',
+        'team' => 'Assigned — :names',
+        'need_end_date' => 'A return date is required to start a delegation.',
+        'past_end_date' => 'The return date is already in the past.',
+        'activated' => 'Delegated to :name.',
+        'deactivated' => 'Delegation ended.',
+    ],
+
     'saved' => 'User saved.',
     'deleted' => 'User deleted.',
     'self_delete' => 'You cannot delete your own account.',

@@ -77,6 +77,8 @@ class ColumnLabel
             'SignedContract' => 'signed_contracts',
             // 2026-08-04 — 차등정산 on/off 가 감사로그에 쌓이기 시작(정산 금액 직결).
             'Salesman' => 'salesmen',
+            // 2026-08-07 — 휴가 대리 위임(스코프·승인 계단을 넘기므로 감사 필수).
+            'UserDelegation' => 'user_delegations',
         ];
 
         return $map[$short] ?? null;
