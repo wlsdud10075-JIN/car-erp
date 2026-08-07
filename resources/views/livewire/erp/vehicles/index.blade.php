@@ -7009,27 +7009,30 @@ function vehicleColumnsToggle() {
                     $isConfirmed = !empty($row['confirmed_at']);
                     $rowBg = $isConfirmed ? 'bg-emerald-50/40 border-emerald-200' : ($row['id'] ? 'bg-amber-50/40 border-amber-200' : 'border-transparent');
                 @endphp
-                <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
+                {{-- data-fp-row = KRW 환산칸 즉시 갱신용 (app.js 문서 위임). 금액·환율이 wire:model(deferred)
+                     이라 서버 왕복을 기다리면 blur 전까지 환산액이 안 변한다 — 그게 "느리다"로 보였다. --}}
+                <div data-fp-row class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     {{-- 순서: 날짜 / 환율 / 금액 / 환율변환금액 / 비고 (jin 2026-07-13). --}}
                     {{-- 날짜 = wire:model.live → 그 날짜 마감환율 자동기입(updatedFinalPayments, 미확정·외화만). --}}
                     <input wire:model.live="finalPayments.{{ $idx }}.payment_date" type="text" data-date class="input-base"
                            style="width: 112px; flex: none;" />
                     {{-- 환율 (외화만, 자동 기입 + 수정 가능) --}}
                     @if($currency !== 'KRW')
-                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" class="input-base"
+                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" data-fp-rate class="input-base"
                            style="width: 80px; flex: none;" placeholder="{{ __('vehicle.ph.rate') }}" title="{{ __('vehicle.panel.rate_at_payment') }}" />
                     @endif
                     {{-- 금액 --}}
-                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" data-money class="input-base"
+                    <input wire:model="finalPayments.{{ $idx }}.amount" type="text" data-money data-fp-amount class="input-base"
                            style="width: 96px; flex: none;" placeholder="{{ __('vehicle.ph.amount') }}" />
-                    {{-- 환율변환금액 (외화만, readonly — FinalPayment::saving 훅이 DB amount_krw 저장) --}}
+                    {{-- 환율변환금액 (외화만, readonly — FinalPayment::saving 훅이 DB amount_krw 저장).
+                         서버값은 초기 표시용이고, 타이핑 중 갱신은 app.js 가 클라이언트에서 한다. --}}
                     @if($currency !== 'KRW')
                     @php
                         $rowAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
                         $rowRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '0');
                         $rowKrw = $rowAmt * $rowRate;
                     @endphp
-                    <input type="text" class="input-base text-right"
+                    <input type="text" data-fp-krw class="input-base text-right"
                            style="width: 130px; flex: none; background-color: #f9fafb; color: #4b5563;"
                            readonly tabindex="-1"
                            value="{{ $rowAmt > 0 && $rowRate > 0 ? '₩'.number_format($rowKrw) : '' }}"
