@@ -356,6 +356,31 @@ if (window.Livewire) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 잔금 행 원화 환산칸([data-fp-krw]) — 금액·환율 타이핑 즉시 갱신 (jin 2026-08-07)
+//   금액·환율은 wire:model(deferred)이라 blur 해야 서버로 간다. 환산액을 서버 렌더에만
+//   맡기면 타이핑 중엔 안 변하고, blur 후 거대한 차량 패널이 통째로 재렌더되며 몇 초 걸린다
+//   → 사용자에겐 "환산 금액이 엄청 느리다"로 보였다. 성능이 아니라 배선 문제(CLAUDE.md #15).
+//   서버 렌더값은 초기 표시·저장 기준 그대로 두고, 입력 중 표시만 여기서 계산한다.
+//   문서 위임이라 wire:navigate·morph·행 추가 뒤에도 계속 동작한다(§8 #21).
+//   data-money 의 +/- 키 처리도 input 이벤트를 dispatch 하므로 함께 잡힌다.
+// ──────────────────────────────────────────────────────────────────────────
+function recalcFinalPaymentKrw(row) {
+    const out = row.querySelector('[data-fp-krw]');
+    if (!out) return;   // KRW 차량 = 환산칸 자체가 없음
+    const num = (s) => Number(String(s ?? '').replace(/[^0-9.]/g, '')) || 0;
+    const amt = num(row.querySelector('[data-fp-amount]')?.value);
+    const rate = num(row.querySelector('[data-fp-rate]')?.value);
+    out.value = amt > 0 && rate > 0 ? '₩' + Math.round(amt * rate).toLocaleString('en-US') : '';
+}
+
+document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!el || !el.matches || !el.matches('[data-fp-amount], [data-fp-rate]')) return;
+    const row = el.closest('[data-fp-row]');
+    if (row) recalcFinalPaymentKrw(row);
+});
+
+// ──────────────────────────────────────────────────────────────────────────
 // 전화번호 input([data-phone]) — 숫자만 입력해도 하이픈 자동 (jin 2026-07-09)
 //   문서 위임(wire:navigate·morph 견딤). 발송부 BizmAlimtalkService 가 숫자만 정규화하므로
 //   하이픈 포함 표시값도 발송 호환. 한국 번호꼴: 010-XXXX-XXXX / 0XX-XXX(X)-XXXX / 02-XXX(X)-XXXX.
