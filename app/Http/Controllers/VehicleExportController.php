@@ -58,7 +58,8 @@ class VehicleExportController extends Controller
         $applyDateFilter = $mirror && $dateType !== 'all' && $dateType !== 'balance';
 
         $vehicles = Vehicle::query()
-            ->with(['salesman', 'buyer', 'consignee', 'settlements'])
+            // 컨사이니 3칸(통관·선적·판매) = effective_consignee 폴백용 eager load.
+            ->with(['salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'settlements'])
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))

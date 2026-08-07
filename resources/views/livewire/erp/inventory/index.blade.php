@@ -76,7 +76,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $isShippedOut = $this->category === 'shipped_out';
 
         $result = Vehicle::query()
-            ->with(['salesman', 'buyer', 'consignee', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
+            // 컨사이니 3칸(통관·선적·판매) = effective_consignee 폴백용 eager load.
+            ->with(['salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
             ->when($isShippedOut,
                 fn ($q) => $q->whereNotNull('warehouse_out_date'),
                 fn ($q) => $q->inStock()
@@ -87,7 +88,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->buyerFilter !== '', fn ($q) => $q->where('buyer_id', $this->buyerFilter))
-            ->when($this->consigneeFilter !== '', fn ($q) => $q->where('consignee_id', $this->consigneeFilter))
+            // 컨사이니 필터 — 3칸 어디에 들어 있든 잡는다. consignee_id 만 보면 07-09 이후 차량이 전부 0건.
+            ->when($this->consigneeFilter !== '', fn ($q) => $q->whereEffectiveConsignee($this->consigneeFilter))
             ->when($this->statusFilter !== '', fn ($q) => $q->where('progress_status_cache', $this->statusFilter))
             ->when($this->locationFilters !== [], function ($q) {
                 $picked = array_values(array_diff($this->locationFilters, ['__none']));
@@ -605,7 +607,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="badge {{ $v->sales_channel === 'export' ? 'badge-blue' : ($v->sales_channel === 'heyman' ? 'badge-teal' : 'badge-purple') }}">{{ $v->sales_channel }}</span>
                     </td>
                     <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
-                    <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->consignee?->name ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->effective_consignee?->name ?? '-' }}</td>
                     <td class="py-3 text-right">
                         <a href="{{ route('erp.vehicles.index') }}?openVehicle={{ $v->id }}"
                            wire:navigate

@@ -63,7 +63,8 @@ class VehicleExportService
             'cost_total' => ['비용합계', 'num', fn (Vehicle $v) => $v->cost_total, '매입'],   // accessor
             // 판매
             'buyer' => ['바이어', 'str', fn (Vehicle $v) => $v->buyer?->name, '판매'],
-            'consignee' => ['컨사이니', 'str', fn (Vehicle $v) => $v->consignee?->name, '판매'],
+            // 컨사이니는 선적 탭에서 입력(당사자 축소 2026-07-09) — 화면 목록과 같은 폴백을 쓴다.
+            'consignee' => ['컨사이니', 'str', fn (Vehicle $v) => $v->effective_consignee?->name, '판매'],
             'sale_date' => ['판매일자', 'date', fn (Vehicle $v) => $v->sale_date, '판매'],
             'currency' => ['통화', 'str', fn (Vehicle $v) => $v->currency, '판매'],
             'exchange_rate' => ['환율', 'num', fn (Vehicle $v) => $v->exchange_rate, '판매'],

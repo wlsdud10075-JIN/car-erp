@@ -1723,10 +1723,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             );
         }
 
-        return $this->filteredVehicleQuery()
-            ->with(['buyer', 'consignee', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
-            ->orderBy($this->sortColumn, $this->sortDirection)
-            ->paginate($this->perPage);
+        // 컨사이니 3칸(통관·선적·판매) eager load — 목록 컬럼이 effective_consignee 폴백을 쓴다(N+1 방지).
+        $q = $this->filteredVehicleQuery()
+            ->with(['buyer', 'consignee', 'blConsignee', 'exportConsignee', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories']);
+
+        // 컨사이니 정렬은 폴백 우선순위(COALESCE)로 — consignee_id 만 보면 신규 차량이 전부 NULL 이라 정렬이 무의미.
+        $q = $this->sortColumn === 'consignee_id'
+            ? $q->orderByRaw(Vehicle::effectiveConsigneeSortExpression().' '.($this->sortDirection === 'asc' ? 'asc' : 'desc'))
+            : $q->orderBy($this->sortColumn, $this->sortDirection);
+
+        return $q->paginate($this->perPage);
     }
 
     /**
@@ -5601,7 +5607,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->consignee?->name ?? '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->effective_consignee?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>
                 <td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
                     {{ $v->currency }}

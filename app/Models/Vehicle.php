@@ -1298,6 +1298,42 @@ class Vehicle extends Model
         return $this->belongsTo(Consignee::class, 'bl_consignee_id');
     }
 
+    /**
+     * 실효 컨사이니 — 통관 → 선적 → (레거시) 판매 순 폴백. 목록·필터·엑셀의 단일 출처.
+     *
+     * 당사자 축소(jin 2026-07-09)로 판매 탭 컨사이니 입력칸이 사라져 `consignee_id` 는
+     * 신규 차량에서 항상 빈다. 그런데 읽는 쪽(차량목록·재고목록·재고필터·엑셀)이 그 칸만 보고 있어
+     * 컨사이니가 통째로 '-' 로 뜨고 재고 필터는 0건이 됐다(실측 2026-08-07:
+     * ssancarerp 14대 전부 / heymanerp 07-09 이후 59대 전부 빈칸).
+     * 서류(`DocValue::invoiceConsignee`)가 쓰던 3단 폴백과 같은 규칙으로 통일한다.
+     *
+     * ⚠️ 마지막 폴백(판매 칸)을 지우지 말 것 — 07-09 이전 차량(heymanerp 76대)은 거기에만 값이 있다.
+     * ⚠️ 목록에서 쓸 땐 `with(['consignee','blConsignee','exportConsignee'])` 로 eager load (N+1).
+     */
+    public function getEffectiveConsigneeAttribute(): ?Consignee
+    {
+        return $this->exportConsignee ?: $this->blConsignee ?: $this->consignee;
+    }
+
+    /** 위 폴백의 SQL 판 — 우선순위 순. 필터(OR)·정렬(COALESCE)이 화면 표시와 갈리지 않게 하는 단일 출처. */
+    public const CONSIGNEE_FALLBACK_COLUMNS = ['export_consignee_id', 'bl_consignee_id', 'consignee_id'];
+
+    /** 컨사이니 필터 — 3칸 중 어디에 들어 있든 잡는다. */
+    public function scopeWhereEffectiveConsignee(Builder $q, int|string $consigneeId): Builder
+    {
+        return $q->where(function (Builder $sub) use ($consigneeId) {
+            foreach (self::CONSIGNEE_FALLBACK_COLUMNS as $col) {
+                $sub->orWhere($col, $consigneeId);
+            }
+        });
+    }
+
+    /** 컨사이니 정렬용 SQL 식 — 표시값과 같은 우선순위. */
+    public static function effectiveConsigneeSortExpression(): string
+    {
+        return 'COALESCE('.implode(', ', self::CONSIGNEE_FALLBACK_COLUMNS).')';
+    }
+
     public function finalPayments(): HasMany
     {
         return $this->hasMany(FinalPayment::class);
