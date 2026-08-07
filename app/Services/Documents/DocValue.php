@@ -37,10 +37,11 @@ class DocValue
     /**
      * 수출 서류 컨사이니(Client) — 수출(통관) → 선적(B/L) → 판매 순 fallback.
      * 컨사이니는 선적에서 입력, 통관이 이어받음(export_consignee_id). 3단 fallback 으로 단계 무관 안전.
+     * 폴백 정의는 `Vehicle::effective_consignee` 단일 출처 — 화면·엑셀도 같은 값을 본다(2026-08-07).
      */
     public static function invoiceConsignee(Vehicle $v): ?Consignee
     {
-        return $v->exportConsignee ?: $v->blConsignee ?: $v->consignee;
+        return $v->effective_consignee;
     }
 
     /** 컨사이니 ID(여권/주민) — 신규 id_value 우선, 없으면 legacy passport. */
