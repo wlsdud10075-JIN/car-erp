@@ -74,6 +74,12 @@ class InternalPortalController extends Controller
         $sid = $this->salesmanId($request);
         $data = $this->ownVehicles($sid)->where('sale_price', '>', 0)->with('buyer')->get()
             ->map(fn (Vehicle $v) => [
+                // §11 요청·확인 신호용 식별자 (2026-08-08) — board 가 [판매대금확인] 을 보내려면
+                //   차량 id 와 **바이어 id** 가 필요하다. 바이어를 이름 문자열로 맞추면 동명이인·표기흔들림에
+                //   깨지고, 그건 곧 422 buyer_mismatch 로 튕기거나 엉뚱한 바이어에 묶인다.
+                //   PII 아님(내부 정수) + 스코프는 ownVehicles 그대로 → §3 화이트리스트 취지 유지.
+                'vehicle_id' => $v->id,
+                'buyer_id' => $v->buyer_id,
                 'vehicle_number' => $v->vehicle_number,
                 'buyer' => $v->buyer?->name,
                 'currency' => $v->currency,
@@ -89,6 +95,8 @@ class InternalPortalController extends Controller
         $sid = $this->salesmanId($request);
         $data = $this->ownVehicles($sid)->where('purchase_price', '>', 0)->get()
             ->map(fn (Vehicle $v) => [
+                // §11 [입금요청] 전송용 식별자 (2026-08-08) — 없으면 board 버튼이 비활성으로 죽는다.
+                'vehicle_id' => $v->id,
                 'vehicle_number' => $v->vehicle_number,
                 'purchase_price' => (float) $v->purchase_price,
                 'cost_total' => $v->cost_total,
