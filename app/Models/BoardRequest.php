@@ -18,7 +18,11 @@ use Illuminate\Support\Str;
  *
  * 닫히는 방식이 type 별로 다르다:
  *   - purchase_payment      = **자동**. 매입 미지급 0 이면 소멸(누를 사람이 있으면 카톡으로 돌아간다).
- *   - sale_payment_confirm  = **수동**. 재무가 차량별로 체크(부분입금이 흔해 기계 판정 불가).
+ *   - sale_payment_confirm  = **수동**. 차량별로 체크(부분입금이 흔해 기계 판정 불가).
+ *
+ * 👤 확인 주체 = `User::canConfirmFinance()` = super · admin · 업무관리자 · role∈{재무, 관리}.
+ *    **재무 전용이 아니다**(jin 2026-08-09). 핵심은 영업이 스스로 확인할 수 없다는 것 —
+ *    요청한 사람과 통장을 본 사람이 갈려야 신호에 의미가 있다.
  */
 class BoardRequest extends Model
 {
