@@ -280,9 +280,12 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 응답 `201`:
 ```jsonc
 {
-  "batch_id": "9f1c…",                     // purchase_payment 도 1행짜리 묶음으로 발급
+  "batch_id": "9f1c…",                     // sale_payment_confirm 만. purchase_payment 는 **null**
   "created": ["18누0304", "19더49065"],
-  "skipped": [{ "vehicle_number": "21모1234", "reason": "already_open" }]
+  "skipped": [
+    { "vehicle_number": "21모1234", "reason": "already_open" },  // 내 차 → 차량번호로 돌려준다
+    { "vehicle_id": 9999,          "reason": "forbidden" }       // 남의 차 → **id 만**(차량번호를 알려주지 않는다)
+  ]
 }
 ```
 
@@ -291,7 +294,16 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 - **스코프 재인가**: `vehicle_ids` 는 §2 로 매칭된 영업 것만 통과. 남의 차량 id 는 `skipped(reason: forbidden)`.
   (전량 거부 대신 부분 성공 — 한 대 때문에 묶음 전체가 죽지 않게.)
 - `sale_payment_confirm` 은 **모든 차량이 `buyer_id` 소속**이어야 한다. 아니면 `422 buyer_mismatch`(오배치 방지).
+  🔒 **이 422 를 약화시키지 말 것** — board 의 화면 제약(바이어 블록 안에서만 체크)은 실수 방지일 뿐이고,
+  `toggleReqVehicle(buyerId, vehicleId)` 는 공개 Livewire 액션이라 조작된 클라이언트는 섞인 묶음을 만들 수 있다.
+  **바이어 혼합을 실제로 막는 건 서버의 이 422 하나뿐이다.**
 - `purchase_payment` 에 `vehicle_ids` 를 2개 이상 보내면 **각각 별개 요청**으로 생성된다(단위가 1대라서).
+  응답 `batch_id` 가 `null` 인 이유이기도 하다 — 돌려줄 묶음이 하나로 정해지지 않는다(행에는 각자 uuid 가 들어간다).
+  ⇒ 입금요청을 취소하려면 `GET /requests` 로 `batch_id` 를 먼저 조회한다.
+- ✅ **`vehicle_id` 는 `/purchases`·`/sales` 응답에 있다**(2026-08-08 추가). `/sales` 는 `buyer_id` 도 준다 —
+  바이어를 이름 문자열로 맞추면 동명이인·표기흔들림에서 위 422 로 튕긴다.
+  ⚠️ 이 필드들을 지우면 **예외도 로그도 없이 board 버튼만 안 켜진다**(board 는 "전송 불가"로 비활성 처리).
+  가드 = `BoardPortalApiTest::test_portal_exposes_ids_needed_for_board_requests`.
 
 #### `GET /requests` — 상태 폴링 (칩 갱신)
 
@@ -299,6 +311,7 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 
 ```jsonc
 {
+  "count": 1,                                // 묶음 개수
   "requests": [{
     "batch_id": "9f1c…",
     "type": "sale_payment_confirm",

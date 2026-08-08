@@ -155,6 +155,50 @@ class BoardPortalApiTest extends TestCase
         }
     }
 
+    /**
+     * 🔒 §11 신호 전송용 식별자 — 이 3개가 빠지면 **board 의 [입금요청]·[판매대금확인] 버튼이 죽는다**.
+     *
+     * board 는 `vehicle_id` 가 없는 행을 "전송 불가"로 비활성 처리하므로, 삭제해도 예외·로그 없이
+     * 버튼만 조용히 안 켜진다(2026-08-08 board 세션 실측으로 발견). `buyer_id` 는 판매대금확인의
+     * 바이어 확정에 쓰이며, 이름 문자열로 대신하면 동명이인·표기흔들림에서 422 로 튕긴다.
+     *
+     * PII 아님(내부 정수) + `shippable()` 이 이미 같은 값을 같은 스코프로 내준다 → §3 취지 유지.
+     */
+    public function test_portal_exposes_ids_needed_for_board_requests(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
+        $v = Vehicle::create([
+            'vehicle_number' => '55마5555', 'sales_channel' => 'export', 'salesman_id' => $me->id,
+            'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200,
+            'purchase_price' => 800, 'buyer_id' => $buyer->id,
+        ]);
+
+        $this->signedGet('/api/internal/board/purchases', ['salesman_email' => 'me@a.com'])
+            ->assertOk()
+            ->assertJsonPath('data.0.vehicle_id', $v->id);
+
+        $this->signedGet('/api/internal/board/sales', ['salesman_email' => 'me@a.com'])
+            ->assertOk()
+            ->assertJsonPath('data.0.vehicle_id', $v->id)
+            ->assertJsonPath('data.0.buyer_id', $buyer->id);
+    }
+
+    /** 식별자를 추가해도 노출 범위는 그대로 — 남의 차 id 가 새면 안 된다. */
+    public function test_portal_ids_stay_within_own_scope(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $mine = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'purchase_price' => 800]);
+        $theirs = Vehicle::create(['vehicle_number' => '99자9999', 'sales_channel' => 'export', 'salesman_id' => $other->id, 'purchase_price' => 900]);
+
+        $res = $this->signedGet('/api/internal/board/purchases', ['salesman_email' => 'me@a.com'])->assertOk();
+
+        $ids = collect($res->json('data'))->pluck('vehicle_id')->all();
+        $this->assertSame([$mine->id], $ids);
+        $this->assertNotContains($theirs->id, $ids);
+    }
+
     public function test_by_buyer_groups_sales_and_payout_scoped(): void
     {
         $me = $this->salesman('me@a.com');
