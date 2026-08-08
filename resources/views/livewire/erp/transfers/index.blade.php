@@ -415,7 +415,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->values();
     }
 
-    /** 차량 1대 확인 — 재무 확정 권한자만(SoD). 묶음 통째가 아니라 라인 단위(부분입금 대응). */
+    /**
+     * 차량 1대 확인 — `canConfirmFinance()`(super·admin·업무관리자·role∈{재무,관리})만.
+     * **재무 전용이 아니다** — 막아야 할 건 영업의 자가확인뿐이다(요청자 ≠ 확인자).
+     * 묶음 통째가 아니라 라인 단위로 닫는다(부분입금이 흔하다).
+     */
     public function confirmBoardSaleLine(int $id): void
     {
         $user = auth()->user();

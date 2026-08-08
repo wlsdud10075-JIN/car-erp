@@ -9,6 +9,7 @@ use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -128,6 +129,43 @@ class BoardRequestFinanceScreenTest extends TestCase
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
 
         $this->actingAs($sales)->get('/erp/transfers')->assertStatus(403);
+    }
+
+    /**
+     * 확인은 **재무 전용이 아니다** — 관리 role·업무관리자도 누를 수 있다(jin 2026-08-09).
+     * `canConfirmFinance()` = super · admin · manager · role∈{재무, 관리}.
+     * 이걸 좁히면 관리가 "나는 왜 못 누르나" 를 겪는다.
+     *
+     * @dataProvider confirmerProvider
+     */
+    #[DataProvider('confirmerProvider')]
+    public function test_managers_and_admins_can_also_confirm(array $attrs): void
+    {
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $line = BoardRequest::open(
+            $this->vehicle($buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-role'
+        );
+        $user = User::factory()->create(array_merge(['email_verified_at' => now()], $attrs));
+
+        Volt::actingAs($user)->test('erp.transfers.index')
+            ->set('tabType', 'sale_payment')
+            ->call('confirmBoardSaleLine', $line->id);
+
+        $this->assertSame(
+            BoardRequest::STATUS_DONE,
+            $line->fresh()->status,
+            '이 권한도 확인할 수 있어야 한다: '.json_encode($attrs, JSON_UNESCAPED_UNICODE)
+        );
+    }
+
+    public static function confirmerProvider(): array
+    {
+        return [
+            '재무 role' => [['permission' => 'user', 'role' => '재무']],
+            '관리 role' => [['permission' => 'user', 'role' => '관리']],
+            '업무관리자' => [['permission' => 'manager', 'role' => '영업']],
+            '최고관리자' => [['permission' => 'admin', 'role' => '관리']],
+        ];
     }
 
     /** 방어 심층 — 권한 없는 사용자가 액션에 직접 닿아도 상태가 안 바뀐다. */
