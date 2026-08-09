@@ -144,6 +144,50 @@ class SailingStatusTest extends TestCase
         $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
     }
 
+    /**
+     * ③-2 🚨 정산 자동생성 3경로가 운항 상태에 영향받지 않는다.
+     *
+     * 트리거는 ①완납(FinalPayment::saved) ②거래완료 진입 ③인코텀즈·운임비 확정 세 곳이고,
+     * 셋 다 `createSettlementIfComplete` 로 모인다. 운항 상태는 그중 어느 입력도 쓰지 않는다.
+     * 여기서는 ③(운임 게이트)을 운항중 차량으로 태워서 정상 생성되는지 본다 —
+     * CFR 은 운임비가 있어야 게이트를 통과한다(`isFreightConfirmedForSettlement`).
+     */
+    public function test_freight_gate_still_creates_settlement_while_sailing(): void
+    {
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($user);
+
+        $v = $this->makeVehicle([
+            'sale_price' => 5_000,
+            'currency' => 'EUR',
+            'exchange_rate' => 1_500,
+            'incoterms' => 'CFR',
+            'transport_fee' => 0,                                        // 운임 미확정 → 게이트 대기
+            'shipping_date' => now()->subDays(3)->toDateString(),
+            'eta_date' => now()->addDays(25)->toDateString(),             // 운항중
+        ]);
+        // 완납시킨다(확정 잔금). 운임비까지 미리 받아둔다 —
+        // ⚠️ 운임비는 sale_total_amount(미수 분모)에 들어가므로, 나중에 기입하면 그만큼 미수가 새로 생겨
+        //    완납이 깨진다(SKILLS §13). 실무도 운임을 포함해 받고 금액칸을 뒤에 채우는 흐름.
+        $expectedFreight = 300;
+        $v->finalPayments()->create([
+            'amount' => $v->sale_total_amount + $expectedFreight, 'type' => 'balance',
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+            'exchange_rate' => 1_500,
+        ]);
+        $v->refresh();
+
+        $this->assertSame(Vehicle::SAILING_IN_TRANSIT, $v->sailing_status);
+        $this->assertFalse($v->isFreightConfirmedForSettlement(), 'CFR + 운임 0 이면 게이트 대기');
+        $this->assertSame(0, $v->settlements()->count(), '운임 미확정이면 아직 정산 없음');
+
+        // 운임비를 넣으면 그 저장 시점에 정산이 생긴다 — 운항중이어도 마찬가지.
+        $v->update(['transport_fee' => $expectedFreight]);
+
+        $this->assertSame(1, $v->fresh()->settlements()->count(), '운항중이어도 운임 확정 시 정산이 생성돼야 한다');
+        $this->assertSame(Vehicle::SAILING_IN_TRANSIT, $v->fresh()->sailing_status);
+    }
+
     /** 진행상태와 직교 — 운항중 차량이 여러 진행단계에 걸쳐 있어도 전부 잡힌다. */
     public function test_sailing_spans_multiple_progress_stages(): void
     {
