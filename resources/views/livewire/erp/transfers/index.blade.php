@@ -29,6 +29,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     /** 큐 20-C — 'transfer' (자금 이체) / 'sale_payment' (판매 잔금) / 'purchase_payment' (매입 잔금) */
+    // ⚠️ #[Url] 유지 — 알람센터가 board 요청 카드에서 `?tabType=purchase_payment` 로 바로 보낸다.
     #[Url]
     public string $tabType = 'transfer';
 
@@ -173,7 +174,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return FinalPayment::whereHas('vehicle')
             ->whereNull('transfer_id')
             ->whereNull('confirmed_at')
-            ->count();
+            ->count()
+            + BoardRequest::openCount(BoardRequest::TYPE_SALE_PAYMENT_CONFIRM);   // 2026-08-09 — 위 주석 참조
     }
 
     /** 큐 20-C — 매입 잔금. */
@@ -189,10 +191,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->paginate($this->perPage);
     }
 
+    /**
+     * 탭 숫자 = 확정 대기 잔금 + **board 요청**(2026-08-09).
+     * board 요청을 안 더하면 탭에 들어가 보기 전엔 요청이 온 걸 모른다(jin 실제로 겪음).
+     */
     #[Computed]
     public function purchasePaymentAwaitingCount(): int
     {
-        return PurchaseBalancePayment::whereHas('vehicle')->whereNull('confirmed_at')->count();
+        return PurchaseBalancePayment::whereHas('vehicle')->whereNull('confirmed_at')->count()
+            + BoardRequest::openCount(BoardRequest::TYPE_PURCHASE_PAYMENT);
     }
 
     /** 큐 20-C — 잔금 모달 열기 (sale_payment / purchase_payment 공용). */

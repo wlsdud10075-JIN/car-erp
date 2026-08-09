@@ -161,16 +161,28 @@ new #[Layout('components.layouts.app')] class extends Component
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
+                            // board 요청·확인 신호 (2026-08-09) — 처리 자리가 재무 처리 화면이다.
+                            $isBoardPurchase = $type === 'board_purchase_payment';
+                            $isBoardSale = $type === 'board_sale_confirm';
+                            $isBoard = $isBoardPurchase || $isBoardSale;
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
+                            $href = $isBoard
+                                ? route('erp.transfers.index', ['tabType' => $isBoardPurchase ? 'purchase_payment' : 'sale_payment'])
+                                : route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
                         @endphp
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                            <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
+                            <a href="{{ $href }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
                                 {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
                             </a>
                             <span class="text-xs tabular-nums text-gray-400">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
-                            @if ($isShip)
+                            @if ($isBoard)
+                                <span class="rounded-full {{ $isBoardPurchase ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }} px-1.5 py-0.5 text-[11px] font-bold">{{ __('alarm.badge_board') }}</span>
+                                <span class="text-[12px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">
+                                    {{ $isBoardPurchase ? __('alarm.board_purchase_action') : __('alarm.board_sale_action') }}
+                                </span>
+                            @elseif ($isShip)
                                 <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ __('alarm.task_shipping') }} {{ $meta['shipping_method'] ?? '' }}</span>
                             @elseif ($isArrival)
                                 <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">{{ __('alarm.badge_new') }}</span>

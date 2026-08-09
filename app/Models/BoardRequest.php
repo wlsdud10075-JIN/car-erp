@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -84,6 +85,19 @@ class BoardRequest extends Model
     }
 
     /**
+     * 열린 신호 수 — **뱃지 단일 출처**. 재무처리 탭 · 사이드바 · 알람이 전부 이걸 쓴다.
+     * 세는 식을 복제하면 화면마다 숫자가 갈린다(SKILLS §8 — 같은 공식이 3곳에 있던 회사이익 사고).
+     */
+    public static function openCount(?string $type = null): int
+    {
+        return self::query()->open()
+            ->when($type !== null, fn ($q) => $q->where('type', $type))
+            // 차량이 지워진 신호는 화면에 못 그리므로 세지도 않는다(뱃지 숫자 ≠ 목록 건수 방지).
+            ->whereHas('vehicle')
+            ->count();
+    }
+
+    /**
      * 멱등 — 같은 차 + 같은 type 에 이미 열린 요청이 있으면 만들지 않는다.
      * board 가 재전송해도 뱃지가 두 개 생기지 않게 하는 단일 지점.
      */
@@ -93,10 +107,15 @@ class BoardRequest extends Model
     }
 
     /**
-     * 신호 1건 생성. 이미 열려 있으면 null (호출측이 skipped 로 응답).
+     * 신호 1건 올리기. 이미 열려 있으면 null (호출측이 skipped 로 응답).
      * batch_id 를 넘기면 그 묶음에 붙고, 없으면 새 묶음(입금요청 = 1행짜리 묶음).
+     *
+     * ⚠️ 이름이 `open` 이 아닌 이유 — scope `open()` 과 충돌한다. Eloquent 는 `Model::scopeX` 를
+     *    `Model::x()` 로 노출하는데, **같은 이름의 실제 static 메서드가 있으면 그쪽이 이긴다.**
+     *    그래서 `BoardRequest::raise()->get()`(조회 의도)이 생성 메서드로 가서 ArgumentCountError 로 죽는다.
+     *    (2026-08-09 실제로 밟았다.) 조회는 `BoardRequest::query()->open()`, 생성은 `raise()`.
      */
-    public static function open(
+    public static function raise(
         int $vehicleId,
         string $type,
         string $requestedByEmail,
@@ -108,7 +127,7 @@ class BoardRequest extends Model
             return null;
         }
 
-        return self::create([
+        $row = self::create([
             'batch_id' => $batchId ?: (string) Str::uuid(),
             'type' => $type,
             'vehicle_id' => $vehicleId,
@@ -118,6 +137,54 @@ class BoardRequest extends Model
             'requested_at' => now(),
             'note' => $note,
         ]);
+
+        $row->syncTaskAlarm();
+
+        return $row;
+    }
+
+    /** 알람 type — 신호 type 과 1:1. 알람센터·사이드바 벨이 이걸로 분기한다. */
+    public const ALARM_TYPES = [
+        self::TYPE_PURCHASE_PAYMENT => 'board_purchase_payment',
+        self::TYPE_SALE_PAYMENT_CONFIRM => 'board_sale_confirm',
+    ];
+
+    /**
+     * 알람 생성 — 재무 처리 화면에 **들어가 보기 전엔 모르던 문제**를 없앤다(jin 2026-08-09).
+     *
+     * `target_role='관리'` 를 쓰면 기존 `TaskAlarm::scopeVisibleTo` 분기를 그대로 타서
+     * **admin·업무관리자는 전체 / role='관리' 는 본인 팀**(휴가 위임 포함)이 본다 —
+     * `canSeeAlarm` 과의 lockstep 을 건드리지 않는다.
+     */
+    public function syncTaskAlarm(): void
+    {
+        if (! Schema::hasTable('task_alarms') || $this->status !== self::STATUS_OPEN) {
+            return;
+        }
+
+        $alarm = TaskAlarm::firstOrNew([
+            'type' => self::ALARM_TYPES[$this->type] ?? null,
+            'vehicle_id' => $this->vehicle_id,
+            'resolved_at' => null,
+        ]);
+        $alarm->target_role = '관리';
+        $alarm->message_meta = TaskAlarm::sanitizeMeta([
+            'vehicle_number' => $this->vehicle?->vehicle_number,
+        ]);
+        $alarm->save();
+    }
+
+    /** 신호가 닫히면 알람도 같이 닫는다 — 안 하면 처리한 일이 벨에 계속 남는다. */
+    public function resolveTaskAlarm(string $reason): void
+    {
+        if (! Schema::hasTable('task_alarms')) {
+            return;
+        }
+
+        TaskAlarm::where('type', self::ALARM_TYPES[$this->type] ?? null)
+            ->where('vehicle_id', $this->vehicle_id)
+            ->whereNull('resolved_at')
+            ->update(['resolved_at' => now(), 'resolved_reason' => $reason]);
     }
 
     /**
@@ -139,6 +206,8 @@ class BoardRequest extends Model
             'confirmed_by_id' => $user?->id,
             'confirmed_at' => now(),
         ]);
+
+        $this->resolveTaskAlarm($user ? 'confirmed' : 'auto_resolved');
     }
 
     /**

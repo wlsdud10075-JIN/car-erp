@@ -105,7 +105,10 @@
             ->whereHas('vehicle')
             ->whereNull('confirmed_at')
             ->count();
-        $pendingFinanceConfirmations = $pendingTransferCount + $pendingFinalPaymentCount + $pendingPurchaseBalanceCount;
+        // board 요청·확인 신호(§11, 2026-08-09) — 이걸 안 더하면 재무 처리 화면에 들어가
+        //   탭까지 눌러보기 전엔 요청이 온 걸 모른다(jin 실제로 겪음). 세는 식은 BoardRequest::openCount 단일 출처.
+        $pendingFinanceConfirmations = $pendingTransferCount + $pendingFinalPaymentCount + $pendingPurchaseBalanceCount
+            + \App\Models\BoardRequest::openCount();
     } else {
         $pendingFinanceConfirmations = 0;
     }

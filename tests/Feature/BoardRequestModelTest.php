@@ -58,8 +58,8 @@ class BoardRequestModelTest extends TestCase
     {
         $v = $this->vehicle();
 
-        $first = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
-        $second = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $second = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
 
         $this->assertNotNull($first);
         $this->assertNull($second, 'board 재전송이 두 번째 신호를 만들었다 — 뱃지가 쌓인다');
@@ -70,8 +70,8 @@ class BoardRequestModelTest extends TestCase
     {
         $v = $this->vehicle();
 
-        $this->assertNotNull(BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
-        $this->assertNotNull(BoardRequest::open($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com'));
+        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
+        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com'));
 
         $this->assertSame(2, BoardRequest::where('vehicle_id', $v->id)->open()->count());
     }
@@ -79,17 +79,17 @@ class BoardRequestModelTest extends TestCase
     public function test_can_reopen_after_done(): void
     {
         $v = $this->vehicle();
-        $first = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
+        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
         $first->markDone();
 
         // 닫힌 뒤엔 다시 요청할 수 있어야 한다(2차 입금 등) — 멱등이 영구 차단이 되면 안 된다.
-        $this->assertNotNull(BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
+        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
     }
 
     public function test_mark_done_records_who_and_is_noop_when_not_open(): void
     {
         $user = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
-        $r = BoardRequest::open($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com');
+        $r = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com');
 
         $r->markDone($user);
         $r->refresh();
@@ -108,7 +108,7 @@ class BoardRequestModelTest extends TestCase
     /** 자동 해소(매입 미지급 0)는 사람이 없다 — confirmed_by 가 비어도 done 이어야 한다. */
     public function test_system_resolution_has_no_confirmer(): void
     {
-        $r = BoardRequest::open($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
+        $r = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
         $r->markDone();
         $r->refresh();
 
@@ -123,7 +123,7 @@ class BoardRequestModelTest extends TestCase
         $batch = 'batch-uuid-1';
         $lines = collect();
         foreach (range(1, 3) as $i) {
-            $lines->push(BoardRequest::open(
+            $lines->push(BoardRequest::raise(
                 $this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch
             ));
         }
@@ -144,8 +144,8 @@ class BoardRequestModelTest extends TestCase
     public function test_cancelled_lines_are_excluded_from_batch_status(): void
     {
         $batch = 'batch-uuid-2';
-        $a = BoardRequest::open($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', null, $batch);
-        $b = BoardRequest::open($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', null, $batch);
+        $a = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', null, $batch);
+        $b = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', null, $batch);
 
         $a->update(['status' => BoardRequest::STATUS_CANCELLED]);
         $b->markDone();

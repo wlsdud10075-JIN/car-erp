@@ -128,15 +128,24 @@ new class extends Component
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
+                            // board 요청·확인 신호 (2026-08-09) — 처리 자리가 차량 패널이 아니라 재무 처리 화면이다.
+                            $isBoardPurchase = $type === 'board_purchase_payment';
+                            $isBoardSale = $type === 'board_sale_confirm';
+                            $isBoard = $isBoardPurchase || $isBoardSale;
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && ! $isArrival && $dday !== null && $dday <= 3;
+                            $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
+                            $href = $isBoard
+                                ? route('erp.transfers.index', ['tabType' => $isBoardPurchase ? 'purchase_payment' : 'sale_payment'])
+                                : route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
                         @endphp
-                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isArrival ? 'border-l-blue-500' : ($isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400')) }}">
-                            <a href="{{ route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]) }}" wire:navigate class="block">
+                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isBoard ? ($isBoardPurchase ? 'border-l-blue-500' : 'border-l-purple-500') : ($isArrival ? 'border-l-blue-500' : ($isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400'))) }}">
+                            <a href="{{ $href }}" wire:navigate class="block">
                                 <div class="flex items-center justify-between">
                                     <span class="text-[13px] font-bold text-gray-800">{{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}</span>
-                                    @if ($isShip)
+                                    @if ($isBoard)
+                                        <span class="rounded-full {{ $isBoardPurchase ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }} px-1.5 py-0.5 text-[11px] font-bold">{{ __('alarm.badge_board') }}</span>
+                                    @elseif ($isShip)
                                         <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ $meta['shipping_method'] ?? '' }}</span>
                                     @elseif ($isArrival)
                                         <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">{{ __('alarm.badge_new') }}</span>
@@ -150,10 +159,12 @@ new class extends Component
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance')))) }}@if (! $isShip && ! $isArrival && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isBoardPurchase ? __('alarm.task_board_purchase') : ($isBoardSale ? __('alarm.task_board_sale') : ($isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance')))))) }}@if (! $isShip && ! $isArrival && ! $isBoard && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
-                                @if ($isShip)
+                                @if ($isBoard)
+                                    <span class="text-[11.5px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">{{ $isBoardPurchase ? __('alarm.board_purchase_action') : __('alarm.board_sale_action') }}</span>
+                                @elseif ($isShip)
                                     <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>
                                 @elseif ($isArrival)
                                     <span class="text-[11.5px] font-semibold text-blue-700">{{ __('alarm.arrival_action') }}</span>

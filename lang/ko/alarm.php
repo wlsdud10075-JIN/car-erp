@@ -13,6 +13,13 @@ return [
     'task_document_deadline' => '선적 서류마감',
     'doc_deadline_action' => '서류마감 임박',
     // 매매상 잔금 10일 알림 (karaba)
+    // board 요청·확인 신호 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11
+    'task_board_purchase' => '영업 입금요청',
+    'task_board_sale' => '영업 판매대금확인',
+    'board_purchase_action' => '매입 지급 처리 필요',
+    'board_sale_action' => '입금 확인 필요',
+    'badge_board' => '요청',
+
     'task_balance_due' => '매매상 잔금',
     'balance_dday' => '잔금 D-:d',
     'balance_overdue' => '잔금 기한 지남',
