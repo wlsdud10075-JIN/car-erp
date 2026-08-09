@@ -138,7 +138,7 @@ class Vehicle extends Model
         'purchase_remittance_memo',
         'registration_number', 'reg_cert_number',
         'is_deregistered', 'deregistration_document', 'deregistration_notice_phone',
-        'sale_date', 'currency', 'exchange_rate', 'buyer_id', 'consignee_id',
+        'sale_date', 'currency', 'exchange_rate', 'buyer_id', 'buyer_undecided', 'consignee_id',
         'sale_price', 'tax_dc', 'commission', 'transport_fee', 'auto_loading',
         // 큐 22-A-3 (2026-05-20) — deposit_down_payment / interim_payment / advance_payment1 / advance_payment2 DROP.
         // 4컬럼은 final_payments.type enum (deposit_down/interim/advance_1/advance_2) 로 통합.
@@ -163,6 +163,7 @@ class Vehicle extends Model
         'forwarding_email_sent' => 'boolean',
         'dhl_request' => 'boolean',
         'is_dealer_purchase' => 'boolean',
+        'buyer_undecided' => 'boolean',
         'is_deposit_purchase' => 'boolean',
         'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
@@ -518,6 +519,8 @@ class Vehicle extends Model
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising', 'purchase_vat_amount',
         'buyer_id', 'salesman_id',
+        // 2026-08-09 (jin) — 바이어 미정 매입(투기). 미수 통제를 우회하는 명시적 예외라 누가 켰는지 추적한다.
+        'buyer_undecided',
         // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).
         'is_deregistered', 'deregistration_document',
         // 큐 22-C-light (2026-05-20) Security 해소조건 — 매입처 계좌 4컬럼 변경 audit.
@@ -609,6 +612,13 @@ class Vehicle extends Model
             //   처럼 공백이 섞여 들어와 검색·중복판정이 어긋났다. 진입점 통합(UI·시드·import 전부).
             if (is_string($vehicle->vehicle_number)) {
                 $vehicle->vehicle_number = trim($vehicle->vehicle_number);
+            }
+
+            // 바이어 미정 매입 (jin 2026-08-09) — 바이어가 실제로 정해지면 플래그를 자동으로 내린다.
+            //   안 내리면 뱃지가 영영 남아 "미정인데 바이어가 있는" 모순 상태로 보인다.
+            //   진입점 통합(UI·import·API 전부) — 사람이 체크를 해제하는 걸 잊어도 안전하다.
+            if ($vehicle->buyer_id && $vehicle->buyer_undecided) {
+                $vehicle->buyer_undecided = false;
             }
 
             // 2026-05-20 사용자 정정 — KRW 통화 시 환율 자동 1 normalize.

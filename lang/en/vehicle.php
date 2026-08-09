@@ -94,6 +94,8 @@ return [
     'balance_badge_overdue' => 'bal overdue',
     'deposit_badge_waiting' => 'Deposit-buy',
 
+    'buyer_undecided_badge' => 'No buyer',
+    'buyer_undecided_title' => 'Bought without a buyer (speculative) — clears once a buyer is set',
     'board_badge_purchase' => 'Pay req.',
     'board_badge_sale' => 'Confirm',
     'board_title_purchase' => 'Sales requested a purchase payment — clears once the balance is recorded',
@@ -355,6 +357,8 @@ return [
         'purchase_registration_type' => 'Purchase Registration',
         'purchase_evidence_subtype' => 'Evidence Type',
         'is_dealer_purchase' => 'Dealer',
+        'buyer_undecided' => 'Buyer undecided (speculative purchase)',
+        'buyer_undecided_hint' => 'Only tick this when buying before a buyer is decided. The vehicle is saved without a buyer and appears under Inventory → General stock. It clears automatically once a buyer is set.',
         'is_deposit_purchase' => 'Deposit purchase (paid with buyer deposit)',
         'is_deposit_purchase_hint' => 'Enabling this starts the buyer payment reminder alerts (day 5 to sales/management, past day 10 to the executive). They stop automatically once the buyer meets the required payment ratio.',
         'purchase_price' => 'Buy Price (KRW)',
