@@ -1847,6 +1847,61 @@ class Vehicle extends Model
     }
 
     /**
+     * 운항 상태 (jin 2026-08-09) — **진행상태와 직교하는 표시 전용 축**.
+     *
+     * 선적일(= 실제 출항일, jin 확인)과 ETA 가 둘 다 있으면 배가 떴다고 본다.
+     * ETA 가 미래면 아직 바다 위(`운항중`), 지났으면 도착한 것으로 본다(`도착` — **예정 기준 추정**).
+     *
+     * 🚫 **`progress_status` cascade 에 넣지 않는다.** 넣으면 두 가지가 조용히 깨진다(실측 확인):
+     *   ① 정산 자동생성은 `progress_status_cache` 가 '거래완료'로 **바뀌는 순간**(`wasChanged`)을 보는데,
+     *      시간 경과 전이는 `refreshCaches()`(raw update)로만 일어나 **모델 훅이 안 뜬다** → 정산 영구 미생성.
+     *      (SKILLS §8 #43 과 같은 형태.)
+     *   ② `scopeInStock` 이 "거래완료면 출고일 없어도 재고 제외"를 쓰는데, 거래완료가 아니게 되면
+     *      **출고일 미입력 92대(heymanerp 실측)가 재고로 복귀**한다.
+     *   ③ ETA 를 미래로 고치면 거래완료 → 운항중으로 **역행**한다(진행상태 단조 전진 원칙 위반).
+     *
+     * ⚠️ **진행상태로 대상을 좁히지 않는다** — 선적일+ETA 만 본다. 단계 게이트를 두면
+     *    v3 grandfather 라벨(`수출통관중` 등)이나 회사별 데이터 차이에서 조용히 빠진다.
+     *    실측상 4단계(선적중·선적완료·통관중·거래완료) 밖에도 선적일 보유 차가 24대 있는데,
+     *    그건 반입지 미입력 등 **데이터 미비를 드러내는 쪽이 낫다**고 판단해 포함한다.
+     *
+     * ⚠️ 캐시 컬럼을 만들지 않는다 — 시간 의존이라 저장하는 순간 낡는다. 매 쿼리 날짜 비교.
+     */
+    public const SAILING_IN_TRANSIT = '운항중';
+
+    public const SAILING_ARRIVED = '도착';
+
+    public const SAILING_PHASES = ['in_transit', 'arrived'];
+
+    public function getSailingStatusAttribute(): ?string
+    {
+        if (! $this->shipping_date || ! $this->eta_date) {
+            return null;
+        }
+
+        return $this->eta_date->toDateString() > now()->toDateString()
+            ? self::SAILING_IN_TRANSIT
+            : self::SAILING_ARRIVED;
+    }
+
+    /**
+     * 위 accessor 와 **같은 판정을 SQL 로**. 둘이 갈리면 화면 카운트와 목록이 어긋난다
+     * (가드 = `SailingStatusTest::test_scope_and_accessor_agree`).
+     */
+    public function scopeSailing(Builder $query, string $phase): Builder
+    {
+        // ⚠️ 경계는 '오늘 23:59:59' 로 잡는다 — SQLite 는 date 컬럼을 'Y-m-d 00:00:00' 로 저장해서
+        //    `eta_date <= '2026-08-09'` 가 오늘 도착 건을 **놓친다**(문자열 비교라 00:00:00 이 더 큼).
+        //    whereDate() 는 인덱스를 죽이므로 범위 비교를 쓴다(export 컨트롤러와 같은 관례).
+        $endOfToday = now()->toDateString().' 23:59:59';
+
+        return $query->whereNotNull('shipping_date')
+            ->whereNotNull('eta_date')
+            ->when($phase === 'in_transit', fn ($q) => $q->where('eta_date', '>', $endOfToday))
+            ->when($phase === 'arrived', fn ($q) => $q->where('eta_date', '<=', $endOfToday));
+    }
+
+    /**
      * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음 AND 거래완료 아님.
      *   미완납 = 입고 전(제외) / 출고일 찍힘 = 출고됨(제외).
      *   거래완료(출항) = 출고일 미입력이어도 제외 (jin 2026-07-23) — 거래완료는 확실히 나간 것.
