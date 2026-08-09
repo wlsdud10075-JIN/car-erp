@@ -45,7 +45,7 @@ class BoardRequestAutoResolveTest extends TestCase
     public function test_request_closes_when_purchase_is_fully_paid(): void
     {
         $v = $this->vehicle(1_000_000);
-        $req = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
 
         $this->assertSame(BoardRequest::STATUS_OPEN, $req->fresh()->status);
 
@@ -63,7 +63,7 @@ class BoardRequestAutoResolveTest extends TestCase
     public function test_partial_payment_keeps_request_open(): void
     {
         $v = $this->vehicle(1_000_000);
-        $req = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
 
         $v->purchaseBalancePayments()->create([
             'amount' => 400_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
@@ -76,7 +76,7 @@ class BoardRequestAutoResolveTest extends TestCase
     public function test_sale_confirm_is_never_auto_resolved(): void
     {
         $v = $this->vehicle(1_000_000);
-        $sale = BoardRequest::open($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com');
+        $sale = BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com');
 
         $v->purchaseBalancePayments()->create([
             'amount' => 1_000_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
@@ -97,7 +97,7 @@ class BoardRequestAutoResolveTest extends TestCase
             'amount' => 1_000_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
         ]);
 
-        $req = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
         $this->assertSame(BoardRequest::STATUS_OPEN, $req->fresh()->status);
 
         $v->fresh()->resolveOpenPurchasePaymentRequests();
@@ -119,7 +119,7 @@ class BoardRequestAutoResolveTest extends TestCase
             'permission' => 'user', 'role' => '재무', 'email_verified_at' => now(),
         ]);
         $v = $this->vehicle(1_000_000);
-        $req = BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
 
         // ① 재무가 지급 행을 만든다 — 아직 미확정이라 미지급은 그대로다.
         $pbp = PurchaseBalancePayment::create([

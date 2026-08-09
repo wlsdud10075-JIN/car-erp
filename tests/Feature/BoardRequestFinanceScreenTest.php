@@ -55,7 +55,7 @@ class BoardRequestFinanceScreenTest extends TestCase
     public function test_purchase_request_shows_without_any_pbp_row(): void
     {
         $v = $this->vehicle();
-        BoardRequest::open($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
 
         $this->assertSame(0, $v->purchaseBalancePayments()->count(), '전제: 잔금 행이 없다');
 
@@ -89,8 +89,8 @@ class BoardRequestFinanceScreenTest extends TestCase
         $v1 = $this->vehicle($buyer->id);
         $v2 = $this->vehicle($buyer->id);
         $batch = 'batch-screen-1';
-        $l1 = BoardRequest::open($v1->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, $batch);
-        BoardRequest::open($v2->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, $batch);
+        $l1 = BoardRequest::raise($v1->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, $batch);
+        BoardRequest::raise($v2->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, $batch);
         $l1->markDone();
 
         Volt::actingAs($this->finance())->test('erp.transfers.index')
@@ -103,7 +103,7 @@ class BoardRequestFinanceScreenTest extends TestCase
     public function test_finance_can_confirm_single_vehicle(): void
     {
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
-        $line = BoardRequest::open(
+        $line = BoardRequest::raise(
             $this->vehicle($buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-1'
         );
 
@@ -142,7 +142,7 @@ class BoardRequestFinanceScreenTest extends TestCase
     public function test_managers_and_admins_can_also_confirm(array $attrs): void
     {
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
-        $line = BoardRequest::open(
+        $line = BoardRequest::raise(
             $this->vehicle($buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-role'
         );
         $user = User::factory()->create(array_merge(['email_verified_at' => now()], $attrs));
@@ -172,7 +172,7 @@ class BoardRequestFinanceScreenTest extends TestCase
     public function test_confirm_action_rejects_user_without_finance_permission(): void
     {
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
-        $line = BoardRequest::open(
+        $line = BoardRequest::raise(
             $this->vehicle($buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-1'
         );
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
@@ -191,7 +191,7 @@ class BoardRequestFinanceScreenTest extends TestCase
     public function test_fully_confirmed_batch_disappears(): void
     {
         $buyer = Buyer::create(['name' => 'DONE CO', 'is_active' => true]);
-        $line = BoardRequest::open(
+        $line = BoardRequest::raise(
             $this->vehicle($buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-done'
         );
         $line->markDone();
@@ -207,8 +207,8 @@ class BoardRequestFinanceScreenTest extends TestCase
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
         $pv = $this->vehicle();
         $sv = $this->vehicle($buyer->id);
-        BoardRequest::open($pv->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
-        BoardRequest::open($sv->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-x');
+        BoardRequest::raise($pv->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($sv->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-x');
 
         Volt::actingAs($this->finance())->test('erp.transfers.index')
             ->set('tabType', 'purchase_payment')

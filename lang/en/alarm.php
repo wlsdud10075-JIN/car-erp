@@ -13,6 +13,12 @@ return [
     'task_document_deadline' => 'Shipping doc deadline',
     'doc_deadline_action' => 'Deadline approaching',
     // Dealer (매매상) balance 10-day alarm (karaba)
+    'task_board_purchase' => 'Sales payment request',
+    'task_board_sale' => 'Sales payment confirmation',
+    'board_purchase_action' => 'Purchase payment needed',
+    'board_sale_action' => 'Confirm incoming payment',
+    'badge_board' => 'REQ',
+
     'task_balance_due' => 'Dealer balance',
     'balance_dday' => 'Balance D-:d',
     'balance_overdue' => 'Balance overdue',

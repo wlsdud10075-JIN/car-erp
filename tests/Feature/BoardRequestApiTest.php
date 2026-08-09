@@ -205,8 +205,8 @@ class BoardRequestApiTest extends TestCase
         $v1 = $this->vehicle($sm->id, '11가1111', $buyer->id);
         $v2 = $this->vehicle($sm->id, '22나2222', $buyer->id);
         $batch = 'b-1';
-        $r1 = BoardRequest::open($v1->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
-        BoardRequest::open($v2->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
+        $r1 = BoardRequest::raise($v1->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
+        BoardRequest::raise($v2->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
         $r1->markDone();
 
         $res = $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all']);
@@ -227,8 +227,8 @@ class BoardRequestApiTest extends TestCase
     {
         $mine = $this->salesman('mine@ex.com');
         $theirs = $this->salesman('theirs@ex.com');
-        BoardRequest::open($this->vehicle($mine->id, '11가1111')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'mine@ex.com');
-        BoardRequest::open($this->vehicle($theirs->id, '99하9999')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'theirs@ex.com');
+        BoardRequest::raise($this->vehicle($mine->id, '11가1111')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'mine@ex.com');
+        BoardRequest::raise($this->vehicle($theirs->id, '99하9999')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'theirs@ex.com');
 
         $res = $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'mine@ex.com']);
 
@@ -241,8 +241,8 @@ class BoardRequestApiTest extends TestCase
         $sm = $this->salesman('a@ex.com');
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
         $batch = 'b-cancel';
-        $done = BoardRequest::open($this->vehicle($sm->id, '11가1111', $buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
-        $open = BoardRequest::open($this->vehicle($sm->id, '22나2222', $buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
+        $done = BoardRequest::raise($this->vehicle($sm->id, '11가1111', $buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
+        $open = BoardRequest::raise($this->vehicle($sm->id, '22나2222', $buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch);
         $done->markDone();
 
         $this->signedPost("/api/internal/board/requests/{$batch}/cancel", ['salesman_email' => 'a@ex.com'])

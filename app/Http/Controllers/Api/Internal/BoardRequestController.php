@@ -21,7 +21,7 @@ use Illuminate\Support\Str;
  *    매입 지급액·판매 N잔금 기입은 전부 erp 관리 이상의 일이다.
  * - IDOR = vehicle.salesman_id == 해소 영업(SalesmanResolver). 남의 차는 **전량 거부 대신 부분 skip**
  *   — 한 대 때문에 묶음 전체가 죽으면 영업이 원인을 못 찾고 카톡으로 돌아간다.
- * - 멱등 = `BoardRequest::open()` 단일 지점(같은 차+type 에 open 이 있으면 null).
+ * - 멱등 = `BoardRequest::raise()` 단일 지점(같은 차+type 에 open 이 있으면 null).
  */
 class BoardRequestController extends Controller
 {
@@ -89,7 +89,7 @@ class BoardRequestController extends Controller
                     continue;
                 }
 
-                $row = BoardRequest::open(
+                $row = BoardRequest::raise(
                     vehicleId: $vehicle->id,
                     type: $data['type'],
                     requestedByEmail: (string) $salesman->email,
@@ -174,6 +174,7 @@ class BoardRequestController extends Controller
         // bulk update 는 모델 이벤트가 안 뜬다(SKILLS §2) — 건별 update 로 정상 경로 유지.
         foreach ($lines as $line) {
             $line->update(['status' => BoardRequest::STATUS_CANCELLED]);
+            $line->resolveTaskAlarm('cancelled');   // 취소한 일이 벨에 계속 남지 않게
         }
 
         return response()->json(['ok' => true, 'cancelled' => $lines->count()]);
