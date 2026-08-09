@@ -74,14 +74,17 @@ new #[Layout('components.layouts.app')] class extends Component
         //   inStock() 은 whereNull(warehouse_out_date) 라 이 카테고리와 배타적 → 스코프를 분기한다.
         //   재고 이력 조회용이라 매입완납 조건은 걸지 않는다(출고된 차는 이미 재고를 떠난 것).
         $isShippedOut = $this->category === 'shipped_out';
+        $isAwaitingPayment = $this->category === 'awaiting_payment';
 
         $result = Vehicle::query()
             // 컨사이니 3칸(통관·선적·판매) = effective_consignee 폴백용 eager load.
             ->with(['salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'purchaseBalancePayments'])   // purchaseBalancePayments: warehouse_in_date·purchase_unpaid_amount accessor N+1 방지
-            ->when($isShippedOut,
-                fn ($q) => $q->whereNotNull('warehouse_out_date'),
-                fn ($q) => $q->inStock()
-            )
+            // 지급대기(jin 2026-08-09) = 매입 대금이 남은 차 = 입고 전. inStock() 과 배타적이라 스코프를 분기한다.
+            ->when($isAwaitingPayment, fn ($q) => $q->awaitingPurchasePayment())
+            ->when(! $isAwaitingPayment, fn ($q) => $q->when($isShippedOut,
+                fn ($q2) => $q2->whereNotNull('warehouse_out_date'),
+                fn ($q2) => $q2->inStock()
+            ))
             ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
             ->when($this->category === 'pre_ship', fn ($q) => $q->where('sale_price', '>', 0))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
@@ -235,6 +238,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'pre_ship' => $scoped(Vehicle::query()->preShippingStock())->count(),
             // 출고완료는 재고가 아니라 "나간 이력" — 전체 합계(cat_all)에는 더하지 않는다.
             'shipped_out' => $scoped(Vehicle::query()->whereNotNull('warehouse_out_date'))->count(),
+            // 지급대기 = 입고 전이라 재고 합계(cat_all)에도 안 더한다.
+            'awaiting_payment' => $scoped(Vehicle::query()->awaitingPurchasePayment())->count(),
         ];
     }
 
@@ -375,6 +380,12 @@ new #[Layout('components.layouts.app')] class extends Component
             {{ __('inventory.cat_all') }}
             <span class="pill-count">{{ number_format($cc['general'] + $cc['pre_ship']) }}</span>
         </button>
+        {{-- 지급대기 (jin 2026-08-09) — 매입 대금이 남은 차. 지급을 마치면 자동으로 재고 탭으로 넘어간다. --}}
+        <button wire:click="setCategory('awaiting_payment')"
+                class="tab-pill {{ $category === 'awaiting_payment' ? 'is-active' : '' }}">
+            {{ __('inventory.cat_awaiting_payment') }}
+            <span class="pill-count">{{ number_format($cc['awaiting_payment']) }}</span>
+        </button>
         <button wire:click="setCategory('general')"
                 class="tab-pill {{ $category === 'general' ? 'is-active' : '' }}">
             {{ __('inventory.cat_general') }}
@@ -395,6 +406,8 @@ new #[Layout('components.layouts.app')] class extends Component
             <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_general_hint') }}</span>
         @elseif($category === 'shipped_out')
             <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_shipped_out_hint') }}</span>
+        @elseif($category === 'awaiting_payment')
+            <span class="ml-2 text-xs text-gray-400">{{ __('inventory.cat_awaiting_payment_hint') }}</span>
         @endif
     </div>
 

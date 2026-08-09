@@ -25,6 +25,8 @@ return [
     'cat_general' => '일반재고',
     'cat_pre_ship' => '선적전 재고',
     'cat_general_hint' => '바이어 미정 투기매입 (권장: 대당 2억 이내 · 입고 3개월 내 판매)',
+    'cat_awaiting_payment' => '지급대기',
+    'cat_awaiting_payment_hint' => '매입 대금이 남은 차량입니다(입고 전). 지급을 마치면 재고로 넘어갑니다.',
     'cat_shipped_out' => '출고완료',
     'cat_shipped_out_hint' => '출고일이 찍혀 재고에서 빠진 차량 (최근 출고순). 출고일을 비우면 재고로 되돌아옵니다.',
     'badge_over_cap' => '2억 초과',

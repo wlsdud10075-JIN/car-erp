@@ -72,7 +72,16 @@ class InternalPortalController extends Controller
     public function sales(Request $request): JsonResponse
     {
         $sid = $this->salesmanId($request);
-        $data = $this->ownVehicles($sid)->where('sale_price', '>', 0)->with('buyer')->get()
+        // 진행상태 필터 (board 인계 2026-08-09 요청 ②) — 판매내역에서 거래완료인지 진행중인지 구분이 안 됐다.
+        //   board 가 받아놓고 감추면 트래픽이 그대로라 의미가 없으므로 **서버에서 건다**.
+        //   progress_status_cache 는 인덱스가 있어 필터가 실제로 행을 줄인다.
+        $exclude = array_values(array_filter(array_map(
+            'trim', explode(',', (string) $request->query('exclude_status', ''))
+        )));
+
+        $data = $this->ownVehicles($sid)->where('sale_price', '>', 0)->with('buyer')
+            ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
+            ->get()
             ->map(fn (Vehicle $v) => [
                 // §11 요청·확인 신호용 식별자 (2026-08-08) — board 가 [판매대금확인] 을 보내려면
                 //   차량 id 와 **바이어 id** 가 필요하다. 바이어를 이름 문자열로 맞추면 동명이인·표기흔들림에
@@ -81,6 +90,9 @@ class InternalPortalController extends Controller
                 'vehicle_id' => $v->id,
                 'buyer_id' => $v->buyer_id,
                 'vehicle_number' => $v->vehicle_number,
+                // ⚠️ ERP 값 **그대로** 내보낸다 — board 용으로 추리거나 이름을 바꾸면
+                //    "ERP엔 있는데 board엔 없다"가 생긴다(jin 2026-08-09 확정).
+                'progress_status' => $v->progress_status_cache,
                 'buyer' => $v->buyer?->name,
                 'currency' => $v->currency,
                 'sale_price' => (float) $v->sale_price,
@@ -105,6 +117,88 @@ class InternalPortalController extends Controller
             ])->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);
+    }
+
+    /**
+     * 재고 3분류 (board 인계 2026-08-09 요청 ①) — `erp/inventory` 화면의 미러.
+     *
+     * 왜: board 「매입내역」은 `purchases()`(매입가>0 **전량**)라 필터도 페이징도 없이
+     * 영업이 평생 매입한 차가 매번 통째로 왔다. 단조증가라 절대 안 줄어든다.
+     * 재고는 `inStock()` 이라 집합이 유한하고(영업당 20~50대), 누적되는 꼬리는 `shipped_out` 으로 빠진다.
+     *
+     * ⚠️ **분류 정의는 화면 scope 를 그대로 재사용한다** — 여기에 조건을 옮겨 적으면 갈리는 순간
+     *    "ERP엔 재고인데 board엔 없다"가 된다. `inStock()` 은 출고일뿐 아니라 매입완납·거래완료까지
+     *    보는 복합 조건이라 특히 그렇다.
+     * 🚫 마진·PII 없음(§3) — 화면에도 마진 노출이 0건이라 그대로 옮기면 된다.
+     */
+    public function inventory(Request $request): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+
+        $category = (string) $request->query('category', 'general');
+        if (! in_array($category, ['awaiting_payment', 'general', 'pre_ship', 'shipped_out'], true)) {
+            return response()->json([
+                'error' => 'invalid_category',
+                'message' => 'category 는 awaiting_payment | general | pre_ship | shipped_out 중 하나여야 합니다.',
+            ], 422);
+        }
+
+        $search = trim((string) $request->query('search', ''));
+        $isShippedOut = $category === 'shipped_out';
+
+        $q = $this->ownVehicles($sid)
+            ->with(['buyer', 'purchaseBalancePayments'])   // purchase_unpaid_amount·warehouse_in_date accessor N+1 방지
+            // scope 를 그대로 쓴다 — generalStock/preShippingStock 은 inStock() 을 이미 품고 있다.
+            //   awaiting_payment(지급대기) = 매입 대금이 남은 차 = 입고 전. **[입금요청]을 보낼 대상이 정확히 이 집합**이라
+            //   재고 3분류만으로는 board 가 버튼을 달 곳이 없다(jin 2026-08-09 — ERP 재고관리에도 같은 탭을 만들었다).
+            ->when($category === 'awaiting_payment', fn ($q2) => $q2->awaitingPurchasePayment())
+            ->when($category === 'general', fn ($q2) => $q2->generalStock())
+            ->when($category === 'pre_ship', fn ($q2) => $q2->preShippingStock())
+            ->when($isShippedOut, fn ($q2) => $q2->whereNotNull('warehouse_out_date'))
+            // 검색 대상은 화면과 동일(소유자명 제외 — PII).
+            ->when($search !== '', fn ($q2) => $q2->where(fn ($q3) => $q3
+                ->where('vehicle_number', 'like', "%{$search}%")
+                ->orWhere('brand', 'like', "%{$search}%")
+                ->orWhere('model_type', 'like', "%{$search}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$search}%")
+                ->orWhere('export_declaration_number', 'like', "%{$search}%")
+                ->orWhere('vessel_name', 'like', "%{$search}%")
+                ->orWhere('container_number', 'like', "%{$search}%")
+            ))
+            ->when($isShippedOut,
+                fn ($q2) => $q2->orderByDesc('warehouse_out_date')->orderByDesc('id'),
+                fn ($q2) => $q2->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')
+            );
+
+        $total = (clone $q)->count();
+
+        // 누적되는 건 shipped_out 뿐이라 거기만 잘라 보낸다(board 는 최근 30건 + [더 보기] offset).
+        if ($isShippedOut) {
+            $limit = min(max((int) $request->query('limit', 30), 1), 200);
+            $q->offset(max((int) $request->query('offset', 0), 0))->limit($limit);
+        }
+
+        $data = $q->get()->map(fn (Vehicle $v) => [
+            'vehicle_id' => $v->id,                       // §11 [입금요청] 전송용 — 없으면 board 버튼이 죽는다
+            'vehicle_number' => $v->vehicle_number,
+            'progress_status' => $v->progress_status_cache,
+            'stock_location' => $v->stock_location,
+            'stock_location_note' => $v->stock_location_note,
+            'warehouse_in_date' => $v->warehouse_in_date?->toDateString(),
+            'warehouse_out_date' => $v->warehouse_out_date?->toDateString(),
+            'buyer_id' => $v->buyer_id,                   // 일반재고는 바이어 미정이라 null 가능
+            'buyer' => $v->buyer?->name,
+            'purchase_price' => (float) $v->purchase_price,
+            'purchase_unpaid' => $v->purchase_unpaid_amount,
+            'purchase_date' => $v->purchase_date?->toDateString(),
+        ])->values();
+
+        return response()->json([
+            'count' => $data->count(),
+            'total' => $total,          // shipped_out 의 [더 보기] 종료 판정용
+            'category' => $category,
+            'data' => $data,
+        ]);
     }
 
     public function settlements(Request $request): JsonResponse
