@@ -70,21 +70,6 @@ return [
     'new_pbp_hint' => '자동 생성된 임시 매입 잔금 외에 별도 매입 잔금 입력이 필요한 경우 (분할 지급·추가 비용 등)',
     'new_pbp_btn' => '+ 신규 매입 잔금 추가',
 
-    // board 요청·확인 신호 (2026-08-07) — 권위 = docs/integration/board-portal-api.md §11
-    'board' => [
-        'purchase_title' => 'board 입금요청',
-        'purchase_hint' => '영업이 입금을 요청한 차량입니다. 지급을 기입해 미지급이 0이 되면 자동으로 사라집니다.',
-        'sale_title' => 'board 판매대금확인 요청',
-        'sale_hint' => '영업이 대금 입금을 알렸습니다. 통장을 확인한 차량만 체크하세요.',
-        'requested_by' => '요청',
-        'pay_btn' => '지급 입력',
-        'confirm_btn' => '확인',
-        'confirmed' => '확인됨',
-        'progress' => ':done/:total 확인',
-        'empty' => '대기 중인 요청이 없습니다.',
-        'confirm_done' => '확인 처리했습니다.',
-        'no_permission' => '판매대금 확인 권한이 없습니다.',
-    ],
     'pending' => '대기',
     'confirmed' => '확정',
     'empty_payment' => '조건에 맞는 잔금이 없습니다.',

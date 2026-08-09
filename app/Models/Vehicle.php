@@ -1386,6 +1386,27 @@ class Vehicle extends Model
         return $this->hasMany(FinalPayment::class);
     }
 
+    /** board 요청·확인 신호 (§11). 목록에서 쓸 땐 `with(['boardRequests' => fn ($q) => $q->open()])`. */
+    public function boardRequests(): HasMany
+    {
+        return $this->hasMany(BoardRequest::class);
+    }
+
+    /**
+     * 열려 있는 board 신호 종류 — 차량관리 목록·드로어 뱃지 단일 출처.
+     *
+     * jin 2026-08-09: 신호는 **차량관리에서 뱃지로 바로 보여야 한다**(보증금 매입 뱃지와 같은 자리).
+     * 재무 처리 화면으로 건너가 기입하는 흐름은 실무와 안 맞는다 — 차값·계약금·매도비가 거기엔 없다.
+     *
+     * @return array<int, string> BoardRequest::TYPE_* (없으면 빈 배열)
+     */
+    public function getOpenBoardRequestTypesAttribute(): array
+    {
+        return $this->boardRequests
+            ->where('status', BoardRequest::STATUS_OPEN)
+            ->pluck('type')->unique()->values()->all();
+    }
+
     /** 차량 등록 사진 (N장, jpg/png) — 업로드 순서대로. */
     public function photos(): HasMany
     {

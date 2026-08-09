@@ -93,6 +93,17 @@ return [
     'balance_badge' => 'D-:d 잔금',
     'balance_badge_overdue' => '잔금 지연',
     'deposit_badge_waiting' => '보증금매입',
+
+    // board 요청·확인 신호 뱃지 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11.
+    //   ⚠️ 라벨을 늘리지 말 것 — 차량번호 옆에 보증금매입(5~8자)·잔금지연(5자)과 나란히 선다.
+    'board_badge_purchase' => '입금요청',
+    'board_badge_sale' => '대금확인',
+    'board_title_purchase' => '영업이 매입 입금을 요청했습니다 — 매입 탭에서 지급을 기입하면 사라집니다',
+    'board_title_sale' => '영업이 판매대금 입금을 알렸습니다 — 확인하면 board 로 회신됩니다',
+    'board_confirm_btn' => '입금 확인',
+    'board_no_permission' => '판매대금 확인 권한이 없습니다.',
+    'board_confirm_done' => '확인했습니다 — board 에 회신됩니다.',
+    'board_requested_by' => ':email · :date 요청',
     'deposit_badge_paid' => '보증금매입 완납',
     'deposit_purchase_waiting' => '보증금 매입 · 바이어 판매입금 대기',
     'deposit_purchase_paid' => '보증금 매입 · 완납(미수 0)',
