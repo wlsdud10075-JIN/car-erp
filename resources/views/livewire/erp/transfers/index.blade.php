@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\BoardRequest;
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
 use App\Models\PurchaseBalancePayment;
@@ -29,7 +28,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
 
     /** 큐 20-C — 'transfer' (자금 이체) / 'sale_payment' (판매 잔금) / 'purchase_payment' (매입 잔금) */
-    // ⚠️ #[Url] 유지 — 알람센터가 board 요청 카드에서 `?tabType=purchase_payment` 로 바로 보낸다.
     #[Url]
     public string $tabType = 'transfer';
 
@@ -174,8 +172,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return FinalPayment::whereHas('vehicle')
             ->whereNull('transfer_id')
             ->whereNull('confirmed_at')
-            ->count()
-            + BoardRequest::openCount(BoardRequest::TYPE_SALE_PAYMENT_CONFIRM);   // 2026-08-09 — 위 주석 참조
+            ->count();
     }
 
     /** 큐 20-C — 매입 잔금. */
@@ -191,15 +188,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->paginate($this->perPage);
     }
 
-    /**
-     * 탭 숫자 = 확정 대기 잔금 + **board 요청**(2026-08-09).
-     * board 요청을 안 더하면 탭에 들어가 보기 전엔 요청이 온 걸 모른다(jin 실제로 겪음).
-     */
     #[Computed]
     public function purchasePaymentAwaitingCount(): int
     {
-        return PurchaseBalancePayment::whereHas('vehicle')->whereNull('confirmed_at')->count()
-            + BoardRequest::openCount(BoardRequest::TYPE_PURCHASE_PAYMENT);
+        return PurchaseBalancePayment::whereHas('vehicle')->whereNull('confirmed_at')->count();
     }
 
     /** 큐 20-C — 잔금 모달 열기 (sale_payment / purchase_payment 공용). */
@@ -371,90 +363,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->limit(50)
             ->get(['id', 'vehicle_number', 'nice_reg_vin', 'purchase_from']);
 
-        // board [입금요청]에서 prefill 로 들어온 차량이 최근 50대 밖이면 목록에 없어 선택칸이 빈 채로 열린다.
-        //   재무는 "지급 입력을 눌렀는데 차량이 안 잡힌다"만 보게 되므로 명시적으로 끼워 넣는다.
-        if ($this->newPbpVehicleId !== '' && ! $list->contains('id', (int) $this->newPbpVehicleId)) {
-            $picked = \App\Models\Vehicle::query()
-                ->whereKey((int) $this->newPbpVehicleId)
-                ->first(['id', 'vehicle_number', 'nice_reg_vin', 'purchase_from']);
-            if ($picked) {
-                $list->prepend($picked);
-            }
-        }
-
         return $list;
     }
 
-    /**
-     * board 요청·확인 신호 (2026-08-07) — 권위 = docs/integration/board-portal-api.md §11.
-     *
-     * [입금요청]은 **PBP 행이 아직 없는 상태**로 온다(board 는 재무가 기입하기 *전*에 요청한다).
-     * 그래서 아래 잔금 목록에 붙일 행이 없어 **BoardRequest 기준 별도 섹션**으로 띄운다.
-     * 자동 소멸(매입 미지급 0)이라 여기에 완료 버튼을 두지 않는다.
-     */
-    #[Computed]
-    public function boardPurchaseRequests()
-    {
-        return BoardRequest::query()
-            ->ofType(BoardRequest::TYPE_PURCHASE_PAYMENT)
-            ->open()
-            ->with('vehicle:id,vehicle_number,purchase_from')
-            ->orderBy('requested_at')
-            ->get()
-            ->filter(fn (BoardRequest $r) => $r->vehicle !== null)
-            ->values();
-    }
-
-    /** [판매대금확인] — 바이어 1 + 차량 N대 묶음. 재무가 통장 보고 차량별로 체크. */
-    #[Computed]
-    public function boardSaleConfirmBatches()
-    {
-        return BoardRequest::query()
-            ->ofType(BoardRequest::TYPE_SALE_PAYMENT_CONFIRM)
-            ->where('status', '!=', BoardRequest::STATUS_CANCELLED)
-            ->whereHas('vehicle')
-            ->with(['vehicle:id,vehicle_number', 'buyer:id,name'])
-            ->orderByDesc('id')
-            ->get()
-            ->groupBy('batch_id')
-            // 전부 확인된 묶음은 목록에서 뺀다 — 남은 일만 보이게.
-            ->filter(fn ($lines) => $lines->contains(fn (BoardRequest $r) => $r->status === BoardRequest::STATUS_OPEN))
-            ->values();
-    }
-
-    /**
-     * 차량 1대 확인 — `canConfirmFinance()`(super·admin·업무관리자·role∈{재무,관리})만.
-     * **재무 전용이 아니다** — 막아야 할 건 영업의 자가확인뿐이다(요청자 ≠ 확인자).
-     * 묶음 통째가 아니라 라인 단위로 닫는다(부분입금이 흔하다).
-     */
-    public function confirmBoardSaleLine(int $id): void
-    {
-        $user = auth()->user();
-        if (! $user?->canConfirmFinance()) {
-            $this->dispatch('notify', message: __('transfer.board.no_permission'), type: 'warning');
-
-            return;
-        }
-
-        $line = BoardRequest::query()
-            ->ofType(BoardRequest::TYPE_SALE_PAYMENT_CONFIRM)
-            ->open()
-            ->find($id);
-
-        if (! $line) {
-            return;
-        }
-
-        $line->markDone($user);
-        unset($this->boardSaleConfirmBatches);
-        $this->dispatch('notify', message: __('transfer.board.confirm_done'), type: 'success');
-    }
-
-    /** $vehicleId 를 주면 그 차량으로 prefill — board 입금요청에서 바로 지급 입력으로 잇는다. */
-    public function openNewPbpModal(string $vehicleId = ''): void
+    public function openNewPbpModal(): void
     {
         $this->showNewPbpModal = true;
-        $this->newPbpVehicleId = $vehicleId;
+        $this->newPbpVehicleId = '';
         $this->newPbpAmountStr = '';
         $this->newPbpDate = now()->toDateString();
         $this->newPbpNote = '';
@@ -909,86 +824,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $isSale = $tabType === 'sale_payment';
         $payments = $isSale ? $this->salePayments : $this->purchasePayments;
     @endphp
-
-    {{-- board [입금요청] (2026-08-07) — 권위 §11. 잔금 행이 아직 없는 상태로 오므로 별도 섹션.
-         완료 버튼 없음: 지급 기입 → 미지급 0 → 자동 소멸. --}}
-    @if($tabType === 'purchase_payment' && $this->boardPurchaseRequests->isNotEmpty())
-    <div class="card">
-        <div class="section-header">
-            <span class="section-dot bg-blue-500"></span>
-            <span class="section-title">{{ __('transfer.board.purchase_title') }}</span>
-            <span class="pill-count ml-2">{{ $this->boardPurchaseRequests->count() }}</span>
-        </div>
-        <p class="mb-2 text-xs text-gray-500">{{ __('transfer.board.purchase_hint') }}</p>
-        <div class="flex flex-col gap-2">
-            @foreach($this->boardPurchaseRequests as $req)
-            <div wire:key="brq-p-{{ $req->id }}"
-                 class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2">
-                <div class="min-w-0">
-                    <span class="font-medium text-gray-800">{{ $req->vehicle->vehicle_number }}</span>
-                    @if($req->vehicle->purchase_from)
-                        <span class="ml-2 text-xs text-gray-500">{{ $req->vehicle->purchase_from }}</span>
-                    @endif
-                    <span class="ml-2 text-[11px] text-gray-400">
-                        {{ __('transfer.board.requested_by') }} {{ $req->requested_by_email }}
-                        · {{ $req->requested_at?->format('m-d') }}
-                    </span>
-                    @if($req->note)
-                        <p class="mt-0.5 text-[11px] text-gray-500">{{ $req->note }}</p>
-                    @endif
-                </div>
-                <button wire:click="openNewPbpModal('{{ $req->vehicle_id }}')"
-                        class="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
-                    {{ __('transfer.board.pay_btn') }}
-                </button>
-            </div>
-            @endforeach
-        </div>
-    </div>
-    @endif
-
-    {{-- board [판매대금확인] (2026-08-07) — 바이어 1 + 차량 N대. 통장 확인한 차량만 체크(부분확인). --}}
-    @if($tabType === 'sale_payment' && $this->boardSaleConfirmBatches->isNotEmpty())
-    @foreach($this->boardSaleConfirmBatches as $lines)
-    @php
-        $head = $lines->first();
-        $doneCount = $lines->where('status', \App\Models\BoardRequest::STATUS_DONE)->count();
-    @endphp
-    <div class="card" wire:key="brq-s-{{ $head->batch_id }}">
-        <div class="section-header">
-            <span class="section-dot bg-purple-500"></span>
-            <span class="section-title">{{ __('transfer.board.sale_title') }}</span>
-            <span class="ml-2 font-medium text-gray-800">{{ $head->buyer?->name }}</span>
-            <span class="pill-count ml-2">{{ __('transfer.board.progress', ['done' => $doneCount, 'total' => $lines->count()]) }}</span>
-        </div>
-        <p class="mb-2 text-xs text-gray-500">
-            {{ __('transfer.board.sale_hint') }}
-            <span class="ml-1 text-gray-400">
-                {{ __('transfer.board.requested_by') }} {{ $head->requested_by_email }}
-                · {{ $head->requested_at?->format('m-d') }}
-            </span>
-        </p>
-        <div class="flex flex-col gap-1.5">
-            @foreach($lines as $line)
-            <div wire:key="brq-sl-{{ $line->id }}"
-                 class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2">
-                <span class="font-medium {{ $line->status === \App\Models\BoardRequest::STATUS_DONE ? 'text-gray-400 line-through' : 'text-gray-800' }}">
-                    {{ $line->vehicle?->vehicle_number }}
-                </span>
-                @if($line->status === \App\Models\BoardRequest::STATUS_DONE)
-                    <span class="badge badge-green">{{ __('transfer.board.confirmed') }}</span>
-                @else
-                    <button wire:click="confirmBoardSaleLine({{ $line->id }})"
-                            class="rounded bg-violet-600 px-3 py-1 text-xs font-medium text-white hover:bg-violet-700">
-                        {{ __('transfer.board.confirm_btn') }}
-                    </button>
-                @endif
-            </div>
-            @endforeach
-        </div>
-    </div>
-    @endforeach
-    @endif
 
     {{-- 큐 22-C 핵심 (2026-05-20) — 매입 잔금 탭: 재무가 신규 row 직접 추가 (Spec-E 입력+확정 통합). --}}
     @if($tabType === 'purchase_payment')

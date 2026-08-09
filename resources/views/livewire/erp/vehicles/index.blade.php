@@ -1724,8 +1724,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 컨사이니 3칸(통관·선적·판매) eager load — 목록 컬럼이 effective_consignee 폴백을 쓴다(N+1 방지).
+        //   boardRequests(open) = 차량번호 옆 board 신호 뱃지용.
         $q = $this->filteredVehicleQuery()
-            ->with(['buyer', 'consignee', 'blConsignee', 'exportConsignee', 'salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories']);
+            ->with([
+                'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'salesman',
+                'finalPayments', 'purchaseBalancePayments', 'receivableHistories',
+                'boardRequests' => fn ($q2) => $q2->open(),
+            ]);
 
         // 컨사이니 정렬은 폴백 우선순위(COALESCE)로 — consignee_id 만 보면 신규 차량이 전부 NULL 이라 정렬이 무의미.
         $q = $this->sortColumn === 'consignee_id'
@@ -1961,6 +1966,52 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Computed]
     public function dischargePorts() { return \App\Models\Port::ofType('discharge')->get(); }
+
+    /**
+     * board 요청·확인 신호 — 편집 중인 차량의 열린 신호(드로어 헤더).
+     * jin 2026-08-09: 신호는 차량관리에서 보고 여기서 회신한다(재무 처리로 건너가지 않는다).
+     */
+    #[Computed]
+    public function boardRequestsForPanel()
+    {
+        if ($this->editingId === null) {
+            return collect();
+        }
+
+        return \App\Models\BoardRequest::query()
+            ->where('vehicle_id', $this->editingId)
+            ->open()
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * 판매대금확인 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
+     * 권한 = canConfirmFinance(super·admin·업무관리자·role∈{재무,관리}).
+     */
+    public function confirmBoardRequest(int $id): void
+    {
+        $user = auth()->user();
+        if (! $user?->canConfirmFinance()) {
+            $this->dispatch('notify', message: __('vehicle.board_no_permission'), type: 'warning');
+
+            return;
+        }
+
+        $line = \App\Models\BoardRequest::query()
+            ->where('vehicle_id', $this->editingId)   // 패널에 연 차량으로 한정 (id 주입 방어)
+            ->ofType(\App\Models\BoardRequest::TYPE_SALE_PAYMENT_CONFIRM)
+            ->open()
+            ->find($id);
+
+        if (! $line) {
+            return;
+        }
+
+        $line->markDone($user);
+        unset($this->boardRequestsForPanel, $this->vehicles);
+        $this->dispatch('notify', message: __('vehicle.board_confirm_done'), type: 'success');
+    }
 
     #[Computed]
     public function consigneesForSale()
@@ -5585,6 +5636,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $depState === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
                         </span>
                     @endif
+                    {{-- board 요청·확인 신호 (2026-08-09) — 영업이 board 에서 보낸 신호를 여기서 바로 본다.
+                         ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap. --}}
+                    @php $brqTypes = $v->open_board_request_types; @endphp
+                    @if($brqTypes !== [])
+                        <span class="inline-flex flex-wrap gap-1 align-middle">
+                            @if(in_array(\App\Models\BoardRequest::TYPE_PURCHASE_PAYMENT, $brqTypes, true))
+                                <span class="ml-1 whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
+                                      title="{{ __('vehicle.board_title_purchase') }}">{{ __('vehicle.board_badge_purchase') }}</span>
+                            @endif
+                            @if(in_array(\App\Models\BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, $brqTypes, true))
+                                <span class="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700"
+                                      title="{{ __('vehicle.board_title_sale') }}">{{ __('vehicle.board_badge_sale') }}</span>
+                            @endif
+                        </span>
+                    @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
@@ -5948,6 +6014,31 @@ function vehicleColumnsToggle() {
                         </span>
                     @endif
                 </p>
+                @endif
+
+                {{-- board 요청·확인 신호 (2026-08-09) — 드로어에서 바로 보고, 여기서 회신한다.
+                     입금요청은 버튼이 없다(매입 탭에 지급을 기입하면 자동으로 사라진다). --}}
+                @if($editingId !== null && $this->boardRequestsForPanel->isNotEmpty())
+                <div class="mt-1.5 flex flex-col gap-1">
+                    @foreach($this->boardRequestsForPanel as $brq)
+                    @php $isPurchase = $brq->type === \App\Models\BoardRequest::TYPE_PURCHASE_PAYMENT; @endphp
+                    <div wire:key="panel-brq-{{ $brq->id }}"
+                         class="flex items-center justify-between gap-2 rounded-md border px-2 py-1 {{ $isPurchase ? 'border-blue-200 bg-blue-50' : 'border-purple-200 bg-purple-50' }}">
+                        <span class="min-w-0 text-[11px] {{ $isPurchase ? 'text-blue-800' : 'text-purple-800' }}">
+                            <span class="font-bold">{{ $isPurchase ? __('vehicle.board_badge_purchase') : __('vehicle.board_badge_sale') }}</span>
+                            <span class="ml-1 opacity-75">
+                                {{ __('vehicle.board_requested_by', ['email' => $brq->requested_by_email, 'date' => $brq->requested_at?->format('m-d')]) }}
+                            </span>
+                        </span>
+                        @if(! $isPurchase && auth()->user()?->canConfirmFinance())
+                            <button type="button" wire:click="confirmBoardRequest({{ $brq->id }})"
+                                    class="shrink-0 rounded bg-purple-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-700">
+                                {{ __('vehicle.board_confirm_btn') }}
+                            </button>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
                 @endif
             </div>
         </div>

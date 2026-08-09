@@ -161,16 +161,15 @@ new #[Layout('components.layouts.app')] class extends Component
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
-                            // board 요청·확인 신호 (2026-08-09) — 처리 자리가 재무 처리 화면이다.
+                            // board 요청·확인 신호 (2026-08-09) — 처리 자리는 차량관리 드로어다.
                             $isBoardPurchase = $type === 'board_purchase_payment';
                             $isBoardSale = $type === 'board_sale_confirm';
                             $isBoard = $isBoardPurchase || $isBoardSale;
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
-                            $href = $isBoard
-                                ? route('erp.transfers.index', ['tabType' => $isBoardPurchase ? 'purchase_payment' : 'sale_payment'])
-                                : route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
+                            // board 신호도 차량관리 드로어로 연다 — 거기서 뱃지·금액을 함께 본다(jin 2026-08-09).
+                            $href = route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
                         @endphp
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
                             <a href="{{ $href }}" wire:navigate class="w-24 font-bold text-gray-800 hover:text-violet-700">
