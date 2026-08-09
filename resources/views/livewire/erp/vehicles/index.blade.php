@@ -784,6 +784,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         'purchase_date', 'sale_date', 'shipping_date', 'bl_issue_date',
         'salesman_id', 'sale_price', 'purchase_price', 'transport_fee', 'transport_fee_usd',
         'currency', 'exchange_rate', 'sales_channel', 'buyer_id', 'consignee_id', 'created_at',
+        // 2026-08-09 — 아래 4개는 헤더에 정렬 버튼이 **이미 있었는데** 이 목록에 없어서
+        //   눌러도 아무 일이 없었다(setSort 가 화이트리스트 밖이면 조용히 return — 에러도 안 난다).
+        //   가드 = VehicleSortableColumnsTest(버튼과 화이트리스트 정적 대조).
+        'eta_date', 'deregistration_date', 'nice_reg_vin', 'purchase_from',
+        // 운항 필터와 짝 — 같은 배에 실린 차를 모아 본다.
+        'vessel_name', 'export_declaration_number',
     ];
 
     public function setSort(string $col): void
@@ -5628,6 +5634,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('vehicle.col.vessel_name')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
@@ -5741,6 +5748,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>
+                <td class="py-3 pr-4 text-xs text-gray-600" x-show="visible['vessel_name']">{{ $v->vessel_name ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
@@ -5814,7 +5822,7 @@ function vehicleColumnsToggle() {
         transport_fee: true, transport_fee_usd: false, purchase_from: false,
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
-        export_declaration_number: false, container_number: false, bl_number: false,
+        export_declaration_number: false, vessel_name: false, container_number: false, bl_number: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, consignee: false, sales_channel: false,
@@ -5832,6 +5840,7 @@ function vehicleColumnsToggle() {
             { key: 'bl_issue_date',  label: @json(__('vehicle.col.bl_issue_date')) },
             { key: 'deregistration_date',       label: @json(__('vehicle.col.deregistration_date')) },
             { key: 'export_declaration_number', label: @json(__('vehicle.col.export_declaration_number')) },
+            { key: 'vessel_name',               label: @json(__('vehicle.col.vessel_name')) },
             { key: 'container_number',          label: @json(__('vehicle.col.container_number')) },
             { key: 'bl_number',                 label: @json(__('vehicle.col.bl_number')) },
             { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },

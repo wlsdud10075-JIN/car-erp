@@ -1850,7 +1850,9 @@ class Vehicle extends Model
      * 운항 상태 (jin 2026-08-09) — **진행상태와 직교하는 표시 전용 축**.
      *
      * 선적일(= 실제 출항일, jin 확인)과 ETA 가 둘 다 있으면 배가 떴다고 본다.
-     * ETA 가 미래면 아직 바다 위(`운항중`), 지났으면 도착한 것으로 본다(`도착` — **예정 기준 추정**).
+     * ETA 가 미래면 아직 바다 위(`운항중`), 지났으면 `도착예정`.
+     * ⚠️ **'도착'이 아니라 '도착예정'이다** — ETA 는 예정일이고 지연되면 배는 아직 바다에 있다.
+     *    실제 입항을 확인하려면 포워더 소스가 필요하다(2026-08-09 현재 ERP 에 없음).
      *
      * 🚫 **`progress_status` cascade 에 넣지 않는다.** 넣으면 두 가지가 조용히 깨진다(실측 확인):
      *   ① 정산 자동생성은 `progress_status_cache` 가 '거래완료'로 **바뀌는 순간**(`wasChanged`)을 보는데,
@@ -1869,7 +1871,8 @@ class Vehicle extends Model
      */
     public const SAILING_IN_TRANSIT = '운항중';
 
-    public const SAILING_ARRIVED = '도착';
+    /** ⚠️ 라벨이 '도착'이 아니라 '도착예정' 인 이유 — ETA 는 예정일이라 실제 입항 확인이 아니다(jin 2026-08-09). */
+    public const SAILING_ARRIVED = '도착예정';
 
     public const SAILING_PHASES = ['in_transit', 'arrived'];
 
