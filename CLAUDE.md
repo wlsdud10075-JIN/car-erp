@@ -361,9 +361,16 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > ⚠️ 메모리 파일명은 **언더스코어**다(`project_deployment.md` 등). 하이픈으로 찾으면 안 나온다.
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태 (2026-07-30)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master == dev, 미배포 기능코드 0. 테스트 **1382 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+**현재 상태 (2026-08-09)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master(`8c9bc8e`) == dev, **미배포 기능코드 0**. 테스트 **1692 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 **CI 배포 게이트 적용됨** — 테스트가 통과해야 3사 배포가 시작된다(위 Git 브랜치 전략 참조).
+
+> 🤝 **board 연동 3종이 08-09 에 라이브**(board 도 같은 날 배포):
+> ① **요청·확인 신호**(§11) — board [입금요청]·[판매대금확인] → **차량관리 뱃지**로 뜨고 드로어에서 회신.
+>    입금요청은 매입 지급 기입 시 **자동 소멸**(완료 버튼 없음). = `project_board_erp_request_ack`
+> ② **재고 4분류 미러** — board 「매입내역」(전량조회) 대체. **지급대기** 탭 신설(= 입금요청 대상). = `project_board_inventory_mirror`
+> ③ **바이어 미정 매입** — 명시 체크박스로만 바이어 없이 등록. = `project_buyer_undecided_purchase`
 
 **남은 작업**: 코드 착수 대기 **0건**. 진행 중인 안건은 전부 jin 운영 몫이거나 board 세션 몫이라
 `MEMORY.md` 의 「jin 운영 몫」·「외부·타 세션 병목」 섹션을 볼 것.

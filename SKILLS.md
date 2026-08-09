@@ -661,6 +661,43 @@ extension=zip    # 주석 제거
 알림톡 사유가 한글로 렌더되는지, 사전 값 자체가 한글인지 검사한다. **기능 테스트로는 원리상 못 잡는다**(영문이어도 화면은 정상 렌더).
 ⚠️ 스캔 정규식은 범위를 좁힐 것 — `'error' => '...'` 를 전 파일에서 찾으면 API 응답까지 잡아 오탐이 난다(실제로 났다).
 
+### 42. 🚨 Eloquent **scope 와 같은 이름의 static 메서드**를 만들면 조회가 생성 메서드로 간다 (2026-08-09)
+
+**원인**: Eloquent 는 `scopeOpen()` 을 `Model::open()` 으로 노출한다. 그런데 **같은 이름의 실제 static 메서드가 있으면 그쪽이 이긴다**(`__callStatic` 은 진짜 메서드가 없을 때만 탄다).
+`BoardRequest` 에 생성용 `public static function open(int $vehicleId, string $type, …)` 와 조회용 `scopeOpen()` 을 같이 두자, **`BoardRequest::open()->get()`(조회 의도)이 생성 메서드로 가서 `ArgumentCountError`** 로 죽었다. 내가 직접 밟았다.
+**증상**: `Too few arguments to function … at least 3 expected`. 시끄럽게 죽으니 #32(Volt 프로퍼티↔메서드, 조용히 죽음)보다는 낫지만 원인이 안 보여 헤맨다. **인스턴스 빌더 경유(`Model::query()->open()`)는 정상 동작**해서 "어떤 데선 되고 어떤 데선 안 되는" 형태로 위장된다.
+**해결**: 생성 메서드를 다른 이름으로(`raise()`). **조회 = `query()->open()` / 생성 = `raise()`.**
+**🧭 규칙**: 새 모델에 `scopeX` 를 만들 때 **같은 이름의 static 메서드가 없는지 grep**. 특히 `open`·`active`·`pending` 처럼 동사이자 상태인 단어가 위험하다.
+
+### 43. 🔇 `Vehicle::refreshCaches()` 는 **raw update** — `saved` 훅이 안 뜬다 (2026-08-09)
+
+**원인**: `refreshCaches()` 는 `DB::table('vehicles')->where(...)->update([...])` 로 캐시 3컬럼을 쓴다(§2 의 "bulk update 는 모델 이벤트가 안 뜬다" 가 **내부 구현에도 해당**). 그래서 잔금 저장 → `PurchaseBalancePayment::saved` → `refreshCaches()` 경로에서는 **`Vehicle::saved` 훅이 한 번도 안 돈다**.
+**실측 사고**: board [입금요청] 자동 해소를 `Vehicle::saved` 에만 걸었더니 전액 지급해도 뱃지가 안 꺼졌다. 완료 버튼이 없는 설계라 **수동 탈출구도 없었다**.
+**해결**: 잔금 변화에 반응해야 하는 로직은 **`PurchaseBalancePayment::saved`/`FinalPayment::saved` 에 직접** 건다(기존 `purchase_balance_due` 알람 해소가 이미 그 자리에 있다 — 옆에 붙이면 된다).
+**⚠️ 관계 캐시도 같이 조심**: 그 훅 안에서 `$p->vehicle` 은 **방금 만든 잔금을 모른다**. 미지급을 다시 계산하려면 `fresh()`/`load()` 로 리로드해야 한다. 안 하면 "전액 지급했는데 안 꺼진다"가 된다.
+**🧭 규칙**: "저장하면 자동으로 …" 를 만들 때 **그 저장이 어느 모델의 어느 훅을 실제로 태우는지** 확인할 것. 테스트가 관계로 행을 만들면 운영 경로(서비스·컴포넌트)를 안 타므로, **운영 경로를 그대로 타는 테스트를 따로** 둔다.
+
+### 44. 🪞 화면을 API 로 미러할 땐 **조건을 옮겨 적지 말고 scope 를 재사용** (2026-08-09)
+
+board 포털이 `erp/inventory` 재고 분류를 미러할 때, 조건을 컨트롤러에 옮겨 적으면 갈리는 순간
+**"ERP엔 재고인데 board엔 없다"** 가 된다. 사람이 눈으로는 못 잡는다.
+- `scopeInStock()` 은 출고일만 보는 게 아니다 — **매입가>0 + 출고 전 + 거래완료 아님 + 매입 완납**(서브쿼리) 복합 조건이다. 요약해 옮기면 반드시 어긋난다.
+- 가드 = 화면 scope 와 API 응답의 **id 집합을 직접 비교**하는 테스트(`BoardInventoryApiTest::test_categories_match_the_screen_scopes`).
+- ⚠️ **미러 대상이 목적에 맞는지도 확인**할 것 — 재고 3분류를 미러했더니 **[입금요청]을 보낼 차(매입 미지급)가 어디에도 없었다**(미지급 = 입고 전 = 재고 아님). 실측으로 발견해 `awaiting_payment`(지급대기) 분류를 ERP 화면에 함께 신설했다. **board 전용 분류를 발명하지 말고 ERP 화면에도 같이 만든다** — 그래야 양쪽이 같은 화면을 본다.
+
+### 45. 🧮 같은 SQL 식이 4곳에 복제돼 있었다 — 새로 쓰기 전에 `grep` (2026-08-09)
+
+매입 미지급 식(`매입가 + 매도비 − 확정 PBP 합`)이 `scopeInStock`·`scopeAction('purchase_unpaid')`·`purchase_balance_due`·`deregistration_needed` **4곳에 같은 문자열**로 있었다(주석엔 "단일 출처"라고 적혀 있었는데도).
+다섯 번째를 붙이는 대신 **`Vehicle::purchaseUnpaidRawExpr()`** 로 뽑고 전부 그걸 쓰게 했다. 부호만 바꿔 쓴다(`> 0` / `<= 0`).
+**🔒 가드**: 그 문자열이 파일에 **1회만** 존재하는지 정적 검사. (회사이익 공식이 3곳에 복제돼 대표 보고만 틀렸던 사고와 같은 형태 — 하나만 고치면 화면마다 숫자가 갈린다.)
+
+### 46. 🔁 어트리뷰트 중복 = 화면 통째 500 — `grep` 은 윗줄도 봐야 한다 (2026-08-09)
+
+`tabType` 에 `#[Url]` 을 추가했는데 **이미 붙어 있었다**. `Attribute "Url" must not be repeated` 로 그 화면이 통째로 죽는다.
+원인은 확인 방법이었다 — `grep "Url.*tabType"` 처럼 **같은 줄만** 찾으면 프로퍼티 **윗줄**에 있는 어트리뷰트를 못 본다.
+**🧭 규칙**: 프로퍼티에 어트리뷰트를 추가하기 전엔 `grep -B2` 로 **앞줄을 함께** 보거나 해당 구간을 직접 읽을 것.
+
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
