@@ -1888,6 +1888,21 @@ class Vehicle extends Model
     }
 
     /**
+     * 기계용 키 — API·필터 파라미터가 쓰는 값. 표시용 한글 라벨(`sailing_status`)과 짝이다.
+     *
+     * ⚠️ 라벨을 쿼리 파라미터로 쓰지 말 것 — board 연동은 **쿼리 문자열이 HMAC 서명 대상**이라
+     *    한글이 들어가면 인코딩이 한 바이트만 달라도 서명이 깨진다.
+     */
+    public function getSailingPhaseAttribute(): ?string
+    {
+        return match ($this->sailing_status) {
+            self::SAILING_IN_TRANSIT => 'in_transit',
+            self::SAILING_ARRIVED => 'arrived',
+            default => null,
+        };
+    }
+
+    /**
      * 위 accessor 와 **같은 판정을 SQL 로**. 둘이 갈리면 화면 카운트와 목록이 어긋난다
      * (가드 = `SailingStatusTest::test_scope_and_accessor_agree`).
      */

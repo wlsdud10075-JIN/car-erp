@@ -78,9 +78,14 @@ class InternalPortalController extends Controller
         $exclude = array_values(array_filter(array_map(
             'trim', explode(',', (string) $request->query('exclude_status', ''))
         )));
+        // 운항 필터 (2026-08-09) — 진행상태와 **직교**하는 축이라 exclude_status 와 동시에 걸 수 있다.
+        //   ⚠️ 값은 영문 키다(라벨은 한글) — 쿼리는 HMAC 서명 대상이라 한글이 들어가면 인코딩 차이로 서명이 깨진다.
+        $sailing = (string) $request->query('sailing', '');
+        $sailing = in_array($sailing, Vehicle::SAILING_PHASES, true) ? $sailing : '';
 
         $data = $this->ownVehicles($sid)->where('sale_price', '>', 0)->with('buyer')
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
+            ->when($sailing !== '', fn ($q) => $q->sailing($sailing))
             ->get()
             ->map(fn (Vehicle $v) => [
                 // §11 요청·확인 신호용 식별자 (2026-08-08) — board 가 [판매대금확인] 을 보내려면
@@ -93,6 +98,14 @@ class InternalPortalController extends Controller
                 // ⚠️ ERP 값 **그대로** 내보낸다 — board 용으로 추리거나 이름을 바꾸면
                 //    "ERP엔 있는데 board엔 없다"가 생긴다(jin 2026-08-09 확정).
                 'progress_status' => $v->progress_status_cache,
+                // 운항 상태 (2026-08-09) — 진행상태와 **별개 축**이다. 진행상태가 선적중이든 거래완료든
+                //   선적일+ETA 가 있으면 배 위에 있다. `sailing` = 기계용 키(필터값과 동일) / `sailing_status` = 표시 라벨.
+                //   ⚠️ 「도착예정」은 ETA 가 지났다는 뜻이지 **실제 입항 확인이 아니다** — board 화면에도 그렇게 쓸 것.
+                'sailing' => $v->sailing_phase,
+                'sailing_status' => $v->sailing_status,
+                'vessel_name' => $v->vessel_name,
+                'shipping_date' => $v->shipping_date?->toDateString(),
+                'eta_date' => $v->eta_date?->toDateString(),
                 'buyer' => $v->buyer?->name,
                 'currency' => $v->currency,
                 'sale_price' => (float) $v->sale_price,
@@ -182,6 +195,13 @@ class InternalPortalController extends Controller
             'vehicle_id' => $v->id,                       // §11 [입금요청] 전송용 — 없으면 board 버튼이 죽는다
             'vehicle_number' => $v->vehicle_number,
             'progress_status' => $v->progress_status_cache,
+            // 운항 상태 (2026-08-09) — 출고완료 탭에서 특히 쓸모 있다("나갔다"만으론 배 위인지 도착인지 모른다).
+            //   재고(지급대기·일반·선적전)는 출고 전이라 대개 null 이다.
+            'sailing' => $v->sailing_phase,
+            'sailing_status' => $v->sailing_status,
+            'vessel_name' => $v->vessel_name,
+            'shipping_date' => $v->shipping_date?->toDateString(),
+            'eta_date' => $v->eta_date?->toDateString(),
             'stock_location' => $v->stock_location,
             'stock_location_note' => $v->stock_location_note,
             'warehouse_in_date' => $v->warehouse_in_date?->toDateString(),
