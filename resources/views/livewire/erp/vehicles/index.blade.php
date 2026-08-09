@@ -5418,18 +5418,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
 
         {{-- 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. 선적일(출항일)+ETA 로만 판정하므로
-             선적중·선적완료·통관중·거래완료에 걸쳐 있다. 진행상태 pill 과 동시 선택 가능. --}}
-        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-4">
+             선적중·선적완료·통관중·거래완료에 걸쳐 있다. 진행상태 pill 과 동시 선택 가능.
+             ⚠️ 색 클래스는 **빌드된 app.css 에 이미 있는 것만** 쓴다 — 새 색을 넣으면 npm run build
+                전까지 배경이 안 깔려 흰 글씨만 남는다(jin 제보로 실제 발생: bg-sky-600/bg-teal-600).
+             미선택도 연한 색조를 줘서 진행상태 pill(회색)과 다른 축임이 한눈에 보이게 한다. --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
             @foreach([
-                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => \App\Models\Vehicle::SAILING_IN_TRANSIT, 'on' => 'bg-sky-600'],
-                ['phase' => 'arrived',    'icon' => '⚓', 'label' => \App\Models\Vehicle::SAILING_ARRIVED,    'on' => 'bg-teal-600'],
+                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => \App\Models\Vehicle::SAILING_IN_TRANSIT,
+                 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
+                ['phase' => 'arrived',    'icon' => '⚓', 'label' => \App\Models\Vehicle::SAILING_ARRIVED,
+                 'on' => 'bg-emerald-600 text-white shadow-sm', 'off' => 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'],
             ] as $s)
+            @php $isOn = $sailingFilter === $s['phase']; @endphp
             <button type="button" wire:click="toggleSailing('{{ $s['phase'] }}')"
-                    title="선적일(출항)과 도착예정일이 모두 입력된 차량 — 예정일 기준입니다"
-                    class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
-                           @if($sailingFilter === $s['phase']) {{ $s['on'] }} text-white @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
-                {{ $s['icon'] }} {{ $s['label'] }}
-                <span class="ml-0.5 opacity-70">{{ number_format($this->sailingCounts[$s['phase']]) }}</span>
+                    title="선적일(출항)과 도착예정일이 모두 입력된 차량 — 예정일 기준입니다{{ $isOn ? ' · 다시 누르면 해제' : '' }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition
+                           {{ $isOn ? $s['on'].' font-semibold' : $s['off'].' font-medium' }}">
+                {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($this->sailingCounts[$s['phase']]) }})
             </button>
             @endforeach
         </div>
