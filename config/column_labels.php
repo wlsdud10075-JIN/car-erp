@@ -45,6 +45,7 @@ return [
         'purchase_registration_type' => '매입등록',
         'purchase_evidence_subtype' => '증빙유형',
         'is_dealer_purchase' => '매매상',
+        'buyer_undecided' => '바이어 미정 매입',
         'nice_reg_owner_name' => '소유자',
         'nice_reg_owner_rrn' => '주민(법인)등록번호',
 

@@ -96,6 +96,8 @@ return [
 
     // board 요청·확인 신호 뱃지 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11.
     //   ⚠️ 라벨을 늘리지 말 것 — 차량번호 옆에 보증금매입(5~8자)·잔금지연(5자)과 나란히 선다.
+    'buyer_undecided_badge' => '바이어미정',
+    'buyer_undecided_title' => '바이어 미정 매입(투기) — 판매 시 바이어를 지정하면 표시가 사라집니다',
     'board_badge_purchase' => '입금요청',
     'board_badge_sale' => '대금확인',
     'board_title_purchase' => '영업이 매입 입금을 요청했습니다 — 매입 탭에서 지급을 기입하면 사라집니다',
@@ -357,6 +359,8 @@ return [
         'purchase_registration_type' => '매입등록',
         'purchase_evidence_subtype' => '증빙유형',
         'is_dealer_purchase' => '매매상',
+        'buyer_undecided' => '바이어 미정 (투기 매입)',
+        'buyer_undecided_hint' => '바이어가 정해지기 전에 먼저 사는 경우에만 체크하세요. 체크하면 바이어 없이 등록되고 재고관리 「일반재고」로 잡힙니다. 판매 시 바이어를 지정하면 자동으로 해제됩니다.',
         'is_deposit_purchase' => '보증금으로 매입 (바이어 보증금으로 매입대금 지급)',
         'is_deposit_purchase_hint' => '체크하면 바이어 입금 독촉 알림톡이 시작됩니다 (5일 후 담당 영업·관리, 10일 초과 시 대표). 바이어가 기준 입금률을 넘기면 자동으로 멈춥니다.',
         'purchase_price' => '매입가 (원)',

@@ -893,6 +893,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   ⚠️ 저장 권한은 canConfirmFinance 만 — save() 에서 재검사한다(체크박스 disabled 는 UI 편의일 뿐).
     public bool $is_deposit_purchase = false;
 
+    /** 바이어 미정 매입(투기) — 켜야만 바이어 없이 신규 등록이 통과한다 (jin 2026-08-09). */
+    public bool $buyer_undecided = false;
+
     /** 1단(매입등록) 변경 시 2단(증빙유형)이 새 캐스케이드에 없으면 리셋. */
     public function updatedPurchaseRegistrationType(): void
     {
@@ -2850,6 +2853,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
         $this->deposit_purchase_state = $v->deposit_purchase_state;
         $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
+        $this->buyer_undecided = (bool) $v->buyer_undecided;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -3714,12 +3718,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   import(ImportVehicles)·board(PurchaseSyncController)는 Vehicle::create 직접 호출 = save() 미경유라 자동 면제.
         //   기존(레거시) 무바이어 차량 편집은 editingId 있어 미적용 — 편집이 막히지 않음.
         //   안내: 담당자=기본정보 탭 / 바이어=판매 탭 — 어느 탭에서 지정하는지 토스트(어느 탭이든 보임)+인라인 에러.
-        if ($this->editingId === null && ($this->salesman_id_str === '' || $this->buyer_id_str === '')) {
+        //   ⚠️ 예외 = 「바이어 미정(투기 매입)」 명시 체크 (jin 2026-08-09). 바이어가 정해지기 전에 사 두는
+        //      경우가 실제로 있고(재고관리 「일반재고」의 정의 — SKILLS §14), 그동안 등록 자체가 막혀 있었다.
+        //      🚫 바이어를 빈 채로 두는 것만으로 통과시키지 않는다 — 그러면 "실수로 빠뜨린 것"과 구분이 안 돼
+        //         이 가드의 원래 목적(빠뜨림 방지)이 사라진다. 사람이 명시적으로 켜야 한다.
+        //      미수 통제는 안 뚫린다 — 나중에 바이어를 넣는 순간 shouldCheckPurchaseGate 가 '교체'로 보고 발동.
+        $buyerMissing = $this->buyer_id_str === '' && ! $this->buyer_undecided;
+        if ($this->editingId === null && ($this->salesman_id_str === '' || $buyerMissing)) {
             $this->dispatch('notify', message: __('vehicle.valmsg.party_required'), type: 'warning');
             if ($this->salesman_id_str === '') {
                 $this->addError('salesman_id_str', __('vehicle.valmsg.salesman_required'));
             }
-            if ($this->buyer_id_str === '') {
+            if ($buyerMissing) {
                 $this->addError('buyer_id_str', __('vehicle.valmsg.buyer_required'));
             }
 
@@ -3968,6 +3978,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'currency'     => $this->currency,
             'exchange_rate' => $toFloat($this->exchange_rate_str),
             'buyer_id'     => $toId($this->buyer_id_str),
+            'buyer_undecided' => $this->buyer_undecided,
             'consignee_id' => $toId($this->consignee_id_str),
             'sale_price'       => $toFloat($this->sale_price_str),
             'tax_dc'           => $toFloat($this->tax_dc_str),
@@ -5131,7 +5142,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','buyer_undecided',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -5636,6 +5647,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ $depState === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
                         </span>
                     @endif
+                    {{-- 바이어 미정 매입 (2026-08-09) — 투기 매입. 바이어 지정 시 자동 해제된다. --}}
+                    @if($v->buyer_undecided)
+                        <span class="ml-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
+                              title="{{ __('vehicle.buyer_undecided_title') }}">{{ __('vehicle.buyer_undecided_badge') }}</span>
+                    @endif
                     {{-- board 요청·확인 신호 (2026-08-09) — 영업이 board 에서 보낸 신호를 여기서 바로 본다.
                          ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap. --}}
                     @php $brqTypes = $v->open_board_request_types; @endphp
@@ -6012,6 +6028,10 @@ function vehicleColumnsToggle() {
                               title="{{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_purchase_paid') : __('vehicle.deposit_purchase_waiting') }}">
                             {{ $deposit_purchase_state === 'paid' ? __('vehicle.deposit_badge_paid') : __('vehicle.deposit_badge_waiting') }}
                         </span>
+                    @endif
+                    @if($editingId !== null && $buyer_undecided)
+                        <span class="ml-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
+                              title="{{ __('vehicle.buyer_undecided_title') }}">{{ __('vehicle.buyer_undecided_badge') }}</span>
                     @endif
                 </p>
                 @endif
@@ -6889,6 +6909,19 @@ function vehicleColumnsToggle() {
                         :required="true" placeholder="{{ __('vehicle.panel.select_placeholder') }}"
                         wire:key="cbx-buyer-sale-{{ $buyer_id_str }}" />
                     @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+
+                    {{-- 바이어 미정 매입 (jin 2026-08-09) — 바이어가 정해지기 전에 사는 투기 매입.
+                         명시 체크여야 신규 등록이 통과한다(빈 값만으로는 안 된다 — 실수와 구분).
+                         바이어를 지정하면 Vehicle::saving 이 자동으로 내린다. --}}
+                    @if($buyer_id_str === '')
+                    <label class="mt-1.5 flex cursor-pointer items-start gap-1.5 text-[11px] text-gray-600">
+                        <input type="checkbox" wire:model.live="buyer_undecided" class="mt-0.5 rounded border-gray-300" />
+                        <span>
+                            <span class="font-medium">{{ __('vehicle.field.buyer_undecided') }}</span>
+                            <span class="mt-0.5 block text-[10.5px] leading-snug text-gray-400">{{ __('vehicle.field.buyer_undecided_hint') }}</span>
+                        </span>
+                    </label>
+                    @endif
                 </div>
                 {{-- 당사자 축소 (jin 2026-07-09) — 판매=바이어만. 컨사이니는 선적 탭에서 입력. --}}
                 <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
