@@ -36,6 +36,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 진행상태 pill 3상태 순환: 미선택(회색) → 이것만(보라, progressFilter) → 제외(빨강, excludeStatuses).
     // 전체 유지 + 완료건 제외 같은 다중 제외 지원. progress_status_cache 인덱스로 whereNotIn.
     #[Url(as: 'exclude')] public array $excludeStatuses = [];
+    // 운항 필터 (jin 2026-08-09) — '' 전체 / in_transit 운항중 / arrived 도착.
+    // 진행상태와 **직교**한다(선적일+ETA만 봄) — 진행상태 pill 과 함께 걸 수 있다. 판정 = Vehicle::scopeSailing.
+    #[Url(as: 'sailing')] public string $sailingFilter = '';
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
     #[Url] public string $cancelFilter = '';
     // 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지). transport_fee = 입력값.
@@ -1211,7 +1214,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset([
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
-            'sortColumn', 'sortDirection', 'freightExact', 'vinSearch',
+            'sortColumn', 'sortDirection', 'freightExact', 'vinSearch', 'sailingFilter',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
         $this->dateFrom = now()->subYear()->format('Y-m-d');
@@ -1693,6 +1696,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /**
+     * 운항 필터 토글 (jin 2026-08-09) — 같은 걸 다시 누르면 해제.
+     * 진행상태 pill 과 **직교**라 서로 건드리지 않는다(운항중 + 통관중 동시 조회 가능).
+     */
+    public function toggleSailing(string $phase): void
+    {
+        $this->sailingFilter = ($this->sailingFilter === $phase) ? '' : $phase;
+
+        unset($this->vehicles, $this->sailingCounts);
+        $this->resetPage();
+    }
+
+    /** pill 카운트 — 운항 필터를 뺀 현재 조건 기준. 목록과 같은 요청에서 계산한다(캐시 금지: 자정에 경계가 움직임). */
+    #[Computed]
+    public function sailingCounts(): array
+    {
+        $base = $this->filteredVehicleQuery(false);
+
+        return [
+            'in_transit' => (clone $base)->sailing('in_transit')->count(),
+            'arrived' => (clone $base)->sailing('arrived')->count(),
+        ];
+    }
+
     public function updatedSalesmanId(): void
     {
         unset($this->vehicles);
@@ -1838,7 +1865,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]));
     }
 
-    private function filteredVehicleQuery()
+    /**
+     * @param  bool  $withSailing  운항 필터 적용 여부. pill 카운트는 "운항 필터를 뺀 나머지 조건" 기준이라
+     *                             false 로 부른다(자기 자신으로 자기를 세면 항상 전체가 된다).
+     */
+    private function filteredVehicleQuery(bool $withSailing = true)
     {
         $dateColumn = match ($this->dateType) {
             'sale'           => 'sale_date',
@@ -1882,6 +1913,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
+            // 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. Vehicle::scopeSailing 단일 출처.
+            ->when($withSailing && in_array($this->sailingFilter, \App\Models\Vehicle::SAILING_PHASES, true),
+                fn ($q) => $q->sailing($this->sailingFilter))
             // 매입취소 필터 — 진행(미수)/완료(미수0)/마감/정상 구분 (jin 2026-07-18)
             ->when($this->cancelFilter === 'active', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0))
             ->when($this->cancelFilter === 'done', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)
@@ -5376,6 +5410,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
             @endforeach
         </div>
+
+        {{-- 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. 선적일(출항일)+ETA 로만 판정하므로
+             선적중·선적완료·통관중·거래완료에 걸쳐 있다. 진행상태 pill 과 동시 선택 가능. --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-4">
+            @foreach([
+                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => \App\Models\Vehicle::SAILING_IN_TRANSIT, 'on' => 'bg-sky-600'],
+                ['phase' => 'arrived',    'icon' => '⚓', 'label' => \App\Models\Vehicle::SAILING_ARRIVED,    'on' => 'bg-teal-600'],
+            ] as $s)
+            <button type="button" wire:click="toggleSailing('{{ $s['phase'] }}')"
+                    title="선적일(출항)과 도착예정일이 모두 입력된 차량 — 예정일 기준입니다"
+                    class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
+                           @if($sailingFilter === $s['phase']) {{ $s['on'] }} text-white @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
+                {{ $s['icon'] }} {{ $s['label'] }}
+                <span class="ml-0.5 opacity-70">{{ number_format($this->sailingCounts[$s['phase']]) }}</span>
+            </button>
+            @endforeach
+        </div>
     </div>
 </div>
 
@@ -5675,6 +5726,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                    {{-- 운항 뱃지 (jin 2026-08-09) — 진행상태와 별개 축이라 나란히 붙인다. 도착은 ETA 경과 = 추정. --}}
+                    @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
+                        <span class="badge badge-blue" title="선적일 {{ $v->shipping_date?->format('Y-m-d') }} · 도착예정 {{ $v->eta_date?->format('Y-m-d') }}">🚢</span>
+                    @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)
+                        <span class="badge badge-teal" title="도착예정일 {{ $v->eta_date?->format('Y-m-d') }} 경과 (예정 기준 추정)">⚓</span>
+                    @endif
                     @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                 </td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
@@ -5843,6 +5900,11 @@ function vehicleColumnsToggle() {
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
             <div class="flex items-center gap-1.5">
                 <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
+                    <span class="badge badge-blue">🚢</span>
+                @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)
+                    <span class="badge badge-teal">⚓</span>
+                @endif
                 @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                 @if($v->sale_price > 0)
                     <span class="text-xs font-medium text-gray-700">{{ number_format($v->sale_price) }} {{ $v->currency }}</span>
@@ -5905,6 +5967,7 @@ function vehicleColumnsToggle() {
                         if ($wire.search) p.set('q', $wire.search);
                         if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
                         if ($wire.excludeStatuses && $wire.excludeStatuses.length) p.set('exclude', $wire.excludeStatuses.join(','));
+                        if ($wire.sailingFilter) p.set('sailing', $wire.sailingFilter);
                         p.set('dateType', $wire.dateType || 'purchase');
                         if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
                         if ($wire.dateTo) p.set('dateTo', $wire.dateTo);

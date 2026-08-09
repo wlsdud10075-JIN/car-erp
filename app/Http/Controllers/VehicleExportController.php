@@ -42,6 +42,9 @@ class VehicleExportController extends Controller
         $mirror = $request->query('scope', 'current') !== 'all';
         $progress = $mirror ? (string) $request->query('progress', '') : '';
         $exclude = $mirror ? array_values(array_filter(explode(',', (string) $request->query('exclude', '')))) : [];
+        // 운항 필터 (jin 2026-08-09) — 화면 pill 과 정합. 화이트리스트 밖 값은 무시(필터 없음).
+        $sailing = $mirror ? (string) $request->query('sailing', '') : '';
+        $sailing = in_array($sailing, Vehicle::SAILING_PHASES, true) ? $sailing : '';
         $search = $mirror ? trim((string) $request->query('q', '')) : '';
         $salesmanId = $mirror ? (string) $request->query('salesmanId', '') : '';
         $dateFrom = $mirror ? (string) $request->query('dateFrom', '') : '';
@@ -65,6 +68,7 @@ class VehicleExportController extends Controller
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
+            ->when($sailing !== '', fn ($q) => $q->sailing($sailing))
             // 성능(jin 2026-07-23): $dateCol(purchase/sale/shipping/bl_issue_date) 전부 인덱스 → whereDate(DATE())가
             //   인덱스 죽임. 시간경계 범위로 인덱스 유지 + 양쪽 DB(SQLite 'Y-m-d 00:00:00' 저장) 안전.
             ->when($applyDateFilter && $dateFrom !== '', fn ($q) => $q->where($dateCol, '>=', $dateFrom.' 00:00:00'))
@@ -98,6 +102,7 @@ class VehicleExportController extends Controller
             'filters' => array_filter([
                 'range' => $mirror ? 'current' : 'all',
                 'progress' => $progress, 'exclude' => implode(',', $exclude), 'q' => $search, 'salesmanId' => $salesmanId,
+                'sailing' => $sailing,
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
             ]),
         ]);
