@@ -1854,6 +1854,45 @@ class Vehicle extends Model
      *     progress_status_cache NULL 은 판정 불가라 재고 잔존(orWhereNull).
      *   매입 미지급 식은 scopeAction('purchase_unpaid') 와 동일 단일 출처(≤ 0 반전).
      */
+    /**
+     * 매입 미지급 SQL 식 — **단일 출처**. 확정 PBP(payment_date 도래 + confirmed_at) 기준으로
+     * `매입가 + 매도비 − 지급합` 을 계산한다. `getPurchaseUnpaidAmountAttribute` 와 정합(SKILLS §13).
+     *
+     * ⚠️ 이 식을 복사해 쓰지 말 것 — 2026-08-09 기준 이미 4곳에 같은 문자열이 퍼져 있었고,
+     *    한 곳만 고치면 화면마다 숫자가 갈린다(회사이익 공식이 3곳에 복제됐던 사고와 같은 형태).
+     *    부호만 바꿔 쓴다: 미지급 있음 `> 0` / 완납 `<= 0`.
+     * CAST AS SIGNED — BIGINT UNSIGNED underflow 방지(환불·선지급 케이스).
+     */
+    public static function purchaseUnpaidRawExpr(): string
+    {
+        return '(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
+                         - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
+                                      WHERE vehicle_id = vehicles.id
+                                      AND payment_date IS NOT NULL AND payment_date <= ?
+                                      AND confirmed_at IS NOT NULL), 0))';
+    }
+
+    /**
+     * 지급대기 (jin 2026-08-09) — **매입 대금이 남은 차 = 입고 전**. 재고관리 화면의 첫 탭.
+     *
+     * `inStock()` 에서 매입완납 조건 하나만 뒤집은 것이라 재고와 **정확히 배타적**이고,
+     * 둘을 합치면 "출고 전 매입차 전체"가 된다. 지급을 마치는 순간 여기서 빠져 재고로 넘어간다.
+     *
+     * 왜 필요한가: board 포털이 「매입내역」(전량조회)을 재고 3분류로 대체하는데,
+     * **[입금요청]을 보낼 차량이 정확히 이 집합**이라 재고에만 있으면 버튼을 달 곳이 없다.
+     * ERP 에서도 그동안 이 차들은 차량관리 필터로만 볼 수 있었다 — 재고 생애주기의 앞 칸을 채운다.
+     */
+    public function scopeAwaitingPurchasePayment($query)
+    {
+        return $query->where('purchase_price', '>', 0)
+            ->whereNull('warehouse_out_date')
+            ->where(function ($q) {
+                $q->where('progress_status_cache', '!=', '거래완료')
+                    ->orWhereNull('progress_status_cache');
+            })
+            ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()]);
+    }
+
     public function scopeInStock($query)
     {
         return $query->where('purchase_price', '>', 0)
@@ -1862,11 +1901,7 @@ class Vehicle extends Model
                 $q->where('progress_status_cache', '!=', '거래완료')
                     ->orWhereNull('progress_status_cache');
             })
-            ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                         - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
-                                      WHERE vehicle_id = vehicles.id
-                                      AND payment_date IS NOT NULL AND payment_date <= ?
-                                      AND confirmed_at IS NOT NULL), 0)) <= 0', [now()->toDateString()]);
+            ->whereRaw(self::purchaseUnpaidRawExpr().' <= 0', [now()->toDateString()]);
     }
 
     // ── Computed: 채권기준금액 (판매합계 — 통화 단위) ───────────────
@@ -2071,11 +2106,7 @@ class Vehicle extends Model
                 // CAST AS SIGNED — BIGINT UNSIGNED underflow 방지 (환불·선지급 케이스).
                 // 큐 20-B 분자 A안 — confirmed_at IS NOT NULL 가드 (재무 승인 우회 차단).
                 // getPurchaseUnpaidAmountAttribute 와 정합 (SKILLS §13 분모 단일 출처).
-                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
-                                          WHERE vehicle_id = vehicles.id
-                                          AND payment_date IS NOT NULL AND payment_date <= ?
-                                          AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()]),
+                ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()]),
             // 매매상 잔금 10일 알림 (karaba) — 매매상 체크(is_dealer_purchase) + 계약금 입력 + 잔금 미납.
             //   is_dealer_purchase 는 karaba 만 채워 자연 격리. due_date = 계약금일+10 (scan 에서 산정).
             //   getPurchaseBalanceDueDaysAttribute 와 동일 조건(단일 출처). alarms:scan 이 생성/자동해소.
@@ -2083,11 +2114,7 @@ class Vehicle extends Model
             'purchase_balance_due' => $q
                 ->where('is_dealer_purchase', true)
                 ->where('purchase_price', '>', 0)
-                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
-                                          WHERE vehicle_id = vehicles.id
-                                          AND payment_date IS NOT NULL AND payment_date <= ?
-                                          AND confirmed_at IS NOT NULL), 0)) > 0', [now()->toDateString()])
+                ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()])
                 ->whereExists(function ($sub) {
                     $sub->select(DB::raw(1))->from('purchase_balance_payments')
                         ->whereColumn('purchase_balance_payments.vehicle_id', 'vehicles.id')
@@ -2120,11 +2147,7 @@ class Vehicle extends Model
                 ->where(fn ($q2) => $q2->where('is_deregistered', false)
                     ->orWhereNull('deregistration_document'))
                 // 큐 22-C-E (2026-05-20) — 2컬럼 DROP 후 단순화. purchase_unpaid 부호 반전.
-                ->whereRaw('(CAST(purchase_price AS SIGNED) + CAST(selling_fee AS SIGNED)
-                             - COALESCE((SELECT SUM(amount) FROM purchase_balance_payments
-                                          WHERE vehicle_id = vehicles.id
-                                          AND payment_date IS NOT NULL AND payment_date <= ?
-                                          AND confirmed_at IS NOT NULL), 0)) <= 0', [now()->toDateString()]),
+                ->whereRaw(self::purchaseUnpaidRawExpr().' <= 0', [now()->toDateString()]),
 
             // ── 통관 role (8) ──
             // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합).

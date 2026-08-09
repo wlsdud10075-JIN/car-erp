@@ -25,6 +25,8 @@ return [
     'cat_general' => 'General Stock',
     'cat_pre_ship' => 'Pre-shipping Stock',
     'cat_general_hint' => 'Speculative purchase, no buyer yet (recommended: ≤200M each · sell within 3 months of intake)',
+    'cat_awaiting_payment' => 'Awaiting payment',
+    'cat_awaiting_payment_hint' => 'Purchase balance still outstanding (not yet received). Moves to stock once paid.',
     'cat_shipped_out' => 'Released',
     'cat_shipped_out_hint' => 'Vehicles that left stock once a release date was set (newest first). Clearing the release date returns them to stock.',
     'badge_over_cap' => 'Over 200M',
