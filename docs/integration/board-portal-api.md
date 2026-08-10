@@ -73,14 +73,20 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   "purchase_locked": true,
   "purchase_lock": {
     "locked": true,
-    "mode": "unsecured",            // unsecured(금액 판정) | ratio(미수율 판정) | off(락 토글 OFF)
-    "threshold_pct": 50,            // ratio 모드의 미수율 임계(%)
-    "unpaid_ratio_pct": 92.0,       // 현재 미수율(%) — 판정 근거 없으면 null
-    "unpaid_krw": 92000000,
-    "vehicle_count": 3,             // 선적 전 진행중 대수
-    "available_krw": 0,             // 남은 매입 여력 = 보증금 + 무담보 − 이미 나간 매입 지급
-    "unsecured_limit_krw": 5000000,
-    "unsecured_available_krw": 0
+    "mode": "unsecured",              // unsecured(금액 판정) | ratio(미수율 판정) | off(락 토글 OFF)
+    "basis": {                        // ⭐ 락을 **실제로 결정하는** 값 — board 는 이것만 표시한다
+      "kind": "unsecured_krw",        // unsecured_krw | ratio | null(근거 없음·토글 OFF)
+      "current": 0,                   // 남은 무담보(원)  /  ratio 면 현재 미수율(%)
+      "limit": 5000000                // 무담보 한도(원)  /  ratio 면 임계(%)
+    },
+    "reference": {                    // 참고 숫자 — 🚫 락 판정과 무관
+      "unpaid_krw": 92000000,
+      "vehicle_count": 3,             // 선적 전 진행중 대수
+      "unpaid_ratio_pct": 92.0,
+      "available_krw": 0,             // 보증금 여력 = 입금액×비율 + 무담보 − 매입 지급
+      "unsecured_limit_krw": 5000000,
+      "unsecured_available_krw": 0
+    }
   }
 }
 ```
@@ -88,14 +94,24 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 - **판정 = ERP `App\Services\PurchaseRegistrationGate` 단일 출처.** 화면 저장 게이트와 **같은 함수**를 탄다.
   🚫 board 가 조건을 옮겨 적지 말 것 — 갈리는 순간 영업은 board 에서 "가능"을 보고 돈을 쓴 뒤 ERP 에서
   막힌다. board 는 `purchase_locked` 를 **그대로 신뢰**해서 표시·차단만 한다.
+- 🚨 **`basis` 와 `reference` 를 나란히 렌더하지 말 것.** ratio 모드에서 `available_krw`(보증금 여력)는
+  락 판정과 **분모·분자가 아예 다르다**. 그래서 *"여력 0원인데 등록 가능"* · *"락인데 여력 1천만"* 이
+  **둘 다 정상**으로 나온다. 나란히 보여주면 영업이 반드시 오판한다 — 근거는 `basis` 하나뿐이다.
+  (억지로 일치시키려 하면 매입 락이 망가진다. 그 어긋남은 `BoardPurchaseLockApiTest` 가 박아뒀다.)
+- **`basis.current/limit` 은 숫자로만 다룰 것** — JSON 이 `20.0` 을 `20` 으로 직렬화하므로 정수/실수가 섞인다.
 - **`mode`**: 바이어에 무담보 한도가 설정돼 있으면 `unsecured`(무담보 잔액 0 = 락), 아니면 `ratio`(미수율 > 임계 = 락).
-  시스템관리자가 매입 락 토글을 끈 회사는 전부 `off` + `locked=false`.
-- **판정 근거가 없는 바이어**(차량 0대 · 무담보 미설정)는 `locked=false` + 숫자 `null`. 신규 바이어가 막히면 안 된다.
+  시스템관리자가 매입 락 토글을 끈 회사는 전부 `off` + `locked=false` + `basis.kind=null`.
+- **판정 근거가 없는 바이어**(차량 0대 · 무담보 미설정)는 `locked=false` + `basis.kind=null`. 신규 바이어가 막히면 안 된다.
 - **락은 절대 규칙이 아니다** — ERP 화면에서는 [관리]·최고관리자가 사유를 적고 **1회 통과**시킬 수 있다
   (다음 차는 또 발동, 지속 토큰 없음, `AuditLog(purchase_gate_override)`). board 에서 막혔다고 끝이 아니라
   **"ERP 관리자 승인이 필요하다"** 로 안내하는 게 맞다.
 - **스코프**: 미수 금액이 실리므로 본인 바이어 스코프가 더 중요해졌다. 기존 `salesman_id` 스코프 그대로.
 - 성능: 바이어당 쿼리를 돌리지 않는다(`Buyer::computeReceivableGaugesFor` — 차량·한도 각 1쿼리).
+  ⚠️ 단 그 1쿼리는 **상태 필터가 없다** — 거래완료·출고분까지 끌어와 PHP 에서 버린다(게이지가
+  `completed_*`·`shipped_*` 를 집계하기 때문). 즉 **단조증가**한다. 실측 2026-08-10 heymanerp =
+  가장 바쁜 영업이 바이어 16명 · 차량 **239행**(나머지는 3행 이하)이라 지금은 문제없다.
+  드로어가 느리다는 제보가 오면 **여기부터 볼 것**(같은 병으로 `purchases()` → `inventory()` 를
+  2026-08-09 에 갈아엎었다). 좁힐 땐 API 경로만 — 화면(`buyers/index`)은 `completed_krw` 를 쓴다.
 - 가드 = `tests/Feature/BoardPurchaseLockApiTest`(API 판정 ≡ 저장 게이트, 모드 분기, 토글 OFF, 판정식 복제 정적 검사).
 
 ### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)

@@ -150,10 +150,11 @@ class BoardPurchaseLockApiTest extends TestCase
 
         $this->assertTrue($byId[$exhausted->id]['purchase_locked']);
         $this->assertSame(PurchaseRegistrationGate::MODE_UNSECURED, $byId[$exhausted->id]['purchase_lock']['mode']);
-        $this->assertSame(0, $byId[$exhausted->id]['purchase_lock']['unsecured_available_krw']);
+        $this->assertSame(0, $byId[$exhausted->id]['purchase_lock']['basis']['current']);
 
         $this->assertFalse($byId[$room->id]['purchase_locked'], '무담보 잔액이 남았으면 미수율이 100% 여도 통과다');
-        $this->assertSame(4_000_000, $byId[$room->id]['purchase_lock']['unsecured_available_krw']);
+        $this->assertSame(4_000_000, $byId[$room->id]['purchase_lock']['basis']['current']);
+        $this->assertSame(5_000_000, $byId[$room->id]['purchase_lock']['basis']['limit']);
 
         // ⚠️ 모드 유도가 두 경로에서 다르다 — 저장 게이트는 `Buyer::hasUnsecuredLimit()`,
         //    일괄 판정은 게이지에 실린 `unsecured_limit_krw`(N+1 회피). 지금은 같은 값이지만
@@ -163,6 +164,37 @@ class BoardPurchaseLockApiTest extends TestCase
             $this->assertSame($single['mode'], $byId[$b->id]['purchase_lock']['mode'], "바이어 {$b->name}: 모드 분기가 두 경로에서 갈렸다");
             $this->assertSame($single['locked'], $byId[$b->id]['purchase_locked'], "바이어 {$b->name}: 판정이 두 경로에서 갈렸다");
         }
+    }
+
+    /**
+     * 🚨 **의도된 모순** — ratio 모드에서 `available_krw`(보증금 여력)는 락 판정과 무관하다.
+     *
+     * 게이트는 미수율(미수 ÷ 선적전 총액)을 보고, 여력은 입금액×비율 − 매입지급이라
+     * 분모·분자가 아예 다르다. 그래서 "여력 0원인데 등록 가능" 이 정상이다.
+     * 이 둘을 억지로 일치시키려 하면 매입 락이 망가진다 — 그래서 어긋난 상태를 박아둔다.
+     * board 는 `basis` 만 근거로 표시해야 한다.
+     */
+    public function test_available_krw_is_not_the_lock_basis(): void
+    {
+        $s = $this->salesman('mismatch@car-erp.test');
+        $b = $this->buyer($s);
+        // 총액 1억 / 입금 8천만 → 미수율 20% = 통과. 보증금 한도 = 8천만×50% = 4천만.
+        // 매입 지급 5천만 → 여력은 0. "여력 0인데 통과" 가 그대로 나와야 한다.
+        $this->vehicle($b, 100_000_000, 80_000_000, 50_000_000);
+
+        $row = collect(
+            $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'mismatch@car-erp.test'])->json('data')
+        )->firstWhere('id', $b->id);
+
+        $this->assertFalse($row['purchase_locked'], '미수율 20% 는 통과다 — 보증금 여력이 0이어도 락이 아니다');
+        $this->assertSame(0, $row['purchase_lock']['reference']['available_krw'], '여력은 0이 맞다 (다른 계산이라 어긋난다)');
+
+        // 근거는 미수율이지 여력이 아니다.
+        $this->assertSame('ratio', $row['purchase_lock']['basis']['kind']);
+        // ⚠️ assertEquals — JSON 은 20.0 을 `20` 으로 직렬화해 정수로 되돌아온다.
+        //    board 도 `basis.current/limit` 을 **숫자**로만 다룰 것(타입 단정 금지).
+        $this->assertEquals(20.0, $row['purchase_lock']['basis']['current']);
+        $this->assertEquals(50.0, $row['purchase_lock']['basis']['limit']);
     }
 
     /** 락 토글 OFF(시스템관리자) — API 도 함께 꺼진다. 화면에만 듣는 킬스위치면 의미가 없다. */
@@ -199,7 +231,8 @@ class BoardPurchaseLockApiTest extends TestCase
         )->firstWhere('id', $b->id);
 
         $this->assertFalse($row['purchase_locked']);
-        $this->assertNull($row['purchase_lock']['unpaid_ratio_pct']);
+        $this->assertNull($row['purchase_lock']['basis']['kind'], '판정 근거가 없으면 근거도 비어 있어야 한다');
+        $this->assertNull($row['purchase_lock']['reference']['unpaid_ratio_pct']);
     }
 
     /** 타 영업 바이어는 애초에 안 나온다 — 락 정보에 미수 금액이 실리므로 스코프가 더 중요해졌다. */
@@ -223,24 +256,32 @@ class BoardPurchaseLockApiTest extends TestCase
      */
     public function test_lock_predicate_lives_in_one_place(): void
     {
-        $roots = [base_path('app'), base_path('resources/views')];
-        $hits = [];
-        foreach ($roots as $root) {
-            $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
-            foreach ($it as $file) {
-                if (! $file->isFile() || ! str_ends_with($file->getFilename(), '.php')) {
-                    continue;
-                }
-                if (str_contains((string) file_get_contents($file->getPathname()), "unsecured_available_krw'] <= 0")) {
-                    $hits[] = str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname());
+        // 두 분기를 **둘 다** 본다 — 무담보만 검사하면 ratio 분기는 자유롭게 복제된다.
+        $needles = [
+            "unsecured_available_krw'] <= 0",   // 무담보 모드
+            "['ratio'] > \$threshold",          // 미수율 모드
+        ];
+        $only = 'app'.DIRECTORY_SEPARATOR.'Services'.DIRECTORY_SEPARATOR.'PurchaseRegistrationGate.php';
+
+        foreach ($needles as $needle) {
+            $hits = [];
+            foreach ([base_path('app'), base_path('resources/views')] as $root) {
+                $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root));
+                foreach ($it as $file) {
+                    if (! $file->isFile() || ! str_ends_with($file->getFilename(), '.php')) {
+                        continue;
+                    }
+                    if (str_contains((string) file_get_contents($file->getPathname()), $needle)) {
+                        $hits[] = str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname());
+                    }
                 }
             }
-        }
 
-        $this->assertSame(
-            ['app'.DIRECTORY_SEPARATOR.'Services'.DIRECTORY_SEPARATOR.'PurchaseRegistrationGate.php'],
-            $hits,
-            '매입 락 판정은 PurchaseRegistrationGate 한 곳에만 있어야 한다. 복제하지 말고 그 서비스를 부를 것.'
-        );
+            $this->assertSame(
+                [$only],
+                $hits,
+                "매입 락 판정(`{$needle}`)은 PurchaseRegistrationGate 한 곳에만 있어야 한다. 복제하지 말고 그 서비스를 부를 것."
+            );
+        }
     }
 }
