@@ -50,12 +50,53 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /settlements` | 정산 — `status`·`actual_payout`·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만) | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
-| `GET /buyers` | **드로어 드롭다운** — `{id, name, country}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지 |
+| `GET /buyers` | **드로어 드롭다운** — `{id, name, country, purchase_locked, purchase_lock{…}}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지. 매입 락 = **§4-0** |
 | `GET /consignees?buyer_id=` | **드로어 드롭다운** — `{id, name}` | 해당 buyer 하위 `is_active` 컨사이니. **IDOR — buyer_id 가 본인 소유일 때만**(아니면 빈 목록) |
 
 - **연동 B v3 드롭다운**(2026-06-23): board 경매/구매 드로어가 바이어·컨사이니를 car-erp 목록에서 선택(→ purchase-sync v3 `buyer_id`/`consignee_id` 송신). ⚠️ **Jin 결정 = 영업 본인 스코프**(인계문서의 "전체 활성 허용" 권장과 다름). `buyers` 가 비스코프였다면 IDOR 불변식 깨는 첫 사례라 거부 — 본인 바이어만. board 는 신차에 본인 바이어만 지정 가능(타 영업 바이어 필요 시 car-erp 에서 수동). 미구현 시 board graceful degrade(수동 입력).
 - **환율0 외화**: `sale_unpaid_amount_krw_cache`가 `NULL`이면 그대로 `null` 반환 + `currency`·`exchange_rate` 동봉. board는 `null`을 "환율 미입력"으로 표시(절대 `0`/완납 coerce 금지).
 - N+1 방지: `with(['finalPayments','purchaseBalancePayments','receivableHistories'])`.
+
+### 4-0. 매입 등록 락 (`GET /buyers` 동봉, 2026-08-10)
+
+> **왜 여기인가** — car-erp 의 매입 락 4겹은 전부 차량관리 화면 `save()` 안에 있다. board 가 밀어넣는
+> 연동 B(`POST /internal/purchase-sync`)는 `Vehicle::create` 직접 호출이라 **어느 락도 안 거친다**.
+> 그렇다고 수신 시점에 거부하면 안 된다 — board 는 이미 `status='won'`(낙찰 = 돈이 나간 뒤)에 보내므로,
+> 거부하면 회사가 소유한 차가 ERP 에 없는 상태가 될 뿐이다. **막을 수 있는 유일한 지점은 상류**,
+> 즉 영업이 바이어를 고르는 순간이다. 그래서 판정을 드롭다운에 실어 보낸다.
+
+`GET /buyers` 의 각 행에 아래가 추가된다(기존 필드는 그대로 — 전방호환).
+
+```json
+{
+  "id": 12, "name": "OSAKA MOTORS", "country": "Japan",
+  "purchase_locked": true,
+  "purchase_lock": {
+    "locked": true,
+    "mode": "unsecured",            // unsecured(금액 판정) | ratio(미수율 판정) | off(락 토글 OFF)
+    "threshold_pct": 50,            // ratio 모드의 미수율 임계(%)
+    "unpaid_ratio_pct": 92.0,       // 현재 미수율(%) — 판정 근거 없으면 null
+    "unpaid_krw": 92000000,
+    "vehicle_count": 3,             // 선적 전 진행중 대수
+    "available_krw": 0,             // 남은 매입 여력 = 보증금 + 무담보 − 이미 나간 매입 지급
+    "unsecured_limit_krw": 5000000,
+    "unsecured_available_krw": 0
+  }
+}
+```
+
+- **판정 = ERP `App\Services\PurchaseRegistrationGate` 단일 출처.** 화면 저장 게이트와 **같은 함수**를 탄다.
+  🚫 board 가 조건을 옮겨 적지 말 것 — 갈리는 순간 영업은 board 에서 "가능"을 보고 돈을 쓴 뒤 ERP 에서
+  막힌다. board 는 `purchase_locked` 를 **그대로 신뢰**해서 표시·차단만 한다.
+- **`mode`**: 바이어에 무담보 한도가 설정돼 있으면 `unsecured`(무담보 잔액 0 = 락), 아니면 `ratio`(미수율 > 임계 = 락).
+  시스템관리자가 매입 락 토글을 끈 회사는 전부 `off` + `locked=false`.
+- **판정 근거가 없는 바이어**(차량 0대 · 무담보 미설정)는 `locked=false` + 숫자 `null`. 신규 바이어가 막히면 안 된다.
+- **락은 절대 규칙이 아니다** — ERP 화면에서는 [관리]·최고관리자가 사유를 적고 **1회 통과**시킬 수 있다
+  (다음 차는 또 발동, 지속 토큰 없음, `AuditLog(purchase_gate_override)`). board 에서 막혔다고 끝이 아니라
+  **"ERP 관리자 승인이 필요하다"** 로 안내하는 게 맞다.
+- **스코프**: 미수 금액이 실리므로 본인 바이어 스코프가 더 중요해졌다. 기존 `salesman_id` 스코프 그대로.
+- 성능: 바이어당 쿼리를 돌리지 않는다(`Buyer::computeReceivableGaugesFor` — 차량·한도 각 1쿼리).
+- 가드 = `tests/Feature/BoardPurchaseLockApiTest`(API 판정 ≡ 저장 게이트, 모드 분기, 토글 OFF, 판정식 복제 정적 검사).
 
 ### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)
 
