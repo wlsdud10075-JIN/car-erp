@@ -57,7 +57,7 @@ class InternalPortalController extends Controller
     {
         $sid = $this->salesmanId($request);
         $data = $this->ownVehicles($sid)->where('sale_price', '>', 0)->with('buyer')->get()
-            ->map(fn (Vehicle $v) => [
+            ->map(fn (Vehicle $v) => Vehicle::portalMeta($v) + [
                 'vehicle_number' => $v->vehicle_number,
                 'buyer' => $v->buyer?->name,
                 'currency' => $v->currency,
@@ -88,7 +88,7 @@ class InternalPortalController extends Controller
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
             ->when($sailing !== '', fn ($q) => $q->sailing($sailing))
             ->get()
-            ->map(fn (Vehicle $v) => [
+            ->map(fn (Vehicle $v) => Vehicle::portalMeta($v) + [
                 // §11 요청·확인 신호용 식별자 (2026-08-08) — board 가 [판매대금확인] 을 보내려면
                 //   차량 id 와 **바이어 id** 가 필요하다. 바이어를 이름 문자열로 맞추면 동명이인·표기흔들림에
                 //   깨지고, 그건 곧 422 buyer_mismatch 로 튕기거나 엉뚱한 바이어에 묶인다.
@@ -192,7 +192,7 @@ class InternalPortalController extends Controller
             $q->offset(max((int) $request->query('offset', 0), 0))->limit($limit);
         }
 
-        $data = $q->get()->map(fn (Vehicle $v) => [
+        $data = $q->get()->map(fn (Vehicle $v) => Vehicle::portalMeta($v) + [
             'vehicle_id' => $v->id,                       // §11 [입금요청] 전송용 — 없으면 board 버튼이 죽는다
             'vehicle_number' => $v->vehicle_number,
             'progress_status' => $v->progress_status_cache,

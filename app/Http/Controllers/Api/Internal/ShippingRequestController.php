@@ -46,7 +46,7 @@ class ShippingRequestController extends Controller
             ->whereNotIn('id', $inOpenBundle)
             ->with('buyer.consignees')
             ->get()
-            ->map(fn (Vehicle $v) => [
+            ->map(fn (Vehicle $v) => Vehicle::portalMeta($v) + [
                 'vehicle_id' => $v->id,
                 'vehicle_number' => $v->vehicle_number,
                 'buyer' => $v->buyer ? ['id' => $v->buyer->id, 'name' => $v->buyer->name] : null,
@@ -92,7 +92,9 @@ class ShippingRequestController extends Controller
                 'ship_status' => $this->bundleShipStatus($items),
                 'change_requested' => $items->contains(fn ($r) => $r->change_requested_at !== null),
                 'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
-                'vehicles' => $items->map(fn ($r) => [
+                // ⚠️ 묶음 **안의 차량 배열**에도 필요하다 — 여기가 board 묶음 pill·변경요청 행이다.
+                //    `$r->vehicle` 은 null 일 수 있어 portalMeta 가 null-safe 다.
+                'vehicles' => $items->map(fn ($r) => Vehicle::portalMeta($r->vehicle) + [
                     'vehicle_id' => $r->vehicle_id,
                     'vehicle_number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
                     'status' => $r->status,
