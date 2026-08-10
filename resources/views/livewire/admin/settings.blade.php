@@ -1240,14 +1240,19 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 무담보 한도 기능 on/off (jin 2026-08-10) — 회사마다 쓰는 곳·안 쓰는 곳이 있다.
                  끄면 무담보 판정·표시가 통째로 빠지고 기존 미수율 게이트만 남는다.
                  토글 즉시저장이라 아래 [저장]과 무관하다(락 토글과 같은 방식). --}}
-            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
-                <span class="text-sm text-gray-700">{{ __('feature_settings.unsecured_limit_label') }}
-                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.unsecured_limit_sub') }}</span>
-                </span>
-                <input type="checkbox" wire:model.live="unsecuredLimitEnabled" class="peer sr-only">
-                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-indigo-500
-                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
-            </label>
+            {{-- ⚠️ 마크업·색은 바로 위 락 토글과 **동일**하게 유지할 것.
+                 다른 색(bg-indigo-500 등)을 쓰면 빌드된 CSS 에 없어서 켜도 회색으로 보인다
+                 — jin 제보로 실제 발생(운항 필터 pill 과 같은 형태). --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ __('feature_settings.unsecured_limit_label') }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.unsecured_limit_sub') }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="unsecuredLimitEnabled" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+            </div>
 
             <div class="flex justify-end pt-1">
                 <button type="button" wire:click="saveLockParams" class="btn-primary px-4 py-1.5 text-sm">

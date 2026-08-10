@@ -6770,7 +6770,7 @@ function vehicleColumnsToggle() {
             <div class="mb-2 rounded-md border {{ $uAvail > 0 ? 'border-indigo-200 bg-indigo-50' : 'border-red-200 bg-red-50' }} px-3 py-2">
                 <div class="flex items-center justify-between text-[11px] {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-700' }}">
                     <span>💳 {{ __('buyer.field.unsecured_available') }}</span>
-                    <span class="font-mono text-sm font-bold {{ $uAvail > 0 ? 'text-indigo-900' : 'text-red-600' }}">₩{{ number_format($uAvail) }}</span>
+                    <span class="font-mono text-sm font-bold {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-600' }}">₩{{ number_format($uAvail) }}</span>
                 </div>
                 <div class="mt-1 text-[11px] {{ $uAvail > 0 ? 'text-indigo-500' : 'font-medium text-red-600' }}">
                     @if($room['unsecured_used_krw'] > 0)
