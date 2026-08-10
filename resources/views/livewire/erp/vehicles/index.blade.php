@@ -3783,25 +3783,20 @@ new #[Layout('components.layouts.app')] class extends Component {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
 
-            // 무담보 한도 (jin 2026-08-10) — **추가 관문이 아니라 구제 수단**이다.
-            //   ⚠️ 초기 구현은 한도가 설정되면 판정을 통째로 한도 기반으로 바꿨는데, 그러면 담보 한도를
-            //      이미 넘긴 바이어는 **한도를 새로 줬는데 오히려 막히는** 모순이 생긴다
-            //      (실측 OSAKA MOTORS: 미수율 19.8% 로 기존 판정은 통과인데 한도 판정에선 차단).
-            //   그래서 순서를 뒤집었다 — 기존 판정으로 통과하면 무담보분은 **손대지 않고 그냥 통과**하고,
-            //   기존 판정에 걸렸을 때만 무담보 잔액으로 구제한다. 이것이 "정말 마지막에 쓴다"의 뜻이다.
+            // 무담보 한도 (jin 2026-08-10 확정) — 보증금을 다 쓴 뒤 쓰는 **마지막 방어선**.
+            //   보증금(입금액×비율) → 무담보 순으로 차감되고, 무담보까지 0이면 **진짜 매입 락**이다.
+            //   판매잔금이 들어오면 보증금이 되살아나 무담보도 원복된다.
+            //
+            //   ⚠️ 무담보를 설정한 바이어는 **미수율이 아니라 금액**으로 판정한다. 그래서 설정 전엔
+            //      미수율로 통과하던 바이어가 설정 후 막힐 수 있다 — 보증금을 이미 초과 사용한 경우다.
+            //      (실측 OSAKA MOTORS: 보증금 5,473만인데 매입 지급 7,786만.) 그게 의도다 —
+            //      무담보 설정 = "이 바이어는 금액 기준으로 관리한다"는 선언이다.
             $threshold = \App\Models\Setting::lockThreshold('purchase_registration');
-            $legacyBlocked = $gauge && $gauge['ratio'] > $threshold;
             $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
 
-            if ($useUnsecured && $gauge) {
-                // 담보(선적 전 국내 차량)가 아예 없으면 기존 판정이 성립하지 않는다(ratio=0 → 항상 통과).
-                //   바로 그 구간을 막으라고 만든 값이므로 이때는 무담보 잔액만으로 판정한다.
-                $blocked = $gauge['total_krw'] > 0
-                    ? ($legacyBlocked && $gauge['unsecured_available_krw'] <= 0)
-                    : ($gauge['unsecured_available_krw'] <= 0);
-            } else {
-                $blocked = $legacyBlocked;
-            }
+            $blocked = $gauge && ($useUnsecured
+                ? $gauge['unsecured_available_krw'] <= 0      // 무담보까지 소진 = 락
+                : $gauge['ratio'] > $threshold);              // 미설정 = 기존 미수율 판정 그대로
 
             if ($blocked) {
                 $this->purchaseGateInfo = [

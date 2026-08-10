@@ -188,15 +188,14 @@ class Buyer extends Model
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
         $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
         $limitKrw = $baseLimitKrw + $unsecuredLimit;
-        // 무담보분은 **기존 판정(미수율)에 걸렸을 때만** 쓰인다 — 그게 "정말 마지막에 쓴다"의 뜻이다.
-        //   기존 판정으로 통과하는 동안에는 한 푼도 줄지 않는다(= 설정한 금액을 그대로 쓸 수 있다).
-        //   ⚠️ 이 조건을 빼면 한도를 주기 **전에** 이미 나간 매입 지급까지 소급해서 깎여
-        //      "설정하자마자 남은 금액 0"이 된다(실측 OSAKA MOTORS: 담보 5,473만 / 지급 7,786만 →
-        //      미수율 19.8% 로 기존 판정은 멀쩡히 통과하는데 화면만 0원이었다 — jin 제보).
-        $legacyBlocked = $totalKrw > 0 && ($unpaidKrw / $totalKrw) > $depositThreshold;
-        $unsecuredUsedKrw = ($legacyBlocked || $totalKrw <= 0)
-            ? min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw))
-            : 0;
+        // 차감 순서 (jin 2026-08-10 확정) — **보증금 먼저, 그다음 무담보.**
+        //   보증금(입금액×비율) 안에서 쓰는 동안 무담보는 그대로 있고,
+        //   보증금을 다 쓴 뒤 초과분만큼 무담보가 줄어든다. 무담보까지 0이면 매입 락이다.
+        //   판매잔금이 들어오면 보증금이 늘어 초과분이 줄고 → 무담보가 저절로 원복된다.
+        //   ⚠️ 미수율(기존 게이트)은 이 계산에 관여하지 않는다 — 금액만 본다.
+        //      한때 "미수율에 걸렸을 때만 깎는다"로 뒀었는데, 같은 상황에서 결과가 갈려
+        //      예측이 불가능했다(jin: "이거 좀 헷갈리네").
+        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw));
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)

@@ -127,19 +127,36 @@ class UnsecuredLimitGateTest extends TestCase
         $this->assertSame(5_000_000, $g['unsecured_available_krw'], '설정한 금액을 그대로 쓸 수 있어야 한다');
     }
 
-    /** ③ 기존 판정에 걸린 상태에서만, 담보를 넘어선 만큼이 무담보분에서 빠진다. */
-    public function test_only_the_excess_draws_down_once_legacy_gate_trips(): void
+    /** ③ 보증금을 넘어선 만큼만 무담보에서 빠진다 — 미수율과 무관하게 **금액**으로만 판정. */
+    public function test_only_the_excess_over_deposit_draws_down(): void
     {
         $b = $this->buyer(5_000_000);
-        // 판매 1,000만 중 400만만 입금 → 미수율 60% 로 기존 판정에 걸린다.
-        // 담보 한도 = 400만 × 50% = 200만. 매입 지급 500만 → 초과 300만이 무담보분에서.
+        // 판매 1,000만 중 400만 입금 → 보증금 = 400만 × 50% = 200만.
+        // 매입 지급 500만 → 보증금 200만을 쓰고 초과 300만이 무담보에서 빠진다.
         $this->vehicle($b, 10_000_000, 4_000_000, 5_000_000);
 
         $g = $b->receivableGauge();
 
-        $this->assertGreaterThan(0.5, $g['ratio'], '기존 판정에 걸린 상태여야 한다');
+        $this->assertSame(2_000_000, $g['base_limit_krw']);
         $this->assertSame(3_000_000, $g['unsecured_used_krw']);
         $this->assertSame(2_000_000, $g['unsecured_available_krw']);
+    }
+
+    /** 같은 금액이면 미수율이 달라도 결과가 같아야 한다 — 예측 가능성(jin: "헷갈린다"의 해소). */
+    public function test_drawdown_does_not_depend_on_unpaid_ratio(): void
+    {
+        // 두 바이어 모두 보증금 200만(입금 400만) · 매입 지급 500만. 미수만 다르다.
+        $high = $this->buyer(5_000_000);
+        $this->vehicle($high, 10_000_000, 4_000_000, 5_000_000);   // 미수율 60%
+        $low = $this->buyer(5_000_000);
+        $this->vehicle($low, 4_400_000, 4_000_000, 5_000_000);     // 미수율 9%
+
+        $gh = $high->receivableGauge();
+        $gl = $low->receivableGauge();
+
+        $this->assertGreaterThan($gl['ratio'], $gh['ratio'], '미수율은 서로 달라야 한다');
+        $this->assertSame($gh['unsecured_used_krw'], $gl['unsecured_used_krw'],
+            '미수율이 달라도 같은 금액이면 무담보 차감은 같아야 한다');
     }
 
     /** 선적 후 미수는 한도 계산에 들어가지 않는다(이번 범위 밖) — 표시만 된다. */
@@ -155,24 +172,22 @@ class UnsecuredLimitGateTest extends TestCase
     }
 
     /**
-     * 🚨 무담보 한도는 **구제 수단이지 추가 관문이 아니다** — 설정했다고 더 엄격해지면 안 된다.
-     *    실측 OSAKA MOTORS: 미수율 19.8% 로 기존 판정은 통과인데, 담보 한도는 이미 초과한 상태였다.
-     *    초기 구현은 이 바이어를 막아버렸다(한도를 줬는데 오히려 막히는 모순).
+     * 🚨 무담보를 설정하면 그 바이어는 **미수율이 아니라 금액**으로 관리된다.
+     *    그래서 보증금을 이미 초과해 쓴 바이어는 설정 즉시 막힐 수 있다 — 의도된 동작이다
+     *    (실측 OSAKA MOTORS: 보증금 5,473만인데 매입 지급 7,786만. 원래 막혔어야 할 상태였고
+     *     미수율 게이트가 관대해서 통과하고 있었다). jin 2026-08-10 확정.
      */
-    public function test_setting_a_limit_never_makes_the_gate_stricter(): void
+    public function test_setting_a_limit_switches_the_buyer_to_amount_based_control(): void
     {
         $admin = $this->admin();
         $b = $this->buyer(5_000_000);
-        // 미수율은 낮아 기존 판정 통과(1,000만 중 900만 입금 = 미수율 10%).
-        // 그러나 매입 지급 1,000만은 담보 한도 450만을 넘고 초과분 550만이 무담보 500만을 다 먹는다.
+        // 미수율은 10% 로 낮지만(기존 판정이면 통과), 매입 지급 1,000만이
+        // 보증금 450만 + 무담보 500만 = 950만을 넘는다.
         $this->vehicle($b, 10_000_000, 9_000_000, 10_000_000);
 
         $g = $b->fresh()->receivableGauge();
-        $this->assertLessThan(0.4, $g['ratio'], '기존 판정으로는 통과하는 상태여야 한다');
-        // 담보 한도(450만)를 훌쩍 넘겨 지급했지만, 기존 판정을 통과하는 동안에는 무담보분이 줄지 않는다.
-        //   → jin 제보의 핵심: "아직 한 번도 안 썼으니 설정한 금액을 다 쓸 수 있어야 한다".
-        $this->assertSame(0, $g['unsecured_used_krw'], '기존 판정 통과 중에는 무담보분을 쓰지 않는다');
-        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '설정한 금액이 그대로 남아야 한다');
+        $this->assertLessThan(0.4, $g['ratio'], '미수율만 보면 통과하는 상태');
+        $this->assertSame(0, $g['unsecured_available_krw'], '보증금·무담보를 모두 소진');
 
         $c = Volt::actingAs($admin)->test('erp.vehicles.index')
             ->call('openCreate')
@@ -182,8 +197,8 @@ class UnsecuredLimitGateTest extends TestCase
             ->set('purchase_price_str', '1,000,000')
             ->call('save');
 
-        $this->assertFalse($c->get('showPurchaseGate'),
-            '기존 판정으로 통과하는 바이어는 무담보분이 바닥나도 막히면 안 된다');
+        $this->assertTrue($c->get('showPurchaseGate'),
+            '무담보까지 소진되면 미수율이 낮아도 막혀야 한다 — 그게 마지막 방어선의 뜻이다');
     }
 
     /** ①·② 게이트 — 미설정은 통과, 설정+소진은 차단. */
