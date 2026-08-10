@@ -17,6 +17,8 @@ class Buyer extends Model
         'contact_phone', 'passport_id', 'address', 'memo', 'is_active',
         // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
         'is_inherited', 'inherited_from_salesman_id', 'inherited_at',
+        // 2026-08-10 jin — 무담보 한도(단골에게 담보 없이 내주는 매입 한도). NULL·0 = 미설정 = 기존 동작.
+        'unsecured_limit_krw',
     ];
 
     protected $casts = [
@@ -125,9 +127,17 @@ class Buyer extends Model
      * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date
      *                              + purchaseBalancePayments 가 로드된 Vehicle 컬렉션
      */
-    public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null): ?array
+    /**
+     * 무담보 한도 (jin 2026-08-10) — `$unsecuredLimit` 로 주입한다.
+     *   기존 한도는 **선적 전 국내 차량**의 입금액에서만 나오므로, 차가 다 선적되면 0이 되고
+     *   게이지 자체가 `null` 이라 매입 락이 통째로 사라진다. 무담보 한도는 그 구간을 메운다.
+     *   ⚠️ 그래서 아래 `$totalKrw <= 0` 조기반환은 **무담보 한도가 있으면 하지 않는다** —
+     *      바로 그 상황(국내 차 0대)에서 쓰라고 만든 값이기 때문이다.
+     */
+    public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null, int $unsecuredLimit = 0): ?array
     {
         $depositThreshold ??= Setting::lockThreshold('purchase_registration');
+        $unsecuredLimit = max(0, $unsecuredLimit);
         $totalKrw = 0;
         $unpaidKrw = 0;
         $purchasePaidKrw = 0;   // 선적 전 진행중 차량에 이미 나간 매입 지급 (여력 소진분)
@@ -136,6 +146,7 @@ class Buyer extends Model
         $completedCount = 0;
         $shippedKrw = 0;
         $shippedCount = 0;
+        $shippedUnpaidKrw = 0;
         foreach ($vehicles as $v) {
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
@@ -151,6 +162,9 @@ class Buyer extends Model
             if (filled($v->warehouse_out_date)) {
                 $shippedKrw += $rowKrw;
                 $shippedCount++;
+                // 선적 후 미수 — 한도 계산엔 **안 들어간다**(jin 2026-08-10 이번 범위 밖).
+                //   무담보 한도를 정할 때 사람이 보고 판단하라고 별도 집계만 한다.
+                $shippedUnpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
 
                 continue;   // 선적 후(출고) — 국내 미수 기준에서 분리
             }
@@ -161,7 +175,8 @@ class Buyer extends Model
             $purchasePaidKrw += $v->purchase_paid_amount;   // 매입은 원화 — 환율 환산 불필요
         }
 
-        if ($totalKrw <= 0) {
+        // ⚠️ 무담보 한도가 설정된 바이어는 국내 차가 0대여도 게이지를 만든다(그게 이 기능의 목적).
+        if ($totalKrw <= 0 && $unsecuredLimit <= 0) {
             return null;
         }
 
@@ -171,23 +186,38 @@ class Buyer extends Model
         //   신: 실제로 받은 돈의 절반까지 매입에 쓸 수 있고, 매입 지급이 나가면 그만큼 줄고,
         //       판매 잔금이 더 들어오면 한도가 늘어 여력이 회복된다.
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
-        $limitKrw = (int) ($paidKrw * $depositThreshold);
+        $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
+        $limitKrw = $baseLimitKrw + $unsecuredLimit;
+        // 차감 순서 (jin 2026-08-10 확정) — **보증금 먼저, 그다음 무담보.**
+        //   보증금(입금액×비율) 안에서 쓰는 동안 무담보는 그대로 있고,
+        //   보증금을 다 쓴 뒤 초과분만큼 무담보가 줄어든다. 무담보까지 0이면 매입 락이다.
+        //   판매잔금이 들어오면 보증금이 늘어 초과분이 줄고 → 무담보가 저절로 원복된다.
+        //   ⚠️ 미수율(기존 게이트)은 이 계산에 관여하지 않는다 — 금액만 본다.
+        //      한때 "미수율에 걸렸을 때만 깎는다"로 뒀었는데, 같은 상황에서 결과가 갈려
+        //      예측이 불가능했다(jin: "이거 좀 헷갈리네").
+        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw));
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
             'unpaid_krw' => $unpaidKrw,
             'paid_krw' => $paidKrw,
-            'paid_pct' => max(0, min(100, $paidKrw / $totalKrw * 100)),
-            'ratio' => max(0, min(1, $unpaidKrw / $totalKrw)),   // 게이지 채움·게이트 비교 (미수/진행중총) — 변경 금지
+            // ⚠️ 무담보 한도만 있고 국내 차가 0대면 $totalKrw = 0 이다 — 0 나누기 방어.
+            'paid_pct' => $totalKrw > 0 ? max(0, min(100, $paidKrw / $totalKrw * 100)) : 100.0,
+            'ratio' => $totalKrw > 0 ? max(0, min(1, $unpaidKrw / $totalKrw)) : 0.0,   // 게이지 채움·게이트 비교 (미수/진행중총) — 변경 금지
             'vehicle_count' => $count,              // 진행중·선적 전 건수
             'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
-            'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 입금액 × 50%
+            'base_limit_krw' => $baseLimitKrw,      // 담보분 = 입금액 × 설정비율
+            'unsecured_limit_krw' => $unsecuredLimit,   // 무담보분 = 바이어별 설정값 (0 = 미설정)
+            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 담보 한도를 넘어선 매입 지급
+            'unsecured_available_krw' => max(0, $unsecuredLimit - $unsecuredUsedKrw),   // 무담보 잔액 — 락 판정
+            'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 담보분 + 무담보분
             'used_krw' => $purchasePaidKrw,         // 이미 쓴 금액 = 매입 지급(계약금·잔금 확정분)
             'available_krw' => max(0, $limitKrw - $purchasePaidKrw),   // 남은 여력 = 이만큼 더 매입 가능
             'completed_krw' => $completedKrw,       // 거래완료 총액 (분리 표기)
             'completed_count' => $completedCount,
             'shipped_krw' => $shippedKrw,           // 선적 후(출고) 총액 (분리 표기)
             'shipped_count' => $shippedCount,
+            'shipped_unpaid_krw' => $shippedUnpaidKrw,   // 선적 후 미수 — 한도 계산 미포함, 판단 근거 표시용
         ];
     }
 
@@ -195,6 +225,32 @@ class Buyer extends Model
     public function receivableGauge(): ?array
     {
         // purchaseBalancePayments = 여력의 '사용' 분자. eager load 안 하면 차량당 1쿼리.
-        return static::computeReceivableGauge($this->vehicles()->with('purchaseBalancePayments')->get());
+        return static::computeReceivableGauge(
+            $this->vehicles()->with('purchaseBalancePayments')->get(),
+            null,
+            (int) ($this->unsecured_limit_krw ?? 0),
+        );
+    }
+
+    /**
+     * 무담보 한도가 설정된 바이어인가 (jin 2026-08-10) — **게이트 분기의 단일 출처**.
+     *
+     * 설정됨  → 한도 기반 게이트(여력 소진 시 차단). 국내 차가 0대여도 판정된다.
+     * 미설정  → 기존 미수율 기반 게이트 그대로. 운영 충격 없음(jin 확정).
+     */
+    public function hasUnsecuredLimit(): bool
+    {
+        // 🚨 컬럼이 안 실린 인스턴스(`select`·`pluck` 로 컬럼을 제한한 쿼리)에서 부르면
+        //    `?? 0` 이 조용히 "미설정"으로 만들어 **락이 사라진다**. 그 형태의 사고가 이미 있었다
+        //    (`with('관계:id,name')` 로 tier 컬럼이 빠져 정산액이 20배 틀림 — 예외도 경고도 없었다).
+        //    금액·락을 좌우하는 값이라 조용히 넘어가지 않고 큰 소리로 죽인다.
+        if (! array_key_exists('unsecured_limit_krw', $this->getAttributes())) {
+            throw new \LogicException(
+                'Buyer::hasUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
+                .'매입 락 판정에 쓰이므로 컬럼을 제한한 쿼리로 조회하지 마세요.'
+            );
+        }
+
+        return (int) ($this->unsecured_limit_krw ?? 0) > 0;
     }
 }

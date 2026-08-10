@@ -197,6 +197,7 @@ return [
         'memo' => '메모',
         'is_active' => '활성 상태',
         'is_inherited' => '승계받은 바이어',
+        'unsecured_limit_krw' => '무담보 한도',
         'inherited_from_salesman_id' => '승계 전 담당자',
         'inherited_at' => '승계일',
     ],

@@ -42,6 +42,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_inherited  = false;
     public string $inherited_from_salesman_id_str = '';
     public string $inherited_at  = '';
+    // 2026-08-10 jin — 무담보 한도. 담보(선적 전 국내 차량)가 없어도 이 금액까지는 매입해준다.
+    //   빈 값·0 = 미설정 → 기존 미수율 게이트 그대로. > 0 = 한도 소진 시 매입 차단.
+    //   매입 락을 좌우하므로 저장 시 canApprove() 재인가 + 감사 기록 (is_inherited 와 같은 취급).
+    public string $unsecured_limit_krw_str = '';
 
     // ── 컨사이니 탭 ────────────────────────────────────────────────
     public array  $consigneeList      = [];
@@ -97,7 +101,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 단일 출처 — Buyer::computeReceivableGauge (매입 게이트와 동일 로직·임계, 숫자 일치 보장).
-        return Buyer::computeReceivableGauge($buyer->vehicles()->with('purchaseBalancePayments')->get());
+        //   ⚠️ 무담보 한도를 안 넘기면 화면 숫자와 게이트 판정이 갈린다(게이트는 receivableGauge() 경유).
+        return Buyer::computeReceivableGauge(
+            $buyer->vehicles()->with('purchaseBalancePayments')->get(),
+            null,
+            (int) ($buyer->unsecured_limit_krw ?? 0),
+        );
     }
 
     /**
@@ -121,11 +130,21 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]);
 
         $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
+        // 무담보 한도 — 현재 페이지 바이어분만 1쿼리로(행마다 조회하면 N+1).
+        $limits = Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id');
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
-            $gauge = Buyer::computeReceivableGauge($group, $depositThreshold);
+            $gauge = Buyer::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));
             if ($gauge !== null) {
                 $out[(int) $bid] = $gauge;
+            }
+        }
+
+        // 차량이 한 대도 없는데 한도만 설정된 바이어 — 위 루프는 **차량에서 출발**하므로 통째로 빠진다.
+        //   이 기능이 겨냥하는 게 담보 0인 바이어라, 목록에서만 안 보이면 "패널엔 있는데 목록엔 없다"가 된다.
+        foreach ($limits as $bid => $limit) {
+            if ((int) $limit > 0 && ! isset($out[(int) $bid])) {
+                $out[(int) $bid] = Buyer::computeReceivableGauge([], $depositThreshold, (int) $limit);
             }
         }
 
@@ -287,6 +306,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_inherited  = (bool) $buyer->is_inherited;
         $this->inherited_from_salesman_id_str = $buyer->inherited_from_salesman_id ? (string) $buyer->inherited_from_salesman_id : '';
         $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
+        $this->unsecured_limit_krw_str = ($buyer->unsecured_limit_krw ?? 0) > 0
+            ? number_format((int) $buyer->unsecured_limit_krw) : '';
 
         $this->loadConsignees($id);
         $this->loadSavings($id);
@@ -339,15 +360,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ? (int) $this->inherited_from_salesman_id_str : null;
             // 해제 시 부속 정보도 함께 비운다 — "승계 ON 일 때만 원담당자·승계일 존재" 불변식.
             $data['inherited_at'] = $this->is_inherited && $this->inherited_at !== '' ? $this->inherited_at : null;
+            // 무담보 한도 (jin 2026-08-10) — 매입 락을 직접 좌우하므로 승계와 같은 재인가 대상.
+            //   빈 값은 null(미설정)로 저장한다. 0 을 넣어도 hasUnsecuredLimit() 이 false 라 기존 동작.
+            $limit = (int) preg_replace('/[^0-9]/', '', $this->unsecured_limit_krw_str);
+            $data['unsecured_limit_krw'] = $limit > 0 ? $limit : null;
         }
 
         if ($this->editingId) {
             $buyer = Buyer::findOrFail($this->editingId);
             $wasInherited = (bool) $buyer->is_inherited;
+            $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
             $buyer->update($data);
             // 승계 표시는 정산액(건당 5만)을 바꾸므로 변경 이력을 남긴다 (Buyer 엔 감사 훅이 없어 여기서 직접).
             if (array_key_exists('is_inherited', $data) && $wasInherited !== $this->is_inherited) {
                 \App\Models\AuditLog::recordChange($buyer, 'is_inherited', $wasInherited, $this->is_inherited);
+            }
+            // 무담보 한도는 매입 락 기준선이라 변경 이력 필수 — 누가 언제 얼마로 올렸는지가 감사 핵심.
+            if (array_key_exists('unsecured_limit_krw', $data) && $wasLimit !== (int) ($data['unsecured_limit_krw'] ?? 0)) {
+                \App\Models\AuditLog::recordChange($buyer, 'unsecured_limit_krw', $wasLimit, (int) ($data['unsecured_limit_krw'] ?? 0));
             }
         } else {
             $buyer = Buyer::create($data);
@@ -940,6 +970,41 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @error('inherited_at')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                         </div>
                     </div>
+                    @endif
+                </div>
+
+                {{-- 무담보 한도 (jin 2026-08-10) — 담보(선적 전 국내 차량)가 없어도 이 금액까지 매입 허용.
+                     매입 락을 직접 좌우하므로 승계와 같이 [관리] 이상만 보고 고칠 수 있다. --}}
+                @php $ug = $this->buyerReceivable; @endphp
+                <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+                    <label class="label-base">{{ __('buyer.field.unsecured_limit') }}</label>
+                    <input wire:model="unsecured_limit_krw_str" type="text" data-money inputmode="numeric"
+                           class="input-base" placeholder="{{ __('buyer.field.unsecured_limit_ph') }}" />
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.unsecured_limit_hint') }}</p>
+
+                    @if($editingId && $ug && ($ug['unsecured_limit_krw'] ?? 0) > 0)
+                    {{-- 무담보분 잔액만 보여준다 (jin 2026-08-10) — 담보 한도·총액·전체 사용액까지 같이 늘어놓으니
+                         복잡하고, 무엇보다 담보 한도를 이미 넘긴 바이어는 「남은 여력 0」으로 보여
+                         "한도를 줬는데 못 쓴다"는 오해를 부른다. 여기 숫자는 무담보분만이다. --}}
+                    <div class="mt-3 flex items-center justify-between border-t border-indigo-200 pt-2 text-sm">
+                        <span class="text-gray-600">{{ __('buyer.field.unsecured_available') }}</span>
+                        <span class="font-bold {{ $ug['unsecured_available_krw'] > 0 ? 'text-emerald-700' : 'text-red-600' }}">
+                            ₩{{ number_format($ug['unsecured_available_krw']) }}
+                            @if($ug['unsecured_used_krw'] > 0)
+                                <span class="ml-1 text-[11px] font-normal text-gray-500">({{ __('buyer.field.unsecured_used', ['amount' => number_format($ug['unsecured_used_krw'])]) }})</span>
+                            @endif
+                        </span>
+                    </div>
+                    @if($ug['unsecured_used_krw'] <= 0)
+                    <p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.unsecured_untouched') }}</p>
+                    @endif
+                    @if(($ug['shipped_unpaid_krw'] ?? 0) > 0)
+                    {{-- 선적 후 미수는 한도 계산에 **안 들어간다**(jin 2026-08-10 — 이번 범위 밖).
+                         한도를 얼마로 줄지 판단할 때 보라고 표시만 한다. --}}
+                    <p class="mt-1.5 text-[11px] text-amber-700">
+                        {{ __('buyer.field.shipped_unpaid_note', ['amount' => number_format($ug['shipped_unpaid_krw'])]) }}
+                    </p>
+                    @endif
                     @endif
                 </div>
                 @endif

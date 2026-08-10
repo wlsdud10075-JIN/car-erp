@@ -3782,7 +3782,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->purchaseGateApproved && \App\Models\Setting::lockEnabled('purchase_registration') && $this->shouldCheckPurchaseGate()) {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
-            if ($gauge && $gauge['ratio'] > \App\Models\Setting::lockThreshold('purchase_registration')) {
+
+            // 무담보 한도 (jin 2026-08-10 확정) — 보증금을 다 쓴 뒤 쓰는 **마지막 방어선**.
+            //   보증금(입금액×비율) → 무담보 순으로 차감되고, 무담보까지 0이면 **진짜 매입 락**이다.
+            //   판매잔금이 들어오면 보증금이 되살아나 무담보도 원복된다.
+            //
+            //   ⚠️ 무담보를 설정한 바이어는 **미수율이 아니라 금액**으로 판정한다. 그래서 설정 전엔
+            //      미수율로 통과하던 바이어가 설정 후 막힐 수 있다 — 보증금을 이미 초과 사용한 경우다.
+            //      (실측 OSAKA MOTORS: 보증금 5,473만인데 매입 지급 7,786만.) 그게 의도다 —
+            //      무담보 설정 = "이 바이어는 금액 기준으로 관리한다"는 선언이다.
+            $threshold = \App\Models\Setting::lockThreshold('purchase_registration');
+            $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
+
+            $blocked = $gauge && ($useUnsecured
+                ? $gauge['unsecured_available_krw'] <= 0      // 무담보까지 소진 = 락
+                : $gauge['ratio'] > $threshold);              // 미설정 = 기존 미수율 판정 그대로
+
+            if ($blocked) {
                 $this->purchaseGateInfo = [
                     'buyer' => $buyer->name,
                     'ratio' => round($gauge['ratio'] * 100, 1),
@@ -3794,6 +3810,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'deposit_pct' => $gauge['deposit_pct'],
                     'limit' => (int) ($gauge['total_krw'] * \App\Models\Setting::lockThreshold('purchase_registration')),
                     'total' => $gauge['total_krw'],
+                    // 무담보 한도 모드 — 모달이 다른 문구·숫자를 보여준다.
+                    'unsecured_mode' => $useUnsecured,
+                    'unsecured_limit' => $gauge['unsecured_limit_krw'],
+                    'unsecured_used' => $gauge['unsecured_used_krw'],
+                    'base_limit' => $gauge['base_limit_krw'],
+                    'total_limit' => $gauge['limit_krw'],
+                    'used' => $gauge['used_krw'],
                 ];
                 $this->purchaseGateReason = '';
                 $this->showPurchaseGate = true;
@@ -8776,8 +8799,9 @@ function vehicleColumnsToggle() {
         <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
             <span class="mt-0.5 text-2xl">🚫</span>
             <div>
-                <h3 class="text-base font-bold text-gray-900">{{ __('vehicle.purchase_gate.title') }}</h3>
-                <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.purchase_gate.subtitle') }}</p>
+                @php $pgUnsecured = $this->purchaseGateInfo['unsecured_mode'] ?? false; @endphp
+                <h3 class="text-base font-bold text-gray-900">{{ __($pgUnsecured ? 'vehicle.purchase_gate.unsecured_title' : 'vehicle.purchase_gate.title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __($pgUnsecured ? 'vehicle.purchase_gate.unsecured_subtitle' : 'vehicle.purchase_gate.subtitle') }}</p>
             </div>
         </div>
 
@@ -8785,14 +8809,27 @@ function vehicleColumnsToggle() {
             {{-- 미수 현황 요약 (드로어/목록 게이지와 동일 수치) --}}
             <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
                 <div class="font-semibold text-red-800">{{ $pg['buyer'] ?? '' }}</div>
-                <div class="mt-1 flex items-center justify-between text-red-700">
-                    <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
-                    <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
-                </div>
-                {{-- 보증금 여력 (jin 2026-07-20) — 한도 대비 미수가 초과라 차단됨 --}}
-                <div class="mt-1.5 border-t border-red-200 pt-1.5 text-xs text-red-600">
-                    {{ __('vehicle.purchase_gate.deposit', ['pct' => $pg['deposit_pct'] ?? 50, 'limit' => number_format((int) ($pg['limit'] ?? 0)), 'total' => number_format((int) ($pg['total'] ?? 0))]) }}
-                </div>
+
+                @if($pg['unsecured_mode'] ?? false)
+                    {{-- 무담보 한도 모드 (jin 2026-08-10) — 미수율이 아니라 **한도 소진**으로 막힌 것이라
+                         숫자를 그대로 보여줘야 한다. 미수율만 보여주면 "미수 0인데 왜 막히지?"가 된다. --}}
+                    <div class="mt-1 font-bold text-red-700">{{ __('vehicle.purchase_gate.unsecured_exhausted') }}</div>
+                    <div class="mt-2 space-y-1 border-t border-red-200 pt-2 text-xs text-red-700">
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.base_limit', ['pct' => $pg['deposit_pct'] ?? 50]) }}</span><span>₩{{ number_format((int) ($pg['base_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.unsecured_limit') }}</span><span>₩{{ number_format((int) ($pg['unsecured_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between border-t border-red-200 pt-1 font-semibold"><span>{{ __('vehicle.purchase_gate.total_limit') }}</span><span>₩{{ number_format((int) ($pg['total_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.used') }}</span><span>₩{{ number_format((int) ($pg['used'] ?? 0)) }}</span></div>
+                    </div>
+                @else
+                    <div class="mt-1 flex items-center justify-between text-red-700">
+                        <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
+                        <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
+                    </div>
+                    {{-- 보증금 여력 (jin 2026-07-20) — 한도 대비 미수가 초과라 차단됨 --}}
+                    <div class="mt-1.5 border-t border-red-200 pt-1.5 text-xs text-red-600">
+                        {{ __('vehicle.purchase_gate.deposit', ['pct' => $pg['deposit_pct'] ?? 50, 'limit' => number_format((int) ($pg['limit'] ?? 0)), 'total' => number_format((int) ($pg['total'] ?? 0))]) }}
+                    </div>
+                @endif
             </div>
 
             @if($canApprovePg)
