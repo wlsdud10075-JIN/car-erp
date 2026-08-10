@@ -213,6 +213,61 @@ class UnsecuredLimitGateTest extends TestCase
         $this->assertSame(5_000_000, $g['unsecured_available_krw'], '무담보는 그대로여야 한다');
     }
 
+    /**
+     * 🚨 회사 돈이 나가 있는 동안에는 체크를 **풀 수 없다** (jin 2026-08-10 제보).
+     *
+     * 계약금 기록은 그대로인데 체크만 끄면 한도가 돌아와 락을 그냥 우회할 수 있다.
+     * 푸는 방법은 하나 — 판매대금을 받아 선적 진입 조건을 넘기는 것(그때 자동으로 풀린다).
+     */
+    public function test_flag_cannot_be_unticked_while_money_is_out(): void
+    {
+        $admin = $this->admin();
+        $b = $this->buyer(5_000_000);
+        $v = $this->vehicle($b, 10_000_000, 0, down: 500_000);
+
+        Volt::actingAs($admin)->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('is_unsecured_down', false)
+            ->call('save');
+
+        $this->assertTrue((bool) $v->fresh()->is_unsecured_down, '해제가 거부돼야 한다');
+        $this->assertSame(4_500_000, $b->fresh()->receivableGauge()['unsecured_available_krw'],
+            '한도가 돌아오면 안 된다');
+    }
+
+    /** 선적 진입 조건을 넘긴 뒤에는 체크를 풀 수 있다(이미 회수된 돈이므로). */
+    public function test_flag_can_be_unticked_after_shipping_entry(): void
+    {
+        $admin = $this->admin();
+        $b = $this->buyer(5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');
+        $v = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need + 10) / 100), down: 500_000);
+
+        $this->assertTrue($v->isShippingEntryMet(), '선적 진입을 넘긴 전제');
+
+        Volt::actingAs($admin)->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('is_unsecured_down', false)
+            ->call('save');
+
+        $this->assertFalse((bool) $v->fresh()->is_unsecured_down, '회수된 뒤에는 해제된다');
+    }
+
+    /** 게이지의 해제 판정과 차량 헬퍼가 같은 답을 낸다 — 갈리면 "화면은 풀렸는데 저장은 막힌다". */
+    public function test_release_check_is_single_source(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');
+
+        $met = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need + 10) / 100), down: 300_000);
+        $notMet = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need - 20) / 100), down: 400_000);
+
+        $this->assertTrue($met->isShippingEntryMet());
+        $this->assertFalse($notMet->isShippingEntryMet());
+        // 게이지는 헬퍼를 그대로 쓰므로, 묶인 계약금은 미충족 차량 것만이어야 한다.
+        $this->assertSame(400_000, $b->fresh()->receivableGauge()['locked_down_payment_krw']);
+    }
+
     /** 선적 후 미수는 한도 계산에 안 들어간다 — 표시만 된다. */
     public function test_shipped_unpaid_is_reported_but_not_deducted(): void
     {

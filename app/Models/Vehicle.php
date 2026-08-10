@@ -1772,6 +1772,31 @@ class Vehicle extends Model
      * 매입 잔금(`balance`)·매도비(`selling_fee`)에는 쓰지 않는다. 그래서 type='down' 만 센다.
      * 확정 조건은 `purchase_paid_amount` 와 동일(payment_date 도래 + confirmed_at).
      */
+    /**
+     * 선적 진입 조건(판매대금 N% 입금)을 넘었는가 — **무담보 해제 판정의 단일 출처** (jin 2026-08-10).
+     *
+     * 무담보에 묶인 계약금은 이 시점에 풀린다. 회사가 대신 낸 돈이 판매대금으로 회수됐다는 뜻이다.
+     * `Buyer::computeReceivableGauge` 와 저장 가드가 **같은 이 메서드**를 쓴다 —
+     * 각자 계산하면 "화면은 풀렸다는데 저장은 막힌다"가 생긴다.
+     *
+     * ⚠️ 관계가 아니라 **컬럼만** 본다(`sale_unpaid_amount_krw_cache`). 바이어 목록 게이지는
+     *    컬럼을 제한해 차량을 로드하므로, 관계 기반 accessor 를 쓰면 거기서 조용히 틀린다.
+     * ⚠️ 임계는 매입 게이트가 아니라 `shipping_entry` 키다(운영에서 값이 다르다).
+     */
+    public function isShippingEntryMet(): bool
+    {
+        $rate = (float) ($this->exchange_rate ?? 0);
+        $total = (float) ($this->sale_total_amount ?? 0);
+        $krw = ($total > 0 && $rate > 0) ? (int) ($total * $rate) : 0;
+        if ($krw <= 0) {
+            return false;   // 판매가·환율 미입력 — 판정 불가라 "아직 아님"으로 본다
+        }
+
+        $unpaid = (int) ($this->sale_unpaid_amount_krw_cache ?? 0);
+
+        return ($unpaid / $krw) <= Setting::lockThreshold('shipping_entry');
+    }
+
     public function getConfirmedDownPaymentAttribute(): int
     {
         return (int) $this->purchaseBalancePayments

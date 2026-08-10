@@ -2160,6 +2160,26 @@ new #[Layout('components.layouts.app')] class extends Component {
      *   신규 등록 중이면 폼에서 고른 바이어, 저장된 차량이면 그 차량의 바이어를 본다.
      *   ⚠️ 표시 전용 — 저장을 막지 않는다(매입등록 락은 C5 게이트가 ratio 로 별도 판정).
      */
+    /**
+     * 무담보 체크를 지금 풀 수 있는가 (jin 2026-08-10).
+     *
+     * 회사 돈이 아직 나가 있는데(확정 계약금 있음 + 선적 진입 전) 체크를 풀면 한도만 돌아온다.
+     * 저장 시점에도 같은 가드가 있고(save), 여기서는 화면에 미리 알려 헛클릭을 막는다.
+     */
+    #[Computed]
+    public function unsecuredLockHeld(): bool
+    {
+        if (! $this->editingId) {
+            return false;
+        }
+        $v = \App\Models\Vehicle::find($this->editingId);
+
+        return $v
+            && $v->is_unsecured_down
+            && $v->confirmed_down_payment > 0
+            && ! $v->isShippingEntryMet();
+    }
+
     #[Computed]
     public function purchasingRoom(): ?array
     {
@@ -3968,6 +3988,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         $unsecuredDown = $user->canApprove()
             ? $this->is_unsecured_down
             : (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
+
+        // 🚨 해제 가드 (jin 2026-08-10 제보) — **회사 돈이 아직 나가 있는데 체크를 끄면
+        //   한도만 돌아온다**. 계약금 기록은 그대로인데 무담보가 복구되니 락을 그냥 우회할 수 있다.
+        //   그래서 확정 계약금이 있고 아직 선적 진입 전이면 해제를 거부한다.
+        //   푸는 방법은 하나 — 판매대금을 받아 선적 진입 조건을 넘기는 것(그때 자동으로 풀린다).
+        $unsecuredWasOn = (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
+        if ($unsecuredWasOn && ! $unsecuredDown && $editingVehicle) {
+            $stillOut = $editingVehicle->confirmed_down_payment > 0 && ! $editingVehicle->isShippingEntryMet();
+            if ($stillOut) {
+                $unsecuredDown = true;   // 해제 거부 — 값은 켜진 채로 저장
+                $this->dispatch('notify', message: __('vehicle.toast.unsecured_lock_kept'), type: 'error');
+            }
+        }
 
         $data = [
             'vehicle_number' => $this->vehicle_number,
@@ -6786,14 +6819,19 @@ function vehicleColumnsToggle() {
                 {{-- 무담보로 지급한 계약금 표시 (jin 2026-08-10).
                      계약금 행만으로는 그 돈이 바이어 것인지 회사가 대신 낸 것인지 알 수 없다.
                      무담보는 회사가 대신 내준 몫을 담는 주머니라, 체크한 차만 한도를 소모한다. --}}
-                <label class="flex items-start gap-2 {{ $canFlagUnsecured ? 'cursor-pointer' : '' }}">
+                @php $uLocked = $this->unsecuredLockHeld; @endphp
+                <label class="flex items-start gap-2 {{ $canFlagUnsecured && ! $uLocked ? 'cursor-pointer' : '' }}">
                     <input type="checkbox" wire:model.live="is_unsecured_down"
                            class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                           @if(! $canFlagUnsecured) disabled @endif />
+                           @if(! $canFlagUnsecured || $uLocked) disabled @endif />
                     <span class="text-xs {{ $canFlagUnsecured ? 'font-medium text-indigo-900' : 'text-gray-500' }}">
                         {{ __('vehicle.field.is_unsecured_down') }}
                         <span class="mt-0.5 block text-[11px] font-normal {{ $canFlagUnsecured ? 'text-indigo-600' : 'text-gray-400' }}">
-                            {{ __('vehicle.field.is_unsecured_down_hint') }}
+                            @if($uLocked)
+                                🔒 {{ __('vehicle.field.is_unsecured_down_locked') }}
+                            @else
+                                {{ __('vehicle.field.is_unsecured_down_hint') }}
+                            @endif
                         </span>
                     </span>
                 </label>

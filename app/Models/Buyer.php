@@ -148,7 +148,6 @@ class Buyer extends Model
         $shippedCount = 0;
         $shippedUnpaidKrw = 0;
         $lockedDownPaymentKrw = 0;   // 무담보에 묶인 계약금 (선적 진입 전인 차량분)
-        $shippingCutoff = Setting::lockThreshold('shipping_entry');
         foreach ($vehicles as $v) {
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
@@ -184,12 +183,9 @@ class Buyer extends Model
             //      낸 것인지 알 수 없다**. 무담보는 회사가 대신 내준 몫을 담는 주머니이므로,
             //      사람이 명시한 것만 센다(jin: "이거 실제로 50만원이 누구 돈일 줄 알고?").
             //      체크 안 함 = 바이어 돈 → 무담보 무관. 우회가 아니라 사실 기록이다.
-            //   ⚠️ 임계는 매입 게이트(purchase_registration)가 아니라 **선적 진입(shipping_entry)** 것이다 —
-            //      운영에서 두 값이 다르다(heymanerp 60% vs 50%). 테스트 기본값은 둘 다 같아 이 차이가
-            //      로컬에선 절대 안 드러나므로(SKILLS §8 #36 과 같은 형태) 키를 명시적으로 쓴다.
-            $rowRatio = $rowKrw > 0 ? ($rowUnpaidKrw / $rowKrw) : null;
-            $shippingReady = $rowRatio !== null && $rowRatio <= $shippingCutoff;
-            if (! $shippingReady && ($v->is_unsecured_down ?? false)) {
+            //   해제 판정은 `Vehicle::isShippingEntryMet()` **단일 출처**다 — 저장 가드도 같은 걸 쓴다.
+            //   각자 계산하면 "화면은 풀렸다는데 저장은 막힌다"가 생긴다.
+            if (! $v->isShippingEntryMet() && ($v->is_unsecured_down ?? false)) {
                 $lockedDownPaymentKrw += $v->confirmed_down_payment;
             }
         }
