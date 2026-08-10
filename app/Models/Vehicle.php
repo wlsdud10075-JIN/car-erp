@@ -123,6 +123,7 @@ class Vehicle extends Model
         'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
         'is_deposit_purchase', 'deposit_purchase_at',   // 보증금 매입 마커 + 도장 일시 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
+        'is_unsecured_down',   // 무담보로 지급한 계약금 표시 (jin 2026-08-10) — 회사가 바이어 대신 낸 것만 체크
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -165,6 +166,7 @@ class Vehicle extends Model
         'is_dealer_purchase' => 'boolean',
         'buyer_undecided' => 'boolean',
         'is_deposit_purchase' => 'boolean',
+        'is_unsecured_down' => 'boolean',
         'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
@@ -537,6 +539,7 @@ class Vehicle extends Model
         // 2026-07-30 (jin) — 보증금 매입 마커. 켜는 순간 바이어 입금 독촉 알림톡 타이머가 돌기 시작하고,
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
+        'is_unsecured_down',   // 돈의 출처 기록 — 누가 언제 표시했는지 추적 필요
     ];
 
     /**
@@ -1760,6 +1763,48 @@ class Vehicle extends Model
     public function getPurchaseUnpaidAmountAttribute(): int
     {
         return (int) (($this->purchase_price + $this->selling_fee) - $this->purchase_paid_amount);
+    }
+
+    /**
+     * 확정 **계약금**만 (jin 2026-08-10) — 무담보 한도가 묶이는 유일한 대상.
+     *
+     * 무담보는 "국내에 차가 없어 보증금을 못 쓰는 단골이 **새 차 계약금을 걸 때**" 쓰라고 만든 것이라
+     * 매입 잔금(`balance`)·매도비(`selling_fee`)에는 쓰지 않는다. 그래서 type='down' 만 센다.
+     * 확정 조건은 `purchase_paid_amount` 와 동일(payment_date 도래 + confirmed_at).
+     */
+    /**
+     * 선적 진입 조건(판매대금 N% 입금)을 넘었는가 — **무담보 해제 판정의 단일 출처** (jin 2026-08-10).
+     *
+     * 무담보에 묶인 계약금은 이 시점에 풀린다. 회사가 대신 낸 돈이 판매대금으로 회수됐다는 뜻이다.
+     * `Buyer::computeReceivableGauge` 와 저장 가드가 **같은 이 메서드**를 쓴다 —
+     * 각자 계산하면 "화면은 풀렸다는데 저장은 막힌다"가 생긴다.
+     *
+     * ⚠️ 관계가 아니라 **컬럼만** 본다(`sale_unpaid_amount_krw_cache`). 바이어 목록 게이지는
+     *    컬럼을 제한해 차량을 로드하므로, 관계 기반 accessor 를 쓰면 거기서 조용히 틀린다.
+     * ⚠️ 임계는 매입 게이트가 아니라 `shipping_entry` 키다(운영에서 값이 다르다).
+     */
+    public function isShippingEntryMet(): bool
+    {
+        $rate = (float) ($this->exchange_rate ?? 0);
+        $total = (float) ($this->sale_total_amount ?? 0);
+        $krw = ($total > 0 && $rate > 0) ? (int) ($total * $rate) : 0;
+        if ($krw <= 0) {
+            return false;   // 판매가·환율 미입력 — 판정 불가라 "아직 아님"으로 본다
+        }
+
+        $unpaid = (int) ($this->sale_unpaid_amount_krw_cache ?? 0);
+
+        return ($unpaid / $krw) <= Setting::lockThreshold('shipping_entry');
+    }
+
+    public function getConfirmedDownPaymentAttribute(): int
+    {
+        return (int) $this->purchaseBalancePayments
+            ->filter(fn ($p) => $p->type === 'down'
+                && $p->payment_date !== null
+                && $p->payment_date->lte(now())
+                && $p->confirmed_at !== null)
+            ->sum('amount');
     }
 
     /**

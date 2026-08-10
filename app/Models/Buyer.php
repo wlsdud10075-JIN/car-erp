@@ -147,6 +147,7 @@ class Buyer extends Model
         $shippedKrw = 0;
         $shippedCount = 0;
         $shippedUnpaidKrw = 0;
+        $lockedDownPaymentKrw = 0;   // 무담보에 묶인 계약금 (선적 진입 전인 차량분)
         foreach ($vehicles as $v) {
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
@@ -171,8 +172,22 @@ class Buyer extends Model
 
             $count++;
             $totalKrw += $rowKrw;
-            $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+            $rowUnpaidKrw = (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+            $unpaidKrw += $rowUnpaidKrw;
             $purchasePaidKrw += $v->purchase_paid_amount;   // 매입은 원화 — 환율 환산 불필요
+
+            // 무담보에 묶이는 것 = **「무담보로 지급」 체크된 차량의 계약금**이고,
+            //   그 차가 선적 진입 조건을 넘으면 풀린다 (jin 2026-08-10).
+            //
+            //   🚨 체크를 보는 이유 — 계약금 행만으로는 그 돈이 **바이어가 보낸 것인지 회사가 대신
+            //      낸 것인지 알 수 없다**. 무담보는 회사가 대신 내준 몫을 담는 주머니이므로,
+            //      사람이 명시한 것만 센다(jin: "이거 실제로 50만원이 누구 돈일 줄 알고?").
+            //      체크 안 함 = 바이어 돈 → 무담보 무관. 우회가 아니라 사실 기록이다.
+            //   해제 판정은 `Vehicle::isShippingEntryMet()` **단일 출처**다 — 저장 가드도 같은 걸 쓴다.
+            //   각자 계산하면 "화면은 풀렸다는데 저장은 막힌다"가 생긴다.
+            if (! $v->isShippingEntryMet() && ($v->is_unsecured_down ?? false)) {
+                $lockedDownPaymentKrw += $v->confirmed_down_payment;
+            }
         }
 
         // ⚠️ 무담보 한도가 설정된 바이어는 국내 차가 0대여도 게이지를 만든다(그게 이 기능의 목적).
@@ -188,14 +203,16 @@ class Buyer extends Model
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
         $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
         $limitKrw = $baseLimitKrw + $unsecuredLimit;
-        // 차감 순서 (jin 2026-08-10 확정) — **보증금 먼저, 그다음 무담보.**
-        //   보증금(입금액×비율) 안에서 쓰는 동안 무담보는 그대로 있고,
-        //   보증금을 다 쓴 뒤 초과분만큼 무담보가 줄어든다. 무담보까지 0이면 매입 락이다.
-        //   판매잔금이 들어오면 보증금이 늘어 초과분이 줄고 → 무담보가 저절로 원복된다.
-        //   ⚠️ 미수율(기존 게이트)은 이 계산에 관여하지 않는다 — 금액만 본다.
-        //      한때 "미수율에 걸렸을 때만 깎는다"로 뒀었는데, 같은 상황에서 결과가 갈려
-        //      예측이 불가능했다(jin: "이거 좀 헷갈리네").
-        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw));
+        // 무담보 사용량 (jin 2026-08-10 최종) — **계약금만 담는 독립 주머니**다.
+        //   보증금과 섞지 않는다. 규모가 근본적으로 다르기 때문이다:
+        //     보증금 = 차값 전체(잔금 포함)를 커버하는 큰 한도(입금액의 절반, 보통 수천만)
+        //     무담보 = 계약금 전용 작은 한도(계약금 건당 50~100만 × 몇 건 = 500만 정도)
+        //   보증금 초과분을 기준으로 삼으면 **차값 전체가 초과분에 들어가** 500만짜리 한도가
+        //   한 번에 날아간다 — 그러면 이 기능이 의미가 없다(jin: "그래서 내가 차감형식을 얘기했던 거야").
+        //
+        //   그래서 계약금을 걸면 그만큼 빠지고, 그 차가 선적 진입 조건을 넘으면 그만큼 돌아온다.
+        //   그게 전부다. 예측이 쉽고 화면 숫자로 다음 동작을 알 수 있다.
+        $unsecuredUsedKrw = min($unsecuredLimit, $lockedDownPaymentKrw);
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
@@ -208,7 +225,8 @@ class Buyer extends Model
             'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
             'base_limit_krw' => $baseLimitKrw,      // 담보분 = 입금액 × 설정비율
             'unsecured_limit_krw' => $unsecuredLimit,   // 무담보분 = 바이어별 설정값 (0 = 미설정)
-            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 담보 한도를 넘어선 매입 지급
+            'locked_down_payment_krw' => $lockedDownPaymentKrw,   // 선적 진입 전 차량의 계약금 합(해제 대기)
+            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 위 계약금 중 보증금으로 못 덮은 몫
             'unsecured_available_krw' => max(0, $unsecuredLimit - $unsecuredUsedKrw),   // 무담보 잔액 — 락 판정
             'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 담보분 + 무담보분
             'used_krw' => $purchasePaidKrw,         // 이미 쓴 금액 = 매입 지급(계약금·잔금 확정분)
@@ -228,7 +246,7 @@ class Buyer extends Model
         return static::computeReceivableGauge(
             $this->vehicles()->with('purchaseBalancePayments')->get(),
             null,
-            (int) ($this->unsecured_limit_krw ?? 0),
+            $this->effectiveUnsecuredLimit(),   // 기능 토글 반영 — 화면과 게이트가 같은 값을 본다
         );
     }
 
@@ -238,19 +256,32 @@ class Buyer extends Model
      * 설정됨  → 한도 기반 게이트(여력 소진 시 차단). 국내 차가 0대여도 판정된다.
      * 미설정  → 기존 미수율 기반 게이트 그대로. 운영 충격 없음(jin 확정).
      */
-    public function hasUnsecuredLimit(): bool
+    /**
+     * 실효 무담보 한도 — **기능 토글까지 반영한 단일 출처**.
+     * 시스템관리자가 기능을 끈 회사에서는 컬럼에 값이 있어도 0으로 본다(판정·표시 동시에 꺼짐).
+     */
+    public function effectiveUnsecuredLimit(): int
     {
+        if (! Setting::unsecuredLimitEnabled()) {
+            return 0;   // 기능 OFF — 컬럼을 볼 필요도 없다
+        }
+
         // 🚨 컬럼이 안 실린 인스턴스(`select`·`pluck` 로 컬럼을 제한한 쿼리)에서 부르면
         //    `?? 0` 이 조용히 "미설정"으로 만들어 **락이 사라진다**. 그 형태의 사고가 이미 있었다
         //    (`with('관계:id,name')` 로 tier 컬럼이 빠져 정산액이 20배 틀림 — 예외도 경고도 없었다).
         //    금액·락을 좌우하는 값이라 조용히 넘어가지 않고 큰 소리로 죽인다.
         if (! array_key_exists('unsecured_limit_krw', $this->getAttributes())) {
             throw new \LogicException(
-                'Buyer::hasUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
+                'Buyer::effectiveUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
                 .'매입 락 판정에 쓰이므로 컬럼을 제한한 쿼리로 조회하지 마세요.'
             );
         }
 
-        return (int) ($this->unsecured_limit_krw ?? 0) > 0;
+        return max(0, (int) ($this->unsecured_limit_krw ?? 0));
+    }
+
+    public function hasUnsecuredLimit(): bool
+    {
+        return $this->effectiveUnsecuredLimit() > 0;
     }
 }

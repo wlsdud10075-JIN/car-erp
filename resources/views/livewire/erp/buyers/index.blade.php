@@ -105,7 +105,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Buyer::computeReceivableGauge(
             $buyer->vehicles()->with('purchaseBalancePayments')->get(),
             null,
-            (int) ($buyer->unsecured_limit_krw ?? 0),
+            $buyer->effectiveUnsecuredLimit(),
         );
     }
 
@@ -127,11 +127,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
                 'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
                 'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
+                // ⚠️ 무담보 판정에 쓰인다 — 빠지면 조용히 false 가 되어 묶인 계약금이 0 으로 보인다
+                //    (관계 컬럼 제한이 계산을 깨뜨린 사고와 같은 형태).
+                'is_unsecured_down',
             ]);
 
         $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
         // 무담보 한도 — 현재 페이지 바이어분만 1쿼리로(행마다 조회하면 N+1).
-        $limits = Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id');
+        // 기능 토글이 꺼진 회사에서는 전부 0 으로 본다(1회 조회 — 행마다 Setting 을 읽지 않는다).
+        $unsecuredOn = \App\Models\Setting::unsecuredLimitEnabled();
+        $limits = $unsecuredOn
+            ? Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id')
+            : collect();
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
             $gauge = Buyer::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));

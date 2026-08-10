@@ -902,6 +902,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   ⚠️ 저장 권한은 canConfirmFinance 만 — save() 에서 재검사한다(체크박스 disabled 는 UI 편의일 뿐).
     public bool $is_deposit_purchase = false;
 
+    // 무담보로 지급한 계약금 표시 (jin 2026-08-10) — 회사가 바이어 대신 낸 계약금만 체크한다.
+    //   계약금 행만으로는 그 돈이 누구 것인지 알 수 없어서 사람이 명시한다. [관리] 이상만 변경 가능.
+    public bool $is_unsecured_down = false;
+
     /** 바이어 미정 매입(투기) — 켜야만 바이어 없이 신규 등록이 통과한다 (jin 2026-08-09). */
     public bool $buyer_undecided = false;
 
@@ -2156,6 +2160,26 @@ new #[Layout('components.layouts.app')] class extends Component {
      *   신규 등록 중이면 폼에서 고른 바이어, 저장된 차량이면 그 차량의 바이어를 본다.
      *   ⚠️ 표시 전용 — 저장을 막지 않는다(매입등록 락은 C5 게이트가 ratio 로 별도 판정).
      */
+    /**
+     * 무담보 체크를 지금 풀 수 있는가 (jin 2026-08-10).
+     *
+     * 회사 돈이 아직 나가 있는데(확정 계약금 있음 + 선적 진입 전) 체크를 풀면 한도만 돌아온다.
+     * 저장 시점에도 같은 가드가 있고(save), 여기서는 화면에 미리 알려 헛클릭을 막는다.
+     */
+    #[Computed]
+    public function unsecuredLockHeld(): bool
+    {
+        if (! $this->editingId) {
+            return false;
+        }
+        $v = \App\Models\Vehicle::find($this->editingId);
+
+        return $v
+            && $v->is_unsecured_down
+            && $v->confirmed_down_payment > 0
+            && ! $v->isShippingEntryMet();
+    }
+
     #[Computed]
     public function purchasingRoom(): ?array
     {
@@ -2893,6 +2917,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
         $this->deposit_purchase_state = $v->deposit_purchase_state;
         $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
+        $this->is_unsecured_down = (bool) $v->is_unsecured_down;
         $this->buyer_undecided = (bool) $v->buyer_undecided;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
@@ -3958,6 +3983,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? $this->is_deposit_purchase
             : (bool) (($editingVehicle ?? null)?->is_deposit_purchase ?? false);
 
+        // 무담보 지급 표시 (jin 2026-08-10) — 매입 락 기준선을 움직이므로 [관리] 이상만.
+        //   화면 disabled 는 편의일 뿐이라 저장 시점에 다시 인가한다(SKILLS §8 #26).
+        $unsecuredDown = $user->canApprove()
+            ? $this->is_unsecured_down
+            : (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
+
+        // 🚨 해제 가드 (jin 2026-08-10 제보) — **회사 돈이 아직 나가 있는데 체크를 끄면
+        //   한도만 돌아온다**. 계약금 기록은 그대로인데 무담보가 복구되니 락을 그냥 우회할 수 있다.
+        //   그래서 확정 계약금이 있고 아직 선적 진입 전이면 해제를 거부한다.
+        //   푸는 방법은 하나 — 판매대금을 받아 선적 진입 조건을 넘기는 것(그때 자동으로 풀린다).
+        $unsecuredWasOn = (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
+        if ($unsecuredWasOn && ! $unsecuredDown && $editingVehicle) {
+            $stillOut = $editingVehicle->confirmed_down_payment > 0 && ! $editingVehicle->isShippingEntryMet();
+            if ($stillOut) {
+                $unsecuredDown = true;   // 해제 거부 — 값은 켜진 채로 저장
+                $this->dispatch('notify', message: __('vehicle.toast.unsecured_lock_kept'), type: 'error');
+            }
+        }
+
         $data = [
             'vehicle_number' => $this->vehicle_number,
             'sales_channel'  => $this->sales_channel,
@@ -4003,6 +4047,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_evidence_subtype'  => $this->purchase_evidence_subtype  ?: null,
             'is_dealer_purchase' => $this->is_dealer_purchase,
             'is_deposit_purchase' => $depositMarker,   // 도장 시각(deposit_purchase_at)은 Vehicle::saving 이 찍는다
+            'is_unsecured_down' => $unsecuredDown,
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -4129,6 +4174,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $oldPath = $vehicle->{$f['col']};
                     if ($this->{$f['fileProp']}) {
                         $newPath = $this->{$f['fileProp']}->store("vehicles/{$vehicle->id}", config('filesystems.vehicle_docs_disk'));
+                        // 🚨 store() 는 실패해도 예외가 아니라 **false** 를 리턴한다(디스크 'throw' => false).
+                        //   옛 코드는 그 false 를 그대로 컬럼에 넣고, 심지어 `$oldPath !== $newPath` 가 참이라
+                        //   **멀쩡하던 옛 서류를 삭제 목록에 넣었다** — 새 파일도 없고 옛 파일도 사라진다.
+                        //   (2026-08-10 연동 B 첨부 사고와 같은 부류. 그쪽은 사진 행만 남았지만 여긴 손실이다.)
+                        if (! $newPath) {
+                            throw new \App\Exceptions\FileStoreFailedException($f['col']);
+                        }
                         $newlyStoredPaths[] = $newPath;
                         $fileUpdates[$f['col']] = $newPath;
                         if ($oldPath && $oldPath !== $newPath) {
@@ -4157,6 +4209,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $nextOrder = (int) \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
                     foreach ($this->photoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/photos", config('filesystems.vehicle_docs_disk'));
+                        // 실패 시 false → path='' 인 깨진 사진 행이 남는다. 끊어서 롤백시킨다.
+                        if (! $photoPath) {
+                            throw new \App\Exceptions\FileStoreFailedException('vehicle_photo');
+                        }
                         $newlyStoredPaths[] = $photoPath;
                         \App\Models\VehiclePhoto::create([
                             'vehicle_id' => $vehicle->id,
@@ -4181,6 +4237,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->where('category', 'shipping')->max('sort_order');
                     foreach ($this->shipPhotoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/ship-photos", config('filesystems.vehicle_docs_disk'));
+                        if (! $photoPath) {
+                            throw new \App\Exceptions\FileStoreFailedException('ship_photo');
+                        }
                         $newlyStoredPaths[] = $photoPath;
                         \App\Models\VehiclePhoto::create([
                             'vehicle_id' => $vehicle->id,
@@ -4468,6 +4527,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외
             foreach ($newlyStoredPaths as $p) {
                 Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
+            }
+            // 파일 저장 실패는 재시도로 풀리는 부류라 500 대신 안내한다(2026-08-10).
+            //   ⚠️ 여기까지 왔다는 건 트랜잭션이 롤백됐다는 뜻 — **옛 파일은 그대로 남아 있다**.
+            //      옛 파일 삭제는 아래 성공 경로에서만 실행되기 때문이다.
+            if ($e instanceof \App\Exceptions\FileStoreFailedException) {
+                \Log::warning('Vehicle save 파일 저장 실패', ['vehicle_id' => $this->editingId, 'target' => $e->target]);
+                $this->dispatch('notify', message: __('vehicle.toast.file_store_failed'), type: 'error');
+
+                return;
             }
             throw $e;
         }
@@ -5147,6 +5215,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 원본 파일명 보존(사용자가 무엇을 올렸는지 목록에서 바로 보이도록). fpId 폴더로 격리.
             $safeName = preg_replace('/[^\p{L}\p{N}._-]+/u', '_', basename($file->getClientOriginalName())) ?: 'proof';
             $path = $file->storeAs("vehicles/{$vehicleId}/payment-proofs/{$fpId}", $safeName, config('filesystems.vehicle_docs_disk'));
+            // 🚨 실패하면 false 다. 그대로 두면 proof_path 에 빈 값이 들어가고, 아래 `!==` 가 참이라
+            //   **멀쩡하던 옛 증빙까지 삭제 목록**에 올라간다. 끊어서 트랜잭션을 되돌린다.
+            if (! $path) {
+                throw new \App\Exceptions\FileStoreFailedException('payment_proof');
+            }
             $newlyStoredPaths[] = $path;
             if ($existingPath && $existingPath !== $path) {
                 $pathsToDelete[] = $existingPath;   // 교체(이름 다름) 시 옛 파일 정리. 같은 이름=덮어씀이라 삭제 안 함.
@@ -5205,7 +5278,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','buyer_undecided',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -6732,6 +6805,51 @@ function vehicleColumnsToggle() {
             {{-- 매입 가능 금액 (jin 2026-07-29) — 매입비를 더 써도 되는지 판단하는 자리가 여기다.
                  바이어 화면과 같은 단일출처(Buyer::receivableGauge). 표시 전용이라 저장을 막지 않는다. --}}
             @php $room = $this->purchasingRoom; @endphp
+            {{-- 무담보 한도 현황 (jin 2026-08-10) — 계약금을 넣기 전에 "이 계약금이 무담보에서 나가는지"를
+                 그 자리에서 보여준다. 누르는 스위치가 아니라 표시다 — 보증금이 남아 있으면 거기서 먼저 나가고,
+                 없으면 무담보에서 나가는 순서가 자동으로 정해지기 때문이다.
+                 ⚠️ 위 「매입 가능 금액」 박스는 `paid_krw > 0` 조건이라, 무담보의 타깃 상황
+                    (국내 차 0대 = 입금액 0)에서는 아예 안 뜬다. 그래서 별도 블록이 필요하다. --}}
+            @if($room && ($room['unsecured_limit_krw'] ?? 0) > 0)
+            @php
+                $uAvail = $room['unsecured_available_krw'];
+                $canFlagUnsecured = auth()->user()?->canApprove() ?? false;
+            @endphp
+            <div class="mb-2 rounded-md border {{ $uAvail > 0 ? 'border-indigo-200 bg-indigo-50' : 'border-red-200 bg-red-50' }} px-3 py-2">
+                {{-- 무담보로 지급한 계약금 표시 (jin 2026-08-10).
+                     계약금 행만으로는 그 돈이 바이어 것인지 회사가 대신 낸 것인지 알 수 없다.
+                     무담보는 회사가 대신 내준 몫을 담는 주머니라, 체크한 차만 한도를 소모한다. --}}
+                @php $uLocked = $this->unsecuredLockHeld; @endphp
+                <label class="flex items-start gap-2 {{ $canFlagUnsecured && ! $uLocked ? 'cursor-pointer' : '' }}">
+                    <input type="checkbox" wire:model.live="is_unsecured_down"
+                           class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                           @if(! $canFlagUnsecured || $uLocked) disabled @endif />
+                    <span class="text-xs {{ $canFlagUnsecured ? 'font-medium text-indigo-900' : 'text-gray-500' }}">
+                        {{ __('vehicle.field.is_unsecured_down') }}
+                        <span class="mt-0.5 block text-[11px] font-normal {{ $canFlagUnsecured ? 'text-indigo-600' : 'text-gray-400' }}">
+                            @if($uLocked)
+                                🔒 {{ __('vehicle.field.is_unsecured_down_locked') }}
+                            @else
+                                {{ __('vehicle.field.is_unsecured_down_hint') }}
+                            @endif
+                        </span>
+                    </span>
+                </label>
+
+                <div class="mt-2 flex items-center justify-between border-t {{ $uAvail > 0 ? 'border-indigo-200' : 'border-red-200' }} pt-1.5 text-[11px] {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-700' }}">
+                    <span>💳 {{ __('buyer.field.unsecured_available') }}</span>
+                    <span class="font-mono text-sm font-bold {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-600' }}">₩{{ number_format($uAvail) }}</span>
+                </div>
+                <div class="mt-1 text-[11px] {{ $uAvail > 0 ? 'text-indigo-500' : 'font-medium text-red-600' }}">
+                    @if($room['unsecured_used_krw'] > 0)
+                        {{ __('vehicle.field.unsecured_in_use', ['amount' => number_format($room['unsecured_used_krw'])]) }}
+                    @else
+                        {{ __('vehicle.field.unsecured_idle') }}
+                    @endif
+                </div>
+            </div>
+            @endif
+
             @if($room && ($room['limit_krw'] ?? 0) >= 0 && ($room['paid_krw'] ?? 0) > 0)
             @php $roomAvail = $room['available_krw']; @endphp
             <div class="mb-2 rounded-md border {{ $roomAvail > 0 ? 'border-violet-200 bg-violet-50' : 'border-red-200 bg-red-50' }} px-3 py-2">

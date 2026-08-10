@@ -131,8 +131,23 @@ class SignController extends Controller
 
         // ② 렌더 성공 → 파일 저장 + 단일 save 로 서명 상태 원자적 확정.
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
-        $disk->put($sigPath, $png);
-        $disk->put($signedPath, $signedPdf);
+        // 🚨 put() 은 실패해도 예외가 아니라 false 를 리턴한다(디스크 'throw' => false, 2026-08-10).
+        //   반환값을 안 보던 옛 코드는 그대로 status=SIGNED 를 확정해서 **파일 없는 서명완료 계약**을
+        //   만들었다. signed_hash 는 메모리 바이트로 계산되니 정상처럼 보이고, 이후 다운로드는 영구 404 다.
+        //   하드삭제 가드가 있어 자가복구 경로도 없다 → 확정 전에 끊고 렌더 실패와 같은 화면을 준다.
+        $stored = $disk->put($sigPath, $png) && $disk->put($signedPath, $signedPdf);
+        if (! $stored || ! $disk->exists($signedPath)) {
+            Log::warning('[sign] 서명본 저장 실패 — 서명 확정 취소', [
+                'contract_id' => $contract->id, 'signed_path' => $signedPath,
+            ]);
+
+            return response()->view('sign.show', [
+                'contract' => $contract->fresh(),   // status 는 viewed 그대로 — 바이어가 다시 시도할 수 있다
+                'previewUrl' => URL::temporarySignedRoute('sign.preview', now()->addHours(2), ['token' => $token]),
+                'submitUrl' => URL::temporarySignedRoute('sign.submit', now()->addHours(2), ['token' => $token]),
+                'error' => __('signed_contract.sign.render_failed'),
+            ], 503);
+        }
         $contract->forceFill([
             'status' => SignedContract::STATUS_SIGNED,
             'signed_pdf_path' => $signedPath,

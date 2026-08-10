@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -11,17 +12,18 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 무담보 한도 (jin 2026-08-10) — 담보(선적 전 국내 차량)가 없어도 이 금액까지 매입을 허용한다.
+ * 무담보 한도 (jin 2026-08-10) — 국내에 차가 없어 보증금을 못 쓰는 단골이
+ * **새 차 계약금을 걸 때** 쓰는 한도.
  *
- * 배경(운영 실측 heymanerp 2026-08-10): 기존 매입 게이트는 **선적 전 국내 차량**만 담보로 본다.
- * 그래서 차가 다 선적돼 국내에 0대면 게이지가 `null` 이라 락이 통째로 사라진다 —
- * AUTO DIOR 는 선적 전 0대인데 선적 후 미수가 3.19억이었다.
+ * 규칙 (jin 확정):
+ *   - 묶이는 것은 **계약금뿐**이다. 매입 잔금·매도비에는 쓰지 않는다.
+ *   - **보증금과는 독립**이다. 보증금이 남아 있어도 계약금은 무담보에서 빠진다
+ *     (보증금 초과분 기준으로 하면 차값 전체가 초과분에 들어가 500만짜리 한도가 한 번에 날아간다).
+ *   - **선적 진입 조건(판매금 N% 입금)을 넘는 순간 그 차 몫이 풀린다** — 계속 묶여 있으면 안 되니까.
+ *   - 무담보까지 0이면 신규 차량 등록이 막힌다. 미설정 바이어는 종전 미수율 판정 그대로.
  *
- * 이 테스트가 지키는 것:
- *   ① 미설정 바이어는 **기존 동작 그대로**(운영 충격 0 — jin 확정)
- *   ② 설정 바이어는 국내 차 0대여도 한도만큼 매입되고, 소진되면 막힌다
- *   ③ 판매대금이 들어오면 기본 한도가 살아나 **자동 회복**된다
- *   ④ 화면 숫자(바이어 패널)와 게이트 판정이 **같은 값**을 쓴다
+ * 배경(운영 실측 heymanerp): 기존 매입 락은 선적 전 국내 차량만 담보로 봐서, 차가 다 선적되면
+ * 게이지가 null 이라 락이 통째로 사라졌다. AUTO DIOR 는 선적전 0대인데 선적 후 미수 3.19억.
  */
 class UnsecuredLimitGateTest extends TestCase
 {
@@ -44,16 +46,22 @@ class UnsecuredLimitGateTest extends TestCase
         ]);
     }
 
-    /** 매입 지급이 확정된 차 1대. $shippedOut 이면 출고까지 끝나 담보에서 빠진다. */
-    private function vehicle(Buyer $b, int $salePrice, int $paidKrw, int $purchasePaid, bool $shippedOut = false): Vehicle
-    {
+    /**
+     * @param  int  $down  확정 계약금 (무담보가 묶이는 유일한 대상)
+     * @param  int  $balance  확정 매입 잔금 (무담보와 무관해야 한다)
+     */
+    private function vehicle(
+        Buyer $b, int $salePrice, int $paidKrw, int $down = 0, int $balance = 0,
+        bool $shippedOut = false, bool $unsecuredDown = true
+    ): Vehicle {
         $v = Vehicle::create([
             'vehicle_number' => 'UL'.++$this->counter.'가1234',
             'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
             'salesman_id' => $b->salesman_id, 'buyer_id' => $b->id,
-            'purchase_date' => '2026-08-01', 'purchase_price' => 10_000_000,
+            'purchase_date' => '2026-08-01', 'purchase_price' => 20_000_000,
             'sale_price' => $salePrice, 'sale_date' => '2026-08-02',
             'warehouse_out_date' => $shippedOut ? '2026-08-05' : null,
+            'is_unsecured_down' => $unsecuredDown,
         ]);
         if ($paidKrw > 0) {
             $v->finalPayments()->create([
@@ -61,158 +69,228 @@ class UnsecuredLimitGateTest extends TestCase
                 'payment_date' => '2026-08-03', 'confirmed_at' => now(),
             ]);
         }
-        if ($purchasePaid > 0) {
-            $v->purchaseBalancePayments()->create([
-                'amount' => $purchasePaid, 'payment_date' => '2026-08-03', 'confirmed_at' => now(),
-            ]);
+        foreach ([['down', $down], ['balance', $balance]] as [$type, $amt]) {
+            if ($amt > 0) {
+                $v->purchaseBalancePayments()->create([
+                    'amount' => $amt, 'type' => $type,
+                    'payment_date' => '2026-08-03', 'confirmed_at' => now(),
+                ]);
+            }
         }
         $v->refreshCaches();
 
         return $v->fresh();
     }
 
-    /** ① 미설정 바이어 — 국내 차 0대면 게이지가 null (기존 동작 유지). */
+    /** 미설정 바이어 — 국내 차 0대면 게이지가 null (기존 동작 유지, 운영 충격 0). */
     public function test_buyer_without_limit_keeps_existing_behaviour(): void
     {
-        $b = $this->buyer();                                  // 한도 미설정
-        $this->vehicle($b, 5_000_000, 5_000_000, 0, true);    // 다 선적됨
+        $b = $this->buyer();
+        $this->vehicle($b, 5_000_000, 5_000_000, 0, 0, true);
 
         $this->assertFalse($b->hasUnsecuredLimit());
-        $this->assertNull($b->receivableGauge(), '담보도 한도도 없으면 게이지 없음 = 기존 동작');
+        $this->assertNull($b->receivableGauge(), '보증금도 한도도 없으면 게이지 없음 = 기존 동작');
     }
 
-    /** ② 설정 바이어 — 국내 차 0대여도 게이지가 생기고 한도만큼 여력이 있다. */
+    /** 설정 바이어 — 국내 차 0대여도 게이지가 생기고 한도 전액이 여력이다. */
     public function test_limit_creates_gauge_even_with_no_domestic_vehicles(): void
     {
         $b = $this->buyer(5_000_000);
-        $this->vehicle($b, 5_000_000, 5_000_000, 0, true);    // 다 선적됨 → 담보 0
+        $this->vehicle($b, 5_000_000, 5_000_000, 0, 0, true);
 
         $g = $b->receivableGauge();
 
         $this->assertNotNull($g, '한도가 있으면 국내 차 0대여도 게이지를 만들어야 한다');
-        $this->assertSame(0, $g['base_limit_krw'], '담보가 없으니 기본 한도는 0');
-        $this->assertSame(5_000_000, $g['unsecured_limit_krw']);
-        $this->assertSame(5_000_000, $g['limit_krw']);
-        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '한도 전액이 여력');
-        $this->assertSame(0.0, $g['ratio'], '0 나누기 방어 — 담보 0이면 미수율은 0');
+        $this->assertSame(0, $g['base_limit_krw'], '국내 차가 없으니 보증금은 0');
+        $this->assertSame(5_000_000, $g['unsecured_available_krw']);
+        $this->assertSame(0.0, $g['ratio'], '0 나누기 방어');
     }
 
-    /** ② 담보가 없으면 매입 지급이 무담보분을 그대로 깎는다. */
-    public function test_limit_is_consumed_by_purchase_payments(): void
+    /** 🚨 계약금만 묶인다 — 매입 잔금은 무담보를 건드리지 않는다. */
+    public function test_only_the_down_payment_locks_the_credit(): void
     {
         $b = $this->buyer(5_000_000);
-        $this->vehicle($b, 0, 0, 5_000_000);                  // 매입만 하고 아직 안 팔린 차 = 담보 0
+        // 판매 없음(=보증금 0). 계약금 200만 + 매입 잔금 900만.
+        $this->vehicle($b, 0, 0, down: 2_000_000, balance: 9_000_000);
+
+        $g = $b->receivableGauge();
+
+        $this->assertSame(2_000_000, $g['locked_down_payment_krw'], '계약금만 잡혀야 한다');
+        $this->assertSame(2_000_000, $g['unsecured_used_krw']);
+        $this->assertSame(3_000_000, $g['unsecured_available_krw'],
+            '매입 잔금 900만은 무담보와 무관하다');
+    }
+
+    /** 🚨 선적 진입 조건을 넘으면 그 차의 계약금이 풀린다 — 계속 묶여 있으면 안 된다. */
+    public function test_deposit_is_released_once_shipping_entry_is_met(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');   // 기본 50, 운영 60
+
+        // 판매 1,000만 / 계약금 300만. 입금이 필요 비율에 **미달**이면 묶여 있어야 한다.
+        $short = (int) (10_000_000 * ($need - 10) / 100);
+        $v = $this->vehicle($b, 10_000_000, $short, down: 3_000_000);
+
+        $this->assertSame(3_000_000, $b->receivableGauge()['locked_down_payment_krw'],
+            '선적 진입 전이면 계약금이 묶여 있어야 한다');
+
+        // 필요 비율을 넘겨 입금하면 그 차 몫이 풀린다.
+        $v->finalPayments()->create([
+            'amount' => 10_000_000 - $short, 'type' => 'balance', 'exchange_rate' => 1,
+            'payment_date' => '2026-08-04', 'confirmed_at' => now(),
+        ]);
+        $v->refreshCaches();
+
+        $g = $b->fresh()->receivableGauge();
+        $this->assertSame(0, $g['locked_down_payment_krw'], '선적 진입 조건을 넘으면 풀려야 한다');
+        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '무담보가 전액 복구돼야 한다');
+    }
+
+    /**
+     * 🚨 무담보는 **보증금과 독립**이다 — 보증금이 남아 있어도 계약금은 무담보에서 빠진다.
+     *
+     * 보증금 초과분을 기준으로 삼으면 **차값 전체가 초과분에 들어가** 500만짜리 한도가
+     * 한 번에 날아간다. 계약금은 운영 실측상 86%가 100만원 이하(78건 중 67건)라
+     * 규모가 근본적으로 다르다 — 섞으면 이 기능이 의미를 잃는다(jin 2026-08-10).
+     */
+    public function test_credit_is_independent_of_the_deposit(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');
+        $short = (int) (10_000_000 * ($need - 10) / 100);   // 선적 진입 미달 → 계약금 묶임
+
+        // 보증금이 계약금보다 훨씬 크지만, 계약금은 그대로 무담보에서 빠진다.
+        $this->vehicle($b, 10_000_000, $short, down: 1_000_000);
+
+        $g = $b->receivableGauge();
+
+        $this->assertGreaterThan(1_000_000, $g['base_limit_krw'], '보증금이 계약금보다 큰 전제');
+        $this->assertSame(1_000_000, $g['unsecured_used_krw'], '보증금과 무관하게 계약금만큼 빠진다');
+        $this->assertSame(4_000_000, $g['unsecured_available_krw']);
+    }
+
+    /** 매입 잔금은 아무리 커도 무담보를 건드리지 않는다. */
+    public function test_balance_payments_never_touch_the_credit(): void
+    {
+        $b = $this->buyer(5_000_000);
+        // 계약금 50만 + 매입 잔금 1,500만(차값). 무담보는 계약금만 본다.
+        $this->vehicle($b, 0, 0, down: 500_000, balance: 15_000_000);
+
+        $g = $b->receivableGauge();
+
+        $this->assertSame(500_000, $g['unsecured_used_krw'], '잔금 1,500만은 무담보와 무관');
+        $this->assertSame(4_500_000, $g['unsecured_available_krw']);
+    }
+
+    /** 계약금이 한도를 넘어도 사용량은 한도까지만(음수 여력 없음). */
+    public function test_usage_is_capped_at_the_limit(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $this->vehicle($b, 0, 0, down: 8_000_000);
 
         $g = $b->receivableGauge();
 
         $this->assertSame(5_000_000, $g['unsecured_used_krw']);
-        $this->assertSame(0, $g['unsecured_available_krw'], '무담보분을 다 쓰면 잔액 0');
+        $this->assertSame(0, $g['unsecured_available_krw']);
     }
 
     /**
-     * 🚨 담보 한도 안에서 쓰는 동안은 무담보분이 **줄지 않는다**.
-     *    "정말 마지막에 쓴다"의 핵심. 초기 구현은 총한도에서 총사용액을 빼는 바람에
-     *    담보를 이미 넘긴 바이어가 「남은 여력 0」으로 보였다(실측 OSAKA MOTORS).
+     * 🚨 체크하지 않은 계약금은 무담보를 건드리지 않는다.
+     *
+     * 계약금 행만으로는 그 돈이 바이어가 보낸 것인지 회사가 대신 낸 것인지 알 수 없다.
+     * 무담보는 회사가 대신 내준 몫을 담는 주머니라 사람이 명시한 것만 센다
+     * (jin: "이거 실제로 50만원이 누구 돈일 줄 알고?").
      */
-    public function test_unsecured_is_untouched_while_collateral_covers_it(): void
+    public function test_unchecked_down_payment_does_not_touch_the_credit(): void
     {
         $b = $this->buyer(5_000_000);
-        // 판매 1,000만 전액 입금 → 담보 한도 500만. 매입 지급 300만은 그 안에서 해결된다.
-        $this->vehicle($b, 10_000_000, 10_000_000, 3_000_000);
+        // 바이어가 직접 보낸 돈으로 낸 계약금 → 체크 안 함.
+        $this->vehicle($b, 0, 0, down: 500_000, unsecuredDown: false);
 
         $g = $b->receivableGauge();
 
-        $this->assertSame(5_000_000, $g['base_limit_krw'], '입금액 1,000만 × 50%');
-        $this->assertSame(0, $g['unsecured_used_krw'], '담보로 커버되는 동안 무담보분은 손대지 않는다');
-        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '설정한 금액을 그대로 쓸 수 있어야 한다');
+        $this->assertSame(0, $g['locked_down_payment_krw'], '체크 안 한 계약금은 안 잡힌다');
+        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '무담보는 그대로여야 한다');
     }
 
-    /** ③ 보증금을 넘어선 만큼만 무담보에서 빠진다 — 미수율과 무관하게 **금액**으로만 판정. */
-    public function test_only_the_excess_over_deposit_draws_down(): void
+    /**
+     * 🚨 회사 돈이 나가 있는 동안에는 체크를 **풀 수 없다** (jin 2026-08-10 제보).
+     *
+     * 계약금 기록은 그대로인데 체크만 끄면 한도가 돌아와 락을 그냥 우회할 수 있다.
+     * 푸는 방법은 하나 — 판매대금을 받아 선적 진입 조건을 넘기는 것(그때 자동으로 풀린다).
+     */
+    public function test_flag_cannot_be_unticked_while_money_is_out(): void
+    {
+        $admin = $this->admin();
+        $b = $this->buyer(5_000_000);
+        $v = $this->vehicle($b, 10_000_000, 0, down: 500_000);
+
+        Volt::actingAs($admin)->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('is_unsecured_down', false)
+            ->call('save');
+
+        $this->assertTrue((bool) $v->fresh()->is_unsecured_down, '해제가 거부돼야 한다');
+        $this->assertSame(4_500_000, $b->fresh()->receivableGauge()['unsecured_available_krw'],
+            '한도가 돌아오면 안 된다');
+    }
+
+    /** 선적 진입 조건을 넘긴 뒤에는 체크를 풀 수 있다(이미 회수된 돈이므로). */
+    public function test_flag_can_be_unticked_after_shipping_entry(): void
+    {
+        $admin = $this->admin();
+        $b = $this->buyer(5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');
+        $v = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need + 10) / 100), down: 500_000);
+
+        $this->assertTrue($v->isShippingEntryMet(), '선적 진입을 넘긴 전제');
+
+        Volt::actingAs($admin)->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('is_unsecured_down', false)
+            ->call('save');
+
+        $this->assertFalse((bool) $v->fresh()->is_unsecured_down, '회수된 뒤에는 해제된다');
+    }
+
+    /** 게이지의 해제 판정과 차량 헬퍼가 같은 답을 낸다 — 갈리면 "화면은 풀렸는데 저장은 막힌다". */
+    public function test_release_check_is_single_source(): void
     {
         $b = $this->buyer(5_000_000);
-        // 판매 1,000만 중 400만 입금 → 보증금 = 400만 × 50% = 200만.
-        // 매입 지급 500만 → 보증금 200만을 쓰고 초과 300만이 무담보에서 빠진다.
-        $this->vehicle($b, 10_000_000, 4_000_000, 5_000_000);
+        $need = Setting::lockRequiredPaidPct('shipping_entry');
 
-        $g = $b->receivableGauge();
+        $met = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need + 10) / 100), down: 300_000);
+        $notMet = $this->vehicle($b, 10_000_000, (int) (10_000_000 * ($need - 20) / 100), down: 400_000);
 
-        $this->assertSame(2_000_000, $g['base_limit_krw']);
-        $this->assertSame(3_000_000, $g['unsecured_used_krw']);
-        $this->assertSame(2_000_000, $g['unsecured_available_krw']);
+        $this->assertTrue($met->isShippingEntryMet());
+        $this->assertFalse($notMet->isShippingEntryMet());
+        // 게이지는 헬퍼를 그대로 쓰므로, 묶인 계약금은 미충족 차량 것만이어야 한다.
+        $this->assertSame(400_000, $b->fresh()->receivableGauge()['locked_down_payment_krw']);
     }
 
-    /** 같은 금액이면 미수율이 달라도 결과가 같아야 한다 — 예측 가능성(jin: "헷갈린다"의 해소). */
-    public function test_drawdown_does_not_depend_on_unpaid_ratio(): void
-    {
-        // 두 바이어 모두 보증금 200만(입금 400만) · 매입 지급 500만. 미수만 다르다.
-        $high = $this->buyer(5_000_000);
-        $this->vehicle($high, 10_000_000, 4_000_000, 5_000_000);   // 미수율 60%
-        $low = $this->buyer(5_000_000);
-        $this->vehicle($low, 4_400_000, 4_000_000, 5_000_000);     // 미수율 9%
-
-        $gh = $high->receivableGauge();
-        $gl = $low->receivableGauge();
-
-        $this->assertGreaterThan($gl['ratio'], $gh['ratio'], '미수율은 서로 달라야 한다');
-        $this->assertSame($gh['unsecured_used_krw'], $gl['unsecured_used_krw'],
-            '미수율이 달라도 같은 금액이면 무담보 차감은 같아야 한다');
-    }
-
-    /** 선적 후 미수는 한도 계산에 들어가지 않는다(이번 범위 밖) — 표시만 된다. */
+    /** 선적 후 미수는 한도 계산에 안 들어간다 — 표시만 된다. */
     public function test_shipped_unpaid_is_reported_but_not_deducted(): void
     {
         $b = $this->buyer(5_000_000);
-        $this->vehicle($b, 30_000_000, 0, 0, true);           // 선적 후 미수 3,000만
+        $this->vehicle($b, 30_000_000, 0, down: 2_000_000, shippedOut: true);
 
         $g = $b->receivableGauge();
 
         $this->assertSame(30_000_000, $g['shipped_unpaid_krw']);
-        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '선적 후 미수가 한도를 깎으면 안 된다');
+        $this->assertSame(5_000_000, $g['unsecured_available_krw'],
+            '출고된 차는 계약금도 무담보를 안 묶는다(이미 나간 차)');
     }
 
-    /**
-     * 🚨 무담보를 설정하면 그 바이어는 **미수율이 아니라 금액**으로 관리된다.
-     *    그래서 보증금을 이미 초과해 쓴 바이어는 설정 즉시 막힐 수 있다 — 의도된 동작이다
-     *    (실측 OSAKA MOTORS: 보증금 5,473만인데 매입 지급 7,786만. 원래 막혔어야 할 상태였고
-     *     미수율 게이트가 관대해서 통과하고 있었다). jin 2026-08-10 확정.
-     */
-    public function test_setting_a_limit_switches_the_buyer_to_amount_based_control(): void
-    {
-        $admin = $this->admin();
-        $b = $this->buyer(5_000_000);
-        // 미수율은 10% 로 낮지만(기존 판정이면 통과), 매입 지급 1,000만이
-        // 보증금 450만 + 무담보 500만 = 950만을 넘는다.
-        $this->vehicle($b, 10_000_000, 9_000_000, 10_000_000);
-
-        $g = $b->fresh()->receivableGauge();
-        $this->assertLessThan(0.4, $g['ratio'], '미수율만 보면 통과하는 상태');
-        $this->assertSame(0, $g['unsecured_available_krw'], '보증금·무담보를 모두 소진');
-
-        $c = Volt::actingAs($admin)->test('erp.vehicles.index')
-            ->call('openCreate')
-            ->set('vehicle_number', '99저1111')
-            ->set('buyer_id_str', (string) $b->id)
-            ->set('salesman_id_str', (string) $b->salesman_id)
-            ->set('purchase_price_str', '1,000,000')
-            ->call('save');
-
-        $this->assertTrue($c->get('showPurchaseGate'),
-            '무담보까지 소진되면 미수율이 낮아도 막혀야 한다 — 그게 마지막 방어선의 뜻이다');
-    }
-
-    /** ①·② 게이트 — 미설정은 통과, 설정+소진은 차단. */
-    public function test_gate_blocks_only_when_limit_is_exhausted(): void
+    /** 게이트 — 미설정은 통과, 설정+소진은 차단. */
+    public function test_gate_blocks_only_when_credit_is_exhausted(): void
     {
         $admin = $this->admin();
 
-        // 한도 미설정 + 다 선적됨 → 종전대로 통과
-        $free = $this->buyer();
-        $this->vehicle($free, 5_000_000, 5_000_000, 0, true);
+        $free = $this->buyer();                                  // 미설정 + 다 선적 → 통과
+        $this->vehicle($free, 5_000_000, 5_000_000, 0, 0, true);
 
-        // 한도 설정 + 소진 → 차단
-        $capped = $this->buyer(5_000_000);
-        $this->vehicle($capped, 0, 0, 5_000_000);
+        $capped = $this->buyer(5_000_000);                       // 계약금으로 한도 소진
+        $this->vehicle($capped, 0, 0, down: 5_000_000);
 
         foreach ([[$free, false], [$capped, true]] as [$buyer, $shouldBlock]) {
             $c = Volt::actingAs($admin)->test('erp.vehicles.index')
@@ -224,16 +302,16 @@ class UnsecuredLimitGateTest extends TestCase
                 ->call('save');
 
             $this->assertSame($shouldBlock, $c->get('showPurchaseGate'),
-                $shouldBlock ? '한도 소진 바이어는 막혀야 한다' : '한도 미설정 바이어는 종전대로 통과해야 한다');
+                $shouldBlock ? '무담보 소진 바이어는 막혀야 한다' : '미설정 바이어는 종전대로 통과');
         }
     }
 
-    /** 게이트 모달이 한도 모드로 뜨고 숫자를 담는다 — 미수율만 보이면 "미수 0인데 왜?"가 된다. */
-    public function test_gate_modal_shows_limit_numbers_in_unsecured_mode(): void
+    /** 게이트 모달이 한도 모드 숫자를 담는다 — 미수율만 보이면 "미수 0인데 왜?"가 된다. */
+    public function test_gate_modal_shows_limit_numbers(): void
     {
         $admin = $this->admin();
         $b = $this->buyer(5_000_000);
-        $this->vehicle($b, 0, 0, 5_000_000);
+        $this->vehicle($b, 0, 0, down: 5_000_000);
 
         $info = Volt::actingAs($admin)->test('erp.vehicles.index')
             ->call('openCreate')
@@ -249,29 +327,29 @@ class UnsecuredLimitGateTest extends TestCase
         $this->assertSame(5_000_000, $info['unsecured_used']);
     }
 
-    /** ④ 바이어 화면 숫자 = 게이트가 쓰는 숫자. 갈리면 "화면엔 여력이 있는데 막힌다"가 된다. */
+    /** 바이어 화면 숫자 = 게이트가 쓰는 숫자. 갈리면 "화면엔 여력이 있는데 막힌다"가 된다. */
     public function test_buyer_screen_and_gate_use_the_same_numbers(): void
     {
         $admin = $this->admin();
         $b = $this->buyer(5_000_000);
-        $this->vehicle($b, 10_000_000, 4_000_000, 3_000_000);
+        $this->vehicle($b, 10_000_000, 4_000_000, down: 3_000_000);
 
         $screen = Volt::actingAs($admin)->test('erp.buyers.index')
             ->call('openEdit', $b->id)
             ->get('buyerReceivable');
-
         $gate = $b->fresh()->receivableGauge();
 
-        foreach (['base_limit_krw', 'unsecured_limit_krw', 'unsecured_used_krw', 'unsecured_available_krw', 'used_krw'] as $k) {
+        foreach (['base_limit_krw', 'unsecured_limit_krw', 'locked_down_payment_krw',
+            'unsecured_used_krw', 'unsecured_available_krw'] as $k) {
             $this->assertSame($gate[$k], $screen[$k], "{$k} — 화면과 게이트가 갈렸다");
         }
     }
 
-    /** 차량이 0대인데 한도만 있는 바이어도 목록 게이지에 나온다("패널엔 있는데 목록엔 없다" 방지). */
+    /** 차량이 0대인데 한도만 있는 바이어도 목록 게이지에 나온다. */
     public function test_list_gauge_includes_buyer_with_limit_but_no_vehicles(): void
     {
         $admin = $this->admin();
-        $b = $this->buyer(5_000_000);                          // 차량 0대
+        $b = $this->buyer(5_000_000);
 
         $gauges = Volt::actingAs($admin)->test('erp.buyers.index')->get('receivableGauges');
 
