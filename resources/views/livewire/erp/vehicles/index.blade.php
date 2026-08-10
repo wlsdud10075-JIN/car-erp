@@ -8792,8 +8792,9 @@ function vehicleColumnsToggle() {
         <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
             <span class="mt-0.5 text-2xl">🚫</span>
             <div>
-                <h3 class="text-base font-bold text-gray-900">{{ __('vehicle.purchase_gate.title') }}</h3>
-                <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.purchase_gate.subtitle') }}</p>
+                @php $pgUnsecured = $this->purchaseGateInfo['unsecured_mode'] ?? false; @endphp
+                <h3 class="text-base font-bold text-gray-900">{{ __($pgUnsecured ? 'vehicle.purchase_gate.unsecured_title' : 'vehicle.purchase_gate.title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __($pgUnsecured ? 'vehicle.purchase_gate.unsecured_subtitle' : 'vehicle.purchase_gate.subtitle') }}</p>
             </div>
         </div>
 

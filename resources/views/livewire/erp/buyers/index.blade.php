@@ -140,6 +140,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        // 차량이 한 대도 없는데 한도만 설정된 바이어 — 위 루프는 **차량에서 출발**하므로 통째로 빠진다.
+        //   이 기능이 겨냥하는 게 담보 0인 바이어라, 목록에서만 안 보이면 "패널엔 있는데 목록엔 없다"가 된다.
+        foreach ($limits as $bid => $limit) {
+            if ((int) $limit > 0 && ! isset($out[(int) $bid])) {
+                $out[(int) $bid] = Buyer::computeReceivableGauge([], $depositThreshold, (int) $limit);
+            }
+        }
+
         return $out;
     }
 

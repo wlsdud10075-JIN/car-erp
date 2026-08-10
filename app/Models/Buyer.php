@@ -234,6 +234,17 @@ class Buyer extends Model
      */
     public function hasUnsecuredLimit(): bool
     {
+        // 🚨 컬럼이 안 실린 인스턴스(`select`·`pluck` 로 컬럼을 제한한 쿼리)에서 부르면
+        //    `?? 0` 이 조용히 "미설정"으로 만들어 **락이 사라진다**. 그 형태의 사고가 이미 있었다
+        //    (`with('관계:id,name')` 로 tier 컬럼이 빠져 정산액이 20배 틀림 — 예외도 경고도 없었다).
+        //    금액·락을 좌우하는 값이라 조용히 넘어가지 않고 큰 소리로 죽인다.
+        if (! array_key_exists('unsecured_limit_krw', $this->getAttributes())) {
+            throw new \LogicException(
+                'Buyer::hasUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
+                .'매입 락 판정에 쓰이므로 컬럼을 제한한 쿼리로 조회하지 마세요.'
+            );
+        }
+
         return (int) ($this->unsecured_limit_krw ?? 0) > 0;
     }
 }

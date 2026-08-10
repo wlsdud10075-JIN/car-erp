@@ -201,6 +201,31 @@ class UnsecuredLimitGateTest extends TestCase
         }
     }
 
+    /** 차량이 0대인데 한도만 있는 바이어도 목록 게이지에 나온다("패널엔 있는데 목록엔 없다" 방지). */
+    public function test_list_gauge_includes_buyer_with_limit_but_no_vehicles(): void
+    {
+        $admin = $this->admin();
+        $b = $this->buyer(5_000_000);                          // 차량 0대
+
+        $gauges = Volt::actingAs($admin)->test('erp.buyers.index')->get('receivableGauges');
+
+        $this->assertArrayHasKey($b->id, $gauges);
+        $this->assertSame(5_000_000, $gauges[$b->id]['available_krw']);
+    }
+
+    /**
+     * 🚨 컬럼을 제한해 조회한 Buyer 로 락을 판정하면 **조용히 0** 이 되어 락이 사라진다.
+     *    같은 형태로 정산액이 20배 틀린 적이 있다(예외·경고 0). 그래서 큰 소리로 죽인다.
+     */
+    public function test_limit_check_throws_when_column_is_not_loaded(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $partial = Buyer::select('id', 'name')->find($b->id);
+
+        $this->expectException(\LogicException::class);
+        $partial->hasUnsecuredLimit();
+    }
+
     /** 한도 변경은 감사로그에 남는다 — 누가 언제 얼마로 올렸는지가 감사 핵심. */
     public function test_limit_change_is_audited(): void
     {
