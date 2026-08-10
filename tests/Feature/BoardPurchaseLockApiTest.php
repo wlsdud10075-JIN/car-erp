@@ -154,6 +154,15 @@ class BoardPurchaseLockApiTest extends TestCase
 
         $this->assertFalse($byId[$room->id]['purchase_locked'], '무담보 잔액이 남았으면 미수율이 100% 여도 통과다');
         $this->assertSame(4_000_000, $byId[$room->id]['purchase_lock']['unsecured_available_krw']);
+
+        // ⚠️ 모드 유도가 두 경로에서 다르다 — 저장 게이트는 `Buyer::hasUnsecuredLimit()`,
+        //    일괄 판정은 게이지에 실린 `unsecured_limit_krw`(N+1 회피). 지금은 같은 값이지만
+        //    한쪽만 바뀌면 무담보 바이어가 조용히 미수율 판정으로 떨어진다. 여기서 묶어둔다.
+        foreach ([$exhausted, $room] as $b) {
+            $single = PurchaseRegistrationGate::forBuyer($b->fresh());
+            $this->assertSame($single['mode'], $byId[$b->id]['purchase_lock']['mode'], "바이어 {$b->name}: 모드 분기가 두 경로에서 갈렸다");
+            $this->assertSame($single['locked'], $byId[$b->id]['purchase_locked'], "바이어 {$b->name}: 판정이 두 경로에서 갈렸다");
+        }
     }
 
     /** 락 토글 OFF(시스템관리자) — API 도 함께 꺼진다. 화면에만 듣는 킬스위치면 의미가 없다. */
