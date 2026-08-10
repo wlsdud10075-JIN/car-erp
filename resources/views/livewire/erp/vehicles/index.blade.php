@@ -3782,7 +3782,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->purchaseGateApproved && \App\Models\Setting::lockEnabled('purchase_registration') && $this->shouldCheckPurchaseGate()) {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
-            if ($gauge && $gauge['ratio'] > \App\Models\Setting::lockThreshold('purchase_registration')) {
+
+            // 무담보 한도 (jin 2026-08-10) — 설정된 바이어는 **한도 소진**으로 판정한다.
+            //   기존 미수율 판정은 담보(선적 전 국내 차량)가 있어야 성립한다 — 다 선적되면 게이지가
+            //   null 이라 락이 통째로 사라진다. 무담보 한도는 정확히 그 구간을 막으라고 만든 값이라
+            //   여기서 분기하지 않으면 화면 숫자만 바뀌고 **락은 그대로**다(Buyer.php 주석의 경고 그대로).
+            $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
+            $blocked = $gauge && ($useUnsecured
+                ? $gauge['available_krw'] <= 0
+                : $gauge['ratio'] > \App\Models\Setting::lockThreshold('purchase_registration'));
+
+            if ($blocked) {
                 $this->purchaseGateInfo = [
                     'buyer' => $buyer->name,
                     'ratio' => round($gauge['ratio'] * 100, 1),
@@ -3794,6 +3804,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'deposit_pct' => $gauge['deposit_pct'],
                     'limit' => (int) ($gauge['total_krw'] * \App\Models\Setting::lockThreshold('purchase_registration')),
                     'total' => $gauge['total_krw'],
+                    // 무담보 한도 모드 — 모달이 다른 문구·숫자를 보여준다.
+                    'unsecured_mode' => $useUnsecured,
+                    'unsecured_limit' => $gauge['unsecured_limit_krw'],
+                    'base_limit' => $gauge['base_limit_krw'],
+                    'total_limit' => $gauge['limit_krw'],
+                    'used' => $gauge['used_krw'],
                 ];
                 $this->purchaseGateReason = '';
                 $this->showPurchaseGate = true;
@@ -8785,14 +8801,27 @@ function vehicleColumnsToggle() {
             {{-- 미수 현황 요약 (드로어/목록 게이지와 동일 수치) --}}
             <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
                 <div class="font-semibold text-red-800">{{ $pg['buyer'] ?? '' }}</div>
-                <div class="mt-1 flex items-center justify-between text-red-700">
-                    <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
-                    <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
-                </div>
-                {{-- 보증금 여력 (jin 2026-07-20) — 한도 대비 미수가 초과라 차단됨 --}}
-                <div class="mt-1.5 border-t border-red-200 pt-1.5 text-xs text-red-600">
-                    {{ __('vehicle.purchase_gate.deposit', ['pct' => $pg['deposit_pct'] ?? 50, 'limit' => number_format((int) ($pg['limit'] ?? 0)), 'total' => number_format((int) ($pg['total'] ?? 0))]) }}
-                </div>
+
+                @if($pg['unsecured_mode'] ?? false)
+                    {{-- 무담보 한도 모드 (jin 2026-08-10) — 미수율이 아니라 **한도 소진**으로 막힌 것이라
+                         숫자를 그대로 보여줘야 한다. 미수율만 보여주면 "미수 0인데 왜 막히지?"가 된다. --}}
+                    <div class="mt-1 font-bold text-red-700">{{ __('vehicle.purchase_gate.unsecured_exhausted') }}</div>
+                    <div class="mt-2 space-y-1 border-t border-red-200 pt-2 text-xs text-red-700">
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.base_limit', ['pct' => $pg['deposit_pct'] ?? 50]) }}</span><span>₩{{ number_format((int) ($pg['base_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.unsecured_limit') }}</span><span>₩{{ number_format((int) ($pg['unsecured_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between border-t border-red-200 pt-1 font-semibold"><span>{{ __('vehicle.purchase_gate.total_limit') }}</span><span>₩{{ number_format((int) ($pg['total_limit'] ?? 0)) }}</span></div>
+                        <div class="flex justify-between"><span>{{ __('vehicle.purchase_gate.used') }}</span><span>₩{{ number_format((int) ($pg['used'] ?? 0)) }}</span></div>
+                    </div>
+                @else
+                    <div class="mt-1 flex items-center justify-between text-red-700">
+                        <span>{{ __('vehicle.purchase_gate.unpaid', ['amount' => number_format((int) ($pg['unpaid'] ?? 0)), 'count' => $pg['count'] ?? 0]) }}</span>
+                        <span class="font-bold">{{ __('vehicle.purchase_gate.ratio', ['pct' => $pg['ratio'] ?? 0]) }}</span>
+                    </div>
+                    {{-- 보증금 여력 (jin 2026-07-20) — 한도 대비 미수가 초과라 차단됨 --}}
+                    <div class="mt-1.5 border-t border-red-200 pt-1.5 text-xs text-red-600">
+                        {{ __('vehicle.purchase_gate.deposit', ['pct' => $pg['deposit_pct'] ?? 50, 'limit' => number_format((int) ($pg['limit'] ?? 0)), 'total' => number_format((int) ($pg['total'] ?? 0))]) }}
+                    </div>
+                @endif
             </div>
 
             @if($canApprovePg)

@@ -639,6 +639,12 @@ return [
         'unpaid' => '미수 ₩:amount · :count대',
         'ratio' => '미수율 :pct%',
         'deposit' => '보증금 한도 ₩:limit (선적 전 총액 ₩:total 의 :pct%) 초과 — 미수가 한도를 넘어 등록 제한',
+        // 무담보 한도 모드 (jin 2026-08-10) — 미수율이 아니라 한도 소진으로 막힌 경우.
+        'unsecured_exhausted' => '무담보 한도까지 소진되어 매입할 수 없습니다',
+        'base_limit' => '기본 한도 (입금액 × :pct%)',
+        'unsecured_limit' => '무담보 한도',
+        'total_limit' => '총 한도',
+        'used' => '사용 (확정 매입 지급)',
         'reason' => '승인 사유',
         'reason_ph' => '예: 신용장(L/C) 확인 완료. 5/20 잔금 입금 예정 확인됨.',
         'need_manager' => '신규 등록을 진행하려면 관리자 승인이 필요합니다. 받을 돈 회수 후 다시 시도하세요.',
