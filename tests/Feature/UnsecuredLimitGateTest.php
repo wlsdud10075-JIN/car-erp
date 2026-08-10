@@ -17,7 +17,8 @@ use Tests\TestCase;
  *
  * 규칙 (jin 확정):
  *   - 묶이는 것은 **계약금뿐**이다. 매입 잔금·매도비에는 쓰지 않는다.
- *   - 보증금(입금액×비율)이 있으면 그게 먼저 커버하고, 못 덮는 몫만 무담보에서 빠진다.
+ *   - **보증금과는 독립**이다. 보증금이 남아 있어도 계약금은 무담보에서 빠진다
+ *     (보증금 초과분 기준으로 하면 차값 전체가 초과분에 들어가 500만짜리 한도가 한 번에 날아간다).
  *   - **선적 진입 조건(판매금 N% 입금)을 넘는 순간 그 차 몫이 풀린다** — 계속 묶여 있으면 안 되니까.
  *   - 무담보까지 0이면 신규 차량 등록이 막힌다. 미설정 바이어는 종전 미수율 판정 그대로.
  *
@@ -143,55 +144,52 @@ class UnsecuredLimitGateTest extends TestCase
         $this->assertSame(5_000_000, $g['unsecured_available_krw'], '무담보가 전액 복구돼야 한다');
     }
 
-    /** 보증금이 계약금을 다 덮으면 무담보는 손대지 않는다. */
-    public function test_deposit_covers_first(): void
+    /**
+     * 🚨 무담보는 **보증금과 독립**이다 — 보증금이 남아 있어도 계약금은 무담보에서 빠진다.
+     *
+     * 보증금 초과분을 기준으로 삼으면 **차값 전체가 초과분에 들어가** 500만짜리 한도가
+     * 한 번에 날아간다. 계약금은 운영 실측상 86%가 100만원 이하(78건 중 67건)라
+     * 규모가 근본적으로 다르다 — 섞으면 이 기능이 의미를 잃는다(jin 2026-08-10).
+     */
+    public function test_credit_is_independent_of_the_deposit(): void
     {
         $b = $this->buyer(5_000_000);
         $need = Setting::lockRequiredPaidPct('shipping_entry');
         $short = (int) (10_000_000 * ($need - 10) / 100);   // 선적 진입 미달 → 계약금 묶임
 
-        // 계약금만 있고 잔금은 없다 → 매입 지급 총액이 보증금 안에 들어간다.
+        // 보증금이 계약금보다 훨씬 크지만, 계약금은 그대로 무담보에서 빠진다.
         $this->vehicle($b, 10_000_000, $short, down: 1_000_000);
 
         $g = $b->receivableGauge();
 
-        $this->assertGreaterThan($g['used_krw'], $g['base_limit_krw'], '보증금이 지출보다 커야 하는 전제');
-        $this->assertSame(0, $g['unsecured_used_krw'], '보증금이 덮으면 무담보는 그대로');
+        $this->assertGreaterThan(1_000_000, $g['base_limit_krw'], '보증금이 계약금보다 큰 전제');
+        $this->assertSame(1_000_000, $g['unsecured_used_krw'], '보증금과 무관하게 계약금만큼 빠진다');
+        $this->assertSame(4_000_000, $g['unsecured_available_krw']);
     }
 
-    /**
-     * 🚨 보증금 소진은 **매입 지급 총액**으로 판정한다 — 계약금만 비교하면 안 된다.
-     *    실측 OSAKA: 보증금 5,473만인데 매입 지출 7,786만(계약금 3,358만 + 잔금).
-     *    계약금만 보증금과 비교하면 "아직 여유 있음"이 되지만 실제로는 2,313만 초과 상태다(jin 지적).
-     */
-    public function test_balance_payments_also_exhaust_the_deposit(): void
+    /** 매입 잔금은 아무리 커도 무담보를 건드리지 않는다. */
+    public function test_balance_payments_never_touch_the_credit(): void
     {
         $b = $this->buyer(5_000_000);
-        $need = Setting::lockRequiredPaidPct('shipping_entry');
-        $short = (int) (10_000_000 * ($need - 10) / 100);
-
-        // 보증금은 입금액의 일부. 잔금으로 크게 써서 보증금을 넘긴 뒤 계약금을 얹는다.
-        $this->vehicle($b, 10_000_000, $short, down: 2_000_000, balance: 15_000_000);
+        // 계약금 50만 + 매입 잔금 1,500만(차값). 무담보는 계약금만 본다.
+        $this->vehicle($b, 0, 0, down: 500_000, balance: 15_000_000);
 
         $g = $b->receivableGauge();
 
-        $this->assertGreaterThan($g['base_limit_krw'], $g['used_krw'], '지출이 보증금을 넘은 상태');
-        $this->assertSame(2_000_000, $g['unsecured_used_krw'],
-            '보증금이 잔금으로 소진됐으면 계약금은 무담보에서 나간다');
+        $this->assertSame(500_000, $g['unsecured_used_krw'], '잔금 1,500만은 무담보와 무관');
+        $this->assertSame(4_500_000, $g['unsecured_available_krw']);
     }
 
-    /** 초과분이 계약금보다 크더라도 무담보가 떠안는 건 **계약금까지**다(잔금 초과분은 아니다). */
-    public function test_credit_never_absorbs_more_than_the_down_payment(): void
+    /** 계약금이 한도를 넘어도 사용량은 한도까지만(음수 여력 없음). */
+    public function test_usage_is_capped_at_the_limit(): void
     {
         $b = $this->buyer(5_000_000);
-
-        // 보증금 0(판매 없음) + 계약금 100만 + 잔금 900만 → 초과분 1,000만이지만 계약금은 100만뿐.
-        $this->vehicle($b, 0, 0, down: 1_000_000, balance: 9_000_000);
+        $this->vehicle($b, 0, 0, down: 8_000_000);
 
         $g = $b->receivableGauge();
 
-        $this->assertSame(1_000_000, $g['unsecured_used_krw'],
-            '잔금 초과분까지 무담보가 떠안으면 안 된다');
+        $this->assertSame(5_000_000, $g['unsecured_used_krw']);
+        $this->assertSame(0, $g['unsecured_available_krw']);
     }
 
     /** 선적 후 미수는 한도 계산에 안 들어간다 — 표시만 된다. */
