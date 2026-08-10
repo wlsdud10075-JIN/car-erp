@@ -202,11 +202,18 @@ class Buyer extends Model
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
         $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
         $limitKrw = $baseLimitKrw + $unsecuredLimit;
-        // 무담보에 묶이는 것 = **아직 선적 진입을 못 한 차량들의 계약금** (jin 2026-08-10 확정).
-        //   용도가 "국내에 차가 없어 보증금을 못 쓰는 단골이 새 차 **계약금**을 걸 때"라
-        //   매입 잔금·매도비는 세지 않는다. 보증금이 있으면 그게 먼저 커버한다.
-        //   해제는 이산적이다 — 그 차가 선적 진입 조건(판매금 N% 입금)을 넘는 순간 그 차 몫이 풀린다.
-        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $lockedDownPaymentKrw - $baseLimitKrw));
+        // 무담보 사용량 (jin 2026-08-10 확정) — 두 조건을 **동시에** 만족하는 몫이다.
+        //   ① 보증금을 넘어선 지출일 것 — 보증금은 계약금·잔금·매도비 **전부**에 쓰이므로
+        //      소진 판정도 매입 지급 총액으로 한다.
+        //   ② 그 초과분 중 **계약금**일 것 — 무담보는 계약금에만 쓴다(매입 잔금엔 안 쓴다).
+        //   그래서 둘 중 작은 값이다.
+        //
+        //   ⚠️ 계약금만 보증금과 비교하면 안 된다 — 잔금으로 보증금을 이미 다 쓴 바이어가
+        //      "아직 여유 있음"으로 잡힌다(실측 OSAKA: 보증금 5,473만인데 매입 지출 7,786만.
+        //      계약금 3,358만만 보면 여유가 있어 보이지만 실제로는 2,313만 초과 상태다 — jin 지적).
+        //   ⚠️ 반대로 초과분만 보면 잔금 초과분까지 무담보가 떠안는다. 그래서 min 이다.
+        $depositExcessKrw = max(0, $purchasePaidKrw - $baseLimitKrw);
+        $unsecuredUsedKrw = min($unsecuredLimit, min($lockedDownPaymentKrw, $depositExcessKrw));
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
