@@ -3783,14 +3783,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             $buyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             $gauge = $buyer?->receivableGauge();
 
-            // 무담보 한도 (jin 2026-08-10) — 설정된 바이어는 **한도 소진**으로 판정한다.
-            //   기존 미수율 판정은 담보(선적 전 국내 차량)가 있어야 성립한다 — 다 선적되면 게이지가
-            //   null 이라 락이 통째로 사라진다. 무담보 한도는 정확히 그 구간을 막으라고 만든 값이라
-            //   여기서 분기하지 않으면 화면 숫자만 바뀌고 **락은 그대로**다(Buyer.php 주석의 경고 그대로).
+            // 무담보 한도 (jin 2026-08-10) — **추가 관문이 아니라 구제 수단**이다.
+            //   ⚠️ 초기 구현은 한도가 설정되면 판정을 통째로 한도 기반으로 바꿨는데, 그러면 담보 한도를
+            //      이미 넘긴 바이어는 **한도를 새로 줬는데 오히려 막히는** 모순이 생긴다
+            //      (실측 OSAKA MOTORS: 미수율 19.8% 로 기존 판정은 통과인데 한도 판정에선 차단).
+            //   그래서 순서를 뒤집었다 — 기존 판정으로 통과하면 무담보분은 **손대지 않고 그냥 통과**하고,
+            //   기존 판정에 걸렸을 때만 무담보 잔액으로 구제한다. 이것이 "정말 마지막에 쓴다"의 뜻이다.
+            $threshold = \App\Models\Setting::lockThreshold('purchase_registration');
+            $legacyBlocked = $gauge && $gauge['ratio'] > $threshold;
             $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
-            $blocked = $gauge && ($useUnsecured
-                ? $gauge['available_krw'] <= 0
-                : $gauge['ratio'] > \App\Models\Setting::lockThreshold('purchase_registration'));
+
+            if ($useUnsecured && $gauge) {
+                // 담보(선적 전 국내 차량)가 아예 없으면 기존 판정이 성립하지 않는다(ratio=0 → 항상 통과).
+                //   바로 그 구간을 막으라고 만든 값이므로 이때는 무담보 잔액만으로 판정한다.
+                $blocked = $gauge['total_krw'] > 0
+                    ? ($legacyBlocked && $gauge['unsecured_available_krw'] <= 0)
+                    : ($gauge['unsecured_available_krw'] <= 0);
+            } else {
+                $blocked = $legacyBlocked;
+            }
 
             if ($blocked) {
                 $this->purchaseGateInfo = [
@@ -3807,6 +3818,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     // 무담보 한도 모드 — 모달이 다른 문구·숫자를 보여준다.
                     'unsecured_mode' => $useUnsecured,
                     'unsecured_limit' => $gauge['unsecured_limit_krw'],
+                    'unsecured_used' => $gauge['unsecured_used_krw'],
                     'base_limit' => $gauge['base_limit_krw'],
                     'total_limit' => $gauge['limit_krw'],
                     'used' => $gauge['used_krw'],

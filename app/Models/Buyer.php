@@ -187,11 +187,16 @@ class Buyer extends Model
         //       판매 잔금이 더 들어오면 한도가 늘어 여력이 회복된다.
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
         $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
-        // 무담보 한도를 더한 것이 실제로 쓸 수 있는 총액이다(jin 2026-08-10).
-        //   기본 한도는 담보(선적 전 국내 차량의 입금액)에서 나오고, 무담보 한도는 신용에서 나온다.
-        //   "정말 마지막에 쓴다"는 순서는 합산으로 자동 성립한다 — 기본이 남아 있으면 그게 먼저 소진되고,
-        //   기본이 0이 돼야 무담보분이 줄어든다. 판매대금이 들어오면 기본이 늘어 무담보분이 되살아난다.
         $limitKrw = $baseLimitKrw + $unsecuredLimit;
+        // 무담보분은 **기존 판정(미수율)에 걸렸을 때만** 쓰인다 — 그게 "정말 마지막에 쓴다"의 뜻이다.
+        //   기존 판정으로 통과하는 동안에는 한 푼도 줄지 않는다(= 설정한 금액을 그대로 쓸 수 있다).
+        //   ⚠️ 이 조건을 빼면 한도를 주기 **전에** 이미 나간 매입 지급까지 소급해서 깎여
+        //      "설정하자마자 남은 금액 0"이 된다(실측 OSAKA MOTORS: 담보 5,473만 / 지급 7,786만 →
+        //      미수율 19.8% 로 기존 판정은 멀쩡히 통과하는데 화면만 0원이었다 — jin 제보).
+        $legacyBlocked = $totalKrw > 0 && ($unpaidKrw / $totalKrw) > $depositThreshold;
+        $unsecuredUsedKrw = ($legacyBlocked || $totalKrw <= 0)
+            ? min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw))
+            : 0;
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
@@ -202,8 +207,10 @@ class Buyer extends Model
             'ratio' => $totalKrw > 0 ? max(0, min(1, $unpaidKrw / $totalKrw)) : 0.0,   // 게이지 채움·게이트 비교 (미수/진행중총) — 변경 금지
             'vehicle_count' => $count,              // 진행중·선적 전 건수
             'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
-            'base_limit_krw' => $baseLimitKrw,      // 담보분 = 입금액 × 50%
+            'base_limit_krw' => $baseLimitKrw,      // 담보분 = 입금액 × 설정비율
             'unsecured_limit_krw' => $unsecuredLimit,   // 무담보분 = 바이어별 설정값 (0 = 미설정)
+            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 담보 한도를 넘어선 매입 지급
+            'unsecured_available_krw' => max(0, $unsecuredLimit - $unsecuredUsedKrw),   // 무담보 잔액 — 락 판정
             'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 담보분 + 무담보분
             'used_krw' => $purchasePaidKrw,         // 이미 쓴 금액 = 매입 지급(계약금·잔금 확정분)
             'available_krw' => max(0, $limitKrw - $purchasePaidKrw),   // 남은 여력 = 이만큼 더 매입 가능

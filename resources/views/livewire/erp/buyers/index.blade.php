@@ -982,37 +982,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                            class="input-base" placeholder="{{ __('buyer.field.unsecured_limit_ph') }}" />
                     <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.unsecured_limit_hint') }}</p>
 
-                    @if($editingId && $ug)
-                    {{-- 지금 이 바이어의 한도 현황 — 매입 게이트가 보는 것과 같은 수치(단일 출처). --}}
-                    <div class="mt-3 space-y-1 border-t border-indigo-200 pt-2 text-xs text-gray-700">
-                        <div class="flex justify-between">
-                            <span>{{ __('buyer.field.base_limit', ['pct' => $ug['deposit_pct']]) }}</span>
-                            <span>₩{{ number_format($ug['base_limit_krw']) }}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>{{ __('buyer.field.unsecured_limit') }}</span>
-                            <span>₩{{ number_format($ug['unsecured_limit_krw']) }}</span>
-                        </div>
-                        <div class="flex justify-between border-t border-indigo-200 pt-1 font-semibold">
-                            <span>{{ __('buyer.field.total_limit') }}</span>
-                            <span>₩{{ number_format($ug['limit_krw']) }}</span>
-                        </div>
-                        <div class="flex justify-between">
-                            <span>{{ __('buyer.field.limit_used') }}</span>
-                            <span>₩{{ number_format($ug['used_krw']) }}</span>
-                        </div>
-                        <div class="flex justify-between font-semibold {{ $ug['available_krw'] > 0 ? 'text-emerald-700' : 'text-red-600' }}">
-                            <span>{{ __('buyer.field.limit_available') }}</span>
-                            <span>₩{{ number_format($ug['available_krw']) }}</span>
-                        </div>
-                        @if(($ug['shipped_unpaid_krw'] ?? 0) > 0)
-                        {{-- 선적 후 미수는 한도 계산에 **안 들어간다**(jin 2026-08-10 — 이번 범위 밖).
-                             한도를 얼마로 줄지 판단할 때 보라고 표시만 한다. --}}
-                        <div class="mt-1.5 border-t border-indigo-200 pt-1.5 text-[11px] text-amber-700">
-                            {{ __('buyer.field.shipped_unpaid_note', ['amount' => number_format($ug['shipped_unpaid_krw'])]) }}
-                        </div>
-                        @endif
+                    @if($editingId && $ug && ($ug['unsecured_limit_krw'] ?? 0) > 0)
+                    {{-- 무담보분 잔액만 보여준다 (jin 2026-08-10) — 담보 한도·총액·전체 사용액까지 같이 늘어놓으니
+                         복잡하고, 무엇보다 담보 한도를 이미 넘긴 바이어는 「남은 여력 0」으로 보여
+                         "한도를 줬는데 못 쓴다"는 오해를 부른다. 여기 숫자는 무담보분만이다. --}}
+                    <div class="mt-3 flex items-center justify-between border-t border-indigo-200 pt-2 text-sm">
+                        <span class="text-gray-600">{{ __('buyer.field.unsecured_available') }}</span>
+                        <span class="font-bold {{ $ug['unsecured_available_krw'] > 0 ? 'text-emerald-700' : 'text-red-600' }}">
+                            ₩{{ number_format($ug['unsecured_available_krw']) }}
+                            @if($ug['unsecured_used_krw'] > 0)
+                                <span class="ml-1 text-[11px] font-normal text-gray-500">({{ __('buyer.field.unsecured_used', ['amount' => number_format($ug['unsecured_used_krw'])]) }})</span>
+                            @endif
+                        </span>
                     </div>
+                    @if($ug['unsecured_used_krw'] <= 0)
+                    <p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.unsecured_untouched') }}</p>
+                    @endif
+                    @if(($ug['shipped_unpaid_krw'] ?? 0) > 0)
+                    {{-- 선적 후 미수는 한도 계산에 **안 들어간다**(jin 2026-08-10 — 이번 범위 밖).
+                         한도를 얼마로 줄지 판단할 때 보라고 표시만 한다. --}}
+                    <p class="mt-1.5 text-[11px] text-amber-700">
+                        {{ __('buyer.field.shipped_unpaid_note', ['amount' => number_format($ug['shipped_unpaid_krw'])]) }}
+                    </p>
+                    @endif
                     @endif
                 </div>
                 @endif
