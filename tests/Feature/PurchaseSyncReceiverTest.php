@@ -356,6 +356,57 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame(0, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
     }
 
+    /**
+     * 🚨 2026-08-10 운영 사고 — 복사가 실패했는데 **DB 사진 행만 15건** 쌓였다.
+     *
+     * 디스크가 `'throw' => false` 라 S3 실패는 예외가 아니라 `false` 로 온다. 옛 코드는 그 반환값을
+     * 버리고 `VehiclePhoto` 를 만들어서, 화면엔 사진이 있는데 파일은 없는 상태가 조용히 남았다.
+     * 게다가 dedup 가드가 재전송을 걸러서 **영원히 자가복구되지 않았다**.
+     *
+     * ⚠️ `Storage::fake()` 는 로컬 드라이버라 copy 가 늘 성공한다 — 그래서 기존 테스트로는
+     *    원리상 못 잡았다. 여기서는 copy 가 false 를 리턴하도록 강제한다.
+     */
+    public function test_attachment_row_is_not_created_when_copy_fails(): void
+    {
+        $name = config('filesystems.vehicle_docs_disk');
+        $real = Storage::fake($name);
+        $real->put('purchase-board/x/fail.jpg', 'BYTES');
+
+        // copy 만 실패시키고 나머지 동작은 그대로 둔다.
+        $mock = \Mockery::mock($real)->makePartial();
+        $mock->shouldReceive('copy')->andReturn(false);
+        Storage::set($name, $mock);
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '77저7777',
+            'attachments' => [['s3_path' => 'purchase-board/x/fail.jpg', 'sort' => 1]],
+        ]));
+
+        $res->assertStatus(201);
+        $vid = $res->json('vehicle_id');
+
+        $this->assertSame(0, VehiclePhoto::where('vehicle_id', $vid)->count(),
+            '복사가 실패하면 사진 행을 만들면 안 된다 — 파일 없는 유령 행이 된다');
+        // board 는 응답 코드만 보므로, 실패 건수를 바디에 실어야 알 수 있다.
+        $this->assertSame(0, $res->json('attachments_added'));
+        $this->assertSame(1, $res->json('attachments_failed'));
+    }
+
+    /** 정상 경로에서도 첨부 집계가 응답에 실린다(board 가 대조할 수 있게). */
+    public function test_response_reports_attachment_counts(): void
+    {
+        Storage::fake(config('filesystems.vehicle_docs_disk'))->put('purchase-board/x/ok.jpg', 'A');
+
+        $res = $this->postSigned($this->validPayload([
+            'contract_version' => 2, 'vehicle_number' => '77저1234',
+            'attachments' => [['s3_path' => 'purchase-board/x/ok.jpg', 'sort' => 1]],
+        ]));
+
+        $res->assertStatus(201);
+        $this->assertSame(1, $res->json('attachments_added'));
+        $this->assertSame(0, $res->json('attachments_failed'));
+    }
+
     public function test_attachment_resend_is_deduped(): void
     {
         Storage::fake(config('filesystems.vehicle_docs_disk'))->put('purchase-board/x/a.jpg', 'A');

@@ -78,6 +78,20 @@ return [
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
+            /*
+             * 🚨 copy()/move() 가 통째로 실패하던 원인 (2026-08-10 실측).
+             *
+             * Flysystem 의 S3 copy 는 기본적으로 **원본의 visibility 를 먼저 조회**한다
+             * (`retain_visibility` 기본 true → `GetObjectAcl`). 그런데 우리 버킷은 ACL 이 비활성이라
+             * 그 조회가 항상 실패하고, 그 예외가 `UnableToCopyFile` 로 바뀌어 **복사가 시작도 못 한다**.
+             * 위 `'throw' => false` 와 겹쳐 예외 없이 `false` 만 리턴돼 아무도 몰랐다.
+             *   실측: 운영 heymanerp 에서 `getVisibility()` 가 원본·기존 객체 **양쪽 모두** 실패.
+             *   피해: 연동 B 첨부(board→ERP 사진)가 DB 행만 15건 생기고 S3 객체는 0건.
+             *
+             * Laravel 은 Cloudflare R2 일 때만 이 값을 자동으로 false 로 내린다(FilesystemManager) —
+             * ACL 비활성 AWS 버킷은 직접 꺼야 한다. 끄면 ACL 을 아예 안 건드리고 복사만 한다.
+             */
+            'retain_visibility' => false,
         ],
 
         // 로컬 전용 — 연동 B 첨부 소스로 board 앱 폴더를 읽기 위한 브리지.

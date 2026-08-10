@@ -37,6 +37,15 @@ use Illuminate\Support\Facades\Validator;
 class PurchaseSyncController extends Controller
 {
     /**
+     * 직전 syncAttachments() 에서 **붙이지 못한** 첨부 수.
+     *
+     * board 는 응답 코드(200/201)만 보고 성공으로 기록하므로, 첨부가 통째로 실패해도
+     * 양쪽 다 모르는 상태가 된다(2026-08-10 사고 — 15건이 그렇게 쌓였다).
+     * 그래서 응답 바디에 실어 보낸다.
+     */
+    private int $attachmentsFailed = 0;
+
+    /**
      * 지원 계약 버전. 미지원 → 422.
      * v2 = attachments[] 추가(전방호환, v1 도 계속 수용).
      * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee·
@@ -115,9 +124,15 @@ class PurchaseSyncController extends Controller
                 'vehicle_id' => $existing->id,
                 'vehicle_number' => $data['vehicle_number'],
                 'attachments_added' => $synced,
+                'attachments_failed' => $this->attachmentsFailed,
             ]);
 
-            return response()->json(['vehicle_id' => $existing->id], 200);
+            return response()->json([
+                'vehicle_id' => $existing->id,
+                // board 가 첨부 실패를 알 수 있는 유일한 통로 — 200 만 보고 성공으로 기록하던 것을 막는다.
+                'attachments_added' => $synced,
+                'attachments_failed' => $this->attachmentsFailed,
+            ], 200);
         }
 
         // ── 영업 매칭 ──────────────────────────────────────────────────
@@ -243,9 +258,14 @@ class PurchaseSyncController extends Controller
             'nice_filled' => $niceFilled,
             'vin' => $vehicle->nice_reg_vin,
             'attachments_added' => $attachmentsAdded,
+            'attachments_failed' => $this->attachmentsFailed,
         ]);
 
-        return response()->json(['vehicle_id' => $vehicle->id], 201);
+        return response()->json([
+            'vehicle_id' => $vehicle->id,
+            'attachments_added' => $attachmentsAdded,
+            'attachments_failed' => $this->attachmentsFailed,
+        ], 201);
     }
 
     /**
@@ -277,6 +297,7 @@ class PurchaseSyncController extends Controller
         $count = VehiclePhoto::where('vehicle_id', $vehicle->id)->count();
         $nextOrder = (int) VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
         $created = 0;
+        $failed = 0;
 
         foreach ($attachments as $att) {
             if ($count + $created >= 10) {
@@ -298,17 +319,33 @@ class PurchaseSyncController extends Controller
                 if (! $targetDisk->exists($target)) {
                     if (! $sourceDisk->exists($src)) {
                         Log::warning('[purchase-sync] 첨부 원본 없음 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src]);
+                        $failed++;
 
                         continue;
                     }
-                    if ($sameDisk) {
-                        $targetDisk->copy($src, $target);                          // 운영: 같은 디스크 서버사이드 복사
-                    } else {
-                        $targetDisk->writeStream($target, $sourceDisk->readStream($src));   // 로컬: 교차 디스크 스트림
+                    // 🚨 반환값을 반드시 본다 (2026-08-10 사고).
+                    //   디스크가 `'throw' => false` 라 실패해도 **예외가 아니라 false** 가 온다.
+                    //   예전엔 이 값을 버리고 아래 VehiclePhoto 를 만들어서, S3 엔 파일이 없고 DB 엔
+                    //   사진 행만 있는 상태가 조용히 쌓였다(운영 15건). try/catch 는 방어가 안 된다.
+                    $ok = $sameDisk
+                        ? $targetDisk->copy($src, $target)                                  // 운영: 같은 디스크 서버사이드 복사
+                        : $targetDisk->writeStream($target, $sourceDisk->readStream($src)); // 로컬: 교차 디스크 스트림
+
+                    // 복사가 true 를 리턴해도 실제로 올라갔는지 한 번 더 확인한다 —
+                    //   "행은 있는데 파일은 없는" 상태를 만드는 경로를 완전히 닫는다.
+                    if (! $ok || ! $targetDisk->exists($target)) {
+                        Log::warning('[purchase-sync] 첨부 복사 실패 — skip', [
+                            'vehicle_id' => $vehicle->id, 's3_path' => $src, 'target' => $target,
+                            'returned' => $ok, 'disk' => $targetName,
+                        ]);
+                        $failed++;
+
+                        continue;
                     }
                 }
             } catch (\Throwable $e) {
                 Log::warning('[purchase-sync] 첨부 복사 실패 — skip', ['vehicle_id' => $vehicle->id, 's3_path' => $src, 'error' => $e->getMessage()]);
+                $failed++;
 
                 continue;
             }
@@ -320,6 +357,10 @@ class PurchaseSyncController extends Controller
             ]);
             $created++;
         }
+
+        // 실패 건수를 함께 돌려준다 — board 는 200/201 만 보고 성공으로 기록하므로,
+        //   이 값을 응답에 실어주지 않으면 첨부가 통째로 실패해도 양쪽 다 모른다(2026-08-10 사고).
+        $this->attachmentsFailed = $failed;
 
         return $created;
     }
