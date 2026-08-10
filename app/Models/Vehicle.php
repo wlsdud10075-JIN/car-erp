@@ -1948,6 +1948,31 @@ class Vehicle extends Model
     }
 
     /**
+     * board 포털 차량 행의 공통 메타 (인계 2026-08-10) — **차량번호가 보이는 곳이면 같이 보인다**.
+     *
+     * 🔑 board 는 **정확히 이 세 키**를 읽는다(`vin`·`brand`·`model_type`). 이름을 바꾸면 board 는
+     *    조용히 아무것도 안 그린다 — 그래서 emit 지점 6곳이 각자 배열을 짜지 않고 여기를 부른다.
+     *    (같은 배열이 여러 곳에 복제되면 한 곳만 고쳤을 때 탭마다 다르게 보인다.)
+     *
+     * ⚠️ 값이 없으면 `null` — board 는 없는 값에 대시조차 안 그린다(각 필드 독립 degrade).
+     *    그래서 car-erp 배포 전에 board 를 올려도 화면이 안 틀어진다.
+     *
+     * 🔒 `nice_reg_vin` 노출은 §3 PII 화이트리스트 판단을 거쳤다(2026-08-10):
+     *    VIN 은 **차량 식별자이지 소유자 식별정보가 아니다**(⛔ 목록 = RRN·소유자명/주소·계좌·마진).
+     *    암호화 대상도 아니고, 이 엔드포인트들은 전부 **영업 본인 차량 스코프**라 그 영업이 ERP
+     *    기본정보 탭·선적서류에서 이미 보는 값이다. 노출면이 늘지 않는다.
+     *    🚫 여기에 소유자·계좌 필드를 얹지 말 것 — 그 순간 판단 근거가 통째로 무너진다.
+     */
+    public static function portalMeta(?self $vehicle): array
+    {
+        return [
+            'vin' => $vehicle?->nice_reg_vin,
+            'brand' => $vehicle?->brand,
+            'model_type' => $vehicle?->model_type,
+        ];
+    }
+
+    /**
      * 위 accessor 와 **같은 판정을 SQL 로**. 둘이 갈리면 화면 카운트와 목록이 어긋난다
      * (가드 = `SailingStatusTest::test_scope_and_accessor_agree`).
      */

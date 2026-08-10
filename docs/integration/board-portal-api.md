@@ -34,7 +34,8 @@
 ## 3. PII·응답 화이트리스트 (절대 노출 금지)
 - ⛔ `nice_reg_owner_rrn`(RRN)·`nice_reg_owner_name/addr`·`purchase_seller_account`(계좌)·`purchase_seller_holder` — **어떤 응답에도 미포함**.
 - ⛔ **마진 raw**(`sales_margin`·`vat_margin`·`total_margin`) — **기본 미포함**. (기능설정 `board_show_margin` 토글 = v2, default off.)
-- ✅ 허용: `vehicle_number`·금액류(원화/외화)·`currency`·`exchange_rate`·바이어명·진행상태·일자·정산 status·`actual_payout`(실지급액).
+- ✅ 허용: `vehicle_number`·금액류(원화/외화)·`currency`·`exchange_rate`·바이어명·진행상태·일자·정산 status·`actual_payout`(실지급액)
+  ·**`vin`(`nice_reg_vin`)·`brand`·`model_type`** (2026-08-10 판단 — §4-2).
 - 에러 응답 = 표준 JSON `{ "error": "...", "message": "..." }`. 스택·DB구조·Laravel 내부 노출 금지.
 
 ---
@@ -113,6 +114,42 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   드로어가 느리다는 제보가 오면 **여기부터 볼 것**(같은 병으로 `purchases()` → `inventory()` 를
   2026-08-09 에 갈아엎었다). 좁힐 땐 API 경로만 — 화면(`buyers/index`)은 `completed_krw` 를 쓴다.
 - 가드 = `tests/Feature/BoardPurchaseLockApiTest`(API 판정 ≡ 저장 게이트, 모드 분기, 토글 OFF, 판정식 복제 정적 검사).
+
+### 4-2. 차량 메타 — 차대번호·브랜드/차종 (board 인계 2026-08-10)
+
+> 요청(jin) = **"차량번호가 보이는 곳이면 차대번호와 브랜드/차종도 같이"**. board 는 표시만 한다 —
+> 응답에 없으면 아무것도 못 그린다. 인계 = board `meetings/handoff-carerp-portal-vehicle-meta.md`.
+
+차량 행을 내보내는 **모든** 응답에 아래 3키가 함께 나간다(기존 필드 불변 — 전방호환).
+
+```json
+"vin": "KMHXX00000000001",   // ERP nice_reg_vin
+"brand": "현대",
+"model_type": "그랜저 IG"
+```
+
+**적용 지점 (컨트롤러 2개 — ⚠️ 하나만 고치면 절반만 된다)**
+
+| 컨트롤러 | 응답 | board 탭 |
+|---|---|---|
+| `InternalPortalController` | `receivables` | 미수금 |
+| `InternalPortalController` | `sales` | 판매내역 |
+| `InternalPortalController` | `inventory` (4분류 전부) | 재고 |
+| `ShippingRequestController` | `shippable` | 선적요청(미배정 차) |
+| `ShippingRequestController` | `bundles` → **`vehicles[]`** | 선적요청(묶음 pill·변경요청 행) |
+
+- 🚫 **`settlements` 는 제외** — board 화면에 차량 행이 없고(바이어별 집계만 렌더) 인계문서도
+  "넣어도 board 는 안 쓴다"고 명시했다. 안 쓰는 필드를 노출면에 올리지 않는다.
+- **단일 출처 = `Vehicle::portalMeta(?Vehicle)`.** 각 지점이 배열을 손으로 짜지 않는다 —
+  키가 갈리면 board 는 **에러도 없이 그냥 안 그린다**(없는 필드 = degrade). null-safe 라
+  `bundles` 처럼 `$r->vehicle` 이 null 일 수 있는 자리에서도 그대로 쓴다.
+- 값이 없으면 **`null`**(빈 문자열 아님). 각 필드 독립 degrade라 **car-erp 배포 전에 board 를 올려도
+  화면이 안 틀어진다** — 그래도 올릴 이유는 없다(보일 게 없다). 순서 = **car-erp → board**.
+- 🔒 **VIN 노출 판단(2026-08-10)** — 허용. VIN 은 **차량 식별자이지 소유자 식별정보가 아니고**
+  (⛔ 목록 = RRN·소유자명/주소·계좌·마진) 암호화 대상도 아니다. 이 엔드포인트들은 전부 **영업 본인
+  차량 스코프**라, 그 영업이 ERP 기본정보 탭·선적서류(이미 다운로드 가능)에서 보는 값과 같다 —
+  노출면이 늘지 않는다. 🚫 `portalMeta` 에 소유자·계좌 필드를 얹지 말 것(그 순간 이 근거가 무너진다).
+- 가드 = `tests/Feature/BoardPortalVehicleMetaTest`(5개 응답 전수 · null degrade · 키 손코딩 정적 검사 · PII 누출).
 
 ### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)
 
