@@ -323,22 +323,62 @@ class InternalPortalController extends Controller
                 'purchase_locked' => (bool) ($v['locked'] ?? false),
                 // 사람에게 "왜 막혔는지"를 보여주기 위한 근거. 락이 아니어도 함께 내려간다
                 // (남은 여력을 보고 판단하는 게 예방의 핵심이라 막힌 뒤에만 주면 늦다).
+                //
+                // 🚨 `basis`(락을 정하는 값)와 `reference`(참고 숫자)를 **일부러 분리**했다.
+                //    ratio 모드에서 `available_krw`(보증금 여력)는 락 판정과 **무관**해서 서로 모순돼
+                //    보인다 — "여력 0원인데 등록됨" / "락인데 여력 1천만" 이 둘 다 실제로 생긴다
+                //    (게이트는 미수율을 보고, 여력은 입금액×비율−매입지급이라 분모·분자가 다르다).
+                //    한 덩어리로 내려주면 board 가 반드시 나란히 렌더하고, 영업은 그걸 보고 오판한다.
+                //    board 는 **`basis` 만 근거로 표시**할 것.
                 'purchase_lock' => [
                     'locked' => (bool) ($v['locked'] ?? false),
                     'mode' => (string) ($v['mode'] ?? PurchaseRegistrationGate::MODE_OFF),
-                    'threshold_pct' => (int) round(((float) ($v['threshold'] ?? 0)) * 100),
-                    'unpaid_ratio_pct' => $g ? round($g['ratio'] * 100, 1) : null,
-                    'unpaid_krw' => $g['unpaid_krw'] ?? null,
-                    'vehicle_count' => $g['vehicle_count'] ?? null,
-                    // 남은 매입 여력 = 보증금 + 무담보 − 이미 나간 매입 지급.
-                    'available_krw' => $g['available_krw'] ?? null,
-                    'unsecured_limit_krw' => $g['unsecured_limit_krw'] ?? null,
-                    'unsecured_available_krw' => $g['unsecured_available_krw'] ?? null,
+                    'basis' => self::purchaseLockBasis($v, $g),
+                    'reference' => [
+                        'unpaid_krw' => $g['unpaid_krw'] ?? null,
+                        'vehicle_count' => $g['vehicle_count'] ?? null,   // 선적 전 진행중 대수
+                        'unpaid_ratio_pct' => $g ? round($g['ratio'] * 100, 1) : null,
+                        // 보증금 여력 = 입금액×비율 + 무담보 − 매입 지급. **락 판정 미사용**(표시 전용).
+                        'available_krw' => $g['available_krw'] ?? null,
+                        'unsecured_limit_krw' => $g['unsecured_limit_krw'] ?? null,
+                        'unsecured_available_krw' => $g['unsecured_available_krw'] ?? null,
+                    ],
                 ],
             ];
         })->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);
+    }
+
+    /**
+     * 매입 락을 **실제로 결정하는 값 하나**만 골라 낸다 — board 표시의 단일 근거.
+     *
+     * `kind` 로 단위가 갈린다:
+     *   - `ratio`         : current/limit = 미수율(%)  — 현재가 한계를 **초과**하면 락
+     *   - `unsecured_krw` : current/limit = 원(무담보 잔액/한도) — 잔액이 **0 이하**면 락
+     *   - `null`          : 판정 근거 없음(신규 바이어) 또는 락 토글 OFF
+     */
+    private static function purchaseLockBasis(?array $verdict, ?array $gauge): array
+    {
+        $mode = $verdict['mode'] ?? PurchaseRegistrationGate::MODE_OFF;
+
+        if ($gauge === null || $mode === PurchaseRegistrationGate::MODE_OFF) {
+            return ['kind' => null, 'current' => null, 'limit' => null];
+        }
+
+        if ($mode === PurchaseRegistrationGate::MODE_UNSECURED) {
+            return [
+                'kind' => 'unsecured_krw',
+                'current' => (int) $gauge['unsecured_available_krw'],   // 남은 무담보
+                'limit' => (int) $gauge['unsecured_limit_krw'],
+            ];
+        }
+
+        return [
+            'kind' => 'ratio',
+            'current' => round($gauge['ratio'] * 100, 1),                        // 현재 미수율(%)
+            'limit' => round(((float) ($verdict['threshold'] ?? 0)) * 100, 1),   // 임계(%)
+        ];
     }
 
     /**
