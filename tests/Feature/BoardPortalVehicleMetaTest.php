@@ -150,21 +150,90 @@ class BoardPortalVehicleMetaTest extends TestCase
     }
 
     /**
-     * 🧹 세 키를 각 emit 지점이 손으로 짜지 않고 `Vehicle::portalMeta()` 를 부르는지 정적 검사.
+     * 🧹 키를 손으로 짜지 않았는지 — 복제되면 탭마다 이름이 갈리고, 갈린 탭은 **에러 없이 안 그려진다**.
      *
-     * 복제되면 탭마다 이름이 갈리고, 갈린 탭은 **에러 없이 그냥 안 그려진다**.
-     * 그래서 기능 테스트만으로는 "새로 추가된 emit 지점"을 영원히 못 잡는다.
+     * ⚠️ 이 검사는 **복제만** 잡는다. 누락은 아래 `test_every_vehicle_row_emitter_is_declared` 가 잡는다.
      */
     public function test_meta_keys_are_not_hand_written_in_controllers(): void
     {
-        $dir = base_path('app/Http/Controllers/Api/Internal');
-        foreach (glob($dir.'/*.php') as $path) {
-            $src = (string) file_get_contents($path);
+        foreach (glob(base_path('app/Http/Controllers/Api/Internal').'/*.php') as $path) {
             $this->assertStringNotContainsString(
                 "'model_type' =>",
-                $src,
+                (string) file_get_contents($path),
                 basename($path).' — 차량 메타를 손으로 짜지 말고 Vehicle::portalMeta() 를 쓸 것 '
                 .'(키가 갈리면 board 는 에러 없이 안 그린다).'
+            );
+        }
+    }
+
+    /**
+     * 🔒 **누락 방지** — 차량 행을 내보내는 메서드가 새로 생기면 여기서 red 가 난다.
+     *
+     * 인계문서의 경고("컨트롤러가 2개다 — 하나만 고치면 절반만 된다")가 겨냥한 실패는
+     * **빠뜨림**이지 오타가 아니다. 그런데 빠뜨린 응답은 board 에서 그냥 안 그려질 뿐이라
+     * 기능 테스트로는 영원히 안 잡힌다. 그래서 `'vehicle_number' =>` 를 쓰는 메서드를 전부 세고
+     * **메타를 붙일지 말지 사람이 선언한 목록**과 대조한다. 새 엔드포인트는 선언을 강제받는다.
+     */
+    public function test_every_vehicle_row_emitter_is_declared(): void
+    {
+        // 메서드 => 차량 메타를 붙이는가
+        $expected = [
+            'InternalPortalController.php' => [
+                'receivables' => true,
+                'sales' => true,
+                'inventory' => true,
+                // board 「매입내역」은 2026-08-09 에 inventory 로 대체됐다(전량조회라 단조증가).
+                'purchases' => false,
+                // board 화면에 차량 행이 없다(바이어별 집계만 렌더) — 인계문서 명시.
+                'settlements' => false,
+            ],
+            'ShippingRequestController.php' => [
+                'shippable' => true,
+                'bundles' => true,
+                // 아래 3개는 **ERP 내부 알람 메시지**(TaskAlarm::sanitizeMeta)지 board 응답이 아니다.
+                'fireShippingAlarm' => false,
+                'fireBlAlarm' => false,
+                'fireChangeAlarm' => false,
+            ],
+        ];
+
+        foreach ($expected as $file => $methods) {
+            $src = (string) file_get_contents(base_path('app/Http/Controllers/Api/Internal/'.$file));
+            $chunks = preg_split('/(?=\n    (?:public|private|protected) (?:static )?function )/', $src);
+
+            $seen = [];
+            foreach ($chunks as $chunk) {
+                if (! str_contains($chunk, "'vehicle_number' =>")) {
+                    continue;
+                }
+                if (! preg_match('/function (\w+)\s*\(/', $chunk, $m)) {
+                    continue;
+                }
+                $method = $m[1];
+                $seen[] = $method;
+
+                $this->assertArrayHasKey(
+                    $method,
+                    $methods,
+                    "{$file}::{$method}() 가 차량 행을 내보내는데 선언이 없다. "
+                    .'board 에 차대번호·브랜드/차종을 실을지 정하고 이 목록에 추가할 것 '
+                    .'(빠뜨리면 그 탭만 조용히 안 그려진다).'
+                );
+
+                $this->assertSame(
+                    $methods[$method],
+                    str_contains($chunk, 'portalMeta('),
+                    "{$file}::{$method}() 의 Vehicle::portalMeta() 사용이 선언과 다르다."
+                );
+            }
+
+            // 순서는 계약이 아니다 — 집합만 같으면 된다.
+            $declared = array_keys($methods);
+            sort($declared);
+            sort($seen);
+            $this->assertSame(
+                $declared, $seen,
+                "{$file}: 선언된 메서드와 실제 차량 행 emit 지점이 다르다(이름 변경·삭제 확인)."
             );
         }
     }
