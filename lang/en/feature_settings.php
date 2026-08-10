@@ -5,6 +5,8 @@ return [
     'title' => 'Feature Settings',
     'subtitle' => 'System admin (super) only — global settings',
     'saved' => 'Saved — refresh to see it in the sidebar.',
+    'unsecured_limit_label' => 'Unsecured credit',
+    'unsecured_limit_sub' => 'Lets long-standing buyers place deposits without collateral. When off, per-buyer unsecured credit is ignored and only the unpaid-ratio gate applies.',
     'stamp_upload_failed' => 'Stamp upload failed. The existing stamp is unchanged — please try again.',
     'locale_enabled_flash' => 'English has been enabled. Use the 한국어 / English buttons in the top bar to switch your own screen.',
     'locale_disabled_flash' => 'English has been disabled.',

@@ -240,7 +240,7 @@ class Buyer extends Model
         return static::computeReceivableGauge(
             $this->vehicles()->with('purchaseBalancePayments')->get(),
             null,
-            (int) ($this->unsecured_limit_krw ?? 0),
+            $this->effectiveUnsecuredLimit(),   // 기능 토글 반영 — 화면과 게이트가 같은 값을 본다
         );
     }
 
@@ -250,19 +250,32 @@ class Buyer extends Model
      * 설정됨  → 한도 기반 게이트(여력 소진 시 차단). 국내 차가 0대여도 판정된다.
      * 미설정  → 기존 미수율 기반 게이트 그대로. 운영 충격 없음(jin 확정).
      */
-    public function hasUnsecuredLimit(): bool
+    /**
+     * 실효 무담보 한도 — **기능 토글까지 반영한 단일 출처**.
+     * 시스템관리자가 기능을 끈 회사에서는 컬럼에 값이 있어도 0으로 본다(판정·표시 동시에 꺼짐).
+     */
+    public function effectiveUnsecuredLimit(): int
     {
+        if (! Setting::unsecuredLimitEnabled()) {
+            return 0;   // 기능 OFF — 컬럼을 볼 필요도 없다
+        }
+
         // 🚨 컬럼이 안 실린 인스턴스(`select`·`pluck` 로 컬럼을 제한한 쿼리)에서 부르면
         //    `?? 0` 이 조용히 "미설정"으로 만들어 **락이 사라진다**. 그 형태의 사고가 이미 있었다
         //    (`with('관계:id,name')` 로 tier 컬럼이 빠져 정산액이 20배 틀림 — 예외도 경고도 없었다).
         //    금액·락을 좌우하는 값이라 조용히 넘어가지 않고 큰 소리로 죽인다.
         if (! array_key_exists('unsecured_limit_krw', $this->getAttributes())) {
             throw new \LogicException(
-                'Buyer::hasUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
+                'Buyer::effectiveUnsecuredLimit() — unsecured_limit_krw 가 로드되지 않았습니다. '
                 .'매입 락 판정에 쓰이므로 컬럼을 제한한 쿼리로 조회하지 마세요.'
             );
         }
 
-        return (int) ($this->unsecured_limit_krw ?? 0) > 0;
+        return max(0, (int) ($this->unsecured_limit_krw ?? 0));
+    }
+
+    public function hasUnsecuredLimit(): bool
+    {
+        return $this->effectiveUnsecuredLimit() > 0;
     }
 }

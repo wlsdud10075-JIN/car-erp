@@ -19,6 +19,10 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alarmEnabled = false;
 
+    // 무담보 한도 기능 on/off (jin 2026-08-10) — 회사마다 쓰는 곳·안 쓰는 곳이 있다.
+    //   ⚠️ 기본 true — 이미 배포된 기능이라 끄면 켜둔 회사의 락이 조용히 풀린다.
+    public bool $unsecuredLimitEnabled = true;
+
     public bool $assistantEnabled = false;
 
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
@@ -106,6 +110,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->companyTemplateSet = Setting::companyTemplateSet();
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
+        $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
@@ -623,6 +628,37 @@ new #[Layout('components.layouts.app')] class extends Component
             ['key' => 'alarm_enabled'],
             ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => 'ETA 통관서류 알람 활성화'],
         );
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /**
+     * 무담보 한도 기능 on/off (jin 2026-08-10).
+     * 끄면 무담보 판정·표시가 통째로 빠지고 기존 미수율 게이트만 남는다.
+     * 락 기준선을 바꾸는 조작이라 감사로그를 남긴다(누가 언제 껐는지가 사후에 반드시 필요하다).
+     */
+    public function updatedUnsecuredLimitEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $key = 'unsecured_limit_enabled_'.Setting::companyTemplateSet();
+        $setting = Setting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => '무담보 한도 기능 활성화'],
+        );
+
+        // 락 기준선을 바꾸는 조작 — 락 토글과 같은 형식으로 감사로그를 남긴다.
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'unsecured_limit_toggle_changed',
+            'column_name' => 'unsecured_limit_enabled',
+            'old_value' => $value ? '0' : '1',
+            'new_value' => $value ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
@@ -1200,6 +1236,18 @@ new #[Layout('components.layouts.app')] class extends Component
                 <input type="number" min="0" wire:model="graceDays" class="input-base ml-auto w-20 py-1 text-sm">
                 <span class="text-xs text-gray-400">{{ __('feature_settings.days_unit') }}</span>
             </div>
+
+            {{-- 무담보 한도 기능 on/off (jin 2026-08-10) — 회사마다 쓰는 곳·안 쓰는 곳이 있다.
+                 끄면 무담보 판정·표시가 통째로 빠지고 기존 미수율 게이트만 남는다.
+                 토글 즉시저장이라 아래 [저장]과 무관하다(락 토글과 같은 방식). --}}
+            <label class="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
+                <span class="text-sm text-gray-700">{{ __('feature_settings.unsecured_limit_label') }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.unsecured_limit_sub') }}</span>
+                </span>
+                <input type="checkbox" wire:model.live="unsecuredLimitEnabled" class="peer sr-only">
+                <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-indigo-500
+                             after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+            </label>
 
             <div class="flex justify-end pt-1">
                 <button type="button" wire:click="saveLockParams" class="btn-primary px-4 py-1.5 text-sm">

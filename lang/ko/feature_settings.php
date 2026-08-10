@@ -5,6 +5,8 @@ return [
     'title' => '기능 설정',
     'subtitle' => '시스템관리자(super) 전용 — 전역 설정',
     'saved' => '저장 완료 — 새로고침하면 사이드바에 반영됩니다.',
+    'unsecured_limit_label' => '무담보 한도 사용',
+    'unsecured_limit_sub' => '단골 바이어가 보증금 없이 계약금을 걸 수 있게 합니다. 끄면 바이어별 무담보 한도가 무시되고 기존 미수율 기준으로만 매입이 막힙니다.',
     'stamp_upload_failed' => '도장 업로드에 실패했습니다. 기존 도장은 그대로 있습니다 — 잠시 후 다시 시도해 주세요.',
     'locale_enabled_flash' => '영어가 활성화되었습니다. 상단바의 한국어 / English 버튼으로 본인 화면을 전환하세요.',
     'locale_disabled_flash' => '영어가 비활성화되었습니다.',

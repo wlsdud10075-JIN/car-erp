@@ -105,7 +105,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Buyer::computeReceivableGauge(
             $buyer->vehicles()->with('purchaseBalancePayments')->get(),
             null,
-            (int) ($buyer->unsecured_limit_krw ?? 0),
+            $buyer->effectiveUnsecuredLimit(),
         );
     }
 
@@ -131,7 +131,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
         // 무담보 한도 — 현재 페이지 바이어분만 1쿼리로(행마다 조회하면 N+1).
-        $limits = Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id');
+        // 기능 토글이 꺼진 회사에서는 전부 0 으로 본다(1회 조회 — 행마다 Setting 을 읽지 않는다).
+        $unsecuredOn = \App\Models\Setting::unsecuredLimitEnabled();
+        $limits = $unsecuredOn
+            ? Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id')
+            : collect();
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
             $gauge = Buyer::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));

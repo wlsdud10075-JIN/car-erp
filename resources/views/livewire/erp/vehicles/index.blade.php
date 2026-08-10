@@ -6760,6 +6760,30 @@ function vehicleColumnsToggle() {
             {{-- 매입 가능 금액 (jin 2026-07-29) — 매입비를 더 써도 되는지 판단하는 자리가 여기다.
                  바이어 화면과 같은 단일출처(Buyer::receivableGauge). 표시 전용이라 저장을 막지 않는다. --}}
             @php $room = $this->purchasingRoom; @endphp
+            {{-- 무담보 한도 현황 (jin 2026-08-10) — 계약금을 넣기 전에 "이 계약금이 무담보에서 나가는지"를
+                 그 자리에서 보여준다. 누르는 스위치가 아니라 표시다 — 보증금이 남아 있으면 거기서 먼저 나가고,
+                 없으면 무담보에서 나가는 순서가 자동으로 정해지기 때문이다.
+                 ⚠️ 위 「매입 가능 금액」 박스는 `paid_krw > 0` 조건이라, 무담보의 타깃 상황
+                    (국내 차 0대 = 입금액 0)에서는 아예 안 뜬다. 그래서 별도 블록이 필요하다. --}}
+            @if($room && ($room['unsecured_limit_krw'] ?? 0) > 0)
+            @php $uAvail = $room['unsecured_available_krw']; $uLocked = $room['locked_down_payment_krw'] ?? 0; @endphp
+            <div class="mb-2 rounded-md border {{ $uAvail > 0 ? 'border-indigo-200 bg-indigo-50' : 'border-red-200 bg-red-50' }} px-3 py-2">
+                <div class="flex items-center justify-between text-[11px] {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-700' }}">
+                    <span>💳 {{ __('buyer.field.unsecured_available') }}</span>
+                    <span class="font-mono text-sm font-bold {{ $uAvail > 0 ? 'text-indigo-900' : 'text-red-600' }}">₩{{ number_format($uAvail) }}</span>
+                </div>
+                <div class="mt-1 text-[11px] {{ $uAvail > 0 ? 'text-indigo-500' : 'font-medium text-red-600' }}">
+                    @if($room['unsecured_used_krw'] > 0)
+                        {{ __('vehicle.field.unsecured_in_use', ['amount' => number_format($room['unsecured_used_krw'])]) }}
+                    @elseif($uLocked > 0)
+                        {{ __('vehicle.field.unsecured_covered_by_deposit') }}
+                    @else
+                        {{ __('vehicle.field.unsecured_idle') }}
+                    @endif
+                </div>
+            </div>
+            @endif
+
             @if($room && ($room['limit_krw'] ?? 0) >= 0 && ($room['paid_krw'] ?? 0) > 0)
             @php $roomAvail = $room['available_krw']; @endphp
             <div class="mb-2 rounded-md border {{ $roomAvail > 0 ? 'border-violet-200 bg-violet-50' : 'border-red-200 bg-red-50' }} px-3 py-2">

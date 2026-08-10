@@ -90,6 +90,18 @@ class Setting extends Model
     }
 
     /**
+     * 무담보 한도 기능 on/off (jin 2026-08-10) — 회사마다 쓰는 곳·안 쓰는 곳이 있다.
+     *
+     * ⚠️ 기본값 **true** 다. 이미 배포된 기능이라 false 로 두면 켜둔 회사의 락이 조용히 풀린다.
+     *   끄면 무담보 판정·표시가 통째로 빠지고 **기존 미수율 게이트만** 남는다
+     *   (매입 락 자체를 끄는 `lock_purchase_registration` 과는 다르다 — 그건 미수율 게이트까지 끈다).
+     */
+    public static function unsecuredLimitEnabled(): bool
+    {
+        return (bool) self::get('unsecured_limit_enabled_'.self::companyTemplateSet(), true);
+    }
+
+    /**
      * 서류 양식 세트(=회사) 단일 출처. 기능설정 토글(company_template_set) 우선,
      * 미설정 시 .env COMPANY_TEMPLATE_SET(config) fallback. 값: system(SSANCAR)/heyman/karaba.
      */
