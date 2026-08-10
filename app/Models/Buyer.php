@@ -147,6 +147,8 @@ class Buyer extends Model
         $shippedKrw = 0;
         $shippedCount = 0;
         $shippedUnpaidKrw = 0;
+        $lockedDownPaymentKrw = 0;   // 무담보에 묶인 계약금 (선적 진입 전인 차량분)
+        $shippingCutoff = Setting::lockThreshold('shipping_entry');
         foreach ($vehicles as $v) {
             $rate = (float) ($v->exchange_rate ?? 0);
             $total = (float) ($v->sale_total_amount ?? 0);
@@ -171,8 +173,20 @@ class Buyer extends Model
 
             $count++;
             $totalKrw += $rowKrw;
-            $unpaidKrw += (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+            $rowUnpaidKrw = (int) ($v->sale_unpaid_amount_krw_cache ?? 0);
+            $unpaidKrw += $rowUnpaidKrw;
             $purchasePaidKrw += $v->purchase_paid_amount;   // 매입은 원화 — 환율 환산 불필요
+
+            // 무담보에 묶이는 것은 **계약금뿐**이고, 그 차가 선적 진입 조건을 넘으면 풀린다
+            //   (jin 2026-08-10). "선적될 때면 판매금의 60%는 들어온 것이니 그때 자동으로 풀자."
+            //   ⚠️ 임계는 매입 게이트(purchase_registration)가 아니라 **선적 진입(shipping_entry)** 것이다 —
+            //      운영에서 두 값이 다르다(heymanerp 60% vs 50%). 테스트 기본값은 둘 다 같아 이 차이가
+            //      로컬에선 절대 안 드러나므로(SKILLS §8 #36 과 같은 형태) 키를 명시적으로 쓴다.
+            $rowRatio = $rowKrw > 0 ? ($rowUnpaidKrw / $rowKrw) : null;
+            $shippingReady = $rowRatio !== null && $rowRatio <= $shippingCutoff;
+            if (! $shippingReady) {
+                $lockedDownPaymentKrw += $v->confirmed_down_payment;
+            }
         }
 
         // ⚠️ 무담보 한도가 설정된 바이어는 국내 차가 0대여도 게이지를 만든다(그게 이 기능의 목적).
@@ -188,14 +202,11 @@ class Buyer extends Model
         //   ⚠️ 표시 전용 — 차단하지 않는다. 매입등록 게이트(C5)는 아래 ratio 를 그대로 쓴다.
         $baseLimitKrw = (int) ($paidKrw * $depositThreshold);
         $limitKrw = $baseLimitKrw + $unsecuredLimit;
-        // 차감 순서 (jin 2026-08-10 확정) — **보증금 먼저, 그다음 무담보.**
-        //   보증금(입금액×비율) 안에서 쓰는 동안 무담보는 그대로 있고,
-        //   보증금을 다 쓴 뒤 초과분만큼 무담보가 줄어든다. 무담보까지 0이면 매입 락이다.
-        //   판매잔금이 들어오면 보증금이 늘어 초과분이 줄고 → 무담보가 저절로 원복된다.
-        //   ⚠️ 미수율(기존 게이트)은 이 계산에 관여하지 않는다 — 금액만 본다.
-        //      한때 "미수율에 걸렸을 때만 깎는다"로 뒀었는데, 같은 상황에서 결과가 갈려
-        //      예측이 불가능했다(jin: "이거 좀 헷갈리네").
-        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $purchasePaidKrw - $baseLimitKrw));
+        // 무담보에 묶이는 것 = **아직 선적 진입을 못 한 차량들의 계약금** (jin 2026-08-10 확정).
+        //   용도가 "국내에 차가 없어 보증금을 못 쓰는 단골이 새 차 **계약금**을 걸 때"라
+        //   매입 잔금·매도비는 세지 않는다. 보증금이 있으면 그게 먼저 커버한다.
+        //   해제는 이산적이다 — 그 차가 선적 진입 조건(판매금 N% 입금)을 넘는 순간 그 차 몫이 풀린다.
+        $unsecuredUsedKrw = min($unsecuredLimit, max(0, $lockedDownPaymentKrw - $baseLimitKrw));
 
         return [
             'total_krw' => $totalKrw,               // 진행중(선적 전) 총액 (거래완료·출고 제외)
@@ -208,7 +219,8 @@ class Buyer extends Model
             'deposit_pct' => (int) round($depositThreshold * 100),  // 한도 비율(%) — 기본 50
             'base_limit_krw' => $baseLimitKrw,      // 담보분 = 입금액 × 설정비율
             'unsecured_limit_krw' => $unsecuredLimit,   // 무담보분 = 바이어별 설정값 (0 = 미설정)
-            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 담보 한도를 넘어선 매입 지급
+            'locked_down_payment_krw' => $lockedDownPaymentKrw,   // 선적 진입 전 차량의 계약금 합(해제 대기)
+            'unsecured_used_krw' => $unsecuredUsedKrw,  // 무담보분 사용 = 위 계약금 중 보증금으로 못 덮은 몫
             'unsecured_available_krw' => max(0, $unsecuredLimit - $unsecuredUsedKrw),   // 무담보 잔액 — 락 판정
             'limit_krw' => $limitKrw,               // 쓸 수 있는 총액 = 담보분 + 무담보분
             'used_krw' => $purchasePaidKrw,         // 이미 쓴 금액 = 매입 지급(계약금·잔금 확정분)

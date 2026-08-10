@@ -1763,6 +1763,23 @@ class Vehicle extends Model
     }
 
     /**
+     * 확정 **계약금**만 (jin 2026-08-10) — 무담보 한도가 묶이는 유일한 대상.
+     *
+     * 무담보는 "국내에 차가 없어 보증금을 못 쓰는 단골이 **새 차 계약금을 걸 때**" 쓰라고 만든 것이라
+     * 매입 잔금(`balance`)·매도비(`selling_fee`)에는 쓰지 않는다. 그래서 type='down' 만 센다.
+     * 확정 조건은 `purchase_paid_amount` 와 동일(payment_date 도래 + confirmed_at).
+     */
+    public function getConfirmedDownPaymentAttribute(): int
+    {
+        return (int) $this->purchaseBalancePayments
+            ->filter(fn ($p) => $p->type === 'down'
+                && $p->payment_date !== null
+                && $p->payment_date->lte(now())
+                && $p->confirmed_at !== null)
+            ->sum('amount');
+    }
+
+    /**
      * 매매상 잔금 10일 알림 앵커 (karaba, jin 2026-07-12) — 계약금(down PBP) 최초 payment_date.
      * 계약금 미입력이면 null. 알림/목록 배지 단일 출처.
      */
