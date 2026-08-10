@@ -123,6 +123,7 @@ class Vehicle extends Model
         'purchase_evidence_type', 'purchase_partner_type',   // karaba (구) flat — 존치(데이터 안전)
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
         'is_deposit_purchase', 'deposit_purchase_at',   // 보증금 매입 마커 + 도장 일시 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
+        'is_unsecured_down',   // 무담보로 지급한 계약금 표시 (jin 2026-08-10) — 회사가 바이어 대신 낸 것만 체크
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -165,6 +166,7 @@ class Vehicle extends Model
         'is_dealer_purchase' => 'boolean',
         'buyer_undecided' => 'boolean',
         'is_deposit_purchase' => 'boolean',
+        'is_unsecured_down' => 'boolean',
         'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
@@ -537,6 +539,7 @@ class Vehicle extends Model
         // 2026-07-30 (jin) — 보증금 매입 마커. 켜는 순간 바이어 입금 독촉 알림톡 타이머가 돌기 시작하고,
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
+        'is_unsecured_down',   // 돈의 출처 기록 — 누가 언제 표시했는지 추적 필요
     ];
 
     /**

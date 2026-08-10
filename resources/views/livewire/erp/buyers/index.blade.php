@@ -127,6 +127,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
                 'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
                 'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
+                // ⚠️ 무담보 판정에 쓰인다 — 빠지면 조용히 false 가 되어 묶인 계약금이 0 으로 보인다
+                //    (관계 컬럼 제한이 계산을 깨뜨린 사고와 같은 형태).
+                'is_unsecured_down',
             ]);
 
         $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)

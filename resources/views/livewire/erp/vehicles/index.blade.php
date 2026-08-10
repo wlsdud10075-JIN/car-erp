@@ -902,6 +902,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   ⚠️ 저장 권한은 canConfirmFinance 만 — save() 에서 재검사한다(체크박스 disabled 는 UI 편의일 뿐).
     public bool $is_deposit_purchase = false;
 
+    // 무담보로 지급한 계약금 표시 (jin 2026-08-10) — 회사가 바이어 대신 낸 계약금만 체크한다.
+    //   계약금 행만으로는 그 돈이 누구 것인지 알 수 없어서 사람이 명시한다. [관리] 이상만 변경 가능.
+    public bool $is_unsecured_down = false;
+
     /** 바이어 미정 매입(투기) — 켜야만 바이어 없이 신규 등록이 통과한다 (jin 2026-08-09). */
     public bool $buyer_undecided = false;
 
@@ -2893,6 +2897,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_dealer_purchase = (bool) $v->is_dealer_purchase;
         $this->deposit_purchase_state = $v->deposit_purchase_state;
         $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
+        $this->is_unsecured_down = (bool) $v->is_unsecured_down;
         $this->buyer_undecided = (bool) $v->buyer_undecided;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
@@ -3958,6 +3963,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? $this->is_deposit_purchase
             : (bool) (($editingVehicle ?? null)?->is_deposit_purchase ?? false);
 
+        // 무담보 지급 표시 (jin 2026-08-10) — 매입 락 기준선을 움직이므로 [관리] 이상만.
+        //   화면 disabled 는 편의일 뿐이라 저장 시점에 다시 인가한다(SKILLS §8 #26).
+        $unsecuredDown = $user->canApprove()
+            ? $this->is_unsecured_down
+            : (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
+
         $data = [
             'vehicle_number' => $this->vehicle_number,
             'sales_channel'  => $this->sales_channel,
@@ -4003,6 +4014,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_evidence_subtype'  => $this->purchase_evidence_subtype  ?: null,
             'is_dealer_purchase' => $this->is_dealer_purchase,
             'is_deposit_purchase' => $depositMarker,   // 도장 시각(deposit_purchase_at)은 Vehicle::saving 이 찍는다
+            'is_unsecured_down' => $unsecuredDown,
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -5233,7 +5245,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','buyer_undecided',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -6766,17 +6778,33 @@ function vehicleColumnsToggle() {
                  ⚠️ 위 「매입 가능 금액」 박스는 `paid_krw > 0` 조건이라, 무담보의 타깃 상황
                     (국내 차 0대 = 입금액 0)에서는 아예 안 뜬다. 그래서 별도 블록이 필요하다. --}}
             @if($room && ($room['unsecured_limit_krw'] ?? 0) > 0)
-            @php $uAvail = $room['unsecured_available_krw']; $uLocked = $room['locked_down_payment_krw'] ?? 0; @endphp
+            @php
+                $uAvail = $room['unsecured_available_krw'];
+                $canFlagUnsecured = auth()->user()?->canApprove() ?? false;
+            @endphp
             <div class="mb-2 rounded-md border {{ $uAvail > 0 ? 'border-indigo-200 bg-indigo-50' : 'border-red-200 bg-red-50' }} px-3 py-2">
-                <div class="flex items-center justify-between text-[11px] {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-700' }}">
+                {{-- 무담보로 지급한 계약금 표시 (jin 2026-08-10).
+                     계약금 행만으로는 그 돈이 바이어 것인지 회사가 대신 낸 것인지 알 수 없다.
+                     무담보는 회사가 대신 내준 몫을 담는 주머니라, 체크한 차만 한도를 소모한다. --}}
+                <label class="flex items-start gap-2 {{ $canFlagUnsecured ? 'cursor-pointer' : '' }}">
+                    <input type="checkbox" wire:model.live="is_unsecured_down"
+                           class="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                           @if(! $canFlagUnsecured) disabled @endif />
+                    <span class="text-xs {{ $canFlagUnsecured ? 'font-medium text-indigo-900' : 'text-gray-500' }}">
+                        {{ __('vehicle.field.is_unsecured_down') }}
+                        <span class="mt-0.5 block text-[11px] font-normal {{ $canFlagUnsecured ? 'text-indigo-600' : 'text-gray-400' }}">
+                            {{ __('vehicle.field.is_unsecured_down_hint') }}
+                        </span>
+                    </span>
+                </label>
+
+                <div class="mt-2 flex items-center justify-between border-t {{ $uAvail > 0 ? 'border-indigo-200' : 'border-red-200' }} pt-1.5 text-[11px] {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-700' }}">
                     <span>💳 {{ __('buyer.field.unsecured_available') }}</span>
                     <span class="font-mono text-sm font-bold {{ $uAvail > 0 ? 'text-indigo-700' : 'text-red-600' }}">₩{{ number_format($uAvail) }}</span>
                 </div>
                 <div class="mt-1 text-[11px] {{ $uAvail > 0 ? 'text-indigo-500' : 'font-medium text-red-600' }}">
                     @if($room['unsecured_used_krw'] > 0)
                         {{ __('vehicle.field.unsecured_in_use', ['amount' => number_format($room['unsecured_used_krw'])]) }}
-                    @elseif($uLocked > 0)
-                        {{ __('vehicle.field.unsecured_covered_by_deposit') }}
                     @else
                         {{ __('vehicle.field.unsecured_idle') }}
                     @endif

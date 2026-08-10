@@ -51,7 +51,8 @@ class UnsecuredLimitGateTest extends TestCase
      * @param  int  $balance  확정 매입 잔금 (무담보와 무관해야 한다)
      */
     private function vehicle(
-        Buyer $b, int $salePrice, int $paidKrw, int $down = 0, int $balance = 0, bool $shippedOut = false
+        Buyer $b, int $salePrice, int $paidKrw, int $down = 0, int $balance = 0,
+        bool $shippedOut = false, bool $unsecuredDown = true
     ): Vehicle {
         $v = Vehicle::create([
             'vehicle_number' => 'UL'.++$this->counter.'가1234',
@@ -60,6 +61,7 @@ class UnsecuredLimitGateTest extends TestCase
             'purchase_date' => '2026-08-01', 'purchase_price' => 20_000_000,
             'sale_price' => $salePrice, 'sale_date' => '2026-08-02',
             'warehouse_out_date' => $shippedOut ? '2026-08-05' : null,
+            'is_unsecured_down' => $unsecuredDown,
         ]);
         if ($paidKrw > 0) {
             $v->finalPayments()->create([
@@ -190,6 +192,25 @@ class UnsecuredLimitGateTest extends TestCase
 
         $this->assertSame(5_000_000, $g['unsecured_used_krw']);
         $this->assertSame(0, $g['unsecured_available_krw']);
+    }
+
+    /**
+     * 🚨 체크하지 않은 계약금은 무담보를 건드리지 않는다.
+     *
+     * 계약금 행만으로는 그 돈이 바이어가 보낸 것인지 회사가 대신 낸 것인지 알 수 없다.
+     * 무담보는 회사가 대신 내준 몫을 담는 주머니라 사람이 명시한 것만 센다
+     * (jin: "이거 실제로 50만원이 누구 돈일 줄 알고?").
+     */
+    public function test_unchecked_down_payment_does_not_touch_the_credit(): void
+    {
+        $b = $this->buyer(5_000_000);
+        // 바이어가 직접 보낸 돈으로 낸 계약금 → 체크 안 함.
+        $this->vehicle($b, 0, 0, down: 500_000, unsecuredDown: false);
+
+        $g = $b->receivableGauge();
+
+        $this->assertSame(0, $g['locked_down_payment_krw'], '체크 안 한 계약금은 안 잡힌다');
+        $this->assertSame(5_000_000, $g['unsecured_available_krw'], '무담보는 그대로여야 한다');
     }
 
     /** 선적 후 미수는 한도 계산에 안 들어간다 — 표시만 된다. */

@@ -362,6 +362,8 @@ return [
         'buyer_undecided_hint' => 'Only tick this when buying before a buyer is decided. The vehicle is saved without a buyer and appears under Inventory → General stock. It clears automatically once a buyer is set.',
         'is_deposit_purchase' => 'Deposit purchase (paid with buyer deposit)',
         'is_deposit_purchase_hint' => 'Enabling this starts the buyer payment reminder alerts (day 5 to sales/management, past day 10 to the executive). They stop automatically once the buyer meets the required payment ratio.',
+        'is_unsecured_down' => 'Deposit paid from unsecured credit',
+        'is_unsecured_down_hint' => 'Tick only when the company paid the deposit on behalf of the buyer. Leave it unticked if the buyer sent the money. Only ticked vehicles draw on the unsecured credit, and it is released once shipping entry is met.',
         'unsecured_in_use' => 'KRW :amount of this buyer deposit is drawn from unsecured credit. It is released once shipping entry is met.',
         'unsecured_covered_by_deposit' => 'Deposits are covered by the buyer deposit, so unsecured credit is untouched.',
         'unsecured_idle' => 'Not used yet. Deposits draw from here when the buyer deposit runs out.',

@@ -177,14 +177,19 @@ class Buyer extends Model
             $unpaidKrw += $rowUnpaidKrw;
             $purchasePaidKrw += $v->purchase_paid_amount;   // 매입은 원화 — 환율 환산 불필요
 
-            // 무담보에 묶이는 것은 **계약금뿐**이고, 그 차가 선적 진입 조건을 넘으면 풀린다
-            //   (jin 2026-08-10). "선적될 때면 판매금의 60%는 들어온 것이니 그때 자동으로 풀자."
+            // 무담보에 묶이는 것 = **「무담보로 지급」 체크된 차량의 계약금**이고,
+            //   그 차가 선적 진입 조건을 넘으면 풀린다 (jin 2026-08-10).
+            //
+            //   🚨 체크를 보는 이유 — 계약금 행만으로는 그 돈이 **바이어가 보낸 것인지 회사가 대신
+            //      낸 것인지 알 수 없다**. 무담보는 회사가 대신 내준 몫을 담는 주머니이므로,
+            //      사람이 명시한 것만 센다(jin: "이거 실제로 50만원이 누구 돈일 줄 알고?").
+            //      체크 안 함 = 바이어 돈 → 무담보 무관. 우회가 아니라 사실 기록이다.
             //   ⚠️ 임계는 매입 게이트(purchase_registration)가 아니라 **선적 진입(shipping_entry)** 것이다 —
             //      운영에서 두 값이 다르다(heymanerp 60% vs 50%). 테스트 기본값은 둘 다 같아 이 차이가
             //      로컬에선 절대 안 드러나므로(SKILLS §8 #36 과 같은 형태) 키를 명시적으로 쓴다.
             $rowRatio = $rowKrw > 0 ? ($rowUnpaidKrw / $rowKrw) : null;
             $shippingReady = $rowRatio !== null && $rowRatio <= $shippingCutoff;
-            if (! $shippingReady) {
+            if (! $shippingReady && ($v->is_unsecured_down ?? false)) {
                 $lockedDownPaymentKrw += $v->confirmed_down_payment;
             }
         }
