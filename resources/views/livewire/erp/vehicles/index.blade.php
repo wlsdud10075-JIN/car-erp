@@ -3816,14 +3816,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             //      미수율로 통과하던 바이어가 설정 후 막힐 수 있다 — 보증금을 이미 초과 사용한 경우다.
             //      (실측 OSAKA MOTORS: 보증금 5,473만인데 매입 지급 7,786만.) 그게 의도다 —
             //      무담보 설정 = "이 바이어는 금액 기준으로 관리한다"는 선언이다.
-            $threshold = \App\Models\Setting::lockThreshold('purchase_registration');
+            //   🔗 판정식은 `PurchaseRegistrationGate` **한 곳**에만 있다 — board 읽기 API 가 같은
+            //      함수를 타야 "board 는 된다는데 ERP 는 막는다"가 안 생긴다(SKILLS §8 #44).
             $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
+            $verdict = \App\Services\PurchaseRegistrationGate::decide($gauge, $useUnsecured);
 
-            $blocked = $gauge && ($useUnsecured
-                ? $gauge['unsecured_available_krw'] <= 0      // 무담보까지 소진 = 락
-                : $gauge['ratio'] > $threshold);              // 미설정 = 기존 미수율 판정 그대로
-
-            if ($blocked) {
+            if ($verdict['locked']) {
                 $this->purchaseGateInfo = [
                     'buyer' => $buyer->name,
                     'ratio' => round($gauge['ratio'] * 100, 1),

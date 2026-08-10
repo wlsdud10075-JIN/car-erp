@@ -116,46 +116,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function receivableGauges(): array
     {
-        $buyerIds = collect($this->buyers->items())->pluck('id')->all();
-        if (empty($buyerIds)) {
-            return [];
-        }
-
-        $vehicles = \App\Models\Vehicle::whereIn('buyer_id', $buyerIds)
-            ->with('purchaseBalancePayments')   // 여력의 '사용' 분자 — 없으면 차량당 1쿼리
-            ->get([
-                'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
-                'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
-                'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
-                // ⚠️ 무담보 판정에 쓰인다 — 빠지면 조용히 false 가 되어 묶인 계약금이 0 으로 보인다
-                //    (관계 컬럼 제한이 계산을 깨뜨린 사고와 같은 형태).
-                'is_unsecured_down',
-            ]);
-
-        $depositThreshold = \App\Models\Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
-        // 무담보 한도 — 현재 페이지 바이어분만 1쿼리로(행마다 조회하면 N+1).
-        // 기능 토글이 꺼진 회사에서는 전부 0 으로 본다(1회 조회 — 행마다 Setting 을 읽지 않는다).
-        $unsecuredOn = \App\Models\Setting::unsecuredLimitEnabled();
-        $limits = $unsecuredOn
-            ? Buyer::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id')
-            : collect();
-        $out = [];
-        foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
-            $gauge = Buyer::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));
-            if ($gauge !== null) {
-                $out[(int) $bid] = $gauge;
-            }
-        }
-
-        // 차량이 한 대도 없는데 한도만 설정된 바이어 — 위 루프는 **차량에서 출발**하므로 통째로 빠진다.
-        //   이 기능이 겨냥하는 게 담보 0인 바이어라, 목록에서만 안 보이면 "패널엔 있는데 목록엔 없다"가 된다.
-        foreach ($limits as $bid => $limit) {
-            if ((int) $limit > 0 && ! isset($out[(int) $bid])) {
-                $out[(int) $bid] = Buyer::computeReceivableGauge([], $depositThreshold, (int) $limit);
-            }
-        }
-
-        return $out;
+        // 배치 로더는 Buyer::computeReceivableGaugesFor 단일 출처 — board 읽기 API 도 같은 걸 쓴다.
+        //   컬럼 목록·무담보 한도 주입이 두 벌이 되면 화면과 board 숫자가 조용히 갈린다.
+        return Buyer::computeReceivableGaugesFor(
+            collect($this->buyers->items())->pluck('id')->all()
+        );
     }
 
     /**

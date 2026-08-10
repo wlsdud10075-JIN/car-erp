@@ -8,6 +8,7 @@ use App\Models\Consignee;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use App\Services\ExchangeRateService;
+use App\Services\PurchaseRegistrationGate;
 use App\Services\SalesmanResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -300,13 +301,42 @@ class InternalPortalController extends Controller
     public function buyers(Request $request): JsonResponse
     {
         $sid = $this->salesmanId($request);
-        $data = Buyer::query()->where('salesman_id', $sid)->where('is_active', true)
-            ->with('country')->orderBy('name')->get()
-            ->map(fn (Buyer $b) => [
+        $buyers = Buyer::query()->where('salesman_id', $sid)->where('is_active', true)
+            ->with('country')->orderBy('name')->get();
+
+        // 🔒 매입 등록 락 (2026-08-10) — board 가 **낙찰 전에** 막을 수 있게 같이 내려준다.
+        //   ERP 차량관리는 저장 시점에 막지만, board 는 이미 `status='won'`(= 돈이 나간 뒤)에
+        //   보내므로 그때 거부해봐야 늦다. 예방은 바이어를 고르는 이 화면에서만 가능하다.
+        //   판정은 `PurchaseRegistrationGate` 단일 출처 — 조건을 여기 옮겨 적지 말 것(SKILLS §8 #44).
+        //   ⚠️ 키가 없는 바이어 = 판정 근거 없음 = **통과**(락 아님). board 도 그렇게 읽어야 한다.
+        $verdicts = PurchaseRegistrationGate::forBuyerIds($buyers->pluck('id')->all());
+
+        $data = $buyers->map(function (Buyer $b) use ($verdicts) {
+            $v = $verdicts[$b->id] ?? null;
+            $g = $v['gauge'] ?? null;
+
+            return [
                 'id' => $b->id,
                 'name' => $b->name,
                 'country' => $b->country?->name,
-            ])->values();
+                // 평탄한 bool — board 가 최소 구현으로도 막을 수 있게.
+                'purchase_locked' => (bool) ($v['locked'] ?? false),
+                // 사람에게 "왜 막혔는지"를 보여주기 위한 근거. 락이 아니어도 함께 내려간다
+                // (남은 여력을 보고 판단하는 게 예방의 핵심이라 막힌 뒤에만 주면 늦다).
+                'purchase_lock' => [
+                    'locked' => (bool) ($v['locked'] ?? false),
+                    'mode' => (string) ($v['mode'] ?? PurchaseRegistrationGate::MODE_OFF),
+                    'threshold_pct' => (int) round(((float) ($v['threshold'] ?? 0)) * 100),
+                    'unpaid_ratio_pct' => $g ? round($g['ratio'] * 100, 1) : null,
+                    'unpaid_krw' => $g['unpaid_krw'] ?? null,
+                    'vehicle_count' => $g['vehicle_count'] ?? null,
+                    // 남은 매입 여력 = 보증금 + 무담보 − 이미 나간 매입 지급.
+                    'available_krw' => $g['available_krw'] ?? null,
+                    'unsecured_limit_krw' => $g['unsecured_limit_krw'] ?? null,
+                    'unsecured_available_krw' => $g['unsecured_available_krw'] ?? null,
+                ],
+            ];
+        })->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);
     }

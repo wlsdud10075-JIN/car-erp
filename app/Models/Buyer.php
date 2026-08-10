@@ -239,6 +239,58 @@ class Buyer extends Model
         ];
     }
 
+    /**
+     * 여러 바이어의 미수 게이지를 한 번에 (N+1 방지) — [buyer_id => gauge].
+     *
+     * 바이어 목록 행 배경 게이지 · board 읽기 API 의 매입 락 표시가 공유한다.
+     * ⚠️ `get()` 의 컬럼 목록을 줄이지 말 것 — 하나만 빠져도 계산이 **조용히** 틀어진다
+     *    (관계 컬럼 제한으로 정산액이 20배 틀렸던 사고와 같은 형태).
+     *
+     * @param  int[]  $buyerIds
+     * @return array<int, array>
+     */
+    public static function computeReceivableGaugesFor(array $buyerIds): array
+    {
+        $buyerIds = array_values(array_unique(array_map('intval', $buyerIds)));
+        if (empty($buyerIds)) {
+            return [];
+        }
+
+        $vehicles = Vehicle::whereIn('buyer_id', $buyerIds)
+            ->with('purchaseBalancePayments')   // 여력의 '사용' 분자 — 없으면 차량당 1쿼리
+            ->get([
+                'id', 'buyer_id', 'sale_price', 'transport_fee', 'sale_other_costs',
+                'commission', 'auto_loading', 'tax_dc', 'exchange_rate',
+                'sale_unpaid_amount_krw_cache', 'progress_status_cache', 'warehouse_out_date',
+                // ⚠️ 무담보 판정에 쓰인다 — 빠지면 조용히 false 가 되어 묶인 계약금이 0 으로 보인다.
+                'is_unsecured_down',
+            ]);
+
+        $depositThreshold = Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
+        // 무담보 한도 — 대상 바이어분만 1쿼리로. 기능 토글이 꺼진 회사에서는 전부 0 으로 본다.
+        $limits = Setting::unsecuredLimitEnabled()
+            ? static::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id')
+            : collect();
+
+        $out = [];
+        foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
+            $gauge = static::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));
+            if ($gauge !== null) {
+                $out[(int) $bid] = $gauge;
+            }
+        }
+
+        // 차량이 한 대도 없는데 한도만 설정된 바이어 — 위 루프는 **차량에서 출발**하므로 통째로 빠진다.
+        //   이 기능이 겨냥하는 게 담보 0인 바이어라, 여기서 빠지면 "패널엔 있는데 목록엔 없다"가 된다.
+        foreach ($limits as $bid => $limit) {
+            if ((int) $limit > 0 && ! isset($out[(int) $bid])) {
+                $out[(int) $bid] = static::computeReceivableGauge([], $depositThreshold, (int) $limit);
+            }
+        }
+
+        return $out;
+    }
+
     /** 이 바이어의 미수 게이지 (자기 차량 로딩). 매입 게이트가 사용. */
     public function receivableGauge(): ?array
     {
