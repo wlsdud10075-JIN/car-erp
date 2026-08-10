@@ -517,6 +517,7 @@ return [
 
     'toast' => [
         'db_constraint' => 'A data constraint error occurred while saving. Please check your inputs (sale date, buyer, exchange rate, amounts).',
+        'file_store_failed' => 'File upload failed, so the save was cancelled. Existing files are untouched — please try again.',
         'buyer_first' => 'Select a buyer first',
         'buyer_created' => 'New buyer created',
         'consignee_created' => 'New consignee created',

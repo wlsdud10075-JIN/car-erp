@@ -100,8 +100,14 @@ class BackupDatabase extends Command
             return;
         }
         try {
-            Storage::disk($disk)->put('db-backups/'.$filename, file_get_contents($localPath));
-            $this->info("✓ 원격 업로드: [{$disk}] db-backups/{$filename}");
+            $remotePath = 'db-backups/'.$filename;
+            // 🚨 put() 은 실패해도 예외가 아니라 false 를 리턴한다(디스크 'throw' => false, 2026-08-10).
+            //   반환값을 안 보던 옛 코드는 업로드가 실패해도 "✓ 원격 업로드" 를 찍고 성공 종료했다.
+            //   백업은 실패를 모르는 게 가장 위험하다 — 필요할 때 없다는 걸 그때 알게 된다.
+            if (! Storage::disk($disk)->put($remotePath, file_get_contents($localPath))) {
+                throw new \RuntimeException('put() returned false — 업로드 거부(권한·용량·네트워크)');
+            }
+            $this->info("✓ 원격 업로드: [{$disk}] {$remotePath}");
         } catch (\Throwable $e) {
             // claudereview E — 무음 실패 제거. cron(03:00) 운영에선 콘솔 출력이 안 보이므로
             // Log::critical 로 남겨 알림 연동/모니터링이 잡을 수 있게 한다. (로컬 백업은 이미 성공.)

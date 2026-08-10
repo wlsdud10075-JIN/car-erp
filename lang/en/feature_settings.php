@@ -5,6 +5,7 @@ return [
     'title' => 'Feature Settings',
     'subtitle' => 'System admin (super) only — global settings',
     'saved' => 'Saved — refresh to see it in the sidebar.',
+    'stamp_upload_failed' => 'Stamp upload failed. The existing stamp is unchanged — please try again.',
     'locale_enabled_flash' => 'English has been enabled. Use the 한국어 / English buttons in the top bar to switch your own screen.',
     'locale_disabled_flash' => 'English has been disabled.',
 

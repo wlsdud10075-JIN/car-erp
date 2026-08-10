@@ -2,6 +2,7 @@
 
 namespace App\Services\Documents;
 
+use App\Exceptions\FileStoreFailedException;
 use App\Models\AuditLog;
 use App\Models\SignedContract;
 use App\Models\Vehicle;
@@ -54,8 +55,15 @@ class SigningSessionService
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
         $uuid = (string) Str::uuid();
         $xlsxPath = "signed-contracts/{$uuid}.xlsx";
-        $disk->put($xlsxPath, $xlsxBytes);
-        $disk->put(SignedContract::previewPathFor($xlsxPath), $pdfBytes);
+        // 🚨 저장이 실패하면 여기서 끊는다 (2026-08-10). put() 은 예외가 아니라 false 를 리턴하는데,
+        //   그대로 진행하면 **바로 아래 revokeOverlappingActive() 가 기존에 잘 되던 서명 링크를 폐기**하고
+        //   죽은 링크로 새 세션을 만든다 → 바이어가 링크 두 개를 다 못 쓴다.
+        //   폐기보다 저장이 먼저 확정돼야 한다.
+        $stored = $disk->put($xlsxPath, $xlsxBytes)
+            && $disk->put(SignedContract::previewPathFor($xlsxPath), $pdfBytes);
+        if (! $stored || ! $disk->exists($xlsxPath)) {
+            throw new FileStoreFailedException('signing_session');
+        }
 
         // 재발급 = 겹치는 활성세션 revoke (활성 1개 불변식). signed 는 보존(하드삭제 가드).
         $this->revokeOverlappingActive($vehicles->pluck('id')->map(fn ($x) => (int) $x)->all());

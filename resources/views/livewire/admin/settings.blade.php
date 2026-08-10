@@ -484,11 +484,27 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $set = $this->stampSet();
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
-        if ($old = Setting::get('stamp_'.$set.'_'.$role)) {
-            $disk->delete($old);   // 기존 업로드본 제거(확장자 바뀜 대비)
-        }
+        $old = Setting::get('stamp_'.$set.'_'.$role);
+
+        // 🚨 순서가 중요하다 (2026-08-10) — 예전엔 **옛 도장을 먼저 지우고** 저장했다.
+        //   storeAs 는 실패해도 예외가 아니라 false 를 리턴하므로(디스크 'throw' => false),
+        //   업로드가 실패하면 도장이 **한 장도 없는 상태**가 되고 Setting 엔 빈 값이 박혔다.
+        //   도장은 3사 전 서류에 찍히는 것이라 피해가 넓다. 저장에 성공한 뒤에만 옛것을 지운다.
         $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
         $path = $file->storeAs('stamps/'.$set, $role.'.'.$ext, config('filesystems.vehicle_docs_disk'));
+
+        if (! $path) {
+            \Log::warning('도장 업로드 실패 — 기존 도장 유지', ['role' => $role, 'set' => $set]);
+            $this->dispatch('notify', message: __('feature_settings.stamp_upload_failed'), type: 'error');
+
+            return;
+        }
+
+        // 확장자가 바뀌어 경로가 달라진 경우에만 옛 파일 제거.
+        //   같은 경로면 방금 덮어쓴 새 파일이므로 지우면 안 된다.
+        if ($old && $old !== $path) {
+            $disk->delete($old);
+        }
 
         Setting::updateOrCreate(
             ['key' => 'stamp_'.$set.'_'.$role],

@@ -5,6 +5,7 @@ return [
     'title' => '기능 설정',
     'subtitle' => '시스템관리자(super) 전용 — 전역 설정',
     'saved' => '저장 완료 — 새로고침하면 사이드바에 반영됩니다.',
+    'stamp_upload_failed' => '도장 업로드에 실패했습니다. 기존 도장은 그대로 있습니다 — 잠시 후 다시 시도해 주세요.',
     'locale_enabled_flash' => '영어가 활성화되었습니다. 상단바의 한국어 / English 버튼으로 본인 화면을 전환하세요.',
     'locale_disabled_flash' => '영어가 비활성화되었습니다.',
 

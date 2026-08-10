@@ -4129,6 +4129,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $oldPath = $vehicle->{$f['col']};
                     if ($this->{$f['fileProp']}) {
                         $newPath = $this->{$f['fileProp']}->store("vehicles/{$vehicle->id}", config('filesystems.vehicle_docs_disk'));
+                        // 🚨 store() 는 실패해도 예외가 아니라 **false** 를 리턴한다(디스크 'throw' => false).
+                        //   옛 코드는 그 false 를 그대로 컬럼에 넣고, 심지어 `$oldPath !== $newPath` 가 참이라
+                        //   **멀쩡하던 옛 서류를 삭제 목록에 넣었다** — 새 파일도 없고 옛 파일도 사라진다.
+                        //   (2026-08-10 연동 B 첨부 사고와 같은 부류. 그쪽은 사진 행만 남았지만 여긴 손실이다.)
+                        if (! $newPath) {
+                            throw new \App\Exceptions\FileStoreFailedException($f['col']);
+                        }
                         $newlyStoredPaths[] = $newPath;
                         $fileUpdates[$f['col']] = $newPath;
                         if ($oldPath && $oldPath !== $newPath) {
@@ -4157,6 +4164,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $nextOrder = (int) \App\Models\VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
                     foreach ($this->photoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/photos", config('filesystems.vehicle_docs_disk'));
+                        // 실패 시 false → path='' 인 깨진 사진 행이 남는다. 끊어서 롤백시킨다.
+                        if (! $photoPath) {
+                            throw new \App\Exceptions\FileStoreFailedException('vehicle_photo');
+                        }
                         $newlyStoredPaths[] = $photoPath;
                         \App\Models\VehiclePhoto::create([
                             'vehicle_id' => $vehicle->id,
@@ -4181,6 +4192,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->where('category', 'shipping')->max('sort_order');
                     foreach ($this->shipPhotoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/ship-photos", config('filesystems.vehicle_docs_disk'));
+                        if (! $photoPath) {
+                            throw new \App\Exceptions\FileStoreFailedException('ship_photo');
+                        }
                         $newlyStoredPaths[] = $photoPath;
                         \App\Models\VehiclePhoto::create([
                             'vehicle_id' => $vehicle->id,
@@ -4468,6 +4482,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 트랜잭션 실패: 새로 저장된 파일 정리 후 재예외
             foreach ($newlyStoredPaths as $p) {
                 Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
+            }
+            // 파일 저장 실패는 재시도로 풀리는 부류라 500 대신 안내한다(2026-08-10).
+            //   ⚠️ 여기까지 왔다는 건 트랜잭션이 롤백됐다는 뜻 — **옛 파일은 그대로 남아 있다**.
+            //      옛 파일 삭제는 아래 성공 경로에서만 실행되기 때문이다.
+            if ($e instanceof \App\Exceptions\FileStoreFailedException) {
+                \Log::warning('Vehicle save 파일 저장 실패', ['vehicle_id' => $this->editingId, 'target' => $e->target]);
+                $this->dispatch('notify', message: __('vehicle.toast.file_store_failed'), type: 'error');
+
+                return;
             }
             throw $e;
         }
@@ -5147,6 +5170,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 원본 파일명 보존(사용자가 무엇을 올렸는지 목록에서 바로 보이도록). fpId 폴더로 격리.
             $safeName = preg_replace('/[^\p{L}\p{N}._-]+/u', '_', basename($file->getClientOriginalName())) ?: 'proof';
             $path = $file->storeAs("vehicles/{$vehicleId}/payment-proofs/{$fpId}", $safeName, config('filesystems.vehicle_docs_disk'));
+            // 🚨 실패하면 false 다. 그대로 두면 proof_path 에 빈 값이 들어가고, 아래 `!==` 가 참이라
+            //   **멀쩡하던 옛 증빙까지 삭제 목록**에 올라간다. 끊어서 트랜잭션을 되돌린다.
+            if (! $path) {
+                throw new \App\Exceptions\FileStoreFailedException('payment_proof');
+            }
             $newlyStoredPaths[] = $path;
             if ($existingPath && $existingPath !== $path) {
                 $pathsToDelete[] = $existingPath;   // 교체(이름 다름) 시 옛 파일 정리. 같은 이름=덮어씀이라 삭제 안 함.
