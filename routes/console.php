@@ -19,6 +19,10 @@ Schedule::command('vehicles:rebuild-caches')->dailyAt('05:00')->withoutOverlappi
 
 // ETA 영구 알람 일일 스캔 (2026-06-18) — 도착 임박 통관서류 알람 생성/갱신/자동해소.
 // Setting('alarm_enabled')=false 면 내부에서 건너뜀(배포 ≠ 작동). 업무 시작 전 06:00.
+// 공휴일 자동 수집 (2026-08-11) — 임시·대체공휴일은 연중에 갑자기 지정되므로 매일 받는다.
+//   알림톡 수신자 시각 규칙이 이 값을 쓴다(발송 경로는 저장분만 읽는다 — API 를 직접 안 부른다).
+Schedule::command('holidays:sync')->dailyAt('04:10')->withoutOverlapping();
+
 Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
 
 // 카카오 알림톡 자동발송 (2026-07-06) — 캐시 재계산(05:00) 후 최신 grace/미수 기준.

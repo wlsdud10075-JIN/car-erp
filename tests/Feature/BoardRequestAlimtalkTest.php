@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
 use App\Models\BoardRequest;
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
@@ -161,6 +162,36 @@ class BoardRequestAlimtalkTest extends TestCase
         $this->assertStringContainsString('계좌 미등록', Http::recorded()[0][0]->data()[0]['msg'] ?? '');
     }
 
+    /**
+     * 🚫 **판매대금확인엔 매입처 계좌를 싣지 않는다.**
+     *
+     * 그건 "돈이 **들어왔으니** 확인해달라"는 신호다. 거기에 송금 계좌가 찍히면 받는 사람이
+     * 거기로 돈을 보낼 수 있다 — 방향이 반대라 실제 금전 사고가 된다.
+     * (한 템플릿으로 세 신호를 다 보내기 때문에 생기는 함정이다.)
+     */
+    public function test_sale_confirm_carries_no_payee_account(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($sm->id);
+        $v->update(['buyer_id' => $buyer->id]);
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_SALE_PAYMENT_CONFIRM,
+            'buyer_id' => $buyer->id,
+            'vehicle_ids' => [$v->id],
+        ])->assertStatus(201);
+
+        $sent = Http::recorded()[0][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString($v->vehicle_number, $sent);
+        $this->assertStringNotContainsString('123456-78-901234', $sent, '판매대금확인에 매입처 계좌가 실렸다 — 반대 방향으로 송금할 수 있다');
+        $this->assertStringNotContainsString('국민', $sent);
+        $this->assertStringNotContainsString('계좌 미등록', $sent, '계좌 줄 자체가 나오면 안 된다');
+    }
+
     /** ⚠️ skipped(멱등) 에는 안 보낸다 — 중복 카톡의 원인이다. */
     public function test_no_alimtalk_for_skipped_lines(): void
     {
@@ -309,6 +340,45 @@ class BoardRequestAlimtalkTest extends TestCase
     }
 
     /**
+     * 🗓️ **고정 공휴일은 코드에 내장** — 매년 손으로 다시 적게 하면 결국 안 적게 되고,
+     * 그러면 그날 담당자에게 알림이 가버린다(jin 2026-08-11).
+     */
+    public function test_fixed_holidays_need_no_manual_entry(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+        // 수기 등록은 비워 둔다 — 그래도 걸려야 한다.
+
+        // 어린이날(05-05)이 평일인 해로 검증한다. 주말이면 요일만으로도 대표라 무엇을 검증했는지 흐려진다.
+        Carbon::setTestNow('2026-05-05 10:00:00');
+        $this->assertLessThanOrEqual(5, now()->isoWeekday(), '전제: 그해 어린이날은 평일');
+        $this->assertSame(
+            ['010-9999-9999'],
+            AlimtalkRecipients::forTimeRules('erp_board_request'),
+            '고정 공휴일인데 근무일로 처리돼 담당자에게 갔다'
+        );
+
+        // 바로 다음 평일은 정상 근무일.
+        Carbon::setTestNow('2026-05-06 10:00:00');
+        $this->assertSame(['010-1111-1111'], AlimtalkRecipients::forTimeRules('erp_board_request'));
+    }
+
+    /** 수기 등록은 **날짜가 매년 바뀌는 것**만 — 설날 같은 음력 공휴일. */
+    public function test_manual_holiday_supplements_the_fixed_list(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+        Setting::updateOrCreate(
+            ['key' => 'alimtalk_holidays_'.Setting::companyTemplateSet()],
+            ['value' => '2026-02-17', 'type' => 'string'],   // 설날 (음력이라 고정 목록에 없다)
+        );
+
+        Carbon::setTestNow('2026-02-17 10:00:00');
+        $this->assertLessThanOrEqual(5, now()->isoWeekday(), '전제: 그 설날은 평일');
+        $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'));
+    }
+
+    /**
      * ⚠️ **아무에게도 안 가는 상태를 만들지 않는다.** 규칙이 0명을 가리켜도 대표에게 강제 발송한다 —
      * 조용히 0명에게 가는 게 카톡보다 나쁘다.
      */
@@ -367,6 +437,56 @@ class BoardRequestAlimtalkTest extends TestCase
             Carbon::setTestNow($outside);
             $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'), $outside);
         }
+    }
+
+    /**
+     * 🕳️ **기본 규칙에 빈 구간이 없다** — 한 주 10,080분을 전부 훑는다 (jin 2026-08-11 질문).
+     *
+     * jin 물음: "일요일 → 월요일 09:00 까지는 주말 종일에 포함되나, 아니면 월요일에서 누락되나?"
+     * 답: **월요일 00:00~08:59 는 「월~금 17:30~익일 09:00」 행이 잡는다**(주말 행이 아니다).
+     * ⚠️ **요일은 "그 시각의 요일"로 판정**하므로, 자정을 넘긴 구간은 **끝나는 쪽 요일에도 체크가
+     *    있어야** 그 새벽이 덮인다. 야간 행에서 월요일을 빼면 일요일 밤~월요일 새벽이 빈다.
+     *
+     * 빈 구간이 생겨도 대표 폴백 덕에 발송 자체는 되지만, **의도한 사람이 아닌 사람에게 간다.**
+     * 그래서 "폴백이 필요 없는가"를 본다.
+     */
+    public function test_default_rules_cover_every_minute_of_the_week(): void
+    {
+        $start = Carbon::parse('2026-08-10 00:00');   // 월요일 00:00
+        $gaps = [];
+
+        for ($i = 0; $i < 7 * 24 * 60; $i++) {
+            $t = $start->copy()->addMinutes($i);
+            if (AlimtalkRecipients::isHoliday($t)) {
+                continue;   // 공휴일은 일요일 취급이라 주말 행이 덮는다(별도 테스트)
+            }
+            if (AlimtalkRecipients::matchingRules('erp_board_request', $t) === []) {
+                $gaps[] = $t->format('D H:i');
+            }
+        }
+
+        $this->assertSame([], array_slice($gaps, 0, 8),
+            '기본 규칙에 빈 구간이 있다 — 그 시간대 알림이 의도한 담당자가 아니라 대표 폴백으로 간다. '.
+            '총 '.count($gaps).'분');
+    }
+
+    /** 일요일 밤 ↔ 월요일 새벽 경계 — 끊기지 않고 같은 수신자로 이어진다. */
+    public function test_sunday_night_runs_into_monday_morning_without_a_gap(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+
+        foreach ([
+            '2026-08-16 23:59' => '일요일 밤 (주말 종일 행)',
+            '2026-08-17 00:00' => '월요일 자정 (평일 야간 행이 이어받는다)',
+            '2026-08-17 08:59' => '월요일 08:59 (아직 야간)',
+        ] as $at => $why) {
+            Carbon::setTestNow($at);
+            $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'), $why);
+        }
+
+        Carbon::setTestNow('2026-08-17 09:00');   // 근무 시작 → 담당자로 넘어간다
+        $this->assertSame(['010-1111-1111'], AlimtalkRecipients::forTimeRules('erp_board_request'));
     }
 
     /** 카드 규격 — 요약(summary)을 두지 않았다(금액 없는 판매대금확인에서 K140 반려를 부른다). */

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\KoreanHolidayService;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -16,6 +17,109 @@ use Tests\TestCase;
 class AlimtalkCatalogTest extends TestCase
 {
     use RefreshDatabase;
+
+    /**
+     * 🕑 시각 규칙 편집기의 **읽기 쉬움**(jin 2026-08-11 지적).
+     *
+     * ⚠️ `24:00` 은 `<input type="time">` 에 못 들어간다(최대 23:59) — 종일 규칙이 **빈 시간칸**으로
+     *    보여서 "주말은 09시만 설정된 건가?" 로 읽혔다. 종일은 시간칸 대신 「종일」로 보여준다.
+     * ⚠️ 17:30~09:00 이 당일인지 익일인지 화면에 아무 표시가 없어 해석이 갈렸다 — 「익일」을 찍는다.
+     */
+    public function test_rule_editor_shows_allday_and_nextday_plainly(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->assertOk()->html();
+
+        // 기본 규칙 = 평일 주간 / 평일 야간(자정 넘김) / 주말 종일
+        $this->assertStringContainsString(__('alimtalk_catalog.rule_allday'), $html, '종일 표시가 없다');
+        $this->assertStringContainsString(__('alimtalk_catalog.rule_nextday'), $html, '익일 표시가 없다');
+
+        // 🚫 24:00 이 time 입력값으로 렌더되면 브라우저가 빈칸으로 만든다(그 증상 자체를 막는다).
+        $this->assertStringNotContainsString('value="24:00"', $html);
+
+        // 사람 말 요약 — 요일·시간·수신자가 한 줄로 보여야 한다.
+        $this->assertStringContainsString('→', $html);
+    }
+
+    /** 종일 ↔ 시간 지정 전환. 24:00 은 버튼으로만 만들어진다(입력칸으로는 못 넣는다). */
+    public function test_toggle_all_day(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->set('timeRules.erp_board_request', [
+                ['to' => 'admin', 'days' => [6, 7], 'from' => '09:00', 'till' => '18:00'],
+            ])
+            ->call('toggleAllDay', 'erp_board_request', 0);
+
+        $rule = $c->get('timeRules')['erp_board_request'][0];
+        $this->assertSame(['00:00', '24:00'], [$rule['from'], $rule['till']]);
+
+        $c->call('toggleAllDay', 'erp_board_request', 0);
+        $rule = $c->get('timeRules')['erp_board_request'][0];
+        $this->assertNotSame('24:00', $rule['till'], '되돌렸는데 시간칸에 못 넣는 값이 남았다');
+    }
+
+    /** 자동 수집이 켜져 있으면 받아온 날짜와 「지금 받아오기」가 보인다. */
+    public function test_auto_holiday_status_is_visible_when_configured(): void
+    {
+        config(['services.holiday.key' => 'TESTKEY']);
+        Setting::updateOrCreate(
+            ['key' => KoreanHolidayService::cacheKey((int) now()->year)],
+            ['value' => json_encode([now()->year.'-02-17' => '설날'], JSON_UNESCAPED_UNICODE), 'type' => 'string'],
+        );
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();
+
+        $this->assertStringContainsString('설날', $html, '자동 수집된 날짜가 안 보인다');
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_sync_now'), $html);
+    }
+
+    /**
+     * ⏳ 활용기간(24개월)을 화면에서 보고 적을 수 있어야 한다 (jin 2026-08-11).
+     * 만료되면 수집만 조용히 멈추고 저장분이 늙는다 — 사람이 알아챌 유일한 자리가 여기다.
+     */
+    public function test_key_expiry_is_editable_and_counted_down(): void
+    {
+        config(['services.holiday.key' => 'TESTKEY']);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        Carbon::setTestNow('2026-08-11 10:00');
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index');
+        $c->assertSee(__('alimtalk_catalog.holidays_expiry'))
+            ->assertSee(__('alimtalk_catalog.holidays_expiry_unset'));   // 미입력 안내
+
+        $c->set('holidayExpiresAt', '2028-08-10')->call('saveHolidayExpiry');
+        $this->assertSame('2028-08-10', Setting::get(KoreanHolidayService::expiresAtKey()));
+
+        // 임박하면 D-day 가 뜬다.
+        $c->set('holidayExpiresAt', '2026-09-10')->call('saveHolidayExpiry');
+        Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->assertSee(__('alimtalk_catalog.holidays_expires_in', ['n' => 30]));
+
+        Carbon::setTestNow();
+    }
+
+    /** 🗓️ 고정 공휴일은 화면에 안내만 하고 수기 입력은 변동분만 받는다. */
+    public function test_fixed_holidays_are_shown_not_asked_for(): void
+    {
+        // ⚠️ 개발자 .env 에 키가 있으면 화면이 '켜짐' 으로 뜬다 — 테스트가 환경을 타지 않게 못 박는다.
+        config(['services.holiday.key' => '']);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();
+
+        foreach (['신정', '삼일절', '어린이날', '성탄절'] as $name) {
+            $this->assertStringContainsString($name, $html, "고정 공휴일 '{$name}' 안내가 없다");
+        }
+
+        // 자동 수집 상태가 보여야 한다 — 켜졌는지 꺼졌는지 모르면 수기로 또 적게 된다.
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_auto'), $html);
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_auto_off'), $html,
+            '키 미설정인데 그 사실이 화면에 안 보인다');
+    }
 
     /**
      * 🕑 시각 규칙 편집기 (2026-08-11) — 화면에서 규칙을 실제로 고칠 수 있어야 한다.

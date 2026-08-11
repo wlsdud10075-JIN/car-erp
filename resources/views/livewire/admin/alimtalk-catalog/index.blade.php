@@ -3,6 +3,7 @@
 use App\Models\Setting;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkRecipients;
+use App\Services\KoreanHolidayService;
 use App\Support\AlimtalkTemplates;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -18,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 공휴일 수기 목록 (회사 공통) — 'YYYY-MM-DD' 를 줄바꿈으로. */
     public string $holidays = '';
 
+    /** 공휴일 API 활용기간 만료일 (YYYY-MM-DD). 24개월마다 갱신해야 한다. */
+    public string $holidayExpiresAt = '';
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -31,6 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->holidays = implode("
 ", AlimtalkRecipients::holidays());
+        $this->holidayExpiresAt = (string) (Setting::get(KoreanHolidayService::expiresAtKey(), '') ?: '');
     }
 
     public function isTimeRouted(string $code): bool
@@ -42,6 +47,114 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function timeRuleCount(string $code): int
     {
         return count(AlimtalkRecipients::forTimeRules($code));
+    }
+
+    /** 이 행이 지금 걸려 있는가 — 「지금 적용」 표시용. 판정은 발송과 같은 함수를 쓴다. */
+    public function appliesNow(array $rule): bool
+    {
+        return AlimtalkRecipients::ruleAppliesNow($rule);
+    }
+
+    /** 이 행이 '종일'인가 — 00:00~24:00. 별도 상태를 두지 않고 값에서 파생한다(둘이 어긋날 일이 없다). */
+    public function isAllDay(array $rule): bool
+    {
+        return ($rule['from'] ?? '') === '00:00' && ($rule['till'] ?? '') === '24:00';
+    }
+
+    /**
+     * 종료가 시작보다 이르거나 같으면 **자정을 넘긴 구간**이다(17:30~익일 09:00).
+     * 화면에 「익일」을 찍지 않으면 "당일 09시인가?" 로 읽힌다(jin 지적).
+     */
+    public function crossesMidnight(array $rule): bool
+    {
+        return ! $this->isAllDay($rule) && ($rule['till'] ?? '') <= ($rule['from'] ?? '');
+    }
+
+    /** 규칙 한 줄을 사람 말로 — 시간 칸만 보고는 해석이 갈린다. */
+    public function describeRule(array $rule): string
+    {
+        $names = __('alimtalk_catalog.weekdays');
+        $days = array_map(fn ($d) => $names[(int) $d] ?? $d, (array) ($rule['days'] ?? []));
+        $when = $this->isAllDay($rule)
+            ? __('alimtalk_catalog.rule_allday')
+            : ($rule['from'] ?? '').' ~ '.($this->crossesMidnight($rule) ? __('alimtalk_catalog.rule_nextday').' ' : '').($rule['till'] ?? '');
+
+        return __('alimtalk_catalog.rule_summary', [
+            'days' => implode('·', $days) ?: '—',
+            'when' => $when,
+            'to' => trim((string) ($rule['to'] ?? '')) ?: '—',
+        ]);
+    }
+
+    /** 종일 ↔ 시간 지정 전환. 24:00 은 <input type="time"> 에 못 들어가므로 버튼으로만 만든다. */
+    public function toggleAllDay(string $code, int $idx): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null) {
+            return;
+        }
+        [$from, $till] = $this->isAllDay($rule) ? ['09:00', '18:00'] : ['00:00', '24:00'];
+        $this->timeRules[$code][$idx]['from'] = $from;
+        $this->timeRules[$code][$idx]['till'] = $till;
+    }
+
+    /** 자동 수집 상태 — 켜졌는지, 몇 건인지, 언제 받았는지. */
+    public function holidayAuto(): array
+    {
+        $year = (int) now()->year;
+
+        $synced = (string) (Setting::get(KoreanHolidayService::lastSyncedKey(), '') ?: '');
+
+        return [
+            'configured' => KoreanHolidayService::isConfigured(),
+            'this_year' => KoreanHolidayService::cached($year),
+            'next_year' => KoreanHolidayService::cached($year + 1),
+            'synced_at' => $synced,
+            // 마지막 수집이 오래됐으면 조용히 늙고 있다는 뜻 — 만료·장애의 첫 신호다.
+            'stale' => $synced !== '' && \Illuminate\Support\Carbon::parse($synced)->lt(now()->subDays(3)),
+            'expires_in' => KoreanHolidayService::daysUntilExpiry(),
+            'year' => $year,
+        ];
+    }
+
+    /**
+     * 활용기간 만료일 저장 — API 가 알려주지 않으므로 사람이 적어 둔다(24개월).
+     * 안 적어두면 만료 후 **수집만 조용히 실패**하고 저장분이 늙는다(발송은 계속돼 아무도 모른다).
+     */
+    public function saveHolidayExpiry(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        $v = trim($this->holidayExpiresAt);
+        Setting::updateOrCreate(
+            ['key' => KoreanHolidayService::expiresAtKey()],
+            ['value' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '', 'type' => 'string',
+                'description' => '공휴일 API 활용기간 만료일'],
+        );
+        $this->holidayExpiresAt = (string) (Setting::get(KoreanHolidayService::expiresAtKey(), '') ?: '');
+        $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
+    }
+
+    /** 지금 받아오기 — 연말·임시공휴일 지정 직후에 하루를 안 기다리게. */
+    public function syncHolidays(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        if (! KoreanHolidayService::isConfigured()) {
+            $this->dispatch('notify', message: __('alimtalk_catalog.holidays_auto_unset'), type: 'warning');
+
+            return;
+        }
+        $svc = app(KoreanHolidayService::class);
+        $n = ($svc->syncYear((int) now()->year) ?? 0) + ($svc->syncYear((int) now()->year + 1) ?? 0);
+        $this->dispatch('notify',
+            message: $n > 0 ? __('alimtalk_catalog.holidays_synced', ['n' => $n]) : __('alimtalk_catalog.holidays_sync_failed'),
+            type: $n > 0 ? 'success' : 'warning');
+    }
+
+    /** 화면이 보여줄 고정 공휴일(코드 내장) — 수기로 또 적지 않게. */
+    public function fixedHolidays(): array
+    {
+        return AlimtalkRecipients::FIXED_HOLIDAYS;
     }
 
     public function addTimeRule(string $code): void
@@ -251,24 +364,56 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         <div class="flex flex-col gap-2">
                             @foreach($this->timeRules[$code] ?? [] as $i => $rule)
-                                <div wire:key="tr-{{ $code }}-{{ $i }}" class="flex flex-wrap items-center gap-2 rounded-lg bg-gray-50 p-2">
-                                    <input type="text" wire:model="timeRules.{{ $code }}.{{ $i }}.to"
-                                           class="input-base w-44 text-xs" placeholder="{{ __('alimtalk_catalog.rule_to_ph') }}" />
-                                    <span class="flex items-center gap-1.5">
-                                        @foreach(__('alimtalk_catalog.weekdays') as $d => $dl)
-                                            <label class="flex items-center gap-0.5 text-[11px] text-gray-600">
-                                                <input type="checkbox" value="{{ $d }}" wire:model="timeRules.{{ $code }}.{{ $i }}.days"
-                                                       class="h-3.5 w-3.5 rounded border-gray-300" />{{ $dl }}
-                                            </label>
-                                        @endforeach
-                                    </span>
-                                    <input type="time" wire:model="timeRules.{{ $code }}.{{ $i }}.from" class="input-base w-28 text-xs" />
-                                    <span class="text-xs text-gray-400">~</span>
-                                    <input type="time" wire:model="timeRules.{{ $code }}.{{ $i }}.till" class="input-base w-28 text-xs" />
-                                    <button type="button" wire:click="removeTimeRule('{{ $code }}', {{ $i }})"
-                                            class="ml-auto rounded px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
-                                        {{ __('alimtalk_catalog.rule_remove') }}
-                                    </button>
+                                @php
+                                    $allDay = $this->isAllDay($rule);
+                                    $overnight = $this->crossesMidnight($rule);
+                                @endphp
+                                <div wire:key="tr-{{ $code }}-{{ $i }}" class="rounded-lg bg-gray-50 p-2">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <input type="text" wire:model.live="timeRules.{{ $code }}.{{ $i }}.to"
+                                               class="input-base w-44 text-xs" placeholder="{{ __('alimtalk_catalog.rule_to_ph') }}" />
+                                        <span class="flex items-center gap-1.5">
+                                            @foreach(__('alimtalk_catalog.weekdays') as $d => $dl)
+                                                <label class="flex items-center gap-0.5 text-[11px] text-gray-600">
+                                                    <input type="checkbox" value="{{ $d }}" wire:model.live="timeRules.{{ $code }}.{{ $i }}.days"
+                                                           class="h-3.5 w-3.5 rounded border-gray-300" />{{ $dl }}
+                                                </label>
+                                            @endforeach
+                                        </span>
+
+                                        {{-- 종일이면 시간칸을 아예 안 보여준다. 24:00 은 <input type="time"> 에
+                                             넣을 수 없어(최대 23:59) 빈칸으로 보이던 게 혼란의 원인이었다(jin 지적). --}}
+                                        @if($allDay)
+                                            <span class="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-primary-text">
+                                                {{ __('alimtalk_catalog.rule_allday') }}
+                                            </span>
+                                        @else
+                                            <input type="time" wire:model.live="timeRules.{{ $code }}.{{ $i }}.from" class="input-base w-28 text-xs" />
+                                            <span class="text-xs text-gray-400">~</span>
+                                            @if($overnight)
+                                                <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
+                                                    {{ __('alimtalk_catalog.rule_nextday') }}
+                                                </span>
+                                            @endif
+                                            <input type="time" wire:model.live="timeRules.{{ $code }}.{{ $i }}.till" class="input-base w-28 text-xs" />
+                                        @endif
+
+                                        <button type="button" wire:click="toggleAllDay('{{ $code }}', {{ $i }})"
+                                                class="rounded border border-gray-300 px-2 py-1 text-[11px] text-gray-600 hover:bg-white">
+                                            {{ $allDay ? __('alimtalk_catalog.rule_set_hours') : __('alimtalk_catalog.rule_allday') }}
+                                        </button>
+                                        <button type="button" wire:click="removeTimeRule('{{ $code }}', {{ $i }})"
+                                                class="ml-auto rounded px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
+                                            {{ __('alimtalk_catalog.rule_remove') }}
+                                        </button>
+                                    </div>
+                                    {{-- 사람 말 요약 — 시간칸만 보고는 "당일인지 익일인지"가 안 갈린다. --}}
+                                    <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500">
+                                        <span>↳ {{ $this->describeRule($rule) }}</span>
+                                        @if($this->appliesNow($rule))
+                                            <span class="rounded-full bg-green-100 px-1.5 py-0.5 font-bold text-green-700">{{ __('alimtalk_catalog.rule_active_now') }}</span>
+                                        @endif
+                                    </div>
                                 </div>
                             @endforeach
                         </div>
@@ -284,7 +429,70 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                         <div class="mt-3 border-t border-gray-100 pt-3">
                             <div class="mb-1 text-xs font-medium text-gray-500">{{ __('alimtalk_catalog.holidays') }}</div>
-                            <textarea wire:model="holidays" rows="3" class="input-base w-full font-mono text-xs" placeholder="2026-01-01&#10;2026-03-01"></textarea>
+                            {{-- 공휴일은 달력에 늘 있는 정보다 — 사람이 옮겨 적게 하면 결국 안 적게 되고,
+                                 그러면 그날 담당자에게 알림이 가버린다(jin 지적). 그래서 자동 수집이 주 출처다. --}}
+                            @php $auto = $this->holidayAuto(); @endphp
+                            <div class="mb-2 rounded-lg border p-2 text-[11px] {{ $auto['configured'] ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800' }}">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="font-bold">{{ __('alimtalk_catalog.holidays_auto') }}</span>
+                                    @if($auto['configured'])
+                                        <span>{{ __('alimtalk_catalog.holidays_auto_on', [
+                                            'y' => $auto['year'], 'a' => count($auto['this_year']),
+                                            'y2' => $auto['year'] + 1, 'b' => count($auto['next_year']),
+                                        ]) }}</span>
+                                        @if($auto['synced_at'])
+                                            <span class="opacity-70">· {{ $auto['synced_at'] }}</span>
+                                        @endif
+                                        <button type="button" wire:click="syncHolidays" wire:loading.attr="disabled"
+                                                class="ml-auto rounded border border-green-300 bg-white px-2 py-0.5 font-medium hover:bg-green-100">
+                                            {{ __('alimtalk_catalog.holidays_sync_now') }}
+                                        </button>
+                                    @else
+                                        <span>{{ __('alimtalk_catalog.holidays_auto_off') }}</span>
+                                    @endif
+                                </div>
+                                @if($auto['configured'] && $auto['this_year'])
+                                    <div class="mt-1 opacity-80">
+                                        {{ collect($auto['this_year'])->map(fn ($name, $d) => substr($d, 5).' '.$name)->implode(' · ') }}
+                                    </div>
+                                @endif
+
+                                @if($auto['configured'])
+                                    {{-- ⏳ 활용기간(24개월). API 가 안 알려주므로 사람이 적어 둔다 —
+                                         안 적어두면 만료 후 **수집만 조용히 실패**하고 저장분이 늙는다. --}}
+                                    @php
+                                        $d = $auto['expires_in'];
+                                        $tone = $d === null ? 'text-gray-500'
+                                            : ($d < 0 ? 'text-red-700 font-bold' : ($d <= 60 ? 'text-amber-700 font-bold' : 'text-gray-600'));
+                                    @endphp
+                                    <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-green-200 pt-2">
+                                        <span class="font-medium text-gray-600">{{ __('alimtalk_catalog.holidays_expiry') }}</span>
+                                        <input type="date" wire:model="holidayExpiresAt" class="input-base w-40 text-xs" />
+                                        <button type="button" wire:click="saveHolidayExpiry"
+                                                class="rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-50">
+                                            {{ __('alimtalk_catalog.save') }}
+                                        </button>
+                                        <span class="{{ $tone }}">
+                                            @if($d === null)
+                                                {{ __('alimtalk_catalog.holidays_expiry_unset') }}
+                                            @elseif($d < 0)
+                                                {{ __('alimtalk_catalog.holidays_expired', ['n' => abs($d)]) }}
+                                            @else
+                                                {{ __('alimtalk_catalog.holidays_expires_in', ['n' => $d]) }}
+                                            @endif
+                                        </span>
+                                    </div>
+                                    @if($auto['stale'])
+                                        <div class="mt-1 font-bold text-red-700">{{ __('alimtalk_catalog.holidays_stale') }}</div>
+                                    @endif
+                                @endif
+                            </div>
+                            <div class="mb-2 rounded-lg bg-gray-50 p-2 text-[11px] text-gray-500">
+                                <span class="font-medium text-gray-600">{{ __('alimtalk_catalog.holidays_fixed') }}</span>
+                                <span class="ml-1">{{ implode(' · ', $this->fixedHolidays()) }}</span>
+                                <div class="mt-1">{{ __('alimtalk_catalog.holidays_fixed_hint') }}</div>
+                            </div>
+                            <textarea wire:model="holidays" rows="3" class="input-base w-full font-mono text-xs" placeholder="2026-02-16&#10;2026-09-24"></textarea>
                             <div class="mt-1 flex items-center gap-2">
                                 <p class="text-[11px] text-gray-400">{{ __('alimtalk_catalog.holidays_help') }}</p>
                                 <button type="button" wire:click="saveHolidays" class="btn-primary ml-auto px-3 py-1 text-xs">

@@ -90,7 +90,7 @@ class BoardRequestModelTest extends TestCase
                 $this->assertArrayHasKey($key, $meta, "{$type} 의 TYPE_META 에 '{$key}' 가 없다");
                 $this->assertNotSame('', trim((string) $meta[$key]));
             }
-            foreach (['manual_confirm', 'auto_resolve', 'amount'] as $flag) {
+            foreach (['manual_confirm', 'auto_resolve', 'amount', 'payee'] as $flag) {
                 $this->assertIsBool($meta[$flag] ?? null, "{$type} 의 '{$flag}' 가 bool 이 아니다");
             }
             // 빌드된 CSS 에 있는 색만 쓴다 (SKILLS §8 #50 — 없는 색은 켜도 회색으로 보인다).
