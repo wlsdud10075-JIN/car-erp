@@ -135,7 +135,8 @@ class BoardRequestController extends Controller
 
         // 🔔 알림톡은 **트랜잭션이 끝난 뒤** 보낸다 — 롤백됐는데 카톡만 나가면 되돌릴 수가 없다.
         //    `skipped`(already_open·forbidden)에는 안 보낸다: 중복 카톡의 원인이다.
-        $this->notifyCreated($data['type'], $createdRows, (string) $salesman->email);
+        // 카드에는 이름을 쓴다 — 아이템 내용이 20자에서 잘려 이메일이 뭉개진다(이름 없으면 이메일 폴백).
+        $this->notifyCreated($data['type'], $createdRows, (string) ($salesman->name ?: $salesman->email));
 
         return response()->json([
             'batch_id' => $isSaleConfirm ? $batchId : null,
@@ -157,7 +158,7 @@ class BoardRequestController extends Controller
      *
      * @param  array<int, BoardRequest>  $rows
      */
-    private function notifyCreated(string $type, array $rows, string $requesterEmail): void
+    private function notifyCreated(string $type, array $rows, string $requester): void
     {
         if ($rows === []) {
             return;
@@ -198,7 +199,7 @@ class BoardRequestController extends Controller
                     ? ($numbers[0].' 외 '.(count($numbers) - 1).'대')
                     : ($numbers[0] ?? '-'),
                 '금액' => $total > 0 ? number_format($total).'원' : '-',
-                '요청자' => $requesterEmail,
+                '요청자' => $requester,
                 '요청내역' => implode("\n", $lines),
             ];
 
