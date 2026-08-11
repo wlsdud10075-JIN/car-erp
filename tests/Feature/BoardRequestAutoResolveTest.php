@@ -100,9 +100,61 @@ class BoardRequestAutoResolveTest extends TestCase
         $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
         $this->assertSame(BoardRequest::STATUS_OPEN, $req->fresh()->status);
 
-        $v->fresh()->resolveOpenPurchasePaymentRequests();
+        $v->fresh()->resolveAutoClosingBoardRequests();
 
         $this->assertSame(BoardRequest::STATUS_DONE, $req->fresh()->status);
+    }
+
+    /** 매입잔금 요청은 구 [입금요청]과 같은 조건으로 닫힌다 — 미지급 0. */
+    public function test_purchase_balance_request_closes_when_fully_paid(): void
+    {
+        $v = $this->vehicle(1_000_000);
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 700_000);
+
+        $v->purchaseBalancePayments()->create([
+            'amount' => 1_000_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame(BoardRequest::STATUS_DONE, $req->fresh()->status, '미지급 0 인데 매입잔금 요청이 안 닫혔다');
+    }
+
+    /**
+     * 🔒 **계약금은 미지급 0 으로 닫히면 안 된다** (인계 §3, jin 2026-08-11).
+     *
+     * 미지급 0 = 잔금까지 다 준 상태다. 그때 계약금 신호가 비로소 꺼지면
+     * "계약금 아직 안 보냈다"는 **거짓 신호**가 차 인수 시점까지 화면에 남는다.
+     * ERP 는 계약금을 실제로 보냈는지 알 방법이 없다(금액을 회계에 안 쓰므로) → 수동 확인만.
+     */
+    public function test_deposit_request_survives_full_payment(): void
+    {
+        $v = $this->vehicle(1_000_000);
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+
+        $v->purchaseBalancePayments()->create([
+            'amount' => 1_000_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame(
+            BoardRequest::STATUS_OPEN,
+            $deposit->fresh()->status,
+            '계약금 요청이 매입 완납으로 닫혔다 — 사람이 확인하지 않았는데 신호가 사라진다'
+        );
+    }
+
+    /**
+     * 계약금이 열려 있어도 잔금 요청이 통과해야 한다 — 멱등키가 `(vehicle_id, type)` 이라
+     * type 이 갈리는 것이 이 설계의 전제다(하위구분 필드였다면 여기서 조용히 skip 됐다).
+     */
+    public function test_deposit_and_balance_coexist_on_one_vehicle(): void
+    {
+        $v = $this->vehicle(1_000_000);
+
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+        $balance = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 700_000);
+
+        $this->assertNotNull($deposit);
+        $this->assertNotNull($balance, '계약금이 열려 있다고 잔금 요청이 skip 됐다 — 잔금 요청이 도착하지 않는다');
+        $this->assertSame(2, BoardRequest::query()->where('vehicle_id', $v->id)->open()->count());
     }
 
     /**

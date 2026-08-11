@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 /**
@@ -93,6 +94,134 @@ class AlimtalkRecipients
         }
 
         return collect(explode(',', (string) $raw))->map(fn ($g) => trim($g))->filter()->unique()->values()->all();
+    }
+
+    // ── 시각 규칙 라우팅 (jin 2026-08-11, board 요청 신호) ────────────────────────────────
+    //
+    // jin: "평시엔 알림톡이 없지만 지정한 담당자 1~2명은 알림톡을 받는거지. 그 알림톡은 시간대를
+    //       지정할 수 있거나 요일을 지정할 수 있고.. 하이브리드적인?"
+    //
+    // 🧭 **"17:30 이후엔 대표" 를 예외 분기로 박지 않는다.** 규칙 테이블 한 장으로 두면 그게
+    //    예외가 아니라 규칙의 자연스러운 결과가 되고, 시간대를 바꿀 때 코드를 안 고쳐도 된다.
+
+    /** 시각 규칙으로 수신자가 갈리는 알림 — 역할 체크박스 대신 규칙 편집기를 쓴다. */
+    public const TIME_RULE_CODES = ['erp_board_request'];
+
+    /**
+     * 규칙 미설정 시 기본값. 인계문서 §5-1 표 그대로.
+     *   `to`    = 콤마 구분. BROADCAST_GROUPS 키(역할) 또는 전화번호를 직접 적어도 된다.
+     *   `days`  = ISO 요일(월=1 … 일=7).
+     *   `from`/`till` = 'HH:MM'. **till < from 이면 자정을 넘긴 구간**(17:30–09:00).
+     *                   두 행으로 쪼개는 것보다 설정 실수가 적다.
+     */
+    public const DEFAULT_TIME_RULES = [
+        ['to' => '관리,manager', 'days' => [1, 2, 3, 4, 5], 'from' => '09:00', 'till' => '17:30'],
+        ['to' => 'admin', 'days' => [1, 2, 3, 4, 5], 'from' => '17:30', 'till' => '09:00'],
+        ['to' => 'admin', 'days' => [6, 7], 'from' => '00:00', 'till' => '24:00'],
+    ];
+
+    /** 이 알림이 시각 규칙형인가. */
+    public static function isTimeRouted(string $code): bool
+    {
+        return in_array($code, self::TIME_RULE_CODES, true);
+    }
+
+    /** 저장된 규칙(회사별). 미설정·깨진 JSON 이면 기본값. */
+    public static function timeRules(string $code): array
+    {
+        $set = Setting::companyTemplateSet();
+        $raw = (string) (Setting::get("alimtalk_timerules_{$code}_{$set}", '') ?: '');
+        if (trim($raw) === '') {
+            return self::DEFAULT_TIME_RULES;
+        }
+
+        $rules = json_decode($raw, true);
+
+        // ⚠️ 깨진 설정으로 **아무도 안 받는 상태**가 되는 게 최악이다(조용히 0명 = 카톡보다 나쁨).
+        //    파싱 실패나 빈 배열이면 기본값으로 되돌린다.
+        return is_array($rules) && $rules !== [] ? $rules : self::DEFAULT_TIME_RULES;
+    }
+
+    /**
+     * 공휴일 목록(회사별 수기 등록) — 'YYYY-MM-DD' 를 줄바꿈·콤마로 구분.
+     * 외부 API 를 끌어오지 않는다(연 1회 입력이면 충분하고, 발송 경로에 외부 의존을 넣지 않는다).
+     *
+     * @return array<int, string>
+     */
+    public static function holidays(): array
+    {
+        $set = Setting::companyTemplateSet();
+        $raw = (string) (Setting::get("alimtalk_holidays_{$set}", '') ?: '');
+
+        return collect(preg_split('/[\s,]+/', $raw))
+            ->map(fn ($d) => trim((string) $d))
+            ->filter(fn ($d) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) === 1)
+            ->unique()->values()->all();
+    }
+
+    /**
+     * 시각 규칙 수신자 — **현재 시각에 매칭되는 모든 행**의 수신자 합집합.
+     *
+     * ⚠️ **공휴일은 일요일(7)로 취급한다** (jin: "공휴일 = 주말과 동일 취급").
+     *    행마다 '공휴일 포함' 체크를 두는 대신 요일을 갈아끼우면, "토·일 종일 대표" 한 줄이
+     *    공휴일까지 자동으로 덮고 "월~금 담당자" 줄은 자동으로 빠진다 — 설정 실수가 줄어든다.
+     * ⚠️ **매칭 0명이면 대표에게 강제 발송한다.** 조용히 0명에게 가는 게 최악이다.
+     */
+    public static function forTimeRules(string $code, ?\DateTimeInterface $at = null): array
+    {
+        $now = $at ? Carbon::instance($at) : now();
+        $isHoliday = in_array($now->format('Y-m-d'), self::holidays(), true);
+        $dow = $isHoliday ? 7 : (int) $now->isoWeekday();
+        $mins = $now->hour * 60 + $now->minute;
+
+        $phones = [];
+        foreach (self::timeRules($code) as $rule) {
+            if (! self::ruleMatches($rule, $dow, $mins)) {
+                continue;
+            }
+            foreach (explode(',', (string) ($rule['to'] ?? '')) as $target) {
+                $target = trim($target);
+                if ($target === '') {
+                    continue;
+                }
+                // 역할 그룹이면 그 그룹 사용자 번호, 아니면 직접 적은 번호로 본다.
+                $phones = array_merge(
+                    $phones,
+                    isset(self::BROADCAST_GROUPS[$target]) ? self::groupPhones($target) : [$target]
+                );
+            }
+        }
+
+        $phones = collect($phones)->map(fn ($p) => trim((string) $p))->filter()->unique()->values()->all();
+
+        return $phones !== [] ? $phones : self::admins();
+    }
+
+    /** 한 규칙 행이 지금 시각에 걸리는가. till < from 이면 자정 넘김 구간. */
+    private static function ruleMatches(array $rule, int $dow, int $mins): bool
+    {
+        if (($rule['active'] ?? true) === false) {
+            return false;
+        }
+        $days = array_map('intval', (array) ($rule['days'] ?? []));
+        if (! in_array($dow, $days, true)) {
+            return false;
+        }
+
+        $from = self::minutes((string) ($rule['from'] ?? '00:00'));
+        $till = self::minutes((string) ($rule['till'] ?? '24:00'));
+
+        return $till > $from
+            ? ($mins >= $from && $mins < $till)
+            : ($mins >= $from || $mins < $till);   // 자정 넘김
+    }
+
+    /** 'HH:MM' → 자정부터의 분. '24:00' = 1440(하루 끝). */
+    private static function minutes(string $hhmm): int
+    {
+        [$h, $m] = array_pad(array_map('intval', explode(':', $hhmm)), 2, 0);
+
+        return max(0, min(1440, $h * 60 + $m));
     }
 
     /** 브로드캐스트형 알림 수신자 번호 — 선택된 역할 그룹 사용자 phone (중복 제거). */

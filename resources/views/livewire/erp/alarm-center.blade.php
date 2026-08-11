@@ -129,9 +129,10 @@ new class extends Component
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
                             // board 요청·확인 신호 (2026-08-09) — 처리 자리는 차량관리 드로어다.
-                            $isBoardPurchase = $type === 'board_purchase_payment';
-                            $isBoardSale = $type === 'board_sale_confirm';
-                            $isBoard = $isBoardPurchase || $isBoardSale;
+                            //   type 을 여기서 열거하지 말 것: 신호가 늘면 색·문구가 조용히 빠진다.
+                            $boardMeta = \App\Models\BoardRequest::metaByAlarmType($type);
+                            $isBoard = $boardMeta !== [];
+                            $isBoardPurchase = $isBoard && ($boardMeta['color'] ?? '') !== 'purple';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
                             $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
@@ -158,11 +159,11 @@ new class extends Component
                                         </span>
                                     @endif
                                 </div>
-                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isBoardPurchase ? __('alarm.task_board_purchase') : ($isBoardSale ? __('alarm.task_board_sale') : ($isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance')))))) }}@if (! $isShip && ! $isArrival && ! $isBoard && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isBoard ? __($boardMeta['task']) : ($isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance'))))) }}@if (! $isShip && ! $isArrival && ! $isBoard && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
                             </a>
                             <div class="mt-1 flex items-center justify-between">
                                 @if ($isBoard)
-                                    <span class="text-[11.5px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">{{ $isBoardPurchase ? __('alarm.board_purchase_action') : __('alarm.board_sale_action') }}</span>
+                                    <span class="text-[11.5px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">{{ __($boardMeta['action']) }}</span>
                                 @elseif ($isShip)
                                     <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>
                                 @elseif ($isArrival)

@@ -138,6 +138,39 @@ class BoardRequestVehicleBadgeTest extends TestCase
         $this->assertSame(BoardRequest::STATUS_OPEN, $line->fresh()->status);
     }
 
+    /**
+     * 계약금·매입잔금 (2026-08-11) — 목록 뱃지·드로어 금액·회신이 모두 붙어야 한다.
+     *
+     * 이 부류는 **에러 없이 조용히 빠진다** — type 을 늘렸는데 화면이 두 개 리터럴로 분기하고
+     * 있으면 뱃지가 안 뜨고, 확인 액션이 옛 type 으로 좁혀져 있으면 버튼을 눌러도 아무 일이
+     * 안 일어난다(둘 다 실제로 그 상태였다). 그래서 렌더와 회신을 함께 잡는다.
+     */
+    public function test_split_purchase_requests_render_amount_and_confirm(): void
+    {
+        $v = $this->vehicle();
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 3_000_000);
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 7_500_000);
+
+        $user = $this->admin();
+
+        // ① 목록 — 두 뱃지가 함께 뜬다(한 차에 계약금·잔금이 동시에 성립한다).
+        Volt::actingAs($user)->test('erp.vehicles.index')
+            ->assertSee(__('vehicle.board_badge_deposit'))
+            ->assertSee(__('vehicle.board_badge_balance'));
+
+        // ② 드로어 — 금액이 보여야 한다. 이게 없으면 돈 보낼 사람이 얼마인지 알 수 없어 기능이 무의미하다.
+        $component = Volt::actingAs($user)->test('erp.vehicles.index')->call('openEdit', $v->id);
+        $component->assertSee(number_format(3_000_000))
+            ->assertSee(number_format(7_500_000))
+            ->assertSee(__('vehicle.board_confirm_btn'));
+
+        // ③ 회신 — 계약금은 사람이 눌러야만 닫힌다.
+        $component->call('confirmBoardRequest', $deposit->id);
+        $deposit->refresh();
+        $this->assertSame(BoardRequest::STATUS_DONE, $deposit->status, '계약금 확인 버튼이 아무 일도 하지 않았다');
+        $this->assertSame($user->id, $deposit->confirmed_by_id);
+    }
+
     /** 다른 차량의 신호 id 를 주입해도 안 닫힌다 — 패널에 연 차량으로 한정(IDOR). */
     public function test_cannot_confirm_request_of_another_vehicle(): void
     {

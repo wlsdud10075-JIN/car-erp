@@ -191,6 +191,19 @@ class AlimtalkTemplates
                 ['name' => '승인/반려 바로가기', 'type' => 'WL', 'url_mobile' => '${URL}', 'url_pc' => '${URL}'],
             ],
         ],
+        // ── board 요청 신호 1종 (jin 2026-08-11) ──
+        // board 영업이 [계약금]·[매입잔금]·[판매대금확인] 을 보내면 즉시 발송. 수신자는 **시각 규칙**으로
+        // 갈린다(근무시간엔 담당자, 그 밖엔 대표) — AlimtalkRecipients::forTimeRules().
+        // ⚠️ 요약(summary)을 두지 않았다. 요약 description 은 **금액 표기만** 허용이라(K140),
+        //    금액이 없는 판매대금확인에서 '0원' 을 찍거나 발송이 통째로 반려된다.
+        'erp_board_request' => [
+            'name' => 'board 요청접수',
+            'recipient' => '시각 규칙',
+            'vars' => ['건수', '구분', '차량', '금액', '요청자', '요청내역'],
+            'title' => '',
+            'body' => "[사내 업무용] board 요청 #{건수}건\n\n사내 업무 시스템(board)에서 영업이 보낸 요청이 접수되었습니다.\n\n#{요청내역}\n\nERP 차량관리에서 확인 후 처리해 주세요.",
+        ],
+
         'erp_payout_done' => [
             'name' => '정산지급 승인완료',
             'recipient' => '제출자',
@@ -273,6 +286,17 @@ class AlimtalkTemplates
                 ['title' => '제출', 'description' => '#{제출자}'],
             ],
         ],
+        // ⚠️ title 은 6자·highlight description 은 19자·item description 은 20자(자동컷) 상한.
+        //    summary 는 일부러 없다(위 TEMPLATES 주석 — K140).
+        'erp_board_request' => [
+            'header' => 'board 요청 접수',
+            'highlight' => ['title' => '#{건수}건', 'description' => '#{구분}'],
+            'items' => [
+                ['title' => '차량', 'description' => '#{차량}'],
+                ['title' => '금액', 'description' => '#{금액}'],
+                ['title' => '요청', 'description' => '#{요청자}'],
+            ],
+        ],
         'erp_payout_done' => [
             'header' => '정산 지급 완료',
             'highlight' => ['title' => '#{총액}', 'description' => '#{귀속월} 지급 완료'],
@@ -327,6 +351,7 @@ class AlimtalkTemplates
         'erp_deposit_cash_overdue' => '매일 09:00 (평일) — 「보증금으로 매입」 체크 후 10일 초과 & 미달 (독촉 대상에선 제외)',
         'erp_pickup_reminder' => '매일 09:00 (평일) — 매입일 +2일 & 매입 미완납',
         'erp_deregistration_notice' => '말소등록증 업로드 후 담당자가 수동 발송',
+        'erp_board_request' => 'board 영업이 계약금·매입잔금·판매대금확인을 보낸 즉시 (수신자는 시각 규칙으로 갈림 — 근무시간엔 담당자, 그 밖엔 대표)',
         'erp_payout_request' => '월배치 정산 지급 제출·전진 시 (→다음 계단 승인자)',
         'erp_payout_done' => '월배치 정산 지급 최종 승인 시 (→제출자)',
         'erp_payout_rejected' => '월배치 정산 지급 반려 시 (→제출자)',

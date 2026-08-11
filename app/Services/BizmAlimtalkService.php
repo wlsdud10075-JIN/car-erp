@@ -75,7 +75,11 @@ class BizmAlimtalkService
         }
 
         $message = AlimtalkTemplates::render($code, $vars);
-        $base['message'] = $message;
+        // 🔒 **보낼 본문은 그대로, 로그만 가린다.** `purchase_seller_account` 는 DB 에 암호화 저장되고
+        //    감사로그에서도 마스킹되는 컬럼이다 — 그걸 alimtalk_logs.message 에 평문으로 박으면
+        //    한쪽 문만 잠근 셈이 된다. 받는 사람은 카톡으로 실제 번호를 봐야 송금할 수 있으므로
+        //    발송본은 손대지 않는다. 호출측이 `$context['mask']` 로 가릴 문자열을 명시한다.
+        $base['message'] = self::maskForLog($message, (array) ($context['mask'] ?? []));
 
         try {
             // 1차 롤아웃 = 전부 기본형(선택안함)으로 BizM 등록 → emphasis title 은 안 보낸다.
@@ -146,6 +150,25 @@ class BizmAlimtalkService
 
             return AlimtalkLog::create($base + ['status' => 'failed', 'error' => Str::limit($e->getMessage(), 480, '')]);
         }
+    }
+
+    /**
+     * 로그 저장용 마스킹 — 넘겨받은 문자열만 정확히 가린다.
+     *
+     * ⚠️ 정규식으로 "계좌처럼 생긴 숫자"를 추정하지 않는다 — 금액·차량번호·날짜를 오탐해
+     * 로그가 읽을 수 없게 된다. 가릴 값을 아는 건 호출측뿐이다.
+     */
+    private static function maskForLog(string $message, array $secrets): string
+    {
+        foreach ($secrets as $secret) {
+            $secret = trim((string) $secret);
+            if ($secret === '') {
+                continue;
+            }
+            $message = str_replace($secret, '[계좌 마스킹]', $message);
+        }
+
+        return $message;
     }
 
     /**

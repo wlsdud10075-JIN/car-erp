@@ -178,8 +178,99 @@ class BoardRequestApiTest extends TestCase
         ])->assertStatus(422)->assertJsonPath('error', 'buyer_required');
     }
 
-    /** 🚫 §11-2 — board 가 금액을 보내도 저장되지 않는다. */
-    public function test_amount_from_board_is_discarded(): void
+    // ── 금액 (2026-08-11 §11-2 개정) ──────────────────────────────────────────
+
+    /** 계약금·잔금은 금액을 싣는다. 저장은 `amount_krw` **하나뿐**. */
+    public function test_purchase_deposit_and_balance_store_the_amount(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        foreach ([
+            BoardRequest::TYPE_PURCHASE_DEPOSIT => 3_000_000,
+            BoardRequest::TYPE_PURCHASE_BALANCE => 7_500_000,
+        ] as $type => $amount) {
+            $this->signedPost('/api/internal/board/requests', [
+                'salesman_email' => 'a@ex.com',
+                'type' => $type,
+                'vehicle_ids' => [$v->id],
+                'amount_krw' => $amount,
+            ])->assertStatus(201)->assertJsonCount(1, 'created');
+
+            $this->assertSame(
+                $amount,
+                BoardRequest::query()->where('type', $type)->value('amount_krw'),
+                "{$type} 요청 금액이 저장되지 않았다 — 받는 사람이 얼마를 보낼지 알 수 없다"
+            );
+        }
+    }
+
+    /**
+     * 🚫 **금액은 표시 전용이다** — 회계에 흘러들면 안 된다(§11-5 흡수 금지).
+     * board 가 금액을 보내도 매입 미지급·잔금 행은 그대로여야 한다.
+     */
+    public function test_amount_never_touches_accounting(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $v->update(['purchase_date' => '2026-08-01', 'purchase_price' => 10_000_000]);
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
+        ])->assertStatus(201);
+
+        $this->assertSame(0, $v->purchaseBalancePayments()->count(), '신호가 매입 잔금 행을 만들었다(§11-5)');
+        $this->assertSame(
+            10_000_000,
+            (int) $v->fresh()->purchase_unpaid_amount,
+            '요청 금액이 매입 미지급에 반영됐다 — 신호는 회계에 쓰지 않는다'
+        );
+    }
+
+    /** 금액이 이 기능의 전부다 — 비면 조용히 null 로 넘기지 않고 거절한다. */
+    public function test_amount_is_required_for_the_two_purchase_types(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        foreach ([BoardRequest::TYPE_PURCHASE_DEPOSIT, BoardRequest::TYPE_PURCHASE_BALANCE] as $type) {
+            $this->signedPost('/api/internal/board/requests', [
+                'salesman_email' => 'a@ex.com',
+                'type' => $type,
+                'vehicle_ids' => [$v->id],
+            ])->assertStatus(422)->assertJsonPath('error', 'amount_required');
+        }
+
+        $this->assertSame(0, BoardRequest::count(), '금액 없는 요청이 만들어졌다');
+    }
+
+    /** 금액칸이 없는 type 에 금액이 딸려오면 저장하지 않는다(표시 자리가 없어 유령 데이터가 된다). */
+    public function test_amount_is_dropped_for_types_that_do_not_carry_it(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($sm->id, '11가1111', $buyer->id);
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_SALE_PAYMENT_CONFIRM,
+            'buyer_id' => $buyer->id,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 4_500_000,
+        ])->assertStatus(201);
+
+        $this->assertNull(BoardRequest::first()->amount_krw);
+    }
+
+    /**
+     * 🔒 **구 `purchase_payment` 는 계속 받아야 한다.** board 운영(master)이 아직 그걸 보내는
+     * 구버전이고 ERP 가 먼저 배포된다 — 여기서 422 로 튕기면 board 운영의 입금요청 경로가
+     * 통째로 죽는다(구 버튼 외에 대체 경로가 없다). board master 가 신버전을 실은 뒤에 뺀다.
+     */
+    public function test_legacy_purchase_payment_is_still_accepted_without_amount(): void
     {
         $sm = $this->salesman('a@ex.com');
         $v = $this->vehicle($sm->id, '11가1111');
@@ -188,14 +279,23 @@ class BoardRequestApiTest extends TestCase
             'salesman_email' => 'a@ex.com',
             'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
             'vehicle_ids' => [$v->id],
-            'amount' => 4_500_000,
-            'sale_price' => 9_999,
-        ])->assertStatus(201);
+        ])->assertStatus(201)->assertJsonCount(1, 'created');
 
-        $row = BoardRequest::first()->getAttributes();
-        foreach (['amount', 'sale_price'] as $key) {
-            $this->assertArrayNotHasKey($key, $row, "board 가 보낸 {$key} 이 저장됐다 — 신호에 금액을 싣지 않는다(§11-2)");
-        }
+        $this->assertNull(BoardRequest::first()->amount_krw);
+    }
+
+    /** 응답에 금액이 실려야 한다 — board 는 전송 후 입력칸을 비우므로 여기가 유일한 확인처다. */
+    public function test_index_returns_the_requested_amount(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'a@ex.com', amountKrw: 3_000_000);
+
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com'])
+            ->assertOk()
+            ->assertJsonPath('requests.0.type', BoardRequest::TYPE_PURCHASE_DEPOSIT)
+            ->assertJsonPath('requests.0.amount_krw', 3_000_000)
+            ->assertJsonPath('requests.0.vehicles.0.amount_krw', 3_000_000);
     }
 
     public function test_index_returns_batch_status_without_money(): void
@@ -216,9 +316,11 @@ class BoardRequestApiTest extends TestCase
             ->assertJsonPath('requests.0.buyer_name', 'ABC')
             ->assertJsonCount(2, 'requests.0.vehicles');
 
+        // ⚠️ 'amount' 는 이제 화이트리스트 안이다(`amount_krw`, 2026-08-11 §11-2 개정) — 뺀 건 그 때문이다.
+        //    나머지는 그대로 금지: 마진·RRN·매입가는 board 에 흘러선 안 된다.
         $body = $res->json();
         $flat = json_encode($body, JSON_UNESCAPED_UNICODE);
-        foreach (['margin', 'rrn', 'purchase_price', 'amount'] as $leak) {
+        foreach (['margin', 'rrn', 'purchase_price', 'sale_price'] as $leak) {
             $this->assertStringNotContainsString($leak, $flat, "응답에 {$leak} 가 샜다(§3 화이트리스트)");
         }
     }

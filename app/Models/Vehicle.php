@@ -924,7 +924,7 @@ class Vehicle extends Model
         });
 
         /**
-         * board [입금요청] 자동 해소 — 매입 미지급 0 이면 신호가 스스로 꺼진다.
+         * board 매입 신호 자동 해소 — 매입 미지급 0 이면 신호가 스스로 꺼진다.
          *
          * 권위 = docs/integration/board-portal-api.md §11. **완료 버튼을 만들지 않는 것이 핵심**이다
          * (누를 사람이 있으면 결국 카톡으로 돌아간다 — jin 2026-08-07).
@@ -938,19 +938,25 @@ class Vehicle extends Model
             if (! $hasBoardRequestTable) {
                 return;
             }
-            $vehicle->resolveOpenPurchasePaymentRequests();
+            $vehicle->resolveAutoClosingBoardRequests();
         });
     }
 
     /**
-     * 매입 미지급이 0 이하면 열린 [입금요청] 을 닫는다. 사람이 안 누른다(confirmed_by = null).
+     * 매입 미지급이 0 이하면 **자동소멸 대상 신호**를 닫는다. 사람이 안 누른다(confirmed_by = null).
      * 야간 보정 없이 즉시 반영 — 재무가 지급을 기입하는 순간 뱃지가 사라져야 자연스럽다.
+     *
+     * 🚫 **대상을 여기서 열거하지 말 것** — 단일 출처는 `BoardRequest::TYPE_META['auto_resolve']` 다.
+     *    특히 **계약금(purchase_deposit)은 대상이 아니다**: 미지급 0 = 잔금까지 다 준 상태라,
+     *    그때 계약금 신호가 꺼지면 "계약금 아직 안 보냈다"는 거짓 신호가 차 인수 시점까지 남는다.
+     *    ERP 는 계약금을 지급했는지 알 방법이 없다(금액을 회계에 안 쓰므로) → 수동 확인만.
+     *    가드 = `BoardRequestAutoResolveTest::test_deposit_request_survives_full_payment`.
      */
-    public function resolveOpenPurchasePaymentRequests(): void
+    public function resolveAutoClosingBoardRequests(): void
     {
         $open = BoardRequest::query()
             ->where('vehicle_id', $this->id)
-            ->ofType(BoardRequest::TYPE_PURCHASE_PAYMENT)
+            ->whereIn('type', BoardRequest::typesWith('auto_resolve'))
             ->open()
             ->get();
 
