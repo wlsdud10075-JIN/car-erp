@@ -1098,6 +1098,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $memo = '';
 
+    /**
+     * 탭별 메모 — `탭 key => 값`. 목록은 `Vehicle::TAB_MEMOS` 단일 출처라 여기서 열거하지 않는다
+     * (열거하면 탭을 늘릴 때 조용히 한 곳이 빠진다). 하단 공통 `memo` 는 그대로 별개다.
+     */
+    public array $tabMemos = [];
+
     // ── 파일 업로드 ───────────────────────────────────────────────
     public $deregistrationDocFile    = null;
     public $exportDeclarationDocFile = null;
@@ -3097,6 +3103,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dhl_request           = $v->dhl_request;
 
         $this->memo = $v->memo ?? '';
+        foreach (\App\Models\Vehicle::TAB_MEMOS as $tabKey => $col) {
+            $this->tabMemos[$tabKey] = (string) ($v->{$col} ?? '');
+        }
 
         $this->deregistration_document_path     = $v->deregistration_document     ?? '';
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
@@ -4135,6 +4144,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'dhl_dimensions' => $this->dhl_dimensions ?: null,
             'dhl_request'    => $this->dhl_request,
             'memo' => $this->memo ?: null,
+            // 탭별 메모 5칸 — Vehicle::TAB_MEMOS 를 돌아 채운다(열거 복제 금지).
+            ...collect(\App\Models\Vehicle::TAB_MEMOS)
+                ->mapWithKeys(fn ($col, $tabKey) => [$col => trim((string) ($this->tabMemos[$tabKey] ?? '')) ?: null])
+                ->all(),
             // 카풀/헤이맨 계산서 (channel != carpul/heyman 이어도 컬럼은 nullable이라 OK)
             // 큐 16 — tax_invoice_*·agency_fee persist 제거.
         ];
@@ -7105,6 +7118,15 @@ function vehicleColumnsToggle() {
                     <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.deregistration_date_hint') }}</p>
                 </div>
             </div>
+
+            {{-- 탭 메모 (2026-08-11) — 이 탭에서만 쓰는 메모. 하단 「메모(공통)」와 별개다. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-blue-500"></span>
+                <span class="section-title">{{ __('vehicle.tab_memo.title') }}</span>
+            </div>
+            <textarea wire:model="tabMemos.purchase" rows="3" class="input-base w-full"
+                      placeholder="{{ __('vehicle.tab_memo.placeholder.purchase') }}"></textarea>
         </div>
 
         {{-- ─── 판매 탭 ──────────────────────────────────── --}}
@@ -7651,6 +7673,15 @@ function vehicleColumnsToggle() {
                 @endif
             </div>
             @endif
+
+            {{-- 탭 메모 (2026-08-11) — 이 탭에서만 쓰는 메모. 하단 「메모(공통)」와 별개다. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-purple-500"></span>
+                <span class="section-title">{{ __('vehicle.tab_memo.title') }}</span>
+            </div>
+            <textarea wire:model="tabMemos.sale" rows="3" class="input-base w-full"
+                      placeholder="{{ __('vehicle.tab_memo.placeholder.sale') }}"></textarea>
         </div>
 
         {{-- ─── 수출통관 탭 ───────────────────────────────── --}}
@@ -7769,6 +7800,15 @@ function vehicleColumnsToggle() {
                     </x-erp.file-drop>
                 </div>
             </div>
+
+            {{-- 탭 메모 (2026-08-11) — 이 탭에서만 쓰는 메모. 하단 「메모(공통)」와 별개다. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-amber-500"></span>
+                <span class="section-title">{{ __('vehicle.tab_memo.title') }}</span>
+            </div>
+            <textarea wire:model="tabMemos.clearance" rows="3" class="input-base w-full"
+                      placeholder="{{ __('vehicle.tab_memo.placeholder.clearance') }}"></textarea>
         </div>
 
         {{-- ─── B/L 탭 ────────────────────────────────────── --}}
@@ -7893,6 +7933,15 @@ function vehicleColumnsToggle() {
                 </div>
                 @endif
             </div>
+
+            {{-- 탭 메모 (2026-08-11) — 이 탭에서만 쓰는 메모. 하단 「메모(공통)」와 별개다. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ __('vehicle.tab_memo.title') }}</span>
+            </div>
+            <textarea wire:model="tabMemos.shipping" rows="3" class="input-base w-full"
+                      placeholder="{{ __('vehicle.tab_memo.placeholder.shipping') }}"></textarea>
         </div>
 
         {{-- ─── B/L 탭 (발급) — 수출통관 다음, 실제 업무 최종 단계 (2026-07-04) --}}
@@ -7993,6 +8042,15 @@ function vehicleColumnsToggle() {
                     </x-erp.file-drop>
                 </div>
             </div>
+
+            {{-- 탭 메모 (2026-08-11) — 이 탭에서만 쓰는 메모. 하단 「메모(공통)」와 별개다. --}}
+            <hr class="section-divider">
+            <div class="section-header">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ __('vehicle.tab_memo.title') }}</span>
+            </div>
+            <textarea wire:model="tabMemos.bl" rows="3" class="input-base w-full"
+                      placeholder="{{ __('vehicle.tab_memo.placeholder.bl') }}"></textarea>
         </div>
 
         {{-- ─── DHL 탭 ────────────────────────────────────── --}}
@@ -8239,7 +8297,9 @@ function vehicleColumnsToggle() {
 
         {{-- ─── 메모 (공통) ──────────────────────────────── --}}
         <div class="mt-5">
-            <label class="label-base">{{ __('vehicle.field.memo') }}</label>
+            {{-- ⚠️ 이 칸은 탭 컨테이너 **밖**이라 어느 탭에서도 같은 내용이 보인다. 그게 의도다
+                 (차량 전체에 대한 한마디). 라벨에 「공통」을 박아 탭 메모와 헷갈리지 않게 한다. --}}
+            <label class="label-base">{{ __('vehicle.field.memo_common') }}</label>
             <textarea wire:model="memo" class="input-base" rows="2" placeholder="{{ __('vehicle.ph.memo') }}"></textarea>
         </div>
 

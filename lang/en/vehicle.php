@@ -97,6 +97,18 @@ return [
 
     'buyer_undecided_badge' => 'No buyer',
     'buyer_undecided_title' => 'Bought without a buyer (speculative) — clears once a buyer is set',
+    // Per-tab memos (2026-08-11) — separate from the shared memo at the bottom.
+    'tab_memo' => [
+        'title' => 'Tab memo',
+        'placeholder' => [
+            'purchase' => 'Notes about this purchase (visible on this tab only)',
+            'sale' => 'Notes about this sale (visible on this tab only)',
+            'clearance' => 'Notes about customs clearance (visible on this tab only)',
+            'shipping' => 'Notes about shipping / warehouse-in (visible on this tab only)',
+            'bl' => 'Notes about the B/L (visible on this tab only)',
+        ],
+    ],
+
     'board_badge_purchase' => 'Pay req.',
     'board_badge_sale' => 'Confirm',
     // Split of the payment request into two signals (2026-08-11)
@@ -465,6 +477,7 @@ return [
         'dhl_dimensions' => 'Size (W×H×L cm)',
         'dhl_request_done' => 'DHL dispatch requested',
         'memo' => 'Memo',
+        'memo_common' => 'Memo (shared across all tabs)',
     ],
 
     // Progress-flow chip hover reasons (panel header)

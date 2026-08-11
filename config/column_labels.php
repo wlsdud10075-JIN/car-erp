@@ -39,6 +39,13 @@ return [
         'purchase_seller_account' => '매입처 계좌',
         'purchase_seller_holder' => '매입처 예금주',
         'purchase_bank_memo' => '매입 계좌 메모',
+        // 탭별 메모 5칸 (2026-08-11) — 감사 대상이라 한글 라벨 필수. 없으면 감사로그에 영문 컬럼명이
+        // 그대로 노출된다(SKILLS §8 #41 — jin 이 같은 지적을 4번 했다).
+        'memo_purchase' => '매입 탭 메모',
+        'memo_sale' => '판매 탭 메모',
+        'memo_clearance' => '수출통관 탭 메모',
+        'memo_shipping' => '선적 탭 메모',
+        'memo_bl' => 'B/L 탭 메모',
         'purchase_remittance_memo' => '송금 메모',
         'purchase_price' => '매입가',
         'selling_fee' => '매도비',

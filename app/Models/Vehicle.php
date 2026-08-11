@@ -154,6 +154,8 @@ class Vehicle extends Model
         'dhl_recipient_name', 'dhl_recipient_address', 'dhl_recipient_phone',
         'dhl_sender_name', 'dhl_sender_address', 'dhl_weight', 'dhl_dimensions',
         'dhl_request', 'memo',
+        // 탭별 메모 5칸 (2026-08-11) — 목록은 self::TAB_MEMOS 단일 출처.
+        'memo_purchase', 'memo_sale', 'memo_clearance', 'memo_shipping', 'memo_bl',
         // Phase 3 서류 자동기입 (2026-05-24) — NICE 원본 보관 + 말소일 + 기통수
         'nice_raw', 'deregistration_date', 'nice_spec_cylinders',
     ];
@@ -530,6 +532,9 @@ class Vehicle extends Model
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 변경 audit (purchase_fee_account 는 MASKED_COLUMNS 마스킹).
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
+        // 2026-08-11 (jin) — 탭별 메모 5칸. 돈·통관·선적 얘기가 적히는 자리라 누가 언제 바꿨는지 남긴다
+        //   (`purchase_bank_memo` 가 이미 감사 대상인 것과 같은 이유). 공통 `memo` 는 종전대로 비감사.
+        ...self::TAB_MEMOS,
         // 2026-07-28 (jin) — 출고일. 찍는 순간 차량이 재고에서 빠지고(scopeInStock) 선적전/후 미수
         //   분류 pivot 도 바뀌는데 누가 언제 처리했는지 기록이 없었다. 되돌림(비우기)도 추적 대상.
         'warehouse_out_date',
@@ -576,6 +581,25 @@ class Vehicle extends Model
      * 만들면 이력이 2배가 된다 → ReceivableHistory 가 이 플래그를 try/finally 로 세운다.
      */
     public static bool $skipSavingsHistory = false;
+
+    /**
+     * 차량 편집 **탭별 메모** — `탭 key => 컬럼`. 화면·모델·감사가 전부 이 목록 하나를 쓴다 (jin 2026-08-11).
+     *
+     * 종전엔 메모가 `memo` 하나뿐이었는데 그 입력칸이 탭 컨테이너 **밖**에 있어 8개 탭 어디서든
+     * 같은 박스가 보였다(공유 버그가 아니라 애초에 한 칸). 라벨엔 그 사정이 없어 "탭마다 따로 쓰는
+     * 칸"으로 읽혔다 — jin 제보.
+     *
+     * ⚠️ **공통 `memo` 는 살려 둔다.** 운영 데이터가 들어 있고 "차량 전체에 대한 한마디" 자리는 여전히 쓴다.
+     * 🧭 탭을 늘리려면 **여기 한 줄 + 마이그레이션 + 그 탭 blade 한 줄**. 화면이 이 목록을 돌므로
+     *    라벨·저장·감사는 자동으로 따라온다(열거를 복제하지 말 것 — SKILLS §8 #45).
+     */
+    public const TAB_MEMOS = [
+        'purchase' => 'memo_purchase',
+        'sale' => 'memo_sale',
+        'clearance' => 'memo_clearance',
+        'shipping' => 'memo_shipping',
+        'bl' => 'memo_bl',
+    ];
 
     /**
      * 2차 정산 비용 일괄 기입 대상 컬럼 화이트리스트 (9개 비용만).
