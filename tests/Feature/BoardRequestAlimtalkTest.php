@@ -439,6 +439,56 @@ class BoardRequestAlimtalkTest extends TestCase
         }
     }
 
+    /**
+     * 🕳️ **기본 규칙에 빈 구간이 없다** — 한 주 10,080분을 전부 훑는다 (jin 2026-08-11 질문).
+     *
+     * jin 물음: "일요일 → 월요일 09:00 까지는 주말 종일에 포함되나, 아니면 월요일에서 누락되나?"
+     * 답: **월요일 00:00~08:59 는 「월~금 17:30~익일 09:00」 행이 잡는다**(주말 행이 아니다).
+     * ⚠️ **요일은 "그 시각의 요일"로 판정**하므로, 자정을 넘긴 구간은 **끝나는 쪽 요일에도 체크가
+     *    있어야** 그 새벽이 덮인다. 야간 행에서 월요일을 빼면 일요일 밤~월요일 새벽이 빈다.
+     *
+     * 빈 구간이 생겨도 대표 폴백 덕에 발송 자체는 되지만, **의도한 사람이 아닌 사람에게 간다.**
+     * 그래서 "폴백이 필요 없는가"를 본다.
+     */
+    public function test_default_rules_cover_every_minute_of_the_week(): void
+    {
+        $start = Carbon::parse('2026-08-10 00:00');   // 월요일 00:00
+        $gaps = [];
+
+        for ($i = 0; $i < 7 * 24 * 60; $i++) {
+            $t = $start->copy()->addMinutes($i);
+            if (AlimtalkRecipients::isHoliday($t)) {
+                continue;   // 공휴일은 일요일 취급이라 주말 행이 덮는다(별도 테스트)
+            }
+            if (AlimtalkRecipients::matchingRules('erp_board_request', $t) === []) {
+                $gaps[] = $t->format('D H:i');
+            }
+        }
+
+        $this->assertSame([], array_slice($gaps, 0, 8),
+            '기본 규칙에 빈 구간이 있다 — 그 시간대 알림이 의도한 담당자가 아니라 대표 폴백으로 간다. '.
+            '총 '.count($gaps).'분');
+    }
+
+    /** 일요일 밤 ↔ 월요일 새벽 경계 — 끊기지 않고 같은 수신자로 이어진다. */
+    public function test_sunday_night_runs_into_monday_morning_without_a_gap(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+
+        foreach ([
+            '2026-08-16 23:59' => '일요일 밤 (주말 종일 행)',
+            '2026-08-17 00:00' => '월요일 자정 (평일 야간 행이 이어받는다)',
+            '2026-08-17 08:59' => '월요일 08:59 (아직 야간)',
+        ] as $at => $why) {
+            Carbon::setTestNow($at);
+            $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'), $why);
+        }
+
+        Carbon::setTestNow('2026-08-17 09:00');   // 근무 시작 → 담당자로 넘어간다
+        $this->assertSame(['010-1111-1111'], AlimtalkRecipients::forTimeRules('erp_board_request'));
+    }
+
     /** 카드 규격 — 요약(summary)을 두지 않았다(금액 없는 판매대금확인에서 K140 반려를 부른다). */
     public function test_card_has_no_summary_and_declares_every_variable(): void
     {

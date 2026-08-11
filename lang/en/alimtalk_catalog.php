@@ -30,6 +30,7 @@ return [
     'rule_add' => '＋ Add rule',
     'rule_remove' => 'Remove',
     'rule_help' => "Recipients accept role keys (admin, manager, 관리, 영업, 수출통관, 재무, super) or phone numbers, comma separated. Everyone matched by a rule that covers the current time receives it. If the end time is earlier than the start, the window crosses midnight (17:30-09:00). Public holidays count as Sunday, so a single 'Sat/Sun all day' rule covers them too. If no rule matches, it goes to the top administrator - it never reaches nobody.",
+    'rule_active_now' => 'active now',
     'rule_allday' => 'All day',
     'rule_set_hours' => 'Set hours',
     'rule_nextday' => 'next day',

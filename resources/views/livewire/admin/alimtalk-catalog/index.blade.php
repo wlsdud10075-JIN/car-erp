@@ -44,6 +44,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         return count(AlimtalkRecipients::forTimeRules($code));
     }
 
+    /** 이 행이 지금 걸려 있는가 — 「지금 적용」 표시용. 판정은 발송과 같은 함수를 쓴다. */
+    public function appliesNow(array $rule): bool
+    {
+        return AlimtalkRecipients::ruleAppliesNow($rule);
+    }
+
     /** 이 행이 '종일'인가 — 00:00~24:00. 별도 상태를 두지 않고 값에서 파생한다(둘이 어긋날 일이 없다). */
     public function isAllDay(array $rule): bool
     {
@@ -345,7 +351,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         </button>
                                     </div>
                                     {{-- 사람 말 요약 — 시간칸만 보고는 "당일인지 익일인지"가 안 갈린다. --}}
-                                    <div class="mt-1 text-[11px] text-gray-500">↳ {{ $this->describeRule($rule) }}</div>
+                                    <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500">
+                                        <span>↳ {{ $this->describeRule($rule) }}</span>
+                                        @if($this->appliesNow($rule))
+                                            <span class="rounded-full bg-green-100 px-1.5 py-0.5 font-bold text-green-700">{{ __('alimtalk_catalog.rule_active_now') }}</span>
+                                        @endif
+                                    </div>
                                 </div>
                             @endforeach
                         </div>

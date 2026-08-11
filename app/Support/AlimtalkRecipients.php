@@ -201,15 +201,8 @@ class AlimtalkRecipients
      */
     public static function forTimeRules(string $code, ?\DateTimeInterface $at = null): array
     {
-        $now = $at ? Carbon::instance($at) : now();
-        $dow = self::isHoliday($now) ? 7 : (int) $now->isoWeekday();
-        $mins = $now->hour * 60 + $now->minute;
-
         $phones = [];
-        foreach (self::timeRules($code) as $rule) {
-            if (! self::ruleMatches($rule, $dow, $mins)) {
-                continue;
-            }
+        foreach (self::matchingRules($code, $at) as $rule) {
             foreach (explode(',', (string) ($rule['to'] ?? '')) as $target) {
                 $target = trim($target);
                 if ($target === '') {
@@ -226,6 +219,40 @@ class AlimtalkRecipients
         $phones = collect($phones)->map(fn ($p) => trim((string) $p))->filter()->unique()->values()->all();
 
         return $phones !== [] ? $phones : self::admins();
+    }
+
+    /**
+     * 지금(또는 지정 시각)에 걸리는 규칙 행들 — 발송과 화면이 **같은 판정**을 쓰게 하는 단일 지점.
+     *
+     * ⚠️ **요일은 "그 시각의 요일"로 본다.** 자정을 넘긴 구간(17:30~09:00)은 시작 요일이 아니라
+     *    **끝나는 쪽 요일에도 체크가 있어야** 그 새벽이 덮인다. 예: 월요일 새벽 02:00 은 일요일 밤의
+     *    연장이지만 요일은 **월**이라, 「월~금 17:30~익일 09:00」 행이 잡는다(주말 행이 아니다).
+     *    그래서 기본값의 야간 행은 월~금 다섯 개가 다 켜져 있다 — 하나라도 빼면 그 새벽이 빈다.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function matchingRules(string $code, ?\DateTimeInterface $at = null): array
+    {
+        $now = $at ? Carbon::instance($at) : now();
+        $dow = self::isHoliday($now) ? 7 : (int) $now->isoWeekday();
+        $mins = $now->hour * 60 + $now->minute;
+
+        return array_values(array_filter(
+            self::timeRules($code),
+            fn (array $rule) => self::ruleMatches($rule, $dow, $mins),
+        ));
+    }
+
+    /**
+     * 규칙 한 행이 지금 걸려 있는가 — **저장 전 편집 중인 행**에도 쓸 수 있게 공개한다.
+     * 화면이 자체 판정을 만들지 않고 이걸 부르므로 발송과 표시가 갈리지 않는다.
+     */
+    public static function ruleAppliesNow(array $rule, ?\DateTimeInterface $at = null): bool
+    {
+        $now = $at ? Carbon::instance($at) : now();
+        $dow = self::isHoliday($now) ? 7 : (int) $now->isoWeekday();
+
+        return self::ruleMatches($rule, $dow, $now->hour * 60 + $now->minute);
     }
 
     /** 한 규칙 행이 지금 시각에 걸리는가. till < from 이면 자정 넘김 구간. */
