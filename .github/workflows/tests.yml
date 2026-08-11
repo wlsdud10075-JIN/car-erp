@@ -28,7 +28,10 @@ jobs:
         with:
           php-version: 8.4
           tools: composer:v2
-          coverage: xdebug
+          # ⚡ 2026-08-12 — 구 `coverage: xdebug`. **커버리지를 아무도 안 쓰는데**(phpunit.xml 에 설정 없음,
+          #   `--coverage` 플래그 없음, 업로드 스텝 없음) xdebug 가 로드돼 매 테스트를 느리게 하고 있었다.
+          #   커버리지를 다시 켤 땐 그 잡만 따로 두고 배포 게이트에는 얹지 말 것(게이트 = 배포 대기시간).
+          coverage: none
 
       - name: Setup Node
         uses: actions/setup-node@v4
