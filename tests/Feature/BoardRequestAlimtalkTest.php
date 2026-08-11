@@ -340,6 +340,45 @@ class BoardRequestAlimtalkTest extends TestCase
     }
 
     /**
+     * 🗓️ **고정 공휴일은 코드에 내장** — 매년 손으로 다시 적게 하면 결국 안 적게 되고,
+     * 그러면 그날 담당자에게 알림이 가버린다(jin 2026-08-11).
+     */
+    public function test_fixed_holidays_need_no_manual_entry(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+        // 수기 등록은 비워 둔다 — 그래도 걸려야 한다.
+
+        // 어린이날(05-05)이 평일인 해로 검증한다. 주말이면 요일만으로도 대표라 무엇을 검증했는지 흐려진다.
+        Carbon::setTestNow('2026-05-05 10:00:00');
+        $this->assertLessThanOrEqual(5, now()->isoWeekday(), '전제: 그해 어린이날은 평일');
+        $this->assertSame(
+            ['010-9999-9999'],
+            AlimtalkRecipients::forTimeRules('erp_board_request'),
+            '고정 공휴일인데 근무일로 처리돼 담당자에게 갔다'
+        );
+
+        // 바로 다음 평일은 정상 근무일.
+        Carbon::setTestNow('2026-05-06 10:00:00');
+        $this->assertSame(['010-1111-1111'], AlimtalkRecipients::forTimeRules('erp_board_request'));
+    }
+
+    /** 수기 등록은 **날짜가 매년 바뀌는 것**만 — 설날 같은 음력 공휴일. */
+    public function test_manual_holiday_supplements_the_fixed_list(): void
+    {
+        $this->manager('010-1111-1111');
+        $this->boss('010-9999-9999');
+        Setting::updateOrCreate(
+            ['key' => 'alimtalk_holidays_'.Setting::companyTemplateSet()],
+            ['value' => '2026-02-17', 'type' => 'string'],   // 설날 (음력이라 고정 목록에 없다)
+        );
+
+        Carbon::setTestNow('2026-02-17 10:00:00');
+        $this->assertLessThanOrEqual(5, now()->isoWeekday(), '전제: 그 설날은 평일');
+        $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'));
+    }
+
+    /**
      * ⚠️ **아무에게도 안 가는 상태를 만들지 않는다.** 규칙이 0명을 가리켜도 대표에게 강제 발송한다 —
      * 조용히 0명에게 가는 게 카톡보다 나쁘다.
      */

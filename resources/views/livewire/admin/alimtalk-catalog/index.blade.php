@@ -44,6 +44,56 @@ new #[Layout('components.layouts.app')] class extends Component {
         return count(AlimtalkRecipients::forTimeRules($code));
     }
 
+    /** 이 행이 '종일'인가 — 00:00~24:00. 별도 상태를 두지 않고 값에서 파생한다(둘이 어긋날 일이 없다). */
+    public function isAllDay(array $rule): bool
+    {
+        return ($rule['from'] ?? '') === '00:00' && ($rule['till'] ?? '') === '24:00';
+    }
+
+    /**
+     * 종료가 시작보다 이르거나 같으면 **자정을 넘긴 구간**이다(17:30~익일 09:00).
+     * 화면에 「익일」을 찍지 않으면 "당일 09시인가?" 로 읽힌다(jin 지적).
+     */
+    public function crossesMidnight(array $rule): bool
+    {
+        return ! $this->isAllDay($rule) && ($rule['till'] ?? '') <= ($rule['from'] ?? '');
+    }
+
+    /** 규칙 한 줄을 사람 말로 — 시간 칸만 보고는 해석이 갈린다. */
+    public function describeRule(array $rule): string
+    {
+        $names = __('alimtalk_catalog.weekdays');
+        $days = array_map(fn ($d) => $names[(int) $d] ?? $d, (array) ($rule['days'] ?? []));
+        $when = $this->isAllDay($rule)
+            ? __('alimtalk_catalog.rule_allday')
+            : ($rule['from'] ?? '').' ~ '.($this->crossesMidnight($rule) ? __('alimtalk_catalog.rule_nextday').' ' : '').($rule['till'] ?? '');
+
+        return __('alimtalk_catalog.rule_summary', [
+            'days' => implode('·', $days) ?: '—',
+            'when' => $when,
+            'to' => trim((string) ($rule['to'] ?? '')) ?: '—',
+        ]);
+    }
+
+    /** 종일 ↔ 시간 지정 전환. 24:00 은 <input type="time"> 에 못 들어가므로 버튼으로만 만든다. */
+    public function toggleAllDay(string $code, int $idx): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null) {
+            return;
+        }
+        [$from, $till] = $this->isAllDay($rule) ? ['09:00', '18:00'] : ['00:00', '24:00'];
+        $this->timeRules[$code][$idx]['from'] = $from;
+        $this->timeRules[$code][$idx]['till'] = $till;
+    }
+
+    /** 화면이 보여줄 고정 공휴일(코드 내장) — 수기로 또 적지 않게. */
+    public function fixedHolidays(): array
+    {
+        return AlimtalkRecipients::FIXED_HOLIDAYS;
+    }
+
     public function addTimeRule(string $code): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -251,24 +301,51 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         <div class="flex flex-col gap-2">
                             @foreach($this->timeRules[$code] ?? [] as $i => $rule)
-                                <div wire:key="tr-{{ $code }}-{{ $i }}" class="flex flex-wrap items-center gap-2 rounded-lg bg-gray-50 p-2">
-                                    <input type="text" wire:model="timeRules.{{ $code }}.{{ $i }}.to"
-                                           class="input-base w-44 text-xs" placeholder="{{ __('alimtalk_catalog.rule_to_ph') }}" />
-                                    <span class="flex items-center gap-1.5">
-                                        @foreach(__('alimtalk_catalog.weekdays') as $d => $dl)
-                                            <label class="flex items-center gap-0.5 text-[11px] text-gray-600">
-                                                <input type="checkbox" value="{{ $d }}" wire:model="timeRules.{{ $code }}.{{ $i }}.days"
-                                                       class="h-3.5 w-3.5 rounded border-gray-300" />{{ $dl }}
-                                            </label>
-                                        @endforeach
-                                    </span>
-                                    <input type="time" wire:model="timeRules.{{ $code }}.{{ $i }}.from" class="input-base w-28 text-xs" />
-                                    <span class="text-xs text-gray-400">~</span>
-                                    <input type="time" wire:model="timeRules.{{ $code }}.{{ $i }}.till" class="input-base w-28 text-xs" />
-                                    <button type="button" wire:click="removeTimeRule('{{ $code }}', {{ $i }})"
-                                            class="ml-auto rounded px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
-                                        {{ __('alimtalk_catalog.rule_remove') }}
-                                    </button>
+                                @php
+                                    $allDay = $this->isAllDay($rule);
+                                    $overnight = $this->crossesMidnight($rule);
+                                @endphp
+                                <div wire:key="tr-{{ $code }}-{{ $i }}" class="rounded-lg bg-gray-50 p-2">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <input type="text" wire:model.live="timeRules.{{ $code }}.{{ $i }}.to"
+                                               class="input-base w-44 text-xs" placeholder="{{ __('alimtalk_catalog.rule_to_ph') }}" />
+                                        <span class="flex items-center gap-1.5">
+                                            @foreach(__('alimtalk_catalog.weekdays') as $d => $dl)
+                                                <label class="flex items-center gap-0.5 text-[11px] text-gray-600">
+                                                    <input type="checkbox" value="{{ $d }}" wire:model.live="timeRules.{{ $code }}.{{ $i }}.days"
+                                                           class="h-3.5 w-3.5 rounded border-gray-300" />{{ $dl }}
+                                                </label>
+                                            @endforeach
+                                        </span>
+
+                                        {{-- 종일이면 시간칸을 아예 안 보여준다. 24:00 은 <input type="time"> 에
+                                             넣을 수 없어(최대 23:59) 빈칸으로 보이던 게 혼란의 원인이었다(jin 지적). --}}
+                                        @if($allDay)
+                                            <span class="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-primary-text">
+                                                {{ __('alimtalk_catalog.rule_allday') }}
+                                            </span>
+                                        @else
+                                            <input type="time" wire:model.live="timeRules.{{ $code }}.{{ $i }}.from" class="input-base w-28 text-xs" />
+                                            <span class="text-xs text-gray-400">~</span>
+                                            @if($overnight)
+                                                <span class="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
+                                                    {{ __('alimtalk_catalog.rule_nextday') }}
+                                                </span>
+                                            @endif
+                                            <input type="time" wire:model.live="timeRules.{{ $code }}.{{ $i }}.till" class="input-base w-28 text-xs" />
+                                        @endif
+
+                                        <button type="button" wire:click="toggleAllDay('{{ $code }}', {{ $i }})"
+                                                class="rounded border border-gray-300 px-2 py-1 text-[11px] text-gray-600 hover:bg-white">
+                                            {{ $allDay ? __('alimtalk_catalog.rule_set_hours') : __('alimtalk_catalog.rule_allday') }}
+                                        </button>
+                                        <button type="button" wire:click="removeTimeRule('{{ $code }}', {{ $i }})"
+                                                class="ml-auto rounded px-2 py-1 text-[11px] text-red-600 hover:bg-red-50">
+                                            {{ __('alimtalk_catalog.rule_remove') }}
+                                        </button>
+                                    </div>
+                                    {{-- 사람 말 요약 — 시간칸만 보고는 "당일인지 익일인지"가 안 갈린다. --}}
+                                    <div class="mt-1 text-[11px] text-gray-500">↳ {{ $this->describeRule($rule) }}</div>
                                 </div>
                             @endforeach
                         </div>
@@ -284,7 +361,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                         <div class="mt-3 border-t border-gray-100 pt-3">
                             <div class="mb-1 text-xs font-medium text-gray-500">{{ __('alimtalk_catalog.holidays') }}</div>
-                            <textarea wire:model="holidays" rows="3" class="input-base w-full font-mono text-xs" placeholder="2026-01-01&#10;2026-03-01"></textarea>
+                            {{-- 고정 공휴일은 코드에 내장 — 매년 손으로 다시 적게 하면 결국 안 적게 되고,
+                                 그러면 그날 담당자에게 알림이 가버린다(jin 지적). --}}
+                            <div class="mb-2 rounded-lg bg-gray-50 p-2 text-[11px] text-gray-500">
+                                <span class="font-medium text-gray-600">{{ __('alimtalk_catalog.holidays_fixed') }}</span>
+                                <span class="ml-1">{{ implode(' · ', $this->fixedHolidays()) }}</span>
+                                <div class="mt-1">{{ __('alimtalk_catalog.holidays_fixed_hint') }}</div>
+                            </div>
+                            <textarea wire:model="holidays" rows="3" class="input-base w-full font-mono text-xs" placeholder="2026-02-16&#10;2026-09-24"></textarea>
                             <div class="mt-1 flex items-center gap-2">
                                 <p class="text-[11px] text-gray-400">{{ __('alimtalk_catalog.holidays_help') }}</p>
                                 <button type="button" wire:click="saveHolidays" class="btn-primary ml-auto px-3 py-1 text-xs">

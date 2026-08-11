@@ -18,6 +18,62 @@ class AlimtalkCatalogTest extends TestCase
     use RefreshDatabase;
 
     /**
+     * 🕑 시각 규칙 편집기의 **읽기 쉬움**(jin 2026-08-11 지적).
+     *
+     * ⚠️ `24:00` 은 `<input type="time">` 에 못 들어간다(최대 23:59) — 종일 규칙이 **빈 시간칸**으로
+     *    보여서 "주말은 09시만 설정된 건가?" 로 읽혔다. 종일은 시간칸 대신 「종일」로 보여준다.
+     * ⚠️ 17:30~09:00 이 당일인지 익일인지 화면에 아무 표시가 없어 해석이 갈렸다 — 「익일」을 찍는다.
+     */
+    public function test_rule_editor_shows_allday_and_nextday_plainly(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->assertOk()->html();
+
+        // 기본 규칙 = 평일 주간 / 평일 야간(자정 넘김) / 주말 종일
+        $this->assertStringContainsString(__('alimtalk_catalog.rule_allday'), $html, '종일 표시가 없다');
+        $this->assertStringContainsString(__('alimtalk_catalog.rule_nextday'), $html, '익일 표시가 없다');
+
+        // 🚫 24:00 이 time 입력값으로 렌더되면 브라우저가 빈칸으로 만든다(그 증상 자체를 막는다).
+        $this->assertStringNotContainsString('value="24:00"', $html);
+
+        // 사람 말 요약 — 요일·시간·수신자가 한 줄로 보여야 한다.
+        $this->assertStringContainsString('→', $html);
+    }
+
+    /** 종일 ↔ 시간 지정 전환. 24:00 은 버튼으로만 만들어진다(입력칸으로는 못 넣는다). */
+    public function test_toggle_all_day(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->set('timeRules.erp_board_request', [
+                ['to' => 'admin', 'days' => [6, 7], 'from' => '09:00', 'till' => '18:00'],
+            ])
+            ->call('toggleAllDay', 'erp_board_request', 0);
+
+        $rule = $c->get('timeRules')['erp_board_request'][0];
+        $this->assertSame(['00:00', '24:00'], [$rule['from'], $rule['till']]);
+
+        $c->call('toggleAllDay', 'erp_board_request', 0);
+        $rule = $c->get('timeRules')['erp_board_request'][0];
+        $this->assertNotSame('24:00', $rule['till'], '되돌렸는데 시간칸에 못 넣는 값이 남았다');
+    }
+
+    /** 🗓️ 고정 공휴일은 화면에 안내만 하고 수기 입력은 변동분만 받는다. */
+    public function test_fixed_holidays_are_shown_not_asked_for(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();
+
+        foreach (['신정', '삼일절', '어린이날', '성탄절'] as $name) {
+            $this->assertStringContainsString($name, $html, "고정 공휴일 '{$name}' 안내가 없다");
+        }
+        $this->assertStringContainsString('설날', $html, '수기 대상(음력)이 뭔지 안내가 없다');
+    }
+
+    /**
      * 🕑 시각 규칙 편집기 (2026-08-11) — 화면에서 규칙을 실제로 고칠 수 있어야 한다.
      * 엔진만 만들고 편집 UI 가 없으면 jin 이 근무시간을 못 바꾼다(설정이 코드에 박힌 것과 같다).
      */

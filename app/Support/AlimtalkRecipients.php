@@ -143,8 +143,39 @@ class AlimtalkRecipients
     }
 
     /**
-     * 공휴일 목록(회사별 수기 등록) — 'YYYY-MM-DD' 를 줄바꿈·콤마로 구분.
-     * 외부 API 를 끌어오지 않는다(연 1회 입력이면 충분하고, 발송 경로에 외부 의존을 넣지 않는다).
+     * 해마다 날짜가 같은 **양력 고정 공휴일** — 코드에 내장한다(jin 2026-08-11).
+     *
+     * 매년 손으로 다시 적게 하면 결국 안 적게 되고, 그러면 그날 담당자에게 알림이 가버린다.
+     * 🗓️ 여기 없는 것 = **해마다 날짜가 바뀌는 것뿐** → 수기 등록 대상:
+     *    설날·추석(음력) · 부처님오신날(음력) · 대체공휴일 · 임시공휴일 · 선거일.
+     *
+     * @var array<string, string> 'MM-DD' => 이름
+     */
+    public const FIXED_HOLIDAYS = [
+        '01-01' => '신정',
+        '03-01' => '삼일절',
+        '05-05' => '어린이날',
+        '06-06' => '현충일',
+        '08-15' => '광복절',
+        '10-03' => '개천절',
+        '10-09' => '한글날',
+        '12-25' => '성탄절',
+    ];
+
+    /**
+     * 이 날이 공휴일인가 — **고정 공휴일 + 회사별 수기 등록분**.
+     * 공휴일이면 요일 판정이 일요일로 바뀐다(주말과 동일 취급, jin 확정).
+     */
+    public static function isHoliday(\DateTimeInterface $date): bool
+    {
+        return isset(self::FIXED_HOLIDAYS[$date->format('m-d')])
+            || in_array($date->format('Y-m-d'), self::holidays(), true);
+    }
+
+    /**
+     * **수기 등록** 공휴일 목록(회사별) — 'YYYY-MM-DD' 를 줄바꿈·콤마로 구분.
+     * 고정 공휴일은 위 FIXED_HOLIDAYS 라 여기 적을 필요 없다(적어도 무해).
+     * 외부 API 를 끌어오지 않는다(발송 경로에 외부 의존을 넣지 않는다).
      *
      * @return array<int, string>
      */
@@ -165,13 +196,13 @@ class AlimtalkRecipients
      * ⚠️ **공휴일은 일요일(7)로 취급한다** (jin: "공휴일 = 주말과 동일 취급").
      *    행마다 '공휴일 포함' 체크를 두는 대신 요일을 갈아끼우면, "토·일 종일 대표" 한 줄이
      *    공휴일까지 자동으로 덮고 "월~금 담당자" 줄은 자동으로 빠진다 — 설정 실수가 줄어든다.
+     *    공휴일 판정 = 고정 공휴일(내장) + 수기 등록분. `self::isHoliday()`.
      * ⚠️ **매칭 0명이면 대표에게 강제 발송한다.** 조용히 0명에게 가는 게 최악이다.
      */
     public static function forTimeRules(string $code, ?\DateTimeInterface $at = null): array
     {
         $now = $at ? Carbon::instance($at) : now();
-        $isHoliday = in_array($now->format('Y-m-d'), self::holidays(), true);
-        $dow = $isHoliday ? 7 : (int) $now->isoWeekday();
+        $dow = self::isHoliday($now) ? 7 : (int) $now->isoWeekday();
         $mins = $now->hour * 60 + $now->minute;
 
         $phones = [];
