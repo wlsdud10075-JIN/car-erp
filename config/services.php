@@ -88,4 +88,13 @@ return [
         'test_phone' => env('ALIMTALK_TEST_PHONE', ''),
     ],
 
+    /*
+     * 대한민국 공휴일 자동 수집 — 공공데이터포털 「한국천문연구원 특일 정보」.
+     * 키가 없으면 수집을 건너뛰고 내장 고정 공휴일 + 수기 등록분으로만 판정한다(발송은 계속된다).
+     * 발급 = data.go.kr → '특일 정보' 활용신청(무료). 상세 = docs/operations/alimtalk-templates-draft.md
+     */
+    'holiday' => [
+        'key' => env('HOLIDAY_API_KEY'),
+    ],
+
 ];

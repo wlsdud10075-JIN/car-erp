@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\KoreanHolidayService;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -60,6 +61,22 @@ class AlimtalkCatalogTest extends TestCase
         $this->assertNotSame('24:00', $rule['till'], '되돌렸는데 시간칸에 못 넣는 값이 남았다');
     }
 
+    /** 자동 수집이 켜져 있으면 받아온 날짜와 「지금 받아오기」가 보인다. */
+    public function test_auto_holiday_status_is_visible_when_configured(): void
+    {
+        config(['services.holiday.key' => 'TESTKEY']);
+        Setting::updateOrCreate(
+            ['key' => KoreanHolidayService::cacheKey((int) now()->year)],
+            ['value' => json_encode([now()->year.'-02-17' => '설날'], JSON_UNESCAPED_UNICODE), 'type' => 'string'],
+        );
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();
+
+        $this->assertStringContainsString('설날', $html, '자동 수집된 날짜가 안 보인다');
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_sync_now'), $html);
+    }
+
     /** 🗓️ 고정 공휴일은 화면에 안내만 하고 수기 입력은 변동분만 받는다. */
     public function test_fixed_holidays_are_shown_not_asked_for(): void
     {
@@ -70,7 +87,11 @@ class AlimtalkCatalogTest extends TestCase
         foreach (['신정', '삼일절', '어린이날', '성탄절'] as $name) {
             $this->assertStringContainsString($name, $html, "고정 공휴일 '{$name}' 안내가 없다");
         }
-        $this->assertStringContainsString('설날', $html, '수기 대상(음력)이 뭔지 안내가 없다');
+
+        // 자동 수집 상태가 보여야 한다 — 켜졌는지 꺼졌는지 모르면 수기로 또 적게 된다.
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_auto'), $html);
+        $this->assertStringContainsString(__('alimtalk_catalog.holidays_auto_off'), $html,
+            '키 미설정인데 그 사실이 화면에 안 보인다');
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\KoreanHolidayService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -145,9 +146,9 @@ class AlimtalkRecipients
     /**
      * 해마다 날짜가 같은 **양력 고정 공휴일** — 코드에 내장한다(jin 2026-08-11).
      *
-     * 매년 손으로 다시 적게 하면 결국 안 적게 되고, 그러면 그날 담당자에게 알림이 가버린다.
-     * 🗓️ 여기 없는 것 = **해마다 날짜가 바뀌는 것뿐** → 수기 등록 대상:
-     *    설날·추석(음력) · 부처님오신날(음력) · 대체공휴일 · 임시공휴일 · 선거일.
+     * ⚠️ 이건 **바닥(fallback)** 이지 주 출처가 아니다. 주 출처 = `KoreanHolidayService`(자동 수집)로,
+     *    음력 공휴일·대체공휴일·임시공휴일·선거일까지 전부 가져온다. 여기 목록은 API 키가 없거나
+     *    수집이 실패했을 때 **최소한 이 8일은 지켜지게** 하려고 남긴다.
      *
      * @var array<string, string> 'MM-DD' => 이름
      */
@@ -168,14 +169,22 @@ class AlimtalkRecipients
      */
     public static function isHoliday(\DateTimeInterface $date): bool
     {
-        return isset(self::FIXED_HOLIDAYS[$date->format('m-d')])
-            || in_array($date->format('Y-m-d'), self::holidays(), true);
+        $ymd = $date->format('Y-m-d');
+
+        // 세 출처의 **합집합**. 하나가 비어도 나머지가 받친다 — 빠뜨리는 쪽이 사고이므로 넓게 잡는다.
+        //   ① 자동 수집(한국천문연구원) — 음력·대체·임시공휴일·선거일까지 여기서 온다
+        //   ② 내장 고정 공휴일        — API 미설정·장애 시의 바닥
+        //   ③ 회사 수기 등록          — 창립기념일·단체휴가 등 공휴일이 아닌 휴무일
+        return isset(KoreanHolidayService::cached((int) $date->format('Y'))[$ymd])
+            || isset(self::FIXED_HOLIDAYS[$date->format('m-d')])
+            || in_array($ymd, self::holidays(), true);
     }
 
     /**
-     * **수기 등록** 공휴일 목록(회사별) — 'YYYY-MM-DD' 를 줄바꿈·콤마로 구분.
-     * 고정 공휴일은 위 FIXED_HOLIDAYS 라 여기 적을 필요 없다(적어도 무해).
-     * 외부 API 를 끌어오지 않는다(발송 경로에 외부 의존을 넣지 않는다).
+     * **수기 등록** 휴무일(회사별) — 'YYYY-MM-DD' 를 줄바꿈·콤마로 구분.
+     *
+     * 자동 수집이 켜져 있으면 여기 적을 것은 **공휴일이 아닌 회사 휴무일**뿐이다
+     * (창립기념일·단체휴가 등). 공휴일을 또 적어도 무해하다(합집합).
      *
      * @return array<int, string>
      */

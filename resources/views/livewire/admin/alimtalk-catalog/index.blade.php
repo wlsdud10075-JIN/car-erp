@@ -3,6 +3,7 @@
 use App\Models\Setting;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkRecipients;
+use App\Services\KoreanHolidayService;
 use App\Support\AlimtalkTemplates;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -92,6 +93,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         [$from, $till] = $this->isAllDay($rule) ? ['09:00', '18:00'] : ['00:00', '24:00'];
         $this->timeRules[$code][$idx]['from'] = $from;
         $this->timeRules[$code][$idx]['till'] = $till;
+    }
+
+    /** 자동 수집 상태 — 켜졌는지, 몇 건인지, 언제 받았는지. */
+    public function holidayAuto(): array
+    {
+        $year = (int) now()->year;
+
+        return [
+            'configured' => KoreanHolidayService::isConfigured(),
+            'this_year' => KoreanHolidayService::cached($year),
+            'next_year' => KoreanHolidayService::cached($year + 1),
+            'synced_at' => (string) (Setting::get(KoreanHolidayService::lastSyncedKey(), '') ?: ''),
+            'year' => $year,
+        ];
+    }
+
+    /** 지금 받아오기 — 연말·임시공휴일 지정 직후에 하루를 안 기다리게. */
+    public function syncHolidays(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        if (! KoreanHolidayService::isConfigured()) {
+            $this->dispatch('notify', message: __('alimtalk_catalog.holidays_auto_unset'), type: 'warning');
+
+            return;
+        }
+        $svc = app(KoreanHolidayService::class);
+        $n = ($svc->syncYear((int) now()->year) ?? 0) + ($svc->syncYear((int) now()->year + 1) ?? 0);
+        $this->dispatch('notify',
+            message: $n > 0 ? __('alimtalk_catalog.holidays_synced', ['n' => $n]) : __('alimtalk_catalog.holidays_sync_failed'),
+            type: $n > 0 ? 'success' : 'warning');
     }
 
     /** 화면이 보여줄 고정 공휴일(코드 내장) — 수기로 또 적지 않게. */
@@ -372,8 +403,34 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                         <div class="mt-3 border-t border-gray-100 pt-3">
                             <div class="mb-1 text-xs font-medium text-gray-500">{{ __('alimtalk_catalog.holidays') }}</div>
-                            {{-- 고정 공휴일은 코드에 내장 — 매년 손으로 다시 적게 하면 결국 안 적게 되고,
-                                 그러면 그날 담당자에게 알림이 가버린다(jin 지적). --}}
+                            {{-- 공휴일은 달력에 늘 있는 정보다 — 사람이 옮겨 적게 하면 결국 안 적게 되고,
+                                 그러면 그날 담당자에게 알림이 가버린다(jin 지적). 그래서 자동 수집이 주 출처다. --}}
+                            @php $auto = $this->holidayAuto(); @endphp
+                            <div class="mb-2 rounded-lg border p-2 text-[11px] {{ $auto['configured'] ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800' }}">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="font-bold">{{ __('alimtalk_catalog.holidays_auto') }}</span>
+                                    @if($auto['configured'])
+                                        <span>{{ __('alimtalk_catalog.holidays_auto_on', [
+                                            'y' => $auto['year'], 'a' => count($auto['this_year']),
+                                            'y2' => $auto['year'] + 1, 'b' => count($auto['next_year']),
+                                        ]) }}</span>
+                                        @if($auto['synced_at'])
+                                            <span class="opacity-70">· {{ $auto['synced_at'] }}</span>
+                                        @endif
+                                        <button type="button" wire:click="syncHolidays" wire:loading.attr="disabled"
+                                                class="ml-auto rounded border border-green-300 bg-white px-2 py-0.5 font-medium hover:bg-green-100">
+                                            {{ __('alimtalk_catalog.holidays_sync_now') }}
+                                        </button>
+                                    @else
+                                        <span>{{ __('alimtalk_catalog.holidays_auto_off') }}</span>
+                                    @endif
+                                </div>
+                                @if($auto['configured'] && $auto['this_year'])
+                                    <div class="mt-1 opacity-80">
+                                        {{ collect($auto['this_year'])->map(fn ($name, $d) => substr($d, 5).' '.$name)->implode(' · ') }}
+                                    </div>
+                                @endif
+                            </div>
                             <div class="mb-2 rounded-lg bg-gray-50 p-2 text-[11px] text-gray-500">
                                 <span class="font-medium text-gray-600">{{ __('alimtalk_catalog.holidays_fixed') }}</span>
                                 <span class="ml-1">{{ implode(' · ', $this->fixedHolidays()) }}</span>
