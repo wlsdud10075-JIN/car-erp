@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\FinalPayment;
+use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\ShippingRequest;
@@ -155,5 +156,93 @@ class ShippingBundleGateTest extends TestCase
             ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
 
         $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch));
+    }
+
+    /**
+     * 🔓 **입금이 들어오면 락은 저절로 풀린다 — 사람이 다시 눌러줄 곳이 없다** (jin 2026-08-12 질문).
+     *
+     * 차단 여부는 어디에도 저장되지 않는다. 화면을 그릴 때마다 `entryAggregate()` 가
+     * `sale_unpaid_amount_krw_cache` 로 다시 계산한다. 그 캐시는 `FinalPayment::saved` →
+     * `Vehicle::refreshCaches()` 로 입금 저장 즉시 갱신된다. ⇒ 다음 화면 진입에 이미 풀려 있다.
+     *
+     * ⚠️ 이 테스트가 지키는 것은 **그 연결고리**다. 잔금 저장을 bulk update(`whereIn->update()`)로
+     *    바꾸면 모델 훅이 안 떠서 캐시가 안 갱신되고(SKILLS §8 #43), 입금했는데 **영영 안 풀리는**
+     *    상태가 된다 — 에러도 로그도 없이.
+     */
+    public function test_lock_releases_by_itself_once_payment_is_confirmed(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch, $vehicles] = $this->bundle([100, 100]);   // 전액 미수 → 차단
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+        $this->assertSame(ShippingRequest::STATUS_REQUESTED, $this->bundleStatus($batch), '전액 미수인데 착수됐다');
+
+        // 재무가 한 대의 입금을 확정 — 묶음 aggregate 미수율 50% → cutoff(50%) 이하로 내려간다.
+        FinalPayment::create([
+            'vehicle_id' => $vehicles[0]->id,
+            'amount' => 10_000_000,
+            'type' => 'balance',
+            'payment_date' => '2026-05-06',
+            'confirmed_at' => now(),
+        ]);
+
+        // 사람이 잠금해제를 누르지 않았다 — 화면만 다시 열었다.
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch),
+            '입금이 확정됐는데도 착수가 막혀 있다 — 캐시가 안 따라왔다');
+    }
+
+    /**
+     * ⚠️ **재무 확정 전(Draft) 입금은 락을 안 푼다** — 미수 단일 출처가 `confirmed_at` 이 찍힌 잔금뿐이라서다.
+     * 영업이 판매 탭에 입금을 적어두기만 하면 화면엔 보여도 게이트는 그대로다. 의도된 동작이지만
+     * "입금 넣었는데 왜 안 풀리냐" 제보의 1순위 원인이라 못 박아 둔다.
+     */
+    public function test_unconfirmed_payment_does_not_release_the_lock(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch, $vehicles] = $this->bundle([100, 100]);
+        $this->actingAs($this->admin());
+
+        FinalPayment::create([
+            'vehicle_id' => $vehicles[0]->id,
+            'amount' => 10_000_000,
+            'type' => 'balance',
+            'payment_date' => '2026-05-06',
+            'confirmed_at' => null,   // 재무 미확정 (Draft)
+        ]);
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_REQUESTED, $this->bundleStatus($batch),
+            '미확정 잔금이 게이트를 통과시켰다 — 미수 단일 출처(confirmed)와 어긋난다');
+    }
+
+    /**
+     * 🔓 채권관리 회수이력(현금·상계 등)으로 들어온 돈도 같은 방식으로 락을 푼다.
+     * `ReceivableHistory::saved` 가 `refreshCaches()` 를 부른다 — 잔금과 다른 경로라 따로 확인한다.
+     */
+    public function test_receivable_recovery_also_releases_the_lock(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch, $vehicles] = $this->bundle([100, 100]);
+        $this->actingAs($this->admin());
+
+        ReceivableHistory::create([
+            'vehicle_id' => $vehicles[0]->id,
+            'method' => 'cash',
+            'amount' => 10_000_000,
+            'collected_at' => '2026-05-06',
+        ]);
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch),
+            '회수이력으로 들어온 돈이 게이트에 반영되지 않았다');
     }
 }
