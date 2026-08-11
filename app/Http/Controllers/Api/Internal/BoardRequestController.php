@@ -193,6 +193,10 @@ class BoardRequestController extends Controller
             //   계좌는 **ERP 가 이미 갖고 있다**(연동 B 가 purchase_seller_* 로 넣어둔다) — board 가 다시
             //   실어 보내지 않는다(노출면 불변). ⚠️ 비어 있으면 빈 줄로 두지 말고 명시한다 —
             //   빈 줄이면 받는 사람이 계좌를 못 찾아 결국 카톡으로 되묻는다(기능의 목적이 무너진다).
+            // 🚫 판매대금확인엔 계좌를 싣지 않는다 — 돈이 **들어온** 걸 확인해달라는 신호라
+            //    매입처 계좌가 찍히면 받는 사람이 거기로 돈을 보낼 수 있다(방향이 반대다).
+            $showPayee = BoardRequest::meta($type)['payee'] ?? false;
+
             $lines = [];
             $secrets = [];
             foreach ($rows as $r) {
@@ -203,9 +207,11 @@ class BoardRequestController extends Controller
                 if ($r->amount_krw !== null) {
                     $lines[] = '  '.number_format($r->amount_krw).'원';
                 }
-                $lines[] = '  '.$this->payeeLine($v);
-                // 계좌번호는 카톡 본문엔 실려야 하지만 alimtalk_logs 에는 남기지 않는다(암호화 컬럼).
-                $secrets[] = (string) ($v?->purchase_seller_account ?? '');
+                if ($showPayee) {
+                    $lines[] = '  '.$this->payeeLine($v);
+                    // 계좌번호는 카톡 본문엔 실려야 하지만 alimtalk_logs 에는 남기지 않는다(암호화 컬럼).
+                    $secrets[] = (string) ($v?->purchase_seller_account ?? '');
+                }
             }
 
             // 카드 하이라이트도 정정임을 밝힌다(전부 정정일 때만 — 섞이면 본문 줄이 가른다).

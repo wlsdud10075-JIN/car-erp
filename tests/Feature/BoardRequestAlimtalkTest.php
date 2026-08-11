@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
 use App\Models\BoardRequest;
+use App\Models\Buyer;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
@@ -159,6 +160,36 @@ class BoardRequestAlimtalkTest extends TestCase
         ])->assertStatus(201);
 
         $this->assertStringContainsString('계좌 미등록', Http::recorded()[0][0]->data()[0]['msg'] ?? '');
+    }
+
+    /**
+     * 🚫 **판매대금확인엔 매입처 계좌를 싣지 않는다.**
+     *
+     * 그건 "돈이 **들어왔으니** 확인해달라"는 신호다. 거기에 송금 계좌가 찍히면 받는 사람이
+     * 거기로 돈을 보낼 수 있다 — 방향이 반대라 실제 금전 사고가 된다.
+     * (한 템플릿으로 세 신호를 다 보내기 때문에 생기는 함정이다.)
+     */
+    public function test_sale_confirm_carries_no_payee_account(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($sm->id);
+        $v->update(['buyer_id' => $buyer->id]);
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_SALE_PAYMENT_CONFIRM,
+            'buyer_id' => $buyer->id,
+            'vehicle_ids' => [$v->id],
+        ])->assertStatus(201);
+
+        $sent = Http::recorded()[0][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString($v->vehicle_number, $sent);
+        $this->assertStringNotContainsString('123456-78-901234', $sent, '판매대금확인에 매입처 계좌가 실렸다 — 반대 방향으로 송금할 수 있다');
+        $this->assertStringNotContainsString('국민', $sent);
+        $this->assertStringNotContainsString('계좌 미등록', $sent, '계좌 줄 자체가 나오면 안 된다');
     }
 
     /** ⚠️ skipped(멱등) 에는 안 보낸다 — 중복 카톡의 원인이다. */

@@ -74,6 +74,9 @@ class BoardRequest extends Model
      *      ⚠️ **계약금은 false 여야 한다.** 미지급 0 = 잔금까지 다 준 상태다. 그때 계약금 신호가
      *      비로소 꺼지면 "계약금 아직 안 보냈다"는 거짓 신호가 차 인수 시점까지 화면에 남는다.
      * - `amount` = 금액을 필수로 받는가(board 가 빈 값으로 보내면 422).
+     * - `payee`  = 알림톡에 **송금할 매입처 계좌**를 실을 것인가.
+     *      ⚠️ **판매대금확인은 false 여야 한다.** 그건 "돈이 들어왔으니 확인해달라"는 신호인데,
+     *      거기에 매입처 계좌가 찍히면 받는 사람이 **거기로 돈을 보낼 수 있다**(방향이 반대다).
      */
     public const TYPE_META = [
         self::TYPE_PURCHASE_PAYMENT => [
@@ -81,6 +84,7 @@ class BoardRequest extends Model
             'title' => 'vehicle.board_title_purchase',
             'action' => 'alarm.board_purchase_action',
             'alarm' => 'board_purchase_payment',
+            'payee' => true,
             'task' => 'alarm.task_board_purchase',
             'color' => 'blue',
             'manual_confirm' => false,
@@ -92,6 +96,7 @@ class BoardRequest extends Model
             'title' => 'vehicle.board_title_deposit',
             'action' => 'alarm.board_deposit_action',
             'alarm' => 'board_purchase_deposit',
+            'payee' => true,
             'task' => 'alarm.task_board_deposit',
             'color' => 'blue',
             'manual_confirm' => true,
@@ -103,6 +108,7 @@ class BoardRequest extends Model
             'title' => 'vehicle.board_title_balance',
             'action' => 'alarm.board_balance_action',
             'alarm' => 'board_purchase_balance',
+            'payee' => true,
             'task' => 'alarm.task_board_balance',
             'color' => 'blue',
             'manual_confirm' => true,
@@ -114,6 +120,7 @@ class BoardRequest extends Model
             'title' => 'vehicle.board_title_sale',
             'action' => 'alarm.board_sale_action',
             'alarm' => 'board_sale_confirm',
+            'payee' => false,
             'task' => 'alarm.task_board_sale',
             'color' => 'purple',
             'manual_confirm' => true,
