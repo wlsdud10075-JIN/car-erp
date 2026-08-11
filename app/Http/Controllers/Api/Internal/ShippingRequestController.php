@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api\Internal;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\ForwardingCompany;
+use App\Models\Salesman;
 use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
 use App\Models\Vehicle;
@@ -247,7 +249,7 @@ class ShippingRequestController extends Controller
                     if ($ex && $ex->status === ShippingRequest::STATUS_REQUESTED) {
                         $forwardingChanged = (int) $ex->forwarding_company_id !== (int) $forwardingId;
                         $ex->update($attrs + ['requested_at' => now()]);
-                        $this->applyBundleToVehicle($vid, $forwardingId, $forwardingChanged, $freightShare[$vid] ?? null);
+                        $this->applyBundleToVehicle($vid, $salesman, $forwardingId, $forwardingChanged, $freightShare[$vid] ?? null);
                         $this->fireShippingAlarm($ex->vehicle ?? Vehicle::find($vid), $bundle['shipping_method']);
                         $updated[] = $vid;
 
@@ -261,7 +263,7 @@ class ShippingRequestController extends Controller
                         'status' => ShippingRequest::STATUS_REQUESTED,
                         'requested_at' => now(),
                     ]);
-                    $this->applyBundleToVehicle($vid, $forwardingId, true, $freightShare[$vid] ?? null);
+                    $this->applyBundleToVehicle($vid, $salesman, $forwardingId, true, $freightShare[$vid] ?? null);
                     $this->fireShippingAlarm(Vehicle::find($vid), $bundle['shipping_method']);
                     $created[] = $vid;
                 }
@@ -448,8 +450,11 @@ class ShippingRequestController extends Controller
      *    NULL 과 0 을 **둘 다 빈 것으로** 본다(0 을 '입력된 값' 으로 보면 영영 안 채워진다).
      *
      * ⚠️ 모델 `update()` 를 쓴다 — raw update 면 감사·캐시 훅이 안 뜬다(SKILLS §8 #43).
+     * ⚠️ 감사는 **영업 이름으로** 남긴다 — HMAC 경로엔 세션이 없어 그냥 두면 「시스템」으로 찍히고,
+     *    "누가 골랐나" 를 못 따져 위 추적이 통째로 빈다. 연결 User 가 없으면 null(그땐
+     *    `shipping_requests.requested_by_email` 이 남는다).
      */
-    private function applyBundleToVehicle(int $vehicleId, ?int $forwardingId, bool $forwardingChanged, ?int $freightShare): void
+    private function applyBundleToVehicle(int $vehicleId, Salesman $salesman, ?int $forwardingId, bool $forwardingChanged, ?int $freightShare): void
     {
         $vehicle = Vehicle::find($vehicleId);
         if (! $vehicle) {
@@ -465,7 +470,7 @@ class ShippingRequestController extends Controller
         }
 
         if ($attrs !== []) {
-            $vehicle->update($attrs);
+            AuditLog::actingAs($salesman->user_id, fn () => $vehicle->update($attrs));
         }
     }
 

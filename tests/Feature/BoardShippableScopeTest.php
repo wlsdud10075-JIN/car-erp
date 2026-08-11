@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\ShippingRequest;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -246,11 +248,42 @@ class BoardShippableScopeTest extends TestCase
         $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk();
         $this->assertSame($corrected->id, $v->fresh()->forwarding_company_id, '관리 정정이 재전송에 지워졌다');
 
-        // 영업이 실제로 바꾸면 그건 반영된다
-        $payload['bundles'][0]['forwarding_company_id'] = $fw->id === $corrected->id ? $fw->id : $fw->id;
-        $payload['bundles'][0]['bl_type'] = 'original';   // 무관한 변경이 섞여도 판정은 포워딩사 값 기준
+        // 무관한 변경이 섞여도 판정은 포워딩사 값 기준 — 여전히 안 덮는다.
+        $payload['bundles'][0]['bl_type'] = 'original';
         $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk();
         $this->assertSame($corrected->id, $v->fresh()->forwarding_company_id, '같은 값 재전송인데 덮었다');
+
+        // 반대로 **영업이 실제로 다른 회사로 바꾸면** 그건 반영된다(이쪽이 안 되면 기능 자체가 죽는다).
+        $picked = ForwardingCompany::create(['name' => '팬오션', 'is_active' => true]);
+        $payload['bundles'][0]['forwarding_company_id'] = $picked->id;
+        $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk();
+        $this->assertSame($picked->id, $v->fresh()->forwarding_company_id, '영업의 변경이 차량에 안 반영됐다');
+    }
+
+    /**
+     * 🔍 board 가 고른 포워딩사는 감사에 **사람 이름**으로 남아야 한다.
+     * HMAC 경로엔 로그인 세션이 없어 그냥 두면 「시스템」으로 찍히고,
+     * "영업이 잘못 골라도 관리가 눈치챌 기회가 사라진다" 는 우려의 대응이 통째로 비게 된다.
+     */
+    public function test_forwarding_change_is_attributed_to_the_salesman(): void
+    {
+        $user = User::factory()->create(['email' => 'ship@ex.com', 'email_verified_at' => now()]);
+        $s = $this->salesman();
+        $s->update(['user_id' => $user->id]);
+        $fw = ForwardingCompany::create(['name' => '한진', 'is_active' => true]);
+        $v = $this->vehicle($s, ['sale_price' => 1_000_000]);
+
+        $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => $s->email,
+            'bundles' => [['shipping_method' => 'RORO', 'vehicle_ids' => [$v->id], 'forwarding_company_id' => $fw->id]],
+        ])->assertOk();
+
+        $log = AuditLog::where('auditable_type', Vehicle::class)
+            ->where('auditable_id', $v->id)->where('column_name', 'forwarding_company_id')->first();
+
+        $this->assertNotNull($log, '포워딩사 변경이 감사에 안 남았다');
+        $this->assertSame($user->id, $log->user_id, '「시스템」으로 찍혔다 — 누가 골랐는지 알 수 없다');
+        $this->assertSame((string) $fw->id, $log->new_value);
     }
 
     /** 명부에 없거나 비활성인 포워딩사는 422 — 지급 명부 오염 경로를 안 만든다. */

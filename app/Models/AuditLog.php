@@ -59,6 +59,34 @@ class AuditLog extends Model
     }
 
     /**
+     * 로그인 세션이 없는 경로(HMAC 연동 API)에서 **행위자를 명시**한다 — 2026-08-12.
+     *
+     * `recordChange`/`recordEvent` 는 `auth()->id()` 를 쓰는데, board 연동은 세션이 없어 늘 null 이다.
+     * 그러면 감사 화면에 **「시스템」**으로 찍혀 cron 이 바꾼 것과 구분이 안 된다 — 사람이 고른 값을
+     * 사람 이름 없이 남기면 "누가 이렇게 했나" 를 못 따진다(포워딩사 지정이 정확히 그 경우).
+     *
+     * ⚠️ 연동 사용자를 **로그인시키지 않는다** — 여기서 바꾸는 건 감사 기록의 귀속뿐이다.
+     * 연결된 User 가 없는 영업이면 null 로 남는다(그 경우의 추적은 `shipping_requests.requested_by_email`).
+     */
+    protected static ?int $actorUserId = null;
+
+    public static function actingAs(?int $userId, callable $callback): mixed
+    {
+        $previous = self::$actorUserId;
+        self::$actorUserId = $userId;
+        try {
+            return $callback();
+        } finally {
+            self::$actorUserId = $previous;
+        }
+    }
+
+    private static function actorId(): ?int
+    {
+        return auth()->id() ?? self::$actorUserId;
+    }
+
+    /**
      * 단일 컬럼 변경 기록. RRN 등 마스킹 컬럼은 값을 저장하지 않고
      * "변경 발생" 사실만 기록 (개보법 §29 — 민감정보 로그 평문 금지).
      */
@@ -74,7 +102,7 @@ class AuditLog extends Model
         }
 
         return self::create([
-            'user_id' => auth()->id(),
+            'user_id' => self::actorId(),
             'approval_request_id' => self::$currentApprovalRequestId,
             'auditable_type' => $model::class,
             'auditable_id' => $model->getKey(),
@@ -92,7 +120,7 @@ class AuditLog extends Model
     public static function recordEvent(Model $model, string $action): self
     {
         return self::create([
-            'user_id' => auth()->id(),
+            'user_id' => self::actorId(),
             'approval_request_id' => self::$currentApprovalRequestId,
             'auditable_type' => $model::class,
             'auditable_id' => $model->getKey(),
