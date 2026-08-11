@@ -121,6 +121,46 @@ class AlimtalkRecipients
         ['to' => 'admin', 'days' => [6, 7], 'from' => '00:00', 'till' => '24:00'],
     ];
 
+    /**
+     * 규칙의 수신자 토큰이 쓸 수 있는 값인가 — **역할 키** 또는 **전화번호**.
+     *
+     * ⚠️ 이 검사가 없으면 오타가 **조용한 사고**가 된다. `관리자`(→`관리`) 처럼 잘못 적으면
+     *    역할 키가 아니라 **전화번호로 간주**돼 수신자 1명으로 잡히고, 그 바람에
+     *    "매칭 0명 → 대표 폴백" 도 안 걸린다. 결과: 아무에게도 안 가는데 화면엔 1명으로 보인다.
+     */
+    public static function isValidTarget(string $target): bool
+    {
+        $target = trim($target);
+
+        return isset(self::BROADCAST_GROUPS[$target])
+            || strlen(preg_replace('/[^0-9]/', '', $target) ?? '') >= 8;   // 전화번호로 볼 최소 자릿수
+    }
+
+    /** 수신자 토큰을 실제 번호로 — 역할이면 그 그룹 전원, 번호면 그대로. 잘못된 값은 버린다. */
+    private static function resolveTarget(string $target): array
+    {
+        $target = trim($target);
+        if (! self::isValidTarget($target)) {
+            return [];
+        }
+
+        return isset(self::BROADCAST_GROUPS[$target]) ? self::groupPhones($target) : [$target];
+    }
+
+    /**
+     * 이 수신자 문구(`관리,manager`)가 지금 몇 명인가 — 화면이 오타를 **즉시** 보게 한다.
+     * 0명으로 뜨면 잘못 적었거나 그 역할에 전화번호가 없다는 뜻이다.
+     */
+    public static function countTargets(string $to): int
+    {
+        $phones = [];
+        foreach (explode(',', $to) as $t) {
+            $phones = array_merge($phones, self::resolveTarget($t));
+        }
+
+        return count(array_unique(array_filter(array_map('trim', $phones))));
+    }
+
     /** 이 알림이 시각 규칙형인가. */
     public static function isTimeRouted(string $code): bool
     {
@@ -213,15 +253,9 @@ class AlimtalkRecipients
         $phones = [];
         foreach (self::matchingRules($code, $at) as $rule) {
             foreach (explode(',', (string) ($rule['to'] ?? '')) as $target) {
-                $target = trim($target);
-                if ($target === '') {
-                    continue;
-                }
-                // 역할 그룹이면 그 그룹 사용자 번호, 아니면 직접 적은 번호로 본다.
-                $phones = array_merge(
-                    $phones,
-                    isset(self::BROADCAST_GROUPS[$target]) ? self::groupPhones($target) : [$target]
-                );
+                // 역할 그룹이면 그 그룹 사용자 번호, 번호면 그대로. **잘못된 토큰은 버린다** —
+                // 남겨두면 "수신자는 있는데 아무에게도 안 가는" 상태가 되고 대표 폴백도 안 걸린다.
+                $phones = array_merge($phones, self::resolveTarget($target));
             }
         }
 

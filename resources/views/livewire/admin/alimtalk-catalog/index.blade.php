@@ -182,8 +182,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $clean = [];
+        $bad = [];
         foreach ($this->timeRules[$code] ?? [] as $rule) {
-            $to = trim((string) ($rule['to'] ?? ''));
+            // 잘못 적은 수신자는 저장하지 않는다 — 남기면 "수신자는 있는데 아무에게도 안 가는" 상태가 된다.
+            $tokens = array_filter(array_map('trim', explode(',', (string) ($rule['to'] ?? ''))));
+            $good = array_values(array_filter($tokens, fn ($t) => AlimtalkRecipients::isValidTarget($t)));
+            $bad = array_merge($bad, array_diff($tokens, $good));
+            $to = implode(',', $good);
             $days = array_values(array_unique(array_filter(
                 array_map('intval', (array) ($rule['days'] ?? [])),
                 fn (int $d) => $d >= 1 && $d <= 7,
@@ -209,7 +214,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 저장한 결과를 그대로 되읽는다 — 빈 저장이면 기본값이 화면에 다시 뜬다(무엇이 적용됐는지 일치).
         $this->timeRules[$code] = AlimtalkRecipients::timeRules($code);
-        $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
+        $this->dispatch('notify',
+            message: $bad === []
+                ? __('alimtalk_catalog.saved')
+                : __('alimtalk_catalog.rule_bad_target', ['list' => implode(', ', array_unique($bad))]),
+            type: $bad === [] ? 'success' : 'warning');
     }
 
     public function saveHolidays(): void
@@ -409,7 +418,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </div>
                                     {{-- 사람 말 요약 — 시간칸만 보고는 "당일인지 익일인지"가 안 갈린다. --}}
                                     <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500">
+                                        @php $n = \App\Support\AlimtalkRecipients::countTargets((string) ($rule['to'] ?? '')); @endphp
                                         <span>↳ {{ $this->describeRule($rule) }}</span>
+                                        {{-- 실제 인원수 — 오타나 전화번호 미등록이면 즉시 0명으로 보인다. --}}
+                                        <span class="{{ $n === 0 ? 'font-bold text-red-600' : 'text-gray-400' }}">
+                                            ({{ __('alimtalk_catalog.rule_people', ['n' => $n]) }})
+                                        </span>
                                         @if($this->appliesNow($rule))
                                             <span class="rounded-full bg-green-100 px-1.5 py-0.5 font-bold text-green-700">{{ __('alimtalk_catalog.rule_active_now') }}</span>
                                         @endif

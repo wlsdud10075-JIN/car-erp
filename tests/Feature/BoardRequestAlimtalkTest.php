@@ -395,6 +395,48 @@ class BoardRequestAlimtalkTest extends TestCase
         $this->assertSame(['010-9999-9999'], AlimtalkRecipients::forTimeRules('erp_board_request'));
     }
 
+    /**
+     * 🚨 **오타 수신자는 버린다** (jin 2026-08-11 "수기로 써도 돼?").
+     *
+     * 수신자 칸은 자유 입력이라 `관리자`(정답은 `관리`) 처럼 잘못 적기 쉽다. 종전엔 그런 토큰이
+     * **전화번호로 간주**돼 수신자 1명으로 잡혔고, 그 바람에 "매칭 0명 → 대표 폴백" 도 안 걸렸다.
+     * ⇒ 아무에게도 안 가는데 화면엔 1명으로 보이는, 가장 나쁜 형태의 조용한 실패.
+     */
+    public function test_unknown_recipient_token_is_dropped_and_falls_back(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->boss('010-9999-9999');
+        Setting::updateOrCreate(
+            ['key' => 'alimtalk_timerules_erp_board_request_'.Setting::companyTemplateSet()],
+            ['value' => json_encode([['to' => '관리자', 'days' => [1, 2, 3, 4, 5], 'from' => '00:00', 'till' => '24:00']]), 'type' => 'string'],
+        );
+
+        $this->assertFalse(AlimtalkRecipients::isValidTarget('관리자'));
+        $this->assertSame(0, AlimtalkRecipients::countTargets('관리자'), '오타가 1명으로 잡히면 폴백이 죽는다');
+        $this->assertSame(
+            ['010-9999-9999'],
+            AlimtalkRecipients::forTimeRules('erp_board_request'),
+            '오타 토큰이 수신자로 남아 대표 폴백이 안 걸렸다'
+        );
+    }
+
+    /** 역할 키와 전화번호 둘 다 쓸 수 있다 — 섞어 써도 된다. */
+    public function test_roles_and_phone_numbers_can_be_mixed(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        Setting::updateOrCreate(
+            ['key' => 'alimtalk_timerules_erp_board_request_'.Setting::companyTemplateSet()],
+            ['value' => json_encode([['to' => '관리, 010-3333-3333', 'days' => [1, 2, 3, 4, 5], 'from' => '00:00', 'till' => '24:00']]), 'type' => 'string'],
+        );
+
+        $this->assertSame(2, AlimtalkRecipients::countTargets('관리, 010-3333-3333'));
+        $this->assertSame(
+            ['010-1111-1111', '010-3333-3333'],
+            AlimtalkRecipients::forTimeRules('erp_board_request')
+        );
+    }
+
     /** 깨진 설정으로 수신자가 사라지지 않는다 — 파싱 실패면 기본 규칙으로 되돌린다. */
     public function test_broken_rule_json_falls_back_to_defaults(): void
     {
