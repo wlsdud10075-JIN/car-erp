@@ -545,6 +545,11 @@ class Vehicle extends Model
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
         'is_unsecured_down',   // 돈의 출처 기록 — 누가 언제 표시했는지 추적 필요
+        // 2026-08-12 (board 인계) — board 선적 계획이 원장에 쓰는 첫 두 컬럼.
+        //   포워딩사는 채우는 순간 관리 할 일 큐(`forwarding_missing`)에서 그 차가 빠진다 —
+        //   "영업이 잘못 골라도 관리가 눈치챌 기회가 사라진다" 는 우려의 유일한 대응이 이 기록이다.
+        //   운임비(USD)는 회계 미포함 메모지만 서류·정산 대화에 쓰이므로 같이 남긴다.
+        'forwarding_company_id', 'transport_fee_usd',
     ];
 
     /**

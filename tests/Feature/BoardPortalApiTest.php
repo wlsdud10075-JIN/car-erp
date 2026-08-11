@@ -229,14 +229,19 @@ class BoardPortalApiTest extends TestCase
 
     // ── ③ 선적요청 ──────────────────────────────────────────
 
-    public function test_shippable_returns_own_sale_done_only(): void
+    /**
+     * 🔀 **2026-08-11 후보 확대** — 판정 기준이 `progress_status_cache='판매완료'`(= 완납) 에서
+     * **`sale_price > 0`** 로 바뀌었다(board 인계 §4). 그래서 이 테스트의 옛 전제
+     * (판매가 없이 캐시 컬럼만 '판매완료' 로 raw update) 는 더 이상 통하지 않는다 — 이제
+     * 라벨이 아니라 **실제 판매 데이터**를 본다. 확대가 순수 확대인지는 `BoardShippableScopeTest`.
+     */
+    public function test_shippable_returns_own_sold_vehicles(): void
     {
         $me = $this->salesman('me@a.com');
         $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
         $v = $this->exportVehicle($me->id, '11가1111');
-        $v->update(['buyer_id' => $buyer->id]);
-        Vehicle::where('id', $v->id)->update(['progress_status_cache' => '판매완료']);   // 선적 가능 전제
-        $this->exportVehicle($me->id, '99자9999');   // 판매완료 아님 → 제외
+        $v->update(['buyer_id' => $buyer->id, 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200]);
+        $this->exportVehicle($me->id, '99자9999');   // 판매 전 → 제외
 
         $res = $this->signedGet('/api/internal/board/shippable', ['salesman_email' => 'me@a.com'])->assertOk();
         $res->assertJsonPath('count', 1);

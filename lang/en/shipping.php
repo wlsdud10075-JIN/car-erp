@@ -129,6 +129,10 @@ return [
         'unpaid' => 'Unpaid',
         'fx_missing' => ':n missing FX',
         'surrender_warning' => '⚠ Surrender + unpaid — title leverage released',
+        'forwarding' => 'Forwarder',
+        'from_board' => '(set by sales)',
+        'freight_usd' => 'Freight',
+        'freight_split' => '· split across :n',
     ],
 
     'change' => [

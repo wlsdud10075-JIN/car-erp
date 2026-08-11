@@ -590,7 +590,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $order = array_flip($batchIds);
 
         $grouped = ShippingRequest::query()
-            ->with(['vehicle', 'buyer', 'consignee'])
+            ->with(['vehicle', 'buyer', 'consignee', 'forwardingCompany'])
             ->whereIn('batch_id', $batchIds)
             ->get()
             ->groupBy('batch_id');
@@ -639,6 +639,10 @@ new #[Layout('components.layouts.app')] class extends Component
                         ? ['status' => $signContract->status, 'id' => $signContract->id]
                         : ['status' => 'none'],
                     'shipping_method' => $f->shipping_method,
+                    // board 가 선적 계획에서 고른 값 (2026-08-11 인계 ③④). 차량 원장에도 반영되지만
+                    //   여기 값은 **영업이 요청한 것**이라, 관리가 ERP 에서 고친 뒤에도 원래 요청을 볼 수 있다.
+                    'forwarding' => $f->forwardingCompany?->name,
+                    'freight_usd' => $f->transport_fee_usd_total,
                     'bl_type' => $f->bl_type,
                     'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
                     'requested_by' => $f->requested_by_email,
@@ -964,6 +968,20 @@ new #[Layout('components.layouts.app')] class extends Component
                         @endif
                         @if ($b['surrender_unpaid_warning'])
                             <span class="badge badge-amber">{{ __('shipping.fin.surrender_warning') }}</span>
+                        @endif
+                        {{-- board 선적 계획에서 영업이 고른 값 — 차량 원장에도 들어가지만 "누가 정했나"를 여기서 보여준다. --}}
+                        @if ($b['forwarding'])
+                            <span class="text-[11px] text-gray-500">
+                                {{ __('shipping.fin.forwarding') }} <span class="font-medium text-gray-700">{{ $b['forwarding'] }}</span>
+                                <span class="text-gray-400">{{ __('shipping.fin.from_board') }}</span>
+                            </span>
+                        @endif
+                        @if ($b['freight_usd'])
+                            <span class="text-[11px] text-gray-500">
+                                {{ __('shipping.fin.freight_usd') }}
+                                <span class="font-medium text-gray-700">${{ number_format($b['freight_usd']) }}</span>
+                                <span class="text-gray-400">{{ __('shipping.fin.freight_split', ['n' => $b['count']]) }}</span>
+                            </span>
                         @endif
                     </div>
 

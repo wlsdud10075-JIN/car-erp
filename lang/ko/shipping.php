@@ -131,6 +131,10 @@ return [
         'unpaid' => '미수',
         'fx_missing' => '환율 미입력 :n대',
         'surrender_warning' => '⚠ 써랜더 + 미완납 — 실물 leverage 포기 주의',
+        'forwarding' => '포워딩사',
+        'from_board' => '(영업 지정)',
+        'freight_usd' => '운임비',
+        'freight_split' => '· :n대 분할 기록',
     ],
 
     // 변경요청 (영업이 in_progress 묶음에 보낸 명시 변경요청)

@@ -179,11 +179,17 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
 - **⚠️ `vehicles` 컬럼(특히 `export_buyer_id`)에 적재 금지** — C4/C5 게이트(`guardStageOrderForExport`)·`ManagementWorkflowChecklistTest:375` 회귀.
 
 ### 5-1. 읽기 — `GET /shippable` (새로 묶을 차 후보) + `GET /bundles` (영속 묶음)
-- **`GET /shippable?salesman_email=`** — **새로 묶을 차 후보만.** `progress_status_cache='판매완료'` **AND** `sales_channel='export'` **AND** 아직 어느 open 묶음에도 없음. + 바이어·컨사이니(기존 선택만, 신규입력 v2).
+- **`GET /shippable?salesman_email=`** — **새로 묶을 차 후보만.** `sale_price > 0` **AND** `sales_channel='export'` **AND** `bl_loading_location` 없음 **AND** `bl_document` 없음 **AND** 아직 어느 open 묶음에도 없음. + 바이어·컨사이니(기존 선택만, 신규입력 v2).
+  - 🔀 **2026-08-11 후보 확대 (board 인계 §4, jin).** 구 조건은 `progress_status_cache='판매완료'` 였는데 그건 **판매대금 완납**을 뜻해서 미수 있는 차가 아예 안 떴다. 영업은 **돈 들어오기 전에 미리 묶어 서류를 준비**하려 한다 → 판매중까지 넓혔다. (게이트를 새로 만드는 게 아니다 — 진행 판단은 지금처럼 관리 몫이고, 미수 표시로 구분한다.)
+  - ⚠️ **"이미 떠난 차"는 진행상태 라벨이 아니라 구조로 뺀다** — 반입지(항구 스테이징 시작) / B/L(발급 완료). 라벨을 쓰면 v3 grandfather(`수출통관중` 등)에서 조용히 빠진다. v4 cascade 상 `판매완료` 는 이 둘이 모두 비어야 도달하므로 **구 후보를 하나도 안 떨어뜨리는 순수 확대**다(가드 = `BoardShippableScopeTest::test_widening_never_drops_a_previously_visible_vehicle`).
+  - 🚫 **`warehouse_out_date`(출고일)로 거르지 않는다.** board 인계는 "출고 후 차가 후보로 돌아오면 안 된다"고 썼지만, 운영엔 **반입지 없이 출고일만 찍힌 차**가 많아 그걸로 거르면 **지금 보이던 후보가 대량으로 사라진다**(heymanerp 실측: 현행 후보 29대 중 대다수). 요구의 본뜻(= 새로 돌아오면 안 된다)은 위 두 조건으로 이미 충족된다.
+  - 📊 **미수 필드 동봉 (인계 §5)**: `currency`·`unpaid_krw`·`unpaid_ratio`·`fully_paid`. 이름은 `/sales`·`/receivables` 와 **동일**(board 가 분류를 발명하지 않는다). ⚠️ `unpaid_krw` 의 **null 은 그대로 흘린다** — 환율 미입력이라 완납 판정 불가라는 뜻이고, 0 으로 바꾸면 가짜 완납이다(§5-4).
+- **`GET /forwarding-companies`** (2026-08-11, 스코프 없음 — 회사 공용 명부) — 활성 포워딩사 `{id, name}` 만. board 는 **고르기만 한다(신규 생성 없음)**: 오타·중복 등록이 지급 명부를 오염시키는 경로를 안 만든다. 명부에 없으면 ERP 에서 등록. ⚠️ 담당자·연락처·주소는 안 내보낸다(§3).
 - **`GET /bundles?salesman_email=`** — **영업 본인 묶음 전체(전 상태, 안 사라짐).** 묶음별:
   - `batch_id`·`shipping_method`·`bl_type`·**`ship_status`**(선적단계 — ⚠️ 키 이름은 `ship_status`, 스펙 초기 텍스트의 `status` 아님. 권위=구현)·`bl_status`·`vehicles[]`(번호·차별 status).
   - **⚠️ `buyer`/`consignee` = `{id, name}` 객체** (이름 문자열 아님 — board 가 sync 재전송 시 `buyer_id` 필요. 문자열만이면 묶음 누락→자동취소 footgun. 2026-06-30 board e2e 차단이슈) + **`consignees`=`[{id,name}]`**(그 바이어 컨사이니 옵션, 편집용). buyer 없으면 `null`·`[]`.
   - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`·`surrender_unpaid_warning`.
+  - **묶음 속성 되돌려주기 (2026-08-11)**: `forwarding_company`(=`{id,name}`|null)·`transport_fee_usd_total`(int|null). 없으면 board 가 묶음을 다시 열었을 때 칸이 비고, 그대로 재전송하면 값이 날아간다.
   - `change_requested`(in_progress 변경요청 대기 여부).
   - → board "내 선적묶음" 영속 뷰 + 미수 게이지. *(이게 "묶음이 화면에서 안 사라짐"의 구현)*
 
@@ -192,9 +198,17 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1
   ```json
   { "salesman_email":"...",
     "bundles":[
-      { "buyer_id":N, "consignee_id":N, "shipping_method":"RORO|CONTAINER", "bl_type":"original|surrender|null", "vehicle_ids":[A,B] }
+      { "buyer_id":N, "consignee_id":N, "shipping_method":"RORO|CONTAINER", "bl_type":"original|surrender|null",
+        "forwarding_company_id":N, "transport_fee_usd_total":1000, "vehicle_ids":[A,B] }
     ] }
   ```
+  - 🚚 **`forwarding_company_id`** (2026-08-11, 인계 §6) — **활성 명부에 있는 id 만**(아니면 `422`, 부분 적용 없음). 드롭다운에서 골랐다는 건 검증이 아니다(§8 #28). 값은 묶음에 저장되고 **차량 원장 `vehicles.forwarding_company_id` 에도 반영**된다 — board 가 `vehicles` 컬럼에 쓰는 첫 사례다.
+    - ✅ **§5-0 「vehicles 적재 금지」에 안 걸린다**: 그 금지는 `export_buyer_id` 처럼 C4/C5 게이트 트리거인 컬럼 얘기다. 이 컬럼은 `guardStageOrderForExport` 의 `$hasExportInput` 에도, `LEDGER_LOCK_FIELDS` 에도 없다(2026-08-12 실검증). C4/C5 자체가 UI `save()` 에서만 호출돼 API 저장은 안 탄다.
+    - ⚠️ 채우는 순간 그 차가 관리 할 일 큐 **`forwarding_missing` 에서 빠진다**(jin: 그래도 된다 — 영업이 아는 걸 미리 채워주는 것). 대응 = 값 변경을 `AUDITED_COLUMNS` 로 감사에 남기고, ERP 선적 화면 묶음 카드에 「포워딩사 ○○ (영업 지정)」으로 표시.
+    - 🧭 **덮어쓰지 않는다 — 묶음의 값이 실제로 바뀌었을 때만 차량에 민다.** sync 는 선언형이라 저장할 때마다 전체가 온다. 매번 덮으면 **관리가 ERP 에서 고친 값이 조용히 되돌아간다**(가드 = `test_resync_does_not_revert_a_manual_correction`).
+  - 💵 **`transport_fee_usd_total`** (2026-08-11, 인계 §7) — 묶음 총액(USD 정수). **`CONTAINER` 묶음에서만** 받는다(RORO 면 서버가 버린다 — board 를 믿지 않는다). 멤버 차량에 **1/N** 로 `vehicles.transport_fee_usd`(회계 미포함 기록칸)에 기입.
+    - 🧮 **분할 규칙**(단일 출처 = `ShippingRequest::splitFreightUsd`): 몫 = `intdiv(총액, 묶음 전체 대수)`, **나머지는 최소 `vehicle_id` 한 대**가 받는다(재전송해도 같은 차가 받아 값이 안 흔들린다).
+    - **비어 있을 때만 채운다**(jin 확정. NULL·0 둘 다 빈 것으로 봄). 그래서 **기입 합계가 총액과 안 맞을 수 있다** — 분모는 언제나 전체 대수이고 수기값은 보호되기 때문. 의도된 결과다.
   - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
   - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
   - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
