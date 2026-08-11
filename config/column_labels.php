@@ -84,6 +84,7 @@ return [
         'commission' => '커미션',
         'auto_loading' => '자동하역비',
         'transport_fee' => '운임비',
+        'transport_fee_usd' => '운임비(USD, 기록용)',
         'sale_other_costs' => '기타 판매비용',
 
         // 입금

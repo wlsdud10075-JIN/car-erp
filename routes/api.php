@@ -45,6 +45,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
+        // 포워딩사 명부 (2026-08-11) — board 는 고르기만 한다(신규 생성 없음). 활성 {id,name} 만.
+        Route::get('forwarding-companies', [ShippingRequestController::class, 'forwardingCompanies'])->name('forwarding-companies');
         Route::get('bundles', [ShippingRequestController::class, 'bundles'])->name('bundles');                // 영속 묶음 + 미수집계
         Route::post('shipping-requests/sync', [ShippingRequestController::class, 'sync'])->name('sync');      // 선언형 재동기화
         Route::post('bundles/{batch}/bl-request', [ShippingRequestController::class, 'blRequest'])->name('bl-request');   // B/L요청

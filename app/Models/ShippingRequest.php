@@ -43,6 +43,8 @@ class ShippingRequest extends Model
 
     protected $fillable = [
         'batch_id', 'vehicle_id', 'buyer_id', 'consignee_id', 'shipping_method',
+        // 묶음 속성 (board 인계 2026-08-11) — 영업이 **요청한** 값. 실제 적용값은 vehicles 쪽.
+        'forwarding_company_id', 'transport_fee_usd_total',
         'bl_type', 'bl_status', 'requested_by_email', 'status',
         'requested_at', 'processed_at', 'change_requested_at', 'change_request_meta', 'note',
     ];
@@ -67,6 +69,38 @@ class ShippingRequest extends Model
     public function consignee(): BelongsTo
     {
         return $this->belongsTo(Consignee::class);
+    }
+
+    public function forwardingCompany(): BelongsTo
+    {
+        return $this->belongsTo(ForwardingCompany::class);
+    }
+
+    /**
+     * 컨테이너 운임비(USD) 총액을 멤버 차량 수로 나눈 몫 — **1/N 규칙의 단일 출처**.
+     *
+     * 🧮 **정한 규칙**(board 인계 §7 이 "코드 주석에 남겨 달라" 고 명시한 그것):
+     *   ① 몫 = `intdiv(총액, 전체 멤버 수)`. **분모는 언제나 묶음 전체 대수**다 —
+     *      이미 값이 있어 건너뛴 차도 센다. 그래서 실제 기입 합계는 총액보다 작을 수 있고,
+     *      그게 "수기값 보호 우선" 규칙의 의도된 결과다.
+     *   ② 나머지는 **가장 작은 vehicle_id 한 대**가 받는다. 재전송해도 같은 차가 받아 값이 흔들리지 않는다
+     *      (반올림으로 흩뿌리면 sync 마다 배분이 미묘하게 달라진다).
+     *
+     * @param  list<int>  $vehicleIds  묶음 전체 멤버(건너뛸 차 포함)
+     * @return array<int, int> vehicle_id => 배분액
+     */
+    public static function splitFreightUsd(?int $totalUsd, array $vehicleIds): array
+    {
+        $ids = array_values(array_unique(array_filter($vehicleIds)));
+        if (! $totalUsd || $totalUsd <= 0 || $ids === []) {
+            return [];
+        }
+
+        $share = intdiv($totalUsd, count($ids));
+        $out = array_fill_keys($ids, $share);
+        $out[min($ids)] += $totalUsd - $share * count($ids);   // 나머지는 최소 id 한 대에
+
+        return $out;
     }
 
     /**
