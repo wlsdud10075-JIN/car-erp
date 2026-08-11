@@ -12,7 +12,9 @@ use Illuminate\Support\Facades\Schema;
  * 여기 값은 **영업이 요청한 값**이고 저기 값은 **실제 적용된 값**이다 — `bl_type` 이 이미 쓰는
  * 이중 보관과 같은 구조(§5-0). 갈라지면 관리가 "board 가 뭘 골랐는지" 를 볼 수 있어야 하기 때문.
  *
- * nullable 2개 = MySQL 8 INSTANT DDL(무중단).
+ * ⏱️ 컬럼 추가 2개는 nullable 이라 MySQL 8 INSTANT 지만, **FK 추가는 INSTANT 가 아니다**
+ *    (별도 `ADD CONSTRAINT`). `shipping_requests` 는 작아서(3사 다 수백 행) 실제로는 즉시 끝나지만,
+ *    "무중단 보장" 으로 읽지 말 것 — 큰 표에 같은 패턴을 복사하면 락이 걸린다.
  */
 return new class extends Migration
 {
