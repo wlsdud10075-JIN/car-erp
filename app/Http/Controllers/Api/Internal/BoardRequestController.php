@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api\Internal;
 use App\Http\Controllers\Controller;
 use App\Models\BoardRequest;
 use App\Models\Vehicle;
+use App\Services\BizmAlimtalkService;
 use App\Services\SalesmanResolver;
+use App\Support\AlimtalkRecipients;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -96,9 +99,10 @@ class BoardRequestController extends Controller
 
         $batchId = (string) Str::uuid();
         $created = [];
+        $createdRows = [];
         $skipped = [];
 
-        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $batchId, &$created, &$skipped) {
+        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $batchId, &$created, &$createdRows, &$skipped) {
             foreach ($data['vehicle_ids'] as $vid) {
                 $vehicle = $vehicles->get($vid);
                 if (! $vehicle) {
@@ -125,14 +129,104 @@ class BoardRequestController extends Controller
                 }
 
                 $created[] = $vehicle->vehicle_number;
+                $createdRows[] = $row;
             }
         });
+
+        // 🔔 알림톡은 **트랜잭션이 끝난 뒤** 보낸다 — 롤백됐는데 카톡만 나가면 되돌릴 수가 없다.
+        //    `skipped`(already_open·forbidden)에는 안 보낸다: 중복 카톡의 원인이다.
+        $this->notifyCreated($data['type'], $createdRows, (string) $salesman->email);
 
         return response()->json([
             'batch_id' => $isSaleConfirm ? $batchId : null,
             'created' => $created,
             'skipped' => $skipped,
         ], 201);
+    }
+
+    /**
+     * 새로 만들어진 신호를 알림톡 1건으로 알린다 (jin 2026-08-11).
+     *
+     * 🕑 **수신자는 시각 규칙**으로 갈린다 — 근무시간엔 담당자, 그 밖(야간·주말·공휴일)엔 대표.
+     *    판정은 `AlimtalkRecipients::forTimeRules()` 서버 시각 단일 판정이다.
+     *    ⚠️ **board 가 미리 판정해 힌트를 실어 보내지 않는다** — 판정 지점이 둘로 갈리면 반드시 어긋난다.
+     *
+     * 발송은 fire-and-forget: `BizmAlimtalkService` 가 게이트·예외를 흡수하므로 실패해도 API 응답은
+     * 정상이다. ⚠️ 그래도 여기서 예외가 새면 **요청은 만들어졌는데 201 이 안 나가** board 가 실패로
+     * 오해하고 재전송한다(그건 멱등에 걸려 already_open 이 된다) — 그래서 통째로 감싼다.
+     *
+     * @param  array<int, BoardRequest>  $rows
+     */
+    private function notifyCreated(string $type, array $rows, string $requesterEmail): void
+    {
+        if ($rows === []) {
+            return;
+        }
+
+        try {
+            $code = 'erp_board_request';
+            $phones = AlimtalkRecipients::forTimeRules($code);
+            if ($phones === []) {
+                return;
+            }
+
+            $label = __(BoardRequest::meta($type)['badge'] ?? '') ?: $type;
+            $total = array_sum(array_map(fn (BoardRequest $r) => (int) $r->amount_krw, $rows));
+            $numbers = array_values(array_filter(array_map(fn (BoardRequest $r) => $r->vehicle?->vehicle_number, $rows)));
+
+            // 본문의 가변 목록 = 한 변수에 개행으로 담는다(담당자실적 패턴과 동일).
+            //   계좌는 **ERP 가 이미 갖고 있다**(연동 B 가 purchase_seller_* 로 넣어둔다) — board 가 다시
+            //   실어 보내지 않는다(노출면 불변). ⚠️ 비어 있으면 빈 줄로 두지 말고 명시한다 —
+            //   빈 줄이면 받는 사람이 계좌를 못 찾아 결국 카톡으로 되묻는다(기능의 목적이 무너진다).
+            $lines = [];
+            $secrets = [];
+            foreach ($rows as $r) {
+                $v = $r->vehicle;
+                $lines[] = '■ '.$label.' · '.($v?->vehicle_number ?? '-');
+                if ($r->amount_krw !== null) {
+                    $lines[] = '  '.number_format($r->amount_krw).'원';
+                }
+                $lines[] = '  '.$this->payeeLine($v);
+                // 계좌번호는 카톡 본문엔 실려야 하지만 alimtalk_logs 에는 남기지 않는다(암호화 컬럼).
+                $secrets[] = (string) ($v?->purchase_seller_account ?? '');
+            }
+
+            $vars = [
+                '건수' => count($rows),
+                '구분' => $label,
+                '차량' => count($numbers) > 1
+                    ? ($numbers[0].' 외 '.(count($numbers) - 1).'대')
+                    : ($numbers[0] ?? '-'),
+                '금액' => $total > 0 ? number_format($total).'원' : '-',
+                '요청자' => $requesterEmail,
+                '요청내역' => implode("\n", $lines),
+            ];
+
+            $svc = BizmAlimtalkService::active();
+            foreach ($phones as $phone) {
+                $svc->send($code, $phone, $vars, [
+                    'vehicle_id' => $rows[0]->vehicle_id,
+                    'mask' => $secrets,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // 신호는 이미 만들어졌다 — 알림 실패로 201 을 깨뜨리지 않는다. 무음 실패 방지로 로그만.
+            Log::warning('board request alimtalk failed', ['type' => $type, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /** 송금 계좌 한 줄. 비어 있으면 "계좌 미등록" 을 명시한다(빈 줄 금지 — 위 주석). */
+    private function payeeLine(?Vehicle $vehicle): string
+    {
+        $bank = trim((string) ($vehicle?->purchase_seller_bank ?? ''));
+        $account = trim((string) ($vehicle?->purchase_seller_account ?? ''));
+        $holder = trim((string) ($vehicle?->purchase_seller_holder ?? ''));
+
+        if ($bank === '' && $account === '') {
+            return '계좌 미등록';
+        }
+
+        return trim($bank.' '.$account).($holder !== '' ? ' ('.$holder.')' : '');
     }
 
     /**
