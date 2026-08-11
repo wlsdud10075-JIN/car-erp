@@ -251,6 +251,36 @@ class BoardRequest extends Model
     }
 
     /**
+     * 열린 요청의 **금액만** 고쳐 쓴다 — 오타 정정 재전송 (jin 2026-08-11).
+     *
+     * 멱등키가 `(vehicle_id, type)` 이라 재전송은 `raise()` 에서 null 이 된다. 그런데 **금액이 이
+     * 기능의 전부**라, 300만을 350만으로 고쳐 다시 보냈는데 옛 금액이 남으면 받는 사람이 틀린 돈을
+     * 보낸다. 그래서 금액만 갱신한다 — **행을 새로 만들지 않으므로 중복 뱃지가 안 생긴다**(멱등 유지).
+     *
+     * 갱신했으면 그 행을, 아니면 null(= 호출측이 종전대로 skipped 처리).
+     * - 금액을 안 받는 type(판매대금확인·구 입금요청)은 대상이 아니다.
+     * - **같은 금액이면 갱신하지 않는다** — 오클릭 재전송에 알림톡이 두 번 나가지 않게.
+     *
+     * ⚠️ 갱신하면 호출측이 **알림톡을 다시 보내야 한다.** 안 보내면 받는 사람 카톡엔 옛 금액이,
+     *    화면엔 새 금액이 남아 둘이 갈린다 — 그게 이 기능이 막으려던 바로 그 사고다.
+     */
+    public static function refreshAmount(int $vehicleId, string $type, ?int $amountKrw): ?self
+    {
+        if (! (self::meta($type)['amount'] ?? false) || ! $amountKrw) {
+            return null;
+        }
+
+        $row = self::query()->where('vehicle_id', $vehicleId)->ofType($type)->open()->first();
+        if (! $row || (int) $row->amount_krw === (int) $amountKrw) {
+            return null;
+        }
+
+        $row->update(['amount_krw' => $amountKrw]);
+
+        return $row;
+    }
+
+    /**
      * 알람 생성 — 재무 처리 화면에 **들어가 보기 전엔 모르던 문제**를 없앤다(jin 2026-08-09).
      *
      * `target_role='관리'` 를 쓰면 기존 `TaskAlarm::scopeVisibleTo` 분기를 그대로 타서

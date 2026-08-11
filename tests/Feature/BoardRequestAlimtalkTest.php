@@ -186,6 +186,58 @@ class BoardRequestAlimtalkTest extends TestCase
         );
     }
 
+    /**
+     * 💡 금액을 고쳐 다시 보내면 **알림톡을 다시 보내되 「금액 수정」임을 밝힌다.**
+     *
+     * 다시 안 보내면 받는 사람 카톡엔 옛 금액이, 화면엔 새 금액이 남아 둘이 갈린다.
+     * 밝히지 않으면 두 번째 카톡을 새 요청으로 읽고 **두 번 보낸다** — 둘 다 돈 사고다.
+     */
+    public function test_amount_correction_resends_and_says_it_is_a_correction(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm->id);
+
+        $send = fn (int $amount) => $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => $amount,
+        ]);
+
+        $send(3_000_000)->assertStatus(201);
+        $send(3_500_000)->assertStatus(201);
+
+        $logs = AlimtalkLog::where('template_code', 'erp_board_request')->orderBy('id')->get();
+        $this->assertCount(2, $logs, '금액을 고쳤는데 알림톡이 다시 안 갔다 — 카톡엔 옛 금액이 남는다');
+
+        $second = Http::recorded()[1][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString('3,500,000원', $second);
+        $this->assertStringContainsString('금액 수정', $second, '정정임을 안 밝히면 두 번 보낸다');
+        $this->assertStringNotContainsString('3,000,000원', $second);
+    }
+
+    /** 같은 금액 재전송(오클릭)엔 알림톡이 안 나간다. */
+    public function test_same_amount_resend_sends_no_second_alimtalk(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm->id);
+
+        $payload = [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
+        ];
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_board_request')->count());
+    }
+
     /** 알림톡이 죽어도 신호 생성과 201 응답은 살아야 한다(board 가 실패로 오해해 재전송하지 않게). */
     public function test_alimtalk_failure_does_not_break_the_api(): void
     {
