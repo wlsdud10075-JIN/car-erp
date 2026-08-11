@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Setting;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -23,8 +24,18 @@ use Illuminate\Support\Facades\Log;
  */
 class KoreanHolidayService
 {
-    /** 공공데이터포털 — 한국천문연구원 특일 정보 (국경일·공휴일). */
-    private const URL = 'http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
+    /**
+     * 공공데이터포털 — 한국천문연구원 특일 정보 「공휴일 정보 조회」.
+     * 활용가이드 v1.4 + 실호출 확인(2026-08-11): `solYear` 필수 / `solMonth` 선택 /
+     * `numOfRows` 기본 10 이라 반드시 올려야 한 해가 다 온다.
+     */
+    private const URL = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
+
+    /** 활용기간 만료일(수기 입력) — 24개월 뒤 조용히 끊기는 걸 막는 유일한 신호. */
+    public static function expiresAtKey(): string
+    {
+        return 'holiday_api_expires_at';
+    }
 
     /** 연도별 저장 키. 공휴일은 전국 공통이라 회사(set)로 안 가른다. */
     public static function cacheKey(int $year): string
@@ -40,6 +51,20 @@ class KoreanHolidayService
     public static function isConfigured(): bool
     {
         return trim((string) config('services.holiday.key', '')) !== '';
+    }
+
+    /**
+     * 활용기간 만료까지 남은 일수. 미입력이면 null(경고 안 함).
+     * 음수면 이미 지난 것 — 그 뒤로는 수집이 조용히 실패하고 저장분만 늙어간다.
+     */
+    public static function daysUntilExpiry(): ?int
+    {
+        $raw = trim((string) (Setting::get(self::expiresAtKey(), '') ?: ''));
+        if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays(Carbon::parse($raw)->startOfDay(), false);
     }
 
     /**
@@ -68,12 +93,18 @@ class KoreanHolidayService
         }
 
         try {
-            $res = Http::timeout(20)->get(self::URL, [
-                'serviceKey' => config('services.holiday.key'),
+            // ⚠️ data.go.kr 은 **Encoding / Decoding 두 가지 키**를 준다.
+            //    Encoding 키(`%3D` 처럼 %XX 를 품음)를 쿼리 빌더에 넘기면 **다시 인코딩돼**
+            //    `%253D` 가 되고 인증이 실패한다. 반대로 Decoding 키를 그냥 붙이면 `+` 가
+            //    공백으로 해석돼 또 실패한다. ⇒ 어느 쪽을 붙여넣어도 되게 여기서 갈라준다.
+            $key = trim((string) config('services.holiday.key'));
+            $serviceKey = str_contains($key, '%') ? $key : rawurlencode($key);
+
+            $res = Http::timeout(20)->get(self::URL.'?serviceKey='.$serviceKey.'&'.http_build_query([
                 'solYear' => $year,
-                'numOfRows' => 100,
+                'numOfRows' => 100,   // 기본 10 — 안 올리면 한 해가 잘려 온다(실측 22건)
                 '_type' => 'json',
-            ]);
+            ]));
 
             if ($res->failed()) {
                 Log::warning('holiday sync http fail', ['year' => $year, 'status' => $res->status()]);
@@ -131,7 +162,10 @@ class KoreanHolidayService
         $out = [];
         foreach ($items as $it) {
             $locdate = (string) data_get($it, 'locdate', '');
-            // 공휴일(쉬는 날)만. 국경일이어도 isHoliday=N 이면 근무일이다(예: 제헌절).
+            // 공휴일(쉬는 날)만 — `isHoliday=N` 은 근무일이라 버린다.
+            //   ⚠️ 어떤 날이 Y 인지 **코드로 단정하지 말 것.** 활용가이드 v1.4(2020)는 제헌절이
+            //   안 온다고 적었지만 실호출(2026-08-11)에선 2026·2027 모두 `Y` 로 왔다(대체공휴일까지).
+            //   법이 바뀌면 API 가 먼저 반영된다 — 우리는 그 값을 그대로 따른다.
             if (! preg_match('/^\d{8}$/', $locdate) || strtoupper((string) data_get($it, 'isHoliday', 'N')) !== 'Y') {
                 continue;
             }

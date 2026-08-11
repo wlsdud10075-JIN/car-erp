@@ -19,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 공휴일 수기 목록 (회사 공통) — 'YYYY-MM-DD' 를 줄바꿈으로. */
     public string $holidays = '';
 
+    /** 공휴일 API 활용기간 만료일 (YYYY-MM-DD). 24개월마다 갱신해야 한다. */
+    public string $holidayExpiresAt = '';
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -32,6 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->holidays = implode("
 ", AlimtalkRecipients::holidays());
+        $this->holidayExpiresAt = (string) (Setting::get(KoreanHolidayService::expiresAtKey(), '') ?: '');
     }
 
     public function isTimeRouted(string $code): bool
@@ -100,13 +104,35 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $year = (int) now()->year;
 
+        $synced = (string) (Setting::get(KoreanHolidayService::lastSyncedKey(), '') ?: '');
+
         return [
             'configured' => KoreanHolidayService::isConfigured(),
             'this_year' => KoreanHolidayService::cached($year),
             'next_year' => KoreanHolidayService::cached($year + 1),
-            'synced_at' => (string) (Setting::get(KoreanHolidayService::lastSyncedKey(), '') ?: ''),
+            'synced_at' => $synced,
+            // 마지막 수집이 오래됐으면 조용히 늙고 있다는 뜻 — 만료·장애의 첫 신호다.
+            'stale' => $synced !== '' && \Illuminate\Support\Carbon::parse($synced)->lt(now()->subDays(3)),
+            'expires_in' => KoreanHolidayService::daysUntilExpiry(),
             'year' => $year,
         ];
+    }
+
+    /**
+     * 활용기간 만료일 저장 — API 가 알려주지 않으므로 사람이 적어 둔다(24개월).
+     * 안 적어두면 만료 후 **수집만 조용히 실패**하고 저장분이 늙는다(발송은 계속돼 아무도 모른다).
+     */
+    public function saveHolidayExpiry(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        $v = trim($this->holidayExpiresAt);
+        Setting::updateOrCreate(
+            ['key' => KoreanHolidayService::expiresAtKey()],
+            ['value' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : '', 'type' => 'string',
+                'description' => '공휴일 API 활용기간 만료일'],
+        );
+        $this->holidayExpiresAt = (string) (Setting::get(KoreanHolidayService::expiresAtKey(), '') ?: '');
+        $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
     }
 
     /** 지금 받아오기 — 연말·임시공휴일 지정 직후에 하루를 안 기다리게. */
@@ -429,6 +455,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <div class="mt-1 opacity-80">
                                         {{ collect($auto['this_year'])->map(fn ($name, $d) => substr($d, 5).' '.$name)->implode(' · ') }}
                                     </div>
+                                @endif
+
+                                @if($auto['configured'])
+                                    {{-- ⏳ 활용기간(24개월). API 가 안 알려주므로 사람이 적어 둔다 —
+                                         안 적어두면 만료 후 **수집만 조용히 실패**하고 저장분이 늙는다. --}}
+                                    @php
+                                        $d = $auto['expires_in'];
+                                        $tone = $d === null ? 'text-gray-500'
+                                            : ($d < 0 ? 'text-red-700 font-bold' : ($d <= 60 ? 'text-amber-700 font-bold' : 'text-gray-600'));
+                                    @endphp
+                                    <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-green-200 pt-2">
+                                        <span class="font-medium text-gray-600">{{ __('alimtalk_catalog.holidays_expiry') }}</span>
+                                        <input type="date" wire:model="holidayExpiresAt" class="input-base w-40 text-xs" />
+                                        <button type="button" wire:click="saveHolidayExpiry"
+                                                class="rounded border border-gray-300 bg-white px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-50">
+                                            {{ __('alimtalk_catalog.save') }}
+                                        </button>
+                                        <span class="{{ $tone }}">
+                                            @if($d === null)
+                                                {{ __('alimtalk_catalog.holidays_expiry_unset') }}
+                                            @elseif($d < 0)
+                                                {{ __('alimtalk_catalog.holidays_expired', ['n' => abs($d)]) }}
+                                            @else
+                                                {{ __('alimtalk_catalog.holidays_expires_in', ['n' => $d]) }}
+                                            @endif
+                                        </span>
+                                    </div>
+                                    @if($auto['stale'])
+                                        <div class="mt-1 font-bold text-red-700">{{ __('alimtalk_catalog.holidays_stale') }}</div>
+                                    @endif
                                 @endif
                             </div>
                             <div class="mb-2 rounded-lg bg-gray-50 p-2 text-[11px] text-gray-500">

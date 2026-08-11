@@ -77,9 +77,36 @@ class AlimtalkCatalogTest extends TestCase
         $this->assertStringContainsString(__('alimtalk_catalog.holidays_sync_now'), $html);
     }
 
+    /**
+     * ⏳ 활용기간(24개월)을 화면에서 보고 적을 수 있어야 한다 (jin 2026-08-11).
+     * 만료되면 수집만 조용히 멈추고 저장분이 늙는다 — 사람이 알아챌 유일한 자리가 여기다.
+     */
+    public function test_key_expiry_is_editable_and_counted_down(): void
+    {
+        config(['services.holiday.key' => 'TESTKEY']);
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        Carbon::setTestNow('2026-08-11 10:00');
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index');
+        $c->assertSee(__('alimtalk_catalog.holidays_expiry'))
+            ->assertSee(__('alimtalk_catalog.holidays_expiry_unset'));   // 미입력 안내
+
+        $c->set('holidayExpiresAt', '2028-08-10')->call('saveHolidayExpiry');
+        $this->assertSame('2028-08-10', Setting::get(KoreanHolidayService::expiresAtKey()));
+
+        // 임박하면 D-day 가 뜬다.
+        $c->set('holidayExpiresAt', '2026-09-10')->call('saveHolidayExpiry');
+        Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->assertSee(__('alimtalk_catalog.holidays_expires_in', ['n' => 30]));
+
+        Carbon::setTestNow();
+    }
+
     /** 🗓️ 고정 공휴일은 화면에 안내만 하고 수기 입력은 변동분만 받는다. */
     public function test_fixed_holidays_are_shown_not_asked_for(): void
     {
+        // ⚠️ 개발자 .env 에 키가 있으면 화면이 '켜짐' 으로 뜬다 — 테스트가 환경을 타지 않게 못 박는다.
+        config(['services.holiday.key' => '']);
         $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
 
         $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();

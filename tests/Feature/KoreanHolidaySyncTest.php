@@ -61,12 +61,12 @@ class KoreanHolidaySyncTest extends TestCase
         $this->assertFalse(AlimtalkRecipients::isHoliday(Carbon::parse('2026-02-18')));
     }
 
-    /** 국경일이어도 쉬지 않는 날(제헌절 등)은 공휴일이 아니다 — isHoliday=N 은 버린다. */
+    /** `isHoliday=N` 은 근무일이라 버린다(어떤 날이 N 인지는 API 가 정한다 — 코드로 단정 안 함). */
     public function test_non_rest_days_are_ignored(): void
     {
         $this->withKey();
         Http::fake(['*' => Http::response($this->body([
-            $this->item(20260717, '제헌절', 'N'),
+            $this->item(20260717, '근무일인 기념일', 'N'),
             $this->item(20260815, '광복절'),
         ]))]);
 
@@ -99,7 +99,7 @@ class KoreanHolidaySyncTest extends TestCase
             '빈 items(문자열)' => [['response' => ['body' => ['items' => '']]]],
             '빈 배열' => [['response' => ['body' => ['items' => ['item' => []]]]]],
             '전부 근무일' => [['response' => ['body' => ['items' => ['item' => [
-                ['dateName' => '제헌절', 'isHoliday' => 'N', 'locdate' => 20260717],
+                ['dateName' => '근무일인 기념일', 'isHoliday' => 'N', 'locdate' => 20260717],
             ]]]]]],
             '에러 응답' => [['OpenAPI_ServiceResponse' => ['cmmMsgHeader' => ['errMsg' => 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR']]]],
         ];
@@ -146,6 +146,48 @@ class KoreanHolidaySyncTest extends TestCase
 
         // 그래도 내장 고정 공휴일은 지켜진다(바닥).
         $this->assertTrue(AlimtalkRecipients::isHoliday(Carbon::parse('2026-01-01')));
+    }
+
+    /**
+     * ⏳ **활용기간 만료** — API 는 만료를 알려주지 않는다. 만료되면 수집만 조용히 실패하고
+     * 저장분이 늙어간다(발송은 계속돼 아무도 모른다). 그래서 사람이 적어둔 날짜로 D-day 를 센다.
+     */
+    public function test_expiry_countdown(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00');
+
+        $this->assertNull(KoreanHolidayService::daysUntilExpiry(), '미입력이면 경고하지 않는다');
+
+        foreach (['2026-09-10' => 30, '2026-08-11' => 0, '2026-08-01' => -10] as $date => $expected) {
+            Setting::updateOrCreate(
+                ['key' => KoreanHolidayService::expiresAtKey()],
+                ['value' => $date, 'type' => 'string'],
+            );
+            $this->assertSame($expected, KoreanHolidayService::daysUntilExpiry(), $date);
+        }
+
+        // 형식이 아니면 무시한다(엉뚱한 D-day 를 띄우지 않는다).
+        Setting::updateOrCreate(['key' => KoreanHolidayService::expiresAtKey()], ['value' => '내년쯤', 'type' => 'string']);
+        $this->assertNull(KoreanHolidayService::daysUntilExpiry());
+
+        Carbon::setTestNow();
+    }
+
+    /**
+     * 🗄️ 한 해치 JSON 이 `settings.value` 에 들어가야 한다 — varchar(255) 시절 실제로 깨졌다
+     * (`1406 Data too long`). 같은 벽에 **알림톡 시각 규칙**도 닿아 있었다(3행에 196자).
+     */
+    public function test_a_full_year_fits_in_the_settings_column(): void
+    {
+        $this->withKey();
+        $items = [];
+        for ($i = 1; $i <= 30; $i++) {   // 실측 22~24일 → 여유 있게 30일
+            $items[] = $this->item(20260100 + $i, '대체공휴일(부처님오신날)');
+        }
+        Http::fake(['*' => Http::response($this->body($items))]);
+
+        $this->assertSame(30, app(KoreanHolidayService::class)->syncYear(2026));
+        $this->assertCount(30, KoreanHolidayService::cached(2026));
     }
 
     /** 커맨드는 올해+내년을 받는다 — 1월 1일에 그 해가 비어 있지 않게. */
