@@ -404,6 +404,7 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 {
   "batch_id": "9f1c…",                     // sale_payment_confirm 만. 매입 신호는 **null**
   "created": ["18누0304", "19더49065"],
+  "updated": ["19더49065"],                // created 의 **부분집합** — 금액만 갱신된 차량
   "skipped": [
     { "vehicle_number": "21모1234", "reason": "already_open" },  // 내 차 → 차량번호로 돌려준다
     { "vehicle_id": 9999,          "reason": "forbidden" }       // 남의 차 → **id 만**(차량번호를 알려주지 않는다)
@@ -411,8 +412,18 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 }
 ```
 
-- **멱등**: 같은 `(vehicle_id, type)` 에 `open` 이 있으면 새로 만들지 않고 `skipped` 로 돌려준다.
-  board 가 재전송해도 안전 — 중복 뱃지가 안 생긴다.
+- **멱등**: 같은 `(vehicle_id, type)` 에 `open` 이 있으면 새로 만들지 않는다. board 가 재전송해도
+  중복 뱃지가 안 생긴다.
+- 💡 **금액 정정 재전송 (2026-08-11)** — 열려 있는 요청에 **다른 금액**으로 다시 보내면 그 행의
+  `amount_krw` 를 **제자리에서 갱신**하고 알림톡을 다시 보낸다(본문에 「금액 수정」 표기).
+  300만을 350만으로 고쳤는데 옛 금액이 남으면 받는 사람이 틀린 돈을 보내기 때문이다.
+  행을 새로 만들지 않으므로 멱등은 그대로다. 취소 후 재전송이라는 별도 절차가 필요 없다.
+  - **같은 금액**이면 갱신하지 않는다 → 종전대로 `skipped(already_open)`. 오클릭에 카톡이 두 번 안 나간다.
+  - 금액을 안 받는 type(`sale_payment_confirm`·구 `purchase_payment`)은 대상이 아니다.
+  - 이미 `done` 인 요청은 대상이 아니다 — 재전송하면 **새 요청**이 열린다(종전 동작).
+  - ⚠️ **갱신분은 `created` 에 담겨 돌아온다**(`updated` 는 그 **부분집합**). board 가 `created`·`skipped`
+    만 읽어도 "N건 전송"이 맞게 뜨도록 한 것 — ERP 가 먼저 배포되므로 board 무변경으로도 동작한다.
+    board 가 "N건 중 M건 금액 수정"을 보여주고 싶을 때만 `updated` 를 읽으면 된다.
 - **스코프 재인가**: `vehicle_ids` 는 §2 로 매칭된 영업 것만 통과. 남의 차량 id 는 `skipped(reason: forbidden)`.
   (전량 거부 대신 부분 성공 — 한 대 때문에 묶음 전체가 죽지 않게.)
 - `sale_payment_confirm` 은 **모든 차량이 `buyer_id` 소속**이어야 한다. 아니면 `422 buyer_mismatch`(오배치 방지).
@@ -473,6 +484,8 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
    ERP 값 **그대로** 표시(재계산·완료 coerce 금지 — §8 degrade 원칙 동일).
 5. **degrade** — 401/5xx/미설정이면 "**전송 불가**" 표시. 성공한 척하지 말 것(영업이 보냈다고 착각하면 카톡보다 나쁘다).
 6. **금액을 비운 채 전송하지 않는다** — ERP 가 `422 amount_required` 로 튕긴다(§11-2).
+7. **금액 정정은 그냥 다시 보내면 된다** — 금액칸을 고쳐 같은 버튼을 누르면 ERP 가 제자리에서 갱신한다.
+   무르기 버튼을 따로 만들 필요 없다(jin 2026-08-11).
 
 ### 11-5. 흡수 금지 (신호)
 

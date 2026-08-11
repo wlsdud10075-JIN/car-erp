@@ -100,9 +100,11 @@ class BoardRequestController extends Controller
         $batchId = (string) Str::uuid();
         $created = [];
         $createdRows = [];
+        $updated = [];
+        $updatedIds = [];
         $skipped = [];
 
-        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $batchId, &$created, &$createdRows, &$skipped) {
+        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $batchId, &$created, &$createdRows, &$updated, &$updatedIds, &$skipped) {
             foreach ($data['vehicle_ids'] as $vid) {
                 $vehicle = $vehicles->get($vid);
                 if (! $vehicle) {
@@ -123,11 +125,20 @@ class BoardRequestController extends Controller
                 );
 
                 if ($row === null) {
-                    $skipped[] = ['vehicle_number' => $vehicle->vehicle_number, 'reason' => 'already_open'];
+                    // 이미 열려 있다 — 금액을 고쳐 다시 보낸 것이면 그 금액만 갱신한다(오타 정정).
+                    $row = BoardRequest::refreshAmount($vehicle->id, $data['type'], $amountKrw);
+                    if ($row === null) {
+                        $skipped[] = ['vehicle_number' => $vehicle->vehicle_number, 'reason' => 'already_open'];
 
-                    continue;
+                        continue;
+                    }
+                    $updated[] = $vehicle->vehicle_number;
+                    $updatedIds[] = $row->id;
                 }
 
+                // ⚠️ 갱신분도 `created` 에 담는다 — board 는 `created`/`skipped` 만 읽으므로,
+                //    별도 키로만 돌려주면 board 화면이 "0건 전송"으로 보인다(ERP 가 먼저 배포된다).
+                //    `updated` 는 그 부분집합이다: board 가 나중에 "N건 중 M건 금액 수정"을 쓰고 싶을 때만 본다.
                 $created[] = $vehicle->vehicle_number;
                 $createdRows[] = $row;
             }
@@ -136,11 +147,12 @@ class BoardRequestController extends Controller
         // 🔔 알림톡은 **트랜잭션이 끝난 뒤** 보낸다 — 롤백됐는데 카톡만 나가면 되돌릴 수가 없다.
         //    `skipped`(already_open·forbidden)에는 안 보낸다: 중복 카톡의 원인이다.
         // 카드에는 이름을 쓴다 — 아이템 내용이 20자에서 잘려 이메일이 뭉개진다(이름 없으면 이메일 폴백).
-        $this->notifyCreated($data['type'], $createdRows, (string) ($salesman->name ?: $salesman->email));
+        $this->notifyCreated($data['type'], $createdRows, (string) ($salesman->name ?: $salesman->email), $updatedIds);
 
         return response()->json([
             'batch_id' => $isSaleConfirm ? $batchId : null,
             'created' => $created,
+            'updated' => $updated,   // created 의 **부분집합** — 금액만 갱신된 차량
             'skipped' => $skipped,
         ], 201);
     }
@@ -157,8 +169,10 @@ class BoardRequestController extends Controller
      * 오해하고 재전송한다(그건 멱등에 걸려 already_open 이 된다) — 그래서 통째로 감싼다.
      *
      * @param  array<int, BoardRequest>  $rows
+     * @param  array<int, int>  $updatedIds  그중 **금액만 갱신된** 행 id — 본문에 정정임을 밝힌다.
+     *                                       안 밝히면 받는 사람이 두 번째 카톡을 새 요청으로 읽고 **두 번 보낸다**.
      */
-    private function notifyCreated(string $type, array $rows, string $requester): void
+    private function notifyCreated(string $type, array $rows, string $requester, array $updatedIds = []): void
     {
         if ($rows === []) {
             return;
@@ -183,7 +197,9 @@ class BoardRequestController extends Controller
             $secrets = [];
             foreach ($rows as $r) {
                 $v = $r->vehicle;
-                $lines[] = '■ '.$label.' · '.($v?->vehicle_number ?? '-');
+                // 금액 정정분은 반드시 밝힌다 — 안 밝히면 두 번째 카톡을 새 요청으로 읽고 두 번 보낸다.
+                $mark = in_array($r->id, $updatedIds, true) ? ' (금액 수정)' : '';
+                $lines[] = '■ '.$label.$mark.' · '.($v?->vehicle_number ?? '-');
                 if ($r->amount_krw !== null) {
                     $lines[] = '  '.number_format($r->amount_krw).'원';
                 }
@@ -192,9 +208,13 @@ class BoardRequestController extends Controller
                 $secrets[] = (string) ($v?->purchase_seller_account ?? '');
             }
 
+            // 카드 하이라이트도 정정임을 밝힌다(전부 정정일 때만 — 섞이면 본문 줄이 가른다).
+            //   ⚠️ 하이라이트 설명은 19자 상한이다. '매입잔금 수정' = 7자로 여유가 있다.
+            $allUpdated = count($updatedIds) === count($rows);
+
             $vars = [
                 '건수' => count($rows),
-                '구분' => $label,
+                '구분' => $label.($allUpdated ? ' 수정' : ''),
                 '차량' => count($numbers) > 1
                     ? ($numbers[0].' 외 '.(count($numbers) - 1).'대')
                     : ($numbers[0] ?? '-'),

@@ -284,6 +284,96 @@ class BoardRequestApiTest extends TestCase
         $this->assertNull(BoardRequest::first()->amount_krw);
     }
 
+    /**
+     * 💡 **금액을 고쳐 다시 보내면 갱신된다** (jin 2026-08-11) — 300만을 350만으로 정정했는데
+     * 옛 금액이 남으면 받는 사람이 틀린 돈을 보낸다. 행은 새로 안 만든다(중복 뱃지 없음 = 멱등 유지).
+     */
+    public function test_resending_a_different_amount_updates_it_in_place(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        $send = fn (int $amount) => $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => $amount,
+        ]);
+
+        $send(3_000_000)->assertStatus(201);
+        $res = $send(3_500_000)->assertStatus(201);
+
+        $this->assertSame(1, BoardRequest::count(), '정정 재전송이 행을 새로 만들었다 — 뱃지가 두 개 뜬다');
+        $this->assertSame(3_500_000, BoardRequest::first()->amount_krw, '고쳐 보낸 금액이 반영되지 않았다');
+
+        // board 는 created·skipped 만 읽는다 — 갱신분이 created 에 있어야 "0건 전송"으로 안 보인다.
+        $res->assertJsonPath('created', ['11가1111'])
+            ->assertJsonPath('updated', ['11가1111'])
+            ->assertJsonCount(0, 'skipped');
+    }
+
+    /** 같은 금액 재전송(오클릭)은 갱신도 알림도 없다 — 종전대로 already_open. */
+    public function test_resending_the_same_amount_is_still_skipped(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        $payload = [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
+        ];
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+
+        $this->signedPost('/api/internal/board/requests', $payload)
+            ->assertStatus(201)
+            ->assertJsonCount(0, 'created')
+            ->assertJsonCount(0, 'updated')
+            ->assertJsonPath('skipped.0.reason', 'already_open');
+    }
+
+    /** 금액을 안 받는 type 은 갱신 대상이 아니다 — 종전대로 skip. */
+    public function test_resend_does_not_update_types_without_an_amount(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        $payload = [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,   // 구 입금요청 — 금액칸 없음
+            'vehicle_ids' => [$v->id],
+        ];
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+
+        $this->signedPost('/api/internal/board/requests', $payload + ['amount_krw' => 9_000_000])
+            ->assertStatus(201)
+            ->assertJsonPath('skipped.0.reason', 'already_open');
+
+        $this->assertNull(BoardRequest::first()->amount_krw);
+    }
+
+    /** 확인된(done) 요청은 갱신 대상이 아니다 — 재전송하면 새 요청이 열려야 한다. */
+    public function test_resend_after_confirmation_opens_a_new_request(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        $payload = [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
+        ];
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+        BoardRequest::first()->markDone();
+
+        $this->signedPost('/api/internal/board/requests', ['amount_krw' => 500_000] + $payload)
+            ->assertStatus(201)->assertJsonCount(1, 'created')->assertJsonCount(0, 'updated');
+
+        $this->assertSame(2, BoardRequest::count());
+    }
+
     /** 응답에 금액이 실려야 한다 — board 는 전송 후 입력칸을 비우므로 여기가 유일한 확인처다. */
     public function test_index_returns_the_requested_amount(): void
     {
