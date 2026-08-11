@@ -361,13 +361,19 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > ⚠️ 메모리 파일명은 **언더스코어**다(`project_deployment.md` 등). 하이픈으로 찾으면 안 나온다.
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태 (2026-08-10)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`857108e`) == dev, **미배포 기능코드 0**. 테스트 **1743 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+**현재 상태 (2026-08-11)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master(`d943207`) == dev, **미배포 기능코드 0**. 테스트 **1821 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 
-> 🩹 **08-10 배포 3건** — ①**연동 B 첨부 S3 복사가 한 번도 성공한 적 없던 것**(Flysystem ACL 조회, SKILLS §8 #48)
-> ②**파일 쓰기 실패를 무시하던 8곳**(전자서명·도장·서류 교체 등, §8 #47) ③**무담보 한도**(계약금 전용, §8 #49).
-> 무담보는 **3사 모두 설정된 바이어 0곳** — 켜야 동작한다(기능 토글은 기본 ON).
+> 🤝 **08-11 배포 3회** — board 인계 「입금요청 분리」 반영. ①**계약금/매입잔금 2종 + 금액**(표시 전용,
+> 회계 미반영). ⚠️계약금은 미지급 0 으로 **자동소멸 안 함**(수동 확인만) — 꺼지면 거짓 신호가 인수까지 남는다.
+> 구 `purchase_payment` 는 **계속 수신**(board 운영이 구버전이라 튕기면 유일한 경로가 죽는다).
+> ②**금액 정정 재전송**(다른 금액이면 제자리 갱신 + 알림톡 재발송「금액 수정」. 무르기 UI 는 안 만듦 = jin 결정.
+> 갱신분을 `created` 에 담아 **board 무변경으로 동작**). ③**요청 알림톡**(`erp_board_request`) — 수신자가
+> **시각 규칙**으로 갈린다(근무시간 담당자 / 야간·주말·공휴일 대표). ④**공휴일 자동 수집**(한국천문연구원 특일 API,
+> ssancarerp·heymanerp 키 주입 완료·karaba 미설정). ⑤**차량 탭별 메모 5칸**(매입·판매·통관·선적·B/L).
+> 🚨 **알림톡은 BizM 승인 대기라 실발송 0건** — 승인 전까지 게이트에서 skipped. 등록 파일·문안 = jin 몫.
+> ⚠️ **board 는 아직 master 미머지**(ERP 선배포 완료 상태) — board 세션에서 올려야 새 버튼이 산다.
 
 **남은 작업**: 코드 착수 대기 **0건**. 진행 중인 안건은 전부 jin 운영 몫이거나 board 세션 몫이라
 `MEMORY.md` 의 「jin 운영 몫」·「외부·타 세션 병목」 섹션을 볼 것.
