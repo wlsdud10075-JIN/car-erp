@@ -333,30 +333,53 @@ board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시할 때 �
 
 ## 11. 요청·확인 신호 (카톡 대체) — `board_requests` (2026-08-07 jin 범위 확정)
 
-> 상태: **스펙 확정 · ERP 미구현.** 계약을 먼저 고정하고 양쪽이 병행 개발한다.
+> 상태: **ERP 구현 완료.** 2026-08-11 에 입금요청이 **계약금/매입잔금 2종 + 금액**으로 개정됐다.
 > ERP 계획서 = `docs/design/board-erp-request-ack.md`. 결정 배경 = 그 문서 §1·§6.
 > ⚠️ **board 변경은 board repo/세션에서 커밋**한다(복사 금지=drift). 본 절이 권위.
 
-### 11-1. 무엇인가 — "두 마디"만 옮긴다
+### 11-1. 무엇인가 — 카톡으로 하던 "해주세요 / 했습니다"
 
 실무자가 카톡으로 주고받던 **"해주세요" / "했습니다"** 를 시스템 안으로 넣는다.
-데이터(금액·상태)는 이미 §4 읽기 API 로 흐르고 있으므로 **새로 실어 보낼 게 없다**.
 
-| 신호 | `type` | 단위 | 뜻 | 닫히는 방법 |
-|---|---|---|---|---|
-| **입금요청** | `purchase_payment` | 차량 1대 | "이 차 입금해주세요" | **ERP 자동** — 매입 미지급 0 이면 소멸 |
-| **판매대금확인** | `sale_payment_confirm` | 바이어 1 + 차량 N대 | "이 바이어 차 N대 대금 넣었으니 확인해주세요" | **ERP 에서 수동** — 차량별 체크(부분확인) |
+| 신호 | `type` | 단위 | 금액 | 뜻 | 닫히는 방법 |
+|---|---|---|---|---|---|
+| **계약금** | `purchase_deposit` | 차량 1대 | **필수** | "이 차 계약금 N원 보내주세요" | **수동 확인만** (아래 ⚠️) |
+| **매입잔금** | `purchase_balance` | 차량 1대 | **필수** | "이 차 잔금 N원 보내주세요" | **ERP 자동** — 매입 미지급 0 이면 소멸 (+수동 확인도 가능) |
+| **판매대금확인** | `sale_payment_confirm` | 바이어 1 + 차량 N대 | 없음 | "이 바이어 차 N대 대금 넣었으니 확인해주세요" | **ERP 에서 수동** — 차량별 체크(부분확인) |
+| ~~입금요청~~ | `purchase_payment` | 차량 1대 | 없음 | **deprecated (2026-08-11)** | 자동 — 종전 규칙 그대로 |
 
+> ⚠️ **`purchase_deposit` 을 "미지급 0" 으로 자동소멸시키지 말 것.** 미지급 0 = 잔금까지 다 준
+> 상태다. 그때까지 계약금 신호가 살아 있으면 **"계약금 아직 안 보냈다"는 거짓 신호**가 차 인수
+> 시점까지 화면에 남는다. ERP 는 계약금 지급 여부를 알 방법이 없다(금액을 회계에 안 쓰므로)
+> ⇒ 수동 확인이 유일하게 성립하는 설계다. 가드 = `BoardRequestAutoResolveTest::test_deposit_request_survives_full_payment`.
+>
+> 🔒 **구 `purchase_payment` 는 계속 수신한다 — 화이트리스트에서 빼지 말 것.** 신규 생성 UI 경로는
+> 없지만, board 운영이 신버전을 싣기 전까지는 그게 board 의 **유일한 입금요청 경로**다.
+> 여기서 422 를 내면 조용히 "전송 불가"가 되고 대체 경로가 없다. board master 배포 후 별도 커밋으로 제거.
+>
+> 🧩 **멱등키가 `(vehicle_id, type)` 이라 반드시 별개 type 이어야 한다.** 하나의 type 에 하위구분
+> (`subtype`)을 얹는 설계는 작동하지 않는다 — 계약금이 열려 있으면 잔금 요청이 `already_open` 으로
+> **조용히 버려져** 영업 화면엔 "이미 요청됨"만 뜨고 잔금 요청은 아무 데도 도착하지 않는다.
+>
 > 👤 **확인 주체 = `canConfirmFinance()`** — **super · admin · 업무관리자 · role∈{재무, 관리}**.
 > "재무만"이 아니다(jin 2026-08-09 지적). 관리·업무관리자도 누를 수 있고, 그게 의도다.
 > 요점은 **영업이 스스로 확인할 수 없다**는 것 — 통장을 본 사람과 요청한 사람이 갈려야 신호에 의미가 있다.
 
-### 11-2. 🚫 금액을 주고받지 않는다 (최중요)
+### 11-2. 💰 금액 — 싣되, 회계에는 쓰지 않는다 (2026-08-11 개정)
 
-- 요청 body·응답 어디에도 **금액 필드가 없다**. board 가 금액을 보내도 ERP 는 **무시**한다.
-- 매입 지급액·판매 N잔금 기입은 **전부 ERP 관리 이상**의 일이다. 신호는 "누구의 어느 차"까지만 지목한다.
-- 근거 = jin 2026-08-07: "금액을 넣어서 그 금액이 반영되게는 하지말자. 진짜 단순한 신호수준."
-- 은행 API 연동 시 입금요청이 "계약금/잔금 얼마" 로 확장될 예정 — **그때 이 절을 개정**한다. 지금 필드를 선점하지 말 것.
+> 구 규칙("금액을 주고받지 않는다", jin 2026-08-07)은 **폐기**됐다. 신호에 금액이 없으니
+> 받는 사람이 **얼마를 보내야 하는지 몰라** 결국 카톡으로 되물었다 — 신호가 일을 끝내지 못했다.
+> jin 2026-08-11: *"얼마를 보내줘야 하는지 정해서 알려줘야 한다고 하더라고. 그게 계약금인지, 매입잔금인지 알아야 넣어 줄 수 있다고."*
+
+- `POST /requests` body 에 **`amount_krw`**(정수, KRW). 계약금·잔금은 **필수** — 없으면 `422 amount_required`.
+  `sale_payment_confirm` 에는 넣지 않는다(보내도 저장 안 함).
+- 저장은 `board_requests.amount_krw` **한 컬럼**. **표시 전용**이다.
+- 🚫 **회계 컬럼(`final_payments`·`purchase_balance_payments`·`vehicles.*`)에 간접적으로라도 쓰지 않는다** —
+  §11-5 흡수 금지는 그대로 유효하다. 재무는 이 숫자를 **보고** 매입 탭에 직접 기입한다.
+  자동 기입은 **은행 API 연동 이후**다(jin: *"자동 기입되는건 은행 API 연결된 이후가 되어도 되니까."*).
+- ⚠️ **`GET /requests` 응답에도 반드시 실어 준다.** board 는 전송 성공 시 입력칸을 비우므로,
+  응답에 금액이 없으면 **요청한 본인이 "얼마 요청했지?" 를 어디에서도 볼 수 없다**.
+- 가드 = `BoardRequestApiTest::test_amount_never_touches_accounting` · `BoardRequestModelTest::test_table_carries_only_the_display_amount`.
 
 ### 11-3. 엔드포인트
 
@@ -368,9 +391,10 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 ```jsonc
 {
   "salesman_email": "sales@example.com",   // 쿼리·서명 포함 (§2)
-  "type": "sale_payment_confirm",
-  "vehicle_ids": [12, 34, 56],
-  "buyer_id": 7,          // sale_payment_confirm 필수 / purchase_payment 는 생략
+  "type": "purchase_deposit",
+  "vehicle_ids": [12],
+  "amount_krw": 3000000,  // purchase_deposit·purchase_balance 필수 / 그 외는 생략(보내도 버림)
+  "buyer_id": 7,          // sale_payment_confirm 필수 / 매입 신호는 생략
   "note": "5/12 송금분"    // 선택, 200자
 }
 ```
@@ -378,7 +402,7 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 응답 `201`:
 ```jsonc
 {
-  "batch_id": "9f1c…",                     // sale_payment_confirm 만. purchase_payment 는 **null**
+  "batch_id": "9f1c…",                     // sale_payment_confirm 만. 매입 신호는 **null**
   "created": ["18누0304", "19더49065"],
   "skipped": [
     { "vehicle_number": "21모1234", "reason": "already_open" },  // 내 차 → 차량번호로 돌려준다
@@ -395,9 +419,12 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
   🔒 **이 422 를 약화시키지 말 것** — board 의 화면 제약(바이어 블록 안에서만 체크)은 실수 방지일 뿐이고,
   `toggleReqVehicle(buyerId, vehicleId)` 는 공개 Livewire 액션이라 조작된 클라이언트는 섞인 묶음을 만들 수 있다.
   **바이어 혼합을 실제로 막는 건 서버의 이 422 하나뿐이다.**
-- `purchase_payment` 에 `vehicle_ids` 를 2개 이상 보내면 **각각 별개 요청**으로 생성된다(단위가 1대라서).
-  응답 `batch_id` 가 `null` 인 이유이기도 하다 — 돌려줄 묶음이 하나로 정해지지 않는다(행에는 각자 uuid 가 들어간다).
-  ⇒ 입금요청을 취소하려면 `GET /requests` 로 `batch_id` 를 먼저 조회한다.
+- **매입 신호**(`purchase_deposit`·`purchase_balance`·구 `purchase_payment`)에 `vehicle_ids` 를 2개 이상
+  보내면 **각각 별개 요청**으로 생성된다(단위가 1대라서). 응답 `batch_id` 가 `null` 인 이유이기도 하다 —
+  돌려줄 묶음이 하나로 정해지지 않는다(행에는 각자 uuid 가 들어간다).
+  ⇒ 매입 신호를 취소하려면 `GET /requests` 로 `batch_id` 를 먼저 조회한다.
+- 금액 필수 type 에 `amount_krw` 가 없거나 0 이면 **`422 amount_required`** — 한 대도 만들지 않는다.
+  조용히 null 로 넘기면 받는 사람이 금액을 못 봐 기능 자체가 무의미해진다.
 - ✅ **`vehicle_id` 는 `/purchases`·`/sales` 응답에 있다**(2026-08-08 추가). `/sales` 는 `buyer_id` 도 준다 —
   바이어를 이름 문자열로 맞추면 동명이인·표기흔들림에서 위 422 로 튕긴다.
   ⚠️ 이 필드들을 지우면 **예외도 로그도 없이 board 버튼만 안 켜진다**(board 는 "전송 불가"로 비활성 처리).
@@ -415,17 +442,19 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
     "type": "sale_payment_confirm",
     "status": "partial",                   // open | partial | done | cancelled
     "buyer_name": "ABC TRADING",
+    "amount_krw": null,                    // 매입 신호면 요청 금액, 판매대금확인이면 null
     "requested_at": "2026-08-07T10:00:00+09:00",
     "vehicles": [
-      { "vehicle_number": "18누0304", "status": "done", "confirmed_at": "2026-08-07T14:20:00+09:00" },
-      { "vehicle_number": "22가1111", "status": "open", "confirmed_at": null }
+      { "vehicle_number": "18누0304", "status": "done", "amount_krw": null, "confirmed_at": "2026-08-07T14:20:00+09:00" },
+      { "vehicle_number": "22가1111", "status": "open", "amount_krw": null, "confirmed_at": null }
     ]
   }]
 }
 ```
 
 - `status` 는 라인 집계 — 전부 done = `done` / 일부 done = `partial` / 하나도 안 됐으면 `open`.
-- **금액·마진·PII 없음**(§3 화이트리스트 유지). 차량번호·상태·시각뿐.
+- **마진·PII 없음**(§3 화이트리스트 유지). 차량번호·상태·시각 + **요청 금액**뿐.
+- `amount_krw` 는 묶음·라인 **양쪽에** 실린다(매입 신호는 1대=1묶음이라 같은 값). board 는 어느 쪽을 읽어도 된다.
 
 #### `POST /requests/{batch_id}/cancel` — 오클릭 취소 (선택 구현)
 
@@ -433,19 +462,22 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 
 ### 11-4. board 측 작업 (board repo·board 세션 — 복사 금지)
 
-1. `CarErpReadService` 에 `sendBoardRequest(type, vehicleIds, buyerId?, note?)` + `fetchBoardRequests(status?)` 추가.
+1. `CarErpReadService` 에 `sendBoardRequest(type, vehicleIds, buyerId?, note?, amountKrw?)` + `fetchBoardRequests(status?)` 추가.
    HMAC 은 §1 canonical **바이트 단위 일치**(POST 는 body 포함).
-2. **[입금요청] 버튼** — 차량 1대 화면/행에서. 누르면 그 차 1대만 전송.
+2. **금액칸 + [계약금] [매입잔금] 2버튼** — 차량 1대 행에서. 칩도 type 별로 가른다
+   (한 차에 「계약금 확인됨」 + 「잔금 요청중」이 동시에 성립한다).
+   ⚠️ **금액 자동계산 금지**(잔금 = 매입가 − 계약금 자동채움 ❌) — 계약금은 board 가 알 수 없다.
 3. **[판매대금확인] 버튼** — 바이어를 고르고 그 바이어 차량 N대를 **체크해서** 전송(선적요청 UI 와 같은 감각).
    ⚠️ 서로 다른 바이어의 차를 한 묶음에 담지 못하게 board 에서 먼저 막는다(ERP 도 `422` 로 이중 방어).
 4. **상태 칩** — `GET /requests` 폴링. `partial` 이면 `3/5` 처럼 보여준다.
    ERP 값 **그대로** 표시(재계산·완료 coerce 금지 — §8 degrade 원칙 동일).
 5. **degrade** — 401/5xx/미설정이면 "**전송 불가**" 표시. 성공한 척하지 말 것(영업이 보냈다고 착각하면 카톡보다 나쁘다).
-6. **금액 입력칸을 만들지 않는다** — §11-2. 만들어도 ERP 가 버린다.
+6. **금액을 비운 채 전송하지 않는다** — ERP 가 `422 amount_required` 로 튕긴다(§11-2).
 
 ### 11-5. 흡수 금지 (신호)
 
-- board 가 금액을 실어 보내거나, ERP 회계 컬럼(`final_payments`·`purchase_balance_payments`)에 **간접적으로라도 쓰기**.
+- 요청 금액(`amount_krw`)을 ERP 회계 컬럼(`final_payments`·`purchase_balance_payments`·`vehicles.*`)에
+  **간접적으로라도 쓰기**. 표시 전용이다 — 재무가 보고 직접 기입한다(자동 기입은 은행 API 연동 이후).
 - board 가 요청을 **스스로 done 처리**(확인은 ERP 쪽 사람의 행위다 — 요청자와 확인자가 갈리는 게 이 기능의 존재 이유).
 - 신호를 `vehicles` 상태 컬럼에 적재(§9 와 동일 — 게이트 회귀).
 

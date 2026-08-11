@@ -15,8 +15,13 @@ return [
     // Dealer (매매상) balance 10-day alarm (karaba)
     'task_board_purchase' => 'Sales payment request',
     'task_board_sale' => 'Sales payment confirmation',
+    // Split of the payment request into two signals (2026-08-11) — these carry an amount
+    'task_board_deposit' => 'Sales deposit request',
+    'task_board_balance' => 'Sales balance request',
     'board_purchase_action' => 'Purchase payment needed',
     'board_sale_action' => 'Confirm incoming payment',
+    'board_deposit_action' => 'Send the deposit',
+    'board_balance_action' => 'Send the purchase balance',
     'badge_board' => 'REQ',
 
     'task_balance_due' => 'Dealer balance',

@@ -2033,8 +2033,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 판매대금확인 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
+     * board 신호 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
      * 권한 = canConfirmFinance(super·admin·업무관리자·role∈{재무,관리}).
+     *
+     * 대상 = `TYPE_META['manual_confirm']` 인 type 뿐 — 여기서 열거하지 말 것.
+     * 구 [입금요청](purchase_payment)은 자동소멸 전용이라 제외된다(버튼도 안 뜬다).
      */
     public function confirmBoardRequest(int $id): void
     {
@@ -2047,11 +2050,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $line = \App\Models\BoardRequest::query()
             ->where('vehicle_id', $this->editingId)   // 패널에 연 차량으로 한정 (id 주입 방어)
-            ->ofType(\App\Models\BoardRequest::TYPE_SALE_PAYMENT_CONFIRM)
+            ->whereIn('type', \App\Models\BoardRequest::typesWith('manual_confirm'))
             ->open()
             ->find($id);
 
+        // 조용히 return 하면 "버튼을 눌렀는데 아무 일도 안 일어난다"가 된다(원인을 못 찾는 부류).
         if (! $line) {
+            $this->dispatch('notify', message: __('vehicle.board_confirm_gone'), type: 'warning');
+
             return;
         }
 
@@ -5810,18 +5816,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                               title="{{ __('vehicle.buyer_undecided_title') }}">{{ __('vehicle.buyer_undecided_badge') }}</span>
                     @endif
                     {{-- board 요청·확인 신호 (2026-08-09) — 영업이 board 에서 보낸 신호를 여기서 바로 본다.
-                         ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap. --}}
+                         ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap.
+                         type 을 여기서 열거하지 말 것 — TYPE_META 를 돌면 새 신호가 자동으로 뜬다
+                         (열거하면 type 이 늘 때 **에러 없이 뱃지만 안 뜬다**). --}}
                     @php $brqTypes = $v->open_board_request_types; @endphp
                     @if($brqTypes !== [])
                         <span class="inline-flex flex-wrap gap-1 align-middle">
-                            @if(in_array(\App\Models\BoardRequest::TYPE_PURCHASE_PAYMENT, $brqTypes, true))
-                                <span class="ml-1 whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
-                                      title="{{ __('vehicle.board_title_purchase') }}">{{ __('vehicle.board_badge_purchase') }}</span>
-                            @endif
-                            @if(in_array(\App\Models\BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, $brqTypes, true))
-                                <span class="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700"
-                                      title="{{ __('vehicle.board_title_sale') }}">{{ __('vehicle.board_badge_sale') }}</span>
-                            @endif
+                            @foreach(\App\Models\BoardRequest::TYPE_META as $brqType => $brqMeta)
+                                @if(in_array($brqType, $brqTypes, true))
+                                    <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $brqMeta['color'] === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700' }}"
+                                          title="{{ __($brqMeta['title']) }}">{{ __($brqMeta['badge']) }}</span>
+                                @endif
+                            @endforeach
                         </span>
                     @endif
                 </td>
@@ -6207,23 +6213,30 @@ function vehicleColumnsToggle() {
                 </p>
                 @endif
 
-                {{-- board 요청·확인 신호 (2026-08-09) — 드로어에서 바로 보고, 여기서 회신한다.
-                     입금요청은 버튼이 없다(매입 탭에 지급을 기입하면 자동으로 사라진다). --}}
+                {{-- board 요청·확인 신호 (2026-08-09, 금액 2026-08-11) — 드로어에서 바로 보고 여기서 회신한다.
+                     💰 금액은 **표시 전용**이다 — 여기 숫자를 보고 매입 탭에 사람이 직접 기입한다.
+                     구 [입금요청]만 버튼이 없다(매입 탭에 지급을 기입하면 자동으로 사라진다). --}}
                 @if($editingId !== null && $this->boardRequestsForPanel->isNotEmpty())
                 <div class="mt-1.5 flex flex-col gap-1">
                     @foreach($this->boardRequestsForPanel as $brq)
-                    @php $isPurchase = $brq->type === \App\Models\BoardRequest::TYPE_PURCHASE_PAYMENT; @endphp
+                    @php
+                        $brqMeta = \App\Models\BoardRequest::meta($brq->type);
+                        $isPurple = ($brqMeta['color'] ?? 'blue') === 'purple';
+                    @endphp
                     <div wire:key="panel-brq-{{ $brq->id }}"
-                         class="flex items-center justify-between gap-2 rounded-md border px-2 py-1 {{ $isPurchase ? 'border-blue-200 bg-blue-50' : 'border-purple-200 bg-purple-50' }}">
-                        <span class="min-w-0 text-[11px] {{ $isPurchase ? 'text-blue-800' : 'text-purple-800' }}">
-                            <span class="font-bold">{{ $isPurchase ? __('vehicle.board_badge_purchase') : __('vehicle.board_badge_sale') }}</span>
+                         class="flex items-center justify-between gap-2 rounded-md border px-2 py-1 {{ $isPurple ? 'border-purple-200 bg-purple-50' : 'border-blue-200 bg-blue-50' }}">
+                        <span class="min-w-0 text-[11px] {{ $isPurple ? 'text-purple-800' : 'text-blue-800' }}">
+                            <span class="font-bold">{{ isset($brqMeta['badge']) ? __($brqMeta['badge']) : $brq->type }}</span>
+                            @if($brq->amount_krw !== null)
+                                <span class="ml-1 font-bold tabular-nums">{{ number_format($brq->amount_krw) }}{{ __('vehicle.board_amount_unit') }}</span>
+                            @endif
                             <span class="ml-1 opacity-75">
                                 {{ __('vehicle.board_requested_by', ['email' => $brq->requested_by_email, 'date' => $brq->requested_at?->format('m-d')]) }}
                             </span>
                         </span>
-                        @if(! $isPurchase && auth()->user()?->canConfirmFinance())
+                        @if(($brqMeta['manual_confirm'] ?? false) && auth()->user()?->canConfirmFinance())
                             <button type="button" wire:click="confirmBoardRequest({{ $brq->id }})"
-                                    class="shrink-0 rounded bg-purple-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-purple-700">
+                                    class="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-white {{ $isPurple ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700' }}">
                                 {{ __('vehicle.board_confirm_btn') }}
                             </button>
                         @endif

@@ -16,8 +16,13 @@ return [
     // board 요청·확인 신호 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11
     'task_board_purchase' => '영업 입금요청',
     'task_board_sale' => '영업 판매대금확인',
+    // 입금요청 분리 2종 (2026-08-11) — 금액을 실어 보내는 신호
+    'task_board_deposit' => '영업 계약금 요청',
+    'task_board_balance' => '영업 매입잔금 요청',
     'board_purchase_action' => '매입 지급 처리 필요',
     'board_sale_action' => '입금 확인 필요',
+    'board_deposit_action' => '계약금 송금 필요',
+    'board_balance_action' => '매입잔금 송금 필요',
     'badge_board' => '요청',
 
     'task_balance_due' => '매매상 잔금',

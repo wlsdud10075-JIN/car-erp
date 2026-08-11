@@ -77,11 +77,11 @@ class PurchaseBalancePayment extends Model
                     ->update(['resolved_at' => now(), 'resolved_reason' => 'balance_paid']);
             }
 
-            // board [입금요청] 자동 해소 (2026-08-07) — 위 알람과 같은 조건(매입 미지급 0), 같은 자리.
+            // board 매입 신호 자동 해소 (2026-08-07) — 위 알람과 같은 조건(매입 미지급 0), 같은 자리.
             //   ⚠️ Vehicle::saved 훅에만 두면 안 걸린다 — `refreshCaches()` 는 raw update 라
             //      모델 이벤트가 안 뜬다(SKILLS §2). 잔금 경로는 여기가 유일한 진입점이다.
             if (Schema::hasTable('board_requests')) {
-                $p->vehicle?->resolveOpenPurchasePaymentRequests();
+                $p->vehicle?->resolveAutoClosingBoardRequests();
             }
         });
         static::deleted(fn (PurchaseBalancePayment $p) => $p->vehicle?->refreshCaches());

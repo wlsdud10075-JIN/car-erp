@@ -14,12 +14,14 @@ use Illuminate\Support\Str;
  *
  * 권위 = docs/integration/board-portal-api.md §11 / 계획 = docs/design/board-erp-request-ack.md.
  *
- * 🚫 **금액을 다루지 않는다.** board 가 보내도 버린다 — 매입 지급액·판매 N잔금 기입은
- *    전부 erp 관리 이상의 일이다. 여기 금액 필드를 추가하려거든 §11-2 를 먼저 읽을 것.
+ * 💰 **금액을 싣는다 (2026-08-11 개정).** 받는 사람이 얼마를 보내야 하는지 몰라 결국 카톡으로
+ *    되돌아갔다 — 금액이 없으면 신호가 일을 끝내지 못한다. 다만 **표시 전용**이다:
+ *    🚫 회계 컬럼(`final_payments`·`purchase_balance_payments`·`vehicles.*`)에 간접적으로라도
+ *    쓰지 않는다(§11-5 흡수 금지 유지). 자동 기입은 은행 API 연동 이후.
  *
- * 닫히는 방식이 type 별로 다르다:
- *   - purchase_payment      = **자동**. 매입 미지급 0 이면 소멸(누를 사람이 있으면 카톡으로 돌아간다).
- *   - sale_payment_confirm  = **수동**. 차량별로 체크(부분입금이 흔해 기계 판정 불가).
+ * 🗺️ **type 별 성격은 TYPE_META 한 곳에만 둔다.** 화면 3곳(목록 뱃지·드로어·알람센터)이 각자
+ *    `=== TYPE_PURCHASE_PAYMENT` 로 분기하던 걸 맵으로 모았다. 안 그러면 type 을 늘릴 때마다
+ *    **아무 에러 없이 뱃지가 안 뜨는** 화면이 생긴다(SKILLS §8 #45 — 같은 판정의 복제).
  *
  * 👤 확인 주체 = `User::canConfirmFinance()` = super · admin · 업무관리자 · role∈{재무, 관리}.
  *    **재무 전용이 아니다**(jin 2026-08-09). 핵심은 영업이 스스로 확인할 수 없다는 것 —
@@ -27,13 +29,30 @@ use Illuminate\Support\Str;
  */
 class BoardRequest extends Model
 {
-    /** 매입 [입금요청] — 차량 1대 단위. */
+    /**
+     * 매입 [입금요청] — 차량 1대 단위. **deprecated (2026-08-11)**: 계약금/잔금으로 쪼개졌다.
+     *
+     * ⚠️ **수신은 계속 허용한다 — 화이트리스트에서 빼지 말 것.** board 운영(master)은 아직 이 type 을
+     *    보내는 구버전이고, ERP 가 먼저 배포된다(§7 배포 순서). 여기서 422 로 튕기면 board 운영의
+     *    **유일한 입금요청 경로가 죽는다**. board master 가 신버전을 실은 뒤에 별도 커밋으로 뺀다.
+     */
     public const TYPE_PURCHASE_PAYMENT = 'purchase_payment';
+
+    /** 매입 [계약금] — 차량 1대 + 금액. 계약금 지급은 ERP 가 알 방법이 없어 **수동 확인만**. */
+    public const TYPE_PURCHASE_DEPOSIT = 'purchase_deposit';
+
+    /** 매입 [매입잔금] — 차량 1대 + 금액. 매입 미지급 0 이면 자동소멸(+수동 확인도 허용). */
+    public const TYPE_PURCHASE_BALANCE = 'purchase_balance';
 
     /** 판매 [판매대금확인] — 바이어 1 + 차량 N대 묶음. */
     public const TYPE_SALE_PAYMENT_CONFIRM = 'sale_payment_confirm';
 
-    public const TYPES = [self::TYPE_PURCHASE_PAYMENT, self::TYPE_SALE_PAYMENT_CONFIRM];
+    public const TYPES = [
+        self::TYPE_PURCHASE_PAYMENT,
+        self::TYPE_PURCHASE_DEPOSIT,
+        self::TYPE_PURCHASE_BALANCE,
+        self::TYPE_SALE_PAYMENT_CONFIRM,
+    ];
 
     public const STATUS_OPEN = 'open';
 
@@ -43,21 +62,106 @@ class BoardRequest extends Model
 
     public const STATUSES = [self::STATUS_OPEN, self::STATUS_DONE, self::STATUS_CANCELLED];
 
-    /** 화면 라벨 (jin 확정 명칭 — 대화·UI 통일). */
-    public const TYPE_LABELS = [
-        self::TYPE_PURCHASE_PAYMENT => '입금요청',
-        self::TYPE_SALE_PAYMENT_CONFIRM => '판매대금확인',
+    /**
+     * type 별 성격 — **단일 출처**. 새 type 을 늘리려면 여기 한 줄만 추가한다.
+     *
+     * - `badge`/`title`/`action` = lang 키(ko·en 양쪽에 있어야 한다).
+     * - `color`   = 뱃지 색. ⚠️ **blue·purple 만 쓴다** — 빌드된 CSS 에 있는 색이라 안전하다.
+     *               새 색을 넣으려면 `public/build/assets/*.css` 에 그 클래스가 있는지 먼저 확인할 것
+     *               (SKILLS §8 #50 — 없으면 켜도 회색으로 보인다).
+     * - `manual_confirm` = 드로어에 「입금 확인」 버튼이 뜨는가.
+     * - `auto_resolve`   = 매입 미지급 0 이면 스스로 닫히는가.
+     *      ⚠️ **계약금은 false 여야 한다.** 미지급 0 = 잔금까지 다 준 상태다. 그때 계약금 신호가
+     *      비로소 꺼지면 "계약금 아직 안 보냈다"는 거짓 신호가 차 인수 시점까지 화면에 남는다.
+     * - `amount` = 금액을 필수로 받는가(board 가 빈 값으로 보내면 422).
+     */
+    public const TYPE_META = [
+        self::TYPE_PURCHASE_PAYMENT => [
+            'badge' => 'vehicle.board_badge_purchase',
+            'title' => 'vehicle.board_title_purchase',
+            'action' => 'alarm.board_purchase_action',
+            'alarm' => 'board_purchase_payment',
+            'task' => 'alarm.task_board_purchase',
+            'color' => 'blue',
+            'manual_confirm' => false,
+            'auto_resolve' => true,
+            'amount' => false,
+        ],
+        self::TYPE_PURCHASE_DEPOSIT => [
+            'badge' => 'vehicle.board_badge_deposit',
+            'title' => 'vehicle.board_title_deposit',
+            'action' => 'alarm.board_deposit_action',
+            'alarm' => 'board_purchase_deposit',
+            'task' => 'alarm.task_board_deposit',
+            'color' => 'blue',
+            'manual_confirm' => true,
+            'auto_resolve' => false,
+            'amount' => true,
+        ],
+        self::TYPE_PURCHASE_BALANCE => [
+            'badge' => 'vehicle.board_badge_balance',
+            'title' => 'vehicle.board_title_balance',
+            'action' => 'alarm.board_balance_action',
+            'alarm' => 'board_purchase_balance',
+            'task' => 'alarm.task_board_balance',
+            'color' => 'blue',
+            'manual_confirm' => true,
+            'auto_resolve' => true,
+            'amount' => true,
+        ],
+        self::TYPE_SALE_PAYMENT_CONFIRM => [
+            'badge' => 'vehicle.board_badge_sale',
+            'title' => 'vehicle.board_title_sale',
+            'action' => 'alarm.board_sale_action',
+            'alarm' => 'board_sale_confirm',
+            'task' => 'alarm.task_board_sale',
+            'color' => 'purple',
+            'manual_confirm' => true,
+            'auto_resolve' => false,
+            // 판매대금확인은 금액칸을 만들지 않는다 (jin 2026-08-11) — 입금요청만 분리 대상이다.
+            'amount' => false,
+        ],
     ];
 
     protected $fillable = [
-        'batch_id', 'type', 'vehicle_id', 'buyer_id', 'status',
+        'batch_id', 'type', 'vehicle_id', 'buyer_id', 'amount_krw', 'status',
         'requested_by_email', 'requested_at', 'confirmed_by_id', 'confirmed_at', 'note',
     ];
 
     protected $casts = [
         'requested_at' => 'datetime',
         'confirmed_at' => 'datetime',
+        'amount_krw' => 'integer',
     ];
+
+    /** type 의 성격 한 줄. 모르는 type(옛 데이터)이면 빈 배열 — 호출측이 ?? 로 degrade. */
+    public static function meta(?string $type): array
+    {
+        return self::TYPE_META[$type] ?? [];
+    }
+
+    /** 알람 type(`board_*`)으로 역조회 — 알람센터가 색·문구를 고를 때 쓴다. */
+    public static function metaByAlarmType(string $alarmType): array
+    {
+        foreach (self::TYPE_META as $meta) {
+            if ($meta['alarm'] === $alarmType) {
+                return $meta;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * 이 플래그가 켜진 type 목록 — `typesWith('auto_resolve')` 처럼 쓴다.
+     * 쿼리 `whereIn` 에 그대로 넣어 판정 복제를 막는다.
+     *
+     * @return array<int, string>
+     */
+    public static function typesWith(string $flag): array
+    {
+        return array_keys(array_filter(self::TYPE_META, fn (array $m) => ($m[$flag] ?? false) === true));
+    }
 
     public function vehicle(): BelongsTo
     {
@@ -122,6 +226,7 @@ class BoardRequest extends Model
         ?int $buyerId = null,
         ?string $batchId = null,
         ?string $note = null,
+        ?int $amountKrw = null,
     ): ?self {
         if (! in_array($type, self::TYPES, true) || self::hasOpenFor($vehicleId, $type)) {
             return null;
@@ -132,6 +237,8 @@ class BoardRequest extends Model
             'type' => $type,
             'vehicle_id' => $vehicleId,
             'buyer_id' => $buyerId,
+            // 금액을 받지 않는 type 에 값이 딸려와도 저장하지 않는다(표시 자리가 없어 유령 데이터가 된다).
+            'amount_krw' => (self::meta($type)['amount'] ?? false) ? $amountKrw : null,
             'status' => self::STATUS_OPEN,
             'requested_by_email' => $requestedByEmail,
             'requested_at' => now(),
@@ -142,12 +249,6 @@ class BoardRequest extends Model
 
         return $row;
     }
-
-    /** 알람 type — 신호 type 과 1:1. 알람센터·사이드바 벨이 이걸로 분기한다. */
-    public const ALARM_TYPES = [
-        self::TYPE_PURCHASE_PAYMENT => 'board_purchase_payment',
-        self::TYPE_SALE_PAYMENT_CONFIRM => 'board_sale_confirm',
-    ];
 
     /**
      * 알람 생성 — 재무 처리 화면에 **들어가 보기 전엔 모르던 문제**를 없앤다(jin 2026-08-09).
@@ -163,7 +264,7 @@ class BoardRequest extends Model
         }
 
         $alarm = TaskAlarm::firstOrNew([
-            'type' => self::ALARM_TYPES[$this->type] ?? null,
+            'type' => self::meta($this->type)['alarm'] ?? null,
             'vehicle_id' => $this->vehicle_id,
             'resolved_at' => null,
         ]);
@@ -181,7 +282,7 @@ class BoardRequest extends Model
             return;
         }
 
-        TaskAlarm::where('type', self::ALARM_TYPES[$this->type] ?? null)
+        TaskAlarm::where('type', self::meta($this->type)['alarm'] ?? null)
             ->where('vehicle_id', $this->vehicle_id)
             ->whereNull('resolved_at')
             ->update(['resolved_at' => now(), 'resolved_reason' => $reason]);
