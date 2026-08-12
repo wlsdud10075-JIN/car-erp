@@ -124,6 +124,7 @@ return [
         'container_no' => '컨테이너 No',
         'bl_loading_location' => '반입지',
         'bl_vsl' => 'VSL',
+        'vessel_name' => '선박명(VSL)',
         'bl_document' => 'B/L 문서',
         'bl_issue_date' => 'B/L발행일',
 

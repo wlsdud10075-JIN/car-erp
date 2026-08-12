@@ -69,6 +69,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $bulkEtaDate = '';
 
+    /** 선박명(VSL) 일괄 (jin 2026-08-12) — 빈 칸이면 기존 값 유지. */
+    public string $bulkVessel = '';
+
+    /**
+     * 대상 안에 서로 다른 선박명이 섞였을 때 보여줄 분포 `['MV A' => 182, '' => 112]`.
+     * 비어 있으면 경고 화면이 아니라 입력 화면이다. 「그래도 덮기」를 누르면 비우고 진행한다.
+     */
+    public array $bulkVesselConflict = [];
+
     public string $bulkDateReason = '';
 
     #[Url] public int $perPage = 10;
@@ -1846,6 +1855,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
         $this->bulkShipDate = '';
         $this->bulkEtaDate = '';
+        $this->bulkVessel = '';
+        $this->bulkVesselConflict = [];
         $this->bulkDateReason = '';
         $this->bulkDateOpen = true;
     }
@@ -1859,10 +1870,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         abort_unless((bool) $user?->canAccessClearance(), 403);
 
+        $service = app(\App\Services\BulkVehicleShippingDateService::class);
+
+        // 🚢 선박명을 덮기 전 한 번 멈춘다 (jin 2026-08-12) — 필터가 여러 배의 차를 함께 걷어왔는데
+        //   모르고 덮으면 **다른 배에 실린 차의 배 이름이 수백 대 단위로 날아간다**.
+        //   섞여 있으면 분포를 보여주고, 사람이 「그래도 덮기」를 눌러야 진행한다(= 이 배열이 비면 진행).
+        //   ⚠️ 빈 값은 "다름" 으로 안 센다 — 처음 채우는 게 주 용도라 매번 뜨면 아무도 안 읽는다.
+        if ($this->bulkVessel !== '' && $this->bulkVesselConflict === []) {
+            $breakdown = $service->vesselBreakdown($this->filteredVehicleQuery());
+            if (\App\Services\BulkVehicleShippingDateService::distinctCount($breakdown) > 1) {
+                $this->bulkVesselConflict = $breakdown;
+
+                return;   // 적용 안 함 — 확인 화면으로 전환
+            }
+        }
+
         try {
-            $result = app(\App\Services\BulkVehicleShippingDateService::class)->apply(
+            $result = $service->apply(
                 $this->filteredVehicleQuery(),
-                ['shipping_date' => $this->bulkShipDate, 'eta_date' => $this->bulkEtaDate],
+                [
+                    'shipping_date' => $this->bulkShipDate,
+                    'eta_date' => $this->bulkEtaDate,
+                    'vessel_name' => $this->bulkVessel,
+                ],
                 $user,
                 $this->bulkDateReason !== '' ? $this->bulkDateReason : __('vehicle.bulk_date.reason_default'),
             );
@@ -1873,6 +1903,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->bulkDateOpen = false;
+        $this->bulkVesselConflict = [];
         unset($this->vehicles);
         $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_date.done', [
             'applied' => $result['applied'],
@@ -8888,6 +8919,40 @@ function vehicleColumnsToggle() {
             {{ __('vehicle.bulk_date.target', ['count' => number_format($this->vehicles->total())]) }}
         </p>
 
+        @if($bulkVesselConflict !== [])
+            {{-- 🚢 선박명 충돌 경고 (jin 2026-08-12) — 무엇이 무엇으로 덮이는지 보여주고 한 번 더 확인받는다.
+                 여기서 [그래도 덮기] 를 누르면 conflict 를 비운 채 같은 액션을 다시 타 그대로 적용된다. --}}
+            <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <p class="text-sm font-semibold text-amber-800">{{ __('vehicle.bulk_date.vsl_conflict') }}</p>
+                <ul class="mt-2 space-y-1">
+                    @foreach($bulkVesselConflict as $vslName => $vslCount)
+                        <li class="flex items-baseline justify-between gap-3 text-xs">
+                            <span class="{{ $vslName === '' ? 'text-gray-400' : 'font-medium text-gray-700' }}">
+                                {{ $vslName === '' ? __('vehicle.bulk_date.vsl_empty') : $vslName }}
+                            </span>
+                            <span class="shrink-0 tabular-nums text-gray-500">{{ number_format($vslCount) }}{{ __('vehicle.bulk_date.unit') }}</span>
+                        </li>
+                    @endforeach
+                </ul>
+                <p class="mt-3 text-xs text-amber-800">
+                    {{ __('vehicle.bulk_date.vsl_overwrite', [
+                        'count' => number_format($this->vehicles->total()),
+                        'vsl' => $bulkVessel,
+                    ]) }}
+                </p>
+            </div>
+
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" wire:click="$set('bulkVesselConflict', [])"
+                        class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                    {{ __('common.cancel') }}
+                </button>
+                <button type="button" wire:click="applyBulkDate" wire:loading.attr="disabled"
+                        class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                    {{ __('vehicle.bulk_date.vsl_force') }}
+                </button>
+            </div>
+        @else
         <div class="mt-4 space-y-3">
             {{-- 날짜칸은 프로젝트 표준 data-date(flatpickr) — 20260728 8자리 타이핑·달력 둘 다 됨(SKILLS §14). --}}
             <div>
@@ -8897,6 +8962,11 @@ function vehicleColumnsToggle() {
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.eta') }}</label>
                 <input wire:model="bulkEtaDate" type="text" data-date placeholder="YYYY-MM-DD" class="input-base" />
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.bulk_date.vsl') }}</label>
+                <input wire:model="bulkVessel" type="text" class="input-base"
+                       placeholder="{{ __('vehicle.bulk_date.vsl_ph') }}" />
             </div>
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.reason') }}</label>
@@ -8915,6 +8985,7 @@ function vehicleColumnsToggle() {
                 {{ __('vehicle.bulk_date.apply', ['count' => number_format($this->vehicles->total())]) }}
             </button>
         </div>
+        @endif
     </div>
 </div>
 @endif

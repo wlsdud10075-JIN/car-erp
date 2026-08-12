@@ -540,7 +540,9 @@ class Vehicle extends Model
         'warehouse_out_date',
         // 2026-07-28 (jin) — 선적일·ETA. 묶음 단위로 수백 대를 한 번에 바꾸는 일괄 지정이 생겨서,
         //   누가 언제 어느 값으로 돌렸는지 개별 추적이 필요해졌다. (일괄 출처는 bulk_shipping_date_applied 로 별도 기록.)
-        'shipping_date', 'eta_date',
+        //   2026-08-12 — 선박명도 같은 도구에 합류(jin). 잘못 덮으면 다른 배에 실린 차의 배 이름이
+        //   수백 대 단위로 날아가는데, 그걸 되짚을 기록이 없었다.
+        'shipping_date', 'eta_date', 'vessel_name',
         // 2026-07-30 (jin) — 보증금 매입 마커. 켜는 순간 바이어 입금 독촉 알림톡 타이머가 돌기 시작하고,
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
