@@ -40,7 +40,7 @@ return [
     'repaid_hint' => 'cumulative · not in liquidation value',
     'repaid_on' => 'Repaid :date',
     'repaid_undo' => 'Undo',
-    'repaid_done' => 'Marked ₩:amount as repaid. Please update the closing bank balance for today too.',
+    'repaid_done' => 'Marked ₩:amount as repaid on :date. Please update the closing bank balance for today too.',
     'repaid_undone' => 'Repayment undone. It counts as outstanding again.',
     'repaid_show' => 'Show :count repaid',
     'repaid_hide' => 'Outstanding only',

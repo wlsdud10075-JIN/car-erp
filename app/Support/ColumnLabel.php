@@ -79,6 +79,9 @@ class ColumnLabel
             'Salesman' => 'salesmen',
             // 2026-08-07 — 휴가 대리 위임(스코프·승인 계단을 넘기므로 감사 필수).
             'UserDelegation' => 'user_delegations',
+            // 2026-08-12 — 가수금·경매보증금(청산가치에 억 단위로 들어간다).
+            'AdvanceReceipt' => 'advance_receipts',
+            'AuctionDeposit' => 'auction_deposits',
         ];
 
         return $map[$short] ?? null;

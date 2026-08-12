@@ -40,7 +40,7 @@ return [
     'repaid_hint' => '누계 · 청산가치에 미반영',
     'repaid_on' => '상환 :date',
     'repaid_undo' => '무르기',
-    'repaid_done' => '₩:amount 상환 처리했습니다. 통장 마감잔액도 오늘자로 갱신해 주세요.',
+    'repaid_done' => ':date 자로 ₩:amount 상환 처리했습니다. 통장 마감잔액도 오늘자로 갱신해 주세요.',
     'repaid_undone' => '상환을 되돌렸습니다. 다시 미상환으로 잡힙니다.',
     'repaid_show' => '상환완료 :count건 보기',
     'repaid_hide' => '미상환만 보기',
