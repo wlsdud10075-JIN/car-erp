@@ -273,6 +273,27 @@ return [
         'entered_by' => '입력자',
     ],
 
+    // ─── advance_receipts (가수금 — 갚아야 할 돈 / 대표 자산) ──────────────
+    // 청산가치를 억 단위로 흔드는 원장이라 생성·삭제·성격변경·상환을 전부 감사한다 (jin 2026-08-12).
+    'advance_receipts' => [
+        'received_date' => '입금일',
+        'company_name' => '상호명',
+        'person_name' => '담당자',
+        'amount' => '금액',
+        'nature' => '성격',
+        'note' => '비고',
+        'repaid_at' => '상환일',
+        'repaid_by' => '상환 처리자',
+    ],
+
+    // ─── auction_deposits (경매 보증금) ──────────────────────────────────
+    'auction_deposits' => [
+        'deposited_date' => '예치일',
+        'auction_house' => '경매장',
+        'amount' => '금액',
+        'note' => '비고',
+    ],
+
     // ─── settings (기능 설정) ────────────────────────────────────────────
     'settings' => [
         'value' => '설정값',
@@ -332,6 +353,9 @@ return [
         'SettlementPayoutBatch' => '정산 지급 배치',
         'SignedContract' => '전자서명 계약',
         'UserDelegation' => '업무 위임',
+        // 2026-08-12 — 가수금·경매보증금(청산가치 직결). 종전엔 감사 기록 자체가 없었다.
+        'AdvanceReceipt' => '가수금',
+        'AuctionDeposit' => '경매 보증금',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -414,6 +438,9 @@ return [
         ],
         'approval_requests' => [
             'status' => ['pending' => '대기', 'approved' => '승인', 'rejected' => '반려'],
+        ],
+        'advance_receipts' => [
+            'nature' => ['liability' => '갚아야 할 돈', 'equity' => '대표 자산'],
         ],
         'vehicles' => [
             'sales_channel' => ['export' => '수출', 'heyman' => '헤이맨', 'carpul' => '카풀'],

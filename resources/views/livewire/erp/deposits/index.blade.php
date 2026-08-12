@@ -2,6 +2,7 @@
 
 use App\Models\AdvanceReceipt;
 use App\Models\AuctionDeposit;
+use App\Models\AuditLog;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -71,6 +72,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         return AdvanceReceipt::query()
+            ->with('repaidBy:id,name')   // 「누가 갚음 처리했나」를 목록에서 바로 보여준다 (N+1 회피)
             ->unless($this->showRepaid, fn ($q) => $q->outstanding())
             ->orderByDesc('received_date')->orderByDesc('id')->get();
     }
@@ -120,7 +122,12 @@ new #[Layout('components.layouts.app')] class extends Component
         // 상환된 행의 성격을 바꾸면 「갚은돈」과 「대표 자산」 사이를 오가며 과거 숫자가 흔들린다.
         abort_if($row->repaid_at !== null, 422);
 
+        $old = $row->nature;
         $row->update(['nature' => $nature]);
+        // 성격 하나로 청산가치와 원금이 동시에 억 단위로 움직인다 — 무엇을 언제 바꿨는지 남긴다.
+        if ($old !== $nature) {
+            AuditLog::recordChange($row, 'nature', $old, $nature);
+        }
         $this->refreshTotals();
         session()->flash('success', __('deposits.nature_updated'));
     }
@@ -131,6 +138,11 @@ new #[Layout('components.layouts.app')] class extends Component
      * ⚠️ **「갚아야 할 돈」만** 대상이다(jin 확정). 대표 자산 회수는 종전대로 삭제로 정리한다.
      * ⚠️ 실제로 송금한 **뒤에** 누르는 버튼이다 — 부채는 즉시 사라지는데 통장잔액은 사람이
      *    입력할 때까지 그대로라, 그 사이엔 청산가치가 실제보다 높게 보인다(화면에 안내 표시).
+     *
+     * 🔍 **감사 기록 필수** (jin 2026-08-12) — 억 단위 부채가 목록에서 사라지는 조작인데 종전엔
+     *    아무 흔적도 안 남았다. `repaid_at` 변경을 감사로그에 남겨 "누가 언제 갚음 처리했나"를 남긴다.
+     * 👀 그리고 **누른 행이 눈앞에서 사라지지 않게** 상환분 보기를 자동으로 켠다 — 기본이 미상환만
+     *    보기라 누르는 즉시 행이 증발해 **날짜가 찍혔는지 확인할 방법이 없었다**(jin 실제 제보).
      */
     public function markRepaid(int $id): void
     {
@@ -139,9 +151,16 @@ new #[Layout('components.layouts.app')] class extends Component
         $row = AdvanceReceipt::findOrFail($id);
         abort_unless($row->canRepay(), 422);
 
-        $row->update(['repaid_at' => now()->toDateString(), 'repaid_by' => auth()->id()]);
+        $date = now()->toDateString();
+        $row->update(['repaid_at' => $date, 'repaid_by' => auth()->id()]);
+        AuditLog::recordChange($row, 'repaid_at', null, $date);
+
+        $this->showRepaid = true;   // 방금 처리한 행을 그대로 보여준다(날짜 확인용)
         $this->refreshTotals();
-        session()->flash('success', __('deposits.repaid_done', ['amount' => number_format((int) $row->amount)]));
+        session()->flash('success', __('deposits.repaid_done', [
+            'amount' => number_format((int) $row->amount),
+            'date' => $date,
+        ]));
     }
 
     /** 무르기 — 오클릭 되돌림. 없으면 잘못 누른 순간 복구할 방법이 없다. */
@@ -149,7 +168,11 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         abort_unless(auth()->user()?->canAccessDeposits(), 403);
 
-        AdvanceReceipt::findOrFail($id)->update(['repaid_at' => null, 'repaid_by' => null]);
+        $row = AdvanceReceipt::findOrFail($id);
+        $old = $row->repaid_at?->toDateString();
+        $row->update(['repaid_at' => null, 'repaid_by' => null]);
+        AuditLog::recordChange($row, 'repaid_at', $old, null);
+
         $this->refreshTotals();
         session()->flash('success', __('deposits.repaid_undone'));
     }
@@ -187,8 +210,9 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
+        // 두 원장 모두 청산가치에 억 단위로 들어간다 — 생성·삭제를 감사로그에 남긴다 (jin 2026-08-12).
         if ($this->tab === 'auction') {
-            AuctionDeposit::create([
+            $row = AuctionDeposit::create([
                 'deposited_date' => $this->date,
                 'auction_house' => $this->party,
                 'amount' => $amount,
@@ -196,7 +220,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'created_by' => auth()->id(),
             ]);
         } else {
-            AdvanceReceipt::create([
+            $row = AdvanceReceipt::create([
                 'received_date' => $this->date,
                 'company_name' => $this->party,
                 'amount' => $amount,
@@ -205,6 +229,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 'created_by' => auth()->id(),
             ]);
         }
+        AuditLog::recordEvent($row, 'created');
+        // 금액·상호는 행이 지워지면 못 찾으므로 로그 자체에 박아둔다(soft delete 라도 조회는 번거롭다).
+        AuditLog::recordChange($row, 'amount', null, (int) $amount);
 
         $this->resetForm();
         $this->refreshTotals();
@@ -215,11 +242,14 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         abort_unless(auth()->user()?->canAccessDeposits(), 403);
 
-        if ($this->tab === 'auction') {
-            AuctionDeposit::findOrFail($id)->delete();
-        } else {
-            AdvanceReceipt::findOrFail($id)->delete();
-        }
+        $row = $this->tab === 'auction'
+            ? AuctionDeposit::findOrFail($id)
+            : AdvanceReceipt::findOrFail($id);
+
+        // 지우기 **전에** 금액을 로그에 박는다 — 지운 뒤엔 감사 화면에서 얼마였는지 알 길이 없다.
+        AuditLog::recordChange($row, 'amount', (int) $row->amount, null);
+        AuditLog::recordEvent($row, 'deleted');
+        $row->delete();
 
         $this->refreshTotals();
         session()->flash('success', __('deposits.removed'));
@@ -397,6 +427,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         <td class="py-3 text-right">
                             @if ($tab === 'advance' && $row->repaid_at)
                                 <span class="badge badge-green">{{ __('deposits.repaid_on', ['date' => $row->repaid_at->format('Y-m-d')]) }}</span>
+                                @if ($row->repaidBy)
+                                    <span class="ml-1 text-xs text-gray-400">{{ $row->repaidBy->name }}</span>
+                                @endif
                                 <button type="button" wire:click="undoRepaid({{ $row->id }})"
                                         wire:confirm="{{ __('deposits.confirm_undo') }}"
                                         class="ml-2 text-xs text-gray-500 hover:underline">{{ __('deposits.repaid_undo') }}</button>
@@ -439,6 +472,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         @if ($tab === 'advance' && $row->repaid_at)
                             <div class="mt-1">
                                 <span class="badge badge-green">{{ __('deposits.repaid_on', ['date' => $row->repaid_at->format('Y-m-d')]) }}</span>
+                                @if ($row->repaidBy)
+                                    <span class="ml-1 text-xs text-gray-400">{{ $row->repaidBy->name }}</span>
+                                @endif
                             </div>
                         @endif
                         @if ($row->note)

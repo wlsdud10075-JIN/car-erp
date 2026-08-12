@@ -52,8 +52,12 @@ class AdminUiKoreanLabelTest extends TestCase
      */
     public function test_every_recorded_audit_action_has_a_korean_label(): void
     {
+        // ⚠️ Volt 컴포넌트(.blade.php)도 감사로그를 남긴다 — `app/` 만 훑으면 그쪽이 통째로 빠진다
+        //    (2026-08-12 실측: 위임 2건·가수금 3건이 스캔 밖이었다). `.blade.php` 도 확장자가 php 다.
+        $scanDirs = [base_path('app'), base_path('resources/views/livewire')];
+
         $actions = [];
-        foreach ($this->phpFiles(base_path('app')) as $file) {
+        foreach (array_merge(...array_map(fn ($d) => $this->phpFiles($d), $scanDirs)) as $file) {
             $src = (string) file_get_contents($file);
             if (preg_match_all("/recordEvent\s*\([^,]+,\s*'([a-z0-9_]+)'/i", $src, $m)) {
                 foreach ($m[1] as $a) {
