@@ -2128,6 +2128,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 확정된 계약금 합계 — 딜러 입금완료 알림톡 버튼의 노출 조건·확인문구용 (jin 2026-08-12).
+     * ⚠️ 화면 입력값(`down_payment_str`)이 아니라 **DB 확정분**이다. 아직 저장 안 한 숫자로
+     *    "입금했습니다" 를 보내면 거짓 통지가 된다(발송 액션도 같은 출처를 다시 읽는다).
+     */
+    #[Computed]
+    public function confirmedDownPayment(): int
+    {
+        if ($this->editingId === null) {
+            return 0;
+        }
+
+        return (int) \App\Models\PurchaseBalancePayment::where('vehicle_id', $this->editingId)
+            ->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount');
+    }
+
+    /**
      * board 신호 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
      * 권한 = canConfirmFinance(super·admin·업무관리자·role∈{재무,관리}).
      *
@@ -3453,6 +3469,70 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->dispatch('notify', message: __('vehicle.deregnotice.sent'), type: 'success');
         } else {
             $this->dispatch('notify', message: __('vehicle.deregnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        }
+    }
+
+    /**
+     * 국내 딜러에게 **매입대금 입금완료** 알림톡 (수동 버튼, jin 2026-08-12).
+     *
+     * 🧩 계약금·매입잔금이 템플릿 하나(`erp_purchase_paid`)를 `#{구분}` 으로 공유한다.
+     *
+     * ⚠️ **`$kind='balance'` 는 그 행 하나만 보낸다.** 합계를 보내면 안 된다 —
+     *    운영 실측 239대 중 24대가 잔금을 2~3회 분할 지급한다. 두 번째 알림에 누계를 실으면
+     *    받는 분이 **"추가로 그만큼 더 들어왔다"** 로 읽는다(금액 오해 = 금전 사고).
+     *    계약금은 실측 78대 전부 1건이라 합계 = 그 1건이다.
+     *
+     * 🔒 **확정(`confirmed_at`)된 지급만** 대상이다 — 미확정은 "줄 예정"이지 "줬다"가 아니다.
+     *    화면에서도 확정 행에만 버튼이 뜨지만, 여기서 다시 확인한다(#26 — 액션은 매번 재인가).
+     */
+    public function sendPurchasePaidAlimtalk(string $kind, ?int $pbpId = null): void
+    {
+        abort_unless(in_array($kind, ['down', 'balance'], true), 422);
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+
+        if ($this->editingId === null) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.save_first'), type: 'warning');
+
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        $phone = trim($this->deregistrationBuyerPhone);
+        if ($phone === '') {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.no_phone'), type: 'error');
+
+            return;
+        }
+
+        // 금액 — 화면 draft 가 아니라 **DB 의 확정 행**에서 읽는다(저장 전 입력값을 보내면 거짓 통지).
+        if ($kind === 'down') {
+            $amount = (int) $vehicle->purchaseBalancePayments()
+                ->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount');
+        } else {
+            $row = $vehicle->purchaseBalancePayments()
+                ->where('type', 'balance')->whereNotNull('confirmed_at')->find($pbpId);
+            $amount = (int) ($row->amount ?? 0);
+        }
+
+        if ($amount <= 0) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.not_confirmed'), type: 'error');
+
+            return;
+        }
+
+        $log = \App\Services\BizmAlimtalkService::active()->send('erp_purchase_paid', $phone, [
+            '차량번호' => $vehicle->vehicle_number,
+            '구분' => $kind === 'down' ? __('vehicle.paidnotice.kind_down') : __('vehicle.paidnotice.kind_balance'),
+            '금액' => number_format($amount).'원',
+            '계좌' => \App\Support\AccountMask::forVehicle($vehicle),
+            '입금자명' => \App\Support\AlimtalkConfig::active()->companyLabel(),
+        ], ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()]);
+
+        if ($log->status === 'sent') {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.sent', ['amount' => number_format($amount)]), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
         }
     }
 
@@ -7044,9 +7124,19 @@ function vehicleColumnsToggle() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.down_payment') }}</label>
-                    <input wire:model="down_payment_str" type="text" data-money
-                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                    <div class="flex items-center gap-1">
+                        <input wire:model="down_payment_str" type="text" data-money
+                               class="input-base min-w-0 flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                               placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                        {{-- 딜러에게 「계약금 입금완료」 통지 (jin 2026-08-12). 확정 계약금이 있을 때만.
+                             ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
+                        @if($canConfirmFinance && $editingId !== null && $this->confirmedDownPayment > 0)
+                        <button type="button" wire:click="sendPurchasePaidAlimtalk('down')"
+                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_down'), 'amount' => number_format($this->confirmedDownPayment)]) }}"
+                                title="{{ __('vehicle.paidnotice.btn_title') }}"
+                                class="shrink-0 rounded border border-yellow-300 bg-yellow-50 px-1.5 py-1 text-xs text-yellow-800 hover:bg-yellow-100">📨</button>
+                        @endif
+                    </div>
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.selling_fee_payment') }}</label>
@@ -7100,6 +7190,16 @@ function vehicleColumnsToggle() {
                               title="{{ __('vehicle.panel.confirmed_title', ['at' => $row['confirmed_at'], 'by' => $row['finance_confirmer'] ?? '?']) }}">
                             {{ __('vehicle.panel.confirmed') }}
                         </span>
+                        {{-- 딜러에게 「매입잔금 입금완료」 통지 — **행마다** 붙는다 (jin 2026-08-12).
+                             ⚠️ 합계 버튼 하나로 만들면 안 된다: 운영 239대 중 24대가 잔금을 2~3회로
+                                나눠 지급하는데, 두 번째 알림에 누계를 실으면 받는 분이 "추가로 그만큼
+                                더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
+                        @if($canConfirmFinance)
+                        <button type="button" wire:click="sendPurchasePaidAlimtalk('balance', {{ $row['id'] }})"
+                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_balance'), 'amount' => number_format((float) $row['amount'])]) }}"
+                                title="{{ __('vehicle.paidnotice.btn_title') }}"
+                                class="shrink-0 rounded border border-yellow-300 bg-yellow-50 px-1.5 py-0.5 text-[10px] text-yellow-800 hover:bg-yellow-100">📨</button>
+                        @endif
                         @else
                         <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
                               title="{{ __('vehicle.panel.pending_title') }}">
