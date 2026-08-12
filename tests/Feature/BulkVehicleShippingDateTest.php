@@ -168,4 +168,170 @@ class BulkVehicleShippingDateTest extends TestCase
             Vehicle::query(), ['shipping_date' => '', 'eta_date' => ''], $user, 'GMT'
         );
     }
+
+    // ───────────────────────── 선박명(VSL) 일괄 (jin 2026-08-12) ─────────────────────────
+
+    /** 선박명이 하나뿐(또는 없음)이면 경고 없이 바로 덮는다. */
+    public function test_vessel_applies_without_warning_when_uniform(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001', '');
+        $b = $this->vehicle('11가1002', '');
+
+        Volt::test('erp.vehicles.index')
+            ->set('search', '11가100')
+            ->call('openBulkDate')
+            ->set('bulkVessel', 'MV GMT ASTRO V.2602')
+            ->call('applyBulkDate')
+            ->assertSet('bulkDateOpen', false)
+            ->assertSet('bulkVesselConflict', []);
+
+        $this->assertSame('MV GMT ASTRO V.2602', $a->fresh()->vessel_name);
+        $this->assertSame('MV GMT ASTRO V.2602', $b->fresh()->vessel_name);
+    }
+
+    /**
+     * 🚢 **서로 다른 선박명이 섞였으면 한 번 멈춘다** — 모르고 덮으면 다른 배에 실린 차의
+     * 배 이름이 수백 대 단위로 날아간다. 이때 **아무것도 저장되면 안 된다**(날짜 포함).
+     */
+    public function test_mixed_vessels_halt_before_writing_anything(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001', 'MV GMT ASTRO V.2602');
+        $b = $this->vehicle('11가1002', 'MV HYUNDAI SPIRIT');
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('search', '11가100')
+            ->call('openBulkDate')
+            ->set('bulkShipDate', '2026-08-01')
+            ->set('bulkVessel', 'MV GMT ASTRO V.2602')
+            ->call('applyBulkDate')
+            ->assertSet('bulkDateOpen', true);   // 모달은 열린 채 경고 화면으로
+
+        $this->assertNotSame([], $c->get('bulkVesselConflict'), '섞였는데 경고가 안 떴다');
+        $this->assertSame('MV HYUNDAI SPIRIT', $b->fresh()->vessel_name, '경고 단계에서 덮어버렸다');
+        $this->assertNull($a->fresh()->shipping_date, '경고 단계인데 날짜가 저장됐다');
+    }
+
+    /** 「그래도 덮기」 = 같은 액션 재호출. 이번엔 경고 없이 전부 덮는다. */
+    public function test_force_overwrite_proceeds(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001', 'MV GMT ASTRO V.2602');
+        $b = $this->vehicle('11가1002', 'MV HYUNDAI SPIRIT');
+
+        Volt::test('erp.vehicles.index')
+            ->set('search', '11가100')
+            ->call('openBulkDate')
+            ->set('bulkVessel', 'MV GMT ASTRO V.2602')
+            ->call('applyBulkDate')          // 1회차 = 경고
+            ->call('applyBulkDate')          // 2회차 = 그래도 덮기
+            ->assertSet('bulkDateOpen', false);
+
+        $this->assertSame('MV GMT ASTRO V.2602', $a->fresh()->vessel_name);
+        $this->assertSame('MV GMT ASTRO V.2602', $b->fresh()->vessel_name);
+    }
+
+    /**
+     * ⚠️ **빈 값은 "다름" 으로 안 센다** — 처음 채우는 게 이 도구의 주 용도라, 비어 있는 차가
+     * 섞였다고 매번 경고하면 경고가 무의미해진다(늘 뜨면 아무도 안 읽는다).
+     */
+    public function test_empty_vessel_does_not_count_as_conflict(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $filled = $this->vehicle('11가1001', 'MV GMT ASTRO V.2602');
+        $empty = $this->vehicle('11가1002', '');
+
+        Volt::test('erp.vehicles.index')
+            ->set('search', '11가100')
+            ->call('openBulkDate')
+            ->set('bulkVessel', 'MV GMT ASTRO V.2602')
+            ->call('applyBulkDate')
+            ->assertSet('bulkDateOpen', false)
+            ->assertSet('bulkVesselConflict', []);
+
+        $this->assertSame('MV GMT ASTRO V.2602', $empty->fresh()->vessel_name);
+        $this->assertSame('MV GMT ASTRO V.2602', $filled->fresh()->vessel_name);
+    }
+
+    /** 선박명 칸을 비우고 날짜만 넣으면 기존 선박명은 그대로 — 경고도 안 뜬다. */
+    public function test_blank_vessel_leaves_existing_untouched(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001', 'MV GMT ASTRO V.2602');
+        $b = $this->vehicle('11가1002', 'MV HYUNDAI SPIRIT');
+
+        Volt::test('erp.vehicles.index')
+            ->set('search', '11가100')
+            ->call('openBulkDate')
+            ->set('bulkShipDate', '2026-08-01')
+            ->call('applyBulkDate')
+            ->assertSet('bulkDateOpen', false)
+            ->assertSet('bulkVesselConflict', []);
+
+        $this->assertSame('MV GMT ASTRO V.2602', $a->fresh()->vessel_name);
+        $this->assertSame('MV HYUNDAI SPIRIT', $b->fresh()->vessel_name);
+        $this->assertSame('2026-08-01', $a->fresh()->shipping_date->format('Y-m-d'));
+    }
+
+    /** 🚫 이 도구로는 값을 **비울 수 없다** — 빈 문자열이 지우기 신호가 되면 오조작 한 번에 수백 대가 날아간다. */
+    public function test_cannot_clear_a_vessel_through_the_bulk_tool(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', 'MV GMT ASTRO V.2602');
+
+        $this->expectException(\InvalidArgumentException::class);
+        try {
+            app(BulkVehicleShippingDateService::class)->apply(
+                Vehicle::query(), ['vessel_name' => '   '], $user, '지우기 시도'
+            );
+        } finally {
+            $this->assertSame('MV GMT ASTRO V.2602', $v->fresh()->vessel_name);
+        }
+    }
+
+    /** 선박명 변경도 감사에 남는다 — 수백 대를 한 번에 바꾸는데 기록이 없으면 되짚을 수 없다. */
+    public function test_vessel_change_is_audited(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', 'MV OLD');
+
+        app(BulkVehicleShippingDateService::class)->apply(
+            Vehicle::query()->where('id', $v->id), ['vessel_name' => 'MV NEW'], $user, 'GMT 선적분'
+        );
+
+        $this->assertSame('MV NEW', $v->fresh()->vessel_name);
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_id' => $v->id, 'action' => 'updated', 'column_name' => 'vessel_name',
+            'old_value' => 'MV OLD', 'new_value' => 'MV NEW',
+        ]);
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_id' => $v->id, 'action' => 'bulk_shipping_date_applied', 'new_value' => 'GMT 선적분',
+        ]);
+    }
+
+    /** 분포 집계 — 빈 값은 `''` 키로 모이고, 종류 수는 실제 값만 센다. */
+    public function test_vessel_breakdown_and_distinct_count(): void
+    {
+        $this->vehicle('11가1001', 'MV A');
+        $this->vehicle('11가1002', 'MV A');
+        $this->vehicle('11가1003', 'MV B');
+        $this->vehicle('11가1004', '');
+
+        $service = app(BulkVehicleShippingDateService::class);
+        $breakdown = $service->vesselBreakdown(Vehicle::query());
+
+        $this->assertSame(2, $breakdown['MV A']);
+        $this->assertSame(1, $breakdown['MV B']);
+        $this->assertSame(1, $breakdown['']);
+        $this->assertSame(2, BulkVehicleShippingDateService::distinctCount($breakdown));
+        $this->assertSame(1, BulkVehicleShippingDateService::distinctCount(['MV A' => 5, '' => 9]));
+    }
 }
