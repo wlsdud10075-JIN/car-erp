@@ -974,6 +974,33 @@ new #[Layout('components.layouts.app')] class extends Component
                     {!! $capRow('USD', number_format($cap['balance_usd'], 2)) !!}
                     {!! $capRow('EUR', number_format($cap['balance_eur'], 2)) !!}
                 </div>
+                {{-- 🏦 마이너스 통장 (jin 2026-08-12) — 한도를 설정한 회사에서만 뜬다. 표시 전용.
+                     "지금 얼마나 당겨 썼고 얼마 남았나" 가 가용 자금 판단의 핵심이라 통장 카드에 붙인다. --}}
+                @php $od = $cap['overdraft'] ?? null; @endphp
+                @if($od)
+                    @php
+                        $pct = $od['limit'] > 0 ? min(100, round($od['used'] / $od['limit'] * 100)) : 0;
+                        $barColor = $od['over'] ? 'bg-red-600' : ($pct >= 80 ? 'bg-red-500' : ($pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500'));
+                    @endphp
+                    <div class="mt-3 border-t border-gray-100 pt-2">
+                        <div class="flex items-baseline justify-between text-[11px]">
+                            <span class="text-gray-500">{{ __('cash.overdraft') }}</span>
+                            <span class="tabular-nums {{ $od['used'] > 0 ? 'font-semibold text-gray-700' : 'text-gray-400' }}">
+                                {{ __('cash.overdraft_used', ['used' => $eok($od['used']), 'limit' => $eok($od['limit'])]) }}
+                            </span>
+                        </div>
+                        <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                            <div class="h-full rounded-full {{ $barColor }}" style="width: {{ $pct }}%"></div>
+                        </div>
+                        <div class="mt-1 text-right text-[11px]">
+                            @if($od['over'])
+                                <span class="font-semibold text-red-600">{{ __('cash.overdraft_over') }}</span>
+                            @else
+                                <span class="text-gray-500">{{ __('cash.overdraft_headroom', ['n' => $eok($od['headroom'])]) }}</span>
+                            @endif
+                        </div>
+                    </div>
+                @endif
             </div>
 
             {{-- ② 굴리는 총 자금(순자산) — 미판매 재고 + 미수 기준.

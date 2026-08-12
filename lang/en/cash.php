@@ -46,4 +46,9 @@ return [
     'grain_week' => 'W',
     'grain_month' => 'M',
     'grain_year' => 'Y',
+    'overdraft' => 'Overdraft',
+    'overdraft_used' => 'used :used / limit :limit',
+    'overdraft_headroom' => ':n available',
+    'overdraft_over' => '⚠ Over the limit — check the setting',
+    'sign_hint' => 'Press this when the balance is negative (overdraft account)',
 ];

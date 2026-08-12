@@ -30,6 +30,9 @@ class CapitalStatusService
 {
     public const PRINCIPAL_KEY = 'capital_principal_krw';
 
+    /** 마이너스 통장 한도(원). 미설정 = 안 씀. 회사마다 DB 가 달라 키에 회사 접미사가 필요 없다. */
+    public const OVERDRAFT_KEY = 'overdraft_limit_krw';
+
     private const FX_FALLBACK = ['USD' => 1495, 'EUR' => 1682];
 
     /** 통화별 최신 환율(→KRW). 최근 판매 차량 exchange_rate, 없으면 fallback. */
@@ -182,6 +185,50 @@ class CapitalStatusService
         }
 
         return (int) $v + AdvanceReceipt::equityKrw();
+    }
+
+    /**
+     * 🏦 마이너스 통장(한도대출) 한도 (jin 2026-08-12). 미설정이면 null — 화면에 아무것도 안 띄운다.
+     *
+     * 싼카는 −5억 한도 통장을 써서 원화 잔액이 +/− 를 오간다. **잔액을 있는 그대로 기입**하는 게
+     * 맞다(청산가치·순자산이 통장현금을 그대로 더하므로 음수면 자동으로 차감된다 — "접으면 갚아야
+     * 할 돈"이라 회계적으로 정확하다). 이자도 통장에서 자동 인출돼 잔액에 이미 반영돼 있다.
+     *
+     * 🚫 **차입금을 별도 항목으로 쪼개지 않는 이유**: 회계적으로는 깔끔해 보여도 사람이 통장 앱에서
+     *    본 숫자를 두 칸으로 나눠 옮겨야 한다. 매일 하는 입력이라 거기서 실수가 난다.
+     *    마이너스 통장은 현실에서 **잔액 하나**로 표현되는 물건이고 화면도 그래야 한다.
+     *
+     * 여기 한도는 **표시 전용**이다 — 남은 여력을 보여줄 뿐 어떤 계산에도 안 들어간다.
+     */
+    public function overdraftLimit(): ?int
+    {
+        $v = Setting::get(self::OVERDRAFT_KEY);
+
+        return ($v === null || $v === '') ? null : max(0, (int) $v);
+    }
+
+    /**
+     * 마이너스 통장 사용액·여력 — 원화 잔액이 음수일 때만 의미가 있다.
+     * ⚠️ **원화(`balance_krw`)만 본다.** 환산현금(`cash_krw`)은 외화를 더한 값이라
+     *    달러가 있으면 마이너스가 가려진다 — 한도는 원화 통장의 것이다.
+     *
+     * @return array{limit:?int, used:int, headroom:?int, over:bool}|null 한도 미설정이면 null
+     */
+    public function overdraft(?CashSnapshot $s): ?array
+    {
+        $limit = $this->overdraftLimit();
+        if ($limit === null || $s === null) {
+            return null;
+        }
+
+        $used = max(0, -(int) $s->balance_krw);   // 잔액이 +면 사용 0
+
+        return [
+            'limit' => $limit,
+            'used' => $used,
+            'headroom' => max(0, $limit - $used),
+            'over' => $used > $limit,   // 한도 초과 — 설정값이 낡았거나 오타일 수 있다
+        ];
     }
 
     /** 원금 구성 분해 — 화면에서 "왜 원금이 설정값보다 큰가"를 보여주기 위함. */
@@ -338,6 +385,8 @@ class CapitalStatusService
             'fx_eur' => (float) $s->fx_eur,
             'liquidation_krw' => $liquidation,
             'working_capital_krw' => $working,
+            // 마이너스 통장 (2026-08-12) — 표시 전용. 한도 미설정이면 null 이라 화면이 아무것도 안 그린다.
+            'overdraft' => $injected ? null : $this->overdraft($s),
             'principal_krw' => $principal,
             'principal_breakdown' => $injected ? null : $this->principalBreakdown(),
             // 손익 두 가지 (jin 2026-07-31) — 하나만 보여주면 실제 상태를 오해한다.

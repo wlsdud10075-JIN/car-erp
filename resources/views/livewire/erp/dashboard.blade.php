@@ -26,6 +26,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용.
     public string $cashDate = '';   // 기준일 (기본 오늘, 소급 입력 허용)
     public string $cashKrw = '';
+    /** 원화 잔액이 마이너스인가 (마이너스 통장, jin 2026-08-12). 금액칸은 절대값만 담는다. */
+    public bool $cashKrwNegative = false;
     public string $cashUsd = '';
     public string $cashEur = '';
     public ?string $cashSavedAt = null;
@@ -62,11 +64,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($user->canEnterCashBalance(), 403);
 
         $clean = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
-        $krw = $clean($this->cashKrw);
+        // 부호는 칸이 아니라 토글이 정한다 — 칸에는 절대값만 들어온다(data-money 가 `-` 를 지우기 때문).
+        $krw = abs($clean($this->cashKrw)) * ($this->cashKrwNegative ? -1 : 1);
         $usd = $clean($this->cashUsd);
         $eur = $clean($this->cashEur);
-        if ($krw < 0 || $usd < 0 || $eur < 0) {
-            $this->dispatch('notify', message: '잔액은 0 이상이어야 합니다.', type: 'error');
+        // 🏦 원화는 **음수 허용** (jin 2026-08-12) — 마이너스 통장(한도대출)을 쓰면 잔액이 +/− 를 오간다.
+        //    막아두면 그 날 0 을 넣거나 입력을 건너뛰게 되고, 둘 다 청산가치를 사용액만큼 부풀린다.
+        //    음수는 청산가치·순자산에서 그대로 차감돼 회계적으로 맞다("접으면 갚아야 할 돈").
+        //    ⚠️ 외화는 종전대로 0 이상 — 마이너스 통장은 원화 계좌라, 외화칸의 음수는 오타일 확률이 높다.
+        if ($usd < 0 || $eur < 0) {
+            $this->dispatch('notify', message: '외화 잔액은 0 이상이어야 합니다.', type: 'error');
 
             return;
         }
@@ -82,7 +89,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         app(CapitalStatusService::class)->capture(['krw' => $krw, 'usd' => $usd, 'eur' => $eur], $user, $date);
         $this->cashSavedAt = $date;
         // 저장 후 입력칸 비움 — 다음 입력을 빈칸에서 시작 (jin 2026-07-24). 날짜는 오늘로 리셋.
-        $this->reset(['cashKrw', 'cashUsd', 'cashEur']);
+        $this->reset(['cashKrw', 'cashUsd', 'cashEur', 'cashKrwNegative']);
         $this->cashDate = now()->toDateString();
         $this->dispatch('notify', message: $date.' 통장 잔액을 저장했습니다.', type: 'success');
     }
@@ -738,7 +745,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
-            <input type="text" wire:model="cashKrw" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
+            {{-- 🏦 부호는 **버튼으로** 고른다 (jin 2026-08-12, 마이너스 통장).
+                 금액칸(data-money)은 숫자 외 문자를 실시간으로 지우고 `-` 키를 ÷1000 단축키로 쓰고 있어
+                 **음수를 타이핑하는 것 자체가 불가능**하다. 공용 포매터를 고치면 모든 금액칸이 영향을 받으므로
+                 여기서만 부호를 분리한다 — 겸사겸사 "실수로 음수" 가 안 생긴다(눌러야 음수). --}}
+            <div class="flex gap-1">
+                <button type="button" wire:click="$toggle('cashKrwNegative')"
+                        title="{{ __('cash.sign_hint') }}"
+                        class="shrink-0 rounded border px-2 text-sm font-bold {{ $cashKrwNegative ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-300 bg-white text-gray-400' }}">
+                    {{ $cashKrwNegative ? '−' : '+' }}
+                </button>
+                <input type="text" wire:model="cashKrw" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
+            </div>
         </div>
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.usd') }}</label>
