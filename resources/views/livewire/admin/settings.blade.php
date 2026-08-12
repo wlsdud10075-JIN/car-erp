@@ -85,6 +85,9 @@ new #[Layout('components.layouts.app')] class extends Component
     // 자금 현황 — 투입 원금(밑천). 대표 손익 기준선. super만 입력, 추후 통장 정리 후 기입. (jin 2026-07-23)
     public string $capitalPrincipal = '';
 
+    /** 마이너스 통장 한도(원) — 표시 전용. 빈 값 = 안 씀 (jin 2026-08-12). */
+    public string $overdraftLimit = '';
+
     // 도장/서명/로고 역할 3종 — signature(서명), seal(직인), logo(상호 로고). 회사당 1장씩, 슬롯에 재사용.
     public array $stampRoles = ['signature', 'seal', 'logo'];
 
@@ -130,6 +133,8 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         $cp = Setting::get(\App\Services\CapitalStatusService::PRINCIPAL_KEY);
         $this->capitalPrincipal = ($cp === null || $cp === '') ? '' : (string) $cp;
+        $od = Setting::get(\App\Services\CapitalStatusService::OVERDRAFT_KEY);
+        $this->overdraftLimit = ($od === null || $od === '') ? '' : (string) $od;
         $this->refreshStamps();
         $this->loadStampPositions();
     }
@@ -175,6 +180,10 @@ new #[Layout('components.layouts.app')] class extends Component
         if (! auth()->user()?->isSuperAdmin()) {
             abort(403);
         }
+        // ⚠️ 원금을 비우는 경로가 아래에서 조기 return 하므로 **먼저** 저장한다 —
+        //    뒤에 두면 "원금 지우고 한도만 넣기" 가 조용히 안 먹는다.
+        $this->saveOverdraftLimit();
+
         $raw = str_replace([',', ' '], '', $this->capitalPrincipal);
         if ($raw === '') {
             Setting::where('key', \App\Services\CapitalStatusService::PRINCIPAL_KEY)->delete();
@@ -190,6 +199,24 @@ new #[Layout('components.layouts.app')] class extends Component
         );
         $this->capitalPrincipal = (string) $val;
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /** 마이너스 통장 한도 저장 — 원금과 같은 [저장] 버튼에 묶여 있다(한 카드 안이라 버튼이 둘이면 헷갈린다). */
+    private function saveOverdraftLimit(): void
+    {
+        $raw = str_replace([',', ' '], '', $this->overdraftLimit);
+        if ($raw === '') {
+            Setting::where('key', \App\Services\CapitalStatusService::OVERDRAFT_KEY)->delete();
+            $this->overdraftLimit = '';
+
+            return;
+        }
+        $val = max(0, (int) $raw);
+        Setting::updateOrCreate(
+            ['key' => \App\Services\CapitalStatusService::OVERDRAFT_KEY],
+            ['value' => (string) $val, 'type' => 'integer', 'description' => '자금 현황 — 마이너스 통장 한도(KRW). 표시 전용'],
+        );
+        $this->overdraftLimit = (string) $val;
     }
 
     // 현재 회사 표시명 (메일 설정 라벨용).
@@ -1156,6 +1183,16 @@ new #[Layout('components.layouts.app')] class extends Component
                 <label class="block text-sm font-medium text-gray-700">투입 원금 (원)</label>
                 <input wire:model="capitalPrincipal" type="text" data-money inputmode="numeric" placeholder="예: 2,500,000,000" class="input-base mt-1 w-full text-right" />
                 <p class="mt-1 text-xs text-gray-400">손익 = (통장현금 + 재고 − 미지급) − 이 원금. 미수는 제외(대표 정책).</p>
+            </div>
+            {{-- 🏦 마이너스 통장 한도 (jin 2026-08-12) — 표시 전용. 어떤 계산에도 안 들어간다. --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">마이너스 통장 한도 (원)</label>
+                <input wire:model="overdraftLimit" type="text" data-money inputmode="numeric" placeholder="예: 500,000,000" class="input-base mt-1 w-full text-right" />
+                <p class="mt-1 text-xs text-gray-400">
+                    한도대출 통장을 쓰면 입력해 두세요. 자금현황에 「사용 / 여력」이 표시됩니다.
+                    <span class="text-gray-500">표시 전용이라 청산가치·손익 계산에는 들어가지 않습니다</span> —
+                    마이너스 잔액 자체는 통장현금으로 이미 차감됩니다. 안 쓰면 비워 두세요.
+                </p>
             </div>
             <div class="flex justify-end pt-1">
                 <button wire:click="saveCapitalPrincipal" class="btn-primary">{{ __('common.save') }}</button>

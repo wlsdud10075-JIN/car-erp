@@ -48,4 +48,9 @@ return [
     'grain_week' => '주',
     'grain_month' => '월',
     'grain_year' => '년',
+    'overdraft' => '마이너스 통장',
+    'overdraft_used' => '사용 :used / 한도 :limit',
+    'overdraft_headroom' => '여력 :n',
+    'overdraft_over' => '⚠ 한도 초과 — 설정값을 확인하세요',
+    'sign_hint' => '마이너스 통장이라 잔액이 음수면 눌러 주세요',
 ];
