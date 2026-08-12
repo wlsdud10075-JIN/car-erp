@@ -184,6 +184,53 @@ class BoardInventoryApiTest extends TestCase
         $this->assertNotContains($miss->id, $ids);
     }
 
+    /**
+     * 🛒 **바이어명으로도 찾는다** (board 인계 2026-08-12) — 영업의 "이 바이어한테 나갈 차 뭐뭐 있지".
+     *
+     * ⚠️ 훑는 칸은 **행에 찍히는 그 바이어**(`buyer_id`)다. 인계서는 `export_buyer_id` 를 지목했지만
+     *    재고 행이 보여주는 건 `buyer` 라, 통관 바이어로 훑으면 A 로 표시된 행이 B 로 검색된다.
+     * ⚠️ 화면(`erp/inventory`)과 **같은 목록**을 훑어야 한다 — 한쪽에만 넣으면 board 와 ERP 의
+     *    검색 결과가 갈리고, 사람 눈으로는 못 잡는다(SKILLS §8 #44).
+     */
+    public function test_search_matches_buyer_name(): void
+    {
+        $sm = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'TOKYO TRADING', 'is_active' => true]);
+        $other = Buyer::create(['name' => 'OSAKA MOTORS', 'is_active' => true]);
+
+        $hit = $this->vehicle($sm->id, ['buyer_id' => $buyer->id, 'sale_price' => 5_000_000, 'sale_date' => '2026-08-03']);
+        $miss = $this->vehicle($sm->id, ['buyer_id' => $other->id, 'sale_price' => 5_000_000, 'sale_date' => '2026-08-03']);
+
+        $ids = collect($this->signedGet('/api/internal/board/inventory',
+            ['salesman_email' => 'me@a.com', 'category' => 'pre_ship', 'search' => 'TOKYO'])
+            ->assertOk()->json('data'))->pluck('vehicle_id')->all();
+
+        $this->assertSame([$hit->id], $ids);
+        $this->assertNotContains($miss->id, $ids);
+    }
+
+    /**
+     * 🔒 검색 대상 목록이 화면과 **글자단위로 같은지** 정적 검사.
+     * 한쪽에만 칸을 추가하면 "board 에선 찾히는데 ERP 에선 안 찾히는" 상태가 된다 —
+     * 결과가 조용히 갈릴 뿐 에러가 없어 기능 테스트로는 안 걸린다.
+     */
+    public function test_search_columns_match_the_screen(): void
+    {
+        $screen = file_get_contents(resource_path('views/livewire/erp/inventory/index.blade.php'));
+        $api = file_get_contents(app_path('Http/Controllers/Api/Internal/InternalPortalController.php'));
+
+        // 첫 칸은 `where(`, 나머지는 `orWhere(` 라 접두사는 안 본다 — "그 칸을 훑는가" 만 확인.
+        foreach (['vehicle_number', 'brand', 'model_type', 'nice_reg_vin',
+            'export_declaration_number', 'vessel_name', 'container_number'] as $col) {
+            $this->assertStringContainsString("'{$col}', 'like'", $screen, "재고 화면 검색에서 {$col} 가 빠졌다");
+            $this->assertStringContainsString("'{$col}', 'like'", $api, "재고 API 검색에서 {$col} 가 빠졌다 — 화면과 갈린다");
+        }
+
+        // 바이어는 릴레이션이라 형태가 다르다 — 양쪽 다 있는지만 본다.
+        $this->assertStringContainsString("orWhereHas('buyer'", $screen, '재고 화면 검색에 바이어가 없다');
+        $this->assertStringContainsString("orWhereHas('buyer'", $api, '재고 API 검색에 바이어가 없다 — 화면과 갈린다');
+    }
+
     public function test_invalid_category_is_rejected(): void
     {
         $this->salesman('me@a.com');
