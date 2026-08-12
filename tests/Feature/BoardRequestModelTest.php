@@ -71,10 +71,11 @@ class BoardRequestModelTest extends TestCase
     {
         $v = $this->vehicle();
 
-        $legacy = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 's@ex.com', amountKrw: 1_234_000);
+        // 금액칸 없는 type = 판매대금확인. (구 [입금요청]도 그랬지만 2026-08-12 수신 중단으로 raise 가 안 만든다.)
+        $sale = BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 's@ex.com', amountKrw: 1_234_000);
         $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 's@ex.com', amountKrw: 1_234_000);
 
-        $this->assertNull($legacy->amount_krw, '금액칸 없는 type 에 금액이 저장됐다');
+        $this->assertNull($sale->amount_krw, '금액칸 없는 type 에 금액이 저장됐다');
         $this->assertSame(1_234_000, $deposit->amount_krw);
     }
 
@@ -84,7 +85,9 @@ class BoardRequestModelTest extends TestCase
      */
     public function test_every_type_has_complete_meta(): void
     {
-        foreach (BoardRequest::TYPES as $type) {
+        // ⚠️ TYPES(수신 허용)가 아니라 **TYPE_META 전체**를 돈다 — 폐기한 type 도 열린 행이 남아 있는 한
+        //    화면에 그려지므로 메타가 온전해야 한다(2026-08-12 purchase_payment 수신 중단).
+        foreach (array_keys(BoardRequest::TYPE_META) as $type) {
             $meta = BoardRequest::meta($type);
             foreach (['badge', 'title', 'action', 'task', 'alarm', 'color'] as $key) {
                 $this->assertArrayHasKey($key, $meta, "{$type} 의 TYPE_META 에 '{$key}' 가 없다");
@@ -113,8 +116,8 @@ class BoardRequestModelTest extends TestCase
     {
         $v = $this->vehicle();
 
-        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
-        $second = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
+        $second = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $this->assertNotNull($first);
         $this->assertNull($second, 'board 재전송이 두 번째 신호를 만들었다 — 뱃지가 쌓인다');
@@ -125,7 +128,7 @@ class BoardRequestModelTest extends TestCase
     {
         $v = $this->vehicle();
 
-        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
+        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com'));
         $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com'));
 
         $this->assertSame(2, BoardRequest::where('vehicle_id', $v->id)->open()->count());
@@ -134,11 +137,11 @@ class BoardRequestModelTest extends TestCase
     public function test_can_reopen_after_done(): void
     {
         $v = $this->vehicle();
-        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
+        $first = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com');
         $first->markDone();
 
         // 닫힌 뒤엔 다시 요청할 수 있어야 한다(2차 입금 등) — 멱등이 영구 차단이 되면 안 된다.
-        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com'));
+        $this->assertNotNull(BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com'));
     }
 
     public function test_mark_done_records_who_and_is_noop_when_not_open(): void
@@ -163,7 +166,7 @@ class BoardRequestModelTest extends TestCase
     /** 자동 해소(매입 미지급 0)는 사람이 없다 — confirmed_by 가 비어도 done 이어야 한다. */
     public function test_system_resolution_has_no_confirmer(): void
     {
-        $r = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
+        $r = BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com');
         $r->markDone();
         $r->refresh();
 

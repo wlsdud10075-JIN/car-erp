@@ -71,7 +71,7 @@ class BoardRequestApiTest extends TestCase
         ]);
     }
 
-    public function test_purchase_payment_creates_one_request_per_vehicle(): void
+    public function test_purchase_request_creates_one_request_per_vehicle(): void
     {
         $sm = $this->salesman('a@ex.com');
         $v1 = $this->vehicle($sm->id, '11가1111');
@@ -79,15 +79,16 @@ class BoardRequestApiTest extends TestCase
 
         $res = $this->signedPost('/api/internal/board/requests', [
             'salesman_email' => 'a@ex.com',
-            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
+            'type' => BoardRequest::TYPE_PURCHASE_BALANCE,
             'vehicle_ids' => [$v1->id, $v2->id],
+            'amount_krw' => 3_000_000,
         ]);
 
         $res->assertStatus(201)->assertJsonCount(2, 'created');
 
-        // 입금요청은 차량 1대가 단위 — 묶음이 따로 논다.
+        // 매입 신호는 차량 1대가 단위 — 묶음이 따로 논다.
         $batches = BoardRequest::pluck('batch_id')->unique();
-        $this->assertCount(2, $batches, '입금요청 2건이 한 묶음으로 합쳐졌다 — 단위는 차량 1대다');
+        $this->assertCount(2, $batches, '매입 신호 2건이 한 묶음으로 합쳐졌다 — 단위는 차량 1대다');
     }
 
     public function test_sale_confirm_shares_one_batch(): void
@@ -117,8 +118,9 @@ class BoardRequestApiTest extends TestCase
 
         $res = $this->signedPost('/api/internal/board/requests', [
             'salesman_email' => 'mine@ex.com',
-            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
+            'type' => BoardRequest::TYPE_PURCHASE_BALANCE,
             'vehicle_ids' => [$ok->id, $notMine->id],
+            'amount_krw' => 3_000_000,
         ]);
 
         // 부분 성공 — 남의 차 한 대 때문에 내 차까지 죽으면 원인을 못 찾고 카톡으로 돌아간다.
@@ -135,8 +137,9 @@ class BoardRequestApiTest extends TestCase
         $v = $this->vehicle($sm->id, '11가1111');
         $payload = [
             'salesman_email' => 'a@ex.com',
-            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
+            'type' => BoardRequest::TYPE_PURCHASE_BALANCE,
             'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
         ];
 
         $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
@@ -266,22 +269,26 @@ class BoardRequestApiTest extends TestCase
     }
 
     /**
-     * 🔒 **구 `purchase_payment` 는 계속 받아야 한다.** board 운영(master)이 아직 그걸 보내는
-     * 구버전이고 ERP 가 먼저 배포된다 — 여기서 422 로 튕기면 board 운영의 입금요청 경로가
-     * 통째로 죽는다(구 버튼 외에 대체 경로가 없다). board master 가 신버전을 실은 뒤에 뺀다.
+     * 🛑 **구 `purchase_payment` 는 이제 거절한다** (2026-08-12). 계약금/매입잔금으로 쪼개졌고
+     * board 신버전 전환이 운영 데이터로 확인됐다(heymanerp: 08-10 이후 구 신호 수신 0).
+     *
+     * ⚠️ 메시지에 **무엇으로 바꿔 보내야 하는지**가 들어 있어야 한다 — `in:` 기본 문구
+     * ("selected type is invalid")만으로는 board 쪽에서 원인을 못 찾는다.
      */
-    public function test_legacy_purchase_payment_is_still_accepted_without_amount(): void
+    public function test_retired_purchase_payment_is_rejected_with_a_useful_message(): void
     {
         $sm = $this->salesman('a@ex.com');
         $v = $this->vehicle($sm->id, '11가1111');
 
-        $this->signedPost('/api/internal/board/requests', [
+        $res = $this->signedPost('/api/internal/board/requests', [
             'salesman_email' => 'a@ex.com',
             'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
             'vehicle_ids' => [$v->id],
-        ])->assertStatus(201)->assertJsonCount(1, 'created');
+        ]);
 
-        $this->assertNull(BoardRequest::first()->amount_krw);
+        $res->assertStatus(422)->assertJsonPath('error', 'type_retired');
+        $this->assertStringContainsString('purchase_balance', $res->json('message'));
+        $this->assertSame(0, BoardRequest::count(), '폐기된 type 으로 신호가 만들어졌다');
     }
 
     /**
@@ -339,9 +346,12 @@ class BoardRequestApiTest extends TestCase
         $sm = $this->salesman('a@ex.com');
         $v = $this->vehicle($sm->id, '11가1111');
 
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v->update(['buyer_id' => $buyer->id]);
         $payload = [
             'salesman_email' => 'a@ex.com',
-            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,   // 구 입금요청 — 금액칸 없음
+            'type' => BoardRequest::TYPE_SALE_PAYMENT_CONFIRM,   // 판매대금확인 — 금액칸 없음
+            'buyer_id' => $buyer->id,
             'vehicle_ids' => [$v->id],
         ];
         $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
@@ -419,8 +429,8 @@ class BoardRequestApiTest extends TestCase
     {
         $mine = $this->salesman('mine@ex.com');
         $theirs = $this->salesman('theirs@ex.com');
-        BoardRequest::raise($this->vehicle($mine->id, '11가1111')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'mine@ex.com');
-        BoardRequest::raise($this->vehicle($theirs->id, '99하9999')->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'theirs@ex.com');
+        BoardRequest::raise($this->vehicle($mine->id, '11가1111')->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'mine@ex.com');
+        BoardRequest::raise($this->vehicle($theirs->id, '99하9999')->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'theirs@ex.com');
 
         $res = $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'mine@ex.com']);
 
@@ -455,8 +465,9 @@ class BoardRequestApiTest extends TestCase
 
         $this->postJson('/api/internal/board/requests', [
             'salesman_email' => 'a@ex.com',
-            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
+            'type' => BoardRequest::TYPE_PURCHASE_BALANCE,
             'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
         ])->assertStatus(401);
 
         $this->assertSame(0, BoardRequest::count());
