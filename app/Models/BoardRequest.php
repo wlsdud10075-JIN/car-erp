@@ -30,11 +30,15 @@ use Illuminate\Support\Str;
 class BoardRequest extends Model
 {
     /**
-     * 매입 [입금요청] — 차량 1대 단위. **deprecated (2026-08-11)**: 계약금/잔금으로 쪼개졌다.
+     * 매입 [입금요청] — 차량 1대 단위. **폐기 (2026-08-11 분리 → 2026-08-12 수신 중단)**.
      *
-     * ⚠️ **수신은 계속 허용한다 — 화이트리스트에서 빼지 말 것.** board 운영(master)은 아직 이 type 을
-     *    보내는 구버전이고, ERP 가 먼저 배포된다(§7 배포 순서). 여기서 422 로 튕기면 board 운영의
-     *    **유일한 입금요청 경로가 죽는다**. board master 가 신버전을 실은 뒤에 별도 커밋으로 뺀다.
+     * 🛑 **`TYPES`(수신 화이트리스트)에서 빠졌다 — 다시 넣지 말 것.** 계약금/매입잔금으로 쪼개진
+     *    구 통합 신호다. board 신버전 전환이 운영 데이터로 확인돼(heymanerp: 08-10 16:13 이후 구 신호
+     *    수신 0 · 08-12 신 신호 6건) 별도 커밋으로 뺐다 — 종전 주석이 예고한 그 커밋이다.
+     *
+     * 🗂️ **상수와 `TYPE_META` 는 남긴다.** 아직 열려 있는 기존 행(실측 2건)이 목록 뱃지·드로어·알람에서
+     *    정상적으로 렌더돼야 하고, 그 행들은 매입 지급을 기입하면 자동으로 사라진다(auto_resolve).
+     *    ⚠️ 지우면 그 2건이 라벨 없는 유령 뱃지가 된다 — **소멸을 확인한 뒤에** 정리할 것.
      */
     public const TYPE_PURCHASE_PAYMENT = 'purchase_payment';
 
@@ -47,8 +51,14 @@ class BoardRequest extends Model
     /** 판매 [판매대금확인] — 바이어 1 + 차량 N대 묶음. */
     public const TYPE_SALE_PAYMENT_CONFIRM = 'sale_payment_confirm';
 
+    /**
+     * 🚪 **수신 화이트리스트** — board 가 새로 보낼 수 있는 type. `raise()` 와 API 검증의 단일 출처.
+     *
+     * ⚠️ 이건 **「받을 수 있는 것」이고 `TYPE_META` 는 「그릴 수 있는 것」**이다. 폐기한 type 은
+     *    여기서만 빼고 META 엔 남긴다 — 이미 열려 있는 행이 라벨 없이 렌더되면 안 되기 때문이다.
+     *    화면·집계는 항상 META 를 돌 것(TYPES 를 돌면 옛 행의 뱃지가 조용히 사라진다).
+     */
     public const TYPES = [
-        self::TYPE_PURCHASE_PAYMENT,
         self::TYPE_PURCHASE_DEPOSIT,
         self::TYPE_PURCHASE_BALANCE,
         self::TYPE_SALE_PAYMENT_CONFIRM,

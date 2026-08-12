@@ -48,12 +48,12 @@ class BoardRequestAlarmTest extends TestCase
     public function test_opening_a_request_creates_an_alarm(): void
     {
         $v = $this->vehicle();
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $alarm = TaskAlarm::where('vehicle_id', $v->id)->open()->first();
 
         $this->assertNotNull($alarm, '신호를 보냈는데 알람이 안 생겼다 — 아무도 모르고 지나간다');
-        $this->assertSame('board_purchase_payment', $alarm->type);
+        $this->assertSame('board_purchase_balance', $alarm->type);
         $this->assertSame('관리', $alarm->target_role);
         $this->assertSame($v->vehicle_number, $alarm->message_meta['vehicle_number'] ?? null);
     }
@@ -71,7 +71,7 @@ class BoardRequestAlarmTest extends TestCase
     public function test_alarm_closes_when_request_is_done(): void
     {
         $v = $this->vehicle();
-        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $req->markDone();
 
@@ -83,7 +83,7 @@ class BoardRequestAlarmTest extends TestCase
     public function test_alarm_closes_on_auto_resolution(): void
     {
         $v = $this->vehicle();
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $v->purchaseBalancePayments()->create([
             'amount' => 1_000_000, 'payment_date' => '2026-08-05', 'confirmed_at' => now(),
@@ -96,8 +96,8 @@ class BoardRequestAlarmTest extends TestCase
     public function test_resend_does_not_duplicate_alarm(): void
     {
         $v = $this->vehicle();
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $this->assertSame(1, TaskAlarm::where('vehicle_id', $v->id)->open()->count());
     }
@@ -112,7 +112,7 @@ class BoardRequestAlarmTest extends TestCase
     {
         $sm = Salesman::create(['name' => 'SM', 'email' => 'sm@ex.com', 'is_active' => true]);
         $v = $this->vehicle($sm->id);
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $user = User::factory()->create(array_merge(['email_verified_at' => now()], $attrs));
         $count = TaskAlarm::query()->visibleTo($user)->open()->count();
@@ -145,7 +145,7 @@ class BoardRequestAlarmTest extends TestCase
         $manager->managedSalesmanUsers()->attach($salesUser->id);
 
         $v = $this->vehicle($sm->id);
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
 
         $this->assertSame(1, TaskAlarm::query()->visibleTo($manager->fresh())->open()->count());
     }
@@ -154,12 +154,12 @@ class BoardRequestAlarmTest extends TestCase
     public function test_open_count_is_single_source(): void
     {
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
-        BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
-        BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'a@ex.com');
+        BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com');
+        BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com');
         $sale = BoardRequest::raise($this->vehicle(null, $buyer->id)->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, 'b-1');
 
         $this->assertSame(3, BoardRequest::openCount());
-        $this->assertSame(2, BoardRequest::openCount(BoardRequest::TYPE_PURCHASE_PAYMENT));
+        $this->assertSame(2, BoardRequest::openCount(BoardRequest::TYPE_PURCHASE_BALANCE));
         $this->assertSame(1, BoardRequest::openCount(BoardRequest::TYPE_SALE_PAYMENT_CONFIRM));
 
         $sale->markDone();

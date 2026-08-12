@@ -50,6 +50,16 @@ class BoardRequestController extends Controller
     {
         $salesman = $this->salesman($request);
 
+        // 🛑 폐기된 구 통합 신호(2026-08-12 수신 중단). 아래 validate 의 `in:` 로도 막히지만
+        //    그 메시지("selected type is invalid")로는 board 쪽에서 원인을 못 찾는다 —
+        //    무엇으로 바꿔 보내야 하는지까지 돌려준다.
+        if ($request->input('type') === BoardRequest::TYPE_PURCHASE_PAYMENT) {
+            return response()->json([
+                'error' => 'type_retired',
+                'message' => '[입금요청]은 폐기됐습니다. purchase_deposit(계약금) 또는 purchase_balance(매입잔금)로 보내세요.',
+            ], 422);
+        }
+
         $data = $request->validate([
             'type' => ['required', 'in:'.implode(',', BoardRequest::TYPES)],
             'vehicle_ids' => ['required', 'array', 'min:1'],

@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -38,6 +39,25 @@ class BoardRequestVehicleBadgeTest extends TestCase
     private function admin(): User
     {
         return User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
+    }
+
+    /**
+     * 🗂️ 폐기된 구 [입금요청] 행을 **직접** 만든다 (2026-08-12 수신 중단).
+     *
+     * `raise()` 는 이제 이 type 을 안 만든다(화이트리스트에서 빠짐). 그런데 운영에는 열린 행이
+     * 남아 있고(실측 2건) 그것들이 뱃지·드로어에서 계속 정상적으로 그려져야 한다 —
+     * 그 불변식을 지키는 게 아래 테스트들의 목적이라 생성 경로를 우회한다.
+     */
+    private function legacyRequest(Vehicle $v): BoardRequest
+    {
+        return BoardRequest::create([
+            'batch_id' => (string) Str::uuid(),
+            'type' => BoardRequest::TYPE_PURCHASE_PAYMENT,
+            'vehicle_id' => $v->id,
+            'status' => BoardRequest::STATUS_OPEN,
+            'requested_by_email' => 'sales@ex.com',
+            'requested_at' => now(),
+        ]);
     }
 
     private function vehicle(?int $buyerId = null): Vehicle
@@ -70,23 +90,32 @@ class BoardRequestVehicleBadgeTest extends TestCase
             '사이드바 재무 처리 뱃지에 board 신호가 합산됐다 — 그 화면엔 board 섹션이 없다');
     }
 
-    public function test_list_shows_badge_for_open_request(): void
+    /** 🗂️ 폐기된 구 행도 목록에 그대로 그려진다 — 상수·TYPE_META 를 남긴 이유(2026-08-12). */
+    public function test_list_still_shows_badge_for_legacy_open_request(): void
     {
-        $v = $this->vehicle();
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $this->legacyRequest($this->vehicle());
 
         Volt::actingAs($this->admin())->test('erp.vehicles.index')
             ->assertSee(__('vehicle.board_badge_purchase'));
     }
 
+    public function test_list_shows_badge_for_open_request(): void
+    {
+        $v = $this->vehicle();
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
+
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->assertSee(__('vehicle.board_badge_balance'));
+    }
+
     public function test_list_badge_disappears_when_closed(): void
     {
         $v = $this->vehicle();
-        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
         $req->markDone();
 
         Volt::actingAs($this->admin())->test('erp.vehicles.index')
-            ->assertDontSee(__('vehicle.board_badge_purchase'));
+            ->assertDontSee(__('vehicle.board_badge_balance'));
     }
 
     /** 두 신호가 같은 차에 동시에 걸릴 수 있다 — 둘 다 보여야 한다. */
@@ -94,11 +123,11 @@ class BoardRequestVehicleBadgeTest extends TestCase
     {
         $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
         $v = $this->vehicle($buyer->id);
-        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
         BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-1');
 
         Volt::actingAs($this->admin())->test('erp.vehicles.index')
-            ->assertSee(__('vehicle.board_badge_purchase'))
+            ->assertSee(__('vehicle.board_badge_balance'))
             ->assertSee(__('vehicle.board_badge_sale'));
     }
 
@@ -122,11 +151,14 @@ class BoardRequestVehicleBadgeTest extends TestCase
         $this->assertSame($user->id, $line->confirmed_by_id, '누가 확인했는지 남아야 한다(감사)');
     }
 
-    /** 입금요청엔 확인 버튼이 없다 — 매입 탭에 지급을 기입하면 자동으로 사라진다. */
+    /**
+     * 구 [입금요청]엔 확인 버튼이 없다 — 매입 탭에 지급을 기입하면 자동으로 사라진다.
+     * ⚠️ 이건 **구 type 고유 성질**이다(`manual_confirm=false`). 계약금·매입잔금은 버튼이 있다.
+     */
     public function test_purchase_request_has_no_confirm_button(): void
     {
         $v = $this->vehicle();
-        $line = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_PAYMENT, 'sales@ex.com');
+        $line = $this->legacyRequest($v);
 
         $component = Volt::actingAs($this->admin())->test('erp.vehicles.index')
             ->call('openEdit', $v->id);

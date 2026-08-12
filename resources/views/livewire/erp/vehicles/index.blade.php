@@ -39,6 +39,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 운항 필터 (jin 2026-08-09) — '' 전체 / in_transit 운항중 / arrived 도착.
     // 진행상태와 **직교**한다(선적일+ETA만 봄) — 진행상태 pill 과 함께 걸 수 있다. 판정 = Vehicle::scopeSailing.
     #[Url(as: 'sailing')] public string $sailingFilter = '';
+    // board 요청 뱃지 필터 (jin 2026-08-12) — 진행상태·운항과 **직교하는 세 번째 축**.
+    //   운항과 달리 **다중 선택**이다: 입금요청·계약금·매입잔금은 전부 "내가 처리할 매입 지급"이라
+    //   한 화면에서 같이 훑는 게 실제 흐름이다(대금확인만 성격이 달라 따로 보게 된다).
+    //   pill 은 **요청이 있는 종류만** 뜬다 — 진행상태 10 + 운항 2 위에 4개를 상시 더하면 붐빈다.
+    #[Url(as: 'brq')] public array $boardFilters = [];
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
     #[Url] public string $cancelFilter = '';
     // 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지). transport_fee = 입력값.
@@ -1745,6 +1750,54 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    /**
+     * board 요청 뱃지 필터 토글 (jin 2026-08-12) — 다중. 같은 걸 다시 누르면 해제.
+     * ⚠️ `TYPE_META` 로 화이트리스트 검증한다. `#[Url]` 배열이라 주소창으로 아무 값이나 들어온다.
+     */
+    public function toggleBoardRequest(string $type): void
+    {
+        if (! array_key_exists($type, \App\Models\BoardRequest::TYPE_META)) {
+            return;
+        }
+        $this->boardFilters = in_array($type, $this->boardFilters, true)
+            ? array_values(array_filter($this->boardFilters, fn ($t) => $t !== $type))
+            : [...$this->boardFilters, $type];
+
+        unset($this->vehicles, $this->boardRequestCounts);
+        $this->resetPage();
+    }
+
+    /**
+     * 정제된 board 필터 — 목록 쿼리·export 링크의 단일 출처.
+     * ⚠️ 주소창(`?brq=...`)으로 들어온 값을 그대로 쓰면 안 된다. `TYPE_META` 교집합만 남긴다.
+     */
+    private function boardFilterTypes(): array
+    {
+        return array_values(array_intersect($this->boardFilters, array_keys(\App\Models\BoardRequest::TYPE_META)));
+    }
+
+    /**
+     * pill 카운트 — **board 필터를 뺀** 현재 조건 기준(운항 pill 과 같은 원칙: 자기 자신으로 자기를
+     * 세면 누를수록 숫자가 줄어 못 쓴다). type 당 **차량 수**라 한 차에 신호가 둘이어도 각 1대로 센다.
+     *
+     * 🗂️ `TYPE_META` 가 아니라 **실제 열린 행**을 돌려준다 — 0 건인 종류는 키가 없어 pill 이 안 뜬다.
+     *    (폐기한 `purchase_payment` 도 남은 행이 있는 동안만 자동으로 뜨고, 소진되면 사라진다.)
+     */
+    #[Computed]
+    public function boardRequestCounts(): array
+    {
+        $vehicleIds = $this->filteredVehicleQuery(true, false)->select('vehicles.id');
+
+        return \App\Models\BoardRequest::query()
+            ->where('status', \App\Models\BoardRequest::STATUS_OPEN)
+            ->whereIn('vehicle_id', $vehicleIds)
+            ->selectRaw('type, COUNT(DISTINCT vehicle_id) as c')
+            ->groupBy('type')
+            ->pluck('c', 'type')
+            ->map(fn ($c) => (int) $c)
+            ->all();
+    }
+
     public function updatedSalesmanId(): void
     {
         unset($this->vehicles);
@@ -1915,8 +1968,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * @param  bool  $withSailing  운항 필터 적용 여부. pill 카운트는 "운항 필터를 뺀 나머지 조건" 기준이라
      *                             false 로 부른다(자기 자신으로 자기를 세면 항상 전체가 된다).
+     * @param  bool  $withBoard  board 요청 뱃지 필터 적용 여부. 위와 같은 이유로 그 pill 카운트에선 false.
      */
-    private function filteredVehicleQuery(bool $withSailing = true)
+    private function filteredVehicleQuery(bool $withSailing = true, bool $withBoard = true)
     {
         $dateColumn = match ($this->dateType) {
             'sale'           => 'sale_date',
@@ -1963,6 +2017,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. Vehicle::scopeSailing 단일 출처.
             ->when($withSailing && in_array($this->sailingFilter, \App\Models\Vehicle::SAILING_PHASES, true),
                 fn ($q) => $q->sailing($this->sailingFilter))
+            // board 요청 뱃지 필터 (jin 2026-08-12) — 다중 = OR(고른 신호 중 **하나라도** 열려 있으면).
+            ->when($withBoard && $this->boardFilterTypes() !== [], fn ($q) => $q->whereHas(
+                'boardRequests', fn ($q2) => $q2->open()->whereIn('type', $this->boardFilterTypes())
+            ))
             // 매입취소 필터 — 진행(미수)/완료(미수0)/마감/정상 구분 (jin 2026-07-18)
             ->when($this->cancelFilter === 'active', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)->where('sale_unpaid_amount_krw_cache', '>', 0))
             ->when($this->cancelFilter === 'done', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_ACTIVE)
@@ -5582,6 +5640,34 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
             @endforeach
         </div>
+
+        {{-- board 요청 뱃지 필터 (jin 2026-08-12) — 진행상태·운항과 직교하는 세 번째 축.
+             ⚠️ **요청이 있는 종류만** 뜬다(카운트가 곧 목록이다). 그래서 평소엔 0~2개만 보이고,
+                신호가 다 정리되면 이 줄이 통째로 사라진다.
+             ⚠️ type 을 여기서 열거하지 말 것 — 카운트 키를 돌면 새 신호가 자동으로 따라온다
+                (뱃지 렌더와 같은 원칙: 열거하면 type 이 늘 때 **에러 없이 pill 만 안 뜬다**).
+             ⚠️ 색은 뱃지와 같은 계열로 맞춘다. bg-blue-600·bg-purple-600 은 빌드된 app.css 에
+                있는 것을 확인하고 골랐다(없는 색을 쓰면 눌러도 회색이다 — SKILLS §8 #50). --}}
+        @php $brqCounts = $this->boardRequestCounts; @endphp
+        @if($brqCounts !== [])
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
+            @foreach(\App\Models\BoardRequest::TYPE_META as $brqType => $brqMeta)
+                @continue(($brqCounts[$brqType] ?? 0) < 1)
+                @php
+                    $isOn = in_array($brqType, $boardFilters, true);
+                    $isPurple = ($brqMeta['color'] ?? 'blue') === 'purple';
+                    $onCls = $isPurple ? 'bg-purple-600 text-white shadow-sm' : 'bg-blue-600 text-white shadow-sm';
+                    $offCls = $isPurple ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200';
+                @endphp
+                <button type="button" wire:click="toggleBoardRequest('{{ $brqType }}')"
+                        title="{{ __($brqMeta['title']) }}{{ $isOn ? ' · 다시 누르면 해제' : '' }}"
+                        class="rounded-full px-2.5 py-0.5 text-xs transition
+                               {{ $isOn ? $onCls.' font-semibold' : $offCls.' font-medium' }}">
+                    {{ $isOn ? '✓ ' : '' }}📩 {{ __($brqMeta['badge']) }} ({{ number_format($brqCounts[$brqType]) }})
+                </button>
+            @endforeach
+        </div>
+        @endif
     </div>
 </div>
 
@@ -6126,6 +6212,8 @@ function vehicleColumnsToggle() {
                         if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
                         if ($wire.excludeStatuses && $wire.excludeStatuses.length) p.set('exclude', $wire.excludeStatuses.join(','));
                         if ($wire.sailingFilter) p.set('sailing', $wire.sailingFilter);
+                        {{-- board 요청 뱃지 필터 — 안 넘기면 화면은 6대인데 엑셀은 전체가 나온다. --}}
+                        if ($wire.boardFilters && $wire.boardFilters.length) p.set('brq', $wire.boardFilters.join(','));
                         p.set('dateType', $wire.dateType || 'purchase');
                         if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
                         if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
