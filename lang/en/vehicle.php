@@ -977,6 +977,19 @@ return [
         'failed' => 'AlimTalk send failed: :reason (check Feature Settings → AlimTalk)',
     ],
 
+    // Dealer purchase-payment notice (jin 2026-08-12) — shares the phone field above.
+    'paidnotice' => [
+        'btn_title' => 'Notify the domestic dealer by KakaoTalk that this amount was paid',
+        'kind_down' => 'Down payment',
+        'kind_balance' => 'Purchase balance',
+        'confirm' => 'Send the dealer a KakaoTalk notice that :kind of :amount KRW was paid. Press only after the transfer is actually made. Continue?',
+        'sent' => 'Payment notice sent. (:amount KRW)',
+        'no_phone' => 'Enter the dealer phone number in the deregistration notice field above first.',
+        'not_confirmed' => 'No finance-confirmed payment yet. It can be sent once confirmed.',
+        'save_first' => 'Save the vehicle before sending the notice.',
+        'failed' => 'Notice failed: :reason (check Settings -> KakaoTalk)',
+    ],
+
     // Same-buyer outstanding banner (sale tab)
     'overlap' => [
         'title' => ':count vehicle(s) outstanding for this buyer (₩:amount)',
