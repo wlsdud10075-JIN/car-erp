@@ -9,7 +9,7 @@ return [
     'sum_advance' => '가수금 잔액',
     'sum_auction' => '현재 예치중',
     'count' => ':count건',
-    'hint_advance' => '반제하면 삭제하세요',
+    'hint_advance' => '갚으면 [상환완료]를 누르세요',
     'hint_auction' => '돌려받으면 삭제하세요',
 
     'new' => '새로 추가',
@@ -33,4 +33,18 @@ return [
     'err_amount' => '금액을 입력하세요.',
     'confirm_advance' => '이 가수금을 목록에서 지웁니다. 계속할까요?',
     'confirm_auction' => '이 보증금을 목록에서 지웁니다(회수 처리). 계속할까요?',
+
+    // 상환완료 (jin 2026-08-12) — 갚은 행을 지우지 않고 남긴다.
+    'repaid_btn' => '상환완료',
+    'repaid_label' => '갚은돈',
+    'repaid_hint' => '누계 · 청산가치에 미반영',
+    'repaid_on' => '상환 :date',
+    'repaid_undo' => '무르기',
+    'repaid_done' => '₩:amount 상환 처리했습니다. 통장 마감잔액도 오늘자로 갱신해 주세요.',
+    'repaid_undone' => '상환을 되돌렸습니다. 다시 미상환으로 잡힙니다.',
+    'repaid_show' => '상환완료 :count건 보기',
+    'repaid_hide' => '미상환만 보기',
+    'repaid_total_note' => '위 합계는 항상 미상환 기준입니다.',
+    'confirm_repaid' => '오늘 날짜로 상환 처리합니다. 실제로 송금한 뒤에 누르세요 — 부채는 바로 빠지지만 통장잔액은 직접 입력해야 반영됩니다. 계속할까요?',
+    'confirm_undo' => '상환 처리를 되돌립니다. 다시 갚아야 할 돈으로 잡힙니다. 계속할까요?',
 ];

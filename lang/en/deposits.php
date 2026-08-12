@@ -9,7 +9,7 @@ return [
     'sum_advance' => 'Advance balance',
     'sum_auction' => 'Currently on deposit',
     'count' => ':count entries',
-    'hint_advance' => 'Delete once repaid',
+    'hint_advance' => 'Press [Repaid] once paid back',
     'hint_auction' => 'Delete once refunded',
 
     'new' => 'Add new',
@@ -33,4 +33,18 @@ return [
     'err_amount' => 'Enter an amount.',
     'confirm_advance' => 'Remove this advance receipt from the list. Continue?',
     'confirm_auction' => 'Remove this deposit from the list (treated as refunded). Continue?',
+
+    // Repayment (jin 2026-08-12) — repaid rows stay on the list instead of being deleted.
+    'repaid_btn' => 'Repaid',
+    'repaid_label' => 'Repaid',
+    'repaid_hint' => 'cumulative · not in liquidation value',
+    'repaid_on' => 'Repaid :date',
+    'repaid_undo' => 'Undo',
+    'repaid_done' => 'Marked ₩:amount as repaid. Please update the closing bank balance for today too.',
+    'repaid_undone' => 'Repayment undone. It counts as outstanding again.',
+    'repaid_show' => 'Show :count repaid',
+    'repaid_hide' => 'Outstanding only',
+    'repaid_total_note' => 'Totals above always reflect outstanding only.',
+    'confirm_repaid' => 'Mark as repaid, dated today. Press this only after the transfer is actually made — the liability drops immediately but the bank balance must be entered manually. Continue?',
+    'confirm_undo' => 'Undo the repayment. It will count as outstanding again. Continue?',
 ];

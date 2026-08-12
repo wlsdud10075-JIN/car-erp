@@ -13,8 +13,12 @@ use Livewire\Volt\Component;
  *   가수금(advance)    = 대표·관계사가 회사에 넣은 돈. 상호명·금액·**성격**.
  *   경매보증금(auction) = 경매장에 예치한 돈. 업체·금액.
  *
- * ⚠️ 회수/반제하면 **행을 삭제**한다 → 목록에 남은 합계 = 현재 잔액(지금 묶여 있는 돈).
- *    반환일 칸을 두고 걸러 보는 것보다 단순하다는 jin 판단. softDelete 라 DB 이력은 남는다.
+ * 🔁 **가수금 상환 = [상환완료] 버튼** (jin 2026-08-12). 누른 날로 `repaid_at` 을 찍고 목록에 남긴다.
+ *    종전엔 반제 = 행 삭제였는데, 숫자는 맞아도 **갚은 이력이 화면에서 사라져** 누적 확인이 안 됐다.
+ *    ⚠️ 집계(`liabilityKrw`·`equityKrw`·`totalKrw`)는 **미상환만** 센다 — 모델 `outstanding` 스코프가 단일 출처.
+ *    ⚠️ 「갚아야 할 돈」만 대상(jin 확정). 대표 자산 회수는 종전대로 삭제로 정리한다.
+ *    ⚠️ 이제 [삭제]는 **"잘못 입력한 행 지우기" 전용**이다. 갚은 건 삭제가 아니라 상환완료로.
+ *    ⚠️ 경매보증금은 종전 그대로 삭제로 정리한다(예치금 회수는 이력 누적 요구가 없었다).
  *
  * 💰 **성격(nature)** — 청산가치에서 뺄 돈인지 가른다 (jin 2026-07-31).
  *    liability(갚아야 할 돈, 예: 김진숙차입) → 차감 / equity(대표 본인 돈) → 차감 안 함.
@@ -38,6 +42,13 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $amount = '';
     public string $note = '';
 
+    /**
+     * 상환완료 행까지 펼쳐 볼지 (jin 2026-08-12). 기본은 **미상환만** —
+     * 갚은 행이 계속 쌓이면 정작 "지금 남은 게 얼마" 인지가 안 보인다.
+     * 상단 합계는 이 토글과 무관하게 **항상 미상환 기준**이다(회계 숫자라 화면 설정으로 흔들리면 안 된다).
+     */
+    public bool $showRepaid = false;
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->canAccessDeposits(), 403);
@@ -55,18 +66,36 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function rows()
     {
-        return $this->tab === 'auction'
-            ? AuctionDeposit::orderByDesc('deposited_date')->orderByDesc('id')->get()
-            : AdvanceReceipt::orderByDesc('received_date')->orderByDesc('id')->get();
+        if ($this->tab === 'auction') {
+            return AuctionDeposit::orderByDesc('deposited_date')->orderByDesc('id')->get();
+        }
+
+        return AdvanceReceipt::query()
+            ->unless($this->showRepaid, fn ($q) => $q->outstanding())
+            ->orderByDesc('received_date')->orderByDesc('id')->get();
+    }
+
+    /** 상환완료 건수 — 0 이면 토글을 아예 안 보여준다(쓸 일 없는 버튼을 늘리지 않는다). */
+    #[Computed]
+    public function repaidCount(): int
+    {
+        return $this->tab === 'advance' ? AdvanceReceipt::repaid()->count() : 0;
     }
 
     #[Computed]
     public function total(): int
     {
-        return (int) $this->rows->sum('amount');
+        // ⚠️ 목록이 아니라 **미상환 전체**를 센다 — showRepaid 를 켜면 합계가 부풀던 길을 막는다.
+        return $this->tab === 'auction'
+            ? (int) $this->rows->sum('amount')
+            : AdvanceReceipt::totalKrw();
     }
 
-    /** 성격별 소계 — 갚아야 할 돈만 청산가치에서 빠지므로 나눠 보여준다. */
+    /**
+     * 성격별 소계 — 갚아야 할 돈만 청산가치에서 빠지므로 나눠 보여준다.
+     * ⚠️ 화면 목록이 아니라 **모델 집계**를 쓴다. 목록은 토글로 내용이 바뀌지만
+     *    이 숫자는 자금현황에 들어가는 값과 같아야 한다(모델이 단일 출처).
+     */
     #[Computed]
     public function natureTotals(): array
     {
@@ -75,8 +104,9 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         return [
-            AdvanceReceipt::NATURE_LIABILITY => (int) $this->rows->where('nature', AdvanceReceipt::NATURE_LIABILITY)->sum('amount'),
-            AdvanceReceipt::NATURE_EQUITY => (int) $this->rows->where('nature', AdvanceReceipt::NATURE_EQUITY)->sum('amount'),
+            AdvanceReceipt::NATURE_LIABILITY => AdvanceReceipt::liabilityKrw(),
+            AdvanceReceipt::NATURE_EQUITY => AdvanceReceipt::equityKrw(),
+            'repaid' => AdvanceReceipt::repaidKrw(),
         ];
     }
 
@@ -86,9 +116,53 @@ new #[Layout('components.layouts.app')] class extends Component
         abort_unless(auth()->user()?->canAccessDeposits(), 403);
         abort_unless(array_key_exists($nature, AdvanceReceipt::NATURES), 422);
 
-        AdvanceReceipt::findOrFail($id)->update(['nature' => $nature]);
-        unset($this->rows, $this->total, $this->natureTotals);
+        $row = AdvanceReceipt::findOrFail($id);
+        // 상환된 행의 성격을 바꾸면 「갚은돈」과 「대표 자산」 사이를 오가며 과거 숫자가 흔들린다.
+        abort_if($row->repaid_at !== null, 422);
+
+        $row->update(['nature' => $nature]);
+        $this->refreshTotals();
         session()->flash('success', __('deposits.nature_updated'));
+    }
+
+    /**
+     * 🔁 상환완료 — 버튼을 누른 날로 찍는다 (jin 2026-08-12).
+     *
+     * ⚠️ **「갚아야 할 돈」만** 대상이다(jin 확정). 대표 자산 회수는 종전대로 삭제로 정리한다.
+     * ⚠️ 실제로 송금한 **뒤에** 누르는 버튼이다 — 부채는 즉시 사라지는데 통장잔액은 사람이
+     *    입력할 때까지 그대로라, 그 사이엔 청산가치가 실제보다 높게 보인다(화면에 안내 표시).
+     */
+    public function markRepaid(int $id): void
+    {
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
+
+        $row = AdvanceReceipt::findOrFail($id);
+        abort_unless($row->canRepay(), 422);
+
+        $row->update(['repaid_at' => now()->toDateString(), 'repaid_by' => auth()->id()]);
+        $this->refreshTotals();
+        session()->flash('success', __('deposits.repaid_done', ['amount' => number_format((int) $row->amount)]));
+    }
+
+    /** 무르기 — 오클릭 되돌림. 없으면 잘못 누른 순간 복구할 방법이 없다. */
+    public function undoRepaid(int $id): void
+    {
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
+
+        AdvanceReceipt::findOrFail($id)->update(['repaid_at' => null, 'repaid_by' => null]);
+        $this->refreshTotals();
+        session()->flash('success', __('deposits.repaid_undone'));
+    }
+
+    public function toggleShowRepaid(): void
+    {
+        $this->showRepaid = ! $this->showRepaid;
+        unset($this->rows);
+    }
+
+    private function refreshTotals(): void
+    {
+        unset($this->rows, $this->total, $this->natureTotals, $this->repaidCount);
     }
 
     public function add(): void
@@ -133,7 +207,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         $this->resetForm();
-        unset($this->rows, $this->total, $this->natureTotals);
+        $this->refreshTotals();
         session()->flash('success', __('deposits.added'));
     }
 
@@ -147,7 +221,7 @@ new #[Layout('components.layouts.app')] class extends Component
             AdvanceReceipt::findOrFail($id)->delete();
         }
 
-        unset($this->rows, $this->total, $this->natureTotals);
+        $this->refreshTotals();
         session()->flash('success', __('deposits.removed'));
     }
 
@@ -206,6 +280,14 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="ml-1 font-semibold text-gray-800">₩{{ number_format($this->natureTotals['equity'] ?? 0) }}</span>
                     <span class="ml-1 text-[11px] text-gray-400">{{ __('deposits.nature_equity_hint') }}</span>
                 </div>
+                {{-- 갚은돈 — 표시 전용 누계(청산가치·원금 어디에도 안 들어간다). 0 이면 감춘다. --}}
+                @if (($this->natureTotals['repaid'] ?? 0) > 0)
+                    <div>
+                        <span class="badge badge-green">{{ __('deposits.repaid_label') }}</span>
+                        <span class="ml-1 font-semibold text-emerald-700">₩{{ number_format($this->natureTotals['repaid']) }}</span>
+                        <span class="ml-1 text-[11px] text-gray-400">{{ __('deposits.repaid_hint') }}</span>
+                    </div>
+                @endif
             </div>
         @endif
     </div>
@@ -255,6 +337,17 @@ new #[Layout('components.layouts.app')] class extends Component
         @error('note') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
     </div>
 
+    {{-- 상환완료 보기 토글 — 갚은 게 없으면 안 보여준다(쓸 일 없는 버튼을 늘리지 않는다). --}}
+    @if ($tab === 'advance' && $this->repaidCount > 0)
+        <div class="mb-2 flex items-center gap-2 text-xs">
+            <button type="button" wire:click="toggleShowRepaid"
+                    class="{{ $showRepaid ? 'tab-pill is-active' : 'tab-pill' }}">
+                {{ $showRepaid ? __('deposits.repaid_hide') : __('deposits.repaid_show', ['count' => $this->repaidCount]) }}
+            </button>
+            <span class="text-gray-400">{{ __('deposits.repaid_total_note') }}</span>
+        </div>
+    @endif
+
     {{-- 목록 (데스크탑) --}}
     <div class="card hidden sm:block">
         <table class="w-full text-sm">
@@ -282,22 +375,43 @@ new #[Layout('components.layouts.app')] class extends Component
                             {{ $tab === 'auction' ? $row->auction_house : $row->company_name }}
                         </td>
                         @if ($tab === 'advance')
-                            {{-- 분류를 나중에 정하므로 목록에서 바로 바꿀 수 있게 둔다(jin 2026-07-31). --}}
+                            {{-- 분류를 나중에 정하므로 목록에서 바로 바꿀 수 있게 둔다(jin 2026-07-31).
+                                 상환된 행은 잠근다 — 바꾸면 「갚은돈」과 「대표 자산」 사이를 오가며 과거 숫자가 흔들린다. --}}
                             <td class="py-3 pr-4">
-                                <select class="input-base w-32 py-1 text-xs"
-                                        wire:change="setNature({{ $row->id }}, $event.target.value)">
-                                    @foreach (\App\Models\AdvanceReceipt::NATURES as $key => $label)
-                                        <option value="{{ $key }}" @selected($row->nature === $key)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
+                                @if ($row->repaid_at)
+                                    <span class="badge badge-gray">{{ \App\Models\AdvanceReceipt::NATURES[$row->nature] ?? $row->nature }}</span>
+                                @else
+                                    <select class="input-base w-32 py-1 text-xs"
+                                            wire:change="setNature({{ $row->id }}, $event.target.value)">
+                                        @foreach (\App\Models\AdvanceReceipt::NATURES as $key => $label)
+                                            <option value="{{ $key }}" @selected($row->nature === $key)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                @endif
                             </td>
                         @endif
-                        <td class="py-3 pr-4 text-right text-gray-800">₩{{ number_format((int) $row->amount) }}</td>
+                        <td class="py-3 pr-4 text-right {{ $row->repaid_at ? 'text-gray-400 line-through' : 'text-gray-800' }}">
+                            ₩{{ number_format((int) $row->amount) }}
+                        </td>
                         <td class="py-3 pr-4 text-xs text-gray-500">{{ $row->note ?: '-' }}</td>
                         <td class="py-3 text-right">
-                            <button type="button" wire:click="remove({{ $row->id }})"
-                                    wire:confirm="{{ $tab === 'auction' ? __('deposits.confirm_auction') : __('deposits.confirm_advance') }}"
-                                    class="text-xs text-red-600 hover:underline">{{ __('deposits.remove') }}</button>
+                            @if ($tab === 'advance' && $row->repaid_at)
+                                <span class="badge badge-green">{{ __('deposits.repaid_on', ['date' => $row->repaid_at->format('Y-m-d')]) }}</span>
+                                <button type="button" wire:click="undoRepaid({{ $row->id }})"
+                                        wire:confirm="{{ __('deposits.confirm_undo') }}"
+                                        class="ml-2 text-xs text-gray-500 hover:underline">{{ __('deposits.repaid_undo') }}</button>
+                            @else
+                                @if ($tab === 'advance' && $row->canRepay())
+                                    <button type="button" wire:click="markRepaid({{ $row->id }})"
+                                            wire:confirm="{{ __('deposits.confirm_repaid') }}"
+                                            class="mr-2 rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
+                                        {{ __('deposits.repaid_btn') }}
+                                    </button>
+                                @endif
+                                <button type="button" wire:click="remove({{ $row->id }})"
+                                        wire:confirm="{{ $tab === 'auction' ? __('deposits.confirm_auction') : __('deposits.confirm_advance') }}"
+                                        class="text-xs text-red-600 hover:underline">{{ __('deposits.remove') }}</button>
+                            @endif
                         </td>
                     </tr>
                 @empty
@@ -322,15 +436,35 @@ new #[Layout('components.layouts.app')] class extends Component
                             {{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}
                             @if ($tab === 'advance') · {{ \App\Models\AdvanceReceipt::NATURES[$row->nature] ?? $row->nature }} @endif
                         </div>
+                        @if ($tab === 'advance' && $row->repaid_at)
+                            <div class="mt-1">
+                                <span class="badge badge-green">{{ __('deposits.repaid_on', ['date' => $row->repaid_at->format('Y-m-d')]) }}</span>
+                            </div>
+                        @endif
                         @if ($row->note)
                             <div class="mt-1 text-xs text-gray-400">{{ $row->note }}</div>
                         @endif
                     </div>
                     <div class="text-right">
-                        <div class="font-bold text-gray-800">₩{{ number_format((int) $row->amount) }}</div>
-                        <button type="button" wire:click="remove({{ $row->id }})"
-                                wire:confirm="{{ $tab === 'auction' ? __('deposits.confirm_auction') : __('deposits.confirm_advance') }}"
-                                class="mt-1 text-xs text-red-600">{{ __('deposits.remove') }}</button>
+                        <div class="font-bold {{ $row->repaid_at ? 'text-gray-400 line-through' : 'text-gray-800' }}">
+                            ₩{{ number_format((int) $row->amount) }}
+                        </div>
+                        @if ($tab === 'advance' && $row->repaid_at)
+                            <button type="button" wire:click="undoRepaid({{ $row->id }})"
+                                    wire:confirm="{{ __('deposits.confirm_undo') }}"
+                                    class="mt-1 text-xs text-gray-500">{{ __('deposits.repaid_undo') }}</button>
+                        @else
+                            @if ($tab === 'advance' && $row->canRepay())
+                                <button type="button" wire:click="markRepaid({{ $row->id }})"
+                                        wire:confirm="{{ __('deposits.confirm_repaid') }}"
+                                        class="mt-1 block w-full rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                                    {{ __('deposits.repaid_btn') }}
+                                </button>
+                            @endif
+                            <button type="button" wire:click="remove({{ $row->id }})"
+                                    wire:confirm="{{ $tab === 'auction' ? __('deposits.confirm_auction') : __('deposits.confirm_advance') }}"
+                                    class="mt-1 text-xs text-red-600">{{ __('deposits.remove') }}</button>
+                        @endif
                     </div>
                 </div>
             </div>
