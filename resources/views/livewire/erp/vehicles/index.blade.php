@@ -2128,6 +2128,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 📨 딜러 입금완료 알림톡을 **지금 보낼 수 있는가** — 버튼 노출 조건 (jin 2026-08-12).
+     *
+     * 🚦 승인 전에는 버튼이 아예 안 보여야 한다. jin: *"괜히 버튼 있..."* — 눌러도 안 나가는 버튼은
+     *    "고장난 기능"으로 읽힌다. 그래서 **기능설정의 tmplId 가 채워질 때 자동으로 켜진다**
+     *    (`canSend` = 마스터 on + 계정 설정 + 개별 토글 + 해당 tmplId 존재).
+     * 🇰🇷 부수 효과 — **karaba 는 등록 대상이 아니라 tmplId 가 영영 비어 있어** 그 회사에선 안 뜬다.
+     *    회사별 분기를 코드에 박을 필요가 없다.
+     * ⚡ 잔금 행마다 부르면 Setting 조회가 반복되므로 요청당 한 번만 판정한다.
+     */
+    #[Computed]
+    public function paidNoticeEnabled(): bool
+    {
+        return \App\Support\AlimtalkConfig::active()->canSend('erp_purchase_paid');
+    }
+
+    /**
      * 확정된 계약금 합계 — 딜러 입금완료 알림톡 버튼의 노출 조건·확인문구용 (jin 2026-08-12).
      * ⚠️ 화면 입력값(`down_payment_str`)이 아니라 **DB 확정분**이다. 아직 저장 안 한 숫자로
      *    "입금했습니다" 를 보내면 거짓 통지가 된다(발송 액션도 같은 출처를 다시 읽는다).
@@ -3081,6 +3097,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
+            // ⚠️ 이 목록엔 **계약금(down)·매도비(selling_fee) 행도 함께** 들어온다(기존 동작 — 금액칸과
+            //    이중 표시된다). 잔금 전용 UI(딜러 입금완료 📨)는 type 을 보고 걸러야 한다.
+            'type' => $p->type,
             'payment_date' => $p->payment_date?->format('Y-m-d') ?? '', 'note' => $p->note ?? '',
             // 큐 20-C — 분자 A안 시각화
             'confirmed_at' => $p->confirmed_at?->format('Y-m-d H:i'),
@@ -7130,11 +7149,13 @@ function vehicleColumnsToggle() {
                                placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                         {{-- 딜러에게 「계약금 입금완료」 통지 (jin 2026-08-12). 확정 계약금이 있을 때만.
                              ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
-                        @if($canConfirmFinance && $editingId !== null && $this->confirmedDownPayment > 0)
+                        @if($canConfirmFinance && $editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
                         <button type="button" wire:click="sendPurchasePaidAlimtalk('down')"
                                 wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_down'), 'amount' => number_format($this->confirmedDownPayment)]) }}"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
-                                class="shrink-0 rounded border border-yellow-300 bg-yellow-50 px-1.5 py-1 text-xs text-yellow-800 hover:bg-yellow-100">📨</button>
+                                class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
+                            {{ __('vehicle.paidnotice.btn') }}
+                        </button>
                         @endif
                     </div>
                 </div>
@@ -7194,11 +7215,13 @@ function vehicleColumnsToggle() {
                              ⚠️ 합계 버튼 하나로 만들면 안 된다: 운영 239대 중 24대가 잔금을 2~3회로
                                 나눠 지급하는데, 두 번째 알림에 누계를 실으면 받는 분이 "추가로 그만큼
                                 더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
-                        @if($canConfirmFinance)
+                        @if($canConfirmFinance && $this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
                         <button type="button" wire:click="sendPurchasePaidAlimtalk('balance', {{ $row['id'] }})"
                                 wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_balance'), 'amount' => number_format((float) $row['amount'])]) }}"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
-                                class="shrink-0 rounded border border-yellow-300 bg-yellow-50 px-1.5 py-0.5 text-[10px] text-yellow-800 hover:bg-yellow-100">📨</button>
+                                class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-amber-600">
+                            {{ __('vehicle.paidnotice.btn') }}
+                        </button>
                         @endif
                         @else
                         <span class="text-[10px] font-semibold text-amber-700 whitespace-nowrap"
@@ -7306,15 +7329,27 @@ function vehicleColumnsToggle() {
                     @endif
                     </x-erp.file-drop>
                 </div>
-                {{-- 국내 딜러 말소등록증 알림톡 전달 (수동) — 차량등록 화면 포함 항상 노출(번호 미리 입력, jin 2026-07-14).
-                     발송은 저장된 말소증 링크가 필요해 최초 저장 후 가능. 미저장 클릭 시 '저장 먼저' 토스트로 안내. --}}
+                @endif
+
+                {{-- 국내 딜러 알림톡 — **번호칸은 두 기능이 공유**한다(말소등록증 전달 · 매입대금 입금완료).
+                     ⚠️ 2026-08-12: 이 블록을 `canHandleDeregistration` 밖으로 뺐다. 그 권한에 **재무가 없어서**,
+                        입금완료 📨 버튼(canConfirmFinance)은 보이는데 **번호 넣을 칸이 안 보이는** 상태였다.
+                        발송 버튼만 각자의 권한으로 가른다 — 칸은 둘 다 본다.
+                     차량등록 화면에도 노출(번호 미리 입력, jin 2026-07-14). 말소 발송은 저장 후에만 동작. --}}
+                @if(auth()->user()->canHandleDeregistration() || $canConfirmFinance)
                 <div class="col-span-2">
                     <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
-                        <p class="mt-0.5 text-[11px] text-yellow-700">{{ __('vehicle.deregnotice.hint') }}</p>
+                        <p class="mt-0.5 text-[11px] text-yellow-700">
+                            {{ __('vehicle.deregnotice.hint') }}
+                            {{-- 켜졌을 때만 — 안 보이는 버튼을 설명하면 "어디 있냐"가 된다. --}}
+                            @if($this->paidNoticeEnabled) {{ __('vehicle.deregnotice.hint_paid') }} @endif
+                        </p>
                         <div class="mt-2 flex gap-2">
                             <input wire:model.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
+                            @endif
                         </div>
                     </div>
                 </div>

@@ -967,6 +967,7 @@ return [
 
     // Deregistration certificate AlimTalk delivery to domestic buyer (purchase tab)
     'deregnotice' => [
+        'hint_paid' => 'The [Notify] buttons next to the down payment and balance rows also use this number.',
         'label' => 'Deregistration cert. AlimTalk (domestic dealer)',
         'hint' => 'Sends a link to the deregistration certificate via KakaoTalk AlimTalk. (Link expires in 3 days · configure AlimTalk in Feature Settings)',
         'send_btn' => 'Send AlimTalk',
@@ -979,6 +980,7 @@ return [
 
     // Dealer purchase-payment notice (jin 2026-08-12) — shares the phone field above.
     'paidnotice' => [
+        'btn' => '📨 Notify',
         'btn_title' => 'Notify the domestic dealer by KakaoTalk that this amount was paid',
         'kind_down' => 'Down payment',
         'kind_balance' => 'Purchase balance',
