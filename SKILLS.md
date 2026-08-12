@@ -634,6 +634,34 @@ board 가 고른 포워딩사가 정확히 그 경우였다: "관리가 눈치�
 - ⚠️ 서버에서도 부호 출처를 토글로 못박을 것 — 칸 값에 음수가 흘러와도 `abs()` 로 눌러야
   "토글 OFF 인데 음수 저장" 이 안 생긴다. 가드 = `OverdraftBalanceTest::test_sign_comes_from_the_toggle_not_the_text`.
 
+### 59. 🚪 값을 폐기할 땐 **「받는 목록」에서만 빼고 「그리는 목록」엔 남긴다** (2026-08-12)
+
+`BoardRequest` 의 구 `purchase_payment`(입금요청)를 계약금·매입잔금으로 쪼갠 뒤 수신을 끊었다.
+그런데 **운영에 열린 행이 2건 남아 있었다.** 상수와 `TYPE_META` 까지 같이 지웠으면 그 2건이
+**라벨 없는 유령 뱃지**가 됐을 것이다(뱃지 렌더가 META 를 돌기 때문에 조용히 빈칸이 된다).
+
+그래서 목록을 **두 개로 갈랐다**:
+- `TYPES` = **받을 수 있는 것**(`raise()`·API 검증). 폐기한 값은 **여기서만** 뺀다.
+- `TYPE_META` = **그릴 수 있는 것**(뱃지·색·알람·필터 pill). 폐기해도 **남긴다**.
+
+**🧭 규칙 — 화면·집계는 항상 META 를 돌 것.** `TYPES` 를 돌면 폐기 직후 옛 행의 뱃지가 사라진다.
+실제로 `BoardRequestModelTest::test_every_type_has_complete_meta` 를 `TYPES` 기준으로 두면
+폐기한 값의 메타 완결성을 **아무도 안 지키게** 된다 → META 전체를 돌게 고쳤다.
+
+**⚠️ 곁다리 — 테스트가 폐기한 값 위에 서 있으면 한꺼번에 무너진다.** 이번에 27개가 깨졌다.
+대부분은 "아무 신호나 하나" 가 필요했을 뿐이라 살아있는 type 으로 옮기면 되지만, **일부는
+폐기한 값 고유의 성질**(`manual_confirm=false` + `amount=false` 조합이 그 값에만 있었다)을
+검증하고 있었다 — 그건 옮기면 **검증이 통째로 사라진다**. 그런 테스트는 생성 경로를 우회해
+행을 직접 만들고, 목적을 **"옛 행이 여전히 정상 동작한다"** 로 다시 쓴다.
+
+**🚫 조용히 튕기지 말 것.** `in:` 검증만 걸면 상대(board)가 받는 메시지는
+"selected type is invalid" 뿐이라 원인을 못 찾는다. **무엇으로 바꿔 보내야 하는지**를 담아
+돌려준다(`error=type_retired` + `purchase_deposit`/`purchase_balance` 명시).
+
+**🧭 폐기 시점은 데이터로 정한다** — "board 가 신버전이겠지" 가 아니라 운영 로그로 확인했다
+(heymanerp: 구 신호 마지막 수신 08-10 16:13, 그 뒤 신 신호 6건). 이게 없으면 §11 의
+"튕기면 유일한 경로가 죽는다" 경고를 무시하는 셈이 된다.
+
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
