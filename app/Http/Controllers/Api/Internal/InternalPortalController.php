@@ -178,6 +178,10 @@ class InternalPortalController extends Controller
                 ->orWhere('export_declaration_number', 'like', "%{$search}%")
                 ->orWhere('vessel_name', 'like', "%{$search}%")
                 ->orWhere('container_number', 'like', "%{$search}%")
+                // 바이어명 (board 인계 2026-08-12) — 화면과 **같은 칸**(`buyer_id`, 행에 찍히는 그 바이어).
+                //   ⚠️ 인계서는 `export_buyer_id` 를 지목했지만 재고 행이 보여주는 건 `buyer` 다.
+                //      통관 바이어로 훑으면 A 로 표시된 행이 B 로 검색돼 어긋난다.
+                ->orWhereHas('buyer', fn ($q4) => $q4->where('name', 'like', "%{$search}%"))
             ))
             ->when($isShippedOut,
                 fn ($q2) => $q2->orderByDesc('warehouse_out_date')->orderByDesc('id'),
