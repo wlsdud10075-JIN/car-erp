@@ -200,6 +200,139 @@ class PurchasePaidNoticeTest extends TestCase
         $this->assertSame(0, AlimtalkLog::count());
     }
 
+    // ── 화면 노출 ──────────────────────────────────────────────────────────
+
+    /**
+     * 🐌 **큰 HTML 에 `assertSee` 를 쓰지 말 것** (2026-08-12 실측 — jin 제보 "13분").
+     *
+     * 차량 편집 패널은 렌더 결과가 **153KB** 다. `assertSee` 가 실패하면 PHPUnit 이 그 전체를
+     * diff 로 출력하는데, 그 문자열 비교가 **분 단위**로 걸린다(테스트가 느린 게 아니라 실패 출력이 느리다).
+     * `str_contains` + 짧은 메시지로 단언하면 실패해도 한 줄만 찍힌다.
+     */
+    private function assertPanelHas(string $html, string $needle, string $what): void
+    {
+        $this->assertTrue(str_contains($html, $needle), "패널에 {$what} 가 없다 (HTML ".number_format(strlen($html)).'B)');
+    }
+
+    private function assertPanelLacks(string $html, string $needle, string $what): void
+    {
+        $this->assertFalse(str_contains($html, $needle), "패널에 {$what} 가 보이면 안 된다 (HTML ".number_format(strlen($html)).'B)');
+    }
+
+    private function panelHtml(Vehicle $v): string
+    {
+        return Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html();
+    }
+
+    /**
+     * 👀 **버튼이 실제로 그려지는가** — jin 제보("버튼이 잘 안 보인다") 후 추가.
+     * 조건부 렌더라 조용히 안 뜰 수 있고, 그러면 기능이 있어도 없는 것과 같다.
+     */
+    public function test_buttons_render_for_confirmed_payments(): void
+    {
+        $this->configureAlimtalk();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 3_000_000);
+        $this->pay($v, 'balance', 5_000_000);
+
+        $html = $this->panelHtml($v);
+
+        // ⚠️ 버튼 **라벨**로 찾지 말 것 — 같은 칸의 안내문구가 라벨을 그대로 인용해 항상 매치된다.
+        //    `wire:click` 액션명은 버튼이 실제로 렌더될 때만 나온다.
+        $this->assertPanelHas($html, 'sendPurchasePaidAlimtalk', '📨 버튼');
+        $this->assertSame(2, substr_count($html, 'sendPurchasePaidAlimtalk'), '계약금 1 + 잔금 1 = 2개여야 한다');
+    }
+
+    /**
+     * 🚨 **재무도 딜러 전화번호 칸을 봐야 한다.**
+     *
+     * 그 칸은 `canHandleDeregistration`(영업·통관·관리 — **재무 없음**) 안에 있었다. 그대로 두면
+     * 재무에게 📨 버튼은 보이는데 **번호 넣을 칸이 안 보이는** 상태가 된다 — 눌러도 "번호를 입력하세요"
+     * 토스트만 뜨고, 그 칸이 화면 어디에도 없다. 2026-08-12 에 블록을 밖으로 뺐다.
+     */
+    public function test_finance_can_see_the_dealer_phone_field(): void
+    {
+        $this->configureAlimtalk();
+        $this->actingAs($this->finance());
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 3_000_000);
+
+        $html = $this->panelHtml($v);
+
+        $this->assertPanelHas($html, 'deregistrationBuyerPhone', '딜러 전화번호 입력칸');
+        // 말소 발송 버튼은 여전히 그 권한자에게만 — 칸만 공유하고 버튼은 각자 권한이다.
+        $this->assertPanelLacks($html, 'sendDeregistrationAlimtalk', '말소 발송 버튼');
+    }
+
+    /**
+     * 🪞 **계약금 행이 잔금 목록에도 뜨는 건 기존 동작**이다(`openEdit` 이 PBP 를 type 구분 없이 싣는다).
+     * 거기에도 📨 를 달면 같은 계약금에 버튼이 2개가 되고, 그중 하나는 눌러도 아무 일이 없다
+     * (발송 액션이 `type='balance'` 만 찾으므로). 그래서 잔금 행에만 단다.
+     */
+    public function test_no_duplicate_button_on_the_down_row_inside_the_balance_list(): void
+    {
+        $this->configureAlimtalk();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 3_000_000);
+        $this->pay($v, 'selling_fee', 400_000);
+        $this->pay($v, 'balance', 5_000_000);
+
+        $html = $this->panelHtml($v);
+
+        $this->assertSame(2, substr_count($html, 'sendPurchasePaidAlimtalk'),
+            '계약금 1(금액칸 옆) + 잔금 1 = 2개여야 한다 — 계약금·매도비 행에도 붙었다');
+    }
+
+    /**
+     * 🚦 **승인 전에는 버튼이 아예 없다** (jin 2026-08-12 — *"괜히 버튼 있..."*).
+     *
+     * 눌러도 안 나가는 버튼은 "고장난 기능"으로 읽힌다. 기능설정에 tmplId 가 채워질 때
+     * 자동으로 켜진다 — 배포와 승인을 분리할 수 있게 하는 게 이 게이트의 목적이다.
+     * ⚠️ 부수 효과로 **karaba 처럼 등록 대상이 아닌 회사**에선 영영 안 뜬다(회사 분기 불필요).
+     */
+    public function test_button_is_hidden_until_the_template_is_configured(): void
+    {
+        $this->actingAs($this->finance());
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 3_000_000);
+
+        // 설정 전 — tmplId 가 비어 있다.
+        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(미설정)');
+
+        $this->configureAlimtalk();
+        $this->assertPanelHas($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(설정 후)');
+    }
+
+    /** 개별 토글을 끄면 사라진다 — 승인 후에도 잠시 멈출 수 있어야 한다. */
+    public function test_per_template_toggle_hides_the_button(): void
+    {
+        $this->configureAlimtalk();
+        $this->actingAs($this->finance());
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 3_000_000);
+
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "alimtalk_toggle_erp_purchase_paid_{$set}"], ['value' => '0', 'type' => 'boolean']);
+
+        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(토글 off)');
+    }
+
+    /** 확정 지급이 없으면 버튼도 없다 — 누를 수 없는 버튼을 띄우지 않는다. */
+    public function test_no_button_without_a_confirmed_payment(): void
+    {
+        $this->configureAlimtalk();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle();
+        $this->pay($v, 'balance', 5_000_000, confirmed: false);
+
+        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼');
+    }
+
     // ── 계좌 마스킹 ────────────────────────────────────────────────────────
 
     /** 🔒 뒤 4자리만 나간다 — 전화번호를 잘못 적으면 남의 계좌가 통째로 나가기 때문. */
