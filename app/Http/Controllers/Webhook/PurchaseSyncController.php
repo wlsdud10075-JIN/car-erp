@@ -120,11 +120,16 @@ class PurchaseSyncController extends Controller
         if ($existing) {
             // 멱등 — 신규 생성/NICE 재호출은 스킵하되, 첨부가 오면 dedup 으로 보강(방어적).
             $synced = $this->syncAttachments($existing, $data['attachments'] ?? []);
+            // 2026-08-18 (board 인계 ①) — 급해서 매입가만 보낸 차의 **판매가를 나중에 채워 재전송**하면
+            //   비어 있는 칸만 채운다. 이미 값이 있으면 안 건드린다(관리가 ERP 에서 고친 값 보호).
+            [$filled, $skipped] = $this->fillEmptyFields($existing, $data);
             Log::info('[purchase-sync] 멱등 스킵 — 기존 vehicle_number', [
                 'vehicle_id' => $existing->id,
                 'vehicle_number' => $data['vehicle_number'],
                 'attachments_added' => $synced,
                 'attachments_failed' => $this->attachmentsFailed,
+                'fields_filled' => $filled,
+                'fields_skipped' => $skipped,
             ]);
 
             return response()->json([
@@ -132,6 +137,10 @@ class PurchaseSyncController extends Controller
                 // board 가 첨부 실패를 알 수 있는 유일한 통로 — 200 만 보고 성공으로 기록하던 것을 막는다.
                 'attachments_added' => $synced,
                 'attachments_failed' => $this->attachmentsFailed,
+                // 같은 이유로 "무엇을 채웠고 무엇을 왜 안 채웠나" 도 응답에 싣는다.
+                //   board 가 200 만 보고 "판매가 반영됨" 으로 기록하면 조용한 실패가 된다.
+                'fields_filled' => $filled,
+                'fields_skipped' => (object) $skipped,
             ], 200);
         }
 
@@ -425,6 +434,106 @@ class PurchaseSyncController extends Controller
      *
      * @return array{0: ?int, 1: ?int} [buyer_id, consignee_id]
      */
+    /**
+     * 멱등 재전송에서 **비어 있는 칸만** 채운다 (2026-08-18, board 인계 ①).
+     *
+     * 배경: 급한 차는 매입가만 넣고 판매가·통화·운임비 없이 ERP 로 보낸다. 나중에 판매가를 채워
+     * 재전송해도 멱등 분기가 **첨부만 받고 금액은 통째로 무시**했다. 그래서 "빈 칸 채우기" 만 연다.
+     *
+     * 규칙 3가지:
+     *  1. **이미 값이 있으면 절대 안 건드린다** — 관리가 ERP 에서 고친 값이 board 재전송으로 되돌아가면
+     *     회계가 조용히 틀어진다(운임비 1/N 에서 정한 원칙과 동일).
+     *  2. **판매 3종 + sale_date 는 세트다** — `chk_sale_required`(sale_price>0 → sale_date·exchange_rate>0)
+     *     때문에 부분 기입은 CHECK 위반으로 죽는데, board 는 200 만 보고 성공으로 기록한다.
+     *     ⚠️ `sale_date` 는 **수신일**로 채운다 — 신규 생성 경로가 이미 그렇게 하고 있어 두 경로를 맞춘 것이다
+     *        (board 에 판매일 개념이 없다). 정확한 날짜가 필요하면 관리가 ERP 에서 고친다.
+     *        곁다리: 채권 유예 기산점이 이 날짜다 → 독촉이 이 날로부터 시작된다.
+     *  3. **왜 안 채웠는지 응답에 담는다** — 조용한 실패 금지.
+     *
+     * @return array{0: list<string>, 1: array<string, string>} [채운 필드, 필드=>스킵사유]
+     */
+    private function fillEmptyFields(Vehicle $vehicle, array $data): array
+    {
+        $filled = [];
+        $skipped = [];
+
+        $salePrice = isset($data['sale_price']) ? (float) $data['sale_price'] : 0.0;
+        $saleRate = isset($data['sale_exchange_rate']) ? (float) $data['sale_exchange_rate'] : 0.0;
+
+        if ($salePrice > 0) {
+            if ((float) $vehicle->sale_price > 0) {
+                $skipped['sale_price'] = 'already_set';
+            } elseif ($saleRate <= 0) {
+                // 환율 없이 판매가만 쓰면 CHECK 위반 → 세트 통째 보류(신규 경로와 동일 판단).
+                $skipped['sale_price'] = 'missing_exchange_rate';
+            } else {
+                $vehicle->sale_price = $salePrice;
+                $vehicle->exchange_rate = $saleRate;
+                $vehicle->currency = $data['sale_currency'] ?? 'KRW';
+                $vehicle->sale_date = now()->toDateString();
+                $filled[] = 'sale_price';
+                $filled[] = 'sale_exchange_rate';
+                $filled[] = 'sale_currency';
+                $filled[] = 'sale_date';
+            }
+        }
+
+        // ⚠️ 운임비 = **판매통화** 기준(board 가 환산해 보냄). USD raw 컬럼(`transport_fee_usd`)이 따로 있으니
+        //    헷갈리지 말 것 — 여기에 USD 를 넣으면 미수율 분모가 부풀어 게이트 판정이 틀어진다.
+        if (isset($data['transport_fee']) && (float) $data['transport_fee'] > 0) {
+            if ((float) $vehicle->transport_fee > 0) {
+                $skipped['transport_fee'] = 'already_set';
+            } else {
+                $vehicle->transport_fee = $data['transport_fee'];
+                $filled[] = 'transport_fee';
+            }
+        }
+
+        [$buyerId, $consigneeId] = $this->resolveBuyerConsignee($data['buyer_id'] ?? null, $data['consignee_id'] ?? null);
+
+        if (isset($data['buyer_id'])) {
+            if ($buyerId === null) {
+                $skipped['buyer_id'] = 'invalid_or_inactive';
+            } elseif ($vehicle->buyer_id !== null) {
+                $skipped['buyer_id'] = 'already_set';
+            } else {
+                $vehicle->buyer_id = $buyerId;
+                $filled[] = 'buyer_id';
+            }
+        }
+
+        if (isset($data['consignee_id'])) {
+            // 컨사이니는 바이어 하위다 — 차량의 바이어와 다른 바이어의 컨사이니를 붙이면 서류가 조용히 틀린다.
+            $effectiveBuyerId = $vehicle->buyer_id;
+            if (! isset($data['buyer_id'])) {
+                $skipped['consignee_id'] = 'buyer_not_sent';   // 컨사이니만 와도 소속을 검증할 수 없다
+            } elseif ($consigneeId === null) {
+                $skipped['consignee_id'] = 'invalid_or_inactive';
+            } elseif ($effectiveBuyerId !== $buyerId) {
+                $skipped['consignee_id'] = 'buyer_mismatch';
+            } elseif ($vehicle->consignee_id !== null) {
+                $skipped['consignee_id'] = 'already_set';
+            } else {
+                $vehicle->consignee_id = $consigneeId;
+                $filled[] = 'consignee_id';
+            }
+        }
+
+        if ($filled === []) {
+            return [$filled, $skipped];
+        }
+
+        // 감사 귀속 — HMAC 경로엔 세션이 없어 `auth()->id()` 가 늘 null 이고, 감사 화면엔 「시스템」으로 찍혀
+        //   cron 이 바꾼 것과 구분이 안 된다(SKILLS §8 #56). `buyer_id` 는 감사 대상 컬럼이라 특히 필요하다.
+        //   연결된 User 가 없는 영업이면 null 로 남는다(그건 종전과 같음).
+        $userId = User::where('email', $data['salesman_email'])->value('id');
+        AuditLog::actingAs($userId, function () use ($vehicle) {
+            $vehicle->save();
+        });
+
+        return [$filled, $skipped];
+    }
+
     private function resolveBuyerConsignee(?int $buyerId, ?int $consigneeId): array
     {
         if ($buyerId === null) {
