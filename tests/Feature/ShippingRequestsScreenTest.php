@@ -58,6 +58,37 @@ class ShippingRequestsScreenTest extends TestCase
             ->assertViewHas('batches', fn ($b) => $b->count() === 2);   // 3대·1대 = 2배치
     }
 
+    /**
+     * 묶인 차량 칩 = 차대번호 표기 (jin 2026-08-18). 미입력이면 차량번호로 폴백 —
+     * 빈 칩은 화면이 정상 렌더돼 조용히 넘어가는 부류라 두 방향 모두 못박는다(SKILLS §8 #38).
+     */
+    public function test_vehicle_chip_shows_vin_and_falls_back_to_plate(): void
+    {
+        $withVin = Vehicle::create([
+            'vehicle_number' => '11가1111',
+            'sales_channel' => 'export',
+            'nice_reg_vin' => 'KMHJ581ABGU108491',
+        ]);
+        $noVin = Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export']);
+
+        foreach ([$withVin, $noVin] as $v) {
+            ShippingRequest::create([
+                'batch_id' => 'batch-VIN',
+                'vehicle_id' => $v->id,
+                'shipping_method' => 'RORO',
+                'requested_by_email' => 's@a.com',
+                'status' => 'requested',
+                'requested_at' => now(),
+            ]);
+        }
+
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->assertSee('KMHJ581ABGU108491')     // 차대번호가 칩 본문
+            ->assertSee('22나2222');             // 차대번호 없는 차는 차량번호 폴백
+    }
+
     public function test_done_transition_updates_whole_batch_and_resolves_alarm(): void
     {
         $this->batch('batch-A', ['11가1111', '22나2222']);
