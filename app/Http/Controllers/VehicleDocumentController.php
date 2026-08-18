@@ -98,8 +98,13 @@ class VehicleDocumentController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
+        // 파일명 = 말소신청서_{차량번호}_{차대번호 뒤 6자리} (jin 2026-08-18).
+        //   N개를 한 번에 받으면 차량번호만으로는 어느 차인지 대조가 느려서 VIN 꼬리를 붙인다.
+        //   VIN 미입력 차량은 접미 없이 종전 이름 그대로 — 꼬리 없는 '_' 가 남지 않게 한다.
+        $vin = trim((string) $vehicle->nice_reg_vin);
+        $vinTail = $vin !== '' ? '_'.mb_substr($vin, -6) : '';
         $ext = pathinfo($path, PATHINFO_EXTENSION);
-        $filename = '말소신청서_'.$vehicle->vehicle_number.($ext ? '.'.$ext : '');
+        $filename = '말소신청서_'.$vehicle->vehicle_number.$vinTail.($ext ? '.'.$ext : '');
 
         return $disk->download($path, $filename);
     }

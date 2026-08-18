@@ -651,6 +651,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     'vehicles' => $items->map(fn ($r) => [
                         'id' => $r->vehicle_id,
                         'number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
+                        // 칩 표기 = 차대번호(jin 2026-08-18). 수출 실무가 VIN 으로 소통해서 차량번호보다 쓸모가 크다.
+                        //   미입력이면 차량번호로 폴백 — 빈 칩은 조용한 실패라 절대 만들지 않는다(SKILLS §8 #38).
+                        'vin' => filled($r->vehicle?->nice_reg_vin) ? $r->vehicle->nice_reg_vin : null,
                         'has_dereg' => filled($r->vehicle?->deregistration_document),
                         'unpaid_pct' => $r->vehicle?->unpaid_ratio === null ? null : round($r->vehicle->unpaid_ratio * 100, 1),
                         'entry_blocked' => $isEntryUnder($r->vehicle),   // 개별 C5 경고(빨간 칩) — 묶음 착수와 별개
@@ -1010,8 +1013,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     <div class="mt-2 flex flex-wrap gap-1.5">
                         @foreach ($b['vehicles'] as $veh)
                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $veh['id']]) }}" wire:navigate
-                               class="rounded-md border px-2 py-0.5 text-[11px] font-medium hover:border-primary hover:text-primary-text {{ $veh['entry_blocked'] ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-700' }}">
-                                {{ $veh['number'] }}@if ($veh['entry_blocked'] && $veh['unpaid_pct'] !== null) <span class="ml-0.5 font-semibold">· {{ $veh['unpaid_pct'] }}%</span>@endif
+                               title="{{ $veh['number'] }}"
+                               class="rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium hover:border-primary hover:text-primary-text {{ $veh['entry_blocked'] ? 'border-rose-300 bg-rose-50 text-rose-700' : 'border-gray-200 bg-gray-50 text-gray-700' }}">
+                                {{ $veh['vin'] ?? $veh['number'] }}@if ($veh['entry_blocked'] && $veh['unpaid_pct'] !== null) <span class="ml-0.5 font-semibold">· {{ $veh['unpaid_pct'] }}%</span>@endif
                             </a>
                         @endforeach
                     </div>
