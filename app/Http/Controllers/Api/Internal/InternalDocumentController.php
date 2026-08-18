@@ -18,6 +18,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * ⚠️ board 허용 서류 = 선적 4종 + 판매계약서·인보이스(2026-07-31 개방).
  *    말소서류(RRN·성명·주소 포함)·위임장·통관SET 은 계속 차단(§29 — RRN).
  * 본인 차만(IDOR) + document_access_logs(source='board_api', actor_email) 감사.
+ *
+ * 🚨 **빈 서류 차단** — 바이어 미지정·판매가 0 이면 422 (2026-08-18). 서류는 에러가 안 나면 아무도
+ *    검산하지 않으므로, "발급은 됐는데 내용이 빈" 상태를 만들지 않는 게 유일한 방어다.
  */
 class InternalDocumentController extends Controller
 {
@@ -54,6 +57,20 @@ class InternalDocumentController extends Controller
         // IDOR — export 채널 + 본인 차만
         abort_unless($vehicles->every(fn (Vehicle $v) => $v->sales_channel === 'export'), 403, 'Export only');
         abort_unless($vehicles->every(fn (Vehicle $v) => $v->salesman_id === $salesman->id), 403, 'Forbidden');
+
+        // 🚨 "빈 서류" 차단 (2026-08-18, board 인계 질의 — 선적 계획에서 서류를 뽑게 되며 제기됨).
+        //   jin: *"403 이 나면 바로 알지만, 내용이 빈 서류가 나오면 아무도 못 잡습니다."*
+        //   지금 board 가 넘기는 건 선적 계획 후보(`shippable`, `sale_price>0`)뿐이라 사고는 없었지만,
+        //   그건 **board UI 규율에 기댄 안전**이다. 엔드포인트가 스스로 막는다.
+        //   ⚠️ DB 를 믿지 말 것 — `chk_sale_required` 는 sale_date·exchange_rate 만 보장하고
+        //      **buyer_id 는 보장하지 않는다**(SKILLS §25 2026-08-18 정정, 운영 실측).
+        //   ⚠️ 아래 「1바이어」 검사로는 못 잡는다 — buyer_id 가 **전부 null 이면 unique()->count() === 1**
+        //      이라 그대로 통과한다. 그래서 null 검사가 **별개로** 필요하다.
+        $noBuyer = $vehicles->first(fn (Vehicle $v) => blank($v->buyer_id));
+        abort_if($noBuyer !== null, 422, 'No buyer: '.($noBuyer?->vehicle_number ?? ''));
+
+        $noSale = $vehicles->first(fn (Vehicle $v) => (float) $v->sale_price <= 0);
+        abort_if($noSale !== null, 422, 'No sale price: '.($noSale?->vehicle_number ?? ''));
 
         // 판매계약서·인보이스 = 1바이어·단일통화 (ERP 화면 showMulti 와 같은 가드). 매핑이 바이어블록·환율을
         //   primary 로만 채우므로 혼합 묶음이면 **조용히 틀린 서류**가 나간다 → 422 로 차단.

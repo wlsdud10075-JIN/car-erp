@@ -33,6 +33,7 @@ return [
         'mixed_buyer' => '동일 바이어의 차량만 함께 발급할 수 있습니다.',
         'mixed_currency' => '동일 통화의 차량만 함께 발급할 수 있습니다.',
         'no_buyer' => '바이어가 지정된 차량만 발급할 수 있습니다.',
+        'no_sale_price' => '판매가가 입력된 차량만 발급할 수 있습니다.',
     ],
     'sign' => [
         'invalid' => '서명 이미지가 올바르지 않습니다. 다시 서명해 주세요. · Invalid signature, please sign again.',
