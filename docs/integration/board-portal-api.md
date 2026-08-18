@@ -239,11 +239,36 @@ fully_paid        = (unpaid_total_krw <= 0) AND (fx_missing_count === 0)
 - **UI**: 묶음 미수 = **기존 미납 게이지 패턴(`unpaid_ratio`)** 재사용 + 보기 좋은 카드. **board·car-erp 양쪽 표시**. ⚠️ `fully_paid`·`써랜더×미완납 warning`은 **car-erp가 계산해서 내려보냄**(Codex+Spec-F 수렴 — board가 raw값으로 재계산하면 drift=운영장애). board는 **표시/경고만**, 절대 완납판정 재현 금지.
 - 화이트리스트(§3): 미수금·통화·환율 **허용** / 마진 raw(`sales/vat/total_margin`) **금지**.
 
-## 6. ①② 서류 다운로드 (프록시 스트림 — 선적 4종만)
+## 6. ①② 서류 다운로드 (프록시 스트림 — 선적 4종 + 판매계약서·인보이스)
 - **`GET /documents/{type}?ids=1,2,3&salesman_email=`** — car-erp가 `DocumentFiller`로 동적 생성 → xlsx 바이트 스트림 반환(프록시). board가 그대로 전달.
-- **type 화이트리스트 `BOARD_ALLOWED_TYPES`(필수)**: `roro_invoice_packing`·`roro_contract`·`container_invoice_packing`·`container_contract` **4종만**. 그 외(`deregistration`·`deregistration_contract`·`poa`·`invoice`·`clearance`) **403** — ⛔ 말소서류엔 RRN·성명·주소 포함(§29 국외이전 차단).
+- **type 화이트리스트 `BOARD_ALLOWED_TYPES`(필수)**: `roro_invoice_packing`·`roro_contract`·`container_invoice_packing`·`container_contract` + **2026-07-31 개방분** `sales_contract`·`invoice`. 그 외(`deregistration`·`deregistration_contract`·`poa`·`clearance`) **403** — ⛔ 말소서류엔 RRN·성명·주소 포함(§29 국외이전 차단).
 - 차량 스코프 = `InternalSalesmanScope` 재적용(영업 본인 차만). throttle 별도(서류 생성 = PhpSpreadsheet CPU).
 - 감사 = `DocumentAccessLog` 기록 + **신규 컬럼 `source='board_api'`·`actor_email=salesman_email`**(`user_id`는 null).
+
+### 6-B. 🚨 빈 서류 차단 (2026-08-18 — board 인계 ② 질의 회신)
+
+**질의**: 선적 계획(묶음 sync 전) 상태의 `vehicle_ids` 로 `sales_contract`·`invoice`·서명 세션을 발급해도 되나?
+
+**답**: **된다.** 서류·서명 모두 **차량 id + 바이어 기준**이고 `shipping_requests` 행을 보지 않는다.
+묶음이 없어도 정상 발급된다(가드 = `BoardDocumentBlankGuardTest::test_document_issues_without_any_shipping_request_row`).
+
+**다만 가드를 추가했다** — jin: *"403 이 나면 바로 알지만, 내용이 빈 서류가 나오면 아무도 못 잡습니다."*
+
+| 조건 | 응답 |
+|---|---|
+| 차량 중 하나라도 **바이어 미지정** | `422 No buyer: {차량번호}` |
+| 차량 중 하나라도 **판매가 ≤ 0** | `422 No sale price: {차량번호}` |
+
+- **전 type 공통**(선적 4종 포함). 한 대만 비어도 묶음 전체를 막는다 — 섞이면 그 줄만 빈 채로 인쇄된다.
+- **전자서명도 같은 가드** — `SigningSessionService::validate()` 에 `no_sale_price` 추가(바이어는 종전부터 막고 있었다).
+  서명본은 하드삭제 가드 대상이라 **한 번 만들어지면 되돌릴 수 없다.**
+- ⚠️ **왜 필요했나 (재발 방지 근거 2개)**:
+  1. 「1바이어」 검사(`unique()->count() > 1`)는 **buyer_id 가 전부 null 이면 통과한다**(unique 가 1).
+  2. DB 도 못 막는다 — 운영 `chk_sale_required` 는 `sale_date`·`exchange_rate` 만 보장하고
+     **`buyer_id` 는 보장하지 않는다**(SKILLS §25 2026-08-18 정정, `information_schema` 실측).
+- 📌 **board 는 버튼 비활성화 조건을 추측하지 말고 422 메시지로 분기**할 것(`Mixed buyers`·`Mixed currencies` 와 같은 방식).
+
+테스트 = `BoardDocumentBlankGuardTest` 9케이스.
 
 ---
 

@@ -69,6 +69,23 @@ class BoardPortalApiTest extends TestCase
         return Vehicle::create(['vehicle_number' => $vn, 'sales_channel' => 'export', 'salesman_id' => $salesmanId]);
     }
 
+    /**
+     * 서류 발급이 가능한 차 — **바이어 + 판매가**가 있어야 한다(2026-08-18 빈 서류 가드 §6-B).
+     *
+     * `exportVehicle()` 는 판매 전 상태(바이어·판매가 없음)라 서류 대상이 아니다 —
+     * 그 상태를 일부러 쓰는 테스트가 있어(라인 244 "판매 전 → 제외") 공용 헬퍼는 안 건드린다.
+     */
+    private function docVehicle(int $salesmanId, string $vn, ?int $buyerId = null): Vehicle
+    {
+        $buyerId ??= Buyer::create(['name' => 'DOC BUYER '.$vn, 'is_active' => true])->id;
+
+        return Vehicle::create([
+            'vehicle_number' => $vn, 'sales_channel' => 'export', 'salesman_id' => $salesmanId,
+            'buyer_id' => $buyerId, 'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => '2026-06-01', 'sale_price' => 5000,
+        ]);
+    }
+
     public function test_valid_signature_returns_own_receivables_only(): void
     {
         $me = $this->salesman('me@a.com');
@@ -329,7 +346,7 @@ class BoardPortalApiTest extends TestCase
     public function test_documents_streams_allowed_type_and_logs(): void
     {
         $me = $this->salesman('me@a.com');
-        $v = $this->exportVehicle($me->id, '44라4444');
+        $v = $this->docVehicle($me->id, '44라4444');
 
         $this->signedGet('/api/internal/board/documents/roro_invoice_packing', ['salesman_email' => 'me@a.com', 'ids' => (string) $v->id])
             ->assertOk();
@@ -363,8 +380,7 @@ class BoardPortalApiTest extends TestCase
     {
         $me = $this->salesman('me@a.com');
         $buyer = Buyer::create(['name' => 'GYSII AUTO', 'is_active' => true]);
-        $v = $this->exportVehicle($me->id, '77사7777');
-        $v->update(['buyer_id' => $buyer->id, 'currency' => 'USD']);
+        $v = $this->docVehicle($me->id, '77사7777', $buyer->id);
 
         foreach (['sales_contract', 'invoice'] as $type) {
             $this->signedGet('/api/internal/board/documents/'.$type, ['salesman_email' => 'me@a.com', 'ids' => (string) $v->id])
@@ -386,12 +402,10 @@ class BoardPortalApiTest extends TestCase
         $a = Buyer::create(['name' => 'BUYER A', 'is_active' => true]);
         $b = Buyer::create(['name' => 'BUYER B', 'is_active' => true]);
 
-        $v1 = $this->exportVehicle($me->id, '88아8881');
-        $v1->update(['buyer_id' => $a->id, 'currency' => 'USD']);
-        $v2 = $this->exportVehicle($me->id, '88아8882');
-        $v2->update(['buyer_id' => $b->id, 'currency' => 'USD']);       // 바이어 다름
-        $v3 = $this->exportVehicle($me->id, '88아8883');
-        $v3->update(['buyer_id' => $a->id, 'currency' => 'EUR']);       // 통화 다름
+        $v1 = $this->docVehicle($me->id, '88아8881', $a->id);
+        $v2 = $this->docVehicle($me->id, '88아8882', $b->id);       // 바이어 다름
+        $v3 = $this->docVehicle($me->id, '88아8883', $a->id);
+        $v3->update(['currency' => 'EUR']);                        // 통화 다름
 
         foreach (['sales_contract', 'invoice'] as $type) {
             $this->signedGet('/api/internal/board/documents/'.$type,

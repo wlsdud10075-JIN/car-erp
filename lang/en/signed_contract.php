@@ -25,6 +25,7 @@ return [
         'mixed_buyer' => 'Only vehicles of the same buyer can be issued together.',
         'mixed_currency' => 'Only vehicles of the same currency can be issued together.',
         'no_buyer' => 'Only vehicles with an assigned buyer can be issued.',
+        'no_sale_price' => 'Only vehicles with a sale price can be issued.',
     ],
     'sign' => [
         'invalid' => 'Invalid signature, please sign again.',

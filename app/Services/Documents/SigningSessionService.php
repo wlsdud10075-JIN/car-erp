@@ -114,6 +114,11 @@ class SigningSessionService
         if (blank($vehicles->first()->buyer_id)) {
             throw ValidationException::withMessages(['vehicles' => __('signed_contract.issue.no_buyer')]);
         }
+        // 판매가 0 인 차로 서명을 받으면 **금액이 빈 계약서에 바이어 서명이 박힌다** — 되돌릴 수 없다
+        //   (서명본은 하드삭제 가드 대상). 서류 다운로드와 같은 가드(2026-08-18, board 인계 질의).
+        if ($vehicles->contains(fn (Vehicle $v) => (float) $v->sale_price <= 0)) {
+            throw ValidationException::withMessages(['vehicles' => __('signed_contract.issue.no_sale_price')]);
+        }
     }
 
     /**

@@ -474,9 +474,21 @@ extension=zip    # 주석 제거
 **원인**: 판매 바이어+컨사이니 둘 다 지정 시 `propagateSaleParty()`가 통관(export) 당사자까지 자동 전파했는데, **`export_buyer_id`는 `guardStageOrderForExport`의 `$hasExportInput`(통관 진입 신호)** 이라 — 판매 시점 자동 채움이 <50% 입금 차량의 판매 저장을 C5로 통째 차단(`ManagementWorkflowChecklistTest:375`가 export_buyer_id 단독으로 C4 발동 검증).
 **해결**: 자동전파에서 **통관(export) 당사자 제거**, B/L 당사자(bl_buyer_id — 게이트 트리거 아님)만 전파 유지. 통관 바이어는 실제 통관 단계에서 입력. **교훈: export_buyer_id에 값 넣는 건 "통관 진입"으로 간주됨 — 판매 단계에서 자동으로 채우지 말 것.**
 
-### 25. chk_sale_required — sale_price>0이면 sale_date·buyer_id·exchange_rate>0 필수 (MySQL CHECK)
-**원인**: 운영 MySQL CHECK `chk_sale_required = (sale_price=0 OR (sale_date NOT NULL AND buyer_id NOT NULL AND exchange_rate>0))`. 판매가만 넣고 나머지 누락하면 INSERT/UPDATE 실패(4025).
-**해결**: 판매가 입력 시 sale_date·buyer·환율 항상 동반. (엑셀 일괄적재처럼 sale_date 없으면 선적일/구입일로 대체, 셋 중 하나라도 못 채우면 판매가 보류=매입만.)
+### 25. chk_sale_required — sale_price>0이면 sale_date·exchange_rate>0 필수 (MySQL CHECK)
+
+> 🔧 **2026-08-18 정정 — 이 문서가 틀렸었다.** 원문에 `buyer_id NOT NULL` 이 포함된다고 적혀 있었으나
+> **운영 실제 제약에는 없다.** 3사 `information_schema.CHECK_CONSTRAINTS` 실측:
+> ```
+> chk_sale_required :: ((`sale_price` = 0) or ((`sale_date` is not null) and (`exchange_rate` > 0)))
+> ```
+> ⇒ **DB 는 바이어 없는 판매를 막지 않는다.** 실측 시점 위반 행은 0건이라 사고는 없었지만,
+> "CHECK 가 바이어를 보장한다"고 믿고 코드를 짜면 **바이어 공란 서류가 조용히 나간다**
+> (board 서류 API 가 정확히 그 상태였다 → #60). **바이어 필수는 애플리케이션이 직접 검사해야 한다.**
+
+**원인**: 운영 MySQL CHECK `chk_sale_required = (sale_price=0 OR (sale_date NOT NULL AND exchange_rate>0))`. 판매가만 넣고 나머지 누락하면 INSERT/UPDATE 실패(4025).
+**해결**: 판매가 입력 시 sale_date·환율 항상 동반. (엑셀 일괄적재처럼 sale_date 없으면 선적일/구입일로 대체, 못 채우면 판매가 보류=매입만.)
+**🧭 교훈**: DB 제약을 문서에서 인용하지 말고 **`information_schema` 로 실측**할 것. 마이그레이션 파일과
+운영 스키마가 갈릴 수 있고(수기 ALTER·롤백 이력), 문서는 더 쉽게 갈린다.
 
 ### 26. mutating·열람 엔드포인트 재인가 누락 = IDOR (Review.md #3/#4, 2026-06-09)
 **원인**: 스코프 가드를 **읽기 진입(`openEdit`/`mount`)에서 1회만** 걸고, 변경 액션(`delete`/`save`)·문서 다운로드 컨트롤러·변조 가능 public 프로퍼티엔 재인가가 없던 안티패턴. Livewire public 프로퍼티(`editingId`·`$salesmanId`)와 라우트 `{id}`는 클라이언트가 직접 주입 가능 → 영업이 타 담당 차량 삭제/변조, 타인 차량 RRN 박힌 서류 다운로드(URL만 변경), 타 영업 자금현황 열람.
