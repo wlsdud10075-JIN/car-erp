@@ -117,11 +117,53 @@
 
 테스트 = `PurchaseSyncReceiverTest` v4 케이스(매도비 계좌 3필드 수신·암호화 저장·마스킹).
 
+## 연동 B v5 — 멱등 재전송에서 **빈 칸만 채우기** (fill-if-empty, 2026-08-18)
+
+> board 인계 ①. **contract_version 상향 없음** — v3 필드를 그대로 쓰고 **멱등 분기의 동작만** 바뀐다.
+> board 무변경으로 동작하며, 응답 필드 2개가 늘어난다(모르는 필드는 무시하면 됨).
+
+**왜**: 급한 차는 매입가만 넣고 판매가·통화·운임비 없이 보낸다. 나중에 판매가를 채워 재전송해도
+멱등 분기가 **첨부만 받고 금액은 통째로 무시**했다(위 v3 §7 "push-once"). 그 문을 **빈 칸에 한해서만** 연다.
+
+1. **대상** = `sale_price`·`sale_currency`·`sale_exchange_rate`·`transport_fee`·`buyer_id`·`consignee_id`.
+2. 🔒 **이미 값이 있으면 절대 안 덮는다** — 관리가 ERP 에서 고친 값이 board 재전송으로 되돌아가면
+   회계가 조용히 틀어진다. 스킵 사유 `already_set` 으로 응답에 남는다.
+3. **판매 3종 + `sale_date` 는 세트** — `chk_sale_required`(`sale_price>0` → `sale_date`·`exchange_rate>0`)
+   때문에 부분 기입은 CHECK 위반으로 죽고, board 는 200 만 보고 성공으로 기록한다.
+   환율이 없으면 **판매 세트를 통째로 보류**하고 `missing_exchange_rate` 를 돌려준다.
+4. ⚠️ **`sale_date` = 수신일**(`now()`). board 에 판매일 개념이 없고, **신규 생성 경로가 이미 그렇게 하고 있어**
+   두 경로를 맞춘 것이다. 정확한 날짜가 필요하면 관리가 ERP 에서 고친다.
+   ⚠️ **채권 유예 기산점이 이 날짜다** — 독촉이 이 날로부터 시작된다(선적 전 한정, `Setting::graceDays()`).
+5. ⚠️ **운임비는 판매통화 기준**(`transport_fee`). USD raw 컬럼(`transport_fee_usd`)과 다르다 —
+   USD 를 여기 넣으면 미수율 분모가 부풀어 게이트 판정이 틀어진다.
+6. **컨사이니는 차량의 바이어 하위일 때만** 붙인다. 아니면 `buyer_mismatch` 로 거절(서류가 조용히 틀리는 걸 막는다).
+7. **감사 귀속** — `buyer_id` 는 감사 대상 컬럼인데 HMAC 경로엔 세션이 없어 「시스템」으로 찍힌다.
+   `salesman_email` 로 User 를 찾아 `AuditLog::actingAs` 로 귀속시킨다(없으면 종전대로 null).
+
+**응답 추가 필드** (200 멱등 분기):
+
+```json
+{
+  "vehicle_id": 123,
+  "attachments_added": 0,
+  "attachments_failed": 0,
+  "fields_filled": ["sale_price", "sale_exchange_rate", "sale_currency", "sale_date"],
+  "fields_skipped": { "transport_fee": "already_set" }
+}
+```
+
+스킵 사유 = `already_set` · `missing_exchange_rate` · `invalid_or_inactive` · `buyer_mismatch` · `buyer_not_sent`.
+
+🚨 **board 는 200 만 보고 "반영됨"으로 기록하지 말 것** — `fields_filled` 가 비면 안 채워진 것이다.
+(첨부가 15건 조용히 실패했던 것과 같은 부류다. `attachments_failed` 를 응답에 실은 이유와 동일.)
+
+테스트 = `PurchaseSyncFillIfEmptyTest` 13케이스.
+
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|
 | 신규 생성 | 201 `{vehicle_id}` | car_erp_vehicle_id 채움 → VIN 잠금 |
-| 기존(멱등) | 200 `{vehicle_id}` | 동일 |
+| 기존(멱등) | 200 `{vehicle_id, fields_filled[], fields_skipped{}}` | 동일 + **채움 결과 반영**(아래 v5) |
 | HMAC 실패 | 401 | 영구실패 → integration_events 기록·알림 |
 | 검증/미지원 버전 | 422 | 영구실패(4xx) |
 | 서버 오류 | 5xx | **큐 재시도**(멱등이라 안전) |
