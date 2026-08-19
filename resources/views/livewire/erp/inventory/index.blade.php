@@ -265,7 +265,7 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function setLocation(int $vehicleId, string $location): void
     {
-        if ($location !== '' && ! in_array($location, Vehicle::STOCK_LOCATIONS, true)) {
+        if ($location !== '' && ! in_array($location, Vehicle::stockLocations(), true)) {
             return;   // 화이트리스트 밖 값은 무시
         }
         // draft 는 목록 렌더(inventoryVehicles) 때 DB 값으로 채워진다. 아직 안 채워진 차량(페이지 이동 직후 등)은
@@ -309,7 +309,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
             if (array_key_exists($v->id, $this->stockLocation)) {
                 $loc = trim((string) $this->stockLocation[$v->id]);
-                $loc = in_array($loc, Vehicle::STOCK_LOCATIONS, true) ? $loc : null;
+                $loc = in_array($loc, Vehicle::stockLocations(), true) ? $loc : null;
                 if ($loc !== $v->stock_location) {
                     $v->stock_location = $loc;
                     $dirty = true;
@@ -463,7 +463,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </select>
         {{-- 보관 위치 필터 (jin 2026-07-28) — 담당자 선택 후 위치를 눌러 좁힌다. 다시 누르면 해제. --}}
         <div class="flex items-center gap-1">
-            @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+            @foreach(\App\Models\Vehicle::stockLocations() as $loc)
                 <button type="button" wire:click="toggleLocationFilter('{{ $loc }}')"
                         class="rounded-full border px-2.5 py-1 text-xs {{ in_array($loc, $locationFilters, true) ? 'border-primary bg-primary-light font-semibold text-primary-text' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
                     {{ $loc }}
@@ -593,7 +593,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     {{-- 보관 위치 (jin 2026-07-28) — 버튼으로 찍고 옆칸에 비고. 저장은 출고일과 같은 「적용」. --}}
                     <td class="py-3 pr-4" @click.stop>
                         <div class="flex items-center gap-1">
-                            @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+                            @foreach(\App\Models\Vehicle::stockLocations() as $loc)
                                 @php $on = ($this->stockLocation[$v->id] ?? '') === $loc; @endphp
                                 <button type="button" wire:key="inv-loc-{{ $v->id }}-{{ $loc }}"
                                         wire:click="setLocation({{ $v->id }}, '{{ $loc }}')"
@@ -725,7 +725,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             <div class="mt-1.5 flex flex-wrap items-center gap-1 text-xs" @click.stop.prevent>
                 <span class="text-gray-500">{{ __('inventory.col_location') }}</span>
-                @foreach(\App\Models\Vehicle::STOCK_LOCATIONS as $loc)
+                @foreach(\App\Models\Vehicle::stockLocations() as $loc)
                     @php $onM = ($this->stockLocation[$v->id] ?? '') === $loc; @endphp
                     <button type="button" wire:key="inv-loc-m-{{ $v->id }}-{{ $loc }}"
                             wire:click="setLocation({{ $v->id }}, '{{ $loc }}')"

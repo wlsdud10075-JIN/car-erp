@@ -1321,7 +1321,10 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - **출고완료**(`category=shipped_out`, 2026-07-28) = `whereNotNull('warehouse_out_date')`. `inStock()` 과 배타적이라 스코프를 분기한다(매입완납 조건 없음 — 이미 재고를 떠난 차).
 
 ### 재고 보관위치 + 표시컬럼 (jin 2026-07-28)
-- **보관위치** = `vehicles.stock_location`(string 20, indexed) + `stock_location_note`. 값은 `Vehicle::STOCK_LOCATIONS = ['홈플','화물','야드']` — **enum 아님**(야적장은 늘어난다, §8 #4). 추가는 상수 한 줄이면 화면 버튼·필터가 함께 늘어난다.
+- **보관위치** = `vehicles.stock_location`(string 20, indexed) + `stock_location_note`. **enum 아님**(야적장은 늘어난다, §8 #4).
+  - 🏷️ **회사별로 다르다 — 단일 출처 = `Vehicle::stockLocations()`**(jin 2026-08-19). 공통 `['홈플','화물','야드']` / **karaba `['쇼링','항입고','야드']`**(`Setting::isKaraba()` 분기, `defaultPurchaseCosts()` 와 같은 패턴).
+  - 🚫 상수(`STOCK_LOCATIONS`)를 화면에서 **직접 참조하지 말 것** — 버튼·필터·저장 검증 중 한 곳만 상수를 보면 «버튼엔 있는데 저장이 안 되는» 형태로 갈린다. 가드 = `InventoryStockLocationTest::test_karaba_*`.
+  - ⚠️ 목록에서 값을 **빼는** 변경은 그 값이 이미 저장된 차량을 확인할 것(필터·표시에서 사라진다). 2026-08-19 karaba 전환 시엔 보관위치 보유 차량이 0대라 무영향이었다.
 - **저장은 출고일과 같은 「적용」 1회** (`applyWarehouseOut` — 이름은 출고일 시절 그대로). 즉시저장 아님 = 오클릭 방지 원칙 유지. 위치·비고·출고일이 한 트랜잭션.
 - ⚠️ **draft 폴백 필수**: 위치 draft(`stockLocation[$id]`)는 목록 렌더(`inventoryVehicles` computed)에서 DB 값으로 채워진다. 클릭 판정을 draft 만 보면 **2페이지 이후처럼 아직 안 채워진 차량에서 해제가 안 된다**(이미 '야드'인 차의 [야드]를 눌러도 다시 야드로 설정됨). 키가 없으면 DB 값을 조회해 판단할 것. **같은 구조의 draft 를 새로 만들 때도 동일 주의.**
 - **필터는 다중선택** — `#[Url(as:'loc')] array $locationFilters`. 고른 위치들의 OR + `'__none'`(미지정)도 함께 선택 가능. 전부 해제 = 전체.

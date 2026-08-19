@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -205,5 +206,53 @@ class InventoryStockLocationTest extends TestCase
             ->assertSet('locationFilters', ['야드'])
             ->call('toggleLocationFilter', '야드')
             ->assertSet('locationFilters', []);
+    }
+
+    // ── karaba 전용 보관위치 (jin 2026-08-19) — 홈플·화물 대신 쇼링·항입고. 야드는 공통. ──
+
+    private function asKaraba(): void
+    {
+        Setting::updateOrCreate(['key' => 'company_template_set'], ['value' => 'karaba', 'type' => 'string']);
+    }
+
+    public function test_karaba_profile_swaps_location_list(): void
+    {
+        $this->assertSame(['홈플', '화물', '야드'], Vehicle::stockLocations());
+
+        $this->asKaraba();
+        $this->assertSame(['쇼링', '항입고', '야드'], Vehicle::stockLocations());
+    }
+
+    /** 화면 버튼이 프로파일을 따라가야 한다 — 버튼과 저장 검증이 갈리면 "눌러도 안 먹는" 상태가 된다. */
+    public function test_karaba_screen_shows_new_buttons_only(): void
+    {
+        $this->asKaraba();
+        $this->stockVehicle('11가1001');
+        $this->admin();
+
+        Volt::test('erp.inventory.index')
+            ->assertSeeText('쇼링')
+            ->assertSeeText('항입고')
+            ->assertSeeText('야드')
+            ->assertDontSeeText('홈플')
+            ->assertDontSeeText('화물');
+    }
+
+    public function test_karaba_saves_new_location_and_rejects_retired_one(): void
+    {
+        $this->asKaraba();
+        $v = $this->stockVehicle('11가1001');
+        $this->admin();
+
+        Volt::test('erp.inventory.index')
+            ->call('setLocation', $v->id, '쇼링')
+            ->call('applyWarehouseOut');
+        $this->assertSame('쇼링', $v->fresh()->stock_location);
+
+        // 목록에서 빠진 값은 저장되지 않는다(클라이언트가 옛 값을 보내도).
+        Volt::test('erp.inventory.index')
+            ->call('setLocation', $v->id, '홈플')
+            ->call('applyWarehouseOut');
+        $this->assertSame('쇼링', $v->fresh()->stock_location);
     }
 }
