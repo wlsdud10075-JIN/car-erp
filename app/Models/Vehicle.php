@@ -1912,6 +1912,20 @@ class Vehicle extends Model
      */
     public const STOCK_LOCATIONS = ['홈플', '화물', '야드'];
 
+    /** karaba 전용 보관 위치 (jin 2026-08-19) — 홈플·화물 대신 쇼링·항입고. 야드는 공통. */
+    public const STOCK_LOCATIONS_KARABA = ['쇼링', '항입고', '야드'];
+
+    /**
+     * 회사 프로파일별 보관 위치 단일 출처 — karaba면 karaba 세트, 그 외 공통 세트.
+     *
+     * ⚠️ 화면 버튼·필터·저장 검증이 **모두 이걸** 봐야 한다. 한 곳만 상수를 직접 보면
+     *    "버튼엔 있는데 저장이 안 되는" 형태로 갈린다(SKILLS §8 #45 — 같은 목록의 복제).
+     */
+    public static function stockLocations(): array
+    {
+        return Setting::isKaraba() ? self::STOCK_LOCATIONS_KARABA : self::STOCK_LOCATIONS;
+    }
+
     /**
      * 재고 2분류 (jin 2026-07-18):
      *   일반재고(general)   = 재고 중 미판매(투기매입, 바이어 미정) = sale_price ≤ 0.
