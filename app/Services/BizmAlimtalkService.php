@@ -101,6 +101,19 @@ class BizmAlimtalkService
                     $item['items'] = $itemList['items'];
                 }
             }
+            // 📱 대체문자(LMS) — 알림톡이 실패하면 **BizM 이** 이 내용을 문자로 대신 보낸다(API §3.2).
+            //    우리가 실패를 감지해 재발송하는 게 아니라 요청에 얹어 두는 방식이라 추가 호출이 없다.
+            //    ⚠️ 발신번호가 비어 있으면 얹지 않는다 — 설정 전에 배포해도 무해하다(BizM 사전등록 필수).
+            //    ⚠️ SMS(90byte)로는 링크가 든 본문이 안 들어가므로 항상 LMS('L', 2000byte)로 보낸다.
+            if ($this->config->smsSender !== '' && in_array($code, AlimtalkTemplates::SMS_FALLBACK, true)) {
+                $item['smsKind'] = 'L';
+                $item['msgSms'] = $message;   // 알림톡과 같은 본문 — 문자는 승인 대상이 아니라 자유롭다.
+                $item['smsSender'] = $this->config->smsSender;
+                if ($title = AlimtalkTemplates::SMS_TITLE[$code] ?? '') {
+                    $item['smsLmsTit'] = mb_substr($title, 0, 30);
+                }
+            }
+
             // 웹링크 버튼(정산 승인 링크 등) — bizmsg 발송 API 형식.
             // ⚠️ bizmsg 발송 버튼 = button 배열이 아니라 button1~button5 개별 필드(각 JSON object),
             //    키 = name/type(WL)/url_mobile/url_pc (bizmsg 공식 안내 + 실측 K000, 2026-07-10).

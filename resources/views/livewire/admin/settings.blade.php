@@ -73,6 +73,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $alimtalkUserkeySet = false;
 
+    // 대체문자 발신번호 — 알림톡 실패 시 BizM 이 이 번호로 LMS 를 대신 보낸다(사전등록 필수).
+    public string $alimtalkSmsSender = '';
+
     public array $alimtalkTmplIds = [];                // code => BizM 템플릿ID
 
     public array $alimtalkToggles = [];                // code => bool (개별 on/off)
@@ -359,6 +362,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->alimtalkUserid = Setting::get("alimtalk_userid_{$set}", '') ?: '';
         $this->alimtalkProfile = Setting::get("alimtalk_profile_{$set}", '') ?: '';
         $this->alimtalkUserkeySet = (bool) Setting::get("alimtalk_userkey_{$set}");
+        $this->alimtalkSmsSender = Setting::get("alimtalk_sms_sender_{$set}", '') ?: '';
         $this->alimtalkUserkey = '';
         $this->alimtalkTmplIds = [];
         $this->alimtalkToggles = [];
@@ -383,6 +387,8 @@ new #[Layout('components.layouts.app')] class extends Component
         Setting::updateOrCreate(['key' => "alimtalk_enabled_{$set}"], ['value' => $this->alimtalkEnabled ? '1' : '0', 'type' => 'boolean', 'description' => "알림톡 사용 ({$set})"]);
         Setting::updateOrCreate(['key' => "alimtalk_userid_{$set}"], ['value' => $userid, 'type' => 'string', 'description' => "알림톡 BizM userid ({$set})"]);
         Setting::updateOrCreate(['key' => "alimtalk_profile_{$set}"], ['value' => $profile, 'type' => 'string', 'description' => "알림톡 발신프로필키 ({$set})"]);
+        // 숫자만 남긴다 — BizM 은 하이픈 없는 형태를 받는다.
+        Setting::updateOrCreate(['key' => "alimtalk_sms_sender_{$set}"], ['value' => preg_replace('/\D+/', '', $this->alimtalkSmsSender), 'type' => 'string', 'description' => "대체문자 발신번호 ({$set})"]);
 
         if ($newUserkey !== '') {
             Setting::updateOrCreate(
@@ -1100,6 +1106,22 @@ new #[Layout('components.layouts.app')] class extends Component
                 </label>
                 <input wire:model="alimtalkUserkey" type="password" class="input-base mt-1 w-full font-mono" autocomplete="new-password" />
                 <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.alimtalk_userkey_hint') }}</p>
+            </div>
+
+            {{-- 대체문자 발신번호 (jin 2026-08-20) — 비어 있으면 대체발송을 아예 요청하지 않는다. --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.alimtalk_sms_sender_label') }}</label>
+                <input wire:model="alimtalkSmsSender" type="text" class="input-base mt-1 w-full font-mono" autocomplete="off" placeholder="0212345678" />
+                <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.alimtalk_sms_sender_hint') }}</p>
+                @if (count(\App\Support\AlimtalkTemplates::SMS_FALLBACK) > 0)
+                    <p class="mt-1 text-[11px] text-gray-400">
+                        {{ __('feature_settings.alimtalk_sms_sender_targets', [
+                            'names' => collect(\App\Support\AlimtalkTemplates::SMS_FALLBACK)
+                                ->map(fn ($c) => \App\Support\AlimtalkTemplates::TEMPLATES[$c]['name'] ?? $c)
+                                ->implode(', '),
+                        ]) }}
+                    </p>
+                @endif
             </div>
 
             {{-- 11종 템플릿ID + 개별 on/off --}}

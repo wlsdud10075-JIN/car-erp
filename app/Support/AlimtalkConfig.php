@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Crypt;
  * - tmplIds   : 11종 템플릿의 BizM 발급 코드. 코드별로 있어야 해당 알림 발송 가능.
  * - enabled   : 회사 마스터 on/off (배포 ≠ 작동 — 기본 off).
  * - toggles   : 알림 11종 개별 on/off (기본 on).
+ * - smsSender : 대체문자 발신번호 — 알림톡이 실패하면 BizM 이 이 번호로 SMS/LMS 를 대신 보낸다.
+ *               ⚠️ BizM 콘솔에 **사전 등록·승인된 번호**여야 한다(API v2.29.5 §3.2).
+ *               비어 있으면 대체발송을 요청하지 않는다 — 설정 전 배포해도 무해하다.
  */
 class AlimtalkConfig
 {
@@ -31,6 +34,8 @@ class AlimtalkConfig
         // false(기본)=기본형 평문 발송 / true=아이템리스트형 9종에 header+items payload 발송.
         // 프로필 교체와 함께 켜야 안전(옛 기본형 프로필에 item-list payload 쏘면 형식불일치 반려).
         public bool $itemlist = false,
+        // 대체문자 발신번호(BizM 등록본). 비면 대체발송을 요청하지 않는다.
+        public string $smsSender = '',
     ) {}
 
     public static function active(): self
@@ -40,6 +45,7 @@ class AlimtalkConfig
         $profile = (string) (Setting::get("alimtalk_profile_{$set}", '') ?: '');
         $enabled = (bool) Setting::get("alimtalk_enabled_{$set}", false);
         $itemlist = (bool) Setting::get("alimtalk_itemlist_{$set}", false);
+        $smsSender = preg_replace('/\D+/', '', (string) (Setting::get("alimtalk_sms_sender_{$set}", '') ?: ''));
 
         $userkey = null;
         if ($enc = Setting::get("alimtalk_userkey_{$set}")) {
@@ -57,7 +63,7 @@ class AlimtalkConfig
             $toggles[$code] = (bool) Setting::get("alimtalk_toggle_{$code}_{$set}", true);   // 기본 켜짐
         }
 
-        return new self($set, $userid, $profile, $userkey, $enabled, $tmplIds, $toggles, $itemlist);
+        return new self($set, $userid, $profile, $userkey, $enabled, $tmplIds, $toggles, $itemlist, $smsSender);
     }
 
     /** 발송 계정 설정 여부 — userid + profile 필수(userkey 는 잔액조회 전용이라 발송엔 불필요). */
