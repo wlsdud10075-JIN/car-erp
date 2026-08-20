@@ -590,11 +590,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 결제대기(유예) — 잔금은 남았지만 판매일+유예일 미경과. 채권 총액에선 빠지지만 행방은 보여야 한다.
             'grace' => $q->where('sale_unpaid_amount_krw_cache', '>', 0)->onlyReceivableGrace(),
 
-            // 미수 분류 — pivot=출고일 (jin 2026-07-18). 선적전=출고 전(항구 대기), 선적후=출항.
-            'before_shipping' => $q->whereNull('warehouse_out_date')
+            // 미수 분류 — pivot=「이미 떠났나」 = 출고일 또는 B/L (jin 2026-07-18 → 08-20).
+            //   ⚠️ 조건을 여기 옮겨 적지 말 것 — Vehicle::scopeDeparted/notDeparted 단일 출처(SKILLS §8 #45).
+            'before_shipping' => $q->notDeparted()
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->excludeReceivableGrace(),
-            'after_shipping' => $q->whereNotNull('warehouse_out_date')
+            'after_shipping' => $q->departed()
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
             'deposit' => $q->where('savings_used', '>', 0),

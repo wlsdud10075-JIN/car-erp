@@ -78,27 +78,25 @@ class AlimtalkWeeklySummary extends Command
         $beforeSum = (int) (clone $beforeQ)->sum('sale_unpaid_amount_krw_cache');
         $afterSum = (int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache');
 
-        // 비중 % — 일일 요약과 **같은 규칙**(미수 총액 대비 구성비, jin 2026-08-20).
-        //   한쪽만 고치면 금요일 숫자와 월요일 숫자가 어긋난다. 상세 = AlimtalkDailySummary 주석.
-        //   본문은 정확한 원 단위, 카드는 억 단위 축약 — 카드 description 20자 컷 때문(SKILLS §8 #35).
-        $unpaidTotal = $beforeSum + $afterSum;
-        $share = fn (int $part): ?float => $unpaidTotal > 0 ? round($part / $unpaidTotal * 100, 1) : null;
-        $beforePct = $share($beforeSum);
-        $afterPct = $share($afterSum);
-        $pct = fn (?float $p): string => $p === null ? '' : ' ('.$p.'%)';
+        // % 는 **채권 현황(erp_receivable_status)과 같은 분모**를 쓴다 (jin 2026-08-20).
+        //   분모 = 미수로 잡힌 차의 판매총액. 각자 계산하면 금요일 % 와 매일 % 가 갈려서
+        //   같은 항목인데 알림톡마다 다른 숫자가 찍힌다 → `shareBase()` 단일 출처(SKILLS §8 #45).
+        //   본문은 원 단위, 카드는 억 단위 축약 — 카드 description 20자 컷 때문(SKILLS §8 #35).
+        [$denomKrw] = AlimtalkReceivableStatus::shareBase();
+        $pct = fn (int $part): string => AlimtalkReceivableStatus::sharePct($part, $denomKrw);
 
         return [
             '주간' => $start->format('Y-m-d').' ~ '.$end->format('m-d'),
             '판매건수' => number_format($saleCount),
             '매출액' => number_format($revenue).'원',
             '선적전건수' => number_format((clone $beforeQ)->count()),
-            '선적전금액' => number_format($beforeSum).'원'.$pct($beforePct),
+            '선적전금액' => number_format($beforeSum).'원'.$pct($beforeSum),
             '선적후건수' => number_format((clone $afterQ)->count()),
-            '선적후금액' => number_format($afterSum).'원'.$pct($afterPct),
+            '선적후금액' => number_format($afterSum).'원'.$pct($afterSum),
             '담당자실적' => $perSalesman,
             AlimtalkTemplates::CARD_VARS_KEY => [
-                '선적전금액' => AlimtalkTemplates::cardMoney($beforeSum).$pct($beforePct),
-                '선적후금액' => AlimtalkTemplates::cardMoney($afterSum).$pct($afterPct),
+                '선적전금액' => AlimtalkTemplates::cardMoney($beforeSum).$pct($beforeSum),
+                '선적후금액' => AlimtalkTemplates::cardMoney($afterSum).$pct($afterSum),
             ],
         ];
     }
