@@ -875,7 +875,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ number_format((float)$p->amount, 0) }} <span class="text-[10px] text-gray-500">{{ __('transfer.unit_won') }}</span>
                     </td>
                     <td class="py-3 pr-4 text-xs text-gray-600">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</td>
-                    <td class="py-3 pr-4 text-xs text-gray-500 max-w-xs truncate">{{ $p->note ?? '' }}</td>
+                    <td class="py-3 pr-4 text-xs text-gray-500 max-w-xs truncate" title="{{ $p->note ?? '' }}">{{ $p->note ?? '' }}</td>
                     <td class="py-3 pr-4">
                         @if($isAwaiting)
                         <span class="badge badge-amber">{{ __('transfer.pending') }}</span>

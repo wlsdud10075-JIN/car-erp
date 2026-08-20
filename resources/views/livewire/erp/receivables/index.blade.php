@@ -977,14 +977,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span>
                     </div>
                     @if($v->nice_reg_vin)
-                    <span class="block truncate font-mono text-[11px] text-gray-400">{{ $v->nice_reg_vin }}</span>
+                    <span class="block truncate font-mono text-[11px] text-gray-400" title="{{ $v->nice_reg_vin }}">{{ $v->nice_reg_vin }}</span>
                     @endif
                 </div>
                 <span class="badge {{ $riskBadge }} shrink-0">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span>
             </div>
             {{-- 중간: 바이어 + 담당자 --}}
             <div class="mt-1 flex items-center justify-between gap-2 text-xs text-gray-500">
-                <span class="truncate">{{ $primaryBuyer?->name ?? __('receivable.buyer_none') }}</span>
+                <span class="truncate" title="{{ $primaryBuyer?->name }}">{{ $primaryBuyer?->name ?? __('receivable.buyer_none') }}</span>
                 <span>{{ $v->salesman?->name ?? '-' }}</span>
             </div>
             {{-- 하단: 미납금 + 미납률 --}}

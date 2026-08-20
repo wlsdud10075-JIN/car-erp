@@ -1300,7 +1300,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     @if(empty($f['backs']))<span class="text-gray-300">—</span>@endif
                                 @endif
                             </td>
-                            <td class="py-1.5 text-gray-400 max-w-[120px] truncate">{{ $t['note'] }}</td>
+                            {{-- 메모가 길면 잘리는데 호버해도 안 보였다(jin 2026-08-20).
+                                 title 은 브라우저가 그려서 **슬라이드 패널 밖으로도 안 잘린다** —
+                                 CSS 툴팁(absolute)을 쓰면 패널 overflow 에 갇힌다. --}}
+                            <td class="py-1.5 text-gray-400 max-w-[120px] truncate" title="{{ $t['note'] }}">{{ $t['note'] }}</td>
                             <td class="py-1.5 pl-2">
                                 @if($t['transaction_type'] !== 'CANCELLED')
                                 <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"

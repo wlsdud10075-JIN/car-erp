@@ -466,7 +466,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @else
                         <span class="h-2 w-2 shrink-0 rounded-full border-2 bg-white" style="border-color: {{ $it['color'] }};"></span>
                         @endif
-                        <span class="truncate text-[10px] text-gray-600">{{ $it['label'] }}</span>
+                        <span class="truncate text-[10px] text-gray-600" title="{{ $it['label'] }}">{{ $it['label'] }}</span>
                     </div>
                     @endforeach
                     @if(count($d['items']) > 4)
