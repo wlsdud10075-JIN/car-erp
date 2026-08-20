@@ -34,7 +34,8 @@ $COMPANIES = [
     ['카라바확정알림톡', '카라바'],
 ];
 const ITEM_COLS = ['R', 'T', 'V', 'X', 'Z', 'AB', 'AD', 'AF', 'AH', 'AJ'];
-const JUNK_COLS = ['AN', 'AO', 'AT', 'AU', 'AZ', 'BA', 'BF', 'BG', 'BL', 'BM'];
+/** 값이 들어가도 되는 열 — 이 밖이 하나라도 차 있으면 BizM 이 「오입력 N행」으로 거부한다. */
+const KEEP_COLS = ['A', 'B', 'C', 'D', 'E', 'H', 'I', 'J', 'N', 'O', 'P', 'AL', 'AM'];
 
 $fail = 0;
 foreach ($COMPANIES as [$dir, $label]) {
@@ -99,8 +100,18 @@ foreach ($COMPANIES as [$dir, $label]) {
             $checks['아이템'.($i + 1).'T'] = [$g($c), $card['items'][$i]['title'] ?? ''];
             $checks['아이템'.($i + 1).'D'] = [$g($next), $card['items'][$i]['description'] ?? ''];
         }
-        foreach (JUNK_COLS as $c) {
-            $checks['잔재'.$c] = [$g($c), ''];
+        // 화이트리스트 밖 열은 전부 비어 있어야 한다 — 실제로 K·L(강조표기 문구) 잔재로 7행이 거부됐다.
+        $keep = KEEP_COLS;
+        foreach (ITEM_COLS as $c) {
+            $n = $c;
+            $n++;
+            $keep[] = $c;
+            $keep[] = $n;
+        }
+        for ($col = 'A'; $col !== 'EE'; $col++) {
+            if (! in_array($col, $keep, true) && $g($col) !== '') {
+                $checks['잔재 '.$col] = [$g($col), ''];
+            }
         }
 
         $bad = [];

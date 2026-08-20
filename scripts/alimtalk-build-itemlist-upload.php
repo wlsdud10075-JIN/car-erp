@@ -61,8 +61,17 @@ $COMPANIES = [
 /** 아이템 N(0-based)의 타이틀 열. 설명은 그 다음 열. */
 const ITEM_COLS = ['R', 'T', 'V', 'X', 'Z', 'AB', 'AD', 'AF', 'AH', 'AJ'];
 
-/** 샘플 6행에 박혀 있는 버튼·링크·미리보기 잔재 — 안 지우면 엉뚱한 버튼이 함께 등록된다. */
-const JUNK_COLS = ['AN', 'AO', 'AT', 'AU', 'AZ', 'BA', 'BF', 'BG', 'BL', 'BM', 'DZ', 'ED'];
+/**
+ * 우리가 값을 넣는 열 — **이 목록 밖의 모든 열은 비운다**.
+ *
+ * ⚠️ 잔재 열을 손으로 나열하면 안 된다 — 샘플은 **행마다 예시가 다르다**(실측):
+ *   6행 AO·AU·BA·BG·BM / 7행 거기에 **K·L(강조표기 문구)** 추가 / 9·10행 수십 개 / 17행 카드 전체…
+ *   실제로 K·L 을 안 비워 7행이 BizM 업로드에서 「오입력 7행」으로 거부됐다(jin 2026-08-20).
+ *   그래서 화이트리스트로 뒤집는다. 코드를 몇 행에 넣든 안전하다.
+ *
+ * H(보안 여부)는 샘플 값을 그대로 둔다 — 문자열이 아니라 불린이라 손대면 형식이 깨진다.
+ */
+const KEEP_COLS = ['A', 'B', 'C', 'D', 'E', 'H', 'I', 'J', 'N', 'O', 'P', 'AL', 'AM'];
 
 /** 코드 → 그 행에 쓸 값 배열. null = 그 칸을 비운다. */
 function rowValues(string $code, string $profile): array
@@ -117,8 +126,18 @@ function rowValues(string $code, string $profile): array
         $v[$c] = $card['items'][$i]['title'] ?? null;
         $v[$next] = $card['items'][$i]['description'] ?? null;
     }
-    foreach (JUNK_COLS as $c) {
-        $v[$c] = null;
+    // 쓰는 열 밖은 전부 비운다 — 행마다 다른 샘플 예시(버튼·강조문구·미리보기)를 싹 제거한다.
+    $keep = KEEP_COLS;
+    foreach (ITEM_COLS as $c) {
+        $n = $c;
+        $n++;
+        $keep[] = $c;
+        $keep[] = $n;
+    }
+    for ($col = 'A'; $col !== 'EE'; $col++) {
+        if (! in_array($col, $keep, true)) {
+            $v[$col] = null;
+        }
     }
 
     return $v;
@@ -169,6 +188,9 @@ foreach ($COMPANIES as [$dir, $label, $profile]) {
         foreach (rowValues($code, $profile) as $col => $value) {
             $re = '/<c r="'.$col.$row.'"([^>]*?)(\/>|>.*?<\/c>)/s';
             if (! preg_match($re, $new, $cm)) {
+                if ($value === null) {
+                    continue;   // 원래 없는 칸 = 이미 비어 있다(비우려던 것이므로 정상)
+                }
                 fwrite(STDERR, "❌ 셀 {$col}{$row} 이 없다 — 샘플 열 배치가 바뀌었는지 4·5행을 대조할 것\n");
                 exit(1);
             }
