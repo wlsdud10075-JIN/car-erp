@@ -610,8 +610,6 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function receivableKpis(): array
     {
-        $col = $this->dateColumn();
-
         // 미수금 차량 — sale_unpaid_amount_krw_cache > 0 (NULL은 환율 미입력 외화 → 제외)
         $bySalesman = [];
         $byBuyer = [];
@@ -629,8 +627,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
             // 결제대기(grace) 제외 — 채권 KPI(총미수·담당자별·바이어별·선적전/후 분류) 전부 grace 미포함 (jin 2026-07-06).
             ->excludeReceivableGrace()
-            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            // 🚫 기간 필터를 걸지 않는다 (jin 2026-08-20). 미수는 "지금 못 받고 있는 돈"(재고)이라
+            //    기간으로 자를 대상이 아니다. 기본값이 매입일 2개월이라 **대표가 아침에 받는 알림톡(23건 2.50억)과
+            //    본인 화면(9건 1.74억)이 2.5배 어긋나 있었다** — jin 이 "아무리 조회해도 그 수치가 안 나온다" 고 한 원인.
+            //    매출·판매 통계(kpis·차트)는 종전대로 기간을 탄다 — 그건 흐름이라 기간이 의미가 있다.
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
                 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
                 'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache',
@@ -685,16 +685,14 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
             ->onlyReceivableGrace()
-            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
+            // 기간 필터 없음 — 총미수와 짝이 맞아야 "총미수 + 결제대기" 가 화면에서 닫힌다 (jin 2026-08-20).
             ->selectRaw('COUNT(*) as cnt, SUM(sale_unpaid_amount_krw_cache) as total_unpaid')
             ->first();
 
         // 큐 10 확장 — 디파짓(savings_used > 0)은 별도 query (sale_unpaid 무관, 적립금 사용 차량 모두).
         $depositStats = Vehicle::query()
+            // 채권 탭은 통째로 '현재 상태' 라 기간을 안 탄다 — 채권관리 화면의 같은 탭과 숫자가 맞아야 한다.
             ->where('savings_used', '>', 0)
-            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo))
             ->selectRaw('COUNT(*) as cnt, SUM(savings_used) as total_used')
             ->first();
         $classification['deposit'] = [
@@ -704,9 +702,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 매입취소 (jin 2026-07-18) — 진행(cancelled)·마감(cancelled_closed) 카운트. DB 3-tier 안전한 단순 count.
         $cancelBase = fn () => Vehicle::query()
-            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
-            ->when($this->dateFrom, fn ($q) => $q->where($col, '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where($col, '<=', $this->dateTo));
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids));
         $cancelActive = (int) $cancelBase()->where('cancel_status', Vehicle::CANCEL_ACTIVE)->count();
         $cancelClosed = (int) $cancelBase()->where('cancel_status', Vehicle::CANCEL_CLOSED)->count();
 
@@ -1385,6 +1381,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 큐 4 8-6 — 채권 탭. 위험도 카운트 + 담당자/바이어 TOP 10 + receivables 화면 링크 --}}
     <div x-show="activeTab === 'receivable'" class="space-y-4">
+        {{-- 화면 위 날짜 필터가 채권 탭엔 안 걸린다는 걸 명시 (jin 2026-08-20).
+             안 적으면 "기간을 바꿔도 숫자가 그대로" 를 버그로 읽는다 — 반대로 예전엔 기간이 걸려서
+             대표 알림톡과 2.5배 어긋나 있었다. --}}
+        <p class="text-[11px] text-gray-400">{{ __('admin_dash.recv_period_note') }}</p>
+
         {{-- 총 미수금 + 위험도 카운트 5개 — flex-wrap (Tailwind 빌드 누락 대비) --}}
         <div class="flex flex-wrap gap-3">
             <div class="card min-w-[180px] flex-1 border-red-200 bg-red-50/30">
