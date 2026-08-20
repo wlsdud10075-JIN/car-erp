@@ -1,207 +1,227 @@
 <?php
 
 /**
- * 아이템리스트형 알림톡 BizM 등록 xlsx 생성 (jin 2026-08-20).
+ * BizM 템플릿 등록 xlsx 생성기 — **아이템리스트형** (jin 2026-08-20).
  *
- * 기본형 전용인 `alimtalk-build-upload.php` 의 아이템리스트 판(그 스크립트는 카드 열 N~AM 을 안 채운다).
- * 코드의 `AlimtalkTemplates::TEMPLATES` + `ITEMLIST` 를 **단일 출처**로 삼아 3사 등록본을 만든다.
+ * `alimtalk-build-upload.php`(기본형 전용)의 아이템리스트 판. zip 패치 방식은 **그대로 계승**한다.
  *
- * 🧩 방식 = **기존 승인본 복제 + 행 치환/추가**.
- *   BizM 업로드 양식은 970행짜리 가이드·드롭다운·서식이 들어 있어 새로 만들면 거부된다
- *   (§12-B 의 그 실패). 그래서 승인본을 열어 대상 행만 손대고 저장한다.
+ * 사용법:  php scripts/alimtalk-build-itemlist-upload.php <코드> [<코드>...]
+ * 예)      php scripts/alimtalk-build-itemlist-upload.php erp_receivable_status erp_daily_summary
  *
- * 사용법:
- *   php scripts/alimtalk-build-itemlist-upload.php <코드> [<코드>...] [--apply]
- *     --apply 없으면 dry-run(무엇이 바뀔지만 출력)
+ * 출력:    Desktop\알림톡\{회사}확정알림톡\upload_erp_{회사}_아이템리스트_신규.xlsx  (3사)
+ *          → **인자로 준 코드만** 들어간다. 승인본 전체를 복제하지 않으므로 나머지 20종이
+ *            같이 재등록되는 일이 없다(jin 지적).
  *
- * 결과: Desktop/알림톡/{회사}확정알림톡/upload_erp_{회사}_{코드}_신규.xlsx
- *   기존 행이 있으면 **그 행을 그대로 옮겨 적어** 변경 등록으로, 없으면 맨 뒤에 신규 행으로 넣는다.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 🚨 **왜 zip 을 손으로 패치하는가** (2026-08-11 두 번 실패 후 확립 — docs §12-B)
  *
- * 열 매핑(실측, 4행 헤더 기준):
- *   A 프로필ID / B 템플릿코드 / C 템플릿명 / D 메시지유형(BA) / E 본문 / H 보안(FALSE)
- *   I 카테고리코드 / J 강조유형(아이템리스트형) / N 헤더 / O·P 하이라이트(타이틀·설명)
- *   R·S / T·U / V·W / X·Y / Z·AA … 아이템 1~10(타이틀·설명) / AL·AM 요약(타이틀·설명)
+ *  1. ❌ PhpSpreadsheet/openpyxl 로 load→save 하면 컨테이너가 통째로 재작성된다
+ *     (`[Content_Types].xml`·`docProps`·rels·문자열 저장방식) → BizM 업로더가 **"양식이 다릅니다"** 로 거부.
+ *  2. ❌ 기존 `{회사}확정알림톡` xlsx 를 베이스로 삼아도 안 된다 — 그것들도 openpyxl 산출물이다.
+ *  3. ✅ 베이스는 **BizM 콘솔에서 받은 공식 샘플**(`upload_sample_v2.xlsx`, 진짜 엑셀 산출물).
+ *     zip 엔트리를 **바이트 그대로** 두고 `xl/worksheets/sheet1.xml` + `xl/sharedStrings.xml`
+ *     **두 개만** 고친다.
+ *
+ * ⚠️ 문구는 `AlimtalkTemplates` 상수에서 읽는다 — 손으로 옮기면 띄어쓰기가 어긋나 발송이 반려된다.
+ * ⚠️ 샘플이 갱신되면(`_v3` 등) 4·5행 헤더 배치를 **먼저 대조**할 것.
+ *
+ * 열 매핑(실측, 승인본 4행 헤더 기준):
+ *   A 프로필ID / B 코드 / C 템플릿명 / D 메시지유형(BA) / E 본문 / I 카테고리 / J 강조유형
+ *   N 헤더 / O·P 하이라이트 / R·S T·U V·W X·Y Z·AA AB·AC AD·AE AF·AG AH·AI AJ·AK 아이템1~10 / AL·AM 요약
  */
-
 require __DIR__.'/../vendor/autoload.php';
 
 use App\Support\AlimtalkTemplates;
 use Illuminate\Contracts\Console\Kernel;
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-$args = array_slice($argv, 1);
-$apply = in_array('--apply', $args, true);
-$codes = array_values(array_filter($args, fn ($a) => ! str_starts_with($a, '--')));
-
-if (! $codes) {
-    fwrite(STDERR, "사용법: php scripts/alimtalk-build-itemlist-upload.php <코드> [<코드>...] [--apply]\n");
+$CODES = array_values(array_filter(array_slice($argv, 1), fn ($a) => ! str_starts_with($a, '--')));
+if (! $CODES) {
+    fwrite(STDERR, "사용법: php scripts/alimtalk-build-itemlist-upload.php <코드> [<코드>...]\n");
+    fwrite(STDERR, '아이템리스트형 코드: '.implode(', ', array_keys(AlimtalkTemplates::ITEMLIST))."\n");
+    exit(1);
+}
+if (count($CODES) > 16) {
+    fwrite(STDERR, "❌ 샘플 데이터 행은 6~21행(16개)뿐이다 — 코드를 나눠서 실행할 것\n");
     exit(1);
 }
 
-/** 회사 폴더·파일명 — 실측 경로. */
-const TENANTS = [
-    ['dir' => '싼카확정알림톡', 'name' => '싼카'],
-    ['dir' => '헤이맨확정알림톡', 'name' => '헤이맨'],
-    ['dir' => '카라바확정알림톡', 'name' => '카라바'],
+$BASE = 'C:/Users/User/Desktop/알림톡';
+$SAMPLE = $BASE.'/upload_sample_v2.xlsx';
+
+/** 회사별 발신프로필(플러스친구 아이디) — 등록본에서 확인한 값. */
+$COMPANIES = [
+    ['헤이맨확정알림톡', '헤이맨', '@heyman_con'],
+    ['싼카확정알림톡', '싼카', '@site_condition'],
+    ['카라바확정알림톡', '카라바', '@주식회사카라바'],
 ];
-const DESKTOP = 'C:/Users/User/Desktop/알림톡';
 
-/** 아이템 N 의 타이틀 열 (1~10). 실측: R T V X Z AB AD AF AH AJ */
-function itemCol(int $i): string
+/** 아이템 N(0-based)의 타이틀 열. 설명은 그 다음 열. */
+const ITEM_COLS = ['R', 'T', 'V', 'X', 'Z', 'AB', 'AD', 'AF', 'AH', 'AJ'];
+
+/** 샘플 6행에 박혀 있는 버튼·링크·미리보기 잔재 — 안 지우면 엉뚱한 버튼이 함께 등록된다. */
+const JUNK_COLS = ['AN', 'AO', 'AT', 'AU', 'AZ', 'BA', 'BF', 'BG', 'BL', 'BM', 'DZ', 'ED'];
+
+/** 코드 → 그 행에 쓸 값 배열. null = 그 칸을 비운다. */
+function rowValues(string $code, string $profile): array
 {
-    $cols = ['R', 'T', 'V', 'X', 'Z', 'AB', 'AD', 'AF', 'AH', 'AJ'];
-
-    return $cols[$i] ?? throw new RuntimeException('아이템은 최대 10개다');
-}
-
-/** 열 문자 +1 (R → S, AB → AC) */
-function nextCol(string $c): string
-{
-    $c++;
-
-    return $c;
-}
-
-$fail = 0;
-foreach ($codes as $code) {
-    $tpl = AlimtalkTemplates::TEMPLATES[$code] ?? null;
+    $t = AlimtalkTemplates::TEMPLATES[$code] ?? null;
     $card = AlimtalkTemplates::ITEMLIST[$code] ?? null;
-    if (! $tpl) {
-        fwrite(STDERR, "❌ {$code}: TEMPLATES 에 없다\n");
-        $fail++;
-
-        continue;
-    }
-    if (! $card) {
-        fwrite(STDERR, "❌ {$code}: ITEMLIST 에 없다 — 기본형은 alimtalk-build-upload.php 를 쓸 것\n");
-        $fail++;
-
-        continue;
+    if (! $t || ! $card) {
+        fwrite(STDERR, "❌ {$code}: 아이템리스트형이 아니다 — 기본형은 alimtalk-build-upload.php 를 쓸 것\n");
+        exit(1);
     }
 
-    // 규격 사전 검사 — 카카오 반려 조건(SKILLS §8 #40)
+    // 규격 사전 검사 — 카카오 반려 조건(SKILLS §8 #40). 여기서 걸러야 등록 후에 안 튕긴다.
     $errs = [];
     if (mb_strlen($card['header']) > 16) {
-        $errs[] = "헤더 {$card['header']} 가 16자 초과";
+        $errs[] = "헤더 '{$card['header']}' 16자 초과";
     }
     foreach ($card['items'] as $i => $it) {
         if (mb_strlen($it['title']) > 6) {
-            $errs[] = '아이템'.($i + 1)." 타이틀 '{$it['title']}' 가 6자 초과";
+            $errs[] = '아이템'.($i + 1)." 타이틀 '{$it['title']}' 6자 초과";
         }
     }
     if (isset($card['summary']) && mb_strlen($card['summary']['title']) > 6) {
-        $errs[] = "요약 타이틀 '{$card['summary']['title']}' 가 6자 초과";
+        $errs[] = "요약 타이틀 '{$card['summary']['title']}' 6자 초과";
     }
     if (count($card['items']) < 2 || count($card['items']) > 10) {
-        $errs[] = '아이템은 2~10개여야 한다 (현재 '.count($card['items']).')';
+        $errs[] = '아이템은 2~10개 (현재 '.count($card['items']).')';
+    }
+    foreach ($errs as $e) {
+        fwrite(STDERR, "❌ {$code}: {$e}\n");
     }
     if ($errs) {
-        foreach ($errs as $e) {
-            fwrite(STDERR, "❌ {$code}: {$e}\n");
-        }
-        $fail++;
-
-        continue;
+        exit(1);
     }
 
-    echo "\n━━ {$code} ({$tpl['name']}) ━━\n";
+    $v = [
+        'A' => $profile,
+        'B' => $code,
+        'C' => $t['name'],
+        'E' => $t['body'],
+        'I' => '008002',                 // 대표 보고류 카테고리 — 기존 등록본 전부 이 값
+        'J' => '아이템리스트형',
+        'N' => $card['header'],
+        'O' => $card['highlight']['title'],
+        'P' => $card['highlight']['description'],
+        'AL' => $card['summary']['title'] ?? null,
+        'AM' => $card['summary']['description'] ?? null,
+    ];
+    // 아이템 1~10 — 쓰는 만큼 채우고 **나머지는 명시적으로 비운다**(샘플 잔재 제거).
+    foreach (ITEM_COLS as $i => $c) {
+        $next = $c;
+        $next++;
+        $v[$c] = $card['items'][$i]['title'] ?? null;
+        $v[$next] = $card['items'][$i]['description'] ?? null;
+    }
+    foreach (JUNK_COLS as $c) {
+        $v[$c] = null;
+    }
 
-    foreach (TENANTS as $t) {
-        $src = DESKTOP."/{$t['dir']}/upload_erp_{$t['name']}_아이템리스트.xlsx";
-        if (! file_exists($src)) {
-            echo "  {$t['name']}: 승인본 없음 — skip ({$src})\n";
+    return $v;
+}
 
-            continue;
-        }
+$xmlEscape = fn (string $s): string => str_replace(['&', '<', '>'], ['&amp;', '&lt;', '&gt;'], $s);
 
-        $ss = IOFactory::load($src);
-        $w = $ss->getActiveSheet();
+foreach ($COMPANIES as [$dir, $label, $profile]) {
+    $outPath = "$BASE/$dir/upload_erp_{$label}_아이템리스트_신규.xlsx";
 
-        // 이 코드의 기존 행 찾기 (없으면 맨 뒤 다음 행)
-        $row = null;
-        $last = 5;
-        for ($r = 6; $r <= 300; $r++) {
-            $b = trim((string) $w->getCell('B'.$r)->getValue());
-            if ($b === '') {
+    $zin = new ZipArchive;
+    if ($zin->open($SAMPLE) !== true) {
+        fwrite(STDERR, "❌ 공식 샘플을 못 연다: $SAMPLE\n");
+        exit(1);
+    }
+    $sheet = $zin->getFromName('xl/worksheets/sheet1.xml');
+    $strings = $zin->getFromName('xl/sharedStrings.xml');
+    if ($sheet === false || $strings === false) {
+        fwrite(STDERR, "❌ sheet1.xml / sharedStrings.xml 이 없다 — 샘플이 바뀌었는지 확인할 것\n");
+        exit(1);
+    }
+
+    // ── ① 새 문자열을 sharedStrings 끝에 붙이고 인덱스를 받는다 ──────────────
+    $siCount = preg_match_all('/<si>/', $strings);
+    $append = '';
+    $index = [];   // [행번호][열] => si 인덱스
+    foreach ($CODES as $n => $code) {
+        $row = 6 + $n;
+        foreach (rowValues($code, $profile) as $col => $value) {
+            if ($value === null) {
                 continue;
             }
-            $last = $r;
-            if ($b === $code) {
-                $row = $r;
+            $index[$row][$col] = $siCount + count($index, COUNT_RECURSIVE) - count($index);
+            $append .= '<si><t xml:space="preserve">'.$xmlEscape($value).'</t></si>';
+        }
+    }
+    $strings = str_replace('</sst>', $append.'</sst>', $strings);
+
+    // ── ② 각 행의 셀 교체 ────────────────────────────────────────────────
+    foreach ($CODES as $n => $code) {
+        $row = 6 + $n;
+        if (! preg_match('/<row r="'.$row.'"[^>]*>.*?<\/row>/s', $sheet, $m)) {
+            fwrite(STDERR, "❌ {$row}행을 못 찾았다 — 샘플이 바뀌었는지 확인할 것\n");
+            exit(1);
+        }
+        $orig = $m[0];
+        $new = $orig;
+        foreach (rowValues($code, $profile) as $col => $value) {
+            $re = '/<c r="'.$col.$row.'"([^>]*?)(\/>|>.*?<\/c>)/s';
+            if (! preg_match($re, $new, $cm)) {
+                fwrite(STDERR, "❌ 셀 {$col}{$row} 이 없다 — 샘플 열 배치가 바뀌었는지 4·5행을 대조할 것\n");
+                exit(1);
             }
+            preg_match('/\ss="\d+"/', $cm[1], $sm);   // 스타일 보존
+            $style = $sm[0] ?? '';
+            $new = str_replace($cm[0], $value === null
+                ? '<c r="'.$col.$row.'"'.$style.'/>'
+                : '<c r="'.$col.$row.'"'.$style.' t="s"><v>'.$index[$row][$col].'</v></c>', $new);
         }
-        $isNew = $row === null;
-        $row ??= $last + 1;
-        $profile = trim((string) $w->getCell('A6')->getValue());
+        $sheet = str_replace($orig, $new, $sheet);
+    }
 
-        // ── 값 구성 ───────────────────────────────────────────────
-        $set = [
-            'A' => $profile,
-            'B' => $code,
-            'C' => $tpl['name'],
-            'D' => 'BA',                       // 아이템리스트형 메시지유형
-            'E' => $tpl['body'],
-            'H' => 'FALSE',
-            'I' => trim((string) $w->getCell('I6')->getValue()) ?: '008002',
-            'J' => '아이템리스트형',
-            'N' => $card['header'],
-            'O' => $card['highlight']['title'],
-            'P' => $card['highlight']['description'],
-        ];
-        foreach ($card['items'] as $i => $it) {
-            $c = itemCol($i);
-            $set[$c] = $it['title'];
-            $set[nextCol($c)] = $it['description'];
-        }
-        if (isset($card['summary'])) {
-            $set['AL'] = $card['summary']['title'];
-            $set['AM'] = $card['summary']['description'];
-        }
+    // ── ③ 안 쓰는 예시 행 제거 + dimension 축소 ──────────────────────────
+    $lastUsed = 6 + count($CODES) - 1;
+    for ($r = $lastUsed + 1; $r <= 21; $r++) {
+        $sheet = preg_replace('/<row r="'.$r.'"[^>]*>.*?<\/row>/s', '', $sheet, 1);
+    }
+    $sheet = preg_replace('/<dimension ref="A1:[A-Z]+\d+"\/>/', '<dimension ref="A1:ED'.$lastUsed.'"/>', $sheet, 1);
 
-        // 기존 행을 재사용할 때 **남는 아이템 칸을 비운다** — 항목이 줄면 옛 값이 그대로 남아
-        // 등록본에 유령 줄이 생긴다(일일요약이 2줄→4줄로 늘고 요약칸이 사라진 이번 개편이 그 경우).
-        for ($i = count($card['items']); $i < 10; $i++) {
-            $c = itemCol($i);
-            $set[$c] = null;
-            $set[nextCol($c)] = null;
-        }
-        if (! isset($card['summary'])) {
-            $set['AL'] = null;
-            $set['AM'] = null;
-        }
+    // ── ④ sst count/uniqueCount 재계산 ───────────────────────────────────
+    $tsCount = preg_match_all('/ t="s"/', $sheet);
+    $siTotal = preg_match_all('/<si>/', $strings);
+    $strings = preg_replace('/<sst([^>]*?)count="\d+" uniqueCount="\d+"/',
+        '<sst$1count="'.$tsCount.'" uniqueCount="'.$siTotal.'"', $strings, 1);
 
-        if ($apply) {
-            foreach ($set as $col => $v) {
-                $w->getCell($col.$row)->setValue($v);
-            }
-            $out = DESKTOP."/{$t['dir']}/upload_erp_{$t['name']}_{$code}_신규.xlsx";
-            (new Xlsx($ss))->save($out);
-            echo "  ✅ {$t['name']}: 행 {$row} ".($isNew ? '신규' : '변경').' → '.basename($out)."\n";
+    // ── ⑤ 나머지 엔트리는 **바이트 그대로** 복사 ──────────────────────────
+    @unlink($outPath);
+    $zout = new ZipArchive;
+    if ($zout->open($outPath, ZipArchive::CREATE) !== true) {
+        fwrite(STDERR, "❌ 출력 파일을 못 만든다: $outPath\n");
+        exit(1);
+    }
+    $touched = 0;
+    for ($i = 0; $i < $zin->numFiles; $i++) {
+        $name = $zin->getNameIndex($i);
+        if ($name === 'xl/worksheets/sheet1.xml') {
+            $zout->addFromString($name, $sheet);
+            $touched++;
+        } elseif ($name === 'xl/sharedStrings.xml') {
+            $zout->addFromString($name, $strings);
+            $touched++;
         } else {
-            echo "  · {$t['name']}: 행 {$row} ".($isNew ? '신규 추가' : '기존 변경')." (프로필 {$profile})\n";
+            $zout->addFromString($name, $zin->getFromIndex($i));
         }
-        $ss->disconnectWorksheets();
-        unset($ss);
     }
+    $zout->close();
+    $zin->close();
 
-    // 사람이 눈으로 확인할 카드 미리보기
-    echo "\n  [카드 미리보기]\n";
-    echo "    헤더    {$card['header']}\n";
-    echo "    강조    {$card['highlight']['title']} / {$card['highlight']['description']}\n";
-    foreach ($card['items'] as $it) {
-        printf("    항목    %-8s %s\n", $it['title'], $it['description']);
+    if ($touched !== 2) {
+        fwrite(STDERR, "❌ 고친 엔트리가 2개가 아니다($touched) — 중단\n");
+        exit(1);
     }
-    if (isset($card['summary'])) {
-        echo "    요약    {$card['summary']['title']} / {$card['summary']['description']}\n";
-    }
-    echo '    본문    '.str_replace("\n", ' ⏎ ', $tpl['body'])."\n";
+    echo "✅ $outPath  (".count($CODES).'종: '.implode(', ', $CODES).")\n";
 }
 
-if (! $apply) {
-    echo "\n※ dry-run 이다. 실제 파일을 만들려면 --apply 를 붙일 것.\n";
-}
-exit($fail > 0 ? 1 : 0);
+echo "\n검증: php scripts/alimtalk-verify-itemlist-upload.php ".implode(' ', $CODES)."\n";
