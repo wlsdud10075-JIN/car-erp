@@ -2131,6 +2131,12 @@ class Vehicle extends Model
      *   Σ (sale_total_amount × 환율)  ← sale_price 가 아니라 **판매총액**(부대비용 포함)
      *   환율 미입력 외화(캐시 null)는 제외 — 분자와 같은 기준이어야 비율이 안 왜곡된다.
      *
+     * ℹ️ **현재 호출처 0** (jin 2026-08-20). 대표 알림톡이 유일한 소비자였는데, 그 % 가
+     *   「미수 총액 대비 구성비」로 바뀌면서 이 분모를 안 쓰게 됐다. 같은 개념(= 미수 차량끼리의 비율)은
+     *   채권관리 KPI 「미납률」로 살아 있다(`receivables/index` `default_ratio_pct`).
+     *   ⚠️ 지우지 않은 이유 = §13 의 참조 구현이고, 통화 필터가 없는 집계에서 재사용 가치가 있어서다.
+     *   다시 쓸 땐 화면의 미납률과 **같은 값이 나오는지** 먼저 확인할 것 — 두 벌로 갈리면 SKILLS §8 #45 다.
+     *
      * @param  Builder  $query
      */
     public static function aggregateSaleTotalKrw($query): int

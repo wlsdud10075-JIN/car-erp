@@ -126,6 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   (실측 heymanerp: 초과입금 5대 −308만원 때문에 9.61억이 9.58억으로 찍혔다). 초과입금은 완납 탭에서 따로 본다.
         $unpaidOnly = fn ($q) => (clone $q)->where('sale_unpaid_amount_krw_cache', '>', 0);
 
+
         // 통화별 보기: 재환산 없이 그 통화 차량의 판매시점 원금액 합산 (jin 2026-07-16 — "그때 찍힌 금액 그대로").
         //   전체 보기: 기존대로 행 단위 KRW 환산 후 합산.
         if ($cur !== '') {
@@ -140,6 +141,20 @@ new #[Layout('components.layouts.app')] class extends Component {
             });
             $totalUnpaid = (int) $unpaidOnly($base)->sum('sale_unpaid_amount_krw_cache');
         }
+        // 비중(미수 총액 대비) — 대표 알림톡과 **같은 계산**. 통화 필터 시엔 그 통화 차량끼리의 비중이 된다.
+        //   ⚠️ $totalUnpaid 가 정해진 뒤에 정의한다(값 캡처).
+        $shareOf = function ($q) use ($cur, $totalUnpaid): ?float {
+            if ($totalUnpaid <= 0) {
+                return null;
+            }
+            $q = (clone $q)->excludeReceivableGrace();
+            $part = $cur !== ''
+                ? (float) (clone $q)->where('currency', $cur)->get()->sum(fn ($v) => $v->sale_unpaid_amount)
+                : (float) (clone $q)->sum('sale_unpaid_amount_krw_cache');
+
+            return round($part / $totalUnpaid * 100, 1);
+        };
+
         $totalPaid = max(0, (int) $totalSale - (int) $totalUnpaid);
         $riskCount = (clone $base)->whereIn('receivable_risk', ['danger', 'critical'])->count();
 
@@ -176,6 +191,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   이게 없으면 완납이 분모에 들어간다는 사실이 안 보여서, 같은 수치를 계속 다르게 읽게 된다.
             'sold_count' => (clone $base)->count(),
             'unpaid_count' => $unpaidOnly($base)->count(),
+            // 미납률 — **미수 차량만** 놓고 본 비율(jin 2026-08-20: "완납은 빼고 잔금 남은 것들끼리
+            //   나눠야 채권관리에 의미가 있지 않나"). 미수율(완납 포함)과 나란히 둬야 둘 다 뜻이 산다.
+            //   ⚠️ 라벨 없이 두 % 를 붙여 두면 또 섞여 읽힌다 — 각 카드에 모수를 함께 적는다.
+            'unpaid_only_sale_krw' => $unpaidOnlySale = (int) round($unpaidOnly($base)->get()->sum(
+                fn ($v) => $cur !== '' ? $v->sale_total_amount
+                    : ($v->currency === 'KRW' ? $v->sale_total_amount : $v->sale_total_amount * ($v->exchange_rate ?: 0))
+            )),
+            'default_ratio_pct' => $unpaidOnlySale > 0 ? round($totalUnpaid / $unpaidOnlySale * 100, 1) : null,
+            // 선적전·선적후 **비중**(미수 총액 대비) — 대표 알림톡이 보내는 바로 그 두 % 다.
+            //   알림톡에서 「선적후 74%」 를 보고 화면을 열면 같은 숫자가 있어야 한다.
+            'before_share_pct' => $shareOf(self::applyClassification($this->buildQuery(false), 'before_shipping')),
+            'after_share_pct' => $shareOf(self::applyClassification($this->buildQuery(false), 'after_shipping')),
             // 초과입금(미수 음수) = 돌려줘야 할 돈. 완납에 묻혀 있어 아무도 못 보던 것.
             'overpaid_count' => (clone $base)->where('sale_unpaid_amount_krw_cache', '<', 0)->count(),
             'overpaid_krw' => abs((int) (clone $base)->where('sale_unpaid_amount_krw_cache', '<', 0)->sum('sale_unpaid_amount_krw_cache')),
@@ -762,6 +789,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="mt-1 text-2xl font-bold text-red-600">{!! $this->fmtSummaryMoney($this->summary['total_unpaid_krw']) !!}</div>
             @if($this->summary['unpaid_ratio_pct'] !== null)
                 <div class="mt-0.5 text-[11px] font-medium text-red-400">{{ __('receivable.kpi.unpaid_ratio', ['pct' => $this->summary['unpaid_ratio_pct']]) }}{{ $ratioBasis }}</div>
+            @endif
+            {{-- 미납률 — 완납을 뺀 「미수 차량끼리」의 비율 (jin 2026-08-20).
+                 미수율(완납 포함)과 뜻이 달라 라벨에 모수를 함께 적는다. 안 적으면 두 % 가 섞여 읽힌다. --}}
+            @if($this->summary['default_ratio_pct'] !== null)
+                <div class="mt-0.5 text-[11px] text-gray-400">
+                    {{ __('receivable.kpi.default_ratio', [
+                        'pct' => $this->summary['default_ratio_pct'],
+                        'count' => number_format($this->summary['unpaid_count']),
+                    ]) }}
+                </div>
+            @endif
+            {{-- 대표 알림톡이 보내는 바로 그 두 % — 여기 없으면 카톡을 받고도 화면에서 대조할 수가 없다. --}}
+            @if($this->summary['before_share_pct'] !== null && $this->summary['after_share_pct'] !== null)
+                <div class="mt-0.5 text-[11px] text-gray-400">
+                    {{ __('receivable.kpi.share_split', [
+                        'before' => $this->summary['before_share_pct'],
+                        'after' => $this->summary['after_share_pct'],
+                    ]) }}
+                </div>
             @endif
         </div>
         <div class="card">

@@ -30,6 +30,9 @@ return [
         'grace_hint' => ':count건 · 판매일+10일 후 채권 전환',
         'unpaid_ratio' => '미수율 :pct%',
         'basis_note' => '판매 :sold대 기준 (미수 :unpaid대 · 완납 포함)',
+        // 미수율(완납 포함) 과 뜻이 다르므로 모수를 라벨에 박는다 — 안 그러면 두 %가 섞여 읽힌다.
+        'default_ratio' => '미납률 :pct% (미수 :count대끼리)',
+        'share_split' => '선적전 :before% · 선적후 :after% (대표 알림톡과 동일)',
         'paid_ratio' => '입금률 :pct%',
         'ratio_basis' => '(:cur 기준)',
         'risk_count' => '위험 건수 (위험 + 심각)',

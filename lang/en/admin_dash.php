@@ -112,6 +112,7 @@ return [
     'recv_cancel' => 'Purchase cancellations',
     'recv_cancel_unit' => ' active',
     'recv_cancel_note' => ':closed closed unpaid · penalty receivable included',
+    'recv_share' => ':pct% of outstanding',
     'recv_before' => 'Pre-shipment outstanding',
     'recv_before_note' => ':count vehicles · purchase–sold stage',
     'recv_after' => 'Post-shipment outstanding',
