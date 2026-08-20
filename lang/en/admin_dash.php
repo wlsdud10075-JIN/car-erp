@@ -104,6 +104,7 @@ return [
     'monthly_sales_title_post' => ')',
     'monthly_sales_note' => 'By sale_date. Foreign currency = sale_price × exchange_rate (excludes rate 0/NULL)',
 
+    'recv_period_note' => 'Receivable figures ignore the date filter above and always show current outstanding balances.',
     'recv_total_unpaid' => 'Total outstanding',
     'recv_total_unpaid_note' => 'Excludes foreign currency without exchange rate',
     'recv_grace' => 'Payment grace (excl. from receivables)',

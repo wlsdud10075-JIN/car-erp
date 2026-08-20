@@ -8,11 +8,17 @@ return [
     'forbidden' => 'You do not have permission to access Receivables.',
 
     'tab' => [
-        'all' => 'All',
+        'all' => 'All receivables',
+        'grace' => 'Grace period',
         'before_shipping' => 'Pre-shipment unpaid',
         'after_shipping' => 'Post-shipment unpaid',
         'deposit' => 'Deposit (savings used)',
+        'paid_up' => 'Paid up',
     ],
+    'tab_math' => 'All receivables :all = grace :grace + pre-shipment :before + post-shipment :after (paid-up shown separately)',
+    'period_note' => 'Outstanding balances are shown in full, regardless of date filter',
+    'overpaid_badge' => 'Overpaid',
+    'overpaid_note' => ':count vehicles · :amount KRW received in excess (refund due) — see the Paid up tab',
 
     'kpi' => [
         'total_sale' => 'Total sales (KRW)',
@@ -21,6 +27,7 @@ return [
         'grace' => 'Payment grace (excl. from receivables)',
         'grace_hint' => ':count vehicle(s) · becomes receivable at sale date +10d',
         'unpaid_ratio' => 'Outstanding :pct%',
+        'basis_note' => 'Based on :sold sold (:unpaid unpaid, paid-up included)',
         'paid_ratio' => 'Collected :pct%',
         'ratio_basis' => '(:cur basis)',
         'risk_count' => 'At-risk count (danger + critical)',

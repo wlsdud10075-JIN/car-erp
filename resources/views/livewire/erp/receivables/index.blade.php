@@ -65,8 +65,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             abort(403, __('receivable.forbidden'));
         }
 
-        $this->dateFrom = $this->dateFrom ?: now()->subMonths(3)->format('Y-m-d');
-        $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+        // 🚫 기간 기본값을 주지 않는다 (jin 2026-08-20). 미수는 "지금 못 받고 있는 돈"(재고)이라
+        //    기간으로 자를 대상이 아니다. 게다가 자르는 컬럼이 매입일이라 **오래 못 받은 돈일수록
+        //    먼저 화면에서 사라졌다**(실측 heymanerp: 3개월 기본값 때문에 미수 3대 834만원이 목록에서 누락).
+        //    기본값이 없어야 채권관리 = 관리자 대시보드 = 대표 알림톡 세 곳의 숫자가 같아진다.
+        //    필터 자체는 남겨 둔다 — 사용자가 명시적으로 넣으면 그때만 좁혀진다.
 
         // 판매탭 잠금 잔금 → '채권관리에서 수정' 진입: 해당 차량 수정 패널 바로 오픈 (재검색 불필요).
         if ($this->openVehicle) {
@@ -112,30 +115,37 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 결제대기(grace) 제외 — 총 채권금액(총판매액·총입금·총미수)은 grace 미포함 (jin 2026-07-06).
         //   목록(vehicles)에는 grace 차량이 결제대기 뱃지로 계속 보이되, 채권 총액 집계에서만 빠진다.
         //   총미수만 빼면 total_paid = 총판매-총미수 가 grace 만큼 부풀어 안 맞으므로 base 전체에서 제외.
-        $base = $this->buildQuery()->excludeReceivableGrace();
+        // ⚠️ **KPI 는 분류 탭을 타지 않는다** — `buildQuery(false)` (jin 2026-08-20).
+        //    「전체」탭을 채권(미수>0)으로 좁힌 뒤에도 미수율 분모는 **완납 포함 판매총액**이어야 한다.
+        //    완납을 분모에서 빼면 17.1% 가 **49.5%** 로 튄다(실측) — 그게 바로 대표 알림톡이 이상했던 원인이다.
+        //    탭을 바꿔도 KPI 가 안 흔들리는 편이 "어느 화면에서 보든 같은 숫자" 라는 목적에도 맞는다.
+        $base = $this->buildQuery(false)->excludeReceivableGrace();
         $cur = $this->displayCurrency;   // '' = 전체(₩ 환산) / 통화코드 = 그 통화 차량만 원금액
+
+        // 총미수는 **미수>0 인 행만** 합산한다. 초과입금(미수 음수)까지 더하면 탭 합계와 어긋난다
+        //   (실측 heymanerp: 초과입금 5대 −308만원 때문에 9.61억이 9.58억으로 찍혔다). 초과입금은 완납 탭에서 따로 본다.
+        $unpaidOnly = fn ($q) => (clone $q)->where('sale_unpaid_amount_krw_cache', '>', 0);
 
         // 통화별 보기: 재환산 없이 그 통화 차량의 판매시점 원금액 합산 (jin 2026-07-16 — "그때 찍힌 금액 그대로").
         //   전체 보기: 기존대로 행 단위 KRW 환산 후 합산.
         if ($cur !== '') {
             $base = (clone $base)->where('currency', $cur);
-            $rows = (clone $base)->get();
-            $totalSale = $rows->sum(fn ($v) => $v->sale_total_amount);
-            $totalUnpaid = $rows->sum(fn ($v) => $v->sale_unpaid_amount);
+            $totalSale = (clone $base)->get()->sum(fn ($v) => $v->sale_total_amount);
+            $totalUnpaid = $unpaidOnly($base)->get()->sum(fn ($v) => $v->sale_unpaid_amount);
         } else {
             $totalSale = (clone $base)->get()->sum(function ($v) {
                 $total = $v->sale_total_amount;
 
                 return $v->currency === 'KRW' ? $total : $total * ($v->exchange_rate ?: 0);
             });
-            $totalUnpaid = (int) (clone $base)->sum('sale_unpaid_amount_krw_cache');
+            $totalUnpaid = (int) $unpaidOnly($base)->sum('sale_unpaid_amount_krw_cache');
         }
         $totalPaid = max(0, (int) $totalSale - (int) $totalUnpaid);
         $riskCount = (clone $base)->whereIn('receivable_risk', ['danger', 'critical'])->count();
 
         // 결제대기(grace) — 채권 총액에선 제외됐지만 별도 카드로 보여줘 정합 확인 (jin 2026-07-06).
         //   base 는 grace 제외본이라, grace 는 buildQuery(목록·grace 포함) 에서 따로 집계.
-        $graceQuery = $this->buildQuery()->onlyReceivableGrace()->where('sale_unpaid_amount_krw_cache', '>', 0);
+        $graceQuery = $this->buildQuery(false)->onlyReceivableGrace()->where('sale_unpaid_amount_krw_cache', '>', 0);
         if ($cur !== '') {
             $graceRows = (clone $graceQuery)->where('currency', $cur)->get();
             $graceUnpaid = $graceRows->sum(fn ($v) => $v->sale_unpaid_amount);
@@ -162,6 +172,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   ⚠️ grace_unpaid_krw 는 base(=grace 제외) 밖의 별도 모수라 이 분모로 나누면 안 된다 → % 없음.
             'unpaid_ratio_pct' => $totalSale > 0 ? round($totalUnpaid / $totalSale * 100, 1) : null,
             'paid_ratio_pct' => $totalSale > 0 ? round($totalPaid / $totalSale * 100, 1) : null,
+            // 모수 — "17.1% 가 뭐에 대한 비율인가" 를 화면에 적기 위한 값 (jin 2026-08-20).
+            //   이게 없으면 완납이 분모에 들어간다는 사실이 안 보여서, 같은 수치를 계속 다르게 읽게 된다.
+            'sold_count' => (clone $base)->count(),
+            'unpaid_count' => $unpaidOnly($base)->count(),
+            // 초과입금(미수 음수) = 돌려줘야 할 돈. 완납에 묻혀 있어 아무도 못 보던 것.
+            'overpaid_count' => (clone $base)->where('sale_unpaid_amount_krw_cache', '<', 0)->count(),
+            'overpaid_krw' => abs((int) (clone $base)->where('sale_unpaid_amount_krw_cache', '<', 0)->sum('sale_unpaid_amount_krw_cache')),
         ];
     }
 
@@ -531,9 +548,46 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 공통 쿼리 빌더 — KPI / 목록 / 필터링에 모두 사용.
+     * 분류 탭 SQL — 단일 출처 (jin 2026-08-20).
+     * 목록·탭 카운트·대시보드 카드가 **같은 정의**를 쓰게 한다. 조건을 옮겨 적으면 갈린다(SKILLS §8 #44).
+     *
+     * ⚠️ '' (채권 전체) 의 뜻이 바뀌었다 — 구: 판매된 차 전부(완납 포함 250대) / 신: **잔금 남은 차 전부**(76대).
+     *    채권 화면의 「전체」가 완납까지 세면 선적전+선적후와 안 맞아 보인다(jin 지적). 완납은 별도 탭으로 뺐다.
      */
-    private function buildQuery()
+    public static function applyClassification($q, string $classification)
+    {
+        return match ($classification) {
+            // 채권 전체 = 유예 + 선적전 + 선적후. 세 탭의 합이 이 숫자와 정확히 맞는다.
+            '' => $q->where('sale_unpaid_amount_krw_cache', '>', 0),
+
+            // 결제대기(유예) — 잔금은 남았지만 판매일+유예일 미경과. 채권 총액에선 빠지지만 행방은 보여야 한다.
+            'grace' => $q->where('sale_unpaid_amount_krw_cache', '>', 0)->onlyReceivableGrace(),
+
+            // 미수 분류 — pivot=출고일 (jin 2026-07-18). 선적전=출고 전(항구 대기), 선적후=출항.
+            'before_shipping' => $q->whereNull('warehouse_out_date')
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                ->excludeReceivableGrace(),
+            'after_shipping' => $q->whereNotNull('warehouse_out_date')
+                ->where('sale_unpaid_amount_krw_cache', '>', 0),
+
+            'deposit' => $q->where('savings_used', '>', 0),
+
+            // 완납 — 회수이력 조회용(실측 heymanerp 174대 중 81대가 회수이력 보유)+ **초과입금 5대**가
+            //   여기 묻혀 있다(미수 음수 = 돌려줘야 할 돈). 목록에서 빨강으로 표시한다.
+            'paid_up' => $q->where(fn ($q2) => $q2
+                ->where('sale_unpaid_amount_krw_cache', '<=', 0)
+                ->orWhereNull('sale_unpaid_amount_krw_cache')),
+
+            default => $q,
+        };
+    }
+
+    /**
+     * 공통 쿼리 빌더 — 목록 / 필터링.
+     *
+     * @param  bool  $withClassification  false = 분류 탭을 빼고(탭 카운트·KPI 분모용)
+     */
+    private function buildQuery(bool $withClassification = true)
     {
         return Vehicle::query()
             // 큐 16 — sales_channel 단일화로 채널 필터 제거.
@@ -564,18 +618,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
             ->when($this->unpaidRatioMin === '50', fn ($q) => $q->whereIn('receivable_risk', ['danger', 'critical']))
             ->when($this->unpaidRatioMin === '70', fn ($q) => $q->where('receivable_risk', 'critical'))
-            // 미수 분류 탭 — pivot=출고일 (jin 2026-07-18, Vehicle::scopeAction과 동일 SQL 출처).
-            //   선적전 = 출고일 없음(항구 대기), 선적후 = 출고일 있음(출항). 진행단계·반입지 무관.
-            ->when($this->classification === 'before_shipping', fn ($q) => $q
-                ->whereNull('warehouse_out_date')
-                ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                // 결제대기(grace) 제외 — 선적전 채권은 판매일+10일 지난 것만(scopeExcludeReceivableGrace 단일 출처).
-                ->excludeReceivableGrace())
-            ->when($this->classification === 'after_shipping', fn ($q) => $q
-                ->whereNotNull('warehouse_out_date')
-                ->where('sale_unpaid_amount_krw_cache', '>', 0))
-            ->when($this->classification === 'deposit', fn ($q) => $q
-                ->where('savings_used', '>', 0));
+            // 미수 분류 탭 — applyClassification 단일 출처(위). 조건을 여기 옮겨 적지 말 것.
+            ->when($withClassification, fn ($q) => self::applyClassification($q, $this->classification));
     }
 
     /**
@@ -584,21 +628,15 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function getClassificationCountsProperty(): array
     {
-        $base = Vehicle::query()->where('sale_price', '>', 0);
+        // 🐛 구버전은 자체 base(필터 없음)를 써서 **탭 숫자와 목록이 어긋났다** (jin 2026-08-20 발견).
+        //    탭엔 「선적전 23」이 떠 있는데 눌러 들어가면 20건 — 기간 필터를 탭만 안 탔기 때문.
+        //    이제 buildQuery(false) = 분류만 뺀 같은 필터를 공유한다. 눌렀을 때 그 숫자가 그대로 나온다.
+        $counts = [];
+        foreach (['', 'grace', 'before_shipping', 'after_shipping', 'deposit', 'paid_up'] as $key) {
+            $counts[$key === '' ? 'all' : $key] = self::applyClassification($this->buildQuery(false), $key)->count();
+        }
 
-        return [
-            'all' => (clone $base)->count(),
-            'before_shipping' => (clone $base)
-                ->whereNull('warehouse_out_date')
-                ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                ->excludeReceivableGrace()
-                ->count(),
-            'after_shipping' => (clone $base)
-                ->whereNotNull('warehouse_out_date')
-                ->where('sale_unpaid_amount_krw_cache', '>', 0)
-                ->count(),
-            'deposit' => (clone $base)->where('savings_used', '>', 0)->count(),
-        ];
+        return $counts;
     }
 }; ?>
 
@@ -631,6 +669,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="tab-pill {{ $classification === '' ? 'is-active' : '' }}">
             {{ __('receivable.tab.all') }} <span class="pill-count">{{ $cc['all'] }}</span>
         </button>
+        <button wire:click="$set('classification', 'grace')"
+                class="tab-pill {{ $classification === 'grace' ? 'is-active' : '' }}">
+            {{ __('receivable.tab.grace') }} <span class="pill-count">{{ $cc['grace'] }}</span>
+        </button>
         <button wire:click="$set('classification', 'before_shipping')"
                 class="tab-pill {{ $classification === 'before_shipping' ? 'is-active' : '' }}">
             {{ __('receivable.tab.before_shipping') }} <span class="pill-count">{{ $cc['before_shipping'] }}</span>
@@ -643,7 +685,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="tab-pill {{ $classification === 'deposit' ? 'is-active' : '' }}">
             {{ __('receivable.tab.deposit') }} <span class="pill-count">{{ $cc['deposit'] }}</span>
         </button>
+        {{-- 완납 — 채권은 아니지만 회수이력 조회 + 초과입금(돌려줄 돈) 확인용 (jin 2026-08-20) --}}
+        <button wire:click="$set('classification', 'paid_up')"
+                class="tab-pill {{ $classification === 'paid_up' ? 'is-active' : '' }}">
+            {{ __('receivable.tab.paid_up') }} <span class="pill-count">{{ $cc['paid_up'] }}</span>
+        </button>
     </div>
+
+    {{-- 탭 합계가 눈으로 닫히게 (jin 2026-08-20) — 「채권 전체 = 결제대기 + 선적전 + 선적후」.
+         구 「전체」는 완납까지 세서 250 이었고, 선적전·선적후와 아귀가 안 맞아 보였다. --}}
+    <p class="-mt-2 mb-1 text-[11px] text-gray-400">
+        {{ __('receivable.tab_math', [
+            'all' => $cc['all'], 'grace' => $cc['grace'],
+            'before' => $cc['before_shipping'], 'after' => $cc['after_shipping'],
+        ]) }}
+        <span class="ml-1">· {{ __('receivable.period_note') }}</span>
+    </p>
+
+    {{-- 초과입금 — 완납에 묻혀 아무도 못 보던 「돌려줄 돈」. 있을 때만 뜬다 (jin 2026-08-20). --}}
+    @if($this->summary['overpaid_count'] > 0)
+    <button type="button" wire:click="$set('classification', 'paid_up')"
+            class="card-sm -mt-1 mb-1 flex w-full items-center gap-2 border-red-200 bg-red-50/50 text-left text-[12px] text-red-700 transition hover:bg-red-50">
+        <span class="badge badge-red">{{ __('receivable.overpaid_badge') }}</span>
+        {{ __('receivable.overpaid_note', [
+            'count' => number_format($this->summary['overpaid_count']),
+            'amount' => number_format($this->summary['overpaid_krw']),
+        ]) }}
+    </button>
+    @endif
 
     {{-- 통화 선택 — 재환산 없이 그 통화 차량의 판매시점 원금액 (전체=₩ 환산). 목록은 그대로 (jin 2026-07-16). --}}
     {{-- 외화가 1종이어도 「전체(₩) ↔ 그 통화」는 서로 다른 값이라 고를 이유가 있다(jin 2026-08-06).
@@ -665,6 +734,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="card">
             <div class="text-xs text-gray-500">{{ __('receivable.kpi.total_sale') }}</div>
             <div class="mt-1 text-2xl font-bold text-gray-800">{!! $this->fmtSummaryMoney($this->summary['total_sale_krw']) !!}</div>
+            {{-- 모수 명시 (jin 2026-08-20) — 미수율의 분모에 **완납 차도 들어간다**는 걸 안 적으면
+                 같은 17.1% 를 매번 다르게 읽게 된다. 실제로 대표 알림톡·화면이 어긋난 원인이었다. --}}
+            <div class="mt-0.5 text-[11px] text-gray-400">
+                {{ __('receivable.kpi.basis_note', [
+                    'sold' => number_format($this->summary['sold_count']),
+                    'unpaid' => number_format($this->summary['unpaid_count']),
+                ]) }}
+            </div>
         </div>
         @php
             // 통화 필터를 걸면 KPI 가 원화 환산이 아니라 그 통화 원금액이라(위 summary 주석),

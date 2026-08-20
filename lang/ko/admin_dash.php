@@ -110,6 +110,7 @@ return [
     'monthly_sales_note' => 'sale_date 기준. 외화는 sale_price × exchange_rate (환율 0/NULL 제외)',
 
     // 채권 탭
+    'recv_period_note' => '⏱ 채권 수치는 상단 기간 필터와 무관하게 현재 잔액 전부입니다 (대표 알림톡·채권관리와 동일 기준).',
     'recv_total_unpaid' => '총 미수금',
     'recv_total_unpaid_note' => '환율 미입력 외화 제외',
     'recv_grace' => '결제대기 (채권 제외)',

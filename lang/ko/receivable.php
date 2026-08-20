@@ -8,11 +8,19 @@ return [
     'forbidden' => '채권관리에 접근할 권한이 없습니다.',
 
     'tab' => [
-        'all' => '전체',
+        // 「전체」 = 잔금 남은 차 전부(= 결제대기 + 선적전 + 선적후). 완납은 별도 탭 (jin 2026-08-20).
+        'all' => '채권 전체',
+        'grace' => '결제대기',
         'before_shipping' => '선적전 미수',
         'after_shipping' => '선적후 미수',
         'deposit' => '디파짓 (적립금 사용)',
+        'paid_up' => '완납',
     ],
+    'tab_math' => '채권 전체 :all건 = 결제대기 :grace + 선적전 :before + 선적후 :after · 완납은 별도 탭',
+    // 미수는 '지금 남은 잔액'이라 기간으로 자르지 않는다 — 알림톡·대시보드와 같은 숫자가 되는 근거 (jin 2026-08-20).
+    'period_note' => '미수는 기간과 무관하게 현재 잔액 전부',
+    'overpaid_badge' => '초과입금',
+    'overpaid_note' => ':count대 · :amount원을 더 받았습니다 (환불 대상) — 완납 탭에서 확인',
 
     'kpi' => [
         'total_sale' => '총 매출 (KRW 환산)',
@@ -21,6 +29,7 @@ return [
         'grace' => '결제대기 (채권 제외)',
         'grace_hint' => ':count건 · 판매일+10일 후 채권 전환',
         'unpaid_ratio' => '미수율 :pct%',
+        'basis_note' => '판매 :sold대 기준 (미수 :unpaid대 · 완납 포함)',
         'paid_ratio' => '입금률 :pct%',
         'ratio_basis' => '(:cur 기준)',
         'risk_count' => '위험 건수 (위험 + 심각)',
