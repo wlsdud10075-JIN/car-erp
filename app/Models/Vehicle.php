@@ -655,6 +655,24 @@ class Vehicle extends Model
                 $vehicle->buyer_undecided = false;
             }
 
+            // 🚚 출고일 자동 채움 (jin 2026-08-20) — B/L 이 나왔는데 출고일이 비어 있으면 **선적일**로 채운다.
+            //   왜 필요한가: 2026-07-23 에 "거래완료면 출고일 미입력이어도 재고 아님" 으로 정하면서,
+            //   B/L 이 먼저 나온 차는 재고 화면에서 사라져 **출고일을 찍을 경로가 없어졌다**
+            //   (실측 heymanerp: 거래완료 100대 중 92대가 출고일 공란 — 실무자 잘못이 아니라 화면이 없었다).
+            //   그런데 채권 선적전/후 pivot 은 출고일이라, 이미 떠난 차가 「선적전 미수」로 남았다.
+            //   ⚠️ **비어 있을 때만** 채운다 — 사람이 넣은 날짜를 저장할 때마다 덮으면 안 된다(SKILLS §8 #38).
+            //   ⚠️ 값은 선적일이라 실제 출고보다 늦다(운영 129대 실측: 출고가 평균 10일 먼저).
+            //      계산에 쓰이는 곳은 없고(청산가치는 2026-07-31 에 선적일 기준으로 이동) 정렬·표시뿐이라 무해하다.
+            //      정확한 날짜를 아는 실무자는 재고관리 출고완료 탭에서 그대로 고칠 수 있다.
+            //   ⚠️ 판정은 **진행상태 「거래완료」** 다(jin) — `bl_document` 유무로 보면 grandfather(v1~v3) 차량에서
+            //      어긋난다. 그리고 `progress_status_cache` 가 아니라 **computed `progress_status`** 를 본다:
+            //      캐시는 이 훅 뒤(742행)에서 갱신되므로 여기선 아직 옛 값이라 한 박자 늦게 채워진다.
+            if ($vehicle->progress_status === '거래완료'
+                && blank($vehicle->warehouse_out_date)
+                && filled($vehicle->shipping_date)) {
+                $vehicle->warehouse_out_date = $vehicle->shipping_date;
+            }
+
             // 2026-05-20 사용자 정정 — KRW 통화 시 환율 자동 1 normalize.
             // "한국돈인데 환율 쓸 필요 없음" 직관 보존 + DB CHECK (sale_price > 0 시 exchange_rate > 0) 통과.
             // 진입점 통합 (UI 폼·시드·factory·tinker 모두 동일 정책).
@@ -2461,17 +2479,17 @@ class Vehicle extends Model
             'has_sale' => $q->where('sale_price', '>', 0),
             'has_purchase' => $q->where('purchase_price', '>', 0),
 
-            // ── 미수 분류 — pivot=출고일 (jin 2026-07-18, 구 pivot=progress_status) ──
-            // 선적전 미수: 출고일 없음(항구 주차장 대기) AND sale_unpaid_amount > 0. 반입지·진행단계 무관.
+            // ── 미수 분류 — pivot=「이미 떠났나」 = 출고일 또는 B/L (jin 2026-07-18 → 08-20 보강) ──
+            // 선적전 미수: 아직 안 떠남(항구 주차장 대기) AND sale_unpaid_amount > 0. 반입지·진행단계 무관.
             //   결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
             'receivable_before_shipping' => $q
-                ->whereNull('warehouse_out_date')
+                ->notDeparted()
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->excludeReceivableGrace(),
 
-            // 선적후 미수: 출고일 있음(출항) AND sale_unpaid_amount > 0. 유예 없이 즉시 채권.
+            // 선적후 미수: 이미 떠남(출고일 또는 B/L) AND sale_unpaid_amount > 0. 유예 없이 즉시 채권.
             'receivable_after_shipping' => $q
-                ->whereNotNull('warehouse_out_date')
+                ->departed()
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 
             // 디파짓: savings_used > 0 (적립금 사용분)
@@ -2491,10 +2509,37 @@ class Vehicle extends Model
      * pivot=출고일(jin 2026-07-18, 구 pivot=bl_loading_location). sale_date NULL(판매가 있으나 날짜 미상 —
      * chk_sale_required 상 실질 없음)은 grace 아님으로 간주해 유지한다.
      */
+    /**
+     * 🚢 이미 떠난 차 — **출고일이 찍혔거나 B/L 이 나왔다**(= 거래완료 = 출항). jin 2026-08-20.
+     *
+     * 재고 판정과 **같은 규칙**이다: 2026-07-23 `cfd17f6` 에서 "거래완료(출항) = 확실히 나간 것 →
+     * 출고일 미입력이어도 재고 아님" 으로 정했는데, 채권 선적전/후 pivot 만 그 규칙을 안 따라와
+     * **이미 떠난 차가 「선적전 미수」로 남아 있었다**(실측 heymanerp 11대 881만원).
+     * 07-18 에 pivot 을 출고일로 정하고 5일 뒤 재고 규칙을 바꾸면서 채권을 같이 안 고친 것이다.
+     *
+     * ⚠️ 조건을 옮겨 적지 말고 이 스코프를 쓸 것 — 채권 분류는 화면·대시보드·알림톡 4곳에 흩어져 있다(SKILLS §8 #45).
+     * ℹ️ 2026-08-20 부터 `Vehicle::saving` 이 B/L 발급 시 출고일을 선적일로 자동 채우므로 신규 차량엔
+     *    `bl_document` 분기가 거의 안 걸린다. 선적일조차 없는 예외를 위한 안전망으로 남긴다.
+     */
+    public function scopeDeparted(Builder $q): Builder
+    {
+        return $q->where(fn ($q2) => $q2
+            ->whereNotNull('warehouse_out_date')
+            ->orWhereNotNull('bl_document'));
+    }
+
+    /** 아직 안 떠난 차 — scopeDeparted 의 정확한 여집합(출고일도 B/L 도 없음). */
+    public function scopeNotDeparted(Builder $q): Builder
+    {
+        return $q->whereNull('warehouse_out_date')->whereNull('bl_document');
+    }
+
     public function scopeExcludeReceivableGrace(Builder $q): Builder
     {
+        // 유예 = **아직 안 떠난** 차의 미수 중 판매일+유예일 미경과분. 떠난 차는 유예 없이 즉시 채권이다.
         return $q->whereNot(fn ($q2) => $q2
             ->whereNull('warehouse_out_date')
+            ->whereNull('bl_document')
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString()));
     }
@@ -2506,6 +2551,7 @@ class Vehicle extends Model
     public function scopeOnlyReceivableGrace(Builder $q): Builder
     {
         return $q->whereNull('warehouse_out_date')
+            ->whereNull('bl_document')
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString());
     }

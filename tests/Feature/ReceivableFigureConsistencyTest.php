@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Console\Commands\AlimtalkDailySummary;
+use App\Console\Commands\AlimtalkReceivableStatus;
 use App\Console\Commands\AlimtalkWeeklySummary;
 use App\Models\Buyer;
 use App\Models\User;
@@ -80,8 +80,8 @@ class ReceivableFigureConsistencyTest extends TestCase
         $this->assertSame(1, $cls['after_shipping']['count']);
         $this->assertSame(20_000_000, $cls['after_shipping']['unpaid']);
 
-        // ③ 대표 알림톡 — 세 값이 글자 그대로 같아야 한다
-        $vars = AlimtalkDailySummary::buildVars();
+        // ③ 대표 알림톡(채권 현황) — 세 값이 글자 그대로 같아야 한다
+        $vars = AlimtalkReceivableStatus::buildVars();
         $this->assertSame('1', $vars['선적전건수']);
         $this->assertSame('1', $vars['선적후건수']);
         $this->assertStringStartsWith('10,000,000원', $vars['선적전금액']);
@@ -189,10 +189,13 @@ class ReceivableFigureConsistencyTest extends TestCase
     }
 
     /**
-     * 알림톡 % = **미수 총액 대비 구성비**이고, 그 두 % 가 화면에도 있어야 한다 (jin 2026-08-20).
+     * 화면의 「비중」 = **미수 총액 대비 구성비** (jin 2026-08-20).
      * jin: "미수금 얼마 중 선적전이 어느 비중이고, 선적후가 어느 비중이다. 이렇게 가야 이해할 수 있을 것 같은데"
+     *
+     * ⚠️ 알림톡 % 와는 **분모가 다르다** — 알림톡(채권 현황)은 판매금액 대비라 네 항목 합이 100% 이고,
+     *    화면 비중은 미수 총액 대비라 두 값 합이 100% 다. 그래서 화면 라벨에 모수를 함께 적는다.
      */
-    public function test_alimtalk_share_is_a_split_of_the_unpaid_total_and_appears_on_screen(): void
+    public function test_screen_share_is_a_split_of_the_unpaid_total(): void
     {
         $this->actingAs($this->admin());
         $this->oldPurchaseUnpaid('81가1111', 10_000_000, 0);                                   // 선적전 1,000만
@@ -200,14 +203,6 @@ class ReceivableFigureConsistencyTest extends TestCase
         $this->oldPurchaseUnpaid('83가3333', 60_000_000, 60_000_000);                          // 완납(비중에 영향 없어야)
 
         // 미수 4,000만 중 선적전 25% / 선적후 75%
-        $vars = AlimtalkDailySummary::buildVars();
-        $this->assertStringContainsString('(25%)', $vars['선적전금액']);
-        $this->assertStringContainsString('(75%)', $vars['선적후금액']);
-
-        // 합계엔 % 를 붙이지 않는다 — 구성비의 합은 늘 100% 라 정보가 0 이고, 다른 분모를 쓰면 또 섞인다.
-        $this->assertSame('40,000,000원', $vars['미수합계']);
-
-        // 같은 두 % 가 채권관리 화면에 있어야 대조가 된다.
         $c = Volt::test('erp.receivables.index');
         $s = $c->instance()->summary();
         $this->assertSame(25.0, $s['before_share_pct']);
@@ -220,14 +215,14 @@ class ReceivableFigureConsistencyTest extends TestCase
         $this->assertSame(75.0, $cls['after_shipping']['share_pct']);
     }
 
-    /** 주간요약이 일일요약과 같은 규칙을 써야 한다 — 한쪽만 고치면 금·월 숫자가 어긋난다. */
-    public function test_weekly_summary_uses_the_same_share_rule(): void
+    /** 주간요약이 채권 현황과 **같은 분모**를 써야 한다 — 갈리면 금요일 숫자와 매일 숫자가 어긋난다. */
+    public function test_weekly_summary_shares_the_receivable_denominator(): void
     {
         $this->actingAs($this->admin());
         $this->oldPurchaseUnpaid('84가4444', 10_000_000, 0);
         $this->oldPurchaseUnpaid('85가5555', 30_000_000, 0, now()->subMonths(8)->toDateString());
 
-        $daily = AlimtalkDailySummary::buildVars();
+        $daily = AlimtalkReceivableStatus::buildVars();
         $weekly = AlimtalkWeeklySummary::buildVars();
 
         $this->assertSame($daily['선적전금액'], $weekly['선적전금액']);

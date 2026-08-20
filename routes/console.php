@@ -37,6 +37,9 @@ Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->weekdays()->without
 Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:deposit-cash')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+// 대표 채권 현황 (jin 2026-08-20) — 일일요약에서 돈 이야기를 분리한 신규 알림톡. 일일과 같은 시각.
+//   미설정(tmplId 없음)이면 BizmAlimtalkService 가 내부 skip 하므로 승인 전에 배포해도 무해하다.
+Schedule::command('alimtalk:receivable-status')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
 // 대표 주간 자금/손익 보고 (2026-07-23) — 월요일 09:00. 최신 통장 스냅샷 기준. 미설정/미입력 시 내부 skip(inert).
 Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();

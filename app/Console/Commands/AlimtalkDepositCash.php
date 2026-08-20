@@ -44,9 +44,8 @@ class AlimtalkDepositCash extends Command
                 //   2026-07-18 에 채권 선적전/후 pivot 을 이미 출고일로 통일했는데(SKILLS §14,
                 //   Port::allow_shipping_wait 안내문) 이 cron 만 옛 기준으로 남아 있었다.
                 //   승인된 알림톡 문구("선적이 보류 중인 차량")도 출고 전에만 참이다.
-                ->whereNull('warehouse_out_date')   // 아직 출고(출항) 안 함 = 선적 보류 중
-                ->where(fn ($q) => $q->where('progress_status_cache', '!=', '거래완료')
-                    ->orWhereNull('progress_status_cache'))
+                //   2026-08-20: 같은 판정을 쓰는 4곳이 각자 조건을 적고 있어 `notDeparted()` 단일 출처로 묶었다.
+                ->notDeparted()   // 아직 출고(출항) 안 함 = 선적 보류 중
                 ->with(['buyer', 'salesman'])
                 ->get()
                 ->filter(function (Vehicle $v) use ($threshold) {

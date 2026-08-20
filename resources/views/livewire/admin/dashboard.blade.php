@@ -634,7 +634,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
                 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
                 'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache',
-                'receivable_risk', 'warehouse_out_date')
+                'receivable_risk', 'warehouse_out_date', 'bl_document')
             ->chunk(1000, function ($rows) use (
                 &$bySalesman, &$byBuyer, &$riskCounts, &$classification
             ) {
@@ -669,8 +669,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     $risk = $r->receivable_risk ?? 'none';
                     $riskCounts[$risk] = ($riskCounts[$risk] ?? 0) + 1;
 
-                    // 미수 분류 — 출고일 pivot (jin 2026-07-18). 출고 전=선적전, 출고 후=선적후.
-                    if (blank($r->warehouse_out_date)) {
+                    // 미수 분류 — 「이미 떠났나」 pivot = 출고일 또는 B/L (jin 2026-07-18 → 08-20).
+                    //   Vehicle::scopeDeparted 와 같은 규칙. 한쪽만 고치면 화면과 대시보드가 갈린다.
+                    if (blank($r->warehouse_out_date) && blank($r->bl_document)) {
                         $classification['before_shipping']['unpaid'] += $unpaid;
                         $classification['before_shipping']['count']++;
                     } else {
