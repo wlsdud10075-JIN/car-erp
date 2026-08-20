@@ -19,6 +19,29 @@ namespace App\Support;
  */
 class AlimtalkTemplates
 {
+    /**
+     * 📱 **알림톡 실패 시 문자(LMS)로 대신 보낼 알림** (jin 2026-08-20).
+     *
+     * BizM 이 대신 보낸다 — 우리가 실패를 감지해 재발송하는 게 아니라, 발송 요청에
+     * `smsKind`·`msgSms`·`smsSender`·`smsLmsTit` 를 얹으면 알림톡이 실패했을 때 자동으로 문자가 나간다
+     * (API v2.29.5 §3.2). 응답의 `originMessage` 에 원래 알림톡 실패 사유가 담겨 로그로 구분된다.
+     *
+     * ⚠️ **여기 넣는 만큼 문자 요금이 나간다.** 실패가 잦은 알림을 넣으면 비용이 는다.
+     *    말소등록증은 딜러가 **그 서류를 못 받으면 업무가 멈추는** 건이라 우선 대상이다
+     *    (실측: K101 로 한 달째 특정 딜러에게 안 가고 있었다).
+     * ⚠️ **아이템리스트형은 카드가 문자로 안 간다** — 본문만 가면 숫자가 통째로 빠진다.
+     *    그래서 카드에 데이터가 실린 알림(대표 보고류)은 넣지 않는다. 넣으려면 문자용 본문을 따로 만들 것.
+     * ⚠️ 해외번호는 대체발송을 **지원하지 않는다**(문서 명시) — 국내 딜러·직원 대상만 의미가 있다.
+     */
+    public const SMS_FALLBACK = [
+        'erp_deregistration_notice',
+    ];
+
+    /** LMS 제목(30자) — 본문 첫 줄의 대괄호 부분을 쓴다. 비면 대체발송에서 제목이 빠진다. */
+    public const SMS_TITLE = [
+        'erp_deregistration_notice' => '말소등록증 발급 안내',
+    ];
+
     public const TEMPLATES = [
         // ── 대표(admin) 3종 ──
         'erp_daily_summary' => [
