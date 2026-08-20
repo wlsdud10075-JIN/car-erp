@@ -157,14 +157,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge badge-red text-[10px]">{{ __('log.md_status.failed') }}</span>
                 @endif
             </div>
-            <div class="text-xs text-gray-600 truncate">{{ $log->subject }}</div>
+            <div class="text-xs text-gray-600 truncate" title="{{ $log->subject }}">{{ $log->subject }}</div>
             <div class="text-xs text-gray-500">
                 {{ $log->user?->name ?? '-' }}
                 @if($log->vehicle) · {{ $log->vehicle->vehicle_number }} @endif
                 · {{ __('log.md_channel.'.$log->channel) }}
             </div>
             @php $docs = $log->document_names ?? []; @endphp
-            @if(count($docs) > 0)<div class="text-[11px] text-gray-400 truncate">{{ implode(', ', $docs) }}</div>@endif
+            @if(count($docs) > 0)<div class="text-[11px] text-gray-400 truncate" title="{{ implode(', ', $docs) }}">{{ implode(', ', $docs) }}</div>@endif
             <div class="text-[11px] text-gray-400">{{ $log->created_at?->format('Y-m-d H:i') }}</div>
             @if($log->status === 'failed' && $log->error)<div class="text-[11px] text-red-500">{{ $log->error }}</div>@endif
         </div>

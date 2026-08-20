@@ -256,7 +256,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </div>
                             @if(! empty($p['overlap_vehicle_numbers']))
-                            <div class="text-[10px] text-gray-400 truncate max-w-[260px]">{{ __('approval.t.overlap_vehicles') }} {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
+                            <div class="text-[10px] text-gray-400 truncate max-w-[260px]" title="{{ implode(', ', $p['overlap_vehicle_numbers']) }}">{{ __('approval.t.overlap_vehicles') }} {{ implode(', ', $p['overlap_vehicle_numbers']) }}</div>
                             @endif
                         @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_VEHICLE_TRANSFER)
                             @php $p = $r->payload ?? []; @endphp

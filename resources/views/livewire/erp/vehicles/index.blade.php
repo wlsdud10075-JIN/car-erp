@@ -8721,7 +8721,7 @@ function vehicleColumnsToggle() {
                                 @foreach ($grp['items'] as $doc)
                                     <label class="flex items-center gap-2 text-sm text-gray-700">
                                         <input type="checkbox" wire:model="mailDocIds" value="{{ $doc['key'] }}" class="rounded border-gray-300" />
-                                        <span class="truncate">{{ $doc['name'] }}</span>
+                                        <span class="truncate" title="{{ $doc['name'] }}">{{ $doc['name'] }}</span>
                                     </label>
                                 @endforeach
                             </div>
