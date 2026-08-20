@@ -78,12 +78,13 @@ class AlimtalkWeeklySummary extends Command
         $beforeSum = (int) (clone $beforeQ)->sum('sale_unpaid_amount_krw_cache');
         $afterSum = (int) (clone $afterQ)->sum('sale_unpaid_amount_krw_cache');
 
-        // 미수율 % (jin 2026-08-06) — 일일 요약과 동일 규칙. ⚠️ 분모를 선적전·선적후 합계로 통일한다
-        //   (각자 분모면 더할 수 없는 숫자인데 나란히 놓으면 더해서 읽힌다 — AlimtalkDailySummary 주석 참조).
+        // 비중 % — 일일 요약과 **같은 규칙**(미수 총액 대비 구성비, jin 2026-08-20).
+        //   한쪽만 고치면 금요일 숫자와 월요일 숫자가 어긋난다. 상세 = AlimtalkDailySummary 주석.
         //   본문은 정확한 원 단위, 카드는 억 단위 축약 — 카드 description 20자 컷 때문(SKILLS §8 #35).
-        $denomKrw = Vehicle::aggregateSaleTotalKrw($beforeQ) + Vehicle::aggregateSaleTotalKrw($afterQ);
-        $beforePct = Vehicle::aggregateUnpaidRatioPct($beforeQ, $denomKrw);
-        $afterPct = Vehicle::aggregateUnpaidRatioPct($afterQ, $denomKrw);
+        $unpaidTotal = $beforeSum + $afterSum;
+        $share = fn (int $part): ?float => $unpaidTotal > 0 ? round($part / $unpaidTotal * 100, 1) : null;
+        $beforePct = $share($beforeSum);
+        $afterPct = $share($afterSum);
         $pct = fn (?float $p): string => $p === null ? '' : ' ('.$p.'%)';
 
         return [

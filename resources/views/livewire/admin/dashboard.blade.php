@@ -680,6 +680,15 @@ new #[Layout('components.layouts.app')] class extends Component
                 }
             });
 
+        // 선적전·선적후 **비중**(미수 총액 대비) — 대표 알림톡이 보내는 그 두 % (jin 2026-08-20).
+        //   카드에 함께 찍어야 카톡을 받고 대시보드를 열었을 때 같은 숫자를 확인할 수 있다.
+        $clsTotal = $classification['before_shipping']['unpaid'] + $classification['after_shipping']['unpaid'];
+        foreach (['before_shipping', 'after_shipping'] as $k) {
+            $classification[$k]['share_pct'] = $clsTotal > 0
+                ? round($classification[$k]['unpaid'] / $clsTotal * 100, 1)
+                : null;
+        }
+
         // 결제대기(grace) — 위 메인 쿼리는 grace 제외본이라 별도 집계. 채권 총액에서 뺀 금액을 카드로 표시(정합, jin 2026-07-06).
         $graceStats = Vehicle::query()
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
@@ -1432,13 +1441,13 @@ new #[Layout('components.layouts.app')] class extends Component
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_before') }}</div>
                 <div class="mt-1 text-2xl font-bold text-blue-700">@krw($cls['before_shipping']['unpaid'] ?? 0)<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_before_note', ['count' => $cls['before_shipping']['count'] ?? 0]) }}</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_before_note', ['count' => $cls['before_shipping']['count'] ?? 0]) }}@if(($cls['before_shipping']['share_pct'] ?? null) !== null) · {{ __('admin_dash.recv_share', ['pct' => $cls['before_shipping']['share_pct']]) }}@endif</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'after_shipping']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_after') }}</div>
                 <div class="mt-1 text-2xl font-bold text-amber-700">@krw($cls['after_shipping']['unpaid'] ?? 0)<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_after_note', ['count' => $cls['after_shipping']['count'] ?? 0]) }}</p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_after_note', ['count' => $cls['after_shipping']['count'] ?? 0]) }}@if(($cls['after_shipping']['share_pct'] ?? null) !== null) · {{ __('admin_dash.recv_share', ['pct' => $cls['after_shipping']['share_pct']]) }}@endif</p>
             </a>
             <a href="{{ route('erp.receivables.index', ['classification' => 'deposit']) }}" wire:navigate
                class="card min-w-[200px] flex-1 transition hover:bg-gray-50">

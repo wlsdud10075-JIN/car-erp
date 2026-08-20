@@ -118,6 +118,7 @@ return [
     'recv_cancel' => '매입취소',
     'recv_cancel_unit' => '건 진행',
     'recv_cancel_note' => '미수마감 :closed건 · 위약금 미수는 채권에 포함',
+    'recv_share' => '미수의 :pct%',
     'recv_before' => '선적전 미수금',
     'recv_before_note' => ':count대 · 매입~판매완료 단계',
     'recv_after' => '선적후 미수금',

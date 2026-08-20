@@ -28,6 +28,8 @@ return [
         'grace_hint' => ':count vehicle(s) · becomes receivable at sale date +10d',
         'unpaid_ratio' => 'Outstanding :pct%',
         'basis_note' => 'Based on :sold sold (:unpaid unpaid, paid-up included)',
+        'default_ratio' => 'Default rate :pct% (among :count unpaid)',
+        'share_split' => 'Pre-shipment :before% · post-shipment :after% (same as the daily alert)',
         'paid_ratio' => 'Collected :pct%',
         'ratio_basis' => '(:cur basis)',
         'risk_count' => 'At-risk count (danger + critical)',

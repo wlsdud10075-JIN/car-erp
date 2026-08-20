@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\AlimtalkDailySummary;
+use App\Console\Commands\AlimtalkWeeklySummary;
 use App\Models\Buyer;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -185,5 +186,66 @@ class ReceivableFigureConsistencyTest extends TestCase
         // 초과입금 차는 완납 탭에서 열람할 수 있어야 한다(회수이력·환불 처리 진입점).
         $this->assertLessThan(0, (int) $v->fresh()->sale_unpaid_amount_krw_cache);
         $this->assertSame(1, $c->instance()->classificationCounts['paid_up']);
+    }
+
+    /**
+     * 알림톡 % = **미수 총액 대비 구성비**이고, 그 두 % 가 화면에도 있어야 한다 (jin 2026-08-20).
+     * jin: "미수금 얼마 중 선적전이 어느 비중이고, 선적후가 어느 비중이다. 이렇게 가야 이해할 수 있을 것 같은데"
+     */
+    public function test_alimtalk_share_is_a_split_of_the_unpaid_total_and_appears_on_screen(): void
+    {
+        $this->actingAs($this->admin());
+        $this->oldPurchaseUnpaid('81가1111', 10_000_000, 0);                                   // 선적전 1,000만
+        $this->oldPurchaseUnpaid('82가2222', 30_000_000, 0, now()->subMonths(8)->toDateString()); // 선적후 3,000만
+        $this->oldPurchaseUnpaid('83가3333', 60_000_000, 60_000_000);                          // 완납(비중에 영향 없어야)
+
+        // 미수 4,000만 중 선적전 25% / 선적후 75%
+        $vars = AlimtalkDailySummary::buildVars();
+        $this->assertStringContainsString('(25%)', $vars['선적전금액']);
+        $this->assertStringContainsString('(75%)', $vars['선적후금액']);
+
+        // 합계엔 % 를 붙이지 않는다 — 구성비의 합은 늘 100% 라 정보가 0 이고, 다른 분모를 쓰면 또 섞인다.
+        $this->assertSame('40,000,000원', $vars['미수합계']);
+
+        // 같은 두 % 가 채권관리 화면에 있어야 대조가 된다.
+        $c = Volt::test('erp.receivables.index');
+        $s = $c->instance()->summary();
+        $this->assertSame(25.0, $s['before_share_pct']);
+        $this->assertSame(75.0, $s['after_share_pct']);
+        $c->assertSee('선적전 25% · 선적후 75%');
+
+        // 관리자 대시보드 카드에도 같은 값.
+        $cls = Volt::test('admin.dashboard')->instance()->receivableKpis()['classification'];
+        $this->assertSame(25.0, $cls['before_shipping']['share_pct']);
+        $this->assertSame(75.0, $cls['after_shipping']['share_pct']);
+    }
+
+    /** 주간요약이 일일요약과 같은 규칙을 써야 한다 — 한쪽만 고치면 금·월 숫자가 어긋난다. */
+    public function test_weekly_summary_uses_the_same_share_rule(): void
+    {
+        $this->actingAs($this->admin());
+        $this->oldPurchaseUnpaid('84가4444', 10_000_000, 0);
+        $this->oldPurchaseUnpaid('85가5555', 30_000_000, 0, now()->subMonths(8)->toDateString());
+
+        $daily = AlimtalkDailySummary::buildVars();
+        $weekly = AlimtalkWeeklySummary::buildVars();
+
+        $this->assertSame($daily['선적전금액'], $weekly['선적전금액']);
+        $this->assertSame($daily['선적후금액'], $weekly['선적후금액']);
+    }
+
+    /** 미납률(미수 차량끼리) 은 미수율(완납 포함) 과 다른 값이며 둘 다 화면에 있어야 한다. */
+    public function test_default_rate_and_unpaid_rate_are_both_shown(): void
+    {
+        $this->actingAs($this->admin());
+        $this->oldPurchaseUnpaid('86가6666', 10_000_000, 4_000_000);   // 미수 600만 / 그 차 판매 1,000만
+        $this->oldPurchaseUnpaid('87가7777', 90_000_000, 90_000_000);  // 완납
+
+        $c = Volt::test('erp.receivables.index');
+        $s = $c->instance()->summary();
+
+        $this->assertSame(6.0, $s['unpaid_ratio_pct'], '미수율 = 600만 / 1억(완납 포함)');
+        $this->assertSame(60.0, $s['default_ratio_pct'], '미납률 = 600만 / 1,000만(미수 차량끼리)');
+        $c->assertSee('미납률 60');
     }
 }
