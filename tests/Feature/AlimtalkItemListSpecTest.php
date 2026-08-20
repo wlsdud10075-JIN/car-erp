@@ -23,6 +23,15 @@ class AlimtalkItemListSpecTest extends TestCase
 
     private const TITLE_MAX = 6;
 
+    /**
+     * 아이템 description 은 **변수를 포함한 원문**이 이 길이를 넘으면 **등록 자체가 거부**된다
+     * (BizM 업로드 "메시지 길이제한 N행"). 치환 후가 아니라 `#{…}` 를 그대로 센 길이다.
+     * 2026-08-20 실사고 — '(60% 미만)' 9자 때문에 29자가 되어 일일요약이 반려됐다.
+     * ⚠️ 발송 시점의 20자 컷(ITEM_DESC_MAX)과는 **다른 검사**다. 그건 치환 후 값을 자르는 것이고
+     *    이건 등록 문구 자체의 한계다 — 리터럴이 길면 자를 수도 없다.
+     */
+    private const DESC_SOURCE_MAX = 20;
+
     public function test_every_item_and_summary_title_is_within_the_kakao_limit(): void
     {
         foreach (AlimtalkTemplates::ITEMLIST as $code => $il) {
@@ -45,6 +54,33 @@ class AlimtalkItemListSpecTest extends TestCase
                 );
             }
         }
+    }
+
+    /** 🔒 등록 거부 방지 — 아이템 설명 원문(변수 포함) 20자. 문구를 늘릴 때 여기서 걸린다. */
+    public function test_every_item_description_source_is_within_the_registration_limit(): void
+    {
+        $over = [];
+        foreach (AlimtalkTemplates::ITEMLIST as $code => $card) {
+            foreach ($card['items'] as $i => $it) {
+                $len = mb_strlen($it['description']);
+                if ($len > self::DESC_SOURCE_MAX) {
+                    $over[] = "{$code} 아이템".($i + 1)." {$len}자: {$it['description']}";
+                }
+            }
+            if (isset($card['summary'])) {
+                $len = mb_strlen($card['summary']['description']);
+                if ($len > self::DESC_SOURCE_MAX) {
+                    $over[] = "{$code} 요약 {$len}자: {$card['summary']['description']}";
+                }
+            }
+        }
+
+        $this->assertSame([], $over,
+            '아이템 설명 원문이 '.self::DESC_SOURCE_MAX.'자를 넘으면 BizM 등록이 거부된다.
+'
+            .'설명은 본문(body, 1000자)으로 옮길 것:
+  '.implode('
+  ', $over));
     }
 
     public function test_every_header_is_within_the_kakao_limit(): void

@@ -92,6 +92,12 @@ function rowValues(string $code, string $profile): array
         if (mb_strlen($it['title']) > 6) {
             $errs[] = '아이템'.($i + 1)." 타이틀 '{$it['title']}' 6자 초과";
         }
+        // ⚠️ description 은 **변수를 포함한 원문**이 20자를 넘으면 등록이 거부된다
+        //    (BizM "메시지 길이제한 N행"). 치환 후가 아니라 `#{…}` 를 그대로 센 길이다 —
+        //    2026-08-20 에 '(60% 미만)' 9자 때문에 29자가 되어 7행이 반려됐다.
+        if (mb_strlen($it['description']) > 20) {
+            $errs[] = '아이템'.($i + 1).' 설명이 원문 '.mb_strlen($it['description'])."자 (20자 초과): {$it['description']}";
+        }
     }
     if (isset($card['summary']) && mb_strlen($card['summary']['title']) > 6) {
         $errs[] = "요약 타이틀 '{$card['summary']['title']}' 6자 초과";
