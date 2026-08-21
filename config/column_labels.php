@@ -210,6 +210,9 @@ return [
         'is_active' => '활성 상태',
         'is_inherited' => '승계받은 바이어',
         'unsecured_limit_krw' => '무담보 한도',
+        // 바이어별 락 필요입금률 (jin 2026-08-21) — super 전용 값이라 감사로그가 유일한 견제다.
+        'lock_shipping_entry_pct' => '통관·선적 진입 락 (%)',
+        'lock_purchase_registration_pct' => '매입 등록 락 (%)',
         'unsecured_limit_enabled' => '무담보 한도 기능',
         'inherited_from_salesman_id' => '승계 전 담당자',
         'inherited_at' => '승계일',
