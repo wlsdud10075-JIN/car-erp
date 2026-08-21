@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
+use App\Services\LockThresholdResolver;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * 보증금 매입 바이어 입금 독촉 알림톡 (2026-07-23, jin) — 매일 아침.
  *   대상 = 보증금으로 매입(is_deposit_purchase)한 차 중 아직 출고 전(warehouse_out_date NULL·거래완료 아님)
- *          이고 판매 입금이 선적 기준(Setting::lockThreshold('shipping_entry'))에 미달해 선적 보류 중인 차.
+ *          이고 판매 입금이 선적 기준(LockThresholdResolver, 바이어별 재정의 우선)에 미달해 선적 보류 중인 차.
  *          ⚠️ 반입지(bl_loading_location)가 아니라 **출고일** 이 기준이다 — 항구 주차장 대기(RORO
  *             선적대기 허용 항로)는 반입지가 먼저 찍히지만 아직 출항 전이라 독촉이 계속돼야 한다.
  *   ⏱ 도장(deposit_purchase_at) 후 경과일 분기:
@@ -30,8 +30,10 @@ class AlimtalkDepositCash extends Command
     public function handle(): int
     {
         try {
-            $threshold = Setting::lockThreshold('shipping_entry');       // 미수율 cutoff (기준% → 초과 시 락)
-            $reqPct = Setting::lockRequiredPaidPct('shipping_entry');    // 필요 입금률(%)
+            // 🚨 임계는 **차량마다 그 바이어 기준**으로 해석한다 (jin 2026-08-21 바이어별 락).
+            //    여기서 1회 계산해 루프에 넘기면 바이어 재정의가 통째로 무시되는데 예외도 로그도 안 난다
+            //    — 07-30 에 이 cron 이 옛 pivot 을 써서 독촉이 7대 조용히 꺼져 있던 것과 같은 형태다.
+            //    `with('buyer')` 로 이미 eager load 돼 있어 추가 쿼리는 없다.
             $now = now()->startOfDay();
 
             $candidates = Vehicle::query()
@@ -48,10 +50,11 @@ class AlimtalkDepositCash extends Command
                 ->notDeparted()   // 아직 출고(출항) 안 함 = 선적 보류 중
                 ->with(['buyer', 'salesman'])
                 ->get()
-                ->filter(function (Vehicle $v) use ($threshold) {
+                ->filter(function (Vehicle $v) {
                     $r = $v->unpaid_ratio;
 
-                    return $r !== null && $r > $threshold;   // 여전히 기준 미달(락 유지)
+                    return $r !== null
+                        && $r > LockThresholdResolver::threshold($v->buyer, 'shipping_entry');   // 여전히 기준 미달(락 유지)
                 });
 
             if ($candidates->isEmpty()) {
@@ -78,7 +81,7 @@ class AlimtalkDepositCash extends Command
                 $v->vehicle_number,
                 $v->buyer?->name ?? '-',
                 (int) round((1 - (float) $v->unpaid_ratio) * 100),
-                $showReq ? "기준 {$reqPct}%, " : '',
+                $showReq ? '기준 '.LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry').'%, ' : '',
                 $days
             );
             $listOf = fn ($rows, bool $showReq): string => collect($rows)->take($cap)

@@ -370,13 +370,20 @@ class UnsecuredLimitGateTest extends TestCase
         $partial->hasUnsecuredLimit();
     }
 
-    /** 한도 변경은 감사로그에 남는다 — 누가 언제 얼마로 올렸는지가 감사 핵심. */
+    /**
+     * 한도 변경은 감사로그에 남는다 — 누가 언제 얼마로 올렸는지가 감사 핵심.
+     *
+     * ⚠️ 2026-08-21 부터 **super 전용**이다(구: [관리] 이상). 한도를 넣으면 그 바이어의 매입 판정이
+     *    미수율 → 금액으로 통째로 바뀌므로 락 % 와 같은 무게로 다룬다. 실무자가 자기가 막히면
+     *    자기가 푸는 걸 막는 게 목적이라, 여기서 admin 을 쓰면 저장이 무시된다(권한 자체는
+     *    `BuyerLockAdminOnlyTest` 가 별도로 검증).
+     */
     public function test_limit_change_is_audited(): void
     {
-        $admin = $this->admin();
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
         $b = $this->buyer();
 
-        Volt::actingAs($admin)->test('erp.buyers.index')
+        Volt::actingAs($super)->test('erp.buyers.index')
             ->call('openEdit', $b->id)
             ->set('unsecured_limit_krw_str', '5,000,000')
             ->call('save');

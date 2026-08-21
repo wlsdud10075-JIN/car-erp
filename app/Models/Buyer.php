@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\LockThresholdResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -19,6 +20,9 @@ class Buyer extends Model
         'is_inherited', 'inherited_from_salesman_id', 'inherited_at',
         // 2026-08-10 jin — 무담보 한도(단골에게 담보 없이 내주는 매입 한도). NULL·0 = 미설정 = 기존 동작.
         'unsecured_limit_krw',
+        // 2026-08-21 jin - 바이어별 락 필요입금률(%). NULL = 미설정 = 전역값. 0 은 유효값(락 없음).
+        //   해석은 LockThresholdResolver 단일 출처 - 이 컬럼을 직접 읽지 말 것.
+        'lock_shipping_entry_pct', 'lock_purchase_registration_pct',
     ];
 
     protected $casts = [
@@ -122,7 +126,7 @@ class Buyer extends Model
      *   판매 잔금이 더 들어오면 한도가 늘어 여력이 회복된다.
      *   ⚠️ 구 정의(선적전 총액 × 50% − 미수)와 분모·분자가 둘 다 다르다. 미수 개념이 아니다.
      *   ⚠️ 매입등록 게이트(C5)는 여기가 아니라 ratio 를 본다 — limit/used/available 을 고쳐도 락은 안 움직인다.
-     *   $depositThreshold 미지정 시 Setting::lockThreshold('purchase_registration')(기본 0.5). 배치는 1회 계산해 전달(N+1 방지).
+     *   $depositThreshold 미지정 시 전역값(기본 0.5). 배치는 바이어별로 1회 해석해 전달(N+1·재정의 무시 방지).
      *
      * @param  iterable  $vehicles  sale_total_amount + progress_status_cache + warehouse_out_date
      *                              + purchaseBalancePayments 가 로드된 Vehicle 컬렉션
@@ -134,9 +138,12 @@ class Buyer extends Model
      *   ⚠️ 그래서 아래 `$totalKrw <= 0` 조기반환은 **무담보 한도가 있으면 하지 않는다** —
      *      바로 그 상황(국내 차 0대)에서 쓰라고 만든 값이기 때문이다.
      */
-    public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null, int $unsecuredLimit = 0): ?array
+    public static function computeReceivableGauge(iterable $vehicles, ?float $depositThreshold = null, int $unsecuredLimit = 0, ?float $shippingEntryThreshold = null): ?array
     {
-        $depositThreshold ??= Setting::lockThreshold('purchase_registration');
+        // 🚨 두 임계 모두 **바이어별 재정의**가 있을 수 있다(jin 2026-08-21). 이 메서드는 static 이라
+        //    바이어를 모르므로 호출처가 해석해서 넘긴다. 안 넘기면 전역/차량별 조회로 떨어진다 —
+        //    테스트·단발 호출에는 무해하지만 **배치에서는 반드시 주입**할 것(N+1 + 재정의 무시).
+        $depositThreshold ??= LockThresholdResolver::threshold(null, 'purchase_registration');
         $unsecuredLimit = max(0, $unsecuredLimit);
         $totalKrw = 0;
         $unpaidKrw = 0;
@@ -185,7 +192,7 @@ class Buyer extends Model
             //      체크 안 함 = 바이어 돈 → 무담보 무관. 우회가 아니라 사실 기록이다.
             //   해제 판정은 `Vehicle::isShippingEntryMet()` **단일 출처**다 — 저장 가드도 같은 걸 쓴다.
             //   각자 계산하면 "화면은 풀렸다는데 저장은 막힌다"가 생긴다.
-            if (! $v->isShippingEntryMet() && ($v->is_unsecured_down ?? false)) {
+            if (! $v->isShippingEntryMet($shippingEntryThreshold) && ($v->is_unsecured_down ?? false)) {
                 $lockedDownPaymentKrw += $v->confirmed_down_payment;
             }
         }
@@ -266,7 +273,11 @@ class Buyer extends Model
                 'is_unsecured_down',
             ]);
 
-        $depositThreshold = Setting::lockThreshold('purchase_registration');   // 1회 조회(N+1 방지)
+        // 바이어별 락 임계 (jin 2026-08-21) — 재정의가 없는 바이어는 전역값이 담긴다.
+        //   ⚠️ 배치에서 바이어를 모른 채 계산하면 재정의가 조용히 무시된다 → 여기서 1쿼리로 전부 해석.
+        $depositThresholds = LockThresholdResolver::thresholdsFor($buyerIds, 'purchase_registration');
+        $entryThresholds = LockThresholdResolver::thresholdsFor($buyerIds, 'shipping_entry');
+        $globalDeposit = LockThresholdResolver::threshold(null, 'purchase_registration');
         // 무담보 한도 — 대상 바이어분만 1쿼리로. 기능 토글이 꺼진 회사에서는 전부 0 으로 본다.
         $limits = Setting::unsecuredLimitEnabled()
             ? static::whereIn('id', $buyerIds)->pluck('unsecured_limit_krw', 'id')
@@ -274,7 +285,12 @@ class Buyer extends Model
 
         $out = [];
         foreach ($vehicles->groupBy('buyer_id') as $bid => $group) {
-            $gauge = static::computeReceivableGauge($group, $depositThreshold, (int) ($limits[$bid] ?? 0));
+            $gauge = static::computeReceivableGauge(
+                $group,
+                $depositThresholds[(int) $bid] ?? $globalDeposit,
+                (int) ($limits[$bid] ?? 0),
+                $entryThresholds[(int) $bid] ?? null,
+            );
             if ($gauge !== null) {
                 $out[(int) $bid] = $gauge;
             }
@@ -284,7 +300,12 @@ class Buyer extends Model
         //   이 기능이 겨냥하는 게 담보 0인 바이어라, 여기서 빠지면 "패널엔 있는데 목록엔 없다"가 된다.
         foreach ($limits as $bid => $limit) {
             if ((int) $limit > 0 && ! isset($out[(int) $bid])) {
-                $out[(int) $bid] = static::computeReceivableGauge([], $depositThreshold, (int) $limit);
+                $out[(int) $bid] = static::computeReceivableGauge(
+                    [],
+                    $depositThresholds[(int) $bid] ?? $globalDeposit,
+                    (int) $limit,
+                    $entryThresholds[(int) $bid] ?? null,
+                );
             }
         }
 
@@ -297,8 +318,9 @@ class Buyer extends Model
         // purchaseBalancePayments = 여력의 '사용' 분자. eager load 안 하면 차량당 1쿼리.
         return static::computeReceivableGauge(
             $this->vehicles()->with('purchaseBalancePayments')->get(),
-            null,
+            LockThresholdResolver::threshold($this, 'purchase_registration'),
             $this->effectiveUnsecuredLimit(),   // 기능 토글 반영 — 화면과 게이트가 같은 값을 본다
+            LockThresholdResolver::threshold($this, 'shipping_entry'),
         );
     }
 
