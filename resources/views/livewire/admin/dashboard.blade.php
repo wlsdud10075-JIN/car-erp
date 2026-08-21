@@ -564,6 +564,11 @@ new #[Layout('components.layouts.app')] class extends Component
         // ⚠️ 부호는 그대로 쓴다 — 조정은 +지급뿐 아니라 매입취소 손실 차감(음수)도 담는다.
         // ⚠️ 담당자 스코프(`$ids`)를 조정에도 똑같이 건다. 안 걸면 업무관리자 화면에
         //    자기 팀 밖 지급이 섞인다.
+        // 🧭 조정에는 기간 필터를 따로 안 건다 — 조정에는 날짜가 없고, 배치 승인이
+        //    `execute()` 에서 소속 정산의 `paid_at` 을 **일괄로** 찍기 때문에 한 배치가
+        //    두 달에 걸칠 수 없다. 배치가 잡히면 그 조정 전액이 그 기간의 지급이다.
+        //    ⚠️ 그 전제가 깨지면(정산별로 paid_at 을 따로 찍게 되면) 같은 조정이 두 달에
+        //       각각 전액 잡힌다 — 그때는 여기도 같이 고쳐야 한다.
         if ($batchIds !== []) {
             SettlementPayoutAdjustment::query()
                 ->whereIn('batch_id', array_keys($batchIds))
