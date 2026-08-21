@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -143,5 +144,40 @@ class SettlementMemoSearchTest extends TestCase
 
         // 라우트가 200 이면 쿼리는 통과한 것 — 실제 필터링은 위 scope 테스트가 검증한다.
         $this->assertNotNull($hit->fresh());
+    }
+
+    /**
+     * 🚨 **실제 화면 경로로 넣을 수 있어야 한다.**
+     *
+     * 반타작 흐름은 「기타공제로 절반 빼기 → 월배치 제출」이고, 배치 제출 대상은 **확정된** 정산이다.
+     * 즉 jin 이 손대야 하는 시점은 `confirmed_at` 이 이미 찍힌 뒤다. 회계 가드가 그 시점에
+     * `other_deduction` 을 막으면 **산수는 맞는데 넣을 수가 없는** 기능이 된다.
+     *
+     * 모델을 직접 `saveQuietly` 로 고치는 테스트는 이걸 절대 못 잡는다 — 가드와 validation 을
+     * 통째로 우회하기 때문이다(SKILLS §8 #43 — 운영 경로를 그대로 타는 테스트를 따로 둔다).
+     */
+    public function test_finance_can_split_on_a_confirmed_settlement_through_the_screen(): void
+    {
+        $st = $this->settlement('12타1212', null, 'confirmed');
+        $st->forceFill(['confirmed_at' => now()])->saveQuietly();
+
+        $finance = User::factory()->create([
+            'permission' => 'user', 'role' => '재무', 'email_verified_at' => now(),
+        ]);
+        $this->actingAs($finance);
+
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $st->id)
+            ->set('other_deduction', 500_000)
+            ->set('note', '#동반# 김딜러와 반반')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $fresh = $st->fresh();
+        $this->assertSame(500_000.0, (float) $fresh->other_deduction, '확정 후 기타공제를 못 넣는다 — 반타작이 통째로 막힌다');
+        $this->assertStringContainsString('#동반#', (string) $fresh->note);
+
+        // 그리고 그 메모로 실제로 검색된다 — 넣는 것과 찾는 것이 이어져야 기능이 성립한다.
+        $this->assertSame([$st->id], Settlement::query()->searchTerm('#동반#')->pluck('id')->all());
     }
 }

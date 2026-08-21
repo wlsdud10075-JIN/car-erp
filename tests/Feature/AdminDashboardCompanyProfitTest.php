@@ -243,4 +243,26 @@ class AdminDashboardCompanyProfitTest extends TestCase
         $bRow = $rows[array_search('B', $names, true)];
         $this->assertSame(-500_000, $bRow['contribution'], '조정 받은 만큼 회사 기여가 줄어야 한다');
     }
+
+    /**
+     * 한 배치에 정산이 여러 건이어도 조정은 **한 번만** 센다.
+     * 정산마다 더하면 지급총액이 배로 뛰어 회사이익이 그만큼 깎인다.
+     */
+    public function test_adjustment_counted_once_per_batch(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $a = Salesman::create(['name' => 'A', 'is_active' => true, 'type' => 'freelance']);
+        $b = Salesman::create(['name' => 'B', 'is_active' => true, 'type' => 'freelance']);
+
+        $first = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $second = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $before = $this->companyProfit($admin)['company_net'];
+
+        // 정산 두 건을 같은 배치에 넣고, 그 배치에 조정 하나.
+        $adj = $this->adjust($first, $b, 500_000);
+        $second->forceFill(['payout_batch_id' => $adj->batch_id])->saveQuietly();
+
+        $this->assertSame($before - 500_000, $this->companyProfit($admin)['company_net'],
+            '같은 조정이 정산 수만큼 중복으로 세어졌다');
+    }
 }
