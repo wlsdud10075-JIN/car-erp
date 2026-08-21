@@ -47,6 +47,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   매입 락을 좌우하므로 저장 시 canApprove() 재인가 + 감사 기록 (is_inherited 와 같은 취급).
     public string $unsecured_limit_krw_str = '';
 
+    //   🔒 바이어별 락 필요입금률(%) — **super 전용**. 빈 문자열 = 미설정(전역값 사용).
+    //   ⚠️ '0' 은 유효값이다(= 필요입금 0% = 락 없음). 빈칸과 구분해야 한다 —
+    //      0 을 미설정으로 취급하면 일부러 풀어준 바이어가 조용히 전역으로 돌아간다.
+    public string $lock_shipping_entry_pct_str = '';
+
+    public string $lock_purchase_registration_pct_str = '';
+
     // ── 컨사이니 탭 ────────────────────────────────────────────────
     public array  $consigneeList      = [];
     public bool   $showConsigneeForm  = false;
@@ -280,6 +287,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
         $this->unsecured_limit_krw_str = ($buyer->unsecured_limit_krw ?? 0) > 0
             ? number_format((int) $buyer->unsecured_limit_krw) : '';
+        // NULL 만 빈칸. 0 은 '0' 으로 실어야 "락 없음"이 화면에서 살아난다.
+        $this->lock_shipping_entry_pct_str = $buyer->lock_shipping_entry_pct !== null
+            ? (string) $buyer->lock_shipping_entry_pct : '';
+        $this->lock_purchase_registration_pct_str = $buyer->lock_purchase_registration_pct !== null
+            ? (string) $buyer->lock_purchase_registration_pct : '';
 
         $this->loadConsignees($id);
         $this->loadSavings($id);
@@ -332,16 +344,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ? (int) $this->inherited_from_salesman_id_str : null;
             // 해제 시 부속 정보도 함께 비운다 — "승계 ON 일 때만 원담당자·승계일 존재" 불변식.
             $data['inherited_at'] = $this->is_inherited && $this->inherited_at !== '' ? $this->inherited_at : null;
-            // 무담보 한도 (jin 2026-08-10) — 매입 락을 직접 좌우하므로 승계와 같은 재인가 대상.
-            //   빈 값은 null(미설정)로 저장한다. 0 을 넣어도 hasUnsecuredLimit() 이 false 라 기존 동작.
+        }
+
+        // 🔒 락 기준선 — **super 전용** (jin 2026-08-21). 화면 노출은 편의일 뿐이라 저장 시 재인가(SKILLS §8 #26).
+        //   실무자가 자기가 막히면 자기가 푸는 걸 막는 게 이 권한 분리의 목적이다.
+        if ($user?->isSuperAdmin()) {
+            // 무담보 한도 — 매입 판정을 미수율에서 금액으로 바꾸므로 락 % 와 같은 무게다(구: canApprove).
+            //   빈 값은 null(미설정). 0 을 넣어도 hasUnsecuredLimit() 이 false 라 기존 동작.
             $limit = (int) preg_replace('/[^0-9]/', '', $this->unsecured_limit_krw_str);
             $data['unsecured_limit_krw'] = $limit > 0 ? $limit : null;
+
+            // 🚨 빈칸만 null(미설정). '0' 은 유효값(필요입금 0% = 락 없음)이라 그대로 저장한다.
+            foreach ([
+                'lock_shipping_entry_pct' => $this->lock_shipping_entry_pct_str,
+                'lock_purchase_registration_pct' => $this->lock_purchase_registration_pct_str,
+            ] as $column => $raw) {
+                $raw = trim($raw);
+                $data[$column] = $raw === '' ? null : max(0, min(100, (int) $raw));
+            }
         }
 
         if ($this->editingId) {
             $buyer = Buyer::findOrFail($this->editingId);
             $wasInherited = (bool) $buyer->is_inherited;
             $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
+            $wasLocks = [
+                'lock_shipping_entry_pct' => $buyer->lock_shipping_entry_pct,
+                'lock_purchase_registration_pct' => $buyer->lock_purchase_registration_pct,
+            ];
             $buyer->update($data);
             // 승계 표시는 정산액(건당 5만)을 바꾸므로 변경 이력을 남긴다 (Buyer 엔 감사 훅이 없어 여기서 직접).
             if (array_key_exists('is_inherited', $data) && $wasInherited !== $this->is_inherited) {
@@ -350,6 +380,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 무담보 한도는 매입 락 기준선이라 변경 이력 필수 — 누가 언제 얼마로 올렸는지가 감사 핵심.
             if (array_key_exists('unsecured_limit_krw', $data) && $wasLimit !== (int) ($data['unsecured_limit_krw'] ?? 0)) {
                 \App\Models\AuditLog::recordChange($buyer, 'unsecured_limit_krw', $wasLimit, (int) ($data['unsecured_limit_krw'] ?? 0));
+            }
+            // 🔒 락 기준선 변경은 **유일한 견제 수단**이다 — super 전용이라 사유 입력은 두지 않고 기록만 남긴다.
+            //   Buyer 엔 감사 훅이 없어(AUDITED_COLUMNS 대상 아님) 여기서 직접 남겨야 한다.
+            //   ⚠️ 0 ↔ null 은 뜻이 완전히 다르다(락 없음 vs 전역값) → 느슨한 비교로 뭉개지 말 것.
+            foreach (['lock_shipping_entry_pct', 'lock_purchase_registration_pct'] as $column) {
+                if (array_key_exists($column, $data) && $wasLocks[$column] !== $data[$column]) {
+                    \App\Models\AuditLog::recordChange($buyer, $column, $wasLocks[$column], $data[$column]);
+                }
             }
         } else {
             $buyer = Buyer::create($data);
@@ -945,8 +983,36 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </div>
 
-                {{-- 무담보 한도 (jin 2026-08-10) — 담보(선적 전 국내 차량)가 없어도 이 금액까지 매입 허용.
-                     매입 락을 직접 좌우하므로 승계와 같이 [관리] 이상만 보고 고칠 수 있다. --}}
+                @endif
+                {{-- 🔒 락 기준선 (jin 2026-08-21) — **시스템관리자 전용**.
+                     실무자(관리·업무관리자)가 자기가 막히면 자기가 풀 수 있으면 락이 통제로서 의미가 없다.
+                     무담보 한도도 같은 이유로 이 블록으로 올렸다(구: canApprove).
+                     ⚠️ 무담보를 올리면 매입 판정이 미수율 → 금액으로 통째로 바뀌므로 락 % 와 같은 무게다. --}}
+                @if(auth()->user()?->isSuperAdmin())
+                {{-- 바이어별 락 필요입금률 — 전역 설정보다 먼저 적용된다. 비우면 전역값. --}}
+                <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <div class="text-sm font-semibold text-gray-800">{{ __('buyer.field.lock_section') }}</div>
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.lock_hint') }}</p>
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        @foreach(['shipping_entry' => 'lock_shipping_entry_pct_str', 'purchase_registration' => 'lock_purchase_registration_pct_str'] as $lockKey => $prop)
+                        <div>
+                            <label class="label-base">{{ __('buyer.field.lock_'.$lockKey) }}</label>
+                            <div class="flex items-center gap-1">
+                                <input wire:model="{{ $prop }}" type="number" min="0" max="100" inputmode="numeric"
+                                       class="input-base" placeholder="{{ \App\Models\Setting::lockRequiredPaidPct($lockKey) }}" />
+                                <span class="text-sm text-gray-500">%</span>
+                            </div>
+                            <p class="mt-1 text-[11px] text-gray-500">
+                                {{ __('buyer.field.lock_global', ['pct' => \App\Models\Setting::lockRequiredPaidPct($lockKey)]) }}
+                            </p>
+                            @error($prop)<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                        @endforeach
+                    </div>
+                    <p class="mt-2 text-[11px] leading-relaxed text-amber-700">{{ __('buyer.field.lock_zero_note') }}</p>
+                </div>
+
+                {{-- 무담보 한도 (jin 2026-08-10) — 담보(선적 전 국내 차량)가 없어도 이 금액까지 매입 허용. --}}
                 @php $ug = $this->buyerReceivable; @endphp
                 <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                     <label class="label-base">{{ __('buyer.field.unsecured_limit') }}</label>
