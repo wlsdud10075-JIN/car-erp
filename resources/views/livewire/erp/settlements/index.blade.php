@@ -288,9 +288,19 @@ new #[Layout('components.layouts.app')] class extends Component
         // 정산액 — karaba=이익율 tier / 그 외=type 별 자동 분기 + NULL fallback default
         $settlementAmount = 0;
         if ($isKaraba) {
-            if ($operatingProfit > 0 && $profitRate !== null) {
-                $pct = $profitRate >= 6 ? 20 : ($profitRate >= 5 ? 15 : 10);
-                $settlementAmount = (int) (floor($operatingProfit * $pct / 100 / 10) * 10);
+            // 프리랜서 = 이익률 비율 정산 / 사내직원 = 건당 — 모델 getSettlementAmountAttribute 와 같은 분기.
+            // ⚠️ tier 구간(6/5%)을 여기 옮겨 적지 말 것. 갈리면 «미리보기와 실제 정산액이 다른» 형태가 된다.
+            if ($this->settlement_type === 'ratio') {
+                if ($operatingProfit > 0) {
+                    $pct = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
+                        ? (float) $this->settlement_ratio
+                        : Settlement::karabaTierPercent($profitRate);
+                    $settlementAmount = $pct > 0 ? (int) (floor($operatingProfit * $pct / 100 / 10) * 10) : 0;
+                }
+            } else {
+                $settlementAmount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
+                    ? (int) $this->per_unit_amount
+                    : Settlement::EMPLOYEE_PER_UNIT_DEFAULT;
             }
         } elseif ($this->settlement_type === 'ratio') {
             $ratio = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
@@ -425,6 +435,39 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->salesman_id = $vehicle?->salesman_id;
         $this->vehicleSearch = '';
         unset($this->selectedVehicle, $this->vehicleSearchResults, $this->marginData);
+
+        // 차량이 정해져야 이익률이 나온다 — 여기서 비율 자동값을 채운다(차가 바뀌면 다시).
+        $this->fillKarabaRatio(force: true);
+    }
+
+    /**
+     * karaba — 비율칸에 **이익률 자동값**을 채운다 (jin 2026-08-21).
+     *
+     * 「자동으로 기입되고, 고치면 고친 값으로 계산된다」가 요구사항이라 **읽기 전용이 아니다**.
+     * ⚠️ 그래서 **비어 있을 때만** 채운다 — 사람이 넣은 값을 덮으면 조정이 매번 되돌아간다.
+     * ⚠️ 차량을 바꾸면 이익률이 달라지므로 그때는 다시 계산해 넣는다(선택 직후라 사람 입력이 없다).
+     */
+    private function fillKarabaRatio(bool $force = false): void
+    {
+        if (! \App\Models\Setting::isKaraba() || $this->settlement_type !== 'ratio') {
+            return;
+        }
+        if (! $force && ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0) {
+            return;
+        }
+
+        $rate = $this->marginData['profitRate'] ?? null;
+        $pct = Settlement::karabaTierPercent($rate === null ? null : (float) $rate);
+        if ($pct > 0) {
+            $this->settlement_ratio = $pct;
+        }
+    }
+
+    /** 정산 방식을 바꾸면 karaba 비율 자동값을 다시 맞춘다(사내직원 → 프리랜서 전환 등). */
+    public function updatedSettlementType(): void
+    {
+        unset($this->marginData);
+        $this->fillKarabaRatio();
     }
 
     public function openCreate(): void
@@ -451,6 +494,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->showPanel = true;
 
         unset($this->selectedVehicle, $this->marginData, $this->krwBreakdown);
+
+        // 옛 정산은 비율칸이 비어 있다(예전엔 안 쓰던 값) — 열 때 자동값을 채워 금액이 그대로 보이게 한다.
+        $this->fillKarabaRatio();
     }
 
     public function close(): void
@@ -1854,6 +1900,17 @@ new #[Layout('components.layouts.app')] class extends Component
                        type="number" step="0.01" min="0" max="100"
                        class="input-base" placeholder="{{ __('settlement.field_ratio_ph') }}" />
                 @error('settlement_ratio')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                {{-- karaba — 이익률로 정해지는 자동값을 알려준다. 칸은 그대로 고칠 수 있고,
+                     고치면 그 값으로 정산액이 다시 계산된다(jin 2026-08-21). --}}
+                @if(($this->marginData['isKaraba'] ?? false) && ($this->marginData['profitRate'] ?? null) !== null)
+                    @php $autoPct = \App\Models\Settlement::karabaTierPercent((float) $this->marginData['profitRate']); @endphp
+                    <p class="mt-1 text-xs text-gray-500">
+                        {{ __('settlement.karaba_ratio_hint', [
+                            'rate' => number_format((float) $this->marginData['profitRate'], 1),
+                            'pct' => $autoPct,
+                        ]) }}
+                    </p>
+                @endif
             </div>
             @else
             <div class="mb-3">
@@ -1879,7 +1936,9 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="flex justify-between text-gray-600">
                 <span>{{ __('settlement.result_settlement_amount') }}
                     @if($settlement_type === 'ratio')
-                        <span class="text-xs text-gray-400">{{ __('settlement.result_ratio_formula', ['ratio' => ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : 50]) }}</span>
+                        <span class="text-xs text-gray-400">{{ ($this->marginData['isKaraba'] ?? false)
+                            ? __('settlement.karaba_ratio_formula', ['ratio' => ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : \App\Models\Settlement::karabaTierPercent($this->marginData['profitRate'] ?? null)])
+                            : __('settlement.result_ratio_formula', ['ratio' => ($settlement_ratio ?? null) !== null && (float) $settlement_ratio > 0 ? $settlement_ratio : 50]) }}</span>
                     @else
                         <span class="text-xs text-gray-400">{{ __('settlement.result_per_unit_formula') }}</span>
                     @endif

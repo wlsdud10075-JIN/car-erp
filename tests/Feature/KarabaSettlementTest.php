@@ -98,4 +98,91 @@ class KarabaSettlementTest extends TestCase
         $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
         Volt::test('erp.settlements.index')->assertSee('영업이익');
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 비율칸 사용 (jin 2026-08-21)
+    //
+    // 구: 이익률 tier 를 코드가 직접 곱했고 `settlement_ratio` 는 **읽히지도 않았다**.
+    //     그런데 화면은 그 칸을 필수로 받아서 «넣은 비율이 반영되겠지» 로 읽혔다(실제로는 무시).
+    // 신: 비율칸에 tier 값이 자동으로 채워지고, 고치면 고친 값으로 계산된다.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** 비율칸이 비어 있으면 종전대로 tier 자동값 — 손대지 않으면 결과가 같다. */
+    public function test_blank_ratio_still_uses_the_tier(): void
+    {
+        $s = $this->make();
+
+        $this->assertNull($s->settlement_ratio);
+        $this->assertSame(20, $s->karaba_tier_percent);
+        $this->assertSame(660_000, $s->settlement_amount);
+    }
+
+    /** 🚨 비율을 고치면 **그 값으로** 계산된다 — 이게 이번 변경의 핵심이다. */
+    public function test_edited_ratio_overrides_the_tier(): void
+    {
+        $s = $this->make();
+        $s->settlement_ratio = 10;
+        $s->save();
+
+        // 영업이익 3,300,000 × 10% = 330,000 (tier 20% 였다면 660,000)
+        $this->assertSame(330_000, $s->fresh()->settlement_amount);
+    }
+
+    /** 사내직원(per_unit)은 이익률과 무관하게 건당 정산이다. */
+    public function test_employee_is_paid_per_unit_not_by_tier(): void
+    {
+        $s = $this->make();
+        $s->settlement_type = 'per_unit';
+        $s->per_unit_amount = 150_000;
+        $s->save();
+
+        $this->assertSame(150_000, $s->fresh()->settlement_amount);
+    }
+
+    /** tier 경계는 배타적이다 — 정확히 6%면 20%, 그 아래면 15%. */
+    public function test_tier_boundary_is_exclusive_at_six_percent(): void
+    {
+        $this->assertSame(20, Settlement::karabaTierPercent(6.0));
+        $this->assertSame(15, Settlement::karabaTierPercent(5.99));
+        $this->assertSame(15, Settlement::karabaTierPercent(5.0));
+        $this->assertSame(10, Settlement::karabaTierPercent(4.99));
+        $this->assertSame(0, Settlement::karabaTierPercent(null));
+    }
+
+    /** 영업이익이 0 이하면 비율을 뭘 넣든 0이다(손실을 담당자에게 물리지 않는다). */
+    public function test_negative_profit_stays_zero_even_with_a_ratio(): void
+    {
+        $s = $this->make(['purchase_price' => 20_000_000, 'purchase_vat_amount' => 0]);
+        $s->settlement_ratio = 50;
+        $s->save();
+
+        $this->assertSame(0, $s->fresh()->settlement_amount);
+    }
+
+    /** 편집 화면을 열면 비율칸에 tier 자동값이 채워진다(비어 있던 옛 정산도). */
+    public function test_opening_the_panel_fills_the_ratio(): void
+    {
+        $s = $this->make();
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $s->id)
+            ->assertSet('settlement_ratio', 20);
+    }
+
+    /** 🚨 사람이 넣은 값을 덮지 않는다 — 덮으면 조정이 매번 되돌아간다. */
+    public function test_opening_the_panel_keeps_an_edited_ratio(): void
+    {
+        $s = $this->make();
+        $s->settlement_ratio = 12;
+        $s->save();
+
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $s->id)
+            ->assertSet('settlement_ratio', 12.0);
+    }
 }

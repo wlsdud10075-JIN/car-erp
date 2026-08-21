@@ -195,6 +195,8 @@ return [
     'result_settlement_amount' => 'Settlement amount',
     'inherited_buyer' => 'Inherited',
     'result_ratio_formula' => 'Total margin × :ratio%',
+    'karaba_ratio_formula' => 'Operating profit × :ratio%',
+    'karaba_ratio_hint' => 'Profit rate :rate% -> auto :pct%. Editing this field recalculates with your value.',
     'result_per_unit_formula' => 'Per-unit fixed',
     'result_document_fee' => 'Document fee',
     'result_document_fee_sub' => '(freelancer auto)',
