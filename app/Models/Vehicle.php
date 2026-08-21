@@ -124,6 +124,7 @@ class Vehicle extends Model
         'purchase_registration_type', 'purchase_evidence_subtype', 'is_dealer_purchase',   // karaba 2단 캐스케이드 + 매매상 체크 (Phase 1, 2026-07-22)
         'is_deposit_purchase', 'deposit_purchase_at',   // 보증금 매입 마커 + 도장 일시 — 재무 C2 선지급 확정 시 자동 set (2026-07-23)
         'is_unsecured_down',   // 무담보로 지급한 계약금 표시 (jin 2026-08-10) — 회사가 바이어 대신 낸 것만 체크
+        'has_mortgage',        // 저당 설정 표시 (jin 2026-08-21) — 딜러 입금완료 알림톡의 저당 해지 요청 문구를 가른다
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
@@ -169,6 +170,7 @@ class Vehicle extends Model
         'buyer_undecided' => 'boolean',
         'is_deposit_purchase' => 'boolean',
         'is_unsecured_down' => 'boolean',
+        'has_mortgage' => 'boolean',
         'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
@@ -547,6 +549,8 @@ class Vehicle extends Model
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
         'is_unsecured_down',   // 돈의 출처 기록 — 누가 언제 표시했는지 추적 필요
+        // 2026-08-21 (jin) — 저당 표시. 딜러에게 나가는 문장을 좌우하고 해제가 수동이라 추적한다.
+        'has_mortgage',
         // 2026-08-12 (board 인계) — board 선적 계획이 원장에 쓰는 첫 두 컬럼.
         //   포워딩사는 채우는 순간 관리 할 일 큐(`forwarding_missing`)에서 그 차가 빠진다 —
         //   "영업이 잘못 골라도 관리가 눈치챌 기회가 사라진다" 는 우려의 유일한 대응이 이 기록이다.

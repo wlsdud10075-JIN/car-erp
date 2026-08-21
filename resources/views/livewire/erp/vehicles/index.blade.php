@@ -923,6 +923,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 바이어 미정 매입(투기) — 켜야만 바이어 없이 신규 등록이 통과한다 (jin 2026-08-09). */
     public bool $buyer_undecided = false;
 
+    /**
+     * 저당 설정 표시 (jin 2026-08-21) — 딜러 입금완료 알림톡에 「저당 해지를 부탁드립니다」 를 실을지 가른다.
+     * ⚠️ 해제가 수동이다. 딜러가 저당을 풀어도 안 꺼지므로 발송 확인창에서 매번 포함 여부를 보여준다.
+     */
+    public bool $has_mortgage = false;
+
     /** 1단(매입등록) 변경 시 2단(증빙유형)이 새 캐스케이드에 없으면 리셋. */
     public function updatedPurchaseRegistrationType(): void
     {
@@ -2133,14 +2139,62 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 🚦 승인 전에는 버튼이 아예 안 보여야 한다. jin: *"괜히 버튼 있..."* — 눌러도 안 나가는 버튼은
      *    "고장난 기능"으로 읽힌다. 그래서 **기능설정의 tmplId 가 채워질 때 자동으로 켜진다**
      *    (`canSend` = 마스터 on + 계정 설정 + 개별 토글 + 해당 tmplId 존재).
-     * 🇰🇷 부수 효과 — **karaba 는 등록 대상이 아니라 tmplId 가 영영 비어 있어** 그 회사에선 안 뜬다.
+     * 🇰🇷 부수 효과 — 그 회사에 tmplId 가 안 채워져 있으면 영영 안 뜬다.
      *    회사별 분기를 코드에 박을 필요가 없다.
      * ⚡ 잔금 행마다 부르면 Setting 조회가 반복되므로 요청당 한 번만 판정한다.
      */
     #[Computed]
     public function paidNoticeEnabled(): bool
     {
-        return \App\Support\AlimtalkConfig::active()->canSend('erp_purchase_paid');
+        return $this->paidNoticeCode !== null;
+    }
+
+    /**
+     * 실제로 쓸 템플릿 코드 — **v2 가 승인·입력돼 있으면 그쪽**, 아니면 기존 것 (jin 2026-08-21).
+     *
+     * v2(`erp_purchase_paid_v2`) = 저당 안내 한 줄 + 담당영업 동시 수신. 본문이 다르므로 BizM
+     * 재등록·재승인 대상이라, 승인이 끝난 회사부터 **tmplId 를 넣는 순간 자동으로 전환**된다.
+     * 그 전에는 기존 `erp_purchase_paid` 로 계속 나간다 — 승인 대기 중에 버튼이 죽지 않는다.
+     *
+     * ⚠️ **둘 다 없으면 null** → 버튼 자체가 안 뜬다(위 `paidNoticeEnabled`).
+     * ⚠️ v2 가 3사 모두 가동된 뒤에야 옛 코드를 지운다. 그 전에 지우면 승인 안 끝난 회사가 죽는다.
+     */
+    #[Computed]
+    public function paidNoticeCode(): ?string
+    {
+        $cfg = \App\Support\AlimtalkConfig::active();
+
+        if ($cfg->canSend('erp_purchase_paid_v2')) {
+            return 'erp_purchase_paid_v2';
+        }
+
+        return $cfg->canSend('erp_purchase_paid') ? 'erp_purchase_paid' : null;
+    }
+
+    /**
+     * 발송 확인창 꼬리말 (jin 2026-08-21) — «지금 누르면 무엇이 나가는가» 를 누르기 전에 보여준다.
+     *
+     * 🚨 저당 표시는 **해제가 수동**이라 딜러가 풀어도 켜진 채 남는다. 그 상태로 계속 발송하면
+     *    이미 해지된 차에 해지 요청이 나간다 — 매번 확인창에 실어 그때 눈에 띄게 한다.
+     * ⚠️ 아직 옛 템플릿으로 나가는 회사에서는 저당을 켜도 문구가 안 나간다는 사실을 함께 알린다
+     *    (조용히 빠지면 «보냈으니 전달됐겠지» 로 믿게 된다).
+     */
+    #[Computed]
+    public function paidNoticeConfirmSuffix(): string
+    {
+        $isV2 = $this->paidNoticeCode === 'erp_purchase_paid_v2';
+
+        $suffix = '';
+        if ($this->has_mortgage) {
+            $suffix .= $isV2
+                ? __('vehicle.paidnotice.confirm_mortgage_on')
+                : __('vehicle.paidnotice.confirm_mortgage_pending');
+        }
+        if ($isV2) {
+            $suffix .= __('vehicle.paidnotice.confirm_sales');
+        }
+
+        return $suffix;
     }
 
     /**
@@ -3052,6 +3106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
         $this->is_unsecured_down = (bool) $v->is_unsecured_down;
         $this->buyer_undecided = (bool) $v->buyer_undecided;
+        $this->has_mortgage = (bool) $v->has_mortgage;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
         $this->purchase_seller_account = $v->purchase_seller_account ?? '';
@@ -3540,19 +3595,72 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $log = \App\Services\BizmAlimtalkService::active()->send('erp_purchase_paid', $phone, [
+        // 어느 템플릿으로 나가는지 — 버튼 노출 때와 같은 판정을 여기서 다시 한다(액션은 매번 재인가).
+        $code = $this->paidNoticeCode;
+        if ($code === null) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.disabled'), type: 'error');
+
+            return;
+        }
+        $isV2 = $code === 'erp_purchase_paid_v2';
+
+        // 🚨 토글만 하고 저장을 안 했으면 막는다 — 발송은 **DB 값**을 읽으므로 화면과 다른 내용이
+        //    나간다. 「저당을 켜고 보냈는데 문구가 없다」 가 되면 아무도 눈치 못 챈다.
+        if ($isV2 && $this->has_mortgage !== (bool) $vehicle->has_mortgage) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.mortgage_unsaved'), type: 'warning');
+
+            return;
+        }
+
+        $vars = [
             '차량번호' => $vehicle->vehicle_number,
             '구분' => $kind === 'down' ? __('vehicle.paidnotice.kind_down') : __('vehicle.paidnotice.kind_balance'),
             '금액' => number_format($amount).'원',
             '계좌' => \App\Support\AccountMask::forVehicle($vehicle),
             '입금자명' => \App\Support\AlimtalkConfig::active()->companyLabel(),
-        ], ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()]);
+        ];
 
-        if ($log->status === 'sent') {
-            $this->dispatch('notify', message: __('vehicle.paidnotice.sent', ['amount' => number_format($amount)]), type: 'success');
-        } else {
-            $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        // 저당 안내 — v2 에만 있는 변수다. 🚨 **빈 값을 보내지 않는다**(반려 위험) — 저당이 없으면
+        //    「특이사항 없음」 을 채운다. 옛 템플릿으로 나가는 동안엔 이 줄 자체가 없다(아래 토스트로 알린다).
+        $meta = ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()];
+        if ($isV2) {
+            $vars['특이사항'] = $vehicle->has_mortgage
+                ? \App\Support\AlimtalkTemplates::MORTGAGE_NOTICE
+                : \App\Support\AlimtalkTemplates::MORTGAGE_NONE;
         }
+
+        $log = \App\Services\BizmAlimtalkService::active()->send($code, $phone, $vars, $meta);
+
+        if ($log->status !== 'sent') {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+
+            return;
+        }
+
+        // 담당영업 동시 수신 (jin 2026-08-21) — **v2 에서만**. 옛 본문은 수신 대상을 «딜러» 로 못 박고
+        //   있어서 영업에게 보내면 그 문장이 거짓이 된다(카카오는 본문으로 수신자를 판별한다).
+        // ⚠️ 딜러 발송이 성공한 뒤에만 보낸다 — 안 나간 통지를 «보냈구나» 로 보여주면 그게 거짓 신호다.
+        // ⚠️ 영업 phone 이 비면 아무 일도 안 일어난다(메모리 「phone 비면 조용히 skip」) → 토스트로 알린다.
+        $salesNotice = '';
+        if ($isV2) {
+            $salesPhone = trim((string) ($vehicle->salesman?->phone ?? ''));
+            if ($salesPhone === '') {
+                $salesNotice = __('vehicle.paidnotice.sales_no_phone');
+            } elseif ($salesPhone === $phone) {
+                $salesNotice = '';   // 딜러 번호와 같으면 한 통이면 충분하다.
+            } else {
+                $salesLog = \App\Services\BizmAlimtalkService::active()->send($code, $salesPhone, $vars, $meta);
+                $salesNotice = $salesLog->status === 'sent'
+                    ? __('vehicle.paidnotice.sales_sent')
+                    : __('vehicle.paidnotice.sales_failed');
+            }
+        } elseif ($vehicle->has_mortgage) {
+            // 저당을 켰는데 옛 템플릿으로 나갔다 — 문구가 조용히 빠지면 딜러는 저당 얘기를 못 듣는다.
+            $salesNotice = __('vehicle.paidnotice.mortgage_pending');
+        }
+
+        $message = __('vehicle.paidnotice.sent', ['amount' => number_format($amount)]);
+        $this->dispatch('notify', message: trim($message.' '.$salesNotice), type: 'success');
     }
 
     public function removeExportDeclarationDoc(): void
@@ -4190,6 +4298,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? $this->is_unsecured_down
             : (bool) (($editingVehicle ?? null)?->is_unsecured_down ?? false);
 
+        // 저당 표시 (jin 2026-08-21) — 딜러 알림톡 칸을 보는 권한과 동일(말소 담당·재무).
+        //   화면 노출은 편의일 뿐이라 저장 시점에 다시 인가한다(SKILLS §8 #26).
+        $hasMortgage = ($user->canHandleDeregistration() || $user->canConfirmFinance())
+            ? $this->has_mortgage
+            : (bool) (($editingVehicle ?? null)?->has_mortgage ?? false);
+
         // 🚨 해제 가드 (jin 2026-08-10 제보) — **회사 돈이 아직 나가 있는데 체크를 끄면
         //   한도만 돌아온다**. 계약금 기록은 그대로인데 무담보가 복구되니 락을 그냥 우회할 수 있다.
         //   그래서 확정 계약금이 있고 아직 선적 진입 전이면 해제를 거부한다.
@@ -4249,6 +4363,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'is_dealer_purchase' => $this->is_dealer_purchase,
             'is_deposit_purchase' => $depositMarker,   // 도장 시각(deposit_purchase_at)은 Vehicle::saving 이 찍는다
             'is_unsecured_down' => $unsecuredDown,
+            'has_mortgage' => $hasMortgage,
             // 큐 20-A/C — 매입처 계좌 4컬럼
             'purchase_seller_bank'    => $this->purchase_seller_bank    ?: null,
             'purchase_seller_account' => $this->purchase_seller_account ?: null,
@@ -5483,7 +5598,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided','has_mortgage',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -7151,7 +7266,7 @@ function vehicleColumnsToggle() {
                              ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
                         @if($canConfirmFinance && $editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
                         <button type="button" wire:click="sendPurchasePaidAlimtalk('down')"
-                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_down'), 'amount' => number_format($this->confirmedDownPayment)]) }}"
+                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_down'), 'amount' => number_format($this->confirmedDownPayment)]) }}{{ $this->paidNoticeConfirmSuffix }}"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
                             {{ __('vehicle.paidnotice.btn') }}
@@ -7217,7 +7332,7 @@ function vehicleColumnsToggle() {
                                 더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
                         @if($canConfirmFinance && $this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
                         <button type="button" wire:click="sendPurchasePaidAlimtalk('balance', {{ $row['id'] }})"
-                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_balance'), 'amount' => number_format((float) $row['amount'])]) }}"
+                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_balance'), 'amount' => number_format((float) $row['amount'])]) }}{{ $this->paidNoticeConfirmSuffix }}"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-amber-600">
                             {{ __('vehicle.paidnotice.btn') }}
@@ -7350,6 +7465,17 @@ function vehicleColumnsToggle() {
                             @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
                             @endif
+                        </div>
+                        {{-- 저당 표시 (jin 2026-08-21) — 입금완료 알림톡에 「저당 해지를 부탁드립니다」 를 실을지 가른다.
+                             ⚠️ **해제가 수동이다.** 딜러가 저당을 풀어도 안 꺼지므로, 발송 확인창에서 매번 포함 여부를 보여준다.
+                             ⚠️ 다른 칸과 같이 **저장을 눌러야 반영**된다 — 토글만 하고 발송하면 액션이 막고 안내한다. --}}
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <button type="button" wire:click="$toggle('has_mortgage')"
+                                    class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors {{ $has_mortgage ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gray-200 text-gray-600' }}">
+                                <span class="inline-block h-1.5 w-1.5 rounded-full {{ $has_mortgage ? 'bg-white' : 'bg-gray-400' }}"></span>
+                                {{ __('vehicle.field.has_mortgage') }}
+                            </button>
+                            <span class="text-[11px] text-yellow-700">{{ __('vehicle.field.has_mortgage_hint') }}</span>
                         </div>
                     </div>
                 </div>
