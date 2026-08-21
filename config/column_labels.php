@@ -54,6 +54,8 @@ return [
         'is_dealer_purchase' => '매매상',
         'is_unsecured_down' => '무담보로 지급한 계약금',
         'buyer_undecided' => '바이어 미정 매입',
+        'has_mortgage' => '저당 설정 표시',
+        'is_deposit_purchase' => '보증금으로 매입',
         'nice_reg_owner_name' => '소유자',
         'nice_reg_owner_rrn' => '주민(법인)등록번호',
 

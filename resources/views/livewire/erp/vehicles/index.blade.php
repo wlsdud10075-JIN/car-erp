@@ -7472,7 +7472,6 @@ function vehicleColumnsToggle() {
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             <button type="button" wire:click="$toggle('has_mortgage')"
                                     class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors {{ $has_mortgage ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gray-200 text-gray-600' }}">
-                                <span class="inline-block h-1.5 w-1.5 rounded-full {{ $has_mortgage ? 'bg-white' : 'bg-gray-400' }}"></span>
                                 {{ __('vehicle.field.has_mortgage') }}
                             </button>
                             <span class="text-[11px] text-yellow-700">{{ __('vehicle.field.has_mortgage_hint') }}</span>

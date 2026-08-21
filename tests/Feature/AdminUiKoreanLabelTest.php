@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
+use App\Models\Vehicle;
 use App\Support\ColumnLabel;
 use Tests\TestCase;
 
@@ -144,5 +145,20 @@ class AdminUiKoreanLabelTest extends TestCase
         }
 
         return $out;
+    }
+
+    /**
+     * 감사 대상 컬럼은 **전부 한글 라벨이 있어야 한다** (jin 반복 지적 — SKILLS 8 #41).
+     *
+     * 감사로그 화면은 `column_name` 을 **원문 그대로** 찍는다. AUDITED_COLUMNS 에 새 컬럼을
+     * 넣고 사전을 안 채우면 관리자 화면에 영문 식별자가 그대로 노출된다 — 예외도 로그도 안 난다.
+     * 기능 테스트로는 원리상 못 잡는 부류라 여기서 정적으로 대조한다.
+     */
+    public function test_every_audited_vehicle_column_has_a_korean_label(): void
+    {
+        $labels = config('column_labels.vehicles') ?? [];
+        $missing = array_values(array_diff(Vehicle::AUDITED_COLUMNS, array_keys($labels)));
+
+        $this->assertSame([], $missing, '감사 컬럼에 한글 라벨이 없다: '.implode(', ', $missing));
     }
 }
