@@ -31,6 +31,9 @@ new #[Layout('components.layouts.app')] class extends Component
     // 🔒 락 수치 — 락별 "필요 입금률(%)". lock 키 => int. 기본값 = Setting::LOCK_PAID_DEFAULTS.
     public array $lockThresholds = [];
 
+    /** 신용도 배점 (jin 2026-08-21) — 4축. 합 100 은 강제하지 않는다(입력 합으로 환산). */
+    public array $creditWeights = [];
+
     // 채권 유예일(선적 전 미수 유예). 기본값 = Setting::RECEIVABLE_GRACE_DEFAULT.
     public int $graceDays = 10;
 
@@ -124,6 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component
         foreach (Setting::LOCK_PAID_DEFAULTS as $lock => $default) {
             $this->lockThresholds[$lock] = Setting::lockRequiredPaidPct($lock);
         }
+        $this->creditWeights = \App\Services\BuyerCreditScore::weights();
         $this->graceDays = Setting::graceDays();
         foreach ($this->alarmLeadMeta() as $k => $m) {
             $this->alarmLeadDays[$k] = (int) Setting::get($m['key'], $m['default']);
@@ -772,6 +776,30 @@ new #[Layout('components.layouts.app')] class extends Component
             }
         }
 
+        // 신용도 배점 (jin 2026-08-21) — 제안 표시에만 쓰이고 아무것도 차단하지 않는다.
+        //   합계 100 은 강제하지 않는다(한 축만 올리고 싶을 수 있다). 점수는 입력 합으로 환산된다.
+        $weightsOld = \App\Services\BuyerCreditScore::weights();
+        $weights = [];
+        foreach (\App\Services\BuyerCreditScore::DEFAULT_WEIGHTS as $k => $default) {
+            $weights[$k] = max(0, min(100, (int) ($this->creditWeights[$k] ?? $default)));
+        }
+        if ($weights !== $weightsOld) {
+            $cw = Setting::updateOrCreate(
+                ['key' => 'credit_score_weights_'.$set],
+                ['value' => json_encode($weights), 'type' => 'string', 'description' => '바이어 신용도 배점 ('.$set.')'],
+            );
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(),
+                'auditable_type' => Setting::class,
+                'auditable_id' => $cw->id,
+                'action' => 'updated',
+                'column_name' => 'credit_score_weights',
+                'old_value' => json_encode($weightsOld),
+                'new_value' => json_encode($weights),
+            ]);
+        }
+        $this->creditWeights = $weights;
+
         $graceOld = Setting::graceDays();
         $graceVal = max(0, (int) $this->graceDays);
         $graceSetting = Setting::updateOrCreate(
@@ -1286,6 +1314,27 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
             </div>
             @endforeach
+
+            {{-- 바이어 신용도 배점 (jin 2026-08-21) — **제안 표시 전용. 아무것도 차단하지 않는다.**
+                 바이어 관리 편집 패널에서 등급·권장 락 %를 보여주는 데만 쓰이고, 실제 반영은
+                 사람이 [적용]을 눌러야 일어난다. 자동 연동 안 하는 이유는 BuyerCreditScore 주석 참조. --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2">
+                <div class="text-sm text-gray-700">{{ __('feature_settings.credit_weights_label') }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.credit_weights_sub') }}</span>
+                </div>
+                <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    @foreach(\App\Services\BuyerCreditScore::DEFAULT_WEIGHTS as $axis => $default)
+                    <div class="flex items-center gap-1">
+                        <span class="w-16 shrink-0 text-xs text-gray-500">{{ __('feature_settings.credit_axis_'.$axis) }}</span>
+                        <input type="number" min="0" max="100" wire:model="creditWeights.{{ $axis }}"
+                               class="input-base w-16 py-1 text-sm">
+                    </div>
+                    @endforeach
+                </div>
+                <p class="mt-1.5 text-[11px] text-gray-400">
+                    {{ __('feature_settings.credit_weights_sum', ['sum' => array_sum($creditWeights ?: [])]) }}
+                </p>
+            </div>
 
             {{-- 채권 유예일 — 선적 전 미수는 판매일+이 일수 지나야 채권 (jin 2026-07-20) --}}
             <div class="flex items-center gap-2 rounded-md border border-gray-100 px-3 py-2">

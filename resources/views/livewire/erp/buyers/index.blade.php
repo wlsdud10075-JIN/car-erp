@@ -97,6 +97,34 @@ new #[Layout('components.layouts.app')] class extends Component {
      * KRW 차량 또는 환율 미입력 차량은 분모·분자 모두 제외 (의미 없는 비율 방지).
      */
     #[Computed]
+    public function creditScore(): ?array
+    {
+        // 🚨 **제안 전용**이다. 여기서 아무것도 저장하지 않는다 — [적용]을 눌러야 입력칸이 채워지고,
+        //    그것도 [저장]을 눌러야 DB 로 간다. 자동 반영하면 점수가 조용히 내려가 선적이 막히는데
+        //    영업은 이유를 모른다(BuyerCreditScore 주석 참조).
+        // ⚠️ 목록에서 부르지 말 것 — 지급 행태가 차량별 집계라 N+1 이다. 편집 패널에서만.
+        if (! $this->editingId || ! auth()->user()?->isSuperAdmin()) {
+            return null;
+        }
+        $buyer = Buyer::find($this->editingId);
+
+        return $buyer ? \App\Services\BuyerCreditScore::for($buyer) : null;
+    }
+
+    /** 권장 락 %를 **입력칸에만** 채운다. 저장은 사람이 [저장]을 눌러야 일어난다. */
+    public function applyRecommendedLocks(): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);   // 화면 노출은 편의일 뿐 (SKILLS §8 #26)
+        $credit = $this->creditScore();
+        if (! $credit || ! $credit['available']) {
+            return;
+        }
+        $this->lock_shipping_entry_pct_str = (string) $credit['recommended']['shipping_entry'];
+        $this->lock_purchase_registration_pct_str = (string) $credit['recommended']['purchase_registration'];
+        $this->dispatch('notify', message: __('buyer.field.lock_applied'), type: 'success');
+    }
+
+    #[Computed]
     public function buyerReceivable(): ?array
     {
         if (! $this->editingId) {
@@ -1010,6 +1038,63 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </div>
                     <p class="mt-2 text-[11px] leading-relaxed text-amber-700">{{ __('buyer.field.lock_zero_note') }}</p>
+
+                    {{-- 신용도 제안 (jin 2026-08-21) — **보여주기만 한다.** [적용]은 위 입력칸을 채울 뿐이고,
+                         DB 로 가려면 [저장]을 눌러야 한다. 총점만 던지지 않고 축마다 왜 그 점수인지 찍는다 —
+                         지금 손실 이력은 운영에 사실상 0건이라 전원이 만점이다. 그 사실이 화면에 안 보이면
+                         "72점 B등급"이 실제보다 근거 있어 보인다. --}}
+                    @php $credit = $this->creditScore; @endphp
+                    @if($editingId && $credit)
+                    <div class="mt-3 border-t border-rose-200 pt-3">
+                        @if(! $credit['available'])
+                        <p class="text-[11px] leading-relaxed text-gray-500">{{ __('buyer.field.credit_unavailable') }}</p>
+                        @else
+                        <div class="flex items-center justify-between">
+                            <div class="text-sm text-gray-800">
+                                {{ __('buyer.field.credit_score', ['score' => $credit['score']]) }}
+                                <span class="ml-1 rounded px-1.5 py-0.5 text-xs font-bold
+                                    {{ in_array($credit['grade'], ['A','B']) ? 'bg-emerald-100 text-emerald-700' : ($credit['grade'] === 'C' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700') }}">
+                                    {{ $credit['grade'] }}
+                                </span>
+                                @if($credit['capped_by_loss'])
+                                <span class="ml-1 text-[11px] text-red-600">{{ __('buyer.field.credit_loss_capped') }}</span>
+                                @endif
+                            </div>
+                            <button type="button" wire:click="applyRecommendedLocks"
+                                    class="rounded border border-rose-300 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-100">
+                                {{ __('buyer.field.credit_apply', [
+                                    'entry' => $credit['recommended']['shipping_entry'],
+                                    'purchase' => $credit['recommended']['purchase_registration'],
+                                ]) }}
+                            </button>
+                        </div>
+                        <dl class="mt-2 space-y-0.5">
+                            @foreach($credit['axes'] as $axis)
+                            <div class="flex items-baseline gap-2 text-[11px]">
+                                <dt class="w-14 shrink-0 text-gray-500">{{ $axis['label'] }}</dt>
+                                <dd class="w-12 shrink-0 tabular-nums text-gray-700">{{ $axis['score'] }}/{{ $axis['max'] }}</dd>
+                                <dd class="text-gray-500">{{ $axis['why'] }}</dd>
+                            </div>
+                            @endforeach
+                        </dl>
+                        {{-- 어긋남 표시 — 한 번 넣은 값은 고정이라 점수가 내려가도 안 따라온다.
+                             이게 없으면 넣어놓고 잊어버린다. --}}
+                        @php
+                            $mismatch = [];
+                            foreach (['shipping_entry' => $lock_shipping_entry_pct_str, 'purchase_registration' => $lock_purchase_registration_pct_str] as $k => $cur) {
+                                if (trim((string) $cur) !== '' && (int) $cur !== $credit['recommended'][$k]) {
+                                    $mismatch[] = __('buyer.field.lock_'.$k).' '.(int) $cur.'% → '.$credit['recommended'][$k].'%';
+                                }
+                            }
+                        @endphp
+                        @if($mismatch)
+                        <p class="mt-2 text-[11px] leading-relaxed text-amber-700">
+                            {{ __('buyer.field.credit_mismatch', ['list' => implode(' · ', $mismatch)]) }}
+                        </p>
+                        @endif
+                        @endif
+                    </div>
+                    @endif
                 </div>
 
                 {{-- 무담보 한도 (jin 2026-08-10) — 담보(선적 전 국내 차량)가 없어도 이 금액까지 매입 허용. --}}
