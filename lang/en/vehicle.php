@@ -996,13 +996,13 @@ return [
         'failed' => 'Notice failed: :reason (check Settings -> KakaoTalk)',
         'mortgage_unsaved' => 'The mortgage flag was changed but not saved yet. Save first, then send.',
         'disabled' => 'The KakaoTalk template is not configured yet. (Settings -> KakaoTalk)',
-        'sales_sent' => 'Also sent to the assigned salesperson.',
-        'sales_failed' => 'Sending to the assigned salesperson failed.',
+        'also_sent' => 'Also sent to :count internal recipient(s).',
+        'sales_failed' => 'Sending to the internal recipients failed.',
         'sales_no_phone' => 'No salesperson phone number, so it was sent to the dealer only.',
         'mortgage_pending' => 'The mortgage notice was not included (template pending approval).',
         'confirm_mortgage_on' => ' * The mortgage release request will be included.',
         'confirm_mortgage_pending' => ' * Marked as mortgaged, but the notice is not sent yet (template pending approval).',
-        'confirm_sales' => ' * The assigned salesperson receives the same message.',
+        'confirm_sales' => ' * The assigned salesperson and selected internal recipients receive the same message.',
     ],
 
     // Same-buyer outstanding banner (sale tab)

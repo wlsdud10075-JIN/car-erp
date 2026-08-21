@@ -57,6 +57,13 @@ class AlimtalkRecipients
         'erp_dealer_balance_due' => ['관리', 'manager'],
         'erp_deposit_cash_due' => ['관리', 'manager'],
         'erp_deposit_cash_overdue' => ['admin'],
+        // 딜러 입금완료 v2 (jin 2026-08-21) — **기본은 빈 배열**이다.
+        //   딜러와 그 차 담당영업은 자동으로 받으므로(AUTO_EXTRA), 역할은 «더 받을 사람» 을
+        //   고르는 자리다. 기본을 채워두면 배포하자마자 안 물어본 사람들에게 나간다.
+        //   ⚠️ 여기 키가 있어야 안내 화면에 역할 체크박스가 뜬다(isBroadcast = isset).
+        //   ⚠️ '영업' 을 켜면 **그 차 담당이 아닌 영업까지 전원** 받는다 — 담당자만 받는 건
+        //      AUTO_EXTRA 쪽이다. 둘을 헷갈리면 남의 차 매입 금액이 전 영업에게 퍼진다.
+        'erp_purchase_paid_v2' => [],
     ];
 
     /** 자동 대상(역할 선택 불가) 알림 — 안내 화면 고정 라벨. */
@@ -73,6 +80,7 @@ class AlimtalkRecipients
     /** 브로드캐스트형이면서 자동 대상도 함께 가는 혼합 알림 — 안내 화면 부가 표시. */
     public const AUTO_EXTRA = [
         'erp_deposit_cash_due' => '담당 영업 본인',
+        'erp_purchase_paid_v2' => '국내 딜러 + 담당 영업 본인',
     ];
 
     /** 역할 선택형 알림인가 (DEFAULT_ROLES 에 있으면). */

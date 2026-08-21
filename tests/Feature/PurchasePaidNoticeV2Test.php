@@ -8,6 +8,7 @@ use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\AlimtalkRecipients;
 use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -333,6 +334,127 @@ class PurchasePaidNoticeV2Test extends TestCase
         $this->assertStringContainsString('ERP', $t['body'], '수신 근거(시스템명)가 없으면 심사에서 반려된다');
         $this->assertLessThanOrEqual(1000, mb_strlen($t['body']), 'BizM 본문 1,000자 제한');
         $this->assertArrayNotHasKey('erp_purchase_paid_v2', AlimtalkTemplates::ITEMLIST);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 역할 선택 수신자 (jin 2026-08-21) — 기능설정 → 알림톡에서 «더 받을 사람» 을 고른다.
+    //
+    // ⚠️ 담당 영업(자동)과 역할 '영업'(전원)은 **다른 축**이다. 헷갈리면 남의 차 매입 금액이
+    //    전 영업에게 퍼진다. 그래서 기본 선택은 비어 있고, 켠 회사만 받는다.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private function selectRoles(array $groups): void
+    {
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(
+            ['key' => "alimtalk_roles_erp_purchase_paid_v2_{$set}"],
+            ['value' => implode(',', $groups), 'type' => 'string']
+        );
+    }
+
+    /** 역할 체크박스가 안내 화면에 뜬다(= DEFAULT_ROLES 에 키가 있다). 기본 선택은 없다. */
+    public function test_role_picker_is_available_and_defaults_to_none(): void
+    {
+        $this->assertTrue(AlimtalkRecipients::isBroadcast('erp_purchase_paid_v2'));
+        $this->assertSame([], AlimtalkRecipients::selectedRoles('erp_purchase_paid_v2'),
+            '기본값이 차 있으면 배포하자마자 안 물어본 사람에게 나간다');
+        $this->assertArrayHasKey('erp_purchase_paid_v2', AlimtalkRecipients::AUTO_EXTRA,
+            '딜러·담당영업이 자동으로 받는다는 사실이 안내 화면에 안 뜬다');
+    }
+
+    /** 고른 역할의 사용자도 같은 알림톡을 받는다. */
+    public function test_selected_roles_receive_it_too(): void
+    {
+        $this->configureV1();
+        $this->configureV2();
+        $this->selectRoles(['관리']);
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        User::factory()->create([
+            'permission' => 'user', 'role' => '관리',
+            'phone' => '010-7777-8888', 'email_verified_at' => now(),
+        ]);
+
+        $v = $this->vehicle('010-1111-2222');
+        $this->pay($v);
+
+        $this->send($v, '010-5555-6666');
+
+        $phones = AlimtalkLog::all()->map(fn ($l) => $this->digits($l->phone))->all();
+        $this->assertEqualsCanonicalizing(
+            ['01055556666', '01011112222', '01077778888'],
+            $phones,
+            '딜러 · 담당영업 · 고른 역할 셋 다 받아야 한다'
+        );
+    }
+
+    /** 역할을 안 고르면 종전대로 딜러 + 담당영업뿐이다. */
+    public function test_no_role_selected_keeps_dealer_and_salesman_only(): void
+    {
+        $this->configureV1();
+        $this->configureV2();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        User::factory()->create([
+            'permission' => 'user', 'role' => '관리',
+            'phone' => '010-7777-8888', 'email_verified_at' => now(),
+        ]);
+
+        $v = $this->vehicle('010-1111-2222');
+        $this->pay($v);
+
+        $this->send($v, '010-5555-6666');
+
+        $this->assertCount(2, AlimtalkLog::all());
+    }
+
+    /**
+     * 🚨 표기가 달라도 같은 번호면 한 통이다.
+     * `010-1111-2222` 와 `01011112222` 를 다른 사람으로 세면 1인 사업자(딜러=담당영업)에게
+     * 같은 통지가 두 번 간다 — 받는 쪽은 «두 번 입금됐나» 로 읽는다.
+     */
+    public function test_same_number_in_different_format_is_not_notified_twice(): void
+    {
+        $this->configureV1();
+        $this->configureV2();
+        $this->selectRoles(['관리']);
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        User::factory()->create([
+            'permission' => 'user', 'role' => '관리',
+            'phone' => '01055556666', 'email_verified_at' => now(),   // 딜러와 같은 번호, 다른 표기
+        ]);
+
+        $v = $this->vehicle(null);
+        $this->pay($v);
+
+        $this->send($v, '010-5555-6666');
+
+        $this->assertCount(1, AlimtalkLog::all());
+    }
+
+    /** 옛 템플릿에서는 역할을 골라도 사내로 안 나간다(본문이 「딜러」로 못 박혀 있다). */
+    public function test_roles_do_not_apply_to_the_old_template(): void
+    {
+        $this->configureV1();
+        $this->selectRoles(['관리']);
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        User::factory()->create([
+            'permission' => 'user', 'role' => '관리',
+            'phone' => '010-7777-8888', 'email_verified_at' => now(),
+        ]);
+
+        $v = $this->vehicle('010-1111-2222');
+        $this->pay($v);
+
+        $this->send($v);
+
+        $this->assertCount(1, AlimtalkLog::all(), '옛 템플릿인데 사내로 나갔다');
     }
 
     /**

@@ -3637,30 +3637,54 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        // 담당영업 동시 수신 (jin 2026-08-21) — **v2 에서만**. 옛 본문은 수신 대상을 «딜러» 로 못 박고
-        //   있어서 영업에게 보내면 그 문장이 거짓이 된다(카카오는 본문으로 수신자를 판별한다).
+        // 사내 동시 수신 (jin 2026-08-21) — **v2 에서만**. 옛 본문은 수신 대상을 «딜러» 로 못 박고
+        //   있어서 사내에 보내면 그 문장이 거짓이 된다(카카오는 본문으로 수신자를 판별한다).
+        //
+        // 받는 사람 = ①그 차 **담당 영업**(자동) ②기능설정 → 알림톡에서 **고른 역할 전원**.
+        //   ①은 «본인 차» 라 자동이고, ②는 «더 볼 사람» 을 회사가 고르는 자리다(기본 선택 0개).
+        //   ⚠️ 역할 '영업' 을 켜면 담당이 아닌 영업까지 전원 받는다 — 둘은 다른 축이다.
+        //
         // ⚠️ 딜러 발송이 성공한 뒤에만 보낸다 — 안 나간 통지를 «보냈구나» 로 보여주면 그게 거짓 신호다.
-        // ⚠️ 영업 phone 이 비면 아무 일도 안 일어난다(메모리 「phone 비면 조용히 skip」) → 토스트로 알린다.
-        $salesNotice = '';
+        // ⚠️ 번호는 **숫자만 남겨 비교**한다. 같은 사람이 `010-1111-2222` 와 `01011112222` 로
+        //    들어오면 표기가 달라 중복 발송된다(딜러 = 담당영업인 1인 사업자에서 실제로 겹친다).
+        // ⚠️ 영업 phone 이 비면 아무 일도 안 일어난다(「phone 비면 조용히 skip」) → 토스트로 알린다.
+        $extraNotice = '';
         if ($isV2) {
+            $digits = fn (?string $p): string => preg_replace('/\D/', '', (string) $p) ?? '';
+            $already = [$digits($phone)];
+
             $salesPhone = trim((string) ($vehicle->salesman?->phone ?? ''));
-            if ($salesPhone === '') {
-                $salesNotice = __('vehicle.paidnotice.sales_no_phone');
-            } elseif ($salesPhone === $phone) {
-                $salesNotice = '';   // 딜러 번호와 같으면 한 통이면 충분하다.
-            } else {
-                $salesLog = \App\Services\BizmAlimtalkService::active()->send($code, $salesPhone, $vars, $meta);
-                $salesNotice = $salesLog->status === 'sent'
-                    ? __('vehicle.paidnotice.sales_sent')
-                    : __('vehicle.paidnotice.sales_failed');
+            $extras = $salesPhone !== '' ? [$salesPhone] : [];
+            $extras = array_merge($extras, \App\Support\AlimtalkRecipients::forBroadcast($code));
+
+            $tried = 0;
+            $ok = 0;
+            foreach ($extras as $target) {
+                $d = $digits($target);
+                if ($d === '' || in_array($d, $already, true)) {
+                    continue;
+                }
+                $already[] = $d;
+                $tried++;
+                if (\App\Services\BizmAlimtalkService::active()->send($code, $target, $vars, $meta)->status === 'sent') {
+                    $ok++;
+                }
+            }
+
+            if ($ok > 0) {
+                $extraNotice = __('vehicle.paidnotice.also_sent', ['count' => $ok]);
+            } elseif ($tried > 0) {
+                $extraNotice = __('vehicle.paidnotice.sales_failed');
+            } elseif ($salesPhone === '') {
+                $extraNotice = __('vehicle.paidnotice.sales_no_phone');
             }
         } elseif ($vehicle->has_mortgage) {
             // 저당을 켰는데 옛 템플릿으로 나갔다 — 문구가 조용히 빠지면 딜러는 저당 얘기를 못 듣는다.
-            $salesNotice = __('vehicle.paidnotice.mortgage_pending');
+            $extraNotice = __('vehicle.paidnotice.mortgage_pending');
         }
 
         $message = __('vehicle.paidnotice.sent', ['amount' => number_format($amount)]);
-        $this->dispatch('notify', message: trim($message.' '.$salesNotice), type: 'success');
+        $this->dispatch('notify', message: trim($message.' '.$extraNotice), type: 'success');
     }
 
     public function removeExportDeclarationDoc(): void
