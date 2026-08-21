@@ -510,6 +510,7 @@ return [
 
     // Concurrent-edit lock (2026-06-30)
     'lock' => [
+        'unsecured_check_required' => ':buyer is exempt from the purchase lock via an unsecured credit limit (current unpaid ratio :ratio%). To record a down payment, turn on "Paid unsecured" on the Purchase tab — only then is the limit drawn down, and it is released automatically once sales payments meet the shipping-entry threshold. Leaving it off means the limit never decreases and this buyer is never locked.',
         'someone' => 'Another user',
         'locked_by' => ':name is currently editing — you cannot make changes.',
         'banner' => ':name is editing this vehicle — opened read-only (auto-releases shortly after they leave).',

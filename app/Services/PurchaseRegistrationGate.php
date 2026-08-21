@@ -43,9 +43,13 @@ class PurchaseRegistrationGate
      * @param  bool  $useUnsecured  `Buyer::hasUnsecuredLimit()`
      * @return array{locked: bool, mode: string, threshold: float, gauge: ?array}
      */
-    public static function decide(?array $gauge, bool $useUnsecured): array
+    public static function decide(?array $gauge, bool $useUnsecured, ?float $threshold = null): array
     {
-        $threshold = Setting::lockThreshold('purchase_registration');
+        // 바이어별 재정의 (jin 2026-08-21). 안 넘어오면 **게이지가 들고 있는 값**을 먼저 쓴다 —
+        //   게이지는 이미 바이어별로 계산돼 있어서(`deposit_pct`), 전역으로 떨어지면 판정과 표시가 갈린다.
+        $threshold ??= isset($gauge['deposit_pct'])
+            ? max(0.0, min(1.0, (int) $gauge['deposit_pct'] / 100))
+            : LockThresholdResolver::threshold(null, 'purchase_registration');
 
         if (! self::enabled()) {
             return ['locked' => false, 'mode' => self::MODE_OFF, 'threshold' => $threshold, 'gauge' => $gauge];
@@ -72,7 +76,11 @@ class PurchaseRegistrationGate
             return self::decide(null, false);
         }
 
-        return self::decide($buyer->receivableGauge(), $buyer->hasUnsecuredLimit());
+        return self::decide(
+            $buyer->receivableGauge(),
+            $buyer->hasUnsecuredLimit(),
+            LockThresholdResolver::threshold($buyer, 'purchase_registration'),
+        );
     }
 
     /**

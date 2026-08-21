@@ -4154,7 +4154,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   🔗 판정식은 `PurchaseRegistrationGate` **한 곳**에만 있다 — board 읽기 API 가 같은
             //      함수를 타야 "board 는 된다는데 ERP 는 막는다"가 안 생긴다(SKILLS §8 #44).
             $useUnsecured = $buyer?->hasUnsecuredLimit() ?? false;
-            $verdict = \App\Services\PurchaseRegistrationGate::decide($gauge, $useUnsecured);
+            // 바이어별 락 (jin 2026-08-21) — 재정의가 있으면 그 %, 없으면 전역.
+            $verdict = \App\Services\PurchaseRegistrationGate::decide(
+                $gauge,
+                $useUnsecured,
+                \App\Services\LockThresholdResolver::threshold($buyer, 'purchase_registration'),
+            );
 
             if ($verdict['locked']) {
                 $this->purchaseGateInfo = [
@@ -4166,7 +4171,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     //   ⚠️ gauge['limit_krw'] 는 2026-07-29 부터 '입금액 × 50%'(매입 가능 금액)로 의미가 바뀌었으므로
                     //   여기서 쓰면 안 된다. 락 기준선은 total 로 직접 계산한다.
                     'deposit_pct' => $gauge['deposit_pct'],
-                    'limit' => (int) ($gauge['total_krw'] * \App\Models\Setting::lockThreshold('purchase_registration')),
+                    'limit' => (int) ($gauge['total_krw'] * $verdict['threshold']),
                     'total' => $gauge['total_krw'],
                     // 무담보 한도 모드 — 모달이 다른 문구·숫자를 보여준다.
                     'unsecured_mode' => $useUnsecured,
@@ -4338,6 +4343,39 @@ new #[Layout('components.layouts.app')] class extends Component {
             if ($stillOut) {
                 $unsecuredDown = true;   // 해제 거부 — 값은 켜진 채로 저장
                 $this->dispatch('notify', message: __('vehicle.toast.unsecured_lock_kept'), type: 'error');
+            }
+        }
+
+        // 🔒 무담보 체크 **강제** (jin 2026-08-21) — 잠긴 문 옆의 뚫린 창문을 닫는다.
+        //
+        //   무담보 한도를 설정하면 그 바이어는 미수율 판정에서 빠져 **금액 판정**으로 넘어간다
+        //   (`PurchaseRegistrationGate` MODE_UNSECURED). 그런데 그 금액은 이 체크가 켜진 차의
+        //   계약금만큼만 줄어들기 때문에, **아무도 안 켜면 잔액이 영영 안 줄어 락이 통째로 사라진다.**
+        //   해제 가드(위)는 「켰다가 끄는 것」만 막았지 「처음부터 안 켜는 것」은 아무도 안 막았다.
+        //   실측(heymanerp 2026-08-21): 무담보 설정 2명 · 체크된 차량은 전체 1대.
+        //   그중 R.S.H 는 거래완료 60건짜리 최대 거래처라 사실상 매입 락이 없는 상태였다.
+        //
+        //   ⚠️ 강제해도 거짓 기록이 아니다 — 계약금·매입잔금은 **원화로 딜러에게** 나가고 바이어는
+        //      외화로 판매대금을 보낸다(축이 다르다). 미수율이 임계를 넘은 상태에서 나가는 계약금은
+        //      회사 돈이 확실하다. 「돈의 출처를 모르면 자동 판정하지 말 것」(SKILLS §49) 이 여기선 안 걸린다.
+        //
+        //   ⚠️ board 수신(purchase-sync)은 이 지점을 안 탄다. 탈 필요도 없다 — 그때는 계약금이 0이라
+        //      켜봐야 차감액이 0 이고, 계약금은 **반드시 이 화면을 거쳐** 들어오기 때문이다.
+        $downForUnsecured = (int) preg_replace('/[^0-9]/', '', $this->down_payment_str);
+        if ($downForUnsecured > 0 && ! $unsecuredDown) {
+            $lockBuyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
+            if ($lockBuyer && $lockBuyer->hasUnsecuredLimit()) {
+                $lockGauge = $lockBuyer->receivableGauge();
+                $lockRatio = (float) ($lockGauge['ratio'] ?? 0);
+                // "무담보가 없었다면 락이었을 상황" 에서만 강제한다. 미수가 기준 안이면 평소대로 자유.
+                if ($lockRatio > \App\Services\LockThresholdResolver::threshold($lockBuyer, 'purchase_registration')) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'down_payment_str' => __('vehicle.lock.unsecured_check_required', [
+                            'buyer' => $lockBuyer->name,
+                            'ratio' => number_format($lockRatio * 100, 1),
+                        ]),
+                    ]);
+                }
             }
         }
 

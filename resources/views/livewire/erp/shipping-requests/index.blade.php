@@ -183,6 +183,20 @@ new #[Layout('components.layouts.app')] class extends Component
      *   ⚠️ 개별 차량 C5(guardStageOrderForExport)는 그대로 개별 50% 유지 — 묶음 착수 통과해도 미달 개별차의
      *      반입지 저장은 개별로 막힘(그 차 stage=shipping 승인 우회 필요). 두 게이트는 분리(jin 확정).
      */
+    /**
+     * 선적 진입 cutoff 해석기 — 차량 → cutoff (jin 2026-08-21 바이어별 락).
+     *   바이어 id 를 한 번에 조회해 맵을 만든다(쿼리 1회). 재정의가 없는 바이어는 전역값.
+     *   ⚠️ 루프 밖에서 `Setting::lockThreshold` 를 1회 계산해 쓰면 바이어 재정의가 통째로 무시된다.
+     */
+    private function entryCutoffResolver($vehicles): callable
+    {
+        $ids = collect($vehicles)->filter()->pluck('buyer_id')->filter()->unique()->values()->all();
+        $map = \App\Services\LockThresholdResolver::thresholdsFor($ids, 'shipping_entry');
+        $global = \App\Services\LockThresholdResolver::threshold(null, 'shipping_entry');
+
+        return fn ($v) => $map[(int) ($v->buyer_id ?? 0)] ?? $global;
+    }
+
     private function entryAggregate($vehicles): array
     {
         $active = collect($vehicles)->filter(
@@ -191,8 +205,15 @@ new #[Layout('components.layouts.app')] class extends Component
         $fin = ShippingRequest::financeForVehicles($active);
         $ratio = $fin['unpaid_ratio'];
 
+        // 묶음은 합산 미수율 하나로 판정하는데 바이어가 섞일 수 있다 → **가장 엄격한 기준**을 쓴다.
+        //   (한 명이라도 높은 입금률을 요구하면 그 묶음은 그 기준을 넘어야 한다.)
+        $cutoffOf = $this->entryCutoffResolver($active);
+        $cutoff = $active->isEmpty()
+            ? \App\Services\LockThresholdResolver::threshold(null, 'shipping_entry')
+            : (float) $active->map($cutoffOf)->min();
+
         return [
-            'blocked' => $ratio !== null && $ratio > \App\Models\Setting::lockThreshold('shipping_entry'),
+            'blocked' => $ratio !== null && $ratio > $cutoff,
             'unpaid_pct' => $ratio === null ? null : round($ratio * 100, 1),
         ];
     }
@@ -205,6 +226,7 @@ new #[Layout('components.layouts.app')] class extends Component
     private function bundleBlockers($rows, string $stage): array
     {
         $blockers = [];
+        $cutoffOf = $this->entryCutoffResolver(collect($rows)->map->vehicle);
         foreach ($rows as $r) {
             $v = $r->vehicle;
             if (! $v || (int) $v->sale_price <= 0) {
@@ -212,7 +234,7 @@ new #[Layout('components.layouts.app')] class extends Component
             }
             $ratio = $v->unpaid_ratio;
             if ($stage === 'shipping') {
-                $violates = $ratio === null || $ratio > \App\Models\Setting::lockThreshold('shipping_entry');
+                $violates = $ratio === null || $ratio > $cutoffOf($v);
                 $overridden = $v->hasEntryUnpaidOverride();
             } else {   // bl — 필요 입금률(기본 100% 완납)
                 $violates = $ratio === null || $ratio > \App\Models\Setting::lockThreshold('bl_issue');
@@ -618,9 +640,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 $entryBundleBlocked = $entryLockOn && $entryAgg['blocked'];
                 // 개별 차량 경고(빨간 칩) — 개별 C5 는 그대로 개별 50% 유지. 묶음 착수 통과해도 이 차들은
                 //   반입지 저장 시 개별로 막힘(그 차 승인 우회 필요). aggregate 차단과 별개의 안내 표시.
-                $entryCutoff = \App\Models\Setting::lockThreshold('shipping_entry');
+                $entryCutoffOf = $this->entryCutoffResolver($memberVehicles);
                 $isEntryUnder = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
-                    && ($v->unpaid_ratio === null || $v->unpaid_ratio > $entryCutoff)
+                    && ($v->unpaid_ratio === null || $v->unpaid_ratio > $entryCutoffOf($v))
                     && ! $v->hasEntryUnpaidOverride();
 
                 $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());

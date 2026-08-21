@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\LockThresholdResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -1218,9 +1219,11 @@ class Vehicle extends Model
             }
 
             $ratio = $this->unpaid_ratio;
-            if ($ratio !== null && $ratio > Setting::lockThreshold('shipping_entry')) {
+            // 바이어별 재정의 우선 (jin 2026-08-21) — 없으면 전역. 승인 우회는 이 위 블록에서 이미 처리.
+            $buyerForLock = $this->buyer;
+            if ($ratio !== null && $ratio > LockThresholdResolver::threshold($buyerForLock, 'shipping_entry')) {
                 $percent = number_format($ratio * 100, 1);
-                $needPaid = Setting::lockRequiredPaidPct('shipping_entry');
+                $needPaid = LockThresholdResolver::requiredPaidPct($buyerForLock, 'shipping_entry');
                 throw ValidationException::withMessages([
                     'export_buyer_id' => "판매 입금률 < {$needPaid}% (미수율 {$percent}%) 차량은 통관·선적 진입 불가. {$needPaid}% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
                 ]);
@@ -1842,7 +1845,7 @@ class Vehicle extends Model
      *    컬럼을 제한해 차량을 로드하므로, 관계 기반 accessor 를 쓰면 거기서 조용히 틀린다.
      * ⚠️ 임계는 매입 게이트가 아니라 `shipping_entry` 키다(운영에서 값이 다르다).
      */
-    public function isShippingEntryMet(): bool
+    public function isShippingEntryMet(?float $threshold = null): bool
     {
         $rate = (float) ($this->exchange_rate ?? 0);
         $total = (float) ($this->sale_total_amount ?? 0);
@@ -1851,9 +1854,14 @@ class Vehicle extends Model
             return false;   // 판매가·환율 미입력 — 판정 불가라 "아직 아님"으로 본다
         }
 
+        // 🚨 $threshold 를 안 주면 **전역이 아니라 이 차의 바이어**로 해석한다 (jin 2026-08-21).
+        //    전역으로 폴백하면 바이어 재정의가 조용히 무시되는데 예외도 로그도 안 난다.
+        //    대신 배치(게이지)는 바이어당 1회 해석해 주입할 것 — 안 주면 차량마다 조회라 N+1 이다.
+        $threshold ??= LockThresholdResolver::threshold($this->buyer, 'shipping_entry');
+
         $unpaid = (int) ($this->sale_unpaid_amount_krw_cache ?? 0);
 
-        return ($unpaid / $krw) <= Setting::lockThreshold('shipping_entry');
+        return ($unpaid / $krw) <= $threshold;
     }
 
     public function getConfirmedDownPaymentAttribute(): int

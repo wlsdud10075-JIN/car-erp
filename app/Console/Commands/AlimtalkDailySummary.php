@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
+use App\Services\LockThresholdResolver;
 use App\Support\AlimtalkRecipients;
 use App\Support\AlimtalkTemplates;
 use Illuminate\Console\Command;
@@ -80,11 +80,14 @@ class AlimtalkDailySummary extends Command
 
         // 판매중 = 아직 안 떠났고 선적 진입 입금률에 못 미치는 차. 임계는 회사별 설정(기본 60%).
         //   미수율 accessor 는 행별 computed 라 SQL 로 못 거른다 → 후보를 좁힌 뒤 PHP 로 판정한다.
-        $threshold = Setting::lockThreshold('shipping_entry');   // 미수율 상한(0.4 = 입금 60%)
+        //   ⚠️ 임계는 **차량마다 그 바이어 기준**이다(jin 2026-08-21 바이어별 락). 루프 밖에서 1회
+        //      계산해 넘기면 재정의가 조용히 무시된다 — buyer 를 eager load 해 추가 쿼리를 막는다.
         $selling = Vehicle::query()->where('sale_price', '>', 0)->notDeparted()
             ->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->with('buyer')
             ->get()
-            ->filter(fn (Vehicle $v) => $v->unpaid_ratio !== null && $v->unpaid_ratio > $threshold);
+            ->filter(fn (Vehicle $v) => $v->unpaid_ratio !== null
+                && $v->unpaid_ratio > LockThresholdResolver::threshold($v->buyer, 'shipping_entry'));
         $sellingKrw = (int) $selling->sum('sale_unpaid_amount_krw_cache');
 
         // 통관·B/L 대기 — 거래완료 제외(이미 끝난 차).
