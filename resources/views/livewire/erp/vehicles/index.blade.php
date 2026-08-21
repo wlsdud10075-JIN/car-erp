@@ -7280,6 +7280,20 @@ function vehicleColumnsToggle() {
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
+                {{-- 저당 표시 (jin 2026-08-21) — 계약금·매입잔금 송금 알림톡에 「저당 해지를 부탁드립니다」 를
+                     실을지 가른다. 그래서 **송금 칸 옆**에 둔다(딜러 알림톡 번호칸이 아니라).
+                     ⚠️ **해제가 수동이다.** 딜러가 저당을 풀어도 안 꺼지므로 발송 확인창에서 매번 포함 여부를 보여준다.
+                     ⚠️ 다른 칸과 같이 **저장을 눌러야 반영**된다 — 토글만 하고 발송하면 액션이 막고 안내한다. --}}
+                @if(auth()->user()->canHandleDeregistration() || $canConfirmFinance)
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.has_mortgage') }}</label>
+                    <button type="button" wire:click="$toggle('has_mortgage')"
+                            title="{{ __('vehicle.field.has_mortgage_hint') }}"
+                            class="w-full rounded-md px-2.5 py-2 text-xs font-semibold transition-colors {{ $has_mortgage ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gray-200 text-gray-600' }}">
+                        {{ $has_mortgage ? __('vehicle.field.has_mortgage_on') : __('vehicle.field.has_mortgage_off') }}
+                    </button>
+                </div>
+                @endif
             </div>
             {{-- 잔금 N건 --}}
             <div class="mt-3 space-y-2">
@@ -7465,16 +7479,6 @@ function vehicleColumnsToggle() {
                             @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
                             @endif
-                        </div>
-                        {{-- 저당 표시 (jin 2026-08-21) — 입금완료 알림톡에 「저당 해지를 부탁드립니다」 를 실을지 가른다.
-                             ⚠️ **해제가 수동이다.** 딜러가 저당을 풀어도 안 꺼지므로, 발송 확인창에서 매번 포함 여부를 보여준다.
-                             ⚠️ 다른 칸과 같이 **저장을 눌러야 반영**된다 — 토글만 하고 발송하면 액션이 막고 안내한다. --}}
-                        <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <button type="button" wire:click="$toggle('has_mortgage')"
-                                    class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors {{ $has_mortgage ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-gray-200 text-gray-600' }}">
-                                {{ __('vehicle.field.has_mortgage') }}
-                            </button>
-                            <span class="text-[11px] text-yellow-700">{{ __('vehicle.field.has_mortgage_hint') }}</span>
                         </div>
                     </div>
                 </div>
