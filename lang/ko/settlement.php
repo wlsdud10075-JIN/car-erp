@@ -213,6 +213,9 @@ return [
     'result_settlement_amount' => '정산액',
     'inherited_buyer' => '승계',
     'result_ratio_formula' => '총마진 × :ratio%',
+    // karaba — 이익률 tier 정산. 비율칸은 자동으로 채워지지만 고칠 수 있다(jin 2026-08-21).
+    'karaba_ratio_formula' => '영업이익 × :ratio%',
+    'karaba_ratio_hint' => '이익률 :rate% → 자동 :pct%. 값을 고치면 고친 비율로 계산됩니다.',
     'result_per_unit_formula' => '건당 고정',
     'result_document_fee' => '서류비',
     'result_document_fee_sub' => '(프리랜서 자동)',

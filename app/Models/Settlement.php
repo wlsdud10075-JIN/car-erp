@@ -614,8 +614,34 @@ class Settlement extends Model
     }
 
     /**
-     * karaba 정산액 = tier(이익율) × 영업이익, 10원 절사. 음수 영업이익 → 0 바닥 (jin 2026-07-08).
-     *   ≥6% → ×20% / 5% ≤ r < 6% → ×15% / < 5% → ×10%   (6% 배타경계 — 엑셀 6% 중복카운트 버그 배제).
+     * 이익률 → 요율(%) — **단일 출처**. 화면 미리보기·자동 기입·정산액이 전부 이걸 쓴다.
+     *   ≥6% → 20 / 5% ≤ r < 6% → 15 / < 5% → 10   (6% 배타경계 — 엑셀 6% 중복카운트 버그 배제).
+     * ⚠️ 이 구간을 화면에 옮겨 적지 말 것 — 갈리면 «미리보기와 실제 정산액이 다른» 형태가 된다.
+     */
+    public static function karabaTierPercent(?float $rate): int
+    {
+        if ($rate === null) {
+            return 0;
+        }
+
+        return $rate >= 6 ? 20 : ($rate >= 5 ? 15 : 10);
+    }
+
+    /** 이 정산의 이익률 자동 요율(%). 비율칸을 비워두면 이 값이 쓰인다. */
+    public function getKarabaTierPercentAttribute(): int
+    {
+        return self::karabaTierPercent($this->karaba_profit_rate);
+    }
+
+    /**
+     * karaba 정산액 = **비율 × 영업이익**, 10원 절사. 음수 영업이익 → 0 바닥 (jin 2026-07-08).
+     *
+     * 🔀 **2026-08-21 (jin) — 비율칸을 실제로 쓴다.**
+     *   구: 이익률 tier 를 코드가 직접 곱했고 `settlement_ratio` 는 **읽히지도 않았다**.
+     *       그런데 화면은 그 칸을 필수로 받아서, 아무 숫자나 넣어야 확정이 되고
+     *       «넣은 비율이 반영되겠지» 로 읽히는 상태였다(실제로는 무시).
+     *   신: 비율칸에 이익률 tier 값이 **자동으로 기입**되고, 사람이 고치면 **고친 값으로 계산**된다.
+     *       비어 있으면 종전대로 tier 자동값 — 즉 손대지 않으면 결과가 같다.
      */
     public function getKarabaSettlementAmountAttribute(): int
     {
@@ -623,11 +649,14 @@ class Settlement extends Model
         if ($profit <= 0) {
             return 0;
         }
-        $rate = $this->karaba_profit_rate;
-        if ($rate === null) {
+
+        $pct = $this->settlement_ratio !== null && (float) $this->settlement_ratio > 0
+            ? (float) $this->settlement_ratio
+            : $this->karaba_tier_percent;
+
+        if ($pct <= 0) {
             return 0;
         }
-        $pct = $rate >= 6 ? 20 : ($rate >= 5 ? 15 : 10);
 
         return (int) (floor($profit * $pct / 100 / 10) * 10);
     }
@@ -645,9 +674,14 @@ class Settlement extends Model
      */
     public function getSettlementAmountAttribute(): int
     {
-        // karaba = 이익율 tier 정산 (Setting 프로파일 전역 분기). heyman/ssancar 는 아래 총마진 방식.
+        // karaba (Setting 프로파일 전역 분기) — heyman/ssancar 는 아래 총마진 방식.
+        // 🔀 2026-08-21 (jin) — **프리랜서만 이익률 정산, 사내직원은 건당 고정.**
+        //   구: 타입과 무관하게 tier 를 곱했다(사내직원도 이익률로 받았다).
+        //   ⚠️ 회사가 «전부 tier» 로 확인되면 이 분기를 지우고 되돌리면 된다(jin 확인 예정).
         if (Setting::isKaraba()) {
-            return $this->karaba_settlement_amount;
+            return $this->settlement_type === 'ratio'
+                ? $this->karaba_settlement_amount
+                : $this->effective_per_unit_amount;
         }
         if ($this->settlement_type === 'ratio') {
             return (int) ($this->total_margin * ($this->effective_ratio / 100));
