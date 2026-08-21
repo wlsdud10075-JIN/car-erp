@@ -288,6 +288,30 @@ class Settlement extends Model
      * 성능(jin 2026-07-23): attributed_month 인덱스 유지 위해 whereDate(DATE()) 대신 시간경계 범위.
      *   ⚠ SQLite(테스트)는 date 를 'Y-m-d 00:00:00' 로 저장 → plain where 불일치. 명시 경계로 양쪽 DB 안전.
      */
+    /**
+     * 목록 검색 — **차량번호 또는 정산 메모** (jin 2026-08-21).
+     *
+     * 메모 검색을 넣은 이유: karaba 에서 한 차를 딜러 둘이 같이 진행하는 경우가 있어
+     * 메모에 `#동반#` 같은 키워드를 적어두고 그 건만 골라 반타작 처리한다.
+     *
+     * 🚨 **반드시 클로저로 감싼다.** 맨 `orWhere` 를 붙이면 상태·담당자·월 필터가 통째로
+     *    새어나가 «관리 탭인데 남의 정산이 뜨는» 형태가 된다.
+     * 🚨 **화면과 엑셀이 이 scope 하나를 쓴다.** 조건을 옮겨 적으면 갈리는 순간
+     *    "화면엔 보이는데 엑셀엔 없는" 상태가 되고 눈으로는 못 잡는다(SKILLS §8 #44).
+     */
+    public function scopeSearchTerm($query, ?string $term)
+    {
+        $term = trim((string) $term);
+        if ($term === '') {
+            return $query;
+        }
+
+        return $query->where(function ($q) use ($term) {
+            $q->whereHas('vehicle', fn ($v) => $v->where('vehicle_number', 'like', "%{$term}%"))
+                ->orWhere('note', 'like', "%{$term}%");
+        });
+    }
+
     public function scopeAttributedMonth($query, string $ym)
     {
         if ($ym === '') {

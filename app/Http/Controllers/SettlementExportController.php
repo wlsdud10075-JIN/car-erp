@@ -36,8 +36,7 @@ class SettlementExportController extends Controller
 
         $settlements = Settlement::query()
             ->with(['vehicle', 'salesman'])
-            ->when($search !== '', fn ($q) => $q->whereHas('vehicle',
-                fn ($q2) => $q2->where('vehicle_number', 'like', "%{$search}%")))
+            ->when($search !== '', fn ($q) => $q->searchTerm($search))
             ->when($status !== '', fn ($q) => $q->where('settlement_status', $status))
             ->when($held, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($salesmanId > 0, fn ($q) => $q->where('salesman_id', $salesmanId))

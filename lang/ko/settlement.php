@@ -38,7 +38,7 @@ return [
     'forbidden_rate' => '환율 저장은 [재무]/[관리]/admin 만 가능합니다.',
     'forbidden_close' => '2차 정산 완료는 [재무]/[관리]/admin 만 가능합니다.',
 
-    'search_ph' => '차량번호',
+    'search_ph' => '차량번호 · 메모',
     'filter_all_status' => '전체 상태',
     'held' => [
         'badge' => '미수 지급보류',
