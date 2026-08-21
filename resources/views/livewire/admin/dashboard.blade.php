@@ -4,6 +4,7 @@ use App\Models\Buyer;
 use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutAdjustment;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
 use Livewire\Attributes\Computed;
@@ -513,6 +514,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $marginSum = 0;
         $payoutSum = 0;
         $fxAbsorbed = 0;   // 사내직원 정산건의 실현 환차 — 전액 회사 귀속 (정보용. company_net 에 이미 포함)
+        $batchIds = [];    // 이 기간에 지급된 정산이 속한 월배치 — 아래에서 수동 조정을 마저 더한다.
         $byPerson = [];
 
         Settlement::query()
@@ -522,8 +524,11 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
             ->with('vehicle')
-            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson) {
+            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson, &$batchIds) {
                 foreach ($rows as $s) {
+                    if ($s->payout_batch_id) {
+                        $batchIds[$s->payout_batch_id] = true;
+                    }
                     $margin = (int) ($s->total_margin ?? 0);
                     $payout = (int) ($s->actual_payout ?? 0);
                     $fx = (int) ($s->exchange_difference_krw ?? 0);
@@ -545,6 +550,38 @@ new #[Layout('components.layouts.app')] class extends Component
                     }
                 }
             });
+
+        // 🚨 월배치 **수동 조정**을 마저 반영한다 (jin 2026-08-21).
+        //
+        // 조정은 `settlements` 행이 아니라 **배치**에 달려 있어서 위 루프가 못 본다. 안 더하면
+        // 지급은 나갔는데 회사이익에선 빠진 채로 남아 **대표가 보는 숫자만 틀린다**
+        // (배치 승인화면·월결산 알림톡은 batch.total_payout 을 쓰므로 그쪽은 맞다 — 화면끼리 갈린다).
+        //
+        // 실제로 이게 필요한 장면: 한 차를 딜러 둘이 같이 진행해 **반타작**할 때.
+        //   A 정산에서 기타공제로 절반을 빼고 → B 에게 조정으로 절반을 준다.
+        //   조정을 안 세면 A 의 차감분만큼 회사이익이 부풀고 B 의 지급은 어디에도 안 잡힌다.
+        //
+        // ⚠️ 부호는 그대로 쓴다 — 조정은 +지급뿐 아니라 매입취소 손실 차감(음수)도 담는다.
+        // ⚠️ 담당자 스코프(`$ids`)를 조정에도 똑같이 건다. 안 걸면 업무관리자 화면에
+        //    자기 팀 밖 지급이 섞인다.
+        if ($batchIds !== []) {
+            SettlementPayoutAdjustment::query()
+                ->whereIn('batch_id', array_keys($batchIds))
+                ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+                ->get(['salesman_id', 'amount'])
+                ->each(function (SettlementPayoutAdjustment $adj) use (&$companyNet, &$payoutSum, &$byPerson) {
+                    $amount = (int) $adj->amount;
+                    $payoutSum += $amount;
+                    $companyNet -= $amount;
+
+                    if ($id = $adj->salesman_id) {
+                        if (! isset($byPerson[$id])) {
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0];
+                        }
+                        $byPerson[$id]['contribution'] -= $amount;
+                    }
+                });
+        }
 
         uasort($byPerson, fn ($a, $b) => $b['contribution'] <=> $a['contribution']);
         $topIds = array_slice(array_keys($byPerson), 0, 10);

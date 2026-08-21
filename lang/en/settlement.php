@@ -22,7 +22,7 @@ return [
     'forbidden_rate' => 'Only [Finance]/[Management]/admin can save the exchange rate.',
     'forbidden_close' => 'Only [Finance]/[Management]/admin can close the secondary settlement.',
 
-    'search_ph' => 'Plate',
+    'search_ph' => 'Plate or memo',
     'filter_all_status' => 'All statuses',
     'held' => [
         'badge' => 'Payout held',

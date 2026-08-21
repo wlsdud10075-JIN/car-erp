@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\FinalPayment;
 use App\Models\Salesman;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutAdjustment;
+use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -157,5 +159,88 @@ class AdminDashboardCompanyProfitTest extends TestCase
         // 회사몫 = 4,815,000 − 100,000 (환차는 총마진에 이미 포함 — 따로 더하지 않는다)
         $this->assertSame(4_715_000, $cp['company_net']);
         $this->assertSame(1_000_000, $cp['fx_absorbed'], '사내직원 실현 환차는 전액 회사 귀속(정보 표시)');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 월배치 수동 조정 (jin 2026-08-21) — karaba 반타작이 이 경로를 쓴다.
+    //
+    // 조정은 settlements 행이 아니라 **배치**에 달려 있어서, 안 세면 지급은 나갔는데
+    // 회사이익에선 빠진 채로 남는다. 배치 승인화면·월결산 알림톡은 batch.total_payout 을
+    // 쓰므로 그쪽만 맞고 **대표가 보는 대시보드만 틀린다** — 화면끼리 갈리는 형태다.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private function adjust(Settlement $s, Salesman $to, int $amount): SettlementPayoutAdjustment
+    {
+        $batch = SettlementPayoutBatch::create([
+            'month' => '2026-05', 'submitter_id' => 1, 'submitter_rank' => 'manager',
+            'current_level' => 1, 'status' => 'approved',
+            'total_payout' => 0, 'settlement_count' => 1,
+        ]);
+        $s->forceFill(['payout_batch_id' => $batch->id])->saveQuietly();
+
+        return SettlementPayoutAdjustment::create([
+            'batch_id' => $batch->id, 'salesman_id' => $to->id,
+            'amount' => $amount, 'reason' => '동반 진행 반타작', 'created_by' => 1,
+        ]);
+    }
+
+    /** 조정으로 나간 돈은 회사이익에서 빠진다. */
+    public function test_batch_adjustment_reduces_company_profit(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $a = Salesman::create(['name' => 'A', 'is_active' => true, 'type' => 'freelance']);
+        $b = Salesman::create(['name' => 'B', 'is_active' => true, 'type' => 'freelance']);
+
+        $st = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $before = $this->companyProfit($admin)['company_net'];
+
+        $this->adjust($st, $b, 500_000);
+        $after = $this->companyProfit($admin);
+
+        $this->assertSame($before - 500_000, $after['company_net'], '조정이 회사이익에 안 잡혔다');
+        $this->assertSame($after['margin_sum'] - $after['company_net'], $after['payout_sum'], '지급총액과 회사이익이 서로 안 맞는다');
+    }
+
+    /**
+     * 🚨 **반타작 — 이 기능의 실제 장면.**
+     *
+     * 한 차를 딜러 둘이 같이 진행하면, A 정산에서 기타공제로 절반을 빼고 B 에게 조정으로 준다.
+     * 회사가 더 번 것도 덜 번 것도 아니므로 **회사이익은 그대로여야** 한다.
+     * 조정을 안 세면 A 의 차감분만큼 회사이익이 부풀어 대표 보고가 틀어진다.
+     */
+    public function test_half_split_leaves_company_profit_unchanged(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $a = Salesman::create(['name' => 'A', 'is_active' => true, 'type' => 'freelance']);
+        $b = Salesman::create(['name' => 'B', 'is_active' => true, 'type' => 'freelance']);
+
+        $st = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $baseline = $this->companyProfit($admin)['company_net'];
+
+        // A 의 실지급액 절반을 기타공제로 빼고, 같은 금액을 B 에게 조정으로 준다.
+        $half = (int) floor($st->fresh()->actual_payout / 2);
+        $st->forceFill(['other_deduction' => $half])->saveQuietly();
+        $this->adjust($st->fresh(), $b, $half);
+
+        $this->assertSame($baseline, $this->companyProfit($admin)['company_net'],
+            '반타작인데 회사이익이 움직였다 — 대표 보고만 틀어지는 그 형태다');
+    }
+
+    /** 조정에도 담당자 스코프가 걸린다 — 안 걸면 업무관리자 화면에 팀 밖 지급이 섞인다. */
+    public function test_adjustment_respects_the_manager_scope(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $a = Salesman::create(['name' => 'A', 'is_active' => true, 'type' => 'freelance']);
+        $b = Salesman::create(['name' => 'B', 'is_active' => true, 'type' => 'freelance']);
+
+        $st = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $this->adjust($st, $b, 500_000);
+
+        $rows = $this->companyProfit($admin)['ranking'];
+        $names = array_column($rows, 'name');
+        $this->assertContains('B', $names, '조정만 받은 담당자가 순위에서 통째로 빠졌다');
+
+        $bRow = $rows[array_search('B', $names, true)];
+        $this->assertSame(-500_000, $bRow['contribution'], '조정 받은 만큼 회사 기여가 줄어야 한다');
     }
 }
