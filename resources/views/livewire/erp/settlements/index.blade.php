@@ -463,6 +463,30 @@ new #[Layout('components.layouts.app')] class extends Component
         }
     }
 
+    /**
+     * 저장할 비율 — karaba 에서 **자동값 그대로면 `null` 로 남긴다** (jin 2026-08-21).
+     *
+     * 🚨 **자동값을 숫자로 굳히면 그 순간 tier 가 얼어붙는다.** karaba 의 2차 정산은
+     *    **비용 보정**이 본업이라 영업이익이 자주 움직이는데, 굳은 숫자가 이기면 이익률이
+     *    내려가도 옛 요율로 계산된다. 실측: 이익률 22.8%(20%) 상태에서 메모만 고치고 저장 →
+     *    비용 보정으로 4.8%(10%) 가 됐는데도 **20% 로 남아 정산액이 2배**였다.
+     *    화면을 열고 저장만 해도 그렇게 되므로 «사용자가 안 건드렸는데» 틀어진다.
+     *
+     * 그래서 **사람이 실제로 고친 값만** 저장한다 — 그래야 「손대지 않으면 tier 를 따라간다」가
+     * 참이 된다. 고친 값은 그대로 저장돼 다음에 열어도 유지된다(fillKarabaRatio 가 안 덮는다).
+     */
+    private function resolvedRatioForSave(): ?float
+    {
+        $ratio = $this->settlement_ratio;
+        if ($ratio === null || ! \App\Models\Setting::isKaraba()) {
+            return $ratio;
+        }
+
+        $auto = Settlement::karabaTierPercent($this->marginData['profitRate'] ?? null);
+
+        return $auto > 0 && (float) $ratio === (float) $auto ? null : $ratio;
+    }
+
     /** 정산 방식을 바꾸면 karaba 비율 자동값을 다시 맞춘다(사내직원 → 프리랜서 전환 등). */
     public function updatedSettlementType(): void
     {
@@ -528,7 +552,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'vehicle_id' => $this->vehicle_id,
             'salesman_id' => $this->salesman_id ?: null,
             'settlement_type' => $this->settlement_type,
-            'settlement_ratio' => $this->settlement_type === 'ratio' ? $this->settlement_ratio : null,
+            'settlement_ratio' => $this->settlement_type === 'ratio' ? $this->resolvedRatioForSave() : null,
             'per_unit_amount' => $this->settlement_type === 'per_unit' ? $this->per_unit_amount : null,
             'other_deduction' => (float) ($this->other_deduction ?? 0),
             'settlement_status' => $this->settlement_status,

@@ -185,4 +185,58 @@ class KarabaSettlementTest extends TestCase
             ->call('openEdit', $s->id)
             ->assertSet('settlement_ratio', 12.0);
     }
+
+    /**
+     * 🚨 **자동값 그대로 저장하면 DB 에 굳히지 않는다.**
+     *
+     * karaba 의 2차 정산은 **비용 보정**이 본업이라 영업이익이 자주 움직인다. 자동값을 숫자로
+     * 굳히면 이익률이 내려가도 옛 요율이 이겨서 **정산액이 그대로 남는다**.
+     * 실측(고치기 전): 22.8%(20%) 에서 저장 → 비용 보정으로 4.8%(10%) 가 됐는데 20% 로 남아 2배였다.
+     * 화면을 열고 저장만 해도 그렇게 되므로 «사용자가 안 건드렸는데» 틀어진다.
+     */
+    public function test_auto_ratio_is_not_frozen_into_the_row(): void
+    {
+        $s = $this->make();
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+
+        // 화면을 열고(자동값 20 이 채워진다) 그냥 저장한다.
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $s->id)
+            ->assertSet('settlement_ratio', 20)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertNull($s->fresh()->settlement_ratio, '자동값이 DB 에 굳었다 — tier 가 얼어붙는다');
+
+        // 2차 정산에서 비용을 올려 이익률을 떨어뜨리면 요율이 따라 내려가야 한다.
+        $s->vehicle->update(['cost_deregistration' => 2_600_000]);
+        $fresh = $s->fresh()->load('vehicle');
+
+        $this->assertLessThan(6, $fresh->karaba_profit_rate);
+        $this->assertSame(10, $fresh->karaba_tier_percent);
+        $this->assertSame((int) (floor($fresh->karaba_operating_profit * 10 / 100 / 10) * 10),
+            $fresh->settlement_amount, '비용을 보정했는데 옛 요율로 계산된다');
+    }
+
+    /** 사람이 고친 값은 저장되고 유지된다(자동값과 다르면 override 로 본다). */
+    public function test_edited_ratio_is_persisted(): void
+    {
+        $s = $this->make();
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $s->id)
+            ->set('settlement_ratio', 12)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(12.0, (float) $s->fresh()->settlement_ratio);
+
+        // 다시 열어도 자동값이 덮지 않는다.
+        Volt::test('erp.settlements.index')
+            ->call('openEdit', $s->id)
+            ->assertSet('settlement_ratio', 12.0);
+    }
 }
