@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -61,7 +62,12 @@ class AlimtalkRecipients
         'erp_eta_balance_due' => ['관리', 'manager'],
         'erp_shipping_due' => ['관리', 'manager'],
         'erp_dealer_balance_due' => ['관리', 'manager'],
-        'erp_deposit_cash_due' => ['관리', 'manager'],
+        // 🎯 스코프형 (jin 2026-08-24) — 체크 = 받을지, 역할 = 받을 범위(scopedFor).
+        //   기본값은 **개편 전 동작을 그대로 보존**하도록 맞췄다. 배포 직후 조용해지면 안 된다:
+        //   보증금독촉은 구 코드가 '담당 영업 본인'에게 자동 발송했으므로 '영업'을 켠 채로 시작한다.
+        'erp_deposit_cash_due' => ['관리', 'manager', '영업'],
+        //   픽업은 구 코드가 역할 선택 없이 담당자에게만 보냈다 → '영업'만 켠 채로 시작.
+        'erp_pickup_reminder' => ['영업'],
         'erp_deposit_cash_overdue' => ['admin'],
         // 딜러 입금완료 v2 (jin 2026-08-21) — **기본은 빈 배열**이다.
         //   딜러와 그 차 담당영업은 자동으로 받으므로(AUTO_EXTRA), 역할은 «더 받을 사람» 을
@@ -69,14 +75,15 @@ class AlimtalkRecipients
         //   ⚠️ 여기 키가 있어야 안내 화면에 역할 체크박스가 뜬다(isBroadcast = isset).
         //   ⚠️ '영업' 을 켜면 **그 차 담당이 아닌 영업까지 전원** 받는다 — 담당자만 받는 건
         //      AUTO_EXTRA 쪽이다. 둘을 헷갈리면 남의 차 매입 금액이 전 영업에게 퍼진다.
-        'erp_purchase_paid_v2' => [],
+        //   v2 는 구 코드가 '담당 영업'을 자동 발송했다 → '영업'을 켠 채로 시작(동작 보존).
+        //   ⚠️ 딜러는 역할이 아니다 — 그건 버튼이 직접 보내고 AUTO_EXTRA 로만 안내한다.
+        'erp_purchase_paid_v2' => ['영업'],
     ];
 
     /** 자동 대상(역할 선택 불가) 알림 — 안내 화면 고정 라벨. */
     public const TARGETED_LABELS = [
         // 보증금 선지급 3종(request/done/rejected)은 2026-07-30 제거 — 승인 사다리 자체가
         // 2026-07-29 에 폐기돼 발송할 이벤트가 없어졌다. 안내 화면에 "절대 안 오는 알림"을 남기지 않는다.
-        'erp_pickup_reminder' => '담당 영업 본인',
         'erp_deregistration_notice' => '국내 딜러(수동 발송)',
         // v1. v2(erp_purchase_paid_v2)는 역할 선택형이지만 이건 딜러에게만 가는 수동 발송이다.
         'erp_purchase_paid' => '국내 딜러(수동 발송)',
@@ -87,9 +94,27 @@ class AlimtalkRecipients
 
     /** 브로드캐스트형이면서 자동 대상도 함께 가는 혼합 알림 — 안내 화면 부가 표시. */
     public const AUTO_EXTRA = [
-        'erp_deposit_cash_due' => '담당 영업 본인',
-        'erp_purchase_paid_v2' => '국내 딜러 + 담당 영업 본인',
+        'erp_purchase_paid_v2' => '국내 딜러(버튼이 직접 발송)',
     ];
+
+    /**
+     * 🎯 **차량 스코프형** — 체크한 역할이 「자기가 볼 수 있는 차만」 받는다(`scopedFor`).
+     *
+     * 나머지 역할 선택형(일일요약·채권현황·주간·월결산·자금보고)은 **회사 전체 집계**라
+     * 차량 스코프가 의미 없다 — 그건 체크한 사람이 같은 내용을 받는다.
+     * 안내 화면이 이 둘을 다르게 설명해야 「몇 명이 받는다」가 거짓말이 안 된다.
+     */
+    public const SCOPED_CODES = [
+        'erp_vehicle_new', 'erp_purchase_unpaid', 'erp_sale_unpaid', 'erp_settle_pending',
+        'erp_eta_balance_due', 'erp_shipping_due', 'erp_deposit_cash_due',
+        'erp_pickup_reminder', 'erp_purchase_paid_v2',
+    ];
+
+    /** 이 알림이 차량 스코프형인가. */
+    public static function isScoped(string $code): bool
+    {
+        return in_array($code, self::SCOPED_CODES, true);
+    }
 
     /** 역할 선택형 알림인가 (DEFAULT_ROLES 에 있으면). */
     public static function isBroadcast(string $code): bool
@@ -355,6 +380,26 @@ class AlimtalkRecipients
     /** 한 역할 그룹의 (전화 있는) 사용자 번호. */
     private static function groupPhones(string $group): array
     {
+        $q = self::groupQuery($group);
+
+        return $q ? self::phones($q) : [];
+    }
+
+    /**
+     * 한 역할 그룹의 사용자 — 전화 유무는 호출자가 거른다(폴백을 쓰기 위해).
+     *
+     * @return Collection<int, User>
+     */
+    private static function groupUsers(string $group): Collection
+    {
+        $q = self::groupQuery($group);
+
+        return $q ? $q->get() : collect();
+    }
+
+    /** 역할 그룹 → 사용자 쿼리 단일 출처. */
+    private static function groupQuery(string $group)
+    {
         $query = match ($group) {
             'admin' => User::query()->where('permission', 'admin'),
             'manager' => User::query()->where('permission', 'manager'),
@@ -374,7 +419,83 @@ class AlimtalkRecipients
             $query->whereNotIn('permission', ['super']);
         }
 
-        return self::phones($query);
+        return $query;
+    }
+
+    /**
+     * 🎯 **체크박스는 「받을지」, 역할은 「무엇을 받을지」** (jin 2026-08-24).
+     *
+     * 이전에는 두 갈래가 섞여 있었다 — 역할 체크는 **그룹 전원에게 전량**을 뿌리고,
+     * 담당자 발송은 **코드에 박혀** 화면에 안 보였다. 그래서 화면만 보고 「영업이 안 받네」 하고
+     * 체크하면, 자동 발송과 겹쳐 **중복 + 남의 차 유출**이 났다(2026-08-24 보증금독촉 실사고).
+     * 이제 스위치는 체크박스 하나뿐이고, 범위는 `User::canScopeVehicle()` 이 정한다:
+     *   admin·업무관리자·수출통관·재무 = 전체 / 관리 = 본인 팀(+위임) / 영업 = 본인 담당
+     *
+     * ⚠️ 담당자 없는 차량은 영업·관리 스코프에 안 들어간다 — 그대로 두면 **조용히 아무도 안 받는다**.
+     *    admin·업무관리자가 `canScopeVehicle()` 에서 항상 true 라 그 몫이 자동으로 덮인다.
+     *    ⇒ 그 두 그룹이 **하나도 안 켜져 있으면** 누락이 생길 수 있다(§안내 화면에서 확인).
+     * ⚠️ 전화는 `users.phone` 우선, 비면 `salesmen.phone` 폴백 — 구 픽업 발송이 후자를 썼다.
+     *    heymanerp 는 8명 전부 동일(2026-08-24 실측)이지만 회사별로 갈릴 수 있다.
+     *
+     * @param  iterable<Vehicle>  $vehicles
+     * @return array<string, Collection<int, Vehicle>> [전화 => 그 사람이 볼 수 있는 차량들]
+     */
+    public static function scopedFor(string $code, iterable $vehicles): array
+    {
+        $rows = collect($vehicles)->filter()->values();
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        /** @var array<string, Collection<int, Vehicle>> $out */
+        $out = [];
+        foreach (self::selectedRoles($code) as $group) {
+            foreach (self::groupUsers($group) as $user) {
+                $phone = self::userPhone($user);
+                if ($phone === '') {
+                    continue;
+                }
+                $mine = $rows->filter(fn (Vehicle $v) => $user->canScopeVehicle($v))->values();
+                if ($mine->isEmpty()) {
+                    continue;
+                }
+                // 한 사람이 두 그룹에 걸릴 수 있다(예: role='관리' 이면서 업무관리자) — 합집합.
+                $out[$phone] = isset($out[$phone])
+                    ? $out[$phone]->concat($mine)->unique('id')->values()
+                    : $mine;
+            }
+        }
+
+        // 🚨 **ERP 계정 없는 영업담당자** — `salesmen` 행만 있고 `users` 가 없는 사람이 있다.
+        //    역할 그룹은 User 를 도는 구조라 이 사람들이 통째로 빠진다(구 픽업 발송은 salesmen.phone 을
+        //    직접 읽어서 받고 있었다). 그대로 두면 **새 영업을 계정 없이 추가한 날부터 조용히 끊긴다**.
+        //    체크박스 안에 있으므로 숨은 경로가 아니다 — '영업' 을 켰을 때만 동작한다.
+        if (in_array('영업', self::selectedRoles($code), true)) {
+            $orphans = Salesman::query()
+                ->whereNull('user_id')
+                ->whereNotNull('phone')->where('phone', '!=', '')
+                ->pluck('phone', 'id');
+            foreach ($orphans as $salesmanId => $phone) {
+                $mine = $rows->where('salesman_id', $salesmanId)->values();
+                if ($mine->isEmpty()) {
+                    continue;
+                }
+                $phone = trim((string) $phone);
+                $out[$phone] = isset($out[$phone])
+                    ? $out[$phone]->concat($mine)->unique('id')->values()
+                    : $mine;
+            }
+        }
+
+        return $out;
+    }
+
+    /** 알림톡 수신 번호 — users.phone 우선, 비면 연결된 salesmen.phone. */
+    private static function userPhone(User $user): string
+    {
+        $p = trim((string) $user->phone);
+
+        return $p !== '' ? $p : trim((string) ($user->salesman?->phone ?? ''));
     }
 
     /** 대표(회사 최고관리자) 번호들. */
@@ -434,14 +555,6 @@ class AlimtalkRecipients
         }
 
         return $query->whereNotNull('phone')->where('phone', '!=', '')->get();
-    }
-
-    /** 픽업 재촉 — 그 차량 담당 영업 번호(있으면 1건). */
-    public static function forVehicleSalesman(Vehicle $vehicle): array
-    {
-        $phone = trim((string) ($vehicle->salesman?->phone ?? ''));
-
-        return $phone !== '' ? [$phone] : [];
     }
 
     /** phone 있는 사용자만 뽑아 중복 제거. */

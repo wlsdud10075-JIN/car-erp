@@ -180,7 +180,10 @@ class AlimtalkCatalogTest extends TestCase
             ->assertOk()
             ->assertSee('보증금매입독촉')
             ->assertSee('erp_deposit_cash_due')
-            ->assertSee('담당 영업 본인');   // 본인형 자동 라벨
+            // 2026-08-24 — 보증금독촉·픽업이 역할 선택형으로 바뀌었다. 「담당 영업 본인」 고정 라벨은
+            //   사라지고 체크박스가 뜬다. 코드에 박힌 자동 발송을 화면에서 볼 수 있게 만든 것이 개편의 요지다.
+            ->assertSee('erp_pickup_reminder')
+            ->assertDontSee('담당 영업 본인');
     }
 
     public function test_admin_forbidden_super_only(): void

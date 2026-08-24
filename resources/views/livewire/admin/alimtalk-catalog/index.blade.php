@@ -350,6 +350,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ __('alimtalk_catalog.recipient_roles') }}
                             <span class="ml-1 text-gray-400">({{ __('alimtalk_catalog.now_count', ['n' => $this->recipientCount($code)]) }})</span>
                         </div>
+                        {{-- 🎯 스코프형은 「몇 명이 받는다」만으로는 거짓말이 된다 — 같은 내용을 받는 게 아니라
+                             각자 자기가 볼 수 있는 차만 받기 때문(jin 2026-08-24). 그 차이를 화면에 적는다. --}}
+                        @if(\App\Support\AlimtalkRecipients::isScoped($code))
+                        <p class="mb-2 text-[11px] leading-relaxed text-primary-text">{{ __('alimtalk_catalog.scoped_note') }}</p>
+                        @endif
                         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                             @foreach($this->groups() as $gkey => $glabel)
                                 <label class="flex items-center gap-1.5 text-sm text-gray-700">

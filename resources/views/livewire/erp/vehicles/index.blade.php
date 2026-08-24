@@ -3653,9 +3653,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             $digits = fn (?string $p): string => preg_replace('/\D/', '', (string) $p) ?? '';
             $already = [$digits($phone)];
 
-            $salesPhone = trim((string) ($vehicle->salesman?->phone ?? ''));
-            $extras = $salesPhone !== '' ? [$salesPhone] : [];
-            $extras = array_merge($extras, \App\Support\AlimtalkRecipients::forBroadcast($code));
+            // 🎯 체크가 유일한 스위치, 범위는 역할이 정한다 (jin 2026-08-24).
+            //    구 코드는 담당 영업을 **코드에 박아** 자동 발송했다 — 화면에 안 보이니
+            //    「영업이 왜 받지?」 를 설명할 수 없었다. 기본값 ['영업'] 이라 동작은 그대로다.
+            $extras = array_keys(\App\Support\AlimtalkRecipients::scopedFor($code, [$vehicle]));
 
             $tried = 0;
             $ok = 0;
@@ -3675,7 +3676,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $extraNotice = __('vehicle.paidnotice.also_sent', ['count' => $ok]);
             } elseif ($tried > 0) {
                 $extraNotice = __('vehicle.paidnotice.sales_failed');
-            } elseif ($salesPhone === '') {
+            } elseif (in_array('영업', \App\Support\AlimtalkRecipients::selectedRoles($code), true)) {
+                // '영업' 을 켰는데 아무도 안 잡혔다 — 담당자 전화 없음이 가장 흔한 이유다.
+                //   ⚠️ 여기서 salesman->phone 을 직접 읽지 말 것(AlimtalkScopedRoutingTest 정적 가드).
+                //      그건 「체크박스 밖의 숨은 발송」 과 같은 모양이라 되살아나기 쉽다.
                 $extraNotice = __('vehicle.paidnotice.sales_no_phone');
             }
         } elseif ($vehicle->has_mortgage) {

@@ -629,9 +629,19 @@ class User extends Authenticatable
         return array_values(array_unique($ids));
     }
 
+    /**
+     * 요청 수명 동안만 유효한 memo — 알림톡 스코프 판정이 **차량 수만큼** 이 값을 묻는다.
+     * `activeDelegators()` 와 같은 패턴. 배정을 바꾼 직후엔 인스턴스를 다시 읽을 것.
+     */
+    private $ownSubordinateMemo = null;
+
     /** 위임을 뺀 본인 팀만. */
     public function ownSubordinateSalesmanIds(): array
     {
+        if ($this->ownSubordinateMemo !== null) {
+            return $this->ownSubordinateMemo;
+        }
+
         // 2026-06-30 — 다대다 pivot(주 출처) ∪ 레거시 단일 manager_user_id(이관 전·구 코드 호환).
         // UI 저장 시 manager_user_id = pivot 첫 멤버로 유지 → 항상 pivot ⊇ {manager_user_id} →
         // 합집합 = pivot (드리프트·제거 누락 없음). 영업 1명을 여러 [관리]가 담당.
@@ -640,7 +650,7 @@ class User extends Authenticatable
             ->merge($this->subordinates()->pluck('id'))
             ->unique();
 
-        return Salesman::query()
+        return $this->ownSubordinateMemo = Salesman::query()
             ->whereIn('user_id', $userIds)
             ->pluck('id')
             ->all();

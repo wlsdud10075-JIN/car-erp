@@ -56,6 +56,24 @@ class AlimtalkTriggerTest extends TestCase
         return User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => $phone, 'email_verified_at' => now()]);
     }
 
+    /**
+     * 팀이 있는 [관리] 를 만든다 — 2026-08-24 개편 후 **배정 0명인 [관리]는 아무것도 안 받는다**
+     * (체크 = 받을지 / 역할 = 받을 범위). 그게 jin 이 요청한 규칙이라, 테스트도 팀을 만들어 준다.
+     *
+     * @return array{0:User,1:Salesman}
+     */
+    private function teamManager(string $phone): array
+    {
+        $mgr = $this->manager($phone);
+        $salesUser = User::factory()->create([
+            'permission' => 'user', 'role' => '영업', 'manager_user_id' => $mgr->id,
+            'phone' => null, 'email_verified_at' => now(),
+        ]);
+        $sm = Salesman::create(['name' => '팀영업', 'is_active' => true, 'user_id' => $salesUser->id]);
+
+        return [$mgr, $sm];
+    }
+
     public function test_recipients_resolver_by_role(): void
     {
         $this->admin('010-1111-0000');
@@ -165,9 +183,9 @@ class AlimtalkTriggerTest extends TestCase
 
     public function test_settle_pending_hook_notifies_managers_on_created(): void
     {
-        $this->manager('010-2222-0000');
+        [, $sm] = $this->teamManager('010-2222-0000');
         $this->enableAlimtalk(['erp_settle_pending']);
-        $v = Vehicle::create(['vehicle_number' => '33다3456', 'sales_channel' => 'export']);
+        $v = Vehicle::create(['vehicle_number' => '33다3456', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
 
         Settlement::create([
             'vehicle_id' => $v->id, 'settlement_type' => 'per_unit',
@@ -182,12 +200,13 @@ class AlimtalkTriggerTest extends TestCase
 
     public function test_sale_unpaid_sends_one_list_message_not_per_vehicle(): void
     {
-        $this->manager('010-2222-0000');
+        [, $sm] = $this->teamManager('010-2222-0000');
         $this->enableAlimtalk(['erp_sale_unpaid']);
         $buyer = Buyer::create(['name' => 'DONI', 'is_active' => true]);
         foreach (['11가1111', '22나2222'] as $no) {
             Vehicle::create([
                 'vehicle_number' => $no, 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+                'salesman_id' => $sm->id,
                 'sale_price' => 10_000_000, 'sale_date' => now()->subDays(30)->toDateString(),
                 'currency' => 'KRW', 'exchange_rate' => 1,
             ]);

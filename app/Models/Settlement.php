@@ -109,10 +109,17 @@ class Settlement extends Model
             }
             DB::afterCommit(function () {
                 try {
-                    $count = self::where('settlement_status', 'pending')->count();
+                    // 🎯 사람마다 **자기가 볼 수 있는 차의 정산만** 센다 (jin 2026-08-24).
+                    //    영업은 본인 담당분 확정 대기 건수만 받는다.
+                    $pending = self::query()->where('settlement_status', 'pending')
+                        ->with('vehicle')->get()
+                        ->pluck('vehicle')->filter();
+                    if ($pending->isEmpty()) {
+                        return;
+                    }
                     $svc = BizmAlimtalkService::active();
-                    foreach (AlimtalkRecipients::forBroadcast('erp_settle_pending') as $phone) {
-                        $svc->send('erp_settle_pending', $phone, ['건수' => number_format($count)]);
+                    foreach (AlimtalkRecipients::scopedFor('erp_settle_pending', $pending) as $phone => $mine) {
+                        $svc->send('erp_settle_pending', $phone, ['건수' => number_format($mine->count())]);
                     }
                 } catch (\Throwable $e) {
                     Log::warning('alimtalk settle_pending 실패', ['error' => $e->getMessage()]);

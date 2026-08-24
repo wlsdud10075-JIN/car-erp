@@ -19,6 +19,7 @@ return [
     'off' => 'Inactive',
     'recipient_roles' => 'Recipient roles',
     'now_count' => ':n recipient(s) now',
+    'scoped_note' => 'Checked roles do not all receive the same list. Managers, admins, clearance and finance see everything; a team lead sees their own team, a salesperson only their own vehicles.',
     'save' => 'Save',
     'saved' => 'Recipient roles saved.',
     'auto_prefix' => 'also to',
