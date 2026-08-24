@@ -1389,6 +1389,13 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - 차량목록 검색은 차량번호·브랜드·차종·소유자·수출신고번호·차대번호 끝 6자리와 함께 `vessel_name`, `container_number`도 검색한다. 선적 문의는 VSL/컨테이너 번호로도 찾을 수 있어야 한다.
 
 ### 채권 결제대기 10일 유예 + 선적전/후 미수 pivot=출고일 (jin 2026-07-18)
+
+> 🔀 **2026-08-20 갱신 — 「이미 떠났나」의 단일 출처는 `Vehicle::departed()` = 출고일 **또는** B/L 이다**
+> (`app/Models/Vehicle.php:2536` / `notDeparted()` `:2544`). 아래 절은 **07-18 판**이라 출고일만 말한다.
+> 거래완료면 재고에서 빠지는데 **출고일은 재고관리에서만 찍혀서 찍을 화면이 없었다**(heymanerp 거래완료 100대 중 **92대 공란**).
+> 🚫 **조건을 옮겨 적지 말고 그 스코프를 쓸 것.** 상세 = 메모리 `project_departed_pivot`.
+> ⚠️ 자동채움된 출고일은 **선적일 복사**라 실제보다 평균 10일 늦다(`Vehicle.php:675-679`) — **불리언으로만 쓰고 날짜로 쓰지 말 것.**
+
 - `Vehicle::RECEIVABLE_GRACE_DAYS = 10`.
 - **선적전/후 미수 pivot = `warehouse_out_date`(출고일)** — 구 pivot=`bl_loading_location`(반입지). 사용자 규칙: 반입지 입력했어도 출고 전이면 **항구 주차장 대기 = 선적전 미수**. 실제 출항(출고일 찍힘) = 선적후 미수.
 - 선적 전(출고 전, `warehouse_out_date` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
