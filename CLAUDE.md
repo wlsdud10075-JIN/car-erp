@@ -20,6 +20,12 @@
 > 🔗 **형제 앱 `board` + 연동** (별도 repo/DB/APP_KEY/배포):
 > - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp(heyman) 재고 전환**. 현재 **heyman만 연동**.
 > - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
+
+> 🌐 **ssancar.com 협업 (바이어 마이페이지 × ERP 연동)** — 별도 레포·별도 서버. **세션이 바뀌어도 이어서 진행해야 한다.**
+> - 🎯 **인계문서 = `docs/integration/ssancar-portal-collab.md`** — jin 이 *"ssancar.com 협업 이어서"* / *"바이어 마이페이지"* / *"포털 연동"* 이라고 하면 **여기부터 읽는다.** 문서 지도·상대 레포 위치·확정 사실·함정·재개 절차가 전부 그 안에 있다.
+> - 양측 공용 협의 문서 = `C:\Users\User\Desktop\연구소\12_바이어_마이페이지_설계_협의.md` (계속 덧붙임) / 연동 스펙 정본 = 같은 폴더 `08_ERP_연동_통합정리_v1.0.md`.
+> - ssancar.com 코드 = `C:\xampp\htdocs\ssancar\htdocs` (그누보드5, 자체 CLAUDE.md). 운영 `3.34.165.180` — **자동배포 없음, 대표가 서버를 직접 고친다** → 작업 전 스냅샷 대조 필수.
+> - 🚫 05~11 번 문서를 정본으로 인용하지 말 것(08 이 12건 정정). 🚫 NAS 원본 수정 금지(읽기만).
 > - ⚠️ **크로스 레포 규칙**: 레포 X 관련 결정/변경은 **X의 *커밋된 파일*에 남기고 X 세션에서 커밋**한다. 메모리는 레포별·PC별이라 안 따라옴 — **git 커밋된 파일만** 모든 세션·PC에 전파. (board 수정 = board 세션·board repo에 커밋.)
 > - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(`heymancar.com` 운영, 2026-06-27 배포). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project_deployment_naming`.
 > - **🏷️ 명칭 규칙 (혼동 방지 — 항상 이대로, jin 2026-06-27 박제)**: 회사 3사 = **ssancar · heyman · karaba**(karaba board는 추후 설치), 앱 2종 = **erp**(이 car-erp) · **board**(형제 앞단 앱). 지칭은 반드시 **{회사}{앱}** 한 토큰으로: `ssancarerp` · `ssancarboard` · `heymanerp` · `heymanboard` · `karabaerp` · `karababoard`. 막연히 "ssancar"·"car-erp"·"board"만 쓰지 말 것. 매핑: `ssancarerp`=`heymancar.com` / `heymanerp`=`heysellcar.com` / `karabaerp`=`karaba-erp.com`. (car-erp·board 양 레포·전 세션 공통 — board 세션에도 동일 규칙.)
