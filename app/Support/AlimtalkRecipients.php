@@ -45,6 +45,12 @@ class AlimtalkRecipients
      */
     public const DEFAULT_ROLES = [
         'erp_daily_summary' => ['admin'],
+        // 🚨 여기 없으면 **영영 안 나간다.** isBroadcast=false → 안내 화면에 역할 체크박스가 안 뜨고
+        //    (saveRoles 가 non-broadcast 를 hard-return 한다) selectedRoles=[] 라 09:00 스케줄이
+        //    매일 "수신자 없음 — skip" 으로 끝난다. 예외도 로그도 없다.
+        //    2026-08-24 실사고 — 채권현황이 BizM 승인·tmplId 입력까지 끝났는데 이 줄이 없어
+        //    heymanerp 발송 0건이었다(운영 실측: 설정행 없음·수신자 0). 가드 = AlimtalkRecipientTableTest.
+        'erp_receivable_status' => ['admin'],
         'erp_weekly_summary' => ['admin'],
         'erp_capital_weekly' => ['admin'],   // 자본·손익 기밀 — 대표(admin) 전용
         'erp_monthly_closing' => ['admin'],
@@ -72,6 +78,8 @@ class AlimtalkRecipients
         // 2026-07-29 에 폐기돼 발송할 이벤트가 없어졌다. 안내 화면에 "절대 안 오는 알림"을 남기지 않는다.
         'erp_pickup_reminder' => '담당 영업 본인',
         'erp_deregistration_notice' => '국내 딜러(수동 발송)',
+        // v1. v2(erp_purchase_paid_v2)는 역할 선택형이지만 이건 딜러에게만 가는 수동 발송이다.
+        'erp_purchase_paid' => '국내 딜러(수동 발송)',
         'erp_payout_request' => '승인 계단 담당자',
         'erp_payout_done' => '제출자 본인',
         'erp_payout_rejected' => '제출자 본인',
