@@ -23,13 +23,6 @@ class AlimtalkShippingDue extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::forBroadcast('erp_shipping_due');
-            if (empty($recipients)) {
-                $this->info('shipping-due: 수신자(관리) 없음 — skip.');
-
-                return self::SUCCESS;
-            }
-
             $today = now()->startOfDay();
             $rows = Vehicle::query()
                 ->where('sales_channel', 'export')
@@ -46,7 +39,7 @@ class AlimtalkShippingDue extends Command
             }
 
             $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한. 초과분은 "외 N건", 상세는 채권관리.
-            $lines = $rows->take($cap)->map(function (Vehicle $v) use ($today) {
+            $listOf = fn ($rows) => collect($rows)->take($cap)->map(function (Vehicle $v) use ($today) {
                 $dday = max(0, $today->diffInDays($v->shipping_date, false));
                 $ratio = $v->unpaid_ratio;
                 $pct = $ratio !== null ? round($ratio * 100) : null;
@@ -65,18 +58,21 @@ class AlimtalkShippingDue extends Command
                 }
 
                 return $line;
-            })->implode("\n");
-            if ($rows->count() > $cap) {
-                $lines .= "\n▶ 외 ".($rows->count() - $cap).'건';
-            }
+            })->implode("\n").(count($rows) > $cap ? "\n▶ 외 ".(count($rows) - $cap).'건' : '');
 
-            $vars = ['선적미수목록' => $lines];
+            // 🎯 사람마다 **자기가 볼 수 있는 차만** 담아 보낸다 (jin 2026-08-24).
+            $targets = AlimtalkRecipients::scopedFor('erp_shipping_due', $rows);
+            if (empty($targets)) {
+                $this->info('shipping-due: 수신자 없음 — skip.');
+
+                return self::SUCCESS;
+            }
 
             $svc = BizmAlimtalkService::active();
-            foreach ($recipients as $phone) {
-                $svc->send('erp_shipping_due', $phone, $vars);
+            foreach ($targets as $phone => $mine) {
+                $svc->send('erp_shipping_due', $phone, ['선적미수목록' => $listOf($mine)]);
             }
-            $this->info("shipping-due: {$rows->count()}대, ".count($recipients).'명 발송 시도.');
+            $this->info("shipping-due: {$rows->count()}대, ".count($targets).'명 발송 시도.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

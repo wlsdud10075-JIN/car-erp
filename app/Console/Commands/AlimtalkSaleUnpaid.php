@@ -22,13 +22,6 @@ class AlimtalkSaleUnpaid extends Command
     public function handle(): int
     {
         try {
-            $recipients = AlimtalkRecipients::forBroadcast('erp_sale_unpaid');
-            if (empty($recipients)) {
-                $this->info('sale-unpaid: 수신자(관리) 없음 — skip.');
-
-                return self::SUCCESS;
-            }
-
             $rows = Vehicle::query()->action('sale_unpaid')->with('buyer')->get();
             if ($rows->isEmpty()) {
                 $this->info('sale-unpaid: 대상 0건 — skip.');
@@ -37,21 +30,26 @@ class AlimtalkSaleUnpaid extends Command
             }
 
             $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한. 초과분은 "외 N건", 상세는 채권관리.
-            $lines = $rows->take($cap)->map(fn (Vehicle $v) => sprintf(
+            $listOf = fn ($rows) => collect($rows)->take($cap)->map(fn (Vehicle $v) => sprintf(
                 '▶ %s · %s · %s원',
                 $v->vehicle_number,
                 $v->buyer?->name ?? '-',
                 number_format((int) $v->sale_unpaid_amount_krw_cache)
-            ))->implode("\n");
-            if ($rows->count() > $cap) {
-                $lines .= "\n▶ 외 ".($rows->count() - $cap).'건';
+            ))->implode("\n").(count($rows) > $cap ? "\n▶ 외 ".(count($rows) - $cap).'건' : '');
+
+            // 🎯 사람마다 **자기가 볼 수 있는 차만** 담아 보낸다 (jin 2026-08-24).
+            $targets = AlimtalkRecipients::scopedFor('erp_sale_unpaid', $rows);
+            if (empty($targets)) {
+                $this->info('sale-unpaid: 수신자 없음 — skip.');
+
+                return self::SUCCESS;
             }
 
             $svc = BizmAlimtalkService::active();
-            foreach ($recipients as $phone) {
-                $svc->send('erp_sale_unpaid', $phone, ['미입금목록' => $lines]);
+            foreach ($targets as $phone => $mine) {
+                $svc->send('erp_sale_unpaid', $phone, ['미입금목록' => $listOf($mine)]);
             }
-            $this->info("sale-unpaid: {$rows->count()}대 목록 → ".count($recipients).'명 발송 시도.');
+            $this->info("sale-unpaid: {$rows->count()}대 → ".count($targets).'명 발송 시도.');
 
             return self::SUCCESS;
         } catch (\Throwable $e) {

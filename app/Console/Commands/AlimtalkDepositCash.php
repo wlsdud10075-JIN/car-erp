@@ -91,23 +91,18 @@ class AlimtalkDepositCash extends Command
             $svc = BizmAlimtalkService::active();
             $sent = 0;
 
-            // ① 독촉 (D+5~10) — 관리 전체 + 담당 영업 본인
+            // ① 독촉 (D+5~10) — 🎯 사람마다 **자기가 볼 수 있는 차만** (jin 2026-08-24).
+            //    구 코드는 역할 전체 발송 + 담당자 자동 발송 2중이었다. 「영업」을 체크하면
+            //    영업 전원이 전체 목록을 받고 본인 목록을 또 받아 **중복 + 남의 차 유출**이 났다.
+            //    이제 체크가 유일한 스위치고, 범위는 canScopeVehicle 이 정한다.
             if ($due->isNotEmpty()) {
-                $mgrList = $listOf($due->all(), true);
-                foreach (AlimtalkRecipients::forBroadcast('erp_deposit_cash_due') as $phone) {
-                    $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $mgrList]);
+                // $due 는 [Vehicle, 경과일] 쌍이라 차량만 넘기고 경과일은 id 로 되찾는다.
+                $daysById = $due->mapWithKeys(fn ($x) => [$x[0]->id => $x[1]]);
+                $targets = AlimtalkRecipients::scopedFor('erp_deposit_cash_due', $due->map(fn ($x) => $x[0]));
+                foreach ($targets as $phone => $mine) {
+                    $list = $listOf($mine->map(fn ($v) => [$v, $daysById[$v->id]])->all(), true);
+                    $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $list]);
                     $sent++;
-                }
-                foreach ($due->groupBy(fn ($x) => $x[0]->salesman_id) as $group) {
-                    $recips = AlimtalkRecipients::forVehicleSalesman($group->first()[0]);
-                    if (empty($recips)) {
-                        continue;
-                    }
-                    $ownList = $listOf($group->all(), true);
-                    foreach ($recips as $phone) {
-                        $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $ownList]);
-                        $sent++;
-                    }
                 }
             }
 

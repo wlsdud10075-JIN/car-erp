@@ -186,7 +186,9 @@ class DepositPurchaseMarkerTest extends TestCase
         Setting::updateOrCreate(['key' => "alimtalk_profile_{$set}"], ['value' => 'prof', 'type' => 'string']);
         Setting::updateOrCreate(['key' => "alimtalk_tmpl_erp_deposit_cash_due_{$set}"], ['value' => 'T1', 'type' => 'string']);
 
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        // 2026-08-24 — 수신 범위를 역할이 정한다. **배정 0명인 role='관리' 는 0건**이라
+        //   「전체를 받는 관리자」는 업무관리자(permission='manager')로 만든다.
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true]);
 
         // 판매됐지만 입금 20% (기준 50% 미달 = 선적 보류) — 독촉 대상 조건

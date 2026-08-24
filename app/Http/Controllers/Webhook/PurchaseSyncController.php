@@ -252,7 +252,9 @@ class PurchaseSyncController extends Controller
                 '바이어' => (string) ($vehicle->buyer?->name ?? '-'),
                 '매입가' => number_format((int) $vehicle->purchase_price).'원',
             ];
-            foreach (AlimtalkRecipients::forBroadcast('erp_vehicle_new') as $phone) {
+            // 🎯 체크 = 받을지, 역할 = 받을 범위 (jin 2026-08-24). 차량 1대짜리라
+            //    스코프에 걸리는 사람만 받는다 — 「영업」을 켜도 담당자만 받는다.
+            foreach (AlimtalkRecipients::scopedFor('erp_vehicle_new', [$vehicle]) as $phone => $mine) {
                 $svc->send('erp_vehicle_new', $phone, $newVars, ['vehicle_id' => $vehicle->id]);
             }
         } catch (\Throwable $e) {

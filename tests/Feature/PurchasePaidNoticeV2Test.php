@@ -356,10 +356,16 @@ class PurchasePaidNoticeV2Test extends TestCase
     public function test_role_picker_is_available_and_defaults_to_none(): void
     {
         $this->assertTrue(AlimtalkRecipients::isBroadcast('erp_purchase_paid_v2'));
-        $this->assertSame([], AlimtalkRecipients::selectedRoles('erp_purchase_paid_v2'),
-            '기본값이 차 있으면 배포하자마자 안 물어본 사람에게 나간다');
+        // 🔀 2026-08-24 — 기본값이 [] → ['영업'] 으로 바뀌었다.
+        //   구 코드는 담당 영업을 **코드에 박아** 자동 발송했고 역할 기본값은 비어 있었다.
+        //   이제 '영업' 은 「전 영업」이 아니라 **그 차 담당자만**(scopedFor) 을 뜻하므로,
+        //   기본값에 넣어야 구 동작이 보존되고 «안 물어본 사람에게 나가는» 일도 없다.
+        $this->assertSame(['영업'], AlimtalkRecipients::selectedRoles('erp_purchase_paid_v2'),
+            '기본값에서 빼면 배포 직후 담당 영업이 조용히 못 받는다');
+        $this->assertTrue(AlimtalkRecipients::isScoped('erp_purchase_paid_v2'),
+            '스코프형이 아니면 «영업 체크 = 전 영업» 이 되어 남의 차 매입가가 퍼진다');
         $this->assertArrayHasKey('erp_purchase_paid_v2', AlimtalkRecipients::AUTO_EXTRA,
-            '딜러·담당영업이 자동으로 받는다는 사실이 안내 화면에 안 뜬다');
+            '딜러가 버튼으로 직접 받는다는 사실이 안내 화면에 안 뜬다');
     }
 
     /** 고른 역할의 사용자도 같은 알림톡을 받는다. */
@@ -367,12 +373,14 @@ class PurchasePaidNoticeV2Test extends TestCase
     {
         $this->configureV1();
         $this->configureV2();
-        $this->selectRoles(['관리']);
+        // 체크가 유일한 스위치다 — 담당 영업도 받게 하려면 '영업' 을 함께 켠다(2026-08-24).
+        $this->selectRoles(['manager', '영업']);
         $this->okHttp();
         $this->actingAs($this->finance());
 
         User::factory()->create([
-            'permission' => 'user', 'role' => '관리',
+            // 배정 0명인 role='관리' 는 팀 스코프가 비어 못 받는다 → 전체를 받는 건 업무관리자다.
+            'permission' => 'manager', 'role' => '관리',
             'phone' => '010-7777-8888', 'email_verified_at' => now(),
         ]);
 

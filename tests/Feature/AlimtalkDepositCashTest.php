@@ -63,7 +63,7 @@ class AlimtalkDepositCashTest extends TestCase
     public function test_due_window_sends_to_manager_and_salesman(): void
     {
         $this->enableAlimtalk();
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true]);
         $sm = Salesman::create(['name' => '김영업', 'phone' => '010-5555-0000', 'is_active' => true]);
 
@@ -85,7 +85,7 @@ class AlimtalkDepositCashTest extends TestCase
     {
         $this->enableAlimtalk();
         User::factory()->create(['permission' => 'admin', 'phone' => '010-1111-0000', 'email_verified_at' => now()]);
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'OSAKA', 'is_active' => true]);
 
         // 도장 12일 경과 + 10% 입금 → overdue (대표에게만, 독촉엔 안 감)
@@ -101,7 +101,7 @@ class AlimtalkDepositCashTest extends TestCase
     public function test_skips_when_buyer_paid_threshold(): void
     {
         $this->enableAlimtalk();
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'PAID', 'is_active' => true]);
 
         // 도장 7일 경과지만 60% 입금(기준 50% 충족 = 락 해제) → 발송 안 됨(자동 중단)
@@ -115,7 +115,7 @@ class AlimtalkDepositCashTest extends TestCase
     public function test_skips_before_due_window(): void
     {
         $this->enableAlimtalk();
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'EARLY', 'is_active' => true]);
 
         // 도장 2일 경과(5일 미만) → 아직 독촉 시작 전
@@ -136,7 +136,7 @@ class AlimtalkDepositCashTest extends TestCase
     public function test_port_parked_vehicle_still_gets_reminded(): void
     {
         $this->enableAlimtalk();
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'ALBANIA', 'is_active' => true]);
 
         // 반입지는 찍혔지만(항구 대기) 출고 전 · 입금 0%
@@ -155,7 +155,7 @@ class AlimtalkDepositCashTest extends TestCase
     public function test_shipped_out_vehicle_stops_the_reminder(): void
     {
         $this->enableAlimtalk();
-        User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-2222-0000', 'email_verified_at' => now()]);
         $buyer = Buyer::create(['name' => 'SAILED', 'is_active' => true]);
 
         $this->depositCar('66바6666', $buyer, null, 7, 0, [
