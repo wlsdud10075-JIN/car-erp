@@ -113,4 +113,41 @@ class AlimtalkItemListSpecTest extends TestCase
             }
         }
     }
+
+    /**
+     * 🔒 아이템명·요약명은 **순한글**(+숫자·공백)이어야 한다 — 2026-08-24 실사고.
+     *
+     * 카카오 검수가 'B/L대기' 를 「오탈자」로 반려했다:
+     *   "오탈자가 기재되어 있는 것으로 확인됩니다. 하기 문구를 수정하지 않고 그대로 발송할 경우,
+     *    고정값으로 기재되어 수정이 불가능하게 됩니다. ▶ B/L대기"
+     *
+     * 같은 파일로 함께 올린 채권현황(아이템명 전부 한글)은 **승인**됐다 — 통제된 비교다.
+     * 승인 이력 20여 종의 아이템명에도 라틴 문자·슬래시가 **하나도 없다**.
+     * 본문(E열)·템플릿명(C열)의 'ERP'·'ETA' 는 통과하므로 **아이템명에만** 걸리는 제약이다.
+     *
+     * ⚠️ 공백은 허용한다 — 승인된 '선적전 미수'·'지급 총액'·'총 미수금' 이 쓰고 있다.
+     * ⚠️ 이 부류는 기능 테스트로 못 잡는다. 로컬·CI 는 초록이고 **BizM 등록 심사에서만** 반려된다.
+     */
+    public function test_every_item_title_is_plain_korean(): void
+    {
+        $bad = [];
+        foreach (AlimtalkTemplates::ITEMLIST as $code => $il) {
+            $titles = array_column($il['items'] ?? [], 'title');
+            if (isset($il['summary']['title'])) {
+                $titles[] = $il['summary']['title'];
+            }
+            foreach ($titles as $t) {
+                if (! preg_match('/^[가-힣0-9 ]+$/u', (string) $t)) {
+                    $bad[] = "{$code}: '{$t}'";
+                }
+            }
+        }
+
+        $this->assertSame([], $bad,
+            '아이템명에 한글·숫자·공백 외 문자가 있으면 카카오가 「오탈자」로 등록을 반려한다.
+'
+            .'뜻은 description 으로 옮길 것(변수·영문 자유, 원문 20자).
+  '.implode('
+  ', $bad));
+    }
 }
