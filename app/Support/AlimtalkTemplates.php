@@ -337,7 +337,12 @@ class AlimtalkTemplates
                 ['title' => '선적대기', 'description' => '#{선적대기}대 (완납)'],
                 ['title' => '판매중', 'description' => '#{판매중건수}대 · #{판매중금액}'],
                 ['title' => '통관대기', 'description' => '#{통관대기}대'],
-                ['title' => 'B/L대기', 'description' => '#{BL대기}대'],
+                // ⚠️ 아이템명은 **순한글**로 쓴다. 2026-08-24 에 'B/L대기' 가 「오탈자」로 반려됐다
+                //    (카카오 검수: "고정값으로 기재되어 수정이 불가능"). 승인된 20여 종의 아이템명에
+                //    라틴 문자·슬래시가 하나도 없다 — 본문·템플릿명의 'ERP'·'ETA' 는 통과하는데
+                //    아이템명만 걸린다. 그래서 뜻은 description 으로 옮겼다.
+                //    가드 = AlimtalkItemListSpecTest::test_every_item_title_is_plain_korean.
+                ['title' => '선하증권', 'description' => '#{BL대기}대 발급 대기'],
             ],
         ],
         // 분모 = 미수 차량의 총 판매금액. 네 항목의 % 를 더하면 100% 다(반올림 ±0.1).
