@@ -1289,13 +1289,13 @@ sale_total_amount  = sale_price + transport_fee + sale_other_costs
                    (Vehicle::getSaleTotalAmountAttribute)   ← 분모
 
 sale_unpaid_amount = sale_total_amount
-                   - Σ finalPayments(type='deposit_down').amount    (계약금)
-                   - Σ finalPayments(type='interim').amount         (중도금)
-                   - Σ finalPayments(type='advance_1').amount       (선수금1)
-                   - Σ finalPayments(type='fee').amount             (송금 수수료 — 셀러 부담, 2026-05-28 구 'advance_2' 재용도화)
-                   - Σ finalPayments(type='balance').amount         (잔금 N건)
-                   - Σ receivableHistories(method ≠ 'deposit').amount
+                   - Σ finalPayments(confirmed_at IS NOT NULL).amount   ← ⚠️ **확정분만**. type 무관 전량 합산
+                       (type = deposit_down 계약금 / interim 중도금 / advance_1 선수금1 /
+                        fee 송금수수료(셀러 부담, 2026-05-28 구 'advance_2' 재용도화) / balance 잔금 N건)
+                   - Σ receivableHistories(method NOT IN ('deposit','savings')).amount
+                       ← 🚨 **'savings' 도 빼야 한다** (Vehicle::MIRRORED_RECEIVABLE_METHODS)
                    - savings_used (적립금 사용 — 크레딧으로 잔금 결제, 2026-07-09 jin)
+                   → (0 < 미수 < 1) 이면 0 으로 스냅  ← 외화 소수점 잔차를 완납 처리. 음수(과입금)는 보존
                    (Vehicle::getSaleUnpaidAmountAttribute)  ← 분자
                    ✅ savings_used(적립금 사용) = 이 차량 통화 크레딧으로 잔금 결제 → 미수 차감(2026-07-09).
                       실입금KRW(getSaleReceivedKrwAccumulated)에도 판매환율(FX중립)로 포함 → 2차 환차 대칭.
@@ -1305,6 +1305,14 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
                    sale_total_amount ≤ 0 → null (게이지 비표시)
                    (Vehicle::getUnpaidRatioAttribute)
 ```
+
+> 🔧 **2026-08-24 정정 — 위 분자 공식이 틀려 있었다.** ①`receivableHistories` 에서 **`deposit` 만** 빼는 것으로
+> 적혀 있었으나 코드는 **`['deposit','savings']` 둘 다** 뺀다(`Vehicle::MIRRORED_RECEIVABLE_METHODS`, `Vehicle.php:588`).
+> 문서대로 따라 쓰면 **적립금이 이중 차감**된다 — `savings` 회수이력은 `savings_used` 와 **같은 돈의 미러 행**이다
+> (실측 heymanerp: `savings_used>0` 8대 중 5대가 미러 행 보유, 금액 정확히 일치).
+> ②`finalPayments` 는 **`confirmed_at` 있는 것만** 센다(문서엔 없었다). ③`0<x<1` 스냅이 빠져 있었다.
+> 🧭 **그래서 재집계하지 말 것** — 이 세 가지를 다 알고도 손으로 재현하니 16대짜리가 **17대**로 나왔다.
+> 원문 = `Vehicle.php:1697-1718`. (ssancar.com 연동 협의 중 발견 — 그쪽은 21대가 나왔었다.)
 
 **5곳 정합표** — 직접 SQL 합산 금지. 반드시 accessor 사용.
 
