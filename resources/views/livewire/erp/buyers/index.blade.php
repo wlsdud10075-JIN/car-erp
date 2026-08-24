@@ -103,7 +103,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    그것도 [저장]을 눌러야 DB 로 간다. 자동 반영하면 점수가 조용히 내려가 선적이 막히는데
         //    영업은 이유를 모른다(BuyerCreditScore 주석 참조).
         // ⚠️ 목록에서 부르지 말 것 — 지급 행태가 차량별 집계라 N+1 이다. 편집 패널에서만.
-        if (! $this->editingId || ! auth()->user()?->isSuperAdmin()) {
+        // 🔓 **열람은 관리 이상**(jin 2026-08-24). 실무자가 「이 바이어가 왜 막혔나」를 못 보면
+        //    문의가 전부 시스템관리자에게 몰린다. 고치는 것은 여전히 super 뿐이다.
+        if (! $this->editingId || ! auth()->user()?->canViewOperationLogs()) {
             return null;
         }
         $buyer = Buyer::find($this->editingId);
@@ -1012,11 +1014,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
 
                 @endif
-                {{-- 🔒 락 기준선 (jin 2026-08-21) — **시스템관리자 전용**.
-                     실무자(관리·업무관리자)가 자기가 막히면 자기가 풀 수 있으면 락이 통제로서 의미가 없다.
-                     무담보 한도도 같은 이유로 이 블록으로 올렸다(구: canApprove).
+                {{-- 🔒 락 기준선 — **보기는 관리 이상, 고치기는 시스템관리자**(jin 2026-08-24 분리).
+                     실무자가 자기가 막히면 자기가 풀 수 있으면 락이 통제로서 의미가 없다(그래서 편집은 super).
+                     그렇다고 숨겨 두면 「이 바이어가 왜 막혔나」를 아무도 못 봐서 문의가 전부 super 에게 몰린다.
+                     ⇒ 값·근거는 보여주고 입력만 잠근다. 저장 시 재인가는 그대로다(SKILLS §8 #26).
                      ⚠️ 무담보를 올리면 매입 판정이 미수율 → 금액으로 통째로 바뀌므로 락 % 와 같은 무게다. --}}
-                @if(auth()->user()?->isSuperAdmin())
+                @php $canEditLocks = (bool) auth()->user()?->isSuperAdmin(); @endphp
+                @if(auth()->user()?->canViewOperationLogs())
                 {{-- 바이어별 락 필요입금률 — 전역 설정보다 먼저 적용된다. 비우면 전역값. --}}
                 <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
                     <div class="text-sm font-semibold text-gray-800">{{ __('buyer.field.lock_section') }}</div>
@@ -1027,7 +1031,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <label class="label-base">{{ __('buyer.field.lock_'.$lockKey) }}</label>
                             <div class="flex items-center gap-1">
                                 <input wire:model="{{ $prop }}" type="number" min="0" max="100" inputmode="numeric"
-                                       class="input-base" placeholder="{{ \App\Models\Setting::lockRequiredPaidPct($lockKey) }}" />
+                                       @disabled(! $canEditLocks)
+                                       class="input-base disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                                       placeholder="{{ \App\Models\Setting::lockRequiredPaidPct($lockKey) }}" />
                                 <span class="text-sm text-gray-500">%</span>
                             </div>
                             <p class="mt-1 text-[11px] text-gray-500">
@@ -1038,6 +1044,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </div>
                     <p class="mt-2 text-[11px] leading-relaxed text-amber-700">{{ __('buyer.field.lock_zero_note') }}</p>
+                    @unless($canEditLocks)
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-500">{{ __('buyer.field.lock_readonly') }}</p>
+                    @endunless
 
                     {{-- 신용도 제안 (jin 2026-08-21) — **보여주기만 한다.** [적용]은 위 입력칸을 채울 뿐이고,
                          DB 로 가려면 [저장]을 눌러야 한다. 총점만 던지지 않고 축마다 왜 그 점수인지 찍는다 —
@@ -1060,6 +1069,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="ml-1 text-[11px] text-red-600">{{ __('buyer.field.credit_loss_capped') }}</span>
                                 @endif
                             </div>
+                            @if($canEditLocks)
                             <button type="button" wire:click="applyRecommendedLocks"
                                     class="rounded border border-rose-300 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-100">
                                 {{ __('buyer.field.credit_apply', [
@@ -1067,6 +1077,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     'purchase' => $credit['recommended']['purchase_registration'],
                                 ]) }}
                             </button>
+                            @endif
                         </div>
                         <dl class="mt-2 space-y-0.5">
                             @foreach($credit['axes'] as $axis)
@@ -1102,7 +1113,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                     <label class="label-base">{{ __('buyer.field.unsecured_limit') }}</label>
                     <input wire:model="unsecured_limit_krw_str" type="text" data-money inputmode="numeric"
-                           class="input-base" placeholder="{{ __('buyer.field.unsecured_limit_ph') }}" />
+                           @disabled(! $canEditLocks)
+                           class="input-base disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                           placeholder="{{ __('buyer.field.unsecured_limit_ph') }}" />
                     <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.unsecured_limit_hint') }}</p>
 
                     @if($editingId && $ug && ($ug['unsecured_limit_krw'] ?? 0) > 0)

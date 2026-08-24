@@ -166,15 +166,40 @@ class BuyerLockAdminOnlyTest extends TestCase
 
     // ── 화면 노출 ──────────────────────────────────────────────
 
-    public function test_only_super_sees_the_lock_inputs(): void
+    /**
+     * 🔓 **보기는 관리 이상, 고치기는 super** (jin 2026-08-24 분리).
+     *
+     * 숨겨 두면 실무자가 「이 바이어가 왜 막혔나」를 못 봐서 문의가 전부 시스템관리자에게 몰린다.
+     * 그렇다고 열어 주면 자기가 막힐 때 자기가 푸는 게 되어 락이 통제로서 의미를 잃는다.
+     * ⇒ 값·근거는 보여주고 **입력만 잠근다**. 저장 시 재인가는 그대로다(위 저장 테스트들이 지킨다).
+     */
+    public function test_managers_can_see_the_locks_but_the_inputs_are_disabled(): void
     {
         $b = $this->buyer();
 
         Volt::actingAs($this->user('super'))->test('erp.buyers.index')
             ->call('openEdit', $b->id)
-            ->assertSee('lock_shipping_entry_pct_str');
+            ->assertSee('lock_shipping_entry_pct_str')
+            ->assertDontSee(__('buyer.field.lock_readonly'));
 
-        Volt::actingAs($this->user('admin'))->test('erp.buyers.index')
+        foreach (['admin', 'manager'] as $permission) {
+            Volt::actingAs($this->user($permission))->test('erp.buyers.index')
+                ->call('openEdit', $b->id)
+                ->assertSee('lock_shipping_entry_pct_str')
+                ->assertSee(__('buyer.field.lock_readonly'))
+                ->assertSee('disabled');
+        }
+    }
+
+    /** 🚫 영업은 그대로 못 본다 — 「관리 이상」이지 전원이 아니다. */
+    public function test_sales_role_still_cannot_see_the_locks(): void
+    {
+        $b = $this->buyer();
+        $sales = User::factory()->create([
+            'permission' => 'user', 'role' => '영업', 'email_verified_at' => now(),
+        ]);
+
+        Volt::actingAs($sales)->test('erp.buyers.index')
             ->call('openEdit', $b->id)
             ->assertDontSee('lock_shipping_entry_pct_str');
     }

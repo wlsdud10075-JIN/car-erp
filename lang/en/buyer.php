@@ -66,6 +66,7 @@ return [
         'lock_purchase_registration' => 'Purchase registration',
         'lock_global' => 'global :pct%',
         'lock_zero_note' => 'Note: 0 means "no lock" and is different from blank. Blank uses the global setting. Changes are recorded in the audit log.',
+        'lock_readonly' => 'Only a system administrator can change these values. Ask them if an adjustment is needed.',
         'unsecured_limit' => 'Unsecured credit',
         'unsecured_limit_ph' => 'Leave blank for none (e.g. 5,000,000)',
         'unsecured_limit_hint' => 'Allows purchases up to this amount even with no vehicles in Korea to serve as collateral. Intended for long-standing buyers. Leave blank to keep the current behaviour (unpaid-ratio gate only). If set, this buyer is blocked once base limit + unsecured credit is used up.',
