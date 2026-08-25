@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\ForwardingCompany;
 use App\Models\Port;
+use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -178,8 +180,11 @@ class PortalVehicleApiTest extends TestCase
             $this->assertStringNotContainsString($forbidden, $json, "금지 값이 응답에 있다: {$forbidden}");
         }
 
+        // ⚠️ `sale_price`·`transport_fee` 는 v1.12 C-1 로 **`unpaid_components` 안에서 발행된다** —
+        //    여기서 빠진 것은 허용이 아니라 **위치 이동**이다. 평탄한 최상위 칸으로 올라오면
+        //    아래 test_unpaid_materials_stay_inside_components 가 잡는다.
         foreach ([
-            'purchase_price', 'selling_fee', 'cost_towing', 'sale_price', 'transport_fee',
+            'purchase_price', 'selling_fee', 'cost_towing',
             'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_owner_rrn',
             'sale_unpaid_amount_krw_cache', 'unsecured_limit_krw', 'memo_sale',
         ] as $key) {
@@ -270,5 +275,150 @@ class PortalVehicleApiTest extends TestCase
 
         $this->assertSame('https://www.cigbooking.com/track/WBAJD9100JWC11399', $rows[$open->id]['tracking_url']);
         $this->assertNull($rows[$early->id]['tracking_url'], '출항 당일은 아직 안 열린다');
+    }
+
+    // ── C-1 미수 발행 ───────────────────────────────────────────────────
+
+    /**
+     * 🔑 **이 테스트가 C-1 계약의 본체다.**
+     *
+     * ssancar v1.11 §17-1 은 구성을 「4항」으로 하자고 했다. 항을 세는 방식으로는 안 닫힌다 —
+     * ERP 미수 공식의 항은 8개이고, 늘어날 수 있다. 항 수 대신 **닫힘**을 강제한다.
+     */
+    public function test_components_always_close_to_the_published_balance(): void
+    {
+        // 8항이 전부 살아 있는 차 — 부대비용 3종 + TAX D/C + 회수이력 + 적립금 + 스냅 잔차.
+        $v = $this->seedVehicle([
+            'currency' => 'EUR', 'exchange_rate' => 1400,
+            'sale_date' => now()->subMonths(2)->toDateString(),
+            'sale_price' => 20000, 'transport_fee' => 1500, 'sale_other_costs' => 300,
+            'commission' => 250, 'auto_loading' => 120, 'tax_dc' => 400,
+            'savings_used' => 800,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 9000,
+            'payment_date' => now()->subMonth()->toDateString(), 'confirmed_at' => now()->subMonth(),
+        ]);
+        // ⚠️ 확정 안 된 잔금은 **세면 안 된다**(Draft). 닫힘이 깨지면 여기서 잡힌다.
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 5000,
+            'payment_date' => now()->toDateString(),
+        ]);
+        ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'method' => 'cash', 'amount' => 1200,
+            'collected_at' => now()->subWeek()->toDateString(),
+        ]);
+        // 미러 행 — savings_used 와 같은 돈이라 **두 번 빼면 안 된다**(SKILLS §13 정정).
+        ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'method' => 'savings', 'amount' => 800,
+            'collected_at' => now()->subWeek()->toDateString(),
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+        $c = $row['unpaid_components'];
+
+        $sum = $c['sale_price'] + $c['transport_fee'] + $c['other_charges']
+            - $c['paid'] - $c['savings_used'];
+
+        $this->assertLessThan(
+            1.0,
+            abs($sum - ($row['unpaid_amount'] - $row['overpaid_amount'])),
+            '닫힘 항등식이 깨졌다 — 바이어 화면의 뺄셈이 헤드라인과 안 맞는다'
+        );
+        // ERP 단일 출처와도 같은 값이어야 한다(포털이 자기 공식을 갖지 않는다).
+        $this->assertEqualsWithDelta((float) $v->fresh()->sale_unpaid_amount, $row['unpaid_amount'], 0.01);
+    }
+
+    /** 과입금은 눌러서 0 으로 보내고, 원본은 따로 준다 — 섞으면 바이어 합계가 남의 미수를 상쇄한다. */
+    public function test_overpayment_is_pressed_to_zero_and_reported_separately(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => now()->subMonth()->toDateString(), 'sale_price' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10500,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertEqualsWithDelta(0.0, $row['unpaid_amount'], 0.01);
+        $this->assertEqualsWithDelta(500.0, $row['overpaid_amount'], 0.01);
+        $this->assertTrue($row['fully_paid']);
+    }
+
+    /** 판매 전 차는 미수라는 개념이 없다 — 0 을 보내면 사이트가 「완납」으로 그린다. */
+    public function test_unsold_vehicle_publishes_null_not_zero(): void
+    {
+        $v = $this->seedVehicle(['purchase_price' => 5_000_000]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertNull($row['unpaid_amount']);
+        $this->assertNull($row['unpaid_components']);
+        $this->assertNull($row['currency']);
+        $this->assertFalse($row['fully_paid']);
+    }
+
+    /** 🚨 원화 환산은 하지 않는다(Q11) — 다중통화 바이어가 실재하고, 환산은 시점 문제가 붙는다. */
+    public function test_amounts_are_published_in_the_buyer_currency_only(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'EUR', 'exchange_rate' => 1500,
+            'sale_date' => now()->subMonth()->toDateString(), 'sale_price' => 20000,
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertSame('EUR', $row['currency']);
+        $this->assertEqualsWithDelta(20000.0, $row['unpaid_components']['sale_price'], 0.01, '원화로 환산돼 나오면 안 된다');
+        $this->assertArrayNotHasKey('exchange_rate', $row);
+        $this->assertArrayNotHasKey('unpaid_amount_krw', $row);
+    }
+
+    // ── C-3 레벨3 승급 ──────────────────────────────────────────────────
+
+    /**
+     * 🚨 `progress_status_cache === '판매완료'` 로 세면 틀린다 —
+     *    완납한 차가 선적되면 상태가 위로 올라가 그 문자열에서 빠진다(v4 cascade).
+     */
+    public function test_fully_paid_survives_the_vehicle_moving_past_sold(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => now()->subMonths(3)->toDateString(), 'sale_price' => 10000,
+            'bl_loading_location' => '평택항',
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10000,
+            'payment_date' => now()->subMonths(2)->toDateString(), 'confirmed_at' => now()->subMonths(2),
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertNotSame('판매완료', $row['progress_status_cache'], '전제가 깨졌다 — 이 차는 이미 선적 단계다');
+        $this->assertTrue($row['fully_paid'], '상태 문자열이 아니라 미수로 판정해야 한다');
+    }
+
+    /**
+     * B-2 가 거부했던 두 칸이 C-1 로 돌아왔다. 거부 사유(*"미러에 있으면 계산하고 싶어진다"*)는
+     * 그대로 유효하므로 **`unpaid_components` 밖으로 새지 않는지**를 따로 지킨다.
+     */
+    public function test_unpaid_materials_stay_inside_components(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => now()->subMonth()->toDateString(),
+            'sale_price' => 10000, 'transport_fee' => 900,
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        foreach (['sale_price', 'transport_fee', 'other_charges', 'paid', 'savings_used'] as $k) {
+            $this->assertArrayNotHasKey($k, $row, "미수 재료가 최상위로 새어 나왔다: {$k}");
+            $this->assertArrayHasKey($k, $row['unpaid_components']);
+        }
+        $this->assertSame($v->id, $row['id']);
     }
 }

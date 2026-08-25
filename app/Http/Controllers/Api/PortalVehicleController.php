@@ -35,11 +35,18 @@ class PortalVehicleController extends Controller
         'discharge_port_id', 'bl_document', 'bl_number', 'bl_issue_date',
         // 화물추적 링크 판정에 필요(포워딩사 템플릿 + 출항 D+1). 값 자체는 안 나간다.
         'forwarding_company_id',
+        // C-1 미수 발행 (v1.12) — 아래 unpaid() 가 쓴다.
+        // ⚠️ `exchange_rate` 는 **일부러 뺐다**. 바이어 통화로만 발행하고 원화 환산은 안 한다(Q11).
+        'currency', 'sale_price', 'transport_fee', 'sale_other_costs',
+        'commission', 'auto_loading', 'tax_dc', 'savings_used',
     ];
 
     // 🚫 여기 없는 것 중 **일부러 뺀 것** — 요청서 B-2 가 명시적으로 거부했다.
-    //    `sale_price`·`transport_fee` : 미수를 사이트가 계산하게 만드는 재료다(§3 — 계산은 ERP 몫).
-    //    `sale_unpaid_amount_krw_cache` : 원화 캐시. 발행은 **바이어 통화**로 해야 한다(Q11) → C-1 확정 후.
+    //    `sale_unpaid_amount_krw_cache` : 원화 캐시. 발행은 **바이어 통화**로 한다(Q11) — 환산은 안 한다.
+    //    ⚠️ `sale_price`·`transport_fee` 는 v1.11 에서 B-2 가 거부했다가 C-1 로 **되돌아왔다**.
+    //       거부 사유였던 *"미러에 있으면 사이트가 계산하고 싶어진다"* 는 그대로 유효하므로,
+    //       평탄한 칸이 아니라 `unpaid_components` **안에** 넣고 «표시 전용» 계약을 함께 건다.
+    //       재계산 방지의 실질 가드는 아래 **닫힘 항등식**이다.
     //    소유자 PII · 원가 · 마진 · 바이어 한도 : 애초에 대상이 아니다.
 
     public function vehicles(): JsonResponse
@@ -47,7 +54,15 @@ class PortalVehicleController extends Controller
         $rows = Vehicle::query()
             // 🚨 바이어 미정(투기 매입)은 어느 바이어에게도 발행하지 않는다 — 이게 IDOR 경계다.
             ->whereNotNull('buyer_id')
-            ->with(['dischargePort:id,name', 'forwardingCompany:id,name,tracking_url_template'])
+            // 🚨 `finalPayments`·`receivableHistories` 는 `sale_unpaid_amount` 가 쓰는 관계다.
+            //    빼면 261행 × 2 쿼리로 터진다. 🚫 컬럼 제한(`:id,amount`)을 걸지 말 것 —
+            //    금액 계산 쿼리에서 컬럼을 제한하면 조용히 값이 틀어진다(MEMORY 「살아있는 함정」).
+            ->with([
+                'dischargePort:id,name',
+                'forwardingCompany:id,name,tracking_url_template',
+                'finalPayments',
+                'receivableHistories',
+            ])
             ->select(self::COLUMNS)
             ->orderBy('id')
             ->get();
@@ -115,7 +130,80 @@ class PortalVehicleController extends Controller
 
             // 포워딩사 화물추적 — 열 수 없으면 null. **사이트는 열림 조건을 판정하지 않는다.**
             'tracking_url' => $v->tracking_url,
+        ] + $this->unpaid($v);
+    }
+
+    /**
+     * C-1 미수 발행 (v1.12) — **차량 단위 · 바이어 통화 · 음수 분리**.
+     *
+     * ═══ 닫힘 항등식 (이게 계약의 본체다) ═══════════════════════════════
+     *   sale_price + transport_fee + other_charges − paid − savings_used
+     *       ≡  unpaid_amount − overpaid_amount            (오차 < 통화 1단위)
+     *
+     * 🔑 **`components` 를 「3항」이나 「4항」으로 적으면 닫히지 않는다.**
+     *    ERP 미수 공식(`Vehicle::getSaleUnpaidAmountAttribute`)의 항은 실제로 8개다 —
+     *    `sale_other_costs`·`commission`·`auto_loading`·`tax_dc`·회수이력까지 들어간다.
+     *    ssancar v1.11 §17-1 이 `savings_used` 하나를 되돌려 4항을 제안했는데, 그래도 짧다.
+     *    ⇒ 항을 세지 말고 **닫히게** 만든다. 아래 두 값은 **파생**이라 공식 사본이 아니다:
+     *      other_charges = sale_total_amount − sale_price − transport_fee
+     *      paid          = sale_total_amount − savings_used − 미수(스냅 포함)
+     *    ERP 공식이 바뀌어도 항등식은 자동으로 따라온다(SKILLS §45 — 공식 복제 금지).
+     *
+     * ⚠️ **`paid` 에는 회수이력(`cash`·`offset`·`other`·`write_off`)이 섞여 있다.**
+     *    특히 `write_off`(손실처리)는 **바이어가 낸 돈이 아니라 회사가 포기한 채권**이다.
+     *    ERP 미수 단일 출처가 그걸 빼기 때문에 포털 잔금도 그만큼 줄어든다 —
+     *    같은 차의 **판매계약서 Balance 와는 다를 수 있다**(SKILLS §29: 계약서 Received 는
+     *    회수이력을 일부러 제외한다, jin 2026-07-29). 별도 줄로 쪼개면 손실처리액이
+     *    바이어 화면에 그대로 드러나므로 **지금은 `paid` 에 접어 둔다**(노출 최소).
+     *    🔴 갈라야 한다는 판단이 서면 여기 한 곳만 고치면 된다.
+     *
+     * 🚫 원화 환산을 하지 않는다(Q11) — 다중통화 바이어가 실재하고, 환산은 시점 문제가 붙는다.
+     */
+    private function unpaid(Vehicle $v): array
+    {
+        // 판매 전(매입만 있는 차)은 미수라는 개념이 없다. 0 이 아니라 **null** 로 보낸다 —
+        // 0 을 보내면 사이트가 「완납」으로 그린다.
+        if ((float) $v->sale_price <= 0) {
+            return [
+                'currency' => null,
+                'unpaid_amount' => null,
+                'overpaid_amount' => null,
+                'unpaid_components' => null,
+                // C-3 — 레벨3 승급용. 판매가 없으면 「온전히 결제한 차」가 아니다.
+                'fully_paid' => false,
+            ];
+        }
+
+        $total = (float) $v->sale_total_amount;      // 단일 출처
+        $raw = (float) $v->sale_unpaid_amount;       // 단일 출처(0<x<1 완납 스냅 포함)
+        $savings = (float) ($v->savings_used ?? 0);
+
+        return [
+            'currency' => $v->currency,
+            // v1.6 Q13-3 — 음수를 섞으면 바이어 합계에서 남의 차 미수를 상쇄한다. 눌러서 보낸다.
+            'unpaid_amount' => $this->money(max(0.0, $raw)),
+            // 원본 음수(과입금)는 **따로**. 🚫 unpaid 와 더하지 말 것.
+            'overpaid_amount' => $this->money(max(0.0, -$raw)),
+            'unpaid_components' => [
+                'sale_price' => $this->money((float) $v->sale_price),
+                'transport_fee' => $this->money((float) $v->transport_fee),
+                // 부대비용 묶음 = 기타비용 + Commission + Auto loading − TAX D/C.
+                // 음수일 수 있다(TAX D/C 가 크면).
+                'other_charges' => $this->money($total - (float) $v->sale_price - (float) $v->transport_fee),
+                'paid' => $this->money($total - $savings - $raw),
+                'savings_used' => $this->money($savings),
+            ],
+            // C-3 — ssancar 레벨2→3 자동 승급(v1.11 §2-3). 「판매완료」의 코드상 정의 그대로다.
+            // 🚨 `progress_status_cache === '판매완료'` 로 세면 틀린다 — 완납한 차가 선적되면
+            //    상태가 선적중·거래완료로 올라가 그 문자열에서 빠진다(v4 cascade). 미수로 판정할 것.
+            'fully_paid' => $raw <= 0,
         ];
+    }
+
+    /** 통화 금액 — 소수 2자리. KRW 는 정수라 영향 없고, 외화는 잔차를 접는다. */
+    private function money(float $amount): float
+    {
+        return round($amount, 2);
     }
 
     private function date($value): ?string
