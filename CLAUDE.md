@@ -371,6 +371,11 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 
 > **세션 시작 시 읽을 것**: 메모리 `MEMORY.md`(인덱스 — 여기서 필요한 `project_*.md` 만 열람).
 > ⚠️ 메모리 파일명은 **언더스코어**다(`project_deployment.md` 등). 하이픈으로 찾으면 안 나온다.
+> 📚 **메모리는 3층이다** — `MEMORY.md`(색인, 매 세션 로드·**200줄 넘으면 뒤가 조용히 잘린다**) /
+> `project_*.md`·`feedback_*.md`(주제별 상세) / `_ARCHIVE.md`(끝난 것의 맥락, 안 읽힘).
+> **큰 내용은 아카이브·개별 파일에 쓰고 색인엔 한 줄+경로만 둔다**(jin 2026-08-25).
+> 🔎 **날짜를 몰라도 주제어로 찾는다** — 아카이브 맨 위 「찾는 법」의 주제↔키워드 표를 쓸 것:
+> `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
 **현재 상태 (2026-08-11)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
