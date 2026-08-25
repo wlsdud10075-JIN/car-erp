@@ -785,6 +785,41 @@ heymanerp 발송 **0건**이었다(운영 실측: 설정행 없음·수신자 0�
 정확히 6자는 여유가 없다. 가드 = `AlimtalkItemListSpecTest::test_every_item_title_is_plain_korean`.
 📌 반려 유형 전체(양식·오입력·길이·오탈자 4종)는 메모리 `project_alimtalk_itemlist_registration`.
 
+### 64. 🧮 값을 **분해해서** 밖으로 보낼 땐 「항 수」가 아니라 **닫힘**을 계약한다 (2026-08-25)
+
+ssancar.com 포털에 차량별 미수를 발행하며 **두 세션이 각각 틀렸다.**
+ERP 는 구성을 **3항**(`가격·운임·입금`)으로 제안했고, ssancar 가 **4항**(`+ savings_used`)으로 고쳤다.
+**둘 다 짧았다** — 실제 항은 **8개**다(`app/Models/Vehicle.php:1697-1718`):
+`sale_other_costs` · `commission` · `auto_loading` · `tax_dc` · **회수이력** · **완납 스냅**이 남아 있었다.
+
+🔑 **틀린 이유가 같다.** 둘 다 *"안 맞는 사례를 관찰해서 항을 하나씩 되찾는"* 방법을 썼다.
+그 방법은 **관찰된 만큼만** 찾는다. ssancar 는 8대가 안 맞는 걸 보고 `savings_used` 를 찾았지만,
+`commission` 이 0 인 표본만 봤기 때문에 거기서 멈췄다.
+
+**⇒ 항을 세지 말고 닫히게 만든다.**
+```
+sale_price + transport_fee + other_charges − paid − savings_used
+    ≡  unpaid_amount − overpaid_amount            (오차 < 통화 1단위)
+```
+- **파생으로 만들면 공식 사본이 안 된다** — `other_charges = 총판매 − 가격 − 운임` ·
+  `paid = 총판매 − 적립금 − 미수`. 둘 다 단일 출처에서 **빼서** 만드므로 공식이 바뀌어도
+  항등식이 자동으로 따라온다(#45 의 짝 — 거긴 «복제 금지», 여긴 «애초에 안 쓰기»).
+- **스냅·음수까지 닫혀야 한다.** 세 갈래(미수>1 / 0<미수<1 완납 스냅 / 미수<0 과입금)를
+  **전부** 테스트할 것. 하나만 밟으면 *"합계는 0 인데 줄을 더하면 0 이 아닌"* 화면이 남는다.
+  ⚠️ 스냅 테스트는 **잔차가 실제로 저장됐는지 먼저 단언**할 것 — 소수가 잘리면 잔차 0 이 되어
+  **아무것도 검사하지 않은 채 통과**한다.
+
+**🚫 판매 전 차량에 `0` 을 보내지 말 것** — 받는 화면이 **「완납」으로 그린다.** `null` 이다.
+**🚫 이름 하나에 두 뜻을 담지 말 것** — `paid` 는 *"확정 잔금"* 으로 읽으면 회수이력이 빠지고
+*"모든 입금"* 으로 읽으면 **미확정 Draft 잔금**이 들어온다. 둘 다 운영에 실재한다.
+
+⚠️ **곁다리 — 그 `paid` 에 `write_off`(손실처리)가 섞인다.** 바이어가 낸 돈이 아니라
+**회사가 포기한 채권**이다. ERP 미수 단일 출처가 그걸 빼므로 포털 잔금은 줄어드는데,
+**판매계약서는 회수이력을 일부러 제외한다**(#29 · jin 2026-07-29) → **같은 차에서 두 서류의
+잔금이 다를 수 있다.** 밖으로 보내는 금액을 만들 때 **어느 서류와 나란히 놓이는지** 확인할 것.
+
+가드 = `tests/Feature/PortalVehicleApiTest`(닫힘 3갈래 · 재료가 `unpaid_components` 밖으로 새는지 · null · 통화).
+
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
