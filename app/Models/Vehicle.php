@@ -2594,6 +2594,21 @@ class Vehicle extends Model
             ->orWhereNotNull('bl_document'));
     }
 
+    /**
+     * 인스턴스 판정 — `scopeDeparted` 의 PHP 짝 (2026-08-25, 포털 발행용).
+     *
+     * 🚨 **`$v->departed()` 를 부르지 말 것.** 그건 쿼리 스코프라 인스턴스에서 부르면
+     *    예외 없이 **Builder 객체가 돌아온다** — JSON 에 그대로 실려도 아무도 모른다.
+     *
+     * ⚠️ SQL 과 PHP 는 표현이 다를 수밖에 없어 **두 벌이 된다.** 그래서
+     *    `PortalVehicleApiTest::test_is_departed_agrees_with_the_scope` 가 둘의 일치를 강제한다
+     *    (`SailingStatusTest::test_scope_and_accessor_agree` 와 같은 형태).
+     */
+    public function isDeparted(): bool
+    {
+        return filled($this->warehouse_out_date) || filled($this->bl_document);
+    }
+
     /** 아직 안 떠난 차 — scopeDeparted 의 정확한 여집합(출고일도 B/L 도 없음). */
     public function scopeNotDeparted(Builder $q): Builder
     {
