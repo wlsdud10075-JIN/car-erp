@@ -376,7 +376,7 @@ class PortalVehicleApiTest extends TestCase
     {
         $c = $row['unpaid_components'];
         $sum = $c['sale_price'] + $c['transport_fee'] + $c['other_charges']
-            - $c['paid'] - $c['savings_used'];
+            - $c['paid'] - $c['savings_used'] - $c['written_off'];
 
         $this->assertLessThan(
             1.0,
@@ -471,10 +471,44 @@ class PortalVehicleApiTest extends TestCase
 
         $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
 
-        foreach (['sale_price', 'transport_fee', 'other_charges', 'paid', 'savings_used'] as $k) {
+        foreach (['sale_price', 'transport_fee', 'other_charges', 'paid', 'savings_used', 'written_off'] as $k) {
             $this->assertArrayNotHasKey($k, $row, "미수 재료가 최상위로 새어 나왔다: {$k}");
             $this->assertArrayHasKey($k, $row['unpaid_components']);
         }
         $this->assertSame($v->id, $row['id']);
+    }
+
+    /**
+     * 🚨 **손실처리(`write_off`)는 「바이어가 낸 돈」이 아니다** — 회사가 포기한 채권이다(jin 2026-08-25).
+     *    `paid` 에 섞으면 «당신이 낸 돈» 이 실제보다 커져, 바이어가 자기 송금 기록과 대조하다 어긋난다.
+     */
+    public function test_written_off_debt_is_never_counted_as_money_the_buyer_paid(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => now()->subMonths(3)->toDateString(), 'sale_price' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 6000,
+            'payment_date' => now()->subMonths(2)->toDateString(), 'confirmed_at' => now()->subMonths(2),
+        ]);
+        ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'method' => 'cash', 'amount' => 1000,
+            'collected_at' => now()->subMonth()->toDateString(),
+        ]);
+        ReceivableHistory::create([
+            'vehicle_id' => $v->id, 'method' => 'write_off', 'amount' => 3000,
+            'collected_at' => now()->subWeek()->toDateString(),
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+        $c = $row['unpaid_components'];
+
+        // 실제로 들어온 돈 = 확정 잔금 6,000 + 현금 회수 1,000
+        $this->assertEqualsWithDelta(7000.0, $c['paid'], 0.01, '손실처리액이 「낸 돈」에 섞였다');
+        $this->assertEqualsWithDelta(3000.0, $c['written_off'], 0.01);
+        // ERP 미수 단일 출처는 손실처리를 빼므로 잔금 0 이다 — 그래도 항등식은 닫힌다.
+        $this->assertCloses($row, '손실처리 보유');
+        $this->assertEqualsWithDelta((float) $v->fresh()->sale_unpaid_amount, $row['unpaid_amount'], 0.01);
     }
 }
