@@ -48,6 +48,7 @@ return [
         'all' => 'All',
         'only' => 'Cancelled only',
         'normal' => 'Normal only',
+        'overpaid' => 'Overpaid only',
     ],
     'ratio_all' => 'Unpaid % ALL',
     'ratio_min' => ':percent%+',

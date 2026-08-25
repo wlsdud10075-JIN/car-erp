@@ -51,6 +51,7 @@ return [
         'all' => '전체',
         'only' => '매입취소만',
         'normal' => '정상만',
+        'overpaid' => '과입금만',
     ],
     'ratio_all' => '미납률 ALL',
     'ratio_min' => ':percent%↑',
