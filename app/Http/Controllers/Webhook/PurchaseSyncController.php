@@ -282,7 +282,8 @@ class PurchaseSyncController extends Controller
     /**
      * 연동 B v2 — board 가 보낸 첨부(S3 키)를 차량 사진/첨부(vehicle_photos)로 연결.
      * S3 접근 = (B) car-erp prefix 로 서버사이드 복사(같은 버킷 heysellcar-erp-docs, 바이트 전송 X).
-     * 멱등/방어: target 경로를 source 키로 결정적 생성 → 재전송 시 중복 행 skip. 최대 10건 cap.
+     * 멱등/방어: target 경로를 source 키로 결정적 생성 → 재전송 시 중복 행 skip.
+     * cap = VehiclePhoto::MAX_BASIC (화면 기본정보 갤러리와 같은 한도 — 숫자를 여기 직접 쓰면 조용히 갈린다).
      * 원본 누락·복사 실패는 graceful(해당 건만 skip, 동기화 전체는 성공). 스키마는 path 만(원본명·kind 미저장).
      *
      * @param  array<int, array<string, mixed>>  $attachments
@@ -305,14 +306,18 @@ class PurchaseSyncController extends Controller
         $sourceDisk = Storage::disk($sourceName);
         $sameDisk = $sourceName === $targetName;
 
-        $count = VehiclePhoto::where('vehicle_id', $vehicle->id)->count();
+        // ⚠️ 기본정보 갤러리(category != 'shipping')만 센다 — 선적 사진까지 세면 선적 컷이 많은 차량에서
+        //    board 첨부가 조용히 0건으로 잘린다(화면 한도와 다른 것을 세는 셈).
+        $count = VehiclePhoto::where('vehicle_id', $vehicle->id)
+            ->where(fn ($q) => $q->whereNull('category')->orWhere('category', '!=', 'shipping'))
+            ->count();
         $nextOrder = (int) VehiclePhoto::where('vehicle_id', $vehicle->id)->max('sort_order');
         $created = 0;
         $failed = 0;
 
         foreach ($attachments as $att) {
-            if ($count + $created >= 10) {
-                break;   // 첨부 최대 10건 cap
+            if ($count + $created >= VehiclePhoto::MAX_BASIC) {
+                break;   // 기본정보 갤러리 한도 도달
             }
             $src = is_array($att) ? ($att['s3_path'] ?? null) : null;
             if (! is_string($src) || $src === '') {
