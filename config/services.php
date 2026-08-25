@@ -80,6 +80,15 @@ return [
         'hmac_secret' => env('CAR_ERP_READ_HMAC_SECRET'),
     ],
 
+    // ssancar.com 바이어 포털 읽기 채널 (2026-08-25). board 와 **시크릿을 분리**한다 —
+    //   같은 키를 주면 board 의 전 API 면을 넘기게 되고 한쪽만 폐기할 수 없다(v1.2 Q6).
+    // 🚨 `source` 는 **서버별로 다른 값**이어야 한다. 같은 값이면 사이트의 전량 pull + 차집합이
+    //    «다른 회사 행 = 이 회사 전량 삭제» 로 읽는다. 어휘는 v1.4 확정 = heymanerp / ssancarerp.
+    'ssancar_portal' => [
+        'hmac_secret' => env('SSANCAR_PORTAL_HMAC_SECRET'),
+        'source' => env('SSANCAR_PORTAL_SOURCE', 'heymanerp'),
+    ],
+
     // 카카오 알림톡 — 발신 계정(userid·profile·tmplId)은 기능설정(admin/settings) DB 저장.
     // ⚠️ 로컬 테스트 안전장치(jin 2026-07-10): 운영 크리덴셜을 로컬에서 쓰는 구조라, 로컬 테스트가
     //    실수신자에게 실제 카톡을 보내는 사고를 막는다. local 환경에서 ALIMTALK_TEST_PHONE 설정 시

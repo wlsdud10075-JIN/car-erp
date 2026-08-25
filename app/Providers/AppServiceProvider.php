@@ -34,6 +34,10 @@ class AppServiceProvider extends ServiceProvider
         // board 영업 포털 읽기 API — board 단일 IP 라 영업별(salesman_email) 키로 제한
         // (by(IP) 면 전 영업이 한 한도 공유). HMAC 으로 이미 인증되므로 상한은 넉넉히.
         RateLimiter::for('board-read', fn ($request) => Limit::perMinute(120)->by((string) $request->query('salesman_email', $request->ip())));
+        // 포털은 호출자 파라미터가 없다 — board 의 `salesman_email` 키는 **호출자가 스스로 채우는 값**이라
+        //   바꿔가며 부르면 한도가 무력해진다(v1.2 Q6 이 지적한 그 결함). IP 로 건다.
+        //   6시간마다 전량 1회라 낮게 잡아도 충분하다.
+        RateLimiter::for('portal-read', fn ($request) => Limit::perMinute(30)->by((string) $request->ip()));
 
         // 차량 데이터 export — 2026-06-29 라운드테이블 조건(분3/일100). 파일 반출이라 억제.
         RateLimiter::for('data-export', fn ($request) => [

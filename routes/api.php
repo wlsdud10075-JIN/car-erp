@@ -5,8 +5,10 @@ use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
+use App\Http\Controllers\Api\PortalVehicleController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
+use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
 use Illuminate\Support\Facades\Route;
 
@@ -66,4 +68,21 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::post('requests', [BoardRequestController::class, 'store'])->name('requests.store');
         Route::get('requests', [BoardRequestController::class, 'index'])->name('requests.index');
         Route::post('requests/{batch}/cancel', [BoardRequestController::class, 'cancel'])->name('requests.cancel');
+    });
+
+/*
+| ssancar.com 바이어 포털 읽기 API (2026-08-25)
+| 요청서 = Desktop\연구소\ERP_SSANCAR_WEB\ERP_요청_포털_읽기_엔드포인트_v1.0.md
+| 합의 = ERP_연동_통합정리 v1.2~v1.9 · 진입점 = docs/integration/ssancar-portal-collab.md
+|
+| 🔑 board 채널과 **완전히 분리**한다 — 시크릿·미들웨어·nonce·throttle 넷 다.
+|    같은 시크릿을 주면 board 의 전 API 면을 통째로 넘기게 되고 한쪽만 폐기할 수 없다(v1.2 Q6).
+| 🚫 증분·툼스톤·페이지네이션을 만들지 말 것 — 전량 pull + 차집합이 합의다(v1.2 Q7).
+|    툼스톤 없는 증분은 삭제를 영원히 못 잡는다.
+*/
+Route::middleware([VerifyPortalReadHmac::class, 'throttle:portal-read'])
+    ->prefix('internal/portal')
+    ->name('api.internal.portal.')
+    ->group(function () {
+        Route::get('vehicles', [PortalVehicleController::class, 'vehicles'])->name('vehicles');
     });
