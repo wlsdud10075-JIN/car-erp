@@ -31,6 +31,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
     #[Url] public string $classification = '';
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / 'cancelled' 매입취소만 / 'normal' 정상만
+    //   ➕ 'overpaid' 과입금만 (jin 2026-08-25). 실측 5대 전부 cancel=none 이라 매입취소와 안 겹친다.
+    //   ⚠️ 과입금은 미수가 **음수**라 「완납」 탭에만 있다 — 고르면 탭을 같이 바꿔 준다(updatedCancelFilter).
     #[Url] public string $cancelFilter = '';
 
     // KPI 카드 통화 표시 — '' 전체(₩ 환산 합계) / 'USD'·'JPY'·'KRW'… 그 통화 차량만 판매시점 원금액 합계(재환산 없음).
@@ -87,6 +89,33 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function updatedSearch(): void
     {
+        $this->resetPage();
+    }
+
+    /**
+     * 담당자를 바꾸면 바이어 선택을 검사한다 — 남겨두면 「A 담당자 + B 의 바이어」 조합이 되어
+     * **조용히 0건**이 나온다. 사용자는 필터를 건드린 적이 없으니 이유를 못 찾는다.
+     */
+    /**
+     * 과입금을 고르면 탭도 「완납」으로 옮긴다.
+     *
+     * 🧭 과입금은 미수가 음수라 기본 탭(채권 전체 = 미수 > 0)과 **조건이 충돌해 0건**이 된다.
+     *    조용히 조건만 덮어쓰면 「왜 여기선 다르지」가 되므로, **눈에 보이는 탭을 바꿔** 화면이 스스로 설명하게 한다.
+     */
+    public function updatedCancelFilter(): void
+    {
+        if ($this->cancelFilter === 'overpaid') {
+            $this->classification = 'paid_up';
+        }
+        $this->resetPage();
+    }
+
+    public function updatedSalesmanFilter(): void
+    {
+        if ($this->buyerFilter !== '' && ! $this->buyers->contains('id', (int) $this->buyerFilter)) {
+            $this->buyerFilter = '';
+        }
+        unset($this->buyers);
         $this->resetPage();
     }
 
@@ -238,7 +267,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
-        return Buyer::where('is_active', true)->orderBy('name')->get();
+        // 담당자를 고르면 그 담당자의 바이어만 (jin 2026-08-25).
+        //   실측 heymanerp — 바이어 23명 전원 `salesman_id` 보유, 차량 담당자와 258/261 일치.
+        //   ⚠️ 남는 3대는 엑셀 임포트 잔재라 그 담당자에 배정된 바이어가 아직 없다(jin: 지정되면 그때부터 잡힌다).
+        //      그 사이엔 「목록엔 차가 있는데 드롭다운은 비는」 상태가 되는데, 그건 배정으로 풀 일이다.
+        return Buyer::where('is_active', true)
+            ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->orderBy('name')
+            ->get();
     }
 
     #[Computed]
@@ -641,6 +677,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 매입취소 필터 — 취소차도 위약금(sale_price)이 채권으로 잡히므로 기본은 함께 노출, 필터로 분리.
             ->when($this->cancelFilter === 'cancelled', fn ($q) => $q->where('cancel_status', '!=', Vehicle::CANCEL_NONE))
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', Vehicle::CANCEL_NONE))
+            // 과입금 = 돌려줄 돈. 채권관리 배너·전환 버튼과 같은 기준(`< 0`)을 쓴다.
+            //   🚫 차량 편집 판매탭의 `<= -1` 을 쓰지 말 것 — 두 화면이 -0.5 를 다르게 판정하게 된다.
+            ->when($this->cancelFilter === 'overpaid', fn ($q) => $q->where('sale_unpaid_amount_krw_cache', '<', 0))
             // 미납률 30/50/70%↑ 필터는 receivable_risk 캐시 컬럼 매핑으로 대신.
             // 정확한 ratio 슬라이더 필요 시 raw SQL로 확장 가능 (현재는 카테고리 매핑으로 충분).
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
@@ -855,6 +894,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="">{{ __('receivable.cancel.all') }}</option>
             <option value="cancelled">{{ __('receivable.cancel.only') }}</option>
             <option value="normal">{{ __('receivable.cancel.normal') }}</option>
+            <option value="overpaid">{{ __('receivable.cancel.overpaid') }}</option>
         </select>
         <select wire:model.live="unpaidRatioMin" class="input-filter">
             <option value="">{{ __('receivable.ratio_all') }}</option>
