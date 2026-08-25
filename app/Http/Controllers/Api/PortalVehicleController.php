@@ -137,7 +137,7 @@ class PortalVehicleController extends Controller
      * C-1 미수 발행 (v1.12) — **차량 단위 · 바이어 통화 · 음수 분리**.
      *
      * ═══ 닫힘 항등식 (이게 계약의 본체다) ═══════════════════════════════
-     *   sale_price + transport_fee + other_charges − paid − savings_used
+     *   sale_price + transport_fee + other_charges − paid − savings_used − written_off
      *       ≡  unpaid_amount − overpaid_amount            (오차 < 통화 1단위)
      *
      * 🔑 **`components` 를 「3항」이나 「4항」으로 적으면 닫히지 않는다.**
@@ -146,16 +146,18 @@ class PortalVehicleController extends Controller
      *    ssancar v1.11 §17-1 이 `savings_used` 하나를 되돌려 4항을 제안했는데, 그래도 짧다.
      *    ⇒ 항을 세지 말고 **닫히게** 만든다. 아래 두 값은 **파생**이라 공식 사본이 아니다:
      *      other_charges = sale_total_amount − sale_price − transport_fee
-     *      paid          = sale_total_amount − savings_used − 미수(스냅 포함)
+     *      paid          = sale_total_amount − savings_used − written_off − 미수(스냅 포함)
      *    ERP 공식이 바뀌어도 항등식은 자동으로 따라온다(SKILLS §45 — 공식 복제 금지).
      *
-     * ⚠️ **`paid` 에는 회수이력(`cash`·`offset`·`other`·`write_off`)이 섞여 있다.**
-     *    특히 `write_off`(손실처리)는 **바이어가 낸 돈이 아니라 회사가 포기한 채권**이다.
-     *    ERP 미수 단일 출처가 그걸 빼기 때문에 포털 잔금도 그만큼 줄어든다 —
-     *    같은 차의 **판매계약서 Balance 와는 다를 수 있다**(SKILLS §29: 계약서 Received 는
-     *    회수이력을 일부러 제외한다, jin 2026-07-29). 별도 줄로 쪼개면 손실처리액이
-     *    바이어 화면에 그대로 드러나므로 **지금은 `paid` 에 접어 둔다**(노출 최소).
-     *    🔴 갈라야 한다는 판단이 서면 여기 한 곳만 고치면 된다.
+     * ⚠️ **`written_off`(손실처리)는 「바이어가 낸 돈」이 아니다 — 회사가 포기한 채권이다.**
+     *    그래서 `paid` 에 섞지 않고 **별도 줄**로 뽑는다(jin 2026-08-25 결정).
+     *    섞으면 «당신이 낸 돈» 이 실제보다 커져, 바이어가 자기 송금 기록과 대조하다 어긋난다.
+     *    ⚠️ 그래도 **판매계약서 Balance 와는 다를 수 있다** — 계약서 Received 는 회수이력을
+     *    일부러 제외한다(SKILLS §29, jin 2026-07-29). 화면 문구가 출처를 밝혀야 한다.
+     *
+     * 🔑 `paid` = 확정 잔금 + 회수이력(`cash`·`offset`·`other`) — **실제로 들어온 돈**.
+     *    `written_off` 도 파생으로 뺀 게 아니라 직접 합산하지만, `paid` 를 그만큼 줄여서
+     *    **항등식은 그대로 닫힌다**(아래 계산식 참조).
      *
      * 🚫 원화 환산을 하지 않는다(Q11) — 다중통화 바이어가 실재하고, 환산은 시점 문제가 붙는다.
      */
@@ -177,6 +179,8 @@ class PortalVehicleController extends Controller
         $total = (float) $v->sale_total_amount;      // 단일 출처
         $raw = (float) $v->sale_unpaid_amount;       // 단일 출처(0<x<1 완납 스냅 포함)
         $savings = (float) ($v->savings_used ?? 0);
+        // 🚫 「바이어가 낸 돈」이 아니라 회사가 포기한 채권 — paid 에 섞지 않는다.
+        $writtenOff = (float) $v->receivableHistories->where('method', 'write_off')->sum('amount');
 
         return [
             'currency' => $v->currency,
@@ -190,8 +194,11 @@ class PortalVehicleController extends Controller
                 // 부대비용 묶음 = 기타비용 + Commission + Auto loading − TAX D/C.
                 // 음수일 수 있다(TAX D/C 가 크면).
                 'other_charges' => $this->money($total - (float) $v->sale_price - (float) $v->transport_fee),
-                'paid' => $this->money($total - $savings - $raw),
+                // 실제로 들어온 돈 = 확정 잔금 + 회수이력(cash·offset·other).
+                'paid' => $this->money($total - $savings - $writtenOff - $raw),
                 'savings_used' => $this->money($savings),
+                // 손실처리(회수 포기). 바이어가 낸 돈이 아니므로 paid 와 절대 합치지 말 것.
+                'written_off' => $this->money($writtenOff),
             ],
             // C-3 — ssancar 레벨2→3 자동 승급(v1.11 §2-3). 「판매완료」의 코드상 정의 그대로다.
             // 🚨 `progress_status_cache === '판매완료'` 로 세면 틀린다 — 완납한 차가 선적되면

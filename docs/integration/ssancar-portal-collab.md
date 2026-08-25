@@ -330,7 +330,7 @@ CIG 는 `https://www.cigbooking.com/track/{VIN}` 로 **차대번호만 넣으면
 > ⇒ **HTTP 채널이 SSH 판과 같은 데이터를 준다는 게 증명됐다.**
 >
 > ✅ **C-1·C-3 구현 완료**(회신 = 정본 **v1.12 §18**). ⏳ **3사 배포는 jin 승인 대기.** 🚫 **C-2 는 발행하지 않기로 닫았다.**
-> 🔴 **지금 열려 있는 것은 JIN 답 2건뿐** — 아래 「JIN 답 대기 2건」.
+> ✅ **열려 있던 JIN 답 2건은 닫혔다** — 아래 「JIN 답 대기 2건」.
 >
 > 🔑 **시크릿** — heymanerp **주입 완료**(실호출 200 · 261대 · 금지키 유출 0).
 > **ssancarerp 는 일부러 안 넣었다** — 차량 0대라 켜면 빈 응답만 간다. **DB 적재 후 켠다**(jin 2026-08-25).
@@ -341,7 +341,7 @@ CIG 는 `https://www.cigbooking.com/track/{VIN}` 로 **차대번호만 넣으면
 #### C-1 미수 발행 — **닫힘 항등식이 계약의 본체다**
 
 ```
-sale_price + transport_fee + other_charges − paid − savings_used
+sale_price + transport_fee + other_charges − paid − savings_used − written_off
     ≡  unpaid_amount − overpaid_amount            (오차 < 통화 1단위)
 ```
 
@@ -369,12 +369,17 @@ Q12 결론(묶음 단위 `batch_id` 는 바이어에게 설명할 언어가 없�
 ①`ShippingRequest::entryLockFor()` 추출(**board 세션에도 걸린 같은 추출 — 하나만 만든다**)
 ②발행 단위 = 묶음 ③`locked`+`basis`+`reference` 분리.
 
-#### 🔴 JIN 답 대기 2건 — **정해지면 ERP 한 곳만 고치면 된다**
+#### ✅ JIN 답 2건 — **둘 다 닫혔다** (2026-08-25)
 
-| # | 무엇 | 왜 코드로 못 정하나 |
+| # | 답 | 반영 |
 |---|---|---|
-| **Q16** | `tracking_url` 옆 화주명 문구 — `HAY MAN LTD` 가 SSANCAR 와 **같은 법인인가** | 법인 구조는 코드에 근거가 없다. 틀리면 바이어가 인보이스·B/L 과 대조하다 혼란 |
-| **Q17** | 포털 `paid` 에 **손실처리액(`write_off`)** 을 접어 둘 것인가 쪼갤 것인가 | 접으면 **판매계약서 Balance 와 갈리고**(계약서는 회수이력을 일부러 제외 — `SKILLS.md §29`, JIN 2026-07-29), 쪼개면 손실처리액이 바이어 화면에 드러난다. 현재 = **접어 둠**(노출 최소) |
+| **Q16** 화주명 | **별개 법인이다**(jin) — heyman ≠ ssancar | 문구 **(가)** `"Shipped by HAY MAN LTD, SSANCAR's export partner."` 🚫 *"export entity"* 는 사실과 다르다. ⚠️ **ssancarerp 가 켜지면 한 화면에 두 회사가 섞인다** → 문구를 하드코딩하지 말 것 |
+| **Q17** 손실처리액 | **별도 줄로 쪼갠다**(jin) | `written_off` 신설. `paid` 는 **실제로 들어온 돈**(확정 잔금 + `cash`·`offset`·`other`)만. 항등식이 한 항 늘었다 |
+
+⚠️ **그래도 판매계약서 Balance 와는 다를 수 있다** — 계약서 Received 는 회수이력을 **통째로 제외**한다
+(`SKILLS.md §29`, jin 2026-07-29). 포털은 ERP 미수 단일 출처를 따르므로 손실처리분만큼 잔금이 작다.
+화면 문구가 **출처를 밝혀야** 한다(*"ERP 기준 잔액"*). 규모는 heymanerp 215대 중 회수이력 보유 18대.
+🎨 라벨은 *"우리가 포기했다"* 로 읽히면 다음 거래에서 기대가 생긴다 — 중립어(`Adjustment`)를 권했다.
 
 - **ssancar.com**: 미러 261대 · `pd_*()` 실데이터 · **`pm_stage()` 의 날짜 재판정 제거**(ERP 발행값 사용) ·
   `source` 쓰기 전 게이트 4종(화이트리스트 · 요청≠응답 · `complete` · `count`).
