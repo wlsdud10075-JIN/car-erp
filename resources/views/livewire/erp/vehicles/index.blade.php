@@ -1146,8 +1146,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $clearBlDoc                = false;
     public bool $clearCheckbill            = false;
 
-    // ── 차량 첨부 (사진·PDF·Excel·Word·HWP 등, 최대 10건 — vehicle_photos 테이블) ──────
-    public const MAX_PHOTOS = 10;
+    // ── 차량 첨부 (사진·PDF·Excel·Word·HWP 등 — vehicle_photos 테이블) ──────
+    // 한도는 VehiclePhoto 가 단일 출처(화면·연동이 같은 값을 봐야 한다). 10건 → 30건 (2026-08-25 jin).
+    public const MAX_PHOTOS = \App\Models\VehiclePhoto::MAX_BASIC;
 
     public array $photoFiles = [];      // 누적 버퍼 — 여러 번 선택해도 합쳐짐 (updatedPhotoUpload 가 merge)
     public array $photoUpload = [];     // input 바인딩 (선택 즉시 photoFiles 로 누적 후 비움)
@@ -1159,10 +1160,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $finalPaymentProofFiles = [];   // idx => 업로드 파일 (staged)
     public array $clearFinalPaymentProofs = [];  // idx => true (기존 전시문 삭제 staged)
 
-    // ── 선적 탭 선박 사진 (vehicle_photos category='shipping', 최대 30건) ──
+    // ── 선적 탭 선박 사진 (vehicle_photos category='shipping') ──
     // 기본정보 탭 차량사진과 같은 machinery, 별도 갤러리로 분리 (2026-07-06 jin).
-    // 선적 사진은 여러 컷이 필요해 별도 한도 30건 (2026-07-07 jin, 기본정보 갤러리는 10건 유지).
-    public const MAX_SHIP_PHOTOS = 30;
+    // 선적 사진은 여러 컷이 필요해 30건 (2026-07-07 jin). 2026-08-25 부터 기본정보도 같은 30건.
+    public const MAX_SHIP_PHOTOS = \App\Models\VehiclePhoto::MAX_SHIPPING;
 
     public array $shipPhotoFiles = [];
     public array $shipPhotoUpload = [];
@@ -6932,13 +6933,13 @@ function vehicleColumnsToggle() {
                         <input type="text" wire:model="reg_cert_number" class="input-base" placeholder="{{ __('vehicle.field.reg_cert_number_ph') }}" maxlength="50" />
                         <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.reg_cert_number_hint') }}</p>
                     </div>
-                    {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 · 최대 10건 — vehicle_photos, 운영 시 S3). 여러 건 한 번에 선택. --}}
+                    {{-- 차량 첨부 (사진·PDF·Excel·Word·HWP 등 — vehicle_photos, 운영 시 S3). 한도=VehiclePhoto::MAX_BASIC. --}}
                     <div>
-                        <label class="label-base">{{ __('vehicle.panel.sec.photos') }}</label>
+                        <label class="label-base">{{ __('vehicle.panel.sec.photos', ['max' => \App\Models\VehiclePhoto::MAX_BASIC]) }}</label>
                         <x-erp.file-drop model="photoUpload" multiple
                             accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                             label="사진을 여기로 드래그하거나 선택 (여러 장)" />
-                        <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
+                        <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint', ['pick' => \App\Models\VehiclePhoto::PER_PICK_HINT]) }}</p>
                         <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                         @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                         @error('photoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -8321,13 +8322,13 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.document_deadline') }}</label><input wire:model="document_deadline_date" type="text" data-date class="input-base" /><p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.document_deadline_hint') }}</p></div>
             </div>
 
-            {{-- 선박 사진/첨부 (category='shipping' · 최대 30건 — vehicle_photos, 운영 시 S3). 기본정보 차량사진과 별도 갤러리. --}}
+            {{-- 선박 사진/첨부 (category='shipping' — vehicle_photos, 운영 시 S3). 한도=VehiclePhoto::MAX_SHIPPING. --}}
             <div class="mt-4">
-                <label class="label-base">{{ __('vehicle.panel.sec.ship_photos') }}</label>
+                <label class="label-base">{{ __('vehicle.panel.sec.ship_photos', ['max' => \App\Models\VehiclePhoto::MAX_SHIPPING]) }}</label>
                 <x-erp.file-drop model="shipPhotoUpload" multiple
                     accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
                     label="선적 사진을 여기로 드래그하거나 선택 (여러 장)" />
-                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint') }}</p>
+                <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint', ['pick' => \App\Models\VehiclePhoto::PER_PICK_HINT]) }}</p>
                 <div wire:loading wire:target="shipPhotoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                 @error('shipPhotoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 @error('shipPhotoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror

@@ -421,17 +421,50 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame(1, VehiclePhoto::where('vehicle_id', $first->json('vehicle_id'))->count());
     }
 
-    public function test_attachments_capped_at_ten(): void
+    /** cap 은 화면 기본정보 갤러리와 같은 상수다 — 숫자를 양쪽에 따로 쓰면 조용히 갈린다. */
+    public function test_attachments_capped_at_the_basic_gallery_limit(): void
     {
         $disk = Storage::fake(config('filesystems.vehicle_docs_disk'));
         $atts = [];
-        for ($i = 1; $i <= 13; $i++) {
+        for ($i = 1; $i <= VehiclePhoto::MAX_BASIC + 3; $i++) {
             $disk->put("purchase-board/c/{$i}.jpg", 'X');
             $atts[] = ['s3_path' => "purchase-board/c/{$i}.jpg", 'sort' => $i];
         }
         $res = $this->postSigned($this->validPayload(['contract_version' => 2, 'vehicle_number' => '33다3333', 'attachments' => $atts]));
         $res->assertStatus(201);
-        $this->assertSame(10, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+        $this->assertSame(VehiclePhoto::MAX_BASIC, VehiclePhoto::where('vehicle_id', $res->json('vehicle_id'))->count());
+    }
+
+    /**
+     * 기본정보 cap 은 선적 사진(category='shipping')을 세지 않는다.
+     * 세면 선적 컷이 많은 차량에서 board 첨부가 조용히 0건으로 잘린다(예외·로그 0).
+     */
+    public function test_shipping_photos_do_not_consume_the_board_attachment_cap(): void
+    {
+        $disk = Storage::fake(config('filesystems.vehicle_docs_disk'));
+        $res = $this->postSigned($this->validPayload(['contract_version' => 2, 'vehicle_number' => '33다3334']));
+        $vehicleId = $res->json('vehicle_id');
+
+        for ($i = 1; $i <= VehiclePhoto::MAX_BASIC; $i++) {
+            VehiclePhoto::create([
+                'vehicle_id' => $vehicleId,
+                'path' => "vehicles/{$vehicleId}/ship/{$i}.jpg",
+                'category' => 'shipping',
+                'sort_order' => $i,
+            ]);
+        }
+
+        $disk->put('purchase-board/s/new.jpg', 'X');
+        $again = $this->postSigned($this->validPayload([
+            'contract_version' => 2,
+            'vehicle_number' => '33다3334',
+            'attachments' => [['s3_path' => 'purchase-board/s/new.jpg', 'sort' => 1]],
+        ]));
+        $again->assertSuccessful();
+
+        $this->assertSame(1, VehiclePhoto::where('vehicle_id', $vehicleId)
+            ->where(fn ($q) => $q->whereNull('category')->orWhere('category', '!=', 'shipping'))
+            ->count());
     }
 
     public function test_missing_source_is_skipped_gracefully(): void

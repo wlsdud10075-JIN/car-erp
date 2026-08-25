@@ -91,12 +91,15 @@ class VehiclePhotoTest extends TestCase
         $this->actingAs($this->admin());
         [$sm, $buyer] = $this->party();
 
+        // ⚠️ 여기서 `->image()` 를 쓰면 GD 가 한도+1 장을 실제로 그려서, 전체 테스트 실행 중
+        //    이 클래스에서 메모리가 터진다(단독 실행은 통과해 위장된다 — 2026-08-25 실측).
+        //    개수만 세는 가드라 실제 픽셀이 필요 없다.
         $files = [];
-        for ($i = 0; $i < 11; $i++) {
-            $files[] = UploadedFile::fake()->image("p{$i}.jpg");
+        for ($i = 0; $i <= VehiclePhoto::MAX_BASIC; $i++) {   // 한도 +1 장
+            $files[] = UploadedFile::fake()->create("p{$i}.jpg", 1, 'image/jpeg');
         }
 
-        Volt::test('erp.vehicles.index')
+        $component = Volt::test('erp.vehicles.index')
             ->set('vehicle_number', '12가9999')
             ->set('sales_channel', 'export')
             ->set('salesman_id_str', (string) $sm->id)
@@ -104,6 +107,13 @@ class VehiclePhotoTest extends TestCase
             ->set('photoFiles', $files)
             ->call('save')
             ->assertHasErrors('photoFiles');
+
+        // ⚠️ 「에러가 났다」로는 부족하다 — 형식·용량 같은 다른 이유로 막혀도 통과해버려
+        //    한도 가드가 죽어도 초록으로 남는다. 한도 문구인지까지 확인한다.
+        $this->assertSame(
+            __('vehicle.toast.max_photos', ['max' => VehiclePhoto::MAX_BASIC]),
+            $component->errors()->first('photoFiles')
+        );
 
         $this->assertDatabaseMissing('vehicles', ['vehicle_number' => '12가9999']);
     }
@@ -188,5 +198,34 @@ class VehiclePhotoTest extends TestCase
 
         $this->assertDatabaseMissing('vehicle_photos', ['id' => $photo->id]);
         Storage::disk('public')->assertMissing($path);
+    }
+
+    /**
+     * 한도 숫자는 화면 라벨에 직접 박지 않는다 — 상수가 바뀌어도 라벨이 과거 값을 말하면
+     * 사용자는 화면을 믿고 반대로 조작한다(2026-07-07 선적 한도를 30으로 올리고도
+     * 라벨은 "최대 10건"으로 남아 있었다). 기능 테스트로는 원리상 못 잡는다 — 렌더는 정상이다.
+     */
+    public function test_gallery_labels_take_the_limit_from_the_constant(): void
+    {
+        foreach (['ko', 'en'] as $locale) {
+            foreach (['photos', 'ship_photos'] as $key) {
+                $raw = __("vehicle.panel.sec.{$key}", [], $locale);
+                $this->assertStringContainsString(':max', $raw, "{$locale}/{$key} 라벨은 :max 치환자를 써야 한다");
+                $this->assertDoesNotMatchRegularExpression(
+                    '/\d/',
+                    str_replace(':max', '', $raw),
+                    "{$locale}/{$key} 라벨에 한도 숫자를 직접 적지 말 것"
+                );
+            }
+        }
+
+        $this->assertStringContainsString(
+            (string) VehiclePhoto::MAX_BASIC,
+            __('vehicle.panel.sec.photos', ['max' => VehiclePhoto::MAX_BASIC], 'ko')
+        );
+        $this->assertStringContainsString(
+            (string) VehiclePhoto::MAX_SHIPPING,
+            __('vehicle.panel.sec.ship_photos', ['max' => VehiclePhoto::MAX_SHIPPING], 'ko')
+        );
     }
 }
