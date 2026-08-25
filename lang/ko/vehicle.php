@@ -205,6 +205,12 @@ return [
         'new' => '신규',
         'photo_count' => ':count/10건 · 저장 버튼을 눌러야 반영됩니다.',
         'photo_multi_hint' => '사진·문서 여러 개를 한 번에 선택할 수 있고, 나눠서 추가해도 누적됩니다. 한 번에 고르는 개수는 :pick개(합계 40MB)까지라, 그보다 많으면 나눠서 올려 주세요.',
+        'tracking_open' => ':company 화물추적 열기',
+        'tracking_blocked' => [
+            'too_early' => '출항 다음날부터 조회됩니다',
+            'not_departed' => '출항 후 조회됩니다',
+            'no_vin' => '차대번호를 입력하면 조회할 수 있습니다',
+        ],
         'open_new_tab' => '새 탭에서 열기',
         'validation_title' => '저장할 수 없습니다 — 아래 항목을 확인하세요',
         'tab' => [

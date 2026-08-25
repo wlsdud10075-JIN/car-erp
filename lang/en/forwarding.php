@@ -65,5 +65,8 @@ return [
     'field_contact' => 'Contact name',
     'name_ph' => 'SSANCAR LOGISTICS',
     'saved' => 'Forwarder saved.',
+    'tracking_url' => 'Cargo tracking URL',
+    'tracking_url_hint' => 'Use {VIN} where the chassis number goes, e.g. https://www.cigbooking.com/track/{VIN}. Leave blank to hide the tracking button for this forwarder.',
+    'tracking_url_invalid' => 'Must start with https:// and contain {VIN}.',
     'deleted' => 'Forwarder deleted.',
 ];

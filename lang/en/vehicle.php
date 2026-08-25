@@ -203,6 +203,12 @@ return [
         'new' => 'New',
         'photo_count' => ':count/10 · click Save to apply.',
         'photo_multi_hint' => 'Select several photos/documents at once, or add more in separate picks — they accumulate. Each pick is limited to :pick files (40MB total), so split larger batches.',
+        'tracking_open' => 'Open :company cargo tracking',
+        'tracking_blocked' => [
+            'too_early' => 'Available from the day after departure',
+            'not_departed' => 'Available after departure',
+            'no_vin' => 'Enter the chassis number to enable tracking',
+        ],
         'open_new_tab' => 'Open in new tab',
         'validation_title' => 'Cannot save — please check the items below',
         'tab' => [

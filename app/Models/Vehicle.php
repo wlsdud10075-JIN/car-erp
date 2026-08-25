@@ -2029,6 +2029,60 @@ class Vehicle extends Model
     }
 
     /**
+     * 포워딩사 화물추적 링크 — 만들 수 없으면 null(호출부는 버튼을 안 그린다).
+     *
+     * 🔑 **판정은 여기 한 곳뿐이다.** 화면·API·나중에 ssancar 포털까지 전부 이 값을 받아 쓴다.
+     *    조건을 옮겨 적으면 *"ERP 는 열리는데 포털은 안 열린다"* 가 되고 눈으로 못 잡는다
+     *    (SKILLS §8 #44 · ssancar 협업에서 같은 형태가 다섯 번 나왔다).
+     *
+     * 조건 셋 — 하나라도 빠지면 null:
+     *   ① 포워딩사에 URL 템플릿이 있다        (없는 회사는 애초에 링크가 없다)
+     *   ② 차대번호가 있다                     (템플릿의 `{VIN}` 을 채울 값)
+     *   ③ **출항 D+1 이 지났다**              (당일은 선사 준비·데이터 전달 중이라 조회가 안 된다)
+     *
+     * ⚠️ ③ 을 `sailing_phase` 로 판정하면 안 된다 — 그 값은 **선적일이 미래여도 ETA 만 있으면
+     *    `운항중`** 이 된다. 실측 CIG 61대 중 4대가 정확히 그 상태였고, 그 차들은 조회가 안 된다.
+     *    「실제 출항」은 `shipping_date` 로만 판정한다.
+     */
+    public function getTrackingUrlAttribute(): ?string
+    {
+        if (! $this->shipping_date || ! $this->forwardingCompany) {
+            return null;
+        }
+
+        $openFrom = $this->shipping_date->copy()->startOfDay()
+            ->addDays(ForwardingCompany::TRACKING_ACTIVE_AFTER_DAYS);
+
+        if (now()->startOfDay()->lt($openFrom)) {
+            return null;   // 아직 이르다 — 화면은 「출항 다음날부터 조회됩니다」를 보여준다
+        }
+
+        return $this->forwardingCompany->trackingUrlFor($this->nice_reg_vin);
+    }
+
+    /**
+     * 링크가 아직 안 열린 이유 — 화면이 **왜 비활성인지 말해주기 위한** 값이다.
+     *
+     * 🧭 버튼을 그냥 숨기면 사용자는 이유를 못 봐서 문의가 몰린다(SKILLS §8 #60).
+     *    「템플릿 없음」은 그 회사가 추적을 안 하는 것이라 숨기는 게 맞고,
+     *    「아직 이르다」·「차대번호 없음」은 **보이되 잠그고 사유를 적는다**.
+     */
+    public function getTrackingBlockReasonAttribute(): ?string
+    {
+        if (! $this->forwardingCompany || trim((string) $this->forwardingCompany->tracking_url_template) === '') {
+            return null;   // 링크 자체가 없는 회사 — 버튼을 그리지 않는다
+        }
+        if (trim((string) $this->nice_reg_vin) === '') {
+            return 'no_vin';
+        }
+        if (! $this->shipping_date) {
+            return 'not_departed';
+        }
+
+        return $this->tracking_url === null ? 'too_early' : null;
+    }
+
+    /**
      * board 포털 차량 행의 공통 메타 (인계 2026-08-10) — **차량번호가 보이는 곳이면 같이 보인다**.
      *
      * 🔑 board 는 **정확히 이 세 키**를 읽는다(`vin`·`brand`·`model_type`). 이름을 바꾸면 board 는
