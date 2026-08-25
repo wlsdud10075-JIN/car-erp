@@ -65,5 +65,8 @@ return [
     'field_contact' => '담당자명',
     'name_ph' => 'SSANCAR LOGISTICS',
     'saved' => '포워딩사 정보가 저장됐습니다.',
+    'tracking_url' => '화물추적 URL',
+    'tracking_url_hint' => '차대번호가 들어갈 자리에 {VIN} 을 넣습니다. 예) https://www.cigbooking.com/track/{VIN} · 비워 두면 그 포워딩사 차량엔 추적 버튼이 뜨지 않습니다.',
+    'tracking_url_invalid' => 'https:// 로 시작하고 {VIN} 을 포함해야 합니다.',
     'deleted' => '포워딩사가 삭제됐습니다.',
 ];

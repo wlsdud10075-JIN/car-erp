@@ -2380,6 +2380,35 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 포워딩사 화물추적 링크 (jin 2026-08-25) — 선적 탭 선박명 칸 아래.
+     *
+     * 🔑 **판정은 `Vehicle::tracking_url` 하나뿐이다.** 여기선 그걸 읽어 화면에 넘기기만 한다.
+     *    조건(출항 D+1·템플릿·차대번호)을 이 화면에 옮겨 적으면, 나중에 ssancar 포털이나 목록에
+     *    같은 버튼을 달 때 **한쪽만 열리는** 상태가 되고 예외도 로그도 안 남는다.
+     *
+     * ⚠️ Blade 안에서 `Vehicle::find()` 를 부르면 렌더마다 쿼리가 나간다 — computed 로 한 번만.
+     */
+    #[Computed]
+    public function trackingLink(): array
+    {
+        if (! $this->editingId) {
+            return [];
+        }
+
+        $v = Vehicle::with('forwardingCompany')->find($this->editingId);
+
+        if (! $v) {
+            return [];
+        }
+
+        return [
+            'url' => $v->tracking_url,
+            'reason' => $v->tracking_block_reason,
+            'company' => $v->forwardingCompany?->name,
+        ];
+    }
+
+    /**
      * 큐 2번 — 편집 패널 1대용 흐름도 7노드.
      * 매입 / 말소 / 판매 / 입금 / 선적(반입) / 통관 / B/L. (DHL 흐름 제외 2026-07-04)
      * 상태: done(✓) / warn(!) / progress(진행중) / pending(-).
@@ -8317,7 +8346,22 @@ function vehicleColumnsToggle() {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.vessel') }}</label><input wire:model="vessel_name" type="text" class="input-base" /></div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.vessel') }}</label>
+                    <input wire:model="vessel_name" type="text" class="input-base" />
+                    {{-- 포워딩사 화물추적 — 링크만 연다(우리 서버는 상대 사이트를 호출하지 않는다).
+                         판정 단일 출처 = Vehicle::tracking_url. 조건을 여기 옮겨 적지 말 것. --}}
+                    @if($this->trackingLink['url'] ?? null)
+                        <a href="{{ $this->trackingLink['url'] }}" target="_blank" rel="noopener noreferrer"
+                           class="mt-1 inline-flex items-center gap-1 text-xs text-primary-text hover:underline">
+                            🚢 {{ __('vehicle.panel.tracking_open', ['company' => $this->trackingLink['company']]) }}
+                        </a>
+                    @elseif($this->trackingLink['reason'] ?? null)
+                        <p class="mt-1 inline-flex items-center gap-1 text-xs text-gray-400">
+                            🚢 {{ __('vehicle.panel.tracking_blocked.'.$this->trackingLink['reason']) }}
+                        </p>
+                    @endif
+                </div>
                 <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.document_deadline') }}</label><input wire:model="document_deadline_date" type="text" data-date class="input-base" /><p class="mt-1 text-xs text-gray-400">{{ __('vehicle.field.document_deadline_hint') }}</p></div>
             </div>

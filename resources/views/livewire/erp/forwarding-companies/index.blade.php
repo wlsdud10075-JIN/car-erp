@@ -39,6 +39,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $phone        = '';
     public string $address      = '';
     public string $memo         = '';
+
+    /** 화물추적 URL 템플릿 — `{VIN}` 자리에 차대번호가 들어간다. 비우면 그 회사 차량엔 버튼이 안 뜬다. */
+    public string $tracking_url_template = '';
     public bool   $is_active    = true;
 
     // 포워딩사(선적현황) — admin + [관리] (canManageForwarding). 라우트 'auth, verified' + mount 가드 (2026-07-08 jin).
@@ -112,6 +115,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->phone        = $fc->phone        ?? '';
         $this->address      = $fc->address      ?? '';
         $this->memo         = $fc->memo         ?? '';
+        $this->tracking_url_template = $fc->tracking_url_template ?? '';
         $this->is_active    = $fc->is_active;
         $this->showPanel    = true;
     }
@@ -125,7 +129,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function save(): void
     {
-        $this->validate(['name' => 'required|string|max:100']);
+        $this->validate([
+            'name' => 'required|string|max:100',
+            // ⚠️ https 만 받는다. `javascript:`·`data:` 는 링크를 여는 순간 그 자체로 실행된다.
+            //    그리고 `{VIN}` 이 없으면 어느 차를 눌러도 같은 페이지로 가서 «되는 것처럼 보이는» 링크가 된다.
+            'tracking_url_template' => [
+                'nullable', 'string', 'max:255',
+                'regex:#^https://#',
+                'regex:/'.preg_quote(ForwardingCompany::TRACKING_PLACEHOLDER, '/').'/',
+            ],
+        ], [
+            'tracking_url_template.regex' => __('forwarding.tracking_url_invalid'),
+        ]);
 
         $data = [
             'name'         => $this->name,
@@ -134,6 +149,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'phone'        => $this->phone        ?: null,
             'address'      => $this->address      ?: null,
             'memo'         => $this->memo         ?: null,
+            'tracking_url_template' => trim($this->tracking_url_template) ?: null,
             'is_active'    => $this->is_active,
         ];
 
@@ -158,6 +174,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function resetForm(): void
     {
         $this->name = $this->contact_name = $this->email = $this->phone = $this->address = $this->memo = '';
+        $this->tracking_url_template = '';   // 안 지우면 「새 등록」에 직전 회사 URL 이 남는다
         $this->is_active = true;
     }
 
@@ -756,6 +773,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <label class="label-base">{{ __('common.address') }}</label>
             <input wire:model="address" type="text" class="input-base" />
+        </div>
+        {{-- 화물추적 URL — 회사마다 사이트가 다르고 주소가 바뀌므로 코드에 박지 않는다(jin 2026-08-25). --}}
+        <div>
+            <label class="label-base">{{ __('forwarding.tracking_url') }}</label>
+            <input wire:model="tracking_url_template" type="text" class="input-base"
+                   placeholder="https://www.cigbooking.com/track/{VIN}" dir="ltr" />
+            <p class="mt-1 text-xs text-gray-400">{{ __('forwarding.tracking_url_hint') }}</p>
+            @error('tracking_url_template')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
             <label class="label-base">{{ __('common.memo') }}</label>
