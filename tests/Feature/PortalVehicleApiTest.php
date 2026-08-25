@@ -315,18 +315,74 @@ class PortalVehicleApiTest extends TestCase
         ]);
 
         $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
-        $c = $row['unpaid_components'];
 
+        $this->assertCloses($row, '미수 > 1 (평범한 미납 차)');
+        // ERP 단일 출처와도 같은 값이어야 한다(포털이 자기 공식을 갖지 않는다).
+        $this->assertEqualsWithDelta((float) $v->fresh()->sale_unpaid_amount, $row['unpaid_amount'], 0.01);
+    }
+
+    /**
+     * 🔑 닫힘은 **세 갈래 전부**에서 성립해야 한다. 위 테스트는 그중 하나(미수 > 1)만 밟는다.
+     *
+     *   미수 > 1     unpaid = 미수 · overpaid = 0
+     *   0 < 미수 < 1  ★완납 스냅★ unpaid = 0 인데 components 합은 그 잔차다 → paid 가 흡수한다
+     *   미수 < 0      unpaid = 0 · overpaid = −미수  → 항등식이 overpaid 를 **빼서** 닫는다
+     *
+     * 가운데(스냅)와 아래(과입금)가 안 닫히면 «합계는 0 인데 줄을 더하면 0 이 아닌» 화면이 된다.
+     */
+    public function test_closure_holds_on_the_snap_and_overpaid_branches(): void
+    {
+        // ① 완납 스냅 — 외화 소수점 잔차 0.34 (SKILLS §13 의 그 예시)
+        $snap = $this->seedVehicle([
+            'currency' => 'EUR', 'exchange_rate' => 1400,
+            'sale_date' => now()->subMonth()->toDateString(), 'sale_price' => 8397.34,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $snap->id, 'type' => 'balance', 'amount' => 8397,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+
+        // ② 과입금 — 적립금까지 섞어서(둘이 함께 있을 때가 가장 안 닫히기 쉽다)
+        $over = $this->seedVehicle([
+            'currency' => 'USD', 'exchange_rate' => 1300,
+            'sale_date' => now()->subMonth()->toDateString(),
+            'sale_price' => 10000, 'transport_fee' => 500, 'tax_dc' => 200,
+            'savings_used' => 300,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $over->id, 'type' => 'balance', 'amount' => 11000,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+
+        $rows = collect($this->signed()->assertOk()->json('data'))->keyBy('id');
+
+        // ⚠️ 먼저 «정말 스냅 갈래를 밟았는가» 를 확인한다 — sale_price 가 정수로 잘리면
+        //    잔차가 0 이 되어 이 테스트가 **아무것도 검사하지 않은 채 통과**한다.
+        $this->assertGreaterThan(0.0, (float) $snap->fresh()->sale_price - 8397, '전제가 깨졌다: 소수 잔차가 저장되지 않았다');
+
+        $this->assertCloses($rows[$snap->id], '완납 스냅 (0 < 미수 < 1)');
+        $this->assertEqualsWithDelta(0.0, $rows[$snap->id]['unpaid_amount'], 0.01, '잔차는 완납으로 스냅돼야 한다');
+        $this->assertTrue($rows[$snap->id]['fully_paid']);
+        // 스냅 잔차는 paid 가 흡수한다 — 실제 받은 돈(8397)보다 그만큼 크다.
+        $this->assertGreaterThan(8397.0, $rows[$snap->id]['unpaid_components']['paid']);
+
+        $this->assertCloses($rows[$over->id], '과입금 (미수 < 0)');
+        $this->assertGreaterThan(0, $rows[$over->id]['overpaid_amount']);
+        $this->assertEqualsWithDelta(0.0, $rows[$over->id]['unpaid_amount'], 0.01);
+    }
+
+    /** 닫힘 항등식 — 이 계약이 깨지면 바이어 화면의 뺄셈이 헤드라인과 안 맞는다. */
+    private function assertCloses(array $row, string $branch): void
+    {
+        $c = $row['unpaid_components'];
         $sum = $c['sale_price'] + $c['transport_fee'] + $c['other_charges']
             - $c['paid'] - $c['savings_used'];
 
         $this->assertLessThan(
             1.0,
             abs($sum - ($row['unpaid_amount'] - $row['overpaid_amount'])),
-            '닫힘 항등식이 깨졌다 — 바이어 화면의 뺄셈이 헤드라인과 안 맞는다'
+            "닫힘 항등식이 깨졌다 [{$branch}] — 줄을 더한 값과 헤드라인이 다르다"
         );
-        // ERP 단일 출처와도 같은 값이어야 한다(포털이 자기 공식을 갖지 않는다).
-        $this->assertEqualsWithDelta((float) $v->fresh()->sale_unpaid_amount, $row['unpaid_amount'], 0.01);
     }
 
     /** 과입금은 눌러서 0 으로 보내고, 원본은 따로 준다 — 섞으면 바이어 합계가 남의 미수를 상쇄한다. */
