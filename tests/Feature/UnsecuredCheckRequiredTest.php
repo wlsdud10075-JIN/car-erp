@@ -179,4 +179,52 @@ class UnsecuredCheckRequiredTest extends TestCase
 
         $this->saveDownPayment($v->fresh(), '1,000,000')->assertHasNoErrors();
     }
+
+    // ── 강제가 발동하면 안 되는 경우 (jin 2026-08-26 제보) ───────────
+
+    /**
+     * 🚨 **이미 나간 계약금 때문에 무관한 저장이 막히면 안 된다.**
+     *
+     * 실사고 248가4049 — 계약금 2,000만이 2026-06-19 에 확정 지급됐고 매입 완납·선적완료인데,
+     * **판매 잔금**을 고치려고 저장할 때마다 이 가드가 떴다. 계약금 칸에 옛 값이 실려 있어
+     * `> 0` 이 항상 참이었기 때문이다(save() 는 매 저장마다 전 게이트를 다시 본다).
+     * 그때 체크를 켜라고 강요하면 **두 달 전 지급을 「회사가 대신 냈다」로 만드는 거짓 기록**이 된다.
+     */
+    public function test_an_already_paid_down_payment_does_not_block_unrelated_saves(): void
+    {
+        $b = $this->buyer(5_000_000);
+        $v = $this->vehicle($b, 10_000_000, 0);   // 미수 100% — 강제 조건 자체는 성립
+
+        // ① 처음 계약금을 넣을 때는 체크가 필요하다(기존 동작 보존)
+        $this->saveDownPayment($v, '1,000,000', check: true)->assertHasNoErrors();
+        $v = $v->fresh();
+        $this->assertSame(1_000_000, (int) $v->confirmed_down_payment);
+
+        // ② 같은 금액이 실린 채로 **다른 것**을 고치는 저장 — 막히면 안 된다.
+        //    (체크를 끄는 건 해제 가드가 따로 막는다. 여기선 켠 채로 둔다.)
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('vessel_name', 'MV TEST')
+            ->call('save')
+            ->assertHasNoErrors('down_payment_str');
+    }
+
+    /**
+     * 🚨 **선적 진입 조건을 넘긴 차는 강제하지 않는다 — 켜도 한도가 안 줄어든다.**
+     *
+     * 무담보 사용액은 `Buyer::computeReceivableGauge` 가 `! isShippingEntryMet()` 인 차의
+     * 계약금만 더한다. 넘긴 차를 켜 봐야 차감액이 0 이라 **효과 없이 저장만 막는 셈**이다.
+     * 바로 위 해제 가드는 같은 조건을 이미 보고 있었다 — 같은 불변식인데 한쪽만 안 봤다.
+     */
+    public function test_no_force_once_the_sale_has_cleared_the_shipping_entry_bar(): void
+    {
+        $b = $this->buyer(5_000_000);
+        // 판매대금 전액 입금 → 미수 0 → isShippingEntryMet() 통과
+        $v = $this->vehicle($b, 10_000_000, 10_000_000);
+
+        $this->assertTrue($v->isShippingEntryMet(), '전제가 깨졌다 — 이 차는 선적 진입 조건을 넘어야 한다');
+
+        $this->saveDownPayment($v, '1,000,000')->assertHasNoErrors('down_payment_str');
+        $this->assertSame(1_000_000, (int) $v->fresh()->confirmed_down_payment);
+    }
 }
