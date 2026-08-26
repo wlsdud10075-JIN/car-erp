@@ -1002,42 +1002,80 @@ new #[Layout('components.layouts.app')] class extends Component
         return redirect()->route('erp.vehicles.index', ['openVehicle' => $vehicle->id]);
     }
 
-    public function closeSecondarySettlement(int $id): void
+    /** 2차 마감 권한 — 인라인 단건·일괄이 같은 조건을 본다. */
+    private function canCloseSecondary(): bool
     {
         $user = auth()->user();
-        abort_unless(
-            $user?->isAdmin() || in_array($user?->role, ['재무', '관리'], true),
-            403,
-            __('settlement.forbidden_close')
-        );
 
-        $settlement = Settlement::findOrFail($id);
+        return (bool) ($user?->isAdmin() || in_array($user?->role, ['재무', '관리'], true));
+    }
+
+    /**
+     * 2차 마감을 막는 사유 — 단건·일괄 미리보기·일괄 실행의 **단일 출처** (jin 2026-08-26).
+     *   null = 마감 가능 / 문자열 = 번역 키.
+     * ⚠️ 미리보기와 실행이 각자 조건을 들면 「목록엔 마감된다고 떴는데 안 닫히는」 행이 생긴다.
+     *
+     * - 완납 게이트 (2026-07-06 재피벗 #3): 외화는 원금 완납(sale_unpaid_amount ≤ 0) 후에만 마감.
+     *   미완납으로 마감하면 Σ잔금외화 < 총판매가외화 라 원금 미수가 "환차손"으로 둔갑한다.
+     *   KRW 는 환차 개념이 없어 게이트 제외 (SKILLS §13, [[project_settlement_v2_groupware_design]]).
+     * - 환율: 판매환율이 0/null 이면 환차 계산 불가.
+     */
+    private function secondaryCloseBlocker(Settlement $settlement): ?string
+    {
         if ($settlement->secondary_status !== 'pending') {
-            $this->dispatch('notify', message: __('settlement.notify.close_not_pending'), type: 'warning');
-
-            return;
+            return 'settlement.notify.close_not_pending';
         }
 
-        // 완납 게이트 (2026-07-06 재피벗 #3) — 외화 차량은 원금 완납(sale_unpaid_amount ≤ 0) 후에만 2차 마감.
-        // 미완납 상태로 마감하면 Σ잔금외화 < 총판매가외화 라 원금 미수가 "환차손"으로 둔갑함.
-        // 완납 시에만 2차분 = 순수 실현환차 보장 (SKILLS §13, [[project_settlement_v2_groupware_design]]).
-        // KRW 차량은 환차 개념이 없어 게이트 제외 — 기존 마감 동작 유지.
         $vehicle = $settlement->vehicle;
         if ($vehicle && $vehicle->currency !== 'KRW' && $vehicle->sale_unpaid_amount > 0) {
-            $this->dispatch('notify', message: __('settlement.notify.close_needs_full_payment'), type: 'error');
+            return 'settlement.notify.close_needs_full_payment';
+        }
+
+        [$exchangeDiff] = $this->calculateExchangeDifference($settlement);
+        if ($exchangeDiff === null) {
+            return 'settlement.notify.close_needs_rate';
+        }
+
+        return null;
+    }
+
+    public function closeSecondarySettlement(int $id): void
+    {
+        abort_unless($this->canCloseSecondary(), 403, __('settlement.forbidden_close'));
+
+        $settlement = Settlement::findOrFail($id);
+        $blocker = $this->secondaryCloseBlocker($settlement);
+        if ($blocker !== null) {
+            $type = $blocker === 'settlement.notify.close_not_pending' ? 'warning' : 'error';
+            $this->dispatch('notify', message: __($blocker), type: $type);
 
             return;
         }
 
+        [$exchangeDiff, $carryoverOut] = $this->closeOne($settlement);
+
+        unset($this->settlements);
+        $msg = __('settlement.notify.close_done');
+        if ($exchangeDiff !== null && abs($exchangeDiff) > 0.01) {
+            $sign = $exchangeDiff > 0 ? '+' : '';
+            $msg .= __('settlement.notify.close_diff_suffix', ['sign' => $sign, 'amount' => number_format($exchangeDiff)]);
+        }
+        if ($carryoverOut !== 0) {
+            $sign = $carryoverOut > 0 ? '+' : '';
+            $msg .= __('settlement.notify.close_carry_suffix', ['sign' => $sign, 'amount' => number_format($carryoverOut)]);
+        }
+        $this->dispatch('notify', message: $msg, type: 'success');
+    }
+
+    /**
+     * 2차 마감 단건 실행 (인라인·일괄 공용) — 가드는 **호출 전에** secondaryCloseBlocker 로 통과시킬 것.
+     *
+     * @return array{0: float|null, 1: int}  [환차 KRW, 이월 KRW]
+     */
+    private function closeOne(Settlement $settlement): array
+    {
         // 환차 계산 (2026-07-06 재피벗) — 실입금KRW − baseline(총판매가×판매환율).
         [$exchangeDiff, $usedRate] = $this->calculateExchangeDifference($settlement);
-
-        // 방어 — 판매환율이 0/null 이면 환차 계산 불가 (chk_sale_required 상 판매차량은 사실상 불가).
-        if ($exchangeDiff === null) {
-            $this->dispatch('notify', message: __('settlement.notify.close_needs_rate'), type: 'error');
-
-            return;
-        }
 
         $update = [
             'secondary_status' => 'closed',
@@ -1059,17 +1097,152 @@ new #[Layout('components.layouts.app')] class extends Component
             $settlement->update(['carryover_out_krw' => $carryoverOut]);
         }
 
-        unset($this->settlements);
-        $msg = __('settlement.notify.close_done');
-        if ($exchangeDiff !== null && abs($exchangeDiff) > 0.01) {
-            $sign = $exchangeDiff > 0 ? '+' : '';
-            $msg .= __('settlement.notify.close_diff_suffix', ['sign' => $sign, 'amount' => number_format($exchangeDiff)]);
+        return [$exchangeDiff, $carryoverOut];
+    }
+
+    // -- 2차 정산 완료 일괄 (jin 2026-08-26) ---------------------------------
+    //   마감은 되돌릴 수 없다(secondary_status='closed' = 회계 락 단일 트리거, 해제는 차량별
+    //   [잠금 해제] + 관리 승인). 그래서 wire:confirm 한 줄이 아니라 **무엇이 닫히고 무엇이
+    //   왜 빠지는지** 보여주는 미리보기 모달을 거친다(월배치 제출 모달과 같은 형태).
+    //   ⚠️ 건너뛴 건을 카운터에 뭉뚱그리지 말 것 — 정작 봐야 할 차(미완납·환율누락)가 숫자에 묻힌다.
+
+    public bool $showCloseSecondaryModal = false;
+
+    /** 일괄 대상 -- 2차 대기 + **현재 화면 필터**. 목록에 보이는 것만 닫힌다. */
+    private function secondaryCloseTargets()
+    {
+        return Settlement::query()
+            ->where('secondary_status', 'pending')
+            // ⚠️ salesman 컬럼 제한 금지 (tier) — actual_payout 이 통째로 틀어진다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
+            ->when($this->search, fn ($q) => $q->searchTerm($this->search))
+            ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->when($this->monthFilter, $this->monthScope())
+            ->orderBy('id')
+            ->get();
+    }
+
+    /**
+     * 이 달 2차 대기 건수 — **버튼 노출 판정용** (jin 2026-08-26).
+     *   0 이면 버튼을 아예 안 띄운다. "이번 달에도 눌러야 하나" 하는 헷갈림을 없앤다.
+     *
+     * 🧭 jin 제안은 「일괄 확정을 1회라도 누른 이전 달에만」이었는데, **누른 기록이 없다**
+     *   (confirmMonth 는 이벤트를 안 남기고, 한 건씩 인라인 확정해도 결과가 같다).
+     *   그럴 필요도 없다 — secondary_status='pending' 은 **이미 지급(paid)된 정산**에만 붙으므로
+     *   그 달이 확정·배치·승인을 이미 거쳤다는 뜻이다. 조건이 데이터에 이미 들어 있다.
+     *   ⇒ 달력 규칙(귀속월/지급월 경계) 없이 건수만 보면 된다. 실측: 06월 27 · 07월 27 · 당월 0.
+     *
+     * ⚠️ 이 화면은 wire:poll.30s 라 매 30초 재평가된다 — accessor 를 도는 closeSecondaryPreview 를
+     *   여기서 부르지 말 것(모달 안에서만 쓴다). 여긴 순수 count 여야 한다.
+     */
+    #[Computed]
+    public function secondaryPendingCount(): int
+    {
+        if (! $this->canCloseSecondary() || $this->monthFilter === '') {
+            return 0;
         }
-        if ($carryoverOut !== 0) {
-            $sign = $carryoverOut > 0 ? '+' : '';
-            $msg .= __('settlement.notify.close_carry_suffix', ['sign' => $sign, 'amount' => number_format($carryoverOut)]);
+
+        return Settlement::query()
+            ->where('secondary_status', 'pending')
+            ->when($this->search, fn ($q) => $q->searchTerm($this->search))
+            ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
+            ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            ->when($this->monthFilter, $this->monthScope())
+            ->count();
+    }
+
+    /** 미리보기 -- 닫을 것 / 건너뛸 것(사유 포함). 실행과 같은 secondaryCloseBlocker 를 쓴다. */
+    #[Computed]
+    public function closeSecondaryPreview(): array
+    {
+        $ready = [];
+        $skipped = [];
+        foreach ($this->secondaryCloseTargets() as $s) {
+            $row = [
+                'id' => $s->id,
+                'plate' => $s->vehicle?->vehicle_number ?? '-',
+                'salesman' => $s->salesman?->name ?? '-',
+                'payout' => (int) $s->actual_payout,
+            ];
+            $blocker = $this->secondaryCloseBlocker($s);
+            if ($blocker === null) {
+                $ready[] = $row;
+            } else {
+                $row['reason'] = __($blocker);
+                $skipped[] = $row;
+            }
         }
-        $this->dispatch('notify', message: $msg, type: 'success');
+
+        return ['ready' => $ready, 'skipped' => $skipped];
+    }
+
+    public function openCloseSecondaryModal(): void
+    {
+        if (! $this->canCloseSecondary()) {
+            $this->dispatch('notify', message: __('settlement.forbidden_close'), type: 'error');
+
+            return;
+        }
+        if ($this->monthFilter === '') {
+            $this->dispatch('notify', message: __('settlement.batch.select_month'), type: 'warning');
+
+            return;
+        }
+
+        unset($this->closeSecondaryPreview);
+        $preview = $this->closeSecondaryPreview;
+        if (empty($preview['ready']) && empty($preview['skipped'])) {
+            $this->dispatch('notify', message: __('settlement.batch.close_none'), type: 'warning');
+
+            return;
+        }
+
+        $this->showCloseSecondaryModal = true;
+    }
+
+    public function closeCloseSecondaryModal(): void
+    {
+        $this->showCloseSecondaryModal = false;
+    }
+
+    public function closeSecondaryMonth(): void
+    {
+        abort_unless($this->canCloseSecondary(), 403, __('settlement.forbidden_close'));
+
+        $ok = 0;
+        $skip = 0;
+        $fail = 0;
+        foreach ($this->secondaryCloseTargets() as $s) {
+            if ($this->secondaryCloseBlocker($s) !== null) {
+                $skip++;
+
+                continue;
+            }
+            try {
+                $this->closeOne($s);
+                $ok++;
+            } catch (\Throwable $e) {
+                $fail++;
+                report($e);
+            }
+        }
+
+        $this->showCloseSecondaryModal = false;
+        unset($this->settlements, $this->salesmanSummaries, $this->closeSecondaryPreview);
+
+        if ($ok === 0) {
+            $this->dispatch('notify', message: __('settlement.batch.close_none_done', ['skip' => $skip + $fail]), type: 'warning');
+
+            return;
+        }
+        $this->dispatch(
+            'notify',
+            message: __('settlement.batch.close_done', ['ok' => $ok, 'skip' => $skip + $fail]),
+            type: ($skip + $fail) > 0 ? 'warning' : 'success'
+        );
     }
 
     /**
@@ -1205,6 +1378,13 @@ new #[Layout('components.layouts.app')] class extends Component
             class="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50">
         {{ __('settlement.batch.confirm_month') }}</button>
     @endif
+    {{-- jin 2026-08-26 — 2차 정산 완료 일괄. 마감은 되돌릴 수 없어 미리보기 모달을 반드시 거친다.
+         대상(2차 대기)이 0건인 달엔 아예 안 뜬다 — 권한·월 판정까지 secondaryPendingCount 안에 있다. --}}
+    @if($this->secondaryPendingCount > 0)
+    <button wire:click="openCloseSecondaryModal"
+            class="rounded-md border border-violet-500 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50">
+        {{ __('settlement.batch.close_secondary', ['count' => $this->secondaryPendingCount]) }}</button>
+    @endif
     @if(auth()->user()->canSubmitPayoutBatch() && $monthFilter !== '')
     {{-- 승인큐 이동링크 제거 (2026-07-07 jin) — 사이드바 정산그룹 「승인큐」 메뉴로 접근. 여기선 헷갈림만 유발. --}}
     {{-- jin 2026-08-06 — wire:confirm 한 줄에서 확인 모달로. 조정(매입취소 손실 차감·수동)을
@@ -1212,6 +1392,76 @@ new #[Layout('components.layouts.app')] class extends Component
     <button wire:click="openSubmitModal" class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
     @endif
 </div>
+
+{{-- ── 2차 정산 완료 일괄 확인 모달 (jin 2026-08-26) ──────────────────────
+     닫힐 것과 건너뛸 것을 **사유까지** 보여준다. 카운터로 뭉뚱그리면 정작 손봐야 할
+     차(미완납·환율누락)가 숫자에 묻힌다. --}}
+@if($showCloseSecondaryModal)
+@php $cp = $this->closeSecondaryPreview; @endphp
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:key="close-secondary-modal">
+    <div class="card max-h-[90vh] w-full max-w-2xl overflow-y-auto">
+        <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-gray-800">{{ __('settlement.batch.close_modal_title', ['month' => $monthFilter]) }}</h3>
+            <button type="button" wire:click="closeCloseSecondaryModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+
+        <div class="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {{ __('settlement.batch.close_warning') }}
+        </div>
+
+        {{-- 닫을 것 --}}
+        <div class="mt-3">
+            <div class="section-header"><span class="section-dot bg-violet-500"></span>
+                <span class="section-title">{{ __('settlement.batch.close_ready', ['count' => count($cp['ready'])]) }}</span></div>
+            @if(count($cp['ready']) === 0)
+            <div class="mt-1 px-1.5 py-1 text-xs text-gray-500">{{ __('settlement.batch.close_ready_none') }}</div>
+            @else
+            <div class="mt-1 max-h-56 overflow-y-auto">
+                <table class="w-full text-xs">
+                    <tbody>
+                    @foreach($cp['ready'] as $row)
+                    <tr wire:key="cs-ready-{{ $row['id'] }}" class="border-b border-gray-100">
+                        <td class="py-1 font-medium text-gray-800">{{ $row['plate'] }}</td>
+                        <td class="py-1 text-gray-500">{{ $row['salesman'] }}</td>
+                        <td class="py-1 text-right font-mono text-gray-700">&#8361;{{ number_format($row['payout']) }}</td>
+                    </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+
+        {{-- 건너뛸 것 --}}
+        @if(count($cp['skipped']) > 0)
+        <div class="mt-3">
+            <div class="section-header"><span class="section-dot bg-rose-500"></span>
+                <span class="section-title">{{ __('settlement.batch.close_skipped', ['count' => count($cp['skipped'])]) }}</span></div>
+            <div class="mt-1 max-h-56 overflow-y-auto">
+                @foreach($cp['skipped'] as $row)
+                <div wire:key="cs-skip-{{ $row['id'] }}" class="border-b border-gray-100 py-1 text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-800">{{ $row['plate'] }}</span>
+                        <span class="text-gray-500">{{ $row['salesman'] }}</span>
+                    </div>
+                    <div class="mt-0.5 text-rose-600">{{ $row['reason'] }}</div>
+                </div>
+                @endforeach
+            </div>
+        </div>
+        @endif
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" wire:click="closeCloseSecondaryModal"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">
+                {{ __('settlement.batch.close_cancel') }}</button>
+            <button type="button" wire:click="closeSecondaryMonth" @disabled(count($cp['ready']) === 0)
+                    class="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40">
+                {{ __('settlement.batch.close_apply', ['count' => count($cp['ready'])]) }}</button>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- ── 월배치 제출 확인 모달 (jin 2026-08-06) ─────────────────────────────── --}}
 @if($showSubmitModal)
