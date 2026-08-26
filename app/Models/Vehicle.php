@@ -131,7 +131,7 @@ class Vehicle extends Model
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
-        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_parking', 'cost_extra1', 'cost_extra2',
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',   // karaba 비용 4개 (Phase 2, 2026-07-22)
         'parts_amount',   // karaba 부품 기록(미추적 — 미수·정산·매출 제외)
         'transport_fee_usd',   // 운임비 USD 기록칸(순수 메모 — 어떤 계산에도 미포함, jin 2026-08-05)
@@ -207,19 +207,86 @@ class Vehicle extends Model
     ];
 
     /**
-     * karaba 전용 매입 기본비용 (jin 2026-07-12) — 말소비 17,300 자동 default,
-     * 면허비·탁송비 0(엑셀 명세서 업로드로 나중 기입). heyman/ssancar 는 위 기본값 유지.
+     * karaba 전용 매입 기본비용 — 고정비 3종 (jin 2026-08-26).
+     *   말소비 17,300 / 점검비 80,000 / 주차료 50,000. 면허비·탁송비는 0(엑셀 명세서로 나중 기입).
+     *   ⚠️ 점검비는 **cost_extra1** 이다 — karaba 는 그 칸을 「점검비」로 부른다(costLabel).
+     *      cost_inspection 은 2026-08-26 이관으로 비워졌다(KarabaCostRemap).
+     * heyman/ssancar 는 위 공통 기본값 유지.
      */
     public const DEFAULT_PURCHASE_COSTS_KARABA = [
         'cost_deregistration' => 17300,
         'cost_license' => 0,
         'cost_towing' => 0,
+        'cost_extra1' => 80000,
+        'cost_parking' => 50000,
     ];
 
     /** 회사 프로파일별 매입 기본비용 단일 출처 — karaba면 karaba 세트, 그 외 공통 세트. */
     public static function defaultPurchaseCosts(): array
     {
         return Setting::isKaraba() ? self::DEFAULT_PURCHASE_COSTS_KARABA : self::DEFAULT_PURCHASE_COSTS;
+    }
+
+    /**
+     * 회사 프로파일별 비용 라벨 오버라이드 (jin 2026-08-26) — karaba 는 기타비1/2 를 점검비/기타비로 부른다.
+     *   값 = lang 키 접미. 라벨 문자열을 여기 박지 않는다(EN 이 안 따라온다).
+     */
+    public const COST_LABEL_KEYS_KARABA = [
+        'cost_extra1' => 'cost_extra1_karaba',
+        'cost_extra2' => 'cost_extra2_karaba',
+    ];
+
+    /**
+     * 비용 컬럼 → 화면 라벨 **단일 출처**.
+     * 🚫 화면에서 `__('vehicle.field.cost_*')` 를 직접 부르지 말 것 — 한 곳만 고치면
+     *    매입탭·정산 비용표·감사로그에서 같은 칸이 다른 이름으로 뜬다(SKILLS §8 #45).
+     */
+    public static function costLabel(string $column): string
+    {
+        $key = Setting::isKaraba()
+            ? (self::COST_LABEL_KEYS_KARABA[$column] ?? $column)
+            : $column;
+
+        return __('vehicle.field.'.$key);
+    }
+
+    /**
+     * 화면에 표시하는 비용 10칸 — 3사 공통 (jin 2026-08-26).
+     * karaba 전용 12칸 레이아웃(2026-07-22 Phase 2)은 폐기되고 주차료가 공통 칸으로 들어왔다.
+     * 라벨은 costLabel() 이 회사별로 고른다 — karaba 는 기타비1=점검비 / 기타비2=기타비.
+     */
+    public const DISPLAY_COST_FIELDS = [
+        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_parking',
+        'cost_extra1', 'cost_extra2',
+    ];
+
+    /** cost_total 을 구성하지만 입력칸이 없는 레거시 컬럼 — 값이 남아 있으면 화면에 드러내야 한다. */
+    public const LEGACY_COST_FIELDS = [
+        'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',
+    ];
+
+    /**
+     * 비용 분해 [컬럼 => 금액] — **합이 반드시 cost_total 과 같다**(닫힘, SKILLS §8 #64).
+     *
+     * 표준 9칸은 0이어도 항상 넣고, 입력칸 없는 레거시 4칸은 **0이 아닐 때만** 넣는다.
+     * 그래야 「표의 합계는 맞는데 줄을 더하면 안 맞는」 화면이 안 생기고, 입력칸이 사라진 뒤에도
+     * 남은 금액이 사람 눈에 보인다(입력칸만 없애고 cost_total 에는 계속 더해지던 함정).
+     */
+    public function costBreakdown(): array
+    {
+        $rows = [];
+        foreach (self::DISPLAY_COST_FIELDS as $col) {
+            $rows[$col] = (int) ($this->{$col} ?? 0);
+        }
+        foreach (self::LEGACY_COST_FIELDS as $col) {
+            $amt = (int) ($this->{$col} ?? 0);
+            if ($amt !== 0) {
+                $rows[$col] = $amt;
+            }
+        }
+
+        return $rows;
     }
 
     /**
@@ -572,7 +639,7 @@ class Vehicle extends Model
         'transport_fee', 'auto_loading', 'sale_other_costs', 'exchange_rate',
         'export_declaration_amount',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
-        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
+        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_parking', 'cost_extra1', 'cost_extra2',
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising', 'purchase_vat_amount',
         // Tier 2 — 관계 식별
         'buyer_id', 'salesman_id',
@@ -614,14 +681,12 @@ class Vehicle extends Model
     ];
 
     /**
-     * 2차 정산 비용 일괄 기입 대상 컬럼 화이트리스트 (9개 비용만).
+     * 2차 정산 비용 일괄 기입 대상 컬럼 화이트리스트 (표시 비용 10개만).
      * 면허비 묶음 n/1·탁송비 명세서 매칭 도구는 **이 컬럼만** 건드릴 수 있음.
      * → fleet-wide(전체 차량) 권한이어도 판매가·환율·매입가·바이어·담당자 등 민감 21필드는 봉인.
+     * ⚠️ DISPLAY_COST_FIELDS 와 같아야 한다 — 화면에 없는 칸을 일괄로 채우면 아무도 못 본다.
      */
-    public const BULK_COST_FIELDS = [
-        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
-        'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
-    ];
+    public const BULK_COST_FIELDS = self::DISPLAY_COST_FIELDS;
 
     // 명세서 엑셀 일괄 업로드가 지원되는 비용 컬럼 (「명세서 기입」 도구 대상비용 드롭박스).
     //   - cost_towing  : 업체 월명세서, 차량번호 건바이건 매칭
@@ -1679,7 +1744,7 @@ class Vehicle extends Model
         return (int) (
             $this->cost_deregistration + $this->cost_license + $this->cost_towing +
             $this->cost_carry + $this->cost_shoring + $this->cost_insurance +
-            $this->cost_transfer + $this->cost_extra1 + $this->cost_extra2 +
+            $this->cost_transfer + $this->cost_parking + $this->cost_extra1 + $this->cost_extra2 +
             $this->cost_inspection + $this->cost_performance + $this->cost_repair + $this->cost_advertising
         );
     }

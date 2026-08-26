@@ -955,6 +955,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cost_shoring_str   = '';
     public string $cost_insurance_str = '';
     public string $cost_transfer_str  = '';
+    public string $cost_parking_str   = '';   // 주차료 (jin 2026-08-26) — 3사 공통 10번째 비용칸
     public string $cost_extra1_str    = '';
     public string $cost_extra2_str    = '';
     public string $cost_inspection_str = '';    // karaba 비용 4개 (Phase 2)
@@ -2794,10 +2795,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 운영자가 수정 가능 (또는 0 으로 비움). 2차 정산 단계에서 [관리]/[재무] 가
         // 한 달 뒤 측정된 실제 비용으로 정정 (Phase 1-3 흐름).
         // 회사 프로파일별 기본비용 (karaba=말소 17,300·면허 0·탁송 0 / 그 외=24,000·11,000·30,000)
+        // 키를 이름으로 하나씩 읽지 말 것 — 세트에 고정비를 더해도 UI 만 안 채워진다.
+        //   연동 B(PurchaseSyncController)는 루프라, 같은 차가 들어온 경로에 따라 달라진다.
         $defaultCosts = Vehicle::defaultPurchaseCosts();
-        $this->cost_deregistration_str = number_format($defaultCosts['cost_deregistration']);
-        $this->cost_license_str = number_format($defaultCosts['cost_license']);
-        $this->cost_towing_str = number_format($defaultCosts['cost_towing']);
+        foreach ($defaultCosts as $col => $amount) {
+            $this->{$col.'_str'} = number_format($amount);
+        }
         $this->showPanel = true;
     }
 
@@ -2823,6 +2826,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         'cost_shoring_str' => 'cost_shoring',
         'cost_insurance_str' => 'cost_insurance',
         'cost_transfer_str' => 'cost_transfer',
+        'cost_parking_str' => 'cost_parking',
         'cost_extra1_str' => 'cost_extra1',
         'cost_extra2_str' => 'cost_extra2',
         'cost_inspection_str' => 'cost_inspection',
@@ -3165,6 +3169,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cost_shoring_str    = $v->cost_shoring   ? number_format($v->cost_shoring)   : '';
         $this->cost_insurance_str  = $v->cost_insurance ? number_format($v->cost_insurance) : '';
         $this->cost_transfer_str   = $v->cost_transfer  ? number_format($v->cost_transfer)  : '';
+        $this->cost_parking_str    = $v->cost_parking   ? number_format($v->cost_parking)   : '';
         $this->cost_extra1_str     = $v->cost_extra1    ? number_format($v->cost_extra1)    : '';
         $this->cost_extra2_str     = $v->cost_extra2    ? number_format($v->cost_extra2)    : '';
         $this->cost_inspection_str  = $v->cost_inspection  ? number_format($v->cost_inspection)  : '';
@@ -3894,7 +3899,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_price_str', 'selling_fee_str',
             'cost_deregistration_str', 'cost_license_str', 'cost_towing_str',
             'cost_carry_str', 'cost_shoring_str', 'cost_insurance_str',
-            'cost_transfer_str', 'cost_extra1_str', 'cost_extra2_str',
+            'cost_transfer_str', 'cost_parking_str', 'cost_extra1_str', 'cost_extra2_str',
             'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str', 'purchase_vat_amount_str',
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
@@ -4504,6 +4509,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_shoring'     => $toInt($this->cost_shoring_str),
             'cost_insurance'   => $toInt($this->cost_insurance_str),
             'cost_transfer'    => $toInt($this->cost_transfer_str),
+            'cost_parking'     => $toInt($this->cost_parking_str),
             'cost_extra1'      => $toInt($this->cost_extra1_str),
             'cost_extra2'      => $toInt($this->cost_extra2_str),
             'cost_inspection'  => $toInt($this->cost_inspection_str),
@@ -5726,7 +5732,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
             'cost_deregistration_str','cost_license_str','cost_towing_str','cost_carry_str',
-            'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_extra1_str','cost_extra2_str',
+            'cost_shoring_str','cost_insurance_str','cost_transfer_str','cost_parking_str','cost_extra1_str','cost_extra2_str',
             'cost_inspection_str','cost_performance_str','cost_repair_str','cost_advertising_str','parts_amount_str','purchase_vat_amount_str',
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
@@ -7101,12 +7107,10 @@ function vehicleColumnsToggle() {
                         @endforeach
                     </select>
                 </div>
-                <div class="flex items-end">
-                    <label class="inline-flex items-center gap-2 pb-1.5 text-sm text-gray-700">
-                        <input type="checkbox" wire:model="is_dealer_purchase" class="rounded border-gray-300 text-primary focus:ring-primary" />
-                        {{ __('vehicle.field.is_dealer_purchase') }}
-                    </label>
-                </div>
+                {{-- 매매상 체크박스 제거 (jin 2026-08-26). is_dealer_purchase 는 운영 0건이었다.
+                     ⚠️ 이 체크박스가 「매매상 잔금 10일 알림」(TaskAlarm/알림톡 purchase_balance_due)의
+                        유일한 입력 지점이었다 — 이제 그 알림은 켜질 방법이 없다. karaba 알림톡을
+                        heymanerp 와 같게 전면 교체할 예정이라 의도된 것(jin). 컬럼·읽는 코드는 존치. --}}
                 @endif
             </div>
 
@@ -7246,35 +7250,18 @@ function vehicleColumnsToggle() {
             </div>
             @endif
 
-            @if($isKaraba)
-            {{-- karaba 비용 12개 (Phase 2, 2026-07-22): 쇼링 숨김 + 점검·성능·정비·광고 추가. 순서=매입탭.png --}}
+            {{-- 비용 9칸 — 3사 공통 (jin 2026-08-26). karaba 12칸(2026-07-22 Phase 2)은 폐기:
+                 점검·성능·정비·광고 중 실제로 쓰인 건 점검비뿐이고 그 금액은 기타비1로 합쳐졌다
+                 (마이그레이션 2026_08_26_000001). 라벨은 Vehicle::costLabel 이 회사별로 고른다
+                 — karaba 는 기타비1=점검비 / 기타비2=기타비. --}}
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_inspection') }}</label><input wire:model="cost_inspection_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_performance') }}</label><input wire:model="cost_performance_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_repair') }}</label><input wire:model="cost_repair_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_advertising') }}</label><input wire:model="cost_advertising_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                @foreach(\App\Models\Vehicle::DISPLAY_COST_FIELDS as $costCol)
+                <div wire:key="cost-{{ $costCol }}">
+                    <label class="label-base">{{ \App\Models\Vehicle::costLabel($costCol) }}</label>
+                    <input wire:model="{{ $costCol }}_str" type="text" data-money class="input-base" placeholder="0" />
+                </div>
+                @endforeach
             </div>
-            @else
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">{{ __('vehicle.field.cost_deregistration') }}</label><input wire:model="cost_deregistration_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_license') }}</label><input wire:model="cost_license_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_towing') }}</label><input wire:model="cost_towing_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_carry') }}</label><input wire:model="cost_carry_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_shoring') }}</label><input wire:model="cost_shoring_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_insurance') }}</label><input wire:model="cost_insurance_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_transfer') }}</label><input wire:model="cost_transfer_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra1') }}</label><input wire:model="cost_extra1_str" type="text" data-money class="input-base" placeholder="0" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.cost_extra2') }}</label><input wire:model="cost_extra2_str" type="text" data-money class="input-base" placeholder="0" /></div>
-            </div>
-            @endif
 
             <hr class="section-divider">
             <div class="section-header">

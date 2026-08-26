@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\Vehicle;
+
 /**
  * 회의확장씬 보강 (2026-05-23) — 컬럼·모델 영문 식별자 → 한글 라벨 변환.
  *
@@ -51,6 +53,12 @@ class ColumnLabel
         $table = self::resolveTable($modelOrTable);
         if ($table === null) {
             return $columnName;
+        }
+
+        // 회사 프로파일별 비용 라벨(karaba 점검비·기타비)은 Vehicle::costLabel 이 단일 출처다.
+        //   여기서 사전을 그대로 읽으면 감사로그만 「기타비1」로 떠서 화면과 이름이 갈린다.
+        if ($table === 'vehicles' && isset(Vehicle::COST_LABEL_KEYS_KARABA[$columnName])) {
+            return Vehicle::costLabel($columnName);
         }
 
         $label = config("column_labels.$table.$columnName", $columnName);
