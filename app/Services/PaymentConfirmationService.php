@@ -51,7 +51,7 @@ class PaymentConfirmationService
             throw new DomainException('자금 이체로 생성된 잔금은 InterVehicleTransfer 흐름에서 재무 확정됩니다. 본 Service로 직접 확정할 수 없습니다.');
         }
 
-        $this->assertPaidSettlementGuard($payment->vehicle);
+        $this->assertSettlementClosedGuard($payment->vehicle);
 
         // claudefinalreview C — 동시/중복 확정(더블클릭·재전송) 시 확정자·스냅샷 덮어쓰기(감사오염) 방지.
         // 행 잠금(lockForUpdate)으로 직렬화 후 재확인 — 2번째 호출은 confirmed_at SET 된 걸 보고 차단.
@@ -124,13 +124,15 @@ class PaymentConfirmationService
     }
 
     /**
-     * H4 paid Settlement 가드 — InterVehicleTransferService 동일 패턴.
-     * vehicle에 paid 정산이 있으면 ledger retroactive 변경 차단.
+     * 판매 잔금 재무확정 가드 — 정산 락 개편 통일 (jin 2026-08-26).
+     *   구 H4 는 'paid 정산 존재'로 막았으나 FinalPayment::creating 과 함께 closed 경계로 옮겼다.
+     *   여기를 같이 안 풀면 잔금은 추가돼도 확정이 막혀 미수가 그대로 남는다(미수 분자 = confirmed 행만).
+     *   차량 간 자금 이체(InterVehicleTransferService)는 append-only 원장이라 paid 가드를 그대로 둔다.
      */
-    private function assertPaidSettlementGuard(?Vehicle $vehicle): void
+    private function assertSettlementClosedGuard(?Vehicle $vehicle): void
     {
-        if ($vehicle && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
-            throw new DomainException("차량({$vehicle->vehicle_number})에 paid 정산이 있어 잔금을 재무 확정할 수 없습니다.");
+        if ($vehicle && $vehicle->hasClosedSecondarySettlement()) {
+            throw new DomainException("차량({$vehicle->vehicle_number})은 2차 정산이 마감되어 잔금을 재무 확정할 수 없습니다.");
         }
     }
 }

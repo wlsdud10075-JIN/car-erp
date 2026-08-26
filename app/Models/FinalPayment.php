@@ -76,15 +76,20 @@ class FinalPayment extends Model
         });
         static::deleted(fn (FinalPayment $p) => $p->vehicle?->refreshCaches());
 
-        // 큐 22-A-2 — paid Settlement 후 신규 FP 차단 (PBP creating 훅과 대칭).
-        // 시드·artisan(auth 없음) 우회 — assertPaidSettlementGuard Service 별도 보장.
+        // 큐 22-A-2 — 신규 FP 차단 (PBP creating 훅과 대칭).
+        // 정산 락 개편 통일 (jin 2026-08-26) — 트리거가 'paid' → 2차 정산 마감(closed).
+        //   구 규칙은 "입금은 정산 전 완료 전제"였으나, 운임비처럼 paid 후에 확정되는 매출 항목이
+        //   미수로 남으면 ①잔금을 못 넣고 ②미수 탓에 2차 마감(완납 게이트)도 못 하는 데드락이 됐다
+        //   (실사고 248가4049·29마0712 — 각 1,528 EUR). 매입 쪽은 2026-07-24 에 이미 완화됨(54가6191).
+        //   마감 전 추가분은 정산이 carryover_out 으로 흡수하므로 회계 무결성은 closed 경계가 지킨다.
+        // 시드·artisan(auth 없음) 우회 — Service 가드 별도 보장.
         static::creating(function (FinalPayment $p) {
             if (! auth()->check()) {
                 return;
             }
             $vehicle = $p->vehicle;
-            if ($vehicle && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
-                throw new \DomainException('정산이 paid 상태인 차량에 신규 판매 잔금을 추가할 수 없습니다 (회계 무결성).');
+            if ($vehicle && $vehicle->hasClosedSecondarySettlement()) {
+                throw new \DomainException('2차 정산 마감된 차량에 신규 판매 잔금을 추가할 수 없습니다 (회계 무결성).');
             }
         });
 
