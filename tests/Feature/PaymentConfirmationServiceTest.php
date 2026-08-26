@@ -136,8 +136,10 @@ class PaymentConfirmationServiceTest extends TestCase
         $this->service->confirmPayment($payment, $c['finance']);
     }
 
-    public function test_confirm_payment_blocks_paid_settlement(): void
+    public function test_confirm_payment_allows_paid_settlement_before_secondary_close(): void
     {
+        // 정산 락 개편 통일 (jin 2026-08-26) — creating 만 풀고 여기를 안 풀면 잔금은 추가돼도
+        //   확정이 막혀 미수가 그대로 남는다(미수 분자 = confirmed 행만). 두 가드는 같이 움직인다.
         $c = $this->makeContext();
         Settlement::create([
             'vehicle_id' => $c['vehicle']->id,
@@ -152,8 +154,30 @@ class PaymentConfirmationServiceTest extends TestCase
             'payment_date' => now()->toDateString(),
         ]);
 
+        $this->service->confirmPayment($payment, $c['finance']);
+
+        $this->assertNotNull($payment->fresh()->confirmed_at);
+    }
+
+    public function test_confirm_payment_blocks_closed_secondary_settlement(): void
+    {
+        $c = $this->makeContext();
+        $payment = FinalPayment::create([
+            'vehicle_id' => $c['vehicle']->id,
+            'amount' => 10_000_000,
+            'payment_date' => now()->toDateString(),
+        ]);
+        Settlement::create([
+            'vehicle_id' => $c['vehicle']->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+            'secondary_status' => 'closed',
+        ]);
+
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('paid 정산');
+        $this->expectExceptionMessage('2차 정산이 마감되어');
         $this->service->confirmPayment($payment, $c['finance']);
     }
 

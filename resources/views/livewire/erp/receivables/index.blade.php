@@ -392,10 +392,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             'note' => $this->hNote ?: null,
         ];
 
-        // paid 정산 차량엔 '입금(deposit)' 추가 불가 — 미러링이 신규 잔금(FinalPayment) 생성을 시도해
-        // FinalPayment::creating(paid) 가드에 막혀 500 + 고아 RH 가 됨. 현금/상계/기타로 안내.
-        if ($this->hMethod === 'deposit' && $vehicle->settlements()->where('settlement_status', 'paid')->exists()) {
-            $this->addError('hMethod', __('receivable.err_paid_no_deposit'));
+        // 2차 마감(closed) 차량엔 '입금(deposit)' **신규** 추가 불가 — 미러링이 신규 잔금(FinalPayment)
+        // 생성을 시도해 FinalPayment::creating 가드에 막혀 500 + 고아 RH 가 됨. 현금/상계/기타로 안내.
+        //   정산 락 개편 통일 (jin 2026-08-26) — 트리거가 'paid' → closed. paid·2차대기 차량은 이제 통과.
+        // ⚠️ 이미 미러 잔금이 붙어 있는 행의 **수정**은 여기서 막지 말 것 — 그 경로는 FP 를 새로 안 만들고
+        //   update 만 한다. 여기서 선점하면 아래 환율 소급변경 가드(err_closed_no_rate_edit)의 정확한
+        //   안내가 «방식이 잘못됐다»는 엉뚱한 메시지로 덮인다(가드 = ReceivableRateEditTest).
+        $editingHistory = $this->historyEditId ? ReceivableHistory::find($this->historyEditId) : null;
+        $wouldCreateMirror = $editingHistory === null || $editingHistory->final_payment_id === null;
+        if ($this->hMethod === 'deposit' && $wouldCreateMirror && $vehicle->hasClosedSecondarySettlement()) {
+            $this->addError('hMethod', __('receivable.err_closed_no_deposit'));
 
             return;
         }

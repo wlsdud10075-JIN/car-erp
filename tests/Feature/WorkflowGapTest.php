@@ -1097,10 +1097,11 @@ class WorkflowGapTest extends TestCase
 
     // ── 2026-05-20 큐 22-A-2 — FinalPayment::creating 훅 (해석 B 정정 / 매입 22-C-light 대칭) ──
 
-    public function test_22a2_fp_creating_blocks_new_row_after_paid(): void
+    public function test_22a2_fp_creating_allows_new_row_after_paid(): void
     {
-        // FP::creating 훅 — paid Settlement 후 신규 FP 직접 생성 차단 (회계 무결성).
-        // 영업이 잔금 N+ row 추가 시도해도 paid 차량은 막힌다. PBP 패턴과 대칭.
+        // FP::creating 훅 — 정산 락 개편 통일 (jin 2026-08-26). paid 여도 2차 마감(closed) 전이면 허용.
+        //   구 규칙(paid 차단)은 운임비처럼 paid 후 확정되는 매출이 미수로 남을 때 데드락을 만들었다
+        //   — 잔금도 못 넣고, 그 미수 탓에 2차 마감 완납 게이트도 못 넘는다(248가4049·29마0712).
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['sale_price' => 8000000]);
         Settlement::create([
@@ -1113,8 +1114,33 @@ class WorkflowGapTest extends TestCase
 
         $this->actingAs($admin);
 
+        $fp = FinalPayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => 1000000,
+            'payment_date' => null,
+        ]);
+
+        $this->assertNotNull($fp->id);
+    }
+
+    public function test_22a2_fp_creating_blocks_new_row_after_secondary_closed(): void
+    {
+        // 락 경계는 2차 마감(closed) 하나 — 마감 후엔 흡수할 다음 단계가 없어 신규 잔금 차단.
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $v = $this->makeVehicle(['sale_price' => 8000000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+            'secondary_status' => 'closed',
+        ]);
+
+        $this->actingAs($admin);
+
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('paid 상태');
+        $this->expectExceptionMessage('2차 정산 마감');
         FinalPayment::create([
             'vehicle_id' => $v->id,
             'amount' => 1000000,
@@ -1170,9 +1196,11 @@ class WorkflowGapTest extends TestCase
 
     // ── 2026-05-20 #1 — vehicles/index save() DomainException → 토스트 (화이트스크린 방지) ──
 
-    public function test_paid_settlement_fp_save_dispatches_notify_not_whitescreen(): void
+    public function test_locked_settlement_fp_save_dispatches_notify_not_whitescreen(): void
     {
-        // paid Settlement 차량에 잔금 N+ 추가 후 save() → DomainException → toast 변환 (화이트스크린 X).
+        // 잠긴 차량에 잔금 N+ 추가 후 save() → DomainException → toast 변환 (화이트스크린 X).
+        //   락 트리거는 2차 마감(closed) — 정산 락 개편 통일 (jin 2026-08-26).
+        //   ⚠️ 이 테스트의 목적은 «예외가 토스트로 바뀐다»지 «무엇이 막히나»가 아니다.
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $v = $this->makeVehicle(['sale_price' => 8_000_000]);
         Settlement::create([
@@ -1181,6 +1209,7 @@ class WorkflowGapTest extends TestCase
             'settlement_ratio' => 50,
             'settlement_status' => 'paid',
             'paid_at' => now(),
+            'secondary_status' => 'closed',
         ]);
 
         $this->actingAs($admin);
@@ -1191,7 +1220,33 @@ class WorkflowGapTest extends TestCase
                 ['id' => null, 'amount' => '1000000', 'payment_date' => now()->format('Y-m-d'), 'note' => ''],
             ])
             ->call('save')
-            ->assertDispatched('notify', fn ($name, $params) => ($params['type'] ?? null) === 'error' && str_contains($params['message'] ?? '', 'paid'));
+            ->assertDispatched('notify', fn ($name, $params) => ($params['type'] ?? null) === 'error' && str_contains($params['message'] ?? '', '2차 정산 마감'));
+    }
+
+    public function test_paid_but_open_settlement_fp_save_succeeds(): void
+    {
+        // 짝 — paid 여도 마감 전이면 저장이 통과해야 한다. 이게 안 되면 운임비 후수금이 다시 막힌다.
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
+        $v = $this->makeVehicle(['sale_price' => 8_000_000]);
+        Settlement::create([
+            'vehicle_id' => $v->id,
+            'settlement_type' => 'ratio',
+            'settlement_ratio' => 50,
+            'settlement_status' => 'paid',
+            'paid_at' => now(),
+            'secondary_status' => 'pending',
+        ]);
+
+        $this->actingAs($admin);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('finalPayments', [
+                ['id' => null, 'amount' => '1000000', 'payment_date' => now()->format('Y-m-d'), 'note' => ''],
+            ])
+            ->call('save');
+
+        $this->assertSame(1, $v->finalPayments()->count(), 'paid·마감 전 차량에 잔금이 안 들어감');
     }
 
     // ── 2026-05-20 큐 22-A-3b — type별 분자 정합 + 권한 매트릭스 ──
@@ -1342,9 +1397,11 @@ class WorkflowGapTest extends TestCase
         $this->assertNull($fp->confirmed_at, '영업 입력 = Draft');
     }
 
-    public function test_22a3b_paid_settlement_blocks_4_types_via_creating_hook(): void
+    public function test_22a3b_closed_settlement_blocks_4_types_via_creating_hook(): void
     {
-        // FP::creating 훅 (22-A-2) — paid Settlement 후 모든 type 의 신규 FP 차단.
+        // FP::creating 훅 (22-A-2) — 2차 마감(closed) 후 모든 type 의 신규 FP 차단.
+        //   정산 락 개편 통일 (jin 2026-08-26) — 구 트리거 'paid' 는 계약금·중도금 등 4항목까지
+        //   막아 운임비 후수금 데드락을 만들었다. 락 경계는 closed 하나.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['sale_price' => 8_000_000]);
         Settlement::create([
@@ -1353,12 +1410,13 @@ class WorkflowGapTest extends TestCase
             'settlement_ratio' => 50,
             'settlement_status' => 'paid',
             'paid_at' => now(),
+            'secondary_status' => 'closed',
         ]);
 
         $this->actingAs($admin);
 
         $this->expectException(\DomainException::class);
-        $this->expectExceptionMessage('paid 상태');
+        $this->expectExceptionMessage('2차 정산 마감');
         $v->finalPayments()->create([
             'amount' => 1_000_000,
             'type' => 'deposit_down',
