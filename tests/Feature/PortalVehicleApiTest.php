@@ -183,10 +183,16 @@ class PortalVehicleApiTest extends TestCase
         // ⚠️ `sale_price`·`transport_fee` 는 v1.12 C-1 로 **`unpaid_components` 안에서 발행된다** —
         //    여기서 빠진 것은 허용이 아니라 **위치 이동**이다. 평탄한 최상위 칸으로 올라오면
         //    아래 test_unpaid_materials_stay_inside_components 가 잡는다.
+        // 🔒 **신용도·한도·게이트는 바이어에게 안 나간다**(jin 2026-08-26 — 내부 전용).
+        //    「데이터가 채워지면 열린다」가 아니다. 열려면 jin 이 다시 연다.
+        //    ⚠️ 나중에 «바이어 단위» 엔드포인트를 새로 만들면 이 결정이 자동으로 안 따라온다 —
+        //       그때 화이트리스트를 처음부터 다시 세울 것.
         foreach ([
             'purchase_price', 'selling_fee', 'cost_towing',
             'nice_reg_owner_name', 'nice_reg_owner_addr', 'nice_reg_owner_rrn',
-            'sale_unpaid_amount_krw_cache', 'unsecured_limit_krw', 'memo_sale',
+            'sale_unpaid_amount_krw_cache', 'memo_sale',
+            'unsecured_limit_krw', 'lock_shipping_entry_pct', 'lock_purchase_registration_pct',
+            'credit_score', 'credit_grade', 'available_krw', 'limit_krw', 'deposit_pct',
         ] as $key) {
             $this->assertStringNotContainsString($key, $json, "금지 키가 응답에 있다: {$key}");
         }
