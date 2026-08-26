@@ -822,6 +822,30 @@ sale_price + transport_fee + other_charges − paid − savings_used − written
 
 가드 = `tests/Feature/PortalVehicleApiTest`(닫힘 3갈래 · 재료가 `unpaid_components` 밖으로 새는지 · null · 통화).
 
+### 65. 🚪 가드는 **「이번 저장이 만든 변화인가」와 「그 상태가 아직 유효한가」를 같이 봐야 한다** (2026-08-26)
+
+**무담보 체크 강제**(2026-08-21)가 조건을 `계약금 > 0` 하나로 뒀다. 그런데 `save()` 는
+**매 저장마다 전 게이트를 다시 평가**하고, 폼에는 **기존 계약금이 실려 있다** — 항상 참이다.
+⇒ **판매 탭만 고쳐도 매입 가드가 떴다**(실사고 248가4049: 계약금 2,000만이 두 달 전 확정,
+매입 완납·선적완료인데 판매 잔금 저장이 막힘).
+
+🔑 **더 나빴던 건 「켜도 효과가 없다」는 것이다.** 무담보 사용액은
+`Buyer::computeReceivableGauge` 가 **`! isShippingEntryMet()` 인 차의 계약금만** 더한다
+(`app/Models/Buyer.php:195`). 선적 진입을 넘긴 차는 켜도 한도가 **1원도 안 줄어든다.**
+효과 0인데 저장만 막고, 켜면 두 달 전 지급이 **「회사가 대신 낸 돈」이라는 거짓 기록**이 된다.
+
+🚨 **결정적 단서 — 바로 위 「해제 가드」는 같은 `isShippingEntryMet()` 을 이미 보고 있었다.**
+같은 불변식(«회사 돈이 아직 나가 있나»)을 **한쪽만 안 본 것**이다.
+⇒ **짝을 이루는 가드(켜기/끄기, 진입/해제)를 만들 땐 조건을 나란히 놓고 대조할 것.**
+
+**새 저장 가드를 만들 때 물어볼 것 3가지**
+```
+① 이번 저장이 만든 변화인가?   기존 값으로도 참이면 무관한 저장까지 막는다
+② 그 상태가 아직 유효한가?     이미 해소된 건을 막으면 「효과 없는 차단」이 된다
+③ 강제한 결과가 사실인가?      아니면 사람에게 거짓 기록을 남기라고 시키는 것이다
+```
+가드 = `UnsecuredCheckRequiredTest`(무관한 저장 통과 · 선적 진입 넘긴 차 통과 + 기존 7건).
+
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
