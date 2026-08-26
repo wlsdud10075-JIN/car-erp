@@ -846,6 +846,69 @@ sale_price + transport_fee + other_charges − paid − savings_used − written
 ```
 가드 = `UnsecuredCheckRequiredTest`(무관한 저장 통과 · 선적 진입 넘긴 차 통과 + 기존 7건).
 
+### 66. 🔓 규칙을 「완화」할 때 — 옛 규칙을 검사하던 **테스트**와, 그 가드가 **대신 막아주던 것** (2026-08-26)
+
+**원인**: 2026-07-24 정산 락 개편이 락 트리거를 `paid` → `secondary_status='closed'` 로 옮겼는데
+**판매 입금 경로가 안 따라왔다**(#38·MEMORY 의 「완화도 같은 체크리스트」 3파). `FinalPayment::creating`
+(큐 22-A-2)이 「paid 정산 존재」로 신규 판매 잔금을 차단했고 **예외구멍이 없었다**(super 도 불가).
+
+**증상 — 문이 두 개 동시에 닫힌다**: 운임비처럼 **지급 후에 확정되는 매출**이 미수로 남으면
+①잔금을 못 넣고 ②그 미수 탓에 2차 마감의 완납 게이트(`외화 && 미수>0`)도 못 넘는다.
+**돈을 기록할 수도, 마감할 수도 없다.** 실사고 = heymanerp `248가4049`·`29마0712`(각 EUR 1,528,
+2026-06 귀속). 매입 쪽은 07-24 에 같은 이유로 이미 완화됐다(54가6191) — 판매만 잔재였다.
+⚠️ **가이드가 이 데드락을 우회하라고 가르치고 있었다** — 「정산 완료 차량의 운임비 미수는 회수 이력으로
+정리」(`notion-guide-publish.php`). 버그가 업무 관행으로 굳으면 제보조차 안 올라온다.
+
+**해결**: 판매 입금 3경로를 `hasClosedSecondarySettlement()` 로 통일 — `FinalPayment::creating` ·
+`PaymentConfirmationService`(재무확정) · 채권관리 `deposit` 회수이력.
+🔑 **재무확정을 같이 안 풀면 반쪽이다** — 미수 분자는 `confirmed_at` 있는 행만 센다(SKILLS §13).
+잔금은 들어가는데 미수가 안 줄어 ②가 그대로 남는다. 가드 = `FreightAfterPaidSettlementDeadlockTest`
+(잔금 → 미수 0 → 마감 **end-to-end**. 단계별 단위 테스트로는 「반쪽」이 안 잡힌다).
+🚫 차량 간 자금 이체(`InterVehicleTransferService`)는 append-only 원장이라 `paid` 가드 유지.
+
+**🧭 완화할 때 추가로 봐야 할 것 2가지 — 이번에 둘 다 밟았다.**
+
+**① 옛 규칙을 「다른 문구」로 검사하던 테스트.** 예외 메시지 substring 으로 grep 하면 놓친다.
+`'신규 판매 잔금'` 으로 훑었더니 `'paid 상태'` 를 단언하던 **2건이 그대로 남아** 전체 스위트에서야 드러났다
+(`test_22a3b_paid_settlement_blocks_4_types` — 계약금·중도금 4항목까지 막고 있었다 /
+`test_paid_settlement_fp_save_dispatches_notify` — 목적은 「예외→토스트」인데 트리거로 paid 를 쓰고 있었다).
+⇒ **메시지가 아니라 「그 규칙을 만드는 컬럼·조건」(`settlement_status', 'paid'`)으로 grep**할 것.
+⇒ 목적이 「무엇이 막히나」가 아닌 테스트(화이트스크린 방지 등)는 **트리거만 갈아끼우고 목적은 보존**한다.
+
+**② 그 가드가 「대신 막아주던」 아래쪽 경로.** 채권관리 deposit 차단을 「신규 미러가 생기는 경우」로
+좁혔더니(맞는 변경 — 안 좁히면 기존 행 수정에서 환율 가드의 정확한 안내를 덮는다), 그 아래엔
+**환율 가드밖에 없었다**. `syncFinalPayment` 가 `FinalPayment::where('id',…)->update()` 로
+확정 잔금을 고치는데 **query-builder update 라 모델 `updating` 락·잠금해제 토큰·`AuditLog` 가 전부 안 뜬다**
+— 마감 차량의 금액·수금일이 **예외도 로그도 없이** 바뀔 수 있었다.
+그 테스트 주석이 이미 힌트를 적어두고 있었다: *"paid 면 기존 paid-가드가 먼저 hMethod 로 막음 …
+그 경로가 선점"*. ⇒ **선점하던 가드를 좁힐 땐 「선점이 사라지면 무엇이 남나」를 확인**할 것.
+가드 = `ReceivableRateEditTest::test_amount_and_date_edit_blocked_when_secondary_settlement_closed`
+(넣기 전 실패를 먼저 확인 — `Component has no errors`).
+
+**💡 「숫자가 바뀝니다」는 조건까지 말해야 승인할 수 있다.** 운임비는 정산 base
+(`sale_price + commission + auto_loading − tax_dc`) **밖**이라, **판매환율로 넣으면**
+`settlement_exchange_rate` 가 미완납 폴백과 같은 값이 되어 `actual_payout` 불변 ⇒ **이월 0**.
+움직이는 건 「잔금을 넣는 행위」가 아니라 **「다른 환율로 넣는 것」**이다. 둘 다 테스트로 박제했다.
+
+### 67. 🚪 되돌릴 수 없는 일괄 작업은 **건너뛴 것을 사유까지** 보여준다 (2026-08-26 2차 일괄 마감)
+
+`secondary_status='closed'` 는 회계 락의 **단일 트리거**이고 해제는 차량별 [회계 재조정]+관리 승인이다.
+그런 걸 `wire:confirm` 한 줄로 일괄 처리하면 안 된다 — 08-06 월배치 제출에서 이미 겪은 형태다.
+
+- **미리보기 모달**에 「닫을 것」과 「건너뛸 것 + 사유 + 차량번호」를 나란히 놓는다.
+  `ok/fail` 카운터로 뭉뚱그렸다면 정작 손봐야 할 2대(운임비 미수)가 **숫자에 묻혔을 것**이다(#62 의 그 형태).
+- **미리보기와 실행이 같은 판정 함수**(`secondaryCloseBlocker`)를 쓴다. 갈리면
+  「목록엔 마감된다고 떴는데 안 닫히는」 행이 남는다(#44 의 «조건을 옮겨 적지 말 것»).
+  인라인 단건 버튼도 같은 함수를 쓰게 리팩터했다.
+- **대상 = 화면 필터 그대로.** 보이는 것만 닫힌다. 월 선택 필수.
+- **버튼 노출은 대상 건수로 판정**(`[이 달 2차 일괄 마감 (27)]`, 0건이면 안 뜸).
+  jin 제안은 「일괄 확정을 1회라도 누른 달에만」이었으나 **누른 기록이 없다**(`confirmMonth` 는 이벤트를
+  안 남기고 인라인 확정도 결과가 같다). 그럴 필요도 없다 — `secondary_status='pending'` 은
+  **이미 지급까지 끝난 달**에만 붙으므로 조건이 데이터에 이미 있다. ⇒ **달력 규칙 대신 건수**.
+  실측 06월 27 · 07월 27 · 당월 0.
+- ⚠️ 이 화면은 `wire:poll.30s` — **버튼 판정은 순수 `count()`**, accessor 를 도는 미리보기는 모달 안에서만.
+  안 그러면 30초마다 전 대상의 미수·마진 accessor 가 돈다.
+
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
