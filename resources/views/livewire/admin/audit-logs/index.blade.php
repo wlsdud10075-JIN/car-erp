@@ -30,6 +30,16 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public string $columnFilter = '';
 
+    /**
+     * `column_name` 에 **컬럼명이 아닌 값**을 넣는 액션 — 「컬럼 전체」 목록에서 뺀다.
+     *   assistant_query          질문 유형('guide'·'capital_status(denied)')
+     *   vehicle_deleted_with_reason  ★차량번호★ — 삭제된 차는 대상 열에 번호가 안 떠서 여기 적었다
+     *
+     * ⚠️ 행 표시에서는 빼지 않는다 — 그 값이 어느 차·어떤 질문인지 알려주는 유일한 단서다.
+     *    목록에서만 접는다(`buyer:{이름}` 을 「바이어 변경」 한 줄로 접는 것과 같은 처리).
+     */
+    private const NON_COLUMN_ACTIONS = ['assistant_query', 'vehicle_deleted_with_reason'];
+
     /** 대상(모델) 필터 — 「통장 잔액」처럼 종류로 찾는 진입점. 종전엔 없어서 컬럼명을 알아야만 찾을 수 있었다. */
     #[Url] public string $typeFilter = '';
 
@@ -126,7 +136,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $map = [];
 
         if ($byType['Vehicle']) {
-            $nums = \App\Models\Vehicle::whereIn('id', array_keys($byType['Vehicle']))->pluck('vehicle_number', 'id');
+            // 🔑 `withTrashed` — 삭제 로그는 **지워진 차**를 가리킨다. 빼면 대상 열이 `#170` 으로만 떠서
+            //    어느 차였는지 알 수 없고, 그게 차량번호를 column_name 에 적게 만든 원인이었다.
+            $nums = \App\Models\Vehicle::withTrashed()
+                ->whereIn('id', array_keys($byType['Vehicle']))->pluck('vehicle_number', 'id');
             foreach ($byType['Vehicle'] as $vid => $logIds) {
                 foreach ($logIds as $lid) {
                     $map[$lid] = $nums[$vid] ?? null;
@@ -206,7 +219,9 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $rows = AuditLog::query()
             ->whereNotNull('column_name')
-            ->where(fn ($q) => $q->where('action', '!=', 'assistant_query')->orWhereNull('action'))
+            // 🚫 column_name 에 **컬럼이 아닌 값**이 들어가는 액션은 목록에서 뺀다(액션 필터로 고르면 된다).
+            //    안 빼면 값 종류만큼 항목이 늘어난다 — 차를 지울 때마다, 질문할 때마다 하나씩(jin 2026-08-26).
+            ->whereNotIn('action', self::NON_COLUMN_ACTIONS)
             ->distinct()
             ->get(['auditable_type', 'column_name']);
 
