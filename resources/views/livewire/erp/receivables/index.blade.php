@@ -7,6 +7,7 @@ use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\VehicleLedgerUnlockService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -50,6 +51,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // 채권담당자 지정
     public string $managerIdInput = '';
+
+    // 과입금 전환 사유 — **2차 정산 마감 차량에서만** 요구한다(jin 2026-08-26).
+    //   마감 전엔 자유 정정이 원칙이라(정산 락 개편 2026-07-24) 묻지 않는다.
+    public string $overpayReason = '';
 
     // 회수 이력 입력 폼
     public ?int $historyEditId = null;
@@ -526,12 +531,31 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        // 2차 정산 마감(secondary closed) 차량은 소급 변경 금지 (SKILLS §28) — 환차·이월이 이미
-        //   산정·지급된 뒤라 확정 잔금 감액이 지급값과 어긋난다. 개별 잠금해제로만 정정.
-        if ($vehicle->settlements()->where('secondary_status', 'closed')->exists()) {
-            session()->flash('panel_error', __('receivable.overpay.secondary_closed'));
+        // 2차 정산 마감(closed) 후 — **사유를 쓰면 통과**한다 (jin 2026-08-26).
+        //
+        // 🔑 원래는 무조건 차단이었다. 그건 이 버튼을 만든 2026-07-09 의 규칙이고,
+        //    **2026-07-24 정산 락 개편에서 「마감 후엔 사유를 남기고 정정」으로 완화**됐는데
+        //    이 소비자만 안 따라왔다(`FinalPayment::updating` 은 그때 토큰 방식으로 갱신됐다).
+        //    그래서 잠금을 풀어도 이 버튼은 안 열렸다 — 여긴 토큰을 안 보기 때문이다.
+        //
+        // ⚠️ 마감 전에는 사유를 묻지 않는다. 개편의 요지가 «마감 전 자유 수정»이라
+        //    거기에 마찰을 더하면 취지에 역행한다.
+        // 🚫 승인 사다리는 두지 않는다(jin) — 사유만 남기고 본인이 진행한다.
+        //    권한 `canApprove` = admin·업무관리자·role'관리' — jin 이 지목한 그 그룹 그대로다.
+        $closed = $vehicle->hasClosedSecondarySettlement();
+        $reason = trim($this->overpayReason);
+        if ($closed) {
+            if (! $user->canApprove()) {
+                session()->flash('panel_error', __('receivable.overpay.closed_denied'));
 
-            return;
+                return;
+            }
+            if (mb_strlen($reason) < VehicleLedgerUnlockService::MIN_REASON_LENGTH) {
+                session()->flash('panel_error', __('receivable.overpay.reason_required',
+                    ['n' => VehicleLedgerUnlockService::MIN_REASON_LENGTH]));
+
+                return;
+            }
         }
 
         // 확정 잔금(최근 입력분부터)으로 초과분 커버 — 마지막 입금이 초과분인 게 일반적.
@@ -550,7 +574,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            DB::transaction(function () use ($vehicle, $confirmedFps, $excess, $user) {
+            DB::transaction(function () use ($vehicle, $confirmedFps, $excess, $user, $closed, $reason) {
                 // ① 초과분만큼 확정 잔금 감액 (큰 것부터, 회계 잠금 시스템 우회)
                 $remaining = $excess;
                 FinalPayment::$allowConfirmedMutation = true;
@@ -582,7 +606,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'auditable_id' => $vehicle->id,
                     'action' => 'overpay_converted_to_savings',
                     'column_name' => 'savings_earned',
-                    'old_value' => null,
+                    // 마감 후 전환이면 사유를 남긴다 — 「왜 지급 끝난 차를 건드렸나」가 여기서만 보인다.
+                    'old_value' => $closed ? mb_substr($reason, 0, 500) : null,
                     'new_value' => $vehicle->currency.' '.$excess,
                     'ip_address' => request()?->ip(),
                 ]);
@@ -594,6 +619,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        $this->overpayReason = '';
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
         session()->flash('panel_success', __('receivable.overpay.done', ['amount' => $vehicle->currency.' '.number_format($excess, $isForeign ? 2 : 0)]));
     }
@@ -1112,9 +1138,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="mx-5 mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{{ session('panel_error') }}</div>
         @endif
 
-        {{-- 과입금 → 적립금 전환 (음수 미수 = 과입금 시에만, 재무 권한) --}}
+        {{-- 과입금 → 적립금 전환 (음수 미수 = 과입금 시에만) --}}
         @if ($sv->sale_unpaid_amount < 0 && auth()->user()?->canConfirmFinance())
-        @php $overpayLabel = $sv->currency.' '.number_format(-$sv->sale_unpaid_amount, 0); @endphp
+        @php
+            $overpayLabel = $sv->currency.' '.number_format(-$sv->sale_unpaid_amount, 0);
+            // 2차 마감 차량은 사유를 받는다. 🚫 화면에서 감추지 말 것 — 왜 막혔는지 안 보이면
+            //    「눌러도 아무 일이 없다」가 되고, 그게 07-24 이후 실제로 벌어진 상태였다.
+            $overpayClosed = $sv->hasClosedSecondarySettlement();
+            $overpayAllowed = ! $overpayClosed || auth()->user()?->canApprove();
+        @endphp
         <div class="mx-5 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1123,10 +1155,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 <button type="button" wire:click="convertOverpayToSavings"
                         wire:confirm="{{ __('receivable.overpay.confirm', ['amount' => $overpayLabel]) }}"
-                        class="shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                        @disabled(! $overpayAllowed)
+                        class="shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300">
                     {{ __('receivable.overpay.btn') }}
                 </button>
             </div>
+            @if ($overpayClosed)
+            <div class="mt-2 border-t border-amber-200 pt-2">
+                <div class="text-[11px] text-amber-700">{{ __('receivable.overpay.closed_note') }}</div>
+                @if ($overpayAllowed)
+                <input type="text" wire:model="overpayReason" maxlength="500"
+                       placeholder="{{ __('receivable.overpay.reason_ph', ['n' => \App\Services\VehicleLedgerUnlockService::MIN_REASON_LENGTH]) }}"
+                       class="input-base mt-1.5 w-full text-xs" />
+                @else
+                <div class="mt-1 text-[11px] font-semibold text-amber-800">{{ __('receivable.overpay.closed_denied') }}</div>
+                @endif
+            </div>
+            @endif
         </div>
         @endif
 
