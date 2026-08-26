@@ -76,7 +76,36 @@ class FreightAfterPaidSettlementDeadlockTest extends TestCase
         $settlement = $v->settlements()->first();
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $settlement->id);
 
-        $this->assertSame('closed', $settlement->fresh()->secondary_status, '완납인데 2차 마감이 안 됨');
+        $settlement->refresh();
+        $this->assertSame('closed', $settlement->secondary_status, '완납인데 2차 마감이 안 됨');
+
+        // 🔑 판매환율(1729)로 받아 적으면 **이미 지급된 정산의 숫자는 안 움직인다**.
+        //   운임비는 정산 base(sale_price + commission + auto_loading − tax_dc) 밖이고,
+        //   settlement_exchange_rate 는 실입금KRW ÷ 총판매가인데 전액을 판매환율로 받으면
+        //   미완납 폴백이 주던 값(=판매환율)과 같아진다 ⇒ actual_payout 불변 ⇒ 이월 0.
+        //   숫자를 움직이는 것은 «잔금을 넣는 행위»가 아니라 «다른 환율로 넣는 것»이다.
+        $this->assertSame(0, (int) $settlement->carryover_out_krw, '판매환율로 넣었는데 이월이 생김');
+    }
+
+    public function test_a_different_receipt_rate_is_what_moves_the_paid_numbers(): void
+    {
+        // 위 테스트의 짝 — 실제 입금환율이 다르면 그 차액이 carryover_out 으로 다음 정산에 이월된다.
+        //   («그래서 숫자가 바뀝니다»의 정확한 조건. 설계대로 동작하는 것이지만 조건을 박아둔다.)
+        $v = $this->stuckVehicle();
+        $finance = User::factory()->create(['role' => '재무']);
+        $this->actingAs($finance);
+
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'amount' => 1528, 'type' => 'balance',
+            'payment_date' => '2026-08-26', 'exchange_rate' => 1900,   // 판매환율 1729 와 다름
+            'confirmed_at' => now(), 'confirmed_by_user_id' => $finance->id,
+        ]);
+
+        $settlement = $v->fresh()->settlements()->first();
+        Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $settlement->id);
+
+        $this->assertSame('closed', $settlement->fresh()->secondary_status);
+        $this->assertNotSame(0, (int) $settlement->fresh()->carryover_out_krw, '환율 차이가 이월로 안 넘어감');
     }
 
     public function test_unconfirmed_row_alone_does_not_open_the_second_door(): void
