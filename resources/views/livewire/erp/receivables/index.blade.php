@@ -432,14 +432,36 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        // 2차 마감(closed) 정산 차량은 환율 소급 변경 차단 — 프리랜서(ratio) 환차가 이미 확정됐을 수 있음(회계 무결성).
-        //   per_unit 사내직원은 환차 미반영이라 실질 영향은 없으나, 프리랜서 대비 방어 가드(2차 마감 차량만 막음).
+        // 2차 마감(closed) 정산 차량은 확정 잔금의 **소급 변경 전부** 차단 — 프리랜서(ratio) 환차가
+        //   이미 확정됐을 수 있음(회계 무결성). per_unit 사내직원은 환차 미반영이라 실질 영향은
+        //   없으나, 프리랜서 대비 방어 가드(2차 마감 차량만 막음).
+        //
+        // 🚨 금액·수금일도 여기서 막아야 한다 (2026-08-26). 이 경로는 syncFinalPayment 가
+        //    `FinalPayment::where('id', ...)->update()` 로 확정 잔금을 고치는데, **query-builder
+        //    update 라 모델 updating 락·잠금해제 토큰·AuditLog 가 하나도 안 뜬다** — 조용히 통과한다.
+        //    예전엔 위쪽 deposit 차단이 트리거 'paid' 로 넓게 걸려 이 경로를 선점하고 있었고
+        //    (closed 는 실무상 항상 paid), 락을 closed 로 좁히면서 그 가림막이 사라졌다.
+        //    ⇒ 「윗줄 가드가 대신 막아주던 것」을 좁힐 땐 그 아래에 무엇이 남는지 확인할 것.
         if ($this->historyEditId && $this->hMethod === 'deposit'
             && $vehicle->settlements()->where('secondary_status', 'closed')->exists()) {
-            $origRate = (float) (ReceivableHistory::find($this->historyEditId)?->exchange_rate ?? 0);
+            $orig = ReceivableHistory::find($this->historyEditId);
+
+            $origRate = (float) ($orig?->exchange_rate ?? 0);
             $newRate = $this->hExchangeRate !== '' ? (float) $this->hExchangeRate : 0.0;
             if (abs($newRate - $origRate) > 0.0001) {
                 $this->addError('hExchangeRate', __('receivable.err_closed_no_rate_edit'));
+
+                return;
+            }
+
+            if (abs((float) $this->hAmount - (float) ($orig?->amount ?? 0)) > 0.0001) {
+                $this->addError('hAmount', __('receivable.err_closed_no_amount_edit'));
+
+                return;
+            }
+
+            if ($this->hCollectedAt !== ($orig?->collected_at?->format('Y-m-d') ?? '')) {
+                $this->addError('hCollectedAt', __('receivable.err_closed_no_date_edit'));
 
                 return;
             }
