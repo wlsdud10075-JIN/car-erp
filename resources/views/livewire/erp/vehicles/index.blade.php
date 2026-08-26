@@ -4406,8 +4406,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         //
         //   ⚠️ board 수신(purchase-sync)은 이 지점을 안 탄다. 탈 필요도 없다 — 그때는 계약금이 0이라
         //      켜봐야 차감액이 0 이고, 계약금은 **반드시 이 화면을 거쳐** 들어오기 때문이다.
+        //   🔀 **2026-08-26 (jin 제보) — 두 조건을 더했다. 무관한 저장까지 막고 있었다.**
+        //      248가4049: 계약금 2,000만이 **2026-06-19 에 이미 확정 지급**됐고 매입 완납·선적완료인데,
+        //      **판매 잔금**을 고치려고 저장할 때마다 이 가드가 떴다. 계약금 칸에 옛 값이 실려 있으니
+        //      `> 0` 이 항상 참이었기 때문이다(SKILLS 「게이트 재평가」 — save() 가 매번 전 게이트를 다시 본다).
+        //
+        //      ① **이번 저장에서 계약금이 실제로 늘어날 때만.** 이 가드의 근거는 위 주석의
+        //         *"미수율이 임계를 넘은 상태에서 **나가는** 계약금은 회사 돈이 확실하다"* 인데,
+        //         두 달 전에 나간 돈은 이번 저장이 내보낸 게 아니다. 켜라고 강요하면 **거짓 기록**이 된다.
+        //      ② **선적 진입 조건을 이미 넘긴 차는 제외.** 무담보 사용액은
+        //         `Buyer::computeReceivableGauge` 가 `! isShippingEntryMet()` 인 차의 계약금만 더한다
+        //         (`app/Models/Buyer.php:195`) — 넘긴 차는 **켜도 한도가 1원도 안 줄어든다.**
+        //         효과가 0인데 저장만 막고 있었다. 바로 위 해제 가드는 같은 `isShippingEntryMet()` 을
+        //         이미 보고 있었다 — **같은 불변식인데 한쪽만 안 본 것**이다.
         $downForUnsecured = (int) preg_replace('/[^0-9]/', '', $this->down_payment_str);
-        if ($downForUnsecured > 0 && ! $unsecuredDown) {
+        $downAlreadyOut = (int) round((float) ($editingVehicle?->confirmed_down_payment ?? 0));
+        $downGrowing = $downForUnsecured > $downAlreadyOut;            // ① 이번에 새로 나가는 몫이 있나
+        $moneyStillOut = ! ($editingVehicle?->isShippingEntryMet() ?? false);   // ② 아직 안 회수됐나
+        if ($downForUnsecured > 0 && ! $unsecuredDown && $downGrowing && $moneyStillOut) {
             $lockBuyer = \App\Models\Buyer::find($this->purchaseGateBuyerId());
             if ($lockBuyer && $lockBuyer->hasUnsecuredLimit()) {
                 $lockGauge = $lockBuyer->receivableGauge();
