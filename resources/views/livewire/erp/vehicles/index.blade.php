@@ -1811,6 +1811,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /**
+     * 바이어 필터 — 다른 필터와 같은 형태. **원래 없었다**(2026-08-26 combobox 전환 때 발견).
+     * 없으면 3페이지에서 바이어를 바꿨을 때 결과가 그보다 적어 **빈 목록**이 뜬다.
+     * combobox 는 `$wire.set()` 으로 값을 넣는데 그것도 이 훅을 태운다(재고관리와 동일).
+     */
+    public function updatedBuyerId(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     public function updatedCancelFilter(): void
     {
         unset($this->vehicles);
@@ -5879,13 +5890,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <option value="{{ $s->id }}">{{ $s->name }}</option>
             @endforeach
         </select>
-        {{-- 회의확장씬 #3 Phase 2-4 (2026-05-23) — 바이어 select 필터 --}}
-        <select wire:model.live="buyerId" class="input-filter">
-            <option value="">{{ __('vehicle.all_buyers') }}</option>
-            @foreach($this->buyersForFilter as $b)
-                <option value="{{ $b->id }}">{{ $b->name }}</option>
-            @endforeach
-        </select>
+        {{-- 회의확장씬 #3 Phase 2-4 (2026-05-23) — 바이어 필터.
+             2026-08-26 (jin) select → combobox: 바이어가 많아 스크롤로는 못 찾는다. 재고관리와 같은 컴포넌트.
+             ⚠️ wire:key 를 현재 값에 묶어야 «초기화»·URL 진입 등 서버발 변경 때 Alpine 이 재init 된다
+                (안 묶으면 입력칸에 옛 이름이 남는다). 비우기 = 입력칸 오른쪽 × = 「바이어 전체」. --}}
+        <x-erp.combobox wire:key="veh-buyer-{{ $buyerId }}" model="buyerId" :options="$this->buyersForFilter"
+            :selected="$buyerId" placeholder="{{ __('vehicle.all_buyers') }}" class="w-44" />
         {{-- 매입취소 필터 (jin 2026-07-18) — 취소/취소완료 구분 솔팅 --}}
         <select wire:model.live="cancelFilter" class="input-filter">
             <option value="">{{ __('vehicle.cancel_filter.all') }}</option>
