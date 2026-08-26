@@ -1982,30 +1982,9 @@ new #[Layout('components.layouts.app')] class extends Component
         @if($this->selectedVehicle)
         @php
             $sv = $this->selectedVehicle;
-            $costRows = \App\Models\Setting::isKaraba() ? [
-                'cost_deregistration' => (int) $sv->cost_deregistration,
-                'cost_transfer'       => (int) $sv->cost_transfer,
-                'cost_license'        => (int) $sv->cost_license,
-                'cost_towing'         => (int) $sv->cost_towing,
-                'cost_carry'          => (int) $sv->cost_carry,
-                'cost_insurance'      => (int) $sv->cost_insurance,
-                'cost_inspection'     => (int) $sv->cost_inspection,
-                'cost_performance'    => (int) $sv->cost_performance,
-                'cost_repair'         => (int) $sv->cost_repair,
-                'cost_advertising'    => (int) $sv->cost_advertising,
-                'cost_extra1'         => (int) $sv->cost_extra1,
-                'cost_extra2'         => (int) $sv->cost_extra2,
-            ] : [
-                'cost_deregistration' => (int) $sv->cost_deregistration,
-                'cost_license'        => (int) $sv->cost_license,
-                'cost_towing'         => (int) $sv->cost_towing,
-                'cost_carry'          => (int) $sv->cost_carry,
-                'cost_shoring'        => (int) $sv->cost_shoring,
-                'cost_insurance'      => (int) $sv->cost_insurance,
-                'cost_transfer'       => (int) $sv->cost_transfer,
-                'cost_extra1'         => (int) $sv->cost_extra1,
-                'cost_extra2'         => (int) $sv->cost_extra2,
-            ];
+            // 회사별 목록을 여기 옮겨 적지 말 것 — 갈리면 「표의 합계는 맞는데 줄을 더하면 안 맞는」
+            //   화면이 된다. costBreakdown() 은 합이 반드시 cost_total 과 같다(SKILLS §8 #64).
+            $costRows = $sv->costBreakdown();
             $costTotalSum = array_sum($costRows);
         @endphp
         <div>
@@ -2016,7 +1995,7 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1">
                 @foreach($costRows as $col => $amt)
                 <div class="flex justify-between {{ $amt === 0 ? 'text-gray-300' : 'text-gray-600' }}">
-                    <span>{{ __('vehicle.field.'.$col) }}</span>
+                    <span>{{ \App\Models\Vehicle::costLabel($col) }}</span>
                     <span>₩{{ number_format($amt) }}</span>
                 </div>
                 @endforeach

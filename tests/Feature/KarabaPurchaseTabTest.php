@@ -63,7 +63,7 @@ class KarabaPurchaseTabTest extends TestCase
         $c = Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
             ->assertSee('매입등록')               // 1단
-            ->assertSee('매매상')                 // 매매상 체크박스
+            ->assertDontSee('매매상')             // 체크박스 제거 (jin 2026-08-26) — 운영 0건이었다
             ->assertDontSee('매입처 계좌 정보')   // 계좌란 숨김
             ->assertDontSee('매도비 계좌 정보')
             ->assertDontSee('송금메모')           // 메모 3→1: 송금메모 숨김
@@ -98,9 +98,13 @@ class KarabaPurchaseTabTest extends TestCase
 
         $c = Volt::test('erp.vehicles.index')->call('openCreate');
 
-        $this->assertSame('17,300', $c->get('cost_deregistration_str'));
+        $this->assertSame('17,300', $c->get('cost_deregistration_str'), '말소비');
         $this->assertSame('0', $c->get('cost_license_str'));
         $this->assertSame('0', $c->get('cost_towing_str'));
+        // 고정비 3종 (jin 2026-08-26) — 신규 등록에서 자동으로 채워져야 한다.
+        //   ⚠️ openCreate 가 키를 이름으로 하나씩 읽던 시절엔 세트에 더해도 화면만 안 채워졌다.
+        $this->assertSame('80,000', $c->get('cost_extra1_str'), '점검비(=karaba 기타비1 칸)');
+        $this->assertSame('50,000', $c->get('cost_parking_str'), '주차료');
     }
 
     public function test_karaba_saves_cascade_and_dealer(): void
@@ -123,19 +127,25 @@ class KarabaPurchaseTabTest extends TestCase
         $this->assertTrue((bool) $v->is_dealer_purchase);
     }
 
-    public function test_karaba_cost_grid_shows_new_costs_and_parts(): void
+    public function test_karaba_cost_grid_is_the_common_ten_with_karaba_labels(): void
     {
+        // karaba 12칸(2026-07-22 Phase 2) 폐기 → 3사 공통 10칸 (jin 2026-08-26).
+        //   성능·정비·광고는 3사 전부 0건이라 잃는 게 없었다. 점검비는 「기타비1」 칸으로 옮겨졌고
+        //   karaba 는 그 칸을 「점검비」라고 부른다(Vehicle::costLabel).
         $this->karaba();
         $this->actingAs($this->admin());
         $v = $this->makeVehicle();
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
-            ->assertSee('점검비')
-            ->assertSee('성능비')
-            ->assertSee('정비비용')
-            ->assertSee('광고비용')
-            ->assertSee('부품');   // 판매탭 부품 기록칸
+            ->assertSee('점검비')                 // = cost_extra1 (karaba 라벨)
+            ->assertSee('기타비')                 // = cost_extra2 (karaba 라벨)
+            ->assertSee('주차료')                 // = cost_parking (3사 공통 신설)
+            ->assertSee('쇼링비')                 // 공통 칸이 karaba 에도 돌아왔다
+            ->assertDontSee('성능비')
+            ->assertDontSee('정비비용')
+            ->assertDontSee('광고비용')
+            ->assertSee('부품');   // 판매탭 부품 기록칸은 그대로 (karaba 전용, 미추적)
     }
 
     public function test_karaba_new_costs_in_cost_total_parts_untracked(): void
