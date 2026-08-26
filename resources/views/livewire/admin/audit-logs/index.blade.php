@@ -55,8 +55,14 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->typeFilter !== '', fn ($q) => $q->where('auditable_type', $this->typeFilter))
             // 'buyer:*' = 바이어 변경 전체(값이 바이어명이라 개별 나열하면 드롭다운이 바이어 수만큼 늘어난다).
             ->when($this->columnFilter === self::BUYER_ANY, fn ($q) => $q->where('column_name', 'like', 'buyer:%'))
+            // 단일 컬럼(`shipping_date`)과 일괄 기록(`shipping_date,eta_date`)을 함께 건진다.
+            //   🚫 `like %name%` 만 쓰면 안 된다 — `type` 이 `payment_type` 에도 걸린다.
+            //   콤마 경계를 붙여 **목록의 한 항목**으로만 매칭한다.
             ->when($this->columnFilter !== '' && $this->columnFilter !== self::BUYER_ANY,
-                fn ($q) => $q->where('column_name', $this->columnFilter))
+                fn ($q) => $q->where(fn ($q2) => $q2
+                    ->where('column_name', $this->columnFilter)
+                    ->orWhereRaw("CONCAT(',', REPLACE(column_name, ' ', ''), ',') LIKE ?",
+                        ['%,'.$this->columnFilter.',%'])))
             // 성능(jin 2026-07-23): whereDate 는 DATE(created_at) 로 index 무효 → 범위조건으로 created_at 인덱스 유지.
             //   audit_logs 는 무한 증가 테이블이라 풀스캔 방지 중요. (ssancar 504 교훈 패턴②)
             ->when($this->dateFrom !== '', fn ($q) => $q->where('created_at', '>=', $this->dateFrom.' 00:00:00'))
@@ -216,9 +222,20 @@ new #[Layout('components.layouts.app')] class extends Component
 
                 continue;
             }
-            $out[$name] = $r->auditable_type
-                ? ColumnLabel::column($r->auditable_type, $name)
-                : ColumnLabel::columnAny($name);
+            // 🔑 일괄 작업은 컬럼을 콤마로 이어 붙여 기록한다(`shipping_date,eta_date,vessel_name`).
+            //    그대로 담으면 **조합마다 목록이 하나씩 늘어난다** — 일괄 대상이 바뀔 때마다
+            //    쓸모없는 항목이 쌓이고, 골라도 그 조합인 행만 걸린다(jin 2026-08-26 제보).
+            //    쪼개서 개별 컬럼으로 담으면 조합이 몇 가지든 항목 수가 안 늘고,
+            //    「선적일」을 고르면 그게 포함된 일괄 기록까지 함께 걸린다(아래 필터가 부분일치).
+            foreach (explode(',', $name) as $part) {
+                $part = trim($part);
+                if ($part === '') {
+                    continue;
+                }
+                $out[$part] = $r->auditable_type
+                    ? ColumnLabel::column($r->auditable_type, $part)
+                    : ColumnLabel::columnAny($part);
+            }
         }
         if ($hasBuyer) {
             $out[self::BUYER_ANY] = '바이어 변경';

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
+use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Support\ColumnLabel;
 use Tests\TestCase;
@@ -160,5 +161,73 @@ class AdminUiKoreanLabelTest extends TestCase
         $missing = array_values(array_diff(Vehicle::AUDITED_COLUMNS, array_keys($labels)));
 
         $this->assertSame([], $missing, '감사 컬럼에 한글 라벨이 없다: '.implode(', ', $missing));
+    }
+
+    /**
+     * 🚨 **일괄 작업은 컬럼을 콤마로 이어 붙여 기록한다** (`shipping_date,eta_date,vessel_name`).
+     *
+     * 쪼개서 번역하지 않으면 ①감사로그 행에 영문이 그대로 뜨고 ②「컬럼 전체」 드롭다운이
+     * **조합마다 항목 하나씩** 늘어난다. 일괄 대상이 바뀔 때마다 사람이 사전을 고쳐야 한다는 뜻이라,
+     * jin 이 *"계속 쌓일 때마다 수동으로 매번 얘기하는 것과 같다"* 고 지적한 그 형태다(2026-08-26).
+     */
+    public function test_bulk_column_lists_are_split_and_translated(): void
+    {
+        $cases = [
+            'shipping_date,eta_date',
+            'shipping_date,eta_date,vessel_name',
+            'shipping_date, eta_date',   // 공백이 섞여도
+        ];
+
+        foreach ($cases as $raw) {
+            $label = ColumnLabel::column(Vehicle::class, $raw);
+
+            $this->assertStringNotContainsString('_', $label, "일괄 컬럼 목록이 영문 그대로다: {$raw} → {$label}");
+            foreach (explode(',', $raw) as $part) {
+                $one = ColumnLabel::column(Vehicle::class, trim($part));
+                $this->assertStringContainsString($one, $label, "쪼갠 항목이 빠졌다: {$part}");
+            }
+        }
+    }
+
+    /**
+     * 락 기준선 변경은 `column_name` 에 **설정 논리키**(`lock_threshold_{락}`)를 적는다.
+     * 락이 늘면 그 키도 늘어난다 — 상수에 묶어 두면 사람이 기억할 필요가 없다.
+     */
+    public function test_every_lock_threshold_key_has_a_korean_label(): void
+    {
+        foreach (array_keys(Setting::LOCK_PAID_DEFAULTS) as $lock) {
+            $key = 'lock_threshold_'.$lock;
+            $this->assertKoreanLabel(ColumnLabel::column(Setting::class, $key), "설정 키 {$key}");
+        }
+    }
+
+    /**
+     * 감사로그에 **리터럴로 박아 넣는** `column_name` 은 전부 한글 라벨이 있어야 한다.
+     * 새 감사 이벤트를 만들 때 사전을 안 고치면 여기서 걸린다.
+     */
+    public function test_literal_audit_column_names_have_korean_labels(): void
+    {
+        $files = array_merge(
+            $this->phpFiles(app_path()),
+            $this->phpFiles(resource_path('views/livewire')),
+        );
+        $seen = [];
+        foreach ($files as $file) {
+            $src = file_get_contents($file);
+            // ⚠️ 뒤에 `,` 나 `)` 가 와야 **완결된 리터럴**이다. `'lock_'.$lock` 같은 조립형은
+            //    앞 조각만 잡혀 존재하지 않는 컬럼('lock_')을 요구하게 된다.
+            //    조립형은 그 출처 상수에 묶은 별도 테스트로 지킨다(위 락 기준선).
+            if (! preg_match_all("/'column_name'\s*=>\s*'([a-z][a-z0-9_]*)'\s*[,)]/", $src, $m)) {
+                continue;
+            }
+            foreach ($m[1] as $name) {
+                $seen[$name] = true;
+            }
+        }
+        $this->assertNotEmpty($seen, '스캔이 아무것도 못 찾았다 — 정규식이 낡았다');
+
+        foreach (array_keys($seen) as $name) {
+            $this->assertKoreanLabel(ColumnLabel::columnAny($name), "감사로그 컬럼 '{$name}'");
+        }
     }
 }
