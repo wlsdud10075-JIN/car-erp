@@ -37,6 +37,17 @@ class ColumnLabel
         if (($dynamic = self::dynamicKey($columnName)) !== null) {
             return $dynamic;
         }
+        // 🔑 일괄 작업은 컬럼을 **콤마로 이어 붙여** 기록한다(`shipping_date,eta_date,vessel_name`).
+        //    쪼개서 각각 번역하지 않으면 화면에 영문이 그대로 뜨고, 무엇보다 **조합마다 사전 항목이
+        //    하나씩 더 필요**해진다 — 일괄 대상이 늘 때마다 사람이 사전을 고쳐야 한다는 뜻이다.
+        //    쪼개 두면 조합이 몇 가지든 컬럼 사전 하나로 전부 풀린다.
+        if (str_contains($columnName, ',')) {
+            $parts = array_filter(array_map('trim', explode(',', $columnName)), fn ($p) => $p !== '');
+
+            return $parts === []
+                ? $columnName
+                : implode(', ', array_map(fn ($p) => self::column($modelOrTable, $p), $parts));
+        }
         $table = self::resolveTable($modelOrTable);
         if ($table === null) {
             return $columnName;

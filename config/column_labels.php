@@ -19,6 +19,8 @@ return [
 
     // ─── vehicles ───────────────────────────────────────────────────────
     'vehicles' => [
+        // 매입취소 마감 감사로그가 쓰는 논리키(실제 컬럼 아님).
+        'cancel_shortfall_krw' => '매입취소 손실액',
         'vehicle_number' => '차량번호',
         'warehouse_out_date' => '출고일',
         'brand' => '브랜드',
@@ -304,6 +306,17 @@ return [
         'value' => '설정값',
         'lock_shipping_entry' => '선적 진입 락',
         'capital_principal' => '투입 원금',
+        // 🚨 여기 값들은 **컬럼명이 아니라 설정 키·논리명**이다. 감사로그가 그걸 그대로 찍으므로
+        //    새 설정을 감사 대상으로 만들면 **같은 커밋에 여기도 한 줄** 넣어야 화면이 한글로 뜬다.
+        //    (2026-08-26 jin — 「감사로그에 영문이 계속 쌓인다」 4번째 지적)
+        'lock_threshold_shipping_entry' => '선적 진입 필요입금률',
+        'lock_threshold_purchase_registration' => '매입등록 필요입금률',
+        'lock_threshold_purchase_payment' => '매입지급 필요입금률',
+        'unsecured_limit_enabled' => '무담보 한도 사용',
+        'unsecured_limit_krw' => '무담보 한도',
+        'credit_score_weights' => '신용도 가중치',
+        'lock_threshold_bl_issue' => 'B/L 발행 필요입금률',
+        'receivable_grace_days' => '채권 결제대기 유예일',
     ],
 
     // ─── settlement_payout_batches (정산 지급 배치) ───────────────────────
