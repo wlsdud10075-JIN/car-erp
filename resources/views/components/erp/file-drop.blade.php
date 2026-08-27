@@ -15,7 +15,7 @@
     'model',
     'accept' => '',
     'multiple' => false,
-    'label' => '여기로 드래그하거나 파일을 선택하세요',
+    'label' => null,   // null = common.filedrop.label
 ])
 <div
     x-data="{ over: false, uploading: false, progress: 0 }"
@@ -34,10 +34,10 @@
     <div class="flex items-center gap-2 text-xs text-gray-500">
         <button type="button" @click="$refs.fd.click()"
                 class="shrink-0 rounded border-0 bg-primary-light px-2 py-1 text-[11px] font-medium text-primary-text hover:bg-primary/10">
-            파일 선택
+            {{ __('common.filedrop.browse') }}
         </button>
-        <span x-show="!over" class="truncate">{{ $label }}</span>
-        <span x-show="over" x-cloak class="font-medium text-primary-text">여기에 놓으면 업로드됩니다</span>
+        <span x-show="!over" class="truncate">{{ $label ?? __('common.filedrop.label') }}</span>
+        <span x-show="over" x-cloak class="font-medium text-primary-text">{{ __('common.filedrop.drop_here') }}</span>
     </div>
 
     {{-- 업로드 진행 게이지 — 이 존 업로드 중에만 노출. 즉시완료·0% 도 보이게 최소폭 12%, 완료 후 0.5s 잔류 --}}

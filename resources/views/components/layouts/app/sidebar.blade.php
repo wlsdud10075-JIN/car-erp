@@ -629,19 +629,19 @@
             <div class="flex items-start gap-3">
                 <span class="text-lg leading-none">⚠️</span>
                 <div class="min-w-0 flex-1">
-                    <div class="text-sm font-semibold text-amber-900">사내 업무 도우미(챗봇) 이상</div>
+                    <div class="text-sm font-semibold text-amber-900">{{ __('nav.assistant_down.title') }}</div>
                     <ul class="mt-1 space-y-0.5 text-xs text-amber-800">
                         @foreach($assistantProblems as $p)
                             <li>· {{ $p }}</li>
                         @endforeach
                     </ul>
                     <div class="mt-1.5 text-[11px] text-amber-700">
-                        챗봇은 멈추지 않고 예전 답변을 계속 낼 수 있습니다. 사내 GPU PC 상태를 확인하세요.
+                        {{ __('nav.assistant_down.body') }}
                     </div>
                 </div>
                 <button type="button"
                         @click="show = false; localStorage.setItem('assistant_health_dismissed', '{{ $assistantHealthKey }}')"
-                        class="shrink-0 rounded px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-100">닫기</button>
+                        class="shrink-0 rounded px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-100">{{ __('common.close') }}</button>
             </div>
         </div>
     @endif

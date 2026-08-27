@@ -14,6 +14,7 @@ return [
         'expire' => 'The link expires in 7 days. Re-issuing invalidates the previous link.',
     ],
     'notify' => [
+        'revoked' => 'The signature request was revoked and its link invalidated.',
         'delete_locked' => 'Signed e-contracts cannot be deleted. (legal evidence)',
         'issued' => 'Signing link issued. Send the link below to the buyer.',
         'scope_denied' => 'One or more selected vehicles are out of your scope.',
@@ -34,5 +35,12 @@ return [
     'mail' => [
         'subject' => '[Signed] :no',
         'body' => "Your electronic signature for sales contract :no has been completed.\nThe signed copy (PDF) is attached. This email serves as confirmation and delivery evidence.",
+    ],
+    'revoke' => [
+        'btn' => 'Revoke',
+        'title' => 'Revoke the signature request - the link sent to the buyer stops working immediately',
+        'confirm' => "Revoke this signature request?\n\nThe link sent to the buyer stops working immediately and they will not be able to sign.\n(A contract that is already signed cannot be revoked.)",
+        'signed_locked' => 'A contract that has already been signed cannot be revoked. (Legal evidence)',
+        'not_active' => 'This request has already been revoked or has expired.',
     ],
 ];

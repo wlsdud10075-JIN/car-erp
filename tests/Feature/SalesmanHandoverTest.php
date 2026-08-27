@@ -437,10 +437,11 @@ class SalesmanHandoverTest extends TestCase
     }
 
     /**
-     * 바이어를 따라갈 수 없는 차(바이어 미정)은 **체크로 정한다.**
-     * 자동으로 처리하면 나눠 넘길 때 첫 번째 사람이 조용히 다 가져간다.
+     * 담당 바이어가 없는 차는 **그대로 A 에 남는다** (jin 2026-08-27 — 체크박스를 만들었다가 뺐다).
+     * 그 차들은 대부분 **바이어에 담당자가 안 붙어서** 생긴다 — 승계 모달에서 고를 일이 아니라
+     * 바이어 탭에서 담당자를 지정하면 저절로 풀린다. 그래서 「그대로 두는 것」에 사유로 적어 보여준다.
      */
-    public function test_vehicles_without_a_buyer_are_opt_in(): void
+    public function test_vehicles_without_a_buyer_stay_behind(): void
     {
         $a = $this->salesman('A');
         $b = $this->salesman('B');
@@ -448,16 +449,13 @@ class SalesmanHandoverTest extends TestCase
         $orphan = $this->vehicle($a, null);
 
         $svc = new SalesmanHandoverService;
-        $plan = $svc->preview($a, $b, [$x->id], false);
-        $this->assertSame([$orphan->id], array_column($plan['orphan_vehicles'], 'id'));
-        $this->assertSame([], array_column($plan['vehicles'], 'id'), '안 켜면 안 넘어간다');
-        $this->assertContains('no_buyer', array_column($plan['skipped'], 'reason'));
+        $plan = $svc->preview($a, $b, [$x->id]);
 
-        $svc->apply($a, $b, $this->admin(), null, [$x->id], false);
+        $this->assertNotContains($orphan->id, array_column($plan['vehicles'], 'id'));
+        $this->assertContains('no_buyer', array_column($plan['skipped'], 'reason'), '사유가 보여야 어디서 고칠지 안다');
+
+        $svc->apply($a, $b, $this->admin(), null, [$x->id]);
         $this->assertSame($a->id, $orphan->fresh()->salesman_id);
-
-        $svc->apply($a, $b, $this->admin(), null, [], true);
-        $this->assertSame($b->id, $orphan->fresh()->salesman_id, '켜면 넘어간다');
     }
 
     /** 고른 게 없고 넘길 차도 없으면 아무 일도 안 한다 — 빈 감사로그만 남기지 않는다. */
@@ -468,7 +466,7 @@ class SalesmanHandoverTest extends TestCase
         Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
 
         $this->expectException(\InvalidArgumentException::class);
-        (new SalesmanHandoverService)->apply($a, $b, $this->admin(), null, [], false);
+        (new SalesmanHandoverService)->apply($a, $b, $this->admin(), null, []);
     }
 
     /** 클라이언트가 남의 바이어 id 를 넣어도 무시된다(§8 #26). */

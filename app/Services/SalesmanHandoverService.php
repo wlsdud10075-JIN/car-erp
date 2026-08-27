@@ -48,16 +48,17 @@ class SalesmanHandoverService
      *
      *      ① 고른 바이어의 차           → 함께 이동 (자동. 따로 고르지 않는다)
      *      ② A 의 바이어지만 안 고른 차  → 그대로 A  (그 바이어를 넘길 때 같이 간다)
-     *      ③ 담당 바이어가 없는 차       → **체크박스로 정한다** (바이어 미정 매입·타 영업 바이어)
+     *      ③ 담당 바이어가 없는 차       → 그대로 A  (아래)
      *      ④ 정산이 있는 차             → 그대로 A  (경계 = 정산 유무, jin)
      *
-     *    ③ 이 따로 있는 이유 — 바이어를 따라갈 수가 없는 차다. 자동으로 처리하면 나눠 넘길 때
-     *    **첫 번째 사람이 조용히 다 가져간다.** 사람이 보고 정해야 한다(SKILLS §8 #60).
+     * ⚠ **③ 를 체크박스로 떠넘기지 않는다** (jin 2026-08-27 — 만들었다가 뻐다).
+     *    그 차들은 대부분 **바이어에 담당자가 안 붙어서** 생긴다 — 승계 모달에서 고를 일이
+     *    아니라 **바이어 탭에서 담당자를 지정하면 저절로 풀린다**(바이어 목록 「담당자 미지정」 필터).
+     *    그래서 여기서는 그대로 두고, 「그대로 두는 것」에 **어디서 고치는지**를 적어 보여준다.
      *
      * @param  ?array  $buyerIds  넘길 바이어. null = 전부(단일 승계).
-     * @param  bool  $includeOrphanVehicles  ③ 을 함께 넘길지.
      */
-    public function preview(Salesman $from, Salesman $to, ?array $buyerIds = null, bool $includeOrphanVehicles = true): array
+    public function preview(Salesman $from, Salesman $to, ?array $buyerIds = null): array
     {
         $this->assertPair($from, $to);
 
@@ -85,7 +86,6 @@ class SalesmanHandoverService
         $orphan = $inProgress->filter(fn (Vehicle $v) => ! $v->buyer_id
             || ! in_array((int) $v->buyer_id, $allIds, true));
 
-        $move = $includeOrphanVehicles ? $mine->concat($orphan) : $mine;
         $row = fn (Vehicle $v) => ['id' => $v->id, 'vehicle_number' => $v->vehicle_number];
 
         return [
@@ -98,7 +98,7 @@ class SalesmanHandoverService
                     && $b->inherited_from_salesman_id
                     && (int) $b->inherited_from_salesman_id !== (int) $from->id,
             ])->values()->all(),
-            'vehicles' => $move->map($row)->values()->all(),
+            'vehicles' => $mine->map($row)->values()->all(),
 
             // 고를 수 있는 바이어 전체 — 화면의 체크 목록. **바이어별 진행중 차량 대수**를 같이 준다
             //   (몇 대짜리인지 모르면 사람이 나눌 수가 없다).
@@ -108,10 +108,6 @@ class SalesmanHandoverService
                 'in_progress' => $inProgress->where('buyer_id', $b->id)->count(),
             ])->values()->all(),
 
-            // ③ 바이어를 따라갈 수 없는 차 — 체크박스로 정한다.
-            'orphan_vehicles' => $orphan->map($row)->values()->all(),
-            'include_orphan_vehicles' => $includeOrphanVehicles,
-
             // 건너뛰는 것 — **사유와 차량번호를 같이 보여준다.** 카운터로 뭉개면 정작 봐야 할
             //   몇 대가 숫자에 묻힌다(SKILLS §8 #67).
             'skipped' => $settled->map($row)->map(fn ($r) => $r + ['reason' => 'has_settlement'])
@@ -119,8 +115,7 @@ class SalesmanHandoverService
                     $notSelected->map($row)->map(fn ($r) => $r + ['reason' => 'buyer_not_selected'])
                 )
                 ->concat(
-                    $includeOrphanVehicles ? collect()
-                        : $orphan->map($row)->map(fn ($r) => $r + ['reason' => 'no_buyer'])
+                    $orphan->map($row)->map(fn ($r) => $r + ['reason' => 'no_buyer'])
                 )
                 ->values()->all(),
 
@@ -144,7 +139,6 @@ class SalesmanHandoverService
         User $actor,
         ?string $reason = null,
         ?array $buyerIds = null,
-        bool $includeOrphanVehicles = true,
     ): array {
         if (! $actor->canApprove()) {
             throw new AuthorizationException('퇴사 승계는 [관리] 이상만 실행할 수 있습니다.');
@@ -152,7 +146,7 @@ class SalesmanHandoverService
         $this->assertPair($from, $to);
 
         // 🔑 미리보기와 **같은 함수·같은 인자**. 화면이 보여준 그대로가 실행된다.
-        $plan = $this->preview($from, $to, $buyerIds, $includeOrphanVehicles);
+        $plan = $this->preview($from, $to, $buyerIds);
 
         // 한 명도 안 고르고 차량도 안 넘기면 아무 일도 안 하는 것 — 빈 감사로그만 남기지 않는다.
         if (! $plan['buyers'] && ! $plan['vehicles']) {

@@ -73,39 +73,39 @@ new #[Layout('components.layouts.auth')] class extends Component {
 }; ?>
 
 <div class="flex flex-col gap-6">
-    <x-auth-header title="계정 로그인" description="이메일과 비밀번호를 입력해 로그인하세요" />
+    <x-auth-header :title="__('common.auth.login_title')" :description="__('common.auth.login_desc')" />
 
     <!-- Session Status -->
     <x-auth-session-status class="text-center" :status="session('status')" />
 
     <form wire:submit="login" class="flex flex-col gap-6">
         <!-- Email Address -->
-        <flux:input wire:model="email" label="이메일" type="email" name="email" required autofocus autocomplete="email" placeholder="name@example.com" />
+        <flux:input wire:model="email" label="{{ __('common.email') }}" type="email" name="email" required autofocus autocomplete="email" placeholder="name@example.com" />
 
         <!-- Password -->
         <div class="relative">
             <flux:input
                 wire:model="password"
-                label="비밀번호"
+                label="{{ __('common.auth.password') }}"
                 type="password"
                 name="password"
                 required
                 autocomplete="current-password"
-                placeholder="비밀번호"
+                placeholder="{{ __('common.auth.password') }}"
             />
 
             @if (Route::has('password.request'))
                 <x-text-link class="absolute right-0 top-0" href="{{ route('password.request') }}">
-                    비밀번호를 잊으셨나요?
+                    {{ __('common.auth.forgot') }}
                 </x-text-link>
             @endif
         </div>
 
         <!-- Remember Me -->
-        <flux:checkbox wire:model="remember" label="로그인 상태 유지" />
+        <flux:checkbox wire:model="remember" label="{{ __('common.auth.remember') }}" />
 
         <div class="flex items-center justify-end">
-            <flux:button variant="primary" type="submit" class="w-full">로그인</flux:button>
+            <flux:button variant="primary" type="submit" class="w-full">{{ __('common.auth.submit') }}</flux:button>
         </div>
     </form>
 </div>

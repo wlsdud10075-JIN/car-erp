@@ -1943,13 +1943,13 @@ new #[Layout('components.layouts.app')] class extends Component
             @if($this->marginData['isKaraba'] ?? false)
             {{-- karaba 이익율 정산 (Phase 3) — 영업이익 = 판매가 − (구매가 + 부대비용 − 매입세액VAT) --}}
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
-                <div class="flex justify-between text-gray-600"><span>판매가 <span class="text-xs text-gray-400">(차대금 × 환율)</span></span><span>₩{{ number_format($this->marginData['karabaSalesKrw']) }}</span></div>
-                <div class="flex justify-between text-gray-600"><span>구매가 <span class="text-xs text-gray-400">(매입가 + 매도비)</span></span><span>₩{{ number_format($this->marginData['purchaseTotal']) }}</span></div>
-                <div class="flex justify-between text-gray-600"><span>부대비용</span><span>₩{{ number_format($this->marginData['karabaCosts']) }}</span></div>
-                <div class="flex justify-between text-gray-600"><span>매입세액 (VAT)</span><span>₩{{ number_format($this->marginData['karabaVat']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.sales') }} <span class="text-xs text-gray-400">{{ __('settlement.karaba.sales_note') }}</span></span><span>₩{{ number_format($this->marginData['karabaSalesKrw']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.purchase') }} <span class="text-xs text-gray-400">{{ __('settlement.karaba.purchase_note') }}</span></span><span>₩{{ number_format($this->marginData['purchaseTotal']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.costs') }}</span><span>₩{{ number_format($this->marginData['karabaCosts']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.vat') }}</span><span>₩{{ number_format($this->marginData['karabaVat']) }}</span></div>
                 <hr class="border-gray-200" />
-                <div class="flex justify-between font-semibold text-gray-800"><span>영업이익 <span class="text-xs font-normal text-gray-400">(판매가 − (구매가 + 부대비용 − VAT))</span></span><span class="{{ $this->marginData['operatingProfit'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['operatingProfit']) }}</span></div>
-                <div class="flex justify-between text-gray-600"><span>이익율 <span class="text-xs text-gray-400">(≥6% 20% / 5~6% 15% / &lt;5% 10%)</span></span><span>{{ $this->marginData['profitRate'] !== null ? $this->marginData['profitRate'].'%' : '-' }}</span></div>
+                <div class="flex justify-between font-semibold text-gray-800"><span>{{ __('settlement.karaba.operating') }} <span class="text-xs font-normal text-gray-400">{{ __('settlement.karaba.operating_note') }}</span></span><span class="{{ $this->marginData['operatingProfit'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['operatingProfit']) }}</span></div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.rate') }} <span class="text-xs text-gray-400">(≥6% 20% / 5~6% 15% / &lt;5% 10%)</span></span><span>{{ $this->marginData['profitRate'] !== null ? $this->marginData['profitRate'].'%' : '-' }}</span></div>
             </div>
             @else
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">

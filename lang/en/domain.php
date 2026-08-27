@@ -54,4 +54,12 @@ return [
         'heyman' => 'Heyman',
         'carpul' => 'Carpul',
     ],
+
+    // Sailing phase display labels. Key = Vehicle::SAILING_* constant (stored / compared value).
+    'sailing' => [
+        '운항중' => 'In transit',
+        '도착예정' => 'Due to arrive',
+    ],
+    'sailing_hint' => 'Vehicles that have both a sailing date and an ETA - based on the estimated date',
+    'sailing_hint_on' => ' - click again to clear',
 ];

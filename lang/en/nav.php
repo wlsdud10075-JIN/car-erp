@@ -91,4 +91,9 @@ return [
         'ko' => '한국어',
         'en' => 'English',
     ],
+
+    'assistant_down' => [
+        'title' => 'The in-house assistant (chatbot) is unhealthy',
+        'body' => 'The chatbot does not stop - it can keep serving stale answers. Check the in-house GPU machine.',
+    ],
 ];

@@ -67,7 +67,7 @@ new class extends Component
     {{-- 플로팅 버튼 --}}
     <button type="button" @click="open = !open; if (open) toBottom()"
             class="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg transition hover:bg-primary-hover"
-            :aria-expanded="open" aria-label="업무 도우미 열기">
+            :aria-expanded="open" aria-label="{{ __('assistant.open') }}">
         <span x-show="!open" class="text-2xl">💬</span>
         <span x-show="open" class="text-2xl" x-cloak>×</span>
     </button>
@@ -77,7 +77,7 @@ new class extends Component
          class="absolute bottom-16 right-0 flex h-[520px] w-[360px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div class="border-b border-gray-100 bg-gray-50 px-4 py-3">
             <p class="text-sm font-bold text-gray-800">{{ \App\Models\Setting::get('sidebar_brand', 'SSANCAR') ?: 'SSANCAR' }} 업무 도우미</p>
-            <p class="text-[11px] text-gray-400">로컬 LLM · {{ $assistantHint }}</p>
+            <p class="text-[11px] text-gray-400">{{ __('assistant.engine') }} · {{ $assistantHint }}</p>
         </div>
 
         <div class="flex-1 space-y-3 overflow-y-auto p-4" x-ref="msgs">
@@ -92,17 +92,17 @@ new class extends Component
                 @endif
             @empty
                 <div class="mr-auto max-w-[90%] rounded-xl rounded-bl-sm bg-gray-100 px-3 py-2 text-sm text-gray-600">
-                    안녕하세요. 현재 계정 권한에 맞는 업무 정보와 가이드를 물어보세요.
-                    <span class="mt-1 block text-[11px] text-gray-400">예: {{ $assistantExample }}</span>
+                    {{ __('assistant.greeting') }}
+                    <span class="mt-1 block text-[11px] text-gray-400">{{ __('assistant.example') }} {{ $assistantExample }}</span>
                 </div>
             @endforelse
-            <div wire:loading wire:target="send" class="mr-auto rounded-xl bg-gray-100 px-3 py-2 text-sm text-gray-400">⏳ 조회 중…</div>
+            <div wire:loading wire:target="send" class="mr-auto rounded-xl bg-gray-100 px-3 py-2 text-sm text-gray-400">⏳ {{ __('assistant.loading') }}</div>
         </div>
 
         <form wire:submit="send" class="flex gap-2 border-t border-gray-100 p-3">
-            <input wire:model="q" type="text" placeholder="질문을 입력하세요…" autocomplete="off"
+            <input wire:model="q" type="text" placeholder="{{ __('assistant.placeholder') }}" autocomplete="off"
                    class="input-base flex-1 text-sm" wire:loading.attr="disabled" wire:target="send" />
-            <button type="submit" class="btn-primary px-4 text-sm" wire:loading.attr="disabled" wire:target="send">전송</button>
+            <button type="submit" class="btn-primary px-4 text-sm" wire:loading.attr="disabled" wire:target="send">{{ __('assistant.send') }}</button>
         </form>
     </div>
 </div>
