@@ -757,12 +757,14 @@ class Vehicle extends Model
             //     ① 면장 비었으면 채움  ② 면장이 (구)총판매가와 일치 = 자동복사분이면 신 총판매가로 갱신(추종)
             //     ③ 이번 저장에 면장 직접 편집(수동) or 총판매가와 다른 값(CIF/FOB 수기)이면 보존.
             if ((float) ($vehicle->sale_price ?? 0) > 0) {
-                $newTotal = (float) $vehicle->sale_total_amount;
+                // ⚠️ 총판매가가 아니라 **면장 기준액**(기타 판매비용 제외)을 따라간다 — jin 2026-08-27.
+                //    B/L 재발급비 같은 후발 비용은 「받을 돈」에만 더하고 신고 금액은 건드리지 않는다.
+                $newTotal = (float) $vehicle->declaration_base_amount;
                 $curDecl = (float) ($vehicle->export_declaration_amount ?? 0);
                 $oldDecl = (float) $vehicle->getOriginal('export_declaration_amount');
                 $oldTotal = (float) (
                     $vehicle->getOriginal('sale_price') + $vehicle->getOriginal('transport_fee')
-                    + $vehicle->getOriginal('sale_other_costs') + $vehicle->getOriginal('commission')
+                    + $vehicle->getOriginal('commission')
                     + $vehicle->getOriginal('auto_loading') - $vehicle->getOriginal('tax_dc')
                 );
                 // ⚠️ isDirty('export_declaration_amount') 는 쓰지 말 것 — decimal 컬럼은 DB가 "5200.00"(문자열)로
@@ -2282,6 +2284,25 @@ class Vehicle extends Model
             $this->sale_price + $this->transport_fee + $this->sale_other_costs
             + $this->commission + $this->auto_loading - $this->tax_dc
         );
+    }
+
+    /**
+     * 면장금액(수출신고 금액)이 자동 추종하는 기준액 — **단일 출처** (jin 2026-08-27).
+     *
+     * 총판매가에서 **기타 판매비용을 뺀** 값이다. 총판매가와 한 글자 차이지만 뜻이 다르다:
+     *   총판매가   = 바이어에게 **받을 돈** (미수 분모)
+     *   면장 기준액 = 세관에 신고하는 **물건 값**
+     *
+     * B/L 재발급 수수료처럼 완납 뒤에 생기는 비용을 기타 판매비용에 넣으면 「받을 돈」은 늘어야 하지만
+     * **이미 신고한 면장 금액은 그대로여야 한다**(jin). 그래서 그 항목만 뺀다.
+     * 운임비는 CIF 신고에 들어가므로 **그대로 둔다**.
+     *
+     * 🚫 이 계산을 옮겨 적지 말 것 — 저장 훅과 `vehicles:sync-declaration-amount` 가 같이 쓴다.
+     *    갈리면 저장할 때와 보정 커맨드가 서로 다른 값을 넣어 매번 되돌린다.
+     */
+    public function getDeclarationBaseAmountAttribute(): float
+    {
+        return (float) $this->sale_total_amount - (float) ($this->sale_other_costs ?? 0);
     }
 
     // ── Computed: 미납 비율 (게이지·판매탭 % 표시용, 0~1 또는 null) ──
