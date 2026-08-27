@@ -77,7 +77,7 @@ public function getPurchaseUnpaidAmountAttribute(): int { /* §13 공식 참조 
 | 탭 | 주요 필드 |
 |---|---|
 | `기본정보` | 차량번호, 주행거리, brand/type/cc/kg, NICE API 등록정보 12개, 제원정보 12개, 차량 사진/첨부(사진·PDF·Excel·HWP 등, 최대 10건 — `vehicle_photos`) |
-| `매입` | 매입일, 매입담당자, 구입처, 소유자, 매입가, 매도비, **비용 9개** (말소/면허/탁송/캐리/쇼링/보험/이전비/기타1/기타2), 계약금, 잔금 N건, 송금메모 |
+| `매입` | 매입일, 매입담당자, 구입처, 소유자, 매입가, 매도비, **비용 10개** (말소/면허/탁송/캐리/쇼링/보험/이전비/**주차료**/기타1/기타2 — 단일 출처 `Vehicle::DISPLAY_COST_FIELDS`), 계약금, 잔금 N건, 송금메모 |
 | `판매` | 판매일, 통화/환율, 바이어/컨사이니, 판매가, TAX D/C, Commission, 운임비, 입금현황(계약금 + 중도금 + 잔금 N건 + 선수금1/2 + 적립금 사용) |
 | `수출통관` | 통관 바이어/컨사이니, 포워딩사, **면장금액(USD)**, 선적일, 도착일자(ETA), RORO/CONTAINER, Port of Loading, 수출신고서 업로드 |
 | `선적(B/L)` | 선적 바이어/컨사이니, B/L번호, 컨테이너 No, 반입지, VSL, B/L 문서 업로드 |
@@ -200,7 +200,7 @@ paid 후 한 달 간 secondary='pending' 상태 유지 — 실제 측정된 비�
 
 ```
 paid → secondary='pending' (자동, 한 달 대기)
-  → 차량 비용 9개 수정 (말소비·면허비·탁송·쇼링·보험·이전비·기타1·2 실측치)
+  → 차량 비용 10개 수정 (말소비·면허비·탁송·캐리·쇼링·보험·이전비·주차료·기타1·2 실측치)
   → 정산 시점 환율 입력 (또는 ExchangeRateService 자동 fetch)
   → "2차 완료" 버튼 클릭 (재무/관리/admin 권한, closeSecondarySettlement)
   → secondary='closed' (회계 잠금)
@@ -209,7 +209,7 @@ paid → secondary='pending' (자동, 한 달 대기)
 **closed 시점 자동 계산 (2가지 값)**:
 
 > 🔀 **2026-08-06 (jin)** — ①환차는 계속 계산·저장되지만 **지급액에 가산하지 않는다**(1차에 이미 반영, §5-4 박스).
-> 실현 환차 총액의 감사·참고 기록이다. ②이월(carryover)이 넘기는 것은 이제 **명세서 기입(비용 9개) 변동분**이다.
+> 실현 환차 총액의 감사·참고 기록이다. ②이월(carryover)이 넘기는 것은 이제 **명세서 기입(비용 10개) 변동분**이다.
 
 ```php
 // ① 환차 (exchange_difference_krw)
@@ -987,7 +987,7 @@ nav 상자 자체가 오른쪽에 있어 아무 일도 일어나지 않는다.**
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
-- **비용컬럼 봉인**: `Vehicle::BULK_COST_FIELDS`(비용 9개) 화이트리스트 — **fleet-wide여도 판매가·환율 등 민감 21필드 못 건드림**. `$column` 미포함이면 `InvalidArgumentException`.
+- **비용컬럼 봉인**: `Vehicle::BULK_COST_FIELDS`(= `DISPLAY_COST_FIELDS`, 비용 10개) 화이트리스트 — **fleet-wide여도 판매가·환율 등 민감 21필드 못 건드림**. `$column` 미포함이면 `InvalidArgumentException`.
 - **권한 2축**: 면허비=`canUnlockLedger`(팀, `fleetWide=false`) / 탁송비=`canApprove`(전체, `fleetWide=true`, 명세서 한 장이 전 차량이라). 단일 🔓 버튼은 팀 스코프 그대로(안 건드림).
 - **재업로드 안전(2중)**: ① 2차 마감(`secondary_status='closed'`) 차량은 절대 안 건드림(skip=`settlement_closed`, 값 달라도) — 소급 변경은 개별 🔓로만. ② 값 동일이면 잠금해제·감사 없이 skip(`unchanged`).
 - **면허비 뷰(선적요청 「2차 비용」 탭)**: `secondary=pending` 묶음만, **월 그룹=정산 `created_at`(귀속월)** — 지급월(`paid_at`) 아님. 정산 화면 monthFilter와 동일 축("5월분→6/10 지급"). n/1=첫 차량에 나머지 원.

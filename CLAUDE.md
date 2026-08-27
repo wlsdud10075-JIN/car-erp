@@ -122,7 +122,7 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 > 🔀 **2026-08-06 (jin) — 1차 정산 환율이 「판매환율」에서 「실제 입금환율」로 바뀌었다.**
 > 구: 1차는 판매환율로 계산 → 실입금과의 차이는 2차 마감에서 환차로 실지급액에 **1:1 가산**.
 > 신: **판매금원화의 환율 자체가 실효 입금환율** → 환차가 마진공식(×0.9×비율)을 그대로 통과한다.
-> 2차 정산이 다음달로 이월하는 것은 이제 **명세서 기입(탁송비·면허비 등 비용 9개) 변동분**뿐이다.
+> 2차 정산이 다음달로 이월하는 것은 이제 **명세서 기입(탁송비·면허비 등 비용 10개) 변동분**뿐이다.
 > - 단일 출처 = `Vehicle::settlement_exchange_rate` = `실입금KRW ÷ 총판매가(외화)`.
 >   **미완납·KRW·판매환율 0 이면 판매환율로 폴백**(미완납에 나누면 원금 미수가 환율로 둔갑 — 반토막 난다).
 > - `Settlement::actual_payout` 의 환차 1:1 가산은 **제거**됐다. `exchange_difference_krw` 는 실현 환차 총액의 **감사·참고 기록**으로만 남는다(지급액 미관여).
@@ -173,7 +173,7 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 6. **뷰 캐시 문제 시** `php artisan view:clear && php artisan cache:clear`
 7. **Tailwind v4 + Vite** — 새 유틸 클래스 미반영 시 `npm run build` 또는 `npm run dev`
 8. **차량 진행상태는 computed property** — DB 저장 X. `Vehicle::progress_status` 접근 시마다 우선순위 평가
-9. **vehicles 비용 컬럼은 9개 분리** — Python의 `other_costs(JSON)` 폐기. 합계는 computed (`cost_total`)
+9. **vehicles 비용 컬럼은 10개 분리** — 말소/면허/탁송/캐리/쇼링/보험/이전비/**주차료**/기타1/기타2. Python의 `other_costs(JSON)` 폐기. 합계는 computed (`cost_total`). 목록 단일 출처 = `Vehicle::DISPLAY_COST_FIELDS`. 🏷️ **karaba 는 기타1/2 를 「점검비」/「기타비」로 부른다** — 라벨은 `Vehicle::costLabel()` 이 회사별로 고른다(2026-08-26)
 10. **부가세마진 = `purchase_price × 0.09`** — 매도비(selling_fee) 제외한 순 구입가 기준. 엑셀 CG = T × 0.09 와 일치
 11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감. **면장금액은 `Vehicle::saving` 훅이 「면장 기준액」을 자동 추종 — 비었을 때만 채우고, 명시값(CIF/FOB)은 보존. 면장은 정산 공식 미포함이라 재무 무영향. 기존 차량 보정 = `vehicles:sync-declaration-amount`(같은 기준 사용).**
     🔀 **2026-08-27 (jin) — 추종 기준이 총판매가 → 「면장 기준액」으로 바뀌었다.** 단일 출처 = `Vehicle::declaration_base_amount` = **총판매가 − 기타 판매비용**.
@@ -381,8 +381,9 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태 (2026-08-11)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`d943207`) == dev, **미배포 기능코드 0**. 테스트 **1821 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+**현재 상태 (2026-08-27)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master(`0275f15`), **미배포 기능코드 0**. 테스트 **2169 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 
 > 🤝 **08-11 배포 3회** — board 인계 「입금요청 분리」 반영. ①**계약금/매입잔금 2종 + 금액**(표시 전용,
