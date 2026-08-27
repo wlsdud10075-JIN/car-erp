@@ -81,11 +81,15 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
 | 🚫 증분·툼스톤·페이지네이션을 만들지 말 것 — 전량 pull + 차집합이 합의다(v1.2 Q7).
 |    툼스톤 없는 증분은 삭제를 영원히 못 잡는다.
 */
-Route::middleware([VerifyPortalReadHmac::class, 'throttle:portal-read'])
+Route::middleware([VerifyPortalReadHmac::class])
     ->prefix('internal/portal')
     ->name('api.internal.portal.')
     ->group(function () {
-        Route::get('vehicles', [PortalVehicleController::class, 'vehicles'])->name('vehicles');
+        // ⚠️ throttle 은 **그룹이 아니라 라우트마다** 건다. 그룹에 걸고 안쪽에 또 걸면
+        //    미들웨어는 **대체가 아니라 누적**이라 서류 호출이 전량 pull 의 한도까지 같이 깎는다.
+        Route::get('vehicles', [PortalVehicleController::class, 'vehicles'])
+            ->middleware('throttle:portal-read')
+            ->name('vehicles');
 
         /*
         | 서류 실물 (2026-08-27) — 통로가 둘인 이유는 PortalDocumentController 주석 참조.
@@ -93,9 +97,13 @@ Route::middleware([VerifyPortalReadHmac::class, 'throttle:portal-read'])
         |   짧은 만료 서명 URL 만 발급한다.
         | 🔑 게이트는 Vehicle 한 곳(portalDocumentsBlocker / clearanceSetBlocker)이고
         |    목록 응답과 **같은 메서드**를 서빙 시점에 다시 부른다.
+        | 🚨 **throttle 을 따로 쓴다**(`portal-docs`) — 같은 버킷이면 바이어가 화면을 몇 번 열 때
+        |    30/분을 다 써서 **정기 전량 pull 이 429** 로 굶는다. 그게 미러의 전부다.
         */
-        Route::get('vehicles/{vehicle}/clearance-set', [PortalDocumentController::class, 'clearanceSet'])
-            ->name('vehicles.clearance-set');
-        Route::get('vehicles/{vehicle}/files', [PortalDocumentController::class, 'files'])
-            ->name('vehicles.files');
+        Route::middleware('throttle:portal-docs')->group(function () {
+            Route::get('vehicles/{vehicle}/clearance-set', [PortalDocumentController::class, 'clearanceSet'])
+                ->name('vehicles.clearance-set');
+            Route::get('vehicles/{vehicle}/files', [PortalDocumentController::class, 'files'])
+                ->name('vehicles.files');
+        });
     });

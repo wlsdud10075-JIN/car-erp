@@ -340,6 +340,39 @@ class PortalDocumentApiTest extends TestCase
         $this->signed($this->clearancePath($v), ['buyer_id' => $v->buyer_id])->assertOk();
     }
 
+    /**
+     * 🚨 서류 통로가 **전량 pull 과 같은 한도를 쓰면 안 된다.**
+     *
+     * 바이어가 화면을 몇 번 열면 30/분을 다 써서 **정기 전량 pull 이 429** 로 굶는다.
+     * 그 pull 이 미러의 전부이고, **429 는 부분 응답이 아니라 무응답**이라
+     * `complete:false` 안전핀이 발동조차 못 한다.
+     *
+     * ⚠️ 그룹에 throttle 을 걸고 안쪽에 또 걸면 **누적**된다 — 라우트마다 하나씩만.
+     */
+    public function test_document_routes_do_not_share_the_bulk_pull_throttle(): void
+    {
+        $buckets = function (string $name): array {
+            $route = app('router')->getRoutes()->getByName($name);
+            $this->assertNotNull($route, "라우트 $name 이 없다");
+
+            return array_values(array_filter(
+                $route->gatherMiddleware(),
+                fn ($m) => is_string($m) && str_starts_with($m, 'throttle:')
+            ));
+        };
+
+        $pull = $buckets('api.internal.portal.vehicles');
+        $this->assertSame(['throttle:portal-read'], $pull, '전량 pull 은 자기 한도만 써야 한다');
+
+        foreach (['clearance-set', 'files'] as $doc) {
+            $this->assertSame(
+                ['throttle:portal-docs'],
+                $buckets('api.internal.portal.vehicles.'.$doc),
+                "$doc 이 전량 pull 의 한도를 같이 깎는다 — 정기 pull 이 429 로 굶는다"
+            );
+        }
+    }
+
     /** 생성물이 실제로 xlsx 바이트인가 — 스트림이 비면 200 인데 파일이 안 열린다. */
     public function test_stream_returns_a_real_xlsx(): void
     {
