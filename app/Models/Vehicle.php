@@ -1643,11 +1643,39 @@ class Vehicle extends Model
     public function getProgressStatusAttribute(): string
     {
         $ruleVersion = (int) ($this->progress_status_rule_version ?? 4);
+        $v5 = $ruleVersion >= 5;
         $v4 = $ruleVersion >= 4;
         $v3 = $ruleVersion >= 3;
         $v2 = $ruleVersion >= 2;
 
         if ($v4) {
+            /**
+             * v5 — **소급 정리 전용** (jin 2026-08-27). 기본값은 v4 그대로다.
+             *
+             * 엑셀 임포트로 들어온 옛 차량들이 선적일·ETA·선사·출고일까지 다 있고 완납·정산까지 끝났는데
+             * **B/L 서류 파일만 ERP 에 없어서** 진행상태가 판매완료/선적중에 머물렀다. 배가 떴으니 B/L 은
+             * 실제로 발급됐고(번호가 남은 차도 있다) 파일만 안 올라온 것이다. 그 상태가 ssancar.com 포털에
+             * 「아직 진행중」으로 나가 데이터가 이상해졌다.
+             *
+             * ⚠️ **차량별로 명시 지정한 행에서만 켜진다** — `progress_status_rule_version = 5`.
+             *    새 행 기본값은 4 라 다른 차량은 지금도 앞으로도 영향이 없다(v1~v3 grandfather 와 같은 방식).
+             * ⚠️ 이 분기를 「모두에게」 열지 말 것 — 「거래완료 = B/L 발급」 도메인 불변식이 통째로 깨진다
+             *    (실측 2026-08-26 heymanerp: 거래완료 104대 전부 bl_document 보유, 예외 0).
+             * 🔁 나중에 실무자가 진짜 B/L 을 올리면 아래 v4 규칙으로도 거래완료라 결과가 같다(충돌 없음).
+             *
+             * 성능 — 출고일(컬럼)을 먼저 보고 통과한 행에서만 미수 accessor 를 부른다.
+             *
+             * 🔜 **ssancarerp 과거 데이터 업로드에도 이 장치를 쓴다**(jin 2026-08-27, 곧 유입).
+             *    「정산이 끝난 과거분은 문서가 없어도 거래완료」가 같은 요구다. 다만 **그대로는 안 걸린다** —
+             *    적재양식에 출고일 칸이 없고(실측) `ImportVehicles` 가 rule_version=4 를 명시로 넣는다.
+             *    ⇒ 그때 조건에서 출고일을 빼고 「완납」만 볼지 정한다. 🚫 출고일 자동채움은 금지 —
+             *      선적일 복사가 되어 실제보다 늦은 가짜 날짜가 남는다(SKILLS §14 「불리언으로만」).
+             *    🚫 판정에 정산을 조회하지 말 것 — 완납 시 정산 자동생성이 Vehicle::saved 에 걸려 얽힌다.
+             *      「끝났나」 판정은 선정 단계(마이그·스크립트)에서 하고 규칙은 차량 컬럼만 본다.
+             */
+            if ($v5 && $this->warehouse_out_date && $this->sale_unpaid_amount <= 0) {
+                return '거래완료';
+            }
             // 안건 1 — 반입 → 통관 → B/L → 거래완료
             if ($this->bl_document) {
                 return '거래완료';
