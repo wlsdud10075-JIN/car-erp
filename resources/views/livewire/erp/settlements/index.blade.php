@@ -1821,7 +1821,8 @@ new #[Layout('components.layouts.app')] class extends Component
 </div>
 
 {{-- 하단 여백(pb-28) — 우하단 고정 통관서류 알람 위젯과 페이지네이션 화살표가 겹쳐 클릭 방해되던 문제 해소 (2026-07-07 jin). --}}
-<div class="pb-28">{{ $this->settlements->links() }}</div>
+{{-- 아래 여백은 공용 페이지네이션 뷰가 갖고 있다(vendor/pagination/tailwind) — 여기서 땜질하지 말 것. --}}
+<div>{{ $this->settlements->links() }}</div>
 
 </div>
 
