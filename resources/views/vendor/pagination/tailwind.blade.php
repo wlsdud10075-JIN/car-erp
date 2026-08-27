@@ -5,7 +5,10 @@
      🧭 화면마다 땜질하지 말 것 — 실제로 settlements 는 `pb-28` 로 혼자 피해 있었다.
         `->links()` 를 쓰는 17개 화면이 **이 파일 하나**를 공유한다. 여기서 고치면 전부 따라온다. --}}
 @if ($paginator->hasPages())
-    <nav role="navigation" aria-label="{{ __('Pagination Navigation') }}" class="pb-24 sm:pb-4">
+    {{-- ⚠️ nav 자체가 전체 폭을 잡아야 가운데가 된다. 안에서만 justify-center 를 줘도
+         nav 상자가 내용만큼만 넓으면 **아무 일도 안 일어난다**(jin 2026-08-27 실측 — 차량관리에서 그랬다). --}}
+    <nav role="navigation" aria-label="{{ __('Pagination Navigation') }}"
+         class="flex w-full justify-center pb-24 sm:pb-4">
 
         <div class="flex gap-2 items-center justify-center sm:hidden">
 
