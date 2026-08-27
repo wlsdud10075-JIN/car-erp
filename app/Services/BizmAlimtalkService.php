@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AlimtalkLog;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkTemplates;
+use App\Support\AlimtalkTestVars;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -185,17 +186,26 @@ class BizmAlimtalkService
     }
 
     /**
-     * 테스트 발송 — 일일요약 템플릿을 지정 번호로 보낸다(크리덴셜/승인 검증용, 기능설정 버튼).
+     * 테스트 발송 — **고른 템플릿**을 지정 번호로 보낸다(크리덴셜/승인 검증용, 기능설정 버튼).
      * 마스터/개별 게이트가 꺼져 있어도 테스트는 확인이 목적이라, 계정 설정 + 해당 tmplId 만 있으면 보낸다.
+     *
+     * 🔀 2026-08-27 (jin) — 구버전은 `erp_daily_summary` **고정**이었고, 더 나쁘게는 08-20 개편 전
+     *   **옛 변수**(선적전건수·선적후금액·미수합계)를 넘겨 카드가 깨진 채로 나갔다. 변수는 이제
+     *   `AlimtalkTestVars` 단일 출처가 만든다 — 템플릿이 선언한 vars 를 읽으므로 새 템플릿이 늘어도
+     *   여기를 안 고쳐도 된다.
      */
-    public function sendTest(string $phone): AlimtalkLog
+    public function sendTest(string $phone, string $code = 'erp_daily_summary'): AlimtalkLog
     {
         $phone = $this->normalizePhone($phone);
         $base = [
             'user_id' => auth()->id(),
-            'template_code' => 'erp_daily_summary',
+            'template_code' => $code,
             'phone' => $phone,
         ];
+
+        if (! isset(AlimtalkTemplates::TEMPLATES[$code])) {
+            return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => '없는 템플릿 코드']);
+        }
 
         if ($phone === '') {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'no_phone']);
@@ -203,7 +213,7 @@ class BizmAlimtalkService
         if (! $this->config->isConfigured()) {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'unconfigured']);
         }
-        if ($this->config->tmplId('erp_daily_summary') === '') {
+        if ($this->config->tmplId($code) === '') {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'no_test_tmplid']);
         }
 
@@ -212,20 +222,15 @@ class BizmAlimtalkService
             $this->config->set, $this->config->userid, $this->config->profile,
             $this->config->userkey, true,
             $this->config->tmplIds,
-            ['erp_daily_summary' => true] + $this->config->toggles,
+            [$code => true] + $this->config->toggles,
             $this->config->itemlist,
         );
 
-        return (new self($testConfig))->send('erp_daily_summary', $phone, [
-            '날짜' => now()->toDateString(),
-            '판매건수' => '0',
-            '매출액' => '0원',
-            '선적전건수' => '0',
-            '선적전금액' => '0원',
-            '선적후건수' => '0',
-            '선적후금액' => '0원',
-            '미수합계' => '0원',
-        ], ['user_id' => auth()->id()]);
+        return (new self($testConfig))->send(
+            $code, $phone,
+            AlimtalkTestVars::for($code),
+            ['user_id' => auth()->id()],
+        );
     }
 
     /**
