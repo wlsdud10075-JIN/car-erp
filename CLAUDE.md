@@ -175,7 +175,10 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 8. **차량 진행상태는 computed property** — DB 저장 X. `Vehicle::progress_status` 접근 시마다 우선순위 평가
 9. **vehicles 비용 컬럼은 9개 분리** — Python의 `other_costs(JSON)` 폐기. 합계는 computed (`cost_total`)
 10. **부가세마진 = `purchase_price × 0.09`** — 매도비(selling_fee) 제외한 순 구입가 기준. 엑셀 CG = T × 0.09 와 일치
-11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감. **면장금액 미입력 시 `Vehicle::saving` 훅이 총판매가(`sale_total_amount`)를 자동복사(2026-07-03, 구 sale_price override) — 비었을 때만, 명시값(CIF/FOB) 보존. 면장은 정산 공식 미포함이라 재무 무영향. 기존 차량 보정 = `vehicles:sync-declaration-amount`**
+11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감. **면장금액은 `Vehicle::saving` 훅이 「면장 기준액」을 자동 추종 — 비었을 때만 채우고, 명시값(CIF/FOB)은 보존. 면장은 정산 공식 미포함이라 재무 무영향. 기존 차량 보정 = `vehicles:sync-declaration-amount`(같은 기준 사용).**
+    🔀 **2026-08-27 (jin) — 추종 기준이 총판매가 → 「면장 기준액」으로 바뀌었다.** 단일 출처 = `Vehicle::declaration_base_amount` = **총판매가 − 기타 판매비용**.
+    B/L 재발급 수수료처럼 **완납 뒤에 생기는 비용**을 `sale_other_costs` 에 넣으면 「받을 돈」(미수)만 늘고 **이미 신고한 면장 금액은 그대로여야** 하기 때문.
+    🚢 **운임비는 CIF 신고에 들어가므로 면장에 남는다** — 기타 판매비용만 뺀다. 가드 = `DeclarationExcludesOtherCostsTest`.
 12. **총마진은 마지막에 × 0.9** — 부가세 10% 차감. 사용자 확정 (2026-05-21)
 13. **정산 default 자동 채움** — `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50` (프리랜서) 또는 `per_unit_amount=100000` (사내직원) 자동. 코드 상수는 `Settlement::FREELANCE_RATIO_DEFAULT / EMPLOYEE_PER_UNIT_DEFAULT / FREELANCE_DOCUMENT_FEE`
 14. 🚨 **Volt public 프로퍼티와 메서드에 같은 이름 금지** — `public string $search` + `public function search()` 면 `wire:click="search"` 가 **요청조차 안 보내고 조용히 죽는다**(에러 없음). 화면은 `wire:poll.30s` 때만 갱신돼 **"검색이 느리다"로 위장**된다. 메서드는 `searchNow()`/`applyFilters()`, `wire:model.live` 바인딩이면 `updatedSearch()`. 가드 = `VoltPropertyMethodCollisionTest`(정적 스캔, 단위 테스트로는 못 잡음). 2026-05 발생 → 2026-07-28 7개 화면 재발. 상세 = `SKILLS.md §8 #32`

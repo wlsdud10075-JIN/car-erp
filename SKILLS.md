@@ -1486,6 +1486,23 @@ UI 단계를 거치며 확립할 공통 유틸. **새 페이지·위젯 만들 �
 sale_total_amount  = sale_price + transport_fee + sale_other_costs
                    + commission + auto_loading - tax_dc
                    (Vehicle::getSaleTotalAmountAttribute)   ← 분모
+```
+
+> 💵 **한 글자 차이인데 뜻이 다른 세 합계 — 헷갈리면 돈이 틀어진다** (jin 2026-08-27 확인)
+>
+> | 이름 | 구성 | 뜻 | 단일 출처 |
+> |---|---|---|---|
+> | **총판매가** | 판매가 + **운임비** + **기타판매비용** + 커미션 + AL − TAX D/C | 바이어에게 **받을 돈**(미수 분모) | `sale_total_amount` |
+> | **정산 기준액** | 판매가 + 커미션 + AL − TAX D/C | 담당자 **마진** 계산 | `Settlement::getSalesAmountKrwAttribute` |
+> | **면장 기준액** | 판매가 + **운임비** + 커미션 + AL − TAX D/C | 세관에 신고하는 **물건 값** | `Vehicle::declaration_base_amount` |
+>
+> - **운임비·기타판매비용은 정산에 안 들어간다** — 회사가 대신 치르고 되받는 돈이지 마진이 아니다.
+>   ⇒ B/L 재발급비(55·68·100달러) 같은 후발 비용은 `sale_other_costs` 에 넣으면 **미수만 늘고
+>   정산액·면장은 안 움직인다**. 실증(272무4681 실데이터) = 「정산 해부」 문서.
+> - **면장만 기타판매비용을 뺀다** — 운임비는 CIF 신고에 들어가므로 남긴다.
+> - 🚫 이 셋을 서로 대신 쓰지 말 것. 가드 = `DeclarationExcludesOtherCostsTest`.
+
+```
 
 sale_unpaid_amount = sale_total_amount
                    - Σ finalPayments(confirmed_at IS NOT NULL).amount   ← ⚠️ **확정분만**. type 무관 전량 합산
