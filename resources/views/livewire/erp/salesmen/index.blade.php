@@ -76,6 +76,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $handoverFromId = null;
     public string $handoverToId = '';
     public string $handoverReason = '';
+    /** 넘길 바이어 — **나눠 넘기기의 핵심**. 비우면 아무도 안 넘어간다(전부가 아니다). */
+    public array $handoverBuyerIds = [];
+    /** 담당 바이어가 없는 진행중 차량을 함께 넘길지 — 바이어를 따라갈 수 없는 차라 사람이 정한다. */
+    public bool $handoverIncludeOrphans = true;
 
     public function openHandover(int $fromId): void
     {
@@ -88,6 +92,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->handoverFromId = $fromId;
         $this->handoverToId = '';
         $this->handoverReason = '';
+        $this->handoverIncludeOrphans = true;
+        // 기본은 **전부 선택** — 한 사람에게 통째로 넘기는 게 흔한 경우라 한 번에 끝나야 한다.
+        //   나눌 때만 체크를 푼다.
+        $this->handoverBuyerIds = \App\Models\Buyer::where('salesman_id', $fromId)
+            ->pluck('id')->map(fn ($id) => (string) $id)->all();
+    }
+
+    public function handoverSelectAll(): void
+    {
+        $this->handoverBuyerIds = \App\Models\Buyer::where('salesman_id', $this->handoverFromId)
+            ->pluck('id')->map(fn ($id) => (string) $id)->all();
+    }
+
+    public function handoverSelectNone(): void
+    {
+        $this->handoverBuyerIds = [];
     }
 
     public function closeHandover(): void
@@ -109,7 +129,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            return (new \App\Services\SalesmanHandoverService)->preview($from, $to);
+            return (new \App\Services\SalesmanHandoverService)
+                ->preview($from, $to, $this->handoverBuyerIds, $this->handoverIncludeOrphans);
         } catch (\Throwable $e) {
             return null;
         }
@@ -133,8 +154,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            $r = (new \App\Services\SalesmanHandoverService)
-                ->apply($from, $to, auth()->user(), $this->handoverReason ?: null);
+            $r = (new \App\Services\SalesmanHandoverService)->apply(
+                $from, $to, auth()->user(), $this->handoverReason ?: null,
+                $this->handoverBuyerIds, $this->handoverIncludeOrphans,
+            );
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
 
@@ -535,35 +558,74 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $plan['marks_inherited'] ? __('salesman.handover.mark_on') : __('salesman.handover.mark_off') }}
             </div>
 
+            {{-- 바이어 다중선택 — **나눠 넘기기**(jin 2026-08-27). 한 사람이 다 못 받으면 골라서 넘기고,
+                 다시 눌러 남은 것을 다른 사람에게 넘긴다. 넘어간 바이어는 다음에 열면 목록에서 빠진다. --}}
+            <div>
+                <div class="mb-1.5 flex items-center justify-between">
+                    <p class="text-xs font-semibold text-gray-700">
+                        {{ __('salesman.handover.pick') }}
+                        <span class="ml-1 font-normal text-gray-500">{{ __('salesman.handover.picked', ['n' => count($handoverBuyerIds), 'total' => count($plan['candidates'])]) }}</span>
+                    </p>
+                    <div class="flex gap-2 text-[11px]">
+                        <button wire:click="handoverSelectAll" class="text-violet-600 hover:underline">{{ __('salesman.handover.all') }}</button>
+                        <button wire:click="handoverSelectNone" class="text-gray-400 hover:underline">{{ __('salesman.handover.none') }}</button>
+                    </div>
+                </div>
+                <div class="max-h-44 space-y-0.5 overflow-y-auto rounded border border-gray-200 p-2">
+                    @forelse($plan['candidates'] as $c)
+                    <label wire:key="hb-{{ $c['id'] }}" class="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-gray-50">
+                        <input type="checkbox" wire:model.live="handoverBuyerIds" value="{{ $c['id'] }}" class="rounded" />
+                        <span class="text-gray-800">{{ $c['name'] }}</span>
+                        @if($c['in_progress'])
+                        <span class="ml-auto text-[11px] text-gray-400">{{ __('salesman.handover.n_vehicles', ['n' => $c['in_progress']]) }}</span>
+                        @endif
+                    </label>
+                    @empty
+                    <p class="py-2 text-center text-xs text-gray-400">{{ __('salesman.handover.no_buyers') }}</p>
+                    @endforelse
+                </div>
+                @php $rewrites = collect($plan['buyers'])->where('rewrites_history', true); @endphp
+                @if($rewrites->count())
+                <p class="mt-1.5 text-[11px] text-amber-700">{{ __('salesman.handover.rewrites', ['n' => $rewrites->count()]) }}</p>
+                @endif
+            </div>
+
             <div>
                 <p class="mb-1.5 text-xs font-semibold text-gray-700">{{ __('salesman.handover.moving') }}</p>
                 <div class="space-y-1.5 text-xs">
                     <div class="rounded border border-gray-200 p-2">
                         <span class="font-medium text-gray-800">{{ __('salesman.handover.buyers', ['n' => count($plan['buyers'])]) }}</span>
-                        @if(count($plan['buyers']))
-                        <p class="mt-1 text-gray-500">{{ collect($plan['buyers'])->pluck('name')->take(12)->implode(' · ') }}{{ count($plan['buyers']) > 12 ? ' …' : '' }}</p>
-                        @endif
-                        @php $rewrites = collect($plan['buyers'])->where('rewrites_history', true); @endphp
-                        @if($rewrites->count())
-                        <p class="mt-1.5 text-amber-700">{{ __('salesman.handover.rewrites', ['n' => $rewrites->count()]) }}</p>
-                        @endif
-                    </div>
-                    <div class="rounded border border-gray-200 p-2">
+                        <span class="text-gray-400">·</span>
                         <span class="font-medium text-gray-800">{{ __('salesman.handover.vehicles', ['n' => count($plan['vehicles'])]) }}</span>
                         @if(count($plan['vehicles']))
                         <p class="mt-1 text-gray-500">{{ collect($plan['vehicles'])->pluck('vehicle_number')->take(20)->implode(' · ') }}{{ count($plan['vehicles']) > 20 ? ' …' : '' }}</p>
                         @endif
+                        <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.handover.follows') }}</p>
                     </div>
+
+                    {{-- 바이어를 따라갈 수 없는 차 — 자동으로 처리하면 나눠 넘길 때 첫 번째 사람이
+                         조용히 다 가져간다. 사람이 보고 정한다(SKILLS §8 #60). --}}
+                    @if(count($plan['orphan_vehicles']))
+                    <label class="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-2">
+                        <input type="checkbox" wire:model.live="handoverIncludeOrphans" class="mt-0.5 rounded" />
+                        <span>
+                            <span class="font-medium text-gray-800">{{ __('salesman.handover.orphans', ['n' => count($plan['orphan_vehicles'])]) }}</span>
+                            <span class="mt-0.5 block text-[11px] text-gray-500">{{ collect($plan['orphan_vehicles'])->pluck('vehicle_number')->take(20)->implode(' · ') }}</span>
+                        </span>
+                    </label>
+                    @endif
                 </div>
             </div>
 
             @if(count($plan['skipped']))
             <div>
                 <p class="mb-1.5 text-xs font-semibold text-gray-700">{{ __('salesman.handover.skipping') }}</p>
-                <div class="rounded border border-gray-200 bg-gray-50 p-2 text-xs">
-                    <span class="font-medium text-gray-800">{{ __('salesman.handover.skipped', ['n' => count($plan['skipped'])]) }}</span>
-                    <p class="mt-1 text-gray-500">{{ collect($plan['skipped'])->pluck('vehicle_number')->take(20)->implode(' · ') }}{{ count($plan['skipped']) > 20 ? ' …' : '' }}</p>
+                @foreach(collect($plan['skipped'])->groupBy('reason') as $reason => $rows)
+                <div class="mb-1 rounded border border-gray-200 bg-gray-50 p-2 text-xs">
+                    <span class="font-medium text-gray-800">{{ __('salesman.handover.skip.'.$reason, ['n' => $rows->count()]) }}</span>
+                    <p class="mt-1 text-gray-500">{{ $rows->pluck('vehicle_number')->take(20)->implode(' · ') }}{{ $rows->count() > 20 ? ' …' : '' }}</p>
                 </div>
+                @endforeach
             </div>
             @endif
             @endif

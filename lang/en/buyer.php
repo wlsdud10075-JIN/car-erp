@@ -7,6 +7,7 @@ return [
     'edit_title' => 'Edit Buyer',
     'create_title' => 'Add Buyer',
     'search_ph' => 'Name · email · contact',
+    'no_salesman_filter' => 'No salesman',
     'all_salesmen' => 'All Salesmen',
     'unassigned' => 'Unassigned',
     'empty' => 'No buyers.',

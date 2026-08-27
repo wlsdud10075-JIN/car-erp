@@ -35,19 +35,58 @@ use InvalidArgumentException;
  */
 class SalesmanHandoverService
 {
-    /** 미리보기·실행이 **같은 함수**를 쓴다 — 갈리면 「모달엔 옮긴다고 떴는데 안 옮겨진」 행이 남는다. */
-    public function preview(Salesman $from, Salesman $to): array
+    /**
+     * 미리보기·실행이 **같은 함수**를 쓴다 — 갈리면 「모달엔 옮긴다고 떴는데 안 옮겨진」 행이 남는다.
+     *
+     * ═══ 나눠 넘기기 (jin 2026-08-27) ═════════════════════════════════════════
+     * 바이어가 많으면 한 사람이 다 못 받는다. **바이어를 골라 B 에게 넘기고, 다시 눌러 남은 것을
+     * C 에게** 넘길 수 있어야 한다. 두 번째로 열면 이미 넘어간 바이어는 A 소속이 아니므로
+     * 목록에서 자동으로 빠진다 — 남은 것만 보인다.
+     *
+     * 🔑 **이동 단위는 바이어이고, 차량은 그 바이어를 따라간다.** 「이 바이어들을 B 가 맡는다」가
+     *    사람이 생각하는 단위이기 때문이다. 그래서 진행중 차량을 넷으로 가른다:
+     *
+     *      ① 고른 바이어의 차           → 함께 이동 (자동. 따로 고르지 않는다)
+     *      ② A 의 바이어지만 안 고른 차  → 그대로 A  (그 바이어를 넘길 때 같이 간다)
+     *      ③ 담당 바이어가 없는 차       → **체크박스로 정한다** (바이어 미정 매입·타 영업 바이어)
+     *      ④ 정산이 있는 차             → 그대로 A  (경계 = 정산 유무, jin)
+     *
+     *    ③ 이 따로 있는 이유 — 바이어를 따라갈 수가 없는 차다. 자동으로 처리하면 나눠 넘길 때
+     *    **첫 번째 사람이 조용히 다 가져간다.** 사람이 보고 정해야 한다(SKILLS §8 #60).
+     *
+     * @param  ?array  $buyerIds  넘길 바이어. null = 전부(단일 승계).
+     * @param  bool  $includeOrphanVehicles  ③ 을 함께 넘길지.
+     */
+    public function preview(Salesman $from, Salesman $to, ?array $buyerIds = null, bool $includeOrphanVehicles = true): array
     {
         $this->assertPair($from, $to);
 
-        $buyers = Buyer::where('salesman_id', $from->id)->orderBy('name')->get();
+        $all = Buyer::where('salesman_id', $from->id)->orderBy('name')->get();
+        $allIds = $all->pluck('id')->all();
+
+        // null = 전부. 넘어온 id 중 **A 소속이 아닌 것은 버린다** — 클라이언트가 주입할 수 있다(§8 #26).
+        $selectedIds = $buyerIds === null
+            ? $allIds
+            : array_values(array_intersect(array_map('intval', $buyerIds), $allIds));
+        $buyers = $all->whereIn('id', $selectedIds);
+
         $vehicles = Vehicle::where('salesman_id', $from->id)
             ->withCount('settlements')
             ->orderBy('vehicle_number')
             ->get();
 
-        $move = $vehicles->filter(fn (Vehicle $v) => $v->settlements_count === 0);
-        $keep = $vehicles->filter(fn (Vehicle $v) => $v->settlements_count > 0);
+        $settled = $vehicles->filter(fn (Vehicle $v) => $v->settlements_count > 0);
+        $inProgress = $vehicles->filter(fn (Vehicle $v) => $v->settlements_count === 0);
+
+        $mine = $inProgress->filter(fn (Vehicle $v) => in_array((int) $v->buyer_id, $selectedIds, true));
+        $notSelected = $inProgress->filter(fn (Vehicle $v) => $v->buyer_id
+            && in_array((int) $v->buyer_id, $allIds, true)
+            && ! in_array((int) $v->buyer_id, $selectedIds, true));
+        $orphan = $inProgress->filter(fn (Vehicle $v) => ! $v->buyer_id
+            || ! in_array((int) $v->buyer_id, $allIds, true));
+
+        $move = $includeOrphanVehicles ? $mine->concat($orphan) : $mine;
+        $row = fn (Vehicle $v) => ['id' => $v->id, 'vehicle_number' => $v->vehicle_number];
 
         return [
             // 넘어가는 것
@@ -59,18 +98,31 @@ class SalesmanHandoverService
                     && $b->inherited_from_salesman_id
                     && (int) $b->inherited_from_salesman_id !== (int) $from->id,
             ])->values()->all(),
-            'vehicles' => $move->map(fn (Vehicle $v) => [
-                'id' => $v->id,
-                'vehicle_number' => $v->vehicle_number,
+            'vehicles' => $move->map($row)->values()->all(),
+
+            // 고를 수 있는 바이어 전체 — 화면의 체크 목록. **바이어별 진행중 차량 대수**를 같이 준다
+            //   (몇 대짜리인지 모르면 사람이 나눌 수가 없다).
+            'candidates' => $all->map(fn (Buyer $b) => [
+                'id' => $b->id,
+                'name' => $b->name,
+                'in_progress' => $inProgress->where('buyer_id', $b->id)->count(),
             ])->values()->all(),
+
+            // ③ 바이어를 따라갈 수 없는 차 — 체크박스로 정한다.
+            'orphan_vehicles' => $orphan->map($row)->values()->all(),
+            'include_orphan_vehicles' => $includeOrphanVehicles,
 
             // 건너뛰는 것 — **사유와 차량번호를 같이 보여준다.** 카운터로 뭉개면 정작 봐야 할
             //   몇 대가 숫자에 묻힌다(SKILLS §8 #67).
-            'skipped' => $keep->map(fn (Vehicle $v) => [
-                'id' => $v->id,
-                'vehicle_number' => $v->vehicle_number,
-                'reason' => 'has_settlement',
-            ])->values()->all(),
+            'skipped' => $settled->map($row)->map(fn ($r) => $r + ['reason' => 'has_settlement'])
+                ->concat(
+                    $notSelected->map($row)->map(fn ($r) => $r + ['reason' => 'buyer_not_selected'])
+                )
+                ->concat(
+                    $includeOrphanVehicles ? collect()
+                        : $orphan->map($row)->map(fn ($r) => $r + ['reason' => 'no_buyer'])
+                )
+                ->values()->all(),
 
             // 승계 표시를 켤지 — **받는 사람(B)의 정산 유형**이 정한다.
             //   사내직원이면 건당 5만 고정(신규 개척이 아니므로), 프리랜서는 비율제라 무관.
@@ -86,14 +138,26 @@ class SalesmanHandoverService
      * ⚠️ 인가를 **여기서 다시** 확인한다. 모달을 연 시점의 인가에만 기대면 프로퍼티 주입으로
      *    뚫린다(SKILLS §8 #26 — mutating 은 매번 재인가).
      */
-    public function apply(Salesman $from, Salesman $to, User $actor, ?string $reason = null): array
-    {
+    public function apply(
+        Salesman $from,
+        Salesman $to,
+        User $actor,
+        ?string $reason = null,
+        ?array $buyerIds = null,
+        bool $includeOrphanVehicles = true,
+    ): array {
         if (! $actor->canApprove()) {
             throw new AuthorizationException('퇴사 승계는 [관리] 이상만 실행할 수 있습니다.');
         }
         $this->assertPair($from, $to);
 
-        $plan = $this->preview($from, $to);
+        // 🔑 미리보기와 **같은 함수·같은 인자**. 화면이 보여준 그대로가 실행된다.
+        $plan = $this->preview($from, $to, $buyerIds, $includeOrphanVehicles);
+
+        // 한 명도 안 고르고 차량도 안 넘기면 아무 일도 안 하는 것 — 빈 감사로그만 남기지 않는다.
+        if (! $plan['buyers'] && ! $plan['vehicles']) {
+            throw new InvalidArgumentException('넘길 바이어를 하나 이상 고르세요.');
+        }
         $marksInherited = $plan['marks_inherited'];
 
         return DB::transaction(function () use ($from, $to, $plan, $marksInherited, $reason, $actor) {

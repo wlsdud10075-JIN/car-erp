@@ -7,6 +7,7 @@ return [
     'edit_title' => '바이어 수정',
     'create_title' => '바이어 등록',
     'search_ph' => '이름 · 이메일 · 담당자',
+    'no_salesman_filter' => '담당자 미지정',
     'all_salesmen' => '담당자 전체',
     'unassigned' => '미지정',
     'empty' => '바이어가 없습니다.',
