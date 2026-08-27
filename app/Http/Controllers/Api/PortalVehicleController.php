@@ -39,6 +39,13 @@ class PortalVehicleController extends Controller
         // ⚠️ `exchange_rate` 는 **일부러 뺐다**. 바이어 통화로만 발행하고 원화 환산은 안 한다(Q11).
         'currency', 'sale_price', 'transport_fee', 'sale_other_costs',
         'commission', 'auto_loading', 'tax_dc', 'savings_used',
+        // 🗂️ 서류함 (2026-08-27 jin 확정 4종). **경로는 안 나간다 — 유무만 계산해서 버린다.**
+        //    ssancar 요구: *"경로가 있으면 오히려 곤란하다 — 우리 쪽에 ERP 파일 경로가 남는다."*
+        'export_declaration_document', 'deregistration_document',
+        // 통관 SET 게이트(`Vehicle::clearanceSetBlocker`)가 읽는 칸 — 값 자체는 안 나간다.
+        //   ①운항 = shipping_date·eta_date(위) ②필수칸 = vin·brand·model_type(위) + 아래 4개.
+        'export_consignee_id', 'bl_consignee_id', 'consignee_id',
+        'nice_reg_vehicle_form', 'nice_spec_displacement',
     ];
 
     // 🚫 여기 없는 것 중 **일부러 뺀 것** — 요청서 B-2 가 명시적으로 거부했다.
@@ -64,6 +71,12 @@ class PortalVehicleController extends Controller
                 'receivableHistories',
             ])
             ->select(self::COLUMNS)
+            // 📸 선적 사진 장수 — 관계를 로드하지 않고 **세기만** 한다(262행 × N+1 방지).
+            //    🚫 `!= 'basic'` 으로 세지 말 것 — 기본정보 사진은 `null` 또는 `'basic'` 둘 다 존재한다.
+            //       그 칸엔 매입 서류·등록증 스캔이 섞여 올라와 **소유자 PII 경계**가 지나간다.
+            //    ⚠️ **`select()` 뒤에 와야 한다** — `select()` 는 select 목록을 통째로 갈아치우므로
+            //       앞에 두면 withCount 서브쿼리가 지워져 **조용히 항상 0** 이 된다(실측).
+            ->withCount(['photos as shipping_photo_count' => fn ($q) => $q->where('category', 'shipping')])
             ->orderBy('id')
             ->get();
 
@@ -130,7 +143,43 @@ class PortalVehicleController extends Controller
 
             // 포워딩사 화물추적 — 열 수 없으면 null. **사이트는 열림 조건을 판정하지 않는다.**
             'tracking_url' => $v->tracking_url,
-        ] + $this->unpaid($v);
+        ] + $this->documents($v) + $this->unpaid($v);
+    }
+
+    /**
+     * 🗂️ 서류함 (2026-08-27 jin 확정) — **4종만이다.**
+     *
+     *   통관 SET     🔽 요청 시 생성   `can_download_clearance_set`
+     *   선적 사진    🔽 장수 + 실물    `shipping_photo_count`
+     *   수출신고서   🔽 유무 + 실물    `has_export_declaration_document`
+     *   말소등록증   ☑️ 유무           `has_deregistration_document`
+     *   (B/L 유무는 위 row() 에 이미 있다)
+     *
+     * 🚫 **경로는 절대 안 나간다** — 유무만 계산하고 버린다(ssancar 요구).
+     * 🚫 체크빌(`checkbill_document`)은 **칸조차 만들지 않는다** — B/L 발급 전 확인용 draft라
+     *    `has_bl_document` 옆에 놓으면 「B/L 이 두 개」로 읽힌다. 빈 칸은 「곧 생긴다」고 말한다.
+     * 🚫 `document_deadline_date`(서류마감)도 안 낸다 — **우리 내부 마감**이라 바이어 화면에 뜨면
+     *    「내가 해야 하는 기한」이 된다. ERP 가 한 적 없는 요구를 화면이 만들어낸다.
+     */
+    private function documents(Vehicle $v): array
+    {
+        // 🔑 게이트 단일 출처. 사이트는 이 플래그만 보고 버튼을 그린다 —
+        //    조건을 옮겨 적으면 「버튼은 뜨는데 받으면 거절」이 된다(SKILLS §8 #44).
+        $blocker = $v->clearanceSetBlocker();
+
+        return [
+            // 🚪 서류함 자체가 열렸나 — jin 규칙(운항 단계 진입). **이게 섹션을 그리는 조건이다.**
+            //    아래 `has_*` 는 「그 파일이 존재하나」라는 사실일 뿐이라 매입 단계에도 true 가 된다.
+            //    이 플래그 없이 `has_*` 만 그리면 아직 안 떠난 차의 서류함이 열린다.
+            'documents_open' => $v->portalDocumentsBlocker() === null,
+            'has_export_declaration_document' => filled($v->export_declaration_document),
+            'has_deregistration_document' => filled($v->deregistration_document),
+            'shipping_photo_count' => (int) ($v->shipping_photo_count ?? 0),
+            'can_download_clearance_set' => $blocker === null,
+            // 왜 못 받는지 — **화면에 그대로 쓰라는 게 아니다**(관통 원칙: 화면은 설명하지 않는다).
+            // 사이트 로그·문의 대응용이다. 값이 늘 수 있으니 닫힌 enum 으로 다루지 말 것(v1.3).
+            'clearance_set_blocked_reason' => $blocker,
+        ];
     }
 
     /**

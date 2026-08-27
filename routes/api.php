@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
+use App\Http\Controllers\Api\PortalDocumentController;
 use App\Http\Controllers\Api\PortalVehicleController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
@@ -85,4 +86,16 @@ Route::middleware([VerifyPortalReadHmac::class, 'throttle:portal-read'])
     ->name('api.internal.portal.')
     ->group(function () {
         Route::get('vehicles', [PortalVehicleController::class, 'vehicles'])->name('vehicles');
+
+        /*
+        | 서류 실물 (2026-08-27) — 통로가 둘인 이유는 PortalDocumentController 주석 참조.
+        |   생성물(통관 SET)은 여기서 바이트로 스트림하고, 저장물(수출신고서·선적사진)은
+        |   짧은 만료 서명 URL 만 발급한다.
+        | 🔑 게이트는 Vehicle 한 곳(portalDocumentsBlocker / clearanceSetBlocker)이고
+        |    목록 응답과 **같은 메서드**를 서빙 시점에 다시 부른다.
+        */
+        Route::get('vehicles/{vehicle}/clearance-set', [PortalDocumentController::class, 'clearanceSet'])
+            ->name('vehicles.clearance-set');
+        Route::get('vehicles/{vehicle}/files', [PortalDocumentController::class, 'files'])
+            ->name('vehicles.files');
     });
