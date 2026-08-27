@@ -6,7 +6,8 @@ use App\Models\Vehicle;
 use Illuminate\Console\Command;
 
 /**
- * 면장금액(export_declaration_amount)을 총판매가(sale_total_amount)로 보정.
+ * 면장금액(export_declaration_amount)을 **면장 기준액**(Vehicle::declaration_base_amount)으로 보정.
+ * = 총판매가 − 기타 판매비용. 신고 금액은 「받을 돈」이 아니라 물건 값이다 (jin 2026-08-27).
  *   대상: 판매차량(sale_price>0) 중 면장 ≠ 총판매가.
  *   - 미잠금 차량 → 보정.
  *   - 완료(재무확정 잠금) 차량 → 면장이 0 또는 sale_price(구 자동복사·미입력, 수동 아님)면 보정,
@@ -28,7 +29,8 @@ class SyncDeclarationAmount extends Command
         $fix = [];       // [v, current, target, kind]  kind = unlocked | locked-safe
         $suspect = [];   // [number, current, target]   완료-제3값 → 스킵
         foreach ($sold as $v) {
-            $target = (int) round((float) $v->sale_total_amount);
+            // 면장 기준액 = 총판매가 − 기타 판매비용 (Vehicle::declaration_base_amount 단일 출처).
+            $target = (int) round((float) $v->declaration_base_amount);
             $current = (int) round((float) $v->export_declaration_amount);
             if ($target === $current) {
                 continue;   // 이미 일치
