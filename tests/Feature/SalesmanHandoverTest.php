@@ -382,4 +382,125 @@ class SalesmanHandoverTest extends TestCase
 
         $this->assertSame($b->id, $buyer->fresh()->salesman_id);
     }
+
+    // ── 나눠 넘기기 (jin 2026-08-27) ───────────────────────
+
+    /** 고른 바이어만 넘어간다. 나머지는 A 에 남아 **다음 사람에게 넘길 수 있어야** 한다. */
+    public function test_only_the_picked_buyers_move(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $c = $this->salesman('C');
+        $x = Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+        $y = Buyer::create(['name' => 'Y', 'salesman_id' => $a->id]);
+
+        $svc = new SalesmanHandoverService;
+        $svc->apply($a, $b, $this->admin(), null, [$x->id]);
+
+        $this->assertSame($b->id, $x->fresh()->salesman_id);
+        $this->assertSame($a->id, $y->fresh()->salesman_id, '안 고른 바이어는 A 에 남는다');
+
+        // 두 번째 승계 — 남은 것을 C 에게
+        $svc->apply($a, $c, $this->admin(), null, [$y->id]);
+        $this->assertSame($c->id, $y->fresh()->salesman_id);
+    }
+
+    /** 두 번째로 열면 이미 넘어간 바이어는 목록에서 빠진다 — 남은 것만 보여야 나눌 수 있다. */
+    public function test_second_open_shows_only_what_is_left(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $x = Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+        $y = Buyer::create(['name' => 'Y', 'salesman_id' => $a->id]);
+
+        $svc = new SalesmanHandoverService;
+        $svc->apply($a, $b, $this->admin(), null, [$x->id]);
+
+        $plan = $svc->preview($a, $b);
+        $this->assertSame([$y->id], array_column($plan['candidates'], 'id'));
+    }
+
+    /** 차량은 **그 바이어를 따라간다** — 안 고른 바이어의 차는 같이 안 간다. */
+    public function test_vehicles_follow_their_buyer(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $x = Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+        $y = Buyer::create(['name' => 'Y', 'salesman_id' => $a->id]);
+        $vx = $this->vehicle($a, $x->id);
+        $vy = $this->vehicle($a, $y->id);
+
+        (new SalesmanHandoverService)->apply($a, $b, $this->admin(), null, [$x->id]);
+
+        $this->assertSame($b->id, $vx->fresh()->salesman_id);
+        $this->assertSame($a->id, $vy->fresh()->salesman_id, '안 고른 바이어의 차까지 따라갔다');
+    }
+
+    /**
+     * 바이어를 따라갈 수 없는 차(바이어 미정)은 **체크로 정한다.**
+     * 자동으로 처리하면 나눠 넘길 때 첫 번째 사람이 조용히 다 가져간다.
+     */
+    public function test_vehicles_without_a_buyer_are_opt_in(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $x = Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+        $orphan = $this->vehicle($a, null);
+
+        $svc = new SalesmanHandoverService;
+        $plan = $svc->preview($a, $b, [$x->id], false);
+        $this->assertSame([$orphan->id], array_column($plan['orphan_vehicles'], 'id'));
+        $this->assertSame([], array_column($plan['vehicles'], 'id'), '안 켜면 안 넘어간다');
+        $this->assertContains('no_buyer', array_column($plan['skipped'], 'reason'));
+
+        $svc->apply($a, $b, $this->admin(), null, [$x->id], false);
+        $this->assertSame($a->id, $orphan->fresh()->salesman_id);
+
+        $svc->apply($a, $b, $this->admin(), null, [], true);
+        $this->assertSame($b->id, $orphan->fresh()->salesman_id, '켜면 넘어간다');
+    }
+
+    /** 고른 게 없고 넘길 차도 없으면 아무 일도 안 한다 — 빈 감사로그만 남기지 않는다. */
+    public function test_empty_selection_is_refused(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        (new SalesmanHandoverService)->apply($a, $b, $this->admin(), null, [], false);
+    }
+
+    /** 클라이언트가 남의 바이어 id 를 넣어도 무시된다(§8 #26). */
+    public function test_injected_foreign_buyer_ids_are_ignored(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $c = $this->salesman('C');
+        $mine = Buyer::create(['name' => 'MINE', 'salesman_id' => $a->id]);
+        $others = Buyer::create(['name' => 'OTHERS', 'salesman_id' => $c->id]);
+
+        (new SalesmanHandoverService)->apply($a, $b, $this->admin(), null, [$mine->id, $others->id]);
+
+        $this->assertSame($c->id, $others->fresh()->salesman_id, '남의 바이어가 넘어갔다');
+    }
+
+    /** 화면에서 체크를 풀면 그만큼만 넘어간다 — 미리보기와 실행이 같은 인자를 쓴다. */
+    public function test_screen_partial_handover(): void
+    {
+        $a = $this->salesman('A');
+        $b = $this->salesman('B');
+        $x = Buyer::create(['name' => 'X', 'salesman_id' => $a->id]);
+        $y = Buyer::create(['name' => 'Y', 'salesman_id' => $a->id]);
+
+        $this->actingAs($this->admin());
+        Volt::test('erp.salesmen.index')
+            ->call('openHandover', $a->id)
+            ->set('handoverToId', (string) $b->id)
+            ->set('handoverBuyerIds', [(string) $x->id])
+            ->call('runHandover');
+
+        $this->assertSame($b->id, $x->fresh()->salesman_id);
+        $this->assertSame($a->id, $y->fresh()->salesman_id);
+    }
 }

@@ -19,6 +19,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $search = '';
     #[Url] public int $perPage = 10;
     // 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 필터 + 영업담당자별 정렬.
+    /** 담당자 미지정 필터 토큰 — 숫자 id 와 안 섞이게 문자열로. */
+    public const SALESMAN_NONE = '__none';
+
     #[Url] public string $salesmanFilter = '';
 
     // ── 패널 ─────────────────────────────────────────────────────
@@ -256,7 +259,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereIn('salesman_id', $managerScopeSalesmanIds)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $managerScopeSalesmanIds))
             ))
-            ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
+            // 담당자 필터 — `__none` 은 **미지정만**(jin 2026-08-27). 숫자 id 와 섞이지 않는 토큰이라
+            //   누가 나중에 바이어를 그 id 로 넣어도 충돌하지 않는다.
+            //   퍼사 승계 뒤에 「주인 없는 바이어」를 찾는 자리다 — 안 보이면 영영 남는다.
+            ->when($this->salesmanFilter === self::SALESMAN_NONE, fn ($q) => $q->whereNull('salesman_id'))
+            ->when($this->salesmanFilter !== '' && $this->salesmanFilter !== self::SALESMAN_NONE,
+                fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', "%{$this->search}%")
                 ->orWhere('contact_email', 'like', "%{$this->search}%")
                 ->orWhere('contact_name', 'like', "%{$this->search}%")
@@ -728,6 +736,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
     <select wire:model.live="salesmanFilter" class="input-filter">
         <option value="">{{ __('buyer.all_salesmen') }}</option>
+        <option value="{{ self::SALESMAN_NONE }}">{{ __('buyer.no_salesman_filter') }}</option>
         @foreach($this->salesmen as $sm)
             <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
