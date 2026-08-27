@@ -2,6 +2,7 @@
 
 use App\Models\Setting;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -84,6 +85,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public array $alimtalkToggles = [];                // code => bool (개별 on/off)
 
     public string $alimtalkTestPhone = '';             // 테스트 발송 번호
+    public string $alimtalkTestCode = 'erp_daily_summary';   // 테스트 발송 템플릿 (jin 2026-08-27)
 
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
@@ -410,14 +412,25 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.alimtalk_saved'), type: 'success');
     }
 
-    // 테스트 발송 — 일일요약 템플릿을 입력 번호로. 결과 상태를 토스트로 안내.
+    /**
+     * 테스트 발송 옵션 — **등록(tmplId)된 템플릿만** 뜬다. 안 보이면 아직 승인·입력 전이라는 뜻이다.
+     * 목록·변수 모두 AlimtalkTestVars 단일 출처 — 템플릿이 늘어도 여기를 안 고쳐도 된다.
+     */
+    #[Computed]
+    public function alimtalkTestOptions(): array
+    {
+        return \App\Support\AlimtalkTestVars::options(\App\Support\AlimtalkConfig::active());
+    }
+
+    // 테스트 발송 — 고른 템플릿을 입력 번호로. 결과 상태를 토스트로 안내.
     public function sendTestAlimtalk(): void
     {
         if (! auth()->user()?->isSuperAdmin()) {
             abort(403);
         }
 
-        $log = \App\Services\BizmAlimtalkService::active()->sendTest($this->alimtalkTestPhone);
+        $log = \App\Services\BizmAlimtalkService::active()
+            ->sendTest($this->alimtalkTestPhone, $this->alimtalkTestCode);
 
         if ($log->status === 'sent') {
             $this->dispatch('notify', message: __('feature_settings.alimtalk_test_sent'), type: 'success');
@@ -1177,9 +1190,20 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-2 rounded-md border border-amber-100 bg-amber-50 px-3 py-2.5">
                 <div class="text-xs font-semibold text-amber-800">{{ __('feature_settings.alimtalk_test_label') }}</div>
                 <p class="mt-0.5 text-[11px] text-amber-700">{{ __('feature_settings.alimtalk_test_hint') }}</p>
-                <div class="mt-2 flex gap-2">
-                    <input wire:model="alimtalkTestPhone" type="tel" class="input-base w-full text-sm" placeholder="010-0000-0000" autocomplete="off" />
-                    <button wire:click="sendTestAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('feature_settings.alimtalk_test_btn') }}</button>
+                {{-- 템플릿 선택 (jin 2026-08-27) — 등록된 것만 뜬다. 「실데이터」는 대표·담당자가 실제로
+                     받는 것과 같은 값으로, 「샘플」은 예시 값으로 나간다. --}}
+                <div class="mt-2 space-y-2">
+                    <select wire:model="alimtalkTestCode" class="input-base w-full text-sm">
+                        @forelse($this->alimtalkTestOptions as $code => $label)
+                        <option value="{{ $code }}">{{ $label }}</option>
+                        @empty
+                        <option value="">{{ __('feature_settings.alimtalk_test_none') }}</option>
+                        @endforelse
+                    </select>
+                    <div class="flex gap-2">
+                        <input wire:model="alimtalkTestPhone" type="tel" class="input-base w-full text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                        <button wire:click="sendTestAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('feature_settings.alimtalk_test_btn') }}</button>
+                    </div>
                 </div>
             </div>
         </div>
