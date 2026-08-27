@@ -38,6 +38,13 @@ class AppServiceProvider extends ServiceProvider
         //   바꿔가며 부르면 한도가 무력해진다(v1.2 Q6 이 지적한 그 결함). IP 로 건다.
         //   6시간마다 전량 1회라 낮게 잡아도 충분하다.
         RateLimiter::for('portal-read', fn ($request) => Limit::perMinute(30)->by((string) $request->ip()));
+        // 🚨 서류 통로는 **따로 센다**(2026-08-27). 같은 버킷에 두면 바이어가 화면을 몇 번 열 때
+        //    30/분을 다 써서 **정기 전량 pull 이 429** 로 굶는다. 그 pull 이 미러의 전부이고,
+        //    429 는 부분 응답이 아니라 **무응답**이라 `complete:false` 안전핀이 발동조차 못 한다.
+        //    (SKILLS §15 NICE 게이트웨이와 같은 형태 — 무거운 호출자 하나가 나머지를 굶긴다.)
+        //  · `files` 는 사진이 몇 장이든 **1회 호출**이라 실제 구동량은 「차량 페이지를 연 횟수」다.
+        //  · `clearance-set` 은 927KB 양식 7시트를 매번 생성한다 — 상한이 워커 보호선이기도 하다.
+        RateLimiter::for('portal-docs', fn ($request) => Limit::perMinute(60)->by((string) $request->ip()));
 
         // 차량 데이터 export — 2026-06-29 라운드테이블 조건(분3/일100). 파일 반출이라 억제.
         RateLimiter::for('data-export', fn ($request) => [
