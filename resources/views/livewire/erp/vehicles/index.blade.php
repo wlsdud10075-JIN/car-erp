@@ -6514,8 +6514,11 @@ function vehicleColumnsToggle() {
     @endforelse
 </div>
 
-{{-- ── 페이지네이션 (좌: 데이터 도구 / 우: 페이저) ───────────────────── --}}
-<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+{{-- ── 데이터 도구 (내려받기·일괄기입) ─────────────────────────────────
+     ⚠️ 페이지네이션을 이 flex 행 안에 두지 말 것 — `justify-between` 이 오른쪽 끝으로 밀어
+        우하단 [통관서류 알람] 카드와 겹친다. 공용 뷰의 가운데 정렬도 그 안에선 안 먹는다.
+        재고·채권 화면처럼 **아래 독립 블록**으로 둔다(jin 2026-08-27). --}}
+<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
     <div class="flex items-center gap-2">
         @if(auth()->user()->canAccessAdmin())
         {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin 마이그레이션 도구). 데이터 없는 빈 양식이라 PII·회계 0. --}}
@@ -6618,8 +6621,9 @@ function vehicleColumnsToggle() {
         </button>
         @endif
     </div>
-    <div>{{ $this->vehicles->links() }}</div>
 </div>
+
+<div class="mt-2">{{ $this->vehicles->links() }}</div>
 
 </div>{{-- /flex col --}}
 
