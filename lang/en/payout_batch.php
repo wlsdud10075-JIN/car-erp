@@ -46,6 +46,7 @@ return [
 
     // Monthly batch manual adjustment (jin 2026-07-08)
     'adjust' => [
+        'readonly_hint' => 'Adjustments are fixed when the monthly batch is submitted from Settlements. To change them, reject this batch and submit again from Settlements.',
         'title' => 'Manual adjustment (clawback / special pay)',
         'salesman' => 'Salesman',
         'amount' => 'Amount (- for negative)',

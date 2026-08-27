@@ -19,7 +19,7 @@
                     <span class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white shadow-sm shadow-blue-600/30">{{ $authBrandInitial }}</span>
                     <span class="flex flex-col items-center gap-0.5">
                         <span class="text-2xl font-bold tracking-tight text-blue-700">{{ $authBrand }}</span>
-                        <span class="text-xs font-medium text-zinc-400">중고차 수출 ERP</span>
+                        <span class="text-xs font-medium text-zinc-400">{{ __('common.auth.tagline') }}</span>
                     </span>
                 </a>
                 <div class="flex flex-col gap-6 rounded-2xl border border-blue-100 bg-white p-6 shadow-sm">

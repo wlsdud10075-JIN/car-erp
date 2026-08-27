@@ -62,11 +62,10 @@ return [
         'n_vehicles' => ':n in progress',
         'no_buyers' => 'No buyers to hand over.',
         'follows' => 'In-progress vehicles of the selected buyers move with them.',
-        'orphans' => 'Also move :n in-progress vehicles that have no buyer',
         'skip' => [
             'has_settlement' => ':n vehicles already in settlement — the original salesman keeps them',
             'buyer_not_selected' => ':n vehicles of unselected buyers — they move with their buyer',
-            'no_buyer' => ':n vehicles with no buyer — tick the box above to move them',
+            'no_buyer' => ':n vehicles whose buyer has no salesman — assign one in the buyer list first',
         ],
         'moving' => 'Moving',
         'skipping' => 'Staying',

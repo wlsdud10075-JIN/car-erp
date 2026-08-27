@@ -31,4 +31,20 @@ return [
     'country_search_ph' => '국가 검색 (예: 리투, 독일, LTU)',
     'country_no_match' => '일치하는 국가가 없습니다',
     'error_box_title' => '입력값을 확인해주세요',
+
+    // 로그인·공용 업로드 — 모든 사용자가 첫 화면에서 보는 것이라 번역 누락이 가장 잘 눈에 띄는 자리다.
+    'auth' => [
+        'login_title' => '계정 로그인',
+        'login_desc' => '이메일과 비밀번호를 입력해 로그인하세요',
+        'password' => '비밀번호',
+        'forgot' => '비밀번호를 잊으셨나요?',
+        'remember' => '로그인 상태 유지',
+        'submit' => '로그인',
+        'tagline' => '중고차 수출 ERP',
+    ],
+    'filedrop' => [
+        'label' => '여기로 드래그하거나 파일을 선택하세요',
+        'browse' => '파일 선택',
+        'drop_here' => '여기에 놓으면 업로드됩니다',
+    ],
 ];

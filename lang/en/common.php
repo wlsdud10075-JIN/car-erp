@@ -31,4 +31,20 @@ return [
     'country_search_ph' => 'Search country (e.g. LTU, Germany)',
     'country_no_match' => 'No matching country',
     'error_box_title' => 'Please check your input',
+
+    // Login and the shared upload control - the first thing every user sees.
+    'auth' => [
+        'login_title' => 'Sign in',
+        'login_desc' => 'Enter your email and password to sign in',
+        'password' => 'Password',
+        'forgot' => 'Forgot your password?',
+        'remember' => 'Keep me signed in',
+        'submit' => 'Sign in',
+        'tagline' => 'Used Car Export ERP',
+    ],
+    'filedrop' => [
+        'label' => 'Drag files here or choose them',
+        'browse' => 'Choose file',
+        'drop_here' => 'Drop here to upload',
+    ],
 ];

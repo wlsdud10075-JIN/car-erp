@@ -1130,4 +1130,13 @@ return [
         'sale_date_required' => '판매가를 입력하면 판매일도 필수입니다 — 판매 탭.',
         'sale_buyer_required' => '판매가를 입력하면 바이어도 필수입니다 — 판매 탭.',
     ],
+
+    'tooltip' => [
+        'ship_photos_drop' => '선적 사진을 여기로 드래그하거나 선택 (여러 장)',
+        'approval_no' => '승인 #:no',
+        'transfer_target' => '이체 대상 차량',
+        'sailing' => '선적일 :ship · 도착예정 :eta',
+        'arrived' => '도착예정일 :eta 경과 (예정 기준 추정)',
+        'photos_drop' => '사진을 여기로 드래그하거나 선택 (여러 장)',
+    ],
 ];

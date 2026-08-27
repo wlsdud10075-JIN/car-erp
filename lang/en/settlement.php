@@ -3,6 +3,20 @@
 // i18n — Settlement management (erp/settlements). progress=domain.progress reused.
 return [
     'batch' => [
+        'none_eligible' => 'No settlements to submit for this month (none confirmed, or all held back because the vehicles still have receivables).',
+        'modal_title' => 'Submit the :month batch',
+        'modal_target' => ':count settlements',
+        'modal_cancel_loss' => 'Deduct purchase-cancellation loss',
+        'modal_no_payout' => 'Nothing to pay this month - carry to the next batch',
+        'modal_adjust' => 'Other adjustments',
+        'modal_final' => 'Final payout total',
+        'modal_hint' => 'The approval message goes out with this amount. Once finally approved, the deducted purchase-cancellation loss is marked as settled automatically (it is not marked if the batch is rejected).',
+        'cancel_loss_reason' => 'Purchase-cancellation loss share: :plates',
+        'adjust_salesman' => 'Salesman',
+        'adjust_amount' => 'Amount (may be negative)',
+        'adjust_reason' => 'Reason',
+        'adjust_add' => 'Add',
+        'adjust_invalid' => 'Enter salesman, amount and reason (amount cannot be 0).',
         'submit' => 'Submit Monthly Batch',
         'queue_link' => 'Approval Queue',
         'confirm_submit' => 'Submit :month confirmed settlements as a monthly batch? (Paid after Manager → Representative approval)',
@@ -247,5 +261,17 @@ return [
         'close_done' => 'Secondary settlement finalized',
         'close_diff_suffix' => ' — FX diff :sign₩:amount',
         'close_carry_suffix' => ' / carryover :sign₩:amount',
+    ],
+    'summary_cancel_loss' => 'Purchase-cancellation loss (not applied)',
+    'summary_cancel_loss_hint' => 'The salesman\'s share for vehicles closed out after a cancelled purchase (:plates). Deduct it in the salesman adjustment on the Monthly payout screen - it is not included in the totals here.',
+
+    // karaba profit-rate settlement summary box.
+    'karaba' => [
+        'sales' => 'Sales', 'sales_note' => '(vehicle amount x rate)',
+        'purchase' => 'Purchase', 'purchase_note' => '(purchase price + selling fee)',
+        'costs' => 'Incidental costs',
+        'vat' => 'Input VAT',
+        'operating' => 'Operating profit', 'operating_note' => '(sales - (purchase + costs - VAT))',
+        'rate' => 'Profit rate',
     ],
 ];

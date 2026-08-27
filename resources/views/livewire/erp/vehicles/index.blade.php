@@ -5968,14 +5968,14 @@ new #[Layout('components.layouts.app')] class extends Component {
              미선택도 연한 색조를 줘서 진행상태 pill(회색)과 다른 축임이 한눈에 보이게 한다. --}}
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
             @foreach([
-                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => \App\Models\Vehicle::SAILING_IN_TRANSIT,
+                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_IN_TRANSIT),
                  'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
-                ['phase' => 'arrived',    'icon' => '⚓', 'label' => \App\Models\Vehicle::SAILING_ARRIVED,
+                ['phase' => 'arrived',    'icon' => '⚓', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_ARRIVED),
                  'on' => 'bg-emerald-600 text-white shadow-sm', 'off' => 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'],
             ] as $s)
             @php $isOn = $sailingFilter === $s['phase']; @endphp
             <button type="button" wire:click="toggleSailing('{{ $s['phase'] }}')"
-                    title="선적일(출항)과 도착예정일이 모두 입력된 차량 — 예정일 기준입니다{{ $isOn ? ' · 다시 누르면 해제' : '' }}"
+                    title="{{ __('domain.sailing_hint') }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
                     class="rounded-full px-2.5 py-0.5 text-xs transition
                            {{ $isOn ? $s['on'].' font-semibold' : $s['off'].' font-medium' }}">
                 {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($this->sailingCounts[$s['phase']]) }})
@@ -6002,7 +6002,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     $offCls = $isPurple ? 'bg-purple-100 text-purple-700 hover:bg-purple-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200';
                 @endphp
                 <button type="button" wire:click="toggleBoardRequest('{{ $brqType }}')"
-                        title="{{ __($brqMeta['title']) }}{{ $isOn ? ' · 다시 누르면 해제' : '' }}"
+                        title="{{ __($brqMeta['title']) }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
                         class="rounded-full px-2.5 py-0.5 text-xs transition
                                {{ $isOn ? $onCls.' font-semibold' : $offCls.' font-medium' }}">
                     {{ $isOn ? '✓ ' : '' }}📩 {{ __($brqMeta['badge']) }} ({{ number_format($brqCounts[$brqType]) }})
@@ -6312,9 +6312,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
                     {{-- 운항 뱃지 (jin 2026-08-09) — 진행상태와 별개 축이라 나란히 붙인다. 도착은 ETA 경과 = 추정. --}}
                     @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
-                        <span class="badge badge-blue" title="선적일 {{ $v->shipping_date?->format('Y-m-d') }} · 도착예정 {{ $v->eta_date?->format('Y-m-d') }}">🚢</span>
+                        <span class="badge badge-blue" title="{{ __('vehicle.tooltip.sailing', ['ship' => $v->shipping_date?->format('Y-m-d'), 'eta' => $v->eta_date?->format('Y-m-d')]) }}">🚢</span>
                     @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)
-                        <span class="badge badge-teal" title="도착예정일 {{ $v->eta_date?->format('Y-m-d') }} 경과 (예정 기준 추정)">⚓</span>
+                        <span class="badge badge-teal" title="{{ __('vehicle.tooltip.arrived', ['eta' => $v->eta_date?->format('Y-m-d')]) }}">⚓</span>
                     @endif
                     @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                 </td>
@@ -7003,7 +7003,7 @@ function vehicleColumnsToggle() {
                         <label class="label-base">{{ __('vehicle.panel.sec.photos', ['max' => \App\Models\VehiclePhoto::MAX_BASIC]) }}</label>
                         <x-erp.file-drop model="photoUpload" multiple
                             accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                            label="사진을 여기로 드래그하거나 선택 (여러 장)" />
+                            label="{{ __('vehicle.tooltip.photos_drop') }}" />
                         <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint', ['pick' => \App\Models\VehiclePhoto::PER_PICK_HINT]) }}</p>
                         <div wire:loading wire:target="photoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                         @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -7860,7 +7860,7 @@ function vehicleColumnsToggle() {
                     </span>
                     <span class="text-xs {{ $textMetaClass }} whitespace-nowrap">
                         {{ $row['payment_date'] ?: '-' }}
-                        · 승인 #{{ $row['transfer']['approval_request_id'] }}
+                        · {{ __('vehicle.tooltip.approval_no', ['no' => $row['transfer']['approval_request_id']]) }}
                     </span>
                     @if($pendingVoid)
                     <span class="text-[11px] text-amber-600 whitespace-nowrap">{{ __('vehicle.panel.void_requesting') }}</span>
@@ -8388,7 +8388,7 @@ function vehicleColumnsToggle() {
                 <label class="label-base">{{ __('vehicle.panel.sec.ship_photos', ['max' => \App\Models\VehiclePhoto::MAX_SHIPPING]) }}</label>
                 <x-erp.file-drop model="shipPhotoUpload" multiple
                     accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip"
-                    label="선적 사진을 여기로 드래그하거나 선택 (여러 장)" />
+                    label="{{ __('vehicle.tooltip.ship_photos_drop') }}" />
                 <p class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.photo_multi_hint', ['pick' => \App\Models\VehiclePhoto::PER_PICK_HINT]) }}</p>
                 <div wire:loading wire:target="shipPhotoUpload" class="mt-1 text-xs text-gray-400">{{ __('vehicle.panel.uploading') }}</div>
                 @error('shipPhotoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -9308,7 +9308,7 @@ function vehicleColumnsToggle() {
 
         <div class="mt-3 space-y-2">
             <div>
-                <label class="label-base">이체 대상 차량 <span class="text-red-500">*</span></label>
+                <label class="label-base">{{ __('vehicle.tooltip.transfer_target') }} <span class="text-red-500">*</span></label>
                 <select wire:model="transferTargetVehicleId" class="input-base">
                     <option value="">{{ __('vehicle.panel.select_placeholder') }}</option>
                     @foreach($transferCtx['candidates'] as $cand)

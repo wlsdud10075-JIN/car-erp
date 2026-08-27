@@ -267,4 +267,14 @@ return [
         'close_diff_suffix' => ' — 환차 :sign₩:amount',
         'close_carry_suffix' => ' / 다음 달 이월 :sign₩:amount',
     ],
+
+    // karaba 이익률 정산 요약 박스.
+    'karaba' => [
+        'sales' => '판매가', 'sales_note' => '(차대금 × 환율)',
+        'purchase' => '구매가', 'purchase_note' => '(매입가 + 매도비)',
+        'costs' => '부대비용',
+        'vat' => '매입세액 (VAT)',
+        'operating' => '영업이익', 'operating_note' => '(판매가 − (구매가 + 부대비용 − VAT))',
+        'rate' => '이익율',
+    ],
 ];

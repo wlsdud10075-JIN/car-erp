@@ -78,8 +78,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $handoverReason = '';
     /** 넘길 바이어 — **나눠 넘기기의 핵심**. 비우면 아무도 안 넘어간다(전부가 아니다). */
     public array $handoverBuyerIds = [];
-    /** 담당 바이어가 없는 진행중 차량을 함께 넘길지 — 바이어를 따라갈 수 없는 차라 사람이 정한다. */
-    public bool $handoverIncludeOrphans = true;
 
     public function openHandover(int $fromId): void
     {
@@ -92,7 +90,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->handoverFromId = $fromId;
         $this->handoverToId = '';
         $this->handoverReason = '';
-        $this->handoverIncludeOrphans = true;
         // 기본은 **전부 선택** — 한 사람에게 통째로 넘기는 게 흔한 경우라 한 번에 끝나야 한다.
         //   나눌 때만 체크를 푼다.
         $this->handoverBuyerIds = \App\Models\Buyer::where('salesman_id', $fromId)
@@ -130,7 +127,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         try {
             return (new \App\Services\SalesmanHandoverService)
-                ->preview($from, $to, $this->handoverBuyerIds, $this->handoverIncludeOrphans);
+                ->preview($from, $to, $this->handoverBuyerIds);
         } catch (\Throwable $e) {
             return null;
         }
@@ -155,8 +152,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         try {
             $r = (new \App\Services\SalesmanHandoverService)->apply(
-                $from, $to, auth()->user(), $this->handoverReason ?: null,
-                $this->handoverBuyerIds, $this->handoverIncludeOrphans,
+                $from, $to, auth()->user(), $this->handoverReason ?: null, $this->handoverBuyerIds,
             );
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
@@ -602,18 +598,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                         <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.handover.follows') }}</p>
                     </div>
-
-                    {{-- 바이어를 따라갈 수 없는 차 — 자동으로 처리하면 나눠 넘길 때 첫 번째 사람이
-                         조용히 다 가져간다. 사람이 보고 정한다(SKILLS §8 #60). --}}
-                    @if(count($plan['orphan_vehicles']))
-                    <label class="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-2">
-                        <input type="checkbox" wire:model.live="handoverIncludeOrphans" class="mt-0.5 rounded" />
-                        <span>
-                            <span class="font-medium text-gray-800">{{ __('salesman.handover.orphans', ['n' => count($plan['orphan_vehicles'])]) }}</span>
-                            <span class="mt-0.5 block text-[11px] text-gray-500">{{ collect($plan['orphan_vehicles'])->pluck('vehicle_number')->take(20)->implode(' · ') }}</span>
-                        </span>
-                    </label>
-                    @endif
                 </div>
             </div>
 

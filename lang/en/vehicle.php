@@ -1118,4 +1118,13 @@ return [
         'sale_date_required' => 'A sale date is required when a sale price is entered — Sale tab.',
         'sale_buyer_required' => 'A buyer is required when a sale price is entered — Sale tab.',
     ],
+
+    'tooltip' => [
+        'ship_photos_drop' => 'Drag shipping photos here or choose them (multiple)',
+        'approval_no' => 'Approval #:no',
+        'transfer_target' => 'Target vehicle',
+        'sailing' => 'Sailed :ship - ETA :eta',
+        'arrived' => 'ETA :eta has passed (estimate)',
+        'photos_drop' => 'Drag photos here or choose them (multiple)',
+    ],
 ];

@@ -129,6 +129,10 @@ return [
 
     // Overpayment → savings credit conversion
     'overpay' => [
+        'closed_note' => 'The secondary settlement for this vehicle is closed. Leave a correction reason to convert it.',
+        'closed_denied' => 'Only managers and above can convert a vehicle whose secondary settlement is closed.',
+        'reason_ph' => 'Correction reason (:n characters or more) - e.g. buyer sent in error, converting to credit',
+        'reason_required' => 'The secondary settlement for this vehicle is closed. Enter a correction reason of at least :n characters.',
         'title' => 'Overpaid',
         'hint' => 'Move the excess to the buyer savings credit and set this vehicle receivable to 0.',
         'btn' => 'Convert to savings',
