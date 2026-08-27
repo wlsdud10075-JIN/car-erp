@@ -2178,6 +2178,86 @@ class Vehicle extends Model
     }
 
     /**
+     * ssancar.com 바이어 포털 — **서류함이 열렸나.** 열렸으면 null, 아니면 그 사유.
+     *
+     * 🔑 jin 2026-08-27: *"운항중 뱃지가 달리면 서류작업이 B/L 빼고 전부 완료"*
+     *    ⇒ **서류함 4종이 한 시점에 같이 열린다.** 서류별로 다른 문을 만들지 말 것.
+     *
+     * ⚠️ **`sailing_status`(운항중/도착)로 판정하면 ETA 가 지나는 순간 닫힌다.**
+     *    바이어가 서류를 제일 필요로 하는 때가 **도착 직후 수입통관**이라 거꾸로다.
+     *    **뱃지가 붙은 조건**(`sailing_phase !== null` = 선적일·ETA 둘 다 있음)으로 본다 —
+     *    한 번 열리면 도착해도 닫히지 않는다.
+     *
+     * ⚠️ 알려진 함정 — `sailing_phase` 는 **선적일이 미래여도 ETA 만 채워지면 값이 생긴다**
+     *    (실측 CIG 61대 중 4대). 서류 공개 기준으로는 관대한 쪽이라 그대로 둔다.
+     *    「실제 출항」이 필요한 판정(화물추적)은 `shipping_date` 를 따로 본다.
+     */
+    public function portalDocumentsBlocker(): ?string
+    {
+        if (blank($this->buyer_id)) {
+            return 'no_buyer';   // 바이어 미정(투기 매입) — 어느 바이어에게도 발행하지 않는다
+        }
+
+        return $this->sailing_phase === null ? 'not_sailing' : null;
+    }
+
+    /**
+     * ssancar.com 바이어 포털 — **통관 SET 을 낼 수 있나.** 낼 수 있으면 null, 못 내면 그 사유.
+     *
+     * 🔑 **판정은 여기 한 곳뿐이다.** 목록 응답의 `can_download_clearance_set` 와 실제 다운로드
+     *    엔드포인트가 **같은 값을 읽는다.** 조건을 옮겨 적으면 「버튼은 뜨는데 받으면 거절」이 된다
+     *    (SKILLS §8 #44 — ssancar 협업에서 같은 형태가 다섯 번 나왔다).
+     *    ⚠️ 다운로드 시점에도 **다시 부른다** — 목록을 받은 뒤 차량이 조건에서 벗어날 수 있다(§8 #26).
+     *
+     * 조건 셋:
+     *  ① **운항 단계 진입** — jin 2026-08-27: *"운항중 뱃지가 달리면 서류작업이 B/L 빼고 전부 완료"*.
+     *     ⚠️ `sailing_status`(운항중/도착)로 판정하면 **ETA 가 지나는 순간 닫힌다.** 바이어가 서류를
+     *        제일 필요로 하는 때가 **도착 직후 수입통관**이라 거꾸로다 → **뱃지가 붙은 조건**
+     *        (`sailing_phase !== null` = 선적일·ETA 둘 다 있음)으로 본다.
+     *  ② **필수 칸 충족** — 빈 서류 방어. jin 2026-08-18: *"내용이 빈 서류가 나오면 아무도 못 잡습니다"*.
+     *     🔑 이건 ① 을 의심하는 게 아니다 — ① 이 참이면 **한 대도 안 막는다.**
+     *        실제로 걸리는 집합 = **엑셀 import 과거 차량**(선적·통관이 끝난 상태로 적재되어 면장·B/L·ETA 는
+     *        있는데 NICE 조회를 안 거쳐 제원이 비어 있다 — 2026-06-11 운영 실측 149대 중 147대 `nice_raw` NULL).
+     *        jin 2026-08-27: *"과거 거는 바이어도 다운로드 할 이유가 없다"* ⇒ **막히는 것이 의도한 결과**다.
+     *        ⚠️ 빈 채로 내보내면 말소증·등록증 시트가 **거의 백지인 채 관청 서식 모양**을 하고,
+     *           그 시트엔 원본의 위·변조 확인 문구(car365.go.kr)까지 인쇄돼 있다.
+     *  ③ **바이어가 정해져 있다** — 바이어 미정(투기 매입)은 어느 바이어에게도 발행하지 않는다.
+     *
+     * 🚫 여기에 「판매가 > 0」 같은 board 용 조건을 옮겨 붙이지 말 것 — 청중이 다르다.
+     */
+    public function clearanceSetBlocker(): ?string
+    {
+        // ①③ — 서류함 전체와 같은 문. 통관 SET 만의 조건이 아니므로 따로 둔다.
+        if ($portal = $this->portalDocumentsBlocker()) {
+            return $portal;
+        }
+
+        // ② 필수 칸 — 통관 SET 이 「빈 서식」이 되는 자리만 본다.
+        if (blank($this->nice_reg_vin)) {
+            return 'no_vin';                 // 차대번호 — 등록증·말소증·인보이스 전부가 쓴다
+        }
+        if (blank($this->brand) && blank($this->model_type)) {
+            return 'no_car_name';            // 차명 — 등록증 ④ 차명 / 인보이스 Commodity
+        }
+        // 컨사이니 — 인보이스·팩킹·Travel Invoice 수취인.
+        // ⚠️ `effective_consignee`(관계)를 쓰지 않는다 — 목록 응답이 262행을 도는데 관계를 건드리면
+        //    차량마다 3쿼리가 붙는다. 폴백 **컬럼** 단일 출처로 본다(표시와 같은 우선순위).
+        $hasConsignee = false;
+        foreach (self::CONSIGNEE_FALLBACK_COLUMNS as $col) {
+            $hasConsignee = $hasConsignee || filled($this->{$col});
+        }
+        if (! $hasConsignee) {
+            return 'no_consignee';
+        }
+        // NICE 제원 — 안 채워지면 한글/영문등록증 두 시트가 통째로 빈다.
+        if (blank($this->nice_reg_vehicle_form) || blank($this->nice_spec_displacement)) {
+            return 'no_nice_spec';
+        }
+
+        return null;
+    }
+
+    /**
      * board 포털 차량 행의 공통 메타 (인계 2026-08-10) — **차량번호가 보이는 곳이면 같이 보인다**.
      *
      * 🔑 board 는 **정확히 이 세 키**를 읽는다(`vin`·`brand`·`model_type`). 이름을 바꾸면 board 는
