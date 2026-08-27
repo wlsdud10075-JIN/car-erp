@@ -519,6 +519,24 @@ class Settlement extends Model
      *    통관(`export_buyer_id`)·B/L(`bl_buyer_id`) 당사자와는 무관하다.
      * ⚠️ `Buyer` 는 SoftDeletes 라 바이어가 삭제되면 관계가 null → 조용히 5만원이 아닌
      *    10만원/tier 로 떨어진다. 그래서 withTrashed 로 읽는다(값이 조용히 틀리는 부류 방지).
+     *
+     * 🔑 **퇴사 승계는 「그때부터」다 — 승계 전 담당자의 정산은 건드리지 않는다** (jin 2026-08-27).
+     *    승계 플래그는 **바이어**에 붙어 있어 그 바이어의 과거 건까지 같이 읽힌다. 그대로 두면
+     *    퇴사자 A 의 **아직 안 굳은 정산**(pending·calculating·confirmed)이 건당 5만으로 다시 잘린다 —
+     *    A 가 신규 개척한 실적인데 승계 단가로 깎이는 것이다. 예외도 경고도 없이 조용히 바뀐다.
+     *    jin: *"정산이 이미 A로 되어있는건 그냥 정산을 A가 받을뿐인거지."*
+     *
+     *    ⇒ **이 정산의 담당자가 「승계 전 담당자」면 승계 건이 아니다.**
+     *
+     *    🚫 날짜(`inherited_at` ↔ `created_at`)로 가르지 말 것 — 처음에 그렇게 설계했다가 바꿨다.
+     *       `settlements` 는 **지웠다 다시 만들 수 있고**(pending 은 삭제 가능,
+     *       `createSettlementIfComplete` 가 「정산 없음」이면 재생성한다) 그때 `created_at` 이 새로 찍힌다.
+     *       그러면 A 시절 건이 **조용히 승계로 뒤집힌다**. `salesman_id` 는 그 재생성에도 안 변한다
+     *       (차량의 담당자에서 오고, 승계 대상이 아닌 차는 담당자가 A 그대로다).
+     *
+     *    ⚠️ `inherited_from_salesman_id` 가 **비어 있으면 종전대로 전부 적용**한다 —
+     *       2026-08-04~08-27 사이에 수기로 켠 기존 바이어의 동작이 바뀌지 않게 하는 하위호환이다.
+     *       일괄 승계 도구는 이 칸을 **항상 채운다**.
      */
     public function isInheritedBuyerDeal(): bool
     {
@@ -527,11 +545,22 @@ class Settlement extends Model
             return false;
         }
         // 정산 목록이 행마다 부르므로 요청 단위 메모 (바이어 종류는 적어 쿼리가 종류 수로 수렴).
+        // ⚠️ 캐시하는 것은 **바이어의 값**이지 판정 결과가 아니다 — 판정은 정산마다 다르다.
+        //    결과를 캐시하면 같은 바이어의 A 시절 행과 B 시절 행이 **한 요청 안에서 같은 답**을 받는다
+        //    (정산 목록이 정확히 그 화면이다).
         if (! array_key_exists($buyerId, self::$inheritedBuyerMemo)) {
-            self::$inheritedBuyerMemo[$buyerId] = (bool) Buyer::withTrashed()->whereKey($buyerId)->value('is_inherited');
+            self::$inheritedBuyerMemo[$buyerId] = Buyer::withTrashed()->whereKey($buyerId)
+                ->first(['id', 'is_inherited', 'inherited_from_salesman_id']);
         }
 
-        return self::$inheritedBuyerMemo[$buyerId];
+        $buyer = self::$inheritedBuyerMemo[$buyerId];
+        if (! $buyer || ! $buyer->is_inherited) {
+            return false;
+        }
+
+        $from = $buyer->inherited_from_salesman_id;
+
+        return ! ($from && (int) $this->salesman_id === (int) $from);
     }
 
     /**

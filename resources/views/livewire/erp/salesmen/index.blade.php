@@ -66,6 +66,88 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showPanel = true;
     }
 
+    /*
+    |----------------------------------------------------------------------
+    | 퇴사 승계 (jin 2026-08-27) — A 가 하던 일을 B 가 통째로 받는다.
+    |----------------------------------------------------------------------
+    | 판정·실행은 전부 SalesmanHandoverService 다. 이 화면은 **보여주고 누르는 것**만 한다 —
+    | 조건을 여기 옮겨 적으면 「모달엔 옮긴다고 떴는데 안 옮겨진」 행이 생긴다(SKILLS §8 #67).
+    */
+    public ?int $handoverFromId = null;
+    public string $handoverToId = '';
+    public string $handoverReason = '';
+
+    public function openHandover(int $fromId): void
+    {
+        // 정산 금액을 바꾸는 작업이라 여는 시점에도 막는다(실행 시 서비스가 다시 검사한다).
+        if (! auth()->user()?->canApprove()) {
+            $this->dispatch('notify', message: __('salesman.handover.forbidden'), type: 'warning');
+
+            return;
+        }
+        $this->handoverFromId = $fromId;
+        $this->handoverToId = '';
+        $this->handoverReason = '';
+    }
+
+    public function closeHandover(): void
+    {
+        $this->handoverFromId = null;
+    }
+
+    /** 미리보기 — 받는 사람을 고르기 전엔 null. 실행과 **같은 함수**를 쓴다. */
+    #[Computed]
+    public function handoverPlan(): ?array
+    {
+        if (! $this->handoverFromId || $this->handoverToId === '') {
+            return null;
+        }
+        $from = Salesman::find($this->handoverFromId);
+        $to = Salesman::find((int) $this->handoverToId);
+        if (! $from || ! $to || $from->id === $to->id) {
+            return null;
+        }
+
+        try {
+            return (new \App\Services\SalesmanHandoverService)->preview($from, $to);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** 받을 수 있는 사람 — **활동 중만**. 넘기는 쪽(퇴사자)은 비활성이어도 목록에 남는다. */
+    #[Computed]
+    public function handoverCandidates()
+    {
+        return Salesman::where('is_active', true)
+            ->when($this->handoverFromId, fn ($q) => $q->where('id', '!=', $this->handoverFromId))
+            ->orderBy('name')->get();
+    }
+
+    public function runHandover(): void
+    {
+        $from = Salesman::find($this->handoverFromId);
+        $to = Salesman::find((int) $this->handoverToId);
+        if (! $from || ! $to) {
+            return;
+        }
+
+        try {
+            $r = (new \App\Services\SalesmanHandoverService)
+                ->apply($from, $to, auth()->user(), $this->handoverReason ?: null);
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+
+        $this->handoverFromId = null;
+        unset($this->salesmen);
+        $this->dispatch('notify', message: __('salesman.handover.done', [
+            'buyers' => $r['buyers'], 'vehicles' => $r['vehicles'], 'skipped' => $r['skipped'],
+        ]), type: 'success');
+    }
+
     public function openEdit(int $id): void
     {
         $sm = Salesman::findOrFail($id);
@@ -232,6 +314,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                            onclick="event.stopPropagation()"
                            class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
+                        @if(auth()->user()?->canApprove())
+                        <button wire:click.stop="openHandover({{ $sm->id }})"
+                                class="text-xs text-amber-600 hover:underline">{{ __('salesman.handover.button') }}</button>
+                        @endif
                         <button wire:click.stop="delete({{ $sm->id }})"
                                 wire:confirm="{{ __('salesman.delete_confirm', ['name' => $sm->name]) }}"
                                 class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
@@ -409,6 +495,87 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
+</div>
+@endif
+
+
+{{-- ══ 퇴사 승계 모달 (jin 2026-08-27) ═══════════════════════════════════════
+     되돌리기가 없는 일괄 작업이라 **미리보기 없이 실행하지 않는다.**
+     「옮길 것」과 「건너뛸 것 + 사유 + 차량번호」를 나란히 보여준다 — 카운터로 뭉개면
+     정작 손봐야 할 몇 대가 숫자에 묻힌다(SKILLS §8 #67).                        --}}
+@if($handoverFromId)
+@php $from = \App\Models\Salesman::find($handoverFromId); $plan = $this->handoverPlan; @endphp
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" wire:click.self="closeHandover">
+    <div class="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+        <div class="border-b px-5 py-4">
+            <h3 class="text-base font-semibold text-gray-800">{{ __('salesman.handover.title', ['name' => $from?->name]) }}</h3>
+            <p class="mt-1 text-xs text-gray-500">{{ __('salesman.handover.rule') }}</p>
+        </div>
+
+        <div class="max-h-[60vh] space-y-4 overflow-y-auto px-5 py-4">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="label-base">{{ __('salesman.handover.to') }}</label>
+                    <select wire:model.live="handoverToId" class="input-base">
+                        <option value="">-</option>
+                        @foreach($this->handoverCandidates as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }} ({{ $c->type_label }})</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <label class="label-base">{{ __('salesman.handover.reason') }}</label>
+                    <input wire:model="handoverReason" type="text" class="input-base" placeholder="{{ __('salesman.handover.reason_ph') }}" />
+                </div>
+            </div>
+
+            @if($plan)
+            {{-- 승계 표시를 켤지 — **판정을 문장으로 적는다.** 코드에만 있으면 사람이 반대로 조작한다(§8 #60) --}}
+            <div class="rounded-lg border {{ $plan['marks_inherited'] ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50' }} p-3 text-xs leading-relaxed text-gray-700">
+                {{ $plan['marks_inherited'] ? __('salesman.handover.mark_on') : __('salesman.handover.mark_off') }}
+            </div>
+
+            <div>
+                <p class="mb-1.5 text-xs font-semibold text-gray-700">{{ __('salesman.handover.moving') }}</p>
+                <div class="space-y-1.5 text-xs">
+                    <div class="rounded border border-gray-200 p-2">
+                        <span class="font-medium text-gray-800">{{ __('salesman.handover.buyers', ['n' => count($plan['buyers'])]) }}</span>
+                        @if(count($plan['buyers']))
+                        <p class="mt-1 text-gray-500">{{ collect($plan['buyers'])->pluck('name')->take(12)->implode(' · ') }}{{ count($plan['buyers']) > 12 ? ' …' : '' }}</p>
+                        @endif
+                        @php $rewrites = collect($plan['buyers'])->where('rewrites_history', true); @endphp
+                        @if($rewrites->count())
+                        <p class="mt-1.5 text-amber-700">{{ __('salesman.handover.rewrites', ['n' => $rewrites->count()]) }}</p>
+                        @endif
+                    </div>
+                    <div class="rounded border border-gray-200 p-2">
+                        <span class="font-medium text-gray-800">{{ __('salesman.handover.vehicles', ['n' => count($plan['vehicles'])]) }}</span>
+                        @if(count($plan['vehicles']))
+                        <p class="mt-1 text-gray-500">{{ collect($plan['vehicles'])->pluck('vehicle_number')->take(20)->implode(' · ') }}{{ count($plan['vehicles']) > 20 ? ' …' : '' }}</p>
+                        @endif
+                    </div>
+                </div>
+            </div>
+
+            @if(count($plan['skipped']))
+            <div>
+                <p class="mb-1.5 text-xs font-semibold text-gray-700">{{ __('salesman.handover.skipping') }}</p>
+                <div class="rounded border border-gray-200 bg-gray-50 p-2 text-xs">
+                    <span class="font-medium text-gray-800">{{ __('salesman.handover.skipped', ['n' => count($plan['skipped'])]) }}</span>
+                    <p class="mt-1 text-gray-500">{{ collect($plan['skipped'])->pluck('vehicle_number')->take(20)->implode(' · ') }}{{ count($plan['skipped']) > 20 ? ' …' : '' }}</p>
+                </div>
+            </div>
+            @endif
+            @endif
+        </div>
+
+        <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
+            <button wire:click="closeHandover" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button wire:click="runHandover" class="btn-primary" @disabled(! $plan) wire:loading.attr="disabled" wire:target="runHandover">
+                <span wire:loading.remove wire:target="runHandover">{{ __('salesman.handover.run') }}</span><span wire:loading wire:target="runHandover">{{ __('common.saving') }}</span>
+            </button>
+        </div>
+    </div>
 </div>
 @endif
 
