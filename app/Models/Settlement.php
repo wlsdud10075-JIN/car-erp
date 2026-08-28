@@ -468,6 +468,24 @@ class Settlement extends Model
     /** @var array<int,bool> 요청 단위 메모 — 바이어 승계 여부 (정산 목록 per-row 쿼리 방지) */
     private static array $inheritedBuyerMemo = [];
 
+    /** 요청 단위 메모 — 회사 프로파일(karaba 여부). 요청 중에 바뀌지 않는다. */
+    private static ?bool $karabaMemo = null;
+
+    /**
+     * karaba 여부 — **요청 단위 메모**.
+     *
+     * 🚨 `Setting::get()` 은 캐시가 없어 부를 때마다 `settings` 를 조회한다. `display_margin` 과
+     *    `settlement_amount` 가 행마다 이걸 부르는데, 정산 목록의 담당자별 합계는 **전 정산을 순회**한다.
+     *    실측(ssancarerp 3,815건): 행당 3.2 쿼리 × 3,815 = **23,099 쿼리 / 29 초**.
+     *    회사 프로파일은 한 요청 안에서 바뀌지 않으므로 한 번만 읽는다.
+     * 🚫 `Setting::get()` 전체를 캐시하지 말 것(별건) — 락 게이트·알림톡 수신자가 다 타는 자리라
+     *    stale 하나가 락을 잘못 열 수 있다. 여기서는 **이 모델 안에서만** 메모한다.
+     */
+    private static function isKarabaMemo(): bool
+    {
+        return self::$karabaMemo ??= Setting::isKaraba();
+    }
+
     /** 정산 파라미터 읽기 — Setting override 있으면 그 값, 없으면 기본 상수. 요청 단위 캐시. */
     public static function param(string $key): int
     {
@@ -483,6 +501,7 @@ class Settlement extends Model
     {
         self::$paramMemo = [];
         self::$inheritedBuyerMemo = [];
+        self::$karabaMemo = null;
     }
 
     /**
@@ -700,7 +719,7 @@ class Settlement extends Model
     /** 화면 표시용 마진 — karaba=영업이익 / 그 외=총마진 (요약·목록·모바일 라벨과 세트, Phase 3 UI). */
     public function getDisplayMarginAttribute(): int
     {
-        return Setting::isKaraba() ? $this->karaba_operating_profit : $this->total_margin;
+        return self::isKarabaMemo() ? $this->karaba_operating_profit : $this->total_margin;
     }
 
     /**
@@ -714,7 +733,7 @@ class Settlement extends Model
         // 🔀 2026-08-21 (jin) — **프리랜서만 이익률 정산, 사내직원은 건당 고정.**
         //   구: 타입과 무관하게 tier 를 곱했다(사내직원도 이익률로 받았다).
         //   ⚠️ 회사가 «전부 tier» 로 확인되면 이 분기를 지우고 되돌리면 된다(jin 확인 예정).
-        if (Setting::isKaraba()) {
+        if (self::isKarabaMemo()) {
             return $this->settlement_type === 'ratio'
                 ? $this->karaba_settlement_amount
                 : $this->effective_per_unit_amount;
