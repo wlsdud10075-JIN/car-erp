@@ -213,45 +213,59 @@ class Settlement extends Model
 
             // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
             if ($becamePaid && empty($s->confirmed_snapshot)) {
-                $v = $s->vehicle;
-                // 큐 20-D — Gemini Lock 지적 — 잔금 confirmed 상태도 함께 캡처.
-                // paid 시점 ledger 의 무엇이 confirmed였는지 회계감사 추적 가능.
-                $confirmedFinalPayments = $v
-                    ? $v->finalPayments->whereNotNull('confirmed_at')->map(fn ($p) => [
-                        'id' => $p->id,
-                        'amount' => (float) $p->amount,
-                        'confirmed_at' => $p->confirmed_at?->toIso8601String(),
-                        'transfer_id' => $p->transfer_id,
-                    ])->values()->all()
-                    : [];
-                $confirmedPurchasePayments = $v
-                    ? $v->purchaseBalancePayments->whereNotNull('confirmed_at')->map(fn ($p) => [
-                        'id' => $p->id,
-                        'amount' => (float) $p->amount,
-                        'confirmed_at' => $p->confirmed_at?->toIso8601String(),
-                    ])->values()->all()
-                    : [];
-
-                $s->confirmed_snapshot = [
-                    'captured_at' => now()->toIso8601String(),
-                    'exchange_rate' => $v?->exchange_rate,
-                    'export_declaration_amount' => $v?->export_declaration_amount,
-                    'transport_fee' => $v?->transport_fee,
-                    'purchase_price' => $v?->purchase_price,
-                    'cost_total' => $v?->cost_total,
-                    'sales_amount_krw' => $s->sales_amount_krw,
-                    'settlement_sales_krw' => $s->settlement_sales_krw,
-                    'sales_margin' => $s->sales_margin,
-                    'vat_margin' => $s->vat_margin,
-                    'total_margin' => $s->total_margin,
-                    'settlement_amount' => $s->settlement_amount,
-                    'actual_payout' => $s->actual_payout,
-                    // 큐 20-D — 잔금 confirmed 스냅샷 (Gemini Lock)
-                    'confirmed_final_payments' => $confirmedFinalPayments,
-                    'confirmed_purchase_payments' => $confirmedPurchasePayments,
-                ];
+                $s->confirmed_snapshot = $s->buildConfirmedSnapshot();
             }
         });
+    }
+
+    /**
+     * 지급 시점 회계 상태 스냅샷 — **단일 출처**.
+     *
+     * `paid` 전환 훅이 부르고, 소급 백필 명령(`settlements:backfill-snapshot`)도 **같은 함수**를 부른다.
+     * 🚫 어느 쪽에도 복사해 두지 말 것 — 갈리면 「박제된 값」과 「지금 계산한 값」이 서로 다른 뜻이 된다.
+     *
+     * 담는 것 = 차량 회계 컬럼 + 마진 사슬 + **확정 잔금/매입지급 목록**(큐 20-D, Gemini Lock).
+     * 지급 시점 원장의 무엇이 confirmed 였는지까지 남겨야 회계감사에서 추적된다.
+     *
+     * @return array<string,mixed>
+     */
+    public function buildConfirmedSnapshot(): array
+    {
+        $v = $this->vehicle;
+
+        $confirmedFinalPayments = $v
+            ? $v->finalPayments->whereNotNull('confirmed_at')->map(fn ($p) => [
+                'id' => $p->id,
+                'amount' => (float) $p->amount,
+                'confirmed_at' => $p->confirmed_at?->toIso8601String(),
+                'transfer_id' => $p->transfer_id,
+            ])->values()->all()
+            : [];
+        $confirmedPurchasePayments = $v
+            ? $v->purchaseBalancePayments->whereNotNull('confirmed_at')->map(fn ($p) => [
+                'id' => $p->id,
+                'amount' => (float) $p->amount,
+                'confirmed_at' => $p->confirmed_at?->toIso8601String(),
+            ])->values()->all()
+            : [];
+
+        return [
+            'captured_at' => now()->toIso8601String(),
+            'exchange_rate' => $v?->exchange_rate,
+            'export_declaration_amount' => $v?->export_declaration_amount,
+            'transport_fee' => $v?->transport_fee,
+            'purchase_price' => $v?->purchase_price,
+            'cost_total' => $v?->cost_total,
+            'sales_amount_krw' => $this->sales_amount_krw,
+            'settlement_sales_krw' => $this->settlement_sales_krw,
+            'sales_margin' => $this->sales_margin,
+            'vat_margin' => $this->vat_margin,
+            'total_margin' => $this->total_margin,
+            'settlement_amount' => $this->settlement_amount,
+            'actual_payout' => $this->actual_payout,
+            'confirmed_final_payments' => $confirmedFinalPayments,
+            'confirmed_purchase_payments' => $confirmedPurchasePayments,
+        ];
     }
 
     public function vehicle(): BelongsTo
