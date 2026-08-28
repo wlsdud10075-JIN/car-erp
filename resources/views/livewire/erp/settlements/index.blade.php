@@ -254,6 +254,38 @@ new #[Layout('components.layouts.app')] class extends Component
         })->sortByDesc('actual_payout_sum')->values()->toArray();
     }
 
+    /**
+     * **다른 달에 남은 확정 대기** 건수 (jin 2026-08-28, 월 기본값과 세트).
+     *
+     * 🚨 월 기본값을 넣자마자 「숫자는 보이는데 행이 없다」가 생길 자리가 하나 열렸다 —
+     *    `erp_settlement_confirm_wait` 알림톡은 **월 스코프가 없어 전체 pending 을 센다**.
+     *    재무가 「확정 대기 40건」 카톡을 받고 들어와 31건만 보면 그게 곧 혼란이다.
+     *    실측(2026-08-28) heymanerp 2026-06 2건 · 2026-07 7건 — **실재한다**.
+     * 🧭 그래서 숨기지 않고 **다른 달에 몇 건 남았는지 화면이 스스로 말하게** 한다.
+     *    (채권관리에서 완납 차를 완납 탭으로 데려간 것과 같은 처방)
+     * ⚠️ 월 필터가 걸려 있을 때만 센다. `count()` 하나라 `wire:poll.30s` 에도 부담 없다.
+     */
+    #[Computed]
+    public function pendingOutsideMonth(): int
+    {
+        if ($this->monthFilter === '') {
+            return 0;
+        }
+
+        // 🧭 `whereNot(closure)` 로 뒤집지 않는다 — monthScope 는 OR 두 갈래(attributed_month /
+        //    COALESCE 앵커)라 부정형이 헷갈리고, 실제로 0 이 나왔다. 전체에서 이 달을 빼는 게 명확하다.
+        $base = fn () => Settlement::query()->whereIn('settlement_status', ['pending', 'calculating']);
+
+        return max(0, $base()->count() - $base()->where($this->monthScope())->count());
+    }
+
+    /** 「다른 달 N건」 안내를 눌렀을 때 — 전 기간으로 푼다. */
+    public function clearMonthFilter(): void
+    {
+        $this->monthFilter = '';
+        $this->resetPage();
+    }
+
     /** 담당자별 합계 펼치기/접기 — 접으면 다음 렌더부터 그 계산을 건너뛴다. */
     public function toggleSummaries(): void
     {
@@ -1396,6 +1428,14 @@ new #[Layout('components.layouts.app')] class extends Component
         <option value="{{ $ym }}">{{ $ym }} {{ __('settlement.filter_month_label') }} → {{ $payDate }} {{ __('settlement.filter_month_pay') }}</option>
         @endforeach
     </select>
+    {{-- 다른 달에 남은 확정 대기 — 월 기본값이 가린 것을 화면이 스스로 말한다(위 computed 참조). --}}
+    @if($this->pendingOutsideMonth > 0)
+    <button type="button" wire:click="clearMonthFilter"
+            class="badge badge-amber hover:underline"
+            title="{{ __('settlement.pending_outside_month_title') }}">
+        {{ __('settlement.pending_outside_month', ['count' => $this->pendingOutsideMonth]) }}
+    </button>
+    @endif
     <input wire:model="dateFrom" type="date" class="input-filter" />
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />

@@ -243,4 +243,33 @@ class SettlementMonthFilterTest extends TestCase
         $this->assertTrue($component->instance()->heldOnly);
         $this->assertSame('', $component->instance()->monthFilter);
     }
+
+    /**
+     * 월 기본값이 가린 「다른 달 확정 대기」를 화면이 스스로 말해야 한다.
+     *
+     * 🚨 확정대기 알림톡은 월 스코프가 없어 **전체 pending** 을 센다. 안내가 없으면
+     *    재무가 「40건」 카톡을 받고 들어와 31건만 보게 된다 — 이번에 채권관리에서 고친
+     *    「숫자는 보이는데 행이 없다」와 같은 형태다.
+     *    실측(2026-08-28) heymanerp 2026-06 2건 · 2026-07 7건 — 실재한다.
+     */
+    public function test_pending_in_other_months_is_surfaced(): void
+    {
+        $manager = $this->makeManager();
+        $sm = Salesman::create(['name' => '타월대기', 'settlement_type' => 'ratio']);
+
+        $this->makeSettlementInMonth('2026-04', $sm);
+        $this->makeSettlementInMonth('2026-04', $sm);
+        $this->makeSettlementInMonth(now()->format('Y-m'), $sm);
+
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+
+        // 이번 달 기본값 → 다른 달(2026-04)에 2건 남아 있다고 말해야 한다.
+        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+        $this->assertSame(2, $component->instance()->pendingOutsideMonth());
+
+        // 눌러서 전 기간으로 풀면 가릴 게 없으니 0.
+        $component->call('clearMonthFilter');
+        $this->assertSame('', $component->instance()->monthFilter);
+        $this->assertSame(0, $component->instance()->pendingOutsideMonth());
+    }
 }
