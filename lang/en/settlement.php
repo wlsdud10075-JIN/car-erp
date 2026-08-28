@@ -79,6 +79,8 @@ return [
     'summary_hint' => '— click to filter by that salesman',
     'summary_collapsed_hint' => '— computed when expanded',
     'summary_scope_all' => 'All periods',
+    'pending_outside_month' => 'Pending in other months: :count',
+    'pending_outside_month_title' => 'Clear the month filter and show all periods',
     'summary_detail_toggle' => 'Show details for this salesman',
     'summary_count_label' => 'Count',
     'summary_unassigned' => 'Unassigned',
