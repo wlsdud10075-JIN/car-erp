@@ -106,6 +106,14 @@ class ImportSsancarSettled extends Command
             .'담당자가 사내직원이라 정산은 건당 기준이라 영향 없음.',
     ];
 
+    /**
+     * 담당자 이름 별칭 (jin 2026-08-28) — 파일에 두 사람을 슬래시로 묶은 값이 1건 있다.
+     * 서버엔 김바딤·조하가 따로 있으므로 **김바딤**으로 보낸다.
+     */
+    private const SALESMAN_ALIAS = [
+        '김바딤/조하' => '김바딤',
+    ];
+
     /** 열 → 차량 필드. 96열 현황표 기준. */
     private const MAP = [
         'purchase_date' => 'B',
@@ -252,7 +260,8 @@ class ImportSsancarSettled extends Command
             // 통화 — 공란 88 건은 USD (글자색 검정 + 환율대가 USD 구간, 이중 확인 · jin 확정).
             $row['currency'] = strtoupper(trim((string) $row['currency'])) ?: 'USD';
 
-            $row['_salesman'] = trim($this->val($vals, self::COL_SALESMAN, $r));
+            $sm = trim($this->val($vals, self::COL_SALESMAN, $r));
+            $row['_salesman'] = self::SALESMAN_ALIAS[$sm] ?? $sm;
             $row['_buyer'] = trim($this->val($vals, self::COL_BUYER, $r));
             $row['_consignee'] = trim($this->val($vals, self::COL_CONSIGNEE, $r));
 
@@ -505,6 +514,12 @@ class ImportSsancarSettled extends Command
             }
         }
 
+        // 이니셜 — 담당자별 최빈값. TN 은 티나·최니키타가 공유한다(중복 허용 = jin).
+        $ini = $this->initialsByName($rows);
+        $this->newLine();
+        $this->info('── 이니셜 (비어 있는 담당자에만 기입) ──');
+        $this->line('  '.collect($ini)->map(fn ($v, $k) => "{$k}={$v}")->implode(' · '));
+
         // 담당자 매칭 — 파일에만 있고 서버에 없는 이름은 적재 전에 만들어야 한다.
         $names = array_unique(array_filter(array_column($rows, '_salesman')));
         $known = Salesman::pluck('id', 'name')->all();
@@ -519,10 +534,52 @@ class ImportSsancarSettled extends Command
 
     // ────────────────────────────── 적재 ──────────────────────────────
 
+    /**
+     * 담당자별 이니셜 최빈값 — 비고(CO) 앞머리에서 뽑는다.
+     * 🚫 이니셜로 담당자를 **매칭하지는 않는다**(3건이 어긋난다 — 담당자 M열이 정답).
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<string,string>
+     */
+    private function initialsByName(array $rows): array
+    {
+        $tally = [];
+        foreach ($rows as $row) {
+            $name = $row['_salesman'] ?? '';
+            $ini = $row['_initials'] ?? null;
+            if ($name === '' || ! $ini) {
+                continue;
+            }
+            $tally[$name][$ini] = ($tally[$name][$ini] ?? 0) + 1;
+        }
+        $out = [];
+        foreach ($tally as $name => $counts) {
+            arsort($counts);
+            $out[$name] = (string) array_key_first($counts);
+        }
+        ksort($out);
+
+        return $out;
+    }
+
     /** @param array<int,array<string,mixed>> $rows */
     private function import(array $rows): int
     {
         $salesmen = Salesman::pluck('id', 'name')->all();
+
+        // 이니셜 — **비어 있는 담당자에만** 채운다(운영에서 손으로 넣은 값을 덮지 않는다).
+        $iniSet = 0;
+        foreach ($this->initialsByName($rows) as $name => $ini) {
+            if (! isset($salesmen[$name])) {
+                continue;
+            }
+            $iniSet += Salesman::whereKey($salesmen[$name])
+                ->where(fn ($q) => $q->whereNull('initials')->orWhere('initials', ''))
+                ->update(['initials' => $ini]);
+        }
+        if ($iniSet > 0) {
+            $this->line("  이니셜 기입 {$iniSet}명");
+        }
         $stats = ['vehicle' => 0, 'updated' => 0, 'payment' => 0, 'pbp' => 0, 'receivable' => 0,
             'settlement' => 0, 'cancelled' => 0, 'buyer_new' => 0, 'consignee_new' => 0];
         $touched = [];
