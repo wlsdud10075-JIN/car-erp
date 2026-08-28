@@ -42,14 +42,15 @@ class SalesInvoiceMapping
         return (float) $vs->sum(fn (Vehicle $v) => (float) ($v->{$column} ?? 0));
     }
 
-    /** SUB TOTAL = TOTAL = BALANCE — 차량 합(FOB+운임) + COMMISSION + AUTO LODING − TAX D/C. */
+    /**
+     * SUB TOTAL = TOTAL = BALANCE — 차량 합(FOB+운임) + COMMISSION + AUTO LODING − TAX D/C.
+     *
+     * 🧭 식은 `DocValue::documentSaleTotal` 단일 출처다 — 서류 7종이 같은 식을 쓰므로
+     *    여기서 복제하지 않는다(SKILLS §8 #45).
+     */
     private static function subTotal(Collection $vs): float
     {
-        return (float) $vs->sum(fn (Vehicle $v) => ($v->sale_price ?? 0)
-            + ($v->transport_fee ?? 0)
-            + ($v->commission ?? 0)
-            + ($v->auto_loading ?? 0)
-            - ($v->tax_dc ?? 0));
+        return DocValue::documentSaleTotal($vs);
     }
 
     public static function config(): array

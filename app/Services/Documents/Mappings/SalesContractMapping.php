@@ -32,10 +32,10 @@ use Illuminate\Support\Collection;
  */
 class SalesContractMapping
 {
-    /** Σ(commission + auto_loading − tax_dc) — "Other Charge" (판매금 base 잔여분). */
+    /** Σ(commission + auto_loading − tax_dc) — "Other Charge". 식은 `DocValue::otherCharge` 단일 출처. */
     private static function otherCharge(Vehicle $v): int
     {
-        return (int) (($v->commission ?? 0) + ($v->auto_loading ?? 0) - ($v->tax_dc ?? 0));
+        return (int) DocValue::otherCharge($v);
     }
 
     /** 표 합계(Sub Total X열) 기준 — 차량별 FOB + SHIPPING. */

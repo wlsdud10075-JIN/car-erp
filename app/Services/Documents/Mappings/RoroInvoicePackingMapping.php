@@ -4,6 +4,7 @@ namespace App\Services\Documents\Mappings;
 
 use App\Models\Vehicle;
 use App\Services\Documents\DocValue;
+use Illuminate\Support\Collection;
 
 /**
  * 선적 — RORO Invoice & Packing. 수출 전용. 다중차량.
@@ -42,6 +43,17 @@ class RoroInvoicePackingMapping
                     ['cell' => 'J51', 'fmt' => '=SUM(J%d:J%d)'],
                     ['cell' => 'K51', 'fmt' => '=SUM(K%d:K%d)'],
                     ['cell' => 'L51', 'fmt' => '=SUM(L%d:L%d)'],
+                ],
+                'aggregates' => [
+                    // 기타 청구 1줄 — 종전엔 **아예 없어서** GRAND TOTAL 이 «판매가 + 운임» 만이었다(jin 2026-08-28).
+                    //   F53/I53 는 양식의 빈 여유행이고 `=SUM(I51:I53)` 이 이미 덮고 있어
+                    //   **xlsx 를 한 장도 안 고치고** 흡수된다(실측 — 3사 양식 동일).
+                    // 🧭 계약서는 3줄로 항목명을 내지만 여기는 여유행이 **하나뿐**이라 순액 1줄이다.
+                    //   (jin: "명칭이 나오면 더 좋지만 계산된 총 판매가만 나와도 상관은 없어")
+                    //   3줄로 하려면 양식 3사 재생성이 필요하다 — 그때 여기도 계약서와 같은 모양으로.
+                    // ⚠️ 순액이라 TAX D/C 부호는 식 안에서 이미 상계된다(따로 뒤집지 말 것).
+                    'F53' => fn (Collection $vs) => DocValue::otherChargeSum($vs) ? 'OTHER CHARGE' : null,
+                    'I53' => fn (Collection $vs) => DocValue::otherChargeSum($vs) ?: null,
                 ],
                 'slotCells' => [
                     0 => [

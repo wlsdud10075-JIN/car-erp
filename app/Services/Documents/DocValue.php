@@ -5,6 +5,7 @@ namespace App\Services\Documents;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Vehicle;
+use Illuminate\Support\Collection;
 
 /**
  * 서류 매핑에서 공유하는 값 resolver. 같은 의미의 칸이 여러 서류에 나올 때
@@ -281,5 +282,41 @@ class DocValue
         ];
 
         return strtr($plate, $map);
+    }
+
+    /**
+     * 서류 「기타 청구」 — Commission + Auto Loading − TAX D/C. 판매통화, 1대분.
+     *
+     * 🚨 **이 식을 서류마다 옮겨 적지 말 것** (SKILLS §8 #45). 예전엔 인보이스·판매계약서에
+     *    각각 복제돼 있었고, 나머지 5종(통관SET·container/roro invoice·contract)은 아예 빠져
+     *    **판매가가 `sale_price + transport_fee` 만** 찍히고 있었다(jin 2026-08-28 제보).
+     * ⚠️ TAX D/C 는 **할인**이라 뺀다. 양식 푸터가 `SUM(...)` 으로 「더하는」 칸에 따로 적을
+     *    때는 부호를 뒤집어 넣어야 한다(SalesInvoice E55 가 그 형태).
+     */
+    public static function otherCharge(Vehicle $v): float
+    {
+        return (float) (($v->commission ?? 0) + ($v->auto_loading ?? 0) - ($v->tax_dc ?? 0));
+    }
+
+    /** 위 것의 컬렉션 합 — 다중차량 서류 푸터용. */
+    public static function otherChargeSum(Collection $vs): float
+    {
+        return (float) $vs->sum(fn (Vehicle $v) => self::otherCharge($v));
+    }
+
+    /**
+     * 서류 「총 판매금액」 — Σ(판매가 + 운임비 + 기타청구). 바이어에게 청구하는 금액.
+     *
+     * ⚠️ ERP 의 **총판매가(`Vehicle::sale_total_amount`)와 한 항 다르다** — 여기엔
+     *    `sale_other_costs`(기타 판매비용)가 **없다**. 서류 어느 양식에도 그 칸이 없기 때문이다.
+     *    ⇒ 이 값을 「받을 돈」으로 쓰지 말 것. 미수·채권은 `Vehicle::sale_unpaid_amount` 가 단일 출처다.
+     * ⚠️ 정산 기준액(`Settlement::sales_amount_krw`)과도 다르다 — 그건 운임비를 빼고 **KRW** 다.
+     *    셋의 차이는 SKILLS §13 「한 글자 차이인 세 합계」 표 참조.
+     */
+    public static function documentSaleTotal(Collection $vs): float
+    {
+        return (float) $vs->sum(fn (Vehicle $v) => ($v->sale_price ?? 0)
+            + ($v->transport_fee ?? 0)
+            + self::otherCharge($v));
     }
 }
