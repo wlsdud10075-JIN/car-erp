@@ -214,7 +214,8 @@ class ImportSsancarSettled extends Command
     {
         $this->sheet = $sheet;
         $rows = [];
-        $issues = ['no_plate' => 0, 'no_memo' => 0, 'memo_unparsed' => [], 'year_fixed' => 0, 'plate_fixed' => 0];
+        $issues = ['no_plate' => 0, 'no_memo' => 0, 'memo_unparsed' => [], 'year_fixed' => 0,
+            'plate_fixed' => 0, 'negative_cost' => []];
         $last = $sheet->getHighestDataRow();
 
         // 행 단위로 한 번에 읽는다 — 3,839행 × 96열을 셀마다 getCell 하면 23만 회라 느리고 메모리를 먹는다.
@@ -253,8 +254,16 @@ class ImportSsancarSettled extends Command
             $row['vehicle_number'] = $plate;
 
             // 비용 9개 — 문자값(업체명)이 섞인 칸이 132 건 있다. 엑셀 합계도 0 으로 쳤으므로 0 으로.
+            // 🚨 **비용 컬럼은 `unsignedBigInteger`** 라 음수를 넣으면 MySQL 이
+            //    `1264 Out of range value` 로 죽는다(실측 `128하3052` 기타1 = −275,680, 1 행).
+            //    ⇒ 0 으로 눕히고 **리포트에 드러낸다**(조용히 삼키면 마진이 그만큼 달라진 걸 아무도 모른다).
             foreach (self::COST_MAP as $field => $col) {
-                $row[$field] = $this->toNum($this->val($vals, $col, $r)) ?? 0;
+                $v = $this->toNum($this->val($vals, $col, $r)) ?? 0;
+                if ($v < 0) {
+                    $issues['negative_cost'][] = $plate.' '.$col.'='.number_format($v);
+                    $v = 0;
+                }
+                $row[$field] = $v;
             }
 
             // 통화 — 공란 88 건은 USD (글자색 검정 + 환율대가 USD 구간, 이중 확인 · jin 확정).
@@ -295,7 +304,9 @@ class ImportSsancarSettled extends Command
 
             $row['_savings_earned'] = $this->toNum($this->val($vals, self::COL_SAVINGS_EARNED, $r)) ?? 0;
             $row['_savings_earned_date'] = $this->toDate($this->val($vals, self::COL_SAVINGS_EARNED_DATE, $r));
-            $row['_savings_used'] = $this->toNum($this->val($vals, self::COL_SAVINGS_USED, $r)) ?? 0;
+            // 적립금 사용 — 음수(환급) 2건이 있다. 원장도 컬럼도 음수를 못 받으므로 0 으로 눕힌다.
+            // ⚠️ 델타 계산과 저장값이 **같은 값**을 써야 한다 — 한쪽만 눕히면 미수가 0 으로 안 떨어진다.
+            $row['_savings_used'] = max(0.0, $this->toNum($this->val($vals, self::COL_SAVINGS_USED, $r)) ?? 0);
 
             // 비고 — 정산 구분·지급일의 단일 출처.
             $memo = $this->parseMemo((string) $row['memo']);
@@ -483,6 +494,10 @@ class ImportSsancarSettled extends Command
         $this->line(sprintf('  거래완료(v5) 대상: 선적일 있음 %d · 없음 %d(그대로 둠)', $ship, $noShip));
         $this->line(sprintf('  매입 송금내역: 합계일치 %d · 차액있음 %d(잔금으로 보정) · 메모없음 %d(전액 잔금)',
             $pbpOk, $pbpGap, $pbpNone));
+        if ($issues['negative_cost']) {
+            $this->warn('  ⚠️ 음수 비용 → 0 으로 눕힘(컬럼이 unsigned): '.implode(' · ', $issues['negative_cost']));
+            $this->warn('     그만큼 cost_total 이 줄어 마진·지급액이 엑셀보다 커진다 — 아래 불일치 목록에 나타난다.');
+        }
 
         $this->newLine();
         $this->info('── 정산 재계산 대조 (프리랜서만 — 엑셀 CJ 와 일치해야 정상) ──');
