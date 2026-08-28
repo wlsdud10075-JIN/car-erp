@@ -77,6 +77,9 @@ return [
 
     'summary_title' => 'Totals by salesman',
     'summary_hint' => '— click to filter by that salesman',
+    'summary_collapsed_hint' => '— computed when expanded',
+    'summary_detail_toggle' => 'Show details for this salesman',
+    'summary_count_label' => 'Count',
     'summary_unassigned' => 'Unassigned',
     'summary_count' => ':count',
     'summary_total_margin' => 'Total margin',

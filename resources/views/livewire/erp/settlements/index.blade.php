@@ -35,6 +35,19 @@ new #[Layout('components.layouts.app')] class extends Component
 
     #[Url] public int $perPage = 10;
 
+    /**
+     * 담당자별 합계 펼침 — **기본 접힘**.
+     *
+     * 🚨 이게 성능의 핵심이다. 이 합계는 **필터에 걸린 정산 전부를 순회**하며 행마다
+     *    총마진·정산액·실지급액 accessor 를 돈다. 실측(ssancarerp 3,815건) 7.9초다.
+     *    게다가 이 화면은 `wire:poll.30s` 라 **30초마다 그 비용이 반복**된다.
+     * 🔑 **Alpine 으로 숨기는 것으로는 안 줄어든다** — 서버가 HTML 을 다 만들어 보낸다.
+     *    서버 계산까지 빼려면 접힘이 **서버 상태**여야 하고, 접혀 있으면 Blade 가
+     *    `$this->salesmanSummaries` 를 아예 안 부른다(그러면 `#[Computed]` 도 안 돈다).
+     */
+    #[Url(as: 'sum')]
+    public bool $showSummaries = false;
+
     // ── 슬라이드 패널 ─────────────────────────────────────────────
     public bool $showPanel = false;
 
@@ -179,7 +192,11 @@ new #[Layout('components.layouts.app')] class extends Component
         $all = Settlement::query()
             // ⚠️ salesman 컬럼을 제한하지 말 것 — per_unit_tier_enabled 가 안 실리면
             //    차등정산(tier) 담당자의 정산액이 10만 고정으로 계산돼 합계가 통째로 틀린다(실측 20,430,000→100,000).
-            ->with(['vehicle', 'salesman'])
+            // 🚨 **잔금·회수이력을 같이 싣는다.** 아래 `sum('actual_payout')` 는 행마다
+            //    총마진 → 판매금원화 → 정산환율 → **미수** 를 타고, 미수가 그 둘을 읽는다.
+            //    안 실으면 행마다 2쿼리가 붙는다 — 실측(ssancarerp 3,815건) 7,837쿼리 / 19.3초.
+            //    싣고 나면 209쿼리 / 7.9초.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->monthFilter, $this->monthScope())
@@ -211,6 +228,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 'cancel_loss_plates' => $loss['plates'] ?? [],
             ];
         })->sortByDesc('actual_payout_sum')->values()->toArray();
+    }
+
+    /** 담당자별 합계 펼치기/접기 — 접으면 다음 렌더부터 그 계산을 건너뛴다. */
+    public function toggleSummaries(): void
+    {
+        $this->showSummaries = ! $this->showSummaries;
     }
 
     public function setSalesmanFilter(int $id): void
@@ -1551,53 +1574,74 @@ new #[Layout('components.layouts.app')] class extends Component
 
 {{-- 2026-05-20 #2 피드백 — 영업담당자별 합계 카드 (인원별 솔팅 + 합계). --}}
 {{-- 클릭 시 해당 담당자 필터 토글. statusFilter / dateFrom/To 와 동일 컨텍스트. --}}
-@if(!empty($this->salesmanSummaries))
+{{-- 🚨 **기본 접힘**이고 접혀 있으면 `$this->salesmanSummaries` 를 안 부른다 —
+     그 계산이 전 정산을 순회해서 3,815건이면 7.9초다(그리고 wire:poll.30s 가 반복한다). --}}
 <div class="mt-3">
-    <div class="mb-2 flex items-center gap-2 text-xs text-gray-500">
+    <button type="button" wire:click="toggleSummaries"
+            class="mb-2 flex items-center gap-2 text-xs text-gray-500 hover:text-violet-700">
+        <span class="inline-block transition-transform {{ $showSummaries ? 'rotate-90' : '' }}">▸</span>
         <span>{{ __('settlement.summary_title') }}</span>
-        <span class="text-gray-400">{{ __('settlement.summary_hint') }}</span>
-    </div>
-    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-        @foreach($this->salesmanSummaries as $summary)
-        <button type="button" wire:click="setSalesmanFilter({{ $summary['salesman_id'] ?? 0 }})"
-                class="card text-left transition hover:bg-violet-50 {{ $salesmanFilter == $summary['salesman_id'] ? 'border-violet-400 bg-violet-50/40' : '' }}">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-medium text-gray-700">{{ $summary['salesman_name'] }}</span>
-                <span class="pill-count">{{ __('settlement.summary_count', ['count' => $summary['count']]) }}</span>
+        <span class="text-gray-400">{{ $showSummaries ? __('settlement.summary_hint') : __('settlement.summary_collapsed_hint') }}</span>
+    </button>
+
+    @if($showSummaries)
+        @php $isKaraba = \App\Models\Setting::isKaraba(); @endphp
+        @if(!empty($this->salesmanSummaries))
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+            @foreach($this->salesmanSummaries as $summary)
+            {{-- 접힌 카드 = 이름 + 실지급액. 자세히는 개별 펼치기(값은 이미 계산돼 있어 Alpine 으로 충분). --}}
+            <div x-data="{ open: false }"
+                 class="card {{ $salesmanFilter == $summary['salesman_id'] ? 'border-violet-400 bg-violet-50/40' : '' }}">
+                <div class="flex items-center gap-2">
+                    <button type="button" wire:click="setSalesmanFilter({{ $summary['salesman_id'] ?? 0 }})"
+                            class="min-w-0 flex-1 truncate text-left text-xs font-medium text-gray-700 hover:text-violet-700">
+                        {{ $summary['salesman_name'] }}
+                    </button>
+                    <span class="shrink-0 font-mono text-xs font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
+                    <button type="button" @click="open = !open"
+                            class="shrink-0 text-[11px] text-gray-400 hover:text-violet-700"
+                            :aria-expanded="open" aria-label="{{ __('settlement.summary_detail_toggle') }}">
+                        <span x-text="open ? '−' : '+'">+</span>
+                    </button>
+                </div>
+                <div x-show="open" x-cloak class="mt-2 space-y-1 text-[11px]">
+                    <div class="flex items-center justify-between text-gray-500">
+                        <span>{{ __('settlement.summary_count_label') }}</span>
+                        <span class="pill-count">{{ __('settlement.summary_count', ['count' => $summary['count']]) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-gray-500">
+                        <span>{{ $isKaraba ? __('settlement.label_operating_profit') : __('settlement.summary_total_margin') }}</span>
+                        <span class="font-mono text-gray-700">{{ number_format($summary['total_margin_sum']) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-gray-500">
+                        <span>{{ __('settlement.summary_settlement_amount') }}</span>
+                        <span class="font-mono text-gray-700">{{ number_format($summary['settlement_amount_sum']) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between border-t border-gray-100 pt-1">
+                        <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
+                        <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
+                    </div>
+                    @if(($summary['unconsumed_carryover'] ?? 0) != 0)
+                    <div class="flex items-center justify-between border-t border-gray-100 pt-1">
+                        <span class="{{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ __('settlement.summary_carryover') }}</span>
+                        <span class="font-mono font-semibold {{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['unconsumed_carryover'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['unconsumed_carryover'])) }}</span>
+                    </div>
+                    @endif
+                    {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월배치 지급」 조정에서. --}}
+                    @if(($summary['cancel_loss'] ?? 0) > 0)
+                    <div class="flex items-center justify-between border-t border-gray-100 pt-1"
+                         title="{{ __('settlement.summary_cancel_loss_hint', ['plates' => implode(', ', $summary['cancel_loss_plates'] ?? [])]) }}">
+                        <span class="text-rose-600">{{ __('settlement.summary_cancel_loss') }}</span>
+                        <span class="font-mono font-semibold text-rose-600">−{{ number_format($summary['cancel_loss']) }}</span>
+                    </div>
+                    @endif
+                </div>
             </div>
-            <div class="mt-2 space-y-1 text-[11px]">
-                <div class="flex items-center justify-between text-gray-500">
-                    <span>{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.summary_total_margin') }}</span>
-                    <span class="font-mono text-gray-700">{{ number_format($summary['total_margin_sum']) }}</span>
-                </div>
-                <div class="flex items-center justify-between text-gray-500">
-                    <span>{{ __('settlement.summary_settlement_amount') }}</span>
-                    <span class="font-mono text-gray-700">{{ number_format($summary['settlement_amount_sum']) }}</span>
-                </div>
-                <div class="flex items-center justify-between border-t border-gray-100 pt-1">
-                    <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
-                    <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
-                </div>
-                @if(($summary['unconsumed_carryover'] ?? 0) != 0)
-                <div class="flex items-center justify-between border-t border-gray-100 pt-1">
-                    <span class="{{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ __('settlement.summary_carryover') }}</span>
-                    <span class="font-mono font-semibold {{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['unconsumed_carryover'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['unconsumed_carryover'])) }}</span>
-                </div>
-                @endif
-                {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월배치 지급」 조정에서. --}}
-                @if(($summary['cancel_loss'] ?? 0) > 0)
-                <div class="flex items-center justify-between border-t border-gray-100 pt-1"
-                     title="{{ __('settlement.summary_cancel_loss_hint', ['plates' => implode(', ', $summary['cancel_loss_plates'] ?? [])]) }}">
-                    <span class="text-rose-600">{{ __('settlement.summary_cancel_loss') }}</span>
-                    <span class="font-mono font-semibold text-rose-600">−{{ number_format($summary['cancel_loss']) }}</span>
-                </div>
-                @endif
-            </div>
-        </button>
-        @endforeach
-    </div>
+            @endforeach
+        </div>
+        @endif
+    @endif
 </div>
-@endif
 
 {{-- 테이블 (데스크탑) --}}
 <div class="hidden sm:block overflow-x-auto">

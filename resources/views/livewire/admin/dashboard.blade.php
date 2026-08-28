@@ -214,9 +214,14 @@ new #[Layout('components.layouts.app')] class extends Component
         // 새회의.txt #7 + 3-B (2026-05-23) — 발생 매출 vs 현금 회수 분리.
         // 현금 회수 = sale_received_krw_accumulated accessor 합 (row 별 환율 합산, SKILLS §13)
         // 미수금 = sale_unpaid_amount_krw_cache 컬럼 합 (Vehicle saving 훅 자동 갱신)
-        $cashReceivedKrw = (clone $base)->where('sale_price', '>', 0)->get()->sum(function ($v) {
-            return (int) $v->sale_received_krw_accumulated;
-        });
+        // 🚨 `sale_received_krw_accumulated` 는 차량마다 **잔금·회수이력을 읽는다** — 같이 싣지 않으면
+        //    대상 차량 수만큼 쿼리가 붙는다. 실측(ssancarerp) 기본 2개월 321대 = 643쿼리/532ms,
+        //    기간을 전체로 넓히면 3,837대 = 7,675쿼리/6.1초. 싣고 나면 각각 3쿼리/59ms · 3쿼리/677ms.
+        $cashReceivedKrw = (clone $base)->where('sale_price', '>', 0)
+            ->with(['finalPayments', 'receivableHistories'])
+            ->get()->sum(function ($v) {
+                return (int) $v->sale_received_krw_accumulated;
+            });
         // 결제대기(grace) 제외 — 판매일+10일 미경과 선적전 미수는 아직 채권 아님 (jin 2026-07-06).
         //   발생 매출(saleKrw)·현금 회수는 grace 포함 유지(grace 도 실제 판매). 미수금 KPI 만 제외.
         $unpaidKrw = (int) (clone $base)->where('sale_price', '>', 0)->excludeReceivableGrace()->sum('sale_unpaid_amount_krw_cache');
@@ -414,7 +419,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereNotNull('paid_at')
             ->whereYear('paid_at', $year)
             ->whereNotNull('salesman_id')
-            ->with('vehicle')
+            // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
+            //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
+            //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
             ->chunk(500, function ($rows) use (&$monthlyBySalesman) {
                 foreach ($rows as $s) {
                     $id = $s->salesman_id;
@@ -450,7 +458,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('settlement_status', 'confirmed')
             ->when($this->dateFrom, fn ($q) => $q->where('confirmed_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('confirmed_at', '<=', $this->dateTo.' 23:59:59'))
-            ->with('vehicle')
+            // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
+            //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
+            //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
             ->chunk(500, function ($rows) use (&$payoutPending) {
                 foreach ($rows as $s) {
                     $payoutPending += (int) ($s->actual_payout ?? 0);
@@ -523,7 +534,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereNotNull('paid_at')
             ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
-            ->with('vehicle')
+            // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
+            //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
+            //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
             ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson, &$batchIds) {
                 foreach ($rows as $s) {
                     if ($s->payout_batch_id) {
