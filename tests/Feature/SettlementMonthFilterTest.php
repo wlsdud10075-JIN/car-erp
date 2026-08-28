@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -75,7 +76,9 @@ class SettlementMonthFilterTest extends TestCase
 
         $component = Volt::actingAs($manager)->test('erp.settlements.index');
 
-        // 전체 = 3건.
+        // 전체 = 3건. ⚠️ 2026-08-28 부터 월 필터에 **이번 달 기본값**이 붙었으므로
+        //   「전 기간」을 보려면 명시적으로 비운다(그 동작이 남아 있는지도 함께 검증한다).
+        $component->set('monthFilter', '');
         $this->assertCount(3, $component->instance()->settlements()->items());
 
         // 2026-04 필터 → 목록 2건.
@@ -189,5 +192,55 @@ class SettlementMonthFilterTest extends TestCase
         $component = Volt::actingAs($manager)->test('erp.settlements.index');
 
         $this->assertSame(['2026-05', '2026-03'], $component->instance()->availableMonths());
+    }
+
+    /**
+     * 월 필터 **기본값 = 이번 달** (jin 2026-08-28).
+     *
+     * 🚨 성능이 이유다 — 담당자별 합계가 필터에 걸린 정산 전부를 PHP 로 순회한다.
+     *    전 기간(ssancarerp 3,815건) 8.1초 → 월 스코프 ~1.3초.
+     * 🧭 「전 기간」은 없어지지 않았다. 비우면 그대로 나온다(위 테스트가 그걸 검증한다).
+     */
+    public function test_month_filter_defaults_to_the_current_month(): void
+    {
+        $manager = $this->makeManager();
+
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+
+        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+    }
+
+    /** URL 로 온 monthFilter 가 이긴다 — #[Url] 이 mount 보다 먼저 채우므로 기본값이 덮으면 안 된다. */
+    public function test_month_in_the_url_wins_over_the_default(): void
+    {
+        $manager = $this->makeManager();
+
+        Livewire::withQueryParams(['monthFilter' => '2026-04']);
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+
+        $this->assertSame('2026-04', $component->instance()->monthFilter);
+    }
+
+    /**
+     * 지급보류는 **달과 무관한 잔액**이라 월 기본값을 걸지 않는다 — 딥링크·화면 토글 양쪽.
+     * 걸리면 이번 달에 만든 정산만 보여 «보류가 없다»로 읽히고, 재무 대시보드 건수와 갈린다.
+     */
+    public function test_held_only_never_gets_the_month_default(): void
+    {
+        $manager = $this->makeManager();
+
+        // ① 딥링크(?held=1)
+        Livewire::withQueryParams(['held' => true]);
+        $deeplink = Volt::actingAs($manager)->test('erp.settlements.index');
+        Livewire::withQueryParams([]);
+        $this->assertTrue($deeplink->instance()->heldOnly);
+        $this->assertSame('', $deeplink->instance()->monthFilter);
+
+        // ② 화면 안에서 토글 — 기본값이 걸린 상태에서 켜면 풀려야 한다.
+        $component = Volt::actingAs($manager)->test('erp.settlements.index');
+        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+        $component->call('toggleHeld');
+        $this->assertTrue($component->instance()->heldOnly);
+        $this->assertSame('', $component->instance()->monthFilter);
     }
 }
