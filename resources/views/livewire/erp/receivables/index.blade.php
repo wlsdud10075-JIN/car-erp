@@ -78,6 +78,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    기본값이 없어야 채권관리 = 관리자 대시보드 = 대표 알림톡 세 곳의 숫자가 같아진다.
         //    필터 자체는 남겨 둔다 — 사용자가 명시적으로 넣으면 그때만 좁혀진다.
 
+        // 🚨 `$search` 는 `#[Url]` 이라 `?search=…` 로 **직접 들어오면 updatedSearch() 가 안 뜬다**
+        //    (하이드레이션은 훅을 안 태운다). 공유 링크·뒤로가기·타 화면 딥링크가 여기 해당하므로
+        //    같은 판정을 여기서도 한 번 돌린다. URL 로 탭을 함께 지정했으면 그게 이긴다(안에서 검사).
+        $this->jumpToPaidUpIfOnlyMatchThere();
+
         // 판매탭 잠금 잔금 → '채권관리에서 수정' 진입: 해당 차량 수정 패널 바로 오픈 (재검색 불필요).
         if ($this->openVehicle) {
             try {
@@ -94,7 +99,41 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function updatedSearch(): void
     {
+        $this->jumpToPaidUpIfOnlyMatchThere();
         $this->resetPage();
+    }
+
+    /**
+     * 검색한 차가 **완납이면 「완납」 탭으로 옮긴다** (jin 2026-08-28).
+     *
+     * 🚨 종전엔 완납 차를 검색하면 **탭 pill 엔 「완납 1」이 떠 있는데 목록은 0건**이었다.
+     *    기본 탭(채권 전체 = 미수 > 0)이 그 차를 떨어뜨리기 때문이다. 실무자에겐
+     *    「검색이 안 된다」로 보인다 — 숫자는 보이는데 행이 없으니 더 헷갈린다.
+     *
+     * 🧭 조용히 조건만 덮지 않고 **눈에 보이는 탭을 바꿔** 화면이 스스로 설명하게 한다
+     *    (`updatedCancelFilter` 의 과입금 처리와 같은 형태 — 그게 먼저 승인된 선례다).
+     *
+     * ⚠️ **기본 탭일 때만** 옮긴다. 사용자가 「선적전 미수」 같은 탭을 일부러 골라 뒀으면
+     *    건드리지 않는다 — 고른 조건을 검색 한 번에 뺏으면 그게 또 다른 혼란이다.
+     * ⚠️ 되돌리지 않는다(sticky) — 검색어를 지워도 완납 탭에 남는다. 「직전 탭」을 따로
+     *    들고 있으면 `#[Url]` 과 어긋나기 시작해 디버깅이 어렵다. 탭이 보이므로 사용자가
+     *    스스로 되돌릴 수 있다.
+     * 🧭 판정 쿼리를 새로 쓰지 않는다 — `applyClassification` 단일 출처를 그대로 쓴다
+     *    (조건을 옮겨 적으면 탭과 갈린다, SKILLS §8 #44). `exists()` 라 탭 카운트보다 싸다.
+     */
+    private function jumpToPaidUpIfOnlyMatchThere(): void
+    {
+        if ($this->search === '' || $this->classification !== '') {
+            return;
+        }
+
+        if (self::applyClassification($this->buildQuery(false), '')->exists()) {
+            return;   // 채권 전체에서 이미 나온다 — 현행 그대로.
+        }
+
+        if (self::applyClassification($this->buildQuery(false), 'paid_up')->exists()) {
+            $this->classification = 'paid_up';
+        }
     }
 
     /**
@@ -713,11 +752,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('sale_price', '>', 0)
             // 선박명(VSL)·컨테이너번호로도 찾을 수 있어야 한다 (jin 2026-07-29) —
             // "그 배에 실린 차들 미수" 처럼 선적 단위로 채권을 묻는 흐름. 차량목록 검색과 같은 기준.
+            // 차대번호(VIN)도 같은 칸에서 찾는다 (jin 2026-08-28) — 바이어가 차대번호로 문의하는데
+            //   채권관리에서만 안 찾아져 실무자가 차량관리를 거쳐 오고 있었다.
+            //   ⚠️ 차량관리는 숫자·코드 충돌 때문에 VIN 을 별도 칸으로 뒀지만, 채권관리는 검색칸이
+            //      하나뿐이라 통합한다. 끝 6자리 같은 짧은 입력은 다른 컬럼과도 부분 매칭될 수 있다.
             ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('vehicle_number', 'like', "%{$this->search}%")
                 ->orWhere('brand', 'like', "%{$this->search}%")
                 ->orWhere('vessel_name', 'like', "%{$this->search}%")
                 ->orWhere('container_number', 'like', "%{$this->search}%")
+                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")
             ))
             ->when($this->dateFrom, fn ($q) => $q->where('purchase_date', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('purchase_date', '<=', $this->dateTo))
