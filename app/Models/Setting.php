@@ -9,6 +9,22 @@ class Setting extends Model
     protected $fillable = ['key', 'value', 'type', 'description'];
 
     /**
+     * 설정이 바뀌면 이 값을 메모해 둔 모델의 캐시를 버린다.
+     *
+     * 🚨 `Settlement` 이 회사 프로파일(karaba 여부)과 정산 파라미터를 **요청 단위로 메모**한다
+     *    (정산 목록이 전 정산을 순회하는데 행마다 `settings` 를 조회하던 것을 없애려고).
+     *    기능설정에서 값을 바꾼 **같은 요청 안에서** 다시 읽으면 옛 값이 나오므로 여기서 버린다.
+     * ⚠️ 테스트의 `RefreshDatabase` 롤백은 **모델 이벤트를 안 태운다** — 그건 `Tests\TestCase::setUp`
+     *    이 따로 버린다. 둘 다 있어야 한다.
+     */
+    protected static function booted(): void
+    {
+        $forget = fn () => Settlement::flushParamMemo();
+        static::saved($forget);
+        static::deleted($forget);
+    }
+
+    /**
      * 돈 흐름 락 토글 — 기능설정 "락 관제". lock 키(접미 없음) => 기본값(bool).
      * 회사별 {set} 접미로 저장(알림톡 패턴). 값 seed 불필요 — 여기 기본값이 단일 출처.
      *   #1 매입 등록 · #3 선적 진입(C5) · #4 B/L(G1) = 현행 유지 ON.
