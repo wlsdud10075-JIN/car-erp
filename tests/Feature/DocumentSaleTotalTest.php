@@ -146,6 +146,20 @@ class DocumentSaleTotalTest extends TestCase
                 );
             }
 
+            // 🚨 이 수정의 근거가 「8시트가 같이 낮았다」이므로 **하류 시트까지** 단언한다.
+            //    구매리스트 → 차량인보이스 → Travel Services Invoice 로 두 단계 cascade 한다.
+            $travel = $ss->getSheetByName('Travel Services Invoice');
+            if ($travel !== null) {
+                foreach (['F31' => 'Grend Total', 'F11' => 'Total invoice'] as $coord => $label) {
+                    $this->assertEqualsWithDelta(
+                        (float) $v->declaration_base_amount,
+                        (float) $travel->getCell($coord)->getCalculatedValue(),
+                        0.5,
+                        "[$set] Travel Services Invoice $label($coord) 이 cascade 를 안 받았다.",
+                    );
+                }
+            }
+
             $ss->disconnectWorksheets();
             Vehicle::query()->forceDelete();
         }
