@@ -145,8 +145,24 @@ new #[Layout('components.layouts.app')] class extends Component
     public function mount(): void
     {
         // 재무 대시보드 '미수로 지급보류' 딥링크(?held=1) 진입 시 = 전체담당자 + 지급보류만.
+        //
+        // ⚠️ 딥링크엔 **월 기본값을 걸지 않는다** — 지급보류는 달과 무관한 「잔액」이라
+        //    이번 달로 좁히면 대시보드가 센 건수와 화면이 갈린다.
         if ($this->heldOnly) {
             $this->salesmanFilter = 0;
+
+            return;
+        }
+
+        // 월 필터 기본값 = 이번 달 (jin 2026-08-28).
+        //
+        // 🚨 성능이 이유다. 담당자별 합계는 필터에 걸린 정산 **전부**를 PHP 로 순회하며
+        //    행마다 총마진·정산액 accessor 를 돈다 — 전 기간(ssancarerp 3,815건)이면 8.1초다.
+        //    월로 좁히면 ~1.3초. 목록 SQL 도 같이 좁아진다.
+        // 🧭 「전 기간」은 없어지지 않았다 — 월 선택을 '전체'로 비우면 그대로 나온다(그때만 8.1초).
+        // ⚠️ URL 에 month 가 실려 오면 그 값이 이긴다(#[Url] 이 mount 전에 채운다).
+        if ($this->monthFilter === '') {
+            $this->monthFilter = now()->format('Y-m');
         }
     }
 
@@ -180,6 +196,14 @@ new #[Layout('components.layouts.app')] class extends Component
     public function toggleHeld(): void
     {
         $this->heldOnly = ! $this->heldOnly;
+
+        // 🚨 켤 때는 **월 필터를 푼다** — 지급보류는 달과 무관한 「잔액」이다(미수는 기간으로 안 자른다).
+        //    월 기본값(mount)이 생긴 뒤로, 안 풀면 이번 달에 만든 정산만 보여 «보류가 없다»로 읽힌다.
+        //    딥링크(?held=1)가 mount 에서 월을 안 거는 것과 같은 규칙이다.
+        if ($this->heldOnly) {
+            $this->monthFilter = '';
+        }
+
         $this->resetPage();
     }
 
@@ -1581,6 +1605,8 @@ new #[Layout('components.layouts.app')] class extends Component
             class="mb-2 flex items-center gap-2 text-xs text-gray-500 hover:text-violet-700">
         <span class="inline-block transition-transform {{ $showSummaries ? 'rotate-90' : '' }}">▸</span>
         <span>{{ __('settlement.summary_title') }}</span>
+        {{-- 🧭 범위를 제목에 적는다 — 월 기본값이 생긴 뒤로 「이게 전 기간 합계」라는 오해가 가능해졌다. --}}
+        <span class="pill-count">{{ $monthFilter !== '' ? $monthFilter : __('settlement.summary_scope_all') }}</span>
         <span class="text-gray-400">{{ $showSummaries ? __('settlement.summary_hint') : __('settlement.summary_collapsed_hint') }}</span>
     </button>
 

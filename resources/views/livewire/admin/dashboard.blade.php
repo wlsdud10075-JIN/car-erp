@@ -422,7 +422,12 @@ new #[Layout('components.layouts.app')] class extends Component
             // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
             //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
             //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
-            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
+            // 🚨 **salesman 도 같이 싣는다** — 사내직원(per_unit)이 per_unit_amount 를 명시하지 않으면
+            //    effective_per_unit_amount 가 salesman->per_unit_tier_enabled 를 읽어 행마다 1쿼리가
+            //    더 붙는다(실측 1,286쿼리 / 1.65초). 정산관리 합계는 같은 이유로 이미 싣고 있었다.
+            // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
+            //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->chunk(500, function ($rows) use (&$monthlyBySalesman) {
                 foreach ($rows as $s) {
                     $id = $s->salesman_id;
@@ -461,7 +466,12 @@ new #[Layout('components.layouts.app')] class extends Component
             // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
             //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
             //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
-            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
+            // 🚨 **salesman 도 같이 싣는다** — 사내직원(per_unit)이 per_unit_amount 를 명시하지 않으면
+            //    effective_per_unit_amount 가 salesman->per_unit_tier_enabled 를 읽어 행마다 1쿼리가
+            //    더 붙는다(실측 1,286쿼리 / 1.65초). 정산관리 합계는 같은 이유로 이미 싣고 있었다.
+            // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
+            //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->chunk(500, function ($rows) use (&$payoutPending) {
                 foreach ($rows as $s) {
                     $payoutPending += (int) ($s->actual_payout ?? 0);
@@ -537,7 +547,12 @@ new #[Layout('components.layouts.app')] class extends Component
             // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
             //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
             //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
-            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories'])
+            // 🚨 **salesman 도 같이 싣는다** — 사내직원(per_unit)이 per_unit_amount 를 명시하지 않으면
+            //    effective_per_unit_amount 가 salesman->per_unit_tier_enabled 를 읽어 행마다 1쿼리가
+            //    더 붙는다(실측 1,286쿼리 / 1.65초). 정산관리 합계는 같은 이유로 이미 싣고 있었다.
+            // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
+            //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson, &$batchIds) {
                 foreach ($rows as $s) {
                     if ($s->payout_batch_id) {

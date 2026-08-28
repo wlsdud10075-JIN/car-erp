@@ -81,6 +81,7 @@ return [
     'summary_hint' => '— 클릭하면 해당 담당자만 솔팅',
     // 접힘이 기본 — 펼칠 때만 계산한다(전 정산을 순회하는 무거운 집계라서).
     'summary_collapsed_hint' => '— 펼치면 계산합니다',
+    'summary_scope_all' => '전 기간',
     'summary_detail_toggle' => '이 담당자 상세 펼치기',
     'summary_count_label' => '건수',
     'summary_unassigned' => '미지정',
