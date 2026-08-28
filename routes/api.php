@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
+use App\Http\Controllers\Api\PortalBuyerController;
 use App\Http\Controllers\Api\PortalDocumentController;
 use App\Http\Controllers\Api\PortalVehicleController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
@@ -90,6 +91,16 @@ Route::middleware([VerifyPortalReadHmac::class])
         Route::get('vehicles', [PortalVehicleController::class, 'vehicles'])
             ->middleware('throttle:portal-read')
             ->name('vehicles');
+
+        /*
+        | 바이어 명부 (2026-08-28) — 차량 응답이 주는 `buyer_id` 에 **이름을 붙일 유일한 경로**.
+        | 🔑 throttle 은 **차량과 같은 버킷**(`portal-read`, 30/분·IP). 같은 6시간 크론이
+        |    회당 2요청만 하므로 서로를 굶기지 않는다. 서류를 따로 뗀 이유는 바이어 브라우저의
+        |    순간 폭주였는데, 명부에는 그 축이 없다.
+        */
+        Route::get('buyers', [PortalBuyerController::class, 'buyers'])
+            ->middleware('throttle:portal-read')
+            ->name('buyers');
 
         /*
         | 서류 실물 (2026-08-27) — 통로가 둘인 이유는 PortalDocumentController 주석 참조.
