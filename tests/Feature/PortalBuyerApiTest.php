@@ -96,6 +96,42 @@ class PortalBuyerApiTest extends TestCase
         $this->assertTrue($row['is_active']);
         $this->assertFalse($row['erp_deleted']);
         $this->assertSame(0, $row['vehicle_count']);
+        $this->assertNull($row['salesman_name'], '담당자 미지정이면 null — 🚫 빈 문자열로 눕히면 「없음」과 「모름」이 섞인다.');
+    }
+
+    /**
+     * 영업담당자 **이름** 한 칸 (2026-08-28 jin 승인 — ssancar 3차 패킷).
+     *
+     * 🔑 그쪽의 유일한 담당자 소스가 2026-06-22 스냅샷이라 두 달치 재배정이 빠져 있었다.
+     *    계정 비밀번호를 담당자별로 갈라 전달해야 해서 필요해졌다. 쓰는 자리는 관리자 화면이다.
+     * 🚨 이 테스트가 잡는 진짜 회귀는 **조용한 null** 이다 — `select(COLUMNS)` 에서
+     *    `salesman_id` 가 빠지면 `belongsTo` 매칭이 실패해 전 행이 null 이 되는데,
+     *    예외도 경고도 없다(`country_id` 가 COLUMNS 에 있는 이유와 같다).
+     */
+    public function test_salesman_name_ships_but_never_the_id(): void
+    {
+        $sm = Salesman::create(['name' => '이원호', 'is_active' => true]);
+        $b = $this->buyer(['name' => 'NICK', 'salesman_id' => $sm->id]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
+
+        $this->assertSame('이원호', $row['salesman_name']);
+        $this->assertArrayNotHasKey('salesman_id', $row, 'id 는 계속 닫힌다 — 사전이 두 벌이 되면 그게 낡는다.');
+    }
+
+    /**
+     * 담당자가 **소프트삭제**되면 null 이다 — ERP 바이어 화면이 「미지정」을 그리는 것과 같은 값.
+     * 🚫 `withTrashed` 를 붙이지 말 것: 포털이 ERP 화면보다 더 많이 보여주게 된다.
+     */
+    public function test_soft_deleted_salesman_reads_as_null(): void
+    {
+        $sm = Salesman::create(['name' => '퇴사자', 'is_active' => true]);
+        $b = $this->buyer(['name' => 'Orphaned', 'salesman_id' => $sm->id]);
+        $sm->delete();
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
+
+        $this->assertNull($row['salesman_name']);
     }
 
     // ── 🚨 되돌아가면 차량이 고아가 되는 자리 ───────────────
@@ -155,6 +191,9 @@ class PortalBuyerApiTest extends TestCase
         // 키 이름이 바뀌어도 **값이 새면** 잡히게 문자열을 통째로 훑는다.
         foreach ([
             'unsecured_limit_krw', 'lock_shipping_entry_pct', 'lock_purchase_registration_pct',
+            // ⚠️ `salesman_id` 는 **계속 닫혀 있다**. 2026-08-28 에 연 것은 `salesman_name`(이름)뿐이고,
+            //    그건 이 문자열의 부분문자열이 아니라 이 단언과 충돌하지 않는다
+            //    — 열린 범위는 `test_salesman_name_ships_but_never_the_id` 가 양성으로 못박는다.
             'memo', 'passport_id', 'salesman_id', 'is_inherited', 'inherited_from_salesman_id',
             '내부메모-절대노출금지', 'PASSPORT-PLAINTEXT-1234', '5000000',
         ] as $forbidden) {
