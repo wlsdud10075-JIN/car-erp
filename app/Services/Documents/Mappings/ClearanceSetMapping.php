@@ -74,7 +74,15 @@ class ClearanceSetMapping
                 'B14' => fn (Vehicle $v) => DocValue::consigneeBlock($v, labelIdValue: true), // 컨사이니 (이름+Business number 라벨+주소+이메일+전화+담당자)
                 // D14(NAME)는 템플릿 셀에 `=B14` 수식 — 컨사이니 블록 전체를 미러(Travel Invoice F5 cascade).
                 //   writeCell 이 수식 셀은 안 덮어쓰므로 매핑에서 제외.
-                'B15' => fn (Vehicle $v) => DocValue::money($v->sale_price),        // 판매금 (float — 텍스트면 차량인보이스 SUM/통화서식 깨짐)
+                // 판매금 = 판매가 + Commission + Auto Loading − TAX D/C (jin 2026-08-28).
+                //   🚨 종전엔 `sale_price` 만 찍어 **커미션·하역비·할인이 통째로 빠져** 있었다.
+                //      이 칸 하나가 `=구매리스트!B15` 로 6시트에 cascade 하므로, 세관·바이어가 보는
+                //      8시트 전부가 그만큼 낮은 금액이었다.
+                //   ✅ 결과적으로 `차량인보이스!J22`(= 판매금 + 운임) 가 ERP 면장 기준액
+                //      (`Vehicle::declaration_base_amount`)과 **같아진다** — 취향이 아니라 정합성이다.
+                //   ⚠️ 운임비는 여기 넣지 않는다 — D15 로 따로 가고 J22 에서 합쳐진다.
+                //   (float — 텍스트면 차량인보이스 SUM/통화서식이 깨진다)
+                'B15' => fn (Vehicle $v) => DocValue::money(($v->sale_price ?? 0) + DocValue::otherCharge($v)),
                 'D15' => fn (Vehicle $v) => DocValue::money($v->transport_fee),     // 운임 (float)
                 // Travel Services Invoice 컨사이니 칸 — 계약서 F6/F7 과 동일 소스(컨사이니→없으면 바이어).
                 //   엔진의 'Sheet!Cell' 시트지정 좌표로 마스터 외 시트에 직접 기입.
