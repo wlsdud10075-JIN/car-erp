@@ -61,7 +61,8 @@ class ImportSsancarSettled extends Command
     protected $signature = 'ssancarerp:import-settled
         {path : 정산완료 수출현황표 xlsx 경로}
         {--sheet=수출차량매입-2026 : 시트명}
-        {--apply : 실제 적재 (미지정 시 dry-run — 검증 리포트만)}';
+        {--apply : 실제 적재 (미지정 시 dry-run — 검증 리포트만)}
+        {--unsettled : 미정산 파일 — 정산 생성·미수 0 처리·매입 차액 보정을 하지 않는다}';
 
     protected $description = 'ssancarerp 정산완료 과거분 적재 (96열 현황표 전용, 기본 dry-run)';
 
@@ -144,6 +145,9 @@ class ImportSsancarSettled extends Command
         'auto_loading' => 'AN',
         'tax_dc' => 'AO',
         'transport_fee' => 'AP',
+        // AQ = 같은 운임을 USD 로 적은 칸(판매탭 「운임비(USD) · 기록용」). AP 와는 다른 값이다 —
+        //   EUR 차 실측 비율이 일관되게 1.17 대(예: `61조8437` AP 814 / AQ 950). 어떤 계산에도 안 들어간다.
+        'transport_fee_usd' => 'AQ',
         'memo' => 'CO',
     ];
 
@@ -215,7 +219,7 @@ class ImportSsancarSettled extends Command
         $this->sheet = $sheet;
         $rows = [];
         $issues = ['no_plate' => 0, 'no_memo' => 0, 'memo_unparsed' => [], 'year_fixed' => 0,
-            'plate_fixed' => 0, 'negative_cost' => []];
+            'plate_fixed' => 0, 'negative_cost' => [], 'negative_freight_usd' => []];
         $last = $sheet->getHighestDataRow();
 
         // 행 단위로 한 번에 읽는다 — 3,839행 × 96열을 셀마다 getCell 하면 23만 회라 느리고 메모리를 먹는다.
@@ -247,11 +251,21 @@ class ImportSsancarSettled extends Command
                     in_array($field, ['purchase_date', 'deregistration_date', 'shipping_date', 'eta_date'], true) => $this->toDate($raw),
                     in_array($field, ['year', 'mileage'], true) => $this->toNum($raw) === null ? null : (int) $this->toNum($raw),
                     in_array($field, ['purchase_price', 'selling_fee', 'sale_price', 'exchange_rate', 'commission',
-                        'auto_loading', 'tax_dc', 'transport_fee', 'export_declaration_amount'], true) => $this->toNum($raw) ?? 0,
+                        'auto_loading', 'tax_dc', 'transport_fee', 'transport_fee_usd',
+                        'export_declaration_amount'], true) => $this->toNum($raw) ?? 0,
                     default => $raw,
                 };
             }
             $row['vehicle_number'] = $plate;
+
+            // 운임비(USD)는 「빈 것 = null」 이 원장 규약이다(board 1/N 이 0 도 빈 것으로 본다).
+            //   ⚠️ 음수가 실제로 있다(정산완료본 `02고1463` = −100). 컬럼이 signed 라 저장은 되지만
+            //      운임이 음수일 리 없으므로 버리고 리포트에 드러낸다.
+            $tfu = (float) ($row['transport_fee_usd'] ?? 0);
+            if ($tfu < 0) {
+                $issues['negative_freight_usd'][] = $plate.' AQ='.number_format($tfu);
+            }
+            $row['transport_fee_usd'] = $tfu > 0 ? (int) round($tfu) : null;
 
             // 비용 9개 — 문자값(업체명)이 섞인 칸이 132 건 있다. 엑셀 합계도 0 으로 쳤으므로 0 으로.
             // 🚨 **비용 컬럼은 `unsignedBigInteger`** 라 음수를 넣으면 MySQL 이
@@ -477,8 +491,13 @@ class ImportSsancarSettled extends Command
             }
         }
 
+        $unsettled = (bool) $this->option('unsettled');
+
         $this->newLine();
         $this->info('── 파싱 요약 ──');
+        if ($unsettled) {
+            $this->warn('  🔧 --unsettled 모드 — 정산 생성 안 함 · 미수 남김 · 매입 차액 보정 안 함');
+        }
         $this->line(sprintf('  행 %d  ·  차량번호 없음 %d  ·  번호 정정 %d  ·  연도오타 정정 %d',
             count($rows), $issues['no_plate'], $issues['plate_fixed'], $issues['year_fixed']));
         $this->line(sprintf('  정산구분: 프리랜서 %d · 사내직원 %d · 헤이맨 %d · 미판별 %d',
@@ -489,11 +508,19 @@ class ImportSsancarSettled extends Command
             }
         }
         $this->line(sprintf('  입금: %d행 %d건  ·  귀속월 %d개', $pay['rows'], $pay['count'], count($months)));
-        $this->line(sprintf('  미수 보정: 과입금 %d건(%s 흡수) · 미납 %d건(%s 기타처리)',
-            $over, number_format($overSum, 2), $under, number_format($underSum, 2)));
+        $this->line(sprintf('  미수: 과입금 %d건(%s) · 미납 %d건(%s) → %s',
+            $over, number_format($overSum, 2), $under, number_format($underSum, 2),
+            $unsettled ? '그대로 남긴다(채권으로 살아난다)' : '0 으로 보정'));
         $this->line(sprintf('  거래완료(v5) 대상: 선적일 있음 %d · 없음 %d(그대로 둠)', $ship, $noShip));
-        $this->line(sprintf('  매입 송금내역: 합계일치 %d · 차액있음 %d(잔금으로 보정) · 메모없음 %d(전액 잔금)',
-            $pbpOk, $pbpGap, $pbpNone));
+        $this->line(sprintf('  매입 송금내역: 합계일치 %d · 차액있음 %d · 메모없음 %d → %s',
+            $pbpOk, $pbpGap, $pbpNone,
+            $unsettled ? '차액은 미지급으로 남긴다' : '차액을 잔금으로 보정(미지급 0)'));
+        $tfu = collect($rows)->filter(fn ($r) => ($r['transport_fee_usd'] ?? null) !== null);
+        $this->line(sprintf('  운임비(USD) 기록칸: %d행 기입 (합계 %s · 계산 미포함)',
+            $tfu->count(), number_format((float) $tfu->sum('transport_fee_usd'))));
+        if ($issues['negative_freight_usd']) {
+            $this->warn('  ⚠️ 음수 운임(USD) → 비움: '.implode(' · ', $issues['negative_freight_usd']));
+        }
         if ($issues['negative_cost']) {
             $this->warn('  ⚠️ 음수 비용 → 0 으로 눕힘(컬럼이 unsigned): '.implode(' · ', $issues['negative_cost']));
             $this->warn('     그만큼 cost_total 이 줄어 마진·지급액이 엑셀보다 커진다 — 아래 불일치 목록에 나타난다.');
@@ -580,6 +607,7 @@ class ImportSsancarSettled extends Command
     /** @param array<int,array<string,mixed>> $rows */
     private function import(array $rows): int
     {
+        $unsettled = (bool) $this->option('unsettled');
         $salesmen = Salesman::pluck('id', 'name')->all();
 
         // 이니셜 — **비어 있는 담당자에만** 채운다(운영에서 손으로 넣은 값을 덮지 않는다).
@@ -600,8 +628,8 @@ class ImportSsancarSettled extends Command
         $touched = [];
         $savingsQueue = [];
 
-        DB::transaction(function () use ($rows, $salesmen, &$stats, &$touched, &$savingsQueue) {
-            Model::withoutEvents(function () use ($rows, $salesmen, &$stats, &$touched, &$savingsQueue) {
+        DB::transaction(function () use ($rows, $salesmen, $unsettled, &$stats, &$touched, &$savingsQueue) {
+            Model::withoutEvents(function () use ($rows, $salesmen, $unsettled, &$stats, &$touched, &$savingsQueue) {
                 $buyerCache = [];
                 foreach ($rows as $row) {
                     // ── 바이어 / 컨사이니 ──
@@ -719,7 +747,11 @@ class ImportSsancarSettled extends Command
                     }
 
                     // ── 미수를 0 으로 (정산환율 배율을 1.0 으로 고정하는 것이 목적) ──
-                    $delta = $this->receivableDelta($row);
+                    // 🚫 **미정산 파일에서는 건너뛴다**(jin 2026-08-29). 이 처리는 「정산이 끝나 더 받을 돈이
+                    //    없는 차」 전제로 만든 것이라, 아직 진행 중인 차에 걸면 **실제 채권이 사라진다**
+                    //    (실측 856 대 중 465 대가 미납 · USD 129만 + EUR 279만). 채권관리에서 통째로 증발한다.
+                    //    남겨두면 미완납이라 `settlement_exchange_rate` 가 판매환율로 폴백돼 정산 공식도 정상.
+                    $delta = $unsettled ? 0.0 : $this->receivableDelta($row);
                     if ($delta > 0.005) {
                         // 과입금 → 총판매가에만 들어가는 칸으로 흡수(마진·면장 불변).
                         $vehicle->forceFill(['sale_other_costs' => round($delta, 2)])->save();
@@ -739,10 +771,12 @@ class ImportSsancarSettled extends Command
                     }
 
                     // ── 매입 지급 (S열 구조 + 차액은 잔금으로 보정 → 미지급 0) ──
-                    $stats['pbp'] += $this->applyPurchase($vehicle, $row);
+                    $stats['pbp'] += $this->applyPurchase($vehicle, $row, ! $unsettled);
 
                     // ── 정산 ──
-                    if ($this->createSettlement($vehicle, $row)) {
+                    // 미정산 파일은 말 그대로 정산 전이다. CO(비고)가 거의 비어 있어 대부분 자동으로
+                    // 안 만들어지지만(실측 856 행 중 1 행만 값 있음), 그 1 행도 막는다.
+                    if (! $unsettled && $this->createSettlement($vehicle, $row)) {
                         $stats['settlement']++;
                     }
                 }
@@ -775,7 +809,7 @@ class ImportSsancarSettled extends Command
     }
 
     /** 매입 지급 — 파싱분 입력 후 차액을 잔금으로 채워 미지급 0 으로 만든다. */
-    private function applyPurchase(Vehicle $vehicle, array $row): int
+    private function applyPurchase(Vehicle $vehicle, array $row, bool $fillGap = true): int
     {
         if ($row['_cancelled']) {
             return 0;   // 취소 차량은 매입 지급을 만들지 않는다.
@@ -808,7 +842,10 @@ class ImportSsancarSettled extends Command
         }
 
         // 남은 차액 = 잔금 1건. (메모가 없던 843건은 여기서 전액이 들어간다.)
-        $gap = round($total - $sum, 2);
+        // 🚫 미정산 파일에서는 안 만든다 — 이건 「매입이 이미 다 나갔다」는 전제의 보정이라,
+        //    아직 안 준 차(실측 W='매입대기' 107 대 · S열 공란 256 행)에 걸면 **미지급이 거짓으로 0** 이 된다.
+        //    파싱된 실제 송금 기록은 그대로 남으므로 부분지급도 정상 반영된다.
+        $gap = $fillGap ? round($total - $sum, 2) : 0.0;
         if ($gap > 0.005) {
             (new PurchaseBalancePayment)->forceFill([
                 'vehicle_id' => $vehicle->id,
