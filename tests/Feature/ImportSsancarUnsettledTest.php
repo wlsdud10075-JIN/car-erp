@@ -142,6 +142,26 @@ class ImportSsancarUnsettledTest extends TestCase
         }
     }
 
+    public function test_unsettled_never_marks_a_car_as_finished(): void
+    {
+        // 선적일 + 완납 = 정산완료 적재였다면 v5 가 「거래완료」로 올렸을 조합. 미정산은 그러면 안 된다
+        // — 아직 정산도 B/L 도 남아 있다(jin 2026-08-29, 실측 165 대가 그렇게 튀었다).
+        $v = $this->runImport(['--unsettled' => true, 'fixture' => ['AU' => 11_000]]);   // 판매가+운임 전액 입금
+
+        $this->assertEqualsWithDelta(0, (float) $v->sale_unpaid_amount, 0.01, '완납 조건이 안 만들어졌다');
+        $this->assertSame(4, (int) $v->progress_status_rule_version, '미정산인데 v5(소급 정리 전용)가 박혔다');
+        $this->assertNull($v->warehouse_out_date, '현황표에 없는 출고일이 선적일 복사로 만들어졌다');
+        $this->assertSame('판매완료', $v->progress_status, '진행 중인 차가 거래완료로 튀었다');
+
+        Vehicle::query()->forceDelete();
+
+        // 정산완료 적재(기본 모드)는 종전대로 v5 + 출고일 복사 + 거래완료여야 한다.
+        $w = $this->runImport(['fixture' => ['AU' => 11_000]]);
+        $this->assertSame(5, (int) $w->progress_status_rule_version, '기본 모드의 v5 가 죽었다');
+        $this->assertNotNull($w->warehouse_out_date, '기본 모드의 출고일 복사가 죽었다');
+        $this->assertSame('거래완료', $w->progress_status, '기본 모드의 거래완료 판정이 죽었다');
+    }
+
     public function test_negative_freight_usd_is_dropped_not_stored(): void
     {
         // 정산완료본 `02고1463` 이 실제로 −100 이었다. 운임이 음수일 리 없다.

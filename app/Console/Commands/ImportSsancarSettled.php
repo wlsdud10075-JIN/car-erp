@@ -660,13 +660,20 @@ class ImportSsancarSettled extends Command
                     $attrs = [
                         'sales_channel' => 'export',
                         // v5 = 소급 정리 전용. 출고일(=선적일 복사) + 미수 0 이면 거래완료.
-                        'progress_status_rule_version' => 5,
+                        // 🚫 **미정산 파일은 v4(기본값) 그대로 둔다**(jin 2026-08-29). v5 는 「정산까지 끝나
+                        //    B/L 파일만 없는 과거분」을 위해 만든 규칙이라, 아직 진행 중인 차에 걸면
+                        //    선적·완납했다는 이유로 **거래완료로 튄다**(실측 165 대). 그 차들은 아직
+                        //    정산도 B/L 도 남아 있어 「끝난 차」가 아니다. v4 로 두면 판매중/판매완료에 선다.
+                        'progress_status_rule_version' => $unsettled ? 4 : 5,
                         'salesman_id' => $salesmen[$row['_salesman']] ?? null,
                         'buyer_id' => $buyerId,
                         'consignee_id' => $consigneeId,
                         'is_deregistered' => ! empty($row['deregistration_date']),
                         // 선적일을 출고일에 복사 — ⚠️ 불리언 용도로만 쓸 것(SKILLS §14).
-                        'warehouse_out_date' => $row['shipping_date'],
+                        // 🚫 미정산 파일은 **비운다** — 「있는 그대로 적재」(jin). 현황표에 출고일 칸이 없고,
+                        //    선적일 복사는 실제보다 늦은 가짜 날짜다. v5 를 안 쓰니 복사할 이유도 사라졌다.
+                        //    실무자가 실제 출고일을 찍으면 그때 재고에서 빠지고 선적후 미수로 분류된다.
+                        'warehouse_out_date' => $unsettled ? null : $row['shipping_date'],
                         'sale_other_costs' => 0,
                         'savings_used' => 0,
                         'cancel_status' => $row['_cancelled'] ? Vehicle::CANCEL_ACTIVE : Vehicle::CANCEL_NONE,
