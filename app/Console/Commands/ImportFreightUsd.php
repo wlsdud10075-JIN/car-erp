@@ -59,7 +59,7 @@ class ImportFreightUsd extends Command
         // 수식 칸이 있다(`=1370+120` 류 405 행). 계산값을 쓴다.
         // 계산값이 없으면 0 으로 눕히지 말고 읽기 실패로 센다 — 조용한 0 은 메모 칸에서 아무도 못 본다.
         $rows = [];
-        $stat = ['blank' => 0, 'unreadable' => [], 'nonpositive' => []];
+        $stat = ['blank' => 0, 'text' => [], 'nonpositive' => []];
         $last = $sheet->getHighestDataRow();
         for ($r = self::DATA_START; $r <= $last; $r++) {
             $plate = trim((string) $sheet->getCell('C'.$r)->getValue());
@@ -68,7 +68,8 @@ class ImportFreightUsd extends Command
                 continue;
             }
             $raw = $sheet->getCell('E'.$r)->getValue();
-            if ($raw === null || $raw === '') {
+            // 눈에는 빈칸인데 공백 문자가 들어 있는 셀이 실재한다(실측 2 행).
+            if ($raw === null || (is_string($raw) && trim($raw) === '')) {
                 $stat['blank']++;
 
                 continue;
@@ -76,8 +77,10 @@ class ImportFreightUsd extends Command
             $val = is_string($raw) && str_starts_with($raw, '=')
                 ? $sheet->getCell('E'.$r)->getCalculatedValue()
                 : $raw;
+            // 운임 칸에 금액 대신 **조건**이 적힌 행이 있다 — `FOB` 8 행(실측).
+            // FOB 는 바이어가 운임을 부담하니 적을 운임이 없다. 오류가 아니라 데이터다.
             if (! is_numeric($val)) {
-                $stat['unreadable'][] = "행{$r} {$plate}";
+                $stat['text'][] = $plate.'='.trim((string) $val);
 
                 continue;
             }
@@ -132,9 +135,9 @@ class ImportFreightUsd extends Command
             $this->warn(sprintf('  ⚠️ 기존 값을 덮는 행 %d — 첫 10: %s', count($overwrite),
                 implode(' · ', array_map(fn ($id) => "id{$id} {$overwrite[$id]['old']}→{$overwrite[$id]['new']}", $ids))));
         }
-        if ($stat['unreadable']) {
-            $this->warn('  ⚠️ 읽기 실패(수식 계산값 없음) '.count($stat['unreadable']).': '
-                .implode(' · ', array_slice($stat['unreadable'], 0, 10)));
+        if ($stat['text']) {
+            $this->line('  ℹ️ 금액 대신 조건이 적힌 행 '.count($stat['text']).'(FOB = 바이어 부담 → 적을 운임 없음): '
+                .implode(' · ', array_slice($stat['text'], 0, 10)));
         }
         if ($stat['nonpositive']) {
             $this->warn('  ⚠️ 0 이하 → 건너뜀 '.count($stat['nonpositive']).': '
