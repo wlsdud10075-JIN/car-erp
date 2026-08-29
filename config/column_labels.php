@@ -409,6 +409,7 @@ return [
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
         'bulk_shipping_date_applied' => '선적일·도착일 일괄 기입',
+        'freight_usd_import' => '운임비(USD) 소급 기입',
         // 퇴사 승계 일괄 (2026-08-27) — A 의 바이어·진행중 차량을 B 로 통째 이관.
         'salesman_handover' => '퇴사 승계 일괄 이관',
         'signing_session_revoked' => '전자서명 요청 무름',
