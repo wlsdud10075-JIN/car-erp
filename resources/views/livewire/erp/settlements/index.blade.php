@@ -1616,6 +1616,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 <button type="button" wire:click="addSubmitAdjustment"
                         class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>
             </div>
+            {{-- 사유가 밖으로 나간다는 것을 쓰는 자리에서 알린다 (2026-08-31 board 월배치 미러).
+                 위험한 건 API 가 아니라 「쓰는 사람이 외부 노출을 모르는 것」이다 — SKILLS §8 #60. --}}
+            <p class="mt-1 text-[11px] text-amber-600">{{ __('settlement.batch.adjust_reason_visible') }}</p>
         </div>
 
         {{-- 최종 총액 --}}

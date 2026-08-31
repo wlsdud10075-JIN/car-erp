@@ -15,6 +15,7 @@ return [
         'adjust_salesman' => 'Salesman',
         'adjust_amount' => 'Amount (may be negative)',
         'adjust_reason' => 'Reason',
+        'adjust_reason_visible' => '⚠️ The reason is shown to that salesperson in the portal — do not include other people or incidents.',
         'adjust_add' => 'Add',
         'adjust_invalid' => 'Enter salesman, amount and reason (amount cannot be 0).',
         'submit' => 'Submit Monthly Batch',
