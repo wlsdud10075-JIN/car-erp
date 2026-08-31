@@ -34,17 +34,27 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 $APPLY = in_array('--apply', $argv, true);
 $VERIFY = in_array('--verify', $argv, true);
 
-/** heyman 세트에서 실측한 수식 그대로 — 새로 짜지 않는다(운영에서 검증된 문구). */
+/**
+ * heyman 세트에서 실측한 수식을 기준으로 하되, **자가용 → `Private Car`** 로 바꿨다
+ * (jin 2026-08-31 — 세관/바이어가 기대하는 표기). 원래 양식 리터럴도 `Private car` 였다.
+ *
+ * 🅿️ 운영 실측(3 사 전수) 결과 실제로 쓰이는 값은 **자가용 266 · 영업용 3** 둘뿐이고
+ *    `관용` 은 0 건, `자가용(승용)` 같은 변형도 없다 — SUBSTITUTE 가 전부 정확히 매칭된다.
+ * ⚠️ SUBSTITUTE 는 **정확히 일치할 때만** 바꾼다. 새 표기가 생기면 한글이 그대로 나가므로
+ *    영문 서류에 한글이 보이면 이 목록에 없는 값이 들어온 것이다.
+ */
 const KOR_FORMULA = '=구매리스트!B8';
-const ENG_FORMULA = '=SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(구매리스트!B8,"자가용","Private"),"영업용","Business"),"관용","Official")';
+const ENG_FORMULA = '=SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(구매리스트!B8,"자가용","Private Car"),"영업용","Business"),"관용","Official")';
 
 $targets = [
     '한글등록증' => KOR_FORMULA,
     '영문등록증' => ENG_FORMULA,
 ];
 
-// heyman 은 이미 정상 — 건드리지 않는다.
-$sets = ['system', 'karaba'];
+// 🔀 2026-08-31 2 차 — `자가용 → Private Car` 로 문구가 바뀌면서 **heyman 도 대상**이 됐다.
+//    처음엔 heyman 만 수식이 있어 제외했는데, 그 수식의 내용이 바뀌면 제외 이유가 사라진다.
+//    ⇒ 「이미 있으니 건너뛴다」는 판정을 값 비교로 하게 두고, 세트 목록은 3 사 전부로 둔다.
+$sets = ['system', 'heyman', 'karaba'];
 $root = __DIR__.'/../resources/templates/';
 
 if ($VERIFY) {

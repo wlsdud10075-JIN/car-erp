@@ -30,7 +30,7 @@ class ClearanceUsageAndContainerTest extends TestCase
 
     private const KOR = '=구매리스트!B8';
 
-    private const ENG = '=SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(구매리스트!B8,"자가용","Private"),"영업용","Business"),"관용","Official")';
+    private const ENG = '=SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(구매리스트!B8,"자가용","Private Car"),"영업용","Business"),"관용","Official")';
 
     /** 매핑의 B12 resolver 를 꺼내 그대로 호출한다(양식 좌표까지 함께 고정). */
     private function containerCell(array $attrs): mixed
@@ -124,6 +124,20 @@ class ClearanceUsageAndContainerTest extends TestCase
             $this->assertSame('Business', (string) $ss->getSheetByName('영문등록증')->getCell('P4')->getCalculatedValue(),
                 "{$set} — 영문등록증 Usage 가 비거나 번역이 안 됐다");
         }
+
+        // 자가용 = 운영 266 대(3 사 전수 중 사실상 전부). 표기는 `Private Car` 여야 한다(jin 2026-08-31).
+        $p = Vehicle::create([
+            'vehicle_number' => '33다3333', 'sales_channel' => 'export', 'currency' => 'USD',
+            'nice_reg_use_type' => '자가용',
+        ]);
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            config(['company.template_set' => $set]);
+            $ss = (new DocumentFiller($p))->spreadsheet('clearance');
+
+            $this->assertSame('자가용', (string) $ss->getSheetByName('한글등록증')->getCell('P4')->getCalculatedValue());
+            $this->assertSame('Private Car', (string) $ss->getSheetByName('영문등록증')->getCell('P4')->getCalculatedValue(),
+                "{$set} — 자가용은 「Private Car」로 나와야 한다");
+        }
     }
 
     public function test_generated_document_prints_the_container_number_for_roro(): void
@@ -154,20 +168,76 @@ class ClearanceUsageAndContainerTest extends TestCase
      */
     public function test_container_cell_is_wide_enough_and_never_clips(): void
     {
+        // 🚨 차량팩킹도 대상이다 — `=차량인보이스!G2` 로 값은 미러하지만 **열 너비는 자기 것**을 쓴다.
+        //    인보이스만 넓히면 팩킹리스트에서는 그대로 잘린다(SKILLS §8 #69).
         foreach (['system', 'heyman', 'karaba'] as $set) {
             $path = resource_path("templates/{$set}/clearance_set.xlsx");
-            $ws = IOFactory::createReaderForFile($path)->load($path)->getSheetByName('차량인보이스');
+            $ss = IOFactory::createReaderForFile($path)->load($path);
 
-            $this->assertGreaterThanOrEqual(19.5, $ws->getColumnDimension('G')->getWidth(),
-                "{$set} — 컨테이너 NO 열이 좁아 20 자짜리가 잘린다(운영 실측 3,571 건).");
+            foreach (['차량인보이스', '차량팩킹'] as $sheet) {
+                $ws = $ss->getSheetByName($sheet);
 
-            foreach (['G2', 'G3'] as $c) {
-                $a = $ws->getStyle($c)->getAlignment();
-                $this->assertTrue($a->getShrinkToFit(),
-                    "{$set}/{$c} — 자동축소가 꺼져 있어 더 긴 값(25 자)이 잘린다.");
-                // 엑셀은 자동축소와 줄바꿈을 동시에 못 켠다 — wrap 이 켜지면 축소가 무시된다.
-                $this->assertFalse($a->getWrapText(),
-                    "{$set}/{$c} — 줄바꿈이 켜지면 자동축소가 무효가 된다.");
+                $this->assertGreaterThanOrEqual(19.5, (float) $ws->getColumnDimension('G')->getWidth(),
+                    "{$set}/{$sheet} — 컨테이너 NO 열이 좁아 20 자짜리가 잘린다(운영 실측 3,571 건).");
+
+                foreach (['G2', 'G3'] as $c) {
+                    $a = $ws->getStyle($c)->getAlignment();
+                    $this->assertTrue($a->getShrinkToFit(),
+                        "{$set}/{$sheet}/{$c} — 자동축소가 꺼져 있어 더 긴 값(25 자)이 잘린다.");
+                    // 엑셀은 자동축소와 줄바꿈을 동시에 못 켠다 — wrap 이 켜지면 축소가 무시된다.
+                    $this->assertFalse($a->getWrapText(),
+                        "{$set}/{$sheet}/{$c} — 줄바꿈이 켜지면 자동축소가 무효가 된다.");
+                }
+            }
+        }
+    }
+
+    /**
+     * 양식 제작 당시 차량의 컨테이너 번호(`DFSU6646075`)가 라벨과 함께 박혀 있었다.
+     * **흰칸이라 `DocumentFiller` 가 안 지운다** — 노란칸이었으면 비워졌을 것이다(#71 과 같은 뿌리,
+     * 칸 색깔로 운명이 갈린다). 병합 폭이 좁아 **잘려서 보이지 않았을 뿐**이라 아무도 못 봤다.
+     * 🧭 **잘려서 안 보이는 것은 「없는 것」이 아니다** — 폭·병합을 건드리면 드러난다.
+     */
+    public function test_no_sample_container_number_is_baked_into_the_forms(): void
+    {
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            $ss = IOFactory::createReaderForFile(resource_path("templates/{$set}/clearance_set.xlsx"))
+                ->load(resource_path("templates/{$set}/clearance_set.xlsx"));
+
+            foreach (['차량인보이스', '차량팩킹'] as $sheet) {
+                $ws = $ss->getSheetByName($sheet);
+                foreach (['E2' => 'Reference No.', 'E3' => 'Reference code.'] as $coord => $label) {
+                    $raw = $ws->getCell($coord)->getValue();
+                    $text = is_object($raw) ? $raw->getPlainText() : (string) $raw;
+
+                    $this->assertSame($label, $text,
+                        "{$set}/{$sheet}!{$coord} — 라벨 외의 값(샘플 번호)이 박혀 있다. "
+                        .'매핑도 없고 흰칸이라 그대로 인쇄된다.');
+                }
+            }
+        }
+    }
+
+    /** 다른 양식에도 같은 샘플이 남지 않았는지 — 9 종 × 3 세트 전수. */
+    public function test_the_sample_number_is_gone_from_every_template(): void
+    {
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            foreach (glob(resource_path("templates/{$set}/*.xlsx")) as $path) {
+                $ss = IOFactory::createReaderForFile($path)->load($path);
+                foreach ($ss->getWorksheetIterator() as $ws) {
+                    foreach ($ws->getRowIterator() as $row) {
+                        foreach ($row->getCellIterator() as $cell) {
+                            $v = $cell->getValue();
+                            if ($v === null) {
+                                continue;
+                            }
+                            $t = is_object($v) ? $v->getPlainText() : (string) $v;
+                            $this->assertStringNotContainsString('DFSU6646075', $t,
+                                basename($path).' '.$ws->getTitle().'!'.$cell->getCoordinate()
+                                .' 에 샘플 컨테이너 번호가 남아 있다.');
+                        }
+                    }
+                }
             }
         }
     }
