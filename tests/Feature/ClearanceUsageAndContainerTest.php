@@ -145,6 +145,33 @@ class ClearanceUsageAndContainerTest extends TestCase
         }
     }
 
+    // ── ③ 긴 번호가 잘리지 않는다 (jin 2026-08-31) ────────────────────
+
+    /**
+     * G 열 너비가 **ISO 규격 11 자** 기준(12.25)이었는데 두 회사 모두 자체 관리코드·2 개 병기를 적고 있었다.
+     * 운영 실측: `6.06_G RORO 11-27_10`(20 자, ssancarerp 3,571 건) · `EITU9093137 /  EMCKPM6885`(25 자).
+     * ⇒ 열을 넓히고(20 자를 9pt 그대로 수용) 자동축소를 안전망으로 켠다.
+     */
+    public function test_container_cell_is_wide_enough_and_never_clips(): void
+    {
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            $path = resource_path("templates/{$set}/clearance_set.xlsx");
+            $ws = IOFactory::createReaderForFile($path)->load($path)->getSheetByName('차량인보이스');
+
+            $this->assertGreaterThanOrEqual(19.5, $ws->getColumnDimension('G')->getWidth(),
+                "{$set} — 컨테이너 NO 열이 좁아 20 자짜리가 잘린다(운영 실측 3,571 건).");
+
+            foreach (['G2', 'G3'] as $c) {
+                $a = $ws->getStyle($c)->getAlignment();
+                $this->assertTrue($a->getShrinkToFit(),
+                    "{$set}/{$c} — 자동축소가 꺼져 있어 더 긴 값(25 자)이 잘린다.");
+                // 엑셀은 자동축소와 줄바꿈을 동시에 못 켠다 — wrap 이 켜지면 축소가 무시된다.
+                $this->assertFalse($a->getWrapText(),
+                    "{$set}/{$c} — 줄바꿈이 켜지면 자동축소가 무효가 된다.");
+            }
+        }
+    }
+
     // ── 생성물로 확인 — 인보이스 G2·G3 가 그 값을 받는다 ───────────────
 
     public function test_invoice_cells_reference_the_container_cell(): void
