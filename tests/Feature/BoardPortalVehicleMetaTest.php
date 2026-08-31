@@ -186,6 +186,9 @@ class BoardPortalVehicleMetaTest extends TestCase
                 'purchases' => false,
                 // board 화면에 차량 행이 없다(바이어별 집계만 렌더) — 인계문서 명시.
                 'settlements' => false,
+                // 월배치 미러(2026-08-31)는 **급여 명세**다 — 차량번호·금액·지급일이면 족하고
+                // board 도 그 세 칸만 요청했다. 차대번호·브랜드는 이 화면에서 할 일이 없다.
+                'payoutBatches' => false,
             ],
             'ShippingRequestController.php' => [
                 'shippable' => true,

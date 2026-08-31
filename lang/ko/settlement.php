@@ -28,6 +28,7 @@ return [
         'adjust_salesman' => '담당자',
         'adjust_amount' => '금액(− 가능)',
         'adjust_reason' => '사유',
+        'adjust_reason_visible' => '⚠️ 사유는 해당 영업담당자에게 포털에서 그대로 보입니다 — 다른 사람 이름이나 사건은 적지 마세요.',
         'adjust_add' => '추가',
         'adjust_invalid' => '담당자·금액·사유를 모두 입력하세요 (금액 0 불가).',
 

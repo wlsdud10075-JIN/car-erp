@@ -41,7 +41,11 @@
 ---
 
 ## 4. ④ 재무 읽기 API (읽기전용, accessor/cache 그대로 — raw SQL 재계산 금지=drift)
-prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:300,1 by(salesman_email)]`.
+prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board-read]`.
+> 🔧 **2026-08-31 정정 — 여기 「300,1」이라고 적혀 있었으나 틀렸다.** 실제는 **named limiter** 이고
+> `AppServiceProvider.php:36` 에서 **분당 120**(`Limit::perMinute(120)->by(salesman_email ?: ip)`)이다.
+> board 가 폴링 주기를 이 숫자로 잡으므로 낡은 값을 인용하지 말 것 — **코드가 권위**다.
+> 이 prefix 의 **모든** 엔드포인트가 같은 버킷을 나눠 쓴다(한 화면이 여러 개를 부르면 합산된다).
 
 | 메서드·경로 | 반환 | 비고 |
 |---|---|---|
@@ -599,3 +603,81 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 - board 가 **선적일·ETA 로 자체 판정**(조건 복제 = drift). ERP 가 준 `sailing` 을 그대로 쓴다.
 - `sailing` 을 `progress_status` 자리에 끼워 넣어 **한 축으로 합치기** — 두 축은 독립이다.
 - 「도착예정」을 **입항 확정**으로 표시하거나, 그걸 근거로 정산·미수 판단을 하기.
+
+---
+
+## 13. 정산 월배치 미러 (2026-08-31 board 인계 — 영업 「내가 받은 돈」)
+
+`GET /api/internal/board/payout-batches?salesman_email=` — §1 인증·§4 와 **같은 prefix·미들웨어**.
+
+### 13-1. 왜 차량별 합계로는 안 되나
+
+`settlement_payout_adjustments` 는 마이그 주석 그대로 **「개별 차량 정산은 무손상, 배치 총액에만 반영」**.
+⇒ 환수(−)·특별지급(+)이 있던 달은 **차량별 `actual_payout` 을 정확히 합해도 통장 금액과 다르다.**
+board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 맞는다.
+
+곁다리로 하나 더 해소된다 — `GET /settlements` 는 **상태 필터가 없어** `confirmed`(지급 전)까지 섞여 온다.
+배치 미러는 「승인돼서 실제 나간 묶음」만 보므로 그 혼선이 원천 소멸. 🚫 **그렇다고 `/settlements` 를
+고치지 말 것** — board 의 기존 폴백 화면이 그걸 쓰고 있다.
+
+### 13-2. 응답
+
+```json
+{
+  "count": 1,
+  "data": [{
+    "batch_id": 12,
+    "month": "2026-07",              // 귀속월 (ERP 화면 라벨과 같은 축)
+    "status": "approved",
+    "decided_at": "2026-08-10",      // 승인 확정일 ≈ 지급일
+    "settlements": [{"vehicle_number": "11가1111", "actual_payout": 1000000, "paid_at": "2026-08-10"}],
+    "adjustments": [{"amount": -300000, "reason": "62두1461 5월 배치 환율오류 과지급 환수"}],
+    "settlement_total": 1000000,
+    "adjustment_total": -300000,
+    "net_payout": 700000             // ⭐ 이 사람이 이 배치로 실제 받은 금액
+  }],
+  "unbatched_paid": [{"vehicle_number": "44라4444", "actual_payout": 800000, "paid_at": "2026-06-15"}]
+}
+```
+
+### 13-3. 🚨 `unbatched_paid` 는 예외가 아니라 **본류**다
+
+배치는 2026-07 에 생긴 개념이라 **그 전에 적재된 과거 정산은 전부 배치 밖**이다.
+**2026-08-31 운영 실측**:
+
+| 박스 | paid 총계 | 배치 밖 | 배치 안 | 월배치 |
+|---|---|---|---|---|
+| ssancarerp | 3,815 | **3,815 (100%)** | 0 | **0건** |
+| heymanerp | 155 | **101 (65%)** | 54 | 2건 |
+
+⇒ **그 달 수령액 = Σ `net_payout` + Σ `unbatched_paid`(그 달)** 이다.
+`net_payout` 만 그리면 **ssancarerp 영업 화면은 통째로 빈다**.
+원인은 「대표 직접 지급」이 아니라 **과거 데이터 적재**다(note = `과거적재 —` / `재생성 CK정산`).
+🅿️ 이 비율은 시간이 지나며 배치 쪽으로 옮겨간다 — 하지만 **과거분은 영원히 배치 밖**이다.
+
+### 13-4. 스코프 — 여기가 제일 중요
+
+- `settlements[]`·`adjustments[]` 둘 다 **`salesman_id` = 해소된 영업 본인 것만.**
+- 🚫 **`total_payout`·`settlement_count`(배치 전체 스냅샷)를 실어 보내지 말 것 — 전 영업 합계다.**
+  세 합계(`settlement_total`·`adjustment_total`·`net_payout`)는 **본인 행만 재집계**한 값이다.
+- 본인 행이 0인 배치는 **제외**(0원짜리가 뜨면 「왜 0원이지」가 된다).
+- **`status='approved'` 만.** 배치 쪽 필터 **하나면 충분**하다 — `rejectBy()` 가 멤버의
+  `payout_batch_id` 를 떼면서 정산을 `confirmed` 로 남기므로, 반려 배치에 `paid` 가 붙어 있을 수 없다.
+- 승인 사다리(누가 서명했는지)·마진 raw 는 **미포함**(§3 그대로).
+
+### 13-5. `adjustments[].reason` 은 **준다** (2026-08-31 car-erp 판단)
+
+안 주면 board 에 「조정 −729,250」만 떠서 **설명 없이 깎인 것**으로 보인다 — 영업은 반드시 물어보게 되고
+그 답이 결국 이 문장이다. 본인 조정·본인 차 얘기다.
+🔒 대신 **입력 화면에 「해당 영업담당자에게 그대로 보입니다」를 띄운다**
+(`settlement.batch.adjust_reason_visible`). 위험한 건 API 가 아니라 **쓰는 사람이 외부 노출을 모르는 것**
+이다(SKILLS §8 #60). 새 자유 입력 칸을 밖으로 내보낼 땐 **입력 자리에 그 사실을 적을 것**.
+
+### 13-6. 구현 함정
+
+- ⚠️ **차량 soft delete → `belongsTo` 가 null** → 급여 명세에 「번호 없는 줄」이 생긴다. `withTrashed()` 로 번호를 살린다.
+- ⚠️ `actual_payout` 은 vehicle·finalPayments·receivableHistories·**salesman** 을 타고 계산된다.
+  한 사람이 수백 건일 수 있으므로 **넷 다 eager load**. 🚫 컬럼 제한(`salesman:id,name`) 금지 —
+  사내직원 tier 판정이 `per_unit_tier_enabled` 를 읽어 **정산액이 통째로 틀어진다**(예외·경고 0).
+- 가드 = `tests/Feature/BoardPayoutBatchApiTest` — **응답 본문 문자열**로 전체 스냅샷 누출을 검사한다
+  (매핑 배열만 보는 테스트는 새어도 통과한다). 조정이 운영에 1건뿐이라 **fixture 를 직접** 만든다.

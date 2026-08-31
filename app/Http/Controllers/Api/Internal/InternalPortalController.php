@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutBatch;
 use App\Models\Vehicle;
 use App\Services\ExchangeRateService;
 use App\Services\PurchaseRegistrationGate;
@@ -239,6 +240,93 @@ class InternalPortalController extends Controller
             ])->values();
 
         return response()->json(['count' => $data->count(), 'data' => $data]);
+    }
+
+    /**
+     * 월배치 미러 — 영업 본인이 「그 달에 실제로 받은 금액」 (2026-08-31 board 인계).
+     *
+     * 왜 배치인가: `settlement_payout_adjustments` 는 **개별 차량 정산은 무손상, 배치 총액에만 반영**한다.
+     * 환수(−)·특별지급(+)이 있던 달은 차량별 `actual_payout` 을 정확히 합해도 통장 금액과 다르다.
+     * board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 맞는다.
+     *
+     * 🚫 **`total_payout`·`settlement_count` 를 실어보내지 말 것 — 전 영업 합계다.**
+     *    나가는 순간 board 영업이 남의 정산 총액을 본다. 여기서 주는 세 합계는 **본인 행만 재집계**한 값이다.
+     *    가드 = `BoardPayoutBatchApiTest`(응답 **본문 문자열**을 검사한다 — 매핑 배열만 보면 새어도 통과한다).
+     *
+     * 🚨 **`unbatched_paid` 는 예외 항목이 아니라 본류다.** 배치는 2026-07 에 생긴 개념이라
+     *    그 전에 적재된 과거 정산은 전부 배치 밖이다(2026-08-31 실측: ssancarerp 3,815/3,815 = 100%,
+     *    heymanerp 101/155 = 65%). ⇒ **그 달 수령액 = Σ net_payout + Σ unbatched_paid(그 달)** 이다.
+     *    배치만 그리면 ssancarerp 영업 화면은 통째로 빈다.
+     *
+     * ⚠️ 상태 필터는 배치 쪽 `approved` 하나면 충분하다 — `rejectBy()` 가 멤버의 `payout_batch_id` 를
+     *    떼면서 정산을 `confirmed` 로 남기므로, 반려된 배치에 `paid` 정산이 붙어 있을 수 없다.
+     * ⚠️ 차량이 soft delete 되면 `belongsTo` 가 null 을 준다 — 급여 명세에 번호 없는 줄이 생긴다.
+     *    `withTrashed()` 로 번호를 살린다(고아 정산 사고와 같은 부류).
+     * ⚠️ `actual_payout` 은 vehicle·finalPayments·receivableHistories·salesman 을 타고 계산된다.
+     *    한 사람이 수백 건일 수 있으므로 **넷 다 eager load** 한다. 🚫 컬럼 제한(`salesman:id,name`) 금지 —
+     *    사내직원 tier 판정이 `per_unit_tier_enabled` 를 읽어 정산액이 통째로 틀어진다.
+     */
+    public function payoutBatches(Request $request): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+        $withVehicle = fn ($q) => $q->withTrashed()->with(['finalPayments', 'receivableHistories']);
+
+        $data = SettlementPayoutBatch::query()
+            ->where('status', SettlementPayoutBatch::STATUS_APPROVED)
+            ->with([
+                'settlements' => fn ($q) => $q->where('salesman_id', $sid)
+                    ->with(['vehicle' => $withVehicle, 'salesman']),
+                'adjustments' => fn ($q) => $q->where('salesman_id', $sid),
+            ])
+            ->orderByDesc('month')
+            ->get()
+            ->map(function (SettlementPayoutBatch $b) {
+                $settlementTotal = (int) $b->settlements->sum(fn (Settlement $s) => $s->actual_payout);
+                $adjustmentTotal = (int) $b->adjustments->sum('amount');
+
+                return [
+                    'batch_id' => $b->id,
+                    'month' => $b->month,                          // 귀속월 — ERP 화면 라벨과 같은 축
+                    'status' => $b->status,
+                    'decided_at' => $b->decided_at?->toDateString(),   // 승인 확정일(≈ 지급일)
+                    'settlements' => $b->settlements->map(fn (Settlement $s) => [
+                        'vehicle_number' => $s->vehicle?->vehicle_number,
+                        'actual_payout' => $s->actual_payout,
+                        'paid_at' => $s->paid_at?->toDateString(),
+                    ])->values(),
+                    'adjustments' => $b->adjustments->map(fn ($a) => [
+                        'amount' => (int) $a->amount,
+                        // 사유를 준다 — 안 주면 「조정 −729,250」만 떠서 설명 없이 깎인 것으로 보인다.
+                        // 본인 조정이고 본인 차 얘기다. 입력 화면에 「영업에게 그대로 보인다」고 적어 뒀다.
+                        'reason' => $a->reason,
+                    ])->values(),
+                    'settlement_total' => $settlementTotal,
+                    'adjustment_total' => $adjustmentTotal,
+                    'net_payout' => $settlementTotal + $adjustmentTotal,
+                ];
+            })
+            // 본인 행이 하나도 없는 배치는 뺀다 — 목록에 0원짜리가 뜨면 "왜 0원이지"가 된다.
+            ->filter(fn (array $r) => $r['settlements']->isNotEmpty() || $r['adjustments']->isNotEmpty())
+            ->values();
+
+        $unbatched = Settlement::query()
+            ->where('salesman_id', $sid)
+            ->where('settlement_status', 'paid')
+            ->whereNull('payout_batch_id')
+            ->with(['vehicle' => $withVehicle, 'salesman'])
+            ->orderByDesc('paid_at')
+            ->get()
+            ->map(fn (Settlement $s) => [
+                'vehicle_number' => $s->vehicle?->vehicle_number,
+                'actual_payout' => $s->actual_payout,
+                'paid_at' => $s->paid_at?->toDateString(),
+            ])->values();
+
+        return response()->json([
+            'count' => $data->count(),
+            'data' => $data,
+            'unbatched_paid' => $unbatched,
+        ]);
     }
 
     /**

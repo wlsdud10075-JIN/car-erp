@@ -44,6 +44,9 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
         Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
         Route::get('by-buyer', [InternalPortalController::class, 'byBuyer'])->name('by-buyer');
+        // 월배치 미러 (2026-08-31) — 영업 본인이 그 달에 실제로 받은 금액. 권위 §12.
+        //   조정(환수·특별지급)은 배치 총액에만 반영되므로 차량별 합계로는 통장 금액이 안 나온다.
+        Route::get('payout-batches', [InternalPortalController::class, 'payoutBatches'])->name('payout-batches');
         // 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프).
         Route::get('buyers', [InternalPortalController::class, 'buyers'])->name('buyers');
         Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
