@@ -7,6 +7,7 @@
 > **스택이 달라 그대로 옮기지 않았다.** 항목마다 ERP 실측으로 적용/부적용을 갈랐다.
 >
 > ✅ **2026-09-01 적용 완료 (3사).** 1~3순위를 적용했고 운영 트래픽에서 −78% 를 확인했다 — §10.
+> 로그 처리시간 기록(`$request_time`)과 회전도 적용했다 — §10-5.
 > 4순위(폰트)는 화면이 바뀌므로 보류. 5순위(검색)는 다음 대량 적재 전으로 미뤘다.
 >
 > 🔧 **초판에 회사를 거꾸로 봤다** — 「ssancarerp 는 트래픽이 적다」고 썼는데 **가장 많다**. §10-1 참조.
@@ -337,13 +338,51 @@ listen 443 ssl http2;        # nginx 1.24 는 `http2 on;` 문법이 없다
                                         ★ 평균 −78% ★
 ```
 
-### 10-5. 남은 것
+### 10-5. 로그 — 처리 시간 기록 + 회전 (2026-09-01 추가 적용)
+
+**`$request_time` 을 켰다.** 이제 「서버가 몇 초 걸렸나」가 기록된다.
+
+```nginx
+# 3사 nginx.conf — combined 뒤에 ★덧붙이기만★ 했다
+log_format timed '$remote_addr - $remote_user [$time_local] "$request" '
+                 '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                 'rt=$request_time urt=$upstream_response_time';
+access_log /var/log/nginx/access.log timed;        # ssancarerp 는 vhost 쪽도 함께
+```
+
+🔑 **combined 앞부분을 그대로 두고 뒤에만 붙였다** — `$10`(전송 바이트) 위치가 안 바뀌어서
+**기존에 쓰던 awk 집계가 그대로 돈다.** 포맷을 새로 짜면 그게 조용히 어긋난다.
+
+검증: 3사 전부 `rt=0.026~0.034 urt=…` 기록 확인 · login 200.
+
+**용량 걱정은 반대였다.** `$request_time` 은 줄 **수**를 안 늘리고 줄마다 ~20B 만 붙인다
+(ssancarerp 하루 3,600건 = **하루 70KB**). 정작 문제는 따로 있었다 —
+
+```
+/ssancar-erp/logs/   283MB   ← ★logrotate 대상 밖★ (기본은 /var/log/nginx/*.log 만)
+   nginx-access.log  178MB   2025-11-04 ~ 2026-09-01  ★10개월 무회전★
+   gunicorn-access.log 118MB  Django 몫 (NICE 컷오버로 08-30 이후 안 커진다)
+```
+
+⇒ `/etc/logrotate.d/ssancar-erp-nginx` 신설(daily · rotate 14 · compress · 관용구는
+기존 `/etc/logrotate.d/nginx` 와 동일). 첫 회전을 강제해 **178MB → 286B** 로 비웠고
+nginx 가 새 파일에 계속 쓰는 것을 확인했다.
+
+⚠️ **`su www-data www-data` 가 필수다.** 그 디렉터리가 `ubuntu:www-data drwxrwxr-x` 라
+logrotate 가 *"parent directory has insecure permissions"* 로 **거부한다**(dry-run 에서 잡았다).
+🚫 `gunicorn-*.log` 는 대상에 안 넣었다 — 회전하려면 gunicorn 이 파일을 다시 열어야 하고,
+그건 Django 제거(별건)와 함께 볼 일이다. 118MB 는 그대로 있다.
+
+📌 **나머지 두 서버는 logrotate 가 필요 없다** — `/var/log/nginx/*.log` 를 써서 이미 회전 중이다.
+（vhost 가 `access_log` 를 따로 잡는지부터 확인할 것 — §10-1 의 그 함정이다.）
+
+### 10-6. 남은 것
 
 ```
 4순위 폰트 (fonts.bunny.net)   화면 모양이 바뀐다 → jin 판단 대기
 5순위 검색 스캔                다음 대량 적재 전에. 지금은 100ms 라 안 만든다
 Brotli                         gzip 효과를 며칠 보고 나서 판단
-log_format $request_time       ★서버 처리 시간이 기록되지 않는다★ — 앞으로 추적하려면 이것부터
+gunicorn-access.log 118MB      Django 제거와 함께 (지금은 안 커진다)
 ```
 
 ⚠️ **certbot 갱신이 `listen` 줄을 다시 쓸 수 있다.** 갱신 후 http2 가 빠졌으면 다시 넣으면 된다
