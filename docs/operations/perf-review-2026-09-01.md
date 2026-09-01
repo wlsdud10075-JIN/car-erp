@@ -6,7 +6,10 @@
 > 원본 = `C:\xampp\htdocs\ssancar\htdocs\_ops\dev\PERF_SURVEY.md` (그누보드 · Apache 기준).
 > **스택이 달라 그대로 옮기지 않았다.** 항목마다 ERP 실측으로 적용/부적용을 갈랐다.
 >
-> ⚠️ **아무것도 적용하지 않았다. 검토 결과다.** nginx 변경은 3사 웹 티어를 각각 건드린다.
+> ✅ **2026-09-01 적용 완료 (3사).** 1~3순위를 적용했고 운영 트래픽에서 −78% 를 확인했다 — §10.
+> 4순위(폰트)는 화면이 바뀌므로 보류. 5순위(검색)는 다음 대량 적재 전으로 미뤘다.
+>
+> 🔧 **초판에 회사를 거꾸로 봤다** — 「ssancarerp 는 트래픽이 적다」고 썼는데 **가장 많다**. §10-1 참조.
 
 ---
 
@@ -260,3 +263,87 @@ DB       ssancarerp 4,706대 : 목록 32.9ms(쿼리 7) · 검색 99.7ms · vin�
 
 폰트     fonts.bunny.net CSS 왕복 96ms(3,216B) → 그 뒤 woff2 2차 왕복 · latin 전용
 ```
+
+
+---
+
+## 10. 🔧 적용 결과 · 초판 정정 (2026-09-01)
+
+### 10-1. 🔴 초판이 회사를 거꾸로 봤다
+
+초판은 `/var/log/nginx/access.log` 를 읽고 **"ssancarerp 는 트래픽이 거의 없다"** 고 판단했다.
+**틀렸다.** ssancarerp 의 ERP vhost 는 로그를 **다른 파일에 쓴다**:
+
+```nginx
+# /etc/nginx/sites-available/ssancar-erp
+access_log /ssancar-erp/logs/nginx-access.log;   ← ★여기★
+```
+
+기본 경로에는 board 와 봇 스캔만 남아 있었다. 진짜 로그를 열어 보니 정반대였다:
+
+| 2026-09-01 (07:37 기준) | livewire update | 합계 | 평균 응답 |
+|---|---|---|---|
+| **ssancarerp** (4,706대) | **2,473건** | **1,052 MB** | **446,175 B** |
+| heymanerp (264대) | 459건 | 54.5 MB | 124,488 B |
+
+⇒ ssancarerp 가 요청 **5배** · 바이트 **19배** · **평균 응답이 3.6배** 크다.
+
+**🧭 교훈**: nginx 는 vhost 마다 `access_log` 를 따로 잡을 수 있다.
+**기본 경로만 보고 「트래픽이 없다」고 판단하지 말 것** — `nginx -T | grep access_log` 로 먼저 확인한다.
+(카나리아를 「제일 한가한 서버」로 고른다고 골랐는데 실제로는 **제일 바쁜 서버**였다. 결과는 정상이었지만
+근거가 틀렸다.)
+
+### 10-2. 🔧 §6 의 결론을 보강한다 — jin 의 직감이 맞았다
+
+초판은 *"데이터량은 병목이 아니다 — 목록 렌더가 33ms 대 38ms 로 비슷하다"* 라고 썼다.
+**DB 시간에 대해서는 맞다.** 그런데 **놓친 축이 있었다 — 응답 크기다.**
+
+```
+heymanerp    264대  →  livewire 평균 124 KB
+ssancarerp 4,706대  →  livewire 평균 446 KB   ★3.6배★
+```
+
+데이터가 늘면 목록·필터·집계가 그려내는 **HTML 자체가 커진다.** DB 는 20줄만 꺼내니 빠른데,
+**그려서 내보내는 양이 커지는 것**이다. 그게 전부 비압축으로 나가고 있었다.
+
+⇒ **jin 이 「적재되니까 느려지는 것 같다」고 한 것은 맞았다.** 다만 원인이 «DB 가 느려서» 가 아니라
+**«응답이 커져서»** 였다. 초판의 §6 은 방향은 맞았지만 **한 회사(heymanerp)의 숫자로 일반화**했다.
+
+### 10-3. 적용한 것 (3사 동일)
+
+```nginx
+# /etc/nginx/nginx.conf — 주석 해제 (우분투 기본값 복원)
+gzip_vary on;  gzip_proxied any;  gzip_comp_level 6;
+gzip_types text/plain text/css application/json application/javascript ... ;
+
+# vhost — car-erp server 블록
+location /build/ { add_header Cache-Control "public, max-age=31536000, immutable"; }
+listen 443 ssl http2;        # nginx 1.24 는 `http2 on;` 문법이 없다
+```
+
+백업 = 각 서버 `*.perfbak.20260901-0737~0740`. `nginx -t` 통과 시에만 reload 하고,
+실패하면 자동 원복하도록 스크립트를 짰다(3사 모두 첫 시도에 통과).
+
+### 10-4. 검증 — 운영 실측
+
+```
+3사 공통   /login 200 · app.js 60,787B → 18,422B · Cache-Control: public, max-age=31536000, immutable
+           gzip_types 에 application/json 포함 확인 · listen 443 ssl http2 확인
+
+★ssancarerp 실트래픽 대조★
+   적용 전 00:00~07:36   2,473건 · 평균 446,175 B · 합계 1,052.3 MB
+   적용 후 07:37~            14건 · 평균  96,968 B · 합계     1.3 MB
+                                        ★ 평균 −78% ★
+```
+
+### 10-5. 남은 것
+
+```
+4순위 폰트 (fonts.bunny.net)   화면 모양이 바뀐다 → jin 판단 대기
+5순위 검색 스캔                다음 대량 적재 전에. 지금은 100ms 라 안 만든다
+Brotli                         gzip 효과를 며칠 보고 나서 판단
+log_format $request_time       ★서버 처리 시간이 기록되지 않는다★ — 앞으로 추적하려면 이것부터
+```
+
+⚠️ **certbot 갱신이 `listen` 줄을 다시 쓸 수 있다.** 갱신 후 http2 가 빠졌으면 다시 넣으면 된다
+(압축·캐시는 각각 다른 파일/블록이라 영향 없다).
