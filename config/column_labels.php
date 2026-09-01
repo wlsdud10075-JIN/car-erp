@@ -133,7 +133,14 @@ return [
         'bl_document' => 'B/L 문서',
         'bl_issue_date' => 'B/L발행일',
 
-        // DHL
+        // 서류 발송 (우체국 EMS · DHL) — 캐시 컬럼이지만 감사로그에 그대로 찍힌다.
+        //   원본은 vehicle_shipments 행이고, 금액·번호 변경은 이 컬럼명으로 기록된다(SKILLS §8 #41).
+        'ems_tracking_no_cache' => 'EMS 등기번호',
+        'dhl_tracking_no_cache' => 'DHL 운송장번호',
+        'shipping_fee_total_cache' => '발송비(EMS·DHL)',
+        'shipping_sent_date_cache' => '발송 접수일',
+
+        // DHL (레거시 — 입력칸은 2026-08-31 제거, 과거 기록 표시용으로 라벨은 남긴다)
         'dhl_recipient_name' => 'DHL 수취인',
         'dhl_sender_name' => 'DHL 발송인',
         'dhl_weight' => 'DHL 중량',
@@ -409,6 +416,7 @@ return [
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
         'bulk_shipping_date_applied' => '선적일·도착일 일괄 기입',
+        'bulk_shipment_applied' => '발송 내역 일괄 기입',
         'freight_usd_import' => '운임비(USD) 소급 기입',
         // 퇴사 승계 일괄 (2026-08-27) — A 의 바이어·진행중 차량을 B 로 통째 이관.
         'salesman_handover' => '퇴사 승계 일괄 이관',

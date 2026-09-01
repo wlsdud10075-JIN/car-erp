@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\BoardRequest;
 use App\Models\ExportLog;
 use App\Models\Vehicle;
+use App\Models\VehicleShipment;
 use App\Services\VehicleExportService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -46,6 +48,12 @@ class VehicleExportController extends Controller
         // 운항 필터 (jin 2026-08-09) — 화면 pill 과 정합. 화이트리스트 밖 값은 무시(필터 없음).
         $sailing = $mirror ? (string) $request->query('sailing', '') : '';
         $sailing = in_array($sailing, Vehicle::SAILING_PHASES, true) ? $sailing : '';
+        // 발송 축(EMS·DHL) — 화면 필터와 같은 조건이어야 한다(SKILLS §9 「화면 필터 ↔ export 일치」).
+        //   안 맞추면 「화면엔 3대인데 엑셀엔 300대」가 된다 — 에러 없이 조용히.
+        $shipFilter = $mirror ? (string) $request->query('ship', '') : '';
+        $shipFilter = in_array($shipFilter, ['ems', 'dhl', 'none'], true) ? $shipFilter : '';
+        $shipMonth = $mirror ? (string) $request->query('shipmonth', '') : '';
+        $shipMonth = preg_match('/^\d{4}-\d{2}$/', $shipMonth) === 1 ? $shipMonth : '';
         // board 요청 뱃지 필터 (jin 2026-08-12) — 화면 pill 과 정합. 안 받으면 화면은 6대인데 엑셀은 전체.
         //   ⚠️ 화이트리스트는 TYPES(수신 허용)가 아니라 **TYPE_META(그릴 수 있는 것)** 다 —
         //      폐기된 구 신호도 열린 행이 남아 있는 동안은 화면에서 고를 수 있어야 한다.
@@ -79,6 +87,13 @@ class VehicleExportController extends Controller
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
             ->when($sailing !== '', fn ($q) => $q->sailing($sailing))
+            ->when($shipFilter === 'ems', fn ($q) => $q->whereNotNull('ems_tracking_no_cache'))
+            ->when($shipFilter === 'dhl', fn ($q) => $q->whereNotNull('dhl_tracking_no_cache'))
+            ->when($shipFilter === 'none', fn ($q) => $q->whereNull('ems_tracking_no_cache')->whereNull('dhl_tracking_no_cache'))
+            ->when($shipMonth !== '', fn ($q) => $q->whereBetween('shipping_sent_date_cache', [
+                $shipMonth.'-01',
+                Carbon::parse($shipMonth.'-01')->endOfMonth()->toDateString(),
+            ]))
             ->when($brq !== [], fn ($q) => $q->whereHas('boardRequests', fn ($q2) => $q2->open()->whereIn('type', $brq)))
             // 성능(jin 2026-07-23): $dateCol(purchase/sale/shipping/bl_issue_date) 전부 인덱스 → whereDate(DATE())가
             //   인덱스 죽임. 시간경계 범위로 인덱스 유지 + 양쪽 DB(SQLite 'Y-m-d 00:00:00' 저장) 안전.
@@ -97,7 +112,9 @@ class VehicleExportController extends Controller
                 ->orWhere('nice_reg_vin', 'like', "%{$search}%")
                 ->orWhere('vessel_name', 'like', "%{$search}%")
                 ->orWhere('container_number', 'like', "%{$search}%")
-                ->orWhere('purchase_from', 'like', "%{$search}%")))
+                ->orWhere('purchase_from', 'like', "%{$search}%")
+                ->orWhere('ems_tracking_no_cache', 'like', '%'.VehicleShipment::normalizeTrackingNo($search).'%')
+                ->orWhere('dhl_tracking_no_cache', 'like', '%'.VehicleShipment::normalizeTrackingNo($search).'%')))
             ->orderBy('id')
             ->get();
 
@@ -114,6 +131,7 @@ class VehicleExportController extends Controller
                 'range' => $mirror ? 'current' : 'all',
                 'progress' => $progress, 'exclude' => implode(',', $exclude), 'q' => $search, 'salesmanId' => $salesmanId,
                 'sailing' => $sailing,
+                'ship' => $shipFilter, 'shipmonth' => $shipMonth,
                 'brq' => implode(',', $brq),
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
             ]),

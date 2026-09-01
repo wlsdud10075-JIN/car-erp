@@ -179,6 +179,8 @@ class NotionGuideAudienceTest extends TestCase
     private const RETIRED_TERMS = [
         '보증금 매입 선지급' => '2026-07-29 삭제 — 매입 선지급 승인 사다리',
         '보증금 사용 가능 금액' => '2026-07-29 삭제 — 매입 탭 「매입 가능 금액」으로 대체',
+        'DHL 수취인' => '2026-08-31 삭제 — DHL 탭이 EMS/DHL 발송 기록으로 바뀌며 수취인·발송인·중량 입력칸 제거',
+        'DHL 발송신청 체크' => '2026-08-31 삭제 — 체크박스는 남았으나 안내 문구는 발송 기록 중심으로 교체',
     ];
 
     public function test_guides_do_not_describe_retired_features(): void

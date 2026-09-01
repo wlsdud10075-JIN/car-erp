@@ -394,12 +394,17 @@ class SettlementPayoutBatch extends Model
         $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
         $fx = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
         $payout = (int) $this->total_payout;
+        // 🚨 2026-08-31 — 발송비(EMS·DHL)는 회사가 먼저 치른 돈이라 회사이익에서 빼야 한다.
+        //   여기만 `company_net` 을 그대로 못 쓴다 — payout 이 정산 합이 아니라 **조정 포함 배치 총액**이라
+        //   실지급액을 두 번 빼게 된다. 발송비 항만 같은 accessor 로 더한다.
+        $shipping = (int) $settlements->sum(fn (Settlement $s) => (int) $s->shipping_fee);
 
         return [
             'total_margin' => $totalMargin,
             'payout' => $payout,
             'fx' => $fx,
-            'company_profit' => $totalMargin - $payout,
+            'shipping' => $shipping,
+            'company_profit' => $totalMargin - $payout - $shipping,
         ];
     }
 

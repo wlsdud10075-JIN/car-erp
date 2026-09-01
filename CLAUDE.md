@@ -148,11 +148,27 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
   - 사내직원 (settlement_type='per_unit') = per_unit_amount
                                             기본값: per_unit_amount = 100,000  (Settlement::EMPLOYEE_PER_UNIT_DEFAULT)
 
-실지급액          = 정산액 - 서류비 - other_deduction
+실지급액          = 정산액 - 서류비 - 발송비 - other_deduction
 서류비:
   - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE — 엑셀 CJ = CH/2 - 50000 의 -50000)
   - 사내직원 = 0
+발송비 (2026-08-31 신설) = 그 차량의 서류 발송 실비 합 (우체국 EMS + DHL)
+  - 단일 출처 = Vehicle::shipping_fee_total (= vehicle_shipments 행 합계, 캐시 컬럼)
+  - **프리랜서·사내직원 전액 차감** — 총마진이 아니라 정산액 옆에서 뺀다
+  - 회사 부담분은 금액 0 으로 기록 → 자동으로 무영향 (번호는 남아 바이어가 조회 가능)
 ```
+
+> 📮 **2026-08-31 (jin) — 서류 발송비(우체국 EMS · DHL)가 정산에 들어왔다.**
+> 실무 관리표(`## NEW_2026 DHL & 우체국EMS 발송 내역.xlsx`)가 「담당자 × 월 → 우체국+DHL 월 계 → N/10 정산 반영」
+> 으로 집계하고, 회사가 무는 몫은 **「회사 부담(싼카)」 행으로 따로** 뺀다 ⇒ 담당자에 붙은 건 **그 사람이 전액** 진다.
+> - 🚫 **총마진에서 빼지 말 것** — 사내직원(per_unit)은 정산액이 총마진과 무관해 ssancarerp **1,662건이 무영향**이 되고,
+>   영향이 있는 소수는 tier 경계(매입 1억 · 총마진 100만)라 «같은 금액인데 결과가 셋으로 갈리는» 상태가 된다.
+> - 🚨 **회사이익은 발송비를 다시 빼야 한다** — 지급에서 뺀 만큼 부풀기 때문. 회사가 우체국·DHL 에 **먼저 치른** 돈이라
+>   나갔다 들어온 것이라 순증이 0 이어야 한다. 단일 출처 = `Settlement::company_net`(= 총마진 − 실지급액 − 발송비).
+>   ⚠️ 이 공식은 **3곳**(관리자 대시보드 · 월결산 알림톡 · 월배치 승인화면)에 복제돼 있다 — 하나만 고치면 대표 화면만 틀린다.
+> - 📦 **저장은 행이다**(`vehicle_shipments`) — 한 발송이 최대 42대를 덮고(N/1 분배), 같은 차가 2~3번 발송되는 일이 있다
+>   (DHL 실측 73대 = 2.3% · 연 1,322,624원). 칸 1개씩이면 나중 발송이 앞 발송을 **조용히 덮는다**.
+> - 가드 = `VehicleShipmentSettlementTest` · `VehicleShipmentPanelTest`.
 
 `cost_total` = `cost_deregistration + cost_license + cost_towing + cost_carry + cost_shoring + cost_insurance + cost_transfer + cost_extra1 + cost_extra2` (9개 항목 합, computed).
 

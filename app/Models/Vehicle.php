@@ -175,6 +175,8 @@ class Vehicle extends Model
         'deposit_purchase_at' => 'datetime',
         'is_override_active' => 'boolean',
         'progress_status_rule_version' => 'integer',
+        'shipping_sent_date_cache' => 'date',
+        'shipping_fee_total_cache' => 'integer',
         'nice_reg_first_date' => 'date',
         'nice_reg_date' => 'date',
         'deregistration_date' => 'date',
@@ -1429,7 +1431,68 @@ class Vehicle extends Model
             'progress_status_cache' => $this->progress_status,
             'receivable_risk' => $this->receivable_risk_computed,
             'sale_unpaid_amount_krw_cache' => ($krw = $this->sale_unpaid_amount_krw) !== null ? (int) round($krw) : null,
+            ...$this->shippingCacheValues(),
         ]);
+    }
+
+    /**
+     * 서류 발송(EMS·DHL) 캐시값 4개 — 돈의 **원본은 `vehicle_shipments` 행**이고 여기는 읽기 지점이다.
+     *
+     * 목록 정렬·검색·필터·포털 전송이 join 없이 돌게 하려고 둔다(`progress_status_cache` 와 같은 이유).
+     * 야간 `vehicles:rebuild-caches` 가 `refreshCaches()` 를 부르므로 어긋나도 하루 안에 자가복구된다.
+     *
+     * ⚠️ 번호는 **최신 발송분**을 담는다 — 재발송이면 바이어가 조회해야 하는 건 마지막 번호다.
+     *    정렬 기준은 접수일이고, 같은 날이면 나중에 넣은 행(id)이 이긴다.
+     */
+    public function shippingCacheValues(): array
+    {
+        $rows = $this->shipments()->get();
+
+        // ⚠️ sortBy 에 클로저 **배열**을 넘기면 Laravel 이 그걸 「비교자」로 취급한다(키 추출기가 아니다).
+        //    한 인자짜리 클로저를 넣으면 조용히 엉뚱한 순서가 나온다 → 합성 키 하나로 정렬한다.
+        $order = fn (VehicleShipment $r) => sprintf('%s-%012d', $r->sent_date?->format('Y-m-d') ?? '0000-00-00', $r->id);
+
+        $latest = fn (string $carrier): ?string => $rows->where('carrier', $carrier)
+            ->sortBy($order)
+            ->last()?->tracking_no;
+
+        $lastSent = $rows->filter(fn ($r) => $r->sent_date !== null)
+            ->sortBy($order)
+            ->last()?->sent_date;
+
+        return [
+            'ems_tracking_no_cache' => $latest(VehicleShipment::CARRIER_EMS),
+            'dhl_tracking_no_cache' => $latest(VehicleShipment::CARRIER_DHL),
+            'shipping_fee_total_cache' => (int) $rows->sum('fee'),
+            'shipping_sent_date_cache' => $lastSent?->format('Y-m-d'),
+        ];
+    }
+
+    /**
+     * 발송 행이 바뀐 뒤 — 캐시 갱신 + **금액·번호 변경을 감사로그에 남긴다**.
+     *
+     * `refreshCaches()` 는 raw update 라 `Vehicle::updated` 훅이 안 뜬다(SKILLS §8 #43) →
+     * 여기서 명시적으로 기록하지 않으면 **정산에 들어가는 돈이 아무 흔적 없이 바뀐다**.
+     * 기록 대상은 실제 컬럼명이라 감사 드롭다운이 무한히 늘어나지 않는다(SKILLS §8 #41).
+     */
+    public function refreshShippingCaches(): void
+    {
+        $tracked = ['ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_fee_total_cache'];
+        $before = [];
+        foreach ($tracked as $col) {
+            $before[$col] = $this->getRawOriginal($col) ?? $this->{$col};
+        }
+
+        $this->refreshCaches();
+        $this->refresh();
+
+        foreach ($tracked as $col) {
+            $old = $before[$col];
+            $now = $this->{$col};
+            if ((string) $old !== (string) $now) {
+                AuditLog::recordChange($this, $col, $old, $now);
+            }
+        }
     }
 
     /**
@@ -1558,6 +1621,12 @@ class Vehicle extends Model
     public function purchaseBalancePayments(): HasMany
     {
         return $this->hasMany(PurchaseBalancePayment::class);
+    }
+
+    /** 서류 발송 이력(EMS·DHL) — 1행 = 이 차량 몫. 재발송이면 여러 행. */
+    public function shipments(): HasMany
+    {
+        return $this->hasMany(VehicleShipment::class);
     }
 
     public function settlements(): HasMany
@@ -1777,6 +1846,21 @@ class Vehicle extends Model
             $this->cost_transfer + $this->cost_parking + $this->cost_extra1 + $this->cost_extra2 +
             $this->cost_inspection + $this->cost_performance + $this->cost_repair + $this->cost_advertising
         );
+    }
+
+    /**
+     * 서류 발송비 합계(EMS + DHL, 원) — **정산 실지급액에서 전액 차감되는 값** (jin 2026-08-31).
+     *
+     * 🚫 `cost_total` 에 넣지 않는다 — 비용 10칸은 매입 부대비용이고 ×0.9 를 통과해 총마진을 줄인다.
+     *    발송비는 담당자가 전액 부담하기로 한 값이라 정산액 옆에서 그대로 빠져야 한다
+     *    (실무 집계표의 「담당자 × 월 → 월 계」가 그 사람 차감액과 숫자가 같아야 한다).
+     *
+     * 읽기 지점은 캐시 컬럼이다 — 정산 목록이 행마다 `shipments` 를 다시 읽으면 N+1 이 된다
+     * (2026-08-29 성능 작업으로 없앤 그 형태). 원본 행이 바뀌면 모델 이벤트가 즉시 갱신한다.
+     */
+    public function getShippingFeeTotalAttribute(): int
+    {
+        return (int) ($this->shipping_fee_total_cache ?? 0);
     }
 
     // ── Computed: 판매 미입금액 ─────────────────────────────────────

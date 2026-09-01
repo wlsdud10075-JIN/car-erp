@@ -170,11 +170,12 @@ public function getSettlementAmountAttribute(): int
     return $this->per_unit_amount ?? self::EMPLOYEE_PER_UNIT_DEFAULT;
 }
 
-// 실지급액 = 정산액 - 서류비 - 기타공제. 서류비는 프리랜서만 5만원 (엑셀 CJ = CH/2 - 50000)
+// 실지급액 = 정산액 - 서류비 - 발송비 - 기타공제. 서류비는 프리랜서만 5만원 (엑셀 CJ = CH/2 - 50000)
+//   발송비(2026-08-31) = 우체국 EMS + DHL 실비. **프리랜서·사내직원 전액 차감** (§8 #72)
 public function getActualPayoutAttribute(): int
 {
     $documentFee = $this->settlement_type === 'ratio' ? self::FREELANCE_DOCUMENT_FEE : 0;
-    return $this->settlement_amount - $documentFee - ($this->other_deduction ?? 0);
+    return $this->settlement_amount - $documentFee - $this->shipping_fee - ($this->other_deduction ?? 0);
 }
 ```
 
@@ -1059,6 +1060,49 @@ jin: *"이거 잘려서 내가 못봤네 클릭하기 전까지는."*
 ⇒ 그리고 **모든 양식 수정 스크립트에 `--verify` 를 달 것** — dry-run 은 「할 일」을, verify 는 「현재 상태」를
 보여준다. 이번에 배포 후 운영에서 verify 로 확인한 것이 매번 마지막 관문이었다.
 
+### 72. 📮 **정산에서 빼는 돈은 「어디서」 빼느냐로 사람이 갈린다** (2026-08-31 EMS·DHL 발송비)
+
+서류 발송비(우체국 EMS · DHL)를 정산에 넣으며 정한 것. 후보가 셋이었고 **결과가 사람마다 달랐다**:
+
+| 30,000원 발송비 | 프리랜서 | 사내직원 | 회사 |
+|---|---|---|---|
+| 비용 10칸(`cost_total`)에 넣기 | −13,500 | **0** | −16,500 |
+| 총마진에서 차감 | −15,000 | **0 / −7,500 / −100,000** ← 갈림 | 나머지 |
+| ✅ **정산액에서 차감**(서류비 옆) | −30,000 | −30,000 | 0 |
+
+🚨 **총마진 차감의 진짜 문제는 「무영향」이 아니라 「예측 불가」다.** 사내직원은 정산액이 총마진과
+무관하지만 `employeePerUnitTier` 를 **통과하는 방식이 차마다 다르다** — 매입 1억↑이면 ×25% 라 −7,500,
+총마진 100만 경계에 걸리면 20만→10만 절벽이라 −100,000, 그 외 대부분은 0. 같은 금액인데 셋으로 갈린다
+(#49 의 그 형태). ssancarerp 실측 per_unit **1,662건**이 그 상태가 될 뻔했다.
+
+**정한 방법 = 실무 집계표를 읽는 것.** 관리표가 「담당자 × 월 → 월 계 → N/10 정산」 축이고
+**「회사 부담(싼카)」 행이 따로** 있었다 ⇒ 담당자에 붙은 건 전액 그 사람 몫이다. 코드를 보고 고른 게 아니라
+**사람이 이미 쓰고 있던 표의 축**을 보고 골랐다.
+
+**🚨 곁다리로 반드시 같이 고칠 것 — 회사이익.** 지급에서 뺀 만큼 `총마진 − 실지급액` 이 **부풀어 오른다**.
+회사가 우체국·DHL 에 **먼저 치른** 돈이라 나갔다 들어온 것이고 순증은 0 이어야 한다.
+⇒ `회사 몫 = 총마진 − 실지급액 − 발송비`. 단일 출처 = `Settlement::company_net`.
+⚠️ 이 공식은 **3곳**에 복제돼 있었다(관리자 대시보드 · 월결산 알림톡 · 월배치 승인화면) — 하나만 고치면
+**대표가 보는 화면만 틀린다**(#45 · 2026-08-06 환차 때 겪은 그 형태 #38).
+
+**📦 저장은 칸이 아니라 행이다** — 실측이 정했다:
+- 한 발송이 **최대 42대**를 덮는다(EMS 316발송/896대 · DHL 1,023발송/3,140대) ⇒ 금액은 N/1 분배
+- **같은 차가 2~3번** 발송된다(DHL 73대 = 2.3%). 칸 1개씩이면 나중 발송이 앞 발송을 덮어
+  **연 1,322,624원(DHL 배정액의 2.04%)이 아무에게도 청구되지 않는다.** 예외도 로그도 없다.
+- EMS 는 재발송 0건이었지만 같은 구조로 뒀다 — 둘을 다르게 만들 이유가 없다.
+- 목록 정렬·검색·포털 전송은 **캐시 컬럼 4개**가 받는다(`ems_tracking_no_cache` 등). 돈의 원본은 행이고
+  캐시는 읽기 지점이다 — 정산 목록이 행마다 관계를 다시 읽으면 N+1 이 된다(2026-08-29 에 없앤 그 형태).
+
+**🧭 새로 「정산에서 빼는 값」을 만들 때 물어볼 것**
+```
+① 두 정산 유형(ratio · per_unit)에서 각각 얼마가 빠지나?   한쪽이 0 이면 그건 정책이 아니라 사고다
+② 그 값이 tier·경계를 통과하나?                            통과하면 같은 금액이 차마다 달라진다
+③ 회사이익 공식에서 다시 빼야 하나?                        「회사가 먼저 치른 돈」이면 그렇다
+④ other_deduction 에 합치려 하는가?                        재무 수기 입력칸이라 덮어쓴다 — 자기 줄로
+```
+가드 = `VehicleShipmentSettlementTest`(전액 차감 2유형 · 재발송 합산 · 회사이익 불변 · N/1 · 마감 skip)
++ `VehicleShipmentPanelTest`(무관한 저장이 안 막히는지 · 미리보기↔실행 일치 · 못 찾은 값 노출).
+
 ### 28. 2차 정산 비용 일괄 기입 — 잠금해제 자동 + 비용컬럼 봉인 패턴 (2026-07-01)
 2차 정산 시 비용 정정 일괄 도구. 성격 다른 3비용: **말소비=24,000 고정 / 면허비=묶음당 한 덩어리 n/1 / 탁송비=건바이건(업체 월명세서)**.
 - **공유 뒷단** `App\Services\BulkVehicleCostService::apply($column, [vehicleId=>금액], $user, $reason, $fleetWide)` — ⚠️**2026-07-24 정산 락 개편 후**: 마감(`closed`) 차량은 skip, 나머지는 락이 없어 토큰 없이 직접 `update`(구 `unlockForCostBulk` 토큰 자동발급·소비 흐름 제거). 값 변경은 `Vehicle::updated` recordChange 자동감사, 일괄 기입 사유는 `AuditLog(bulk_cost_applied)` 로 별도 보존. 반환 `[applied, unchanged, skipped]`. (상세=메모리 `project_settlement_lock_redesign`)
@@ -1670,10 +1714,11 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
   - 프리랜서 (ratio)    = 총마진 × (settlement_ratio / 100)    default 50
   - 사내직원 (per_unit) = per_unit_amount                       default 100,000
 
-실지급액          = 정산액 - 서류비 - other_deduction
+실지급액          = 정산액 - 서류비 - 발송비 - other_deduction
 서류비:
   - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE)
   - 사내직원 = 0
+발송비            = Vehicle::shipping_fee_total (우체국 EMS + DHL, 타입 무관 전액)
 ```
 
 ### cost_total

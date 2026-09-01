@@ -39,6 +39,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 운항 필터 (jin 2026-08-09) — '' 전체 / in_transit 운항중 / arrived 도착.
     // 진행상태와 **직교**한다(선적일+ETA만 봄) — 진행상태 pill 과 함께 걸 수 있다. 판정 = Vehicle::scopeSailing.
     #[Url(as: 'sailing')] public string $sailingFilter = '';
+
+    // 서류 발송(EMS·DHL) 축 — 진행상태와 직교한다. '' 전체 / ems / dhl / none(미발송)
+    #[Url(as: 'ship')] public string $shipmentFilter = '';
+
+    // 발송 접수월 (YYYY-MM) — 실무 집계가 「담당자 × 월」 축이라 월로 추리는 일이 잦다.
+    #[Url(as: 'shipmonth')] public string $shipmentMonth = '';
     // board 요청 뱃지 필터 (jin 2026-08-12) — 진행상태·운항과 **직교하는 세 번째 축**.
     //   운항과 달리 **다중 선택**이다: 입금요청·계약금·매입잔금은 전부 "내가 처리할 매입 지급"이라
     //   한 화면에서 같이 훑는 게 실제 흐름이다(대금확인만 성격이 달라 따로 보게 된다).
@@ -434,6 +440,127 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ['matched' => [['id','number','model','current','amount'], ...], 'unmatched' => [['number','amount'], ...]]
     public array $costImportParsed = [];
 
+    // ── EMS / DHL 발송 내역 일괄 기입 (jin 2026-08-31) ────────────
+    //   실무 관리표가 「한 발송 = 차대번호 여러 개」 형태라, 그 칸을 그대로 붙여넣으면 되게 만든다.
+    //   금액은 총액을 넣고 N/1 로 쪼갠다(나머지 원은 첫 차량).
+    public bool $showShipBulk = false;
+
+    public string $shipBulkCarrier = 'ems';
+
+    public string $shipBulkTrackingNo = '';
+
+    public string $shipBulkDate = '';
+
+    public string $shipBulkTotal = '';
+
+    /** 차대번호 또는 차량번호 — 공백·줄바꿈·쉼표 아무거나로 구분. */
+    public string $shipBulkRaw = '';
+
+    /** 미리보기 결과 — 실제 기입과 **같은 판정 함수**가 만든다(SKILLS §8 #67). */
+    public array $shipBulkPlan = [];
+
+    /** 붙여넣기에서 못 찾은 토큰 — 유령 데이터가 조용히 생기지 않게 화면에 그대로 보여준다. */
+    public array $shipBulkUnmatched = [];
+
+    public function openShipmentBulk(): void
+    {
+        abort_unless(auth()->user()?->canApprove(), 403);
+        $this->reset(['shipBulkTrackingNo', 'shipBulkTotal', 'shipBulkRaw', 'shipBulkPlan', 'shipBulkUnmatched']);
+        $this->shipBulkCarrier = 'ems';
+        $this->shipBulkDate = today()->toDateString();
+        $this->showShipBulk = true;
+    }
+
+    public function closeShipmentBulk(): void
+    {
+        $this->showShipBulk = false;
+    }
+
+    /** 지금 체크해 둔 차량을 대상칸에 넣는다 — 목록에서 골라 온 흐름. */
+    public function useSelectedForShipmentBulk(): void
+    {
+        $numbers = Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
+            ->pluck('vehicle_number')->filter()->all();
+        $this->shipBulkRaw = trim($this->shipBulkRaw.PHP_EOL.implode(PHP_EOL, $numbers));
+        $this->shipBulkUnmatched = [];
+        $this->shipBulkPlan = [];
+    }
+
+    /**
+     * 붙여넣은 토큰 → 차량 id. 차대번호(17자 등 영숫자) 우선, 그 다음 차량번호.
+     * 못 찾은 토큰은 **버리지 않고 돌려준다** — 조용히 빠지면 「몇 대가 왜 없지」가 된다.
+     *
+     * @return array{ids:list<int>, unmatched:list<string>}
+     */
+    private function resolveShipBulkVehicles(): array
+    {
+        $tokens = array_values(array_filter(array_map('trim', preg_split('/[\s,;]+/u', $this->shipBulkRaw) ?: [])));
+        $ids = [];
+        $unmatched = [];
+
+        foreach (array_unique($tokens) as $token) {
+            $plate = preg_match('/^\d{2,3}[가-힣]\d{4}$/u', $token) === 1;
+            $vehicle = $plate
+                ? Vehicle::where('vehicle_number', $token)->first()
+                : (Vehicle::where('nice_reg_vin', strtoupper($token))->first()
+                    ?? (strlen($token) >= 6 ? Vehicle::where('nice_reg_vin', 'like', '%'.strtoupper($token))->first() : null));
+
+            if ($vehicle) {
+                $ids[] = $vehicle->id;
+            } else {
+                $unmatched[] = $token;
+            }
+        }
+
+        return ['ids' => array_values(array_unique($ids)), 'unmatched' => $unmatched];
+    }
+
+    public function previewShipmentBulk(): void
+    {
+        abort_unless(auth()->user()?->canApprove(), 403);
+        $resolved = $this->resolveShipBulkVehicles();
+        $this->shipBulkUnmatched = $resolved['unmatched'];
+        $this->shipBulkPlan = app(\App\Services\BulkVehicleShipmentService::class)->plan(
+            $this->shipBulkCarrier,
+            $this->shipBulkTrackingNo,
+            $resolved['ids'],
+            (int) round((float) str_replace(',', '', $this->shipBulkTotal)),
+            auth()->user(),
+        );
+    }
+
+    public function applyShipmentBulk(): void
+    {
+        abort_unless(auth()->user()?->canApprove(), 403);
+        $resolved = $this->resolveShipBulkVehicles();
+        $total = (int) round((float) str_replace(',', '', $this->shipBulkTotal));
+        $label = $this->shipBulkCarrier === 'dhl' ? 'DHL' : 'EMS';
+
+        try {
+            $out = app(\App\Services\BulkVehicleShipmentService::class)->apply(
+                $this->shipBulkCarrier,
+                $this->shipBulkTrackingNo,
+                $resolved['ids'],
+                $total,
+                $this->shipBulkDate,
+                auth()->user(),
+                $label.' 발송 일괄 기입 ('.now()->format('Y-m-d').', 번호 '.$this->shipBulkTrackingNo
+                    .', 총 '.number_format($total).'원, '.count($resolved['ids']).'대)',
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        $this->showShipBulk = false;
+        unset($this->vehicles);
+        $this->dispatch('notify', type: 'success', message: __('vehicle.ship_import.done', [
+            'applied' => $out['applied'], 'unchanged' => $out['unchanged'],
+            'removed' => $out['removed'], 'skipped' => count($out['skipped']),
+        ]));
+    }
+
     public function openCostImport(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
@@ -804,6 +931,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         'eta_date', 'deregistration_date', 'nice_reg_vin', 'purchase_from',
         // 운항 필터와 짝 — 같은 배에 실린 차를 모아 본다.
         'vessel_name', 'export_declaration_number',
+        // 서류 발송(EMS·DHL) — 등기번호·운송장번호·발송비·접수일 (jin 2026-08-31).
+        'ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_fee_total_cache', 'shipping_sent_date_cache',
     ];
 
     public function setSort(string $col): void
@@ -1107,7 +1236,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $bl_issue_date       = '';
     public string $document_deadline_date = '';   // item 6 — 선적 서류마감일 (5일전 알람 트리거)
 
-    // ── DHL ───────────────────────────────────────────────────────
+    // ── EMS / DHL 서류 발송 ───────────────────────────────────────
+    /**
+     * 발송 이력 N건 — [['id'=>?int, 'carrier'=>'ems|dhl', 'tracking_no'=>'', 'fee'=>'', 'sent_date'=>''], ...]
+     *
+     * 한 차량이 재발송되면 행이 늘어난다. 칸 1개씩만 두면 나중 발송이 앞 발송을 덮어
+     * **금액이 조용히 사라진다**(실측 DHL 73대 · 연 132만원, jin 2026-08-31).
+     */
+    public array $shipments = [];
+
+    // ── DHL (레거시 — 운영 3사 전부 0건이라 입력칸은 걷어냈다. 컬럼은 남긴다) ──
     public string $dhl_recipient_name    = '';
     public string $dhl_recipient_address = '';
     public string $dhl_recipient_phone   = '';
@@ -1253,6 +1391,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
             'sortColumn', 'sortDirection', 'freightExact', 'vinSearch', 'sailingFilter',
+            'shipmentFilter', 'shipmentMonth',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
         $this->dateFrom = now()->subYear()->format('Y-m-d');
@@ -1746,6 +1885,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /** 발송 구분 토글 — 같은 걸 다시 누르면 해제(운항 필터와 같은 동작). */
+    public function toggleShipmentFilter(string $key): void
+    {
+        $this->shipmentFilter = ($this->shipmentFilter === $key) ? '' : $key;
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    public function updatedShipmentMonth(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     /** pill 카운트 — 운항 필터를 뺀 현재 조건 기준. 목록과 같은 요청에서 계산한다(캐시 금지: 자정에 경계가 움직임). */
     #[Computed]
     public function sailingCounts(): array
@@ -2025,6 +2178,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
                         ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
                         ->orWhere('purchase_from', 'like', "%{$this->search}%");    // 구입처(매입처)
+                    // 등기번호·운송장번호 — 저장은 정규화형(대문자·기호 제거)이라 검색어도 같은 모양으로
+                    //   맞춰야 한다. 'ED-1054' 처럼 쳐도 찾히게(안 맞추면 조용히 0건).
+                    if ($shipNo = \App\Models\VehicleShipment::normalizeTrackingNo($this->search)) {
+                        $q2->orWhere('ems_tracking_no_cache', 'like', "%{$shipNo}%")
+                            ->orWhere('dhl_tracking_no_cache', 'like', "%{$shipNo}%");
+                    }
                 }
                 if ($this->vinSearch !== '') {
                     $q2->orWhere('nice_reg_vin', 'like', "%{$this->vinSearch}%");   // 차대번호(끝 6자리 등)
@@ -2036,6 +2195,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. Vehicle::scopeSailing 단일 출처.
             ->when($withSailing && in_array($this->sailingFilter, \App\Models\Vehicle::SAILING_PHASES, true),
                 fn ($q) => $q->sailing($this->sailingFilter))
+            // 발송 구분 — 'none' 은 EMS·DHL 둘 다 없는 차(아직 서류를 안 보낸 차).
+            ->when($this->shipmentFilter === 'ems', fn ($q) => $q->whereNotNull('ems_tracking_no_cache'))
+            ->when($this->shipmentFilter === 'dhl', fn ($q) => $q->whereNotNull('dhl_tracking_no_cache'))
+            ->when($this->shipmentFilter === 'none', fn ($q) => $q->whereNull('ems_tracking_no_cache')->whereNull('dhl_tracking_no_cache'))
+            ->when(preg_match('/^\d{4}-\d{2}$/', $this->shipmentMonth) === 1,
+                fn ($q) => $q->whereBetween('shipping_sent_date_cache', [
+                    $this->shipmentMonth.'-01',
+                    \Illuminate\Support\Carbon::parse($this->shipmentMonth.'-01')->endOfMonth()->toDateString(),
+                ]))
             // board 요청 뱃지 필터 (jin 2026-08-12) — 다중 = OR(고른 신호 중 **하나라도** 열려 있으면).
             ->when($withBoard && $this->boardFilterTypes() !== [], fn ($q) => $q->whereHas(
                 'boardRequests', fn ($q2) => $q2->open()->whereIn('type', $this->boardFilterTypes())
@@ -3326,6 +3494,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dhl_weight_str        = $v->dhl_weight ? (string)$v->dhl_weight : '';
         $this->dhl_dimensions        = $v->dhl_dimensions ?? '';
         $this->dhl_request           = $v->dhl_request;
+
+        // 발송 이력 — 접수일 순. 구분은 화면에서 섹션을 가르는 데 쓰인다.
+        $this->shipments = $v->shipments()
+            ->orderBy('sent_date')->orderBy('id')
+            ->get()
+            ->map(fn ($r) => [
+                'id' => $r->id,
+                'carrier' => $r->carrier,
+                'tracking_no' => (string) $r->tracking_no,
+                'fee' => $r->fee ? (string) $r->fee : '',
+                'sent_date' => $r->sent_date?->format('Y-m-d') ?? '',
+            ])->all();
 
         $this->memo = $v->memo ?? '';
         foreach (\App\Models\Vehicle::TAB_MEMOS as $tabKey => $col) {
@@ -4763,6 +4943,40 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
 
+            // 서류 발송(EMS·DHL) 이력 sync — id-diff (SKILLS §4).
+            //   ⚠️ 값이 그대로면 save() 를 부르지 않는다. 부르면 마감 차량 가드가 떠서
+            //      **발송을 건드리지도 않은 저장이 통째로 막힌다**(SKILLS §8 #65 「이번 저장이 만든 변화인가」).
+            $keepShipmentIds = [];
+            foreach ($this->shipments as $sIdx => $row) {
+                $carrier = \App\Models\VehicleShipment::normalizeCarrier($row['carrier'] ?? 'ems');
+                $trackingNo = \App\Models\VehicleShipment::normalizeTrackingNo($row['tracking_no'] ?? null);
+                $fee = (int) round((float) str_replace(',', '', (string) ($row['fee'] ?? '')));
+                $sentDate = \App\Services\BulkVehicleShipmentService::normalizeDate($row['sent_date'] ?? null);
+
+                // 번호도 금액도 없는 빈 행은 저장하지 않는다([＋발송] 만 누르고 만 경우).
+                if ($trackingNo === null && $fee === 0) {
+                    continue;
+                }
+
+                $attrs = ['carrier' => $carrier, 'tracking_no' => $trackingNo, 'fee' => $fee, 'sent_date' => $sentDate];
+
+                if (! empty($row['id']) && ($model = $vehicle->shipments()->find($row['id']))) {
+                    $model->fill($attrs);
+                    if ($model->isDirty()) {
+                        $model->save();
+                    }
+                    $keepShipmentIds[] = $model->id;
+                } else {
+                    $created = $vehicle->shipments()->create($attrs);
+                    $this->shipments[$sIdx]['id'] = $created->id;
+                    $keepShipmentIds[] = $created->id;
+                }
+            }
+            // 폼에서 지운 행 — 모델 delete 로(캐시 갱신·마감 가드가 걸리도록). bulk delete 는 둘 다 건너뛴다.
+            $vehicle->shipments()
+                ->when($keepShipmentIds !== [], fn ($q) => $q->whereNotIn('id', $keepShipmentIds))
+                ->get()->each->delete();
+
             // 22-A-3a 사용자 정정 (2026-05-20) — 4 항목 (계약금/중도금/선수금) FP type별 sync.
             // 재무·관리자 입력 — 각 _str 값과 type별 confirmed 합산 비교 후 변경분만 row 재생성.
             // confirmed_at SET row 잠금 우회 ($allowConfirmedMutation flag) — 4 항목은 분류 메타데이터.
@@ -5633,6 +5847,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearFinalPaymentProofs = array_values($this->clearFinalPaymentProofs);
     }
 
+    /** 발송 행 추가 — 구분(ems/dhl)은 눌린 섹션이 정한다. 접수일은 오늘로 두면 대개 맞다. */
+    public function addShipment(string $carrier): void
+    {
+        $this->shipments[] = [
+            'id' => null,
+            'carrier' => \App\Models\VehicleShipment::normalizeCarrier($carrier),
+            'tracking_no' => '',
+            'fee' => '',
+            'sent_date' => today()->toDateString(),
+        ];
+    }
+
+    public function removeShipment(int $idx): void
+    {
+        unset($this->shipments[$idx]);
+        $this->shipments = array_values($this->shipments);
+    }
+
     /** 전시문 업로드 검증 (선택 즉시) — 이미지·PDF·문서, 최대 10MB. */
     public function updatedFinalPaymentProofFiles(): void
     {
@@ -5768,6 +6000,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cancelShortfallKrw = 0;
         $this->cancelStatusLabel = '';
         $this->dhl_request = false;
+        $this->shipments = [];
         $this->finalPayments = $this->purchaseBalancePayments = [];
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = $this->checkbillFile = null;
         $this->deregistration_document_path = $this->export_declaration_document_path = $this->bl_document_path = $this->checkbill_document_path = '';
@@ -5981,6 +6214,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($this->sailingCounts[$s['phase']]) }})
             </button>
             @endforeach
+        </div>
+
+        {{-- 서류 발송(EMS·DHL) 필터 (jin 2026-08-31) — 진행상태·운항과 또 다른 축.
+             ⚠️ 색은 **빌드된 app.css 에 있는 것만** 쓴다 — bg-teal-600 은 없어서(실측) indigo/amber 로 골랐다.
+                없는 색을 쓰면 눌러도 회색이라 「클릭됐는지 모르겠다」가 된다(SKILLS §8 #50). --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" title="{{ __('vehicle.filter_ship_hint') }}">
+            @foreach([
+                ['key' => 'ems',  'label' => __('vehicle.filter_ship_ems'),
+                 'on' => 'bg-indigo-600 text-white shadow-sm', 'off' => 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'],
+                ['key' => 'dhl',  'label' => __('vehicle.filter_ship_dhl'),
+                 'on' => 'bg-amber-600 text-white shadow-sm',  'off' => 'bg-amber-100 text-amber-700 hover:bg-amber-200'],
+                ['key' => 'none', 'label' => __('vehicle.filter_ship_none'),
+                 'on' => 'bg-gray-600 text-white shadow-sm',   'off' => 'bg-gray-100 text-gray-600 hover:bg-gray-200'],
+            ] as $sf)
+            @php $isOn = $shipmentFilter === $sf['key']; @endphp
+            <button type="button" wire:click="toggleShipmentFilter('{{ $sf['key'] }}')"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $sf['on'].' font-semibold' : $sf['off'].' font-medium' }}">
+                {{ $isOn ? '✓ ' : '' }}📮 {{ $sf['label'] }}
+            </button>
+            @endforeach
+            <input wire:model.live="shipmentMonth" type="month"
+                   class="ml-1 rounded border border-gray-200 px-1.5 py-0.5 text-xs"
+                   title="{{ __('vehicle.filter_ship_month') }}" />
         </div>
 
         {{-- board 요청 뱃지 필터 (jin 2026-08-12) — 진행상태·운항과 직교하는 세 번째 축.
@@ -6214,6 +6470,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('vehicle.col.vessel_name')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['ems_tracking']">{!! $sortBtn('ems_tracking_no_cache', __('vehicle.col.ems_tracking')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['dhl_tracking']">{!! $sortBtn('dhl_tracking_no_cache', __('vehicle.col.dhl_tracking')) !!}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_sent_date']">{!! $sortBtn('shipping_sent_date_cache', __('vehicle.col.shipping_sent_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['shipping_fee']">{!! $sortBtn('shipping_fee_total_cache', __('vehicle.col.shipping_fee'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
@@ -6328,6 +6588,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-xs text-gray-600" x-show="visible['vessel_name']">{{ $v->vessel_name ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>
+                {{-- 발송 4칸 — 캐시 컬럼이라 join 없이 뜬다(원본은 vehicle_shipments 행). --}}
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['ems_tracking']">{{ $v->ems_tracking_no_cache ?: '-' }}</td>
+                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['dhl_tracking']">{{ $v->dhl_tracking_no_cache ?: '-' }}</td>
+                <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_sent_date']">{{ $v->shipping_sent_date_cache?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['shipping_fee']">{{ $v->shipping_fee_total_cache ? number_format($v->shipping_fee_total_cache) : '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
@@ -6377,7 +6642,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="26" class="py-12 text-center text-sm text-gray-400">
+            <tr><td colspan="30" class="py-12 text-center text-sm text-gray-400">
                 @if ($this->perPage === 0)
                     {{ __('vehicle.count_only_hint', ['count' => $this->vehicles->total()]) }}
                 @else
@@ -6400,6 +6665,7 @@ function vehicleColumnsToggle() {
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
         export_declaration_number: false, vessel_name: false, container_number: false, bl_number: false,
+        ems_tracking: false, dhl_tracking: false, shipping_sent_date: false, shipping_fee: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, consignee: false, sales_channel: false,
@@ -6420,6 +6686,10 @@ function vehicleColumnsToggle() {
             { key: 'vessel_name',               label: @json(__('vehicle.col.vessel_name')) },
             { key: 'container_number',          label: @json(__('vehicle.col.container_number')) },
             { key: 'bl_number',                 label: @json(__('vehicle.col.bl_number')) },
+            { key: 'ems_tracking',              label: @json(__('vehicle.col.ems_tracking')) },
+            { key: 'dhl_tracking',              label: @json(__('vehicle.col.dhl_tracking')) },
+            { key: 'shipping_sent_date',        label: @json(__('vehicle.col.shipping_sent_date')) },
+            { key: 'shipping_fee',              label: @json(__('vehicle.col.shipping_fee')) },
             { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },
             { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
             { key: 'consignee',      label: @json(__('vehicle.col.consignee')) },
@@ -6557,6 +6827,8 @@ function vehicleColumnsToggle() {
                         if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
                         if ($wire.excludeStatuses && $wire.excludeStatuses.length) p.set('exclude', $wire.excludeStatuses.join(','));
                         if ($wire.sailingFilter) p.set('sailing', $wire.sailingFilter);
+                        if ($wire.shipmentFilter) p.set('ship', $wire.shipmentFilter);
+                        if ($wire.shipmentMonth) p.set('shipmonth', $wire.shipmentMonth);
                         {{-- board 요청 뱃지 필터 — 안 넘기면 화면은 6대인데 엑셀은 전체가 나온다. --}}
                         if ($wire.boardFilters && $wire.boardFilters.length) p.set('brq', $wire.boardFilters.join(','));
                         p.set('dateType', $wire.dateType || 'purchase');
@@ -6618,6 +6890,12 @@ function vehicleColumnsToggle() {
                 class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
             {{ __('vehicle.cost_import.btn') }}
+        </button>
+        {{-- EMS/DHL 발송 일괄 기입 (jin 2026-08-31) — 「명세서 기입」과 같은 자리·같은 권한. --}}
+        <button type="button" wire:click="openShipmentBulk"
+                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+            <span class="text-base leading-none">📮</span>
+            {{ __('vehicle.ship_import.btn') }}
         </button>
         @endif
     </div>
@@ -8564,32 +8842,73 @@ function vehicleColumnsToggle() {
                       placeholder="{{ __('vehicle.tab_memo.placeholder.bl') }}"></textarea>
         </div>
 
-        {{-- ─── DHL 탭 ────────────────────────────────────── --}}
+        {{-- ─── EMS / DHL 탭 ──────────────────────────────── --}}
+        {{-- 🅿️ 탭 **키**는 'dhl' 그대로 둔다 — 딥링크·Alpine 상태가 그 문자열을 쓴다(라벨만 바뀐다).
+             레거시 수취인/발송인/중량/크기 입력칸은 걷어냈다(운영 3사 전부 0건 실측). 컬럼은 남아 있다. --}}
         <div x-show="tab === 'dhl'" x-cloak>
+            @php
+                $shipmentSections = [
+                    'ems' => ['dot' => 'bg-teal-500', 'sec' => __('vehicle.panel.sec.ems'),
+                              'no' => __('vehicle.field.ems_tracking_no'), 'fee' => __('vehicle.field.ems_fee')],
+                    'dhl' => ['dot' => 'bg-amber-500', 'sec' => __('vehicle.panel.sec.dhl'),
+                              'no' => __('vehicle.field.dhl_tracking_no'), 'fee' => __('vehicle.field.dhl_fee')],
+                ];
+                $shipmentTotal = collect($shipments)
+                    ->sum(fn ($r) => (int) round((float) str_replace(',', '', (string) ($r['fee'] ?? 0))));
+            @endphp
+
+            @foreach($shipmentSections as $shipCarrier => $shipMeta)
             <div class="section-header">
-                <span class="section-dot bg-teal-500"></span>
-                <span class="section-title">{{ __('vehicle.panel.sec.dhl_recipient') }}</span>
+                <span class="section-dot {{ $shipMeta['dot'] }}"></span>
+                <span class="section-title">{{ $shipMeta['sec'] }}</span>
+                <button type="button" wire:click="addShipment('{{ $shipCarrier }}')"
+                        class="ml-auto text-xs text-violet-600 hover:underline">{{ __('vehicle.panel.shipment_add') }}</button>
             </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div><label class="label-base">{{ __('vehicle.field.dhl_recipient_name') }}</label><input wire:model="dhl_recipient_name" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.dhl_recipient_phone') }}</label><input wire:model="dhl_recipient_phone" type="text" class="input-base" /></div>
-                <div class="col-span-2"><label class="label-base">{{ __('vehicle.field.dhl_recipient_address') }}</label><input wire:model="dhl_recipient_address" type="text" class="input-base" /></div>
-            </div>
-            <hr class="section-divider">
-            <div class="section-header">
-                <span class="section-dot bg-teal-300"></span>
-                <span class="section-title">{{ __('vehicle.panel.sec.dhl_sender') }}</span>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div><label class="label-base">{{ __('vehicle.field.dhl_sender_name') }}</label><input wire:model="dhl_sender_name" type="text" class="input-base" /></div>
-                <div class="col-span-2"><label class="label-base">{{ __('vehicle.field.dhl_sender_address') }}</label><input wire:model="dhl_sender_address" type="text" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.dhl_weight') }}</label><input wire:model="dhl_weight_str" type="text" class="input-base" placeholder="1.5" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.dhl_dimensions') }}</label><input wire:model="dhl_dimensions" type="text" class="input-base" placeholder="30x20x10" /></div>
-                <div class="col-span-2 flex items-center gap-2">
-                    <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input wire:model="dhl_request" type="checkbox" class="rounded" /> {{ __('vehicle.field.dhl_request_done') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
-                    </label>
+
+            @if(collect($shipments)->every(fn ($r) => ($r['carrier'] ?? '') !== $shipCarrier))
+                <p class="mb-2 text-xs text-gray-400">{{ __('vehicle.panel.shipment_empty') }}</p>
+            @endif
+
+            @foreach($shipments as $shipIdx => $shipRow)
+                @continue(($shipRow['carrier'] ?? '') !== $shipCarrier)
+                {{-- wire:key 필수 — removeShipment 가 array_values() 로 재인덱싱한다(§4).
+                     없으면 morph 가 입력값을 엉뚱한 행에 붙인다. --}}
+                <div wire:key="ship-{{ $shipCarrier }}-{{ $shipIdx }}" class="mb-2 grid grid-cols-12 items-end gap-2">
+                    <div class="col-span-5">
+                        <label class="label-base">{{ $shipMeta['no'] }}</label>
+                        <input wire:model="shipments.{{ $shipIdx }}.tracking_no" type="text" class="input-base" />
+                    </div>
+                    <div class="col-span-3">
+                        <label class="label-base">{{ $shipMeta['fee'] }}</label>
+                        <input wire:model="shipments.{{ $shipIdx }}.fee" type="text" data-money class="input-base text-right" />
+                    </div>
+                    <div class="col-span-3">
+                        <label class="label-base">{{ __('vehicle.field.shipment_sent_date') }}</label>
+                        <input wire:model="shipments.{{ $shipIdx }}.sent_date" type="text" data-date class="input-base" placeholder="2026-08-01" />
+                    </div>
+                    <div class="col-span-1 pb-2 text-center">
+                        <button type="button" wire:click="removeShipment({{ $shipIdx }})"
+                                class="text-red-400 hover:text-red-600">×</button>
+                    </div>
                 </div>
+            @endforeach
+            <hr class="section-divider">
+            @endforeach
+
+            <div class="total-summary">
+                <div class="row total">
+                    <span>{{ __('vehicle.panel.shipment_total') }}</span>
+                    <span class="amount">@krw($shipmentTotal)</span>
+                </div>
+            </div>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.panel.shipment_hint') }}</p>
+
+            <hr class="section-divider">
+            <div class="flex items-center gap-2">
+                <label class="flex cursor-pointer items-center gap-2 text-sm">
+                    <input wire:model="dhl_request" type="checkbox" class="rounded" /> {{ __('vehicle.field.dhl_request_done') }}
+                    <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
+                </label>
             </div>
         </div>
 
@@ -9627,6 +9946,133 @@ function vehicleColumnsToggle() {
             <button type="button" wire:click="confirmDeleteWithReason" wire:loading.attr="disabled"
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('vehicle.delete_gate.confirm_btn') }}</button>
         </div>
+    </div>
+</div>
+@endif
+
+{{-- ══ EMS · DHL 발송 내역 일괄 기입 모달 (jin 2026-08-31) ══ --}}
+{{-- 🔑 미리보기와 실제 기입이 BulkVehicleShipmentService::plan() 하나를 공유한다 —
+     갈리면 「목록엔 기입된다고 떴는데 안 들어가는」 행이 남는다(SKILLS §8 #67). --}}
+@if($showShipBulk)
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" wire:key="ship-bulk-modal">
+    <div class="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">📮 {{ __('vehicle.ship_import.title') }}</h3>
+            <button type="button" wire:click="closeShipmentBulk" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        <div class="grid grid-cols-4 gap-3">
+            <div>
+                <label class="label-base">{{ __('vehicle.ship_import.carrier') }}</label>
+                <select wire:model.live="shipBulkCarrier" class="input-base">
+                    <option value="ems">{{ __('vehicle.panel.sec.ems') }}</option>
+                    <option value="dhl">{{ __('vehicle.panel.sec.dhl') }}</option>
+                </select>
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.ship_import.tracking_no') }}</label>
+                <input wire:model="shipBulkTrackingNo" type="text" class="input-base font-mono" />
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.ship_import.sent_date') }}</label>
+                <input wire:model="shipBulkDate" type="text" data-date class="input-base" placeholder="2026-08-01" />
+            </div>
+            <div>
+                <label class="label-base">{{ __('vehicle.ship_import.total') }}</label>
+                <input wire:model="shipBulkTotal" type="text" data-money class="input-base text-right" />
+            </div>
+        </div>
+        <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.ship_import.total_hint') }}</p>
+
+        <div class="mt-3">
+            <div class="flex items-center justify-between">
+                <label class="label-base">{{ __('vehicle.ship_import.targets') }}</label>
+                @if(count($shipDocIds) > 0)
+                <button type="button" wire:click="useSelectedForShipmentBulk"
+                        class="text-xs text-violet-600 hover:underline">{{ __('vehicle.ship_import.use_selected') }} ({{ count($shipDocIds) }})</button>
+                @endif
+            </div>
+            <textarea wire:model="shipBulkRaw" rows="4" class="input-base w-full font-mono text-xs"
+                      placeholder="WAUZZZ8R2DA096294 WDC0G0FB0GF03673"></textarea>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.ship_import.targets_hint') }}</p>
+        </div>
+
+        <div class="mt-3 flex gap-2">
+            <button type="button" wire:click="previewShipmentBulk"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                {{ __('vehicle.ship_import.preview') }}
+            </button>
+            <button type="button" wire:click="applyShipmentBulk"
+                    @disabled(($shipBulkPlan['targets'] ?? []) === [])
+                    class="btn-primary disabled:cursor-not-allowed disabled:opacity-40">
+                {{ __('vehicle.ship_import.apply') }}
+            </button>
+        </div>
+
+        @if($shipBulkPlan === [])
+            <p class="mt-3 text-xs text-gray-400">{{ __('vehicle.ship_import.empty_plan') }}</p>
+        @else
+        @php
+            $planTargets = $shipBulkPlan['targets'] ?? [];
+            $planWrite = collect($planTargets)->where('state', '!=', 'unchanged');
+            $planSame = collect($planTargets)->where('state', 'unchanged');
+        @endphp
+        <div class="mt-3 space-y-2 text-xs">
+            <div class="flex flex-wrap gap-2">
+                <span class="badge badge-green">{{ __('vehicle.ship_import.will_write', ['count' => $planWrite->count()]) }}</span>
+                @if($planSame->count())<span class="badge badge-gray">{{ __('vehicle.ship_import.unchanged', ['count' => $planSame->count()]) }}</span>@endif
+                @if(count($shipBulkPlan['removed'] ?? []))<span class="badge badge-amber">{{ __('vehicle.ship_import.removed', ['count' => count($shipBulkPlan['removed'])]) }}</span>@endif
+                @if(count($shipBulkPlan['skipped'] ?? []))<span class="badge badge-red">{{ __('vehicle.ship_import.skipped', ['count' => count($shipBulkPlan['skipped'])]) }}</span>@endif
+                @if(($shipBulkPlan['per_unit'] ?? 0) > 0)
+                <span class="text-gray-600">{{ __('vehicle.ship_import.per_unit') }} {{ number_format($shipBulkPlan['per_unit']) }}</span>
+                @endif
+            </div>
+
+            {{-- 🚨 숫자로 뭉치지 않는다 — 손봐야 할 건이 카운터에 묻힌다(SKILLS §8 #67). --}}
+            @if(count($shipBulkPlan['skipped'] ?? []))
+            <div class="rounded border border-red-200 bg-red-50 p-2">
+                @foreach($shipBulkPlan['skipped'] as $row)
+                <div class="text-red-700">{{ $row['number'] ?? ('#'.$row['id']) }} — {{ __('vehicle.ship_import.reason_'.$row['reason']) }}</div>
+                @endforeach
+            </div>
+            @endif
+
+            @if(count($shipBulkPlan['removed'] ?? []))
+            <div class="rounded border border-amber-200 bg-amber-50 p-2">
+                @foreach($shipBulkPlan['removed'] as $row)
+                <div class="text-amber-800">{{ $row['number'] ?? ('#'.$row['id']) }} — −{{ number_format($row['fee']) }}</div>
+                @endforeach
+            </div>
+            @endif
+
+            @if($shipBulkUnmatched !== [])
+            <div class="rounded border border-red-200 bg-red-50 p-2 font-mono text-red-700">
+                {{ __('vehicle.ship_import.unmatched', ['count' => count($shipBulkUnmatched)]) }}:
+                {{ implode(', ', $shipBulkUnmatched) }}
+            </div>
+            @endif
+
+            @if($planTargets !== [])
+            <div class="max-h-56 overflow-y-auto rounded border border-gray-200">
+                <table class="w-full text-left">
+                    <tbody class="divide-y divide-gray-100">
+                    @foreach($planTargets as $row)
+                    <tr class="{{ $row['state'] === 'unchanged' ? 'text-gray-400' : 'text-gray-700' }}">
+                        <td class="px-2 py-1">{{ $row['number'] ?? ('#'.$row['id']) }}</td>
+                        <td class="px-2 py-1 text-right">
+                            @if($row['current'] !== null && $row['state'] === 'changed')
+                                <span class="text-gray-400 line-through">{{ number_format($row['current']) }}</span>
+                            @endif
+                            {{ number_format($row['fee']) }}
+                        </td>
+                    </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+        @endif
     </div>
 </div>
 @endif
