@@ -190,6 +190,80 @@ class VehicleShipmentPanelTest extends TestCase
         $this->assertSame(0, $closed->fresh()->shipping_fee_total);
     }
 
+    /**
+     * 발송월 필터는 `202607` 로 친다 (jin 2026-09-01).
+     * `<input type="month">` 는 브라우저가 「2026 TAB 08」 식 입력을 강요해서 그렇게 못 친다.
+     */
+    public function test_month_filter_accepts_a_plain_six_digit_month(): void
+    {
+        $c = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->set('shipmentMonth', '202607');
+
+        $this->assertSame('2026-07', $c->get('shipmentMonth'));
+
+        foreach (['2026-7' => '2026-07', '2026/08' => '2026-08', '2026.9' => '2026-09'] as $in => $want) {
+            $this->assertSame($want, $c->set('shipmentMonth', $in)->get('shipmentMonth'));
+        }
+
+        // 못 알아볼 값은 지우지 않는다 — 타이핑 중일 수 있다(지우면 글자를 못 넣는다).
+        $this->assertSame('20', $c->set('shipmentMonth', '20')->get('shipmentMonth'));
+        $this->assertSame('202613', $c->set('shipmentMonth', '202613')->get('shipmentMonth'), '13월은 월이 아니다');
+    }
+
+    /** 필터가 실제로 그 달만 거르는지 — 정규화만 되고 안 걸리면 「조용히 0건」이 된다. */
+    public function test_month_filter_actually_filters(): void
+    {
+        $aug = $this->vehicle();
+        $sep = $this->vehicle();
+        $aug->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EDAUG', 'fee' => 100, 'sent_date' => '2026-08-12']);
+        $sep->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EDSEP', 'fee' => 100, 'sent_date' => '2026-09-03']);
+
+        $ids = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->set('shipmentMonth', '202608')
+            ->instance()->vehicles()->pluck('id')->all();
+
+        $this->assertContains($aug->id, $ids);
+        $this->assertNotContains($sep->id, $ids);
+    }
+
+    /** 체크한 차량이 모달을 열 때 바로 대상칸에 들어와야 한다 — 버튼을 또 누르게 하지 않는다. */
+    public function test_bulk_modal_picks_up_checked_vehicles_when_it_opens(): void
+    {
+        $a = $this->vehicle();
+        $b = $this->vehicle();
+
+        $c = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $a->id, (string) $b->id])
+            ->call('openShipmentBulk');
+
+        $this->assertSame(2, $c->get('shipBulkFromSelection'), '몇 대가 들어왔는지 화면에 적을 값');
+        $raw = $c->get('shipBulkRaw');
+        $this->assertStringContainsString($a->vehicle_number, $raw);
+        $this->assertStringContainsString($b->vehicle_number, $raw);
+
+        // 그대로 미리보기를 누르면 바로 대상이 된다(중간 단계 없음).
+        $plan = $c->set('shipBulkTrackingNo', 'ED1KR')->set('shipBulkTotal', '10000')
+            ->call('previewShipmentBulk')->get('shipBulkPlan');
+        $this->assertCount(2, $plan['targets']);
+    }
+
+    /** 상단 요약은 **필터에 걸린 것만** 센다 — 화면 숫자와 목록이 갈리면 아무도 못 믿는다. */
+    public function test_header_totals_follow_the_filter(): void
+    {
+        $inScope = $this->vehicle(['vessel_name' => 'GMT SUM']);
+        $outScope = $this->vehicle(['vessel_name' => 'OTHER']);
+        $inScope->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EDIN', 'fee' => 29_560]);
+        $inScope->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '4508', 'fee' => 74_028]);
+        $outScope->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EDOUT', 'fee' => 999_999]);
+
+        $totals = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->set('search', 'GMT SUM')
+            ->instance()->shipmentTotals();
+
+        $this->assertSame(29_560, $totals['ems'], '필터 밖 차량이 섞이면 안 된다');
+        $this->assertSame(74_028, $totals['dhl']);
+    }
+
     public function test_bulk_modal_is_closed_to_users_without_approval_permission(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);

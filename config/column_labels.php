@@ -127,6 +127,7 @@ return [
         'bl_consignee_id' => '선적 컨사이니',
         'bl_number' => 'B/L번호',
         'container_no' => '컨테이너 No',
+        'container_number' => '컨테이너 번호',   // 실제 컬럼명 — 위 container_no 는 옛 키
         'bl_loading_location' => '반입지',
         'bl_vsl' => 'VSL',
         'vessel_name' => '선박명(VSL)',
@@ -137,6 +138,8 @@ return [
         //   원본은 vehicle_shipments 행이고, 금액·번호 변경은 이 컬럼명으로 기록된다(SKILLS §8 #41).
         'ems_tracking_no_cache' => 'EMS 등기번호',
         'dhl_tracking_no_cache' => 'DHL 운송장번호',
+        'ems_fee_total_cache' => '우편요금(EMS)',
+        'dhl_fee_total_cache' => '청구금액(DHL)',
         'shipping_fee_total_cache' => '발송비(EMS·DHL)',
         'shipping_sent_date_cache' => '발송 접수일',
 

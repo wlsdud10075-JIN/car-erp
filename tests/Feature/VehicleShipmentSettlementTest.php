@@ -95,6 +95,33 @@ class VehicleShipmentSettlementTest extends TestCase
         $this->assertSame(3000, $v->shipping_fee_total);
     }
 
+    /**
+     * 🔒 닫힘 — `EMS 합 + DHL 합 ≡ 발송비 합`. 셋을 따로 갱신하면
+     * 「합계는 맞는데 줄을 더하면 안 맞는」 화면이 된다(SKILLS §8 #64).
+     */
+    public function test_per_carrier_caches_always_add_up_to_the_total(): void
+    {
+        $v = $this->vehicle();
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED1KR', 'fee' => 14_780]);
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED2KR', 'fee' => 9_000]);
+        $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '4508', 'fee' => 74_028]);
+
+        $v = $v->fresh();
+        $this->assertSame(23_780, $v->ems_fee_total_cache);
+        $this->assertSame(74_028, $v->dhl_fee_total_cache);
+        $this->assertSame(
+            $v->ems_fee_total_cache + $v->dhl_fee_total_cache,
+            $v->shipping_fee_total_cache,
+            '운송사별 합이 총합과 달라지면 화면이 스스로 모순된다'
+        );
+
+        // 하나 지워도 닫혀 있어야 한다.
+        $v->shipments()->where('carrier', 'dhl')->first()->delete();
+        $v = $v->fresh();
+        $this->assertSame(0, $v->dhl_fee_total_cache);
+        $this->assertSame($v->ems_fee_total_cache, $v->shipping_fee_total_cache);
+    }
+
     public function test_tracking_number_is_normalized(): void
     {
         $v = $this->vehicle();
