@@ -6,6 +6,7 @@ use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\SettlementCkBatch;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -200,6 +201,9 @@ class SettlementMonthFilterTest extends TestCase
      * 🚨 성능이 이유다 — 담당자별 합계가 필터에 걸린 정산 전부를 PHP 로 순회한다.
      *    전 기간(ssancarerp 3,815건) 8.1초 → 월 스코프 ~1.3초.
      * 🧭 「전 기간」은 없어지지 않았다. 비우면 그대로 나온다(위 테스트가 그걸 검증한다).
+     * ⚠️ **`now()->format('Y-m')` 이 아니다** — 귀속월 경계가 10일이라 매월 1~9일에는
+     *    달력 月 라벨의 범위(M/10~)가 아직 시작도 안 했다. 그 표현을 쓰면 그 9일 동안
+     *    오늘 만든 정산이 기본 화면에서 사라진다(2026-09-01 실측). 단일 출처 = payrollMonthOf.
      */
     public function test_month_filter_defaults_to_the_current_month(): void
     {
@@ -207,7 +211,7 @@ class SettlementMonthFilterTest extends TestCase
 
         $component = Volt::actingAs($manager)->test('erp.settlements.index');
 
-        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+        $this->assertSame(SettlementCkBatch::payrollMonthOf(now()), $component->instance()->monthFilter);
     }
 
     /** URL 로 온 monthFilter 가 이긴다 — #[Url] 이 mount 보다 먼저 채우므로 기본값이 덮으면 안 된다. */
@@ -238,7 +242,7 @@ class SettlementMonthFilterTest extends TestCase
 
         // ② 화면 안에서 토글 — 기본값이 걸린 상태에서 켜면 풀려야 한다.
         $component = Volt::actingAs($manager)->test('erp.settlements.index');
-        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+        $this->assertSame(SettlementCkBatch::payrollMonthOf(now()), $component->instance()->monthFilter);
         $component->call('toggleHeld');
         $this->assertTrue($component->instance()->heldOnly);
         $this->assertSame('', $component->instance()->monthFilter);
@@ -259,12 +263,12 @@ class SettlementMonthFilterTest extends TestCase
 
         $this->makeSettlementInMonth('2026-04', $sm);
         $this->makeSettlementInMonth('2026-04', $sm);
-        $this->makeSettlementInMonth(now()->format('Y-m'), $sm);
+        $this->makeSettlementInMonth(SettlementCkBatch::payrollMonthOf(now()), $sm);
 
         $component = Volt::actingAs($manager)->test('erp.settlements.index');
 
         // 이번 달 기본값 → 다른 달(2026-04)에 2건 남아 있다고 말해야 한다.
-        $this->assertSame(now()->format('Y-m'), $component->instance()->monthFilter);
+        $this->assertSame(SettlementCkBatch::payrollMonthOf(now()), $component->instance()->monthFilter);
         $this->assertSame(2, $component->instance()->pendingOutsideMonth());
 
         // 눌러서 전 기간으로 풀면 가릴 게 없으니 0.
