@@ -89,7 +89,9 @@ class VehicleExportService
             'ems_tracking_no' => ['EMS등기번호', 'str', fn (Vehicle $v) => $v->ems_tracking_no_cache, '발송'],
             'dhl_tracking_no' => ['DHL운송장번호', 'str', fn (Vehicle $v) => $v->dhl_tracking_no_cache, '발송'],
             'shipping_sent_date' => ['발송일', 'date', fn (Vehicle $v) => $v->shipping_sent_date_cache, '발송'],
-            'shipping_fee' => ['발송비', 'num', fn (Vehicle $v) => $v->shipping_fee_total_cache, '발송'],
+            'ems_fee' => ['우편요금(EMS)', 'num', fn (Vehicle $v) => $v->ems_fee_total_cache, '발송'],
+            'dhl_fee' => ['청구금액(DHL)', 'num', fn (Vehicle $v) => $v->dhl_fee_total_cache, '발송'],
+            'shipping_fee' => ['발송비합', 'num', fn (Vehicle $v) => $v->shipping_fee_total_cache, '발송'],
             // 정산 (admin 전용 export 라우트라 허용 — 회의 2026-06-18/29 'admin 전용 마진'). 전부 accessor 경유,
             // snapshot 아닌 현재 DB 값(F슬롯). 정산 row 없으면 빈칸.
             'settlement_status' => ['정산상태', 'str', fn (Vehicle $v) => $this->settlementOf($v)?->settlement_status, '정산'],

@@ -89,6 +89,12 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public array $bulkVesselConflict = [];
 
+    // 컨테이너 접두어 일괄 교체 (jin 2026-09-01) — `6.08_G RORO 12-33_5` → `6.09_A RORO 12-33_5`.
+    //   선적이 밀려 한 배가 통째로 다음 배로 넘어갈 때 쓴다. 뒤 화물 자리는 그대로 둔다.
+    public string $bulkContainerFrom = '';
+
+    public string $bulkContainerTo = '';
+
     public string $bulkDateReason = '';
 
     #[Url] public int $perPage = 10;
@@ -462,28 +468,30 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 붙여넣기에서 못 찾은 토큰 — 유령 데이터가 조용히 생기지 않게 화면에 그대로 보여준다. */
     public array $shipBulkUnmatched = [];
 
+    /** 열 때 자동으로 채워진 대상 대수 — 「체크한 3대를 넣었습니다」 안내용(0이면 안 뜬다). */
+    public int $shipBulkFromSelection = 0;
+
     public function openShipmentBulk(): void
     {
         abort_unless(auth()->user()?->canApprove(), 403);
         $this->reset(['shipBulkTrackingNo', 'shipBulkTotal', 'shipBulkRaw', 'shipBulkPlan', 'shipBulkUnmatched']);
         $this->shipBulkCarrier = 'ems';
         $this->shipBulkDate = today()->toDateString();
+
+        // 체크해 둔 차량을 **열 때 바로** 대상칸에 넣는다 (jin 2026-09-01) — 버튼을 한 번 더 누르게 하지 않는다.
+        //   ⚠️ `shipDocIds` 는 검색을 바꿔도 유지되는 누적 셋이라, 몇 대가 들어왔는지 화면에 적어준다.
+        //      안 적으면 «내가 고른 줄 몰랐던 차» 가 조용히 섞인다.
+        $numbers = Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
+            ->pluck('vehicle_number')->filter()->all();
+        $this->shipBulkRaw = implode(PHP_EOL, $numbers);
+        $this->shipBulkFromSelection = count($numbers);
+
         $this->showShipBulk = true;
     }
 
     public function closeShipmentBulk(): void
     {
         $this->showShipBulk = false;
-    }
-
-    /** 지금 체크해 둔 차량을 대상칸에 넣는다 — 목록에서 골라 온 흐름. */
-    public function useSelectedForShipmentBulk(): void
-    {
-        $numbers = Vehicle::whereIn('id', array_map('intval', $this->shipDocIds))
-            ->pluck('vehicle_number')->filter()->all();
-        $this->shipBulkRaw = trim($this->shipBulkRaw.PHP_EOL.implode(PHP_EOL, $numbers));
-        $this->shipBulkUnmatched = [];
-        $this->shipBulkPlan = [];
     }
 
     /**
@@ -933,6 +941,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         'vessel_name', 'export_declaration_number',
         // 서류 발송(EMS·DHL) — 등기번호·운송장번호·발송비·접수일 (jin 2026-08-31).
         'ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_fee_total_cache', 'shipping_sent_date_cache',
+        'ems_fee_total_cache', 'dhl_fee_total_cache',
     ];
 
     public function setSort(string $col): void
@@ -1346,6 +1355,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function mount(): void
     {
+        // URL 로 `?shipmonth=202607` 이 와도 화면 입력과 같은 규칙으로 받아준다.
+        $this->shipmentMonth = self::normalizeMonth($this->shipmentMonth);
+
         // perPage 는 #[Url] 이라 ?perPage=… 로 직접 들어온다. 0 이 「건수만」이라는 의미를 갖게 된 뒤로는
         // 잘못된 값이 그대로 paginate() 에 새면 빈 목록의 이유를 알 수 없다 → 진입 시 한 번 정규화.
         if (! in_array($this->perPage, [self::PER_PAGE_COUNT_ONLY, 10, 30, 50, 100], true)) {
@@ -1895,8 +1907,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedShipmentMonth(): void
     {
+        $this->shipmentMonth = self::normalizeMonth($this->shipmentMonth);
         unset($this->vehicles);
         $this->resetPage();
+    }
+
+    /**
+     * `202607` · `2026-7` · `2026/07` · `2026.07` → `2026-07`. 못 알아보면 **그대로 둔다**
+     * (타이핑 중일 수 있다 — 지우면 글자를 못 넣는다). 쿼리는 완성형만 보므로 중간값은 무해하다.
+     */
+    public static function normalizeMonth(string $raw): string
+    {
+        $v = trim($raw);
+        if (preg_match('/^(\d{4})[-\/.]?(\d{1,2})$/', $v, $m) === 1) {
+            $mm = (int) $m[2];
+            if ($mm >= 1 && $mm <= 12) {
+                return sprintf('%s-%02d', $m[1], $mm);
+            }
+        }
+
+        return $v;
     }
 
     /** pill 카운트 — 운항 필터를 뺀 현재 조건 기준. 목록과 같은 요청에서 계산한다(캐시 금지: 자정에 경계가 움직임). */
@@ -2041,6 +2071,24 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 필터 결과 **발송비 합계** — 우편요금(EMS) · 청구금액(DHL) (jin 2026-09-01).
+     *
+     * 🅿️ 통화 분기가 없다 — 발송비는 국내에서 치르는 실비라 **항상 원화**다
+     *    (운임비·판매총액은 차량 통화라 통화별로 쪼갠다).
+     * 합계는 캐시 컬럼을 SUM 한다 — 행을 훑으면 필터가 넓을 때 수천 건이 된다.
+     */
+    #[Computed]
+    public function shipmentTotals(): array
+    {
+        $r = $this->filteredVehicleQuery()
+            ->selectRaw('COALESCE(SUM(COALESCE(ems_fee_total_cache,0)),0) AS ems, '
+                .'COALESCE(SUM(COALESCE(dhl_fee_total_cache,0)),0) AS dhl')
+            ->reorder()->first();
+
+        return ['ems' => (int) ($r->ems ?? 0), 'dhl' => (int) ($r->dhl ?? 0)];
+    }
+
+    /**
      * 필터 결과 통화별 합산 (jin 2026-07-20) — 운임비합·판매총액합을 통화(USD/JPY/…)별로 쪼개 표시.
      *   다중통화 혼재 시 단일 원단위 합산은 의미 없으므로 통화별 소계를 카드에 함께 노출.
      *   운임비·판매총액 컴포넌트는 각 차량 currency 단위 값(SKILLS §13). 환율 환산 없이 통화별 그대로 합산.
@@ -2082,8 +2130,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkEtaDate = '';
         $this->bulkVessel = '';
         $this->bulkVesselConflict = [];
+        $this->bulkContainerFrom = '';
+        $this->bulkContainerTo = '';
         $this->bulkDateReason = '';
         $this->bulkDateOpen = true;
+        unset($this->bulkContainerPrefixes);
+    }
+
+    /**
+     * 대상 안의 컨테이너 접두어 분포 — 드롭다운과 「몇 대가 바뀌나」 표시에 쓴다.
+     *
+     * 🔑 **직접 타이핑이 아니라 고르게 한다** — 접두어는 `6.08_G` 처럼 짧고 비슷해서
+     *    한 글자만 틀려도 조용히 0 대가 바뀐다(에러가 안 난다). 실제 대상에 있는 값만 보여준다.
+     * ⚠️ 모달이 닫혀 있으면 계산하지 않는다 — 목록 렌더마다 수천 행을 훑을 이유가 없다.
+     */
+    #[Computed]
+    public function bulkContainerPrefixes(): array
+    {
+        if (! $this->bulkDateOpen) {
+            return [];
+        }
+
+        return array_filter(
+            app(\App\Services\BulkVehicleShippingDateService::class)
+                ->containerPrefixBreakdown($this->filteredVehicleQuery()),
+            fn ($cnt, $prefix) => $prefix !== '' && $cnt > 0,
+            ARRAY_FILTER_USE_BOTH
+        );
     }
 
     /**
@@ -2120,6 +2193,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ],
                 $user,
                 $this->bulkDateReason !== '' ? $this->bulkDateReason : __('vehicle.bulk_date.reason_default'),
+                // 둘 다 채웠을 때만 접두어를 건드린다 — 한쪽만 쓰면 서비스가 사유를 담아 되돌려준다.
+                ($this->bulkContainerFrom !== '' || $this->bulkContainerTo !== '')
+                    ? ['from' => $this->bulkContainerFrom, 'to' => $this->bulkContainerTo]
+                    : null,
             );
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
@@ -2129,7 +2206,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->bulkDateOpen = false;
         $this->bulkVesselConflict = [];
-        unset($this->vehicles);
+        unset($this->vehicles, $this->bulkContainerPrefixes);
         $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_date.done', [
             'applied' => $result['applied'],
             'unchanged' => $result['unchanged'],
@@ -6109,6 +6186,24 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
     </div>
+    {{-- 발송비합 (jin 2026-09-01) — EMS/DHL 로 필터했을 때 그 합을 바로 본다.
+         🅿️ 합이 0 이면 통째로 안 보인다 — 발송을 안 쓰는 회사(heymanerp·karaba)의 헤더를 어지럽히지 않으려고.
+            숨기는 게 아니라 «셀 게 없다» 는 뜻이라, 값이 생기면 스스로 나타난다. --}}
+    @php $st = $this->shipmentTotals; @endphp
+    @if($st['ems'] + $st['dhl'] > 0)
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex flex-col gap-0.5">
+        <div class="flex items-baseline gap-1.5">
+            <span class="text-sm">📮</span>
+            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.shipping_fee') }}</span>
+            <span class="text-sm font-bold text-gray-800">{{ number_format($st['ems'] + $st['dhl']) }}</span>
+        </div>
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ __('vehicle.stat.ems_fee') }} {{ number_format($st['ems']) }} ·
+            {{ __('vehicle.stat.dhl_fee') }} {{ number_format($st['dhl']) }}
+        </div>
+    </div>
+    @endif
 </div>
 
 {{-- 선적요청 배치 딥링크 활성 — 그 차량만 조회 중임을 안내 + 전체 복귀 --}}
@@ -6234,8 +6329,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $isOn ? '✓ ' : '' }}📮 {{ $sf['label'] }}
             </button>
             @endforeach
-            <input wire:model.live="shipmentMonth" type="month"
-                   class="ml-1 rounded border border-gray-200 px-1.5 py-0.5 text-xs"
+            {{-- 🅿️ `type="month"` 를 안 쓴다 — 브라우저 네이티브 위젯이 「2026 TAB 08」 식 입력을 강요해서
+                 `202607` 이라고 못 친다(jin 2026-09-01). 텍스트로 받고 서버에서 정규화한다. --}}
+            <input wire:model.live.debounce.500ms="shipmentMonth" type="text" inputmode="numeric" maxlength="7"
+                   class="ml-1 w-24 rounded border border-gray-200 px-1.5 py-0.5 text-xs"
+                   placeholder="{{ __('vehicle.filter_ship_month_ph') }}"
                    title="{{ __('vehicle.filter_ship_month') }}" />
         </div>
 
@@ -6473,6 +6571,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" x-show="visible['ems_tracking']">{!! $sortBtn('ems_tracking_no_cache', __('vehicle.col.ems_tracking')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['dhl_tracking']">{!! $sortBtn('dhl_tracking_no_cache', __('vehicle.col.dhl_tracking')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_sent_date']">{!! $sortBtn('shipping_sent_date_cache', __('vehicle.col.shipping_sent_date')) !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['ems_fee']">{!! $sortBtn('ems_fee_total_cache', __('vehicle.col.ems_fee'), 'right') !!}</th>
+                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['dhl_fee']">{!! $sortBtn('dhl_fee_total_cache', __('vehicle.col.dhl_fee'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['shipping_fee']">{!! $sortBtn('shipping_fee_total_cache', __('vehicle.col.shipping_fee'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
                 <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>
@@ -6592,6 +6692,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['ems_tracking']">{{ $v->ems_tracking_no_cache ?: '-' }}</td>
                 <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['dhl_tracking']">{{ $v->dhl_tracking_no_cache ?: '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_sent_date']">{{ $v->shipping_sent_date_cache?->format('Y-m-d') ?? '-' }}</td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['ems_fee']">{{ $v->ems_fee_total_cache ? number_format($v->ems_fee_total_cache) : '-' }}</td>
+                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['dhl_fee']">{{ $v->dhl_fee_total_cache ? number_format($v->dhl_fee_total_cache) : '-' }}</td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['shipping_fee']">{{ $v->shipping_fee_total_cache ? number_format($v->shipping_fee_total_cache) : '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
@@ -6642,7 +6744,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="30" class="py-12 text-center text-sm text-gray-400">
+            <tr><td colspan="32" class="py-12 text-center text-sm text-gray-400">
                 @if ($this->perPage === 0)
                     {{ __('vehicle.count_only_hint', ['count' => $this->vehicles->total()]) }}
                 @else
@@ -6665,7 +6767,8 @@ function vehicleColumnsToggle() {
         vin: false, sale_price: false,
         sale_date: false, shipping_date: false, eta_date: false, bl_issue_date: false,
         export_declaration_number: false, vessel_name: false, container_number: false, bl_number: false,
-        ems_tracking: false, dhl_tracking: false, shipping_sent_date: false, shipping_fee: false,
+        ems_tracking: false, dhl_tracking: false, shipping_sent_date: false,
+        ems_fee: false, dhl_fee: false, shipping_fee: false,
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, consignee: false, sales_channel: false,
@@ -6689,6 +6792,8 @@ function vehicleColumnsToggle() {
             { key: 'ems_tracking',              label: @json(__('vehicle.col.ems_tracking')) },
             { key: 'dhl_tracking',              label: @json(__('vehicle.col.dhl_tracking')) },
             { key: 'shipping_sent_date',        label: @json(__('vehicle.col.shipping_sent_date')) },
+            { key: 'ems_fee',                   label: @json(__('vehicle.col.ems_fee')) },
+            { key: 'dhl_fee',                   label: @json(__('vehicle.col.dhl_fee')) },
             { key: 'shipping_fee',              label: @json(__('vehicle.col.shipping_fee')) },
             { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },
             { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
@@ -9767,6 +9872,39 @@ function vehicleColumnsToggle() {
                 <input wire:model="bulkVessel" type="text" class="input-base"
                        placeholder="{{ __('vehicle.bulk_date.vsl_ph') }}" />
             </div>
+            {{-- 컨테이너 접두어 교체 (jin 2026-09-01) — 선적이 밀려 한 배가 다음 배로 넘어갈 때.
+                 앞 토큰만 갈아끼우고 뒤 화물 자리(`RORO 12-33_5`)는 그대로 둔다.
+                 ISO 번호(EISU8533921)·옛 표기(`RORO 4-19`)는 접두어로 시작하지 않아 자동으로 안 걸린다. --}}
+            @php $ctPrefixes = $this->bulkContainerPrefixes; @endphp
+            {{-- 🚪 대상에 접두어형 번호가 없어도 **칸은 보여준다** — 숨기면 「왜 안 뜨지」가 되고,
+                 보이되 스스로 «이 조건엔 없다» 고 말하면 사람이 필터를 고칠 수 있다(SKILLS §8 #60). --}}
+            <div class="rounded-md border border-gray-200 p-2">
+                <label class="label-base">{{ __('vehicle.bulk_date.ct_prefix') }}</label>
+                <div class="flex items-center gap-2">
+                    <select wire:model.live="bulkContainerFrom" class="input-base flex-1" @disabled($ctPrefixes === [])>
+                        <option value="">{{ __('vehicle.bulk_date.ct_keep') }}</option>
+                        @foreach($ctPrefixes as $ctP => $ctC)
+                        <option value="{{ $ctP }}">{{ $ctP }} ({{ number_format($ctC) }}{{ __('vehicle.bulk_date.unit') }})</option>
+                        @endforeach
+                    </select>
+                    <span class="shrink-0 text-gray-400">→</span>
+                    <input wire:model="bulkContainerTo" type="text" class="input-base flex-1 font-mono"
+                           placeholder="{{ __('vehicle.bulk_date.ct_to_ph') }}" @disabled($ctPrefixes === []) />
+                </div>
+                @if($ctPrefixes === [])
+                <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.bulk_date.ct_none') }}</p>
+                @endif
+                @if($bulkContainerFrom !== '')
+                <p class="mt-1 text-xs text-primary-text">
+                    {{ __('vehicle.bulk_date.ct_preview', [
+                        'count' => number_format($ctPrefixes[$bulkContainerFrom] ?? 0),
+                        'from' => $bulkContainerFrom,
+                        'to' => $bulkContainerTo !== '' ? $bulkContainerTo : '…',
+                    ]) }}
+                </p>
+                @endif
+                <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_date.ct_hint') }}</p>
+            </div>
             <div>
                 <label class="label-base">{{ __('vehicle.bulk_date.reason') }}</label>
                 <input wire:model="bulkDateReason" type="text" class="input-base"
@@ -9987,9 +10125,9 @@ function vehicleColumnsToggle() {
         <div class="mt-3">
             <div class="flex items-center justify-between">
                 <label class="label-base">{{ __('vehicle.ship_import.targets') }}</label>
-                @if(count($shipDocIds) > 0)
-                <button type="button" wire:click="useSelectedForShipmentBulk"
-                        class="text-xs text-violet-600 hover:underline">{{ __('vehicle.ship_import.use_selected') }} ({{ count($shipDocIds) }})</button>
+                @if($shipBulkFromSelection > 0)
+                {{-- 체크한 차량이 자동으로 들어왔다는 사실을 적는다 — 안 적으면 어디서 온 목록인지 모른다. --}}
+                <span class="text-xs text-primary-text">{{ __('vehicle.ship_import.from_selection', ['count' => $shipBulkFromSelection]) }}</span>
                 @endif
             </div>
             <textarea wire:model="shipBulkRaw" rows="4" class="input-base w-full font-mono text-xs"

@@ -177,6 +177,8 @@ class Vehicle extends Model
         'progress_status_rule_version' => 'integer',
         'shipping_sent_date_cache' => 'date',
         'shipping_fee_total_cache' => 'integer',
+        'ems_fee_total_cache' => 'integer',
+        'dhl_fee_total_cache' => 'integer',
         'nice_reg_first_date' => 'date',
         'nice_reg_date' => 'date',
         'deregistration_date' => 'date',
@@ -615,6 +617,10 @@ class Vehicle extends Model
         //   2026-08-12 — 선박명도 같은 도구에 합류(jin). 잘못 덮으면 다른 배에 실린 차의 배 이름이
         //   수백 대 단위로 날아가는데, 그걸 되짚을 기록이 없었다.
         'shipping_date', 'eta_date', 'vessel_name',
+        // 2026-09-01 (jin) — 컨테이너 번호. 선적이 밀리면 접두어(`6.08_G`)를 **한 배 통째로**
+        //   다음 배로 옮기는 일괄 교체가 생겼다(ssancarerp 실측 한 접두어에 최대 383대).
+        //   통관 SET 의 컨테이너 NO 칸이 이 값을 그대로 쓰므로 서류에도 바로 반영된다.
+        'container_number',
         // 2026-07-30 (jin) — 보증금 매입 마커. 켜는 순간 바이어 입금 독촉 알림톡 타이머가 돌기 시작하고,
         //   끄면 독촉이 멈춘다. 누가 언제 켰는지 없으면 "왜 독촉이 오냐/안 오냐"를 못 따진다.
         'is_deposit_purchase',
@@ -1460,9 +1466,15 @@ class Vehicle extends Model
             ->sortBy($order)
             ->last()?->sent_date;
 
+        // 🔑 셋을 **여기서 같이** 만든다 — `ems + dhl ≡ total` 이 항상 참이어야 한다.
+        //    따로 갱신하면 「합계는 맞는데 줄을 더하면 안 맞는」 화면이 된다(SKILLS §8 #64).
+        $feeOf = fn (string $carrier) => (int) $rows->where('carrier', $carrier)->sum('fee');
+
         return [
             'ems_tracking_no_cache' => $latest(VehicleShipment::CARRIER_EMS),
             'dhl_tracking_no_cache' => $latest(VehicleShipment::CARRIER_DHL),
+            'ems_fee_total_cache' => $feeOf(VehicleShipment::CARRIER_EMS),
+            'dhl_fee_total_cache' => $feeOf(VehicleShipment::CARRIER_DHL),
             'shipping_fee_total_cache' => (int) $rows->sum('fee'),
             'shipping_sent_date_cache' => $lastSent?->format('Y-m-d'),
         ];
@@ -1477,7 +1489,8 @@ class Vehicle extends Model
      */
     public function refreshShippingCaches(): void
     {
-        $tracked = ['ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_fee_total_cache'];
+        $tracked = ['ems_tracking_no_cache', 'dhl_tracking_no_cache',
+            'ems_fee_total_cache', 'dhl_fee_total_cache', 'shipping_fee_total_cache'];
         $before = [];
         foreach ($tracked as $col) {
             $before[$col] = $this->getRawOriginal($col) ?? $this->{$col};

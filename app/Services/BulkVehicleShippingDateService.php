@@ -38,6 +38,15 @@ class BulkVehicleShippingDateService
     private const DATE_FIELDS = ['shipping_date', 'eta_date'];
 
     /**
+     * 컨테이너 번호 **접두어** 꼴 — `6.08_G RORO 12-33_5` 의 앞 토큰 `6.08_G`.
+     *   6 = 26년 · 08 = 월 · G = 선박 약칭(GMT). ssancarerp 실무 표기(jin 2026-09-01).
+     *
+     * 이 꼴이 아닌 것(ISO 번호 `EISU8533921` · 옛 표기 `RORO 4-19` · `-`)은 접두어로 치지 않는다.
+     * 실측(2026-09-01 ssancarerp 4,407건): 접두어형 3,576 · ISO 748 · 그 외 83 · 접두어 종류 22.
+     */
+    private const PREFIX_SHAPE = '/^\d+\.\d+_[A-Za-z0-9]+$/u';
+
+    /**
      * 대상 안의 기존 선박명 분포 — `['MV A' => 182, '' => 112]`. 빈 값은 `''` 키로 센다.
      *
      * 🧭 **왜 세는가** (jin 2026-08-12): 필터가 여러 배의 차를 함께 걷어왔는데 모르고 덮으면
@@ -72,12 +81,75 @@ class BulkVehicleShippingDateService
     }
 
     /**
+     * 대상 안의 **컨테이너 접두어 분포** — `['6.08_G' => 296, '' => 831]`.
+     *
+     * 🧭 **왜 세는가** — 선적이 밀리면 한 배(접두어) 통째로 다음 배로 넘긴다. 그런데 같은 접두어를
+     *    단 차 중 **실제로 실린 차와 안 실린 차가 섞여 있다** — 화면 필터로 먼저 추린 뒤,
+     *    여기 뜬 숫자로 «몇 대가 바뀌는지» 를 눈으로 확인하고 누르게 한다.
+     *
+     * 🚫 SQL 로 자르지 않는다 — `SUBSTRING_INDEX` 는 MySQL 전용이라 SQLite 테스트에서 갈린다
+     *    (SKILLS §8 #36 의 그 부류). 대상은 많아야 수천 건이라 PHP 로 묶는 게 안전하고 충분하다.
+     *
+     * @return array<string, int> 접두어 => 대수 (대수 많은 순). 접두어 없는 차는 `''` 키.
+     */
+    public function containerPrefixBreakdown(Builder $query): array
+    {
+        $rows = [];
+        $query->clone()->reorder()->select('container_number')
+            ->chunk(1000, function ($chunk) use (&$rows) {
+                foreach ($chunk as $v) {
+                    $p = self::containerPrefixOf($v->container_number);
+                    $rows[$p] = ($rows[$p] ?? 0) + 1;
+                }
+            });
+        arsort($rows);
+
+        return $rows;
+    }
+
+    /** 컨테이너 번호의 접두어 — 접두어 꼴이 아니면 `''`(ISO 번호·옛 표기·빈칸). */
+    public static function containerPrefixOf(?string $value): string
+    {
+        $first = preg_split('/\s+/u', trim((string) $value))[0] ?? '';
+
+        return preg_match(self::PREFIX_SHAPE, $first) === 1 ? $first : '';
+    }
+
+    /**
+     * 접두어만 갈아끼운다 — `6.08_G RORO 12-33_5` → `6.09_A RORO 12-33_5`.
+     *
+     * 🔑 **뒤 토큰은 손대지 않는다.** 바뀌는 건 «어느 배 · 몇 월» 뿐이고 화물 자리(`RORO 12-33_5`)는
+     *    그대로다. 그래서 문자열 치환이 아니라 **앞 토큰 경계**로 자른다 —
+     *    `str_replace` 를 쓰면 뒤쪽에 우연히 같은 문자열이 있을 때 거기까지 바뀐다.
+     *
+     * 대상이 아니면 `null`(= 이 차는 안 건드림). ISO 번호는 접두어로 시작하지 않아 자동으로 걸러진다.
+     */
+    public static function replaceContainerPrefix(?string $value, string $from, string $to): ?string
+    {
+        $value = (string) $value;
+        $from = trim($from);
+        if ($from === '' || $value === '') {
+            return null;
+        }
+        if ($value === $from) {
+            return $to;
+        }
+        $rest = substr($value, strlen($from));
+        if (str_starts_with($value, $from) && $rest !== '' && preg_match('/^\s/u', $rest) === 1) {
+            return $to.$rest;
+        }
+
+        return null;
+    }
+
+    /**
      * @param  Builder  $query  대상 차량 쿼리(화면 필터를 서버에서 재도출한 것)
      * @param  array<string, string|null>  $values  FIELDS 중 채운 것만 — 빈 칸은 그대로 유지된다
      * @param  string  $reason  일괄 적용 사유(선박명 등) — 감사에 남는다
+     * @param  ?array{from:string,to:string}  $containerPrefix  컨테이너 접두어 교체 (null=안 함)
      * @return array{applied:int, unchanged:int, skipped:list<array{id:int,number:?string,reason:string}>}
      */
-    public function apply(Builder $query, array $values, User $by, string $reason): array
+    public function apply(Builder $query, array $values, User $by, string $reason, ?array $containerPrefix = null): array
     {
         if (! $by->canAccessClearance()) {
             throw new AuthorizationException('선적일·ETA·선박명 일괄 지정 권한 없음 (수출통관/관리 전용)');
@@ -105,17 +177,31 @@ class BulkVehicleShippingDateService
             }
             $payload[$column] = $value;
         }
-        if ($payload === []) {
-            throw new InvalidArgumentException('선적일·ETA·선박명 중 최소 하나는 입력해야 합니다.');
+        // 컨테이너 접두어 — 차량마다 뒤 토큰이 달라 $payload(공통값)에 못 넣는다. 별도로 검증해 루프에서 계산.
+        if ($containerPrefix !== null) {
+            $from = trim((string) ($containerPrefix['from'] ?? ''));
+            $to = trim((string) ($containerPrefix['to'] ?? ''));
+            if ($from === '' || $to === '') {
+                throw new InvalidArgumentException('컨테이너 접두어는 「바꿀 것」과 「새 값」을 모두 입력해야 합니다.');
+            }
+            // 공백이 들어가면 토큰 경계가 깨져 뒤 화물 자리가 통째로 밀린다 — 입구에서 막는다.
+            if (preg_match('/\s/u', $to) === 1) {
+                throw new InvalidArgumentException("새 접두어에 공백은 넣을 수 없습니다: {$to}");
+            }
+            $containerPrefix = ['from' => $from, 'to' => $to];
+        }
+
+        if ($payload === [] && $containerPrefix === null) {
+            throw new InvalidArgumentException('선적일·ETA·선박명·컨테이너 접두어 중 최소 하나는 입력해야 합니다.');
         }
 
         $applied = 0;
         $unchanged = 0;
         $skipped = [];
 
-        DB::transaction(function () use ($query, $payload, $by, $reason, &$applied, &$unchanged, &$skipped) {
+        DB::transaction(function () use ($query, $payload, $containerPrefix, $by, $reason, &$applied, &$unchanged, &$skipped) {
             // chunkById — 수백~수천 대여도 메모리 안전. update 가 정렬 대상 컬럼을 안 건드려서 재방문 없음.
-            $query->clone()->chunkById(200, function ($vehicles) use ($payload, $by, $reason, &$applied, &$unchanged, &$skipped) {
+            $query->clone()->chunkById(200, function ($vehicles) use ($payload, $containerPrefix, $by, $reason, &$applied, &$unchanged, &$skipped) {
                 foreach ($vehicles as $vehicle) {
                     if (! $by->canScopeVehicle($vehicle)) {
                         $skipped[] = ['id' => $vehicle->id, 'number' => $vehicle->vehicle_number, 'reason' => 'no_scope'];
@@ -134,6 +220,16 @@ class BulkVehicleShippingDateService
                             $diff[$column] = $value;
                         }
                     }
+                    // 접두어 교체 — 접두어가 안 맞는 차(ISO 번호·다른 배)는 null 이 와서 그냥 안 바뀐다.
+                    if ($containerPrefix !== null) {
+                        $newNo = self::replaceContainerPrefix(
+                            $vehicle->container_number, $containerPrefix['from'], $containerPrefix['to']
+                        );
+                        if ($newNo !== null && $newNo !== (string) $vehicle->container_number) {
+                            $diff['container_number'] = $newNo;
+                        }
+                    }
+
                     if ($diff === []) {
                         $unchanged++;
 
