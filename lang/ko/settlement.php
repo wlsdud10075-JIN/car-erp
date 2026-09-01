@@ -240,6 +240,8 @@ return [
     'result_per_unit_formula' => '건당 고정',
     'result_document_fee' => '서류비',
     'result_document_fee_sub' => '(프리랜서 자동)',
+    'result_shipping_fee' => '발송비',
+    'result_shipping_fee_sub' => '(EMS·DHL 실비)',
     'result_other_deduction' => '기타공제',
     'result_exchange' => '환차 (실현·참고)',
     'result_exchange_sub' => '(1차 정산에 이미 반영 — 재가산 없음)',

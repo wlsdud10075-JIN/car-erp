@@ -535,6 +535,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $marginSum = 0;
         $payoutSum = 0;
         $fxAbsorbed = 0;   // 사내직원 정산건의 실현 환차 — 전액 회사 귀속 (정보용. company_net 에 이미 포함)
+        $shippingSum = 0;  // 서류 발송비(EMS·DHL) — 회사가 먼저 치르고 지급에서 되받는 돈
         $batchIds = [];    // 이 기간에 지급된 정산이 속한 월배치 — 아래에서 수동 조정을 마저 더한다.
         $byPerson = [];
 
@@ -553,7 +554,7 @@ new #[Layout('components.layouts.app')] class extends Component
             // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
             //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$byPerson, &$batchIds) {
+            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$shippingSum, &$byPerson, &$batchIds) {
                 foreach ($rows as $s) {
                     if ($s->payout_batch_id) {
                         $batchIds[$s->payout_batch_id] = true;
@@ -561,11 +562,15 @@ new #[Layout('components.layouts.app')] class extends Component
                     $margin = (int) ($s->total_margin ?? 0);
                     $payout = (int) ($s->actual_payout ?? 0);
                     $fx = (int) ($s->exchange_difference_krw ?? 0);
-                    $share = $margin - $payout;
+                    // 회사 몫 = 총마진 − 실지급액 − 발송비. 단일 출처 = Settlement::company_net.
+                    //   발송비는 지급에서 빼서 되받지만 회사가 먼저 치른 돈이라 순증이 0 이어야 한다.
+                    $shipping = (int) $s->shipping_fee;
+                    $share = (int) $s->company_net;
 
                     $companyNet += $share;
                     $marginSum += $margin;
                     $payoutSum += $payout;
+                    $shippingSum += $shipping;
                     if ($s->settlement_type === 'per_unit') {
                         $fxAbsorbed += $fx;
                     }
@@ -633,6 +638,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'company_net' => $companyNet,
             'margin_sum' => $marginSum,
             'payout_sum' => $payoutSum,
+            'shipping_sum' => $shippingSum,
             'fx_absorbed' => $fxAbsorbed,
             'ranking' => $ranking,
         ];

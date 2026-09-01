@@ -647,6 +647,43 @@ class Settlement extends Model
         return $this->settlement_type === 'ratio' ? self::param('settlement_freelance_document_fee') : 0;
     }
 
+    /**
+     * 서류 발송비 (우체국 EMS + DHL) — **프리랜서·사내직원 동일하게 전액 차감** (jin 2026-08-31).
+     *
+     * 실무 관리표는 「담당자 × 월 → 우체국+DHL 월 계 → N/10 정산 반영」으로 집계하고,
+     * 회사가 무는 몫은 별도 「회사 부담(싼카)」 행으로 뺀다 ⇒ **담당자에 붙은 건 그 사람이 전액 진다.**
+     *
+     * 🚫 총마진에서 빼지 않는다 — 사내직원(per_unit)은 정산액이 총마진과 무관해 **1,662건이 무영향**이 되고,
+     *    영향이 있는 소수는 tier 경계(1억·100만)라 «같은 금액인데 결과가 셋으로 갈리는» 상태가 된다.
+     *    (SKILLS §8 #49 의 그 형태 — 예측 불가는 정책이 아니라 버그다.)
+     * 🚫 `other_deduction` 에 합치지 않는다 — 재무가 손으로 넣는 칸이라 덮어쓰게 된다.
+     *
+     * 회사 부담분은 `fee = 0` 으로 들어와 자연히 0 이 된다(번호는 남아 바이어 조회는 된다).
+     */
+    public function getShippingFeeAttribute(): int
+    {
+        return (int) ($this->vehicle?->shipping_fee_total ?? 0);
+    }
+
+    /**
+     * 이 정산 1건의 **회사 몫** — 회사이익 공식의 단일 출처 (2026-08-31).
+     *
+     *   회사 몫 = 총마진 − 실지급액 − 발송비
+     *
+     * 🚨 마지막 항이 없으면 회사이익이 발송비만큼 **부풀려진다**. 발송비는 실지급액에서 빼서
+     *    담당자에게 되받는 돈이지만, 그 전에 **회사가 우체국·DHL 에 먼저 치른 돈**이라
+     *    회사 장부에서는 나갔다 들어온 것이라 순증이 0 이어야 한다. 빼는 쪽만 반영하면
+     *    받은 적 없는 수익이 생긴다(2026-08-06 환차 때 겪은 그 형태 — SKILLS §8 #38).
+     *
+     * 🧹 이 공식은 **3곳**에 복제돼 있었다(관리자 대시보드 · 월결산 알림톡 · 월배치 승인화면).
+     *    하나만 고치면 대표가 보는 화면만 틀린다 — 반드시 이 accessor 를 쓸 것(SKILLS §8 #45).
+     *    ⚠️ 월배치 수동 조정은 정산 행이 아니라 배치에 달려 있어 여기 안 들어온다(호출부가 따로 더한다).
+     */
+    public function getCompanyNetAttribute(): int
+    {
+        return $this->total_margin - $this->actual_payout - $this->shipping_fee;
+    }
+
     // ── karaba 이익율 정산 (Phase 3, 2026-07-22) — Setting::isKaraba() 전역 분기 시 사용. 엑셀 매입대장 실측 ──
 
     /**
@@ -776,7 +813,7 @@ class Settlement extends Model
      */
     public function getActualPayoutAttribute(): int
     {
-        $base = $this->settlement_amount - $this->document_fee - (int) ($this->other_deduction ?? 0);
+        $base = $this->settlement_amount - $this->document_fee - $this->shipping_fee - (int) ($this->other_deduction ?? 0);
 
         // 캐리오버 — 전월 이월액 가산 (양수면 추가 지급 / 음수면 차감)
         if ($this->carryover_in_krw !== null) {

@@ -234,6 +234,8 @@ return [
     'result_per_unit_formula' => 'Per-unit fixed',
     'result_document_fee' => 'Document fee',
     'result_document_fee_sub' => '(freelancer auto)',
+    'result_shipping_fee' => 'Shipping fee',
+    'result_shipping_fee_sub' => '(EMS/DHL actual)',
     'result_other_deduction' => 'Other deduction',
     'result_exchange' => 'FX diff (2nd confirmed)',
     'result_exchange_sub' => '(freelancer 1:1)',

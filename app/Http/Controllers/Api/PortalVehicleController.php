@@ -42,6 +42,9 @@ class PortalVehicleController extends Controller
         // 🗂️ 서류함 (2026-08-27 jin 확정 4종). **경로는 안 나간다 — 유무만 계산해서 버린다.**
         //    ssancar 요구: *"경로가 있으면 오히려 곤란하다 — 우리 쪽에 ERP 파일 경로가 남는다."*
         'export_declaration_document', 'deregistration_document',
+        // 📮 서류 발송 조회번호(EMS 등기 · DHL 운송장) — 바이어가 우체국/DHL 사이트에서 직접 조회한다.
+        //    🚫 **금액(shipping_fee_total_cache)은 절대 안 보낸다** — 내부 정산 차감액이라 바이어와 무관하다.
+        'ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_sent_date_cache',
         // 통관 SET 게이트(`Vehicle::clearanceSetBlocker`)가 읽는 칸 — 값 자체는 안 나간다.
         //   ①운항 = shipping_date·eta_date(위) ②필수칸 = vin·brand·model_type(위) + 아래 4개.
         'export_consignee_id', 'bl_consignee_id', 'consignee_id',
@@ -166,12 +169,13 @@ class PortalVehicleController extends Controller
         // 🔑 게이트 단일 출처. 사이트는 이 플래그만 보고 버튼을 그린다 —
         //    조건을 옮겨 적으면 「버튼은 뜨는데 받으면 거절」이 된다(SKILLS §8 #44).
         $blocker = $v->clearanceSetBlocker();
+        $open = $v->portalDocumentsBlocker() === null;
 
         return [
             // 🚪 서류함 자체가 열렸나 — jin 규칙(운항 단계 진입). **이게 섹션을 그리는 조건이다.**
             //    아래 `has_*` 는 「그 파일이 존재하나」라는 사실일 뿐이라 매입 단계에도 true 가 된다.
             //    이 플래그 없이 `has_*` 만 그리면 아직 안 떠난 차의 서류함이 열린다.
-            'documents_open' => $v->portalDocumentsBlocker() === null,
+            'documents_open' => $open,
             'has_export_declaration_document' => filled($v->export_declaration_document),
             'has_deregistration_document' => filled($v->deregistration_document),
             'shipping_photo_count' => (int) ($v->shipping_photo_count ?? 0),
@@ -179,6 +183,13 @@ class PortalVehicleController extends Controller
             // 왜 못 받는지 — **화면에 그대로 쓰라는 게 아니다**(관통 원칙: 화면은 설명하지 않는다).
             // 사이트 로그·문의 대응용이다. 값이 늘 수 있으니 닫힌 enum 으로 다루지 말 것(v1.3).
             'clearance_set_blocked_reason' => $blocker,
+
+            // 📮 서류 발송 조회번호 — **서류함과 같은 게이트**를 탄다. 아직 안 떠난 차에
+            //    번호가 뜨면 「이미 보냈다」로 읽힌다. 안 열렸으면 null 이다(빈 문자열 금지 —
+            //    받는 화면이 「번호 없음」과 「아직 아님」을 구분해야 한다).
+            'ems_tracking_no' => $open ? $v->ems_tracking_no_cache : null,
+            'dhl_tracking_no' => $open ? $v->dhl_tracking_no_cache : null,
+            'document_sent_date' => $open ? $this->date($v->shipping_sent_date_cache) : null,
         ];
     }
 

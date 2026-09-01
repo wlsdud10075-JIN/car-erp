@@ -401,7 +401,12 @@ new #[Layout('components.layouts.app')] class extends Component
             ? \App\Models\Settlement::FREELANCE_DOCUMENT_FEE
             : 0;
 
-        $actualPayout = $settlementAmount - $documentFee - (int) ($this->other_deduction ?? 0);
+        // 서류 발송비(우체국 EMS + DHL) — 타입 무관 전액 차감 (jin 2026-08-31).
+        //   ⚠️ 여기 안 빼면 **미리보기와 실제 지급액이 갈린다** — 화면엔 X 인데 지급은 X−발송비.
+        //   단일 출처는 Settlement::getActualPayoutAttribute 이고 이 블록은 그 미리보기다.
+        $shippingFee = (int) ($v->shipping_fee_total ?? 0);
+
+        $actualPayout = $settlementAmount - $documentFee - $shippingFee - (int) ($this->other_deduction ?? 0);
 
         // 2026-08-06 (jin) — 환차는 판매금원화의 환율로 **1차 정산에 이미 반영**된다.
         //   여기서 다시 더하면 이중계상. 아래 $exchangeDiff 는 실현 환차 총액 **표시 전용**이다.
@@ -430,7 +435,7 @@ new #[Layout('components.layouts.app')] class extends Component
         return compact(
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
-            'documentFee', 'actualPayout', 'exchangeDiff',
+            'documentFee', 'shippingFee', 'actualPayout', 'exchangeDiff',
             'carryoverIn', 'carryoverOut',
             // karaba 이익율 정산 표시용 (Phase 3)
             'isKaraba', 'operatingProfit', 'profitRate', 'karabaSalesKrw', 'purchaseTotal', 'karabaCosts', 'karabaVat'
@@ -2321,6 +2326,13 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="flex justify-between text-gray-500">
                 <span>{{ __('settlement.result_document_fee') }} <span class="text-xs text-gray-400">{{ __('settlement.result_document_fee_sub') }}</span></span>
                 <span class="text-red-500">- ₩{{ number_format($this->marginData['documentFee']) }}</span>
+            </div>
+            @endif
+            {{-- 발송비 (jin 2026-08-31) — 정산액에서 전액 차감. 줄이 없으면 실지급액이 안 맞아 보인다. --}}
+            @if(($this->marginData['shippingFee'] ?? 0) > 0)
+            <div class="flex justify-between text-gray-500">
+                <span>{{ __('settlement.result_shipping_fee') }} <span class="text-xs text-gray-400">{{ __('settlement.result_shipping_fee_sub') }}</span></span>
+                <span class="text-red-500">- ₩{{ number_format($this->marginData['shippingFee']) }}</span>
             </div>
             @endif
             <div class="flex justify-between text-gray-500">
