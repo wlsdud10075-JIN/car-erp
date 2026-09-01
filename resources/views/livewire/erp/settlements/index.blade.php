@@ -161,8 +161,12 @@ new #[Layout('components.layouts.app')] class extends Component
         //    월로 좁히면 ~1.3초. 목록 SQL 도 같이 좁아진다.
         // 🧭 「전 기간」은 없어지지 않았다 — 월 선택을 '전체'로 비우면 그대로 나온다(그때만 8.1초).
         // ⚠️ URL 에 month 가 실려 오면 그 값이 이긴다(#[Url] 이 mount 전에 채운다).
+        // 🚨 `now()->format('Y-m')` 이 아니다 — 귀속월 경계가 **10일**이라(monthRange = [M/10, (M+1)/10))
+        //    매월 1~9일에는 그 달 라벨의 범위가 아직 시작도 안 했다. 그대로 쓰면 그 9일 동안
+        //    **오늘 만들어진 정산이 기본 화면에서 통째로 사라진다**(2026-09-01 실측으로 발견).
+        //    역함수 단일 출처 = SettlementCkBatch::payrollMonthOf (백필 명령·집계가 쓰는 것과 같다).
         if ($this->monthFilter === '') {
-            $this->monthFilter = now()->format('Y-m');
+            $this->monthFilter = \App\Support\SettlementCkBatch::payrollMonthOf(now());
         }
     }
 
