@@ -264,6 +264,34 @@ class VehicleShipmentPanelTest extends TestCase
         $this->assertSame(74_028, $totals['dhl']);
     }
 
+    /**
+     * 🚨 **번역 키가 화면에 그대로 찍히는 것**을 잡는다 (jin 제보 2026-09-01).
+     *
+     * `vehicle.stat.ems_fee` 를 `stat` 이 아니라 `col` 그룹에 넣었더니 헤더에 키 문자열이
+     * 그대로 나왔다 — 예외도 로그도 없고, ko·en 양쪽이 똑같이 틀려서 `LocaleKeyParityTest`
+     * (두 파일 대조)도 통과했다. 렌더 결과를 봐야만 잡힌다.
+     *
+     * 발송 합계 블록·일괄 모달은 **조건부 렌더**라 값을 만들어 둬야 화면에 나온다.
+     */
+    public function test_no_untranslated_key_leaks_into_the_vehicle_screen(): void
+    {
+        $v = $this->vehicle();
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EDKEY', 'fee' => 29_560]);
+        $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '4508', 'fee' => 74_028]);
+        $v->update(['container_number' => '6.08_G RORO 12-33_5']);
+
+        $html = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openBulkDate')          // 선적일·ETA·VSL + 컨테이너 접두어 모달
+            ->call('openShipmentBulk')      // EMS/DHL 기입 모달
+            ->call('openEdit', $v->id)      // 차량 패널(EMS/DHL 탭 포함)
+            ->html();
+
+        preg_match_all('/(?<![a-z0-9_.])(?:vehicle|common|domain|settlement)\.[a-z0-9_]+(?:\.[a-z0-9_]+)+/', $html, $m);
+
+        $this->assertSame([], array_values(array_unique($m[0])),
+            '번역 키가 화면에 그대로 찍혔습니다 — lang 파일에서 그 키가 어느 그룹에 들어갔는지 확인하세요.');
+    }
+
     public function test_bulk_modal_is_closed_to_users_without_approval_permission(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
