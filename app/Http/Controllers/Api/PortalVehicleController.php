@@ -36,8 +36,11 @@ class PortalVehicleController extends Controller
         // 화물추적 링크 판정에 필요(포워딩사 템플릿 + 출항 D+1). 값 자체는 안 나간다.
         'forwarding_company_id',
         // C-1 미수 발행 (v1.12) — 아래 unpaid() 가 쓴다.
-        // ⚠️ `exchange_rate` 는 **일부러 뺐다**. 바이어 통화로만 발행하고 원화 환산은 안 한다(Q11).
-        'currency', 'sale_price', 'transport_fee', 'sale_other_costs',
+        // 💱 `exchange_rate` 는 2026-09-01 에 **열렸다**(구 주석 = 「일부러 뺐다」는 폐기).
+        //    용도가 미수 환산이 아니라 **포인트 적립**이라 Q11 과 충돌하지 않는다 —
+        //    Q11 이 막은 건 「미수를 원화로 그려서 청구액으로 읽히는 것」이다.
+        //    🚫 그래도 **미수 × 이 환율 = 원화 청구액** 은 여전히 금지다(§ row() 주석).
+        'currency', 'exchange_rate', 'sale_price', 'transport_fee', 'sale_other_costs',
         'commission', 'auto_loading', 'tax_dc', 'savings_used',
         // 🗂️ 서류함 (2026-08-27 jin 확정 4종). **경로는 안 나간다 — 유무만 계산해서 버린다.**
         //    ssancar 요구: *"경로가 있으면 오히려 곤란하다 — 우리 쪽에 ERP 파일 경로가 남는다."*
@@ -125,6 +128,16 @@ class PortalVehicleController extends Controller
 
             'purchase_date' => $this->date($v->purchase_date),
             'sale_date' => $this->date($v->sale_date),
+            // 💱 판매 시점 **계약 환율** (jin 2026-09-01 — ssancar.com 포인트 적립 산정용).
+            //    ⚠️ 시세 스냅샷이 아니다. 사람이 판매가와 함께 적는 값이고, 그래서 판매가와
+            //       **같은 시점·같은 거래**의 짝이다(자동기입은 잔금칸에만 있다).
+            //    🔒 회계 잠금 대상이라 2차 마감 뒤엔 안 바뀐다 → 포인트가 소급 변동하지 않는다.
+            //    🚫 `settlement_exchange_rate`(실효 입금환율)를 보내지 말 것 — 입금이 들어올 때마다
+            //       값이 변하고, 과입금 차량에선 초과분이 환율로 둔갑한다(실측 119더5727 +9.78%).
+            //    🚫 이 값으로 **미수를 원화 환산해 그리지 말 것** — Q11 은 그대로 유효하다.
+            'sale_exchange_rate' => (float) $v->sale_price > 0 && (float) $v->exchange_rate > 0
+                ? (float) $v->exchange_rate
+                : null,
             'warehouse_out_date' => $this->date($v->warehouse_out_date),
             'shipping_date' => $this->date($v->shipping_date),
             'eta_date' => $this->date($v->eta_date),

@@ -435,8 +435,58 @@ class PortalVehicleApiTest extends TestCase
 
         $this->assertSame('EUR', $row['currency']);
         $this->assertEqualsWithDelta(20000.0, $row['unpaid_components']['sale_price'], 0.01, '원화로 환산돼 나오면 안 된다');
-        $this->assertArrayNotHasKey('exchange_rate', $row);
         $this->assertArrayNotHasKey('unpaid_amount_krw', $row);
+
+        // 🔧 2026-09-01 — 이 테스트의 목적은 「금액을 바이어 통화로만 발행한다」이지
+        //    「환율 칸이 없다」가 아니었다. 포인트 적립용으로 `sale_exchange_rate` 가 열리면서
+        //    옛 단언(`assertArrayNotHasKey('exchange_rate')`)은 **키 이름이 달라 그냥 통과**해
+        //    아무것도 검사하지 않게 됐다(SKILLS §8 #66). 트리거를 갈고 목적을 되살린다.
+        //    ⇒ 환율은 있어도 되지만, **환산된 금액**은 어디에도 있으면 안 된다.
+        // ⚠️ JSON 은 `1500.0` 을 `1500` 으로 직렬화한다(JSON_PRESERVE_ZERO_FRACTION 없음) —
+        //    받는 쪽은 int 로 올 수 있으니 숫자로 다룰 것. 그래서 여기서도 동등 비교다.
+        $this->assertEqualsWithDelta(1500.0, (float) $row['sale_exchange_rate'], 0.0001, '판매 계약 환율은 원문 그대로');
+        foreach ($row['unpaid_components'] as $key => $amount) {
+            $this->assertLessThan(
+                1_000_000,
+                abs((float) $amount),
+                "구성 {$key} 가 원화로 환산된 크기다 — 통화 발행 계약 위반"
+            );
+        }
+    }
+
+    /**
+     * 💱 포인트 적립용 판매 계약 환율 (jin 2026-09-01).
+     *
+     * 🚫 실효 입금환율(`settlement_exchange_rate`)을 보내면 안 된다 — 입금이 들어올 때마다
+     *    값이 변해 포인트가 소급으로 흔들리고, 과입금 차량에선 초과분이 환율로 둔갑한다
+     *    (운영 실측 119더5727 판매 1,710 → 실효 1,877.20, +9.78%).
+     */
+    public function test_sale_exchange_rate_is_the_contract_rate_not_the_effective_one(): void
+    {
+        $v = $this->seedVehicle([
+            'currency' => 'EUR', 'exchange_rate' => 1710,
+            'sale_date' => now()->subMonth()->toDateString(), 'sale_price' => 20000,
+        ]);
+        // 과입금 — 실효환율이라면 이 초과분이 환율을 밀어 올린다.
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 22_000,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertEqualsWithDelta(1710.0, (float) $row['sale_exchange_rate'], 0.0001);
+        $this->assertGreaterThan(1710.0, (float) $v->fresh()->settlement_exchange_rate, '전제 확인 — 실효환율은 실제로 밀려 올라간다');
+    }
+
+    /** 판매 전 차량은 환율도 `null` 이다 — 0 을 보내면 곱해서 0 원 포인트가 된다. */
+    public function test_unsold_vehicle_publishes_null_exchange_rate(): void
+    {
+        $v = $this->seedVehicle(['sale_price' => 0, 'exchange_rate' => 0]);
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $v->id);
+
+        $this->assertNull($row['sale_exchange_rate']);
     }
 
     // ── C-3 레벨3 승급 ──────────────────────────────────────────────────
