@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -52,9 +53,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->whereIn('id', $authUser->getManagedSalesmanUserIds())
                 ->where('role', '영업')
                 ->where('permission', 'user'))
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', "%{$this->search}%")
-                   ->orWhere('email', 'like', "%{$this->search}%")
+            ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
+                $q2->where('name', 'like', SearchTerm::like($this->search))
+                   ->orWhere('email', 'like', SearchTerm::like($this->search))
             ))
             ->when($this->permFilter, fn($q) => $q->where('permission', $this->permFilter))
             ->orderBy('name')

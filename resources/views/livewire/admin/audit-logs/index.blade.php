@@ -3,6 +3,7 @@
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\ColumnLabel;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -59,7 +60,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         return AuditLog::query()
             ->with(['user', 'approvalRequest'])
-            ->when($this->search !== '', fn ($q) => $this->applySearch($q))
+            ->when(SearchTerm::of($this->search) !== '', fn ($q) => $this->applySearch($q))
             ->when($this->userFilter !== '', fn ($q) => $q->where('user_id', $this->userFilter))
             ->when($this->actionFilter !== '', fn ($q) => $q->where('action', $this->actionFilter))
             ->when($this->typeFilter !== '', fn ($q) => $q->where('auditable_type', $this->typeFilter))
@@ -87,7 +88,7 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     private function applySearch($q)
     {
-        $term = '%'.$this->search.'%';
+        $term = SearchTerm::like($this->search);
         $vehicleIds = \App\Models\Vehicle::where('vehicle_number', 'like', $term)->pluck('id')->all();
         $userIds = User::where('name', 'like', $term)->pluck('id')->all();
 

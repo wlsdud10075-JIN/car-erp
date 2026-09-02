@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Port;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -43,9 +44,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function ports()
     {
         return Port::query()
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('name', 'like', "%{$this->search}%")
-                ->orWhere('code', 'like', "%{$this->search}%")))
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('name', 'like', SearchTerm::like($this->search))
+                ->orWhere('code', 'like', SearchTerm::like($this->search))))
             ->when($this->typeFilter, fn ($q) => $q->where('type', $this->typeFilter))
             ->orderBy('type')
             ->orderBy('name')

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\MailDeliveryLog;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -48,8 +49,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return MailDeliveryLog::query()
             ->with(['vehicle:id,vehicle_number', 'user:id,name'])
-            ->when($this->search, function ($q) {
-                $term = '%'.$this->search.'%';
+            ->when(SearchTerm::of($this->search), function ($q) {
+                $term = SearchTerm::like($this->search);
                 $q->where(function ($q2) use ($term) {
                     $q2->where('to_email', 'like', $term)
                         ->orWhere('subject', 'like', $term)

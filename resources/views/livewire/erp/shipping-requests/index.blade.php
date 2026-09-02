@@ -5,6 +5,7 @@ use App\Models\SignedContract;
 use App\Models\TaskAlarm;
 use App\Models\Vehicle;
 use App\Services\Documents\SigningSessionService;
+use App\Support\SearchTerm;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -580,7 +581,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         // ── 선적/발급 탭 — batch 단위 페이지네이션 + 검색 (탭 진입 시만) ──
         //   기본 필터 = active(요청+진행중, 할 일). 완료는 누적되므로 필터/검색/페이지로 접근.
-        $search = trim($this->search);
+        $search = SearchTerm::of($this->search);
         $applyFilters = function ($q) use ($search) {
             $q->where('status', '!=', ShippingRequest::STATUS_CANCELLED);
             if ($this->statusFilter === 'active') {

@@ -6,6 +6,7 @@ use App\Models\Country;
 use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\SavingsStatus;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -265,9 +266,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->salesmanFilter === self::SALESMAN_NONE, fn ($q) => $q->whereNull('salesman_id'))
             ->when($this->salesmanFilter !== '' && $this->salesmanFilter !== self::SALESMAN_NONE,
                 fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', "%{$this->search}%")
-                ->orWhere('contact_email', 'like', "%{$this->search}%")
-                ->orWhere('contact_name', 'like', "%{$this->search}%")
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', SearchTerm::like($this->search))
+                ->orWhere('contact_email', 'like', SearchTerm::like($this->search))
+                ->orWhere('contact_name', 'like', SearchTerm::like($this->search))
             ))
             // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
             ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막

@@ -3,6 +3,7 @@
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Country;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -51,9 +52,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Consignee::query()
             ->with(['buyer', 'country'])
             ->when($scope !== null, fn($q) => $q->whereHas('buyer', $scope))
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', "%{$this->search}%")
-                   ->orWhere('contact_email', 'like', "%{$this->search}%")
+            ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
+                $q2->where('name', 'like', SearchTerm::like($this->search))
+                   ->orWhere('contact_email', 'like', SearchTerm::like($this->search))
             ))
             ->when($this->buyerFilter, fn($q) => $q->where('buyer_id', $this->buyerFilter))
             ->orderBy('name')

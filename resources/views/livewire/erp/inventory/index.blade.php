@@ -4,6 +4,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Vehicle;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -106,18 +107,18 @@ new #[Layout('components.layouts.app')] class extends Component
                     }
                 });
             })
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('vehicle_number', 'like', "%{$this->search}%")
-                ->orWhere('brand', 'like', "%{$this->search}%")
-                ->orWhere('model_type', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")           // 차대번호 — 끝 6자리 등 부분 검색
-                ->orWhere('export_declaration_number', 'like', "%{$this->search}%") // 수출신고번호
-                ->orWhere('vessel_name', 'like', "%{$this->search}%")            // 선박명(VSL)
-                ->orWhere('container_number', 'like', "%{$this->search}%")        // 컨테이너번호
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('vehicle_number', 'like', SearchTerm::like($this->search))
+                ->orWhere('brand', 'like', SearchTerm::like($this->search))
+                ->orWhere('model_type', 'like', SearchTerm::like($this->search))
+                ->orWhere('nice_reg_vin', 'like', SearchTerm::like($this->search))           // 차대번호 — 끝 6자리 등 부분 검색
+                ->orWhere('export_declaration_number', 'like', SearchTerm::like($this->search)) // 수출신고번호
+                ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))            // 선박명(VSL)
+                ->orWhere('container_number', 'like', SearchTerm::like($this->search))        // 컨테이너번호
                 // 바이어명 (board 인계 2026-08-12) — "이 바이어한테 나갈 차 뭐뭐 있지" 를 재고에서 바로.
                 //   ⚠️ **화면에 표시되는 그 바이어**(`buyer_id`)만 훑는다. 통관·선적 바이어까지 넣으면
                 //      A 로 표시된 행이 B 로 검색되는 어긋남이 생긴다. 일반재고는 바이어가 없어 0건이 정상.
-                ->orWhereHas('buyer', fn ($q3) => $q3->where('name', 'like', "%{$this->search}%"))
+                ->orWhereHas('buyer', fn ($q3) => $q3->where('name', 'like', SearchTerm::like($this->search)))
             ))
             // 출고완료는 "언제 나갔나"가 관심사 → 최근 출고순. 재고는 기존 담당자·매입일 순 유지.
             ->when($isShippedOut,
