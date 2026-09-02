@@ -97,6 +97,40 @@ class CostLicenseBundleTest extends TestCase
             ->assertSee($vehicles[0]->vehicle_number);
     }
 
+    /**
+     * 「면허비 미기입」 뱃지는 **현재 기본값과 옛 기본값 둘 다** 미기입으로 봐야 한다.
+     *
+     * 2026-09-02 에 면허비 기본값이 11,000 → 0 으로 내려갔다. 판정이 현재 기본값만 보면
+     * **전환 전에 등록된 미기입 차량(11,000)의 뱃지가 조용히 꺼진다** — 아직 기입 안 했는데
+     * 기입된 것처럼 보인다. 예외도 로그도 없다(SKILLS §8 #38).
+     */
+    public function test_not_entered_badge_covers_both_current_and_legacy_default(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $this->actingAs($admin);
+
+        [, $vehicles] = $this->makeBundle(2);
+
+        $notEntered = fn () => Volt::test('erp.shipping-requests.index')
+            ->call('setViewTab', 'cost')
+            ->viewData('costBatches')
+            ->flatten(1)
+            ->firstWhere('batch_id', '!=', null)['not_entered'];
+
+        // ① 옛 기본값(11,000) 그대로 = 미기입
+        $this->assertTrue($notEntered(), '옛 기본값 11,000 이 미기입으로 안 잡힌다');
+
+        // ② 현재 기본값(0) = 미기입
+        foreach ($vehicles as $v) {
+            $v->forceFill(['cost_license' => (int) (Vehicle::defaultPurchaseCosts()['cost_license'] ?? 0)])->save();
+        }
+        $this->assertTrue($notEntered(), '현재 기본값이 미기입으로 안 잡힌다');
+
+        // ③ 실측치가 들어가면 미기입 아님
+        $vehicles[0]->forceFill(['cost_license' => 25000])->save();
+        $this->assertFalse($notEntered(), '실측 기입된 묶음이 여전히 미기입으로 뜬다');
+    }
+
     public function test_cost_tab_groups_by_attribution_month_not_paid_month(): void
     {
         // jin: 5월분(귀속 5월) 정산이 6/10 지급 → 「5월」에 묶여야 정산과 맞물림. 지급월(6월) 아님.

@@ -729,12 +729,19 @@ new #[Layout('components.layouts.app')] class extends Component
      *   - 팀 스코프: 관리는 본인 팀 차량 묶음만 / admin·super 전체.
      *   - 귀속월(정산 created_at) 기준 그룹 — 정산 화면과 동일 축(월급 귀속월, "5월분→6/10 지급").
      *     지급월(paid_at)이 아니라 귀속월이라야 2차 정산 배치와 맞물림(jin 2026-07-01).
-     *   - 최신월 먼저. 면허비 미기입(전부 기본값 11,000) 뱃지.
+     *   - 최신월 먼저. 면허비 미기입(전부 기본값 그대로) 뱃지 — 값은 상수를 볼 것.
      */
     private function buildCostBatches()
     {
         $user = auth()->user();
-        $defaultLicense = (int) (Vehicle::DEFAULT_PURCHASE_COSTS['cost_license'] ?? 11000);
+        // 「미기입」 = 면허비가 **기본값 그대로**인 것. 기본값이 바뀌어도 옛 차량이 판정에서
+        // 빠지지 않도록 **현재 기본값 ∪ 과거 기본값**을 본다 (2026-09-02 면허비 11,000 → 0).
+        //   🚫 현재 기본값만 비교하면 전환 전 미기입 차량(11,000)의 뱃지가 조용히 꺼진다.
+        //   🏷️ 상수를 직접 읽지 말 것 — karaba 는 자기 세트다(defaultPurchaseCosts()).
+        $notEnteredLicense = array_values(array_unique([
+            (int) (Vehicle::defaultPurchaseCosts()['cost_license'] ?? 0),
+            Vehicle::LEGACY_DEFAULT_LICENSE_FEE,
+        ]));
 
         $rows = ShippingRequest::query()
             ->where('status', '!=', ShippingRequest::STATUS_CANCELLED)
@@ -748,7 +755,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     && ($user->canAccessAdmin() || $user->canScopeVehicle($v));
             });
 
-        return $rows->groupBy('batch_id')->map(function ($items) use ($defaultLicense) {
+        return $rows->groupBy('batch_id')->map(function ($items) use ($notEnteredLicense) {
             $f = $items->first();
             $vehicles = $items->map->vehicle->filter()->unique('id')->values();
 
@@ -767,7 +774,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'buyer' => $f->buyer?->name,
                 'count' => $vehicles->count(),
                 'month' => $attribMonth ? $attribMonth->format('Y-m') : '—',
-                'not_entered' => $vehicles->every(fn ($v) => (int) $v->cost_license === $defaultLicense),
+                'not_entered' => $vehicles->every(fn ($v) => in_array((int) $v->cost_license, $notEnteredLicense, true)),
                 'vehicles' => $vehicles->map(fn ($v) => [
                     'number' => $v->vehicle_number,
                     'license' => (int) $v->cost_license,

@@ -168,10 +168,16 @@ class PurchaseSyncReceiverTest extends TestCase
         $res->assertStatus(201);
 
         $vehicle = Vehicle::find($res->json('vehicle_id'));
-        // UI 신규등록과 동일 단일 출처(Vehicle::DEFAULT_PURCHASE_COSTS).
+
+        // 🔑 리터럴로 적지 않는다 — UI 신규등록(openCreate)과 **같은 단일 출처**를 참조해야
+        //    기본값이 바뀔 때 「연동 B 만 옛값」으로 갈리는 일이 안 생긴다.
+        //    2026-09-02 에 면허비·탁송비가 0 으로 내려갔고, 그때 이 테스트가 리터럴이라 깨졌다.
+        foreach (Vehicle::defaultPurchaseCosts() as $column => $expected) {
+            $this->assertSame((int) $expected, (int) $vehicle->{$column}, "기본비용 {$column} 불일치");
+        }
+
+        // 말소비는 남는다(0 이 아니다) — 세트가 통째로 비어버리는 회귀를 잡는다.
         $this->assertSame(24000, (int) $vehicle->cost_deregistration);
-        $this->assertSame(11000, (int) $vehicle->cost_license);
-        $this->assertSame(30000, (int) $vehicle->cost_towing);
     }
 
     public function test_payee_account_is_encrypted(): void
