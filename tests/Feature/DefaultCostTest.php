@@ -48,9 +48,15 @@ class DefaultCostTest extends TestCase
 
         $component = Volt::test('erp.vehicles.index')->call('openCreate');
 
+        // 🔑 리터럴로 적지 않는다 — 2026-09-02 에 면허·탁송이 0 으로 내려갔을 때 이 테스트가
+        //    '11,000'/'30,000' 을 **쉼표까지 박아두고** 있어서 깨졌고, 숫자 grep(11000/30000)으로도
+        //    안 걸렸다(SKILLS §8 #66 「옛 규칙을 다른 문구로 검사하던 테스트」).
+        foreach (Vehicle::defaultPurchaseCosts() as $column => $amount) {
+            $this->assertSame(number_format($amount), $component->get($column.'_str'), "기본비용 {$column}");
+        }
+
+        // 말소비는 남는다 — 세트가 통째로 비어버리는 회귀를 잡는다.
         $this->assertSame('24,000', $component->get('cost_deregistration_str'), '말소 default 24,000');
-        $this->assertSame('11,000', $component->get('cost_license_str'), '면허 default 11,000');
-        $this->assertSame('30,000', $component->get('cost_towing_str'), '탁송 default 30,000');
     }
 
     public function test_default_cost_overridable_to_zero(): void

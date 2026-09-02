@@ -3039,7 +3039,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 회의확장씬 #9 (2026-05-22) — 신규 차량 기타비용 기본기재 (사용자 명세).
         // 운영자가 수정 가능 (또는 0 으로 비움). 2차 정산 단계에서 [관리]/[재무] 가
         // 한 달 뒤 측정된 실제 비용으로 정정 (Phase 1-3 흐름).
-        // 회사 프로파일별 기본비용 (karaba=말소 17,300·면허 0·탁송 0 / 그 외=24,000·11,000·30,000)
+        // 회사 프로파일별 기본비용 (karaba=말소 17,300·점검 80,000·주차 50,000 / 그 외=말소 24,000 만)
+        //   ⚠️ 값을 여기 적어두면 낡는다 — 2026-09-02 면허·탁송 0 전환 때 실제로 낡았다. 원문은 상수를 볼 것.
         // 키를 이름으로 하나씩 읽지 말 것 — 세트에 고정비를 더해도 UI 만 안 채워진다.
         //   연동 B(PurchaseSyncController)는 루프라, 같은 차가 들어온 경로에 따라 달라진다.
         $defaultCosts = Vehicle::defaultPurchaseCosts();
@@ -7246,6 +7247,7 @@ function vehicleColumnsToggle() {
                     @unless($editingId)
                         {{-- NICE 1단계가 소유자명 필수 → 차량번호와 함께 입력. nice_reg_owner_name 에 바인딩(아래 등록정보 소유자명과 동기화). --}}
                         <input wire:model="nice_reg_owner_name" type="text" class="input-base mt-1 w-full" autocomplete="off"
+                               data-1p-ignore data-lpignore="true"
                                placeholder="{{ __('vehicle.panel.owner_name_ph') }}" />
                     @endunless
                     @error('vehicle_number')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
@@ -7317,7 +7319,7 @@ function vehicleColumnsToggle() {
                 <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
-                    <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" />
+                    <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" data-1p-ignore data-lpignore="true" />
                     {{-- 편집 모드 NICE 재조회 — 신규등록 모드의 조회 버튼이 편집엔 없어 import/기존 차량은 제원을 못 채웠음(2026-06-11).
                          lookupNiceApi 는 차량번호+소유자명(둘 다 편집모드에서 채워짐)으로 동작 → 채움 후 저장해야 반영. --}}
                     @if($editingId)
@@ -7334,9 +7336,15 @@ function vehicleColumnsToggle() {
                     <label class="label-base">{{ __('vehicle.field.owner_rrn') }}</label>
                     <div class="relative">
                         {{-- UX #4 (2026-05-20) — Alpine x-on:input + $store.rrnMask 로 자동 mask. wire:model.blur 로 blur 시점 sync. --}}
+                        {{-- 🔒 autocomplete="new-password" 필수 (jin 2026-09-02 제보).
+                             이 칸이 type="password" 라 Chrome 이 [소유자명][RRN] 을 로그인 폼으로 보고
+                             저장된 구글 자격증명을 통째로 채워 넣었다. `off` 는 Chrome 이 비밀번호
+                             자동완성에 대해 **의도적으로 무시**하므로 소용없다 — `new-password` 여야
+                             「기존 자격증명 채우기」 대상에서 빠진다. 🚫 off 로 되돌리지 말 것. --}}
                         <input wire:model.blur="nice_reg_owner_rrn" :type="show ? 'text' : 'password'"
                                x-on:input="$el.value = $store.rrnMask.apply($el.value)"
-                               class="input-base pr-10 font-mono" placeholder="000000-0000000" autocomplete="off" maxlength="14" />
+                               class="input-base pr-10 font-mono" placeholder="000000-0000000"
+                               autocomplete="new-password" data-1p-ignore data-lpignore="true" maxlength="14" />
                         <button type="button" @click="show = !show"
                                 class="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-gray-400 hover:text-gray-600"
                                 :title="show ? '{{ __('vehicle.panel.hide') }}' : '{{ __('vehicle.panel.show') }}'"
