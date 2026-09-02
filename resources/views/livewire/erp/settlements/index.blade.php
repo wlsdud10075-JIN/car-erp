@@ -4,6 +4,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -177,7 +178,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         return Settlement::query()
             ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'salesman', 'latestPayApproval.approver'])
-            ->when($this->search, fn ($q) => $q->searchTerm($this->search))
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
@@ -307,12 +308,12 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function vehicleSearchResults()
     {
-        if (strlen($this->vehicleSearch) < 2) {
+        if (strlen(SearchTerm::of($this->vehicleSearch)) < 2) {
             return collect();
         }
 
         return Vehicle::query()
-            ->where('vehicle_number', 'like', "%{$this->vehicleSearch}%")
+            ->where('vehicle_number', 'like', SearchTerm::like($this->vehicleSearch))
             ->with('salesman:id,name')
             ->limit(8)
             ->get(['id', 'vehicle_number', 'salesman_id']);
@@ -1203,7 +1204,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('secondary_status', 'pending')
             // ⚠️ salesman 컬럼 제한 금지 (tier) — actual_payout 이 통째로 틀어진다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->when($this->search, fn ($q) => $q->searchTerm($this->search))
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
@@ -1234,7 +1235,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         return Settlement::query()
             ->where('secondary_status', 'pending')
-            ->when($this->search, fn ($q) => $q->searchTerm($this->search))
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\DocumentAccessLog;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -46,8 +47,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return DocumentAccessLog::query()
             ->with(['user:id,name,email', 'vehicle:id,vehicle_number,sales_channel'])
-            ->when($this->search, function ($q) {
-                $term = '%'.$this->search.'%';
+            ->when(SearchTerm::of($this->search), function ($q) {
+                $term = SearchTerm::like($this->search);
                 $q->where(function ($q2) use ($term) {
                     $q2->whereHas('user', fn ($u) => $u->where('name', 'like', $term)->orWhere('email', 'like', $term))
                         ->orWhereHas('vehicle', fn ($v) => $v->where('vehicle_number', 'like', $term));

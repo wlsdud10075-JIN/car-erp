@@ -2,6 +2,7 @@
 
 use App\Models\Salesman;
 use App\Models\User;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -43,10 +44,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return Salesman::query()
             ->with('user')
-            ->when($this->search, fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', "%{$this->search}%")
-                   ->orWhere('email', 'like', "%{$this->search}%")
-                   ->orWhere('phone', 'like', "%{$this->search}%")
+            ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
+                $q2->where('name', 'like', SearchTerm::like($this->search))
+                   ->orWhere('email', 'like', SearchTerm::like($this->search))
+                   ->orWhere('phone', 'like', SearchTerm::like($this->search))
             ))
             ->orderBy('name')
             ->paginate($this->perPage);

@@ -14,6 +14,7 @@ use App\Models\TaskAlarm;
 use App\Models\Vehicle;
 use App\Services\InterVehicleTransferService;
 use App\Services\NiceApiService;
+use App\Support\SearchTerm;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -308,7 +309,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function searchAccum(): void
     {
-        $term = trim($this->accumSearchTerm);
+        $term = SearchTerm::of($this->accumSearchTerm);
         $this->search = $term;
         $this->vinSearch = $term;   // 선적요청 검색은 차대번호(VIN)로도 찾음 (item 3 분리 후에도 accum은 통합 유지)
         $this->resetPage();
@@ -2245,16 +2246,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 통합검색(차번호·브랜드·차종·소유자·수출신고·선박·컨테이너·구입처) + 차대번호(VIN) OR 그룹.
             //   차량관리 UI는 search / vinSearch 를 별도 칸으로 노출(item 3, 숫자·코드 충돌 방지)하지만,
             //   선적요청 검색(searchAccum)은 둘 다 세팅해 '차번호 OR VIN' 통합검색을 유지한다.
-            ->when($this->search !== '' || $this->vinSearch !== '', fn ($q) => $q->where(function ($q2) {
-                if ($this->search !== '') {
-                    $q2->where('vehicle_number', 'like', "%{$this->search}%")
-                        ->orWhere('brand', 'like', "%{$this->search}%")
-                        ->orWhere('model_type', 'like', "%{$this->search}%")
-                        ->orWhere('nice_reg_owner_name', 'like', "%{$this->search}%")
-                        ->orWhere('export_declaration_number', 'like', "%{$this->search}%")
-                        ->orWhere('vessel_name', 'like', "%{$this->search}%")       // 선박명(VSL)
-                        ->orWhere('container_number', 'like', "%{$this->search}%")  // 컨테이너번호
-                        ->orWhere('purchase_from', 'like', "%{$this->search}%");    // 구입처(매입처)
+            ->when(SearchTerm::of($this->search) !== '' || $this->vinSearch !== '', fn ($q) => $q->where(function ($q2) {
+                if (SearchTerm::of($this->search) !== '') {
+                    $q2->where('vehicle_number', 'like', SearchTerm::like($this->search))
+                        ->orWhere('brand', 'like', SearchTerm::like($this->search))
+                        ->orWhere('model_type', 'like', SearchTerm::like($this->search))
+                        ->orWhere('nice_reg_owner_name', 'like', SearchTerm::like($this->search))
+                        ->orWhere('export_declaration_number', 'like', SearchTerm::like($this->search))
+                        ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))       // 선박명(VSL)
+                        ->orWhere('container_number', 'like', SearchTerm::like($this->search))  // 컨테이너번호
+                        ->orWhere('purchase_from', 'like', SearchTerm::like($this->search));    // 구입처(매입처)
                     // 등기번호·운송장번호 — 저장은 정규화형(대문자·기호 제거)이라 검색어도 같은 모양으로
                     //   맞춰야 한다. 'ED-1054' 처럼 쳐도 찾히게(안 맞추면 조용히 0건).
                     if ($shipNo = \App\Models\VehicleShipment::normalizeTrackingNo($this->search)) {
@@ -2262,8 +2263,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             ->orWhere('dhl_tracking_no_cache', 'like', "%{$shipNo}%");
                     }
                 }
-                if ($this->vinSearch !== '') {
-                    $q2->orWhere('nice_reg_vin', 'like', "%{$this->vinSearch}%");   // 차대번호(끝 6자리 등)
+                if (SearchTerm::of($this->vinSearch) !== '') {
+                    $q2->orWhere('nice_reg_vin', 'like', SearchTerm::like($this->vinSearch));   // 차대번호(끝 6자리 등)
                 }
             }))
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))

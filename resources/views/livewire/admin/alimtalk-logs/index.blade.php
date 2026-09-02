@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\AlimtalkLog;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -84,8 +85,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return AlimtalkLog::query()
             ->with(['vehicle:id,vehicle_number', 'user:id,name'])
-            ->when($this->search, function ($q) {
-                $term = '%'.$this->search.'%';
+            ->when(SearchTerm::of($this->search), function ($q) {
+                $term = SearchTerm::like($this->search);
                 $q->where(function ($q2) use ($term) {
                     $q2->where('phone', 'like', $term)
                         ->orWhere('template_code', 'like', $term)

@@ -4,6 +4,7 @@ use App\Models\AuditLog;
 use App\Models\ForwardingCompany;
 use App\Models\ForwardingInvoice;
 use App\Models\Vehicle;
+use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -63,7 +64,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function shipments()
     {
         $col = $this->dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
-        $term = trim($this->search);
+        $term = SearchTerm::of($this->search);
 
         return Vehicle::query()
             ->whereNotNull('forwarding_company_id')
@@ -86,7 +87,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function companies()
     {
         $companies = ForwardingCompany::query()->orderBy('name')->get();
-        $hasVehicleFilter = $this->search !== '' || $this->dateFrom !== '' || $this->dateTo !== '';
+        $hasVehicleFilter = SearchTerm::of($this->search) !== '' || $this->dateFrom !== '' || $this->dateTo !== '';
 
         if ($hasVehicleFilter) {
             $shipments = $this->shipments;

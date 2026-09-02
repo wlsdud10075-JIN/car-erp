@@ -8,6 +8,7 @@ use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\VehicleLedgerUnlockService;
+use App\Support\SearchTerm;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -123,7 +124,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     private function jumpToPaidUpIfOnlyMatchThere(): void
     {
-        if ($this->search === '' || $this->classification !== '') {
+        if (SearchTerm::of($this->search) === '' || $this->classification !== '') {
             return;
         }
 
@@ -756,12 +757,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   채권관리에서만 안 찾아져 실무자가 차량관리를 거쳐 오고 있었다.
             //   ⚠️ 차량관리는 숫자·코드 충돌 때문에 VIN 을 별도 칸으로 뒀지만, 채권관리는 검색칸이
             //      하나뿐이라 통합한다. 끝 6자리 같은 짧은 입력은 다른 컬럼과도 부분 매칭될 수 있다.
-            ->when($this->search, fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('vehicle_number', 'like', "%{$this->search}%")
-                ->orWhere('brand', 'like', "%{$this->search}%")
-                ->orWhere('vessel_name', 'like', "%{$this->search}%")
-                ->orWhere('container_number', 'like', "%{$this->search}%")
-                ->orWhere('nice_reg_vin', 'like', "%{$this->search}%")
+            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2
+                ->where('vehicle_number', 'like', SearchTerm::like($this->search))
+                ->orWhere('brand', 'like', SearchTerm::like($this->search))
+                ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))
+                ->orWhere('container_number', 'like', SearchTerm::like($this->search))
+                ->orWhere('nice_reg_vin', 'like', SearchTerm::like($this->search))
             ))
             ->when($this->dateFrom, fn ($q) => $q->where('purchase_date', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('purchase_date', '<=', $this->dateTo))
