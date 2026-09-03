@@ -24,6 +24,7 @@ class VehicleDocumentController extends Controller
     // 지원 서류 type (전부 system xlsx 자동기입 — DocumentFiller)
     private const SUPPORTED_TYPES = [
         'deregistration', 'deregistration_contract', 'deregistration_set', 'poa',   // 매입 (전 채널) — set=신청서+계약서 병합본
+        'deregistration_certificate',                         // 매입 (전 채널) — 말소증 한글·영문 2시트
 
         'invoice', 'sales_contract',                          // 판매 (export)
         'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract', // 선적 (export)
