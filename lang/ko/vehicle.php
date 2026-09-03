@@ -985,6 +985,8 @@ return [
         'deregistration_set_sub' => '1파일 2탭 (신청서·계약서) · .xlsx',
         'derg_contract' => '말소 계약서',
         'poa' => '위임장',
+        'deregistration_certificate' => '말소증 (한글·영문)',
+        'deregistration_certificate_sub' => '1파일 2탭 (한글·영문) · .xlsx',
         'invoice' => 'Proforma Invoice',
         'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => '컨테이너 Invoice & Packing',

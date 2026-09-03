@@ -158,6 +158,64 @@ class DocValue
         };
     }
 
+    /**
+     * 차종 영문 — **변환의 단일 출처**. 통관 SET 영문등록증(구매리스트 I6 → M4)과 말소증 영문시트가 함께 쓴다.
+     *
+     * 🔀 2026-09-03 — 종전엔 구매리스트 I6 의 **중첩 SUBSTITUTE 수식**(3사 양식에 각각 복제)이 했는데,
+     *    실제 NICE 값과 어긋나 있었다. 운영 실측(heymanerp 265대):
+     *      승용 중형 148 · 승용 대형 71 · 승용 소형 1 · **승합 중형 1** · (쓰레기값 `205 004` 1)
+     *    그 수식은 승합·화물을 「중형 승합」 순서로 찾아 **「승합 중형」을 못 잡고 한글이 그대로 인쇄**됐고,
+     *    승용 대형만 `HEAVY Passenger`, 승합은 `Ven`(Van 오타) 이었다.
+     *    ⇒ 수식을 걷어내고(`scripts/fix-clearance-vehicle-type-en.php`) 여기로 합쳤다 — SKILLS §8 #45.
+     *
+     * 순서·띄어쓰기를 안 가린다: `승용 중형` · `중형 승용` · `중형승용`(옛 적재분) 전부 같은 결과.
+     * 종류를 못 찾으면 **원본 그대로 통과** — 쓰레기값을 영문으로 위장하지 않는다.
+     */
+    public static function vehicleFormEn(Vehicle $v): ?string
+    {
+        $form = trim((string) $v->nice_reg_vehicle_form);
+        if ($form === '') {
+            return null;
+        }
+
+        $kinds = ['승용' => 'Passenger', '승합' => 'Van', '화물' => 'Cargo', '특수' => 'Special'];
+        $sizes = ['경형' => 'Light', '소형' => 'Small', '중형' => 'Medium', '대형' => 'Large'];
+
+        $find = function (array $table) use ($form): ?string {
+            foreach ($table as $ko => $en) {
+                if (str_contains($form, $ko)) {
+                    return $en;
+                }
+            }
+
+            return null;
+        };
+
+        $kind = $find($kinds);
+        if ($kind === null) {
+            return $form;   // 모르는 값 — 그대로 둔다
+        }
+
+        $size = $find($sizes);
+
+        return trim(($size !== null ? $size.' ' : '').$kind);
+    }
+
+    /**
+     * 용도 영문 — NICE `nice_reg_use_type`(자가용·영업용·관용).
+     * 통관 SET 영문등록증 P4 의 SUBSTITUTE 수식과 **같은 규칙**(Private Car / Business / Official).
+     * 실측 heymanerp: 자가용 221 · 영업용 3 — 「영업용」을 자가용으로 찍던 SKILLS §8 #71 의 그 3대.
+     */
+    public static function useTypeEn(Vehicle $v): ?string
+    {
+        $use = trim((string) ($v->nice_reg_use_type ?: self::niceRaw($v, 'resUseType')));
+        if ($use === '') {
+            return null;
+        }
+
+        return ['자가용' => 'Private Car', '영업용' => 'Business', '관용' => 'Official'][$use] ?? $use;
+    }
+
     /** NICE 응답 원본(nice_raw JSON)에서 키로 읽기. 전용컬럼 없는 NICE 필드용. NICE 연동 전엔 null(공란). */
     public static function niceRaw(Vehicle $v, string $key): mixed
     {

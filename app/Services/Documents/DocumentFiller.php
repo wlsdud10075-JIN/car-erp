@@ -495,6 +495,8 @@ class DocumentFiller
             // item 8 (2026-07-18) — 말소신청서+계약서 1파일 2시트 병합본
             'deregistration_set' => Mappings\DeregistrationSetMapping::class,
             'poa' => Mappings\PowerOfAttorneyMapping::class,
+            // 말소증(한글·영문 2시트) — 통관 SET 의 말소증 시트와 별개 서식 (jin 2026-09-03)
+            'deregistration_certificate' => Mappings\DeregistrationCertificateMapping::class,
             // Phase 2 — 판매 인보이스
             'invoice' => Mappings\SalesInvoiceMapping::class,
             // Phase 3 — 통관 SET (구매리스트 마스터 → 6시트 수식 자동연동)

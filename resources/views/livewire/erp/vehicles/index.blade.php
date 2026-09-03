@@ -9038,6 +9038,7 @@ function vehicleColumnsToggle() {
                 $pdfDocs = [
                     ['type' => 'deregistration_set', 'label' => __('vehicle.docs.deregistration_set')],
                     ['type' => 'poa', 'label' => __('vehicle.docs.poa')],
+                    ['type' => 'deregistration_certificate', 'label' => __('vehicle.docs.deregistration_certificate')],
                     ['type' => 'invoice', 'label' => __('vehicle.docs.invoice')],
                     ['type' => 'sales_contract', 'label' => __('vehicle.docs.sales_contract')],
                     ['type' => 'container_invoice_packing', 'label' => __('vehicle.docs.container_invoice_packing')],
@@ -9119,6 +9120,15 @@ function vehicleColumnsToggle() {
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.poa') }}</div>
                         <div class="text-xs text-gray-500">{{ __('vehicle.docs.sub_purchase') }}</div>
+                    </div>
+                    <span class="text-xs text-violet-600">↓</span>
+                </a>
+                {{-- 말소증 한글·영문 (jin 2026-09-03) — 통관 SET 의 말소증 시트와 별개 서식. 위임장 옆. --}}
+                <a href="{{ $url('deregistration_certificate') }}"
+                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.deregistration_certificate') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.deregistration_certificate_sub') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>

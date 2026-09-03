@@ -976,6 +976,8 @@ return [
         'deregistration_set_sub' => '1 file, 2 tabs (form · contract) · .xlsx',
         'derg_contract' => 'Deregistration Contract',
         'poa' => 'Power of Attorney',
+        'deregistration_certificate' => 'Deregistration Certificate (KO·EN)',
+        'deregistration_certificate_sub' => '1 file, 2 tabs (Korean · English) · .xlsx',
         'invoice' => 'Proforma Invoice',
         'sales_contract' => 'Sales Contract',
         'container_invoice_packing' => 'Container Invoice & Packing',
