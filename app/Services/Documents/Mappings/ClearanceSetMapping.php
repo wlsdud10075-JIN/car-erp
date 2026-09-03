@@ -11,7 +11,14 @@ use App\Services\Documents\DocValue;
  * `=구매리스트!셀` 수식으로 자동연동(검증완료). 매핑은 구매리스트만.
  *
  * 매핑 제외:
- * - I6·I13: 템플릿 수식 — 엔진이 자동 보존 (차종/연료 영문변환)
+ * - I13: 템플릿 수식 — 엔진이 자동 보존 (연료 영문변환)
+ *
+ * 🔀 2026-09-03 — **I6(차종 영문)은 수식에서 매핑으로 옮겼다.** 옛 SUBSTITUTE 수식이 승합·화물을
+ *    「중형 승합」 순서로 찾는데 실제 NICE 값은 「승합 중형」이라 **한글이 그대로 인쇄**됐고
+ *    (heymanerp 실측 1대), 승용 대형만 `HEAVY Passenger`·승합은 `Ven` 오타였다.
+ *    같은 변환이 3사 양식 + 말소증 PHP 로 흩어져 있어 `DocValue::vehicleFormEn()` 하나로 합쳤다(SKILLS §8 #45).
+ *    🚨 양식의 I6 수식은 `scripts/fix-clearance-vehicle-type-en.php` 가 비웠다 — **되살리면 이 매핑이
+ *       조용히 무시된다**(writeCell 은 수식 셀을 안 덮어쓴다). 가드 = `ClearanceRegistrationNumberTest`.
  * D3(등록번호)은 차량 registration_number 로 기입 → 말소증 "제 [D3] 호" cascade.
  * G3(차량등록증 자동차등록번호)은 reg_cert_number 수기필드 → 한글/영문등록증 cascade.
  * NICE 칸(형식·제원관리번호·출력)은 nice_raw 에서 읽음 → NICE 연동 전엔 공란.
@@ -44,7 +51,8 @@ class ClearanceSetMapping
                 'I5' => fn (Vehicle $v) => $v->nice_spec_year ?: $v->year,          // 연도
                 'B6' => fn (Vehicle $v) => $v->nice_reg_first_date,                 // 최초등록일
                 'D6' => fn (Vehicle $v) => $v->year,                               // 연도
-                'G6' => fn (Vehicle $v) => $v->nice_reg_vehicle_form,               // 차종
+                'G6' => fn (Vehicle $v) => $v->nice_reg_vehicle_form,               // 차종 (한글등록증 cascade)
+                'I6' => fn (Vehicle $v) => DocValue::vehicleFormEn($v),             // 차종 영문 (영문등록증 M4 cascade) — 위 🔀 참조
                 'B8' => fn (Vehicle $v) => $v->nice_reg_use_type ?: DocValue::niceRaw($v, 'resUseType'), // 용도/Usage (NICE resUseType → 한글/영문등록증 P4 cascade)
                 'B7' => fn (Vehicle $v) => $v->deregistration_date,                // 말소등록일
                 'D7' => fn (Vehicle $v) => $v->mileage,                            // 주행거리
