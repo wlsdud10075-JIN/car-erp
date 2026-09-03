@@ -60,7 +60,9 @@ class ContainerContractMapping
                 ],
                 'slotCells' => [
                     0 => [
-                        'B' => fn (Vehicle $v) => $v->brand,             // Brand
+                        // 브랜드 영문 — 같은 선적 건의 Invoice&Packing 은 이미 brandEn 을 쓴다.
+                        //   여기만 한글이라 **한 건의 서류 두 장이 서로 다른 표기**로 나갔다(jin 2026-09-03).
+                        'B' => fn (Vehicle $v) => DocValue::brandEn($v),             // Brand
                         'C' => fn (Vehicle $v) => DocValue::carName($v), // Model
                         'D' => fn (Vehicle $v) => $v->year,             // Year
                         'E' => fn (Vehicle $v) => $v->nice_reg_vin,     // Chassis No.

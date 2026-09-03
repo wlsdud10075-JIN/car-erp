@@ -28,7 +28,11 @@ use Illuminate\Support\Collection;
  * Invoice No·바이어/컨사이니·환율 등 헤더는 **primary(첫 차량) 기준**(판매계약서 선례).
  * 동일 바이어·단일통화는 컨트롤러 `HOMOGENEOUS_TYPES` 가드가 보장한다.
  *
- * ℹ️ Code(A열)는 판매계약서와 달리 **한글 차량번호 그대로**다 — 종전 동작 보존(변경은 별건).
+ * 🔀 2026-09-03 — Code(A열)·Maker(B열)가 **한글이었다**. 2026-07-31 다중차량 전환 때
+ *    「종전 동작 보존, 변경은 별건」으로 미뤄둔 것을 jin 이 결정했다: 판매계약서와 **같은 규칙**으로 통일.
+ *      A Code  = `DocValue::romanizePlate()`  (`62거4485` → `62GEO4485`)
+ *      B Maker = `DocValue::brandEn()`        (실측 3사 한글 브랜드 10대)
+ *    바이어가 받는 영문 서류라 한글이 남으면 읽지 못한다. 가드 = `EnglishDocumentTermsTest`.
  */
 class SalesInvoiceMapping
 {
@@ -78,8 +82,11 @@ class SalesInvoiceMapping
                 'count' => 30,
                 'slotCells' => [
                     0 => [
-                        'A' => fn (Vehicle $v) => $v->vehicle_number,             // Code
-                        'B' => fn (Vehicle $v) => $v->brand,                      // Maker
+                        // Code — 바이어가 받는 영문 서류라 로마자(jin 2026-09-03). 판매계약서와 같은 규칙.
+                        'A' => fn (Vehicle $v) => DocValue::romanizePlate($v->vehicle_number),
+                        // Maker — NICE 는 한글로 준다(실측 3사 10대: 벤츠·르노(삼성)·기아·아우디·현대)
+
+                        'B' => fn (Vehicle $v) => DocValue::brandEn($v),
                         'C' => fn (Vehicle $v) => DocValue::carName($v),          // Model
                         'D' => fn (Vehicle $v) => $v->nice_reg_vin,               // Chassis No.
                         'E' => fn (Vehicle $v) => DocValue::money($v->sale_price),      // FOB PRICE
