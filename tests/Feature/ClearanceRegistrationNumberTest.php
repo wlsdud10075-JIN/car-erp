@@ -59,19 +59,54 @@ class ClearanceRegistrationNumberTest extends TestCase
         $this->assertSame('CERT-9999', (string) $ss->getSheetByName('구매리스트')->getCell('G3')->getValue());
     }
 
-    // ③ I6 차종 영문변환 수식 — 실 NICE 포맷("승용 중형" 띄어쓰기) 매칭
-    public function test_clearance_i6_formula_uses_real_vehicle_form_format(): void
+    /**
+     * ③ I6 차종 영문 — 2026-09-03 부터 **수식이 아니라 매핑**(`DocValue::vehicleFormEn`)이 채운다.
+     *
+     * 종전엔 여기서 수식 문자열을 검사했는데, 그건 「승용」만 보증했다. 옛 SUBSTITUTE 는
+     * 승합·화물을 「중형 승합」 순서로 찾아 실제 값 **「승합 중형」을 못 잡고 한글을 그대로 인쇄**했고
+     * (heymanerp 실측 1대), 승용 대형만 `HEAVY Passenger`·승합은 `Ven` 오타였다.
+     * ⇒ 이제 **생성물의 값**을 본다(SKILLS §8 #37) — 수식이 되살아나면 값이 한글로 나와 여기서 걸린다.
+     */
+    public function test_clearance_i6_converts_every_vehicle_form_to_english(): void
+    {
+        $cases = [
+            '승용 중형' => 'Medium Passenger',   // heymanerp 148 대
+            '승용 대형' => 'Large Passenger',    // 71 대 — 옛 수식은 HEAVY 였다
+            '승용 소형' => 'Small Passenger',    // 1 대
+            '승합 중형' => 'Medium Van',         // 1 대 — 옛 수식이 못 잡던 순서·오타(Ven)
+            '화물 대형' => 'Large Cargo',
+            '중형승용' => 'Medium Passenger',    // 옛 적재분 붙여쓰기도 같은 결과
+        ];
+
+        foreach ($cases as $form => $want) {
+            $v = Vehicle::create([
+                'vehicle_number' => 'REG-4-'.crc32($form), 'sales_channel' => 'export',
+                'currency' => 'USD', 'exchange_rate' => 1438, 'dhl_request' => false,
+                'nice_reg_vehicle_form' => $form,
+            ]);
+
+            $ss = (new DocumentFiller($v))->spreadsheet('clearance');
+
+            $this->assertSame($want, (string) $ss->getSheetByName('구매리스트')->getCell('I6')->getValue(),
+                "차종 '{$form}' 이 영문으로 안 바뀌었다 — 양식에 옛 수식이 되살아났는지 확인할 것");
+            $this->assertSame($want, (string) $ss->getSheetByName('영문등록증')->getCell('M4')->getCalculatedValue(),
+                "차종 '{$form}' 이 영문등록증까지 cascade 안 됐다");
+            $this->assertSame($form, (string) $ss->getSheetByName('구매리스트')->getCell('G6')->getValue(),
+                '한글 차종은 원본 그대로여야 한다');
+        }
+    }
+
+    /** 모르는 값은 영문으로 위장하지 않는다 — heymanerp 에 쓰레기값(`205 004`) 1 대가 실재한다. */
+    public function test_clearance_i6_passes_unknown_vehicle_form_through(): void
     {
         $v = Vehicle::create([
-            'vehicle_number' => 'REG-4', 'sales_channel' => 'export',
+            'vehicle_number' => 'REG-4X', 'sales_channel' => 'export',
             'currency' => 'USD', 'exchange_rate' => 1438, 'dhl_request' => false,
+            'nice_reg_vehicle_form' => '205 004',
         ]);
 
-        $i6 = (string) (new DocumentFiller($v))->spreadsheet('clearance')->getSheetByName('구매리스트')->getCell('I6')->getValue();
-
-        $this->assertStringContainsString('승용 중형', $i6);   // 띄어쓰기 포맷
-        $this->assertStringContainsString('Medium Passenger', $i6);
-        $this->assertStringNotContainsString('중형승용', $i6);  // 옛 붙여쓰기(버그) 아님
+        $this->assertSame('205 004', (string) (new DocumentFiller($v))
+            ->spreadsheet('clearance')->getSheetByName('구매리스트')->getCell('I6')->getValue());
     }
 
     // 구매리스트 B14 컨사이니 — ID 줄에 'Business number : ' 라벨 (jin 2026-06-25)
