@@ -98,7 +98,8 @@ class SalesInvoiceLayoutTest extends TestCase
         $sheet = $this->sheet($this->makeVehicles(3));
 
         // 슬롯 — A Code / B Maker / C Model / D Chassis / E FOB / F Shipping
-        $this->assertSame('12가0001', $sheet->getCell('A'.self::FIRST)->getValue(), 'Code = 한글 차량번호 그대로');
+        // Code = 로마자 (jin 2026-09-03 — 판매계약서와 같은 규칙으로 통일). 상세 = SalesInvoiceMapping 주석.
+        $this->assertSame('12GA0001', $sheet->getCell('A'.self::FIRST)->getValue(), 'Code = 로마자 차량번호');
         $this->assertSame('HYUNDAI', $sheet->getCell('B'.self::FIRST)->getValue());
         $this->assertSame('TUCSON', $sheet->getCell('C'.self::FIRST)->getValue());
         $this->assertStringStartsWith('KMHJ581ABGU10', (string) $sheet->getCell('D'.self::FIRST)->getValue());
@@ -106,7 +107,7 @@ class SalesInvoiceLayoutTest extends TestCase
         $this->assertEquals(100, $sheet->getCell('F'.self::FIRST)->getValue(), 'Shipping cost');
 
         // 3번째 슬롯까지 채워졌나
-        $this->assertSame('12가0003', $sheet->getCell('A'.(self::FIRST + 2))->getValue());
+        $this->assertSame('12GA0003', $sheet->getCell('A'.(self::FIRST + 2))->getValue());
         $this->assertEquals(3000, $sheet->getCell('E'.(self::FIRST + 2))->getValue());
 
         // 푸터 값 — commission 10i / auto 5i / tax 2i (i=1..3)
@@ -156,7 +157,7 @@ class SalesInvoiceLayoutTest extends TestCase
     {
         $sheet = $this->sheet($this->makeVehicles(1));
 
-        $this->assertSame('12가0001', $sheet->getCell('A'.self::FIRST)->getValue());
+        $this->assertSame('12GA0001', $sheet->getCell('A'.self::FIRST)->getValue());
         $this->assertEquals(10, $sheet->getCell('E'.$this->row(self::COMMISSION, 1))->getValue());
         $this->assertEquals(5, $sheet->getCell('E'.$this->row(self::AUTO_LOADING, 1))->getValue());
         $this->assertEquals(-2, $sheet->getCell('E'.$this->row(self::TAX_DC, 1))->getValue());

@@ -123,7 +123,10 @@ class DocValue
         return [
             '벤츠' => 'BENZ', '메르세데스벤츠' => 'BENZ', '메르세데스-벤츠' => 'BENZ',
             '비엠더블유' => 'BMW', '아우디' => 'AUDI', '폭스바겐' => 'Volkswagen',
-            '볼보' => 'VOLVO', '르노' => 'RENAULT', '르노삼성' => 'RENAULT', '르노코리아' => 'RENAULT',
+            '볼보' => 'VOLVO', '르노' => 'RENAULT', '르노코리아' => 'RENAULT',
+            // 삼성 계열 표기는 `Renault Samsung` 으로 (jin 2026-09-03). 모델명은 별도 칸이라 그대로 붙는다.
+            //   ⚠️ 괄호형(`르노(삼성)`)이 운영 실제 값이다 — heymanerp 3대. 둘을 다르게 두면 같은 브랜드가 갈린다.
+            '르노(삼성)' => 'Renault Samsung', '르노삼성' => 'Renault Samsung',
             '기아' => 'KIA', '현대' => 'HYUNDAI', '제네시스' => 'GENESIS',
             '쌍용' => 'SSANGYONG', '롤스로이스' => 'ROLLSROYCE', '푸조' => 'Peugeot',
             '도요타' => 'TOYOTA', '토요타' => 'TOYOTA', '렉서스' => 'LEXUS', '혼다' => 'HONDA',
@@ -146,13 +149,14 @@ class DocValue
             return null;
         }
 
+        // ⚠️ 하이브리드를 **맨 먼저** — `하이브리드(경유+전기)` 가 DIESEL 로 새면 안 된다.
         return match (true) {
             str_contains($fuel, '하이브리드') => 'HYBRID',
-            str_contains($fuel, '경유') || stripos($fuel, 'diesel') !== false => 'DIESEL',
+            str_contains($fuel, '경유') || str_contains($fuel, '디젤') || stripos($fuel, 'diesel') !== false => 'DIESEL',
             str_contains($fuel, '휘발유') || str_contains($fuel, '가솔린') || stripos($fuel, 'gasoline') !== false => 'GASOLINE',
             str_contains($fuel, '전기') || stripos($fuel, 'electric') !== false => 'ELECTRIC',
             str_contains($fuel, '수소') => 'HYDROGEN',
-            stripos($fuel, 'lpg') !== false => 'LPG',
+            str_contains($fuel, '엘피지') || stripos($fuel, 'lpg') !== false => 'LPG',
             stripos($fuel, 'cng') !== false => 'CNG',
             default => $fuel,
         };
