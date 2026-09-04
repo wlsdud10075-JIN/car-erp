@@ -98,6 +98,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $bulkDateReason = '';
 
+    // ── 서류 일괄 업로드 (jin 2026-09-04) — 기획 = docs/design/bulk-document-upload.md ──
+    //   대상 = 체크박스 누적 선택($shipDocIds). 「검색으로 N대를 찾고 → 고르고 → 올린다」.
+    //   공유형(신고서·체크빌)은 **파일 1개**가 대상 각각에 들어간다. 개별형(말소증)은 3단계.
+    public bool $bulkDocOpen = false;
+
+    public string $bulkDocType = '';
+
+    public $bulkDocFile = null;
+
+    /** 이미 파일이 있는 차량도 덮어쓸지 — 기본 꺼짐(실수로 덮는 것 방지, jin). */
+    public bool $bulkDocReplace = false;
+
+    /** 같은 번호인데 선택 밖인 차량도 함께 처리할지 — 기본 켬(묶음이 반쪽으로 남지 않게). */
+    public bool $bulkDocIncludeOutside = true;
+
+    /** 번호가 2종 이상 섞였을 때 사람이 명시로 확인했는가. 확인 없이는 진행하지 않는다. */
+    public bool $bulkDocMixedAck = false;
+
+    public string $bulkDocReason = '';
+
     #[Url] public int $perPage = 10;
 
     // #3 다중차량 선적 서류 — 체크박스로 선택한 차량 id (export 차량만). 선택 N대 → 1서류.
@@ -2124,6 +2144,118 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * 선적일·ETA 일괄 지정 모달 열기 — 대상 건수를 확인시킨 뒤 적용(확인 1단계, jin 2026-07-28).
      */
+    /** 서류 일괄 업로드 모달 열기. 권한 있는 서류가 하나도 없으면 애초에 버튼이 안 보인다. */
+    public function openBulkDoc(): void
+    {
+        $allowed = \App\Services\BulkVehicleDocumentService::allowedFor(auth()->user());
+        abort_if($allowed === [], 403);
+
+        $this->bulkDocType = in_array($this->bulkDocType, $allowed, true) ? $this->bulkDocType : $allowed[0];
+        $this->bulkDocFile = null;
+        $this->bulkDocReplace = false;
+        $this->bulkDocIncludeOutside = true;
+        $this->bulkDocMixedAck = false;
+        $this->bulkDocReason = '';
+        $this->bulkDocOpen = true;
+        unset($this->bulkDocPreview);
+    }
+
+    public function closeBulkDoc(): void
+    {
+        $this->bulkDocOpen = false;
+        $this->bulkDocFile = null;
+        unset($this->bulkDocPreview);
+    }
+
+    /** 서류 종류를 바꾸면 「섞임 확인」은 다시 받아야 한다 — 종류마다 보는 번호가 다르다. */
+    public function updatedBulkDocType(): void
+    {
+        $this->bulkDocMixedAck = false;
+        unset($this->bulkDocPreview);
+    }
+
+    /**
+     * 대상·번호분포·선택밖 잔여. **화면과 실행이 같은 판정을 쓴다**(SKILLS §8 #67).
+     * ⚠️ 모달이 닫혀 있으면 계산하지 않는다 — 목록 렌더마다 돌 이유가 없다.
+     */
+    #[Computed]
+    public function bulkDocPreview(): array
+    {
+        $empty = ['targets' => [], 'no_scope' => [], 'breakdown' => [], 'outside' => []];
+        if (! $this->bulkDocOpen || $this->bulkDocType === '' || empty($this->shipDocIds)) {
+            return $empty;
+        }
+
+        try {
+            return app(\App\Services\BulkVehicleDocumentService::class)
+                ->preview($this->shipDocIds, $this->bulkDocType, auth()->user());
+        } catch (\Throwable $e) {
+            return $empty;
+        }
+    }
+
+    /** 파일 1개를 대상 차량 각각에 저장. 대상 id 는 미리보기(서버 판정)에서 나온다. */
+    public function applyBulkDoc(): void
+    {
+        $user = auth()->user();
+        $svc = app(\App\Services\BulkVehicleDocumentService::class);
+
+        $this->validate(
+            ['bulkDocFile' => ['required', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB]],
+            [],
+            ['bulkDocFile' => __('vehicle.bulk_doc.file')],
+        );
+
+        $preview = $this->bulkDocPreview;
+        if ($preview['targets'] === []) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_doc.no_target'));
+
+            return;
+        }
+
+        // 🚦 섞임 — 번호가 2종 이상이면 사람이 명시로 확인해야 진행한다(면장은 신고번호마다 다르다).
+        if (\App\Services\BulkVehicleDocumentService::distinctGroupCount($preview['breakdown']) > 1
+            && ! $this->bulkDocMixedAck) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_doc.mixed_block'));
+
+            return;
+        }
+
+        $ids = array_column($preview['targets'], 'id');
+        if ($this->bulkDocIncludeOutside) {
+            $ids = array_merge($ids, array_column($preview['outside'], 'id'));
+        }
+
+        try {
+            $result = $svc->applyShared(
+                $ids,
+                $this->bulkDocType,
+                $this->bulkDocFile,
+                $user,
+                $this->bulkDocReplace,
+                $this->bulkDocReason !== '' ? $this->bulkDocReason : __('vehicle.bulk_doc.reason_default'),
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+
+        $this->bulkDocOpen = false;
+        $this->bulkDocFile = null;
+        unset($this->vehicles, $this->bulkDocPreview);
+
+        // 올린 묶음은 선택에서 비운다 — 다음 묶음을 담으면 된다(jin 「업로드해도 또 나오지 않나」).
+        if ($result['applied'] > 0) {
+            $this->clearShipDocSelection();
+        }
+
+        $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_doc.done', [
+            'applied' => $result['applied'],
+            'skipped' => count($result['skipped']),
+        ]));
+    }
+
     public function openBulkDate(): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
@@ -4212,10 +4344,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_buyer_id_str'           => [Rule::when($this->bl_buyer_id_str !== '', ['exists:buyers,id'])],
             'bl_consignee_id_str'       => [Rule::when($this->bl_consignee_id_str !== '', ['exists:consignees,id'])],
 
-            'deregistrationDocFile'    => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
-            'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
-            'blDocFile'                => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
-            'checkbillFile'            => ['nullable', 'file', 'mimes:jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip', 'max:10240'],
+            'deregistrationDocFile'    => ['nullable', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB],
+            'exportDeclarationDocFile' => ['nullable', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB],
+            'blDocFile'                => ['nullable', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB],
+            'checkbillFile'            => ['nullable', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB],
 
             // 차량 첨부 — 사진(jpg/png/gif/webp/bmp) + 사무 파일(pdf·xlsx·xls·csv·docx·doc·hwp·hwpx·pptx·ppt·txt·zip), 건당 10MB.
             // 총 건수 제한은 아래 별도 가드. .exe / .php 같은 실행 파일은 mimes 화이트리스트로 자연 차단.
@@ -6431,6 +6563,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="bundleToShipping" wire:confirm="{{ __('vehicle.accum.bundle_confirm') }}"
                     class="rounded border border-indigo-300 bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700">
                 → {{ __('vehicle.accum.bundle_btn') }}
+            </button>
+        @endif
+        {{-- ① 서류 일괄 업로드 (jin 2026-09-04) — 공유형(신고서·체크빌)은 파일 1개가 선택 전체에.
+             권한 있는 서류가 하나도 없으면 버튼 자체가 안 뜬다(단건 화면과 같은 권한). --}}
+        @if(\App\Services\BulkVehicleDocumentService::allowedFor(auth()->user()) !== [])
+            <button type="button" wire:click="openBulkDoc"
+                    class="rounded border border-emerald-300 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+                ↑ {{ __('vehicle.bulk_doc.btn') }}
             </button>
         @endif
         {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
@@ -9836,6 +9976,113 @@ function vehicleColumnsToggle() {
 
 {{-- 작업2 (2026-05-27) — 차량 등록/수정 중 바이어·컨사이니 인라인 quick-add.
      패널 안 닫고 즉석 등록 → 자동 선택. 슬라이드 패널 stacking context 밖(z-100)에 배치. --}}
+@if($bulkDocOpen)
+{{-- 서류 일괄 업로드 모달 (jin 2026-09-04) — 대상 = 체크박스 누적 선택.
+     공유형은 **파일 1개**가 대상 각각에 저장된다(차량마다 다른 경로). --}}
+@php
+    $bdPrev = $this->bulkDocPreview;
+    $bdTypes = \App\Services\BulkVehicleDocumentService::allowedFor(auth()->user());
+    $bdMixed = \App\Services\BulkVehicleDocumentService::distinctGroupCount($bdPrev['breakdown']) > 1;
+    $bdHasFile = collect($bdPrev['targets'])->where('has_file', true)->count();
+    $bdCount = count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
+@endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-doc-modal">
+    <div class="card mx-4 w-full max-w-lg shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_doc.title') }}</h3>
+
+        {{-- 서류 종류 — 모달 전체에 1종. 행별로 다르게 고르지 않는다(오조작 방지). --}}
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.type') }}</label>
+        <select wire:model.live="bulkDocType" class="input-base mt-1 w-full">
+            @foreach($bdTypes as $t)
+                <option value="{{ $t }}">{{ __('vehicle.bulk_doc.type_'.$t) }}</option>
+            @endforeach
+        </select>
+
+        <p class="mt-3 text-xs font-medium text-primary-text">
+            {{ __('vehicle.bulk_doc.target', ['count' => number_format($bdCount)]) }}
+        </p>
+
+        {{-- 대상 차량 — 이미 파일이 있는 차는 회색(교체 체크를 켜야 덮인다). --}}
+        <div class="mt-2 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
+            @forelse($bdPrev['targets'] as $t)
+                <span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['has_file'] ? 'bg-gray-200 text-gray-400 line-through' : 'bg-white text-gray-700' }}">{{ $t['number'] }}</span>
+            @empty
+                <span class="text-xs text-gray-400">{{ __('vehicle.bulk_doc.no_target') }}</span>
+            @endforelse
+        </div>
+
+        @if($bdPrev['no_scope'] !== [])
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_doc.no_scope', ['count' => count($bdPrev['no_scope'])]) }}</p>
+        @endif
+
+        {{-- 🚦 섞임 — 번호가 2종 이상이면 사람이 명시로 확인해야 진행한다.
+             면장은 신고번호마다 다르다 — 한 장을 여러 번호에 붙이면 틀린 세관 서류가 나간다. --}}
+        @if($bdMixed)
+            <div class="mt-3 rounded border border-red-200 bg-red-50 p-2">
+                <p class="text-xs font-semibold text-red-700">{{ __('vehicle.bulk_doc.mixed_title') }}</p>
+                <div class="mt-1 max-h-24 overflow-y-auto text-[11px] text-red-700">
+                    @foreach($bdPrev['breakdown'] as $g => $c)
+                        <div>{{ $g !== '' ? $g : __('vehicle.bulk_doc.no_number') }} — {{ $c }}{{ __('vehicle.bulk_doc.unit') }}</div>
+                    @endforeach
+                </div>
+                <label class="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-red-700">
+                    <input type="checkbox" wire:model.live="bulkDocMixedAck" class="rounded border-red-300">
+                    {{ __('vehicle.bulk_doc.mixed_ack') }}
+                </label>
+            </div>
+        @endif
+
+        {{-- 🚦 빠짐 — 같은 번호인데 선택 밖인 차. 묶음이 반쪽으로 남지 않게 기본으로 포함한다. --}}
+        @if($bdPrev['outside'] !== [])
+            <div class="mt-3 rounded border border-amber-200 bg-amber-50 p-2">
+                <label class="flex items-center gap-1.5 text-[11px] font-medium text-amber-800">
+                    <input type="checkbox" wire:model.live="bulkDocIncludeOutside" class="rounded border-amber-300">
+                    {{ __('vehicle.bulk_doc.outside', ['count' => count($bdPrev['outside'])]) }}
+                </label>
+                <div class="mt-1 max-h-20 overflow-y-auto text-[11px] text-amber-800">
+                    @foreach($bdPrev['outside'] as $o)
+                        <span class="mr-1 inline-block">{{ $o['number'] }}</span>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
+        @if($bdHasFile > 0)
+            <label class="mt-3 flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                <input type="checkbox" wire:model.live="bulkDocReplace" class="rounded border-gray-300">
+                {{ __('vehicle.bulk_doc.replace', ['count' => $bdHasFile]) }}
+            </label>
+        @endif
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.file') }}</label>
+        <div class="mt-1">
+            <x-erp.file-drop model="bulkDocFile" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
+                @if($bulkDocFile)
+                    <p class="mt-1 break-all text-xs text-gray-700">📄 {{ $bulkDocFile->getClientOriginalName() }}</p>
+                @endif
+            </x-erp.file-drop>
+        </div>
+        @error('bulkDocFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.reason') }}</label>
+        <input wire:model="bulkDocReason" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_doc.reason_ph') }}" />
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" wire:click="closeBulkDoc" class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+                {{ __('common.cancel') }}
+            </button>
+            <button type="button" wire:click="applyBulkDoc" wire:loading.attr="disabled" wire:target="applyBulkDoc,bulkDocFile"
+                    @disabled($bdCount === 0 || ($bdMixed && ! $bulkDocMixedAck))
+                    class="btn-primary disabled:opacity-50">
+                <span wire:loading.remove wire:target="applyBulkDoc">{{ __('vehicle.bulk_doc.apply') }}</span>
+                <span wire:loading wire:target="applyBulkDoc">{{ __('vehicle.panel.uploading') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
 @if($bulkDateOpen)
 {{-- 선적일·ETA 일괄 지정 확인 모달 (jin 2026-07-28) — 대상 건수를 보여주고 1단계 확인 후 적용. --}}
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-date-modal">
