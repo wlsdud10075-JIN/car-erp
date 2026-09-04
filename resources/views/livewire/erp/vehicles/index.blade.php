@@ -2255,6 +2255,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->orWhere('export_declaration_number', 'like', SearchTerm::like($this->search))
                         ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))       // 선박명(VSL)
                         ->orWhere('container_number', 'like', SearchTerm::like($this->search))  // 컨테이너번호
+                        ->orWhere('bl_number', 'like', SearchTerm::like($this->search))         // B/L 번호
                         ->orWhere('purchase_from', 'like', SearchTerm::like($this->search));    // 구입처(매입처)
                     // 등기번호·운송장번호 — 저장은 정규화형(대문자·기호 제거)이라 검색어도 같은 모양으로
                     //   맞춰야 한다. 'ED-1054' 처럼 쳐도 찾히게(안 맞추면 조용히 0건).
@@ -6222,7 +6223,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="space-y-2">
     {{-- 검색 + 날짜 + 조회 --}}
     <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+        {{-- placeholder 는 대표만, 전체 목록은 호버(title) 로 (jin 2026-09-04) — 칸을 넓히면 필터바가 줄바꿈된다. --}}
         <input wire:model="search" wire:keydown.enter="applyFilters" type="text" placeholder="{{ __('vehicle.search_placeholder') }}"
+               title="{{ __('vehicle.search_title') }}"
                class="input-filter w-52" />
         <select wire:model="dateType" class="input-filter">
             <option value="purchase">{{ __('vehicle.date_type.purchase') }}</option>
