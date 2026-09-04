@@ -316,7 +316,15 @@ USED                  → balance -= savings  (음수 검증)
 ADJUSTMENT / CANCELLED → balance += savings  (savings 양/음수 모두 가능)
 ```
 
-**잔액 음수 불가**: DB CHECK constraint + service 검증 이중. 동시성 race condition 대비 `Buyer::lockForUpdate()` + 트랜잭션.
+**잔액 음수 불가**: 동시성 race condition 대비 `Buyer::lockForUpdate()` + 트랜잭션.
+
+> 🔧 **2026-09-04 정정 — 이 줄이 「DB CHECK constraint + service 검증 이중」이라고 적혀 있었으나 틀렸다.**
+> `savings_statuses` 마이그레이션 3개 어디에도 **CHECK 제약이 없다**(실측 0건).
+> 게다가 검증조차 이중이 아니다 — 막는 곳은 **바이어탭 UI 한 곳뿐**이고
+> (`resources/views/livewire/erp/buyers/index.blade.php`, `$newBalance < 0` → addError),
+> 자동 경로인 `Vehicle::syncSavingsUsage`(H6 훅)는 **검증 없이 그냥 insert** 한다.
+> ⇒ **적립금 잔액을 프로그램으로 깎는 새 코드를 만들 땐 잔액 부족 검증을 직접 넣을 것.**
+> DB 도 다른 경로도 안 막아 준다. (바이어 현금 원장 기획 중 발견 — `docs/design/buyer-cash-ledger.md`)
 
 **원본 거래 참조**: `original_transaction_id` (self FK) — 수정/취소 시 원본 추적용.
 
