@@ -416,30 +416,70 @@ class Vehicle extends Model
             return;
         }
 
-        // 신규 첨부 (null → not null) — G1 평가
-        $ratio = $this->unpaid_ratio;
+        // 신규 첨부 (null → not null) — G1 평가. 판정은 blRatioBlocker() 단일 출처.
+        $blocker = $this->blRatioBlocker();
+        if ($blocker === null) {
+            return;
+        }
 
-        if ($ratio === null) {
+        if ($blocker === self::BL_BLOCK_NO_SALE_PRICE) {
             // 판매가 미입력 (sale_total_amount ≤ 0) — 미수율 평가 불가
             throw ValidationException::withMessages([
                 'bl_document' => 'B/L 발행 전 판매가 입력이 필요합니다 — 판매 탭. (판매가 미입력으로 미수율 평가 불가.)',
             ]);
         }
 
-        if ($ratio <= Setting::lockThreshold('bl_issue')) {
-            return;   // 필요 입금률 충족(기본 100%=완납) — 발행 가능
-        }
-
-        // 100% 미완납 — 미입금 우회 승인 확인 ('bl'(B/L 발행) 단계, 관리/관리자)
-        //   ⚠ 'shipping'(선적 진입) 우회로는 안 뚫림 — B/L 발행은 별도 'bl' 승인 필요(2026-06-23 jin).
-        if ($this->hasUnpaidOverride('bl')) {
-            return;
-        }
-
-        $percent = number_format($ratio * 100, 1);
+        $percent = number_format($this->unpaid_ratio * 100, 1);
         throw ValidationException::withMessages([
             'bl_document' => "B/L 발행 차단 — 미수율 {$percent}% (잔금 100% 미완납). 완납 후 발행 가능. 또는 관리/관리자 미입금 우회 승인('B/L 발행' 단계) 필요.",
         ]);
+    }
+
+    public const BL_BLOCK_NO_SALE_PRICE = 'bl_no_sale_price';
+
+    public const BL_BLOCK_UNPAID = 'bl_unpaid';
+
+    public const BL_BLOCK_NO_LOADING_LOCATION = 'bl_no_loading_location';
+
+    /**
+     * G1 미수율 판정만 — 저장 훅과 일괄 업로드 미리보기가 **같은 함수**를 쓴다(사본 금지 SKILLS §8 #45).
+     * 통과면 null, 막히면 사유 상수.
+     */
+    public function blRatioBlocker(): ?string
+    {
+        if (! Setting::lockEnabled('bl_issue')) {
+            return null;   // 🔒 락 관제 — B/L 발행 락 OFF (super 토글)
+        }
+
+        $ratio = $this->unpaid_ratio;
+        if ($ratio === null) {
+            return self::BL_BLOCK_NO_SALE_PRICE;
+        }
+        if ($ratio <= Setting::lockThreshold('bl_issue')) {
+            return null;   // 필요 입금률 충족(기본 100%=완납)
+        }
+
+        // 미입금 우회 승인 ('bl' 단계). ⚠ 'shipping'(선적 진입) 우회로는 안 뚫린다(2026-06-23 jin).
+        return $this->hasUnpaidOverride('bl') ? null : self::BL_BLOCK_UNPAID;
+    }
+
+    /**
+     * B/L 문서를 **지금 새로 붙일 수 있나** — 붙일 수 있으면 null, 아니면 사유 상수.
+     *
+     * 일괄 업로드가 「막힐 행」을 **미리 회색으로** 보여주고, 실행이 같은 판정으로 건너뛴다
+     * (SKILLS §8 #67 — 미리보기와 실행이 갈리면 목록엔 되는데 저장이 안 되는 행이 남는다).
+     * 저장 훅(guardBlFiftyPercentRuleOnSaving · H3 반입지)은 그대로 자기 예외를 던진다 — 여기는 예고편이다.
+     */
+    public function blUploadBlocker(): ?string
+    {
+        if (filled($this->bl_document)) {
+            return null;   // grandfather — 기존에 있던 차는 교체·삭제 자유(저장 훅과 동일)
+        }
+        if (blank($this->bl_loading_location)) {
+            return self::BL_BLOCK_NO_LOADING_LOCATION;   // H3 — 반입지 선행
+        }
+
+        return $this->blRatioBlocker();
     }
 
     /**

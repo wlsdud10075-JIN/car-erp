@@ -10016,6 +10016,12 @@ function vehicleColumnsToggle() {
     $bdMax = \App\Services\BulkVehicleDocumentService::INDIVIDUAL_MAX;
     $bdOver = $bdIndividual && count($bdPrev['targets']) > $bdMax;
     $bdPicked = $bdIndividual ? collect($bulkDocFiles)->filter()->count() : 0;
+    $bdBlocked = collect($bdPrev['targets'])->whereNotNull('blocked')->count();
+    // 🚨 B/L 은 붙는 순간 거래완료 → 출고일 자동생성 → 재고 이탈까지 연쇄한다. 미리 말한다.
+    $bdCompletes = ($bdCfg['completes_deal'] ?? false)
+        ? collect($bdPrev['targets'])->whereNull('blocked')->where('has_file', false)->count()
+            + ($bulkDocIncludeOutside ? collect($bdPrev['outside'])->whereNull('blocked')->where('has_file', false)->count() : 0)
+        : 0;
     $bdCount = $bdIndividual
         ? count($bdPrev['targets'])
         : count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
@@ -10035,6 +10041,14 @@ function vehicleColumnsToggle() {
         <p class="mt-3 text-xs font-medium text-primary-text">
             {{ __('vehicle.bulk_doc.target', ['count' => number_format($bdCount)]) }}
         </p>
+        @if($bdCompletes > 0)
+            <p class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-700">
+                {{ __('vehicle.bulk_doc.completes_deal', ['count' => $bdCompletes]) }}
+            </p>
+        @endif
+        @if($bdBlocked > 0)
+            <p class="mt-1 text-[11px] text-red-600">{{ __('vehicle.bulk_doc.blocked_count', ['count' => $bdBlocked]) }}</p>
+        @endif
 
         @if($bdIndividual)
             {{-- 개별형(말소증) — 차량 1대 = 1장이라 **행마다** 파일을 받는다.
@@ -10053,7 +10067,7 @@ function vehicleColumnsToggle() {
                                 @if($t['has_file'] && ! $bulkDocReplace)
                                     <span class="text-[10px] text-gray-400">{{ __('vehicle.bulk_doc.row_has_file') }}</span>
                                 @elseif(($bulkDocFiles[$t['id']] ?? null))
-                                    <span class="max-w-[55%] truncate text-[10px] text-primary-text">📄 {{ $bulkDocFiles[$t['id']]->getClientOriginalName() }}</span>
+                                    <span class="max-w-[55%] truncate text-[10px] text-primary-text" title="{{ $bulkDocFiles[$t['id']]->getClientOriginalName() }}">📄 {{ $bulkDocFiles[$t['id']]->getClientOriginalName() }}</span>
                                 @endif
                             </div>
                             @if(! $t['has_file'] || $bulkDocReplace)
@@ -10072,7 +10086,8 @@ function vehicleColumnsToggle() {
             {{-- 대상 차량 — 이미 파일이 있는 차는 회색(교체 체크를 켜야 덮인다). --}}
             <div class="mt-2 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
                 @forelse($bdPrev['targets'] as $t)
-                    <span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['has_file'] ? 'bg-gray-200 text-gray-400 line-through' : 'bg-white text-gray-700' }}">{{ $t['number'] }}</span>
+                    <span title="{{ $t['blocked'] ? __('vehicle.bulk_doc.blocked_'.$t['blocked']) : '' }}"
+                          class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['blocked'] ? 'bg-red-100 text-red-500 line-through' : ($t['has_file'] ? 'bg-gray-200 text-gray-400 line-through' : 'bg-white text-gray-700') }}">{{ $t['number'] }}</span>
                 @empty
                     <span class="text-xs text-gray-400">{{ __('vehicle.bulk_doc.no_target') }}</span>
                 @endforelse
