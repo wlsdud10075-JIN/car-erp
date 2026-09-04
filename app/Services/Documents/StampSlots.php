@@ -25,6 +25,9 @@ class StampSlots
     /** 서류 type → 한글 라벨 (UI). */
     public const DOC_LABELS = [
         'deregistration_contract' => '말소 계약서',
+        // karaba 가 이 type 에 슬롯을 갖게 되면서(2026-09-04) 설정화면에 노출된다 — 라벨이 없으면
+        //   키 문자열 'deregistration_set' 이 그대로 찍힌다(admin/settings 의 `?? $type` 폴백).
+        'deregistration_set' => '말소신청서_계약서',
         'invoice' => '판매 인보이스',
         'clearance' => '통관 SET',
         'container_invoice_packing' => '컨테이너 Invoice&Packing',
@@ -37,13 +40,41 @@ class StampSlots
     /**
      * 회사(template_set)별 슬롯. heyman 은 jin 2026-06-25 정책(서명=말소계약서만 /
      * 직인=판매·선적인보이스·계약서·통관 차량인보이스/팩킹/Travel, 등록증·말소증 정부직인 제외).
-     * 그 외(system/karaba)는 기본 배치.
+     * karaba 는 기본 배치 + 말소신청서 탭 직인(2026-09-04 jin). 그 외(system)는 기본 배치.
      *
      * @return array<string, list<array{key:string, role:string, sheet:string, anchor:string, width:int, height:int}>>
      */
     public static function all(?string $set = null): array
     {
-        return $set === 'heyman' ? self::heymanSlots() : self::defaultSlots();
+        return match ($set) {
+            'heyman' => self::heymanSlots(),
+            'karaba' => self::karabaSlots(),
+            default => self::defaultSlots(),
+        };
+    }
+
+    /**
+     * karaba 전용 (jin 2026-09-04) — 「말소신청서_계약서」의 **1.차량말소신청서 탭**에 직인을 찍는다.
+     *
+     * 🔑 **기본 배치를 복사하지 않고 얹는다.** 복사하면 기본 슬롯이 바뀔 때 karaba 만 조용히 뒤처진다
+     *    (heymanSlots 는 전량 복사라 그 위험을 안고 있다 — 여기서 되풀이하지 않는다, SKILLS §8 #45).
+     *
+     * 위치 = 신청인 서명란(K26:M28). 그 자리는 「(서명 또는 인)」 라벨만 있는 빈칸이고
+     * baked drawing 이 없어서 `clearAnchors` 가 필요 없다(3세트 실측 drawing 0건).
+     * 크기 233×85px = K~M 열폭 + 26~28 행높이 실측값. 미세조정은 배포 없이
+     * 기능설정 「도장 슬롯 위치/크기」(`stamp_pos_karaba_deregistration_set_apply_seal`)로 한다.
+     *
+     * 🚫 `defaultSlots()` 에 직접 넣지 말 것 — system(ssancarerp)에도 찍힌다.
+     */
+    private static function karabaSlots(): array
+    {
+        $slots = self::defaultSlots();
+        $slots['deregistration_set'][] = [
+            'key' => 'apply_seal', 'role' => 'seal', 'sheet' => '1.차량말소신청서',
+            'anchor' => 'K26', 'width' => 233, 'height' => 85,
+        ];
+
+        return $slots;
     }
 
     /**
