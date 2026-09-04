@@ -132,6 +132,7 @@ return [
         'bl_vsl' => 'VSL',
         'vessel_name' => '선박명(VSL)',
         'bl_document' => 'B/L 문서',
+        'checkbill_document' => '체크빌',
         'bl_issue_date' => 'B/L발행일',
 
         // 서류 발송 (우체국 EMS · DHL) — 캐시 컬럼이지만 감사로그에 그대로 찍힌다.
@@ -419,6 +420,7 @@ return [
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
         'bulk_shipping_date_applied' => '선적일·도착일 일괄 기입',
+        'bulk_document_uploaded' => '서류 일괄 업로드',
         'bulk_shipment_applied' => '발송 내역 일괄 기입',
         'freight_usd_import' => '운임비(USD) 소급 기입',
         // 퇴사 승계 일괄 (2026-08-27) — A 의 바이어·진행중 차량을 B 로 통째 이관.

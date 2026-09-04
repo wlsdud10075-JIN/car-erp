@@ -592,6 +592,14 @@ class Vehicle extends Model
      * 큐 21 — 회계 영향 컬럼(LEDGER_LOCK_FIELDS) 변경 추적 확장.
      * 잠금 해제 후 변경은 반드시 AuditLog 기록 — Specialist F 권고.
      */
+    /**
+     * 차량 서류 업로드 공통 검증 (2026-09-04) — 단건 4칸과 **일괄 업로드**가 같은 규칙을 쓴다.
+     * 종전엔 같은 문자열이 `vehicles/index` 검증에 4벌 복사돼 있었다(SKILLS §8 #45).
+     */
+    public const DOCUMENT_MIMES = 'jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip';
+
+    public const DOCUMENT_MAX_KB = 10240;
+
     public const AUDITED_COLUMNS = [
         // 기존
         'sale_price',
@@ -614,6 +622,10 @@ class Vehicle extends Model
         'buyer_undecided',
         // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).
         'is_deregistered', 'deregistration_document',
+        // 2026-09-04 (jin) — 서류 3종. 말소증만 감사 대상이었는데, 일괄 업로드로 수십 대를 한 번에
+        //   바꾸는 입구가 생기면서 추적이 없으면 안 된다(07-28 에 shipping_date·eta_date 를 등재한 것과 같은 이유).
+        //   특히 bl_document 는 올리는 순간 거래완료 → 출고일 자동생성까지 연쇄한다.
+        'export_declaration_document', 'checkbill_document', 'bl_document',
         // 큐 22-C-light (2026-05-20) Security 해소조건 — 매입처 계좌 4컬럼 변경 audit.
         // purchase_seller_account는 AuditLog::MASKED_COLUMNS 통해 마스킹 저장.
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
