@@ -49,7 +49,8 @@ return [
     'export_col_pinned' => 'always',
     'export_pinned_hint' => '· Vehicle no. and VIN are always included, so settlement-only exports stay traceable.',
 
-    'search_placeholder' => 'Vehicle no. · brand · model · owner · export decl. no. · VIN (last 6) · vessel · container no.',
+    'search_placeholder' => 'Vehicle no. · B/L · decl. no. · vessel · container',
+    'search_title' => 'Vehicle no. · brand · model · owner · export decl. no. · B/L no. · vessel · container no. · supplier · EMS/DHL tracking no.',
     'search_btn' => 'Search',
     'reset_btn' => 'Reset',
     'reset_hint' => 'Restore search, dates, filters and accumulation to the initial state.',
