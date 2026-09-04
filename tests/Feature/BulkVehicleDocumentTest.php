@@ -61,6 +61,12 @@ class BulkVehicleDocumentTest extends TestCase
         return UploadedFile::fake()->create($name, 20, 'application/pdf');
     }
 
+    /** 내용까지 구분해야 「행마다 다른 파일」을 진짜로 검증할 수 있다. */
+    private function fileWith(string $name, string $content): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent($name, $content);
+    }
+
     private function svc(): BulkVehicleDocumentService
     {
         return app(BulkVehicleDocumentService::class);
@@ -232,13 +238,29 @@ class BulkVehicleDocumentTest extends TestCase
 
     // ── 권한·스코프 ────────────────────────────────────────────────
 
+    /**
+     * 권한은 단건 화면과 같다 — 영업은 말소증만, 통관·재무 서류는 못 만진다.
+     * 재무는 아무것도 못 올린다(단건 화면에서도 서류 칸이 없다).
+     */
+    public function test_document_types_follow_the_single_vehicle_permissions(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+        $clearance = User::factory()->create(['permission' => 'user', 'role' => '수출통관', 'email_verified_at' => now()]);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
+
+        $this->assertSame(['deregistration'], BulkVehicleDocumentService::allowedFor($sales));
+        $this->assertSame(
+            ['checkbill', 'export_declaration', 'deregistration'],
+            BulkVehicleDocumentService::allowedFor($clearance)
+        );
+        $this->assertSame([], BulkVehicleDocumentService::allowedFor($finance), '재무는 버튼 자체가 안 떠야 한다');
+    }
+
     public function test_sales_role_cannot_upload_clearance_documents(): void
     {
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
         $this->actingAs($sales);
         $v = $this->vehicle('11가1001');
-
-        $this->assertSame([], BulkVehicleDocumentService::allowedFor($sales), '버튼 자체가 안 떠야 한다');
 
         $this->expectException(AuthorizationException::class);
         $this->svc()->applyShared([$v->id], 'checkbill', $this->file(), $sales, false, '테스트');
@@ -312,5 +334,89 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->assertSame('선적완료', $v->fresh()->progress_status);
         $this->assertSame('선적완료', $v->fresh()->progress_status_cache);
+    }
+
+    // ── 개별형(말소증) — 차량마다 다른 파일 ─────────────────────────
+
+    public function test_individual_mode_gives_each_vehicle_its_own_file(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001');
+        $b = $this->vehicle('22나2002');
+
+        $r = $this->svc()->applyIndividual(
+            [$a->id => $this->fileWith('a.pdf', 'AAAA'), $b->id => $this->fileWith('b.pdf', 'BBBB')],
+            'deregistration', $user, false, '테스트',
+        );
+
+        $this->assertSame(2, $r['applied']);
+        $pa = $a->fresh()->deregistration_document;
+        $pb = $b->fresh()->deregistration_document;
+        $this->assertNotSame($pa, $pb);
+        $this->assertStringContainsString("vehicles/{$a->id}/", $pa);
+        $this->assertStringContainsString("vehicles/{$b->id}/", $pb);
+        // 🔑 핵심 — 행마다 **그 행의 파일**이 가야 한다. 경로만 달라도 내용이 섞이면 말소증이 뒤바뀐다.
+        $this->assertSame('AAAA', Storage::disk($this->disk)->get($pa));
+        $this->assertSame('BBBB', Storage::disk($this->disk)->get($pb));
+    }
+
+    /** 빈 칸은 「안 건드림」이지 지우기가 아니다 — 파일을 안 넣은 행은 그대로 남는다. */
+    public function test_rows_without_a_file_are_left_alone(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001');
+        $b = $this->vehicle('22나2002');
+
+        $r = $this->svc()->applyIndividual([$a->id => $this->file(), $b->id => null], 'deregistration', $user, false, '테스트');
+
+        $this->assertSame(1, $r['applied']);
+        $this->assertNotNull($a->fresh()->deregistration_document);
+        $this->assertNull($b->fresh()->deregistration_document);
+    }
+
+    public function test_individual_mode_refuses_more_than_the_limit(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $files = [];
+        for ($i = 1; $i <= BulkVehicleDocumentService::INDIVIDUAL_MAX + 1; $i++) {
+            $files[$this->vehicle(sprintf('%02d가%04d', $i % 100, $i))->id] = $this->file();
+        }
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->svc()->applyIndividual($files, 'deregistration', $user, false, '테스트');
+    }
+
+    /** 공유형 메서드에 개별형을 넘기면 거부한다(모드를 섞으면 같은 파일이 N대에 붙는다). */
+    public function test_modes_cannot_be_crossed(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001');
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->svc()->applyShared([$v->id], 'deregistration', $this->file(), $user, false, '테스트');
+    }
+
+    public function test_screen_uploads_a_different_file_per_row(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001');
+        $b = $this->vehicle('22나2002');
+
+        Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $a->id, (string) $b->id])
+            ->call('openBulkDoc')
+            ->set('bulkDocType', 'deregistration')
+            ->set('bulkDocFiles.'.$a->id, $this->fileWith('a.pdf', 'AAAA'))
+            ->set('bulkDocFiles.'.$b->id, $this->fileWith('b.pdf', 'BBBB'))
+            ->call('applyBulkDoc')
+            ->assertSet('bulkDocOpen', false);
+
+        $this->assertSame('AAAA', Storage::disk($this->disk)->get($a->fresh()->deregistration_document));
+        $this->assertSame('BBBB', Storage::disk($this->disk)->get($b->fresh()->deregistration_document));
     }
 }
