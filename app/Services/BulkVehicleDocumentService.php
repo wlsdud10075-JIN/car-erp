@@ -60,6 +60,21 @@ class BulkVehicleDocumentService
             'group_by' => 'export_declaration_number',
             'ability' => 'canAccessClearance',
         ],
+        /**
+         * 🚨 B/L 은 **연쇄가 가장 길다.** 붙는 순간 v4 cascade #1 로 거래완료가 되고,
+         *    `Vehicle::saving` 이 출고일을 선적일로 자동으로 채운다 → 재고 이탈 · 선적전/후 미수 재분류.
+         *    그래서 화면이 「이 작업으로 N대가 거래완료가 됩니다」를 미리 말한다.
+         * 🔒 유일하게 **게이트가 있는 서류** — 반입지 선행(H3) + 미수 100% 완납(G1).
+         *    판정은 모델의 `blUploadBlocker()` 단일 출처를 쓴다(저장 훅과 사본이 아니다).
+         */
+        'bl' => [
+            'mode' => self::MODE_SHARED,
+            'column' => 'bl_document',
+            'group_by' => 'bl_number',
+            'ability' => 'canAccessClearance',
+            'blocker' => 'blUploadBlocker',
+            'completes_deal' => true,
+        ],
         // 개별형 — 말소증은 **차량 1대 = 1장**이라 행마다 다른 파일을 받는다.
         //   권한이 다르다: 영업도 올릴 수 있다(단건 화면과 동일).
         'deregistration' => [

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
+use App\Models\FinalPayment;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -250,7 +251,7 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->assertSame(['deregistration'], BulkVehicleDocumentService::allowedFor($sales));
         $this->assertSame(
-            ['checkbill', 'export_declaration', 'deregistration'],
+            ['checkbill', 'export_declaration', 'bl', 'deregistration'],
             BulkVehicleDocumentService::allowedFor($clearance)
         );
         $this->assertSame([], BulkVehicleDocumentService::allowedFor($finance), '재무는 버튼 자체가 안 떠야 한다');
@@ -418,5 +419,96 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->assertSame('AAAA', Storage::disk($this->disk)->get($a->fresh()->deregistration_document));
         $this->assertSame('BBBB', Storage::disk($this->disk)->get($b->fresh()->deregistration_document));
+    }
+
+    // ── 4단계 B/L — 유일하게 게이트가 있는 서류 ─────────────────────
+
+    private function blReady(string $number, array $attrs = []): Vehicle
+    {
+        return $this->vehicle($number, array_merge([
+            'bl_number' => 'KMTC-1',
+            'bl_loading_location' => '평택항',
+            'sale_price' => 10_000_000,
+            'sale_date' => now()->toDateString(),
+        ], $attrs));
+    }
+
+    /** 완납 + 반입지 = 통과. 붙는 순간 거래완료가 되고 출고일이 자동으로 채워진다. */
+    public function test_bl_upload_completes_the_deal_and_fills_release_date(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->blReady('11가1001', ['shipping_date' => '2026-08-01']);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10_000_000,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+        $v->refresh();
+        $this->assertNull($v->blUploadBlocker(), '완납·반입지 있으면 통과해야 한다');
+
+        $r = $this->svc()->applyShared([$v->id], 'bl', $this->file('bl.pdf'), $user, false, '테스트');
+
+        $this->assertSame(1, $r['applied']);
+        $this->assertSame('거래완료', $v->fresh()->progress_status);
+        $this->assertNotNull($v->fresh()->warehouse_out_date, '거래완료 진입 시 출고일이 자동으로 채워진다');
+    }
+
+    /** 미완납은 건너뛴다 — 예외로 죽지 않고 사유와 함께 리포트된다. */
+    public function test_unpaid_vehicle_is_skipped_with_a_reason(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->blReady('11가1001');
+
+        $this->assertSame(Vehicle::BL_BLOCK_UNPAID, $v->blUploadBlocker());
+
+        $r = $this->svc()->applyShared([$v->id], 'bl', $this->file(), $user, false, '테스트');
+
+        $this->assertSame(0, $r['applied']);
+        $this->assertSame(Vehicle::BL_BLOCK_UNPAID, $r['skipped'][0]['reason']);
+        $this->assertNull($v->fresh()->bl_document);
+    }
+
+    public function test_missing_loading_location_is_blocked_before_the_ratio(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->blReady('11가1001', ['bl_loading_location' => null]);
+
+        $this->assertSame(Vehicle::BL_BLOCK_NO_LOADING_LOCATION, $v->blUploadBlocker());
+        $this->assertSame(0, $this->svc()->applyShared([$v->id], 'bl', $this->file(), $user, false, 'x')['applied']);
+    }
+
+    /** 🔑 미리보기와 실행이 같은 판정을 써야 한다 — 갈리면 「목록엔 되는데 저장이 안 되는」 행이 남는다. */
+    public function test_preview_marks_exactly_what_apply_will_skip(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $ok = $this->blReady('11가1001');
+        FinalPayment::create([
+            'vehicle_id' => $ok->id, 'type' => 'balance', 'amount' => 10_000_000,
+            'payment_date' => now()->toDateString(), 'confirmed_at' => now(),
+        ]);
+        $blocked = $this->blReady('22나2002');
+
+        $p = $this->svc()->preview([$ok->id, $blocked->id], 'bl', $user);
+        $previewBlocked = collect($p['targets'])->whereNotNull('blocked')->pluck('id')->all();
+
+        $r = $this->svc()->applyShared([$ok->id, $blocked->id], 'bl', $this->file(), $user, false, '테스트');
+        $applyBlocked = collect($r['skipped'])->pluck('id')->all();
+
+        $this->assertSame($previewBlocked, $applyBlocked, '미리보기와 실행의 차단 대상이 갈렸다');
+        $this->assertSame([$blocked->id], $applyBlocked);
+    }
+
+    /** 게이트 상수는 화면 문구가 있어야 한다 — 없으면 사유칸에 키 문자열이 그대로 찍힌다. */
+    public function test_every_block_reason_has_a_label_in_both_locales(): void
+    {
+        foreach ([Vehicle::BL_BLOCK_NO_LOADING_LOCATION, Vehicle::BL_BLOCK_NO_SALE_PRICE, Vehicle::BL_BLOCK_UNPAID] as $reason) {
+            foreach (['ko', 'en'] as $locale) {
+                $key = 'vehicle.bulk_doc.blocked_'.$reason;
+                $this->assertNotSame($key, (string) __($key, [], $locale), "[$locale] {$key} 번역 누락");
+            }
+        }
     }
 }
