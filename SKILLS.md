@@ -513,6 +513,23 @@ extension=zip    # 주석 제거
 **🔒 가드 = `tests/Feature/FileWriteResultCheckedTest`**(정적). ⚠️ **`Storage::fake()` 는 로컬 드라이버라 쓰기가 늘 성공한다 — 기능 테스트로는 원리상 못 잡는다.** 도장은 저장·삭제 **순서**까지 검사한다.
 **🧭 새 파일 쓰기를 추가할 때마다**: ①반환값을 보는가 ②실패 시 DB를 확정하지 않는가 ③옛 파일을 **먼저 지우지 않는가**.
 
+#### 47-B. ⚠️ **그 반환값 검사가 Livewire 업로드 경로에선 안 걸린다** (2026-09-04 실측 · 미수정)
+
+`#47` 의 가드는 `store()` 가 실패 시 `false` 를 준다는 전제인데, **Livewire 임시파일은 그렇지 않다.**
+`TemporaryUploadedFile::storeAs()` 는 내부 `Storage::put()`/`move()` 의 **반환값을 버리고 `$newPath` 를
+무조건 돌려준다**(`vendor/livewire/livewire/.../TemporaryUploadedFile.php`). ⇒ 화면에서 올린 파일은
+S3 쓰기가 실패해도 `if (! $newPath)` 가 **발동하지 않고** DB 에 경로가 박힌다.
+
+- 대상 = 차량 편집 단건 4칸(말소·면장·체크빌·B/L)·차량 사진·선적 사진 등 **`wire:model` 업로드 전부**.
+  (연동 API·백업처럼 `UploadedFile` 이 아닌 경로는 #47 그대로 유효하다.)
+- **jin 2026-09-04 판단 = 별건, 지금 안 고침.** 아는 상태로 둔다.
+- 🧭 **새로 쓰는 코드는 `store()` 를 쓰지 말고 직접 `put()` + `exists()`** 로 확인할 것
+  (`BulkVehicleDocumentService::applyShared` 가 그 형태).
+- 🚨 곁다리 — **같은 임시파일을 두 번 저장하면 두 번째가 죽을 수 있다.** 대상 디스크가 임시 디스크와
+  **같으면 `move()`** 라 첫 저장에서 원본이 사라진다(다르면 `put` 이라 살아남는다).
+  실측: 3사 `FILESYSTEM_DISK=local` · `VEHICLE_DOCS_DISK=s3` 라 지금은 다르다 — **설정에 기대는 동작이므로
+  반복 저장이 필요하면 내용을 한 번 읽어 N번 쓸 것.**
+
 ### 48. 🪣 Flysystem S3 `copy()` 는 **원본 ACL을 먼저 조회**한다 — ACL 비활성 버킷에서 전멸 (2026-08-10)
 
 **원인**: `retain_visibility` 기본값이 `true` 라 `copy()` 마다 `GetObjectAcl` 을 부른다. 우리 버킷은 ACL 이 비활성(Bucket owner enforced)이라 **그 조회가 항상 실패**하고, `UnableToCopyFile` 로 바뀌어 **복사가 시작조차 못 한다**. Laravel 은 **Cloudflare R2 일 때만** 이 값을 자동으로 내린다(`FilesystemManager`) — ACL 비활성 AWS 버킷은 직접 꺼야 한다.

@@ -60,7 +60,22 @@ class BulkVehicleDocumentService
             'group_by' => 'export_declaration_number',
             'ability' => 'canAccessClearance',
         ],
+        // 개별형 — 말소증은 **차량 1대 = 1장**이라 행마다 다른 파일을 받는다.
+        //   권한이 다르다: 영업도 올릴 수 있다(단건 화면과 동일).
+        'deregistration' => [
+            'mode' => self::MODE_INDIVIDUAL,
+            'column' => 'deregistration_document',
+            'group_by' => null,
+            'ability' => 'canHandleDeregistration',
+        ],
     ];
+
+    /**
+     * 개별형 한 번에 받는 최대 대수.
+     * 근거는 **파일 개수**다 — 브라우저 임시 업로드 × N + S3 왕복 × N + 사람이 N개를 정확히 배정해야 한다.
+     * 공유형은 파일이 1개라 이 상한이 없다(묶음 크기가 곧 대상, 실측 B/L 최대 25대).
+     */
+    public const INDIVIDUAL_MAX = 30;
 
     /** @return array{mode:string,column:string,group_by:?string,ability:string} */
     public static function config(string $type): array
@@ -175,63 +190,162 @@ class BulkVehicleDocumentService
             throw new InvalidArgumentException('대상 차량이 없습니다.');
         }
 
-        $disk = (string) config('filesystems.vehicle_docs_disk');
-        $ext = strtolower($file->getClientOriginalExtension() ?: 'dat');
-        // Livewire 임시파일은 `get()` 이 임시 디스크에서 직접 읽는다(임시 디스크가 s3 여도 동작).
-        //   테스트의 평범한 UploadedFile 에는 그 메서드가 없어 Symfony 의 getContent() 로 떨어진다.
-        $content = method_exists($file, 'get') ? $file->get() : $file->getContent();
+        $ext = self::extOf($file);
+        $content = self::contentOf($file);
 
         $applied = 0;
         $skipped = [];
 
         foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $vehicle) {
-            $stored = null;
-            try {
-                if (! $by->canScopeVehicle($vehicle)) {
-                    $skipped[] = self::skip($vehicle, 'no_scope');
-
-                    continue;
-                }
-                $old = $vehicle->{$cfg['column']};
-                if (filled($old) && ! $replaceExisting) {
-                    $skipped[] = self::skip($vehicle, 'has_file');
-
-                    continue;
-                }
-
-                $path = "vehicles/{$vehicle->id}/".Str::random(40).'.'.$ext;
-                if (! Storage::disk($disk)->put($path, $content) || ! Storage::disk($disk)->exists($path)) {
-                    throw new FileStoreFailedException($cfg['column']);
-                }
-                $stored = $path;
-
-                // 차량별 트랜잭션 — 한 대가 걸려도 나머지가 통째로 롤백되지 않는다
-                //   (선적일 일괄은 chunkById 전체를 감싸고 있어 그 함정이 있다).
-                DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type) {
-                    $vehicle->update([$cfg['column'] => $path]);
-                    AuditLog::create([
-                        'user_id' => $by->id,
-                        'auditable_type' => Vehicle::class,
-                        'auditable_id' => $vehicle->id,
-                        'action' => 'bulk_document_uploaded',
-                        'column_name' => $cfg['column'],
-                        'old_value' => $type,
-                        'new_value' => $reason,
-                        'ip_address' => request()?->ip(),
-                    ]);
-                });
-
-                // 옛 파일 삭제는 **저장·확정이 끝난 뒤에만**. 먼저 지우면 실패 시 둘 다 잃는다(SKILLS §8 #47).
-                if (filled($old) && $old !== $path) {
-                    Storage::disk($disk)->delete($old);
-                }
+            $result = $this->writeOne($vehicle, $cfg, $type, $content, $ext, $by, $replaceExisting, $reason);
+            if ($result === null) {
                 $applied++;
-            } catch (\Throwable $e) {
-                // DB 확정에 실패했으면 방금 올린 파일은 고아다 — 지운다.
-                if ($stored !== null) {
-                    Storage::disk($disk)->delete($stored);
-                }
-                $skipped[] = self::skip($vehicle, 'error', $e->getMessage());
+            } else {
+                $skipped[] = $result;
+            }
+        }
+
+        return ['applied' => $applied, 'skipped' => $skipped];
+    }
+
+    /**
+     * 한 대에 쓰기 — 공유형·개별형이 **같은 함수**를 쓴다(스코프·교체·게이트·감사·롤백 규칙이 갈리지 않게).
+     *
+     * @return array|null 성공이면 null, 아니면 skip 항목
+     */
+    private function writeOne(
+        Vehicle $vehicle,
+        array $cfg,
+        string $type,
+        string $content,
+        string $ext,
+        User $by,
+        bool $replaceExisting,
+        string $reason,
+    ): ?array {
+        $disk = (string) config('filesystems.vehicle_docs_disk');
+        $stored = null;
+        try {
+            if (! $by->canScopeVehicle($vehicle)) {
+                return self::skip($vehicle, 'no_scope');
+            }
+            // 게이트(B/L 만) — 미리보기가 회색으로 보여준 것과 **같은 판정**이다(SKILLS §8 #67).
+            if (($blocker = self::blockerFor($vehicle, $cfg)) !== null) {
+                return self::skip($vehicle, $blocker);
+            }
+            $old = $vehicle->{$cfg['column']};
+            if (filled($old) && ! $replaceExisting) {
+                return self::skip($vehicle, 'has_file');
+            }
+
+            $path = "vehicles/{$vehicle->id}/".Str::random(40).'.'.$ext;
+            if (! Storage::disk($disk)->put($path, $content) || ! Storage::disk($disk)->exists($path)) {
+                throw new FileStoreFailedException($cfg['column']);
+            }
+            $stored = $path;
+
+            // 차량별 트랜잭션 — 한 대가 걸려도 나머지가 통째로 롤백되지 않는다
+            //   (선적일 일괄은 chunkById 전체를 감싸고 있어 그 함정이 있다).
+            DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type) {
+                $vehicle->update([$cfg['column'] => $path]);
+                AuditLog::create([
+                    'user_id' => $by->id,
+                    'auditable_type' => Vehicle::class,
+                    'auditable_id' => $vehicle->id,
+                    'action' => 'bulk_document_uploaded',
+                    'column_name' => $cfg['column'],
+                    'old_value' => $type,
+                    'new_value' => $reason,
+                    'ip_address' => request()?->ip(),
+                ]);
+            });
+
+            // 옛 파일 삭제는 **저장·확정이 끝난 뒤에만**. 먼저 지우면 실패 시 둘 다 잃는다(SKILLS §8 #47).
+            if (filled($old) && $old !== $path) {
+                Storage::disk($disk)->delete($old);
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            // DB 확정에 실패했으면 방금 올린 파일은 고아다 — 지운다.
+            if ($stored !== null) {
+                Storage::disk($disk)->delete($stored);
+            }
+
+            return self::skip($vehicle, 'error', $e->getMessage());
+        }
+    }
+
+    /** 그 차에 이 서류를 붙일 수 없는 사유(모델 판정 위임). 붙일 수 있으면 null. */
+    private static function blockerFor(Vehicle $vehicle, array $cfg): ?string
+    {
+        $method = $cfg['blocker'] ?? null;
+
+        return $method !== null ? $vehicle->{$method}() : null;
+    }
+
+    /**
+     * Livewire 임시파일은 `get()` 이 임시 디스크에서 직접 읽는다(임시 디스크가 s3 여도 동작).
+     * 테스트의 평범한 `UploadedFile` 에는 그 메서드가 없어 Symfony 의 `getContent()` 로 떨어진다.
+     *
+     * 🚨 **`store()` 를 N번 부르지 않는 이유** = Livewire `storeAs()` 는 대상 디스크가 임시 디스크와
+     *    같으면 `move()` 라 첫 저장에서 원본이 사라진다. 더해서 `put` 반환값을 버리고 경로를 그대로
+     *    돌려주므로 실패를 못 잡는다(SKILLS §8 #47-B). 그래서 여기서 내용을 읽어 직접 쓴다.
+     */
+    private static function contentOf(UploadedFile $file): string
+    {
+        return method_exists($file, 'get') ? $file->get() : $file->getContent();
+    }
+
+    private static function extOf(UploadedFile $file): string
+    {
+        return strtolower($file->getClientOriginalExtension() ?: 'dat');
+    }
+
+    /**
+     * 개별형 적용 — 차량마다 **다른 파일**. 말소증은 1대 = 1장이라 공유가 성립하지 않는다.
+     *
+     * @param  array<int|string, UploadedFile|null>  $filesByVehicleId  차량 id => 그 차의 파일
+     * @return array{applied:int,skipped:array}
+     */
+    public function applyIndividual(
+        array $filesByVehicleId,
+        string $type,
+        User $by,
+        bool $replaceExisting,
+        string $reason,
+    ): array {
+        $cfg = self::config($type);
+        $this->authorize($by, $cfg, $type);
+        if ($cfg['mode'] !== self::MODE_INDIVIDUAL) {
+            throw new InvalidArgumentException("개별형이 아닌 서류: {$type}");
+        }
+
+        // 파일이 실제로 올라온 행만 대상 — 빈 칸은 「안 건드림」이지 지우기가 아니다.
+        $files = [];
+        foreach ($filesByVehicleId as $id => $file) {
+            if ($file instanceof UploadedFile && (int) $id > 0) {
+                $files[(int) $id] = $file;
+            }
+        }
+        if ($files === []) {
+            throw new InvalidArgumentException('올릴 파일이 없습니다.');
+        }
+        if (count($files) > self::INDIVIDUAL_MAX) {
+            throw new InvalidArgumentException('한 번에 '.self::INDIVIDUAL_MAX.'대까지만 올릴 수 있습니다.');
+        }
+
+        $applied = 0;
+        $skipped = [];
+        foreach (Vehicle::whereIn('id', array_keys($files))->orderBy('vehicle_number')->get() as $vehicle) {
+            $file = $files[$vehicle->id];
+            $result = $this->writeOne(
+                $vehicle, $cfg, $type, self::contentOf($file), self::extOf($file), $by, $replaceExisting, $reason
+            );
+            if ($result === null) {
+                $applied++;
+            } else {
+                $skipped[] = $result;
             }
         }
 
@@ -252,6 +366,7 @@ class BulkVehicleDocumentService
             'number' => (string) $v->vehicle_number,
             'group' => $cfg['group_by'] !== null ? trim((string) $v->{$cfg['group_by']}) : '',
             'has_file' => filled($v->{$cfg['column']}),
+            'blocked' => self::blockerFor($v, $cfg),
         ];
     }
 

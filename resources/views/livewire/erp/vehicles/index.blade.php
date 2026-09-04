@@ -116,6 +116,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 번호가 2종 이상 섞였을 때 사람이 명시로 확인했는가. 확인 없이는 진행하지 않는다. */
     public bool $bulkDocMixedAck = false;
 
+    /** 개별형(말소증) 행별 파일 — `차량 id => 업로드`. 빈 칸은 「안 건드림」이지 지우기가 아니다. */
+    public array $bulkDocFiles = [];
+
     public string $bulkDocReason = '';
 
     #[Url] public int $perPage = 10;
@@ -2152,6 +2155,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->bulkDocType = in_array($this->bulkDocType, $allowed, true) ? $this->bulkDocType : $allowed[0];
         $this->bulkDocFile = null;
+        $this->bulkDocFiles = [];
         $this->bulkDocReplace = false;
         $this->bulkDocIncludeOutside = true;
         $this->bulkDocMixedAck = false;
@@ -2164,6 +2168,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->bulkDocOpen = false;
         $this->bulkDocFile = null;
+        $this->bulkDocFiles = [];
         unset($this->bulkDocPreview);
     }
 
@@ -2171,6 +2176,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedBulkDocType(): void
     {
         $this->bulkDocMixedAck = false;
+        // 종류가 바뀌면 개별형↔공유형이 갈린다 — 앞서 담은 파일을 그대로 두면 엉뚱한 서류로 나간다.
+        $this->bulkDocFile = null;
+        $this->bulkDocFiles = [];
         unset($this->bulkDocPreview);
     }
 
@@ -2200,10 +2208,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user = auth()->user();
         $svc = app(\App\Services\BulkVehicleDocumentService::class);
 
+        try {
+            $cfg = \App\Services\BulkVehicleDocumentService::config($this->bulkDocType);
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+        $individual = $cfg['mode'] === \App\Services\BulkVehicleDocumentService::MODE_INDIVIDUAL;
+        $fileRule = ['file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB];
+
         $this->validate(
-            ['bulkDocFile' => ['required', 'file', 'mimes:'.Vehicle::DOCUMENT_MIMES, 'max:'.Vehicle::DOCUMENT_MAX_KB]],
+            $individual
+                ? ['bulkDocFiles.*' => array_merge(['nullable'], $fileRule)]
+                : ['bulkDocFile' => array_merge(['required'], $fileRule)],
             [],
-            ['bulkDocFile' => __('vehicle.bulk_doc.file')],
+            ['bulkDocFile' => __('vehicle.bulk_doc.file'), 'bulkDocFiles.*' => __('vehicle.bulk_doc.file')],
         );
 
         $preview = $this->bulkDocPreview;
@@ -2221,20 +2241,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
-        $ids = array_column($preview['targets'], 'id');
-        if ($this->bulkDocIncludeOutside) {
-            $ids = array_merge($ids, array_column($preview['outside'], 'id'));
-        }
+        $reason = $this->bulkDocReason !== '' ? $this->bulkDocReason : __('vehicle.bulk_doc.reason_default');
 
         try {
-            $result = $svc->applyShared(
-                $ids,
-                $this->bulkDocType,
-                $this->bulkDocFile,
-                $user,
-                $this->bulkDocReplace,
-                $this->bulkDocReason !== '' ? $this->bulkDocReason : __('vehicle.bulk_doc.reason_default'),
-            );
+            if ($individual) {
+                // 대상 밖 차량의 파일은 버린다 — 화면이 그린 행(스코프 통과분)만 쓴다.
+                $allowed = array_flip(array_column($preview['targets'], 'id'));
+                $files = array_filter(
+                    $this->bulkDocFiles,
+                    fn ($f, $id) => $f !== null && isset($allowed[(int) $id]),
+                    ARRAY_FILTER_USE_BOTH,
+                );
+                $result = $svc->applyIndividual($files, $this->bulkDocType, $user, $this->bulkDocReplace, $reason);
+            } else {
+                $ids = array_column($preview['targets'], 'id');
+                if ($this->bulkDocIncludeOutside) {
+                    $ids = array_merge($ids, array_column($preview['outside'], 'id'));
+                }
+                $result = $svc->applyShared($ids, $this->bulkDocType, $this->bulkDocFile, $user, $this->bulkDocReplace, $reason);
+            }
         } catch (\Throwable $e) {
             $this->dispatch('notify', type: 'error', message: $e->getMessage());
 
@@ -2243,6 +2268,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->bulkDocOpen = false;
         $this->bulkDocFile = null;
+        $this->bulkDocFiles = [];
         unset($this->vehicles, $this->bulkDocPreview);
 
         // 올린 묶음은 선택에서 비운다 — 다음 묶음을 담으면 된다(jin 「업로드해도 또 나오지 않나」).
@@ -9984,7 +10010,15 @@ function vehicleColumnsToggle() {
     $bdTypes = \App\Services\BulkVehicleDocumentService::allowedFor(auth()->user());
     $bdMixed = \App\Services\BulkVehicleDocumentService::distinctGroupCount($bdPrev['breakdown']) > 1;
     $bdHasFile = collect($bdPrev['targets'])->where('has_file', true)->count();
-    $bdCount = count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
+    $bdCfg = $bulkDocType !== '' && isset(\App\Services\BulkVehicleDocumentService::DOCUMENTS[$bulkDocType])
+        ? \App\Services\BulkVehicleDocumentService::DOCUMENTS[$bulkDocType] : null;
+    $bdIndividual = $bdCfg && $bdCfg['mode'] === \App\Services\BulkVehicleDocumentService::MODE_INDIVIDUAL;
+    $bdMax = \App\Services\BulkVehicleDocumentService::INDIVIDUAL_MAX;
+    $bdOver = $bdIndividual && count($bdPrev['targets']) > $bdMax;
+    $bdPicked = $bdIndividual ? collect($bulkDocFiles)->filter()->count() : 0;
+    $bdCount = $bdIndividual
+        ? count($bdPrev['targets'])
+        : count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
 @endphp
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-doc-modal">
     <div class="card mx-4 w-full max-w-lg shadow-2xl">
@@ -10002,14 +10036,48 @@ function vehicleColumnsToggle() {
             {{ __('vehicle.bulk_doc.target', ['count' => number_format($bdCount)]) }}
         </p>
 
-        {{-- 대상 차량 — 이미 파일이 있는 차는 회색(교체 체크를 켜야 덮인다). --}}
-        <div class="mt-2 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
-            @forelse($bdPrev['targets'] as $t)
-                <span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['has_file'] ? 'bg-gray-200 text-gray-400 line-through' : 'bg-white text-gray-700' }}">{{ $t['number'] }}</span>
-            @empty
-                <span class="text-xs text-gray-400">{{ __('vehicle.bulk_doc.no_target') }}</span>
-            @endforelse
-        </div>
+        @if($bdIndividual)
+            {{-- 개별형(말소증) — 차량 1대 = 1장이라 **행마다** 파일을 받는다.
+                 드롭존이 행마다 하나씩이라 업로드 게이지도 행별로 뜬다(file-drop 이 존별 스코프). --}}
+            @if($bdOver)
+                <p class="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                    {{ __('vehicle.bulk_doc.over_max', ['count' => count($bdPrev['targets']), 'max' => $bdMax]) }}
+                </p>
+            @else
+                <p class="mt-2 text-[11px] text-gray-500">{{ __('vehicle.bulk_doc.picked', ['count' => $bdPicked]) }}</p>
+                <div class="mt-1 max-h-64 space-y-1.5 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
+                    @forelse($bdPrev['targets'] as $t)
+                        <div wire:key="bdrow-{{ $t['id'] }}" class="rounded bg-white p-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-medium {{ $t['has_file'] ? 'text-gray-400 line-through' : 'text-gray-800' }}">{{ $t['number'] }}</span>
+                                @if($t['has_file'] && ! $bulkDocReplace)
+                                    <span class="text-[10px] text-gray-400">{{ __('vehicle.bulk_doc.row_has_file') }}</span>
+                                @elseif(($bulkDocFiles[$t['id']] ?? null))
+                                    <span class="max-w-[55%] truncate text-[10px] text-primary-text">📄 {{ $bulkDocFiles[$t['id']]->getClientOriginalName() }}</span>
+                                @endif
+                            </div>
+                            @if(! $t['has_file'] || $bulkDocReplace)
+                                <div class="mt-1">
+                                    <x-erp.file-drop :model="'bulkDocFiles.'.$t['id']"
+                                        accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip" />
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <span class="text-xs text-gray-400">{{ __('vehicle.bulk_doc.no_target') }}</span>
+                    @endforelse
+                </div>
+            @endif
+        @else
+            {{-- 대상 차량 — 이미 파일이 있는 차는 회색(교체 체크를 켜야 덮인다). --}}
+            <div class="mt-2 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
+                @forelse($bdPrev['targets'] as $t)
+                    <span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['has_file'] ? 'bg-gray-200 text-gray-400 line-through' : 'bg-white text-gray-700' }}">{{ $t['number'] }}</span>
+                @empty
+                    <span class="text-xs text-gray-400">{{ __('vehicle.bulk_doc.no_target') }}</span>
+                @endforelse
+            </div>
+        @endif
 
         @if($bdPrev['no_scope'] !== [])
             <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_doc.no_scope', ['count' => count($bdPrev['no_scope'])]) }}</p>
@@ -10054,6 +10122,7 @@ function vehicleColumnsToggle() {
             </label>
         @endif
 
+        @unless($bdIndividual)
         <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.file') }}</label>
         <div class="mt-1">
             <x-erp.file-drop model="bulkDocFile" accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
@@ -10063,6 +10132,8 @@ function vehicleColumnsToggle() {
             </x-erp.file-drop>
         </div>
         @error('bulkDocFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        @endunless
+        @error('bulkDocFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
         <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.reason') }}</label>
         <input wire:model="bulkDocReason" type="text" class="input-base mt-1 w-full"
@@ -10073,7 +10144,7 @@ function vehicleColumnsToggle() {
                 {{ __('common.cancel') }}
             </button>
             <button type="button" wire:click="applyBulkDoc" wire:loading.attr="disabled" wire:target="applyBulkDoc,bulkDocFile"
-                    @disabled($bdCount === 0 || ($bdMixed && ! $bulkDocMixedAck))
+                    @disabled($bdCount === 0 || $bdOver || ($bdIndividual && $bdPicked === 0) || (! $bdIndividual && $bdMixed && ! $bulkDocMixedAck))
                     class="btn-primary disabled:opacity-50">
                 <span wire:loading.remove wire:target="applyBulkDoc">{{ __('vehicle.bulk_doc.apply') }}</span>
                 <span wire:loading wire:target="applyBulkDoc">{{ __('vehicle.panel.uploading') }}</span>
