@@ -51,6 +51,48 @@ class PayoutApprovalLinkTest extends TestCase
         return URL::temporarySignedRoute('payout.approve.decide', now()->addHour(), ['batch' => $batch->id, 'u' => $u->id]);
     }
 
+    /**
+     * 🚨 버튼 링크의 도메인은 접속 호스트가 아니라 **APP_URL** 이어야 한다 (2026-09-04).
+     *
+     * 카카오는 발송 버튼 링크를 승인본과 대조해 다르면 발송을 통째로 거부한다(K108).
+     * 이 서버는 nginx `server_name` 이 셋(`heysellcar.com`·`www.…`·IP)이고, 이 링크는 제출 화면
+     * (HTTP 요청) 안에서 만들어져 **접속한 호스트를 따라간다** — 제출자가 www 나 IP 로 들어와 있으면
+     * 그 배치의 승인 요청이 아무에게도 안 간다(화면엔 제출 성공으로 보인다).
+     *
+     * 실측: heymanerp K108 5건이 전부 이 템플릿이고, cron 이 만드는 erp_capital_weekly 는 0건이었다.
+     */
+    public function test_approval_link_pins_the_domain_regardless_of_request_host(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+
+        // 제출자가 다른 이름(www·IP)으로 들어와 있는 상황.
+        URL::forceRootUrl('https://www.other-host.test');
+        try {
+            $link = $batch->approvalLinkFor($admin);
+        } finally {
+            URL::forceRootUrl(null);
+        }
+
+        $this->assertStringStartsWith(rtrim(config('app.url'), '/').'/a/payout/', $link,
+            '버튼 링크가 접속 호스트를 따라갔다 — 승인본과 달라져 K108 로 발송이 죽는다');
+        $this->assertStringNotContainsString('other-host', $link);
+
+        // 🔑 도메인만 맞추고 서명이 깨지면 아무 소용이 없다 — 실제로 열리는지까지 본다.
+        //    (서명은 호스트까지 포함해 계산되므로 「만든 뒤 도메인 바꿔치기」로 고치면 여기서 403 이 난다.)
+        $this->get($link)->assertOk();
+    }
+
+    /** 링크를 만든 뒤 전역 상태가 남지 않아야 한다 — 남으면 다른 화면의 URL 이 통째로 바뀐다. */
+    public function test_generating_the_link_does_not_leak_a_forced_root(): void
+    {
+        [$batch, $admin] = $this->pendingBatchWithAdmin();
+        $before = URL::to('/x');
+
+        $batch->approvalLinkFor($admin);
+
+        $this->assertSame($before, URL::to('/x'), 'forceRootUrl 이 되돌려지지 않았다');
+    }
+
     public function test_signed_show_renders_unsigned_forbidden(): void
     {
         [$batch, $admin] = $this->pendingBatchWithAdmin();

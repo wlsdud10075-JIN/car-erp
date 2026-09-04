@@ -426,13 +426,36 @@ class SettlementPayoutBatch extends Model
         }
     }
 
-    /** 이 배치 × 승인자에 바인딩된 만료 서명 승인 링크(5일). 카톡 버튼 URL 로 주입. */
+    /**
+     * 이 배치 × 승인자에 바인딩된 만료 서명 승인 링크(5일). 카톡 버튼 URL 로 주입.
+     *
+     * 🚨 **도메인을 APP_URL 로 고정한다** (2026-09-04) — 카카오는 발송 버튼의 링크를 승인본
+     *    (`https://heysellcar.com/a/payout/#{url}`)과 대조해서, 다르면 발송을 통째로 거부한다
+     *    (`K108:NoMatchedTemplateButtonException` = 「등록된 버튼과 다름」).
+     *
+     *    이 서버는 nginx `server_name` 이 **세 개**다 — `heysellcar.com` · `www.heysellcar.com` · IP.
+     *    그런데 이 링크는 제출 화면(HTTP 요청) 안에서 만들어지고, 요청 컨텍스트의 서명 URL 은
+     *    **접속한 호스트를 그대로** 쓴다. 제출자가 www 나 IP 로 들어와 있으면 버튼 링크가 달라져
+     *    그 배치의 승인 요청이 아무에게도 안 간다(조용히 실패 — 화면엔 제출 성공으로 보인다).
+     *
+     *    실측 근거(heymanerp): K108 5건이 **전부 이 템플릿**이고, 같은 버튼 코드를 쓰지만
+     *    cron 에서 만드는 `erp_capital_weekly` 는 0건이다 — 그쪽은 요청 호스트가 없어 APP_URL 을 쓴다.
+     *
+     * ⚠️ **서명은 호스트까지 포함해 계산된다** — 만든 뒤에 도메인만 바꿔치면 링크가 깨진다.
+     *    반드시 만들기 **전에** 고정하고, 끝나면 되돌린다(다른 URL 생성에 영향이 없게).
+     */
     public function approvalLinkFor(User $user): string
     {
-        return URL::temporarySignedRoute('payout.approve.show', now()->addDays(5), [
-            'batch' => $this->id,
-            'u' => $user->id,
-        ]);
+        URL::forceRootUrl(config('app.url'));
+
+        try {
+            return URL::temporarySignedRoute('payout.approve.show', now()->addDays(5), [
+                'batch' => $this->id,
+                'u' => $user->id,
+            ]);
+        } finally {
+            URL::forceRootUrl(null);
+        }
     }
 
     /** 제출자 전화번호(있으면 1건). */
