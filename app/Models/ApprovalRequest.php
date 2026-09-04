@@ -48,7 +48,8 @@ class ApprovalRequest extends Model
         self::TYPE_INTER_BUYER_OVERLAP => '같은 바이어 미수+신규 거래',
         self::TYPE_SETTLEMENT_PAY => '정산 지급',
         self::TYPE_SENSITIVE_ACTION => '민감 액션 (폐기/RRN/B/L)',
-        self::TYPE_UNPAID_EXPORT_OVERRIDE => '50% 룰 예외',
+        // 라벨에 숫자를 박지 않는다 (jin 2026-09-04) — 진입 기준은 기능설정 값이고 바이어별로도 다르다.
+        self::TYPE_UNPAID_EXPORT_OVERRIDE => '미입금 우회',
         self::TYPE_INTER_VEHICLE_TRANSFER => '차량 간 자금 이체',
         self::TYPE_INTER_VEHICLE_TRANSFER_VOID => '자금 이체 취소',
         self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => '보증금 적용',

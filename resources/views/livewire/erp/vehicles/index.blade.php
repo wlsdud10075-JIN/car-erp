@@ -5045,7 +5045,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         //   옛 코드는 그 false 를 그대로 컬럼에 넣고, 심지어 `$oldPath !== $newPath` 가 참이라
                         //   **멀쩡하던 옛 서류를 삭제 목록에 넣었다** — 새 파일도 없고 옛 파일도 사라진다.
                         //   (2026-08-10 연동 B 첨부 사고와 같은 부류. 그쪽은 사진 행만 남았지만 여긴 손실이다.)
-                        if (! $newPath) {
+                        // ⚠️ 반환값만으로는 부족하다 — **Livewire 임시파일의 storeAs() 는 내부 put/move 의
+                        //   반환값을 버리고 경로를 무조건 돌려준다**(SKILLS §8 #47-B). 화면 업로드는 전부
+                        //   그 경로라 `! $path` 가 영영 안 걸린다 ⇒ 실제로 올라갔는지 exists() 로 확인한다.
+                        if (! $newPath || ! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($newPath)) {
                             throw new \App\Exceptions\FileStoreFailedException($f['col']);
                         }
                         $newlyStoredPaths[] = $newPath;
@@ -5077,7 +5080,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     foreach ($this->photoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/photos", config('filesystems.vehicle_docs_disk'));
                         // 실패 시 false → path='' 인 깨진 사진 행이 남는다. 끊어서 롤백시킨다.
-                        if (! $photoPath) {
+                        // exists() 까지 보는 이유 = SKILLS §8 #47-B (Livewire 는 실패해도 경로를 돌려준다).
+                        if (! $photoPath || ! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($photoPath)) {
                             throw new \App\Exceptions\FileStoreFailedException('vehicle_photo');
                         }
                         $newlyStoredPaths[] = $photoPath;
@@ -5104,7 +5108,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->where('category', 'shipping')->max('sort_order');
                     foreach ($this->shipPhotoFiles as $photo) {
                         $photoPath = $photo->store("vehicles/{$vehicle->id}/ship-photos", config('filesystems.vehicle_docs_disk'));
-                        if (! $photoPath) {
+                        // exists() 까지 보는 이유 = SKILLS §8 #47-B.
+                        if (! $photoPath || ! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($photoPath)) {
                             throw new \App\Exceptions\FileStoreFailedException('ship_photo');
                         }
                         $newlyStoredPaths[] = $photoPath;
@@ -6136,7 +6141,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $path = $file->storeAs("vehicles/{$vehicleId}/payment-proofs/{$fpId}", $safeName, config('filesystems.vehicle_docs_disk'));
             // 🚨 실패하면 false 다. 그대로 두면 proof_path 에 빈 값이 들어가고, 아래 `!==` 가 참이라
             //   **멀쩡하던 옛 증빙까지 삭제 목록**에 올라간다. 끊어서 트랜잭션을 되돌린다.
-            if (! $path) {
+            // exists() 까지 보는 이유 = SKILLS §8 #47-B.
+            if (! $path || ! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($path)) {
                 throw new \App\Exceptions\FileStoreFailedException('payment_proof');
             }
             $newlyStoredPaths[] = $path;

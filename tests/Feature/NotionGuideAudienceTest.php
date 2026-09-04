@@ -173,7 +173,7 @@ class NotionGuideAudienceTest extends TestCase
      * ⚠️ **기능을 삭제할 때 여기에 한 줄 추가한다.** 그러면 가이드·카드에 남은 설명을 이 테스트가 잡는다.
      *
      * 자동 판정(상수 참조 여부로 죽은 타입 추론)은 시도했다가 버렸다 — 살아있는
-     * `TYPE_UNPAID_EXPORT_OVERRIDE`('50% 룰 예외')가 상수명 대신 값으로만 쓰여 죽은 것으로 오판했다.
+     * `TYPE_UNPAID_EXPORT_OVERRIDE`(당시 라벨 '50% 룰 예외')가 상수명 대신 값으로만 쓰여 죽은 것으로 오판했다.
      * **오탐이 나는 가드는 무시당해 결국 안 보게 되므로**, 사람이 명시하는 목록으로 간다.
      */
     private const RETIRED_TERMS = [
@@ -181,6 +181,7 @@ class NotionGuideAudienceTest extends TestCase
         '보증금 사용 가능 금액' => '2026-07-29 삭제 — 매입 탭 「매입 가능 금액」으로 대체',
         'DHL 수취인' => '2026-08-31 삭제 — DHL 탭이 EMS/DHL 발송 기록으로 바뀌며 수취인·발송인·중량 입력칸 제거',
         'DHL 발송신청 체크' => '2026-08-31 삭제 — 체크박스는 남았으나 안내 문구는 발송 기록 중심으로 교체',
+        '50% 룰' => '2026-09-04 개명 — 진입 기준이 기능설정 값(바이어별 재정의 가능)이라 승인 유형 라벨을 「미입금 우회」로 바꿨다',
     ];
 
     public function test_guides_do_not_describe_retired_features(): void

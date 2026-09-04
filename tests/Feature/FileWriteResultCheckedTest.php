@@ -36,10 +36,16 @@ class FileWriteResultCheckedTest extends TestCase
             "FileStoreFailedException('vehicle_photo')",
             "FileStoreFailedException('ship_photo')",
             "FileStoreFailedException('payment_proof')",
+            // 2026-09-04 보강 — 반환값만 보면 **화면 업로드에선 영영 안 걸린다**(SKILLS §8 #47-B).
+            //   Livewire TemporaryUploadedFile::storeAs() 가 내부 put/move 반환값을 버리고 경로를
+            //   무조건 돌려주기 때문. 그래서 exists() 까지 봤는지 함께 강제한다.
+            "! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists(\$newPath)",
+            "! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists(\$photoPath)",
+            "! Storage::disk(config('filesystems.vehicle_docs_disk'))->exists(\$path)",
         ],
         // 도장 — 옛 도장을 먼저 지우던 곳
         'resources/views/livewire/admin/settings.blade.php' => [
-            'if (! $path) {',
+            'exists($path)) {',
             'if ($old && $old !== $path) {',
         ],
         // 전자서명 — 파일 없는 "서명완료" 가 확정되던 곳
