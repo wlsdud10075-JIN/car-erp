@@ -349,7 +349,7 @@ class User extends Authenticatable
      *   1. G2 같은 바이어 미수 + 신규 거래
      *   2. 정산 confirmed → paid 전환
      *   3. 민감 액션 (차량 폐기 / RRN 수정 / B/L 수동 발행)
-     *   4. 50% 룰 예외 진행 (선수금 50% 미달 통관 진입)
+     *   4. 미입금 우회 진행 (진입 기준 입금률 미달 통관·선적 진입 — 기준은 기능설정 값)
      *
      * 허용: super / admin / role='관리'.
      */

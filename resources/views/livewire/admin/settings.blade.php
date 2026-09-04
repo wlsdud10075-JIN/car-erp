@@ -548,7 +548,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
         $path = $file->storeAs('stamps/'.$set, $role.'.'.$ext, config('filesystems.vehicle_docs_disk'));
 
-        if (! $path) {
+        // exists() 까지 보는 이유 = SKILLS §8 #47-B — Livewire 는 저장에 실패해도 경로를 돌려준다.
+        if (! $path || ! \Illuminate\Support\Facades\Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($path)) {
             \Log::warning('도장 업로드 실패 — 기존 도장 유지', ['role' => $role, 'set' => $set]);
             $this->dispatch('notify', message: __('feature_settings.stamp_upload_failed'), type: 'error');
 

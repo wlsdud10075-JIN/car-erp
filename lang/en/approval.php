@@ -3,7 +3,7 @@
 // i18n — Approval queue (erp/approvals). Model labels (action_label/status_label/ApprovalRequest::TYPES) left untranslated (model layer).
 return [
     'title' => 'Approval Queue',
-    'subtitle' => ':count pending · 6 actions combined (same-buyer outstanding · settlement payout · sensitive action · 50% rule exception · fund transfer · transfer void)',
+    'subtitle' => ':count pending · 6 actions combined (same-buyer outstanding · settlement payout · sensitive action · unpaid-export override · fund transfer · transfer void)',
     'all_actions' => 'All actions',
 
     'filter' => [

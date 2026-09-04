@@ -3,7 +3,7 @@
 // i18n — 승인 큐 (erp/approvals). 모델 라벨(action_label/status_label/ApprovalRequest::TYPES)은 미번역(모델 레이어).
 return [
     'title' => '승인 큐',
-    'subtitle' => '대기 :count건 · 6 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·50% 룰 예외·자금 이체·이체 취소)',
+    'subtitle' => '대기 :count건 · 6 액션 통합 (같은 바이어 미수·정산 지급·민감 액션·미입금 우회·자금 이체·이체 취소)',
     'all_actions' => '액션 전체',
 
     'filter' => [
