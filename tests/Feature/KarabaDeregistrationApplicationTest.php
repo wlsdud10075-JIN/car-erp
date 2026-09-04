@@ -9,7 +9,9 @@ use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
 use App\Services\Documents\StampSlots;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Drawing as SharedDrawing;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use Tests\TestCase;
 
@@ -145,6 +147,50 @@ class KarabaDeregistrationApplicationTest extends TestCase
         $ss->disconnectWorksheets();
     }
 
+    /**
+     * 도장 상자는 「양식을 넘지 않으면서 K~M 폭을 다 쓰는」 크기여야 한다 (jin 2026-09-04 「줄이지 말고」).
+     *
+     * karaba 직인은 정사각 도장이 아니라 **가로로 긴 사업자 고무인 블록**(실측 1902×930)이라,
+     * 상자 세로가 낮으면 비율맞춤(contain)의 병목이 세로가 되어 **가로가 저절로 줄어든다** —
+     * 처음 233×85 가 그래서 174×85 로 찍혔다. 세로를 열어 두면 가로가 상자 폭을 다 쓴다.
+     *
+     * ⚠️ 기능 테스트로는 원리상 못 잡는다 — 작게 찍혀도 서류는 정상 생성된다(SKILLS §8 #71).
+     *    그래서 **양식의 실제 열폭·행높이를 읽어** 상자와 대조한다.
+     */
+    public function test_apply_seal_box_fills_the_signature_area_without_overflowing(): void
+    {
+        $ss = IOFactory::createReader('Xlsx')->load($this->template('karaba', 'deregistration_application.xlsx'));
+        $sheet = $ss->getSheetByName(self::SHEET);
+        $font = $ss->getDefaultStyle()->getFont();
+
+        // 가로 = K~M (M 오른쪽은 인쇄영역 A1:M39 밖이라 잘린다).
+        $boxW = 0;
+        foreach (['K', 'L', 'M'] as $col) {
+            $boxW += (int) round(SharedDrawing::cellDimensionToPixels($sheet->getColumnDimension($col)->getWidth(), $font));
+        }
+        // 세로 = 26행 ~ 29행 아래 굵은 구분선까지. 29행은 「특별시장…귀하」 줄이지만 그 글자는
+        //   왼쪽에서 끝나 K~M 구간은 비어 있다(실측) — 실제 도장도 그 위에 찍힌다.
+        $boxH = 0;
+        foreach ([26, 27, 28, 29] as $row) {
+            $boxH += (int) round(SharedDrawing::pointsToPixels($sheet->getRowDimension($row)->getRowHeight()));
+        }
+        $ss->disconnectWorksheets();
+
+        $slot = collect(StampSlots::all('karaba')['deregistration_set'])->firstWhere('key', 'apply_seal');
+        $this->assertNotNull($slot, '말소신청서 직인 슬롯이 없다');
+
+        $this->assertSame($boxW, $slot['width'], "직인 가로가 K~M 폭({$boxW}px)과 다르다 — 좁히면 도장이 작아지고 넓히면 인쇄영역 밖으로 나간다");
+        $this->assertLessThanOrEqual($boxH, $slot['height'], "직인 세로가 29행 구분선({$boxH}px)을 넘는다 — 위임장 블록을 침범한다");
+        // 가로가 병목이 되려면 세로 ≥ 가로 ÷ 도장 비율(1902/930 = 2.045).
+        $this->assertGreaterThanOrEqual(
+            (int) ceil($slot['width'] / (1902 / 930)),
+            $slot['height'],
+            '직인 세로가 낮아 가로가 저절로 줄어든다 — 「줄이지 말라」는 지시로 114px 로 올린 값이다',
+        );
+
+        $this->assertArrayNotHasKey('exact', $slot, 'exact 를 쓰면 상자 크기로 늘여 박아 도장이 찌그러진다');
+    }
+
     /** 설정화면이 키 문자열을 그대로 보여주면 안 된다 — 슬롯이 생겼으니 라벨도 있어야 한다. */
     public function test_document_label_exists_for_the_set(): void
     {
@@ -179,5 +225,58 @@ class KarabaDeregistrationApplicationTest extends TestCase
             $this->assertSame($expected, (string) $sheet->getCell($coord)->getValue(),
                 "생성물 {$coord} — 수임자 값이 지워졌다(노란칸 판정 확인)");
         }
+    }
+
+    /**
+     * 🔑 **도장이 실제로 몇 px 로 박히는지**를 생성물에서 읽는다 (jin 2026-09-04 「줄이지 말고」).
+     *
+     * 슬롯 숫자만 봐서는 못 잡는다 — `overlayStamp` 가 상자 안에서 **비율맞춤(contain)** 하므로,
+     * 세로가 낮으면 가로가 저절로 깎인다(구 233×85 → 실제 174×85). 그래서 karaba 직인과
+     * **같은 비율(1902×930)** 의 이미지를 올려 두고 박힌 Drawing 크기를 직접 확인한다.
+     */
+    public function test_generated_document_stamps_the_seal_at_full_width(): void
+    {
+        if (! function_exists('imagepng')) {
+            $this->markTestSkipped('GD 없음 — 도장 이미지를 만들 수 없다');
+        }
+        Setting::updateOrCreate(['key' => 'company_template_set'], ['value' => 'karaba', 'type' => 'string']);
+
+        // karaba 운영 직인의 실측 비율(사업자 고무인 블록 1902×930). 내용은 무관 — 크기만 본다.
+        $img = imagecreatetruecolor(1902, 930);
+        ob_start();
+        imagepng($img);
+        $png = (string) ob_get_clean();
+        imagedestroy($img);
+
+        $disk = config('filesystems.vehicle_docs_disk');
+        Storage::fake($disk);
+        Storage::disk($disk)->put('stamps/karaba/seal.png', $png);
+        Setting::updateOrCreate(['key' => 'stamp_karaba_seal'], ['value' => 'stamps/karaba/seal.png', 'type' => 'string']);
+
+        $sm = Salesman::firstOrCreate(['name' => 'TESTMAN'], ['type' => 'employee', 'is_active' => true]);
+        $vehicle = Vehicle::create([
+            'vehicle_number' => '11가1002', 'sales_channel' => 'export',
+            'currency' => 'USD', 'exchange_rate' => 1350, 'dhl_request' => false,
+            'salesman_id' => $sm->id, 'purchase_price' => 5_000_000,
+            'purchase_date' => now()->toDateString(),
+            'nice_reg_owner_name' => '홍길동',
+        ]);
+        $this->actingAs(User::factory()->create([
+            'permission' => 'user', 'role' => '수출통관', 'email_verified_at' => now(),
+        ]));
+
+        $sheet = (new DocumentFiller($vehicle))->spreadsheet('deregistration_set')->getSheetByName(self::SHEET);
+        $stamp = null;
+        foreach ($sheet->getDrawingCollection() as $drawing) {
+            if ($drawing->getCoordinates() === 'K26') {
+                $stamp = $drawing;
+            }
+        }
+        $this->assertNotNull($stamp, '생성물에 말소신청서 직인이 없다');
+
+        $slot = collect(StampSlots::all('karaba')['deregistration_set'])->firstWhere('key', 'apply_seal');
+        $this->assertSame($slot['width'], $stamp->getWidth(),
+            '도장이 상자 폭을 다 못 쓴다 — 세로가 병목이라 가로가 깎였다(「줄이지 말라」의 그 증상)');
+        $this->assertLessThanOrEqual($slot['height'], $stamp->getHeight(), '도장 세로가 상자를 넘었다');
     }
 }
