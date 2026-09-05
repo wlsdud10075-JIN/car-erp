@@ -3653,7 +3653,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->toArray();
         $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
         $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
-        $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds) {
+        // 바이어 현금 원장 (jin 2026-09-05) — 「이 잔금이 어느 입금에서 나왔나」 **역방향 추적**.
+        //   현금 탭은 「입금 → 어느 차」를 보여주지만 그 반대는 볼 데가 없었다(jin 지적).
+        //   ⚠️ 행마다 조회하면 N+1 이다 — 한 번에 받아 잔금 id 로 묶는다.
+        $cashByPayment = \App\Models\BuyerCashAllocation::query()
+            ->with('receipt:id,received_date,note')
+            ->whereIn('final_payment_id', $v->finalPayments->pluck('id'))
+            ->orderBy('id')
+            ->get()
+            ->groupBy('final_payment_id');
+
+        $this->finalPayments = $v->finalPayments->map(function ($p) use ($lockedFinalIds, $transferLinkedPayments, $pendingVoidTransferIds, $cashByPayment) {
             $row = [
                 'id' => $p->id, 'amount' => (string) $p->amount,
                 // 회의확장씬 #7 (2026-05-22) — 잔금 row 별 입금 시점 환율
@@ -3668,6 +3678,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'proof_path' => $p->proof_path,
                 'proof_url' => $p->proof_path ? \App\Support\VehicleDocUrl::for($p->proof_path) : null,
                 'proof_name' => $p->proof_path ? basename($p->proof_path) : null,
+                // 이 잔금이 소진한 바이어 현금(입금별). 없으면 빈 배열 → 줄 자체가 안 그려진다.
+                'cash' => ($cashByPayment[$p->id] ?? collect())->map(fn ($a) => [
+                    'date' => $a->receipt?->received_date?->format('Y-m-d') ?? '',
+                    'amount' => (float) $a->amount,
+                    'note' => $a->receipt?->note ?? '',
+                ])->all(),
             ];
             if ($linked = $transferLinkedPayments->get($p->id)) {
                 $t = $linked->transfer;
@@ -8569,6 +8585,30 @@ function vehicleColumnsToggle() {
                         @endif
                     @endif
                     <button type="button" wire:click="removeFinalPayment({{ $idx }})" class="text-red-400 hover:text-red-600">×</button>
+                </div>
+                @endif
+
+                {{-- 바이어 현금에서 차감된 잔금 — 읽기 전용 역방향 추적 (jin 2026-09-05).
+                     🚫 비고 칸을 자동으로 채우지 않는다. 그건 실무자 본인 칸이라 덮으면 안 된다. --}}
+                @if(!empty($row['cash']))
+                @php
+                    $cashTitle = collect($row['cash'])
+                        ->map(fn ($c) => $c['date'].' '.number_format($c['amount'], 2).($c['note'] !== '' ? ' ('.$c['note'].')' : ''))
+                        ->implode(' / ');
+                @endphp
+                <div class="ml-6 -mt-0.5 mb-1 flex items-start gap-1.5 text-[11px] text-emerald-700" title="{{ $cashTitle }}">
+                    <span class="shrink-0">💰</span>
+                    <div class="min-w-0">
+                        <span class="font-medium">{{ __('vehicle.panel.cash_drawn') }}</span>
+                        @foreach($row['cash'] as $c)
+                        <span class="ml-1 text-emerald-600">
+                            {{ __('vehicle.panel.cash_drawn_line', [
+                                'date' => $c['date'],
+                                'amount' => number_format($c['amount'], 2),
+                            ]) }}@if($c['note'] !== '')<span class="text-emerald-500/80"> ({{ $c['note'] }})</span>@endif
+                        </span>
+                        @endforeach
+                    </div>
                 </div>
                 @endif
 
