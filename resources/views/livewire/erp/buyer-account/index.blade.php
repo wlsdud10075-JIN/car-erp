@@ -97,6 +97,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             : [];
     }
 
+    /**
+     * 현금 사용 내역 — 「이 입금이 어느 차에 얼마」. 이 기능의 원래 요구가 이것이다.
+     * 🚨 검색으로 거르지 않는다 — 현금 원장이라 일부만 보이면 「남은 현금」과 안 맞는 표가 된다.
+     */
+    #[Computed]
+    public function cashUsage()
+    {
+        return $this->buyer ? app(BuyerAccountService::class)->cashUsage($this->buyer) : collect();
+    }
+
     /** 통화별 미수 합 — 통화가 섞이면 더하면 안 된다. */
     #[Computed]
     public function unpaidByCurrency(): array
@@ -227,6 +237,55 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforelse
             <p class="mt-2 text-[11px] text-gray-400">{{ __('buyer_account.unpaid_note', ['count' => $this->vehicles->count()]) }}</p>
         </div>
+    </div>
+
+    {{-- 현금 사용 내역 — 「이 10,000 이 어디로 갔나」. 이 기능의 원래 요구가 이것이다.
+         ⚠️ 여기 나오는 차량은 아래 「미수 차량」 표에 없을 수 있다 — 현금으로 완납된 차가 그렇다.
+            그래서 이 표가 따로 필요하다.
+         🚨 검색으로 거르지 않는다(현금 원장이라 일부만 보이면 남은 현금과 안 맞는다). --}}
+    <div class="card">
+        <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer_account.usage_title') }}</h3>
+        <p class="mb-3 text-[11px] text-gray-400">{{ __('buyer_account.usage_note') }}</p>
+
+        @forelse($this->cashUsage as $r)
+        <div class="mb-3 rounded-lg border border-gray-200 last:mb-0">
+            {{-- 입금 한 건 --}}
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
+                <div class="flex flex-wrap items-baseline gap-2">
+                    <span class="text-xs font-semibold text-gray-700">{{ $r->received_date->format('Y-m-d') }}</span>
+                    <span class="font-mono text-sm font-bold text-gray-800">{{ number_format((float) $r->amount, 2) }}</span>
+                    <span class="text-[10px] text-gray-400">{{ $r->currency }}</span>
+                    @if($r->note)
+                    <span class="max-w-[220px] truncate text-[11px] text-gray-400" title="{{ $r->note }}">{{ $r->note }}</span>
+                    @endif
+                </div>
+                <span class="text-xs {{ $r->remaining_amount > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                    {{ __('buyer_account.remaining') }}
+                    <span class="font-mono font-semibold">{{ number_format($r->remaining_amount, 2) }}</span>
+                </span>
+            </div>
+
+            {{-- 그 입금이 간 곳 --}}
+            <table class="w-full text-xs">
+                <tbody class="divide-y divide-gray-100">
+                    @forelse($r->allocations as $a)
+                    <tr>
+                        <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap text-gray-700">{{ $a->vehicle?->vehicle_number ?? '-' }}</td>
+                        <td class="py-1.5 pr-3 max-w-[150px] truncate font-mono text-gray-400" title="{{ $a->vehicle?->nice_reg_vin }}">{{ $a->vehicle?->nice_reg_vin }}</td>
+                        <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $a->finalPayment?->payment_date?->format('Y-m-d') }}</td>
+                        <td class="py-1.5 pr-3 text-right font-mono font-semibold text-gray-700 whitespace-nowrap">
+                            {{ number_format((float) $a->amount, 2) }} <span class="text-[10px] font-normal text-gray-400">{{ $r->currency }}</span>
+                        </td>
+                    </tr>
+                    @empty
+                    <tr><td class="py-2 pl-3 text-gray-300">{{ __('buyer_account.not_used_yet') }}</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        @empty
+        <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
+        @endforelse
     </div>
 
     {{-- 묶음별 잔여 --}}

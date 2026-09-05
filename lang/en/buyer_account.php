@@ -17,6 +17,10 @@ return [
     'remaining' => 'Remaining',
     'no_cash' => 'No receipts recorded.',
 
+    'usage_title' => 'How the cash was used',
+    'usage_note' => 'Which vehicles each receipt was applied to. Always shown in full, regardless of the search — vehicles here may not appear under Outstanding (already fully paid from cash).',
+    'not_used_yet' => 'Not applied yet.',
+
     'unpaid_title' => 'Outstanding (by currency)',
     'no_unpaid' => 'Nothing outstanding.',
     'unpaid_note' => ':count vehicle(s) with an outstanding balance',
