@@ -40,15 +40,66 @@ class BuyerAccountService
      *
      * @return Collection<int, Vehicle>
      */
-    public function unpaidVehicles(Buyer $buyer, ?string $search = '', ?string $vin = ''): Collection
-    {
-        return $buyer->vehicles()
+    /**
+     * 미수 차량 정렬 축 — 화면 pill 과 1:1.
+     *
+     * ⚠️ **금액 정렬만 SQL 이 아니다.** 화면에 나가는 미수는 **그 차량 통화**인데
+     *    DB 에 있는 건 원화 캐시뿐이라, 원화로 줄 세우면 **보이는 숫자와 순서가 어긋난다.**
+     *    이 표는 그대로 바이어에게 전달되고 ssancar.com 에도 미러되므로 그러면 혼동만 커진다
+     *    (jin 2026-09-05). ⇒ 금액은 아래에서 **PHP 로** 정렬한다.
+     *    1차 필터로 행이 몇십 개로 줄어든 뒤라 부담이 없다.
+     */
+    public const SORTS = [
+        'unpaid' => null,                             // 통화별로 묶고 그 안에서 금액 큰 순 (PHP)
+        'vehicle' => 'vehicle_number',
+        'progress' => 'progress_status_cache',
+        'sale_date' => 'sale_date',
+    ];
+
+    public function unpaidVehicles(
+        Buyer $buyer,
+        ?string $search = '',
+        ?string $vin = '',
+        string $sort = 'unpaid',
+        string $dir = 'desc',
+    ): Collection {
+        $sort = array_key_exists($sort, self::SORTS) ? $sort : 'unpaid';
+        $column = self::SORTS[$sort];
+        $dir = $dir === 'asc' ? 'asc' : 'desc';
+
+        $rows = $buyer->vehicles()
             ->where('sale_price', '>', 0)
+            // 🚨 **미수를 DB 에서 먼저 거른다.** 안 그러면 그 바이어의 판매 차량을 **전부** 불러
+            //    (+각 차의 잔금·회수이력까지) PHP 로 걸러야 한다 — 운영 실측으로 어떤 바이어는
+            //    252대를 불러 **1대**를 보여주고 있었다(ssancarerp buyer 14).
+            //    미수는 accessor 라 SQL 로 못 재지만, `sale_unpaid_amount_krw_cache` 가
+            //    `Vehicle::saving`·`refreshCaches` 로 항상 따라온다 — 그걸 **1차 필터**로 쓴다.
+            // ⚠️ 캐시가 null 인 차(환율 미입력 외화)는 놓칠 수 있어 안전망으로 함께 집는다.
+            //    운영 실측 0건이지만 0 을 전제로 코드를 쓰지 않는다.
+            ->where(fn ($q) => $q
+                ->where('sale_unpaid_amount_krw_cache', '>', 0)
+                ->orWhereNull('sale_unpaid_amount_krw_cache'))
             ->searchAny($search, $vin)
             ->with(['finalPayments', 'receivableHistories'])
-            ->orderBy('vehicle_number')
+            ->when($column !== null, fn ($q) => $q->orderBy($column, $dir))
+            ->orderBy('vehicle_number')      // 동률일 때 순서가 흔들리지 않게
             ->get()
+            // 캐시는 1차 필터일 뿐 — 정확한 판정은 여전히 **accessor 단일 출처**다(SKILLS §13).
+            //   캐시가 살짝 낡았어도 화면 숫자는 안 틀린다.
             ->filter(fn (Vehicle $v) => $v->sale_unpaid_amount > self::EPSILON)
+            ->values();
+
+        if ($column !== null) {
+            return $rows;
+        }
+
+        // 금액 정렬 — **통화로 묶고 그 안에서 금액 순**. 통화가 섞인 목록에서 외화 숫자끼리
+        //   그냥 비교하면(EUR 900 vs JPY 100,000) 아무 뜻이 없다.
+        return $rows
+            ->sortBy([
+                ['currency', 'asc'],
+                ['sale_unpaid_amount', $dir],
+            ])
             ->values();
     }
 
@@ -64,15 +115,19 @@ class BuyerAccountService
      *
      * @return Collection<int, BuyerCashReceipt>
      */
-    public function cashUsage(Buyer $buyer): Collection
+    public function cashUsage(Buyer $buyer, ?int $limit = null): Collection
     {
         return BuyerCashReceipt::where('buyer_id', $buyer->id)
+            ->when($limit !== null, fn ($q) => $q->limit($limit))
             ->with([
                 'allocations' => fn ($q) => $q->orderBy('id'),
                 'allocations.vehicle:id,vehicle_number,nice_reg_vin',
                 'allocations.finalPayment:id,payment_date',
             ])
-            ->fifo()
+            // 최근 입금부터 — 사람은 방금 들어온 돈을 먼저 본다.
+            //   (FIFO 소진 순서는 「남은 현금」 계산에만 쓰이고 여기 표시 순서와는 별개다.)
+            ->orderByDesc('received_date')
+            ->orderByDesc('id')
             ->get();
     }
 

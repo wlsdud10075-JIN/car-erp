@@ -20,6 +20,10 @@ return [
     'usage_title' => 'How the cash was used',
     'usage_note' => 'Which vehicles each receipt was applied to. Always shown in full, regardless of the search — vehicles here may not appear under Outstanding (already fully paid from cash).',
     'not_used_yet' => 'Not applied yet.',
+    'col_used_at' => 'Applied on',
+    'col_used_amount' => 'Applied amount',
+    'usage_more' => 'Show :count older receipts',
+    'sort_unpaid_note' => 'Sorted in the vehicle currency (grouped by currency).',
 
     'unpaid_title' => 'Outstanding (by currency)',
     'no_unpaid' => 'Nothing outstanding.',
