@@ -101,6 +101,8 @@ class ColumnLabel
             // 2026-08-12 — 가수금·경매보증금(청산가치에 억 단위로 들어간다).
             'AdvanceReceipt' => 'advance_receipts',
             'AuctionDeposit' => 'auction_deposits',
+            // 2026-09-04 — 바이어 현금 원장(외화 입금 → 판매잔금 차감).
+            'BuyerCashReceipt' => 'buyer_cash_receipts',
         ];
 
         return $map[$short] ?? null;

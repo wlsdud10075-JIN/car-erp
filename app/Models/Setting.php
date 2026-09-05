@@ -118,6 +118,21 @@ class Setting extends Model
     }
 
     /**
+     * 바이어 현금 원장 on/off (jin 2026-09-04) — 회사별. 기획 = docs/design/buyer-cash-ledger.md
+     *
+     * ⚠️ 기본값 **false** 다. 신규 기능이라 켠 회사에서만 동작한다.
+     *   `unsecuredLimitEnabled()` 가 true 인 것과 반대인 이유 = 그건 이미 배포돼 쓰이던 기능이라
+     *   false 로 두면 켜둔 회사의 락이 조용히 풀리기 때문이다. 이건 아무도 안 쓰던 기능이다.
+     *
+     * 🚨 **켜는 순간 판매잔금 입력이 현금 잔액 안으로 제한된다**(2단계 게이트). 그래서 회사는
+     *   「바이어에게 미배분 현금이 없는 날」에 켠다(jin) — 전환 마이그레이션이 없는 이유다.
+     */
+    public static function buyerCashEnabled(): bool
+    {
+        return (bool) self::get('buyer_cash_enabled_'.self::companyTemplateSet(), false);
+    }
+
+    /**
      * 서류 양식 세트(=회사) 단일 출처. 기능설정 토글(company_template_set) 우선,
      * 미설정 시 .env COMPANY_TEMPLATE_SET(config) fallback. 값: system(SSANCAR)/heyman/karaba.
      */
