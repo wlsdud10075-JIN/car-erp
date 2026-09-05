@@ -24,6 +24,10 @@ new #[Layout('components.layouts.app')] class extends Component
     //   ⚠️ 기본 true — 이미 배포된 기능이라 끄면 켜둔 회사의 락이 조용히 풀린다.
     public bool $unsecuredLimitEnabled = true;
 
+    // 바이어 현금 원장 on/off (jin 2026-09-04). 기획 = docs/design/buyer-cash-ledger.md
+    //   기본 false — 신규 기능이라 켠 회사에서만 동작한다.
+    public bool $buyerCashEnabled = false;
+
     public bool $assistantEnabled = false;
 
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
@@ -122,6 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->localeEnEnabled = (bool) Setting::get('locale_en_enabled', false);
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
         $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
+        $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
@@ -706,6 +711,38 @@ new #[Layout('components.layouts.app')] class extends Component
             'auditable_id' => $setting->id,
             'action' => 'unsecured_limit_toggle_changed',
             'column_name' => 'unsecured_limit_enabled',
+            'old_value' => $value ? '0' : '1',
+            'new_value' => $value ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /**
+     * 바이어 현금 원장 on/off (jin 2026-09-04). 기획 = docs/design/buyer-cash-ledger.md
+     *
+     * 🚨 켜면 **판매잔금 입력이 바이어 현금 잔액 안으로 제한**된다(2단계 게이트).
+     *   그래서 「바이어에게 미배분 현금이 없는 날」에 켠다 — 돈 흐름을 바꾸는 조작이라
+     *   무담보 토글과 같은 형식으로 감사로그를 남긴다(누가 언제 켰는지가 사후에 반드시 필요하다).
+     */
+    public function updatedBuyerCashEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $key = 'buyer_cash_enabled_'.Setting::companyTemplateSet();
+        $setting = Setting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => '바이어 현금 원장 활성화'],
+        );
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'buyer_cash_toggle_changed',
+            'column_name' => 'buyer_cash_enabled',
             'old_value' => $value ? '0' : '1',
             'new_value' => $value ? '1' : '0',
             'ip_address' => request()?->ip(),
@@ -1382,6 +1419,21 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.unsecured_limit_sub') }}</span>
                     </span>
                     <input type="checkbox" wire:model.live="unsecuredLimitEnabled" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+            </div>
+
+            {{-- 바이어 현금 원장 on/off (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
+                 켜면 판매잔금이 바이어 현금 잔액 안에서만 들어간다. 「미배분 현금이 없는 날」에 켤 것. --}}
+            {{-- ⚠️ 색은 위 토글과 **동일**하게(peer-checked:bg-amber-500). 새 색을 쓰면 빌드된 CSS 에
+                 없어서 켜도 회색으로 보인다(SKILLS §8 #50). --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ __('feature_settings.buyer_cash_label') }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.buyer_cash_sub') }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="buyerCashEnabled" class="peer sr-only">
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>

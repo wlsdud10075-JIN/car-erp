@@ -313,6 +313,14 @@ return [
         'note' => '비고',
     ],
 
+    // ─── buyer_cash_receipts (바이어 현금 입금) ──────────────────────────
+    'buyer_cash_receipts' => [
+        'received_date' => '수령일',
+        'currency' => '통화',
+        'amount' => '금액',
+        'note' => '비고',
+    ],
+
     // ─── settings (기능 설정) ────────────────────────────────────────────
     'settings' => [
         'value' => '설정값',
@@ -325,6 +333,7 @@ return [
         'lock_threshold_purchase_registration' => '매입등록 필요입금률',
         'lock_threshold_purchase_payment' => '매입지급 필요입금률',
         'unsecured_limit_enabled' => '무담보 한도 사용',
+        'buyer_cash_enabled' => '바이어 현금 원장 사용',
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
         'lock_threshold_bl_issue' => 'B/L 발행 필요입금률',
@@ -386,6 +395,8 @@ return [
         // 2026-08-12 — 가수금·경매보증금(청산가치 직결). 종전엔 감사 기록 자체가 없었다.
         'AdvanceReceipt' => '가수금',
         'AuctionDeposit' => '경매 보증금',
+        // 2026-09-04 — 바이어 현금 원장.
+        'BuyerCashReceipt' => '바이어 현금 입금',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -402,6 +413,9 @@ return [
         'bulk_cost_applied' => '비용 일괄 기입',
         'lock_toggle_changed' => '락 켜기/끄기',
         'unsecured_limit_toggle_changed' => '무담보 한도 기능 켜기/끄기',
+        'buyer_cash_toggle_changed' => '바이어 현금 원장 켜기/끄기',
+        'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
+        'buyer_cash_receipt_deleted' => '바이어 현금 입금 삭제',
         'lock_threshold_changed' => '락 수치 변경',
         'unpaid_override_approved' => '미수 우회 승인',
         'forwarding_invoice_paid' => '운임 지급 청산',

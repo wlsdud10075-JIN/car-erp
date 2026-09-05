@@ -101,6 +101,15 @@ class Buyer extends Model
         return $this->hasMany(Vehicle::class);
     }
 
+    /**
+     * 바이어 현금 입금(외화 원장). 적립금(`savingsStatuses`)과 **다른 것**이다 —
+     * 적립금은 회사가 준 크레딧, 이건 실제로 들어온 현금. 기획 = docs/design/buyer-cash-ledger.md
+     */
+    public function cashReceipts(): HasMany
+    {
+        return $this->hasMany(BuyerCashReceipt::class);
+    }
+
     /** 신규 매입 게이트 임계 — 바이어 미수율이 이 값 초과면 신규 차량 등록 차단(관리 승인 우회). */
     public const RECEIVABLE_GATE_THRESHOLD = 0.5;
 
