@@ -136,10 +136,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 
-    {{-- 바이어 선택 + 검색 --}}
+    {{-- 바이어 · 통합검색 · 차대번호 · 조회 — **네 개가 한 줄에 나란히** (jin 2026-09-05).
+         🚫 하나로 합치지 말 것 — 각자 다른 것을 고르고 찾는 칸이다. 한 상자에 묶지도 않는다.
+         넓이는 충분하다: 224 + 208 + 160 + 조회 + 초기화 + 여백 ≈ 760px (1280 폭에서도 안 밀린다). --}}
     <div class="card">
-        <div class="flex flex-wrap items-end gap-2">
-            <div class="w-full sm:w-72">
+        <div data-row="ba-filters" class="flex flex-wrap items-end gap-2">
+            <div class="w-56">
                 <label class="label-base">{{ __('buyer_account.pick_buyer') }}</label>
                 {{-- 🚫 그냥 select 를 쓰지 말 것 — 바이어가 수백이라 스크롤로 못 찾는다.
                      프로젝트 표준 = 타이핑으로 걸러지는 콤보박스(x-erp.combobox).
@@ -152,23 +154,33 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 wire:key="ba-buyer-{{ $buyerId }}" />
             </div>
 
-            {{-- 검색 — 차량관리와 같은 조건(Vehicle::scopeSearchAny). 칸도 거기와 같게 둘로 나눈다. --}}
-            <div class="w-full sm:w-64">
-                <label class="label-base">{{ __('buyer_account.search') }}</label>
+            {{-- 검색은 차량관리와 **같은 조건**(Vehicle::scopeSearchAny)이고 문구도 같은 것을 쓴다.
+                 placeholder 는 대표만, 전체 목록은 호버(title)로 — 칸을 넓히면 줄이 바뀐다. --}}
+            <div class="w-52">
+                <label class="label-base">{{ __('vehicle.search_btn') }}</label>
                 <input wire:model="search" wire:keydown.enter="searchNow" type="text"
-                       class="input-base w-full" placeholder="{{ __('buyer_account.search_ph') }}" />
+                       placeholder="{{ __('vehicle.search_placeholder') }}"
+                       title="{{ __('vehicle.search_title') }}"
+                       class="input-base w-full" />
             </div>
-            <div class="w-full sm:w-44">
-                <label class="label-base">{{ __('buyer_account.vin_search') }}</label>
+
+            {{-- 차대번호는 통합검색 **바로 옆**. 숫자·코드가 서로 오검색되는 걸 막으려고 칸을 나눈다. --}}
+            <div class="w-40">
+                <label class="label-base">{{ __('buyer_account.col_vin') }}</label>
                 <input wire:model="vinSearch" wire:keydown.enter="searchNow" type="text"
-                       class="input-base w-full" placeholder="{{ __('buyer_account.vin_search_ph') }}" />
+                       placeholder="{{ __('vehicle.vin_ph') }}" title="{{ __('vehicle.vin_ph') }}"
+                       class="input-base w-full" />
             </div>
-            <button type="button" wire:click="searchNow" class="btn-primary px-3 py-1.5 text-sm">{{ __('common.search') }}</button>
+
+            <button wire:click="searchNow" class="btn-primary px-4 py-1.5 text-sm">{{ __('vehicle.search_btn') }}</button>
             @if($search !== '' || $vinSearch !== '')
             <button type="button" wire:click="resetSearch"
-                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.reset_filters') }}</button>
+                    class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+                {{ __('vehicle.reset_btn') }}
+            </button>
             @endif
         </div>
+
         @if($this->buyerOptions->isEmpty())
         <p class="mt-2 text-xs text-gray-400">{{ __('buyer_account.no_buyers') }}</p>
         @endif
