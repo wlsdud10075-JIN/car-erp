@@ -174,6 +174,7 @@ class BuyerCashLedgerTest extends TestCase
         $this->assertSame('EUR', $receipt->currency);
         $this->assertSame('10000.00', (string) $receipt->amount);
         $this->assertSame('2026-09-04', $receipt->received_date->format('Y-m-d'));
+        $this->assertSame('전신환', $receipt->note, '메모가 저장되지 않았다');
         $this->assertNotNull($receipt->created_by, '기재자가 남아야 한다');
         $this->assertDatabaseHas('audit_logs', ['action' => 'buyer_cash_receipt_added']);
     }
@@ -359,6 +360,85 @@ class BuyerCashLedgerTest extends TestCase
 
         $this->assertSame(0.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
         $this->assertSame(2, $fp->refresh()->id ? BuyerCashAllocation::where('final_payment_id', $fp->id)->count() : 0);
+    }
+
+    // ── 좁은 패널(580px)에서 보이는가 ────────────────────────────
+
+    /**
+     * 🚨 **열을 늘리면 오른쪽이 가로 스크롤 밖으로 밀려 안 보인다**(jin 2026-09-05 «메모는 안나오네?»).
+     *    실제로 그랬다 — 8열 표라 메모가 화면 밖에 있었고, 사람은 그걸 「저장이 안 됐다」로 읽는다.
+     *
+     * ⚠️ 렌더 결과만 보는 테스트는 **가로 스크롤을 모른다** — HTML 에 있어도 화면엔 없을 수 있다.
+     *    그래서 원인(열 개수)을 직접 검사한다. 사이드 패널은 `sm:w-[580px]` 고정이다.
+     */
+    public function test_cash_table_stays_narrow_enough_for_the_panel(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+
+        $html = Volt::actingAs($this->user('admin'))->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->html();
+
+        $marker = __('buyer.cash.col_used');
+        $pos = strpos($html, $marker);
+        $this->assertNotFalse($pos, '현금 표 헤더를 못 찾았다');
+
+        $rowStart = strrpos(substr($html, 0, $pos), '<tr');
+        $rowEnd = strpos($html, '</tr>', $pos);
+        $headerRow = substr($html, $rowStart, $rowEnd - $rowStart);
+
+        $this->assertLessThanOrEqual(
+            5,
+            substr_count($headerRow, '<th'),
+            '현금 표 열이 늘었다 — 580px 패널에서 오른쪽 열이 가로 스크롤 밖으로 밀린다. '
+            .'메모·기재자처럼 부수 정보는 열을 늘리지 말고 첫 칸 안에 붙이거나 호버로 넣을 것.'
+        );
+    }
+
+    /** 메모는 열이 아니라 수령일 아래에 붙는다 — 그래도 목록에서 읽혀야 한다. */
+    public function test_receipt_note_is_rendered(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-05', 'amount' => 10000,
+            'note' => '바이어 현금 테스트 #1',
+        ]);
+
+        $html = Volt::actingAs($this->user('admin'))->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString('바이어 현금 테스트 #1', $html, '메모가 목록에 안 나온다');
+    }
+
+    /** 잘려도 호버로 전문이 보여야 한다(적립금 탭과 같은 방식 — jin 2026-09-05). */
+    public function test_allocations_are_readable_on_hover(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $receipt = BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        $fp = $this->finalPayment($vehicle, 4000);
+        BuyerCashAllocation::create([
+            'receipt_id' => $receipt->id, 'final_payment_id' => $fp->id,
+            'vehicle_id' => $vehicle->id, 'amount' => 4000,
+        ]);
+
+        $html = Volt::actingAs($this->user('admin'))->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString(
+            'title="'.$vehicle->vehicle_number.' 4,000.00"',
+            $html,
+            '쓴 내역에 호버(title)가 없다 — 좁은 패널에서 잘리면 읽을 방법이 사라진다'
+        );
     }
 
     // ── 화면에 번역 안 된 키가 새지 않는다 (SKILLS §8 #73) ─────────

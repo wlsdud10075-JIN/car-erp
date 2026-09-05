@@ -782,6 +782,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'vehicle_number' => $a->vehicle?->vehicle_number ?? '-',
                         'amount' => (float) $a->amount,
                     ])->all(),
+                // 좁은 패널에서 여러 줄이 잘려도 호버로 전문이 보이게(적립금 탭과 같은 방식).
+                'uses_title' => $r->allocations
+                    ->map(fn ($a) => ($a->vehicle?->vehicle_number ?? '-').' '.number_format((float) $a->amount, 2))
+                    ->implode(' / '),
             ])->all();
     }
 
@@ -1714,36 +1718,43 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="mb-4 text-xs text-gray-400">{{ __('buyer.cash.no_permission') }}</p>
             @endif
 
-            {{-- 입금 내역 + 배분(「10,000 이 어디로 갔나」) --}}
+            {{-- 입금 내역 + 배분(「10,000 이 어디로 갔나」)
+                 ⚠️ 패널이 580px 라 열을 늘리면 **가로 스크롤 밖으로 밀려 안 보인다**
+                    (jin 2026-09-05 «메모는 안나오네?» — 8열이라 메모가 화면 밖에 있었다).
+                    그래서 메모·기재자는 열을 따로 두지 않고 수령일 아래에 붙이고,
+                    잘리는 것은 전부 title(호버)로 전문을 보여준다. --}}
             <div class="overflow-x-auto">
                 <table class="w-full text-xs">
                     <thead>
                         <tr class="border-b text-left text-gray-400">
-                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_date') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.currency') }}</th>
-                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.cash.col_amount') }}</th>
-                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.cash.col_remaining') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_used') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('common.memo') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_by') }}</th>
+                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_date') }}</th>
+                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_remaining') }}</th>
+                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_used') }}</th>
                             <th class="pb-1.5"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @forelse($cashReceiptList as $r)
-                        <tr>
-                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-500">{{ $r['received_date'] }}</td>
-                            <td class="py-1.5 pr-3 font-mono">{{ $r['currency'] }}</td>
-                            <td class="py-1.5 pr-3 text-right font-mono text-gray-700">{{ number_format($r['amount'], 2) }}</td>
-                            <td class="py-1.5 pr-3 text-right font-mono {{ $r['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
-                                {{ number_format($r['remaining'], 2) }}
-                                @if($r['is_next'])
-                                <span class="ml-1 inline-flex items-center whitespace-nowrap rounded-md border border-primary-light bg-primary-light/50 px-1.5 py-0.5 text-[10px] font-medium text-primary-text">
-                                    ↓ {{ __('buyer.cash.next_out') }}
-                                </span>
+                        <tr class="align-top">
+                            <td class="py-1.5 pr-2">
+                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $r['by'] ?: '-' }}">{{ $r['received_date'] }}</div>
+                                @if($r['note'] !== '')
+                                {{-- 메모는 열이 아니라 여기 붙인다. 잘려도 호버로 전문이 보인다. --}}
+                                <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</div>
                                 @endif
                             </td>
-                            <td class="py-1.5 pr-3 text-[11px]">
+                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono text-gray-700">
+                                {{ number_format($r['amount'], 2) }}
+                                <span class="text-[10px] text-gray-400">{{ $r['currency'] }}</span>
+                            </td>
+                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono {{ $r['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                                {{ number_format($r['remaining'], 2) }}
+                                @if($r['is_next'])
+                                <span class="mt-0.5 block text-[10px] font-medium text-primary-text">↓ {{ __('buyer.cash.next_out') }}</span>
+                                @endif
+                            </td>
+                            <td class="py-1.5 pr-2 text-[11px]" title="{{ $r['uses_title'] }}">
                                 @forelse($r['uses'] as $u)
                                 <div class="whitespace-nowrap text-gray-600">
                                     {{ $u['vehicle_number'] }} <span class="font-mono">{{ number_format($u['amount'], 2) }}</span>
@@ -1752,8 +1763,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="text-gray-300">{{ __('buyer.cash.not_used') }}</span>
                                 @endforelse
                             </td>
-                            <td class="py-1.5 pr-3 max-w-[120px] truncate text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</td>
-                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $r['by'] }}</td>
                             <td class="py-1.5">
                                 {{-- 배분된 입금은 삭제 버튼을 아예 안 보여준다 — 되돌리기는 그 판매잔금 행을 지우는 것이다. --}}
                                 @if($this->canManageCash && empty($r['uses']))
@@ -1764,7 +1773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                         </tr>
                         @empty
-                        <tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.cash.no_receipt') }}</td></tr>
+                        <tr><td colspan="5" class="py-6 text-center text-gray-400">{{ __('buyer.cash.no_receipt') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
