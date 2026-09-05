@@ -53,6 +53,30 @@ class BuyerAccountService
     }
 
     /**
+     * 현금 사용 내역 — **입금 1건 → 어느 차에 얼마**. 이 기능의 원래 요구가 이것이다
+     * (jin: "이 10,000 eur 를 어떻게 사용했는지 투명하게 볼 수 있고 추적할 수 있으며").
+     *
+     * 🚨 **검색으로 거르지 않는다.** 이건 현금 원장이라, 일부만 보여주면 「남은 현금」과
+     *    더해도 안 맞는 표가 된다. 위 미수 차량 표(검색 대상)와는 성격이 다르다.
+     *
+     * ⚠️ 여기 나오는 차량은 **미수 차량 표에 없을 수 있다** — 현금으로 완납된 차가 그렇다.
+     *    그게 이 표가 따로 필요한 이유다.
+     *
+     * @return Collection<int, BuyerCashReceipt>
+     */
+    public function cashUsage(Buyer $buyer): Collection
+    {
+        return BuyerCashReceipt::where('buyer_id', $buyer->id)
+            ->with([
+                'allocations' => fn ($q) => $q->orderBy('id'),
+                'allocations.vehicle:id,vehicle_number,nice_reg_vin',
+                'allocations.finalPayment:id,payment_date',
+            ])
+            ->fifo()
+            ->get();
+    }
+
+    /**
      * 통화별 현금 — 받은 / 쓴 / 남은. 남은 값은 `BuyerCashReceipt::balanceFor` 와 **같은 뺄셈**이다
      * (게이트가 그걸 쓰므로, 여기서 다른 식을 쓰면 화면과 차단 판정이 갈린다).
      *

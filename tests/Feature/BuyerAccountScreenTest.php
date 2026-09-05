@@ -13,6 +13,7 @@ use App\Services\BuyerAccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 /**
@@ -131,6 +132,126 @@ class BuyerAccountScreenTest extends TestCase
         $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer);
 
         $this->assertSame([$unpaid->id], $rows->pluck('id')->all());
+    }
+
+    // ── 현금 사용 내역 (jin 2026-09-05 — "어떤 차량에 얼만큼 썼는지가 없네") ──────
+
+    /**
+     * 🚨 **이 기능의 원래 요구가 이것이다** — "이 10,000 이 어떻게 쓰였는지 투명하게".
+     *    처음엔 이 화면에 없었다(바이어 편집 패널의 현금 탭에만 있었다).
+     */
+    public function test_screen_shows_which_vehicle_each_receipt_paid(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000, 'note' => '전신환 #1',
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 4000,
+            'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+        ]);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString(__('buyer_account.usage_title'), $html);
+        $this->assertStringContainsString('전신환 #1', $html, '어느 입금인지 안 보인다');
+        $this->assertStringContainsString('4,000.00', $html, '그 차에 얼마 갔는지 안 보인다');
+        $this->assertStringContainsString($vehicle->vehicle_number, $html);
+    }
+
+    /**
+     * 🚨 **현금으로 완납된 차도 나와야 한다.** 그 차는 미수 0 이라 「미수 차량」 표에서 빠진다 —
+     *    그래서 이 표가 따로 필요하다. 안 그러면 돈이 어디로 갔는지 화면에서 사라진다.
+     */
+    public function test_fully_paid_vehicle_still_appears_in_cash_usage(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);   // 총판매가 10,000
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 10000,
+            'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+        ]);
+
+        // 전제 — 완납이라 미수 목록엔 없다.
+        $this->assertCount(0, app(BuyerAccountService::class)->unpaidVehicles($buyer));
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString($vehicle->vehicle_number, $html,
+            '현금으로 완납된 차가 화면에서 통째로 사라졌다');
+    }
+
+    /**
+     * 🚨 사용 내역은 **검색으로 거르지 않는다** — 현금 원장이라 일부만 보이면
+     *    「남은 현금」과 더해도 안 맞는 표가 된다.
+     */
+    public function test_cash_usage_is_not_filtered_by_the_search(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer, ['container_number' => 'OTHER']);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 4000,
+            'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+        ]);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->set('search', 'NOTHING-MATCHES')
+            ->call('searchNow')
+            ->html();
+
+        $this->assertStringContainsString('4,000.00', $html, '검색이 현금 사용 내역까지 걸렀다');
+    }
+
+    /** 엑셀에도 같은 내용이 들어간다 — 화면에만 있으면 밖으로 못 낸다. */
+    public function test_export_has_the_cash_usage_sheet(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 4000,
+            'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.export', ['buyer' => $buyer->id]));
+        $response->assertOk();
+        $binary = $response->streamedContent();
+
+        $path = tempnam(sys_get_temp_dir(), 'ba_').'.xlsx';
+        file_put_contents($path, $binary);
+        $ss = IOFactory::createReader('Xlsx')->load($path);
+        $names = $ss->getSheetNames();
+        $ss->disconnectWorksheets();
+        @unlink($path);
+
+        $this->assertContains('현금 사용', $names, '현금 사용 시트가 없다');
     }
 
     // ── 묶음별 ───────────────────────────────────────────────────

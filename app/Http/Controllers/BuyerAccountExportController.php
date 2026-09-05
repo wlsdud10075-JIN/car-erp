@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Buyer;
+use App\Models\BuyerCashReceipt;
 use App\Models\ExportLog;
 use App\Models\Setting;
 use App\Models\Vehicle;
@@ -48,6 +49,9 @@ class BuyerAccountExportController extends Controller
         $ss = new Spreadsheet;
         $this->buildVehicleSheet($ss->getActiveSheet(), $buyer, $vehicles, $cash);
         $this->buildGroupSheet($ss->createSheet(), $axis, $groups);
+        // 「이 입금이 어느 차에 얼마」 — 이 기능의 원래 요구. 검색과 무관하게 전부 넣는다
+        //   (현금 원장이라 일부만 넣으면 남은 현금과 안 맞는 표가 된다).
+        $this->buildUsageSheet($ss->createSheet(), $service->cashUsage($buyer));
         $ss->setActiveSheetIndex(0);
 
         ExportLog::create([
@@ -158,6 +162,40 @@ class BuyerAccountExportController extends Controller
         }
 
         foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    /** @param  Collection<int, BuyerCashReceipt>  $receipts */
+    private function buildUsageSheet(Worksheet $sheet, $receipts): void
+    {
+        $sheet->setTitle('현금 사용');
+
+        foreach (['입금일', '입금액', '통화', '입금 메모', '차량번호', '차대번호', '수금일', '배분액'] as $i => $label) {
+            $this->text($sheet, Coordinate::stringFromColumnIndex($i + 1).'1', $label);
+        }
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+
+        $row = 2;
+        foreach ($receipts as $r) {
+            // 아직 안 쓰인 입금도 한 줄 남긴다 — 안 남기면 「받은 돈」이 엑셀에서 사라진다.
+            $allocations = $r->allocations->all() ?: [null];
+            foreach ($allocations as $a) {
+                $this->text($sheet, 'A'.$row, $r->received_date->format('Y-m-d'));
+                $sheet->setCellValue('B'.$row, (float) $r->amount);
+                $this->text($sheet, 'C'.$row, (string) $r->currency);
+                $this->text($sheet, 'D'.$row, (string) ($r->note ?? ''));
+                $this->text($sheet, 'E'.$row, (string) ($a?->vehicle?->vehicle_number ?? ''));
+                $this->text($sheet, 'F'.$row, (string) ($a?->vehicle?->nice_reg_vin ?? ''));
+                $this->text($sheet, 'G'.$row, (string) ($a?->finalPayment?->payment_date?->format('Y-m-d') ?? ''));
+                if ($a) {
+                    $sheet->setCellValue('H'.$row, (float) $a->amount);
+                }
+                $row++;
+            }
+        }
+
+        foreach (range('A', 'H') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
     }
