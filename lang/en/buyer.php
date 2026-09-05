@@ -174,5 +174,7 @@ return [
         'not_used' => 'Not applied yet',
         'next_out' => 'Next to be drawn from',
         'rate_note' => 'The exchange rate is entered on the sale balance row — record only the FX amount here.',
+        'gate_blocked' => 'Not enough cash on hand for :buyer. Needed :need, available :available (short :short). Record the incoming payment on the buyer Cash tab first.',
+        'gate_race' => 'That buyer cash was just used elsewhere. Reload the screen and save again.',
     ],
 ];

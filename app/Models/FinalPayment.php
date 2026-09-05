@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BuyerCashService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Cache;
@@ -52,6 +53,15 @@ class FinalPayment extends Model
      */
     public static bool $allowConfirmedMutation = false;
 
+    /**
+     * 바이어 현금 원장(2026-09-04) 게이트 우회 — 기획 docs/design/buyer-cash-ledger.md
+     *
+     * 정상 흐름은 우회하지 않는다. 마이그레이션·복구 스크립트처럼 **이미 받은 돈을 사후에 적는**
+     * 경우에만 쓴다(그때는 현금 원장에 대응 입금이 없어 전부 막히기 때문).
+     * ⚠️ 콘솔·시드는 이 플래그가 없어도 통과한다 — 게이트가 `auth()->check()` 를 먼저 본다.
+     */
+    public static bool $skipCashGate = false;
+
     protected static function booted(): void
     {
         // 회의확장씬 #6 보강 (2026-05-23) — amount_krw 자동 계산 (amount × exchange_rate snapshot).
@@ -92,6 +102,51 @@ class FinalPayment extends Model
                 throw new \DomainException('2차 정산 마감된 차량에 신규 판매 잔금을 추가할 수 없습니다 (회계 무결성).');
             }
         });
+
+        // ── 바이어 현금 원장 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md ──
+        //
+        // 🔑 **소진 시점 = 재무 확정 시점**이다(미수가 주는 시점과 같다). 생성 시점에 빼면
+        //    Draft 구간에서 「현금은 줄었는데 미수는 그대로」가 되어 두 숫자를 대조할 수 없다.
+        //    실측: 채권관리 「입금」이 만드는 미러 잔금은 Draft 로 생성되고 미수가 안 준다.
+        // 🚫 조건 판정은 BuyerCashService::gated 단일 출처다 — 여기에 옮겨 적지 말 것.
+        //
+        // 세 소비 경로(차량 판매탭 save · 채권관리 saveHistory · PaymentConfirmationService)는
+        // 전부 DB::transaction 안이고 DomainException 을 잡아 토스트로 보여준다 → 안전하게 롤백된다.
+        static::creating(function (FinalPayment $p) {
+            if ($p->confirmed_at !== null) {
+                app(BuyerCashService::class)->assertAvailable($p);
+            }
+        });
+        static::created(function (FinalPayment $p) {
+            if ($p->confirmed_at !== null) {
+                app(BuyerCashService::class)->allocate($p);
+            }
+        });
+
+        // 확정으로 넘어가는 순간, 그리고 확정분의 금액이 정정되는 순간(마감 전엔 허용된다) 다시 본다.
+        static::updating(function (FinalPayment $p) {
+            $becomesConfirmed = $p->isDirty('confirmed_at') && $p->confirmed_at !== null;
+            $amountMoved = $p->isDirty('amount') && $p->confirmed_at !== null;
+            if ($becomesConfirmed || $amountMoved) {
+                app(BuyerCashService::class)->assertAvailable($p);
+            }
+        });
+        static::updated(function (FinalPayment $p) {
+            $service = app(BuyerCashService::class);
+            if ($p->confirmed_at === null) {
+                // 확정이 풀렸다(시스템 우회 경로) → 현금을 돌려놓는다.
+                if ($p->wasChanged('confirmed_at')) {
+                    $service->release($p);
+                }
+
+                return;
+            }
+            if ($p->wasChanged('confirmed_at') || $p->wasChanged('amount')) {
+                $service->allocate($p);
+            }
+        });
+        // 삭제는 DB cascade(buyer_cash_allocations.final_payment_id)가 처리한다 —
+        //   그게 「회수」의 구현 자체다(jin: 그 잔금 행을 지운다). 여기 코드가 따로 없는 게 맞다.
 
         // 큐 19-C — transfer로 만들어진 잔금은 직접 수정·삭제 불가.
         static::updating(function (FinalPayment $p) {

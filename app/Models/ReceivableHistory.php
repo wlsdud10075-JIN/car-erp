@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BuyerCashService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -140,6 +141,12 @@ class ReceivableHistory extends Model
             if ($this->final_payment_id) {
                 FinalPayment::where('id', $this->final_payment_id)->update($payload);
                 // query builder update — 모델 이벤트 미발생. 캐시는 saved 핸들러에서 별도 refresh.
+                // 🚨 바이어 현금 원장(2026-09-04) — 모델 훅이 안 뜨므로 배분을 직접 다시 맞춘다.
+                //   안 부르면 확정분의 금액만 바뀌고 현금은 그대로라 둘이 조용히 어긋난다.
+                $fp = FinalPayment::find($this->final_payment_id);
+                if ($fp) {
+                    app(BuyerCashService::class)->resyncAfterRawUpdate($fp);
+                }
             } else {
                 // 큐 10 H5 — FinalPayment::created가 또 ReceivableHistory를 만들지 못하게 flag.
                 FinalPayment::$skipReceivableSync = true;
