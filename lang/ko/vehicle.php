@@ -246,6 +246,8 @@ return [
 
     // ── 슬라이드 패널 ─────────────────────────────────────────
     'panel' => [
+        'buyer_cash_available' => ':buyer 현금 잔액 :amount — 판매잔금은 이 금액 안에서만 들어갑니다.',
+        'buyer_cash_empty' => '바이어 탭 「현금」에서 입금을 먼저 기재하세요.',
         'created_badge' => '등록 완료',
         'edit_next' => '편집 모드 — 다음 단계 진행',
         'edit_title' => '차량 수정',

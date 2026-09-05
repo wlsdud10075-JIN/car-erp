@@ -241,6 +241,8 @@ return [
 
     // ── Slide panel ─────────────────────────────────────────
     'panel' => [
+        'buyer_cash_available' => 'Cash on hand for :buyer: :amount — sale balances are limited to this.',
+        'buyer_cash_empty' => 'Record the incoming payment on the buyer Cash tab first.',
         'created_badge' => 'Created',
         'edit_next' => 'Edit mode — continue next step',
         'edit_title' => 'Edit Vehicle',

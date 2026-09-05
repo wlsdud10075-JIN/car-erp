@@ -6057,6 +6057,41 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('vehicle.toast.nice_success', ['count' => $count]), type: 'success');
     }
 
+    /**
+     * 바이어 현금 잔액 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
+     *
+     * 판매잔금이 이 금액 안에서만 들어가므로 **저장을 누르기 전에** 보여준다.
+     * 🚫 조건 판정을 여기 옮겨 적지 말 것 — BuyerCashService::gated 단일 출처를 그대로 쓴다
+     *    (갈리면 「안내는 없는데 저장이 막히는」 형태가 된다).
+     * 반환 null = 이 차량은 게이트 대상이 아님(토글 OFF · KRW · 바이어 없음 등) → 아무것도 안 그린다.
+     */
+    #[Computed]
+    public function buyerCashStatus(): ?array
+    {
+        if (! $this->editingId) {
+            return null;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        if (! $vehicle) {
+            return null;
+        }
+
+        $service = app(\App\Services\BuyerCashService::class);
+        // 실제 잔금 행이 아니라 "이 차량에 지금 잔금을 넣는다면" 을 물어보는 것이라
+        //   판정용 임시 인스턴스를 만들어 같은 gated() 를 통과시킨다.
+        $probe = new \App\Models\FinalPayment(['vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 0]);
+        $probe->setRelation('vehicle', $vehicle);
+        if (! $service->gated($probe)) {
+            return null;
+        }
+
+        return [
+            'buyer' => $vehicle->buyer?->name ?? '-',
+            'currency' => $vehicle->currency,
+            'available' => $service->availableFor($vehicle),
+        ];
+    }
+
     public function addFinalPayment(): void
     {
         // 회의확장씬 #7 (2026-05-22) — 잔금 추가 시 차량 currency 의 실시간 환율 자동 기입.
@@ -8393,6 +8428,21 @@ function vehicleColumnsToggle() {
                     <span class="text-xs font-medium text-gray-500">{{ __('vehicle.field.balance') }}</span>
                     <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">{{ __('vehicle.panel.add') }}</button>
                 </div>
+                {{-- 바이어 현금 잔액 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
+                     막히고 나서 알려주는 것보다 **막히기 전에 보이는 게** 낫다. 토글 ON + 게이트
+                     대상(외화·바이어 있음)일 때만 뜬다. 0 이면 붉게 — 저장이 막힐 상태라는 뜻. --}}
+                @if($this->buyerCashStatus)
+                @php $bcs = $this->buyerCashStatus; @endphp
+                <div class="rounded-md border px-2.5 py-1.5 text-[11px] {{ $bcs['available'] > 0.005 ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700' }}">
+                    {{ __('vehicle.panel.buyer_cash_available', [
+                        'buyer' => $bcs['buyer'],
+                        'amount' => number_format($bcs['available'], 2).' '.$bcs['currency'],
+                    ]) }}
+                    @if($bcs['available'] <= 0.005)
+                    <span class="block">{{ __('vehicle.panel.buyer_cash_empty') }}</span>
+                    @endif
+                </div>
+                @endif
                 @foreach($finalPayments as $idx => $row)
                 @if(!empty($row['transfer']))
                 {{-- 큐 19-C — 차량 간 자금 이체로 자동 생성된 잔금 (append-only). --}}
