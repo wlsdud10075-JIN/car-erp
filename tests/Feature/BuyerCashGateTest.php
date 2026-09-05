@@ -427,6 +427,48 @@ class BuyerCashGateTest extends TestCase
         $this->assertStringContainsString('6,000.00 EUR', $html, '현금 잔액이 판매 탭에 안 보인다');
     }
 
+    /**
+     * 역방향 추적 (jin 2026-09-05) — 현금 탭은 「입금 → 어느 차」를 보여주지만
+     * 차량 판매 탭에서는 **이 잔금이 어느 입금에서 나왔는지 볼 데가 없었다.**
+     * 🚫 비고 칸을 자동으로 채우지 않는다 — 그건 실무자 본인 칸이다. 읽기 전용 줄로 붙인다.
+     */
+    public function test_sale_balance_row_shows_which_receipt_funded_it(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000, 'note' => '바이어 현금 테스트 #1',
+        ]);
+        $this->confirmedBalance($vehicle, 4000);
+
+        $html = Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->html();
+
+        $this->assertStringContainsString('현금에서 차감', $html, '역방향 표시가 없다');
+        $this->assertStringContainsString('2026-09-01', $html, '어느 입금인지 안 보인다');
+        $this->assertStringContainsString('바이어 현금 테스트 #1', $html, '입금 메모가 안 보인다');
+        // 잘려도 읽히도록 호버 전문(여러 입금이면 ' / ' 로 이어 붙인다).
+        $this->assertStringContainsString('title="2026-09-01 4,000.00 (바이어 현금 테스트 #1)"', $html);
+    }
+
+    /** 현금과 무관한 잔금엔 그 줄이 안 붙는다 — 안 쓰는 회사 화면을 어지럽히지 않는다. */
+    public function test_sale_balance_row_shows_nothing_without_an_allocation(): void
+    {
+        $this->actingAs($this->finance());
+        $vehicle = $this->vehicle($this->buyer());
+        $this->confirmedBalance($vehicle, 4000);
+
+        $html = Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->html();
+
+        $this->assertStringNotContainsString('현금에서 차감', $html);
+    }
+
     /** 토글이 꺼져 있으면 아무것도 안 그린다 — 안 쓰는 회사 화면을 어지럽히지 않는다. */
     public function test_sale_tab_shows_nothing_while_the_toggle_is_off(): void
     {
