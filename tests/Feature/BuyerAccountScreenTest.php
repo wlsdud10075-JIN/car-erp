@@ -399,6 +399,86 @@ class BuyerAccountScreenTest extends TestCase
             ->assertDontSee($miss->vehicle_number);
     }
 
+    /**
+     * 배치 (jin 2026-09-05) — **바이어 · 통합검색 · 차대번호 · 조회 네 개가 한 줄**에 나란히.
+     *
+     * 🚫 하나로 합치지 말 것 — 각자 다른 것을 고르고 찾는 칸이다.
+     * ⚠️ 렌더 테스트는 실제 줄바꿈을 모른다 — 그래서 「같은 flex 행 안에 넷이 다 있는지」를 본다.
+     *    바이어를 따로 빼거나 조회를 아래로 내리면 이 검사에서 밖으로 나간다.
+     */
+    public function test_four_controls_sit_in_one_row(): void
+    {
+        $this->enable();
+        $this->buyer();
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')->html();
+        $row = $this->balancedDiv($html, 'data-row="ba-filters"');
+
+        foreach ([
+            'filtered()' => '바이어 콤보박스',
+            'wire:model="search"' => '통합검색 칸',
+            'wire:model="vinSearch"' => '차대번호 칸',
+            'wire:click="searchNow"' => '조회 버튼',
+        ] as $needle => $label) {
+            $this->assertStringContainsString($needle, $row, "{$label} 이 그 줄 밖에 있다");
+        }
+
+        // 순서도 본다 — 차대번호는 통합검색 바로 옆, 그 옆이 조회.
+        $this->assertTrue(
+            strpos($row, 'wire:model="search"') < strpos($row, 'wire:model="vinSearch"')
+            && strpos($row, 'wire:model="vinSearch"') < strpos($row, 'wire:click="searchNow"'),
+            '통합검색 → 차대번호 → 조회 순서가 아니다',
+        );
+    }
+
+    /** `<div ... $marker ...>` 부터 짝이 맞는 `</div>` 까지를 잘라낸다. */
+    private function balancedDiv(string $html, string $marker): string
+    {
+        $at = strpos($html, $marker);
+        $this->assertNotFalse($at, "행 표식({$marker})을 못 찾았다");
+        $start = strrpos(substr($html, 0, $at), '<div');
+        $this->assertNotFalse($start);
+
+        $depth = 0;
+        $i = $start;
+        while ($i < strlen($html)) {
+            $open = strpos($html, '<div', $i);
+            $close = strpos($html, '</div>', $i);
+            if ($close === false) {
+                break;
+            }
+            if ($open !== false && $open < $close) {
+                $depth++;
+                $i = $open + 4;
+
+                continue;
+            }
+            $depth--;
+            if ($depth === 0) {
+                return substr($html, $start, $close + 6 - $start);
+            }
+            $i = $close + 6;
+        }
+
+        $this->fail('행이 안 닫힌다');
+    }
+
+    /**
+     * 검색칸은 **호버로 전체 대상**을 보여준다(jin 2026-09-05).
+     * placeholder 는 좁아서 잘리므로 대표만 적고, 전문은 title 로 — 차량관리와 같은 방식.
+     */
+    public function test_search_boxes_have_hover_titles(): void
+    {
+        $this->enable();
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')->html();
+
+        $this->assertStringContainsString('title="'.e(__('vehicle.search_title')).'"', $html,
+            '통합검색에 호버(title)가 없다');
+        $this->assertStringContainsString('title="'.e(__('vehicle.vin_ph')).'"', $html,
+            '차대번호 칸에 호버(title)가 없다');
+    }
+
     /** 🚨 화면 검색이 엑셀에 안 넘어가면 「화면엔 1대인데 엑셀엔 3대」가 된다(SKILLS §9). */
     public function test_export_honours_the_screen_search(): void
     {

@@ -8,10 +8,6 @@ return [
 
     'pick_buyer' => 'Buyer',
     'pick_placeholder' => 'Choose a buyer',
-    'search' => 'Search',
-    'search_ph' => 'Plate, brand, model, owner, container, B/L, vessel',
-    'vin_search' => 'VIN',
-    'vin_search_ph' => 'last 6 digits ok',
     'pick_first' => 'Choose a buyer to see cash on hand and outstanding amounts.',
     'no_buyers' => 'No buyer has outstanding amounts or remaining cash.',
 

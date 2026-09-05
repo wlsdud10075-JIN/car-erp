@@ -8,10 +8,6 @@ return [
 
     'pick_buyer' => '바이어',
     'pick_placeholder' => '바이어를 고르세요',
-    'search' => '통합검색',
-    'search_ph' => '차량번호·브랜드·차종·소유자·컨테이너·B/L·선박명',
-    'vin_search' => '차대번호',
-    'vin_search_ph' => '끝 6자리도 가능',
     'pick_first' => '바이어를 고르면 현금·미수 현황이 나옵니다.',
     'no_buyers' => '미수가 있거나 현금이 남은 바이어가 없습니다.',
 
