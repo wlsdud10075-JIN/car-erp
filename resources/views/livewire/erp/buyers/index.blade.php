@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\Buyer;
+use App\Models\BuyerCashReceipt;
 use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\SavingsStatus;
+use App\Models\Setting;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -91,6 +93,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $txn_amount   = '';
     public string $txn_rate     = '';   // 적립 시점 환율 (수기 거래용, 선택)
     public string $txn_note     = '';
+
+    // ── 현금 탭 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md ────────────
+    //   🚫 적립금과 다른 원장이다. 적립금 = 회사가 준 크레딧 / 현금 = 실제로 들어온 돈.
+    //   🚨 여기엔 **환율이 없다**. 원화 환산은 판매잔금 행이 계속 담당한다 —
+    //      두 곳에서 원화를 만들면 정산 환율이 갈린다.
+    /** ['EUR' => ['received'=>, 'allocated'=>, 'remaining'=>], ...] */
+    public array  $cashBalances    = [];
+    /** 입금 목록(최근 순) + 각 입금의 배분 내역. */
+    public array  $cashReceiptList = [];
+    public string $cash_currency   = 'USD';
+    public string $cash_date       = '';
+    public string $cash_amount     = '';
+    public string $cash_note       = '';
 
     // ─────────────────────────────────────────────────────────────
 
@@ -334,6 +349,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->loadConsignees($id);
         $this->loadSavings($id);
+        $this->loadCash($id);
         $this->showPanel = true;
     }
 
@@ -496,6 +512,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->showConsigneeForm = false;
         $this->editConsigneeId = null;
+        // 현금 탭 — 신규 등록 패널을 열 때 직전 바이어의 입금이 남아 보이면 안 된다.
+        $this->cashBalances = $this->cashReceiptList = [];
+        $this->cash_amount = $this->cash_note = '';
+        $this->cash_currency = 'USD';
+        $this->cash_date = now()->toDateString();
     }
 
     public function saveConsignee(): void
@@ -690,6 +711,133 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('buyer.savings.cancelled'), type: 'success');
     }
 
+    // ── 현금 탭 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md ──────────
+
+    /**
+     * 이 회사가 현금 원장을 쓰는가. **화면 노출과 저장이 같은 출처를 본다** —
+     * 갈리면 「탭은 보이는데 저장이 안 되는」 형태가 된다(SKILLS §8 #60).
+     */
+    #[Computed]
+    public function cashEnabled(): bool
+    {
+        return Setting::buyerCashEnabled();
+    }
+
+    /** 기재 권한 = 재무·관리·업무관리자(+admin·super) — 판매잔금 재무확정과 같은 권한(jin). */
+    #[Computed]
+    public function canManageCash(): bool
+    {
+        return (bool) auth()->user()?->canConfirmFinance();
+    }
+
+    private function loadCash(?int $buyerId): void
+    {
+        $this->cashBalances = [];
+        $this->cashReceiptList = [];
+        if (! $buyerId || ! Setting::buyerCashEnabled()) {
+            return;
+        }
+        // 수령일 기본값 = 오늘. openEdit 은 resetForm 을 안 타므로 여기서 채운다.
+        $this->cash_date = $this->cash_date ?: now()->toDateString();
+
+        $receipts = BuyerCashReceipt::where('buyer_id', $buyerId)
+            ->with(['allocations.vehicle:id,vehicle_number', 'creator:id,name'])
+            ->fifo()
+            ->get();
+
+        // 통화별 합계 — 게이트가 쓰는 BuyerCashReceipt::balanceFor 와 **같은 뺄셈**이라 숫자가 안 갈린다.
+        foreach ($receipts as $r) {
+            $cur = $r->currency;
+            $this->cashBalances[$cur] ??= ['received' => 0.0, 'allocated' => 0.0, 'remaining' => 0.0];
+            $this->cashBalances[$cur]['received'] += (float) $r->amount;
+            $this->cashBalances[$cur]['allocated'] += $r->allocated_amount;
+            $this->cashBalances[$cur]['remaining'] += $r->remaining_amount;
+        }
+
+        // 「다음에 여기서 나갑니다」 — FIFO 상 남은 게 있는 첫 건(통화별).
+        //   적립금 탭의 next_out 칩과 같은 취지: 소진 순서가 화면에 보여야 사람이 예측할 수 있다.
+        $nextIds = [];
+        foreach ($receipts as $r) {
+            if ($r->has_remaining && ! isset($nextIds[$r->currency])) {
+                $nextIds[$r->currency] = $r->id;
+            }
+        }
+
+        // 목록은 최근 순(사람은 방금 들어온 돈을 먼저 본다). 소진 순서는 위 칩이 알려준다.
+        $this->cashReceiptList = $receipts
+            ->sortByDesc(fn (BuyerCashReceipt $r) => [$r->received_date->format('Y-m-d'), $r->id])
+            ->values()
+            ->map(fn (BuyerCashReceipt $r) => [
+                'id' => $r->id,
+                'received_date' => $r->received_date->format('Y-m-d'),
+                'currency' => $r->currency,
+                'amount' => (float) $r->amount,
+                'allocated' => $r->allocated_amount,
+                'remaining' => $r->remaining_amount,
+                'note' => $r->note ?? '',
+                'by' => $r->creator?->name ?? '',
+                'is_next' => ($nextIds[$r->currency] ?? null) === $r->id,
+                'uses' => $r->allocations
+                    ->map(fn ($a) => [
+                        'vehicle_number' => $a->vehicle?->vehicle_number ?? '-',
+                        'amount' => (float) $a->amount,
+                    ])->all(),
+            ])->all();
+    }
+
+    public function addCashReceipt(): void
+    {
+        // 화면 노출은 편의일 뿐 — 변경 액션은 매번 재인가한다(SKILLS §8 #26).
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+        if (! $this->editingId || ! Setting::buyerCashEnabled()) {
+            return;
+        }
+
+        $this->validate([
+            'cash_date' => 'required|date',
+            'cash_currency' => 'required|in:USD,JPY,EUR,GBP,CNY,KRW',
+            'cash_amount' => 'required|numeric|min:0.01',
+        ]);
+
+        $receipt = BuyerCashReceipt::create([
+            'buyer_id' => $this->editingId,
+            'currency' => $this->cash_currency,
+            'received_date' => $this->cash_date,
+            'amount' => (float) $this->cash_amount,
+            'note' => $this->cash_note ?: null,
+            'created_by' => auth()->id(),
+        ]);
+        \App\Models\AuditLog::recordEvent($receipt, 'buyer_cash_receipt_added');
+
+        $this->cash_amount = '';
+        $this->cash_note = '';
+        $this->loadCash($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.added'), type: 'success');
+    }
+
+    public function deleteCashReceipt(int $id): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+        if (! $this->editingId) {
+            return;
+        }
+        // 바이어 스코프 재확인 — public 프로퍼티로 오는 id 를 그대로 믿지 않는다.
+        $receipt = BuyerCashReceipt::where('buyer_id', $this->editingId)->findOrFail($id);
+
+        // 🚨 이미 배분된 입금은 못 지운다. 지우면 cascade 로 **배분 행만** 사라지고 판매잔금은
+        //    그대로 남아 미수와 현금이 어긋난다. 되돌리기는 「그 판매잔금 행을 지우는 것」이다.
+        if ($receipt->allocations()->exists()) {
+            $this->dispatch('notify', message: __('buyer.cash.delete_blocked'), type: 'error');
+
+            return;
+        }
+
+        \App\Models\AuditLog::recordEvent($receipt, 'buyer_cash_receipt_deleted');
+        $receipt->delete();
+        $this->loadCash($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.deleted'), type: 'success');
+    }
+
     private function resetForm(): void
     {
         $this->name = $this->country_id_str = $this->salesman_id_str = $this->contact_name
@@ -859,7 +1007,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 탭 --}}
     <div class="flex border-b px-5">
-        @foreach(['basic','consignees','savings'] as $k)
+        {{-- 현금 탭은 토글 ON 인 회사에만 뜬다 — 목록 자체를 갈아서 「보이는데 안 되는」 상태를 안 만든다. --}}
+        @foreach($this->cashEnabled ? ['basic','consignees','savings','cash'] : ['basic','consignees','savings'] as $k)
         <button @click="tab='{{ $k }}'"
                 :class="tab==='{{ $k }}' ? 'border-b-2 border-violet-600 text-violet-600' : 'text-gray-500 hover:text-gray-700'"
                 class="px-4 py-3 text-sm font-medium transition flex-shrink-0">{{ __('buyer.tab.'.$k) }}</button>
@@ -1494,6 +1643,135 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             @endif
         </div>
+
+        {{-- ── 현금 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
+             🚫 적립금과 다른 원장이다. 적립금 = 회사가 준 크레딧 / 현금 = 실제로 들어온 돈.
+             🚨 여기엔 환율 칸이 없다 — 원화 환산은 판매잔금 행이 담당한다. --}}
+        @if($this->cashEnabled)
+        <div x-show="tab==='cash'" x-cloak>
+            @if(!$editingId)
+            <p class="text-sm text-gray-400">{{ __('buyer.cash.save_first') }}</p>
+            @else
+
+            {{-- 통화별 현금 --}}
+            @if(count($cashBalances))
+            <div class="mb-4 space-y-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.cash.balances_title') }}</h3>
+                @foreach($cashBalances as $cur => $b)
+                <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div class="flex items-center justify-between">
+                        <span class="font-mono text-sm font-semibold text-gray-700">{{ $cur }}</span>
+                        <span class="font-mono text-base font-bold {{ $b['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                            {{ number_format($b['remaining'], 2) }}
+                        </span>
+                    </div>
+                    <div class="mt-1 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+                        <span>{{ __('buyer.cash.received') }} <span class="font-mono">{{ number_format($b['received'], 2) }}</span></span>
+                        <span>·</span>
+                        <span>{{ __('buyer.cash.allocated') }} <span class="font-mono">{{ number_format($b['allocated'], 2) }}</span></span>
+                        <span>·</span>
+                        <span class="font-medium text-gray-700">{{ __('buyer.cash.remaining') }}</span>
+                    </div>
+                </div>
+                @endforeach
+            </div>
+            @else
+            <p class="mb-4 text-xs text-gray-400">{{ __('buyer.cash.no_receipt') }}</p>
+            @endif
+
+            {{-- 입금 기재 — 재무·관리만. 권한 없으면 폼 대신 이유를 보여준다(숨기면 문의가 몰린다). --}}
+            @if($this->canManageCash)
+            <div class="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.cash.add_title') }}</h3>
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div>
+                        <label class="label-base">{{ __('buyer.cash.received_date') }}</label>
+                        <input wire:model="cash_date" type="date" class="input-base" />
+                        @error('cash_date')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.cash.currency') }}</label>
+                        <select wire:model="cash_currency" class="input-base">
+                            @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
+                            <option value="{{ $cur }}">{{ $cur }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.cash.amount') }}</label>
+                        <input wire:model="cash_amount" type="text" class="input-base" placeholder="0.00" />
+                        @error('cash_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('common.memo') }}</label>
+                        <input wire:model="cash_note" type="text" class="input-base" />
+                    </div>
+                </div>
+                <p class="mt-2 text-[11px] text-gray-400">{{ __('buyer.cash.rate_note') }}</p>
+                <button wire:click="addCashReceipt" class="btn-primary mt-3 text-xs py-1.5">{{ __('buyer.cash.add_btn') }}</button>
+            </div>
+            @else
+            <p class="mb-4 text-xs text-gray-400">{{ __('buyer.cash.no_permission') }}</p>
+            @endif
+
+            {{-- 입금 내역 + 배분(「10,000 이 어디로 갔나」) --}}
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="border-b text-left text-gray-400">
+                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_date') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.currency') }}</th>
+                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.cash.col_remaining') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_used') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('common.memo') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.cash.col_by') }}</th>
+                            <th class="pb-1.5"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @forelse($cashReceiptList as $r)
+                        <tr>
+                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-500">{{ $r['received_date'] }}</td>
+                            <td class="py-1.5 pr-3 font-mono">{{ $r['currency'] }}</td>
+                            <td class="py-1.5 pr-3 text-right font-mono text-gray-700">{{ number_format($r['amount'], 2) }}</td>
+                            <td class="py-1.5 pr-3 text-right font-mono {{ $r['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                                {{ number_format($r['remaining'], 2) }}
+                                @if($r['is_next'])
+                                <span class="ml-1 inline-flex items-center whitespace-nowrap rounded-md border border-primary-light bg-primary-light/50 px-1.5 py-0.5 text-[10px] font-medium text-primary-text">
+                                    ↓ {{ __('buyer.cash.next_out') }}
+                                </span>
+                                @endif
+                            </td>
+                            <td class="py-1.5 pr-3 text-[11px]">
+                                @forelse($r['uses'] as $u)
+                                <div class="whitespace-nowrap text-gray-600">
+                                    {{ $u['vehicle_number'] }} <span class="font-mono">{{ number_format($u['amount'], 2) }}</span>
+                                </div>
+                                @empty
+                                <span class="text-gray-300">{{ __('buyer.cash.not_used') }}</span>
+                                @endforelse
+                            </td>
+                            <td class="py-1.5 pr-3 max-w-[120px] truncate text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</td>
+                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $r['by'] }}</td>
+                            <td class="py-1.5">
+                                {{-- 배분된 입금은 삭제 버튼을 아예 안 보여준다 — 되돌리기는 그 판매잔금 행을 지우는 것이다. --}}
+                                @if($this->canManageCash && empty($r['uses']))
+                                <button wire:click="deleteCashReceipt({{ $r['id'] }})"
+                                        wire:confirm="{{ __('buyer.cash.delete_confirm') }}"
+                                        class="text-gray-300 hover:text-red-400">×</button>
+                                @endif
+                            </td>
+                        </tr>
+                        @empty
+                        <tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.cash.no_receipt') }}</td></tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+        @endif
 
     </div>
 

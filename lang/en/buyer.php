@@ -20,6 +20,7 @@ return [
         'basic' => 'Basic Info',
         'consignees' => 'Consignees',
         'savings' => 'Savings',
+        'cash' => 'Cash',
     ],
 
     'receivable' => [
@@ -143,5 +144,35 @@ return [
         't_adjustment' => 'Adjustment',
         't_cancelled' => 'Cancelled',
         'neg_balance' => 'Cancelling would make the balance negative. Cannot cancel.',
+    ],
+
+    // Buyer cash ledger (2026-09-04) — see docs/design/buyer-cash-ledger.md
+    'cash' => [
+        'save_first' => 'Save the buyer first to manage cash receipts.',
+        'disabled' => 'This company does not use the buyer cash ledger. Turn it on in feature settings.',
+        'no_permission' => 'Only finance and management can record cash receipts.',
+        'balances_title' => 'Cash by currency',
+        'received' => 'Received',
+        'allocated' => 'Applied to vehicles',
+        'remaining' => 'Remaining',
+        'no_receipt' => 'No receipts recorded.',
+        'add_title' => 'Record a receipt',
+        'received_date' => 'Received on',
+        'currency' => 'Currency',
+        'amount' => 'Amount (FX)',
+        'add_btn' => 'Record',
+        'added' => 'Receipt recorded.',
+        'deleted' => 'Receipt removed.',
+        'delete_blocked' => 'This receipt is already applied to vehicles. To undo it, delete that sale balance row.',
+        'delete_confirm' => 'Remove this receipt?',
+        'col_date' => 'Received',
+        'col_amount' => 'Amount',
+        'col_remaining' => 'Remaining',
+        'col_used' => 'Applied to',
+        'col_by' => 'By',
+        'spent' => 'Fully applied',
+        'not_used' => 'Not applied yet',
+        'next_out' => 'Next to be drawn from',
+        'rate_note' => 'The exchange rate is entered on the sale balance row — record only the FX amount here.',
     ],
 ];
