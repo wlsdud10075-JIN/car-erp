@@ -20,6 +20,7 @@ return [
         'basic' => '기본정보',
         'consignees' => '컨사이니',
         'savings' => '적립금',
+        'cash' => '현금',
     ],
 
     'receivable' => [
@@ -145,5 +146,35 @@ return [
         't_adjustment' => '조정',
         't_cancelled' => '취소',
         'neg_balance' => '취소 시 잔액이 음수가 됩니다. 취소 불가.',
+    ],
+
+    // 바이어 현금 원장 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
+    'cash' => [
+        'save_first' => '기본정보를 먼저 저장한 후 현금 입금을 관리할 수 있습니다.',
+        'disabled' => '이 회사는 바이어 현금 원장을 쓰지 않습니다. 기능설정에서 켤 수 있습니다.',
+        'no_permission' => '현금 입금은 재무·관리만 기재할 수 있습니다.',
+        'balances_title' => '통화별 현금',
+        'received' => '받은 돈',
+        'allocated' => '차량에 쓴 돈',
+        'remaining' => '남은 현금',
+        'no_receipt' => '기재된 입금이 없습니다.',
+        'add_title' => '입금 기재',
+        'received_date' => '수령일',
+        'currency' => '통화',
+        'amount' => '금액(외화)',
+        'add_btn' => '입금 기재',
+        'added' => '입금을 기재했습니다.',
+        'deleted' => '입금을 지웠습니다.',
+        'delete_blocked' => '이미 차량에 배분된 입금은 지울 수 없습니다. 되돌리려면 그 차량의 판매잔금 행을 지우세요.',
+        'delete_confirm' => '이 입금을 지울까요?',
+        'col_date' => '수령일',
+        'col_amount' => '금액',
+        'col_remaining' => '남은 금액',
+        'col_used' => '쓴 내역',
+        'col_by' => '기재',
+        'spent' => '전액 사용',
+        'not_used' => '아직 안 씀',
+        'next_out' => '다음에 여기서 나갑니다',
+        'rate_note' => '환율은 판매잔금에 기입합니다 — 여기엔 외화 금액만 적습니다.',
     ],
 ];
