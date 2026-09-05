@@ -14,6 +14,7 @@ return [
     ],
 
     'menu' => [
+        'buyer_account' => 'Buyer account',
         'dashboard' => 'Dashboard',
         'vehicles' => 'Vehicles',
         'inventory' => 'Inventory',
@@ -43,6 +44,7 @@ return [
     ],
 
     'crumb' => [
+        'buyer_account' => 'Buyer account',
         'dashboard' => 'Dashboard',
         'admin_dashboard' => 'Admin Dashboard',
         'users' => 'Users',

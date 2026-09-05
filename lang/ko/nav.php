@@ -14,6 +14,7 @@ return [
     ],
 
     'menu' => [
+        'buyer_account' => '바이어 정산현황',
         'dashboard' => '대시보드',
         'vehicles' => '차량 관리',
         'inventory' => '재고관리',
@@ -43,6 +44,7 @@ return [
     ],
 
     'crumb' => [
+        'buyer_account' => '바이어 정산현황',
         'dashboard' => '대시보드',
         'admin_dashboard' => '관리자 대시보드',
         'users' => '사용자 관리',

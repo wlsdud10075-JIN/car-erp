@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BuyerAccountExportController;
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\PayoutApprovalController;
@@ -164,6 +165,14 @@ Route::middleware(['auth', 'verified'])->prefix('erp')->name('erp.')->group(func
 // 채권관리 — admin + 정산/관리 role (큐 14-2 보강: 채권 위험 모니터링 광범위 허용)
 Route::middleware(['auth', 'verified', 'receivable'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('receivables', 'erp.receivables.index')->name('receivables.index');
+
+    // 바이어 정산현황 (jin 2026-09-05) — 기획 docs/design/buyer-cash-ledger.md
+    //   채권관리와 같은 게이트(canViewReceivables). 「현금 원장」 토글이 꺼진 회사는 컴포넌트가 404.
+    //   'export' 리터럴이 앞서야 {id} 류와 안 부딪힌다(여기엔 {id} 라우트가 없지만 관례 유지).
+    Route::get('buyer-account/export', [BuyerAccountExportController::class, 'download'])
+        ->name('buyer-account.export')
+        ->middleware('throttle:data-export');
+    Volt::route('buyer-account', 'erp.buyer-account.index')->name('buyer-account.index');
 });
 
 // 관리자 대시보드 — '관리' role 포함 read-only 접근 (큐 14-2)
