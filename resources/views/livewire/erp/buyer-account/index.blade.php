@@ -32,6 +32,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $search = '';
     #[Url(as: 'vin')] public string $vinSearch = '';
 
+    // 미수 차량 정렬 — 금액은 **그 차량 통화**로 정렬한다(원화로 줄 세우면 보이는 숫자와 어긋난다).
+    #[Url] public string $sort = 'unpaid';
+    #[Url] public string $dir = 'desc';
+
+    /** 현금 사용 내역 — 입금은 계속 쌓이기만 하므로 **더 보기**로 끊어 읽는다. */
+    public int $usageShown = self::USAGE_PAGE;
+
+    public const USAGE_PAGE = 10;
+
     public function mount(): void
     {
         // 토글이 꺼진 회사엔 메뉴도 안 뜨지만, 주소를 직접 쳐도 막아야 한다(SKILLS §8 #26).
@@ -44,10 +53,35 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->groupAxis = array_key_exists($axis, BuyerAccountService::AXES) ? $axis : 'container';
     }
 
+    /** 정렬 전환 — 같은 축을 다시 누르면 오름/내림이 뒤집힌다. */
+    public function sortBy(string $sort): void
+    {
+        if (! array_key_exists($sort, BuyerAccountService::SORTS)) {
+            return;
+        }
+        $this->dir = ($this->sort === $sort && $this->dir === 'desc') ? 'asc' : 'desc';
+        $this->sort = $sort;
+        unset($this->vehicles, $this->groups, $this->unpaidByCurrency);
+    }
+
+    /** 현금 사용 내역 더 보기 — 한 번에 전부 그리면 입금이 쌓일수록 화면이 끝없이 길어진다. */
+    public function showMoreUsage(): void
+    {
+        $this->usageShown += self::USAGE_PAGE;
+        unset($this->cashUsage);
+    }
+
     /** 검색 실행 — 이름이 `search` 프로퍼티와 겹치면 안 되므로 `searchNow`(§8 #32 의 그 규칙). */
     public function searchNow(): void
     {
         unset($this->vehicles, $this->groups, $this->unpaidByCurrency);
+    }
+
+    /** 바이어를 바꾸면 사용 내역 페이저도 처음으로 — 안 그러면 새 바이어에서 엉뚱하게 많이 펼쳐진다. */
+    public function updatedBuyerId(): void
+    {
+        $this->usageShown = self::USAGE_PAGE;
+        unset($this->cashUsage, $this->vehicles, $this->groups, $this->unpaidByCurrency, $this->cash);
     }
 
     public function resetSearch(): void
@@ -85,7 +119,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function vehicles()
     {
         return $this->buyer
-            ? app(BuyerAccountService::class)->unpaidVehicles($this->buyer, $this->search, $this->vinSearch)
+            ? app(BuyerAccountService::class)->unpaidVehicles(
+                $this->buyer, $this->search, $this->vinSearch, $this->sort, $this->dir)
             : collect();
     }
 
@@ -104,7 +139,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function cashUsage()
     {
-        return $this->buyer ? app(BuyerAccountService::class)->cashUsage($this->buyer) : collect();
+        if (! $this->buyer) {
+            return collect();
+        }
+
+        // 🚨 **입금 건수 상한을 두고 읽는다.** 잔금 확정 1건당 배분 1행이라 이 원장은 줄지 않는다
+        //    (미수는 받으면 사라지지만 여기는 영원히 쌓인다). 전부 그리면 몇 년 뒤 이 화면만
+        //    느려진다 — ssancarerp 에서 정산처리·관리자 대시보드가 그렇게 됐던 그 형태.
+        return app(BuyerAccountService::class)->cashUsage($this->buyer, $this->usageShown + 1);
+    }
+
+    /** 더 볼 게 남았나 — 상한보다 1건 더 읽어서 판정한다(전체 COUNT 를 따로 세지 않게). */
+    #[Computed]
+    public function usageHasMore(): bool
+    {
+        return $this->cashUsage->count() > $this->usageShown;
     }
 
     /** 통화별 미수 합 — 통화가 섞이면 더하면 안 된다. */
@@ -247,7 +296,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer_account.usage_title') }}</h3>
         <p class="mb-3 text-[11px] text-gray-400">{{ __('buyer_account.usage_note') }}</p>
 
-        @forelse($this->cashUsage as $r)
+        @forelse($this->cashUsage->take($usageShown) as $r)
         <div class="mb-3 rounded-lg border border-gray-200 last:mb-0">
             {{-- 입금 한 건 --}}
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
@@ -265,8 +314,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </span>
             </div>
 
-            {{-- 그 입금이 간 곳 --}}
+            {{-- 그 입금이 간 곳 — 제목 줄(th)이 있어야 무슨 값인지 알 수 있다(jin 2026-09-05). --}}
             <table class="w-full text-xs">
+                <thead>
+                    <tr class="border-b border-gray-100 text-left text-[10px] uppercase tracking-wider text-gray-400">
+                        <th class="py-1 pl-3 pr-3 font-medium">{{ __('buyer_account.col_vehicle') }}</th>
+                        <th class="py-1 pr-3 font-medium">{{ __('buyer_account.col_vin') }}</th>
+                        <th class="py-1 pr-3 font-medium">{{ __('buyer_account.col_used_at') }}</th>
+                        <th class="py-1 pr-3 text-right font-medium">{{ __('buyer_account.col_used_amount') }}</th>
+                    </tr>
+                </thead>
                 <tbody class="divide-y divide-gray-100">
                     @forelse($r->allocations as $a)
                     <tr>
@@ -278,7 +335,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </td>
                     </tr>
                     @empty
-                    <tr><td class="py-2 pl-3 text-gray-300">{{ __('buyer_account.not_used_yet') }}</td></tr>
+                    <tr><td colspan="4" class="py-2 pl-3 text-gray-300">{{ __('buyer_account.not_used_yet') }}</td></tr>
                     @endforelse
                 </tbody>
             </table>
@@ -286,6 +343,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         @empty
         <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
         @endforelse
+
+        {{-- 입금은 계속 쌓이기만 한다 — 한 번에 다 그리면 몇 년 뒤 이 화면만 느려진다. --}}
+        @if($this->usageHasMore)
+        <button type="button" wire:click="showMoreUsage"
+                class="mt-1 w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs text-gray-500 hover:border-primary hover:text-primary-text">
+            {{ __('buyer_account.usage_more', ['count' => self::USAGE_PAGE]) }}
+        </button>
+        @endif
     </div>
 
     {{-- 묶음별 잔여 --}}
@@ -336,12 +401,28 @@ new #[Layout('components.layouts.app')] class extends Component {
             <table class="w-full text-xs">
                 <thead>
                     <tr class="border-b text-left text-gray-400">
-                        <th class="pb-1.5 pr-3">{{ __('buyer_account.col_vehicle') }}</th>
+                        {{-- 정렬 가능한 열 — 같은 축을 다시 누르면 오름/내림이 뒤집힌다.
+                             🚨 금액 정렬은 **그 차량 통화** 기준이다(원화로 줄 세우면 보이는 숫자와
+                                순서가 어긋난다 — 이 표는 바이어에게 그대로 나간다). --}}
+                        <th class="pb-1.5 pr-3">
+                            <button type="button" wire:click="sortBy('vehicle')" class="hover:text-primary-text">
+                                {{ __('buyer_account.col_vehicle') }}{!! $sort === 'vehicle' ? ($dir === 'asc' ? ' &uarr;' : ' &darr;') : '' !!}
+                            </button>
+                        </th>
                         <th class="pb-1.5 pr-3">{{ __('buyer_account.col_vin') }}</th>
-                        <th class="pb-1.5 pr-3">{{ __('buyer_account.col_progress') }}</th>
+                        <th class="pb-1.5 pr-3">
+                            <button type="button" wire:click="sortBy('progress')" class="hover:text-primary-text">
+                                {{ __('buyer_account.col_progress') }}{!! $sort === 'progress' ? ($dir === 'asc' ? ' &uarr;' : ' &darr;') : '' !!}
+                            </button>
+                        </th>
                         <th class="pb-1.5 pr-3 text-right">{{ __('buyer_account.col_total') }}</th>
                         <th class="pb-1.5 pr-3 text-right">{{ __('buyer_account.col_received') }}</th>
-                        <th class="pb-1.5 pr-3 text-right">{{ __('buyer_account.col_unpaid') }}</th>
+                        <th class="pb-1.5 pr-3 text-right">
+                            <button type="button" wire:click="sortBy('unpaid')" class="hover:text-primary-text"
+                                    title="{{ __('buyer_account.sort_unpaid_note') }}">
+                                {{ __('buyer_account.col_unpaid') }}{!! $sort === 'unpaid' ? ($dir === 'asc' ? ' &uarr;' : ' &darr;') : '' !!}
+                            </button>
+                        </th>
                         <th class="pb-1.5 pr-3">{{ __('buyer_account.axis.container') }}</th>
                         <th class="pb-1.5 pr-3">{{ __('buyer_account.axis.declaration') }}</th>
                         <th class="pb-1.5 pr-3">{{ __('buyer_account.axis.bl') }}</th>

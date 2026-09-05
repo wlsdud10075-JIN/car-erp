@@ -254,6 +254,146 @@ class BuyerAccountScreenTest extends TestCase
         $this->assertContains('현금 사용', $names, '현금 사용 시트가 없다');
     }
 
+    // ── 대량 대비 · 정렬 (jin 2026-09-05) ─────────────────────────
+
+    /**
+     * 🚨 **완납 차량을 통째로 불러오면 안 된다.** 종전엔 그 바이어의 판매 차량을 전부 읽고
+     *    (+각 차의 잔금·회수이력까지) PHP 로 걸렀다 — 운영 실측 buyer 14 는 **252대를 불러 1대**를
+     *    보여주고 있었다. ssancarerp 에서 정산처리·관리자 대시보드가 느려졌던 그 형태다.
+     *
+     * 실행된 SQL 을 세서, 완납 차량이 결과에서 빠지는 게 아니라 **애초에 안 읽히는지**를 본다.
+     */
+    public function test_paid_vehicles_are_filtered_in_sql_not_in_php(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $unpaid = $this->vehicle($buyer);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 100000,
+        ]);
+        // 완납 차량 5대 — 결과엔 없어야 하고, **불러오지도 않아야** 한다.
+        $paidIds = [];
+        for ($i = 0; $i < 5; $i++) {
+            $v = $this->vehicle($buyer);
+            FinalPayment::create([
+                'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10000,
+                'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+            ]);
+            $paidIds[] = $v->id;
+        }
+
+        $bindings = [];
+        DB::listen(function ($q) use (&$bindings) {
+            $bindings[] = $q->sql;
+        });
+        $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer);
+        DB::flushQueryLog();
+
+        $this->assertSame([$unpaid->id], $rows->pluck('id')->all());
+
+        // 미수 필터가 SQL 에 실제로 들어갔는지 — 안 들어가면 완납 5대를 다 읽는다.
+        $vehicleQuery = collect($bindings)->first(fn ($sql) => str_contains($sql, 'from "vehicles"'));
+        $this->assertNotNull($vehicleQuery);
+        $this->assertStringContainsString('sale_unpaid_amount_krw_cache', $vehicleQuery,
+            '미수 필터가 SQL 에 없다 — 완납 차량까지 전부 불러온다');
+    }
+
+    /**
+     * ⚠️ 위 SQL 필터는 **캐시 컬럼**을 쓴다. 환율 미입력 외화차는 캐시가 null 이라 놓칠 수 있어
+     *    안전망으로 함께 집는다(운영 실측 0건이지만 0 을 전제로 코드를 쓰지 않는다).
+     */
+    public function test_cache_null_vehicle_is_still_listed(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $v = $this->vehicle($buyer);
+        DB::table('vehicles')->where('id', $v->id)
+            ->update(['sale_unpaid_amount_krw_cache' => null]);
+
+        $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer);
+
+        $this->assertSame([$v->id], $rows->pluck('id')->all(),
+            '캐시가 null 인 차가 목록에서 사라졌다 — 환율 미입력 외화차가 조용히 빠진다');
+    }
+
+    /**
+     * 🚨 **금액 정렬은 그 차량 통화 기준**이다(jin 2026-09-05).
+     *    원화 캐시로 줄 세우면 **보이는 숫자와 순서가 어긋난다** — 이 표는 바이어에게 그대로
+     *    나가고 ssancar.com 에도 미러되므로 혼동만 커진다.
+     */
+    public function test_amount_sort_uses_the_vehicle_currency_not_krw(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+
+        // 외화로는 A(900) < B(1,000) 인데, 환율 때문에 **원화로는 뒤집힌다**.
+        $small = $this->vehicle($buyer, ['sale_price' => 900, 'exchange_rate' => 2000]);   // ₩1,800,000
+        $big = $this->vehicle($buyer, ['sale_price' => 1000, 'exchange_rate' => 1000]);    // ₩1,000,000
+
+        $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer, '', '', 'unpaid', 'desc');
+
+        $this->assertSame([$big->id, $small->id], $rows->pluck('id')->all(),
+            '원화 기준으로 정렬됐다 — 화면에 보이는 외화 순서와 어긋난다');
+    }
+
+    /** 통화가 섞이면 통화로 묶는다 — EUR 900 과 JPY 100,000 을 그냥 비교하면 뜻이 없다. */
+    public function test_amount_sort_groups_by_currency(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['currency' => 'JPY', 'sale_price' => 100000]);
+        $this->vehicle($buyer, ['currency' => 'EUR', 'sale_price' => 900]);
+
+        $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer, '', '', 'unpaid', 'desc');
+
+        $this->assertSame(['EUR', 'JPY'], $rows->pluck('currency')->all(), '통화로 안 묶였다');
+    }
+
+    /**
+     * 🚨 **현금 사용 내역은 상한을 두고 읽는다.** 이 원장은 줄지 않는다 — 잔금 확정 1건당
+     *    배분 1행이라 몇 년이면 수백~수천 행이 된다. 전부 그리면 이 화면만 느려진다.
+     */
+    public function test_cash_usage_is_capped_and_pages(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        for ($i = 1; $i <= 14; $i++) {
+            BuyerCashReceipt::create([
+                'buyer_id' => $buyer->id, 'currency' => 'EUR',
+                'received_date' => '2026-09-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT),
+                'amount' => 100 + $i, 'note' => 'R'.$i,
+            ]);
+        }
+
+        $c = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id);
+
+        // 기본은 10건까지 — 최근 입금부터.
+        $c->assertSee('R14')->assertDontSee('R3');
+
+        $c->call('showMoreUsage')->assertSee('R3');
+
+        // 🚨 **화면에서 자르는 것만으로는 부족하다** — 그러면 전부 읽고 나서 버리는 것이라
+        //    느려지는 원인은 그대로다. 읽는 쿼리 자체에 상한이 걸려야 한다.
+        //    (처음에 화면만 검사했더니 상한을 빼도 초록이었다.)
+        $sql = [];
+        DB::listen(function ($q) use (&$sql) {
+            $sql[] = $q->sql;
+        });
+        app(BuyerAccountService::class)->cashUsage($buyer, 11);
+
+        $receiptQuery = collect($sql)->first(fn ($q) => str_contains($q, 'from "buyer_cash_receipts"'));
+        $this->assertNotNull($receiptQuery);
+        $this->assertStringContainsString('limit', strtolower($receiptQuery),
+            '현금 사용 내역을 상한 없이 전부 읽는다 — 입금이 쌓이면 이 화면만 느려진다');
+    }
+
     // ── 묶음별 ───────────────────────────────────────────────────
 
     /**

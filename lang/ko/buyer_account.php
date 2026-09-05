@@ -20,6 +20,10 @@ return [
     'usage_title' => '현금 사용 내역',
     'usage_note' => '입금 한 건이 어느 차량에 얼마씩 쓰였는지. 검색과 무관하게 전부 보여줍니다 — 여기 차량은 아래 「미수 차량」에 없을 수 있습니다(현금으로 완납된 차).',
     'not_used_yet' => '아직 쓰이지 않았습니다.',
+    'col_used_at' => '사용한 날짜',
+    'col_used_amount' => '사용한 금액',
+    'usage_more' => '이전 입금 :count건 더 보기',
+    'sort_unpaid_note' => '그 차량 통화 기준으로 정렬합니다 (통화별로 묶임).',
 
     'unpaid_title' => '받을 돈 (통화별)',
     'no_unpaid' => '남은 미수가 없습니다.',
