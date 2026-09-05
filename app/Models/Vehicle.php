@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\LockThresholdResolver;
+use App\Support\SearchTerm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -2448,6 +2449,51 @@ class Vehicle extends Model
      * 위 accessor 와 **같은 판정을 SQL 로**. 둘이 갈리면 화면 카운트와 목록이 어긋난다
      * (가드 = `SailingStatusTest::test_scope_and_accessor_agree`).
      */
+    /**
+     * 차량 통합검색 **단일 출처** (2026-09-05 추출).
+     *
+     * 종전엔 이 조건이 차량관리 blade 안에 인라인으로 있었다. 새 화면(바이어 정산현황)이
+     * 같은 검색을 필요로 하면서, 복사하면 두 벌이 되어 **한쪽만 고쳐지는** 형태가 된다
+     * (SKILLS §8 #45 — 같은 SQL 식이 4곳에 복제돼 있던 그 부류). 그래서 여기로 옮겼다.
+     *
+     * 검색 대상 = 차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · 선박명 · 컨테이너번호 ·
+     *            B/L번호 · 구입처 (+ 등기·운송장번호는 정규화형으로) / 차대번호는 별도 인자.
+     *
+     * ⚠️ 등기·운송장번호는 **정규화형**(대문자·기호 제거)으로 저장돼 있다 — 검색어도 같은 모양으로
+     *    맞춰야 `ED-1054` 처럼 쳐도 찾힌다(안 맞추면 조용히 0건).
+     * 🚫 새 검색 화면을 만들 때 조건을 옮겨 적지 말고 이 스코프를 부를 것.
+     */
+    public function scopeSearchAny(Builder $query, ?string $search = '', ?string $vin = ''): Builder
+    {
+        $hasSearch = SearchTerm::of($search) !== '';
+        $hasVin = SearchTerm::of($vin) !== '';
+        if (! $hasSearch && ! $hasVin) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $q) use ($search, $vin, $hasSearch, $hasVin) {
+            if ($hasSearch) {
+                $q->where('vehicle_number', 'like', SearchTerm::like($search))
+                    ->orWhere('brand', 'like', SearchTerm::like($search))
+                    ->orWhere('model_type', 'like', SearchTerm::like($search))
+                    ->orWhere('nice_reg_owner_name', 'like', SearchTerm::like($search))
+                    ->orWhere('export_declaration_number', 'like', SearchTerm::like($search))
+                    ->orWhere('vessel_name', 'like', SearchTerm::like($search))       // 선박명(VSL)
+                    ->orWhere('container_number', 'like', SearchTerm::like($search))  // 컨테이너번호
+                    ->orWhere('bl_number', 'like', SearchTerm::like($search))         // B/L 번호
+                    ->orWhere('purchase_from', 'like', SearchTerm::like($search));    // 구입처(매입처)
+
+                if ($shipNo = VehicleShipment::normalizeTrackingNo($search)) {
+                    $q->orWhere('ems_tracking_no_cache', 'like', "%{$shipNo}%")
+                        ->orWhere('dhl_tracking_no_cache', 'like', "%{$shipNo}%");
+                }
+            }
+            if ($hasVin) {
+                $q->orWhere('nice_reg_vin', 'like', SearchTerm::like($vin));   // 차대번호(끝 6자리 등)
+            }
+        });
+    }
+
     public function scopeSailing(Builder $query, string $phase): Builder
     {
         // ⚠️ 경계는 '오늘 23:59:59' 로 잡는다 — SQLite 는 date 컬럼을 'Y-m-d 00:00:00' 로 저장해서

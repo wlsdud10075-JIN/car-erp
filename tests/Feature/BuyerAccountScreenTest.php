@@ -1,0 +1,436 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Buyer;
+use App\Models\BuyerCashReceipt;
+use App\Models\FinalPayment;
+use App\Models\Salesman;
+use App\Models\Setting;
+use App\Models\User;
+use App\Models\Vehicle;
+use App\Services\BuyerAccountService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Livewire\Volt\Volt;
+use Tests\TestCase;
+
+/**
+ * 바이어 정산현황 4단계 — 화면 · 묶음별 · 엑셀. 기획 = docs/design/buyer-cash-ledger.md
+ *
+ * 🚫 「정산」은 이 ERP 에서 **담당자 지급**을 뜻한다. 이 화면은 바이어와의 대금이다 —
+ *    코드·영문은 account 를 쓰고, 화면 이름은 항상 「바이어 정산현황」 전체로 쓴다.
+ */
+class BuyerAccountScreenTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private int $n = 0;
+
+    private function finance(): User
+    {
+        return User::factory()->create([
+            'permission' => 'user', 'role' => '재무', 'email_verified_at' => now(),
+        ]);
+    }
+
+    private function buyer(): Buyer
+    {
+        $s = Salesman::create(['name' => 'S'.++$this->n, 'is_active' => true]);
+
+        return Buyer::create(['name' => 'B'.$this->n, 'is_active' => true, 'salesman_id' => $s->id]);
+    }
+
+    private function vehicle(Buyer $buyer, array $attrs = []): Vehicle
+    {
+        return Vehicle::create(array_merge([
+            'vehicle_number' => '11가'.str_pad((string) (1000 + ++$this->n), 4, '0', STR_PAD_LEFT),
+            'sales_channel' => 'export',
+            'currency' => 'EUR',
+            'exchange_rate' => 1400,
+            'dhl_request' => false,
+            'salesman_id' => $buyer->salesman_id,
+            'buyer_id' => $buyer->id,
+            'sale_price' => 10000,
+            'sale_date' => now()->toDateString(),
+        ], $attrs));
+    }
+
+    private function enable(): void
+    {
+        Setting::updateOrCreate(
+            ['key' => 'buyer_cash_enabled_'.Setting::companyTemplateSet()],
+            ['value' => '1', 'type' => 'boolean'],
+        );
+    }
+
+    // ── 게이트 ───────────────────────────────────────────────────
+
+    /** 토글이 꺼진 회사엔 화면 자체가 없다 — 메뉴만 숨기면 주소를 직접 치면 들어온다(§8 #26). */
+    public function test_screen_is_404_while_the_toggle_is_off(): void
+    {
+        $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.index'))
+            ->assertNotFound();
+    }
+
+    public function test_screen_opens_when_enabled(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.index'))
+            ->assertOk()
+            ->assertSee('바이어 정산현황');
+    }
+
+    /** 채권관리와 같은 게이트 — 영업은 못 본다. */
+    public function test_sales_cannot_open_the_screen(): void
+    {
+        $this->enable();
+        $sales = User::factory()->create([
+            'permission' => 'user', 'role' => '영업', 'email_verified_at' => now(),
+        ]);
+
+        $this->actingAs($sales)->get(route('erp.buyer-account.index'))->assertForbidden();
+    }
+
+    /** 메뉴도 토글을 따라간다 — 화면과 노출이 같은 출처를 봐야 한다(§8 #60). */
+    public function test_sidebar_entry_follows_the_toggle(): void
+    {
+        $user = $this->finance();
+
+        $this->actingAs($user)->get(route('erp.receivables.index'))
+            ->assertOk()->assertDontSee('바이어 정산현황');
+
+        $this->enable();
+
+        $this->actingAs($user)->get(route('erp.receivables.index'))
+            ->assertOk()->assertSee('바이어 정산현황');
+    }
+
+    // ── 미수 목록 ────────────────────────────────────────────────
+
+    /** 완납 차량은 안 나온다 — 「받을 돈」 화면이라 0 은 볼 이유가 없다. */
+    public function test_only_unpaid_vehicles_are_listed(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $unpaid = $this->vehicle($buyer);
+        $paid = $this->vehicle($buyer);
+        $this->actingAs($this->finance());
+        // 게이트가 살아 있으므로 현금을 먼저 넣는다(이 테스트의 관심사는 아니다).
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $paid->id, 'type' => 'balance', 'amount' => 10000,
+            'payment_date' => '2026-09-04', 'confirmed_at' => now(),
+        ]);
+
+        $rows = app(BuyerAccountService::class)->unpaidVehicles($buyer);
+
+        $this->assertSame([$unpaid->id], $rows->pluck('id')->all());
+    }
+
+    // ── 묶음별 ───────────────────────────────────────────────────
+
+    /**
+     * 값이 **정확히 같은 것끼리만** 묶고, 앞뒤 공백은 정규화한다.
+     *
+     * ⚠️ 모델(`Concerns\TrimsStringAttributes`)이 저장할 때 이미 trim 하므로, 그냥 만들면
+     *    서비스의 trim 이 검사되지 않는다(처음에 그렇게 짰다가 trim 을 빼도 초록이었다).
+     *    그래서 **query builder 로 공백이 든 값을 직접 밀어넣어** 서비스가 실제로 그걸 받게 한다.
+     */
+    public function test_groups_by_axis_and_trims_whitespace(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'ABCD1234567']);
+        $padded = $this->vehicle($buyer);
+        $this->vehicle($buyer, ['container_number' => 'ZZZZ9999999']);
+
+        DB::table('vehicles')
+            ->where('id', $padded->id)
+            ->update(['container_number' => '  ABCD1234567  ']);
+
+        $service = app(BuyerAccountService::class);
+        $vehicles = $service->unpaidVehicles($buyer);
+        $this->assertSame('  ABCD1234567  ', $vehicles->firstWhere('id', $padded->id)->getRawOriginal('container_number'),
+            '공백이 안 든 값이 들어와 trim 을 검사하지 못한다');
+
+        $groups = $service->groupsBy('container', $vehicles);
+
+        $this->assertCount(2, $groups);
+        $this->assertSame('ABCD1234567', $groups[0]['key']);
+        $this->assertSame(2, $groups[0]['count']);
+        $this->assertSame(20000.0, $groups[0]['unpaid']);
+    }
+
+    /** 빈 값은 「미지정」으로 모으고 **항상 마지막**에 둔다. */
+    public function test_unassigned_group_goes_last(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => null]);
+        $this->vehicle($buyer, ['container_number' => 'ABCD1234567']);
+
+        $service = app(BuyerAccountService::class);
+        $groups = $service->groupsBy('container', $service->unpaidVehicles($buyer));
+
+        $this->assertSame('ABCD1234567', $groups[0]['key']);
+        $this->assertSame('', $groups[1]['key'], '미지정이 마지막이 아니다');
+    }
+
+    /**
+     * 🚨 **통화가 다르면 합치지 않는다.** 한 묶음에 EUR·USD 가 섞였는데 더하면
+     *    아무 뜻도 없는 숫자가 나온다 — 그런 합계는 사람이 그대로 믿는다.
+     */
+    public function test_currencies_are_never_summed_together(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'SAME', 'currency' => 'EUR']);
+        $this->vehicle($buyer, ['container_number' => 'SAME', 'currency' => 'USD']);
+
+        $service = app(BuyerAccountService::class);
+        $groups = $service->groupsBy('container', $service->unpaidVehicles($buyer));
+
+        $this->assertCount(2, $groups, '통화가 다른데 한 줄로 합쳐졌다');
+        $this->assertEqualsCanonicalizing(['EUR', 'USD'], array_column($groups, 'currency'));
+    }
+
+    /** 4축 전부 동작해야 한다 — 하나만 되면 나머지는 조용히 빈 표가 된다. */
+    public function test_every_axis_groups_something(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, [
+            'container_number' => 'C1', 'export_declaration_number' => 'D1',
+            'bl_number' => 'B1', 'vessel_name' => 'V1',
+        ]);
+
+        $service = app(BuyerAccountService::class);
+        foreach (['container' => 'C1', 'declaration' => 'D1', 'bl' => 'B1', 'vessel' => 'V1'] as $axis => $expected) {
+            $groups = $service->groupsBy($axis, $service->unpaidVehicles($buyer));
+            $this->assertSame($expected, $groups[0]['key'], "{$axis} 축이 안 묶인다");
+        }
+    }
+
+    // ── 현금 요약 ────────────────────────────────────────────────
+
+    /** 화면 요약과 게이트가 쓰는 balanceFor 가 갈리면 안 된다. */
+    public function test_cash_summary_matches_the_single_source(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 7000,
+        ]);
+
+        $cash = app(BuyerAccountService::class)->cashByCurrency($buyer);
+
+        $this->assertSame(
+            BuyerCashReceipt::balanceFor($buyer->id, 'EUR'),
+            $cash['EUR']['remaining'],
+        );
+        $this->assertSame(7000.0, $cash['EUR']['received']);
+        $this->assertSame(0.0, $cash['EUR']['allocated']);
+    }
+
+    // ── 엑셀 ─────────────────────────────────────────────────────
+
+    /**
+     * 🚨 **화면과 엑셀이 같은 조건**이어야 한다. 조건을 컨트롤러에 옮겨 적으면
+     *    「화면엔 3대인데 엑셀엔 300대」가 된다 — 에러 없이 조용히(SKILLS §9).
+     *    그래서 둘 다 같은 서비스를 쓰는지 **행 수로 대조**한다.
+     */
+    public function test_export_matches_the_screen_and_is_logged(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'C1']);
+        $this->vehicle($buyer, ['container_number' => 'C1']);
+        $other = $this->buyer();
+        $this->vehicle($other);   // 다른 바이어 — 엑셀에 섞이면 안 된다
+
+        // 화면이 실제로 그 두 대를 그리는지 먼저 본다.
+        Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->assertSee($buyer->vehicles()->orderBy('vehicle_number')->first()->vehicle_number);
+
+        $expected = app(BuyerAccountService::class)->unpaidVehicles($buyer)->count();
+
+        $response = $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.export', ['buyer' => $buyer->id, 'axis' => 'container']));
+        $response->assertOk();
+        $response->streamedContent();   // streamDownload 를 실제로 흘려봐야 예외가 드러난다
+
+        $this->assertDatabaseHas('export_logs', ['target' => 'buyer_account', 'row_count' => $expected]);
+        $this->assertSame(2, $expected, '다른 바이어 차량이 섞였다');
+    }
+
+    /** 토글이 꺼졌으면 엑셀도 없다 — 화면만 막고 링크를 열어두면 우회된다. */
+    public function test_export_is_404_while_the_toggle_is_off(): void
+    {
+        $buyer = $this->buyer();
+
+        $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.export', ['buyer' => $buyer->id]))
+            ->assertNotFound();
+    }
+
+    /** 축 값은 화이트리스트 — 모르는 값이 오면 기본축으로 떨어진다(SQL 에 안 흘러간다). */
+    public function test_unknown_axis_falls_back(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'C1']);
+
+        $groups = app(BuyerAccountService::class)
+            ->groupsBy('vehicles; DROP TABLE users', app(BuyerAccountService::class)->unpaidVehicles($buyer));
+
+        $this->assertSame('C1', $groups[0]['key'], '알 수 없는 축이 기본축으로 안 떨어졌다');
+    }
+
+    // ── 검색 · 콤보박스 · 차대번호 (jin 2026-09-05) ────────────────
+
+    /**
+     * 🚫 바이어 선택은 **그냥 select 가 아니라 검색되는 콤보박스**여야 한다(프로젝트 표준).
+     *    바이어가 수백이면 스크롤로 못 찾는다.
+     */
+    public function test_buyer_picker_is_a_searchable_combobox(): void
+    {
+        $this->enable();
+        $this->buyer();
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')->html();
+
+        // x-erp.combobox 가 렌더하는 표식 — 타이핑으로 걸러지는 목록.
+        $this->assertStringContainsString('filtered()', $html, '검색되는 콤보박스가 아니다');
+        $this->assertStringNotContainsString('wire:model.live="buyerId"', $html, 'select 로 되돌아갔다');
+    }
+
+    /** 차대번호는 차량번호 **바로 다음**에 온다(jin 지정 순서). */
+    public function test_vin_column_sits_right_after_the_plate(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['nice_reg_vin' => 'KMHXX00XXXX000001']);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString('KMHXX00XXXX000001', $html, '차대번호가 안 보인다');
+        $plate = strpos($html, __('buyer_account.col_vehicle'));
+        $vin = strpos($html, __('buyer_account.col_vin'));
+        $stage = strpos($html, __('buyer_account.col_progress'));
+        $this->assertTrue($plate < $vin && $vin < $stage, '차대번호가 차량번호와 진행상태 사이가 아니다');
+    }
+
+    /**
+     * 🚨 검색은 **차량관리와 같은 조건**이어야 한다 — 조건이 두 벌이 되면
+     *    「차량관리에선 찾히는데 여기선 안 찾히는」 형태가 된다(SKILLS §8 #45).
+     *    그래서 같은 스코프를 쓰는지 **결과 집합으로 대조**한다.
+     */
+    public function test_search_uses_the_same_scope_as_the_vehicle_list(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $hit = $this->vehicle($buyer, ['container_number' => 'FIND-ME-1']);
+        $this->vehicle($buyer, ['container_number' => 'OTHER']);
+
+        $service = app(BuyerAccountService::class);
+        $found = $service->unpaidVehicles($buyer, 'FIND-ME')->pluck('id')->all();
+        $this->assertSame([$hit->id], $found);
+
+        // 같은 검색어를 차량관리가 쓰는 스코프에 그대로 넣어도 같은 차가 나와야 한다.
+        $viaScope = Vehicle::query()->where('buyer_id', $buyer->id)->searchAny('FIND-ME')->pluck('id')->all();
+        $this->assertSame($found, $viaScope, '검색 조건이 차량관리와 갈렸다');
+    }
+
+    /** 차대번호 칸은 별도다 — 끝자리로도 찾힌다. */
+    public function test_vin_search_works(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $hit = $this->vehicle($buyer, ['nice_reg_vin' => 'KMHXX00XXXX987654']);
+        $this->vehicle($buyer, ['nice_reg_vin' => 'KMHXX00XXXX111111']);
+
+        $found = app(BuyerAccountService::class)->unpaidVehicles($buyer, '', '987654')->pluck('id')->all();
+
+        $this->assertSame([$hit->id], $found);
+    }
+
+    /**
+     * 🚨 **화면이 실제로 검색을 반영해야 한다.** 서비스만 검사하면 컴포넌트가 검색어를
+     *    안 넘겨도 초록이다 — 실제로 그랬다(2026-09-05, 이 테스트를 넣고서야 드러났다).
+     */
+    public function test_screen_filters_rows_by_the_search_box(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $hit = $this->vehicle($buyer, ['container_number' => 'FIND-ME-1']);
+        $miss = $this->vehicle($buyer, ['container_number' => 'OTHER-1']);
+
+        Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->set('search', 'FIND-ME')
+            ->call('searchNow')
+            ->assertSee($hit->vehicle_number)
+            ->assertDontSee($miss->vehicle_number);
+    }
+
+    /** 차대번호 칸도 화면에서 걸러야 한다. */
+    public function test_screen_filters_rows_by_the_vin_box(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $hit = $this->vehicle($buyer, ['nice_reg_vin' => 'KMHXX00XXXX987654']);
+        $miss = $this->vehicle($buyer, ['nice_reg_vin' => 'KMHXX00XXXX111111']);
+
+        Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->set('vinSearch', '987654')
+            ->call('searchNow')
+            ->assertSee($hit->vehicle_number)
+            ->assertDontSee($miss->vehicle_number);
+    }
+
+    /** 🚨 화면 검색이 엑셀에 안 넘어가면 「화면엔 1대인데 엑셀엔 3대」가 된다(SKILLS §9). */
+    public function test_export_honours_the_screen_search(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'FIND-ME-1']);
+        $this->vehicle($buyer, ['container_number' => 'OTHER-1']);
+        $this->vehicle($buyer, ['container_number' => 'OTHER-2']);
+
+        $this->actingAs($this->finance())
+            ->get(route('erp.buyer-account.export', ['buyer' => $buyer->id, 'q' => 'FIND-ME']))
+            ->assertOk()
+            ->streamedContent();
+
+        $this->assertDatabaseHas('export_logs', ['target' => 'buyer_account', 'row_count' => 1]);
+    }
+
+    /** 화면에 미번역 키가 그대로 찍히면 안 된다(SKILLS §8 #73). */
+    public function test_no_untranslated_key_leaks(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $this->vehicle($buyer, ['container_number' => 'C1']);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->html();
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/\b(?:buyer_account|nav|common)\.[a-z_]+(?:\.[a-z_]+)?\b/',
+            $html,
+            '번역 안 된 키가 화면에 그대로 찍힌다',
+        );
+    }
+}

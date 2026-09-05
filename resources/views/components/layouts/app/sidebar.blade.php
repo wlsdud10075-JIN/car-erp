@@ -41,6 +41,7 @@
         $routeName === 'erp.shipping-requests.index' => __('nav.menu.shipping_requests'),
         $routeName === 'erp.buyers.index' => __('nav.crumb.buyers'),
         $routeName === 'erp.consignees.index' => __('nav.crumb.consignees'),
+        $routeName === 'erp.buyer-account.index' => __('nav.crumb.buyer_account'),
         $routeName === 'erp.forwarding-companies.index' => __('nav.crumb.forwarding'),
         $routeName === 'erp.salesmen.index' => __('nav.crumb.salesmen'),
         $routeName === 'erp.salesmen.cashflow' => __('nav.crumb.cashflow'),
@@ -229,6 +230,17 @@
                     'icon' => 'users',
                     'active' => request()->routeIs('erp.buyers.*'),
                     'show' => true,
+                ],
+                [
+                    // 바이어 정산현황 (jin 2026-09-05) — 기획 docs/design/buyer-cash-ledger.md
+                    //   🚫 줄여서 「정산」이라고 부르지 말 것. 이 ERP 의 「정산」은 **담당자 지급**이다
+                    //      (정산 처리·정산액·월배치). 가이드·챗봇 카드에도 항상 전체 이름으로 쓴다.
+                    //   토글을 끈 회사엔 메뉴 자체가 안 뜬다 — 화면·게이트가 같은 출처를 본다.
+                    'label' => __('nav.menu.buyer_account'),
+                    'href' => route('erp.buyer-account.index'),
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.buyer-account.*'),
+                    'show' => $user->canViewReceivables() && \App\Models\Setting::buyerCashEnabled(),
                 ],
                 [
                     'label' => __('nav.menu.consignees'),

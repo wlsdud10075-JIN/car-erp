@@ -2401,31 +2401,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Vehicle::query()
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
-            // 통합검색(차번호·브랜드·차종·소유자·수출신고·선박·컨테이너·구입처) + 차대번호(VIN) OR 그룹.
-            //   차량관리 UI는 search / vinSearch 를 별도 칸으로 노출(item 3, 숫자·코드 충돌 방지)하지만,
+            // 통합검색 — 조건은 `Vehicle::scopeSearchAny` **단일 출처**다(2026-09-05 추출).
+            //   🚫 여기에 옮겨 적지 말 것. 바이어 정산현황 화면이 같은 검색을 쓰는데,
+            //      두 벌이 되면 한쪽만 고쳐져 「차량관리에선 찾히는데 저기선 안 찾히는」 형태가 된다.
+            //   차량관리 UI 는 search / vinSearch 를 별도 칸으로 노출(item 3, 숫자·코드 충돌 방지),
             //   선적요청 검색(searchAccum)은 둘 다 세팅해 '차번호 OR VIN' 통합검색을 유지한다.
-            ->when(SearchTerm::of($this->search) !== '' || $this->vinSearch !== '', fn ($q) => $q->where(function ($q2) {
-                if (SearchTerm::of($this->search) !== '') {
-                    $q2->where('vehicle_number', 'like', SearchTerm::like($this->search))
-                        ->orWhere('brand', 'like', SearchTerm::like($this->search))
-                        ->orWhere('model_type', 'like', SearchTerm::like($this->search))
-                        ->orWhere('nice_reg_owner_name', 'like', SearchTerm::like($this->search))
-                        ->orWhere('export_declaration_number', 'like', SearchTerm::like($this->search))
-                        ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))       // 선박명(VSL)
-                        ->orWhere('container_number', 'like', SearchTerm::like($this->search))  // 컨테이너번호
-                        ->orWhere('bl_number', 'like', SearchTerm::like($this->search))         // B/L 번호
-                        ->orWhere('purchase_from', 'like', SearchTerm::like($this->search));    // 구입처(매입처)
-                    // 등기번호·운송장번호 — 저장은 정규화형(대문자·기호 제거)이라 검색어도 같은 모양으로
-                    //   맞춰야 한다. 'ED-1054' 처럼 쳐도 찾히게(안 맞추면 조용히 0건).
-                    if ($shipNo = \App\Models\VehicleShipment::normalizeTrackingNo($this->search)) {
-                        $q2->orWhere('ems_tracking_no_cache', 'like', "%{$shipNo}%")
-                            ->orWhere('dhl_tracking_no_cache', 'like', "%{$shipNo}%");
-                    }
-                }
-                if (SearchTerm::of($this->vinSearch) !== '') {
-                    $q2->orWhere('nice_reg_vin', 'like', SearchTerm::like($this->vinSearch));   // 차대번호(끝 6자리 등)
-                }
-            }))
+            ->searchAny($this->search, $this->vinSearch)
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
