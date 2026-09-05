@@ -819,6 +819,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('buyer.cash.added'), type: 'success');
     }
 
+    /**
+     * 입금 삭제 — **이미 쓰인 입금도 지울 수 있다**(jin 2026-09-05 «잘못 기재했을 수도 있으니
+     * 지워지면 최근 10,000usd 이 나와야 할것같아»).
+     *
+     * 지우면 그 입금의 배분이 cascade 로 사라진다. 그대로 두면 **판매잔금은 남았는데 현금은
+     * 안 빠진** 상태가 되므로, 영향받은 잔금을 **남은 다른 입금에서 FIFO 로 다시 채운다**.
+     * 남은 현금이 모자라면 통째로 롤백하고 사유를 보여준다 — 그때는 그 판매잔금 행을 먼저 지워야 한다.
+     */
     public function deleteCashReceipt(int $id): void
     {
         abort_unless(auth()->user()?->canConfirmFinance(), 403);
@@ -827,19 +835,30 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         // 바이어 스코프 재확인 — public 프로퍼티로 오는 id 를 그대로 믿지 않는다.
         $receipt = BuyerCashReceipt::where('buyer_id', $this->editingId)->findOrFail($id);
+        $affected = $receipt->allocations()->pluck('final_payment_id')->unique()->all();
 
-        // 🚨 이미 배분된 입금은 못 지운다. 지우면 cascade 로 **배분 행만** 사라지고 판매잔금은
-        //    그대로 남아 미수와 현금이 어긋난다. 되돌리기는 「그 판매잔금 행을 지우는 것」이다.
-        if ($receipt->allocations()->exists()) {
-            $this->dispatch('notify', message: __('buyer.cash.delete_blocked'), type: 'error');
+        try {
+            DB::transaction(function () use ($receipt, $affected) {
+                \App\Models\AuditLog::recordEvent($receipt, 'buyer_cash_receipt_deleted');
+                $receipt->delete();
+
+                $service = app(\App\Services\BuyerCashService::class);
+                foreach (\App\Models\FinalPayment::whereIn('id', $affected)->get() as $payment) {
+                    // 남은 현금으로 못 덮으면 여기서 던진다 → 삭제까지 통째로 롤백된다.
+                    $service->assertAvailable($payment);
+                    $service->allocate($payment);
+                }
+            });
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: __('buyer.cash.delete_short', ['reason' => $e->getMessage()]), type: 'error');
 
             return;
         }
 
-        \App\Models\AuditLog::recordEvent($receipt, 'buyer_cash_receipt_deleted');
-        $receipt->delete();
         $this->loadCash($this->editingId);
-        $this->dispatch('notify', message: __('buyer.cash.deleted'), type: 'success');
+        $this->dispatch('notify', message: $affected
+            ? __('buyer.cash.deleted_reallocated')
+            : __('buyer.cash.deleted'), type: 'success');
     }
 
     private function resetForm(): void
@@ -1764,10 +1783,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endforelse
                             </td>
                             <td class="py-1.5">
-                                {{-- 배분된 입금은 삭제 버튼을 아예 안 보여준다 — 되돌리기는 그 판매잔금 행을 지우는 것이다. --}}
-                                @if($this->canManageCash && empty($r['uses']))
+                                {{-- 이미 쓰인 입금도 지울 수 있다 — 남은 다른 입금에서 다시 채운다(jin 2026-09-05).
+                                     그래서 확인 문구가 갈린다. 못 채우면 서버가 막고 사유를 보여준다. --}}
+                                @if($this->canManageCash)
                                 <button wire:click="deleteCashReceipt({{ $r['id'] }})"
-                                        wire:confirm="{{ __('buyer.cash.delete_confirm') }}"
+                                        wire:confirm="{{ empty($r['uses']) ? __('buyer.cash.delete_confirm') : __('buyer.cash.delete_used_confirm') }}"
                                         class="text-gray-300 hover:text-red-400">×</button>
                                 @endif
                             </td>

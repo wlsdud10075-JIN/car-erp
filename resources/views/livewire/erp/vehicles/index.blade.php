@@ -3657,7 +3657,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   현금 탭은 「입금 → 어느 차」를 보여주지만 그 반대는 볼 데가 없었다(jin 지적).
         //   ⚠️ 행마다 조회하면 N+1 이다 — 한 번에 받아 잔금 id 로 묶는다.
         $cashByPayment = \App\Models\BuyerCashAllocation::query()
-            ->with('receipt:id,received_date,note')
+            ->with('receipt:id,received_date,note,amount,currency')
             ->whereIn('final_payment_id', $v->finalPayments->pluck('id'))
             ->orderBy('id')
             ->get()
@@ -3681,7 +3681,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 이 잔금이 소진한 바이어 현금(입금별). 없으면 빈 배열 → 줄 자체가 안 그려진다.
                 'cash' => ($cashByPayment[$p->id] ?? collect())->map(fn ($a) => [
                     'date' => $a->receipt?->received_date?->format('Y-m-d') ?? '',
+                    // ⚠️ 두 금액을 반드시 구분해서 보여줄 것 — `amount` 는 **이 잔금이 가져간 몫**이고
+                    //    `receipt_total` 이 **그 입금 전체**다. 섞어 쓰면 「850 짜리 입금」으로 읽힌다
+                    //    (jin 2026-09-05 실제로 그렇게 읽었다 — 입금은 100,000 인데 850 만 보였다).
                     'amount' => (float) $a->amount,
+                    'receipt_total' => (float) ($a->receipt?->amount ?? 0),
+                    'currency' => $a->receipt?->currency ?? '',
                     'note' => $a->receipt?->note ?? '',
                 ])->all(),
             ];
@@ -8593,7 +8598,9 @@ function vehicleColumnsToggle() {
                 @if(!empty($row['cash']))
                 @php
                     $cashTitle = collect($row['cash'])
-                        ->map(fn ($c) => $c['date'].' '.number_format($c['amount'], 2).($c['note'] !== '' ? ' ('.$c['note'].')' : ''))
+                        ->map(fn ($c) => number_format($c['amount'], 2).' ← '.$c['date'].' '
+                            .__('vehicle.panel.cash_receipt_word').' '.number_format($c['receipt_total'], 2).' '.$c['currency']
+                            .($c['note'] !== '' ? ' ('.$c['note'].')' : ''))
                         ->implode(' / ');
                 @endphp
                 <div class="ml-6 -mt-0.5 mb-1 flex items-start gap-1.5 text-[11px] text-emerald-700" title="{{ $cashTitle }}">
@@ -8603,8 +8610,9 @@ function vehicleColumnsToggle() {
                         @foreach($row['cash'] as $c)
                         <span class="ml-1 text-emerald-600">
                             {{ __('vehicle.panel.cash_drawn_line', [
-                                'date' => $c['date'],
                                 'amount' => number_format($c['amount'], 2),
+                                'date' => $c['date'],
+                                'total' => number_format($c['receipt_total'], 2).' '.$c['currency'],
                             ]) }}@if($c['note'] !== '')<span class="text-emerald-500/80"> ({{ $c['note'] }})</span>@endif
                         </span>
                         @endforeach

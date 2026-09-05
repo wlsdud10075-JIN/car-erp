@@ -297,10 +297,11 @@ class BuyerCashLedgerTest extends TestCase
     }
 
     /**
-     * 🚨 배분된 입금은 못 지운다 — 지우면 cascade 로 **배분 행만** 사라지고 판매잔금은 남아
-     *    미수와 현금이 어긋난다. 되돌리기는 「그 판매잔금 행을 지우는 것」이다(확정 #8).
+     * 배분된 입금도 지울 수 있지만(jin 2026-09-05), **남은 다른 입금이 그 몫을 못 덮으면 막힌다.**
+     * 여기선 다른 입금이 하나도 없으므로 막혀야 한다 — 안 막으면 판매잔금은 남았는데
+     * 현금은 안 빠진 상태가 된다. (덮을 수 있는 경우 = BuyerCashGateTest 의 재배분 테스트)
      */
-    public function test_allocated_receipt_cannot_be_deleted(): void
+    public function test_allocated_receipt_cannot_be_deleted_without_other_cash(): void
     {
         $this->enable();
         $buyer = $this->buyer();

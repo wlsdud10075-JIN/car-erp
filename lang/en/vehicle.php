@@ -242,7 +242,8 @@ return [
     // ── Slide panel ─────────────────────────────────────────
     'panel' => [
         'cash_drawn' => 'Drawn from cash',
-        'cash_drawn_line' => ':date receipt :amount',
+        'cash_drawn_line' => ':amount ← :date receipt of :total',
+        'cash_receipt_word' => 'receipt of',
         'buyer_cash_available' => 'Cash on hand for :buyer: :amount — sale balances are limited to this.',
         'buyer_cash_empty' => 'Record the incoming payment on the buyer Cash tab first.',
         'created_badge' => 'Created',

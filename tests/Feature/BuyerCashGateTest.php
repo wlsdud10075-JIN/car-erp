@@ -406,6 +406,62 @@ class BuyerCashGateTest extends TestCase
         $rh->fresh()->update(['amount' => 5000]);
     }
 
+    // ── 잘못 기재한 입금 지우기 ──────────────────────────────────
+
+    /**
+     * jin 2026-09-05 — «850 usd 를 잘못 기재했을 수도 있으니 지워지면 최근 10,000usd 이 나와야 할것같아»
+     *
+     * 배분된 입금을 지우면 그 몫을 **남은 다른 입금에서 FIFO 로 다시 채운다.**
+     * 안 그러면 판매잔금은 남았는데 현금은 안 빠진 상태가 된다.
+     */
+    public function test_deleting_a_used_receipt_redraws_from_the_others(): void
+    {
+        $this->enable();
+        $finance = $this->finance();
+        $this->actingAs($finance);
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+
+        $wrong = $this->cash($buyer, 850, 'EUR', '2026-09-01');     // 잘못 기재한 것(FIFO 상 먼저)
+        $real = $this->cash($buyer, 10000, 'EUR', '2026-09-02');
+        $fp = $this->confirmedBalance($vehicle, 850);
+
+        // 처음엔 잘못 기재한 쪽에서 나간다(오래된 순).
+        $this->assertSame($wrong->id, BuyerCashAllocation::sole()->receipt_id);
+
+        Volt::actingAs($finance)->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->call('deleteCashReceipt', $wrong->id);
+
+        $this->assertSame(0, BuyerCashReceipt::whereKey($wrong->id)->count(), '잘못 기재한 입금이 안 지워졌다');
+        $allocation = BuyerCashAllocation::sole();
+        $this->assertSame($real->id, $allocation->receipt_id, '남은 입금에서 다시 안 채웠다');
+        $this->assertSame(850.0, (float) $allocation->amount);
+        $this->assertSame(9150.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        // 잔금 자체는 건드리지 않는다 — 돈이 들어온 사실은 그대로다.
+        $this->assertSame(850.0, (float) $fp->fresh()->amount);
+    }
+
+    /** 덮을 현금이 없으면 통째로 롤백된다 — 입금도 배분도 그대로 남는다. */
+    public function test_deleting_a_used_receipt_is_blocked_when_nothing_covers_it(): void
+    {
+        $this->enable();
+        $finance = $this->finance();
+        $this->actingAs($finance);
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $only = $this->cash($buyer, 850, 'EUR', '2026-09-01');
+        $this->confirmedBalance($vehicle, 850);
+
+        Volt::actingAs($finance)->test('erp.buyers.index')
+            ->call('openEdit', $buyer->id)
+            ->call('deleteCashReceipt', $only->id);
+
+        $this->assertSame(1, BuyerCashReceipt::count(), '덮을 현금이 없는데 지워졌다');
+        $this->assertSame(1, BuyerCashAllocation::count(), '배분이 사라져 잔금이 무담보가 됐다');
+        $this->assertSame(0.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+    }
+
     // ── 막히기 전에 보인다 ───────────────────────────────────────
 
     /**
@@ -451,8 +507,16 @@ class BuyerCashGateTest extends TestCase
         $this->assertStringContainsString('현금에서 차감', $html, '역방향 표시가 없다');
         $this->assertStringContainsString('2026-09-01', $html, '어느 입금인지 안 보인다');
         $this->assertStringContainsString('바이어 현금 테스트 #1', $html, '입금 메모가 안 보인다');
+
+        // 🚨 **가져간 몫(4,000)과 입금 전체(10,000)를 구분해서 보여야 한다.**
+        //    안 그러면 「4,000 짜리 입금」으로 읽힌다 — jin 2026-09-05 실제로 그렇게 읽었고,
+        //    그래서 「지운 입금이 아직 남아 있다」는 오해가 났다.
+        $this->assertStringContainsString('4,000.00 ← 2026-09-01 입금 10,000.00 EUR', $html,
+            '가져간 몫과 출처 입금 총액이 구분되지 않는다');
+
         // 잘려도 읽히도록 호버 전문(여러 입금이면 ' / ' 로 이어 붙인다).
-        $this->assertStringContainsString('title="2026-09-01 4,000.00 (바이어 현금 테스트 #1)"', $html);
+        $this->assertStringContainsString(
+            'title="4,000.00 ← 2026-09-01 입금 10,000.00 EUR (바이어 현금 테스트 #1)"', $html);
     }
 
     /** 현금과 무관한 잔금엔 그 줄이 안 붙는다 — 안 쓰는 회사 화면을 어지럽히지 않는다. */
