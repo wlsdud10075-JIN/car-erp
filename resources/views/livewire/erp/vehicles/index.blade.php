@@ -1377,8 +1377,37 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private const MAIL_GEN_EXPORT = ['invoice', 'sales_contract', 'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'];
 
+    /**
+     * 표시 중인 컬럼 키 (jin 2026-09-07 성능) — **화면이 알려 주는 값**이다.
+     *
+     * 컬럼 토글은 localStorage 에 있어 서버가 모른다. 그래서 지금까지 **49열을 전부 그린 뒤
+     * CSS 로 가렸다**. 100행이면 안 보이는 칸 2,200 개가 만들어져 전송된다 —
+     * 실측(4,288대 복제 DB): 20행 167KB → **100행 908KB**, td 3,600개.
+     * gzip 후 60~90KB 로 운영 로그의 「60KB+ = 평균 1.58초」 구간과 정확히 겹친다.
+     *
+     * 🔑 **빈 배열 = 아직 모름 → 전부 그린다**(현행 동작 보존). 화면이 알려 준 뒤부터 줄어든다.
+     *    `x-show` 는 그대로 두었다 — 서버가 그린 것은 클라이언트가 가리므로 첫 렌더도 정확하다.
+     */
+    public array $visibleColumns = [];
+
+    /** 이 컬럼을 서버가 그릴까. 모르면(빈 배열) 그린다 — 안전한 쪽으로 기운다. */
+    public function colOn(string $key): bool
+    {
+        return $this->visibleColumns === [] || in_array($key, $this->visibleColumns, true);
+    }
+
+    /** 화면(localStorage)이 알려 준 표시 컬럼을 기억한다. 세션에 남겨 다음 방문부터 바로 줄인다. */
+    public function syncVisibleColumns(array $keys): void
+    {
+        $this->visibleColumns = array_values(array_filter($keys, 'is_string'));
+        session()->put('vehicles_visible_columns', $this->visibleColumns);
+    }
+
     public function mount(): void
     {
+        // 지난 방문에 화면이 알려 준 표시 컬럼 — 첫 렌더부터 안 보이는 칸을 안 그린다.
+        $this->visibleColumns = (array) session('vehicles_visible_columns', []);
+
         // URL 로 `?shipmonth=202607` 이 와도 화면 입력과 같은 규칙으로 받아준다.
         $this->shipmentMonth = self::normalizeMonth($this->shipmentMonth);
 
@@ -6777,39 +6806,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </th>
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', __('vehicle.col.brand_model')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('nice_reg_vin', __('vehicle.col.vin')) !!}</th>
+                @php if ($this->colOn('brand_model')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand', __('vehicle.col.brand_model')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('vin')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('nice_reg_vin', __('vehicle.col.vin')) !!}</th>@php endif; @endphp
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('progress_status_cache', __('vehicle.col.status')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('vehicle.col.shipping_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{!! $sortBtn('eta_date', __('vehicle.col.eta_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('vehicle.col.vessel_name')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['ems_tracking']">{!! $sortBtn('ems_tracking_no_cache', __('vehicle.col.ems_tracking')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['dhl_tracking']">{!! $sortBtn('dhl_tracking_no_cache', __('vehicle.col.dhl_tracking')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_sent_date']">{!! $sortBtn('shipping_sent_date_cache', __('vehicle.col.shipping_sent_date')) !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['ems_fee']">{!! $sortBtn('ems_fee_total_cache', __('vehicle.col.ems_fee'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['dhl_fee']">{!! $sortBtn('dhl_fee_total_cache', __('vehicle.col.dhl_fee'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['shipping_fee']">{!! $sortBtn('shipping_fee_total_cache', __('vehicle.col.shipping_fee'), 'right') !!}</th>
+                @php if ($this->colOn('purchase_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('sale_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('shipping_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('vehicle.col.shipping_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('eta_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{!! $sortBtn('eta_date', __('vehicle.col.eta_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('bl_issue_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('deregistration_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('export_declaration_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>@php endif; @endphp
+                @php if ($this->colOn('vessel_name')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('vehicle.col.vessel_name')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('container_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>@php endif; @endphp
+                @php if ($this->colOn('bl_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>@php endif; @endphp
+                @php if ($this->colOn('ems_tracking')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['ems_tracking']">{!! $sortBtn('ems_tracking_no_cache', __('vehicle.col.ems_tracking')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('dhl_tracking')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['dhl_tracking']">{!! $sortBtn('dhl_tracking_no_cache', __('vehicle.col.dhl_tracking')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('shipping_sent_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['shipping_sent_date']">{!! $sortBtn('shipping_sent_date_cache', __('vehicle.col.shipping_sent_date')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('ems_fee')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['ems_fee']">{!! $sortBtn('ems_fee_total_cache', __('vehicle.col.ems_fee'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('dhl_fee')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['dhl_fee']">{!! $sortBtn('dhl_fee_total_cache', __('vehicle.col.dhl_fee'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('shipping_fee')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['shipping_fee']">{!! $sortBtn('shipping_fee_total_cache', __('vehicle.col.shipping_fee'), 'right') !!}</th>@php endif; @endphp
                 <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman_id', __('vehicle.col.salesman')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee_id', __('vehicle.col.consignee')) !!}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>
-                <th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{{ __('vehicle.col.settlement_stage') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee_usd']">{!! $sortBtn('transport_fee_usd', __('vehicle.col.transport_fee_usd'), 'right') !!}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>
+                @php if ($this->colOn('purchase_from')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('buyer')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('consignee')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee_id', __('vehicle.col.consignee')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('sales_channel')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('currency_rate')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>@php endif; @endphp
+                @php if ($this->colOn('purchase_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('sale_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('sale_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>@php endif; @endphp
+                @php if ($this->colOn('settlement_stage')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{{ __('vehicle.col.settlement_stage') }}</th>@php endif; @endphp
+                @php if ($this->colOn('transport_fee')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('transport_fee_usd')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee_usd']">{!! $sortBtn('transport_fee_usd', __('vehicle.col.transport_fee_usd'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('unpaid_amount')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>@php endif; @endphp
+                @php if ($this->colOn('unpaid_ratio')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>@php endif; @endphp
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -6886,11 +6915,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </span>
                     @endif
                 </td>
-                <td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
+                @php if ($this->colOn('brand_model')): @endphp<td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
-                </td>
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>
+                </td>@php endif; @endphp
+                @php if ($this->colOn('vin')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4">
                     <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
                     {{-- 운항 뱃지 (jin 2026-08-09) — 진행상태와 별개 축이라 나란히 붙인다. 도착은 ETA 경과 = 추정. --}}
@@ -6901,52 +6930,52 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                     @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                 </td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['eta_date']">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>
-                <td class="py-3 pr-4 text-xs text-gray-600" x-show="visible['vessel_name']">{{ $v->vessel_name ?: '-' }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>
+                @php if ($this->colOn('purchase_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('sale_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('shipping_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_date']">{{ $v->shipping_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('eta_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['eta_date']">{{ $v->eta_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('bl_issue_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['bl_issue_date']">{{ $v->bl_issue_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('deregistration_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['deregistration_date']">{{ $v->deregistration_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('export_declaration_number')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['export_declaration_number']">{{ $v->export_declaration_number ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('vessel_name')): @endphp<td class="py-3 pr-4 text-xs text-gray-600" x-show="visible['vessel_name']">{{ $v->vessel_name ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('container_number')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['container_number']">{{ $v->container_number ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('bl_number')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['bl_number']">{{ $v->bl_number ?: '-' }}</td>@php endif; @endphp
                 {{-- 발송 4칸 — 캐시 컬럼이라 join 없이 뜬다(원본은 vehicle_shipments 행). --}}
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['ems_tracking']">{{ $v->ems_tracking_no_cache ?: '-' }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['dhl_tracking']">{{ $v->dhl_tracking_no_cache ?: '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_sent_date']">{{ $v->shipping_sent_date_cache?->format('Y-m-d') ?? '-' }}</td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['ems_fee']">{{ $v->ems_fee_total_cache ? number_format($v->ems_fee_total_cache) : '-' }}</td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['dhl_fee']">{{ $v->dhl_fee_total_cache ? number_format($v->dhl_fee_total_cache) : '-' }}</td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['shipping_fee']">{{ $v->shipping_fee_total_cache ? number_format($v->shipping_fee_total_cache) : '-' }}</td>
+                @php if ($this->colOn('ems_tracking')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['ems_tracking']">{{ $v->ems_tracking_no_cache ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('dhl_tracking')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['dhl_tracking']">{{ $v->dhl_tracking_no_cache ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('shipping_sent_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['shipping_sent_date']">{{ $v->shipping_sent_date_cache?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('ems_fee')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['ems_fee']">{{ $v->ems_fee_total_cache ? number_format($v->ems_fee_total_cache) : '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('dhl_fee')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['dhl_fee']">{{ $v->dhl_fee_total_cache ? number_format($v->dhl_fee_total_cache) : '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('shipping_fee')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['shipping_fee']">{{ $v->shipping_fee_total_cache ? number_format($v->shipping_fee_total_cache) : '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->effective_consignee?->name ?? '-' }}</td>
-                <td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>
-                <td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
+                @php if ($this->colOn('purchase_from')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('buyer')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('consignee')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->effective_consignee?->name ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('sales_channel')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('currency_rate')): @endphp<td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
                     {{ $v->currency }}
                     @if($v->exchange_rate && $v->exchange_rate != 1)
                         <br><span class="text-[10px]">{{ number_format($v->exchange_rate, 2) }}</span>
                     @endif
-                </td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['purchase_price']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('purchase_price')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['purchase_price']">
                     @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
-                </td>
-                <td class="py-3 pr-4 text-right font-medium text-gray-800" x-show="visible['sale_price']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('sale_price')): @endphp<td class="py-3 pr-4 text-right font-medium text-gray-800" x-show="visible['sale_price']">
                     @if($v->sale_price > 0)
                         {{ number_format($v->sale_price) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>
                     @else -
                     @endif
-                </td>
-                <td class="py-3 pr-4 text-right font-medium text-gray-700" x-show="visible['sale_total']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('sale_total')): @endphp<td class="py-3 pr-4 text-right font-medium text-gray-700" x-show="visible['sale_total']">
                     @if($v->sale_price > 0)
                         {{ number_format($v->sale_total_amount) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>
                     @else -
                     @endif
-                </td>
+                </td>@php endif; @endphp
                 {{-- 정산 단계 (jin 2026-09-07) — 판정은 Vehicle::settlementStage() 단일 출처.
                      🚫 인코텀즈·운임비를 여기서 다시 평가하지 말 것(게이트 = isFreightConfirmedForSettlement). --}}
-                <td class="py-3 pr-4" x-show="visible['settlement_stage']">
+                @php if ($this->colOn('settlement_stage')): @endphp<td class="py-3 pr-4" x-show="visible['settlement_stage']">
                     @php $stage = $v->settlementStage(); @endphp
                     @if($stage === \App\Models\Vehicle::SETTLEMENT_STAGE_DONE)
                         <span class="badge badge-gray">{{ __('vehicle.settlement_badge.done') }}</span>
@@ -6956,23 +6985,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="badge badge-amber">{{ __('vehicle.settlement_badge.freight') }}</span>
                     @else -
                     @endif
-                </td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('transport_fee')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
                     @if($v->transport_fee > 0){{ number_format($v->transport_fee) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>@else -@endif
-                </td>
+                </td>@php endif; @endphp
                 {{-- 운임비(USD) — 기록칸(계산 미포함). 판매통화 운임비와 헷갈리지 않게 USD 를 붙여 찍는다. --}}
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee_usd']">
+                @php if ($this->colOn('transport_fee_usd')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee_usd']">
                     @if($v->transport_fee_usd > 0){{ number_format($v->transport_fee_usd) }} <span class="text-xs text-gray-400">USD</span>@else -@endif
-                </td>
-                <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('unpaid_amount')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
                     @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
-                </td>
-                <td class="py-3 pr-4 text-right text-xs" x-show="visible['unpaid_ratio']">
+                </td>@php endif; @endphp
+                @php if ($this->colOn('unpaid_ratio')): @endphp<td class="py-3 pr-4 text-right text-xs" x-show="visible['unpaid_ratio']">
                     @if($unpaidRatio === null)<span class="text-gray-300">-</span>
                     @elseif($unpaidRatio <= 0)<span class="text-green-600 font-medium">{{ __('vehicle.fully_paid') }}</span>
                     @else <span class="text-amber-600">{{ number_format((1 - $unpaidRatio) * 100, 0) }}%</span>
                     @endif
-                </td>
+                </td>@php endif; @endphp
                 <td class="py-3 text-right">
                     <button wire:click.stop="delete({{ $v->id }})"
                             wire:confirm="{{ __('vehicle.delete_confirm', ['number' => $v->vehicle_number]) }}"
@@ -7052,15 +7081,37 @@ function vehicleColumnsToggle() {
             for (const key in defaultVisible) {
                 this.visible[key] = parsed[key] !== undefined ? parsed[key] : defaultVisible[key];
             }
+            this.pushToServer();
         },
         toggle(key) {
             this.visible[key] = !this.visible[key];
             localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+            this.pushToServer();
         },
         resetDefaults() {
             this.visible = { ...defaultVisible };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
+            this.pushToServer();
         },
+        /**
+         * 표시 컬럼을 서버에 알린다 — 그래야 **안 보이는 칸을 애초에 안 그린다**.
+         * 실측(4,288대): 100행 HTML 908KB → 안 보이는 22칸을 빼면 절반 이하.
+         *
+         * ⚠️ 값이 서버와 같으면 보내지 않는다. 안 그러면 화면을 열 때마다 쓸데없는 왕복이 는다.
+         * ⚠️ 서버가 아직 모르는 동안에도 화면은 정확하다 — x-show 가 그대로 남아 가리기 때문.
+         */
+        pushToServer() {
+            const on = Object.keys(this.visible).filter((k) => this.visible[k]).sort();
+            const now = JSON.stringify(on);
+            if (now === this._pushed) {
+                return;
+            }
+            this._pushed = now;
+            if (this.$wire) {
+                this.$wire.syncVisibleColumns(on);
+            }
+        },
+        _pushed: null,
     };
 }
 </script>
