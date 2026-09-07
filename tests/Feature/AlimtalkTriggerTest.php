@@ -15,6 +15,7 @@ use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -179,6 +180,122 @@ class AlimtalkTriggerTest extends TestCase
         $this->artisan('alimtalk:pickup')->assertSuccessful();
 
         $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_pickup_reminder')->count());
+    }
+
+    // ── 말소 재촉 (erp_deregistration_reminder, jin 2026-09-07) ──
+    //   대상 = 매입 완납 +2일 & is_deregistered=false & 컨테이너번호·수출신고번호 없음. 목록형 1통.
+
+    /** 매입 완납 차량(잔금 전액 확정) 하나 — 말소 재촉 대상의 기본 재료. */
+    private function paidVehicle(Salesman $sm, string $plate, int $daysAgo, array $extra = []): Vehicle
+    {
+        $v = Vehicle::create(array_merge([
+            'vehicle_number' => $plate, 'sales_channel' => 'export',
+            'purchase_price' => 3_000_000, 'purchase_date' => now()->subDays($daysAgo + 1)->toDateString(),
+            'purchase_from' => '○○모터스', 'salesman_id' => $sm->id, 'is_deregistered' => false,
+        ], $extra));
+        // 완납일 = 확정 매입잔금의 마지막 지급일(= Vehicle::warehouse_in_date).
+        $v->purchaseBalancePayments()->create([
+            'amount' => 3_000_000, 'payment_date' => now()->subDays($daysAgo)->toDateString(), 'confirmed_at' => now(),
+        ]);
+
+        return $v->fresh();
+    }
+
+    public function test_deregistration_sends_list_to_vehicle_salesman(): void
+    {
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '김영업', 'phone' => '010-5555-1111', 'is_active' => true]);
+        $this->paidVehicle($sm, '11가1234', 3);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $log = AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->first();
+        $this->assertNotNull($log);
+        $this->assertSame('sent', $log->status);
+        $this->assertSame('01055551111', $log->phone);
+        Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '11가1234')
+            && str_contains($req->data()[0]['msg'] ?? '', '완납 3일 경과'));
+    }
+
+    public function test_deregistration_skips_within_grace_days(): void
+    {
+        // 완납 1일차 = 유예 안. 그 사람 차가 그것뿐이면 통째로 skip(빈 목록을 보내지 않는다).
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '이영업', 'phone' => '010-5555-2222', 'is_active' => true]);
+        $this->paidVehicle($sm, '22나2345', 1);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+    }
+
+    public function test_deregistration_ignores_document_only_gap(): void
+    {
+        // 🎯 jin 2026-09-07 결정 박제 — 「말소는 했고 말소등록증 파일만 없음」은 **대상이 아니다**.
+        //    scopeAction('deregistration_needed') 는 그것도 잡지만(실측 57대 중 41대), 본문이
+        //    "말소 처리해 주세요" 라 그쪽에 보내면 거짓 재촉이 된다.
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '박영업', 'phone' => '010-5555-3333', 'is_active' => true]);
+        $this->paidVehicle($sm, '33다3456', 5, ['is_deregistered' => true]);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+    }
+
+    public static function shippedMarkerProvider(): array
+    {
+        // 컨테이너번호·수출신고번호 어느 쪽이든 있으면 그만 보낸다(jin). 빈 문자열은 «없음» 취급.
+        return [
+            '컨테이너번호' => ['container_number', 'ABCD1234567'],
+            '수출신고번호' => ['export_declaration_number', '12345-67-890123X'],
+        ];
+    }
+
+    #[DataProvider('shippedMarkerProvider')]
+    public function test_deregistration_stops_once_shipping_marker_exists(string $column, string $value): void
+    {
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '최영업', 'phone' => '010-5555-4444', 'is_active' => true]);
+        $this->paidVehicle($sm, '44라4567', 5, [$column => $value]);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+    }
+
+    public function test_deregistration_bundles_multiple_vehicles_into_one_message(): void
+    {
+        // 차량 1대 = 1통이면 실측 최대 13통/일이 된다 → 사람당 1통 목록형(jin 2026-09-07).
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '한영업', 'phone' => '010-5555-5555', 'is_active' => true]);
+        $this->paidVehicle($sm, '55마5678', 3);
+        $this->paidVehicle($sm, '66바6789', 9);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+        Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '55마5678')
+            && str_contains($req->data()[0]['msg'] ?? '', '66바6789'));
+    }
+
+    public function test_deregistration_counts_from_the_last_confirmed_balance_payment(): void
+    {
+        // 매입잔금은 2~3회로 쪼개 지급되는 일이 흔하다(운영 실측 239대 중 24대).
+        // 첫 지급일을 기준으로 삼으면 경과일이 부풀려져 «완납 20일 경과» 같은 거짓이 나간다.
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '서영업', 'phone' => '010-5555-6666', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => '77사7890', 'sales_channel' => 'export',
+            'purchase_price' => 4_000_000, 'purchase_date' => now()->subDays(30)->toDateString(),
+            'purchase_from' => '△△오토', 'salesman_id' => $sm->id, 'is_deregistered' => false,
+        ]);
+        $v->purchaseBalancePayments()->create(['amount' => 1_000_000, 'payment_date' => now()->subDays(20)->toDateString(), 'confirmed_at' => now()]);
+        $v->purchaseBalancePayments()->create(['amount' => 3_000_000, 'payment_date' => now()->subDays(4)->toDateString(), 'confirmed_at' => now()]);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '완납 4일 경과'));
     }
 
     public function test_settle_pending_hook_notifies_managers_on_created(): void

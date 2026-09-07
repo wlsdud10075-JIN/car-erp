@@ -190,7 +190,26 @@ class AlimtalkTemplates
          *   「보증금으로 매입」 체크박스로 옮겼다(Vehicle::saving 이 deposit_purchase_at 도장).
          */
 
-        // ── 영업(role=영업) 1종 — 픽업 재촉 ──
+        // ── 영업(role=영업) 2종 — 픽업 재촉 · 말소 재촉 ──
+
+        // 말소 재촉 (jin 2026-09-07) — 매입 완납 +2일 & 말소 «자체» 미처리. 목록형 1통(사람당 하나).
+        //   🚨 본문이 "말소 처리" 만 말한다 — 대상도 `is_deregistered=false` 로 좁혀 두 쪽을 일치시켰다.
+        //      scopeAction 원본은 「말소는 했고 서류만 없음」까지 잡는데(실측 57대 중 41대), 그쪽까지
+        //      담으면 이 문장이 다수에게 거짓이 된다. 서류 미등록은 대시보드 할일에만 남긴다.
+        //   🚨 발송량 — 컨테이너번호·수출신고번호가 있으면 대상에서 빠진다(jin). 안 빼면 ssancarerp
+        //      346대가 후보다(실측). 조건은 커맨드에 있다(AlimtalkDeregistration).
+        'erp_deregistration_reminder' => [
+            'name' => '말소필요',
+            'recipient' => '영업',
+            // 🚨 body 는 반드시 **큰따옴표 + \\n 이스케이프**로 둘 것 — 작은따옴표+실제 개행으로 쓰면 안 된다.
+            //    2026-09-07 실측: pint 의 single_quote 가 그렇게 펼쳤고, 그때 들어간 CR 이 문자열 안에 남아
+            //    (line_ending 은 코드 줄바꿈만 정규화한다) 등록본 대조가 3사 전부 실패했다. 화면상으론 똑같아 보인다.
+            'vars' => ['건수', '최장차량', '최근차량', '말소목록'],
+            'title' => '',
+            'body' => "[말소 처리 필요] #{건수}대\n\n매입 대금이 완납되었으나 아직 말소 처리가 되지 않은 차량입니다.\n\n#{말소목록}\n\n말소 처리 후 ERP 「차량관리」에서 말소 여부를 체크해 주세요.",
+        ],
+
+        // ── 픽업 재촉 ──
         'erp_pickup_reminder' => [
             'name' => '픽업필요',
             'recipient' => '영업',
@@ -391,6 +410,18 @@ class AlimtalkTemplates
                 ['title' => '미지급 총액', 'description' => '#{총액}'],
             ],
         ],
+        // 말소 재촉 (jin 2026-09-07) — 카드 = 「몇 대인가」, 본문 = 그 목록.
+        //   ⚠️ 차량번호는 아이템 title 에 못 넣는다 — title 6자 상한이라 번호(7~8자)가 안 들어간다(§8 #40).
+        //      번호는 description(20자, 조립 지점 자동컷)에 싣고 title 은 순한글 리터럴로 둔다(§8 #63).
+        'erp_deregistration_reminder' => [
+            'header' => '말소 처리 필요',
+            'highlight' => ['title' => '#{건수}대', 'description' => '말소 처리 대기'],
+            'items' => [
+                ['title' => '가장오래', 'description' => '#{최장차량}'],
+                ['title' => '최근', 'description' => '#{최근차량}'],
+                ['title' => '처리', 'description' => '차량관리 말소완료 체크'],
+            ],
+        ],
         'erp_pickup_reminder' => [
             'header' => '차량 픽업 필요',
             'highlight' => ['title' => '#{차량번호}', 'description' => '#{경과일}일 경과 · 미완납'],
@@ -473,6 +504,7 @@ class AlimtalkTemplates
         'erp_deposit_cash_due' => '매일 09:00 (평일) — 매입 탭 「보증금으로 매입」 체크 후 5~10일 & 바이어 입금 기준 미달',
         'erp_deposit_cash_overdue' => '매일 09:00 (평일) — 「보증금으로 매입」 체크 후 10일 초과 & 미달 (독촉 대상에선 제외)',
         'erp_pickup_reminder' => '매일 09:00 (평일) — 매입일 +2일 & 매입 미완납',
+        'erp_deregistration_reminder' => '매일 09:00 (평일) — 매입 완납 +2일 & 말소 미처리 (컨테이너번호·수출신고번호가 있으면 제외)',
         'erp_deregistration_notice' => '말소등록증 업로드 후 담당자가 수동 발송',
         'erp_purchase_paid' => '계약금·매입잔금 지급 후 매입 탭에서 담당자가 수동 발송 (딜러 연락처 필요)',
         'erp_purchase_paid_v2' => '위와 같되 저당 안내가 붙고 담당영업에게도 함께 발송 (승인·tmplId 입력 시 위 템플릿을 대신함)',
