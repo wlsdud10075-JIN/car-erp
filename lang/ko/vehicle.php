@@ -150,6 +150,14 @@ return [
         'unpaid_ratio' => '입금률',
         'unpaid_purchase' => '미지급',
         'unpaid_sale' => '미입금',
+        'settlement_stage' => '정산',
+    ],
+
+    // 정산 단계 뱃지 (jin 2026-09-07) — 값 = Vehicle::SETTLEMENT_STAGE_*. 컬럼 라벨은 col.settlement_stage.
+    'settlement_badge' => [
+        'done' => '정산됨',
+        'waiting' => '정산대기',
+        'freight' => '운임대기',
     ],
 
     'fully_paid' => '완납',

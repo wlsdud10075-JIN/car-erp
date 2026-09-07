@@ -1440,6 +1440,52 @@ class Vehicle extends Model
     }
 
     /**
+     * 정산 진행 단계 — 차량목록 「정산」 컬럼 단일 출처 (jin 2026-09-07).
+     *
+     *   done    정산됨   — 정산이 지급까지 끝났다(settlement_status='paid').
+     *   waiting 정산대기 — 정산 행은 생겼고 아직 지급 전(pending·calculating·confirmed).
+     *   freight 운임대기 — 정산이 없고, 완납·담당자는 있는데 운임/인코텀즈 게이트에 막혀 있다.
+     *   none    -        — 그 외(미판매·미완납·담당자 없음·매입취소).
+     *
+     * 🚨 **게이트 통과와 정산 존재는 실제로 어긋난다** — 그 불일치를 정리하는 명령이 따로 있을 정도다
+     *    (`ReconcileFreightGate`). 그래서 「빠졌나」의 판정은 게이트가 아니라 **정산 행의 실재**로 한다.
+     * 🚫 인코텀즈·운임을 화면에서 다시 평가하지 말 것 — 게이트는 `isFreightConfirmedForSettlement()`
+     *    하나뿐이고, KRW 는 무조건 통과 / FOB 는 운임비 0이어도 통과 / CFR 만 운임비>0 을 요구한다.
+     *
+     * ⚡ 목록에서는 `settlement_status_peek` 별칭(서브쿼리 1회)을 미리 실어 준다.
+     *    별칭이 없으면 관계를 직접 읽으므로 **행마다 쿼리가 나간다** — 목록에 쓸 땐 반드시 별칭과 함께.
+     */
+    public const SETTLEMENT_STAGE_DONE = 'done';
+
+    public const SETTLEMENT_STAGE_WAITING = 'waiting';
+
+    public const SETTLEMENT_STAGE_FREIGHT = 'freight';
+
+    public const SETTLEMENT_STAGE_NONE = 'none';
+
+    public function settlementStage(): string
+    {
+        $status = array_key_exists('settlement_status_peek', $this->attributes)
+            ? $this->attributes['settlement_status_peek']
+            : $this->settlements()->value('settlement_status');
+
+        if ($status !== null) {
+            return $status === 'paid' ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
+        }
+
+        // 정산 없음 — scopeAwaitingFreightConfirm 과 같은 조건을 같은 순서로 본다(§8 #44).
+        //   완납 판정은 환율 미입력(cache NULL)이면 불가라 제외한다. 매입취소 차는 정산 자체가 안 생긴다.
+        $awaiting = ! $this->isPurchaseCancelled()
+            && $this->sale_price > 0
+            && $this->salesman_id !== null
+            && $this->sale_unpaid_amount_krw_cache !== null
+            && $this->sale_unpaid_amount_krw_cache <= 0
+            && ! $this->isFreightConfirmedForSettlement();
+
+        return $awaiting ? self::SETTLEMENT_STAGE_FREIGHT : self::SETTLEMENT_STAGE_NONE;
+    }
+
+    /**
      * 운임/인코텀즈 확정 대기 큐 — 완납인데 운임 게이트에 막혀 정산이 안 뜬 차량 (jin 2026-07-09).
      * isFreightConfirmedForSettlement()의 SQL 부정형. 대시보드 카드·목록 필터·카운트 단일 출처.
      *   완납 = sale_unpaid_amount_krw_cache <= 0 (환율 미입력 NULL 은 완납 판정 불가 → 제외).
