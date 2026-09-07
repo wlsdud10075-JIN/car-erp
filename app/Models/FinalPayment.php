@@ -26,6 +26,22 @@ class FinalPayment extends Model
      */
     public const AUDITED_LEDGER_COLUMNS = ['amount', 'exchange_rate', 'payment_date', 'amount_krw'];
 
+    /**
+     * 🚨 **DB 기본값(`balance`)을 모델에도 둔다** — jin 2026-09-07 실사고.
+     *
+     * 운영의 두 생성 경로가 `type` 을 안 넘긴다(판매탭 잔금 N행 · 채권관리 「입금」 미러).
+     * DB 기본값은 **INSERT 때만** 적용되므로 `created` 훅이 보는 메모리 모델의 `type` 은 **NULL** 이었고,
+     * `BuyerCashService::gated()` 의 `type !== 'balance'` 가 참이 되어 **현금 차감이 통째로 꺼져 있었다**
+     * (heymanerp: AUTO SCOUT 9,130 EUR 입금 → 확정 잔금 2건 → 배분 0건).
+     *
+     * ⚠️ 이 부류는 **기능 테스트로 원리상 못 잡는다** — 테스트는 `type => balance` 를 명시해서 만들고,
+     *    DB 에는 올바른 값이 들어가 화면·집계도 전부 정상으로 보인다. 훅만 다른 값을 본다.
+     * 🧭 **모델 훅이 읽는 컬럼에 DB 기본값을 쓰지 말 것** — 쓰려면 여기 같이 적는다.
+     */
+    protected $attributes = [
+        'type' => 'balance',
+    ];
+
     protected $casts = [
         'payment_date' => 'date',
         'confirmed_at' => 'datetime',

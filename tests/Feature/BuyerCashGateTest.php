@@ -643,4 +643,94 @@ class BuyerCashGateTest extends TestCase
         $this->expectException(\DomainException::class);
         $this->confirmedBalance($vehicle, 1000);
     }
+
+    // ── type 을 안 넘기는 실제 경로 (jin 2026-09-07 실사고) ──────────────────
+
+    /**
+     * 🚨 **운영 두 경로는 `type` 을 안 넘긴다** — 판매탭 잔금 N행(`vehicles/index` :5209)과
+     *    채권관리 「입금」 미러(`ReceivableHistory::syncFinalPayment` :154).
+     *    DB 기본값 `balance` 는 INSERT 때만 적용돼서 **`created` 훅이 보는 메모리 모델은 NULL** 이었고,
+     *    `gated()` 의 `type !== 'balance'` 가 참이 되어 **문지기와 차감이 통째로 꺼져 있었다.**
+     *    (heymanerp 실사고: AUTO SCOUT 9,130 EUR 입금 → 잔금 2건 확정 → 배분 0건·잔액 그대로.)
+     *
+     * 🧭 이 스위트의 다른 테스트는 전부 `type => balance` 를 **명시**해서 만들기 때문에
+     *    원리상 못 잡았다. 그래서 이 테스트는 **type 을 일부러 안 넘긴다.**
+     */
+    public function test_new_final_payment_defaults_to_balance_in_memory_not_only_in_the_database(): void
+    {
+        $this->assertSame('balance', (new FinalPayment)->type,
+            'type 을 안 넘기고 만든 잔금은 메모리에서도 balance 여야 한다 — 훅이 보는 값이 그것이다');
+    }
+
+    /** 판매탭 경로 — type 없이 만든 확정 잔금이 현금을 실제로 소진한다. */
+    public function test_cash_is_consumed_when_the_sale_tab_creates_a_balance_without_an_explicit_type(): void
+    {
+        $this->actingAs($this->finance());
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $receipt = $this->cash($buyer, 9130);
+
+        // 판매탭(:5209)과 같은 모양 — type 을 넘기지 않는다.
+        $fp = $vehicle->finalPayments()->create([
+            'amount' => 6850, 'exchange_rate' => 1543.32,
+            'payment_date' => '2026-09-07',
+            'confirmed_at' => now(), 'confirmed_by_user_id' => auth()->id(),
+        ]);
+
+        $this->assertSame(6850.0,
+            (float) BuyerCashAllocation::where('final_payment_id', $fp->id)->sum('amount'),
+            '배분 행이 생겨야 한다');
+        $this->assertSame(2280.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        $this->assertSame(2280.0, $receipt->fresh()->remaining_amount);
+    }
+
+    /** 같은 경로에서 현금이 모자라면 막혀야 한다 — 문지기도 같이 꺼져 있었다. */
+    public function test_gate_blocks_the_sale_tab_path_when_cash_is_short(): void
+    {
+        $this->actingAs($this->finance());
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 1000);
+
+        // ⚠️ 예외 「종류」만 보면 안 된다 — 고치기 전에도 이 테스트는 통과했다.
+        //    차단이 뒤늦게 채권 미러 경로(DB 에서 다시 읽어 type 이 balance 인 모델)에서 났기 때문이다.
+        //    그래서 **행이 안 남는지**까지 본다 — 제자리(creating)에서 막혀야 INSERT 자체가 없다.
+        try {
+            $vehicle->finalPayments()->create([
+                'amount' => 6850, 'payment_date' => '2026-09-07', 'confirmed_at' => now(),
+            ]);
+            $this->fail('현금이 모자라면 막혀야 한다');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('현금이 부족합니다', $e->getMessage());
+        }
+        $this->assertSame(0, FinalPayment::where('vehicle_id', $vehicle->id)->count(),
+            '막혔으면 잔금 행이 남아서는 안 된다');
+        $this->assertSame(1000.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+    }
+
+    /** 채권관리 「입금」 미러 경로 — 확정되면 역시 현금을 소진한다. */
+    public function test_cash_is_consumed_through_the_receivable_deposit_mirror(): void
+    {
+        $this->actingAs($this->finance());
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 9130);
+
+        $history = ReceivableHistory::create([
+            'vehicle_id' => $vehicle->id, 'method' => 'deposit',
+            'amount' => 2280, 'collected_at' => '2026-09-07',
+            'note' => '판매 잔금 자동 미러링',
+        ]);
+        $fp = FinalPayment::find($history->fresh()->final_payment_id);
+        $this->assertNotNull($fp, '미러 잔금이 만들어져야 한다');
+        $this->assertSame('balance', $fp->type);
+
+        // 미러는 Draft 로 태어난다(소진 시점 = 재무 확정) → 확정하면 그때 빠진다.
+        $this->assertSame(9130.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        app(PaymentConfirmationService::class)->confirmPayment($fp, auth()->user(), null, null);
+        $this->assertSame(6850.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+    }
 }
