@@ -141,8 +141,12 @@ class FinalPayment extends Model
 
                 return;
             }
-            if ($p->wasChanged('confirmed_at') || $p->wasChanged('amount')) {
-                $service->allocate($p);
+            if ($p->wasChanged('confirmed_at')) {
+                $service->allocate($p);          // 새로 확정됐다 — 배분 행이 없는 게 정상이라 새로 깐다
+            } elseif ($p->wasChanged('amount')) {
+                // 금액만 정정됐다 — **이미 원장에 물려 있을 때만** 다시 깐다. 토글 전에 확정된
+                //   잔금은 배분 행이 없어서, 감액인데도 전액을 배분하려다 현금 부족으로 죽는다.
+                $service->reallocateIfTracked($p);
             }
         });
         // 삭제는 DB cascade(buyer_cash_allocations.final_payment_id)가 처리한다 —

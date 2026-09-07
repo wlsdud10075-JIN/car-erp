@@ -81,9 +81,21 @@ class BuyerCashService
         if (! $this->gated($payment)) {
             return;
         }
+        // 🔑 **줄이는 정정은 통과시킨다** (jin 2026-09-07 제보로 발견).
+        //    토글을 켜기 «전에» 확정된 잔금은 배분 행이 없어 shortfallBase 가 «전액»을 요구한다.
+        //    그래서 채권관리 「적립금으로 전환」처럼 잔금을 **감액**하는 작업이, 현금을 한 푼도 더
+        //    쓰지 않는데도 «현금 부족»으로 막혔다. 게이트의 취지는 «현금 밖의 돈이 들어오는 것»을
+        //    막는 것이지 이미 기록된 돈을 되돌리는 것을 막는 게 아니다.
+        //    ⚠️ 확정으로 넘어가는 순간은 예외다 — 그건 새로 현금을 쓰는 것이라 반드시 검사한다.
+        $becomesConfirmed = $payment->isDirty('confirmed_at') && $payment->confirmed_at !== null;
+        if (! $becomesConfirmed && $payment->exists && $payment->isDirty('amount')
+            && (float) $payment->amount <= (float) $payment->getOriginal('amount') + self::EPSILON) {
+            return;
+        }
+
         $need = $this->shortfallBase($payment);
         if ($need <= self::EPSILON) {
-            return;                             // 금액이 줄었거나 이미 배분된 만큼이면 더 뺄 게 없다
+            return;                             // 이미 배분된 만큼이면 더 뺄 게 없다
         }
 
         $available = $this->availableFor($payment->vehicle);
@@ -154,6 +166,24 @@ class BuyerCashService
         });
     }
 
+    /**
+     * 이미 원장에 물려 있는 잔금만 다시 배분한다 — **금액 정정(감액) 경로 전용** (jin 2026-09-07).
+     *
+     * 🔑 토글을 켜기 «전에» 확정된 잔금은 배분 행이 없다. 그런 잔금을 감액하면 allocate 가
+     *    새 금액 전액을 배분하려 들고, 그 바이어의 현금은 0 이라 race 가드에 걸려 죽는다
+     *    (실제로 채권관리 「적립금으로 전환」이 그렇게 막혔다). **원장 밖 돈은 원장 밖에 둔다.**
+     * ⚠️ 신규 확정(`confirmed_at` 이 채워지는 순간)에는 쓰지 말 것 — 그건 배분 행이 없는 게
+     *    정상이고 반드시 새로 깔아야 한다. 그래서 호출부가 두 경우를 갈라 부른다.
+     */
+    public function reallocateIfTracked(FinalPayment $payment): void
+    {
+        if (! BuyerCashAllocation::where('final_payment_id', $payment->id)->exists()) {
+            return;
+        }
+
+        $this->allocate($payment);
+    }
+
     /** 확정이 풀리거나 대상에서 벗어나면 현금을 돌려놓는다. */
     public function release(FinalPayment $payment): void
     {
@@ -171,6 +201,10 @@ class BuyerCashService
             return;
         }
         $this->assertAvailable($payment);
+        // 원장 밖에서 확정된 잔금은 여기서도 건드리지 않는다 — 위 reallocateIfTracked 와 같은 이유.
+        if (! BuyerCashAllocation::where('final_payment_id', $payment->id)->exists()) {
+            return;
+        }
         $this->allocate($payment);
     }
 

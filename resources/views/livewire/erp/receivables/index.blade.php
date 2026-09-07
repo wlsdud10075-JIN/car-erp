@@ -682,7 +682,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             });
         } catch (\Throwable $e) {
             \Log::warning('convertOverpayToSavings failed', ['vehicle' => $vehicle->id, 'msg' => $e->getMessage()]);
-            session()->flash('panel_error', __('receivable.overpay.failed'));
+            // DomainException 은 «사람에게 보여주려고» 만든 문장이다(현금 부족·마감 등). 일반 실패로
+            //   덮으면 원인이 화면에서 사라져 「그냥 안 된다」가 된다 — 2026-09-07 현금 원장 건이 그랬다.
+            session()->flash('panel_error', $e instanceof \DomainException
+                ? $e->getMessage()
+                : __('receivable.overpay.failed'));
 
             return;
         }
