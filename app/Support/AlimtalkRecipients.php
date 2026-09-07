@@ -114,6 +114,43 @@ class AlimtalkRecipients
         'erp_pickup_reminder', 'erp_purchase_paid_v2', 'erp_deregistration_reminder',
     ];
 
+    /**
+     * 🪜 **단계별 확대**(에스컬레이션, jin 2026-09-07) — 「체크 = 받을지 / 숫자 = 언제부터」.
+     *
+     * 값 = 그 역할이 받기 시작하는 **경과일**. 무엇의 경과인지는 **알림마다 다르므로 커맨드가 정한다**
+     * (말소 재촉 = 매입 완납 후 며칠). 여기서는 「며칠부터인가」만 보관한다.
+     *
+     * 🚫 일수를 코드에 박지 말 것 — 화면에 안 보이는 규칙이 되어 「체크했는데 왜 안 와?」가 된다
+     *    (§8 #60 의 그 실사고). 안내 화면에 숫자칸으로 노출하고 회사별로 저장한다.
+     * 여기 키가 있는 알림만 안내 화면에 숫자칸이 뜬다. 없는 알림은 종전대로 즉시 발송.
+     */
+    public const ESCALATION_DEFAULTS = [
+        // 말소 재촉 — 담당 영업·관리가 먼저, 사흘째 업무관리자, 나흘째 최고관리자까지 **누적**으로 확대.
+        'erp_deregistration_reminder' => ['영업' => 2, '관리' => 2, 'manager' => 3, 'admin' => 4],
+    ];
+
+    /** 단계별 확대를 쓰는 알림인가 (안내 화면 숫자칸 노출 조건). */
+    public static function supportsEscalation(string $code): bool
+    {
+        return isset(self::ESCALATION_DEFAULTS[$code]);
+    }
+
+    /**
+     * 그 역할이 받기 시작하는 경과일 (회사별). 미설정 = 기본값, 기본값도 없으면 0(즉시).
+     * ⚠️ 저장값이 빈 문자열이면 «0 을 명시» 가 아니라 미설정으로 본다 — 숫자칸을 비우면 기본값으로 돌아간다.
+     */
+    public static function escalationDays(string $code, string $group): int
+    {
+        $default = (int) (self::ESCALATION_DEFAULTS[$code][$group] ?? 0);
+        if (! self::supportsEscalation($code)) {
+            return $default;
+        }
+        $set = Setting::companyTemplateSet();
+        $raw = Setting::get("alimtalk_escalate_{$code}_{$group}_{$set}");
+
+        return ($raw === null || $raw === '') ? $default : max(0, (int) $raw);
+    }
+
     /** 이 알림이 차량 스코프형인가. */
     public static function isScoped(string $code): bool
     {
@@ -446,6 +483,20 @@ class AlimtalkRecipients
      */
     public static function scopedFor(string $code, iterable $vehicles): array
     {
+        return self::scopedForTiered($code, $vehicles, fn () => true);
+    }
+
+    /**
+     * 역할마다 **다른 차량 집합**을 주는 스코프 해석 — 단계별 확대용 (jin 2026-09-07).
+     *
+     * @param  callable(string, Vehicle): bool  $eligible  (역할그룹, 차량) → 그 역할이 이 차를 받나
+     *
+     * 🔑 **한 사람이 여러 역할에 걸리는 경우가 정상이다** — 운영 최고관리자는 permission='admin' 이면서
+     *    role='관리' 를 겸한다. 티어별로 따로 보내면 같은 사람에게 두 통이 간다. 아래 합집합이 그걸 막고,
+     *    **더 이른 티어에서 이미 받은 차량**과 늦은 티어의 차량이 한 통으로 합쳐진다.
+     */
+    public static function scopedForTiered(string $code, iterable $vehicles, callable $eligible): array
+    {
         $rows = collect($vehicles)->filter()->values();
         if ($rows->isEmpty()) {
             return [];
@@ -459,7 +510,9 @@ class AlimtalkRecipients
                 if ($phone === '') {
                     continue;
                 }
-                $mine = $rows->filter(fn (Vehicle $v) => $user->canScopeVehicle($v))->values();
+                $mine = $rows
+                    ->filter(fn (Vehicle $v) => $user->canScopeVehicle($v) && $eligible($group, $v))
+                    ->values();
                 if ($mine->isEmpty()) {
                     continue;
                 }
@@ -480,7 +533,9 @@ class AlimtalkRecipients
                 ->whereNotNull('phone')->where('phone', '!=', '')
                 ->pluck('phone', 'id');
             foreach ($orphans as $salesmanId => $phone) {
-                $mine = $rows->where('salesman_id', $salesmanId)->values();
+                $mine = $rows->where('salesman_id', $salesmanId)
+                    ->filter(fn (Vehicle $v) => $eligible('영업', $v))
+                    ->values();
                 if ($mine->isEmpty()) {
                     continue;
                 }

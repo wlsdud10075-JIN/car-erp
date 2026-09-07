@@ -20,6 +20,8 @@ return [
     'recipient_roles' => 'Recipient roles',
     'now_count' => ':n recipient(s) now',
     'scoped_note' => 'Checked roles do not all receive the same list. Managers, admins, clearance and finance see everything; a team lead sees their own team, a salesperson only their own vehicles.',
+    'escalate_unit' => 'd+',
+    'escalate_note' => 'The number is the age at which that role starts receiving an item. The checkbox decides who, the number decides when. Later stages also see the vehicles earlier stages already receive. Leave blank to restore the default.',
     'save' => 'Save',
     'saved' => 'Recipient roles saved.',
     'auto_prefix' => 'also to',

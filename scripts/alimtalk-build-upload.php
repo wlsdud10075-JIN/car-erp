@@ -134,6 +134,19 @@ foreach ($COMPANIES as [$dir, $label, $profile]) {
         '<sst$1count="'.$tsCount.'" uniqueCount="'.$siTotal.'"', $strings, 1);
 
     // ── ⑤ 나머지 엔트리는 **바이트 그대로** 복사 ──────────────────────────
+    // 🚨 **덮어쓰기 전 자동 백업** (2026-09-07 사고) — 이 파일명은 고정이라, 다른 템플릿을 만들면
+    //    직전 등록본을 그대로 지운다. 실제로 BizM 심사에 제출해 둔 「채권현황+일일요약」 등록본을
+    //    말소필요 1종으로 덮어썼다(다행히 손수 떠 둔 백업이 있어 복구). 사람이 기억으로 막을 일이 아니다.
+    if (is_file($outPath)) {
+        $bak = $outPath.'.bak-'.date('YmdHi');
+        if (! is_file($bak) && ! @copy($outPath, $bak)) {
+            fwrite(STDERR, "❌ 기존 파일 백업 실패 — 중단: $outPath
+");
+            exit(1);
+        }
+        $bakName = basename($bak);
+        echo "   ↳ 기존 파일 백업: {$bakName}\n";
+    }
     @unlink($outPath);
     $zout = new ZipArchive;
     if ($zout->open($outPath, ZipArchive::CREATE) !== true) {
