@@ -147,6 +147,14 @@ return [
         'unpaid_ratio' => 'Paid %',
         'unpaid_purchase' => 'Purchase unpaid',
         'unpaid_sale' => 'Sale unpaid',
+        'settlement_stage' => 'Settlement',
+    ],
+
+    // 정산 단계 뱃지 (jin 2026-09-07) — 값 = Vehicle::SETTLEMENT_STAGE_*. 컬럼 라벨은 col.settlement_stage.
+    'settlement_badge' => [
+        'done' => 'Settled',
+        'waiting' => 'Pending',
+        'freight' => 'Freight',
     ],
 
     'fully_paid' => 'Paid',

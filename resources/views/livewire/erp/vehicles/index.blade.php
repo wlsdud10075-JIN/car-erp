@@ -2064,6 +2064,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'salesman',
                 'finalPayments', 'purchaseBalancePayments', 'receivableHistories',
                 'boardRequests' => fn ($q2) => $q2->open(),
+            ])
+            // 「정산」 컬럼용 — 정산 상태를 서브쿼리 1회로 실어 온다(행마다 관계를 읽으면 20행=20쿼리).
+            //   판정은 Vehicle::settlementStage() 단일 출처. 차량당 정산은 1건이 원칙이라 최신 1건을 본다.
+            ->addSelect(['settlement_status_peek' => \App\Models\Settlement::query()
+                ->select('settlement_status')
+                ->whereColumn('vehicle_id', 'vehicles.id')
+                ->latest('id')
+                ->limit(1),
             ]);
 
         // 컨사이니 정렬은 폴백 우선순위(COALESCE)로 — consignee_id 만 보면 신규 차량이 전부 NULL 이라 정렬이 무의미.
@@ -6797,6 +6805,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>
+                <th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{{ __('vehicle.col.settlement_stage') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee_usd']">{!! $sortBtn('transport_fee_usd', __('vehicle.col.transport_fee_usd'), 'right') !!}</th>
                 <th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>
@@ -6935,6 +6944,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @else -
                     @endif
                 </td>
+                {{-- 정산 단계 (jin 2026-09-07) — 판정은 Vehicle::settlementStage() 단일 출처.
+                     🚫 인코텀즈·운임비를 여기서 다시 평가하지 말 것(게이트 = isFreightConfirmedForSettlement). --}}
+                <td class="py-3 pr-4" x-show="visible['settlement_stage']">
+                    @php $stage = $v->settlementStage(); @endphp
+                    @if($stage === \App\Models\Vehicle::SETTLEMENT_STAGE_DONE)
+                        <span class="badge badge-gray">{{ __('vehicle.settlement_badge.done') }}</span>
+                    @elseif($stage === \App\Models\Vehicle::SETTLEMENT_STAGE_WAITING)
+                        <span class="badge badge-blue">{{ __('vehicle.settlement_badge.waiting') }}</span>
+                    @elseif($stage === \App\Models\Vehicle::SETTLEMENT_STAGE_FREIGHT)
+                        <span class="badge badge-amber">{{ __('vehicle.settlement_badge.freight') }}</span>
+                    @else -
+                    @endif
+                </td>
                 <td class="py-3 pr-4 text-right text-gray-600" x-show="visible['transport_fee']">
                     @if($v->transport_fee > 0){{ number_format($v->transport_fee) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>@else -@endif
                 </td>
@@ -6986,6 +7008,7 @@ function vehicleColumnsToggle() {
         currency_rate: false, purchase_price: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, consignee: false, sales_channel: false,
+        settlement_stage: false,
     };
     return {
         open: false,
@@ -7017,6 +7040,7 @@ function vehicleColumnsToggle() {
             { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
             { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
             { key: 'sale_total',     label: @json(__('vehicle.col.sale_total')) },
+            { key: 'settlement_stage', label: @json(__('vehicle.col.settlement_stage')) },
             { key: 'transport_fee',  label: @json(__('vehicle.col.transport_fee')) },
             { key: 'transport_fee_usd', label: @json(__('vehicle.col.transport_fee_usd')) },
             { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
