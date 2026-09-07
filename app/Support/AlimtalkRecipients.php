@@ -68,6 +68,10 @@ class AlimtalkRecipients
         'erp_deposit_cash_due' => ['관리', 'manager', '영업'],
         //   픽업은 구 코드가 역할 선택 없이 담당자에게만 보냈다 → '영업'만 켠 채로 시작.
         'erp_pickup_reminder' => ['영업'],
+        //   말소 재촉 (jin 2026-09-07) — 신설이라 보존할 구 동작이 없다. 기본 '영업'(본인 담당분만)이고,
+        //   관리·업무관리자·최고관리자는 안내 화면에서 켜면 각자 범위대로 받는다(jin 요청).
+        //   ⚠️ 담당자 없는 차는 영업 스코프 밖 → 그 셋 중 하나를 켜야 누군가 받는다(§8 #61 함정 4).
+        'erp_deregistration_reminder' => ['영업'],
         'erp_deposit_cash_overdue' => ['admin'],
         // 딜러 입금완료 v2 (jin 2026-08-21) — **기본은 빈 배열**이다.
         //   딜러와 그 차 담당영업은 자동으로 받으므로(AUTO_EXTRA), 역할은 «더 받을 사람» 을
@@ -107,7 +111,7 @@ class AlimtalkRecipients
     public const SCOPED_CODES = [
         'erp_vehicle_new', 'erp_purchase_unpaid', 'erp_sale_unpaid', 'erp_settle_pending',
         'erp_eta_balance_due', 'erp_shipping_due', 'erp_deposit_cash_due',
-        'erp_pickup_reminder', 'erp_purchase_paid_v2',
+        'erp_pickup_reminder', 'erp_purchase_paid_v2', 'erp_deregistration_reminder',
     ];
 
     /** 이 알림이 차량 스코프형인가. */

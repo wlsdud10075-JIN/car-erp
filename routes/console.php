@@ -31,6 +31,7 @@ Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
 //   ⚠️ 주말 발송 금지(jin 2026-07-10): 정기 자동발송은 평일(월~금)만. weekly 는 금요일이라 무관.
 //      (이벤트 발동 알림 — 정산승인·말소증 등 — 은 사용자 액션 시점이라 스케줄 무관, 별도.)
 Schedule::command('alimtalk:pickup')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+Schedule::command('alimtalk:deregistration')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:purchase-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:sale-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->weekdays()->withoutOverlapping();
