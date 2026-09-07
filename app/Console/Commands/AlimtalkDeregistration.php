@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
  *   ① is_deregistered = false      — 말소 «자체» 미처리만. 해소 = 말소 체크.
  *   ② container_number 없음        — 이미 컨테이너가 잡혔으면 그만 보낸다 (jin 2026-09-07)
  *   ③ export_declaration_number 없음 — 수출신고번호가 나왔으면 그만 보낸다 (jin 2026-09-07)
+ *   ④ buyer_id 있음               — 바이어 없는 일반재고(투기매입)는 제외 (jin 2026-09-07)
  *
  * 🚨 **①이 발송량의 핵심이다.** scopeAction 원본은 `(is_deregistered=false OR 서류없음)` 이라
  *    「말소는 했고 말소등록증 파일만 안 올린」 차까지 잡는다 — ssancarerp 실측 57대 중 **41대(72%)**
@@ -29,6 +30,9 @@ use Illuminate\Support\Facades\Log;
  *    한쪽만 쓰면 빈 문자열로 저장된 행이 조용히 빠져나간다.
  *
  * 목록형 1통 = 사람당 하나(jin 2026-09-07). 차량 1대 = 1통이면 임윤태 13통/일이 된다.
+ *
+ * 🪜 **단계별 확대** — 오래 방치될수록 위로 올라간다. 기본 영업·관리 D+2 → 업무관리자 D+3 → 최고관리자 D+4.
+ *    누적이라 늦은 티어는 앞 티어 차량도 함께 본다. 일수는 「알림톡 안내」 화면에서 회사별로 바꾼다.
  */
 class AlimtalkDeregistration extends Command
 {
@@ -36,8 +40,11 @@ class AlimtalkDeregistration extends Command
 
     protected $description = '매입 완납 +2일 & 말소 미처리 차량 목록 알림톡(1건) — 담당 영업.';
 
-    /** 완납 후 며칠 지나야 재촉하나 (jin 2026-09-07). */
-    private const GRACE_DAYS = 2;
+    /**
+     * 며칠부터 누구에게 가는지는 **AlimtalkRecipients::ESCALATION_DEFAULTS + 회사별 설정**이 정한다.
+     * 기본 = 영업·관리 D+2 / 업무관리자 D+3 / 최고관리자 D+4 (누적 — 늦은 티어는 앞 티어 차량도 함께 본다).
+     * 🚫 여기에 일수를 박지 말 것 — 화면에 안 보이는 규칙이 되면 「체크했는데 왜 안 와?」가 된다(§8 #60).
+     */
 
     /** 본문 1000자 상한 대비 목록 줄 수 상한. 초과분은 "외 N건" — 상세는 차량관리. */
     private const LIST_CAP = 15;
@@ -50,6 +57,9 @@ class AlimtalkDeregistration extends Command
                 ->where('is_deregistered', false)
                 ->where(fn ($q) => $q->whereNull('container_number')->orWhere('container_number', ''))
                 ->where(fn ($q) => $q->whereNull('export_declaration_number')->orWhere('export_declaration_number', ''))
+                // ④ 바이어 없음 = 일반재고(바이어 미정 투기매입) — 팔릴 때까지 말소를 서두를 이유가 없다(jin 2026-09-07).
+                //    재고 2분류의 「일반재고」가 정확히 이 상태다(scopeGeneralStock, SKILLS §14).
+                ->whereNotNull('buyer_id')
                 // ⚠️ warehouse_in_date(매입 완납일)가 purchaseBalancePayments 컬렉션을 읽는다 — eager load 필수.
                 //    AlimtalkSaleUnpaid 를 복제하면 이 줄이 빠진다(그쪽은 캐시 컬럼만 읽어 필요 없다).
                 ->with(['salesman', 'purchaseBalancePayments'])
@@ -61,10 +71,20 @@ class AlimtalkDeregistration extends Command
                 return self::SUCCESS;
             }
 
-            // 🎯 사람마다 **자기가 볼 수 있는 차만** 담아 보낸다 (SCOPED_CODES).
-            //    영업 = 본인 담당분 / 관리 = 본인 팀 / admin·업무관리자 = 전체.
+            // 🎯 사람마다 **자기가 볼 수 있는 차만**, 그리고 **자기 티어에 도달한 차만** 담아 보낸다.
+            //    범위 = SCOPED_CODES(영업 = 본인 담당분 / 관리 = 본인 팀 / admin·업무관리자 = 전체).
+            //    시점 = 역할별 경과일. 한 사람이 여러 역할이면 scopedForTiered 가 한 통으로 합친다.
             //    ⚠️ 담당자 없는 차는 영업 스코프 밖이라 admin·업무관리자를 안 켜면 아무도 못 받는다(§8 #61).
-            $targets = AlimtalkRecipients::scopedFor('erp_deregistration_reminder', $rows);
+            $targets = AlimtalkRecipients::scopedForTiered(
+                'erp_deregistration_reminder',
+                $rows,
+                function (string $group, Vehicle $v): bool {
+                    $elapsed = $this->elapsedDays($v);
+
+                    return $elapsed !== null
+                        && $elapsed >= AlimtalkRecipients::escalationDays('erp_deregistration_reminder', $group);
+                }
+            );
             if (empty($targets)) {
                 $this->info('deregistration: 수신자 없음 — skip.');
 
@@ -74,16 +94,9 @@ class AlimtalkDeregistration extends Command
             $svc = BizmAlimtalkService::active();
             $sent = 0;
             foreach ($targets as $phone => $mine) {
-                // 유예는 **대상 판정이 아니라 목록에서 빼는 것**이다(목록형이라 픽업과 다르다).
-                //   그 사람 차가 전부 유예 안이면 이번 회차는 통째로 skip — 빈 목록을 보내지 않는다.
-                $due = collect($mine)->filter(fn (Vehicle $v) => $this->elapsedDays($v) !== null
-                    && $this->elapsedDays($v) >= self::GRACE_DAYS);
-                if ($due->isEmpty()) {
-                    continue;
-                }
-
+                // 티어 필터가 이미 「이 사람이 지금 받을 차」만 남겼다 — 빈 사람은 애초에 안 들어온다.
                 // 카드(아이템리스트) = 「몇 대인가」 + 양 끝 한 대씩, 본문 = 전체 목록.
-                $sorted = $due->sortByDesc(fn (Vehicle $v) => $this->elapsedDays($v))->values();
+                $sorted = collect($mine)->sortByDesc(fn (Vehicle $v) => $this->elapsedDays($v))->values();
                 $svc->send('erp_deregistration_reminder', $phone, [
                     '건수' => (string) $sorted->count(),
                     '최장차량' => $this->oneLine($sorted->first()),

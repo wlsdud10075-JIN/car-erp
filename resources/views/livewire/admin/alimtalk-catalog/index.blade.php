@@ -13,6 +13,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 브로드캐스트형 알림별 선택 역할: code => [group keys]. */
     public array $roles = [];
 
+    /** 단계별 확대 일수 [code][group] => 일 (jin 2026-09-07). 「체크 = 받을지 / 숫자 = 언제부터」. */
+    public array $escalate = [];
+
     /** 시각 규칙형 알림별 규칙 행: code => [['to'=>,'days'=>[],'from'=>,'till'=>], ...]. */
     public array $timeRules = [];
 
@@ -28,6 +31,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         foreach (array_keys(AlimtalkTemplates::TEMPLATES) as $code) {
             if (AlimtalkRecipients::isBroadcast($code)) {
                 $this->roles[$code] = AlimtalkRecipients::selectedRoles($code);
+                if (AlimtalkRecipients::supportsEscalation($code)) {
+                    foreach (array_keys(AlimtalkRecipients::BROADCAST_GROUPS) as $g) {
+                        $this->escalate[$code][$g] = (string) AlimtalkRecipients::escalationDays($code, $g);
+                    }
+                }
             }
             if (AlimtalkRecipients::isTimeRouted($code)) {
                 $this->timeRules[$code] = AlimtalkRecipients::timeRules($code);
@@ -295,6 +303,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['key' => "alimtalk_roles_{$code}_{$set}"],
             ['value' => implode(',', $selected), 'type' => 'string', 'description' => '알림톡 수신 역할 '.$code.' ('.$set.')'],
         );
+        // 단계별 확대 일수도 같은 [저장]으로 함께 — 체크와 숫자를 따로 저장하게 하면 한쪽만 눌러 어긋난다.
+        if (AlimtalkRecipients::supportsEscalation($code)) {
+            foreach ($valid as $g) {
+                $raw = trim((string) ($this->escalate[$code][$g] ?? ''));
+                Setting::updateOrCreate(
+                    ['key' => "alimtalk_escalate_{$code}_{$g}_{$set}"],
+                    ['value' => $raw === '' ? '' : (string) max(0, (int) $raw), 'type' => 'string',
+                        'description' => '알림톡 단계별 확대 일수 '.$code.'/'.$g.' ('.$set.')'],
+                );
+                $this->escalate[$code][$g] = (string) AlimtalkRecipients::escalationDays($code, $g);
+            }
+        }
         $this->roles[$code] = $selected;   // 정규화된 선택 반영 (recipientCount 는 메서드라 자동 재계산)
         $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
     }
@@ -355,11 +375,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if(\App\Support\AlimtalkRecipients::isScoped($code))
                         <p class="mb-2 text-[11px] leading-relaxed text-primary-text">{{ __('alimtalk_catalog.scoped_note') }}</p>
                         @endif
+                        @if(\App\Support\AlimtalkRecipients::supportsEscalation($code))
+                        <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ __('alimtalk_catalog.escalate_note') }}</p>
+                        @endif
                         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                             @foreach($this->groups() as $gkey => $glabel)
                                 <label class="flex items-center gap-1.5 text-sm text-gray-700">
                                     <input type="checkbox" value="{{ $gkey }}" wire:model="roles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" />
                                     {{ $glabel }}
+                                    {{-- 🪜 「체크 = 받을지 / 숫자 = 언제부터」. 일수를 코드에 박으면 화면에
+                                         안 보이는 규칙이 되어 「체크했는데 왜 안 와?」가 된다(§8 #60). --}}
+                                    @if(\App\Support\AlimtalkRecipients::supportsEscalation($code))
+                                        <span class="ml-0.5 inline-flex items-center gap-1 text-xs text-gray-500">
+                                            D+<input type="number" min="0" max="365" inputmode="numeric"
+                                                wire:model="escalate.{{ $code }}.{{ $gkey }}"
+                                                class="w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs" />{{ __('alimtalk_catalog.escalate_unit') }}
+                                        </span>
+                                    @endif
                                 </label>
                             @endforeach
                             <button type="button" wire:click="saveRoles('{{ $code }}')" class="btn-primary ml-auto px-3 py-1 text-xs">

@@ -188,10 +188,13 @@ class AlimtalkTriggerTest extends TestCase
     /** 매입 완납 차량(잔금 전액 확정) 하나 — 말소 재촉 대상의 기본 재료. */
     private function paidVehicle(Salesman $sm, string $plate, int $daysAgo, array $extra = []): Vehicle
     {
+        // ⚠️ 바이어가 있어야 대상이다 — 바이어 없는 일반재고(투기매입)는 알림에서 제외한다(jin 2026-09-07).
+        $buyer = Buyer::firstOrCreate(['name' => '말소테스트바이어']);
         $v = Vehicle::create(array_merge([
             'vehicle_number' => $plate, 'sales_channel' => 'export',
             'purchase_price' => 3_000_000, 'purchase_date' => now()->subDays($daysAgo + 1)->toDateString(),
             'purchase_from' => '○○모터스', 'salesman_id' => $sm->id, 'is_deregistered' => false,
+            'buyer_id' => $buyer->id,
         ], $extra));
         // 완납일 = 확정 매입잔금의 마지막 지급일(= Vehicle::warehouse_in_date).
         $v->purchaseBalancePayments()->create([
@@ -264,6 +267,19 @@ class AlimtalkTriggerTest extends TestCase
         $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
     }
 
+    public function test_deregistration_skips_general_stock_without_buyer(): void
+    {
+        // 바이어 미정 = 일반재고(투기매입). 팔릴 때까지 말소를 서두를 이유가 없다(jin 2026-09-07).
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '재고영업', 'phone' => '010-5555-7777', 'is_active' => true]);
+        $v = $this->paidVehicle($sm, '88아8888', 5);
+        $v->forceFill(['buyer_id' => null])->saveQuietly();
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+    }
+
     public function test_deregistration_bundles_multiple_vehicles_into_one_message(): void
     {
         // 차량 1대 = 1통이면 실측 최대 13통/일이 된다 → 사람당 1통 목록형(jin 2026-09-07).
@@ -289,6 +305,7 @@ class AlimtalkTriggerTest extends TestCase
             'vehicle_number' => '77사7890', 'sales_channel' => 'export',
             'purchase_price' => 4_000_000, 'purchase_date' => now()->subDays(30)->toDateString(),
             'purchase_from' => '△△오토', 'salesman_id' => $sm->id, 'is_deregistered' => false,
+            'buyer_id' => Buyer::firstOrCreate(['name' => '말소테스트바이어'])->id,
         ]);
         $v->purchaseBalancePayments()->create(['amount' => 1_000_000, 'payment_date' => now()->subDays(20)->toDateString(), 'confirmed_at' => now()]);
         $v->purchaseBalancePayments()->create(['amount' => 3_000_000, 'payment_date' => now()->subDays(4)->toDateString(), 'confirmed_at' => now()]);
@@ -296,6 +313,106 @@ class AlimtalkTriggerTest extends TestCase
         $this->artisan('alimtalk:deregistration')->assertSuccessful();
 
         Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '완납 4일 경과'));
+    }
+
+    // ── 단계별 확대 (jin 2026-09-07) — 영업·관리 D+2 → 업무관리자 D+3 → 최고관리자 D+4, 누적 ──
+
+    /** 그 알림의 수신 역할을 명시 저장 (미설정 시 DEFAULT_ROLES 로 떨어지므로 테스트는 늘 명시한다). */
+    private function setRoles(string $code, array $groups): void
+    {
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "alimtalk_roles_{$code}_{$set}"],
+            ['value' => implode(',', $groups), 'type' => 'string']);
+    }
+
+    public function test_escalation_holds_back_later_tiers_until_their_day(): void
+    {
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $this->setRoles('erp_deregistration_reminder', ['영업', 'manager', 'admin']);
+        $sm = Salesman::create(['name' => '단계영업', 'phone' => '010-8888-0001', 'is_active' => true]);
+        $mgr = User::factory()->create(['permission' => 'manager',
+            'phone' => '010-8888-0002', 'email_verified_at' => now()]);
+        $adm = User::factory()->create(['permission' => 'admin', 'phone' => '010-8888-0003', 'email_verified_at' => now()]);
+        $this->paidVehicle($sm, '11가1111', 2);   // D+2 — 영업만
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $phones = AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->pluck('phone')->all();
+        $this->assertSame(['01088880001'], $phones, 'D+2 에는 영업만 받는다');
+        $this->assertNotNull($mgr);
+        $this->assertNotNull($adm);
+    }
+
+    public function test_escalation_adds_manager_on_day_three_and_admin_on_day_four(): void
+    {
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $this->setRoles('erp_deregistration_reminder', ['영업', 'manager', 'admin']);
+        $sm = Salesman::create(['name' => '단계영업', 'phone' => '010-8888-0001', 'is_active' => true]);
+        User::factory()->create(['permission' => 'manager',
+            'phone' => '010-8888-0002', 'email_verified_at' => now()]);
+        User::factory()->create(['permission' => 'admin', 'phone' => '010-8888-0003', 'email_verified_at' => now()]);
+        $this->paidVehicle($sm, '22나2222', 3);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+        $day3 = AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->pluck('phone')->sort()->values()->all();
+        $this->assertSame(['01088880001', '01088880002'], $day3, 'D+3 에는 업무관리자까지');
+
+        AlimtalkLog::query()->delete();
+        Vehicle::query()->update(['vehicle_number' => '33다3333']);
+        $this->paidVehicle($sm, '44라4444', 4);   // D+4 한 대 추가
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+        $day4 = AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->pluck('phone')->sort()->values()->all();
+        $this->assertSame(['01088880001', '01088880002', '01088880003'], $day4, 'D+4 에는 최고관리자까지');
+    }
+
+    // ℹ️ 「한 사람이 두 티어에 걸려 두 통」은 이 구조에서 안 생긴다 — 역할 그룹이 permission 으로 갈려
+    //    (admin / manager / user+role) **한 사람은 정확히 한 그룹**이다. 최고관리자가 role='관리' 를
+    //    겸해도 [관리] 그룹은 permission='user' 만 잡는다(AlimtalkRecipients::groupQuery).
+    //    scopedForTiered 의 전화번호 합집합은 그래도 남겨 둔다 — ERP 계정 없는 영업담당자가
+    //    같은 번호를 쓰는 경우처럼 번호가 겹칠 여지는 있다.
+
+    public function test_later_tier_does_not_receive_vehicles_below_its_day(): void
+    {
+        // 겸직이 아닌 순수 최고관리자는 D+4 이상만 본다 — D+2 짜리는 안 담긴다.
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $this->setRoles('erp_deregistration_reminder', ['영업', 'admin']);
+        $sm = Salesman::create(['name' => '단계영업', 'phone' => '010-8888-0001', 'is_active' => true]);
+        User::factory()->create(['permission' => 'admin', 'phone' => '010-8888-0003', 'email_verified_at' => now()]);
+        $this->paidVehicle($sm, '55마5555', 2);
+        $this->paidVehicle($sm, '66바6666', 9);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        Http::assertSent(function ($req) {
+            $d = $req->data()[0];
+            if (($d['phn'] ?? '') !== '01088880003') {
+                return false;
+            }
+
+            return str_contains($d['msg'] ?? '', '66바6666') && ! str_contains($d['msg'] ?? '', '55마5555');
+        });
+    }
+
+    public function test_escalation_days_are_configurable_per_company(): void
+    {
+        // 🚫 일수를 코드에 박으면 화면에 안 보이는 규칙이 된다(§8 #60) — 설정으로 바뀌어야 한다.
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $this->setRoles('erp_deregistration_reminder', ['영업']);
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "alimtalk_escalate_erp_deregistration_reminder_영업_{$set}"],
+            ['value' => '10', 'type' => 'string']);
+        $sm = Salesman::create(['name' => '단계영업', 'phone' => '010-8888-0001', 'is_active' => true]);
+        $this->paidVehicle($sm, '77사7777', 5);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count(),
+            'D+10 으로 올렸으면 5일차는 아직 안 간다');
+
+        Setting::updateOrCreate(['key' => "alimtalk_escalate_erp_deregistration_reminder_영업_{$set}"],
+            ['value' => '', 'type' => 'string']);
+        $this->assertSame(2, AlimtalkRecipients::escalationDays('erp_deregistration_reminder', '영업'),
+            '비우면 기본값으로 돌아간다');
     }
 
     public function test_settle_pending_hook_notifies_managers_on_created(): void
