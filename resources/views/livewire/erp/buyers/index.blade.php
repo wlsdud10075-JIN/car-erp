@@ -109,6 +109,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cash_amount     = '';
     public string $cash_note       = '';
 
+    /**
+     * 수수료 — 남은 현금을 0 으로 터는 통로 (jin 2026-09-08).
+     * 바이어가 보낸 돈을 쓰다 보면 **한참 뒤에 송금 수수료가 잡혀** 잔돈이 영영 남는다.
+     */
+    public array  $cashFeeList     = [];
+
+    public string $fee_currency    = 'USD';
+
+    public string $fee_date        = '';
+
+    public string $fee_amount      = '';
+
+    public string $fee_note        = '';
+
+    public bool   $showFeeForm     = false;
+
     // ─────────────────────────────────────────────────────────────
 
     /**
@@ -539,10 +555,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showConsigneeForm = false;
         $this->editConsigneeId = null;
         // 현금 탭 — 신규 등록 패널을 열 때 직전 바이어의 입금이 남아 보이면 안 된다.
-        $this->cashBalances = $this->cashReceiptList = [];
+        $this->cashBalances = $this->cashReceiptList = $this->cashFeeList = [];
         $this->cash_amount = $this->cash_note = '';
         $this->cash_currency = 'USD';
         $this->cash_date = now()->toDateString();
+        $this->fee_amount = $this->fee_note = '';
+        $this->fee_currency = 'USD';
+        $this->fee_date = now()->toDateString();
+        $this->showFeeForm = false;
     }
 
     public function saveConsignee(): void
@@ -760,11 +780,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->cashBalances = [];
         $this->cashReceiptList = [];
+        $this->cashFeeList = [];
         if (! $buyerId || ! Setting::buyerCashEnabled()) {
             return;
         }
         // 수령일 기본값 = 오늘. openEdit 은 resetForm 을 안 타므로 여기서 채운다.
         $this->cash_date = $this->cash_date ?: now()->toDateString();
+        $this->fee_date = $this->fee_date ?: now()->toDateString();
 
         $receipts = BuyerCashReceipt::where('buyer_id', $buyerId)
             ->with(['allocations.vehicle:id,vehicle_number', 'creator:id,name'])
@@ -790,6 +812,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 목록은 최근 순(사람은 방금 들어온 돈을 먼저 본다). 소진 순서는 위 칩이 알려준다.
+        $this->loadCashFees($buyerId);
+
         $this->cashReceiptList = $receipts
             ->sortByDesc(fn (BuyerCashReceipt $r) => [$r->received_date->format('Y-m-d'), $r->id])
             ->values()
@@ -813,6 +837,90 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->map(fn ($a) => ($a->vehicle?->vehicle_number ?? '-').' '.number_format((float) $a->amount, 2))
                     ->implode(' / '),
             ])->all();
+    }
+
+    /** 수수료 목록 — 최근 순. 「어느 입금에서 얼마씩 나갔는지」도 같이 보여준다(입금 행과 같은 방식). */
+    private function loadCashFees(int $buyerId): void
+    {
+        $this->cashFeeList = \App\Models\BuyerCashFee::where('buyer_id', $buyerId)
+            ->with(['allocations.receipt:id,received_date', 'creator:id,name'])
+            ->orderByDesc('charged_date')->orderByDesc('id')
+            ->get()
+            ->map(fn ($f) => [
+                'id' => $f->id,
+                'charged_date' => $f->charged_date->format('Y-m-d'),
+                'currency' => $f->currency,
+                'amount' => (float) $f->amount,
+                'note' => $f->note,
+                'by' => $f->creator?->name,
+                // 어느 입금에서 나갔나 — 좁은 패널이라 호버로 전문(입금 행의 uses_title 과 같은 방식).
+                'from' => $f->allocations
+                    ->map(fn ($a) => ($a->receipt?->received_date?->format('m/d') ?? '-')
+                        .' '.number_format((float) $a->amount, 2))
+                    ->implode(' / '),
+            ])->all();
+    }
+
+    /**
+     * 💸 수수료 부과 — 남은 현금을 FIFO 로 갉아 0 으로 턴다 (jin 2026-09-08).
+     *
+     * 🚫 **입금 행을 고쳐서 맞추지 않는다** — 감사 기록이 사라지고 배분이 cascade 로 날아간다.
+     * 🚫 적립금으로 넘기지 않는다 — 다른 원장이다.
+     */
+    public function addCashFee(): void
+    {
+        // 화면 노출은 편의일 뿐 — 변경 액션은 매번 재인가한다(SKILLS §8 #26).
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+        if (! $this->editingId || ! Setting::buyerCashEnabled()) {
+            return;
+        }
+
+        $this->validate([
+            'fee_date' => 'required|date',
+            'fee_currency' => 'required|in:USD,JPY,EUR,GBP,CNY,KRW',
+            'fee_amount' => 'required|numeric|min:0.01',
+            'fee_note' => 'nullable|string|max:255',
+        ]);
+
+        try {
+            DB::transaction(function () {
+                $fee = \App\Models\BuyerCashFee::create([
+                    'buyer_id' => $this->editingId,
+                    'currency' => $this->fee_currency,
+                    'charged_date' => $this->fee_date,
+                    'amount' => (float) $this->fee_amount,
+                    'note' => $this->fee_note ?: null,
+                    'created_by' => auth()->id(),
+                ]);
+                \App\Models\AuditLog::recordEvent($fee, 'buyer_cash_fee_added');
+                // 남은 현금이 모자라면 여기서 던진다 → 수수료 행 생성까지 통째로 롤백된다.
+                app(\App\Services\BuyerCashService::class)->chargeFee($fee);
+            });
+        } catch (\DomainException $e) {
+            $this->addError('fee_amount', $e->getMessage());
+
+            return;
+        }
+
+        $this->fee_amount = $this->fee_note = '';
+        $this->loadCash($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.fee_added'), type: 'success');
+    }
+
+    /** 수수료 취소 — 배분이 cascade 로 사라져 **현금이 그대로 돌아온다**. */
+    public function deleteCashFee(int $id): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+        if (! $this->editingId) {
+            return;
+        }
+        // 바이어 스코프 재확인 — public 프로퍼티로 오는 id 를 그대로 믿지 않는다.
+        $fee = \App\Models\BuyerCashFee::where('buyer_id', $this->editingId)->findOrFail($id);
+        \App\Models\AuditLog::recordEvent($fee, 'buyer_cash_fee_deleted');
+        $fee->delete();
+
+        $this->loadCash($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.fee_deleted'), type: 'success');
     }
 
     public function addCashReceipt(): void
@@ -861,10 +969,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         // 바이어 스코프 재확인 — public 프로퍼티로 오는 id 를 그대로 믿지 않는다.
         $receipt = BuyerCashReceipt::where('buyer_id', $this->editingId)->findOrFail($id);
-        $affected = $receipt->allocations()->pluck('final_payment_id')->unique()->all();
+        $affected = $receipt->allocations()->whereNotNull('final_payment_id')
+            ->pluck('final_payment_id')->unique()->all();
+        // 💸 이 입금에서 나간 **수수료**도 같이 되살려야 한다 (2026-09-08).
+        //    안 하면 입금이 사라지면서 수수료 배분도 cascade 로 날아가, 수수료 행은 남았는데
+        //    **현금은 도로 늘어난** 상태가 된다(화면엔 아무 표시도 안 뜬다).
+        $affectedFees = $receipt->allocations()->whereNotNull('fee_id')
+            ->pluck('fee_id')->unique()->all();
 
         try {
-            DB::transaction(function () use ($receipt, $affected) {
+            DB::transaction(function () use ($receipt, $affected, $affectedFees) {
                 \App\Models\AuditLog::recordEvent($receipt, 'buyer_cash_receipt_deleted');
                 $receipt->delete();
 
@@ -873,6 +987,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     // 남은 현금으로 못 덮으면 여기서 던진다 → 삭제까지 통째로 롤백된다.
                     $service->assertAvailable($payment);
                     $service->allocate($payment);
+                }
+                foreach (\App\Models\BuyerCashFee::whereIn('id', $affectedFees)->get() as $fee) {
+                    $service->chargeFee($fee);   // 모자라면 던진다 → 삭제까지 롤백
                 }
             });
         } catch (\DomainException $e) {
@@ -1774,7 +1891,55 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                 </div>
                 <p class="mt-2 text-[11px] text-gray-400">{{ __('buyer.cash.rate_note') }}</p>
-                <button wire:click="addCashReceipt" class="btn-primary mt-3 text-xs py-1.5">{{ __('buyer.cash.add_btn') }}</button>
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <button wire:click="addCashReceipt" class="btn-primary text-xs py-1.5">{{ __('buyer.cash.add_btn') }}</button>
+                    {{-- 💸 수수료 (jin 2026-09-08) — 평소엔 접어둔다. 입금 기재만큼 자주 쓰는 게 아니고,
+                         펼쳐 두면 「입금 금액」칸과 헷갈려 엉뚱한 칸에 적는다. --}}
+                    <button type="button" wire:click="$toggle('showFeeForm')"
+                            class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100">
+                        {{ $showFeeForm ? __('buyer.cash.fee_close') : __('buyer.cash.fee_open') }}
+                    </button>
+                </div>
+
+                @if($showFeeForm)
+                <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                    <h4 class="text-xs font-semibold text-amber-800">{{ __('buyer.cash.fee_section') }}</h4>
+                    <p class="mt-1 text-[11px] leading-snug text-amber-700/80">{{ __('buyer.cash.fee_hint') }}</p>
+                    <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <div>
+                            <label class="label-base">{{ __('buyer.cash.fee_date') }}</label>
+                            <input wire:model="fee_date" type="date" class="input-base" />
+                            @error('fee_date')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="label-base">{{ __('buyer.cash.currency') }}</label>
+                            <select wire:model.live="fee_currency" class="input-base">
+                                @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $cur)
+                                <option value="{{ $cur }}">{{ $cur }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label-base">{{ __('buyer.cash.fee_amount') }}</label>
+                            <input wire:model="fee_amount" type="text" class="input-base" placeholder="0.00" />
+                            @error('fee_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="label-base">{{ __('buyer.cash.fee_note') }}</label>
+                            <input wire:model="fee_note" type="text" class="input-base"
+                                   placeholder="{{ __('buyer.cash.fee_note_ph') }}" />
+                        </div>
+                    </div>
+                    {{-- 지금 털 수 있는 최대 = 그 통화의 남은 현금. 안 보여주면 「왜 안 되지」로 되묻게 된다. --}}
+                    <p class="mt-2 text-[11px] text-amber-700/80">
+                        {{ __('buyer.cash.fee_ceiling', ['amount' => number_format($cashBalances[$fee_currency]['remaining'] ?? 0, 2).' '.$fee_currency]) }}
+                    </p>
+                    <button wire:click="addCashFee"
+                            class="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                        {{ __('buyer.cash.fee_add_btn') }}
+                    </button>
+                </div>
+                @endif
             </div>
             @else
             <p class="mb-4 text-xs text-gray-400">{{ __('buyer.cash.no_permission') }}</p>
@@ -1841,6 +2006,50 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tbody>
                 </table>
             </div>
+
+            {{-- 💸 수수료 내역 (jin 2026-09-08) — 있을 때만 보여준다. 없는 게 정상이라 빈 표를 띄우면 잡음이다. --}}
+            @if(! empty($cashFeeList))
+            <div class="mt-4 overflow-x-auto">
+                <h4 class="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.cash.fee_list_title') }}</h4>
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="border-b text-left text-gray-400">
+                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.fee_date') }}</th>
+                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.fee_from') }}</th>
+                            <th class="pb-1.5"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach($cashFeeList as $f)
+                        <tr class="align-top">
+                            <td class="py-1.5 pr-2">
+                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $f['by'] ?: '-' }}">{{ $f['charged_date'] }}</div>
+                                @if($f['note'])
+                                <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>
+                                @endif
+                            </td>
+                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono text-amber-700">
+                                −{{ number_format($f['amount'], 2) }}
+                                <span class="text-[10px] text-gray-400">{{ $f['currency'] }}</span>
+                            </td>
+                            <td class="py-1.5 pr-2 text-[11px] text-gray-600">
+                                {{-- title 은 **자르는 요소 자체**에 붙인다 — 부모에 붙이면 가드가 잡는다(호버 위치도 어긋난다). --}}
+                                <div class="max-w-[150px] truncate" title="{{ $f['from'] }}">{{ $f['from'] ?: '-' }}</div>
+                            </td>
+                            <td class="py-1.5">
+                                @if($this->canManageCash)
+                                <button wire:click="deleteCashFee({{ $f['id'] }})"
+                                        wire:confirm="{{ __('buyer.cash.fee_delete_confirm') }}"
+                                        class="text-gray-300 hover:text-red-400">×</button>
+                                @endif
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @endif
             @endif
         </div>
         @endif

@@ -327,9 +327,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tbody class="divide-y divide-gray-100">
                     @forelse($r->allocations as $a)
                     <tr>
-                        <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap text-gray-700">{{ $a->vehicle?->vehicle_number ?? '-' }}</td>
-                        <td class="py-1.5 pr-3 max-w-[150px] truncate font-mono text-gray-400" title="{{ $a->vehicle?->nice_reg_vin }}">{{ $a->vehicle?->nice_reg_vin }}</td>
-                        <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $a->finalPayment?->payment_date?->format('Y-m-d') }}</td>
+                        {{-- 💸 수수료 배분(2026-09-08)은 차량이 없다 — 빈칸으로 두면 「어디로 갔지」가 된다. --}}
+                        <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap {{ $a->isFee() ? 'text-amber-700' : 'text-gray-700' }}">
+                            {{ $a->isFee() ? __('buyer.cash.fee_section') : ($a->vehicle?->vehicle_number ?? '-') }}
+                        </td>
+                        <td class="py-1.5 pr-3 max-w-[150px] truncate font-mono text-gray-400" title="{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}">{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}</td>
+                        <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $a->isFee() ? $a->fee?->charged_date?->format('Y-m-d') : $a->finalPayment?->payment_date?->format('Y-m-d') }}</td>
                         <td class="py-1.5 pr-3 text-right font-mono font-semibold text-gray-700 whitespace-nowrap">
                             {{ number_format((float) $a->amount, 2) }} <span class="text-[10px] font-normal text-gray-400">{{ $r->currency }}</span>
                         </td>
