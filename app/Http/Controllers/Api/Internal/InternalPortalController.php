@@ -214,6 +214,9 @@ class InternalPortalController extends Controller
             'warehouse_out_date' => $v->warehouse_out_date?->toDateString(),
             'buyer_id' => $v->buyer_id,                   // 일반재고는 바이어 미정이라 null 가능
             'buyer' => $v->buyer?->name,
+            // 「일부러 바이어 없이 산 차」인가 (2026-09-08). `buyer_id === null` 만으로는 **실수로 빠뜨린 차**와
+            //   구분이 안 된다 — board 포털도 ERP 화면과 같은 뱃지를 띄울 수 있게 실어 보낸다.
+            'buyer_undecided' => (bool) $v->buyer_undecided,
             'purchase_price' => (float) $v->purchase_price,
             'purchase_unpaid' => $v->purchase_unpaid_amount,
             'purchase_date' => $v->purchase_date?->toDateString(),
