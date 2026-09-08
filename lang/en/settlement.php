@@ -286,4 +286,10 @@ return [
         'operating' => 'Operating profit', 'operating_note' => '(sales - (purchase + costs - VAT))',
         'rate' => 'Profit rate',
     ],
+    'domestic' => [
+        'sale_total' => 'Total sale',
+        'purchase_price' => 'Purchase price',
+        'base' => 'Domestic base',
+        'note' => 'Domestic deals carry no VAT step — only purchase price, deregistration and towing are deducted from the total sale. Other cost lines do not enter this calculation.',
+    ],
 ];

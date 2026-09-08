@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -299,5 +300,174 @@ class DomesticSettlementTest extends TestCase
         );
         $this->assertSame(2_776_000, $s->total_margin + 0);
         $this->assertSame(0, $s->shipping_fee, '내수는 EMS·DHL 발송이 없어 발송비가 0 이다');
+    }
+
+    // ── 0 원이면 정산 자체가 없다 ─────────────────────────────────────────
+
+    /**
+     * 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 행을 만들지 않는다** (jin 2026-09-08).
+     *    0 원짜리 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
+     */
+    public function test_no_settlement_is_created_when_the_domestic_base_is_exactly_zero(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+        // 판매가 = 매입가 + 말소비 + 탁송비 → 차액 0
+        $v = $this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_224_000);
+
+        $this->assertSame(0, $v->domestic_margin);
+        $this->assertSame(0, $v->settlements()->count(), '차액 0 이면 정산이 생기면 안 된다');
+    }
+
+    /** 수출은 종전대로 — 0 원 규칙은 내수에만 적용된다. */
+    public function test_zero_rule_does_not_touch_export_vehicles(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+        $v = $this->soldVehicle($sm, $this->buyer($sm, domestic: false), salePrice: 10_224_000);
+
+        $this->assertSame(1, $v->settlements()->count(), '수출은 차액과 무관하게 정산이 생긴다');
+    }
+
+    /** 나중에 비용이 정정돼 차액이 생기면 그때 정산이 만들어진다. */
+    public function test_a_later_cost_change_creates_the_settlement_that_was_skipped(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+        $v = $this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_224_000);
+        $this->assertSame(0, $v->settlements()->count());
+
+        $v->update(['cost_towing' => 100_000]);   // 탁송비가 실측으로 줄었다 → 차액 +10만
+
+        $this->assertSame(100_000, $v->fresh()->domestic_margin);
+        $this->assertSame(1, $v->settlements()->count());
+    }
+
+    // ── 사내직원 최소 지급선 ───────────────────────────────────────────────
+
+    /**
+     * 사내직원은 **차액이 건당 금액(10만원)에 못 미치면 0 원**이다 (jin 2026-09-08).
+     * 차액 5만원에 10만원을 주면 회사가 손해다.
+     */
+    public function test_employee_gets_nothing_when_the_base_is_below_the_per_unit_amount(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('employee');
+
+        // 차액 50,000 (< 10만) → 0 원
+        $low = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_274_000));
+        $this->assertSame(50_000, $low->total_margin);
+        $this->assertSame(0, $low->settlement_amount);
+
+        // 차액 100,000 (= 10만) → 10만원. 회사 몫 0.
+        $edge = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_324_000));
+        $this->assertSame(100_000, $edge->total_margin);
+        $this->assertSame(100_000, $edge->settlement_amount);
+        $this->assertSame(0, $edge->company_net);
+    }
+
+    /** 수출 사내직원은 종전대로 — 최소 지급선은 내수에만 있다. */
+    public function test_the_minimum_does_not_apply_to_export_employees(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('employee');
+        // 수출 총마진이 작아도 건당 10만원은 그대로 나간다(종전 동작).
+        // 수출 총마진 = (판매마진 −800,000 + 부가세마진 900,000) × 0.9 = 90,000
+        $s = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm, domestic: false), salePrice: 9_424_000));
+
+        $this->assertSame(90_000, $s->total_margin);
+        $this->assertSame(100_000, $s->settlement_amount);
+    }
+
+    /** 프리랜서는 차액이 작아도 서류비를 그대로 문다 — 절반이 5만이면 실지급 0 원. */
+    public function test_freelancer_document_fee_can_wipe_out_a_small_share(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+
+        // 차액 100,000 → 절반 50,000 − 서류비 50,000 = 0
+        $s = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_324_000));
+        $this->assertSame(50_000, $s->settlement_amount);
+        $this->assertSame(0, $s->actual_payout);
+
+        // 차액 −200,000 → 절반 −100,000 − 서류비 50,000 = −150,000
+        $loss = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm), salePrice: 10_024_000));
+        $this->assertSame(-100_000, $loss->settlement_amount);
+        $this->assertSame(-150_000, $loss->actual_payout);
+    }
+
+    /**
+     * 차등 25% 구간은 최소 지급선에 안 걸린다 — 비율이라 기준액을 넘을 수 없기 때문이다.
+     * (jin 2026-09-08 *"매입 1억↑ & 기준액 0↑ 25% 는 그대로"*)
+     */
+    public function test_the_percentage_tier_survives_the_minimum_rule(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('employee', tier: true);
+
+        // 매입 1억 · 차액 50,000 → 건당이었으면 0 이지만 25% 라 12,500 이 나간다.
+        $s = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm),
+            salePrice: 100_274_000, extra: ['purchase_price' => 100_000_000]));
+
+        $this->assertSame(50_000, $s->total_margin);
+        $this->assertSame(12_500, $s->settlement_amount);
+        $this->assertSame(37_500, $s->company_net);
+    }
+
+    // ── 미리보기(드로어) ↔ 실제 정산 정합 ────────────────────────────────
+
+    /**
+     * 🚨 정산 화면 드로어는 마진 공식을 **복제해서 다시 계산**한다(`marginData`).
+     *    내수 분기를 거기 안 넣었더니 목록은 −200,000 인데 드로어는 **315,000** 을 보여줬다
+     *    (수출 체인을 그대로 돌아 부가세마진 +900,000 이 붙은 값 — jin 2026-09-08 제보).
+     *    예외도 로그도 없이 **숫자만 두 개**가 된다.
+     *
+     * 🧭 그래서 셋(총마진·정산액·실지급액)을 모델과 **직접 대조**한다.
+     *    새 정산 유형을 만들 때 이 테스트를 같이 늘릴 것.
+     */
+    public function test_drawer_preview_matches_the_model_for_domestic_and_export(): void
+    {
+        $this->actingAs($this->finance());
+        $free = $this->salesman('freelance');
+        $emp = $this->salesman('employee');
+
+        $cases = [
+            $this->settlementOf($this->soldVehicle($free, $this->buyer($free))),                       // 내수 이익
+            $this->settlementOf($this->soldVehicle($free, $this->buyer($free), salePrice: 10_024_000)), // 내수 손실
+            $this->settlementOf($this->soldVehicle($emp, $this->buyer($emp), salePrice: 10_274_000)),   // 내수 0원
+            $this->settlementOf($this->soldVehicle($free, $this->buyer($free, domestic: false))),       // 수출
+        ];
+
+        foreach ($cases as $s) {
+            $m = Volt::test('erp.settlements.index')->call('openEdit', $s->id)->instance()->marginData;
+
+            $plate = $s->vehicle->vehicle_number;
+            $this->assertSame((bool) $s->is_domestic, $m['isDomestic'], "{$plate} 내수 판정 불일치");
+            $this->assertSame($s->total_margin, $m['totalMargin'], "{$plate} 총마진이 목록과 드로어에서 갈렸다");
+            $this->assertSame($s->settlement_amount, $m['settlementAmount'], "{$plate} 정산액 불일치");
+            $this->assertSame($s->actual_payout, $m['actualPayout'], "{$plate} 실지급액 불일치");
+        }
+    }
+
+    /**
+     * 내수 드로어는 「적용 비용 내역」을 안 보여준다 (jin 2026-09-08).
+     * 그 표는 수출 마진에서만 빠지는 값이라, 내수에 두면 합계만 덩그러니 남아
+     * 「이 574,000 이 뭐랑 더해지나」가 된다. 말소비·탁송비는 위 기준액 블록에 이미 있다.
+     */
+    public function test_domestic_drawer_hides_the_cost_breakdown_that_it_does_not_use(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+
+        $domestic = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm)));
+        $html = Volt::test('erp.settlements.index')->call('openEdit', $domestic->id)->html();
+        // ⚠️ 문구 안에서 그 블록 이름을 언급하면 이 단언이 헛돈다 — 실제로 한 번 그랬다.
+        $this->assertStringNotContainsString(__('settlement.section_costs'), $html);
+        $this->assertStringContainsString(__('settlement.domestic.base'), $html, '대신 내수 기준액 명세가 보여야 한다');
+
+        // 수출은 종전 그대로 — 숨기는 게 내수에만 걸렸는지 확인한다.
+        $export = $this->settlementOf($this->soldVehicle($sm, $this->buyer($sm, domestic: false)));
+        $exportHtml = Volt::test('erp.settlements.index')->call('openEdit', $export->id)->html();
+        $this->assertStringContainsString(__('settlement.section_costs'), $exportHtml);
     }
 }

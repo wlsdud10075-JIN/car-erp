@@ -1093,7 +1093,18 @@ class Vehicle extends Model
             if (! auth()->check()) {
                 return;
             }
-            if (! $vehicle->wasChanged('incoterms') && ! $vehicle->wasChanged('transport_fee')) {
+            $freightTouched = $vehicle->wasChanged('incoterms') || $vehicle->wasChanged('transport_fee');
+            // 🏠 내수는 「차액 0」이면 정산을 안 만든다 — 그런데 탁송비·말소비는 **나중에 명세서로**
+            //    기입된다(일괄 기입 도구). 그때 차액이 생기는데 재트리거가 없으면 정산이 영영 안 생기고
+            //    아무 신호도 없다. 그래서 기준액을 이루는 칸이 바뀌면 다시 본다.
+            //    (createSettlementIfComplete 가 완납·담당자·정산없음을 재가드하므로 조건 미달이면 no-op.)
+            //    ⚠️ 순서가 중요하다 — **공짜 검사(wasChanged)를 먼저** 두고, 새로 만든 차는 아예 건너뛴다.
+            //       갓 만든 차는 잔금이 없어 완납일 수 없으니 어차피 no-op 인데, isDomesticSale() 이
+            //       바이어를 조회하므로 **차량 저장(대량 적재 포함)마다 쿼리가 한 번씩 늘어난다.**
+            $domesticTouched = ! $vehicle->wasRecentlyCreated
+                && $vehicle->wasChanged(self::DOMESTIC_BASE_FIELDS)
+                && $vehicle->isDomesticSale();
+            if (! $freightTouched && ! $domesticTouched) {
                 return;
             }
             $vehicle->createSettlementIfComplete('자동 생성 — 운임/인코텀즈 확정 시');
@@ -1407,6 +1418,13 @@ class Vehicle extends Model
         if (! $salesman) {
             return;
         }
+        // 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 자체를 만들지 않는다** (jin 2026-09-08).
+        //    0 원짜리 정산 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
+        //    ⚠️ 나중에 비용이 정정돼 차액이 생기면 그때 Vehicle::saved 가 다시 여기로 와서 만든다.
+        $isDomestic = $this->currency === 'KRW' && (bool) $this->domesticBuyer()?->is_domestic;
+        if ($isDomestic && $this->domestic_margin === 0) {
+            return;
+        }
         $this->settlements()->create([
             'salesman_id' => $salesman->id,
             'settlement_type' => $salesman->defaultSettlementType(),
@@ -1420,7 +1438,7 @@ class Vehicle extends Model
             //   ⚠️ Buyer 는 SoftDeletes 라 바이어가 지워지면 관계가 null 이 된다 → withTrashed 로 읽는다.
             //   ⚠️ 원화일 때만 찍는다 — 외화 차량에 내수 바이어가 붙어 있으면(적재·시드 우회) 내수
             //      기준액이 외화를 원화로 오인해 계산되므로, 차라리 종전 공식으로 떨어뜨린다.
-            'is_domestic' => $this->currency === 'KRW' && (bool) $this->domesticBuyer()?->is_domestic,
+            'is_domestic' => $isDomestic,
             'note' => $note,
         ]);
     }
@@ -1444,6 +1462,39 @@ class Vehicle extends Model
         }
 
         return Buyer::withTrashed()->find($this->buyer_id);
+    }
+
+    /**
+     * 내수 기준액 = 총판매가 − 매입탭 합계  (jin 2026-09-08)  — **단일 출처**.
+     *
+     *   매입탭 합계 = 매입가 + 말소비 + 탁송비        (jin 확인 2026-09-08)
+     *
+     * 🚫 **부가세 계산이 없다**(jin) — 부가세마진(매입가 × 9%)도 ×0.9 부가세 차감도 안 탄다.
+     *    수출 마진 공식과 완전히 별개다. 「판 값 − 들어간 값」 그 자체다.
+     * 🚫 **비용 10칸 전부가 아니다** — 말소비·탁송비 두 칸만이다. 면허·캐리·쇼링·보험·이전비·
+     *    주차료·기타1·2 는 수출용 비용이라 내수 계산에 안 들어간다.
+     *    ⚠️ 한때 「매입탭 전체」로 넓혔다가 되돌렸다(jin: *"매입가 + 말소비 + 탁송비 이게 맞아"*).
+     * 🚫 **매도비(selling_fee)도 안 뺀다.**
+     *    ⚠️ 단 사내직원 tier 의 「차값 1억」 판정은 종전대로 매입합계(매입가+매도비)를 쓴다 — 별개 축이다.
+     * 🚨 내수는 원화 전제라 환율이 끼어들지 않는다(`sale_total_amount` 는 통화 그대로다).
+     */
+    /**
+     * 내수 기준액을 이루는 칸들 — **위 공식과 같은 자리에 둔다**(따로 적으면 갈린다).
+     * 정산이 「차액 0」으로 건너뛰어진 차가 나중에 이 칸들이 바뀌면 그때 만들어 준다.
+     */
+    public const DOMESTIC_BASE_FIELDS = [
+        'sale_price', 'transport_fee', 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
+        'purchase_price', 'cost_deregistration', 'cost_towing',
+    ];
+
+    public function getDomesticMarginAttribute(): int
+    {
+        return (int) round(
+            $this->sale_total_amount
+            - (float) ($this->purchase_price ?? 0)
+            - (float) ($this->cost_deregistration ?? 0)
+            - (float) ($this->cost_towing ?? 0)
+        );
     }
 
     /** 이 차량이 지금 내수 판매인가 — 화면 뱃지·저장 가드용. 정산은 박제된 값을 쓴다. */
