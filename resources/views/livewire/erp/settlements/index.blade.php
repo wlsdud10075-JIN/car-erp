@@ -403,6 +403,31 @@ new #[Layout('components.layouts.app')] class extends Component
                 : \App\Models\Settlement::EMPLOYEE_PER_UNIT_DEFAULT;
         }
 
+        // 🏠 내수(국내 판매) — 수출 마진 체인을 **통째로 갈아탄다** (jin 2026-09-08).
+        //    기준액 = 총판매가 − (매입가 + 말소비 + 탁송비). 부가세마진도 ×0.9 도 없다.
+        //    ⚠️ 이 블록이 없으면 화면이 수출 공식을 그대로 그려서 «비용 574,000 이 뭐랑 더해지는지
+        //       알 수 없는» 명세가 된다(jin 제보 99내0003: 목록 −20만 ↔ 드로어 315,000).
+        //    🚫 tier·최소지급선을 여기 옮겨 적지 말 것 — **모델에 물어본다**. 옮겨 적으면
+        //       미리보기와 실제 정산액이 갈린다(이 파일이 이미 수출 공식으로 그러고 있다).
+        $isDomestic = $this->editingId
+            ? (bool) Settlement::find($this->editingId)?->is_domestic       // 박제된 값이 권위
+            : ($v->currency === 'KRW' && $v->isDomesticSale());
+        $domesticBase = 0;
+        if ($isDomestic) {
+            $domesticBase = (int) $v->domestic_margin;
+            $totalMargin = $domesticBase;
+
+            $preview = new Settlement(['settlement_type' => $this->settlement_type]);
+            $preview->is_domestic = true;
+            $preview->settlement_ratio = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
+                ? (float) $this->settlement_ratio : null;
+            $preview->per_unit_amount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
+                ? (int) $this->per_unit_amount : null;
+            $preview->setRelation('vehicle', $v);
+            $preview->setRelation('salesman', $v->salesman);
+            $settlementAmount = (int) $preview->settlement_amount;
+        }
+
         // 서류비 — 프리랜서(ratio)만 50,000 자동 차감
         $documentFee = $this->settlement_type === 'ratio'
             ? \App\Models\Settlement::FREELANCE_DOCUMENT_FEE
@@ -440,6 +465,7 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         return compact(
+            'isDomestic', 'domesticBase',
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
             'documentFee', 'shippingFee', 'actualPayout', 'exchangeDiff',
@@ -2082,7 +2108,36 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('settlement.section_margin') }}</span>
             </div>
-            @if($this->marginData['isKaraba'] ?? false)
+            @if($this->marginData['isDomestic'] ?? false)
+            {{-- 🏠 내수(국내 판매) — 수출 체인(판매금원화→비용→판매마진→부가세마진→×0.9)을 안 탄다.
+                 그 항들을 그대로 보여주면 「비용 합계가 뭐랑 더해지는지 알 수 없는」 명세가 된다
+                 (jin 2026-09-08 제보). 실제로 더하고 빼는 네 줄만 보여준다. --}}
+            @php $dv = $this->selectedVehicle; @endphp
+            <div class="rounded-lg bg-teal-50 p-3 text-sm space-y-1.5">
+                <div class="flex justify-between text-gray-600">
+                    <span>{{ __('settlement.domestic.sale_total') }}</span>
+                    <span>₩{{ number_format($dv->sale_total_amount) }}</span>
+                </div>
+                <div class="flex justify-between text-gray-600">
+                    <span class="pl-2">− {{ __('settlement.domestic.purchase_price') }}</span>
+                    <span>₩{{ number_format((float) ($dv->purchase_price ?? 0)) }}</span>
+                </div>
+                <div class="flex justify-between text-gray-600">
+                    <span class="pl-2">− {{ __('vehicle.field.cost_deregistration') }}</span>
+                    <span>₩{{ number_format((float) ($dv->cost_deregistration ?? 0)) }}</span>
+                </div>
+                <div class="flex justify-between text-gray-600">
+                    <span class="pl-2">− {{ __('vehicle.field.cost_towing') }}</span>
+                    <span>₩{{ number_format((float) ($dv->cost_towing ?? 0)) }}</span>
+                </div>
+                <hr class="border-teal-200" />
+                <div class="flex justify-between font-semibold text-gray-800">
+                    <span>{{ __('settlement.domestic.base') }}</span>
+                    <span class="{{ $this->marginData['totalMargin'] < 0 ? 'text-red-600' : '' }}">₩{{ number_format($this->marginData['totalMargin']) }}</span>
+                </div>
+                <p class="pt-1 text-[11px] leading-relaxed text-teal-800">{{ __('settlement.domestic.note') }}</p>
+            </div>
+            @elseif($this->marginData['isKaraba'] ?? false)
             {{-- karaba 이익율 정산 (Phase 3) — 영업이익 = 판매가 − (구매가 + 부대비용 − 매입세액VAT) --}}
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600"><span>{{ __('settlement.karaba.sales') }} <span class="text-xs text-gray-400">{{ __('settlement.karaba.sales_note') }}</span></span><span>₩{{ number_format($this->marginData['karabaSalesKrw']) }}</span></div>
@@ -2121,8 +2176,11 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
         @endif
 
-        {{-- 적용 비용 내역 (cost_total 분해) — read-only. 2차 정산에서 반영된 실측 비용을 투명화. --}}
-        @if($this->selectedVehicle)
+        {{-- 적용 비용 내역 (cost_total 분해) — read-only. 2차 정산에서 반영된 실측 비용을 투명화.
+             🏠 내수는 이 표가 **아무 데도 안 쓰인다** — 기준액에 들어가는 말소비·탁송비는 위 블록에
+                이미 있고, 나머지 8칸은 내수 계산 밖이다. 합계만 덩그러니 있으면 「574,000 이 뭐랑
+                더해지는지 모르겠다」가 된다(jin 2026-09-08) → 통째로 숨긴다. --}}
+        @if($this->selectedVehicle && ! ($this->marginData['isDomestic'] ?? false))
         @php
             $sv = $this->selectedVehicle;
             // 회사별 목록을 여기 옮겨 적지 말 것 — 갈리면 「표의 합계는 맞는데 줄을 더하면 안 맞는」

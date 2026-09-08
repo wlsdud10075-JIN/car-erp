@@ -461,26 +461,11 @@ class Settlement extends Model
      *    따로 만들면 회사이익 공식이 3곳으로 갈렸던 것과 같은 형태로 반드시 어긋난다(SKILLS §8 #45).
      *
      * 🚫 부가세마진(매입가 × 9%)도 × 0.9 부가세 차감도 **안 탄다** — 수출 공식과 완전히 별개다.
-     * 🚫 비용 10칸 전부가 아니라 **말소비·탁송비 두 칸만**이다(jin 명시). 면허·캐리·쇼링·보험·
-     *    이전비·주차료·기타1·2 는 내수 계산에 안 들어간다.
-     * 🚫 매입가는 `purchase_price` 만이다 — 매도비(`selling_fee`)는 안 뺀다(jin 명시).
-     *    ⚠️ 사내직원 tier 의 「차값 1억」 판정은 종전대로 매입합계(매입가+매도비)를 쓴다 — 별개 축이다.
-     *
-     * 내수는 원화 전제라 환율이 끼어들지 않는다(`sale_total_amount` 는 통화 그대로다).
+     * 공식 본체는 `Vehicle::domestic_margin` 단일 출처다(정산 생성 여부 판정도 그걸 본다).
      */
     public function getDomesticMarginAttribute(): int
     {
-        $v = $this->vehicle;
-        if (! $v) {
-            return 0;
-        }
-
-        return (int) round(
-            $v->sale_total_amount
-            - (float) ($v->purchase_price ?? 0)
-            - (float) ($v->cost_deregistration ?? 0)
-            - (float) ($v->cost_towing ?? 0)
-        );
+        return (int) ($this->vehicle?->domestic_margin ?? 0);
     }
 
     // ── 정산 파라미터 (2026-06-22) — super admin 기능설정에서 Setting override 가능 ─────────
@@ -580,12 +565,25 @@ class Settlement extends Model
         }
 
         // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
-        return self::employeePerUnitTier(
+        $tier = self::employeePerUnitTier(
             $this->total_margin,
             (int) ($this->vehicle->purchase_price ?? 0) + (int) ($this->vehicle->selling_fee ?? 0),
             (bool) ($this->salesman?->per_unit_tier_enabled),
             $this->isInheritedBuyerDeal(),
         );
+
+        // 🏠 내수 — **줄 돈이 번 돈보다 많으면 0 원** (jin 2026-09-08
+        //    *"사내직원은 기본 10만원이상 되어야 지급하는걸로 하자"*).
+        //    내수 기준액은 「판 값 − 들어간 값」이 곧 회사가 번 돈이라, 건당 10만원을 차액 5만원짜리
+        //    거래에 주면 회사가 손해다. 수출은 총마진이 음수일 때만 0 이라 이 규칙이 없다.
+        //    🧭 임계를 「10만원」으로 박지 않고 **정산액 ≤ 기준액** 으로 쓴다 — 그러면
+        //       차등 25% 구간(매입 1억↑)이 자연히 살아난다(비율은 기준액을 넘을 수 없다).
+        //       숫자를 박으면 기능설정에서 건당 금액을 바꿨을 때 한쪽만 따라간다.
+        if ($this->is_domestic && $tier > $this->total_margin) {
+            return 0;
+        }
+
+        return $tier;
     }
 
     /**
