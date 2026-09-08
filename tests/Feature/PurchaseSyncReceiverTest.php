@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -668,5 +669,107 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertNull($v->purchase_fee_holder);
         $this->assertNull($v->purchase_fee_bank);
         $this->assertNull($v->purchase_fee_account);
+    }
+
+    /**
+     * board 「재고매입(바이어 미정)」 인계 검증 (2026-09-08) — board 가 보낼 payload 를 **그대로** 받는가,
+     * 그리고 그 차가 재고관리 어느 분류로 떨어지는가.
+     *
+     * ⚠️ 이 테스트는 board 세션에 회신한 계약이다(전달패킷 2026-09-08). 깨지면 board 화면이 조용히 틀어진다.
+     * ⚠️ SQLite 엔 `chk_sale_required` 가 없어 CHECK 자체는 여기서 못 본다(SKILLS §8 #36).
+     *    다만 컨트롤러가 판매 필드를 **set 자체를 안 하므로**(PurchaseSyncController:182-198) CHECK 는 애초에 안 걸린다.
+     */
+    private function stockPurchasePayload(mixed $salePrice = null): array
+    {
+        return [
+            'contract_version' => 4,
+            'vehicle_number' => '99재1234',
+            'owner_name' => '홍길동',
+            'source' => 'auction',
+            'salesman_email' => 'sales@car-erp.test',
+            'purchase_price_krw' => 10_000_000,
+            'selling_fee_krw' => 300_000,
+            'payee_name' => '김예금',
+            'payee_bank' => '국민은행',
+            'payee_account' => '123-456-789012',
+            // ↓ 재고매입일 때 board 가 비워 보내는 것들
+            'buyer_id' => null,
+            'consignee_id' => null,
+            'sale_price' => $salePrice,
+            'sale_currency' => null,
+            'sale_exchange_rate' => null,
+            'transport_fee' => null,
+            'final_price' => null,
+        ];
+    }
+
+    public function test_stock_purchase_payload_with_nulls_is_accepted(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $res = $this->postSigned($this->stockPurchasePayload());
+
+        $res->assertStatus(201);
+        $v = Vehicle::find($res->json('vehicle_id'));
+
+        $this->assertNull($v->buyer_id);
+        $this->assertNull($v->consignee_id);
+        $this->assertSame(0.0, (float) $v->sale_price);
+        $this->assertNull($v->sale_date);
+        $this->assertSame(10_000_000, (int) $v->purchase_price);   // final_price 없이 purchase_price_krw 로
+        $this->assertSame(300_000, (int) $v->selling_fee);
+    }
+
+    /** `sale_price` 를 `null` 로 보내든 `0` 으로 보내든 결과가 같다 (board Q2). */
+    public function test_stock_purchase_sale_price_zero_behaves_like_null(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $res = $this->postSigned($this->stockPurchasePayload(0));
+
+        $res->assertStatus(201);
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame(0.0, (float) $v->sale_price);
+        $this->assertNull($v->sale_date);
+        $this->assertNull($v->buyer_id);
+    }
+
+    /**
+     * 재고매입 차의 재고 분류 (board Q1) — **바로 일반재고가 아니다**.
+     *   매입대금 미지급 → 「지급대기」. 확정 잔금이 들어와야 「일반재고」로 넘어간다.
+     * 판정은 `sale_price` 기준이라 `buyer_id` 는 분류에 관여하지 않는다.
+     */
+    public function test_stock_purchase_lands_in_awaiting_payment_then_general_stock(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $res = $this->postSigned($this->stockPurchasePayload());
+        $id = $res->json('vehicle_id');
+
+        // ① 매입대금 미지급 = 지급대기. 재고(inStock)엔 아직 없다 → 「전체」 탭에도 안 보인다.
+        $this->assertTrue(Vehicle::query()->awaitingPurchasePayment()->whereKey($id)->exists());
+        $this->assertFalse(Vehicle::query()->inStock()->whereKey($id)->exists());
+        $this->assertFalse(Vehicle::query()->generalStock()->whereKey($id)->exists());
+
+        // ② 매입대금 확정 지급 → 일반재고로 이동 (판매가가 없으므로 pre_ship 이 아니다).
+        $v = Vehicle::find($id);
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => (int) $v->purchase_price + (int) $v->selling_fee,
+            // ⚠️ 어제로 둔다 — SQLite 는 date 캐스트를 '2026-09-08 00:00:00' 로 저장해서
+            //    `payment_date <= '2026-09-08'` 문자열 비교가 오늘치를 떨어뜨린다(운영 MySQL 은 DATE 라 정상).
+            'payment_date' => now()->subDay()->toDateString(),
+            'confirmed_at' => now(),
+        ]);
+
+        $this->assertFalse(Vehicle::query()->awaitingPurchasePayment()->whereKey($id)->exists());
+        $this->assertTrue(Vehicle::query()->generalStock()->whereKey($id)->exists());
+        $this->assertFalse(Vehicle::query()->preShippingStock()->whereKey($id)->exists());
     }
 }
