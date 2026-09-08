@@ -209,8 +209,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
     private function entryAggregate($vehicles): array
     {
+        // 🚢 **선적대기 허용 항로는 집계에서 뺀다** (jin 2026-09-08).
+        //   그 항로(알바니아 두레스 RORO 등)는 **돈을 다 받기 전에 항구에 세워두고 서류를 진행하는** 흐름이라
+        //   `Port::allow_shipping_wait` 플래그가 애초에 C5 를 건너뛰라고 만들어진 것이다(2026-07-18).
+        //   그런데 이틀 뒤 만든 이 묶음 aggregate 게이트가 그 예외를 안 물려받아, 개별 반입지 저장은 되는데
+        //   **묶음 착수만 막혀 수출신고번호·B/L번호 기입 버튼이 통째로 안 뜨는** 상태였다
+        //   (실사고 heymanerp AUTO SCOUT 8대 · R.S.H 1대 — 전부 DURRESS RORO). SKILLS §8 #38 의 그 형태.
+        //   🚫 인도는 여전히 G1(B/L 100% 완납)이 막는다 — `bundleBlockers('bl')` 는 이 예외를 안 본다.
         $active = collect($vehicles)->filter(
-            fn ($v) => $v && (int) $v->sale_price > 0 && ! $v->hasEntryUnpaidOverride()
+            fn ($v) => $v && (int) $v->sale_price > 0
+                && ! $v->hasEntryUnpaidOverride()
+                && ! $v->isShippingWaitRoute()
         );
         $fin = ShippingRequest::financeForVehicles($active);
         $ratio = $fin['unpaid_ratio'];
@@ -225,6 +234,8 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'blocked' => $ratio !== null && $ratio > $cutoff,
             'unpaid_pct' => $ratio === null ? null : round($ratio * 100, 1),
+            // 화면 문구에 박아 쓰던 「50%」 리터럴을 없애기 위한 값 — 임계는 전역 설정이자 바이어별 가변이다.
+            'required_pct' => (int) round((1 - $cutoff) * 100),
         ];
     }
 
@@ -279,7 +290,9 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($to === ShippingRequest::STATUS_IN_PROGRESS && \App\Models\Setting::lockEnabled('shipping_entry')) {
             $agg = $this->entryAggregate($rows->map->vehicle);
             if ($agg['blocked']) {
-                $this->dispatch('notify', message: __('shipping.lock.entry_blocked_aggregate', ['pct' => $agg['unpaid_pct']]), type: 'error');
+                $this->dispatch('notify', message: __('shipping.lock.entry_blocked_aggregate', [
+                    'pct' => $agg['unpaid_pct'], 'req' => $agg['required_pct'],
+                ]), type: 'error');
 
                 return;
             }
@@ -651,9 +664,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 // 개별 차량 경고(빨간 칩) — 개별 C5 는 그대로 개별 50% 유지. 묶음 착수 통과해도 이 차들은
                 //   반입지 저장 시 개별로 막힘(그 차 승인 우회 필요). aggregate 차단과 별개의 안내 표시.
                 $entryCutoffOf = $this->entryCutoffResolver($memberVehicles);
+                //   ⚠️ 선적대기 허용 항로는 빨간 칩도 안 띄운다 — 위 entryAggregate 와 같은 예외를 안 보면
+                //      「착수는 되는데 차량 칩은 빨갛다」가 된다.
                 $isEntryUnder = fn ($v) => $entryLockOn && $v && (int) $v->sale_price > 0
                     && ($v->unpaid_ratio === null || $v->unpaid_ratio > $entryCutoffOf($v))
-                    && ! $v->hasEntryUnpaidOverride();
+                    && ! $v->hasEntryUnpaidOverride()
+                    && ! $v->isShippingWaitRoute();
 
                 $signContract = \App\Models\SignedContract::pickForSet($signSessions, $items->pluck('vehicle_id')->all());
 
@@ -694,6 +710,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     'sales_contract_ok' => $salesContractOk,
                     'entry_bundle_blocked' => $entryBundleBlocked,       // 묶음 aggregate 착수 차단(jin 2026-07-20)
                     'entry_unpaid_pct' => $entryAgg['unpaid_pct'],
+                    'entry_required_pct' => $entryAgg['required_pct'],
                     'surrender_unpaid_warning' => $f->bl_type === ShippingRequest::BL_TYPE_SURRENDER && ! $fin['fully_paid'],
                     'changes' => $items->filter(fn ($r) => $r->change_requested_at !== null)
                         ->map(fn ($r) => [
@@ -908,7 +925,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <div class="flex shrink-0 flex-wrap gap-1.5">
                             @if ($b['status'] === 'requested' && $b['entry_bundle_blocked'])
                                 {{-- 🔒 착수 불가 — 묶음 총 입금률 50% 미만(aggregate, jin 2026-07-20). 착수불가 + 차량관리에서 보기 + 취소만. --}}
-                                <span title="{{ __('shipping.action.entry_locked_tip_aggregate', ['pct' => $b['entry_unpaid_pct']]) }}"
+                                <span title="{{ __('shipping.action.entry_locked_tip_aggregate', ['pct' => $b['entry_unpaid_pct'], 'req' => $b['entry_required_pct']]) }}"
                                       class="cursor-not-allowed rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
                                     🔒 {{ __('shipping.action.entry_locked') }}
                                 </span>
