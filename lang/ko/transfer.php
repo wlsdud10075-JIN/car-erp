@@ -154,6 +154,15 @@ return [
         'note_ph' => '예: KB 12345-6789 / 신한 거래번호 등 — 입력 시 finance_note 에 기록',
         'submit' => '재무 처리 완료',
     ],
+    'search' => [
+        'placeholder' => '차량번호 · 매입처 · 담당자 검색',
+        'clear' => '지우기',
+    ],
+    'total' => [
+        'label' => '합계',
+        'count' => ':n건',
+        'empty' => '해당 건 없음',
+    ],
     'new_pbp_modal' => [
         'title' => '매입 잔금 신규 추가',
         'subtitle' => '재무가 자동 생성된 임시 매입 잔금 외에 별도 매입 잔금 입력. 즉시 확정 선택 가능.',
