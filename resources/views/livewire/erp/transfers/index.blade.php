@@ -3,6 +3,7 @@
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
 use App\Models\PurchaseBalancePayment;
+use App\Support\SearchTerm;
 use App\Services\InterVehicleTransferService;
 use App\Services\PaymentConfirmationService;
 use Livewire\Attributes\Computed;
@@ -36,6 +37,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     #[Url]
     public int $perPage = 10;
+
+    /**
+     * 검색 (jin 2026-09-08) — **차량번호 · 매입처 · 담당자**. 세 탭 공통.
+     *
+     * 🚨 프로퍼티와 같은 이름의 메서드를 만들지 말 것 — 버튼이 요청조차 안 보내고 죽는다(SKILLS §8 #32).
+     *    바인딩이 `wire:model.live.debounce` 라 갱신은 `updatedSearch()` 훅이 받는다.
+     */
+    #[Url]
+    public string $search = '';
 
     public bool $showModal = false;
 
@@ -85,7 +95,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $newPbpNote = '';
 
-    public bool $newPbpImmediateConfirm = true;
+    /**
+     * 신규 매입잔금 「즉시 확정」 — **기본 해제**(jin 2026-09-08).
+     *
+     * 켜져 있으면 모달을 열자마자 확정 상태라, 금액만 넣고 저장하면 **재무 확인 없이 지급 기록이 확정**된다.
+     * 확정은 회계 락(2차 마감)의 입력이 되는 값이라 되돌리기 어렵다 ⇒ 사람이 명시적으로 켜게 한다.
+     * ⚠️ 기본값이 **세 곳**(선언·열기·닫기)에 있다 — 하나만 고치면 모달을 다시 열 때 되살아난다.
+     */
+    public bool $newPbpImmediateConfirm = false;
 
     // 🔒 매입 지급 락 (#2) — 2번째 지급~ && 그 차 판매금 <50% 입금 시 차단. 관리 승인 우회(1회).
     public bool $showPaymentGate = false;
@@ -122,10 +139,49 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
-    #[Computed]
-    public function transfers()
+    /**
+     * 검색 실행 — 버튼·Enter 로만 (jin 2026-09-08).
+     * 🚨 `search()` 로 짓지 말 것 — 프로퍼티와 겹쳐 버튼이 요청조차 안 보내고 죽는다(SKILLS §8 #32).
+     * 1페이지로 되돌린다 — 3페이지에서 검색하면 결과가 있는데 빈 화면이 된다.
+     */
+    public function searchNow(): void
     {
-        return InterVehicleTransfer::query()
+        $this->resetPage();
+    }
+
+    public function clearSearch(): void
+    {
+        $this->search = '';
+        $this->resetPage();
+    }
+
+    /**
+     * 세 탭의 차량 검색 조건 **단일 출처** — 차량번호 · 매입처 · 담당자.
+     *
+     * 🚫 탭마다 옮겨 적지 말 것. 갈리면 「매입 잔금에선 담당자로 찾아지는데 판매 잔금에선 안 되는」
+     *    형태가 되고, 사람은 그걸 「데이터가 없다」로 읽는다(SKILLS §8 #44).
+     */
+    private function applyVehicleSearch($query, string $relation = 'vehicle')
+    {
+        $term = SearchTerm::of($this->search);
+        if ($term === '') {
+            return $query;
+        }
+        $like = SearchTerm::like($term);
+
+        return $query->whereHas($relation, fn ($q) => $q
+            ->where('vehicle_number', 'like', $like)
+            ->orWhere('purchase_from', 'like', $like)
+            ->orWhereHas('salesman', fn ($q2) => $q2->where('name', 'like', $like)));
+    }
+
+    /**
+     * 자금 이체 빌더 — **목록과 합계가 같은 것을 본다**.
+     * 🚫 합계를 페이지 컬렉션에서 `sum()` 하지 말 것. 그러면 「10건만 더한 합계」가 된다.
+     */
+    private function transfersQuery()
+    {
+        $query = InterVehicleTransfer::query()
             ->whereNotIn('kind', InterVehicleTransfer::RETIRED_KINDS)   // 보증금 계열 제거(2026-07-29) — 잔존 행이 standard 로 오인 처리되지 않게
             ->with(['sourceVehicle', 'targetVehicle', 'buyer', 'requester', 'approver', 'financeConfirmer'])
             ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereIn('status', [
@@ -134,7 +190,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]))
             ->when($this->statusFilter === 'executed', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_EXECUTED))
             ->when($this->statusFilter === 'voided', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_VOIDED))
-            ->when($this->statusFilter === 'finance_rejected', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_FINANCE_REJECTED))
+            ->when($this->statusFilter === 'finance_rejected', fn ($q) => $q->where('status', InterVehicleTransfer::STATUS_FINANCE_REJECTED));
+
+        // 이체는 차량이 둘이다(출금/입금) — 어느 쪽에 걸려도 잡는다.
+        $term = SearchTerm::of($this->search);
+        if ($term !== '') {
+            $like = SearchTerm::like($term);
+            $query->where(fn ($q) => $q
+                ->whereHas('sourceVehicle', fn ($q2) => $q2->where('vehicle_number', 'like', $like)
+                    ->orWhere('purchase_from', 'like', $like)
+                    ->orWhereHas('salesman', fn ($q3) => $q3->where('name', 'like', $like)))
+                ->orWhereHas('targetVehicle', fn ($q2) => $q2->where('vehicle_number', 'like', $like)
+                    ->orWhere('purchase_from', 'like', $like)
+                    ->orWhereHas('salesman', fn ($q3) => $q3->where('name', 'like', $like)))
+                ->orWhereHas('buyer', fn ($q2) => $q2->where('name', 'like', $like)));
+        }
+
+        return $query;
+    }
+
+    #[Computed]
+    public function transfers()
+    {
+        return $this->transfersQuery()
             ->orderByDesc('updated_at')
             ->paginate($this->perPage);
     }
@@ -153,15 +231,22 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 회의확장씬 (2026-05-22) — vehicle soft delete 시 PBP/FP 자동 제외 (whereHas('vehicle')).
      * Vehicle SoftDeletes + PBP/FP 는 미사용 → vehicles.deleted_at IS NULL 자동 매칭.
      */
+    private function salePaymentsQuery()
+    {
+        return $this->applyVehicleSearch(
+            FinalPayment::query()
+                ->whereHas('vehicle')
+                ->whereNull('transfer_id')
+                ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
+                ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
+        );
+    }
+
     #[Computed]
     public function salePayments()
     {
-        return FinalPayment::query()
-            ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
-            ->whereHas('vehicle')
-            ->whereNull('transfer_id')
-            ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
-            ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
+        return $this->salePaymentsQuery()
+            ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id,currency', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
             ->orderByDesc('created_at')
             ->paginate($this->perPage);
     }
@@ -176,16 +261,61 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /** 큐 20-C — 매입 잔금. */
+    private function purchasePaymentsQuery()
+    {
+        return $this->applyVehicleSearch(
+            PurchaseBalancePayment::query()
+                ->whereHas('vehicle')
+                ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
+                ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
+        );
+    }
+
     #[Computed]
     public function purchasePayments()
     {
-        return PurchaseBalancePayment::query()
+        return $this->purchasePaymentsQuery()
             ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
-            ->whereHas('vehicle')
-            ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
-            ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
             ->orderByDesc('created_at')
             ->paginate($this->perPage);
+    }
+
+    /**
+     * 지금 탭·필터·검색으로 걸러진 것의 **합계** — 화면 위에 띄운다 (jin 2026-09-08, 차량관리와 같은 방식).
+     *
+     * 🚨 **통화별로 나눠서 낸다.** 판매 잔금은 차량 통화(USD·EUR·JPY…)가 섞여 있어 그냥 더하면
+     *    「9,000」 같은 아무 뜻 없는 숫자가 된다. 매입 잔금은 원화 하나뿐이라 자연히 한 줄이다.
+     * 🚫 페이지 컬렉션에서 더하지 말 것 — 지금 보이는 10건만 더한 합계가 된다.
+     *
+     * @return array<int, array{currency: string, total: float, count: int}>
+     */
+    #[Computed]
+    public function tabTotals(): array
+    {
+        if ($this->tabType === 'transfer') {
+            $rows = $this->transfersQuery()
+                ->selectRaw('currency, SUM(amount) as total, COUNT(*) as cnt')
+                ->groupBy('currency')->get();
+        } elseif ($this->tabType === 'sale_payment') {
+            // 통화는 차량이 들고 있다 — 조인해서 그 기준으로 묶는다.
+            $rows = $this->salePaymentsQuery()
+                ->join('vehicles', 'vehicles.id', '=', 'final_payments.vehicle_id')
+                ->selectRaw('vehicles.currency as currency, SUM(final_payments.amount) as total, COUNT(*) as cnt')
+                ->groupBy('vehicles.currency')->get();
+        } else {
+            $rows = $this->purchasePaymentsQuery()
+                ->selectRaw("'KRW' as currency, SUM(amount) as total, COUNT(*) as cnt")
+                ->get();
+        }
+
+        return $rows
+            ->filter(fn ($r) => (int) $r->cnt > 0)
+            ->map(fn ($r) => [
+                'currency' => (string) ($r->currency ?: 'KRW'),
+                'total' => (float) $r->total,
+                'count' => (int) $r->cnt,
+            ])
+            ->sortBy('currency')->values()->all();
     }
 
     #[Computed]
@@ -351,19 +481,35 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 큐 22-C 핵심 (2026-05-20) — 매입 잔금 신규 row 입력+확정 통합 모달.
+     * 신규 매입잔금 대상 차량 (큐 22-C 모달) — **콤보박스용 `{id,name}`** (jin 2026-09-08).
+     *
+     * 🚫 **`limit(50)` 을 되살리지 말 것.** 종전엔 `<select>` + 최근 50대라, 그보다 오래된 차는
+     *    **목록에 아예 없어서 잔금을 넣을 방법이 없었다**(에러도 안 뜬다 — 그냥 안 보인다).
+     *    검색이 붙은 지금은 더 위험하다: 사람이 차량번호를 쳐도 안 나오면 「없는 차」로 읽는다.
+     * 💡 부담은 없다 — 이 모달은 `showNewPbpModal` 조건부라 **열 때만** 렌더되고, 실어 보내는 건
+     *    id·표시문자열 두 개뿐이다(SKILLS §8 #79 의 그 비용은 목록 36칸짜리 얘기다).
+     *
+     * 정렬 = **매입 미지급이 남은 차가 위로**. 실무에서 고르는 차가 거의 항상 그쪽이다.
      */
     #[Computed]
     public function purchaseEligibleVehicles()
     {
-        $list = \App\Models\Vehicle::query()
+        return \App\Models\Vehicle::query()
             ->where('purchase_price', '>', 0)
             ->whereDoesntHave('settlements', fn ($q) => $q->where('settlement_status', 'paid'))
+            ->with('salesman:id,name')
+            ->orderByRaw(\App\Models\Vehicle::purchaseUnpaidRawExpr().' > 0 DESC', [now()->toDateString()])
             ->orderByDesc('id')
-            ->limit(50)
-            ->get(['id', 'vehicle_number', 'nice_reg_vin', 'purchase_from']);
-
-        return $list;
+            ->get(['id', 'vehicle_number', 'nice_reg_vin', 'purchase_from', 'salesman_id'])
+            ->map(fn ($v) => (object) [
+                'id' => $v->id,
+                // 콤보박스는 이 문자열 하나로 검색한다 — 차량번호·차대번호·매입처·담당자를 다 담아야
+                // 「매입처로 찾기」가 목록 검색과 같은 감각으로 동작한다.
+                'name' => trim($v->vehicle_number
+                    .($v->nice_reg_vin ? ' · '.$v->nice_reg_vin : '')
+                    .' ('.($v->purchase_from ?: __('transfer.new_pbp_modal.vehicle_unassigned')).')'
+                    .($v->salesman?->name ? ' · '.$v->salesman->name : '')),
+            ]);
     }
 
     public function openNewPbpModal(): void
@@ -373,7 +519,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->newPbpAmountStr = '';
         $this->newPbpDate = now()->toDateString();
         $this->newPbpNote = '';
-        $this->newPbpImmediateConfirm = true;
+        $this->newPbpImmediateConfirm = false;
         $this->resetPaymentGate();
     }
 
@@ -384,7 +530,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->newPbpAmountStr = '';
         $this->newPbpDate = '';
         $this->newPbpNote = '';
-        $this->newPbpImmediateConfirm = true;
+        $this->newPbpImmediateConfirm = false;
         $this->resetPaymentGate();
     }
 
@@ -615,7 +761,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endforeach
     </div>
 
-    {{-- 상태 필터 --}}
+    {{-- 상태 필터 + 검색 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <div class="flex gap-1 flex-wrap">
             @if($tabType === 'transfer')
@@ -639,6 +785,37 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endforeach
             @endif
         </div>
+
+        {{-- 검색 — 차량번호 · 매입처 · 담당자 (jin 2026-09-08).
+             🔎 **버튼(또는 Enter)으로만** 돈다 — 타이핑마다 왕복하면 이 화면의 `wire:poll.30s` 와 겹친다.
+                다른 검색칸(차량·재고·바이어·정산)과 같은 형태. --}}
+        <div class="ml-auto flex items-center gap-2">
+            <input type="text" wire:model="search" wire:keydown.enter="searchNow"
+                   placeholder="{{ __('transfer.search.placeholder') }}"
+                   class="input-base w-full sm:w-64" />
+            <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+            @if($search !== '')
+            <button type="button" wire:click="clearSearch"
+                    class="whitespace-nowrap rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-600 hover:bg-gray-200">
+                {{ __('transfer.search.clear') }}
+            </button>
+            @endif
+        </div>
+    </div>
+
+    {{-- 탭별 합계 (jin 2026-09-08) — 지금 탭·상태·검색으로 걸러진 것 전체의 합. 보이는 페이지가 아니다. --}}
+    @php $totals = $this->tabTotals; @endphp
+    <div class="card flex flex-wrap items-center gap-x-6 gap-y-2">
+        <span class="text-xs font-medium text-gray-500">{{ __('transfer.total.label') }}</span>
+        @forelse($totals as $t)
+        <span class="flex items-baseline gap-1.5">
+            <span class="text-[11px] font-semibold text-gray-400">{{ $t['currency'] }}</span>
+            <span class="text-lg font-bold text-gray-900">{{ number_format($t['total'], $t['currency'] === 'KRW' ? 0 : 2) }}</span>
+            <span class="text-xs text-gray-400">({{ __('transfer.total.count', ['n' => number_format($t['count'])]) }})</span>
+        </span>
+        @empty
+        <span class="text-sm text-gray-400">{{ __('transfer.total.empty') }}</span>
+        @endforelse
     </div>
 
     @if($tabType === 'transfer')
@@ -1094,12 +1271,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="mt-3 space-y-3">
             <div>
                 <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.new_pbp_modal.vehicle_label') }}</label>
-                <select wire:model="newPbpVehicleId" class="input-base">
-                    <option value="">{{ __('transfer.new_pbp_modal.vehicle_select') }}</option>
-                    @foreach($this->purchaseEligibleVehicles as $v)
-                    <option value="{{ $v->id }}">{{ $v->vehicle_number }}{{ $v->nice_reg_vin ? ' · '.$v->nice_reg_vin : '' }} ({{ $v->purchase_from ?: __('transfer.new_pbp_modal.vehicle_unassigned') }})</option>
-                    @endforeach
-                </select>
+                {{-- 차량관리·재고관리와 같은 콤보박스 (jin 2026-09-08) — 타이핑으로 차량번호·매입처·담당자 검색.
+                     wire:key 를 선택값에 묶어야 저장·초기화 뒤 Alpine 상태가 다시 잡힌다(컴포넌트 주석 참조). --}}
+                <x-erp.combobox model="newPbpVehicleId"
+                                :options="$this->purchaseEligibleVehicles"
+                                :selected="$newPbpVehicleId"
+                                :placeholder="__('transfer.new_pbp_modal.vehicle_select')"
+                                wire:key="new-pbp-vehicle-{{ $newPbpVehicleId }}" />
                 @error('newPbpVehicleId') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
             </div>
 

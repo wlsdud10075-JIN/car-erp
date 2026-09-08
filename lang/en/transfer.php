@@ -153,6 +153,15 @@ return [
         'note_ph' => 'e.g. KB 12345-6789 / Shinhan tx no. — recorded in finance_note if entered',
         'submit' => 'Confirm',
     ],
+    'search' => [
+        'placeholder' => 'Search plate, seller or salesman',
+        'clear' => 'Clear',
+    ],
+    'total' => [
+        'label' => 'Total',
+        'count' => ':n items',
+        'empty' => 'No matching rows',
+    ],
     'new_pbp_modal' => [
         'title' => 'Add Purchase Balance',
         'subtitle' => 'Finance enters a separate purchase balance row beyond the auto PBP draft. Immediate confirmation optional.',
