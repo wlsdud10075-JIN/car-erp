@@ -49,6 +49,8 @@ return [
     ],
 
     'field' => [
+        'domestic' => '내수(국내 판매) 바이어',
+        'domestic_hint' => '이 바이어로 판 차량은 수출 마진 공식 대신 내수정산(총판매가 − 매입가 − 말소비 − 탁송비)으로 계산됩니다. 원화 차량에만 지정할 수 있습니다.',
         'name' => '바이어명',
         'name_ph' => 'TOKYO AUTO TRADING',
         'salesman' => '영업담당자',

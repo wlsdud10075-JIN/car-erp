@@ -1234,4 +1234,9 @@ return [
         'arrived' => 'ETA :eta has passed (estimate)',
         'photos_drop' => 'Drag photos here or choose them (multiple)',
     ],
+    'domestic' => [
+        'badge' => 'Domestic',
+        'krw_only' => 'A domestic buyer (:buyer) can only be assigned to KRW vehicles. This vehicle is in :currency — change the currency to KRW or pick another buyer.',
+        'buyer_has_foreign' => 'This buyer has :count non-KRW vehicle(s), so it cannot be marked domestic: :plates',
+    ],
 ];

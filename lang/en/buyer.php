@@ -49,6 +49,8 @@ return [
     ],
 
     'field' => [
+        'domestic' => 'Domestic-sale buyer',
+        'domestic_hint' => 'Vehicles sold to this buyer settle with the domestic formula (total sale − purchase − deregistration − towing) instead of the export margin. KRW vehicles only.',
         'name' => 'Buyer Name',
         'name_ph' => 'TOKYO AUTO TRADING',
         'salesman' => 'Salesman',

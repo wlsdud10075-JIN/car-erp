@@ -250,6 +250,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 'total_margin_sum' => (int) $group->sum('display_margin'),   // karaba=영업이익 / 그 외=총마진
                 'settlement_amount_sum' => (int) $group->sum('settlement_amount'),
                 'actual_payout_sum' => (int) $group->sum('actual_payout'),
+                // 내수(국내 판매) 소계 — 「일반정산 아래 내수정산이 나와서 합산」 (jin 2026-09-08).
+                //   ⚠️ 합계(actual_payout_sum)에는 **이미 포함**돼 있다. 여기 둘은 그 안에서 갈라 보여주는 것뿐.
+                //      따로 더하면 이중 계상이다.
+                'domestic_count' => $group->where('is_domestic', true)->count(),
+                'domestic_payout_sum' => (int) $group->where('is_domestic', true)->sum('actual_payout'),
+                'export_payout_sum' => (int) $group->where('is_domestic', false)->sum('actual_payout'),
                 // 미청산 이월 — Salesman accessor(단일 출처). 필터 무관 현재 잔액. 재무 사각지대 보완.
                 'unconsumed_carryover' => (int) ($first->salesman?->unconsumed_carryover ?? 0),
                 // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월배치에서 차감).
@@ -1696,6 +1702,18 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span>{{ __('settlement.summary_settlement_amount') }}</span>
                         <span class="font-mono text-gray-700">{{ number_format($summary['settlement_amount_sum']) }}</span>
                     </div>
+                    {{-- 내수가 섞인 담당자만 갈라서 보여준다 (jin 2026-09-08).
+                         ⚠️ 아래 합계에 **이미 포함**된 값이다 — 더하지 말 것. --}}
+                    @if(($summary['domestic_count'] ?? 0) > 0)
+                    <div class="flex items-center justify-between text-gray-500">
+                        <span class="pl-2">{{ __('settlement.summary_export_payout') }}</span>
+                        <span class="font-mono text-gray-700">{{ number_format($summary['export_payout_sum']) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between text-teal-700">
+                        <span class="pl-2">{{ __('settlement.summary_domestic_payout', ['count' => $summary['domestic_count']]) }}</span>
+                        <span class="font-mono">{{ number_format($summary['domestic_payout_sum']) }}</span>
+                    </div>
+                    @endif
                     <div class="flex items-center justify-between border-t border-gray-100 pt-1">
                         <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
                         <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
@@ -1776,7 +1794,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 };
             @endphp
             <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $s->id }})">
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $s->vehicle?->vehicle_number ?? '-' }}</td>
+                {{-- 내수는 정산 공식이 달라 한눈에 갈려야 한다 — 행에 박제된 값을 읽는다(바이어가 아니라). --}}
+                <td class="py-3 pr-4 font-medium text-gray-800">{{ $s->vehicle?->vehicle_number ?? '-' }}@if($s->is_domestic)<span class="ml-1 whitespace-nowrap rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700" title="{{ __('settlement.domestic_hint') }}">{{ __('vehicle.domestic.badge') }}</span>@endif</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $s->salesman?->name ?? '-' }}</td>
                 <td class="py-3 pr-4">
                     @if($s->vehicle)
@@ -1921,7 +1940,7 @@ new #[Layout('components.layouts.app')] class extends Component
     @endphp
     <div class="card-tight cursor-pointer" wire:click="openEdit({{ $s->id }})">
         <div class="flex items-center justify-between">
-            <div class="font-medium text-gray-800">{{ $s->vehicle?->vehicle_number ?? '-' }}</div>
+            <div class="font-medium text-gray-800">{{ $s->vehicle?->vehicle_number ?? '-' }}@if($s->is_domestic)<span class="ml-1 whitespace-nowrap rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700" title="{{ __('settlement.domestic_hint') }}">{{ __('vehicle.domestic.badge') }}</span>@endif</div>
             <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
         </div>
         <div class="mt-2 grid grid-cols-2 gap-x-4 text-xs text-gray-500">

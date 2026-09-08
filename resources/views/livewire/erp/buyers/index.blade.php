@@ -46,6 +46,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
     //   정산 금액 직결이라 저장 시 canApprove() 재인가 — [관리] 이상(role 관리·업무관리자·최고관리자·시스템관리자).
     public bool   $is_inherited  = false;
+    // 2026-09-08 jin — 내수(국내 판매) 바이어. 이 바이어로 판 차량은 내수정산으로 빠진다.
+    public bool   $is_domestic   = false;
     public string $inherited_from_salesman_id_str = '';
     public string $inherited_at  = '';
     // 2026-08-10 jin — 무담보 한도. 담보(선적 전 국내 차량)가 없어도 이 금액까지는 매입해준다.
@@ -337,6 +339,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->memo          = $buyer->memo          ?? '';
         $this->is_active     = $buyer->is_active;
         $this->is_inherited  = (bool) $buyer->is_inherited;
+        $this->is_domestic   = (bool) $buyer->is_domestic;
         $this->inherited_from_salesman_id_str = $buyer->inherited_from_salesman_id ? (string) $buyer->inherited_from_salesman_id : '';
         $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
         $this->unsecured_limit_krw_str = ($buyer->unsecured_limit_krw ?? 0) > 0
@@ -399,6 +402,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ? (int) $this->inherited_from_salesman_id_str : null;
             // 해제 시 부속 정보도 함께 비운다 — "승계 ON 일 때만 원담당자·승계일 존재" 불변식.
             $data['inherited_at'] = $this->is_inherited && $this->inherited_at !== '' ? $this->inherited_at : null;
+
+            // 내수 지정도 정산 공식을 통째로 바꾸므로 승계와 같은 무게로 재인가한다 (SKILLS §8 #26).
+            //   🚨 내수는 원화 전용이다 — 이 바이어에게 원화가 아닌 차량이 이미 붙어 있으면 막는다.
+            //      (차량 쪽에도 같은 가드가 있다. 두 방향 다 막아야 «체크를 먼저 켜는» 순서로 새지 않는다.)
+            if ($this->is_domestic && $this->editingId) {
+                $foreign = \App\Models\Vehicle::where('buyer_id', $this->editingId)
+                    ->where('currency', '!=', 'KRW')
+                    ->pluck('vehicle_number');
+                if ($foreign->isNotEmpty()) {
+                    $this->addError('is_domestic', __('vehicle.domestic.buyer_has_foreign', [
+                        'count' => $foreign->count(),
+                        'plates' => $foreign->take(5)->implode(', ').($foreign->count() > 5 ? ' …' : ''),
+                    ]));
+
+                    return;
+                }
+            }
+            $data['is_domestic'] = $this->is_domestic;
         }
 
         // 🔒 락 기준선 — **super 전용** (jin 2026-08-21). 화면 노출은 편의일 뿐이라 저장 시 재인가(SKILLS §8 #26).
@@ -422,6 +443,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->editingId) {
             $buyer = Buyer::findOrFail($this->editingId);
             $wasInherited = (bool) $buyer->is_inherited;
+            $wasDomestic = (bool) $buyer->is_domestic;
             $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
             $wasLocks = [
                 'lock_shipping_entry_pct' => $buyer->lock_shipping_entry_pct,
@@ -431,6 +453,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 승계 표시는 정산액(건당 5만)을 바꾸므로 변경 이력을 남긴다 (Buyer 엔 감사 훅이 없어 여기서 직접).
             if (array_key_exists('is_inherited', $data) && $wasInherited !== $this->is_inherited) {
                 \App\Models\AuditLog::recordChange($buyer, 'is_inherited', $wasInherited, $this->is_inherited);
+            }
+            // 내수 지정은 그 바이어로 파는 모든 차의 정산 공식을 바꾼다 — 누가 언제 켰는지 남긴다.
+            if (array_key_exists('is_domestic', $data) && $wasDomestic !== $this->is_domestic) {
+                \App\Models\AuditLog::recordChange($buyer, 'is_domestic', $wasDomestic, $this->is_domestic);
             }
             // 무담보 한도는 매입 락 기준선이라 변경 이력 필수 — 누가 언제 얼마로 올렸는지가 감사 핵심.
             if (array_key_exists('unsecured_limit_krw', $data) && $wasLimit !== (int) ($data['unsecured_limit_krw'] ?? 0)) {
@@ -1161,6 +1187,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
+                {{-- 내수(국내 판매) 바이어 (jin 2026-09-08) — 이 바이어로 판 차량은 내수정산으로 빠진다.
+                     정산 공식을 통째로 바꾸므로 승계와 같은 [관리] 이상 권한. --}}
+                @if(auth()->user()?->canApprove())
+                <div class="rounded-lg border border-teal-200 bg-teal-50 p-3">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input wire:model.live="is_domestic" type="checkbox" class="mt-0.5 rounded" />
+                        <span class="text-sm text-gray-800">
+                            {{ __('buyer.field.domestic') }}
+                            <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">
+                                {{ __('buyer.field.domestic_hint') }}
+                            </span>
+                        </span>
+                    </label>
+                    @error('is_domestic')<p class="mt-2 text-xs text-red-500">{{ $message }}</p>@enderror
+                </div>
+                @endif
+
                 {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리] 이상만 --}}
                 @if(auth()->user()?->canApprove())
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
