@@ -1249,4 +1249,9 @@ return [
         'arrived' => '도착예정일 :eta 경과 (예정 기준 추정)',
         'photos_drop' => '사진을 여기로 드래그하거나 선택 (여러 장)',
     ],
+    'domestic' => [
+        'badge' => '내수',
+        'krw_only' => '내수 바이어(:buyer)는 원화 차량에만 지정할 수 있습니다. 지금 통화는 :currency 입니다 — 통화를 원화로 바꾸거나 다른 바이어를 고르세요.',
+        'buyer_has_foreign' => '이 바이어에게 원화가 아닌 차량이 :count대 있어 내수로 지정할 수 없습니다: :plates',
+    ],
 ];

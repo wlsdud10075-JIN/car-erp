@@ -4753,6 +4753,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $previewVehicle->guardStageOrderForExport();
         $previewVehicle->guardAttachmentDeps();
+        // 내수는 원화 전용 (jin 2026-09-08) — 외화 차량에 내수 바이어를 붙이면 정산 기준액이
+        //   외화 금액을 원화로 오인해 계산된다. 바이어 화면에도 반대 방향 가드가 있다.
+        $previewVehicle->guardDomesticCurrency();
 
         // H10 — 말소 처리(is_deregistered=true) 시 RRN 필수.
         // 말소신청서·등록증재발급·양도증명서 PDF가 RRN 필드 사용. 빈칸 발급 차단.
@@ -6898,6 +6901,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($v->buyer_undecided)
                         <span class="ml-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600"
                               title="{{ __('vehicle.buyer_undecided_title') }}">{{ __('vehicle.buyer_undecided_badge') }}</span>
+                    @endif
+                    {{-- 내수(국내 판매) — 판매 바이어에 내수가 켜져 있으면 붙는다 (jin 2026-09-08).
+                         ⚠️ buyer 는 위에서 eager load 한다 — 행마다 조회하면 N+1. --}}
+                    @if($v->isDomesticSale())
+                        {{-- ⚠️ 색은 **빌드된 CSS 에 이미 있는 것**만 쓴다 — 없으면 배경이 안 깔려
+                             회색으로만 보인다(SKILLS §8 #50). teal 은 board 뱃지(blue·purple)와도 구분된다. --}}
+                        <span class="ml-1 whitespace-nowrap rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700"
+                              title="{{ __('buyer.field.domestic') }}">{{ __('vehicle.domestic.badge') }}</span>
                     @endif
                     {{-- board 요청·확인 신호 (2026-08-09) — 영업이 board 에서 보낸 신호를 여기서 바로 본다.
                          ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap.

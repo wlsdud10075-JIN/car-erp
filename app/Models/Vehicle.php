@@ -1414,7 +1414,68 @@ class Vehicle extends Model
             'per_unit_amount' => null,
             'settlement_status' => 'pending',
             'attributed_month' => $this->settlementAttributionMonth(),
+            // 내수 여부는 **여기서 한 번 박제**하고 이후 바뀌지 않는다 (jin 2026-09-08).
+            //   바이어를 매번 보고 판정하면, 나중에 그 바이어의 내수 체크를 풀었을 때 과거 정산이
+            //   조용히 일반정산으로 뒤집힌다(담당자 승계에서 겪은 그 형태).
+            //   ⚠️ Buyer 는 SoftDeletes 라 바이어가 지워지면 관계가 null 이 된다 → withTrashed 로 읽는다.
+            //   ⚠️ 원화일 때만 찍는다 — 외화 차량에 내수 바이어가 붙어 있으면(적재·시드 우회) 내수
+            //      기준액이 외화를 원화로 오인해 계산되므로, 차라리 종전 공식으로 떨어뜨린다.
+            'is_domestic' => $this->currency === 'KRW' && (bool) $this->domesticBuyer()?->is_domestic,
             'note' => $note,
+        ]);
+    }
+
+    /**
+     * 판매 바이어 (삭제분 포함) — 내수 판정 단일 출처 (jin 2026-09-08).
+     *
+     * ⚠️ 판매 바이어(`buyer_id`)만 본다. 통관(`export_buyer_id`)·B/L(`bl_buyer_id`) 당사자는
+     *    정산과 무관하다(승계 판정이 같은 이유로 판매 바이어만 보는 것과 같은 관례).
+     * ⚠️ `Buyer` 는 SoftDeletes 라 그냥 `$this->buyer` 로 읽으면 삭제된 바이어에서 **조용히 null**
+     *    이 되어 내수 건이 일반정산으로 떨어진다 → `withTrashed`.
+     */
+    public function domesticBuyer(): ?Buyer
+    {
+        if (! $this->buyer_id) {
+            return null;
+        }
+        // ⚠️ 목록은 buyer 를 eager load 한다 — 이미 있으면 그걸 쓴다(행마다 재질의하면 N+1).
+        if ($this->relationLoaded('buyer') && $this->buyer !== null) {
+            return $this->buyer;
+        }
+
+        return Buyer::withTrashed()->find($this->buyer_id);
+    }
+
+    /** 이 차량이 지금 내수 판매인가 — 화면 뱃지·저장 가드용. 정산은 박제된 값을 쓴다. */
+    public function isDomesticSale(): bool
+    {
+        return (bool) $this->domesticBuyer()?->is_domestic;
+    }
+
+    /**
+     * 내수는 **원화 전용** (jin 2026-09-08) — 저장 시 차단.
+     *
+     * 외화 차량에 내수 바이어가 붙으면 세 가지가 조용히 다르게 돈다:
+     *   ① 운임 확정 게이트(`isFreightConfirmedForSettlement`)가 인코텀즈를 요구하기 시작한다
+     *   ② 바이어 현금 원장 문지기가 그 차의 잔금을 대상으로 잡는다(KRW 는 제외 대상)
+     *   ③ 정산 환율(`settlement_exchange_rate`)이 끼어든다 — 내수 기준액은 환율을 안 쓰므로
+     *      **외화 금액이 원화인 것처럼 계산**된다(1,300 EUR 가 1,300원으로)
+     * 예외도 경고도 없이 숫자만 틀리는 부류라, 애초에 못 만들게 막는다.
+     *
+     * 🚫 DB CHECK 로 걸지 않는다 — 기존 행을 깨뜨릴 수 있고, 두 테이블에 걸친 조건이라 표현도 안 된다.
+     * ⚠️ 시드·대량 적재는 통과한다(UI 저장 경로에서만 호출) — 그래서 정산 박제 쪽에도 같은 조건을 둔다.
+     */
+    public function guardDomesticCurrency(): void
+    {
+        if (! $this->isDomesticSale() || $this->currency === 'KRW') {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'currency' => __('vehicle.domestic.krw_only', [
+                'buyer' => $this->domesticBuyer()?->name ?? '-',
+                'currency' => (string) $this->currency,
+            ]),
         ]);
     }
 

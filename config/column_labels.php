@@ -223,6 +223,8 @@ return [
         'memo' => '메모',
         'is_active' => '활성 상태',
         'is_inherited' => '승계받은 바이어',
+        // 내수(국내 판매) 지정 — 그 바이어로 파는 모든 차의 정산 공식을 바꾼다 (jin 2026-09-08).
+        'is_domestic' => '내수 바이어',
         'unsecured_limit_krw' => '무담보 한도',
         // 바이어별 락 필요입금률 (jin 2026-08-21) — super 전용 값이라 감사로그가 유일한 견제다.
         'lock_shipping_entry_pct' => '통관·선적 진입 락 (%)',

@@ -90,6 +90,9 @@ return [
     'label_operating_profit' => 'Operating profit',
     'summary_settlement_amount' => 'Settlement amount',
     'summary_actual_payout' => 'Actual payout',
+    'summary_export_payout' => '└ Export',
+    'domestic_hint' => 'Domestic sale — total sale minus purchase, deregistration and towing.',
+    'summary_domestic_payout' => '└ Domestic (:count)',
     'summary_carryover' => 'Unconsumed carryover',
 
     'col' => [

@@ -31,6 +31,8 @@ class Settlement extends Model
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
         // A-3 (2026-07-08) — 귀속월 고정 (완납월 1일). submitForMonth 앵커.
         'attributed_month',
+        // 2026-09-08 jin — 내수(국내 판매) 건인가. **정산 생성 시점에 박제**하고 이후 바뀌지 않는다.
+        'is_domestic',
     ];
 
     protected $casts = [
@@ -43,6 +45,7 @@ class Settlement extends Model
         'carryover_in_krw' => 'decimal:2',
         'carryover_out_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
+        'is_domestic' => 'boolean',
     ];
 
     /**
@@ -391,6 +394,12 @@ class Settlement extends Model
         if (! $v) {
             return 0;
         }
+        // 내수는 「총판매가」가 곧 매출이다 (jin 2026-09-08) — 환율도 커미션 분해도 끼어들지 않는다.
+        //   이 값은 마진율 KPI 의 분모로만 쓰인다(관리자 대시보드). 수출 공식을 그대로 두면
+        //   원화 차량의 판매환율(대개 1)이 곱해져 **뜻이 다른 분모**가 된다.
+        if ($this->is_domestic) {
+            return (int) round($v->sale_total_amount);
+        }
 
         $base = (float) ($v->sale_price ?? 0)
             + (float) ($v->commission ?? 0)
@@ -437,7 +446,41 @@ class Settlement extends Model
      */
     public function getTotalMarginAttribute(): int
     {
+        if ($this->is_domestic) {
+            return $this->domestic_margin;
+        }
+
         return (int) (($this->sales_margin + $this->vat_margin) * (100 - self::param('settlement_total_margin_vat_deduct')) / 100);
+    }
+
+    /**
+     * 내수 기준액 = 총판매가 − (매입가 + 말소비 + 탁송비)  (jin 2026-09-08)
+     *
+     * 🔑 **분기를 여기 한 곳에만 둔다.** `total_margin` 이 이 값을 돌려주면 정산액(비율·tier)·
+     *    서류비·실지급액·회사몫(`company_net`)이 **전부 자동으로 따라온다**. 내수용 지급액 경로를
+     *    따로 만들면 회사이익 공식이 3곳으로 갈렸던 것과 같은 형태로 반드시 어긋난다(SKILLS §8 #45).
+     *
+     * 🚫 부가세마진(매입가 × 9%)도 × 0.9 부가세 차감도 **안 탄다** — 수출 공식과 완전히 별개다.
+     * 🚫 비용 10칸 전부가 아니라 **말소비·탁송비 두 칸만**이다(jin 명시). 면허·캐리·쇼링·보험·
+     *    이전비·주차료·기타1·2 는 내수 계산에 안 들어간다.
+     * 🚫 매입가는 `purchase_price` 만이다 — 매도비(`selling_fee`)는 안 뺀다(jin 명시).
+     *    ⚠️ 사내직원 tier 의 「차값 1억」 판정은 종전대로 매입합계(매입가+매도비)를 쓴다 — 별개 축이다.
+     *
+     * 내수는 원화 전제라 환율이 끼어들지 않는다(`sale_total_amount` 는 통화 그대로다).
+     */
+    public function getDomesticMarginAttribute(): int
+    {
+        $v = $this->vehicle;
+        if (! $v) {
+            return 0;
+        }
+
+        return (int) round(
+            $v->sale_total_amount
+            - (float) ($v->purchase_price ?? 0)
+            - (float) ($v->cost_deregistration ?? 0)
+            - (float) ($v->cost_towing ?? 0)
+        );
     }
 
     // ── 정산 파라미터 (2026-06-22) — super admin 기능설정에서 Setting override 가능 ─────────

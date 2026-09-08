@@ -23,11 +23,15 @@ class Buyer extends Model
         // 2026-08-21 jin - 바이어별 락 필요입금률(%). NULL = 미설정 = 전역값. 0 은 유효값(락 없음).
         //   해석은 LockThresholdResolver 단일 출처 - 이 컬럼을 직접 읽지 말 것.
         'lock_shipping_entry_pct', 'lock_purchase_registration_pct',
+        // 2026-09-08 jin — 내수(국내 판매) 바이어. 이 바이어로 판 차량은 내수정산으로 빠진다.
+        //   🚨 원화 전용 — 외화 차량에는 붙일 수 없다(Vehicle/Buyer 양쪽 저장에서 막는다).
+        'is_domestic',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'is_inherited' => 'boolean',
+        'is_domestic' => 'boolean',
         'inherited_at' => 'date',
     ];
 
