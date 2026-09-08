@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\FinalPayment;
+use App\Models\Port;
 use App\Models\ReceivableHistory;
 use App\Models\Salesman;
 use App\Models\Setting;
@@ -244,5 +245,92 @@ class ShippingBundleGateTest extends TestCase
 
         $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch),
             '회수이력으로 들어온 돈이 게이트에 반영되지 않았다');
+    }
+
+    /**
+     * 선적대기 허용 항로로 바꾼다 — RORO + 도착항 마스터의 `allow_shipping_wait`.
+     * 반입지·선적일은 안 건드린다(그 컬럼들은 C5 트리거라 저장 자체가 별도 게이트를 탄다).
+     */
+    private function makeWaitRoute(array $vehicles): void
+    {
+        $port = Port::create([
+            'type' => 'discharge', 'name' => 'DURRESS, ALBANIA',
+            'is_active' => true, 'allow_shipping_wait' => true,
+        ]);
+        Vehicle::whereIn('id', collect($vehicles)->pluck('id'))
+            ->update(['shipping_method' => 'RORO', 'discharge_port_id' => $port->id]);
+    }
+
+    /**
+     * 🚢 **선적대기 허용 항로는 묶음 착수도 통과한다** (jin 2026-09-08).
+     *
+     * 그 항로(알바니아 두레스 RORO 등)는 **돈을 다 받기 전에 항구에 세워두고 서류를 진행하는** 흐름이라
+     * `Port::allow_shipping_wait` 가 애초에 C5 를 건너뛰라고 만들어진 것이다(2026-07-18).
+     * 그런데 이틀 뒤 만든 묶음 aggregate 게이트가 그 예외를 안 물려받아, 착수가 막히면 화면에서
+     * **수출신고번호·B/L번호 기입 버튼이 통째로 사라진다** — 실사고 heymanerp AUTO SCOUT 8대.
+     */
+    public function test_shipping_wait_route_bundle_starts_even_at_full_unpaid(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch, $vehicles] = $this->bundle([100, 100]);   // 입금 0원
+        $this->makeWaitRoute($vehicles);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch),
+            '선적대기 허용 항로인데 착수가 막혔다 — 그 묶음은 서류작업을 할 수 없다');
+    }
+
+    /** 대조군 — 같은 미수인데 항로만 다르면 종전대로 막힌다(락을 통째로 푼 게 아니다). */
+    public function test_same_unpaid_on_a_normal_route_is_still_blocked(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch] = $this->bundle([100, 100]);   // 항로 미지정 = 일반
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_REQUESTED, $this->bundleStatus($batch));
+    }
+
+    /**
+     * 섞인 묶음 — 집계는 **일반 항로 차만** 센다(승인 우회 차량을 빼는 것과 같은 자리).
+     * 빼지 않으면 미수 90M/100M = 90% 라 어떤 임계에서도 막힌다 ⇒ 통과했다면 실제로 빠진 것이다.
+     */
+    public function test_mixed_bundle_counts_only_the_normal_route_vehicles(): void
+    {
+        $this->setLock('shipping_entry', true);
+        [$batch, $vehicles] = $this->bundle([100, 0], [90_000_000, 10_000_000]);
+        $this->makeWaitRoute([$vehicles[0]]);   // 미수 90M 짜리만 선적대기 항로
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('changeStatus', $batch, ShippingRequest::STATUS_IN_PROGRESS);
+
+        $this->assertSame(ShippingRequest::STATUS_IN_PROGRESS, $this->bundleStatus($batch));
+    }
+
+    /**
+     * 🚫 **인도는 여전히 막힌다** — G1(B/L 100% 완납)은 이 예외를 안 본다.
+     * B/L 이 화물인도권이라 그것만이 「물건이 넘어가는」 단계다(2026-09-08 커밋이 그은 경계).
+     */
+    public function test_bl_issue_is_still_blocked_on_a_shipping_wait_route(): void
+    {
+        $this->setLock('shipping_entry', true);
+        $this->setLock('bl_issue', true);
+        [$batch, $vehicles] = $this->bundle([100]);
+        $this->makeWaitRoute($vehicles);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.shipping-requests.index')
+            ->call('openIssue', $batch)
+            ->set('blForm.bl_number', 'BL-WAIT-1')
+            ->call('applyBlIssue');
+
+        $this->assertNull(Vehicle::find($vehicles[0]->id)->bl_number,
+            '선적대기 항로라고 B/L 발급까지 열리면 미완납 차의 화물인도권이 나간다');
     }
 }
