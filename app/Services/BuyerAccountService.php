@@ -123,6 +123,7 @@ class BuyerAccountService
                 'allocations' => fn ($q) => $q->orderBy('id'),
                 'allocations.vehicle:id,vehicle_number,nice_reg_vin',
                 'allocations.finalPayment:id,payment_date',
+                'allocations.fee:id,charged_date,note',   // 💸 수수료 배분(2026-09-08) — 차량 대신 이걸 그린다
             ])
             // 최근 입금부터 — 사람은 방금 들어온 돈을 먼저 본다.
             //   (FIFO 소진 순서는 「남은 현금」 계산에만 쓰이고 여기 표시 순서와는 별개다.)

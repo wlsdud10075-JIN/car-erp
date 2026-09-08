@@ -185,9 +185,13 @@ class BuyerAccountExportController extends Controller
                 $sheet->setCellValue('B'.$row, (float) $r->amount);
                 $this->text($sheet, 'C'.$row, (string) $r->currency);
                 $this->text($sheet, 'D'.$row, (string) ($r->note ?? ''));
-                $this->text($sheet, 'E'.$row, (string) ($a?->vehicle?->vehicle_number ?? ''));
-                $this->text($sheet, 'F'.$row, (string) ($a?->vehicle?->nice_reg_vin ?? ''));
-                $this->text($sheet, 'G'.$row, (string) ($a?->finalPayment?->payment_date?->format('Y-m-d') ?? ''));
+                // 💸 수수료 배분(2026-09-08)은 차량·잔금이 없다 — 빈칸으로 두면 「어디로 갔는지」가 사라진다.
+                $isFee = $a?->isFee() ?? false;
+                $this->text($sheet, 'E'.$row, $isFee ? __('buyer.cash.fee_section') : (string) ($a?->vehicle?->vehicle_number ?? ''));
+                $this->text($sheet, 'F'.$row, $isFee ? (string) ($a?->fee?->note ?? '') : (string) ($a?->vehicle?->nice_reg_vin ?? ''));
+                $this->text($sheet, 'G'.$row, $isFee
+                    ? (string) ($a?->fee?->charged_date?->format('Y-m-d') ?? '')
+                    : (string) ($a?->finalPayment?->payment_date?->format('Y-m-d') ?? ''));
                 if ($a) {
                     $sheet->setCellValue('H'.$row, (float) $a->amount);
                 }

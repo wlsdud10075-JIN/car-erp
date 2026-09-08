@@ -103,6 +103,7 @@ class ColumnLabel
             'AuctionDeposit' => 'auction_deposits',
             // 2026-09-04 — 바이어 현금 원장(외화 입금 → 판매잔금 차감).
             'BuyerCashReceipt' => 'buyer_cash_receipts',
+            'BuyerCashFee' => 'buyer_cash_fees',
         ];
 
         return $map[$short] ?? null;

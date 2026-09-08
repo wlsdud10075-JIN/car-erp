@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\BuyerCashAllocation;
+use App\Models\BuyerCashFee;
 use App\Models\BuyerCashReceipt;
 use App\Models\FinalPayment;
 use App\Models\Setting;
@@ -164,6 +165,76 @@ class BuyerCashService
                 throw new DomainException(__('buyer.cash.gate_race'));
             }
         });
+    }
+
+    /**
+     * 💸 **수수료로 남은 현금을 턴다** (jin 2026-09-08).
+     *
+     * 바이어가 보낸 돈을 쓰다 보면 **한참 뒤에 송금 수수료가 잡혀** 실제 들어온 돈이 기재액보다
+     * 조금 적었던 것으로 드러난다. 그러면 원장에 영영 안 없어지는 잔돈이 남는다(예: 12.35 USD).
+     *
+     * 판매잔금 배분과 **완전히 같은 FIFO** 로 오래된 입금부터 갉아먹는다 — 같은 테이블을 쓰므로
+     * 입금의 `remaining_amount`·`balanceFor` 가 손대지 않아도 따라온다.
+     *
+     * @param  float  $amount  외화(그 통화 기준). 남은 현금보다 크면 던진다.
+     *
+     * @throws DomainException 남은 현금이 모자랄 때
+     */
+    public function chargeFee(BuyerCashFee $fee): void
+    {
+        DB::transaction(function () use ($fee) {
+            // 다시 깔 수 있게 먼저 지운다 — 입금이 지워져 그 수수료를 다시 태워야 할 때 그대로 쓴다
+            //   (판매잔금 `allocate()` 와 같은 형태).
+            BuyerCashAllocation::where('fee_id', $fee->id)->delete();
+
+            $remaining = round((float) $fee->amount, 2);
+            if ($remaining <= self::EPSILON) {
+                throw new DomainException(__('buyer.cash.fee_zero'));
+            }
+
+            $receipts = BuyerCashReceipt::forBuyerCurrency($fee->buyer_id, $fee->currency)
+                ->fifo()
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($receipts as $receipt) {
+                if ($remaining <= self::EPSILON) {
+                    break;
+                }
+                // ⚠️ 관계를 eager load 하지 말 것 — 방금 만든 배분이 캐시에 없어 잔액이 부풀어 보인다.
+                $free = $receipt->remaining_amount;
+                if ($free <= self::EPSILON) {
+                    continue;
+                }
+                $take = round(min($free, $remaining), 2);
+
+                BuyerCashAllocation::create([
+                    'receipt_id' => $receipt->id,
+                    'fee_id' => $fee->id,
+                    // 판매잔금이 아니라 수수료다 — 잔금·차량은 비운다(모델 `isFee()` 가 이걸로 가른다).
+                    'final_payment_id' => null,
+                    'vehicle_id' => null,
+                    'amount' => $take,
+                    'created_by' => auth()->id(),
+                ]);
+                $remaining = round($remaining - $take, 2);
+            }
+
+            if ($remaining > self::EPSILON) {
+                // 🚫 모자란 만큼만 털고 끝내지 않는다 — 그러면 사람이 적은 금액과 원장이 어긋난 채
+                //    「처리됐다」로 보인다. 통째로 되돌리고 얼마가 부족한지 알려준다.
+                throw new DomainException(__('buyer.cash.fee_short', [
+                    'short' => number_format($remaining, 2),
+                    'currency' => $fee->currency,
+                ]));
+            }
+        });
+    }
+
+    /** 그 바이어·통화로 지금 수수료로 털 수 있는 최대 금액 = 남은 현금. 화면 안내와 같은 출처. */
+    public function feeCeilingFor(int $buyerId, string $currency): float
+    {
+        return BuyerCashReceipt::balanceFor($buyerId, $currency);
     }
 
     /**

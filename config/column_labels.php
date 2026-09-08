@@ -399,6 +399,7 @@ return [
         'AuctionDeposit' => '경매 보증금',
         // 2026-09-04 — 바이어 현금 원장.
         'BuyerCashReceipt' => '바이어 현금 입금',
+        'BuyerCashFee' => '바이어 현금 수수료',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -417,6 +418,8 @@ return [
         'unsecured_limit_toggle_changed' => '무담보 한도 기능 켜기/끄기',
         'buyer_cash_toggle_changed' => '바이어 현금 원장 켜기/끄기',
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
+        'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
+        'buyer_cash_fee_deleted' => '바이어 현금 수수료 취소',
         'buyer_cash_receipt_deleted' => '바이어 현금 입금 삭제',
         'lock_threshold_changed' => '락 수치 변경',
         'unpaid_override_approved' => '미수 우회 승인',
