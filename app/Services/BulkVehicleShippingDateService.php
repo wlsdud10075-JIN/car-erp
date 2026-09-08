@@ -12,6 +12,8 @@ use InvalidArgumentException;
 
 /**
  * 선적일·ETA 일괄 지정 (jin 2026-07-28) — 한 선박에 실린 수백 대를 한 번에 처리.
+ * 2026-08-12 선박명 · 2026-09-01 컨테이너 접두어 · 2026-09-08 수출신고번호·컨테이너번호가 합류해
+ * 실질은 **「대상 차량 여럿에 같은 선적·통관 값을 찍는」 단일 도구**다(클래스명은 최초 용도 그대로).
  *
  * 배경: 선박 1척에 300대를 배정해도 실제로는 280대만 실린다. 포워더 자료로 실린 차를 추려
  * (차량목록 필터 → 「건수만」 → 엑셀 대조) 그 조건에 걸린 차량 전체에 같은 날짜를 찍는다.
@@ -31,8 +33,15 @@ use InvalidArgumentException;
  */
 class BulkVehicleShippingDateService
 {
-    /** 이 도구가 건드릴 수 있는 컬럼 — 그 외는 예외. 지정한 필드 밖으로 번지지 않게 봉인. */
-    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name'];
+    /**
+     * 이 도구가 건드릴 수 있는 컬럼 — 그 외는 예외. 지정한 필드 밖으로 번지지 않게 봉인.
+     *
+     * 2026-09-08 (jin) — 수출신고번호·컨테이너번호 합류. 선적요청 묶음 화면에만 있던 일괄 기입을
+     * 차량관리 「선택 N대」 에서도 쓸 수 있게 한 것이다(묶음이 아직 없거나 묶음을 넘나드는 경우).
+     * ⚠️ `container_number` 는 이 목록의 **전체 값 기입**과 아래 `$containerPrefix` **접두어 치환**이
+     *    같은 컬럼을 노린다 — 한 호출에 둘 다 오면 어느 쪽이 이기는지 사람이 알 수 없으므로 예외로 막는다.
+     */
+    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number'];
 
     /** 날짜로 다룰 컬럼(8자리 정규화·형식 검사 대상). 나머지는 문자열 그대로. */
     private const DATE_FIELDS = ['shipping_date', 'eta_date'];
@@ -61,9 +70,26 @@ class BulkVehicleShippingDateService
      */
     public function vesselBreakdown(Builder $query): array
     {
+        return $this->valueBreakdown($query, 'vessel_name');
+    }
+
+    /**
+     * 위 판정의 일반형 — 아무 FIELDS 컬럼의 기존 값 분포. 빈 값은 `''` 키.
+     *
+     * 🚫 컬럼마다 같은 SQL 을 옮겨 적지 말 것(SKILLS §8 #45) — 「선박명은 경고가 뜨는데 신고번호는 안 뜨는」
+     *    형태가 된다. 신고번호·컨테이너번호 일괄 기입(2026-09-08)도 이 함수를 쓴다.
+     *
+     * @return array<string, int> 값 => 대수 (대수 많은 순)
+     */
+    public function valueBreakdown(Builder $query, string $column): array
+    {
+        if (! in_array($column, self::FIELDS, true)) {
+            throw new InvalidArgumentException("분포 집계 불가 컬럼: {$column}");
+        }
+
         $rows = $query->clone()
-            ->selectRaw("COALESCE(NULLIF(TRIM(vessel_name), ''), '') as vsl, COUNT(*) as cnt")
-            ->reorder()->groupBy('vsl')->pluck('cnt', 'vsl')->all();
+            ->selectRaw("COALESCE(NULLIF(TRIM({$column}), ''), '') as bucket, COUNT(*) as cnt")
+            ->reorder()->groupBy('bucket')->pluck('cnt', 'bucket')->all();
 
         arsort($rows);
 
@@ -152,7 +178,7 @@ class BulkVehicleShippingDateService
     public function apply(Builder $query, array $values, User $by, string $reason, ?array $containerPrefix = null): array
     {
         if (! $by->canAccessClearance()) {
-            throw new AuthorizationException('선적일·ETA·선박명 일괄 지정 권한 없음 (수출통관/관리 전용)');
+            throw new AuthorizationException('선적·통관 정보 일괄 기입 권한 없음 (수출통관/관리 전용)');
         }
 
         $payload = [];
@@ -191,8 +217,13 @@ class BulkVehicleShippingDateService
             $containerPrefix = ['from' => $from, 'to' => $to];
         }
 
+        // 같은 컬럼을 두 방식이 동시에 노리면 결과가 사람의 예상과 갈린다 — 조용히 한쪽을 이기게 두지 않는다.
+        if (isset($payload['container_number']) && $containerPrefix !== null) {
+            throw new InvalidArgumentException('컨테이너 번호는 「전체 기입」과 「접두어 치환」을 동시에 할 수 없습니다.');
+        }
+
         if ($payload === [] && $containerPrefix === null) {
-            throw new InvalidArgumentException('선적일·ETA·선박명·컨테이너 접두어 중 최소 하나는 입력해야 합니다.');
+            throw new InvalidArgumentException('일괄 기입할 값을 최소 하나는 입력해야 합니다.');
         }
 
         $applied = 0;

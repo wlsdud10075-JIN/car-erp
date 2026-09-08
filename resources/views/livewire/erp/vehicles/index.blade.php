@@ -121,6 +121,21 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $bulkDocReason = '';
 
+    // ── 수출신고번호·컨테이너번호 일괄 기입 (jin 2026-09-08) ──
+    //   선적요청 묶음 화면에만 있던 기능을 「선택 N대」로 가져온 것. 묶음이 아직 없거나 묶음 경계를
+    //   넘나드는 선택에서도 번호를 한 번에 찍을 수 있어야 한다는 요청.
+    //   ⚠️ 이 모달은 **live 바인딩을 쓰지 않는다** — 값을 치는 동안 목록을 다시 조회하지 않기 위함(2026-09-08 통일).
+    public bool $bulkNumOpen = false;
+
+    public string $bulkNumDecl = '';
+
+    public string $bulkNumContainer = '';
+
+    /** 기존 값이 2종 이상 섞였는데도 덮을 것인가 — 사람이 명시로 확인해야 진행한다. */
+    public bool $bulkNumAck = false;
+
+    public string $bulkNumReason = '';
+
     #[Url] public int $perPage = 10;
 
     // #3 다중차량 선적 서류 — 체크박스로 선택한 차량 id (export 차량만). 선택 N대 → 1서류.
@@ -2315,6 +2330,136 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_doc.done', [
             'applied' => $result['applied'],
+            'skipped' => count($result['skipped']),
+        ]));
+    }
+
+    /** 번호 일괄 기입 모달 열기 — 통관 데이터라 canAccessClearance(선적요청 묶음 폼과 같은 권한). */
+    public function openBulkNumber(): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        $this->bulkNumDecl = '';
+        $this->bulkNumContainer = '';
+        $this->bulkNumAck = false;
+        $this->bulkNumReason = '';
+        $this->bulkNumOpen = true;
+        unset($this->bulkNumPreview);
+    }
+
+    public function closeBulkNumber(): void
+    {
+        $this->bulkNumOpen = false;
+        unset($this->bulkNumPreview);
+    }
+
+    /**
+     * 대상 대수 + **기존 값 분포**. 화면과 실행이 같은 판정을 쓴다(SKILLS §8 #67).
+     *
+     * 🧭 왜 분포를 보는가 — 선적요청은 「묶음」이라 값이 동질이지만 여기 대상은 사람이 아무거나 고른 것이다.
+     *    서로 다른 신고번호를 단 차가 섞였는데 모르고 덮으면 **세관에 신고한 번호가 통째로 날아간다**
+     *    (선박명 일괄에서 배운 것과 같은 규칙 — jin 2026-08-12).
+     * ⚠️ 빈 값은 「다름」으로 세지 않는다. 처음 채우는 게 주 용도라 매번 뜨면 아무도 안 읽는다.
+     * ⚠️ 모달이 닫혀 있으면 계산하지 않는다 — 목록 렌더마다 group by 를 돌 이유가 없다.
+     */
+    #[Computed]
+    public function bulkNumPreview(): array
+    {
+        $empty = ['count' => 0, 'no_scope' => 0, 'export_declaration_number' => [], 'container_number' => []];
+        if (! $this->bulkNumOpen || empty($this->shipDocIds)) {
+            return $empty;
+        }
+
+        // 🔒 **스코프 밖 차량은 미리보기에서도 빼야 한다** — 서비스가 실행 시 skip 하므로, 여기서 안 빼면
+        //    「대상 5대」라고 해놓고 3대만 바뀐다(SKILLS §8 #67 — 미리보기와 실행이 같은 판정을 쓸 것).
+        $user = auth()->user();
+        $ids = array_values(array_unique(array_map('intval', $this->shipDocIds)));
+        $scopedIds = Vehicle::whereIn('id', $ids)->get()
+            ->filter(fn ($v) => (bool) $user?->canScopeVehicle($v))
+            ->pluck('id')->all();
+        $svc = app(\App\Services\BulkVehicleShippingDateService::class);
+
+        return [
+            'count' => count($scopedIds),
+            'no_scope' => count($ids) - count($scopedIds),
+            'export_declaration_number' => $svc->valueBreakdown(Vehicle::whereIn('id', $scopedIds), 'export_declaration_number'),
+            'container_number' => $svc->valueBreakdown(Vehicle::whereIn('id', $scopedIds), 'container_number'),
+        ];
+    }
+
+    /** 채운 칸 중 기존 값이 2종 이상 섞인 컬럼. 화면 경고와 실행 가드가 같은 판정을 쓴다. */
+    public function bulkNumberConflicts(): array
+    {
+        $prev = $this->bulkNumPreview;
+        $out = [];
+        foreach ([
+            'export_declaration_number' => $this->bulkNumDecl,
+            'container_number' => $this->bulkNumContainer,
+        ] as $col => $val) {
+            if (trim((string) $val) === '') {
+                continue;   // 빈 칸 = 안 건드림 → 덮을 것이 없다
+            }
+            if (\App\Services\BulkVehicleShippingDateService::distinctCount($prev[$col] ?? []) > 1) {
+                $out[$col] = $prev[$col];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * 선택 N대에 수출신고번호·컨테이너번호 일괄 기입 (jin 2026-09-08).
+     *
+     * 대상 = 사람이 체크박스로 고른 누적 선택. ID 는 사람의 선택이라 그대로 쓰되
+     * **차량별 canScopeVehicle 재인가는 서비스가** 한다(SKILLS §8 #26). 스코프 밖은 skip 으로 돌아온다.
+     * 빈 칸은 「안 건드림」 — 이 도구로 값을 비울 수는 없다(오조작 한 번에 수십 대가 날아가지 않게).
+     *
+     * 🚫 성공해도 선택을 비우지 않는다 — 번호를 찍은 그 묶음에 곧바로 면장을 올리는 흐름이라
+     *    여기서 비우면 사람이 같은 차를 다시 골라야 한다(서류 일괄 업로드와 의도적으로 다르다).
+     */
+    public function applyBulkNumber(): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canAccessClearance(), 403);
+
+        if (empty($this->shipDocIds)) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.no_target'));
+
+            return;
+        }
+        if (trim($this->bulkNumDecl) === '' && trim($this->bulkNumContainer) === '') {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.empty'));
+
+            return;
+        }
+        if ($this->bulkNumberConflicts() !== [] && ! $this->bulkNumAck) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.mixed_block'));
+
+            return;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $this->shipDocIds)));
+
+        try {
+            $result = app(\App\Services\BulkVehicleShippingDateService::class)->apply(
+                Vehicle::whereIn('id', $ids),
+                [
+                    'export_declaration_number' => $this->bulkNumDecl,
+                    'container_number' => $this->bulkNumContainer,
+                ],
+                $user,
+                $this->bulkNumReason !== '' ? $this->bulkNumReason : __('vehicle.bulk_num.reason_default'),
+            );
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+
+        $this->bulkNumOpen = false;
+        unset($this->vehicles, $this->bulkNumPreview);
+        $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_num.done', [
+            'applied' => $result['applied'],
+            'unchanged' => $result['unchanged'],
             'skipped' => count($result['skipped']),
         ]));
     }
@@ -6685,6 +6830,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ↑ {{ __('vehicle.bulk_doc.btn') }}
             </button>
         @endif
+        {{-- ①-B 번호 일괄 기입 (jin 2026-09-08) — 선적요청 묶음 화면에만 있던 것을 「선택 N대」로.
+             묶음이 아직 없거나 묶음 경계를 넘나드는 선택에서도 신고번호·컨테이너번호를 한 번에 찍는다. --}}
+        @if(auth()->user()?->canAccessClearance())
+            <button type="button" wire:click="openBulkNumber"
+                    class="rounded border border-green-300 bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
+                # {{ __('vehicle.bulk_num.btn') }}
+            </button>
+        @endif
         {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
         @if(auth()->user()?->canApprove() && $this->selectedBundle)
             <a href="{{ route('erp.shipping-requests.index', ['focus' => $this->selectedBundle]) }}" wire:navigate
@@ -10337,6 +10490,80 @@ function vehicleColumnsToggle() {
                     class="btn-primary disabled:opacity-50">
                 <span wire:loading.remove wire:target="applyBulkDoc">{{ __('vehicle.bulk_doc.apply') }}</span>
                 <span wire:loading wire:target="applyBulkDoc">{{ __('vehicle.panel.uploading') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+@if($bulkNumOpen)
+{{-- 수출신고번호·컨테이너번호 일괄 기입 모달 (jin 2026-09-08) — 대상 = 체크박스 누적 선택.
+     선적요청 묶음 폼과 같은 규칙: **빈 칸은 안 건드림**(한쪽만 채워도 됨), 값을 비울 수는 없음.
+     ⚠️ live 바인딩 없음 — 값을 치는 동안 목록을 다시 조회하지 않는다. --}}
+@php
+    $bnPrev = $this->bulkNumPreview;
+    $bnConflict = $this->bulkNumberConflicts();
+    $bnLabels = [
+        'export_declaration_number' => __('vehicle.bulk_num.decl'),
+        'container_number' => __('vehicle.bulk_num.container'),
+    ];
+@endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-num-modal">
+    <div class="card mx-4 w-full max-w-lg shadow-2xl">
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_num.title') }}</h3>
+        <p class="mt-1 text-xs font-medium text-primary-text">
+            {{ __('vehicle.bulk_num.target', ['count' => number_format($bnPrev['count'])]) }}
+        </p>
+        @if($bnPrev['no_scope'] > 0)
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_num.no_scope', ['count' => $bnPrev['no_scope']]) }}</p>
+        @endif
+        <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_num.keep_hint') }}</p>
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_num.decl') }}</label>
+        <input wire:model="bulkNumDecl" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_num.decl_ph') }}" />
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_num.container') }}</label>
+        <input wire:model="bulkNumContainer" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_num.container_ph') }}" />
+
+        {{-- 🚦 현재 값이 여러 종류 — 채우면 하나로 덮인다. 선박명 일괄과 같은 규칙(빈 값은 「다름」으로 안 셈).
+             ⚠️ 칸을 채우기 전에도 보여준다(live 바인딩을 안 쓰므로). 실제 차단은 **채운 칸이 섞였을 때만**. --}}
+        @foreach($bnLabels as $bnCol => $bnLabel)
+            @php $bnDist = \App\Services\BulkVehicleShippingDateService::distinctCount($bnPrev[$bnCol] ?? []); @endphp
+            @if($bnDist > 1)
+                <div class="mt-3 rounded border border-amber-200 bg-amber-50 p-2">
+                    <p class="text-xs font-semibold text-amber-800">
+                        {{ __('vehicle.bulk_num.mixed_title', ['field' => $bnLabel, 'kinds' => $bnDist]) }}
+                    </p>
+                    <div class="mt-1 max-h-24 overflow-y-auto text-[11px] text-amber-800">
+                        @foreach($bnPrev[$bnCol] as $bnVal => $bnCnt)
+                            <div>{{ $bnVal !== '' ? $bnVal : __('vehicle.bulk_num.no_number') }} — {{ $bnCnt }}{{ __('vehicle.bulk_num.unit') }}</div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+        @endforeach
+        @if($bnConflict !== [])
+            <label class="mt-2 flex items-center gap-1.5 text-[11px] font-medium text-red-700">
+                <input type="checkbox" wire:model="bulkNumAck" class="rounded border-red-300">
+                {{ __('vehicle.bulk_num.mixed_ack') }}
+            </label>
+        @endif
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_num.reason') }}</label>
+        <input wire:model="bulkNumReason" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_num.reason_ph') }}" />
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" wire:click="closeBulkNumber"
+                    class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+                {{ __('common.cancel') }}
+            </button>
+            <button type="button" wire:click="applyBulkNumber" wire:loading.attr="disabled" wire:target="applyBulkNumber"
+                    @disabled($bnPrev['count'] === 0)
+                    class="btn-primary disabled:opacity-50">
+                {{ __('vehicle.bulk_num.apply') }}
             </button>
         </div>
     </div>

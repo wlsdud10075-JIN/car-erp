@@ -128,6 +128,7 @@ return [
         'bl_number' => 'B/L번호',
         'container_no' => '컨테이너 No',
         'container_number' => '컨테이너 번호',   // 실제 컬럼명 — 위 container_no 는 옛 키
+        'export_declaration_number' => '수출신고번호',
         'bl_loading_location' => '반입지',
         'bl_vsl' => 'VSL',
         'vessel_name' => '선박명(VSL)',
@@ -438,7 +439,8 @@ return [
         'capital_report_viewed' => '자금 보고서 열람',
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
-        'bulk_shipping_date_applied' => '선적일·도착일 일괄 기입',
+        // 2026-09-08 — 같은 도구가 선박명·컨테이너·수출신고번호까지 찍는다. 무엇이 바뀌었는지는 column_name 에 남는다.
+        'bulk_shipping_date_applied' => '선적·통관 정보 일괄 기입',
         'bulk_document_uploaded' => '서류 일괄 업로드',
         'bulk_shipment_applied' => '발송 내역 일괄 기입',
         'freight_usd_import' => '운임비(USD) 소급 기입',
