@@ -53,17 +53,22 @@ function notion(string $m, string $u, array $b, string $t, string $v): array
     for ($try = 0; $try < 6; $try++) {
         $c = curl_init($u);
         curl_setopt_array($c, [CURLOPT_CUSTOMREQUEST => $m, CURLOPT_RETURNTRANSFER => 1,
+            CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_TIMEOUT => 60,
             CURLOPT_HTTPHEADER => ['Authorization: Bearer '.$t, 'Content-Type: application/json', 'Notion-Version: '.$v],
             CURLOPT_POSTFIELDS => $b ? json_encode($b, JSON_UNESCAPED_UNICODE) : ($m === 'GET' ? null : '{}')]);
         $r = curl_exec($c);
         $code = curl_getinfo($c, CURLINFO_HTTP_CODE);
         curl_close($c);
-        if (in_array($code, [409, 429, 500, 502, 503, 504], true)) {
+        if ($r === false || $code === 0 || in_array($code, [409, 429, 500, 502, 503, 504], true)) {
             usleep(600000 * ($try + 1));
 
             continue;
         }
         $j = json_decode((string) $r, true) ?: [];
+        if (! is_array(json_decode((string) $r, true))) {
+            fwrite(STDERR, "❌ Notion 응답이 올바른 JSON이 아닙니다. 발행을 중단합니다.\n");
+            exit(1);
+        }
         if ($code >= 300) {
             fwrite(STDERR, "❌ Notion $m ($code): ".($j['message'] ?? $r)."\n");
             exit(1);
@@ -150,6 +155,11 @@ foreach ($cards as $g) {
             $bad[] = "제목 중복: {$c['title']}";
         }
         $titles[$c['title']] = $g['group'];
+        foreach ($c['rows'] ?? [] as $row) {
+            if (! is_array($row) || count($row) !== 2 || ! is_string($row[0] ?? null) || ! is_string($row[1] ?? null)) {
+                $bad[] = "{$c['title']} → rows는 [라벨, 본문] 문자열 2개여야 합니다(추가 값은 발행 시 유실됩니다).";
+            }
+        }
     }
 }
 if ($bad) {
