@@ -98,7 +98,11 @@ new #[Layout('components.layouts.app')] class extends Component {
      * ⚠️ 이름을 search() 로 두면 $search 프로퍼티와 충돌해 호출조차 안 된다(wire:click 도 죽음).
      *    상세 = tests/Feature/VoltPropertyMethodCollisionTest.
      */
-    public function updatedSearch(): void
+    /**
+     * 검색 실행 — 버튼·Enter 로만 (jin 2026-09-08).
+     * 🚨 `search()` 로 짓지 말 것 — 프로퍼티와 겹쳐 버튼이 요청조차 안 보내고 죽는다(SKILLS §8 #32).
+     */
+    public function searchNow(): void
     {
         $this->jumpToPaidUpIfOnlyMatchThere();
         $this->resetPage();
@@ -966,8 +970,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 필터 바 --}}
     <div class="card flex flex-wrap items-center gap-2">
-        <input type="text" wire:model.live.debounce.500ms="search" placeholder="{{ __('receivable.search_ph') }}"
+        {{-- 🔎 검색은 **버튼(또는 Enter)으로만** 돈다 (jin 2026-09-08).
+             타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돌고, 이 화면은
+             `wire:poll` 까지 겹친다. 다른 검색칸(차량·재고·바이어·정산)과 같은 형태다. --}}
+        <input type="text" wire:model="search" wire:keydown.enter="searchNow" placeholder="{{ __('receivable.search_ph') }}"
                class="input-filter w-52" />
+        <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
         <input type="date" wire:model.live="dateFrom" class="input-filter" />
         <span class="text-xs text-gray-400">~</span>
         <input type="date" wire:model.live="dateTo" class="input-filter" />

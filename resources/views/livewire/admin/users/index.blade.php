@@ -16,6 +16,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $permFilter  = '';
     #[Url] public int $perPage = 10;
 
+    /** 검색 실행 — 버튼·Enter 로만 (jin 2026-09-08). 🚨 `search()` 로 짓지 말 것: 프로퍼티와 겹쳐 버튼이 죽는다(SKILLS §8 #32). */
+    public function searchNow(): void
+    {
+        $this->resetPage();
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
@@ -429,8 +435,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 필터 --}}
 <div class="card-tight flex flex-wrap items-center gap-3">
-    <input wire:model.live.debounce.400ms="search" type="text" placeholder="{{ __('user.search_ph') }}"
+    {{-- 🔎 검색은 **버튼(또는 Enter)으로만** 돈다 (jin 2026-09-08).
+                 타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돈다 — 이 ERP 의
+                 다른 검색칸(차량·재고·바이어·정산 등)이 전부 이 형태다. --}}
+    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('user.search_ph') }}"
            class="input-base w-full sm:w-60" />
+    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
     <select wire:model.live="permFilter" class="input-base w-full sm:w-auto">
         <option value="">{{ __('user.all_perm') }}</option>
         @if(auth()->user()->isSuperAdmin())

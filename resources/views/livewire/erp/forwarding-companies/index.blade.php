@@ -437,9 +437,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         <option value="shipping">{{ __('forwarding.date_shipping') }}</option>
         <option value="bl">{{ __('forwarding.date_bl') }}</option>
     </select>
-    <input wire:model.live="dateFrom" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_from') }}" />
+    {{-- 🔎 기간칸도 **치는 동안 조회하지 않는다** (jin 2026-09-08) — `type="text"` 라 `20260701` 을
+         손으로 치면 글자마다 왕복한다. 옆 [검색] 버튼(또는 Enter)으로 적용한다. --}}
+    <input wire:model="dateFrom" wire:keydown.enter="searchNow" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_from') }}" />
     <span class="text-gray-400 text-sm">~</span>
-    <input wire:model.live="dateTo" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_to') }}" />
+    <input wire:model="dateTo" wire:keydown.enter="searchNow" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_to') }}" />
     <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('forwarding.search_ph') }}"
            class="input-filter w-64" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>

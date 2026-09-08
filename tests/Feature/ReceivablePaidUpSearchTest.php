@@ -79,6 +79,7 @@ class ReceivablePaidUpSearchTest extends TestCase
 
         $this->page()
             ->set('search', '11가1111')
+            ->call('searchNow')
             ->assertSet('classification', 'paid_up')
             ->assertSee($paid->vehicle_number);
     }
@@ -89,6 +90,7 @@ class ReceivablePaidUpSearchTest extends TestCase
 
         $this->page()
             ->set('search', '22나2222')
+            ->call('searchNow')
             ->assertSet('classification', '')
             ->assertSee('22나2222');
     }
@@ -101,12 +103,13 @@ class ReceivablePaidUpSearchTest extends TestCase
         $this->page()
             ->set('classification', 'before_shipping')
             ->set('search', '33다3333')
+            ->call('searchNow')
             ->assertSet('classification', 'before_shipping');
     }
 
     /**
      * `?search=` 로 **직접 들어오는 경로**도 같이 동작해야 한다.
-     * `#[Url]` 하이드레이션은 `updatedSearch()` 를 안 태우므로 `mount()` 에도 같은 판정이 있다.
+     * `#[Url]` 하이드레이션은 `searchNow()` 를 안 태우므로 `mount()` 에도 같은 판정이 있다.
      */
     public function test_the_url_entry_point_also_jumps(): void
     {
@@ -128,11 +131,13 @@ class ReceivablePaidUpSearchTest extends TestCase
 
         $this->page()
             ->set('search', '000111')
+            ->call('searchNow')
             ->assertSet('classification', '')
             ->assertSee('55마5555');
 
         $this->page()
             ->set('search', '000222')
+            ->call('searchNow')
             ->assertSet('classification', 'paid_up')
             ->assertSee($paid->vehicle_number);
     }

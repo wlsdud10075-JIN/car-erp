@@ -6577,7 +6577,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endforeach
             {{-- 🅿️ `type="month"` 를 안 쓴다 — 브라우저 네이티브 위젯이 「2026 TAB 08」 식 입력을 강요해서
                  `202607` 이라고 못 친다(jin 2026-09-01). 텍스트로 받고 서버에서 정규화한다. --}}
-            <input wire:model.live.debounce.500ms="shipmentMonth" type="text" inputmode="numeric" maxlength="7"
+            {{-- 🔎 **치는 동안 조회하지 않는다** (jin 2026-09-08) — 이건 목록 필터라 글자마다 왕복하면
+                 `202607` 하나에 요청이 6번 간다. Enter 나 위쪽 [검색] 버튼으로 적용한다.
+                 값 정규화(`202607` → `2026-07`)는 `updatedShipmentMonth` 가 그 왕복 때 처리한다. --}}
+            <input wire:model="shipmentMonth" wire:keydown.enter="applyFilters" type="text" inputmode="numeric" maxlength="7"
                    class="ml-1 w-24 rounded border border-gray-200 px-1.5 py-0.5 text-xs"
                    placeholder="{{ __('vehicle.filter_ship_month_ph') }}"
                    title="{{ __('vehicle.filter_ship_month') }}" />
