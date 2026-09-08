@@ -351,4 +351,26 @@ class BoardInventoryApiTest extends TestCase
             '매입 미지급 식이 복제됐다 — Vehicle::purchaseUnpaidRawExpr() 하나만 써야 한다'
         );
     }
+
+    /**
+     * 재고매입(바이어 미정) 표시가 board 포털 재고 행에도 실린다 (2026-09-08, 연동 B v5).
+     *
+     * `buyer_id === null` 만으로는 **실수로 빠뜨린 차**와 구분이 안 된다 —
+     * board 포털도 ERP 화면과 같은 뱃지를 띄우려면 이 칸이 필요하다.
+     */
+    public function test_inventory_row_exposes_buyer_undecided(): void
+    {
+        $sm = $this->salesman('me@a.com');
+        $stock = $this->vehicle($sm->id, ['buyer_undecided' => true]);          // 바이어 미정 매입
+        $plain = $this->vehicle($sm->id, ['buyer_undecided' => false]);         // 그냥 바이어 없는 차
+
+        $res = $this->signedGet('/api/internal/board/inventory',
+            ['salesman_email' => 'me@a.com', 'category' => 'general'])->assertOk();
+
+        $rows = collect($res->json('data'))->keyBy('vehicle_id');
+        $this->assertTrue($rows->has($stock->id), '전제: 두 대 모두 일반재고여야 한다');
+        $this->assertTrue($rows->has($plain->id));
+        $this->assertTrue($rows[$stock->id]['buyer_undecided']);
+        $this->assertFalse($rows[$plain->id]['buyer_undecided']);
+    }
 }

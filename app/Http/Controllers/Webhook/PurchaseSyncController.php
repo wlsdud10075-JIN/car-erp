@@ -51,8 +51,11 @@ class PurchaseSyncController extends Controller
      * v3 = 금액/바이어/컨사이니 확장 — purchase_price_krw·selling_fee_krw·transport_fee·
      *      sale_price·sale_currency·sale_exchange_rate·buyer_id·consignee_id (모두 optional).
      * v4 = 매도비 계좌 3필드 — selling_fee_payee_name/bank/account (매도비 별도 계좌, 모두 optional).
+     * v5 = 재고매입(바이어 미정) — buyer_undecided (optional).
+     *      ⚠️ 문서의 「연동 B v5 — fill-if-empty」(2026-08-18)와 **다른 것**이다. 그건 contract_version
+     *      상향이 없는 기능 이름이고, 여기 5 는 실제 계약 버전이다.
      */
-    private const SUPPORTED_VERSIONS = [1, 2, 3, 4];
+    private const SUPPORTED_VERSIONS = [1, 2, 3, 4, 5];
 
     /** sale_currency 허용 enum (vehicles.currency 와 동일). */
     private const SALE_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
@@ -97,6 +100,10 @@ class PurchaseSyncController extends Controller
             'sale_exchange_rate' => ['nullable', 'numeric', 'min:0'],   // pre-fill, 관리가 지정시점 환율로 덮어씀
             'buyer_id' => ['nullable', 'integer'],
             'consignee_id' => ['nullable', 'integer'],
+            // 연동 B v5 — 재고매입(바이어 미정). board 가 「바이어를 일부러 안 정하고 사 두는 매입」임을
+            //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
+            //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
+            'buyer_undecided' => ['nullable', 'boolean'],
             // 연동 B v2 — 차량 사진/서류 첨부(공유 S3 키만, 바이트 아님). 전방호환: 없으면 무시.
             'attachments' => ['nullable', 'array', 'max:50'],
             'attachments.*.s3_path' => ['required_with:attachments', 'string', 'max:1024'],
@@ -176,6 +183,11 @@ class PurchaseSyncController extends Controller
         [$buyerId, $consigneeId] = $this->resolveBuyerConsignee($data['buyer_id'] ?? null, $data['consignee_id'] ?? null);
         $vehicle->buyer_id = $buyerId;
         $vehicle->consignee_id = $consigneeId;
+
+        // v5 — 재고매입(바이어 미정) 표시. 차량목록·편집 패널에 「바이어미정」 뱃지가 붙는다.
+        //   해제는 안 건드려도 된다 — 나중에 바이어가 실제로 붙으면 `Vehicle::saving` 이 내린다(Vehicle.php:798).
+        //   그래서 board 가 buyer_id 와 함께 true 를 보내도 모순 상태가 안 남는다.
+        $vehicle->buyer_undecided = (bool) ($data['buyer_undecided'] ?? false);
 
         // v3 — 판매 pre-fill (관리 편집). ⚠️ chk_sale_required: sale_price>0 이면 sale_date·exchange_rate>0 필수.
         //   환율 누락 시 sale 필드 통째 보류(= 매입중 유지) — INSERT 실패 방지(SKILLS #25).
@@ -456,6 +468,10 @@ class PurchaseSyncController extends Controller
      *        (board 에 판매일 개념이 없다). 정확한 날짜가 필요하면 관리가 ERP 에서 고친다.
      *        곁다리: 채권 유예 기산점이 이 날짜다 → 독촉이 이 날로부터 시작된다.
      *  3. **왜 안 채웠는지 응답에 담는다** — 조용한 실패 금지.
+     *
+     * 🚫 **`buyer_undecided`(v5)는 여기서 안 건드린다.** 「빈 칸」이 없는 불리언이라 「아직 안 정함」과
+     *    「사람이 껐음」을 구분할 수 없다 — 재전송이 ERP 에서 끈 체크를 되살리면 규칙 1 위반이다.
+     *    뒤처리도 필요 없다: 재전송이 `buyer_id` 를 채우면 아래 `save()` 에서 `Vehicle::saving` 이 자동 해제한다.
      *
      * @return array{0: list<string>, 1: array<string, string>} [채운 필드, 필드=>스킵사유]
      */

@@ -23,7 +23,7 @@
   "c_no": null, "payee_name": null, "payee_bank": null, "payee_account": null }
 ```
 - ⚠️ **VIN 은 payload 에 없음** (2026-06-15 정정). board 는 VIN 을 모른다 — VIN 은 **NICE 차량조회로만** 나오고 그건 **car-erp 책임**. board 는 `vehicle_number + owner_name` 을 보내고 car-erp 가 NICE 로 VIN·차량정보를 채운다. **매칭/멱등/식별 키 = `vehicle_number`**. (과거 vin 기반 계약은 drift — 되돌리지 말 것.)
-- **전방호환**: **모르는 필드는 무시**(구 계약의 `vin` 잔재 포함). `contract_version` 검사 — **`1`·`2` 처리**(v2 = `attachments[]` 추가, §연동 B v2), 미지원 버전 → **422** + 로그.
+- **전방호환**: **모르는 필드는 무시**(구 계약의 `vin` 잔재 포함). `contract_version` 검사 — **`1`~`5` 처리**(v2 attachments · v3 금액/바이어 · v4 매도비계좌 · v5 재고매입), 미지원 버전 → **422** + 로그.
 - **필수**: `vehicle_number · source · final_price · salesman_email`. `owner_name` 포함 나머지 optional. (`owner_name` 없으면 NICE 불가 → vehicle_number 로만 생성, VIN 수동/후속.)
 - **보안경계**: RRN/전화/서류 **미포함**(board가 안 보냄). `payee_account` 는 HMAC+HTTPS 한정 평문 수신.
 
@@ -119,6 +119,9 @@
 
 ## 연동 B v5 — 멱등 재전송에서 **빈 칸만 채우기** (fill-if-empty, 2026-08-18)
 
+> 🚨 **이름 주의 — 이 「v5」는 `contract_version: 5` 가 아니다.** 아래 첫 줄대로 계약 버전 상향이 없는
+> **기능 이름**이다. 실제 `contract_version: 5` 는 그 아래 「재고매입(바이어 미정)」 절이다(2026-09-08).
+
 > board 인계 ①. **contract_version 상향 없음** — v3 필드를 그대로 쓰고 **멱등 분기의 동작만** 바뀐다.
 > board 무변경으로 동작하며, 응답 필드 2개가 늘어난다(모르는 필드는 무시하면 됨).
 
@@ -158,6 +161,62 @@
 (첨부가 15건 조용히 실패했던 것과 같은 부류다. `attachments_failed` 를 응답에 실은 이유와 동일.)
 
 테스트 = `PurchaseSyncFillIfEmptyTest` 13케이스.
+
+## 연동 B `contract_version: 5` — 재고매입(바이어 미정) (2026-09-08)
+
+> 발신 권위 = board `SKILLS.md §12`. 인계 = board `meetings/handoff-carerp-stock-purchase-no-buyer.md`,
+> 회신 = `Desktop\연구소\전달패킷_carerp→board_2026-09-08_재고매입_바이어미정.md`.
+> 배경: **차값이 쌀 때 바이어 없이 미리 사 두는 매입**을 board `/auction` 구매확정에서 정식 경로로 만든다.
+> board 는 2026-08-10 부터 바이어 선택을 필수로 막고 있었고(`err_buyer_required`), 그 차단만 푼다.
+
+**payload 확장** (기존 필드 전부 유지·전방호환. 신규 1개, nullable):
+```json
+"buyer_undecided": true      // → vehicles.buyer_undecided (신규 생성 시에만)
+```
+재고매입일 때 board 가 함께 **비워 보내는** 것들 (전부 이미 `nullable` — 수신측 무변경):
+`buyer_id` · `consignee_id` · `sale_price` · `sale_currency` · `sale_exchange_rate` · `transport_fee` · `final_price`
+(⚠️ `final_price` 는 `required_without:purchase_price_krw` 다 — **`purchase_price_krw` 가 반드시 실려야** 한다.)
+
+**수신 규칙** (`PurchaseSyncController`):
+1. **`contract_version: 5` 수용** (1·2·3·4·5). 미지원 → 422 유지.
+2. **`buyer_undecided`** 는 **신규 생성(201) 경로에서만** 적용. 없으면 `false`.
+3. 🚫 **멱등 재전송(200 `fillEmptyFields`)에서는 안 건드린다** — 「빈 칸」이 없는 불리언이라
+   「아직 안 정함」과 「사람이 껐음」이 구분되지 않는다. 재전송이 ERP 에서 끈 체크를 되살리면
+   fill-if-empty 의 규칙 1(이미 있는 값 불가침) 위반이다.
+4. **해제는 자동** — 나중에 바이어가 실제로 붙으면 `Vehicle::saving` 이 플래그를 내린다(`Vehicle.php:798`).
+   진입점 통합이라 UI·import·API 전부 해당. board 가 `buyer_id` 와 `true` 를 같이 보내도 모순이 안 남는다.
+5. **판매 필드는 애초에 안 쓰인다** — `sale_price`(또는 환율)가 `> 0` 이 아니면 컨트롤러가 판매 칸을
+   **set 자체를 안 한다**(`:182-198`). ⇒ `chk_sale_required` CHECK 에 **닿지 않는다**.
+   `sale_price` 는 `null` 과 `0` 이 완전히 동일하게 동작한다(권장 = `null`).
+6. **읽기 API 에도 실린다** — board 포털 재고 행(`GET /internal/board/inventory`)에 `buyer_undecided` 추가.
+   ERP 화면과 같은 뱃지를 board 에서도 띄울 수 있다.
+
+**재고 분류 (board 가 자주 오해하는 지점)**:
+```
+매입가 > 0  &  출고일 없음  &  거래완료 아님
+   ├─ 매입 미지급 > 0 ────────────→  awaiting_payment (지급대기)  ← 재고매입 차가 **여기부터** 시작
+   └─ 매입 미지급 ≤ 0 (= inStock)
+          ├─ sale_price ≤ 0/NULL ─→  general  (일반재고)          ← 매입대금 확정 지급 후 여기로
+          └─ sale_price > 0 ──────→  pre_ship (선적전 재고)
+출고일 있음 ──────────────────────→  shipped_out (출고완료)
+```
+🚨 **판정은 `sale_price` 기준이고 `buyer_id` 는 관여하지 않는다.** 그리고 지급대기는 `inStock()` 과 배타적이라
+재고관리 **「전체」 탭에도 안 보인다**(전체 = general + pre_ship). 「board 에서 보냈는데 재고에 없다」를
+버그로 읽기 쉬운 자리다.
+
+**매입 등록 락과의 관계**:
+- ✅ **ERP 화면**에서 나중에 바이어를 지정하면 락이 **발동한다** —
+  `shouldCheckPurchaseGate()` 가 `(int) null !== $buyerId` 를 「교체」로 본다(`vehicles/index.blade.php:3166`).
+- ⚠️ **재전송 API(`fillEmptyFields`)로 `buyer_id` 를 채우는 경로엔 락 검사가 없다**(`:501`).
+  2026-09-08 jin 판단 = **추가하지 않는다**(화면 경로가 막으므로 실사용 흐름은 안 뚫린다).
+  🚫 board 는 재고매입 차에 **재전송으로 `buyer_id` 를 싣지 않는다**(인계서 §1 — 이후 ERP 에서만 진행).
+  이 전제가 바뀌면 그때 게이트를 넣는다.
+
+**배포 순서 (중요)**: ⚠️ **car-erp v5 master 먼저 배포** → board `contract_version: 5` 송신 전환.
+(미배포 상태로 v5 가 오면 **422 로 sync 전체 거부**.) v5 를 안 보내도 기존 v4 payload 는 그대로 동작한다.
+
+테스트 = `PurchaseSyncReceiverTest` 의 `test_stock_purchase_*` (null payload 수용 · `sale_price` null≡0 ·
+지급대기→일반재고 이동 · v5 플래그 저장 · 미지원버전 방어 · 바이어 지정 시 자동 해제).
 
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |

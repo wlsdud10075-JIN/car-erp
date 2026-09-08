@@ -772,4 +772,85 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertTrue(Vehicle::query()->generalStock()->whereKey($id)->exists());
         $this->assertFalse(Vehicle::query()->preShippingStock()->whereKey($id)->exists());
     }
+
+    /**
+     * 연동 B v5 — 재고매입(바이어 미정) 플래그.
+     *
+     * `buyer_id: null` 만으로는 **실수로 빠뜨린 차**와 구분이 안 된다(vehicles/index.blade.php:4629).
+     * board 가 "일부러 비웠다"를 명시하면 ERP 가 차량목록에 「바이어미정」 뱃지를 띄운다.
+     */
+    public function test_v5_stores_stock_purchase_flag(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $res = $this->postSigned(array_merge($this->stockPurchasePayload(), ['contract_version' => 5, 'buyer_undecided' => true]));
+
+        $res->assertStatus(201);
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertTrue((bool) $v->buyer_undecided);
+        $this->assertNull($v->buyer_id);
+    }
+
+    /** 플래그를 안 보내면 false — v4 이하 payload 가 그대로 도는 것을 보장한다. */
+    public function test_v5_flag_defaults_to_false_when_absent(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $res = $this->postSigned(array_merge($this->stockPurchasePayload(), ['contract_version' => 5]));
+
+        $res->assertStatus(201);
+        $this->assertFalse((bool) Vehicle::find($res->json('vehicle_id'))->buyer_undecided);
+    }
+
+    /**
+     * 바이어가 함께 오면 플래그가 **자동으로 내려간다** (`Vehicle::saving`, Vehicle.php:798).
+     * ⇒ board 가 모순된 조합을 보내도 "미정인데 바이어가 있는" 상태가 안 남는다.
+     */
+    public function test_v5_flag_is_auto_cleared_when_buyer_is_sent(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+        $buyer = Buyer::create(['name' => 'ABC Motors', 'is_active' => true]);
+
+        $payload = array_merge($this->stockPurchasePayload(), [
+            'contract_version' => 5,
+            'buyer_undecided' => true,
+            'buyer_id' => $buyer->id,
+        ]);
+        $res = $this->postSigned($payload);
+
+        $res->assertStatus(201);
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame($buyer->id, $v->buyer_id);
+        $this->assertFalse((bool) $v->buyer_undecided);
+    }
+
+    /**
+     * 멱등 재전송은 플래그를 **안 건드린다**. 「빈 칸」이 없는 불리언이라 「아직 안 정함」과
+     * 「사람이 껐음」이 구분되지 않는다 — 재전송이 ERP 에서 끈 체크를 되살리면 안 된다.
+     */
+    public function test_v5_flag_is_not_touched_on_idempotent_resend(): void
+    {
+        Salesman::create([
+            'name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true,
+        ]);
+
+        $first = $this->postSigned(array_merge($this->stockPurchasePayload(), ['contract_version' => 5, 'buyer_undecided' => true]));
+        $id = $first->json('vehicle_id');
+        $this->assertTrue((bool) Vehicle::find($id)->buyer_undecided);
+
+        $again = $this->postSigned(array_merge($this->stockPurchasePayload(), [
+            'contract_version' => 5,
+            'buyer_undecided' => false,
+        ]));
+
+        $again->assertStatus(200);
+        $this->assertSame($id, $again->json('vehicle_id'));
+        $this->assertTrue((bool) Vehicle::find($id)->buyer_undecided);   // 그대로
+    }
 }
