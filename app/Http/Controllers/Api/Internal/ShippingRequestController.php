@@ -43,6 +43,8 @@ class ShippingRequestController extends Controller
      * ⚠️ **"이미 떠난 차"는 구조로 배제한다 — 진행상태 라벨로 좁히지 않는다.**
      *    라벨을 쓰면 v3 grandfather(`수출통관중` 등)에서 조용히 빠진다(운항 상태에서 내린 판단과 같은 이유).
      *      - `bl_loading_location` 있음 = 반입(항구 스테이징) 시작 → 계획 단계가 아니다
+     *        ⚠️ **예외 = 선적대기 허용 항로**(2026-09-08). 그 항로는 반입지가 먼저 찍히는 게 정상이라
+     *           빼면 안 된다 — `Vehicle::scopeOnShippingWaitRoute`.
      *      - `bl_document` 있음 = B/L 발급 = 거래완료
      *    v4 cascade 상 **`판매완료`는 이 둘이 모두 비어야만 도달**하므로, 이 조건은 종전 후보를 하나도
      *    떨어뜨리지 않는 **순수 확대**다(가드 = `BoardShippableScopeTest`). board 가 요청한
@@ -66,8 +68,15 @@ class ShippingRequestController extends Controller
             ->where('salesman_id', $sid)
             ->where('sales_channel', 'export')
             ->where('sale_price', '>', 0)
-            ->whereNull('bl_loading_location')
             ->whereNull('bl_document')
+            // 🚢 반입지가 찍혔어도 **선적대기 허용 항로**(RORO + `allow_shipping_wait`)면 후보로 남긴다
+            //    (jin 2026-09-08). 그 항로는 돈을 다 받기 전에 항구 주차장에 세워두는 흐름이라
+            //    **반입지가 먼저 찍히는 게 정상**인데, 찍는 순간 후보에서 빠져 묶을 방법이 없어졌다
+            //    (실사고 heymanerp 63보5172 — 같은 바이어의 다른 8대는 반입지 전에 묶어서 살아남았다).
+            //    🚫 락을 푸는 게 아니다 — 인도는 여전히 G1(B/L 100% 완납)이 막는다.
+            ->where(fn ($q) => $q->whereNull('bl_loading_location')->orWhere(
+                fn ($q2) => $q2->onShippingWaitRoute()
+            ))
             ->whereNotIn('id', $inOpenBundle)
             ->with('buyer.consignees')
             ->get()

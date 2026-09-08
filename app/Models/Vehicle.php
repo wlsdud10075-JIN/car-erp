@@ -1357,9 +1357,7 @@ class Vehicle extends Model
             //   allow_shipping_wait 플래그. 해당 항로는 우회 없이 통관·선적 진입(선적대기 서류작업) 허용 →
             //   C5(50%) 게이트 skip. 하드코딩('알바니아 두레스') 대신 항구 마스터 데이터로 지정(관리자 편집).
             //   ⚠ 선적된 게 아니라 항구 주차장 대기 = 선적전 미수(warehouse_out_date pivot, item 3)로 유지.
-            if ($this->shipping_method === 'RORO'
-                && $this->discharge_port_id
-                && $this->dischargePort?->allow_shipping_wait) {
+            if ($this->isShippingWaitRoute()) {
                 return;
             }
 
@@ -1381,6 +1379,32 @@ class Vehicle extends Model
                 ]);
             }
         }
+    }
+
+    /**
+     * 「선적대기 허용 항로」인가 (jin 2026-07-18) — RORO + 도착항 마스터의 `allow_shipping_wait`.
+     *
+     * 이 항로는 **돈을 다 받기 전에 항구 주차장에 차를 세워두는** 흐름이라 반입지가 먼저 찍힌다.
+     * 그래서 C5(진입 입금률) 게이트를 건너뛴다. 실제 인도는 여전히 G1(B/L 100% 완납)이 막는다 —
+     * B/L 이 화물인도권이므로 그것만이 「물건이 넘어가는」 단계다.
+     *
+     * 🚫 **조건을 옮겨 적지 말 것.** 아래 `scopeOnShippingWaitRoute` 가 같은 판정의 쿼리판이고,
+     *    board 후보 목록(`/shippable`)이 그걸 쓴다. 갈리면 「ERP 는 저장되는데 board 에선 안 뜨는」
+     *    형태가 된다(SKILLS §8 #44). 가드 = `BoardShippableScopeTest` 의 술어↔스코프 대조.
+     */
+    public function isShippingWaitRoute(): bool
+    {
+        return $this->shipping_method === 'RORO'
+            && $this->discharge_port_id
+            && (bool) $this->dischargePort?->allow_shipping_wait;
+    }
+
+    /** 위 술어의 쿼리판 — 반드시 같은 조건을 유지할 것. */
+    public function scopeOnShippingWaitRoute($query)
+    {
+        return $query->where('shipping_method', 'RORO')
+            ->whereNotNull('discharge_port_id')
+            ->whereHas('dischargePort', fn ($q) => $q->where('allow_shipping_wait', true));
     }
 
     /**

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\ForwardingCompany;
+use App\Models\Port;
 use App\Models\Salesman;
 use App\Models\ShippingRequest;
 use App\Models\User;
@@ -371,5 +372,82 @@ class BoardShippableScopeTest extends TestCase
         $this->assertSame([], ShippingRequest::splitFreightUsd(null, [1, 2]));
         $this->assertSame([], ShippingRequest::splitFreightUsd(0, [1, 2]));
         $this->assertSame([], ShippingRequest::splitFreightUsd(100, []));
+    }
+
+    /**
+     * 🚢 **선적대기 허용 항로는 반입지가 찍혀도 후보로 남는다** (jin 2026-09-08).
+     *
+     * 그 항로(RORO + `Port::allow_shipping_wait`)는 **돈을 다 받기 전에 항구 주차장에 세워두는** 흐름이라
+     * 반입지가 먼저 찍히는 게 정상이다. 그런데 찍는 순간 후보에서 빠져 **묶을 방법이 없어졌다**
+     * (실사고 heymanerp 63보5172 — 같은 바이어의 다른 8대는 반입지 전에 묶어서 살아남았다).
+     *
+     * 🚫 락을 푸는 게 아니다 — B/L 이 나온 차는 이 항로에서도 제외된다(아래에서 함께 단언).
+     */
+    public function test_shipping_wait_route_stays_a_candidate_after_berthing(): void
+    {
+        $s = $this->salesman();
+        $buyer = Buyer::create(['name' => 'ALB BUYER', 'is_active' => true]);
+        $waitPort = Port::create([
+            'type' => 'discharge', 'name' => 'DURRESS, ALBANIA', 'is_active' => true, 'allow_shipping_wait' => true,
+        ]);
+        $normalPort = Port::create([
+            'type' => 'discharge', 'name' => 'JEBEL ALI', 'is_active' => true, 'allow_shipping_wait' => false,
+        ]);
+
+        $common = ['sale_price' => 1_000_000, 'buyer_id' => $buyer->id, 'sale_date' => '2026-01-01',
+            'bl_loading_location' => '인천항 3부두', 'shipping_method' => 'RORO'];
+
+        // 후보로 남아야 하는 차 — 선적대기 허용 항로 + 반입지 있음 + 미완납
+        $waiting = $this->vehicle($s, $common + ['discharge_port_id' => $waitPort->id]);
+
+        // 남으면 안 되는 것들
+        $otherPort = $this->vehicle($s, $common + ['discharge_port_id' => $normalPort->id]);   // 허용 항로 아님
+        $noPort = $this->vehicle($s, $common);                                                 // 도착항 미지정
+        $container = $this->vehicle($s, array_merge($common, [                                 // RORO 아님
+            'shipping_method' => 'CONTAINER', 'discharge_port_id' => $waitPort->id]));
+        $issued = $this->vehicle($s, array_merge($common, [                                    // 🔒 B/L 나온 차는 그래도 제외
+            'discharge_port_id' => $waitPort->id, 'bl_document' => 'bl/alb.pdf']));
+
+        $ids = $this->shippableIds($s);
+
+        $this->assertContains($waiting->id, $ids, '선적대기 허용 항로인데 반입지 때문에 후보에서 빠졌다 — 확대의 목적 자체');
+        $this->assertNotContains($otherPort->id, $ids, '허용 안 된 항로까지 열렸다');
+        $this->assertNotContains($noPort->id, $ids, '도착항 미지정인데 열렸다');
+        $this->assertNotContains($container->id, $ids, 'RORO 가 아닌데 열렸다');
+        $this->assertNotContains($issued->id, $ids, 'B/L 발급 차가 후보로 돌아왔다 — 락이 풀렸다');
+    }
+
+    /**
+     * 🔗 술어(`isShippingWaitRoute`) ↔ 스코프(`onShippingWaitRoute`)가 **같은 판정**이어야 한다.
+     *
+     * C5 게이트는 술어를 쓰고 board 후보 목록은 스코프를 쓴다. 갈리면
+     * 「ERP 는 저장되는데 board 에선 안 뜨는」 형태가 되고, 사람 눈으로는 못 잡는다(SKILLS §8 #44).
+     */
+    public function test_shipping_wait_predicate_and_scope_agree(): void
+    {
+        $s = $this->salesman();
+        $waitPort = Port::create([
+            'type' => 'discharge', 'name' => 'DURRESS, ALBANIA', 'is_active' => true, 'allow_shipping_wait' => true,
+        ]);
+        $plainPort = Port::create([
+            'type' => 'discharge', 'name' => 'JEBEL ALI', 'is_active' => true, 'allow_shipping_wait' => false,
+        ]);
+
+        $cases = [
+            ['shipping_method' => 'RORO', 'discharge_port_id' => $waitPort->id],
+            ['shipping_method' => 'RORO', 'discharge_port_id' => $plainPort->id],
+            ['shipping_method' => 'RORO', 'discharge_port_id' => null],
+            ['shipping_method' => 'CONTAINER', 'discharge_port_id' => $waitPort->id],
+            ['shipping_method' => null, 'discharge_port_id' => $waitPort->id],
+        ];
+
+        foreach ($cases as $i => $attrs) {
+            $v = $this->vehicle($s, $attrs);
+            $byScope = Vehicle::query()->onShippingWaitRoute()->whereKey($v->id)->exists();
+            $this->assertSame(
+                $v->fresh()->isShippingWaitRoute(), $byScope,
+                "술어와 스코프가 갈렸다 — case #{$i}: ".json_encode($attrs)
+            );
+        }
     }
 }
