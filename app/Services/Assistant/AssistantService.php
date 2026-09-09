@@ -21,6 +21,40 @@ class AssistantService
     /** 색인 청크가 가질 수 있는 등급. 감시(AssistantHealthCheck)도 이 목록을 단일출처로 쓴다. */
     public const RAG_AUDIENCES = ['staff', 'finance', 'executive', 'system'];
 
+    /**
+     * 가이드(RAG) 시스템 프롬프트 — **단일 출처**. 평가 커맨드(`assistant:eval --llm`)가 같은 것을 쓴다.
+     *
+     * 🚫 여기 문구를 다른 곳에 옮겨 적지 말 것 — 갈리면 「평가에선 잘 나오는데 실제 챗봇은 다른 답」이 된다.
+     *
+     * 🔀 **2026-09-09 개조** (jin). 구 프롬프트는 «간결·정확하게» + «어디에도 관련 내용이 전혀 없을 때만
+     *    없다고 하라» 두 마디뿐이라, 실제 답변이 **한 문단으로 끝나고 필수 사실을 빠뜨렸다**
+     *    (실측: 정렬 질문에서 「초기화 복원」·「동률 미보장」 누락 / 승인 큐에서 「본인 승인 불가」·
+     *    「송금 미실행」 누락). 근거를 더 줘도 프롬프트가 그대로면 **요약만 길어질 뿐**이라 세트로 고친다.
+     *
+     * 넣은 것 5가지 — ①구조(직접답→조건·절차→주의·한계) ②근거 카드 제목 밝히기(어느 카드를 실제로
+     * 썼는지 사람이 검증할 수 있어야 한다) ③갈래 나누기(회사·권한 차이를 하나로 뭉치지 않기)
+     * ④반대 정보(「자동인 것」을 물으면 「자동이 아닌 것」도) ⑤**부분 부재**(질문의 일부만 자료가 없으면
+     * 그 항목만 없다고 하고 나머지는 답한다 — 구 문구로는 이 경우를 다룰 수 없었다).
+     *
+     * ⚠️ **길이도 비용이다** — 이 프롬프트가 길어지면 그만큼 근거 예산(`rag_ctx_chars`)이 줄어든다.
+     */
+    public const GUIDE_SYSTEM_PROMPT = <<<'PROMPT'
+        당신은 SSANCAR 사내 업무 도우미다. 아래 [참고자료]에 적힌 사실만 근거로 한국어로 답하라. 지어내지 마라.
+
+        답변은 세 부분으로 쓴다.
+        1) 직접 답 — 질문이 묻는 것(뜻·위치·방법·가능 여부)을 먼저 답한다. 위치만 안내하고 끝내지 마라.
+        2) 조건·절차 — 그렇게 되기 위한 조건·순서·권한·예외를 참고자료에 있는 만큼 빠뜨리지 말고 적는다.
+        3) 주의·한계 — 헷갈리기 쉬운 점, 사람이 직접 해야 하는 것, 이 답이 다루지 못한 범위.
+
+        - 사실마다 어느 카드에서 온 것인지 「카드 제목」으로 밝힌다. 답에 쓰지 않은 카드는 적지 마라.
+        - 조건에 따라 답이 갈리면 갈래를 나눠 각각 적는다. 회사·권한·화면에 따라 다르면 그 차이를 유지하고 하나의 규칙으로 뭉치지 마라.
+        - 「자동으로 되는 것」을 물으면 참고자료가 밝힌 「자동이 아닌 것·사람이 넣어야 하는 것」도 함께 적는다.
+        - 목록을 답할 때는 참고자료에 있는 범위만 적고 그것이 전체라고 단정하지 마라.
+        - 질문에 여러 항목이 있으면 항목별로 답하고, 참고자료에 없는 항목은 그 항목만 「ERP에 확인된 정보가 없습니다」라고 적는다. 나머지 항목은 정상적으로 답한다.
+        - 참고자료에 관련 내용이 하나도 없을 때만 「해당 내용은 등록된 업무 가이드에 없습니다」라고 답한다.
+        - 같은 문장을 두 부분에 되풀이하지 마라. 이미 적은 것은 다시 적지 않는다.
+        PROMPT;
+
     public function __construct(
         private OllamaClient $ollama,
         private AssistantQueries $queries,
@@ -330,14 +364,25 @@ class AssistantService
      *    「자주 하는 실수」 2개)은 내용이 전혀 다르다(cos 0.57~0.75). 제목 기준은 멀쩡한 근거를 떨어뜨린다.
      * ⚠️ 1.0 이상이면 중복 제거를 끄는 것이다(전후 대조·긴급 원복용).
      *
+     * 📏 **문맥 예산이 개수보다 먼저다** (jin 2026-09-09 실측).
+     *    청크 길이가 10배까지 차이 나서 **개수는 안전한 손잡이가 아니다** — 같은 `topk=4` 인데
+     *    질문에 따라 문맥이 3,315자(인감)와 **9,023자**(정렬)로 갈린다. 모델 상주 컨텍스트는
+     *    `ctx=4096`(실측 `/api/ps`)이고 **초과분은 조용히 잘린다** — 잘리는 쪽이 앞이라
+     *    **점수가 가장 높은 근거가 사라진다**. 에러도 로그도 없다.
+     *    ⇒ 그래서 예산(문자 수)을 넘기는 청크는 건너뛰고 **뒤의 더 작은 청크를 담는다**(`break` 아님).
+     *    첫 청크는 예산을 넘겨도 담는다 — 근거 0장으로 답하게 만들 수는 없다.
+     *    ⚠️ 0 이면 예산을 끄는 것이다(순위 측정처럼 「전부 나열」이 필요할 때).
+     *
      * @param  array<int, array<string, mixed>>  $kb  후보 청크 (candidateChunks 결과)
      * @param  array<int, float>  $scored  청크 인덱스 => 질문과의 코사인. **내림차순 정렬돼 있어야 한다.**
      * @return array<int, float> 고른 것만 남긴 [인덱스 => 점수] (순서 보존)
      */
-    public function selectTopChunks(array $kb, array $scored, int $k, ?float $dedupCos = null): array
+    public function selectTopChunks(array $kb, array $scored, int $k, ?float $dedupCos = null, ?int $ctxChars = null): array
     {
         $threshold = $dedupCos ?? (float) config('assistant.rag_dedup_cos', 0.90);
+        $budget = $ctxChars ?? (int) config('assistant.rag_ctx_chars', 4000);
         $picked = [];
+        $used = 0;
 
         foreach ($scored as $i => $score) {
             if (count($picked) >= $k) {
@@ -355,10 +400,50 @@ class AssistantService
                     continue;
                 }
             }
+            $len = mb_strlen((string) ($kb[$i]['text'] ?? ''));
+            if ($budget > 0 && $picked !== [] && $used + $len > $budget) {
+                continue;   // 이 청크는 예산 초과 — 뒤의 더 작은 근거에 자리를 준다
+            }
             $picked[$i] = $score;
+            $used += $len;
         }
 
         return $picked;
+    }
+
+    /**
+     * 질문 임베딩과 후보 청크의 코사인 — **내림차순 정렬된** [청크 인덱스 => 점수].
+     * 평가 커맨드가 같은 채점을 쓰게 하려고 공개한다(SKILLS §8 #44).
+     *
+     * @return array<int, float>
+     */
+    public function scoreChunks(array $kb, array $qEmb): array
+    {
+        $scored = [];
+        foreach ($kb as $i => $doc) {
+            $scored[$i] = $this->cosine($qEmb, $doc['embedding'] ?? []);
+        }
+        arsort($scored);
+
+        return $scored;
+    }
+
+    /**
+     * 고른 청크로 LLM 에 넘길 [참고자료] 문자열과 출처 목록을 만든다.
+     *
+     * @param  array<int, float>  $picked  selectTopChunks 결과
+     * @return array{ctx:string, sources:array<int, array{title:string, score:float}>}
+     */
+    public function buildContext(array $kb, array $picked): array
+    {
+        $ctx = '';
+        $sources = [];
+        foreach ($picked as $i => $score) {
+            $ctx .= "### {$kb[$i]['source']}\n{$kb[$i]['text']}\n\n";
+            $sources[] = ['title' => $kb[$i]['source'], 'score' => round($score, 3)];
+        }
+
+        return ['ctx' => $ctx, 'sources' => $sources];
     }
 
     private function guide(string $question, User $user): array
@@ -377,24 +462,15 @@ class AssistantService
             if (! $qEmb) {
                 throw new \RuntimeException('임베딩 실패');
             }
-            $scored = [];
-            foreach ($kb as $i => $doc) {
-                $scored[$i] = $this->cosine($qEmb, $doc['embedding'] ?? []);
-            }
-            arsort($scored);
+            $scored = $this->scoreChunks($kb, $qEmb);
             $top = $this->selectTopChunks($kb, $scored, (int) config('assistant.rag_topk', 3));
+            ['ctx' => $ctx, 'sources' => $sources] = $this->buildContext($kb, $top);
 
-            $ctx = '';
-            $sources = [];
-            foreach ($top as $i => $score) {
-                $ctx .= "### {$kb[$i]['source']}\n{$kb[$i]['text']}\n\n";
-                $sources[] = ['title' => $kb[$i]['source'], 'score' => round($score, 3)];
-            }
-
-            $sys = '당신은 SSANCAR 사내 업무 도우미다. 반드시 아래 [참고자료]를 근거로 한국어로 간결·정확하게 답하라. '
-                .'질문과 관련된 규칙·절차·금지·예외·주의사항이 참고자료에 있으면 그것을 바탕으로 분명히 답하라. '
-                .'참고자료 어디에도 관련 내용이 전혀 없을 때만 "해당 내용은 등록된 업무 가이드에 없습니다."라고 답하라. 지어내지 마라.';
-            $answer = $this->ollama->chat((string) config('assistant.llm_model'), $sys, "[참고자료]\n{$ctx}\n[질문]\n{$question}");
+            $answer = $this->ollama->chat(
+                (string) config('assistant.llm_model'),
+                self::GUIDE_SYSTEM_PROMPT,
+                "[참고자료]\n{$ctx}\n[질문]\n{$question}"
+            );
 
             return ['kind' => 'guide', 'answer' => $answer ?: '(응답 없음)', 'sources' => $sources];
         } catch (\Throwable $e) {
