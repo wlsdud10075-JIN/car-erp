@@ -8,62 +8,51 @@ use App\Services\Assistant\OllamaClient;
 use Illuminate\Console\Command;
 
 /**
- * 챗봇 검색 품질 측정 (jin 2026-09-09) — 「고쳤더니 나아졌나」를 느낌이 아니라 숫자로 본다.
+ * 챗봇 검색·답변 품질 측정 (jin 2026-09-09) — 「고쳤더니 나아졌나」를 느낌이 아니라 대조로 본다.
  *
- * 🔑 **LLM 을 쓰지 않는다.** 재는 것은 **정답 카드가 top-k 안에 몇 위로 들어오나** 하나뿐이다.
- *    임베딩만 쓰면 빠르고 **같은 입력에 같은 결과**가 나온다 — 생성 답변을 채점하면 매번 흔들려
- *    변경의 효과를 귀속시킬 수 없다.
+ * 두 가지 모드가 있고 성격이 다르다.
+ *
+ *   ① 기본(검색) — **LLM 을 쓰지 않는다.** 재는 것은 「정답 카드가 top-k 안에 몇 위인가」 하나뿐이다.
+ *      임베딩만 쓰면 빠르고 **같은 입력에 같은 결과**가 나온다 → 변경 효과를 귀속시킬 수 있다.
+ *   ② `--llm`(답변) — 실제 프롬프트로 답변을 생성해 **사람이 전·후를 나란히 읽는다.**
+ *      🚫 자동 채점하지 않는다 — qwen3:8b 출력은 실행마다 흔들려 점수가 튄다. 정직한 산출물은 «나란히 놓인 글»이다.
  *
  * 🧭 **4등급을 전부 잰다.** 그러면 「권한 때문에 안 나온 것」과 「검색이 못 찾은 것」이 표에서 저절로
  *    갈린다. 예) 「승인큐가 뭐야?」의 정답 카드는 `finance` 라 **영업(staff)에게는 원리상 안 나온다**
- *    — 버그가 아니라 설계다(2026-09-08 확정). 그래서 기대 카드 옆에 등급을 함께 찍는다.
+ *    — 버그가 아니라 설계다(2026-09-08 확정). 그래서 문항마다 필요한 등급을 함께 찍는다.
  *
- * 🚫 후보 추림·중복 제거를 여기에 옮겨 적지 않는다 — `AssistantService::candidateChunks()` ·
- *    `selectTopChunks()` 를 그대로 부른다. 갈리면 **평가가 거짓말을 한다**(SKILLS §8 #44).
+ * 🚫 후보 추림·채점·중복 제거·문맥 조립·시스템 프롬프트를 여기에 옮겨 적지 않는다 —
+ *    `AssistantService` 의 `candidateChunks()`·`scoreChunks()`·`selectTopChunks()`·`buildContext()`·
+ *    `GUIDE_SYSTEM_PROMPT` 를 그대로 부른다. 갈리면 **평가가 거짓말하는 계기판**이 된다(SKILLS §8 #44).
+ *
+ * 문항은 `scripts/notion-cards/natural-language-eval.json`(Notion 세션 작성, dev-only)을 읽는다.
+ * 🚫 문항·기대 카드를 이 파일에 손으로 적지 않는다 — 원고가 늘 때 평가만 낡는다.
  *
  * 사용 예 (운영 색인을 로컬에 받아 재는 경우):
  *   php artisan assistant:eval --index=/tmp/index-erp-prod.json --topk=3 --dedup=1.0   # 전(baseline)
  *   php artisan assistant:eval --index=/tmp/index-erp-prod.json --topk=8               # 후
+ *   php artisan assistant:eval --index=... --llm --only=shipping-wait-start-1,queue-1  # 답변 대조
  */
 class AssistantEval extends Command
 {
     protected $signature = 'assistant:eval
         {--index= : 색인 파일 경로(미지정 시 .env ASSISTANT_INDEX_PATH)}
+        {--cases= : 문항 JSON 경로(미지정 시 scripts/notion-cards/natural-language-eval.json)}
         {--topk= : 근거로 넘길 청크 수(미지정 시 설정값)}
         {--dedup= : 중복 제거 코사인 임계(1.0 이상 = 끔)}
         {--depth=20 : 정답 카드 순위를 이 깊이까지 찾아 표시}
-        {--show=3 : 등급별로 실제 상위 N개를 함께 출력(0=안 함)}';
+        {--only= : 특정 문항 id 만(쉼표 구분)}
+        {--llm : 실제 프롬프트로 답변을 생성해 출력(사람이 전·후를 읽는 용도)}
+        {--show=0 : 등급별 실제 상위 N개를 함께 출력(검색 모드에서만)}';
 
-    protected $description = '챗봇 가이드 검색 품질 측정 — 질문별 정답 카드가 top-k 안에 몇 위인지';
+    protected $description = '챗봇 가이드 검색·답변 품질 측정 — 정답 카드 순위 표 / --llm 은 실제 답변 대조';
+
+    private const DEFAULT_CASES = 'scripts/notion-cards/natural-language-eval.json';
 
     /**
-     * 평가 질문과 기대 카드 (jin 2026-09-08 확정 5문항).
-     * 기대 카드는 **`source` 부분문자열**로 적는다 — 사람에게 「어느 카드가 올라왔나」를 말해 주는 단위가 그것이다.
+     * 등급 표본 — 실제 `User::assistantAudiences()` 를 통과시켜 얻는다(등급 규칙을 옮겨 적지 않기 위함).
+     * 값은 「그 등급을 대표하는 계정 속성」이다.
      */
-    private const CASES = [
-        [
-            'q' => '차량 관리에서 정렬 기준이 어떻게 돼?',
-            'expect' => ['차량관리 — 목록/개요', '자연어로 찾는 차량관리 안내'],
-        ],
-        [
-            'q' => '인감, 직인 정보 어디서 봐?',
-            'expect' => ['서류의 인감·직인 확인', '차량관리 - 서류 탭', 'E. 대시보드·관리·로그 › 기능설정'],
-        ],
-        [
-            'q' => '승인큐가 뭐야?',
-            'expect' => ['D. 재무·정산 › 승인 큐'],
-        ],
-        [
-            'q' => '반입지가 뭐야?',
-            'expect' => ['반입지·면장·서류의 의미와 자동 처리', 'C. 재고·통관·선적 › 재고관리'],
-        ],
-        [
-            'q' => '자동입력되는 항목을 알려줘',
-            'expect' => ['F. 개념 (크로스 · 단일 출처) › 자동 입력·계산·반영 항목 안내'],
-        ],
-    ];
-
-    /** 등급 표본 — 실제 `User::assistantAudiences()` 를 통과시켜 얻는다(등급 규칙을 옮겨 적지 않기 위함). */
     private const TIERS = [
         'staff' => ['permission' => 'user', 'role' => '영업'],
         'finance' => ['permission' => 'user', 'role' => '재무'],
@@ -82,13 +71,30 @@ class AssistantEval extends Command
             config(['assistant.index_path' => $path]);
         }
 
+        $casesPath = (string) ($this->option('cases') ?: base_path(self::DEFAULT_CASES));
+        if (! is_file($casesPath)) {
+            $this->warn("문항 파일이 없습니다: {$casesPath}");
+            $this->line('※ 이 파일은 dev 전용(Notion 세션 작성)이라 master 체크아웃에는 없습니다. --cases 로 경로를 주세요.');
+
+            return self::FAILURE;
+        }
+        $cases = json_decode((string) file_get_contents($casesPath), true)['cases'] ?? [];
+        if ($only = array_filter(array_map('trim', explode(',', (string) $this->option('only'))))) {
+            $cases = array_values(array_filter($cases, fn ($c) => in_array($c['id'] ?? '', $only, true)));
+        }
+        if (! $cases) {
+            $this->error('평가할 문항이 없습니다.');
+
+            return self::FAILURE;
+        }
+
         $topk = $this->option('topk') !== null ? (int) $this->option('topk') : (int) config('assistant.rag_topk', 3);
         $dedup = $this->option('dedup') !== null ? (float) $this->option('dedup') : (float) config('assistant.rag_dedup_cos', 0.90);
         $depth = max($topk, (int) $this->option('depth'));
-        $show = (int) $this->option('show');
 
         $this->line('색인 = '.config('assistant.index_path'));
-        $this->line(sprintf('topk=%d · 중복제거 임계=%s · 순위 탐색 깊이=%d', $topk, $dedup >= 1.0 ? '끔' : (string) $dedup, $depth));
+        $this->line('문항 = '.$casesPath.' ('.count($cases).'문항)');
+        $this->line(sprintf('topk=%d · 중복제거 임계=%s%s', $topk, $dedup >= 1.0 ? '끔' : (string) $dedup, $this->option('llm') ? ' · 답변 생성 ON' : ''));
         $this->newLine();
 
         // 등급별 후보 청크는 질문과 무관하므로 한 번만 만든다.
@@ -102,35 +108,43 @@ class AssistantEval extends Command
         )));
         $this->newLine();
 
-        $inTopK = 0;
-        $expectedTotal = 0;
+        return $this->option('llm')
+            ? $this->runAnswers($svc, $ollama, $cases, $kbByTier, $topk, $dedup)
+            : $this->runRetrieval($svc, $ollama, $cases, $kbByTier, $topk, $dedup, $depth);
+    }
 
-        foreach (self::CASES as $n => $case) {
-            $qEmb = $ollama->embed((string) config('assistant.emb_model'), $case['q']);
+    /** ① 검색 모드 — 정답 카드 순위 표. */
+    private function runRetrieval(
+        AssistantService $svc, OllamaClient $ollama, array $cases, array $kbByTier, int $topk, float $dedup, int $depth
+    ): int {
+        $hit = 0;
+        $total = 0;
+        $rows = [];
+
+        foreach ($cases as $case) {
+            $qEmb = $ollama->embed((string) config('assistant.emb_model'), (string) $case['question']);
             if (! $qEmb) {
                 $this->error('임베딩 실패 — Ollama('.config('assistant.ollama').') 가 떠 있는지 확인하세요.');
 
                 return self::FAILURE;
             }
+            $need = (string) ($case['required_audience'] ?? 'staff');
 
-            $this->line(sprintf('<options=bold>Q%d. %s</>', $n + 1, $case['q']));
-            $rows = [];
+            // 순위는 등급별로 한 번만 계산해 재사용한다.
+            $rankedByTier = [];
+            foreach ($kbByTier as $tier => $kb) {
+                // 순위 측정에는 문맥 예산을 끈다(0) — 예산이 걸리면 「몇 위인가」가 왜곡된다.
+                $rankedByTier[$tier] = array_keys($svc->selectTopChunks($kb, $svc->scoreChunks($kb, $qEmb), $depth, $dedup, 0));
+            }
 
-            foreach ($case['expect'] as $expect) {
-                $row = [$this->shorten($expect)];
+            foreach ((array) ($case['expected_cards'] ?? []) as $expect) {
+                $row = [$case['id'], $need, $this->shorten($expect)];
                 foreach ($kbByTier as $tier => $kb) {
-                    $ranked = $this->rank($svc, $kb, $qEmb, $depth, $dedup);
-                    $pos = null;
-                    foreach ($ranked as $r => $i) {
-                        if (mb_strpos((string) ($kb[$i]['source'] ?? ''), $expect) !== false) {
-                            $pos = $r + 1;
-                            break;
-                        }
-                    }
-                    if ($tier === 'staff') {
-                        $expectedTotal++;
+                    $pos = $this->positionOf($kb, $rankedByTier[$tier], $expect);
+                    if ($tier === $need) {
+                        $total++;
                         if ($pos !== null && $pos <= $topk) {
-                            $inTopK++;
+                            $hit++;
                         }
                     }
                     $row[] = $pos === null ? '—' : ($pos <= $topk ? "✅ {$pos}" : (string) $pos);
@@ -138,58 +152,72 @@ class AssistantEval extends Command
                 $rows[] = $row;
             }
 
-            $this->table(['기대 카드', ...array_keys($kbByTier)], $rows);
-
-            if ($show > 0) {
-                $kb = $kbByTier['staff'];
-                $ranked = $this->rank($svc, $kb, $qEmb, $depth, $dedup);
-                $this->line('  staff 실제 상위:');
-                foreach (array_slice($ranked, 0, $show) as $r => $i) {
-                    $this->line(sprintf('    %d. %s', $r + 1, $this->shorten((string) $kb[$i]['source'])));
+            if ((int) $this->option('show') > 0) {
+                $kb = $kbByTier[$need];
+                foreach (array_slice($rankedByTier[$need], 0, (int) $this->option('show')) as $r => $i) {
+                    $rows[] = ['', '', sprintf('  · 실제 %d위: %s', $r + 1, $this->shorten((string) $kb[$i]['source'])), '', '', '', ''];
                 }
             }
-            $this->newLine();
         }
 
+        $this->table(['문항', '필요등급', '기대 카드', ...array_keys($kbByTier)], $rows);
         $this->line(sprintf(
-            '<options=bold>staff 기준 — 기대 카드 %d개 중 top-%d 안에 %d개 (%.0f%%)</>',
-            $expectedTotal, $topk, $inTopK, $expectedTotal ? $inTopK / $expectedTotal * 100 : 0
+            '<options=bold>필요 등급 기준 — 기대 카드 %d개 중 top-%d 안에 %d개 (%.0f%%)</>',
+            $total, $topk, $hit, $total ? $hit / $total * 100 : 0
         ));
-        $this->line('※ finance/executive/system 열의 「—」 는 그 등급에 그 카드가 없다는 뜻일 수도 있다(권한 경계, 버그 아님).');
+        $this->line('※ 「필요등급」 열이 그 문항을 실제로 묻는 사람의 등급이다. 그보다 낮은 등급의 「—」 는 권한 경계(버그 아님).');
 
         return self::SUCCESS;
     }
 
-    /**
-     * 질문 하나에 대한 순위 목록(청크 인덱스). 중복 제거까지 **본 코드와 같은 함수**로 통과시킨다.
-     *
-     * @return array<int,int> 0-based 순위 => 청크 인덱스
-     */
-    private function rank(AssistantService $svc, array $kb, array $qEmb, int $depth, float $dedup): array
-    {
-        $scored = [];
-        foreach ($kb as $i => $doc) {
-            $scored[$i] = $this->cosine($qEmb, $doc['embedding'] ?? []);
-        }
-        arsort($scored);
+    /** ② 답변 모드 — 실제 프롬프트로 생성해 사람이 읽는다. 자동 채점하지 않는다. */
+    private function runAnswers(
+        AssistantService $svc, OllamaClient $ollama, array $cases, array $kbByTier, int $topk, float $dedup
+    ): int {
+        foreach ($cases as $case) {
+            $need = (string) ($case['required_audience'] ?? 'staff');
+            $kb = $kbByTier[$need] ?? $kbByTier['staff'];
+            $qEmb = $ollama->embed((string) config('assistant.emb_model'), (string) $case['question']);
+            if (! $qEmb) {
+                $this->error('임베딩 실패 — Ollama 확인');
 
-        return array_keys($svc->selectTopChunks($kb, $scored, $depth, $dedup));
+                return self::FAILURE;
+            }
+            $picked = $svc->selectTopChunks($kb, $svc->scoreChunks($kb, $qEmb), $topk, $dedup);
+            ['ctx' => $ctx, 'sources' => $sources] = $svc->buildContext($kb, $picked);
+
+            $answer = $ollama->chat(
+                (string) config('assistant.llm_model'),
+                AssistantService::GUIDE_SYSTEM_PROMPT,
+                "[참고자료]\n{$ctx}\n[질문]\n{$case['question']}"
+            );
+
+            $this->line(str_repeat('=', 100));
+            $this->line(sprintf('<options=bold>[%s · %s] %s</>', $case['id'], $need, $case['question']));
+            $this->line('근거: '.implode(' / ', array_map(fn ($s) => $this->shorten($s['title']).' ('.$s['score'].')', $sources)));
+            if ($facts = (array) ($case['reference_facts'] ?? [])) {
+                $this->line('필수 사실: '.implode(' | ', $facts));
+            }
+            $this->newLine();
+            $this->line(trim((string) $answer) ?: '(응답 없음)');
+            $this->newLine();
+        }
+
+        $this->line(str_repeat('=', 100));
+
+        return self::SUCCESS;
     }
 
-    /** 본 코드와 같은 계산 — 서비스의 private 을 못 쓰므로 같은 식을 쓴다(값 검증은 테스트가 한다). */
-    private function cosine(array $a, array $b): float
+    /** 기대 카드가 순위 목록의 몇 번째인가(1-based). 없으면 null. */
+    private function positionOf(array $kb, array $ranked, string $expect): ?int
     {
-        $dot = 0.0;
-        $na = 0.0;
-        $nb = 0.0;
-        $n = min(count($a), count($b));
-        for ($i = 0; $i < $n; $i++) {
-            $dot += $a[$i] * $b[$i];
-            $na += $a[$i] ** 2;
-            $nb += $b[$i] ** 2;
+        foreach ($ranked as $r => $i) {
+            if (mb_strpos((string) ($kb[$i]['source'] ?? ''), $expect) !== false) {
+                return $r + 1;
+            }
         }
 
-        return ($na > 0 && $nb > 0) ? $dot / (sqrt($na) * sqrt($nb)) : 0.0;
+        return null;
     }
 
     /** 표에 들어가게 `사내 업무 가이드 › 🏢 ERP (car-erp) ›` 접두어를 떼어낸다. */

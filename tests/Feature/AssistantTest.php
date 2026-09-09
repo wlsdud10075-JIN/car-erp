@@ -492,4 +492,75 @@ class AssistantTest extends TestCase
         $this->assertStringNotContainsString('index_scope', $src, '스코프 필터가 평가에 복제됐다');
         $this->assertStringNotContainsString('RAG_AUDIENCES', $src, '등급 필터가 평가에 복제됐다');
     }
+
+    /**
+     * 📏 **문맥 예산이 개수보다 먼저 걸린다** (jin 2026-09-09 실측).
+     *
+     * 청크 길이가 10배까지 달라 개수는 안전한 손잡이가 아니다 — 같은 `topk=4` 인데 문맥이 3,315자와
+     * **9,023자**로 갈렸다. 모델 상주 컨텍스트는 4096(실측 `/api/ps`)이고 **넘긴 만큼 조용히 앞부터
+     * 잘려 점수 1위 근거가 사라진다**(에러도 로그도 없다).
+     */
+    public function test_context_budget_cuts_before_the_count_does(): void
+    {
+        $svc = app(AssistantService::class);
+        $kb = [
+            ['source' => '작은1', 'text' => str_repeat('가', 100), 'embedding' => [1.0, 0.0, 0.0]],
+            ['source' => '거대',   'text' => str_repeat('나', 5000), 'embedding' => [0.0, 1.0, 0.0]],
+            ['source' => '작은2', 'text' => str_repeat('다', 100), 'embedding' => [0.0, 0.0, 1.0]],
+        ];
+        $scored = [0 => 0.9, 1 => 0.8, 2 => 0.7];   // 거대 청크가 2위
+
+        // 예산 1000자 — 거대 청크는 건너뛰고 **뒤의 작은 근거를 담는다**(break 가 아니라 continue).
+        $picked = array_keys($svc->selectTopChunks($kb, $scored, 3, 1.0, 1000));
+        $this->assertSame([0, 2], $picked, '예산을 넘는 청크가 뒤 근거의 자리를 잡아먹었다');
+
+        // 예산을 끄면(0) 개수만 본다 — 순위 측정용 경로.
+        $this->assertSame([0, 1, 2], array_keys($svc->selectTopChunks($kb, $scored, 3, 1.0, 0)));
+    }
+
+    /** 첫 청크는 예산을 넘겨도 담는다 — 근거 0장으로 답하게 만들 수는 없다. */
+    public function test_the_first_chunk_is_kept_even_if_it_alone_blows_the_budget(): void
+    {
+        $svc = app(AssistantService::class);
+        $kb = [['source' => '거대', 'text' => str_repeat('가', 9000), 'embedding' => [1.0, 0.0]]];
+
+        $this->assertSame([0], array_keys($svc->selectTopChunks($kb, [0 => 0.9], 3, 1.0, 1000)));
+    }
+
+    /**
+     * 🔒 시스템 프롬프트가 요구하는 것 5가지가 실제로 들어 있는지 **정적으로** 지킨다.
+     *
+     * 구 프롬프트는 «간결·정확하게» + «어디에도 관련 내용이 전혀 없을 때만» 두 마디뿐이라 실제 답변이
+     * 한 문단으로 끝나고 필수 사실을 빠뜨렸다. 그 두 문구가 되살아나면 같은 증상이 돌아온다.
+     * ⚠️ 기능 테스트로는 원리상 못 잡는다 — LLM 답변은 실행마다 달라 단언할 수 없고, 프롬프트가
+     *    뭐든 화면은 정상 렌더된다.
+     */
+    public function test_guide_prompt_keeps_the_five_instructions(): void
+    {
+        $p = AssistantService::GUIDE_SYSTEM_PROMPT;
+
+        // ① 구조
+        $this->assertStringContainsString('직접 답', $p);
+        $this->assertStringContainsString('조건·절차', $p);
+        $this->assertStringContainsString('주의·한계', $p);
+        // ② 근거 카드 밝히기 ③ 갈래 ④ 반대 정보 ⑤ 부분 부재
+        $this->assertStringContainsString('카드 제목', $p);
+        $this->assertStringContainsString('갈래', $p);
+        $this->assertStringContainsString('자동이 아닌 것', $p);
+        $this->assertStringContainsString('ERP에 확인된 정보가 없습니다', $p);
+
+        // 🚫 되살아나면 안 되는 구 문구
+        $this->assertStringNotContainsString('간결', $p, '「간결하게」가 돌아오면 답이 다시 한 문단으로 줄어든다');
+        $this->assertStringNotContainsString('어디에도 관련 내용이 전혀 없을 때만', $p, '부분 부재를 다룰 수 없는 구 문구가 돌아왔다');
+    }
+
+    /** 프롬프트도 문맥 예산을 먹는다 — 너무 길어지면 근거가 밀려난다. */
+    public function test_guide_prompt_stays_within_its_share_of_the_budget(): void
+    {
+        $this->assertLessThan(
+            (int) config('assistant.rag_ctx_chars', 4000) / 4,
+            mb_strlen(AssistantService::GUIDE_SYSTEM_PROMPT),
+            '시스템 프롬프트가 근거 예산의 1/4 을 넘었다 — 그만큼 근거가 줄어든다'
+        );
+    }
 }
