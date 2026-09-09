@@ -42,6 +42,8 @@ class AssistantEval extends Command
         {--dedup= : 중복 제거 코사인 임계(1.0 이상 = 끔)}
         {--depth=20 : 정답 카드 순위를 이 깊이까지 찾아 표시}
         {--only= : 특정 문항 id 만(쉼표 구분)}
+        {--ask= : 채점표에 없는 질문을 그대로 하나 물어본다(--llm 과 함께)}
+        {--tier=staff : --ask 로 물을 때의 권한 등급}
         {--llm : 실제 프롬프트로 답변을 생성해 출력(사람이 전·후를 읽는 용도)}
         {--show=0 : 등급별 실제 상위 N개를 함께 출력(검색 모드에서만)}';
 
@@ -69,6 +71,23 @@ class AssistantEval extends Command
                 return self::FAILURE;
             }
             config(['assistant.index_path' => $path]);
+        }
+
+        // --ask = 채점표 밖의 질문. 「이 질문엔 어떻게 답하나」를 바로 보려는 용도라 필수 사실은 없다.
+        if ($ask = (string) $this->option('ask')) {
+            $cases = [['id' => 'ask', 'question' => $ask, 'required_audience' => (string) $this->option('tier'),
+                'expected_cards' => [], 'reference_facts' => []]];
+            $topk = $this->option('topk') !== null ? (int) $this->option('topk') : (int) config('assistant.rag_topk', 8);
+            $dedup = $this->option('dedup') !== null ? (float) $this->option('dedup') : (float) config('assistant.rag_dedup_cos', 0.90);
+            $kbByTier = [];
+            foreach (self::TIERS as $tier => $attrs) {
+                $kbByTier[$tier] = $svc->candidateChunks((new User($attrs))->assistantAudiences());
+            }
+            $this->line('색인 = '.config('assistant.index_path'));
+            $this->line(sprintf('topk=%d · 중복제거=%s · 예산=%d자', $topk, (string) $dedup, (int) config('assistant.rag_ctx_chars', 4000)));
+            $this->newLine();
+
+            return $this->runAnswers($svc, $ollama, $cases, $kbByTier, $topk, $dedup);
         }
 
         $casesPath = (string) ($this->option('cases') ?: base_path(self::DEFAULT_CASES));
@@ -198,8 +217,10 @@ class AssistantEval extends Command
             if ($facts = (array) ($case['reference_facts'] ?? [])) {
                 $this->line('필수 사실: '.implode(' | ', $facts));
             }
+            $body = trim((string) $answer);
+            $this->line(sprintf('분량: %d자 · %d줄', mb_strlen($body), $body === '' ? 0 : substr_count($body, "\n") + 1));
             $this->newLine();
-            $this->line(trim((string) $answer) ?: '(응답 없음)');
+            $this->line($body ?: '(응답 없음)');
             $this->newLine();
         }
 

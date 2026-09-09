@@ -549,9 +549,15 @@ class AssistantTest extends TestCase
         $this->assertStringContainsString('자동이 아닌 것', $p);
         $this->assertStringContainsString('ERP에 확인된 정보가 없습니다', $p);
 
+        // 2026-09-09 2차 — 나열을 막는 규칙(jin 제보: 한 질문에 25줄이 나왔다)
+        $this->assertStringContainsString('필요한 것만', $p, '「필요한 것만 쓴다」가 없으면 참고자료를 통째로 옮긴다');
+        $this->assertStringContainsString('서식 기호', $p, '위젯은 평문을 그대로 뿌린다 — 별표 금지 지시가 필요하다');
+        $this->assertStringContainsString('근거 카드: ', $p, '근거 줄의 라벨을 고정하지 않으면 제목만 덩그러니 남는다');
+
         // 🚫 되살아나면 안 되는 구 문구
         $this->assertStringNotContainsString('간결', $p, '「간결하게」가 돌아오면 답이 다시 한 문단으로 줄어든다');
         $this->assertStringNotContainsString('어디에도 관련 내용이 전혀 없을 때만', $p, '부분 부재를 다룰 수 없는 구 문구가 돌아왔다');
+        $this->assertStringNotContainsString('빠뜨리지 말고 적는다', $p, '이 문구가 「다 옮겨라」로 읽혀 25줄 나열을 만들었다');
     }
 
     /** 프롬프트도 문맥 예산을 먹는다 — 너무 길어지면 근거가 밀려난다. */
