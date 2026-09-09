@@ -27,7 +27,19 @@ class ReceivableHistory extends Model
      *    로컬 SQLite 는 enum 을 강제하지 않아 테스트로도 안 잡힌다([[project_db_tier_mismatch]]).
      *    가드 = ReceivableMethodEnumTest (이 상수 ↔ 마이그레이션 enum 문자열 대조).
      */
-    public const METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings'];
+    public const METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings', 'misc_loss'];
+
+    /**
+     * 사람이 회수이력 폼에서 **직접 고를 수 있는** 방법 — 검증이 이 목록을 쓴다.
+     *
+     * 🚫 `misc_loss`(잡손실)는 여기 없다. 그건 **과입금 정리 버튼만** 만드는 기록이라,
+     *    손으로 넣으면 잔금 감액 없이 행만 생겨 실사 때 「정리했다는 기록인데 돈은 그대로」가 된다.
+     *    미수 계산에서도 제외되는 미러 항목이라 넣어도 아무 숫자가 안 움직인다.
+     *
+     * 🧭 목록이 둘인 이유 = SKILLS §8 #59 의 「받을 수 있는 것 / 그릴 수 있는 것」과 같은 갈래.
+     *    `METHODS` 는 **DB enum 과 대조하는 전체 목록**이고, 이쪽은 입력 허용분이다.
+     */
+    public const MANUAL_METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings'];
 
     /**
      * 적립금(method=savings) 행이 vehicles.savings_used 를 갱신하는 걸 건너뛰는 플래그 (2026-07-28).

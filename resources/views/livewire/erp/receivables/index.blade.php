@@ -2,11 +2,15 @@
 
 use App\Models\AuditLog;
 use App\Models\Buyer;
+use App\Models\BuyerCashFee;
+use App\Models\BuyerCashReceipt;
 use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BuyerCashService;
 use App\Services\VehicleLedgerUnlockService;
 use App\Support\SearchTerm;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +60,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 과입금 전환 사유 — **2차 정산 마감 차량에서만** 요구한다(jin 2026-08-26).
     //   마감 전엔 자유 정정이 원칙이라(정산 락 개편 2026-07-24) 묻지 않는다.
     public string $overpayReason = '';
+
+    /** 과입금 정리 두 갈래 — 적립금(바이어 크레딧) / 잡손실(회사 몫). */
+    private const OVERPAY_TO_SAVINGS = 'savings';
+
+    private const OVERPAY_TO_MISC_LOSS = 'misc_loss';
 
     // 회수 이력 입력 폼
     public ?int $historyEditId = null;
@@ -346,7 +355,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             return null;
         }
 
-        return Vehicle::with(['receivableHistories.collector', 'receivableManager', 'salesman', 'buyer', 'exportBuyer'])
+        // ⚠️ `finalPayment:id,confirmed_at` — 「재무 확정 대기」 표시가 이 값을 본다.
+        //    부분 select 에서 confirmed_at 을 빼면 **모든 입금이 대기중으로 보인다**(예외 0 · SKILLS §8 #83).
+        return Vehicle::with(['receivableHistories.collector', 'receivableHistories.finalPayment:id,confirmed_at',
+            'receivableManager', 'salesman', 'buyer', 'exportBuyer'])
             ->find($this->selectedVehicleId);
     }
 
@@ -408,7 +420,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->validate([
             'hCollectedAt' => ['required', 'date'],
             'hCollectorId' => ['required', 'exists:users,id'],
-            'hMethod' => ['required', 'in:'.implode(',', ReceivableHistory::METHODS)],
+            // 🚫 MANUAL_METHODS — 잡손실은 과입금 정리 버튼만 만든다(손으로 못 넣는다).
+            'hMethod' => ['required', 'in:'.implode(',', ReceivableHistory::MANUAL_METHODS)],
             'hAmount' => ['required', 'numeric', 'min:0'],
             'hExchangeRate' => ['nullable', 'numeric', 'min:0'],
             'hNote' => ['nullable', 'string', 'max:500'],
@@ -568,18 +581,45 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * 과입금 → 적립금 전환 (jin 2026-07-09).
      *
-     * 과입금(음수 미수)된 차량의 초과분을 바이어 적립금(EARNED)으로 옮기고 미수를 0으로 만든다.
-     *   ① 초과분만큼 확정 잔금(FinalPayment) 감액 → received 감소 → 미수 0.
-     *      정산 paid 여부와 무관하게 회계 잠금을 시스템 우회($allowConfirmedMutation)로 감액한다.
-     *      감액 자체(amount old→new)는 FinalPayment::updated 훅이 AuditLog 로 자동 기록.
-     *   ② 초과분을 buyer×currency 적립금 풀에 EARNED +초과분 (syncSavingsDeposit).
-     *   ③ 전환 사실을 Vehicle 단위 AuditLog(overpay_converted_to_savings)로 기록.
+     * 초과분을 바이어 **적립금(EARNED)** 으로 옮기고 미수를 0 으로 만든다.
+     */
+    public function convertOverpayToSavings(): void
+    {
+        $this->resolveOverpay(self::OVERPAY_TO_SAVINGS);
+    }
+
+    /**
+     * 과입금 → 잡손실 전환 (jin 2026-09-09).
+     *
+     * 초과분을 **회사 몫**으로 돌리고 미수를 0 으로 만든다. 바이어에게 크레딧을 주지 않는다.
+     *
+     * 🧭 왜 필요한가 — 바이어들이 송금 수수료 명목으로 조금씩 더 보내서 금액이 몇십 단위로 남는다.
+     *    우리가 수수료를 떠안은 것도 있으니 그 잔돈은 돌려줄 돈이 아니라 회사 돈이다. 적립금으로
+     *    돌리면 「나중에 쓸 수 있는 바이어 크레딧」이 되어 뜻이 달라진다.
+     *
+     * 🚫 「누적 셀러부담액」 카드와 상계하지 않는다(jin 2026-09-09 확인) — 그 카드는 영업이 바이어에게
+     *    «이만큼 떠안았다»고 들이미는 협상 숫자라, 여기서 깎으면 그 용도가 무너진다.
+     */
+    public function convertOverpayToMiscLoss(): void
+    {
+        $this->resolveOverpay(self::OVERPAY_TO_MISC_LOSS);
+    }
+
+    /**
+     * 과입금 정리 **단일 출처** — 두 버튼이 이 하나를 쓴다 (2026-09-09 통합).
+     *
+     * ① 초과분만큼 확정 잔금(FinalPayment) 감액 → received 감소 → 미수 0.
+     *    정산 paid 여부와 무관하게 회계 잠금을 시스템 우회($allowConfirmedMutation)로 감액한다.
+     *    감액 자체(amount old→new)는 FinalPayment::updated 훅이 AuditLog 로 자동 기록.
+     * ② 🚨 **되돌아온 현금을 바이어 현금 원장에서 뺀다.**
+     * ③ 갈림 — 적립금: buyer×currency 풀에 EARNED / 잡손실: 회수이력 `misc_loss` 행.
+     * ④ 전환 사실을 Vehicle 단위 AuditLog 로 기록.
      *
      * 권한 = canConfirmFinance (관리·재무·업무관리자·admin/super) — 채권관리 진입 권한과 동일 범위.
      * 메모: 정산 마진은 판매가 기준이라 과입금 전환은 이미 지급된 정산금에 영향 없음.
      * 안전장치: 초과분이 확정 잔금 총액을 넘으면(기타회수 등 다른 출처 과입금) 자동 처리 대신 차단(수동 확인).
      */
-    public function convertOverpayToSavings(): void
+    private function resolveOverpay(string $mode): void
     {
         $user = auth()->user();
         abort_unless((bool) $user?->canConfirmFinance(), 403);
@@ -597,6 +637,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
+        // 적립금은 받을 주체가 필요하다. 잡손실은 회사 몫이라 바이어가 없어도 성립하지만,
+        //   원장 정리(②)를 위해서도 바이어가 있는 게 정상이라 두 경로 모두 같은 조건을 쓴다.
         if (! $vehicle->buyer_id) {
             session()->flash('panel_error', __('receivable.overpay.no_buyer'));
 
@@ -613,7 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // ⚠️ 마감 전에는 사유를 묻지 않는다. 개편의 요지가 «마감 전 자유 수정»이라
         //    거기에 마찰을 더하면 취지에 역행한다.
         // 🚫 승인 사다리는 두지 않는다(jin) — 사유만 남기고 본인이 진행한다.
-        //    권한 `canApprove` = admin·업무관리자·role'관리' — jin 이 지목한 그 그룹 그대로다.
+        //    두 경로가 **같은 게이트**를 쓴다 — 잡손실이 더 느슨하면 그쪽으로 우회하게 된다.
         $closed = $vehicle->hasClosedSecondarySettlement();
         $reason = trim($this->overpayReason);
         if ($closed) {
@@ -646,7 +688,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         try {
-            DB::transaction(function () use ($vehicle, $confirmedFps, $excess, $user, $closed, $reason) {
+            DB::transaction(function () use ($vehicle, $confirmedFps, $excess, $user, $closed, $reason, $mode, $isForeign) {
+                // 감액 전 원장 잔액 — ②에서 「얼마가 되돌아왔나」를 이 차이로 구한다.
+                $cashBefore = $this->ledgerBalanceOf($vehicle);
+
                 // ① 초과분만큼 확정 잔금 감액 (큰 것부터, 회계 잠금 시스템 우회)
                 $remaining = $excess;
                 FinalPayment::$allowConfirmedMutation = true;
@@ -668,16 +713,59 @@ new #[Layout('components.layouts.app')] class extends Component {
                     FinalPayment::$allowConfirmedMutation = false;
                 }
 
-                // ② 바이어 적립금 EARNED +초과분
-                $vehicle->syncSavingsDeposit($excess);
+                // ② 🚨 되돌아온 현금을 원장에서 뺀다 — 이게 없으면 **이중 크레딧**이다.
+                //
+                //    잔금을 감액하면 `FinalPayment::updated` → `reallocateIfTracked` 가 배분을 줄이고,
+                //    그만큼 현금이 바이어 지갑으로 **되돌아온다**. 그 상태로 적립금까지 주면 과입금 30 에
+                //    크레딧이 60 이 된다(2026-09-09 재현 실측). 잡손실이면 「회사 돈」이라는 말 자체가 거짓이 된다.
+                //
+                //    🧭 되돌아온 금액을 배분 계산을 다시 짜서 구하지 않고 **잔액 차이**로 구한다 —
+                //       그래야 배분 규칙이 바뀌어도 따라온다(공식을 옮겨 적지 않는다, SKILLS §8 #45).
+                //    ⚠️ 원장을 안 쓰거나(토글 OFF·KRW·바이어 없음) 원장 밖에서 확정된 잔금이면 차이가
+                //       0 이라 아무 행도 안 생긴다 — 2026-09-07 에 고친 「원장 밖 돈은 원장 밖에」가 유지된다.
+                //    ⚠️ FIFO 라 되돌아온 그 입금이 아니라 **가장 오래된 입금**에서 빠질 수 있다.
+                //       총액은 같으므로 정상이다 — 「엉뚱한 입금에서 빠졌다」고 고치지 말 것.
+                $returned = round($this->ledgerBalanceOf($vehicle) - $cashBefore, 2);
+                if ($returned > 0.005) {
+                    $fee = BuyerCashFee::create([
+                        'buyer_id' => $vehicle->buyer_id,
+                        'currency' => $vehicle->currency,
+                        'kind' => BuyerCashFee::KIND_OVERPAY,
+                        'charged_date' => today(),
+                        'amount' => $returned,
+                        'note' => __('receivable.overpay.ledger_note', ['plate' => $vehicle->vehicle_number]),
+                        'created_by' => $user->id,
+                    ]);
+                    // 모자라면 던진다 → 트랜잭션 통째 롤백(감액도 되돌아간다).
+                    app(BuyerCashService::class)->chargeFee($fee);
+                }
 
-                // ③ 전환 사실 감사로그 (잔금 감액 old→new 는 FinalPayment::updated 가 별도 기록)
+                // ③ 갈림
+                if ($mode === self::OVERPAY_TO_SAVINGS) {
+                    $vehicle->syncSavingsDeposit($excess);
+                } else {
+                    // 잡손실 — 회수이력에 항목으로 남긴다(회계실사 매칭용). 미수 계산에서는 제외된다
+                    //   (`Vehicle::MIRRORED_RECEIVABLE_METHODS`) — 안 그러면 0 으로 만든 미수가 다시 음수가 된다.
+                    ReceivableHistory::create([
+                        'vehicle_id' => $vehicle->id,
+                        'collected_at' => today(),
+                        'collector_id' => $user->salesman?->id,
+                        'method' => 'misc_loss',
+                        'amount' => $excess,
+                        'exchange_rate' => $isForeign ? $vehicle->exchange_rate : null,
+                        'note' => __('receivable.overpay.misc_loss_note'),
+                    ]);
+                }
+
+                // ④ 전환 사실 감사로그 (잔금 감액 old→new 는 FinalPayment::updated 가 별도 기록)
                 AuditLog::create([
                     'user_id' => $user->id,
                     'auditable_type' => Vehicle::class,
                     'auditable_id' => $vehicle->id,
-                    'action' => 'overpay_converted_to_savings',
-                    'column_name' => 'savings_earned',
+                    'action' => $mode === self::OVERPAY_TO_SAVINGS
+                        ? 'overpay_converted_to_savings'
+                        : 'overpay_converted_to_misc_loss',
+                    'column_name' => $mode === self::OVERPAY_TO_SAVINGS ? 'savings_earned' : 'misc_loss',
                     // 마감 후 전환이면 사유를 남긴다 — 「왜 지급 끝난 차를 건드렸나」가 여기서만 보인다.
                     'old_value' => $closed ? mb_substr($reason, 0, 500) : null,
                     'new_value' => $vehicle->currency.' '.$excess,
@@ -685,7 +773,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ]);
             });
         } catch (\Throwable $e) {
-            \Log::warning('convertOverpayToSavings failed', ['vehicle' => $vehicle->id, 'msg' => $e->getMessage()]);
+            \Log::warning('resolveOverpay failed', ['vehicle' => $vehicle->id, 'mode' => $mode, 'msg' => $e->getMessage()]);
             // DomainException 은 «사람에게 보여주려고» 만든 문장이다(현금 부족·마감 등). 일반 실패로
             //   덮으면 원인이 화면에서 사라져 「그냥 안 된다」가 된다 — 2026-09-07 현금 원장 건이 그랬다.
             session()->flash('panel_error', $e instanceof \DomainException
@@ -697,7 +785,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->overpayReason = '';
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
-        session()->flash('panel_success', __('receivable.overpay.done', ['amount' => $vehicle->currency.' '.number_format($excess, $isForeign ? 2 : 0)]));
+        $amountLabel = $vehicle->currency.' '.number_format($excess, $isForeign ? 2 : 0);
+        session()->flash('panel_success', $mode === self::OVERPAY_TO_SAVINGS
+            ? __('receivable.overpay.done', ['amount' => $amountLabel])
+            : __('receivable.overpay.done_misc_loss', ['amount' => $amountLabel]));
+    }
+
+    /**
+     * 그 차량 바이어·통화의 원장 남은 현금 — 원장을 안 쓰는 경우는 0 을 준다.
+     *
+     * 🔑 0 을 주면 위 ②의 「잔액 차이」가 자동으로 0 이 되어 아무 행도 안 생긴다.
+     *    조건을 `BuyerCashService::gated()` 와 나란히 두지 않고 여기서 다시 판단하는 이유 =
+     *    거긴 **잔금 1건**을 보는 판정이고 여긴 **바이어 지갑**을 보는 조회라 대상이 다르다.
+     */
+    private function ledgerBalanceOf(Vehicle $vehicle): float
+    {
+        if (! Setting::buyerCashEnabled() || ! $vehicle->buyer_id || $vehicle->currency === 'KRW') {
+            return 0.0;
+        }
+
+        return BuyerCashReceipt::balanceFor($vehicle->buyer_id, $vehicle->currency);
     }
 
     public function resetHistoryForm(): void
@@ -1237,13 +1344,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <div class="text-xs font-semibold text-amber-800">{{ __('receivable.overpay.title') }} <span class="font-bold">{{ $overpayLabel }}</span></div>
                     <div class="mt-0.5 text-[11px] text-amber-600">{{ __('receivable.overpay.hint') }}</div>
+                    <div class="mt-0.5 text-[11px] text-amber-600">{{ __('receivable.overpay.hint_choice') }}</div>
                 </div>
-                <button type="button" wire:click="convertOverpayToSavings"
-                        wire:confirm="{{ __('receivable.overpay.confirm', ['amount' => $overpayLabel]) }}"
-                        @disabled(! $overpayAllowed)
-                        class="shrink-0 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300">
-                    {{ __('receivable.overpay.btn') }}
-                </button>
+                {{-- 두 갈래 — 적립금(바이어가 나중에 쓴다) / 잡손실(회사 몫으로 끝낸다).
+                     🚫 라벨을 줄이지 말 것: 「전환」만 두면 어느 쪽인지 모른 채 누른다. --}}
+                <div class="flex shrink-0 flex-wrap gap-1.5">
+                    <button type="button" wire:click="convertOverpayToSavings"
+                            wire:confirm="{{ __('receivable.overpay.confirm', ['amount' => $overpayLabel]) }}"
+                            @disabled(! $overpayAllowed)
+                            class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+                        {{ __('receivable.overpay.btn') }}
+                    </button>
+                    <button type="button" wire:click="convertOverpayToMiscLoss"
+                            wire:confirm="{{ __('receivable.overpay.confirm_misc_loss', ['amount' => $overpayLabel]) }}"
+                            @disabled(! $overpayAllowed)
+                            class="rounded-md border border-amber-600 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400">
+                        {{ __('receivable.overpay.btn_misc_loss') }}
+                    </button>
+                </div>
             </div>
             @if ($overpayClosed)
             <div class="mt-2 border-t border-amber-200 pt-2">
@@ -1309,6 +1427,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <option value="savings">{{ __('receivable.method.savings') }}</option>
                     </select>
                     @error('hMethod')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                    @if ($hMethod === 'deposit')
+                    <div class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-800">
+                        {{ __('receivable.deposit_two_step') }}
+                    </div>
+                    @endif
                     @if ($hMethod === 'savings')
                         @php
                             $savBal = (float) (\App\Models\SavingsStatus::where('buyer_id', $sv->buyer_id)
@@ -1381,6 +1504,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="text-xs text-gray-500">{{ $h->collector?->name ?? '-' }}</span>
                                 @if ($h->final_payment_id)
                                 <span class="text-xs text-blue-500" title="{{ __('receivable.mirror_title') }}">↔ #{{ $h->final_payment_id }}</span>
+                                {{-- 🚨 「입금」만 2단계다 — 판매잔금을 미확정으로 만들고, 재무가 확정해야 미수가 준다.
+                                     표시가 없으면 현금 행과 똑같이 보여 「입금은 왜 안 먹지?」가 된다(jin 2026-09-09).
+                                     다른 방식(현금·상계·기타·손실)은 회수이력 자체가 곧바로 미수를 깎는다. --}}
+                                @if (! $h->finalPayment?->confirmed_at)
+                                <span class="badge badge-amber" title="{{ __('receivable.pending_confirm_title') }}">{{ __('receivable.pending_confirm') }}</span>
+                                @endif
                                 @endif
                             </div>
                             <div class="mt-1 text-base font-semibold text-gray-800">{{ $sv->currency }} {{ number_format($h->amount, 0) }}</div>

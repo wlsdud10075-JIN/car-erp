@@ -110,6 +110,7 @@ return [
         'eta_date' => '도착 예정일(ETA)',
         'c_no' => '컨테이너 번호',
         'savings_earned' => '적립금 적립액',
+        'misc_loss' => '잡손실(과입금 정리)',
         'purchase_fee_holder' => '매도비 예금주',
         'purchase_fee_bank' => '매도비 은행',
         'purchase_fee_account' => '매도비 계좌번호',
@@ -439,6 +440,7 @@ return [
         'capital_report_viewed' => '자금 보고서 열람',
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
+        'overpay_converted_to_misc_loss' => '초과입금 → 잡손실 전환',
         // 2026-09-08 — 같은 도구가 선박명·컨테이너·수출신고번호까지 찍는다. 무엇이 바뀌었는지는 column_name 에 남는다.
         'bulk_shipping_date_applied' => '선적·통관 정보 일괄 기입',
         'bulk_document_uploaded' => '서류 일괄 업로드',

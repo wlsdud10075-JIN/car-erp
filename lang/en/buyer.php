@@ -180,6 +180,7 @@ return [
         'rate_note' => 'The exchange rate is entered on the sale balance row — record only the FX amount here.',
         'gate_blocked' => 'Not enough cash on hand for :buyer. Needed :need, available :available (short :short). Record the incoming payment on the buyer Cash tab first.',
         'fee_section' => 'Write off as fee',
+        'overpay_section' => 'Overpayment clean-up',
         'fee_hint' => 'When a wire fee made the actual receipt smaller than the recorded amount, clear the difference here. It is taken from the remaining cash, oldest receipt first.',
         'fee_hint_vehicle' => 'A wire fee that belongs to one vehicle goes in Sale tab -> Wire fee; that already reduces this cash. Use this box only for a fee you cannot attach to a vehicle - entering it in both places deducts it twice.',
         'fee_badge' => 'Wire fee',
