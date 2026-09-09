@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\FinalPayment;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -296,5 +298,144 @@ class PurchaseCancelTest extends TestCase
             'amount' => 600, 'type' => 'balance', 'payment_date' => '2026-05-27', 'confirmed_at' => now(),
         ]);
         $this->assertSame('취소완료', $v->fresh()->cancel_status_label);
+    }
+
+    // ── 🚫 매입취소 차는 단계 큐에 안 들어간다 (jin 2026-09-09) ────────────────────
+    //
+    // 🚨 **실사고**: heymanerp `222나4513`(취소 · 위약금 완납 · 라벨 「취소완료」)이 **6개 큐**에 걸려
+    //    매입 완납일부터 **107일째** 말소 재촉을 받고 있었다. 위약금을 `sale_price` 로 추적하는 구조
+    //    때문에 진행상태가 「판매완료」로 계산되고, 그 아래 단계 큐가 전부 «수출해야 한다» 로 읽었다.
+
+    /** 그 사고를 그대로 재현한 차 — 매입 완납 + 위약금 완납 + 말소 미처리. */
+    private function cancelledFullyPaid(): Vehicle
+    {
+        $sm = Salesman::create(['name' => '무사백', 'type' => 'employee', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'EASY DRIVE', 'is_active' => true, 'salesman_id' => $sm->id]);
+        $v = Vehicle::create([
+            'vehicle_number' => '222나4513',
+            'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1746,
+            'dhl_request' => false, 'salesman_id' => $sm->id, 'buyer_id' => $buyer->id,
+            'purchase_price' => 1_000_000, 'purchase_date' => now()->subDays(107)->toDateString(),
+            // 위약금 — 매입취소는 이 칸을 재사용한다(2026-07-18 설계)
+            'sale_price' => 600, 'sale_date' => now()->subDays(100)->toDateString(),
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now()->subDays(107),
+        ]);
+        // 매입 완납 — 이게 없으면 애초에 말소 큐에 안 들어가 테스트가 아무것도 검사하지 않는다.
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id, 'amount' => 1_000_000,
+            'payment_date' => now()->subDays(107)->toDateString(), 'confirmed_at' => now()->subDays(107),
+        ]);
+        // 위약금 완납 → 라벨이 「취소완료」가 된다
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => now()->subDays(90)->toDateString(), 'confirmed_at' => now()->subDays(90),
+        ]);
+        $v->refresh()->refreshProgressCache();
+
+        return $v->refresh();
+    }
+
+    /** 전제 — 이 차가 「취소완료」 · 매입 완납 · 말소 미처리라는 것부터 확인한다. */
+    public function test_the_fixture_reproduces_the_reported_state(): void
+    {
+        $v = $this->cancelledFullyPaid();
+
+        $this->assertSame('취소완료', $v->cancel_status_label);
+        $this->assertSame(0, $v->purchase_unpaid_amount, '매입 완납이어야 말소 큐에 들어간다');
+        $this->assertSame(0.0, (float) $v->sale_unpaid_amount, '위약금 완납이어야 「취소완료」다');
+        $this->assertFalse((bool) $v->is_deregistered);
+    }
+
+    /** 🚫 단계 큐 16개 전부에서 빠진다 — 매입을 취소했으면 말소·통관·선적·B/L·DHL 이 영영 없다. */
+    public function test_cancelled_vehicle_is_out_of_every_workflow_queue(): void
+    {
+        $v = $this->cancelledFullyPaid();
+
+        $workflow = [
+            'deregistration_needed',
+            'clearance_needed', 'clearance_request_needed', 'clearance_info_missing',
+            'clearance_stuck', 'clearance_candidates', 'forwarding_missing',
+            'export_declaration_upload_needed',
+            'shipping_needed', 'shipping_process_needed', 'bl_upload_needed',
+            'dhl_needed', 'dhl_dispatch_needed',
+            'eta_clearance_reminder', 'eta_missing',
+            'document_deadline_reminder',
+        ];
+        foreach ($workflow as $action) {
+            $this->assertFalse(
+                Vehicle::query()->action($action)->where('id', $v->id)->exists(),
+                "매입취소 차가 {$action} 큐에 남아 있다"
+            );
+        }
+    }
+
+    /**
+     * ✅ **돈 큐는 그대로** — 위약금 채권 추적이 매입취소 기능의 본체다. 여기까지 빼면
+     *    받을 돈이 화면에서 사라진다(jin 2026-09-09 확인: 매입 미지급도 재무가 봐야 할 돈).
+     */
+    public function test_cancelled_vehicle_stays_in_the_money_queues(): void
+    {
+        $sm = Salesman::create(['name' => '무사백2', 'type' => 'employee', 'is_active' => true]);
+        $buyer = Buyer::create(['name' => 'EASY DRIVE 2', 'is_active' => true, 'salesman_id' => $sm->id]);
+        $v = Vehicle::create([
+            'vehicle_number' => '222나4514',
+            'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1746,
+            'dhl_request' => false, 'salesman_id' => $sm->id, 'buyer_id' => $buyer->id,
+            'purchase_price' => 1_000_000, 'purchase_date' => now()->subDays(107)->toDateString(),
+            'sale_price' => 600, 'sale_date' => now()->subDays(100)->toDateString(),
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now()->subDays(107),
+        ]);
+        $v->refresh()->refreshProgressCache();
+
+        // 위약금 미수 — 계속 받아야 한다
+        $this->assertTrue(Vehicle::query()->action('sale_unpaid')->where('id', $v->id)->exists(),
+            '위약금 미수가 채권 큐에서 사라졌다');
+        // 딜러 대금 미지급 — 재무가 봐야 할 돈
+        $this->assertTrue(Vehicle::query()->action('purchase_unpaid')->where('id', $v->id)->exists(),
+            '매입 미지급이 큐에서 사라졌다');
+    }
+
+    /**
+     * 🔒 **대시보드 카운트와 목록 SQL 이 같아야 한다**(§8 #44). 둘이 갈리면 「카드엔 1대인데 눌러도
+     *    아무것도 없는」 화면이 된다 — 대시보드가 `scopeAction` 을 그대로 쓰는지 확인한다.
+     */
+    public function test_dashboard_count_and_list_agree_after_the_exclusion(): void
+    {
+        $cancelled = $this->cancelledFullyPaid();
+
+        // 대조군 — 취소가 아닌 같은 상태의 차는 그대로 잡혀야 한다(조건을 통째로 깨뜨린 게 아님을 증명)
+        $normal = Vehicle::create([
+            'vehicle_number' => '333다1111',
+            'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1746,
+            'dhl_request' => false, 'salesman_id' => $cancelled->salesman_id, 'buyer_id' => $cancelled->buyer_id,
+            'purchase_price' => 1_000_000, 'purchase_date' => now()->subDays(107)->toDateString(),
+        ]);
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $normal->id, 'amount' => 1_000_000,
+            'payment_date' => now()->subDays(107)->toDateString(), 'confirmed_at' => now()->subDays(107),
+        ]);
+        $normal->refresh()->refreshProgressCache();
+
+        $ids = Vehicle::query()->action('deregistration_needed')->pluck('id')->all();
+
+        $this->assertContains($normal->id, $ids, '정상 차량이 말소 큐에서 빠졌다 — 조건을 과하게 좁혔다');
+        $this->assertNotContains($cancelled->id, $ids);
+        $this->assertSame(count($ids), Vehicle::query()->action('deregistration_needed')->count(),
+            '카운트와 목록이 갈렸다');
+    }
+
+    /** 말소 재촉 알림톡도 같은 출처를 쓰므로 자동으로 빠진다 — 조건을 두 곳에 적지 않는다. */
+    public function test_deregistration_reminder_does_not_target_a_cancelled_vehicle(): void
+    {
+        $v = $this->cancelledFullyPaid();
+
+        $hit = Vehicle::query()->action('deregistration_needed')
+            ->where('is_deregistered', false)
+            ->where(fn ($q) => $q->whereNull('container_number')->orWhere('container_number', ''))
+            ->where(fn ($q) => $q->whereNull('export_declaration_number')->orWhere('export_declaration_number', ''))
+            ->whereNotNull('buyer_id')
+            ->where('id', $v->id)->exists();
+
+        $this->assertFalse($hit, '매입취소 차가 말소 재촉 알림톡 대상에 남아 있다');
     }
 }
