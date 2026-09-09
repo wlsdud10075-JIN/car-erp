@@ -380,4 +380,116 @@ class AssistantTest extends TestCase
         Setting::updateOrCreate(['key' => 'assistant_enabled'], ['value' => '1', 'type' => 'boolean']);
         $this->actingAs($admin)->get('/admin/dashboard')->assertOk()->assertSee('SSANCAR 업무 도우미', false);
     }
+
+    /**
+     * 🚨 **jin 2026-09-09 제보** — 「선적대기 허용 항로인데 미수여도 묶음 착수돼? B/L도 가능해?」를
+     * 물었더니 채권 KPI 표(총 미수 640,732,308원 …)가 나왔다. 「미수」라는 낱말 하나 때문에
+     * **규칙 질문이 DB 조회로 잡힌** 것이다. 같은 형태로 두 건이 더 있었다(실측).
+     *
+     * B(DB 조회)는 「얼마」를 답하는 경로다 — 「되나·왜·어디서」를 물으면 가이드로 가야 한다.
+     */
+    public function test_rule_questions_are_not_captured_by_the_money_router(): void
+    {
+        $svc = app(AssistantService::class);
+
+        // jin 실제 질문
+        $this->assertSame('guide', $svc->classify('선적대기 허용 항로인데 미수여도 묶음 착수돼? B/L도 가능해?'));
+        // 같은 형태로 실측된 나머지 2건
+        $this->assertSame('guide', $svc->classify('손익분기가 뭐야?'));
+        $this->assertSame('guide', $svc->classify('채권관리 어디서 봐?'));
+        // 규칙 낱말이 섞인 다른 표현들
+        $this->assertSame('guide', $svc->classify('미수 있으면 통관 진입이 막히는 조건이 뭐야?'));
+        $this->assertSame('guide', $svc->classify('자금 이체는 누가 승인해야 가능해?'));
+    }
+
+    /**
+     * ⚠️ **금액 신호가 규칙 신호를 이긴다.** 이 순서가 뒤집히면 「얼마나 되나?」 처럼 **되나** 가 들어간
+     * 금액 질문이 통째로 가이드로 새어 숫자를 못 받는다. 그리고 **신호가 둘 다 없으면 종전대로 DB 조회**다
+     * — 여기서 기본값을 가이드로 바꾸면 잘 쓰던 조회가 조용히 죽는다.
+     */
+    public function test_number_questions_still_reach_the_database_router(): void
+    {
+        $svc = app(AssistantService::class);
+
+        $this->assertSame('receivable_summary', $svc->classify('이번달 미수금이 얼마나 되나?'));
+        $this->assertSame('receivable_summary', $svc->classify('미수금'));
+        $this->assertSame('receivable_by_buyer', $svc->classify('바이어별 미수 알려줘'));
+        $this->assertSame('capital_status', $svc->classify('자금 현황 보여줘'));
+        $this->assertSame('capital_status', $svc->classify('굴리는 총 자금 얼마'));
+        // 🚫 '언제' 를 규칙 신호에 넣지 않는 이유 — 시점을 계산해 주는 DB 질문이 새어 나간다.
+        $this->assertSame('break_even', $svc->classify('손익분기 언제 넘어?'));
+    }
+
+    /** 규칙 질문이어도 시스템 등급 질문은 `system_guide` 로 남아야 한다 — 아니면 system 청크가 검색에서 빠진다. */
+    public function test_a_rule_question_about_system_settings_keeps_the_system_tier(): void
+    {
+        $svc = app(AssistantService::class);
+
+        $this->assertSame('system_guide', $svc->classify('기능설정에서 알림톡 로그 왜 안 보여?'));
+        $this->assertSame('system_guide', $svc->classify('챗봇 색인 어떻게 갱신돼?'));
+    }
+
+    /**
+     * 근거 중복 제거 (jin 2026-09-09) — 「자동 입력·계산·반영 항목 안내」가 두 페이지에 거의 같은 내용으로
+     * 실려 있어 top-3 중 두 자리를 같은 말이 먹고 있었다(운영 실측 cos 0.927 = 색인에서 가장 닮은 쌍).
+     */
+    public function test_near_duplicate_chunks_do_not_take_two_of_the_top_slots(): void
+    {
+        $svc = app(AssistantService::class);
+        // 1번과 2번이 거의 같은 방향(cos≈0.9997), 3번은 직교.
+        $kb = [
+            ['source' => 'A', 'embedding' => [1.0, 0.0, 0.0]],
+            ['source' => 'A 사본', 'embedding' => [0.999, 0.02, 0.0]],
+            ['source' => 'B', 'embedding' => [0.0, 1.0, 0.0]],
+        ];
+        $scored = [0 => 0.90, 1 => 0.89, 2 => 0.40];   // 내림차순
+
+        $picked = array_keys($svc->selectTopChunks($kb, $scored, 2));
+        $this->assertSame([0, 2], $picked, '거의 같은 청크가 두 자리를 먹었다');
+
+        // 점수가 높은 쪽(먼저 온 쪽)을 남긴다.
+        $this->assertSame([0], array_keys($svc->selectTopChunks($kb, $scored, 1)));
+    }
+
+    /** 서로 다른 내용은 아무리 주제가 가까워도 남긴다 — 임계를 낮추면 멀쩡한 근거가 떨어진다. */
+    public function test_merely_related_chunks_are_kept(): void
+    {
+        $svc = app(AssistantService::class);
+        // cos ≈ 0.8 — 운영 색인의 「진행 게이트 두 판」(0.876) 자리. 서로 보완하는 다른 글이다.
+        $kb = [
+            ['source' => 'A', 'embedding' => [1.0, 0.0]],
+            ['source' => 'B', 'embedding' => [0.8, 0.6]],
+        ];
+        $picked = array_keys($svc->selectTopChunks($kb, [0 => 0.9, 1 => 0.8], 2));
+        $this->assertSame([0, 1], $picked);
+    }
+
+    /** 임계 1.0 이상 = 중복 제거를 끈 것(전후 대조·긴급 원복용). */
+    public function test_dedup_can_be_switched_off(): void
+    {
+        $svc = app(AssistantService::class);
+        $kb = [
+            ['source' => 'A', 'embedding' => [1.0, 0.0]],
+            ['source' => 'A 사본', 'embedding' => [1.0, 0.0]],
+        ];
+        $this->assertSame([0], array_keys($svc->selectTopChunks($kb, [0 => 0.9, 1 => 0.9], 2, 0.90)));
+        $this->assertSame([0, 1], array_keys($svc->selectTopChunks($kb, [0 => 0.9, 1 => 0.9], 2, 1.0)));
+    }
+
+    /**
+     * 🔒 **평가 커맨드가 후보 추림을 옮겨 적지 않는지** 정적으로 지킨다.
+     *
+     * `assistant:eval` 이 스코프·등급 필터를 따로 구현하면 **평가는 찾는데 실제 챗봇은 못 찾는** 상태가
+     * 되고, 그때 평가는 「거짓말하는 계기판」이 된다(SKILLS §8 #44). 기능 테스트로는 원리상 못 잡는다 —
+     * 양쪽 다 정상 동작하고 숫자만 어긋난다.
+     */
+    public function test_eval_command_reuses_the_real_candidate_filter(): void
+    {
+        $src = file_get_contents(base_path('app/Console/Commands/AssistantEval.php'));
+
+        $this->assertStringContainsString('candidateChunks(', $src, '평가가 후보 추림을 직접 구현하고 있다');
+        $this->assertStringContainsString('selectTopChunks(', $src, '평가가 중복 제거를 직접 구현하고 있다');
+        $this->assertStringNotContainsString('index_scope', $src, '스코프 필터가 평가에 복제됐다');
+        $this->assertStringNotContainsString('RAG_AUDIENCES', $src, '등급 필터가 평가에 복제됐다');
+    }
 }
