@@ -187,7 +187,10 @@ class BuyerAccountExportController extends Controller
                 $this->text($sheet, 'D'.$row, (string) ($r->note ?? ''));
                 // 💸 수수료 배분(2026-09-08)은 차량·잔금이 없다 — 빈칸으로 두면 「어디로 갔는지」가 사라진다.
                 $isFee = $a?->isFee() ?? false;
-                $this->text($sheet, 'E'.$row, $isFee ? __('buyer.cash.fee_section') : (string) ($a?->vehicle?->vehicle_number ?? ''));
+                // 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 화면 뱃지와 같은 구분을 엑셀에도 남긴다.
+                $this->text($sheet, 'E'.$row, $isFee
+                    ? __('buyer.cash.fee_section')
+                    : (string) ($a?->vehicle?->vehicle_number ?? '').($a?->isVehicleFee() ? ' ('.__('buyer.cash.fee_badge').')' : ''));
                 $this->text($sheet, 'F'.$row, $isFee ? (string) ($a?->fee?->note ?? '') : (string) ($a?->vehicle?->nice_reg_vin ?? ''));
                 $this->text($sheet, 'G'.$row, $isFee
                     ? (string) ($a?->fee?->charged_date?->format('Y-m-d') ?? '')

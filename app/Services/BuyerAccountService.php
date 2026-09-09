@@ -122,7 +122,7 @@ class BuyerAccountService
             ->with([
                 'allocations' => fn ($q) => $q->orderBy('id'),
                 'allocations.vehicle:id,vehicle_number,nice_reg_vin',
-                'allocations.finalPayment:id,payment_date',
+                'allocations.finalPayment:id,payment_date,type',   // ⚠️ type 필수 — 빼면 isVehicleFee() 가 늘 false
                 'allocations.fee:id,charged_date,note',   // 💸 수수료 배분(2026-09-08) — 차량 대신 이걸 그린다
             ])
             // 최근 입금부터 — 사람은 방금 들어온 돈을 먼저 본다.

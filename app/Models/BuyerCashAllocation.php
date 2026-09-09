@@ -54,6 +54,21 @@ class BuyerCashAllocation extends Model
         return $this->fee_id !== null;
     }
 
+    /**
+     * 판매탭 「송금 수수료」(`final_payments.type='fee'`)로 나간 배분인가 — 2026-09-09 부터 생긴다.
+     *
+     * 🧭 `isFee()` 와 다르다. 이쪽은 **차량이 붙어 있다**(그 차 판매탭에 기입했으므로) —
+     *    그래서 화면이 차량번호를 그대로 쓰고 뱃지만 덧붙인다. 구분을 안 하면 6 EUR 짜리
+     *    수수료가 「아주 작은 잔금」으로 보여 사람이 이중으로 또 털게 된다.
+     *
+     * ⚠️ `finalPayment` 관계를 부분 select 로 eager load 할 때 **`type` 을 빼면 늘 false 가 된다**
+     *    (예외 0 · 화면은 정상 렌더). 단일 출처 = `BuyerAccountService` 의 with 목록.
+     */
+    public function isVehicleFee(): bool
+    {
+        return $this->fee_id === null && $this->finalPayment?->type === 'fee';
+    }
+
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
