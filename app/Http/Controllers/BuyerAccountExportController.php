@@ -189,7 +189,7 @@ class BuyerAccountExportController extends Controller
                 $isFee = $a?->isFee() ?? false;
                 // 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 화면 뱃지와 같은 구분을 엑셀에도 남긴다.
                 $this->text($sheet, 'E'.$row, $isFee
-                    ? __('buyer.cash.fee_section')
+                    ? ($a?->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section'))
                     : (string) ($a?->vehicle?->vehicle_number ?? '').($a?->isVehicleFee() ? ' ('.__('buyer.cash.fee_badge').')' : ''));
                 $this->text($sheet, 'F'.$row, $isFee ? (string) ($a?->fee?->note ?? '') : (string) ($a?->vehicle?->nice_reg_vin ?? ''));
                 $this->text($sheet, 'G'.$row, $isFee

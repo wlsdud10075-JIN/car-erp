@@ -20,9 +20,31 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class BuyerCashFee extends Model
 {
+    /** 송금 수수료 — 실제로 들어온 돈이 기재액보다 적었을 때 그 차액을 턴다. */
+    public const KIND_FEE = 'fee';
+
+    /**
+     * 과입금 정리 (2026-09-09) — 과입금을 적립금·잡손실로 돌리면 감액된 잔금만큼 현금이 지갑으로
+     * **되돌아온다.** 그 되돌아온 몫을 원장에서 빼는 행이다.
+     *
+     * 🚨 이게 없으면 **이중 크레딧**이 된다 — 적립금은 적립금대로 생기고 현금도 되돌아와, 과입금
+     *    30 에 크레딧이 60 이 된다(재현 실측). 2026-09-09 이전엔 이 행이 없어서 그 상태였다.
+     */
+    public const KIND_OVERPAY = 'overpay';
+
+    public const KINDS = [self::KIND_FEE, self::KIND_OVERPAY];
+
     protected $fillable = [
-        'buyer_id', 'currency', 'charged_date', 'amount', 'note', 'created_by',
+        'buyer_id', 'currency', 'kind', 'charged_date', 'amount', 'note', 'created_by',
     ];
+
+    /** 모델 훅·화면이 읽는 기본값 — DB default 는 INSERT 때만 적용된다(SKILLS §8 #80). */
+    protected $attributes = ['kind' => self::KIND_FEE];
+
+    public function isOverpayCleanup(): bool
+    {
+        return $this->kind === self::KIND_OVERPAY;
+    }
 
     protected function casts(): array
     {

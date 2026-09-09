@@ -217,7 +217,149 @@ class VehicleExportService
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($ci))->setAutoSize(true);
         }
 
+        // 💰 회계실사용 상세 2시트 (jin 2026-09-09) — 차량 시트는 1대 1행이라 «무슨 돈이 언제»가 안 담긴다.
+        //    한 차량에 잔금·회수이력이 여러 행이라 구조상 같은 시트에 못 넣는다.
+        $this->appendPaymentSheet($ss, $vehicles);
+        $this->appendReceivableSheet($ss, $vehicles);
+        $ss->setActiveSheetIndex(0);   // 열었을 때 차량목록이 먼저 보이게
+
         return $ss;
+    }
+
+    /**
+     * 「입금내역」 시트 — 확정·미확정 판매입금 **개별 행**.
+     *
+     * 🧭 차량 시트의 `판매총액`·`미입금액`은 합계라 실사에서 「이 돈이 언제 어느 명목으로 들어왔나」를
+     *    못 짚는다. 그 매칭이 이 시트의 목적이다.
+     *
+     * ⚠️ **미확정(재무 확정 전) 행도 담는다** — 미수 계산에는 안 들어가지만 «입금은 됐는데 확정이 안 된»
+     *    구간이 실사에서 가장 자주 질문받는 자리다. 「재무확정」 열로 구분한다.
+     */
+    private function appendPaymentSheet(Spreadsheet $ss, Collection $vehicles): void
+    {
+        // ⚠️ Eloquent 컬렉션일 때만 — Support\Collection 이 들어와도 죽지 않게(테스트·다른 호출부).
+        //    each()->loadMissing 으로 대신하면 모델마다 쿼리라 N+1 이 된다.
+        if ($vehicles instanceof \Illuminate\Database\Eloquent\Collection) {
+            $vehicles->loadMissing(['finalPayments.financeConfirmer', 'buyer']);
+        }
+
+        $sheet = $ss->createSheet();
+        $sheet->setTitle('입금내역');
+        $headers = ['차량번호', '차대번호', '바이어', '통화', '구분', '금액', '입금 시점 환율',
+            'KRW 환산', '입금일', '재무확정', '확정자', '차량간 이체', '비고'];
+        $this->writeSheetHeader($sheet, $headers);
+
+        $typeLabel = fn (?string $t) => match ($t) {
+            'deposit_down' => __('vehicle.field.deposit_down'),
+            'interim' => __('vehicle.field.interim'),
+            'advance_1' => __('vehicle.field.advance1'),
+            'fee' => __('vehicle.field.fee'),
+            default => __('vehicle.field.balance'),
+        };
+
+        $row = 2;
+        foreach ($vehicles as $v) {
+            foreach ($v->finalPayments->sortBy([['payment_date', 'asc'], ['id', 'asc']]) as $fp) {
+                $vals = [
+                    ['str', $v->vehicle_number],
+                    ['str', $v->nice_reg_vin],
+                    ['str', $v->buyer?->name],
+                    ['str', $v->currency],
+                    ['str', $typeLabel($fp->type)],
+                    ['num', $fp->amount],
+                    ['num', $fp->exchange_rate],
+                    ['num', $fp->amount_krw],
+                    ['date', $fp->payment_date],
+                    ['str', $fp->confirmed_at ? __('common.yes') : __('common.no')],
+                    ['str', $fp->financeConfirmer?->name],
+                    ['str', $fp->transfer_id ? __('common.yes') : ''],
+                    ['str', $fp->note],
+                ];
+                $this->writeSheetRow($sheet, $row++, $vals);
+            }
+        }
+        $this->autoSize($sheet, count($headers));
+    }
+
+    /**
+     * 「회수이력」 시트 — 입금·현금·상계·기타·손실·적립금사용·**잡손실** 개별 행.
+     *
+     * 🚨 **「미수반영」 열이 이 시트의 핵심이다.** `입금`·`적립금 사용`·`잡손실`은 다른 기록의 미러라
+     *    미수 계산에서 빠진다(`Vehicle::MIRRORED_RECEIVABLE_METHODS`). 그 표시가 없으면 실사자가
+     *    행을 그냥 더해서 «장부가 안 맞는다»고 읽는다 — 실제로는 중복 계상을 피한 결과다.
+     */
+    private function appendReceivableSheet(Spreadsheet $ss, Collection $vehicles): void
+    {
+        // ⚠️ Eloquent 컬렉션일 때만 — Support\Collection 이 들어와도 죽지 않게(테스트·다른 호출부).
+        //    each()->loadMissing 으로 대신하면 모델마다 쿼리라 N+1 이 된다.
+        if ($vehicles instanceof \Illuminate\Database\Eloquent\Collection) {
+            $vehicles->loadMissing(['receivableHistories.collector', 'buyer']);
+        }
+
+        $sheet = $ss->createSheet();
+        $sheet->setTitle('회수이력');
+        $headers = ['차량번호', '차대번호', '바이어', '통화', '방식', '금액', '환율',
+            '수금일', '회수담당자', '미수반영', '연결 잔금 ID', '비고'];
+        $this->writeSheetHeader($sheet, $headers);
+
+        $mirrored = Vehicle::MIRRORED_RECEIVABLE_METHODS;
+
+        $row = 2;
+        foreach ($vehicles as $v) {
+            foreach ($v->receivableHistories->sortBy([['collected_at', 'asc'], ['id', 'asc']]) as $h) {
+                $vals = [
+                    ['str', $v->vehicle_number],
+                    ['str', $v->nice_reg_vin],
+                    ['str', $v->buyer?->name],
+                    ['str', $v->currency],
+                    ['str', __('receivable.method.'.$h->method)],
+                    ['num', $h->amount],
+                    ['num', $h->exchange_rate],
+                    ['date', $h->collected_at],
+                    ['str', $h->collector?->name],
+                    // 미수에 «또» 반영되는 행인가 — 미러 항목은 아니오.
+                    ['str', in_array($h->method, $mirrored, true) ? __('common.no') : __('common.yes')],
+                    ['str', $h->final_payment_id ? (string) $h->final_payment_id : ''],
+                    ['str', $h->note],
+                ];
+                $this->writeSheetRow($sheet, $row++, $vals);
+            }
+        }
+        $this->autoSize($sheet, count($headers));
+    }
+
+    /** 상세 시트 공통 — 헤더 1행(차량목록 시트와 같은 서식·고정). */
+    private function writeSheetHeader($sheet, array $headers): void
+    {
+        $i = 1;
+        foreach ($headers as $h) {
+            $sheet->setCellValueExplicit(Coordinate::stringFromColumnIndex($i).'1', $h, DataType::TYPE_STRING);
+            $i++;
+        }
+        $last = Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->getStyle('A1:'.$last.'1')->applyFromArray([
+            'font' => ['bold' => true],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E8E5F5']],
+        ]);
+        $sheet->freezePane('A2');
+    }
+
+    /** @param  array<int, array{0: string, 1: mixed}>  $vals  [타입, 값] 쌍 — writeCell 과 같은 규칙(수식 주입 방어). */
+    private function writeSheetRow($sheet, int $row, array $vals): void
+    {
+        $c = 1;
+        foreach ($vals as [$type, $val]) {
+            $this->writeCell($sheet, Coordinate::stringFromColumnIndex($c).$row, $type, $val);
+            $c++;
+        }
+    }
+
+    private function autoSize($sheet, int $count): void
+    {
+        foreach (range(1, $count) as $ci) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($ci))->setAutoSize(true);
+        }
     }
 
     private function writeCell($sheet, string $coord, string $type, mixed $val): void

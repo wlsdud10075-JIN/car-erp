@@ -760,7 +760,15 @@ class Vehicle extends Model
      *   - savings  → vehicles.savings_used 로 미러 (ReceivableHistory::syncSavingsUsed)
      * 미수 accessor 와 실입금KRW(환차 baseline) 양쪽이 이 상수를 공유한다 — 새 미러 방법이 생기면 여기만 추가.
      */
-    public const MIRRORED_RECEIVABLE_METHODS = ['deposit', 'savings'];
+    /**
+     * 미수 계산에서 **제외**하는 회수이력 방법 — 다른 기록의 미러라 또 빼면 이중 차감이다.
+     *
+     * · `deposit` = 확정 잔금(FinalPayment)의 미러
+     * · `savings` = `vehicles.savings_used` 의 미러
+     * · `misc_loss` = **과입금 정리의 기록**(2026-09-09). 🚨 여기 안 넣으면 정리 직후 미수가
+     *   다시 음수로 돌아간다 — 잔금을 감액해 0 으로 만든 만큼을 이 행이 또 빼기 때문이다.
+     */
+    public const MIRRORED_RECEIVABLE_METHODS = ['deposit', 'savings', 'misc_loss'];
 
     /**
      * 판매탭發 savings_used 변경 시 회수이력 미러 행 생성을 건너뛰는 플래그 (2026-07-28).

@@ -331,7 +331,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                              그리고 판매탭 송금수수료(2026-09-09~)는 **차량이 붙어 있다** — 뱃지를 안 달면
                              6 EUR 짜리가 「아주 작은 잔금」으로 보여 사람이 원장에서 또 털게 된다. --}}
                         <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap {{ $a->isFee() || $a->isVehicleFee() ? 'text-amber-700' : 'text-gray-700' }}">
-                            {{ $a->isFee() ? __('buyer.cash.fee_section') : ($a->vehicle?->vehicle_number ?? '-') }}
+                            {{ $a->isFee() ? ($a->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section')) : ($a->vehicle?->vehicle_number ?? '-') }}
                             @if($a->isVehicleFee())
                             <span class="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-sans font-medium text-amber-700">{{ __('buyer.cash.fee_badge') }}</span>
                             @endif

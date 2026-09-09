@@ -856,6 +856,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'charged_date' => $f->charged_date->format('Y-m-d'),
                 'currency' => $f->currency,
                 'amount' => (float) $f->amount,
+                // 종류(2026-09-09) — 수수료 / 과입금 정리. 안 구분하면 「무슨 수수료지?」가 된다.
+                'is_overpay' => $f->isOverpayCleanup(),
                 'note' => $f->note,
                 'by' => $f->creator?->name,
                 // 어느 입금에서 나갔나 — 좁은 패널이라 호버로 전문(입금 행의 uses_title 과 같은 방식).
@@ -2034,7 +2036,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @foreach($cashFeeList as $f)
                         <tr class="align-top">
                             <td class="py-1.5 pr-2">
-                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $f['by'] ?: '-' }}">{{ $f['charged_date'] }}</div>
+                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $f['by'] ?: '-' }}">
+                                    {{ $f['charged_date'] }}
+                                    <span class="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">{{ $f['is_overpay'] ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_badge') }}</span>
+                                </div>
                                 @if($f['note'])
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>
                                 @endif
