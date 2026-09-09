@@ -5433,6 +5433,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     if (abs($newAmount - $existingSum) < 0.01) {
                         continue;   // 변경 없음
                     }
+                    // 💵 바이어 현금 원장 (2026-09-09 `fee` 합류) — **원장 밖에서 확정된 옛 행은
+                    //    원장 밖에 둔다.** 이 sync 는 「지우고 다시 만들기」라 금액 정정도 **항상 신규
+                    //    행**이 된다 → `assertAvailable` 의 «줄이는 정정은 통과» 예외(그건
+                    //    `$payment->exists` 를 본다)가 **발동하지 않는다**. 그대로 두면 토글 전에
+                    //    확정된 수수료를 **감액**하는데도 전액을 현금에서 요구해 죽는다
+                    //    (09-07 잔금에서 겪은 그 형태의 다른 문 — SKILLS §8 #66).
+                    //    판정은 배분 행 유무. 🚨 **삭제 전에** 봐야 한다 — 아래 delete 는 bulk 라
+                    //    모델 이벤트가 안 뜨지만 DB cascade 로 배분이 사라진다.
+                    $oldPaymentIds = $vehicle->finalPayments()
+                        ->where('type', $type)
+                        ->whereNotNull('confirmed_at')
+                        ->whereNull('transfer_id')
+                        ->pluck('id');
+                    $outsideLedger = $oldPaymentIds->isNotEmpty()
+                        && ! \App\Models\BuyerCashAllocation::whereIn('final_payment_id', $oldPaymentIds)->exists();
                     FinalPayment::$allowConfirmedMutation = true;
                     try {
                         $vehicle->finalPayments()
@@ -5447,20 +5462,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                         // 2026-05-28 fix — 4항목 row 의 exchange_rate snapshot.
                         // FinalPayment::saving 훅이 amount × exchange_rate = amount_krw 자동 계산.
                         // 미설정 시 amount_krw=null → buyerFees / 채권관리 KRW 합산에서 누락.
-                        $vehicle->finalPayments()->create([
-                            'amount' => $newAmount,
-                            'type' => $type,
-                            'payment_date' => today(),
-                            'exchange_rate' => $vehicle->exchange_rate,
-                            'confirmed_at' => now(),
-                            'confirmed_by_user_id' => auth()->id(),
-                            'note' => match ($type) {
-                                'deposit_down' => '계약금',
-                                'interim' => '중도금',
-                                'advance_1' => '선수금1',
-                                'fee' => '송금 수수료',
-                            },
-                        ]);
+                        FinalPayment::$skipCashGate = $outsideLedger;
+                        try {
+                            $vehicle->finalPayments()->create([
+                                'amount' => $newAmount,
+                                'type' => $type,
+                                'payment_date' => today(),
+                                'exchange_rate' => $vehicle->exchange_rate,
+                                'confirmed_at' => now(),
+                                'confirmed_by_user_id' => auth()->id(),
+                                'note' => match ($type) {
+                                    'deposit_down' => '계약금',
+                                    'interim' => '중도금',
+                                    'advance_1' => '선수금1',
+                                    'fee' => '송금 수수료',
+                                },
+                            ]);
+                        } finally {
+                            FinalPayment::$skipCashGate = false;
+                        }
                     }
                 }
             }

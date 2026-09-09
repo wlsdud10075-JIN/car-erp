@@ -789,7 +789,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->fee_date = $this->fee_date ?: now()->toDateString();
 
         $receipts = BuyerCashReceipt::where('buyer_id', $buyerId)
-            ->with(['allocations.vehicle:id,vehicle_number', 'creator:id,name'])
+            // ⚠️ finalPayment 의 `type` 이 있어야 판매탭 송금수수료를 구분한다 — 빼면 늘 잔금처럼 보인다.
+            ->with(['allocations.vehicle:id,vehicle_number', 'allocations.finalPayment:id,type', 'creator:id,name'])
             ->fifo()
             ->get();
 
@@ -831,10 +832,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ->map(fn ($a) => [
                         'vehicle_number' => $a->vehicle?->vehicle_number ?? '-',
                         'amount' => (float) $a->amount,
+                        // 💸 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 표시를 안 하면
+                        //    6 EUR 짜리가 「아주 작은 잔금」으로 보여 원장에서 또 털게 된다.
+                        'is_wire_fee' => $a->isVehicleFee(),
                     ])->all(),
                 // 좁은 패널에서 여러 줄이 잘려도 호버로 전문이 보이게(적립금 탭과 같은 방식).
                 'uses_title' => $r->allocations
-                    ->map(fn ($a) => ($a->vehicle?->vehicle_number ?? '-').' '.number_format((float) $a->amount, 2))
+                    ->map(fn ($a) => ($a->vehicle?->vehicle_number ?? '-').' '.number_format((float) $a->amount, 2)
+                        .($a->isVehicleFee() ? ' ('.__('buyer.cash.fee_badge').')' : ''))
                     ->implode(' / '),
             ])->all();
     }
@@ -1905,6 +1910,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
                     <h4 class="text-xs font-semibold text-amber-800">{{ __('buyer.cash.fee_section') }}</h4>
                     <p class="mt-1 text-[11px] leading-snug text-amber-700/80">{{ __('buyer.cash.fee_hint') }}</p>
+                    {{-- 🚫 이중 차감 방지 (2026-09-09) — 판매탭 송금수수료가 이제 현금을 스스로 줄인다. --}}
+                    <p class="mt-1 rounded border border-amber-300 bg-amber-100/70 px-2 py-1 text-[11px] leading-snug text-amber-800">{{ __('buyer.cash.fee_hint_vehicle') }}</p>
                     <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                         <div>
                             <label class="label-base">{{ __('buyer.cash.fee_date') }}</label>
@@ -1983,8 +1990,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="py-1.5 pr-2 text-[11px]" title="{{ $r['uses_title'] }}">
                                 @forelse($r['uses'] as $u)
-                                <div class="whitespace-nowrap text-gray-600">
+                                <div class="whitespace-nowrap {{ $u['is_wire_fee'] ? 'text-amber-700' : 'text-gray-600' }}">
                                     {{ $u['vehicle_number'] }} <span class="font-mono">{{ number_format($u['amount'], 2) }}</span>
+                                    @if($u['is_wire_fee'])
+                                    <span class="rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">{{ __('buyer.cash.fee_badge') }}</span>
+                                    @endif
                                 </div>
                                 @empty
                                 <span class="text-gray-300">{{ __('buyer.cash.not_used') }}</span>

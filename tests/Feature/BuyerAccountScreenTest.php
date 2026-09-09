@@ -774,4 +774,43 @@ class BuyerAccountScreenTest extends TestCase
             '번역 안 된 키가 화면에 그대로 찍힌다',
         );
     }
+
+    /**
+     * 💸 판매탭 송금수수료 배분은 **차량이 붙어 있다** — 뱃지가 없으면 「아주 작은 잔금」으로 보여
+     *    사람이 원장에서 또 털고, 그러면 같은 수수료에 현금이 두 번 빠진다.
+     *
+     * 🔑 이 테스트는 **eager load 누락까지 잡는다** — `allocations.finalPayment` 를 부분 select 할 때
+     *    `type` 을 빼면 `isVehicleFee()` 가 늘 false 가 되고, 예외도 로그도 없이 뱃지만 사라진다.
+     */
+    public function test_a_wire_fee_allocation_is_marked_on_the_screen(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $feeVehicle = $this->vehicle($buyer);
+        $balanceVehicle = $this->vehicle($buyer);
+        BuyerCashReceipt::create([
+            'buyer_id' => $buyer->id, 'currency' => 'EUR',
+            'received_date' => '2026-09-01', 'amount' => 10000,
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $feeVehicle->id, 'type' => 'fee', 'amount' => 6,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $balanceVehicle->id, 'type' => 'balance', 'amount' => 4000,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->html();
+
+        $this->assertStringContainsString(__('buyer.cash.fee_badge'), $html,
+            '판매탭 송금수수료 배분이 잔금과 구분되지 않는다');
+        $this->assertStringContainsString($feeVehicle->vehicle_number, $html, '어느 차 수수료인지 안 보인다');
+        // 뱃지가 뜻을 가지려면 잔금엔 안 붙어야 한다 — 한 번만 나와야 정상이다.
+        $this->assertSame(1, substr_count($html, __('buyer.cash.fee_badge')),
+            '잔금 배분에도 수수료 뱃지가 붙었다');
+    }
 }

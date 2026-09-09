@@ -11,6 +11,7 @@ use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BuyerCashService;
 use App\Services\PaymentConfirmationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
@@ -573,13 +574,21 @@ class BuyerCashGateTest extends TestCase
     }
 
     /** 계약금·중도금·선수금·수수료는 jin 명시 제외 — type 이 balance 가 아니다. */
-    public function test_non_balance_types_are_not_gated(): void
+    /**
+     * 🚫 계약금·중도금·선수금1 은 여전히 제외 — **이유가 유형마다 다르다**(`GATED_TYPES` 표).
+     *    계약금은 회사가 대신 낸 것이 실재해 「바이어 현금」으로 단정할 수 없고(SKILLS §8 #49),
+     *    중도금·선수금1 은 jin 명시 범위 밖이다(원장 바이어 실사용 0 건).
+     *
+     * ⚠️ 2026-09-09 에 `fee` 가 이 목록에서 **빠졌다** — 수수료는 정의상 바이어가 보낸 돈의
+     *    일부라 현금을 쓴다. 근거는 아래 수수료 테스트들에 있다.
+     */
+    public function test_deposit_and_interim_and_advance_are_not_gated(): void
     {
         $this->enable();
         $this->actingAs($this->finance());
         $vehicle = $this->vehicle($this->buyer());
 
-        foreach (['deposit_down', 'interim', 'advance_1', 'fee'] as $type) {
+        foreach (['deposit_down', 'interim', 'advance_1'] as $type) {
             $fp = FinalPayment::create([
                 'vehicle_id' => $vehicle->id, 'type' => $type, 'amount' => 1000,
                 'payment_date' => '2026-09-04', 'confirmed_at' => now(),
@@ -732,5 +741,212 @@ class BuyerCashGateTest extends TestCase
         $this->assertSame(9130.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
         app(PaymentConfirmationService::class)->confirmPayment($fp, auth()->user(), null, null);
         $this->assertSame(6850.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+    }
+
+    // ── 💸 송금 수수료(셀러부담) = 바이어가 보낸 돈의 일부 (jin 2026-09-09) ─────────
+    //
+    // 🚨 **실사고**: 판매탭 수수료가 미수만 줄이고 현금을 안 써서, 원장이 남은 현금을 부풀려
+    //    표시했다(heymanerp 실측 수수료 4건 24 EUR 중 원장 반영 18 → 원장 2,280 ↔ 실제 2,274).
+    //    그 6 은 다음 잔금에 조용히 쓰여 바이어에게 그만큼 더 크레딧이 된다.
+
+    /** 못을 박는다 — 유형을 늘리려면 이 테스트를 고쳐야 하므로 「휩쓸려 들어가는」 일이 없다. */
+    public function test_gated_types_are_exactly_balance_and_wire_fee(): void
+    {
+        $this->assertSame(['balance', 'fee'], BuyerCashService::GATED_TYPES,
+            '유형을 늘렸다면 GATED_TYPES 표의 이유와 판매탭 sync 의 「원장 밖」 판정을 함께 볼 것');
+    }
+
+    public function test_wire_fee_consumes_cash_and_leaves_a_row(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $receipt = $this->cash($buyer, 10000);
+
+        $fp = FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'fee', 'amount' => 6,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+
+        // 🚨 예외 없음만 보면 안 된다 — **배분 행**이 생겨야 현금이 실제로 준 것이다(SKILLS §8 #80).
+        $allocation = BuyerCashAllocation::sole();
+        $this->assertSame($fp->id, $allocation->final_payment_id);
+        $this->assertSame('6.00', (string) $allocation->amount);
+        $this->assertSame(9994.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        $this->assertSame(9994.0, $receipt->fresh()->remaining_amount);
+    }
+
+    /**
+     * jin 이 실제로 한 것 — 10,000 받아 수수료 6 + 잔금 9,994 로 나눠 적으면 **원장이 0** 이 된다.
+     * 고치기 전엔 6 이 영영 남았고, 그래서 원장 수수료에 6 을 한 번 더 적어야 했다.
+     */
+    public function test_wire_fee_plus_balances_empty_the_ledger(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $feeVehicle = $this->vehicle($buyer);
+        $balanceVehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 10000);
+
+        FinalPayment::create([
+            'vehicle_id' => $feeVehicle->id, 'type' => 'fee', 'amount' => 6,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+        $this->confirmedBalance($balanceVehicle, 9994);
+
+        $this->assertSame(0.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'),
+            '수수료까지 합쳐 정확히 다 쓰면 남은 현금이 0 이어야 한다');
+    }
+
+    /** 잔금과 같은 규칙 — 입금을 안 잡았으면 수수료도 못 적는다(의도된 마찰). */
+    public function test_wire_fee_is_blocked_without_cash(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $vehicle = $this->vehicle($this->buyer());
+
+        try {
+            FinalPayment::create([
+                'vehicle_id' => $vehicle->id, 'type' => 'fee', 'amount' => 6,
+                'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+            ]);
+            $this->fail('현금이 없는데 수수료가 들어갔다');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('현금', $e->getMessage());
+        }
+        $this->assertSame(0, FinalPayment::count(), '막혔으면 행이 남아서는 안 된다');
+    }
+
+    /**
+     * 🔑 **운영 경로**(판매탭 4항목 sync)로 확인한다 — 모델에 직접 넣는 테스트만 있으면
+     *    「화면에서는 안 되는」 상태를 못 잡는다(SKILLS §8 #80 이 정확히 그 사고였다).
+     */
+    public function test_sale_tab_wire_fee_consumes_cash_end_to_end(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 10000);
+
+        Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '6')
+            ->call('save');
+
+        $fp = FinalPayment::where('vehicle_id', $vehicle->id)->where('type', 'fee')->sole();
+        $this->assertSame(6.0, (float) BuyerCashAllocation::where('final_payment_id', $fp->id)->sum('amount'),
+            '판매탭으로 넣은 수수료가 현금을 안 썼다');
+        $this->assertSame(9994.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+    }
+
+    /** 판매탭에서 수수료를 비우면 현금이 돌아온다(행 삭제 → cascade). */
+    public function test_clearing_the_sale_tab_wire_fee_returns_the_cash(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 10000);
+
+        $component = Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '6')
+            ->call('save');
+        $this->assertSame(9994.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+
+        $component->call('openEdit', $vehicle->id)->set('fee_str', '')->call('save');
+
+        $this->assertSame(10000.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        $this->assertSame(0, BuyerCashAllocation::count());
+    }
+
+    /** 원장에 물려 있는 수수료를 고치면 배분이 따라온다. */
+    public function test_a_tracked_wire_fee_reallocates_when_the_amount_changes(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        $this->cash($buyer, 10000);
+
+        $component = Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '6')
+            ->call('save');
+
+        $component->call('openEdit', $vehicle->id)->set('fee_str', '10')->call('save');
+
+        $this->assertSame(9990.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'));
+        $this->assertSame(10.0, (float) BuyerCashAllocation::sum('amount'));
+    }
+
+    // ── 「지금까지 해놓은 건 그대로」 (jin 2026-09-09) ────────────────────────────
+    //
+    // 🔑 판매탭 4항목 sync 는 **지우고 다시 만들기**라 정정도 항상 신규 행이 된다 →
+    //    `assertAvailable` 의 «줄이는 정정은 통과» 예외가 발동하지 않는다. 그래서 「그 타입 행에
+    //    배분이 있었나」로 갈라, 원장 밖에서 확정된 옛 수수료는 계속 원장 밖에 둔다.
+
+    /** 도입 전에 확정된 수수료를 **감액**하는데 막히면 안 된다(09-07 잔금에서 겪은 그 형태). */
+    public function test_reducing_a_wire_fee_that_lives_outside_the_ledger_is_not_blocked(): void
+    {
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        // 토글 전에 확정된 행 — 배분이 없다
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'fee', 'amount' => 6,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+        $this->assertSame(0, BuyerCashAllocation::count());
+        $this->enable();                        // 현금은 한 푼도 없다
+
+        Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '5')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(5.0,
+            (float) FinalPayment::where('vehicle_id', $vehicle->id)->where('type', 'fee')->sum('amount'),
+            '감액이 반영돼야 한다');
+        $this->assertSame(0, BuyerCashAllocation::count(), '원장 밖 돈은 원장 밖에 둔다');
+    }
+
+    /** 옛 수수료를 올려도 원장 밖에 그대로 둔다 — 소급으로 현금을 끌어오지 않는다. */
+    public function test_raising_a_wire_fee_that_lives_outside_the_ledger_does_not_touch_the_cash(): void
+    {
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        FinalPayment::create([
+            'vehicle_id' => $vehicle->id, 'type' => 'fee', 'amount' => 6,
+            'payment_date' => '2026-09-08', 'confirmed_at' => now(),
+        ]);
+        $this->enable();
+        $this->cash($buyer, 10000);
+
+        Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '12')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(10000.0, BuyerCashReceipt::balanceFor($buyer->id, 'EUR'),
+            '옛 수수료 정정이 소급으로 현금을 끌어왔다');
+        $this->assertSame(0, BuyerCashAllocation::count());
+    }
+
+    /** 반대로 **처음 넣는** 수수료는 원장 밖 예외를 타지 않는다 — 현금이 없으면 막힌다. */
+    public function test_a_brand_new_sale_tab_wire_fee_is_still_gated(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);   // 현금 0
+
+        Volt::actingAs($this->finance())->test('erp.vehicles.index')
+            ->call('openEdit', $vehicle->id)
+            ->set('fee_str', '6')
+            ->call('save');
+
+        $this->assertSame(0, FinalPayment::where('vehicle_id', $vehicle->id)->where('type', 'fee')->count(),
+            '현금이 없는데 새 수수료가 들어갔다');
     }
 }
