@@ -32,6 +32,36 @@ class Vehicle extends Model
 
     public const CANCEL_CLOSED = 'cancelled_closed'; // 미수 마감 — 못 받고 종료(프리랜서 손실 절반 부담)
 
+    /**
+     * 🚫 **매입취소 차량이 들어가면 안 되는 단계 큐** (jin 2026-09-09 제보).
+     *
+     * 매입을 취소했으면 **말소·통관·선적·B/L·DHL 은 영영 일어나지 않는다.** 그런데 위약금을
+     * `sale_price` 로 추적하는 구조(2026-07-18) 때문에 진행상태가 「판매완료」로 계산되고,
+     * 그 아래 단계 큐들이 전부 «이 차는 수출해야 하는데 말소가 안 됐다» 로 읽었다.
+     *
+     * 실사고 = heymanerp `222나4513`(2026-07-18 취소 · 위약금 600 EUR **완납** · 라벨 「취소완료」)이
+     * **6개 큐**에 걸려 매입 완납일부터 **107일째** 말소 재촉을 받고 있었다(말소 알림톡 대상 6대 중 1대).
+     * 회사 전체 매입취소 4대 중 `clearance_info_missing`·`clearance_candidates` 는 **4대 전부**였다.
+     *
+     * 🔑 **돈 큐는 여기 넣지 않는다** — 위약금 채권 추적이 매입취소 기능의 본체다:
+     *   · `sale_unpaid` · `receivable_*` — 위약금을 계속 받아야 한다
+     *   · `purchase_unpaid` · `purchase_balance_due` — 딜러 대금은 재무가 봐야 할 돈이다(jin 2026-09-09 확인)
+     *   · `exchange_rate_missing` — 위약금이 외화면 환율이 필요하다
+     *
+     * ⚠️ 이 목록은 `scopeAction` **한 곳**에서만 적용된다 — 대시보드 카운트·차량목록·알림톡이 같은
+     *    출처를 보므로 세 숫자가 함께 맞는다. 큐마다 따로 빼면 조용히 갈린다(§8 #44).
+     */
+    private const NOT_FOR_CANCELLED = [
+        'deregistration_needed',
+        'clearance_needed', 'clearance_request_needed', 'clearance_info_missing',
+        'clearance_stuck', 'clearance_candidates', 'forwarding_missing',
+        'export_declaration_upload_needed',
+        'shipping_needed', 'shipping_process_needed', 'bl_upload_needed',
+        'dhl_needed', 'dhl_dispatch_needed',
+        'eta_clearance_reminder', 'eta_missing',
+        'document_deadline_reminder',
+    ];
+
     /** 매입취소(진행/완료/마감 어느 단계든) 여부. progress·정산·판매KPI 분기 단일 출처. */
     public function isPurchaseCancelled(): bool
     {
@@ -2737,12 +2767,18 @@ class Vehicle extends Model
                 $q->where('progress_status_cache', '!=', '거래완료')
                     ->orWhereNull('progress_status_cache');
             })
+            ->where('cancel_status', self::CANCEL_NONE)   // 취소된 매입은 입고될 일이 없다 (2026-09-09)
             ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()]);
     }
 
     public function scopeInStock($query)
     {
         return $query->where('purchase_price', '>', 0)
+            // 🚫 매입취소 차는 우리 재고가 아니다 (jin 2026-09-09). generalStock·preShippingStock ·
+            //    board 포털 미러가 전부 이 스코프를 품고 있어 한 줄로 따라온다(§8 #44).
+            //    ⚠️ 청산가치의 「재고」는 **다른 함수**다(CapitalStatusService::inventoryKrw — 선적일 기준).
+            //       거기도 같은 제외가 들어가 있다.
+            ->where('cancel_status', self::CANCEL_NONE)
             ->whereNull('warehouse_out_date')
             ->where(function ($q) {
                 $q->where('progress_status_cache', '!=', '거래완료')
@@ -2968,6 +3004,12 @@ class Vehicle extends Model
             $q->where(fn ($q2) => $q2
                 ->where('progress_status_cache', '!=', '거래완료')
                 ->orWhereNull('progress_status_cache'));
+        }
+        if (in_array($action, self::NOT_FOR_CANCELLED, true)) {
+            // 🚫 매입취소 차량은 이 단계 큐에 안 들어간다 (jin 2026-09-09 — 아래 상수 주석 참조).
+            //    `cancel_status` 는 NOT NULL DEFAULT 'none' 이라 이 한 줄로 충분하다
+            //    (whereNotIn 을 쓰면 컬럼이 나중에 nullable 로 바뀌는 순간 전 행이 조용히 빠진다).
+            $q->where('cancel_status', self::CANCEL_NONE);
         }
 
         return match ($action) {

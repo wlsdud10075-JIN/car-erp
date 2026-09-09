@@ -567,4 +567,90 @@ class CapitalStatusTest extends TestCase
         $this->assertEmpty(AlimtalkCapitalWeekly::buildVars());
         $this->artisan('alimtalk:capital-weekly')->assertExitCode(0);
     }
+
+    /**
+     * 🚫 **매입취소 차는 자금 계산에서 통째로 빠진다** (jin 2026-09-09).
+     *
+     * 🚨 **자산만 빼면 안 된다.** 매입취소 차의 매입 미지급은 `payableKrw()` 가 계속 빼므로,
+     *    재고만 빼면 **안 갚아도 되는 부채만 남아** 청산가치가 크게 틀어진다.
+     *    실측(heymanerp): 매입취소 4대의 재고 6,588만 ↔ 미지급 6,470만 이 거의 상쇄해 순영향이
+     *    **+25만**뿐인데, 자산만 뺐다면 **−6,495만** 움직였다. 그래서 이 테스트는 **둘을 함께** 본다.
+     */
+    public function test_cancelled_purchase_leaves_both_the_inventory_and_the_payable(): void
+    {
+        // 지급을 거의 안 한 상태에서 취소된 차 — 운영 실측 3대가 정확히 이 모양이다(매입가 ≈ 미지급).
+        $v = Vehicle::create([
+            'vehicle_number' => 'CAP-CANCEL', 'sales_channel' => 'export',
+            'purchase_date' => '2026-05-01', 'purchase_price' => 25_560_000,
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now(),
+        ]);
+        $v->purchaseBalancePayments()->create([
+            'amount' => 60_000, 'type' => 'down', 'payment_date' => '2026-05-05', 'confirmed_at' => now(),
+        ]);
+        $svc = app(CapitalStatusService::class);
+
+        $this->assertSame(0, $svc->inventoryKrw(), '매입취소 차가 재고에 남아 있다');
+        $this->assertSame(0, $svc->payableKrw(), '매입취소 차의 매입 미지급이 부채에 남아 있다');
+        $this->assertSame(0, $svc->unsoldInventoryKrw(), '매입취소 차가 순자산 미판매재고에 남아 있다');
+    }
+
+    /** 위약금(sale_price 재사용)이 「선수금」으로 차감되던 것도 함께 빠진다. */
+    public function test_cancel_penalty_is_not_treated_as_an_advance_payment(): void
+    {
+        $buyer = Buyer::create(['name' => 'CAP-CANCEL-BUYER', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => 'CAP-CANCEL2', 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'purchase_date' => '2026-05-01', 'purchase_price' => 1_000_000,
+            'sale_date' => '2026-06-01', 'sale_price' => 600, 'currency' => 'EUR', 'exchange_rate' => 1544,
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now(),
+        ]);
+        $v->purchaseBalancePayments()->create([
+            'amount' => 1_000_000, 'type' => 'balance', 'payment_date' => '2026-05-05', 'confirmed_at' => now(),
+        ]);
+        // 위약금 완납 — 222나4513 과 같은 상태
+        $v->finalPayments()->create([
+            'amount' => 600, 'type' => 'balance', 'payment_date' => '2026-06-10', 'confirmed_at' => now(),
+        ]);
+        $svc = app(CapitalStatusService::class);
+
+        $this->assertSame(0, $svc->inventoryKrw());
+        $this->assertSame(0, $svc->advancePaymentKrw(['EUR' => 1544.0, 'USD' => 1350.0, 'JPY' => 9.0, 'GBP' => 1700.0, 'CNY' => 190.0]),
+            '위약금이 「돌려줄 선수금」으로 차감되고 있다');
+    }
+
+    /** 🔒 **대조군** — 취소가 아니면 그대로 세야 한다(조건을 과하게 좁힌 게 아님을 증명). */
+    public function test_a_normal_vehicle_is_still_counted_after_the_cancel_exclusion(): void
+    {
+        $this->seedErp();
+        $svc = app(CapitalStatusService::class);
+
+        $this->assertSame(15_000_000, $svc->inventoryKrw(), '정상 차량이 재고에서 빠졌다');
+        $this->assertSame(7_000_000, $svc->payableKrw(), '정상 차량 미지급이 빠졌다');
+    }
+
+    /**
+     * 🚫 매입취소 차는 재고관리 화면·지급대기에서도 빠진다.
+     *    ⚠️ 청산가치의 「재고」와 **다른 함수**다(선적일 vs 출고일) — 그래서 양쪽을 각각 검사한다.
+     */
+    public function test_cancelled_purchase_is_out_of_the_inventory_screen_scopes(): void
+    {
+        $paid = Vehicle::create([
+            'vehicle_number' => 'CAP-CANCEL3', 'sales_channel' => 'export',
+            'purchase_date' => '2026-05-01', 'purchase_price' => 1_000_000,
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now(),
+        ]);
+        $paid->purchaseBalancePayments()->create([
+            'amount' => 1_000_000, 'type' => 'balance', 'payment_date' => '2026-05-05', 'confirmed_at' => now(),
+        ]);
+        $unpaid = Vehicle::create([
+            'vehicle_number' => 'CAP-CANCEL4', 'sales_channel' => 'export',
+            'purchase_date' => '2026-05-01', 'purchase_price' => 1_000_000,
+            'cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now(),
+        ]);
+
+        $this->assertFalse(Vehicle::inStock()->where('id', $paid->id)->exists(), '매입취소 차가 재고에 있다');
+        $this->assertFalse(Vehicle::query()->generalStock()->where('id', $paid->id)->exists());
+        $this->assertFalse(Vehicle::query()->awaitingPurchasePayment()->where('id', $unpaid->id)->exists(),
+            '매입취소 차가 지급대기에 있다');
+    }
 }

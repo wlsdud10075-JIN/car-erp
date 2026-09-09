@@ -48,13 +48,26 @@ class CapitalStatusService
         return $fx;
     }
 
-    /** 거래완료(B/L 발급 = 소유권 이전) 전 차량만 — 세 재고 계산의 공통 조건. */
+    /**
+     * **아직 우리 것인 차만** — 세 재고 계산의 공통 조건.
+     *   ① 거래완료(B/L 발급 = 소유권 이전) 전
+     *   ② 매입취소가 아님 (jin 2026-09-09)
+     *
+     * 🚨 **②를 재고에서만 빼면 안 된다** — 매입취소 차의 매입 미지급은 `payableKrw()` 가 계속 빼므로,
+     *    자산만 빼면 **안 갚아도 되는 부채만 남는다**. 실측(heymanerp 2026-09-09): 매입취소 4대의
+     *    재고 6,588만 ↔ 미지급 6,470만 이 거의 상쇄해 순영향이 **+25만**뿐이었는데, 자산만 빼면
+     *    청산가치가 **−6,495만** 움직인다. 그래서 `payableKrw()` 에도 같은 제외가 들어가 있다 —
+     *    **한쪽만 고치지 말 것**(이 파일의 「완납 여부 무관 … 자산-부채 비대칭」 경고와 같은 함정).
+     *
+     * 🧭 재무 할일 큐의 「매입 미지급」(`scopeAction('purchase_unpaid')`)은 **그대로 남는다**(jin 확인).
+     *    거긴 «재무가 확인해야 할 돈»이고 여기는 «청산가치 평가»라 축이 다르다.
+     */
     private function notHandedOver($q)
     {
         return $q->where(function ($q2) {
             $q2->where('progress_status_cache', '!=', '거래완료')
                 ->orWhereNull('progress_status_cache');
-        });
+        })->where('cancel_status', Vehicle::CANCEL_NONE);
     }
 
     /**
@@ -125,6 +138,9 @@ class CapitalStatusService
     {
         $total = 0;
         Vehicle::where('purchase_price', '>', 0)
+            // 🚫 매입취소 차는 갚을 돈이 아니다 (jin 2026-09-09) — 위 notHandedOver 주석 참조.
+            //    자산(재고)과 **반드시 같이** 빠져야 한다. 한쪽만 빼면 청산가치가 크게 틀어진다.
+            ->where('cancel_status', Vehicle::CANCEL_NONE)
             ->with('purchaseBalancePayments')
             ->chunkById(300, function ($chunk) use (&$total) {
                 foreach ($chunk as $v) {
