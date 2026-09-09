@@ -30,6 +30,11 @@ return [
     'index_path' => env('ASSISTANT_INDEX_PATH', ''),
     'rag_topk' => (int) env('ASSISTANT_RAG_TOPK', 3),
 
+    // 근거 중복 제거 임계(코사인). 이미 고른 청크와 이만큼 닮으면 건너뛴다 — jin 2026-09-09.
+    //   0.90 근거 = 운영 색인 113청크 실측(staff 쌍 p99 0.789 · max 0.927 = 실제 중복 1쌍).
+    //   ⚠️ **1.0 이상이면 끈다.** 전후 대조·긴급 원복용. topk 와 같이 .env 로 3사 개별 조정 가능.
+    'rag_dedup_cos' => (float) env('ASSISTANT_RAG_DEDUP_COS', 0.90),
+
     // 색인 스코프 필터 — source(페이지 경로)에 이 문자열이 포함된 청크만 검색.
     //   index.json 은 board+erp 공용이지만 ERP 챗봇은 ERP 가이드만 답하도록.
     //   비우면 전체. car-erp = 'ERP (car-erp)' 권장. (board 미사용이라 혼동 방지)

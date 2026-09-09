@@ -52,10 +52,55 @@ class AssistantService
         return $result;
     }
 
+    /**
+     * 「얼마」를 묻는 게 아니라 「되나·왜·어떻게」를 묻는 질문인가 (jin 2026-09-09 제보).
+     *
+     * 🚨 **실사고** — 「선적대기 허용 항로인데 미수여도 묶음 착수돼? B/L도 가능해?」를 물었더니
+     *    채권 KPI 표(총 미수 640,732,308원 …)가 나왔다. 「미수」라는 낱말 하나 때문에 **규칙 질문이
+     *    DB 조회로 잡힌** 것이다. 같은 형태로 「손익분기가 뭐야?」→금액표 · 「채권관리 어디서 봐?」→금액표.
+     *
+     * 🔑 **B(DB 조회)는 「얼마」를 답하는 경로**고 가이드는 「되나·왜·어디서」를 답하는 경로다.
+     *    그래서 **금액을 묻는 신호가 없고 규칙을 묻는 신호만 있으면** DB 조회로 보내지 않는다.
+     * ⚠️ **금액 신호가 우선**이다 — 「이번달 미수금이 얼마나 되나?」 는 `되나` 가 있어도 금액 질문이다.
+     *    이 순서를 뒤집으면 멀쩡히 돌던 조회가 통째로 가이드로 새어 **숫자를 못 받는다**.
+     * 🚫 신호가 **둘 다 없으면 종전대로 DB 조회**다(「미수금」 한 마디 = 지금도 금액표가 맞다).
+     *    여기서 기본값을 가이드로 바꾸면 잘 쓰던 조회가 조용히 죽는다.
+     */
+    private function asksRuleNotNumber(string $q): bool
+    {
+        $has = fn (array $kw) => (bool) array_filter($kw, fn ($k) => mb_strpos($q, $k) !== false);
+
+        // 금액을 요구하는 신호 — 하나라도 있으면 종전 라우팅을 그대로 둔다.
+        if ($has(['얼마', '총액', '합계', '몇'])) {
+            return false;
+        }
+
+        // 규칙·절차·정의·가능여부를 묻는 신호.
+        return $has([
+            '되나', '되니', '되냐', '되는', '되면', '돼?', '되어도', '해도 되', '가능',
+            '왜', '어떻게', '어디서', '어디에', '어디야', '무엇', '뭐야', '무슨', '뭔지',
+            '조건', '기준', '규칙', '방법', '절차', '뜻', '의미', '차이',
+            // 🚫 '언제' 는 넣지 않는다 — 「손익분기 언제 넘어?」 처럼 **시점을 계산해 주는 DB 질문**이
+            //    규칙 질문으로 새어 버린다. 시점을 묻는 규칙 질문(「정산 언제 확정해?」)은 그 자체로
+            //    금액 낱말이 없어 어차피 가이드로 간다.
+            '막히', '차단', '안 되', '안되', '안돼', '못 하', '못하',
+            '허용', '예외',
+        ]);
+    }
+
     /** 결정적 키워드 분류. 더 구체적인 의도를 먼저 검사. */
     public function classify(string $q): string
     {
         $has = fn (array $kw) => (bool) array_filter($kw, fn ($k) => mb_strpos($q, $k) !== false);
+
+        $isSystemGuide = $has(['기능설정', '기능 설정', '시스템관리자', '시스템 관리자', '알림톡 로그', '알림톡 안내', 'Ollama', '챗봇 색인', '서버 로그']);
+
+        // 🧭 규칙 질문은 DB 조회(B) 분기를 통째로 건너뛴다 — 위 asksRuleNotNumber 참조.
+        //    ⚠️ system_guide 는 살려야 한다. 그냥 'guide' 로 떨어뜨리면 system 등급 청크가
+        //       검색에서 빠져 「기능설정에서 왜 안 보여?」 같은 질문이 답을 못 찾는다.
+        if ($this->asksRuleNotNumber($q)) {
+            return $isSystemGuide ? 'system_guide' : 'guide';
+        }
 
         // 대표 전용 실적·자금. 구체적인 의도를 일반 자금보다 먼저 검사한다.
         if ($has(['매출', '판매실적', '판매 실적'])
@@ -79,7 +124,7 @@ class AssistantService
         if ($isReceivable) {
             return 'receivable_summary';
         }
-        if ($has(['기능설정', '기능 설정', '시스템관리자', '시스템 관리자', '알림톡 로그', '알림톡 안내', 'Ollama', '챗봇 색인', '서버 로그'])) {
+        if ($isSystemGuide) {
             return 'system_guide';
         }
 
@@ -230,23 +275,34 @@ class AssistantService
 
     // ── A: 업무 가이드 RAG (LLM) ─────────────────────────────────
 
-    private function guide(string $question, User $user): array
+    /**
+     * 색인 로드 + 스코프·등급 필터 — `guide()` 와 평가 커맨드(`assistant:eval`)의 **단일 출처**.
+     *
+     * 🚫 조건을 옮겨 적지 말 것(SKILLS §8 #44) — 갈리면 「평가에선 찾는데 실제 챗봇은 못 찾는」
+     *    형태가 되고, 그건 평가가 거짓말을 하는 것이라 원래 버그보다 고치기 어렵다.
+     *
+     * @param  array<int,string>  $allowedAudiences  `User::assistantAudiences()` 결과
+     * @return array<int, array<string, mixed>>
+     */
+    public function candidateChunks(array $allowedAudiences): array
     {
         $path = (string) config('assistant.index_path');
         if ($path === '' || ! is_file($path)) {
-            return ['kind' => 'guide', 'answer' => '업무 가이드 색인이 아직 준비되지 않았습니다. 관리자에게 문의해 주세요.'];
+            return [];
         }
         $kb = json_decode(file_get_contents($path), true) ?: [];
+
         // 스코프 필터 — ERP 챗봇은 ERP 가이드 청크만 (board 내용 혼입 방지, jin 2026-07-24).
         $scope = (string) config('assistant.index_scope');
         if ($scope !== '') {
             $kb = array_values(array_filter($kb, fn ($d) => mb_strpos((string) ($d['source'] ?? ''), $scope) !== false));
         }
+
         // 권한 필터를 임베딩 검색보다 먼저 적용한다. LLM에는 허용된 청크만 전달된다.
         // 색인에 audience가 하나라도 있으면 새 형식으로 보고, 미표기 청크는 누락 사고 방지를 위해 제외한다.
         $usesAudienceMetadata = (bool) array_filter($kb, fn ($doc) => array_key_exists('audience', $doc));
-        $allowedAudiences = $user->assistantAudiences();
-        $kb = array_values(array_filter($kb, function ($doc) use ($allowedAudiences, $usesAudienceMetadata) {
+
+        return array_values(array_filter($kb, function ($doc) use ($allowedAudiences, $usesAudienceMetadata) {
             if (! array_key_exists('audience', $doc) && $usesAudienceMetadata) {
                 return false;
             }
@@ -258,6 +314,60 @@ class AssistantService
 
             return (bool) array_intersect($required, $allowedAudiences);
         }));
+    }
+
+    /**
+     * 점수 내림차순으로 k 개를 고르되 **이미 고른 것과 거의 같은 청크는 건너뛴다** (jin 2026-09-09).
+     *
+     * 🧭 **왜 필요한가** — 「자동 입력·계산·반영 항목 안내」가 `공통 ›` 과 `기능 카드 › F. 개념 ›`
+     *    양쪽에 거의 같은 내용으로 실려 있다. top-3 중 두 자리를 같은 말이 먹으면 **실질 근거가 1장**이다.
+     *
+     * 🔬 **임계값 근거 = 운영 색인 실측**(2026-09-09, 113청크 · staff 쌍 1,953개):
+     *    p50 0.602 · p90 0.686 · p99 0.789 · **max 0.927 = 바로 그 중복 쌍**(색인에서 가장 닮은 쌍).
+     *    2위는 0.876(진행 게이트의 워크플로우판 ↔ 부서가이드판)으로 **서로 보완하는 다른 글**이다.
+     *    => 기본 0.90 은 «거의 같은 글» 하나만 걸러낸다.
+     * 🚫 **제목이 같으면 중복으로 보지 말 것** — 실측 제목중복 3그룹 중 둘(「개요」 4개 ·
+     *    「자주 하는 실수」 2개)은 내용이 전혀 다르다(cos 0.57~0.75). 제목 기준은 멀쩡한 근거를 떨어뜨린다.
+     * ⚠️ 1.0 이상이면 중복 제거를 끄는 것이다(전후 대조·긴급 원복용).
+     *
+     * @param  array<int, array<string, mixed>>  $kb  후보 청크 (candidateChunks 결과)
+     * @param  array<int, float>  $scored  청크 인덱스 => 질문과의 코사인. **내림차순 정렬돼 있어야 한다.**
+     * @return array<int, float> 고른 것만 남긴 [인덱스 => 점수] (순서 보존)
+     */
+    public function selectTopChunks(array $kb, array $scored, int $k, ?float $dedupCos = null): array
+    {
+        $threshold = $dedupCos ?? (float) config('assistant.rag_dedup_cos', 0.90);
+        $picked = [];
+
+        foreach ($scored as $i => $score) {
+            if (count($picked) >= $k) {
+                break;
+            }
+            if ($threshold < 1.0) {
+                $tooClose = false;
+                foreach (array_keys($picked) as $j) {
+                    if ($this->cosine($kb[$i]['embedding'] ?? [], $kb[$j]['embedding'] ?? []) >= $threshold) {
+                        $tooClose = true;   // 먼저 고른 쪽이 점수가 높다 — 그것을 남긴다
+                        break;
+                    }
+                }
+                if ($tooClose) {
+                    continue;
+                }
+            }
+            $picked[$i] = $score;
+        }
+
+        return $picked;
+    }
+
+    private function guide(string $question, User $user): array
+    {
+        $path = (string) config('assistant.index_path');
+        if ($path === '' || ! is_file($path)) {
+            return ['kind' => 'guide', 'answer' => '업무 가이드 색인이 아직 준비되지 않았습니다. 관리자에게 문의해 주세요.'];
+        }
+        $kb = $this->candidateChunks($user->assistantAudiences());
         if (! $kb) {
             return ['kind' => 'guide', 'answer' => '현재 권한으로 조회할 수 있는 업무 가이드가 없습니다.'];
         }
@@ -272,7 +382,7 @@ class AssistantService
                 $scored[$i] = $this->cosine($qEmb, $doc['embedding'] ?? []);
             }
             arsort($scored);
-            $top = array_slice($scored, 0, (int) config('assistant.rag_topk', 3), true);
+            $top = $this->selectTopChunks($kb, $scored, (int) config('assistant.rag_topk', 3));
 
             $ctx = '';
             $sources = [];
