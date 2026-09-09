@@ -388,16 +388,34 @@ class AssistantTest extends TestCase
      *
      * B(DB 조회)는 「얼마」를 답하는 경로다 — 「되나·왜·어디서」를 물으면 가이드로 가야 한다.
      */
-    public function test_rule_questions_are_not_captured_by_the_money_router(): void
+    /**
+     * 🚨 **운영 로그에서 실제로 나온 오분류** (2026-09-09 실측: heymanerp 49건 + karabaerp 31건).
+     *
+     * 「미수·채권」 낱말 하나 때문에 규칙 질문이 DB 금액 조회로 갔다. 아래 문장은 **사람이 실제로 그렇게
+     * 물은 것**이라 내가 상상한 예문보다 값이 크다 — 특히 「채권담당자」는 역할 이름인데 「채권」+「담당자」로
+     * 쪼개져 담당자별 미수 조회로 가 **권한 거부**까지 났다(사용자는 용어 뜻을 물었을 뿐이다).
+     *
+     * 🚫 의문사만 늘려서는 원리상 못 잡는다 — 「채권담당자」에는 규칙 신호가 아예 없다.
+     *    그래서 **화면·기능·역할 이름**을 신호로 쓴다.
+     */
+    public function test_real_questions_from_the_production_log_are_not_captured_by_the_money_router(): void
     {
         $svc = app(AssistantService::class);
 
-        // jin 실제 질문
+        // karabaerp — 역할 이름이 쪼개져 조회로 가던 것(띄어쓰기 변형까지)
+        $this->assertSame('guide', $svc->classify('채권담당자'));
+        $this->assertSame('guide', $svc->classify('채권 담당자'));
+        $this->assertSame('guide', $svc->classify('채권담당자 역할'));
+        $this->assertSame('guide', $svc->classify('채권관리에서 위험도는 판매일 기준 경과일수로 판정되나요'));
+
+        // heymanerp — jin 이 직접 물어본 두 문장
         $this->assertSame('guide', $svc->classify('선적대기 허용 항로인데 미수여도 묶음 착수돼? B/L도 가능해?'));
-        // 같은 형태로 실측된 나머지 2건
+        $this->assertSame('guide', $svc->classify('선적요청에 미수가 있어도 묶일 수 있는 경우가 뭐뭐있어?'));
+        $this->assertSame('guide', $svc->classify('선적요청에서 미수가 있을경우 묶이는 경우가 어떤게 있어?'));
+
+        // 같은 형태로 실측된 나머지
         $this->assertSame('guide', $svc->classify('손익분기가 뭐야?'));
         $this->assertSame('guide', $svc->classify('채권관리 어디서 봐?'));
-        // 규칙 낱말이 섞인 다른 표현들
         $this->assertSame('guide', $svc->classify('미수 있으면 통관 진입이 막히는 조건이 뭐야?'));
         $this->assertSame('guide', $svc->classify('자금 이체는 누가 승인해야 가능해?'));
     }
@@ -410,6 +428,13 @@ class AssistantTest extends TestCase
     public function test_number_questions_still_reach_the_database_router(): void
     {
         $svc = app(AssistantService::class);
+
+        // 운영 로그의 **정상** 조회 — 이게 깨지면 잘 쓰던 기능이 죽는다
+        $this->assertSame('receivable_summary', $svc->classify('무사백 미수금 리스트 알려줘.'));
+        $this->assertSame('receivable_summary', $svc->classify('채권리스트'));
+        $this->assertSame('receivable_by_buyer', $svc->classify('바이어별 미수현황은?'));
+        $this->assertSame('receivable_by_salesman', $svc->classify('인원별로는 미수금을 알 수 없어?'));
+        $this->assertSame('capital_status', $svc->classify('자금현황 알려줘.'));
 
         $this->assertSame('receivable_summary', $svc->classify('이번달 미수금이 얼마나 되나?'));
         $this->assertSame('receivable_summary', $svc->classify('미수금'));
