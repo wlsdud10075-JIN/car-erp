@@ -33,11 +33,17 @@ class KarabaDeregistrationApplicationTest extends TestCase
     /** 직인 앵커 — 신청인 블록 우측. 셀 칸을 넘는 크기라 K 가 아니라 I 에서 시작한다. */
     private const SEAL_ANCHOR = 'I25';
 
-    /** 수임자 블록 — 라벨은 B37~B39, 값은 C37~C39(C37:K37 등 병합). */
+    /**
+     * 수임자 블록 — 라벨은 B37~B39, 값은 C37~C39(C37:K37 등 병합).
+     *
+     * ⚠️ C39 는 **라벨이 「사업자번호」인데 값은 주민등록번호 형식**이다 — 별지17호 법정 서식이라
+     *    라벨을 못 바꾸고, 수임자가 개인이라 그 칸에 개인 번호가 들어간다(jin 2026-09-10 교체).
+     *    구 값 `11-95-278048-01`(자동차매매업 등록번호 형식)에서 바꿨다.
+     */
     private const AGENT_CELLS = [
         'C37' => '경기도 고양시 덕양구 유산길 9, 203호(내유동)',
         'C38' => '길영채',
-        'C39' => '11-95-278048-01',
+        'C39' => '731110-1041111',
     ];
 
     private function template(string $set, string $file): string
