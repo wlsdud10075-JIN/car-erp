@@ -2193,6 +2193,58 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 💸 매입 미지급 총액 — 화면의 검색·필터·정렬 조건 그대로 (jin 2026-09-10).
+     *
+     * 「내가 지금 지급해야 할 돈이 얼마인가」를 목록 위에서 바로 본다. 매입은 원화 단일이라
+     * 판매총액처럼 통화별로 쪼개지 않는다(`freightTotalsByCurrency` 와 다른 이유).
+     *
+     * 🔑 **대상은 `action('purchase_unpaid_all')` 단일 출처** — 숫자를 누르면 `action` 이 그 값으로
+     *    세팅돼 **그 숫자를 만든 차가 그대로** 나온다(§9 「카운트 = 목록 where」). 조건을 옮겨 적지 말 것.
+     * 🚫 기존 `purchase_unpaid`(할일 큐)를 쓰지 않는다 — 거래완료를 빼므로 총액이 빈다
+     *    (실측 heymanerp 거래완료 2대·1,480만원).
+     * ⚠️ 매입취소도 센다(jin 결정) — 그래서 `cancelled_*` 를 함께 돌려 화면이 꼬리로 밝힌다.
+     *
+     * @return array{total:int, cnt:int, cancelled_cnt:int, cancelled_total:int}
+     */
+    #[Computed]
+    public function purchaseUnpaidTotals(): array
+    {
+        $expr = \App\Models\Vehicle::purchaseUnpaidRawExpr();
+        $today = now()->toDateString();
+
+        $row = $this->filteredVehicleQuery()
+            ->action('purchase_unpaid_all')
+            ->selectRaw(
+                "COALESCE(SUM({$expr}),0) AS total, COUNT(*) AS cnt, "
+                ."COALESCE(SUM(CASE WHEN cancel_status <> 'none' THEN 1 ELSE 0 END),0) AS cancelled_cnt, "
+                ."COALESCE(SUM(CASE WHEN cancel_status <> 'none' THEN {$expr} ELSE 0 END),0) AS cancelled_total",
+                [$today, $today]
+            )
+            ->first();
+
+        return [
+            'total' => (int) ($row->total ?? 0),
+            'cnt' => (int) ($row->cnt ?? 0),
+            'cancelled_cnt' => (int) ($row->cancelled_cnt ?? 0),
+            'cancelled_total' => (int) ($row->cancelled_total ?? 0),
+        ];
+    }
+
+    /**
+     * 「미지급 총액」 숫자 클릭 — 그 숫자를 만든 차만 보기 / 해제 (jin 2026-09-10).
+     *
+     * 🧭 왜 진행상태 「매입중」 pill 로는 안 되는가: 미지급 차의 87%가 판매중·선적완료·거래완료라
+     *    그 pill 엔 안 잡힌다(실측 heymanerp 30대 중 매입중 4대). 그래서 별도 필터가 필요하다.
+     * ⚠️ 이름이 `action` 프로퍼티와 겹치지 않게 둘 것 — 같으면 wire:click 이 조용히 죽는다(§8 #32).
+     */
+    public function toggleUnpaidFilter(): void
+    {
+        $this->action = $this->action === 'purchase_unpaid_all' ? '' : 'purchase_unpaid_all';
+        unset($this->vehicles, $this->purchaseUnpaidTotals, $this->freightTotals, $this->freightTotalsByCurrency);
+        $this->resetPage();
+    }
+
+    /**
      * 목록 필터 체인 — vehicles(페이지) · freightTotals(합계) 공용 단일 출처 (item 6, jin 2026-07-18).
      * 정렬·페이지네이션·eager load 는 호출부에서.
      */
@@ -6600,6 +6652,33 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
     </div>
+    {{-- 💸 미지급 총액 (jin 2026-09-10) — 「지금 지급해야 할 돈」. 매입은 원화 단일이라 통화별로 안 쪼갠다.
+         🔑 **숫자를 누르면 그 숫자를 만든 차만** 남는다(action=purchase_unpaid_all 토글) — 진행상태
+            「매입중」 pill 로는 미지급 차의 87%가 안 잡히기 때문이다(실측 30대 중 매입중 4대).
+         🅿️ 0 이면 통째로 안 보인다 — 발송비합과 같은 규칙. «셀 게 없다»는 뜻이라 값이 생기면 나타난다.
+         ⚠️ 필터가 켜져 있으면 합이 0 이어도 보여야 한다 — 안 그러면 끌 버튼이 사라진다. --}}
+    @php $pu = $this->purchaseUnpaidTotals; $puOn = $this->action === 'purchase_unpaid_all'; @endphp
+    @if($pu['total'] > 0 || $puOn)
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex flex-col gap-0.5">
+        <button type="button" wire:click="toggleUnpaidFilter"
+                class="flex items-baseline gap-1.5 rounded px-1 -mx-1 transition hover:bg-amber-50 {{ $puOn ? 'bg-amber-50' : '' }}"
+                title="{{ __('vehicle.stat.purchase_unpaid_title') }}">
+            <span class="text-sm">💸</span>
+            <span class="text-[11px] {{ $puOn ? 'font-semibold text-amber-800' : 'text-gray-500' }}">{{ __('vehicle.stat.purchase_unpaid') }}</span>
+            <span class="text-sm font-bold {{ $puOn ? 'text-amber-900' : 'text-gray-800' }}">{{ number_format($pu['total']) }}</span>
+            <span class="text-[10px] text-gray-400">{{ $pu['cnt'] }}{{ __('vehicle.stat.unit') }}</span>
+            @if($puOn)<span class="text-[10px] font-medium text-amber-700">{{ __('vehicle.stat.purchase_unpaid_off') }}</span>@endif
+        </button>
+        {{-- 매입취소분 꼬리 (jin 2026-09-10 «화면 그대로 + 꼬리표시») — 화면에 보이면 합산하되 그 사실을
+             밝힌다. 09-09 에 재고·자금 계산에서는 뺀 차들이라, 안 밝히면 「자금현황과 왜 다르지」가 된다. --}}
+        @if($pu['cancelled_cnt'] > 0)
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ __('vehicle.stat.purchase_unpaid_cancelled', ['count' => $pu['cancelled_cnt'], 'amount' => number_format($pu['cancelled_total'])]) }}
+        </div>
+        @endif
+    </div>
+    @endif
     {{-- 발송비합 (jin 2026-09-01) — EMS/DHL 로 필터했을 때 그 합을 바로 본다.
          🅿️ 합이 0 이면 통째로 안 보인다 — 발송을 안 쓰는 회사(heymanerp·karaba)의 헤더를 어지럽히지 않으려고.
             숨기는 게 아니라 «셀 게 없다» 는 뜻이라, 값이 생기면 스스로 나타난다. --}}
@@ -6650,6 +6729,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="text" data-date class="input-filter" />
+        {{-- ⚠️ 「전체」 기준에서는 기간이 안 걸린다 — 조용히 무시되면 사람은 좁혀진 줄 안다 (jin 2026-09-10 제보).
+             실사고: 1년 기간을 넣고 엑셀을 받았는데 날짜 기준이 「전체」라 4,700대가 전량 나가 500 이 났다.
+             🚫 자동으로 기준을 바꾸지 않는다 — 「전체」를 일부러 보던 사람의 목록이 갑자기 줄어든다(jin 결정). --}}
+        @if($dateType === 'all' && ($dateFrom !== '' || $dateTo !== ''))
+        <span class="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800"
+              title="{{ __('vehicle.date_range_ignored_hint') }}">⚠️ {{ __('vehicle.date_range_ignored') }}</span>
+        @endif
         <select wire:model.live="salesmanId" class="input-filter">
             <option value="">{{ __('vehicle.all_salesmen') }}</option>
             @foreach($this->salesmen as $s)
@@ -7121,6 +7207,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="badge badge-teal" title="{{ __('vehicle.tooltip.arrived', ['eta' => $v->eta_date?->format('Y-m-d')]) }}">⚓</span>
                     @endif
                     @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                    {{-- 💸 매입 미지급 병기 (jin 2026-09-10) — 진행상태가 「판매중」이어도 매입 잔금이 남았으면
+                         그 사실이 목록에서 보여야 한다. 실측 heymanerp: 미지급 30대 중 26대(87%)가
+                         판매중·선적완료·거래완료라 진행상태만 보면 매입이 끝난 것처럼 보였다.
+                         ⚠️ 「매입중」일 때는 안 붙인다 — 같은 말이 두 번 되어 뜻이 흐려진다.
+                         N+1 없음: purchaseBalancePayments 가 목록에서 이미 eager load 된다(:2109). --}}
+                    @if($status !== '매입중' && $v->purchase_price > 0 && ($pUnpaid = $v->purchase_unpaid_amount) > 0)
+                        <span class="badge badge-blue" title="{{ __('vehicle.purchase_unpaid_badge_title', ['amount' => number_format($pUnpaid)]) }}">{{ __('domain.progress.매입중') }}</span>
+                    @endif
                 </td>
                 @php if ($this->colOn('purchase_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
                 @php if ($this->colOn('sale_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['sale_date']">{{ $v->sale_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp

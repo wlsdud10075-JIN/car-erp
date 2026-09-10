@@ -3022,6 +3022,21 @@ class Vehicle extends Model
 
         return match ($action) {
             // ── 영업 role (5) ──
+            /**
+             * 💸 매입 미지급 **전량** (jin 2026-09-10) — 차량관리 「미지급 총액」 지표·클릭 필터 전용.
+             *
+             * `purchase_unpaid` 와 식은 같고 **범위만 다르다**: 그쪽은 $activeOnly 라 거래완료를 빼는
+             * 「할일 큐」이고, 이쪽은 «지금 지급해야 할 돈 전부» 라 거래완료도 센다.
+             * 실측 heymanerp: 미지급 30대 중 거래완료 2대·1,480만원 — 큐 기준으로 합치면 그만큼 빈다.
+             *
+             * 🔑 **합계와 클릭 필터가 이 한 곳을 같이 본다** — 화면의 숫자를 누르면 그 숫자를 만든 차가
+             *    정확히 나온다(§9 의 「카운트 = 목록 where」 불변식). 조건을 옮겨 적지 말 것.
+             * ⚠️ 매입취소도 포함한다(jin 2026-09-10 «화면 그대로») — NOT_FOR_CANCELLED 에 넣지 말 것.
+             *    대신 화면이 「매입취소 N대 포함」을 꼬리로 밝힌다.
+             */
+            'purchase_unpaid_all' => $q
+                ->where('purchase_price', '>', 0)
+                ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()]),
             'purchase_unpaid' => $q
                 ->where('purchase_price', '>', 0)
                 // 큐 22-C-E (2026-05-20) — 2컬럼 DROP 후 단순화.

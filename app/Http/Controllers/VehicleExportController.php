@@ -9,6 +9,7 @@ use App\Models\VehicleShipment;
 use App\Services\VehicleExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -78,9 +79,25 @@ class VehicleExportController extends Controller
         // dateType='balance' → 잔금입금(final_payments.payment_date) whereHas 로 별도 처리 (화면과 정합)
         $applyDateFilter = $mirror && $dateType !== 'all' && $dateType !== 'balance';
 
+        // 💾 대용량 export 는 PHP 기본 128M 을 넘는다 (2026-09-10 ssancarerp 실사고).
+        //    ssancarerp 4,700대에서 0.65초 만에 `Allowed memory size ... exhausted` 로 500 이 났다
+        //    — laravel.log 에는 안 남는다(예외가 아니라 fatal error). nginx error.log 에만 찍힌다.
+        //    🚫 php.ini 를 올리지 않는다 — 그러면 **모든 요청**의 상한이 올라가 서버가 위험하다
+        //       (karabaerp 는 RAM 1.9GB·워커 5개라 5×512M 이 물리 메모리를 넘는다). 이 요청만 올린다.
+        //    📏 값은 **실측으로 정했다** — 0대 56MB(고정) / 76대 66MB ⇒ 대당 약 0.13MB.
+        //       ssancarerp 4,700대 ≈ 670MB 라 512M 로는 모자란다. 1G 는 그 위의 여유다.
+        //       ⚠️ 이건 상한이지 예약이 아니다 — 작은 회사(karaba 300대 미만)는 실제로 100MB 도 안 쓴다.
+        @ini_set('memory_limit', '1024M');
+
         $vehicles = Vehicle::query()
             // 컨사이니 3칸(통관·선적·판매) = effective_consignee 폴백용 eager load.
-            ->with(['salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'settlements'])
+            //   ⚠️ `finalPayments`·`receivableHistories` 는 **회계실사 2시트가 쓴다**(2026-09-09 신설).
+            //      빠지면 차량마다 따로 읽어 4,700대 = 9,400 쿼리가 되고 그 결과가 전부 메모리에 쌓인다.
+            //      새 시트를 붙일 때 이 목록도 같이 볼 것 — 안 그러면 조용히 N+1 이 된다.
+            ->with([
+                'salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'settlements',
+                'finalPayments', 'receivableHistories',
+            ])
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
@@ -118,6 +135,7 @@ class VehicleExportController extends Controller
             ->orderBy('id')
             ->get();
 
+        $rowCount = $vehicles->count();
         $spreadsheet = $exporter->build($vehicles, $selected, $allowSettlement);
 
         ExportLog::create([
@@ -125,7 +143,7 @@ class VehicleExportController extends Controller
             'ip_address' => $request->ip(),
             'target' => 'vehicles',
             'scope' => $restrictOwn ? 'own' : ($restrictMgr ? 'team' : 'all'),
-            'row_count' => $vehicles->count(),
+            'row_count' => $rowCount,
             'columns' => $selected !== [] ? $selected : $exporter->columnKeys($allowSettlement),
             'filters' => array_filter([
                 'range' => $mirror ? 'current' : 'all',
@@ -135,6 +153,14 @@ class VehicleExportController extends Controller
                 'brq' => implode(',', $brq),
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
             ]),
+        ]);
+
+        // 📏 실제 사용량을 남긴다 — 「얼마나 필요한가」를 추측하지 않으려고(다음 판단의 근거).
+        //    상한(512M)에 근접하면 스트리밍으로 바꿔야 한다는 신호다.
+        Log::info('vehicles export built', [
+            'rows' => $rowCount,
+            'cols' => count($selected),
+            'peak_mb' => (int) round(memory_get_peak_usage(true) / 1048576),
         ]);
 
         $filename = '차량목록_'.now()->format('Ymd_His').'.xlsx';
