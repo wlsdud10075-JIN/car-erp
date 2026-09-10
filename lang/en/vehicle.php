@@ -187,7 +187,7 @@ return [
     'deposit_badge_waiting' => 'Deposit-buy',
 
     'buyer_undecided_badge' => 'No buyer',
-    'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW',
+    'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW - click to show only vehicles with an unpaid balance',
     'date_range_ignored' => 'Range not applied',
     'date_range_ignored_hint' => 'The date basis is set to All, so the range you typed is not applied. Pick a basis (purchase date, sale date, ...) and it takes effect - for both the list and the export.',
     'buyer_undecided_title' => 'Bought without a buyer (speculative) — clears once a buyer is set',
