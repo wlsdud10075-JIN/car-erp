@@ -252,7 +252,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $sid = $this->effectiveSalesmanId();
 
-        return Vehicle::query()
+        $counts = Vehicle::query()
             ->whereNull('deleted_at')
             ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
             ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 파이프라인 오염 방지 (jin 2026-07-18)
@@ -260,6 +260,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->groupBy('progress_status_cache')
             ->pluck('cnt', 'progress_status_cache')
             ->toArray();
+
+        // 🚫 「매입중」을 넓히지 않는다 — 이 표는 **분포**다(어느 단계에 몇 대). 넓히면 한 차가
+        //    「선적완료」이면서 「매입중」이 되어 단계 합이 총 대수를 넘는다(jin 2026-09-10 결정).
+        //    차량관리 필터의 「매입중」은 더 넓다(매입 잔금이 남은 차 전부) — 그래서 이 숫자를 눌러
+        //    들어가면 목록이 더 많이 나온다. 의도된 차이이고, 매입 미지급은 아래 할일 카드가 따로 센다.
+        return $counts;
     }
 
     public function pipelineUrl(string $status): string

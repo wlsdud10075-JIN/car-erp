@@ -2670,8 +2670,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   선적요청 검색(searchAccum)은 둘 다 세팅해 '차번호 OR VIN' 통합검색을 유지한다.
             ->searchAny($this->search, $this->vinSearch)
             ->when($this->ids !== '', fn ($q) => $q->whereIn('id', array_filter(array_map('intval', explode(',', $this->ids)))))
-            ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
-            ->when($this->excludeStatuses, fn ($q) => $q->whereNotIn('progress_status_cache', $this->excludeStatuses))
+            // 🎯 「매입중」은 넓다 — 매입 잔금이 남았으면 판매중·선적완료여도 매입중이다(jin 2026-09-10).
+            //    조건은 Vehicle::scopeProgressStage 단일 출처 — 대시보드 카운트도 같은 걸 써서 숫자가 안 갈린다.
+            ->when($this->progressFilter, fn ($q) => $q->progressStage($this->progressFilter))
+            ->when($this->excludeStatuses, fn ($q) => $q->notProgressStages($this->excludeStatuses))
             // 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. Vehicle::scopeSailing 단일 출처.
             ->when($withSailing && in_array($this->sailingFilter, \App\Models\Vehicle::SAILING_PHASES, true),
                 fn ($q) => $q->sailing($this->sailingFilter))
@@ -6805,6 +6807,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             @endphp
             <button wire:click="cycleProgress('{{ $val }}')"
+                    @if($val === '매입중') title="{{ __('vehicle.progress_pill.maeipjung_hint') }}" @endif
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            @if($isInclude) bg-violet-600 text-white @elseif($isExclude) bg-red-500 text-white line-through @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
                 {{ $val === '' ? __('vehicle.filter_all') : __('domain.progress.'.$val) }}
@@ -7234,12 +7237,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                          ⚠️ 「매입중」일 때는 안 붙인다 — 같은 말이 두 번 되어 뜻이 흐려진다.
                          N+1 없음: purchaseBalancePayments 가 목록에서 이미 eager load 된다(:2109). --}}
                     @if($status !== '매입중' && $v->purchase_price > 0 && ($pUnpaid = $v->purchase_unpaid_amount) > 0)
-                        {{-- 🖱️ 눌러서 「미지급 남은 차량만」 (jin 2026-09-10 제보) — 뱃지에 「매입중」이라 써놓고
-                             진행상태 pill 「매입중」 을 누르면 안 나오는 게 모순이었다.
-                             🚫 pill 자체를 넓히지는 않았다 — 진행상태는 차량당 한 단계라, 넓히면
-                                한 차가 두 단계에 속해 대시보드 파이프라인 합계가 전체 대수를 넘는다(jin 결정).
+                        {{-- 🖱️ 누르면 진행상태 pill 「매입중」이 켜진다 — **pill 과 같은 동작**이어야 한다.
+                             한때 별도 필터(미지급 전용)를 걸었는데, 같은 낱말이 두 결과를 내면 더 헷갈린다.
                              ⚠️ `.stop` 필수 — 행 전체가 openEdit 이라 안 막으면 편집 패널이 열린다. --}}
-                        <button type="button" wire:click.stop="toggleUnpaidFilter"
+                        <button type="button" wire:click.stop="cycleProgress('매입중')"
                                 class="badge badge-blue cursor-pointer hover:brightness-95"
                                 title="{{ __('vehicle.purchase_unpaid_badge_title', ['amount' => number_format($pUnpaid)]) }}">{{ __('domain.progress.매입중') }}</button>
                     @endif

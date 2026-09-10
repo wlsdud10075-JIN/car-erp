@@ -158,16 +158,16 @@ class VehiclePurchaseUnpaidTotalTest extends TestCase
         $this->actingAs($this->admin());
 
         $html = $this->screen()->html();
-        $this->assertMatchesRegularExpression(
-            '/<button[^>]*wire:click\.stop="toggleUnpaidFilter"/',
+        $this->assertStringContainsString(
+            'wire:click.stop="cycleProgress',
             $html,
-            '뱃지가 눌리지 않는다 — 눌러도 행 편집만 열리거나 아무 일도 안 일어난다'
+            '뱃지가 pill 「매입중」을 켜지 않는다 — 같은 낱말이 두 결과를 내면 더 헷갈린다'
         );
 
-        // 누르면 미지급 차량만 남아야 한다 — 「미지급 총액」 클릭과 같은 결과(같은 액션을 쓴다).
-        $c = $this->screen()->call('toggleUnpaidFilter');
+        // 누른 결과 = pill 「매입중」과 같아야 한다.
+        $c = $this->screen()->call('cycleProgress', '매입중');
         $ids = collect($c->instance()->vehicles->items())->pluck('id')->all();
-        $this->assertSame([$sold->id], $ids, '뱃지 클릭 결과가 미지급 차량과 다르다');
+        $this->assertSame([$sold->id], $ids, '뱃지 클릭 결과가 pill 「매입중」과 다르다');
     }
 
     // ── ② 미지급 총액 지표 ───────────────────────────────────────
@@ -277,6 +277,95 @@ class VehiclePurchaseUnpaidTotalTest extends TestCase
             '필터가 켜진 채 합이 0 이 되자 지표가 사라졌다 — 해제할 방법이 없어진다');
         $this->assertStringContainsString(__('vehicle.stat.purchase_unpaid_off'), $html,
             '켜져 있다는 표시(누르면 해제)가 없다');
+    }
+
+    // ── ③ 진행상태 pill 「매입중」 (jin 2026-09-10 재요청) ────────
+
+    /**
+     * 🎯 **pill 「매입중」은 매입 잔금이 남은 차를 전부 잡는다** — 판매중·선적완료여도.
+     *    jin: *"매입중이 붙은 건 앞에 어떤 게 붙어있든 상관없이 매입중에 전부 떠줘야 맞다"*.
+     */
+    public function test_maeipjung_pill_includes_sold_vehicles_that_still_owe(): void
+    {
+        $buyer = $this->buyer();
+        $notSold = $this->vehicle($buyer);                                       // 진행상태 매입중
+        $sold = $this->vehicle($buyer, ['sale_price' => 20_000_000, 'sale_date' => '2026-09-05']);
+        $paid = $this->vehicle($buyer, ['purchase_price' => 5_000_000]);
+        $this->payPurchase($paid, 5_000_000);                                    // 완납 → 빠져야 한다
+        $this->actingAs($this->admin());
+
+        $c = $this->screen()->set('progressFilter', '매입중');
+        $ids = collect($c->instance()->vehicles->items())->pluck('id')->sort()->values()->all();
+
+        $this->assertSame([$notSold->id, $sold->id], $ids,
+            'pill 「매입중」이 판매중인 미지급 차량을 안 잡는다');
+    }
+
+    /**
+     * ⚠️ **순수 확대여야 한다** — 매입가가 0 이라 미지급도 0 인 차는 진행상태가 「매입중」이다.
+     *    조건을 「미지급>0」 하나로 바꾸면 그런 차가 조용히 사라진다(§8 #55 「넓히는 변경」).
+     */
+    public function test_widening_never_drops_a_plain_maeipjung_vehicle(): void
+    {
+        $buyer = $this->buyer();
+        $noPrice = $this->vehicle($buyer, ['purchase_price' => 0]);
+        $noPrice->refresh();
+        $this->assertSame('매입중', $noPrice->progress_status_cache, '전제: 진행상태가 매입중');
+        $this->assertSame(0, $noPrice->purchase_unpaid_amount, '전제: 미지급 0');
+        $this->actingAs($this->admin());
+
+        $ids = collect($this->screen()->set('progressFilter', '매입중')
+            ->instance()->vehicles->items())->pluck('id')->all();
+
+        $this->assertContains($noPrice->id, $ids, '미지급 0 인 매입중 차량이 빠졌다 — 확대가 아니라 교체가 됐다');
+    }
+
+    /** 제외(빨강)도 같은 뜻이어야 한다 — 포함만 넓히면 같은 pill 이 방향에 따라 다른 뜻이 된다. */
+    public function test_excluding_maeipjung_also_drops_sold_vehicles_that_owe(): void
+    {
+        $buyer = $this->buyer();
+        $this->vehicle($buyer);                                                   // 매입중
+        $sold = $this->vehicle($buyer, ['sale_price' => 20_000_000, 'sale_date' => '2026-09-05']);
+        $paid = $this->vehicle($buyer, ['purchase_price' => 5_000_000]);
+        $this->payPurchase($paid, 5_000_000);
+        $this->actingAs($this->admin());
+
+        $ids = collect($this->screen()->set('excludeStatuses', ['매입중'])
+            ->instance()->vehicles->items())->pluck('id')->all();
+
+        $this->assertSame([$paid->id], $ids, '「매입중 제외」인데 미지급 남은 판매중 차가 남았다');
+        $this->assertNotContains($sold->id, $ids);
+    }
+
+    /**
+     * 🧭 **대시보드 스트립은 좁고 차량관리 필터는 넓다 — 의도된 차이다** (jin 2026-09-10 결정).
+     *
+     * 스트립은 「어느 단계에 몇 대」인 **분포표**다. 「매입중」을 넓히면 한 차가 「선적완료」이면서
+     * 「매입중」이 되어 **단계 합이 총 대수를 넘는다**. 그래서 대시보드는 진행상태 그대로 둔다.
+     * 차량관리 필터는 「작업 대상 고르기」라 넓은 쪽이 쓸모 있다.
+     *
+     * ⚠️ 그래서 스트립 숫자를 눌러 들어가면 목록이 더 많이 나온다. 그게 맞다 —
+     *    이 테스트는 그 차이가 **사라지지 않았는지**(= 대시보드가 조용히 넓어지지 않았는지)를 지킨다.
+     *    매입 미지급 자체는 대시보드의 「매입 미지급」 할일 카드가 따로 센다.
+     */
+    public function test_dashboard_stays_narrow_while_the_list_is_wide(): void
+    {
+        $buyer = $this->buyer();
+        $this->vehicle($buyer);                                                   // 진행상태 매입중
+        $this->vehicle($buyer, ['sale_price' => 20_000_000, 'sale_date' => '2026-09-05']);  // 판매중 + 미지급
+        $paid = $this->vehicle($buyer, ['purchase_price' => 5_000_000]);
+        $this->payPurchase($paid, 5_000_000);
+
+        $admin = $this->admin();
+        $this->actingAs($admin);
+
+        $counts = Volt::actingAs($admin)->test('erp.dashboard')->instance()->pipelineCounts();
+        $listed = count($this->screen()->set('progressFilter', '매입중')->instance()->vehicles->items());
+
+        $this->assertSame(1, $counts['매입중'] ?? 0,
+            '대시보드 스트립이 넓어졌다 — 분포표라 단계 합이 총 대수를 넘으면 안 된다');
+        $this->assertSame(2, $listed,
+            '차량관리 필터가 좁아졌다 — 매입 잔금이 남은 판매중 차가 빠졌다');
     }
 
     // ── 정적·번역 가드 ───────────────────────────────────────────
