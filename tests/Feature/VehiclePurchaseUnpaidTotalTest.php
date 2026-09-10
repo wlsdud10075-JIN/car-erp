@@ -138,6 +138,38 @@ class VehiclePurchaseUnpaidTotalTest extends TestCase
         );
     }
 
+    /**
+     * 🖱️ 뱃지를 누르면 미지급 차량만 남는다 (jin 2026-09-10 제보).
+     *
+     * 제보: *「매입중이 붙은 건 앞에 어떤 게 붙어있든 상관없이 매입중에 전부 떠줘야 맞는 것 같은데?」*
+     * 뱃지에 「매입중」이라 써놓고 진행상태 pill 「매입중」 에는 안 잡히는 게 모순이었다.
+     *
+     * 🚫 **pill 자체를 넓히지는 않았다** — 진행상태는 차량당 정확히 한 단계라(v4 cascade),
+     *    넓히면 한 차가 「선적완료」이면서 「매입중」이 되어 대시보드 파이프라인 합계가
+     *    전체 대수를 넘는다. 그래서 뱃지 쪽에 동작을 붙였다(jin 결정).
+     * ⚠️ `.stop` 이 없으면 행 클릭(openEdit)이 먼저 먹어 편집 패널이 열린다.
+     */
+    public function test_the_badge_itself_filters_to_unpaid_vehicles(): void
+    {
+        $buyer = $this->buyer();
+        $sold = $this->vehicle($buyer, ['sale_price' => 20_000_000, 'sale_date' => '2026-09-05']);
+        $paid = $this->vehicle($buyer, ['purchase_price' => 5_000_000]);
+        $this->payPurchase($paid, 5_000_000);
+        $this->actingAs($this->admin());
+
+        $html = $this->screen()->html();
+        $this->assertMatchesRegularExpression(
+            '/<button[^>]*wire:click\.stop="toggleUnpaidFilter"/',
+            $html,
+            '뱃지가 눌리지 않는다 — 눌러도 행 편집만 열리거나 아무 일도 안 일어난다'
+        );
+
+        // 누르면 미지급 차량만 남아야 한다 — 「미지급 총액」 클릭과 같은 결과(같은 액션을 쓴다).
+        $c = $this->screen()->call('toggleUnpaidFilter');
+        $ids = collect($c->instance()->vehicles->items())->pluck('id')->all();
+        $this->assertSame([$sold->id], $ids, '뱃지 클릭 결과가 미지급 차량과 다르다');
+    }
+
     // ── ② 미지급 총액 지표 ───────────────────────────────────────
 
     /**

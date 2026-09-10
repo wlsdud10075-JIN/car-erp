@@ -194,7 +194,7 @@ return [
     'buyer_undecided_badge' => '바이어미정',
     // 💸 진행상태 옆 매입 미지급 병기 (jin 2026-09-10) — 뱃지 글자는 domain.progress.매입중 을 쓰고
     //    금액만 여기서 호버로 보여준다. 「판매중인데 매입 잔금이 남았다」를 목록에서 알아보려는 것.
-    'purchase_unpaid_badge_title' => '매입 미지급 :amount원 — 매입 잔금이 남아 있습니다',
+    'purchase_unpaid_badge_title' => '매입 미지급 :amount원 — 누르면 미지급이 남은 차량만 봅니다',
     // ⚠️ 날짜 기준이 「전체」면 기간이 안 걸린다 (jin 2026-09-10 실사고 — 1년을 넣었는데 전량이 나갔다)
     'date_range_ignored' => '기간 미적용',
     'date_range_ignored_hint' => '날짜 기준이 「전체」라 입력한 기간이 적용되지 않습니다. 매입일·판매일 등 기준을 고르면 그때부터 걸립니다 — 화면 목록과 엑셀 모두 같습니다.',

@@ -7213,7 +7213,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                          ⚠️ 「매입중」일 때는 안 붙인다 — 같은 말이 두 번 되어 뜻이 흐려진다.
                          N+1 없음: purchaseBalancePayments 가 목록에서 이미 eager load 된다(:2109). --}}
                     @if($status !== '매입중' && $v->purchase_price > 0 && ($pUnpaid = $v->purchase_unpaid_amount) > 0)
-                        <span class="badge badge-blue" title="{{ __('vehicle.purchase_unpaid_badge_title', ['amount' => number_format($pUnpaid)]) }}">{{ __('domain.progress.매입중') }}</span>
+                        {{-- 🖱️ 눌러서 「미지급 남은 차량만」 (jin 2026-09-10 제보) — 뱃지에 「매입중」이라 써놓고
+                             진행상태 pill 「매입중」 을 누르면 안 나오는 게 모순이었다.
+                             🚫 pill 자체를 넓히지는 않았다 — 진행상태는 차량당 한 단계라, 넓히면
+                                한 차가 두 단계에 속해 대시보드 파이프라인 합계가 전체 대수를 넘는다(jin 결정).
+                             ⚠️ `.stop` 필수 — 행 전체가 openEdit 이라 안 막으면 편집 패널이 열린다. --}}
+                        <button type="button" wire:click.stop="toggleUnpaidFilter"
+                                class="badge badge-blue cursor-pointer hover:brightness-95"
+                                title="{{ __('vehicle.purchase_unpaid_badge_title', ['amount' => number_format($pUnpaid)]) }}">{{ __('domain.progress.매입중') }}</button>
                     @endif
                 </td>
                 @php if ($this->colOn('purchase_date')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_date']">{{ $v->purchase_date?->format('Y-m-d') ?? '-' }}</td>@php endif; @endphp
