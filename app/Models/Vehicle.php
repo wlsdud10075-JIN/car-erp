@@ -2767,6 +2767,58 @@ class Vehicle extends Model
      * **[입금요청]을 보낼 차량이 정확히 이 집합**이라 재고에만 있으면 버튼을 달 곳이 없다.
      * ERP 에서도 그동안 이 차들은 차량관리 필터로만 볼 수 있었다 — 재고 생애주기의 앞 칸을 채운다.
      */
+    /**
+     * 🎯 진행상태 단계 필터 — **단일 출처** (jin 2026-09-10).
+     *
+     * 다른 단계는 캐시 컬럼과 정확히 일치한다. 「매입중」만 넓다 —
+     * **매입 잔금이 남은 차는 판매중·선적완료여도 매입중**이다.
+     * jin: *"매입중이 붙은 건 앞에 어떤 게 붙어있든 상관없이 매입중에 전부 떠줘야 맞다"*.
+     * 실측 heymanerp: 미지급 30대 중 26대(87%)가 그 상태라, 좁은 정의로는 대부분이 빠졌다.
+     *
+     * ⚠️ **순수 확대다** — `progress_status_cache='매입중'` 인 차는 미지급이 0 이어도(매입가 미입력 등)
+     *    그대로 남는다. 조건을 「미지급>0」 하나로 바꾸면 기존에 보이던 차가 조용히 사라진다(§8 #55).
+     *
+     * 🚨 **그 대가 = 파이프라인 합계가 전체 대수를 넘는다.** 한 차가 「선적완료」이면서 「매입중」이다.
+     *    대시보드 카운트도 이 스코프를 쓰므로 숫자와 목록은 일치하지만, 단계 합이 총 대수와 다르다.
+     *    jin 이 그 대가를 알고 고른 동작이다 — 「분포」가 아니라 「할 일이 남았나」로 읽는다.
+     *
+     * 🚫 조건을 화면에 옮겨 적지 말 것 — 차량관리 필터·업무 대시보드·관리자 대시보드 셋이 이걸 쓴다.
+     */
+    public function scopeProgressStage(Builder $q, string $status): Builder
+    {
+        if ($status !== '매입중') {
+            return $q->where('progress_status_cache', $status);
+        }
+
+        return $q->where(fn ($q2) => $q2
+            ->where('progress_status_cache', '매입중')
+            ->orWhere(fn ($q3) => $q3
+                ->where('purchase_price', '>', 0)
+                ->whereRaw(self::purchaseUnpaidRawExpr().' > 0', [now()->toDateString()])));
+    }
+
+    /**
+     * 진행상태 제외 필터 — `scopeProgressStage` 의 반대. 「매입중」의 넓은 뜻을 그대로 뒤집는다.
+     *
+     * 🧭 포함만 넓히고 제외를 안 넓히면 「매입중을 빼고 본다」에 선적완료+매입 미지급 차가 남아
+     *    같은 pill 이 방향에 따라 다른 뜻이 된다.
+     */
+    public function scopeNotProgressStages(Builder $q, array $statuses): Builder
+    {
+        $plain = array_values(array_diff($statuses, ['매입중']));
+        if ($plain !== []) {
+            $q->whereNotIn('progress_status_cache', $plain);
+        }
+        if (in_array('매입중', $statuses, true)) {
+            $q->where('progress_status_cache', '!=', '매입중')
+                ->where(fn ($q2) => $q2
+                    ->where('purchase_price', '<=', 0)
+                    ->orWhereRaw(self::purchaseUnpaidRawExpr().' <= 0', [now()->toDateString()]));
+        }
+
+        return $q;
+    }
+
     public function scopeAwaitingPurchasePayment($query)
     {
         return $query->where('purchase_price', '>', 0)
