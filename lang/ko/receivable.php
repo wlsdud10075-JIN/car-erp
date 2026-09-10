@@ -21,6 +21,12 @@ return [
     ],
     'import_cleared_note' => '화면상 완납이지만 실제로 받지 않은 돈이 있는 차량입니다. 과거 데이터를 올릴 때 미납분을 회수이력 「기타」로 적어 미수를 0 으로 맞춘 기록입니다. 미수 금액은 0 으로 보이므로 아래 회수이력의 「기타」 줄 금액을 보고 청구하세요. 실제로 받으면 그 줄을 지우고 입금을 기록합니다.',
     'import_cleared_badge' => '임포트 정리',
+    'import_cleared_cars' => ':n대',
+    'import_cleared_empty' => '조건에 맞는 건이 없습니다',
+    'import_cleared_settle' => '받았음',
+    'import_cleared_settle_hint' => '실제로 받은 금액을 적으면 회수이력에 「현금」으로 기록하고 이 줄을 그만큼 차감합니다. 전액이면 이 줄이 사라지고 목록에서도 빠집니다. 회계 숫자는 안 움직입니다 — 매출은 판매 시점에 이미 잡혔고 미수도 그대로 0 입니다.',
+    'import_cleared_settled' => '수령을 기록했습니다.',
+    'import_cleared_settled_note' => '임포트 정리분 실제 수령',
     'tab_math' => '채권 전체 :all건 = 결제대기 :grace + 선적전 :before + 선적후 :after · 완납은 별도 탭',
     // 미수는 '지금 남은 잔액'이라 기간으로 자르지 않는다 — 알림톡·대시보드와 같은 숫자가 되는 근거 (jin 2026-08-20).
     'period_note' => '미수는 기간과 무관하게 현재 잔액 전부',
@@ -57,6 +63,8 @@ return [
         'only' => '매입취소만',
         'normal' => '정상만',
         'overpaid' => '과입금만',
+        // 대상이 있는 회사에서만 선택지가 보인다 (jin 2026-09-10).
+        'import_cleared' => '임포트 정리만',
     ],
     'ratio_all' => '미납률 ALL',
     'ratio_min' => ':percent%↑',

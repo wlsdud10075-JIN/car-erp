@@ -57,6 +57,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 채권담당자 지정
     public string $managerIdInput = '';
 
+    // 「받았음」 청산 (jin 2026-09-10) — 임포트 정리분 줄에서 실제 수령을 기록한다.
+    public ?int $settleHistoryId = null;
+
+    public string $settleAmount = '';
+
+    public string $settleDate = '';
+
     // 과입금 전환 사유 — **2차 정산 마감 차량에서만** 요구한다(jin 2026-08-26).
     //   마감 전엔 자유 정정이 원칙이라(정산 락 개편 2026-07-24) 묻지 않는다.
     public string $overpayReason = '';
@@ -162,9 +169,12 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function updatedCancelFilter(): void
     {
-        if ($this->cancelFilter === 'overpaid') {
+        // 미수가 0 이하인 부류는 기본 탭(채권 전체 = 미수>0)에서 **0 건**이 뜬다 — 탭을 같이 옮겨 준다.
+        //   과입금 = 미수 음수 / 임포트 정리분 = 적재가 0 으로 눕힌 것. 둘 다 「완납」 탭에 있다.
+        if (in_array($this->cancelFilter, ['overpaid', 'import_cleared'], true)) {
             $this->classification = 'paid_up';
         }
+        unset($this->importClearedTotals);
         $this->resetPage();
     }
 
@@ -550,6 +560,93 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
     }
 
+    /**
+     * 「받았음」 — 임포트 정리분을 실제 수령으로 청산한다 (jin 2026-09-10).
+     *
+     * 사람이 두 동작을 순서 맞춰 하던 것을 **한 트랜잭션**으로 묶는다:
+     *   ① 회수이력 「현금」 생성  ② 「기타」 줄을 그만큼 차감(전액이면 삭제)
+     *
+     * 🔑 **버튼의 존재 이유는 「원자성」이다.** 사람이 손으로 두 단계를 하면 그 사이가 위험하다 —
+     *    「기타」를 먼저 지우면 미수가 살아나 v5 규칙(「출고일 + 완납」)이 깨지고 **거래완료가
+     *    판매중으로 떨어진다**. 거기서 두 번째 단계를 잊으면 그 상태가 그대로 남는다.
+     *    ⚠️ 이 메서드 안에서는 **순서가 결과를 안 바꾼다**(한 트랜잭션 + 끝에 refreshCaches 로 최종 확정).
+     *       일부러 뒤집어 돌려봐도 결과가 같았다 — 「현금 먼저」는 의도를 드러내는 배치일 뿐이다.
+     * 🔑 **현금(cash)을 쓰는 이유** = 「입금(deposit)」은 판매 잔금 미러를 만들어 2차 마감 차량에서
+     *    `FinalPayment::creating` 가드에 막힌다(실측 대상 317 중 228 이 마감). 현금은 회수이력이
+     *    직접 미수를 깎아 잔금을 안 만들므로 마감 차량에서도 된다 — 화면 안내도 그렇게 돼 있다.
+     * 🧾 회계는 안 움직인다 — 매출은 판매 시점에 이미 인식됐고, 「기타」도 「현금」도 똑같이
+     *    실입금 KRW 에 들어간다(`sale_received_krw_accumulated`). 바뀌는 것은 **기록의 뜻**뿐이다.
+     */
+    public function openSettleImport(int $historyId): void
+    {
+        $h = ReceivableHistory::find($historyId);
+        if (! $h || $h->vehicle_id !== $this->selectedVehicleId) {
+            return;
+        }
+        $this->settleHistoryId = $h->id;
+        $this->settleAmount = (string) (float) $h->amount;   // 기본 = 전액
+        $this->settleDate = now()->toDateString();
+        $this->resetValidation();
+    }
+
+    public function closeSettleImport(): void
+    {
+        $this->settleHistoryId = null;
+        $this->settleAmount = '';
+        $this->settleDate = '';
+        $this->resetValidation();
+    }
+
+    public function settleImportCleared(): void
+    {
+        $h = ReceivableHistory::find($this->settleHistoryId);
+        // 🔒 표식이 붙은 행만 — 사람이 넣은 「기타」를 이 버튼으로 지우게 두지 않는다.
+        if (! $h || $h->vehicle_id !== $this->selectedVehicleId
+            || ! ReceivableHistory::query()->importCleared()->whereKey($h->id)->exists()) {
+            $this->closeSettleImport();
+
+            return;
+        }
+
+        $this->validate([
+            'settleAmount' => ['required', 'numeric', 'gt:0', 'lte:'.(float) $h->amount],
+            'settleDate' => ['required', 'date'],
+        ], [], [
+            'settleAmount' => __('receivable.field.amount_attr'),
+            'settleDate' => __('receivable.field.date'),
+        ]);
+
+        $amount = (float) $this->settleAmount;
+        $vehicleId = $h->vehicle_id;
+
+        DB::transaction(function () use ($h, $amount) {
+            // ① 실제 수령 — 현금
+            ReceivableHistory::create([
+                'vehicle_id' => $h->vehicle_id,
+                'method' => 'cash',
+                'amount' => $amount,
+                'collected_at' => $this->settleDate,
+                'collector_id' => auth()->id(),
+                'note' => __('receivable.import_cleared_settled_note'),
+            ]);
+
+            // ② 「기타」 줄 차감 — 전액이면 삭제(그 순간 목록에서 빠진다), 부분이면 남은 금액만 남긴다.
+            if ($amount >= (float) $h->amount) {
+                $h->delete();
+            } else {
+                $h->amount = (float) $h->amount - $amount;
+                $h->save();
+            }
+        });
+
+        // 두 훅이 각각 캐시를 갱신하지만, 최종 상태로 한 번 더 확정한다(refreshCaches 가 스스로 refresh 한다).
+        Vehicle::find($vehicleId)?->refreshCaches();
+
+        $this->closeSettleImport();
+        unset($this->selectedVehicle, $this->vehicles, $this->summary, $this->importClearedTotals, $this->hasImportCleared);
+        session()->flash('panel_success', __('receivable.import_cleared_settled'));
+    }
+
     public function deleteHistory(int $historyId): void
     {
         $h = ReceivableHistory::find($historyId);
@@ -845,16 +942,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             'deposit' => $q->where('savings_used', '>', 0),
 
-            // 임포트 정리분 (jin 2026-09-10) — **화면상 완납인데 실제로는 안 받은 돈**이 있는 차.
-            //   2026-08-28 소급 적재가 미납을 회수이력 「기타」로 적어 미수를 0 으로 눕혔다.
-            //   미수를 되살리지 않기로 한 이유(jin) = v5 규칙이 「출고일+완납」이라 되살리면
-            //   실측 77 대가 거래완료에서 판매중으로 떨어지고, 2차 마감된 228 건은 살려봤자
-            //   `FinalPayment::creating` 가드에 막혀 **받은 돈을 넣을 수도 없다**.
-            //   ⇒ 미수는 0 그대로 두고 **여기서 목록으로만** 본다. 받으면 그때 그 행을 지우고
-            //     진짜 입금을 넣는다(2차 미마감이면 지금 바로 된다).
-            //   🔑 표식 = ReceivableHistory::scopeImportCleared 단일 출처.
-            'import_cleared' => $q->whereHas('receivableHistories', fn ($h) => $h->importCleared()),
-
             // 완납 — 회수이력 조회용(실측 heymanerp 174대 중 81대가 회수이력 보유)+ **초과입금 5대**가
             //   여기 묻혀 있다(미수 음수 = 돌려줘야 할 돈). 목록에서 빨강으로 표시한다.
             'paid_up' => $q->where(fn ($q2) => $q2
@@ -904,6 +991,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 과입금 = 돌려줄 돈. 채권관리 배너·전환 버튼과 같은 기준(`< 0`)을 쓴다.
             //   🚫 차량 편집 판매탭의 `<= -1` 을 쓰지 말 것 — 두 화면이 -0.5 를 다르게 판정하게 된다.
             ->when($this->cancelFilter === 'overpaid', fn ($q) => $q->where('sale_unpaid_amount_krw_cache', '<', 0))
+            // 임포트 정리분 (jin 2026-09-10) — **화면상 완납인데 실제로는 안 받은 돈**이 있는 차.
+            //   2026-08-28 소급 적재가 미납을 회수이력 「기타」로 적어 미수를 0 으로 눕혔다.
+            //   🔑 분류 탭이 아니라 **여기(드롭박스)** 에 둔다 — 탭은 KPI·합계를 안 타는데(buildQuery(false))
+            //      드롭박스는 탄다. 그래서 바이어를 함께 고르면 「이 바이어한테 얼마」가 바로 나온다.
+            //   🔑 표식 = ReceivableHistory::scopeImportCleared 단일 출처(전환 명령이 같은 행을 본다).
+            ->when($this->cancelFilter === 'import_cleared',
+                fn ($q) => $q->whereHas('receivableHistories', fn ($h) => $h->importCleared()))
             // 미납률 30/50/70%↑ 필터는 receivable_risk 캐시 컬럼 매핑으로 대신.
             // 정확한 ratio 슬라이더 필요 시 raw SQL로 확장 가능 (현재는 카테고리 매핑으로 충분).
             ->when($this->unpaidRatioMin === '30', fn ($q) => $q->whereIn('receivable_risk', ['caution', 'danger', 'critical']))
@@ -911,6 +1005,43 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->unpaidRatioMin === '70', fn ($q) => $q->where('receivable_risk', 'critical'))
             // 미수 분류 탭 — applyClassification 단일 출처(위). 조건을 여기 옮겨 적지 말 것.
             ->when($withClassification, fn ($q) => self::applyClassification($q, $this->classification));
+    }
+
+    /**
+     * 드롭박스에 「임포트 정리분」을 노출할지 — **대상이 있을 때만** (jin 2026-09-10).
+     * 소급 적재를 한 회사에만 생기는 상태다. 회사별 분기를 코드에 박지 않고,
+     * 다 받아 정리하면 선택지가 저절로 사라진다(SKILLS §8 #67).
+     */
+    #[Computed]
+    public function hasImportCleared(): bool
+    {
+        return ReceivableHistory::query()->importCleared()->exists();
+    }
+
+    /**
+     * 「임포트 정리분」 합계 — **목록과 같은 조건**으로 통화별 합산 (jin 2026-09-10).
+     *
+     * 미수는 0 이라 KPI 카드엔 한 푼도 안 잡힌다. 청구하려면 이 숫자가 필요하다.
+     * 🔑 바이어·담당자·검색을 그대로 타므로 **바이어를 고르면 그 바이어에게 받을 금액**이 나온다.
+     * 🚫 통화를 섞어 더하지 않는다 — USD 와 EUR 를 합치면 아무 뜻이 없는 숫자가 된다.
+     */
+    #[Computed]
+    public function importClearedTotals(): array
+    {
+        if ($this->cancelFilter !== 'import_cleared') {
+            return [];
+        }
+
+        return ReceivableHistory::query()->importCleared()
+            ->whereIn('vehicle_id', $this->buildQuery()->select('vehicles.id'))
+            ->join('vehicles', 'vehicles.id', '=', 'receivable_histories.vehicle_id')
+            ->selectRaw('vehicles.currency as cur, SUM(receivable_histories.amount) as total,'
+                .' COUNT(DISTINCT vehicles.id) as cars')
+            ->groupBy('vehicles.currency')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => ['cur' => $r->cur, 'total' => (float) $r->total, 'cars' => (int) $r->cars])
+            ->all();
     }
 
     /**
@@ -923,7 +1054,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    탭엔 「선적전 23」이 떠 있는데 눌러 들어가면 20건 — 기간 필터를 탭만 안 탔기 때문.
         //    이제 buildQuery(false) = 분류만 뺀 같은 필터를 공유한다. 눌렀을 때 그 숫자가 그대로 나온다.
         $counts = [];
-        foreach (['', 'grace', 'before_shipping', 'after_shipping', 'deposit', 'paid_up', 'import_cleared'] as $key) {
+        foreach (['', 'grace', 'before_shipping', 'after_shipping', 'deposit', 'paid_up'] as $key) {
             $counts[$key === '' ? 'all' : $key] = self::applyClassification($this->buildQuery(false), $key)->count();
         }
 
@@ -981,25 +1112,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="tab-pill {{ $classification === 'paid_up' ? 'is-active' : '' }}">
             {{ __('receivable.tab.paid_up') }} <span class="pill-count">{{ $cc['paid_up'] }}</span>
         </button>
-        {{-- 임포트 정리분 — **대상이 있을 때만** 뜬다 (jin 2026-09-10).
-             소급 적재를 한 회사에만 생기는 상태라 회사별 분기를 코드에 박을 필요가 없고,
-             다 받아서 정리하면 저절로 사라진다(SKILLS §8 #67 「버튼 노출은 대상 건수로」). --}}
-        @if($cc['import_cleared'] > 0 || $classification === 'import_cleared')
-        <button wire:click="$set('classification', 'import_cleared')"
-                title="{{ __('receivable.tab.import_cleared_hint') }}"
-                class="tab-pill {{ $classification === 'import_cleared' ? 'is-active' : '' }}">
-            {{ __('receivable.tab.import_cleared') }} <span class="pill-count">{{ $cc['import_cleared'] }}</span>
-        </button>
-        @endif
     </div>
-
-    {{-- 이 탭은 「미수 0 인데 안 받은 돈」이라 반드시 이유를 적는다 (SKILLS §8 #85 · #60).
-         안 적으면 미수 컬럼이 전부 0 이라 「왜 여기 있지」가 되고, 사람이 멀쩡한 기록을 손본다. --}}
-    @if($classification === 'import_cleared')
-    <div class="card-sm -mt-1 mb-1 border-amber-200 bg-amber-50/60 text-[12px] text-amber-800">
-        {{ __('receivable.import_cleared_note') }}
-    </div>
-    @endif
 
     {{-- 탭 합계가 눈으로 닫히게 (jin 2026-08-20) — 「채권 전체 = 결제대기 + 선적전 + 선적후」.
          구 「전체」는 완납까지 세서 250 이었고, 선적전·선적후와 아귀가 안 맞아 보였다. --}}
@@ -1010,6 +1123,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]) }}
         <span class="ml-1">· {{ __('receivable.period_note') }}</span>
     </p>
+
+    {{-- 임포트 정리분을 골랐을 때 — **미수가 0 이라 KPI 엔 한 푼도 안 잡힌다.** 청구하려면 이 숫자가 필요하다.
+         왜 완납인데 여기 있는지도 같이 적는다 — 안 적으면 사람이 멀쩡한 기록을 손본다(SKILLS §8 #60·#85). --}}
+    @if($cancelFilter === 'import_cleared')
+    <div class="card-sm -mt-1 mb-1 border-amber-200 bg-amber-50/60 text-[12px] text-amber-800">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span class="badge badge-amber">{{ __('receivable.import_cleared_badge') }}</span>
+            {{-- 🚫 통화를 섞어 더하지 않는다 — 합치면 아무 뜻이 없는 숫자가 된다. --}}
+            @foreach($this->importClearedTotals as $t)
+            <span class="font-semibold">{{ $t['cur'] }} {{ number_format($t['total'], 2) }}</span>
+            <span class="text-amber-700">({{ __('receivable.import_cleared_cars', ['n' => $t['cars']]) }})</span>
+            @endforeach
+            @if($this->importClearedTotals === [])
+            <span>{{ __('receivable.import_cleared_empty') }}</span>
+            @endif
+        </div>
+        <p class="mt-1 leading-relaxed">{{ __('receivable.import_cleared_note') }}</p>
+    </div>
+    @endif
 
     {{-- 초과입금 — 완납에 묻혀 아무도 못 보던 「돌려줄 돈」. 있을 때만 뜬다 (jin 2026-08-20). --}}
     @if($this->summary['overpaid_count'] > 0)
@@ -1141,6 +1273,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="cancelled">{{ __('receivable.cancel.only') }}</option>
             <option value="normal">{{ __('receivable.cancel.normal') }}</option>
             <option value="overpaid">{{ __('receivable.cancel.overpaid') }}</option>
+            {{-- 대상이 있는 회사에서만 보인다 — 소급 적재를 한 회사에만 생기는 상태라
+                 회사별 분기를 코드에 박을 필요가 없고, 다 받아 정리하면 저절로 사라진다(SKILLS §8 #67). --}}
+            @if($this->hasImportCleared || $cancelFilter === 'import_cleared')
+            <option value="import_cleared">{{ __('receivable.cancel.import_cleared') }}</option>
+            @endif
         </select>
         <select wire:model.live="unpaidRatioMin" class="input-filter">
             <option value="">{{ __('receivable.ratio_all') }}</option>
@@ -1532,8 +1669,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 {{-- 「기타」 줄 중 소급 적재가 남긴 것 — 실제로 받은 돈이 아니라 **아직 받을 돈**이다.
                                      표시가 없으면 진짜 회수한 「기타」와 구분이 안 돼 청구 대상을 못 고른다.
                                      판정 = ReceivableHistory::scopeImportCleared 와 같은 표식(jin 2026-09-10). --}}
-                                @if ($h->method === 'other' && str_starts_with((string) $h->note, \App\Models\ReceivableHistory::IMPORT_CLEARED_NOTE_PREFIX))
+                                @php $isImportCleared = $h->method === 'other'
+                                    && str_starts_with((string) $h->note, \App\Models\ReceivableHistory::IMPORT_CLEARED_NOTE_PREFIX); @endphp
+                                @if ($isImportCleared)
                                 <span class="badge badge-amber" title="{{ __('receivable.tab.import_cleared_hint') }}">{{ __('receivable.import_cleared_badge') }}</span>
+                                {{-- 「받았음」 — 현금 기록 + 이 줄 차감을 한 번에. 순서를 코드에 박아 진행상태가 안 흔들린다. --}}
+                                <button type="button" wire:click="openSettleImport({{ $h->id }})"
+                                        class="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100">
+                                    {{ __('receivable.import_cleared_settle') }}
+                                </button>
                                 @endif
                                 <span class="text-xs text-gray-500">{{ $h->collector?->name ?? '-' }}</span>
                                 @if ($h->final_payment_id)
@@ -1556,6 +1700,27 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <button type="button" wire:click="deleteHistory({{ $h->id }})" wire:confirm="{{ __('receivable.delete_confirm') }}" class="text-xs text-red-500 hover:underline">{{ __('common.delete') }}</button>
                         </div>
                     </div>
+
+                    {{-- 「받았음」 입력 — 금액·수금일만 받는다. 부분 수령이면 남은 금액이 계속 뜬다. --}}
+                    @if ($settleHistoryId === $h->id)
+                    <div class="mt-2 rounded border border-emerald-200 bg-emerald-50/60 p-2">
+                        <p class="mb-2 text-[11px] leading-relaxed text-emerald-800">{{ __('receivable.import_cleared_settle_hint') }}</p>
+                        <div class="flex flex-wrap items-end gap-2">
+                            <label class="text-[11px] text-gray-600">
+                                {{ __('receivable.field.amount_attr') }}
+                                <input type="text" wire:model="settleAmount" data-money class="input-base mt-0.5 w-32 text-sm">
+                            </label>
+                            <label class="text-[11px] text-gray-600">
+                                {{ __('receivable.field.date') }}
+                                <input type="text" wire:model="settleDate" data-date class="input-base mt-0.5 w-32 text-sm">
+                            </label>
+                            <button type="button" wire:click="settleImportCleared" class="btn-primary px-3 py-1 text-xs">{{ __('receivable.import_cleared_settle') }}</button>
+                            <button type="button" wire:click="closeSettleImport" class="px-2 py-1 text-xs text-gray-500 hover:underline">{{ __('common.cancel') }}</button>
+                        </div>
+                        @error('settleAmount') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                        @error('settleDate') <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                    @endif
                 </div>
                 @endforeach
             </div>
