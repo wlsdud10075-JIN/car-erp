@@ -3844,6 +3844,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 이 잔금이 소진한 바이어 현금(입금별). 없으면 빈 배열 → 줄 자체가 안 그려진다.
                 'cash' => ($cashByPayment[$p->id] ?? collect())->map(fn ($a) => [
                     'date' => $a->receipt?->received_date?->format('Y-m-d') ?? '',
+                    // 🔁 이 잔금보다 **나중에** 받은 입금이 메운 줄인가 (jin 2026-09-10 제보).
+                    //    먼저 받은 돈을 다른 차가 가져가면 여기로 밀린다 — 표시가 없으면
+                    //    「나중 날짜 입금이 이 잔금에 쓰였다」로 보여 시간이 거꾸로 간 것처럼 읽힌다.
+                    //    ⚠️ 관계를 직접 심는다 — 안 그러면 usedDate() 가 행마다 잔금을 다시 읽어 N+1.
+                    'is_backfill' => $a->setRelation('finalPayment', $p)->isBackfillFor($a->receipt?->received_date),
                     // ⚠️ 두 금액을 반드시 구분해서 보여줄 것 — `amount` 는 **이 잔금이 가져간 몫**이고
                     //    `receipt_total` 이 **그 입금 전체**다. 섞어 쓰면 「850 짜리 입금」으로 읽힌다
                     //    (jin 2026-09-05 실제로 그렇게 읽었다 — 입금은 100,000 인데 850 만 보였다).
@@ -8857,6 +8862,8 @@ function vehicleColumnsToggle() {
                                 'date' => $c['date'],
                                 'total' => number_format($c['receipt_total'], 2).' '.$c['currency'],
                             ]) }}@if($c['note'] !== '')<span class="text-emerald-500/80"> ({{ $c['note'] }})</span>@endif
+                            @if($c['is_backfill'])<span class="ml-0.5 rounded bg-sky-100 px-1 text-[9px] font-medium text-sky-700"
+                                  title="{{ __('buyer.cash.backfill_hint') }}">{{ __('buyer.cash.backfill_badge') }}</span>@endif
                         </span>
                         @endforeach
                     </div>

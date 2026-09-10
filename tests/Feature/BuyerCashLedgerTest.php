@@ -435,8 +435,10 @@ class BuyerCashLedgerTest extends TestCase
             ->call('openEdit', $buyer->id)
             ->html();
 
+        // 🗓️ 2026-09-10 — 줄 앞에 **잔금 수금일**이 붙는다(jin 제보: 「언제 것인지」가 없었다).
+        //    표(월-일)와 호버(연도까지)가 같은 출처를 쓰므로 여기서 형식이 바뀌면 표도 바뀐 것이다.
         $this->assertStringContainsString(
-            'title="'.$vehicle->vehicle_number.' 4,000.00"',
+            'title="2026-09-04 '.$vehicle->vehicle_number.' 4,000.00"',
             $html,
             '쓴 내역에 호버(title)가 없다 — 좁은 패널에서 잘리면 읽을 방법이 사라진다'
         );

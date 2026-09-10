@@ -337,7 +337,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </td>
                         <td class="py-1.5 pr-3 max-w-[150px] truncate font-mono text-gray-400" title="{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}">{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}</td>
-                        <td class="py-1.5 pr-3 whitespace-nowrap text-gray-400">{{ $a->isFee() ? $a->fee?->charged_date?->format('Y-m-d') : $a->finalPayment?->payment_date?->format('Y-m-d') }}</td>
+                        {{-- 🔁 이 입금보다 **먼저** 기입된 잔금이면 표시한다 (jin 2026-09-10 제보).
+                             FIFO 재배분의 정상 결과지만, 표시가 없으면 「09-10 에 받은 돈이 09-09 에
+                             쓰였다」로 읽혀 시간이 거꾸로 간 것처럼 보인다. 판정은 모델 단일 출처. --}}
+                        @php $isBackfill = $a->isBackfillFor($r->received_date); @endphp
+                        <td class="py-1.5 pr-3 whitespace-nowrap {{ $isBackfill ? 'text-sky-700' : 'text-gray-400' }}">
+                            {{ $a->usedDate() ?? '-' }}
+                            @if($isBackfill)
+                            <span class="ml-1 rounded bg-sky-100 px-1 py-px text-[9px] font-medium text-sky-700"
+                                  title="{{ __('buyer.cash.backfill_hint') }}">{{ __('buyer.cash.backfill_badge') }}</span>
+                            @endif
+                        </td>
                         <td class="py-1.5 pr-3 text-right font-mono font-semibold text-gray-700 whitespace-nowrap">
                             {{ number_format((float) $a->amount, 2) }} <span class="text-[10px] font-normal text-gray-400">{{ $r->currency }}</span>
                         </td>

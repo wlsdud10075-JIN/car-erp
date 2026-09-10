@@ -173,6 +173,13 @@ return [
         'col_amount' => 'Amount',
         'col_remaining' => 'Remaining',
         'col_used' => 'Applied to',
+        'used_date_title' => 'The date is the payment date of that sale balance (for a ledger fee, the fee date). When one balance spans two receipts the same vehicle appears on both rows - the oldest cash is drawn first.',
+        'ledger_fee' => 'Ledger fee',
+        // 🔁 FIFO 재배분 (jin 2026-09-10 제보) — 잔금 수금일 < 입금 수령일 인 줄.
+        //    실측: 09-10 입금이 368머4746 의 09-09 잔금 0.49 를 메웠다. 표시가 없으면
+        //    「09-10 에 받은 돈이 09-09 에 쓰였다」로 읽혀 시간이 거꾸로 간 것처럼 보인다.
+        'backfill_badge' => 'Backfilled',
+        'backfill_hint' => 'This balance was recorded before this receipt arrived. The earlier cash went to another vehicle, so this receipt covered the shortfall - the oldest cash is always drawn first (the amounts are correct).',
         'col_by' => 'By',
         'spent' => 'Fully applied',
         'not_used' => 'Not applied yet',

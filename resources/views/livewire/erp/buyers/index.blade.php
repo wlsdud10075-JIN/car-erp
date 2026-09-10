@@ -790,7 +790,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $receipts = BuyerCashReceipt::where('buyer_id', $buyerId)
             // ⚠️ finalPayment 의 `type` 이 있어야 판매탭 송금수수료를 구분한다 — 빼면 늘 잔금처럼 보인다.
-            ->with(['allocations.vehicle:id,vehicle_number', 'allocations.finalPayment:id,type', 'creator:id,name'])
+            //    `payment_date`·`fee` 는 배분 줄의 날짜·라벨 출처다(BuyerCashAllocation::usedDate — 빼면 날짜가 빈다).
+            ->with([
+                'allocations.vehicle:id,vehicle_number',
+                'allocations.finalPayment:id,type,payment_date',
+                'allocations.fee:id,kind,charged_date',
+                'creator:id,name',
+            ])
             ->fifo()
             ->get();
 
@@ -818,29 +824,69 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cashReceiptList = $receipts
             ->sortByDesc(fn (BuyerCashReceipt $r) => [$r->received_date->format('Y-m-d'), $r->id])
             ->values()
-            ->map(fn (BuyerCashReceipt $r) => [
-                'id' => $r->id,
-                'received_date' => $r->received_date->format('Y-m-d'),
-                'currency' => $r->currency,
-                'amount' => (float) $r->amount,
-                'allocated' => $r->allocated_amount,
-                'remaining' => $r->remaining_amount,
-                'note' => $r->note ?? '',
-                'by' => $r->creator?->name ?? '',
-                'is_next' => ($nextIds[$r->currency] ?? null) === $r->id,
-                'uses' => $r->allocations
-                    ->map(fn ($a) => [
-                        'vehicle_number' => $a->vehicle?->vehicle_number ?? '-',
-                        'amount' => (float) $a->amount,
-                        // 💸 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 표시를 안 하면
-                        //    6 EUR 짜리가 「아주 작은 잔금」으로 보여 원장에서 또 털게 된다.
-                        'is_wire_fee' => $a->isVehicleFee(),
-                    ])->all(),
-                // 좁은 패널에서 여러 줄이 잘려도 호버로 전문이 보이게(적립금 탭과 같은 방식).
-                'uses_title' => $r->allocations
-                    ->map(fn ($a) => ($a->vehicle?->vehicle_number ?? '-').' '.number_format((float) $a->amount, 2)
-                        .($a->isVehicleFee() ? ' ('.__('buyer.cash.fee_badge').')' : ''))
-                    ->implode(' / '),
+            ->map(function (BuyerCashReceipt $r) use ($nextIds) {
+                // 🔑 표와 호버가 같은 출처를 보도록 한 번만 만든다(아래 uses_title 이 이걸 쓴다).
+                $uses = $this->cashUseRows($r);
+
+                return [
+                    'id' => $r->id,
+                    'received_date' => $r->received_date->format('Y-m-d'),
+                    'currency' => $r->currency,
+                    'amount' => (float) $r->amount,
+                    'allocated' => $r->allocated_amount,
+                    'remaining' => $r->remaining_amount,
+                    'note' => $r->note ?? '',
+                    'by' => $r->creator?->name ?? '',
+                    'is_next' => ($nextIds[$r->currency] ?? null) === $r->id,
+                    'uses' => $uses,
+                    // 좁은 패널에서 여러 줄이 잘려도 호버로 전문이 보이게(적립금 탭과 같은 방식).
+                    //   🔑 `uses` 를 그대로 쓴다 — 따로 조립하면 날짜·라벨이 표와 호버에서 갈린다(SKILLS §8 #45).
+                    'uses_title' => collect($uses)
+                        ->map(fn (array $u) => ($u['date'] ?? '-').' '.$u['label'].' '.number_format($u['amount'], 2)
+                            .($u['is_wire_fee'] ? ' ('.__('buyer.cash.fee_badge').')' : '')
+                            .($u['is_backfill'] ? ' ('.__('buyer.cash.backfill_badge').')' : ''))
+                        ->implode(' / '),
+                ];
+            })->all();
+    }
+
+    /**
+     * 🗓️ 입금 1건의 「쓴 내역」 줄 — 날짜·라벨·금액 (jin 2026-09-10 제보).
+     *
+     * 제보: 「기록되는 날짜나 수정사항이 반영되는 게 이상하게 보인다」. 금액은 맞았다 —
+     * 빠진 것은 **각 줄이 언제 것인지**였다. `allocate()` 는 잔금이 바뀔 때마다 배분을
+     * 지우고 FIFO 로 다시 깔기 때문에, 한 잔금이 두 입금에 걸치면 같은 차량이 서로 다른
+     * 입금 줄에 나뉘어 붙는다(실측: 368머4746 의 09-09 잔금이 09-10 입금 줄에 0.49).
+     * 날짜가 없으면 그게 「09-10 에 생긴 일」로 읽힌다.
+     *
+     * 🚫 **배분 행의 created_at 을 쓰지 말 것** — 그 행은 재배분마다 새로 생기므로 그 값은
+     *    「FIFO 가 마지막으로 돌아간 시각」이다. 돈이 오간 날은 잔금의 수금일(`payment_date`)이고,
+     *    원장 수수료는 수수료일(`charged_date`)이다.
+     */
+    private function cashUseRows(BuyerCashReceipt $receipt): array
+    {
+        return $receipt->allocations
+            // 날짜순 — id 순으로 두면 재배분 때마다 줄 순서가 뒤바뀐다(바로 그 혼란의 일부).
+            ->sortBy(fn ($a) => [$a->usedDate() ?? '9999-99-99', $a->id])
+            ->values()
+            ->map(fn ($a) => [
+                'date' => $d = $a->usedDate(),
+                // 표는 좁으니 월-일만 — 연도까지는 호버(uses_title)가 보여준다.
+                'date_short' => $d ? substr($d, 5) : null,
+                // 🔁 나중 입금이 메운 줄 — 안 알려주면 「시간이 거꾸로 간다」로 읽힌다(모델 주석).
+                'is_backfill' => $a->isBackfillFor($receipt->received_date),
+                // 원장 수수료 배분은 차량이 없다 — 라벨을 안 주면 `- 6.00` 으로만 찍혀
+                //   「아주 작은 잔금」처럼 보인다(실측 R.S.H 에 3줄).
+                'label' => $a->isFee()
+                    ? ($a->fee?->isOverpayCleanup()
+                        ? __('buyer.cash.overpay_section')
+                        : __('buyer.cash.ledger_fee'))
+                    : ($a->vehicle?->vehicle_number ?? '-'),
+                'amount' => (float) $a->amount,
+                // 💸 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 표시를 안 하면
+                //    6 EUR 짜리가 「아주 작은 잔금」으로 보여 원장에서 또 털게 된다.
+                'is_wire_fee' => $a->isVehicleFee(),
+                'is_ledger_fee' => $a->isFee(),
             ])->all();
     }
 
@@ -848,7 +894,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function loadCashFees(int $buyerId): void
     {
         $this->cashFeeList = \App\Models\BuyerCashFee::where('buyer_id', $buyerId)
-            ->with(['allocations.receipt:id,received_date', 'creator:id,name'])
+            // ⚠️ `amount` 를 함께 받는다 — 같은 날 입금이 여럿이면 날짜만으론 어느 건지 못 가린다.
+            ->with(['allocations.receipt:id,received_date,amount', 'creator:id,name'])
             ->orderByDesc('charged_date')->orderByDesc('id')
             ->get()
             ->map(fn ($f) => [
@@ -861,9 +908,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'note' => $f->note,
                 'by' => $f->creator?->name,
                 // 어느 입금에서 나갔나 — 좁은 패널이라 호버로 전문(입금 행의 uses_title 과 같은 방식).
+                //   🗓️ **입금 금액을 같이 적는다** (jin 2026-09-10 제보). 날짜만 쓰면 같은 날 입금이
+                //      여러 건일 때 전부 똑같이 보인다 — 실측 R.S.H 는 09-09 에 입금 3건(58,027.81 /
+                //      3,900 / 9,658.28)이고 수수료 3건이 모두 3,900 에서 나갔는데 화면엔
+                //      `09/09 6.00` 이 세 줄로 찍혀 「같은 날짜가 왜 세 번」으로 읽혔다.
                 'from' => $f->allocations
                     ->map(fn ($a) => ($a->receipt?->received_date?->format('m/d') ?? '-')
-                        .' '.number_format((float) $a->amount, 2))
+                        .' ('.number_format((float) ($a->receipt?->amount ?? 0), 2).') '
+                        .number_format((float) $a->amount, 2))
                     ->implode(' / '),
             ])->all();
     }
@@ -1966,7 +2018,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_date') }}</th>
                             <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
                             <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_remaining') }}</th>
-                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_used') }}</th>
+                            <th class="pb-1.5 pr-2" title="{{ __('buyer.cash.used_date_title') }}">{{ __('buyer.cash.col_used') }}</th>
                             <th class="pb-1.5"></th>
                         </tr>
                     </thead>
@@ -1992,8 +2044,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="py-1.5 pr-2 text-[11px]" title="{{ $r['uses_title'] }}">
                                 @forelse($r['uses'] as $u)
-                                <div class="whitespace-nowrap {{ $u['is_wire_fee'] ? 'text-amber-700' : 'text-gray-600' }}">
-                                    {{ $u['vehicle_number'] }} <span class="font-mono">{{ number_format($u['amount'], 2) }}</span>
+                                {{-- 🗓️ 날짜 = 그 잔금의 수금일(원장 수수료는 수수료일). 한 잔금이 두 입금에
+                                     걸치면 같은 차량이 두 줄로 나뉘므로, 날짜가 없으면 「이 입금 날짜에
+                                     생긴 일」로 읽힌다(jin 2026-09-10 제보). 🚫 created_at 아님 — 재배분마다 갱신된다. --}}
+                                <div class="whitespace-nowrap {{ $u['is_wire_fee'] || $u['is_ledger_fee'] ? 'text-amber-700' : 'text-gray-600' }}">
+                                    <span class="font-mono text-[10px] {{ $u['is_backfill'] ? 'font-semibold text-sky-700' : 'text-gray-400' }}">{{ $u['date_short'] ?? '—' }}</span>
+                                    {{ $u['label'] }} <span class="font-mono">{{ number_format($u['amount'], 2) }}</span>
+                                    @if($u['is_backfill'])
+                                    {{-- 🔁 이 입금보다 **먼저** 기입된 잔금이다. 표시가 없으면 시간이 거꾸로 간 것으로 읽힌다. --}}
+                                    <span class="rounded bg-sky-100 px-1 text-[9px] font-medium text-sky-700"
+                                          title="{{ __('buyer.cash.backfill_hint') }}">{{ __('buyer.cash.backfill_badge') }}</span>
+                                    @endif
                                     @if($u['is_wire_fee'])
                                     <span class="rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">{{ __('buyer.cash.fee_badge') }}</span>
                                     @endif
