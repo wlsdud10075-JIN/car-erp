@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -32,6 +33,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $dateType = 'all';
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
+    /**
+     * mount 가 채운 기본 기간(1년) — 「사용자가 기간을 **바꿨나**」를 판정한다.
+     * 🧭 이게 없으면 진입 상태에서도 조건이 참이라 안내가 **항상** 뜬다
+     *    (기본 기간이 채워져 있고 날짜 기준 기본이 「전체」이므로). jin 2026-09-10:
+     *    *"저렇게 계속 자리 차지하고 있는 게 더 이상한데"*.
+     * ⚠️ `#[Locked]` — 클라이언트가 바꾸면 안내가 조용히 꺼진다.
+     */
+    #[Locked]
+    public string $defaultDateFrom = '';
+
+    #[Locked]
+    public string $defaultDateTo = '';
     // 큐 16 — channelFilter Url 파라미터 제거 (채널 단일).
     #[Url] public string $progressFilter = '';
     // 진행상태 pill 3상태 순환: 미선택(회색) → 이것만(보라, progressFilter) → 제외(빨강, excludeStatuses).
@@ -1456,12 +1469,27 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->dateFrom = $this->dateFrom ?: now()->subYear()->format('Y-m-d');
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+        // 이 값과 달라졌을 때만 「기간 미적용」을 알린다(applyFilters). 진입 상태에서는 조용하다.
+        $this->defaultDateFrom = $this->dateFrom;
+        $this->defaultDateTo = $this->dateTo;
     }
 
     public function applyFilters(): void
     {
         unset($this->vehicles);
         $this->resetPage();
+
+        // ⚠️ 「전체」 기준에서는 기간이 안 걸린다 — 조용히 무시되면 사람은 좁혀진 줄 안다.
+        //    실사고(2026-09-10): 1년 기간을 넣고 엑셀을 받았는데 기준이 「전체」라 ssancarerp
+        //    4,700대가 전량 나가 메모리 초과로 500 이 났다.
+        //    🧭 **기간을 바꿨을 때만** 알린다 — 기본 기간(1년)이 이미 채워져 있어서
+        //       조건만 보면 늘 참이고, 그러면 안내가 화면에 상주하게 된다(jin 제보).
+        //    🚫 자동으로 기준을 바꾸지 않는다 — 「전체」를 일부러 보던 사람의 목록이 줄어든다(jin 결정).
+        if ($this->dateType === 'all'
+            && ($this->dateFrom !== '' || $this->dateTo !== '')
+            && ($this->dateFrom !== $this->defaultDateFrom || $this->dateTo !== $this->defaultDateTo)) {
+            $this->dispatch('notify', message: __('vehicle.date_range_ignored_hint'), type: 'warning');
+        }
     }
 
     /** 초기화 — 차량관리 진입 직후 상태로 원복(검색·기간·진행·담당·바이어·누적·정렬 전부 리셋). */
@@ -6729,13 +6757,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="text" data-date class="input-filter" />
-        {{-- ⚠️ 「전체」 기준에서는 기간이 안 걸린다 — 조용히 무시되면 사람은 좁혀진 줄 안다 (jin 2026-09-10 제보).
-             실사고: 1년 기간을 넣고 엑셀을 받았는데 날짜 기준이 「전체」라 4,700대가 전량 나가 500 이 났다.
-             🚫 자동으로 기준을 바꾸지 않는다 — 「전체」를 일부러 보던 사람의 목록이 갑자기 줄어든다(jin 결정). --}}
-        @if($dateType === 'all' && ($dateFrom !== '' || $dateTo !== ''))
-        <span class="rounded bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-800"
-              title="{{ __('vehicle.date_range_ignored_hint') }}">⚠️ {{ __('vehicle.date_range_ignored') }}</span>
-        @endif
         <select wire:model.live="salesmanId" class="input-filter">
             <option value="">{{ __('vehicle.all_salesmen') }}</option>
             @foreach($this->salesmen as $s)
