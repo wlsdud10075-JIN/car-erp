@@ -192,6 +192,12 @@ return [
     // board 요청·확인 신호 뱃지 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11.
     //   ⚠️ 라벨을 늘리지 말 것 — 차량번호 옆에 보증금매입(5~8자)·잔금지연(5자)과 나란히 선다.
     'buyer_undecided_badge' => '바이어미정',
+    // 💸 진행상태 옆 매입 미지급 병기 (jin 2026-09-10) — 뱃지 글자는 domain.progress.매입중 을 쓰고
+    //    금액만 여기서 호버로 보여준다. 「판매중인데 매입 잔금이 남았다」를 목록에서 알아보려는 것.
+    'purchase_unpaid_badge_title' => '매입 미지급 :amount원 — 매입 잔금이 남아 있습니다',
+    // ⚠️ 날짜 기준이 「전체」면 기간이 안 걸린다 (jin 2026-09-10 실사고 — 1년을 넣었는데 전량이 나갔다)
+    'date_range_ignored' => '기간 미적용',
+    'date_range_ignored_hint' => '날짜 기준이 「전체」라 입력한 기간이 적용되지 않습니다. 매입일·판매일 등 기준을 고르면 그때부터 걸립니다 — 화면 목록과 엑셀 모두 같습니다.',
     'buyer_undecided_title' => '바이어 미정 매입(투기) — 판매 시 바이어를 지정하면 표시가 사라집니다',
     // 탭별 메모 (2026-08-11) — 하단 「메모(공통)」과 별개. 목록은 Vehicle::TAB_MEMOS 단일 출처.
     'tab_memo' => [
@@ -237,6 +243,11 @@ return [
         'freight' => '운임비 합',
         'sale_total' => '판매총액 합',
         'shipping_fee' => '발송비 합',
+        // 💸 미지급 총액 (jin 2026-09-10) — 화면 조건 그대로. 누르면 그 차량만 남는다.
+        'purchase_unpaid' => '미지급 총액',
+        'purchase_unpaid_title' => '지금 지급해야 할 매입 잔금 합계입니다 (화면의 검색·필터 조건 그대로). 누르면 미지급이 남은 차량만 봅니다 — 진행상태가 판매중·선적완료여도 포함됩니다.',
+        'purchase_unpaid_off' => '· 누르면 해제',
+        'purchase_unpaid_cancelled' => '매입취소 :count대 포함 (:amount원)',
         'ems_fee' => '우편요금',
         'dhl_fee' => '청구금액',
     ],

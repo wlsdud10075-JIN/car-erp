@@ -187,6 +187,9 @@ return [
     'deposit_badge_waiting' => 'Deposit-buy',
 
     'buyer_undecided_badge' => 'No buyer',
+    'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW',
+    'date_range_ignored' => 'Range not applied',
+    'date_range_ignored_hint' => 'The date basis is set to All, so the range you typed is not applied. Pick a basis (purchase date, sale date, ...) and it takes effect - for both the list and the export.',
     'buyer_undecided_title' => 'Bought without a buyer (speculative) — clears once a buyer is set',
     // Per-tab memos (2026-08-11) — separate from the shared memo at the bottom.
     'tab_memo' => [
@@ -232,6 +235,10 @@ return [
         'freight' => 'Freight total',
         'sale_total' => 'Sell total',
         'shipping_fee' => 'Shipping',
+        'purchase_unpaid' => 'Unpaid total',
+        'purchase_unpaid_title' => 'Total purchase balance still owed, under the current search and filters. Click to show only vehicles with an unpaid balance - including those already sold or shipped.',
+        'purchase_unpaid_off' => '- click to clear',
+        'purchase_unpaid_cancelled' => 'includes :count cancelled purchase(s) (:amount KRW)',
         'ems_fee' => 'Postage',
         'dhl_fee' => 'DHL',
     ],
