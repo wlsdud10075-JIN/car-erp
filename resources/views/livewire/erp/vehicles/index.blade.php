@@ -2032,8 +2032,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $base = $this->filteredVehicleQuery(false);
 
         return [
-            'in_transit' => (clone $base)->sailing('in_transit')->count(),
-            'arrived' => (clone $base)->sailing('arrived')->count(),
+            'in_transit' => (clone $base)->sailing('in_transit')->excludeClosedDeals()->count(),
+            'arrived' => (clone $base)->sailing('arrived')->excludeClosedDeals()->count(),
         ];
     }
 
@@ -2675,8 +2675,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->progressFilter, fn ($q) => $q->progressStage($this->progressFilter))
             ->when($this->excludeStatuses, fn ($q) => $q->notProgressStages($this->excludeStatuses))
             // 운항 필터 (jin 2026-08-09) — 진행상태와 직교하는 축. Vehicle::scopeSailing 단일 출처.
+            //   ➕ 「거래완료 + 2차 마감」은 뺀다 (jin 2026-09-10) — 소급 적재분이 pill 을 덮어
+            //      도착예정이 전체의 81%였다. 🚫 scopeSailing 자체는 안 건드린다(포털이 그대로 쓴다).
+            //      단일 출처 = Vehicle::scopeExcludeClosedDeals. pill 카운트도 같은 줄을 탄다.
             ->when($withSailing && in_array($this->sailingFilter, \App\Models\Vehicle::SAILING_PHASES, true),
-                fn ($q) => $q->sailing($this->sailingFilter))
+                fn ($q) => $q->sailing($this->sailingFilter)->excludeClosedDeals())
             // 발송 구분 — 'none' 은 EMS·DHL 둘 다 없는 차(아직 서류를 안 보낸 차).
             ->when($this->shipmentFilter === 'ems', fn ($q) => $q->whereNotNull('ems_tracking_no_cache'))
             ->when($this->shipmentFilter === 'dhl', fn ($q) => $q->whereNotNull('dhl_tracking_no_cache'))

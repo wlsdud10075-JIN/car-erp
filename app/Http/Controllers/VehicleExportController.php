@@ -103,7 +103,9 @@ class VehicleExportController extends Controller
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
             ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
-            ->when($sailing !== '', fn ($q) => $q->sailing($sailing))
+            // 화면 pill 과 같은 집합을 내보낸다 — 「거래완료 + 2차 마감」 제외 (jin 2026-09-10).
+            //   화면은 580 인데 엑셀만 3,883 이 나오면 아무도 그 차이를 눈으로 못 잡는다.
+            ->when($sailing !== '', fn ($q) => $q->sailing($sailing)->excludeClosedDeals())
             ->when($shipFilter === 'ems', fn ($q) => $q->whereNotNull('ems_tracking_no_cache'))
             ->when($shipFilter === 'dhl', fn ($q) => $q->whereNotNull('dhl_tracking_no_cache'))
             ->when($shipFilter === 'none', fn ($q) => $q->whereNull('ems_tracking_no_cache')->whereNull('dhl_tracking_no_cache'))

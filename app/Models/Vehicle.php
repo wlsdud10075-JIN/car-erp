@@ -2718,6 +2718,33 @@ class Vehicle extends Model
         });
     }
 
+    /**
+     * 🚢 운항 pill 전용 제외 — 「거래완료 + 2차 정산 마감」은 끝난 일이다 (jin 2026-09-10).
+     *
+     * 왜 필요했나 — ssancarerp 소급 적재(3,839대)가 선적일·ETA 를 전부 들고 들어왔다.
+     * `scopeSailing` 은 **진행상태를 일부러 안 보는** 설계(2026-08-09)라 그 과거분이 그대로
+     * 「도착예정」으로 쓸렸다 — 실측 3,883 / 전체 4,793 = **81%**. pill 이 사실상 「과거 전체」가 됐다.
+     *
+     * ⏳ **시간이 지나면 저절로 줄어든다** — 2차가 닫히는 순간 빠진다. 고정 목록이 아니라
+     *    「아직 안 끝난 배」만 남는 구조다(실측 적용 후 580 대, 그중 337 대가 2차 미마감).
+     *
+     * 🚫 **`scopeSailing`·`sailing_status` 를 좁히지 않는다.** 그 값은 ssancar.com 포털과 board 가
+     *    그대로 받아 화면을 그리고(`PortalVehicleController` · `InternalPortalController`),
+     *    `SailingStatusTest::test_scope_and_accessor_agree` 가 scope↔accessor 일치를 박아둔다.
+     *    ⇒ **차량관리 목록·pill 카운트·그 목록의 엑셀만** 이걸 덧붙인다(「매입중」과 같은 형태).
+     *
+     * ⚠️ 조건을 「2차 마감」 하나로 줄이지 않는다 — 지금은 마감된 차가 전부 거래완료라
+     *    결과가 같지만(실측 3,303 동일), 나중에 거래완료가 아닌 차에 마감된 정산이 생기면
+     *    그건 아직 배 위에 있는 차다. 둘 다 보는 게 뜻에 맞는다.
+     */
+    public function scopeExcludeClosedDeals(Builder $query): Builder
+    {
+        return $query->where(fn (Builder $q) => $q
+            ->where('progress_status_cache', '!=', '거래완료')
+            ->orWhereNull('progress_status_cache')   // 판정 불가 — 숨기지 않는다
+            ->orWhereDoesntHave('settlements', fn ($s) => $s->where('secondary_status', 'closed')));
+    }
+
     public function scopeSailing(Builder $query, string $phase): Builder
     {
         // ⚠️ 경계는 '오늘 23:59:59' 로 잡는다 — SQLite 는 date 컬럼을 'Y-m-d 00:00:00' 로 저장해서

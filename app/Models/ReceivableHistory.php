@@ -42,6 +42,28 @@ class ReceivableHistory extends Model
     public const MANUAL_METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings'];
 
     /**
+     * 소급 적재가 「미수를 0 으로 만들려고」 남긴 회수이력의 표식 (2026-08-28 ssancarerp 적재).
+     *
+     * 그 행은 **실제로 받은 돈이 아니다** — 적재 시점에 미납이던 금액을 기타(other) 로 적어
+     * 미수를 0 으로 눕힌 기록이다(jin 확정, 🚫손실처리 아님). 그래서 화면상 완납인데
+     * 실제로는 받아야 할 돈이 남아 있는 차가 생긴다(실측 ssancarerp 317 건 — 그중 45 대는
+     * 금액이 **운임비와 정확히 일치**한다 = 물건값은 받고 운임만 못 받은 선적 묶음).
+     *
+     * 🔑 **표식은 이 문자열 하나뿐이다.** 채권관리 「임포트 정리분」 탭과
+     *    `ssancarerp:convert-import-receivables` 가 같은 값을 본다 — 옮겨 적지 말 것(SKILLS §8 #45).
+     * 🧭 `method='other'` 만으로 고르지 않는 이유 = 기타는 **사람이 실제 회수에도 쓰는** 방법이라
+     *    그것만 보면 진짜 받은 돈까지 「안 받은 돈」으로 뜬다(오탐이 나는 목록은 곧 무시당한다).
+     */
+    public const IMPORT_CLEARED_NOTE_PREFIX = '과거데이터 임포트';
+
+    /** 위 표식이 붙은 「미수 정리」 행 — 단일 출처. */
+    public function scopeImportCleared($query)
+    {
+        return $query->where('method', 'other')
+            ->where('note', 'like', self::IMPORT_CLEARED_NOTE_PREFIX.'%');
+    }
+
+    /**
      * 적립금(method=savings) 행이 vehicles.savings_used 를 갱신하는 걸 건너뛰는 플래그 (2026-07-28).
      * 판매탭에서 savings_used 가 바뀌면 Vehicle H6 가 기록용 미러 행을 만드는데, 그 행이 다시
      * savings_used 를 더하면 이중 반영된다 → Vehicle 이 이 플래그를 try/finally 로 세운다.
