@@ -845,6 +845,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             'deposit' => $q->where('savings_used', '>', 0),
 
+            // 임포트 정리분 (jin 2026-09-10) — **화면상 완납인데 실제로는 안 받은 돈**이 있는 차.
+            //   2026-08-28 소급 적재가 미납을 회수이력 「기타」로 적어 미수를 0 으로 눕혔다.
+            //   미수를 되살리지 않기로 한 이유(jin) = v5 규칙이 「출고일+완납」이라 되살리면
+            //   실측 77 대가 거래완료에서 판매중으로 떨어지고, 2차 마감된 228 건은 살려봤자
+            //   `FinalPayment::creating` 가드에 막혀 **받은 돈을 넣을 수도 없다**.
+            //   ⇒ 미수는 0 그대로 두고 **여기서 목록으로만** 본다. 받으면 그때 그 행을 지우고
+            //     진짜 입금을 넣는다(2차 미마감이면 지금 바로 된다).
+            //   🔑 표식 = ReceivableHistory::scopeImportCleared 단일 출처.
+            'import_cleared' => $q->whereHas('receivableHistories', fn ($h) => $h->importCleared()),
+
             // 완납 — 회수이력 조회용(실측 heymanerp 174대 중 81대가 회수이력 보유)+ **초과입금 5대**가
             //   여기 묻혀 있다(미수 음수 = 돌려줘야 할 돈). 목록에서 빨강으로 표시한다.
             'paid_up' => $q->where(fn ($q2) => $q2
@@ -913,7 +923,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    탭엔 「선적전 23」이 떠 있는데 눌러 들어가면 20건 — 기간 필터를 탭만 안 탔기 때문.
         //    이제 buildQuery(false) = 분류만 뺀 같은 필터를 공유한다. 눌렀을 때 그 숫자가 그대로 나온다.
         $counts = [];
-        foreach (['', 'grace', 'before_shipping', 'after_shipping', 'deposit', 'paid_up'] as $key) {
+        foreach (['', 'grace', 'before_shipping', 'after_shipping', 'deposit', 'paid_up', 'import_cleared'] as $key) {
             $counts[$key === '' ? 'all' : $key] = self::applyClassification($this->buildQuery(false), $key)->count();
         }
 
@@ -971,7 +981,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                 class="tab-pill {{ $classification === 'paid_up' ? 'is-active' : '' }}">
             {{ __('receivable.tab.paid_up') }} <span class="pill-count">{{ $cc['paid_up'] }}</span>
         </button>
+        {{-- 임포트 정리분 — **대상이 있을 때만** 뜬다 (jin 2026-09-10).
+             소급 적재를 한 회사에만 생기는 상태라 회사별 분기를 코드에 박을 필요가 없고,
+             다 받아서 정리하면 저절로 사라진다(SKILLS §8 #67 「버튼 노출은 대상 건수로」). --}}
+        @if($cc['import_cleared'] > 0 || $classification === 'import_cleared')
+        <button wire:click="$set('classification', 'import_cleared')"
+                title="{{ __('receivable.tab.import_cleared_hint') }}"
+                class="tab-pill {{ $classification === 'import_cleared' ? 'is-active' : '' }}">
+            {{ __('receivable.tab.import_cleared') }} <span class="pill-count">{{ $cc['import_cleared'] }}</span>
+        </button>
+        @endif
     </div>
+
+    {{-- 이 탭은 「미수 0 인데 안 받은 돈」이라 반드시 이유를 적는다 (SKILLS §8 #85 · #60).
+         안 적으면 미수 컬럼이 전부 0 이라 「왜 여기 있지」가 되고, 사람이 멀쩡한 기록을 손본다. --}}
+    @if($classification === 'import_cleared')
+    <div class="card-sm -mt-1 mb-1 border-amber-200 bg-amber-50/60 text-[12px] text-amber-800">
+        {{ __('receivable.import_cleared_note') }}
+    </div>
+    @endif
 
     {{-- 탭 합계가 눈으로 닫히게 (jin 2026-08-20) — 「채권 전체 = 결제대기 + 선적전 + 선적후」.
          구 「전체」는 완납까지 세서 250 이었고, 선적전·선적후와 아귀가 안 맞아 보였다. --}}
@@ -1501,6 +1529,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="flex items-center gap-2 text-sm">
                                 <span class="font-medium text-gray-800">{{ $h->collected_at->format('Y-m-d') }}</span>
                                 <span class="badge {{ $methodBadge }}">{{ $methodLabel }}</span>
+                                {{-- 「기타」 줄 중 소급 적재가 남긴 것 — 실제로 받은 돈이 아니라 **아직 받을 돈**이다.
+                                     표시가 없으면 진짜 회수한 「기타」와 구분이 안 돼 청구 대상을 못 고른다.
+                                     판정 = ReceivableHistory::scopeImportCleared 와 같은 표식(jin 2026-09-10). --}}
+                                @if ($h->method === 'other' && str_starts_with((string) $h->note, \App\Models\ReceivableHistory::IMPORT_CLEARED_NOTE_PREFIX))
+                                <span class="badge badge-amber" title="{{ __('receivable.tab.import_cleared_hint') }}">{{ __('receivable.import_cleared_badge') }}</span>
+                                @endif
                                 <span class="text-xs text-gray-500">{{ $h->collector?->name ?? '-' }}</span>
                                 @if ($h->final_payment_id)
                                 <span class="text-xs text-blue-500" title="{{ __('receivable.mirror_title') }}">↔ #{{ $h->final_payment_id }}</span>

@@ -40,14 +40,20 @@ use Illuminate\Support\Facades\DB;
  *    흡수했는데 계약서 Total 엔 그 칸이 없어 Balance 가 **음수**로 찍힌다(실측 79대).
  *    그건 계약서 양식의 문제라 여기서 못 고친다.
  *
+ * ## 🚨 이 명령을 돌리기 전에 (jin 2026-09-10)
+ *
+ * 전환하면 그 행은 **확정 판매 잔금**이 된다 — 즉 ERP 는 그 돈을 **받은 것으로 기록**한다.
+ * 그런데 실제로는 **안 받은 돈**이 섞여 있다(실측 45 대는 금액이 운임비와 일치 = 운임 미수령).
+ * ⇒ 돌리는 순간 표식이 사라져 채권관리 「임포트 정리분」 탭에서도 통째로 빠지고,
+ *   **무엇을 못 받았는지 다시 찾을 방법이 없어진다.**
+ * 🅿️ 그래서 2026-09-10 현재 **미실행**이다(실측 317 행 전량 잔존). 계약서 Received 칸을 맞추려면
+ *   먼저 「받을 것 / 이미 받았는데 기록만 없는 것」을 가른 뒤 후자에만 `--limit` 으로 돌릴 것.
+ *
  *   php artisan ssancarerp:convert-import-receivables            # dry-run (기본)
  *   php artisan ssancarerp:convert-import-receivables --apply
  */
 class ConvertImportReceivableToPayment extends Command
 {
-    /** 적재기가 남긴 표식 — 이 문자열로만 대상을 고른다. */
-    private const NOTE_MARKER = '과거데이터 임포트%';
-
     protected $signature = 'ssancarerp:convert-import-receivables
         {--apply : 실제 전환 (미지정 시 dry-run)}
         {--limit=0 : 처리할 최대 건수 (0=전체)}';
@@ -59,9 +65,10 @@ class ConvertImportReceivableToPayment extends Command
         $apply = (bool) $this->option('apply');
         $limit = max(0, (int) $this->option('limit'));
 
+        // 🔑 대상 선정은 ReceivableHistory::scopeImportCleared 단일 출처다.
+        //    채권관리 「임포트 정리분」 탭이 같은 행을 본다 — 조건을 옮겨 적으면 갈린다(SKILLS §8 #45).
         $query = ReceivableHistory::query()
-            ->where('note', 'like', self::NOTE_MARKER)
-            ->where('method', 'other')
+            ->importCleared()
             ->whereNull('final_payment_id')
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'vehicle.settlements.salesman'])
             ->orderBy('id');
