@@ -64,6 +64,13 @@ Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();
 //   ⚠️ 매일(주말 포함) — 금요일 마감이 토요일 09:00 에 정확히 잡히게. 잔금 날짜별 환율 자동기입 소스.
 Schedule::command('exchange:snapshot-daily')->dailyAt('09:00')->withoutOverlapping();
 
+// 시스템 점검 요약 → 시스템관리자 텔레그램 1통 (jin 2026-09-11, SKILLS §8 #88 후속).
+//   🚫 환율 스냅샷(09:00)보다 **먼저** 돈다 — 그래서 마감환율의 정상 나이가 늘 2일이다
+//      (SystemHealthReport::CHECKS 주석). 시각을 옮기면 그 임계도 같이 봐야 한다.
+//   🟢 이상이 없어도 보낸다(dead-man's switch). 끄는 곳은 기능설정.
+//   3사가 각자 보낸다 — 모아 보내면 모으는 서버가 죽을 때 통째로 침묵한다.
+Schedule::command('system:health-check')->dailyAt('08:00')->withoutOverlapping();
+
 // 챗봇 호스트 감시 (2026-07-30, 색인 세션 요청) — 사내 GPU PC 는 자기가 죽었다고 알릴 통로가 없다.
 //   죽어도 챗봇은 에러 없이 옛 답변만 계속 내므로 티가 안 난다. Ollama 응답 + 색인 mtime 두 지표를
 //   캐시에 적어두고 사이드바(시스템관리자 전용)가 읽는다. 캐시 TTL 30분 → 스케줄러가 죽으면 화면이

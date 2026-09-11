@@ -99,6 +99,9 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $telegramToken = '';                 // 입력칸 — 비우면 기존 토큰 유지
     public bool $telegramTokenSet = false;             // 저장 여부만 표시(값은 안 내려보냄)
 
+    // 아침 점검 항목별 on/off·임계일 — 배포 없이 조정하려고 설정에 둔다(3사 동시배포라 배포가 무겁다).
+    public array $healthChecks = [];                   // key => ['on' => bool, 'days' => int]
+
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
@@ -371,6 +374,14 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->telegramChatId = $cfg->chatId;
         $this->telegramTokenSet = $cfg->token !== null && $cfg->token !== '';
         $this->telegramToken = '';   // 값은 화면으로 안 내려보낸다
+
+        $this->healthChecks = [];
+        foreach (array_keys(\App\Services\SystemHealthReport::CHECKS) as $k) {
+            $this->healthChecks[$k] = [
+                'on' => \App\Services\SystemHealthReport::enabled($k),
+                'days' => \App\Services\SystemHealthReport::days($k),
+            ];
+        }
     }
 
     /**
@@ -406,6 +417,14 @@ new #[Layout('components.layouts.app')] class extends Component
                 ['key' => 'telegram_bot_token'],
                 ['value' => \Illuminate\Support\Facades\Crypt::encryptString($newToken), 'type' => 'string', 'description' => '시스템 장애 텔레그램 봇 토큰(암호화)'],
             );
+        }
+
+        foreach (\App\Services\SystemHealthReport::CHECKS as $k => $def) {
+            $on = (bool) ($this->healthChecks[$k]['on'] ?? $def['default_on']);
+            // 임계 0 은 「즉시 X」가 되어 매일 빨개진다 — 최소 1 로 눌러 사고를 막는다.
+            $days = max(1, (int) ($this->healthChecks[$k]['days'] ?? $def['days']));
+            Setting::updateOrCreate(['key' => "health_check_{$k}_enabled"], ['value' => $on ? '1' : '0', 'type' => 'boolean', 'description' => "아침 점검 항목 on/off ({$k})"]);
+            Setting::updateOrCreate(['key' => "health_check_{$k}_days"], ['value' => (string) $days, 'type' => 'integer', 'description' => "아침 점검 임계일 ({$k})"]);
         }
 
         $this->loadTelegramSettings();
@@ -1286,6 +1305,33 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.telegram_daily_hint') }}</span>
                 </span>
             </label>
+
+            <hr class="section-divider">
+
+            {{-- 아침 점검 항목 — 무엇을 O/X 로 볼지. 오탐이 나는 항목은 꺼두면 된다.
+                 🔴 「챗봇 자료」는 기본 off(2026-09-11 GPU 경합으로 챗봇 정지 중). --}}
+            <div class="{{ $telegramEnabled && $telegramDailySummary ? '' : 'opacity-50' }}">
+                <p class="text-sm font-medium text-gray-700">{{ __('feature_settings.telegram_checks_label') }}</p>
+                <p class="mb-2 text-xs text-gray-400">{{ __('feature_settings.telegram_checks_hint') }}</p>
+                <div class="space-y-1.5">
+                    @foreach (array_keys(\App\Services\SystemHealthReport::CHECKS) as $hk)
+                    <div class="flex items-center gap-2" wire:key="hc-{{ $hk }}">
+                        <input wire:model="healthChecks.{{ $hk }}.on" type="checkbox"
+                               @disabled(! ($telegramEnabled && $telegramDailySummary))
+                               class="rounded border-gray-300" />
+                        <span class="w-28 text-sm text-gray-700">{{ __('health.item.'.$hk) }}</span>
+                        @if ($hk !== 'alimtalk_failed')
+                            <input wire:model="healthChecks.{{ $hk }}.days" type="number" min="1" max="60"
+                                   @disabled(! ($telegramEnabled && $telegramDailySummary))
+                                   class="input-base w-16 text-right text-xs" />
+                            <span class="text-xs text-gray-400">{{ __('feature_settings.telegram_checks_days') }}</span>
+                        @else
+                            <span class="text-xs text-gray-400">{{ __('feature_settings.telegram_checks_count_based') }}</span>
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+            </div>
 
             <div class="flex items-center justify-between pt-1">
                 <button wire:click="sendTelegramTest" wire:loading.attr="disabled"

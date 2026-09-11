@@ -179,4 +179,8 @@ return [
     'telegram_test_failed' => '발송에 실패했습니다. 봇 토큰과 받는 사람 번호를 확인하세요.',
     'telegram_not_configured' => '봇 토큰과 받는 사람 번호를 먼저 저장하세요.',
     'telegram_saved' => '텔레그램 알림 설정을 저장했습니다.',
+    'telegram_checks_label' => '아침 점검 항목',
+    'telegram_checks_hint' => '무엇을 정상/이상으로 볼지 고릅니다. 오른쪽 숫자는 「마지막 성공이 며칠을 넘기면 이상으로 볼지」입니다. 오탐이 나는 항목은 꺼두세요 — 매일 이상으로 뜨면 요약 전체를 안 읽게 됩니다.',
+    'telegram_checks_days' => '일',
+    'telegram_checks_count_based' => '한 건이라도 있으면 이상',
 ];
