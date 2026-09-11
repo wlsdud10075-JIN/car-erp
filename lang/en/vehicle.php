@@ -1275,6 +1275,7 @@ return [
         'buyer_has_foreign' => 'This buyer has :count non-KRW vehicle(s), so it cannot be marked domestic: :plates',
     ],
     'taxinvoice' => [
+        'not_paid' => 'The purchase amount is not fully paid. ₩:amount is still outstanding, so a tax invoice cannot be requested.',
         'send_btn' => '🧾 Request tax invoice',
         'confirm' => 'This sends a tax-invoice request for this purchase, along with a link to download the business registration certificate. Send it?',
         'save_first' => 'Save the vehicle first.',

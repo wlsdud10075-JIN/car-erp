@@ -4322,6 +4322,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         $vehicle = \App\Models\Vehicle::find($this->editingId);
         abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
 
+        // 🚨 **매입 대금을 다 치른 차만** 요청할 수 있다 (jin 2026-09-11).
+        //    세금계산서는 대금을 지급한 뒤 받는 것이라, 미지급 상태로 요청하면 딜러가 먼저 발행하게 된다.
+        //    ⚠️ 매입가 0 을 함께 보는 이유 — 매입가를 아직 안 넣은 차는 미지급도 0 이라 「완납」으로 읽힌다
+        //       (v4 cascade 의 `매입완료` 판정이 같은 두 조건을 쓰는 것과 같은 이유).
+        //    🚫 화면 입력값이 아니라 **DB 확정분**(확정 PBP 기준 accessor)을 본다 — 저장 안 한 숫자로
+        //       「다 냈다」고 판단하면 거짓 요청이 나간다.
+        $unpaid = (int) $vehicle->purchase_unpaid_amount;
+        if ((int) $vehicle->purchase_price <= 0 || $unpaid > 0) {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.not_paid', [
+                'amount' => number_format(max($unpaid, 0)),
+            ]), type: 'error');
+
+            return;
+        }
+
         $phone = trim($this->deregistrationBuyerPhone);
         if ($phone === '') {
             $this->dispatch('notify', message: __('vehicle.taxinvoice.no_phone'), type: 'error');
