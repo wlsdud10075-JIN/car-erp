@@ -316,6 +316,55 @@ class PaymentBreakdownPrecisionTest extends TestCase
         $this->assertStringContainsString('5,894.17', $html, '입금이 반올림돼 보인다');
     }
 
+    // ── 미러 정리 (jin 2026-09-11 «B로 진행») ────────────────────────
+
+    /** 짝 잃은 회수이력 = 「판매 잔금 자동 미러링」인데 연결이 끊긴 행. */
+    private function orphanMirrors(): int
+    {
+        return ReceivableHistory::whereNull('final_payment_id')
+            ->where('note', '판매 잔금 자동 미러링')->count();
+    }
+
+    public function test_changing_a_breakdown_amount_leaves_no_orphan_mirror(): void
+    {
+        // 예전엔 4항목 sync 의 삭제가 bulk 라 잔금만 사라지고 회수이력이 NULL 로 남았다
+        //   → 채권관리에 「지워도 아무 일이 안 일어나는」 입금 줄이 쌓였다(실측 heymanerp 4건).
+        $v = $this->vehicle();
+
+        $c = $this->panel()->call('openEdit', $v->id)->set('fee_str', '6.46')->call('save');
+        $this->assertSame(1, ReceivableHistory::where('vehicle_id', $v->id)->count(), '미러가 안 생겼다');
+
+        $c->call('openEdit', $v->id)->set('fee_str', '7.25')->call('save');
+
+        $this->assertSame(0, $this->orphanMirrors(), '금액을 고쳤더니 짝 잃은 회수이력이 남았다');
+        $this->assertSame(1, ReceivableHistory::where('vehicle_id', $v->id)->count(), '미러가 중복되거나 사라졌다');
+        $this->assertSame(7.25, (float) ReceivableHistory::where('vehicle_id', $v->id)->value('amount'));
+    }
+
+    public function test_clearing_a_breakdown_amount_removes_the_mirror_too(): void
+    {
+        $v = $this->vehicle();
+
+        $c = $this->panel()->call('openEdit', $v->id)->set('fee_str', '6.46')->call('save');
+        $c->call('openEdit', $v->id)->set('fee_str', '')->call('save');
+
+        $this->assertSame(0, $this->orphanMirrors(), '칸을 비웠더니 짝 잃은 회수이력이 남았다');
+        $this->assertSame(0, ReceivableHistory::where('vehicle_id', $v->id)->count(), '미러가 안 지워졌다');
+        $this->assertNull($this->feeAmount($v));
+    }
+
+    public function test_deleting_from_receivables_still_takes_both(): void
+    {
+        // 반대 방향도 그대로여야 한다 — 채권관리가 원천이라는 규칙은 안 건드렸다.
+        $v = $this->vehicle();
+        $this->panel()->call('openEdit', $v->id)->set('fee_str', '6.46')->call('save');
+
+        ReceivableHistory::where('vehicle_id', $v->id)->get()->each->delete();
+
+        $this->assertNull($this->feeAmount($v), '채권관리에서 지웠는데 판매잔금이 남았다');
+        $this->assertSame(0, $this->orphanMirrors());
+    }
+
     // ── 정적 가드 ───────────────────────────────────────────────────
 
     public function test_the_breakdown_loader_never_casts_the_sum_to_int(): void
