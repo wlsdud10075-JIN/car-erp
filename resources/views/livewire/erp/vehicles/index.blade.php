@@ -2816,6 +2816,20 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 🧾 세금계산서 발행 요청 알림톡을 **지금 보낼 수 있는가** — 버튼 노출 조건 (jin 2026-09-11).
+     *
+     * 🚦 위 딜러 입금완료와 같은 원칙 — BizM 승인 전에는 버튼이 아예 안 뜬다. tmplId 가 채워지면
+     *    자동으로 켜지므로 회사별 분기를 코드에 박을 필요가 없다(SKILLS §8 #54-B).
+     * ⚠️ **사업자등록증 등록 여부는 여기서 안 본다.** 등록을 안 했다는 사실은 눌렀을 때 안내로
+     *    알려야 한다 — 버튼이 조용히 사라지면 왜 없는지 아무도 모른다(SKILLS §8 #60).
+     */
+    #[Computed]
+    public function taxInvoiceNoticeEnabled(): bool
+    {
+        return \App\Support\AlimtalkConfig::active()->canSend('erp_tax_invoice_request');
+    }
+
+    /**
      * 실제로 쓸 템플릿 코드 — **v2 가 승인·입력돼 있으면 그쪽**, 아니면 기존 것 (jin 2026-08-21).
      *
      * v2(`erp_purchase_paid_v2`) = 저당 안내 한 줄 + 담당영업 동시 수신. 본문이 다르므로 BizM
@@ -4281,6 +4295,67 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->dispatch('notify', message: __('vehicle.deregnotice.sent'), type: 'success');
         } else {
             $this->dispatch('notify', message: __('vehicle.deregnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+        }
+    }
+
+    /**
+     * 국내 딜러에게 **세금계산서 발행 요청** 알림톡 (수동 버튼, jin 2026-09-11).
+     *
+     * 🚫 알림톡은 파일 첨부가 안 된다 — 사업자등록증은 **만료 서명 링크**로 보낸다(말소증과 같은 길).
+     *    만료 7일은 **본문에도 적혀 있으므로** 여기 숫자를 바꾸면 BizM 재승인이 필요하다.
+     * 📞 수신 번호는 말소등록증·입금완료와 **같은 칸**(`deregistration_notice_phone`)이다 — 세 번째 소비자.
+     * 🏢 회사명·사업자번호는 기능설정에서 회사별로 받는다. 하나라도 비면 발송을 막는다 —
+     *    빈 값이 그대로 나가면 딜러가 어느 회사의 요청인지 모른다.
+     */
+    public function sendTaxInvoiceAlimtalk(): void
+    {
+        abort_unless(
+            auth()->user()?->canAccessClearance() || auth()->user()?->canAccessSettlement(),
+            403,
+        );
+
+        if ($this->editingId === null) {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.save_first'), type: 'warning');
+
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        $phone = trim($this->deregistrationBuyerPhone);
+        if ($phone === '') {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.no_phone'), type: 'error');
+
+            return;
+        }
+
+        $set = \App\Models\Setting::companyTemplateSet();
+        $certPath = \App\Models\Setting::get('biz_cert_'.$set);
+        $name = trim((string) \App\Models\Setting::get('biz_cert_name_'.$set, ''));
+        $number = trim((string) \App\Models\Setting::get('biz_cert_number_'.$set, ''));
+
+        // 셋 중 하나라도 비면 보내지 않는다 — 빈 값이 나가면 딜러가 어느 회사인지 모른다.
+        if (blank($certPath) || $name === '' || $number === '') {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.no_cert'), type: 'error');
+
+            return;
+        }
+
+        $link = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'buyer.business-registration', now()->addDays(7), ['vehicle' => $vehicle->id],
+        );
+
+        $log = \App\Services\BizmAlimtalkService::active()->send('erp_tax_invoice_request', $phone, [
+            '차량번호' => $vehicle->vehicle_number,
+            '회사명' => $name,
+            '사업자번호' => $number,
+            '링크' => $link,
+        ], ['vehicle_id' => $vehicle->id, 'user_id' => auth()->id()]);
+
+        if ($log->status === 'sent') {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.sent'), type: 'success');
+        } else {
+            $this->dispatch('notify', message: __('vehicle.taxinvoice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
         }
     }
 
@@ -8578,7 +8653,7 @@ function vehicleColumnsToggle() {
                         입금완료 📨 버튼(canConfirmFinance)은 보이는데 **번호 넣을 칸이 안 보이는** 상태였다.
                         발송 버튼만 각자의 권한으로 가른다 — 칸은 둘 다 본다.
                      차량등록 화면에도 노출(번호 미리 입력, jin 2026-07-14). 말소 발송은 저장 후에만 동작. --}}
-                @if(auth()->user()->canHandleDeregistration() || $canConfirmFinance)
+                @if(auth()->user()->canHandleDeregistration() || $canConfirmFinance || $this->taxInvoiceNoticeEnabled)
                 <div class="col-span-2">
                     <div class="rounded-md border border-yellow-100 bg-yellow-50 px-3 py-2.5">
                         <div class="text-xs font-semibold text-yellow-800">{{ __('vehicle.deregnotice.label') }}</div>
@@ -8591,6 +8666,13 @@ function vehicleColumnsToggle() {
                             <input wire:model.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
                             @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
+                            @endif
+                            {{-- 세금계산서 발행 요청 (jin 2026-09-11) — 사업자등록증을 링크로 함께 보낸다.
+                                 🚦 BizM 승인(tmplId)이 있어야 뜬다. 권한 = 재무·수출통관·관리 이상(영업 제외). --}}
+                            @if($this->taxInvoiceNoticeEnabled && (auth()->user()->canAccessClearance() || auth()->user()->canAccessSettlement()))
+                            <button type="button" wire:click="sendTaxInvoiceAlimtalk"
+                                    wire:confirm="{{ __('vehicle.taxinvoice.confirm') }}"
+                                    class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.taxinvoice.send_btn') }}</button>
                             @endif
                         </div>
                     </div>

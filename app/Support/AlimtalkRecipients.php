@@ -91,6 +91,7 @@ class AlimtalkRecipients
         'erp_deregistration_notice' => '국내 딜러(수동 발송)',
         // v1. v2(erp_purchase_paid_v2)는 역할 선택형이지만 이건 딜러에게만 가는 수동 발송이다.
         'erp_purchase_paid' => '국내 딜러(수동 발송)',
+        'erp_tax_invoice_request' => '국내 딜러(수동 발송)',
         'erp_payout_request' => '승인 계단 담당자',
         'erp_payout_done' => '제출자 본인',
         'erp_payout_rejected' => '제출자 본인',
