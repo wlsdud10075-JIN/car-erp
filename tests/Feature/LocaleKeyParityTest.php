@@ -79,6 +79,36 @@ class LocaleKeyParityTest extends TestCase
             ],
         ];
 
+        // 🕳️ **en 에만 있는 키**를 찾는다 (jin 2026-09-11 점검에서 드러난 구멍).
+        //    아래 루프는 「영어 값에 한글이 남았나」만 봤고, 키 존재 여부는 ko→en 한 방향만 봤다.
+        //    en 에만 있는 키를 화면이 쓰면 **한국어 사용자가 영어를 본다**(fallback_locale=en).
+        //    실측으로 10개가 있었다(`payout_batch.cancel_loss.*` — 08-06 UI 이동 잔재, 화면 미사용).
+        $enOnly = [];
+        foreach (glob(lang_path('en/*.php')) as $enPath) {
+            $name = basename($enPath);
+            if (in_array($name, self::SKIP, true)) {
+                continue;
+            }
+            $koPath = lang_path('ko/'.$name);
+            if (! file_exists($koPath)) {
+                continue;   // 파일 자체가 없는 경우는 아래 루프·다른 테스트가 본다
+            }
+            $koKeys = $this->flatten(require $koPath);
+            foreach (array_keys($this->flatten(require $enPath)) as $key) {
+                if (! array_key_exists($key, $koKeys)) {
+                    $enOnly[] = "{$name}: {$key}";
+                }
+            }
+        }
+
+        $this->assertSame([], $enOnly, sprintf(
+            'en 에만 있는 키 %d개 — 한국어 화면이 영어로 떨어진다. ko 에 추가하거나, 안 쓰는 키면 en 에서 지울 것.
+%s',
+            count($enOnly),
+            implode('
+', $enOnly),
+        ));
+
         $left = [];
         foreach (glob(lang_path('en/*.php')) as $enPath) {
             $name = basename($enPath);
