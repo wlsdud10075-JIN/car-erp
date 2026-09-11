@@ -333,7 +333,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap {{ $a->isFee() || $a->isVehicleFee() ? 'text-amber-700' : 'text-gray-700' }}">
                             {{ $a->isFee() ? ($a->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section')) : ($a->vehicle?->vehicle_number ?? '-') }}
                             @if($a->isVehicleFee())
-                            <span class="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-sans font-medium text-amber-700">{{ __('buyer.cash.fee_badge') }}</span>
+                            <span class="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-sans font-medium text-amber-700"
+                                  title="{{ __('buyer.cash.fee_badge_hint') }}">{{ __('buyer.cash.fee_badge') }}</span>
                             @endif
                         </td>
                         <td class="py-1.5 pr-3 max-w-[150px] truncate font-mono text-gray-400" title="{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}">{{ $a->isFee() ? ($a->fee?->note ?? '') : $a->vehicle?->nice_reg_vin }}</td>
@@ -361,6 +362,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         @empty
         <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
         @endforelse
+
+        {{-- 🧭 지우는 곳을 화면이 말해야 한다 (jin 2026-09-11 · SKILLS §8 #60).
+             이 표엔 삭제가 없는 게 설계인데(원본은 판매탭·채권관리), 안내가 없어서
+             「6.00 이 보이는데 지울 방법이 없다」는 문의가 왔다. --}}
+        <p class="mt-1 text-[11px] text-gray-400">{{ __('buyer.cash.where_to_delete') }}</p>
 
         {{-- 입금은 계속 쌓이기만 한다 — 한 번에 다 그리면 몇 년 뒤 이 화면만 느려진다. --}}
         @if($this->usageHasMore)

@@ -191,6 +191,8 @@ return [
         'fee_hint' => 'When a wire fee made the actual receipt smaller than the recorded amount, clear the difference here. It is taken from the remaining cash, oldest receipt first.',
         'fee_hint_vehicle' => 'A wire fee that belongs to one vehicle goes in Sale tab -> Wire fee; that already reduces this cash. Use this box only for a fee you cannot attach to a vehicle - entering it in both places deducts it twice.',
         'fee_badge' => 'Wire fee',
+        'where_to_delete' => 'This table is read-only. Remove a vehicle wire fee from that vehicle’s sales tab, and a balance from the receivables screen.',
+        'fee_badge_hint' => 'Remove this line from the Wire fee field on that vehicle’s sales tab.',
         'fee_date' => 'Fee date',
         'fee_amount' => 'Fee (foreign currency)',
         'fee_note' => 'Reason (optional)',
