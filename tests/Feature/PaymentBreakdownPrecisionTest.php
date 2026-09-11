@@ -299,6 +299,23 @@ class PaymentBreakdownPrecisionTest extends TestCase
         $this->assertStringNotContainsString('1,000,000.00', $html, '정수인데 소수 두 자리가 붙었다');
     }
 
+    public function test_the_sale_summary_shows_decimals(): void
+    {
+        // jin 2026-09-11 — 판매탭 위쪽 요약(총판매가·입금·미수)도 반올림하고 있었다.
+        //   실측 heymanerp 12대가 해당 (예: 미수 125.83 → 126).
+        $v = $this->vehicle();
+        $v->update(['sale_price' => 6020, 'transport_fee' => 0]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 5894.17,
+            'exchange_rate' => 1400, 'payment_date' => '2026-09-11', 'confirmed_at' => now(),
+        ]);
+
+        $html = $this->panel()->call('openEdit', $v->id)->html();
+
+        $this->assertStringContainsString('125.83', $html, '미수가 반올림돼 보인다');
+        $this->assertStringContainsString('5,894.17', $html, '입금이 반올림돼 보인다');
+    }
+
     // ── 정적 가드 ───────────────────────────────────────────────────
 
     public function test_the_breakdown_loader_never_casts_the_sum_to_int(): void

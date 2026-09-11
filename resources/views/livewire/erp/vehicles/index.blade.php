@@ -8967,15 +8967,21 @@ function vehicleColumnsToggle() {
                 @if($panelSaleTotal === null)
                     <div class="text-sm text-gray-400">—</div>
                 @else
-                @php $salePaid = (float) $panelSaleTotal - (float) $panelSaleUnpaid; @endphp
+                @php
+                    $salePaid = (float) $panelSaleTotal - (float) $panelSaleUnpaid;
+                    // 🚨 소수 보존 (jin 2026-09-11) — `number_format($x)` 는 **반올림**한다.
+                    //    외화 미수 125.83 이 126 으로 보였다. 바이어가 보낸 금액과 대조할 때
+                    //    어긋나는 자리다. 소수가 없으면 종전처럼 정수로만 찍는다.
+                    $money = fn ($x) => number_format((float) $x, fmod((float) $x, 1) == 0.0 ? 0 : 2);
+                @endphp
                     <div class="space-y-1 text-sm">
                         <div class="flex justify-between text-gray-600">
                             <span>{{ __('vehicle.panel.sale_total') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.sale_total_sub') }}</span></span>
-                            <span>{{ $currency }} {{ number_format($panelSaleTotal) }}</span>
+                            <span>{{ $currency }} {{ $money($panelSaleTotal) }}</span>
                         </div>
                         <div class="flex justify-between text-gray-600">
                             <span>{{ __('vehicle.panel.sale_paid') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.sale_paid_sub') }}</span></span>
-                            <span>{{ $currency }} {{ number_format($salePaid) }}</span>
+                            <span>{{ $currency }} {{ $money($salePaid) }}</span>
                         </div>
                         <hr class="border-purple-100" />
                         <div class="flex justify-between font-semibold">
@@ -8985,10 +8991,10 @@ function vehicleColumnsToggle() {
                                 @endif
                             </span>
                             @if($panelSaleUnpaid > 0)
-                            <span class="text-amber-800">{{ $currency }} {{ number_format($panelSaleUnpaid) }}</span>
+                            <span class="text-amber-800">{{ $currency }} {{ $money($panelSaleUnpaid) }}</span>
                             @elseif($panelSaleUnpaid <= -1)
                             {{-- 음수 epsilon 대칭: 외화 반올림 잔차(-1<x<0)는 완납으로, ≤-1 만 과입금 플래그(거짓 과입금 방지). --}}
-                            <span class="text-red-600">+{{ $currency }} {{ number_format(abs($panelSaleUnpaid)) }} · {{ __('vehicle.panel.overpaid') }}</span>
+                            <span class="text-red-600">+{{ $currency }} {{ $money(abs($panelSaleUnpaid)) }} · {{ __('vehicle.panel.overpaid') }}</span>
                             @else
                             <span class="text-emerald-700">{{ $currency }} 0 · {{ __('vehicle.panel.fully_paid') }}</span>
                             @endif
