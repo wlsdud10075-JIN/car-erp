@@ -1,0 +1,16 @@
+{
+  "language": "ko",
+  "plan": "max",
+  "displayMode": "custom",
+  "lines": [
+    ["model", "context", "cost", "rateLimit5h", "rateLimit7d"],
+    ["projectInfo", "linesChanged", "sessionDuration", "todoProgress"],
+    ["codexUsage", "burnRate", "cacheHit"]
+  ],
+  "disabledWidgets": ["geminiUsage", "geminiUsageAll"],
+  "theme": "default",
+  "separator": "pipe",
+  "cache": {
+    "ttlSeconds": 60
+  }
+}

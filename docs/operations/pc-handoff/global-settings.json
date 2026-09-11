@@ -1,0 +1,132 @@
+{
+  "env": {
+    "GEMINI_API_KEY": "<<각 PC에서 본인 키로 교체>>",
+    "GEMINI_CLI_TRUST_WORKSPACE": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(php *)",
+      "Bash(php artisan *)",
+      "Bash(composer *)",
+      "Bash(npm *)",
+      "Bash(node *)",
+      "Bash(vendor/bin/pint *)",
+      "Bash(vendor/bin/pest *)",
+      "Bash(vendor/bin/phpunit *)",
+      "Bash(gh *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(awk *)",
+      "Bash(sed *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(tr *)",
+      "Bash(cut *)",
+      "Bash(echo *)",
+      "Bash(printf *)",
+      "Bash(which *)",
+      "Bash(where *)",
+      "Bash(cp *)",
+      "Bash(mkdir *)",
+      "Bash(diff *)",
+      "Bash(md5sum *)",
+      "Bash(xargs *)",
+      "Bash(basename *)",
+      "Bash(dirname *)",
+      "Bash(sleep *)",
+      "Bash(curl *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(cmd *)",
+      "Bash(iconv *)",
+      "PowerShell(*)",
+      "Read(*)"
+    ],
+    "deny": [
+      "Bash(php artisan key:generate*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)"
+    ],
+    "ask": [
+      "Bash(git push origin master*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)"
+    ],
+    "defaultMode": "auto",
+    "additionalDirectories": [
+      "C:/Users/User/Desktop/스크린샷",
+      "C:/Users/User/Pictures/Screenshots"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node C:/Users/User/.claude/statusline-state.js",
+    "refreshInterval": 3
+  },
+  "enabledPlugins": {
+    "cross-verify@devbrother-plugins": true
+  },
+  "extraKnownMarketplaces": {
+    "devbrother-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "devbrother2024/claude-plugins"
+      }
+    }
+  },
+  "advisorModel": "fable",
+  "tui": "fullscreen",
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Bash(vendor/bin/pint --dirty)",
+      "Bash(php artisan migrate:status)",
+      "Bash(php artisan view:clear)",
+      "Bash(php artisan cache:clear)"
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Bash(php artisan key:generate)",
+      "Bash(git push origin master)",
+      "Bash(php artisan migrate:fresh*)"
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured",
+      "**Primary use of Claude Code**: software development",
+      "**Cloud provider(s)**: AWS (Lightsail 52.79.200.151; S3 bucket heysellcar-erp-docs)",
+      "**Repository visibility**: PUBLIC — github.com/wlsdud10075-JIN/car-erp.git (any push here is publishing)",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: .env-based (APP_KEY encrypts RRN data — never regenerate); CI secrets DEPLOY_HOST/DEPLOY_PATH/DEPLOY_PORT/DEPLOY_SSH_KEY/DEPLOY_USER/FLUX_LICENSE_KEY/FLUX_USERNAME (names only, not values)",
+      "**Default / protected branches**: master (default branch, production — auto-deploys to 3 live companies on push); no branch-protection rules or rulesets reported by gh — treat as unprotected at the platform level despite CLAUDE.md describing manual deploy discipline",
+      "**CI/CD deploy targets**: master push → automatic SSH deploy to AWS Lightsail 52.79.200.151, driving heysellcar.com, heymancar.com, karaba-erp.com simultaneously",
+      "**Network posture**: None configured",
+      "**Source control**: The trusted repo (car-erp, github.com/wlsdud10075-JIN/car-erp.git) and its remote(s) only — public repo, so only this repo's own work belongs there; secrets/sensitive data (RRN, credentials) are never cleared into it regardless of visibility",
+      "**Trusted internal domains**: heysellcar.com, heymancar.com, karaba-erp.com (this project's own production deploy targets); Tailscale hosts 100.110.133.112 and 100.75.178.19 seen repeatedly in this project's transcripts",
+      "**Trusted cloud buckets**: heysellcar-erp-docs (config-derived — not a confirmed upload destination; uploads of local data still require confirmation)",
+      "**Key internal services**: NICE 차량정보 lookup gateway (niceab.nicednr.co.kr, routed via ssancarerp middleware); data.go.kr 공휴일 API; local Ollama at localhost:11434 for internal chatbot",
+      "**Internal package registry**: None configured",
+      "**Sensitive data locations & audiences**: nice_reg_owner_rrn column (RRN, APP_KEY-encrypted) and other PII in the car_erp database; .env / .env.example / .env.backup / .env.production; database/migrations/2026_05_12_000002_extend_rrn_column_and_add_encrypted_flag.php; share only with audiences cleared at the [named+specifics] bar",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace/host/container carrying prod or production as a whole word/segment; also treat master-branch deploy and the three live company domains (heysellcar.com, heymancar.com, karaba-erp.com) and AWS host 52.79.200.151 as production-equivalent per CLAUDE.md",
+      "**Protected deployment namespaces / environments**: master branch and the AWS Lightsail production host (52.79.200.151) driving heysellcar.com / heymancar.com / karaba-erp.com — treated as production despite lacking a 'prod' name literal",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries prod or production as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development (Laravel ERP feature work, migrations, deploys) on car-erp",
+      "**Trusted repo**: C:\\xampp\\htdocs\\car-erp (working directory) and its remote github.com/wlsdud10075-JIN/car-erp.git — public visibility means only this repo's own work belongs in commits/pushes; RRN/credentials are never committed regardless",
+      "**Org-specific CLIs**: php artisan (Laravel), composer, vendor/bin/pint, codex (delegated executor via handoff docs at C:\\xampp\\htdocs\\CODEX_*_HANDOFF.md), gemini CLI",
+      "routine under car-erp/ prefix: php artisan, composer, npm run build/dev, vendor/bin/pint --dirty, git operations on dev branch"
+    ]
+  }
+}
