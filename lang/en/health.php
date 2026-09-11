@@ -7,6 +7,9 @@ return [
     'stale' => ':date (no update for :days days)',
     'count' => ':n',
 
+    'job_failed' => 'Scheduled job failed',
+    'job_recovered' => 'Scheduled job recovered',
+    'job_no_reason' => 'No reason was recorded.',
     'item' => [
         'exchange' => 'Closing rates',
         'alimtalk_sent' => 'Alerts sent',

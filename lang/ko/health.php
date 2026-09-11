@@ -9,6 +9,9 @@ return [
     'stale' => ':date (:days일째 갱신 없음)',
     'count' => ':n건',
 
+    'job_failed' => '정기 작업 실패',
+    'job_recovered' => '정기 작업 복구',
+    'job_no_reason' => '사유가 기록되지 않았습니다.',
     'item' => [
         'exchange' => '마감환율',
         'alimtalk_sent' => '알림톡 발송',
