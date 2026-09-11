@@ -307,6 +307,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
             ->orderBy('salesman_id')
             ->orderBy('name')
+            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+            ->orderBy('id')
             ->paginate($this->perPage);
     }
 

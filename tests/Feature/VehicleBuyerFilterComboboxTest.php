@@ -58,7 +58,10 @@ class VehicleBuyerFilterComboboxTest extends TestCase
         $this->cars($b, 2, '22');    // 1페이지에도 안 참
 
         $page = Volt::test('erp.vehicles.index')->set('perPage', 10)->call('gotoPage', 3);
-        $page->assertSeeText('11가1021');   // 3페이지에 A 의 차가 보이는 상태
+        // 🔢 순서는 「등록시각 desc → id desc」다(2026-09-11 tie-break 추가 전까지 이 줄은
+        //    동점 순서에 기대고 있어 **CI 에서 간헐 실패**했다 — SKILLS §8 #92).
+        //    27대가 같은 초에 만들어지므로 id desc 가 정한다: 1p=B2,B1,A25..A18 / 2p=A17..A8 / 3p=A7..A1.
+        $page->assertSeeText('11가1001');   // 3페이지에 A 의 차가 보이는 상태
 
         $page->set('buyerId', (string) $b->id);
 

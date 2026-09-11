@@ -214,6 +214,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return $this->transfersQuery()
             ->orderByDesc('updated_at')
+            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+            ->orderByDesc('id')
             ->paginate($this->perPage);
     }
 
@@ -248,6 +250,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->salePaymentsQuery()
             ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id,currency', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
             ->orderByDesc('created_at')
+            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+            ->orderByDesc('id')
             ->paginate($this->perPage);
     }
 
@@ -277,6 +281,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->purchasePaymentsQuery()
             ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
             ->orderByDesc('created_at')
+            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+            ->orderByDesc('id')
             ->paginate($this->perPage);
     }
 
