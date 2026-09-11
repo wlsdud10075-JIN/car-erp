@@ -91,6 +91,14 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $alimtalkTestPhone = '';             // 테스트 발송 번호
     public string $alimtalkTestCode = 'erp_daily_summary';   // 테스트 발송 템플릿 (jin 2026-08-27)
 
+    // 시스템 장애 텔레그램 (jin 2026-09-11) — 받는 사람이 시스템관리자 1명이라 회사(set) 구분 없이 전역 키.
+    // 🚫 알림톡과 섞지 말 것(수신자가 다르다). 상세 = App\Support\TelegramConfig.
+    public bool $telegramEnabled = false;              // 마스터 — 끄면 정기·긴급 전부 정지
+    public bool $telegramDailySummary = true;          // 매일 요약(🟢 포함). 꺼도 긴급은 나간다
+    public string $telegramChatId = '';
+    public string $telegramToken = '';                 // 입력칸 — 비우면 기존 토큰 유지
+    public bool $telegramTokenSet = false;             // 저장 여부만 표시(값은 안 내려보냄)
+
     // 정산 파라미터 (2026-06-22) — Settlement 차등 tier/비율. key => 값. super 전용 내부설정(i18n 생략).
     public array $settlementParams = [];
 
@@ -142,6 +150,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->loadMailSettings();
         $this->loadCarmodooSettings();
         $this->loadAlimtalkSettings();
+        $this->loadTelegramSettings();
         foreach (\App\Models\Settlement::PARAM_DEFAULTS as $key => $default) {
             $this->settlementParams[$key] = (int) Setting::get($key, $default);
         }
@@ -352,6 +361,79 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $this->loadCarmodooSettings();
         $this->dispatch('notify', message: __('feature_settings.carmodoo_saved'), type: 'success');
+    }
+
+    private function loadTelegramSettings(): void
+    {
+        $cfg = \App\Support\TelegramConfig::active();
+        $this->telegramEnabled = $cfg->enabled;
+        $this->telegramDailySummary = $cfg->dailySummary;
+        $this->telegramChatId = $cfg->chatId;
+        $this->telegramTokenSet = $cfg->token !== null && $cfg->token !== '';
+        $this->telegramToken = '';   // 값은 화면으로 안 내려보낸다
+    }
+
+    /**
+     * 시스템 장애 텔레그램 저장 — super 전용. 토큰은 **새로 입력했을 때만** 갱신한다(공백=기존 유지).
+     * carmodoo 비번·알림톡 userkey 와 같은 형태.
+     */
+    public function saveTelegram(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $newToken = trim($this->telegramToken);
+        $chatId = trim($this->telegramChatId);
+
+        // 켜려면 설정이 끝나 있어야 한다 — 「켰는데 아무것도 안 온다」를 만들지 않는다.
+        if ($this->telegramEnabled && $chatId === '') {
+            $this->addError('telegramChatId', __('feature_settings.telegram_chat_id_required'));
+
+            return;
+        }
+        if ($this->telegramEnabled && ! $this->telegramTokenSet && $newToken === '') {
+            $this->addError('telegramToken', __('feature_settings.telegram_token_required'));
+
+            return;
+        }
+
+        Setting::updateOrCreate(['key' => 'telegram_chat_id'], ['value' => $chatId, 'type' => 'string', 'description' => '시스템 장애 텔레그램 chat_id']);
+        Setting::updateOrCreate(['key' => 'telegram_enabled'], ['value' => $this->telegramEnabled ? '1' : '0', 'type' => 'boolean', 'description' => '시스템 장애 텔레그램 마스터 on/off']);
+        Setting::updateOrCreate(['key' => 'telegram_daily_summary'], ['value' => $this->telegramDailySummary ? '1' : '0', 'type' => 'boolean', 'description' => '시스템 장애 텔레그램 매일 요약 on/off']);
+        if ($newToken !== '') {
+            Setting::updateOrCreate(
+                ['key' => 'telegram_bot_token'],
+                ['value' => \Illuminate\Support\Facades\Crypt::encryptString($newToken), 'type' => 'string', 'description' => '시스템 장애 텔레그램 봇 토큰(암호화)'],
+            );
+        }
+
+        $this->loadTelegramSettings();
+        $this->dispatch('notify', message: __('feature_settings.telegram_saved'), type: 'success');
+    }
+
+    /**
+     * 테스트 발송 — 저장된 설정으로 실제 1통 보낸다. **마스터가 꺼져 있어도 보낸다**(force):
+     * 설정을 막 넣은 사람이 도착을 확인해야 켤지 말지 정할 수 있다.
+     */
+    public function sendTelegramTest(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $notifier = \App\Services\TelegramNotifier::active();
+        if (! $notifier->config()->isConfigured()) {
+            $this->dispatch('notify', message: __('feature_settings.telegram_not_configured'), type: 'warning');
+
+            return;
+        }
+
+        $ok = $notifier->send(__('feature_settings.telegram_test_title'), __('feature_settings.telegram_test_body'), force: true);
+
+        $this->dispatch('notify',
+            message: $ok ? __('feature_settings.telegram_test_sent') : __('feature_settings.telegram_test_failed'),
+            type: $ok ? 'success' : 'error');
     }
 
     /** 알림톡 11종 메타 (blade foreach — code/이름/수신자). */
@@ -1136,6 +1218,81 @@ new #[Layout('components.layouts.app')] class extends Component
 
             <div class="flex justify-end pt-1">
                 <button wire:click="saveCarmodoo" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- 시스템 장애 텔레그램 (jin 2026-09-11) — 시스템관리자 1명에게만 간다. super 전용.
+         🚫 아래 알림톡과 다른 물건이다 — 받는 사람이 다르다(알림톡=직원·바이어·딜러). --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('feature_settings.telegram_section') }}</span>
+                @if ($telegramTokenSet && $telegramEnabled)
+                    <span class="badge badge-green">{{ __('feature_settings.telegram_on') }}</span>
+                @elseif ($telegramTokenSet)
+                    <span class="badge badge-gray">{{ __('feature_settings.telegram_off') }}</span>
+                @endif
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.telegram_hint') }}</p>
+            <div class="rounded-md border border-sky-100 bg-sky-50 px-3 py-1.5 text-xs text-sky-700">
+                {{ __('feature_settings.telegram_company_note', ['company' => $this->currentCompanyLabel()]) }}
+            </div>
+
+            {{-- 봇 토큰 — 저장 여부만 보여주고 값은 안 내려보낸다 --}}
+            <div>
+                <label class="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    {{ __('feature_settings.telegram_token_label') }}
+                    @if ($telegramTokenSet)
+                        <span class="badge badge-green">{{ __('feature_settings.telegram_token_set') }}</span>
+                    @endif
+                </label>
+                <input wire:model="telegramToken" type="password" class="input-base mt-1 w-full" autocomplete="new-password" placeholder="••••" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.telegram_token_hint') }}</p>
+                @error('telegramToken') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.telegram_chat_id_label') }}</label>
+                <input wire:model="telegramChatId" type="text" class="input-base mt-1 w-full font-mono text-xs" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.telegram_chat_id_hint') }}</p>
+                @error('telegramChatId') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+            </div>
+
+            <hr class="section-divider">
+
+            {{-- 마스터 --}}
+            <label class="flex items-start gap-2">
+                <input wire:model="telegramEnabled" type="checkbox" class="mt-0.5 rounded border-gray-300" />
+                <span>
+                    <span class="text-sm font-medium text-gray-700">{{ __('feature_settings.telegram_enabled_label') }}</span>
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.telegram_enabled_hint') }}</span>
+                </span>
+            </label>
+
+            {{-- 매일 요약 — 마스터가 꺼져 있으면 의미가 없으므로 잠근다.
+                 🚫 숨기지 말 것 — 보이되 잠가야 화면이 스스로 설명한다(SKILLS §8 #60). --}}
+            <label class="flex items-start gap-2 {{ $telegramEnabled ? '' : 'opacity-50' }}">
+                <input wire:model="telegramDailySummary" type="checkbox" @disabled(! $telegramEnabled) class="mt-0.5 rounded border-gray-300" />
+                <span>
+                    <span class="text-sm font-medium text-gray-700">{{ __('feature_settings.telegram_daily_label') }}</span>
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.telegram_daily_hint') }}</span>
+                </span>
+            </label>
+
+            <div class="flex items-center justify-between pt-1">
+                <button wire:click="sendTelegramTest" wire:loading.attr="disabled"
+                        class="text-xs text-sky-600 hover:underline disabled:opacity-50">
+                    {{ __('feature_settings.telegram_test_button') }}
+                </button>
+                <button wire:click="saveTelegram" class="btn-primary">{{ __('common.save') }}</button>
             </div>
         </div>
     </div>
