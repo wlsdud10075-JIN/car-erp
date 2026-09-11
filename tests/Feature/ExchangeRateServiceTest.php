@@ -29,26 +29,34 @@ class ExchangeRateServiceTest extends TestCase
         DB::statement('PRAGMA foreign_keys = OFF');
     }
 
+    /**
+     * 네이버 prices JSON (2026-09-11 개편본). 옆 필드에 전혀 다른 값을 넣어
+     * 파서가 receiveValue(송금 받으실 때) 말고 엉뚱한 필드를 잡으면 즉시 드러나게 한다.
+     *
+     * ⚠️ fake 는 **포맷 변경을 원리상 못 잡는다** — 구 th_ex5 fake 가 내내 초록인 채로
+     *    운영만 이틀 죽어 있었다. 이 픽스처는 실제 응답을 보고 쓴 것이니
+     *    네이버가 또 바꾸면 여기부터 실물과 대조할 것.
+     */
     private function fakeNaverHtml(): array
     {
-        // 상세페이지 tbl_exchange 구조 — th_ex5 = 송금 받으실 때(전신환 매입률).
-        // th_ex2(현찰살때)에 다른 값을 넣어 셀렉터가 엉뚱한 셀을 안 잡는지 검증.
-        $detail = fn (string $ttBuying) => Http::response(
-            '<table class="tbl_exchange"><tbody>'
-            .'<tr><th class="th_ex2"><span>현찰 사실 때</span></th><td> 9,999.99 </td></tr>'
-            .'<tr><th class="th_ex3"><span>현찰 파실 때</span></th><td> 8,888.88 </td></tr>'
-            .'<tr><th class="th_ex4"><span>송금 보내실 때</span></th><td> 7,777.77 </td></tr>'
-            .'<tr><th class="th_ex5"><span>송금 받으실 때</span></th><td> '.$ttBuying.' </td></tr>'
-            .'</tbody></table>',
-            200
-        );
+        $detail = fn (string $ttBuying) => Http::response([
+            'isSuccess' => true,
+            'result' => [[
+                'localTradedAt' => '2026-09-11',
+                'closePrice' => '9,999.99',      // 매매기준율 — 잡으면 안 됨
+                'cashBuyValue' => '8,888.88',    // 현찰 사실 때 — 잡으면 안 됨
+                'cashSellValue' => '6,666.66',   // 현찰 파실 때 — 잡으면 안 됨
+                'sendValue' => '7,777.77',       // 송금 보내실 때 — 잡으면 안 됨
+                'receiveValue' => $ttBuying,     // ← 이것만 정답
+            ]],
+        ], 200);
 
         return [
-            '*marketindexCd=FX_USDKRW*' => $detail('1,367.50'),
-            '*marketindexCd=FX_JPYKRW*' => $detail('9.05'),
-            '*marketindexCd=FX_EURKRW*' => $detail('1,470.20'),
-            '*marketindexCd=FX_GBPKRW*' => $detail('1,720.40'),
-            '*marketindexCd=FX_CNYKRW*' => $detail('189.30'),
+            '*reutersCode=FX_USDKRW*' => $detail('1,367.50'),
+            '*reutersCode=FX_JPYKRW*' => $detail('9.05'),
+            '*reutersCode=FX_EURKRW*' => $detail('1,470.20'),
+            '*reutersCode=FX_GBPKRW*' => $detail('1,720.40'),
+            '*reutersCode=FX_CNYKRW*' => $detail('189.30'),
         ];
     }
 

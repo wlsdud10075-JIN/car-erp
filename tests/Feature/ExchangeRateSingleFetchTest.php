@@ -28,7 +28,10 @@ class ExchangeRateSingleFetchTest extends TestCase
     {
         Cache::flush();
         Http::fake([
-            '*FX_USDKRW*' => Http::response('<th class="th_ex5"><span>x</span></th><td> 1,458.10 </td>'),
+            '*FX_USDKRW*' => Http::response([
+                'isSuccess' => true,
+                'result' => [['receiveValue' => '1,458.10', 'sendValue' => '9,999.99']],
+            ]),
             '*' => Http::response('nope', 500),
         ]);
 

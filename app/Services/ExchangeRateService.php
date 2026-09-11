@@ -21,10 +21,20 @@ use Illuminate\Support\Facades\Log;
  *   "송금받을 때"라는 라벨과 실제 값이 불일치 → 송금받을때(전신환 매입률)로 정정.
  *   ※ 자동환율만 변경 — 정산 마진 기준(차량 exchange_rate, 관리 판매시점 지정)은 불변(재무 무영향).
  *
- * 결정 (2026-07-03):
- *   - 통화별 detail 페이지(exchangeDetail.naver?marketindexCd=FX_{CUR}KRW) 5회 호출
- *   - 각 페이지 tbl_exchange 의 th_ex5 행(= 송금 받으실 때) 값 파싱 (클래스 기반 → EUC-KR 라벨 무관)
- *     행 순서: th_ex2 현찰살때 / th_ex3 현찰팔때 / th_ex4 송금보낼때 / th_ex5 송금받을때
+ * 🚨 2026-09-11 — **스크래핑 사망, JSON API 로 교체.** 네이버가 marketindex 를 Next.js 로
+ *   개편해 상세페이지 HTML 에 **환율 값 자체가 없다**(클라이언트 렌더). `th_ex5` 도 `tbl_exchange`
+ *   도 사라졌다. HTTP 는 계속 200 이라 아무 데서도 안 터지고 **조용히 null** 만 돌았다.
+ *   실측 blast radius = 3사 전부 · 대시보드 위젯 · 잔금N+ 자동기입 · 마감환율 스냅샷
+ *   (karabaerp daily_exchange_rates 09-09 이후 중단) · board `/rates`. 이틀간 무음.
+ *   ⚠️ 테스트는 옛 HTML 을 fake 해서 **내내 초록**이었다 — fake 는 원리상 포맷 변경을 못 잡는다.
+ *
+ * 결정 (2026-09-11, 구 2026-07-03 대체):
+ *   - 통화별 JSON 1회 호출: m.stock.naver.com/front-api/marketIndex/prices
+ *       ?category=exchange&reutersCode=FX_{CUR}KRW&page=1
+ *   - `result[0].receiveValue` = **송금 받으실 때**(전신환 매입률). 같은 행에
+ *     cashBuyValue(현찰살때)·cashSellValue(현찰팔때)·sendValue(송금보낼때)·closePrice(매매기준율)가
+ *     함께 온다 — **필드를 헷갈리면 값이 통째로 달라진다**(실측 USD recv 1,335.3 vs send 1,361.7).
+ *   - `result[0]` = 최신 영업일. 주말·공휴일은 직전 영업일이 그대로 첫 행에 온다.
  *   - JPY 는 100엔 기준(네이버 관례 그대로, 단위 불변)
  *   - Cache::remember 1h TTL — 외부 호출 부담 최소화 + 환율 변동 한 시간 단위 충분
  *   - 실패 시 null 반환 — 호출자가 수동 입력 fallback 처리
@@ -44,7 +54,7 @@ class ExchangeRateService
 
     private const SUPPORTED_CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY'];
 
-    private const NAVER_DETAIL_URL = 'https://finance.naver.com/marketindex/exchangeDetail.naver';
+    private const NAVER_PRICES_URL = 'https://m.stock.naver.com/front-api/marketIndex/prices';
 
     /**
      * 5종 통화 환율 일괄 조회. Cache hit 시 즉시 반환.
@@ -148,9 +158,11 @@ class ExchangeRateService
     /** 단일 통화 네이버 조회 (getRate 미스·getRates 루프 공용). */
     private function fetchOneFromNaver(string $currency): ?float
     {
-        $html = $this->fetchHtml(self::NAVER_DETAIL_URL.'?marketindexCd=FX_'.$currency.'KRW');
+        $body = $this->fetchHtml(
+            self::NAVER_PRICES_URL.'?category=exchange&reutersCode=FX_'.$currency.'KRW&page=1'
+        );
 
-        return $html === null ? null : $this->parseTtBuyingRate($html);
+        return $body === null ? null : $this->parseTtBuyingRate($body);
     }
 
     private function fetchHtml(string $url): ?string
@@ -172,17 +184,27 @@ class ExchangeRateService
     }
 
     /**
-     * 상세페이지 tbl_exchange 에서 '송금 받으실 때'(전신환 매입률) 값 추출.
-     * 행 구조: <th class="th_ex5"><span>송금 받으실 때</span></th><td> 1,516.00 </td>
-     *   th_ex2 현찰살때 / th_ex3 현찰팔때 / th_ex4 송금보낼때 / th_ex5 송금받을때.
-     * 클래스(th_ex5) 기반 매칭 → EUC-KR 라벨 인코딩 무관, 자리수 span 분리도 없음.
+     * prices JSON 에서 '송금 받으실 때'(전신환 매입률) 추출 — `result[0].receiveValue`.
+     * 응답: {"isSuccess":true,"result":[{"localTradedAt":"2026-09-11","closePrice":"1,348.50",
+     *        "cashBuyValue":"1,372.09","cashSellValue":"1,324.91","sendValue":"1,361.71",
+     *        "receiveValue":"1,335.29"}, ...]}
+     *
+     * 🚫 **옆 필드를 잡지 말 것** — 전부 같은 행에 있고 전부 그럴듯한 환율이다.
+     *    receiveValue(받을때) ≠ sendValue(보낼때) ≠ closePrice(매매기준율).
+     * 형식이 또 바뀌면 null 로 닫는다(호출자가 수기 fallback).
      */
-    private function parseTtBuyingRate(string $html): ?float
+    private function parseTtBuyingRate(string $body): ?float
     {
-        if (preg_match('/th_ex5[^>]*>.*?<td[^>]*>\s*([\d,]+(?:\.\d+)?)\s*<\/td>/is', $html, $m)) {
-            return (float) str_replace(',', '', $m[1]);
+        $json = json_decode($body, true);
+        if (! is_array($json) || ($json['isSuccess'] ?? false) !== true) {
+            return null;
         }
+        $raw = $json['result'][0]['receiveValue'] ?? null;
+        if (! is_string($raw) && ! is_numeric($raw)) {
+            return null;
+        }
+        $value = (float) str_replace(',', '', (string) $raw);
 
-        return null;
+        return $value > 0 ? $value : null;
     }
 }
