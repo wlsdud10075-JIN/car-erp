@@ -1191,6 +1191,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $interim_payment_str = '';
     public string $advance_payment1_str = '';
     public string $fee_str               = '';   // 2026-05-28 — 구 선수금2(advance_2) → 송금 수수료(fee) 재용도화 (셀러 부담)
+    /**
+     * openEdit 이 불러온 4항목 문자열 스냅샷 (2026-09-11). save() 의 sync 가 「사람이 이 칸을
+     * 건드렸나」를 판정하는 단일 출처 — 폼 값이 이것과 같으면 아무것도 하지 않는다.
+     * ⚠️ 클라이언트가 주입하면 삭제된 행을 되살릴 수 있으므로 `#[Locked]`.
+     */
+    #[Locked]
+    public array $loadedPaymentBreakdown = [];
     public string $savings_used_str     = '';
     // 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 (한 번 저장 → SavingsStatus EARNED 거래 → reset).
     // 누적 표시는 buyerSavingsBalance computed (SavingsStatus 단일 출처).
@@ -3895,14 +3902,31 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    이체분은 아래 $transferSumByType 로 박스 옆에 별도 표시한다(save 의 4항목 sync 와 짝).
         $confirmedFp = $v->finalPayments->whereNotNull('confirmed_at');
         $sumByType = function (string $type) use ($confirmedFp): string {
-            $sum = $confirmedFp->where('type', $type)->whereNull('transfer_id')->sum('amount');
+            $sum = (float) $confirmedFp->where('type', $type)->whereNull('transfer_id')->sum('amount');
 
-            return $sum > 0 ? (string) (int) $sum : '';
+            // 🚨 2026-09-11 (jin 제보) — 여기 `(int)` 가 있었다. 외화 cents 가 통째로 날아갔다
+            //    (수수료 6.46 → '6'). 단순 표시가 아니라 **편집칸에 들어가는 값**이라,
+            //    깎인 값이 다음 save() 의 4항목 sync 에서 「달라졌다」로 읽혀 **DB 를 덮었다**.
+            //    ⇒ 계약금·중도금·선수금1 은 읽기 전용인데도(2026-07-06 신규입력 중단) 매 저장마다
+            //      재작성됐다 — 그 줄의 "props 불변이라 저장 시 no-op" 전제를 이 캐스팅이 깨고 있었다.
+            //    잔금 N행(`(string) $p->amount`)과 같은 정밀도를 쓴다. 뒤 0 은 떨어뜨려 기존 정수
+            //    표시('6')를 그대로 유지한다 — '6.00' 으로 바뀌면 사람이 또 손댄다.
+            //    (number_format 이 항상 '.XX' 를 붙이므로 '100.00' → '100' 로 안전하게 줄어든다.)
+            return $sum > 0 ? rtrim(rtrim(number_format($sum, 2, '.', ''), '0'), '.') : '';
         };
         $this->deposit_down_payment_str = $sumByType('deposit_down');
         $this->interim_payment_str = $sumByType('interim');
         $this->advance_payment1_str = $sumByType('advance_1');
         $this->fee_str               = $sumByType('fee');
+        // 🔒 SKILLS §8 #65 ① 「이번 저장이 만든 변화인가」 — 불러온 값을 그대로 기억해 둔다.
+        //    save() 는 이것과 폼 값이 같으면 sync 를 통째로 건너뛴다. 없으면, 패널을 열어둔 사이
+        //    채권관리에서 지운 행이 폼에 남은 옛 값으로 **되살아난다**(2026-09-11 실사고).
+        $this->loadedPaymentBreakdown = [
+            'deposit_down' => $this->deposit_down_payment_str,
+            'interim' => $this->interim_payment_str,
+            'advance_1' => $this->advance_payment1_str,
+            'fee' => $this->fee_str,
+        ];
         // 박스 옆 보조표시용 — type별 이체(보증금 적용) 유입액. 0 이면 표시 안 함.
         //   이게 없으면 사용자가 박스에서 사라진 금액을 은행 명세와 맞추며 총액으로 다시 타이핑 →
         //   그게 정확히 링크를 파괴하던 편집이라, 이 표시는 필수(코스메틱 아님).
@@ -5597,7 +5621,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'advance_1' => $this->advance_payment1_str,
                     'fee' => $this->fee_str,
                 ];
+                $breakdownLocked = false;   // 마감 차량에서 한 건이라도 막혔나 (아래 안내용)
                 foreach ($typeStrMap as $type => $str) {
+                    // 🔒 SKILLS §8 #65 ① 「이번 저장이 만든 변화인가」 (2026-09-11).
+                    //    사람이 이 칸을 안 건드렸으면 **아무것도 하지 않는다**. 이게 없으면
+                    //    패널을 열어둔 사이 채권관리에서 지운 행이 폼의 옛 값으로 되살아나고
+                    //    (jin 실사고: 23로0319 수수료), 읽기 전용인 계약금·중도금·선수금1 도
+                    //    무관한 탭 저장 한 번에 재작성된다.
+                    if (array_key_exists($type, $this->loadedPaymentBreakdown)
+                        && $this->loadedPaymentBreakdown[$type] === $str) {
+                        continue;
+                    }
                     // 콤마 제거 후 파싱 — 매입 2항목(down/selling_fee)과 동일. '4,000,000' → 4 절단 방지.
                     $newAmount = $str === '' ? 0.0 : (float) str_replace(',', '', $str);
                     // ⚠️ 2026-07-28 — whereNull('transfer_id') 필수. 보증금 적용은 기본 유형이
@@ -5612,6 +5646,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->sum('amount');
                     if (abs($newAmount - $existingSum) < 0.01) {
                         continue;   // 변경 없음
+                    }
+                    // 🔒 2차 정산 마감 차량은 여기서 막는다 (2026-09-11).
+                    //    아래 delete 는 **bulk** 라 `FinalPayment::deleting` 의 마감 가드가 발화하지
+                    //    않고, 게다가 `$allowConfirmedMutation` 로 확정 잠금까지 연다 — 마감된 회계가
+                    //    예외도 감사기록도 없이 다시 쓰인다. 정정이 정말 필요하면 잔금 행처럼
+                    //    잠금 해제(관리 승인)를 거쳐야 한다. 조용히 통과시키지 말 것.
+                    if ($vehicle->hasClosedSecondarySettlement()) {
+                        $breakdownLocked = true;
+
+                        continue;
                     }
                     // 💵 바이어 현금 원장 (2026-09-09 `fee` 합류) — **원장 밖에서 확정된 옛 행은
                     //    원장 밖에 둔다.** 이 sync 는 「지우고 다시 만들기」라 금액 정정도 **항상 신규
@@ -5662,6 +5706,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             FinalPayment::$skipCashGate = false;
                         }
                     }
+                    // 반영됐으니 스냅샷도 따라간다 — 안 하면 「저장하고 계속」 뒤 같은 값이 또 변경으로 읽힌다.
+                    $this->loadedPaymentBreakdown[$type] = $str;
+                }
+                if ($breakdownLocked) {
+                    $this->dispatch('notify', message: __('vehicle.breakdown.settlement_closed'), type: 'error');
                 }
             }
 
@@ -6658,6 +6707,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->niceRaw = [];
         // 2026-07-28 — 이체 유입 보조표시는 openEdit 에서만 채워짐. 신규 등록 화면에 직전 차량분 잔존 방지.
         $this->transferAppliedByType = [];
+        // 신규 등록은 불러온 값이 없다 — 비워야 「사람이 입력한 값」으로 정상 판정된다(2026-09-11).
+        $this->loadedPaymentBreakdown = [];
         $this->sales_channel = 'export';
         $this->currency = 'USD';
         $this->is_deregistered = $this->is_export_cleared = false;
@@ -7487,13 +7538,24 @@ function vehicleColumnsToggle() {
             { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
         ],
         init() {
+            if (this._inited) {
+                return;   // x-data 의 자동 init() 과 x-init="init()" 이 둘 다 부른다 — 한 번만.
+            }
+            this._inited = true;
             const saved = localStorage.getItem(STORAGE_KEY);
             const parsed = saved ? JSON.parse(saved) : {};
             for (const key in defaultVisible) {
                 this.visible[key] = parsed[key] !== undefined ? parsed[key] : defaultVisible[key];
             }
             this.pushToServer();
+            // $wire 가 아직 없어 못 보냈으면 Livewire 가 준비된 뒤 한 번 더 시도한다.
+            //   이게 없으면 그 페이지에서는 영영 안 보내져 「새로고침 두 번」이 된다.
+            if (this._pushed === null) {
+                document.addEventListener('livewire:initialized', () => this.pushToServer(), { once: true });
+                queueMicrotask(() => this.pushToServer());
+            }
         },
+        _inited: false,
         toggle(key) {
             this.visible[key] = !this.visible[key];
             localStorage.setItem(STORAGE_KEY, JSON.stringify(this.visible));
@@ -7517,10 +7579,16 @@ function vehicleColumnsToggle() {
             if (now === this._pushed) {
                 return;
             }
-            this._pushed = now;
-            if (this.$wire) {
-                this.$wire.syncVisibleColumns(on);
+            // 🚨 2026-09-11 (jin «새로고침 2번 해야 컬럼이 나온다») — 예전엔 여기서 도장(_pushed)을
+            //    **먼저** 찍고 그다음에 $wire 를 확인했다. Alpine 이 Livewire 보다 먼저 살아나면
+            //    그 한 번이 조용히 유실되고, 도장은 이미 찍혀 있어 **그 페이지 수명 동안 재시도가 없다.**
+            //    그래서 첫 새로고침은 낡은 세션으로 그려지고 두 번째부터 맞았다.
+            //    ⇒ 보낸 뒤에 찍는다. 못 보냈으면 도장을 안 남겨 다음 기회에 다시 시도한다.
+            if (!this.$wire) {
+                return;
             }
+            this.$wire.syncVisibleColumns(on);
+            this._pushed = now;
         },
         _pushed: null,
     };
@@ -7909,7 +7977,11 @@ function vehicleColumnsToggle() {
     </div>
 
     {{-- Tab Content --}}
-    <div class="flex-1 overflow-y-auto px-5 py-5">
+    {{-- data-panel-scroll = 스크롤 위치 보존 대상 표식 (jin 2026-09-11 «잔금 행 추가하면 맨 위로 간다»).
+         서버와 한 번 통신할 때마다 이 컨테이너가 morph 되어 scrollTop 이 0 으로 돌아간다.
+         값에 편집 중인 차량 id 를 담아, **다른 차량으로 바뀌면 복원하지 않는다**(그땐 맨 위가 맞다).
+         app.js 의 commit 훅이 이 표식을 읽는다 — 이름을 바꾸면 그쪽도 같이 고칠 것. --}}
+    <div class="flex-1 overflow-y-auto px-5 py-5" data-panel-scroll="{{ $editingId ?? 'new' }}">
         <div>
 
         {{-- ─── 기본정보 탭 ─────────────────────────────── --}}
@@ -8810,10 +8882,13 @@ function vehicleColumnsToggle() {
                 {{-- 계약금·중도금·선수금1 = 판매탭 신규입력 중단 (jin 2026-07-06 확정 — 잔금으로 일원화). --}}
                 {{-- 레거시(과거 입력) 값만 read-only 표시. 미수계산은 §13 타입무관 그대로 반영. props 불변이라 저장 시 no-op. --}}
                 @php
+                    // 2026-09-11 — (int) 였다. 외화 계약금의 cents 가 표시에서 사라져 은행 명세와
+                    //   대조가 안 됐다(ssancarerp 실측 125건이 소수를 들고 있다). 저장값과 같은
+                    //   정밀도로 보여주되, 소수가 없으면 종전처럼 정수로만 찍는다.
                     $legacyPay = array_filter([
-                        __('vehicle.field.deposit_down') => (int) str_replace(',', '', (string) ($deposit_down_payment_str ?: '0')),
-                        __('vehicle.field.interim') => (int) str_replace(',', '', (string) ($interim_payment_str ?: '0')),
-                        __('vehicle.field.advance1') => (int) str_replace(',', '', (string) ($advance_payment1_str ?: '0')),
+                        __('vehicle.field.deposit_down') => (float) str_replace(',', '', (string) ($deposit_down_payment_str ?: '0')),
+                        __('vehicle.field.interim') => (float) str_replace(',', '', (string) ($interim_payment_str ?: '0')),
+                        __('vehicle.field.advance1') => (float) str_replace(',', '', (string) ($advance_payment1_str ?: '0')),
                     ], fn ($v) => $v > 0);
                     // 2026-07-28 — 위 합계는 이제 "수기 입력분"만이다(이체 링크 행 제외, openEdit sumByType).
                     //   빠진 이체 유입분을 여기서 명시하지 않으면 사용자가 은행 명세와 맞추다 총액을 되쓰게 되고,
@@ -8831,7 +8906,7 @@ function vehicleColumnsToggle() {
                     <div class="mb-1 text-[10px] font-semibold uppercase text-gray-400">{{ __('vehicle.panel.legacy_breakdown') }}</div>
                     <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
                         @foreach($legacyPay as $label => $amt)
-                            <span>{{ $label }} <b class="text-gray-800">{{ number_format($amt) }}</b></span>
+                            <span>{{ $label }} <b class="text-gray-800">{{ number_format($amt, fmod($amt, 1) == 0.0 ? 0 : 2) }}</b></span>
                         @endforeach
                     </div>
                 </div>

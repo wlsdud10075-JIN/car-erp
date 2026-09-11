@@ -505,10 +505,35 @@ document.addEventListener('focusin', (e) => {
 document.addEventListener('focusout', (e) => {
     const el = e.target;
     if (!(el && el.matches && el.matches('input[data-date]'))) return;
-    const m = el.value.trim().match(/^(\d{4})(\d{2})(\d{2})$/);
+    const before = el.value;
+    const m = before.trim().match(/^(\d{4})(\d{2})(\d{2})$/);
     if (m) el.value = `${m[1]}-${m[2]}-${m[3]}`;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    // 2026-09-11 — 예전엔 **무조건** 재발행했다. 그 사이 이 칸들이 wire:model.live 가 되면서,
+    //   날짜칸을 눌렀다 다른 칸을 누르기만 해도 서버 왕복이 나가 패널 스크롤이 맨 위로 튀었다.
+    //   값이 실제로 바뀐 경우만 알리면 1970 방어는 그대로 살고 헛왕복만 사라진다.
+    if (el.value !== before) el.dispatchEvent(new Event('input', { bubbles: true }));
 });
+
+// ── 차량 편집 패널 스크롤 위치 보존 (jin 2026-09-11 «잔금 행 추가하면 맨 위로 간다») ──────────
+//   목록과 패널이 하나의 Livewire 컴포넌트라, 패널 안의 어떤 조작이든 서버 왕복 한 번이면
+//   스크롤 컨테이너가 morph 되어 scrollTop 이 0 으로 초기화된다. 행 추가·체크박스·필드 이동 전부.
+//   ⚠️ 표식 값(편집 중인 차량 id)이 바뀌면 복원하지 않는다 — 다른 차를 열었으면 맨 위가 맞다.
+if (window.Livewire) {
+    const panelScroll = () => document.querySelector('[data-panel-scroll]');
+    window.Livewire.hook('commit', ({ succeed }) => {
+        const el = panelScroll();
+        if (!el || el.scrollTop <= 0) return;
+        const key = el.getAttribute('data-panel-scroll');
+        const top = el.scrollTop;
+        succeed(() => {
+            requestAnimationFrame(() => {
+                const after = panelScroll();
+                if (!after || after.getAttribute('data-panel-scroll') !== key) return;
+                if (after.scrollTop !== top) after.scrollTop = top;
+            });
+        });
+    });
+}
 
 // 라이프사이클 훅은 이제 "정리"만 한다 — 생성은 위 focusin 이 전담(사전 일괄 생성 제거).
 //   구현이 문서 전체 재스캔이었고 morph.updated 는 바뀐 요소마다 발생해서,
