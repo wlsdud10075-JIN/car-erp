@@ -156,7 +156,6 @@ return [
         'not_overpaid' => 'Not overpaid (receivable ≥ 0).',
         'no_buyer' => 'No sale buyer assigned; cannot convert to savings.',
         'exceeds_confirmed' => 'Excess exceeds total confirmed balance payments. Check the overpayment source and correct manually.',
-        'secondary_closed' => 'Cannot auto-convert: the 2nd settlement is closed (FX/carryover already finalized). Correct via individual unlock.',
         'failed' => 'Overpayment-to-savings conversion failed.',
         'hint_choice' => 'Savings = credit the buyer can spend later / Misc loss = closed as company money (not refunded).',
         'btn_misc_loss' => 'Convert to misc loss',
