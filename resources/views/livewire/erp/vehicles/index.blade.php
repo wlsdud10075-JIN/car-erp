@@ -7312,7 +7312,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($v->transport_fee_usd > 0){{ number_format($v->transport_fee_usd) }} <span class="text-xs text-gray-400">USD</span>@else -@endif
                 </td>@php endif; @endphp
                 @php if ($this->colOn('unpaid_amount')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['unpaid_amount']">
-                    @if($unpaidAmount > 0)₩{{ number_format($unpaidAmount) }}@else -@endif
+                    {{-- 미수금은 **판매통화 단위**다(sale_unpaid_amount). 원화 기호를 리터럴로 박으면
+                         EUR·USD 차가 원화로 위장된다(jin 2026-09-11). 옆 운임비 칸·호버 툴팁과 같은 표기.
+                         가드 = VehicleListCurrencyLabelTest --}}
+                    @if($unpaidAmount > 0){{ number_format($unpaidAmount) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>@else -@endif
                 </td>@php endif; @endphp
                 @php if ($this->colOn('unpaid_ratio')): @endphp<td class="py-3 pr-4 text-right text-xs" x-show="visible['unpaid_ratio']">
                     @if($unpaidRatio === null)<span class="text-gray-300">-</span>
