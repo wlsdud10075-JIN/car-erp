@@ -179,4 +179,8 @@ return [
     'telegram_test_failed' => 'Send failed. Check the token and chat_id.',
     'telegram_not_configured' => 'Save the bot token and chat_id first.',
     'telegram_saved' => 'Telegram alert settings saved.',
+    'telegram_checks_label' => 'Morning check items',
+    'telegram_checks_hint' => 'Choose what counts as healthy. The number is how many days without a success before it is flagged. Turn off anything that keeps producing false alarms — a daily red line makes people stop reading the summary.',
+    'telegram_checks_days' => 'days',
+    'telegram_checks_count_based' => 'flagged if any exist',
 ];
