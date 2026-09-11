@@ -9038,7 +9038,8 @@ function vehicleColumnsToggle() {
                 <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
                     <span class="text-xs">{{ $isVoided ? '⊘' : ($pendingVoid ? '⏳' : '🔁') }}</span>
                     <span class="w-24 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
-                        {{ number_format((float)$row['amount']) }} {{ $row['transfer']['currency'] }}
+                        @php $tAmt = (float) $row['amount']; @endphp
+                        {{ number_format($tAmt, fmod($tAmt, 1) == 0.0 ? 0 : 2) }} {{ $row['transfer']['currency'] }}
                     </span>
                     <span class="flex-1 text-xs {{ $textMutedClass }}">
                         @php $cpNum = $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id']; @endphp
@@ -9082,7 +9083,11 @@ function vehicleColumnsToggle() {
                         {{ $lockedRate > 0 ? number_format($lockedRate, 2) : '—' }}
                     </span>
                     @endif
-                    <span class="w-24 text-sm text-gray-600">{{ number_format($lockedAmt) }}</span>
+                    {{-- 🚨 소수 보존 (jin 2026-09-11 제보) — `number_format($x)` 는 **반올림**한다.
+                         외화 잔금 10,434.54 가 10,435 로, 수수료 6.46 이 6 으로 보였다.
+                         DB·입력칸은 멀쩡한데 **잠긴 행의 표시만** 깎여서 「또 절삭됐나」로 읽힌다.
+                         소수가 없으면 종전처럼 정수로만 찍는다. --}}
+                    <span class="w-24 text-sm text-gray-600">{{ number_format($lockedAmt, fmod($lockedAmt, 1) == 0.0 ? 0 : 2) }}</span>
                     @if($currency !== 'KRW')
                     <span class="w-28 text-sm text-gray-600" title="{{ __('vehicle.panel.krw_converted') }}">
                         {{ $lockedRate > 0 && $lockedAmt > 0 ? '₩'.number_format($lockedAmt * $lockedRate) : '' }}

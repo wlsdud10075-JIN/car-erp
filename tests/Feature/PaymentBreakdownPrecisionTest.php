@@ -261,6 +261,44 @@ class PaymentBreakdownPrecisionTest extends TestCase
         $this->assertNull($this->feeAmount($v), '칸을 비웠는데 행이 남았다');
     }
 
+    // ── 화면 표시 ───────────────────────────────────────────────────
+
+    public function test_a_locked_payment_row_shows_its_decimals(): void
+    {
+        // jin 2026-09-11 제보 — DB·입력칸은 6.46 인데 **잠긴 행의 표시만** 6 이었다.
+        //   잔금 행은 회수이력 미러가 붙는 순간 잠기므로(= 사실상 전부) 사람이 보는 건 이쪽이다.
+        //   `number_format($x)` 는 버리는 게 아니라 **반올림**한다 → 10,434.54 는 10,435 로 보였다.
+        $v = $this->vehicle();
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'fee', 'amount' => 6.46,
+            'exchange_rate' => 1564, 'payment_date' => '2026-09-11', 'confirmed_at' => now(),
+        ]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10434.54,
+            'exchange_rate' => 1546.74, 'payment_date' => '2026-09-11', 'confirmed_at' => now(),
+        ]);
+
+        $html = $this->panel()->call('openEdit', $v->id)->html();
+
+        $this->assertStringContainsString('6.46', $html, '잠긴 수수료 행이 소수를 안 보여준다');
+        $this->assertStringContainsString('10,434.54', $html, '잠긴 잔금 행이 반올림돼 보인다');
+    }
+
+    public function test_a_whole_number_row_stays_without_decimals(): void
+    {
+        // 반대쪽도 박아 둔다 — 원화 잔금이 전부 「1,000,000.00」 이 되면 그것대로 읽기 나쁘다.
+        $v = $this->vehicle('KRW');
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 1000000,
+            'payment_date' => '2026-09-11', 'confirmed_at' => now(),
+        ]);
+
+        $html = $this->panel()->call('openEdit', $v->id)->html();
+
+        $this->assertStringContainsString('1,000,000', $html);
+        $this->assertStringNotContainsString('1,000,000.00', $html, '정수인데 소수 두 자리가 붙었다');
+    }
+
     // ── 정적 가드 ───────────────────────────────────────────────────
 
     public function test_the_breakdown_loader_never_casts_the_sum_to_int(): void
