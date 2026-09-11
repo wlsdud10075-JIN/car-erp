@@ -607,7 +607,10 @@
                 'bg-blue-600': item.type === 'info'
              }"
              class="rounded-lg px-4 py-3 text-sm text-white shadow-lg max-w-md">
-            <span x-text="item.msg"></span>
+            {{-- whitespace-pre-line — 여러 줄 안내(예: 「등록하세요 / 문의하세요」)가 한 줄로 뭉개지지 않게.
+                 x-text 는 textContent 라 
+ 이 그대로 들어오고, CSS 가 없으면 공백으로 접힌다. --}}
+            <span x-text="item.msg" class="whitespace-pre-line"></span>
         </div>
     </template>
 </div>

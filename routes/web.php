@@ -27,6 +27,13 @@ Route::get('d/deregistration/{vehicle}', [BuyerDocumentController::class, 'dereg
     ->middleware('signed')
     ->name('buyer.deregistration');
 
+// 국내 딜러 사업자등록증 전달 링크 (2026-09-11) — 세금계산서 발행 요청 알림톡이 보낸 만료 서명 링크.
+// 파일은 회사 단위(Setting biz_cert_{set})지만 **차량을 바인딩**한다 — 어느 차의 요청이었는지
+// 접근 로그에 남기고, 링크마다 서명을 갈라 한 번 받은 링크가 영구히 열리지 않게 한다. 7일 만료(발급측).
+Route::get('d/business-registration/{vehicle}', [BuyerDocumentController::class, 'businessRegistration'])
+    ->middleware('signed')
+    ->name('buyer.business-registration');
+
 // 대표 자금 보고 (2026-07-27, 안건4 3단계) — 로그인 없이 서명 링크로 열람. 주간·월간 공용(기준일만 다름).
 //   ⚠️ 회사 재무 전부가 담긴 화면이라 발급측에서 만료(7일)를 걸고, 열람 시 감사 로그를 남긴다.
 Route::get('a/capital/{date}', [CapitalReportController::class, 'show'])

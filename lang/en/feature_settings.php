@@ -183,4 +183,17 @@ return [
     'telegram_checks_hint' => 'Choose what counts as healthy. The number is how many days without a success before it is flagged. Turn off anything that keeps producing false alarms — a daily red line makes people stop reading the summary.',
     'telegram_checks_days' => 'days',
     'telegram_checks_count_based' => 'flagged if any exist',
+
+    // 사업자등록증 (jin 2026-09-11)
+    'biz_cert_section' => 'Business registration certificate',
+    'biz_cert_none' => 'not registered',
+    'biz_cert_hint' => 'Sent as a download link with the tax-invoice request alert. Registered per company. PDF only, up to 10MB.',
+    'biz_cert_upload_btn' => 'Upload certificate',
+    'biz_cert_invalid' => 'PDF files only (max 10MB).',
+    'biz_cert_upload_failed' => 'Upload failed. The existing file was kept.',
+    'biz_cert_removed' => 'Certificate removed.',
+    'biz_cert_remove_confirm' => 'Removing the certificate stops the tax-invoice request alert from being sent. Remove it?',
+    'biz_cert_name_label' => 'Business name (as on the certificate)',
+    'biz_cert_number_label' => 'Business registration number',
+    'biz_cert_number_hint' => 'Appears verbatim in the tax-invoice request alert.',
 ];

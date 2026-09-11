@@ -183,4 +183,17 @@ return [
     'telegram_checks_hint' => '무엇을 정상/이상으로 볼지 고릅니다. 오른쪽 숫자는 「마지막 성공이 며칠을 넘기면 이상으로 볼지」입니다. 오탐이 나는 항목은 꺼두세요 — 매일 이상으로 뜨면 요약 전체를 안 읽게 됩니다.',
     'telegram_checks_days' => '일',
     'telegram_checks_count_based' => '한 건이라도 있으면 이상',
+
+    // 사업자등록증 (jin 2026-09-11)
+    'biz_cert_section' => '사업자등록증',
+    'biz_cert_none' => '미등록',
+    'biz_cert_hint' => '세금계산서 발행 요청 알림톡에 내려받기 링크로 함께 나갑니다. 회사마다 따로 등록합니다. PDF 만 올릴 수 있고 최대 10MB 입니다.',
+    'biz_cert_upload_btn' => '사업자등록증 올리기',
+    'biz_cert_invalid' => 'PDF 파일만 올릴 수 있습니다 (최대 10MB).',
+    'biz_cert_upload_failed' => '업로드에 실패했습니다. 기존 파일은 그대로 두었습니다.',
+    'biz_cert_removed' => '사업자등록증을 지웠습니다.',
+    'biz_cert_remove_confirm' => '사업자등록증을 지우면 세금계산서 요청 알림톡을 보낼 수 없습니다. 지울까요?',
+    'biz_cert_name_label' => '상호 (사업자등록증상 이름)',
+    'biz_cert_number_label' => '사업자등록번호',
+    'biz_cert_number_hint' => '세금계산서 발행 요청 알림톡 본문에 그대로 나갑니다.',
 ];

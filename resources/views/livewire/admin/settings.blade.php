@@ -124,6 +124,19 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public array $stampUrls = [];    // role => 미리보기 URL|null
 
+    // 사업자등록증 (jin 2026-09-11) — 세금계산서 요청 알림톡이 딜러에게 링크로 전달한다.
+    // 🚫 도장과 달리 **PDF** 다(이미지 아님). 화면에 미리보기를 띄우지 않고 등록 여부만 보여준다.
+    public $bizCertUpload = null;
+
+    public ?string $bizCertPath = null;
+
+    // 세금계산서 요청 알림톡 본문에 실리는 회사 정보. 회사별로 달라서 설정에서 받는다.
+    // 🚫 config/company.php 를 쓰지 말 것 — 싼카 값이 하드코딩된 **단일 회사** 설정이고 이미 죽어 있다
+    //    (읽는 코드가 template_set·name_en 뿐이고 은행정보도 낡았다).
+    public string $bizCertName = '';        // 사업자등록증상 상호
+
+    public string $bizCertNumber = '';      // 사업자등록번호
+
     // 슬롯별 위치/크기 — "type::key" => ['doc','slot','role','dx','dy','w','h']
     public array $stampPositions = [];
 
@@ -162,6 +175,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $od = Setting::get(\App\Services\CapitalStatusService::OVERDRAFT_KEY);
         $this->overdraftLimit = ($od === null || $od === '') ? '' : (string) $od;
         $this->refreshStamps();
+        $this->refreshBizCert();
         $this->loadStampPositions();
     }
 
@@ -619,6 +633,93 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
+    /** 사업자등록증 등록 상태 — 경로만 본다(PDF 라 미리보기 없음). */
+    private function refreshBizCert(): void
+    {
+        $path = Setting::get('biz_cert_'.$this->stampSet());
+        // 파일이 사라졌는데 Setting 만 남은 경우를 「없음」으로 본다 — 화면이 거짓말하면 안 된다.
+        $this->bizCertPath = ($path && Storage::disk(config('filesystems.vehicle_docs_disk'))->exists($path)) ? $path : null;
+        $this->bizCertName = (string) (Setting::get('biz_cert_name_'.$this->stampSet(), '') ?: '');
+        $this->bizCertNumber = (string) (Setting::get('biz_cert_number_'.$this->stampSet(), '') ?: '');
+    }
+
+    /** 상호·사업자등록번호 저장 — 세금계산서 요청 알림톡 본문이 쓴다. */
+    public function saveBizCertInfo(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $set = $this->stampSet();
+        Setting::updateOrCreate(['key' => 'biz_cert_name_'.$set], ['value' => trim($this->bizCertName), 'type' => 'string', 'description' => '사업자등록증 상호 ('.$set.')']);
+        Setting::updateOrCreate(['key' => 'biz_cert_number_'.$set], ['value' => trim($this->bizCertNumber), 'type' => 'string', 'description' => '사업자등록번호 ('.$set.')']);
+        $this->refreshBizCert();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    public function updatedBizCertUpload(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate(
+            ['bizCertUpload' => 'mimes:pdf|max:10240'],
+            ['bizCertUpload' => __('feature_settings.biz_cert_invalid')],
+        );
+        $this->storeBizCert($this->bizCertUpload);
+        $this->bizCertUpload = null;
+    }
+
+    /**
+     * 사업자등록증 저장 — 도장(storeStamp)과 **같은 3단 순서**를 지킨다:
+     *   ① storeAs 반환값 + exists() 둘 다 확인 (디스크가 'throw' => false 라 실패해도 예외가 아니다.
+     *      게다가 Livewire 는 저장에 실패해도 경로를 돌려준다 — SKILLS §8 #47·#47-B)
+     *   ② 실패하면 DB 를 안 건드리고 **옛 파일을 그대로 둔 채** 빠진다
+     *   ③ 성공한 뒤에만 옛 파일을 지운다
+     * 🚫 순서를 바꾸지 말 것 — 업로드가 실패하면 등록증이 한 장도 없는 상태가 되고,
+     *    그러면 딜러에게 나간 링크가 통째로 404 가 된다.
+     */
+    private function storeBizCert($file): void
+    {
+        $set = $this->stampSet();
+        $diskName = config('filesystems.vehicle_docs_disk');
+        $disk = Storage::disk($diskName);
+        $old = Setting::get('biz_cert_'.$set);
+
+        $path = $file->storeAs('biz-certs/'.$set, 'business-registration.pdf', $diskName);
+
+        if (! $path || ! $disk->exists($path)) {
+            \Log::warning('사업자등록증 업로드 실패 — 기존 파일 유지', ['set' => $set]);
+            $this->dispatch('notify', message: __('feature_settings.biz_cert_upload_failed'), type: 'error');
+
+            return;
+        }
+
+        if ($old && $old !== $path) {
+            $disk->delete($old);
+        }
+
+        Setting::updateOrCreate(
+            ['key' => 'biz_cert_'.$set],
+            ['value' => $path, 'type' => 'string', 'description' => '사업자등록증 ('.$set.')'],
+        );
+        $this->refreshBizCert();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    public function removeBizCert(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $set = $this->stampSet();
+        if ($old = Setting::get('biz_cert_'.$set)) {
+            Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($old);
+        }
+        Setting::where('key', 'biz_cert_'.$set)->delete();
+        $this->refreshBizCert();
+        $this->dispatch('notify', message: __('feature_settings.biz_cert_removed'), type: 'success');
+    }
+
     private function refreshStamps(): void
     {
         $set = $this->stampSet();
@@ -1043,6 +1144,7 @@ new #[Layout('components.layouts.app')] class extends Component
         );
 
         $this->refreshStamps();   // 도장도 선택 회사 기준으로 갱신
+        $this->refreshBizCert();  // 사업자등록증도 회사별이라 함께
         $this->loadStampPositions();
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
@@ -1711,6 +1813,68 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div class="flex justify-end pt-1">
                     <button wire:click="saveAlarmParams" class="btn-primary text-xs" wire:loading.attr="disabled" wire:target="saveAlarmParams">{{ __('common.save') }}</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- 사업자등록증 (jin 2026-09-11) — 세금계산서 요청 알림톡이 딜러에게 링크로 보낸다.
+         🚫 도장과 달리 PDF 라 미리보기를 안 띄운다. 등록 여부만 보여준다. --}}
+    <div class="card max-w-xl" x-data="{ open: false }">
+        <button type="button" @click="open = !open" class="flex w-full items-center justify-between">
+            <span class="flex items-center gap-2">
+                <span class="section-dot bg-emerald-500"></span>
+                <span class="section-title">{{ __('feature_settings.biz_cert_section') }}</span>
+                @if ($bizCertPath)
+                    <span class="badge badge-green">{{ __('feature_settings.stamp_uploaded') }}</span>
+                @else
+                    <span class="badge badge-gray">{{ __('feature_settings.biz_cert_none') }}</span>
+                @endif
+            </span>
+            <svg :class="open ? 'rotate-180' : ''" class="h-4 w-4 text-gray-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+        </button>
+
+        <div x-show="open" x-transition class="mt-3 space-y-3">
+            <p class="text-xs text-gray-500">{{ __('feature_settings.biz_cert_hint') }}</p>
+            <div class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-800">
+                {{ __('feature_settings.telegram_company_note', ['company' => $this->currentCompanyLabel()]) }}
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <label x-data
+                    x-on:dragover.prevent="$el.classList.add('brightness-95')"
+                    x-on:dragleave.prevent="$el.classList.remove('brightness-95')"
+                    x-on:drop.prevent="$el.classList.remove('brightness-95'); if ($event.dataTransfer?.files?.length) { $refs.bc.files = $event.dataTransfer.files; $refs.bc.dispatchEvent(new Event('change', { bubbles: true })); }"
+                    class="btn-primary cursor-pointer text-sm">
+                    <span wire:loading.remove wire:target="bizCertUpload">{{ __('feature_settings.biz_cert_upload_btn') }}</span>
+                    <span wire:loading wire:target="bizCertUpload">…</span>
+                    <input x-ref="bc" type="file" wire:model="bizCertUpload" accept="application/pdf" class="hidden">
+                </label>
+                @if ($bizCertPath)
+                    <button type="button" wire:click="removeBizCert" wire:confirm="{{ __('feature_settings.biz_cert_remove_confirm') }}"
+                            class="text-sm text-gray-500 underline hover:text-rose-600">
+                        {{ __('feature_settings.stamp_remove_btn') }}
+                    </button>
+                @endif
+            </div>
+
+            @error('bizCertUpload') <p class="text-xs text-rose-600">{{ $message }}</p> @enderror
+
+            <hr class="section-divider">
+
+            {{-- 알림톡 본문에 실리는 값 — 회사별로 달라서 여기서 받는다. --}}
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.biz_cert_name_label') }}</label>
+                <input wire:model="bizCertName" type="text" class="input-base mt-1 w-full" autocomplete="off" />
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.biz_cert_number_label') }}</label>
+                <input wire:model="bizCertNumber" type="text" class="input-base mt-1 w-full font-mono text-sm" placeholder="000-00-00000" autocomplete="off" />
+                <p class="mt-1 text-xs text-gray-400">{{ __('feature_settings.biz_cert_number_hint') }}</p>
+            </div>
+            <div class="flex justify-end">
+                <button wire:click="saveBizCertInfo" class="btn-primary">{{ __('common.save') }}</button>
             </div>
         </div>
     </div>
