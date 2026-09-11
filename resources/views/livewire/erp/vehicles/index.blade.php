@@ -10112,10 +10112,23 @@ function vehicleColumnsToggle() {
         @elseif ($wonbuResult)
             {{-- 요약 뱃지 --}}
             <div class="flex flex-wrap items-center gap-2">
+                {{-- 🚨 `?? 0` 으로 뭉개지 말 것 — null 은 「없다」가 아니라 **「못 읽었다」**다
+                     (CarmodooService::parseHtml, jin 2026-09-11). 0 으로 그리면 carmodoo 가
+                     페이지를 바꾼 날부터 모든 차가 「깨끗」으로 보이고 아무도 모른다. --}}
                 @foreach (['압류' => 'seizure', '저당' => 'mortgage', '구조' => 'structure'] as $k => $_)
-                    @php $cnt = (int) ($wonbuResult['summary'][$k] ?? 0); @endphp
-                    <span class="badge {{ $cnt > 0 ? 'badge-red' : 'badge-gray' }}">{{ __('vehicle.wonbu.'.$_) }} {{ $cnt }}</span>
+                    @php $cnt = $wonbuResult['summary'][$k] ?? null; @endphp
+                    @if ($cnt === null)
+                        <span class="badge badge-amber">{{ __('vehicle.wonbu.'.$_) }} {{ __('vehicle.wonbu.unknown') }}</span>
+                    @else
+                        <span class="badge {{ $cnt > 0 ? 'badge-red' : 'badge-gray' }}">{{ __('vehicle.wonbu.'.$_) }} {{ $cnt }}</span>
+                    @endif
                 @endforeach
+                @php $wonbuUnknown = collect(['압류', '저당', '구조'])->contains(fn ($k) => ($wonbuResult['summary'][$k] ?? null) === null); @endphp
+                @if ($wonbuUnknown)
+                    <div class="mt-2 w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {{ __('vehicle.wonbu.unknown_note') }}
+                    </div>
+                @endif
             </div>
 
             @if (! empty($wonbuResult['note']))

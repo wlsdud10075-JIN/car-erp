@@ -1074,6 +1074,8 @@ return [
 
     // Vehicle registry lookup (carmodoo)
     'wonbu' => [
+        'unknown' => 'unknown',
+        'unknown_note' => 'Could not read the lien counts from the lookup page. This is not zero — it means unverified. Check the association site directly.',
         'button' => 'Registry lookup',
         'loading' => 'Looking up…',
         'modal_title' => 'Vehicle Registration Record',
