@@ -5682,11 +5682,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                         && ! \App\Models\BuyerCashAllocation::whereIn('final_payment_id', $oldPaymentIds)->exists();
                     FinalPayment::$allowConfirmedMutation = true;
                     try {
-                        $vehicle->finalPayments()
-                            ->where('type', $type)
-                            ->whereNotNull('confirmed_at')
-                            ->whereNull('transfer_id')
-                            ->delete();
+                        // 🔗 미러(회수이력)를 **먼저** 지운다 (jin 2026-09-11 «B로 진행»).
+                        //    `ReceivableHistory::deleted` 가 짝인 판매잔금까지 데려간다 —
+                        //    채권관리에서 지울 때와 **같은 통로**라 규칙이 한 벌로 유지된다.
+                        //    예전엔 여기가 bulk delete 라 잔금만 사라지고 회수이력은
+                        //    `final_payment_id = NULL` 로 남았다(FK nullOnDelete) → 채권관리에
+                        //    짝 잃은 「입금」 줄이 쌓였고, 지워도 아무 일이 안 일어났다.
+                        //    실측 heymanerp 4건(7월 2 · 8월 1 · 9월 1) — 한 달에 한 건 꼴.
+                        \App\Models\ReceivableHistory::whereIn('final_payment_id', $oldPaymentIds)
+                            ->get()->each->delete();
+                        // 미러가 없던 행(옛 데이터·미러 생성을 건너뛴 경로)은 직접 지운다.
+                        //   ⚠️ bulk delete 로 되돌리지 말 것 — 모델 이벤트가 안 떠서
+                        //     캐시 갱신·현금 배분 회수가 통째로 빠진다.
+                        FinalPayment::whereIn('id', $oldPaymentIds)->get()->each->delete();
                     } finally {
                         FinalPayment::$allowConfirmedMutation = false;
                     }
