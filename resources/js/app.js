@@ -525,12 +525,17 @@ if (window.Livewire) {
         if (!el || el.scrollTop <= 0) return;
         const key = el.getAttribute('data-panel-scroll');
         const top = el.scrollTop;
+        // 벤더 실측(livewire.esm.js) — commit 훅의 succeed 는 `onRender` 에 걸려 있고,
+        //   그건 morph 가 끝난 뒤 requestAnimationFrame 안이다. 즉 여기가 이미 「그릴 직전」이라
+        //   지금 되돌리면 한 프레임도 안 깜빡인다. rAF 한 번 더는 안전망(다음 프레임 재확인).
         succeed(() => {
-            requestAnimationFrame(() => {
+            const restore = () => {
                 const after = panelScroll();
                 if (!after || after.getAttribute('data-panel-scroll') !== key) return;
                 if (after.scrollTop !== top) after.scrollTop = top;
-            });
+            };
+            restore();
+            requestAnimationFrame(restore);
         });
     });
 }
