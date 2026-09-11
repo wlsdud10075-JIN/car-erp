@@ -2,9 +2,13 @@
 
 namespace App\Providers;
 
+use App\Listeners\NotifyScheduledTaskOutcome;
 use App\Services\Assistant\OllamaClient;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\ScheduledTaskFailed;
+use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -30,6 +34,12 @@ class AppServiceProvider extends ServiceProvider
         // 다중차량(showMulti)은 1요청=최대 30대라 분당 횟수를 더 낮게 잡아 대량열람 억제.
         RateLimiter::for('vehicle-docs', fn ($request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
         RateLimiter::for('vehicle-docs-multi', fn ($request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
+
+        // 정기 작업 실패 → 시스템관리자 텔레그램 (jin 2026-09-11, 3단계).
+        // Laravel 이 이미 이벤트를 발행하는데 듣는 사람이 없었다 — 리스너 하나로 전 스케줄 잡을 덮는다.
+        // 🚨 Finished 는 exit code 검사 「전」에 발행된다(리스너 docblock) — 성공으로 단정하지 말 것.
+        Event::listen(ScheduledTaskFailed::class, [NotifyScheduledTaskOutcome::class, 'onFailed']);
+        Event::listen(ScheduledTaskFinished::class, [NotifyScheduledTaskOutcome::class, 'onFinished']);
 
         // board 영업 포털 읽기 API — board 단일 IP 라 영업별(salesman_email) 키로 제한
         // (by(IP) 면 전 영업이 한 한도 공유). HMAC 으로 이미 인증되므로 상한은 넉넉히.
