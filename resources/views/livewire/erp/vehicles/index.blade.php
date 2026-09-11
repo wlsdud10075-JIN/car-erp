@@ -2158,6 +2158,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? $q->orderByRaw(Vehicle::effectiveConsigneeSortExpression().' '.($this->sortDirection === 'asc' ? 'asc' : 'desc'))
             : $q->orderBy($this->sortColumn, $this->sortDirection);
 
+        // 🚨 동점 tie-break 필수 (jin 2026-09-11) — 기본 정렬이 `created_at` 인데 **일괄 적재분은
+        //    초 단위 시각이 전부 같다**(실측 ssancarerp 4,794대 중 4,693대 · 한 초에 최대 79대).
+        //    동점 행의 순서는 DB 가 보장하지 않으므로, LIMIT/OFFSET 페이지네이션에서 **같은 차가
+        //    두 페이지에 나오거나 어떤 차는 어느 페이지에도 안 나올 수 있다**(예외 0 · 로그 0).
+        //    id 를 마지막 정렬키로 붙이면 순서가 확정된다 — 시각이 다른 차들의 순서는 안 바뀐다.
+        //    방향을 주 정렬과 맞춰야 「최신순인데 동점 구간만 거꾸로」가 안 생긴다.
+        $q = $q->orderBy('vehicles.id', $this->sortDirection === 'asc' ? 'asc' : 'desc');
+
         return $q->paginate($this->perPage);
     }
 

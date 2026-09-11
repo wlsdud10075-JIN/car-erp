@@ -123,7 +123,9 @@ new #[Layout('components.layouts.app')] class extends Component
             // 출고완료는 "언제 나갔나"가 관심사 → 최근 출고순. 재고는 기존 담당자·매입일 순 유지.
             ->when($isShippedOut,
                 fn ($q) => $q->orderByDesc('warehouse_out_date')->orderByDesc('id'),
-                fn ($q) => $q->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')
+                // 동점 tie-break (jin 2026-09-11) — 매입일이 같은 차가 많아 페이지가 흔들린다(SKILLS §8 #92).
+                //   출고완료 분기는 이미 id 를 쓰고 있다.
+                fn ($q) => $q->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')->orderBy('id')
             )
             ->paginate($this->perPage);
 

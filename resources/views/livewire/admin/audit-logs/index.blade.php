@@ -80,6 +80,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateFrom !== '', fn ($q) => $q->where('created_at', '>=', $this->dateFrom.' 00:00:00'))
             ->when($this->dateTo !== '', fn ($q) => $q->where('created_at', '<=', $this->dateTo.' 23:59:59'))
             ->latest('created_at')
+            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+            ->orderByDesc('id')
             ->paginate($this->perPage);
     }
 

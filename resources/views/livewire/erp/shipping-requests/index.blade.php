@@ -629,6 +629,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ->groupBy('batch_id')
             ->selectRaw('batch_id, MAX(requested_at) as latest_req')
             ->orderByDesc('latest_req')
+            // 동점 tie-break (jin 2026-09-11) — 같은 시각에 여러 묶음이 생기면 페이지가 흔들린다.
+            //   GROUP BY 라 id 를 못 쓴다 → 그룹키(batch_id) 자체가 유일하므로 그걸 2차 키로 쓴다.
+            ->orderByDesc('batch_id')
             ->paginate($this->perPage);
 
         $batchIds = collect($batchPage->items())->pluck('batch_id')->all();
