@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AlimtalkLog;
+use App\Models\PurchaseBalancePayment;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -60,12 +61,29 @@ class TaxInvoiceRequestTest extends TestCase
         return User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
     }
 
+    /** 매입 대금을 다 치른 차 — 세금계산서 요청의 전제(jin 2026-09-11). */
     private function vehicle(): Vehicle
     {
-        return Vehicle::create([
+        $v = Vehicle::create([
             'vehicle_number' => '12가3456',
             'sales_channel' => 'export',
             'deregistration_notice_phone' => '010-1234-5678',
+            'purchase_price' => 5_000_000,
+        ]);
+        $this->payOff($v, 5_000_000);
+
+        return $v->fresh();
+    }
+
+    /** 확정 매입 잔금으로 완납시킨다 — accessor 가 확정분만 세므로 confirmed_at 이 필요하다. */
+    private function payOff(Vehicle $v, int $amount): void
+    {
+        PurchaseBalancePayment::create([
+            'vehicle_id' => $v->id,
+            'amount' => $amount,
+            'payment_date' => now()->toDateString(),
+            'type' => 'balance',
+            'confirmed_at' => now(),
         ]);
     }
 
@@ -133,12 +151,55 @@ class TaxInvoiceRequestTest extends TestCase
         }
     }
 
+    public function test_it_refuses_to_send_when_the_purchase_is_not_fully_paid(): void
+    {
+        // 🚨 세금계산서는 대금을 치른 뒤 받는 것이다 — 미지급 상태로 요청하면 딜러가 먼저 발행하게 된다.
+        $this->alimtalkReady();
+        $this->companyReady();
+        $this->actingAs($this->financeUser());
+        $v = Vehicle::create([
+            'vehicle_number' => '77가7777',
+            'sales_channel' => 'export',
+            'deregistration_notice_phone' => '010-1111-2222',
+            'purchase_price' => 5_000_000,
+        ]);
+        $this->payOff($v, 3_000_000);   // 200만 남음
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->call('sendTaxInvoiceAlimtalk')
+            ->assertDispatched('notify', type: 'error');
+
+        $this->assertSame(0, AlimtalkLog::count());
+    }
+
+    public function test_a_vehicle_with_no_purchase_price_is_not_treated_as_paid(): void
+    {
+        // ⚠️ 매입가를 아직 안 넣은 차는 미지급도 0 이라 그냥 보면 「완납」으로 읽힌다.
+        $this->alimtalkReady();
+        $this->companyReady();
+        $this->actingAs($this->financeUser());
+        $v = Vehicle::create([
+            'vehicle_number' => '55가5555',
+            'sales_channel' => 'export',
+            'deregistration_notice_phone' => '010-3333-4444',
+        ]);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->call('sendTaxInvoiceAlimtalk')
+            ->assertDispatched('notify', type: 'error');
+
+        $this->assertSame(0, AlimtalkLog::count());
+    }
+
     public function test_it_refuses_to_send_without_a_phone_number(): void
     {
         $this->alimtalkReady();
         $this->companyReady();
         $this->actingAs($this->financeUser());
-        $v = Vehicle::create(['vehicle_number' => '99가9999', 'sales_channel' => 'export', 'deregistration_notice_phone' => null]);
+        $v = Vehicle::create(['vehicle_number' => '99가9999', 'sales_channel' => 'export', 'deregistration_notice_phone' => null, 'purchase_price' => 1_000_000]);
+        $this->payOff($v, 1_000_000);
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
