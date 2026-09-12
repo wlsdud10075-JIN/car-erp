@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Support\SearchTerm;
 use DomainException;
 use Illuminate\Support\Facades\DB;
 
@@ -48,10 +49,18 @@ class SettlementGateOverrideService
      * 🚨 **`wire:poll` 이 도는 렌더에 올리지 말 것.** 미수 accessor 가 행마다 잔금·회수이력을 타므로
      *    모달을 열 때만 계산해야 한다. eager load 3종이 그 N+1 을 막는다.
      */
-    public function candidates()
+    public function candidates(?string $search = null)
     {
+        $term = SearchTerm::of($search);
+
         return Vehicle::query()
             ->with(['salesman', 'finalPayments', 'receivableHistories', 'buyer'])
+            // 🔎 검색은 **SQL 에서** 먼저 좁힌다 — 아래 accessor 필터는 행마다 미수를 계산하므로
+            //    여기서 줄이는 만큼 그대로 비용이 준다(싼카 458대 → 한 대).
+            ->when($term !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('vehicle_number', 'like', '%'.$term.'%')
+                ->orWhereHas('salesman', fn ($sm) => $sm->where('name', 'like', '%'.$term.'%'))
+            ))
             ->where('sale_price', '>', 0)                       // no_sale 이면 예외 대상 아님
             ->whereNotNull('salesman_id')->whereHas('salesman')  // no_salesman 이면 예외 대상 아님
             ->whereDoesntHave('settlements')                     // already_exists 이면 예외 대상 아님

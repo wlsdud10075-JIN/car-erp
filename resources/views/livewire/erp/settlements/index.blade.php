@@ -28,6 +28,12 @@ new #[Layout('components.layouts.app')] class extends Component
     // 게이트 예외 (jin 2026-09-12) — docs/design/settlement-gate-exception.md
     #[Url(as: 'ovr')] public bool $overrideOnly = false;
     public bool $showGateCandidates = false;
+    public string $gateSearch = '';
+    public int $gatePage = 1;
+    public array $gateRows = [];
+    public int $gateTotal = 0;
+    public int $gatePages = 1;
+    private const GATE_PER_PAGE = 20;
     public ?int $gateVehicleId = null;
     public ?int $gateSettlementId = null;
     public string $gateReason = '';
@@ -241,8 +247,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->gateVehicleId = null;
         $this->gateReason = '';
         $this->gateSettlementId = null;
+        $this->gateSearch = '';
+        $this->gatePage = 1;
         $this->showGateCandidates = true;
-        unset($this->gateCandidates);
+        $this->loadGateCandidates();
     }
 
     public function closeGateCandidates(): void
@@ -251,17 +259,64 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->gateVehicleId = null;
         $this->gateReason = '';
         $this->gateSettlementId = null;
-        unset($this->gateCandidates);
+        $this->gateSearch = '';
+        $this->gatePage = 1;
+        $this->gateRows = [];
+        $this->gateTotal = 0;
+        $this->gatePages = 1;
     }
 
-    #[Computed]
-    public function gateCandidates()
+    /**
+     * 「예외 대상」을 **한 번 계산해 그 페이지만 담아 둔다**.
+     *
+     * 🚨 **computed 를 화면에서 직접 쓰면 안 된다** — 이 화면은 `wire:poll.30s` 라 모달을 열어둔
+     *    30초마다 후보 전량의 미수 accessor 가 다시 돈다(싼카 458대). 담아 두면 poll 은 공짜다.
+     * 🧭 그래서 목록이 **저절로 갱신되지 않는다** — [새로고침] 버튼을 둔다. 예외를 걸고 나면
+     *    이 함수가 다시 돌아 그 행이 빠진다.
+     * 💾 담는 것은 **모델이 아니라 표시용 배열**이다. 모델을 담으면 Livewire 페이로드가 통째로 커진다.
+     */
+    public function loadGateCandidates(): void
     {
-        if (! $this->showGateCandidates) {
-            return collect();
-        }
+        $all = app(SettlementGateOverrideService::class)->candidates($this->gateSearch);
 
-        return app(SettlementGateOverrideService::class)->candidates();
+        $this->gateTotal = $all->count();
+        $this->gatePages = max(1, (int) ceil($this->gateTotal / self::GATE_PER_PAGE));
+        $this->gatePage = min(max(1, $this->gatePage), $this->gatePages);
+
+        $this->gateRows = $all
+            ->slice(($this->gatePage - 1) * self::GATE_PER_PAGE, self::GATE_PER_PAGE)
+            ->map(function (Vehicle $v) {
+                $unpaid = (float) $v->sale_unpaid_amount;
+                $freight = (float) ($v->transport_fee ?? 0);
+
+                return [
+                    'id' => $v->id,
+                    'plate' => $v->vehicle_number,
+                    'salesman' => $v->salesman?->name ?? '-',
+                    'currency' => $v->currency ?: 'KRW',
+                    'unpaid' => $unpaid,
+                    'freight' => $freight,
+                    // 「미수가 운임비와 같다」 = 눌러도 되는 건이라는 **유일한 단서**다(§3-8).
+                    //   판정이 아니라 표시다 — 입금이 항목별로 귀속되지 않아 우연히 맞을 수 있다.
+                    'same_as_freight' => $freight > 0 && abs($unpaid - $freight) < 0.01,
+                    // 서비스가 후보를 고르며 계산해 담아 둔 값(중복 계산 방지).
+                    'blockers' => $v->gateBlockers ?? $v->settlementBlockers(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    public function updatedGateSearch(): void
+    {
+        $this->gatePage = 1;
+        $this->loadGateCandidates();
+    }
+
+    public function gatePageMove(int $delta): void
+    {
+        $this->gatePage = max(1, $this->gatePage + $delta);
+        $this->loadGateCandidates();
     }
 
     /** 사유 입력 단계로 — 제안 문구를 미리 채운다(판정 아님, 사람이 고쳐 쓴다). */
@@ -322,7 +377,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->gateVehicleId = null;
         $this->gateSettlementId = null;
         $this->gateReason = '';
-        unset($this->settlements, $this->gateCandidates, $this->salesmanSummaries);
+        unset($this->settlements, $this->salesmanSummaries);
+        if ($this->showGateCandidates) {
+            $this->loadGateCandidates();   // 방금 만든 건은 목록에서 빠진다
+        }
         session()->flash('success', __('settlement.gate.done'));
     }
 
@@ -2262,21 +2320,36 @@ new #[Layout('components.layouts.app')] class extends Component
      🚫 수동 「신규 정산」 폼으로 대신하지 말 것 — 거긴 귀속월이 완납월이 아니라 생성월이 된다. --}}
 @if($showGateCandidates)
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:click.self="closeGateCandidates">
-    <div class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl">
+    {{-- ⚠️ `min-h-0` 이 핵심이다 — flex 자식은 기본 `min-height:auto` 라 **내용보다 작아지지 않는다**.
+         그러면 아래 `overflow-y-auto` 가 발동할 일이 없어 **스크롤이 아예 안 먹는다**(jin 제보). --}}
+    <div class="flex max-h-[85vh] min-h-0 w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl">
         <div class="flex items-start justify-between border-b px-5 py-4">
             <div>
                 <h3 class="text-base font-bold text-gray-800">{{ __('settlement.gate.candidates_title') }}</h3>
                 <p class="mt-0.5 text-xs text-gray-500">{{ __('settlement.gate.candidates_desc') }}</p>
             </div>
-            <button wire:click="closeGateCandidates" class="text-gray-400 hover:text-gray-600">✕</button>
+            <button wire:click="closeGateCandidates" class="text-gray-400 hover:text-gray-600">&times;</button>
         </div>
 
-        @php $cands = $this->gateCandidates; @endphp
-        <div class="flex-1 overflow-y-auto px-5 py-3">
-            @if($cands->isEmpty())
-            <p class="py-10 text-center text-sm text-gray-400">{{ __('settlement.gate.candidates_empty') }}</p>
+        {{-- 검색 + 건수 + 새로고침 (고정 머리) --}}
+        <div class="flex flex-wrap items-center gap-2 border-b bg-gray-50 px-5 py-2">
+            <input wire:model.live.debounce.400ms="gateSearch" type="text"
+                   class="input-filter w-52" placeholder="{{ __('settlement.gate.search_ph') }}" />
+            <span class="text-xs text-gray-500">
+                {{ __('settlement.gate.candidates_count', ['count' => $gateTotal]) }}
+            </span>
+            <button type="button" wire:click="loadGateCandidates"
+                    class="ml-auto rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                    title="{{ __('settlement.gate.refresh_title') }}">{{ __('settlement.gate.refresh') }}</button>
+        </div>
+
+        {{-- ⚠️ `min-h-0` 없이는 이 칸이 내용만큼 커져 버려 스크롤이 안 생긴다. --}}
+        <div class="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+            @if($gateTotal === 0)
+            <p class="py-10 text-center text-sm text-gray-400">
+                {{ $gateSearch === '' ? __('settlement.gate.candidates_empty') : __('settlement.gate.search_empty') }}
+            </p>
             @else
-            <p class="mb-2 text-xs text-gray-500">{{ __('settlement.gate.candidates_count', ['count' => $cands->count()]) }}</p>
             <div class="overflow-x-auto">
             <table class="w-full min-w-[640px] text-sm">
                 <thead class="border-b text-xs text-gray-500">
@@ -2290,32 +2363,26 @@ new #[Layout('components.layouts.app')] class extends Component
                     </tr>
                 </thead>
                 <tbody class="divide-y">
-                @foreach($cands as $cv)
-                @php
-                    // 서비스가 후보를 고르며 계산해 담아 둔 값(중복 계산 방지). 없으면 그때만 다시 센다.
-                    $cb = $cv->gateBlockers ?? $cv->settlementBlockers();
-                    $cUnpaid = (float) $cv->sale_unpaid_amount;
-                    $cFreight = (float) ($cv->transport_fee ?? 0);
-                @endphp
-                <tr class="{{ $gateVehicleId === $cv->id ? 'bg-amber-50' : '' }}">
-                    <td class="py-2 pr-3 font-medium text-gray-800">{{ $cv->vehicle_number }}</td>
-                    <td class="py-2 pr-3 text-gray-600">{{ $cv->salesman?->name ?? '-' }}</td>
-                    <td class="py-2 pr-3 text-right whitespace-nowrap {{ $cUnpaid > 0 ? 'text-red-600' : 'text-gray-400' }}">
-                        {{ $cUnpaid > 0 ? $cv->currency.' '.number_format($cUnpaid, 2) : '-' }}
+                @foreach($gateRows as $row)
+                <tr wire:key="gate-cand-{{ $row['id'] }}" class="{{ $gateVehicleId === $row['id'] ? 'bg-amber-50' : '' }}">
+                    <td class="py-2 pr-3 font-medium text-gray-800">{{ $row['plate'] }}</td>
+                    <td class="py-2 pr-3 text-gray-600">{{ $row['salesman'] }}</td>
+                    <td class="py-2 pr-3 text-right whitespace-nowrap {{ $row['unpaid'] > 0 ? 'text-red-600' : 'text-gray-400' }}">
+                        {{ $row['unpaid'] > 0 ? $row['currency'].' '.number_format($row['unpaid'], 2) : '-' }}
                     </td>
                     <td class="py-2 pr-3 text-right whitespace-nowrap text-gray-500">
-                        {{ $cFreight > 0 ? $cv->currency.' '.number_format($cFreight, 2) : '-' }}
-                        @if($cFreight > 0 && abs($cUnpaid - $cFreight) < 0.01)
+                        {{ $row['freight'] > 0 ? $row['currency'].' '.number_format($row['freight'], 2) : '-' }}
+                        @if($row['same_as_freight'])
                         <span class="ml-1 badge badge-teal">{{ __('settlement.gate.same_as_freight') }}</span>
                         @endif
                     </td>
                     <td class="py-2 pr-3">
-                        @foreach($cb as $b)
+                        @foreach($row['blockers'] as $b)
                         <span class="badge badge-amber">{{ __('settlement.gate.blocker.'.$b) }}</span>
                         @endforeach
                     </td>
                     <td class="py-2 text-right">
-                        <button wire:click="startGateOverride({{ $cv->id }})"
+                        <button wire:click="startGateOverride({{ $row['id'] }})"
                                 class="whitespace-nowrap rounded border border-amber-400 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50">
                             {{ __('settlement.gate.create_btn') }}
                         </button>
@@ -2327,6 +2394,17 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             @endif
         </div>
+
+        {{-- 페이지 (고정 바닥) — 화면에 다 안 들어오는 걸 스크롤로만 버티게 하지 않는다. --}}
+        @if($gatePages > 1)
+        <div class="flex items-center justify-between border-t px-5 py-2 text-xs text-gray-500">
+            <button type="button" wire:click="gatePageMove(-1)" @disabled($gatePage <= 1)
+                    class="rounded border border-gray-300 bg-white px-2 py-1 disabled:opacity-40">&lsaquo;</button>
+            <span>{{ $gatePage }} / {{ $gatePages }}</span>
+            <button type="button" wire:click="gatePageMove(1)" @disabled($gatePage >= $gatePages)
+                    class="rounded border border-gray-300 bg-white px-2 py-1 disabled:opacity-40">&rsaquo;</button>
+        </div>
+        @endif
     </div>
 </div>
 @endif
