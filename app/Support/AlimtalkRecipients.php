@@ -216,18 +216,39 @@ class AlimtalkRecipients
         $target = trim($target);
 
         return isset(self::BROADCAST_GROUPS[$target])
+            || self::userIdOf($target) !== null
             || strlen(preg_replace('/[^0-9]/', '', $target) ?? '') >= 8;   // 전화번호로 볼 최소 자릿수
     }
 
-    /** 수신자 토큰을 실제 번호로 — 역할이면 그 그룹 전원, 번호면 그대로. 잘못된 값은 버린다. */
+    /**
+     * `user:12` 토큰이면 그 id — 아니면 null. (2026-09-12 신설)
+     *
+     * 🔑 **번호를 적어 두지 않고 사람을 가리키는 이유** — 번호를 박아 두면 그 사람이 퇴사해
+     *    계정이 없어져도 **계속 발송된다**. id 로 가리키면 계정이 사라진 순간 자동으로 빠진다.
+     */
+    public static function userIdOf(string $target): ?int
+    {
+        return preg_match('/^user:(\d+)$/', trim($target), $m) ? (int) $m[1] : null;
+    }
+
+    /** 수신자 토큰을 실제 번호로 — 역할이면 그 그룹 전원, `user:12` 면 그 사람, 번호면 그대로. */
     private static function resolveTarget(string $target): array
     {
         $target = trim($target);
         if (! self::isValidTarget($target)) {
             return [];
         }
+        if (isset(self::BROADCAST_GROUPS[$target])) {
+            return self::groupPhones($target);
+        }
+        if (($id = self::userIdOf($target)) !== null) {
+            // 번호가 비어 있으면 빈 배열 — 화면의 ⚠️ 표시와 같은 판정이다(조용히 빠지지 않게).
+            $phone = trim((string) (User::query()->whereKey($id)->value('phone') ?? ''));
 
-        return isset(self::BROADCAST_GROUPS[$target]) ? self::groupPhones($target) : [$target];
+            return $phone === '' ? [] : [$phone];
+        }
+
+        return [$target];
     }
 
     /**
@@ -330,11 +351,15 @@ class AlimtalkRecipients
      *    공휴일까지 자동으로 덮고 "월~금 담당자" 줄은 자동으로 빠진다 — 설정 실수가 줄어든다.
      *    공휴일 판정 = 고정 공휴일(내장) + 수기 등록분. `self::isHoliday()`.
      * ⚠️ **매칭 0명이면 대표에게 강제 발송한다.** 조용히 0명에게 가는 게 최악이다.
+     *
+     * 🔀 2026-09-12 (jin) — `$type`(신호 종류)을 받는다. 계약금과 매입잔금의 수신자를 다르게
+     *    가져가려는 것인데, board 요청 3종이 **템플릿 하나를 공유**해서 코드만으로는 못 가른다.
+     *    ⇒ 규칙 행의 `types` 로 가른다. **null 이거나 빈 배열이면 전 신호에 적용**(하위호환).
      */
-    public static function forTimeRules(string $code, ?\DateTimeInterface $at = null): array
+    public static function forTimeRules(string $code, ?\DateTimeInterface $at = null, ?string $type = null): array
     {
         $phones = [];
-        foreach (self::matchingRules($code, $at) as $rule) {
+        foreach (self::matchingRules($code, $at, $type) as $rule) {
             foreach (explode(',', (string) ($rule['to'] ?? '')) as $target) {
                 // 역할 그룹이면 그 그룹 사용자 번호, 번호면 그대로. **잘못된 토큰은 버린다** —
                 // 남겨두면 "수신자는 있는데 아무에게도 안 가는" 상태가 되고 대표 폴백도 안 걸린다.
@@ -357,7 +382,7 @@ class AlimtalkRecipients
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function matchingRules(string $code, ?\DateTimeInterface $at = null): array
+    public static function matchingRules(string $code, ?\DateTimeInterface $at = null, ?string $type = null): array
     {
         $now = $at ? Carbon::instance($at) : now();
         $dow = self::isHoliday($now) ? 7 : (int) $now->isoWeekday();
@@ -365,8 +390,25 @@ class AlimtalkRecipients
 
         return array_values(array_filter(
             self::timeRules($code),
-            fn (array $rule) => self::ruleMatches($rule, $dow, $mins),
+            fn (array $rule) => self::ruleMatches($rule, $dow, $mins, $type),
         ));
+    }
+
+    /**
+     * 규칙 행이 이 신호(type)에 적용되는가 — **표시와 발송이 같은 판정을 쓰게** 하는 단일 지점.
+     *
+     * 🔑 `types` 가 없거나 비어 있으면 **전 신호에 적용**한다. 이 폴백이 하위호환의 전부다 —
+     *    2026-09-12 이전에 저장된 규칙과 `DEFAULT_TIME_RULES` 에는 이 키가 없다.
+     *    ⚠️ 「빈 배열 = 아무 신호에도 안 감」으로 바꾸지 말 것. 배포 순간 기존 설정이 전부 죽는다.
+     */
+    public static function ruleCoversType(array $rule, ?string $type): bool
+    {
+        if ($type === null) {
+            return true;
+        }
+        $types = array_values(array_filter(array_map('strval', (array) ($rule['types'] ?? []))));
+
+        return $types === [] || in_array($type, $types, true);
     }
 
     /**
@@ -382,9 +424,12 @@ class AlimtalkRecipients
     }
 
     /** 한 규칙 행이 지금 시각에 걸리는가. till < from 이면 자정 넘김 구간. */
-    private static function ruleMatches(array $rule, int $dow, int $mins): bool
+    private static function ruleMatches(array $rule, int $dow, int $mins, ?string $type = null): bool
     {
         if (($rule['active'] ?? true) === false) {
+            return false;
+        }
+        if (! self::ruleCoversType($rule, $type)) {
             return false;
         }
         $days = array_map('intval', (array) ($rule['days'] ?? []));
@@ -425,6 +470,28 @@ class AlimtalkRecipients
         $q = self::groupQuery($group);
 
         return $q ? self::phones($q) : [];
+    }
+
+    /**
+     * 역할 그룹의 사람들 — **수신자 피커 전용**(2026-09-12).
+     *
+     * 🚨 `phone` 이 비어 있어도 **버리지 않고 그대로 돌려준다.** 화면이 `⚠️ 번호 없음` 을 보여줘야
+     *    「관리 3명 중 2명만 받는다」가 눈에 띈다. 발송 경로는 `users.phone` 만 보므로(폴백 없음)
+     *    번호 없는 사람은 실제로 안 받는다 — 그 사실을 **숨기지 않는 것**이 이 메서드의 목적이다.
+     *
+     * @return array<int, array{id:int, name:string, phone:string}>
+     */
+    public static function groupMembers(string $group): array
+    {
+        return self::groupUsers($group)
+            ->map(fn (User $u) => [
+                'id' => (int) $u->id,
+                'name' => (string) ($u->name ?: $u->email),
+                'phone' => trim((string) ($u->phone ?? '')),
+            ])
+            ->sortBy('name')
+            ->values()
+            ->all();
     }
 
     /**
