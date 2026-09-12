@@ -113,8 +113,12 @@ class FinalPayment extends Model
             if (! auth()->check()) {
                 return;
             }
+            // 🚪 게이트 예외(jin 2026-09-12) — 예외로 지급한 정산은 **신규 잔금 추가만** 유예한다.
+            //    나중에 들어온 돈을 기록할 길이 없으면 예외가 반쪽이 된다. 미수가 0 이 되면 자동 재잠금.
+            //    🚫 `hasClosedSecondarySettlement()` 로 되돌리지 말 것 — 기존 잔금 수정·삭제는
+            //       그쪽을 그대로 보고 있고, 열리는 것은 **이 경로뿐**이다.
             $vehicle = $p->vehicle;
-            if ($vehicle && $vehicle->hasClosedSecondarySettlement()) {
+            if ($vehicle && $vehicle->ledgerLockedForNewPayments()) {
                 throw new \DomainException('2차 정산 마감된 차량에 신규 판매 잔금을 추가할 수 없습니다 (회계 무결성).');
             }
         });

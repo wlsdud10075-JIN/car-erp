@@ -131,7 +131,10 @@ class PaymentConfirmationService
      */
     private function assertSettlementClosedGuard(?Vehicle $vehicle): void
     {
-        if ($vehicle && $vehicle->hasClosedSecondarySettlement()) {
+        // 🚪 게이트 예외(jin 2026-09-12) — `FinalPayment::creating` 과 **같은 술어**를 본다.
+        //    여기를 같이 안 풀면 잔금은 들어가는데 미수가 안 줄어(분자는 confirmed 행만) 재잠금이
+        //    영영 안 걸린다 — §8 #66 에서 이미 밟은 자리다.
+        if ($vehicle && $vehicle->ledgerLockedForNewPayments()) {
             throw new DomainException("차량({$vehicle->vehicle_number})은 2차 정산이 마감되어 잔금을 재무 확정할 수 없습니다.");
         }
     }

@@ -194,8 +194,10 @@ class SettlementPayoutBatch extends Model
         //   근거: 받을 돈(미수)을 다 못 받았는데 영업 정산을 지급하면 회사 리스크 + 수금 동기 약화.
         //   완납 기준 A-3로 생성돼도, 운임비 후입력 등으로 완납 후 미수가 재발하면 지급 시점에 재차단.
         //   비파괴적 — 정산은 유지(귀속월·스냅샷 보존), 지급만 보류. 완납되면 다음 배치에 자동 재진입.
+        //   🚪 예외(게이트 오버라이드)가 걸린 정산은 통과 — 판정은 `isPayoutHeldByUnpaid()` 단일 출처
+        //      (조건을 여기 옮겨 적으면 「뱃지는 없는데 배치에서 빠지는」 형태가 된다 — §8 #44).
         return Settlement::whereIn('id', $ids)->with('vehicle')->get()
-            ->reject(fn ($s) => (int) ($s->vehicle?->sale_unpaid_amount ?? 0) > 0)
+            ->reject(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())
             ->pluck('id');
     }
 
