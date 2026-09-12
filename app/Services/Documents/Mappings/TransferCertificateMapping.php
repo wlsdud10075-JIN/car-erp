@@ -86,16 +86,34 @@ class TransferCertificateMapping
         ];
     }
 
+    /** NICE 차종의 종류 부분. `DocValue::vehicleFormEn` 의 `$kinds` 와 같은 목록이다. */
+    private const KINDS = ['승용', '승합', '화물', '특수'];
+
     /**
-     * 「차종」 칸 = 차종명 + 연식 (예 `승용 2022`). jin 2026-09-12 — 기입 예시 실물이 그 형태다.
+     * 「차종」 칸 = 종류 + 연식 (예 `승용 2022`). jin 2026-09-12 — 기입 예시 실물이 그 형태다.
      *
-     * NICE 차종은 `승용 중형`처럼 크기까지 들어오므로 **첫 토큰만** 쓴다.
-     * 둘 다 없으면 null(빈칸) — 없는 값을 만들어 채우지 않는다(SKILLS §8 #71).
+     * 🚨 **첫 토큰을 자르면 안 된다.** NICE 값은 크기까지 들어오는데 **순서와 띄어쓰기가 섞여 있다** —
+     *    `승용 중형` · `중형 승용` · `중형승용` 이 운영에 공존한다(SKILLS §8 #75-C, 옛 적재분 표기).
+     *    첫 토큰을 쓰면 `중형 승용` 인 차가 「중형 2022」로 인쇄된다. 예외도 로그도 없다.
+     *    ⇒ `DocValue::vehicleFormEn` 과 같은 방식으로 **포함 여부**로 찾는다.
+     *
+     * 아는 종류가 없으면 원본을 그대로 통과시킨다 — 영문 변환과 같은 원칙이다(모르는 값을 지어내지 않는다).
+     * 차종·연식이 둘 다 없으면 null(빈칸). 없는 값을 만들어 채우지 않는다(SKILLS §8 #71).
      */
     public static function formAndYear(Vehicle $v): ?string
     {
         $form = trim((string) $v->nice_reg_vehicle_form);
-        $kind = $form === '' ? '' : (preg_split('/\s+/u', $form)[0] ?? '');
+        $kind = '';
+        foreach (self::KINDS as $k) {
+            if ($form !== '' && str_contains($form, $k)) {
+                $kind = $k;
+                break;
+            }
+        }
+        if ($kind === '') {
+            $kind = $form;   // 모르는 표기는 원본 그대로 — 위장하지 않는다
+        }
+
         $year = (int) ($v->year ?? 0);
         $out = trim($kind.' '.($year > 0 ? (string) $year : ''));
 

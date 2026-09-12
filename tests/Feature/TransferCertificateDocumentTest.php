@@ -167,6 +167,22 @@ class TransferCertificateDocumentTest extends TestCase
         $sh = $this->sheetFor('system', $this->vehicle());
         $this->assertSame('승용 2022', $sh->getCell('F14')->getValue());
 
+        // 🚨 운영 표기가 **순서·띄어쓰기까지 섞여 있다**(SKILLS §8 #75-C) — 전부 같은 결과여야 한다.
+        //    첫 토큰을 자르면 `중형 승용` 인 차가 「중형 2022」로 인쇄된다.
+        foreach (['중형 승용' => '승용 2022', '중형승용' => '승용 2022', '승합 중형' => '승합 2022',
+            '화물 대형' => '화물 2022', '특수' => '특수 2022'] as $raw => $want) {
+            $sh = $this->sheetFor('system', $this->vehicle([
+                'vehicle_number' => '19더90'.random_int(10, 99), 'nice_reg_vehicle_form' => $raw,
+            ]));
+            $this->assertSame($want, $sh->getCell('F14')->getValue(), "차종 표기 '{$raw}'");
+        }
+
+        // 모르는 표기는 원본 그대로 — 위장하지 않는다(실측 쓰레기값 `205 004` 가 존재한다).
+        $sh = $this->sheetFor('system', $this->vehicle([
+            'vehicle_number' => '19더9067', 'nice_reg_vehicle_form' => '205 004',
+        ]));
+        $this->assertSame('205 004 2022', $sh->getCell('F14')->getValue());
+
         // 차종 정보가 없으면 연식만.
         $sh = $this->sheetFor('system', $this->vehicle([
             'vehicle_number' => '19더9066', 'nice_reg_vehicle_form' => null,

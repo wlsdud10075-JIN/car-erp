@@ -351,7 +351,7 @@ class LocaleTest extends TestCase
             ->assertSee('Payment Status')            // 판매 탭 섹션
             ->assertSee('Sale Basics')
             ->assertSee('Korea Post EMS')            // EMS/DHL 탭 (구 'DHL Recipient' — 2026-08-31 발송 기록으로 교체)
-            ->assertSee('Purchase Documents (3)')    // 서류 탭
+            ->assertSee('Purchase Documents (4)')    // 서류 탭 (2026-09-12 양도증명서 합류로 3종→4종)
             ->assertSee('Power of Attorney')
             ->assertSee('Create')                    // 저장바(신규)
             ->assertDontSee('NICE 등록정보 (12)')

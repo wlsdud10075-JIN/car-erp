@@ -121,12 +121,15 @@ class StampSlots
             // 양도증명서(2026-09-12) — **회사(을) 쪽에만** 찍는다. 갑(차주)은 사람이 직접 서명한다.
             //   ① 매매업자 직인 = 유의사항 2번이 «매매업자는 반드시 직인을 찍어야 합니다» 라고 요구하는 그 칸.
             //   ② 하단 양수인 서명란 = jin 이 말한 「양수인 쪽」.
-            //   ⚠️ 행 높이가 17pt(≈23px)로 촘촘해 상자를 크게 잡으면 아랫줄을 덮는다 — 세로를 눌러 뒀다.
+            //   ⚠️ 행 높이가 촘촘해 상자를 크게 잡으면 아랫줄을 덮는다 — 세로를 눌러 뒀다.
+            //   ⚠️ 하단 도장 앵커가 **서명줄(45행)이 아니라 43행**인 이유 — 45행은 27px 뿐이라
+            //      거기서 시작하면 44px 도장이 바로 아래 「(유의사항)」 상자를 파고든다(렌더로 확인).
+            //      43~45행에 걸치게 하면 서명줄 위에 자연스럽게 앉는다.
             //   🚫 `exact` 금지(비율 안 맞는 도장이 찌그러진다). 미세조정은 배포 없이 기능설정에서.
             //   baked drawing 이 없어 `clearAnchors` 불필요(백지 생성이라 0건).
             'transfer_certificate' => [
                 ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
-                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC45', 'width' => 90, 'height' => 44],
+                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC43', 'width' => 90, 'height' => 44],
             ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
@@ -191,7 +194,7 @@ class StampSlots
             //    default 에만 넣으면 heyman 만 도장이 안 찍힌다(위 :59-60 주석의 그 위험).
             'transfer_certificate' => [
                 ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
-                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC45', 'width' => 90, 'height' => 44],
+                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC43', 'width' => 90, 'height' => 44],
             ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
