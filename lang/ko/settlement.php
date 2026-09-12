@@ -64,6 +64,7 @@ return [
         'filter' => '예외 처리만',
         'badge' => '게이트 예외',
         'badge_tooltip' => ':at 예외 처리 · 사유: :reason (당시 미수 :then → 현재 :now)',
+        'preview_tooltip' => '미수가 남았지만 예외 처리돼 마감할 수 있는 건입니다 (현재 미수 :unpaid).',
         'forbidden' => '정산 게이트 예외는 재무 이상만 처리할 수 있습니다.',
         'candidates_btn' => '🚪 예외 대상',
         'candidates_title' => '예외로 정산 만들기',

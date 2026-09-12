@@ -26,6 +26,16 @@ class Vehicle extends Model
     use SoftDeletes;
 
     /** 매입취소 상태 (jin 2026-07-18) — 위약금은 sale_price·채권 배관 재사용, progress 오염만 이 마커로 분리. */
+    /**
+     * 「예외 대상」 목록이 그 행의 `settlementBlockers()` 를 담아 두는 자리 — **DB 컬럼이 아니다**.
+     *
+     * 🔑 **선언된 프로퍼티여야 한다.** 동적 속성으로 붙이면 Eloquent `__set` 을 타서 **어트리뷰트가
+     *    되고**, 그 모델을 저장하는 순간 「컬럼 없음」으로 죽는다. 여기 선언해 두면 그 경로를 안 탄다.
+     * 🚫 판정에 쓰지 말 것 — 단일 출처는 `settlementBlockers()` 다. 이건 같은 요청 안에서
+     *    같은 계산을 두 번 하지 않으려는 것뿐이다(후보 458행이면 poll 마다 쿼리 900개 차이).
+     */
+    public ?array $gateBlockers = null;
+
     public const CANCEL_NONE = 'none';
 
     public const CANCEL_ACTIVE = 'cancelled';        // 매입취소 — 위약금 채권 추적(미수>0=진행, 미수0=취소완료 표시)

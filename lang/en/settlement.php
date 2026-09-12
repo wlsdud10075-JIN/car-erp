@@ -62,6 +62,7 @@ return [
         'filter' => 'Overridden only',
         'badge' => 'Gate override',
         'badge_tooltip' => 'Overridden on :at · Reason: :reason (unpaid then :then → now :now)',
+        'preview_tooltip' => 'Receivable remains, but this one is overridden so it can be closed (currently :unpaid).',
         'forbidden' => 'Only finance or above can override the settlement gate.',
         'candidates_btn' => '🚪 Override candidates',
         'candidates_title' => 'Create settlement with an override',

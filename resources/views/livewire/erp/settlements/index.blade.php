@@ -1506,6 +1506,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 'plate' => $s->vehicle?->vehicle_number ?? '-',
                 'salesman' => $s->salesman?->name ?? '-',
                 'payout' => (int) $s->actual_payout,
+                // 🚪 예외 건은 **완납이 아닌데도** 「닫을 것」에 들어온다 — 표시가 없으면
+                //    매달 「왜 이건 닫히지」가 된다(§8 #60). 미수를 함께 보여준다.
+                'override' => $s->hasGateOverride(),
+                'unpaid' => $s->vehicle
+                    ? $s->vehicle->currency.' '.number_format((float) $s->vehicle->sale_unpaid_amount, 2)
+                    : '',
             ];
             $blocker = $this->secondaryCloseBlocker($s);
             if ($blocker === null) {
@@ -1783,7 +1789,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     <tbody>
                     @foreach($cp['ready'] as $row)
                     <tr wire:key="cs-ready-{{ $row['id'] }}" class="border-b border-gray-100">
-                        <td class="py-1 font-medium text-gray-800">{{ $row['plate'] }}</td>
+                        <td class="py-1 font-medium text-gray-800">{{ $row['plate'] }}
+                            @if($row['override'])
+                            <span class="badge badge-amber ml-1"
+                                  title="{{ __('settlement.gate.preview_tooltip', ['unpaid' => $row['unpaid']]) }}">{{ __('settlement.gate.badge') }}</span>
+                            @endif
+                        </td>
                         <td class="py-1 text-gray-500">{{ $row['salesman'] }}</td>
                         <td class="py-1 text-right font-mono text-gray-700">&#8361;{{ number_format($row['payout']) }}</td>
                     </tr>
@@ -2281,7 +2292,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <tbody class="divide-y">
                 @foreach($cands as $cv)
                 @php
-                    $cb = $cv->settlementBlockers();
+                    // 서비스가 후보를 고르며 계산해 담아 둔 값(중복 계산 방지). 없으면 그때만 다시 센다.
+                    $cb = $cv->gateBlockers ?? $cv->settlementBlockers();
                     $cUnpaid = (float) $cv->sale_unpaid_amount;
                     $cFreight = (float) ($cv->transport_fee ?? 0);
                 @endphp
