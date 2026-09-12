@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\BoardRequest;
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -225,6 +227,8 @@ class AlimtalkSignalRoutingTest extends TestCase
 
     // ── ④ 피커 조작 ──────────────────────────────────────────────────────
 
+    private const ADDR = 'rule:'.self::CODE.':0';
+
     public function test_picking_a_person_turns_off_the_whole_role(): void
     {
         $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
@@ -232,7 +236,7 @@ class AlimtalkSignalRoutingTest extends TestCase
 
         $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
             ->set('timeRules.'.self::CODE, [['to' => '관리', 'days' => [1], 'from' => '09:00', 'till' => '18:00']])
-            ->call('toggleMember', self::CODE, 0, '관리', $u->id);
+            ->call('toggleMemberAt', self::ADDR, '관리', $u->id);
 
         $to = $c->get('timeRules')[self::CODE][0]['to'];
         $this->assertSame('user:'.$u->id, $to,
@@ -246,7 +250,7 @@ class AlimtalkSignalRoutingTest extends TestCase
 
         $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
             ->set('timeRules.'.self::CODE, [['to' => 'user:'.$u->id, 'days' => [1], 'from' => '09:00', 'till' => '18:00']])
-            ->call('toggleGroup', self::CODE, 0, '관리');
+            ->call('toggleGroupAt', self::ADDR, '관리');
 
         $this->assertSame('관리', $c->get('timeRules')[self::CODE][0]['to']);
     }
@@ -259,9 +263,98 @@ class AlimtalkSignalRoutingTest extends TestCase
 
         $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
             ->set('timeRules.'.self::CODE, [['to' => '관리', 'days' => [1], 'from' => '09:00', 'till' => '18:00']])
-            ->call('toggleMember', self::CODE, 0, '관리', $sales->id);
+            ->call('toggleMemberAt', self::ADDR, '관리', $sales->id);
 
         $this->assertSame('관리', $c->get('timeRules')[self::CODE][0]['to'],
             '다른 역할의 사용자가 관리 그룹 토큰으로 들어갔다');
+    }
+
+    // ── ⑤ 역할 선택형 알림톡 16종에도 같은 피커 (jin 2026-09-12 «전체 적용») ──────────
+
+    /** 🔑 같은 조각·같은 메서드가 「role:{code}」 주소로도 동작해야 한다 — 화면 두 벌은 갈린다(§8 #44). */
+    public function test_the_same_picker_works_for_plain_role_notifications(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $keep = $this->user('관리', '010-1111-1111');
+        $this->user('관리', '010-3333-3333');   // 같은 역할인데 안 고른 사람
+
+        // ⚠️ 기본값이 ['관리','manager'] 라 먼저 상태를 명시한다 — 안 하면 다른 역할이 섞여
+        //    「무엇을 검사하는 테스트인지」가 흐려진다.
+        Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->set('roles.erp_vehicle_new', ['관리'])
+            ->call('toggleMemberAt', 'role:erp_vehicle_new', '관리', $keep->id)
+            ->call('saveRoles', 'erp_vehicle_new');
+
+        $this->assertSame(['user:'.$keep->id], AlimtalkRecipients::selectedRoles('erp_vehicle_new'),
+            '역할 선택형에서 개별 지정이 저장되지 않았다 (또는 「관리 전체」가 같이 남았다)');
+        $this->assertSame(['010-1111-1111'], AlimtalkRecipients::forBroadcast('erp_vehicle_new'),
+            '개별 지정인데 그 사람만 받지 않았다');
+    }
+
+    /** 저장 검증 — 피커에 안 뜨는 계정은 버린다(영영 안 걸리는 수신자를 남기지 않는다). */
+    public function test_an_unpickable_account_is_dropped_on_save(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        // role 이 ROLES 밖(레거시 '전체') → 어느 역할 그룹에도 안 잡힌다
+        $ghost = User::factory()->create(['permission' => 'user', 'role' => '전체', 'phone' => '010-7777-7777', 'email_verified_at' => now()]);
+
+        Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->set('roles.erp_vehicle_new', ['관리', 'user:'.$ghost->id])
+            ->call('saveRoles', 'erp_vehicle_new');
+
+        $this->assertSame(['관리'], AlimtalkRecipients::selectedRoles('erp_vehicle_new'));
+    }
+
+    /**
+     * 🚨 **계정 없는 영업담당자**(salesmen 만 있는 사람)는 「영업 전체」일 때만 받는다.
+     *    개별 지정으로 바꾸면 빠지는 게 맞다 — 고를 수 있는 대상이 아니기 때문이다.
+     *    이 구분이 사라지면 「고른 적 없는 사람이 받는」 상태가 된다.
+     */
+    public function test_orphan_salespeople_follow_the_whole_role_only(): void
+    {
+        // 계정 없는 영업담당자 — salesmen 행만 있고 users 가 없다(운영에 실재).
+        $orphan = Salesman::create([
+            'name' => '계정없는영업', 'type' => 'freelance', 'is_active' => true,
+            'phone' => '010-8888-8888',
+        ]);
+        $v = Vehicle::create([
+            'vehicle_number' => '99가9999', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1350, 'dhl_request' => false, 'salesman_id' => $orphan->id,
+            'sale_price' => 10000, 'sale_date' => now()->toDateString(),
+        ]);
+
+        $code = 'erp_sale_unpaid';
+        $key = 'alimtalk_roles_'.$code.'_'.Setting::companyTemplateSet();
+
+        // ① 역할 전체 → 계정 없는 영업담당자도 받는다(구 동작 보존).
+        Setting::updateOrCreate(['key' => $key], ['value' => '영업', 'type' => 'string']);
+        $this->assertArrayHasKey('010-8888-8888', AlimtalkRecipients::scopedFor($code, [$v]),
+            '「영업」 전체를 켰는데 계정 없는 영업담당자가 빠졌다 — 새 영업을 계정 없이 추가한 날부터 끊긴다');
+
+        // ② 개별 지정 → 빠진다. 고를 수 있는 대상이 아니므로 끼워 넣으면 「고른 적 없는 사람이 받는」 상태다.
+        $picked = $this->user('영업', '010-1111-1111');
+        Setting::updateOrCreate(['key' => $key], ['value' => 'user:'.$picked->id, 'type' => 'string']);
+        $this->assertArrayNotHasKey('010-8888-8888', AlimtalkRecipients::scopedFor($code, [$v]),
+            '개별 지정인데 계정 없는 영업담당자까지 받는다 — 고른 적 없는 사람에게 나간다');
+    }
+
+    /** 단계별 확대가 붙은 알림(말소 재촉)은 역할 체크박스 그대로 — jin 2026-09-12 «말소재촉은 냅둬». */
+    public function test_the_escalating_notification_keeps_the_plain_checkboxes(): void
+    {
+        $this->assertTrue(AlimtalkRecipients::supportsEscalation('erp_deregistration_reminder'));
+
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $html = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')->html();
+
+        // ⚠️ 렌더된 화면 전체를 단언 인자로 넘기지 않는다 — 실패 시 그걸 통째로 찍느라
+        //    테스트가 멈춘 것처럼 보인다(SKILLS §8 #93, 이 파일을 쓰면서 실제로 밟았다).
+        $this->assertFalse(
+            str_contains($html, "toggleGroupAt('role:erp_deregistration_reminder'"),
+            '말소 재촉에 인원 피커가 붙었다 — 단계별 확대 일수가 역할 단위라 개별 지정과 안 맞는다',
+        );
+        $this->assertTrue(
+            str_contains($html, 'escalate.erp_deregistration_reminder'),
+            '말소 재촉의 단계별 확대 숫자칸이 사라졌다',
+        );
     }
 }

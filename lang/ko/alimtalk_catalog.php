@@ -55,6 +55,7 @@ return [
     'rule_number_bad' => '전화번호 형식이 아닙니다. 숫자 8자리 이상으로 적어주세요.',
     'rule_number_hint' => 'ERP 계정이 없는 분에게 보낼 때만 쓰세요. 직접 적은 번호는 그 사람이 퇴사해도 계속 발송됩니다.',
     'rule_nobody' => '이 구간은 받을 사람이 0명입니다 — 최고관리자에게 발송됩니다.',
+    'rule_sales_orphan_hint' => 'ERP 계정 없는 영업담당자는 제외됩니다',
     'rule_pick_group' => '역할째 켜기',
     'holidays_auto' => '자동 수집',
     'holidays_auto_on' => ':y년 :a일 · :y2년 :b일 (설날·추석·부처님오신날·대체·임시공휴일·선거일 포함)',
