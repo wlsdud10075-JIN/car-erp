@@ -449,6 +449,105 @@ class SettlementGateOverrideTest extends TestCase
         }
     }
 
+    // ── 9. 「예외 대상」 목록 — 검색·페이지·담아두기 ──────────────────
+
+    public function test_the_candidate_list_can_be_searched_by_plate_and_salesman(): void
+    {
+        $this->actingAs($this->finance());
+        $a = $this->freightUnpaidVehicle();
+        $b = $this->freightUnpaidVehicle();
+
+        $c = Volt::test('erp.settlements.index')->call('openGateCandidates');
+        $c->assertSet('gateTotal', 2);
+
+        // 차량번호
+        $c->set('gateSearch', $a->vehicle_number)->assertSet('gateTotal', 1);
+        $this->assertSame($a->vehicle_number, $c->get('gateRows')[0]['plate']);
+
+        // 담당자 이름
+        $c->set('gateSearch', $b->salesman->name)->assertSet('gateTotal', 1);
+        $this->assertSame($b->vehicle_number, $c->get('gateRows')[0]['plate']);
+
+        // 없는 값
+        $c->set('gateSearch', 'ZZZZ없음')->assertSet('gateTotal', 0);
+        $this->assertSame([], $c->get('gateRows'));
+
+        // 비우면 전부 돌아온다
+        $c->set('gateSearch', '')->assertSet('gateTotal', 2);
+    }
+
+    public function test_the_candidate_list_is_paged_not_dumped_at_once(): void
+    {
+        $this->actingAs($this->finance());
+        for ($i = 0; $i < 22; $i++) {
+            $this->freightUnpaidVehicle();
+        }
+
+        $c = Volt::test('erp.settlements.index')->call('openGateCandidates');
+        $c->assertSet('gateTotal', 22)->assertSet('gatePages', 2)->assertSet('gatePage', 1);
+        $this->assertCount(20, $c->get('gateRows'), '한 화면에 스무 줄까지만');
+
+        $c->call('gatePageMove', 1)->assertSet('gatePage', 2);
+        $this->assertCount(2, $c->get('gateRows'));
+
+        // 끝을 넘겨 눌러도 마지막 페이지에 머문다
+        $c->call('gatePageMove', 1)->assertSet('gatePage', 2);
+        $c->call('gatePageMove', -1)->assertSet('gatePage', 1);
+    }
+
+    /**
+     * 🚨 성능 가드 — 이 화면은 `wire:poll.30s` 다. 목록을 computed 로 두면 모달을 열어둔 30초마다
+     *    후보 전량의 미수 accessor 가 다시 돈다(싼카 458대). 담아 두면 poll 이 공짜다.
+     *
+     * 그래서 **밖에서 상태가 바뀌어도 다시 그리는 것만으로는 목록이 안 변해야** 한다 —
+     * 그게 「다시 계산하지 않는다」는 뜻이다. [새로고침] 을 눌러야 반영된다.
+     */
+    public function test_the_list_is_stashed_so_the_poll_does_not_recompute_it(): void
+    {
+        $finance = $this->finance();
+        $this->actingAs($finance);
+        $v = $this->freightUnpaidVehicle();
+
+        $c = Volt::test('erp.settlements.index')->call('openGateCandidates');
+        $c->assertSet('gateTotal', 1);
+
+        // 밖에서 완납시키면 이 차는 더 이상 후보가 아니다.
+        $fp = $v->fresh()->finalPayments()->create([
+            'amount' => 1312, 'type' => 'balance', 'payment_date' => '2026-09-10', 'exchange_rate' => 1400,
+        ]);
+        app(PaymentConfirmationService::class)->confirmPayment($fp, $finance);
+        $v->fresh()->refreshCaches();
+        // ⚠️ 완납되면 **자동 정산이 생긴다** — 그래서 사유가 사라지는 게 아니라 `already_exists` 로
+        //    바뀐다. 어느 쪽이든 「예외 대상」에서는 빠진다. 그걸 단언한다(빈 배열이 아니라).
+        $this->assertFalse(
+            app(SettlementGateOverrideService::class)->isOverridable($v->fresh()),
+            '후보 조건이 실제로 풀렸다'
+        );
+
+        // 다시 그려도(= poll 이 돌아도) 담아둔 값 그대로 — 재계산하지 않는다는 증거다.
+        $c->call('$refresh')->assertSet('gateTotal', 1);
+
+        // [새로고침] 을 눌러야 빠진다.
+        $c->call('loadGateCandidates')->assertSet('gateTotal', 0);
+    }
+
+    public function test_creating_an_override_drops_that_row_from_the_open_list(): void
+    {
+        $this->actingAs($this->finance());
+        $v = $this->freightUnpaidVehicle();
+
+        $c = Volt::test('erp.settlements.index')->call('openGateCandidates');
+        $c->assertSet('gateTotal', 1);
+
+        $c->call('startGateOverride', $v->id)
+            ->set('gateReason', '미수 1,312 EUR — 운임비와 동일합니다.')
+            ->call('confirmGateOverride');
+
+        // 만들고 나면 그 행은 목록에서 빠져야 한다 — 안 그러면 두 번 누른다.
+        $c->assertSet('gateTotal', 0);
+        $this->assertTrue(Settlement::sole()->hasGateOverride());
+    }
+
     public function test_a_short_reason_is_rejected(): void
     {
         $this->actingAs($this->finance());
