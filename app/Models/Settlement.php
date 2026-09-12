@@ -33,6 +33,9 @@ class Settlement extends Model
         'attributed_month',
         // 2026-09-08 jin — 내수(국내 판매) 건인가. **정산 생성 시점에 박제**하고 이후 바뀌지 않는다.
         'is_domestic',
+        // 2026-09-12 jin — 신규 정산 게이트 예외(사유 기반). 판정은 `gate_override_at` 유무 하나.
+        'gate_override_reason', 'gate_override_by', 'gate_override_at',
+        'gate_override_blockers', 'gate_override_unpaid_amount',
     ];
 
     protected $casts = [
@@ -46,6 +49,9 @@ class Settlement extends Model
         'carryover_out_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
         'is_domestic' => 'boolean',
+        'gate_override_at' => 'datetime',
+        'gate_override_blockers' => 'array',
+        'gate_override_unpaid_amount' => 'decimal:2',
     ];
 
     /**
@@ -282,22 +288,43 @@ class Settlement extends Model
     }
 
     /**
+     * 이 정산에 **게이트 예외**가 걸려 있나 (jin 2026-09-12).
+     * 정본 = `docs/design/settlement-gate-exception.md`.
+     *
+     * 🔑 **상태 컬럼을 따로 두지 않는다** — 시각 하나로 판정하므로 어긋날 여지가 없다(§8 #80).
+     * 🚫 `gate_override_unpaid_amount`(그때의 미수)를 판정에 쓰지 말 것 — 보여주기 전용이다.
+     *    금액 조건은 처음부터 없다(jin «미수가 얼마든 예외처리»).
+     */
+    public function hasGateOverride(): bool
+    {
+        return $this->gate_override_at !== null;
+    }
+
+    /**
      * 지급보류 — confirmed 인데 차량에 미수(받을 돈)가 남아 월배치·지급에서 제외되는 상태.
      * (jin 2026-07-08: 받을 돈 다 못 받았으면 영업 정산 지급 보류 — 회사 리스크·수금 동기.)
      * 완납되면 자동 해소돼 다음 배치에 재진입.
+     *
+     * 🚪 **예외가 걸린 정산은 보류하지 않는다**(jin 2026-09-12). 운임비 후입력처럼 정산액에
+     *    1원도 영향을 안 주는 미수가 담당자 지급을 영구히 막던 것이 이 예외의 존재 이유다.
+     * ⚠️ 이 술어는 **네 곳이 같이 봐야 한다** — 여기 · `scopePayoutHeldByUnpaid` ·
+     *    `SettlementPayoutBatch::eligibleSettlementIds` · 목록 뱃지. 하나만 빠지면
+     *    「뱃지는 없는데 필터엔 잡히는」 형태가 된다(§8 #44·#81).
      */
     public function isPayoutHeldByUnpaid(): bool
     {
         return $this->settlement_status === 'confirmed'
             && $this->payout_batch_id === null
+            && ! $this->hasGateOverride()
             && (int) ($this->vehicle?->sale_unpaid_amount ?? 0) > 0;
     }
 
-    /** SQL 스코프 — 지급보류(confirmed·미배치·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
+    /** SQL 스코프 — 지급보류(confirmed·미배치·**예외 없음**·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
     public function scopePayoutHeldByUnpaid($query)
     {
         return $query->where('settlement_status', 'confirmed')
             ->whereNull('payout_batch_id')
+            ->whereNull('gate_override_at')
             ->whereHas('vehicle', fn ($v) => $v->where('sale_unpaid_amount_krw_cache', '>', 0));
     }
 
