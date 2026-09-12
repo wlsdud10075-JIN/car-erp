@@ -3709,6 +3709,25 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    /**
+     * 30초 자동 갱신의 **유일한 진입점** (2026-09-12).
+     *
+     * 예전엔 루트에 `wire:poll.30s`(갱신), 패널 안에 `wire:poll.30s="heartbeat"` 가 **따로** 있었다.
+     * 둘은 같은 컴포넌트라 각각 **11,500줄 전체를 다시 그렸다** — 패널을 열어두면 30초마다 2회.
+     *
+     * 🚫 루트 태그의 `wire:poll` 속성을 `@if` 로 갈아끼우는 식으로 합치지 말 것 —
+     *    편집 중 여부에 따라 **속성이 바뀌면** morph 후 폴링이 다시 등록된다는 보장이 없고,
+     *    하트비트가 조용히 멈추면 **편집 잠금이 만료돼 남이 같은 차를 연다.**
+     *    ⇒ 속성은 고정해 두고 **여기서** 갈린다.
+     */
+    public function tick(): void
+    {
+        if ($this->editingId) {
+            $this->heartbeat();
+        }
+        // 패널이 닫혀 있으면 할 일이 없다 — 액션이 끝나면 어차피 전체가 다시 그려져 목록이 갱신된다.
+    }
+
     /** wire:poll 하트비트 — 패널 열린 동안 내 잠금 TTL 갱신. 타인 잠금이 만료됐으면 점유로 전환. */
     public function heartbeat(): void
     {
@@ -6748,8 +6767,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 }; ?>
 
-{{-- UX #6 (2026-05-20) — wire:poll.30s — 사이드바 뱃지 + 페이지 데이터 30초 자동 갱신. --}}
-<div wire:poll.30s>
+{{-- UX #6 (2026-05-20) — wire:poll.30s — 사이드바 뱃지 + 페이지 데이터 30초 자동 갱신.
+     🚨 2026-09-12 — 폴링은 **이 한 곳뿐**이고 `tick()` 이 편집 중이면 하트비트까지 겸한다.
+     예전엔 패널 안에 `wire:poll.30s="heartbeat"` 가 **따로** 있었는데, 같은 컴포넌트라
+     **둘 다 전체를 다시 그렸다**(패널 열어두면 30초마다 11,500줄 렌더 ×2).
+     🚫 속성을 `@if` 로 갈아끼우지 말 것 — 갈리는 자리는 `tick()` 이다(그 메서드 주석 참조). --}}
+<div wire:poll.30s="tick">
 {{-- ── 플래시 메시지 ────────────────────────────────────────────── --}}
 @if(session('success'))
     <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 3000)"
@@ -7896,10 +7919,7 @@ function vehicleColumnsToggle() {
         </button>
     </div>
 
-    {{-- 동시 편집 잠금 — 패널 열린 동안 하트비트(내 잠금 갱신) + 타인 점유 시 읽기전용 배너 --}}
-    @if($editingId !== null)
-    <div wire:poll.30s="heartbeat"></div>
-    @endif
+    {{-- 동시 편집 잠금 — 하트비트는 **루트 wire:poll** 이 겸한다(2026-09-12). 여기선 읽기전용 배너만. --}}
     @if($editLockedByOther)
     <div class="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-sm text-amber-800">
         <span class="text-base">🔒</span>
@@ -11223,7 +11243,7 @@ function vehicleColumnsToggle() {
             <button type="button" wire:click="closeShipmentBulk" class="text-gray-400 hover:text-gray-600">✕</button>
         </div>
 
-        <div class="grid grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
                 <label class="label-base">{{ __('vehicle.ship_import.carrier') }}</label>
                 <select wire:model.live="shipBulkCarrier" class="input-base">
