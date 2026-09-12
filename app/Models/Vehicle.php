@@ -625,6 +625,43 @@ class Vehicle extends Model
     }
 
     /**
+     * 🚪 **신규 잔금을 넣을 수 있나** — 게이트 예외가 회계 잠금을 「유예」하는 지점 (jin 2026-09-12).
+     * 정본 = `docs/design/settlement-gate-exception.md` §2-2.
+     *
+     * ```
+     * 잠금 = 2차 마감된 정산이 있다
+     *        AND NOT ( 그 마감 정산이 **전부** 예외다  AND  차량 미수 > 0 )
+     * ```
+     *
+     * 🔑 **유예지 해제가 아니다.** 열리는 것은 **B-① 신규 잔금 추가**(+재무확정·채권관리 입금)뿐이고
+     *    차량 회계 26칸(A)·기존 잔금 수정(B-②)·삭제(B-③)는 `hasClosedSecondarySettlement()` 를
+     *    그대로 본다. 과거 기록은 못 건드리고 **새로 받은 돈만** 추가한다 — 사후에 판매가·환율이
+     *    바뀌면 그 변경이 마감 정산에 반영되지 않아(record-only) 차량과 스냅샷이 갈린다.
+     *
+     * 🔁 **재잠금은 자동이다** — 별도 상태값이 없고 매번 계산하므로, 잔금이 들어와 미수가 0 이 되거나
+     *    예외를 해제하는 순간 다음 저장부터 바로 잠긴다(어긋날 여지 없음 — §8 #80).
+     *
+     * ⚠️ 마감 정산이 여럿이고 **하나라도 예외가 아니면 잠근다**(안전한 쪽). 담당자 승계·재생성으로
+     *    한 차에 마감 정산이 둘 이상 생기는 일이 실재한다.
+     */
+    public function ledgerLockedForNewPayments(): bool
+    {
+        $closed = $this->settlements()
+            ->where('secondary_status', 'closed')
+            ->get(['id', 'gate_override_at']);
+
+        if ($closed->isEmpty()) {
+            return false;
+        }
+        if ($closed->contains(fn ($s) => $s->gate_override_at === null)) {
+            return true;   // 예외 없는 마감이 하나라도 있으면 그대로 잠금
+        }
+
+        // 전부 예외 — 미수가 남아 있는 동안만 유예한다. 0 이 되면 즉시 재잠금.
+        return (int) ($this->sale_unpaid_amount ?? 0) <= 0;
+    }
+
+    /**
      * 삭제 시 사유 모달 + AuditLog 필요 대상 — 회계 연관 차량 (2026-07-08 jin).
      * 확정 잔금(회계잠금) 또는 정산 이력이 있으면 "그냥 삭제" 대신 사유 입력·기록을 강제.
      * (권한 자체는 Vehicle::deleting 가드가 별도 판정 — confirmed 잔금은 admin/super 전용.)
@@ -1454,8 +1491,68 @@ class Vehicle extends Model
      * Eloquent saving 이벤트를 우회하고 컬럼만 직접 갱신해 무한 루프 방지.
      */
     /**
+     * 정산을 만들 수 없는 사유 — 자동 생성·수동 생성·화면 칩의 **단일 출처**. 빈 배열이면 생성 가능.
+     *
+     * `['purchase_cancelled','no_sale','unpaid','no_salesman','already_exists','freight_unconfirmed','domestic_zero']`
+     *
+     * 🧭 **첫 사유에서 멈추지 않고 전부 모은다.** 「예외로 정산 생성」이 대상을 고를 때
+     *    *남은 사유가 `unpaid`·`freight_unconfirmed` 뿐인가* 를 봐야 하기 때문이다 —
+     *    early-return 이면 담당자 없는 차가 「미수만 걸렸다」로 보여 예외 대상에 섞인다.
+     *
+     * 🚫 조건을 다른 곳에 옮겨 적지 말 것(SKILLS §8 #44) — 자동 훅·수동 폼·지급보류가 전부 이걸 본다.
+     * ⚠️ `settlementStage()`·`scopeAwaitingFreightConfirm()` 은 **축이 다른 사본**이라 일부러 안 합친다
+     *    (「지금 어느 단계인가」 vs 「왜 못 만드나」).
+     */
+    public function settlementBlockers(): array
+    {
+        $blockers = [];
+
+        // 매입취소 차량은 정산 대상 아님 — 위약금을 sale_price 로 넣어도 정산 자동생성 원천 차단.
+        //   (통화·인코텀즈 무관 명시 가드. 이전엔 외화+인코텀즈 미입력 우연 차단에만 의존 — jin 2026-07-18)
+        if ($this->isPurchaseCancelled()) {
+            $blockers[] = 'purchase_cancelled';
+        }
+        if ((float) ($this->sale_price ?? 0) <= 0) {
+            $blockers[] = 'no_sale';
+        }
+        if ($this->sale_unpaid_amount > 0) {
+            $blockers[] = 'unpaid';               // 아직 미완납
+        }
+        // 담당자 — id 가 비었거나, id 는 있는데 행이 사라진 경우(삭제) 둘 다 같은 사유다.
+        if (! $this->salesman_id || ! $this->salesman) {
+            $blockers[] = 'no_salesman';
+        }
+        if ($this->settlements()->exists()) {
+            $blockers[] = 'already_exists';       // 재귀속 금지
+        }
+        if (! $this->isFreightConfirmedForSettlement()) {
+            $blockers[] = 'freight_unconfirmed';  // 운임 미확정 — 인코텀즈/운임비 확정 시 재트리거
+        }
+        // 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 자체를 만들지 않는다** (jin 2026-09-08).
+        //    0 원짜리 정산 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
+        //    ⚠️ 나중에 비용이 정정돼 차액이 생기면 그때 Vehicle::saved 가 다시 여기로 와서 만든다.
+        if ($this->isDomesticSettlement() && $this->domestic_margin === 0) {
+            $blockers[] = 'domestic_zero';
+        }
+
+        return $blockers;
+    }
+
+    /**
+     * 정산에 박제될 「내수인가」 — `settlements.is_domestic` 의 단일 출처.
+     *
+     * ⚠️ `isDomesticSale()` 과 다르다 — 저쪽은 통화를 안 본다(화면 뱃지용).
+     *    원화일 때만 찍는다 — 외화 차량에 내수 바이어가 붙어 있으면(적재·시드 우회) 내수
+     *    기준액이 외화를 원화로 오인해 계산되므로, 차라리 종전 공식으로 떨어뜨린다.
+     */
+    public function isDomesticSettlement(): bool
+    {
+        return $this->currency === 'KRW' && (bool) $this->domesticBuyer()?->is_domestic;
+    }
+
+    /**
      * A-3 (2026-07-08) — 판매완료(완납) 또는 거래완료 시 pending 정산 자동 생성.
-     *   조건: sale_price>0 && 미입금≤0(완납) && 담당자 있음 && 정산 없음(재귀속 금지).
+     *   조건은 전부 `settlementBlockers()` 단일 출처가 판정한다(2026-09-12 리팩터, 동작 불변).
      *   귀속월(attributed_month) = settlementAttributionMonth() — 완납월 기준, 단 완납월이 이미
      *     마감된 달이면 현재 열린 달로 이월 (jin 2026-07-18 "마감된 달은 동결" 규칙).
      *   type default(ratio/per_unit)는 null 위임(Setting 기반 자동 산정).
@@ -1463,35 +1560,28 @@ class Vehicle extends Model
      */
     public function createSettlementIfComplete(string $note): void
     {
-        // 매입취소 차량은 정산 대상 아님 — 위약금을 sale_price 로 넣어도 정산 자동생성 원천 차단.
-        //   (통화·인코텀즈 무관 명시 가드. 이전엔 외화+인코텀즈 미입력 우연 차단에만 의존 — jin 2026-07-18)
-        if ($this->isPurchaseCancelled()) {
+        if ($this->settlementBlockers() !== []) {
             return;
         }
-        if ((float) ($this->sale_price ?? 0) <= 0) {
-            return;
-        }
-        if ($this->sale_unpaid_amount > 0) {
-            return;   // 아직 미완납
-        }
-        if (! $this->salesman_id || $this->settlements()->exists()) {
-            return;   // 담당자 없음 또는 이미 정산(재귀속 금지)
-        }
-        if (! $this->isFreightConfirmedForSettlement()) {
-            return;   // 운임 미확정 — 대기 (인코텀즈/운임비 확정 시 재트리거)
-        }
+
+        $this->createSettlementNow($note);
+    }
+
+    /**
+     * 조건을 **보지 않고** 정산을 만든다 — 자동 경로와 예외 경로가 **같은 본체**를 쓰게 하는 지점.
+     *
+     * 🚫 직접 부르지 말 것 — 게이트는 호출부가 진다(`createSettlementIfComplete` 또는 예외 처리 화면).
+     *    본체를 복제하면 예외로 만든 정산만 `attributed_month`·`is_domestic` 이 비어
+     *    귀속월이 완납월이 아니라 생성월이 된다(수동 「신규 정산」 폼이 정확히 그 상태다).
+     */
+    public function createSettlementNow(string $note): ?Settlement
+    {
         $salesman = $this->salesman;
         if (! $salesman) {
-            return;
+            return null;   // 담당자 없이는 만들 수 없다 — 예외로도 못 넘긴다(입력 미비)
         }
-        // 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 자체를 만들지 않는다** (jin 2026-09-08).
-        //    0 원짜리 정산 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
-        //    ⚠️ 나중에 비용이 정정돼 차액이 생기면 그때 Vehicle::saved 가 다시 여기로 와서 만든다.
-        $isDomestic = $this->currency === 'KRW' && (bool) $this->domesticBuyer()?->is_domestic;
-        if ($isDomestic && $this->domestic_margin === 0) {
-            return;
-        }
-        $this->settlements()->create([
+
+        return $this->settlements()->create([
             'salesman_id' => $salesman->id,
             'settlement_type' => $salesman->defaultSettlementType(),
             'settlement_ratio' => null,
@@ -1501,10 +1591,7 @@ class Vehicle extends Model
             // 내수 여부는 **여기서 한 번 박제**하고 이후 바뀌지 않는다 (jin 2026-09-08).
             //   바이어를 매번 보고 판정하면, 나중에 그 바이어의 내수 체크를 풀었을 때 과거 정산이
             //   조용히 일반정산으로 뒤집힌다(담당자 승계에서 겪은 그 형태).
-            //   ⚠️ Buyer 는 SoftDeletes 라 바이어가 지워지면 관계가 null 이 된다 → withTrashed 로 읽는다.
-            //   ⚠️ 원화일 때만 찍는다 — 외화 차량에 내수 바이어가 붙어 있으면(적재·시드 우회) 내수
-            //      기준액이 외화를 원화로 오인해 계산되므로, 차라리 종전 공식으로 떨어뜨린다.
-            'is_domestic' => $isDomestic,
+            'is_domestic' => $this->isDomesticSettlement(),
             'note' => $note,
         ]);
     }
