@@ -200,7 +200,7 @@ new #[Layout('components.layouts.app')] class extends Component {
          넓이는 충분하다: 224 + 208 + 160 + 조회 + 초기화 + 여백 ≈ 760px (1280 폭에서도 안 밀린다). --}}
     <div class="card">
         <div data-row="ba-filters" class="flex flex-wrap items-end gap-2">
-            <div class="w-56">
+            <div class="w-full sm:w-56">
                 <label class="label-base">{{ __('buyer_account.pick_buyer') }}</label>
                 {{-- 🚫 그냥 select 를 쓰지 말 것 — 바이어가 수백이라 스크롤로 못 찾는다.
                      프로젝트 표준 = 타이핑으로 걸러지는 콤보박스(x-erp.combobox).
@@ -215,7 +215,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             {{-- 검색은 차량관리와 **같은 조건**(Vehicle::scopeSearchAny)이고 문구도 같은 것을 쓴다.
                  placeholder 는 대표만, 전체 목록은 호버(title)로 — 칸을 넓히면 줄이 바뀐다. --}}
-            <div class="w-52">
+            <div class="w-full sm:w-52">
                 <label class="label-base">{{ __('vehicle.search_btn') }}</label>
                 <input wire:model="search" wire:keydown.enter="searchNow" type="text"
                        placeholder="{{ __('vehicle.search_placeholder') }}"
@@ -224,7 +224,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             {{-- 차대번호는 통합검색 **바로 옆**. 숫자·코드가 서로 오검색되는 걸 막으려고 칸을 나눈다. --}}
-            <div class="w-40">
+            <div class="w-full sm:w-40">
                 <label class="label-base">{{ __('buyer_account.col_vin') }}</label>
                 <input wire:model="vinSearch" wire:keydown.enter="searchNow" type="text"
                        placeholder="{{ __('vehicle.vin_ph') }}" title="{{ __('vehicle.vin_ph') }}"
@@ -315,6 +315,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             {{-- 그 입금이 간 곳 — 제목 줄(th)이 있어야 무슨 값인지 알 수 있다(jin 2026-09-05). --}}
+            <div class="overflow-x-auto">
             <table class="w-full text-xs">
                 <thead>
                     <tr class="border-b border-gray-100 text-left text-[10px] uppercase tracking-wider text-gray-400">
@@ -358,6 +359,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endforelse
                 </tbody>
             </table>
+            </div>
         </div>
         @empty
         <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
