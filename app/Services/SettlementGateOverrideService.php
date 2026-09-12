@@ -60,7 +60,14 @@ class SettlementGateOverrideService
             ->orderByDesc('sale_date')
             ->orderByDesc('id')   // 동점 tie-break — 적재분은 같은 날짜가 수백 건이다(§8 #92)
             ->get()
-            ->filter(fn (Vehicle $v) => $this->isOverridable($v))
+            ->filter(function (Vehicle $v) {
+                $b = $v->settlementBlockers();
+                // 🔑 여기서 계산한 사유를 그 자리에 담아 둔다 — 화면이 칩을 그리려고 다시 부르면
+                //    행마다 쿼리가 한 번 더 돈다(458행이면 poll 마다 900쿼리). 단일 출처는 그대로다.
+                $v->gateBlockers = $b;
+
+                return $b !== [] && array_diff($b, self::OVERRIDABLE) === [];
+            })
             ->values();
     }
 
