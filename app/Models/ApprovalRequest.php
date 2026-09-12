@@ -229,6 +229,14 @@ class ApprovalRequest extends Model
         if (auth()->check() && ! auth()->user()->isAdmin()) {
             throw new \DomainException('정산 지급은 대표(최고관리자) 승인 또는 월배치 승인으로만 가능합니다.');
         }
+        // 🚪 지급보류(미수) — 월배치는 처음부터 봤는데 **개별 승인만 안 보고 있었다**(jin 2026-09-12 확인).
+        //    같은 술어를 여기서도 물린다. 예외가 걸린 정산은 그대로 통과한다.
+        //    🚫 조건을 옮겨 적지 말 것 — `isPayoutHeldByUnpaid()` 단일 출처(§8 #44·#81).
+        if ($settlement->isPayoutHeldByUnpaid()) {
+            throw new \DomainException(
+                '차량에 미수가 남아 지급이 보류된 정산입니다. 완납하거나 정산관리에서 예외로 처리한 뒤 지급하세요.'
+            );
+        }
         Settlement::$allowBatchPayout = true;
         try {
             $settlement->settlement_status = 'paid';

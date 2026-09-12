@@ -470,7 +470,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   안내가 «방식이 잘못됐다»는 엉뚱한 메시지로 덮인다(가드 = ReceivableRateEditTest).
         $editingHistory = $this->historyEditId ? ReceivableHistory::find($this->historyEditId) : null;
         $wouldCreateMirror = $editingHistory === null || $editingHistory->final_payment_id === null;
-        if ($this->hMethod === 'deposit' && $wouldCreateMirror && $vehicle->hasClosedSecondarySettlement()) {
+        // 🚪 게이트 예외(jin 2026-09-12) — 미러가 신규 잔금을 만드는 경로라 B-① 과 같은 술어를 본다.
+        if ($this->hMethod === 'deposit' && $wouldCreateMirror && $vehicle->ledgerLockedForNewPayments()) {
             $this->addError('hMethod', __('receivable.err_closed_no_deposit'));
 
             return;

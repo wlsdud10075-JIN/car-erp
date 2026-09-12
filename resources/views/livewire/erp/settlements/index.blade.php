@@ -1150,8 +1150,14 @@ new #[Layout('components.layouts.app')] class extends Component
             return 'settlement.notify.close_not_pending';
         }
 
+        // 🚪 게이트 예외(jin 2026-09-12) — 완납 게이트를 예외가 통과한다.
+        //    예외로 지급까지 한 정산을 2차에서 다시 막으면 그 정산은 영영 안 닫히고, 환차·이월이
+        //    계산되지 않아 프리랜서 이월이 통째로 증발한다.
+        //    ⚠️ 대신 **마감하는 순간 환차·이월이 1회 확정**되고 그 뒤 들어온 돈은 담당자 정산에
+        //       반영되지 않는다(post-close = record-only, 2026-07-24 개편의 기존 규칙). 화면이 경고한다.
         $vehicle = $settlement->vehicle;
-        if ($vehicle && $vehicle->currency !== 'KRW' && $vehicle->sale_unpaid_amount > 0) {
+        if ($vehicle && $vehicle->currency !== 'KRW' && $vehicle->sale_unpaid_amount > 0
+            && ! $settlement->hasGateOverride()) {
             return 'settlement.notify.close_needs_full_payment';
         }
 
