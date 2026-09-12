@@ -307,7 +307,14 @@ new #[Layout('components.layouts.app')] class extends Component
             ->all();
     }
 
-    public function updatedGateSearch(): void
+    /**
+     * 검색 실행 — **치는 동안이 아니라 누를 때** 조회한다(`SearchRequiresButtonTest`).
+     *
+     * 🚨 이 목록은 행마다 미수 accessor 를 타므로 한 글자마다 조회하면 그대로 비용이 곱해진다.
+     * ⚠️ 이름을 `gateSearch()` 로 짓지 말 것 — 같은 이름의 프로퍼티가 있어 **버튼이 요청조차
+     *    안 보내고 조용히 죽는다**(SKILLS §8 #32, 이 프로젝트에서 2번 발생).
+     */
+    public function searchGateNow(): void
     {
         $this->gatePage = 1;
         $this->loadGateCandidates();
@@ -2333,8 +2340,12 @@ new #[Layout('components.layouts.app')] class extends Component
 
         {{-- 검색 + 건수 + 새로고침 (고정 머리) --}}
         <div class="flex flex-wrap items-center gap-2 border-b bg-gray-50 px-5 py-2">
-            <input wire:model.live.debounce.400ms="gateSearch" type="text"
+            <input wire:model="gateSearch" wire:keydown.enter="searchGateNow" type="text"
                    class="input-filter w-52" placeholder="{{ __('settlement.gate.search_ph') }}" />
+            <button type="button" wire:click="searchGateNow"
+                    class="rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                {{ __('settlement.gate.search_btn') }}
+            </button>
             <span class="text-xs text-gray-500">
                 {{ __('settlement.gate.candidates_count', ['count' => $gateTotal]) }}
             </span>

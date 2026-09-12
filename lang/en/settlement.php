@@ -70,6 +70,7 @@ return [
         'candidates_empty' => 'No vehicle can be overridden.',
         'candidates_count' => ':count vehicle(s)',
         'search_ph' => 'Vehicle no. / salesperson',
+        'search_btn' => 'Search',
         'search_empty' => 'No match.',
         'refresh' => 'Refresh',
         'refresh_title' => 'The list is computed once when opened (to keep the screen fast). Press to recompute.',

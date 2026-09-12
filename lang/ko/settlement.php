@@ -72,6 +72,7 @@ return [
         'candidates_empty' => '예외로 넘길 차량이 없습니다.',
         'candidates_count' => '대상 :count대',
         'search_ph' => '차량번호 · 담당자',
+        'search_btn' => '검색',
         'search_empty' => '검색 결과가 없습니다.',
         'refresh' => '새로고침',
         'refresh_title' => '목록은 열 때 한 번만 계산합니다(느려지지 않게). 최신 상태로 다시 보려면 누르세요.',
