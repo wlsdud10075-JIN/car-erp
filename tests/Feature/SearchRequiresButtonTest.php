@@ -50,7 +50,8 @@ class SearchRequiresButtonTest extends TestCase
         'finalPayments..payment_date' => '잔금 수금일 → 그 날짜 마감환율 자동기입',
 
         // 알림톡 시각 규칙 편집 — 고칠 때마다 「사람 말로 요약한 문장」을 다시 그린다.
-        'timeRules...to' => '알림톡 수신 시각 규칙 미리보기',
+        //   🗑️ 'timeRules...to' 는 2026-09-12 에 제거했다 — 수신자를 손으로 적던 칸이
+        //      역할별 접이식 피커(버튼·체크박스)로 바뀌어 자유 입력칸 자체가 없어졌다.
         'timeRules...from' => '알림톡 수신 시각 규칙 미리보기',
         'timeRules...till' => '알림톡 수신 시각 규칙 미리보기',
     ];
@@ -151,10 +152,14 @@ class SearchRequiresButtonTest extends TestCase
         }
         $all = preg_replace('/\{\{.*?\}\}/', '', $all);
 
+        // ⚠️ 판정을 미리 하고 단언에는 bool 만 넘긴다 — `$all` 은 전 Livewire 화면을 이어 붙인
+        //    수 MB 짜리다. 그대로 단언 인자로 주면 **실패할 때 그걸 통째로 출력**하느라
+        //    테스트가 멈춘 것처럼 보인다(2026-09-12 실측, SKILLS §8 #93).
+        $this->assertTrue(str_contains($all, 'wire:model.live'), 'Livewire 화면을 하나도 못 읽었다');
+
         foreach (array_keys(self::LIVE_ALLOWED) as $prop) {
-            $this->assertStringContainsString('wire:model.live', $all);
-            $this->assertMatchesRegularExpression(
-                '/wire:model\.live[^=]*="'.preg_quote($prop, '/').'"/', $all,
+            $this->assertTrue(
+                (bool) preg_match('/wire:model\.live[^=]*="'.preg_quote($prop, '/').'"/', $all),
                 "LIVE_ALLOWED 의 '{$prop}' 이 화면에 없다 — 지웠으면 목록에서도 지울 것"
             );
         }

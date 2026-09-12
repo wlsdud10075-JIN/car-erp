@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BoardRequest;
 use App\Models\Setting;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkRecipients;
@@ -16,8 +17,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 단계별 확대 일수 [code][group] => 일 (jin 2026-09-07). 「체크 = 받을지 / 숫자 = 언제부터」. */
     public array $escalate = [];
 
-    /** 시각 규칙형 알림별 규칙 행: code => [['to'=>,'days'=>[],'from'=>,'till'=>], ...]. */
+    /** 시각 규칙형 알림별 규칙 행: code => [['to'=>,'days'=>[],'from'=>,'till'=>,'types'=>[]], ...]. */
     public array $timeRules = [];
+
+    /** 「번호 직접 추가」 입력칸 임시값: code => idx => 문자열. 저장 대상이 아니다. */
+    public array $numberDraft = [];
 
     /** 공휴일 수기 목록 (회사 공통) — 'YYYY-MM-DD' 를 줄바꿈으로. */
     public string $holidays = '';
@@ -87,11 +91,195 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? __('alimtalk_catalog.rule_allday')
             : ($rule['from'] ?? '').' ~ '.($this->crossesMidnight($rule) ? __('alimtalk_catalog.rule_nextday').' ' : '').($rule['till'] ?? '');
 
+        // 토큰을 사람 말로 — `user:12` 가 그대로 보이면 요약이 요약 구실을 못 한다(2026-09-12).
+        $to = array_map(function (string $t) {
+            if (isset(AlimtalkRecipients::BROADCAST_GROUPS[$t])) {
+                return AlimtalkRecipients::BROADCAST_GROUPS[$t];
+            }
+            $id = AlimtalkRecipients::userIdOf($t);
+            if ($id === null) {
+                return $t;   // 직접 적은 번호는 그대로
+            }
+            // ⚠️ 규칙 × 토큰마다 조회하면 N+1 이다 — 이미 불러온 역할 목록에서 찾는다(추가 쿼리 0).
+            foreach (array_keys(AlimtalkRecipients::BROADCAST_GROUPS) as $g) {
+                foreach ($this->groupMembers($g) as $m) {
+                    if ($m['id'] === $id) {
+                        return $m['name'];
+                    }
+                }
+            }
+
+            return $t;
+        }, $this->ruleTokens($rule));
+
         return __('alimtalk_catalog.rule_summary', [
             'days' => implode('·', $days) ?: '—',
             'when' => $when,
-            'to' => trim((string) ($rule['to'] ?? '')) ?: '—',
+            'to' => implode(', ', $to) ?: '—',
         ]);
+    }
+
+    // ── 수신자 피커 (jin 2026-09-12) ─────────────────────────────────────────────
+    //   예전엔 `to` 칸에 역할 키와 전화번호를 **손으로** 적었다. 함정이 둘이었다:
+    //     ① 퇴사해도 번호가 규칙에 남아 계속 발송된다.
+    //     ② 계정에 번호가 없는 사람은 조용히 빠진다 — 화면에 아무 표시가 없었다.
+    //   ⇒ 사람은 `user:{id}` 로 가리키고(계정이 없어지면 자동으로 빠짐), 번호 없는 사람은 ⚠️ 로 보여준다.
+    //   저장 형식은 그대로 「콤마로 이은 토큰」이라 기존 규칙·기본값이 전부 그대로 산다.
+
+    /** 수신자 문구를 토큰 배열로 — 화면과 저장이 같은 파서를 쓴다. */
+    public function ruleTokens(array $rule): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', (string) ($rule['to'] ?? '')))));
+    }
+
+    /**
+     * 역할 그룹의 현재 상태 — 'all' / 'some' / 'none'.
+     *
+     * 🔑 'all'(역할째 켬) 과 'some'(개별 지정)은 **뜻이 다르다.** 개별로 고르면 명단이 얼어붙어
+     *    나중에 그 역할에 사람이 늘어도 안 간다. 화면이 이 차이를 말하지 않으면 아무도 모른다.
+     */
+    public function groupState(array $rule, string $group): string
+    {
+        $tokens = $this->ruleTokens($rule);
+        if (in_array($group, $tokens, true)) {
+            return 'all';
+        }
+
+        return $this->selectedMembers($rule, $group) === [] ? 'none' : 'some';
+    }
+
+    /** 이 그룹에서 개별 지정된 사용자 id 들. */
+    public function selectedMembers(array $rule, string $group): array
+    {
+        $ids = array_column(AlimtalkRecipients::groupMembers($group), 'id');
+        $picked = [];
+        foreach ($this->ruleTokens($rule) as $t) {
+            $id = AlimtalkRecipients::userIdOf($t);
+            if ($id !== null && in_array($id, $ids, true)) {
+                $picked[] = $id;
+            }
+        }
+
+        return $picked;
+    }
+
+    /** 역할별 사람 목록 — 한 렌더에 규칙 수 × 그룹 수만큼 불리므로 요청 안에서 한 번만 조회한다. */
+    private array $memberCache = [];
+
+    public function groupMembers(string $group): array
+    {
+        return $this->memberCache[$group] ??= AlimtalkRecipients::groupMembers($group);
+    }
+
+    /** 신호 라벨 — board 뱃지 문구를 그대로 쓴다(같은 말로 부르게). */
+    public function typeLabel(string $type): string
+    {
+        return __(BoardRequest::meta($type)['badge'] ?? '') ?: $type;
+    }
+
+    /** 규칙에 붙은 「직접 적은 번호」 토큰들 — 역할·사람이 아닌 것. */
+    public function ruleNumbers(array $rule): array
+    {
+        return array_values(array_filter(
+            $this->ruleTokens($rule),
+            fn ($t) => ! isset(AlimtalkRecipients::BROADCAST_GROUPS[$t]) && AlimtalkRecipients::userIdOf($t) === null,
+        ));
+    }
+
+    /** 토큰 목록을 규칙에 도로 심는다 — 쓰기 지점을 하나로 묶어 형식이 갈리지 않게. */
+    private function putTokens(string $code, int $idx, array $tokens): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        if (! isset($this->timeRules[$code][$idx])) {
+            return;
+        }
+        $this->timeRules[$code][$idx]['to'] = implode(',', array_values(array_unique(array_filter($tokens))));
+    }
+
+    /** 역할째 켜기/끄기 — 켜면 그 그룹의 개별 지정은 의미가 없어지므로 같이 지운다. */
+    public function toggleGroup(string $code, int $idx, string $group): void
+    {
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null) {
+            return;
+        }
+        $memberIds = array_column(AlimtalkRecipients::groupMembers($group), 'id');
+        $tokens = array_filter($this->ruleTokens($rule), function ($t) use ($group, $memberIds) {
+            $id = AlimtalkRecipients::userIdOf($t);
+
+            return $t !== $group && ! ($id !== null && in_array($id, $memberIds, true));
+        });
+        if ($this->groupState($rule, $group) !== 'all') {
+            $tokens[] = $group;
+        }
+        $this->putTokens($code, $idx, $tokens);
+    }
+
+    /** 개별 켜기/끄기 — 개별을 고르면 「역할 전체」는 해제한다(둘이 겹치면 뜻이 모호해진다). */
+    public function toggleMember(string $code, int $idx, string $group, int $userId): void
+    {
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null || ! in_array($userId, array_column(AlimtalkRecipients::groupMembers($group), 'id'), true)) {
+            return;   // 그 그룹에 없는 id 는 무시 — 클라이언트 주입 방어
+        }
+        $token = 'user:'.$userId;
+        $tokens = array_filter($this->ruleTokens($rule), fn ($t) => $t !== $group && $t !== $token);
+        if (! in_array($token, $this->ruleTokens($rule), true)) {
+            $tokens[] = $token;
+        }
+        $this->putTokens($code, $idx, $tokens);
+    }
+
+    /** 직접 적은 번호 지우기 — ERP 계정이 없는 외부 수신자용 통로는 남겨둔다. */
+    public function removeNumber(string $code, int $idx, string $number): void
+    {
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null) {
+            return;
+        }
+        $this->putTokens($code, $idx, array_filter($this->ruleTokens($rule), fn ($t) => $t !== $number));
+    }
+
+    public function addNumber(string $code, int $idx): void
+    {
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        $raw = trim((string) ($this->numberDraft[$code][$idx] ?? ''));
+        if ($rule === null || $raw === '' || ! AlimtalkRecipients::isValidTarget($raw)) {
+            $this->dispatch('notify', message: __('alimtalk_catalog.rule_number_bad'), type: 'error');
+
+            return;
+        }
+        $this->putTokens($code, $idx, [...$this->ruleTokens($rule), $raw]);
+        $this->numberDraft[$code][$idx] = '';
+    }
+
+    /** 이 규칙이 적용되는 신호 — 비어 있으면 **전 신호**(하위호환). */
+    public function ruleTypes(array $rule): array
+    {
+        return array_values(array_filter(array_map('strval', (array) ($rule['types'] ?? []))));
+    }
+
+    public function toggleRuleType(string $code, int $idx, string $type): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+        $rule = $this->timeRules[$code][$idx] ?? null;
+        if ($rule === null || ! in_array($type, BoardRequest::TYPES, true)) {
+            return;
+        }
+        $cur = $this->ruleTypes($rule);
+        $next = in_array($type, $cur, true)
+            ? array_values(array_diff($cur, [$type]))
+            : [...$cur, $type];
+        // 전부 켜면 빈 배열로 눕힌다 — 「전 신호」와 같은 뜻이고, 신호가 늘어도 자동으로 따라온다.
+        sort($next);
+        $all = BoardRequest::TYPES;
+        sort($all);
+        $this->timeRules[$code][$idx]['types'] = $next === $all ? [] : $next;
+    }
+
+    public function boardTypes(): array
+    {
+        return BoardRequest::TYPES;
     }
 
     /** 종일 ↔ 시간 지정 전환. 24:00 은 <input type="time"> 에 못 들어가므로 버튼으로만 만든다. */
@@ -205,12 +393,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                 continue;   // 수신자나 요일이 비면 영원히 안 걸리는 행 — 저장하지 않는다
             }
             sort($days);
-            $clean[] = [
+            // 🚨 2026-09-12 — **여기 안 실으면 화면에선 켜지는데 저장하면 조용히 사라진다.**
+            //    `active` 가 정확히 그 상태로 방치돼 있다(ruleMatches 는 읽는데 여기서 안 쓴다).
+            //    types = 이 규칙이 적용되는 board 신호. **비면 전 신호**(하위호환 — 기존 저장값엔 이 키가 없다).
+            $types = array_values(array_filter(
+                array_map('strval', (array) ($rule['types'] ?? [])),
+                fn ($t) => in_array($t, BoardRequest::TYPES, true),
+            ));
+            sort($types);
+            $allTypes = BoardRequest::TYPES;
+            sort($allTypes);
+
+            $row = [
                 'to' => $to,
                 'days' => $days,
                 'from' => $this->hhmm($rule['from'] ?? '00:00'),
                 'till' => $this->hhmm($rule['till'] ?? '24:00'),
             ];
+            // 🔑 「전 신호」면 키를 **아예 안 남긴다** — 2026-09-12 이전 저장값과 글자 단위로 같아지고,
+            //    나중에 신호가 늘어도 그 규칙이 자동으로 따라온다. (빈 배열을 남겨도 뜻은 같지만
+            //    저장물이 달라져 「무엇이 바뀌었나」를 볼 때 잡음이 된다.)
+            if ($types !== [] && $types !== $allTypes) {
+                $row['types'] = $types;
+            }
+            $clean[] = $row;
         }
 
         $set = Setting::companyTemplateSet();
@@ -416,8 +622,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endphp
                                 <div wire:key="tr-{{ $code }}-{{ $i }}" class="rounded-lg bg-gray-50 p-2">
                                     <div class="flex flex-wrap items-center gap-2">
-                                        <input type="text" wire:model.live="timeRules.{{ $code }}.{{ $i }}.to"
-                                               class="input-base w-44 text-xs" placeholder="{{ __('alimtalk_catalog.rule_to_ph') }}" />
                                         <span class="flex items-center gap-1.5">
                                             @foreach(__('alimtalk_catalog.weekdays') as $d => $dl)
                                                 <label class="flex items-center gap-0.5 text-[11px] text-gray-600">
@@ -453,6 +657,100 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             {{ __('alimtalk_catalog.rule_remove') }}
                                         </button>
                                     </div>
+                                    {{-- 🔀 적용 신호 (jin 2026-09-12) — board 요청 3종이 템플릿 하나를 공유하므로
+                                         「계약금은 대표, 매입잔금은 관리」를 여기서 가른다. 하나도 안 고르면 전 신호. --}}
+                                    @php $rTypes = $this->ruleTypes($rule); @endphp
+                                    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                        <span class="text-[11px] font-medium text-gray-500">{{ __('alimtalk_catalog.rule_types') }}</span>
+                                        @foreach($this->boardTypes() as $bt)
+                                            @php $on = in_array($bt, $rTypes, true) || $rTypes === []; @endphp
+                                            <button type="button" wire:click="toggleRuleType('{{ $code }}', {{ $i }}, '{{ $bt }}')"
+                                                    class="rounded-full px-2 py-0.5 text-[11px] font-medium {{ $on ? 'bg-primary-light text-primary-text' : 'bg-gray-200 text-gray-500 line-through' }}">
+                                                {{ $this->typeLabel($bt) }}
+                                            </button>
+                                        @endforeach
+                                        @if($rTypes === [])
+                                            <span class="text-[11px] text-gray-400">{{ __('alimtalk_catalog.rule_types_all') }}</span>
+                                        @endif
+                                    </div>
+
+                                    {{-- 👤 받을 사람 (jin 2026-09-12) — 예전엔 역할 키와 번호를 손으로 적었다.
+                                         ①퇴사해도 번호가 남아 계속 갔고 ②번호 없는 사람은 조용히 빠졌다.
+                                         역할째 켜면 **전원(자동 반영)**, 펼쳐서 개별로 고르면 **고정 명단**이다 — 그 차이를 글로 적는다. --}}
+                                    <div class="mt-2" x-data="{ open: '' }">
+                                        <div class="mb-1 text-[11px] font-medium text-gray-500">{{ __('alimtalk_catalog.rule_recipients') }}</div>
+                                        <div class="flex flex-col gap-0.5">
+                                            @foreach(\App\Support\AlimtalkRecipients::BROADCAST_GROUPS as $g => $gLabel)
+                                                @php
+                                                    $st = $this->groupState($rule, $g);
+                                                    $members = $this->groupMembers($g);
+                                                    $picked = $this->selectedMembers($rule, $g);
+                                                @endphp
+                                                <div class="rounded bg-white px-2 py-1">
+                                                    <div class="flex flex-wrap items-center gap-2">
+                                                        <button type="button" x-on:click="open = (open === '{{ $g }}' ? '' : '{{ $g }}')"
+                                                                class="w-4 text-[11px] text-gray-400 hover:text-gray-700"
+                                                                x-text="open === '{{ $g }}' ? '▾' : '▸'">▸</button>
+                                                        <label class="flex items-center gap-1 text-[11px] text-gray-700">
+                                                            <input type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300"
+                                                                   wire:click="toggleGroup('{{ $code }}', {{ $i }}, '{{ $g }}')"
+                                                                   @checked($st === 'all') />
+                                                            <span class="font-medium">{{ $gLabel }}</span>
+                                                        </label>
+                                                        @if($st === 'all')
+                                                            <span class="text-[11px] text-emerald-700">{{ __('alimtalk_catalog.rule_group_all', ['n' => count($members)]) }}</span>
+                                                        @elseif($st === 'some')
+                                                            <span class="text-[11px] text-amber-700">{{ __('alimtalk_catalog.rule_group_some', ['n' => count($picked)]) }}</span>
+                                                        @else
+                                                            <span class="text-[11px] text-gray-300">{{ __('alimtalk_catalog.rule_group_none') }}</span>
+                                                        @endif
+                                                    </div>
+                                                    <div x-show="open === '{{ $g }}'" x-cloak class="mt-1 flex flex-wrap gap-x-4 gap-y-1 pl-6">
+                                                        @forelse($members as $m)
+                                                            <label wire:key="mem-{{ $code }}-{{ $i }}-{{ $g }}-{{ $m['id'] }}"
+                                                                   class="flex items-center gap-1 text-[11px] text-gray-600">
+                                                                <input type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300"
+                                                                       wire:click="toggleMember('{{ $code }}', {{ $i }}, '{{ $g }}', {{ $m['id'] }})"
+                                                                       @checked(in_array($m['id'], $picked, true)) />
+                                                                {{ $m['name'] }}
+                                                                @if($m['phone'] === '')
+                                                                    <span class="rounded bg-red-100 px-1 font-bold text-red-700"
+                                                                          title="{{ __('alimtalk_catalog.rule_no_phone_hint') }}">⚠️ {{ __('alimtalk_catalog.rule_no_phone') }}</span>
+                                                                @else
+                                                                    <span class="text-gray-400">{{ $m['phone'] }}</span>
+                                                                @endif
+                                                            </label>
+                                                        @empty
+                                                            <span class="text-[11px] text-gray-400">—</span>
+                                                        @endforelse
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+
+                                        {{-- ERP 계정이 없는 외부 수신자용 통로는 남긴다. 다만 그 번호는 퇴사해도 계속 가므로 경고를 붙인다. --}}
+                                        @php $nums = $this->ruleNumbers($rule); @endphp
+                                        <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                            @foreach($nums as $num)
+                                                <span wire:key="num-{{ $code }}-{{ $i }}-{{ $loop->index }}"
+                                                      class="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-[11px] text-gray-700">
+                                                    {{ $num }}
+                                                    <button type="button" wire:click="removeNumber('{{ $code }}', {{ $i }}, '{{ $num }}')"
+                                                            class="text-gray-500 hover:text-red-600">✕</button>
+                                                </span>
+                                            @endforeach
+                                            <input type="text" wire:model="numberDraft.{{ $code }}.{{ $i }}"
+                                                   wire:keydown.enter="addNumber('{{ $code }}', {{ $i }})"
+                                                   placeholder="{{ __('alimtalk_catalog.rule_number_ph') }}"
+                                                   title="{{ __('alimtalk_catalog.rule_number_hint') }}"
+                                                   class="input-base w-36 text-[11px]" />
+                                            <button type="button" wire:click="addNumber('{{ $code }}', {{ $i }})"
+                                                    class="rounded border border-gray-300 px-2 py-1 text-[11px] text-gray-600 hover:bg-white">
+                                                {{ __('alimtalk_catalog.rule_number_add') }}
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     {{-- 사람 말 요약 — 시간칸만 보고는 "당일인지 익일인지"가 안 갈린다. --}}
                                     <div class="mt-1 flex items-center gap-1.5 text-[11px] text-gray-500">
                                         @php $n = \App\Support\AlimtalkRecipients::countTargets((string) ($rule['to'] ?? '')); @endphp
@@ -465,6 +763,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                                             <span class="rounded-full bg-green-100 px-1.5 py-0.5 font-bold text-green-700">{{ __('alimtalk_catalog.rule_active_now') }}</span>
                                         @endif
                                     </div>
+                                    {{-- 🚨 0명 경고 (jin 2026-09-12) — 개별 지정한 사람이 퇴사하면 여기가 0 이 된다.
+                                         그래도 발송이 끊기지는 않지만(최고관리자 폴백), **의도한 사람이 못 받는다**.
+                                         숫자만으로는 눈에 안 띄어 한 줄로 적는다. --}}
+                                    @if($n === 0)
+                                        <div class="mt-1 rounded bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700">
+                                            {{ __('alimtalk_catalog.rule_nobody') }}
+                                        </div>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>

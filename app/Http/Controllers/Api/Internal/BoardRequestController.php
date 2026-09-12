@@ -190,7 +190,10 @@ class BoardRequestController extends Controller
 
         try {
             $code = 'erp_board_request';
-            $phones = AlimtalkRecipients::forTimeRules($code);
+            // 🔀 2026-09-12 (jin) — 신호 종류를 함께 넘긴다. 계약금과 매입잔금의 수신자를 다르게
+            //    가져가려면 여기가 유일한 갈림길이다(3종이 템플릿 하나를 공유하므로 $code 로는 못 가른다).
+            //    규칙 행에 `types` 가 없으면 전 신호에 적용되므로 기존 설정은 그대로 산다.
+            $phones = AlimtalkRecipients::forTimeRules($code, type: $type);
             if ($phones === []) {
                 return;
             }
