@@ -460,20 +460,22 @@ class SettlementGateOverrideTest extends TestCase
         $c = Volt::test('erp.settlements.index')->call('openGateCandidates');
         $c->assertSet('gateTotal', 2);
 
-        // 차량번호
-        $c->set('gateSearch', $a->vehicle_number)->assertSet('gateTotal', 1);
+        // 차량번호 — 🚨 **치는 동안이 아니라 누를 때** 조회한다(SearchRequiresButtonTest).
+        //    그래서 set() 만으로는 아무 일도 없어야 하고, 실행은 searchGateNow 가 한다.
+        $c->set('gateSearch', $a->vehicle_number)->assertSet('gateTotal', 2);
+        $c->call('searchGateNow')->assertSet('gateTotal', 1);
         $this->assertSame($a->vehicle_number, $c->get('gateRows')[0]['plate']);
 
         // 담당자 이름
-        $c->set('gateSearch', $b->salesman->name)->assertSet('gateTotal', 1);
+        $c->set('gateSearch', $b->salesman->name)->call('searchGateNow')->assertSet('gateTotal', 1);
         $this->assertSame($b->vehicle_number, $c->get('gateRows')[0]['plate']);
 
         // 없는 값
-        $c->set('gateSearch', 'ZZZZ없음')->assertSet('gateTotal', 0);
+        $c->set('gateSearch', 'ZZZZ없음')->call('searchGateNow')->assertSet('gateTotal', 0);
         $this->assertSame([], $c->get('gateRows'));
 
         // 비우면 전부 돌아온다
-        $c->set('gateSearch', '')->assertSet('gateTotal', 2);
+        $c->set('gateSearch', '')->call('searchGateNow')->assertSet('gateTotal', 2);
     }
 
     public function test_the_candidate_list_is_paged_not_dumped_at_once(): void
