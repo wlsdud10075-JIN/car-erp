@@ -497,6 +497,8 @@ class DocumentFiller
             'poa' => Mappings\PowerOfAttorneyMapping::class,
             // 말소증(한글·영문 2시트) — 통관 SET 의 말소증 시트와 별개 서식 (jin 2026-09-03)
             'deregistration_certificate' => Mappings\DeregistrationCertificateMapping::class,
+            // 양도증명서(별지 제16호서식) — 회사가 **양수인**(매입). 국내 서류라 EXPORT_ONLY 아님 (jin 2026-09-11)
+            'transfer_certificate' => Mappings\TransferCertificateMapping::class,
             // Phase 2 — 판매 인보이스
             'invoice' => Mappings\SalesInvoiceMapping::class,
             // Phase 3 — 통관 SET (구매리스트 마스터 → 6시트 수식 자동연동)

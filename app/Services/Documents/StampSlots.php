@@ -28,6 +28,7 @@ class StampSlots
         // karaba 가 이 type 에 슬롯을 갖게 되면서(2026-09-04) 설정화면에 노출된다 — 라벨이 없으면
         //   키 문자열 'deregistration_set' 이 그대로 찍힌다(admin/settings 의 `?? $type` 폴백).
         'deregistration_set' => '말소신청서_계약서',
+        'transfer_certificate' => '양도증명서',
         'invoice' => '판매 인보이스',
         'clearance' => '통관 SET',
         'container_invoice_packing' => '컨테이너 Invoice&Packing',
@@ -117,6 +118,16 @@ class StampSlots
             'deregistration_set' => [
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
             ],
+            // 양도증명서(2026-09-12) — **회사(을) 쪽에만** 찍는다. 갑(차주)은 사람이 직접 서명한다.
+            //   ① 매매업자 직인 = 유의사항 2번이 «매매업자는 반드시 직인을 찍어야 합니다» 라고 요구하는 그 칸.
+            //   ② 하단 양수인 서명란 = jin 이 말한 「양수인 쪽」.
+            //   ⚠️ 행 높이가 17pt(≈23px)로 촘촘해 상자를 크게 잡으면 아랫줄을 덮는다 — 세로를 눌러 뒀다.
+            //   🚫 `exact` 금지(비율 안 맞는 도장이 찌그러진다). 미세조정은 배포 없이 기능설정에서.
+            //   baked drawing 이 없어 `clearAnchors` 불필요(백지 생성이라 0건).
+            'transfer_certificate' => [
+                ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
+                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC45', 'width' => 90, 'height' => 44],
+            ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
                 //   앵커가 어긋나면 removeDrawingsAt 이 원본을 못 지워 업로드 직인과 **이중 도장**이 된다(§8 #37 ③).
@@ -175,6 +186,12 @@ class StampSlots
             ],
             'deregistration_set' => [
                 ['key' => 'sign', 'role' => 'signature', 'sheet' => '2.계약서', 'anchor' => 'A62', 'width' => 430, 'height' => 60, 'exact' => true, 'clearAnchors' => ['A60']],
+            ],
+            // 🚨 `defaultSlots()` 와 **같은 내용을 여기에도** 둬야 한다 — 이 메서드는 전량 복사본이라
+            //    default 에만 넣으면 heyman 만 도장이 안 찍힌다(위 :59-60 주석의 그 위험).
+            'transfer_certificate' => [
+                ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
+                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC45', 'width' => 90, 'height' => 44],
             ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.

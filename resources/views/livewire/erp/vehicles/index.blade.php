@@ -9910,6 +9910,7 @@ function vehicleColumnsToggle() {
                     ['type' => 'deregistration_set', 'label' => __('vehicle.docs.deregistration_set')],
                     ['type' => 'poa', 'label' => __('vehicle.docs.poa')],
                     ['type' => 'deregistration_certificate', 'label' => __('vehicle.docs.deregistration_certificate')],
+                    ['type' => 'transfer_certificate', 'label' => __('vehicle.docs.transfer_certificate')],
                     ['type' => 'invoice', 'label' => __('vehicle.docs.invoice')],
                     ['type' => 'sales_contract', 'label' => __('vehicle.docs.sales_contract')],
                     ['type' => 'container_invoice_packing', 'label' => __('vehicle.docs.container_invoice_packing')],
@@ -9976,7 +9977,8 @@ function vehicleColumnsToggle() {
                 <span class="section-dot bg-blue-500"></span>
                 <span class="section-title">{{ __('vehicle.docs.sec_purchase') }}</span>
             </div>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {{-- 양도증명서 합류로 4장이 됐다(2026-09-12) — 3열이면 마지막 1장이 홀로 남는다. --}}
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {{-- item 8 (2026-07-18) — 말소신청서+계약서 1파일 2시트 병합본 (구 2버튼 통합) --}}
                 <a href="{{ $url('deregistration_set') }}"
                    class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
@@ -10000,6 +10002,15 @@ function vehicleColumnsToggle() {
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.deregistration_certificate') }}</div>
                         <div class="text-xs text-gray-500">{{ __('vehicle.docs.deregistration_certificate_sub') }}</div>
+                    </div>
+                    <span class="text-xs text-violet-600">↓</span>
+                </a>
+                {{-- 양도증명서 (jin 2026-09-11) — 별지 제16호서식. 회사가 **양수인**(매입) 방향으로 채운다. --}}
+                <a href="{{ $url('transfer_certificate') }}"
+                   class="card-tight flex items-center justify-between hover:border-violet-400 hover:bg-violet-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.transfer_certificate') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.transfer_certificate_sub') }}</div>
                     </div>
                     <span class="text-xs text-violet-600">↓</span>
                 </a>

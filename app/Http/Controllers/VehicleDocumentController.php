@@ -25,6 +25,7 @@ class VehicleDocumentController extends Controller
     private const SUPPORTED_TYPES = [
         'deregistration', 'deregistration_contract', 'deregistration_set', 'poa',   // 매입 (전 채널) — set=신청서+계약서 병합본
         'deregistration_certificate',                         // 매입 (전 채널) — 말소증 한글·영문 2시트
+        'transfer_certificate',                               // 매입 (전 채널) — 양도증명서 별지16호. 🚫 EXPORT_ONLY 아님(국내 서류)
 
         'invoice', 'sales_contract',                          // 판매 (export)
         'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract', // 선적 (export)
