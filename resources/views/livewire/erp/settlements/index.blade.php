@@ -4,7 +4,9 @@ use App\Models\ApprovalRequest;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
+use App\Services\SettlementGateOverrideService;
 use App\Support\SearchTerm;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -23,6 +25,12 @@ new #[Layout('components.layouts.app')] class extends Component
     // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 보기(재무 대시보드 딥링크 ?held=1).
     //   URL 파라미터명 = 'held' (as 별칭). 재무 대시보드 '미수로 지급보류' 클릭 → ?held=1.
     #[Url(as: 'held')] public bool $heldOnly = false;
+    // 게이트 예외 (jin 2026-09-12) — docs/design/settlement-gate-exception.md
+    #[Url(as: 'ovr')] public bool $overrideOnly = false;
+    public bool $showGateCandidates = false;
+    public ?int $gateVehicleId = null;
+    public ?int $gateSettlementId = null;
+    public string $gateReason = '';
 
     public int $salesmanFilter = 0;
 
@@ -181,6 +189,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
@@ -215,6 +224,138 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
+    // ── 게이트 예외 (jin 2026-09-12) ────────────────────────────────
+    //    정본 = docs/design/settlement-gate-exception.md
+    //    🚫 판정·생성·해제 조건을 여기 옮겨 적지 말 것 — 전부 SettlementGateOverrideService 다.
+
+    /**
+     * 「예외 대상」 목록을 연다.
+     *
+     * 🚨 **버튼으로만 계산한다.** 이 화면은 `wire:poll.30s` 라 상시 렌더에 올리면
+     *    30초마다 후보 전량의 미수 accessor 가 돈다(§8 #67 의 그 자리).
+     * 🚫 헤더에 건수 뱃지를 달지 말 것 — SQL 근사치는 조건 복제가 되고, 틀린 숫자는 없는 것보다 나쁘다.
+     */
+    public function openGateCandidates(): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+        $this->gateVehicleId = null;
+        $this->gateReason = '';
+        $this->gateSettlementId = null;
+        $this->showGateCandidates = true;
+        unset($this->gateCandidates);
+    }
+
+    public function closeGateCandidates(): void
+    {
+        $this->showGateCandidates = false;
+        $this->gateVehicleId = null;
+        $this->gateReason = '';
+        $this->gateSettlementId = null;
+        unset($this->gateCandidates);
+    }
+
+    #[Computed]
+    public function gateCandidates()
+    {
+        if (! $this->showGateCandidates) {
+            return collect();
+        }
+
+        return app(SettlementGateOverrideService::class)->candidates();
+    }
+
+    /** 사유 입력 단계로 — 제안 문구를 미리 채운다(판정 아님, 사람이 고쳐 쓴다). */
+    public function startGateOverride(int $vehicleId): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+        $vehicle = Vehicle::find($vehicleId);
+        if (! $vehicle) {
+            return;
+        }
+        $this->gateVehicleId = $vehicleId;
+        $this->gateSettlementId = null;
+        $this->gateReason = app(SettlementGateOverrideService::class)->suggestReason($vehicle);
+    }
+
+    /** 이미 있는 정산(지급보류)에 예외를 건다 — 부 통로. */
+    public function startGateOverrideForSettlement(int $settlementId): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+        $s = Settlement::with('vehicle')->find($settlementId);
+        if (! $s) {
+            return;
+        }
+        $this->gateSettlementId = $settlementId;
+        $this->gateVehicleId = null;
+        $this->gateReason = $s->vehicle
+            ? app(SettlementGateOverrideService::class)->suggestReason($s->vehicle)
+            : '';
+    }
+
+    public function cancelGateOverride(): void
+    {
+        $this->gateVehicleId = null;
+        $this->gateSettlementId = null;
+        $this->gateReason = '';
+    }
+
+    public function confirmGateOverride(): void
+    {
+        $user = auth()->user();
+        abort_unless($user?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+
+        $svc = app(SettlementGateOverrideService::class);
+        try {
+            if ($this->gateSettlementId) {
+                $svc->applyToExisting(Settlement::findOrFail($this->gateSettlementId), $user, $this->gateReason);
+            } elseif ($this->gateVehicleId) {
+                $svc->createWithOverride(Vehicle::findOrFail($this->gateVehicleId), $user, $this->gateReason);
+            } else {
+                return;
+            }
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        $this->gateVehicleId = null;
+        $this->gateSettlementId = null;
+        $this->gateReason = '';
+        unset($this->settlements, $this->gateCandidates, $this->salesmanSummaries);
+        session()->flash('success', __('settlement.gate.done'));
+    }
+
+    public function releaseGateOverride(int $id): void
+    {
+        $user = auth()->user();
+        abort_unless($user?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+
+        try {
+            app(SettlementGateOverrideService::class)->release(Settlement::findOrFail($id), $user);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        unset($this->settlements, $this->salesmanSummaries);
+        session()->flash('success', __('settlement.gate.released'));
+    }
+
+    /** 예외 처리된 건만 보기 — 지급보류 토글과 같은 형태. */
+    public function toggleOverrideOnly(): void
+    {
+        $this->overrideOnly = ! $this->overrideOnly;
+
+        // 지급보류 토글과 같은 이유로 월 필터를 푼다 — 예외 건은 달과 무관하게 찾는다.
+        if ($this->overrideOnly) {
+            $this->monthFilter = '';
+        }
+
+        $this->resetPage();
+    }
+
     // 2026-05-20 #2 피드백 — 영업담당자별 합계 (인원별 솔팅 + 합계 KPI).
     // 현재 statusFilter / monthFilter / dateFrom / dateTo 동일 적용 (목록 SQL 과 일치).
     // computed accessor (total_margin / settlement_amount / actual_payout) 사용 → PHP 집계.
@@ -231,6 +372,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
             ))
@@ -558,7 +700,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $vehicle = Vehicle::find($vehicleId);
         $this->salesman_id = $vehicle?->salesman_id;
         $this->vehicleSearch = '';
-        unset($this->selectedVehicle, $this->vehicleSearchResults, $this->marginData);
+        unset($this->selectedVehicle, $this->vehicleSearchResults, $this->marginData, $this->panelBlockers);
 
         // 차량이 정해져야 이익률이 나온다 — 여기서 비율 자동값을 채운다(차가 바뀌면 다시).
         $this->fillKarabaRatio(force: true);
@@ -623,7 +765,30 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetValidation();
         $this->resetForm();
         $this->editingId = null;
+        $this->gateReason = '';
         $this->showPanel = true;
+    }
+
+    /**
+     * 편집 패널에 띄울 「왜 못 만드나」 칩 — **막히고 나서가 아니라 막히기 전에 보여준다**(§8 #60).
+     * 편집 모드에선 빈 배열(게이트가 생성 분기에만 걸리므로 칩도 거기서만 뜬다).
+     */
+    #[Computed]
+    public function panelBlockers(): array
+    {
+        if ($this->editingId || ! $this->vehicle_id) {
+            return [];
+        }
+
+        return Vehicle::find($this->vehicle_id)?->settlementBlockers() ?? [];
+    }
+
+    /** 사유 코드 → 사람 말. 🚫 화면에 코드를 그대로 노출하지 말 것(§8 #41). */
+    public function gateBlockerLabels(array $blockers): string
+    {
+        return collect($blockers)
+            ->map(fn (string $b) => __('settlement.gate.blocker.'.$b))
+            ->implode(' · ');
     }
 
     public function openEdit(int $id): void
@@ -652,6 +817,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetValidation();
         $this->showPanel = false;
         $this->editingId = null;
+        $this->gateReason = '';
         unset($this->selectedVehicle, $this->vehicleSearchResults, $this->marginData);
     }
 
@@ -695,13 +861,54 @@ new #[Layout('components.layouts.app')] class extends Component
             }
             $existing->update($data);
         } else {
+            // 🚪 **생성 분기에만** 상태 게이트를 건다 (jin 2026-09-12).
+            //    수동 「신규 정산」은 형식 4줄 말고 차량 상태를 보는 조건이 **하나도 없었다** —
+            //    미수 87 EUR 짜리 정산이 그렇게 만들어졌다(실사고 #5806). 자동 경로와 같은 술어를 물린다.
+            //
+            // 🚫 편집 분기(`editingId`)엔 걸지 말 것 — 폼에 실린 옛 vehicle_id 로도 참이 되어
+            //    메모·기타공제 같은 무관한 수정이 통째로 막힌다(§8 #65 ①).
+            // 🚫 `Settlement::creating` 에 걸지 말 것 — 적재·백필 4개 명령이 전부 걸린다.
+            //
+            // ⚠️ 여기서 넘길 수 있는 것도 unpaid·freight_unconfirmed 뿐이다. 담당자 없음·중복은
+            //    입력 미비라 사유로 못 넘긴다(그 판정은 서비스 단일 출처).
+            $gateVehicle = Vehicle::find($this->vehicle_id);
+            $blockers = $gateVehicle?->settlementBlockers() ?? [];
+            if ($blockers !== []) {
+                $svc = app(SettlementGateOverrideService::class);
+                if (! $svc->isOverridable($gateVehicle)) {
+                    throw ValidationException::withMessages([
+                        'vehicle_id' => __('settlement.gate.not_overridable', [
+                            'reasons' => $this->gateBlockerLabels($blockers),
+                        ]),
+                    ]);
+                }
+                if (! auth()->user()?->canConfirmFinance()) {
+                    throw ValidationException::withMessages([
+                        'vehicle_id' => __('settlement.gate.forbidden'),
+                    ]);
+                }
+                if (mb_strlen(trim($this->gateReason)) < SettlementGateOverrideService::MIN_REASON_LENGTH) {
+                    throw ValidationException::withMessages([
+                        'gateReason' => __('settlement.gate.reason_required', [
+                            'reasons' => $this->gateBlockerLabels($blockers),
+                            'min' => SettlementGateOverrideService::MIN_REASON_LENGTH,
+                        ]),
+                    ]);
+                }
+            }
+
             if ($this->settlement_status === 'confirmed') {
                 $data['confirmed_at'] = $now;
             }
             if ($this->settlement_status === 'paid') {
                 $data['paid_at'] = $now;
             }
-            Settlement::create($data);
+            $created = Settlement::create($data);
+
+            if ($blockers !== [] && $gateVehicle) {
+                app(SettlementGateOverrideService::class)
+                    ->applyToExisting($created, auth()->user(), $this->gateReason);
+            }
         }
 
         unset($this->settlements);
@@ -1023,6 +1230,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereIn('settlement_status', ['pending', 'calculating'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
             ->get();
@@ -1248,6 +1456,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
             ->orderBy('id')
@@ -1279,6 +1488,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
             ->count();
@@ -1442,6 +1652,15 @@ new #[Layout('components.layouts.app')] class extends Component
             <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
             <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
+        {{-- 🚪 예외 대상 (jin 2026-09-12) — 정산이 아예 안 생긴 차를 사유만 쓰고 만든다.
+             🚫 건수 뱃지를 달지 말 것 — 후보 판정은 미수 accessor 라 wire:poll.30s 에 올릴 수 없고,
+                SQL 근사치는 조건 복제가 된다(§8 #44·#67). --}}
+        @if(auth()->user()?->canConfirmFinance())
+        <button wire:click="openGateCandidates"
+                class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">
+            {{ __('settlement.gate.candidates_btn') }}
+        </button>
+        @endif
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             {{ __('settlement.add') }}
@@ -1464,6 +1683,11 @@ new #[Layout('components.layouts.app')] class extends Component
     <button type="button" wire:click="toggleHeld"
             class="rounded border px-2.5 py-1.5 text-sm font-medium {{ $heldOnly ? 'border-red-300 bg-red-50 text-red-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
         {{ __('settlement.held.filter') }}
+    </button>
+    {{-- 게이트 예외 (jin 2026-09-12) — 사유를 달고 통과시킨 정산만 --}}
+    <button type="button" wire:click="toggleOverrideOnly"
+            class="rounded border px-2.5 py-1.5 text-sm font-medium {{ $overrideOnly ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+        {{ __('settlement.gate.filter') }}
     </button>
     <select wire:model="salesmanFilter" class="input-filter">
         <option value="0">{{ __('settlement.filter_all_salesman') }}</option>
@@ -1912,6 +2136,17 @@ new #[Layout('components.layouts.app')] class extends Component
                     @if($s->isPayoutHeldByUnpaid())
                     <span class="badge badge-red ml-1" title="{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}">{{ __('settlement.held.badge') }}</span>
                     @endif
+                    {{-- 🚪 게이트 예외 (jin 2026-09-12) — 미수가 남아 있는데 사유를 달고 통과시킨 건.
+                         ⚠️ 표시가 없으면 매달 「왜 이건 지급됐지」가 된다(§8 #60). --}}
+                    @if($s->hasGateOverride())
+                    <span class="badge badge-amber ml-1"
+                          title="{{ __('settlement.gate.badge_tooltip', [
+                              'reason' => $s->gate_override_reason,
+                              'then' => number_format((float) ($s->gate_override_unpaid_amount ?? 0), 2),
+                              'now' => number_format((float) ($s->vehicle?->sale_unpaid_amount ?? 0), 2),
+                              'at' => $s->gate_override_at?->format('Y-m-d'),
+                          ]) }}">{{ __('settlement.gate.badge') }}</span>
+                    @endif
                     {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
                     @if($secondaryLabel)
                     <span class="badge {{ $secondaryBadge }} ml-1" title="{{ __('settlement.col.status') }}">{{ $secondaryLabel }}</span>
@@ -1947,6 +2182,16 @@ new #[Layout('components.layouts.app')] class extends Component
                         <button wire:click.stop="openReadjustModal({{ $s->id }})"
                                 class="text-xs text-amber-600 hover:text-amber-800"
                                 title="{{ __('settlement.readjust.title') }}">🔓 {{ __('settlement.btn_readjust') }}</button>
+                        @endif
+                        {{-- 🚪 게이트 예외 (jin 2026-09-12) — 지급보류 행에서 바로 거는 **부 통로**.
+                             주 통로는 헤더의 [예외 대상]이다(정산 행이 아예 없는 쪽이 실측상 전부). --}}
+                        @if($s->isPayoutHeldByUnpaid() && auth()->user()->canConfirmFinance())
+                        <button wire:click.stop="startGateOverrideForSettlement({{ $s->id }})"
+                                class="text-xs font-medium text-amber-600 hover:text-amber-800">{{ __('settlement.gate.apply_btn') }}</button>
+                        @elseif($s->hasGateOverride() && auth()->user()->canConfirmFinance())
+                        <button wire:click.stop="releaseGateOverride({{ $s->id }})"
+                                wire:confirm="{{ __('settlement.gate.confirm_release') }}"
+                                class="text-xs text-gray-400 hover:text-gray-600">{{ __('settlement.gate.release_btn') }}</button>
                         @endif
                         <button wire:click.stop="delete({{ $s->id }})"
                                 wire:confirm="{{ __('settlement.confirm_delete') }}"
@@ -2000,6 +2245,108 @@ new #[Layout('components.layouts.app')] class extends Component
 {{-- 하단 여백(pb-28) — 우하단 고정 통관서류 알람 위젯과 페이지네이션 화살표가 겹쳐 클릭 방해되던 문제 해소 (2026-07-07 jin). --}}
 {{-- 아래 여백은 공용 페이지네이션 뷰가 갖고 있다(vendor/pagination/tailwind) — 여기서 땜질하지 말 것. --}}
 <div>{{ $this->settlements->links() }}</div>
+
+{{-- 🚪 예외 대상 모달 (jin 2026-09-12) — docs/design/settlement-gate-exception.md §2-4
+     정산이 **아예 안 생긴** 차를 사유만 쓰고 자동 생성과 똑같이 만든다.
+     🚫 수동 「신규 정산」 폼으로 대신하지 말 것 — 거긴 귀속월이 완납월이 아니라 생성월이 된다. --}}
+@if($showGateCandidates)
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:click.self="closeGateCandidates">
+    <div class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl">
+        <div class="flex items-start justify-between border-b px-5 py-4">
+            <div>
+                <h3 class="text-base font-bold text-gray-800">{{ __('settlement.gate.candidates_title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('settlement.gate.candidates_desc') }}</p>
+            </div>
+            <button wire:click="closeGateCandidates" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        @php $cands = $this->gateCandidates; @endphp
+        <div class="flex-1 overflow-y-auto px-5 py-3">
+            @if($cands->isEmpty())
+            <p class="py-10 text-center text-sm text-gray-400">{{ __('settlement.gate.candidates_empty') }}</p>
+            @else
+            <p class="mb-2 text-xs text-gray-500">{{ __('settlement.gate.candidates_count', ['count' => $cands->count()]) }}</p>
+            <div class="overflow-x-auto">
+            <table class="w-full min-w-[640px] text-sm">
+                <thead class="border-b text-xs text-gray-500">
+                    <tr>
+                        <th class="py-2 pr-3 text-left">{{ __('settlement.gate.col_vehicle') }}</th>
+                        <th class="py-2 pr-3 text-left">{{ __('settlement.gate.col_salesman') }}</th>
+                        <th class="py-2 pr-3 text-right">{{ __('settlement.gate.col_unpaid') }}</th>
+                        <th class="py-2 pr-3 text-right">{{ __('settlement.gate.col_freight') }}</th>
+                        <th class="py-2 pr-3 text-left">{{ __('settlement.gate.col_reasons') }}</th>
+                        <th class="py-2 text-right"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                @foreach($cands as $cv)
+                @php
+                    $cb = $cv->settlementBlockers();
+                    $cUnpaid = (float) $cv->sale_unpaid_amount;
+                    $cFreight = (float) ($cv->transport_fee ?? 0);
+                @endphp
+                <tr class="{{ $gateVehicleId === $cv->id ? 'bg-amber-50' : '' }}">
+                    <td class="py-2 pr-3 font-medium text-gray-800">{{ $cv->vehicle_number }}</td>
+                    <td class="py-2 pr-3 text-gray-600">{{ $cv->salesman?->name ?? '-' }}</td>
+                    <td class="py-2 pr-3 text-right whitespace-nowrap {{ $cUnpaid > 0 ? 'text-red-600' : 'text-gray-400' }}">
+                        {{ $cUnpaid > 0 ? $cv->currency.' '.number_format($cUnpaid, 2) : '-' }}
+                    </td>
+                    <td class="py-2 pr-3 text-right whitespace-nowrap text-gray-500">
+                        {{ $cFreight > 0 ? $cv->currency.' '.number_format($cFreight, 2) : '-' }}
+                        @if($cFreight > 0 && abs($cUnpaid - $cFreight) < 0.01)
+                        <span class="ml-1 badge badge-teal">{{ __('settlement.gate.same_as_freight') }}</span>
+                        @endif
+                    </td>
+                    <td class="py-2 pr-3">
+                        @foreach($cb as $b)
+                        <span class="badge badge-amber">{{ __('settlement.gate.blocker.'.$b) }}</span>
+                        @endforeach
+                    </td>
+                    <td class="py-2 text-right">
+                        <button wire:click="startGateOverride({{ $cv->id }})"
+                                class="whitespace-nowrap rounded border border-amber-400 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50">
+                            {{ __('settlement.gate.create_btn') }}
+                        </button>
+                    </td>
+                </tr>
+                @endforeach
+                </tbody>
+            </table>
+            </div>
+            @endif
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 사유 입력 — 생성(주 통로)·기존 정산(부 통로) 공용 --}}
+@if($gateVehicleId || $gateSettlementId)
+<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+        <h3 class="text-base font-bold text-gray-800">{{ __('settlement.gate.reason_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('settlement.gate.reason_desc', ['min' => \App\Services\SettlementGateOverrideService::MIN_REASON_LENGTH]) }}</p>
+
+        <textarea wire:model="gateReason" rows="3" class="input-base mt-3"
+                  placeholder="{{ __('settlement.gate.reason_ph') }}"></textarea>
+
+        {{-- ⚠️ 이 경고를 빼지 말 것 — 2차 마감 시점에 환차·이월이 **1회 확정**되고 그 뒤 들어온 돈은
+             담당자 정산에 반영되지 않는다(post-close = record-only). 2026-07-24 개편의 기존 규칙이다. --}}
+        <div class="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            ⚠️ {{ __('settlement.gate.warn_fx') }}
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button wire:click="cancelGateOverride"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button wire:click="confirmGateOverride" class="btn-primary"
+                    wire:loading.attr="disabled" wire:target="confirmGateOverride">
+                <span wire:loading.remove wire:target="confirmGateOverride">{{ __('settlement.gate.reason_submit') }}</span>
+                <span wire:loading wire:target="confirmGateOverride">{{ __('common.saving') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
 
 </div>
 
@@ -2494,6 +2841,30 @@ new #[Layout('components.layouts.app')] class extends Component
             @endif
             @endif
         </div>
+
+        {{-- 🚪 게이트 예외 (jin 2026-09-12) — 막히기 전에 「왜 못 만드나」를 먼저 보여준다(§8 #60).
+             생성 모드에서만 뜬다. 편집은 게이트를 안 타므로 칩도 안 뜬다. --}}
+        @php $pb = $this->panelBlockers; @endphp
+        @if($pb)
+        @php $pbOverridable = array_diff($pb, \App\Services\SettlementGateOverrideService::OVERRIDABLE) === []; @endphp
+        <div class="rounded-lg border {{ $pbOverridable ? 'border-amber-300 bg-amber-50' : 'border-red-300 bg-red-50' }} px-4 py-3">
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs font-semibold {{ $pbOverridable ? 'text-amber-800' : 'text-red-800' }}">{{ __('settlement.gate.panel_title') }}</span>
+                @foreach($pb as $b)
+                <span class="badge {{ in_array($b, \App\Services\SettlementGateOverrideService::OVERRIDABLE, true) ? 'badge-amber' : 'badge-red' }}">{{ __('settlement.gate.blocker.'.$b) }}</span>
+                @endforeach
+            </div>
+            @if($pbOverridable)
+            <p class="mt-2 text-xs text-amber-700">{{ __('settlement.gate.panel_overridable') }}</p>
+            <textarea wire:model="gateReason" rows="2" class="input-base mt-1.5"
+                      placeholder="{{ __('settlement.gate.reason_ph') }}"></textarea>
+            @error('gateReason')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+            <p class="mt-1.5 text-xs text-amber-700">⚠️ {{ __('settlement.gate.warn_fx') }}</p>
+            @else
+            <p class="mt-2 text-xs text-red-700">{{ __('settlement.gate.panel_blocked') }}</p>
+            @endif
+        </div>
+        @endif
 
         {{-- 메모 --}}
         <div>
