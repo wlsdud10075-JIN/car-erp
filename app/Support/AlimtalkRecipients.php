@@ -165,9 +165,14 @@ class AlimtalkRecipients
     }
 
     /**
-     * 이 알림의 현재 선택 역할 (회사별). 미설정 = 기본값 / 명시 저장 = 그 값(빈=아무도 안 받음).
+     * 이 알림의 현재 수신자 토큰 (회사별). 미설정 = 기본값 / 명시 저장 = 그 값(빈=아무도 안 받음).
      *
-     * @return string[] 그룹 key 배열
+     * 🔀 2026-09-12 — 역할 키뿐 아니라 **`user:{id}`(개별 지정)**·전화번호도 들어올 수 있다.
+     *    해석은 `resolveTarget()`(번호) / `tokenTargets()`(스코프) 두 곳이 단일 출처다.
+     *    🚫 호출부에서 `in_array('영업', …)` 처럼 **역할 이름을 직접 확인하는 코드**를 새로 만들지 말 것 —
+     *       개별 지정으로 바꾸는 순간 그 판정이 조용히 false 가 된다. 기존 2곳은 그게 의도다(전체일 때만).
+     *
+     * @return string[] 토큰 배열 (역할 key | `user:{id}` | 전화번호)
      */
     public static function selectedRoles(string $code): array
     {
@@ -457,11 +462,46 @@ class AlimtalkRecipients
     public static function forBroadcast(string $code): array
     {
         $phones = [];
-        foreach (self::selectedRoles($code) as $group) {
-            $phones = array_merge($phones, self::groupPhones($group));
+        // 🔀 2026-09-12 — 저장값이 역할 키만이 아니라 `user:{id}`(개별 지정)일 수도 있다.
+        //    resolveTarget 이 셋(역할·사람·번호)을 다 안다 — 여기서 분기하면 갈린다.
+        foreach (self::selectedRoles($code) as $token) {
+            $phones = array_merge($phones, self::resolveTarget($token));
         }
 
         return collect($phones)->map(fn ($p) => trim((string) $p))->filter()->unique()->values()->all();
+    }
+
+    /**
+     * 토큰 하나가 가리키는 **(사용자, 역할그룹)** 쌍들 — 스코프 발송이 쓰는 단일 출처 (2026-09-12).
+     *
+     * 역할 키면 그 그룹 전원. `user:{id}` 면 그 사람 하나인데, **그 사람이 속한 역할마다** 한 쌍씩 낸다 —
+     * 단계별 확대(며칠째부터)가 역할 단위라, 개별로 골라도 그 사람 역할의 기준을 그대로 따라야 한다.
+     * 어느 역할에도 안 걸리는 계정(레거시 role='전체' 등)은 빈 배열 — 애초에 피커에도 안 뜬다.
+     *
+     * @return array<int, array{0: User, 1: string}>
+     */
+    private static function tokenTargets(string $token): array
+    {
+        if (isset(self::BROADCAST_GROUPS[$token])) {
+            return self::groupUsers($token)->map(fn (User $u) => [$u, $token])->all();
+        }
+        $id = self::userIdOf($token);
+        if ($id === null) {
+            return [];   // 직접 적은 번호는 차량 스코프를 못 매긴다 — 스코프형에서는 제외된다
+        }
+        $user = User::query()->whereKey($id)->first();
+        if (! $user) {
+            return [];   // 퇴사(계정 삭제) → 자동으로 빠진다
+        }
+        $out = [];
+        foreach (array_keys(self::BROADCAST_GROUPS) as $g) {
+            $q = self::groupQuery($g);
+            if ($q && (clone $q)->whereKey($user->getKey())->exists()) {
+                $out[] = [$user, $g];
+            }
+        }
+
+        return $out;
     }
 
     /** 한 역할 그룹의 (전화 있는) 사용자 번호. */
@@ -470,6 +510,24 @@ class AlimtalkRecipients
         $q = self::groupQuery($group);
 
         return $q ? self::phones($q) : [];
+    }
+
+    /**
+     * 이 사용자를 수신자로 고를 수 있나 — **어느 역할 그룹에든 속해야** 한다 (2026-09-12).
+     *
+     * 저장 검증용. 피커에 뜨지 않는 계정(레거시 `role='전체'` 등)이 토큰으로 들어오면 영영 안 걸리는
+     * 수신자가 되므로 저장 단계에서 버린다. 클라이언트 주입 방어도 겸한다(§8 #26).
+     */
+    public static function userIsPickable(int $id): bool
+    {
+        foreach (array_keys(self::BROADCAST_GROUPS) as $g) {
+            $q = self::groupQuery($g);
+            if ($q && (clone $q)->whereKey($id)->exists()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -572,8 +630,10 @@ class AlimtalkRecipients
 
         /** @var array<string, Collection<int, Vehicle>> $out */
         $out = [];
-        foreach (self::selectedRoles($code) as $group) {
-            foreach (self::groupUsers($group) as $user) {
+        foreach (self::selectedRoles($code) as $token) {
+            // 🔀 2026-09-12 — 역할 키든 `user:{id}`(개별 지정)든 여기서 (사람, 역할) 쌍으로 펼친다.
+            //    개별로 골라도 **그 사람 역할의 단계·자격 판정**을 그대로 탄다.
+            foreach (self::tokenTargets($token) as [$user, $group]) {
                 $phone = self::userPhone($user);
                 if ($phone === '') {
                     continue;
@@ -595,6 +655,11 @@ class AlimtalkRecipients
         //    역할 그룹은 User 를 도는 구조라 이 사람들이 통째로 빠진다(구 픽업 발송은 salesmen.phone 을
         //    직접 읽어서 받고 있었다). 그대로 두면 **새 영업을 계정 없이 추가한 날부터 조용히 끊긴다**.
         //    체크박스 안에 있으므로 숨은 경로가 아니다 — '영업' 을 켰을 때만 동작한다.
+        //
+        // ⚠️ **개별 지정(2026-09-12)에는 일부러 안 붙인다.** 「영업 중 이 사람들만」을 고른 순간
+        //    계정 없는 영업담당자는 **고를 수 있는 대상이 아니다**(users 행이 없어 목록에 안 뜬다).
+        //    그래도 끼워 넣으면 「고른 적 없는 사람이 받는」 상태가 된다. 그래서 조건은 **역할 전체**일 때만.
+        //    화면이 이 차이를 적어 준다(alimtalk_catalog.rule_sales_orphan_hint).
         if (in_array('영업', self::selectedRoles($code), true)) {
             $orphans = Salesman::query()
                 ->whereNull('user_id')

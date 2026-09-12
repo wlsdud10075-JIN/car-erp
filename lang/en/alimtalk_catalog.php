@@ -55,6 +55,7 @@ return [
     'rule_number_bad' => 'That is not a phone number. Use at least 8 digits.',
     'rule_number_hint' => 'Use this only for people without an ERP account. A typed number keeps receiving even after that person leaves.',
     'rule_nobody' => 'Nobody is set for this slot - it will go to the top administrator.',
+    'rule_sales_orphan_hint' => 'Salespeople without an ERP account are excluded',
     'rule_pick_group' => 'Whole role',
     'holidays_auto' => 'Auto sync',
     'holidays_auto_on' => ':y: :a days, :y2: :b days (incl. lunar, substitute, temporary holidays and election days)',
