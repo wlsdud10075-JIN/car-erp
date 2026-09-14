@@ -18,7 +18,8 @@ class RebuildVehicleCaches extends Command
     public function handle(): int
     {
         $count = 0;
-        Vehicle::with(['finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
+        // ⚠️ buyer 를 빼지 말 것 — 위험도가 바이어별 게이트 임계를 읽는다(2026-09-14). 빼면 4,700대 N+1.
+        Vehicle::with(['finalPayments', 'purchaseBalancePayments', 'receivableHistories', 'buyer'])
             ->chunk(200, function ($vehicles) use (&$count) {
                 foreach ($vehicles as $vehicle) {
                     $krw = $vehicle->sale_unpaid_amount_krw;

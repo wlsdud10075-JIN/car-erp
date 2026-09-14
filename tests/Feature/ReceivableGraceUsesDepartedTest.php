@@ -148,8 +148,11 @@ class ReceivableGraceUsesDepartedTest extends TestCase
         $this->assertNotFalse($start);
         $body = substr($src, $start, 1600);
 
-        $this->assertStringContainsString('! $this->isDeparted()', $body,
-            '위험도 유예 분기가 isDeparted() 단일 출처를 안 쓴다');
+        // ⚠️ **호출 형태가 아니라 「그 함수를 쓰는가」를 본다.** 처음엔 `! $this->isDeparted()` 라는
+        //    문자열을 그대로 찾았는데, 2026-09-14 위험도 개편이 `$departed = $this->isDeparted();`
+        //    로 변수를 빼자 **의도는 지켜졌는데 가드가 빨개졌다**. 가드가 리팩터를 막으면 안 된다.
+        $this->assertStringContainsString('$this->isDeparted()', $body,
+            '위험도 계산이 isDeparted() 단일 출처를 안 쓴다');
         $this->assertStringNotContainsString('blank($this->warehouse_out_date)', $body,
             '위험도 유예 분기가 아직 출고일만 본다 — 07-18 판이 남아 있다');
     }
