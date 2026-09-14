@@ -80,7 +80,8 @@
                 type="button"
                 @click="select(item)"
                 :class="item.id === selectedId ? 'bg-blue-50' : ''"
-                class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50"
+                {{-- 🎨 글자색 명시 필수 — 폰 다크 모드 강제에서 흰 글자가 된다(§8 #97). --}}
+                class="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-50"
             >
                 <span x-text="item.name"></span>
                 <span class="text-xs text-gray-400" x-text="item.code"></span>

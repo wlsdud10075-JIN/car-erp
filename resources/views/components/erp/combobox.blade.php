@@ -53,8 +53,11 @@
     <div x-show="open" x-cloak
          class="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
         <template x-for="opt in filtered()" :key="opt.id">
+            {{-- 🎨 **글자색을 명시한다** — 빼면 폰의 「다크 모드 강제」에서 흰 글자가 되어
+                 흰 배경에 안 보인다(jin 2026-09-14: 「검색해도 흰색인데 클릭하면 적용은 된다」).
+                 app.css 의 강제 규칙은 input·textarea·select 만 덮어서 버튼은 상속값을 쓴다. --}}
             <button type="button" @click="choose(opt)"
-                    class="block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-primary-light" x-text="opt.name"></button>
+                    class="block w-full truncate px-3 py-1.5 text-left text-sm text-gray-800 hover:bg-primary-light" x-text="opt.name"></button>
         </template>
         <div x-show="filtered().length === 0" class="px-3 py-2 text-xs text-gray-400">{{ __('vehicle.panel.no_match') }}</div>
     </div>
