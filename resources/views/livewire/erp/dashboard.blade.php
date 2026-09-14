@@ -337,11 +337,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 정산 대기는 settlements 라우트로 직접 이동
             ['label' => $t('settlement_wait', 'l'), 'desc' => $t('settlement_wait', 'd'),
              'count' => $pendingSettlements, 'dot' => 'bg-violet-500', 'urgent' => false,
-             'href' => route('erp.settlements.index')],
+             'href' => route('erp.settlements.index').'?status=pending'],
             // 매입취소 → 채권관리(취소 필터)로. 취소완료·미수 모두 표시.
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
              'count' => $cancelTotal, 'dot' => 'bg-rose-500', 'urgent' => false,
-             'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
+             'href' => route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all'],
         ];
     }
 
@@ -404,6 +404,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP 후 단순화.
         $totalPurchaseUnpaid = (int) (Vehicle::query()
             ->whereNull('deleted_at')
+            // 🔀 **진행 중만 센다** (jin 2026-09-14). 바로 아래 할일 「매입 미지급」은 거래완료를 빼는데
+            //    이 금액만 포함해서 **같은 화면에서 모집단이 달랐다**(실측 39대 vs 37대 규모).
+            //    화면 문구가 이미 「진행중 매입 잔금 합계」라고 말하고 있어 금액 쪽을 맞췄다.
+            //    🚫 조건을 옮겨 적지 말 것 — `scopeAction('purchase_unpaid')` 와 같은 active 한정이다.
+            ->where(fn ($q) => $q->where('progress_status_cache', '!=', '거래완료')
+                ->orWhereNull('progress_status_cache'))
             ->where('purchase_price', '>', 0)
             // CAST AS SIGNED — BIGINT UNSIGNED 빼기 결과가 음수면 underflow. WHERE/SELECT 양쪽 적용.
             // Review.md #6 (2026-06-09) — confirmed_at IS NOT NULL 필터 추가.
@@ -469,13 +475,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('settlement_confirm_needed', 'l'), $t('settlement_confirm_needed', 'd'), $c('settlement_confirm_needed'), 'bg-violet-500', 'settlement_confirm_needed'),
             $this->row($t('settlement_pay_needed', 'l'),     $t('settlement_pay_needed', 'd'),     $c('settlement_pay_needed'),     'bg-violet-500', 'settlement_pay_needed'),
             $this->row($t('payout_held', 'l'),               $t('payout_held', 'd'),               $heldCount,                      'bg-red-500',    '',                          true, route('erp.settlements.index').'?held=1'),
-            $this->row($t('secondary_close', 'l'),           $t('secondary_close', 'd'),           $secondaryPending,               'bg-violet-500', '',                          false, route('erp.settlements.index')),
+            $this->row($t('secondary_close', 'l'),           $t('secondary_close', 'd'),           $secondaryPending,               'bg-violet-500', '',                          false, route('erp.settlements.index').'?secondary=pending'),
             $this->row($t('receivable_risk', 'l'),           $t('receivable_risk', 'd'),           $c('receivable_risk'),           'bg-red-500',    'receivable_risk',           true),
             // 매입취소 미수 (jin 2026-07-18) — 위약금 미수령 취소건(미수 마감/손실 처리). 채권관리(취소필터)로.
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
              'count' => (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', '!=', Vehicle::CANCEL_NONE)->count(),
              'dot' => 'bg-rose-500', 'urgent' => false,
-             'href' => route('erp.receivables.index').'?cancelFilter=cancelled'],
+             'href' => route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all'],
         ];
     }
 
@@ -485,7 +491,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function buildManagementKpis(): array
     {
         // 승인 대기 = 차량간이체·보증금 선지급·미수 우회 등 (/erp/approvals 와 동일 출처).
-        $pendingApprovals = ApprovalRequest::where('status', ApprovalRequest::STATUS_PENDING)->count();
+        // 🔀 **폐기된 승인 유형을 빼고 센다** (jin 2026-09-14) — 승인 화면·사이드바가 쓰는 것과 같은
+        //    `actionable()` 단일 출처다. 안 쓰면 카드만 폐기 유형까지 세어 숫자가 크게 나온다.
+        $pendingApprovals = ApprovalRequest::actionable()->where('status', ApprovalRequest::STATUS_PENDING)->count();
 
         $pendingSettlements = Settlement::query()
             ->whereIn('settlement_status', ['pending', 'confirmed'])
@@ -527,7 +535,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $t = fn (string $k, string $f) => __("dashboard.act.management.$k.$f");
 
-        $pendingApprovals = ApprovalRequest::where('status', ApprovalRequest::STATUS_PENDING)->count();
+        // 🔀 **폐기된 승인 유형을 빼고 센다** (jin 2026-09-14) — 승인 화면·사이드바가 쓰는 것과 같은
+        //    `actionable()` 단일 출처다. 안 쓰면 카드만 폐기 유형까지 세어 숫자가 크게 나온다.
+        $pendingApprovals = ApprovalRequest::actionable()->where('status', ApprovalRequest::STATUS_PENDING)->count();
         // 재고 감독 (jin 2026-07-26) — 관리/업무관리자 몫. 일반재고(투기·장기) 건수 신호 + 재고관리 딥링크.
         $generalStock = Vehicle::query()->generalStock()->count();
 

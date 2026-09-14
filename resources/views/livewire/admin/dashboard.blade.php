@@ -681,8 +681,11 @@ new #[Layout('components.layouts.app')] class extends Component
      * - 분모 = sale_total_amount × exchange_rate (부대비용 포함, accessor 정의와 동일)
      * - sale_price만 사용하면 분자(부대비용 포함) ↔ 분모(미포함) 비대칭 → 의미 없는 비율 산출됨
      *
-     * 큐 4 점검 — dateColumn 기준 dateFrom/dateTo 적용 (vehicles/index action 진입 시 동일 기간 적용).
-     * 위험도 카운트는 receivable_safe/caution/danger/critical scopeAction과 SQL 100% 일치.
+     * 🚫 **위험도 4카드는 기간을 안 탄다** (jin 2026-08-20) — 미수는 「지금 못 받고 있는 돈」(재고)이다.
+     *    그래서 링크도 `vehiclesUrlAllTime()` 을 쓴다. ⚠️ `vehiclesUrl()` 로 되돌리지 말 것 —
+     *    목록만 상단 조회기간에 잘려 **심각 207 → 145** 처럼 갈린다(2026-09-14 실측).
+     * ⚠️ 「SQL 100% 일치」라고 적혀 있던 자리다 — 2026-09-14 까지 **사실이 아니었다**(§8 #97-B).
+     *    지금은 맞지만, 맞다고 적어 두면 다음 사람이 확인을 건너뛴다. 가드는 `DashboardCardMatchesListTest`.
      */
     #[Computed]
     public function receivableKpis(): array
@@ -827,6 +830,19 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'salesman_top' => $buildRows($topSalesmanIds, $bySalesman, $salesmanNames),
             'buyer_top' => $buildRows($topBuyerIds, $byBuyer, $buyerNames),
+            /*
+             * 🕳️ **「안전」은 여기서 영영 0 이었다** — 고쳤다 (jin 2026-09-14).
+             *
+             * 위 집계는 **미수가 남은 차**만 돈다(`sale_unpaid_amount_krw_cache > 0`). 그런데
+             * `receivable_risk='safe'` 의 뜻은 **미수 ≤ 0**(완납)이라 **그 집합에 있을 수가 없다.**
+             * ⇒ 카드가 늘 0 이라 자리만 차지했다. 이제 **완납된 판매차**를 따로 센다 —
+             *    라벨(「안전」)이 약속하는 것과 같고, 눌렀을 때 나오는 목록과도 같다
+             *    (`scopeAction('receivable_safe')` 도 같은 날 `> 0` 요구를 뺐다).
+             * ⚠️ 담당자 스코프는 다른 카드와 같게 유지한다(`$ids`).
+             */
+            // 🗑️ 'safe' 는 **카드에서 내렸다**(jin 2026-09-14) — 채권 화면에 완납은 필요 없다.
+            //    키는 남겨 둔다(0). 다른 소비자가 배열을 돌다 깨지지 않게 하기 위함이고,
+            //    되살릴 거면 `scopeAction('receivable_safe')` 로 세면 된다(그쪽은 뜻이 맞게 고쳐 뒀다).
             'risk_counts' => $riskCounts,
             'total_unpaid' => array_sum(array_column($bySalesman, 'unpaid')),
             // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18)
@@ -848,16 +864,18 @@ new #[Layout('components.layouts.app')] class extends Component
      * 2) 수출신고서 미업로드 차량 수 — 통관중 단계 (export_buyer_id+shipping_date 있지만 문서 NULL)
      * 3) 포워딩사 TOP 5 진행 차량 수 — forwarding_company_id GROUP, 통관/선적 단계 한정
      *
-     * SQL 100% 일치 원칙 (SKILLS.md §9):
-     * - Vehicle::scopeAction의 activeOnly(progress_status_cache != '거래완료')와 동일
+     * 🔀 **2026-09-14 — 카운트가 scopeAction 을 직접 부른다.** 그 전엔 조건을 옮겨 적어서
+     *    2026-09-09 매입취소 제외를 못 물려받았다(카드에만 취소 차가 남음, §8 #38·#45).
+     * SKILLS.md §9 일치 원칙:
+     * - activeOnly·매입취소 제외·30일 임계가 전부 scopeAction 한 곳에서 온다
      * - 안건 J 본격 (2026-05-20) — dhl_request 직접 참조 폐기. v2/v3 cascade 호환.
      * - dateColumn() 기준 dateFrom/dateTo 동일 적용 (vehicles/index와 동일 컨텍스트)
      */
     #[Computed]
     public function clearanceKpis(): array
     {
+        // 화면 문구용 — 실제 임계는 scopeAction('clearance_stuck') 안에 있다(같은 30일).
         $stuckThresholdDays = 30;
-        $stuckDate = now()->subDays($stuckThresholdDays)->format('Y-m-d');
         $col = $this->dateColumn();
 
         // 공통: active 한정 + dateColumn 범위 (scopeAction과 일치)
@@ -868,24 +886,20 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateFrom, fn ($q2) => $q2->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q2) => $q2->where($col, '<=', $this->dateTo));
 
-        // 1) 통관 정체 — clearance_stuck action과 동일. 큐 16: sales_channel 단일.
-        $stuckCount = $applyCommonFilters(Vehicle::query())
-            ->where('sale_price', '>', 0)
-            ->where(function ($q) {
-                $q->whereNull('sale_unpaid_amount_krw_cache')
-                    ->orWhere('sale_unpaid_amount_krw_cache', '<=', 0);
-            })
-            ->whereNull('export_declaration_document')
-            ->whereNotNull('sale_date')
-            ->where('sale_date', '<=', $stuckDate)
-            ->count();
+        /*
+         * 🔀 **2026-09-14 — 조건을 옮겨 적던 것을 scopeAction 경유로 바꿨다** (jin 「A~F 전부」).
+         *
+         * 여기 두 카운트는 목록(`action=clearance_stuck` 등)과 「동일」하다고 주석에 적혀 있었지만
+         * **2026-09-09 매입취소 제외를 못 물려받아** 카드에만 취소 차가 남아 있었다(§8 #38·#45).
+         * ⇒ 이제 같은 scope 를 부른다. active 한정·취소 제외·30일 임계가 전부 그 한 곳에서 온다.
+         * 🚫 조건을 다시 여기 적지 말 것 — 적는 순간 또 갈린다.
+         * ⚠️ `$applyCommonFilters` 의 active 한정은 scope 와 겹치지만 무해하다(같은 조건).
+         */
+        // 1) 통관 정체
+        $stuckCount = $applyCommonFilters(Vehicle::query()->action('clearance_stuck'))->count();
 
-        // 2) 수출신고서 미업로드 — export_declaration_upload_needed action과 동일.
-        $unfiledCount = $applyCommonFilters(Vehicle::query())
-            ->whereNotNull('export_buyer_id')
-            ->whereNotNull('shipping_date')
-            ->whereNull('export_declaration_document')
-            ->count();
+        // 2) 수출신고서 미업로드
+        $unfiledCount = $applyCommonFilters(Vehicle::query()->action('export_declaration_upload_needed'))->count();
 
         // 3) 포워딩사별 진행 차량 — 선적/통관 단계 (안건 1 v4 — 단계명 swap, v3 호환 포함)
         $clearanceStages = ['선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료'];
@@ -928,6 +942,22 @@ new #[Layout('components.layouts.app')] class extends Component
         ], $extra);
 
         return route('erp.vehicles.index').'?'.http_build_query($params);
+    }
+
+    /**
+     * 🚫 **기간을 안 실어 보내는 링크** — 카드가 기간을 안 세는 지표 전용 (jin 2026-09-14).
+     *
+     * 채권 위험도 4카드는 「미수는 기간으로 안 자른다」(jin 2026-08-20)라 **전 기간**을 센다.
+     * 그런데 `vehiclesUrl()` 이 상단 조회기간을 같이 실어 보내서 **목록만 잘려 나왔다** —
+     * 실측 2026-09-14 ssancarerp 심각 **207 → 145** · 위험 23 → 8 · heymanerp 심각 16 → 10.
+     *
+     * 🧭 **2026-08-20 에 고친 증상이 한 클릭 뒤로 옮겨가 있었다.** 그때는 카드에서만 기간을 뺐다.
+     * ⚠️ 차량목록은 `dateType` 이 없으면 기본값 `'all'` 이라 기간을 아예 안 건다 — 그래서 셋 다 뺀다.
+     * 🚫 다른 카드에 쓰지 말 것 — 매출·판매 통계는 **흐름**이라 기간이 의미가 있다.
+     */
+    public function vehiclesUrlAllTime(array $extra = []): string
+    {
+        return route('erp.vehicles.index').'?'.http_build_query($extra);
     }
 }; ?>
 
@@ -1496,7 +1526,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_grace_note', ['count' => $this->receivableKpis['grace_count']]) }}</p>
             </div>
             {{-- 매입취소 (jin 2026-07-18) — 진행/마감 카운트, 채권관리 취소필터로 --}}
-            <a href="{{ route('erp.receivables.index').'?cancelFilter=cancelled' }}" wire:navigate
+            <a href="{{ route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all' }}" wire:navigate
                class="card min-w-[180px] flex-1 border-rose-200 bg-rose-50/40 transition hover:bg-rose-50">
                 <div class="text-xs text-gray-500">{{ __('admin_dash.recv_cancel') }}</div>
                 <div class="mt-1 text-2xl font-bold text-rose-600">
@@ -1504,9 +1534,16 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_cancel_note', ['closed' => $this->receivableKpis['cancel_closed']]) }}</p>
             </a>
-            {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅 --}}
-            @foreach (['safe' => [__('receivable.risk.safe'), 'green'], 'caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
-            <a href="{{ $this->vehiclesUrl(['action' => 'receivable_'.$key]) }}" wire:navigate
+            {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅.
+                 🚫 **기간을 실어 보내지 않는다**(jin 2026-09-14) — 카드가 전 기간을 세기 때문이다.
+                    vehiclesUrl() 을 쓰면 목록만 상단 조회기간에 잘려 숫자가 갈린다(실측 207 → 145).
+                 🕳️ 「안전」은 미수 0 인 차라 미수 목록 기준으로는 구조적으로 0 이었다 —
+                    아래 receivableKpis 에서 「완납된 판매차」로 뜻을 맞췄다. --}}
+            {{-- 🗑️ **「안전」 카드는 내렸다** (jin 2026-09-14) — *「안전이란 건 없지 뭐.. 채권인데..」*
+                 채권 화면은 **못 받은 돈**을 보는 곳인데 안전은 **다 받은 차**다(실측 싼카 4,252대).
+                 화면만 채우고 아무 행동도 안 만든다. 🚫 다시 넣지 말 것 — 가드가 잡는다. --}}
+            @foreach (['caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
+            <a href="{{ $this->vehiclesUrlAllTime(['action' => 'receivable_'.$key]) }}" wire:navigate
                class="card min-w-[160px] flex-1 transition hover:bg-gray-50">
                 <div class="flex items-center justify-between">
                     <span class="text-xs text-gray-500">{{ $label }}</span>
