@@ -460,7 +460,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     </button>
     @if($showCalendar)
     @php $cm = \Illuminate\Support\Carbon::createFromFormat('Y-m', $calMonth ?: now()->format('Y-m')); @endphp
-    <div class="mt-3" x-data="{ tip: null, ttype: '', tx: 0, ty: 0 }">
+    <div class="mt-3" x-data="{ tip: null, ttype: '', tx: 0, ty: 0 }"
+         {{-- 탭으로 연 상세는 바깥을 누르면 닫는다(터치엔 mouseleave 가 없다). --}}
+         @click="tip = null">
         {{-- 월 네비 --}}
         <div class="mb-2 flex items-center justify-center gap-4">
             <button wire:click="shiftMonth(-1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">‹</button>
@@ -468,19 +470,27 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button wire:click="shiftMonth(1)" class="rounded px-2 py-0.5 text-gray-500 hover:bg-gray-100">›</button>
         </div>
         {{-- 요일 --}}
-        <div class="grid grid-cols-7 text-center text-[11px] font-medium text-gray-400">
+        {{-- 📱 폰(390px)에서 칸 하나가 49px 라 차량번호가 통째로 잘린다 — 가로로 굴려서 본다.
+             560px 면 칸이 80px 로 읽을 만하고, 데스크탑(카드 내부 ~592px)에선 넘치지 않아 스크롤바가 안 생긴다. --}}
+        <div class="overflow-x-auto">
+        <div class="grid min-w-[560px] grid-cols-7 text-center text-[11px] font-medium text-gray-400">
             @foreach(['일','월','화','수','목','금','토'] as $i => $wd)<div class="py-1 {{ $i === 0 ? 'text-red-400' : ($i === 6 ? 'text-blue-400' : '') }}">{{ $wd }}</div>@endforeach
         </div>
         {{-- 6주 그리드 — 각 날짜에 선적(● 채운 점)·도착(○ 빈 점) + 차량번호 --}}
-        <div class="grid grid-cols-7 overflow-hidden rounded-lg border border-gray-200">
+        <div class="grid min-w-[560px] grid-cols-7 overflow-hidden rounded-lg border border-gray-200">
             @foreach($this->calendarDays as $i => $d)
             <div class="min-h-[88px] border-b border-r border-gray-100 p-1 {{ $d['inMonth'] ? '' : 'bg-gray-50/50' }}">
                 <div class="text-[11px] {{ ! $d['inMonth'] ? 'text-gray-300' : ($i % 7 === 0 ? 'text-red-400' : ($i % 7 === 6 ? 'text-blue-400' : 'text-gray-500')) }}">{{ $d['day'] }}</div>
                 <div class="mt-0.5 space-y-0.5">
                     @foreach(array_slice($d['items'], 0, 4) as $it)
+                    {{-- 👆 **탭으로도 열린다** (jin 2026-09-14) — 터치 기기엔 hover 가 없어
+                         `@mouseenter` 만 있으면 **눌러도 아무것도 안 나온다**. 상세를 볼 길이 0 이었다.
+                         데스크탑은 mouseenter 가 그대로 살아 있어 동작이 안 바뀐다. --}}
                     <div class="flex cursor-pointer items-center gap-1 truncate leading-tight"
                          @mouseenter="tip = {{ \Illuminate\Support\Js::from($it['tip']) }}; ttype = '{{ $it['type'] }}'; tx = $event.clientX; ty = $event.clientY"
-                         @mousemove="tx = $event.clientX; ty = $event.clientY" @mouseleave="tip = null">
+                         @mousemove="tx = $event.clientX; ty = $event.clientY" @mouseleave="tip = null"
+                         @click.stop="tip = {{ \Illuminate\Support\Js::from($it['tip']) }}; ttype = '{{ $it['type'] }}';
+                                      tx = $event.clientX; ty = $event.clientY">
                         @if($it['type'] === 'ship')
                         <span class="h-2 w-2 shrink-0 rounded-full" style="background-color: {{ $it['color'] }};"></span>
                         @else
@@ -495,6 +505,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
             @endforeach
+        </div>
         </div>
         <p class="mt-1.5 text-center text-[11px] text-gray-400">{{ __('forwarding.calendar_legend') }}</p>
 
@@ -648,17 +659,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <div class="flex flex-col items-end gap-1.5">
                                         {{-- 1행: 통화 + 인보이스금액 (× 수기환율 = 환산KRW) --}}
                                         <div class="flex flex-wrap items-center justify-end gap-1.5">
-                                            <select wire:model.live="invForm.{{ $fkey }}.currency" class="input-filter h-7 w-16 text-xs">
+                                            {{-- 📱 h-9 sm:h-7 — 28px 은 손가락엔 작다(권장 44px).
+                                                 폰만 키우고 데스크탑은 그대로. 특히 [청산]은 되돌리려면
+                                                 따로 해제해야 하는 **돈 확정 버튼**이라 오탭 비용이 크다. --}}
+                                            <select wire:model.live="invForm.{{ $fkey }}.currency" class="input-filter h-9 sm:h-7 w-16 text-xs">
                                                 @foreach(['USD','JPY','EUR','GBP','CNY','KRW'] as $c)
                                                     <option value="{{ $c }}" @selected($curSel === $c)>{{ $c }}</option>
                                                 @endforeach
                                             </select>
                                             <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.amount" type="text" data-money
-                                                   placeholder="{{ __('forwarding.inv_amount_ph') }}" class="input-filter h-7 w-24 text-right text-xs" />
+                                                   placeholder="{{ __('forwarding.inv_amount_ph') }}" class="input-filter h-9 sm:h-7 w-24 text-right text-xs" />
                                             @if($curSel !== 'KRW')
                                                 <span class="text-[10px] text-gray-400">×</span>
                                                 <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.manual_rate" type="text" inputmode="decimal"
-                                                       placeholder="{{ __('forwarding.rec_rate') }}" class="input-filter h-7 w-16 text-right text-xs" />
+                                                       placeholder="{{ __('forwarding.rec_rate') }}" class="input-filter h-9 sm:h-7 w-16 text-right text-xs" />
                                                 <span class="text-[10px] text-gray-600">= ₩{{ number_format($converted) }}</span>
                                             @endif
                                         </div>
@@ -666,7 +680,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <div class="flex flex-wrap items-center justify-end gap-1.5">
                                             <span class="text-[10px] text-gray-400">{{ __('forwarding.rec_paid') }}</span>
                                             <input wire:model.live.debounce.500ms="invForm.{{ $fkey }}.actual_paid_krw" type="text" data-money
-                                                   placeholder="₩" class="input-filter h-7 w-24 text-right text-xs" />
+                                                   placeholder="₩" class="input-filter h-9 sm:h-7 w-24 text-right text-xs" />
                                             <span class="text-[10px] {{ $diff === 0 ? 'text-gray-400' : 'text-amber-600' }}">
                                                 {{ __('forwarding.rec_diff') }} {{ $diff > 0 ? '+' : '' }}{{ number_format($diff) }}
                                             </span>
@@ -677,11 +691,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                                                 <span class="badge badge-gray text-[10px]">{{ __('forwarding.rec_writeoff') }} {{ number_format((int) $woff) }}</span>
                                             @endif
                                             <button wire:click="saveInvoice({{ $fc->id }}, '{{ $grp['type'] }}', @js($grp['key']), true)"
-                                                    class="btn-primary h-7 px-2 text-[11px]">{{ __('forwarding.settle') }}</button>
+                                                    class="btn-primary h-9 sm:h-7 px-2 text-[11px]">{{ __('forwarding.settle') }}</button>
                                         </div>
                                         {{-- 비고 --}}
                                         <input wire:model="invForm.{{ $fkey }}.memo" type="text"
-                                               placeholder="{{ __('forwarding.rec_memo') }}" class="input-filter h-7 w-56 text-xs" />
+                                               placeholder="{{ __('forwarding.rec_memo') }}" class="input-filter h-9 sm:h-7 w-56 text-xs" />
                                     </div>
                                 @endif
                             </div>
