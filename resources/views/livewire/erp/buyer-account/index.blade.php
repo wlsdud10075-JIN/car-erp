@@ -38,6 +38,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /** 현금 사용 내역 — 입금은 계속 쌓이기만 하므로 **더 보기**로 끊어 읽는다. */
     public int $usageShown = self::USAGE_PAGE;
+    /** 현금 사용 내역 보기 — 'receipt'(입금별, 기본) / 'vehicle'(차량별). jin 2026-09-14 */
+    public string $usageView = 'receipt';
 
     public const USAGE_PAGE = 10;
 
@@ -149,11 +151,35 @@ new #[Layout('components.layouts.app')] class extends Component {
         return app(BuyerAccountService::class)->cashUsage($this->buyer, $this->usageShown + 1);
     }
 
+    /**
+     * 같은 내역을 **차량 기준**으로 묶은 것 — 판매탭과 같은 모양이라 대조할 게 없다 (jin 2026-09-14).
+     *
+     * 🚫 이름을 `usageView()` 로 짓지 말 것 — 같은 이름의 프로퍼티가 있어 **버튼이 요청조차 안 보내고
+     *    조용히 죽는다**(SKILLS §8 #32).
+     */
+    #[Computed]
+    public function cashUsageByVehicle()
+    {
+        if (! $this->buyer) {
+            return collect();
+        }
+
+        return app(BuyerAccountService::class)->cashUsageByVehicle($this->buyer, $this->usageShown + 1);
+    }
+
+    public function switchUsageView(string $view): void
+    {
+        $this->usageView = $view === 'vehicle' ? 'vehicle' : 'receipt';
+        unset($this->cashUsage, $this->cashUsageByVehicle);
+    }
+
     /** 더 볼 게 남았나 — 상한보다 1건 더 읽어서 판정한다(전체 COUNT 를 따로 세지 않게). */
     #[Computed]
     public function usageHasMore(): bool
     {
-        return $this->cashUsage->count() > $this->usageShown;
+        return $this->usageView === 'vehicle'
+            ? $this->cashUsageByVehicle->count() > $this->usageShown
+            : $this->cashUsage->count() > $this->usageShown;
     }
 
     /** 통화별 미수 합 — 통화가 섞이면 더하면 안 된다. */
@@ -296,6 +322,62 @@ new #[Layout('components.layouts.app')] class extends Component {
         <h3 class="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer_account.usage_title') }}</h3>
         <p class="mb-3 text-[11px] text-gray-400">{{ __('buyer_account.usage_note') }}</p>
 
+        {{-- 🔀 보기 전환 (jin 2026-09-14) — **같은 사실을 두 질문으로** 본다.
+             입금별 = 「이 송금이 어디로 갔나」(남은 현금을 알려면 이쪽) ·
+             차량별 = 「이 차에 얼마 들어갔나」(판매탭과 같은 모양이라 대조할 게 없다).
+             한 잔금이 송금 둘에 걸치면 입금별에선 같은 차가 두 줄로 흩어진다 — 그게 헷갈린 자리다. --}}
+        <div class="mb-3 flex flex-wrap items-center gap-1">
+            @foreach(['receipt', 'vehicle'] as $view)
+            <button type="button" wire:click="switchUsageView('{{ $view }}')"
+                    class="rounded border px-2.5 py-1 text-xs font-medium {{ $usageView === $view
+                        ? 'border-primary bg-primary-light text-primary-text'
+                        : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                {{ __('buyer_account.usage_view_'.$view) }}
+            </button>
+            @endforeach
+            <span class="ml-1 text-[11px] text-gray-400">{{ __('buyer_account.usage_view_hint_'.$usageView) }}</span>
+        </div>
+
+        @if($usageView === 'vehicle')
+        {{-- ── 차량별 보기 ── --}}
+        @forelse($this->cashUsageByVehicle->take($usageShown) as $g)
+        <div class="mb-3 rounded-lg border border-gray-200 last:mb-0">
+            <div class="flex flex-wrap items-center gap-2 rounded-t-lg bg-gray-50 px-3 py-2">
+                <span class="font-mono text-sm font-bold {{ $g['is_fee'] ? 'text-amber-700' : 'text-gray-800' }}">{{ $g['label'] }}</span>
+                @if($g['vin'])
+                <span class="max-w-[160px] truncate font-mono text-[11px] text-gray-400" title="{{ $g['vin'] }}">{{ $g['vin'] }}</span>
+                @endif
+                <span class="ml-auto font-mono text-sm font-bold text-gray-800">{{ number_format($g['total'], 2) }}</span>
+                <span class="text-[10px] text-gray-400">{{ $g['currency'] }}</span>
+            </div>
+            <div class="divide-y divide-gray-100">
+                @foreach($g['pieces'] as $p)
+                <div class="flex flex-wrap items-center gap-2 px-3 py-1.5 text-xs">
+                    <span class="text-gray-300">└</span>
+                    <span class="font-mono font-semibold text-gray-700">{{ number_format($p['amount'], 2) }}</span>
+                    <span class="text-gray-400">{{ __('buyer_account.usage_from_receipt', [
+                        'date' => $p['received_date'],
+                        'total' => number_format($p['receipt_total'], 2),
+                    ]) }}</span>
+                    @if($p['is_vehicle_fee'])
+                    <span class="rounded bg-amber-100 px-1 py-px text-[9px] font-medium text-amber-700"
+                          title="{{ __('buyer.cash.fee_badge_hint') }}">{{ __('buyer.cash.fee_badge') }}</span>
+                    @endif
+                    @if($p['note'] !== '')
+                    <span class="text-[11px] text-gray-400">({{ $p['note'] }})</span>
+                    @endif
+                </div>
+                @endforeach
+                {{-- 조각이 둘 이상일 때만 「왜 쪼개졌나」를 적는다 — 하나면 설명할 게 없다. --}}
+                @if(count($g['pieces']) > 1)
+                <div class="px-3 py-1.5 text-[11px] text-gray-400">{{ __('buyer_account.usage_split_hint') }}</div>
+                @endif
+            </div>
+        </div>
+        @empty
+        <p class="text-xs text-gray-400">{{ __('buyer_account.not_used_yet') }}</p>
+        @endforelse
+        @else
         @forelse($this->cashUsage->take($usageShown) as $r)
         <div class="mb-3 rounded-lg border border-gray-200 last:mb-0">
             {{-- 입금 한 건 --}}
@@ -376,6 +458,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         @empty
         <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
         @endforelse
+        @endif
 
         {{-- 🧭 지우는 곳을 화면이 말해야 한다 (jin 2026-09-11 · SKILLS §8 #60).
              이 표엔 삭제가 없는 게 설계인데(원본은 판매탭·채권관리), 안내가 없어서

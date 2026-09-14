@@ -204,6 +204,75 @@ class BuyerCashSplitBalanceTest extends TestCase
             __('vehicle.panel.cash_drawn_sum', ['sum' => '100.00', 'count' => 1]), $html);
     }
 
+    // ── 차량별 보기 (jin 2026-09-14) ─────────────────────────────
+
+    /** 차량별로 묶으면 **합계가 먼저** 보이고 출처가 그 밑에 붙는다 — 판매탭과 같은 모양이다. */
+    public function test_vehicle_view_groups_the_pieces_under_one_total(): void
+    {
+        $this->enable();
+        [$buyer, $target] = $this->splitScenario();
+
+        $groups = app(BuyerAccountService::class)->cashUsageByVehicle($buyer, 20);
+        $row = $groups->firstWhere('label', $target->vehicle_number);
+
+        $this->assertNotNull($row, '차량별 보기에 그 차가 없다');
+        $this->assertEqualsWithDelta(904.0, $row['total'], 0.01, '합계가 잔금과 다르다');
+        $this->assertCount(2, $row['pieces'], '출처 두 건이 한 묶음으로 안 모였다');
+    }
+
+    /**
+     * 🚫 **두 보기가 같은 숫자를 말해야 한다.** 갈리면 대조하다 또 「꼬였다」가 된다 —
+     *    재료를 따로 질의하면 정확히 그 사고가 난다(§8 #44).
+     */
+    public function test_both_views_add_up_to_the_same_money(): void
+    {
+        $this->enable();
+        [$buyer] = $this->splitScenario();
+
+        $svc = app(BuyerAccountService::class);
+        $byReceipt = $svc->cashUsage($buyer)->flatMap->allocations->sum(fn ($a) => (float) $a->amount);
+        $byVehicle = $svc->cashUsageByVehicle($buyer)->sum(fn (array $g) => $g['total']);
+
+        $this->assertEqualsWithDelta($byReceipt, $byVehicle, 0.01, '입금별 합계와 차량별 합계가 갈린다');
+    }
+
+    /** 화면에서 보기를 바꾸면 그 차가 **한 줄**로 보인다(조각이 흩어지지 않는다). */
+    public function test_switching_the_view_renders_the_vehicle_grouping(): void
+    {
+        $this->enable();
+        [$buyer, $target] = $this->splitScenario();
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->call('switchUsageView', 'vehicle')
+            ->html();
+
+        $this->assertStringContainsString(__('buyer_account.usage_split_hint'), $html,
+            '쪼개진 묶음에 「왜 나뉘었나」 설명이 없다');
+        // 조각 둘이 한 묶음 안에 모두 있어야 한다.
+        foreach (['228.00', '676.00', '904.00'] as $n) {
+            $this->assertStringContainsString($n, $html, "차량별 보기에 {$n} 가 없다");
+        }
+    }
+
+    /** 🚫 조각이 하나뿐인 묶음엔 「왜 나뉘었나」를 안 붙인다 — 설명할 게 없다. */
+    public function test_vehicle_view_omits_the_split_hint_when_one_piece(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $v = $this->vehicle($buyer, 100);
+        $this->receipt($buyer, '2026-09-01', 500);
+        $this->balance($v, '2026-09-05', 100);
+
+        $html = Volt::actingAs($this->finance())->test('erp.buyer-account.index')
+            ->set('buyerId', (string) $buyer->id)
+            ->call('switchUsageView', 'vehicle')
+            ->html();
+
+        $this->assertStringNotContainsString(__('buyer_account.usage_split_hint'), $html);
+    }
+
     /** 두 화면이 **같은 조각 금액**을 말하는지 — 갈리면 대조하다 또 「꼬였다」가 된다. */
     public function test_both_screens_agree_on_the_same_pieces(): void
     {

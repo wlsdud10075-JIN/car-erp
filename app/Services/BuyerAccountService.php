@@ -137,6 +137,60 @@ class BuyerAccountService
     }
 
     /**
+     * 같은 현금 사용 내역을 **차량 기준**으로 다시 묶는다 (jin 2026-09-14).
+     *
+     * 🔑 **왜 두 가지 보기인가** — 같은 사실을 두 질문으로 본다.
+     *   입금별 = 「이 송금이 어디로 갔나」(남은 현금을 알려면 이쪽이 필요하다)
+     *   차량별 = 「이 차에 얼마가 들어갔나」(판매탭과 **같은 모양**이라 대조가 필요 없다)
+     *
+     * 한 잔금이 송금 둘에 걸치면 입금별 보기에선 같은 차가 두 줄로 흩어진다 — 그게
+     * 「두 번 찍혔다」로 읽힌 자리다. 차량별로 묶으면 합계가 먼저 보이고 출처가 그 밑에 붙는다.
+     *
+     * 🚫 조건을 새로 쓰지 말 것 — 재료는 `cashUsage()` 와 **같은 배분 행**이다.
+     *    여기서 따로 질의하면 두 보기가 다른 숫자를 말하게 된다(§8 #44).
+     *
+     * @return Collection<int, array{key:string, label:string, vin:?string, is_fee:bool, total:float, currency:string, pieces:array}>
+     */
+    public function cashUsageByVehicle(Buyer $buyer, ?int $limit = null): Collection
+    {
+        $groups = $this->cashUsage($buyer)          // ← 같은 출처. 상한은 묶은 뒤에 건다.
+            ->flatMap(fn ($r) => $r->allocations->map(fn ($a) => [$r, $a]))
+            ->groupBy(function (array $pair) {
+                [, $a] = $pair;
+
+                // 차량이 없는 배분(원장 수수료·과입금 정리)은 한 바구니로 모은다 —
+                // 빈칸으로 흩어 두면 「어디로 갔지」가 된다.
+                return $a->isFee() ? 'fee' : 'v:'.$a->vehicle_id;
+            });
+
+        return $groups->map(function (Collection $pairs, string $key) {
+            [$firstReceipt, $first] = $pairs->first();
+
+            return [
+                'key' => $key,
+                'is_fee' => $key === 'fee',
+                'label' => $key === 'fee'
+                    ? __('buyer.cash.fee_section')
+                    : ($first->vehicle?->vehicle_number ?? '-'),
+                'vin' => $key === 'fee' ? null : $first->vehicle?->nice_reg_vin,
+                'currency' => $firstReceipt->currency,
+                'total' => (float) $pairs->sum(fn (array $p) => (float) $p[1]->amount),
+                // 최근 것부터 — 사람은 방금 빠진 돈을 먼저 본다(입금별 보기와 같은 순서 감각).
+                'pieces' => $pairs->sortByDesc(fn (array $p) => $p[0]->received_date)->map(fn (array $p) => [
+                    'amount' => (float) $p[1]->amount,
+                    'received_date' => $p[0]->received_date?->format('Y-m-d'),
+                    'receipt_total' => (float) $p[0]->amount,
+                    'is_vehicle_fee' => $p[1]->isVehicleFee(),
+                    'note' => $p[1]->isFee() ? ($p[1]->fee?->note ?? '') : '',
+                ])->values()->all(),
+            ];
+        })
+            ->sortByDesc(fn (array $g) => $g['pieces'][0]['received_date'] ?? '')
+            ->when($limit !== null, fn (Collection $c) => $c->take($limit))
+            ->values();
+    }
+
+    /**
      * 통화별 현금 — 받은 / 쓴 / 남은. 남은 값은 `BuyerCashReceipt::balanceFor` 와 **같은 뺄셈**이다
      * (게이트가 그걸 쓰므로, 여기서 다른 식을 쓰면 화면과 차단 판정이 갈린다).
      *
