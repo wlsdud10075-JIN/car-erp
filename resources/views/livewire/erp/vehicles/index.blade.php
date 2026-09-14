@@ -66,6 +66,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url(as: 'brq')] public array $boardFilters = [];
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
     #[Url] public string $cancelFilter = '';
+    /**
+     * 🗑️ 「말소 필요」 토글 (jin 2026-09-14) — 매입 완납 + 말소 미처리 + 완납 후 N일 경과.
+     * 🚫 진행상태에 「말소중」을 만들지 않기로 한 대신 목록에서 찾게 하는 것이다(Vehicle::scopeAction 주석).
+     */
+    #[Url(as: 'task')] public string $taskFilter = '';
     // 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지). transport_fee = 입력값.
     #[Url] public string $freightExact = '';
     // 차대번호(VIN) 검색 (item 3, jin 2026-07-24) — 메인 검색과 분리(차번호·수출신고번호 등 숫자/코드 충돌 방지).
@@ -1506,7 +1511,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
             'sortColumn', 'sortDirection', 'freightExact', 'vinSearch', 'sailingFilter',
-            'shipmentFilter', 'shipmentMonth',
+            'shipmentFilter', 'shipmentMonth', 'taskFilter',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
         $this->dateFrom = now()->subYear()->format('Y-m-d');
@@ -1997,6 +2002,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->sailingFilter = ($this->sailingFilter === $phase) ? '' : $phase;
 
         unset($this->vehicles, $this->sailingCounts);
+        $this->resetPage();
+    }
+
+    /**
+     * 🗑️ 작업 필터 토글 (말소 필요) — 같은 걸 다시 누르면 해제(운항 필터와 같은 동작).
+     * ⚠️ 메서드명을 `taskFilter` 로 하지 말 것 — 프로퍼티와 같은 이름이면 버튼이 조용히 죽는다(§8 #32).
+     */
+    public function toggleTask(string $key): void
+    {
+        $this->taskFilter = ($this->taskFilter === $key) ? '' : $key;
+
+        unset($this->vehicles);
         $this->resetPage();
     }
 
@@ -2714,6 +2731,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where(fn ($q2) => $q2->where('sale_unpaid_amount_krw_cache', '<=', 0)->orWhereNull('sale_unpaid_amount_krw_cache')))
             ->when($this->cancelFilter === 'closed', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_CLOSED))
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_NONE))
+            // 🗑️ 말소 필요 — 조건을 옮겨 적지 말 것. scopeAction 단일 출처(§8 #44).
+            ->when($this->taskFilter === 'deregistration', fn ($q) => $q->action('deregistration_due'))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -7018,6 +7037,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($this->sailingCounts[$s['phase']]) }})
             </button>
             @endforeach
+        </div>
+
+        {{-- 🗑️ 말소 필요 (jin 2026-09-14) — 매입 완납 + 말소 미처리 + 완납 후 N일 경과.
+             진행상태와 **다른 축**이다: 판매중·선적중이어도 말소가 안 됐으면 여기 뜬다.
+             ⚠️ 색은 **빌드된 app.css 에 있는 것만** — rose 계열은 기존 pill 이 쓰고 있어 안전하다(§8 #50). --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
+            @php $deregOn = $taskFilter === 'deregistration'; @endphp
+            <button type="button" wire:click="toggleTask('deregistration')"
+                    title="{{ __('vehicle.filter_dereg_hint', ['days' => \App\Models\Vehicle::deregistrationDueDays()]) }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition
+                           {{ $deregOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+                {{ $deregOn ? '✓ ' : '' }}🗑️ {{ __('vehicle.filter_dereg') }}
+            </button>
         </div>
 
         {{-- 서류 발송(EMS·DHL) 필터 (jin 2026-08-31) — 진행상태·운항과 또 다른 축.

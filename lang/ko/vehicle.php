@@ -123,6 +123,8 @@ return [
     'filter_ship_month' => '발송월',
     'filter_ship_month_ph' => '202607',
     'filter_ship_hint' => '서류 발송(EMS·DHL) 축 — 진행상태와 별개다',
+    'filter_dereg' => '말소 필요',
+    'filter_dereg_hint' => '매입 완납 후 :days일이 지났는데 말소가 안 된 차 — 진행상태와 별개라 판매중·선적중도 나온다',
 
     'date_type' => [
         'purchase' => '매입일',

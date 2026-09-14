@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\LockThresholdResolver;
+use App\Support\AlimtalkRecipients;
 use App\Support\SearchTerm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -3264,6 +3265,37 @@ class Vehicle extends Model
                 // 큐 22-C-E (2026-05-20) — 2컬럼 DROP 후 단순화. purchase_unpaid 부호 반전.
                 ->whereRaw(self::purchaseUnpaidRawExpr().' <= 0', [now()->toDateString()]),
 
+            /*
+             * 🗑️ **말소 필요(작업 대기)** — 위 큐 중 **완납 후 N일 경과분만** (jin 2026-09-14).
+             *
+             * jin: *「완납되고 D+2 일부터 말소중 토글에 솔팅될 수 있도록. 알림톡도 가긴 하지만
+             *        화면에서 찾기가 어려움.」*
+             *
+             * 🚫 **진행상태(cascade)에 「말소중」을 새로 만들지 않았다**(jin 2026-09-14 「다」안).
+             *    cascade 는 **판매가 말소보다 먼저**라, 팔린 차는 말소 단계가 아예 안 보인다
+             *    (그래서 지금 「말소완료」로 보이는 차도 안 팔린 것뿐이다 — 실측 ssancarerp 29 · heymanerp 11).
+             *    단계를 끼우면 실측 ssancarerp 306대 중 **3대**만 잡히고(나머지는 이미 판매 단계),
+             *    말소를 판매 위로 올리면 **306대가 판매중·판매완료에서 통째로 빠져나가** 판매 통계가 흔들린다.
+             *    ⇒ 「찾기 어렵다」만 푸는 **목록 필터**로 했다. 기존 숫자는 하나도 안 바뀐다.
+             *
+             * 🔑 **일수는 알림톡 설정을 그대로 읽는다**(`deregistrationDueDays()`).
+             *    새 상수를 만들면 화면과 알림톡이 다른 날에 걸려 「알림은 왔는데 목록엔 없다」가 된다.
+             */
+            /*
+             * ⚠️ **`DATE(...)` 로 감싸는 것이 필수다** — 안 감싸면 **경계에서 하루가 갈린다**(§8 #36).
+             *    운영 MySQL 은 `date` 컬럼이라 `2026-09-12` 로 저장되는데, 테스트 SQLite 는 Eloquent
+             *    `date` 캐스트가 `2026-09-12 00:00:00` 으로 쓴다. 문자열 비교라 같은 날이 MySQL 에선
+             *    포함되고 SQLite 에선 빠진다 ⇒ **테스트가 초록인 채로 운영만 하루 이르게 뜬다.**
+             *    실제로 이 가드를 깨뜨려 보다 「완납 당일」 케이스가 안 빨개져서 발견했다(§8 #73).
+             */
+            'deregistration_due' => $q->action('deregistration_needed')
+                ->whereRaw('DATE((SELECT MAX(p.payment_date) FROM purchase_balance_payments p'
+                    .' WHERE p.vehicle_id = vehicles.id AND p.confirmed_at IS NOT NULL'
+                    .' AND p.payment_date IS NOT NULL AND DATE(p.payment_date) <= ?)) <= ?', [
+                        now()->toDateString(),
+                        now()->subDays(self::deregistrationDueDays())->toDateString(),
+                    ]),
+
             // ── 통관 role (8) ──
             // 2026-05-20 #1 피드백 — 수출통관 후보 차량 (말소 대기 + 통관 준비 합집합).
             // 사용자 의도 원문: 수출통관 사이드바에 두 그룹 차량 솔팅.
@@ -3525,6 +3557,18 @@ class Vehicle extends Model
             ->where(fn ($q2) => $q2
                 ->whereNull('shipping_date')
                 ->orWhere('shipping_date', '>', self::departedDateBoundary()));
+    }
+
+    /**
+     * 🗑️ 「말소 필요」로 뜨기까지의 일수 — **알림톡 설정이 단일 출처**다 (jin 2026-09-14).
+     *
+     * 🚫 숫자를 여기 박지 말 것. 회사별로 「알림톡 안내」 화면에서 바꿀 수 있고(기본 2),
+     *    박아 두면 **알림은 왔는데 목록엔 안 뜨는** 날이 생긴다(§8 #60 — 화면에 안 보이는 규칙).
+     * ⚠️ 확대 단계 중 **첫 단계(영업)** 를 쓴다 — 담당자에게 처음 알림이 가는 날과 목록 진입이 같아야 한다.
+     */
+    public static function deregistrationDueDays(): int
+    {
+        return AlimtalkRecipients::escalationDays('erp_deregistration_reminder', '영업');
     }
 
     public function scopeExcludeReceivableGrace(Builder $q): Builder
