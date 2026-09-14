@@ -3416,11 +3416,52 @@ class Vehicle extends Model
      * ℹ️ 2026-08-20 부터 `Vehicle::saving` 이 B/L 발급 시 출고일을 선적일로 자동 채우므로 신규 차량엔
      *    `bl_document` 분기가 거의 안 걸린다. 선적일조차 없는 예외를 위한 안전망으로 남긴다.
      */
+    /**
+     * 「이미 떠났나」 — 채권 선적전/후 pivot 의 **단일 출처**.
+     *
+     * 🔀 **2026-09-14 (jin) — 선적일·B/L 번호를 더했다.** 그 전엔 「출고일 또는 B/L 파일」뿐이었는데,
+     *    출고일은 **거래완료가 되어야** 자동으로 찍히고 거래완료는 **B/L 파일**을 요구한다 ⇒
+     *    **두 문이 결국 같은 하나에 물려 있었다.** 파일을 안 올리는 회사에선 선적후 미수가
+     *    **구조적으로 영원히 0** 이다(실측: ssancarerp 미수 459대 중 0, karabaerp 0 — B/L 파일이
+     *    각각 14/4794, 0/전체). heymanerp 만 파일을 올려서(149/294) 살아 있었다.
+     *
+     *    jin: *「선적일만 찍혀 있어도 재고로는 잡혀 있지만 선적후 미수로는 잡히고,
+     *          거래완료되면 자연스레 빠지는 거고.」* — 사람이 **실제로 찍는 값**을 기준으로 삼는다.
+     *    ➕ **B/L 발행일**도 넣는다 — 선하증권 발급 = 물건이 넘어갔다는 뜻이고, 파일 업로드와 무관해서
+     *       3사에서 똑같이 작동한다(heymanerp 45대 기입 중).
+     *    🚫 **`bl_number` 는 쓰지 않는다**(2026-09-14 실측으로 기각) — 자유 입력칸이라 메모장처럼
+     *       쓰이고 있다. ssancarerp 미수 237대가 「번호 있음」으로 잡히는데 그중 **120대가 빈 문자열**,
+     *       10대가 `-`, 4대가 「인천항에 있음」·「야드위치」 같은 **한글 메모**였다.
+     *       「인천항에 있음」은 **아직 안 떠났다**는 뜻이라 정반대로 읽힌다.
+     *       모양 검사로 거르는 규칙은 곧 뚫린다(띄어쓴 번호·슬래시 넣은 번호) — 돈 분류를 거기 걸지 않는다.
+     *
+     * 🚫 **미래 선적일은 제외한다** — 배를 미리 잡아 둔 차(ETD 가 다음 주)를 오늘 「떠났다」로
+     *    보면 안 된다. 실측 당시엔 0건이었지만 앞으로 생긴다.
+     * 🚫 **반입지(`bl_loading_location`)는 안 본다** — 항구 주차장에 세운 것이라 돈 관점에선 아직이다
+     *    (2026-07-18 jin 결정, SKILLS §8 #55). 그 규칙은 그대로다.
+     *
+     * ⚠️ 조건을 옮겨 적지 말고 이 스코프를 쓸 것 — 채권 분류는 화면·대시보드·알림톡·포털에 흩어져 있다(§8 #45).
+     * ⚠️ 순수 확대다 — 전에 선적후였던 차가 선적전으로 가는 일은 없다(가드가 단언한다).
+     */
     public function scopeDeparted(Builder $q): Builder
     {
         return $q->where(fn ($q2) => $q2
             ->whereNotNull('warehouse_out_date')
-            ->orWhereNotNull('bl_document'));
+            ->orWhereNotNull('bl_document')
+            ->orWhere('bl_issue_date', '<=', self::departedDateBoundary())
+            ->orWhere('shipping_date', '<=', self::departedDateBoundary()));
+    }
+
+    /**
+     * 「오늘까지」의 경계값.
+     *
+     * ⚠️ `'Y-m-d'` 로 비교하지 말 것 — SQLite 는 date 컬럼을 `'Y-m-d 00:00:00'` 로 저장해서
+     *    `shipping_date <= '2026-09-14'` 가 **오늘 선적한 차를 놓친다**(문자열 비교라 00:00:00 이 더 크다).
+     *    `whereDate()` 는 인덱스를 죽이므로 범위 비교를 쓴다(`scopeSailing` 과 같은 관례).
+     */
+    public static function departedDateBoundary(): string
+    {
+        return now()->toDateString().' 23:59:59';
     }
 
     /**
@@ -3430,18 +3471,58 @@ class Vehicle extends Model
      *    예외 없이 **Builder 객체가 돌아온다** — JSON 에 그대로 실려도 아무도 모른다.
      *
      * ⚠️ SQL 과 PHP 는 표현이 다를 수밖에 없어 **두 벌이 된다.** 그래서
-     *    `PortalVehicleApiTest::test_is_departed_agrees_with_the_scope` 가 둘의 일치를 강제한다
-     *    (`SailingStatusTest::test_scope_and_accessor_agree` 와 같은 형태).
+     *    `PortalVehicleApiTest::test_is_departed_agrees_with_the_scope` 가 둘의 일치를 강제한다.
      */
     public function isDeparted(): bool
     {
-        return filled($this->warehouse_out_date) || filled($this->bl_document);
+        return self::departedFrom(
+            $this->warehouse_out_date, $this->bl_document, $this->bl_issue_date, $this->shipping_date
+        );
     }
 
-    /** 아직 안 떠난 차 — scopeDeparted 의 정확한 여집합(출고일도 B/L 도 없음). */
+    /**
+     * 원시 값에서의 판정 — **`isDeparted()` 와 같은 규칙, 같은 코드**.
+     *
+     * 🔑 관리자 대시보드는 미수를 `select(...)->chunk()` 로 도는데(수천 행) 행마다 모델을 만들 수
+     *    없다. 그렇다고 조건을 옮겨 적으면 **화면과 대시보드가 갈린다**(§8 #45 — 실제로 그렇게
+     *    적혀 있었다). 그래서 판정만 여기로 뽑아 양쪽이 같은 것을 부른다.
+     * ⚠️ 부르는 쪽은 `bl_number`·`shipping_date` 를 **select 에 포함**해야 한다 — 빠지면 늘 null 이라
+     *    조용히 「선적전」이 된다(§8 #83 의 그 형태).
+     */
+    public static function departedFrom(mixed $out, mixed $blDoc, mixed $blIssued, mixed $shipping): bool
+    {
+        if (filled($out) || filled($blDoc)) {
+            return true;
+        }
+
+        // 🚫 **미래 날짜는 아직 안 떠난 것** — 배를 미리 잡아 둔 차(ETD 가 다음 주)를
+        //    오늘 「떠났다」로 보면 안 된다. 두 날짜에 같은 규칙을 쓴다.
+        foreach ([$blIssued, $shipping] as $raw) {
+            if (blank($raw)) {
+                continue;
+            }
+            $date = $raw instanceof \DateTimeInterface
+                ? $raw->format('Y-m-d')
+                : substr((string) $raw, 0, 10);
+            if ($date <= now()->toDateString()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** 아직 안 떠난 차 — `scopeDeparted` 의 **정확한 여집합**. 넷 다 없어야 한다. */
     public function scopeNotDeparted(Builder $q): Builder
     {
-        return $q->whereNull('warehouse_out_date')->whereNull('bl_document');
+        return $q->whereNull('warehouse_out_date')
+            ->whereNull('bl_document')
+            ->where(fn ($q2) => $q2
+                ->whereNull('bl_issue_date')
+                ->orWhere('bl_issue_date', '>', self::departedDateBoundary()))
+            ->where(fn ($q2) => $q2
+                ->whereNull('shipping_date')
+                ->orWhere('shipping_date', '>', self::departedDateBoundary()));
     }
 
     public function scopeExcludeReceivableGrace(Builder $q): Builder
