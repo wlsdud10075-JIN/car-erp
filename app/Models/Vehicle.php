@@ -3120,11 +3120,13 @@ class Vehicle extends Model
             return 'safe';
         }
 
-        // 결제대기 유예 (jin 2026-07-06, A안) — 선적 전(출고 전 = warehouse_out_date 없음) 미수는
+        // 결제대기 유예 (jin 2026-07-06, A안) — **아직 안 떠난** 차의 미수는
         //   판매일 + RECEIVABLE_GRACE_DAYS 지나야 채권. 그 전엔 'grace'(정상 결제 대기, 채권 아님).
-        //   선적 후(출고 = 출항)는 유예 없이 즉시 위험. ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
-        //   pivot=출고일(jin 2026-07-18): 반입지 입력돼도 출고 전이면 항구 주차장=선적전. (구 pivot=bl_loading_location)
-        if (blank($this->warehouse_out_date) && $this->sale_date
+        //   **떠난 차는 유예 없이 즉시 위험.** ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
+        // 🚨 「떠났나」는 반드시 isDeparted() 단일 출처를 쓸 것 — 조건을 옮겨 적지 말 것(§8 #97-B).
+        //   2026-07-18 판은 출고일만, 08-20 판은 출고일·B/L 파일만 봤는데 09-14 에 스코프만 4신호로
+        //   넓어져 **같은 질문에 세 세대가 공존**했다. 그래서 세 곳을 한 커밋에 여기로 통일했다(jin 승인).
+        if (! $this->isDeparted() && $this->sale_date
             && $this->sale_date->copy()->addDays(Setting::graceDays())->startOfDay()->isFuture()) {
             return 'grace';
         }
@@ -3528,9 +3530,9 @@ class Vehicle extends Model
     public function scopeExcludeReceivableGrace(Builder $q): Builder
     {
         // 유예 = **아직 안 떠난** 차의 미수 중 판매일+유예일 미경과분. 떠난 차는 유예 없이 즉시 채권이다.
+        // 🚨 「떠났나」는 notDeparted() 단일 출처 — 조건을 옮겨 적지 말 것(§8 #97-B).
         return $q->whereNot(fn ($q2) => $q2
-            ->whereNull('warehouse_out_date')
-            ->whereNull('bl_document')
+            ->notDeparted()
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString()));
     }
@@ -3541,8 +3543,7 @@ class Vehicle extends Model
      */
     public function scopeOnlyReceivableGrace(Builder $q): Builder
     {
-        return $q->whereNull('warehouse_out_date')
-            ->whereNull('bl_document')
+        return $q->notDeparted()
             ->whereNotNull('sale_date')
             ->where('sale_date', '>', now()->subDays(Setting::graceDays())->toDateString());
     }
