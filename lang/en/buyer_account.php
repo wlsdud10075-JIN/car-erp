@@ -22,6 +22,8 @@ return [
     'not_used_yet' => 'Not applied yet.',
     'col_used_at' => 'Applied on',
     'col_used_amount' => 'Applied amount',
+    'used_of_balance' => 'of :total balance',
+    'used_of_balance_hint' => 'Part of this vehicle balance. Cash is drawn oldest-receipt-first, so one balance can be covered by several receipts — it was not paid twice.',
     'usage_more' => 'Show :count older receipts',
     'sort_unpaid_note' => 'Sorted in the vehicle currency (grouped by currency).',
 

@@ -122,7 +122,11 @@ class BuyerAccountService
             ->with([
                 'allocations' => fn ($q) => $q->orderBy('id'),
                 'allocations.vehicle:id,vehicle_number,nice_reg_vin',
-                'allocations.finalPayment:id,payment_date,type',   // ⚠️ type 필수 — 빼면 isVehicleFee() 가 늘 false
+                // ⚠️ type 필수 — 빼면 isVehicleFee() 가 늘 false
+                // ⚠️ amount 필수 — 빼면 「잔금 얼마 중 얼마」 표기가 통째로 사라진다(jin 2026-09-14).
+                //    한 잔금이 입금 둘에 걸치면 같은 차가 두 줄로 보이는데, 총액이 없으면
+                //    사람이 **두 번 낸 것으로 읽는다** — 실제로 그렇게 읽혔다.
+                'allocations.finalPayment:id,payment_date,type,amount',
                 'allocations.fee:id,charged_date,note,kind',   // ⚠️ kind 필수 — 빼면 과입금 정리가 「수수료」로 보인다   // 💸 수수료 배분(2026-09-08) — 차량 대신 이걸 그린다
             ])
             // 최근 입금부터 — 사람은 방금 들어온 돈을 먼저 본다.
