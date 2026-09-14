@@ -2843,17 +2843,19 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 > 회사에선 선적후 미수가 **구조적으로 영원히 0** 이었다(배포 전 실측 ssancarerp 459대 중 0 · karabaerp 0).
 > 배포 후 ssancarerp = **선적후 165 · 선적전 294**. 🚫 `bl_number` 는 **안 쓴다**(자유 입력칸 — 빈 문자열·`-`·한글 메모).
 > 날짜는 **과거만**(미래 선적일은 아직 안 떠난 것), 경계는 **오늘 포함**. 상세 = §8 #97.
-> ⚠️ **유예(grace) 쪽은 아직 안 따라왔다** — `scopeExcludeReceivableGrace`·`scopeOnlyReceivableGrace` 는 08-20 판(2신호),
-> `getReceivableRiskComputedAttribute` 의 유예 분기는 **07-18 판(출고일만)** 이다. 아래 「단일출처 반영 지점」 목록을
-> **그대로 믿지 말 것** — 세 세대가 공존한다. 선적일만 찍힌 차가 「선적후 미수」이면서 「결제대기」가 될 수 있다.
-> 🔢 3사 실측 0건(2026-09-14)이라 현재 틀린 화면은 없다. 🚫 **맞추면 독촉·채권 큐 모수가 늘어나므로 jin 승인 후**,
-> 그리고 **세 곳을 한 커밋에**(하나만 고치면 목록과 위험도 컬럼이 갈린다). 상세 = 메모리 `project_departed_pivot`.
+> ✅ **유예(grace) 쪽도 같은 날 맞췄다**(jin 승인, 세 곳 한 커밋). 배포 직후엔 스코프만 4신호로 넓어지고
+> `scopeExcludeReceivableGrace`·`scopeOnlyReceivableGrace` 는 08-20 판(2신호), `getReceivableRiskComputedAttribute`
+> 의 유예 분기는 **07-18 판(출고일만)** 이라 **같은 질문에 세 세대가 공존**했다 — 선적일만 찍힌 차가
+> 「선적후 미수」이면서 동시에 「결제대기」가 될 수 있었다(3사 실측 0건이라 화면이 틀린 적은 없다).
+> 🔑 **0 일 때 고치는 게 제일 싸다** — 바뀌는 화면이 없는 걸 확인하면서 맞출 수 있다.
+> 🚫 아래 「단일출처 반영 지점」에 새 항목을 추가할 때 **조건을 옮겨 적지 말 것** — `notDeparted()` / `isDeparted()` 를 부른다.
+> 가드 = `ReceivableGraceUsesDepartedTest`(기능 5 + **정적 검사 1**). 상세 = §8 #97-B · 메모리 `project_departed_pivot`.
 
 - `Vehicle::RECEIVABLE_GRACE_DAYS = 10`.
 - **선적전/후 미수 pivot = `warehouse_out_date`(출고일)** — 구 pivot=`bl_loading_location`(반입지). 사용자 규칙: 반입지 입력했어도 출고 전이면 **항구 주차장 대기 = 선적전 미수**. 실제 출항(출고일 찍힘) = 선적후 미수.
 - 선적 전(출고 전, `warehouse_out_date` 없음) 미수는 `sale_date + 10일` 전까지 `grace`(결제대기)로 보고 채권/선적전 미수 알림에서 제외한다.
 - 선적 후(출고 = 출항) 미수는 유예 없이 즉시 채권이다.
-- **단일출처 반영 지점(전부 출고일 pivot)**: `Vehicle::getReceivableRiskComputedAttribute` · `scopeExcludeReceivableGrace` · `scopeOnlyReceivableGrace` · `scopeAction('receivable_before_shipping'/'receivable_after_shipping')` · 채권관리 `receivables/index`(classification 인라인) · 관리자 대시보드 `receivableKpis`(classification 인라인) · **`AlimtalkDepositCash`(보증금 독촉 대상, 2026-07-30 합류)**. 알림톡 daily/weekly·InternalPortal은 scope 경유(자동).
+- **단일출처 반영 지점(전부 `departed()`/`isDeparted()` 경유 — 2026-09-14 통일)**: `Vehicle::getReceivableRiskComputedAttribute` · `scopeExcludeReceivableGrace` · `scopeOnlyReceivableGrace` · `scopeAction('receivable_before_shipping'/'receivable_after_shipping')` · 채권관리 `receivables/index` · 관리자 대시보드 `receivableKpis`(`departedFrom` — raw row 라 모델이 없다) · **`AlimtalkDepositCash`(보증금 독촉 대상, 2026-07-30 합류)**. 알림톡 daily/weekly·InternalPortal은 scope 경유(자동).
 - 🚢 **"선적됐나"를 `bl_loading_location`(반입지)으로 판정하지 말 것 — 돈 관점에선 항상 출고일.** 반입지는 **항구 주차장에 세우려고 먼저 찍는다**(RORO 「선적대기 허용 항로」 = `Port::allow_shipping_wait`, 현재 DURRESS/ALBANIA). 2026-07-23 에 만든 `AlimtalkDepositCash` 가 `whereNull('bl_loading_location')` 을 써서 **입금 0원인 차의 독촉이 "주차했다"는 이유로 조용히 꺼져 있었다**(실측 heymanerp 9대 중 7대, 5대가 입금 0%). 2026-07-30 출고일로 교정. ⚠️ **pivot 을 07-18 에 정했는데 5일 뒤 만든 코드가 안 따라온 사례** — 새 쿼리를 쓸 때 이 목록을 먼저 볼 것. 반입지는 **진행상태(v4 cascade)** 판정에만 쓴다.
 - 시간 경과에 따른 `grace` → 채권 전환은 야간 `vehicles:rebuild-caches`(05:00)로 반영된다. **⚠️ pivot 변경 배포 직후 = 기존 데이터 1회 cache rebuild 필요**(`receivable_risk` 캐시가 옛 pivot 기준). 또한 이미 출항했지만 `warehouse_out_date` 미입력인 기존 차량은 출고일을 채워야 선적후로 잡힌다(미입력이면 선적전으로 표시 — 규칙상 정상).
 - 채권관리 위험도 필터에 `grace` 옵션이 있으므로 결제대기 차량만 따로 확인 가능하다.
