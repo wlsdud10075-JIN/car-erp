@@ -8624,15 +8624,25 @@ function vehicleColumnsToggle() {
                 @endphp
                 @if(!empty($row['transfer_locked']))
                 {{-- 2026-07-28 — 매입 선지급(보증금)으로 생성된 잔금: append-only 라 읽기전용. 판매 잔금 이체행과 동일 취급. --}}
-                <div class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                {{-- 📱 `flex-wrap` — 칸 너비가 **데스크탑 패널(700px) 기준 픽셀**로 박혀 있어
+                     390px 폰에서는 다 못 들어간다. 줄바꿈이 없으면 넘치는 대신 **비고칸이 0px 로
+                     찌그러지고**, 부모가 `overflow-y-auto` 라 `overflow-x` 도 auto 가 되어
+                     **탭이 통째로 옆으로 밀린다**(jin 2026-09-14 제보).
+                     데스크탑은 폭이 남아 줄이 안 바뀐다 — 렌더 무변화. --}}
+                <div class="flex flex-wrap gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
                     <span class="text-xs text-gray-400">🔒</span>
                     <span class="w-24 text-sm text-gray-600">{{ number_format((float)$row['amount']) }}</span>
                     <span class="w-28 text-sm text-gray-600">{{ $row['payment_date'] ?: '-' }}</span>
-                    <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
+                    <span class="grow basis-full sm:basis-0 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
                     <span class="text-[10px] font-semibold text-indigo-600 whitespace-nowrap">{{ __('vehicle.panel.transfer_locked_pbp') }}</span>
                 </div>
                 @else
-                <div class="flex gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
+                {{-- 📱 `flex-wrap` — 칸 너비가 **데스크탑 패널(700px) 기준 픽셀**로 박혀 있어
+                     390px 폰에서는 다 못 들어간다. 줄바꿈이 없으면 넘치는 대신 **비고칸이 0px 로
+                     찌그러지고**, 부모가 `overflow-y-auto` 라 `overflow-x` 도 auto 가 되어
+                     **탭이 통째로 옆으로 밀린다**(jin 2026-09-14 제보).
+                     데스크탑은 폭이 남아 줄이 안 바뀐다 — 렌더 무변화. --}}
+                <div class="flex flex-wrap gap-2 items-center rounded border px-2 py-1 {{ $pbpRowBg }}">
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.amount" type="text" data-money
                            class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="width: 96px; flex: none;"
@@ -8642,7 +8652,7 @@ function vehicleColumnsToggle() {
                            style="width: 112px; flex: none;"
                            @if(!$canConfirmFinance) disabled @endif />
                     <input wire:model="purchaseBalancePayments.{{ $idx }}.note" type="text"
-                           class="input-base flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           class="input-base grow basis-full sm:basis-0 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
                            style="min-width: 0;"
                            placeholder="{{ __('vehicle.ph.note') }}" @if(!$canConfirmFinance) disabled @endif />
                     @if(!empty($row['id']))
@@ -9069,13 +9079,18 @@ function vehicleColumnsToggle() {
                     $textMutedClass = $isVoided ? 'text-gray-500' : ($pendingVoid ? 'text-amber-800' : 'text-violet-800');
                     $textMetaClass = $isVoided ? 'text-gray-400' : ($pendingVoid ? 'text-amber-600' : 'text-violet-600');
                 @endphp
-                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
+                {{-- 📱 `flex-wrap` — 칸 너비가 **데스크탑 패널(700px) 기준 픽셀**로 박혀 있어
+                     390px 폰에서는 다 못 들어간다. 줄바꿈이 없으면 넘치는 대신 **비고칸이 0px 로
+                     찌그러지고**, 부모가 `overflow-y-auto` 라 `overflow-x` 도 auto 가 되어
+                     **탭이 통째로 옆으로 밀린다**(jin 2026-09-14 제보).
+                     데스크탑은 폭이 남아 줄이 안 바뀐다 — 렌더 무변화. --}}
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex flex-wrap gap-2 items-center rounded {{ $boxClass }} px-2 py-1.5 border">
                     <span class="text-xs">{{ $isVoided ? '⊘' : ($pendingVoid ? '⏳' : '🔁') }}</span>
                     <span class="w-24 text-sm font-semibold {{ $isVoided ? 'text-gray-500 line-through' : ($row['transfer']['direction'] === 'outgoing' ? 'text-red-600' : 'text-emerald-700') }}">
                         @php $tAmt = (float) $row['amount']; @endphp
                         {{ number_format($tAmt, fmod($tAmt, 1) == 0.0 ? 0 : 2) }} {{ $row['transfer']['currency'] }}
                     </span>
-                    <span class="flex-1 text-xs {{ $textMutedClass }}">
+                    <span class="grow basis-full sm:basis-0 text-xs {{ $textMutedClass }}">
                         @php $cpNum = $row['transfer']['counterpart_number'] ?? '#'.$row['transfer']['counterpart_id']; @endphp
                         @if($row['transfer']['direction'] === 'outgoing')
                             {!! __('vehicle.panel.transfer_out', ['number' => '<span class="font-mono">'.e($cpNum).'</span>']) !!}
@@ -9102,7 +9117,12 @@ function vehicleColumnsToggle() {
                     @endif
                 </div>
                 @elseif(!empty($row['locked']))
-                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
+                {{-- 📱 `flex-wrap` — 칸 너비가 **데스크탑 패널(700px) 기준 픽셀**로 박혀 있어
+                     390px 폰에서는 다 못 들어간다. 줄바꿈이 없으면 넘치는 대신 **비고칸이 0px 로
+                     찌그러지고**, 부모가 `overflow-y-auto` 라 `overflow-x` 도 auto 가 되어
+                     **탭이 통째로 옆으로 밀린다**(jin 2026-09-14 제보).
+                     데스크탑은 폭이 남아 줄이 안 바뀐다 — 렌더 무변화. --}}
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" class="flex flex-wrap gap-2 items-center rounded bg-gray-50 px-2 py-1.5 border border-gray-200">
                 @php
                     $lockedAmt = (float) str_replace(',', '', $row['amount'] ?? '0');
                     $lockedRate = (float) str_replace(',', '', $row['exchange_rate'] ?? '');
@@ -9127,7 +9147,7 @@ function vehicleColumnsToggle() {
                         {{ $lockedRate > 0 && $lockedAmt > 0 ? '₩'.number_format($lockedAmt * $lockedRate) : '' }}
                     </span>
                     @endif
-                    <span class="flex-1 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
+                    <span class="grow basis-full sm:basis-0 min-w-0 text-xs text-gray-400 truncate" title="{{ $row['note'] ?: '' }}">{{ $row['note'] ?: '' }}</span>
                     <a href="{{ route('erp.receivables.index', ['openVehicle' => $this->editingId]) }}" wire:navigate
                        class="text-xs text-violet-500 hover:underline whitespace-nowrap">{{ __('vehicle.panel.edit_in_receivables') }}</a>
                 </div>
@@ -9142,7 +9162,12 @@ function vehicleColumnsToggle() {
                 {{-- wire:key 필수 — removeFinalPayment 가 array_values() 로 재인덱싱하므로(§4) 키가 없으면
                      morph 가 행을 위치로만 맞춘다. KRW 환산칸은 wire:model 이 없는 순수 DOM 값이라
                      되돌려줄 근거가 없어, 중간 행을 지우면 환산액이 한 칸 밀려 남는다. --}}
-                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" data-fp-row class="flex gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
+                {{-- 📱 `flex-wrap` — 칸 너비가 **데스크탑 패널(700px) 기준 픽셀**로 박혀 있어
+                     390px 폰에서는 다 못 들어간다. 줄바꿈이 없으면 넘치는 대신 **비고칸이 0px 로
+                     찌그러지고**, 부모가 `overflow-y-auto` 라 `overflow-x` 도 auto 가 되어
+                     **탭이 통째로 옆으로 밀린다**(jin 2026-09-14 제보).
+                     데스크탑은 폭이 남아 줄이 안 바뀐다 — 렌더 무변화. --}}
+                <div wire:key="fp-{{ $row['id'] ?? 'n'.$idx }}" data-fp-row class="flex flex-wrap gap-2 items-center rounded border px-2 py-1 {{ $rowBg }}">
                     {{-- 순서: 날짜 / 환율 / 금액 / 환율변환금액 / 비고 (jin 2026-07-13). --}}
                     {{-- 날짜 = wire:model.live → 그 날짜 마감환율 자동기입(updatedFinalPayments, 미확정·외화만). --}}
                     <input wire:model.live="finalPayments.{{ $idx }}.payment_date" type="text" data-date class="input-base"
@@ -9170,7 +9195,7 @@ function vehicleColumnsToggle() {
                            placeholder="₩0" title="{{ __('vehicle.panel.krw_converted') }}" />
                     @endif
                     {{-- 비고 --}}
-                    <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base flex-1"
+                    <input wire:model="finalPayments.{{ $idx }}.note" type="text" class="input-base grow basis-full sm:basis-0"
                            style="min-width: 0;" placeholder="{{ __('vehicle.ph.note') }}" />
                     @if($row['id'])
                         @if($isConfirmed)
