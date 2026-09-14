@@ -12,6 +12,7 @@ return [
     'unassigned' => '미지정',
     'empty' => '바이어가 없습니다.',
     'delete_confirm' => ':name 바이어를 삭제하시겠습니까?',
+    'delete_confirm_simple' => '이 바이어를 삭제할까요? 되돌릴 수 없습니다.',
     'saved' => '바이어 정보가 저장됐습니다.',
     'deleted' => '바이어가 삭제됐습니다.',
     'col_name' => '바이어명',

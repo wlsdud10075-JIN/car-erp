@@ -10,6 +10,7 @@ return [
     'all_buyers' => 'All Buyers',
     'empty' => 'No consignees.',
     'delete_confirm' => 'Delete consignee :name?',
+    'delete_confirm_simple' => 'Delete this consignee? This cannot be undone.',
     'saved' => 'Consignee saved.',
     'deleted' => 'Consignee deleted.',
 

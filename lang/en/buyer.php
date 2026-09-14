@@ -12,6 +12,7 @@ return [
     'unassigned' => 'Unassigned',
     'empty' => 'No buyers.',
     'delete_confirm' => 'Delete buyer :name?',
+    'delete_confirm_simple' => 'Delete this buyer? This cannot be undone.',
     'saved' => 'Buyer saved.',
     'deleted' => 'Buyer deleted.',
     'col_name' => 'Buyer Name',
