@@ -2152,9 +2152,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 큐 18: close confirm 모달 (.card) --}}
 <div x-show="confirmOpen" x-cloak x-transition.opacity
-     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3"
      @click.self="confirmOpen = false">
-    <div class="card max-w-sm mx-4 shadow-2xl">
+    <div class="card max-w-sm mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('common.unsaved_title') }}</h3>
         <p class="mt-2 text-sm text-gray-600">{{ __('common.unsaved_body') }}</p>
         <div class="mt-5 flex justify-end gap-2">

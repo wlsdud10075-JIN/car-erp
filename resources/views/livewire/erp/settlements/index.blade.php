@@ -2327,8 +2327,10 @@ new #[Layout('components.layouts.app')] class extends Component
      🚫 수동 「신규 정산」 폼으로 대신하지 말 것 — 거긴 귀속월이 완납월이 아니라 생성월이 된다. --}}
 @if($showGateCandidates)
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:click.self="closeGateCandidates">
-    {{-- ⚠️ `min-h-0` 이 핵심이다 — flex 자식은 기본 `min-height:auto` 라 **내용보다 작아지지 않는다**.
-         그러면 아래 `overflow-y-auto` 가 발동할 일이 없어 **스크롤이 아예 안 먹는다**(jin 제보). --}}
+    {{-- 머리(제목·검색)와 바닥(페이지)을 고정하고 가운데만 굴리는 형태.
+         ⚠️ `min-h-0` 은 **보험이다** — 스크롤 칸 자신이 `overflow-y-auto` 면 사양상 최소높이가
+            이미 0 이라 없어도 굴러간다(2026-09-14 정정, SKILLS §8 #96). 진짜 필요한 경우는
+            스크롤 컨테이너가 이 flex 자식의 **자손**일 때다. 빼도 되지만 해롭지 않아 둔다. --}}
     <div class="flex max-h-[85vh] min-h-0 w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl">
         <div class="flex items-start justify-between border-b px-5 py-4">
             <div>
@@ -2423,7 +2425,7 @@ new #[Layout('components.layouts.app')] class extends Component
 {{-- 사유 입력 — 생성(주 통로)·기존 정산(부 통로) 공용 --}}
 @if($gateVehicleId || $gateSettlementId)
 <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-bold text-gray-800">{{ __('settlement.gate.reason_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('settlement.gate.reason_desc', ['min' => \App\Services\SettlementGateOverrideService::MIN_REASON_LENGTH]) }}</p>
 
@@ -2454,7 +2456,7 @@ new #[Layout('components.layouts.app')] class extends Component
 {{-- 정산 락 개편 (jin 2026-07-24) — 마감(closed) 정산 회계 재조정(잠금 해제) 모달 --}}
 @if($showReadjustModal)
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" wire:click.self="closeReadjustModal">
-    <div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+    <div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-sm font-bold text-gray-800">🔓 {{ __('settlement.readjust.title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('settlement.readjust.desc') }}</p>
         <textarea wire:model="readjustReason" rows="4"

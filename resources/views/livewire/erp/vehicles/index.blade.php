@@ -7205,7 +7205,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 {{-- 전자서명 링크 발급 모달 — 발급된 signed URL 복사(바이어에게 카톡/이메일로 전달). --}}
 @if($showSignModal)
 <div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" x-data="{ copied: false }">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" x-data="{ copied: false }">
         <div class="mb-3 flex items-center justify-between">
             <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
             <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>
@@ -9956,8 +9956,8 @@ function vehicleColumnsToggle() {
 
                 {{-- 서류 선택 모달 --}}
                 <div x-show="show" x-cloak @keydown.escape.window="closeModal()"
-                     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50" @click.self="closeModal()">
-                    <div class="card w-full max-w-sm mx-4 shadow-2xl" @click.stop>
+                     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-3" @click.self="closeModal()">
+                    <div class="card w-full max-w-sm mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
                         <h3 class="text-sm font-semibold text-gray-900">
                             <span x-show="mode==='pdf'">{{ __('vehicle.docs.output_modal_pdf') }}</span>
                             <span x-show="mode==='print'" x-cloak>{{ __('vehicle.docs.output_modal_print') }}</span>
@@ -10247,9 +10247,9 @@ function vehicleColumnsToggle() {
 
 {{-- 큐 18: close confirm 모달 (.card) --}}
 <div x-show="confirmOpen" x-cloak x-transition.opacity
-     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3"
      @click.self="confirmOpen = false">
-    <div class="card max-w-sm mx-4 shadow-2xl">
+    <div class="card max-w-sm mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.close_title') }}</h3>
         <p class="mt-2 text-sm text-gray-600">{{ __('vehicle.modal.close_body') }}</p>
         <div class="mt-5 flex justify-end gap-2">
@@ -10427,9 +10427,9 @@ function vehicleColumnsToggle() {
      운영 흐름상 체크/서류 순서가 비순차적이라 강제 차단 대신 모달로 인지 강제.
      슬라이드 패널 stacking context 밖에 배치. close()/save() 끝에서 정리됨. --}}
 @if($showDocCheckModal && ! empty($docCheckMismatches))
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:key="doc-check-mismatch-modal">
-    <div class="card max-w-lg mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-lg mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.doc_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.doc_desc') }}</p>
 
@@ -10472,9 +10472,9 @@ function vehicleColumnsToggle() {
 
 {{-- 미래 날짜 확인 모달 (jin 2026-07-21) — 매입일/판매일이 오늘보다 미래일 때 --}}
 @if($showFutureDateModal && ! empty($futureDates))
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:key="future-date-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.future_date_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.future_date_today', ['today' => now()->format('Y-m-d')]) }}</p>
 
@@ -10511,10 +10511,10 @@ function vehicleColumnsToggle() {
 {{-- UX #3 (2026-05-20) — 영업 저장 확인 모달.
      매입+판매 필수 항목 미리보기 → [확인] 시 save() 실행. 영업이 입력 누락 마지막 검증. --}}
 @if($showSaveConfirmModal)
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:click.self="closeSaveConfirmModal"
      wire:key="save-confirm-modal">
-    <div class="card max-w-2xl mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-2xl mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         @php
             $tabLabel = in_array($activeTabForSave, ['purchase','sale','bl','clearance'], true)
                 ? __('vehicle.panel.tab.'.$activeTabForSave)
@@ -10641,10 +10641,10 @@ function vehicleColumnsToggle() {
      슬라이드 패널 stacking context 밖에 배치 (overlap 모달과 동일 패턴). --}}
 @if($showTransferRequestModal)
 @php $transferCtx = $this->transferContext; @endphp
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:click.self="closeTransferRequestModal"
      wire:key="transfer-request-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.modal.transfer_req_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.transfer_req_desc') }}</p>
 
@@ -10700,10 +10700,10 @@ function vehicleColumnsToggle() {
 @php
     $voidTarget = \App\Models\InterVehicleTransfer::with('sourceVehicle:id,vehicle_number', 'targetVehicle:id,vehicle_number')->find($voidTransferId);
 @endphp
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:click.self="closeTransferVoidModal"
      wire:key="transfer-void-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-red-700">{{ __('vehicle.modal.void_title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.modal.void_desc') }}</p>
 
@@ -10761,8 +10761,8 @@ function vehicleColumnsToggle() {
         ? count($bdPrev['targets'])
         : count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
 @endphp
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-doc-modal">
-    <div class="card mx-4 w-full max-w-lg shadow-2xl">
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-doc-modal">
+    <div class="card mx-4 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_doc.title') }}</h3>
 
         {{-- 서류 종류 — 모달 전체에 1종. 행별로 다르게 고르지 않는다(오조작 방지). --}}
@@ -10916,8 +10916,8 @@ function vehicleColumnsToggle() {
         'container_number' => __('vehicle.bulk_num.container'),
     ];
 @endphp
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-num-modal">
-    <div class="card mx-4 w-full max-w-lg shadow-2xl">
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-num-modal">
+    <div class="card mx-4 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_num.title') }}</h3>
         <p class="mt-1 text-xs font-medium text-primary-text">
             {{ __('vehicle.bulk_num.target', ['count' => number_format($bnPrev['count'])]) }}
@@ -10980,8 +10980,8 @@ function vehicleColumnsToggle() {
 
 @if($bulkDateOpen)
 {{-- 선적일·ETA 일괄 지정 확인 모달 (jin 2026-07-28) — 대상 건수를 보여주고 1단계 확인 후 적용. --}}
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="bulk-date-modal">
-    <div class="card w-full max-w-md mx-4 shadow-2xl">
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-date-modal">
+    <div class="card w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_date.title') }}</h3>
         <p class="mt-1 text-xs font-medium text-primary-text">
             {{ __('vehicle.bulk_date.target', ['count' => number_format($this->vehicles->total())]) }}
@@ -11092,10 +11092,10 @@ function vehicleColumnsToggle() {
 @endif
 
 @if($quickAddOpen)
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60" wire:key="quick-add-modal">
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="quick-add-modal">
     {{-- @click.stop 제거 (jin 2026-07-21): 카드가 클릭 전파를 막으면 내부 country-picker 의 @click.outside 가
          document 까지 못 가서 나라 드롭다운이 안 닫힘. 이 모달은 배경 클릭 닫기가 없어 @click.stop 불필요. --}}
-    <div class="card w-full max-w-md mx-4 shadow-2xl">
+    <div class="card w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">
             {{ $quickAddType === 'buyer' ? __('vehicle.modal.qa_buyer_title') : __('vehicle.modal.qa_consignee_title') }}
             <span class="ml-1 text-xs font-normal text-gray-400">
@@ -11156,7 +11156,7 @@ function vehicleColumnsToggle() {
 @if($showPurchaseGate)
 @php $pg = $this->purchaseGateInfo; $canApprovePg = auth()->user()?->canApproveUnpaidExport(); @endphp
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" wire:key="purchase-gate-modal">
-    <div class="w-full max-w-md rounded-xl bg-white shadow-2xl" @click.stop>
+    <div class="w-full max-w-md rounded-xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
             <span class="mt-0.5 text-2xl">🚫</span>
             <div>
@@ -11223,7 +11223,7 @@ function vehicleColumnsToggle() {
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" wire:key="delete-gate-modal"
      x-data @keyup.escape.window="$wire.cancelDeleteGate()">
     <div class="fixed inset-0" @click="$wire.cancelDeleteGate()"></div>
-    <div class="relative w-full max-w-md rounded-xl bg-white shadow-2xl">
+    <div class="relative w-full max-w-md rounded-xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
             <span class="mt-0.5 text-2xl">🗑️</span>
             <div>

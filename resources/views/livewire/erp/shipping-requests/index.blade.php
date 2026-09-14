@@ -1274,7 +1274,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 전자서명 링크 발급 모달 — 발급/재표시된 signed URL 복사(바이어에게 전달) --}}
     @if($showSignModal)
     <div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
-        <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" x-data="{ copied: false }">
+        <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" x-data="{ copied: false }">
             <div class="mb-3 flex items-center justify-between">
                 <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
                 <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>

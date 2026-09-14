@@ -529,7 +529,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 @if($handoverFromId)
 @php $from = \App\Models\Salesman::find($handoverFromId); $plan = $this->handoverPlan; @endphp
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" wire:click.self="closeHandover">
-    <div class="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-xl">
+    {{-- ⚠️ overflow-hidden 은 모서리 둥글리기용이다 — 그대로 두면 내용이 길 때 **잘린다**.
+         세로만 스크롤로 바꾼다(가로는 계속 숨긴다). --}}
+    <div class="w-full max-w-2xl overflow-x-hidden rounded-xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
         <div class="border-b px-5 py-4">
             <h3 class="text-base font-semibold text-gray-800">{{ __('salesman.handover.title', ['name' => $from?->name]) }}</h3>
             <p class="mt-1 text-xs text-gray-500">{{ __('salesman.handover.rule') }}</p>

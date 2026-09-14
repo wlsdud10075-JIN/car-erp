@@ -438,9 +438,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 결정 모달 --}}
 @if($showDecisionModal)
-<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3"
      wire:click.self="closeDecisionModal">
-    <div class="card max-w-md mx-4 shadow-2xl">
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">
             {{ $decisionMode === 'approve' ? __('approval.modal.approve_title') : __('approval.modal.reject_title') }}
         </h3>

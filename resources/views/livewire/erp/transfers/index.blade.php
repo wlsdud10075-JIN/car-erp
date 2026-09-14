@@ -1138,9 +1138,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 재무 확정 / 거부 모달 (큐 19-K — decisionMode 분기) --}}
 @if($showModal)
-<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3"
      wire:click.self="closeModal">
-    <div class="card max-w-md mx-4 shadow-2xl">
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         @if($decisionMode === 'reject')
         @php
             $modalTransfer = $modalTransferId ? \App\Models\InterVehicleTransfer::find($modalTransferId) : null;
@@ -1267,10 +1267,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 큐 22-C 핵심 (2026-05-20) — 매입 잔금 신규 row 입력+확정 통합 모달. --}}
 @if($showNewPbpModal)
-<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
      wire:click.self="closeNewPbpModal"
      wire:key="new-pbp-modal">
-    <div class="card max-w-md mx-4 shadow-2xl" @click.stop>
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-gray-900">{{ __('transfer.new_pbp_modal.title') }}</h3>
         <p class="mt-1 text-xs text-gray-500">{{ __('transfer.new_pbp_modal.subtitle') }}</p>
 
@@ -1326,9 +1326,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 🔒 매입 지급 락 (#2) 승인 모달 — 2번째 지급~ && 그 차 판매금 <50% 입금. 관리/관리자만 승인. --}}
 @if($showPaymentGate)
-<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60"
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-3"
      wire:click.self="cancelPaymentGate" wire:key="pbp-gate-modal">
-    <div class="card max-w-md mx-4 shadow-2xl border-rose-200" @click.stop>
+    <div class="card max-w-md mx-4 shadow-2xl border-rose-200 max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-rose-700">🔒 {{ __('transfer.pbp_gate.title') }}</h3>
         <p class="mt-2 text-sm text-gray-700">
             {{ __('transfer.pbp_gate.body', ['vehicle' => $paymentGateInfo['vehicle'] ?? '', 'ratio' => $paymentGateInfo['ratio'] ?? 0]) }}
