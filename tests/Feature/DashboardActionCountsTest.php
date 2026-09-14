@@ -246,8 +246,20 @@ class DashboardActionCountsTest extends TestCase
     {
         // BL 발행 + 미입금 → critical
         $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 0, 'bl_document' => 'bl.pdf', 'dhl_request' => false]);
-        // 50% 미입금 → caution (제외)
-        $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 500]);
+        /*
+         * 50% 미입금 → caution (제외)
+         *
+         * ⚠️ **판매일을 명시해야 한다**(2026-09-14 위험도 개편). 헬퍼 기본값이 `2026-05-01` 이라
+         *    오늘 기준 100일이 넘고, 새 규칙은 **「안 나갔는데 판매 후 90일」을 위험**으로 본다
+         *    ⇒ 날짜를 안 주면 이 차가 caution 이 아니라 danger 가 되어 이 테스트가 깨진다.
+         *    (실제로 개편 직후 전체 스위트에서 이 한 건이 빨개졌다 — §8 #66 「옛 규칙을 검사하던 테스트」.)
+         * 🧭 이 테스트의 **목적은 그대로다** — 「receivable_risk 액션은 danger·critical 만 센다」.
+         *    바뀐 건 그 등급을 만드는 조건이라 **픽스처만** 새 규칙에 맞췄다.
+         */
+        $this->makeVehicle([
+            'sale_price' => 1000, 'deposit_down_payment' => 500,
+            'sale_date' => now()->subDays(30)->toDateString(),   // 유예(10일) 밖 · 오래됨(90일) 안
+        ]);
         // 완납 → safe (제외)
         $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 1000]);
 

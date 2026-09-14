@@ -2594,6 +2594,21 @@ class Vehicle extends Model
     }
 
     /**
+     * ⚓ **배가 이미 도착했나** — 채권 위험도가 쓰는 단일 출처 (jin 2026-09-14).
+     *
+     * 🚫 조건을 옮겨 적지 말 것 — `sailing_status` / `scopeSailing('arrived')` 와 **같은 판정**이어야
+     *    한다(§8 #44). 셋이 갈리면 차량관리 운항 pill 과 채권 등급이 서로 다른 답을 한다.
+     * ⚠️ 선적일·ETA 가 둘 다 있어야 판정된다 — 하나라도 없으면 **「도착 안 함」**이다(모르는 것을
+     *    위험으로 올리면 ETA 를 안 적는 회사에서 전 차량이 심각이 된다).
+     * 🧭 jin 2026-09-14 확인: *「도착기준 응 맞아. 그거 변경되면 어차피 변경하거든」* — ETA 를 고치면
+     *    등급이 따라 움직이는 것이 의도다.
+     */
+    public function hasArrived(): bool
+    {
+        return $this->sailing_status === self::SAILING_ARRIVED;
+    }
+
+    /**
      * 기계용 키 — API·필터 파라미터가 쓰는 값. 표시용 한글 라벨(`sailing_status`)과 짝이다.
      *
      * ⚠️ 라벨을 쿼리 파라미터로 쓰지 말 것 — board 연동은 **쿼리 문자열이 HMAC 서명 대상**이라
@@ -3112,33 +3127,51 @@ class Vehicle extends Model
 
         $unpaid = $this->sale_unpaid_amount;
 
-        // BL 발행 + 미납 잔존 → 즉시 critical (계산식codex.txt 잠정 규칙)
-        if ($this->bl_document && $unpaid > 0) {
-            return 'critical';
-        }
-
         if ($unpaid <= 0) {
             return 'safe';
         }
 
-        // 결제대기 유예 (jin 2026-07-06, A안) — **아직 안 떠난** 차의 미수는
-        //   판매일 + RECEIVABLE_GRACE_DAYS 지나야 채권. 그 전엔 'grace'(정상 결제 대기, 채권 아님).
-        //   **떠난 차는 유예 없이 즉시 위험.** ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip.
+        // ① 받을 수단이 사라진 것 — B/L(화물인도권)을 넘겼거나 배가 **이미 도착**했다.
+        //    도착하면 바이어가 차를 찾아가므로 지렛대가 없다. jin: 「진짜 심각한 건 배가 도착인데 돈을 안 받은 것」.
+        if ($this->bl_document || $this->hasArrived()) {
+            return 'critical';
+        }
+
         // 🚨 「떠났나」는 반드시 isDeparted() 단일 출처를 쓸 것 — 조건을 옮겨 적지 말 것(§8 #97-B).
-        //   2026-07-18 판은 출고일만, 08-20 판은 출고일·B/L 파일만 봤는데 09-14 에 스코프만 4신호로
-        //   넓어져 **같은 질문에 세 세대가 공존**했다. 그래서 세 곳을 한 커밋에 여기로 통일했다(jin 승인).
-        if (! $this->isDeparted() && $this->sale_date
+        $departed = $this->isDeparted();
+
+        /*
+         * ② 떠났는데 **선적 진입 게이트 미달** — 입금이 덜 된 채 나간 차다.
+         *
+         * 🔑 임계는 **바이어별 재정의를 존중**한다(`LockThresholdResolver`). 처음엔 전역값을 쓰려 했는데
+         *    기존 가드(`BuyerLockThresholdTest::no code bypasses the resolver`)가 잡았고, 그게 옳다 —
+         *    바이어에게 **승인된 완화**로 나간 차는 jin 이 말한 「60%에 맞지 않게 **우회**」가 아니다.
+         *    전역값을 쓰면 그 차가 억울하게 「위험」이 된다.
+         * ⚠️ 그 대신 `$this->buyer` 를 탄다 — **재계산 명령은 buyer 를 eager load** 해야 N+1 이 안 된다
+         *    (`RebuildVehicleCaches` 에 넣어 뒀다). 저장 훅은 1대라 무관하다.
+         */
+        if ($departed && ($unpaid / $total) > LockThresholdResolver::threshold($this->buyer, 'shipping_entry')) {
+            return 'danger';
+        }
+
+        // ③ **아직 안 나갔는데 너무 오래됐다.** 보통 선적 전후로 돈을 거의 다 받으므로
+        //    미출고가 길어지는 것 자체가 비정상이다(jin 2026-09-14). 기준일 = 판매일.
+        $soldDaysAgo = $this->sale_date
+            ? (int) $this->sale_date->copy()->startOfDay()->diffInDays(now()->startOfDay())
+            : null;
+
+        if (! $departed && $soldDaysAgo !== null && $soldDaysAgo >= Setting::receivableStaleDays()) {
+            return 'danger';
+        }
+
+        // ④ 결제대기 유예 (jin 2026-07-06 A안) — 아직 안 떠났고 판매 후 유예일 이내면 채권이 아니다.
+        //    ⚠️ 캐시 컬럼이라 시간 경과는 야간 rebuild(05:00)로 flip 된다.
+        if (! $departed && $this->sale_date
             && $this->sale_date->copy()->addDays(Setting::graceDays())->startOfDay()->isFuture()) {
             return 'grace';
         }
 
-        $ratio = ($unpaid / $total) * 100;
-
-        return match (true) {
-            $ratio <= 50 => 'caution',
-            $ratio <= 70 => 'danger',
-            default => 'critical',
-        };
+        return 'caution';
     }
 
     /**

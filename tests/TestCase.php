@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Models\Setting;
 use App\Models\Settlement;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
@@ -22,5 +23,8 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
         Settlement::flushParamMemo();
+        // 💰 채권 위험도 파라미터(게이트 임계·오래됨·유예)도 같은 이유로 버린다 (2026-09-14).
+        //    설정을 `DB::table()->insert` 로 심는 시더·테스트는 모델 이벤트를 안 태워 메모가 남는다.
+        Setting::flushRiskParamMemo();
     }
 }

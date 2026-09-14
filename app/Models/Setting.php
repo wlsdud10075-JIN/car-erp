@@ -19,9 +19,36 @@ class Setting extends Model
      */
     protected static function booted(): void
     {
-        $forget = fn () => Settlement::flushParamMemo();
+        $forget = function () {
+            Settlement::flushParamMemo();
+            self::flushRiskParamMemo();
+        };
         static::saved($forget);
         static::deleted($forget);
+    }
+
+    /**
+     * 💰 **채권 위험도 파라미터 요청 단위 메모** (jin 2026-09-14 개편과 함께).
+     *
+     * 🚨 왜 필요한가 — 위험도 계산이 차량마다 설정을 **최대 3번** 조회한다
+     *    (게이트 임계 · 오래됨 일수 · 유예일). `Setting::get()` 은 캐시가 없어 매번 쿼리다.
+     *    야간 재계산(`vehicles:rebuild-caches`)이 ssancarerp **4,700대**를 도므로 그대로 두면
+     *    조회가 수천 건 늘어난다. 개편 전에는 유예일 하나뿐이라 티가 안 났다.
+     * 🧭 `Settlement::flushParamMemo()` 와 **같은 패턴**이다(위 booted 참조) — 새로 만든 게 아니라
+     *    이 레포가 이미 같은 문제를 푼 방식을 따랐다.
+     * ⚠️ 기능설정에서 값을 바꾼 **같은 요청 안에서** 다시 읽으면 옛 값이 나오므로 booted 에서 버린다.
+     *    ⚠️ 테스트의 `RefreshDatabase` 롤백은 모델 이벤트를 안 태운다 — `Tests\TestCase::setUp` 도 버려야 한다.
+     */
+    private static array $riskParamMemo = [];
+
+    public static function flushRiskParamMemo(): void
+    {
+        self::$riskParamMemo = [];
+    }
+
+    private static function riskParam(string $key, callable $resolve): int|float
+    {
+        return self::$riskParamMemo[$key] ??= $resolve();
     }
 
     /**
@@ -96,13 +123,32 @@ class Setting extends Model
      */
     public static function lockThreshold(string $lock): float
     {
-        return max(0.0, min(1.0, (100 - self::lockRequiredPaidPct($lock)) / 100));
+        return (float) self::riskParam('lock:'.$lock, fn () => max(0.0, min(1.0, (100 - self::lockRequiredPaidPct($lock)) / 100)));
     }
 
     /** 채권 유예일 — super 조정값(회사별). 미설정 시 RECEIVABLE_GRACE_DEFAULT(10). 0 이상. */
     public static function graceDays(): int
     {
-        return (int) max(0, self::get('receivable_grace_days_'.self::companyTemplateSet(), self::RECEIVABLE_GRACE_DEFAULT));
+        return (int) self::riskParam('grace', fn () => max(0, (int) self::get('receivable_grace_days_'.self::companyTemplateSet(), self::RECEIVABLE_GRACE_DEFAULT)));
+    }
+
+    /**
+     * 🕰️ **「팔렸는데 아직 안 나갔다」가 며칠 넘으면 위험인가** (jin 2026-09-14). 기본 90일.
+     *
+     * jin: *「보통 배를 타기 전이나 선적이 되면 돈을 거의 다 주는 형태」* ⇒ 미출고가 오래 지속되는
+     * 것 자체가 비정상이다. 기준일은 **판매일**이다 — 후보를 실측해 고른 결과다:
+     *   · 등록일 = 2026-08-28 일괄 적재로 **전부 최근**(싼카 최장 17일) → 못 쓴다
+     *   · 매입 완납일 = 확정 잔금 행이 있어야 생겨 **절반이 빈다**(싼카 152/289) → 빈 차가 조용히 빠진다
+     *   · 매입일 ≈ 판매일 (같은 날 기록이 heymanerp 89% · ssancarerp 76%) — 다를 땐 판매일이 더 늦어 보수적
+     * 90일 근거 = 싼카 미출고 미수 289대의 **중앙값 33일**, 90일 초과는 상위 **7%**(20대)뿐.
+     *
+     * 🚫 숫자를 코드에 박지 말 것 — 회사마다 다르고, 몇 달 써 보고 조정할 값이다(§8 #60).
+     */
+    public const RECEIVABLE_STALE_DEFAULT = 90;
+
+    public static function receivableStaleDays(): int
+    {
+        return (int) self::riskParam('stale', fn () => max(1, (int) self::get('receivable_stale_days_'.self::companyTemplateSet(), self::RECEIVABLE_STALE_DEFAULT)));
     }
 
     /**
