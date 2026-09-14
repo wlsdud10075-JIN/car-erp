@@ -3398,9 +3398,16 @@ class Vehicle extends Model
             'receivable_risk' => $q
                 ->whereIn('receivable_risk', ['danger', 'critical']),
 
-            // 큐 4 8-6 — 채권 위험도 카드별 vehicles 라우팅 (admin 대시보드 receivableKpis와 SQL 100% 일치).
-            // 미수금 캐시 NULL은 환율 미입력 외화 → 통계 제외 (카운트 정책과 동일).
-            'receivable_safe', 'receivable_caution', 'receivable_danger', 'receivable_critical' => $q
+            /*
+             * 큐 4 8-6 — 채권 위험도 카드별 vehicles 라우팅 (admin 대시보드 receivableKpis 와 같은 집합).
+             * 미수금 캐시 NULL 은 환율 미입력 외화 → 통계 제외 (카운트 정책과 동일).
+             *
+             * 🕳️ **「안전」만 `> 0` 을 요구하지 않는다** (jin 2026-09-14). `safe` 의 뜻이 **미수 ≤ 0**(완납)
+             *    이라, `> 0` 을 함께 걸면 **구조적으로 영원히 0 건**이 된다. 실제로 카드가 늘 0 이었다.
+             *    나머지 셋은 정의상 미수가 있지만 `> 0` 을 안전망으로 남긴다(환율 미입력 NULL 배제).
+             */
+            'receivable_safe' => $q->where('receivable_risk', 'safe'),
+            'receivable_caution', 'receivable_danger', 'receivable_critical' => $q
                 ->where('receivable_risk', str_replace('receivable_', '', $action))
                 ->where('sale_unpaid_amount_krw_cache', '>', 0),
 

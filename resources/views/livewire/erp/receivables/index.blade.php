@@ -952,6 +952,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where('sale_unpaid_amount_krw_cache', '<=', 0)
                 ->orWhereNull('sale_unpaid_amount_krw_cache')),
 
+            /*
+             * 🚫 **미수 조건을 걸지 않는다** — 매입취소 카드 전용 (jin 2026-09-14).
+             *
+             * 관리자 대시보드 「매입취소」 카드는 **취소된 차 전부**를 센다. 그런데 링크가 기본 분류
+             * (`''` = 미수 > 0)로 열려서 **위약금을 다 받은 차(취소완료)가 목록에서 통째로 사라졌다** —
+             * 카드 라벨이 약속한 집합과 달랐다. 이 값으로 들어오면 취소 필터만 걸고 미수는 안 본다.
+             * ⚠️ `default` 에 기대지 않고 이름을 붙였다 — 기대면 다음 사람이 우연인 줄 안다.
+             */
+            'cancelled_all' => $q,
+
             default => $q,
         };
     }

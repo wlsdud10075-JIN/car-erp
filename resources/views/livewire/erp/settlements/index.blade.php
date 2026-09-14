@@ -20,7 +20,18 @@ new #[Layout('components.layouts.app')] class extends Component
     // ── 목록 필터 ──────────────────────────────────────────────────
     public string $search = '';
 
-    public string $statusFilter = '';
+    /**
+     * 🔗 **딥링크로도 걸 수 있다** (jin 2026-09-14) — 업무 대시보드 「정산 대기」 카드용.
+     * 카드는 전 기간을 세는데 이 화면은 이번 귀속월로 열려서 **「10건이라더니 눌러보니 0건」**이 됐다.
+     * ⚠️ 이 값이 실려 오면 **월 기본값을 걸지 않는다**(mount 참조) — 지급보류 딥링크와 같은 이유다.
+     */
+    #[Url(as: 'status')] public string $statusFilter = '';
+
+    /**
+     * 🔗 2차 정산 마감 대기 딥링크 (jin 2026-09-14) — 업무 대시보드 재무 카드용.
+     * 이 화면엔 원래 **2차 상태로 거르는 수단이 없어서**, 카드를 눌러도 무엇을 봐야 할지 알 수 없었다.
+     */
+    #[Url(as: 'secondary')] public string $secondaryFilter = '';
 
     // 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 보기(재무 대시보드 딥링크 ?held=1).
     //   URL 파라미터명 = 'held' (as 별칭). 재무 대시보드 '미수로 지급보류' 클릭 → ?held=1.
@@ -169,6 +180,13 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
+        // 🔗 상태 딥링크도 같은 이유로 월 기본값을 안 건다 (jin 2026-09-14).
+        //    「정산 대기」·「2차 마감 대기」는 **달과 무관한 잔량**이라, 이번 달로 좁히면
+        //    대시보드가 센 건수와 화면이 갈린다 — 실제로 「10건이라더니 눌러보니 0건」이었다.
+        if ($this->statusFilter !== '' || $this->secondaryFilter !== '') {
+            return;
+        }
+
         // 월 필터 기본값 = 이번 달 (jin 2026-08-28).
         //
         // 🚨 성능이 이유다. 담당자별 합계는 필터에 걸린 정산 **전부**를 PHP 로 순회하며
@@ -195,6 +213,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -437,6 +456,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
@@ -1295,6 +1315,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereIn('settlement_status', ['pending', 'calculating'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -1521,6 +1542,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -1553,6 +1575,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
