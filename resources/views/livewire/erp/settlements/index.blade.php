@@ -2518,7 +2518,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border bg-white shadow-lg">
                     @foreach($this->vehicleSearchResults as $v)
                     <button wire:click="selectVehicle({{ $v->id }})"
-                            class="flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm last:border-0 hover:bg-gray-50">
+                            {{-- 🎨 글자색 명시 필수 — 폰 다크 모드 강제에서 흰 글자가 된다(§8 #97). --}}
+                            class="flex w-full items-center justify-between border-b px-3 py-2 text-left text-sm text-gray-800 last:border-0 hover:bg-gray-50">
                         <span class="font-medium">{{ $v->vehicle_number }}</span>
                         @if($v->salesman)
                         <span class="text-xs text-gray-400">{{ $v->salesman->name }}</span>
