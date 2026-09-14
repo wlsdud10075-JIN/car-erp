@@ -711,7 +711,9 @@ new #[Layout('components.layouts.app')] class extends Component
             ->select('id', 'salesman_id', 'buyer_id', 'sale_price', 'transport_fee',
                 'sale_other_costs', 'commission', 'auto_loading', 'tax_dc',
                 'currency', 'exchange_rate', 'sale_unpaid_amount_krw_cache',
-                'receivable_risk', 'warehouse_out_date', 'bl_document')
+                // ⚠️ bl_issue_date·shipping_date 를 빼지 말 것 — Vehicle::departedFrom 이 그걸 본다.
+                //    빠지면 늘 null 이라 **조용히 전부 「선적전」**이 된다(§8 #83).
+                'receivable_risk', 'warehouse_out_date', 'bl_document', 'bl_issue_date', 'shipping_date')
             ->chunk(1000, function ($rows) use (
                 &$bySalesman, &$byBuyer, &$riskCounts, &$classification
             ) {
@@ -746,9 +748,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     $risk = $r->receivable_risk ?? 'none';
                     $riskCounts[$risk] = ($riskCounts[$risk] ?? 0) + 1;
 
-                    // 미수 분류 — 「이미 떠났나」 pivot = 출고일 또는 B/L (jin 2026-07-18 → 08-20).
-                    //   Vehicle::scopeDeparted 와 같은 규칙. 한쪽만 고치면 화면과 대시보드가 갈린다.
-                    if (blank($r->warehouse_out_date) && blank($r->bl_document)) {
+                    // 미수 분류 — 「이미 떠났나」. 🚫 **조건을 여기 옮겨 적지 말 것**(§8 #45) —
+                    //   예전엔 그렇게 적혀 있어서 판정이 바뀔 때마다 화면과 대시보드가 갈렸다.
+                    //   판정은 Vehicle 단일 출처를 부른다(2026-09-14).
+                    if (! \App\Models\Vehicle::departedFrom(
+                        $r->warehouse_out_date, $r->bl_document, $r->bl_issue_date, $r->shipping_date
+                    )) {
                         $classification['before_shipping']['unpaid'] += $unpaid;
                         $classification['before_shipping']['count']++;
                     } else {
