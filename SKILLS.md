@@ -2823,6 +2823,11 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 > 회사에선 선적후 미수가 **구조적으로 영원히 0** 이었다(배포 전 실측 ssancarerp 459대 중 0 · karabaerp 0).
 > 배포 후 ssancarerp = **선적후 165 · 선적전 294**. 🚫 `bl_number` 는 **안 쓴다**(자유 입력칸 — 빈 문자열·`-`·한글 메모).
 > 날짜는 **과거만**(미래 선적일은 아직 안 떠난 것), 경계는 **오늘 포함**. 상세 = §8 #97.
+> ⚠️ **유예(grace) 쪽은 아직 안 따라왔다** — `scopeExcludeReceivableGrace`·`scopeOnlyReceivableGrace` 는 08-20 판(2신호),
+> `getReceivableRiskComputedAttribute` 의 유예 분기는 **07-18 판(출고일만)** 이다. 아래 「단일출처 반영 지점」 목록을
+> **그대로 믿지 말 것** — 세 세대가 공존한다. 선적일만 찍힌 차가 「선적후 미수」이면서 「결제대기」가 될 수 있다.
+> 🔢 3사 실측 0건(2026-09-14)이라 현재 틀린 화면은 없다. 🚫 **맞추면 독촉·채권 큐 모수가 늘어나므로 jin 승인 후**,
+> 그리고 **세 곳을 한 커밋에**(하나만 고치면 목록과 위험도 컬럼이 갈린다). 상세 = 메모리 `project_departed_pivot`.
 
 - `Vehicle::RECEIVABLE_GRACE_DAYS = 10`.
 - **선적전/후 미수 pivot = `warehouse_out_date`(출고일)** — 구 pivot=`bl_loading_location`(반입지). 사용자 규칙: 반입지 입력했어도 출고 전이면 **항구 주차장 대기 = 선적전 미수**. 실제 출항(출고일 찍힘) = 선적후 미수.
