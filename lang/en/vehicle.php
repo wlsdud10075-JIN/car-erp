@@ -226,6 +226,7 @@ return [
     'deleted' => 'Vehicle deleted.',
     'delete' => 'Delete',
     'delete_confirm' => 'Delete vehicle :number?',
+    'delete_confirm_simple' => 'Delete this vehicle? If it has accounting records you will be asked for a reason.',
     'empty' => 'No vehicles.',
     'freight_total' => 'Freight total ₩:amount',
     'sale_total_sum' => 'Sell total ₩:amount',

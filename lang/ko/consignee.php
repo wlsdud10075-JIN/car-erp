@@ -10,6 +10,7 @@ return [
     'all_buyers' => '전체 바이어',
     'empty' => '컨사이니가 없습니다.',
     'delete_confirm' => ':name 컨사이니를 삭제하시겠습니까?',
+    'delete_confirm_simple' => '이 컨사이니를 삭제할까요? 되돌릴 수 없습니다.',
     'saved' => '컨사이니가 저장됐습니다.',
     'deleted' => '컨사이니가 삭제됐습니다.',
 

@@ -11,6 +11,7 @@ return [
     'cashflow_view' => 'View cashflow',
     'carryover_badge' => 'Unconsumed carryover',
     'delete_confirm' => 'Delete salesman :name?',
+    'delete_confirm_simple' => 'Delete this salesperson? This cannot be undone.',
     'saved' => 'Salesman saved.',
     'deleted' => 'Salesman deleted.',
     'edit_title' => 'Edit Salesman',

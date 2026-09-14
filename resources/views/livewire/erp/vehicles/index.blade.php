@@ -10200,6 +10200,20 @@ function vehicleColumnsToggle() {
 
     {{-- Panel Footer --}}
     <div class="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4">
+        {{-- 🗑️ 폰 전용 삭제 (jin 2026-09-14) — 목록 카드가 아니라 **패널 푸터**에 둔다.
+             카드 자체가 「누르면 편집 열림」이라 거기 삭제를 붙이면 오탭이 곧 사고가 된다.
+             여기는 차를 이미 연 상태라 의도가 분명하다.
+             ⚠️ 회계 연관 차량은 `delete()` 가 사유 모달(삭제 게이트)로 넘긴다 — 그 흐름 그대로다.
+             ⚠️ 남이 편집 중이면 막는다(저장 버튼과 같은 잠금).
+             데스크탑은 표에 삭제가 있으므로 `sm:hidden` — 렌더가 안 바뀐다. --}}
+        @if($editingId)
+        <button wire:click="delete({{ $editingId }})" type="button"
+                wire:confirm="{{ __('vehicle.delete_confirm_simple') }}"
+                @disabled($editLockedByOther)
+                class="mr-auto rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-40 sm:hidden">
+            {{ __('vehicle.delete') }}
+        </button>
+        @endif
         <button @click="attemptClose()" type="button"
                 class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
             {{ __('vehicle.footer.cancel') }}

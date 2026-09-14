@@ -420,6 +420,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="flex items-center justify-end gap-2 border-t px-5 py-4">
+        {{-- 🗑️ 폰 전용 삭제 (jin 2026-09-14) — 목록 카드가 아니라 **패널 푸터**에 둔다.
+             카드 자체가 「누르면 편집 열림」이라 거기 삭제를 붙이면 오탭이 곧 사고가 된다.
+             여기는 항목을 이미 연 상태라 의도가 분명하고, 확인창이 한 번 더 받는다.
+             데스크탑은 표에 삭제가 있으므로 `sm:hidden` — 렌더가 안 바뀐다. --}}
+        @if($editingId)
+        <button wire:click="delete({{ $editingId }})"
+                wire:confirm="{{ __('consignee.delete_confirm_simple') }}"
+                class="mr-auto rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 sm:hidden">
+            {{ __('common.delete') }}
+        </button>
+        @endif
         <button @click="attemptClose()" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
         <button wire:click="save" class="btn-primary" wire:loading.attr="disabled" wire:target="save">
             <span wire:loading.remove wire:target="save">{{ __('common.save') }}</span><span wire:loading wire:target="save">{{ __('common.saving') }}</span>

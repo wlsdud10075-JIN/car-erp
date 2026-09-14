@@ -467,8 +467,20 @@ new #[Layout('components.layouts.app')] class extends Component
                         </div>
                         <div class="mt-0.5 text-xs text-gray-500">
                             {{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}
-                            @if ($tab === 'advance') · {{ \App\Models\AdvanceReceipt::NATURES[$row->nature] ?? $row->nature }} @endif
+                            @if ($tab === 'advance' && $row->repaid_at) · {{ \App\Models\AdvanceReceipt::NATURES[$row->nature] ?? $row->nature }} @endif
                         </div>
+                        {{-- 🗂️ 성격은 **바꿀 수 있어야 한다** (jin 2026-09-14) — 나중에 정하는 값인데
+                             폰에서는 글자로만 보여 **고칠 방법이 없었다**. 이 화면엔 편집 패널이 없어
+                             우회로가 「신규 등록」뿐이었다. 표(데스크탑)와 같은 선택칸·같은 잠금 규칙.
+                             ⚠️ 상환된 행은 잠근다 — 바꾸면 「갚은 돈」과 「대표 자산」 사이를 오간다. --}}
+                        @if ($tab === 'advance' && ! $row->repaid_at)
+                        <select class="input-base mt-1 w-32 py-1 text-xs"
+                                wire:change="setNature({{ $row->id }}, $event.target.value)">
+                            @foreach (\App\Models\AdvanceReceipt::NATURES as $key => $label)
+                                <option value="{{ $key }}" @selected($row->nature === $key)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        @endif
                         @if ($tab === 'advance' && $row->repaid_at)
                             <div class="mt-1">
                                 <span class="badge badge-green">{{ __('deposits.repaid_on', ['date' => $row->repaid_at->format('Y-m-d')]) }}</span>

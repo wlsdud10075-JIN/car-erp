@@ -235,6 +235,7 @@ return [
     'deleted' => '차량이 삭제됐습니다.',
     'delete' => '삭제',
     'delete_confirm' => '차량 :number을(를) 삭제하시겠습니까?',
+    'delete_confirm_simple' => '이 차량을 삭제할까요? 회계 기록이 있으면 사유를 묻는 창이 뜹니다.',
     'empty' => '차량이 없습니다.',
     'freight_total' => '운임비 합 ₩:amount',
     'sale_total_sum' => '판매총액 합 ₩:amount',
