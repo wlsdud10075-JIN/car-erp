@@ -9203,6 +9203,15 @@ function vehicleColumnsToggle() {
                     <span class="shrink-0">💰</span>
                     <div class="min-w-0">
                         <span class="font-medium">{{ __('vehicle.panel.cash_drawn') }}</span>
+                        {{-- 🔗 입금이 둘 이상이면 **합계를 먼저** 보여준다 (jin 2026-09-14).
+                             FIFO 가 오래된 입금부터 쓰므로 한 잔금이 여러 입금에 걸치는 건 정상인데,
+                             조각만 나열하면 바이어 정산현황의 조각 숫자와 대조하다 「두 번 찍혔다」로 읽는다. --}}
+                        @if(count($row['cash']) > 1)
+                        <span class="ml-1 rounded bg-emerald-100 px-1 font-semibold text-emerald-800">{{ __('vehicle.panel.cash_drawn_sum', [
+                            'sum' => number_format(collect($row['cash'])->sum('amount'), 2),
+                            'count' => count($row['cash']),
+                        ]) }}</span>
+                        @endif
                         @foreach($row['cash'] as $c)
                         <span class="ml-1 text-emerald-600">
                             {{ __('vehicle.panel.cash_drawn_line', [

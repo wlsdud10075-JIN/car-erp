@@ -22,6 +22,8 @@ return [
     'not_used_yet' => '아직 쓰이지 않았습니다.',
     'col_used_at' => '사용한 날짜',
     'col_used_amount' => '사용한 금액',
+    'used_of_balance' => '잔금 :total 중',
+    'used_of_balance_hint' => '이 차 잔금의 일부입니다. 오래된 입금부터 쓰기 때문에 한 잔금이 입금 여러 건에 나뉘어 들어갑니다 — 두 번 낸 것이 아닙니다.',
     'usage_more' => '이전 입금 :count건 더 보기',
     'sort_unpaid_note' => '그 차량 통화 기준으로 정렬합니다 (통화별로 묶임).',
 

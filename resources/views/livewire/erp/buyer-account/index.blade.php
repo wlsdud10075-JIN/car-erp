@@ -350,8 +350,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                                   title="{{ __('buyer.cash.backfill_hint') }}">{{ __('buyer.cash.backfill_badge') }}</span>
                             @endif
                         </td>
+                        {{-- 🔗 **이 줄이 그 차 잔금의 전부인지 일부인지**를 밝힌다 (jin 2026-09-14).
+                             한 잔금이 입금 둘에 걸치면 같은 차가 **두 줄**로 보인다(FIFO 가 오래된 입금부터 쓰므로
+                             정상이다). 총액이 없으면 사람이 「두 번 찍혔다」로 읽는다 — 실제로 그렇게 읽혔다
+                             (05두6299 잔금 9,040 = 2,280 + 6,760). 금액이 잔금 총액과 같으면 안 붙인다(노이즈). --}}
+                        @php
+                            $fpTotal = $a->isFee() ? null : (float) ($a->finalPayment?->amount ?? 0);
+                            $showOf = $fpTotal > 0 && abs($fpTotal - (float) $a->amount) >= 0.01;
+                        @endphp
                         <td class="py-1.5 pr-3 text-right font-mono font-semibold text-gray-700 whitespace-nowrap">
                             {{ number_format((float) $a->amount, 2) }} <span class="text-[10px] font-normal text-gray-400">{{ $r->currency }}</span>
+                            @if($showOf)
+                            <div class="text-[10px] font-sans font-normal text-gray-400"
+                                 title="{{ __('buyer_account.used_of_balance_hint') }}">{{ __('buyer_account.used_of_balance', ['total' => number_format($fpTotal, 2)]) }}</div>
+                            @endif
                         </td>
                     </tr>
                     @empty
