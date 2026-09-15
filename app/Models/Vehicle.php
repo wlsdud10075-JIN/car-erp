@@ -3118,6 +3118,25 @@ class Vehicle extends Model
 
     public const DEPOSIT_CASH_OVERDUE_DAYS = 10;
 
+    /**
+     * 📅 **판매 후 며칠 지났나** — 채권 화면과 위험도 등급이 **같은 숫자**를 쓰게 하는 단일 출처.
+     *
+     * 기준일이 판매일인 이유(jin 2026-09-14 실측):
+     *   등록일 = 2026-08-28 일괄 적재로 **전부 최근**(최장 17일)이 되어 시계가 지워졌다
+     *   매입 완납일 = 확정 잔금 행이 있어야 생겨 **152/289 만 값이 있다**(빈 차가 조용히 빠진다)
+     *   판매일 = **100% 존재**(판매가가 있으면 DB 제약이 판매일을 강제한다 — §8 #25)
+     *
+     * 🚫 화면에서 날짜를 다시 빼지 말 것 — 갈리면 「90일인데 왜 아직 주의야?」가 된다.
+     * ⚠️ Carbon 3 의 `diffInDays` 는 **부호가 있다**(§8 #34) — 기준→대상 방향으로 쓴다.
+     *    판매일이 미래인 행(오입력)은 음수가 나오는데 **그대로 보여준다**(0 으로 눕히면 오입력이 숨는다).
+     */
+    public function getDaysSinceSaleAttribute(): ?int
+    {
+        return $this->sale_date
+            ? (int) $this->sale_date->copy()->startOfDay()->diffInDays(now()->startOfDay())
+            : null;
+    }
+
     public function getReceivableRiskComputedAttribute(): string
     {
         $total = $this->sale_total_amount;
@@ -3156,9 +3175,8 @@ class Vehicle extends Model
 
         // ③ **아직 안 나갔는데 너무 오래됐다.** 보통 선적 전후로 돈을 거의 다 받으므로
         //    미출고가 길어지는 것 자체가 비정상이다(jin 2026-09-14). 기준일 = 판매일.
-        $soldDaysAgo = $this->sale_date
-            ? (int) $this->sale_date->copy()->startOfDay()->diffInDays(now()->startOfDay())
-            : null;
+        // 🚫 여기서 날짜를 다시 빼지 말 것 — 화면(채권 목록 「경과일」)과 **같은 출처**여야 한다.
+        $soldDaysAgo = $this->days_since_sale;
 
         if (! $departed && $soldDaysAgo !== null && $soldDaysAgo >= Setting::receivableStaleDays()) {
             return 'danger';

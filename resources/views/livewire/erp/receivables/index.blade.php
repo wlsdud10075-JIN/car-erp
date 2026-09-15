@@ -33,6 +33,15 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $progressFilter = '';
     #[Url] public string $riskFilter = '';        // safe/caution/danger/critical
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
+    /*
+     * 📅 정렬 (jin 2026-09-15) — 'unpaid' 미납금 큰 순(종전 기본) / 'age' 오래된 순.
+     *
+     * 왜 필요한가: 등급만으로는 **같은 칸 안에서 무엇이 급한지** 알 수 없다.
+     * 실측(싼카 2026-09-15) 「위험」 41대에 **26일짜리와 279일짜리가 섞여** 있었고,
+     * 「주의」 317대 중 124대는 한 달도 안 된 정상 거래였다.
+     * 🚫 기본값을 바꾸지 말 것 — 종전 순서(미납금 큰 순)를 그대로 둔다. 바꾸면 익숙한 화면이 흔들린다.
+     */
+    #[Url(as: 'sort')] public string $sortKey = 'unpaid';
     // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18).
     // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
     #[Url] public string $classification = '';
@@ -187,6 +196,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /**
+     * 🚨 메서드 이름을 프로퍼티(`$sortKey`)와 같게 짓지 말 것 — Volt 에서 이름이 겹치면
+     *    `wire:click` 이 **요청조차 안 보내고 조용히 죽는다**(§8 #32).
+     */
+    public function applySort(string $key): void
+    {
+        if (! in_array($key, ['unpaid', 'age'], true)) {
+            return;
+        }
+        $this->sortKey = $key;
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
@@ -202,9 +225,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return $this->buildQuery()
             ->with(['exportBuyer', 'buyer', 'salesman', 'receivableManager'])
-            ->orderByDesc('sale_unpaid_amount_krw_cache')
+            // 📅 오래된 순 = 판매일 오름차순. 판매일이 빈 행은 **맨 뒤로** 보낸다
+            //    (MySQL 은 NULL 을 ASC 에서 맨 앞에 놓는다 — 그대로 두면 「가장 오래된 것」 자리에 빈칸이 온다).
+            ->when($this->sortKey === 'age',
+                fn ($q) => $q->orderByRaw('sale_date IS NULL, sale_date ASC'),
+                fn ($q) => $q->orderByDesc('sale_unpaid_amount_krw_cache'))
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
             //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+            //   🚨 오래된 순은 **같은 판매일이 무더기**로 생긴다(적재 한 번이면 수백 대) — 여기가 특히 중요하다.
             ->orderByDesc('id')
             ->paginate($this->perPage);
     }
@@ -1313,10 +1341,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.salesman') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.buyer') }}</th>
                     <th class="py-2 pr-3 text-right">{{ __('receivable.col.sale_total') }}</th>
-                    <th class="py-2 pr-3 text-right">{{ __('receivable.col.unpaid') }}</th>
+                    <th class="py-2 pr-3 text-right">
+                        <button type="button" wire:click="applySort('unpaid')"
+                                class="inline-flex items-center gap-1 uppercase {{ $sortKey === 'unpaid' ? 'font-bold text-violet-700' : 'hover:text-gray-700' }}">
+                            {{ __('receivable.col.unpaid') }}<span class="text-[10px]">{{ $sortKey === 'unpaid' ? '▼' : '↕' }}</span>
+                        </button>
+                    </th>
                     <th class="py-2 pr-3 text-right">{{ __('receivable.col.unpaid_ratio') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.progress') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.bl') }}</th>
+                    <th class="py-2 pr-3 text-right">
+                        <button type="button" wire:click="applySort('age')"
+                                class="inline-flex items-center gap-1 uppercase {{ $sortKey === 'age' ? 'font-bold text-violet-700' : 'hover:text-gray-700' }}">
+                            {{ __('receivable.col.age') }}<span class="text-[10px]">{{ $sortKey === 'age' ? '▼' : '↕' }}</span>
+                        </button>
+                    </th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.risk') }}</th>
                     <th class="py-2 pr-3 text-left">{{ __('receivable.col.manager') }}</th>
                     {{-- 큐 16 — 계산서1/2 컬럼 제거 (헤이맨/카풀 폐기). --}}
@@ -1368,13 +1407,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
                     </td>
                     <td class="py-2 pr-3 text-center text-xs">{{ $v->bl_document ? '✓' : '-' }}</td>
+                    {{-- 📅 경과일 — 판매일부터 오늘까지. 단일 출처 = Vehicle::days_since_sale (위험도 등급이 쓰는 그 값).
+                         🚫 여기에 색(빨강/주황)을 넣지 말 것 — 90일 규칙은 **아직 안 떠난 차**에만 적용된다.
+                            떠난 차에 같은 색을 칠하면 옆칸 위험도와 **다른 답**을 하는 화면이 된다. 숫자만 보여준다. --}}
+                    <td class="py-2 pr-3 text-right text-gray-600">{{ $v->days_since_sale !== null ? __('receivable.age_days', ['days' => number_format($v->days_since_sale)]) : '-' }}</td>
                     <td class="py-2 pr-3"><span class="badge {{ $riskBadge }}">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span></td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->receivableManager?->name ?? '-' }}</td>
                     {{-- 큐 16 — tax_invoice 컬럼 제거 --}}
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="13" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
+                    <td colspan="14" class="py-8 text-center text-gray-400">{{ __('receivable.empty') }}</td>
                 </tr>
                 @endforelse
             </tbody>
@@ -1382,6 +1425,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 카드 리스트 (모바일) --}}
+    {{-- 📱 데스크탑은 표 머리글을 눌러 정렬하는데 카드엔 머리글이 없다 —
+         그것만으로 「폰에선 정렬이 안 된다」가 되므로 같은 두 가지를 버튼으로 둔다.
+         h-9 = 손가락 크기(§8 #98). --}}
+    <div class="mb-2 flex gap-2 sm:hidden">
+        @foreach (['unpaid', 'age'] as $key)
+        <button type="button" wire:click="applySort('{{ $key }}')"
+                class="h-9 flex-1 rounded-lg border px-3 text-xs {{ $sortKey === $key ? 'border-violet-300 bg-violet-50 font-medium text-violet-700' : 'border-gray-200 text-gray-500' }}">
+            {{ __('receivable.sort.'.$key) }}
+        </button>
+        @endforeach
+    </div>
     <div class="block sm:hidden space-y-2">
         @forelse ($this->vehicles as $v)
         @php
@@ -1430,8 +1484,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ __('receivable.mobile_unpaid') }} <span class="font-medium text-red-600">{{ $v->currency }} {{ number_format($v->sale_unpaid_amount, 0) }}</span>
                 </div>
                 {{-- 데스크탑엔 컬럼 헤더가 있어 무슨 숫자인지 알지만 모바일엔 없어서 라벨을 붙인다 --}}
-                <div class="text-xs text-gray-700">
-                    <span class="text-gray-400">{{ __('receivable.col.unpaid_ratio') }}</span> {{ $unpaidRatio }}%
+                <div class="flex items-center gap-2 text-xs text-gray-700">
+                    <span><span class="text-gray-400">{{ __('receivable.col.unpaid_ratio') }}</span> {{ $unpaidRatio }}%</span>
+                    @if($v->days_since_sale !== null)
+                    <span><span class="text-gray-400">{{ __('receivable.col.age') }}</span> {{ __('receivable.age_days', ['days' => number_format($v->days_since_sale)]) }}</span>
+                    @endif
                 </div>
             </div>
         </div>

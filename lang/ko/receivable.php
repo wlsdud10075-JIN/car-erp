@@ -89,8 +89,15 @@ return [
         'unpaid_ratio' => '미납률',
         'progress' => '진행상태',
         'bl' => 'BL',
+        'age' => '경과일',
         'risk' => '위험도',
         'manager' => '채권담당',
+    ],
+    // 📅 경과일 (jin 2026-09-15) — 판매일부터 오늘까지. 단일 출처 = Vehicle::days_since_sale
+    'age_days' => ':days일',
+    'sort' => [
+        'unpaid' => '미납금 큰 순',
+        'age' => '오래된 순',
     ],
     'empty' => '조회된 차량이 없습니다.',
     'buyer_none' => '바이어 미지정',
