@@ -336,6 +336,44 @@ class TransferCertificateDocumentTest extends TestCase
             ->assertOk();
     }
 
+    /**
+     * 🏛️ **조합 이름은 종이 한가운데**(원본 스캔 실측 · jin 2026-09-16).
+     *
+     * 오른쪽 용지규격 블록과 **같은 폭의 빈 블록이 왼쪽에** 있어야 가운데 칸이 좌우 대칭이 된다.
+     * 그게 없으면 「A~AA 안에서 가운데」라 종이 기준으로는 왼쪽으로 치우친다 —
+     * **화면도 인쇄도 정상으로 보이므로** 기능 테스트로는 원리상 못 잡는다.
+     */
+    public function test_the_association_name_sits_in_the_middle_of_the_page(): void
+    {
+        foreach (self::SETS as $set) {
+            $sh = IOFactory::createReader('Xlsx')
+                ->load(resource_path("templates/$set/".self::TYPE.'.xlsx'))
+                ->getSheetByName(self::SHEET);
+
+            $span = static function (string $from, string $to) use ($sh): float {
+                $sum = 0.0;
+                for ($i = Coordinate::columnIndexFromString($from); $i <= Coordinate::columnIndexFromString($to); $i++) {
+                    $w = $sh->getColumnDimension(Coordinate::stringFromColumnIndex($i))->getWidth();
+                    $sum += $w < 0 ? 8.43 : $w;
+                }
+
+                return $sum;
+            };
+
+            $this->assertStringContainsString('경 기 도', (string) $sh->getCell('N47')->getValue(),
+                "[$set] 조합 이름이 가운데 칸(N47)에 없다");
+
+            $left = $span('A', 'M');
+            $mid = $span('N', 'AA');
+            $right = $span('AB', 'AN');
+            $center = $left + $mid / 2;
+            $off = abs($center - ($left + $mid + $right) / 2);
+
+            $this->assertTrue($off <= 1.5,
+                "[$set] 조합 이름이 종이 한가운데가 아니다 — 중심이 ".round($off, 1).' 칸 치우쳤다');
+        }
+    }
+
     // ── ⑦ A4 한 장 「채움」 ─────────────────────────────────────────────
 
     /**
@@ -359,13 +397,14 @@ class TransferCertificateDocumentTest extends TestCase
                 ->getSheetByName(self::SHEET);
 
             // ① 가로 — 다시 좁아지면 실패. 구 양식은 94.1 이었다(A4 폭의 2/3).
+            //    현재 138.3 = 좌우 여백이 같아지는 폭(jin 2026-09-16 «좌측여백처럼 만들어줬으면»).
             $widths = 0.0;
             for ($i = 1; $i <= 40; $i++) {
                 $w = $sh->getColumnDimension(Coordinate::stringFromColumnIndex($i))->getWidth();
                 $widths += $w < 0 ? 8.43 : $w;
             }
-            $this->assertTrue($widths >= 118 && $widths <= 132,
-                "[$set] 열 폭 합이 A4 를 못 채운다 — 기대 118~132, 실제 ".round($widths, 1));
+            $this->assertTrue($widths >= 130 && $widths <= 148,
+                "[$set] 열 폭 합이 A4 를 못 채운다 — 기대 130~148, 실제 ".round($widths, 1));
 
             // ② 세로 — **100% 에서도** 한 장. 엑셀은 행 높이를 화면 픽셀(0.75pt) 배수로 올려 잡으므로
             //    그 올림까지 반영해서 재야 「0.45pt 초과로 갈라지는」 경우를 잡는다.
