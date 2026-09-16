@@ -374,6 +374,49 @@ class TransferCertificateDocumentTest extends TestCase
         }
     }
 
+    /**
+     * 🖼️ **원본처럼 「큰 테두리 하나 + 그 안의 작은 상자」**(jin 2026-09-16).
+     *
+     * jin: *「원본은 큰 CONTAINER 처럼 테두리가 하나 있고, 특약사항이 그 안에서 작은 DIV 처럼
+     * 되어있고 구분이 되어있다」*. 세 가지가 달랐다 — 바깥 테두리가 아예 없었고, 특약 블록이
+     * 테두리에 딱 붙어 있었고, 조항 영역에 원본엔 없는 상자가 있어 제10조 아래에 가로선이 하나 더 있었다.
+     *
+     * 🚨 **컨테이너는 안쪽 상자를 다 그린 뒤에 그려야 한다** — 엑셀은 맞닿은 두 칸의 경계선을
+     *    하나만 들고 있어서, 먼저 그리면 뒤따르는 `box()` 가 굵은 좌우 선을 가는 선으로 덮는다.
+     *    그래도 한 장 그대로에 테스트도 통과한다 — **인쇄물에서만 테두리가 사라진다.**
+     */
+    public function test_it_has_one_outer_container_with_the_special_terms_floating_inside(): void
+    {
+        foreach (self::SETS as $set) {
+            $sh = IOFactory::createReader('Xlsx')
+                ->load(resource_path("templates/$set/".self::TYPE.'.xlsx'))
+                ->getSheetByName(self::SHEET);
+
+            $border = static fn (string $cell, string $side): string => (string) $sh->getStyle($cell)
+                ->getBorders()->{'get'.$side}()->getBorderStyle();
+
+            // ① 제목~유의사항을 감싸는 굵은 바깥선. 조항 한복판(30행)에서도 좌우가 살아 있어야 한다.
+            foreach ([['A2', 'Top'], ['A30', 'Left'], ['AN30', 'Right'], ['A46', 'Bottom']] as [$cell, $side]) {
+                $this->assertSame('medium', $border($cell, $side),
+                    "[$set] 바깥 컨테이너가 $cell 의 $side 에 없다 — 안쪽 상자가 덮었을 수 있다");
+            }
+
+            // ② 조항 영역엔 자기 상자가 없다 — 있으면 제10조 아래에 원본에 없는 줄이 생긴다.
+            $this->assertSame('none', $border('A25', 'Bottom'),
+                "[$set] 조항 영역에 상자가 다시 생겼다");
+
+            // ③ 특약 블록은 **안쪽으로 떠 있다** — A 열과 AN 열은 여백으로 비어야 한다.
+            $this->assertStringContainsString('특', (string) $sh->getCell('B34')->getValue(),
+                "[$set] 특약 라벨이 안쪽(B34)에 없다");
+            $this->assertSame('thin', $border('B34', 'Left'),
+                "[$set] 특약 라벨 상자의 왼쪽 변이 B 에 없다 — A 열 여백이 사라졌다");
+            $this->assertNotSame('', (string) $sh->getCell('D31')->getValue(),
+                "[$set] 특약 내용이 안쪽(D31)에서 시작하지 않는다");
+            $this->assertSame('none', $border('AN31', 'Left'),
+                "[$set] 성능책임보험료 상자가 오른쪽 여백 없이 바깥 테두리에 붙었다");
+        }
+    }
+
     // ── ⑦ A4 한 장 「채움」 ─────────────────────────────────────────────
 
     /**

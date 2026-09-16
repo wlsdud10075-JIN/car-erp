@@ -253,6 +253,7 @@ function build(array $co): Spreadsheet
     buildClauses($sh);
     buildSpecial($sh);
     buildFooter($sh);
+    container($sh);
 
     paintYellow($sh);
     pageSetup($sh);
@@ -451,7 +452,9 @@ function buildClauses(Worksheet $sh): void
         $sh->getRowDimension($r)->setRowHeight($lines * CLAUSE_LH);
         $r++;
     }
-    box($sh, 'A21:AN'.($r - 1));
+    // 🚫 조항 영역엔 **자기 상자가 없다** — 원본도 그렇다.
+    //    위 경계는 20행(표 마지막 줄)의 상자가, 좌우는 바깥 컨테이너가 그린다.
+    //    여기에 상자를 치면 제10조 아래에 원본에 없는 가로선이 하나 더 생긴다.
 }
 
 /**
@@ -506,23 +509,27 @@ function buildSpecial(Worksheet $sh): void
     $top = 31;
     $bottom = $top + count(SPECIAL) - 1;   // 44
 
-    put($sh, "A$top:B$bottom", "특\n약\n사\n항",
+    // 🖼️ 원본은 특약 블록이 **바깥 테두리 안에 떠 있는 작은 상자**다(jin 2026-09-16).
+    //    ⇒ 왼쪽 A 열을 여백으로 비우고 B 부터 시작한다. 라벨 상자는 내용 상자보다 **짧게**
+    //      세로 가운데만 차지한다 — 원본이 그 모양이다.
+    put($sh, 'B34:C41', "특\n약\n사\n항",
         ['size' => 9, 'bold' => true, 'align' => 'center', 'wrap' => true]);
 
     $r = $top;
     foreach (SPECIAL as [$text, $head]) {
-        put($sh, "C$r:W$r", ' '.$text, ['size' => 7.5, 'bold' => $head]);
+        put($sh, "D$r:W$r", ' '.$text, ['size' => 7.5, 'bold' => $head]);
         $sh->getRowDimension($r)->setRowHeight(10.5);
         $r++;
     }
-    box($sh, "A$top:B$bottom");
-    box($sh, "C$top:W$bottom");
+    box($sh, 'B34:C41');
+    box($sh, "D$top:W$bottom");
 
     // 오른쪽 — 성능책임보험료 + 증명 문구 + 발행일. 특약 상자와 같은 행 범위를 나눠 쓴다.
-    put($sh, 'X31:AE32', '성능 책임 보험료', ['size' => 10, 'align' => 'center']);
-    num($sh, 'AF31:AN32', 0, ['size' => 10, 'align' => 'right', 'fmt' => FMT_WON]);
-    box($sh, 'X31:AE32');
-    box($sh, 'AF31:AN32');
+    //    오른쪽도 AN 열을 여백으로 비운다 — 양쪽이 비어야 「떠 있는 상자」로 읽힌다.
+    put($sh, 'X31:AD32', '성능 책임 보험료', ['size' => 10, 'align' => 'center']);
+    num($sh, 'AE31:AM32', 0, ['size' => 10, 'align' => 'right', 'fmt' => FMT_WON]);
+    box($sh, 'X31:AD32');
+    box($sh, 'AE31:AM32');
 
     // ⚠️ 오른쪽 폭(X:AN ≈ 37 엑셀폭 ≈ 193pt)은 9pt 로 21자밖에 안 들어간다 —
     //    3행에 우겨넣으면 아랫줄이 잘린다. 8pt 로 낮추고 5행을 준다.
@@ -556,6 +563,20 @@ function buildFooter(Worksheet $sh): void
     put($sh, 'N47:AA47', '경 기 도 자 동 차 매 매 사 업 조 합', ['size' => 11, 'align' => 'center']);
     put($sh, 'AB47:AN47', '210mm×297mm[백상지 80g/㎡] ', ['size' => 7, 'align' => 'right']);
     $sh->getRowDimension(47)->setRowHeight(18);
+}
+
+/**
+ * 🖼️ 제목~유의사항을 감싸는 **바깥 테두리 하나**. 원본이 그 모양이다(jin 2026-09-16).
+ *
+ * 1행(서식번호·구분표시)과 47행(조합명)은 **테두리 밖**이다 — 원본도 그렇다.
+ *
+ * 🚨 **반드시 안쪽 상자를 다 그린 뒤에 호출할 것.** 엑셀은 맞닿은 두 칸의 경계선을
+ *    하나만 들고 있어서, 먼저 그리면 뒤따르는 `box()` 가 좌우 굵은 선을 가는 선으로 덮는다.
+ *    예외 0 · 한 장 그대로 · 테스트도 통과 — 인쇄물에서만 컨테이너가 사라진다.
+ */
+function container(Worksheet $sh): void
+{
+    $sh->getStyle('A2:AN46')->getBorders()->getOutline()->setBorderStyle(Border::BORDER_MEDIUM);
 }
 
 /**
