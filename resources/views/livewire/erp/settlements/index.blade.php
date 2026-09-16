@@ -988,6 +988,28 @@ new #[Layout('components.layouts.app')] class extends Component
             if ($this->settlement_status === 'paid') {
                 $data['paid_at'] = $now;
             }
+
+            /*
+             * 🗓️ **귀속월·내수를 자동 경로와 같은 규칙으로 채운다** (jin 2026-09-16).
+             *
+             * 이 폼은 둘 다 안 채우고 있었다. 그러면:
+             *   · `attributed_month` 가 비어 **월배치에 영영 안 잡힌다** — 화면엔 있는데 지급 대상이 아니다.
+             *     실측 ssancarerp 5건이 그 상태였다(전부 손으로 만든 것).
+             *   · `is_domestic` 이 비어 **내수 건이 수출 공식으로 굳는다**. 이 값은 생성 시 박제라
+             *     나중에 바이어를 고쳐도 안 바뀐다.
+             * 예외도 로그도 없다 — 숫자는 나오고 화면도 정상이라 배치를 뽑아 봐야 안다.
+             *
+             * 🔑 **자동 생성과 같은 함수**를 쓴다(`Vehicle::createSettlementNow` 가 쓰는 그 둘).
+             *    🚫 여기서 「이번 달」을 직접 넣지 말 것 — 완납월이 마감된 달이면 현재 열린 달로
+             *       넘기는 규칙(jin 2026-07-18)이 그 함수 안에 있다. 옮겨 적으면 갈린다(§8 #45).
+             * ⚠️ 편집 분기엔 안 넣는다 — 기존 정산의 귀속월이 저장할 때마다 조용히 움직이면
+             *    이미 지급된 배치의 구성이 바뀐다(§8 #65 ①).
+             */
+            if ($gateVehicle) {
+                $data['attributed_month'] = $gateVehicle->settlementAttributionMonth();
+                $data['is_domestic'] = $gateVehicle->isDomesticSettlement();
+            }
+
             $created = Settlement::create($data);
 
             if ($blockers !== [] && $gateVehicle) {
