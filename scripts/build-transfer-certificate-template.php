@@ -78,12 +78,18 @@ const CLAUSE_UNITS = 132;
  *    반대로 예산만 키우면 상자 밖으로 **잘린 채 인쇄**된다(예외 0 · 테스트도 통과).
  * ⚠️ 바꿨으면 반드시 PDF 로 렌더해 **가로 폭까지** 재 볼 것 — 페이지 수만 보면 못 잡는다.
  */
-const WIDTH_SCALE = 1.33;
+const WIDTH_SCALE = 1.47;
 
-/** 폭 예산을 배율에 맞춰 환산. 예산을 상수로 박으면 배율과 조용히 어긋난다. */
+/**
+ * 폭 예산을 배율에 맞춰 환산. 예산을 상수로 박으면 배율과 조용히 어긋난다.
+ *
+ * ⚠️ **올림이 아니라 버림**이다 — 예산이 반 칸이라도 넘치면 그 줄이 상자 밖으로 밀려
+ * 엑셀이 제멋대로 다시 감는다(실측: 「…매매계약」 / 「서」 로 한 글자가 홀로 떨어졌다).
+ * 모자란 쪽은 오른쪽이 조금 비는 것으로 끝나지만, 넘치는 쪽은 인쇄물이 망가진다.
+ */
 function units(int $base): int
 {
-    return (int) round($base * WIDTH_SCALE);
+    return (int) floor($base * WIDTH_SCALE);
 }
 
 const YELLOW = 'FFFFFF00';
@@ -543,7 +549,11 @@ function buildFooter(Worksheet $sh): void
     $sh->getRowDimension(46)->setRowHeight((substr_count($notice, "\n") + 1) * CLAUSE_LH);
     box($sh, 'A46:AN46');
 
-    put($sh, 'A47:AA47', '경 기 도 자 동 차 매 매 사 업 조 합', ['size' => 11, 'align' => 'center']);
+    // 조합 이름은 **페이지 한가운데**다(원본 스캔 실측). 오른쪽 용지규격 블록(AB~AN, 13열)과
+    // 같은 폭의 **빈 블록을 왼쪽에 두어** 가운데 칸이 좌우 대칭이 되게 한다 —
+    // 안 그러면 「A~AA 안에서 가운데」라 종이 기준으로는 왼쪽으로 치우친다(jin 2026-09-16).
+    put($sh, 'A47:M47', '', []);
+    put($sh, 'N47:AA47', '경 기 도 자 동 차 매 매 사 업 조 합', ['size' => 11, 'align' => 'center']);
     put($sh, 'AB47:AN47', '210mm×297mm[백상지 80g/㎡] ', ['size' => 7, 'align' => 'right']);
     $sh->getRowDimension(47)->setRowHeight(18);
 }
