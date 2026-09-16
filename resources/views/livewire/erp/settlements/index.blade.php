@@ -2253,6 +2253,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $statusBadge }}">{{ $statusLabel }}</span>
+                    {{-- 🚪 지급 대상 아닌 담당자 (jin 2026-09-16) — 자매 회사 계정 등.
+                         표시가 없으면 「확정했는데 왜 지급이 안 되지」가 된다(§8 #60). --}}
+                    @if($s->isPayoutExcludedBySalesman())
+                    <span class="badge badge-gray ml-1"
+                          title="{{ __('settlement.payout_excluded.tooltip', ['name' => $s->salesman?->name ?? '-']) }}">{{ __('settlement.payout_excluded.badge') }}</span>
+                    @endif
                     {{-- 지급 게이트 (jin 2026-07-08) — 미수 있어 월배치·지급에서 제외되는 확정 정산 표시 --}}
                     @if($s->isPayoutHeldByUnpaid())
                     <span class="badge badge-red ml-1" title="{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}">{{ __('settlement.held.badge') }}</span>

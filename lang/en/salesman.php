@@ -34,6 +34,8 @@ return [
         'type_unset' => 'Not set — enter in User management',
         'per_unit_tier' => 'Apply tiered settlement',
         'per_unit_tier_hint' => 'When on: 200,000 KRW for total margin ≥ 1M, or 25% of total margin when purchase total ≥ 100M. When off: flat 100,000 KRW per unit (0 for loss-making vehicles). Inherited-buyer deals are always 50,000 KRW regardless of this setting.',
+        'payout_excluded' => 'Excluded from payouts',
+        'payout_excluded_hint' => 'Turn this on for accounts that are not people (a sister company, for example). Settlements for this salesman are still created and listed, but never join a monthly payout batch, so zero-value rows stop piling up. Batches already paid are not changed retroactively.',
         'type_no_account' => 'No login account linked',
     ],
 

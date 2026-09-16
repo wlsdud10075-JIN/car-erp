@@ -319,6 +319,33 @@ class Settlement extends Model
             && (int) ($this->vehicle?->sale_unpaid_amount ?? 0) > 0;
     }
 
+    /**
+     * 🚪 **지급 대상이 아닌 담당자의 정산인가** (jin 2026-09-16).
+     *
+     * 「헤이맨」처럼 **사람이 아닌 계정**(자매 회사)이 담당자로 들어간 건들이 있다. 기록으로만
+     * 남기고 실지급이 0 원인데, 확정하면 월배치 대상에 **0 원 줄로 올라온다**
+     * (실측 ssancarerp 2026-08 대상 15건이 전부 그것 — 지급 합계 0원).
+     *
+     * 🚫 금액(0원)으로 가르지 말 것 — 0원 정산 58건 중 39건은 **진짜 사람의 정산**이다
+     *    (서류비로 몫이 깎였거나 기준액이 건당 금액보다 작은 경우). 음수 지급(손실 분담)도 48건 있다.
+     * ⚠️ 이 술어는 **세 곳이 같이 본다** — 여기 · `scopePayoutExcludedSalesman` ·
+     *    `SettlementPayoutBatch::eligibleSettlementIds`. 하나만 빠지면 「목록엔 안 뜨는데
+     *    배치엔 들어가는」 형태가 된다(§8 #44).
+     * 🚫 지급이 **이미 끝난** 건은 제외하지 않는다 — 과거 배치의 구성이 소급해 바뀌면 안 된다.
+     */
+    public function isPayoutExcludedBySalesman(): bool
+    {
+        return $this->payout_batch_id === null
+            && (bool) $this->salesman?->payout_excluded;
+    }
+
+    /** SQL 스코프 — 지급 대상 아닌 담당자(미배치분만). 목록 뱃지·필터가 같은 답을 하게. */
+    public function scopePayoutExcludedSalesman($query)
+    {
+        return $query->whereNull('payout_batch_id')
+            ->whereHas('salesman', fn ($q) => $q->where('payout_excluded', true));
+    }
+
     /** SQL 스코프 — 지급보류(confirmed·미배치·**예외 없음**·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
     public function scopePayoutHeldByUnpaid($query)
     {
