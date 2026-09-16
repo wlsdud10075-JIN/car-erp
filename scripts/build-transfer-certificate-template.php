@@ -62,6 +62,26 @@ const CLAUSE_PT = 6.0;
 const CLAUSE_LH = 9.2;
 const CLAUSE_UNITS = 132;
 
+/**
+ * 🖨️ **A4 채움 배율** — 열 너비와 글자 예산에 **함께** 곱한다.
+ *
+ * 처음 만들 때(2026-09-12) 세로만 맞춰서 **가로를 34% 남긴 채** 끝났다.
+ * fitToPage 가 「1장」으로 만들어 주니 페이지 수만 보는 검증은 초록이었고,
+ * 인쇄물은 왼쪽으로 몰려 오른쪽이 텅 비었다(jin 2026-09-16 제보).
+ *
+ * 🚨 **비율은 스캔 실측이라 열마다 다시 고르지 말 것** — 전체에 같은 값을 곱한다.
+ * 🚨 **글자 예산도 같이 곱해야 한다** — 폭만 키우면 조항 줄이 짧게 끝나 오른쪽이 또 빈다.
+ *    반대로 예산만 키우면 상자 밖으로 **잘린 채 인쇄**된다(예외 0 · 테스트도 통과).
+ * ⚠️ 바꿨으면 반드시 PDF 로 렌더해 **가로 폭까지** 재 볼 것 — 페이지 수만 보면 못 잡는다.
+ */
+const WIDTH_SCALE = 1.33;
+
+/** 폭 예산을 배율에 맞춰 환산. 예산을 상수로 박으면 배율과 조용히 어긋난다. */
+function units(int $base): int
+{
+    return (int) round($base * WIDTH_SCALE);
+}
+
 const YELLOW = 'FFFFFF00';
 const BLUE = 'FF1F3FBF';
 
@@ -213,7 +233,7 @@ function build(array $co): Spreadsheet
 
     for ($i = 1; $i <= 40; $i++) {
         $col = Coordinate::stringFromColumnIndex($i);
-        $sh->getColumnDimension($col)->setWidth(COL_WIDTHS[$col] ?? COL_DEFAULT);
+        $sh->getColumnDimension($col)->setWidth((COL_WIDTHS[$col] ?? COL_DEFAULT) * WIDTH_SCALE);
     }
 
     buildHeader($sh);
@@ -415,7 +435,7 @@ function buildClauses(Worksheet $sh): void
         //    한 줄이 두 줄로 다시 감기는데, 병합셀은 엑셀이 행 높이를 자동으로 못 맞춰
         //    **아랫줄이 통째로 잘린 채 인쇄된다**(예외 0 · 화면은 정상 · 테스트도 통과).
         //    직접 감아서 줄 수를 확정한다 — 그래야 높이 계산이 구조적으로 맞는다.
-        $wrapped = reflow($text, CLAUSE_UNITS);
+        $wrapped = reflow($text, units(CLAUSE_UNITS));
         $lines = substr_count($wrapped, "\n") + 1;
         put($sh, "A$r:AN$r", $wrapped, ['size' => CLAUSE_PT, 'wrap' => true, 'valign' => 'top']);
         $sh->getRowDimension($r)->setRowHeight($lines * CLAUSE_LH);
@@ -497,7 +517,7 @@ function buildSpecial(Worksheet $sh): void
     // ⚠️ 오른쪽 폭(X:AN ≈ 37 엑셀폭 ≈ 193pt)은 9pt 로 21자밖에 안 들어간다 —
     //    3행에 우겨넣으면 아랫줄이 잘린다. 8pt 로 낮추고 5행을 준다.
     put($sh, 'X34:AN38',
-        reflow('「자동차등록규칙」 제33조제2항제2호에 따라 위의 중고자동차매매계약서 기재내용과 같이 양도하였음을 증명합니다.', 46, ''),
+        reflow('「자동차등록규칙」 제33조제2항제2호에 따라 위의 중고자동차매매계약서 기재내용과 같이 양도하였음을 증명합니다.', units(46), ''),
         ['size' => 8, 'wrap' => true]);
 
     put($sh, 'X40:AN41', '        년                 월                 일       ', ['size' => 9, 'align' => 'right']);
@@ -514,7 +534,7 @@ function buildFooter(Worksheet $sh): void
     put($sh, 'AI45:AN45', '(서명 또는 인) ', ['size' => 8, 'align' => 'right']);
     $sh->getRowDimension(45)->setRowHeight(20);
 
-    $notice = reflow(NOTICE, CLAUSE_UNITS, '              ');
+    $notice = reflow(NOTICE, units(CLAUSE_UNITS), '              ');
     put($sh, 'A46:AN46', $notice, ['size' => CLAUSE_PT, 'wrap' => true, 'valign' => 'top']);
     $sh->getRowDimension(46)->setRowHeight((substr_count($notice, "\n") + 1) * CLAUSE_LH);
     box($sh, 'A46:AN46');
@@ -558,8 +578,12 @@ function pageSetup(Worksheet $sh): void
     $ps->setFitToHeight(1);
     $ps->setPrintArea('A1:AN47');
 
+    // ⚠️ **여백은 0.01 인치가 한 장을 가른다.** 구 양식은 내용 높이가 인쇄 가능 높이를
+    //    **0.45pt**(엑셀이 행 높이를 화면 픽셀 배수로 올림한 뒤의 값) 넘겨 45행에서 갈라졌다 —
+    //    fitToPage 가 가려 줘서 엑셀에선 1장이었지만, 그걸 안 보는 뷰어·프린터에선 2장이 됐다.
+    //    세로 여백을 줄여 **100% 에서도** 한 장에 들어가게 둔다(fitToPage 는 안전망으로만).
     $m = $sh->getPageMargins();
-    $m->setTop(0.28)->setBottom(0.2)->setLeft(0.28)->setRight(0.28)->setHeader(0)->setFooter(0);
+    $m->setTop(0.24)->setBottom(0.16)->setLeft(0.28)->setRight(0.28)->setHeader(0)->setFooter(0);
 }
 
 // ── 셀 헬퍼 ────────────────────────────────────────────────────────────

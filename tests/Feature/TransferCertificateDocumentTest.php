@@ -11,6 +11,7 @@ use App\Services\Documents\Mappings\TransferCertificateMapping;
 use App\Services\Documents\StampSlots;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
@@ -333,5 +334,57 @@ class TransferCertificateDocumentTest extends TestCase
         $this->actingAs($user)
             ->get(route('erp.vehicles.documents.show', ['id' => $krw->id, 'type' => self::TYPE]))
             ->assertOk();
+    }
+
+    // ── ⑦ A4 한 장 「채움」 ─────────────────────────────────────────────
+
+    /**
+     * 🖨️ **A4 한 장에 「채워서」 들어가는가** (jin 2026-09-16 제보).
+     *
+     * 처음 판(2026-09-12)은 세로만 맞추고 **가로를 34% 남겼다** — 인쇄물이 왼쪽으로 몰리고
+     * 오른쪽이 텅 빘다. 그때 확인은 「3사 전부 A4 1장」이었는데, fitToPage 가 한 장으로
+     * 만들어 주니 **페이지 수만 보는 확인은 초록**이었다. 게다가 내용 높이가 인쇄 가능
+     * 높이를 **0.45pt** 넘겨, fitToPage 를 안 보는 뷰어·프린터에선 45행에서 갈라졌다.
+     *
+     * ⚠️ **기능 테스트로는 원리상 못 잡는다** — 서류는 늘 정상 생성되고 화면도 정상이다.
+     *    그래서 양식 파일의 **기하를 직접 잰다**.
+     * ⚠️ px 환산은 엔진마다 다르다(엑셀 ↔ LibreOffice 실측 14% 차이) — 단언에 쓰지 않는다.
+     *    폭은 **엑셀 열 단위 합**, 높이는 **pt 합**으로만 본다.
+     */
+    public function test_the_form_fills_one_a4_page_in_every_company(): void
+    {
+        foreach (self::SETS as $set) {
+            $sh = IOFactory::createReader('Xlsx')
+                ->load(resource_path("templates/$set/".self::TYPE.'.xlsx'))
+                ->getSheetByName(self::SHEET);
+
+            // ① 가로 — 다시 좁아지면 실패. 구 양식은 94.1 이었다(A4 폭의 2/3).
+            $widths = 0.0;
+            for ($i = 1; $i <= 40; $i++) {
+                $w = $sh->getColumnDimension(Coordinate::stringFromColumnIndex($i))->getWidth();
+                $widths += $w < 0 ? 8.43 : $w;
+            }
+            $this->assertTrue($widths >= 118 && $widths <= 132,
+                "[$set] 열 폭 합이 A4 를 못 채운다 — 기대 118~132, 실제 ".round($widths, 1));
+
+            // ② 세로 — **100% 에서도** 한 장. 엑셀은 행 높이를 화면 픽셀(0.75pt) 배수로 올려 잡으므로
+            //    그 올림까지 반영해서 재야 「0.45pt 초과로 갈라지는」 경우를 잡는다.
+            $rows = 0.0;
+            foreach (range(1, 47) as $r) {
+                $h = $sh->getRowDimension($r)->getRowHeight();
+                $rows += ceil(($h < 0 ? 14.4 : $h) / 0.75) * 0.75;
+            }
+            $m = $sh->getPageMargins();
+            $free = 841.89 - ($m->getTop() + $m->getBottom()) * 72 - $rows;
+            $this->assertTrue($free >= 12,
+                "[$set] 100% 로 인쇄하면 한 장을 넘는다 — 남는 높이 ".round($free, 1).'pt (12pt 이상 필요)');
+
+            // ③ 안전망은 안전망대로 살아 있어야 한다 — 꺼지면 어긋난 날 바로 두 장이 된다.
+            $ps = $sh->getPageSetup();
+            $this->assertTrue($ps->getFitToPage(), "[$set] fitToPage 안전망이 꺼졌다");
+            $this->assertSame(1, $ps->getFitToWidth(), "[$set] fitToWidth 가 1 이 아니다");
+            $this->assertSame(1, $ps->getFitToHeight(), "[$set] fitToHeight 가 1 이 아니다");
+            $this->assertSame('A1:AN47', $ps->getPrintArea(), "[$set] 인쇄 영역이 바뀌었다");
+        }
     }
 }
