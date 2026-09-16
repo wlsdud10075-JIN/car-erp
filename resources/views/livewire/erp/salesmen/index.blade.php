@@ -38,6 +38,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. 정산 금액 직결이라 canApprove() 만 수정 가능
     //   ([관리] 이상 = role 관리 · 업무관리자 · 최고관리자 · 시스템관리자).
     public bool   $per_unit_tier_enabled = false;
+    public bool   $payout_excluded       = false;
 
     #[Computed]
     public function salesmen()
@@ -183,6 +184,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->memo        = $sm->memo  ?? '';
         $this->is_active   = $sm->is_active;
         $this->per_unit_tier_enabled = (bool) $sm->per_unit_tier_enabled;
+        $this->payout_excluded = (bool) $sm->payout_excluded;
         $this->showPanel   = true;
     }
 
@@ -210,12 +212,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             // tier 는 정산 금액을 바꾸므로 화면 노출과 별개로 저장 시점에 재인가한다 (SKILLS §8 #26).
             if (auth()->user()?->canApprove()) {
                 $data['per_unit_tier_enabled'] = $this->per_unit_tier_enabled;
+                // 🚪 지급 대상 제외도 돈이 나가고 안 나가고를 가르므로 tier 와 같은 무게로 재인가한다.
+                $data['payout_excluded'] = $this->payout_excluded;
             }
             $wasTier = (bool) $sm->per_unit_tier_enabled;
+            $wasExcluded = (bool) $sm->payout_excluded;
             $sm->update($data);
             // 돈을 바꾸는 스위치라 누가 언제 켰는지 남긴다 (Salesman 엔 감사 훅이 없어 여기서 직접).
             if (array_key_exists('per_unit_tier_enabled', $data) && $wasTier !== $this->per_unit_tier_enabled) {
                 \App\Models\AuditLog::recordChange($sm, 'per_unit_tier_enabled', $wasTier, $this->per_unit_tier_enabled);
+            }
+            if (array_key_exists('payout_excluded', $data) && $wasExcluded !== $this->payout_excluded) {
+                \App\Models\AuditLog::recordChange($sm, 'payout_excluded', $wasExcluded, $this->payout_excluded);
             }
         } else {
             // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
@@ -484,6 +492,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ __('salesman.field.per_unit_tier') }}
                     <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">
                         {{ __('salesman.field.per_unit_tier_hint') }}
+                    </span>
+                </span>
+            </label>
+        </div>
+        @endif
+        {{-- 🚪 지급 대상 제외 (jin 2026-09-16) — 「헤이맨」처럼 사람이 아닌 계정(자매 회사)용.
+             ⚠️ tier 와 달리 **사내직원 한정이 아니다** — 어떤 유형이든 지급 안 하는 계정이 있을 수 있다. --}}
+        @if(auth()->user()?->canApprove())
+        <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <label class="flex items-start gap-2 cursor-pointer">
+                <input wire:model="payout_excluded" type="checkbox" class="mt-0.5 rounded" />
+                <span class="text-sm text-gray-800">
+                    {{ __('salesman.field.payout_excluded') }}
+                    <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">
+                        {{ __('salesman.field.payout_excluded_hint') }}
                     </span>
                 </span>
             </label>

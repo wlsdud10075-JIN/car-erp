@@ -196,7 +196,11 @@ class SettlementPayoutBatch extends Model
         //   비파괴적 — 정산은 유지(귀속월·스냅샷 보존), 지급만 보류. 완납되면 다음 배치에 자동 재진입.
         //   🚪 예외(게이트 오버라이드)가 걸린 정산은 통과 — 판정은 `isPayoutHeldByUnpaid()` 단일 출처
         //      (조건을 여기 옮겨 적으면 「뱃지는 없는데 배치에서 빠지는」 형태가 된다 — §8 #44).
-        return Settlement::whereIn('id', $ids)->with('vehicle')->get()
+        // 🚪 지급 대상이 아닌 담당자(자매 회사 계정 등)의 정산은 배치에 안 넣는다 (jin 2026-09-16).
+        //    판정은 `isPayoutExcludedBySalesman()` 단일 출처 — 조건을 여기 옮겨 적으면
+        //    「목록엔 빠졌다고 뜨는데 배치엔 들어가는」 형태가 된다(§8 #44).
+        return Settlement::whereIn('id', $ids)->with(['vehicle', 'salesman'])->get()
+            ->reject(fn (Settlement $s) => $s->isPayoutExcludedBySalesman())
             ->reject(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())
             ->pluck('id');
     }

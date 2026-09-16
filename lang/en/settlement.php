@@ -52,6 +52,10 @@ return [
 
     'search_ph' => 'Plate or memo',
     'filter_all_status' => 'All statuses',
+    'payout_excluded' => [
+        'badge' => 'Not payable',
+        'tooltip' => 'Salesman ":name" is excluded from payouts, so this settlement never joins a monthly batch. Change it in the salesman settings.',
+    ],
     'held' => [
         'badge' => 'Payout held',
         'filter' => 'Held only',

@@ -17,9 +17,15 @@ class Salesman extends Model
         'type',
         // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. OFF=10만원 고정.
         'per_unit_tier_enabled',
+        // 2026-09-16 jin — 정산 지급 대상이 아닌 담당자(자매 회사 계정 등). 상세 = 마이그레이션 주석.
+        'payout_excluded',
     ];
 
-    protected $casts = ['is_active' => 'boolean', 'per_unit_tier_enabled' => 'boolean'];
+    protected $casts = [
+        'is_active' => 'boolean',
+        'per_unit_tier_enabled' => 'boolean',
+        'payout_excluded' => 'boolean',
+    ];
 
     public const TYPES = [
         'employee' => '사내직원',
