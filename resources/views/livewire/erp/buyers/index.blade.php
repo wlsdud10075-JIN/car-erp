@@ -128,6 +128,24 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ─────────────────────────────────────────────────────────────
 
     /**
+     * 🏠 이 바이어에게 아직 원화가 아닌 차가 몇 대인가 — 내수 토글 밑 안내용.
+     *
+     * 저장을 막지 않기로 한 만큼(jin 2026-09-16) 그 상태가 화면에 보여야 한다(SKILLS §8 #60).
+     * ⚠️ 신규 등록(편집 중이 아님)이면 붙은 차가 없으므로 0 이다.
+     */
+    #[Computed]
+    public function domesticForeignCount(): int
+    {
+        if (! $this->is_domestic || ! $this->editingId) {
+            return 0;
+        }
+
+        return \App\Models\Vehicle::where('buyer_id', $this->editingId)
+            ->where('currency', '!=', 'KRW')
+            ->count();
+    }
+
+    /**
      * 회의확장씬 #2 개발예정 Phase 3-1 (c) (2026-05-23) — 바이어 미수금 게이지.
      * 분모: Σ(sale_total_amount × exchange_rate) — SKILLS §13 단일 출처.
      * 분자: Σ(sale_unpaid_amount_krw_cache) — Vehicle saving 훅 자동 갱신.
@@ -423,21 +441,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $data['inherited_at'] = $this->is_inherited && $this->inherited_at !== '' ? $this->inherited_at : null;
 
             // 내수 지정도 정산 공식을 통째로 바꾸므로 승계와 같은 무게로 재인가한다 (SKILLS §8 #26).
-            //   🚨 내수는 원화 전용이다 — 이 바이어에게 원화가 아닌 차량이 이미 붙어 있으면 막는다.
-            //      (차량 쪽에도 같은 가드가 있다. 두 방향 다 막아야 «체크를 먼저 켜는» 순서로 새지 않는다.)
-            if ($this->is_domestic && $this->editingId) {
-                $foreign = \App\Models\Vehicle::where('buyer_id', $this->editingId)
-                    ->where('currency', '!=', 'KRW')
-                    ->pluck('vehicle_number');
-                if ($foreign->isNotEmpty()) {
-                    $this->addError('is_domestic', __('vehicle.domestic.buyer_has_foreign', [
-                        'count' => $foreign->count(),
-                        'plates' => $foreign->take(5)->implode(', ').($foreign->count() > 5 ? ' …' : ''),
-                    ]));
-
-                    return;
-                }
-            }
+            //   🔀 2026-09-16 (jin) — 「원화 아닌 차가 있으면 저장 차단」을 걷어냈다.
+            //      실제 작업 순서가 «먼저 내수로 묶고 통화는 나중에» 라서 막으면 그 순서가 불가능해진다.
+            //      숫자는 정산 박제(`Vehicle::isDomesticSettlement`)가 지킨다 — 통화가 외화인 채로
+            //      정산이 나면 일반(수출) 공식으로 떨어지지, 외화를 원화로 오인하지 않는다.
+            //      🚫 여기에 다시 막지 말 것. 대신 아래 화면이 몇 대가 남았는지 말한다.
             $data['is_domestic'] = $this->is_domestic;
         }
 
@@ -1380,6 +1388,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </span>
                     </label>
                     @error('is_domestic')<p class="mt-2 text-xs text-red-500">{{ $message }}</p>@enderror
+                    {{-- 🏠 막지 않는 대신 상태를 말한다 (jin 2026-09-16) — 이 바이어에게 아직 원화가
+                         아닌 차가 몇 대인지. 그 차들은 통화를 바꾸기 전까지 수출 공식으로 정산된다. --}}
+                    @if($this->domesticForeignCount > 0)
+                    <p class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-800">
+                        {{ __('vehicle.domestic.buyer_has_foreign', ['count' => $this->domesticForeignCount]) }}
+                    </p>
+                    @endif
                 </div>
                 @endif
 

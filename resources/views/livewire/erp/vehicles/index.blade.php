@@ -2766,6 +2766,25 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   buyersForFilter/buyers/index 와 동일 규칙: admin=전체 / 영업=본인(직접 salesman_id + 차량 간접) / 관리=subordinate.
     //   ⚠ 편집 중 차량의 현재 바이어(판매/통관/B-L)는 스코프 밖이어도 항상 포함 — 드롭다운에서 사라져
     //     저장 시 선택이 소실되는 것 방지. (buyer 없으면 salesman 매칭 필수 = 운영 규칙, jin 수용.)
+    /**
+     * 🏠 지금 고른 판매 바이어가 내수인데 통화가 아직 원화가 아닌가 — 판매 탭 안내용.
+     *
+     * 🚫 프로퍼티와 같은 이름을 쓰지 말 것(§8 #32). 여기엔 `$domesticAwaitingKrw` 프로퍼티가 없다.
+     * ⚠️ 편집 패널은 차 1대라 조회 1회다 — 목록 행에서는 이걸 쓰지 말고
+     *    `$v->isDomesticAwaitingKrw()`(eager load 된 buyer 를 쓴다)를 쓸 것.
+     */
+    #[Computed]
+    public function domesticAwaitingKrw(): bool
+    {
+        if ($this->currency === 'KRW' || ! $this->buyer_id_str) {
+            return false;
+        }
+
+        return (bool) \App\Models\Buyer::withTrashed()
+            ->whereKey((int) $this->buyer_id_str)
+            ->value('is_domestic');
+    }
+
     #[Computed]
     public function buyers()
     {
@@ -5148,9 +5167,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $previewVehicle->guardStageOrderForExport();
         $previewVehicle->guardAttachmentDeps();
-        // 내수는 원화 전용 (jin 2026-09-08) — 외화 차량에 내수 바이어를 붙이면 정산 기준액이
-        //   외화 금액을 원화로 오인해 계산된다. 바이어 화면에도 반대 방향 가드가 있다.
-        $previewVehicle->guardDomesticCurrency();
+        // 🔀 내수 원화 전용 저장 차단은 2026-09-16 에 걷어냈다 (jin) — 먼저 내수로 묶고 통화는
+        //    나중에 정리하는 게 실제 작업 순서다. 숫자는 정산 박제(`isDomesticSettlement`)가 지키고,
+        //    그 사이 상태는 목록 뱃지와 아래 판매 탭 안내가 말한다. 🚫 여기에 다시 막지 말 것.
 
         // H10 — 말소 처리(is_deregistered=true) 시 RRN 필수.
         // 말소신청서·등록증재발급·양도증명서 PDF가 RRN 필드 사용. 빈칸 발급 차단.
@@ -7412,9 +7431,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                          ⚠️ buyer 는 위에서 eager load 한다 — 행마다 조회하면 N+1. --}}
                     @if($v->isDomesticSale())
                         {{-- ⚠️ 색은 **빌드된 CSS 에 이미 있는 것**만 쓴다 — 없으면 배경이 안 깔려
-                             회색으로만 보인다(SKILLS §8 #50). teal 은 board 뱃지(blue·purple)와도 구분된다. --}}
-                        <span class="ml-1 whitespace-nowrap rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700"
-                              title="{{ __('buyer.field.domestic') }}">{{ __('vehicle.domestic.badge') }}</span>
+                             회색으로만 보인다(SKILLS §8 #50). teal 은 board 뱃지(blue·purple)와도 구분된다.
+                             🏠 통화가 아직 원화가 아니면 **다른 색 + 다른 말**로 구분한다 — 같은 뱃지로
+                                두면 「내수로 정산된다」로 읽히는데 실제로는 수출 공식으로 나간다. --}}
+                        @php $domesticPending = $v->isDomesticAwaitingKrw(); @endphp
+                        <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $domesticPending ? 'bg-amber-100 text-amber-700' : 'bg-teal-100 text-teal-700' }}"
+                              title="{{ $domesticPending ? __('vehicle.domestic.awaiting_krw', ['currency' => $v->currency]) : __('buyer.field.domestic') }}">{{ $domesticPending ? __('vehicle.domestic.badge_pending') : __('vehicle.domestic.badge') }}</span>
                     @endif
                     {{-- board 요청·확인 신호 (2026-08-09) — 영업이 board 에서 보낸 신호를 여기서 바로 본다.
                          ⚠️ 위 뱃지들과 나란히 서므로 라벨은 4자 고정. 여러 개면 아래로 흐르게 flex-wrap.
@@ -8903,6 +8925,13 @@ function vehicleColumnsToggle() {
                         :required="true" placeholder="{{ __('vehicle.panel.select_placeholder') }}"
                         wire:key="cbx-buyer-sale-{{ $buyer_id_str }}" />
                     @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    {{-- 🏠 내수 바이어인데 통화가 원화가 아니다 — 저장은 되지만 정산은 수출 공식으로 간다.
+                         막지 않기로 한 만큼(jin 2026-09-16) 화면이 그 사실을 말해야 한다(SKILLS §8 #60). --}}
+                    @if($this->domesticAwaitingKrw)
+                    <p class="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-relaxed text-amber-800">
+                        {{ __('vehicle.domestic.awaiting_krw', ['currency' => $currency]) }}
+                    </p>
+                    @endif
 
                     {{-- 바이어 미정 매입 (jin 2026-08-09) — 바이어가 정해지기 전에 사는 투기 매입.
                          명시 체크여야 신규 등록이 통과한다(빈 값만으로는 안 된다 — 실수와 구분).

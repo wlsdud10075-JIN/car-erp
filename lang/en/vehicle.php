@@ -1277,8 +1277,9 @@ return [
     ],
     'domestic' => [
         'badge' => 'Domestic',
-        'krw_only' => 'A domestic buyer (:buyer) can only be assigned to KRW vehicles. This vehicle is in :currency — change the currency to KRW or pick another buyer.',
-        'buyer_has_foreign' => 'This buyer has :count non-KRW vehicle(s), so it cannot be marked domestic: :plates',
+        'badge_pending' => 'Domestic (KRW pending)',
+        'awaiting_krw' => 'This is a domestic buyer but the currency is :currency. Saving is allowed, but a settlement created now uses the export formula, not the domestic one — switch the currency to KRW before settlement to get domestic treatment.',
+        'buyer_has_foreign' => 'This buyer has :count non-KRW vehicle(s). Those are settled with the export formula, not the domestic one, until their currency is changed to KRW.',
     ],
     'breakdown' => [
         'settlement_closed' => 'The secondary settlement for this vehicle is closed, so the down payment, interim, advance-1 and fee cannot be changed. Unlock it for accounting revision (manager approval) from the settlement screen.',
