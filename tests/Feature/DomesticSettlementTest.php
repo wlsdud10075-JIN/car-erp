@@ -9,7 +9,6 @@ use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -34,6 +33,14 @@ class DomesticSettlementTest extends TestCase
     {
         return User::factory()->create([
             'permission' => 'user', 'role' => '재무', 'email_verified_at' => now(),
+        ]);
+    }
+
+    /** 내수 토글은 [관리] 이상만 본다(정산 공식을 바꾸므로) — 재무로는 그 블록이 아예 안 그려진다. */
+    private function approver(): User
+    {
+        return User::factory()->create([
+            'permission' => 'admin', 'role' => '관리', 'email_verified_at' => now(),
         ]);
     }
 
@@ -229,33 +236,125 @@ class DomesticSettlementTest extends TestCase
         $this->assertTrue($s->fresh()->is_domestic);
     }
 
-    // ── 원화 전용 ─────────────────────────────────────────────────────────
+    // ── 통화가 아직 원화가 아닐 때 ────────────────────────────────────────
 
-    public function test_domestic_buyer_cannot_be_used_on_a_foreign_currency_vehicle(): void
+    /**
+     * 🔀 **저장은 된다** (jin 2026-09-16).
+     *
+     * 예전엔 외화 차량에 내수 바이어를 붙이면 저장이 막혔다. 그런데 jin 의 실제 작업 순서가
+     * 그 반대였다 — *«입력된것이 usd로 해놓은게 있거든 … 어차피 정산으로 되기전까지는 krw로 바뀔거거든?»*
+     * 먼저 내수로 묶어 두고 통화는 나중에 정리한다. 막으면 그 순서가 통째로 불가능해진다.
+     *
+     * 🚫 저장 차단을 되살리지 말 것 — 돈은 정산 박제가 지킨다(아래 테스트).
+     */
+    public function test_a_foreign_currency_vehicle_can_be_saved_with_a_domestic_buyer(): void
     {
         $this->actingAs($this->finance());
         $sm = $this->salesman('freelance');
         $b = $this->buyer($sm);
-        $v = new Vehicle([
+
+        $v = Vehicle::create([
             'vehicle_number' => '99가9999', 'sales_channel' => 'export', 'currency' => 'EUR',
             'exchange_rate' => 1500, 'dhl_request' => false,
             'salesman_id' => $sm->id, 'buyer_id' => $b->id,
             'sale_price' => 10_000, 'sale_date' => now()->toDateString(),
         ]);
 
-        $this->expectException(ValidationException::class);
-        $v->guardDomesticCurrency();
+        $this->assertTrue($b->fresh()->is_domestic, '전제가 안 선다 — 내수 바이어여야 한다');
+        $this->assertDatabaseHas('vehicles', ['id' => $v->id, 'currency' => 'EUR', 'buyer_id' => $b->id]);
+        $this->assertTrue($v->fresh()->isDomesticAwaitingKrw(), '「원화 대기」 상태로 표시돼야 한다');
     }
 
-    /** 원화면 통과한다 — 무관한 저장을 막지 않는다. */
-    public function test_krw_vehicle_with_a_domestic_buyer_passes_the_guard(): void
+    /** 통화를 원화로 바꾸면 대기 상태가 풀린다 — 이게 jin 이 말한 「정산 전에 바뀐다」이다. */
+    public function test_switching_the_currency_to_krw_clears_the_pending_state(): void
     {
         $this->actingAs($this->finance());
         $sm = $this->salesman('freelance');
         $v = $this->soldVehicle($sm, $this->buyer($sm));
 
-        $v->guardDomesticCurrency();
-        $this->assertTrue(true);
+        $this->assertFalse($v->fresh()->isDomesticAwaitingKrw(), '원화 차량은 대기 상태가 아니다');
+        $this->assertTrue($v->fresh()->isDomesticSale());
+    }
+
+    /** 내수 바이어가 아니면 통화가 외화여도 대기 상태가 아니다 — 무관한 차에 경고가 붙으면 안 된다. */
+    public function test_a_plain_export_vehicle_is_never_marked_pending(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+        $b = Buyer::create(['name' => '수출바이어', 'is_active' => true, 'salesman_id' => $sm->id]);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '99가8888', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'dhl_request' => false,
+            'salesman_id' => $sm->id, 'buyer_id' => $b->id,
+            'sale_price' => 9_000, 'sale_date' => now()->toDateString(),
+        ]);
+
+        $this->assertFalse($v->fresh()->isDomesticAwaitingKrw());
+    }
+
+    /**
+     * 🖥️ **화면이 그 상태를 말한다** — 막지 않기로 한 대가다(SKILLS §8 #60).
+     *
+     * 막던 시절엔 사람이 저장에 실패해서 알았다. 이제는 저장이 되므로, 화면이 말하지 않으면
+     * 「내수로 묶어 놨는데 수출로 정산됐다」를 **정산이 나온 뒤에야** 알게 된다.
+     */
+    public function test_the_vehicle_list_marks_a_domestic_buyer_still_in_foreign_currency(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+
+        $pending = Vehicle::create([
+            'vehicle_number' => '99가7777', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'dhl_request' => false,
+            'salesman_id' => $sm->id, 'buyer_id' => $this->buyer($sm)->id,
+            'sale_price' => 9_000, 'sale_date' => now()->toDateString(),
+        ]);
+        $settled = $this->soldVehicle($sm, $this->buyer($sm));   // 원화 — 평범한 내수
+
+        $html = Volt::actingAs($this->finance())->test('erp.vehicles.index')->html();
+
+        $this->assertTrue(str_contains($html, $pending->vehicle_number), '전제가 안 선다 — 목록에 있어야 한다');
+        $this->assertTrue(str_contains($html, '내수(원화대기)'),
+            '통화가 외화인 내수 차에 「원화대기」 표시가 없다 — 수출로 정산되는 걸 아무도 모른다');
+        $this->assertTrue(str_contains($html, $settled->vehicle_number));
+    }
+
+    /** 바이어 화면도 같다 — 몇 대가 남았는지 그 자리에서 말한다. */
+    public function test_the_buyer_screen_says_how_many_vehicles_are_still_foreign(): void
+    {
+        $this->actingAs($this->finance());
+        $sm = $this->salesman('freelance');
+        $b = $this->buyer($sm);
+        Vehicle::create([
+            'vehicle_number' => '99가6666', 'sales_channel' => 'export', 'currency' => 'USD',
+            'exchange_rate' => 1300, 'dhl_request' => false,
+            'salesman_id' => $sm->id, 'buyer_id' => $b->id,
+            'sale_price' => 9_000, 'sale_date' => now()->toDateString(),
+        ]);
+
+        $c = Volt::actingAs($this->approver())->test('erp.buyers.index')->call('openEdit', $b->id);
+
+        $this->assertSame(1, $c->instance()->domesticForeignCount);
+        $this->assertTrue(str_contains($c->html(), '원화가 아닌 차량이 1대'),
+            '바이어 화면이 남은 대수를 말하지 않는다');
+    }
+
+    /**
+     * 🔒 **저장 차단이 되살아나지 못하게** — 되돌려도 화면은 정상이고 「저장이 안 된다」는
+     * 제보로만 드러난다. 그래서 정적으로 막는다.
+     */
+    public function test_the_save_time_block_is_not_reintroduced(): void
+    {
+        foreach (['app/Models/Vehicle.php',
+            'resources/views/livewire/erp/vehicles/index.blade.php',
+            'resources/views/livewire/erp/buyers/index.blade.php'] as $f) {
+            $src = file_get_contents(base_path($f));
+            $this->assertFalse(str_contains($src, 'guardDomesticCurrency'),
+                "내수 원화 저장 차단이 되살아났다({$f}) — jin 2026-09-16 에 걷어낸 것이다");
+            $this->assertFalse(str_contains($src, 'domestic.krw_only'),
+                "막는 문구가 되살아났다({$f}) — 지금은 알리는 문구(awaiting_krw)만 쓴다");
+        }
     }
 
     /**

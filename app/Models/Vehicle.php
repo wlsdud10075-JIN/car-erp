@@ -1668,30 +1668,28 @@ class Vehicle extends Model
     }
 
     /**
-     * 내수는 **원화 전용** (jin 2026-09-08) — 저장 시 차단.
+     * 🏠 **내수 바이어인데 아직 통화가 원화가 아니다** — 저장은 되고, 화면이 그 상태를 말한다.
      *
-     * 외화 차량에 내수 바이어가 붙으면 세 가지가 조용히 다르게 돈다:
-     *   ① 운임 확정 게이트(`isFreightConfirmedForSettlement`)가 인코텀즈를 요구하기 시작한다
-     *   ② 바이어 현금 원장 문지기가 그 차의 잔금을 대상으로 잡는다(KRW 는 제외 대상)
-     *   ③ 정산 환율(`settlement_exchange_rate`)이 끼어든다 — 내수 기준액은 환율을 안 쓰므로
-     *      **외화 금액이 원화인 것처럼 계산**된다(1,300 EUR 가 1,300원으로)
-     * 예외도 경고도 없이 숫자만 틀리는 부류라, 애초에 못 만들게 막는다.
+     * 🔀 **2026-09-16 (jin) — 저장 차단을 걷어냈다.** 원래는 여기서 `ValidationException` 을 던져
+     *    외화 차량에 내수 바이어를 붙이지 못하게 했는데, jin 의 실제 작업 순서가 그 반대였다:
+     *    *«입력된것이 usd로 해놓은게 있거든 … 어차피 정산으로 되기전까지는 krw로 바뀔거거든?»*
+     *    ⇒ 먼저 내수로 묶어 두고 통화는 나중에 정리한다. 막으면 그 순서가 통째로 불가능해진다.
      *
-     * 🚫 DB CHECK 로 걸지 않는다 — 기존 행을 깨뜨릴 수 있고, 두 테이블에 걸친 조건이라 표현도 안 된다.
-     * ⚠️ 시드·대량 적재는 통과한다(UI 저장 경로에서만 호출) — 그래서 정산 박제 쪽에도 같은 조건을 둔다.
+     * 🔑 **막지 않아도 숫자는 안 틀린다** — 돈을 지키는 자리는 여기가 아니라 정산 박제다.
+     *    `isDomesticSettlement()` 가 `currency === 'KRW'` 를 요구하므로, 통화가 외화인 채로
+     *    정산이 만들어지면 **일반(수출) 공식**으로 떨어진다. 1,300 EUR 를 1,300원으로 읽는 일은
+     *    일어나지 않는다. 가드 = `DomesticSettlementTest::test_foreign_currency_is_never_stamped_as_domestic`.
+     *
+     * ⚠️ **대신 조용하다** — 화면엔 「내수」라고 붙어 있는데 정산은 수출로 나간다.
+     *    그래서 이 값이 참이면 **목록 뱃지와 판매 탭이 그 사실을 말한다**(SKILLS §8 #60 —
+     *    동작을 결정하는 것은 화면에 있어야 한다). 막는 대신 보여주는 쪽으로 바꾼 것이지
+     *    「신경 안 써도 된다」가 아니다.
+     *
+     * 🚫 되살려서 다시 막지 말 것 — jin 2026-09-16 명시 결정이다.
      */
-    public function guardDomesticCurrency(): void
+    public function isDomesticAwaitingKrw(): bool
     {
-        if (! $this->isDomesticSale() || $this->currency === 'KRW') {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            'currency' => __('vehicle.domestic.krw_only', [
-                'buyer' => $this->domesticBuyer()?->name ?? '-',
-                'currency' => (string) $this->currency,
-            ]),
-        ]);
+        return $this->isDomesticSale() && $this->currency !== 'KRW';
     }
 
     /**
