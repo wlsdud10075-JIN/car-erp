@@ -77,6 +77,28 @@ class ReceivableHistory extends Model
             $h->syncFinalPayment();
             $h->syncSavingsUsed();
             $h->vehicle?->refreshCaches();
+
+            /*
+             * 🧾 **회수로 완납이 되면 정산을 만든다** (jin 2026-09-16).
+             *
+             * 정산 자동생성의 계기는 셋뿐이었다 — 판매 잔금 저장 · 거래완료 진입 · 인코텀즈/운임비 변경.
+             * 그런데 미수를 0 으로 만드는 길은 그것만이 아니다. 채권관리에서 짜투리를 「기타」로 털면
+             * 미수는 0 이 되는데 **판매 잔금이 안 생기고**(미러링은 「입금」 한 종류뿐),
+             * 캐시 갱신은 raw update 라 `Vehicle::saved` 도 안 뜬다(SKILLS §8 #43).
+             * ⇒ **아무 계기도 안 울려 정산이 영영 안 만들어진다.** 예외도 로그도 없다.
+             *   실사고 = ssancarerp `263버8577`(2026-09-16 jin 제보) — 완납·인코텀즈·운임 다 넣었는데
+             *   막는 사유가 `[]` 인 채로 정산이 0 건이었다.
+             *
+             * 🔑 사람 눈엔 「입금」으로 털든 「기타」로 털든 **같은 행위**다. 결과가 갈리면 안 된다.
+             * ⚠️ `createSettlementIfComplete` 가 완납·담당자·정산없음·운임확정을 **전부 재가드**하므로
+             *    조건 미달이면 no-op 이고, 「입금」처럼 잔금이 생기는 경로는 이미 만들어진 뒤라
+             *    `already_exists` 로 걸려 **두 번 만들어지지 않는다**.
+             * ⚠️ `fresh()` 로 다시 읽는다 — 훅 안의 `$h->vehicle` 은 방금 넣은 회수이력을 모를 수 있다(§8 #43).
+             * ⚠️ auth 가드 = 시드·적재·artisan 대량 유입 차단(다른 두 계기와 같은 정책).
+             */
+            if (auth()->check()) {
+                $h->vehicle?->fresh()?->createSettlementIfComplete('자동 생성 — 채권 회수로 완납 진입 시');
+            }
         });
 
         static::deleted(function (ReceivableHistory $h) {

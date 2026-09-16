@@ -17,7 +17,8 @@ use Illuminate\Console\Command;
  *   (settlements:backfill-attributed-month 는 기존 정산의 귀속월만 채움 — 없는 정산은 못 만듦.)
  *   과거 import/CLI 무인증 유입 갭(구 버전 목적)도 동일하게 흡수.
  *
- * 대상 = 판매완료/거래완료 && sale_price>0 && 완납(미입금≤0) && 담당자 있음 && 정산 없음
+ * 대상 = sale_price>0 && 완납(미입금≤0) && 담당자 있음 && 정산 없음
+ *        (진행상태는 보지 않는다 — 2026-09-16. 완납된 차는 선적·통관 단계에 있는 게 정상이다.)
  *        && 완납월(fullPaymentMonth) == --month.
  * 생성 = Vehicle::createSettlementIfComplete (A-3 로직 재사용 — attributed_month=완납월 고정, 멱등).
  * ⚠️ --month 필수(--force 시) — 과거 이미 지급된 배치로의 귀속 오염 방지. 완납월별 명시 실행.
@@ -46,9 +47,19 @@ class BackfillMissingSettlements extends Command
             return self::INVALID;
         }
 
-        // 판매완료/거래완료 + 담당자 + 정산 없음 후보 (완납 여부는 createSettlementIfComplete 가 재확인).
+        /*
+         * 완납 + 담당자 + 정산 없음 후보 (완납 여부는 아래 filter 와 createSettlementIfComplete 가 재확인).
+         *
+         * 🔀 **2026-09-16 — 진행상태 제한(`판매완료`·`거래완료`)을 걷어냈다** (jin).
+         *    정산 자동생성 자체는 진행상태를 보지 않는다(완납이면 만든다). 그런데 이 도구만
+         *    두 상태로 좁혀 놔서, **완납인데 이미 배를 탄 차가 후보에서 통째로 빠졌다.**
+         *    v4 cascade 는 선적·통관을 판매완료보다 **먼저** 평가하므로(CLAUDE.md 진행상태 10단계),
+         *    완납된 차의 진행상태는 대부분 `선적중`·`선적완료`·`통관중` 이다 — 그게 정상이다.
+         *    실사고 = ssancarerp `263버8577`(완납·`선적완료`) — 정산도 없고 이 도구로도 안 잡혔다.
+         * ⚠️ **순수 확대다** — 구 조건이 뽑던 차는 한 대도 안 빠진다(가드가 그걸 단언한다, §8 #55).
+         *    `sale_price > 0` + 완납이면 진행상태는 그 다섯 중 하나뿐이라 엉뚱한 차가 들어오지 않는다.
+         */
         $candidates = Vehicle::query()
-            ->whereIn('progress_status_cache', ['판매완료', '거래완료'])
             ->where('sale_price', '>', 0)
             ->whereNotNull('salesman_id')
             ->whereDoesntHave('settlements')
@@ -56,8 +67,8 @@ class BackfillMissingSettlements extends Command
             ->get()
             ->filter(fn (Vehicle $v) => $v->sale_unpaid_amount <= 0);   // 완납만
 
+        // 담당자 없는 누락분도 같은 범위로 센다 — 한쪽만 넓히면 «후보는 늘었는데 경고는 그대로» 가 된다.
         $noSalesman = Vehicle::query()
-            ->whereIn('progress_status_cache', ['판매완료', '거래완료'])
             ->where('sale_price', '>', 0)
             ->whereNull('salesman_id')
             ->whereDoesntHave('settlements')
@@ -75,7 +86,7 @@ class BackfillMissingSettlements extends Command
             $this->line(sprintf('  %s : %d대', $ym, $cnt));
         }
         if ($noSalesman > 0) {
-            $this->warn("완납/거래완료 + 정산없음 + 담당자 없음 : {$noSalesman}대 (담당자 지정 필요 — 백필 불가)");
+            $this->warn("완납 + 정산없음 + 담당자 없음 : {$noSalesman}대 (담당자 지정 필요 — 백필 불가)");
         }
 
         if ($month === '') {
