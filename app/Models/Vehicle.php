@@ -785,6 +785,10 @@ class Vehicle extends Model
         //   바꾸는 입구가 생기면서 추적이 없으면 안 된다(07-28 에 shipping_date·eta_date 를 등재한 것과 같은 이유).
         //   특히 bl_document 는 올리는 순간 거래완료 → 출고일 자동생성까지 연쇄한다.
         'export_declaration_document', 'checkbill_document', 'bl_document',
+        // 2026-09-17 (jin) — B/L 번호. 차량관리 「번호 일괄 기입」으로 **수십 대를 한 번에** 바꾸는
+        //   입구가 생겼다. 07-28 에 shipping_date·eta_date 를 같은 이유로 등재한 것과 같다
+        //   (컨테이너번호·수출신고번호는 이미 대상이었다).
+        'bl_number',
         // 큐 22-C-light (2026-05-20) Security 해소조건 — 매입처 계좌 4컬럼 변경 audit.
         // purchase_seller_account는 AuditLog::MASKED_COLUMNS 통해 마스킹 저장.
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
@@ -1128,7 +1132,9 @@ class Vehicle extends Model
         });
         static::updated(function (Vehicle $vehicle) {
             foreach (self::AUDITED_COLUMNS as $col) {
-                if ($vehicle->wasChanged($col)) {
+                // 🧹 `wasChanged()` 만 보면 「0.00 → 0」 같은 표기 차이가 매번 쌓인다 — 판정은
+                //    `AuditLog::isRealChange()` 단일 출처다(jin 2026-09-17, 실측 82.9%가 그 부류였다).
+                if (AuditLog::isRealChange($vehicle, $col)) {
                     AuditLog::recordChange(
                         $vehicle,
                         $col,

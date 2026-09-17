@@ -148,7 +148,7 @@ class PurchaseBalancePayment extends Model
                 return;
             }
             foreach (self::AUDITED_LEDGER_COLUMNS as $col) {
-                if ($p->wasChanged($col)) {
+                if (AuditLog::isRealChange($p, $col)) {
                     AuditLog::recordChange($p, $col, $p->getOriginal($col), $p->getAttribute($col));
                 }
             }
