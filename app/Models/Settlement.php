@@ -153,7 +153,7 @@ class Settlement extends Model
 
         static::updated(function (Settlement $s) {
             foreach (self::AUDITED_COLUMNS as $col) {
-                if ($s->wasChanged($col)) {
+                if (AuditLog::isRealChange($s, $col)) {
                     AuditLog::recordChange(
                         $s,
                         $col,
