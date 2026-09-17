@@ -52,6 +52,19 @@ class BoardRequest extends Model
     public const TYPE_SALE_PAYMENT_CONFIRM = 'sale_payment_confirm';
 
     /**
+     * 👔 **대표계약금** (jin 2026-09-17) — 계약금 요청을 **시각 규칙 없이 대표에게만** 보내는 별개 신호.
+     *
+     * 왜 필요한가: 입금요청 알림톡은 시각 규칙을 타서 근무시간엔 담당자 1~2명에게만 간다. 그 담당자가
+     * 휴가·외근이면 요청이 거기 멈춰 있고 jin 이 사람 손으로 확인해 줘야 했다.
+     *
+     * 🚫 **`purchase_deposit` 에 플래그로 얹지 않았다** — 멱등키가 `(vehicle_id, type)` 이라
+     *    일반 계약금이 열려 있는 차에서 `already_open` 으로 **조용히 버려진다**(§8 #59 의 그 함정).
+     *    같은 차에 일반 계약금 + 대표계약금이 **동시에 열리는 것이 정상**이다(평시 요청이 안 먹혀
+     *    대표에게 다시 보내는 게 용도). 🚫 한쪽을 보고 다른 쪽을 닫지 말 것.
+     */
+    public const TYPE_PURCHASE_DEPOSIT_CEO = 'purchase_deposit_ceo';
+
+    /**
      * 🚪 **수신 화이트리스트** — board 가 새로 보낼 수 있는 type. `raise()` 와 API 검증의 단일 출처.
      *
      * ⚠️ 이건 **「받을 수 있는 것」이고 `TYPE_META` 는 「그릴 수 있는 것」**이다. 폐기한 type 은
@@ -62,6 +75,7 @@ class BoardRequest extends Model
         self::TYPE_PURCHASE_DEPOSIT,
         self::TYPE_PURCHASE_BALANCE,
         self::TYPE_SALE_PAYMENT_CONFIRM,
+        self::TYPE_PURCHASE_DEPOSIT_CEO,
     ];
 
     public const STATUS_OPEN = 'open';
@@ -109,6 +123,22 @@ class BoardRequest extends Model
             'payee' => true,
             'task' => 'alarm.task_board_deposit',
             'color' => 'blue',
+            'manual_confirm' => true,
+            'auto_resolve' => false,
+            'amount' => true,
+        ],
+        self::TYPE_PURCHASE_DEPOSIT_CEO => [
+            'badge' => 'vehicle.board_badge_deposit_ceo',
+            'title' => 'vehicle.board_title_deposit_ceo',
+            'action' => 'alarm.board_deposit_ceo_action',
+            'alarm' => 'board_purchase_deposit_ceo',
+            // 매입 요청이라 입금 계좌를 싣는다(판매대금확인과 갈리는 그 자리 — §8 #54).
+            'payee' => true,
+            'task' => 'alarm.task_board_deposit_ceo',
+            // 일반 계약금(blue)과 한 줄에 나란히 뜨므로 색을 갈라야 사람이 구분한다.
+            //   ⚠️ 빌드된 app.css 에 있는 색만 쓴다(§8 #50) — amber 는 기존 뱃지가 쓰고 있다.
+            'color' => 'amber',
+            // 계약금과 동일 — 「매입 미지급 0」 자동소멸 금지, 사람이 확인해야 닫힌다.
             'manual_confirm' => true,
             'auto_resolve' => false,
             'amount' => true,

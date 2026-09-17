@@ -88,7 +88,10 @@ class AlimtalkSignalRoutingTest extends TestCase
         $this->user('관리', '010-1111-1111');
         $this->rules([['to' => '관리', 'days' => [1, 2, 3, 4, 5], 'from' => '00:00', 'till' => '24:00']]);
 
-        foreach (BoardRequest::TYPES as $type) {
+        // 👔 대표 직행 신호는 **시각 규칙 표를 아예 안 탄다**(2026-09-17) — 이 하위호환 규칙의 대상이 아니다.
+        //    🚫 여기에 되돌려 넣지 말 것: 넣으면 기존 3행이 그 신호를 덮어 평일 낮에 대표가 아니라
+        //       담당자에게 가는 **정반대 라우팅**이 된다. 가드 = `BoardCeoDepositTest`.
+        foreach (array_filter(BoardRequest::TYPES, fn ($t) => ! AlimtalkRecipients::isCeoDirect($t)) as $type) {
             $this->assertSame(['010-1111-1111'],
                 AlimtalkRecipients::forTimeRules(self::CODE, type: $type),
                 "types 가 없는 규칙이 {$type} 에 안 걸렸다 — 기존 설정이 전부 죽는다");

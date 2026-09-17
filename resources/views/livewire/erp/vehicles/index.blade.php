@@ -7475,7 +7475,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <span class="inline-flex flex-wrap gap-1 align-middle">
                             @foreach(\App\Models\BoardRequest::TYPE_META as $brqType => $brqMeta)
                                 @if(in_array($brqType, $brqTypes, true))
-                                    <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $brqMeta['color'] === 'purple' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700' }}"
+                                    <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ match ($brqMeta['color']) {
+                                              'purple' => 'bg-purple-100 text-purple-700',
+                                              'amber' => 'bg-amber-100 text-amber-700',
+                                              default => 'bg-blue-100 text-blue-700',
+                                          } }}"
                                           title="{{ __($brqMeta['title']) }}">{{ __($brqMeta['badge']) }}</span>
                                 @endif
                             @endforeach

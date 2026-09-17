@@ -220,10 +220,12 @@ return [
     'board_badge_sale' => '대금확인',
     // 입금요청 분리 2종 (2026-08-11). ⚠️ 목록 뱃지는 다른 뱃지와 나란히 서므로 4자 이내로 유지할 것.
     'board_badge_deposit' => '계약금',
+    'board_badge_deposit_ceo' => '대표계약금',
     'board_badge_balance' => '매입잔금',
     'board_title_purchase' => '영업이 매입 입금을 요청했습니다 — 매입 탭에서 지급을 기입하면 사라집니다',
     'board_title_sale' => '영업이 판매대금 입금을 알렸습니다 — 확인하면 board 로 회신됩니다',
     'board_title_deposit' => '영업이 계약금 송금을 요청했습니다 — 송금 후 「입금 확인」을 눌러야 사라집니다 (금액은 표시 전용이라 매입 탭에 직접 기입합니다)',
+    'board_title_deposit_ceo' => '영업이 대표에게 직접 계약금 송금을 요청했습니다 — 담당자가 부재일 때 쓰는 요청이라 시간·요일과 무관하게 대표에게 갑니다. 같은 차에 일반 계약금 요청이 함께 열려 있을 수 있으니 중복 송금에 주의하세요 (금액은 표시 전용)',
     'board_title_balance' => '영업이 매입잔금 송금을 요청했습니다 — 매입 탭에 지급을 기입해 미지급이 0 이 되면 사라집니다',
     'board_amount_unit' => '원',
     'board_confirm_btn' => '입금 확인',
