@@ -3612,6 +3612,28 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        /*
+         * 🔓 **회계 재조정 토큰이 있으면 통과** (jin 2026-09-17).
+         *
+         * 이 가드는 2026-05(큐 10 H4)에 만든 것이라 트리거가 아직 `paid` 이고, 2026-07-24 락 개편이
+         * 도입한 **잠금 해제 토큰을 안 보고 있었다**. 그래서 정산 화면 [🔓 회계 재조정] 이 토큰을
+         * 발급해도 **차량 패널 저장이 여기서 먼저 막혀** 기능이 한 번도 동작한 적이 없다
+         * (`SettlementReadjustTest` 는 토큰 «발급»까지만 검증해서 5개월간 안 드러났다 — §8 #66).
+         * 실사고 = ssancarerp 379우9212(2차 마감 뒤 운임비 기입 불가, jin 2026-09-17).
+         *
+         * 🚫 **트리거를 `closed` 로 바꾸지 말 것** — 모델 가드와 달리 이 가드는 `paid` 직후
+         *    2차 대기(pending) 구간도 덮고 있고, 그 구간의 예외를 재무·관리·admin 으로 좁혀 둔다
+         *    (회의확장씬 #8). `canEditVehicleFinancialFields()` 에는 **영업**도 들어 있어서,
+         *    트리거만 바꾸면 영업이 2차 대기 중 금액을 고칠 수 있게 되어 범위가 넘친다.
+         *
+         * ⚠️ **여기서 토큰을 소비하지 않는다**(`Cache::has`, pull 아님) — 소비 지점은
+         *    `Vehicle::guardLedgerLockOnSaving()` 한 곳이다. 여기서 당겨 쓰면 정작 모델 가드가
+         *    토큰을 못 찾아 같은 저장이 그 다음 줄에서 막힌다.
+         */
+        if (\Illuminate\Support\Facades\Cache::has(Vehicle::ledgerUnlockCacheKey((int) $this->editingId))) {
+            return;
+        }
+
         // 회의확장씬 #8 (2026-05-22) — 2차 정산 대기 동안 [재무]/[관리]/admin 잠금 해제.
         // paid 후 한 달 뒤 측정되는 기타비용(말소·면허·탁송·보험·이전비·기타1,2) 수정 대기.
         // secondary_status='closed' 후 다시 잠금 (회계 무결성 복구).

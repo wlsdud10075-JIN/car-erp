@@ -688,6 +688,22 @@ class Vehicle extends Model
         if ($closed->isEmpty()) {
             return false;
         }
+
+        /*
+         * 🔓 **회계 재조정 중이면 신규 잔금도 함께 연다** (jin 2026-09-17).
+         *
+         * 운임비처럼 **마감 뒤에 확정되는 매출**을 재조정으로 기입하면 그만큼 **미수가 새로 생긴다**.
+         * 그 돈을 받아 기록할 길이 없으면 재조정이 반쪽이 된다 — 아래 게이트 예외(2026-09-12)를
+         * 만든 것과 **같은 이유**다. jin 2026-09-17: *「운임비를 기록해야 하고 미수로 남고,
+         * 추후에 받아야 해. 이거까지 진행이 되어야 해.」*
+         *
+         * 토큰은 발급에 **권한 + 사유 10자**가 필요하고 **5분 TTL** 이라 열리는 창이 좁다.
+         * ⚠️ **여기서 소비하지 않는다** — 소비는 `guardLedgerLockOnSaving()` 한 곳이다. 여기서 당기면
+         *    「운임비 + 잔금」을 한 번에 저장할 때 차량 칸 쪽이 토큰을 못 찾아 그 저장이 통째로 막힌다.
+         */
+        if ($this->id && Cache::has(self::ledgerUnlockCacheKey($this->id))) {
+            return false;
+        }
         if ($closed->contains(fn ($s) => $s->gate_override_at === null)) {
             return true;   // 예외 없는 마감이 하나라도 있으면 그대로 잠금
         }

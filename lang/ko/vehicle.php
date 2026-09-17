@@ -730,7 +730,7 @@ return [
         'nice_not_configured' => 'NICE 조회가 설정되지 않았습니다 — 수동 입력하세요.',
         'nice_failed' => 'NICE 조회에 실패했습니다.',
         'nice_success' => 'NICE 조회 완료 — 등록정보·제원 :count개 자동 입력됨. (저장해야 반영)',
-        'paid_locked' => "정산이 'paid' 상태인 차량의 회계 컬럼은 변경할 수 없습니다 (시도: :fields). 정산 취소 후 재시도하세요.",
+        'paid_locked' => "정산이 'paid' 상태인 차량의 회계 컬럼은 변경할 수 없습니다 (시도: :fields). 2차 마감된 차량은 정산 화면에서 [🔓 회계 재조정]으로 잠금을 푼 뒤 수정하세요.",
         'max_photos' => '차량 첨부는 최대 :max건까지 등록할 수 있습니다.',
         'rrn_required' => '말소 처리에는 소유자 주민(법인)등록번호가 필수입니다 — 기본정보 탭.',
         'dup_vehicle' => '같은 차량번호(:value)가 차량 #:id로 이미 등록되어 있습니다.:hint',
