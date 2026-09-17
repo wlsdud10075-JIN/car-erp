@@ -1264,7 +1264,7 @@ return [
         'exchange_rate_required' => 'Foreign-currency vehicles require an exchange rate — Sale tab. (Settlement miscalculates without it.)',
         // Sale required trio (pre-empts chk_sale_required DB CHECK)
         'sale_date_required' => 'A sale date is required when a sale price is entered — Sale tab.',
-        'sale_buyer_required' => 'A buyer is required when a sale price is entered — Sale tab.',
+        'sale_buyer_required' => 'A buyer is required when a sale price is entered — Sale tab. To revert to "buyer undecided" after a cancelled purchase, clear the sale price, sale date and freight first; the buyer field then becomes clearable and the undecided checkbox appears.',
     ],
 
     'tooltip' => [
