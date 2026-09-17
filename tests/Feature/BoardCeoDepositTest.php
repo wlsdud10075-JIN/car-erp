@@ -179,6 +179,43 @@ class BoardCeoDepositTest extends TestCase
             ->assertSee(__('alimtalk_catalog.ceo_direct_count', ['n' => 1]));
     }
 
+    /**
+     * 🗣️ **안내가 실제 출처를 가리키는가** (jin 2026-09-17 지적).
+     *
+     * 처음엔 「번호는 기능설정의 대표 번호에서 바꿉니다」라고 적었는데 **그 화면이 없다** —
+     * `alimtalk_recipients_admin_{set}` 는 코드가 읽기만 하고 **쓰는 UI 가 0곳**이다(DB 직접 주입용).
+     * 실질 출처는 **사용자관리의 최고관리자(`permission='admin'`) 휴대폰번호**다.
+     * 실측 2026-09-17 heymanerp: override 0건 · 최고관리자 1명(010-****-9977).
+     * ⇒ 없는 화면을 가리키는 안내는 「거기 가서 바꿨는데 왜 그대로지」를 만든다(§8 #60 의 뒤집힌 형태).
+     */
+    public function test_the_hint_points_at_the_real_source(): void
+    {
+        $this->ceo();
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        $html = Volt::test('admin.alimtalk-catalog.index')->html();
+
+        $this->assertStringContainsString('사용자관리', $html, '안내가 실제 출처를 안 가리킨다');
+        $this->assertStringNotContainsString('기능설정의 대표 번호', $html, '없는 화면을 가리키는 안내가 남아 있다');
+        $this->assertFalse(AlimtalkRecipients::adminOverrideSet(), '기본 상태에서는 override 가 없어야 한다');
+    }
+
+    /** 🔀 수신 번호가 별도 지정된 회사에서는 **다른 문장**이 나온다 — 화면이 거짓말하지 않게. */
+    public function test_an_explicit_recipient_list_changes_the_hint(): void
+    {
+        $this->ceo();
+        Setting::updateOrCreate(
+            ['key' => 'alimtalk_recipients_admin_'.Setting::companyTemplateSet()],
+            ['value' => '010-0000-0000', 'type' => 'string'],
+        );
+        $this->assertTrue(AlimtalkRecipients::adminOverrideSet());
+
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+        Volt::test('admin.alimtalk-catalog.index')
+            ->assertSee(__('alimtalk_catalog.ceo_direct_count_override', ['n' => 1]))
+            ->assertDontSee(__('alimtalk_catalog.ceo_direct_count', ['n' => 1]));
+    }
+
     /** ⚠️ 받을 대표가 0명이면 화면이 **경고**해야 한다 — 조용히 0명에게 가는 게 최악이다(§8 #62). */
     public function test_zero_ceo_recipients_is_warned_on_screen(): void
     {
