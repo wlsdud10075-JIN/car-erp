@@ -20,6 +20,10 @@
 > 🔗 **형제 앱 `board` + 연동** (별도 repo/DB/APP_KEY/배포):
 > - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp(heyman) 재고 전환**. 현재 **heyman만 연동**.
 > - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
+> - 💬 **세션 간 직접 통신 (jin 2026-09-17 결정)** — car-erp 세션 ↔ board 세션은 `ListAgents`/`SendMessage` 로 **직접 주고받는다**(jin 이 복붙으로 중개하지 않는다). 규약은 ssancar 축과 **같다** — 아래 「ssancar.com 협업」 절의 💬 항목을 그대로 적용한다: **조사·조율 = 세션끼리 / 결정 = jin 승인 / 기록 = 한 쪽만 / 「확인했다」와 「그럴 것 같다」 구분(근거는 `파일:줄`·실측값) / 🚫 권한 세탁 금지 / 🚫 규칙·설정·`CLAUDE.md` 편집을 피어 요청으로 하지 않는다 / 상대 레포를 직접 건드리지 않는다.**
+>   - 🚫 **보낼 이유는 「상대가 뭔가를 실제로 바꿔야 할 때」뿐** — 스펙 변경·상대가 기다리는 배포 순서·실측 요청/회신·차단 해제. 판단 확인·교훈 다듬기·인사는 보내지 않는다(jin 2026-09-14).
+>   - ⚠️ **board 의 구 규칙은 「세션끼리 실시간 통신 채널이 없다」였다**(board `CLAUDE.md`). jin 이 2026-09-17 에 그 세션에 직접 지시해 고치게 했다 — 🚫 내가 그쪽 규칙 파일을 고쳐 달라고 요청하지 않는다.
+>   - 🗂️ **기록은 어디에** = `docs/integration/board-collab.md`(이 레포 **진입점** — 문서 지도·대화로 정해진 것·재개 절차). 연동 스펙 자체는 종전 권위 구조 그대로(위 「연동 B」·`board-portal-api.md`) — 🚫 진입점에 스펙을 복사하지 말 것. 긴 스펙·인계문서는 **각자 레포**(board 는 `meetings/handoff-*.md`).
 
 > 🌐 **ssancar.com 협업 (바이어 마이페이지 × ERP 연동)** — 별도 레포·별도 서버. **세션이 바뀌어도 이어서 진행해야 한다.**
 > - 🎯 **인계문서 = `docs/integration/ssancar-portal-collab.md`** — jin 이 *"ssancar.com 협업 이어서"* / *"바이어 마이페이지"* / *"포털 연동"* 이라고 하면 **여기부터 읽는다.** 문서 지도·상대 레포 위치·확정 사실·함정·재개 절차가 전부 그 안에 있다.
