@@ -41,7 +41,16 @@ class BulkVehicleShippingDateService
      * ⚠️ `container_number` 는 이 목록의 **전체 값 기입**과 아래 `$containerPrefix` **접두어 치환**이
      *    같은 컬럼을 노린다 — 한 호출에 둘 다 오면 어느 쪽이 이기는지 사람이 알 수 없으므로 예외로 막는다.
      */
-    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number'];
+    /**
+     * 이 도구가 만질 수 있는 컬럼 — **화이트리스트**. 여기 없으면 호출측이 넘겨도 무시된다.
+     *
+     * 🔀 2026-09-17 `bl_number` 추가 (jin) — 선적요청 묶음 화면에만 있던 것을 차량관리 「번호 일괄 기입」
+     *    에서도 쓸 수 있게. 🚫 **`bl_document`(파일)는 넣지 않는다** — 그건 G1 100% 완납 게이트가 걸린
+     *    자리이고, 선적요청 묶음 폼도 같은 이유로 제외해 뒀다.
+     * 🔑 `bl_number` 는 **진행상태·게이트 판정에 안 쓰인다**(2026-09-14 실측으로 기각 — 자유 입력칸이라
+     *    빈 문자열·`-`·한글 메모가 실재한다, §8 #97). 그래서 일괄로 찍어도 단계가 넘어가지 않는다.
+     */
+    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number', 'bl_number'];
 
     /** 날짜로 다룰 컬럼(8자리 정규화·형식 검사 대상). 나머지는 문자열 그대로. */
     private const DATE_FIELDS = ['shipping_date', 'eta_date'];

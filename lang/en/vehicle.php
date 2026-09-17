@@ -43,13 +43,15 @@ return [
     // Bulk entry of export declaration no / container no (jin 2026-09-08) — blank field = leave as is.
     'bulk_num' => [
         'btn' => 'Bulk enter numbers',
-        'title' => 'Bulk enter export declaration no / container no',
+        'title' => 'Bulk enter export declaration no / container no / B/L no',
         'target' => 'Will be written to the :count selected vehicle(s)',
         'keep_hint' => 'A blank field is left untouched — filling only one is fine. (This tool cannot clear a value.)',
         'decl' => 'Export declaration no',
         'decl_ph' => 'e.g. 12345-67-8901234',
         'container' => 'Container no',
         'container_ph' => 'e.g. TEMU1234567 or 6.09_A RORO 12-33_5',
+        'bl' => 'B/L no',
+        'bl_ph' => 'e.g. HDMUABCD1234567',
         'mixed_title' => '⚠️ :field currently has :kinds distinct values — writing will overwrite them all',
         'mixed_ack' => 'I have reviewed the above and want to overwrite',
         'mixed_block' => 'Values are mixed — tick the confirmation box to proceed.',
