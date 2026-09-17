@@ -396,6 +396,19 @@ class AlimtalkRecipients
      */
     public const CEO_DIRECT_TYPES = [BoardRequest::TYPE_PURCHASE_DEPOSIT_CEO];
 
+    /**
+     * 대표 번호가 **기능설정 override 로 직접 지정**돼 있나 — 화면 안내를 사실에 맞추는 단일 판정.
+     *
+     * ⚠️ `alimtalk_recipients_admin_{set}` 는 **쓰는 UI 가 없다**(코드가 읽기만 한다. 넣으려면 DB 직접).
+     *    그래서 실무의 실질 출처는 **사용자관리의 최고관리자(`permission='admin'`) 휴대폰번호**다.
+     *    실측 2026-09-17 heymanerp: override 0건 · 최고관리자 1명(번호 있음).
+     *    🚫 안내 문구에 「기능설정에서 바꾸세요」라고 쓰지 말 것 — **없는 화면을 가리키게 된다**(jin 지적).
+     */
+    public static function adminOverrideSet(): bool
+    {
+        return self::override('admin') !== null;
+    }
+
     public static function isCeoDirect(?string $type): bool
     {
         return $type !== null && in_array($type, self::CEO_DIRECT_TYPES, true);

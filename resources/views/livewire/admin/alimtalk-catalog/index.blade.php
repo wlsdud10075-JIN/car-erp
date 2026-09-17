@@ -716,9 +716,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </label>
                                 </div>
                                 <div class="mt-1 text-[11px] {{ $ceoN === 0 ? 'font-bold text-red-600' : 'text-gray-500' }}">
+                                    @php $ceoOverride = \App\Support\AlimtalkRecipients::adminOverrideSet(); @endphp
                                     {{ $ceoN === 0
                                         ? __('alimtalk_catalog.ceo_direct_none')
-                                        : __('alimtalk_catalog.ceo_direct_count', ['n' => $ceoN]) }}
+                                        : __($ceoOverride ? 'alimtalk_catalog.ceo_direct_count_override' : 'alimtalk_catalog.ceo_direct_count', ['n' => $ceoN]) }}
                                 </div>
                             </div>
                         @endforeach
