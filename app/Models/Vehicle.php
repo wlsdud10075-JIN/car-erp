@@ -73,6 +73,30 @@ class Vehicle extends Model
         'document_deadline_reminder',
     ];
 
+    /**
+     * 🏠 **내수(국내 판매) 차량이 안 들어가는 단계 큐** (jin 2026-09-17).
+     *
+     * jin: *「정산 안 하는 사용자는 내수용처럼 국내에서 사고파는 거라 **말소를 직접적으로 하지 않아서**
+     *        지금 말소처리필요에 다 잡힌다」* — ssancarerp 실측 「말소 처리 필요」 274대 중 **21대(7.7%)**,
+     *        「말소 필요」 토글 270대 중 21대, 말소 재촉 알림톡 15대 중 1대가 그것이었다.
+     *        말소는 **사는 쪽이 한다**(jin 2026-09-17 «말소는 ssancarerp 에서 안 한다») — 재촉해도 우리 일이 아니다.
+     *        ⚠️ 그 차들에도 말소 체크(11대)·말소등록증(10대)이 있는데, 그건 **상대가 한 것을 뒤에 기록**한 것이다.
+     *
+     * 🔑 **판정은 「내수 바이어」다 — 담당자가 아니다.** 실측으로 두 키가 지금은 같은 집합을 가르지만
+     *    (담당자 「헤이맨」 33대 = 내수 바이어 33대 = KRW 33대), 말소를 안 하는 **원인은 국내 거래**이지
+     *    「지급 대상이 아니라서」가 아니다. `salesmen.payout_excluded`(2026-09-16, 사람이 아닌 계정용)에
+     *    두 번째 뜻을 얹으면 「지급은 제외인데 말소는 우리가 하는」 담당자가 생길 때 조용히 빠진다(§8 #64).
+     *    게다가 내수 바이어 차량은 34대인데 그 담당자는 33대다 — **1대는 담당자가 다르다.** 바이어 키만 그걸 잡는다.
+     *
+     * 🚫 **돈 큐는 여기 넣지 않는다** — 매입취소(`NOT_FOR_CANCELLED`)와 같은 선이다. 내수도 돈은 받고
+     *    정산도 한다(내수 공식 2026-09-08): `purchase_unpaid` · `sale_unpaid` · `receivable_*` ·
+     *    `settlement_*` · `exchange_rate_missing` 은 그대로 잡혀야 한다.
+     *
+     * ⚠️ 목록이 위(`NOT_FOR_CANCELLED`)와 **같다** — 둘 다 「이 차는 수출 흐름을 안 탄다」이기 때문이다.
+     *    복사해 적지 않고 **참조**한다(갈리면 한쪽만 고쳐진다, §8 #45). 나중에 갈라야 하면 그때 풀어 쓸 것.
+     */
+    private const NOT_FOR_DOMESTIC = self::NOT_FOR_CANCELLED;
+
     /** 매입취소(진행/완료/마감 어느 단계든) 여부. progress·정산·판매KPI 분기 단일 출처. */
     public function isPurchaseCancelled(): bool
     {
@@ -1668,6 +1692,33 @@ class Vehicle extends Model
     }
 
     /**
+     * 🏠 내수 판매 차량 — `isDomesticSale()` 의 **SQL 짝** (jin 2026-09-17).
+     *
+     * ⚠️ **`buyers.deleted_at` 을 보지 않는다** — accessor 가 `withTrashed` 로 읽기 때문이다(위 `domesticBuyer`).
+     *    여기서 걸러 버리면 바이어를 지운 순간 그 차가 **다시 수출 큐로 돌아온다**(예외도 로그도 없다).
+     * ⚠️ `isDomesticSettlement()` 이 아니라 `isDomesticSale()` 과 맞춘다 — 통화를 안 본다.
+     *    jin 2026-09-16 결정대로 「내수로 먼저 묶고 통화는 나중에」가 정상 순서라, 그 사이에도 말소 재촉이
+     *    가면 안 된다. 실측 33대 전부 KRW 라 지금은 숫자 차이도 없다.
+     * 가드 = `DomesticExportQueueTest`.
+     */
+    public function scopeDomesticSale(Builder $q): Builder
+    {
+        return $q->whereExists(fn ($sub) => $sub->select(DB::raw(1))
+            ->from('buyers')
+            ->whereColumn('buyers.id', 'vehicles.buyer_id')
+            ->where('buyers.is_domestic', true));
+    }
+
+    /** 내수가 아닌 차 — `scopeDomesticSale` 의 **정확한 여집합**(바이어 없는 차도 여기 들어온다). */
+    public function scopeNotDomesticSale(Builder $q): Builder
+    {
+        return $q->whereNotExists(fn ($sub) => $sub->select(DB::raw(1))
+            ->from('buyers')
+            ->whereColumn('buyers.id', 'vehicles.buyer_id')
+            ->where('buyers.is_domestic', true));
+    }
+
+    /**
      * 🏠 **내수 바이어인데 아직 통화가 원화가 아니다** — 저장은 되고, 화면이 그 상태를 말한다.
      *
      * 🔀 **2026-09-16 (jin) — 저장 차단을 걷어냈다.** 원래는 여기서 `ValidationException` 을 던져
@@ -3246,6 +3297,11 @@ class Vehicle extends Model
             //    `cancel_status` 는 NOT NULL DEFAULT 'none' 이라 이 한 줄로 충분하다
             //    (whereNotIn 을 쓰면 컬럼이 나중에 nullable 로 바뀌는 순간 전 행이 조용히 빠진다).
             $q->where('cancel_status', self::CANCEL_NONE);
+        }
+        if (in_array($action, self::NOT_FOR_DOMESTIC, true)) {
+            // 🏠 내수(국내 판매) 차량은 수출 흐름 큐에 안 들어간다 (jin 2026-09-17 — 위 상수 주석).
+            //    조건은 `scopeNotDomesticSale` 단일 출처다 — 옮겨 적지 말 것(§8 #44).
+            $q->notDomesticSale();
         }
 
         return match ($action) {
