@@ -297,7 +297,43 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function boardTypes(): array
     {
-        return BoardRequest::TYPES;
+        /*
+         * 🚫 **대표 직행 신호는 이 목록에 넣지 않는다** (jin 2026-09-17).
+         *
+         * 이 칸은 「비우면 전 신호에 적용」이라는 하위호환 폴백을 갖고 있다(§8 #94). 대표계약금을
+         * 여기 넣으면 기존 3행(전부 `types` 비어 있음)이 그 신호까지 덮어, 평일 낮엔 「담당자」 행이
+         * 걸려 **대표에게 안 가는 정반대 결과**가 된다. 반대로 요일을 넓혀 맞추면 기존 3종이 평일에도
+         * 대표에게 가기 시작한다.
+         * ⇒ 대표 직행은 아래 전용 줄에서 켜고 끈다. 가드 = `BoardCeoDepositTest`.
+         */
+        return array_values(array_filter(
+            BoardRequest::TYPES,
+            fn (string $t) => ! AlimtalkRecipients::isCeoDirect($t),
+        ));
+    }
+
+    /** 👔 대표 직행 신호들 — 위 표가 아니라 전용 줄에서 다룬다. */
+    public function ceoDirectTypes(): array
+    {
+        return array_values(array_filter(
+            BoardRequest::TYPES,
+            fn (string $t) => AlimtalkRecipients::isCeoDirect($t),
+        ));
+    }
+
+    /** 대표 직행 알림톡 on/off — 끄면 알림톡만 안 간다(요청·뱃지·할일은 남는다). */
+    public function toggleCeoDirect(string $type): void
+    {
+        abort_unless(auth()->user()?->isSuperAdmin(), 403);
+
+        $set = Setting::companyTemplateSet();
+        $now = AlimtalkRecipients::ceoDirectEnabled($type);
+        Setting::updateOrCreate(
+            ['key' => "alimtalk_ceo_direct_{$type}_{$set}"],
+            ['value' => $now ? '0' : '1', 'type' => 'string',
+                'description' => '대표 직행 알림톡 발송 여부 ('.$type.')'],
+        );
+        $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
     }
 
     /** 종일 ↔ 시간 지정 전환. 24:00 은 <input type="time"> 에 못 들어가므로 버튼으로만 만든다. */
@@ -660,6 +696,32 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{ __('alimtalk_catalog.time_rules') }}
                             <span class="text-gray-400">({{ __('alimtalk_catalog.now_receiving', ['n' => $this->timeRuleCount($code)]) }})</span>
                         </div>
+
+                        {{-- 👔 **대표 직행 신호** (jin 2026-09-17) — 아래 시각 규칙 표를 타지 않는다.
+                             컨트롤이 화면에 없으면 「체크했는데 왜 안 와?」 / 「표를 바꿨는데 왜 그대로지?」가
+                             된다(§8 #60·#62). 그래서 **여기서 켜고 끄고, 지금 누가 받는지 숫자로 보여준다.** --}}
+                        @foreach($this->ceoDirectTypes() as $ct)
+                            @php $ceoN = count(\App\Support\AlimtalkRecipients::admins()); @endphp
+                            <div wire:key="ceo-{{ $code }}-{{ $ct }}" class="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+                                        {{ $this->typeLabel($ct) }}
+                                    </span>
+                                    <span class="text-[11px] font-medium text-amber-900">{{ __('alimtalk_catalog.ceo_direct_desc') }}</span>
+                                    <label class="ml-auto flex cursor-pointer items-center gap-1 text-[11px] font-medium text-gray-700">
+                                        <input type="checkbox" wire:click="toggleCeoDirect('{{ $ct }}')"
+                                               @checked(\App\Support\AlimtalkRecipients::ceoDirectEnabled($ct))
+                                               class="h-3.5 w-3.5 rounded border-gray-300" />
+                                        {{ __('alimtalk_catalog.ceo_direct_on') }}
+                                    </label>
+                                </div>
+                                <div class="mt-1 text-[11px] {{ $ceoN === 0 ? 'font-bold text-red-600' : 'text-gray-500' }}">
+                                    {{ $ceoN === 0
+                                        ? __('alimtalk_catalog.ceo_direct_none')
+                                        : __('alimtalk_catalog.ceo_direct_count', ['n' => $ceoN]) }}
+                                </div>
+                            </div>
+                        @endforeach
                         <div class="flex flex-col gap-2">
                             @foreach($this->timeRules[$code] ?? [] as $i => $rule)
                                 @php
@@ -707,7 +769,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                          「계약금은 대표, 매입잔금은 관리」를 여기서 가른다. 하나도 안 고르면 전 신호. --}}
                                     @php $rTypes = $this->ruleTypes($rule); @endphp
                                     <div class="mt-2 flex flex-wrap items-center gap-1.5">
-                                        <span class="text-[11px] font-medium text-gray-500">{{ __('alimtalk_catalog.rule_types') }}</span>
+                                        <span class="text-[11px] font-medium text-gray-500" title="{{ __('alimtalk_catalog.rule_types_hint') }}">{{ __('alimtalk_catalog.rule_types') }}</span>
                                         @foreach($this->boardTypes() as $bt)
                                             @php $on = in_array($bt, $rTypes, true) || $rTypes === []; @endphp
                                             <button type="button" wire:click="toggleRuleType('{{ $code }}', {{ $i }}, '{{ $bt }}')"

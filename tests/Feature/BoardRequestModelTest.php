@@ -97,7 +97,10 @@ class BoardRequestModelTest extends TestCase
                 $this->assertIsBool($meta[$flag] ?? null, "{$type} 의 '{$flag}' 가 bool 이 아니다");
             }
             // 빌드된 CSS 에 있는 색만 쓴다 (SKILLS §8 #50 — 없는 색은 켜도 회색으로 보인다).
-            $this->assertContains($meta['color'], ['blue', 'purple'], "{$type} 의 색이 빌드 CSS 에 없는 값이다");
+            // 👔 amber = 대표 직행(2026-09-17). 일반 계약금(blue)과 **한 줄에 나란히** 뜨므로 갈라야 한다.
+            //    ⚠️ 여기에 값을 늘리면 **뱃지 렌더의 match 에도** 분기를 넣어야 한다 — 안 넣으면 메타만
+            //       다르고 화면은 파랑 그대로다(실제로 그렇게 될 뻔했다).
+            $this->assertContains($meta['color'], ['blue', 'purple', 'amber'], "{$type} 의 색이 빌드 CSS 에 없는 값이다");
             // 알람 type 은 겹치면 안 된다 — 겹치면 한 신호를 닫을 때 다른 신호의 벨까지 꺼진다.
             $this->assertSame(
                 $meta,

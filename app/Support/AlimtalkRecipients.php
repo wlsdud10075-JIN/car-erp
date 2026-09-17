@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\BoardRequest;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\User;
@@ -363,6 +364,16 @@ class AlimtalkRecipients
      */
     public static function forTimeRules(string $code, ?\DateTimeInterface $at = null, ?string $type = null): array
     {
+        // 👔 **대표 직행 신호는 표를 아예 안 본다** (jin 2026-09-17).
+        //    「대표 번호는 한 곳에서만 관리」(jin 결정)라 `admins()` 를 그대로 쓴다 — 기능설정의
+        //    대표 번호 override 가 이미 그 한 곳이다.
+        //    🚫 시각 규칙 행으로 처리하지 않은 이유: 기존 행들은 `types` 가 비어 **전 신호에 적용**된다
+        //       (하위호환). 그 표에 이 신호를 얹으면 평일 낮엔 「담당자」 행이 걸려 **대표에게 안 가는**
+        //       정반대 결과가 되고, 반대로 요일을 넓히면 기존 3종이 평일에도 대표에게 가기 시작한다.
+        if (self::isCeoDirect($type)) {
+            return self::ceoDirectEnabled($type) ? self::admins() : [];
+        }
+
         $phones = [];
         foreach (self::matchingRules($code, $at, $type) as $rule) {
             foreach (explode(',', (string) ($rule['to'] ?? '')) as $target) {
@@ -375,6 +386,35 @@ class AlimtalkRecipients
         $phones = collect($phones)->map(fn ($p) => trim((string) $p))->filter()->unique()->values()->all();
 
         return $phones !== [] ? $phones : self::admins();
+    }
+
+    /**
+     * 👔 **대표 직행 신호** — 시각·요일을 안 보고 대표(`admins()`)에게만 간다 (jin 2026-09-17).
+     *
+     * ⚠️ 문자열을 쓰지 않고 모델 상수를 가리킨다 — 두 곳에 적으면 오타가 **조용히** 「직행 아님」이 된다.
+     *    가드 = `BoardCeoDepositTest::test_ceo_direct_list_matches_the_model_constant`.
+     */
+    public const CEO_DIRECT_TYPES = [BoardRequest::TYPE_PURCHASE_DEPOSIT_CEO];
+
+    public static function isCeoDirect(?string $type): bool
+    {
+        return $type !== null && in_array($type, self::CEO_DIRECT_TYPES, true);
+    }
+
+    /**
+     * 그 신호의 알림톡을 보낼지 — 「알림톡 안내」 화면의 체크 1개 (기본 ON).
+     *
+     * ⚠️ 끄면 **알림톡만** 안 간다. 요청 행·뱃지·할일은 그대로 남는다 — 돈 요청을 화면에서까지
+     *    없애면 board 가 누른 버튼이 어디에도 안 보이게 된다.
+     */
+    public static function ceoDirectEnabled(?string $type): bool
+    {
+        if ($type === null) {
+            return false;
+        }
+        $set = Setting::companyTemplateSet();
+
+        return (string) Setting::get("alimtalk_ceo_direct_{$type}_{$set}", '1') !== '0';
     }
 
     /**

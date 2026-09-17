@@ -18,10 +18,12 @@ return [
     'task_board_sale' => '영업 판매대금확인',
     // 입금요청 분리 2종 (2026-08-11) — 금액을 실어 보내는 신호
     'task_board_deposit' => '영업 계약금 요청',
+    'task_board_deposit_ceo' => '영업 대표계약금 요청',
     'task_board_balance' => '영업 매입잔금 요청',
     'board_purchase_action' => '매입 지급 처리 필요',
     'board_sale_action' => '입금 확인 필요',
     'board_deposit_action' => '계약금 송금 필요',
+    'board_deposit_ceo_action' => '대표계약금 송금 필요',
     'board_balance_action' => '매입잔금 송금 필요',
     'badge_board' => '요청',
 
