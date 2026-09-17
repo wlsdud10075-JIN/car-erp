@@ -1,0 +1,117 @@
+# ssancarerp 2026-09-10 지급분 ERP 반영 (인계문서)
+
+> 🎯 **상태 = 계산·검증 완료 / 적용 대기** (jin 2026-09-17 *「계산만 해놓고 적용은 내일하자. 좀 다른점이 있어서
+> 혹시 모르니까. 바로 반영 할 수 있게만 준비해줘.」*).
+> ⚠️ **운영 DB 에 아직 아무것도 안 썼다.** dry-run 만 돌렸다.
+> 10/10 부터는 ERP 가 정산 정본이 되므로, 9/10 지급분이 이 작업으로 마무리된다.
+
+## 0. 원본
+
+| 무엇 | 경로 |
+|---|---|
+| 지급 원본 엑셀 | `C:\Users\User\Desktop\ssancarerpDB\2026.09.17 수출정산 9월_업로드.xlsx` (시트 `연아-F (2)`) |
+| 대조표(산출물) | `…\ssancarerpDB\2026.09.17 9월정산_ERP매칭_대조표.xlsx` (인원별 요약 · 차량별 상세 560행 · 확인 필요) |
+| 적용 스크립트·데이터 | `…\ssancarerpDB\_ERP반영_2026-09-10\` · 운영서버 `/home/ubuntu/apply_sep.php` · `/home/ubuntu/sep_settle.csv` |
+
+엑셀 구조 = 담당자별 블록 + 블록 끝 합계행. 열: `D` 차량번호 · `L` 차대번호 · `M` 담당 ·
+`CH` 총마진 · `CI` 총마진÷2 · `CJ` = CI−5만 · `CM` 실지급액 · `CO` 비고 · **`CS` 환율추가정산후 실지급액** · `CT` = CS−CM.
+
+## 1. 매칭 — 차대번호(VIN) + 차량번호 **둘 다** 일치로 확정
+
+562행 중 **560대**가 VIN·번호판이 같은 차를 가리켰다. 담당자 불일치 **0건**.
+
+🚨 **VIN 한 개만으로 매칭하면 틀린다** — `KMHYA811DNU008901` 이 ERP 차량 **2대**(#6576 `106호2914` ·
+#6669 `326가7460`)에 들어 있어, VIN 우선 매칭이 판매 없는 엉뚱한 차를 잡았다.
+그 한 대 때문에 박병훈 ERP 총마진이 **22.3M → −17.9M 쪽으로 30M 왜곡**됐다.
+⇒ **교차검증(VIN∩번호판) 전에는 인원별 합계를 보고하지 말 것.**
+
+## 2. 확정된 결정 (jin 2026-09-17)
+
+1. **9/10 실제 송금액 = 엑셀 `CS`**(환율추가정산후 실지급액) — 단, **프리랜서만**.
+2. **사내직원 9명은 건당으로 지급됐다 — 엑셀의 직원 CS 열은 「프리랜서였다면」 가상치다.**
+   ⇒ ERP 건당 정책값을 그대로 기록한다(`other_deduction = 0`).
+3. **차등지급(`salesmen.per_unit_tier_enabled`) 체크는 ERP 설정을 따른다.** 실측 = **무사백 1명만 ON**
+   (82건 중 100,000×72 · 200,000×8 · 0×2). 나머지 8명은 건당 10만 고정.
+4. **2차 정산은 열어둔다** — `paid` 까지만(→ `secondary_status='pending'` 자동). 회계 락 안 건다.
+5. 기록 기준 = **실제 송금액에 맞춤.** 프리랜서는 ERP 자연 계산과의 차액을 `other_deduction` 으로 흡수한다.
+   ⚠️ jin 이 *「기타공제 칸이 조정액으로 오염된다」* 를 알고 고른 것이다. 총 **45,402,729원**이 그 칸에 들어간다.
+
+### 왜 차액이 생기나 — ERP 는 CS 를 스스로 낼 수 있다
+
+ERP 는 2026-08-06 부터 **실입금환율**(`Vehicle::settlement_exchange_rate`)로 정산한다.
+그 데이터가 들어 있는 **94대에서는 ERP 계산이 CS 와 거의 일치**한다(실측 `156구7942` CS −10,088 = ERP −10,088).
+나머지 466대는 **08-28 소급 적재분이라 잔금이 판매환율로만 들어 있어** 판매환율로 폴백한다 ⇒ CM 쪽 값이 나온다.
+**공식이 다른 게 아니라 입금 KRW 데이터가 없는 것이다.**
+🅿️ 정공법(입금환율을 잔금에 채워 ERP 가 스스로 CS 를 내게)은 **jin 이 택하지 않았다** —
+현금원장·FIFO 배분을 건드려 §8 #80·#83 이 재현될 수 있다.
+
+## 3. 적용 대상 548건 (제외 14건)
+
+```
+프리랜서 313건 = CS 합       61,549,613원   (신규 188 · 기존 pending→paid)
+사내직원 235건 = ERP 건당     22,600,000원
+                 ─────────────────────────
+                 합계        84,149,613원   신규 생성 327 · 기존 갱신 221
+```
+
+dry-run 실측 **금액 불일치 0건**.
+
+### 제외 14건 — 전부 jin 확인 필요
+
+| 사유 | 엑셀행 / 차량 |
+|---|---|
+| ERP 에 차량 없음 | r42 `64도3163`(와심, 취소) · r460 `27고0712`(무사백) |
+| **ERP 판매 미입력**(판매가 0·진행 「매입중」인데 엑셀엔 EUR 판매가) | r150 `13가1312` · r152 `48러6019` · r156 `10나5310` · r157 `05버6301` (전부 박병훈) · r111 `66더1784`(이원호, 취소행) |
+| ERP 매입취소 상태 | r362 `230고5572`(존) |
+| 엑셀 취소행 | r432 `60두1818`(무사백) · r500 `385조2228` · r501 `236더6287`(카를로스) |
+| **엑셀은 내수인데 ERP 는 수출바이어** | r175 `361마6579`(USD) · r177 `132우4774`(USD) · r179 `320거1225`(EUR) — 셋 다 바이어 #205 `AUTO GYSII` |
+
+🏠 **내수 8대 중 5대는 ERP 도 내수**(바이어 #421 `내수_1`, KRW) — 정상 처리 대상이다.
+나머지 3대만 ERP 데이터가 수출로 잡혀 있다. **통화만 바꾸지 말 것**(판매가·계약금을 같이 안 고치면
+금액이 1/환율 로 줄어든다 — `02노0396` 과 같은 부류).
+
+🚫 **취소행은 정산행이 아니다** — 매입취소 손실 분담은 `SettlementPayoutAdjustment`(월배치 제출 모달, §8 #28-2)
+자리다. 이 작업에 섞지 않는다.
+
+## 4. 실행 절차 (내일)
+
+```bash
+# 0) 파일이 남아 있는지 확인 (없으면 _ERP반영_2026-09-10/ 에서 다시 올린다)
+ssh -i ~/.ssh/car_erp_key ubuntu@heymancar.com 'ls -la /home/ubuntu/apply_sep.php /home/ubuntu/sep_settle.csv'
+ssh -i ~/.ssh/car_erp_key ubuntu@heymancar.com 'cp /home/ubuntu/apply_sep.php /home/ubuntu/sep_settle.csv /tmp/ && mv /tmp/sep_settle.csv /tmp/sep_settle.csv'
+
+# 1) dry-run 을 먼저 다시 돌려 숫자가 그대로인지 본다 (약 5분)
+ssh … 'cd /var/www/car-erp && php artisan tinker /tmp/apply_sep.php > /tmp/apply_dry.out 2>&1'
+ssh … 'grep -v DEPRECATED /tmp/apply_dry.out'
+#    ⇒ 「처리 대상 548건 / 합계 84,149,613 / 금액 불일치: 0건」 이어야 한다
+
+# 2) 적용 (jin 명시 승인 후에만)
+ssh … 'cd /var/www/car-erp && APPLY=1 php artisan tinker /tmp/apply_sep.php > /tmp/apply_run.out 2>&1'
+
+# 3) 검증 — 다시 읽어서 같은 표가 나오는지
+ssh … 'cd /var/www/car-erp && php artisan tinker --execute="
+  \$q=\App\Models\Settlement::whereDate(\"paid_at\",\"2026-09-10\");
+  echo \$q->count().\" 건 / 지급합 \".number_format(\$q->get()->sum(fn(\$s)=>\$s->actual_payout)).PHP_EOL;"'
+```
+
+## 5. 쓰기 전에 확인해 둔 것 (재조사 말 것)
+
+- **알림톡 안 나간다** — `Settlement::created` 의 `erp_settle_pending` 은 `status !== 'pending'` 이면 즉시 return.
+  이 스크립트는 **처음부터 `paid` 로 만든다.**
+- **이중지급 위험 없다** — `SettlementPayoutBatch::eligibleSettlementIds()` 는 `settlement_status='confirmed'`
+  + `payout_batch_id IS NULL` 만 고른다. `paid` 는 영영 다시 안 잡힌다. `payout_batch_id` 는 null 로 둔다
+  (9/10 지급은 ERP 밖에서 일어났으므로 월배치에 없는 게 맞다).
+- **paid 가드 통과** — `saving` 훅의 「대표만 paid」 가드는 `auth()->check()` 일 때만 던진다. artisan 은 세션이 없다.
+  귀속은 `AuditLog::actingAs(super #1)` 로 명시한다(§8 #56 — 안 하면 561행이 「시스템」이 된다).
+- **이월(carryover) 영향 없다** — `creating` 훅은 `secondary_status='closed'` 정산에서만 흡수하는데
+  현재 0건이고 이번에도 안 닫는다 ⇒ 생성 순서가 결과를 바꾸지 않는다.
+- **발송비 0원** — 이 560대에 EMS/DHL 행이 하나도 없다. 실지급액에 영향 없음.
+- **기존 221건은 전부 `pending`** 이고 `settlement_type` 이 담당자 타입과 **불일치 0건**이다. 타입을 갈아끼울 일 없다.
+- `other_deduction` 은 `decimal(15,2)` **부호 있는** 컬럼이라 음수(추가 지급분 90건)가 들어간다.
+- `confirmed_snapshot` 은 저장 시점 차량 상태를 담는다 — **오늘 상태가 박제된다**(9/10 시점이 아니다).
+
+## 6. 남은 것
+
+- [ ] jin 이 말한 *「좀 다른 점」* 반영 → 있으면 **제외 목록·목표금액만** 고치면 된다(스크립트 상단).
+- [ ] 제외 14건 처리 방침
+- [ ] 적용 후 `docs/operations/aws-deployment-record.md` 가 아니라 **이 문서에 실행 결과**를 덧붙일 것
