@@ -149,6 +149,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $bulkNumContainer = '';
 
+    /** B/L 번호 (jin 2026-09-17) — 선적요청 묶음에만 있던 칸을 여기서도. 🚫 B/L **파일**은 대상이 아니다. */
+    public string $bulkNumBl = '';
+
     /** 기존 값이 2종 이상 섞였는데도 덮을 것인가 — 사람이 명시로 확인해야 진행한다. */
     public bool $bulkNumAck = false;
 
@@ -2452,6 +2455,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
         $this->bulkNumDecl = '';
         $this->bulkNumContainer = '';
+        $this->bulkNumBl = '';
         $this->bulkNumAck = false;
         $this->bulkNumReason = '';
         $this->bulkNumOpen = true;
@@ -2476,7 +2480,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function bulkNumPreview(): array
     {
-        $empty = ['count' => 0, 'no_scope' => 0, 'export_declaration_number' => [], 'container_number' => []];
+        $empty = ['count' => 0, 'no_scope' => 0, 'export_declaration_number' => [], 'container_number' => [], 'bl_number' => []];
         if (! $this->bulkNumOpen || empty($this->shipDocIds)) {
             return $empty;
         }
@@ -2495,6 +2499,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'no_scope' => count($ids) - count($scopedIds),
             'export_declaration_number' => $svc->valueBreakdown(Vehicle::whereIn('id', $scopedIds), 'export_declaration_number'),
             'container_number' => $svc->valueBreakdown(Vehicle::whereIn('id', $scopedIds), 'container_number'),
+            'bl_number' => $svc->valueBreakdown(Vehicle::whereIn('id', $scopedIds), 'bl_number'),
         ];
     }
 
@@ -2506,6 +2511,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         foreach ([
             'export_declaration_number' => $this->bulkNumDecl,
             'container_number' => $this->bulkNumContainer,
+            'bl_number' => $this->bulkNumBl,
         ] as $col => $val) {
             if (trim((string) $val) === '') {
                 continue;   // 빈 칸 = 안 건드림 → 덮을 것이 없다
@@ -2538,7 +2544,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        if (trim($this->bulkNumDecl) === '' && trim($this->bulkNumContainer) === '') {
+        if (trim($this->bulkNumDecl) === '' && trim($this->bulkNumContainer) === '' && trim($this->bulkNumBl) === '') {
             $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.empty'));
 
             return;
@@ -2557,6 +2563,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 [
                     'export_declaration_number' => $this->bulkNumDecl,
                     'container_number' => $this->bulkNumContainer,
+                    'bl_number' => $this->bulkNumBl,
                 ],
                 $user,
                 $this->bulkNumReason !== '' ? $this->bulkNumReason : __('vehicle.bulk_num.reason_default'),
@@ -11046,6 +11053,7 @@ function vehicleColumnsToggle() {
     $bnLabels = [
         'export_declaration_number' => __('vehicle.bulk_num.decl'),
         'container_number' => __('vehicle.bulk_num.container'),
+        'bl_number' => __('vehicle.bulk_num.bl'),
     ];
 @endphp
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-num-modal">
@@ -11066,6 +11074,12 @@ function vehicleColumnsToggle() {
         <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_num.container') }}</label>
         <input wire:model="bulkNumContainer" type="text" class="input-base mt-1 w-full"
                placeholder="{{ __('vehicle.bulk_num.container_ph') }}" />
+
+        {{-- B/L 번호 (jin 2026-09-17) — 선적요청 묶음에만 있던 칸. 🚫 B/L **파일**은 여기서 못 올린다
+             (G1 100% 완납 게이트가 걸린 자리라 차량별로만 — 선적요청 묶음 폼도 같은 이유로 제외). --}}
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_num.bl') }}</label>
+        <input wire:model="bulkNumBl" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_num.bl_ph') }}" />
 
         {{-- 🚦 현재 값이 여러 종류 — 채우면 하나로 덮인다. 선박명 일괄과 같은 규칙(빈 값은 「다름」으로 안 셈).
              ⚠️ 칸을 채우기 전에도 보여준다(live 바인딩을 안 쓰므로). 실제 차단은 **채운 칸이 섞였을 때만**. --}}
