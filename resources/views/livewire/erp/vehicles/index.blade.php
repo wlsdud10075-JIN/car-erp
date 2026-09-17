@@ -4926,6 +4926,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $messages = [
             'nice_reg_owner_rrn.regex' => __('vehicle.toast.rrn_format'),
+            // 🛒 **바이어를 지우려다 막힌 사람에게 무엇을 해야 하는지 알려준다** (jin 2026-09-17).
+            //    아래 판매 필수 3종 블록에 이미 친절 문구가 있는데, 그건 `$this->validate()` **뒤**라
+            //    일반 규칙 메시지(「판매 바이어은(는) 필수 입력 항목입니다」)가 **먼저 떠서 가려졌다**.
+            //    바이어가 산다는 걸 취소해 「바이어 미정」으로 되돌리려는 경우가 실제로 있다
+            //    (실사고 ssancarerp 42너5507) — 그때 판매가를 같이 비워야 한다는 걸 화면이 말해야 한다(§8 #60).
+            'buyer_id_str.required' => __('vehicle.valmsg.sale_buyer_required'),
         ];
 
         $this->validate($rules, $messages, $attributes);
