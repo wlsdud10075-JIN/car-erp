@@ -303,3 +303,76 @@ ssancarerp 전체    2026-07 이전 = paid 3,800여건 (08-28 소급 적재분)
    (무사백 정본 25대 제외 ↔ ERP 0원 2대).
 
 ⇒ 위 §6-4 가 결론이다 — **산식은 같고 3가지만 남았다.** 이 절의 「R/T 가 ERP 에 없다」는 서술은 §6-4 에서 정정됐다.
+
+---
+
+# 7. 🖥️ 로컬 미리보기 (jin 2026-09-18 요청 — *「전체적인 9월10일의 월배치를 로컬에서 보고싶어」*)
+
+> 🚫 **운영 DB 에는 여전히 아무것도 안 썼다.** 아래는 **운영 스냅샷 사본**에 만든 것이다.
+
+| 무엇 | 값 |
+|---|---|
+| 주소 | **http://localhost:8010/erp/payout-batches** (정산 상세 = `/erp/settlements`, 월 `2026-08`) |
+| DB | **`car_erp_sep_preview`** (로컬 MySQL) ← `mysqldump` 스냅샷 2026-09-18 |
+| 환경 | **`.env.preview`**(APP_ENV=preview · `.gitignore` 등재) · `APP_ENV=preview php artisan serve --port=8010` |
+| 로그인 | **ssancarerp 운영 계정 그대로**(스냅샷이라 해시 동일) |
+| 🚫 건드리지 않은 것 | jin 의 8001 · 로컬 `car_erp` DB · 운영 |
+
+## 7-1. 확정된 금액 (jin 2026-09-18 — 프리랜서·사내직원 **둘 다 엑셀 정본**)
+
+```
+배치 #2  2026-08  pending  level 3 (대표 차례)
+  정산 560건               80,647,067원   ← 프리 62,147,067 + 직원 18,500,000
+  조정   8건               41,698,933원   ← 프리랜서 사람단위(이월·보너스·보류해제·예치금)
+  ─────────────────────────────────────
+  총액                    122,346,000원   = 프리 103,846,000 + 직원 18,500,000
+```
+차량별 목표 = **프리 탭 `CS`(환율추가정산후 실지급액)** · **본사 탭 `CU`(본사직원 실지급액)**.
+`other_deduction` 으로 `actual_payout` 을 그 값에 고정한다.
+
+## 7-2. 🚪 미수 지급보류 155건 — **게이트 예외로 포함시켰다** (jin 확인 필요)
+
+`eligibleSettlementIds` 는 **미수 있는 차량의 정산을 지급보류**한다(jin 2026-07-08).
+그대로 두면 560건 중 **405건만** 배치에 들어간다(실측). 빠지는 155건은 **전부 미수 사유**이고
+담당자 지급제외는 0건이다 — 이용빈 50 · 와심 27 · 아짐 13 · 박아름 12 · 이원호 9 · 무사백 9 ·
+카를로스 8 · 조하 7 · 임윤태 6 · 김연아 4 · 존 4 · 콘스탄틴 3 · 박종범 2 · 손세훈 1.
+
+⇒ 이 건들은 **2026-09-10 에 실제로 지급이 끝난 기록**이라 「보류」가 사실이 아니다.
+   설계된 **정산 게이트 예외**(jin 2026-09-12, `gate_override_*`)를 사유와 함께 걸어 포함시켰다.
+   🚨 **화면의 예외 뱃지로 확인할 것** — 평소 운영에서 「예외 대상 = 뱃지 붙은 것만」(ssancar 19건)이던
+   기준을 이 배치가 **155건으로 크게 늘린다.** 운영 적용 전 jin 승인 사항이다.
+
+## 7-3. ⚠️ 만들면서 밟은 함정 — 운영에서도 그대로 걸린다
+
+1. **조정을 담당자 「이름」으로 붙이면 삭제된 옛 행에 간다.** 첫 시도에서 가태웅 → #1,
+   이용빈 → #13, 이원호 → **#19(삭제됨)** 로 붙었다(운영에 임윤태 17·18, 이원호 19 등 옛 행이 있다).
+   ⇒ **그 달 정산이 실제로 쓰는 `salesman_id` 안에서만** 고를 것.
+2. **`submitForMonth` 는 끝에서 알림톡을 쏜다**(`notifyPayoutRequest`). 미리보기 DB 는 운영 사본이라
+   **설정이 살아 있어 진짜로 나간다.** ⇒ 제출 전에 `alimtalk_enabled*`·`alimtalk_toggle*` 을 전부 0 으로.
+   실측 확인 = `alimtalk_logs` 에 `erp_payout_request → skipped(disabled_or_unconfigured)` 1건, **발송 0건**.
+3. **`php artisan tinker <파일>` 은 끝나고도 프로세스가 안 죽는다**(로컬·운영 공통).
+   긴 조회는 `nohup … &` 로 띄우고 **로그 파일**로 받을 것. 파이프(`| grep`)로 받으면 출력이 통째로 유실된다.
+
+## 7-4. 재현 절차
+
+```bash
+# 스냅샷 (운영은 읽기만)
+ssh … 'cd /var/www/car-erp && php artisan tinker /tmp/mkcnf.php'   # 자격증명을 파일로만 씀
+ssh … 'mysqldump --defaults-extra-file=/tmp/.mycnf --single-transaction --quick \
+        --no-tablespaces --set-gtid-purged=OFF ssancar_erp | gzip > /tmp/ssancarerp_snap.sql.gz'
+ssh … 'shred -u /tmp/.mycnf'        # 🚨 자격증명 파일은 반드시 지울 것
+# 로컬
+mysql -u root -e "DROP DATABASE IF EXISTS car_erp_sep_preview; CREATE DATABASE car_erp_sep_preview …"
+gzip -dc ssancarerp_snap.sql.gz | mysql -u root car_erp_sep_preview
+APP_ENV=preview php artisan tinker <scratchpad>/preview_batch.php     # 알림톡 차단 → 정산 → 예외 → 배치
+APP_ENV=preview php artisan serve --port=8010 --host=127.0.0.1
+```
+스크립트·데이터 = 세션 scratchpad `preview_batch.php` · `targets.csv` · `adjust.csv`
+(내용은 `_ERP반영_2026-09-10\` 와 `2026.09.18 사내직원_지급대조_v2.xlsx` 로도 보존).
+
+## 7-5. 남은 것
+
+- [ ] jin 이 로컬에서 확인 → 운영 적용 승인
+- [ ] **미수 지급보류 예외 155건** 이 맞는 처리인지 (7-2)
+- [ ] 무사백 7·8월 차등 건 (jin 이 전달 예정) · 7월분은 ERP 에 **이미 584,054원 반영**돼 있다
+- [ ] 바이어 승계 플래그 7건 (`2026.09.18 사내직원_승계바이어_대조.xlsx`)
