@@ -16,21 +16,27 @@
 ⇒ *「heymanerp 처럼」* = **4GB** 다. 1GB 가 아니다. $11 이 맞다면 그건 **4GB 요금**이므로
    ssancarerp 도 4GB 로 내리면 같은 값이 된다. (요금제 확인은 콘솔에서 — SSH 로는 못 본다.)
 
-## 2. 🏋️ 이 서버는 heymanerp 보다 **짊어진 게 많다**
+## 2. 🏋️ 두 서버 차이 — **board 는 양쪽 다 있다** (2026-09-18 정정)
 
-`nginx -T` · `systemctl` 실측:
+> ⚠️ **처음에 「heymanerp 엔 board 가 없다」고 적었는데 틀렸다.** jin 지적 후 `nginx -T` 로 직접 확인.
+> `systemctl` 의 supervisor 워커 수만 보고 추정한 것이 원인이다 — **사이트 구성은 nginx 로 봐야 한다.**
 
-| | ssancarerp 서버 | heymanerp 서버 |
+| | ssancarerp (8GB · $44) | heymanerp (4GB) |
 |---|---|---|
-| ERP | `heymancar.com` (DB 48.2MB) | `heysellcar.com` |
-| **board** | **`board.heymancar.com`** (DB 0.7MB) | 없음 |
-| **3사 공용 NICE 게이트웨이** | **`/provide/api/nice-lookup/`** | 없음 |
-| 구 Django(gunicorn) | `ssancar-erp.service` (트래픽 0, 제거 대기) | 없음 |
-| 큐 워커 | supervisor 2개(board + car-erp) | supervisor 1개 |
-| php-fpm max_children | **14** | 10 |
+| ERP | `heymancar.com` · DB **48.2MB** | `heysellcar.com` · DB **20.9MB** |
+| **board** | `board.heymancar.com` · DB 0.7MB | **`board.heysellcar.com` · DB 2.4MB** ✅ 있다 |
+| **3사 공용 NICE 게이트웨이** | **`/provide/api/nice-lookup/`** | ❌ 없다 |
+| 구 Django(gunicorn) | `ssancar-erp.service` (트래픽 0, 제거 대기) | ❌ 없다 |
+| 큐 워커 | 2개 (board + car-erp) | 1개 (board) |
+| php-fpm max_children | 14 | 10 |
+| 실사용 메모리 | **1,600MB** | **1,417MB** |
 
-🔑 **`/provide/api/nice-lookup/` 은 3사 ERP 가 전부 이 서버로 부른다**(CLAUDE.md §15).
-   heymanerp·karabaerp 의 차량조회가 **여기를 거친다** — 이 서버가 죽으면 3사 조회가 같이 죽는다.
+🔑 **실제 차이는 둘뿐이다 — NICE 게이트웨이와 구 Django.**
+   그 외 스택(ERP + board + MySQL + nginx + php-fpm)은 **같다**.
+   ⇒ **heymanerp 가 같은 스택을 4GB 에서 1,417MB 로 돌리고 있다는 것이 4GB 판정의 직접 근거다.**
+
+⚠️ **`/provide/api/nice-lookup/` 은 3사 ERP 가 전부 이 서버로 부른다**(CLAUDE.md §15).
+   heymanerp·karabaerp 의 차량조회가 여기를 거친다 — 이 서버가 죽으면 **3사 조회가 같이 죽는다.**
 
 ## 3. 💾 메모리 — **1GB 불가 · 2GB 위험 · 4GB 안전**
 
