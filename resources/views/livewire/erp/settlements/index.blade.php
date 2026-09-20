@@ -770,9 +770,15 @@ new #[Layout('components.layouts.app')] class extends Component
         }
 
         // pending / null: 실입금 − baseline 미리보기 (마감 시 확정될 값과 동일).
+        //   🔑 식은 모델 단일 출처를 쓴다(2026-09-20). 정산행이 아직 없을 수도 있어 임시 인스턴스로 묻는다.
+        //   ⚠️ 이 패널은 **미완납이어도 보여준다** — 바로 위·아래에 실입금과 baseline 을 나란히 놓는
+        //      회계 명세라 사람이 차이의 출처를 볼 수 있다. 목록·엑셀은 숫자만 나가므로 미완납이면
+        //      「−」로 둔다(`Settlement::display_exchange_difference`).
+        $fxOwner = $settlement ?? tap(new Settlement, fn (Settlement $t) => $t->setRelation('vehicle', $v));
+
         return array_merge($base, [
             'baseline_krw' => $baselineKrw,
-            'exchange_diff' => (float) ($receivedKrw - $baselineKrw),
+            'exchange_diff' => (float) $fxOwner->computeExchangeDifference(),
             'is_preview' => true,
         ]);
     }
@@ -1703,31 +1709,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
     /**
      * 회의확장씬 #7 Step C-4 — 정산 시점 환율 재계산 환차.
-     * 회의확장씬 #6+7 보강 (2026-05-23) — 저장된 exchange_rate_at_close 우선 사용.
+     *
+     * 🔀 **2026-09-20 — 식을 `Settlement::computeExchangeDifference()` 로 옮겼다**(계산 무변경).
+     *    엑셀 내보내기·목록이 같은 값을 그려야 하는데 이 화면 안에만 있어서 쓸 수가 없었다(§8 #44·#45).
+     *    여긴 2차 마감 경로의 호출 형태(`[diff, rate]`)를 유지하는 얇은 래퍼로만 남긴다.
      *
      * @return array{0: float|null, 1: float|null}  [diff KRW, rate used]
-     *   diff: 환차 KRW (양수=환차익 / 음수=환차손 / 0=동일). null=계산 불가.
-     *   rate: 실제 사용된 환율 (저장값 또는 자동 fetch). null=KRW 차량 또는 실패.
+     *   rate 는 항상 null — exchange_rate_at_close 컬럼은 deprecate(closed 감사행만 보존).
      */
     private function calculateExchangeDifference(Settlement $settlement): array
     {
-        $vehicle = $settlement->vehicle;
-        if (! $vehicle || $vehicle->currency === 'KRW') {
-            return [0.0, null];   // KRW 차량은 환차 없음
-        }
-
-        // 2026-07-06 재피벗 — close_rate 제거, baseline = 판매환율 고정.
-        $saleRate = (float) ($vehicle->exchange_rate ?? 0);
-        if ($saleRate <= 0) {
-            return [null, null];   // 판매환율 없음 — 계산 불가 (chk_sale_required 상 사실상 불가)
-        }
-
-        // 환차 = 실입금KRW − baseline. baseline = 총판매가 외화 × 판매환율.
-        $receivedKrw = (float) $vehicle->sale_received_krw_accumulated;
-        $baselineKrw = (float) $vehicle->sale_total_amount * $saleRate;
-
-        // 두 번째 반환값 null → exchange_rate_at_close 미기록 (컬럼 deprecate, closed 감사행만 보존).
-        return [$receivedKrw - $baselineKrw, null];
+        return [$settlement->computeExchangeDifference(), null];
     }
 
     private function resetForm(): void

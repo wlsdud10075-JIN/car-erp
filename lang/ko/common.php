@@ -45,6 +45,8 @@ return [
         'submit' => '로그인',
         'tagline' => '중고차 수출 ERP',
     ],
+    'won' => '원',
+
     'filedrop' => [
         'label' => '여기로 드래그하거나 파일을 선택하세요',
         'browse' => '파일 선택',
