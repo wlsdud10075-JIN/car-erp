@@ -522,6 +522,130 @@ class Settlement extends Model
         return (int) ($this->vehicle?->domestic_margin ?? 0);
     }
 
+    // ── 마진율 · 환차 표시 (2026-09-20, jin 「차량 하나하나에 관한 마진율이 표시되며,
+    //     그 담당자의 총 마진율은 몇이다」) ──────────────────────────────────────
+
+    /**
+     * 📊 **마진율 — 단일 출처.** 정본 엑셀 인원 탭 `CK = CH / CC` 실측(조하 7월분).
+     *   = 총마진 ÷ 판매금원화(운임비 제외). **비율**을 돌려준다(0.0359 = 3.59%) — 화면에서 % 로 그린다.
+     *
+     * 🚫 **내수는 null** (jin 2026-09-18 *「내수는 마진률이 없지. 그냥 넣지말아버려.
+     *    그것도 마진률의 평균에도 들어가지않게.」*). 분모 0 도 null.
+     *    ⚠️ **null 을 0% 로 그리지 말 것** — 「−」다. 0% 로 그리면 합계를 눈으로 검산할 때 어긋난다.
+     *
+     * 🏷️ **karaba 는 자기 이익률을 쓴다** — 그 회사는 이익률이 **정산 요율을 정하는 값**이라
+     *    (`karabaTierPercent`) 여기에 다른 식의 숫자를 띄우면 한 화면에 비슷한 이름의 다른 값이 둘이 된다.
+     *    ssancar·heyman 은 `display_margin === total_margin` 이라 아래 식 그대로다.
+     */
+    public function getMarginRateAttribute(): ?float
+    {
+        if ($this->is_domestic) {
+            return null;
+        }
+
+        if (self::isKarabaMemo()) {
+            $rate = $this->karaba_profit_rate;
+
+            return $rate === null ? null : $rate / 100;   // 그쪽은 % 로 돌려준다
+        }
+
+        $base = (int) $this->sales_amount_krw;
+
+        return $base === 0 ? null : $this->total_margin / $base;
+    }
+
+    /**
+     * 📐 **여러 건의 마진율 — 합계는 평균이 아니다.**
+     *   `Σ총마진 ÷ Σ판매금원화` (금액 가중). 엑셀 합계행이 `CH합/CC합` 인 것이 근거다.
+     *
+     * 🚨 개별 마진율을 평균 내면 **소액 차량이 과대 반영**돼 숫자가 달라진다.
+     * 🔑 **마진율이 null 인 행은 분자·분모 양쪽에서 통째로 뺀다** — 내수·분모 0 이 여기서 한 번에 걸린다.
+     *    한쪽에서만 빼면 마진율이 부풀거나(분모만) 깎인다(분자만).
+     *    ⇒ 화면에 「−」로 그려진 줄은 소계를 **1원도 움직이지 않는다**.
+     *
+     * @param  iterable<int, self>  $rows
+     */
+    public static function marginRateOf(iterable $rows): ?float
+    {
+        $karaba = self::isKarabaMemo();
+        $num = 0.0;
+        $den = 0.0;
+
+        foreach ($rows as $s) {
+            if ($s->margin_rate === null) {
+                continue;
+            }
+            if ($karaba) {
+                $v = $s->vehicle;
+                $num += (float) $s->karaba_operating_profit;
+                $den += (float) ($v?->sale_price ?? 0) * (float) ($v?->exchange_rate ?? 0);
+
+                continue;
+            }
+            $num += (float) $s->total_margin;
+            $den += (float) $s->sales_amount_krw;
+        }
+
+        return $den == 0.0 ? null : $num / $den;
+    }
+
+    /**
+     * 💱 **환차 계산 본체** — 2026-09-20 에 정산관리 화면의 private 메서드에서 꺼냈다(식 무변경).
+     *   환차 = 실입금KRW − baseline(총판매가 외화 × 판매환율). 2026-07-06 재피벗 공식.
+     *
+     * 반환: KRW / `0.0` = KRW 차량(환차 개념 없음) / `null` = 판매환율 없어 계산 불가.
+     *
+     * 🚫 **이 식을 화면·엑셀에 옮겨 적지 말 것**(§8 #44·#45) — 갈리면 「화면 3,000원 ↔ 엑셀 2,900원」이 된다.
+     * ⚠️ **미수 판정을 여기 넣지 않는다** — 2차 마감 저장 경로가 이걸 쓰는데, 게이트 예외로
+     *    미수인 채 마감하는 길이 설계상 열려 있다. 미수 판정은 표시용 `display_exchange_difference` 몫.
+     */
+    public function computeExchangeDifference(): ?float
+    {
+        $vehicle = $this->vehicle;
+        if (! $vehicle || $vehicle->currency === 'KRW') {
+            return 0.0;
+        }
+
+        $saleRate = (float) ($vehicle->exchange_rate ?? 0);
+        if ($saleRate <= 0) {
+            return null;
+        }
+
+        return (float) $vehicle->sale_received_krw_accumulated
+            - (float) $vehicle->sale_total_amount * $saleRate;
+    }
+
+    /**
+     * 💱 **화면·엑셀이 그리는 환차** — 마감됨이면 저장값, 마감 전이면 미리보기.
+     *
+     * jin 2026-09-18: *「1차정산 이후부터는 환차가 있어야 할텐데?」* — 맞다. 환차는 판매금원화의
+     * 환율(`Vehicle::settlement_exchange_rate`)을 타고 **1차부터 금액에 이미 녹아 있는데**,
+     * `exchange_difference_krw` **컬럼**은 2차 마감 때만 쓰이므로 화면·엑셀이 빈칸이었다.
+     *
+     * 🚨 **미완납이면 `null`(「−」)** — 미리보기 식은 덜 받은 돈을 그대로 마이너스로 뱉는다.
+     *    그걸 「환차」로 인쇄하면 **미수가 환차로 둔갑**한다(실측 155건이 그 상태였다).
+     *    판정은 `Vehicle::hasRealizedFxBasis()` 단일 출처 — 정산환율이 보는 바로 그 조건이다.
+     *
+     * 🚫 **1차 확정 시점에 컬럼으로 저장하지 않는다** — 뒤에 잔금이 더 들어오면 값이 낡고,
+     *    「마감 때 계산된 값」이라는 기존 전제(`ReopenSecondarySettlement` 가 그 위에 서 있다)가 깨진다.
+     *    관리자 대시보드·`profitStats()['fx']` 가 그 컬럼을 합산하므로 숫자도 움직인다.
+     *    ⇒ **저장값은 안 건드리고 「표시」만 맞춘다.**
+     */
+    public function getDisplayExchangeDifferenceAttribute(): ?float
+    {
+        if ($this->secondary_status === 'closed') {
+            return $this->exchange_difference_krw === null ? null : (float) $this->exchange_difference_krw;
+        }
+
+        return $this->vehicle?->hasRealizedFxBasis() ? $this->computeExchangeDifference() : null;
+    }
+
+    /** 환차 값이 「미리보기」인가(= 2차 마감 전). 화면이 확정/예상을 구분해 말하는 근거(§8 #85). */
+    public function isExchangeDifferencePreview(): bool
+    {
+        return $this->secondary_status !== 'closed';
+    }
+
     // ── 정산 파라미터 (2026-06-22) — super admin 기능설정에서 Setting override 가능 ─────────
     // 상수 = 기본값(Setting row 없으면 사용). 컬럼 값(settlement_ratio, per_unit_amount) 명시 시 user override 우선.
     public const FREELANCE_RATIO_DEFAULT = 50;          // 프리랜서 비율 기본 50%

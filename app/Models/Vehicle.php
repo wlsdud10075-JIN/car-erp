@@ -2404,16 +2404,37 @@ class Vehicle extends Model
     {
         $saleRate = (float) ($this->exchange_rate ?? 0);
 
-        if ($this->currency === 'KRW' || $saleRate <= 0) {
+        if (! $this->hasRealizedFxBasis()) {
             return $saleRate;
         }
 
-        $totalFx = (float) $this->sale_total_amount;
-        if ($totalFx <= 0 || $this->sale_unpaid_amount > 0) {
-            return $saleRate;
+        return (float) $this->sale_received_krw_accumulated / (float) $this->sale_total_amount;
+    }
+
+    /**
+     * 💱 **실현 환차를 말할 수 있는 차인가** — 2026-09-20 신설(기존 조건을 꺼낸 것, 동작 무변경).
+     *
+     * 외화 · 판매환율 있음 · 총판매가 > 0 · **미수 없음**. 이 넷이 맞아야 「실제로 받은 환율」이
+     * 존재한다. 하나라도 어긋나면 `settlement_exchange_rate` 가 판매환율로 폴백한다.
+     *
+     * 🚨 **미수가 있는 차에 환차를 계산하면 미수가 환차로 둔갑한다.** 환차 미리보기 식
+     * (`실입금 − 총판매가 × 판매환율`)은 돈을 덜 받은 만큼을 그대로 마이너스로 뱉기 때문이다.
+     * 실측: ssancarerp 2026-08 배치에 그런 차가 **155건**(미수 지급보류 게이트 예외분).
+     *
+     * 🚫 이 조건을 다른 곳에 옮겨 적지 말 것(§8 #44·#45) — 환차 표시·정산환율이 **같은 판정**을
+     *    봐야 «화면은 환차가 있다는데 정산은 판매환율로 계산된» 상태가 안 생긴다.
+     *
+     * ⚠️ **2차 마감 저장값에는 이 판정을 걸지 않는다** — 게이트 예외(`hasGateOverride`)로 미수인
+     *    채 마감하는 길이 설계상 열려 있고(jin 2026-09-12), 그때 환차·이월이 1회 확정된다.
+     *    여기서 막으면 그 정산이 영영 안 닫히고 프리랜서 이월이 증발한다.
+     */
+    public function hasRealizedFxBasis(): bool
+    {
+        if (($this->currency ?? 'KRW') === 'KRW' || (float) ($this->exchange_rate ?? 0) <= 0) {
+            return false;
         }
 
-        return (float) $this->sale_received_krw_accumulated / $totalFx;
+        return (float) $this->sale_total_amount > 0 && $this->sale_unpaid_amount <= 0;
     }
 
     /**

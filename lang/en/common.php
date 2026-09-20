@@ -45,6 +45,8 @@ return [
         'submit' => 'Sign in',
         'tagline' => 'Used Car Export ERP',
     ],
+    'won' => 'KRW',
+
     'filedrop' => [
         'label' => 'Drag files here or choose them',
         'browse' => 'Choose file',

@@ -19,12 +19,17 @@ class Salesman extends Model
         'per_unit_tier_enabled',
         // 2026-09-16 jin — 정산 지급 대상이 아닌 담당자(자매 회사 계정 등). 상세 = 마이그레이션 주석.
         'payout_excluded',
+        // 2026-09-18 jin — 예치금(프리랜서) · 기본급(사내직원). **표시 전용**, 지급액 불참.
+        //   null = 미입력(화면 「−」) / 0 = 「없음」 명시. 상세 = 마이그레이션 주석.
+        'deposit_krw', 'base_salary_krw',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'per_unit_tier_enabled' => 'boolean',
         'payout_excluded' => 'boolean',
+        'deposit_krw' => 'integer',
+        'base_salary_krw' => 'integer',
     ];
 
     public const TYPES = [
@@ -41,6 +46,22 @@ class Salesman extends Model
     public function getTypeLabelAttribute(): string
     {
         return self::TYPES[$this->type] ?? '사내직원';
+    }
+
+    /**
+     * 💰 **그 달에 이 사람이 실제로 받는 돈** = 기본급 + 그 달 정산액 (jin 2026-09-18).
+     *
+     * 🚨 이름을 「실지급액」으로 쓰지 말 것 — ERP 에서 **실지급액 = `Settlement::actual_payout`**
+     *    (정산액 − 서류비 − 발송비 − 기타공제)으로 정산관리·월배치·엑셀 3곳이 이미 쓴다.
+     *    같은 낱말이 화면마다 다른 숫자를 가리키면 «정산관리는 180만인데 월배치는 454만» 이 된다.
+     *    ⇒ 이 합계의 이름은 **「월수령액」**이다(jin 확정).
+     *
+     * 🚫 배치 총액·회사이익에 더하지 않는다 — 급여는 정산이 아니다.
+     * 프리랜서는 기본급이 없으므로 정산액 그대로 돌려준다.
+     */
+    public function monthlyTakeHome(int $settlementPayout): int
+    {
+        return (int) ($this->base_salary_krw ?? 0) + $settlementPayout;
     }
 
     public function user(): BelongsTo

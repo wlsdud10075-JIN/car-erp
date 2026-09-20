@@ -40,6 +40,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $per_unit_tier_enabled = false;
     public bool   $payout_excluded       = false;
 
+    // 2026-09-18 jin — 예치금(프리랜서) / 기본급(사내직원). 금액칸이라 문자열로 받는다
+    //   (콤마 포매터 data-money 가 붙는다 — SKILLS §14). 빈 문자열 = 미입력(null 저장).
+    public string $deposit_krw_str     = '';
+    public string $base_salary_krw_str = '';
+
     #[Computed]
     public function salesmen()
     {
@@ -185,7 +190,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_active   = $sm->is_active;
         $this->per_unit_tier_enabled = (bool) $sm->per_unit_tier_enabled;
         $this->payout_excluded = (bool) $sm->payout_excluded;
+        $this->deposit_krw_str     = $sm->deposit_krw     === null ? '' : (string) $sm->deposit_krw;
+        $this->base_salary_krw_str = $sm->base_salary_krw === null ? '' : (string) $sm->base_salary_krw;
         $this->showPanel   = true;
+    }
+
+    /** 금액칸 → 정수 또는 null. 빈칸·콤마·기타 문자를 걷어낸다(0 과 미입력을 구분해야 하므로 null 유지). */
+    private function moneyOrNull(string $raw): ?int
+    {
+        $digits = preg_replace('/[^0-9]/', '', $raw) ?? '';
+
+        return $digits === '' ? null : (int) $digits;
     }
 
     public function close(): void
@@ -215,15 +230,33 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 🚪 지급 대상 제외도 돈이 나가고 안 나가고를 가르므로 tier 와 같은 무게로 재인가한다.
                 $data['payout_excluded'] = $this->payout_excluded;
             }
-            $wasTier = (bool) $sm->per_unit_tier_enabled;
-            $wasExcluded = (bool) $sm->payout_excluded;
+            // 💰 예치금·기본급 — 연결된 계정 유형이 정하는 **한 칸만** 저장한다.
+            //   🚫 유형이 안 붙은 담당자는 둘 다 건드리지 않는다 — 화면에도 안 띄운다.
+            //      엉뚱한 칸에 금액이 들어가는 것보다 비어 있는 게 낫다.
+            //   ⚠️ 유형이 바뀌면 반대쪽 칸의 옛 값은 **지우지 않는다**(기록). 화면이 안 보여줄 뿐이다.
+            //   🚨 화면에서 숨긴 것과 **별개로** 저장 시점에 권한을 다시 본다(§8 #26) —
+            //      프로퍼티는 클라이언트가 직접 주입할 수 있다. 테스트가 실제로 이 구멍을 잡았다.
+            $linkedType = auth()->user()?->canApprove() ? $sm->user?->type : null;
+            if ($linkedType === 'freelance') {
+                $data['deposit_krw'] = $this->moneyOrNull($this->deposit_krw_str);
+            } elseif ($linkedType === 'employee') {
+                $data['base_salary_krw'] = $this->moneyOrNull($this->base_salary_krw_str);
+            }
+
+            $before = [
+                'per_unit_tier_enabled' => (bool) $sm->per_unit_tier_enabled,
+                'payout_excluded' => (bool) $sm->payout_excluded,
+                'deposit_krw' => $sm->deposit_krw,
+                'base_salary_krw' => $sm->base_salary_krw,
+            ];
             $sm->update($data);
             // 돈을 바꾸는 스위치라 누가 언제 켰는지 남긴다 (Salesman 엔 감사 훅이 없어 여기서 직접).
-            if (array_key_exists('per_unit_tier_enabled', $data) && $wasTier !== $this->per_unit_tier_enabled) {
-                \App\Models\AuditLog::recordChange($sm, 'per_unit_tier_enabled', $wasTier, $this->per_unit_tier_enabled);
-            }
-            if (array_key_exists('payout_excluded', $data) && $wasExcluded !== $this->payout_excluded) {
-                \App\Models\AuditLog::recordChange($sm, 'payout_excluded', $wasExcluded, $this->payout_excluded);
+            //   🔑 비교는 `AuditLog::valuesDiffer()` — `!==` 로 하면 «3000000» ↔ 3000000 처럼
+            //      표기만 다른 값이 변경으로 잡혀 소음이 쌓인다(§8 #108).
+            foreach ($before as $col => $was) {
+                if (array_key_exists($col, $data) && \App\Models\AuditLog::valuesDiffer($was, $data[$col])) {
+                    \App\Models\AuditLog::recordChange($sm, $col, $was, $data[$col]);
+                }
             }
         } else {
             // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
@@ -495,6 +528,31 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </span>
                 </span>
             </label>
+        </div>
+        @endif
+        {{-- 💰 예치금(프리랜서) / 기본급(사내직원) — jin 2026-09-18.
+             「사용자관리에서 프리랜서냐 사내직원이냐에 따라서 그걸 기입 할 수 있게」
+             🚫 유형이 안 붙은 담당자에겐 **둘 다 안 보인다** — 엉뚱한 칸에 금액이 들어가는 것보다 낫다.
+             🚫 지급액에 더해지지 않는다(표시 전용) — 배치 총액·회사이익 불변. --}}
+        @if($linkedUserType === 'freelance' && auth()->user()?->canApprove())
+        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
+            <label class="label-base">{{ __('salesman.field.deposit') }}</label>
+            <div class="flex items-center gap-1">
+                <input wire:model="deposit_krw_str" data-money type="text" inputmode="numeric"
+                       class="input-base flex-1 text-right tabular-nums" placeholder="{{ __('salesman.field.money_ph') }}" />
+                <span class="text-sm text-gray-600">{{ __('common.won') }}</span>
+            </div>
+            <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.deposit_hint') }}</p>
+        </div>
+        @elseif($linkedUserType === 'employee' && auth()->user()?->canApprove())
+        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
+            <label class="label-base">{{ __('salesman.field.base_salary') }}</label>
+            <div class="flex items-center gap-1">
+                <input wire:model="base_salary_krw_str" data-money type="text" inputmode="numeric"
+                       class="input-base flex-1 text-right tabular-nums" placeholder="{{ __('salesman.field.money_ph') }}" />
+                <span class="text-sm text-gray-600">{{ __('common.won') }}</span>
+            </div>
+            <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.base_salary_hint') }}</p>
         </div>
         @endif
         {{-- 🚪 지급 대상 제외 (jin 2026-09-16) — 「헤이맨」처럼 사람이 아닌 계정(자매 회사)용.

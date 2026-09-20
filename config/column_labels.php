@@ -208,6 +208,10 @@ return [
         'name' => '영업담당자명',
         'type' => '정산 분류',
         'per_unit_tier_enabled' => '차등 정산(tier) 적용',
+        // 2026-09-16 신설분이 라벨 없이 영문으로 찍히고 있었다(§8 #41) — 2026-09-20 보충.
+        'payout_excluded' => '지급 대상 제외',
+        'deposit_krw' => '예치금(프리랜서)',
+        'base_salary_krw' => '기본급(사내직원)',
         'is_active' => '활성 상태',
         'phone' => '전화번호',
         'email' => '이메일',
