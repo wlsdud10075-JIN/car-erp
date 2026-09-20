@@ -61,8 +61,9 @@ class PayoutApprovalController extends Controller
     {
         $user = User::find((int) $request->query('u'));
 
+        // 💡 잔금·회수이력까지 얹는다 — 엑셀의 마진율·환차가 그것을 타고 내려간다(560건 N+1 방지).
         $settlements = $batch->settlements()
-            ->with(['vehicle', 'salesman'])
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->orderBy('salesman_id')->orderBy('id')
             ->get();
 
