@@ -45,6 +45,10 @@ class SettlementExportService
     private function columns(): array
     {
         return [
+            // 🔢 No. — 시트마다 1부터, 가운데 정렬 (jin 2026-09-18).
+            //    🔑 가짜 컬럼이지만 **이 목록에 넣는 것이 핵심**이다 — 합계 행의 SUM 열 위치가
+            //       `array_search` 로 잡히므로, 밖에서 한 칸 밀면 언젠가 합계가 엉뚱한 열에 박힌다.
+            '_no' => ['No.', 'no', null],
             // 식별 — 항상 맨 앞. 차량번호는 재발급으로 바뀌므로 차대번호(VIN)까지 함께.
             'vehicle_number' => ['차량번호', 'str', fn (Settlement $s) => $s->vehicle?->vehicle_number],
             'chassis_number' => ['차대번호', 'str', fn (Settlement $s) => $s->vehicle?->nice_reg_vin],
@@ -64,6 +68,9 @@ class SettlementExportService
             'sales_margin' => ['판매마진', 'num', fn (Settlement $s) => $s->sales_margin],
             'vat_margin' => ['부가세마진', 'num', fn (Settlement $s) => $s->vat_margin],
             'total_margin' => ['총마진', 'num', fn (Settlement $s) => $s->total_margin],
+            // 📊 마진율 — 비율로 쓰고 셀 서식으로 % 를 붙인다(엑셀에서 다시 계산 가능).
+            //    내수·분모 0 은 null → 빈칸. 🚨 합계는 SUM 이 아니다(아래 SUM_COLUMNS 에 안 넣는다).
+            'margin_rate' => ['마진율', 'rate', fn (Settlement $s) => $s->margin_rate],
             // 정산
             'settlement_type' => ['정산방식', 'str', fn (Settlement $s) => $s->settlement_type === 'ratio' ? '프리랜서(비율)' : '사내직원(건당)'],
             'settlement_ratio' => ['정산비율(%)', 'num', fn (Settlement $s) => $s->settlement_type === 'ratio' ? $s->settlement_ratio : null],
@@ -71,15 +78,21 @@ class SettlementExportService
             'settlement_amount' => ['정산액', 'num', fn (Settlement $s) => $s->settlement_amount],
             'document_fee' => ['서류비', 'num', fn (Settlement $s) => $s->document_fee],
             'other_deduction' => ['기타공제', 'num', fn (Settlement $s) => $s->other_deduction],
-            'exchange_difference_krw' => ['환차', 'num', fn (Settlement $s) => $s->exchange_difference_krw],
+            // 💱 환차 — **1차 정산부터 채워진다**(jin 2026-09-18). 마감되면 저장값, 전이면 미리보기.
+            //    🔑 화면과 **같은 단일 출처**를 부른다 — 식을 여기 옮겨 적으면
+            //       「화면 3,000원 ↔ 엑셀 2,900원」이 된다(§8 #44·#45).
+            'exchange_difference_krw' => ['환차', 'num', fn (Settlement $s) => $s->display_exchange_difference],
             'carryover_in_krw' => ['이월(받음)', 'num', fn (Settlement $s) => $s->carryover_in_krw],
             // ⚠️ pending 은 확정 전 미리보기 + 배치 조정 미반영 → 라벨에 (예정) 고정.
             'actual_payout' => ['실지급액(예정)', 'num', fn (Settlement $s) => $s->actual_payout],
         ];
     }
 
-    /** 하단 합계 행에 금액을 더할 컬럼 key. */
+    /** 하단 합계 행에 금액을 더할 컬럼 key. 🚨 마진율은 여기 넣으면 안 된다(비율의 합은 무의미). */
     private const SUM_COLUMNS = ['total_margin', 'settlement_amount', 'actual_payout'];
+
+    /** 마진율 셀 서식 — 화면 `Settlement::formatMarginRate` 와 같은 소수 1자리. */
+    private const RATE_FORMAT = '0.0%';
 
     /** @return list<string> */
     public function columnLabels(): array
@@ -125,32 +138,48 @@ class SettlementExportService
     private function buildSummarySheet(Worksheet $sheet, Collection $groups): void
     {
         $sheet->setTitle('요약');
-        $head = ['영업담당자', '대수', '총마진', '정산액', '실지급액(예정)'];
+        // 🔢 시트마다 1부터 — 요약 시트도 같다(jin 2026-09-18 「응 시트마다 그래야지」).
+        $head = ['No.', '영업담당자', '대수', '총마진', '마진율', '정산액', '실지급액(예정)'];
         foreach ($head as $i => $label) {
             $sheet->setCellValueExplicit(Coordinate::stringFromColumnIndex($i + 1).'1', $label, DataType::TYPE_STRING);
         }
         $this->styleHeader($sheet, count($head));
 
         $row = 2;
+        $no = 0;
         foreach ($groups as $name => $rows) {
-            $sheet->setCellValueExplicit("A{$row}", (string) $name, DataType::TYPE_STRING);
-            $sheet->setCellValue("B{$row}", $rows->count());
-            $sheet->setCellValue("C{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->total_margin));
-            $sheet->setCellValue("D{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->settlement_amount));
-            $sheet->setCellValue("E{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->actual_payout));
+            $sheet->setCellValue("A{$row}", ++$no);
+            $sheet->setCellValueExplicit("B{$row}", (string) $name, DataType::TYPE_STRING);
+            $sheet->setCellValue("C{$row}", $rows->count());
+            $sheet->setCellValue("D{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->total_margin));
+            $rate = Settlement::marginRateOf($rows);
+            if ($rate !== null) {
+                $sheet->setCellValue("E{$row}", $rate);
+                $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
+            }
+            $sheet->setCellValue("F{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->settlement_amount));
+            $sheet->setCellValue("G{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->actual_payout));
             $row++;
         }
 
         // 전체 합계
         if ($row > 2) {
-            $sheet->setCellValueExplicit("A{$row}", '합계', DataType::TYPE_STRING);
-            foreach (['B', 'C', 'D', 'E'] as $col) {
+            $sheet->setCellValueExplicit("B{$row}", '합계', DataType::TYPE_STRING);
+            foreach (['C', 'D', 'F', 'G'] as $col) {
                 $sheet->setCellValue("{$col}{$row}", "=SUM({$col}2:{$col}".($row - 1).')');
             }
-            $sheet->getStyle("A{$row}:E{$row}")->getFont()->setBold(true);
+            // 🚨 마진율만 SUM 이 아니다 — 전체 정산을 합친 가중 비율이다.
+            $all = $groups->flatten(1);
+            $rate = Settlement::marginRateOf($all);
+            if ($rate !== null) {
+                $sheet->setCellValue("E{$row}", $rate);
+                $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
+            }
+            $sheet->getStyle("A{$row}:G{$row}")->getFont()->setBold(true);
         }
 
-        $sheet->getStyle('A1:E1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A1:G1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A1:A'.max(2, $row))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         for ($c = 1; $c <= count($head); $c++) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
         }
@@ -170,13 +199,24 @@ class SettlementExportService
         $this->styleHeader($sheet, count($cols));
 
         $row = 2;
+        $no = 0;
         foreach ($rows as $s) {
             $i = 1;
+            $no++;
             foreach ($cols as $def) {
                 $cell = Coordinate::stringFromColumnIndex($i).$row;
+                if ($def[1] === 'no') {
+                    $sheet->setCellValue($cell, $no);
+                    $i++;
+
+                    continue;
+                }
                 $value = ($def[2])($s);
                 if ($value !== null && $value !== '') {
-                    if ($def[1] === 'num') {
+                    if ($def[1] === 'rate') {
+                        $sheet->setCellValue($cell, (float) $value);
+                        $sheet->getStyle($cell)->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
+                    } elseif ($def[1] === 'num') {
                         $sheet->setCellValue($cell, $value);
                     } elseif ($def[1] === 'date') {
                         $sheet->setCellValueExplicit($cell, $value->format('Y-m-d'), DataType::TYPE_STRING);
@@ -191,7 +231,8 @@ class SettlementExportService
 
         // 합계 행 — 금액 컬럼만. SUM 범위는 실제 채운 구간이라 행 수와 무관하게 정확.
         if ($row > 2) {
-            $sheet->setCellValueExplicit("A{$row}", '합계 '.$rows->count().'대', DataType::TYPE_STRING);
+            // 🔢 A 열은 No. 다 — 합계 라벨은 그 다음 칸에 넣는다(번호 자리에 글자가 들어가면 엑셀 정렬이 깨진다).
+            $sheet->setCellValueExplicit("B{$row}", '합계 '.$rows->count().'대', DataType::TYPE_STRING);
             $keys = array_keys($cols);
             foreach (self::SUM_COLUMNS as $key) {
                 $idx = array_search($key, $keys, true);
@@ -201,9 +242,22 @@ class SettlementExportService
                 $col = Coordinate::stringFromColumnIndex($idx + 1);
                 $sheet->setCellValue("{$col}{$row}", "=SUM({$col}2:{$col}".($row - 1).')');
             }
+            // 🚨 마진율 합계는 **평균도 SUM 도 아니다** — Σ총마진 ÷ Σ판매금원화(금액 가중).
+            //    엑셀 합계행이 `CH합/CC합` 인 것이 근거다. 화면과 같은 메서드를 부른다.
+            $rateIdx = array_search('margin_rate', $keys, true);
+            if ($rateIdx !== false) {
+                $rate = Settlement::marginRateOf($rows);
+                $col = Coordinate::stringFromColumnIndex($rateIdx + 1);
+                if ($rate !== null) {
+                    $sheet->setCellValue("{$col}{$row}", $rate);
+                    $sheet->getStyle("{$col}{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
+                }
+            }
             $last = Coordinate::stringFromColumnIndex(count($cols));
             $sheet->getStyle("A{$row}:{$last}{$row}")->getFont()->setBold(true);
         }
+
+        $sheet->getStyle('A1:A'.max(2, $row))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         for ($c = 1; $c <= count($cols); $c++) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);

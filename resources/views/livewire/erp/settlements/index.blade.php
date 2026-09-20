@@ -209,7 +209,9 @@ new #[Layout('components.layouts.app')] class extends Component
     public function settlements()
     {
         return Settlement::query()
-            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'salesman', 'latestPayApproval.approver'])
+            // 💡 `receivableHistories` 가 빠져 있었다 — 미수(→ 정산환율 → 마진·마진율)가 그것을 읽는다.
+            //    이 화면은 `wire:poll.30s` 라 30초마다 행 수만큼 쿼리가 더 나갔다.
+            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'vehicle.receivableHistories', 'salesman', 'latestPayApproval.approver'])
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
@@ -2126,6 +2128,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{-- 매입가 — 사내직원 차등 tier 트리거(≥1억→총마진×25%). 방식↔총마진 사이 기준값. --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.purchase_price') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.col.total_margin') }}</th>
+                {{-- 📊 마진율 (jin 2026-09-18) — 총마진 ÷ 판매금원화. 내수는 「—」. --}}
+                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.margin_rate') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
@@ -2216,6 +2220,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-right {{ $s->display_margin < 0 ? 'text-red-500' : 'text-gray-700' }}">
                     ₩{{ number_format($s->display_margin) }}
                 </td>
+                <td class="py-3 pr-4 text-right text-xs text-gray-500 tabular-nums"
+                    title="{{ __('settlement.margin_rate_title') }}">{{ \App\Models\Settlement::formatMarginRate($s->margin_rate) }}</td>
                 <td class="py-3 pr-4 text-right text-gray-700">
                     ₩{{ number_format($s->settlement_amount) }}
                     {{-- 왜 이 금액인지 — 승계 바이어면 건당 5만 고정이라, 표시 없으면 재무가 이유를 못 찾는다 (jin 2026-08-04) --}}
@@ -2226,21 +2232,29 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-right font-semibold {{ $s->actual_payout < 0 ? 'text-red-600' : 'text-gray-800' }}">
                     ₩{{ number_format($s->actual_payout) }}
                 </td>
-                {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차 (저장값 기준, live 계산 X). --}}
+                {{-- 💱 환차 — **1차 정산부터 보인다** (jin 2026-09-18).
+                     환차는 판매금원화의 환율(정산환율)을 타고 1차부터 금액에 이미 녹아 있는데,
+                     `exchange_difference_krw` **컴럼**은 2차 마감 때만 쓰여 여기가 빈칸이었다.
+                     🔑 값은 `Settlement::display_exchange_difference` 단일 출처 — 엑셀도 같은 걸 쓴다.
+                     🚨 미완납이면 null 이라 「—」이다(덜 받은 돈이 환차로 둔갑하는 것을 막는다). --}}
                 <td class="py-3 pr-4 text-right text-xs">
+                    @php $diff = $s->display_exchange_difference; @endphp
                     @if($s->vehicle?->currency === 'KRW')
                         <span class="text-gray-300" title="{{ __('settlement.exchange_krw_vehicle_title') }}">—</span>
-                    @elseif($s->secondary_status === 'closed' && $s->exchange_difference_krw !== null)
-                        @php $diff = (float) $s->exchange_difference_krw; @endphp
-                        @if($diff > 0)
-                        <span class="font-semibold text-emerald-600" title="{{ __('settlement.exchange_profit_title') }}">+₩{{ number_format($diff) }}</span>
-                        @elseif($diff < 0)
-                        <span class="font-semibold text-red-600" title="{{ __('settlement.exchange_loss_title') }}">-₩{{ number_format(abs($diff)) }}</span>
-                        @else
-                        <span class="text-gray-400" title="{{ __('settlement.exchange_same_title') }}">₩0</span>
-                        @endif
+                    @elseif($diff === null)
+                        <span class="text-gray-300" title="{{ __('settlement.exchange_needs_full_payment') }}">—</span>
                     @else
-                        <span class="text-gray-300" title="{{ __('settlement.exchange_after_close') }}">—</span>
+                        @php $preview = $s->isExchangeDifferencePreview(); @endphp
+                        <span title="{{ $preview ? __('settlement.exchange_preview_title') : ($diff > 0 ? __('settlement.exchange_profit_title') : ($diff < 0 ? __('settlement.exchange_loss_title') : __('settlement.exchange_same_title'))) }}">
+                            @if($diff > 0)
+                            <span class="font-semibold text-emerald-600">+₩{{ number_format($diff) }}</span>
+                            @elseif($diff < 0)
+                            <span class="font-semibold text-red-600">-₩{{ number_format(abs($diff)) }}</span>
+                            @else
+                            <span class="text-gray-400">₩0</span>
+                            @endif
+                            @if($preview)<span class="ml-0.5 text-[10px] font-normal text-gray-400">{{ __('settlement.exchange_preview_mark') }}</span>@endif
+                        </span>
                     @endif
                 </td>
                 <td class="py-3 pr-4">
@@ -2320,7 +2334,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </tr>
             @empty
             <tr>
-                <td colspan="10" class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</td>
+                <td colspan="13" class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</td>
             </tr>
             @endforelse
         </tbody>
