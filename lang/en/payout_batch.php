@@ -35,4 +35,21 @@ return [
         'title' => 'Manual adjustment (clawback / special pay)',
         'reflected' => 'adj. applied',
     ],
+
+    // Margin rate / base salary / monthly take-home (jin 2026-09-18) — display only.
+    'margin' => [
+        'label' => 'Margin rate',
+        'batch_total' => 'Whole batch',
+        'none' => '—',
+        'hint' => 'Total margin divided by sales amount in KRW. Domestic vehicles have no margin rate, so they show a dash and are left out of the subtotal.',
+        'pay' => [
+            'base_salary' => 'Base salary',
+            'settlement' => 'Settlement',
+            'take_home' => 'Monthly take-home',
+            'deposit' => 'Deposit held',
+            'base_salary_total' => 'Base salary total',
+            'expected_transfer' => 'Expected transfer this month',
+            'expected_hint' => 'Payout total plus the base salary of every employee named in this batch. It is shown so the whole outgoing amount can be seen at once, and never enters approval or company profit.',
+        ],
+    ],
 ];

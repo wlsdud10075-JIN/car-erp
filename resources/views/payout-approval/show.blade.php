@@ -40,6 +40,12 @@
         .veh .row .k { color:#6b7280; } .veh .row .v { color:#4b5563; font-weight:500; }
         .loss { color:#dc2626; }
         .veh .row .k .meta { display:block; color:#9ca3af; font-weight:400; font-size:11px; margin-top:2px; }
+        .drill > summary .k .rate { color:#9ca3af; font-weight:400; font-size:11px; margin-left:6px; }
+        .pay { margin:2px 0 6px 18px; border:1px solid #f3f4f6; border-radius:8px; padding:4px 10px; }
+        .pay .row { padding:3px 0; border-bottom:0; font-size:13px; }
+        .pay .row .k { color:#6b7280; } .pay .row .v { color:#4b5563; font-weight:500; }
+        .pay .row.sum { border-top:1px solid #f3f4f6; }
+        .pay .row.sum .k, .pay .row.sum .v { color:#111827; font-weight:700; }
         .xlsx { display:block; margin-top:10px; padding:11px 12px; border:1px solid #d1d5db; border-radius:8px;
                 text-align:center; color:#374151; font-size:13px; font-weight:600; text-decoration:none; }
         .xlsx:hover { background:#f9fafb; }
@@ -57,6 +63,12 @@
         <div class="row"><span class="k">귀속월</span><span class="v">{{ $batch->month }}</span></div>
         <div class="row"><span class="k">건수</span><span class="v">{{ number_format($batch->settlement_count) }}건</span></div>
         <div class="row total"><span class="k">지급 총액</span><span class="v">{{ number_format($batch->total_payout) }}원</span></div>
+        {{-- 💰 기본급은 지급 총액 밖이다 — 승인하는 숫자는 위의 「지급 총액」 그대로고,
+             아래는 통장에서 나갈 돈을 한 번에 보기 위한 참고치다. --}}
+        @if(!empty($profit['base_salary']))
+        <div class="row"><span class="k">+ 기본급 합계</span><span class="v">{{ number_format($profit['base_salary']) }}원</span></div>
+        <div class="row"><span class="k">이달 송금 예상</span><span class="v">{{ number_format($batch->total_payout + $profit['base_salary']) }}원</span></div>
+        @endif
     </div>
 
     @if(!empty($breakdown))
@@ -65,7 +77,9 @@
         @foreach($breakdown as $name => $row)
         <details class="drill">
             <summary>
-                <span class="k">{{ $name }}</span>
+                <span class="k">{{ $name }}
+                    <span class="rate">마진율 {{ $row['margin_rate'] }}</span>
+                </span>
                 <span class="v">
                     {{ number_format($row['count']) }}건 · {{ number_format($row['net']) }}원
                     @if($row['adjust'] !== 0)
@@ -73,13 +87,24 @@
                     @endif
                 </span>
             </summary>
+            {{-- 사내직원은 「기본급 + 정산 = 월수령액」 (jin 2026-09-18).
+                 지급 총액은 정산만이다 — 급여는 여기 표시만 된다. --}}
+            @if(($row['base_salary'] ?? 0) > 0)
+            <div class="pay">
+                <div class="row"><span class="k">기본급</span><span class="v">{{ number_format($row['base_salary']) }}원</span></div>
+                <div class="row"><span class="k">정산</span><span class="v">{{ number_format($row['net']) }}원</span></div>
+                <div class="row sum"><span class="k">월수령액</span><span class="v">{{ number_format($row['take_home']) }}원</span></div>
+            </div>
+            @elseif(($row['deposit'] ?? null) !== null)
+            <div class="pay"><div class="row"><span class="k">예치금 보유</span><span class="v">{{ number_format($row['deposit']) }}원</span></div></div>
+            @endif
             <div class="veh">
                 @forelse($row['vehicles'] as $v)
                 <div class="row bd">
                     <span class="k">
                         {{ $v['number'] }}
                         {{-- 승인 판단용 3항목 (jin 2026-08-04) — 총마진·정산방식·실지급액 --}}
-                        <span class="meta">총마진 {{ number_format($v['margin']) }} · {{ $v['type'] }}</span>
+                        <span class="meta">총마진 {{ number_format($v['margin']) }} · 마진율 {{ $v['margin_rate'] }} · {{ $v['type'] }}</span>
                     </span>
                     <span class="v">{{ number_format($v['amount']) }}원</span>
                 </div>
@@ -112,6 +137,9 @@
     <div class="card profit">
         <div class="sub" style="margin-bottom:8px;">회사이익</div>
         <div class="row"><span class="k">총마진</span><span class="v">{{ number_format($profit['total_margin']) }}원</span></div>
+        @isset($profit['margin_rate'])
+        <div class="row"><span class="k">마진율</span><span class="v">{{ \App\Models\Settlement::formatMarginRate($profit['margin_rate']) }}</span></div>
+        @endisset
         <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
         @if($profit['fx'] !== 0)
         <div class="row"><span class="k">환차</span><span class="v">{{ $profit['fx'] >= 0 ? '+' : '−' }} {{ number_format(abs($profit['fx'])) }}원</span></div>
