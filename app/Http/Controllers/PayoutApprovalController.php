@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\ExportLog;
+use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Services\SettlementExportService;
@@ -166,19 +167,25 @@ class PayoutApprovalController extends Controller
      */
     private function breakdown(SettlementPayoutBatch $batch): array
     {
-        $blank = ['count' => 0, 'payout' => 0, 'adjust' => 0, 'net' => 0, 'vehicles' => []];
+        $blank = ['count' => 0, 'payout' => 0, 'adjust' => 0, 'net' => 0, 'vehicles' => [],
+            'settlements' => [], 'base_salary' => 0, 'margin_rate' => null, 'take_home' => 0];
         $rows = [];
 
-        foreach ($batch->settlements()->with(['salesman', 'vehicle'])->get() as $s) {
+        // 💡 잔금·회수이력까지 얹는다 — `actual_payout`·`margin_rate` 가 그것까지 타고 내려간다.
+        foreach ($batch->settlements()->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get() as $s) {
             $name = $s->salesman?->name ?? __('payout_batch.no_salesman');
             $rows[$name] ??= $blank;
             $amount = (int) $s->actual_payout;
             $rows[$name]['payout'] += $amount;
+            $rows[$name]['settlements'][] = $s;
+            $rows[$name]['base_salary'] = (int) ($s->salesman?->base_salary_krw ?? 0);
+            $rows[$name]['deposit'] = $s->salesman?->deposit_krw;
             $rows[$name]['vehicles'][] = [
                 'number' => $s->vehicle?->vehicle_number ?: '#'.$s->vehicle_id,
                 'amount' => $amount,
-                // 승인 판단에 실제로 쓰는 3개만 (jin 2026-08-04) — 엑셀 25열을 폰에 다 띄울 순 없다.
+                // 승인 판단에 실제로 쓰는 것만 (jin 2026-08-04) — 엑셀 25열을 폰에 다 띄울 순 없다.
                 'margin' => (int) $s->total_margin,
+                'margin_rate' => Settlement::formatMarginRate($s->margin_rate),
                 'type' => $s->settlement_type === 'ratio'
                     ? __('payout_batch.type_ratio', ['ratio' => $s->effective_ratio])
                     : __('payout_batch.type_per_unit'),
@@ -189,11 +196,24 @@ class PayoutApprovalController extends Controller
             $name = $adj->salesman?->name ?? __('payout_batch.no_salesman');
             $rows[$name] ??= $blank;
             $rows[$name]['adjust'] += (int) $adj->amount;
+            // 조정만 있는 사람도 배치의 일원이라 기본급·예치금이 따라와야 한다.
+            if ($rows[$name]['base_salary'] === 0) {
+                $rows[$name]['base_salary'] = (int) ($adj->salesman?->base_salary_krw ?? 0);
+                $rows[$name]['deposit'] ??= $adj->salesman?->deposit_krw;
+            }
         }
 
         foreach ($rows as $name => $row) {
             $rows[$name]['count'] = count($row['vehicles']);
             $rows[$name]['net'] = $row['payout'] + $row['adjust'];
+            // 📊 그 사람의 총 마진율 — Σ총마진 / Σ판매금원화 (평균 아니다).
+            //    🔑 **월배치 화면과 같은 메서드를 부른다** — 묶는 루프는 여기 따로 있지만
+            //       숫자를 만드는 식은 한 곳이라야 «월배치 3.6% ↔ 승인화면 3.7%» 가 안 생긴다.
+            $rows[$name]['margin_rate'] = Settlement::formatMarginRate(
+                Settlement::marginRateOf(collect($row['settlements']))
+            );
+            $rows[$name]['take_home'] = $rows[$name]['base_salary'] + $rows[$name]['net'];
+            unset($rows[$name]['settlements']);   // 뷰에 모델을 넘길 이유가 없다
         }
         uasort($rows, fn (array $a, array $b): int => $b['net'] <=> $a['net']);
 

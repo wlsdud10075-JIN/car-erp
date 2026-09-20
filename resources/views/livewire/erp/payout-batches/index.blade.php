@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -22,8 +23,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function batches()
     {
+        // 💡 `actual_payout`·`margin_rate` 가 차량마다 **잔금·회수이력**을 읽는다
+        //    (정산액 → 총마진 → 판매금원화 → 정산환율 → 미수). 안 얹으면 배치 1개당 쿼리가
+        //    1,000개를 넘는다(실측 560건 = 1,125개 → 5개).
         return SettlementPayoutBatch::with([
-            'submitter', 'approvals.approver', 'settlements.vehicle', 'settlements.salesman',
+            'submitter', 'approvals.approver', 'settlements.salesman',
+            'settlements.vehicle.finalPayments', 'settlements.vehicle.receivableHistories',
             'adjustments.salesman', 'adjustments.creator',
         ])
             ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
@@ -158,21 +163,70 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- 드릴다운: 사람별 → 차량별. max-w-md 로 내역↔금액 간격 축소(카드 전폭 양끝 벌어짐 방지, jin 2026-07-07) --}}
                 @if($expandedId === $b->id)
                 <div class="mt-3 max-w-md space-y-2 border-t border-gray-100 pt-3">
+                    {{-- 📊 배치 전체 요약 (jin 2026-09-18) — 마진율 + 「+기본급 = 이달 송금 예상」.
+                         ⚠️ **펼쳤을 때만 계산한다** — 마진율은 배치의 전 정산을 훑어야 나오고
+                            (실측 560건 0.48초) 카드 목록은 한 번에 최대 60개다. 접힌 카드에 붙이면
+                            목록 렌더가 배치 수만큼 곱해져 몇 초가 된다(§8 #96-C). --}}
+                    @php
+                        $batchRate = Settlement::marginRateOf($b->settlements);
+                        $baseTotal = $b->baseSalaryTotal($b->settlements);
+                    @endphp
+                    <div class="rounded-md bg-gray-50 px-2.5 py-2">
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="font-semibold text-gray-600">{{ __('payout_batch.margin.batch_total') }}</span>
+                            <span class="font-semibold text-gray-700" title="{{ __('payout_batch.margin.hint') }}">
+                                {{ __('payout_batch.margin.label') }} {{ Settlement::formatMarginRate($batchRate) }}
+                            </span>
+                        </div>
+                        @if($baseTotal > 0)
+                        <div class="mt-1 flex items-center justify-between text-[11px] text-gray-500"
+                             title="{{ __('payout_batch.margin.pay.expected_hint') }}">
+                            <span>+ {{ __('payout_batch.margin.pay.base_salary_total') }} ₩{{ number_format($baseTotal) }}</span>
+                            <span class="font-semibold text-primary-text tabular-nums">{{ __('payout_batch.margin.pay.expected_transfer') }} ₩{{ number_format($b->total_payout + $baseTotal) }}</span>
+                        </div>
+                        @endif
+                    </div>
+
                     @foreach($bySalesman as $name => $group)
                     @php
                         $payoutSum = (int) $group->sum(fn ($s) => $s->actual_payout);
                         $adjSum = (int) ($adjBySalesman[$name] ?? 0);
                         $netSum = $payoutSum + $adjSum;
+                        $personRate = Settlement::marginRateOf($group);
+                        // 💰 기본급·예치금은 **연결된 담당자**에 붙는다. 없는 사람은 줄이 안 뜼다.
+                        $person = $group->first()?->salesman;
+                        $baseSalary = (int) ($person?->base_salary_krw ?? 0);
+                        $deposit = $person?->deposit_krw;
                     @endphp
                     <div>
                         <div class="flex items-center justify-between text-xs font-medium text-gray-700">
-                            <span>{{ $name }}</span>
+                            <span>{{ $name }}
+                                <span class="ml-1 text-[10px] font-normal text-gray-400" title="{{ __('payout_batch.margin.hint') }}">{{ __('payout_batch.margin.label') }} {{ Settlement::formatMarginRate($personRate) }}</span>
+                            </span>
                             <span>{{ __('payout_batch.count', ['n' => $group->count()]) }} · ₩{{ number_format($netSum) }}@if($adjSum !== 0) <span class="text-[10px] {{ $adjSum < 0 ? 'text-red-500' : 'text-green-600' }}">({{ $adjSum < 0 ? '−' : '+' }}₩{{ number_format(abs($adjSum)) }} {{ __('payout_batch.adjust.reflected') }})</span>@endif</span>
                         </div>
+
+                        {{-- 💴 사내직원 — 「기본급 + 정산 = 월수령액」 (jin 2026-09-18).
+                             🚫 배치 총액에는 안 들어간다. 위 금액(정산)과 아래 월수령액은 뜻이 다르다. --}}
+                        @if($baseSalary > 0)
+                        <div class="mt-1 ml-3 rounded border border-gray-100 bg-white px-2 py-1 text-[11px]">
+                            <div class="flex justify-between text-gray-500"><span>{{ __('payout_batch.margin.pay.base_salary') }}</span><span class="tabular-nums">₩{{ number_format($baseSalary) }}</span></div>
+                            <div class="flex justify-between text-gray-500"><span>{{ __('payout_batch.margin.pay.settlement') }}</span><span class="tabular-nums">₩{{ number_format($netSum) }}</span></div>
+                            <div class="mt-0.5 flex justify-between border-t border-gray-100 pt-0.5 font-semibold text-gray-700"><span>{{ __('payout_batch.margin.pay.take_home') }}</span><span class="tabular-nums">₩{{ number_format($baseSalary + $netSum) }}</span></div>
+                        </div>
+                        @endif
+
+                        {{-- 🏦 프리랜서 예치금 — 보유액 표시일 뿐, 지급액에 더하지 않는다(jin 「그냥 보유하면되고」). --}}
+                        @if($deposit !== null && $baseSalary === 0)
+                        <div class="mt-1 ml-3 text-[11px] text-gray-400">({{ __('payout_batch.margin.pay.deposit') }} ₩{{ number_format($deposit) }})</div>
+                        @endif
+
                         <div class="mt-1 space-y-0.5 pl-3">
                             @foreach($group as $s)
                             <div class="flex items-center justify-between text-[11px] text-gray-500">
-                                <span>{{ $s->vehicle?->vehicle_number ?? ('#'.$s->vehicle_id) }}</span>
+                                <span>{{ $s->vehicle?->vehicle_number ?? ('#'.$s->vehicle_id) }}
+                                    <span class="ml-1 text-gray-400">{{ Settlement::formatMarginRate($s->margin_rate) }}</span>
+                                </span>
                                 <span class="tabular-nums">₩{{ number_format($s->actual_payout) }}</span>
                             </div>
                             @endforeach

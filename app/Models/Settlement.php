@@ -572,18 +572,32 @@ class Settlement extends Model
         $den = 0.0;
 
         foreach ($rows as $s) {
-            if ($s->margin_rate === null) {
+            // 🚫 내수는 분자·분모 양쪽에서 통째로 뺀다 — 「−」로 그려진 줄이 소계를 안 움직인다.
+            if ($s->is_domestic) {
                 continue;
             }
+
+            // ⚡ 분모를 **먼저** 구하고 그것으로 null 을 판정한다. `margin_rate` 를 불러 null 을
+            //    확인한 뒤 분자·분모를 다시 구하면 같은 값을 세 번 계산하게 된다
+            //    (실측 560건 924ms → 이 형태 500ms대). 정산 화면·월배치가 한 번에 수백 건을 돈다.
             if ($karaba) {
                 $v = $s->vehicle;
+                $base = (float) ($v?->sale_price ?? 0) * (float) ($v?->exchange_rate ?? 0);
+                if ($base <= 0.0) {
+                    continue;
+                }
                 $num += (float) $s->karaba_operating_profit;
-                $den += (float) ($v?->sale_price ?? 0) * (float) ($v?->exchange_rate ?? 0);
+                $den += $base;
 
                 continue;
             }
+
+            $base = (float) $s->sales_amount_krw;
+            if ($base == 0.0) {
+                continue;
+            }
             $num += (float) $s->total_margin;
-            $den += (float) $s->sales_amount_krw;
+            $den += $base;
         }
 
         return $den == 0.0 ? null : $num / $den;
@@ -638,6 +652,16 @@ class Settlement extends Model
         }
 
         return $this->vehicle?->hasRealizedFxBasis() ? $this->computeExchangeDifference() : null;
+    }
+
+    /**
+     * 🖨️ **마진율 한 줄 표기 — 화면·엑셀 공용.** null 이면 「—」.
+     *    🚫 `number_format($r * 100)` 을 화면마다 옮겨 적지 말 것 — 자릿수가 갈리면
+     *       「월배치 3.6% ↔ 엑셀 3.59%」가 되어 사람이 다른 숫자로 읽는다.
+     */
+    public static function formatMarginRate(?float $rate): string
+    {
+        return $rate === null ? '—' : number_format($rate * 100, 1).'%';
     }
 
     /** 환차 값이 「미리보기」인가(= 2차 마감 전). 화면이 확정/예상을 구분해 말하는 근거(§8 #85). */

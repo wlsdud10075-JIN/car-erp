@@ -396,7 +396,11 @@ class SettlementPayoutBatch extends Model
      */
     public function profitStats(): array
     {
-        $settlements = $this->settlements()->get();
+        // 💡 관계를 미리 얹는다 — `total_margin` → `sales_amount_krw` → `settlement_exchange_rate`
+        //    → `sale_unpaid_amount` 가 차량마다 잔금·회수이력을 읽는다. 560건 배치면 그대로 N+1 이다.
+        $settlements = $this->settlements()
+            ->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])
+            ->get();
         $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
         $fx = (int) $settlements->sum(fn (Settlement $s) => (int) ($s->exchange_difference_krw ?? 0));
         $payout = (int) $this->total_payout;
@@ -411,7 +415,41 @@ class SettlementPayoutBatch extends Model
             'fx' => $fx,
             'shipping' => $shipping,
             'company_profit' => $totalMargin - $payout - $shipping,
+            // 📊 배치 전체 마진율 (jin 2026-09-18) — Σ총마진 / Σ판매금원화. 내수는 양쪽에서 빠진다.
+            'margin_rate' => Settlement::marginRateOf($settlements),
+            // 💰 기본급 합계 — **표시 전용**. 회사이익·지급총액 어디에도 안 들어간다.
+            'base_salary' => $this->baseSalaryTotal($settlements),
         ];
+    }
+
+    /**
+     * 💰 **이 배치에 이름이 올라온 사내직원들의 기본급 합** (jin 2026-09-18).
+     *
+     * 화면의 「+ 기본급 합계 = 이달 송금 예상」이 이 값을 쓴다 — 통장에서 나갈 돈을 한 번에 보려는 것이다.
+     *
+     * 🚫 **배치 총액에 더하지 않는다** — `total_payout` 은 정산만이고, 회사이익
+     *    (`총마진 − 지급 − 발송비`)도 그대로다. 급여를 섞으면 그 지표의 뜻이 바뀐다(§8 #72).
+     * ⚠️ **그 달에 정산 건이 없는 직원은 안 들어간다** — 배치에 이름이 없기 때문이다.
+     *    「전 직원 급여 합계」가 아니라 **이 배치 사람들의** 기본급 합이다.
+     * 🔑 조정만 있는 사람도 배치의 일원이라 함께 센다(승인 화면이 그렇게 그린다).
+     *
+     * @param  Collection<int, Settlement>|null  $settlements  이미 읽어둔 정산(재조회 방지)
+     */
+    public function baseSalaryTotal($settlements = null): int
+    {
+        $settlements ??= $this->relationLoaded('settlements')
+            ? $this->settlements
+            : $this->settlements()->with('salesman')->get();
+        // 이미 읽어둔 관계가 있으면 그걸 쓴다 — 월배치 화면은 배치 60개를 한 번에 그린다.
+        $adjustments = $this->relationLoaded('adjustments')
+            ? $this->adjustments
+            : $this->adjustments()->with('salesman')->get();
+
+        return (int) $settlements->pluck('salesman')
+            ->merge($adjustments->pluck('salesman'))
+            ->filter()
+            ->unique('id')
+            ->sum(fn (Salesman $sm) => (int) ($sm->base_salary_krw ?? 0));
     }
 
     public function notifyPayoutRequest(): void
