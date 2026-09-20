@@ -9,6 +9,7 @@ use App\Models\Vehicle;
 use App\Services\SettlementExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Tests\TestCase;
 
@@ -224,5 +225,98 @@ class SettlementExportMarginTest extends TestCase
         $labels = (new SettlementExportService)->columnLabels();
         $this->assertSame('No.', $labels[0], 'No. 가 맨 앞 열이 아니다');
         $this->assertContains('마진율', $labels);
+    }
+
+    // ── 숫자 쉼표 서식 ──────────────────────────────────────────────────
+
+    /**
+     * 💰 **금액 칸에 쉼표** (jin 2026-09-20 「그냥 숫자만 나온곳에 쉼표스타일을 넣어주는게」).
+     *    마진율(%)·날짜·문자는 그대로 두고, **No. 순번에도 안 붙인다**(「1,024번」이 되면 안 된다).
+     */
+    public function test_money_cells_get_a_thousands_separator_but_labels_and_numbering_do_not(): void
+    {
+        $sm = $this->salesman('조하');
+        $this->settlement($sm, 10_000, 5_000_000, true);
+
+        $book = (new SettlementExportService)->build(Settlement::with('vehicle', 'salesman')->get());
+
+        foreach ([$book->getSheetByName('조하'), $book->getSheetByName('요약')] as $sheet) {
+            $name = $sheet->getTitle();
+
+            // No. 열엔 쉼표가 없다
+            $this->assertStringNotContainsString(',', $sheet->getStyle('A2')->getNumberFormat()->getFormatCode(),
+                "{$name}: 순번에 쉼표 서식이 붙었다");
+
+            $money = $this->headerIndex($sheet, $name === '요약' ? '총마진' : '총마진');
+            $this->assertStringContainsString('#,##0',
+                $sheet->getStyle([$money, 2])->getNumberFormat()->getFormatCode(),
+                "{$name}: 총마진에 쉼표 서식이 없다");
+
+            // 마진율은 % 그대로 (쉼표로 덮어쓰지 않았다)
+            $rate = $this->headerIndex($sheet, '마진율');
+            $this->assertSame('0.0%', $sheet->getStyle([$rate, 2])->getNumberFormat()->getFormatCode(),
+                "{$name}: 마진율 서식이 쉼표로 덮였다");
+
+            // 차량번호는 문자 — 서식을 건드리지 않았다
+            if ($name !== '요약') {
+                $plate = $this->headerIndex($sheet, '차량번호');
+                $this->assertStringNotContainsString('#,##0',
+                    $sheet->getStyle([$plate, 2])->getNumberFormat()->getFormatCode(), '문자 칸에 숫자 서식이 붙었다');
+            }
+        }
+    }
+
+    /**
+     * 🚨 **소수를 반올림해 죽이지 않는다** — §8 #91-D 가 그 사고였다
+     *    (`number_format` 은 버리는 게 아니라 **반올림**한다 → 10,434.54 가 「10,435」로 보인다).
+     *    판매금액은 외화 `decimal(15,2)` 라 실제로 소수가 들어온다.
+     */
+    public function test_the_comma_format_never_rounds_a_foreign_currency_amount_away(): void
+    {
+        $sm = $this->salesman('조하');
+        $s = $this->settlement($sm, 10_000, 5_000_000, true);
+        $s->vehicle->update(['sale_price' => 10_434.54, 'exchange_rate' => 8.6409]);
+
+        $book = (new SettlementExportService)->build(Settlement::with('vehicle', 'salesman')->get());
+        $sheet = $book->getSheetByName('조하');
+
+        $priceFmt = $sheet->getStyle([$this->headerIndex($sheet, '판매금액'), 2])->getNumberFormat()->getFormatCode();
+        $this->assertSame('10,434.54', NumberFormat::toFormattedString(10_434.54, $priceFmt),
+            '판매금액 소수가 반올림돼 없는 금액이 된다');
+
+        // 환율은 decimal(15,4) — 4자리를 살린다
+        $rateFmt = $sheet->getStyle([$this->headerIndex($sheet, '환율'), 2])->getNumberFormat()->getFormatCode();
+        $this->assertSame('8.6409', NumberFormat::toFormattedString(8.6409, $rateFmt),
+            '환율 소수가 잘렸다 — JPY 가 8.64 로 보인다');
+
+        // 정수 금액엔 불필요한 소수점이 안 붙는다 — `.##` 은 **선택적** 자리라 그렇다.
+        // ⚠️ 여기서 `toFormattedString` 으로 단언하면 안 된다: PhpSpreadsheet 에뮬레이터는
+        //    정수에 `1,234,567.00` 을 돌려주는데 **엑셀·LibreOffice 는 `1,234,567`** 로 그린다.
+        //    실제 렌더로 확인했다(2026-09-20, soffice → PDF: `#,##0.##` → 1,234,567 / 10,434.54 / 0).
+        //    ⇒ 사람이 보는 것은 서식 코드가 결정하므로 코드 자체를 못박는다(§8 #37 「검증은 생성물로」의
+        //    한계 지점 — 생성물을 렌더해 눈으로 본 뒤, 재발 방지는 코드로 건다).
+        $this->assertSame('#,##0.##', $priceFmt, '금액 서식이 바뀌었다 — 엑셀 렌더를 다시 확인할 것');
+    }
+
+    /**
+     * 🐢 서식은 **열 단위로 한 번씩** 건다 — 셀마다 걸면 4,500행에서 내려받기가 느려진다.
+     *    관찰 가능한 증거 = 값이 없는 행(합계 행 아래 빈 칸)까지 같은 서식이 걸려 있는가.
+     */
+    public function test_the_format_is_applied_to_the_column_including_the_footer_row(): void
+    {
+        $sm = $this->salesman('조하');
+        $this->settlement($sm, 10_000, 5_000_000, true);
+        $this->settlement($sm, 20_000, 9_000_000, true);
+
+        $book = (new SettlementExportService)->build(Settlement::with('vehicle', 'salesman')->get());
+        $sheet = $book->getSheetByName('조하');
+        $col = $this->headerIndex($sheet, '총마진');
+
+        // 2·3 = 데이터, 4 = 합계(SUM 수식)
+        foreach ([2, 3, 4] as $r) {
+            $this->assertStringContainsString('#,##0',
+                $sheet->getStyle([$col, $r])->getNumberFormat()->getFormatCode(),
+                "{$r}행 총마진에 쉼표 서식이 없다");
+        }
     }
 }

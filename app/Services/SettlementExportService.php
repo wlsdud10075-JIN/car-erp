@@ -60,7 +60,7 @@ class SettlementExportService
             'paid_at' => ['지급일', 'date', fn (Settlement $s) => $s->paid_at],
             // 차량 회계 근거 — 마진이 왜 그 값인지 대조용
             'currency' => ['통화', 'str', fn (Settlement $s) => $s->vehicle?->currency],
-            'exchange_rate' => ['환율', 'num', fn (Settlement $s) => $s->vehicle?->exchange_rate],
+            'exchange_rate' => ['환율', 'num4', fn (Settlement $s) => $s->vehicle?->exchange_rate],
             'purchase_price' => ['구입금액', 'num', fn (Settlement $s) => $s->vehicle?->purchase_price],
             'sale_price' => ['판매금액', 'num', fn (Settlement $s) => $s->vehicle?->sale_price],
             'cost_total' => ['비용합계', 'num', fn (Settlement $s) => $s->vehicle?->cost_total],
@@ -93,6 +93,33 @@ class SettlementExportService
 
     /** 마진율 셀 서식 — 화면 `Settlement::formatMarginRate` 와 같은 소수 1자리. */
     private const RATE_FORMAT = '0.0%';
+
+    /**
+     * 💰 금액 셀 — 천 단위 쉼표 (jin 2026-09-20 「그냥 숫자만 나온곳에 쉼표스타일」).
+     *
+     * 🚨 **`#,##0` 이 아니다.** 이 열들에는 외화 소수가 실제로 들어온다
+     *    (판매금액 `decimal(15,2)`·환차·송금수수료). `#,##0` 으로 굳히면 10,434.54 가
+     *    **「10,435」로 보여 없는 금액**이 된다 — jin 이 이미 겪은 그 사고다(§8 #91-D:
+     *    「`number_format` 은 버리는 게 아니라 반올림한다」). `.##` 은 소수가 **있을 때만** 보여준다.
+     */
+    private const NUM_FORMAT = '#,##0.##';
+
+    /** 환율 전용 — `decimal(15,4)` 라 4자리까지 살린다(JPY 8.6409 를 8.64 로 깎지 않는다). */
+    private const NUM4_FORMAT = '#,##0.####';
+
+    /**
+     * 숫자 타입 → 셀 서식. 🚫 `str`·`date`·`no` 는 없다(쉼표를 붙일 값이 아니다 —
+     * 특히 `no` 는 순번이라 네 자리가 넘어도 「1,024번」이 되면 안 된다).
+     */
+    private static function numberFormatFor(string $type): ?string
+    {
+        return match ($type) {
+            'num' => self::NUM_FORMAT,
+            'num4' => self::NUM4_FORMAT,
+            'rate' => self::RATE_FORMAT,
+            default => null,
+        };
+    }
 
     /** @return list<string> */
     public function columnLabels(): array
@@ -155,7 +182,6 @@ class SettlementExportService
             $rate = Settlement::marginRateOf($rows);
             if ($rate !== null) {
                 $sheet->setCellValue("E{$row}", $rate);
-                $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
             }
             $sheet->setCellValue("F{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->settlement_amount));
             $sheet->setCellValue("G{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->actual_payout));
@@ -173,10 +199,16 @@ class SettlementExportService
             $rate = Settlement::marginRateOf($all);
             if ($rate !== null) {
                 $sheet->setCellValue("E{$row}", $rate);
-                $sheet->getStyle("E{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
             }
             $sheet->getStyle("A{$row}:G{$row}")->getFont()->setBold(true);
         }
+
+        // 💰 대수·총마진·정산액·실지급액은 쉼표, 마진율만 % (합계 행까지 같은 범위).
+        $lastRow = max(2, $row);
+        foreach (['C', 'D', 'F', 'G'] as $col) {
+            $sheet->getStyle("{$col}2:{$col}{$lastRow}")->getNumberFormat()->setFormatCode(self::NUM_FORMAT);
+        }
+        $sheet->getStyle("E2:E{$lastRow}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
 
         $sheet->getStyle('A1:G1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet->getStyle('A1:A'.max(2, $row))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -215,8 +247,7 @@ class SettlementExportService
                 if ($value !== null && $value !== '') {
                     if ($def[1] === 'rate') {
                         $sheet->setCellValue($cell, (float) $value);
-                        $sheet->getStyle($cell)->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
-                    } elseif ($def[1] === 'num') {
+                    } elseif ($def[1] === 'num' || $def[1] === 'num4') {
                         $sheet->setCellValue($cell, $value);
                     } elseif ($def[1] === 'date') {
                         $sheet->setCellValueExplicit($cell, $value->format('Y-m-d'), DataType::TYPE_STRING);
@@ -250,11 +281,23 @@ class SettlementExportService
                 $col = Coordinate::stringFromColumnIndex($rateIdx + 1);
                 if ($rate !== null) {
                     $sheet->setCellValue("{$col}{$row}", $rate);
-                    $sheet->getStyle("{$col}{$row}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
                 }
             }
             $last = Coordinate::stringFromColumnIndex(count($cols));
             $sheet->getStyle("A{$row}:{$last}{$row}")->getFont()->setBold(true);
+        }
+
+        // 💰 숫자 서식은 **열 단위로 한 번씩** 건다 — 합계 행까지 같은 범위에 들어간다.
+        //    🚫 셀마다 걸지 말 것: ssancarerp 4,536건 × 숫자 15열 = 6만 번이라 내려받기가 눈에 띄게 느려진다.
+        $lastRow = max(2, $row);
+        $i = 1;
+        foreach ($cols as $def) {
+            $fmt = self::numberFormatFor($def[1]);
+            if ($fmt !== null) {
+                $col = Coordinate::stringFromColumnIndex($i);
+                $sheet->getStyle("{$col}2:{$col}{$lastRow}")->getNumberFormat()->setFormatCode($fmt);
+            }
+            $i++;
         }
 
         $sheet->getStyle('A1:A'.max(2, $row))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
