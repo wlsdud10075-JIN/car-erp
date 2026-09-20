@@ -267,35 +267,48 @@ class SettlementExportMarginTest extends TestCase
     }
 
     /**
-     * 🚨 **소수를 반올림해 죽이지 않는다** — §8 #91-D 가 그 사고였다
-     *    (`number_format` 은 버리는 게 아니라 **반올림**한다 → 10,434.54 가 「10,435」로 보인다).
-     *    판매금액은 외화 `decimal(15,2)` 라 실제로 소수가 들어온다.
+     * 🚨 **정수 금액에 마침표가 매달리면 안 된다** (jin 2026-09-20
+     *    「콤마는 맞는데 마침표는 왜 들어갔어..ㅋㅋ 마침표는 없애줘」).
+     *
+     *    엑셀은 `#,##0.##` 을 정수에 적용하면 **`1,234,567.`** 로 그린다 —
+     *    **LibreOffice 는 안 붙여서** 렌더 확인만으로는 못 잡았다(엑셀 COM 실측 2026-09-20).
+     *    ⇒ 소수 자리(`.`)가 서식에 들어가는 순간 재발한다. 그래서 **서식 코드 자체**를 못박는다.
      */
-    public function test_the_comma_format_never_rounds_a_foreign_currency_amount_away(): void
+    public function test_money_formats_never_leave_a_dangling_decimal_point(): void
+    {
+        $sm = $this->salesman('조하');
+        $this->settlement($sm, 10_000, 5_000_000, true);
+
+        $book = (new SettlementExportService)->build(Settlement::with('vehicle', 'salesman')->get());
+
+        foreach ([$book->getSheetByName('조하'), $book->getSheetByName('요약')] as $sheet) {
+            $name = $sheet->getTitle();
+            foreach (['총마진', '정산액'] as $label) {
+                $fmt = $sheet->getStyle([$this->headerIndex($sheet, $label), 2])->getNumberFormat()->getFormatCode();
+                $this->assertStringNotContainsString('.', $fmt,
+                    "{$name}/{$label}: 서식에 소수점이 있다 — 엑셀이 「1,234,567.」로 그린다");
+                $this->assertSame('#,##0', $fmt);
+            }
+        }
+    }
+
+    /**
+     * 💱 **환율만은 소수를 살린다** — `#,##0` 이면 JPY 8.6409 가 「9」가 되어 뜻이 사라진다.
+     *    `General` 은 쉼표가 없지만 환율은 네 자리라 필요 없고, 마침표도 안 매단다.
+     */
+    public function test_the_exchange_rate_keeps_its_decimals(): void
     {
         $sm = $this->salesman('조하');
         $s = $this->settlement($sm, 10_000, 5_000_000, true);
-        $s->vehicle->update(['sale_price' => 10_434.54, 'exchange_rate' => 8.6409]);
+        $s->vehicle->update(['exchange_rate' => 8.6409]);
 
         $book = (new SettlementExportService)->build(Settlement::with('vehicle', 'salesman')->get());
         $sheet = $book->getSheetByName('조하');
+        $fmt = $sheet->getStyle([$this->headerIndex($sheet, '환율'), 2])->getNumberFormat()->getFormatCode();
 
-        $priceFmt = $sheet->getStyle([$this->headerIndex($sheet, '판매금액'), 2])->getNumberFormat()->getFormatCode();
-        $this->assertSame('10,434.54', NumberFormat::toFormattedString(10_434.54, $priceFmt),
-            '판매금액 소수가 반올림돼 없는 금액이 된다');
-
-        // 환율은 decimal(15,4) — 4자리를 살린다
-        $rateFmt = $sheet->getStyle([$this->headerIndex($sheet, '환율'), 2])->getNumberFormat()->getFormatCode();
-        $this->assertSame('8.6409', NumberFormat::toFormattedString(8.6409, $rateFmt),
-            '환율 소수가 잘렸다 — JPY 가 8.64 로 보인다');
-
-        // 정수 금액엔 불필요한 소수점이 안 붙는다 — `.##` 은 **선택적** 자리라 그렇다.
-        // ⚠️ 여기서 `toFormattedString` 으로 단언하면 안 된다: PhpSpreadsheet 에뮬레이터는
-        //    정수에 `1,234,567.00` 을 돌려주는데 **엑셀·LibreOffice 는 `1,234,567`** 로 그린다.
-        //    실제 렌더로 확인했다(2026-09-20, soffice → PDF: `#,##0.##` → 1,234,567 / 10,434.54 / 0).
-        //    ⇒ 사람이 보는 것은 서식 코드가 결정하므로 코드 자체를 못박는다(§8 #37 「검증은 생성물로」의
-        //    한계 지점 — 생성물을 렌더해 눈으로 본 뒤, 재발 방지는 코드로 건다).
-        $this->assertSame('#,##0.##', $priceFmt, '금액 서식이 바뀌었다 — 엑셀 렌더를 다시 확인할 것');
+        $this->assertSame('General', $fmt, '환율 서식이 바뀌었다 — JPY 가 「9」로 보일 수 있다');
+        $this->assertSame('8.6409', NumberFormat::toFormattedString(8.6409, $fmt));
+        $this->assertSame('1621', NumberFormat::toFormattedString(1621, $fmt), '정수 환율에 군더더기가 붙었다');
     }
 
     /**
