@@ -220,4 +220,48 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $this->assertTrue($vehicle->relationLoaded('receivableHistories'),
             '회수이력이 지연 로딩이다 — 미수 계산이 차량마다 쿼리를 친다');
     }
+
+    /**
+     * 🚨 **승인 페이지는 대표가 실제로 보는 화면이다** — 마진율만 대조하면 절반이다.
+     *    기본급 3줄 · 「+ 기본급 합계 / 이달 송금 예상」 · 차량 줄 마진율까지 실제 렌더로 확인한다.
+     *    (그 블록들은 월배치 화면과 **다른 코드**라 한쪽만 고쳐져도 아무 테스트가 안 빨개졌다.)
+     */
+    public function test_the_approval_page_shows_the_pay_block_and_the_expected_transfer(): void
+    {
+        [$batch, $employee, $freelancer] = $this->batch();
+
+        $approver = $this->manager();
+        $url = URL::temporarySignedRoute(
+            'payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $approver->id]
+        );
+        $html = $this->get($url)->assertOk()->getContent();
+
+        // ① 사내직원 3줄 — 기본급 / 정산 / 월수령액
+        $net = (int) $batch->settlements()->where('salesman_id', $employee->id)->get()
+            ->sum(fn (Settlement $s) => (int) $s->actual_payout);
+        $this->assertStringContainsString('월수령액', $html, '승인 페이지에 월수령액 줄이 없다');
+        $this->assertStringContainsString(number_format((int) $employee->base_salary_krw), $html);
+        $this->assertStringContainsString(number_format((int) $employee->base_salary_krw + $net), $html,
+            '월수령액 = 기본급 + 정산 이 안 찍혔다');
+
+        // ② 프리랜서는 예치금 보유만
+        $this->assertStringContainsString('예치금 보유', $html);
+        $this->assertStringContainsString(number_format((int) $freelancer->deposit_krw), $html);
+
+        // ③ 지급 총액 카드 — 승인 금액은 그대로이고 그 아래에 참고 두 줄
+        $this->assertStringContainsString('이달 송금 예상', $html, '송금 예상 줄이 없다');
+        $this->assertStringContainsString(
+            number_format((int) $batch->total_payout + $batch->baseSalaryTotal()).'원', $html,
+            '이달 송금 예상 = 지급 총액 + 기본급 합계 가 안 맞는다'
+        );
+        $this->assertStringContainsString(number_format((int) $batch->total_payout).'원', $html,
+            '승인 금액(지급 총액)이 기본급까지 더한 값으로 바뀌었다');
+
+        // ④ 차량 줄에도 마진율
+        $s = $batch->settlements()->with('vehicle')->first();
+        $this->assertStringContainsString(
+            '마진율 '.Settlement::formatMarginRate($s->margin_rate), $html,
+            '차량 줄에 마진율이 없다'
+        );
+    }
 }

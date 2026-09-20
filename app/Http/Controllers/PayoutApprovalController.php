@@ -168,7 +168,7 @@ class PayoutApprovalController extends Controller
     private function breakdown(SettlementPayoutBatch $batch): array
     {
         $blank = ['count' => 0, 'payout' => 0, 'adjust' => 0, 'net' => 0, 'vehicles' => [],
-            'settlements' => [], 'base_salary' => 0, 'margin_rate' => null, 'take_home' => 0];
+            'settlements' => [], 'base_salary' => 0, 'deposit' => null, 'margin_rate' => null, 'take_home' => 0];
         $rows = [];
 
         // 💡 잔금·회수이력까지 얹는다 — `actual_payout`·`margin_rate` 가 그것까지 타고 내려간다.
