@@ -159,6 +159,7 @@ return [
         'settlement_amount' => 'Settlement',
         'actual_payout' => 'Actual payout',
         'exchange_diff' => 'FX diff',
+        'margin_rate' => 'Margin rate',
         'status' => 'Status',
     ],
     'ratio_unit' => 'Ratio :ratio%',
@@ -171,6 +172,10 @@ return [
     'exchange_loss_title' => 'FX loss',
     'exchange_same_title' => 'No FX diff',
     'exchange_after_close' => 'Shown after secondary settlement',
+    'exchange_needs_full_payment' => 'There is still an outstanding balance, so no FX difference can be stated yet. It appears once the vehicle is paid in full.',
+    'exchange_preview_title' => 'Expected value. Closing the secondary settlement locks it in. The amount is already reflected from the first settlement onward.',
+    'exchange_preview_mark' => 'est.',
+    'margin_rate_title' => 'Total margin divided by sales amount in KRW. Domestic vehicles have no margin rate, so they show a dash and are left out of the subtotal.',
 
     'approval_pending' => 'Approval pending',
     'approval_pending_title' => 'Approval pending — awaiting manager decision',

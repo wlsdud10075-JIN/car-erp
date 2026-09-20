@@ -203,6 +203,53 @@ class SettlementMarginRateTest extends TestCase
         $this->assertFalse($s->fresh()->isExchangeDifferencePreview());
     }
 
+    // ── 정산관리 목록 ───────────────────────────────────────────────────
+
+    /**
+     * 📋 목록에 **마진율 열**이 있고, 내수는 「—」다.
+     *    ⚠️ 이 화면은 `wire:poll.30s` 라 행마다 accessor 를 도는 비용이 30초마다 반복된다 —
+     *       그래서 목록 쿼리에 `vehicle.receivableHistories` 까지 얹어 뒀다(미수 → 정산환율 → 마진율).
+     */
+    public function test_the_settlement_list_shows_a_margin_rate_column(): void
+    {
+        $sm = $this->salesman();
+        $export = $this->settlement($this->vehicle($sm, 10_000, 5_000_000, '14라1414'));
+        $this->settlement($this->vehicle($sm, 9_000, 4_000_000, '15마1515'), ['is_domestic' => true]);
+
+        $this->actingAs(User::factory()->create([
+            'permission' => 'admin', 'email_verified_at' => now(),
+        ]));
+
+        Volt::test('erp.settlements.index')
+            ->assertSee(__('settlement.col.margin_rate'))
+            ->assertSee(Settlement::formatMarginRate($export->margin_rate))
+            ->assertSee('—');   // 내수 줄
+    }
+
+    /**
+     * 💱 목록 환차 칸이 **1차부터 채워진다** — 구현 전에는 2차 마감 전이면 전부 「—」였다.
+     *    마감 전 값은 「예상」이라고 화면이 말한다(§8 #85 — 즉시 반영과 승인 후 반영을 섞지 말 것).
+     */
+    public function test_the_settlement_list_fills_the_fx_column_before_close(): void
+    {
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm, 10_000, 5_000_000, '16바1616');
+        $v->finalPayments()->create([
+            'type' => 'balance', 'amount' => 10_000, 'exchange_rate' => 1050,
+            'payment_date' => '2026-09-05', 'confirmed_at' => now(),
+        ]);
+        $v->refresh();
+        $this->settlement($v);
+
+        $this->actingAs(User::factory()->create([
+            'permission' => 'admin', 'email_verified_at' => now(),
+        ]));
+
+        Volt::test('erp.settlements.index')
+            ->assertSee('+₩'.number_format(500_000))
+            ->assertSee(__('settlement.exchange_preview_mark'));
+    }
+
     /**
      * 🔒 **화면과 모델이 같은 환차를 말한다** — 정산관리 편집 패널의 KRW 명세는 이제 모델 식을 쓴다.
      *    둘이 갈리면 「패널 3,000원 ↔ 엑셀 2,900원」이 된다(§8 #44·#45).

@@ -165,6 +165,7 @@ return [
         'settlement_amount' => '정산액',
         'actual_payout' => '실지급액',
         'exchange_diff' => '환차',
+        'margin_rate' => '마진율',
         'status' => '상태',
     ],
     'ratio_unit' => '비율 :ratio%',
@@ -177,6 +178,10 @@ return [
     'exchange_loss_title' => '환차손',
     'exchange_same_title' => '환차 동일',
     'exchange_after_close' => '2차 정산 완료 후 표시',
+    'exchange_needs_full_payment' => '미수가 남아 있어 환차를 말할 수 없습니다 — 완납되면 표시됩니다.',
+    'exchange_preview_title' => '예상치 — 2차 정산을 마감하면 이 값으로 확정됩니다. 금액에는 1차 정산부터 이미 반영돼 있습니다.',
+    'exchange_preview_mark' => '예상',
+    'margin_rate_title' => '총마진 ÷ 판매금원화. 내수 차량은 마진율이 없어 「—」로 두고 합계에서도 빠집니다.',
 
     'approval_pending' => '승인 대기중',
     'approval_pending_title' => '승인 대기중 — 관리자 결정 대기',
