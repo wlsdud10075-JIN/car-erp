@@ -84,6 +84,52 @@ class LivewireExtractedScriptTest extends TestCase
         )));
     }
 
+    /**
+     * 🚨 **그 JS 가 문법적으로 유효한가** — 2026-09-21 에 내가 두 번 깨뜨렸다.
+     *   ① Blade 가 컴파일 안 된 채 새어 `@json(` 에서 SyntaxError
+     *   ② 그걸 고치면서 배열을 들어내고 **닫는 `],` 를 안 지웠다**
+     *      → jin: *「컬럼을 누르니까 사이드바가 접혔다 펼쳐지고, 컬럼은 전체가 다 펼쳐져 있다」*
+     *
+     * 🔑 **증상이 엉뚱한 곳에서 나온다.** 함수가 정의되지 않으면 Alpine `x-data` 가 실패하고,
+     *    그러면 `open` 같은 이름이 **부모 스코프(사이드바)로 새어** 엉뚱한 것이 토글되고
+     *    `visible[...]` 은 undefined 라 `x-show` 가 안 먹어 **전 컬럼이 펼쳐진다.**
+     *    PHP lint·기능 테스트·렌더 검사 **전부 초록**이다 — JS 를 아무도 파싱하지 않기 때문이다.
+     *
+     * ⇒ 실제로 파서에 넣어 본다. node 가 없으면 skip(CI 에는 있다 — `npm run build`).
+     */
+    public function test_the_inline_script_actually_parses_as_javascript(): void
+    {
+        exec('node --version 2>&1', $o, $code);
+        if ($code !== 0) {
+            $this->markTestSkipped('node 없음 — JS 파싱 검사를 건너뛴다');
+        }
+
+        foreach ($this->views() as $path) {
+            $src = file_get_contents($path);
+            if (! preg_match_all('/<script>
+(.*?)
+<\/script>/s', $src, $m)) {
+                continue;
+            }
+            foreach ($m[1] as $i => $body) {
+                // Blade 가 값을 채우는 자리는 파서가 모르므로 자리표시자로 바꾼다.
+                $js = preg_replace('/@js\([^)]*\)|@json\([^)]*\)|\{\{.*?\}\}/s', 'null', $body);
+                $tmp = tempnam(sys_get_temp_dir(), 'lwjs').'.js';
+                // 인자·전역은 선언만 해 준다(정의 여부가 아니라 **문법**을 본다).
+                file_put_contents($tmp, 'function __wrap(){ let columns=[],serverKnows=[];
+'.$js.'
+}
+');
+                exec('node --check '.escapeshellarg($tmp).' 2>&1', $out, $rc);
+                @unlink($tmp);
+                $this->assertSame(0, $rc, basename($path)." 의 {$i}번째 <script> 가 JS 문법 오류다:
+".implode('
+', array_slice($out, -6)));
+                $out = [];
+            }
+        }
+    }
+
     /** 차량목록 — 라벨이 실제로 `x-data` 로 넘어가고 JS 는 그걸 인자로 받는다. */
     public function test_the_vehicle_column_labels_travel_through_x_data(): void
     {

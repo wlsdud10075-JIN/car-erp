@@ -7798,7 +7798,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
         //    여기에 Blade 지시어(json·중괄호 보간)를 쓰면 브라우저가 그 글자를 그대로 받아
         //    SyntaxError 로 죽고, 모듈 전체가 실행되지 않는다.
         togglableColumns: columns,
-        ],
         init() {
             if (this._inited) {
                 return;   // x-data 의 자동 init() 과 x-init="init()" 이 둘 다 부른다 — 한 번만.
