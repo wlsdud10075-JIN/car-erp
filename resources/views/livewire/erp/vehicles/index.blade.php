@@ -1440,6 +1440,56 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /** 화면(localStorage)이 알려 준 표시 컬럼을 기억한다. 세션에 남겨 다음 방문부터 바로 줄인다. */
+    /**
+     * 🔤 컬럼 토글 드롭다운의 [키 → 라벨] — **PHP 에서 만든다.**
+     *
+     * 🚨 JS 쪽(`vehicleColumnsToggle`)에 `@json(__('...'))` 로 두면 안 된다.
+     *    그 `<script>` 는 0열이라 Livewire 4 가 별도 JS 모듈로 뽑아 가는데
+     *    **그 경로엔 Blade 컴파일이 없다** — 브라우저가 `@json(` 글자를 그대로 받아
+     *    `Uncaught SyntaxError` 로 죽고, 모듈 전체가 실행되지 않는다.
+     *    그러면 컬럼 드롭다운이 죽는 것은 물론, `syncVisibleColumns` 도 안 불려
+     *    서버가 「모르면 전부 그린다」 폴백으로 **36칸을 다 렌더**한다(§8 #79 가 무효화된다).
+     *    ⇒ 라벨은 여기서 만들고 `x-data` 로 넘긴다(그쪽은 HTML 본문이라 정상 컴파일된다).
+     *
+     * @return list<array{key:string,label:string}>
+     */
+    public function columnToggleOptions(): array
+    {
+        return [
+            ['key' => 'brand_model', 'label' => __('vehicle.col.brand_model')],
+            ['key' => 'vin', 'label' => __('vehicle.col.vin')],
+            ['key' => 'purchase_date', 'label' => __('vehicle.col.purchase_date')],
+            ['key' => 'sale_date', 'label' => __('vehicle.col.sale_date')],
+            ['key' => 'shipping_date', 'label' => __('vehicle.col.shipping_date')],
+            ['key' => 'eta_date', 'label' => __('vehicle.col.eta_date')],
+            ['key' => 'bl_issue_date', 'label' => __('vehicle.col.bl_issue_date')],
+            ['key' => 'deregistration_date', 'label' => __('vehicle.col.deregistration_date')],
+            ['key' => 'export_declaration_number', 'label' => __('vehicle.col.export_declaration_number')],
+            ['key' => 'vessel_name', 'label' => __('vehicle.col.vessel_name')],
+            ['key' => 'container_number', 'label' => __('vehicle.col.container_number')],
+            ['key' => 'bl_number', 'label' => __('vehicle.col.bl_number')],
+            ['key' => 'ems_tracking', 'label' => __('vehicle.col.ems_tracking')],
+            ['key' => 'dhl_tracking', 'label' => __('vehicle.col.dhl_tracking')],
+            ['key' => 'shipping_sent_date', 'label' => __('vehicle.col.shipping_sent_date')],
+            ['key' => 'ems_fee', 'label' => __('vehicle.col.ems_fee')],
+            ['key' => 'dhl_fee', 'label' => __('vehicle.col.dhl_fee')],
+            ['key' => 'shipping_fee', 'label' => __('vehicle.col.shipping_fee')],
+            ['key' => 'purchase_from', 'label' => __('vehicle.col.purchase_from')],
+            ['key' => 'buyer', 'label' => __('vehicle.col.buyer')],
+            ['key' => 'consignee', 'label' => __('vehicle.col.consignee')],
+            ['key' => 'sales_channel', 'label' => __('vehicle.col.channel')],
+            ['key' => 'currency_rate', 'label' => __('vehicle.col.currency_rate')],
+            ['key' => 'purchase_price', 'label' => __('vehicle.col.purchase_price')],
+            ['key' => 'sale_price', 'label' => __('vehicle.col.sale_price')],
+            ['key' => 'sale_total', 'label' => __('vehicle.col.sale_total')],
+            ['key' => 'settlement_stage', 'label' => __('vehicle.col.settlement_stage')],
+            ['key' => 'transport_fee', 'label' => __('vehicle.col.transport_fee')],
+            ['key' => 'transport_fee_usd', 'label' => __('vehicle.col.transport_fee_usd')],
+            ['key' => 'unpaid_amount', 'label' => __('vehicle.col.unpaid_amount')],
+            ['key' => 'unpaid_ratio', 'label' => __('vehicle.col.unpaid_ratio')],
+        ];
+    }
+
     public function syncVisibleColumns(array $keys): void
     {
         $this->visibleColumns = array_values(array_filter($keys, 'is_string'));
@@ -7314,7 +7364,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- ── 데스크탑 테이블 (회의확장씬 #10 컬럼 토글 + 정렬) ─────── --}}
 <div class="hidden sm:block"
-     x-data="vehicleColumnsToggle()"
+     x-data="vehicleColumnsToggle(@js($this->columnToggleOptions()))"
      x-init="init()">
 
     {{-- 컬럼 토글 드롭다운 --}}
@@ -7618,7 +7668,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 회의확장씬 #10 Phase 2-3 (2026-05-23) — 컬럼 토글 Alpine 컴포넌트 (localStorage 캐시). --}}
 <script>
-function vehicleColumnsToggle() {
+function vehicleColumnsToggle(columns) {
     const STORAGE_KEY = 'car_erp_vehicles_columns_v3';   // v3: 기본=브랜드/차종·매입일·말소일·판매총액 (jin 2026-07-07)
     const defaultVisible = {
         brand_model: true, purchase_date: true, deregistration_date: true, sale_total: true,
@@ -7636,38 +7686,12 @@ function vehicleColumnsToggle() {
     return {
         open: false,
         visible: {},
-        togglableColumns: [
-            { key: 'brand_model',    label: @json(__('vehicle.col.brand_model')) },
-            { key: 'vin',            label: @json(__('vehicle.col.vin')) },
-            { key: 'purchase_date',  label: @json(__('vehicle.col.purchase_date')) },
-            { key: 'sale_date',      label: @json(__('vehicle.col.sale_date')) },
-            { key: 'shipping_date',  label: @json(__('vehicle.col.shipping_date')) },
-            { key: 'eta_date',       label: @json(__('vehicle.col.eta_date')) },
-            { key: 'bl_issue_date',  label: @json(__('vehicle.col.bl_issue_date')) },
-            { key: 'deregistration_date',       label: @json(__('vehicle.col.deregistration_date')) },
-            { key: 'export_declaration_number', label: @json(__('vehicle.col.export_declaration_number')) },
-            { key: 'vessel_name',               label: @json(__('vehicle.col.vessel_name')) },
-            { key: 'container_number',          label: @json(__('vehicle.col.container_number')) },
-            { key: 'bl_number',                 label: @json(__('vehicle.col.bl_number')) },
-            { key: 'ems_tracking',              label: @json(__('vehicle.col.ems_tracking')) },
-            { key: 'dhl_tracking',              label: @json(__('vehicle.col.dhl_tracking')) },
-            { key: 'shipping_sent_date',        label: @json(__('vehicle.col.shipping_sent_date')) },
-            { key: 'ems_fee',                   label: @json(__('vehicle.col.ems_fee')) },
-            { key: 'dhl_fee',                   label: @json(__('vehicle.col.dhl_fee')) },
-            { key: 'shipping_fee',              label: @json(__('vehicle.col.shipping_fee')) },
-            { key: 'purchase_from',  label: @json(__('vehicle.col.purchase_from')) },
-            { key: 'buyer',          label: @json(__('vehicle.col.buyer')) },
-            { key: 'consignee',      label: @json(__('vehicle.col.consignee')) },
-            { key: 'sales_channel',  label: @json(__('vehicle.col.channel')) },
-            { key: 'currency_rate',  label: @json(__('vehicle.col.currency_rate')) },
-            { key: 'purchase_price', label: @json(__('vehicle.col.purchase_price')) },
-            { key: 'sale_price',     label: @json(__('vehicle.col.sale_price')) },
-            { key: 'sale_total',     label: @json(__('vehicle.col.sale_total')) },
-            { key: 'settlement_stage', label: @json(__('vehicle.col.settlement_stage')) },
-            { key: 'transport_fee',  label: @json(__('vehicle.col.transport_fee')) },
-            { key: 'transport_fee_usd', label: @json(__('vehicle.col.transport_fee_usd')) },
-            { key: 'unpaid_amount',  label: @json(__('vehicle.col.unpaid_amount')) },
-            { key: 'unpaid_ratio',   label: @json(__('vehicle.col.unpaid_ratio')) },
+        // 🚨 라벨은 **밖에서 받는다** — 이 <script> 는 0열이라 Livewire 4 가 통째로 뽑아
+        //    별도 JS 모듈로 서빙하고, **그때 Blade 를 컴파일하지 않는다**
+        //    (`SingleFileParser::extractScriptPortion`, 「column 0 = root-level」 규칙).
+        //    여기에 Blade 지시어(json·중괄호 보간)를 쓰면 브라우저가 그 글자를 그대로 받아
+        //    SyntaxError 로 죽고, 모듈 전체가 실행되지 않는다.
+        togglableColumns: columns,
         ],
         init() {
             if (this._inited) {
