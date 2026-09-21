@@ -69,4 +69,6 @@ return [
     'tracking_url_hint' => 'Use {VIN} where the chassis number goes, e.g. https://www.cigbooking.com/track/{VIN}. Leave blank to hide the tracking button for this forwarder.',
     'tracking_url_invalid' => 'Must start with https:// and contain {VIN}.',
     'deleted' => 'Forwarder deleted.',
+    'range_notice' => 'A date range is applied — only shipments in that range are listed.',
+    'range_clear' => 'Show all periods',
 ];

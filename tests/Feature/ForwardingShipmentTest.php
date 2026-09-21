@@ -101,9 +101,31 @@ class ForwardingShipmentTest extends TestCase
 
         $this->actingAs($this->admin());
 
+        // 📂 2026-09-21 부터 상세는 **펼친 포워딩사만** 그린다(접힌 상태에선 서버가 아예 안 보낸다).
+        //    운영 4.4MB → 60KB 의 근거. 접힌 채로 assertSee 하면 그 최적화를 되돌려야 초록이 된다.
         Volt::test('erp.forwarding-companies.index')
+            ->assertDontSee('KMHFWDVIN0000001')          // 접혀 있으면 상세가 없다
+            ->call('toggleCompany', $fc->id)
             ->assertSee('19더9065')
             ->assertSee('KMHFWDVIN0000001');
+    }
+
+    /**
+     * 🚨 **선적일이 비어 있는 건도 기본 화면에 있어야 한다** (2026-09-21).
+     *    「최근 2개월」을 기본 기간으로 걸었다가 운영 사본 608건 중 **462건(선적일 NULL)이 사라졌다**.
+     *    `shipping_date >= …` 는 NULL 을 걸러낸다 — 옛 건을 빼는 게 아니라 날짜 없는 건을 빼는 것이었다.
+     *    기본값은 없다. 이 테스트는 그 결정이 되돌아가면 빨개진다.
+     */
+    public function test_an_undated_shipment_is_listed_by_default(): void
+    {
+        $fc = ForwardingCompany::create(['name' => 'FWD NODATE', 'is_active' => true]);
+        $this->shipVehicle($fc->id, ['shipping_date' => null, 'currency' => 'USD', 'transport_fee' => 4321]);
+
+        $this->actingAs($this->admin());
+
+        $c = Volt::test('erp.forwarding-companies.index');
+        $this->assertSame('', $c->get('dateFrom'), '기간에 기본값이 생겼다 — 날짜 없는 선적이 사라진다');
+        $c->assertSee('USD 4,321');   // 헤더 합계 = 접힌 상태에서도 보인다
     }
 
     /**

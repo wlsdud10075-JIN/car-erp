@@ -17,6 +17,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   CRUD(추가/편집/삭제)는 슬라이드 패널로 보존.
     public string $search = '';
     #[Url] public string $dateType = 'shipping';   // shipping = shipping_date / bl = bl_issue_date
+    /**
+     * 🚫 **기간에 기본값을 두지 말 것** (2026-09-21 — 넣었다가 뺐다).
+     *    「최근 2개월」을 기본으로 걸었더니 운영 사본 608건 중 **462건이 사라졌다** —
+     *    옛 건이 빠진 게 아니라 **선적일이 비어 있는 건**(76%)이 `shipping_date >= …` 에 걸러진 것이다.
+     *    「2개월 넘은 건」은 9건뿐이었다. 화면이 가벼워진 것처럼 보였지만 데이터를 숨긴 것이었다(§8 #55·#97).
+     *    화면 크기는 「펼친 곳만 그리기」와 묶음 규칙으로 이미 63KB 라 기본 기간이 주는 이득도 없다.
+     */
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
 
@@ -52,6 +59,42 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->calMonth === '') {
             $this->calMonth = now()->format('Y-m');
         }
+
+    }
+
+    /**
+     * 📂 **펼친 포워딩사만** 상세를 그린다 (jin 2026-09-21 「조회했을 때만 그리는건 어때?」).
+     *
+     * 예전엔 전 기간 선적을 **다 그려놓고** `x-show="open"` 으로 가렸다 —
+     * 안 보이는 것을 그려서 CSS 로 숨기던 §8 #79 의 그 패턴이다.
+     * 실측(운영 사본 608건): **HTML 4,429KB · DOM 73,818개**. 게다가 `wire:poll.60s` 라
+     * 가만히 있어도 60초마다 그 7만 개를 다시 만들었다.
+     *
+     * ⚠️ 대신 펼칠 때 서버 왕복이 한 번 생긴다(CSS 토글은 즉시였다). 월배치 화면에서
+     *    같은 선택을 했다 — 「펼쳤을 때만 계산」.
+     *
+     * @var list<int>
+     */
+    public array $expandedCompanies = [];
+
+    public function toggleCompany(int $id): void
+    {
+        $this->expandedCompanies = in_array($id, $this->expandedCompanies, true)
+            ? array_values(array_diff($this->expandedCompanies, [$id]))
+            : [...$this->expandedCompanies, $id];
+    }
+
+    public function isExpanded(int $id): bool
+    {
+        return in_array($id, $this->expandedCompanies, true);
+    }
+
+    /** 기간을 비워 전 기간을 본다 — 「예전 건이 사라졌다」의 탈출구. */
+    public function clearRange(): void
+    {
+        $this->dateFrom = '';
+        $this->dateTo = '';
+        $this->searchNow();
     }
 
     public function searchNow(): void
@@ -185,17 +228,66 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 차량 → [group_type, group_key]. 우선순위 container › vessel › declaration (데이터로 자동 분류).
      *
      * ⚠️ 2026-07-27 jin: vessel 을 declaration 위로 승격. 운임은 배 단위로 청구되는데
-     *    수출신고번호는 차량 1~2대 단위라 묶음이 잘게 쪼개졌다. declaration 은 선박명이
-     *    아직 안 들어온 차량의 폴백으로만 남는다.
+     *    수출신고번호는 차량 1~2대 단위라 묶음이 잘게 쪼개졌다.
+     *
+     * 🔀 **2026-09-21 jin — 선적방법이 먼저다.**
+     *    *「RORO면 선박명으로 묶고, CONTAINER면 컨테이너번호로 묶으면 돼.
+     *      RORO여도 컨테이너번호에 RORO번호를 기입할 수 있어서 지금 이렇게 된 것 같은데」*
+     *
+     *    맞았다. 컨테이너를 무조건 1순위로 두니, **RORO 인데 컨테이너 칸에 RORO 번호를 적는**
+     *    회사에서 묶음이 차 한 대당 하나로 쪼개졌다. 실측:
+     *    ```
+     *                RORO 건수 / 그중 컨테이너 칸 채움      CIG 묶음
+     *    ssancarerp   571 / 568   ← 여기가 원인              554 → 117
+     *    heymanerp     81 /   0   ← 그래서 멀쩡했다           12 →  12 (무변화)
+     *    ```
+     *    묶음 하나당 운임 인보이스 폼이 한 벌 그려지므로 그대로 화면 크기다.
+     *
+     * 🔑 **RORO 에 컨테이너 폴백을 남긴다** — ssancarerp 에 「RORO 인데 선박명 없음」이 99건 있다.
+     *    빼면 그 99건이 신고번호(차량 1~2대 단위)로 흩어져 **지금보다 나빠진다.**
+     *    선박명이 채워지면 자동으로 선박 묶음으로 옮겨간다.
+     * 🚫 CONTAINER 에 선박 폴백은 **안 넣는다** — 「CONTAINER 인데 컨테이너 칸이 빔」이
+     *    3사 실측 **0건**이라 결과가 한 건도 안 달라진다. 규칙은 단순할수록 안 갈린다.
+     *
+     * 🔀 **선적방법이 비어 있으면 컨테이너 칸을 제일 뒤로** (jin 2026-09-21
+     *    *「선적방법 없음이면 선박명->수출신고번호->컨테이너번호 여야 맞는거 아니니?」*).
+     *    방법을 모르면 그 칸이 진짜 컨테이너인지 RORO 관리코드인지 알 수 없다. 실측 ssancarerp 4건 중
+     *    3건이 `6.07_A RORO 3-2_7` 꼴이었다 — 컨테이너를 먼저 보면 대당 묶음, 선박을 먼저 보면 배별 묶음.
+     *
+     * ⚠️ **묶음 키가 바뀌면 그 묶음에 붙은 인보이스가 미아가 된다**(`group_type`+`group_key` 로 붙는다).
+     *    heymanerp 인보이스 39건은 새 규칙에서도 묶음 수가 12/13/11/5 로 **전부 그대로**라 안전하다.
+     *    ssancarerp 는 0건. 가드 = `ForwardingGroupKeyTest`.
      */
     private function groupKeyOf($v): array
     {
+        $method = $v->shipping_method;
+
+        // ① 선적방법이 정한다.
+        if ($method === 'RORO' && ! empty($v->vessel_name)) {
+            return ['vessel', $v->vessel_name];
+        }
+
+        // ② 방법을 모르면 컨테이너 칸을 못 믿는다 — 선박 → 신고번호 → 컨테이너.
+        if ($method !== 'RORO' && $method !== 'CONTAINER') {
+            if (! empty($v->vessel_name)) {
+                return ['vessel', $v->vessel_name];
+            }
+            if (! empty($v->export_declaration_number)) {
+                return ['declaration', $v->export_declaration_number];
+            }
+            if (! empty($v->container_number)) {
+                return ['container', $v->container_number];
+            }
+
+            return ['none', ''];
+        }
+
+        // ③ 컨테이너번호 (CONTAINER 의 1순위이자, 선박명 없는 RORO 의 폴백)
         if (! empty($v->container_number)) {
             return ['container', $v->container_number];
         }
-        if (! empty($v->vessel_name)) {
-            return ['vessel', $v->vessel_name];
-        }
+
+        // ④ 수출신고번호 — 차량 1~2대 단위라 마지막이다.
         if (! empty($v->export_declaration_number)) {
             return ['declaration', $v->export_declaration_number];
         }
@@ -451,6 +543,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     </label>
 </div>
 
+{{-- 📅 **기간이 걸려 있으면 화면이 그 사실을 말한다** (§8 #60).
+     ⚠️ 기간 필터는 `shipping_date >= …` 라 **선적일이 비어 있는 건도 함께 빠진다**(운영 76%).
+     그래서 기본값은 없고, 사용자가 걸었을 때만 이 줄이 뜬다 — 「사라졌다」의 탈출구가 [전 기간 보기]다. --}}
+@php if ($dateFrom !== '' || $dateTo !== ''): @endphp
+<p class="-mt-1 text-[11px] text-gray-400">
+    {{ __('forwarding.range_notice') }}
+    <button type="button" wire:click="clearRange" class="ml-1 text-violet-600 underline hover:text-violet-800">{{ __('forwarding.range_clear') }}</button>
+</p>
+@php endif; @endphp
+
 {{-- 스케줄 달력 (③) — 접이식. 선적일→도착일 기간 막대, 같은 묶음 동일 색. 기본 접힘. --}}
 <div class="card-tight">
     <button type="button" wire:click="$toggle('showCalendar')" class="flex w-full items-center gap-2 text-left">
@@ -554,11 +656,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 운임비가 아예 없는 포워딩사와 "전액 청산" 을 구분하기 위한 판정.
             $hasAnyFee = (int) $ships->sum('transport_fee') > 0;
         @endphp
-        <div class="card-tight" x-data="{ open: false }">
+        @php $isOpen = $this->isExpanded($fc->id); @endphp
+        <div class="card-tight">
             {{-- 헤더 행 --}}
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <button type="button" @click="open = !open" class="flex flex-1 items-center gap-2 text-left">
-                    <svg class="h-4 w-4 text-gray-400 transition-transform" :class="open ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                {{-- 📂 펼치기는 **서버 왕복**이다 — 접혀 있는 상세를 아예 안 그리기 위해서다.
+                     🚫 `x-show` 로 되돌리지 말 것: 그러면 전 포워딩사의 선적이 다시 전부 실려 나간다. --}}
+                <button type="button" wire:click="toggleCompany({{ $fc->id }})" wire:loading.attr="disabled" class="flex flex-1 items-center gap-2 text-left">
+                    <svg class="h-4 w-4 text-gray-400 transition-transform {{ $isOpen ? 'rotate-90' : '' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
                     <span class="font-semibold text-gray-800">{{ $fc->name }}</span>
                     <span class="badge {{ $fc->is_active ? 'badge-green' : 'badge-gray' }}">{{ $fc->is_active ? __('common.active') : __('common.inactive') }}</span>
                     <span class="pill-count">{{ __('forwarding.shipment_count', ['count' => $ships->count()]) }}</span>
@@ -583,7 +688,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
             </div>
             {{-- 선적 차량 목록 (아코디언) — 묶음(컨테이너/신고번호/선박)별 그룹 + 운임 인보이스 청산 --}}
-            <div x-show="open" x-cloak class="mt-3 border-t border-gray-100 pt-3">
+            @php if ($isOpen): @endphp
+            <div class="mt-3 border-t border-gray-100 pt-3">
                 @php $groups = $this->groupedShipments[$fc->id] ?? collect(); @endphp
                 @if($groups->isEmpty())
                     <p class="py-3 text-center text-xs text-gray-400">{{ __('forwarding.no_shipment') }}</p>
@@ -737,6 +843,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 @endif
             </div>
+            @php endif; @endphp
         </div>
     @empty
         <div class="py-12 text-center text-sm text-gray-400">{{ __('forwarding.empty') }}</div>
