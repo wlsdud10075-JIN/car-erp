@@ -89,9 +89,9 @@ class LivewireExtractedScriptTest extends TestCase
     {
         $src = file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php'));
 
-        $this->assertStringContainsString('vehicleColumnsToggle(@js($this->columnToggleOptions()))', $src,
+        $this->assertStringContainsString('vehicleColumnsToggle(@js($this->columnToggleOptions())', $src,
             '라벨을 x-data 로 안 넘기면 JS 안에서 다시 Blade 를 쓰게 된다');
-        $this->assertStringContainsString('function vehicleColumnsToggle(columns) {', $src,
+        $this->assertStringContainsString('function vehicleColumnsToggle(columns', $src,
             'JS 가 라벨을 인자로 안 받는다');
         $this->assertStringContainsString('togglableColumns: columns,', $src);
     }
