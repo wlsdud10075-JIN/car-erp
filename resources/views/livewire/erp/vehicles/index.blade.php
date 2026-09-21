@@ -1439,7 +1439,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->visibleColumns === [] || in_array($key, $this->visibleColumns, true);
     }
 
-    /** 화면(localStorage)이 알려 준 표시 컬럼을 기억한다. 세션에 남겨 다음 방문부터 바로 줄인다. */
     /**
      * 🔤 컬럼 토글 드롭다운의 [키 → 라벨] — **PHP 에서 만든다.**
      *
@@ -1490,16 +1489,78 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    /** 표시 컬럼·화면폭을 기억하는 쿠키 (1년). 🔑 **세션이 아니라 쿠키인 이유** = 아래 `mount()` 참고. */
+    private const PREF_COOKIE_DAYS = 365;
+
+    /**
+     * 화면(localStorage)이 알려 준 표시 컬럼을 기억한다.
+     * 세션 + **쿠키** 양쪽에 남긴다 — 쿠키라야 **다음 로그인의 첫 요청부터** 안다.
+     */
     public function syncVisibleColumns(array $keys): void
     {
         $this->visibleColumns = array_values(array_filter($keys, 'is_string'));
         session()->put('vehicles_visible_columns', $this->visibleColumns);
+        \Illuminate\Support\Facades\Cookie::queue(
+            'veh_cols', implode(',', $this->visibleColumns), 60 * 24 * self::PREF_COOKIE_DAYS
+        );
     }
+
+    /**
+     * 📱 **이 화면이 폰인가** — `null` = 아직 모름.
+     *
+     * 서버는 화면 폭을 모르므로 예전엔 **데스크탑 표와 모바일 카드를 둘 다** 그려 보내고
+     * CSS(`sm:hidden`)로 한쪽을 가렸다. 100행이면 **같은 목록이 두 벌**이다
+     * (실측 2026-09-21 운영 4,960대 · 100행: 674KB/13,962요소 → **540KB/9,720요소**).
+     * 안 보이는 칸을 그려서 가리던 §8 #79 와 **같은 문제의 블록판**이다.
+     *
+     * 🔑 **모르면 둘 다 그린다** — §8 #79 의 그 규칙. 반대로 두면 화면이 알려 주기 전
+     *    첫 렌더에서 목록이 통째로 사라진다. 폰에서 그러면 「아무것도 안 나온다」가 된다.
+     * 📌 **저장은 쿠키 = 브라우저 단위**다. 사용자 단위(DB)로 두면 같은 사람이 PC 와 폰을
+     *    오갈 때 틀리고, 세션만 두면 **로그인할 때마다 첫 화면이 무겁다**.
+     */
+    #[\Livewire\Attributes\Locked]
+    public ?bool $isMobileViewport = null;
+
+    /** 화면이 자기 폭을 알려 준다. 값이 같으면 JS 쪽에서 왕복조차 하지 않는다. */
+    public function syncViewport(bool $mobile): void
+    {
+        $this->isMobileViewport = $mobile;
+        session()->put('vehicles_is_mobile', $mobile);
+        \Illuminate\Support\Facades\Cookie::queue(
+            'veh_mobile', $mobile ? '1' : '0', 60 * 24 * self::PREF_COOKIE_DAYS
+        );
+    }
+
+    /** 데스크탑 표를 그릴까 (모르면 그린다). */
+    public function renderDesktopList(): bool
+    {
+        return $this->isMobileViewport !== true;
+    }
+
+    /** 모바일 카드를 그릴까 (모르면 그린다). */
+    public function renderMobileList(): bool
+    {
+        return $this->isMobileViewport !== false;
+    }
+
 
     public function mount(): void
     {
         // 지난 방문에 화면이 알려 준 표시 컬럼 — 첫 렌더부터 안 보이는 칸을 안 그린다.
+        //   세션 → 쿠키 순. 🔑 **쿠키라야 로그인 직후 첫 요청부터** 안다
+        //   (세션만 쓰면 로그인할 때마다 그 한 번이 36칸 × 100행 = 1,000KB 로 나간다).
         $this->visibleColumns = (array) session('vehicles_visible_columns', []);
+        if ($this->visibleColumns === []) {
+            $cookie = (string) request()->cookie('veh_cols', '');
+            $this->visibleColumns = $cookie === ''
+                ? []
+                : array_values(array_filter(explode(',', $cookie), fn ($k) => $k !== ''));
+        }
+
+        // 📱 지난 방문에 알려 준 화면 폭 — 첫 렌더부터 한쪽 목록만 그린다.
+        //    셋 다 없으면 null(모름) 이고, 그때는 **둘 다** 그린다(§8 #79 의 「모르면 그린다」).
+        $mobile = session('vehicles_is_mobile', request()->cookie('veh_mobile'));
+        $this->isMobileViewport = $mobile === null ? null : (bool) (int) $mobile;
 
         // URL 로 `?shipmonth=202607` 이 와도 화면 입력과 같은 규칙으로 받아준다.
         $this->shipmentMonth = self::normalizeMonth($this->shipmentMonth);
@@ -7362,9 +7423,18 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 @endif
 
-{{-- ── 데스크탑 테이블 (회의확장씬 #10 컬럼 토글 + 정렬) ─────── --}}
+{{-- 📱 화면 폭을 서버에 **한 번** 알려준다 (jin 2026-09-21 「100개 화면이 느리다」).
+     이게 없으면 서버가 데스크탑 표와 모바일 카드를 **둘 다** 그려 CSS 로 한쪽을 가린다
+     — 100행이면 같은 목록이 두 벌이다(실측 672KB 중 모바일 카드 약 197KB).
+     🔑 서버가 이미 같은 값을 알고 있으면 왕복조차 하지 않는다. --}}
+<div class="hidden" x-data="vehicleViewportSync({{ $this->isMobileViewport === null ? 'null' : ($this->isMobileViewport ? 'true' : 'false') }})"></div>
+
+{{-- ── 데스크탑 테이블 (회의확장씬 #10 컬럼 토글 + 정렬) ───────
+     🚫 `@if` 로 감싸지 말 것 — Livewire 가 조건마다 `<!--[if BLOCK]-->` 주석을 넣어
+        100행이면 오히려 커진다(§8 #79 에서 실측: 908 → 1,084KB). --}}
+@php if ($this->renderDesktopList()): @endphp
 <div class="hidden sm:block"
-     x-data="vehicleColumnsToggle(@js($this->columnToggleOptions()))"
+     x-data="vehicleColumnsToggle(@js($this->columnToggleOptions()), @js($this->visibleColumns))"
      x-init="init()">
 
     {{-- 컬럼 토글 드롭다운 --}}
@@ -7665,10 +7735,46 @@ new #[Layout('components.layouts.app')] class extends Component {
         </table>
     </div>
 </div>
+@php endif; @endphp
 
 {{-- 회의확장씬 #10 Phase 2-3 (2026-05-23) — 컬럼 토글 Alpine 컴포넌트 (localStorage 캐시). --}}
 <script>
-function vehicleColumnsToggle(columns) {
+/**
+ * 📱 화면 폭을 서버에 알려준다. `known` = 서버가 이미 아는 값(null = 모름).
+ *
+ * 🚨 도장(_done)은 **성공한 뒤에** 찍는다 — 먼저 찍으면 $wire 가 아직 없을 때
+ *    그 페이지 수명 동안 재시도가 없다(§8 #91-C 의 「2번 새로고침해야 컬럼이 나온다」가 그것).
+ * 🔑 서버가 이미 같은 값을 알면 **왕복하지 않는다** — 매 페이지 로드마다 왕복이 붙으면
+ *    고치려던 것(큰 응답)이 두 번 오간다.
+ */
+function vehicleViewportSync(known) {
+    const MQ = window.matchMedia('(max-width: 639.98px)');   // Tailwind `sm` = 640px
+    return {
+        _sent: null,          // 서버에 보낸 값(= 서버가 아는 값)
+        report() {
+            const isMobile = MQ.matches;
+            const acked = this._sent === null ? known : this._sent;
+            if (acked === isMobile) { return; }              // 서버가 이미 안다 — 왕복 안 함
+            if (!this.$wire) {
+                // Alpine 이 Livewire 보다 먼저 살아난 경우 — 깨어날 신호를 한 번 단다.
+                //   🚨 여기서 _sent 를 찍으면 안 된다(§8 #91-C) — 못 보냈는데 보냈다고 남으면 재시도가 없다.
+                document.addEventListener('livewire:initialized', () => this.report(), { once: true });
+                return;
+            }
+            this.$wire.syncViewport(isMobile);
+            this._sent = isMobile;
+        },
+        init() {
+            this.report();
+            // 🚨 **창 크기가 바뀌면 다시 알려야 한다.** 안 하면 데스크탑으로 기억된 화면을
+            //    640px 아래로 줄였을 때 표는 CSS 가 숨기고 카드는 서버가 안 그려 **화면이 빈다.**
+            //    (반대 방향도 같다 — 폰 가로모드·태블릿 회전·브라우저 확대.)
+            MQ.addEventListener('change', () => this.report());
+        },
+    };
+}
+
+function vehicleColumnsToggle(columns, serverKnows) {
     const STORAGE_KEY = 'car_erp_vehicles_columns_v3';   // v3: 기본=브랜드/차종·매입일·말소일·판매총액 (jin 2026-07-07)
     const defaultVisible = {
         brand_model: true, purchase_date: true, deregistration_date: true, sale_total: true,
@@ -7746,12 +7852,21 @@ function vehicleColumnsToggle(columns) {
             this.$wire.syncVisibleColumns(on);
             this._pushed = now;
         },
-        _pushed: null,
+        // 🔑 **서버가 이미 아는 값으로 도장을 미리 찍는다** (jin 2026-09-21).
+        //    쿠키 덕에 서버가 첫 렌더부터 컬럼을 아는 경우가 대부분인데, 예전엔 그래도
+        //    매 페이지 로드마다 `syncVisibleColumns` 왕복이 한 번씩 더 나갔다
+        //    (100행이면 그 응답이 500KB 대다). 같으면 아예 안 보낸다.
+        //    ⚠️ 다르면 종전대로 보낸다 — 「안 보내고 끝」이 아니다.
+        _pushed: Array.isArray(serverKnows) && serverKnows.length
+            ? JSON.stringify([...serverKnows].sort())
+            : null,
     };
 }
 </script>
 
-{{-- ── 모바일 카드 리스트 ───────────────────────────────────────── --}}
+{{-- ── 모바일 카드 리스트 ─────────────────────────────────────────
+     🚫 여기도 `@if` 금지 — 위와 같은 이유. --}}
+@php if ($this->renderMobileList()): @endphp
 <div class="block sm:hidden space-y-2">
     @forelse($this->vehicles as $v)
     @php
@@ -7812,6 +7927,7 @@ function vehicleColumnsToggle(columns) {
     </div>
     @endforelse
 </div>
+@php endif; @endphp
 
 {{-- ── 데이터 도구 (내려받기·일괄기입) ─────────────────────────────────
      ⚠️ 페이지네이션을 이 flex 행 안에 두지 말 것 — `justify-between` 이 오른쪽 끝으로 밀어
