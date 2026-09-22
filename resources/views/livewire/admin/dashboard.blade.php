@@ -7,6 +7,7 @@ use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -16,6 +17,26 @@ new #[Layout('components.layouts.app')] class extends Component
 {
     #[Url] public string $dateFrom = '';
     #[Url] public string $dateTo = '';
+
+    // ⚡ 집계 캐시 (jin 2026-09-22) — 운영 ssancarerp 문서 요청 10초 · 30초 poll 마다 반복.
+    //   정산 986행의 마진 사슬을 매 렌더마다 다시 계산하는 게 남은 비용이라, 집계 결과를 **사용자·스코프·기간별로**
+    //   짧게(기본 60초) 캐시한다. poll 은 캐시를 읽고, [조회] 는 salt 를 올려 항상 새로 계산한다.
+    //   숫자는 안 바뀐다 — 최대 TTL 만큼 늦게 보일 뿐. TTL = services.admin_dashboard.cache_seconds (테스트 0).
+    public int $cacheSalt = 0;
+
+    private function remembered(string $name, \Closure $fn): array
+    {
+        $ttl = (int) config('services.admin_dashboard.cache_seconds', 60);
+        if ($ttl <= 0) {
+            return $fn();
+        }
+        $key = 'admin-dash:'.$name.':'.md5(json_encode([
+            config('company.template_set'), auth()->id(), $this->managerScopeSalesmanIds(),
+            $this->dateFrom, $this->dateTo, $this->dateType, $this->cacheSalt,
+        ]));
+
+        return Cache::remember($key, $ttl, $fn);
+    }
 
     // 큐 4 8-1 — 기준일 컬럼 전환. UI 라벨: 매입일/판매일/선적일/거래완료일.
     // 'completed'는 정식 거래완료일 컬럼이 없어 B/L 발행일(bl_issue_date)로 임시 매핑.
@@ -192,6 +213,11 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function kpis(): array
     {
+        return $this->remembered('kpis', fn () => $this->computeKpis());
+    }
+
+    private function computeKpis(): array
+    {
         $col = $this->dateColumn();
         $ids = $this->managerScopeSalesmanIds();
         $base = Vehicle::query()
@@ -252,6 +278,7 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function applyFilters(): void
     {
+        $this->cacheSalt++;   // [조회] 는 캐시를 안 탄다 — 새 salt = 새 키
         unset(
             $this->kpis,
             $this->monthlyChartData,
@@ -278,6 +305,11 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Computed]
     public function monthlyChartData(): array
+    {
+        return $this->remembered('monthlyChartData', fn () => $this->computeMonthlyChartData());
+    }
+
+    private function computeMonthlyChartData(): array
     {
         $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
         $ids = $this->managerScopeSalesmanIds();
@@ -348,6 +380,11 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function salesmanPerformance(): array
     {
+        return $this->remembered('salesmanPerformance', fn () => $this->computeSalesmanPerformance());
+    }
+
+    private function computeSalesmanPerformance(): array
+    {
         $col = $this->dateColumn();
         $ids = $this->managerScopeSalesmanIds();
         $aggregates = [];  // salesman_id => ['count' => N, 'total_krw' => N]
@@ -410,6 +447,11 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Computed]
     public function settlementKpis(): array
+    {
+        return $this->remembered('settlementKpis', fn () => $this->computeSettlementKpis());
+    }
+
+    private function computeSettlementKpis(): array
     {
         $year = $this->dateFrom ? (int) substr($this->dateFrom, 0, 4) : now()->year;
         $ids = $this->managerScopeSalesmanIds();
@@ -550,6 +592,11 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Computed]
     public function companyProfit(): array
+    {
+        return $this->remembered('companyProfit', fn () => $this->computeCompanyProfit());
+    }
+
+    private function computeCompanyProfit(): array
     {
         $ids = $this->managerScopeSalesmanIds();
 
@@ -714,6 +761,11 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Computed]
     public function receivableKpis(): array
+    {
+        return $this->remembered('receivableKpis', fn () => $this->computeReceivableKpis());
+    }
+
+    private function computeReceivableKpis(): array
     {
         // 미수금 차량 — sale_unpaid_amount_krw_cache > 0 (NULL은 환율 미입력 외화 → 제외)
         $bySalesman = [];
@@ -898,6 +950,11 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Computed]
     public function clearanceKpis(): array
+    {
+        return $this->remembered('clearanceKpis', fn () => $this->computeClearanceKpis());
+    }
+
+    private function computeClearanceKpis(): array
     {
         // 화면 문구용 — 실제 임계는 scopeAction('clearance_stuck') 안에 있다(같은 30일).
         $stuckThresholdDays = 30;

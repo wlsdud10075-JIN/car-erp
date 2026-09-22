@@ -23,6 +23,7 @@
              CI 는 setup-php 가 이미 무제한이라 무영향이고, 여기 두면 로컬도 같은 조건이 된다.
              ⚠️ `php -d memory_limit=-1 artisan test` 는 안 먹는다 — 러너를 자식 프로세스로 띄우기 때문. -->
         <ini name="memory_limit" value="-1"/>
+        <env name="ADMIN_DASHBOARD_CACHE_SECONDS" value="0"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_LOCALE" value="ko"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
