@@ -106,4 +106,10 @@ return [
         'key' => env('HOLIDAY_API_KEY'),
     ],
 
+    // 관리자 대시보드 집계 캐시(초). 0 = 캐시 없음(테스트). 운영 ssancarerp 문서 요청 10초의 반은
+    //   정산 마진 사슬 재계산이라 사용자·스코프·기간별로 짧게 캐시한다(jin 2026-09-22). [조회] 는 항상 새로 계산.
+    'admin_dashboard' => [
+        'cache_seconds' => (int) env('ADMIN_DASHBOARD_CACHE_SECONDS', 60),
+    ],
+
 ];
