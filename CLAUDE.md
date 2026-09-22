@@ -15,6 +15,7 @@
 > - 과거 결정 검색: `docs/meetings/INDEX.md`
 > - 트리거 키워드: "회의 돌려줘" / "라운드테이블" / "/회의" / "부서별로 검토해줘". 마이그레이션·VAT 공식·RRN·`config/auth.php` 변경 등 무거운 안건은 자동 풀회의 제안.
 
+> 📦 **2026-09-22 트림** — `SKILLS.md §8` 버그·교훈 **#1~#95 전문**을 `docs/archive/skills-8-2026-09-22/SKILLS-8-lessons-1-95.md` 로 이동(295KB → 123KB). 본문엔 색인표 + #96 이후만. 「§8 #N」 참조는 번호로 그 파일을 `grep -n "^### N\."`.
 > 📦 **2026-05-29 트림** — 완료된 큐 표·grandfather 코드·폐기된 dompdf 버그·구 기획안(role기획보안_수정.md)·1차 배포 day-by-day 플랜은 `docs/archive/md-2026-05-29/` 로 이동. `CLAUDE.md.full` / `SKILLS.md.full` 원본 백업 보존. 옛 결정 맥락 필요 시 grep.
 
 > 🔗 **형제 앱 `board` + 연동** (별도 repo/DB/APP_KEY/배포):
