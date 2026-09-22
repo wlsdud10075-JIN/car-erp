@@ -20,6 +20,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 require __DIR__.'/../vendor/autoload.php';
+require __DIR__.'/lib/heyman-clearance-design.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
@@ -115,6 +116,12 @@ foreach ($map as $file => $sheets) {
     // 통관 등록증/말소증은 화면 Gridlines OFF (정부 양식). PhpSpreadsheet reader 가 showGridLines="false"
     // 를 true 로 오독 → load 마다 재설정 필요(명시). 엑셀은 "false" 정상 인식.
     if ($file === 'clearance_set.xlsx') {
+        // 2026-09-22 heyman 통관 SET 디자인(직인·관인 위치 · Travel 상단 · 발급기관 칸) — 여기서 같이 적용하지 않으면
+        //   재생성할 때마다 system 모양으로 되돌아간다. 항목 = scripts/lib/heyman-clearance-design.php.
+        foreach (applyHeymanClearanceDesign($ss, $APPLY) as $line) {
+            echo '  '.($APPLY ? '✔' : '·')." 디자인: {$line}
+";
+        }
         foreach (['한글등록증', '영문등록증', '말소증'] as $gsh) {
             if ($g = $ss->getSheetByName($gsh)) {
                 $g->setShowGridlines(false);
