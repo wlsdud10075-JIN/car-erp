@@ -1747,12 +1747,12 @@ new #[Layout('components.layouts.app')] class extends Component
                     }
 
                     // 초기 차트 렌더 — DOM 안착 후 (월별 차트 위젯이 꺼져 있어도 ref는 존재)
-                    this.$nextTick(() => this.renderCharts());
+                    this.whenChartReady(() => this.renderCharts());
 
                     // 큐 4 8-2 — 조회 버튼 적용 시 charts-refresh 이벤트로 데이터 푸시
                     Livewire.on('charts-refresh', (event) => {
                         this.chartData = event.data;
-                        this.$nextTick(() => this.renderCharts());
+                        this.whenChartReady(() => this.renderCharts());
                     });
                 },
                 isWidgetVisible(key) {
@@ -1762,15 +1762,32 @@ new #[Layout('components.layouts.app')] class extends Component
                     this.activeTab = tab;
                     localStorage.setItem('car_erp_admin_dashboard_tab', tab);
                     // 탭 전환으로 새로 visible 된 canvas의 0x0 → 재렌더링
-                    this.$nextTick(() => this.renderCharts());
+                    this.whenChartReady(() => this.renderCharts());
                 },
                 toggleWidget(key) {
                     this.widgets[key] = !this.widgets[key];
                     localStorage.setItem('car_erp_admin_dashboard_widgets', JSON.stringify(this.widgets));
                     // 차트 위젯이 켜질 때 canvas가 0x0이었던 경우 재렌더링
                     if (['w-monthly', 'w-salesman', 'w-settlement'].includes(key) && this.widgets[key]) {
-                        this.$nextTick(() => this.renderCharts());
+                        this.whenChartReady(() => this.renderCharts());
                     }
+                },
+                // 🔑 Chart.js 는 이 컴포넌트 안의 <script src> 로 온다. wire:navigate 로 들어오면 Livewire 가
+                //    body 의 script 태그를 복제해 **비동기로** 로드하고 Alpine 은 그걸 기다리지 않는다 →
+                //    init() 시점에 `Chart` 가 없어 renderCharts() 가 조용히 return → «새로고침해야 그래프가 뜬다»
+                //    (jin 2026-09-22, ssancarerp 상시 재현). F5 는 script 가 동기라 멀쩡했다.
+                //    ⇒ Chart 가 정의될 때까지 100ms 간격으로 기다렸다가 그린다(최대 10초). 가드 = AdminDashboardChartReadyTest.
+                whenChartReady(cb) {
+                    if (typeof Chart !== 'undefined') { this.$nextTick(cb); return; }
+                    let tries = 0;
+                    const timer = setInterval(() => {
+                        if (typeof Chart !== 'undefined') {
+                            clearInterval(timer);
+                            this.$nextTick(cb);
+                        } else if (++tries >= 100) {
+                            clearInterval(timer);
+                        }
+                    }, 100);
                 },
                 renderCharts() {
                     if (typeof Chart === 'undefined') return;
