@@ -351,7 +351,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('salesman.search_ph') }}"
            class="input-filter w-64" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
-    <div class="flex flex-wrap items-center gap-1 sm:ml-2">
+    <div class="flex flex-wrap items-center gap-1">
         <button type="button" wire:click="setTypeFilter('')"
                 class="tab-pill {{ $typeFilter === '' ? 'is-active' : '' }}">{{ __('salesman.type_filter.all') }}</button>
         @foreach(\App\Models\Salesman::TYPES as $tKey => $tLabel)
