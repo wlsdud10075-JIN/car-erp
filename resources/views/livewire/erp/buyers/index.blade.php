@@ -8,6 +8,7 @@ use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\SavingsStatus;
 use App\Models\Setting;
+use App\Models\Vehicle;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -122,6 +123,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $fee_amount      = '';
 
     public string $fee_note        = '';
+
+    // 💳 적립금 사용 — 현금 탭 (jin 2026-09-22 «적립금사용을 하는걸 추가하는게 여기다. 같이 미러도 되야 하고»)
+    //   저장 경로 = 채권관리 「적립금」 회수와 **같은 행**(ReceivableHistory method=savings) → syncSavingsUsed →
+    //   vehicles.savings_used → Vehicle H6 → SavingsStatus USED(vehicle_id) — 판매탭·채권관리·적립금 잔액에 한 번에 미러.
+    //   🚫 현금 원장(buyer_cash_*)엔 행을 넣지 않는다 — 적립금은 「회사가 준 크레딧」이라 원장 밖(설계 확정 #1, §8 #83).
+    public string $sv_vehicle_id = '';
+    public string $sv_amount = '';
+    public string $sv_date = '';
+    public string $sv_note = '';
+    public array $savingsUseBalances = [];   // 통화 => 잔액
+    public array $savingsUseVehicles = [];   // 이 바이어의 미수 차량(select)
+    public array $savingsUseList = [];       // 사용 이력(USED/REFUND, 차량번호 포함)
 
     public bool   $showFeeForm     = false;
 
@@ -831,6 +844,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 목록은 최근 순(사람은 방금 들어온 돈을 먼저 본다). 소진 순서는 위 칩이 알려준다.
         $this->loadCashFees($buyerId);
+        $this->loadSavingsUse($buyerId);
 
         $this->cashReceiptList = $receipts
             ->sortByDesc(fn (BuyerCashReceipt $r) => [$r->received_date->format('Y-m-d'), $r->id])
@@ -859,6 +873,110 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->implode(' / '),
                 ];
             })->all();
+    }
+
+    /** 💳 적립금 구역(현금 탭) — 잔액·미수 차량·사용 이력. 판매탭/채권관리에서 쓴 것도 여기 같이 보인다(미러). */
+    private function loadSavingsUse(int $buyerId): void
+    {
+        $this->sv_date = $this->sv_date ?: now()->toDateString();
+
+        $this->savingsUseBalances = SavingsStatus::where('buyer_id', $buyerId)
+            ->orderByDesc('id')->get()->unique('currency')
+            ->pluck('balance', 'currency')
+            ->map(fn ($b) => (float) $b)
+            ->filter(fn ($b) => abs($b) > 0.005)
+            ->toArray();
+
+        // 미수 차량 — 적립금은 그 차 잔금에만 쓴다. 통화가 다른 차는 고를 수 없다(잔액은 통화별).
+        $this->savingsUseVehicles = Vehicle::where('buyer_id', $buyerId)
+            ->where('sale_price', '>', 0)
+            ->where(fn ($q) => $q->where('sale_unpaid_amount_krw_cache', '>', 0)->orWhereNull('sale_unpaid_amount_krw_cache'))
+            ->with(['finalPayments', 'receivableHistories'])
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (Vehicle $v) => $v->sale_unpaid_amount > 0.005 && isset($this->savingsUseBalances[$v->currency]))
+            ->map(fn (Vehicle $v) => [
+                'id' => $v->id,
+                'vehicle_number' => $v->vehicle_number,
+                'currency' => $v->currency,
+                'unpaid' => (float) $v->sale_unpaid_amount,
+            ])->values()->all();
+
+        $this->savingsUseList = SavingsStatus::where('buyer_id', $buyerId)
+            ->whereIn('transaction_type', ['USED', 'REFUND'])
+            ->with('vehicle:id,vehicle_number')
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get()
+            ->map(fn (SavingsStatus $t) => [
+                'id' => $t->id,
+                'date' => $t->created_at->format('Y-m-d'),
+                'currency' => $t->currency,
+                'amount' => (float) $t->savings,                       // USED 는 음수, REFUND 는 양수
+                'vehicle_number' => $t->vehicle?->vehicle_number,      // 차량 없는 옛 「적립금 탭」 입력은 null
+                'note' => $t->note ?? '',
+            ])->all();
+    }
+
+    /** 💳 적립금으로 잔금 결제 — 채권관리 「적립금」 회수와 같은 행을 만든다(미러 단일 경로). */
+    public function useSavingsForVehicle(): void
+    {
+        if (! $this->editingId) {
+            return;
+        }
+        if (! $this->canManageCash) {
+            $this->dispatch('notify', message: __('buyer.cash.no_permission'), type: 'error');
+
+            return;
+        }
+        $this->validate([
+            'sv_vehicle_id' => 'required|integer',
+            'sv_amount' => 'required|numeric|min:0.01',
+            'sv_date' => 'required|date',
+        ]);
+
+        $vehicle = Vehicle::where('buyer_id', $this->editingId)->find((int) $this->sv_vehicle_id);
+        if (! $vehicle) {
+            $this->addError('sv_vehicle_id', __('buyer.cash.savings_no_vehicle'));
+
+            return;
+        }
+        $amount = round((float) $this->sv_amount, 2);
+        $balance = (float) (SavingsStatus::where('buyer_id', $this->editingId)
+            ->where('currency', $vehicle->currency)->orderByDesc('id')->first()?->balance ?? 0);
+        if ($amount > $balance + 0.005) {
+            $this->addError('sv_amount', __('buyer.cash.savings_insufficient', ['balance' => number_format($balance, 2), 'currency' => $vehicle->currency]));
+
+            return;
+        }
+        $unpaid = (float) $vehicle->sale_unpaid_amount;
+        if ($amount > $unpaid + 0.005) {
+            $this->addError('sv_amount', __('buyer.cash.savings_over_unpaid', ['unpaid' => number_format($unpaid, 2), 'currency' => $vehicle->currency]));
+
+            return;
+        }
+
+        try {
+            DB::transaction(fn () => ReceivableHistory::create([
+                'vehicle_id' => $vehicle->id,
+                'collected_at' => $this->sv_date,
+                'collector_id' => auth()->id(),
+                'method' => 'savings',
+                'amount' => $amount,
+                'note' => $this->sv_note ?: __('buyer.cash.savings_note_default'),
+            ]));
+        } catch (\DomainException $e) {
+            $this->addError('sv_amount', $e->getMessage());
+
+            return;
+        }
+
+        $this->sv_vehicle_id = '';
+        $this->sv_amount = '';
+        $this->sv_note = '';
+        $this->loadCash($this->editingId);
+        $this->loadSavings($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.savings_used_ok', ['vehicle' => $vehicle->vehicle_number]), type: 'success');
     }
 
     /**
@@ -2144,6 +2262,81 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </table>
             </div>
             @endif
+
+            {{-- 💳 적립금 (jin 2026-09-22) — 현금과 **다른 돈**(회사가 준 크레딧)이라 위 원장 표엔 안 섞는다.
+                 여기서 차량을 골라 쓰면 판매탭·채권관리·적립금 잔액에 한 번에 미러된다(같은 행: 채권관리 「적립금」 회수). --}}
+            <div class="mt-5 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-violet-700">{{ __('buyer.cash.savings_title') }}</h3>
+                    <div class="flex flex-wrap gap-1.5">
+                        @forelse($savingsUseBalances as $cur => $bal)
+                        <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[11px] font-semibold text-violet-700 ring-1 ring-violet-200">{{ $cur }} {{ number_format($bal, 2) }}</span>
+                        @empty
+                        <span class="text-[11px] text-gray-400">{{ __('buyer.cash.savings_balance_none') }}</span>
+                        @endforelse
+                    </div>
+                </div>
+                <p class="mb-3 text-[11px] text-gray-500">{{ __('buyer.cash.savings_hint') }}</p>
+
+                @if($this->canManageCash && count($savingsUseBalances))
+                <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div class="col-span-2 sm:col-span-1">
+                        <label class="label-base">{{ __('buyer.cash.savings_vehicle') }}</label>
+                        <select wire:model="sv_vehicle_id" class="input-base">
+                            <option value="">{{ __('buyer.cash.savings_vehicle_ph') }}</option>
+                            @foreach($savingsUseVehicles as $sv)
+                            <option value="{{ $sv['id'] }}">{{ $sv['vehicle_number'] }} · {{ $sv['currency'] }} {{ number_format($sv['unpaid'], 2) }}</option>
+                            @endforeach
+                        </select>
+                        @error('sv_vehicle_id')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.cash.savings_amount') }}</label>
+                        <input wire:model="sv_amount" type="text" inputmode="decimal" class="input-base" placeholder="0.00" />
+                        @error('sv_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.cash.savings_date') }}</label>
+                        <input wire:model="sv_date" type="date" class="input-base" />
+                        @error('sv_date')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('common.memo') }}</label>
+                        <input wire:model="sv_note" type="text" class="input-base" />
+                    </div>
+                </div>
+                <button wire:click="useSavingsForVehicle" class="mt-3 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700">
+                    {{ __('buyer.cash.savings_use_btn') }}
+                </button>
+                @endif
+
+                <div class="mt-3 overflow-x-auto">
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="border-b border-violet-100 text-left text-gray-400">
+                                <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_date') }}</th>
+                                <th class="pb-1.5 pr-2">{{ __('buyer.cash.savings_col_vehicle') }}</th>
+                                <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                                <th class="pb-1.5">{{ __('common.memo') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-violet-100">
+                            @forelse($savingsUseList as $u)
+                            <tr class="align-top">
+                                <td class="py-1.5 pr-2 whitespace-nowrap text-gray-500">{{ $u['date'] }}</td>
+                                <td class="py-1.5 pr-2 whitespace-nowrap text-gray-700">{{ $u['vehicle_number'] ?? __('buyer.cash.savings_no_vehicle_label') }}</td>
+                                <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono {{ $u['amount'] < 0 ? 'text-violet-700' : 'text-emerald-700' }}">
+                                    {{ number_format($u['amount'], 2) }} <span class="text-[10px] text-gray-400">{{ $u['currency'] }}</span>
+                                </td>
+                                <td class="py-1.5 text-[11px] text-gray-500"><div class="max-w-[180px] truncate" title="{{ $u['note'] }}">{{ $u['note'] }}</div></td>
+                            </tr>
+                            @empty
+                            <tr><td colspan="4" class="py-4 text-center text-gray-400">{{ __('buyer.cash.savings_no_use') }}</td></tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </div>
             @endif
         </div>
         @endif
