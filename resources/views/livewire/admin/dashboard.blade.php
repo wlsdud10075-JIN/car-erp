@@ -284,20 +284,20 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $countByMonth = function (string $column) use ($year, $ids): array {
             $buckets = array_fill(1, 12, 0);
-            Vehicle::query()
+            // ⚡ 모델 청크 + Carbon 캐스팅 대신 날짜 문자열만 뽑는다 — 4,700대 × 3열이면 1.1초 → 수십 ms.
+            //    드라이버 무관(SQLite 테스트 · MySQL 운영): 'YYYY-MM-DD…' 의 6~7번째 글자가 월이다.
+            $dates = Vehicle::query()
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->whereYear($column, $year)
                 ->whereNotNull($column)
-                ->select($column)
-                ->orderBy($column)
-                ->chunk(1000, function ($rows) use (&$buckets, $column) {
-                    foreach ($rows as $r) {
-                        $d = $r->{$column};
-                        if ($d) {
-                            $buckets[(int) $d->format('n')]++;
-                        }
-                    }
-                });
+                ->toBase()
+                ->pluck($column);
+            foreach ($dates as $d) {
+                $m = (int) substr((string) $d, 5, 2);
+                if ($m >= 1 && $m <= 12) {
+                    $buckets[$m]++;
+                }
+            }
 
             return array_values($buckets);
         };
@@ -312,16 +312,19 @@ new #[Layout('components.layouts.app')] class extends Component
             ->where('sale_price', '>', 0)
             ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 판매실적 오염 방지 (jin 2026-07-18)
             ->select('sale_date', 'sale_price', 'currency', 'exchange_rate')
+            ->toBase()
             ->orderBy('sale_date')
             ->chunk(1000, function ($rows) use (&$salesBuckets) {
+                // ⚡ toBase() — 모델 hydration 과 Carbon 캐스팅 없이 월은 문자열에서 자른다(값은 같다).
                 foreach ($rows as $r) {
-                    if (! $r->sale_date) {
+                    $m = (int) substr((string) $r->sale_date, 5, 2);
+                    if ($m < 1 || $m > 12) {
                         continue;
                     }
                     $krw = $r->currency === 'KRW'
                         ? (int) $r->sale_price
                         : ($r->exchange_rate > 0 ? (int) ($r->sale_price * $r->exchange_rate) : 0);
-                    $salesBuckets[(int) $r->sale_date->format('n')] += $krw;
+                    $salesBuckets[$m] += $krw;
                 }
             });
 
@@ -413,33 +416,39 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 1) 인원별 정산지급액 월별 stacked bar
         $monthlyBySalesman = [];
-        Settlement::query()
+        $paidYearQuery = fn () => Settlement::query()
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'paid')
             ->whereNotNull('paid_at')
             ->whereYear('paid_at', $year)
-            ->whereNotNull('salesman_id')
-            // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
-            //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
-            //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
-            // 🚨 **salesman 도 같이 싣는다** — 사내직원(per_unit)이 per_unit_amount 를 명시하지 않으면
-            //    effective_per_unit_amount 가 salesman->per_unit_tier_enabled 를 읽어 행마다 1쿼리가
-            //    더 붙는다(실측 1,286쿼리 / 1.65초). 정산관리 합계는 같은 이유로 이미 싣고 있었다.
-            // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
-            //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
-            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->chunk(500, function ($rows) use (&$monthlyBySalesman) {
+            ->whereNotNull('salesman_id');
+        $addPayout = function ($s, int $payout) use (&$monthlyBySalesman) {
+            $id = $s->salesman_id;
+            if (! isset($monthlyBySalesman[$id])) {
+                $monthlyBySalesman[$id] = array_fill(0, 12, 0);
+            }
+            $month = (int) $s->paid_at->format('n');
+            $monthlyBySalesman[$id][$month - 1] += $payout;
+        };
+        // ⚡ 스냅샷이 있는 행(paid 대부분)은 **값만** 읽는다 — 차량·잔금·회수이력을 실을 이유가 없다.
+        //    실측 2026-09-22 사본: 4,319행을 관계 3개까지 적재하니 2.7초, 갈라 읽으면 스냅샷 쪽은 수십 ms.
+        //    paid 는 confirmed_snapshot 우선 (큐 10 H4 — retroactive drift 방지). 값은 종전과 같다.
+        $paidYearQuery()->whereNotNull('confirmed_snapshot')
+            ->select(['id', 'salesman_id', 'paid_at', 'confirmed_snapshot'])
+            ->chunk(1000, function ($rows) use ($addPayout) {
                 foreach ($rows as $s) {
-                    $id = $s->salesman_id;
-                    if (! isset($monthlyBySalesman[$id])) {
-                        $monthlyBySalesman[$id] = array_fill(0, 12, 0);
-                    }
-                    $month = (int) $s->paid_at->format('n');
-                    // paid는 confirmed_snapshot 우선 (큐 10 H4 — retroactive drift 방지)
-                    $payout = $s->confirmed_snapshot['actual_payout']
-                        ?? $s->actual_payout
-                        ?? 0;
-                    $monthlyBySalesman[$id][$month - 1] += (int) $payout;
+                    $addPayout($s, (int) ($s->confirmed_snapshot['actual_payout'] ?? 0));
+                }
+            });
+        // 스냅샷 없는 행(엑셀 적재분)만 accessor — 그래서 여기만 관계를 싣는다.
+        // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면 행마다 2쿼리.
+        // 🚨 **salesman 도 같이 싣는다** — per_unit_amount 미지정 사내직원은 per_unit_tier_enabled 를 읽는다.
+        // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면 금액이 통째로 틀린다.
+        $paidYearQuery()->whereNull('confirmed_snapshot')
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
+            ->chunk(500, function ($rows) use ($addPayout) {
+                foreach ($rows as $s) {
+                    $addPayout($s, (int) ($s->actual_payout ?? 0));
                 }
             });
         $totals = array_map('array_sum', $monthlyBySalesman);
@@ -480,19 +489,32 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // 3) 정산 마진율 평균 — 큐 16: 채널별 평균 마진 제거 (단일 채널).
         $marginRates = [];
-        Settlement::query()
+        $paidWindowQuery = fn () => Settlement::query()
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'paid')
             ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
-            ->chunk(500, function ($rows) use (&$marginRates) {
+            ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'));
+        $addRate = function (int $totalMargin, int $salesKrw) use (&$marginRates) {
+            if ($salesKrw > 0) {
+                $marginRates[] = $totalMargin / $salesKrw;
+            }
+        };
+        // ⚡ 1) 과 같은 분리 — 스냅샷 있는 행은 값만, 없는 행(적재분)만 관계를 싣고 accessor. 값은 종전과 같다.
+        $paidWindowQuery()->whereNotNull('confirmed_snapshot')
+            ->select(['id', 'confirmed_snapshot'])
+            ->chunk(1000, function ($rows) use ($addRate) {
                 foreach ($rows as $s) {
                     $snap = $s->confirmed_snapshot;
-                    $totalMargin = (int) ($snap['total_margin'] ?? $s->total_margin ?? 0);
-                    $salesKrw = (int) ($snap['sales_amount_krw'] ?? $s->sales_amount_krw ?? 0);
-                    if ($salesKrw > 0) {
-                        $marginRates[] = $totalMargin / $salesKrw;
-                    }
+                    $addRate((int) ($snap['total_margin'] ?? 0), (int) ($snap['sales_amount_krw'] ?? 0));
+                }
+            });
+        // 🚨 스냅샷 없는 행이 `total_margin` 폴백을 타며 행마다 3쿼리(차량·잔금·회수이력)가 붙었다
+        //    (실측 2026-09-22 사본: 1,331쿼리 5.3초 중 1,278쿼리가 이 자리). 관계를 싣는다.
+        $paidWindowQuery()->whereNull('confirmed_snapshot')
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
+            ->chunk(500, function ($rows) use ($addRate) {
+                foreach ($rows as $s) {
+                    $addRate((int) ($s->total_margin ?? 0), (int) ($s->sales_amount_krw ?? 0));
                 }
             });
         $avgMarginRate = $marginRates ? array_sum($marginRates) / count($marginRates) : 0;
@@ -565,7 +587,10 @@ new #[Layout('components.layouts.app')] class extends Component
                     // 회사 몫 = 총마진 − 실지급액 − 발송비. 단일 출처 = Settlement::company_net.
                     //   발송비는 지급에서 빼서 되받지만 회사가 먼저 치른 돈이라 순증이 0 이어야 한다.
                     $shipping = (int) $s->shipping_fee;
-                    $share = (int) $s->company_net;
+                    // ⚡ company_net accessor(= total_margin − actual_payout − shipping_fee)를 다시 부르면
+                    //    방금 계산한 총마진·실지급액 체인을 한 번 더 돈다(행당 3.4ms × 986행 = 3.4초 중 절반).
+                    //    같은 정의를 이미 손에 든 값으로 조립한다 — 단일 출처는 여전히 Settlement::company_net.
+                    $share = $margin - $payout - $shipping;
 
                     $companyNet += $share;
                     $marginSum += $margin;
