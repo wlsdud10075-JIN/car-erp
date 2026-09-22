@@ -272,6 +272,9 @@ class Settlement extends Model
             'total_margin' => $this->total_margin,
             'settlement_amount' => $this->settlement_amount,
             'actual_payout' => $this->actual_payout,
+            // 2026-09-22 — 회사 몫(총마진 − 실지급액 − 발송비)을 스냅샷만으로 닫으려고 발송비도 박는다.
+            //   옛 스냅샷엔 이 키가 없다 → 읽는 쪽은 vehicle.shipping_fee_total 로 폴백(관리자 대시보드 companyProfit).
+            'shipping_fee' => $this->shipping_fee,
             'confirmed_final_payments' => $confirmedFinalPayments,
             'confirmed_purchase_payments' => $confirmedPurchasePayments,
         ];
