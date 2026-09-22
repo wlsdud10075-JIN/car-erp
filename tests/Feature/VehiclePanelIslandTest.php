@@ -122,6 +122,27 @@ class VehiclePanelIslandTest extends TestCase
         $this->assertFalse($inst->hasRenderedIslandFragments(), '전체를 그리는데 섬 조각까지 따로 보냈다(이중 렌더)');
     }
 
+    /**
+     * 검증 실패 = 쓰기 없는 패널 액션 → 섬만 다시 그린다. 그때 칸 아래 오류 문구가 섬 조각에 실려야 한다.
+     * (SupportValidation 이 renderIsland 훅에서 $errors 를 공유한다 — 이게 빠지면 토스트만 뜨고 칸은 조용히 비어 있다.)
+     */
+    public function test_validation_messages_reach_the_island_fragment(): void
+    {
+        $this->actingAs($this->admin());
+        $v = Vehicle::create(['vehicle_number' => '12가3456', 'purchase_price' => 0]);
+        $c = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
+        $inst = $c->instance();
+
+        $inst->boot();
+        $inst->addError('vehicle_number', '섬 검증 문구');
+        $inst->skipRender();
+        $inst->renderIsland('panel');
+
+        $fragments = $inst->getRenderedIslandFragments();
+        $this->assertNotEmpty($fragments);
+        $this->assertTrue(str_contains($fragments[0], '섬 검증 문구'), '검증 문구가 섬 조각에 없다 — 저장 실패 시 칸 아래가 비어 보인다');
+    }
+
     /** ③ 패널이 여는 모달은 전부 섬 안에. 밖에 있으면 패널 액션이 root 를 건너뛰어 모달이 안 뜬다(예외 0·조용히). */
     public function test_every_panel_opened_modal_lives_inside_the_island(): void
     {
