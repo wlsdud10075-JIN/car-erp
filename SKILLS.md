@@ -2720,6 +2720,43 @@ PurchaseBalancePayment·Settlement)이 같이 쓴다. 숫자는 숫자로, 빈 �
 
 가드 = `AuditNoiseTest`(5) + `BulkNumberBlTest`(7).
 
+### 109. 🏝️ **섬(`@island`)을 Volt 큰 파일에 넣으면 컴파일이 66초** — precompiler 순서가 원인 (2026-09-22)
+
+jin 실측(ssancarerp 100행, F12 Local metrics): 첫 그리기 LCP 0.77s 는 좋은데 **편집 패널 닫기 클릭 INP 2,248ms**.
+목록과 패널이 한 컴포넌트라 패널 안 조작 하나(닫기·탭·잔금 행 추가)에도 서버 왕복 뒤 **100행 전체 morph + Alpine 재초기화**.
+⇒ 패널을 Livewire 4 **섬**(`@island(name: 'panel', always: true)`)으로 감쌌다 — 패널에서 시작한 액션은 패널 조각만 다시 그린다.
+
+**🚨 그런데 섬을 넣자 테스트 프로세스의 첫 렌더가 9.5s → 109~158s.** 원인은 섬이 아니라 **훅 순서**였다:
+```
+Blade prepareStringsForCompilationUsing  =  [ Livewire 섬 precompiler , Volt 템플릿 추출 ]   ← 등록 순서대로 돈다
+```
+Livewire 가 먼저 부팅되니 섬 컴파일러가 **Volt 파일의 PHP 클래스 부분(372KB)까지** Blade 지시어 정규식으로 훑는다.
+실측 `IslandCompiler::compile` 전체 741KB = **66초** / HTML 부분 369KB 만 = **0.04초**. 클래스의 docblock·이메일·괄호가 정규식을 태운다.
+**고침** = `AppServiceProvider::moveIslandPrecompilerAfterVolt()` — 훅 배열을 reflection 으로 읽어 섬 콜백을 **맨 뒤로**. 첫 렌더 9.6s 복귀.
+가드 = `VehiclePanelIslandTest::test_the_island_precompiler_runs_after_volt_extracts_the_template`(순서를 구조로 단언 — 시간 단언은 흔들린다).
+⚠️ Livewire 업그레이드가 그 배열 이름을 바꾸면 **부팅에서 시끄럽게 죽는다**(좋다). 콜백을 못 찾으면 조용히 옛 순서 → 그래서 가드가 순서를 본다.
+
+**🏝️ 섬 설계 3줄** (`vehicles/index` 클래스 상단 주석이 원문)
+- 패널 액션 → 섬만. **단, DB 를 썼으면 전체**(목록 최신화) — 판정은 `DB::listen` 으로 「이번 요청에 쓰기 쿼리가 있었나」.
+  메서드마다 손으로 표시하면 빠뜨린다(#38). 캐시·세션 테이블(편집 잠금 하트비트)은 쓰기로 안 센다.
+  구현 = `renderIsland()` 오버라이드에서 `store($this)->set('skipRender', false)` (SupportIslands 가 skipRender 를 먼저 건다).
+- **패널이 여는 모달은 전부 섬 안** — root 에 두면 패널 액션이 root 를 건너뛰어 **모달이 안 뜬다**(예외 0). 전자서명 링크 모달이 root 에 있어 섬 안으로 옮겼다.
+  가드 = `test_every_panel_opened_modal_lives_inside_the_island`(플래그 12개의 `@if` 위치를 섬 범위와 대조).
+- 🚫 리스너 1회 등록을 **정적 플래그**로 막지 말 것 — 테스트마다 앱이 새로 떠서 「리스너 없는 앱」이 생긴다. `app()->bound(키)` 로.
+
+**🧵 §8 #73·#92 가 네 번째로 재발했다** — `\b` 가 **백스페이스(0x08)** 로 박혔다(python heredoc). 증상 = 쓰기 판정이 늘 false.
+`cat -A` 에 `^H` 로 보인다. 게다가 고치는 python 도 두 번 헛돌았다(닫지 않은 파일 핸들·`-c` 따옴표) — **파일에 쓴 뒤 다시 읽어 세는 줄**을 스크립트 끝에 둘 것. 백슬래시는 `chr(92)` 로 조립.
+
+**📏 프로파일 숫자도 틀렸었다** — `compileString(전체)` 100초를 「기준선」이라 적을 뻔했다. 경로 없이 문자열로 컴파일하면 Volt 추출이 안 돌아
+클래스까지 Blade 가 훑는다. 실제 기준선은 `git stash` 뒤 테스트 프로세스 **9.5초**. ⇒ **기준선은 진짜 경로로 잰다**(#96-D 의 「무엇을 셌나」).
+
+**📈 곁다리 — 관리자 대시보드 그래프 「처음 들어가면 안 그려지고 새로고침해야」(jin, ssancarerp 상시)**
+Chart.js 가 컴포넌트 안 `<script src>` 로 온다. `wire:navigate` 로 진입하면 Livewire 가 body 의 script 를 복제해 **비동기**로 로드하고
+Alpine `init()` 은 기다리지 않는다 → `renderCharts()` 가 `typeof Chart === 'undefined'` 로 **조용히 return**. F5 는 script 가 동기라 멀쩡 →
+「새로고침하면 된다」로 위장. 고침 = `whenChartReady(cb)`(100ms 폴링, 최대 10초)를 모든 `renderCharts()` 호출 앞에.
+가드 = `AdminDashboardChartReadyTest`(정적 — 그래프 안 그려져도 렌더는 정상이라 기능 테스트로는 못 잡는다).
+⚠️ head 의 원격 script 는 Livewire 가 기다린다(`mergeNewHead`) — **body 안 `<script src>` 만** 이 함정이다.
+
 ---
 
 ## 9. 구현 패턴
