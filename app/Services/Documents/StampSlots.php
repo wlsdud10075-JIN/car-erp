@@ -221,11 +221,14 @@ class StampSlots
                 ['key' => 'seal', 'role' => 'seal', 'sheet' => 'CONTRACT', 'anchor' => 'C70', 'width' => 361, 'height' => 203],
             ],
             // 등록증·말소증 정부직인은 슬롯에서 제외. 회사 직인은 차량인보이스·팩킹·Travel 만.
+            // 2026-09-22 jin 「파일과 다 같게」 — 양식 baked 직인을 G34/G34/B28 로 옮겼다(선·글자에 걸려 있었다).
+            //   앵커는 baked 와 **같아야** 하고(removeDrawingsAt 정확일치, §8 #37 ③) 오프셋은 dx/dy 로 여기 둔다
+            //   (position() 이 Setting override 없을 때 이 값을 쓴다). 단일 출처 = scripts/lib/heyman-clearance-design.php.
+            //   Travel 상단은 글자 「HEYMAN」이라 로고 슬롯이 없다(올리면 글자를 덮는다).
             'clearance' => [
-                ['key' => 'seal_invoice', 'role' => 'seal', 'sheet' => '차량인보이스', 'anchor' => 'G33', 'width' => 290, 'height' => 137],
-                ['key' => 'seal_packing', 'role' => 'seal', 'sheet' => '차량팩킹', 'anchor' => 'G33', 'width' => 290, 'height' => 136],
-                ['key' => 'seal_travel', 'role' => 'seal', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'width' => 291, 'height' => 188],
-                ['key' => 'logo_travel', 'role' => 'logo', 'sheet' => 'Travel Services Invoice', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
+                ['key' => 'seal_invoice', 'role' => 'seal', 'sheet' => '차량인보이스', 'anchor' => 'G34', 'dx' => 17, 'dy' => 2, 'width' => 290, 'height' => 137],
+                ['key' => 'seal_packing', 'role' => 'seal', 'sheet' => '차량팩킹', 'anchor' => 'G34', 'dx' => 18, 'dy' => 7, 'width' => 290, 'height' => 136],
+                ['key' => 'seal_travel', 'role' => 'seal', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'dx' => 0, 'dy' => 21, 'width' => 291, 'height' => 188],
             ],
         ];
     }
@@ -243,8 +246,8 @@ class StampSlots
         $o = is_string($json) && $json !== '' ? (json_decode($json, true) ?: []) : [];
 
         return [
-            'dx' => (int) ($o['dx'] ?? 0),
-            'dy' => (int) ($o['dy'] ?? 0),
+            'dx' => (int) ($o['dx'] ?? ($slot['dx'] ?? 0)),
+            'dy' => (int) ($o['dy'] ?? ($slot['dy'] ?? 0)),
             'w' => (int) ($o['w'] ?? $slot['width']),
             'h' => (int) ($o['h'] ?? $slot['height']),
         ];
