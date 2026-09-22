@@ -20,6 +20,10 @@ return [
     'col' => [
         'name' => '이름',
         'account' => '연결 계정',
+        'type' => '유형',
+    ],
+    'type_filter' => [
+        'all' => '전체',
     ],
     'field' => [
         'name' => '이름',

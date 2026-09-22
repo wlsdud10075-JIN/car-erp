@@ -20,6 +20,10 @@ return [
     'col' => [
         'name' => 'Name',
         'account' => 'Linked Account',
+        'type' => 'Type',
+    ],
+    'type_filter' => [
+        'all' => 'All',
     ],
     'field' => [
         'name' => 'Name',

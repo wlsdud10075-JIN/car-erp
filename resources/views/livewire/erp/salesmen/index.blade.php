@@ -14,6 +14,17 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $search    = '';
     #[Url] public int $perPage = 10;
+    // 2026-09-22 jin — 「ssancarerp 는 사람이 많아 하나하나 찾기 어렵다」→ 사내직원/프리랜서 pill 필터.
+    //   기준은 `salesmen.type`(정산 훅이 읽는 그 값 — user.type 의 미러). 컬럼이 NOT NULL default 'employee' 라
+    //   계정 미연결 담당자는 「사내직원」으로 잡힌다(실측 마이그 2026_05_20_000011).
+    //   ⚠️ 메서드 이름을 프로퍼티와 같게 두지 말 것(§8 #32) — setTypeFilter().
+    #[Url(as: 'type')] public string $typeFilter = '';
+
+    public function setTypeFilter(string $type): void
+    {
+        $this->typeFilter = array_key_exists($type, Salesman::TYPES) ? $type : '';
+        $this->resetPage();
+    }
     public bool   $showPanel = false;
     public ?int   $editingId = null;
 
@@ -50,6 +61,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return Salesman::query()
             ->with('user')
+            ->when($this->typeFilter !== '', fn($q) => $q->where('type', $this->typeFilter))
             ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', SearchTerm::like($this->search))
                    ->orWhere('email', 'like', SearchTerm::like($this->search))
@@ -339,6 +351,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('salesman.search_ph') }}"
            class="input-filter w-64" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    <div class="flex flex-wrap items-center gap-1 sm:ml-2">
+        <button type="button" wire:click="setTypeFilter('')"
+                class="tab-pill {{ $typeFilter === '' ? 'is-active' : '' }}">{{ __('salesman.type_filter.all') }}</button>
+        @foreach(\App\Models\Salesman::TYPES as $tKey => $tLabel)
+        <button type="button" wire:click="setTypeFilter('{{ $tKey }}')"
+                class="tab-pill {{ $typeFilter === $tKey ? 'is-active' : '' }}">{{ $tLabel }}</button>
+        @endforeach
+    </div>
 </div>
 
 {{-- 테이블 (데스크탑) --}}
@@ -347,6 +367,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                 <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.name') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.type') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.account') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
@@ -364,6 +385,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} ml-1.5 text-[10px]"
                           title="{{ __('salesman.carryover_badge') }}">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
                     @endif
+                </td>
+                <td class="py-3 pr-4">
+                    <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : 'badge-blue' }}">{{ $sm->type_label }}</span>
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->user?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
@@ -389,7 +413,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="6" class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</td></tr>
+            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -411,6 +435,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
             </div>
             <div class="flex items-center gap-2">
+                <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : 'badge-blue' }}">{{ $sm->type_label }}</span>
                 <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? __('common.active') : __('common.inactive') }}</span>
                 <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                    class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
