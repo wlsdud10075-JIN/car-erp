@@ -15,6 +15,7 @@ use App\Models\Vehicle;
 use App\Services\InterVehicleTransferService;
 use App\Services\NiceApiService;
 use App\Support\SearchTerm;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -24,6 +25,8 @@ use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
+
+use function Livewire\store;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination, WithFileUploads;
@@ -1543,6 +1546,54 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->isMobileViewport !== false;
     }
 
+    // ══ 🏝️ 편집 패널 = Livewire 4 「섬(island)」 (jin 2026-09-22 «섬방식 시도해보자») ═════════════════
+    //   실측(ssancarerp 100행, F12 Local metrics): 패널 닫기 클릭 INP **2,248ms** — 목록·패널이 한 컴포넌트라
+    //   패널 안 조작(닫기·탭·잔금 행 추가·wire:model.live) 하나에도 서버 왕복 뒤 100행 전체가 morph 됐다.
+    //   패널을 `@island(name: 'panel', always: true)` 로 감싸면 **패널 안에서 시작한 액션은 패널만** 다시 그린다
+    //   (Livewire 가 root render 를 skip 하고 그 섬 조각만 보낸다). 목록 쪽(root)에서 시작한 액션은 종전대로 전체.
+    //
+    //   🔑 단 하나의 예외 = **DB 에 무언가를 썼으면 전체를 다시 그린다.** 저장·삭제·일괄기입 뒤 목록이 옛 값으로
+    //   남으면 안 되기 때문. 판정은 「이번 요청에 쓰기 쿼리가 있었나」(DB::listen) — 메서드마다 손으로 표시하면
+    //   빠뜨린다(§8 #38 의 그 형태). 캐시·세션 테이블 쓰기(편집 잠금 하트비트)는 쓰기로 안 센다.
+    //   ⚠️ 패널이 여는 모달(메일·원부·확인·이체·quick-add·게이트·전자서명 링크)은 **전부 섬 안**에 있어야 한다 —
+    //      root 에 두면 패널 액션이 root 를 skip 해서 모달이 안 뜬다. 가드 = VehiclePanelIslandTest(정적).
+    private static bool $islandWriteSeen = false;
+
+    public function boot(): void
+    {
+        static::$islandWriteSeen = false;
+        // 리스너는 앱 인스턴스당 1회 — 정적 플래그로 막으면 테스트마다 앱이 새로 떠서 리스너 없는 앱이 생긴다.
+        if (app()->bound('vehicles.island-write-listener')) {
+            return;
+        }
+        app()->instance('vehicles.island-write-listener', true);
+        DB::listen(function ($q) {
+            if (! preg_match('/^\s*(insert|update|delete|replace)\b/i', $q->sql)) {
+                return;
+            }
+            if (preg_match('/^\s*(insert\s+into|update|delete\s+from|replace\s+into)\s+[`"]?(cache|cache_locks|sessions|jobs|failed_jobs)[`"]?\b/i', $q->sql)) {
+                return;
+            }
+            static::$islandWriteSeen = true;
+        });
+    }
+
+    /** 섬 렌더 훅 — 패널에서 시작한 액션이 DB 를 썼으면 섬 대신 전체를 다시 그린다(목록 최신화). */
+    public function renderIsland($name, $content = null, $mode = 'morph', $with = [], $mount = false)
+    {
+        if ($name === 'panel' && static::$islandWriteSeen) {
+            store($this)->set('skipRender', false);
+
+            return;
+        }
+        parent::renderIsland($name, $content, $mode, $with, $mount);
+    }
+
+    /** 테스트 전용 — 「이번 요청에 쓰기가 있었나」 판정 노출. */
+    public static function islandWriteSeen(): bool
+    {
+        return static::$islandWriteSeen;
+    }
 
     public function mount(): void
     {
@@ -7399,30 +7450,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 @endif
 
-{{-- 전자서명 링크 발급 모달 — 발급된 signed URL 복사(바이어에게 카톡/이메일로 전달). --}}
-@if($showSignModal)
-<div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" x-data="{ copied: false }">
-        <div class="mb-3 flex items-center justify-between">
-            <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
-            <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>
-        </div>
-        <p class="mb-2 text-sm text-gray-600">{{ __('signed_contract.modal.hint') }}</p>
-        <div class="flex gap-2">
-            <input type="text" readonly value="{{ $signUrl }}" x-ref="signUrl"
-                   class="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-700" />
-            <button type="button"
-                    @click="$refs.signUrl.select(); navigator.clipboard.writeText($refs.signUrl.value); copied = true; setTimeout(() => copied = false, 1500)"
-                    class="shrink-0 rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
-                <span x-show="!copied">{{ __('signed_contract.modal.copy') }}</span>
-                <span x-show="copied" x-cloak>✓</span>
-            </button>
-        </div>
-        <p class="mt-3 text-xs text-gray-400">{{ __('signed_contract.modal.expire') }}</p>
-    </div>
-</div>
-@endif
-
 {{-- 📱 화면 폭을 서버에 **한 번** 알려준다 (jin 2026-09-21 「100개 화면이 느리다」).
      이게 없으면 서버가 데스크탑 표와 모바일 카드를 **둘 다** 그려 CSS 로 한쪽을 가린다
      — 100행이면 같은 목록이 두 벌이다(실측 672KB 중 모바일 카드 약 197KB).
@@ -8049,6 +8076,9 @@ function vehicleColumnsToggle(columns, serverKnows) {
 
 </div>{{-- /flex col --}}
 
+{{-- 🏝️ 편집 패널 섬 — 패널 안 액션은 이 섬만 다시 그린다(클래스 상단 「편집 패널 = 섬」 주석). 
+     패널이 여는 모달은 전부 이 섬 안에 둘 것. --}}
+@island(name: 'panel', always: true)
 {{-- ══════════════════════════════════════════════════════════════ --}}
 {{-- 슬라이드 패널                                                  --}}
 {{-- ══════════════════════════════════════════════════════════════ --}}
@@ -11867,5 +11897,33 @@ function vehicleColumnsToggle(columns, serverKnows) {
     </div>
 </div>
 @endif
+
+{{-- 전자서명 링크 발급 모달 — 패널 서류탭(showSignLink)과 다중선택 바(requestSignature) 양쪽에서 연다.
+     2026-09-22 섬 도입으로 root → 섬 안으로 이동(패널 액션은 root 를 안 그린다). --}}
+{{-- 전자서명 링크 발급 모달 — 발급된 signed URL 복사(바이어에게 카톡/이메일로 전달). --}}
+@if($showSignModal)
+<div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" wire:click.self="$set('showSignModal', false)">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto" x-data="{ copied: false }">
+        <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">✍ {{ __('signed_contract.request_btn') }} · {{ $signContractNo }}</h3>
+            <button type="button" wire:click="$set('showSignModal', false)" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <p class="mb-2 text-sm text-gray-600">{{ __('signed_contract.modal.hint') }}</p>
+        <div class="flex gap-2">
+            <input type="text" readonly value="{{ $signUrl }}" x-ref="signUrl"
+                   class="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-700" />
+            <button type="button"
+                    @click="$refs.signUrl.select(); navigator.clipboard.writeText($refs.signUrl.value); copied = true; setTimeout(() => copied = false, 1500)"
+                    class="shrink-0 rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+                <span x-show="!copied">{{ __('signed_contract.modal.copy') }}</span>
+                <span x-show="copied" x-cloak>✓</span>
+            </button>
+        </div>
+        <p class="mt-3 text-xs text-gray-400">{{ __('signed_contract.modal.expire') }}</p>
+    </div>
+</div>
+@endif
+
+@endisland
 
 </div>{{-- /root --}}

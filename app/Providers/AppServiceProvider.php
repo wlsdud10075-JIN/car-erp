@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Features\SupportIslands\SupportIslands;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -64,5 +65,35 @@ class AppServiceProvider extends ServiceProvider
 
         // @krw($amount) — 대시보드 금액 억/만 축약 표시(+정확 금액 title 툴팁). 2026-06-11.
         Blade::directive('krw', fn ($expr) => "<?php echo \\App\\Support\\Money::krwTag($expr); ?>");
+
+        $this->moveIslandPrecompilerAfterVolt();
+    }
+
+    /**
+     * 🏝️ Livewire 「섬(@island)」 precompiler 를 Volt 의 템플릿 추출 「뒤」로 옮긴다 (2026-09-22).
+     *
+     * 두 패키지가 같은 Blade 훅(prepareStringsForCompilationUsing)에 등록되는데 Livewire 가 먼저 부팅돼
+     * 섬 컴파일러가 **Volt 파일의 PHP 클래스 부분까지** Blade 지시어 정규식으로 훑는다.
+     * 차량관리(741KB, 클래스 372KB)는 그 한 번이 **66초**였고 HTML 만이면 **0.04초**다(실측 2026-09-22).
+     * Volt 추출이 먼저 돌면 섬 컴파일러는 HTML 만 본다. 순서만 바꾸고 동작은 그대로다.
+     * 가드 = VehiclePanelIslandTest::test_the_island_precompiler_runs_after_volt_extracts_the_template.
+     */
+    protected function moveIslandPrecompilerAfterVolt(): void
+    {
+        $compiler = $this->app->make('blade.compiler');
+        $prop = new \ReflectionProperty($compiler, 'prepareStringsForCompilationUsing');
+        $islands = [];
+        $others = [];
+        foreach ($prop->getValue($compiler) as $callback) {
+            $scope = $callback instanceof \Closure
+                ? (new \ReflectionFunction($callback))->getClosureScopeClass()?->getName()
+                : null;
+            if ($scope === SupportIslands::class) {
+                $islands[] = $callback;
+            } else {
+                $others[] = $callback;
+            }
+        }
+        $prop->setValue($compiler, [...$others, ...$islands]);
     }
 }
