@@ -55,7 +55,7 @@ return [
     'kpi_unpaid' => '이달 미수금',
     'kpi_unpaid_sub' => '받을 돈',
     'kpi_receivable_link' => '채권관리 →',
-    'kpi_unpaid_note' => '발생 − 회수 = 미수 (자동 정합)',
+    'kpi_unpaid_note' => '채권관리 합계와 기준이 다릅니다 — 조회기간 안 · 결제대기 제외 · 과입금 상계',
 
     'progress_title' => '진행 단계별 차량 수',
 

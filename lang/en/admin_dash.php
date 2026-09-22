@@ -54,7 +54,7 @@ return [
     'kpi_unpaid' => 'Outstanding this month',
     'kpi_unpaid_sub' => 'Receivable',
     'kpi_receivable_link' => 'Receivables →',
-    'kpi_unpaid_note' => 'Accrual − collected = outstanding (auto-reconciled)',
+    'kpi_unpaid_note' => 'Differs from Receivables: period-scoped · payment-grace excluded · overpayments netted',
 
     'progress_title' => 'Vehicles by progress stage',
 
