@@ -43,7 +43,7 @@ class KarabaDeregistrationApplicationTest extends TestCase
     private const AGENT_CELLS = [
         'C37' => '경기도 고양시 덕양구 유산길 9, 203호(내유동)',
         'C38' => '길영채',
-        'C39' => '731110-1041111',
+        'C39' => '010-4703-0627',
     ];
 
     private function template(string $set, string $file): string
