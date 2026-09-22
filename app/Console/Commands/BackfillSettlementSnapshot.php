@@ -40,6 +40,7 @@ class BackfillSettlementSnapshot extends Command
 {
     protected $signature = 'settlements:backfill-snapshot
         {--apply : 실제 기록 (미지정 시 dry-run)}
+        {--include-pending : 2차 미마감(paid+pending) 행도 「오늘 값」으로 채운다 — 스냅샷에 backfilled_at 표식}
         {--chunk=200 : 한 번에 처리할 행 수}';
 
     protected $description = '지급 완료·2차 마감 정산의 confirmed_snapshot 소급 백필 (기본 dry-run)';
@@ -49,10 +50,17 @@ class BackfillSettlementSnapshot extends Command
         $apply = (bool) $this->option('apply');
         $chunk = max(20, (int) $this->option('chunk'));
 
+        // --include-pending (2026-09-22, jin) — 2차 미마감 행은 값이 아직 움직이지만, 스냅샷이 **없으면**
+        //   ① 관리자 대시보드가 매 렌더마다 마진 사슬을 다시 계산하고(운영 10초의 절반)
+        //   ② 2차 마감이 `?? 0` 기준으로 실지급액 전액을 이월로 만들 뻔했다(마감 코드에 가드 추가).
+        //   그래서 「오늘 값」을 박되 `backfilled_at` 을 남겨 지급 시점 기록이 아님을 밝힌다.
+        //   대시보드가 보여주는 값과 같은 값이므로 화면 숫자는 움직이지 않는다.
+        $includePending = (bool) $this->option('include-pending');
+
         $query = Settlement::query()
             ->where('settlement_status', 'paid')
-            // 🔒 마감된 것만 — 마감이 회계 잠금이라 지금 값이 곧 지급 시점 값이다.
-            ->where('secondary_status', 'closed')
+            // 🔒 기본은 마감된 것만 — 마감이 회계 잠금이라 지금 값이 곧 지급 시점 값이다.
+            ->when(! $includePending, fn ($q) => $q->where('secondary_status', 'closed'))
             ->whereNull('confirmed_snapshot')
             // 마진 사슬이 차량의 잔금·회수이력을 읽는다 — 같이 싣지 않으면 행마다 쿼리가 붙는다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'vehicle.purchaseBalancePayments', 'salesman']);
@@ -64,8 +72,8 @@ class BackfillSettlementSnapshot extends Command
         $already = Settlement::whereNotNull('confirmed_snapshot')->count();
 
         $this->info('── 대상 ──');
-        $this->line("  백필 대상 (paid + 2차 closed + 스냅샷 없음) : {$total}건");
-        $this->line("  건너뜀   (paid 인데 2차 미마감)              : {$skipped}건  ← 아직 값이 움직인다");
+        $this->line('  백필 대상 (paid + '.($includePending ? '2차 무관' : '2차 closed').' + 스냅샷 없음) : '.$total.'건');
+        $this->line('  '.($includePending ? '포함' : '건너뜀').'   (paid 인데 2차 미마감)              : '.$skipped.'건  ← 아직 값이 움직인다'.($includePending ? ' → 오늘 값 + backfilled_at 표식' : ''));
         $this->line("  이미 있음 (덮지 않는다)                       : {$already}건");
 
         if ($total === 0) {
@@ -106,8 +114,12 @@ class BackfillSettlementSnapshot extends Command
                         // 그래도 마진 값은 남으므로 기록한다(감사추적 목적).
                         $noVehicle++;
                     }
+                    $snap = $s->buildConfirmedSnapshot();
+                    if ($s->secondary_status !== 'closed') {
+                        $snap['backfilled_at'] = now()->toIso8601String();   // 지급 시점 기록이 아니라 소급 박제다
+                    }
                     DB::table('settlements')->where('id', $s->id)
-                        ->update(['confirmed_snapshot' => json_encode($s->buildConfirmedSnapshot(), JSON_UNESCAPED_UNICODE)]);
+                        ->update(['confirmed_snapshot' => json_encode($snap, JSON_UNESCAPED_UNICODE)]);
                     $done++;
                 }
                 $bar->advance($rows->count());

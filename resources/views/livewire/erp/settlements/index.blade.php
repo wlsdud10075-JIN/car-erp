@@ -1544,6 +1544,12 @@ new #[Layout('components.layouts.app')] class extends Component
         // 새회의 #8 보강 (2026-05-23) — 캐리오버 계산.
         // carryover_out_krw = closed actual_payout (cost·환차 모두 반영) - paid snapshot actual_payout
         // 다음 영업담당자 정산 creating 훅이 자동 흡수.
+        // 🚨 paid 스냅샷이 없는 행(엑셀 적재분 · 스크립트 지급분)은 이월을 만들지 않는다 (2026-09-22).
+        //    `?? 0` 이면 「마감 실지급액 − 0」= 실지급액 **전액**이 이월로 둔갑해 다음 정산에서 **한 번 더 지급**된다.
+        //    실측 ssancarerp: 2026-08-10 지급 426행이 스냅샷 없이 2차 대기 중이었다. 기준이 없으면 이월도 없다.
+        if ($settlement->confirmed_snapshot === null) {
+            return [$exchangeDiff, 0];
+        }
         $paidSnapshotPayout = (int) ($settlement->confirmed_snapshot['actual_payout'] ?? 0);
         $closedPayout = $settlement->fresh()->actual_payout;
         $carryoverOut = $closedPayout - $paidSnapshotPayout;
