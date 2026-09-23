@@ -1,11 +1,16 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
 use App\Models\PurchaseBalancePayment;
+use App\Models\ReceivableHistory;
+use App\Models\Vehicle;
 use App\Support\SearchTerm;
 use App\Services\InterVehicleTransferService;
 use App\Services\PaymentConfirmationService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -103,6 +108,27 @@ new #[Layout('components.layouts.app')] class extends Component {
      * ⚠️ 기본값이 **세 곳**(선언·열기·닫기)에 있다 — 하나만 고치면 모달을 다시 열 때 되살아난다.
      */
     public bool $newPbpImmediateConfirm = false;
+
+    /**
+     * 잔금 수정·삭제 (jin 2026-09-22 «재무처리에 … 금액을 수정하고, 삭제할 수 있는 기능이 없어»).
+     *
+     * 대상 = 판매·매입 잔금 2탭 × **미확정 + 확정(2차 마감 전)**. 이체 탭은 「거부」로 충분(jin 09-23).
+     * 🚫 버튼 노출은 권한이 아니다(§8 #26) — 서버 판정은 `editablePayment()` 한 곳이 한다.
+     * - 이체 링크 행(`transfer_id`)·2차 마감 차량은 화면에도 안 보이고 서버도 거부.
+     * - 모델 인스턴스 save/delete 만 쓴다 — bulk 는 캐시·감사·현금 재배분·미러를 전부 건너뛴다(SKILLS §2).
+     * - 판매잔금 삭제는 채권관리 미러(ReceivableHistory)를 **먼저** 지운다(`final_payment_id` 가 nullOnDelete 라
+     *   FP 를 직접 지우면 짝 잃은 「입금」 줄이 남는다 — 실측 4건).
+     * - 미수가 되살아나면 그 차의 **확정 전 정산(pending·calculating)을 지운다**(jin 09-23) — 재완납 시 자동 재생성.
+     */
+    public bool $showEditPaymentModal = false;
+
+    public ?int $editPaymentId = null;
+
+    public string $editAmountStr = '';
+
+    public string $editDate = '';
+
+    public string $editNote = '';
 
     // 🔒 매입 지급 락 (#2) — 2번째 지급~ && 그 차 판매금 <50% 입금 시 차단. 관리 승인 우회(1회).
     public bool $showPaymentGate = false;
@@ -435,6 +461,212 @@ new #[Layout('components.layouts.app')] class extends Component {
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: __('transfer.msg.confirm_failed', ['error' => $e->getMessage()]), type: 'error');
             $this->closeModal();
+        }
+    }
+
+    /**
+     * 이 페이지 잔금 행들 중 **2차 마감된 차량** id — 행마다 `hasClosedSecondarySettlement()` 를 부르면
+     * N+1 이라 페이지 단위로 한 번 묻는다. 화면의 수정·삭제 버튼 노출용(판정 자체는 `editablePayment()`).
+     */
+    #[Computed]
+    public function closedSettlementVehicleIds(): array
+    {
+        $rows = match ($this->tabType) {
+            'sale_payment' => $this->salePayments->items(),
+            'purchase_payment' => $this->purchasePayments->items(),
+            default => [],
+        };
+        $ids = collect($rows)->pluck('vehicle_id')->unique()->values();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return \App\Models\Settlement::query()
+            ->whereIn('vehicle_id', $ids)
+            ->where('secondary_status', 'closed')
+            ->pluck('vehicle_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * 수정·삭제 가능한 잔금 행을 **서버에서** 고른다(권한 · 탭 · 이체 링크 · 2차 마감). 아니면 DomainException.
+     * 모델 가드(FinalPayment/PurchaseBalancePayment updating·deleting)가 뒤에서 한 번 더 막지만,
+     * 여기서 먼저 거르면 사용자에게 「왜 안 되는지」를 말해 줄 수 있다.
+     */
+    private function editablePayment(int $id): FinalPayment|PurchaseBalancePayment
+    {
+        if (! auth()->user()?->canConfirmFinanceTransfer()) {
+            throw new \DomainException(__('transfer.forbidden'));
+        }
+        $p = match ($this->tabType) {
+            'sale_payment' => FinalPayment::find($id),
+            'purchase_payment' => PurchaseBalancePayment::find($id),
+            default => null,
+        };
+        if (! $p) {
+            throw new \DomainException(__('transfer.msg.payment_not_found'));
+        }
+        if ($p->transfer_id !== null) {
+            throw new \DomainException(__('transfer.msg.edit_transfer_linked'));
+        }
+        if ($p->vehicle?->hasClosedSecondarySettlement()) {
+            throw new \DomainException(__('transfer.msg.edit_closed'));
+        }
+
+        return $p;
+    }
+
+    public function openEditPaymentModal(int $id): void
+    {
+        try {
+            $p = $this->editablePayment($id);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+
+        $this->editPaymentId = $p->id;
+        // 신규 매입잔금 모달과 같은 규칙 — 숫자만(콤마 없이). 소수점 잔재(.00)는 지운다.
+        $this->editAmountStr = rtrim(rtrim(number_format((float) $p->amount, 2, '.', ''), '0'), '.');
+        $this->editDate = $p->payment_date?->format('Y-m-d') ?? '';
+        $this->editNote = (string) ($p->note ?? '');
+        $this->showEditPaymentModal = true;
+    }
+
+    public function closeEditPaymentModal(): void
+    {
+        $this->showEditPaymentModal = false;
+        $this->editPaymentId = null;
+        $this->editAmountStr = '';
+        $this->editDate = '';
+        $this->editNote = '';
+        $this->resetErrorBag();
+    }
+
+    public function saveEditedPayment(): void
+    {
+        $this->validate([
+            'editAmountStr' => ['required', 'numeric', 'gt:0'],
+            'editDate' => ['required', 'date'],
+            'editNote' => ['nullable', 'string', 'max:255'],
+        ], [], [
+            'editAmountStr' => __('transfer.attr.amount'),
+            'editDate' => __('transfer.attr.date'),
+            'editNote' => __('transfer.attr.memo'),
+        ]);
+
+        try {
+            $p = $this->editablePayment((int) $this->editPaymentId);
+            $wasConfirmed = $p->confirmed_at !== null;
+            // ⚠️ save() 뒤엔 getOriginal() 이 새 값을 돌려준다 — 감사용 옛 값은 **먼저** 뜬다.
+            $old = [
+                'amount' => (float) $p->amount,
+                'payment_date' => $p->payment_date?->format('Y-m-d'),
+                'note' => $p->note,
+            ];
+            $new = [
+                'amount' => (float) str_replace(',', '', $this->editAmountStr),
+                'payment_date' => $this->editDate,
+                'note' => $this->editNote !== '' ? $this->editNote : null,
+            ];
+
+            DB::transaction(function () use ($p, $wasConfirmed, $old, $new) {
+                $p->amount = $new['amount'];
+                $p->payment_date = $new['payment_date'];
+                $p->note = $new['note'];
+                $p->save();   // 모델 훅 = 현금 게이트(감액 통과)·재배분·캐시·(확정분) 감사
+
+                // 채권관리 미러(입금 줄)도 같은 숫자를 보여야 한다. 모델 save 는 RH::saved → syncFinalPayment 로
+                //   되돌아오므로 query builder 로만 맞춘다(미수 계산엔 안 쓰이는 표시용 행).
+                if ($p instanceof FinalPayment) {
+                    ReceivableHistory::query()->where('final_payment_id', $p->id)
+                        ->update(['amount' => $new['amount'], 'collected_at' => $new['payment_date']]);
+                }
+
+                // 모델 훅은 미확정 행의 정정을 감사하지 않는다(일상 편집). 재무 화면에서의 정정은 돈이 움직이는
+                //   기록이라 남긴다. 확정 행은 훅이 이미 amount/payment_date 를 기록하므로 여기서 또 적지 않는다(이중 기록 방지).
+                if (! $wasConfirmed) {
+                    foreach (['amount', 'payment_date', 'note'] as $col) {
+                        $changed = $col === 'amount'
+                            ? abs($old[$col] - $new[$col]) > 1e-9
+                            : ($old[$col] ?? null) !== ($new[$col] ?? null);
+                        if ($changed) {
+                            AuditLog::recordChange($p, $col, $old[$col], $new[$col]);
+                        }
+                    }
+                }
+
+                if ($p instanceof FinalPayment) {
+                    $this->reconcileSettlementAfterShrink($p->vehicle);
+                }
+            });
+
+            $this->dispatch('notify', message: __('transfer.msg.payment_edited'), type: 'success');
+            $this->closeEditPaymentModal();
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: __('transfer.msg.edit_failed', ['error' => $e->getMessage()]), type: 'error');
+        } catch (\Throwable $e) {
+            Log::warning('transfers payment edit failed', ['id' => $this->editPaymentId, 'msg' => $e->getMessage()]);
+            $this->dispatch('notify', message: __('transfer.msg.edit_failed', ['error' => $e->getMessage()]), type: 'error');
+        }
+    }
+
+    public function deletePayment(int $id): void
+    {
+        try {
+            $p = $this->editablePayment($id);
+            $vehicle = $p->vehicle;
+
+            DB::transaction(function () use ($p, $vehicle) {
+                AuditLog::recordEvent($p, 'deleted');   // 실패하면 트랜잭션이 같이 되돌린다
+                if ($p instanceof FinalPayment) {
+                    // 미러 먼저 — RH::deleted 가 짝 FP 를 데려가며 FP::deleting 가드도 정상 발화한다.
+                    ReceivableHistory::query()->where('final_payment_id', $p->id)->get()->each->delete();
+                    if (FinalPayment::query()->whereKey($p->id)->exists()) {
+                        $p->delete();   // 미러가 없던 행
+                    }
+                    $this->reconcileSettlementAfterShrink($vehicle);
+                } else {
+                    $p->delete();
+                }
+            });
+
+            $this->dispatch('notify', message: __('transfer.msg.payment_deleted'), type: 'success');
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: __('transfer.msg.delete_failed', ['error' => $e->getMessage()]), type: 'error');
+        } catch (\Throwable $e) {
+            Log::warning('transfers payment delete failed', ['id' => $id, 'msg' => $e->getMessage()]);
+            $this->dispatch('notify', message: __('transfer.msg.delete_failed', ['error' => $e->getMessage()]), type: 'error');
+        }
+    }
+
+    /**
+     * 판매 잔금을 줄이거나 지워 **미수가 되살아난** 차량의 정산 정리(jin 2026-09-23).
+     * 확정 전 정산(pending·calculating)은 완납이 존재 근거라 지운다 — 다시 완납되면 `createSettlementIfComplete`
+     * 가 재생성한다(`already_exists` 는 소프트삭제 행을 안 센다). confirmed/paid 는 건드리지 않고 경고만.
+     * 🚫 `secondary_status='pending'` 으로 고르지 말 것 — 그건 paid 정산의 「2차 대기」다.
+     */
+    private function reconcileSettlementAfterShrink(?Vehicle $vehicle): void
+    {
+        if (! $vehicle instanceof Vehicle) {
+            return;
+        }
+        $vehicle = $vehicle->fresh();
+        if ((float) $vehicle->sale_unpaid_amount <= 0) {
+            return;
+        }
+
+        $open = $vehicle->settlements()->whereIn('settlement_status', ['pending', 'calculating'])->get();
+        foreach ($open as $s) {
+            $s->delete();
+        }
+        if ($open->isNotEmpty()) {
+            $this->dispatch('notify', message: __('transfer.msg.settlement_pending_removed', ['count' => $open->count()]), type: 'warning');
+        }
+        if ($vehicle->settlements()->whereIn('settlement_status', ['confirmed', 'paid'])->exists()) {
+            $this->dispatch('notify', message: __('transfer.msg.settlement_locked_warning'), type: 'warning');
         }
     }
 
@@ -1070,6 +1302,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                     </td>
                     <td class="py-3 text-right">
+                        @php $canEditRow = $p->transfer_id === null && ! in_array((int) $p->vehicle_id, $this->closedSettlementVehicleIds, true); @endphp
+                        <div class="flex flex-wrap items-center justify-end gap-1">
                         @if($isAwaiting)
                         <button wire:click="openPaymentModal({{ $p->id }})"
                                 class="rounded bg-emerald-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-600">
@@ -1078,6 +1312,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @else
                         <span class="text-xs text-gray-400">{{ __('transfer.processed') }}</span>
                         @endif
+                        @if($canEditRow)
+                        <button wire:click="openEditPaymentModal({{ $p->id }})" type="button"
+                                class="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">{{ __('transfer.edit_btn') }}</button>
+                        <button wire:click="deletePayment({{ $p->id }})" type="button"
+                                wire:confirm="{{ __('transfer.delete_confirm', ['amount' => number_format((float) $p->amount, 0)]) }}"
+                                class="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50">{{ __('transfer.delete_btn') }}</button>
+                        @endif
+                        </div>
                     </td>
                 </tr>
                 @empty
@@ -1123,6 +1365,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             @else
             <div class="mt-1 text-[10px] text-gray-500">
                 {{ $p->financeConfirmer?->name ?? __('transfer.finance_fallback') }} · {{ $p->confirmed_at?->format('Y-m-d H:i') }}
+            </div>
+            @endif
+            @if($p->transfer_id === null && ! in_array((int) $p->vehicle_id, $this->closedSettlementVehicleIds, true))
+            <div class="mt-2 flex gap-2">
+                <button wire:click="openEditPaymentModal({{ $p->id }})" type="button"
+                        class="flex-1 rounded border border-gray-300 px-3 py-2 text-xs text-gray-600">{{ __('transfer.edit_btn') }}</button>
+                <button wire:click="deletePayment({{ $p->id }})" type="button"
+                        wire:confirm="{{ __('transfer.delete_confirm', ['amount' => number_format((float) $p->amount, 0)]) }}"
+                        class="flex-1 rounded border border-red-200 px-3 py-2 text-xs text-red-600">{{ __('transfer.delete_btn') }}</button>
             </div>
             @endif
         </div>
@@ -1318,6 +1569,45 @@ new #[Layout('components.layouts.app')] class extends Component {
                     class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
                 <span wire:loading.remove wire:target="createNewPbp">{{ __('transfer.new_pbp_modal.submit') }}</span>
                 <span wire:loading wire:target="createNewPbp">{{ __('transfer.new_pbp_modal.processing') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 잔금 수정 모달 (jin 2026-09-22) — 금액·지급일·메모. 대상 판정은 서버 editablePayment(). --}}
+@if($showEditPaymentModal)
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
+     wire:click.self="closeEditPaymentModal"
+     wire:key="edit-payment-modal-{{ $editPaymentId }}">
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
+        <h3 class="text-base font-semibold text-gray-900">{{ $tabType === 'sale_payment' ? __('transfer.edit_modal.title_sale') : __('transfer.edit_modal.title_purchase') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('transfer.edit_modal.subtitle') }}</p>
+
+        <div class="mt-3 space-y-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.edit_modal.amount_label') }}</label>
+                <input wire:model="editAmountStr" type="text" class="input-base" placeholder="0" />
+                @error('editAmountStr') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.edit_modal.date_label') }}</label>
+                <input wire:model="editDate" type="date" class="input-base" />
+                @error('editDate') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">{{ __('transfer.edit_modal.memo_label') }}</label>
+                <textarea wire:model="editNote" rows="2" class="input-base"></textarea>
+                @error('editNote') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+            </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button wire:click="closeEditPaymentModal" type="button"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button wire:click="saveEditedPayment" wire:loading.attr="disabled" wire:target="saveEditedPayment"
+                    class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+                {{ __('transfer.edit_modal.submit') }}
             </button>
         </div>
     </div>
