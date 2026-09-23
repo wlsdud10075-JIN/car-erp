@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
+use App\Services\Documents\DocValue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
@@ -29,7 +30,23 @@ class MultiVehicleShippingDocumentTest extends TestCase
             'nice_reg_vin' => 'VIN000000000'.str_pad((string) $i, 4, '0', STR_PAD_LEFT),
             'sale_price' => 1000 * $i,        // 합 검증용
             'transport_fee' => 100 * $i,      // shipping 합 검증용
+            // ⚠️ 기타청구 3항이 전부 0 이 아니어야 한다 — 0 이면 「단가에 합산」이 빠져도 합계가 우연히 맞는다
+            //    (2026-09-22 까지 이 픽스처가 그 장님 상태였다). 순액 = 30i + 20i − 10i = 40i.
+            'commission' => 30 * $i,
+            'auto_loading' => 20 * $i,
+            'tax_dc' => 10 * $i,
         ]));
+    }
+
+    /**
+     * 서류별 「판매가 열」 기대값 — 인보이스&팩킹은 단가에 기타청구를 합산(jin 2026-09-22),
+     * 계약서 FOB 는 원 판매가 그대로(기타청구는 E47~E49 3줄로 따로 낸다).
+     */
+    private static function expectedAmount(string $type, Collection $vehicles): float
+    {
+        return in_array($type, ['container_invoice_packing', 'roro_invoice_packing'], true)
+            ? (float) $vehicles->sum(fn (Vehicle $v) => DocValue::unitPriceWithCharges($v))
+            : (float) $vehicles->sum('sale_price');
     }
 
     #[DataProvider('shippingTypes')]
@@ -37,7 +54,7 @@ class MultiVehicleShippingDocumentTest extends TestCase
     {
         foreach ([1, 3, 7, 12, 30] as $n) {
             $vehicles = $this->makeVehicles($n);
-            $expectedAmount = $vehicles->sum('sale_price');
+            $expectedAmount = self::expectedAmount($type, $vehicles);
 
             $ss = (new DocumentFiller($vehicles))->spreadsheet($type);
             $sheet = $ss->getSheetByName($sheetName);
@@ -106,10 +123,45 @@ class MultiVehicleShippingDocumentTest extends TestCase
 
         $reloaded = IOFactory::load($tmp);
         $sheet = $reloaded->getSheetByName('INVOICE');
-        // 트림 후 footer(원본 51 - removed 25 = 26). I열 = Σ sale_price = 1000+2000+...+5000 = 15000
-        $this->assertEquals(15000, (float) $sheet->getCell('I26')->getCalculatedValue());
+        // 트림 후 footer(원본 51 - removed 25 = 26). I열 = Σ(판매가 + 기타청구) = 15000 + 40×15 = 15600
+        $this->assertEquals(15600, (float) $sheet->getCell('I26')->getCalculatedValue());
 
         @unlink($tmp);
+    }
+
+    /**
+     * 🧾 jin 2026-09-22: «other charge 항목이 판매가에 같이 합산되고, 문서 자체에는 판매가 + 운임비 = 최종금액».
+     * 단가(H) = 판매가 + Commission + Auto Loading − TAX D/C 이고, 08-28 에 푸터 여유행에 내던
+     * 「OTHER CHARGE」 줄은 없다. GRAND TOTAL 은 SUB TOTAL + OCEAN FREIGHT 그대로다.
+     * 푸터 합만 보면 못 잡는다(항이 H 로 옮겨 가도 합은 같다) — 슬롯 단가와 여유행을 직접 본다.
+     */
+    #[DataProvider('invoicePackingTypes')]
+    public function test_unit_price_absorbs_other_charges_and_the_spare_row_stays_empty(string $type, int $first, int $stride, int $spareRow, int $grandRow): void
+    {
+        $vehicles = $this->makeVehicles(3);
+        $sheet = (new DocumentFiller($vehicles))->spreadsheet($type)->getSheetByName('INVOICE');
+        $removed = (30 - 3) * $stride;
+
+        // 슬롯 1 단가 = 1000 + (30 + 20 − 10) = 1040 (원 판매가 1000 이 아니다)
+        $this->assertEquals(1040.0, (float) $sheet->getCell('H'.$first)->getValue(), "$type 단가에 기타청구가 합산되지 않았다");
+        $this->assertEquals(3120.0, (float) $sheet->getCell('H'.($first + 2 * $stride))->getValue());
+
+        // 여유행(OTHER CHARGE 자리)은 라벨도 금액도 없다
+        $this->assertSame('', trim((string) $sheet->getCell('F'.($spareRow - $removed))->getValue()), "$type 여유행에 라벨이 남아 있다 — 08-28 「OTHER CHARGE」 줄이 되살아났다");
+        $this->assertSame('', trim((string) $sheet->getCell('I'.($spareRow - $removed))->getValue()));
+
+        // GRAND TOTAL = Σ단가 + Σ운임 = (1040+2080+3120) + (100+200+300) = 6840 — 기타청구가 두 번 들어가지 않는다
+        $this->assertEquals(6840.0, (float) $sheet->getCell('I'.($grandRow - $removed))->getCalculatedValue(), "$type GRAND TOTAL ≠ 판매가 + 운임");
+        $this->assertEquals(DocValue::documentSaleTotal($vehicles), (float) $sheet->getCell('I'.($grandRow - $removed))->getCalculatedValue());
+    }
+
+    public static function invoicePackingTypes(): array
+    {
+        return [
+            // type, firstRow, stride, spareRow(원본), grandTotalRow(원본)
+            'container_invoice' => ['container_invoice_packing', 21, 3, 113, 114],
+            'roro_invoice' => ['roro_invoice_packing', 21, 1, 53, 54],
+        ];
     }
 
     /**
