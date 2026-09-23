@@ -182,6 +182,10 @@ class AlimtalkRecipients
      */
     public static function selectedRoles(string $code): array
     {
+        // 🔁 링크 후속본(v2)은 **구 코드의 수신자 설정을 그대로 쓴다** — jin 이 구 코드 행에서 고른
+        //    역할·개별 지정(`user:{id}`)이 승인 순간 그대로 이어져야 한다. v2 행에 따로 저장하면
+        //    「체크했는데 안 온다」(§8 #60)가 된다. 저장(`saveRoles`)도 같은 키다.
+        $code = AlimtalkTemplates::baseCode($code);
         $set = Setting::companyTemplateSet();
         $raw = Setting::get("alimtalk_roles_{$code}_{$set}", '__unset__');
         if ($raw === '__unset__') {
