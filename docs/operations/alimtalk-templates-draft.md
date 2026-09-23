@@ -90,6 +90,24 @@
 정산에서 자세히 확인하실 수 있습니다.
 ```
 
+## 1-B ~ 3-B. 대표 4종 링크 후속본 (`erp_receivable_status_v2` · `erp_daily_summary_v2` · `erp_weekly_summary_v2` · `erp_monthly_closing_v2`) — 2026-09-23 신규
+
+- jin 2026-09-22: «최고관리자가 받는 알림톡에서 채권관리·관리자대시보드·정산현황 내용이 들어간 것 중 link 를 넣어서 erp 로 연결». 목적지 = **ERP 화면 딥링크**(09-23 결정, 서명 리포트 페이지 신설 안 함).
+- **수신·카테고리·강조유형·카드**: 구 코드와 동일(대표 · 008002 · 아이템리스트형 · 같은 카드). **변수 동일**. 다른 것 = 본문 마지막 줄 + **웹링크 버튼 1개**.
+- 🚨 **버튼 = 템플릿의 일부 → 재심사.** 구 코드에 버튼을 얹지 않고 새 코드로 등록한다(`erp_purchase_paid_v2` 와 같은 전환). 승인·tmplId 입력 순간 `AlimtalkTemplates::activeCode()` 가 전환하고, 3사 전부 가동되면 구 코드를 은퇴시킨다.
+- **등록 파일 = 코드가 만든다**: `php scripts/alimtalk-admin-link-xlsx.php --apply` → `Desktop/알림톡/{헤이맨,싼카,카라바}확정알림톡/upload_erp_{회사}_대표링크4종_신규.xlsx`(4행). `--verify` 로 셀 단위 대조. 🚫 손으로 치지 말 것.
+- **버튼 URL**(회사 도메인 리터럴 + 경로 — 발송 코드는 `APP_URL` + 경로로 같은 값을 만든다):
+
+| 코드 | 버튼명 | 경로 | 본문 마지막 줄 |
+|---|---|---|---|
+| `erp_receivable_status_v2` | 채권관리 바로가기 | `/erp/receivables` | 아래 버튼 또는 사내 업무 시스템(ERP) 채권관리에서 자세히 확인하실 수 있습니다. |
+| `erp_daily_summary_v2` | 대시보드 바로가기 | `/admin/dashboard` | 아래 버튼 또는 사내 업무 시스템(ERP) 관리자 대시보드에서 자세히 확인하실 수 있습니다. |
+| `erp_weekly_summary_v2` | 채권관리 바로가기 | `/erp/receivables` | 아래 버튼 또는 사내 업무 시스템(ERP) 채권관리에서 자세히 확인하실 수 있습니다. |
+| `erp_monthly_closing_v2` | 정산관리 바로가기 | `/erp/settlements` | 아래 버튼 또는 사내 업무 시스템(ERP) 정산관리에서 자세히 확인하실 수 있습니다. |
+
+- 도메인 = heysellcar.com(헤이맨) / heymancar.com(싼카) / karaba-erp.com(카라바). ⚠️ 서버 이전 등으로 `APP_URL` 이 바뀌면 그 회사 버튼이 전부 K108 — 재등록 대상.
+- 화면은 전부 로그인 게이트(채권 receivable · 대시보드 admin-dashboard · 정산 settlement). 카톡 브라우저에 세션이 없으면 로그인 뒤 그 화면으로 간다.
+
 ---
 
 # 관리(role=관리) 6종
@@ -419,6 +437,10 @@ ERP에서 내용을 확인하고 정산을 확정해 주세요.
 | 1 | 일일요약 | 대표 | `erp_daily_summary` | 008002 |
 | 2 | 주간요약 | 대표 | `erp_weekly_summary` | 008002 |
 | 3 | 월결산요약 | 대표 | `erp_monthly_closing` | 008002 |
+| 1-B | 채권현황(링크) | 대표 | `erp_receivable_status_v2` | 008002 |
+| 1-C | 일일요약(링크) | 대표 | `erp_daily_summary_v2` | 008002 |
+| 2-B | 주간요약(링크) | 대표 | `erp_weekly_summary_v2` | 008002 |
+| 3-B | 월결산요약(링크) | 대표 | `erp_monthly_closing_v2` | 008002 |
 | 4 | 신규차량등록 | 관리 | `erp_vehicle_new` | 008002 |
 | 5 | 매입미지급 | 관리 | `erp_purchase_unpaid` | 008002 |
 | 6 | 판매미입금 | 관리 | `erp_sale_unpaid` | 008002 |
