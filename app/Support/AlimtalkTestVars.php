@@ -34,7 +34,7 @@ final class AlimtalkTestVars
     /** 이 코드는 실데이터로 나가나(true) 샘플로 나가나(false) — 화면이 그대로 알려준다. */
     public static function isRealData(string $code): bool
     {
-        return isset(self::REAL_BUILDERS[$code]);
+        return isset(self::REAL_BUILDERS[AlimtalkTemplates::baseCode($code)]);
     }
 
     /**
@@ -44,9 +44,10 @@ final class AlimtalkTestVars
     public static function for(string $code): array
     {
         $real = [];
-        if (isset(self::REAL_BUILDERS[$code])) {
+        $base = AlimtalkTemplates::baseCode($code);   // 링크 후속본(v2)은 구 코드의 실데이터 빌더를 그대로 쓴다
+        if (isset(self::REAL_BUILDERS[$base])) {
             try {
-                [$class, $method] = self::REAL_BUILDERS[$code];
+                [$class, $method] = self::REAL_BUILDERS[$base];
                 $real = $class::$method();
             } catch (\Throwable) {
                 $real = [];

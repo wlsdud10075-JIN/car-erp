@@ -31,8 +31,11 @@ class AlimtalkWeeklySummary extends Command
 
             $vars = self::buildVars();
             $svc = BizmAlimtalkService::active();
+            // 링크 후속본(v2)이 승인·tmplId 입력됐으면 그 코드로, 버튼은 APP_URL + path (jin 2026-09-22, AlimtalkTemplates 참조).
+            $code = AlimtalkTemplates::activeCode('erp_weekly_summary');
+            $buttons = AlimtalkTemplates::linkButtons($code);
             foreach ($recipients as $phone) {
-                $svc->send('erp_weekly_summary', $phone, $vars);
+                $svc->send($code, $phone, $vars, [], $buttons);
             }
             $this->info('weekly-summary: '.count($recipients).'명 발송 시도.');
 

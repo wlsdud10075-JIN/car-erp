@@ -9,6 +9,7 @@ use App\Models\SettlementPayoutBatch;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkTemplates;
 use App\Support\SettlementCkBatch;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Collection;
@@ -80,9 +81,12 @@ class AlimtalkMonthlyClosing extends Command
 
             $vars = self::buildVars($month);
             $svc = BizmAlimtalkService::active();
+            // 링크 후속본(v2)이 승인·tmplId 입력됐으면 그 코드로, 버튼은 APP_URL + path (jin 2026-09-22, AlimtalkTemplates 참조).
+            $code = AlimtalkTemplates::activeCode('erp_monthly_closing');
+            $buttons = AlimtalkTemplates::linkButtons($code);
             $sent = 0;
             foreach ($recipients as $phone) {
-                $log = $svc->send('erp_monthly_closing', $phone, $vars);
+                $log = $svc->send($code, $phone, $vars, [], $buttons);
                 $sent += $log->status === 'sent' ? 1 : 0;
             }
 

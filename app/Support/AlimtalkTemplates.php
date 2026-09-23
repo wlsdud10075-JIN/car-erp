@@ -98,6 +98,51 @@ class AlimtalkTemplates
             'body' => "[월 결산 보고] #{대상월}\n\n#{대상월} 결산이 마무리되었습니다.\n\n■ 인원별 지급\n#{인원별지급}\n\n정산에서 자세히 확인하실 수 있습니다.",
         ],
 
+        // ── 위 대표 4종의 후속본 (jin 2026-09-22) — **ERP 화면으로 가는 웹링크 버튼** ──
+        // jin: «최고관리자가 받는 알림톡에서 채권관리·관리자대시보드·정산현황 내용이 들어간 것 중 link 를 넣어서 erp 로 연결».
+        // 🚨 **버튼은 템플릿의 일부라 추가 = BizM 재심사다.** 기존 코드에 버튼을 얹으면 승인 전 발송이 전량 K108 로 죽으므로
+        //    `erp_purchase_paid_v2` 와 같은 방식 — 새 코드로 등록하고, tmplId 가 채워지면 `activeCode()` 가 자동 전환한다.
+        //    3사 전부 승인·가동된 뒤에 구 코드를 은퇴시킨다. 그 전엔 구 코드를 손대지 말 것.
+        // 🔗 **목적지 = ERP 화면 딥링크**(jin 2026-09-23 결정 — 서명 리포트 페이지 신설 안 함). 로그인 게이트는 그대로다:
+        //    카톡 브라우저에 세션이 없으면 로그인 뒤 그 화면으로 간다(Laravel `intended`).
+        // 🔗 URL 은 발송 시 `linkButtons()` 가 `config('app.url')` + path 로 만든다 — cron 에서만 나가므로 접속 호스트 함정(§8 #76)이 없다.
+        //    ⚠️ BizM 등록 xlsx 의 버튼 URL(도메인 리터럴)과 **글자 단위로 같아야** 한다(K108). 등록본은 `scripts/alimtalk-admin-link-xlsx.php` 가 여기서 만든다.
+        // ⚠️ 카드(ITEMLIST)는 구 코드와 같다 — `SUCCESSOR_OF` 로 구 코드의 카드를 그대로 쓴다(복사하면 갈린다, §8 #45).
+        'erp_receivable_status_v2' => [
+            'name' => '채권현황(링크)',
+            'recipient' => 'admin',
+            'vars' => ['날짜', '대상대수', '총판매금액', '유예건수', '유예금액', '선적전건수', '선적전금액',
+                '선적후건수', '선적후금액', '입금액', '미수합계'],
+            'title' => '',
+            'body' => "[채권 현황] #{날짜}\n\n미수가 남아 있는 차량의 회수 현황입니다.\n아래 버튼 또는 사내 업무 시스템(ERP) 채권관리에서 자세히 확인하실 수 있습니다.",
+            'button' => [['name' => '채권관리 바로가기', 'type' => 'WL', 'path' => '/erp/receivables']],
+        ],
+        'erp_daily_summary_v2' => [
+            'name' => '일일요약(링크)',
+            'recipient' => 'admin',
+            'vars' => ['날짜', '판매건수', '매출액', '선적대기', '판매중건수', '판매중금액', '통관대기', 'BL대기'],
+            'title' => '',
+            // 구 본문은 「차량관리에서」였다 — 내용(매출·진행 현황)이 관리자 대시보드 것이라 버튼과 함께 문구도 맞췄다.
+            'body' => "[일일 현황] #{날짜}\n\n이번 달 매출과 차량 진행 현황입니다.\n※ 판매중 = 선적 진입 입금률(60%)에 미달한 차량\n아래 버튼 또는 사내 업무 시스템(ERP) 관리자 대시보드에서 자세히 확인하실 수 있습니다.",
+            'button' => [['name' => '대시보드 바로가기', 'type' => 'WL', 'path' => '/admin/dashboard']],
+        ],
+        'erp_weekly_summary_v2' => [
+            'name' => '주간요약(링크)',
+            'recipient' => 'admin',
+            'vars' => ['주간', '판매건수', '매출액', '선적전건수', '선적전금액', '선적후건수', '선적후금액', '담당자실적'],
+            'title' => '',
+            'body' => "[주간 현황] #{주간}\n\n이번 주 매출과 미수 현황입니다.\n\n■ 담당자별 실적\n#{담당자실적}\n\n아래 버튼 또는 사내 업무 시스템(ERP) 채권관리에서 자세히 확인하실 수 있습니다.",
+            'button' => [['name' => '채권관리 바로가기', 'type' => 'WL', 'path' => '/erp/receivables']],
+        ],
+        'erp_monthly_closing_v2' => [
+            'name' => '월결산요약(링크)',
+            'recipient' => 'admin',
+            'vars' => ['대상월', '총매출', '총마진', '지급총액', '회사이익', '인원별지급'],
+            'title' => '',
+            'body' => "[월 결산 보고] #{대상월}\n\n#{대상월} 결산이 마무리되었습니다.\n\n■ 인원별 지급\n#{인원별지급}\n\n아래 버튼 또는 사내 업무 시스템(ERP) 정산관리에서 자세히 확인하실 수 있습니다.",
+            'button' => [['name' => '정산관리 바로가기', 'type' => 'WL', 'path' => '/erp/settlements']],
+        ],
+
         // ── 관리(role=관리) 5종 ──
         'erp_vehicle_new' => [
             'name' => '신규차량등록',
@@ -512,6 +557,10 @@ class AlimtalkTemplates
         'erp_weekly_summary' => '매주 금요일 18:00 — 대표 주간 요약',
         'erp_capital_weekly' => '매주 월요일 09:00 — 대표 주간 자금/손익 보고 (통장현금·재고·미수·미지급·손익)',
         'erp_monthly_closing' => '월배치 정산이 최종 승인된 때 (2026-07-31 변경 — 구: 익월 첫 영업일. 정산 확정 전에 나가 마진·지급이 과소보고됐다)',
+        'erp_receivable_status_v2' => '채권현황과 같되 「채권관리 바로가기」 버튼이 붙는다 (승인·tmplId 입력 시 채권현황을 대신함)',
+        'erp_daily_summary_v2' => '일일요약과 같되 「대시보드 바로가기」 버튼이 붙는다 (승인·tmplId 입력 시 일일요약을 대신함)',
+        'erp_weekly_summary_v2' => '주간요약과 같되 「채권관리 바로가기」 버튼이 붙는다 (승인·tmplId 입력 시 주간요약을 대신함)',
+        'erp_monthly_closing_v2' => '월결산요약과 같되 「정산관리 바로가기」 버튼이 붙는다 (승인·tmplId 입력 시 월결산요약을 대신함)',
         'erp_vehicle_new' => 'board 경유 신규 차량 등록 시',
         'erp_purchase_unpaid' => '매일 09:00 (평일) — 매입 미지급 있으면',
         'erp_sale_unpaid' => '매일 09:00 (평일) — 판매 미입금 있으면 (결제대기 10일 유예 제외)',
@@ -565,10 +614,67 @@ class AlimtalkTemplates
         return self::substitute(self::TEMPLATES[$code]['title'] ?? '', $vars);
     }
 
+    /**
+     * 🔁 후속본(v2) → 구 코드. 카드(ITEMLIST)·실데이터 빌더는 구 코드 것을 그대로 쓴다.
+     *
+     * 왜 맵인가 — 카드를 v2 에 복사해 두면 한쪽만 고쳐지는 날이 온다(§8 #45). 구 코드가 은퇴하면
+     * 그때 카드를 v2 이름으로 옮기고 이 줄을 지운다.
+     * ⚠️ `erp_purchase_paid_v2` 는 본문·수신자가 달라 여기 없다(카드 없는 기본형).
+     */
+    public const SUCCESSOR_OF = [
+        'erp_receivable_status_v2' => 'erp_receivable_status',
+        'erp_daily_summary_v2' => 'erp_daily_summary',
+        'erp_weekly_summary_v2' => 'erp_weekly_summary',
+        'erp_monthly_closing_v2' => 'erp_monthly_closing',
+    ];
+
+    /** 카드·빌더를 공유하는 구 코드 — 후속본이 아니면 자기 자신. */
+    public static function baseCode(string $code): string
+    {
+        return self::SUCCESSOR_OF[$code] ?? $code;
+    }
+
+    /**
+     * 지금 회사에서 실제로 보낼 코드 — 후속본(v2)이 승인·tmplId 입력됐으면 v2, 아니면 구 코드.
+     *
+     * 커맨드는 구 코드 이름으로 부른다(`activeCode('erp_daily_summary')`). 회사 분기가 없다 —
+     * tmplId 한 줄이 스위치다(`erp_purchase_paid_v2` 와 같은 전환 방식, SKILLS §8 #54-B).
+     */
+    public static function activeCode(string $base): string
+    {
+        $successor = array_search($base, self::SUCCESSOR_OF, true);
+        if ($successor !== false && AlimtalkConfig::active()->canSend($successor)) {
+            return $successor;
+        }
+
+        return $base;
+    }
+
+    /**
+     * 웹링크 버튼(발송용) — 템플릿 `button` 메타의 `path` 를 `APP_URL` 에 붙인다. 버튼 없는 코드는 [].
+     *
+     * 🚫 요청 컨텍스트의 `url()` 을 쓰지 말 것 — nginx server_name 이 여럿이라 접속 호스트가 새고
+     *    승인본 URL 과 달라져 K108 이 난다(§8 #76). `config('app.url')` 만 쓴다.
+     * BizM 등록본의 버튼 URL 은 `scripts/alimtalk-admin-link-xlsx.php` 가 같은 규칙으로 만든다.
+     */
+    public static function linkButtons(string $code, ?string $baseUrl = null): array
+    {
+        $root = rtrim($baseUrl ?? (string) config('app.url'), '/');
+        $out = [];
+        foreach (self::TEMPLATES[$code]['button'] ?? [] as $b) {
+            if (! isset($b['path'])) {
+                continue;   // `${URL}` 형(서명 링크)은 호출측이 URL 을 만든다
+            }
+            $out[] = ['name' => $b['name'], 'url' => $root.$b['path']];
+        }
+
+        return $out;
+    }
+
     /** 아이템리스트형 여부. */
     public static function hasItemList(string $code): bool
     {
-        return isset(self::ITEMLIST[$code]);
+        return isset(self::ITEMLIST[self::baseCode($code)]);
     }
 
     /**
@@ -613,7 +719,7 @@ class AlimtalkTemplates
      */
     public static function itemListPayload(string $code, array $vars = []): ?array
     {
-        $il = self::ITEMLIST[$code] ?? null;
+        $il = self::ITEMLIST[self::baseCode($code)] ?? null;
         if ($il === null) {
             return null;
         }
