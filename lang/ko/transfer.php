@@ -75,7 +75,30 @@ return [
     'empty_payment' => '조건에 맞는 잔금이 없습니다.',
     'unit_won' => '원',
 
+    // 잔금 수정·삭제 (jin 2026-09-22)
+    'edit_btn' => '수정',
+    'delete_btn' => '삭제',
+    'delete_confirm' => ':amount원 잔금을 삭제할까요? 삭제 후 미수(미지급)가 되살아나고, 판매 잔금은 채권관리 입금 줄도 함께 사라집니다.',
+    'edit_modal' => [
+        'title_sale' => '판매 잔금 수정',
+        'title_purchase' => '매입 잔금 수정',
+        'subtitle' => '금액·지급일·메모만 바뀝니다. 확정 여부는 그대로이고, 확정 행의 정정은 감사로그에 남습니다. 2차 마감된 차량은 수정할 수 없습니다.',
+        'amount_label' => '금액',
+        'date_label' => '지급일',
+        'memo_label' => '메모',
+        'submit' => '저장',
+    ],
+
     'msg' => [
+        'payment_not_found' => '잔금을 찾을 수 없습니다.',
+        'edit_transfer_linked' => '차량 간 자금 이체로 생긴 잔금은 여기서 수정·삭제할 수 없습니다. 이체 취소 흐름을 쓰세요.',
+        'edit_closed' => '2차 정산이 마감된 차량의 잔금은 수정·삭제할 수 없습니다 (회계 무결성). 정산관리 「회계 재조정」을 쓰세요.',
+        'payment_edited' => '잔금을 수정했습니다.',
+        'payment_deleted' => '잔금을 삭제했습니다.',
+        'edit_failed' => '잔금 수정 실패: :error',
+        'delete_failed' => '잔금 삭제 실패: :error',
+        'settlement_pending_removed' => '미수가 다시 생겨 확정 전 정산 :count건을 지웠습니다. 다시 완납되면 자동으로 생성됩니다.',
+        'settlement_locked_warning' => '이 차량에는 확정·지급된 정산이 있습니다. 미수가 다시 생겼으니 정산관리에서 확인하세요.',
         'only_awaiting_sale' => '확정 대기 상태의 판매 잔금만 처리할 수 있습니다.',
         'only_awaiting_purchase' => '확정 대기 상태의 매입 잔금만 처리할 수 있습니다.',
         'sale_not_found' => '판매 잔금을 찾을 수 없습니다.',

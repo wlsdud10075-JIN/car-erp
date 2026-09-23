@@ -74,7 +74,30 @@ return [
     'empty_payment' => 'No matching balances.',
     'unit_won' => 'KRW',
 
+    // Balance edit/delete (jin 2026-09-22)
+    'edit_btn' => 'Edit',
+    'delete_btn' => 'Delete',
+    'delete_confirm' => 'Delete this :amount balance? The unpaid amount comes back, and a sale balance also removes its receivable-history line.',
+    'edit_modal' => [
+        'title_sale' => 'Edit sale balance',
+        'title_purchase' => 'Edit purchase balance',
+        'subtitle' => 'Only amount, payment date and memo change. Confirmation status stays, and corrections to confirmed rows are audited. Vehicles with a closed secondary settlement cannot be edited.',
+        'amount_label' => 'Amount',
+        'date_label' => 'Payment date',
+        'memo_label' => 'Memo',
+        'submit' => 'Save',
+    ],
+
     'msg' => [
+        'payment_not_found' => 'Balance not found.',
+        'edit_transfer_linked' => 'Balances created by an inter-vehicle transfer cannot be edited or deleted here. Use the transfer void flow.',
+        'edit_closed' => 'Balances of a vehicle with a closed secondary settlement cannot be edited or deleted (ledger integrity). Use the settlement readjustment.',
+        'payment_edited' => 'Balance updated.',
+        'payment_deleted' => 'Balance deleted.',
+        'edit_failed' => 'Failed to update balance: :error',
+        'delete_failed' => 'Failed to delete balance: :error',
+        'settlement_pending_removed' => 'The unpaid amount came back, so :count unconfirmed settlement(s) were removed. They are recreated automatically once fully paid again.',
+        'settlement_locked_warning' => 'This vehicle has a confirmed or paid settlement. The unpaid amount came back — check it in settlements.',
         'only_awaiting_sale' => 'Only sale balances awaiting confirmation can be processed.',
         'only_awaiting_purchase' => 'Only purchase balances awaiting confirmation can be processed.',
         'sale_not_found' => 'Sale balance not found.',
