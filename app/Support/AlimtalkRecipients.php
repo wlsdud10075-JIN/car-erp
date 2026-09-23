@@ -56,6 +56,11 @@ class AlimtalkRecipients
         'erp_weekly_summary' => ['admin'],
         'erp_capital_weekly' => ['admin'],   // 자본·손익 기밀 — 대표(admin) 전용
         'erp_monthly_closing' => ['admin'],
+        // 링크 버튼 후속본 4종(jin 2026-09-22) — 구 코드와 같은 대표 전용. 여기 없으면 승인 뒤에도 영영 안 나간다(위 실사고).
+        'erp_receivable_status_v2' => ['admin'],
+        'erp_daily_summary_v2' => ['admin'],
+        'erp_weekly_summary_v2' => ['admin'],
+        'erp_monthly_closing_v2' => ['admin'],
         'erp_vehicle_new' => ['관리', 'manager'],
         'erp_purchase_unpaid' => ['관리', 'manager'],
         'erp_sale_unpaid' => ['관리', 'manager'],
