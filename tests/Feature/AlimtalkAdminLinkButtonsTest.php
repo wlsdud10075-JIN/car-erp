@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
 use App\Support\AlimtalkTemplates;
 use App\Support\AlimtalkTestVars;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -127,6 +129,44 @@ class AlimtalkAdminLinkButtonsTest extends TestCase
                 && isset($item['header'], $item['items'])   // 카드도 같이 간다
                 && str_contains((string) $item['msg'], '아래 버튼');
         });
+    }
+
+    /** v2 의 수신자 = 구 코드 행의 설정(역할·개별 지정) 그대로 — 승인 순간 같은 사람에게 간다. v2 행엔 체크박스가 없다. */
+    public function test_successor_shares_the_base_recipient_setting(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now(), 'phone' => '010-1111-2222']);
+        $set = Setting::companyTemplateSet();
+        // 구 코드 행에서 「이 사람만」으로 저장한 상태
+        Setting::updateOrCreate(['key' => "alimtalk_roles_erp_receivable_status_{$set}"], ['value' => 'user:'.$admin->id, 'type' => 'string']);
+
+        $this->assertSame(['user:'.$admin->id], AlimtalkRecipients::selectedRoles('erp_receivable_status_v2'), 'v2 가 구 코드의 수신자 설정을 안 읽는다');
+        $this->assertSame(
+            AlimtalkRecipients::forBroadcast('erp_receivable_status'),
+            AlimtalkRecipients::forBroadcast('erp_receivable_status_v2'),
+            '승인 순간 받는 사람이 달라진다 — 구 코드 설정을 v2 가 공유해야 한다'
+        );
+        $this->assertNotSame([], AlimtalkRecipients::forBroadcast('erp_receivable_status_v2'));
+
+        // 안내 화면: v2 행은 체크박스 대신 「공유」 안내
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $this->actingAs($super);
+        $html = Volt::test('admin.alimtalk-catalog.index')->html();
+        $this->assertStringContainsString(__('alimtalk_catalog.shared_recipients', ['base' => '채권현황', 'n' => 1]), $html);
+        $this->assertStringNotContainsString('wire:model="roles.erp_receivable_status_v2"', $html, 'v2 행에 아무것도 안 읽는 체크박스가 그려졌다(§8 #60)');
+    }
+
+    /** 기능설정 「테스트 발송」도 v2 면 button1 을 싣는다 — 승인 뒤 jin 의 첫 동작이 이것이다. */
+    public function test_test_send_of_a_successor_carries_the_button(): void
+    {
+        config(['app.url' => 'https://heysellcar.com']);
+        $this->configure(['erp_monthly_closing_v2' => 'TMPL_MC_V2']);
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'M2']]], 200)]);
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        BizmAlimtalkService::active()->sendTest('01012345678', 'erp_monthly_closing_v2');
+
+        Http::assertSent(fn ($request) => (($request->data()[0]['button1']['url_mobile'] ?? null) === 'https://heysellcar.com/erp/settlements')
+            && (($request->data()[0]['button1']['name'] ?? null) === '정산관리 바로가기'));
     }
 
     /** 커맨드 4개가 전부 activeCode·linkButtons 를 지난다 — 하나라도 구 코드를 직접 부르면 그 알림만 영영 링크가 없다. */

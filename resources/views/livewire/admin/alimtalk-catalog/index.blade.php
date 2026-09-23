@@ -574,8 +574,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $selected = array_values(array_unique($selected));
         $set = Setting::companyTemplateSet();
+        // 링크 후속본(v2)은 구 코드와 수신자 설정을 공유한다(AlimtalkRecipients::selectedRoles 와 같은 키).
+        $storeCode = AlimtalkTemplates::baseCode($code);
         Setting::updateOrCreate(
-            ['key' => "alimtalk_roles_{$code}_{$set}"],
+            ['key' => "alimtalk_roles_{$storeCode}_{$set}"],
             ['value' => implode(',', $selected), 'type' => 'string', 'description' => '알림톡 수신 역할 '.$code.' ('.$set.')'],
         );
         // 단계별 확대 일수도 같은 [저장]으로 함께 — 체크와 숫자를 따로 저장하게 하면 한쪽만 눌러 어긋난다.
@@ -640,7 +642,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
                 {{-- 수신자 --}}
                 <div class="mt-3 border-t border-gray-100 pt-3">
-                    @if($broadcast)
+                    @if($broadcast && ($sharedBase = \App\Support\AlimtalkTemplates::SUCCESSOR_OF[$code] ?? null))
+                        {{-- 🔁 링크 후속본 — 수신자는 구 코드 행과 **하나**다. 여기에 체크박스를 두면 아무것도 안 읽는
+                             칸이 생긴다(§8 #60). 승인·tmplId 입력 순간 구 코드 수신자에게 이 후속본이 나간다. --}}
+                        <p class="text-[11px] leading-relaxed text-gray-600">
+                            🔁 {{ __('alimtalk_catalog.shared_recipients', ['base' => \App\Support\AlimtalkTemplates::TEMPLATES[$sharedBase]['name'] ?? $sharedBase, 'n' => $this->recipientCount($code)]) }}
+                        </p>
+                    @elseif($broadcast)
                         <div class="mb-2 text-xs font-medium text-gray-500">
                             {{ __('alimtalk_catalog.recipient_roles') }}
                             <span class="ml-1 text-gray-400">({{ __('alimtalk_catalog.now_count', ['n' => $this->recipientCount($code)]) }})</span>
