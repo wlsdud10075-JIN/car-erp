@@ -9,6 +9,7 @@ use App\Models\Vehicle;
 use App\Services\PaymentConfirmationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -187,5 +188,74 @@ class BoardRequestAutoResolveTest extends TestCase
             $req->fresh()->status,
             '재무 확정 경로가 자동 해소를 안 태웠다 — 운영에서 뱃지가 안 꺼진다'
         );
+    }
+
+    /**
+     * 💰 계약금 신호의 계기 = **매입 탭 계약금 행**(jin 2026-09-22 «계약금 행에 기입하면 지급했다는 거니까
+     * 신호가 사라져도 되지 않을까»). 잔금(auto_resolve)과 달리 미지급이 남아 있어도 닫힌다 — 계약금 행 자체가
+     * 「보냈다」는 기록이라 거짓 신호가 아니다. 일반 계약금·대표계약금이 같이 닫힌다(같은 사실).
+     */
+    public function test_deposit_request_closes_when_the_down_payment_row_is_saved(): void
+    {
+        $v = $this->vehicle(1_000_000);
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+        $ceo = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT_CEO, 'sales@ex.com', amountKrw: 300_000);
+        $balance = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 700_000);
+
+        $v->purchaseBalancePayments()->create([
+            'type' => 'down', 'amount' => 300_000, 'payment_date' => '2026-09-22', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame(BoardRequest::STATUS_DONE, $deposit->fresh()->status, '계약금 행을 저장했는데 계약금 신호가 안 닫혔다');
+        $this->assertSame(BoardRequest::STATUS_DONE, $ceo->fresh()->status, '대표계약금 신호가 일반 계약금과 같이 안 닫혔다');
+        $this->assertNull($deposit->fresh()->confirmed_by_id, '자동 닫힘인데 사람이 확인한 것으로 기록됐다');
+        $this->assertSame(BoardRequest::STATUS_OPEN, $balance->fresh()->status, '계약금 행이 잔금 신호까지 닫았다 — 미지급 700,000 이 남아 있다');
+    }
+
+    /** 잔금(balance) 행만으로는 계약금 신호가 안 닫힌다 — 위 `test_deposit_request_survives_full_payment` 와 짝. */
+    public function test_a_balance_row_does_not_close_the_deposit_request(): void
+    {
+        $v = $this->vehicle(1_000_000);
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+
+        $v->purchaseBalancePayments()->create([
+            'type' => 'balance', 'amount' => 300_000, 'payment_date' => '2026-09-22', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame(BoardRequest::STATUS_OPEN, $deposit->fresh()->status, '잔금 행이 계약금 신호를 닫았다 — 계기는 계약금 행뿐이어야 한다');
+    }
+
+    /** 0원 계약금 행(칸을 비운 저장)은 「보냈다」가 아니다. */
+    public function test_a_zero_down_payment_row_keeps_the_deposit_request_open(): void
+    {
+        $v = $this->vehicle(1_000_000);
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+
+        $v->purchaseBalancePayments()->create([
+            'type' => 'down', 'amount' => 0, 'payment_date' => '2026-09-22', 'confirmed_at' => now(),
+        ]);
+
+        $this->assertSame(BoardRequest::STATUS_OPEN, $deposit->fresh()->status);
+    }
+
+    /**
+     * 🔒 **운영 경로** — 재무가 차량 편집 패널 매입 탭 「계약금」 칸에 금액을 넣고 저장하는 흐름
+     * (`vehicles/index` 2항목 sync 가 type='down' confirmed 행을 `create()` 한다)에서도 닫히는가.
+     */
+    public function test_deposit_request_closes_through_the_vehicle_panel_down_payment_field(): void
+    {
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
+        $v = $this->vehicle(1_000_000);
+        $deposit = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_DEPOSIT, 'sales@ex.com', amountKrw: 300_000);
+
+        $this->actingAs($finance);
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('down_payment_str', '300,000')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertSame(300_000.0, (float) $v->purchaseBalancePayments()->where('type', 'down')->sum('amount'), '패널 저장이 계약금 행을 안 만들었다 — 픽스처 문제');
+        $this->assertSame(BoardRequest::STATUS_DONE, $deposit->fresh()->status, '패널 계약금 저장 경로에서 신호가 안 닫혔다 — 운영에서 뱃지가 그대로 남는다');
     }
 }

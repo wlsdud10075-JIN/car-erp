@@ -66,6 +66,20 @@ class PurchaseBalancePayment extends Model
                     ->update(['resolved_at' => now(), 'resolved_reason' => 'down_payment']);
             }
 
+            // 계약금(down) 입력 → board 계약금 신호(일반·대표) 자동 닫기 (jin 2026-09-22).
+            //   「매입 미지급 0」 계기(auto_resolve)와 다르다 — 계약금 행 자체가 「보냈다」는 기록이라
+            //   잔금 전에 닫혀도 거짓 신호가 아니다. 대상은 BoardRequest::TYPE_META['resolve_on_deposit'] 단일 출처.
+            //   ⚠️ 위 알람 블록과 같은 자리에 두는 이유 — 계약금 행은 패널 2항목 sync 가 `create()` 로 만들어
+            //      이 훅이 유일한 진입점이다(Vehicle::saved 는 raw update 라 안 뜬다, SKILLS §2).
+            if ($p->type === 'down' && (int) $p->amount > 0 && Schema::hasTable('board_requests')) {
+                BoardRequest::query()
+                    ->where('vehicle_id', $p->vehicle_id)
+                    ->whereIn('type', BoardRequest::typesWith('resolve_on_deposit'))
+                    ->open()
+                    ->get()
+                    ->each(fn (BoardRequest $r) => $r->markDone());
+            }
+
             // 잔금 완납 → 매매상 잔금 10일 알림 즉시 해소 (jin 2026-07-12, scan 보정 전 반응성).
             //   open 알람 있을 때만 fresh 미지급 계산 (non-karaba·무알람은 exists() 에서 short-circuit).
             if (Schema::hasTable('task_alarms')

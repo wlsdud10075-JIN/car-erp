@@ -97,6 +97,10 @@ class BoardRequest extends Model
      * - `auto_resolve`   = 매입 미지급 0 이면 스스로 닫히는가.
      *      ⚠️ **계약금은 false 여야 한다.** 미지급 0 = 잔금까지 다 준 상태다. 그때 계약금 신호가
      *      비로소 꺼지면 "계약금 아직 안 보냈다"는 거짓 신호가 차 인수 시점까지 화면에 남는다.
+     * - `resolve_on_deposit` = **매입 탭 계약금 행(`purchase_balance_payments.type='down'`, 금액>0)이
+     *      저장되면** 스스로 닫히는가(jin 2026-09-22 «계약금 행에 기입하면 지급했다는 거니까 신호가 사라져도»).
+     *      계기가 「완납」이 아니라 「계약금 행」이라 위 거짓 신호 문제가 없다. 「입금 확인」 버튼은 그대로
+     *      남는다(계약금을 ERP 밖에서 처리한 경우의 탈출구). 진입점 = `PurchaseBalancePayment::saved`.
      * - `amount` = 금액을 필수로 받는가(board 가 빈 값으로 보내면 422).
      * - `payee`  = 알림톡에 **송금할 매입처 계좌**를 실을 것인가.
      *      ⚠️ **판매대금확인은 false 여야 한다.** 그건 "돈이 들어왔으니 확인해달라"는 신호인데,
@@ -125,6 +129,7 @@ class BoardRequest extends Model
             'color' => 'blue',
             'manual_confirm' => true,
             'auto_resolve' => false,
+            'resolve_on_deposit' => true,
             'amount' => true,
         ],
         self::TYPE_PURCHASE_DEPOSIT_CEO => [
@@ -138,9 +143,11 @@ class BoardRequest extends Model
             // 일반 계약금(blue)과 한 줄에 나란히 뜨므로 색을 갈라야 사람이 구분한다.
             //   ⚠️ 빌드된 app.css 에 있는 색만 쓴다(§8 #50) — amber 는 기존 뱃지가 쓰고 있다.
             'color' => 'amber',
-            // 계약금과 동일 — 「매입 미지급 0」 자동소멸 금지, 사람이 확인해야 닫힌다.
+            // 계약금과 동일 — 「매입 미지급 0」 자동소멸 금지. 계약금 행이 저장되면 일반 계약금과 함께 닫힌다
+            //   (같은 사실 = 계약금 송금 을 대표에게 다시 보낸 것이므로).
             'manual_confirm' => true,
             'auto_resolve' => false,
+            'resolve_on_deposit' => true,
             'amount' => true,
         ],
         self::TYPE_PURCHASE_BALANCE => [
