@@ -387,15 +387,18 @@ board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시할 때 �
 
 | 신호 | `type` | 단위 | 금액 | 뜻 | 닫히는 방법 |
 |---|---|---|---|---|---|
-| **계약금** | `purchase_deposit` | 차량 1대 | **필수** | "이 차 계약금 N원 보내주세요" | **수동 확인만** (아래 ⚠️) |
+| **계약금** | `purchase_deposit` | 차량 1대 | **필수** | "이 차 계약금 N원 보내주세요" | **ERP 자동** — 매입 탭 계약금 행 저장 시 소멸(2026-09-22) (+수동 확인도 가능, 아래 ⚠️) |
 | **매입잔금** | `purchase_balance` | 차량 1대 | **필수** | "이 차 잔금 N원 보내주세요" | **ERP 자동** — 매입 미지급 0 이면 소멸 (+수동 확인도 가능) |
 | **판매대금확인** | `sale_payment_confirm` | 바이어 1 + 차량 N대 | 없음 | "이 바이어 차 N대 대금 넣었으니 확인해주세요" | **ERP 에서 수동** — 차량별 체크(부분확인) |
 | ~~입금요청~~ | `purchase_payment` | 차량 1대 | 없음 | **deprecated (2026-08-11)** | 자동 — 종전 규칙 그대로 |
 
 > ⚠️ **`purchase_deposit` 을 "미지급 0" 으로 자동소멸시키지 말 것.** 미지급 0 = 잔금까지 다 준
 > 상태다. 그때까지 계약금 신호가 살아 있으면 **"계약금 아직 안 보냈다"는 거짓 신호**가 차 인수
-> 시점까지 화면에 남는다. ERP 는 계약금 지급 여부를 알 방법이 없다(금액을 회계에 안 쓰므로)
-> ⇒ 수동 확인이 유일하게 성립하는 설계다. 가드 = `BoardRequestAutoResolveTest::test_deposit_request_survives_full_payment`.
+> 시점까지 화면에 남는다. 가드 = `BoardRequestAutoResolveTest::test_deposit_request_survives_full_payment`.
+> ✅ **2026-09-22 (jin) — 계기는 「매입 탭 계약금 행」이다.** 계약금 행(`purchase_balance_payments.type='down'`, 금액>0)이
+> 저장되면 일반·대표 계약금 신호가 함께 닫힌다(`TYPE_META['resolve_on_deposit']`, 진입점 `PurchaseBalancePayment::saved`).
+> 계약금 행 자체가 「보냈다」는 기록이라 잔금 전에 닫혀도 거짓 신호가 아니다. 「입금 확인」은 탈출구로 남는다.
+> board 쪽 변경 없음 — 닫힘은 종전 `markDone` 경로 그대로(폴링이 `done` 을 본다).
 >
 > 🔒 **구 `purchase_payment` 는 계속 수신한다 — 화이트리스트에서 빼지 말 것.** 신규 생성 UI 경로는
 > 없지만, board 운영이 신버전을 싣기 전까지는 그게 board 의 **유일한 입금요청 경로**다.
