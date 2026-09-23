@@ -217,7 +217,7 @@ return [
     'board_badge_balance' => 'Balance',
     'board_title_purchase' => 'Sales requested a purchase payment — clears once the balance is recorded',
     'board_title_sale' => 'Sales reported an incoming payment — confirming replies back to board',
-    'board_title_deposit' => 'Sales requested a deposit transfer — clears only when you press Confirm (the amount is for reference; record it in the purchase tab yourself)',
+    'board_title_deposit' => 'Sales requested a deposit transfer — clears once you record the deposit in the purchase tab (or press Confirm). The amount is for reference; record it in the purchase tab yourself',
     'board_title_deposit_ceo' => 'Sales asked the CEO directly for a deposit transfer — used when the owner is away, so it is sent to the CEO regardless of time or weekday. A regular deposit request may be open on the same vehicle; watch for a double transfer (the amount is for reference)',
     'board_title_balance' => 'Sales requested the purchase balance — clears once the outstanding purchase amount reaches zero',
     'board_amount_unit' => ' KRW',

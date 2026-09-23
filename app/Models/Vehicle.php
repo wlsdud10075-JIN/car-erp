@@ -1291,7 +1291,8 @@ class Vehicle extends Model
      * 🚫 **대상을 여기서 열거하지 말 것** — 단일 출처는 `BoardRequest::TYPE_META['auto_resolve']` 다.
      *    특히 **계약금(purchase_deposit)은 대상이 아니다**: 미지급 0 = 잔금까지 다 준 상태라,
      *    그때 계약금 신호가 꺼지면 "계약금 아직 안 보냈다"는 거짓 신호가 차 인수 시점까지 남는다.
-     *    ERP 는 계약금을 지급했는지 알 방법이 없다(금액을 회계에 안 쓰므로) → 수동 확인만.
+     *    계약금 신호는 **매입 탭 계약금 행(type='down') 저장**이 닫는다(jin 2026-09-22,
+     *    `PurchaseBalancePayment::saved` · `TYPE_META['resolve_on_deposit']`) — 그리고 「입금 확인」 수동.
      *    가드 = `BoardRequestAutoResolveTest::test_deposit_request_survives_full_payment`.
      */
     public function resolveAutoClosingBoardRequests(): void
