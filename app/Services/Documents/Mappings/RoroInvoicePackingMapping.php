@@ -4,7 +4,6 @@ namespace App\Services\Documents\Mappings;
 
 use App\Models\Vehicle;
 use App\Services\Documents\DocValue;
-use Illuminate\Support\Collection;
 
 /**
  * 선적 — RORO Invoice & Packing. 수출 전용. 다중차량.
@@ -44,17 +43,10 @@ class RoroInvoicePackingMapping
                     ['cell' => 'K51', 'fmt' => '=SUM(K%d:K%d)'],
                     ['cell' => 'L51', 'fmt' => '=SUM(L%d:L%d)'],
                 ],
-                'aggregates' => [
-                    // 기타 청구 1줄 — 종전엔 **아예 없어서** GRAND TOTAL 이 «판매가 + 운임» 만이었다(jin 2026-08-28).
-                    //   F53/I53 는 양식의 빈 여유행이고 `=SUM(I51:I53)` 이 이미 덮고 있어
-                    //   **xlsx 를 한 장도 안 고치고** 흡수된다(실측 — 3사 양식 동일).
-                    // 🧭 계약서는 3줄로 항목명을 내지만 여기는 여유행이 **하나뿐**이라 순액 1줄이다.
-                    //   (jin: "명칭이 나오면 더 좋지만 계산된 총 판매가만 나와도 상관은 없어")
-                    //   3줄로 하려면 양식 3사 재생성이 필요하다 — 그때 여기도 계약서와 같은 모양으로.
-                    // ⚠️ 순액이라 TAX D/C 부호는 식 안에서 이미 상계된다(따로 뒤집지 말 것).
-                    'F53' => fn (Collection $vs) => DocValue::otherChargeSum($vs) ? 'OTHER CHARGE' : null,
-                    'I53' => fn (Collection $vs) => DocValue::otherChargeSum($vs) ?: null,
-                ],
+                // 🧭 기타청구(Commission·Auto Loading·TAX D/C)는 **단가(H)에 합산**한다 — 문서엔 「판매가 + 운임 = 최종금액」만.
+                //   08-28 엔 푸터 여유행(F53/I53)에 「OTHER CHARGE」 순액 1줄을 따로 냈으나 jin 2026-09-22 가 뒤집었다
+                //   («other charge 항목이 판매가에 같이 합산되고 … 판매가 + 운임비 = 최종금액»). 🚫 여유행 줄을 되살리지 말 것.
+                //   GRAND TOTAL(`=SUM(I51:I53)`) 숫자는 그대로다 — 항이 H 로 옮겨 갔을 뿐이라 xlsx 는 안 고쳤다.
                 'slotCells' => [
                     0 => [
                         'C' => fn (Vehicle $v) => DocValue::brandEn($v),                      // maker (제조사 영문 — NICE 한글 변환)
@@ -62,7 +54,7 @@ class RoroInvoicePackingMapping
                         'E' => fn (Vehicle $v) => $v->year,
                         'F' => fn (Vehicle $v) => $v->nice_reg_vin,
                         'G' => fn (Vehicle $v) => 1,                                         // Q'TY
-                        'H' => fn (Vehicle $v) => DocValue::money($v->sale_price),
+                        'H' => fn (Vehicle $v) => DocValue::unitPriceWithCharges($v),        // unit price = 판매가 + 기타청구
                         'J' => fn (Vehicle $v) => $v->nice_spec_curb_weight ?: $v->weight_kg, // weight(KG)
                         'L' => fn (Vehicle $v) => DocValue::money($v->transport_fee),         // shipping
                     ],

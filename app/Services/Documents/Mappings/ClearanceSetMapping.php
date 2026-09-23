@@ -95,7 +95,7 @@ class ClearanceSetMapping
                 //      (`Vehicle::declaration_base_amount`)과 **같아진다** — 취향이 아니라 정합성이다.
                 //   ⚠️ 운임비는 여기 넣지 않는다 — D15 로 따로 가고 J22 에서 합쳐진다.
                 //   (float — 텍스트면 차량인보이스 SUM/통화서식이 깨진다)
-                'B15' => fn (Vehicle $v) => DocValue::money(($v->sale_price ?? 0) + DocValue::otherCharge($v)),
+                'B15' => fn (Vehicle $v) => DocValue::unitPriceWithCharges($v),
                 'D15' => fn (Vehicle $v) => DocValue::money($v->transport_fee),     // 운임 (float)
                 // Travel Services Invoice 컨사이니 칸 — 계약서 F6/F7 과 동일 소스(컨사이니→없으면 바이어).
                 //   엔진의 'Sheet!Cell' 시트지정 좌표로 마스터 외 시트에 직접 기입.

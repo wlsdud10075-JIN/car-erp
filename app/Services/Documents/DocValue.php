@@ -367,6 +367,25 @@ class DocValue
     }
 
     /**
+     * 서류 「단가」 — 판매가 + 기타청구(Commission + Auto Loading − TAX D/C). 판매통화, 1대분.
+     *
+     * jin 2026-09-22: «other charge 항목이 판매가에 같이 합산되고, 문서 자체에는 판매가 + 운임비 = 최종금액».
+     * RORO/컨테이너 Invoice&Packing 의 단가(H)·통관 SET 구매리스트 「판매금」이 이 값을 쓴다.
+     * ⚠️ `sale_other_costs`(기타 판매비용)는 **안 들어간다**(jin 확정 — `documentSaleTotal` 과 같은 이유).
+     * ⚠️ 판매가가 비었고 기타청구도 0 이면 null — 칸을 비워 둔다(`money()` 와 같은 「없으면 빈칸」).
+     */
+    public static function unitPriceWithCharges(Vehicle $v): ?float
+    {
+        $sale = self::money($v->sale_price);
+        $charge = self::otherCharge($v);
+        if ($sale === null && $charge == 0.0) {
+            return null;
+        }
+
+        return (float) (($sale ?? 0) + $charge);
+    }
+
+    /**
      * 서류 「총 판매금액」 — Σ(판매가 + 운임비 + 기타청구). 바이어에게 청구하는 금액.
      *
      * ⚠️ ERP 의 **총판매가(`Vehicle::sale_total_amount`)와 한 항 다르다** — 여기엔
