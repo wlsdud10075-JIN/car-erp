@@ -1598,3 +1598,19 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - **DHL API** — 1단계 스코프 외 (수동 입력만).
 - **S3** ✅ 완료 — 버킷 `heysellcar-erp-docs`, IAM, `league/flysystem-aws-s3-v3`, 서명URL. 차량 사진(`vehicle_photos`) + 서류 파일 저장.
 - **배포** — AWS Lightsail (`52.79.200.151`). dev→master 머지 시 자동 SSH 배포. 전체 기록 = `docs/operations/aws-deployment-record.md`.
+
+### 111. 🚚 **서버를 옮기면 「사이트 conf 만」이 아니라 「그 conf 가 기대는 것」이 따라와야 한다** (2026-09-24 ssancarerp 4GB 이전)
+
+같은 코드·같은 `.env`·같은 DB 인데 새 서버에서 네 번 멎었다. 전부 **파일 하나가 다른 파일·다른 사용자를 전제**하고 있던 것이다.
+
+| 증상 | 전제 | 고침 |
+|---|---|---|
+| `nginx -t: unknown log format "timed"` | 사이트 conf 의 `timed` 는 **`nginx.conf`** 에 정의(09-01 성능 작업). 사이트만 복사 | `nginx.conf` 통째 |
+| `open() "/ssancar-erp/logs/…" failed` | access_log 가 **Django 시절 경로** | `/var/log/nginx/` 로 치환 |
+| board 워커 BACKOFF — *Database file … database.sqlite does not exist* | www-data 워커가 **`.env`(600 ubuntu)를 못 읽어** 기본값 sqlite. 구 서버는 `config:cache` 가 있어 무증상 | 워커 기동 **전에** `config:cache` |
+| ERP 첫 요청 500 — *tempnam(): file created in the system's temporary directory* | `view:cache` 를 ubuntu 로 돌리면 Livewire 컴파일 dir 이 **0755** 로 생겨 www-data 가 못 씀 | 캐시 생성 **뒤에** `chmod -R g+rwX storage` |
+
+🧭 **이전 검증은 「서버 안에서 curl 200」까지 가야 한다.** `nginx -t`·`supervisorctl status`·`artisan about` 이 초록이어도 첫 HTTP 요청에서 500 이 났다. 위 넷 중 셋은 **요청이 와야** 드러난다.
+🚨 **WireGuard 는 키가 하나면 서버가 둘일 수 없다** — 새 서버가 터널을 올리는 순간 공유기 peer endpoint 가 넘어와 **구 서버 원부조회(3사 게이트웨이)가 끊긴다.** 구축 땐 conf 만, 전환 때 구 정지 → 신 기동. 그리고 구 서버는 유닛이 `inactive` 인 채 인터페이스만 떠 있었다(손으로 `wg-quick up`) — `systemctl stop` 은 no-op, `wg-quick down` 으로.
+📏 곁다리 — `gh run rerun --job` 은 같은 run 의 **새 attempt** 라 `gh run list` 엔 안 뜬다. `gh run view <run>` 으로 잡을 본다(§8 #107-C 의 「런이 아니라 SHA」와 같은 결).
+상세 = `docs/operations/ssancarerp-server-migration-commands.md` 「실행 후기」.

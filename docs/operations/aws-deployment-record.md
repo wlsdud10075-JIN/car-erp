@@ -580,3 +580,7 @@ cherry-pick(.md 제외). 마이그 없음.
 **조치 (2대)**: `/etc/php/8.4/fpm/php.ini` → `40M/40M` (백업 `.bak-20260718`) → `sudo systemctl restart php8.4-fpm.service`(정확 유닛명) → **HTTPS phpinfo 프로브로 런타임 실측 검증**(`upload=40M post=40M` 확인) → 프로브 삭제. 두 대 모두 성공.
 
 **재발방지**: `scripts/karaba-1-stack.sh` 에 php.ini 40M sed 추가(신규 서버 자동) + 본 체크리스트에 항목 추가. ssancar(대물량) 정식 배포 시에도 이 스크립트 경로면 자동 반영.
+
+## 2026-09-24 — ssancarerp 서버 이전 (8GB → 4GB, 배포 아님·인프라)
+
+구 인스턴스(8GB, ip-172-26-0-226) → 새 `New_Ssancar_Erp`(4GB/2vCPU/80GB, ip-172-26-11-155). **고정 IP `54.116.7.83` 재할당**이라 도메인·DNS·NAS·`DEPLOY_HOST`·NICE 화이트리스트 무변경. 다운타임 ≈6분. WireGuard(`wg-carmodoo`)·Tailscale(`ssancarerp-server-new`)·letsencrypt·supervisor 2·cron 3·백업 스크립트 3 이식. 구 Django(`ssancar-erp.service`)는 새 서버에 없음(`/provide/` 잔여 경로 → 404, nice-lookup 은 PHP). GH `deploy-ssancar` 재실행 success(sha `7bf9279`). 계획·정정·실행 = `ssancarerp-server-migration-runbook.md` §2-B · `ssancarerp-server-migration-commands.md` 「실행 후기」. 구 인스턴스는 점검모드 정지 → **10/1 이후 삭제**.

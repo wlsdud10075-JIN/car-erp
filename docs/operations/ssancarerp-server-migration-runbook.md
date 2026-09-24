@@ -4,7 +4,7 @@
 > 📌 사전 조사 = `ssancarerp-instance-downsize.md` (왜 4GB 인지·왜 1GB 는 안 되는지)
 > 🧰 **실행 명령 = `ssancarerp-server-migration-commands.md`** — A~D 를 블록별 「붙여 넣고 검증 한 줄」로 풀어 둔 것(2026-09-24). 실행할 땐 그 문서를 연다.
 > 🔧 **2026-09-24 재개 준비 실측 정정 = §2-B** — 런북 가정과 달랐던 것 10개(letsencrypt 복사·방화벽 443·WireGuard 단일 peer 함정·NAS 백업 키·Django sqlite·타임존 UTC 등). **jin 몫 2·3·6 과 A·B·C·D 에 반영 완료.**
-> 🚫 **아직 아무것도 안 바꿨다.**
+> ✅ **2026-09-24 전환 완료** — 고정 IP 재할당(가), 다운타임 ≈6분, 건수 구=신 일치, D 서버 몫 전부 통과, GH deploy-ssancar 재실행 success. 남은 것 = jin 실사용 확인 · 익일 NAS 수신 · **10/1 이후 구 인스턴스 삭제**. 실행 중 잡은 함정 4개 = commands 문서 맨 아래 「실행 후기」.
 
 ## 0. 이 서버에 사는 것 — **4개를 통째로 옮긴다**
 
