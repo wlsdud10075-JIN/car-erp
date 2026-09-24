@@ -69,6 +69,8 @@ jobs:
             php artisan config:cache || true
             php artisan route:cache || true
             php artisan view:cache || true
+            # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
+            sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
             # PHP-FPM 재시작(opcache 갱신) — 서버 서비스명에 맞게 조정. 무중단이면 reload.
             sudo systemctl reload php8.4-fpm || true
@@ -107,6 +109,8 @@ jobs:
             php artisan config:cache || true
             php artisan route:cache || true
             php artisan view:cache || true
+            # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
+            sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
@@ -148,6 +152,8 @@ jobs:
             php artisan config:cache || true
             php artisan route:cache || true
             php artisan view:cache || true
+            # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
+            sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
@@ -186,6 +192,8 @@ jobs:
             php artisan config:cache || true
             php artisan route:cache || true
             php artisan view:cache || true
+            # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
+            sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
