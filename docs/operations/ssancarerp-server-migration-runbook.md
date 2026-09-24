@@ -2,6 +2,8 @@
 
 > 🎯 **8GB → 4GB 다운사이징.** 화면·데이터·문서·주소 **전부 그대로.** 바뀌는 건 「담는 그릇」뿐.
 > 📌 사전 조사 = `ssancarerp-instance-downsize.md` (왜 4GB 인지·왜 1GB 는 안 되는지)
+> 🧰 **실행 명령 = `ssancarerp-server-migration-commands.md`** — A~D 를 블록별 「붙여 넣고 검증 한 줄」로 풀어 둔 것(2026-09-24). 실행할 땐 그 문서를 연다.
+> 🔧 **2026-09-24 재개 준비 실측 정정 = §2-B** — 런북 가정과 달랐던 것 10개(letsencrypt 복사·방화벽 443·WireGuard 단일 peer 함정·NAS 백업 키·Django sqlite·타임존 UTC 등). **jin 몫 2·3·6 과 A·B·C·D 에 반영 완료.**
 > 🚫 **아직 아무것도 안 바꿨다.**
 
 ## 0. 이 서버에 사는 것 — **4개를 통째로 옮긴다**
@@ -43,9 +45,28 @@ ERP  →  https://niceab.nicednr.co.kr (= 211.174.52.231)
 | **Tailscale** | `ssancarerp-server` (100.87.123.37). 챗봇이 `gpu-office`(100.110.133.112:11434) 를 부른다 | 새 노드로 가입. **부르는 쪽이라 상대 IP 만 맞으면 된다** |
 | **S3** | 차량 문서·사진 · DB 백업 | 🚫 **옮기지 않는다.** `.env` 의 키로 같은 버킷을 보면 끝 |
 | **알림톡(BizM)** | 승인 버튼 링크가 `https://heymancar.com/a/payout/…` | 도메인 그대로라 **무변경**. 🚨 `APP_URL` 반드시 동일하게 |
-| **DB 백업 cron** | 매일 18:00 UTC(=03:00 KST) `db_backup.sh` + 일요일 01:00 `weekly_backup_prepare.sh` | 스크립트 2개 복사 + crontab 재등록 |
-| **SSL** | `heymancar.com`(+www) 만료 11/29 · `board.heymancar.com` 만료 11/24 | 전환 후 certbot 재발급(도메인 동일) |
-| **큐 워커** | supervisor 2개 (board-ssancar-worker · ssancar-car-erp-worker) | conf 복사 |
+| **DB 백업 cron** | ⚠️ 09-24 실측 정정 — ubuntu crontab 3줄: `0 1 * * 0 weekly_backup_prepare.sh` · `* * * * * schedule:run`(→ Laravel `db:backup` 이 매일 S3 로) · `30 16 * * * erp_db_dump.sh`(=01:30 KST, **09-22 수정본**, `backup_staging/daily` 에 mysql 2 + Django sqlite). `db_backup.sh` 는 crontab 에 **없다**(수동용, `.db_backup.cnf` 필요) | 스크립트 3개 + `.db_backup.cnf`(🚨 DB 비번) 복사 + crontab 3줄 재등록 + `backup_staging` 디렉터리 재생성 |
+| **NAS → AWS 백업 키** | `authorized_keys` 에 `nas-to-aws-backup`(ed25519) — 사무실 NAS 가 이 서버로 붙어 `backup_staging` 을 당겨간다(09-24 발견, 런북에 없던 연결) | `authorized_keys` 통째 복사(github-actions ×3 · claude · nas). 👤 NAS 가 **IP 로 붙는지 도메인으로 붙는지**는 jin 확인 — 고정 IP 재할당이면 둘 다 무변경 |
+| **SSL** | `heymancar.com`(+www) 만료 11/29 · `board.heymancar.com` 만료 11/24 | ⚠️ 09-24 정정 — **`/etc/letsencrypt` 를 구→신 복사**(nginx 사이트 conf 가 `listen 443 ssl` + 인증서 경로라 파일 없으면 nginx 가 안 뜬다 = B11 전 화면 점검 불가). 새로 발급은 IP 가 넘어간 뒤에나 가능하므로 전환 후엔 **`certbot renew --dry-run` 으로 갱신 경로만 확인** |
+| **큐 워커** | supervisor 2개 (board-ssancar-worker=`www-data` · ssancar-car-erp-worker=`ubuntu`) | conf 복사 — **실행 사용자가 다르다**, storage 는 `ubuntu:www-data` setgid |
+| **챗봇 색인** | `storage/app/index-erp.json`(3MB) — 회사 GPU PC 가 SSH 로 밀어 넣는다(현재 챗봇 OFF, 09-09 정지) | 파일 1개 복사. 👤 GPU PC 스크립트가 어느 주소(도메인/Tailscale IP)로 붙는지는 챗봇 재가동 때 확인 |
+
+## 2-B. 🔧 2026-09-24 실측 정정 — 런북 가정과 달랐던 것 (구 서버 읽기 전용 인벤토리)
+
+| # | 가정 | 실측 | 반영 |
+|---|---|---|---|
+| 1 | 전환 후 certbot 재발급 | 사이트 conf 가 인증서 파일을 참조 → **파일 없으면 nginx 기동 실패**. IP 전환 전 발급 불가 | **B11 에서 `/etc/letsencrypt` 구→신 복사**, C6 = `renew --dry-run` |
+| 2 | 새 인스턴스 방화벽 | Lightsail 기본 = 22·80 만 | 👤 **jin 2 에 443 추가**. WireGuard·Tailscale 은 outbound 라 inbound 불필요 |
+| 3 | 🚨 WireGuard 는 conf 복사로 끝 | **키·peer 가 하나** — 새 서버가 터널을 올리면 공유기 peer endpoint 가 새 서버로 넘어가 **구 서버 원부조회(3사 게이트웨이)가 끊긴다** | B8 = conf 만 넣고 **기동 금지**. C1 구 서버 wg 정지 → C3b 새 서버 wg 기동 |
+| 4 | 타임존 설정 | 구 서버 **UTC** (cron `30 16` = 01:30 KST) | B1 = UTC 그대로. KST 로 바꾸면 cron 전부 9시간 밀린다 |
+| 5 | PHP 8.4 | Ubuntu 24.04 기본은 8.3 → **ondrej PPA** · 패키지 13개(bcmath cli common curl fpm gd intl mbstring mysql opcache readline xml zip) · node **24** · composer 2.7 · LibreOffice 24.2 + fonts-nanum(배포 스크립트가 없으면 설치하므로 미리) | B2 명령에 실측 목록 그대로 |
+| 6 | 백업 = 스크립트 2개 | 3개 + `.db_backup.cnf`(비밀) + `backup_staging/` + **NAS 가 붙는 `nas-to-aws-backup` 키** | §2 표 · A4 · B11 · D7 |
+| 7 | Django 는 안 만들면 끝 | `/ssancar-erp/db.sqlite3`(바이어·컨사이니 원본) 을 `erp_db_dump.sh` 가 매일 뜬다 | **A5 = 구 인스턴스 삭제 전 1회 보관**(venv 제외 tar). 새 서버엔 없어도 스크립트는 WARN 후 통과 |
+| 8 | Tailscale 가입 | `tailscale up` 이 **로그인 URL 승인**을 요구 · 노드명 `ssancarerp-server` 충돌 | 👤 **jin 3-B**: URL 승인. 새 노드명 `ssancarerp-server-new` |
+| 9 | 문서·사진 = S3 | ✅ 맞다 — `VEHICLE_DOCS_DISK=s3` · `DB_BACKUP_DISK=s3` · 버킷 `ssancar-erp-docs`. `.env` 의 `FILESYSTEM_DISK=local` 은 livewire 임시파일(42MB)뿐 | 옮길 로컬 파일 = board `storage/app` 8개(2.6MB) · `index-erp.json` 뿐 |
+| 10 | `DEPLOY_HOST` 시크릿 | 값은 못 본다(마스킹). **고정 IP 재할당(가)이면 IP 가 안 바뀌어 어느 쪽이든 무변경**. 동적(나)이면 jin 이 도메인으로 재설정 | 새 서버 `authorized_keys` 에 github-actions 키가 복사되면 끝. D10 = 같은 master 재배포로 경로 확인 |
+
+**모순 정리(둘이 다르게 적혀 있던 것)** — `pm.max_children` = **14**(09-21 PSS 실측이 나중 근거: 워커당 21MB, 14개 300MB. 10 으로 줄이면 NICE 8~14초 점유 때 워커 부족) · `innodb_buffer_pool_size` = **기본 128M 그대로**(구 서버도 override 없음, DB 55.6MB. 아래 B3 의 512M 은 취소).
 
 ---
 
@@ -66,10 +87,13 @@ ERP  →  https://niceab.nicednr.co.kr (= 211.174.52.231)
          (WireGuard 가 AWS→공유기 방향이라서). 동적일 경우 **DNS 2건만** 손대면 된다.
 - [ ] **2. 새 인스턴스 생성** — Ubuntu 24.04 · **4GB / 2 vCPU** · **같은 리전·가용영역**(ap-northeast-2)
       🚫 스냅샷 복원 금지 — Lightsail 은 **더 작은 번들로 복원이 안 된다.** 빈 인스턴스로 만든다.
+      🔥 **네트워킹 탭 방화벽에 HTTPS 443 추가**(기본은 22·80 뿐 — 없으면 B11 점검에서 접속이 안 된다). 그 외 inbound 불필요
 - [ ] **3. 새 인스턴스에 SSH 키 등록** — 기존 `car_erp_key` 를 그대로 쓰면 내 작업이 수월하다
+- [ ] **3-B. Tailscale 승인** — B9 에서 내가 URL 을 주면 브라우저에서 승인(1분). 새 노드명 `ssancarerp-server-new`
 - [ ] **4. APP_KEY 백업 확인** — 🚨 **이게 사라지면 RRN 전량 복구 불가.** 1Password 등에 있는지 확인
 - [ ] **5. 전환 시간대 결정** — 다운타임 **10~20분**. 업무 없는 시간으로
 - [ ] **6. 알려주기** — 새 인스턴스 접속 정보(공인 IP)
+      ➕ **사무실 NAS 백업이 서버에 어떤 주소로 붙는지**(IP `54.116.7.83` / 도메인) — 고정 IP 재할당이면 무관, 동적이면 NAS 쪽도 바꿔야 한다
 
 ### D-day (9/24~28 중 하루)
 
@@ -93,37 +117,40 @@ ERP  →  https://niceab.nicednr.co.kr (= 211.174.52.231)
 ```
 A1  DB 덤프 2개 (ssancar_erp · board_ssancar) → S3 + 로컬 2벌
 A2  .env 2개 (car-erp · board) 안전 보관        🚨 APP_KEY 포함
-A3  /etc/wireguard/wg-carmodoo.conf 보관        🚨 개인키 포함
-A4  nginx 사이트 설정 · php-fpm pool · supervisor conf · cron · systemd 유닛 수집
-A5  /home/ubuntu/*.sh (백업 스크립트 2개)
+A3  /etc/wireguard/wg-carmodoo.conf · /etc/letsencrypt · ~/.db_backup.cnf   🚨 비밀 — 로컬에 안 뜬다, B 에서 구→신 직결 파이프
+A4  nginx 사이트 설정 · php-fpm pool · supervisor conf · cron · systemd 유닛 · authorized_keys(공개키) 수집
+A5  /home/ubuntu/*.sh (백업 스크립트 3개) + 구 Django /ssancar-erp (venv 제외 tar — db.sqlite3 원본 보관 1회)
 A6  현재 상태 스냅샷 기록 — 차량수·정산수·S3 객체수·마지막 알림톡 (이전 후 대조용)
 ```
+※ A1 덤프는 `mysqldump | gzip` 을 ssh 파이프로 로컬에 받는다 — **구 서버에 파일을 만들지 않는다**(쓰기 0). 명령 = commands 문서 A.
 
 ### B. 새 서버 구축 (D-2 ~ D-1, 구 서버 영향 0)
 
 ```
-B1  Ubuntu 24.04 기본 · 타임존 · 스왑 2GB
-B2  nginx 1.24 · PHP 8.4 (+확장 전량: bcmath calendar ctype curl dom exif ffi fileinfo
-    ftp gd gettext iconv intl mbstring mysqli opcache pcntl pdo_mysql posix shmop
-    simplexml sockets sodium sysv* tokenizer xml xsl zip) · MySQL 8.0
-    🚨 gd · zip 없으면 서류(xlsx)가 통째로 죽는다
-B3  MySQL 튜닝 — 4GB 에 맞춰 innodb_buffer_pool_size 512M · max_connections 100
-B4  php-fpm pm.max_children **10** (heymanerp 와 동일. 8GB 때의 14 를 그대로 쓰면 안 된다)
-B5  코드 배포 — car-erp(master) · board-ssancar(master)
-B6  .env 복사 + composer install --no-dev + npm ci && npm run build + storage:link
-B7  WireGuard 설치 + conf 복사 + 기동 → **`wg show` 로 handshake 확인**
-B8  Tailscale 가입 (새 노드)
+B1  스왑 2GB · 타임존 **UTC 그대로**(cron 이 UTC 기준으로 적혀 있다)
+B2  ondrej PPA → PHP 8.4 패키지 13개(bcmath cli common curl fpm gd intl mbstring mysql opcache readline xml zip)
+    · nginx 1.24 · MySQL 8.0 · node 24 · composer · supervisor · certbot · wireguard-tools · tailscale · libreoffice-calc+fonts-nanum
+    🚨 gd · zip 없으면 서류(xlsx)가 통째로 죽는다 · php.ini upload/post 40M
+B3  MySQL — DB 2개 + 사용자(값은 .env 에서). 튜닝 **없음**(구 서버도 override 0, DB 55MB — 512M 안은 취소)
+B4  php-fpm pm.max_children **14**(구 서버와 동일 — 09-21 PSS 실측으로 4GB 에 충분. 🚫 줄이지 말 것, NICE 점유 때 워커 부족)
+B5  코드 배포 — car-erp(master) · board-ssancar(master) — sha 가 구 서버와 같아야 한다
+B6  .env 구→신 파이프(로컬 디스크 X) + APP_KEY 지문 대조 + composer --no-dev + npm ci && build + storage:link + 권한(ubuntu:www-data setgid)
+B7  WireGuard conf 복사만 — 🚨 **기동 금지**(§2-B #3: 올리는 순간 구 서버 원부조회가 끊긴다). 기동은 C3b
+B8  Tailscale 가입 (새 노드 `ssancarerp-server-new`, 👤 jin URL 승인)
 B9  DB 복원 2개 → 건수 대조
-B10 cron · supervisor · systemd 등록 (🚫 구 Django 는 만들지 않는다)
-B11 로컬 hosts 로 도메인을 새 서버에 물려 **전 화면 점검** (아직 IP 전환 전)
+B10 nginx 사이트 2개 + **/etc/letsencrypt 복사** + supervisor + cron 3줄 + 백업 스크립트 3개 + .db_backup.cnf + authorized_keys + backup_staging/ (🚫 구 Django 는 만들지 않는다)
+B11 로컬 hosts(또는 curl --resolve)로 도메인을 새 서버에 물려 **전 화면 점검** (아직 IP 전환 전 — 복사한 인증서라 경고 없이 열린다)
 ```
+※ 블록별 명령·검증 = `ssancarerp-server-migration-commands.md` §B (번호가 조금 다르다 — 실행 순서대로 다시 매겼다).
 
 ### C. 전환 (D-day, 다운타임 10~20분)
 
 ```
-C1  구 서버 점검모드(artisan down) + cron·supervisor 정지          ← 쓰기 차단
-C2  최종 DB 덤프 → 새 서버 복원 (48MB, 3분)                        ← 그 사이 데이터
+C1  구 서버 점검모드(artisan down ×2) + cron·supervisor 정지 + **WireGuard 정지**   ← 쓰기 차단 + 터널 반납
+      🚨 이 순간부터 C3b 까지 3사 원부조회 불통 — 5분 안에
+C2  최종 DB 덤프 → 새 서버 복원 (56MB, 3분 — DROP/CREATE 후 통째로)      ← 그 사이 데이터
 C3  건수 대조 (차량·정산·잔금·감사로그·알림톡)
+C3b 새 서버 기동 — **WireGuard 먼저**(handshake 확인) → supervisor → config:cache → artisan up ×2
 C4  IP 넘기기 — **당일 콘솔에서 확인 후 둘 중 하나**
       (가) 고정 IP 다 → 구 인스턴스에서 분리 → 새 인스턴스에 연결. **IP·DNS·공유기 무변경**
       (나) 동적이다   → 새 인스턴스의 IP 로 **DNS 2건** 변경
@@ -132,8 +159,8 @@ C4  IP 넘기기 — **당일 콘솔에서 확인 후 둘 중 하나**
       🔑 **어느 쪽이든 원부조회는 영향 없다** — WireGuard 가 AWS→공유기 방향이고
          NICE 가 보는 건 공유기 IP 다(§1).
 C5  DNS 전파 확인 (고정 IP 면 즉시 / 동적이면 dig 로 확인)
-C6  certbot 재발급 (heymancar.com +www · board.heymancar.com)
-C7  구 서버는 그대로 둔다 (정지만, 삭제 금지)
+C6  인증서 = 복사본(11/24·11/29 까지 유효). `certbot renew --dry-run` 으로 갱신 경로만 확인(재발급 불필요)
+C7  구 서버는 그대로 둔다 (down 상태로 정지만, 삭제 금지) — ⚠️ IP 가 넘어간 뒤엔 `heymancar.com` SSH = 새 서버. 구 서버는 콘솔 브라우저 SSH
 ```
 
 ### D. 검증 (C 직후, jin 과 함께)
@@ -145,9 +172,11 @@ D3  서류 다운로드(xlsx) · 차량 사진 보기            ← S3 연결
 D4  board.heymancar.com 접속 · 연동 1건
 D5  알림톡 테스트 발송 1건
 D6  큐 워커 · schedule:run 동작
-D7  DB 백업 cron 수동 1회 실행
+D7  DB 백업 수동 1회 — `db:backup`(S3) + `erp_db_dump.sh`(backup_staging) + 👤 **다음 날 NAS 가 당겨갔나**
 D8  RRN 복호화 확인 (APP_KEY 정상)                  ← 화면에서 1건
 D9  A6 스냅샷과 건수 전량 대조
+D10 GitHub 배포 경로 — 직전 deploy 런의 `deploy-ssancar` 잡 재실행(같은 master, 무중단 스크립트) → success
+D11 메모리 실측 (`free -m` · php-fpm RSS 합) — used < 2GB 면 4GB 판정 확인
 ```
 
 ### E. 사후 (D+1 ~ D+7)
