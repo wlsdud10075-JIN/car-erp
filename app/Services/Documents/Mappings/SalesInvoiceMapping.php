@@ -37,17 +37,11 @@ use Illuminate\Support\Collection;
 class SalesInvoiceMapping
 {
     /**
-     * 컬렉션 합계. 금액 컬럼은 전부 NOT NULL(default 0) 이라 null 분기가 필요 없다.
-     * 1대일 때 종전 출력과 동일: COMMISSION·AUTO LODING 은 0 이어도 `$0` 이 찍히고(money(0)=0.0),
-     * TAX D/C 만 0 이면 빈칸이다(아래 falsy 분기 — 종전 `$v->tax_dc ? … : null` 과 같음).
-     */
-    private static function sum(Collection $vs, string $column): float
-    {
-        return (float) $vs->sum(fn (Vehicle $v) => (float) ($v->{$column} ?? 0));
-    }
-
-    /**
      * SUB TOTAL = TOTAL = BALANCE — 차량 합(FOB+운임) + COMMISSION + AUTO LODING − TAX D/C.
+     *
+     * 🔀 2026-09-24 (jin) — 기타청구 3줄(E53~E55, 라벨 C53~C55 는 양식 인쇄)은 폐기. FOB(E)에 합산한다
+     *    (`DocValue::unitPriceWithCharges`, 인보이스&팩킹·계약서와 동일). 라벨·값칸은 `clearCellsPreTrim` 으로
+     *    트림 前에 비운다. SUB TOTAL/TOTAL/BALANCE 숫자는 그대로. 🚫 3줄을 되살리지 말 것(두 번 들어간다).
      *
      * 🧭 식은 `DocValue::documentSaleTotal` 단일 출처다 — 서류 7종이 같은 식을 쓰므로
      *    여기서 복제하지 않는다(SKILLS §8 #45).
@@ -89,17 +83,15 @@ class SalesInvoiceMapping
                         'B' => fn (Vehicle $v) => DocValue::brandEn($v),
                         'C' => fn (Vehicle $v) => DocValue::carName($v),          // Model
                         'D' => fn (Vehicle $v) => $v->nice_reg_vin,               // Chassis No.
-                        'E' => fn (Vehicle $v) => DocValue::money($v->sale_price),      // FOB PRICE
+                        'E' => fn (Vehicle $v) => DocValue::unitPriceWithCharges($v),   // FOB PRICE = 판매가 + 기타청구 (09-24)
                         'F' => fn (Vehicle $v) => DocValue::money($v->transport_fee),   // Shipping cost
                     ],
                 ],
                 // 슬롯 열 SUM 수식 없음 — 위 docblock 참조(푸터 전부 값).
                 'footerAggregates' => [],
+                // 기타청구 3행(53~55) — 라벨 C 와 값칸 E 를 트림 前 비운다(subTotal docblock, 09-24).
+                'clearCellsPreTrim' => ['C53', 'E53', 'C54', 'E54', 'C55', 'E55'],
                 'aggregates' => [
-                    'E53' => fn (Collection $vs) => self::sum($vs, 'commission'),    // COMMISSION
-                    'E54' => fn (Collection $vs) => self::sum($vs, 'auto_loading'),  // AUTO LODING
-                    // TAX D/C — 양식 합계에 더해지므로 음수로(할인). 0 이면 종전대로 빈칸.
-                    'E55' => fn (Collection $vs) => ($t = self::sum($vs, 'tax_dc')) ? -1 * $t : null,
                     'E56' => fn (Collection $vs) => self::subTotal($vs),   // SUB TOTAL
                     'E60' => fn (Collection $vs) => self::subTotal($vs),   // TOTAL
                     'E63' => fn (Collection $vs) => self::subTotal($vs),   // BALANCE MONEY

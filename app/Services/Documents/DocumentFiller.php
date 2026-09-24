@@ -304,6 +304,16 @@ class DocumentFiller
             $this->writeCell($sheet, $coord, $resolver($this->vehicles));
         }
 
+        // 트림 前 공란화 — 양식에 인쇄된 비노란 라벨(판매계약서 「Other Charge」·Proforma 「COMMISSION/AUTO LODING/TAX D/C」)
+        //   은 clearYellowFill 이 못 지우고, 3-1 `clearCells` 는 removeRow **뒤** 고정좌표라 N<30 이면 엉뚱한 행을 지운다
+        //   (SalesInvoiceMapping docblock 이 그래서 DEPOSIT 라벨을 양식에서 비웠다). 원본 좌표가 아직 유효한 여기서
+        //   값과 배경색을 함께 비운다 — 라벨만 지우면 색 띠가 남는다. (jin 2026-09-24, 기타청구를 단가에 합산하며 라벨 제거)
+        foreach ($m['clearCellsPreTrim'] ?? [] as $coord) {
+            $coord = $this->mergeAnchor($sheet, $coord);
+            $sheet->getCell($coord)->setValueExplicit(null, DataType::TYPE_NULL);
+            $sheet->getStyle($coord)->getFill()->setFillType(Fill::FILL_NONE);
+        }
+
         if ($n < $capacity) {
             $sheet->removeRow($first + $n * $stride, ($capacity - $n) * $stride);
             $sheet->garbageCollect();   // 트림 후 시트 dimension 정정 (꼬리 빈 행 제거)
