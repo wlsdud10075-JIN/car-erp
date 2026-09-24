@@ -9,6 +9,7 @@ use App\Models\ReceivableHistory;
 use App\Models\SavingsStatus;
 use App\Models\Setting;
 use App\Models\Vehicle;
+use App\Services\BuyerRebindService;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -31,6 +32,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 패널 ─────────────────────────────────────────────────────
     public bool   $showPanel  = false;
     public ?int   $editingId  = null;
+
+    // ── 삭제 게이트 (2026-09-24) — 차량이 붙은 바이어는 이관 대상을 고른 뒤 삭제. 판정 = BuyerRebindService.
+    public bool   $showDeleteGate = false;
+    public ?int   $deleteTargetId = null;
+    /** @var array<string,mixed> 모달 표시용(이름·건수) — 모델을 담지 않는다(페이로드) */
+    public array  $deleteTargetInfo = [];
+    public string $deleteRebindTargetStr = '';
 
     // ── 기본정보 ──────────────────────────────────────────────────
     public string $name          = '';
@@ -521,11 +529,98 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('buyer.saved'), type: 'success');
     }
 
+    /**
+     * 삭제 — 바이어 삭제 가드 (jin 2026-09-23 → 2026-09-24, SKILLS §8 #110).
+     *   돈(적립금·현금·이체)이 붙어 있으면 차단 토스트. 차량이 붙어 있으면 「이관 후 삭제」 모달. 둘 다 없으면 바로 삭제.
+     *   모델 `Buyer::deleting` 이 같은 판정을 한 번 더 던지므로(DomainException) 여기 분기를 지워도 조용히 지워지진 않는다.
+     */
     public function delete(int $id): void
     {
-        Buyer::findOrFail($id)->delete();
+        $buyer = Buyer::findOrFail($id);
+        $refs = BuyerRebindService::references($buyer);
+
+        if ($refs['money']['total'] > 0 || $refs['vehicles']['total'] > 0) {
+            if (! BuyerRebindService::canRebind($buyer)) {
+                $this->dispatch('notify', message: BuyerRebindService::blockReason($buyer), type: 'error');
+
+                return;
+            }
+            $this->deleteTargetId = $id;
+            $this->deleteTargetInfo = [
+                'name' => $buyer->name,
+                'count' => $refs['vehicles']['total'],
+                'sale' => $refs['vehicles']['buyer_id'],
+                'export' => $refs['vehicles']['export_buyer_id'],
+                'bl' => $refs['vehicles']['bl_buyer_id'],
+                'consignees' => $refs['consignees'],
+            ];
+            $this->deleteRebindTargetStr = '';
+            $this->resetErrorBag(['deleteRebindTargetStr']);
+            $this->showDeleteGate = true;
+
+            return;
+        }
+
+        $this->performBuyerDelete($buyer, null);
+    }
+
+    /** 이관 대상 후보 — 삭제 대상 자신을 뺀 살아있는 바이어. `<select>` 라 SearchRequiresButtonTest 무관. */
+    #[Computed]
+    public function rebindCandidates()
+    {
+        return Buyer::query()->where('id', '!=', (int) $this->deleteTargetId)->orderBy('name')->get(['id', 'name']);
+    }
+
+    /** 「이관 후 삭제」 확정 — 차량 3컬럼 + 컨사이니를 넘기고 삭제(한 트랜잭션). */
+    public function confirmDeleteWithRebind(): void
+    {
+        if (! $this->deleteTargetId) {
+            return;
+        }
+        $this->validate(['deleteRebindTargetStr' => ['required', 'integer', 'exists:buyers,id']], [
+            'deleteRebindTargetStr.required' => __('buyer.delete_gate.rebind_required'),
+            'deleteRebindTargetStr.exists' => __('buyer.delete_gate.target_deleted'),
+        ]);
+
+        $buyer = Buyer::findOrFail($this->deleteTargetId);
+        $target = Buyer::findOrFail((int) $this->deleteRebindTargetStr);   // 살아있는 바이어만(글로벌 스코프)
+        $this->performBuyerDelete($buyer, $target);
+    }
+
+    public function cancelDeleteGate(): void
+    {
+        $this->showDeleteGate = false;
+        $this->deleteTargetId = null;
+        $this->deleteTargetInfo = [];
+        $this->deleteRebindTargetStr = '';
+        $this->resetErrorBag(['deleteRebindTargetStr']);
+        unset($this->rebindCandidates);
+    }
+
+    private function performBuyerDelete(Buyer $buyer, ?Buyer $rebindTo): void
+    {
+        try {
+            $plan = null;
+            DB::transaction(function () use ($buyer, $rebindTo, &$plan) {
+                if ($rebindTo) {
+                    $plan = BuyerRebindService::rebind($buyer, $rebindTo, apply: true);
+                }
+                $buyer->delete();   // 이관 뒤엔 참조 0 → Buyer::deleting 가드 통과
+            });
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+
+        if ($this->editingId === $buyer->id) {
+            $this->close();
+        }
+        $this->cancelDeleteGate();
         unset($this->buyers);
-        $this->dispatch('notify', message: __('buyer.deleted'), type: 'success');
+        $this->dispatch('notify', type: 'success', message: $plan
+            ? __('buyer.delete_gate.rebound', ['count' => count($plan['vehicles']), 'consignees' => $plan['consignees'], 'target' => $rebindTo->name])
+            : __('buyer.deleted'));
     }
 
     // ── 컨사이니 ──────────────────────────────────────────────────
@@ -2383,6 +2478,48 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
+</div>
+@endif
+
+{{-- 삭제 게이트 모달 (2026-09-24) — 차량이 붙은 바이어: 이관 대상을 고른 뒤 삭제. 차량 삭제 게이트(vehicles/index) 와 같은 틀. --}}
+@if($showDeleteGate)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4" wire:key="buyer-delete-gate-modal"
+     x-data @keyup.escape.window="$wire.cancelDeleteGate()">
+    <div class="fixed inset-0" @click="$wire.cancelDeleteGate()"></div>
+    <div class="relative w-full max-w-md rounded-xl bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-start gap-3 border-b border-gray-100 px-5 py-4">
+            <span class="mt-0.5 text-2xl">🗑️</span>
+            <div>
+                <h3 class="text-base font-bold text-gray-900">{{ __('buyer.delete_gate.title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('buyer.delete_gate.ctx') }}</p>
+            </div>
+        </div>
+        <div class="px-5 py-4">
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+                {{ __('buyer.delete_gate.target', [
+                    'name' => $deleteTargetInfo['name'] ?? '', 'count' => $deleteTargetInfo['count'] ?? 0,
+                    'sale' => $deleteTargetInfo['sale'] ?? 0, 'export' => $deleteTargetInfo['export'] ?? 0,
+                    'bl' => $deleteTargetInfo['bl'] ?? 0, 'consignees' => $deleteTargetInfo['consignees'] ?? 0,
+                ]) }}
+            </div>
+            <div class="mt-4">
+                <label class="label-base">{{ __('buyer.delete_gate.rebind_label') }} <span class="text-red-500">*</span></label>
+                <select wire:model="deleteRebindTargetStr" class="input-base">
+                    <option value="">{{ __('buyer.delete_gate.rebind_ph') }}</option>
+                    @foreach($this->rebindCandidates as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                    @endforeach
+                </select>
+                @error('deleteRebindTargetStr')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+            <button type="button" wire:click="cancelDeleteGate"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button type="button" wire:click="confirmDeleteWithRebind" wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">{{ __('buyer.delete_gate.confirm_btn') }}</button>
+        </div>
+    </div>
 </div>
 @endif
 

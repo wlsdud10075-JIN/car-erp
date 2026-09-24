@@ -369,6 +369,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 'deleted' => 'badge-red',
                                 'restored' => 'badge-amber',
                                 'force_deleted' => 'badge-red',
+                                'buyer_rebound' => 'badge-amber',   // 바이어 삭제 전 차량·컨사이니 이관 (2026-09-24, BuyerRebindService)
                                 default => 'badge-gray',
                             };
                         @endphp

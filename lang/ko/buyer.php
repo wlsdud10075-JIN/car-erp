@@ -15,6 +15,21 @@ return [
     'delete_confirm_simple' => '이 바이어를 삭제할까요? 되돌릴 수 없습니다.',
     'saved' => '바이어 정보가 저장됐습니다.',
     'deleted' => '바이어가 삭제됐습니다.',
+    // 삭제 가드 (2026-09-24) — 판정은 App\Services\BuyerRebindService. 차량이 붙은 바이어는 이관 후 삭제, 돈이 붙은 바이어는 삭제 불가.
+    'delete_gate' => [
+        'title' => '바이어 삭제 — 차량 이관',
+        'blocked_money' => ':name — 적립금·현금 원장이 있는 바이어는 삭제할 수 없습니다 (적립금 :savings건 · 현금 :cash건 · 이체 :transfers건). 원장을 먼저 정리하세요.',
+        'blocked_vehicles' => ':name — 차량 :count대가 이 바이어를 쓰고 있습니다 (판매 :sale · 통관 :export · B/L :bl). 삭제하려면 차량을 넘길 바이어를 고르세요.',
+        'ctx' => '차량은 지우지 않습니다. 판매·통관·B/L 바이어 칸과 이 바이어의 컨사이니가 고른 바이어로 통째로 넘어간 뒤 삭제됩니다.',
+        'target' => ':name · 차량 :count대 (판매 :sale · 통관 :export · B/L :bl) · 컨사이니 :consignees건',
+        'rebind_label' => '차량·컨사이니를 넘길 바이어',
+        'rebind_ph' => '바이어 선택',
+        'rebind_required' => '차량을 넘길 바이어를 고르세요.',
+        'same_target' => '같은 바이어로는 이관할 수 없습니다.',
+        'target_deleted' => '삭제된 바이어로는 이관할 수 없습니다.',
+        'confirm_btn' => '이관 후 삭제',
+        'rebound' => '차량 :count대와 컨사이니 :consignees건을 「:target」으로 넘기고 삭제했습니다.',
+    ],
     'col_name' => '바이어명',
 
     'tab' => [
