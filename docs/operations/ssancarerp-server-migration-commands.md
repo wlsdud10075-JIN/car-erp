@@ -350,4 +350,9 @@ $S $NEW 'sudo certbot renew --dry-run 2>&1 | tail -3'
 | 도구 | Claude Bash 는 `sleep` 금지 · 긴 복합 명령(`rm -rf`+DB 복원)은 권한 분류기가 거부 | 블록을 잘게, `rm -r` |
 | D10 | `gh run rerun --job` 은 **같은 run 의 새 attempt** — `gh run list` 로는 안 보인다. `gh run view <run>` 으로 잡 상태를 본다 | — |
 
+| 전환 후 | 텔레그램 🔴 `assistant:health-check` 실패 — cron(ubuntu)이 `laravel.log`(www-data 644)에 못 써 **로그 쓰기 예외로 명령이 죽음**(Ollama 는 경고일 뿐 exit 0). **근본 = heyman 은 `ubuntu ∈ www-data` 그룹인데 새 서버는 아니었다** → 위 Livewire dir 문제도 같은 뿌리 | `sudo usermod -aG www-data ubuntu` + `chown ubuntu:www-data storage/logs/*.log; chmod 664`. **B6 에 넣을 것: 스택 직후 `usermod -aG www-data ubuntu`** |
+| B9 | `tailscale up` 승인을 **다른 Google 계정(wlsdud10075)** 으로 해서 peers=0 — 3사 서버·gpu-office 는 wlsdud10070 tailnet | `tailscale logout` → 다시 `up` → **wlsdud10070 계정으로 승인** |
+| 전환 후 | `carmodoo login failed "다시 시도하세요"` WARNING 1건 — 새 서버는 세션 캐시가 비어 첫 로그인이 거부됨(서비스 docblock 의 알려진 함정), 재시도 성공(jin 원부조회 OK) | 무시 |
+
 실측: 전환 직후 used 1,413MB / avail 2,419MB · php-fpm 14 워커 RSS 합 319MB · 로그인 0.11~0.16s.
+📌 **heyman·karaba 도 배포 순간 1요청씩 500** — `deploy.yml` 의 `view:cache`(ubuntu) 뒤 Livewire `islands/` 컴파일에서 www-data Permission denied(09-22·09-24 각 1건, 그 뒤 dir 이 www-data 소유가 되어 조용). 고치려면 deploy 스크립트 끝에 `chmod -R g+rwX storage/framework/views` — 백로그.

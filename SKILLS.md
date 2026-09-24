@@ -1610,6 +1610,7 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 | board 워커 BACKOFF — *Database file … database.sqlite does not exist* | www-data 워커가 **`.env`(600 ubuntu)를 못 읽어** 기본값 sqlite. 구 서버는 `config:cache` 가 있어 무증상 | 워커 기동 **전에** `config:cache` |
 | ERP 첫 요청 500 — *tempnam(): file created in the system's temporary directory* | `view:cache` 를 ubuntu 로 돌리면 Livewire 컴파일 dir 이 **0755** 로 생겨 www-data 가 못 씀 | 캐시 생성 **뒤에** `chmod -R g+rwX storage` |
 
+🔑 **넷의 공통 뿌리 = 새 서버의 `ubuntu` 가 `www-data` 그룹에 없었다**(heyman·구 서버는 들어 있다). 그래서 www-data 가 만든 664 파일(로그·컴파일 뷰)을 cron·배포(ubuntu)가 못 쓰고, 반대도 마찬가지. 전환 뒤 첫 텔레그램 🔴 도 이것 — `assistant:health-check` 가 **로그를 쓰다** 죽었다(Ollama 경고는 exit 0). ⇒ 서버 구축 스크립트 첫 줄에 `usermod -aG www-data ubuntu`.
 🧭 **이전 검증은 「서버 안에서 curl 200」까지 가야 한다.** `nginx -t`·`supervisorctl status`·`artisan about` 이 초록이어도 첫 HTTP 요청에서 500 이 났다. 위 넷 중 셋은 **요청이 와야** 드러난다.
 🚨 **WireGuard 는 키가 하나면 서버가 둘일 수 없다** — 새 서버가 터널을 올리는 순간 공유기 peer endpoint 가 넘어와 **구 서버 원부조회(3사 게이트웨이)가 끊긴다.** 구축 땐 conf 만, 전환 때 구 정지 → 신 기동. 그리고 구 서버는 유닛이 `inactive` 인 채 인터페이스만 떠 있었다(손으로 `wg-quick up`) — `systemctl stop` 은 no-op, `wg-quick down` 으로.
 📏 곁다리 — `gh run rerun --job` 은 같은 run 의 **새 attempt** 라 `gh run list` 엔 안 뜬다. `gh run view <run>` 으로 잡을 본다(§8 #107-C 의 「런이 아니라 SHA」와 같은 결).
