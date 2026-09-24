@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BuyerRebindService;
 use App\Services\LockThresholdResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -51,6 +52,19 @@ class Buyer extends Model
      */
     protected static function booted(): void
     {
+        // 삭제 가드 (jin 2026-09-23 → 2026-09-24, SKILLS §8 #110) — 판정·문구는 BuyerRebindService 단일 출처.
+        //   차량이 붙어 있으면 화면이 「이관 후 삭제」 모달로 풀고, 적립금·현금 원장이 있으면 어디서도 못 지운다.
+        //   ⚠️ auth 없는 경로(시더·artisan·테스트 픽스처)는 통과 — Vehicle::deleting 과 같은 우회. 「이미 매달린 데이터」를
+        //   일부러 만드는 테스트가 있다(DomesticExportQueueTest·SettlementTierPerSalesmanTest). 화면은 항상 로그인 상태다.
+        static::deleting(function (Buyer $buyer) {
+            if (! auth()->check()) {
+                return;
+            }
+            if ($reason = BuyerRebindService::blockReason($buyer)) {
+                throw new \DomainException($reason);
+            }
+        });
+
         static::created(function (Buyer $buyer) {
             if (self::$skipAutoConsignee || ! auth()->check()) {
                 return;

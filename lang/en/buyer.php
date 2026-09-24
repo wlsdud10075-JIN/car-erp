@@ -15,6 +15,21 @@ return [
     'delete_confirm_simple' => 'Delete this buyer? This cannot be undone.',
     'saved' => 'Buyer saved.',
     'deleted' => 'Buyer deleted.',
+    // Delete guard (2026-09-24) — decided by App\Services\BuyerRebindService. Buyers with vehicles are rebound then deleted; buyers with money ledgers cannot be deleted.
+    'delete_gate' => [
+        'title' => 'Delete buyer — rebind vehicles',
+        'blocked_money' => ':name — a buyer with savings/cash ledger rows cannot be deleted (savings :savings · cash :cash · transfers :transfers). Clear the ledgers first.',
+        'blocked_vehicles' => ':name — :count vehicle(s) reference this buyer (sale :sale · export :export · B/L :bl). Pick a buyer to move them to before deleting.',
+        'ctx' => 'Vehicles are not deleted. Their sale/export/B/L buyer columns and the consignees of this buyer are moved to the chosen buyer, then the buyer is deleted.',
+        'target' => ':name · :count vehicle(s) (sale :sale · export :export · B/L :bl) · :consignees consignee(s)',
+        'rebind_label' => 'Move vehicles & consignees to',
+        'rebind_ph' => 'Select buyer',
+        'rebind_required' => 'Pick a buyer to move the vehicles to.',
+        'same_target' => 'Cannot rebind to the same buyer.',
+        'target_deleted' => 'Cannot rebind to a deleted buyer.',
+        'confirm_btn' => 'Rebind & delete',
+        'rebound' => 'Moved :count vehicle(s) and :consignees consignee(s) to ":target" and deleted the buyer.',
+    ],
     'col_name' => 'Buyer Name',
 
     'tab' => [
