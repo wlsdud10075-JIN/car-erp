@@ -1053,6 +1053,34 @@ Alpine `init()` 은 기다리지 않는다 → `renderCharts()` 가 `typeof Char
 
 ---
 
+### 110. 🗑️ **「등록이 안 됐다」 = NULL 이 아니라 「삭제된 행을 가리킨다」부터** (2026-09-23 ssancarerp 무사백 29대)
+
+jin: *「정산된 것 중 무사백 정산된 거 중 바이어 등록이 안 된 게 있어서 … 바이어만 넣어줄 수 있어?」* + 대조용 엑셀.
+운영에서 「정산 있고 `buyer_id IS NULL`」을 세니 **0대**였다. 빈 게 아니라 **soft-delete 된 바이어를 가리키고** 있었다 —
+ATLAS GROUP SH.P.K 가 08-28 13:48 에 #393 으로 새로 생겨 29대가 붙고, 21분 뒤 중복이라 **삭제**됐는데(같은 이름 #47 이 08-19 부터 있었다)
+차량은 안 옮겨졌다. 화면은 `buyer?->name` 이라 빈칸으로 보인다. 같은 형태가 손세훈 6대(#400, 대체 바이어 없음)에도 있었다.
+
+- 🔎 **진단 한 줄** — 「없다」 제보는 `whereNull` 로 세지 말고 **`join buyers … whereNotNull(buyers.deleted_at)`** 로 먼저 센다.
+  NULL 0 이 「등록됐다」의 증거가 아니다. 이 레포는 Buyer·Settlement 가 SoftDeletes 라 **참조가 산 행을 가리키는지**가 따로 있다.
+- 🚪 **구조 원인 = 바이어 삭제 가드가 없다.** 차량 N대가 물려 있어도 지워진다 → 착수 대기(차단 또는 이관 대상 선택 + 3사 매달린 참조 점검 명령).
+- ✅ 고침 = `vehicles.buyer_id` 393→47 만(정산·통관/BL 바이어·컨사이니 무변경, #393 딸린 데이터 0 확인 후), 감사로그 29건. dry-run → jin 승인·오토모드 OFF → apply → 검증(매달린 참조 0).
+
+#### 110-B. 🧭 **`settlement_status` 와 `secondary_status` 의 「pending」은 다른 것이다** (같은 주, 재무처리 수정·삭제)
+
+「미수가 되살아나면 **확정 전** 정산을 지운다」를 만들며 `secondary_status='pending'` 으로 고를 뻔했다.
+그건 **paid 정산의 「2차 대기」**다(`Settlement.php:74` 라벨) — 그걸 지웠으면 지급 끝난 정산이 사라졌다.
+확정 전 = `settlement_status IN ('pending','calculating')`. 가드 = `TransfersPaymentEditDeleteTest::test_a_paid_settlement_is_left_alone_with_a_warning`.
+⇒ 같은 단어가 두 컬럼에 있으면 **어느 축의 pending 인지** 주석에 적고, 테스트는 「다른 축의 pending 이 살아남는지」로 쓴다.
+
+#### 110-C. 🔁 **후속본(v2) 템플릿은 「수신자 설정 키」도 물려받아야 한다** (같은 주, 대표 알림톡 링크 버튼)
+
+`erp_*_v2` 4종을 만들고 커맨드는 `forBroadcast(구 코드)` 로 수신자를 뽑아 v2 로 보냈다. 그러면 안내 화면의 v2 행에는
+**아무것도 안 읽는 체크박스**가 그려진다(§8 #60 의 「체크했는데 왜 안 와」). advisor 지적으로 잡았다.
+⇒ `selectedRoles`/`saveRoles` 가 `baseCode()` 키로 읽고 쓰게 해 `forBroadcast(v2) === forBroadcast(구)` 를 **테스트로 못 박고**, v2 행은 체크박스 대신 「공유」 안내.
+곁다리 — **버튼이 등록된 템플릿은 「테스트 발송」도 버튼을 실어야 한다**(안 실으면 승인본과 달라 K108). `sendTest` 에 `linkButtons` 를 붙였다.
+
+---
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
