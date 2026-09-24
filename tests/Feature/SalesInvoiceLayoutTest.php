@@ -11,6 +11,7 @@ use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\RichText\RichText;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use Tests\TestCase;
 
 /**
@@ -103,24 +104,27 @@ class SalesInvoiceLayoutTest extends TestCase
         $this->assertSame('HYUNDAI', $sheet->getCell('B'.self::FIRST)->getValue());
         $this->assertSame('TUCSON', $sheet->getCell('C'.self::FIRST)->getValue());
         $this->assertStringStartsWith('KMHJ581ABGU10', (string) $sheet->getCell('D'.self::FIRST)->getValue());
-        $this->assertEquals(1000, $sheet->getCell('E'.self::FIRST)->getValue(), 'FOB');
+        // FOB = 판매가 + 기타청구(10+5−2 = 13i) — 2026-09-24 부터 단가에 합산(인보이스&팩킹·계약서와 동일)
+        $this->assertEquals(1013, $sheet->getCell('E'.self::FIRST)->getValue(), 'FOB = 판매가 + 기타청구');
         $this->assertEquals(100, $sheet->getCell('F'.self::FIRST)->getValue(), 'Shipping cost');
 
         // 3번째 슬롯까지 채워졌나
         $this->assertSame('12GA0003', $sheet->getCell('A'.(self::FIRST + 2))->getValue());
-        $this->assertEquals(3000, $sheet->getCell('E'.(self::FIRST + 2))->getValue());
+        $this->assertEquals(3039, $sheet->getCell('E'.(self::FIRST + 2))->getValue());
 
-        // 푸터 값 — commission 10i / auto 5i / tax 2i (i=1..3)
-        $sub = $this->expectedSubTotal(3);   // 6678
-        $this->assertEquals(60, $sheet->getCell('E'.$this->row(self::COMMISSION, 3))->getValue(), 'Σ COMMISSION');
-        $this->assertEquals(30, $sheet->getCell('E'.$this->row(self::AUTO_LOADING, 3))->getValue(), 'Σ AUTO LODING');
-        $this->assertEquals(-12, $sheet->getCell('E'.$this->row(self::TAX_DC, 3))->getValue(), 'TAX D/C 는 음수(할인)');
+        // 푸터 — 기타청구 3행(COMMISSION/AUTO LODING/TAX D/C)은 라벨·값 모두 비워진다(양식 인쇄 라벨을 트림 前 공란화).
+        //   되살아나면 SUB TOTAL 이 기타청구를 두 번 센 것이다.
+        $sub = $this->expectedSubTotal(3);   // 6678 — 숫자는 09-23 과 동일
+        foreach ([self::COMMISSION, self::AUTO_LOADING, self::TAX_DC] as $r) {
+            $this->assertNull($sheet->getCell('E'.$this->row($r, 3))->getValue(), "기타청구 값칸 {$r} 은 비어야 한다");
+            $this->assertNull($sheet->getCell('C'.$this->row($r, 3))->getValue(), "기타청구 라벨 {$r} 은 비어야 한다");
+            $this->assertSame(Fill::FILL_NONE, $sheet->getStyle('C'.$this->row($r, 3))->getFill()->getFillType(), "라벨 {$r} 배경색 띠가 남아 있다");
+        }
         $this->assertEquals($sub, $sheet->getCell('E'.$this->row(self::SUB_TOTAL, 3))->getValue(), 'SUB TOTAL');
         $this->assertEquals($sub, $sheet->getCell('E'.$this->row(self::TOTAL, 3))->getValue(), 'TOTAL');
         $this->assertEquals($sub, $sheet->getCell('E'.$this->row(self::BALANCE, 3))->getValue(), 'BALANCE MONEY');
 
         // 라벨도 같이 올라왔는지 — 값만 맞고 라벨이 어긋나면 인쇄물이 뒤죽박죽이 된다.
-        $this->assertSame('COMMISSION', $this->label($sheet, 'C'.$this->row(self::COMMISSION, 3)));
         $this->assertSame('SUB TOTAL', $this->label($sheet, 'C'.$this->row(self::SUB_TOTAL, 3)));
         $this->assertSame('TOTAL', $this->label($sheet, 'C'.$this->row(self::TOTAL, 3)));
         $this->assertSame(' BALANCE MONEY', $this->label($sheet, 'C'.$this->row(self::BALANCE, 3)));
@@ -158,10 +162,12 @@ class SalesInvoiceLayoutTest extends TestCase
         $sheet = $this->sheet($this->makeVehicles(1));
 
         $this->assertSame('12GA0001', $sheet->getCell('A'.self::FIRST)->getValue());
-        $this->assertEquals(10, $sheet->getCell('E'.$this->row(self::COMMISSION, 1))->getValue());
-        $this->assertEquals(5, $sheet->getCell('E'.$this->row(self::AUTO_LOADING, 1))->getValue());
-        $this->assertEquals(-2, $sheet->getCell('E'.$this->row(self::TAX_DC, 1))->getValue());
-        // 1000 + 100 + 10 + 5 − 2
+        // 1대 발급도 FOB 에 기타청구 합산(1000 + 10 + 5 − 2), 3행은 비어 있다 — 1슬롯 트림 경로에서도 공란화가 돼야 한다
+        $this->assertEquals(1013, $sheet->getCell('E'.self::FIRST)->getValue());
+        $this->assertNull($sheet->getCell('E'.$this->row(self::COMMISSION, 1))->getValue());
+        $this->assertNull($sheet->getCell('C'.$this->row(self::COMMISSION, 1))->getValue());
+        $this->assertNull($sheet->getCell('E'.$this->row(self::TAX_DC, 1))->getValue());
+        // 1000 + 100 + 10 + 5 − 2 — 종전과 같은 숫자
         $this->assertEquals(1113, $sheet->getCell('E'.$this->row(self::SUB_TOTAL, 1))->getValue());
         $this->assertNull($sheet->getCell('A'.(self::FIRST + 1))->getValue(), '남은 슬롯이 트림돼야 한다');
     }
@@ -180,14 +186,16 @@ class SalesInvoiceLayoutTest extends TestCase
         $sheet = $this->sheet(collect([$v->fresh()]));
 
         $this->assertNull($sheet->getCell('E'.$this->row(self::TAX_DC, 1))->getValue(), 'TAX D/C 0 은 빈칸');
-        $this->assertEquals(0, $sheet->getCell('E'.$this->row(self::COMMISSION, 1))->getValue(), 'COMMISSION 0 은 $0');
+        // 09-24 부터 3행은 값이 있든 없든 비어 있다 — FOB 가 그대로 5000 (기타청구 0)
+        $this->assertNull($sheet->getCell('E'.$this->row(self::COMMISSION, 1))->getValue(), 'COMMISSION 행은 폐기됐다');
+        $this->assertEquals(5000, $sheet->getCell('E'.self::FIRST)->getValue(), '기타청구 0 이면 FOB = 판매가');
     }
 
     public function test_full_thirty_slots_fit(): void
     {
         $sheet = $this->sheet($this->makeVehicles(30));
 
-        $this->assertEquals(30000, $sheet->getCell('E'.(self::FIRST + 29))->getValue(), '30번째 슬롯 FOB');
+        $this->assertEquals(30390, $sheet->getCell('E'.(self::FIRST + 29))->getValue(), '30번째 슬롯 FOB = 30000 + 기타청구 13×30');
         $this->assertSame('SUB TOTAL', $this->label($sheet, 'C'.self::SUB_TOTAL), '30대면 트림 없음');
         $this->assertEquals($this->expectedSubTotal(30), $sheet->getCell('E'.self::SUB_TOTAL)->getValue());
     }

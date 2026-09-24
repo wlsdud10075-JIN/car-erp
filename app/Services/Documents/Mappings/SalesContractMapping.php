@@ -17,8 +17,8 @@ use Illuminate\Support\Collection;
  *
  * 푸터 (jin 2026-07-29 확정 배치):
  *   R52·U52·X52  Sub Total     = 표 3열 SUM — footerAggregate(수식, 채운영역 range)
- *   R53          Other Charge  = Σ(commission + auto_loading − tax_dc)   ┐
- *   R54          Total Amount  = Sub Total(X) + Other Charge             │ aggregates(값) —
+ *   R53          (폐기 09-24)   Other Charge 는 R열 FOB 에 합산 — 라벨 M53·값 R53 은 clearCellsPreTrim 으로 비운다  ┐
+ *   R54          Total Amount  = Σ(FOB + SHIPPING + Other Charge) — Sub Total(X) 과 같은 값               │ aggregates(값) —
  *   R55          Received      = Σ 확정입금                               │ 표에 없는 필드라 컬렉션 집계,
  *   R56          Deposit       = Σ 적립금 사용(savings_used)              │ removeRow 안전 위해 수식 아닌 값
  *   R57          Balance       = Total − Received − Deposit              ┘
@@ -28,6 +28,10 @@ use Illuminate\Support\Collection;
  *    오류라 **빼기**로 바로잡았다.
  *
  * ⚠️ 환율 행(USD/Euro Rate)은 **삭제**(jin 2026-07-29). 구 매핑의 C55/C56 은 갈 곳이 없다.
+ *
+ * 🔀 2026-09-24 (jin) — FOB PRICE(R) = 판매가 + 기타청구(`DocValue::unitPriceWithCharges`, 인보이스&팩킹·선적 계약서와 동일).
+ *   Other Charge 행(M53 라벨은 양식 인쇄·비노란)은 `clearCellsPreTrim` 으로 값·배경을 비운다. Total/Balance 숫자는 그대로.
+ *   🚫 R53 aggregate 를 되살리지 말 것 — 되살리면 Total 에 기타청구가 두 번 들어간다.
  * R12(Date)=TODAY() 수식은 매핑 제외(엔진이 자동 보존).
  */
 class SalesContractMapping
@@ -76,7 +80,7 @@ class SalesContractMapping
                         'E' => fn (Vehicle $v) => DocValue::brandEn($v),          // Brand (영문)
                         'I' => fn (Vehicle $v) => DocValue::carName($v),         // Model
                         'M' => fn (Vehicle $v) => $v->nice_reg_vin,             // Chassis No.
-                        'R' => fn (Vehicle $v) => DocValue::money($v->sale_price),      // FOB PRICE
+                        'R' => fn (Vehicle $v) => DocValue::unitPriceWithCharges($v),   // FOB PRICE = 판매가 + 기타청구 (09-24)
                         'U' => fn (Vehicle $v) => DocValue::money($v->transport_fee),   // SHIPPING (차량별)
                         // X(TOTAL)=슬롯에 박힌 =SUM(R:W) 수식 — 매핑 대상 아님.
                     ],
@@ -86,8 +90,9 @@ class SalesContractMapping
                     ['cell' => 'U52', 'fmt' => '=SUM(U%d:U%d)'],   // Sub Total — SHIPPING 합
                     ['cell' => 'X52', 'fmt' => '=SUM(X%d:X%d)'],   // Sub Total — TOTAL 합
                 ],
+                // Other Charge 행(M53 라벨 + R53 값) — 09-24 부터 R열에 합산되므로 트림 前 비운다(클래스 docblock).
+                'clearCellsPreTrim' => ['M53', 'R53'],
                 'aggregates' => [
-                    'R53' => fn (Collection $vs) => (int) $vs->sum(fn (Vehicle $v) => self::otherCharge($v)),                        // Other Charge
                     'R54' => fn (Collection $vs) => (int) $vs->sum(fn (Vehicle $v) => self::rowTotal($v) + self::otherCharge($v)),   // Total Amount
                     'R55' => fn (Collection $vs) => (int) $vs->sum(fn (Vehicle $v) => DocValue::confirmedReceived($v)),              // Received
                     'R56' => fn (Collection $vs) => (int) $vs->sum(fn (Vehicle $v) => $v->savings_used ?? 0),                        // Deposit (적립금)

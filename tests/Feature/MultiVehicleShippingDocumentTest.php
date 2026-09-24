@@ -39,14 +39,12 @@ class MultiVehicleShippingDocumentTest extends TestCase
     }
 
     /**
-     * 서류별 「판매가 열」 기대값 — 인보이스&팩킹은 단가에 기타청구를 합산(jin 2026-09-22),
-     * 계약서 FOB 는 원 판매가 그대로(기타청구는 E47~E49 3줄로 따로 낸다).
+     * 「판매가 열」 기대값 — 선적 4종 전부 단가에 기타청구를 합산한다
+     * (인보이스&팩킹 jin 2026-09-22 → 계약서 2026-09-24. 09-23 까지는 계약서 FOB 가 원 판매가 + E47~E49 3줄이었다).
      */
     private static function expectedAmount(string $type, Collection $vehicles): float
     {
-        return in_array($type, ['container_invoice_packing', 'roro_invoice_packing'], true)
-            ? (float) $vehicles->sum(fn (Vehicle $v) => DocValue::unitPriceWithCharges($v))
-            : (float) $vehicles->sum('sale_price');
+        return (float) $vehicles->sum(fn (Vehicle $v) => DocValue::unitPriceWithCharges($v));
     }
 
     #[DataProvider('shippingTypes')]
@@ -161,6 +159,39 @@ class MultiVehicleShippingDocumentTest extends TestCase
             // type, firstRow, stride, spareRow(원본), grandTotalRow(원본)
             'container_invoice' => ['container_invoice_packing', 21, 3, 113, 114],
             'roro_invoice' => ['roro_invoice_packing', 21, 1, 53, 54],
+        ];
+    }
+
+    /**
+     * 계약서판 (2026-09-24) — FOB(F) 에 기타청구가 합산되고, 08-28 의 여유행 3줄(E47~F49)은 라벨도 값도 없다.
+     * TOTAL(F52 = SUM(F46:G51)) 은 3줄이 F열로 흡수돼 숫자가 그대로다 — 두 번 들어가면 여기서 잡힌다.
+     */
+    #[DataProvider('contractTypes')]
+    public function test_contract_fob_absorbs_other_charges_and_the_spare_rows_stay_empty(string $type): void
+    {
+        $vehicles = $this->makeVehicles(3);
+        $sheet = (new DocumentFiller($vehicles))->spreadsheet($type)->getSheetByName('HBB340.');
+        $removed = 30 - 3;   // stride 1, first 16 → 푸터가 27행 위로
+
+        $this->assertEquals(1040.0, (float) $sheet->getCell('F16')->getValue(), "$type FOB 에 기타청구가 합산되지 않았다");
+        $this->assertEquals(3120.0, (float) $sheet->getCell('F18')->getValue());
+
+        foreach ([47, 48, 49] as $r) {
+            $this->assertSame('', trim((string) $sheet->getCell('E'.($r - $removed))->getValue()), "$type 여유행 {$r} 에 라벨이 남아 있다 — 08-28 3줄을 되살리지 말 것");
+            $this->assertSame('', trim((string) $sheet->getCell('F'.($r - $removed))->getValue()));
+        }
+
+        // I46 FOB 합 = 1040+2080+3120 = 6240 · F52 TOTAL = FOB + 운임 = 6240 + 600 = 6840 (기타청구 이중계상 없음)
+        $this->assertEquals(6240.0, (float) $sheet->getCell('I'.(46 - $removed))->getCalculatedValue());
+        $this->assertEquals(6840.0, (float) $sheet->getCell('F'.(52 - $removed))->getCalculatedValue(), "$type TOTAL ≠ 판매가 + 기타청구 + 운임");
+        $this->assertEquals(DocValue::documentSaleTotal($vehicles), (float) $sheet->getCell('F'.(52 - $removed))->getCalculatedValue());
+    }
+
+    public static function contractTypes(): array
+    {
+        return [
+            'container_contract' => ['container_contract'],
+            'roro_contract' => ['roro_contract'],
         ];
     }
 

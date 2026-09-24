@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Calculation\Calculation;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use Tests\TestCase;
 
 /**
@@ -94,18 +95,22 @@ class SalesContractLayoutTest extends TestCase
         $this->assertSame('BENZ', $sheet->getCell('E'.self::FIRST)->getValue());
         $this->assertSame('S580', $sheet->getCell('I'.self::FIRST)->getValue());
         $this->assertStringStartsWith('W1K6X7GB8MA', (string) $sheet->getCell('M'.self::FIRST)->getValue());
-        $this->assertEquals(1000, $sheet->getCell('R'.self::FIRST)->getValue(), 'FOB');
+        // FOB = 판매가 + 기타청구(10+5−2 = 13i) — 2026-09-24 부터 단가에 합산(인보이스&팩킹·선적 계약서와 동일)
+        $this->assertEquals(1013, $sheet->getCell('R'.self::FIRST)->getValue(), 'FOB = 판매가 + 기타청구');
         $this->assertEquals(100, $sheet->getCell('U'.self::FIRST)->getValue(), 'SHIPPING (차량별)');
 
-        // 푸터 값 — sale_price 1000·2000·3000 / transport 100·200·300 / other = (10+5-2)*i = 13i
+        // 푸터 값 — sale_price 1000·2000·3000 / transport 100·200·300 / other = 13i (이미 R열에 들어 있다)
         $other = 13 * (1 + 2 + 3);            // 78
         $subTotal = 6000 + 600;               // 6600
-        $total = $subTotal + $other;          // 6678
+        $total = $subTotal + $other;          // 6678 — 숫자는 09-23 과 동일(기타청구가 두 번 들어가지 않는다)
         $received = 300 * 6;                  // 1800
         $deposit = 50 * 6;                    // 300
 
-        $this->assertEquals($other, $sheet->getCell('R'.$this->row(self::OTHER, 3))->getValue(), 'Other Charge');
-        $this->assertEquals($total, $sheet->getCell('R'.$this->row(self::TOTAL, 3))->getValue(), 'Total = Sub + Other');
+        // Other Charge 행은 라벨(M53, 양식 인쇄)도 값(R53)도 비워진다 — 되살아나면 Total 이 두 번 센 것
+        $this->assertNull($sheet->getCell('R'.$this->row(self::OTHER, 3))->getValue(), 'Other Charge 값칸은 비어야 한다');
+        $this->assertNull($sheet->getCell('M'.$this->row(self::OTHER, 3))->getValue(), 'Other Charge 라벨은 비어야 한다');
+        $this->assertSame(Fill::FILL_NONE, $sheet->getStyle('M'.$this->row(self::OTHER, 3))->getFill()->getFillType(), '라벨 배경색 띠가 남아 있다');
+        $this->assertEquals($total, $sheet->getCell('R'.$this->row(self::TOTAL, 3))->getValue(), 'Total = Σ(FOB+SHIPPING) — FOB 에 기타청구 포함');
         $this->assertEquals($received, $sheet->getCell('R'.$this->row(self::RECEIVED, 3))->getValue(), 'Received');
         $this->assertEquals($deposit, $sheet->getCell('R'.$this->row(self::DEPOSIT, 3))->getValue(), 'Deposit = 적립금');
         $this->assertEquals(
@@ -115,7 +120,6 @@ class SalesContractLayoutTest extends TestCase
         );
 
         // 라벨도 같이 올라왔는지 — 값만 맞고 라벨이 어긋나면 인쇄물이 뒤죽박죽이 된다.
-        $this->assertSame('Other Charge', $sheet->getCell('M'.$this->row(self::OTHER, 3))->getValue());
         $this->assertSame('Balance Money', $sheet->getCell('M'.$this->row(self::BALANCE, 3))->getValue());
     }
 
@@ -144,7 +148,7 @@ class SalesContractLayoutTest extends TestCase
     {
         $sheet = $this->sheet($this->makeVehicles(30));
 
-        $this->assertEquals(30000, $sheet->getCell('R'.(self::FIRST + 29))->getValue(), '30번째 슬롯 FOB');
+        $this->assertEquals(30390, $sheet->getCell('R'.(self::FIRST + 29))->getValue(), '30번째 슬롯 FOB = 30000 + 기타청구 13×30');
         $this->assertSame('Sub Total', $sheet->getCell('M'.self::SUB)->getValue(), '30대면 트림 없음');
     }
 
