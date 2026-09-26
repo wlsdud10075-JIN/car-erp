@@ -27,6 +27,7 @@ return [
         'rebind_required' => 'Pick a buyer to move the vehicles to.',
         'same_target' => 'Cannot rebind to the same buyer.',
         'target_deleted' => 'Cannot rebind to a deleted buyer.',
+        'no_permission' => 'Only the management role, work managers and administrators can delete or rebind buyers.',
         'confirm_btn' => 'Rebind & delete',
         'rebound' => 'Moved :count vehicle(s) and :consignees consignee(s) to ":target" and deleted the buyer.',
     ],

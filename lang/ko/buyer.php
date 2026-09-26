@@ -27,6 +27,7 @@ return [
         'rebind_required' => '차량을 넘길 바이어를 고르세요.',
         'same_target' => '같은 바이어로는 이관할 수 없습니다.',
         'target_deleted' => '삭제된 바이어로는 이관할 수 없습니다.',
+        'no_permission' => '바이어 삭제·이관은 관리 담당·업무관리자·최고관리자만 할 수 있습니다.',
         'confirm_btn' => '이관 후 삭제',
         'rebound' => '차량 :count대와 컨사이니 :consignees건을 「:target」으로 넘기고 삭제했습니다.',
     ],
