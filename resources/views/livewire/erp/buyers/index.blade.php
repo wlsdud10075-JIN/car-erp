@@ -536,6 +536,8 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function delete(int $id): void
     {
+        // (나) jin 2026-09-26 — 삭제·이관은 관리 role·업무관리자·최고관리자·시스템관리자만(canApprove). 버튼도 같은 조건으로 숨긴다.
+        abort_unless(auth()->user()?->canApprove(), 403, __('buyer.delete_gate.no_permission'));
         $buyer = Buyer::findOrFail($id);
         $refs = BuyerRebindService::references($buyer);
 
@@ -577,6 +579,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->deleteTargetId) {
             return;
         }
+        abort_unless(auth()->user()?->canApprove(), 403, __('buyer.delete_gate.no_permission'));
         $this->validate(['deleteRebindTargetStr' => ['required', 'integer', 'exists:buyers,id']], [
             'deleteRebindTargetStr.required' => __('buyer.delete_gate.rebind_required'),
             'deleteRebindTargetStr.exists' => __('buyer.delete_gate.target_deleted'),
@@ -1386,9 +1389,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </span>
                 </td>
                 <td class="py-3 text-right">
+                    @if(auth()->user()?->canApprove())
                     <button wire:click.stop="delete({{ $b->id }})"
                             wire:confirm="{{ __('buyer.delete_confirm', ['name' => $b->name]) }}"
                             class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
+                    @endif
                 </td>
             </tr>
             @empty
@@ -2444,7 +2449,7 @@ new #[Layout('components.layouts.app')] class extends Component {
              카드 자체가 「누르면 편집 열림」이라 거기 삭제를 붙이면 오탭이 곧 사고가 된다.
              여기는 항목을 이미 연 상태라 의도가 분명하고, 확인창이 한 번 더 받는다.
              데스크탑은 표에 삭제가 있으므로 `sm:hidden` — 렌더가 안 바뀐다. --}}
-        @if($editingId)
+        @if($editingId && auth()->user()?->canApprove())
         <button wire:click="delete({{ $editingId }})"
                 wire:confirm="{{ __('buyer.delete_confirm_simple') }}"
                 class="mr-auto rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 sm:hidden">

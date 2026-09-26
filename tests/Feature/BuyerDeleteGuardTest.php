@@ -219,6 +219,30 @@ class BuyerDeleteGuardTest extends TestCase
         $this->assertSoftDeleted('buyers', ['id' => $b->id]);
     }
 
+    /** (나) jin 2026-09-26 — 삭제·이관은 관리 role·업무관리자·admin·super(canApprove) 만. 영업은 버튼도 없고 호출도 403. */
+    public function test_only_approvers_can_delete_or_rebind(): void
+    {
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+        $this->actingAs($sales);
+        $b = Buyer::create(['name' => 'CLEAN', 'is_active' => true]);
+
+        Volt::test('erp.buyers.index')->assertDontSeeHtml('wire:click.stop="delete(');
+        Volt::test('erp.buyers.index')->call('delete', $b->id)->assertForbidden();   // Livewire 는 abort 를 응답 상태로 돌려준다
+        $this->assertNotNull(Buyer::find($b->id));
+
+        foreach ([['permission' => 'user', 'role' => '관리'], ['permission' => 'manager', 'role' => '관리'], ['permission' => 'admin', 'role' => '관리'], ['permission' => 'super', 'role' => '관리']] as $attrs) {
+            $this->actingAs(User::factory()->create($attrs + ['email_verified_at' => now()]));
+            $x = Buyer::create(['name' => 'X '.$attrs['permission'], 'is_active' => true]);
+            $c = Volt::test('erp.buyers.index');
+            if (in_array($attrs['permission'], ['admin', 'super'], true)) {
+                // 목록 전체가 보이는 계정에서만 버튼 존재를 본다 — role 관리(user) 는 부하 담당자 바이어만 목록에 뜬다(스코프)
+                $c->assertSee($x->name)->assertSeeHtml('delete('.$x->id.')');
+            }
+            $c->call('delete', $x->id);
+            $this->assertSoftDeleted('buyers', ['id' => $x->id]);   // ⚠️ 3번째 인자는 메시지가 아니라 DB 연결명
+        }
+    }
+
     // ── 점검 명령 ───────────────────────────────────────────────────────
 
     public function test_check_dangling_lists_vehicles_pointing_at_deleted_buyers_and_rebinds_on_apply(): void
