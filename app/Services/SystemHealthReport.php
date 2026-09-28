@@ -46,8 +46,8 @@ class SystemHealthReport
         'db_backup' => ['days' => 2, 'default_on' => true],
         'assistant_index' => ['days' => 3, 'default_on' => false],
         // board→ERP 전송 감사 (2026-09-28, 야간 배치 실행기 1단계 — §12-1 D). board 의
-        //   `purchase-sync:audit`(07:40) 가 남긴 JSON 을 읽는다. 판정은 그 명령의 SQL, 여기선 세기만.
-        //   경로(BOARD_AUDIT_JSON)가 비면 행 자체가 안 생긴다 — board 가 없는 회사(ssancar·karaba)에
+        //   `board:purchase-sync-audit`(07:40) 가 남긴 JSON 을 읽는다. 판정은 그 명령의 SQL, 여기선 세기만.
+        //   경로(BOARD_AUDIT_JSON)가 비면 행 자체가 안 생긴다 — board 가 없는 회사(karaba)에
         //   「기록 없음」이 매일 뜨면 소음이다. days = JSON 이 이 일수보다 오래되면 X(감사 명령이 죽으면
         //   조용해지는 것을 막는다 — 침묵이 정상으로 읽히면 안 된다).
         'board_sync_stalled' => ['days' => 1, 'default_on' => true],
@@ -118,7 +118,7 @@ class SystemHealthReport
         };
     }
 
-    /** `BOARD_AUDIT_JSON` — 비면 null. heymanerp 만 설정한다(board 는 그 서버에만 있다). */
+    /** `BOARD_AUDIT_JSON` — 비면 null. board 가 같은 박스에 있는 회사만 설정(heymanerp `/var/www/board/…`, ssancarerp `/var/www/board-ssancar/…`). */
     public static function boardAuditPath(): ?string
     {
         $p = trim((string) config('services.board_read.audit_json', ''));
