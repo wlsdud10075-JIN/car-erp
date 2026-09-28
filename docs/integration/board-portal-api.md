@@ -158,7 +158,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
 
 ### 4-3. 차량 존재 확인 — `GET /vehicles/exists?ids=1,2,3` (2026-09-28, 야간 배치 실행기 1단계)
 
-board 의 **전송 감사 명령 `purchase-sync:audit`** 전용. 「board 는 완료(`synced`+`car_erp_vehicle_id`)인데 ERP 엔 없는 차」를
+board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb99743`) 전용. 「board 는 완료(`synced`+`car_erp_vehicle_id`)인데 ERP 엔 없는 차」를
 집합 차이로 확정할 때 쓴다(기획 정본 = car-erp `docs/design/agent-virtual-office-analysis.md` §11·§12).
 
 - 인증 = 기존 board-read HMAC(§1) 그대로. **스코프 없음**(salesman_email 불필요) — 응답이 id 의 존재 여부뿐이라 새는 정보가 없다.
@@ -166,6 +166,8 @@ board 의 **전송 감사 명령 `purchase-sync:audit`** 전용. 「board 는 �
 - 요청 = `ids` 콤마 구분 정수, **한 번에 500개까지**(초과·유효 id 0개 = 422). 중복·비정수는 무시.
 - 응답 = `{ "exists": [1,2], "missing": [3] }` (오름차순). **소프트 삭제된 차는 `missing`** — board 가 가리키는 행이 산 행인지가 질문이다.
 - 감사 명령이 매일 07:40 에 부르고, 결과 JSON 을 ERP 08:00 아침 점검(`BOARD_AUDIT_JSON`)이 읽어 「board→ERP 전송·정합성」 2행을 붙인다.
+  ⚠️ board 는 **두 박스**에 있다(heymanboard `/var/www/board` · ssancarboard `/var/www/board-ssancar`, board 세션 09-28 정정) — 각 ERP 는 **같은 박스의** board 파일을 읽는다.
+  ⚠️ 정체 시계는 `updated_at` 이라 won 행을 다른 이유로 저장하면 60분이 다시 시작한다(엄밀히 하려면 `board_audit_logs` 의 won 전이 시각 — 후속, jin 결정).
 - 가드 = `BoardVehicleExistsApiTest` · `BoardSyncHealthRowsTest`.
 
 ### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)
