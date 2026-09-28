@@ -156,6 +156,18 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
   노출면이 늘지 않는다. 🚫 `portalMeta` 에 소유자·계좌 필드를 얹지 말 것(그 순간 이 근거가 무너진다).
 - 가드 = `tests/Feature/BoardPortalVehicleMetaTest`(5개 응답 전수 · null degrade · 키 손코딩 정적 검사 · PII 누출).
 
+### 4-3. 차량 존재 확인 — `GET /vehicles/exists?ids=1,2,3` (2026-09-28, 야간 배치 실행기 1단계)
+
+board 의 **전송 감사 명령 `purchase-sync:audit`** 전용. 「board 는 완료(`synced`+`car_erp_vehicle_id`)인데 ERP 엔 없는 차」를
+집합 차이로 확정할 때 쓴다(기획 정본 = car-erp `docs/design/agent-virtual-office-analysis.md` §11·§12).
+
+- 인증 = 기존 board-read HMAC(§1) 그대로. **스코프 없음**(salesman_email 불필요) — 응답이 id 의 존재 여부뿐이라 새는 정보가 없다.
+  🚫 차량번호·금액·바이어를 싣지 말 것 — 싣는 순간 §2 본인격리 대상이 된다.
+- 요청 = `ids` 콤마 구분 정수, **한 번에 500개까지**(초과·유효 id 0개 = 422). 중복·비정수는 무시.
+- 응답 = `{ "exists": [1,2], "missing": [3] }` (오름차순). **소프트 삭제된 차는 `missing`** — board 가 가리키는 행이 산 행인지가 질문이다.
+- 감사 명령이 매일 07:40 에 부르고, 결과 JSON 을 ERP 08:00 아침 점검(`BOARD_AUDIT_JSON`)이 읽어 「board→ERP 전송·정합성」 2행을 붙인다.
+- 가드 = `BoardVehicleExistsApiTest` · `BoardSyncHealthRowsTest`.
+
 ### 4-1. 환율 read (`GET /rates`) — board 가 car-erp 값 받아쓰기 (2026-07-03)
 
 > 인계 = board `meetings/handoff-car-erp-exchange-rate.md`. 결정 B: board 가 독자 스크래핑(Frankfurter/ECB) 대신 **car-erp 값을 그대로 받음** — 같은 소스를 각자 긁으면 시점차로 어긋나므로 단일 소스(car-erp)로 통일해야 100% 일치.
