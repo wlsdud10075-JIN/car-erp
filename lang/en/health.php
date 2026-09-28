@@ -33,7 +33,7 @@ return [
         'holidays' => 'The holiday list is not being updated. The API key may have expired.',
         'db_backup' => 'There is no backup file from today. Nothing to restore from.',
         'assistant_index' => 'The assistant reference material is not being updated.',
-        'board_sync_stalled' => 'Some won listings never reached the ERP. Check the transfer errors in the board purchase list.',
+        'board_sync_stalled' => 'Some won listings never reached the ERP, or were deleted in the ERP after transfer. Check the board transfer errors and the ERP deletion history.',
         'board_sync_integrity' => 'Board and ERP disagree on transfer state for some vehicles. A vehicle may have been created twice or its id is wrong.',
     ],
 ];
