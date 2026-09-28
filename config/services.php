@@ -78,6 +78,9 @@ return [
     // 미설정 시 읽기 엔드포인트 전부 401(안전밸브). 권위 스펙 = docs/integration/board-portal-api.md.
     'board_read' => [
         'hmac_secret' => env('CAR_ERP_READ_HMAC_SECRET'),
+        // board 전송 감사 JSON(board `purchase-sync:audit` 산출물) 경로 — heymanerp 만 설정(board 가 그 서버에만 있다).
+        // 비면 아침 점검의 「board→ERP」 두 행이 아예 안 생긴다. 예: /var/www/board/storage/app/integration/purchase-sync-audit.json
+        'audit_json' => env('BOARD_AUDIT_JSON'),
     ],
 
     // ssancar.com 바이어 포털 읽기 채널 (2026-08-25). board 와 **시크릿을 분리**한다 —

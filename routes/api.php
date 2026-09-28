@@ -42,6 +42,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('receivables', [InternalPortalController::class, 'receivables'])->name('receivables');
         Route::get('sales', [InternalPortalController::class, 'sales'])->name('sales');
         Route::get('purchases', [InternalPortalController::class, 'purchases'])->name('purchases');
+        // 차량 존재 확인 — board 전송 감사(purchase-sync:audit) 전용. 존재 여부만, 스코프 없음.
+        Route::get('vehicles/exists', [InternalPortalController::class, 'vehiclesExist'])->name('vehicles.exists');
         Route::get('settlements', [InternalPortalController::class, 'settlements'])->name('settlements');
         Route::get('by-buyer', [InternalPortalController::class, 'byBuyer'])->name('by-buyer');
         // 월배치 미러 (2026-08-31) — 영업 본인이 그 달에 실제로 받은 금액. 권위 §12.
