@@ -45,7 +45,20 @@ class SystemHealthReport
         'holidays' => ['days' => 10, 'default_on' => true],
         'db_backup' => ['days' => 2, 'default_on' => true],
         'assistant_index' => ['days' => 3, 'default_on' => false],
+        // board→ERP 전송 감사 (2026-09-28, 야간 배치 실행기 1단계 — §12-1 D). board 의
+        //   `purchase-sync:audit`(07:40) 가 남긴 JSON 을 읽는다. 판정은 그 명령의 SQL, 여기선 세기만.
+        //   경로(BOARD_AUDIT_JSON)가 비면 행 자체가 안 생긴다 — board 가 없는 회사(ssancar·karaba)에
+        //   「기록 없음」이 매일 뜨면 소음이다. days = JSON 이 이 일수보다 오래되면 X(감사 명령이 죽으면
+        //   조용해지는 것을 막는다 — 침묵이 정상으로 읽히면 안 된다).
+        'board_sync_stalled' => ['days' => 1, 'default_on' => true],
+        'board_sync_integrity' => ['days' => 1, 'default_on' => true],
     ];
+
+    /** board 감사 JSON 을 읽는 항목 — 경로 미설정이면 rows() 에서 통째로 뺀다. */
+    public const BOARD_KEYS = ['board_sync_stalled', 'board_sync_integrity'];
+
+    /** @var array{ok:bool, data:?array, detail:?string}|null 요청당 1회만 파싱 */
+    private ?array $boardAudit = null;
 
     /** @return array<int, array{key:string, ok:bool, detail:string}> 꺼진 항목은 아예 안 들어온다 */
     public function rows(): array
@@ -53,6 +66,9 @@ class SystemHealthReport
         $rows = [];
         foreach (array_keys(self::CHECKS) as $key) {
             if (! self::enabled($key)) {
+                continue;
+            }
+            if (in_array($key, self::BOARD_KEYS, true) && self::boardAuditPath() === null) {
                 continue;
             }
             $rows[] = ['key' => $key] + $this->check($key);
@@ -96,8 +112,81 @@ class SystemHealthReport
                 storage_path('app/index-erp.json'),
                 self::days('assistant_index'),
             ),
+            'board_sync_stalled' => $this->boardRow('stalled'),
+            'board_sync_integrity' => $this->boardRow('integrity'),
             default => ['ok' => true, 'detail' => '-'],
         };
+    }
+
+    /** `BOARD_AUDIT_JSON` — 비면 null. heymanerp 만 설정한다(board 는 그 서버에만 있다). */
+    public static function boardAuditPath(): ?string
+    {
+        $p = trim((string) config('services.board_read.audit_json', ''));
+
+        return $p === '' ? null : $p;
+    }
+
+    /**
+     * board 감사 JSON 한 행. 형태는 board 명령 명세(§9 board-07 전달문) 그대로:
+     *   {generated_at, counts:{stalled, synced_without_erp_id, erp_id_without_synced, missing_in_erp}, missing_in_erp:[]|null, errors:[]}
+     *
+     * 🚫 여기서 판정하지 않는다 — 세는 것은 board 의 SQL, 이 행은 그 숫자를 옮겨 적을 뿐이다.
+     *    「missing_in_erp 가 null」= board 가 ERP 존재 확인에 실패한 것 → 0 이 아니라 X 다(모르는 것을 정상으로 찍지 않는다).
+     */
+    private function boardRow(string $which): array
+    {
+        $audit = $this->loadBoardAudit();
+        if ($audit['data'] === null) {
+            return ['ok' => $audit['ok'], 'detail' => (string) $audit['detail']];
+        }
+        $c = $audit['data']['counts'] ?? [];
+        $n = fn (string $k) => (int) ($c[$k] ?? 0);
+
+        if ($which === 'stalled') {
+            $missingUnknown = array_key_exists('missing_in_erp', $audit['data']) && $audit['data']['missing_in_erp'] === null;
+            if ($missingUnknown) {
+                $err = implode(' / ', array_map('strval', (array) ($audit['data']['errors'] ?? [])));
+
+                return ['ok' => false, 'detail' => __('health.board_audit_failed', ['err' => $err !== '' ? $err : '-'])];
+            }
+            $s = $n('stalled');
+            $m = $n('missing_in_erp');
+
+            return [
+                'ok' => $s === 0 && $m === 0,
+                'detail' => ($s === 0 && $m === 0) ? __('health.none') : __('health.board_stalled', ['s' => $s, 'm' => $m]),
+            ];
+        }
+
+        $a = $n('synced_without_erp_id');
+        $b = $n('erp_id_without_synced');
+
+        return [
+            'ok' => $a === 0 && $b === 0,
+            'detail' => ($a === 0 && $b === 0) ? __('health.none') : __('health.board_integrity', ['a' => $a, 'b' => $b]),
+        ];
+    }
+
+    /** JSON 을 한 번만 읽는다. 파일 없음 = 기록 없음(정상) / 오래됨·깨짐 = X. */
+    private function loadBoardAudit(): array
+    {
+        if ($this->boardAudit !== null) {
+            return $this->boardAudit;
+        }
+        $path = self::boardAuditPath();
+        if ($path === null || ! File::exists($path)) {
+            return $this->boardAudit = ['ok' => true, 'data' => null, 'detail' => __('health.no_record')];
+        }
+        $fresh = $this->fromDate(now()->setTimestamp(File::lastModified($path)), self::days('board_sync_stalled'));
+        if (! $fresh['ok']) {
+            return $this->boardAudit = ['ok' => false, 'data' => null, 'detail' => $fresh['detail']];
+        }
+        $data = json_decode((string) File::get($path), true);
+        if (! is_array($data) || ! isset($data['counts']) || ! is_array($data['counts'])) {
+            return $this->boardAudit = ['ok' => false, 'data' => null, 'detail' => __('health.board_audit_failed', ['err' => 'invalid json'])];
+        }
+
+        return $this->boardAudit = ['ok' => true, 'data' => $data, 'detail' => null];
     }
 
     /**

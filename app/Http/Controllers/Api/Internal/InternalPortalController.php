@@ -54,6 +54,38 @@ class InternalPortalController extends Controller
         ]);
     }
 
+    /**
+     * 차량 존재 확인 — board 의 `purchase-sync:audit`(전송 감사)가 「board 는 완료(synced)인데 ERP 엔
+     * 없는 차」를 확정하는 데 쓴다 (jin 2026-09-28 야간 배치 실행기 1단계, §11 · §12-1 D).
+     *
+     * - 스코프 없음(영업 본인격리 미적용): 응답이 **id 의 존재 여부뿐**이라 새는 정보가 없다.
+     *   차량번호·금액·바이어를 절대 싣지 말 것 — 싣는 순간 본인격리 대상이 된다.
+     * - 소프트 삭제된 차는 `missing` 이다 — board 가 가리키는 행이 산 행인지가 질문이다(SKILLS §8 #110).
+     * - 한 번에 500개까지. 그 이상은 board 가 나눠 부른다(감사 명령 명세 3항).
+     */
+    public function vehiclesExist(Request $request): JsonResponse
+    {
+        $raw = (string) $request->query('ids', '');
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', explode(',', $raw)),
+            fn (int $id) => $id > 0,
+        )));
+
+        if ($ids === []) {
+            return response()->json(['message' => 'ids 가 비었습니다.'], 422);
+        }
+        if (count($ids) > 500) {
+            return response()->json(['message' => 'ids 는 한 번에 500개까지입니다.'], 422);
+        }
+
+        $exists = Vehicle::query()->whereKey($ids)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        sort($exists);
+        $missing = array_values(array_diff($ids, $exists));
+        sort($missing);
+
+        return response()->json(['exists' => $exists, 'missing' => $missing]);
+    }
+
     public function receivables(Request $request): JsonResponse
     {
         $sid = $this->salesmanId($request);
