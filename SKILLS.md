@@ -1615,3 +1615,12 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 🚨 **WireGuard 는 키가 하나면 서버가 둘일 수 없다** — 새 서버가 터널을 올리는 순간 공유기 peer endpoint 가 넘어와 **구 서버 원부조회(3사 게이트웨이)가 끊긴다.** 구축 땐 conf 만, 전환 때 구 정지 → 신 기동. 그리고 구 서버는 유닛이 `inactive` 인 채 인터페이스만 떠 있었다(손으로 `wg-quick up`) — `systemctl stop` 은 no-op, `wg-quick down` 으로.
 📏 곁다리 — `gh run rerun --job` 은 같은 run 의 **새 attempt** 라 `gh run list` 엔 안 뜬다. `gh run view <run>` 으로 잡을 본다(§8 #107-C 의 「런이 아니라 SHA」와 같은 결).
 상세 = `docs/operations/ssancarerp-server-migration-commands.md` 「실행 후기」.
+
+### 112. 🪟 **세션 0 의 PowerShell 에서 `& ssh …` 로 출력을 잡으면 영영 멈춘다** (2026-09-28 야간 배치 실행기)
+
+회사 GPU PC 에 야간 조사 스크립트를 올리고 SSH 로 실행했더니 **첫 `ssh` 호출에서 로그가 멈췄다.** 세 번 반복. 같은 명령을 cmd 로 직접 치면 1초에 끝난다.
+- 원인 = 작업 스케줄러·sshd 가 띄운 **세션 0(콘솔 없음)** 의 PowerShell 5.1 이 네이티브 콘솔 앱(ssh.exe)의 출력을 `$o = & ssh … 2>&1` 로 잡으면 프로세스가 끝나지 않는다. `-n`(stdin 차단)을 붙여도 같다.
+- 실측 표: `& ssh … 2>&1` ✗ · `& ssh …`(리다이렉트 없음) ✗ · `cmd /c 배치파일` ✓ · **`Start-Process -RedirectStandardOutput 파일 -Wait` ✓**.
+- ⇒ 스케줄러가 돌리는 PowerShell 에서 콘솔 앱(ssh·git·claude·php)은 **전부 `Start-Process` + 파일 리다이렉트**로 부르고, 긴 입력은 `-RedirectStandardInput` 으로 넘긴다(`scripts/nightly/nightly-investigate.ps1` `RunCapture`).
+- 🧭 곁다리 둘: ①함수 매개변수 이름을 `$args` 로 두면 PowerShell 자동 변수에 가려 **빈 배열**이 들어간다(`ArgumentList 에 null` 오류) — `$argList` 로. ②`printf` 로 Windows 경로를 쓰면 `\n`(`\nightly`)이 개행이 된다 — 파일은 Write 로.
+- 🧭 그리고 **비대화형 SSH 에서 `php artisan tinker <파일>` 은 운영에서도 멈춘다**(메모리의 「운영은 정상」은 틀렸다) — `require bootstrap/app.php` + Kernel bootstrap 스크립트로 돌릴 것. 멈춘 tinker 는 서버에 남으니 `pkill -f` 로 치운다.
