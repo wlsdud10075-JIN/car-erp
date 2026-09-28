@@ -118,6 +118,23 @@ jobs:
 
   # 2번째 회사 karaba 서버 (멀티회사, 2026-06-14). heyman 잡과 동일 스크립트 —
   # environment=karaba 로 DEPLOY_* 시크릿만 분리. 한 잡 실패해도 다른 잡은 영향 없음.
+      # 🔴 배포 실패 → 시스템관리자 텔레그램 1통 (2026-09-28, 야간 배치 실행기 §12-1 A).
+      #   토큰은 서버 기능설정(DB)에 있어 GitHub 시크릿이 없다 — 서버에 들어가 artisan 이 보낸다.
+      #   SSH 자체가 안 되는 실패는 이 통로로도 못 알린다(GitHub 메일이 남는다). 실패해도 잡 결과를 바꾸지 않는다.
+      - name: Notify deploy failure (heyman)
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          timeout: 60s
+          command_timeout: 2m
+          script: |
+            cd /var/www/car-erp && php artisan notify:deploy-failed --job=deploy --run=${{ github.run_id }} --sha=${{ github.sha }} || true
+
   deploy-karaba:
     needs: tests
     runs-on: ubuntu-latest
@@ -162,6 +179,23 @@ jobs:
   # 3번째 회사 ssancar 서버 (2026-06-30 추가). ⚠️ NICE 게이트웨이(heymancar.com/provide/)와
   # co-location → artisan down 시 heyman NICE 조회까지 멈춤. 그래서 이 잡만 '무중단'(down 없음).
   # 추가형 마이그(create table 등)는 안전. 파괴적/대형 마이그는 ssancar 수동배포(런북) 권장.
+      # 🔴 배포 실패 → 시스템관리자 텔레그램 1통 (2026-09-28, 야간 배치 실행기 §12-1 A).
+      #   토큰은 서버 기능설정(DB)에 있어 GitHub 시크릿이 없다 — 서버에 들어가 artisan 이 보낸다.
+      #   SSH 자체가 안 되는 실패는 이 통로로도 못 알린다(GitHub 메일이 남는다). 실패해도 잡 결과를 바꾸지 않는다.
+      - name: Notify deploy failure (karaba)
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          timeout: 60s
+          command_timeout: 2m
+          script: |
+            cd /var/www/car-erp && php artisan notify:deploy-failed --job=deploy-karaba --run=${{ github.run_id }} --sha=${{ github.sha }} || true
+
   deploy-ssancar:
     needs: tests
     runs-on: ubuntu-latest
@@ -197,3 +231,20 @@ jobs:
             php artisan storage:link || true
             sudo systemctl reload php8.4-fpm || true
             php artisan queue:restart || true
+
+      # 🔴 배포 실패 → 시스템관리자 텔레그램 1통 (2026-09-28, 야간 배치 실행기 §12-1 A).
+      #   토큰은 서버 기능설정(DB)에 있어 GitHub 시크릿이 없다 — 서버에 들어가 artisan 이 보낸다.
+      #   SSH 자체가 안 되는 실패는 이 통로로도 못 알린다(GitHub 메일이 남는다). 실패해도 잡 결과를 바꾸지 않는다.
+      - name: Notify deploy failure (ssancar)
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          timeout: 60s
+          command_timeout: 2m
+          script: |
+            cd /var/www/car-erp && php artisan notify:deploy-failed --job=deploy-ssancar --run=${{ github.run_id }} --sha=${{ github.sha }} || true
