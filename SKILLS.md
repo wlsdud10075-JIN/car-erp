@@ -1624,3 +1624,10 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - ⇒ 스케줄러가 돌리는 PowerShell 에서 콘솔 앱(ssh·git·claude·php)은 **전부 `Start-Process` + 파일 리다이렉트**로 부르고, 긴 입력은 `-RedirectStandardInput` 으로 넘긴다(`scripts/nightly/nightly-investigate.ps1` `RunCapture`).
 - 🧭 곁다리 둘: ①함수 매개변수 이름을 `$args` 로 두면 PowerShell 자동 변수에 가려 **빈 배열**이 들어간다(`ArgumentList 에 null` 오류) — `$argList` 로. ②`printf` 로 Windows 경로를 쓰면 `\n`(`\nightly`)이 개행이 된다 — 파일은 Write 로.
 - 🧭 그리고 **비대화형 SSH 에서 `php artisan tinker <파일>` 은 운영에서도 멈춘다**(메모리의 「운영은 정상」은 틀렸다) — `require bootstrap/app.php` + Kernel bootstrap 스크립트로 돌릴 것. 멈춘 tinker 는 서버에 남으니 `pkill -f` 로 치운다.
+
+#### 112-B. 🪟 **BOM 없는 `.ps1` 은 한글 뒤 개행을 먹는다** · Codex 정션 · `ExitCode` null (2026-09-29 4단계)
+
+- `.ps1` 을 BOM 없는 UTF-8 로 저장하면 PowerShell 5.1 이 **CP949 로 읽어** 한글로 끝나는 줄의 개행을 다음 글자와 묶는다 → **그 다음 줄이 주석에 붙어 변수가 전부 null**(`Get-Content 'Path' null`, `Start-Process FilePath null`). 09-28 스크립트는 한글 줄 끝이 우연히 `.` 이라 살았다. ⇒ `.ps1` 은 **`utf-8-sig` + CRLF** 로 쓴다(`scripts/nightly/README.md`).
+- Codex 설치 폴더 `…\OpenAI\Codex\bin` 은 **정션 2단**(→ `.codex\packages\standalone\current` → `releases\<버전>`). 비대화형 SSH 는 정션을 못 넘어 「신뢰할 수 없는 탑재 지점」이 되고, 실제 경로로 부르면 `--version` 은 뜨지만 **명령 실행(sandbox runner)이 `runner pipe-in` 타임아웃**으로 죽는다. 대화형 로그온 스케줄러에선 정상. ⇒ Codex 무인 실행은 **스케줄러로만**, 경로는 정션을 따라가 실제 파일로.
+- `Start-Process -PassThru` 로 받은 `$p` 는 `WaitForExit()` 뒤에도 **`ExitCode` 가 null** 일 수 있다 — `$null = $p.Handle` 을 먼저 한 번 건드린다. 이걸로 `--verify` 4종이 전부 「불일치」로 오판됐다(null -ne 0).
+- 🧭 `--verify` 류는 **불일치가 exit 1** 이다 — 배치에서 실패로 취급하지 말 것. 그리고 매일 뜨는 「알려진 정상」(ERP 허브에 「영업」 페이지 없음)은 신호에서 빼야 진짜 신호가 안 묻힌다.
