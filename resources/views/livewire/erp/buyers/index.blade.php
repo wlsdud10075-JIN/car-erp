@@ -470,14 +470,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             $data['is_domestic'] = $this->is_domestic;
         }
 
+        // 💳 무담보 한도 — **업무관리자 이상**(manager·admin·super, jin 2026-09-29). 화면 노출은 편의일 뿐이라 저장 시 재인가(SKILLS §8 #26).
+        //   08-21 엔 락 % 와 같은 무게로 super 전용이었으나, 실무 요청이 전부 시스템관리자에게 몰려 되돌렸다.
+        //   자기 락을 자기가 푸는 문제는 남는다 — 감사로그(아래)가 유일한 견제다. 락 % 는 그대로 super 전용.
+        //   🚫 canApprove() 를 쓰지 말 것 — role=관리 일반 사용자까지 열린다(요청 범위 밖).
+        //   빈 값은 null(미설정). 0 을 넣어도 hasUnsecuredLimit() 이 false 라 기존 동작.
+        if ($user?->canAccessAdmin()) {
+            $limit = (int) preg_replace('/[^0-9]/', '', $this->unsecured_limit_krw_str);
+            $data['unsecured_limit_krw'] = $limit > 0 ? $limit : null;
+        }
+
         // 🔒 락 기준선 — **super 전용** (jin 2026-08-21). 화면 노출은 편의일 뿐이라 저장 시 재인가(SKILLS §8 #26).
         //   실무자가 자기가 막히면 자기가 푸는 걸 막는 게 이 권한 분리의 목적이다.
         if ($user?->isSuperAdmin()) {
-            // 무담보 한도 — 매입 판정을 미수율에서 금액으로 바꾸므로 락 % 와 같은 무게다(구: canApprove).
-            //   빈 값은 null(미설정). 0 을 넣어도 hasUnsecuredLimit() 이 false 라 기존 동작.
-            $limit = (int) preg_replace('/[^0-9]/', '', $this->unsecured_limit_krw_str);
-            $data['unsecured_limit_krw'] = $limit > 0 ? $limit : null;
-
             // 🚨 빈칸만 null(미설정). '0' 은 유효값(필요입금 0% = 락 없음)이라 그대로 저장한다.
             foreach ([
                 'lock_shipping_entry_pct' => $this->lock_shipping_entry_pct_str,
@@ -1655,8 +1660,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                      실무자가 자기가 막히면 자기가 풀 수 있으면 락이 통제로서 의미가 없다(그래서 편집은 super).
                      그렇다고 숨겨 두면 「이 바이어가 왜 막혔나」를 아무도 못 봐서 문의가 전부 super 에게 몰린다.
                      ⇒ 값·근거는 보여주고 입력만 잠근다. 저장 시 재인가는 그대로다(SKILLS §8 #26).
-                     ⚠️ 무담보를 올리면 매입 판정이 미수율 → 금액으로 통째로 바뀌므로 락 % 와 같은 무게다. --}}
-                @php $canEditLocks = (bool) auth()->user()?->isSuperAdmin(); @endphp
+                     💳 무담보 한도는 **업무관리자 이상**이 고친다(jin 2026-09-29 — 요청이 전부 super 에게 몰려서).
+                        08-21 엔 락 % 와 같은 무게로 super 전용이었다. 락 % 는 그대로 super. 저장 재인가는 save() 가 갈라 본다. --}}
+                @php $canEditLocks = (bool) auth()->user()?->isSuperAdmin(); $canEditUnsecured = (bool) auth()->user()?->canAccessAdmin(); @endphp
                 @if(auth()->user()?->canViewOperationLogs())
                 {{-- 바이어별 락 필요입금률 — 전역 설정보다 먼저 적용된다. 비우면 전역값. --}}
                 <div class="rounded-lg border border-rose-200 bg-rose-50 p-3">
@@ -1750,10 +1756,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
                     <label class="label-base">{{ __('buyer.field.unsecured_limit') }}</label>
                     <input wire:model="unsecured_limit_krw_str" type="text" data-money inputmode="numeric"
-                           @disabled(! $canEditLocks)
+                           @disabled(! $canEditUnsecured)
                            class="input-base disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
                            placeholder="{{ __('buyer.field.unsecured_limit_ph') }}" />
                     <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.unsecured_limit_hint') }}</p>
+                    @unless($canEditUnsecured)
+                    {{-- role=관리 일반 사용자 — 보이지만 못 고친다(락 % 안내와 문구가 다르다: 여기는 업무관리자 이상). --}}
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-500">{{ __('buyer.field.unsecured_readonly') }}</p>
+                    @endunless
 
                     @if($editingId && $ug && ($ug['unsecured_limit_krw'] ?? 0) > 0)
                     {{-- 무담보분 잔액만 보여준다 (jin 2026-08-10) — 담보 한도·총액·전체 사용액까지 같이 늘어놓으니
