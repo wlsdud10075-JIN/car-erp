@@ -414,7 +414,8 @@ board의 `synced + car_erp_vehicle_id` 집합을 ERP 읽기 API의 차량 ID/차
 - 구조 = **검증은 PHP, 발행만 Codex.** `nightly-notion.ps1`(04:30) 이 pull → `--verify` 4종(car-erp 카드·부서 가이드·워크플로우 / board 카드)을 LLM 없이 돌려 보고서를 만든다. `-Apply` 가 켜져 있고 불일치가 있을 때만 `codex exec` 가 `AGENTS.md → CODEX_NOTION_HANDOFF.md §9` 대로 **타깃 발행 → 재검증**. 관찰 모드(-Apply 없음)는 Notion 쓰기 0·Codex 호출 0.
 - 실측: 관찰 모드 1회 = 50초(pull 포함). Codex 스모크(읽기 전용 verify 1건) = 14초·6,180 토큰, **대화형 로그온 스케줄러에서만 명령 실행이 된다**(SSH 는 sandbox runner 파이프 타임아웃). 인계문서는 노트북 `C:\xampp\htdocs` 의 12개 파일을 회사 PC 같은 경로로 복사.
 - 09-29 첫 보고: 불일치 3/4(카드 4장 · 가이드 공통·재무 · board 카드) = 08-03 부터 밀린 발행 대기분 + 오늘 무담보 권한 문구. 「영업 — 페이지 없음」은 알려진 정상(ERP 허브에 영업 페이지 없음)이라 신호에서 뺐다.
-- ⏳ jin 결정 대기: ① `-Apply` 켜는 시점(관찰 며칠 뒤) ② 무인 Codex 의 샌드박스 수준(`workspace-write`+네트워크로 통과했으므로 우회 플래그 불필요 — 그대로 둘지) ③ 인계문서 동기화 채널(레포 `docs/` · 메모리 레포 · 수동 scp).
+- ✅ **09-29 15:05 첫 `-Apply` 실행 성공**(jin «지금 적용해야 할 게 있으니 해보면») — 13분, Codex 가 car-erp 카드 4장·board 카드 7장·가이드 공통/재무/관리 타깃 발행 → 2차 대조 car-erp 3종 ✅ 정합. 샌드박스 workspace-write+네트워크로 충분(우회 플래그 불필요 확정). 남은 불일치 = board 라이브 카드 6장이 cards.json 에 없음 → 원인은 **노트북 board 레포의 미커밋 cards.json**(+96/−11) — board 세션이 커밋·푸시하면 다음 날 정합.
+- ⏳ jin 결정 대기: ① 매일 `-Apply` 로 전환할지(첫 실행 통과) ② 무인 Codex 의 샌드박스 수준(`workspace-write`+네트워크로 통과했으므로 우회 플래그 불필요 — 그대로 둘지) ③ 인계문서 동기화 채널(레포 `docs/` · 메모리 레포 · 수동 scp).
 
 ### 11-4. 보류·안 함
 - 원격 제어 상시 세션(#2)·야간 배포 집행(#3) — 안 함. 낮에 노트북에서.
