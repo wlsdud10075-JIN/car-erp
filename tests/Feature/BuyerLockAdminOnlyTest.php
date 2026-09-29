@@ -11,14 +11,16 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 락 기준선은 **시스템관리자 전용** (jin 2026-08-21).
+ * 락 % 는 **시스템관리자 전용** (jin 2026-08-21) · 무담보 한도는 **업무관리자 이상** (jin 2026-09-29).
  *
- * 배경: ERP 실무자는 관리·업무관리자 둘뿐이다(영업은 board 를 쓴다). 그 둘이 락을 설정하는
+ * 배경(08-21): ERP 실무자는 관리·업무관리자 둘뿐이다(영업은 board 를 쓴다). 그 둘이 락을 설정하는
  * 사람이자 락에 걸리는 사람이면 "막히면 자기가 올린다"가 되어 통제가 성립하지 않는다.
- * 그래서 락 %와 무담보 한도를 super 로 올리고, 감사로그를 유일한 견제로 남긴다.
+ * 그래서 락 %와 무담보 한도를 super 로 올리고, 감사로그를 유일한 견제로 남겼다.
  *
- * ⚠️ 무담보 한도는 **기존에 [관리] 이상이 만지던 값**이다(2026-08-10~08-21). 운영 heymanerp 에
- *    실제 2행(R.S.H·EASY DRIVE)이 있으므로 이 변경은 동작 변경이다.
+ * 🔀 09-29 되돌림(무담보만): 무담보 한도 조정 요청이 전부 시스템관리자(jin)에게 몰려서
+ *    manager·admin·super 가 고치게 했다(`canAccessAdmin()`). 자기 락을 자기가 푸는 문제는 남고
+ *    감사로그가 유일한 견제다. 🚫 role=관리 일반 사용자는 여전히 못 고친다(`canApprove()` 아님).
+ *    락 % 는 그대로 super 전용이다.
  */
 class BuyerLockAdminOnlyTest extends TestCase
 {
@@ -112,14 +114,51 @@ class BuyerLockAdminOnlyTest extends TestCase
         $this->assertNull($b->lock_purchase_registration_pct);
     }
 
-    /** 무담보 한도도 super 로 올렸다 — 올리면 매입 판정이 미수율에서 금액으로 통째로 바뀌기 때문. */
-    public function test_admin_can_no_longer_change_the_unsecured_limit(): void
+    // ── 무담보 한도 = 업무관리자 이상 (jin 2026-09-29) ───────────
+
+    /** 락 % 는 못 바꾸는 admin·manager 가 무담보 한도는 바꾼다 — 그리고 그 변경은 감사로그에 남는다. */
+    public function test_admin_and_manager_can_change_the_unsecured_limit(): void
+    {
+        foreach (['admin', 'manager'] as $permission) {
+            $b = $this->buyer(['unsecured_limit_krw' => 5_000_000]);
+
+            $this->save($this->user($permission), $b, ['unsecured_limit_krw_str' => '9,000,000']);
+
+            $this->assertSame(9_000_000, (int) $b->fresh()->unsecured_limit_krw,
+                "{$permission} 가 무담보 한도를 못 고치면 요청이 전부 시스템관리자에게 몰린다");
+            $this->assertTrue(
+                AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)
+                    ->where('column_name', 'unsecured_limit_krw')->where('new_value', '9000000')->exists(),
+                "{$permission} 의 무담보 변경이 기록되지 않으면 유일한 견제가 사라진다",
+            );
+        }
+    }
+
+    /** 🚫 role=관리 일반 사용자는 여전히 못 고친다 — 「업무관리자 이상」이지 canApprove() 가 아니다. */
+    public function test_a_plain_user_with_manage_role_cannot_change_the_unsecured_limit(): void
     {
         $b = $this->buyer(['unsecured_limit_krw' => 5_000_000]);
 
-        $this->save($this->user('admin'), $b, ['unsecured_limit_krw_str' => '99,000,000']);
+        $this->save($this->user('user'), $b, ['unsecured_limit_krw_str' => '99,000,000']);
 
         $this->assertSame(5_000_000, (int) $b->fresh()->unsecured_limit_krw);
+        $this->assertFalse(AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)
+            ->where('column_name', 'unsecured_limit_krw')->exists());
+    }
+
+    /** 무담보를 열어도 락 % 는 그대로 super 전용이다 — 두 권한이 같은 블록에 묶여 있다가 갈라졌다. */
+    public function test_manager_still_cannot_change_the_lock_percentages(): void
+    {
+        $b = $this->buyer(['lock_shipping_entry_pct' => 70]);
+
+        $this->save($this->user('manager'), $b, [
+            'unsecured_limit_krw_str' => '9,000,000',
+            'lock_shipping_entry_pct_str' => '10',
+        ]);
+
+        $b->refresh();
+        $this->assertSame(9_000_000, (int) $b->unsecured_limit_krw);
+        $this->assertSame(70, (int) $b->lock_shipping_entry_pct, '무담보를 열면서 락 % 까지 따라 열리면 08-21 통제가 무너진다');
     }
 
     public function test_super_can_still_change_the_unsecured_limit(): void
@@ -187,8 +226,15 @@ class BuyerLockAdminOnlyTest extends TestCase
                 ->call('openEdit', $b->id)
                 ->assertSee('lock_shipping_entry_pct_str')
                 ->assertSee(__('buyer.field.lock_readonly'))
-                ->assertSee('disabled');
+                ->assertSee('disabled')
+                ->assertDontSee(__('buyer.field.unsecured_readonly'));   // 무담보는 고칠 수 있다(09-29)
         }
+
+        // role=관리 일반 사용자 — 락 % 도 무담보도 보기만.
+        Volt::actingAs($this->user('user'))->test('erp.buyers.index')
+            ->call('openEdit', $b->id)
+            ->assertSee(__('buyer.field.lock_readonly'))
+            ->assertSee(__('buyer.field.unsecured_readonly'));
     }
 
     /** 🚫 영업은 그대로 못 본다 — 「관리 이상」이지 전원이 아니다. */
