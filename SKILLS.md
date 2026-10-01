@@ -120,7 +120,7 @@ public function removeFinalPayment(int $idx): void
 > 🔀 **2026-08-06 (jin) — 정산환율 전환.** 아래 판매금원화의 환율이 `exchange_rate`(판매환율) 에서
 > `settlement_exchange_rate`(**실효 입금환율**) 로 바뀌었다. 상세 = `CLAUDE.md` 「정산 마진 공식」 상단 박스.
 > 요점 3줄: ①환차가 2차 1:1 가산 → **1차 마진공식 통과**로 이동(`actual_payout` 의 환차 가산 제거).
-> ②**미완납이면 판매환율 폴백**(안 하면 원금 미수가 환율로 둔갑). ③운임비 환차는 회사 몫(정산 base 밖).
+> ②**미완납이면 받은 몫만 실효환율, 미수분은 판매환율로 섞는다**(10-01 B안 — 구: 통째 폴백. 미수 원금은 판매환율 평가라 환율로 둔갑하지 않는다). ③운임비 환차는 회사 몫(정산 base 밖).
 
 ```php
 // 판매금원화 = (sale_price + commission + auto_loading - tax_dc) × 정산환율
