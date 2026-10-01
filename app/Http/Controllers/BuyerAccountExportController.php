@@ -179,8 +179,7 @@ class BuyerAccountExportController extends Controller
         $row = 2;
         foreach ($receipts as $r) {
             // 아직 안 쓰인 입금도 한 줄 남긴다 — 안 남기면 「받은 돈」이 엑셀에서 사라진다.
-            // 💳 적립금 전환 배분은 화면과 같이 뺀다(jin 2026-10-01).
-            $allocations = $r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer())->values()->all() ?: [null];
+            $allocations = $r->allocations->all() ?: [null];
             foreach ($allocations as $a) {
                 $this->text($sheet, 'A'.$row, $r->received_date->format('Y-m-d'));
                 $sheet->setCellValue('B'.$row, (float) $r->amount);
@@ -190,7 +189,7 @@ class BuyerAccountExportController extends Controller
                 $isFee = $a?->isFee() ?? false;
                 // 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 화면 뱃지와 같은 구분을 엑셀에도 남긴다.
                 $this->text($sheet, 'E'.$row, $isFee
-                    ? ($a?->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section'))
+                    ? ($a?->fee?->isSavingsTransfer() ? __('buyer.cash.savings_badge') : ($a?->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section')))
                     : (string) ($a?->vehicle?->vehicle_number ?? '').($a?->isVehicleFee() ? ' ('.__('buyer.cash.fee_badge').')' : ''));
                 $this->text($sheet, 'F'.$row, $isFee ? (string) ($a?->fee?->note ?? '') : (string) ($a?->vehicle?->nice_reg_vin ?? ''));
                 $this->text($sheet, 'G'.$row, $isFee

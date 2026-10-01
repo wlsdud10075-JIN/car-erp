@@ -154,14 +154,14 @@ class BuyerAccountService
     public function cashUsageByVehicle(Buyer $buyer, ?int $limit = null): Collection
     {
         $groups = $this->cashUsage($buyer)          // ← 같은 출처. 상한은 묶은 뒤에 건다.
-            // 💳 적립금 전환 배분은 정산현황에 안 그린다(jin 2026-10-01 «적립금으로 적립한 내용은 나오지 않게») — 입금별 보기·엑셀도 같다.
-            ->flatMap(fn ($r) => $r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer())->map(fn ($a) => [$r, $a]))
+            ->flatMap(fn ($r) => $r->allocations->map(fn ($a) => [$r, $a]))
             ->groupBy(function (array $pair) {
                 [, $a] = $pair;
 
                 // 차량이 없는 배분(원장 수수료·과입금 정리)은 한 바구니로 모은다 —
                 // 빈칸으로 흩어 두면 「어디로 갔지」가 된다.
-                return $a->isFee() ? 'fee' : 'v:'.$a->vehicle_id;
+                // 💳 적립금 전환(2026-10-01)은 수수료와 다른 묶음 — 「보낸 돈을 다 써서 0」을 사실대로 보여준다(jin).
+                return $a->isFee() ? ($a->fee?->isSavingsTransfer() ? 'savings' : 'fee') : 'v:'.$a->vehicle_id;
             });
 
         return $groups->map(function (Collection $pairs, string $key) {
@@ -169,11 +169,13 @@ class BuyerAccountService
 
             return [
                 'key' => $key,
-                'is_fee' => $key === 'fee',
-                'label' => $key === 'fee'
-                    ? __('buyer.cash.fee_section')
-                    : ($first->vehicle?->vehicle_number ?? '-'),
-                'vin' => $key === 'fee' ? null : $first->vehicle?->nice_reg_vin,
+                'is_fee' => $key === 'fee' || $key === 'savings',
+                'label' => $key === 'savings'
+                    ? __('buyer.cash.savings_badge')
+                    : ($key === 'fee'
+                        ? __('buyer.cash.fee_section')
+                        : ($first->vehicle?->vehicle_number ?? '-')),
+                'vin' => in_array($key, ['fee', 'savings'], true) ? null : $first->vehicle?->nice_reg_vin,
                 'currency' => $firstReceipt->currency,
                 'total' => (float) $pairs->sum(fn (array $p) => (float) $p[1]->amount),
                 // 최근 것부터 — 사람은 방금 빠진 돈을 먼저 본다(입금별 보기와 같은 순서 감각).
