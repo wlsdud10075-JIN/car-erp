@@ -181,6 +181,9 @@ return [
     'exchange_needs_full_payment' => '미수가 남아 있어 환차를 말할 수 없습니다 — 완납되면 표시됩니다.',
     'exchange_preview_title' => '예상치 — 2차 정산을 마감하면 이 값으로 확정됩니다. 금액에는 1차 정산부터 이미 반영돼 있습니다.',
     'exchange_preview_mark' => '예상',
+    'exchange_needs_receipt' => '아직 받은 돈이 없어 환차가 없습니다 — 입금되면 받은 몫부터 표시됩니다.',
+    'exchange_partial_title' => '받은 몫의 환차만 센 값입니다(미수분은 판매환율로 평가해 환차 0). 완납되면 전체 환차로 바뀌고, 2차 마감 때 그 시점 값으로 확정됩니다.',
+    'exchange_partial_mark' => '부분',
     'margin_rate_title' => '총마진 ÷ 판매금원화. 내수 차량은 마진율이 없어 「—」로 두고 합계에서도 빠집니다.',
 
     'approval_pending' => '승인 대기중',
@@ -247,6 +250,8 @@ return [
     'krw_received_sub' => '(row별 환율)',
     'krw_baseline' => '기준액',
     'krw_baseline_sub' => '(총판매가 × 판매환율)',
+    'krw_baseline_sub_partial' => '(받은 외화 × 판매환율 — 미수분 제외)',
+    'krw_unpaid_fx' => '미수 외화 (환차 계산에서 제외)',
     'krw_rate_unavailable' => '현재 환율 조회 실패 — 정산 시점 KRW / 환차 계산 불가',
     'rate_source' => [
         'manual' => '입력 중',

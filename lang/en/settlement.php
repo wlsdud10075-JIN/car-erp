@@ -175,6 +175,9 @@ return [
     'exchange_needs_full_payment' => 'There is still an outstanding balance, so no FX difference can be stated yet. It appears once the vehicle is paid in full.',
     'exchange_preview_title' => 'Expected value. Closing the secondary settlement locks it in. The amount is already reflected from the first settlement onward.',
     'exchange_preview_mark' => 'est.',
+    'exchange_needs_receipt' => 'Nothing has been received yet, so there is no FX difference. It appears from the first receipt onward, for the received portion.',
+    'exchange_partial_title' => 'FX difference on the received portion only (the outstanding balance is valued at the sale rate, so it contributes 0). It becomes the full difference once paid in full and is locked in at secondary close.',
+    'exchange_partial_mark' => 'partial',
     'margin_rate_title' => 'Total margin divided by sales amount in KRW. Domestic vehicles have no margin rate, so they show a dash and are left out of the subtotal.',
 
     'approval_pending' => 'Approval pending',
@@ -241,6 +244,8 @@ return [
     'krw_received_sub' => '(per-row rate)',
     'krw_baseline' => 'Baseline',
     'krw_baseline_sub' => '(total sale × sale rate)',
+    'krw_baseline_sub_partial' => '(received FX × sale rate — outstanding excluded)',
+    'krw_unpaid_fx' => 'Outstanding (excluded from FX difference)',
     'krw_rate_unavailable' => 'Current rate lookup failed — cannot compute settlement KRW / FX diff',
     'rate_source' => [
         'manual' => 'entering',

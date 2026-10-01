@@ -754,15 +754,22 @@ new #[Layout('components.layouts.app')] class extends Component
             return $base;
         }
 
-        // 2026-07-06 재피벗 — baseline = 총판매가(외화) × 판매환율. close_rate 제거.
-        // 환차 = 실입금KRW − baseline. 프리뷰·확정 동일 공식이라 괴리 없음.
+        // 2026-07-06 재피벗 — baseline = 외화 × 판매환율. close_rate 제거.
+        // 🔀 2026-10-01 (jin B안) — 미완납이면 baseline 은 **받은 외화**(총판매가 − 미수) × 판매환율.
+        //    환차 = 실입금KRW − baseline 이 미완납에서도 그대로 맞아떨어진다(이 패널의 존재 이유 = 세 줄이 닫힘).
+        //    미수 외화는 따로 한 줄 보여준다(`unpaid_fx`) — 사람이 「받은 몫만 센 환차」임을 볼 수 있게.
         $saleRate = (float) ($v->exchange_rate ?? 0);
         if ($saleRate <= 0) {
             return array_merge($base, ['rate_unavailable' => true]);
         }
-        $baselineKrw = (int) ((float) $v->sale_total_amount * $saleRate);
+        $unpaidFx = max(0.0, (float) $v->sale_unpaid_amount);
+        $receivedFx = (float) $v->sale_total_amount - $unpaidFx;
+        $baselineKrw = (int) ($receivedFx * $saleRate);
+        $base['unpaid_fx'] = $unpaidFx;
+        $base['is_partial'] = $unpaidFx > 0;
 
-        // closed: 저장된 환차 사용 (확정값). baseline 은 판매환율 불변이라 재계산해도 동일.
+        // closed: 저장된 환차 사용 (확정값). baseline 은 마감 시점 받은 외화 기준 — 그 뒤 들어온 돈은 record-only 라
+        //   현재 받은 외화로 다시 계산한 baseline 과 어긋날 수 있다(저장값이 권위).
         if ($settlement && $secondaryStatus === 'closed' && $settlement->exchange_difference_krw !== null) {
             return array_merge($base, [
                 'baseline_krw' => $baselineKrw,
@@ -773,9 +780,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
         // pending / null: 실입금 − baseline 미리보기 (마감 시 확정될 값과 동일).
         //   🔑 식은 모델 단일 출처를 쓴다(2026-09-20). 정산행이 아직 없을 수도 있어 임시 인스턴스로 묻는다.
-        //   ⚠️ 이 패널은 **미완납이어도 보여준다** — 바로 위·아래에 실입금과 baseline 을 나란히 놓는
-        //      회계 명세라 사람이 차이의 출처를 볼 수 있다. 목록·엑셀은 숫자만 나가므로 미완납이면
-        //      「−」로 둔다(`Settlement::display_exchange_difference`).
         $fxOwner = $settlement ?? tap(new Settlement, fn (Settlement $t) => $t->setRelation('vehicle', $v));
 
         return array_merge($base, [
@@ -2242,16 +2246,17 @@ new #[Layout('components.layouts.app')] class extends Component
                      환차는 판매금원화의 환율(정산환율)을 타고 1차부터 금액에 이미 녹아 있는데,
                      `exchange_difference_krw` **컴럼**은 2차 마감 때만 쓰여 여기가 빈칸이었다.
                      🔑 값은 `Settlement::display_exchange_difference` 단일 출처 — 엑셀도 같은 걸 쓴다.
-                     🚨 미완납이면 null 이라 「—」이다(덜 받은 돈이 환차로 둔갑하는 것을 막는다). --}}
+                     🔀 2026-10-01 (jin B안) 미완납도 **받은 몫의 환차**를 보여주고 「부분」 표식을 붙인다.
+                     「—」는 KRW · 판매환율 없음 · 아직 받은 돈 0 뿐이다. --}}
                 <td class="py-3 pr-4 text-right text-xs">
                     @php $diff = $s->display_exchange_difference; @endphp
                     @if($s->vehicle?->currency === 'KRW')
                         <span class="text-gray-300" title="{{ __('settlement.exchange_krw_vehicle_title') }}">—</span>
                     @elseif($diff === null)
-                        <span class="text-gray-300" title="{{ __('settlement.exchange_needs_full_payment') }}">—</span>
+                        <span class="text-gray-300" title="{{ __('settlement.exchange_needs_receipt') }}">—</span>
                     @else
-                        @php $preview = $s->isExchangeDifferencePreview(); @endphp
-                        <span title="{{ $preview ? __('settlement.exchange_preview_title') : ($diff > 0 ? __('settlement.exchange_profit_title') : ($diff < 0 ? __('settlement.exchange_loss_title') : __('settlement.exchange_same_title'))) }}">
+                        @php $preview = $s->isExchangeDifferencePreview(); $partial = $s->isExchangeDifferencePartial(); @endphp
+                        <span title="{{ $partial ? __('settlement.exchange_partial_title') : ($preview ? __('settlement.exchange_preview_title') : ($diff > 0 ? __('settlement.exchange_profit_title') : ($diff < 0 ? __('settlement.exchange_loss_title') : __('settlement.exchange_same_title')))) }}">
                             @if($diff > 0)
                             <span class="font-semibold text-emerald-600">+₩{{ number_format($diff) }}</span>
                             @elseif($diff < 0)
@@ -2259,7 +2264,8 @@ new #[Layout('components.layouts.app')] class extends Component
                             @else
                             <span class="text-gray-400">₩0</span>
                             @endif
-                            @if($preview)<span class="ml-0.5 text-[10px] font-normal text-gray-400">{{ __('settlement.exchange_preview_mark') }}</span>@endif
+                            @if($partial)<span class="ml-0.5 text-[10px] font-normal text-amber-600">{{ __('settlement.exchange_partial_mark') }}</span>
+                            @elseif($preview)<span class="ml-0.5 text-[10px] font-normal text-gray-400">{{ __('settlement.exchange_preview_mark') }}</span>@endif
                         </span>
                     @endif
                 </td>
@@ -2773,10 +2779,17 @@ new #[Layout('components.layouts.app')] class extends Component
                     $canEditRate = auth()->user()?->isAdmin()
                         || in_array(auth()->user()?->role, ['재무', '관리'], true);
                 @endphp
+                {{-- 🔀 2026-10-01 B안 — 미완납이면 기준액 = 받은 외화 × 판매환율. 미수 외화를 따로 보여 「받은 몫만 센 환차」임을 밝힌다. --}}
                 <div class="flex justify-between text-xs">
-                    <span class="text-gray-500">{{ __('settlement.krw_baseline') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_baseline_sub') }}</span></span>
+                    <span class="text-gray-500">{{ __('settlement.krw_baseline') }} <span class="text-[10px] text-gray-400">{{ __(! empty($kb['is_partial']) ? 'settlement.krw_baseline_sub_partial' : 'settlement.krw_baseline_sub') }}</span></span>
                     <span class="text-gray-700">₩{{ number_format($kb['baseline_krw']) }}</span>
                 </div>
+                @if(! empty($kb['is_partial']))
+                <div class="flex justify-between text-xs">
+                    <span class="text-amber-700">{{ __('settlement.krw_unpaid_fx') }}</span>
+                    <span class="text-amber-700">{{ $this->selectedVehicle?->currency }} {{ number_format($kb['unpaid_fx'], 2) }}</span>
+                </div>
+                @endif
                 <div class="flex justify-between text-xs">
                     <span class="text-gray-500">{{ __('settlement.krw_expected_diff') }} <span class="text-[10px] text-gray-400">{{ __('settlement.krw_expected_diff_sub') }}</span></span>
                     @if($kb['exchange_diff'] > 0)
@@ -2818,7 +2831,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{-- closed — 저장된 확정값 (2026-07-06 재피벗: baseline=판매환율) --}}
                 <hr class="border-gray-200">
                 <div class="flex justify-between text-gray-700">
-                    <span>{{ __('settlement.krw_baseline') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_baseline_sub') }}</span></span>
+                    <span>{{ __('settlement.krw_baseline') }} <span class="text-xs text-gray-400">{{ __(! empty($kb['is_partial']) ? 'settlement.krw_baseline_sub_partial' : 'settlement.krw_baseline_sub') }}</span></span>
                     <span class="font-medium">₩{{ number_format($kb['baseline_krw']) }}</span>
                 </div>
                 <div class="flex justify-between font-semibold">

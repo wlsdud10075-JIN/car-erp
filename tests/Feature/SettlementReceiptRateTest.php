@@ -114,18 +114,36 @@ class SettlementReceiptRateTest extends TestCase
     }
 
     /**
-     * 🚨 미완납이면 판매환율로 떨어져야 한다.
-     * 실효환율(실입금÷총판매가)을 그대로 쓰면 절반만 입금됐을 때 환율이 반토막 나
-     * 원금 미수가 환율로 둔갑한다.
+     * 🔀 2026-10-01 (jin B안) — 미완납은 **받은 몫만 실효환율, 미수분은 판매환율**로 섞는다.
+     *   구(08-06~09-30): 미완납이면 판매환율로 통째 폴백(366,205). 게이트 예외로 미수인 채 지급하는
+     *   156건의 환차가 완납 전엔 영영 담당자에게 안 갔다.
+     *   섞은 환율 = (4,000×1718 + 4,996×1716) ÷ 8,996. 원금 미수는 판매환율로 평가되어 환율로 둔갑하지 않는다.
+     *   ⚠️ 결과는 폴백값(366,205)과 완납값(373,259) **사이**여야 한다 — 방향이 맞다는 유일한 검산.
      */
-    public function test_falls_back_to_sale_rate_while_unpaid(): void
+    public function test_partial_receipt_blends_received_fx_with_sale_rate(): void
     {
         $v = $this->makeVehicle();
         $this->pay($v, 4000, 1718);   // 8,996 중 4,000 만
         $v->refresh();
 
         $this->assertGreaterThan(0, (float) $v->sale_unpaid_amount);
-        $this->assertSame(1716.0, round($v->settlement_exchange_rate, 4), '미완납인데 실효환율을 썼다');
+        $expectedRate = (4000 * 1718 + (8996 - 4000) * 1716) / 8996;
+        $this->assertEqualsWithDelta($expectedRate, $v->settlement_exchange_rate, 1e-9, '받은 몫만 실효환율이어야 한다');
+
+        $payout = $this->settle($v)->actual_payout;
+        $this->assertSame(369_341, $payout);
+        $this->assertGreaterThan(366_205, $payout, '폴백값보다 커야 한다(받은 4,000 의 환차익 +2/EUR)');
+        $this->assertLessThan(373_259, $payout, '완납값보다 작아야 한다(미수 4,996 은 판매환율 평가)');
+    }
+
+    /** 미수분은 판매환율로 평가되므로 「전액 판매환율로 받은 것」과 「하나도 안 받은 것」의 정산환율은 같다. */
+    public function test_unpaid_portion_never_moves_the_rate(): void
+    {
+        $v = $this->makeVehicle();
+        $this->pay($v, 4000, 1716);   // 판매환율 그대로 일부만
+        $v->refresh();
+
+        $this->assertSame(1716.0, round($v->settlement_exchange_rate, 4));
         $this->assertSame(366_205, $this->settle($v)->actual_payout);
     }
 

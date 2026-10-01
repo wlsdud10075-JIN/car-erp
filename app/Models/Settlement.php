@@ -607,14 +607,17 @@ class Settlement extends Model
     }
 
     /**
-     * 💱 **환차 계산 본체** — 2026-09-20 에 정산관리 화면의 private 메서드에서 꺼냈다(식 무변경).
-     *   환차 = 실입금KRW − baseline(총판매가 외화 × 판매환율). 2026-07-06 재피벗 공식.
+     * 💱 **환차 계산 본체** — 2026-09-20 에 정산관리 화면의 private 메서드에서 꺼냈다.
+     *   🔀 2026-10-01 (jin B안): **받은 몫의 실현 환차**만 센다.
+     *   환차 = 실입금KRW − (총판매가 − 미수외화) × 판매환율 = 실입금KRW − 받은외화 × 판매환율.
+     *   · 완납이면 종전 식(실입금 − 총판매가 × 판매환율)과 글자 단위로 같다.
+     *   · 미완납이면 미수 원금이 환차손으로 둔갑하지 않는다 — 게이트 예외로 미수인 채 2차 마감하는
+     *     경로가 이 값을 저장하므로, 예외 건의 저장 환차도 「받은 몫」만 담긴다.
+     *   `Vehicle::settlement_exchange_rate`(섞은 환율)와 같은 전제라 1차 금액과 어긋나지 않는다.
      *
      * 반환: KRW / `0.0` = KRW 차량(환차 개념 없음) / `null` = 판매환율 없어 계산 불가.
      *
      * 🚫 **이 식을 화면·엑셀에 옮겨 적지 말 것**(§8 #44·#45) — 갈리면 「화면 3,000원 ↔ 엑셀 2,900원」이 된다.
-     * ⚠️ **미수 판정을 여기 넣지 않는다** — 2차 마감 저장 경로가 이걸 쓰는데, 게이트 예외로
-     *    미수인 채 마감하는 길이 설계상 열려 있다. 미수 판정은 표시용 `display_exchange_difference` 몫.
      */
     public function computeExchangeDifference(): ?float
     {
@@ -628,8 +631,9 @@ class Settlement extends Model
             return null;
         }
 
-        return (float) $vehicle->sale_received_krw_accumulated
-            - (float) $vehicle->sale_total_amount * $saleRate;
+        $receivedFx = (float) $vehicle->sale_total_amount - max(0.0, (float) $vehicle->sale_unpaid_amount);
+
+        return (float) $vehicle->sale_received_krw_accumulated - $receivedFx * $saleRate;
     }
 
     /**
@@ -639,9 +643,10 @@ class Settlement extends Model
      * 환율(`Vehicle::settlement_exchange_rate`)을 타고 **1차부터 금액에 이미 녹아 있는데**,
      * `exchange_difference_krw` **컬럼**은 2차 마감 때만 쓰이므로 화면·엑셀이 빈칸이었다.
      *
-     * 🚨 **미완납이면 `null`(「−」)** — 미리보기 식은 덜 받은 돈을 그대로 마이너스로 뱉는다.
-     *    그걸 「환차」로 인쇄하면 **미수가 환차로 둔갑**한다(실측 155건이 그 상태였다).
-     *    판정은 `Vehicle::hasRealizedFxBasis()` 단일 출처 — 정산환율이 보는 바로 그 조건이다.
+     * 🔀 2026-10-01 (jin B안): **미완납도 받은 몫의 환차를 보여준다.** 식 자체가 받은 외화만 세므로
+     *    미수가 환차로 둔갑하지 않는다. `null`(「−」)은 ①KRW ②판매환율 없음 ③총판매가 0
+     *    ④**아직 받은 돈이 0**(환차라고 부를 사건이 없다 — 「₩0 환율 같음」으로 보이면 거짓) 뿐이다.
+     *    「부분」인지(미수 남음) 「전체」인지는 `Vehicle::hasRealizedFxBasis()` 가 가른다(표시용).
      *
      * 🚫 **1차 확정 시점에 컬럼으로 저장하지 않는다** — 뒤에 잔금이 더 들어오면 값이 낡고,
      *    「마감 때 계산된 값」이라는 기존 전제(`ReopenSecondarySettlement` 가 그 위에 서 있다)가 깨진다.
@@ -654,7 +659,19 @@ class Settlement extends Model
             return $this->exchange_difference_krw === null ? null : (float) $this->exchange_difference_krw;
         }
 
-        return $this->vehicle?->hasRealizedFxBasis() ? $this->computeExchangeDifference() : null;
+        $v = $this->vehicle;
+        if (! $v || ($v->currency ?? 'KRW') === 'KRW' || (float) ($v->exchange_rate ?? 0) <= 0
+            || (float) $v->sale_total_amount <= 0 || (float) $v->sale_received_krw_accumulated <= 0) {
+            return null;
+        }
+
+        return $this->computeExchangeDifference();
+    }
+
+    /** 환차가 「받은 몫」만인가(미수 남음) — 목록 「부분」 표식·드로어 기준액 라벨이 본다(2026-10-01). */
+    public function isExchangeDifferencePartial(): bool
+    {
+        return $this->secondary_status !== 'closed' && ! ($this->vehicle?->hasRealizedFxBasis() ?? false);
     }
 
     /**
