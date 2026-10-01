@@ -173,8 +173,7 @@ class CashToSavingsTransferTest extends TestCase
 
         Volt::test('erp.buyers.index')
             ->call('openEdit', $b->id)
-            ->set('fee_currency', 'EUR')
-            ->call('transferCashToSavings')
+            ->call('transferCashToSavings', 'EUR')
             ->assertHasNoErrors();
 
         $this->assertSame(0.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
@@ -189,10 +188,9 @@ class CashToSavingsTransferTest extends TestCase
 
         Volt::test('erp.buyers.index')
             ->call('openEdit', $b->id)
-            ->set('fee_currency', 'EUR')
-            ->set('savings_transfer_amount', '158')
-            ->call('transferCashToSavings')
-            ->assertHasErrors('savings_transfer_amount');
+            ->set('savings_transfer_amount.EUR', '158')
+            ->call('transferCashToSavings', 'EUR')
+            ->assertHasErrors('savings_transfer_amount.EUR');
 
         $this->assertSame(100.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
         $this->assertSame(0, SavingsStatus::where('buyer_id', $b->id)->count());

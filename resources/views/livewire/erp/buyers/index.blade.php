@@ -130,8 +130,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $fee_amount      = '';
 
-    /** 💳 남은 현금 → 적립금 전환 금액(외화) — 비우면 그 통화의 남은 현금 전부(jin 2026-10-01). */
-    public string $savings_transfer_amount = '';
+    /** 💳 남은 현금 → 적립금 전환 금액(외화, 통화별) — 비우면 그 통화의 남은 현금 전부(jin 2026-10-01). */
+    public array $savings_transfer_amount = [];
 
     public string $fee_note        = '';
 
@@ -1208,31 +1208,32 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 💳 남은 현금 → 적립금 전환 (jin 2026-10-01, 기획 §6). 판매 탭 「적립금 적립」과 같은 서비스를 부른다 —
      *    어디서 넣든 적립금 +N · 현금 남은 금액 −N 한 쌍이 생긴다. 비우면 그 통화의 남은 현금 전부.
      */
-    public function transferCashToSavings(): void
+    public function transferCashToSavings(string $currency): void
     {
         abort_unless(auth()->user()?->canConfirmFinance(), 403);
         if (! $this->editingId || ! Setting::buyerCashEnabled()) {
             return;
         }
-        $this->validate(['fee_currency' => 'required|in:USD,JPY,EUR,GBP,CNY']);
+        abort_unless(in_array($currency, ['USD', 'JPY', 'EUR', 'GBP', 'CNY'], true), 422);   // wire:click 인자 — 화이트리스트(§8 #26)
 
         $service = app(\App\Services\BuyerCashService::class);
-        $amount = $this->savings_transfer_amount === ''
-            ? $service->feeCeilingFor((int) $this->editingId, $this->fee_currency)
-            : (float) str_replace(',', '', $this->savings_transfer_amount);
+        $raw = trim((string) ($this->savings_transfer_amount[$currency] ?? ''));
+        $amount = $raw === ''
+            ? $service->feeCeilingFor((int) $this->editingId, $currency)
+            : (float) str_replace(',', '', $raw);
 
         try {
-            $service->transferToSavings((int) $this->editingId, $this->fee_currency, $amount, null, __('buyer.cash.savings_note'));
+            $service->transferToSavings((int) $this->editingId, $currency, $amount, null, __('buyer.cash.savings_note'));
         } catch (\DomainException $e) {
-            $this->addError('savings_transfer_amount', $e->getMessage());
+            $this->addError('savings_transfer_amount.'.$currency, $e->getMessage());
 
             return;
         }
 
-        $this->savings_transfer_amount = '';
+        unset($this->savings_transfer_amount[$currency]);
         $this->loadCash($this->editingId);
         $this->loadSavings($this->editingId);
-        $this->dispatch('notify', message: __('buyer.cash.savings_added', ['amount' => number_format($amount, 2).' '.$this->fee_currency]), type: 'success');
+        $this->dispatch('notify', message: __('buyer.cash.savings_added', ['amount' => number_format($amount, 2).' '.$currency]), type: 'success');
     }
 
     /** 수수료 취소 — 배분이 cascade 로 사라져 **현금이 그대로 돌아온다**. */
@@ -2249,24 +2250,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </button>
                 </div>
 
-                {{-- 💳 남은 현금 → 적립금 (jin 2026-10-01, 기획 §6) — 수수료 폼 밖에 둔다(접힌 폼 안에 넣었더니 jin 이 못 찾았다). 판매 탭 「적립금 적립」과 같은 결과. 비우면 남은 현금 전부. --}}
+                {{-- 💳 남은 현금 → 적립금 (jin 2026-10-01, 기획 §6) — 수수료 폼 밖, **통화별**로 그린다.
+                     수수료 폼의 통화 드롭박스(기본 USD)에 묶었더니 EUR 바이어에서 버튼이 죽어 있었다(jin 로컬 확인). 남은 현금이 있는 통화만. --}}
+                @php $savingsTargets = collect($cashBalances)->filter(fn ($b) => ($b['remaining'] ?? 0) > 0.005); @endphp
+                @if($savingsTargets->isNotEmpty())
                 <div class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
                     <h4 class="text-xs font-semibold text-emerald-800">{{ __('buyer.cash.savings_section') }}</h4>
                     <p class="mt-1 text-[11px] leading-snug text-emerald-800/80">{{ __('buyer.cash.savings_hint') }}</p>
+                    @foreach($savingsTargets as $cur => $b)
                     <div class="mt-2 flex flex-wrap items-end gap-2">
+                        <span class="pb-1.5 font-mono text-xs text-gray-700">{{ $cur }} {{ number_format($b['remaining'], 2) }}</span>
                         <div>
                             <label class="label-base">{{ __('buyer.cash.savings_amount') }}</label>
-                            <input wire:model="savings_transfer_amount" type="text" inputmode="decimal" class="input-base w-36"
-                                   placeholder="{{ number_format($cashBalances[$fee_currency]['remaining'] ?? 0, 2) }}" />
+                            <input wire:model="savings_transfer_amount.{{ $cur }}" type="text" inputmode="decimal" class="input-base w-36"
+                                   placeholder="{{ number_format($b['remaining'], 2) }}" />
                         </div>
-                        <button wire:click="transferCashToSavings" wire:confirm="{{ __('buyer.cash.savings_confirm') }}"
-                                @disabled(($cashBalances[$fee_currency]['remaining'] ?? 0) <= 0)
-                                class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                        <button wire:click="transferCashToSavings('{{ $cur }}')" wire:confirm="{{ __('buyer.cash.savings_confirm') }}"
+                                class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
                             {{ __('buyer.cash.savings_btn') }}
                         </button>
                     </div>
-                    @error('savings_transfer_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    @error('savings_transfer_amount.'.$cur)<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    @endforeach
                 </div>
+                @endif
 
                 @if($showFeeForm)
                 <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
