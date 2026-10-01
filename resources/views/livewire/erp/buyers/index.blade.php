@@ -2249,6 +2249,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </button>
                 </div>
 
+                {{-- 💳 남은 현금 → 적립금 (jin 2026-10-01, 기획 §6) — 수수료 폼 밖에 둔다(접힌 폼 안에 넣었더니 jin 이 못 찾았다). 판매 탭 「적립금 적립」과 같은 결과. 비우면 남은 현금 전부. --}}
+                <div class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                    <h4 class="text-xs font-semibold text-emerald-800">{{ __('buyer.cash.savings_section') }}</h4>
+                    <p class="mt-1 text-[11px] leading-snug text-emerald-800/80">{{ __('buyer.cash.savings_hint') }}</p>
+                    <div class="mt-2 flex flex-wrap items-end gap-2">
+                        <div>
+                            <label class="label-base">{{ __('buyer.cash.savings_amount') }}</label>
+                            <input wire:model="savings_transfer_amount" type="text" inputmode="decimal" class="input-base w-36"
+                                   placeholder="{{ number_format($cashBalances[$fee_currency]['remaining'] ?? 0, 2) }}" />
+                        </div>
+                        <button wire:click="transferCashToSavings" wire:confirm="{{ __('buyer.cash.savings_confirm') }}"
+                                @disabled(($cashBalances[$fee_currency]['remaining'] ?? 0) <= 0)
+                                class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                            {{ __('buyer.cash.savings_btn') }}
+                        </button>
+                    </div>
+                    @error('savings_transfer_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                </div>
+
                 @if($showFeeForm)
                 <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
                     <h4 class="text-xs font-semibold text-amber-800">{{ __('buyer.cash.fee_section') }}</h4>
@@ -2289,24 +2308,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ __('buyer.cash.fee_add_btn') }}
                     </button>
 
-                    {{-- 💳 남은 현금 → 적립금 (jin 2026-10-01, 기획 §6) — 판매 탭 「적립금 적립」과 같은 결과. 비우면 남은 현금 전부. --}}
-                    <div class="mt-3 border-t border-amber-200 pt-3">
-                        <h4 class="text-xs font-semibold text-emerald-800">{{ __('buyer.cash.savings_section') }}</h4>
-                        <p class="mt-1 text-[11px] leading-snug text-emerald-800/80">{{ __('buyer.cash.savings_hint') }}</p>
-                        <div class="mt-2 flex flex-wrap items-end gap-2">
-                            <div>
-                                <label class="label-base">{{ __('buyer.cash.savings_amount') }}</label>
-                                <input wire:model="savings_transfer_amount" type="text" inputmode="decimal" class="input-base w-36"
-                                       placeholder="{{ number_format($cashBalances[$fee_currency]['remaining'] ?? 0, 2) }}" />
-                            </div>
-                            <button wire:click="transferCashToSavings" wire:confirm="{{ __('buyer.cash.savings_confirm') }}"
-                                    @disabled(($cashBalances[$fee_currency]['remaining'] ?? 0) <= 0)
-                                    class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
-                                {{ __('buyer.cash.savings_btn') }}
-                            </button>
-                        </div>
-                        @error('savings_transfer_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-                    </div>
                 </div>
                 @endif
             </div>
