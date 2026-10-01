@@ -231,4 +231,21 @@ class PortalBuyerApiTest extends TestCase
         $this->signed(null, $nonce)->assertOk();
         $this->signed(null, $nonce)->assertStatus(401);
     }
+
+    /** 👤 v1.18 — 담당자 유형. 출처 = salesmen.type, 담당자 없으면 null(빈 문자열 금지는 salesman_name 과 같은 이유). */
+    public function test_salesman_type_ships_from_salesmen_type(): void
+    {
+        $emp = Salesman::create(['name' => '사내', 'type' => 'employee', 'is_active' => true]);
+        $fre = Salesman::create(['name' => '프리', 'type' => 'freelance', 'is_active' => true]);
+        $b1 = $this->buyer(['name' => 'B-EMP', 'salesman_id' => $emp->id]);
+        $b2 = $this->buyer(['name' => 'B-FRE', 'salesman_id' => $fre->id]);
+        $b3 = $this->buyer(['name' => 'B-NONE']);
+
+        $rows = collect($this->signed()->assertOk()->json('data'))->keyBy('id');
+
+        $this->assertSame('employee', $rows[$b1->id]['salesman_type']);
+        $this->assertSame('freelance', $rows[$b2->id]['salesman_type']);
+        $this->assertNull($rows[$b3->id]['salesman_type'], '담당자 없으면 null — 빈 문자열 금지');
+        $this->assertArrayNotHasKey('salesman_id', $rows[$b1->id]);
+    }
 }
