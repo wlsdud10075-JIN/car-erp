@@ -650,7 +650,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 대상 비용 전환 시 미리보기 초기화 + 거래처를 해당 비용의 기본값으로 리셋(현대A1 선택 후 면허 전환 시 stale 방지). */
     public function updatedCostImportColumn(): void
     {
-        $this->costImportCompany = $this->costImportColumn === 'cost_license' ? 'mutual' : 'wika';
+        $this->costImportCompany = \App\Models\Vehicle::COST_IMPORT_DEFAULT_COMPANY[$this->costImportColumn] ?? 'wika';
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
     }
 
@@ -762,7 +762,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 if ($amount <= 0) {
                     continue;
                 }
-                $rows[] = ['plate' => $plate, 'amount' => $amount];
+                $row = ['plate' => $plate, 'amount' => $amount];
+                // 차대번호(데일리) — 대문자·공백 제거. 17자가 아니면 없는 것으로 본다(번호만으로 매칭).
+                if (isset($layout['vin'])) {
+                    $vin = strtoupper(preg_replace('/\s+/u', '', (string) $sheet->getCell($layout['vin'].$r)->getCalculatedValue()));
+                    $row['vin'] = strlen($vin) === 17 ? $vin : null;
+                }
+                $rows[] = $row;
             }
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
@@ -795,23 +801,48 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 같은 차량번호가 여러 줄(취소 후 재진행 등)이면 금액 합산 (jin 2026-07-03). 등장 순서 유지.
         $sums = [];
         $order = [];
+        $vins = [];   // 차대번호(있는 서식만) — 같은 번호의 첫 17자 값
         foreach ($rows as $r) {
             if (! isset($sums[$r['plate']])) {
                 $order[] = $r['plate'];
                 $sums[$r['plate']] = 0;
             }
             $sums[$r['plate']] += $r['amount'];
+            if (! empty($r['vin']) && empty($vins[$r['plate']])) {
+                $vins[$r['plate']] = $r['vin'];
+            }
         }
 
         $matched = [];
         $unmatched = [];
         foreach ($order as $plate) {
             $amount = $sums[$plate];
-            $vehicle = \App\Models\Vehicle::where('vehicle_number', $plate)->first();
+            $vin = $vins[$plate] ?? null;
+            $note = null;
+            $reason = null;
+            $byPlate = \App\Models\Vehicle::where('vehicle_number', $plate)->get();
+            if ($vin === null) {
+                $vehicle = $byPlate->first();
+            } else {
+                // 🔑 차대번호가 있는 서식(데일리 보험료)은 번호 + 차대번호가 함께 맞아야 한다 (jin 2026-10-01).
+                //   번호판은 말소 뒤 재사용되므로 같은 번호의 다른 차에 기입되는 사고를 막는다.
+                //   ERP 에 차대번호가 비어 있으면(NICE 미조회) 번호만으로 받는다 — 비교할 것이 없다.
+                $vehicle = $byPlate->first(fn ($v) => strtoupper(trim((string) $v->nice_reg_vin)) === $vin)
+                    ?? $byPlate->first(fn ($v) => trim((string) $v->nice_reg_vin) === '');
+                if (! $vehicle && $byPlate->isNotEmpty()) {
+                    $reason = 'vin_mismatch';   // 번호는 있는데 차대번호가 다른 차 — 기입하지 않는다
+                } elseif (! $vehicle) {
+                    // 번호로 못 찾으면 차대번호로 — 번호판이 바뀐 차(재등록 등). 명세서 번호를 같이 보여준다.
+                    $vehicle = \App\Models\Vehicle::where('nice_reg_vin', $vin)->first();
+                    $note = $vehicle ? 'vin_only' : null;
+                }
+            }
             if ($vehicle) {
                 $matched[] = [
                     'id' => $vehicle->id,
                     'number' => $vehicle->vehicle_number,
+                    'file_number' => $plate,
+                    'note' => $note,
                     'model' => trim(($vehicle->brand ?? '').' '.($vehicle->model_type ?? '')),
                     'current' => (int) $vehicle->{$this->costImportColumn},
                     'amount' => $amount,
@@ -819,7 +850,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'finalized' => $vehicle->settlements()->where('secondary_status', 'closed')->exists(),
                 ];
             } else {
-                $unmatched[] = ['number' => $plate, 'amount' => $amount];
+                $unmatched[] = ['number' => $plate, 'amount' => $amount, 'reason' => $reason];
             }
         }
 
@@ -11728,7 +11759,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                     </select>
                 </div>
-                <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : __('vehicle.cost_import.col_hint') }}</p>
+                <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : ($costImportColumn === 'cost_insurance' ? __('vehicle.cost_import.ins_col_hint') : __('vehicle.cost_import.col_hint')) }}</p>
             </div>
 
             @if($costImportColumn === 'cost_license' && $costImportCompany === 'seongji')
@@ -11853,6 +11884,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <td class="px-3 py-1.5 font-mono font-medium {{ $isFinal ? 'text-gray-400' : 'text-gray-800' }}">
                                 {{ $row['number'] }}
                                 @if($isFinal)<span class="ml-1 rounded bg-gray-200 px-1 py-0.5 text-[9px] text-gray-500">{{ __('vehicle.cost_import.finalized_badge') }}</span>@endif
+                                @if(($row['note'] ?? null) === 'vin_only')<span class="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-sans text-amber-700">{{ __('vehicle.cost_import.note.vin_only', ['plate' => $row['file_number'] ?? '']) }}</span>@endif
                             </td>
                             <td class="px-3 py-1.5 {{ $isFinal ? 'text-gray-400' : 'text-gray-600' }}">{{ $row['model'] }}</td>
                             <td class="px-3 py-1.5 text-right text-gray-400">{{ number_format($row['current']) }}</td>
@@ -11876,7 +11908,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <p class="mb-1 text-[11px] font-semibold text-red-700">{{ ($costImportParsed['mode'] ?? '') === 'license' ? __('vehicle.cost_import.lic_unmatched_title') : __('vehicle.cost_import.unmatched_title') }}</p>
                 <div class="flex flex-wrap gap-1.5">
                     @foreach($unmatched as $u)
-                    <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] text-red-600">{{ $u['number'] }} ({{ number_format($u['amount']) }})</span>
+                    <span class="rounded bg-white px-2 py-0.5 font-mono text-[11px] text-red-600">{{ $u['number'] }} ({{ number_format($u['amount']) }})@if(! empty($u['reason'])) <span class="font-sans text-[10px] text-red-500">{{ __('vehicle.cost_import.reason.'.$u['reason']) }}</span>@endif</span>
                     @endforeach
                 </div>
             </div>
