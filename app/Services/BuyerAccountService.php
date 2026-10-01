@@ -154,7 +154,8 @@ class BuyerAccountService
     public function cashUsageByVehicle(Buyer $buyer, ?int $limit = null): Collection
     {
         $groups = $this->cashUsage($buyer)          // ← 같은 출처. 상한은 묶은 뒤에 건다.
-            ->flatMap(fn ($r) => $r->allocations->map(fn ($a) => [$r, $a]))
+            // 💳 적립금 전환 배분은 정산현황에 안 그린다(jin 2026-10-01 «적립금으로 적립한 내용은 나오지 않게») — 입금별 보기·엑셀도 같다.
+            ->flatMap(fn ($r) => $r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer())->map(fn ($a) => [$r, $a]))
             ->groupBy(function (array $pair) {
                 [, $a] = $pair;
 

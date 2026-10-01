@@ -179,7 +179,8 @@ class BuyerAccountExportController extends Controller
         $row = 2;
         foreach ($receipts as $r) {
             // 아직 안 쓰인 입금도 한 줄 남긴다 — 안 남기면 「받은 돈」이 엑셀에서 사라진다.
-            $allocations = $r->allocations->all() ?: [null];
+            // 💳 적립금 전환 배분은 화면과 같이 뺀다(jin 2026-10-01).
+            $allocations = $r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer())->values()->all() ?: [null];
             foreach ($allocations as $a) {
                 $this->text($sheet, 'A'.$row, $r->received_date->format('Y-m-d'));
                 $sheet->setCellValue('B'.$row, (float) $r->amount);

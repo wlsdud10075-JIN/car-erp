@@ -390,7 +390,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="max-w-[220px] truncate text-[11px] text-gray-400" title="{{ $r->note }}">{{ $r->note }}</span>
                     @endif
                 </div>
+                {{-- 💳 적립금 전환분은 아래 사용 내역에 안 그린다(jin 2026-10-01). 대신 여기 한 줄 — 안 적으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다. --}}
+                @php $toSavings = (float) $r->allocations->filter(fn ($a) => $a->fee?->isSavingsTransfer())->sum('amount'); @endphp
                 <span class="text-xs {{ $r->remaining_amount > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                    @if($toSavings > 0.005)<span class="mr-2 text-[11px] text-emerald-700">{{ __('buyer_account.to_savings_note', ['amount' => number_format($toSavings, 2)]) }}</span>@endif
                     {{ __('buyer_account.remaining') }}
                     <span class="font-mono font-semibold">{{ number_format($r->remaining_amount, 2) }}</span>
                 </span>
@@ -408,7 +411,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    @forelse($r->allocations as $a)
+                    @forelse($r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer()) as $a)
                     <tr>
                         {{-- 💸 수수료 배분(2026-09-08)은 차량이 없다 — 빈칸으로 두면 「어디로 갔지」가 된다.
                              그리고 판매탭 송금수수료(2026-09-09~)는 **차량이 붙어 있다** — 뱃지를 안 달면
