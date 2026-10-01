@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Buyer;
 use App\Models\BuyerCashAllocation;
 use App\Models\BuyerCashReceipt;
+use App\Models\SavingsStatus;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
 
@@ -213,14 +214,22 @@ class BuyerAccountService
             ->groupBy('r.currency')
             ->pluck('total', 'currency');
 
+        // 💳 적립금 잔액(통화별) — 현금을 적립금으로 돌리면 「0원이 됐다」 옆에 「적립금은 N」이 같이 보여야 한다(jin 2026-10-01).
+        //    잔액 = 그 통화의 마지막 적립금 행 balance(적립금 원장의 단일 출처 — 매 행이 누적 잔액을 든다).
+        $savings = SavingsStatus::query()
+            ->where('buyer_id', $buyer->id)
+            ->whereIn('id', fn ($q) => $q->selectRaw('MAX(id)')->from('savings_statuses')->where('buyer_id', $buyer->id)->groupBy('currency'))
+            ->pluck('balance', 'currency');
+
         $out = [];
-        foreach ($received->keys()->merge($allocated->keys())->unique() as $currency) {
+        foreach ($received->keys()->merge($allocated->keys())->merge($savings->keys())->unique() as $currency) {
             $in = (float) ($received[$currency] ?? 0);
             $used = (float) ($allocated[$currency] ?? 0);
             $out[$currency] = [
                 'received' => round($in, 2),
                 'allocated' => round($used, 2),
                 'remaining' => round($in - $used, 2),
+                'savings' => round((float) ($savings[$currency] ?? 0), 2),
             ];
         }
         ksort($out);

@@ -294,6 +294,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span>·</span>
                     <span class="font-medium text-gray-700">{{ __('buyer_account.remaining') }}</span>
                 </div>
+                {{-- 💳 적립금 잔액 — 현금과 다른 돈(회사가 준 크레딧)이라 줄을 따로 둔다. 전환으로 현금이 0 이 돼도 여기 남아 있다(jin 2026-10-01). --}}
+                @if(($c['savings'] ?? 0) != 0)
+                <div class="mt-1 text-[11px] text-emerald-700">{{ __('buyer_account.savings_balance') }} <span class="font-mono font-semibold">{{ number_format($c['savings'], 2) }}</span> <span class="text-gray-400">{{ $cur }}</span></div>
+                @endif
             </div>
             @empty
             <p class="text-xs text-gray-400">{{ __('buyer_account.no_cash') }}</p>
