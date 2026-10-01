@@ -15,6 +15,7 @@ return [
     'received' => '받은 돈',
     'allocated' => '차량에 쓴 돈',
     'remaining' => '남은 현금',
+    'to_savings_note' => '적립금으로 전환 :amount (내역에서 제외)',
     'no_cash' => '기재된 입금이 없습니다.',
 
     'usage_title' => '현금 사용 내역',

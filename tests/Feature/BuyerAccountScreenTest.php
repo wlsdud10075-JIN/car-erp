@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\BuyerAccountService;
+use App\Services\BuyerCashService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
@@ -812,5 +813,30 @@ class BuyerAccountScreenTest extends TestCase
         // 뱃지가 뜻을 가지려면 잔금엔 안 붙어야 한다 — 한 번만 나와야 정상이다.
         $this->assertSame(1, substr_count($html, __('buyer.cash.fee_badge')),
             '잔금 배분에도 수수료 뱃지가 붙었다');
+    }
+
+    /**
+     * 💳 적립금 전환분은 사용 내역에 안 그린다 (jin 2026-10-01 «바이어정산현황에는 적립금으로 적립한 내용은 나오지 않게»).
+     *    기존엔 fee 배분이라 「수수료로 털기」로 찍혔다(라벨 사전이 화면마다 복제돼 있던 자리, §8 #45).
+     *    대신 입금 머리글에 「적립금으로 전환 N」 한 줄 — 안 적으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다.
+     */
+    public function test_savings_transfer_is_not_listed_as_a_fee(): void
+    {
+        $this->enable();
+        $buyer = $this->buyer();
+        $vehicle = $this->vehicle($buyer);
+        BuyerCashReceipt::create(['buyer_id' => $buyer->id, 'currency' => 'EUR', 'received_date' => '2026-10-01', 'amount' => 4554]);
+        FinalPayment::create(['vehicle_id' => $vehicle->id, 'type' => 'balance', 'amount' => 4396, 'payment_date' => '2026-10-01', 'confirmed_at' => now()]);
+        $this->actingAs($this->finance());
+        app(BuyerCashService::class)->transferToSavings($buyer->id, 'EUR', 158, null, null);
+
+        $c = Volt::actingAs($this->finance())->test('erp.buyer-account.index')->set('buyerId', (string) $buyer->id);
+        $html = $c->html();
+        $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html, '적립금 전환이 「수수료로 털기」로 찍혔다');
+        $this->assertStringContainsString(__('buyer_account.to_savings_note', ['amount' => '158.00']), $html, '전환분 메모가 없으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다');
+        $this->assertStringContainsString('4,396.00', $html);
+
+        $html2 = $c->call('switchUsageView', 'vehicle')->html();
+        $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html2, '차량별 보기에도 적립금 전환이 수수료로 찍혔다');
     }
 }
