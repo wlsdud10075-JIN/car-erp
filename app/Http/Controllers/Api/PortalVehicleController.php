@@ -30,6 +30,8 @@ class PortalVehicleController extends Controller
         'id', 'buyer_id', 'vehicle_number', 'nice_reg_vin',
         'brand', 'model_type', 'year', 'mileage', 'color',
         'progress_status_cache',
+        // 🚫 매입취소 마커 (v1.18, jin 2026-10-01 승인) — 포털 SSP 조기 적립의 자동 회수 트리거. 아래 row() 가 'none' 을 null 로 바꾼다.
+        'cancel_status',
         'purchase_date', 'sale_date', 'warehouse_out_date', 'shipping_date', 'eta_date',
         'vessel_name', 'container_number', 'port_of_loading', 'shipping_method', 'incoterms',
         'discharge_port_id', 'bl_document', 'bl_number', 'bl_issue_date',
@@ -132,6 +134,8 @@ class PortalVehicleController extends Controller
 
             // ★원문 문자열★ — 사이트가 모르는 값은 폴백 + 로그로 처리한다(닫힌 enum 금지, v1.3).
             'progress_status_cache' => $v->progress_status_cache,
+            // 매입취소: null(정상) | 'cancelled'(취소·위약금 채권 추적) | 'cancelled_closed'(미수 마감). DB 의 'none' 은 보내지 않는다.
+            'cancel_status' => $v->cancel_status === Vehicle::CANCEL_NONE || $v->cancel_status === null ? null : $v->cancel_status,
             // 진행 단계 평가에 쓰는 축. 사이트가 날짜로 재판정하면 갈린다(v1.2 §7-B 2).
             'sailing_phase' => $v->sailing_phase,
             // 🚨 `$v->departed()` 는 쿼리 스코프라 Builder 가 돌아온다 — 인스턴스 판정은 isDeparted().

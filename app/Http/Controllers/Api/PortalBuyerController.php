@@ -69,7 +69,7 @@ class PortalBuyerController extends Controller
             // 🚫 `salesman` 에 `withTrashed` 를 붙이지 말 것 — 소프트삭제된 담당자를 보내면
             //    포털이 **ERP 화면보다 더 많이** 보여준다(ERP 바이어 목록은 그때 「미지정」을 그린다).
             //    컬럼 제한(`:id,name`)은 여기서 안전하다 — 금액을 계산하지 않고 이름만 읽는다.
-            ->with(['country:id,name', 'salesman:id,name'])
+            ->with(['country:id,name', 'salesman:id,name,type'])
             ->select(self::COLUMNS)
             /*
             | 🔑 **대조용 숫자다.** 이 카운트의 집합이 차량 엔드포인트가 발행하는 집합과
@@ -126,6 +126,9 @@ class PortalBuyerController extends Controller
             // 🧭 이름이 `salesman_name` 인 것은 **외부 계약**이라 그렇다. 이 파일의 관용
             //    (`country` 처럼 접미사 없음)과 다르지만 「정리」하지 말 것 — 상대가 그 키를 읽는다.
             'salesman_name' => $b->salesman?->name,
+            // 👤 담당자 유형 (v1.18, jin 2026-10-01 승인) — 포털 관리자 「ERP × 사내직원/프리랜서」 드롭박스용.
+            //    출처 = salesmen.type ('employee'|'freelance'), 담당자 없으면 null. 이름과 같은 관계라 쿼리 추가 없음.
+            'salesman_type' => $b->salesman?->type,
             'vehicle_count' => (int) ($b->vehicles_count ?? 0),
             // 🔑 행을 빼지 않고 **플래그로** 준다 — 위 withTrashed() 주석 참조.
             'erp_deleted' => $b->trashed(),

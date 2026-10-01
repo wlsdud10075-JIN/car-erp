@@ -584,4 +584,19 @@ class PortalVehicleApiTest extends TestCase
         $this->assertStringNotContainsString('->get()', $body, '통째 ->get() 이 돌아왔다');
         $this->assertStringNotContainsString('memory_limit', $body, '메모리 한도를 올려 넘기지 말 것 — 다음 임계에서 또 죽는다');
     }
+
+    /** 🚫 v1.18 — 매입취소 마커. DB 'none' 은 null 로, 취소 두 상태는 원문 그대로. */
+    public function test_cancel_status_ships_with_none_as_null(): void
+    {
+        $normal = $this->seedVehicle();
+        $cancelled = $this->seedVehicle(['cancel_status' => Vehicle::CANCEL_ACTIVE]);
+        $closed = $this->seedVehicle(['cancel_status' => Vehicle::CANCEL_CLOSED]);
+
+        $rows = collect($this->signed()->assertOk()->json('data'))->keyBy('id');
+
+        $this->assertArrayHasKey('cancel_status', $rows[$normal->id]);
+        $this->assertNull($rows[$normal->id]['cancel_status'], "DB 'none' 은 null 로 나가야 한다");
+        $this->assertSame('cancelled', $rows[$cancelled->id]['cancel_status']);
+        $this->assertSame('cancelled_closed', $rows[$closed->id]['cancel_status']);
+    }
 }
