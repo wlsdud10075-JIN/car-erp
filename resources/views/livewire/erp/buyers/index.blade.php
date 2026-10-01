@@ -130,6 +130,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $fee_amount      = '';
 
+    /** 💳 남은 현금 → 적립금 전환 금액(외화) — 비우면 그 통화의 남은 현금 전부(jin 2026-10-01). */
+    public string $savings_transfer_amount = '';
+
     public string $fee_note        = '';
 
     // 💳 적립금 사용 — 현금 탭 (jin 2026-09-22 «적립금사용을 하는걸 추가하는게 여기다. 같이 미러도 되야 하고»)
@@ -1110,9 +1113,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // 원장 수수료 배분은 차량이 없다 — 라벨을 안 주면 `- 6.00` 으로만 찍혀
                 //   「아주 작은 잔금」처럼 보인다(실측 R.S.H 에 3줄).
                 'label' => $a->isFee()
-                    ? ($a->fee?->isOverpayCleanup()
-                        ? __('buyer.cash.overpay_section')
-                        : __('buyer.cash.ledger_fee'))
+                    ? ($a->fee?->isSavingsTransfer()
+                        ? __('buyer.cash.savings_badge')
+                        : ($a->fee?->isOverpayCleanup()
+                            ? __('buyer.cash.overpay_section')
+                            : __('buyer.cash.ledger_fee')))
                     : ($a->vehicle?->vehicle_number ?? '-'),
                 'amount' => (float) $a->amount,
                 // 💸 판매탭 송금수수료(2026-09-09~)는 차량이 붙어 있다 — 표시를 안 하면
@@ -1137,6 +1142,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'amount' => (float) $f->amount,
                 // 종류(2026-09-09) — 수수료 / 과입금 정리. 안 구분하면 「무슨 수수료지?」가 된다.
                 'is_overpay' => $f->isOverpayCleanup(),
+                'is_savings' => $f->isSavingsTransfer(),
                 'note' => $f->note,
                 'by' => $f->creator?->name,
                 // 어느 입금에서 나갔나 — 좁은 패널이라 호버로 전문(입금 행의 uses_title 과 같은 방식).
@@ -1198,6 +1204,37 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('buyer.cash.fee_added'), type: 'success');
     }
 
+    /**
+     * 💳 남은 현금 → 적립금 전환 (jin 2026-10-01, 기획 §6). 판매 탭 「적립금 적립」과 같은 서비스를 부른다 —
+     *    어디서 넣든 적립금 +N · 현금 남은 금액 −N 한 쌍이 생긴다. 비우면 그 통화의 남은 현금 전부.
+     */
+    public function transferCashToSavings(): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403);
+        if (! $this->editingId || ! Setting::buyerCashEnabled()) {
+            return;
+        }
+        $this->validate(['fee_currency' => 'required|in:USD,JPY,EUR,GBP,CNY']);
+
+        $service = app(\App\Services\BuyerCashService::class);
+        $amount = $this->savings_transfer_amount === ''
+            ? $service->feeCeilingFor((int) $this->editingId, $this->fee_currency)
+            : (float) str_replace(',', '', $this->savings_transfer_amount);
+
+        try {
+            $service->transferToSavings((int) $this->editingId, $this->fee_currency, $amount, null, __('buyer.cash.savings_note'));
+        } catch (\DomainException $e) {
+            $this->addError('savings_transfer_amount', $e->getMessage());
+
+            return;
+        }
+
+        $this->savings_transfer_amount = '';
+        $this->loadCash($this->editingId);
+        $this->loadSavings($this->editingId);
+        $this->dispatch('notify', message: __('buyer.cash.savings_added', ['amount' => number_format($amount, 2).' '.$this->fee_currency]), type: 'success');
+    }
+
     /** 수수료 취소 — 배분이 cascade 로 사라져 **현금이 그대로 돌아온다**. */
     public function deleteCashFee(int $id): void
     {
@@ -1207,6 +1244,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         // 바이어 스코프 재확인 — public 프로퍼티로 오는 id 를 그대로 믿지 않는다.
         $fee = \App\Models\BuyerCashFee::where('buyer_id', $this->editingId)->findOrFail($id);
+        // 🚫 적립금 전환 행은 지우지 않는다 — 현금만 돌아오고 적립금은 남아 이중 크레딧이 된다(BuyerCashFee::KIND_SAVINGS).
+        if ($fee->isSavingsTransfer()) {
+            $this->dispatch('notify', message: __('buyer.cash.savings_delete_blocked'), type: 'error');
+
+            return;
+        }
         \App\Models\AuditLog::recordEvent($fee, 'buyer_cash_fee_deleted');
         $fee->delete();
 
@@ -2245,6 +2288,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                             class="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
                         {{ __('buyer.cash.fee_add_btn') }}
                     </button>
+
+                    {{-- 💳 남은 현금 → 적립금 (jin 2026-10-01, 기획 §6) — 판매 탭 「적립금 적립」과 같은 결과. 비우면 남은 현금 전부. --}}
+                    <div class="mt-3 border-t border-amber-200 pt-3">
+                        <h4 class="text-xs font-semibold text-emerald-800">{{ __('buyer.cash.savings_section') }}</h4>
+                        <p class="mt-1 text-[11px] leading-snug text-emerald-800/80">{{ __('buyer.cash.savings_hint') }}</p>
+                        <div class="mt-2 flex flex-wrap items-end gap-2">
+                            <div>
+                                <label class="label-base">{{ __('buyer.cash.savings_amount') }}</label>
+                                <input wire:model="savings_transfer_amount" type="text" inputmode="decimal" class="input-base w-36"
+                                       placeholder="{{ number_format($cashBalances[$fee_currency]['remaining'] ?? 0, 2) }}" />
+                            </div>
+                            <button wire:click="transferCashToSavings" wire:confirm="{{ __('buyer.cash.savings_confirm') }}"
+                                    @disabled(($cashBalances[$fee_currency]['remaining'] ?? 0) <= 0)
+                                    class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                                {{ __('buyer.cash.savings_btn') }}
+                            </button>
+                        </div>
+                        @error('savings_transfer_amount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    </div>
                 </div>
                 @endif
             </div>
@@ -2345,7 +2407,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="py-1.5 pr-2">
                                 <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $f['by'] ?: '-' }}">
                                     {{ $f['charged_date'] }}
+                                    @if(! empty($f['is_savings']))
+                                    <span class="ml-1 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">{{ __('buyer.cash.savings_badge') }}</span>
+                                    @else
                                     <span class="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">{{ $f['is_overpay'] ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_badge') }}</span>
+                                    @endif
                                 </div>
                                 @if($f['note'])
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>

@@ -389,6 +389,8 @@ return [
         'inherit_from_bl' => '(auto from B/L consignee)',
         'no_match' => 'No match',
         'fee_note' => '(seller pays)',
+        'savings_from_cash_note' => 'Vehicle :plate sales tab: remaining cash moved to savings',
+        'savings_cash_short' => 'Savings not recorded: :msg Savings can only come from remaining cash (check the cash tab).',
         'savings_deposit_note' => '(accumulates on save, resets)',
         'savings_balance_note' => '(SavingsStatus by buyer×currency)',
         'after_save_note' => '(updates after save)',

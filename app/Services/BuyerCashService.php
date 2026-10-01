@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\BuyerCashAllocation;
 use App\Models\BuyerCashFee;
 use App\Models\BuyerCashReceipt;
 use App\Models\FinalPayment;
+use App\Models\SavingsStatus;
 use App\Models\Setting;
 use App\Models\Vehicle;
 use DomainException;
@@ -257,6 +259,72 @@ class BuyerCashService
     public function feeCeilingFor(int $buyerId, string $currency): float
     {
         return BuyerCashReceipt::balanceFor($buyerId, $currency);
+    }
+
+    /**
+     * 💳 **적립은 이 길로 가야 하나** — 현금 원장을 쓰는 회사의 외화 바이어면 적립금은 반드시 남은 현금에서 나온다
+     * (jin 2026-10-01 «남은 현금이 없는데 어떻게 적립을 해?»). 아니면 종전대로 적립금만 적는다(ssancarerp·KRW).
+     */
+    public static function routesSavingsThroughCash(?string $currency): bool
+    {
+        return Setting::buyerCashEnabled() && ($currency ?? 'KRW') !== 'KRW';
+    }
+
+    /**
+     * 💳 **남은 현금 → 적립금 전환** (jin 2026-10-01, 기획 §6 확정 #10).
+     *
+     * 한 트랜잭션에서 ①현금 원장에 `kind=savings` 행을 만들어 그 금액만큼 입금을 FIFO 로 소진하고
+     * ②적립금 EARNED 를 적는다. 판매 탭 「적립금 적립」과 현금 탭 「적립금으로」 버튼이 **둘 다 이걸 부른다** —
+     * 어디서 넣든 결과가 같다(적립금 +N · 현금 남은 금액 −N).
+     *
+     * 🚨 남은 현금이 모자라면 `chargeFee()` 가 던지고 **적립금도 안 생긴다** — 「남은 돈을 적립」이 뜻이라
+     *    현금 없이 적립할 수 없다. 호출부가 DomainException 을 받아 화면에 부족액을 보여준다.
+     * ⚠️ 채권관리 「과입금 → 적립금」은 이걸 쓰지 않는다 — 거기선 감액으로 **되돌아온** 현금을 `KIND_OVERPAY` 로
+     *    빼고 `syncSavingsDeposit()` 를 따로 부른다(2026-09-09). 여기까지 태우면 이중 소진이다.
+     *
+     * @param  Vehicle|null  $vehicle  판매 탭이면 그 차(적립금 행에 차량·판매환율 박제) / 현금 탭이면 null(환율 NULL — 기획 §6)
+     *
+     * @throws DomainException 남은 현금이 모자랄 때(통째 롤백)
+     */
+    public function transferToSavings(int $buyerId, string $currency, float $amount, ?Vehicle $vehicle, ?string $note): BuyerCashFee
+    {
+        $amount = round($amount, 2);
+        if ($amount <= self::EPSILON) {
+            throw new DomainException(__('buyer.cash.fee_zero'));
+        }
+
+        return DB::transaction(function () use ($buyerId, $currency, $amount, $vehicle, $note) {
+            $fee = BuyerCashFee::create([
+                'buyer_id' => $buyerId,
+                'currency' => $currency,
+                'kind' => BuyerCashFee::KIND_SAVINGS,
+                'charged_date' => today(),
+                'amount' => $amount,
+                'note' => $note,
+                'created_by' => auth()->id(),
+            ]);
+            AuditLog::recordEvent($fee, 'buyer_cash_to_savings');
+            $this->chargeFee($fee);   // 모자라면 던진다 → 아래 적립금까지 통째로 안 생긴다
+
+            if ($vehicle) {
+                $vehicle->syncSavingsDeposit($amount);
+            } else {
+                $latest = SavingsStatus::where('buyer_id', $buyerId)->where('currency', $currency)
+                    ->lockForUpdate()->orderByDesc('id')->first();
+                SavingsStatus::create([
+                    'buyer_id' => $buyerId,
+                    'vehicle_id' => null,
+                    'currency' => $currency,
+                    'exchange_rate' => null,   // 기획 §6 — 현금 입금엔 원화가 없어 적을 값이 없다
+                    'transaction_type' => 'EARNED',
+                    'savings' => $amount,
+                    'balance' => (float) ($latest?->balance ?? 0) + $amount,
+                    'note' => $note ?: __('buyer.cash.savings_note'),
+                ]);
+            }
+
+            return $fee;
+        });
     }
 
     /**

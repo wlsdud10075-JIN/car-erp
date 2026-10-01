@@ -6023,8 +6023,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ? 0.0
                     : (float) str_replace(',', '', $this->savings_deposit_str);
                 if ($depositAmt > 0 && $vehicle->buyer_id) {
-                    $vehicle->syncSavingsDeposit($depositAmt);
-                    $this->savings_deposit_str = '';
+                    // 💳 현금 원장을 쓰는 회사의 외화 바이어 — 적립은 **남은 현금에서** 나온다(jin 2026-10-01).
+                    //    안 그러면 적립금은 적립금대로 생기고 현금은 미배분으로 남아 양쪽에 다 적립된 것처럼 보인다
+                    //    (실측 EASY DRIVE 158 EUR). 모자라면 저장은 됐지만 적립은 안 되고 부족액을 알린다.
+                    if (\App\Services\BuyerCashService::routesSavingsThroughCash($vehicle->currency)) {
+                        try {
+                            app(\App\Services\BuyerCashService::class)->transferToSavings(
+                                (int) $vehicle->buyer_id, $vehicle->currency, $depositAmt, $vehicle,
+                                __('vehicle.panel.savings_from_cash_note', ['plate' => $vehicle->vehicle_number]),
+                            );
+                            $this->savings_deposit_str = '';
+                        } catch (\DomainException $e) {
+                            $this->dispatch('notify', message: __('vehicle.panel.savings_cash_short', ['msg' => $e->getMessage()]), type: 'error');
+                        }
+                    } else {
+                        $vehicle->syncSavingsDeposit($depositAmt);
+                        $this->savings_deposit_str = '';
+                    }
                     unset($this->buyerSavingsBalance);   // computed 캐시 무효화 → 즉시 반영
                 }
             }

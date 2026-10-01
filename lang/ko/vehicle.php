@@ -399,6 +399,8 @@ return [
         'inherit_from_bl' => '(선적 컨사이니 자동)',
         'no_match' => '일치 없음',
         'fee_note' => '(셀러 부담)',
+        'savings_from_cash_note' => '차량 :plate 판매 탭에서 남은 현금을 적립금으로 전환',
+        'savings_cash_short' => '적립하지 못했습니다 — :msg 적립금은 남은 현금에서만 나옵니다(현금 탭에서 입금·배분을 확인하세요).',
         'savings_deposit_note' => '(저장 시 누적, reset)',
         'savings_balance_note' => '(바이어×통화 SavingsStatus)',
         'after_save_note' => '(저장 후 갱신)',
