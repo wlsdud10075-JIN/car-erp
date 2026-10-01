@@ -390,10 +390,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="max-w-[220px] truncate text-[11px] text-gray-400" title="{{ $r->note }}">{{ $r->note }}</span>
                     @endif
                 </div>
-                {{-- 💳 적립금 전환분은 아래 사용 내역에 안 그린다(jin 2026-10-01). 대신 여기 한 줄 — 안 적으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다. --}}
-                @php $toSavings = (float) $r->allocations->filter(fn ($a) => $a->fee?->isSavingsTransfer())->sum('amount'); @endphp
                 <span class="text-xs {{ $r->remaining_amount > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
-                    @if($toSavings > 0.005)<span class="mr-2 text-[11px] text-emerald-700">{{ __('buyer_account.to_savings_note', ['amount' => number_format($toSavings, 2)]) }}</span>@endif
                     {{ __('buyer_account.remaining') }}
                     <span class="font-mono font-semibold">{{ number_format($r->remaining_amount, 2) }}</span>
                 </span>
@@ -411,13 +408,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    @forelse($r->allocations->reject(fn ($a) => $a->fee?->isSavingsTransfer()) as $a)
+                    @forelse($r->allocations as $a)
                     <tr>
                         {{-- 💸 수수료 배분(2026-09-08)은 차량이 없다 — 빈칸으로 두면 「어디로 갔지」가 된다.
                              그리고 판매탭 송금수수료(2026-09-09~)는 **차량이 붙어 있다** — 뱃지를 안 달면
                              6 EUR 짜리가 「아주 작은 잔금」으로 보여 사람이 원장에서 또 털게 된다. --}}
                         <td class="py-1.5 pl-3 pr-3 font-mono whitespace-nowrap {{ $a->isFee() || $a->isVehicleFee() ? 'text-amber-700' : 'text-gray-700' }}">
-                            {{ $a->isFee() ? ($a->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section')) : ($a->vehicle?->vehicle_number ?? '-') }}
+                            {{-- 💳 적립금 전환(2026-10-01)은 제 이름으로 — 수수료로 찍히면 바이어가 「수수료를 떼였다」로 읽는다. --}}
+                            {{ $a->isFee() ? ($a->fee?->isSavingsTransfer() ? __('buyer.cash.savings_badge') : ($a->fee?->isOverpayCleanup() ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_section'))) : ($a->vehicle?->vehicle_number ?? '-') }}
                             @if($a->isVehicleFee())
                             <span class="ml-1 rounded bg-amber-100 px-1 py-px text-[9px] font-sans font-medium text-amber-700"
                                   title="{{ __('buyer.cash.fee_badge_hint') }}">{{ __('buyer.cash.fee_badge') }}</span>

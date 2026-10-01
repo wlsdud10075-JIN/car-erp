@@ -15,7 +15,6 @@ return [
     'received' => 'Received',
     'allocated' => 'Applied to vehicles',
     'remaining' => 'Remaining',
-    'to_savings_note' => 'Moved to savings :amount (not listed below)',
     'no_cash' => 'No receipts recorded.',
 
     'usage_title' => 'How the cash was used',

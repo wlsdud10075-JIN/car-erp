@@ -816,11 +816,11 @@ class BuyerAccountScreenTest extends TestCase
     }
 
     /**
-     * 💳 적립금 전환분은 사용 내역에 안 그린다 (jin 2026-10-01 «바이어정산현황에는 적립금으로 적립한 내용은 나오지 않게»).
-     *    기존엔 fee 배분이라 「수수료로 털기」로 찍혔다(라벨 사전이 화면마다 복제돼 있던 자리, §8 #45).
-     *    대신 입금 머리글에 「적립금으로 전환 N」 한 줄 — 안 적으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다.
+     * 💳 적립금 전환은 **제 이름으로 사실대로** 보인다 (jin 2026-10-01 «수수료도, 적립금도, 현금사용내역도 다 보여주고 —
+     *    너가 보낸 돈 깨끗하게 써서 0원이 됐다, 이렇게»). 기존엔 fee 배분이라 「수수료로 털기」로 찍혔다
+     *    (라벨 사전이 화면마다 복제돼 있던 자리, §8 #45) — 바이어가 「수수료를 떼였다」로 읽는다.
      */
-    public function test_savings_transfer_is_not_listed_as_a_fee(): void
+    public function test_savings_transfer_is_listed_under_its_own_name(): void
     {
         $this->enable();
         $buyer = $this->buyer();
@@ -833,10 +833,12 @@ class BuyerAccountScreenTest extends TestCase
         $c = Volt::actingAs($this->finance())->test('erp.buyer-account.index')->set('buyerId', (string) $buyer->id);
         $html = $c->html();
         $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html, '적립금 전환이 「수수료로 털기」로 찍혔다');
-        $this->assertStringContainsString(__('buyer_account.to_savings_note', ['amount' => '158.00']), $html, '전환분 메모가 없으면 받은 돈 − 사용 ≠ 남은 현금으로 보인다');
+        $this->assertStringContainsString(__('buyer.cash.savings_badge'), $html, '적립금 전환 줄이 안 보인다 — 돈이 사라진 것처럼 읽힌다');
+        $this->assertStringContainsString('158.00', $html);
         $this->assertStringContainsString('4,396.00', $html);
 
         $html2 = $c->call('switchUsageView', 'vehicle')->html();
-        $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html2, '차량별 보기에도 적립금 전환이 수수료로 찍혔다');
+        $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html2);
+        $this->assertStringContainsString(__('buyer.cash.savings_badge'), $html2, '차량별 보기에도 제 이름으로 나와야 한다');
     }
 }
