@@ -32,7 +32,19 @@ class BuyerCashFee extends Model
      */
     public const KIND_OVERPAY = 'overpay';
 
-    public const KINDS = [self::KIND_FEE, self::KIND_OVERPAY];
+    /**
+     * 적립금 전환 (jin 2026-10-01) — 남은 현금을 적립금으로 돌릴 때 그 현금을 원장에서 빼는 행.
+     *
+     * 🔑 적립금(`savings_statuses`)과 현금(`buyer_cash_*`)은 다른 원장이라 서로를 모른다. 판매 탭에서
+     *    「적립금 적립」을 넣으면 적립금만 생기고 현금은 미배분으로 남아 **양쪽에 다 적립된 것처럼**
+     *    보였다(실측 heymanerp EASY DRIVE 158 EUR, 2026-10-01). 이 행이 그 둘을 잇는다 —
+     *    `BuyerCashService::transferToSavings()` 가 적립금 EARNED 와 이 행을 한 트랜잭션으로 만든다.
+     *    기획 = `docs/design/buyer-cash-ledger.md` §6(확정 #10).
+     * 🚫 이 행은 화면에서 지우지 않는다 — 지우면 현금은 돌아오는데 적립금은 남아 다시 이중 크레딧이 된다.
+     */
+    public const KIND_SAVINGS = 'savings';
+
+    public const KINDS = [self::KIND_FEE, self::KIND_OVERPAY, self::KIND_SAVINGS];
 
     protected $fillable = [
         'buyer_id', 'currency', 'kind', 'charged_date', 'amount', 'note', 'created_by',
@@ -44,6 +56,11 @@ class BuyerCashFee extends Model
     public function isOverpayCleanup(): bool
     {
         return $this->kind === self::KIND_OVERPAY;
+    }
+
+    public function isSavingsTransfer(): bool
+    {
+        return $this->kind === self::KIND_SAVINGS;
     }
 
     protected function casts(): array
