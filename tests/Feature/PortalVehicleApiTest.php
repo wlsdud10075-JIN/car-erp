@@ -567,4 +567,21 @@ class PortalVehicleApiTest extends TestCase
         $this->assertCloses($row, '손실처리 보유');
         $this->assertEqualsWithDelta((float) $v->fresh()->sale_unpaid_amount, $row['unpaid_amount'], 0.01);
     }
+
+    /**
+     * 🧠 **통째 로드 금지** (2026-10-01 실사고) — ssancarerp 5,129대를 `->get()` 으로 올리면 php-fpm 128MB 를 넘겨
+     *    6시간마다 도는 포털 미러가 전부 500 이었다(09-30 15:03 UTC 부터 3회). 기능 테스트로는 원리상 못 잡는다
+     *    (픽스처 몇 대는 늘 통과) — 그래서 소스를 본다(§8 #98 과 같은 부류).
+     */
+    public function test_vehicles_endpoint_never_loads_every_vehicle_at_once(): void
+    {
+        $src = file_get_contents(app_path('Http/Controllers/Api/PortalVehicleController.php'));
+        $start = strpos($src, 'public function vehicles()');
+        $end = strpos($src, 'private function row(');
+        $body = substr($src, $start, $end - $start);
+
+        $this->assertStringContainsString('lazyById(', $body, '묶음 로드가 사라졌다 — 5천 대에서 128MB 를 넘긴다');
+        $this->assertStringNotContainsString('->get()', $body, '통째 ->get() 이 돌아왔다');
+        $this->assertStringNotContainsString('memory_limit', $body, '메모리 한도를 올려 넘기지 말 것 — 다음 임계에서 또 죽는다');
+    }
 }

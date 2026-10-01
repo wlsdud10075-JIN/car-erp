@@ -62,9 +62,18 @@ class PortalVehicleController extends Controller
     //       재계산 방지의 실질 가드는 아래 **닫힘 항등식**이다.
     //    소유자 PII · 원가 · 마진 · 바이어 한도 : 애초에 대상이 아니다.
 
+    /** 한 번에 메모리에 올리는 차량 수 — 아래 vehicles() 주석. */
+    private const CHUNK = 300;
+
     public function vehicles(): JsonResponse
     {
-        $rows = Vehicle::query()
+        // 🧠 **통째 로드 금지** (2026-10-01 실사고) — ssancarerp 5,129대를 잔금·회수이력까지 한 번에 올리면
+        //    php-fpm 128MB 를 넘겨 500 이 난다. 2026-09-30 15:03 UTC 부터 6시간마다 포털 미러가 전부 실패했다
+        //    (실측: 통째 로드 = 128MB 초과로 fatal / lazyById(500) = 최대 76MB · 3.0초 · JSON 5.7MB).
+        //    차량 수는 계속 늘어난다 — 모델은 묶음(CHUNK)만큼만 살려 두고 배열로 바꾼 뒤 버린다.
+        //    🚫 PHP 메모리 한도를 올려서 넘기지 말 것 — 다음 임계에서 또 같은 방식으로 죽는다.
+        $data = [];
+        $query = Vehicle::query()
             // 🚨 바이어 미정(투기 매입)은 어느 바이어에게도 발행하지 않는다 — 이게 IDOR 경계다.
             ->whereNotNull('buyer_id')
             // 🚨 `finalPayments`·`receivableHistories` 는 `sale_unpaid_amount` 가 쓰는 관계다.
@@ -82,9 +91,11 @@ class PortalVehicleController extends Controller
             //       그 칸엔 매입 서류·등록증 스캔이 섞여 올라와 **소유자 PII 경계**가 지나간다.
             //    ⚠️ **`select()` 뒤에 와야 한다** — `select()` 는 select 목록을 통째로 갈아치우므로
             //       앞에 두면 withCount 서브쿼리가 지워져 **조용히 항상 0** 이 된다(실측).
-            ->withCount(['photos as shipping_photo_count' => fn ($q) => $q->where('category', 'shipping')])
-            ->orderBy('id')
-            ->get();
+            ->withCount(['photos as shipping_photo_count' => fn ($q) => $q->where('category', 'shipping')]);
+        // lazyById 가 id 오름차순으로 CHUNK 씩 읽는다(종전 id 정렬 통째 로드와 같은 순서).
+        foreach ($query->lazyById(self::CHUNK) as $v) {
+            $data[] = $this->row($v);
+        }
 
         return response()->json([
             // v1.4 확정 스펙 — ISO8601 + 오프셋 필수(오프셋 없으면 파서가 로컬로 읽어 9시간 어긋난다).
@@ -93,10 +104,10 @@ class PortalVehicleController extends Controller
             //    사이트의 전량 pull + 차집합이 «다른 회사 행 = 이 회사 전량 삭제» 로 읽는다.
             //    Phase 1 은 heymanerp 만 호출해서 그 사고가 안 보인다 — 값이 늘어날 때 터진다.
             'source' => (string) config('services.ssancar_portal.source'),
-            'count' => $rows->count(),
+            'count' => count($data),
             // v1.4 의 안전핀 — false 면 사이트가 차집합 삭제를 보류한다(부분 응답으로 전량 삭제 방지).
             'complete' => true,
-            'data' => $rows->map(fn (Vehicle $v) => $this->row($v))->all(),
+            'data' => $data,
         ]);
     }
 
