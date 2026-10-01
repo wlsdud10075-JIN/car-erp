@@ -836,6 +836,7 @@ class BuyerAccountScreenTest extends TestCase
         $this->assertStringContainsString(__('buyer.cash.savings_badge'), $html, '적립금 전환 줄이 안 보인다 — 돈이 사라진 것처럼 읽힌다');
         $this->assertStringContainsString('158.00', $html);
         $this->assertStringContainsString('4,396.00', $html);
+        $this->assertStringContainsString(__('buyer_account.savings_balance'), $html, '현금이 0 이 됐으면 적립금이 얼마인지 옆에 보여야 한다');
 
         $html2 = $c->call('switchUsageView', 'vehicle')->html();
         $this->assertStringNotContainsString(__('buyer.cash.fee_section'), $html2);

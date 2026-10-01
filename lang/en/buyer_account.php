@@ -15,6 +15,7 @@ return [
     'received' => 'Received',
     'allocated' => 'Applied to vehicles',
     'remaining' => 'Remaining',
+    'savings_balance' => 'Savings balance',
     'no_cash' => 'No receipts recorded.',
 
     'usage_title' => 'How the cash was used',
