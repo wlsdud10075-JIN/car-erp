@@ -156,20 +156,37 @@ class SettlementMarginRateTest extends TestCase
     // ── 환차 표시 ───────────────────────────────────────────────────────
 
     /**
-     * 🚨 **미완납이면 환차를 말하지 않는다** — 미리보기 식은 덜 받은 돈을 그대로 마이너스로 뱉는다.
-     *    그걸 「환차」로 인쇄하면 미수가 환차로 둔갑한다. 실측 ssancarerp 2026-08 배치에
-     *    그런 차가 **155건**(미수 지급보류 게이트 예외분)이었다.
+     * 🔀 2026-10-01 (jin B안) — **받은 돈이 0 이면** 환차가 없다(「—」). 구 규칙(미완납이면 전부 「—」)은
+     *    받은 몫의 환차까지 숨겨 게이트 예외 156건이 환차 없이 지급됐다. 이제 「—」는 입금 0 뿐이다.
      */
-    public function test_an_unpaid_vehicle_shows_no_exchange_difference(): void
+    public function test_a_vehicle_with_no_receipt_shows_no_exchange_difference(): void
     {
         $s = $this->settlement($this->vehicle($this->salesman(), 10_000, 5_000_000, '99자9999'));
 
         $this->assertGreaterThan(0, $s->vehicle->sale_unpaid_amount, '표본이 미완납이 아니다');
-        $this->assertNull($s->display_exchange_difference,
-            '미완납 차에 환차가 찍혔다 — 미수가 환차로 둔갑한다');
+        $this->assertNull($s->display_exchange_difference, '입금 0 인데 환차가 찍혔다 — 환차라 부를 사건이 없다');
+        $this->assertSame(0.0, (float) $s->computeExchangeDifference(), '받은 외화 0 이면 식도 0 이어야 한다(미수가 손실로 둔갑하면 안 된다)');
+    }
 
-        // 계산 본체는 여전히 값을 낸다(2차 마감 게이트 예외 경로가 그걸 쓴다).
-        $this->assertNotNull($s->computeExchangeDifference());
+    /** 🔀 미완납이라도 **받은 몫**의 환차는 보인다 — 「부분」 표식과 함께. 미수분은 판매환율 평가라 0. */
+    public function test_a_partially_paid_vehicle_shows_the_received_portion_only(): void
+    {
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm, 10_000, 5_000_000, '77자7777');
+        $v->finalPayments()->create([
+            'type' => 'balance', 'amount' => 4_000, 'exchange_rate' => 1050,
+            'payment_date' => '2026-09-05', 'confirmed_at' => now(),
+        ]);
+        $v->refresh();
+        $s = $this->settlement($v);
+
+        $this->assertSame(6_000.0, (float) $v->sale_unpaid_amount);
+        // 받은 4,000: 실입금 4,200,000 − 4,000×1000 = +200,000. 미수 6,000 은 식에 안 들어간다.
+        $this->assertEqualsWithDelta(200_000.0, $s->display_exchange_difference, 0.01);
+        $this->assertTrue($s->isExchangeDifferencePartial(), '미수가 남았는데 「부분」이 아니다');
+
+        Volt::actingAs(User::factory()->create(['permission' => 'admin']))->test('erp.settlements.index')
+            ->assertSee(__('settlement.exchange_partial_mark'));
     }
 
     /** ✅ 완납이면 1차만 된 상태에서도 환차가 보인다 — jin 이 지적한 그 자리. */
