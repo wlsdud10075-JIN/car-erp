@@ -199,6 +199,8 @@ jin: *«850 usd 를 잘못 기재했을 수도 있으니 지워지면 최근 10,
 
 ## 6. 남은 현금 → 적립금 전환 (확정 #10)
 
+> ✅ **2026-10-01 구현** — `BuyerCashService::transferToSavings()` 가 ①`buyer_cash_fees` `kind=savings` 행으로 입금을 FIFO 소진 ②`SavingsStatus` EARNED 를 한 트랜잭션으로 만든다. 현금 탭 「적립금으로 전환」 버튼과 **판매 탭 「적립금 적립」이 같은 서비스**를 부른다(jin «남은 현금이 없는데 어떻게 적립을 해?» — 원장 회사의 외화 바이어는 적립이 반드시 남은 현금에서 나온다. 모자라면 적립도 안 됨). 원장 OFF·KRW 는 종전(적립만). 전환 행은 화면에서 삭제 불가. 가드 = `CashToSavingsTransferTest`. 계기 = heymanerp EASY DRIVE 158 EUR 가 적립금·미배분 현금 양쪽에 남은 건.
+
 미수보다 많이 배분하는 건 막는다. 대신 바이어 현금 탭에 **「남은 현금 N → 적립금으로」** 버튼 하나.
 한 트랜잭션에서 ①`SavingsStatus` EARNED 생성 ②그 입금을 소진 처리.
 
