@@ -428,6 +428,7 @@ return [
         'buyer_cash_toggle_changed' => '바이어 현금 원장 켜기/끄기',
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
+        'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
         'buyer_cash_fee_deleted' => '바이어 현금 수수료 취소',
         'buyer_cash_receipt_deleted' => '바이어 현금 입금 삭제',
         'lock_threshold_changed' => '락 수치 변경',
