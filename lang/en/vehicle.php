@@ -889,6 +889,13 @@ return [
         'unchanged_suffix' => '(:count unchanged)',
         'apply_btn' => 'Apply',
         // License fee (customs license monthly statement — split total n/1 by export declaration number)
+        'ins_col_hint' => 'Daily "policy history" export (B plate · C VIN · G premium). Only vehicles whose plate and VIN both match are filled; same plate with a different VIN stays unmatched. Duplicate policies for one vehicle are summed.',
+        'reason' => [
+            'vin_mismatch' => 'VIN mismatch',
+        ],
+        'note' => [
+            'vin_only' => 'matched by VIN (statement plate :plate)',
+        ],
         'lic_col_hint' => 'Customs license-fee statement (monthly). Vehicles are grouped by export declaration number and the total is split n/1.',
         'lic_file_label' => 'Upload Excel file (customs license-fee monthly statement .xlsx)',
         'lic_parse_empty' => 'No export declaration number found. Make sure this is a license-fee statement (with declaration no., qty, total).',
@@ -908,6 +915,7 @@ return [
             'hyundai_a1' => 'Hyundai A1',
             'mutual' => 'Mutual',
             'seongji' => 'Seongji',
+            'daily' => 'Daily',
         ],
         'seongji_notice' => 'Seongji license fees are infrequent (1-2/year), so instead of document mapping, enter the total in the shipping request "Secondary cost" tab to split n/1 across the bundle. (Handled from bundles pending secondary settlement.)',
         'seongji_goto' => 'Go to shipping requests',

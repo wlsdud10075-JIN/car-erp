@@ -236,4 +236,86 @@ class CostStatementImportTest extends TestCase
         Volt::test('erp.shipping-requests.index', ['tab' => 'cost'])
             ->assertSet('viewTab', 'cost');
     }
+
+    // ── 보험료 — 데일리 가입이력조회 (jin 2026-10-01) ───────────────────
+
+    /** 데일리 서식 행 — 실제 export 와 같은 열(A일시 B차량번호 C차대번호 D차종 E연식 F기간 G가입금액 …). */
+    private function dailyRows(array $body): array
+    {
+        $head = ['가입일시', '차량번호', '차대번호', '차종', '연식', '가입기간', '가입금액', '보험시작', '보험종료', '가입자', '상태'];
+        $rows = [$head];
+        foreach ($body as [$plate, $vin, $amount]) {
+            $rows[] = ['2026-09-30 15:41:37', $plate, $vin, 'TUCSON', '2016', 1, $amount, '2026.09.30', '2026.09.30', '싼카', '정상'];
+        }
+        $rows[] = ['', '', '', '', '', '', 3021740, '', '', '', ''];   // 마지막 합계행 — 번호가 비어 skip 돼야 한다
+
+        return $rows;
+    }
+
+    private function vehicleWithVin(string $number, ?string $vin): Vehicle
+    {
+        $v = $this->makeVehicle($number);
+        $v->forceFill(['nice_reg_vin' => $vin, 'cost_insurance' => 0])->save();
+
+        return $v;
+    }
+
+    /** 🔑 번호 + 차대번호가 함께 맞아야 기입된다. 번호판은 재사용되므로 번호만으로는 다른 차에 들어간다. */
+    public function test_daily_insurance_matches_plate_and_vin_together(): void
+    {
+        $this->actingAs($this->admin());
+        $ok = $this->vehicleWithVin('18가5347', 'KMHJ381ABGU124746');
+        $this->vehicleWithVin('38나2787', 'VF12RGJ1DHW792358');                   // 같은 번호, 다른 차대
+        $noVin = $this->vehicleWithVin('284다1237', null);                          // ERP 에 차대 없음 → 번호만으로
+        $renamed = $this->vehicleWithVin('99라9999', 'W1KZF8GB2MA971910');         // 번호판이 바뀐 차 → 차대로
+
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_insurance')
+            ->assertSet('costImportCompany', 'daily')
+            ->set('costImportFile', $this->uploadXlsx($this->dailyRows([
+                ['18가5347', 'kmhj381abgu124746', 7650],      // 소문자 차대 — 정규화
+                ['18가5347', 'KMHJ381ABGU124746', 7650],      // 두 번 가입 → 합산
+                ['38나2787', 'XXXXXXXXXXXXXXXXX', 7650],      // 번호는 같은데 차대 불일치 → 미매칭
+                ['284다1237', 'KNAG541BBPA218651', 7650],     // ERP 차대 비어 있음 → 번호만으로 매칭
+                ['128마1954', 'W1KZF8GB2MA971910', 7650],     // 번호 없음 → 차대로 매칭
+                ['77바7777', 'YV1UZ68TCK1245482', 7650],      // 둘 다 없음
+            ])));
+
+        $parsed = $c->get('costImportParsed');
+        $byNumber = collect($parsed['matched'])->keyBy('number');
+        $this->assertSame(15300, (int) $byNumber['18가5347']['amount'], '두 번 가입은 합산');
+        $this->assertSame(7650, (int) $byNumber['284다1237']['amount'], 'ERP 차대가 비면 번호만으로 받는다');
+        $this->assertSame('vin_only', $byNumber['99라9999']['note'], '번호판이 바뀐 차는 차대로 찾고 표식을 붙인다');
+        $this->assertSame('128마1954', $byNumber['99라9999']['file_number']);
+        $this->assertArrayNotHasKey('38나2787', $byNumber->toArray(), '차대 불일치는 기입 대상이 아니다');
+
+        $unmatched = collect($parsed['unmatched'])->keyBy('number');
+        $this->assertSame('vin_mismatch', $unmatched['38나2787']['reason']);
+        $this->assertNull($unmatched['77바7777']['reason']);
+        $this->assertCount(2, $unmatched);
+        $c->assertSee(__('vehicle.cost_import.reason.vin_mismatch'))
+            ->assertSee(__('vehicle.cost_import.note.vin_only', ['plate' => '128마1954']));
+
+        $c->call('applyCostImport');
+        $this->assertSame(15300, (int) $ok->fresh()->cost_insurance);
+        $this->assertSame(7650, (int) $noVin->fresh()->cost_insurance);
+        $this->assertSame(7650, (int) $renamed->fresh()->cost_insurance);
+        $this->assertSame(0, (int) Vehicle::where('vehicle_number', '38나2787')->first()->cost_insurance, '차대 불일치 차에 기입됐다');
+        $this->assertSame(30000, (int) $ok->fresh()->cost_towing, '보험료 기입이 탁송비를 건드렸다');
+    }
+
+    /** 보험료 거래처 목록은 데일리뿐 — 붙여넣기는 막힌다(좌표 파서). */
+    public function test_daily_insurance_rejects_paste_and_other_companies(): void
+    {
+        $this->actingAs($this->admin());
+        $this->assertSame(['daily'], Vehicle::COST_IMPORT_COMPANIES['cost_insurance']);
+
+        Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_insurance')
+            ->set('costImportRaw', '18가5347 7650')
+            ->call('parseCostImport')
+            ->assertStatus(422);
+    }
 }
