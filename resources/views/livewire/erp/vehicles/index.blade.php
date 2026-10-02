@@ -1060,6 +1060,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   클라이언트가 못 바꾸도록 #[Locked].
     #[\Livewire\Attributes\Locked]
     public bool $editLockedByOther = false;
+    /** 옛 폼 저장 거부용 지문 (jin 2026-10-02) — openEdit 때 Vehicle::editFingerprint(), save() 트랜잭션 안에서 대조. */
+    public string $formFingerprint = '';
 
     #[\Livewire\Attributes\Locked]
     public string $editLockOwnerName = '';
@@ -4041,6 +4043,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->justCreatedId = null;
         }
         $this->editingId = $id;
+        $this->formFingerprint = $v->editFingerprint();
 
         $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $id)
             ->whereNotNull('final_payment_id')
@@ -5724,13 +5727,38 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 22-C-light 후속 fix (2026-05-20) — Vehicle save 전에 PBP existing id 캡처.
         // Vehicle::saved 훅이 자동 PBP Draft 생성하는데, 그 후 sync 에서 existing - submitted = 자동 Draft 가 delete 대상에 포함되어 사라지는 버그.
         // 캡처 시점을 Vehicle 저장 전으로 옮기면 자동 PBP 보호.
+        // 🔁 같은 폼 안에 똑같은 새 잔금 행이 둘 (jin 2026-10-02) — 실사고 ssancarerp 매입잔금 2건(신규 등록 1요청에 같은 행 2개).
+        //   금액·날짜·메모가 완전히 같은 **새 행**(id 없음)이 둘이면 저장을 거부한다. 기존 행끼리는 안 본다(정당한 과거 기록).
+        foreach (['finalPayments' => 'duplicate_final_payment_row', 'purchaseBalancePayments' => 'duplicate_purchase_payment_row'] as $prop => $msgKey) {
+            $seen = [];
+            foreach ($this->{$prop} as $row) {
+                if (! empty($row['id']) || (($row['amount'] ?? '') === '' && ($row['payment_date'] ?? '') === '')) {
+                    continue;
+                }
+                $key = str_replace(',', '', (string) ($row['amount'] ?? '')).'|'.$toDate((string) ($row['payment_date'] ?? '')).'|'.trim((string) ($row['note'] ?? ''));
+                if (isset($seen[$key])) {
+                    $this->addError($prop, __('vehicle.valmsg.'.$msgKey));
+                    $this->dispatch('notify', message: __('vehicle.valmsg.'.$msgKey), type: 'error');
+
+                    return;
+                }
+                $seen[$key] = true;
+            }
+        }
+
         $existingPurchaseIdsBefore = $this->editingId
             ? PurchaseBalancePayment::where('vehicle_id', $this->editingId)->pluck('id')->toArray()
             : [];
         try {
             \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, $existingPurchaseIdsBefore, &$newlyStoredPaths, &$pathsToDelete, &$vehicle) {
                 if ($this->editingId) {
-                    $vehicle = Vehicle::findOrFail($this->editingId);
+                    // 🔒 옛 폼 저장 거부 (jin 2026-10-02) — 행을 잠근 뒤 지문을 다시 계산해 패널 열 때와 대조한다.
+                    //   잠금 없이 비교하면 겹친 두 요청이 둘 다 「같다」를 보고 둘 다 쓴다(실사고 58저0778 — 1초 차 요청 2개).
+                    //   SQLite 는 lockForUpdate 를 무시하지만 테스트는 순차라 무관, 운영 MySQL 이 진짜 가드다.
+                    $vehicle = Vehicle::lockForUpdate()->findOrFail($this->editingId);
+                    if ($this->formFingerprint !== '' && $vehicle->editFingerprint() !== $this->formFingerprint) {
+                        throw new \App\Exceptions\StaleFormException(__('vehicle.toast.stale_form'));
+                    }
                     $vehicle->update($data);
                 } else {
                     $vehicle = Vehicle::create($data);
@@ -6179,6 +6207,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
             $vehicle->refreshCaches();
             });
+        } catch (\App\Exceptions\StaleFormException $e) {
+            // 옛 폼 (jin 2026-10-02) — 롤백됐고 아무것도 안 썼다. 안내한 뒤 패널을 **다시 열어** 남이 저장한 값을 보여준다
+            //   (안 열면 같은 옛 폼으로 또 저장을 누른다). 사용자 입력은 사라진다 — 그게 중복보다 싸다.
+            foreach ($newlyStoredPaths as $p) {
+                Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
+            }
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+            $this->openEdit($this->editingId);
+
+            return;
         } catch (\DomainException $e) {
             // #1 (2026-05-20) — paid Settlement·SoD·회계 무결성 등 비즈니스 룰 위반.
             // 화이트스크린 대신 토스트로 사용자에게 사유 노출. 트랜잭션은 이미 rollback됨.
