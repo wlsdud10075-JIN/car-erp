@@ -495,7 +495,7 @@ return [
         'spec_length' => 'Length (mm)',
         'spec_width' => 'Width (mm)',
         'spec_height' => 'Height (mm)',
-        'spec_curb_weight' => 'Curb Weight (kg)',
+        'spec_curb_weight' => 'Gross Weight (kg)',
         'spec_fuel_efficiency' => 'Fuel Economy (km/L)',
         'spec_control_no' => 'Spec Control No.',
         'spec_form_name' => 'Type (Form)',

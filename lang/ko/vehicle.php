@@ -505,7 +505,7 @@ return [
         'spec_length' => '전장 (mm)',
         'spec_width' => '전폭 (mm)',
         'spec_height' => '전고 (mm)',
-        'spec_curb_weight' => '공차중량 (kg)',
+        'spec_curb_weight' => '차량총중량 (kg)',
         'spec_fuel_efficiency' => '연비 (km/L)',
         'spec_control_no' => '제원관리번호',
         'spec_form_name' => '형식',
