@@ -7,8 +7,9 @@ use App\Services\Documents\DocValue;
 use Tests\TestCase;
 
 /**
- * 통관 서류용 NICE 파생값 — 전용 컬럼/입력 필드 없이 nice_raw 에서 서류 생성 시점에 파싱.
- * (사용자 결정 2026-05-26: 검사종료 등은 새 컬럼 안 만들고 서류에만 적용)
+ * 통관 서류용 NICE 파생값 — nice_raw 폴백 파싱.
+ * (2026-05-26 엔 「새 컬럼 없이 서류에만」이었으나 2026-10-02 부터 전용 컬럼이 우선이고 raw 는 폴백 — NiceEditableSpecFieldsTest.
+ *  여기 테스트는 컬럼이 빈 차량(백필 전·NICE 미연동)의 폴백 경로를 그대로 지킨다.)
  */
 class DocValueNiceTest extends TestCase
 {
