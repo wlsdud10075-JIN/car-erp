@@ -724,6 +724,7 @@ return [
         'nice_not_configured' => 'NICE lookup is not configured — enter manually.',
         'nice_failed' => 'NICE lookup failed.',
         'nice_success' => 'NICE lookup done — :count registration/spec fields auto-filled. (Save to apply)',
+        'stale_form' => 'Someone else (or another window) saved this vehicle first. Nothing was saved; the panel was reloaded with the latest data — please re-enter your changes.',
         'paid_locked' => "Accounting columns of a 'paid' settlement vehicle cannot be changed (attempted: :fields). For a closed settlement, unlock it first with [🔓 Readjust] on the settlement screen.",
         'max_photos' => 'Up to :max attachments can be added.',
         'rrn_required' => 'Deregistration requires the owner resident/corp registration number — Basic Info tab.',
@@ -1268,6 +1269,8 @@ return [
 
     // Custom validation messages (approval / transfer / ledger unlock reasons)
     'valmsg' => [
+        'duplicate_final_payment_row' => 'Two new sale payment rows have the same amount, date and note. Remove one or add a note to tell them apart.',
+        'duplicate_purchase_payment_row' => 'Two new purchase payment rows have the same amount, date and note. Remove one or add a note to tell them apart.',
         'unlock_reason_required' => 'Enter an unlock reason of at least 10 characters.',
         'unlock_reason_min' => 'The unlock reason must be at least 10 characters.',
         'approval_reason_required' => 'Enter a reason for the approval request.',

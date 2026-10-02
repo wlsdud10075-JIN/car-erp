@@ -2839,6 +2839,22 @@ class Vehicle extends Model
      *
      * 🚫 여기에 「판매가 > 0」 같은 board 용 조건을 옮겨 붙이지 말 것 — 청중이 다르다.
      */
+    /**
+     * 편집 폼 신선도 지문 (jin 2026-10-02) — 패널을 연 뒤 누가 먼저 저장했는지 알아채는 기준.
+     *   = 차량 updated_at + 판매잔금 행 id 목록 + 매입잔금 행 id 목록.
+     * 패널 열 때(openEdit) 들고 있다가 저장 트랜잭션 안(행 잠금 뒤)에서 다시 계산해 대조한다 — 다르면 StaleFormException.
+     * ⚠️ 관계 캐시가 아니라 **DB 를 다시 읽는다**(잠금 뒤의 값이어야 한다). raw update(refreshCaches·배치)는 updated_at 을
+     *    안 건드리므로 야간 캐시 재계산은 옛 폼으로 안 보인다.
+     */
+    public function editFingerprint(): string
+    {
+        $fp = FinalPayment::where('vehicle_id', $this->id)->orderBy('id')->pluck('id')->implode(',');
+        $pbp = PurchaseBalancePayment::where('vehicle_id', $this->id)->orderBy('id')->pluck('id')->implode(',');
+        $updated = self::query()->whereKey($this->id)->value('updated_at');
+
+        return md5((string) $updated.'|'.$fp.'|'.$pbp);
+    }
+
     public function clearanceSetBlocker(): ?string
     {
         // ①③ — 서류함 전체와 같은 문. 통관 SET 만의 조건이 아니므로 따로 둔다.
