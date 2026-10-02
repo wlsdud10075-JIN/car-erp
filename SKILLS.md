@@ -1342,7 +1342,7 @@ UI 단계를 거치며 확립할 공통 유틸. **새 페이지·위젯 만들 �
 
 ### NICE 연동 — 현재 상태
 - `nice_raw`(JSON, cast array): 전용컬럼 없는 NICE 필드(resValidPeriod·resSpecControlNo·maxPower·mtrsFomNm·fomNm)+engineSpec 원본. `DocValue::niceRaw($v,$key)`.
-- `deregistration_date`(말소일)·`nice_spec_cylinders`(기통). NICE 연동 완료(`698f0c9`). 기통수·검사종료는 nice_raw 에서 서류 생성 시 파싱(`DocValue::niceCylinders/niceInspectionStart/End`).
+- `deregistration_date`(말소일)·`nice_spec_cylinders`(기통). NICE 연동 완료(`698f0c9`). 기통수·검사종료·제원관리번호·형식·최대출력은 **2026-10-02 부터 전용 컬럼 우선, nice_raw 폴백**(`DocValue::nice*` — 기본정보 탭에서 수정 가능, 죽은 칸 변속기·구동방식·축거·색상은 화면에서 제거). 구: raw 에서 서류 생성 시 파싱.
 - 매매업등록번호(통관 D3·G3)는 NICE 비제공→공란(수기).
 
 ### 회사 정보 / 부호 주의

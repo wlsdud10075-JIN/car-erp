@@ -407,7 +407,7 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 
 | 연동 | 상태 | 위치 |
 |---|---|---|
-| **NICE API** | ✅ 완료 (`698f0c9`, 2026-05-25) — ssancar-erp 미들웨어 경유. 미구현 2건(기통수·검사종료)은 nice_raw 에서 서류 생성 시 파싱 | `app/Services/NiceApiService.php`, `docs/nice-followup-items.md` |
+| **NICE API** | ✅ 완료 (`698f0c9`, 2026-05-25) — ssancar-erp 미들웨어 경유. ~~미구현 2건(기통수·검사종료)은 nice_raw 에서 서류 생성 시 파싱~~ → **2026-10-02 전용 컬럼 우선·raw 폴백**(기본정보 탭에서 수정 가능, 배포 뒤 `vehicles:sync-nice-spec-columns --apply`) | `app/Services/NiceApiService.php`, `docs/nice-followup-items.md` |
 | **포워딩사 메일** | ❌ 영구 제거 (사용자 결정) | - |
 | DHL API | ⏸️ 1단계 스코프 외 (수동 입력만) | - |
 | **S3** | ✅ 완료 — 버킷 `heysellcar-erp-docs`, IAM, `league/flysystem-aws-s3-v3`, 서명URL | `config/filesystems.php` |
