@@ -75,7 +75,8 @@ class NiceApiServiceTest extends TestCase
                 'useFuelNm' => '경유', 'resFinalOwner' => '홍길동', 'resUserIdentiyNo' => '700101-1234567',
                 'engineSpec' => '6/3342', 'vhcleWt' => '1600', 'cbdLt' => '4900',
                 'fuelCnsmpRt' => '9.5',   // 연비 — 소수점 보존
-                'maxPower' => '190/4000', 'resSpecControlNo' => 'SPEC-1',   // 미매핑 → raw 만
+                'maxPower' => '190/4000', 'resSpecControlNo' => 'SPEC-1',   // 2026-10-02 부터 전용 컬럼(spec) + raw
+                'fomNm' => 'I3W13-5D', 'resValidPeriod' => '2026-08-13 ~ 2028-08-12  주행거리:104938',
             ],
         ], 200)]);
 
@@ -98,6 +99,13 @@ class NiceApiServiceTest extends TestCase
         $this->assertSame('4900', $r['spec']['nice_spec_length']);
         $this->assertSame('현대', $r['spec']['nice_spec_maker']);
         $this->assertSame('9.5', $r['spec']['nice_spec_fuel_efficiency']);   // 연비 소수점 보존
+        // 2026-10-02 — 서류가 쓰던 raw 5종 + 검사기간이 편집 가능한 전용 컬럼으로
+        $this->assertSame('SPEC-1', $r['spec']['nice_spec_control_no']);
+        $this->assertSame('I3W13-5D', $r['spec']['nice_spec_form_name']);
+        $this->assertSame('190/4000', $r['spec']['nice_spec_max_power']);
+        $this->assertSame('6', $r['spec']['nice_spec_cylinders']);          // engineSpec '/' 앞
+        $this->assertSame('2026-08-13', $r['spec']['nice_inspection_start']);
+        $this->assertSame('2028-08-12', $r['spec']['nice_inspection_end']);
         // raw 원본 보존 (미매핑 필드 포함)
         $this->assertSame('190/4000', $r['raw']['maxPower']);
         $this->assertSame('SPEC-1', $r['raw']['resSpecControlNo']);
