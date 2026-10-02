@@ -226,39 +226,85 @@ class DocValue
         return data_get($v->nice_raw, $key);
     }
 
-    /**
-     * NICE engineSpec "기통/배기량"(예: "4/1950") → 기통수(슬래시 앞 숫자).
-     * 전용 컬럼/입력 필드 없이 nice_raw 에서 서류 생성 시점에만 파싱 (사용자 결정).
-     */
-    public static function niceCylinders(Vehicle $v): ?string
+    // ── NICE 제원 5종 + 검사기간 — 「전용 컬럼 우선 · nice_raw 폴백」 (jin 2026-10-02 «수정할 수 있어야 해») ──
+    //   2026-05-26 엔 「새 컬럼 없이 서류 생성 시점에만 파싱」이었다. 10-02 부터 기본정보 탭에 편집 칸이 생겨
+    //   컬럼이 있으면 그 값을, 없으면(백필 전 차량·NICE 미연동) 종전대로 raw 를 찍는다.
+    //   ⚠️ raw 파싱 규칙은 아래 static 파서 한 곳이 단일 출처 — NiceApiService::transform · 백필 명령도 같은 함수를 쓴다.
+
+    /** NICE engineSpec "기통/배기량"(예: "4/1950") → 기통수(슬래시 앞 숫자). 없으면 null. */
+    public static function cylindersFromEngineSpec(?string $spec): ?string
     {
-        $spec = (string) self::niceRaw($v, 'engineSpec');
+        $spec = (string) $spec;
         $head = str_contains($spec, '/') ? substr($spec, 0, strpos($spec, '/')) : $spec;
 
         return preg_match('/\d+/', $head, $m) ? $m[0] : null;
     }
 
-    /**
-     * NICE resValidPeriod "2025-09-15 ~ 2027-09-14  주행거리:..." → 검사 유효기간 [시작, 종료] 날짜.
-     * 형식에서 YYYY-MM-DD 를 순서대로 추출(첫째=시작, 둘째=종료). 단일 날짜면 종료는 null.
-     */
-    private static function niceValidPeriodDates(Vehicle $v): array
+    /** NICE resValidPeriod "2025-09-15 ~ 2027-09-14  주행거리:..." → [시작, 종료]. 단일 날짜면 종료 null. */
+    public static function validPeriodDates(?string $period): array
     {
-        preg_match_all('/\d{4}-\d{2}-\d{2}/', (string) self::niceRaw($v, 'resValidPeriod'), $m);
+        preg_match_all('/\d{4}-\d{2}-\d{2}/', (string) $period, $m);
 
         return [$m[0][0] ?? null, $m[0][1] ?? null];
     }
 
-    /** 검사 유효기간 시작일 (resValidPeriod 첫 날짜). */
-    public static function niceInspectionStart(Vehicle $v): ?string
+    /** 기통수 — nice_spec_cylinders 우선, 없으면 raw engineSpec 파싱. */
+    public static function niceCylinders(Vehicle $v): ?string
     {
-        return self::niceValidPeriodDates($v)[0];
+        if (filled($v->nice_spec_cylinders)) {
+            return (string) $v->nice_spec_cylinders;
+        }
+
+        return self::cylindersFromEngineSpec(self::niceRaw($v, 'engineSpec'));
     }
 
-    /** 검사 유효기간 종료일 (resValidPeriod 둘째 날짜). */
+    /** 검사 유효기간 시작일 — nice_inspection_start 우선, 없으면 raw resValidPeriod 첫 날짜. */
+    public static function niceInspectionStart(Vehicle $v): ?string
+    {
+        if ($v->nice_inspection_start) {
+            return $v->nice_inspection_start->format('Y-m-d');
+        }
+
+        return self::validPeriodDates(self::niceRaw($v, 'resValidPeriod'))[0];
+    }
+
+    /** 검사 유효기간 종료일 — nice_inspection_end 우선, 없으면 raw resValidPeriod 둘째 날짜. */
     public static function niceInspectionEnd(Vehicle $v): ?string
     {
-        return self::niceValidPeriodDates($v)[1];
+        if ($v->nice_inspection_end) {
+            return $v->nice_inspection_end->format('Y-m-d');
+        }
+
+        return self::validPeriodDates(self::niceRaw($v, 'resValidPeriod'))[1];
+    }
+
+    /** 제원관리번호 — nice_spec_control_no 우선, 없으면 raw resSpecControlNo. */
+    public static function niceSpecControlNo(Vehicle $v): ?string
+    {
+        return self::columnOrRaw($v, 'nice_spec_control_no', 'resSpecControlNo');
+    }
+
+    /** 형식 — nice_spec_form_name 우선, 없으면 raw fomNm. */
+    public static function niceFormName(Vehicle $v): ?string
+    {
+        return self::columnOrRaw($v, 'nice_spec_form_name', 'fomNm');
+    }
+
+    /** 최대출력 — nice_spec_max_power 우선, 없으면 raw maxPower (예: "152/5500"). */
+    public static function niceMaxPower(Vehicle $v): ?string
+    {
+        return self::columnOrRaw($v, 'nice_spec_max_power', 'maxPower');
+    }
+
+    private static function columnOrRaw(Vehicle $v, string $column, string $rawKey): ?string
+    {
+        $col = trim((string) $v->{$column});
+        if ($col !== '') {
+            return $col;
+        }
+        $raw = trim((string) self::niceRaw($v, $rawKey));
+
+        return $raw !== '' ? $raw : null;
     }
 
     /**

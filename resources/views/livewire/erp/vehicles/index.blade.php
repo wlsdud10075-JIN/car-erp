@@ -1112,21 +1112,23 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $nice_reg_owner_rrn    = '';
     public string $nice_reg_max_load_str = '';
     public string $nice_reg_passengers_str = '';
-    public string $nice_reg_color        = '';
 
-    // ── NICE API 제원정보 12 ──────────────────────────────────────
+    // ── NICE API 제원정보 (2026-10-02 죽은 칸 변속기·구동방식·축거 제거 · 서류가 쓰는 5칸+검사기간 추가) ──────────────────────────────────────
     public string $nice_spec_maker           = '';
     public string $nice_spec_model           = '';
     public string $nice_spec_year            = '';
     public string $nice_spec_displacement_str = '';
-    public string $nice_spec_transmission    = '';
-    public string $nice_spec_drive_type      = '';
     public string $nice_spec_length_str      = '';
     public string $nice_spec_width_str       = '';
     public string $nice_spec_height_str      = '';
-    public string $nice_spec_wheelbase_str   = '';
     public string $nice_spec_curb_weight_str = '';
     public string $nice_spec_fuel_efficiency = '';
+    public string $nice_spec_control_no      = '';   // 제원관리번호 (통관 G5·말소증 E9)
+    public string $nice_spec_form_name       = '';   // 형식 (통관 G4)
+    public string $nice_spec_max_power       = '';   // 최대출력 "152/5500" (통관 G11)
+    public string $nice_spec_cylinders_str   = '';   // 기통수 (통관 G12)
+    public string $nice_inspection_start     = '';   // 검사 유효기간 시작 (통관 I10)
+    public string $nice_inspection_end       = '';   // 검사 유효기간 종료 (통관 I11)
 
     // NICE 조회 응답 원본(ssancar data) — 저장 시 nice_raw 컬럼에 보존 (미매핑 필드 재조회 없이 활용).
     public array $niceRaw = [];
@@ -4086,21 +4088,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->nice_reg_owner_rrn    = $v->nice_reg_owner_rrn    ?? '';
         $this->nice_reg_max_load_str    = $v->nice_reg_max_load    ? (string)$v->nice_reg_max_load    : '';
         $this->nice_reg_passengers_str  = $v->nice_reg_passengers  ? (string)$v->nice_reg_passengers  : '';
-        $this->nice_reg_color           = $v->nice_reg_color        ?? '';
 
         // NICE 제원
         $this->nice_spec_maker           = $v->nice_spec_maker           ?? '';
         $this->nice_spec_model           = $v->nice_spec_model           ?? '';
         $this->nice_spec_year            = $v->nice_spec_year            ?? '';
         $this->nice_spec_displacement_str = $v->nice_spec_displacement    ? (string)$v->nice_spec_displacement : '';
-        $this->nice_spec_transmission    = $v->nice_spec_transmission    ?? '';
-        $this->nice_spec_drive_type      = $v->nice_spec_drive_type      ?? '';
         $this->nice_spec_length_str      = $v->nice_spec_length      ? (string)$v->nice_spec_length      : '';
         $this->nice_spec_width_str       = $v->nice_spec_width       ? (string)$v->nice_spec_width       : '';
         $this->nice_spec_height_str      = $v->nice_spec_height      ? (string)$v->nice_spec_height      : '';
-        $this->nice_spec_wheelbase_str   = $v->nice_spec_wheelbase   ? (string)$v->nice_spec_wheelbase   : '';
         $this->nice_spec_curb_weight_str = $v->nice_spec_curb_weight ? (string)$v->nice_spec_curb_weight : '';
         $this->nice_spec_fuel_efficiency = $v->nice_spec_fuel_efficiency ?? '';
+        $this->nice_spec_control_no      = $v->nice_spec_control_no      ?? '';
+        $this->nice_spec_form_name       = $v->nice_spec_form_name       ?? '';
+        $this->nice_spec_max_power       = $v->nice_spec_max_power       ?? '';
+        $this->nice_spec_cylinders_str   = $v->nice_spec_cylinders   ? (string)$v->nice_spec_cylinders   : '';
+        $this->nice_inspection_start     = $v->nice_inspection_start ? $v->nice_inspection_start->format('Y-m-d') : '';
+        $this->nice_inspection_end       = $v->nice_inspection_end   ? $v->nice_inspection_end->format('Y-m-d')   : '';
 
         // 매입
         $this->purchase_date       = $v->purchase_date ? $v->purchase_date->format('Y-m-d') : '';
@@ -4988,7 +4992,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_max_load_str', 'nice_reg_passengers_str',
             'nice_spec_displacement_str', 'nice_spec_length_str',
             'nice_spec_width_str', 'nice_spec_height_str',
-            'nice_spec_wheelbase_str', 'nice_spec_curb_weight_str',
+            'nice_spec_cylinders_str', 'nice_spec_curb_weight_str',
             'purchase_price_str', 'selling_fee_str',
             'cost_deregistration_str', 'cost_license_str', 'cost_towing_str',
             'cost_carry_str', 'cost_shoring_str', 'cost_insurance_str',
@@ -5035,6 +5039,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'document_deadline_date' => ['nullable', 'date'],
             'nice_reg_first_date' => ['nullable', 'date'],
             'nice_reg_date'       => ['nullable', 'date'],
+            'nice_inspection_start' => ['nullable', 'date'],
+            'nice_inspection_end'   => ['nullable', 'date'],
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
@@ -5099,6 +5105,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'bl_issue_date'  => __('vehicle.attr.bl_issue_date'),
             'nice_reg_first_date' => __('vehicle.attr.nice_reg_first_date'),
             'nice_reg_date'  => __('vehicle.attr.nice_reg_date'),
+            'nice_inspection_start' => __('vehicle.attr.nice_inspection_start'),
+            'nice_inspection_end'   => __('vehicle.attr.nice_inspection_end'),
             'salesman_id_str' => __('vehicle.attr.salesman'),
             'buyer_id_str'    => __('vehicle.attr.buyer'),
             'consignee_id_str' => __('vehicle.attr.consignee'),
@@ -5570,20 +5578,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_owner_rrn'    => $this->nice_reg_owner_rrn    ?: null,
             'nice_reg_max_load'     => $this->nice_reg_max_load_str   !== '' ? (int)$this->nice_reg_max_load_str   : null,
             'nice_reg_passengers'   => $this->nice_reg_passengers_str !== '' ? (int)$this->nice_reg_passengers_str : null,
-            'nice_reg_color'        => $this->nice_reg_color ?: null,
             // NICE 제원
             'nice_spec_maker'           => $this->nice_spec_maker           ?: null,
             'nice_spec_model'           => $this->nice_spec_model           ?: null,
             'nice_spec_year'            => $this->nice_spec_year            ?: null,
             'nice_spec_displacement'    => $this->nice_spec_displacement_str !== '' ? (int)$this->nice_spec_displacement_str : null,
-            'nice_spec_transmission'    => $this->nice_spec_transmission    ?: null,
-            'nice_spec_drive_type'      => $this->nice_spec_drive_type      ?: null,
             'nice_spec_length'          => $this->nice_spec_length_str      !== '' ? (int)$this->nice_spec_length_str      : null,
             'nice_spec_width'           => $this->nice_spec_width_str       !== '' ? (int)$this->nice_spec_width_str       : null,
             'nice_spec_height'          => $this->nice_spec_height_str      !== '' ? (int)$this->nice_spec_height_str      : null,
-            'nice_spec_wheelbase'       => $this->nice_spec_wheelbase_str   !== '' ? (int)$this->nice_spec_wheelbase_str   : null,
             'nice_spec_curb_weight'     => $this->nice_spec_curb_weight_str !== '' ? (int)$this->nice_spec_curb_weight_str : null,
             'nice_spec_fuel_efficiency' => $this->nice_spec_fuel_efficiency ?: null,
+            'nice_spec_control_no'      => $this->nice_spec_control_no      ?: null,
+            'nice_spec_form_name'       => $this->nice_spec_form_name       ?: null,
+            'nice_spec_max_power'       => $this->nice_spec_max_power       ?: null,
+            'nice_spec_cylinders'       => $this->nice_spec_cylinders_str   !== '' ? (int)$this->nice_spec_cylinders_str   : null,
+            'nice_inspection_start'     => $toDate($this->nice_inspection_start),
+            'nice_inspection_end'       => $toDate($this->nice_inspection_end),
             // 매입
             'purchase_date'    => $toDate($this->purchase_date),
             'salesman_id'      => $toId($this->salesman_id_str),
@@ -6986,10 +6996,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'vehicle_number','brand','model_type','color','year_str','cc_str','weight_kg_str','mileage_str',
             'nice_reg_vin','nice_reg_engine_no','nice_reg_fuel_type','nice_reg_use_type','nice_reg_vehicle_form',
             'nice_reg_first_date','nice_reg_date','nice_reg_owner_name','nice_reg_owner_addr','nice_reg_owner_rrn',
-            'nice_reg_max_load_str','nice_reg_passengers_str','nice_reg_color',
+            'nice_reg_max_load_str','nice_reg_passengers_str',
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
-            'nice_spec_transmission','nice_spec_drive_type','nice_spec_length_str','nice_spec_width_str',
-            'nice_spec_height_str','nice_spec_wheelbase_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
+            'nice_spec_length_str','nice_spec_width_str',
+            'nice_spec_height_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
+            'nice_spec_control_no','nice_spec_form_name','nice_spec_max_power','nice_spec_cylinders_str','nice_inspection_start','nice_inspection_end',
             'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided','has_mortgage',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
@@ -8432,6 +8443,9 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="text" data-date class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
+                {{-- 검사 유효기간 — NICE resValidPeriod 를 조회 때 둘로 나눠 넣는다(통관 SET I10·I11). 2026-10-02 --}}
+                <div><label class="label-base">{{ __('vehicle.field.inspection_start') }}</label><input wire:model="nice_inspection_start" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.inspection_end') }}</label><input wire:model="nice_inspection_end" type="text" data-date class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
                     <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" data-1p-ignore data-lpignore="true" />
@@ -8470,7 +8484,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.max_load') }}</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.passengers') }}</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.reg_color') }}</label><input wire:model="nice_reg_color" type="text" class="input-base" /></div>
                 <div class="col-span-2 sm:col-span-1"><label class="label-base">{{ __('vehicle.field.owner_addr') }}</label><input wire:model="nice_reg_owner_addr" type="text" class="input-base" /></div>
             </div>
 
@@ -8484,14 +8497,16 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <div><label class="label-base">{{ __('vehicle.field.spec_model') }}</label><input wire:model="nice_spec_model" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_year') }}</label><input wire:model="nice_spec_year" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_displacement') }}</label><input wire:model="nice_spec_displacement_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.spec_transmission') }}</label><input wire:model="nice_spec_transmission" type="text" class="input-base" placeholder="{{ __('vehicle.ph.transmission') }}" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.spec_drive_type') }}</label><input wire:model="nice_spec_drive_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.drive_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_length') }}</label><input wire:model="nice_spec_length_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_width') }}</label><input wire:model="nice_spec_width_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_height') }}</label><input wire:model="nice_spec_height_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.spec_wheelbase') }}</label><input wire:model="nice_spec_wheelbase_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_curb_weight') }}</label><input wire:model="nice_spec_curb_weight_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_fuel_efficiency') }}</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
+                {{-- 2026-10-02 (jin) — 서류(통관 SET·말소증)가 찍는데 nice_raw 에만 있던 값. 조회 시 자동, 수정 가능. 비면 서류는 raw 를 폴백으로 쓴다(DocValue). --}}
+                <div><label class="label-base">{{ __('vehicle.field.spec_cylinders') }}</label><input wire:model="nice_spec_cylinders_str" type="number" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_max_power') }}</label><input wire:model="nice_spec_max_power" type="text" class="input-base" placeholder="152/5500" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_form_name') }}</label><input wire:model="nice_spec_form_name" type="text" class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.spec_control_no') }}</label><input wire:model="nice_spec_control_no" type="text" class="input-base" /></div>
             </div>
 
             {{-- 차량등록증 자동차등록번호 ↔ 차량 첨부 — 나란히(2열) 배치로 세로 공간 절약 --}}

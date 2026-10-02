@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Documents\DocValue;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -237,9 +238,17 @@ class NiceApiService
         // 연비(공인연비) — NICE fuelCnsmpRt (예: "9.5"). 정수 추출($digits)이 아니라 소수점 보존.
         $fuelEff = preg_match('/\d+(?:\.\d+)?/', (string) ($d['fuelCnsmpRt'] ?? ''), $mFuel) ? $mFuel[0] : null;
         $set($spec, 'nice_spec_fuel_efficiency', $fuelEff);
+        // 2026-10-02 (jin) — 서류가 찍는데 raw 에만 있던 5종을 전용 컬럼으로(기본정보 탭에서 수정 가능).
+        //   파싱 규칙은 DocValue 의 static 파서가 단일 출처(서류 폴백·백필 명령과 같은 함수).
+        $set($spec, 'nice_spec_control_no', $d['resSpecControlNo'] ?? null);
+        $set($spec, 'nice_spec_form_name', $d['fomNm'] ?? null);
+        $set($spec, 'nice_spec_max_power', $d['maxPower'] ?? null);
+        $set($spec, 'nice_spec_cylinders', DocValue::cylindersFromEngineSpec($d['engineSpec'] ?? null));
+        [$inspStart, $inspEnd] = DocValue::validPeriodDates($d['resValidPeriod'] ?? null);
+        $set($spec, 'nice_inspection_start', $inspStart);
+        $set($spec, 'nice_inspection_end', $inspEnd);
 
-        // 대응 컬럼 없음(resValidPeriod·resSpecControlNo·maxPower·mtrsFomNm·fomNm)은 raw 에만 보존.
-        // NICE 미제공 컬럼(transmission·drive_type·wheelbase)은 빈 채로 둔다.
+        // 대응 컬럼 없음(mtrsFomNm = 원동기형식과 같은 값)은 raw 에만 보존.
         return [
             'success' => true,
             'registration' => $reg,

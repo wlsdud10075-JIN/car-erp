@@ -43,11 +43,11 @@ class ClearanceSetMapping
                 'I3' => fn (Vehicle $v) => $v->nice_reg_date,                       // 등록증날짜
                 'B4' => fn (Vehicle $v) => $v->vehicle_number,                      // 차량번호
                 'D4' => fn (Vehicle $v) => DocValue::romanizePlate($v->vehicle_number), // 영문차량번호
-                'G4' => fn (Vehicle $v) => DocValue::niceRaw($v, 'fomNm'),          // 형식 (NICE)
+                'G4' => fn (Vehicle $v) => DocValue::niceFormName($v),              // 형식 (컬럼 우선 · NICE raw 폴백)
                 'I4' => fn (Vehicle $v) => $v->nice_reg_engine_no,                  // 원동기형식
                 'B5' => fn (Vehicle $v) => DocValue::carNameFull($v),               // 차명 (brand+model)
                 'D5' => fn (Vehicle $v) => $v->nice_reg_vin,                        // 차대번호
-                'G5' => fn (Vehicle $v) => DocValue::niceRaw($v, 'resSpecControlNo'), // 제원관리번호 (NICE)
+                'G5' => fn (Vehicle $v) => DocValue::niceSpecControlNo($v),         // 제원관리번호 (컬럼 우선 · NICE raw 폴백)
                 'I5' => fn (Vehicle $v) => $v->nice_spec_year ?: $v->year,          // 연도
                 'B6' => fn (Vehicle $v) => $v->nice_reg_first_date,                 // 최초등록일
                 'D6' => fn (Vehicle $v) => $v->year,                               // 연도
@@ -69,7 +69,7 @@ class ClearanceSetMapping
                 'I11' => fn (Vehicle $v) => DocValue::niceInspectionEnd($v),       // 검사종료 (NICE resValidPeriod 분할)
                 'B11' => fn (Vehicle $v) => $v->vessel_name,                       // VSL
                 'D11' => fn (Vehicle $v) => $v->shipping_date,                     // 선적일 (차량인보이스 C18 cascade)
-                'G11' => fn (Vehicle $v) => DocValue::niceRaw($v, 'maxPower'),     // 출력 (NICE)
+                'G11' => fn (Vehicle $v) => DocValue::niceMaxPower($v),            // 출력 (컬럼 우선 · NICE raw 폴백)
                 // 컨테이너 NO (차량인보이스 G2·G3 cascade).
                 // 🔀 **적힌 컨테이너 번호가 최우선이다** (jin 2026-08-31). ssancarerp 는 물량이 많아
                 //    RORO 여도 컨테이너 번호를 적어 관리하는데, 그때 서류에 'RORO' 만 찍혀 그 번호가 사라졌다.

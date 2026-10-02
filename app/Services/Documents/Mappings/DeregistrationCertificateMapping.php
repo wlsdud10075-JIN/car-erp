@@ -46,7 +46,7 @@ class DeregistrationCertificateMapping
                 'K7' => fn (Vehicle $v) => $v->nice_reg_vin,                          // 차대번호
                 'E8' => fn (Vehicle $v) => $v->nice_reg_engine_no,                    // 원동기형식
                 'K8' => fn (Vehicle $v) => $v->nice_spec_year ?: $v->year,            // 모델연도
-                'E9' => fn (Vehicle $v) => DocValue::niceRaw($v, 'resSpecControlNo'), // 제원관리번호 (NICE)
+                'E9' => fn (Vehicle $v) => DocValue::niceSpecControlNo($v),           // 제원관리번호 (컬럼 우선 · NICE raw 폴백)
                 'K9' => fn (Vehicle $v) => $v->nice_reg_use_type ?: DocValue::niceRaw($v, 'resUseType'), // 용도 (NICE)
                 'E10' => fn (Vehicle $v) => $v->nice_reg_first_date,                  // 최초등록일
                 // 말소등록일 — 맨 아래 발행일(H20)이 `=E13` 이라 자동으로 따라온다.
@@ -61,7 +61,7 @@ class DeregistrationCertificateMapping
                 self::EN.'K7' => fn (Vehicle $v) => $v->nice_reg_vin,                 // Chassis No
                 self::EN.'E8' => fn (Vehicle $v) => $v->nice_reg_engine_no,           // Motor Type
                 self::EN.'K8' => fn (Vehicle $v) => $v->nice_spec_year ?: $v->year,   // Model year
-                self::EN.'E9' => fn (Vehicle $v) => DocValue::niceRaw($v, 'resSpecControlNo'), // Approval No
+                self::EN.'E9' => fn (Vehicle $v) => DocValue::niceSpecControlNo($v),           // Approval No
                 self::EN.'K9' => fn (Vehicle $v) => DocValue::useTypeEn($v),          // Purpose
                 self::EN.'E10' => fn (Vehicle $v) => $v->nice_reg_first_date,         // Car Registration date
                 self::EN.'E13' => fn (Vehicle $v) => $v->deregistration_date,         // Repealed Date

@@ -226,6 +226,7 @@ class Vehicle extends Model
         'memo_purchase', 'memo_sale', 'memo_clearance', 'memo_shipping', 'memo_bl',
         // Phase 3 서류 자동기입 (2026-05-24) — NICE 원본 보관 + 말소일 + 기통수
         'nice_raw', 'deregistration_date', 'nice_spec_cylinders',
+        'nice_spec_control_no', 'nice_spec_form_name', 'nice_spec_max_power', 'nice_inspection_start', 'nice_inspection_end',   // 2026-10-02 편집 가능 NICE 칸
     ];
 
     protected $casts = [
@@ -247,6 +248,8 @@ class Vehicle extends Model
         'dhl_fee_total_cache' => 'integer',
         'nice_reg_first_date' => 'date',
         'nice_reg_date' => 'date',
+        'nice_inspection_start' => 'date',
+        'nice_inspection_end' => 'date',
         'deregistration_date' => 'date',
         'nice_raw' => 'array',
         'purchase_date' => 'date',
