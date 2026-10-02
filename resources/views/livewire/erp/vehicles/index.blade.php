@@ -8395,29 +8395,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 {{-- 큐 16 — 판매채널 select 제거. sales_channel은 hidden 'export' 고정. --}}
                 <input type="hidden" wire:model="sales_channel" />
                 {{-- 큐 17 — 폐기 체크박스 제거 (운영상 폐기 없음). --}}
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.brand') }}</label>
-                    <input wire:model="brand" type="text" class="input-base" placeholder="{{ __('vehicle.ph.brand') }}" />
-                </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.model_type') }}</label>
-                    <input wire:model="model_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.model_type') }}" />
-                </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.year') }}</label>
-                    <input wire:model="year_str" type="number" class="input-base" placeholder="2020" />
-                </div>
-                {{-- 2026-10-02 (jin) 기본정보 「배기량」 입력칸 제거 — 제원정보 배기량과 100% 같은 값(조회가 둘 다 채움)이고
-                     서류·목록·내보내기 모두 제원 쪽을 읽는다. 컬럼 cc 와 자동 기입은 그대로(입력칸만 없앰). --}}
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.weight_kg') }}</label>
-                    <input wire:model="weight_kg_str" type="number" class="input-base" placeholder="1470" />
-                </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.mileage') }}</label>
-                    <input wire:model="mileage_str" type="number" class="input-base" placeholder="85000" />
-                </div>
-                {{-- 2026-10-02 (jin) 기본정보 「색상」 입력칸 제거 — 실측 채움 5/5,152 · 1/325, 서류 0. 컬럼·값은 보존. --}}
+                {{-- 2026-10-02 (jin) — 브랜드·차종·연식·주행거리는 NICE 등록정보 섹션으로, 중량은 제원정보 섹션으로 옮겼다
+                     (조회가 채우는 칸은 조회 섹션에 모아 둔다). 배기량 입력칸(제원과 100% 같은 값)·색상(채움 0%)은 제거, 컬럼·자동기입은 보존. --}}
                 {{-- 영업담당자 — 등록 시 지정 누락 방지 위해 매입 탭에서 기본정보로 이동 (2026-06-04).
                      옵션은 $this->salesmen (관리 role 은 본인 팀 영업만 노출). --}}
                 <div>
@@ -8438,6 +8417,11 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <span class="section-title">{{ __('vehicle.panel.sec.nice_reg') }}</span>
             </div>
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {{-- 조회 1단계(등록원부)가 채우는 기본 식별 4칸 — 2026-10-02 상단 일반 영역에서 이동 --}}
+                <div><label class="label-base">{{ __('vehicle.field.brand') }}</label><input wire:model="brand" type="text" class="input-base" placeholder="{{ __('vehicle.ph.brand') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.model_type') }}</label><input wire:model="model_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.model_type') }}" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.year') }}</label><input wire:model="year_str" type="number" class="input-base" placeholder="2020" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.mileage') }}</label><input wire:model="mileage_str" type="number" class="input-base" placeholder="85000" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.vin') }}</label><input wire:model="nice_reg_vin" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.engine_no') }}</label><input wire:model="nice_reg_engine_no" type="text" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.fuel_type') }}</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.fuel_type') }}" /></div>
@@ -8503,6 +8487,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <div><label class="label-base">{{ __('vehicle.field.spec_width') }}</label><input wire:model="nice_spec_width_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_height') }}</label><input wire:model="nice_spec_height_str" type="number" class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_curb_weight') }}</label><input wire:model="nice_spec_curb_weight_str" type="number" class="input-base" /></div>
+                {{-- 중량(weight_kg) — 조회 2단계가 차량총중량과 같은 값으로 채운다. 2026-10-02 상단에서 이동(통합은 미결 — 서류 매핑 동반). --}}
+                <div><label class="label-base">{{ __('vehicle.field.weight_kg') }}</label><input wire:model="weight_kg_str" type="number" class="input-base" placeholder="1470" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.spec_fuel_efficiency') }}</label><input wire:model="nice_spec_fuel_efficiency" type="text" class="input-base" /></div>
                 {{-- 2026-10-02 (jin) — 서류(통관 SET·말소증)가 찍는데 nice_raw 에만 있던 값. 조회 시 자동, 수정 가능. 비면 서류는 raw 를 폴백으로 쓴다(DocValue). --}}
                 <div><label class="label-base">{{ __('vehicle.field.spec_cylinders') }}</label><input wire:model="nice_spec_cylinders_str" type="number" class="input-base" /></div>

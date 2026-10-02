@@ -70,6 +70,23 @@ class NiceEditableSpecFieldsTest extends TestCase
         }
     }
 
+    /** 🧭 조회가 채우는 칸은 조회 섹션 안에 — 상단 일반 영역엔 차량번호·담당자만 (jin 2026-10-02). */
+    public function test_lookup_filled_fields_live_inside_the_nice_sections(): void
+    {
+        $blade = file_get_contents(base_path(self::PANEL));
+        $basic = strpos($blade, "x-show=\"tab === 'basic'\"");
+        $reg = strpos($blade, "__('vehicle.panel.sec.nice_reg')", $basic);
+        $spec = strpos($blade, "__('vehicle.panel.sec.nice_spec')", $reg);
+        $end = strpos($blade, "x-show=\"tab === 'purchase'\"", $spec);
+        $pos = fn (string $prop) => strpos($blade, 'wire:model="'.$prop.'"', $basic);
+
+        foreach (['brand', 'model_type', 'year_str', 'mileage_str'] as $prop) {
+            $this->assertTrue($reg < $pos($prop) && $pos($prop) < $spec, "{$prop} 는 NICE 등록정보 섹션 안에 있어야 한다");
+        }
+        $this->assertTrue($spec < $pos('weight_kg_str') && $pos('weight_kg_str') < $end, '중량은 NICE 제원정보 섹션 안에 있어야 한다');
+        $this->assertTrue($basic < $pos('salesman_id_str') && $pos('salesman_id_str') < $reg, '담당자는 상단 일반 영역에 남는다');
+    }
+
     /** 🔎 조회 → 새 6칸이 채워지고 → 저장 → DB 에 남는다. */
     public function test_lookup_fills_the_new_fields_and_save_persists_them(): void
     {
