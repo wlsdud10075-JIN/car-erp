@@ -23,7 +23,8 @@ use App\Services\Documents\DocValue;
  * G3(차량등록증 자동차등록번호)은 reg_cert_number 수기필드 → 한글/영문등록증 cascade.
  * NICE 칸(형식·제원관리번호·출력)은 nice_raw 에서 읽음 → NICE 연동 전엔 공란.
  * 기통수(G12)·검사시작(I10)·검사종료(I11)는 nice_raw 의 engineSpec·resValidPeriod 를
- *   서류 생성 시점에 파싱(DocValue::niceCylinders/niceInspectionStart/End) — 전용 컬럼·입력 필드 없이.
+ *   🔀 2026-10-02 부터 전용 컬럼(nice_spec_cylinders·nice_inspection_start/end 등) 우선, raw 는 폴백(DocValue::nice*).
+ *   (구) 서류 생성 시점에 파싱(DocValue::niceCylinders/niceInspectionStart/End) — 전용 컬럼·입력 필드 없이.
  */
 class ClearanceSetMapping
 {

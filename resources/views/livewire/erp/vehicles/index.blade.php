@@ -5041,6 +5041,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_date'       => ['nullable', 'date'],
             'nice_inspection_start' => ['nullable', 'date'],
             'nice_inspection_end'   => ['nullable', 'date'],
+            // 컬럼 길이(40/40/30)와 맞춘다 — SQLite 테스트는 길이를 안 보고 운영 MySQL 만 1406 으로 죽는다(§8 #36 형태)
+            'nice_spec_control_no'  => ['nullable', 'string', 'max:40'],
+            'nice_spec_form_name'   => ['nullable', 'string', 'max:40'],
+            'nice_spec_max_power'   => ['nullable', 'string', 'max:30'],
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
@@ -5107,6 +5111,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_date'  => __('vehicle.attr.nice_reg_date'),
             'nice_inspection_start' => __('vehicle.attr.nice_inspection_start'),
             'nice_inspection_end'   => __('vehicle.attr.nice_inspection_end'),
+            'nice_spec_control_no'  => __('vehicle.attr.nice_spec_control_no'),
+            'nice_spec_form_name'   => __('vehicle.attr.nice_spec_form_name'),
+            'nice_spec_max_power'   => __('vehicle.attr.nice_spec_max_power'),
             'salesman_id_str' => __('vehicle.attr.salesman'),
             'buyer_id_str'    => __('vehicle.attr.buyer'),
             'consignee_id_str' => __('vehicle.attr.consignee'),
