@@ -59,6 +59,12 @@ class NiceEditableSpecFieldsTest extends TestCase
             $this->assertStringNotContainsString('wire:model="'.$dead.'"', $blade, "죽은 칸 {$dead} 이 아직 화면에 있다");
             $this->assertStringNotContainsString('public string $'.$dead, $blade, "죽은 칸 {$dead} 프로퍼티가 남아 있다");
         }
+        // 기본정보 색상·배기량 입력칸(jin 2026-10-02 2차) — 컬럼·프로퍼티는 남기고 **입력칸만** 없다(조회가 cc 를 계속 채운다).
+        foreach (['color', 'cc_str'] as $hidden) {
+            $this->assertStringNotContainsString('wire:model="'.$hidden.'"', $blade, "기본정보 {$hidden} 입력칸이 아직 있다");
+        }
+        $this->assertStringContainsString('wire:model="nice_spec_displacement_str"', $blade, '제원 배기량은 남긴다');
+        $this->assertStringContainsString('wire:model="nice_spec_maker"', $blade, '제원 제조사는 남긴다');
         foreach (['nice_spec_control_no', 'nice_spec_form_name', 'nice_spec_max_power', 'nice_spec_cylinders_str', 'nice_inspection_start', 'nice_inspection_end'] as $new) {
             $this->assertStringContainsString('wire:model="'.$new.'"', $blade, "새 칸 {$new} 바인딩이 없다");
         }

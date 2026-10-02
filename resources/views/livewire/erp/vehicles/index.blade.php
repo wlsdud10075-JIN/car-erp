@@ -8407,10 +8407,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <label class="label-base">{{ __('vehicle.field.year') }}</label>
                     <input wire:model="year_str" type="number" class="input-base" placeholder="2020" />
                 </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.cc') }}</label>
-                    <input wire:model="cc_str" type="number" class="input-base" placeholder="1991" />
-                </div>
+                {{-- 2026-10-02 (jin) 기본정보 「배기량」 입력칸 제거 — 제원정보 배기량과 100% 같은 값(조회가 둘 다 채움)이고
+                     서류·목록·내보내기 모두 제원 쪽을 읽는다. 컬럼 cc 와 자동 기입은 그대로(입력칸만 없앰). --}}
                 <div>
                     <label class="label-base">{{ __('vehicle.field.weight_kg') }}</label>
                     <input wire:model="weight_kg_str" type="number" class="input-base" placeholder="1470" />
@@ -8419,10 +8417,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <label class="label-base">{{ __('vehicle.field.mileage') }}</label>
                     <input wire:model="mileage_str" type="number" class="input-base" placeholder="85000" />
                 </div>
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.color') }}</label>
-                    <input wire:model="color" type="text" class="input-base" placeholder="{{ __('vehicle.ph.color') }}" />
-                </div>
+                {{-- 2026-10-02 (jin) 기본정보 「색상」 입력칸 제거 — 실측 채움 5/5,152 · 1/325, 서류 0. 컬럼·값은 보존. --}}
                 {{-- 영업담당자 — 등록 시 지정 누락 방지 위해 매입 탭에서 기본정보로 이동 (2026-06-04).
                      옵션은 $this->salesmen (관리 role 은 본인 팀 영업만 노출). --}}
                 <div>
