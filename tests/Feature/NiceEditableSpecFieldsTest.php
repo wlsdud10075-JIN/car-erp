@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\Documents\DocumentFiller;
 use App\Services\Documents\DocValue;
 use App\Services\Documents\Mappings\ClearanceSetMapping;
 use App\Services\Documents\Mappings\DeregistrationCertificateMapping;
@@ -141,6 +142,48 @@ class NiceEditableSpecFieldsTest extends TestCase
         $this->assertSame('152/5500', $cells['G11']($v), '안 고친 최대출력은 raw 폴백');
         $this->assertSame('I3W13-5D', $cells['G4']($v), '안 고친 형식은 raw 폴백');
         $this->assertSame('B999-00001-0000-0001', DeregistrationCertificateMapping::config()['cells']['E9']($v), '말소증 E9 도 같은 출처');
+    }
+
+    /**
+     * 📄 **마지막 한 걸음** — 패널에서 고친 값이 실제로 만들어진 서류 파일의 셀에 찍히나 (jin 2026-10-02
+     * «기본정보에서 다 수정해도 서류에도 다 적용되고 하는거지?»). 매핑 클로저가 아니라 xlsx 를 생성해 읽는다.
+     */
+    public function test_generated_documents_print_values_edited_in_the_panel(): void
+    {
+        $v = $this->vehicle(['nice_raw' => self::RAW]);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('nice_spec_control_no', 'EDIT-CTRL-0001')
+            ->set('nice_spec_form_name', 'EDIT-FORM')
+            ->set('nice_spec_max_power', '199/6000')
+            ->set('nice_spec_cylinders_str', '8')
+            ->set('nice_inspection_start', '2027-01-01')
+            ->set('nice_inspection_end', '2029-01-31')
+            ->set('nice_spec_displacement_str', '2999')
+            ->set('nice_spec_year', '2021')
+            ->call('save')->assertHasNoErrors();
+        $v->refresh();
+
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            config(['company.template_set' => $set]);
+            $list = (new DocumentFiller($v))->spreadsheet('clearance')->getSheetByName('구매리스트');
+            $cell = fn (string $c) => (string) $list->getCell($c)->getValue();
+
+            $this->assertSame('EDIT-FORM', $cell('G4'), "{$set} 형식");
+            $this->assertSame('EDIT-CTRL-0001', $cell('G5'), "{$set} 제원관리번호");
+            $this->assertSame('199/6000', $cell('G11'), "{$set} 최대출력");
+            $this->assertSame('8', $cell('G12'), "{$set} 기통수");
+            $this->assertSame('2027-01-01', $cell('I10'), "{$set} 검사 시작");
+            $this->assertSame('2029-01-31', $cell('I11'), "{$set} 검사 종료");
+            $this->assertSame('2999', $cell('G10'), "{$set} 배기량(제원)");
+            $this->assertSame('2021', $cell('I5'), "{$set} 연도(제원 연식)");
+
+            $dereg = (new DocumentFiller($v))->spreadsheet('deregistration_certificate');
+            $this->assertSame('EDIT-CTRL-0001', (string) $dereg->getSheetByName('말소증')->getCell('E9')->getValue(), "{$set} 말소증 제원관리번호");
+            $this->assertSame('EDIT-CTRL-0001', (string) $dereg->getSheetByName('영문말소증')->getCell('E9')->getValue(), "{$set} 영문말소증 Approval No");
+        }
     }
 
     /** 🕳️ 백필 전 차량(컬럼 비고 raw 만) — 서류는 종전 그대로 raw 를 찍는다(순수 확대). */
