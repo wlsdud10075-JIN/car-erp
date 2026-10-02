@@ -21,6 +21,8 @@ Ubuntu 24.04.3 · PHP 8.4.22 · nginx 1.24.0 · MySQL 8.0.46 · 2 vCPU
 
 ## 1. 🔑 원부조회가 어떻게 나가는지 — **이게 이전의 핵심**
 
+> ⚠️ **2026-10-02 정정** — 아래 그림의 `211.174.52.231` 은 NICE 가 아니라 **carmodoo(board 원부조회)** IP 다. NICE(`niceab.nicednr.co.kr` = 203.234.213.39)는 터널 밖, 공인 IP 로 직접 나간다(실측: wg 전송량 keepalive 분량뿐). 터널은 board 원부조회용이다.
+
 ```
 ERP  →  https://niceab.nicednr.co.kr (= 211.174.52.231)
          └ 라우팅: 211.174.52.231 dev wg-carmodoo
