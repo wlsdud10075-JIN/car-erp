@@ -1511,26 +1511,17 @@ new #[Layout('components.layouts.app')] class extends Component
      *   null = 마감 가능 / 문자열 = 번역 키.
      * ⚠️ 미리보기와 실행이 각자 조건을 들면 「목록엔 마감된다고 떴는데 안 닫히는」 행이 생긴다.
      *
-     * - 완납 게이트 (2026-07-06 재피벗 #3): 외화는 원금 완납(sale_unpaid_amount ≤ 0) 후에만 마감.
-     *   미완납으로 마감하면 Σ잔금외화 < 총판매가외화 라 원금 미수가 "환차손"으로 둔갑한다.
-     *   KRW 는 환차 개념이 없어 게이트 제외 (SKILLS §13, [[project_settlement_v2_groupware_design]]).
+     * - 🔀 **2026-10-06 (jin) — 완납 게이트 제거.** 구(2026-07-06 재피벗 #3)는 외화 원금 완납 후에만 마감이었다
+     *   (미완납 마감 = 원금 미수가 환차손으로 둔갑). 10-01 B안 뒤로 환차 식이 **받은 몫만** 세므로 그 왜곡이 없어졌고,
+     *   jin: *「미수 있어도 마감은 하자. 미수금액만 보여주고, 그건 받아야 하는 금액으로 남기기만 하면 돼」*.
+     *   미수는 행·드로어에 그대로 남고, 마감 뒤 들어오는 돈은 `Vehicle::ledgerLockedForNewPayments()` 가
+     *   미수 > 0 인 동안 열어 둬 기록할 수 있다(담당자 정산엔 반영 안 됨 — 마감 = 1회 확정).
      * - 환율: 판매환율이 0/null 이면 환차 계산 불가.
      */
     private function secondaryCloseBlocker(Settlement $settlement): ?string
     {
         if ($settlement->secondary_status !== 'pending') {
             return 'settlement.notify.close_not_pending';
-        }
-
-        // 🚪 게이트 예외(jin 2026-09-12) — 완납 게이트를 예외가 통과한다.
-        //    예외로 지급까지 한 정산을 2차에서 다시 막으면 그 정산은 영영 안 닫히고, 환차·이월이
-        //    계산되지 않아 프리랜서 이월이 통째로 증발한다.
-        //    ⚠️ 대신 **마감하는 순간 환차·이월이 1회 확정**되고 그 뒤 들어온 돈은 담당자 정산에
-        //       반영되지 않는다(post-close = record-only, 2026-07-24 개편의 기존 규칙). 화면이 경고한다.
-        $vehicle = $settlement->vehicle;
-        if ($vehicle && $vehicle->currency !== 'KRW' && $vehicle->sale_unpaid_amount > 0
-            && ! $settlement->hasGateOverride()) {
-            return 'settlement.notify.close_needs_full_payment';
         }
 
         [$exchangeDiff] = $this->calculateExchangeDifference($settlement);

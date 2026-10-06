@@ -667,8 +667,8 @@ class Vehicle extends Model
      * 정본 = `docs/design/settlement-gate-exception.md` §2-2.
      *
      * ```
-     * 잠금 = 2차 마감된 정산이 있다
-     *        AND NOT ( 그 마감 정산이 **전부** 예외다  AND  차량 미수 > 0 )
+     * 잠금 = 2차 마감된 정산이 있다  AND  차량 미수 ≤ 0        ← 2026-10-06 (jin) 미수 있어도 마감 가능해지며 확대
+     * (구 2026-09-12: … AND NOT ( 그 마감 정산이 **전부** 예외다  AND  차량 미수 > 0 ))
      * ```
      *
      * 🔑 **유예지 해제가 아니다.** 열리는 것은 **B-① 신규 잔금 추가**(+재무확정·채권관리 입금)뿐이고
@@ -707,11 +707,14 @@ class Vehicle extends Model
         if ($this->id && Cache::has(self::ledgerUnlockCacheKey($this->id))) {
             return false;
         }
-        if ($closed->contains(fn ($s) => $s->gate_override_at === null)) {
-            return true;   // 예외 없는 마감이 하나라도 있으면 그대로 잠금
-        }
 
-        // 전부 예외 — 미수가 남아 있는 동안만 유예한다. 0 이 되면 즉시 재잠금.
+        /*
+         * 🔀 **2026-10-06 (jin) — 미수가 남은 마감 차량은 예외 여부와 무관하게 신규 잔금이 열린다.**
+         * 2차 마감이 「미수 있어도」 가능해졌다(완납 게이트 제거). 마감 뒤 들어오는 돈을 기록할 길이 없으면
+         * 그 미수는 영영 못 지우는 숫자가 된다 — jin: *「미수금액만 보여주고, 그건 받아야 하는 금액으로 남기기만 하면 돼」*.
+         * 구: 예외(`gate_override_at`) 마감만 유예. 신: 마감 + 미수 > 0 이면 유예. 0 이 되면 즉시 재잠금(종전과 같다).
+         * 그 돈의 환차는 담당자 정산에 반영되지 않는다(마감 = 1회 확정, record-only — 종전 규칙 그대로).
+         */
         return (int) ($this->sale_unpaid_amount ?? 0) <= 0;
     }
 

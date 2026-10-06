@@ -354,7 +354,6 @@ return [
         'pay_reason' => '정산 #:id (:vehicle) 지급 처리',
         'pay_sent' => '지급 승인 요청을 보냈습니다.',
         'close_not_pending' => '2차 정산 대기 상태가 아닙니다.',
-        'close_needs_full_payment' => '외화 차량은 판매대금 완납(미수 0) 후에만 2차 정산을 마감할 수 있습니다. 미수 잔액이 남아 있어 환차가 왜곡됩니다.',
         'close_needs_rate' => '외화 차량은 2차 정산 환율을 입력해야 마감할 수 있습니다 (자동 환율 조회 실패). 상단 환율 입력 후 다시 마감하세요.',
         'close_done' => '2차 정산 완료 (최종 마무리)',
         'close_diff_suffix' => ' — 환차 :sign₩:amount',
