@@ -1196,6 +1196,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'count' => $settlements->count(),
             'payout_sum' => (int) $settlements->sum('actual_payout'),
             'losses' => $losses,
+            // 💸 미청산 이월 자동 줄 (jin 2026-10-06) — 제출이 부르는 **같은 함수**. 체크칸 없이 자동으로 들어간다.
+            'carryovers' => \App\Models\SettlementPayoutBatch::carryoverLinesFor($settlements),
         ];
     }
 
@@ -1209,11 +1211,13 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereIn('salesman_id', $checked)
             ->sum('sum');
         $adjSum = collect($this->submitAdjustments)->sum('amount');
+        $carrySum = (int) collect($preview['carryovers'] ?? [])->sum('amount');
 
         return [
             'loss_sum' => (int) $lossSum,
             'adj_sum' => (int) $adjSum,
-            'final' => max(0, $preview['payout_sum'] - (int) $lossSum + (int) $adjSum),
+            'carry_sum' => $carrySum,
+            'final' => max(0, $preview['payout_sum'] - (int) $lossSum + (int) $adjSum + $carrySum),
         ];
     }
 
@@ -2054,6 +2058,26 @@ new #[Layout('components.layouts.app')] class extends Component
                 </label>
                 @endforeach
             </div>
+        </div>
+        @endif
+
+        {{-- 💸 미청산 이월 자동 조정 (jin 2026-10-06) — 2차 마감 차액(환차+비용)이 담당자별 한 줄로 들어간다. 체크칸 없음(자동). --}}
+        @if(!empty($pv['carryovers']))
+        <div class="mt-3" data-carryover-lines>
+            <div class="section-header"><span class="section-dot bg-violet-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_carryover') }}</span></div>
+            <div class="mt-1 space-y-1">
+                @foreach($pv['carryovers'] as $line)
+                <div wire:key="carry-{{ $line['salesman_id'] }}" class="flex items-start gap-2 rounded px-1.5 py-1 text-xs">
+                    <span class="flex-1">
+                        <span class="font-medium text-gray-700">{{ $line['name'] }}</span>
+                        <span class="ml-1 text-gray-400">{{ $line['reason'] }}</span>
+                    </span>
+                    <span class="font-mono {{ $line['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $line['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($line['amount'])) }}</span>
+                </div>
+                @endforeach
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.modal_carryover_hint') }}</p>
         </div>
         @endif
 
