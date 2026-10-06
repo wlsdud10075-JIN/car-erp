@@ -235,7 +235,11 @@ class SettlementPayoutBatch extends Model
         $payoutBySalesman = $settlements->groupBy('salesman_id')->map(fn ($g) => (int) $g->sum(fn ($s) => $s->actual_payout));
 
         $lines = [];
-        foreach (Salesman::where('payout_excluded', false)->orderBy('name')->get() as $sm) {
+        foreach (Salesman::orderBy('name')->get() as $sm) {
+            // 지급 대상 아닌 담당자 — `Settlement::isPayoutExcludedBySalesman()` 과 같은 칸(salesmen.payout_excluded)을 본다.
+            if ((bool) $sm->payout_excluded) {
+                continue;
+            }
             $unconsumed = (int) $sm->unconsumed_carryover;
             if ($unconsumed === 0) {
                 continue;
