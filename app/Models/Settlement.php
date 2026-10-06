@@ -395,8 +395,9 @@ class Settlement extends Model
 
         $old = $current->format('Y-m-d');
         $new = $target->format('Y-m-d');
-        self::query()->whereKey($this->id)->update(['attributed_month' => $new]);
-        $this->attributed_month = $new;
+        // 🚫 raw update 로 'Y-m-d' 만 쓰지 말 것 — 앱은 date 캐스트로 'Y-m-d 00:00:00' 을 저장하고 월 스코프 셋이
+        //    그 시간 경계로 비교한다. 형태가 다르면 SQLite 에서 그 달에서 빠진다(이 테스트가 잡았다). 캐스트를 거쳐 조용히 저장.
+        $this->forceFill(['attributed_month' => $target])->saveQuietly();
         AuditLog::recordChange($this, 'attributed_month', $old, $new);
 
         return $ym;
