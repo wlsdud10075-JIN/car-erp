@@ -179,21 +179,102 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $this->assertSame(9_999_999, $after['base_salary']);
     }
 
+    // ── 정산 없는 월급 직원 (jin 2026-10-06 「정산이 0명인 사람은 월급만 나올 수 있게」) ──────
+
     /**
-     * 💰 「이달 송금 예상」 = 지급 총액 + **이 배치에 이름이 올라온** 직원의 기본급.
-     *    ⚠️ 그 달에 정산 건이 없는 직원은 배치에 없으므로 안 들어간다 — 「전 직원 급여 합계」가 아니다.
+     * 💴 **그 달 정산이 0건인 재직 사내직원도 「기본급만」 줄로 두 화면에 오르고, 기본급 합계에 들어간다.**
+     *    구(09-18)는 「배치에 이름이 있는 사람만」이라 그 직원의 월급이 송금 예상에서 조용히 빠졌다.
+     *
+     * ⚠️ 정산 0 이면 기본급 = 월수령액이라 숫자만으로는 못 가른다(§8 #107) — 이름·라벨 옆에서 본다.
      */
-    public function test_the_base_salary_total_counts_only_people_in_the_batch(): void
+    public function test_a_salaried_employee_with_no_settlement_appears_on_both_screens(): void
     {
         [$batch] = $this->batch();
-
-        Salesman::create([
+        $idle = Salesman::create([
             'name' => '이달엔 건이 없는 직원', 'type' => 'employee',
             'is_active' => true, 'base_salary_krw' => 5_000_000,
         ]);
+        $payoutBefore = (int) $batch->total_payout;
 
-        $this->assertSame(2_740_000, $batch->fresh()->baseSalaryTotal(),
-            '배치에 없는 직원의 기본급이 섞였다');
+        // 합계 = 배치 안 직원(2,740,000) + 정산 없는 직원(5,000,000)
+        $this->assertSame(2_740_000 + 5_000_000, $batch->fresh()->baseSalaryTotal(),
+            '정산 없는 직원의 기본급이 합계에 안 들어갔다');
+
+        // ① 월배치 화면 — 그 사람 줄이 「기본급만」 라벨과 함께 뜬다
+        $this->actingAs($this->manager());
+        $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        $this->assertMatchesRegularExpression(
+            '/data-salary-only="'.$idle->id.'"[\s\S]{0,600}?'.preg_quote($idle->name, '/').'[\s\S]{0,300}?'
+            .preg_quote(__('payout_batch.margin.pay.salary_only'), '/').'/u',
+            $html, '월배치 화면에 「기본급만」 줄이 없다'
+        );
+        $this->assertStringContainsString(number_format(5_000_000), $html);
+
+        // ② 대표 승인 페이지 — 같은 사람이 「기본급만」으로 보인다
+        $url = URL::temporarySignedRoute(
+            'payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $this->manager()->id]
+        );
+        $page = $this->get($url)->assertOk()->getContent();
+        $this->assertMatchesRegularExpression(
+            '/'.preg_quote($idle->name, '/').'[\s\S]{0,200}?기본급만/u',
+            $page, '승인 페이지에 「기본급만」 사람이 없다'
+        );
+        $this->assertStringContainsString('정산 없음 · 기본급만', $page);
+        $this->assertStringNotContainsString('정산 없음 (조정만)', $page, '기본급만 직원이 「조정만」으로 찍혔다');
+        // 「이달 송금 예상」도 그 사람 몫만큼 커진다
+        $this->assertStringContainsString(
+            number_format($payoutBefore + 2_740_000 + 5_000_000).'원', $page,
+            '이달 송금 예상에 정산 없는 직원의 기본급이 안 들어갔다'
+        );
+
+        // 🚫 지급 총액은 그대로 — 급여는 정산이 아니다
+        $this->assertSame($payoutBefore, (int) $batch->fresh()->total_payout, '지급 총액이 움직였다');
+    }
+
+    /**
+     * 🚪 **「전 직원 급여 합계」는 아니다** — 퇴사 · 지급 제외(신분, §8 #103) · 기본급 미입력 · 기본급 0(명시 「없음」) ·
+     *    예치금만 있는 프리랜서는 줄도 합계도 안 생긴다. jin 요청 범위 = **월급**이라 예치금만 있는 사람은 대상이 아니다.
+     */
+    public function test_people_who_do_not_draw_a_salary_this_month_stay_out(): void
+    {
+        [$batch] = $this->batch();
+
+        $outsiders = [
+            '퇴사한 직원' => ['type' => 'employee', 'is_active' => false, 'base_salary_krw' => 5_000_000],
+            '지급 제외 계정' => ['type' => 'employee', 'is_active' => true, 'payout_excluded' => true, 'base_salary_krw' => 5_000_000],
+            '기본급 미입력' => ['type' => 'employee', 'is_active' => true, 'base_salary_krw' => null],
+            '기본급 없음 명시' => ['type' => 'employee', 'is_active' => true, 'base_salary_krw' => 0],
+            '예치금만 있는 프리랜서' => ['type' => 'freelance', 'is_active' => true, 'deposit_krw' => 7_000_000],
+        ];
+        foreach ($outsiders as $name => $attrs) {
+            Salesman::create(array_merge(['name' => $name], $attrs));
+        }
+
+        $this->assertSame(2_740_000, $batch->fresh()->baseSalaryTotal(), '월급이 안 나가는 사람의 기본급이 섞였다');
+
+        $this->actingAs($this->manager());
+        $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        foreach (array_keys($outsiders) as $name) {
+            $this->assertStringNotContainsString($name, $html, "「{$name}」이 월배치 화면에 올라왔다");
+        }
+        $this->assertStringNotContainsString('data-salary-only', $html);
+    }
+
+    /**
+     * 🔁 **배치에 이미 있는 직원은 두 번 안 센다** — 정산이 있는 직원은 정산 줄로만 나오고
+     *    「기본급만」 줄이 또 생기면 안 된다(id 로 뺀다 — 이름으로 빼면 동명이인이 사라진다).
+     */
+    public function test_an_employee_already_in_the_batch_is_not_listed_twice(): void
+    {
+        [$batch, $employee] = $this->batch();
+
+        $this->assertSame(2_740_000, $batch->fresh()->baseSalaryTotal());
+        $this->assertCount(0, $batch->fresh()->salaryOnlyPeople($batch->settlements, $batch->adjustments));
+
+        $this->actingAs($this->manager());
+        $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        $this->assertSame(1, substr_count($html, '>'.$employee->name), '같은 직원이 두 줄로 나왔다');
+        $this->assertStringNotContainsString('data-salary-only', $html);
     }
 
     // ── 비용 ────────────────────────────────────────────────────────────

@@ -64,6 +64,25 @@ class Salesman extends Model
         return (int) ($this->base_salary_krw ?? 0) + $settlementPayout;
     }
 
+    /**
+     * 💴 **이달 월급이 나가는 사람** — 재직 중이고 지급 대상이며 기본급이 0 보다 큰 담당자 (jin 2026-10-06).
+     *
+     * jin: *「정산이 0명인 사람은 월급만 나올 수 있게 변경이 되어야 해」* — 그 달 정산 건이 없어도
+     * 월배치·승인화면에 「기본급만」 줄로 올라와 「이달 송금 예상」에 들어간다.
+     *
+     * 🔑 **세 소비자(월배치 드릴다운 · 승인 breakdown · `baseSalaryTotal`)가 전부 이 스코프를 쓴다** —
+     *    조건을 옮겨 적으면 «승인화면엔 있는데 월배치엔 없다»가 된다(§8 #44).
+     * - `base_salary_krw > 0` — **0 은 「없음」을 명시한 값**이라 줄을 만들지 않는다(`SalesmanDepositBaseSalaryTest`).
+     * - `payout_excluded` 는 09-16 의 신분 기준 제외(자매 회사 계정) — 금액이 아니라 신분으로 뺀다(§8 #103).
+     * - 퇴사(`is_active=false`)·삭제(SoftDeletes)는 빠진다. 프리랜서 예치금은 **대상 아님**(jin 요청 범위 = 월급).
+     */
+    public function scopeSalariedForBatch($query)
+    {
+        return $query->where('is_active', true)
+            ->where('payout_excluded', false)
+            ->where('base_salary_krw', '>', 0);
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
