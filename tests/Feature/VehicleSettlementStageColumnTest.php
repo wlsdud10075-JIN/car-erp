@@ -115,6 +115,39 @@ class VehicleSettlementStageColumnTest extends TestCase
             $this->soldVehicle(['incoterms' => null, 'exchange_rate' => 0], paid: false)->settlementStage(), '환율 미입력');
     }
 
+    /**
+     * 🚗 매입취소 차는 정산 행이 아니라 **손실 반영 도장**으로 본다 (jin 2026-10-06 「정산처리 되기까지는 정산대기,
+     *    정산되면 정산처리로」). 실사고: 66더1784(ssancarerp) 가 1차 정산이 지급돼 있어 「정산됨」으로 떠서
+     *    실무자가 손실(227,500)이 처리된 줄 알았다.
+     */
+    public function test_cancelled_vehicles_follow_the_loss_settlement_stamp_not_the_settlement_row(): void
+    {
+        // 미수마감(손실 확정) + 정산 행이 지급(paid)이어도 — 도장 전엔 정산대기
+        $v = $this->soldVehicle();
+        Settlement::$allowBatchPayout = true;
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $v->salesman_id, 'settlement_type' => 'per_unit',
+            'per_unit_amount' => 100_000, 'settlement_status' => 'paid', 'paid_at' => now(),
+        ]);
+        Settlement::$allowBatchPayout = false;
+        Vehicle::whereKey($v->id)->update([
+            'cancel_status' => Vehicle::CANCEL_CLOSED, 'cancelled_at' => now(), 'cancel_shortfall_krw' => 455_000,
+        ]);
+        $this->assertSame(Vehicle::SETTLEMENT_STAGE_WAITING, $v->fresh()->settlementStage(), '손실 미반영인데 정산됨으로 떴다');
+
+        // 월배치 손실 조정에 반영(도장) → 정산됨
+        Vehicle::whereKey($v->id)->update(['cancel_loss_settled_at' => now()]);
+        $this->assertSame(Vehicle::SETTLEMENT_STAGE_DONE, $v->fresh()->settlementStage());
+
+        // 매입취소 진행중 — 위약금 미수가 남으면 대기, 다 받으면(취소완료) 더 할 게 없다
+        $open = $this->soldVehicle([], paid: false);
+        Vehicle::whereKey($open->id)->update(['cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now()]);
+        $this->assertSame(Vehicle::SETTLEMENT_STAGE_WAITING, $open->fresh()->settlementStage(), '위약금 미수 남음 = 대기');
+        $done = $this->soldVehicle();
+        Vehicle::whereKey($done->id)->update(['cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now()]);
+        $this->assertSame(Vehicle::SETTLEMENT_STAGE_DONE, $done->fresh()->settlementStage(), '취소완료(미수 0) = 정산됨');
+    }
+
     public function test_matches_the_dashboard_freight_queue(): void
     {
         // 대시보드 「인코텀즈 확정 필요」 카드와 같은 집합이어야 한다 — 조건을 옮겨 적으면 갈린다(§8 #44).

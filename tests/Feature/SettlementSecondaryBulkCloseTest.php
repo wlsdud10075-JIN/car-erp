@@ -55,12 +55,25 @@ class SettlementSecondaryBulkCloseTest extends TestCase
             ]);
         }
 
-        return Settlement::create([
+        $s = Settlement::create([
             'vehicle_id' => $v->id, 'salesman_id' => $this->salesman->id,
             'settlement_type' => 'ratio', 'settlement_ratio' => 50,
             'settlement_status' => 'paid', 'confirmed_at' => now(), 'paid_at' => now(),
             'secondary_status' => 'pending', 'attributed_month' => '2026-07-01',
         ]);
+        // 2026-10-06 — 일괄은 「2차 가능」(지급 뒤 비용 기입됨)만 닫는다. paid 전환 훅이 리셋하므로 **뒤에** 찍는다.
+        //    비용 대기 분기는 SecondaryReadyFilterTest.
+        Settlement::whereKey($s->id)->update(['secondary_ready_at' => now()]);
+
+        return $s->fresh();
+    }
+
+    /** 환율을 지워 「환율 누락」으로 막히는 건 — 완납 게이트는 2026-10-06 에 없어졌으므로 남은 차단 사유는 이것뿐이다. */
+    private function withoutRate(Settlement $s): Settlement
+    {
+        Vehicle::whereKey($s->vehicle_id)->update(['exchange_rate' => 0]);
+
+        return $s->fresh();
     }
 
     private function actAsFinance(): User
@@ -74,7 +87,8 @@ class SettlementSecondaryBulkCloseTest extends TestCase
     public function test_preview_separates_closable_from_skipped_with_a_reason(): void
     {
         $ok = $this->makeSettlement('BULK-OK', 10000, 0, 10000);       // 완납
-        $stuck = $this->makeSettlement('BULK-STUCK', 10000, 1528, 10000); // 운임비 미수
+        // 구: 운임비 미수로 건너뜀. 2026-10-06 부터 미수는 막지 않으므로 환율 누락으로 막히는 건으로 바꿨다.
+        $stuck = $this->withoutRate($this->makeSettlement('BULK-STUCK', 10000, 1528, 10000));
         $this->actAsFinance();
 
         $component = Volt::test('erp.settlements.index')
@@ -96,7 +110,7 @@ class SettlementSecondaryBulkCloseTest extends TestCase
     public function test_bulk_close_closes_only_the_previewed_rows(): void
     {
         $ok = $this->makeSettlement('BULK-OK', 10000, 0, 10000);
-        $stuck = $this->makeSettlement('BULK-STUCK', 10000, 1528, 10000);
+        $stuck = $this->withoutRate($this->makeSettlement('BULK-STUCK', 10000, 1528, 10000));   // 환율 누락(2026-10-06 — 미수는 더 이상 안 막는다)
         $this->actAsFinance();
 
         Volt::test('erp.settlements.index')
@@ -106,7 +120,7 @@ class SettlementSecondaryBulkCloseTest extends TestCase
             ->assertSet('showCloseSecondaryModal', false);
 
         $this->assertSame('closed', $ok->fresh()->secondary_status);
-        $this->assertSame('pending', $stuck->fresh()->secondary_status, '미완납 차량이 일괄에 쓸려 들어감');
+        $this->assertSame('pending', $stuck->fresh()->secondary_status, '환율 없는 차량이 일괄에 쓸려 들어감');
     }
 
     public function test_bulk_close_honours_the_month_filter(): void

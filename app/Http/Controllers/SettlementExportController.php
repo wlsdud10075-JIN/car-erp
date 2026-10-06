@@ -29,6 +29,8 @@ class SettlementExportController extends Controller
         $search = trim((string) $request->query('q', ''));
         $status = (string) $request->query('status', '');
         $held = $request->query('held') === '1';
+        // 2026-10-06 jin — 2차 필터(2차 가능/비용 대기/대기/마무리)도 화면 그대로. 모르는 값은 scope 가 무시한다.
+        $secondary = (string) $request->query('secondary', '');
         $salesmanId = (int) $request->query('salesmanId', 0);
         $month = (string) $request->query('month', '');
         $dateFrom = (string) $request->query('dateFrom', '');
@@ -38,6 +40,7 @@ class SettlementExportController extends Controller
             ->with(['vehicle', 'salesman'])
             ->when($search !== '', fn ($q) => $q->searchTerm($search))
             ->when($status !== '', fn ($q) => $q->where('settlement_status', $status))
+            ->when($secondary !== '', fn ($q) => $q->secondaryFilter($secondary))
             ->when($held, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($salesmanId > 0, fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($month !== '', fn ($q) => $q->attributedMonth($month))

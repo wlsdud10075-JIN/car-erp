@@ -24,6 +24,8 @@ class Settlement extends Model
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status', 'payout_batch_id',
         'secondary_status', 'secondary_closed_at',
+        // 2026-10-06 jin — 「2차 가능」: 지급 뒤 비용 칸이 기입된 시각(NULL = 비용 대기). 마이그레이션 주석 참조.
+        'secondary_ready_at',
         // 회의확장씬 #7 Step C-4 (2026-05-22) — 2차 정산 시 환차 (현재 환율 vs 입금 시점 평균)
         'exchange_difference_krw',
         // 회의확장씬 #6+7 보강 (2026-05-23) — 2차 정산 시 환율 (수동 입력 또는 자동 fetch 저장, audit trail)
@@ -45,6 +47,7 @@ class Settlement extends Model
         'attributed_month' => 'date',
         'paid_at' => 'datetime',
         'secondary_closed_at' => 'datetime',
+        'secondary_ready_at' => 'datetime',
         'exchange_difference_krw' => 'decimal:2',
         'exchange_rate_at_close' => 'decimal:4',
         'carryover_in_krw' => 'decimal:2',
@@ -207,6 +210,10 @@ class Settlement extends Model
             if ($becomingPaid && ! $s->secondary_status) {
                 $s->secondary_status = 'pending';
             }
+            // 2026-10-06 jin — 「2차 가능」은 **지급 뒤** 기입된 비용만 근거다. 1차 전에 넣은 비용은 리셋.
+            if ($becomingPaid) {
+                $s->secondary_ready_at = null;
+            }
 
             // paid 전환 시 정산 파라미터 동결(materialize, 2026-06-22) — 이후 Setting 변경·tier 재계산으로부터
             // 확정 정산 금액을 보호. 특히 사내직원 per_unit 을 고정해 carry_out=0 불변식(SKILLS §5-5) 유지
@@ -358,6 +365,51 @@ class Settlement extends Model
             ->whereNull('payout_batch_id')
             ->whereNull('gate_override_at')
             ->whereHas('vehicle', fn ($v) => $v->where('sale_unpaid_amount_krw_cache', '>', 0));
+    }
+
+    // ── 2차 가능 / 비용 대기 (jin 2026-10-06) ─────────────────────────────────────────────
+    //   2차 대기(secondary_status='pending')를 둘로 가른다 — 지급 뒤 비용 칸이 기입됐나(`secondary_ready_at`).
+    //   일괄 2차 마감은 「2차 가능」만 닫고, 「비용 대기」는 필터로 따로 뽑아 명세서 기입으로 보낸다.
+    //   단건 [2차 완료]는 종전대로 둘 다 된다(추가 비용이 원래 없는 차는 손으로 닫는다 — jin).
+
+    /** 2차 대기 + 지급 뒤 비용 기입됨 = 「2차 가능」. */
+    public function scopeSecondaryReady($query)
+    {
+        return $query->where('secondary_status', 'pending')->whereNotNull('secondary_ready_at');
+    }
+
+    /** 2차 대기 + 아직 비용 기입 없음 = 「비용 대기」. */
+    public function scopeSecondaryWaiting($query)
+    {
+        return $query->where('secondary_status', 'pending')->whereNull('secondary_ready_at');
+    }
+
+    /** 화면 필터 값 → 스코프. pending/closed 는 종전 그대로, ready/waiting 이 새 값. 모르는 값은 무시. */
+    public function scopeSecondaryFilter($query, string $filter)
+    {
+        return match ($filter) {
+            'ready' => $query->secondaryReady(),
+            'waiting' => $query->secondaryWaiting(),
+            'pending', 'closed' => $query->where('secondary_status', $filter),
+            default => $query,
+        };
+    }
+
+    /**
+     * 💴 **그 차량의 2차 대기 정산을 「2차 가능」으로** — `Vehicle::updated` 훅이 비용 칸 실변경을 보고 부른다.
+     *
+     * 명세서 기입 일괄(`BulkVehicleCostService`, 모델 update)·패널 수동 입력 모두 같은 훅을 지나므로 구분 없이 같다
+     * (jin 「손으로 넣은 것도 마찬가지, 뺄 이유가 없다」). 이미 값이 있으면 덮지 않는다(첫 기입 시각 보존).
+     * ⚠️ `paid_at` 이 없는(지급 전) 정산은 대상이 아니다 — 2차 대기 자체가 paid 뒤에만 붙는다.
+     *
+     * @return int 표시한 정산 수
+     */
+    public static function markSecondaryReadyForVehicle(Vehicle $vehicle): int
+    {
+        return static::query()
+            ->where('vehicle_id', $vehicle->id)
+            ->secondaryWaiting()
+            ->update(['secondary_ready_at' => now()]);
     }
 
     /**

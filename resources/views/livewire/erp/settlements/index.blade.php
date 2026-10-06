@@ -215,7 +215,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
-            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
+            ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -458,7 +458,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
-            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
+            ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->monthFilter, $this->monthScope())
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
@@ -1393,7 +1393,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->whereIn('settlement_status', ['pending', 'calculating'])
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
-            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
+            ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -1607,17 +1607,22 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public bool $showCloseSecondaryModal = false;
 
-    /** 일괄 대상 -- 2차 대기 + **현재 화면 필터**. 목록에 보이는 것만 닫힌다. */
-    private function secondaryCloseTargets()
+    /**
+     * 일괄 대상 -- 2차 대기 + **현재 화면 필터**. 목록에 보이는 것만 닫힌다.
+     *
+     * 🔀 2026-10-06 (jin) — 일괄은 **「2차 가능」(지급 뒤 비용 기입됨)만** 닫는다. 「비용 대기」는 미리보기에 건수로만 보이고
+     *    단건 [2차 완료]로는 종전대로 닫을 수 있다(추가 비용이 원래 없는 차). `$which='waiting'` 은 그 건수용.
+     */
+    private function secondaryCloseTargets(string $which = 'ready')
     {
         return Settlement::query()
-            ->where('secondary_status', 'pending')
+            ->secondaryFilter($which === 'waiting' ? 'waiting' : 'ready')
             // ⚠️ salesman 컬럼 제한 금지 (tier) — actual_payout 이 통째로 틀어진다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
-            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
+            ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -1650,7 +1655,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
-            ->when($this->secondaryFilter, fn ($q) => $q->where('secondary_status', $this->secondaryFilter))
+            ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
             ->when($this->overrideOnly, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($this->salesmanFilter, fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->monthFilter, $this->monthScope())
@@ -1685,7 +1690,8 @@ new #[Layout('components.layouts.app')] class extends Component
             }
         }
 
-        return ['ready' => $ready, 'skipped' => $skipped];
+        // 💴 「비용 대기」는 대상이 아니다 — 건수로만 보여 준다(§8 #67 건너뛴 것을 숨기지 않는다).
+        return ['ready' => $ready, 'skipped' => $skipped, 'waiting' => $this->secondaryCloseTargets('waiting')->count()];
     }
 
     public function openCloseSecondaryModal(): void
@@ -1834,6 +1840,14 @@ new #[Layout('components.layouts.app')] class extends Component
         <option value="confirmed">{{ __('settlement.status.confirmed') }}</option>
         <option value="paid">{{ __('settlement.status.paid') }}</option>
     </select>
+    {{-- 2차 정산 필터 (jin 2026-10-06) — 「2차 가능」(지급 뒤 비용 기입됨)만 솔팅해 일괄 마감하고, 「비용 대기」는 따로 뽑아 명세서 기입으로. --}}
+    <select wire:model="secondaryFilter" class="input-filter" title="{{ __('settlement.filter_secondary_ready_title') }}" data-secondary-filter>
+        <option value="">{{ __('settlement.filter_all_secondary') }}</option>
+        <option value="ready">{{ __('settlement.secondary.ready') }}</option>
+        <option value="waiting">{{ __('settlement.secondary.waiting') }}</option>
+        <option value="pending">{{ __('settlement.secondary.pending') }}</option>
+        <option value="closed">{{ __('settlement.secondary.closed') }}</option>
+    </select>
     {{-- 지급 게이트 (jin 2026-07-08) — 미수로 지급보류된 확정 정산만 --}}
     <button type="button" wire:click="toggleHeld"
             class="rounded border px-2.5 py-1.5 text-sm font-medium {{ $heldOnly ? 'border-red-300 bg-red-50 text-red-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
@@ -1879,6 +1893,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 if ($wire.search) p.set('q', $wire.search);
                 if ($wire.statusFilter) p.set('status', $wire.statusFilter);
                 if ($wire.heldOnly) p.set('held', '1');
+                if ($wire.secondaryFilter) p.set('secondary', $wire.secondaryFilter);
                 if ($wire.salesmanFilter) p.set('salesmanId', $wire.salesmanFilter);
                 if ($wire.monthFilter) p.set('month', $wire.monthFilter);
                 if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
@@ -1953,6 +1968,13 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             @endif
         </div>
+
+        {{-- 비용 대기 (jin 2026-10-06) — 일괄 대상이 아님을 숫자로 말한다. 0 이면 조용히. --}}
+        @if(($cp['waiting'] ?? 0) > 0)
+        <p class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800" data-close-waiting>
+            {{ __('settlement.batch.close_waiting', ['count' => $cp['waiting']]) }}
+        </p>
+        @endif
 
         {{-- 건너뛸 것 --}}
         @if(count($cp['skipped']) > 0)
@@ -2195,9 +2217,17 @@ new #[Layout('components.layouts.app')] class extends Component
                 };
                 $statusLabel = __('settlement.status.'.$s->settlement_status);
                 // 회의확장씬 #8 (2026-05-22) — 2차 정산 status 보강 라벨.
-                $secondaryLabel = in_array($s->secondary_status, ['pending', 'closed'], true) ? __('settlement.secondary.'.$s->secondary_status) : null;
-                $secondaryBadge = match($s->secondary_status) {
-                    'pending' => 'badge-amber',
+                // 2026-10-06 jin — 2차 대기를 「2차 가능」(지급 뒤 비용 기입됨, secondary_ready_at) / 「비용 대기」로 가른다.
+                $secondaryKey = match(true) {
+                    $s->secondary_status === 'pending' && $s->secondary_ready_at !== null => 'ready',
+                    $s->secondary_status === 'pending' => 'waiting',
+                    $s->secondary_status === 'closed' => 'closed',
+                    default => null,
+                };
+                $secondaryLabel = $secondaryKey ? __('settlement.secondary.'.$secondaryKey) : null;
+                $secondaryBadge = match($secondaryKey) {
+                    'ready'   => 'badge-green',
+                    'waiting' => 'badge-amber',
                     'closed'  => 'badge-gray',
                     default   => null,
                 };

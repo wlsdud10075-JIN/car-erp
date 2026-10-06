@@ -53,6 +53,8 @@ class SecondaryCloseWithUnpaidTest extends TestCase
         ]);
         $s->forceFill(['settlement_status' => 'paid', 'paid_at' => now()])->save();   // paid 전환 훅 → 스냅샷 + 2차 대기
         Settlement::$allowBatchPayout = false;
+        // 지급 뒤 비용(탁송비) 기입 → 「2차 가능」. 일괄 마감 대상은 이것만이다(2026-10-06 3번, 훅은 SecondaryReadyFilterTest 가 본다).
+        $v->fresh()->update(['cost_towing' => 150_000]);
 
         return [$v->fresh(), $s->fresh(), $sm];
     }
