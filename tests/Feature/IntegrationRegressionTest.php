@@ -29,6 +29,17 @@ class IntegrationRegressionTest extends TestCase
     {
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
+        // 🔀 2026-10-06 — 운영은 「새 정산이 이월을 흡수」하지 않는다(월배치 자동 조정 줄로 대체, jin).
+        //    case18~25 는 그 **옛 흡수 공식**(Σout − Σin − Σ청산 · 담당자 격리 · 재흡수 금지)을 못 박는 회귀라
+        //    스위치를 켜고 돈다 — 공식 자체는 `Salesman::unconsumed_carryover` 와 같아 지금도 청산 계산의 단일 출처다.
+        //    새 경로의 가드 = CarryoverAutoBatchLineTest.
+        Settlement::$absorbCarryoverOnCreate = true;
+    }
+
+    protected function tearDown(): void
+    {
+        Settlement::$absorbCarryoverOnCreate = false;
+        parent::tearDown();
     }
 
     private function makeAdmin(): User

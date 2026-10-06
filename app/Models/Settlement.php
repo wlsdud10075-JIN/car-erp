@@ -89,6 +89,12 @@ class Settlement extends Model
     public static bool $allowBatchPayout = false;
 
     /**
+     * 구 「새 정산이 미청산 이월을 흡수」 훅 스위치 — 2026-10-06 부터 기본 OFF(월배치 조정 줄이 대신한다).
+     * 옛 동작을 재현해야 하는 테스트·마이그 검증용으로만 켠다. 🚫 운영 코드에서 켜지 말 것(이중 지급).
+     */
+    public static bool $absorbCarryoverOnCreate = false;
+
+    /**
      * 큐 10 H3·H4 — 정산 saving 시 검증 + snapshot 캡처.
      * 큐 11-4 — settlement_status / paid_at 변경 audit_logs 기록.
      */
@@ -103,6 +109,13 @@ class Settlement extends Model
         //            - Σ(영업담당자 settlement.carryover_in_krw)  (자기 자신 제외)
         // 명시적으로 set 된 경우 (테스트·migrate 등) 우회.
         static::creating(function (Settlement $s) {
+            // 🔀 2026-10-06 (jin 「너 추천으로 하자」) — **새 정산이 이월을 흡수하지 않는다.** 미청산 이월은 월배치 제출 때
+            //    담당자별 조정 한 줄로 들어간다(`SettlementPayoutBatch::carryoverLinesFor` + 청산 기록). 둘 다 두면 두 번 지급이라 끈다.
+            //    구: 다음 새 정산이 흡수 — 새 차가 없으면 영영 미청산(ssancarerp 6명 −460,679 가 그 상태였다).
+            //    기존 행의 carryover_in_krw 는 역사라 그대로 두고 actual_payout 도 종전대로 더한다.
+            if (! self::$absorbCarryoverOnCreate) {
+                return;
+            }
             if ($s->carryover_in_krw !== null || ! $s->salesman_id) {
                 return;
             }

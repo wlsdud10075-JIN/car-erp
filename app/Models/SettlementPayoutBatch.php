@@ -216,6 +216,50 @@ class SettlementPayoutBatch extends Model
      *
      * @param  array<int, array{salesman_id:int, amount:int, reason:string, cancel_vehicle_ids?:array<int,int>|null}>  $adjustments
      */
+    /**
+     * 💸 **미청산 이월 → 이번 배치의 자동 조정 줄** (jin 2026-10-06 「너 추천으로 하자」).
+     *
+     * 담당자별 `Salesman::unconsumed_carryover`(= Σ마감 이월 − Σ흡수 − Σ청산)를 조정 한 줄로 가져온다.
+     * 제출 모달 미리보기와 `submitForMonth` 가 **같은 이 함수**를 부른다 — 갈리면 「모달엔 있는데 배치엔 없다」(§8 #44).
+     *
+     * - **+ 이월(담당자가 받을 돈)은 전액** — 이번 배치에 그 담당자 정산이 없어도 조정만 있는 행으로 들어간다.
+     * - **− 이월(회사가 돌려받을 돈)은 그 담당자의 이번 배치 지급액까지만** 차감하고, 넘치는 몫은 미청산으로 남겨
+     *   다음 배치에서 또 가져온다. 지급이 0 인 사람에게서 돈을 걷는 줄은 못 만든다(매입취소 손실도 같은 규칙).
+     * - 담당자 `payout_excluded`(지급 대상 아님)는 건너뛴다.
+     *
+     * @param  Collection<int, Settlement>  $settlements  이번 배치에 들어갈 정산(제출 전 미리 읽은 것)
+     * @return array<int, array{salesman_id:int, name:string, amount:int, unconsumed:int, partial:bool, reason:string}>
+     */
+    public static function carryoverLinesFor($settlements): array
+    {
+        $payoutBySalesman = $settlements->groupBy('salesman_id')->map(fn ($g) => (int) $g->sum(fn ($s) => $s->actual_payout));
+
+        $lines = [];
+        foreach (Salesman::where('payout_excluded', false)->orderBy('name')->get() as $sm) {
+            $unconsumed = (int) $sm->unconsumed_carryover;
+            if ($unconsumed === 0) {
+                continue;
+            }
+            $amount = $unconsumed > 0
+                ? $unconsumed
+                : -min(abs($unconsumed), max(0, (int) ($payoutBySalesman[$sm->id] ?? 0)));
+            if ($amount === 0) {
+                continue;   // 음수 이월인데 이번 달 지급이 없다 — 다음 배치로
+            }
+            $lines[] = [
+                'salesman_id' => (int) $sm->id,
+                'name' => (string) $sm->name,
+                'amount' => $amount,
+                'unconsumed' => $unconsumed,
+                'partial' => $amount !== $unconsumed,
+                'reason' => __('settlement.batch.carryover_reason', ['amount' => number_format(abs($unconsumed))])
+                    .($amount !== $unconsumed ? ' '.__('settlement.batch.carryover_partial', ['rest' => number_format(abs($unconsumed - $amount))]) : ''),
+            ];
+        }
+
+        return $lines;
+    }
+
     public static function submitForMonth(User $submitter, string $month, array $adjustments = []): self
     {
         if (! $submitter->canSubmitPayoutBatch()) {
@@ -256,6 +300,16 @@ class SettlementPayoutBatch extends Model
                     (string) $a['reason'],
                     $a['cancel_vehicle_ids'] ?? null,
                 );
+            }
+
+            // 💸 미청산 이월 자동 조정 줄 (jin 2026-10-06) — 제출 모달 미리보기와 **같은 함수**로 뽑는다.
+            foreach (self::carryoverLinesFor($settlements) as $line) {
+                $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason']);
+                CarryoverClearance::create([
+                    'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
+                    'amount_krw' => $line['amount'], 'direction' => $line['amount'] > 0 ? 'pay' : 'collect',
+                    'cleared_by' => $submitter->id, 'note' => '월배치 #'.$batch->id.' 자동 흡수',
+                ]);
             }
 
             return $batch;
@@ -370,6 +424,9 @@ class SettlementPayoutBatch extends Model
 
             // 멤버 정산 배치 해제 → 재배치 가능 (settlement_status=confirmed 유지)
             $this->settlements()->update(['payout_batch_id' => null]);
+            // 💸 이 배치가 가져갔던 미청산 이월을 되돌린다 — 안 되돌리면 반려된 배치가 돈을 「처리한 것」이 되어
+            //    다음 제출에서 그 이월이 안 나온다(조정 줄은 반려 배치의 역사로 남는다). (jin 2026-10-06)
+            CarryoverClearance::where('payout_batch_id', $this->id)->delete();
         });
 
         // 커밋 후 fire-and-forget — 제출자에게 반려 통보(사유 포함).
