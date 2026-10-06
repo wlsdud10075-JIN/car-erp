@@ -584,3 +584,11 @@ cherry-pick(.md 제외). 마이그 없음.
 ## 2026-09-24 — ssancarerp 서버 이전 (8GB → 4GB, 배포 아님·인프라)
 
 구 인스턴스(8GB, ip-172-26-0-226) → 새 `New_Ssancar_Erp`(4GB/2vCPU/80GB, ip-172-26-11-155). **고정 IP `54.116.7.83` 재할당**이라 도메인·DNS·NAS·`DEPLOY_HOST`·NICE 화이트리스트 무변경. 다운타임 ≈6분. WireGuard(`wg-carmodoo`)·Tailscale(`ssancarerp-server-new`)·letsencrypt·supervisor 2·cron 3·백업 스크립트 3 이식. 구 Django(`ssancar-erp.service`)는 새 서버에 없음(`/provide/` 잔여 경로 → 404, nice-lookup 은 PHP). GH `deploy-ssancar` 재실행 success(sha `7bf9279`). 계획·정정·실행 = `ssancarerp-server-migration-runbook.md` §2-B · `ssancarerp-server-migration-commands.md` 「실행 후기」. 구 인스턴스는 점검모드 정지 → **10/1 이후 삭제**.
+
+## 2026-10-06 (2차) — 정산씬 개편 9커밋 배포 `3405967d` (3사 동시)
+
+- **내용**: 기본급만 줄(`a09a0e8a`) · 귀속월 드롭박스(`c33c795d`) · 미수 있어도 2차 마감 + 마감 차량 미수 남은 동안 신규 잔금 열림(`985bc06a`) · 「2차 가능/비용 대기」 + 매입취소 정산 단계(`575ef506`) · 2차 차액 분해·엑셀(`05bd7a9c`) · 목록 「상태/2차 정산/작업」 3칸(`f55934c0`) · 메모·문구(`573ff9b2`) · **미청산 이월 → 월배치 자동 조정 줄**(`1c574257`, 후속 `0d2d4e3e`). master cherry-pick 9개, dev 와의 앱 코드 잔차 = 미승인 `NotifySend.php` 1건.
+- **검증**: 로컬 전체 3,190 통과·실패 7 = GD. deploy 런 `37434431147` 잡 5개 success(tests/ci · mysql-check · deploy · deploy-ssancar · deploy-karaba). 3사 sha `3405967d` 일치 · 마이그 3개 Ran · maintenance OFF · login 200 ×3(외부 curl; ssancarerp 서버 내부 자기 도메인 curl 은 000 = 루프백) · 배포 후 ERROR 0.
+- **배포 뒤 작업**: `settlements:backfill-secondary-ready --apply` — ssancarerp 431 → **2차 가능 46 · 비용 대기 385**(재실행 0건) · heymanerp 61 → 0 · karabaerp 0 → 생략.
+- **운영 수동(같은 날, 승인·감사로그)**: ssancarerp 정산 #6628(14더3753)·#6676(383오6259) 귀속월 07→09 · 66더1784 매입취소 손실 반영 도장(9/10 배치 #2 승인시각).
+- **다음 배치(10/10)에서 볼 것**: 제출 모달 「미청산 이월 자동 반영」 줄(ssancarerp 6명, −460,679 중 − 는 그 달 지급액까지만). 실무자에게 **이월 수동 조정 중복 금지** 안내.
