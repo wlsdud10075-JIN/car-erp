@@ -164,7 +164,12 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
 - 인증 = 기존 board-read HMAC(§1) 그대로. **스코프 없음**(salesman_email 불필요) — 응답이 id 의 존재 여부뿐이라 새는 정보가 없다.
   🚫 차량번호·금액·바이어를 싣지 말 것 — 싣는 순간 §2 본인격리 대상이 된다.
 - 요청 = `ids` 콤마 구분 정수, **한 번에 500개까지**(초과·유효 id 0개 = 422). 중복·비정수는 무시.
-- 응답 = `{ "exists": [1,2], "missing": [3] }` (오름차순). **소프트 삭제된 차는 `missing`** — board 가 가리키는 행이 산 행인지가 질문이다.
+- 응답 = `{ "exists": [1,2], "missing": [3], "deleted": [4] }` (오름차순). 🔀 **2026-10-06 (jin) — 소프트 삭제된 차는 `deleted`** 로 따로 온다.
+  09-28 엔 「산 행인가」가 질문이라 `missing` 으로 쳤는데, ERP 에서 board 차량을 지울 때마다 그 차가 **영원히** 아침점검 빨간 줄에 남았다
+  (10-06 heymanerp 5대 = 전부 ERP 에 생긴 뒤 ERP 에서 지운 차). `missing` = **전송 누락(ERP 에 아예 없음)** 만.
+  ⇒ board 감사 명령은 `deleted` 를 `missing_in_erp` 에 **넣지 않고** `counts.deleted_in_erp` 로 따로 센다(목록은 `deleted_in_erp:[…]` 선택).
+  ERP 아침점검은 `deleted_in_erp` 를 실패가 아니라 「(ERP 에서 지운 차 N건 — 참고)」로 붙인다. ERP 쪽이 먼저 배포돼도 board 는 모르는 키를
+  무시하고 `missing` 에서 빠지므로 **하위호환**(배포 순서 무관).
 - 감사 명령이 매일 07:40 에 부르고, 결과 JSON 을 ERP 08:00 아침 점검(`BOARD_AUDIT_JSON`)이 읽어 「board→ERP 전송·정합성」 2행을 붙인다.
   ⚠️ board 는 **두 박스**에 있다(heymanboard `/var/www/board` · ssancarboard `/var/www/board-ssancar`, board 세션 09-28 정정) — 각 ERP 는 **같은 박스의** board 파일을 읽는다.
   ⚠️ 정체 시계는 `updated_at` 이라 won 행을 다른 이유로 저장하면 60분이 다시 시작한다(엄밀히 하려면 `board_audit_logs` 의 won 전이 시각 — 후속, jin 결정).
