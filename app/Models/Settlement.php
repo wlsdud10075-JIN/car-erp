@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
 use App\Support\SettlementCkBatch;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -359,13 +361,17 @@ class Settlement extends Model
     }
 
     /**
-     * 귀속월 한 칸 이동 (jin 2026-10-06) — 직전 달(-1) 또는 다음 달(+1) 로만.
+     * 귀속월 한 칸 이동 (jin 2026-10-06 1차) — 직전 달(-1) 또는 다음 달(+1).
+     *
+     * 🔀 **같은 날 2차 — 화면은 드롭박스(`moveAttributedMonthTo`)로 바뀌었다.** 「두 달 이상은 말이 안 된다」던
+     *    1차 결정은 실사례(ssancarerp 14더3753 07→09, 08 마감)로 뒤집혔다 — 한 칸 이동은 마감된 달을 건너뛸 수 없다.
+     *    이 메서드는 **같은 가드를 타는 얇은 래퍼**로만 남는다(돈 흐름 E2E `SettlementAttributedMonthShiftMoneyTest` 가 부른다).
      *
      * 실무: 9월 판매 건의 자투리 수수료를 10월 초에 완납 처리하면 귀속월이 10월(= 11/10 지급)로 잡힌다.
-     * 그걸 정산처리 드로어에서 9월(= 10/10 지급)로 당긴다. 반대 방향도 허용. 두 달 이상은 1차 정산 뒤라 말이 안 된다(jin).
+     * 그걸 정산처리 드로어에서 9월(= 10/10 지급)로 당긴다. 반대 방향도 허용.
      * 막는 것: 지급됨 · 배치에 묶임 · 대상 달이 마감됨(지급 승인 배치 존재) · 대상 달 배치가 제출돼 승인 대기 중
-     *   (옮기면 그 배치에 안 들어가 지급에서 빠진다 — 반려 뒤 다시).
-     * raw update + 감사로그 직접 기록 — Settlement::saving 가드·캐시 훅과 무관한 컬럼이고 변경 이력은 남겨야 한다.
+     *   (옮기면 그 배치에 안 들어가 지급에서 빠진다 — 반려 뒤 다시) · 창 밖.
+     * 감사로그 직접 기록 — Settlement::saving 가드·캐시 훅과 무관한 컬럼이고 변경 이력은 남겨야 한다.
      *
      * @return string 새 귀속월 'Y-m'
      */
@@ -374,6 +380,62 @@ class Settlement extends Model
         if (! in_array($delta, [-1, 1], true)) {
             throw new \InvalidArgumentException('delta must be -1 or 1');
         }
+        if (! $this->attributed_month) {
+            throw new \DomainException(__('settlement.shift.blocked_no_month'));
+        }
+
+        return $this->moveAttributedMonthTo($this->attributed_month->copy()->startOfMonth()->addMonths($delta)->format('Y-m'));
+    }
+
+    /** 귀속월 선택지의 창 — 오늘 기준 몇 달 뒤/앞까지 고를 수 있나 (jin 2026-10-06 「월을 선택할 수 있게」). */
+    public const MOVABLE_MONTHS_BACK = 6;
+
+    public const MOVABLE_MONTHS_FORWARD = 1;
+
+    /**
+     * 📅 **옮길 수 있는 귀속월 목록** — 드로어 드롭박스의 선택지이자 `moveAttributedMonthTo()` 의 창 가드.
+     *
+     * 오늘 기준 뒤로 6개월·앞으로 1개월 창에서 **지급 승인된 달(마감)과 배치가 제출된 달(승인 대기)을 뺀다.**
+     * 지금 귀속월도 뺀다(같은 달로 옮길 이유가 없다). 창을 두는 이유 = 오타 한 번에 2030년으로 보내지 않기 위해.
+     *
+     * 🔑 「한 칸」 규칙(10-06 1차)을 버린 이유 — 한 칸 이동은 **목적지마다** 마감을 보므로 승인된 달을 **건너뛸 수 없다.**
+     *    실사례 ssancarerp 14더3753: 07 귀속 → 09(10/10 지급)로 가야 하는데 08 이 마감이라 두 번 눌러도 막혔다.
+     *    목적지 하나만 검사하면 그 달을 넘어간다.
+     *
+     * @return array<string, string> ['2026-09' => '2026-09-10', …]  (값 = 그 귀속월의 지급일)
+     */
+    public static function movableMonths(?CarbonInterface $today = null, ?string $exceptYm = null): array
+    {
+        $today = ($today ?? now())->copy()->startOfMonth();
+        $out = [];
+        for ($i = -self::MOVABLE_MONTHS_BACK; $i <= self::MOVABLE_MONTHS_FORWARD; $i++) {
+            $m = $today->copy()->addMonths($i);
+            $ym = $m->format('Y-m');
+            if ($ym === $exceptYm) {
+                continue;
+            }
+            if (SettlementPayoutBatch::isMonthClosed($ym)) {
+                continue;
+            }
+            if (SettlementPayoutBatch::where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
+                continue;
+            }
+            $out[$ym] = $m->copy()->addMonthNoOverflow()->format('Y-m').'-10';
+        }
+
+        return $out;
+    }
+
+    /**
+     * 📅 **귀속월을 고른 달로 옮긴다** — 드로어 「귀속월 선택 → [이동]」의 단일 출처 (jin 2026-10-06 2차).
+     *
+     * 가드는 1차와 같다(지급완료 · 배치 소속 · 귀속월 없음 · **목적지가** 마감/제출중) + 창(`movableMonths`).
+     * 목적지만 검사하므로 사이에 마감된 달이 있어도 넘어간다(07 → 09, 08 마감). 감사로그 한 줄(이전→이후).
+     *
+     * @return string 옮긴 귀속월 'Y-m'
+     */
+    public function moveAttributedMonthTo(string $ym): string
+    {
         if ($this->settlement_status === 'paid' || $this->paid_at) {
             throw new \DomainException(__('settlement.shift.blocked_paid'));
         }
@@ -383,14 +445,24 @@ class Settlement extends Model
         if (! $this->attributed_month) {
             throw new \DomainException(__('settlement.shift.blocked_no_month'));
         }
+        if (! preg_match('/^\d{4}-\d{2}$/', $ym)) {
+            throw new \InvalidArgumentException('month must be Y-m');
+        }
         $current = $this->attributed_month->copy()->startOfMonth();
-        $target = $current->copy()->addMonths($delta);
-        $ym = $target->format('Y-m');
+        $target = Carbon::createFromFormat('Y-m-d', $ym.'-01')->startOfMonth();
+        if ($target->equalTo($current)) {
+            throw new \DomainException(__('settlement.shift.blocked_same'));
+        }
         if (SettlementPayoutBatch::isMonthClosed($ym)) {
             throw new \DomainException(__('settlement.shift.blocked_closed', ['month' => $ym]));
         }
         if (SettlementPayoutBatch::where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
             throw new \DomainException(__('settlement.shift.blocked_pending_batch', ['month' => $ym]));
+        }
+        if (! array_key_exists($ym, self::movableMonths(null, $current->format('Y-m')))) {
+            throw new \DomainException(__('settlement.shift.blocked_out_of_window', [
+                'back' => self::MOVABLE_MONTHS_BACK, 'forward' => self::MOVABLE_MONTHS_FORWARD,
+            ]));
         }
 
         $old = $current->format('Y-m-d');
