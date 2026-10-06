@@ -909,6 +909,26 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->fillKarabaRatio();
     }
 
+    /**
+     * 귀속월 한 칸 이동 (jin 2026-10-06) — 드로어 [◀ 직전 달] / [다음 달 ▶]. 권한 = 정산 확정 범위.
+     * 판정·기록은 Settlement::shiftAttributedMonth 단일 출처(막히면 DomainException → 토스트).
+     */
+    public function shiftAttributedMonth(int $delta): void
+    {
+        abort_unless(auth()->user()?->canConfirmFinance(), 403, __('settlement.gate.forbidden'));
+        $s = Settlement::findOrFail($this->editingId);
+        try {
+            $ym = $s->shiftAttributedMonth($delta);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+        unset($this->availableMonths);
+        $pay = \Carbon\Carbon::parse($ym.'-01')->addMonthNoOverflow()->format('Y-m').'-10';
+        $this->dispatch('notify', message: __('settlement.shift.done', ['month' => $ym, 'pay' => $pay]), type: 'success');
+    }
+
     public function close(): void
     {
         $this->resetValidation();
@@ -3018,6 +3038,24 @@ new #[Layout('components.layouts.app')] class extends Component
             @endif
             @if($existing?->paid_at)
             <p class="mt-0.5 text-xs text-gray-400">{{ __('settlement.paid_at', ['datetime' => $existing->paid_at->format('Y-m-d H:i')]) }}</p>
+            @endif
+            {{-- 귀속월 한 칸 이동 (jin 2026-10-06) — 완납이 다음 달 초로 밀려 지급월이 한 달 늦어진 건을 당긴다(반대도). 판정은 모델. --}}
+            @if($existing?->attributed_month && auth()->user()?->canConfirmFinance())
+            @php
+                $shiftYm = $existing->attributed_month->format('Y-m');
+                $shiftPay = $existing->attributed_month->copy()->addMonthNoOverflow()->format('Y-m').'-10';
+                $shiftLocked = $existing->settlement_status === 'paid' || $existing->paid_at || $existing->payout_batch_id;
+            @endphp
+            <div class="mt-2 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-gray-600">{{ __('settlement.shift.label') }} <strong class="text-gray-800">{{ $shiftYm }}</strong> → {{ $shiftPay }} {{ __('settlement.filter_month_pay') }}</span>
+                    <button type="button" wire:click="shiftAttributedMonth(-1)" wire:loading.attr="disabled" wire:target="shiftAttributedMonth" @disabled($shiftLocked)
+                            class="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">◀ {{ __('settlement.shift.prev') }}</button>
+                    <button type="button" wire:click="shiftAttributedMonth(1)" wire:loading.attr="disabled" wire:target="shiftAttributedMonth" @disabled($shiftLocked)
+                            class="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50">{{ __('settlement.shift.next') }} ▶</button>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-400">{{ $shiftLocked ? __('settlement.shift.locked_hint') : __('settlement.shift.hint') }}</p>
+            </div>
             @endif
             @endif
         </div>
