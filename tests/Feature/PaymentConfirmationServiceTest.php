@@ -162,6 +162,10 @@ class PaymentConfirmationServiceTest extends TestCase
     public function test_confirm_payment_blocks_closed_secondary_settlement(): void
     {
         $c = $this->makeContext();
+        // 🔀 2026-10-06 — 마감 차량은 **미수가 0 일 때만** 잠긴다(미수가 남으면 받을 돈을 기록하도록 열린다).
+        //    그래서 나머지 50,000,000 을 먼저 확정해 완납으로 만든 뒤, 그 위에 또 들어온 돈의 확정이 막히는지 본다.
+        $c['vehicle']->finalPayments()->create(['amount' => 50_000_000, 'type' => 'balance', 'confirmed_at' => now()]);
+        $c['vehicle']->fresh()->refreshCaches();
         $payment = FinalPayment::create([
             'vehicle_id' => $c['vehicle']->id,
             'amount' => 10_000_000,

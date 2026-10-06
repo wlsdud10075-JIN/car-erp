@@ -178,6 +178,8 @@ return [
         'settlement_amount' => 'Settlement',
         'actual_payout' => 'Actual payout',
         'exchange_diff' => 'FX diff',
+        'secondary' => '2nd close',
+        'actions' => 'Actions',
         'margin_rate' => 'Margin rate',
         'status' => 'Status',
     ],

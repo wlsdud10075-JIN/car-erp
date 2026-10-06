@@ -1126,8 +1126,11 @@ class WorkflowGapTest extends TestCase
     public function test_22a2_fp_creating_blocks_new_row_after_secondary_closed(): void
     {
         // 락 경계는 2차 마감(closed) 하나 — 마감 후엔 흡수할 다음 단계가 없어 신규 잔금 차단.
+        // 🔀 2026-10-06 — 단, **미수가 0 일 때만** 잠긴다(미수가 남으면 받을 돈을 기록하도록 열린다). 완납으로 만들고 본다.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['sale_price' => 8000000]);
+        $v->finalPayments()->create(['amount' => 8000000, 'type' => 'balance', 'confirmed_at' => now()]);   // auth 없음 → 훅 우회
+        $v->fresh()->refreshCaches();
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',
@@ -1201,8 +1204,11 @@ class WorkflowGapTest extends TestCase
         // 잠긴 차량에 잔금 N+ 추가 후 save() → DomainException → toast 변환 (화이트스크린 X).
         //   락 트리거는 2차 마감(closed) — 정산 락 개편 통일 (jin 2026-08-26).
         //   ⚠️ 이 테스트의 목적은 «예외가 토스트로 바뀐다»지 «무엇이 막히나»가 아니다.
+        //   🔀 2026-10-06 — 마감 차량은 미수 0 일 때만 잠기므로 완납으로 만들어 둔다.
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $v = $this->makeVehicle(['sale_price' => 8_000_000]);
+        $v->finalPayments()->create(['amount' => 8_000_000, 'type' => 'balance', 'confirmed_at' => now()]);   // auth 없음 → 훅 우회
+        $v->fresh()->refreshCaches();
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',
@@ -1402,8 +1408,11 @@ class WorkflowGapTest extends TestCase
         // FP::creating 훅 (22-A-2) — 2차 마감(closed) 후 모든 type 의 신규 FP 차단.
         //   정산 락 개편 통일 (jin 2026-08-26) — 구 트리거 'paid' 는 계약금·중도금 등 4항목까지
         //   막아 운임비 후수금 데드락을 만들었다. 락 경계는 closed 하나.
+        //   🔀 2026-10-06 — 마감 차량은 미수 0 일 때만 잠기므로 완납으로 만들어 둔다.
         $admin = User::factory()->create(['permission' => 'admin']);
         $v = $this->makeVehicle(['sale_price' => 8_000_000]);
+        $v->finalPayments()->create(['amount' => 8_000_000, 'type' => 'balance', 'confirmed_at' => now()]);   // auth 없음 → 훅 우회
+        $v->fresh()->refreshCaches();
         Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio',

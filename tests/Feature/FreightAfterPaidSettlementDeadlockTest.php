@@ -108,10 +108,12 @@ class FreightAfterPaidSettlementDeadlockTest extends TestCase
         $this->assertNotSame(0, (int) $settlement->fresh()->carryover_out_krw, '환율 차이가 이월로 안 넘어감');
     }
 
-    public function test_unconfirmed_row_alone_does_not_open_the_second_door(): void
+    /**
+     * 미수 분자는 confirmed 행만 센다 — 미확정 잔금은 미수를 못 줄인다. 그 경계를 박제한다.
+     * 🔀 2026-10-06 — 「미완납이면 2차 마감 차단」은 폐기됐다(jin 「미수 있어도 마감은 하자」). 마감은 되고, 미수는 남는다.
+     */
+    public function test_unconfirmed_row_does_not_reduce_the_receivable(): void
     {
-        // 미수 분자는 confirmed 행만 센다 — creating 만 풀고 재무확정 가드를 안 풀면
-        //   "잔금은 들어갔는데 마감은 여전히 막힌" 반쪽 수정이 된다. 그 경계를 박제한다.
         $v = $this->stuckVehicle();
         $finance = User::factory()->create(['role' => '재무']);
         $this->actingAs($finance);
@@ -127,21 +129,35 @@ class FreightAfterPaidSettlementDeadlockTest extends TestCase
         $settlement = $v->settlements()->first();
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $settlement->id);
 
-        $this->assertSame('pending', $settlement->fresh()->secondary_status, '미완납인데 2차가 마감됨');
+        $this->assertSame('closed', $settlement->fresh()->secondary_status, '2026-10-06 부터 미수가 남아도 마감된다');
+        $this->assertSame(1528, (int) $v->fresh()->sale_unpaid_amount, '마감이 미수를 지우면 안 된다 — 받을 돈이다');
     }
 
-    public function test_after_secondary_close_the_door_shuts_again(): void
+    /**
+     * 🔀 2026-10-06 — 마감 뒤에도 **미수가 남아 있는 동안은** 잔금이 열려 있다(그 돈을 기록할 길). 받아서 미수가 0 이 되면 닫힌다.
+     *    구: 마감 즉시 차단(예외 뱃지 건만 유예).
+     */
+    public function test_after_secondary_close_the_door_shuts_once_the_receivable_is_cleared(): void
     {
         $v = $this->stuckVehicle();
         $v->settlements()->first()->update(['secondary_status' => 'closed']);
-
         $this->actingAs(User::factory()->create(['role' => '재무']));
+
+        $this->assertFalse($v->fresh()->ledgerLockedForNewPayments(), '미수 1,528 이 남아 있으면 열려 있어야 한다');
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'amount' => 1528, 'type' => 'balance',
+            'payment_date' => '2026-08-26', 'exchange_rate' => 1729, 'confirmed_at' => now(),
+        ]);
+        $v = $v->fresh();
+        $v->refreshCaches();
+        $this->assertSame(0, (int) $v->fresh()->sale_unpaid_amount);
+        $this->assertTrue($v->fresh()->ledgerLockedForNewPayments(), '미수 0 이면 다시 잠긴다');
 
         $this->expectException(\DomainException::class);
         $this->expectExceptionMessage('2차 정산 마감');
         FinalPayment::create([
-            'vehicle_id' => $v->id, 'amount' => 1528, 'type' => 'balance',
-            'payment_date' => '2026-08-26', 'confirmed_at' => now(),
+            'vehicle_id' => $v->id, 'amount' => 1, 'type' => 'balance',
+            'payment_date' => '2026-08-27', 'confirmed_at' => now(),
         ]);
     }
 }
