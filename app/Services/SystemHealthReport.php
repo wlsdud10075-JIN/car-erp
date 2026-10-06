@@ -151,11 +151,15 @@ class SystemHealthReport
             }
             $s = $n('stalled');
             $m = $n('missing_in_erp');
+            // 2026-10-06 — ERP 에서 지워진 차(deleted_in_erp)는 실패가 아니라 참고 건수. board 가 아직 안 보내면 0.
+            $d = $n('deleted_in_erp');
+            $ok = $s === 0 && $m === 0;
+            $detail = $ok ? __('health.none') : __('health.board_stalled', ['s' => $s, 'm' => $m]);
+            if ($d > 0) {
+                $detail .= ' '.__('health.board_deleted_note', ['d' => $d]);
+            }
 
-            return [
-                'ok' => $s === 0 && $m === 0,
-                'detail' => ($s === 0 && $m === 0) ? __('health.none') : __('health.board_stalled', ['s' => $s, 'm' => $m]),
-            ];
+            return ['ok' => $ok, 'detail' => $detail];
         }
 
         $a = $n('synced_without_erp_id');

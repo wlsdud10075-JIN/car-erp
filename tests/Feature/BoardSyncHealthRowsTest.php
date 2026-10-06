@@ -83,6 +83,16 @@ class BoardSyncHealthRowsTest extends TestCase
         $this->assertTrue($rows['board_sync_integrity']['ok']);
     }
 
+    /** 🔀 2026-10-06 — ERP 에서 지운 차(deleted_in_erp)는 실패가 아니다. 참고 건수만 붙고 행은 정상. */
+    public function test_vehicles_deleted_in_erp_are_an_info_count_not_a_failure(): void
+    {
+        $this->writeAudit(['stalled' => 0, 'synced_without_erp_id' => 0, 'erp_id_without_synced' => 0, 'missing_in_erp' => 0, 'deleted_in_erp' => 5]);
+        $row = collect((new SystemHealthReport)->rows())->firstWhere('key', 'board_sync_stalled');
+
+        $this->assertTrue($row['ok'], 'ERP 에서 지운 차는 전송 실패가 아니다');
+        $this->assertStringContainsString('5', $row['detail']);
+    }
+
     public function test_counts_are_copied_not_judged(): void
     {
         $this->writeAudit(['stalled' => 2, 'synced_without_erp_id' => 1, 'erp_id_without_synced' => 3, 'missing_in_erp' => 1]);
