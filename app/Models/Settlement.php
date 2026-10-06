@@ -94,6 +94,9 @@ class Settlement extends Model
      */
     protected static function booted(): void
     {
+        // 2차 차액 분해 메모는 저장되면 낡는다(마감·이월 박제 뒤 같은 인스턴스를 다시 읽는 closeOne 경로).
+        static::saved(fn (Settlement $s) => $s->forgetSecondaryBreakdownMemo());
+
         // 새회의 #8 보강 (2026-05-23) — 신규 정산 creating 시 영업담당자 미적용 이월 흡수.
         // 사용자 정책: 영업담당자별 이월 / 2차 closed 시점 트리거 / 음수 이월 허용 (차감).
         // unconsumed = Σ(영업담당자 closed settlement.carryover_out_krw)
@@ -396,7 +399,28 @@ class Settlement extends Model
      *
      * @return array{base:int, fx:int|null, cost:int|null, other:int|null, total:int, frozen:bool}|null
      */
+    /** 요청 안 인스턴스 메모 — 목록은 행마다(행 + 담당자 카드) 두 번 부르고 화면이 wire:poll.30s 다(§8 #96-C). saved 때 비운다. */
+    private ?array $secondaryBreakdownMemo = null;
+
+    private bool $secondaryBreakdownMemoSet = false;
+
     public function secondaryBreakdown(): ?array
+    {
+        if (! $this->secondaryBreakdownMemoSet) {
+            $this->secondaryBreakdownMemo = $this->computeSecondaryBreakdown();
+            $this->secondaryBreakdownMemoSet = true;
+        }
+
+        return $this->secondaryBreakdownMemo;
+    }
+
+    public function forgetSecondaryBreakdownMemo(): void
+    {
+        $this->secondaryBreakdownMemo = null;
+        $this->secondaryBreakdownMemoSet = false;
+    }
+
+    private function computeSecondaryBreakdown(): ?array
     {
         $snap = $this->confirmed_snapshot;
         if (! is_array($snap) || ! array_key_exists('actual_payout', $snap)) {
