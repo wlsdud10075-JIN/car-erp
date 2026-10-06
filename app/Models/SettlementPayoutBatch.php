@@ -423,19 +423,21 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 💰 **이 배치에 이름이 올라온 사내직원들의 기본급 합** (jin 2026-09-18).
+     * 💰 **이 배치 사람들 + 정산이 없어도 월급이 나가는 직원의 기본급 합** (jin 2026-09-18 → 2026-10-06 확대).
      *
      * 화면의 「+ 기본급 합계 = 이달 송금 예상」이 이 값을 쓴다 — 통장에서 나갈 돈을 한 번에 보려는 것이다.
      *
      * 🚫 **배치 총액에 더하지 않는다** — `total_payout` 은 정산만이고, 회사이익
      *    (`총마진 − 지급 − 발송비`)도 그대로다. 급여를 섞으면 그 지표의 뜻이 바뀐다(§8 #72).
-     * ⚠️ **그 달에 정산 건이 없는 직원은 안 들어간다** — 배치에 이름이 없기 때문이다.
-     *    「전 직원 급여 합계」가 아니라 **이 배치 사람들의** 기본급 합이다.
+     * 🔀 **10-06 (jin) — 그 달에 정산 건이 없는 사내직원도 들어간다.** 구: 「배치에 이름이 있는 사람만」이라
+     *    정산 0건인 직원의 월급이 송금 예상에서 조용히 빠졌다. 신: 배치 사람들(정산·조정) ∪
+     *    `Salesman::salariedForBatch()`(재직·지급대상·기본급>0). 두 집합을 **id 로** 합쳐 한 번만 센다.
      * 🔑 조정만 있는 사람도 배치의 일원이라 함께 센다(승인 화면이 그렇게 그린다).
      *
      * @param  Collection<int, Settlement>|null  $settlements  이미 읽어둔 정산(재조회 방지)
+     * @param  Collection<int, Salesman>|null  $salaryOnly  이미 구한 「기본급만」 명부(재조회 방지 — 화면이 줄도 그린다)
      */
-    public function baseSalaryTotal($settlements = null): int
+    public function baseSalaryTotal($settlements = null, $salaryOnly = null): int
     {
         $settlements ??= $this->relationLoaded('settlements')
             ? $this->settlements
@@ -445,11 +447,45 @@ class SettlementPayoutBatch extends Model
             ? $this->adjustments
             : $this->adjustments()->with('salesman')->get();
 
-        return (int) $settlements->pluck('salesman')
+        $inBatch = $settlements->pluck('salesman')
             ->merge($adjustments->pluck('salesman'))
             ->filter()
-            ->unique('id')
+            ->unique('id');
+
+        return (int) $inBatch
+            ->merge($salaryOnly ?? $this->salaryOnlyPeople($settlements, $adjustments))
             ->sum(fn (Salesman $sm) => (int) ($sm->base_salary_krw ?? 0));
+    }
+
+    /**
+     * 💴 **정산도 조정도 없는데 이달 월급은 나가는 직원** (jin 2026-10-06
+     * *「정산이 0명인 사람은 월급만 나올 수 있게 변경이 되어야 해」*).
+     *
+     * 월배치 드릴다운·승인 breakdown 이 이 목록으로 「기본급만」 줄을 그리고, `baseSalaryTotal` 이 같은
+     * 목록을 합한다 — **세 곳이 같은 메서드를 부르므로** 줄의 합과 합계가 어긋나지 않는다.
+     * 대상 조건은 `Salesman::salariedForBatch()` 한 곳. 배치에 이미 있는 사람은 **id 로** 뺀다
+     * (이름 키로 빼면 동명이인이 사라진다).
+     *
+     * ⚠️ **지금의 명부다** — 옛 배치를 오늘 열면 그 뒤 입사한 직원도 보인다. `base_salary_krw` 자체가
+     *    박제 없이 실시간으로 읽히므로(수정하면 과거 화면도 바뀐다) 같은 결로 둔다.
+     *
+     * @param  Collection<int, Settlement>  $settlements
+     * @param  Collection<int, SettlementPayoutAdjustment>  $adjustments
+     * @return Collection<int, Salesman>
+     */
+    public function salaryOnlyPeople($settlements, $adjustments): Collection
+    {
+        $ids = $settlements->pluck('salesman_id')
+            ->merge($adjustments->pluck('salesman_id'))
+            ->filter()
+            ->unique()
+            ->values();
+
+        return Salesman::query()
+            ->salariedForBatch()
+            ->whereNotIn('id', $ids)
+            ->orderBy('name')
+            ->get();
     }
 
     public function notifyPayoutRequest(): void

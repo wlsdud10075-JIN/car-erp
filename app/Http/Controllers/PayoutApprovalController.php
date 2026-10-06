@@ -169,11 +169,13 @@ class PayoutApprovalController extends Controller
     private function breakdown(SettlementPayoutBatch $batch): array
     {
         $blank = ['count' => 0, 'payout' => 0, 'adjust' => 0, 'net' => 0, 'vehicles' => [],
-            'settlements' => [], 'base_salary' => 0, 'deposit' => null, 'margin_rate' => null, 'take_home' => 0];
+            'settlements' => [], 'base_salary' => 0, 'deposit' => null, 'margin_rate' => null, 'take_home' => 0,
+            'salary_only' => false];
         $rows = [];
 
         // 💡 잔금·회수이력까지 얹는다 — `actual_payout`·`margin_rate` 가 그것까지 타고 내려간다.
-        foreach ($batch->settlements()->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get() as $s) {
+        $settlements = $batch->settlements()->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get();
+        foreach ($settlements as $s) {
             $name = $s->salesman?->name ?? __('payout_batch.no_salesman');
             $rows[$name] ??= $blank;
             $amount = (int) $s->actual_payout;
@@ -193,7 +195,8 @@ class PayoutApprovalController extends Controller
             ];
         }
 
-        foreach ($batch->adjustments()->with('salesman')->get() as $adj) {
+        $adjustments = $batch->adjustments()->with('salesman')->get();
+        foreach ($adjustments as $adj) {
             $name = $adj->salesman?->name ?? __('payout_batch.no_salesman');
             $rows[$name] ??= $blank;
             $rows[$name]['adjust'] += (int) $adj->amount;
@@ -202,6 +205,18 @@ class PayoutApprovalController extends Controller
                 $rows[$name]['base_salary'] = (int) ($adj->salesman?->base_salary_krw ?? 0);
                 $rows[$name]['deposit'] ??= $adj->salesman?->deposit_krw;
             }
+        }
+
+        // 💴 정산도 조정도 없는 사내직원 — 「기본급만」 행 (jin 2026-10-06). 월배치 화면과 **같은 명부**
+        //    (`salaryOnlyPeople`)라 두 화면의 사람 수가 같고, `profitStats()['base_salary']` 와도 닫힌다.
+        //    🚫 지급 총액엔 안 들어간다 — net 0 이라 아래 정렬에서 맨 뒤로 간다.
+        foreach ($batch->salaryOnlyPeople($settlements, $adjustments) as $person) {
+            if (isset($rows[$person->name])) {
+                continue;   // 동명이인이 배치에 있다 — 이름 키 행을 덮어쓰지 않는다(합계는 id 기준이라 이미 맞다)
+            }
+            $rows[$person->name] = $blank;
+            $rows[$person->name]['base_salary'] = (int) $person->base_salary_krw;
+            $rows[$person->name]['salary_only'] = true;
         }
 
         foreach ($rows as $name => $row) {

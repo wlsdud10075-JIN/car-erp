@@ -49,7 +49,8 @@ return [
             'deposit' => 'Deposit held',
             'base_salary_total' => 'Base salary total',
             'expected_transfer' => 'Expected transfer this month',
-            'expected_hint' => 'Payout total plus the base salary of every employee named in this batch. It is shown so the whole outgoing amount can be seen at once, and never enters approval or company profit.',
+            'expected_hint' => 'Payout total plus employee base salaries (people in this batch, plus active salaried employees with no settlement this month). It is shown so the whole outgoing amount can be seen at once, and never enters approval or company profit.',
+            'salary_only' => 'No settlement · base salary only',
         ],
     ],
 ];

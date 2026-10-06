@@ -169,7 +169,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                             목록 렌더가 배치 수만큼 곱해져 몇 초가 된다(§8 #96-C). --}}
                     @php
                         $batchRate = Settlement::marginRateOf($b->settlements);
-                        $baseTotal = $b->baseSalaryTotal($b->settlements);
+                        // 💴 정산·조정이 없어도 이달 월급이 나가는 직원 (jin 2026-10-06) — 아래에 「기본급만」 줄로
+                        //    그리고 합계에도 넣는다. 한 번 구해 둘 다에 넘긴다(쿼리 1회).
+                        $salaryOnly = $b->salaryOnlyPeople($b->settlements, $b->adjustments);
+                        $baseTotal = $b->baseSalaryTotal($b->settlements, $salaryOnly);
                     @endphp
                     <div class="rounded-md bg-gray-50 px-2.5 py-2">
                         <div class="flex items-center justify-between text-[11px]">
@@ -193,7 +196,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $adjSum = (int) ($adjBySalesman[$name] ?? 0);
                         $netSum = $payoutSum + $adjSum;
                         $personRate = Settlement::marginRateOf($group);
-                        // 💰 기본급·예치금은 **연결된 담당자**에 붙는다. 없는 사람은 줄이 안 뜼다.
+                        // 💰 기본급·예치금은 **연결된 담당자**에 붙는다. 담당자가 없는 묶음은 금액 줄이 안 뜬다.
+                        //    (정산 없는 월급 직원은 이 루프 밖 「기본급만」 줄로 — jin 2026-10-06)
                         $person = $group->first()?->salesman;
                         $baseSalary = (int) ($person?->base_salary_krw ?? 0);
                         $deposit = $person?->deposit_krw;
@@ -230,6 +234,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="tabular-nums">₩{{ number_format($s->actual_payout) }}</span>
                             </div>
                             @endforeach
+                        </div>
+                    </div>
+                    @endforeach
+
+                    {{-- 💴 정산도 조정도 없는 사내직원 — 「기본급만」 (jin 2026-10-06 「정산이 0명인 사람은 월급만 나올 수 있게」).
+                         위 「+ 기본급 합계」와 같은 명부(`salaryOnlyPeople`)라 줄의 합 = 합계. 🚫 배치 총액엔 안 들어간다. --}}
+                    @foreach($salaryOnly as $person)
+                    <div data-salary-only="{{ $person->id }}">
+                        <div class="flex items-center justify-between text-xs font-medium text-gray-700">
+                            <span>{{ $person->name }}
+                                <span class="ml-1 text-[10px] font-normal text-gray-400">{{ __('payout_batch.margin.pay.salary_only') }}</span>
+                            </span>
+                            <span>{{ __('payout_batch.count', ['n' => 0]) }} · ₩0</span>
+                        </div>
+                        <div class="mt-1 ml-3 rounded border border-gray-100 bg-white px-2 py-1 text-[11px]">
+                            <div class="flex justify-between text-gray-500"><span>{{ __('payout_batch.margin.pay.base_salary') }}</span><span class="tabular-nums">₩{{ number_format($person->base_salary_krw) }}</span></div>
+                            <div class="flex justify-between text-gray-500"><span>{{ __('payout_batch.margin.pay.settlement') }}</span><span class="tabular-nums">₩0</span></div>
+                            <div class="mt-0.5 flex justify-between border-t border-gray-100 pt-0.5 font-semibold text-gray-700"><span>{{ __('payout_batch.margin.pay.take_home') }}</span><span class="tabular-nums">₩{{ number_format($person->base_salary_krw) }}</span></div>
                         </div>
                     </div>
                     @endforeach

@@ -78,7 +78,12 @@
         <details class="drill">
             <summary>
                 <span class="k">{{ $name }}
+                    @if(!empty($row['salary_only']))
+                    {{-- 💴 정산도 조정도 없는 사내직원 — 기본급만 (jin 2026-10-06) --}}
+                    <span class="rate">기본급만</span>
+                    @else
                     <span class="rate">마진율 {{ $row['margin_rate'] }}</span>
+                    @endif
                 </span>
                 <span class="v">
                     {{ number_format($row['count']) }}건 · {{ number_format($row['net']) }}원
@@ -109,7 +114,8 @@
                     <span class="v">{{ number_format($v['amount']) }}원</span>
                 </div>
                 @empty
-                <div class="row bd"><span class="k">정산 없음 (조정만)</span><span class="v">-</span></div>
+                {{-- 정산 줄이 없는 두 경우를 가른다 — 조정만 있는 사람 / 기본급만 나가는 직원(jin 2026-10-06) --}}
+                <div class="row bd"><span class="k">{{ !empty($row['salary_only']) ? '정산 없음 · 기본급만' : '정산 없음 (조정만)' }}</span><span class="v">-</span></div>
                 @endforelse
             </div>
         </details>
