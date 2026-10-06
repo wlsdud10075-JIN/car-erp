@@ -191,6 +191,7 @@ return [
         'settlement_ratio' => '정산 비율',
         'per_unit_amount' => '건당 금액',
         'other_deduction' => '기타 공제',
+        'attributed_month' => '정산 귀속월',   // 2026-10-06 드로어 「귀속월 한 칸 이동」이 감사로그에 남긴다
         'settlement_status' => '정산 상태',
         'secondary_status' => '2차 정산 상태',
         'gate_override_reason' => '게이트 예외 사유',
