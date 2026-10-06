@@ -186,6 +186,9 @@ return [
         'settlement_amount' => '정산액',
         'actual_payout' => '실지급액',
         'exchange_diff' => '환차',
+        // 2026-10-06 jin 「상태 하나로 전부 나열되어 있으니 보기 어렵다」 — 상태 / 2차 / 작업 세 칸으로 가른다.
+        'secondary' => '2차 정산',
+        'actions' => '작업',
         'margin_rate' => '마진율',
         'status' => '상태',
     ],

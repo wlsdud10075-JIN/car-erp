@@ -111,8 +111,12 @@ class SettlementFxRepivotTest extends TestCase
         $this->assertSame(30000.0, (float) $s2->fresh()->exchange_difference_krw, '기타회수 없는 V2');
     }
 
-    /** 미완납(외화)에서는 2차 마감 차단 — 원금 미수가 환차로 둔갑하는 것 방지. */
-    public function test_unpaid_foreign_blocks_secondary_close(): void
+    /**
+     * 🔀 2026-10-06 — 미완납(외화)도 2차 마감된다(jin 「미수 있어도 마감은 하자」). 구 규칙(차단)의 이유였던
+     *    「원금 미수가 환차손으로 둔갑」은 10-01 B안으로 식 자체가 받은 몫만 세게 되어 사라졌다 —
+     *    600 만 받았으면 환차 = 600 × (1,350 − 1,300) = 30,000 이지 미수 400 은 환차에 안 들어간다.
+     */
+    public function test_unpaid_foreign_closes_with_received_only_fx(): void
     {
         $admin = $this->admin();
         $this->actingAs($admin);
@@ -126,8 +130,9 @@ class SettlementFxRepivotTest extends TestCase
 
         Volt::test('erp.settlements.index')->call('closeSecondarySettlement', $s->id);
 
-        $this->assertSame('pending', $s->fresh()->secondary_status, '미완납 외화는 마감 차단');
-        $this->assertNull($s->fresh()->exchange_difference_krw);
+        $this->assertSame('closed', $s->fresh()->secondary_status, '2026-10-06 부터 미수가 남아도 마감된다');
+        $this->assertSame(30000.0, (float) $s->fresh()->exchange_difference_krw, '받은 600 의 환차만 — 미수 400 은 환차가 아니다');
+        $this->assertSame(400, (int) $v->fresh()->sale_unpaid_amount, '미수는 받을 돈으로 그대로 남는다');
     }
 
     /** 환차 = Σ(잔금외화 × (잔금환율 − 판매환율)) — 여러 잔금 row 합산. */

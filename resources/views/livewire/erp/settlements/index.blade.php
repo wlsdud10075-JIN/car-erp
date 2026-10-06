@@ -2217,8 +2217,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.exchange_diff') }}</th>
+                {{-- 2026-10-06 jin 「상태 하나로 전부 나열되어 있으니 보기 어렵다」 — 상태(1차) / 2차 정산(뱃지+이월) / 작업(버튼) 세 칸. --}}
                 <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.status') }}</th>
-                <th class="pb-2 font-medium"></th>
+                <th class="pb-2 pr-4 font-medium" data-th-secondary>{{ __('settlement.col.secondary') }}</th>
+                <th class="pb-2 font-medium text-right" data-th-actions>{{ __('settlement.col.actions') }}</th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -2373,18 +2375,6 @@ new #[Layout('components.layouts.app')] class extends Component
                               'at' => $s->gate_override_at?->format('Y-m-d'),
                           ]) }}">{{ __('settlement.gate.badge') }}</span>
                     @endif
-                    {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
-                    @if($secondaryLabel)
-                    <span class="badge {{ $secondaryBadge }} ml-1" title="{{ __('settlement.col.status') }}">{{ $secondaryLabel }}</span>
-                    {{-- 💱 2차 차액(이월) 미리보기 (jin 2026-10-06) — 1차 지급액 대비 지금 얼마나 벌어졌나. 0 이면 조용히. 상세는 드로어. --}}
-                    @php $rowBd = $s->secondaryBreakdown(); @endphp
-                    @if($rowBd !== null && $rowBd['total'] !== 0)
-                    <span class="ml-1 text-[10px] tabular-nums {{ $rowBd['total'] > 0 ? 'text-emerald-600' : 'text-red-500' }}"
-                          title="{{ $rowBd['frozen'] ? __('settlement.breakdown.title_closed') : __('settlement.breakdown.title_pending') }}" data-row-carry>
-                        {{ __('settlement.breakdown.row_label') }} {{ $rowBd['total'] > 0 ? '+' : '−' }}{{ number_format(abs($rowBd['total'])) }}
-                    </span>
-                    @endif
-                    @endif
                     {{-- 큐 14-4-2 — 지급 승인 요청 상태 인라인 표시 --}}
                     @php $pa = $s->latestPayApproval; @endphp
                     @if($pa && $pa->status === 'pending')
@@ -2393,6 +2383,22 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="badge badge-red ml-1" title="{{ __('settlement.approval_rejected_title', ['name' => $pa->approver?->name ?? '?', 'reason' => $pa->decision_note ?? __('settlement.approval_no_reason')]) }}">
                         {{ __('settlement.approval_rejected') }}
                     </span>
+                    @endif
+                </td>
+                {{-- 2차 정산 칸 (jin 2026-10-06) — 2차 가능 / 비용 대기 / 최종 마무리 뱃지 + 이월 미리보기. 1차 상태와 섞지 않는다. --}}
+                <td class="py-3 pr-4 whitespace-nowrap" data-secondary-cell>
+                    @if($secondaryLabel)
+                    <span class="badge {{ $secondaryBadge }}" title="{{ __('settlement.col.secondary') }}">{{ $secondaryLabel }}</span>
+                    {{-- 💱 2차 차액(이월) 미리보기 — 1차 지급액 대비 지금 얼마나 벌어졌나. 0 이면 조용히. 상세는 드로어. --}}
+                    @php $rowBd = $s->secondaryBreakdown(); @endphp
+                    @if($rowBd !== null && $rowBd['total'] !== 0)
+                    <span class="ml-1 text-[10px] tabular-nums {{ $rowBd['total'] > 0 ? 'text-emerald-600' : 'text-red-500' }}"
+                          title="{{ $rowBd['frozen'] ? __('settlement.breakdown.title_closed') : __('settlement.breakdown.title_pending') }}" data-row-carry>
+                        {{ __('settlement.breakdown.row_label') }} {{ $rowBd['total'] > 0 ? '+' : '−' }}{{ number_format(abs($rowBd['total'])) }}
+                    </span>
+                    @endif
+                    @else
+                    <span class="text-gray-300">—</span>
                     @endif
                 </td>
                 <td class="py-3 text-right">
@@ -2435,7 +2441,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </tr>
             @empty
             <tr>
-                <td colspan="13" class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</td>
+                <td colspan="14" class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</td>
             </tr>
             @endforelse
         </tbody>

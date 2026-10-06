@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\ReceivableHistory;
 use App\Models\Settlement;
 use App\Models\User;
@@ -36,13 +37,22 @@ class ReceivablePaidDepositGuardTest extends TestCase
             'buyer_id' => $buyer->id, 'sale_date' => '2026-05-01',
             'sale_price' => 10000, 'transport_fee' => 0,   // 미납 10000 (입금 없음)
         ]);
+        // 🔀 2026-10-06 — 마감 차량은 **미수 0 일 때만** 잠긴다. 「마감 차단」을 보는 케이스는 완납으로 만든다
+        //    (미수가 남으면 받을 돈을 기록하도록 열린다 — 그건 SecondaryCloseWithUnpaidTest 가 본다).
+        if ($secondaryStatus === 'closed') {
+            FinalPayment::create([
+                'vehicle_id' => $v->id, 'amount' => 10000, 'type' => 'balance', 'exchange_rate' => 1438,
+                'payment_date' => '2026-05-02', 'confirmed_at' => now(),
+            ]);
+            $v->fresh()->refreshCaches();
+        }
         Settlement::create([
             'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
             'settlement_status' => 'paid', 'confirmed_at' => now(), 'paid_at' => now(),
             'secondary_status' => $secondaryStatus,
         ]);
 
-        return $v;
+        return $v->fresh();
     }
 
     public function test_deposit_on_closed_vehicle_is_blocked_without_500_or_orphan_rh(): void
@@ -50,6 +60,8 @@ class ReceivablePaidDepositGuardTest extends TestCase
         $v = $this->paidVehicle('closed');  // auth 미존재 시점 → paid 전환 가드 우회
         $user = User::factory()->create(['role' => '재무']);   // canViewReceivables
         $this->actingAs($user);
+        // 완납 픽스처의 확정 잔금이 채권 이력에 미러 1행을 남긴다 — 「고아」는 저장 전후로 **늘어난 행**이다.
+        $before = ReceivableHistory::where('vehicle_id', $v->id)->count();
 
         Volt::test('erp.receivables.index')
             ->set('selectedVehicleId', $v->id)
@@ -60,7 +72,7 @@ class ReceivablePaidDepositGuardTest extends TestCase
             ->call('saveHistory')
             ->assertHasErrors('hMethod');   // 500 대신 친절한 검증 에러
 
-        $this->assertSame(0, ReceivableHistory::where('vehicle_id', $v->id)->count(), '고아 RH 가 생성됨');
+        $this->assertSame($before, ReceivableHistory::where('vehicle_id', $v->id)->count(), '고아 RH 가 생성됨');
     }
 
     public function test_deposit_on_paid_but_not_closed_vehicle_succeeds(): void
