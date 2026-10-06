@@ -359,6 +359,50 @@ class Settlement extends Model
     }
 
     /**
+     * 귀속월 한 칸 이동 (jin 2026-10-06) — 직전 달(-1) 또는 다음 달(+1) 로만.
+     *
+     * 실무: 9월 판매 건의 자투리 수수료를 10월 초에 완납 처리하면 귀속월이 10월(= 11/10 지급)로 잡힌다.
+     * 그걸 정산처리 드로어에서 9월(= 10/10 지급)로 당긴다. 반대 방향도 허용. 두 달 이상은 1차 정산 뒤라 말이 안 된다(jin).
+     * 막는 것: 지급됨 · 배치에 묶임 · 대상 달이 마감됨(지급 승인 배치 존재) · 대상 달 배치가 제출돼 승인 대기 중
+     *   (옮기면 그 배치에 안 들어가 지급에서 빠진다 — 반려 뒤 다시).
+     * raw update + 감사로그 직접 기록 — Settlement::saving 가드·캐시 훅과 무관한 컬럼이고 변경 이력은 남겨야 한다.
+     *
+     * @return string 새 귀속월 'Y-m'
+     */
+    public function shiftAttributedMonth(int $delta): string
+    {
+        if (! in_array($delta, [-1, 1], true)) {
+            throw new \InvalidArgumentException('delta must be -1 or 1');
+        }
+        if ($this->settlement_status === 'paid' || $this->paid_at) {
+            throw new \DomainException(__('settlement.shift.blocked_paid'));
+        }
+        if ($this->payout_batch_id) {
+            throw new \DomainException(__('settlement.shift.blocked_in_batch'));
+        }
+        if (! $this->attributed_month) {
+            throw new \DomainException(__('settlement.shift.blocked_no_month'));
+        }
+        $current = $this->attributed_month->copy()->startOfMonth();
+        $target = $current->copy()->addMonths($delta);
+        $ym = $target->format('Y-m');
+        if (SettlementPayoutBatch::isMonthClosed($ym)) {
+            throw new \DomainException(__('settlement.shift.blocked_closed', ['month' => $ym]));
+        }
+        if (SettlementPayoutBatch::where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
+            throw new \DomainException(__('settlement.shift.blocked_pending_batch', ['month' => $ym]));
+        }
+
+        $old = $current->format('Y-m-d');
+        $new = $target->format('Y-m-d');
+        self::query()->whereKey($this->id)->update(['attributed_month' => $new]);
+        $this->attributed_month = $new;
+        AuditLog::recordChange($this, 'attributed_month', $old, $new);
+
+        return $ym;
+    }
+
+    /**
      * 귀속월 스코프 — 'YYYY-MM'. A-3(2026-07-08) 기준 attributed_month(완납월, 달력 1일~말일) 우선,
      * NULL(백필 전/누락)만 기존 앵커 [M/10, (M+1)/10) 로 fallback.
      *
