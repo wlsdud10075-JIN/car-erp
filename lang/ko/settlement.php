@@ -39,6 +39,7 @@ return [
         'close_ready' => '마감할 정산 :count건',
         'close_ready_none' => '지금 마감할 수 있는 정산이 없습니다.',
         'close_skipped' => '건너뛸 정산 :count건',
+        'close_waiting' => '비용 대기 :count건은 대상이 아닙니다 — 지급 뒤 비용 칸이 기입되면 「2차 가능」으로 올라옵니다. 추가 비용이 없는 차는 행의 [2차 완료]로 닫으세요.',
         'close_cancel' => '취소',
         'close_apply' => ':count건 마감',
         'close_none' => '이 달에 2차 정산 대기 중인 정산이 없습니다.',
@@ -130,7 +131,12 @@ return [
     'secondary' => [
         'pending' => '2차 대기',
         'closed' => '최종 마무리',
+        // 2026-10-06 jin — 2차 대기를 둘로 가른다: 지급 뒤 비용(탁송·면허 등) 기입됨 / 아직 없음
+        'ready' => '2차 가능',
+        'waiting' => '비용 대기',
     ],
+    'filter_all_secondary' => '2차 전체',
+    'filter_secondary_ready_title' => '2차 가능 = 지급 뒤 비용 칸(탁송·면허·말소 등)이 기입된 2차 대기 건. 일괄 2차 마감은 이것만 닫습니다.',
 
     'summary_title' => '영업담당자별 합계',
     'summary_hint' => '— 클릭하면 해당 담당자만 솔팅',

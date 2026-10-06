@@ -37,6 +37,7 @@ return [
         'close_ready' => ':count settlement(s) to close',
         'close_ready_none' => 'No settlement can be closed right now.',
         'close_skipped' => ':count settlement(s) skipped',
+        'close_waiting' => ':count awaiting-costs row(s) are not included — they become “2nd ready” once vehicle costs are entered after payout. Close a car with no extra costs from its row button.',
         'close_cancel' => 'Cancel',
         'close_apply' => 'Close :count',
         'close_none' => 'No secondary-pending settlement in this month.',
@@ -127,7 +128,11 @@ return [
     'secondary' => [
         'pending' => '2nd pending',
         'closed' => 'Finalized',
+        'ready' => '2nd ready',
+        'waiting' => 'Awaiting costs',
     ],
+    'filter_all_secondary' => 'All 2nd',
+    'filter_secondary_ready_title' => '2nd ready = pending rows whose vehicle costs (towing, licence, deregistration…) were entered after payout. Bulk closing only closes these.',
 
     'summary_title' => 'Totals by salesman',
     'summary_hint' => '— click to filter by that salesman',

@@ -1161,6 +1161,16 @@ class Vehicle extends Model
                     );
                 }
             }
+
+            // 💴 「2차 가능」(jin 2026-10-06) — 비용 칸(10개) 중 하나라도 **실제로** 바뀌었으면 이 차의 2차 대기
+            //    정산을 2차 가능으로 표시한다. 명세서 기입 일괄·패널 수동 입력 모두 이 훅을 지난다.
+            //    같은 `isRealChange` 를 쓴다 — 재저장의 「0.00 → 0」으로 전 차량이 2차 가능이 되면 필터가 무의미(§8 #108).
+            foreach (self::DISPLAY_COST_FIELDS as $col) {
+                if (AuditLog::isRealChange($vehicle, $col)) {
+                    Settlement::markSecondaryReadyForVehicle($vehicle);
+                    break;
+                }
+            }
         });
 
         // H6 — savings_used delta 감지 → SavingsStatus(USED/REFUND) 자동 생성.
@@ -1831,6 +1841,18 @@ class Vehicle extends Model
 
     public function settlementStage(): string
     {
+        // 🚗 매입취소 차는 정산 행이 아니라 **손실 반영 도장**으로 본다 (jin 2026-10-06 「매입취소된 거 드로어에
+        //    정산됨으로 바로 표시되던데, 정산처리 되기까지는 정산대기 똑같이 되고 정산되면 정산처리로」).
+        //    미수마감(손실 확정) = 월배치 손실 조정에 반영(`cancel_loss_settled_at`)돼야 끝난 것이고,
+        //    매입취소 진행중 = 위약금 미수가 남아 있으면 대기, 다 받았으면(취소완료) 더 정산할 게 없다.
+        if ($this->isPurchaseCancelled()) {
+            if ($this->cancel_status === self::CANCEL_CLOSED) {
+                return $this->cancel_loss_settled_at ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
+            }
+
+            return $this->sale_unpaid_amount <= 0 ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
+        }
+
         $status = array_key_exists('settlement_status_peek', $this->attributes)
             ? $this->attributes['settlement_status_peek']
             : $this->settlements()->value('settlement_status');
