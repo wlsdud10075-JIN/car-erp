@@ -303,6 +303,10 @@ class SettlementGateOverrideTest extends TestCase
 
     // ── 5. 2차 마감 ────────────────────────────────────────────────
 
+    /**
+     * 🔀 2026-10-06 — 완납 게이트 자체가 없어졌다(jin 「미수 있어도 마감은 하자」). 예외 건은 종전대로 닫히고,
+     *    **예외가 없어도** 닫힌다. 그 뒷부분은 `SecondaryCloseWithUnpaidTest` 가 본다.
+     */
     public function test_override_passes_the_secondary_close_full_payment_gate(): void
     {
         $this->actingAs($this->finance());
@@ -378,7 +382,12 @@ class SettlementGateOverrideTest extends TestCase
         $this->assertTrue($v->fresh()->ledgerLockedForNewPayments(), '미수가 0 이면 즉시 재잠금');
     }
 
-    public function test_releasing_the_override_locks_the_ledger_again(): void
+    /**
+     * 🔀 2026-10-06 — 구 규칙 「예외를 풀면 미수가 남아 있어도 잠긴다」는 폐기됐다. 유예의 근거가 예외 뱃지가 아니라
+     *    **미수 자체**가 됐으므로(jin 「받아야 하는 금액으로 남기기만」), 예외를 풀어도 미수가 남아 있으면 열려 있다.
+     *    예외 해제 자체는 종전대로 동작한다(뱃지·감사로그).
+     */
+    public function test_releasing_the_override_keeps_new_payments_open_while_unpaid_remains(): void
     {
         $this->actingAs($this->finance());
         $v = $this->freightUnpaidVehicle();
@@ -388,10 +397,15 @@ class SettlementGateOverrideTest extends TestCase
         $this->assertFalse($v->fresh()->ledgerLockedForNewPayments());
 
         app(SettlementGateOverrideService::class)->release($s->fresh(), auth()->user());
-        $this->assertTrue($v->fresh()->ledgerLockedForNewPayments(), '미수가 남아 있어도 예외를 풀면 잠긴다');
+        $this->assertFalse($s->fresh()->hasGateOverride(), '예외는 풀렸다');
+        $this->assertFalse($v->fresh()->ledgerLockedForNewPayments(), '미수가 남아 있으면 예외와 무관하게 열려 있다(2026-10-06)');
     }
 
-    public function test_one_non_overridden_closed_settlement_keeps_the_lock(): void
+    /**
+     * 🔀 2026-10-06 — 구 「예외 없는 마감이 하나라도 있으면 잠근다」는 폐기. 지금은 미수만 본다:
+     *    마감 정산이 몇 개든 **미수 > 0 이면 열리고, 0 이면 잠긴다.** 승계로 마감 정산이 둘인 차도 같다.
+     */
+    public function test_multiple_closed_settlements_follow_the_unpaid_rule(): void
     {
         $this->actingAs($this->finance());
         $v = $this->freightUnpaidVehicle();
@@ -399,7 +413,6 @@ class SettlementGateOverrideTest extends TestCase
             ->createWithOverride($v, auth()->user(), '미수 1,312 EUR — 운임비와 동일합니다.');
         $s1->forceFill(['secondary_status' => 'closed', 'secondary_closed_at' => now()])->save();
 
-        // 담당자 승계·재생성으로 한 차에 마감 정산이 둘 이상 생기는 일이 실재한다. 안전한 쪽으로 잠근다.
         Settlement::$allowBatchPayout = true;   // Phase 2 — setup paid 가드 우회
         Settlement::create([
             'vehicle_id' => $v->id, 'salesman_id' => $v->salesman_id,
@@ -408,7 +421,8 @@ class SettlementGateOverrideTest extends TestCase
         ]);
         Settlement::$allowBatchPayout = false;
 
-        $this->assertTrue($v->fresh()->ledgerLockedForNewPayments());
+        $this->assertGreaterThan(0, (float) $v->fresh()->sale_unpaid_amount);
+        $this->assertFalse($v->fresh()->ledgerLockedForNewPayments(), '미수가 남아 있으면 예외 없는 마감이 있어도 열린다');
     }
 
     // ── 7. 미수 표시는 손대지 않았다 ─────────────────────────────────

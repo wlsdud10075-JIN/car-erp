@@ -346,7 +346,6 @@ return [
         'pay_reason' => 'Settlement #:id (:vehicle) payout',
         'pay_sent' => 'Payout approval request sent.',
         'close_not_pending' => 'Not in the secondary-pending state.',
-        'close_needs_full_payment' => 'Foreign-currency vehicles can only be closed after the sale is fully paid (zero outstanding). An outstanding balance would distort the FX difference.',
         'close_needs_rate' => 'Foreign-currency vehicles require a settlement exchange rate before closing (auto rate lookup failed). Enter the rate above, then close again.',
         'close_done' => 'Secondary settlement finalized',
         'close_diff_suffix' => ' — FX diff :sign₩:amount',
