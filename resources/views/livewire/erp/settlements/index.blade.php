@@ -490,6 +490,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 'export_payout_sum' => (int) $group->where('is_domestic', false)->sum('actual_payout'),
                 // 미청산 이월 — Salesman accessor(단일 출처). 필터 무관 현재 잔액. 재무 사각지대 보완.
                 'unconsumed_carryover' => (int) ($first->salesman?->unconsumed_carryover ?? 0),
+                // 💱 2차 대기 건의 이월 예상 합 (jin 2026-10-06) — 아직 마감 전이라 미청산에 안 잡힌 차액. 필터 범위 안.
+                'pending_carry_preview' => (int) $group->where('secondary_status', 'pending')
+                    ->sum(fn (Settlement $s) => (int) ($s->secondaryBreakdown()['total'] ?? 0)),
                 // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월배치에서 차감).
                 'cancel_loss' => (int) ($loss['sum'] ?? 0),
                 'cancel_loss_plates' => $loss['plates'] ?? [],
@@ -1570,10 +1573,16 @@ new #[Layout('components.layouts.app')] class extends Component
         // 환차 계산 (2026-07-06 재피벗) — 실입금KRW − baseline(총판매가×판매환율).
         [$exchangeDiff, $usedRate] = $this->calculateExchangeDifference($settlement);
 
+        // 💱 분해 박제 (jin 2026-10-06) — 마감 **전** 값으로 환차분/비용분을 계산해 함께 저장한다.
+        //    마감 뒤엔 `secondaryBreakdown()` 이 이 저장값만 읽는다(미수 남은 차에 뒤늦게 돈이 들어와도 안 움직인다).
+        $breakdown = $settlement->secondaryBreakdown();
+
         $update = [
             'secondary_status' => 'closed',
             'secondary_closed_at' => now(),
             'exchange_difference_krw' => $exchangeDiff,
+            'secondary_fx_krw' => $breakdown['fx'] ?? null,
+            'secondary_cost_krw' => $breakdown['cost'] ?? null,
         ];
         if ($usedRate !== null) {
             $update['exchange_rate_at_close'] = $usedRate;
@@ -2165,6 +2174,13 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="font-mono font-semibold {{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['unconsumed_carryover'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['unconsumed_carryover'])) }}</span>
                     </div>
                     @endif
+                    {{-- 💱 2차 대기 이월 예상 (jin 2026-10-06) — 마감 전 차액 합. 마감하면 위 「미청산 이월」로 넘어간다. --}}
+                    @if(($summary['pending_carry_preview'] ?? 0) != 0)
+                    <div class="flex items-center justify-between border-t border-gray-100 pt-1" data-pending-carry>
+                        <span class="text-gray-500">{{ __('settlement.summary_pending_carry') }}</span>
+                        <span class="font-mono {{ $summary['pending_carry_preview'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['pending_carry_preview'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['pending_carry_preview'])) }}</span>
+                    </div>
+                    @endif
                     {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월배치 지급」 조정에서. --}}
                     @if(($summary['cancel_loss'] ?? 0) > 0)
                     <div class="flex items-center justify-between border-t border-gray-100 pt-1"
@@ -2360,6 +2376,14 @@ new #[Layout('components.layouts.app')] class extends Component
                     {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 상태 보강 라벨 --}}
                     @if($secondaryLabel)
                     <span class="badge {{ $secondaryBadge }} ml-1" title="{{ __('settlement.col.status') }}">{{ $secondaryLabel }}</span>
+                    {{-- 💱 2차 차액(이월) 미리보기 (jin 2026-10-06) — 1차 지급액 대비 지금 얼마나 벌어졌나. 0 이면 조용히. 상세는 드로어. --}}
+                    @php $rowBd = $s->secondaryBreakdown(); @endphp
+                    @if($rowBd !== null && $rowBd['total'] !== 0)
+                    <span class="ml-1 text-[10px] tabular-nums {{ $rowBd['total'] > 0 ? 'text-emerald-600' : 'text-red-500' }}"
+                          title="{{ $rowBd['frozen'] ? __('settlement.breakdown.title_closed') : __('settlement.breakdown.title_pending') }}" data-row-carry>
+                        {{ __('settlement.breakdown.row_label') }} {{ $rowBd['total'] > 0 ? '+' : '−' }}{{ number_format(abs($rowBd['total'])) }}
+                    </span>
+                    @endif
                     @endif
                     {{-- 큐 14-4-2 — 지급 승인 요청 상태 인라인 표시 --}}
                     @php $pa = $s->latestPayApproval; @endphp
@@ -3047,16 +3071,28 @@ new #[Layout('components.layouts.app')] class extends Component
                     ₩{{ number_format($this->marginData['actualPayout']) }}
                 </span>
             </div>
-            {{-- 새회의 #8 보강 (2026-05-23) — 다음 달 이월 표시 (closed + carryover_out_krw 존재 시). --}}
-            @if(! empty($this->marginData['carryoverOut']))
-            <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-700">
-                <strong>{{ __('settlement.result_carryover_out') }}</strong>
-                @if($this->marginData['carryoverOut'] > 0)
-                <span class="text-emerald-700">+₩{{ number_format($this->marginData['carryoverOut']) }}</span>
-                @else
-                <span class="text-red-600">-₩{{ number_format(abs($this->marginData['carryoverOut'])) }}</span>
+            {{-- 💱 2차 차액 분해 (jin 2026-10-06) — 「1차 지급액 → 환차분 → 2차 차액(비용) → (기타) → 이월금액(최종)」.
+                 월배치 모달을 띄우기 전에 실무자가 차액이 얼마나 생겼는지 보려는 것. 값은 Settlement::secondaryBreakdown() 단일 출처 —
+                 마감 전엔 「예상」(지금 값 − 지급 스냅샷), 마감 뒤엔 박제값. 지급 전 정산(스냅샷 없음)엔 안 그린다. --}}
+            @php
+                $bdSettlement = $editingId ? \App\Models\Settlement::find($editingId) : null;
+                $bd = $bdSettlement && in_array($bdSettlement->secondary_status, ['pending', 'closed'], true) ? $bdSettlement->secondaryBreakdown() : null;
+                $bdSigned = fn (?int $n) => $n === null ? '—' : (($n > 0 ? '+' : ($n < 0 ? '−' : '')).'₩'.number_format(abs($n)));
+                $bdColor = fn (?int $n) => $n === null || $n === 0 ? 'text-gray-500' : ($n > 0 ? 'text-emerald-700' : 'text-red-600');
+            @endphp
+            @if($bd !== null)
+            <div class="mt-1 rounded border border-violet-200 bg-violet-50 px-2 py-1.5 text-[11px] text-violet-800 space-y-0.5" data-secondary-breakdown>
+                <div class="flex justify-between font-semibold">
+                    <span>{{ $bd['frozen'] ? __('settlement.breakdown.title_closed') : __('settlement.breakdown.title_pending') }}</span>
+                </div>
+                <div class="flex justify-between text-gray-600"><span>{{ __('settlement.breakdown.base') }}</span><span class="tabular-nums">₩{{ number_format($bd['base']) }}</span></div>
+                <div class="flex justify-between"><span>{{ __('settlement.breakdown.fx') }}</span><span class="tabular-nums {{ $bdColor($bd['fx']) }}">{{ $bdSigned($bd['fx']) }}</span></div>
+                <div class="flex justify-between"><span>{{ __('settlement.breakdown.cost') }} <span class="text-gray-400">{{ __('settlement.breakdown.cost_sub') }}</span></span><span class="tabular-nums {{ $bdColor($bd['cost']) }}">{{ $bdSigned($bd['cost']) }}</span></div>
+                @if(($bd['other'] ?? 0) !== 0 && $bd['other'] !== null)
+                <div class="flex justify-between"><span>{{ __('settlement.breakdown.other') }} <span class="text-gray-400">{{ __('settlement.breakdown.other_sub') }}</span></span><span class="tabular-nums {{ $bdColor($bd['other']) }}">{{ $bdSigned($bd['other']) }}</span></div>
                 @endif
-                {{ __('settlement.result_carryover_out_note') }}
+                <div class="flex justify-between border-t border-violet-200 pt-0.5 font-semibold"><span>{{ __('settlement.breakdown.total') }}</span><span class="tabular-nums {{ $bdColor($bd['total']) }}">{{ $bdSigned($bd['total']) }}</span></div>
+                <p class="text-[10px] text-violet-600">{{ $bd['frozen'] ? __('settlement.result_carryover_out_note') : __('settlement.breakdown.pending_note') }}</p>
             </div>
             @endif
         </div>

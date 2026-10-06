@@ -152,6 +152,20 @@ return [
     'domestic_hint' => 'Domestic sale — total sale minus purchase, deregistration and towing.',
     'summary_domestic_payout' => '└ Domestic (:count)',
     'summary_carryover' => 'Unconsumed carryover',
+    'summary_pending_carry' => 'Expected carryover (2nd pending)',
+    'breakdown' => [
+        'title_pending' => '2nd-close delta (expected — vs. first payout)',
+        'title_closed' => '2nd-close delta (final)',
+        'base' => 'First payout',
+        'fx' => 'FX portion',
+        'cost' => '2nd delta',
+        'cost_sub' => '(towing, licence and other cost changes)',
+        'other' => 'Other',
+        'other_sub' => '(document / shipping / other deduction changes)',
+        'total' => 'Carryover (final)',
+        'pending_note' => 'Fixed at 2nd close and carried into next month’s unconsumed carryover. Until then it moves with rate and cost changes.',
+        'row_label' => 'carry',
+    ],
 
     'col' => [
         'vehicle_no' => 'Plate',

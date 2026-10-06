@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Settlement;
+use App\Models\Vehicle;
 use Illuminate\Support\Collection;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -85,6 +86,11 @@ class SettlementExportService
             'carryover_in_krw' => ['이월(받음)', 'num', fn (Settlement $s) => $s->carryover_in_krw],
             // ⚠️ pending 은 확정 전 미리보기 + 배치 조정 미반영 → 라벨에 (예정) 고정.
             'actual_payout' => ['실지급액(예정)', 'num', fn (Settlement $s) => $s->actual_payout],
+            // 💱 2차 차액 분해 (jin 2026-10-06) — 1차 지급액 대비 환차분 / 비용(2차 차액)분 / 이월 합계.
+            //    화면과 같은 `secondaryBreakdown()` 단일 출처. 지급 전(스냅샷 없음)은 빈칸, 마감 뒤엔 박제값.
+            'secondary_fx' => ['환차분(2차)', 'num', fn (Settlement $s) => $s->secondaryBreakdown()['fx'] ?? null],
+            'secondary_cost' => ['2차 차액(비용)', 'num', fn (Settlement $s) => $s->secondaryBreakdown()['cost'] ?? null],
+            'carryover_out_krw' => ['이월(최종)', 'num', fn (Settlement $s) => $s->secondaryBreakdown()['total'] ?? null],
         ];
     }
 
@@ -179,11 +185,15 @@ class SettlementExportService
     {
         $sheet->setTitle('요약');
         // 🔢 시트마다 1부터 — 요약 시트도 같다(jin 2026-09-18 「응 시트마다 그래야지」).
-        $head = ['No.', '영업담당자', '대수', '총마진', '마진율', '정산액', '실지급액(예정)'];
+        // 💴 미청산 이월·미반영 매입취소 손실 (jin 2026-10-06 「엑셀 미청산 이월, 매입취소 손실 엑셀 반영」) — 둘 다 **담당자별 잔액**이라
+        //    명세 행이 아니라 요약 시트에 둔다. 「실지급액(예정)」엔 섞지 않는다 — 손실은 월배치 조정에서 한 번만 차감하므로
+        //    여기 더하면 이중 청구(Vehicle::unsettledCancelLossBySalesman docblock). 화면 담당자 카드와 같은 출처.
+        $head = ['No.', '영업담당자', '대수', '총마진', '마진율', '정산액', '실지급액(예정)', '미청산 이월', '미반영 매입취소 손실'];
         foreach ($head as $i => $label) {
             $sheet->setCellValueExplicit(Coordinate::stringFromColumnIndex($i + 1).'1', $label, DataType::TYPE_STRING);
         }
         $this->styleHeader($sheet, count($head));
+        $cancelLoss = Vehicle::unsettledCancelLossBySalesman();
 
         $row = 2;
         $no = 0;
@@ -198,13 +208,16 @@ class SettlementExportService
             }
             $sheet->setCellValue("F{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->settlement_amount));
             $sheet->setCellValue("G{$row}", (int) $rows->sum(fn (Settlement $s) => (int) $s->actual_payout));
+            $salesman = $rows->first()?->salesman;
+            $sheet->setCellValue("H{$row}", (int) ($salesman?->unconsumed_carryover ?? 0));
+            $sheet->setCellValue("I{$row}", (int) ($cancelLoss[(int) ($salesman?->id ?? 0)]['sum'] ?? 0));
             $row++;
         }
 
         // 전체 합계
         if ($row > 2) {
             $sheet->setCellValueExplicit("B{$row}", '합계', DataType::TYPE_STRING);
-            foreach (['C', 'D', 'F', 'G'] as $col) {
+            foreach (['C', 'D', 'F', 'G', 'H', 'I'] as $col) {
                 $sheet->setCellValue("{$col}{$row}", "=SUM({$col}2:{$col}".($row - 1).')');
             }
             // 🚨 마진율만 SUM 이 아니다 — 전체 정산을 합친 가중 비율이다.
@@ -213,17 +226,17 @@ class SettlementExportService
             if ($rate !== null) {
                 $sheet->setCellValue("E{$row}", $rate);
             }
-            $sheet->getStyle("A{$row}:G{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:I{$row}")->getFont()->setBold(true);
         }
 
-        // 💰 대수·총마진·정산액·실지급액은 쉼표, 마진율만 % (합계 행까지 같은 범위).
+        // 💰 대수·총마진·정산액·실지급액·이월·손실은 쉼표, 마진율만 % (합계 행까지 같은 범위).
         $lastRow = max(2, $row);
-        foreach (['C', 'D', 'F', 'G'] as $col) {
+        foreach (['C', 'D', 'F', 'G', 'H', 'I'] as $col) {
             $sheet->getStyle("{$col}2:{$col}{$lastRow}")->getNumberFormat()->setFormatCode(self::NUM_FORMAT);
         }
         $sheet->getStyle("E2:E{$lastRow}")->getNumberFormat()->setFormatCode(self::RATE_FORMAT);
 
-        $sheet->getStyle('A1:G1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle('A1:I1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         $sheet->getStyle('A1:A'.max(2, $row))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         for ($c = 1; $c <= count($head); $c++) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);

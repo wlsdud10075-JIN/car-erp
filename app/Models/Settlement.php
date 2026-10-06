@@ -32,6 +32,8 @@ class Settlement extends Model
         'exchange_rate_at_close',
         // 새회의 #8 보강 (2026-05-23) — 정산 캐리오버 (영업담당자별 이월)
         'carryover_in_krw', 'carryover_out_krw',
+        // 2026-10-06 jin — 2차 마감 차액의 분해 박제(환차분 / 비용분). 기타 = carryover_out − 둘.
+        'secondary_fx_krw', 'secondary_cost_krw',
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
         // A-3 (2026-07-08) — 귀속월 고정 (완납월 1일). submitForMonth 앵커.
         'attributed_month',
@@ -52,6 +54,8 @@ class Settlement extends Model
         'exchange_rate_at_close' => 'decimal:4',
         'carryover_in_krw' => 'decimal:2',
         'carryover_out_krw' => 'decimal:2',
+        'secondary_fx_krw' => 'decimal:2',
+        'secondary_cost_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
         'is_domestic' => 'boolean',
         'gate_override_at' => 'datetime',
@@ -365,6 +369,71 @@ class Settlement extends Model
             ->whereNull('payout_batch_id')
             ->whereNull('gate_override_at')
             ->whereHas('vehicle', fn ($v) => $v->where('sale_unpaid_amount_krw_cache', '>', 0));
+    }
+
+    // ── 2차 차액 분해 — 1차 지급액 대비 환차분 / 비용(2차 차액)분 / 기타 / 이월 합계 (jin 2026-10-06) ──────
+
+    /**
+     * 💱 **2차 차액의 분해** — 드로어·행·담당자 카드·엑셀이 전부 이 하나를 그린다.
+     *
+     * jin: *「1차 정산에서 실지급액 준 거 대비 +,- 가 되어서 차액이 표시되는 행이 보여지면 좋겠고,
+     *      결국은 환차, 2차 차액, 이월금액(최종) 이렇게 되는 그림」* — 월배치 모달을 띄우기 전에
+     *      실무자가 차액이 얼마나 생겼는지 알고 싶어서다.
+     *
+     * 기준 = 지급 스냅샷(`confirmed_snapshot`). 없으면 null(옛 적재분 — 화면은 「—」, `closeOne` 도 이월 0).
+     * - **마감 전(pending)** = 지금 값 − 스냅샷 **미리보기**(`frozen=false`). 환율·비용이 바뀌면 같이 움직인다.
+     * - **마감 뒤(closed)** = 마감 때 박제한 값(`frozen=true`) — 합계는 `carryover_out_krw`, 분해는
+     *   `secondary_fx_krw`/`secondary_cost_krw`. 🚫 다시 계산하지 않는다 — 미수가 남은 채 마감한 차에
+     *   뒤늦게 돈이 들어오면 환율이 움직여 실시간 값이 변하는데, 마감은 1회 확정이다(jin «담당자 정산은 다시 안 움직인다»).
+     *   이 컬럼 이전에 마감된 행은 분해가 null 이고 합계만 있다.
+     *
+     * 분해 방법 — 마진 변동을 원인별로 나눈 뒤 정산액 변동을 그 비율로 배분한다.
+     *   Δm_fx   = (판매금원화 지금 − 스냅샷) × 0.9      ← 정산환율(실입금)이 움직인 몫
+     *   Δm_cost = −(비용합계 지금 − 스냅샷) × 0.9       ← 탁송비·면허비 등 명세서 기입
+     *   정산액 변동(Δsa) 을 |Δm_fx| : |Δm_cost| : |나머지 Δm| 로 나눈다 — 프리랜서(총마진 × 비율)는 정확히 맞고,
+     *   사내직원(건당 고정, paid 때 동결)은 Δsa=0 이라 전부 0, karaba(이익률 구간)는 근사다.
+     *   기타 = 합계 − fx − cost (서류비·발송비·기타공제 변동 + 배분 잔차).
+     *
+     * @return array{base:int, fx:int|null, cost:int|null, other:int|null, total:int, frozen:bool}|null
+     */
+    public function secondaryBreakdown(): ?array
+    {
+        $snap = $this->confirmed_snapshot;
+        if (! is_array($snap) || ! array_key_exists('actual_payout', $snap)) {
+            return null;
+        }
+        $base = (int) $snap['actual_payout'];
+
+        if ($this->secondary_status === 'closed') {
+            $total = (int) round((float) ($this->carryover_out_krw ?? 0));
+            if ($this->secondary_fx_krw === null && $this->secondary_cost_krw === null) {
+                return ['base' => $base, 'fx' => null, 'cost' => null, 'other' => null, 'total' => $total, 'frozen' => true];
+            }
+            $fx = (int) round((float) ($this->secondary_fx_krw ?? 0));
+            $cost = (int) round((float) ($this->secondary_cost_krw ?? 0));
+
+            return ['base' => $base, 'fx' => $fx, 'cost' => $cost, 'other' => $total - $fx - $cost, 'total' => $total, 'frozen' => true];
+        }
+
+        $total = (int) $this->actual_payout - $base;
+        $dSa = (int) $this->settlement_amount - (int) ($snap['settlement_amount'] ?? $this->settlement_amount);
+        $dmFx = ((float) $this->sales_amount_krw - (float) ($snap['sales_amount_krw'] ?? $this->sales_amount_krw)) * 0.9;
+        $dmCost = -((float) ($this->vehicle?->cost_total ?? 0) - (float) ($snap['cost_total'] ?? ($this->vehicle?->cost_total ?? 0))) * 0.9;
+        $dmAll = (float) $this->total_margin - (float) ($snap['total_margin'] ?? $this->total_margin);
+        // 마진 1원이 정산액 몇 원으로 바뀌는가(k). 프리랜서 = 비율/100 과 같고(정확), karaba 는 근사.
+        //   Δm 이 0 인데 Δsa 가 있으면(건당 금액 수동 수정 등) 전부 「기타」로 — 원인별로 나눌 근거가 없다.
+        if (abs($dmAll) > 1e-9) {
+            $k = $dSa / $dmAll;
+        } elseif ($this->settlement_type === 'ratio' && ! self::isKarabaMemo()) {
+            $k = $this->effective_ratio / 100;   // 환차 + 와 비용 − 가 정확히 상쇄된 경우에도 각 몫은 보여야 한다
+        } else {
+            $k = 0.0;
+        }
+        // ⚠️ 각 원인의 Δm 에 **같은 k** 를 곱한다 — 비중(|Δm|)으로 Δsa 를 쪼개면 환차 + · 비용 − 가 섞일 때 부호가 틀어진다.
+        $fx = (int) round($dmFx * $k);
+        $cost = (int) round($dmCost * $k);
+
+        return ['base' => $base, 'fx' => $fx, 'cost' => $cost, 'other' => $total - $fx - $cost, 'total' => $total, 'frozen' => false];
     }
 
     // ── 2차 가능 / 비용 대기 (jin 2026-10-06) ─────────────────────────────────────────────
