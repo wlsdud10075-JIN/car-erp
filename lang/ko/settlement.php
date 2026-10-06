@@ -157,6 +157,21 @@ return [
     'domestic_hint' => '내수(국내 판매) — 총판매가 − 매입가 − 말소비 − 탁송비 로 계산됩니다.',
     'summary_domestic_payout' => '└ 내수정산 (:count건)',
     'summary_carryover' => '미청산 이월',
+    'summary_pending_carry' => '2차 대기 이월 예상',
+    // 💱 2차 차액 분해 (jin 2026-10-06) — 「1차 지급액 → 환차분 → 2차 차액(비용) → 이월금액(최종)」
+    'breakdown' => [
+        'title_pending' => '2차 차액 (예상 — 1차 지급액 대비)',
+        'title_closed' => '2차 차액 (마감 확정)',
+        'base' => '1차 지급액',
+        'fx' => '환차분',
+        'cost' => '2차 차액',
+        'cost_sub' => '(탁송비·면허비 등 비용 변동)',
+        'other' => '기타',
+        'other_sub' => '(서류비·발송비·기타공제 변동)',
+        'total' => '이월금액(최종)',
+        'pending_note' => '2차 마감 때 이 값으로 확정돼 다음 달 미청산 이월로 넘어갑니다. 그 전엔 환율·비용이 바뀌면 같이 움직입니다.',
+        'row_label' => '이월',
+    ],
     'summary_cancel_loss' => '매입취소 손실 (미반영)',
     'summary_cancel_loss_hint' => '매입취소 미수마감 차량의 담당자 부담 몫입니다 (:plates). 실제 차감은 「월배치 지급」 화면의 담당자 조정에서 하세요 — 여기 정산 합계에는 포함돼 있지 않습니다.',
 
