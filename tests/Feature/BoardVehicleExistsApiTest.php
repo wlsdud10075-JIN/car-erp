@@ -64,16 +64,19 @@ class BoardVehicleExistsApiTest extends TestCase
         $res->assertOk()->assertExactJson([
             'exists' => [$a->id, $b->id],
             'missing' => [$ghost],
+            'deleted' => [],
         ]);
     }
 
-    public function test_a_soft_deleted_vehicle_counts_as_missing(): void
+    /** 🔀 2026-10-06 — 소프트 삭제는 `deleted` (missing 아님). ERP 가 지운 board 차량이 아침점검에 영원히 남던 것. */
+    public function test_a_soft_deleted_vehicle_is_reported_as_deleted_not_missing(): void
     {
         $v = $this->vehicle();
         $v->delete();
+        $ghost = $v->id + 1000;
 
-        $this->signedGet('/api/internal/board/vehicles/exists', ['ids' => (string) $v->id])
-            ->assertOk()->assertExactJson(['exists' => [], 'missing' => [$v->id]]);
+        $this->signedGet('/api/internal/board/vehicles/exists', ['ids' => "{$v->id},{$ghost}"])
+            ->assertOk()->assertExactJson(['exists' => [], 'missing' => [$ghost], 'deleted' => [$v->id]]);
     }
 
     public function test_duplicates_and_junk_are_ignored(): void
@@ -81,7 +84,7 @@ class BoardVehicleExistsApiTest extends TestCase
         $v = $this->vehicle();
 
         $this->signedGet('/api/internal/board/vehicles/exists', ['ids' => "{$v->id},{$v->id},abc,0,-3"])
-            ->assertOk()->assertExactJson(['exists' => [$v->id], 'missing' => []]);
+            ->assertOk()->assertExactJson(['exists' => [$v->id], 'missing' => [], 'deleted' => []]);
     }
 
     public function test_empty_or_oversized_lists_are_rejected_not_silently_zero(): void

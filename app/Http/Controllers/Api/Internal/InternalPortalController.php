@@ -60,7 +60,11 @@ class InternalPortalController extends Controller
      *
      * - 스코프 없음(영업 본인격리 미적용): 응답이 **id 의 존재 여부뿐**이라 새는 정보가 없다.
      *   차량번호·금액·바이어를 절대 싣지 말 것 — 싣는 순간 본인격리 대상이 된다.
-     * - 소프트 삭제된 차는 `missing` 이다 — board 가 가리키는 행이 산 행인지가 질문이다(SKILLS §8 #110).
+     * - 🔀 2026-10-06 (jin) — 소프트 삭제된 차는 `missing` 이 아니라 **`deleted`** 로 따로 돌려준다.
+     *   09-28 엔 「산 행인가」가 질문이라 missing 으로 쳤는데, ERP 가 board 차량을 지울 때마다 그 차가 **영원히**
+     *   아침점검 빨간 줄에 남았다(heymanerp 5대 — 전부 ERP 에 생긴 뒤 지워진 차). 전송 누락(ERP 에 아예 없음)만
+     *   `missing` 이고, 지워진 차는 board 가 참고 건수로만 적는다. board 가 `deleted` 를 모르는 동안에도
+     *   `missing` 에서 빠지므로 하위호환이다(board 는 모르는 키를 무시한다).
      * - 한 번에 500개까지. 그 이상은 board 가 나눠 부른다(감사 명령 명세 3항).
      */
     public function vehiclesExist(Request $request): JsonResponse
@@ -80,10 +84,12 @@ class InternalPortalController extends Controller
 
         $exists = Vehicle::query()->whereKey($ids)->pluck('id')->map(fn ($id) => (int) $id)->all();
         sort($exists);
-        $missing = array_values(array_diff($ids, $exists));
+        $deleted = Vehicle::onlyTrashed()->whereKey($ids)->pluck('id')->map(fn ($id) => (int) $id)->all();
+        sort($deleted);
+        $missing = array_values(array_diff($ids, $exists, $deleted));
         sort($missing);
 
-        return response()->json(['exists' => $exists, 'missing' => $missing]);
+        return response()->json(['exists' => $exists, 'missing' => $missing, 'deleted' => $deleted]);
     }
 
     public function receivables(Request $request): JsonResponse

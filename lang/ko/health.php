@@ -11,6 +11,7 @@ return [
     'board_stalled' => '정체 :s건 · ERP 미도착 :m건',
     'board_integrity' => '완료인데 ERP 번호 없음 :a건 · ERP 번호 있는데 미완료 :b건',
     'board_audit_failed' => 'ERP 대조 실패 (:err)',
+    'board_deleted_note' => '(ERP 에서 지운 차 :d건 — 참고)',
 
     'job_failed' => '정기 작업 실패',
     'job_recovered' => '정기 작업 복구',
@@ -36,7 +37,7 @@ return [
         'holidays' => '공휴일 목록이 갱신되지 않았습니다. 인증키 사용 기간이 끝났을 수 있습니다.',
         'db_backup' => '오늘 백업 파일이 없습니다. 되돌려야 할 때 쓸 것이 없습니다.',
         'assistant_index' => '챗봇이 참고하는 자료가 갱신되지 않았습니다.',
-        'board_sync_stalled' => '낙찰됐는데 ERP 로 넘어가지 않은 차가 있습니다. board 매입내역에서 전송 오류를 확인하세요.',
+        'board_sync_stalled' => '낙찰됐는데 ERP 로 넘어가지 않은 차가 있습니다. board 매입내역의 전송 오류를 확인하세요. (넘어간 뒤 ERP 에서 지운 차는 실패가 아니라 참고 건수로만 붙습니다.)',
         'board_sync_integrity' => 'board 와 ERP 의 전송 상태가 서로 맞지 않는 차가 있습니다. 같은 차가 두 번 만들어졌거나 번호가 어긋났을 수 있습니다.',
     ],
 ];
