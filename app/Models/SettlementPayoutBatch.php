@@ -572,6 +572,16 @@ class SettlementPayoutBatch extends Model
         $this->forceFill(['request_notified_at' => now()])->saveQuietly();
     }
 
+    /**
+     * 재전송할 수 있는 사람 — 제출 권한자([관리]·업무관리자) + 시스템관리자(super).
+     * super 를 넣은 이유: jin 이 지금까지 손으로 재발송하던 사람이고, 로컬·운영 확인도 super 로 한다(2026-10-07 「로컬에 버튼이 없는데?」).
+     * 대표(admin)는 받는 사람이라 넣지 않는다.
+     */
+    public static function canResendRequest(?User $u): bool
+    {
+        return $u !== null && ($u->canSubmitPayoutBatch() || $u->isSuperAdmin());
+    }
+
     /** 재전송 대기 — 마지막 발송 뒤 이 시간 안에는 다시 못 보낸다(대표 카톡 도배 방지). */
     public const RESEND_COOLDOWN_MINUTES = 10;
 
@@ -626,7 +636,7 @@ class SettlementPayoutBatch extends Model
         if ($this->status !== self::STATUS_PENDING) {
             throw new \DomainException(__('payout_batch.resend.not_pending'));
         }
-        if (! $by->canSubmitPayoutBatch()) {
+        if (! self::canResendRequest($by)) {
             throw new \DomainException(__('payout_batch.resend.forbidden'));
         }
         if (($wait = $this->resendWaitMinutes()) > 0) {

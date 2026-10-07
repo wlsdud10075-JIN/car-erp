@@ -114,6 +114,20 @@ class PayoutRequestResendTest extends TestCase
         }
     }
 
+    /** 시스템관리자(super)도 보낼 수 있다 — jin 이 손으로 재발송하던 사람(2026-10-07). 대표(admin)는 받는 사람이라 버튼 없음. */
+    public function test_super_admin_can_resend_too(): void
+    {
+        [$batch] = $this->pendingBatch();
+        $this->travel(11)->minutes();
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $this->actingAs($super);
+
+        $c = Volt::test('erp.payout-batches.index');
+        $this->assertStringContainsString('data-resend-request', $c->html(), 'super 화면에 버튼이 없다');
+        $c->call('resendRequest', $batch->id)->assertDispatched('notify', fn ($n, $p) => ($p['type'] ?? '') === 'success');
+        $this->assertSame(2, $this->requestsTo('01020000000'));
+    }
+
     /** 카드에 마지막 발송 시각과 결과 한 줄 — 전달 보고가 오면 「전달됨」, 실패면 「발송 실패」. */
     public function test_the_card_shows_last_send_time_and_delivery_result(): void
     {

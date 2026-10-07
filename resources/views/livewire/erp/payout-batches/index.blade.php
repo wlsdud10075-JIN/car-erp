@@ -145,7 +145,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                     </div>
                     {{-- 📨 승인요청 재전송 (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 다시 보낸다. 연타 방지 10분. --}}
-                    @if($b->status === 'pending' && auth()->user()->canSubmitPayoutBatch())
+                    @if($b->status === 'pending' && \App\Models\SettlementPayoutBatch::canResendRequest(auth()->user()))
                     @php $wait = $b->resendWaitMinutes(); @endphp
                     <button type="button" wire:click="resendRequest({{ $b->id }})" @disabled($wait > 0)
                             wire:loading.attr="disabled" wire:target="resendRequest({{ $b->id }})"
