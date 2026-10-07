@@ -573,12 +573,14 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 재전송할 수 있는 사람 — **[관리] 이상** = 관리 · 업무관리자 · 최고관리자 · 시스템관리자 (`approvalRank() >= 1`).
-     * jin 2026-10-07: *「관리 이상이라 함은 관리, 업무관리자, 최고관리자, 시스템관리자 이렇게까지가 기본」*.
+     * 재전송할 수 있는 사람 — **관리 · 업무관리자만**(= 월배치 제출 권한 `canSubmitPayoutBatch()`, rank 1~2).
+     * jin 2026-10-07: 「제출한 쪽이 승인 쪽을 재촉하는 버튼」. 최고관리자는 받는 사람(자기에게 보내는 버튼이 되고,
+     * 폰 승인 화면에서 [승인] 위치가 밀린다), 시스템관리자는 서버에서 직접 보낼 수 있어 뺀다.
+     * ⚠️ 「관리 이상 = 넷 전부」 기본값의 **명시적 예외**다(메모리 feedback_manager_and_above).
      */
     public static function canResendRequest(?User $u): bool
     {
-        return $u !== null && $u->approvalRank() >= 1;
+        return $u !== null && $u->canSubmitPayoutBatch();
     }
 
     /** 재전송 대기 — 마지막 발송 뒤 이 시간 안에는 다시 못 보낸다(대표 카톡 도배 방지). */

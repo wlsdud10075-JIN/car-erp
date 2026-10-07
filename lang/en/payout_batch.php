@@ -38,7 +38,7 @@ return [
         'done' => 'Approval request sent again to :role.',
         'wait' => 'Just sent — you can resend in :min minute(s).',
         'not_pending' => 'Only a batch awaiting approval can be resent.',
-        'forbidden' => 'Only managers and above (manager role, business manager, administrator, system administrator) can resend.',
+        'forbidden' => 'Only payout-batch submitters (manager role, business manager) can resend.',
         'last_sent' => 'Last approval request :at (:ago)',
         'delivery' => [
             'delivered' => 'Delivered',
