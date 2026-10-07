@@ -762,8 +762,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
             {{-- 🏦 부호는 **버튼으로** 고른다 (jin 2026-08-12, 마이너스 통장).
-                 금액칸(data-money)은 숫자 외 문자를 실시간으로 지우고 `-` 키를 ÷1000 단축키로 쓰고 있어
-                 **음수를 타이핑하는 것 자체가 불가능**하다. 공용 포매터를 고치면 모든 금액칸이 영향을 받으므로
+                 금액칸(data-money)은 숫자 외 문자를 실시간으로 지워
+                 **음수를 타이핑하는 것 자체가 불가능**하다(data-money-signed 칸 제외, ÷1000 단축키는 10-07 폐지). 공용 포매터를 고치면 모든 금액칸이 영향을 받으므로
                  여기서만 부호를 분리한다 — 겸사겸사 "실수로 음수" 가 안 생긴다(눌러야 음수). --}}
             <div class="flex gap-1">
                 <button type="button" wire:click="$toggle('cashKrwNegative')"

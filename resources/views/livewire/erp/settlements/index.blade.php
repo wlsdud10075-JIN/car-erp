@@ -2101,7 +2101,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                     @endforeach
                 </select>
-                <input type="text" wire:model="newAdjAmount" data-money placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
+                <input type="text" wire:model="newAdjAmount" data-money data-money-signed placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
                 <input type="text" wire:model="newAdjReason" placeholder="{{ __('settlement.batch.adjust_reason') }}" class="input-base flex-1 text-xs" />
                 <button type="button" wire:click="addSubmitAdjustment"
                         class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>

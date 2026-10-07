@@ -305,43 +305,35 @@ document.addEventListener('alpine:init', () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────
-// 금액 input([data-money]) — 실시간 콤마 + 넘패드 +/- 로 000 추가/제거 (jin 2026-07-06)
+// 금액 input([data-money]) — 실시간 콤마 (jin 2026-07-06)
 //   문서 위임(wire:navigate·morph 견딤, §8 #21). 정수부만 콤마 · 소수점(외화 cents) 보존.
-//   +/- 키(넘패드/일반) = 정수부 ×1000 / ÷1000 → 5,000,000원 빠른 입력.
+//   🚫 +/- 키 ×1000/÷1000 단축키는 폐지 (jin 2026-10-07 「기본 기능 원래대로」) — `-` 를 가로채서
+//      「− 가능」 칸(정산 제출 모달 기타 조정)에 음수를 칠 수 없었다.
+//   부호: 기본은 숫자 외 문자를 지운다(음수 불가, §8 #58). 음수가 필요한 칸만 data-money-signed 로
+//      맨 앞 `-` 하나를 남긴다 — 공용으로 열면 음수 검증 없는 칸으로 오타가 흘러간다.
 //   저장부 save()가 str_replace(',','') 로 콤마 제거하므로 콤마 포함 표시값도 저장 호환.
 // ──────────────────────────────────────────────────────────────────────────
-function moneyFormat(raw) {
-    let s = String(raw ?? '').replace(/[^0-9.]/g, '');
-    if (s === '') return '';
+function moneyFormat(raw, signed = false) {
+    const str = String(raw ?? '');
+    const neg = signed && str.trim().startsWith('-');
+    let s = str.replace(/[^0-9.]/g, '');
+    if (s === '') return neg ? '-' : '';
     const dot = s.indexOf('.');
     let intp = dot === -1 ? s : s.slice(0, dot);
     const dec = dot === -1 ? '' : '.' + s.slice(dot + 1).replace(/\./g, '').slice(0, 2);
     intp = intp.replace(/^0+(?=\d)/, '');
     intp = intp === '' ? '0' : Number(intp).toLocaleString('en-US');
-    return intp + dec;
+    return (neg ? '-' : '') + intp + dec;
 }
 
 function applyMoneyFormat(el) {
-    const f = moneyFormat(el.value);
+    const f = moneyFormat(el.value, el.hasAttribute('data-money-signed'));
     if (f !== el.value) el.value = f;
 }
 
 document.addEventListener('input', (e) => {
     const el = e.target;
     if (el && el.matches && el.matches('input[data-money]')) applyMoneyFormat(el);
-});
-
-document.addEventListener('keydown', (e) => {
-    const el = e.target;
-    if (!el || !el.matches || !el.matches('input[data-money]')) return;
-    if (e.key !== '+' && e.key !== '-') return;
-    e.preventDefault();
-    const d = String(el.value).replace(/[^0-9]/g, ''); // 정수부만 (넘패드 000)
-    let n = d === '' ? 0 : Number(d);
-    n = e.key === '+' ? n * 1000 : Math.floor(n / 1000);
-    el.value = n ? n.toLocaleString('en-US') : '';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
 function formatAllMoney() {
@@ -362,7 +354,6 @@ if (window.Livewire) {
 //   → 사용자에겐 "환산 금액이 엄청 느리다"로 보였다. 성능이 아니라 배선 문제(CLAUDE.md #15).
 //   서버 렌더값은 초기 표시·저장 기준 그대로 두고, 입력 중 표시만 여기서 계산한다.
 //   문서 위임이라 wire:navigate·morph·행 추가 뒤에도 계속 동작한다(§8 #21).
-//   data-money 의 +/- 키 처리도 input 이벤트를 dispatch 하므로 함께 잡힌다.
 // ──────────────────────────────────────────────────────────────────────────
 function recalcFinalPaymentKrw(row) {
     const out = row.querySelector('[data-fp-krw]');
