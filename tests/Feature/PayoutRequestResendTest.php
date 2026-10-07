@@ -95,7 +95,7 @@ class PayoutRequestResendTest extends TestCase
         $this->assertSame(0, $batch->fresh()->resendWaitMinutes());
     }
 
-    /** 🚫 제출 권한 없는 사람(재무·대표)·승인 끝난 배치는 못 보낸다. 버튼도 안 보인다. */
+    /** 🚫 [관리] 미만(재무 등)은 못 보낸다 · 최고관리자는 보인다 · 승인 끝난 배치는 대상 아님. */
     public function test_only_submitters_and_only_pending_batches(): void
     {
         [$batch, , $mgr, $adm] = $this->pendingBatch();
@@ -106,15 +106,16 @@ class PayoutRequestResendTest extends TestCase
         try {
             $batch->fresh()->resendPayoutRequest($finance);
         } finally {
+            // 대표(최고관리자)도 [관리] 이상이라 버튼이 보인다(jin 2026-10-07 「관리 이상 = 관리·업무관리자·최고관리자·시스템관리자」)
             $this->actingAs($adm);
-            $this->assertStringNotContainsString('data-resend-request', Volt::test('erp.payout-batches.index')->html(), '대표 화면에 재전송 버튼이 보인다');
+            $this->assertStringContainsString('data-resend-request', Volt::test('erp.payout-batches.index')->html(), '최고관리자 화면에 재전송 버튼이 없다');
             $batch->approveBy($mgr);
             $batch->approveBy($adm);
             $this->assertSame('approved', $batch->fresh()->status);
         }
     }
 
-    /** 시스템관리자(super)도 보낼 수 있다 — jin 이 손으로 재발송하던 사람(2026-10-07). 대표(admin)는 받는 사람이라 버튼 없음. */
+    /** 시스템관리자(super)도 보낼 수 있다 — [관리] 이상(2026-10-07). */
     public function test_super_admin_can_resend_too(): void
     {
         [$batch] = $this->pendingBatch();
