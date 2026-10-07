@@ -41,13 +41,8 @@ return [
         'wait' => '방금 보냈습니다 — :min분 뒤에 다시 보낼 수 있습니다.',
         'not_pending' => '승인 대기 중인 배치만 다시 보낼 수 있습니다.',
         'forbidden' => '관리·업무관리자(월배치 제출 권한자)만 다시 보낼 수 있습니다.',
-        'last_sent' => '마지막 승인요청 :at (:ago)',
-        'delivery' => [
-            'delivered' => '전달됨',
-            'sent' => '발송됨 · 전달 확인 전',
-            'failed' => '발송 실패',
-            'skipped' => '발송 안 됨(설정)',
-        ],
+        'state_ok' => '발송성공',
+        'state_fail' => '발송실패',
     ],
     'adjust' => [
         'title' => '조정 내역 (제출 시 확정)',

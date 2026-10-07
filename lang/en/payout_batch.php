@@ -39,13 +39,8 @@ return [
         'wait' => 'Just sent — you can resend in :min minute(s).',
         'not_pending' => 'Only a batch awaiting approval can be resent.',
         'forbidden' => 'Only payout-batch submitters (manager role, business manager) can resend.',
-        'last_sent' => 'Last approval request :at (:ago)',
-        'delivery' => [
-            'delivered' => 'Delivered',
-            'sent' => 'Sent · not yet confirmed',
-            'failed' => 'Failed',
-            'skipped' => 'Not sent (settings)',
-        ],
+        'state_ok' => 'Sent',
+        'state_fail' => 'Send failed',
     ],
     'adjust' => [
         'readonly_hint' => 'Adjustments are fixed when the monthly batch is submitted from Settlements. To change them, reject this batch and submit again from Settlements.',

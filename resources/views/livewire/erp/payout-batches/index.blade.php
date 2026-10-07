@@ -144,6 +144,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                             · <span class="text-amber-600">{{ __('payout_batch.next_level', ['role' => $this->levelLabel($b->current_level)]) }}</span>
                         @endif
                     </div>
+                    {{-- 📨 승인요청 발송 결과 (jin 2026-10-07 「색상으로 발송성공·실패 둘만」) — 시각 없이 뱃지 하나. 알림톡 자체는 무변경.
+                         초록 = 발송성공(카카오 접수·전달) / 빨강 = 발송실패(실패·미전달·설정으로 차단). 기록 없으면 안 그린다. --}}
+                    @if($b->status === 'pending' && ($sendOk = $b->requestSendOk()) !== null)
+                    <span class="rounded px-2 py-0.5 text-[11px] font-medium {{ $sendOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}" data-request-send-state="{{ $sendOk ? 'ok' : 'fail' }}">
+                        {{ $sendOk ? __('payout_batch.resend.state_ok') : __('payout_batch.resend.state_fail') }}
+                    </span>
+                    @endif
                     {{-- 📨 승인요청 재전송 (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 다시 보낸다. 연타 방지 10분. --}}
                     @if($b->status === 'pending' && \App\Models\SettlementPayoutBatch::canResendRequest(auth()->user()))
                     @php $wait = $b->resendWaitMinutes(); @endphp
@@ -164,20 +171,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     @endif
                 </div>
-
-                {{-- 📨 승인요청 마지막 발송 (jin 2026-10-07) — 다시 보낼지 판단할 수 있게 시각·결과 한 줄. 대기 중인 배치만. --}}
-                @if($b->status === 'pending' && $b->request_notified_at)
-                @php
-                    $delivery = $b->lastRequestDelivery();
-                    $deliveryClass = match ($delivery) { 'delivered' => 'text-emerald-600', 'failed' => 'text-red-600', 'skipped' => 'text-amber-600', default => 'text-gray-500' };
-                @endphp
-                <div class="mt-1.5 text-[11px] text-gray-400" data-request-last-sent>
-                    {{ __('payout_batch.resend.last_sent', ['at' => $b->request_notified_at->format('m-d H:i'), 'ago' => $b->request_notified_at->diffForHumans()]) }}
-                    @if($delivery)
-                    · <span class="{{ $deliveryClass }}">{{ __('payout_batch.resend.delivery.'.$delivery) }}</span>
-                    @endif
-                </div>
-                @endif
 
                 {{-- 반려 사유 입력 --}}
                 @if($rejectingId === $b->id)
