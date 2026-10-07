@@ -187,6 +187,7 @@ class NotionGuideAudienceTest extends TestCase
         '변속기' => '2026-10-02 삭제 — 기본정보 NICE 제원 칸(변속기·구동방식·축거)은 NICE 가 안 채우고 서류도 안 써서 화면에서 제거',
         '구동방식' => '2026-10-02 삭제 — 위와 같음',
         '축거' => '2026-10-02 삭제 — 위와 같음',
+        '000이 붙고' => '2026-10-07 폐지 — 금액칸 +/- ×1000 단축키 제거(+/- 는 일반 키로 동작)',
     ];
 
     public function test_guides_do_not_describe_retired_features(): void
