@@ -629,6 +629,17 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
+     * 화면 뱃지용 두 갈래 (jin 2026-10-07 「발송성공·실패 이 둘만」) — true 초록 / false 빨강 / null 기록 없음(안 그림).
+     * 성공 = 발송 접수(sent)·전달(delivered). 실패 = 실패·미전달·설정 차단(skipped — 대표에게 안 갔으니 실패로 본다).
+     */
+    public function requestSendOk(): ?bool
+    {
+        $d = $this->lastRequestDelivery();
+
+        return $d === null ? null : in_array($d, ['delivered', 'sent'], true);
+    }
+
+    /**
      * 📨 **승인요청 재전송** (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 월배치 화면에서 다시 보낸다.
      * 현재 승인 계단의 사람에게만, 서명 링크를 새로 만들어 보낸다(배치 내용 불변). 연타 방지 10분 · 감사로그.
      */

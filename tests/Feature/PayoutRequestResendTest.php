@@ -129,21 +129,24 @@ class PayoutRequestResendTest extends TestCase
         $this->assertSame(1, $this->requestsTo('01020000000'), 'super 가 보냈다');
     }
 
-    /** 카드에 마지막 발송 시각과 결과 한 줄 — 전달 보고가 오면 「전달됨」, 실패면 「발송 실패」. */
-    public function test_the_card_shows_last_send_time_and_delivery_result(): void
+    /** 카드에 뱃지 하나 — 발송 접수·전달이면 초록 「발송성공」, 실패·미전달·설정 차단이면 빨강 「발송실패」(jin 2026-10-07). 시각은 안 보인다. */
+    public function test_the_card_shows_a_single_green_or_red_send_badge(): void
     {
         [$batch, $submitter] = $this->pendingBatch();
         $this->actingAs($submitter);
+        $badge = fn () => Volt::test('erp.payout-batches.index')->html();
 
-        $html = Volt::test('erp.payout-batches.index')->html();
-        $this->assertMatchesRegularExpression('/data-request-last-sent[\s\S]{0,300}?'.preg_quote(__('payout_batch.resend.delivery.sent'), '/').'/u', $html);
+        $this->assertMatchesRegularExpression('/bg-green-100[^"]*"[^>]*data-request-send-state="ok"[^>]*>\s*'.preg_quote(__('payout_batch.resend.state_ok'), '/').'/u', $badge());
 
         AlimtalkLog::where('template_code', 'erp_payout_request')->update(['report_status' => 'delivered']);
-        $this->assertSame('delivered', $batch->fresh()->lastRequestDelivery());
-        $this->assertMatchesRegularExpression('/data-request-last-sent[\s\S]{0,300}?'.preg_quote(__('payout_batch.resend.delivery.delivered'), '/').'/u',
-            Volt::test('erp.payout-batches.index')->html());
+        $this->assertTrue($batch->fresh()->requestSendOk(), '전달됨은 성공');
 
         AlimtalkLog::where('template_code', 'erp_payout_request')->update(['status' => 'failed', 'report_status' => null]);
-        $this->assertSame('failed', $batch->fresh()->lastRequestDelivery());
+        $this->assertFalse($batch->fresh()->requestSendOk());
+        $this->assertMatchesRegularExpression('/bg-red-100[^"]*"[^>]*data-request-send-state="fail"[^>]*>\s*'.preg_quote(__('payout_batch.resend.state_fail'), '/').'/u', $badge());
+
+        AlimtalkLog::where('template_code', 'erp_payout_request')->update(['status' => 'skipped']);
+        $this->assertFalse($batch->fresh()->requestSendOk(), '설정으로 막혀 안 간 것도 실패');
+        $this->assertStringNotContainsString('마지막 승인요청', $badge(), '시각 줄이 남아 있다');
     }
 }
