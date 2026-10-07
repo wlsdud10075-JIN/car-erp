@@ -67,7 +67,17 @@
 | 반려 | 유지. **즉시 수정 = 같은 배치 재상신 / 반려 = 새 배치로** 올림. 반려 내용은 보존 |
 | karaba | 2사 완료 뒤 가능 여부를 jin 에게 보고 |
 
-## 3. 열린 질문 (3차)
+### 3차 문답 결정 (jin 2026-10-07)
+
+| # | 결정 |
+|---|---|
+| 기여·지분율 기준 | **잠정** — 회사 기여 = 총마진 − (정산금 + 급여 지급합계 + 추가 인센티브) − 발송비. 지분율 = 개인 기여 ÷ 전체 합(음수 %). jin «화면을 봐야 이해 — 추천대로 해 보고 보자» |
+| 대시보드 회사순이익 | **급여(검차 포함)도 뺀다**. 검차 등 특정인 몫이 아닌 급여는 **「공통 인건비」 한 줄** |
+| 급여 기준 월 | **귀속월**. 드로어에 **월 선택**을 두고 그 달 칸에 기입(11/10 전 입력) |
+| 추가 인센티브 | **N건** 가능(금액 + 사유 행 추가) — 예외가 계속 생기므로. 카드·결재 내역에 사유 표시 |
+| 결재선 | 업무관리자가 **월정산 제출 때 부장·전무·대표를 드롭다운으로 선택**(기본값 = 지난번). 그 직급에 사람이 없으면 자동 건너뜀 |
+
+## 3. 열린 질문 (4차)
 
 → 대화로 진행 중. 답이 나면 §2 에 옮긴다.
 
@@ -87,3 +97,44 @@
 프리랜서 = 급여·정산금 칸 없이 환산 합계가 곧 실지급. 회사 이익 = §3 Q1 결정에 따름
 검차직원 = 급여 지급합계만 (회사 손익 칸 없음 — §3 확인)
 ```
+
+**화면 시안(가상 예시)** = https://claude.ai/artifact/GhDAaSQvAfLj5T33Sy4WT7 (jin 비공개 아티팩트, 2026-10-07 v1)
+
+## 5. 현행 구조 조사 (2026-10-07, 근거 `파일:줄`)
+
+- 배치 = `settlement_payout_batches`(month·submitter_rank·current_level·status·total_payout·settlement_count) · 서명 이력 `settlement_payout_approvals`(action approved/rejected, **회차 칸 없음**) · 조정 `settlement_payout_adjustments`(amount·reason, **종류 칸 없음** — 이월·손실·수기가 사유 문자열로만 갈림).
+- 계단 = `User::approvalRank()`(User.php:299) 숫자 + `TOP_RANK=3`(SettlementPayoutBatch.php:26) + `current_level++`. 알림톡 수신자도 permission 으로 조회(`AlimtalkRecipients::payoutApproverUsers` :800).
+- 반려 = 정산 풀기(:433) + 이월 청산 삭제(:436). **같은 배치 재상신 기능 없음.** 조정 수정은 pending 일 때만.
+- 기본급 = `salesmen.base_salary_krw` 실시간 읽기(박제 없음 — 고치면 과거 배치 화면도 바뀐다).
+- 영업담당자 = User 가 원본(role 「영업」 저장 시 `Salesman::updateOrCreate`, admin/users :204). name·type 은 담당자 화면에서 못 바꾼다.
+- 앱 내 알림 = `TaskAlarm` 뿐이고 **user_id 칸이 없다**(역할 단위). 결재 알림은 전부 알림톡.
+- 승인 링크 = 5일 서명 URL, 로그인 없음. 사람별 breakdown 이 **이름 문자열 키**(동명이인 위험).
+- 회사이익 공식이 **3곳**: 대시보드 `computeCompanyProfit`(paid_at 기준 + 조정 차감) · 월결산 알림톡 `AlimtalkMonthlyClosing`(귀속월 기준, **조정 미반영**) · 배치 `profitStats`(batch.total_payout). 대시보드 문구 `admin_dash.php:92,96` 은 아직 옛 「+환차」 공식을 말한다(코드와 불일치 — 기존 결함).
+- 「월배치」 노출 = lang/ko 22 · 승인 화면 하드코딩 1 · app 메시지 ~8 · 엑셀 열 헤더 1 · 가이드 36 · 카드 14. **알림톡 승인 문구 3종(`erp_payout_request/done/rejected`)에 「월배치」** → 바꾸지 않는다(BizM).
+- 사내직원 정산금 = `effective_per_unit_amount`(Settlement.php:1057) · 차등 `employeePerUnitTier`(:1137). 프리랜서 환산은 `total_margin × param(ratio) − param(서류비) − shipping_fee − other_deduction` 으로 재조립 가능(`document_fee` accessor 는 사내직원이면 0 이라 직접 param).
+- 환차 분리: ⓐ 1차에 녹은 몫 = base × (실효환율 − 판매환율) → 총마진 × 비율 경로로 재계산 가능(accessor 없음) · ⓑ 2차 몫 = `secondaryBreakdown()['fx']`(Settlement.php:396) 정산 단위로 이미 있음(사내직원은 고정이라 0). `exchange_difference_krw` 는 운임비까지 포함한 총액이라 **정산 반영분과 다르다**.
+
+## 6. 설계 초안 (착수 결정 전 — 바뀔 수 있음)
+
+**데이터**
+1. `payroll_entries`(salesman_id · month 'YYYY-MM' · label · amount · sort · is_custom) — 11개 고정 항목 + N행. 월별 빈칸 시작. `base_salary_krw` 는 읽지 않게 한다(값은 비움).
+2. `salesmen.type` 에 **검차(inspector)** 추가 — 🚨 enum 이면 모델 상수 + 같은 커밋 ALTER + 정적 가드(§8 #36).
+3. `users.approval_title` nullable(부장/전무/대표) — 최고관리자에게만. 사용자관리 권한 select 아래.
+4. `settlement_payout_adjustments.kind`(manual · carryover · loss · **incentive**) — 인센티브 N건 = kind=incentive 행.
+5. `settlement_payout_batch_steps`(batch_id · seq · title · approver_user_id · status · acted_at · note) — 제출 때 고른 결재선. 사람 없는 직급은 행을 안 만든다(= 건너뜀). v3 배치만 이 표로 돌고, 옛 배치는 `current_level` 그대로.
+6. `settlement_payout_batch_changes`(batch_id · user_id · salesman_id · 무엇 · 전 · 후 · 시각) — 노란 표시와 결재 내역의 출처.
+7. 배치 박제 `breakdown_snapshot`(json) — 제출·수정 때마다 사람별 계산 결과를 박제. **반려돼도 이걸로 그린다**(정산은 지금처럼 풀어서 새 월정산으로 다시 올릴 수 있게).
+8. 앱 내 알림 — `TaskAlarm` 에 user_id·batch 참조를 붙이거나 작은 별도 표.
+
+**계산 단일 출처** — `PersonSettlementBreakdown`(가칭) 하나가 사람 한 명의 「환산 · 이월 · 환차 · 급여 · 정산금 · 인센티브 · 실지급 · 급여공제후 마진 · 회사 기여」를 낸다. 정산관리 카드 · 월정산 · 승인 링크 · 대시보드가 **모두 이것만** 부른다(§8 #44·#45 — 공식 복제 금지).
+
+**순서·일정(착수 후 10일)**
+| 일 | 작업 |
+|---|---|
+| 1~2 | 데이터 1~4 + 사내직원관리(개명·탭·드로어 월 선택·급여 항목) |
+| 3~4 | 계산 단일 출처 + jin 예시 숫자로 테스트 |
+| 5 | 정산관리 카드 · 월정산 카드 · 승인 링크 화면 |
+| 6~7 | 결재선(선택·이어서·수정·변경 색·ERP 알림·반려 보존) |
+| 8 | 대시보드 지분율 + 공통 인건비 + 회사이익 3곳 정합 |
+| 9 | 「월배치」→「월정산」 라벨 + 가이드·카드 |
+| 10 | 전체 테스트 · 운영 사본 검증 · 배포(업무시간 외, 10/10 지급 끝난 뒤) |
