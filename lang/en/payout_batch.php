@@ -30,6 +30,23 @@ return [
     ],
 
     // Monthly batch manual adjustment (jin 2026-07-08)
+    'resend' => [
+        'btn' => 'Resend request',
+        'btn_wait' => 'Resend in :min min',
+        'hint' => 'Sends the approval request message again to the approver at the current step (with a fresh link). The batch itself does not change.',
+        'confirm' => 'Send the approval request to :role again?',
+        'done' => 'Approval request sent again to :role.',
+        'wait' => 'Just sent — you can resend in :min minute(s).',
+        'not_pending' => 'Only a batch awaiting approval can be resent.',
+        'forbidden' => 'Only users who can submit payout batches can resend.',
+        'last_sent' => 'Last approval request :at (:ago)',
+        'delivery' => [
+            'delivered' => 'Delivered',
+            'sent' => 'Sent · not yet confirmed',
+            'failed' => 'Failed',
+            'skipped' => 'Not sent (settings)',
+        ],
+    ],
     'adjust' => [
         'readonly_hint' => 'Adjustments are fixed when the monthly batch is submitted from Settlements. To change them, reject this batch and submit again from Settlements.',
         'title' => 'Manual adjustment (clawback / special pay)',

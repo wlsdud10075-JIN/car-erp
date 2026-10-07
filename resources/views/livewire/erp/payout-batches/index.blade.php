@@ -65,6 +65,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __('payout_batch.notify.approved'), type: 'success');
     }
 
+    /** 📨 승인요청 재전송 (jin 2026-10-07) — 판정(대기 중·제출 권한·10분 대기)은 모델 단일 출처. */
+    public function resendRequest(int $id): void
+    {
+        $batch = SettlementPayoutBatch::findOrFail($id);
+        try {
+            $batch->resendPayoutRequest(auth()->user());
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+        unset($this->batches);
+        $this->dispatch('notify', message: __('payout_batch.resend.done', ['role' => $this->levelLabel($batch->current_level)]), type: 'success');
+    }
+
     public function startReject(int $id): void
     {
         $this->rejectingId = $id;
@@ -129,6 +144,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                             · <span class="text-amber-600">{{ __('payout_batch.next_level', ['role' => $this->levelLabel($b->current_level)]) }}</span>
                         @endif
                     </div>
+                    {{-- 📨 승인요청 재전송 (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 다시 보낸다. 연타 방지 10분. --}}
+                    @if($b->status === 'pending' && auth()->user()->canSubmitPayoutBatch())
+                    @php $wait = $b->resendWaitMinutes(); @endphp
+                    <button type="button" wire:click="resendRequest({{ $b->id }})" @disabled($wait > 0)
+                            wire:loading.attr="disabled" wire:target="resendRequest({{ $b->id }})"
+                            wire:confirm="{{ __('payout_batch.resend.confirm', ['role' => $this->levelLabel($b->current_level)]) }}"
+                            title="{{ $wait > 0 ? __('payout_batch.resend.wait', ['min' => $wait]) : __('payout_batch.resend.hint') }}"
+                            class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            data-resend-request>
+                        📨 {{ $wait > 0 ? __('payout_batch.resend.btn_wait', ['min' => $wait]) : __('payout_batch.resend.btn') }}
+                    </button>
+                    @endif
                     @if($b->status === 'pending' && $canDecide)
                     <div class="flex items-center gap-2">
                         <button wire:click="approve({{ $b->id }})" wire:confirm="{{ __('payout_batch.confirm_approve') }}"
@@ -137,6 +164,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     @endif
                 </div>
+
+                {{-- 📨 승인요청 마지막 발송 (jin 2026-10-07) — 다시 보낼지 판단할 수 있게 시각·결과 한 줄. 대기 중인 배치만. --}}
+                @if($b->status === 'pending' && $b->request_notified_at)
+                @php
+                    $delivery = $b->lastRequestDelivery();
+                    $deliveryClass = match ($delivery) { 'delivered' => 'text-emerald-600', 'failed' => 'text-red-600', 'skipped' => 'text-amber-600', default => 'text-gray-500' };
+                @endphp
+                <div class="mt-1.5 text-[11px] text-gray-400" data-request-last-sent>
+                    {{ __('payout_batch.resend.last_sent', ['at' => $b->request_notified_at->format('m-d H:i'), 'ago' => $b->request_notified_at->diffForHumans()]) }}
+                    @if($delivery)
+                    · <span class="{{ $deliveryClass }}">{{ __('payout_batch.resend.delivery.'.$delivery) }}</span>
+                    @endif
+                </div>
+                @endif
 
                 {{-- 반려 사유 입력 --}}
                 @if($rejectingId === $b->id)

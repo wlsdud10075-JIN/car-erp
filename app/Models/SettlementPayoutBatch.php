@@ -36,11 +36,14 @@ class SettlementPayoutBatch extends Model
     protected $fillable = [
         'month', 'submitter_id', 'submitter_rank', 'current_level', 'status',
         'total_payout', 'settlement_count', 'submitted_at', 'decided_at', 'reject_reason',
+        // 2026-10-07 jin — 승인요청 마지막 발송 시각(재전송 연타 방지 · 발송 결과 표시). 마이그레이션 주석 참조.
+        'request_notified_at',
     ];
 
     protected $casts = [
         'submitted_at' => 'datetime',
         'decided_at' => 'datetime',
+        'request_notified_at' => 'datetime',
     ];
 
     /**
@@ -565,6 +568,72 @@ class SettlementPayoutBatch extends Model
                 ['name' => '승인/반려 바로가기', 'url' => $url],
             ]);
         }
+        // 📨 마지막 발송 시각 — 재전송 연타 방지·발송 결과 표시의 기준(2026-10-07). 상태 컬럼이 아니라 조용히 저장.
+        $this->forceFill(['request_notified_at' => now()])->saveQuietly();
+    }
+
+    /** 재전송 대기 — 마지막 발송 뒤 이 시간 안에는 다시 못 보낸다(대표 카톡 도배 방지). */
+    public const RESEND_COOLDOWN_MINUTES = 10;
+
+    /** 지금 재전송까지 남은 분(0 = 가능). 발송 기록이 없으면 0. */
+    public function resendWaitMinutes(): int
+    {
+        if (! $this->request_notified_at) {
+            return 0;
+        }
+        $elapsed = $this->request_notified_at->diffInSeconds(now(), false);
+        $left = self::RESEND_COOLDOWN_MINUTES * 60 - (int) $elapsed;
+
+        return $left > 0 ? (int) ceil($left / 60) : 0;
+    }
+
+    /**
+     * 📨 마지막 승인요청 발송 결과 — 이 배치의 `request_notified_at` 이후 `erp_payout_request` 로그(배치 id 가 로그에 없어서 시각으로 맺는다).
+     * 'delivered'(전달 확인) · 'sent'(발송·전달 확인 전) · 'failed'(실패·미전달) · 'skipped'(게이트 차단) · null(기록 없음).
+     * 같은 시각대에 다른 배치 요청이 겹칠 수 있으나 월당 진행 배치는 1개라 사실상 이 배치 것이다.
+     */
+    public function lastRequestDelivery(): ?string
+    {
+        if (! $this->request_notified_at) {
+            return null;
+        }
+        $logs = AlimtalkLog::query()
+            ->where('template_code', 'like', 'erp_payout_request%')
+            ->where('created_at', '>=', $this->request_notified_at->copy()->subMinute())
+            ->get(['status', 'report_status']);
+        if ($logs->isEmpty()) {
+            return null;
+        }
+        if ($logs->contains(fn ($l) => $l->status === 'failed' || $l->report_status === 'undelivered')) {
+            return 'failed';
+        }
+        if ($logs->every(fn ($l) => $l->report_status === 'delivered')) {
+            return 'delivered';
+        }
+        if ($logs->every(fn ($l) => $l->status === 'skipped')) {
+            return 'skipped';
+        }
+
+        return 'sent';
+    }
+
+    /**
+     * 📨 **승인요청 재전송** (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 월배치 화면에서 다시 보낸다.
+     * 현재 승인 계단의 사람에게만, 서명 링크를 새로 만들어 보낸다(배치 내용 불변). 연타 방지 10분 · 감사로그.
+     */
+    public function resendPayoutRequest(User $by): void
+    {
+        if ($this->status !== self::STATUS_PENDING) {
+            throw new \DomainException(__('payout_batch.resend.not_pending'));
+        }
+        if (! $by->canSubmitPayoutBatch()) {
+            throw new \DomainException(__('payout_batch.resend.forbidden'));
+        }
+        if (($wait = $this->resendWaitMinutes()) > 0) {
+            throw new \DomainException(__('payout_batch.resend.wait', ['min' => $wait]));
+        }
+        $this->notifyPayoutRequest();
+        AuditLog::recordEvent($this, 'payout_request_resent');
     }
 
     /**
