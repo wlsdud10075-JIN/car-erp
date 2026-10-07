@@ -573,13 +573,12 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 재전송할 수 있는 사람 — 제출 권한자([관리]·업무관리자) + 시스템관리자(super).
-     * super 를 넣은 이유: jin 이 지금까지 손으로 재발송하던 사람이고, 로컬·운영 확인도 super 로 한다(2026-10-07 「로컬에 버튼이 없는데?」).
-     * 대표(admin)는 받는 사람이라 넣지 않는다.
+     * 재전송할 수 있는 사람 — **[관리] 이상** = 관리 · 업무관리자 · 최고관리자 · 시스템관리자 (`approvalRank() >= 1`).
+     * jin 2026-10-07: *「관리 이상이라 함은 관리, 업무관리자, 최고관리자, 시스템관리자 이렇게까지가 기본」*.
      */
     public static function canResendRequest(?User $u): bool
     {
-        return $u !== null && ($u->canSubmitPayoutBatch() || $u->isSuperAdmin());
+        return $u !== null && $u->approvalRank() >= 1;
     }
 
     /** 재전송 대기 — 마지막 발송 뒤 이 시간 안에는 다시 못 보낸다(대표 카톡 도배 방지). */
