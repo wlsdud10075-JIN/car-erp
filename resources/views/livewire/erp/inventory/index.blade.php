@@ -7,6 +7,7 @@ use App\Models\Vehicle;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -29,6 +30,12 @@ use Livewire\WithPagination;
  */
 new #[Layout('components.layouts.app')] class extends Component
 {
+    /** 🪟 다른 탭이 차량을 저장했다(app.js BroadcastChannel) — 다시 그리기만 하면 목록이 최신이다 (jin 2026-10-08). */
+    #[On('vehicles-changed')]
+    public function vehiclesChangedElsewhere(): void
+    {
+    }
+
     use WithPagination;
 
     #[Url] public string $salesmanFilter = '';

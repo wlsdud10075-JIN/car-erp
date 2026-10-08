@@ -540,6 +540,32 @@ if (window.Livewire) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// 🪟 여러 탭 동기화 (jin 2026-10-08) — 같은 브라우저의 다른 탭이 차량을 저장하면 이 탭도 바로 안다.
+//   서버(vehicles/index rendered 훅)가 「이번 요청에 DB 쓰기가 있었다」면 'vehicles-changed' 를 보낸다
+//   → 여기서 BroadcastChannel 로 다른 탭에 전달 → 그 탭은 Livewire.dispatch 로 자기 컴포넌트에 알린다
+//   (차량관리 = 지문 대조 후 조용히 다시 열기/배너 · 재고관리 = 다시 그리기).
+//   BroadcastChannel 은 보낸 탭 자신에게는 안 돌아오므로 탭 ID 가 필요 없다. 다른 사용자의 저장은
+//   30초 하트비트가 따라온다 — 여기는 같은 브라우저 안에서만 즉시다.
+//   탭을 다시 볼 때(visibilitychange) 도 한 번 대조한다 — 백그라운드에서 폴링이 느려졌을 수 있다.
+//   app.js 는 세션당 1회 로드라 여기 배선이 안전하다(§8 #21).
+// ──────────────────────────────────────────────────────────────────────────
+if (window.Livewire && 'BroadcastChannel' in window) {
+    const tabSync = new BroadcastChannel('car-erp-vehicles');
+    let tabSyncRaf = 0;
+    const notifyThisTab = () => {
+        cancelAnimationFrame(tabSyncRaf);
+        tabSyncRaf = requestAnimationFrame(() => window.Livewire.dispatch('vehicles-changed'));
+    };
+    window.Livewire.on('vehicles-changed', () => {
+        try { tabSync.postMessage(1); } catch (e) { /* 채널이 닫혔으면 조용히 */ }
+    });
+    tabSync.onmessage = notifyThisTab;
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') notifyThisTab();
+    });
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // 공용 차트 재렌더 등록기 — window.registerChart(id, drawFn) (jin 2026-07-25)
 //
 // ⚠️ 새 vanilla-canvas 차트는 반드시 이 등록기로 등록하고, 절대 컴포넌트 blade 안에서

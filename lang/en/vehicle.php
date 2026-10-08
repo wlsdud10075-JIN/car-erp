@@ -652,6 +652,14 @@ return [
         'now_editable' => 'The edit lock was released — you can edit now.',
     ],
 
+    // Multi-tab sync (2026-10-08)
+    'remote' => [
+        'banner' => 'Another tab (or user) saved this vehicle first. You have unsaved input, so it was not replaced — note what you need, then click [Reload latest].',
+        'reload' => 'Reload latest',
+        'reloaded' => 'Reloaded with the version saved in another tab.',
+        'save_blocked' => 'Another tab saved first, so this form is stale. Click [Reload latest] and enter your changes again.',
+    ],
+
     // PHP toasts / flash / validation messages
     'overpay' => [
         'reason_required' => 'Please enter a correction reason.',
