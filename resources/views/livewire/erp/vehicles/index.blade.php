@@ -21,6 +21,7 @@ use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -1062,6 +1063,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $editLockedByOther = false;
     /** 옛 폼 저장 거부용 지문 (jin 2026-10-02) — openEdit 때 Vehicle::editFingerprint(), save() 트랜잭션 안에서 대조. */
     public string $formFingerprint = '';
+
+    // 🪟 여러 탭 동기화 (jin 2026-10-08) — 「탭3에서 저장했는데 탭1은 옛 폼」을 저장 시점이 아니라 **먼저** 알아챈다.
+    //   remoteChanged = 다른 창·다른 사용자가 이 차량을 먼저 저장했고, 이 탭은 입력 중이라 조용히 못 덮는다 → 배너.
+    //   formDirty     = 패널을 연 뒤 사용자가 폼 칸을 건드렸나(목록 필터 제외). 안 건드렸으면 조용히 다시 연다.
+    //   판정의 단일 출처는 여전히 editFingerprint() — 신호(BroadcastChannel·하트비트)는 「지금 비교해 봐」일 뿐.
+    public bool $remoteChanged = false;
+
+    public bool $formDirty = false;
 
     #[\Livewire\Attributes\Locked]
     public string $editLockOwnerName = '';
@@ -4015,6 +4024,85 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['user_id' => auth()->id(), 'name' => (string) auth()->user()->name],
             self::EDIT_LOCK_TTL,
         );
+        // 🪟 다른 사용자가 저장한 것은 30초 안에 따라온다(같은 브라우저 탭은 BroadcastChannel 로 즉시).
+        $this->syncWithRemote();
+    }
+
+    // ── 여러 탭 동기화 (jin 2026-10-08) ──────────────────────────────────
+    //   「탭1에서 수정하고 탭2로 가도 바로 반영」. 옛 폼 저장 거부(StaleFormException)는 그대로 둔다 — 그게 진짜 가드다.
+    //   여기는 그 가드가 **터지기 전에** 다른 탭이 알아채게 하는 것뿐이다.
+    //   ⚠️ 조용히 다시 여는 것은 formDirty === false 일 때만 — 입력 중인 칸을 말없이 날리면 그게 고치려는 사고보다
+    //      크다. 애매하면 배너. formDirty 는 모든 커밋(wire:poll 포함)에 실려 오는 wire:model 갱신으로 선다
+    //      (livewire.esm.js getUpdates = diff(canonical, ephemeral) — deferred 도 다음 요청에 실린다).
+
+    /** 목록 필터·정렬·페이지 칸 — 이게 바뀐 건 「폼을 고친 것」이 아니다(#[Url] 프로퍼티 + 정렬·컬럼). */
+    private const NON_FORM_PROPS = [
+        'search', 'dateType', 'dateFrom', 'dateTo', 'progressFilter', 'excludeStatuses', 'sailingFilter',
+        'shipmentFilter', 'shipmentMonth', 'boardFilters', 'cancelFilter', 'taskFilter', 'freightExact',
+        'vinSearch', 'action', 'salesmanId', 'ids', 'openVehicle', 'create', 'buyerId', 'perPage',
+        'sortColumn', 'sortDirection', 'visibleColumns', 'page', 'paginators',
+    ];
+
+    /** 클라이언트가 보낸 프로퍼티 갱신 — 패널이 열려 있고 폼 칸이면 dirty. */
+    public function updated(string $name): void
+    {
+        if (! $this->editingId) {
+            return;
+        }
+        $root = explode('.', $name, 2)[0];
+        if (! in_array($root, self::NON_FORM_PROPS, true)) {
+            $this->formDirty = true;
+        }
+    }
+
+    /** 지문이 달라졌나 — 안 건드렸으면 조용히 다시 열고, 입력 중이면 배너(저장은 막힌다). */
+    private function syncWithRemote(): void
+    {
+        if (! $this->editingId || $this->editLockedByOther || $this->remoteChanged) {
+            return;
+        }
+        $current = Vehicle::query()->whereKey($this->editingId)->first()?->editFingerprint();
+        if ($current === null || $this->formFingerprint === '' || $current === $this->formFingerprint) {
+            return;
+        }
+        if ($this->formDirty) {
+            $this->remoteChanged = true;
+            $this->dispatch('notify', message: __('vehicle.remote.banner'), type: 'warning');
+
+            return;
+        }
+        $this->openEdit($this->editingId);
+        $this->dispatch('notify', message: __('vehicle.remote.reloaded'), type: 'success');
+    }
+
+    /** 다른 탭(같은 브라우저)이 「차량에 뭔가 썼다」고 알려 왔다 — app.js BroadcastChannel → Livewire.dispatch. */
+    #[On('vehicles-changed')]
+    public function vehiclesChangedElsewhere(): void
+    {
+        $this->syncWithRemote();
+        // 패널이 닫혀 있어도 이 요청이 전체를 다시 그리므로 목록은 최신이 된다.
+    }
+
+    /** 배너의 [최신으로 다시 열기] — 입력은 버리고 남이 저장한 값으로 다시 연다(사용자가 눌렀을 때만). */
+    public function reloadFromRemote(): void
+    {
+        if (! $this->editingId) {
+            return;
+        }
+        $this->openEdit($this->editingId);
+        $this->dispatch('notify', message: __('vehicle.remote.reloaded'), type: 'success');
+    }
+
+    /**
+     * 이번 요청이 DB 에 썼으면 다른 탭에 알린다 — 판정은 섬 렌더와 같은 DB::listen 플래그(§8 #38: 메서드마다 손으로
+     * 표시하면 빠뜨린다). rendered 훅은 SupportEvents 의 dehydrate 보다 먼저 돌아 dispatch 가 실린다
+     * (LivewireServiceProvider 기능 등록 순서: SupportEvents → SupportLifecycleHooks).
+     */
+    public function rendered(): void
+    {
+        if (static::$islandWriteSeen) {
+            $this->dispatch('vehicles-changed');
+        }
     }
 
     public function openEdit(int $id): void
@@ -4044,6 +4132,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->editingId = $id;
         $this->formFingerprint = $v->editFingerprint();
+        $this->remoteChanged = false;
+        $this->formDirty = false;
 
         $lockedFinalIds = \App\Models\ReceivableHistory::where('vehicle_id', $id)
             ->whereNotNull('final_payment_id')
@@ -4428,6 +4518,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->editLockOwnerName = '';
         $this->editingId = null;
         $this->justCreatedId = null;
+        $this->remoteChanged = false;
+        $this->formDirty = false;
         $this->panelUnpaidRatio = null;
         // 큐 19-C — 자금 이체 모달도 동일 정리
         $this->resetTransferRequestForm();
@@ -5240,6 +5332,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         // "저장하고 계속" 플래그 캡처 후 즉시 해제 (조기 return·예외 경로에서도 잔존 안 하도록).
         $keepOpen = $this->keepPanelOpen;
         $this->keepPanelOpen = false;
+
+        // 🪟 다른 창이 먼저 저장한 뒤 배너가 떠 있으면 여기서 막는다 — 아래 지문 가드까지 가면 입력이 통째로 사라진다.
+        if ($this->remoteChanged) {
+            $this->dispatch('notify', message: __('vehicle.remote.save_blocked'), type: 'error');
+
+            return;
+        }
 
         // C7-b 회의확장씬 (2026-05-22) — 신규 등록 권한: 영업·관리 role 또는 admin/super.
         // 사용자 헤더 명세 "[관리]가 차량등록부터 거래완료까지 모든 씬 진행" 완전 충족.
@@ -8288,6 +8387,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
     <div class="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-5 py-2.5 text-sm text-amber-800">
         <span class="text-base">🔒</span>
         <span>{{ __('vehicle.lock.banner', ['name' => $editLockOwnerName]) }}</span>
+    </div>
+    @endif
+
+    {{-- 🪟 다른 창이 먼저 저장 — 입력 중이라 조용히 못 덮어 배너로(jin 2026-10-08). 섬 안에 둔다(VehiclePanelIslandTest). --}}
+    @if($remoteChanged)
+    <div class="flex items-center justify-between gap-2 border-b border-blue-300 bg-blue-50 px-5 py-2.5 text-sm text-blue-800" data-remote-changed>
+        <span>🔄 {{ __('vehicle.remote.banner') }}</span>
+        <button type="button" wire:click="reloadFromRemote" class="btn-primary shrink-0 text-xs">{{ __('vehicle.remote.reload') }}</button>
     </div>
     @endif
 
