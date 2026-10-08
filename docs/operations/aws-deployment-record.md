@@ -598,3 +598,14 @@ cherry-pick(.md 제외). 마이그 없음.
 - **내용**: 월배치 승인 대기 카드에 「📨 승인요청 재전송」(관리·업무관리자만, 현재 승인 계단에게만, 링크 새로 생성, 10분 잠금, 감사로그 `payout_request_resent`) + 버튼 옆 뱃지 초록 「발송성공」/빨강 「발송실패」. 알림톡 템플릿 무변경. 컬럼 `settlement_payout_batches.request_notified_at` 1개. cherry-pick 5(`945d330c` `da993efd` `bce717de` `bc74d84f` `3f981436`).
 - **검증**: deploy 런 `37565138200` 잡 5개 success · 3사 sha `e5350d88` · 마이그 Ran · maintenance OFF · login 200 ×3 · 오늘 ERROR 0.
 - **참고**: 배포 전부터 대기 중이던 배치(heymanerp #4 등)는 발송 시각이 비어 뱃지가 안 뜨고 버튼은 바로 눌린다. 한 번 보내면 그때부터 뱃지가 생긴다.
+
+## 2026-10-07 — 금액칸 +/− ×1000 단축키 폐지 + 정산 제출 모달 「기타 조정」 음수 `49381ed7` (3사 동시)
+
+- **내용**: `app.js` keydown 가로채기 제거(+/− 는 일반 키). 포매터는 `data-money-signed` 칸만 맨 앞 `-` 유지(기본은 숫자만, §8 #58) — 정산관리 제출 모달 기타 조정 금액칸에 적용(저장부는 원래 음수 수신). 가이드 「+ 누르면 000」 2곳 삭제·RETIRED_TERMS. 가드 `MoneyInputSignTest`. cherry-pick 1(`197a2a15`).
+- **검증**: deploy 런 `37581636229` 잡 5개 success(15:28→15:34 KST) · 3사 sha `49381ed7`. 로컬 전체 3,206건 중 실패 = GD 7 + 병렬 뷰캐시 rename 오류 6(순차 재실행 30건 전부 통과).
+
+## 2026-10-08 — 여러 탭 동기화 (다른 탭이 저장하면 즉시 반영, 입력 중이면 배너) `9e73d73b` (3사 동시)
+
+- **내용**: 서버 `rendered()` 훅이 「이번 요청에 DB 쓰기」(섬 렌더 `DB::listen` 플래그)면 `vehicles-changed` 발행 → `app.js` BroadcastChannel `car-erp-vehicles` 로 같은 브라우저 다른 탭 → `Livewire.dispatch` → 차량관리(지문 대조: 안 건드렸으면 조용히 재오픈 / `formDirty` 면 배너+저장 차단+[최신으로 다시 열기])·재고관리(재렌더). visibilitychange 1회 대조. 하트비트(30초)에도 지문 대조 → 다른 사용자 저장 30초 내. 「옛 폼 저장 거부」 가드 그대로. lang ko/en `vehicle.remote.*`. 가드 `VehicleTabSyncTest` 6(깨뜨리기 4종 확인). cherry-pick 1(`13316ab3`). SKILLS §8 #113.
+- **검증**: deploy 런 `37720430255` 잡 5개 success(11:57→12:04 KST) · 3사 sha `9e73d73b` · 3사 빌드 JS 에 `car-erp-vehicles` 존재 · login 200 ×3. 로컬 전체 3,212건 중 실패 = GD 7 만.
+- ⚠️ **브라우저 2탭 실측은 배포 시점에 미실시** — jin 또는 다음 세션이 확인: 탭1 패널에서 칸 하나 입력 → 탭2에서 같은 차량 저장 → 탭1 에 파란 배너·저장 차단·[최신으로 다시 열기]. 안 건드린 탭은 토스트와 함께 조용히 재오픈. 열린 탭은 `Ctrl+Shift+R` 필요(JS 변경).
