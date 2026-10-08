@@ -56,10 +56,12 @@ return [
     'type' => [
         'employee' => '사내직원',
         'freelance' => '프리랜서',
+        'inspector' => '검차직원',
     ],
     'type_suffix' => [
         'employee' => '(건당 정산)',
         'freelance' => '(비율 정산)',
+        'inspector' => '(급여만)',
     ],
     // 퇴사 승계 (jin 2026-08-27) — A 가 하던 일을 B 가 통째로 받는다.
     'handover' => [
