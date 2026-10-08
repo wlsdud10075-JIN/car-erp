@@ -1632,3 +1632,19 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 - Codex 설치 폴더 `…\OpenAI\Codex\bin` 은 **정션 2단**(→ `.codex\packages\standalone\current` → `releases\<버전>`). 비대화형 SSH 는 정션을 못 넘어 「신뢰할 수 없는 탑재 지점」이 되고, 실제 경로로 부르면 `--version` 은 뜨지만 **명령 실행(sandbox runner)이 `runner pipe-in` 타임아웃**으로 죽는다. 대화형 로그온 스케줄러에선 정상. ⇒ Codex 무인 실행은 **스케줄러로만**, 경로는 정션을 따라가 실제 파일로.
 - `Start-Process -PassThru` 로 받은 `$p` 는 `WaitForExit()` 뒤에도 **`ExitCode` 가 null** 일 수 있다 — `$null = $p.Handle` 을 먼저 한 번 건드린다. 이걸로 `--verify` 4종이 전부 「불일치」로 오판됐다(null -ne 0).
 - 🧭 `--verify` 류는 **불일치가 exit 1** 이다 — 배치에서 실패로 취급하지 말 것. 그리고 매일 뜨는 「알려진 정상」(ERP 허브에 「영업」 페이지 없음)은 신호에서 빼야 진짜 신호가 안 묻힌다.
+
+### 113. 🪟 **「저장할 때 막는 가드」가 있으면 「그 전에 다른 탭이 알게 하는 길」도 같이 둔다** (2026-10-08 여러 탭 동기화)
+
+jin: *「탭3에서 수정하고 탭1에서 다른 걸 쓰면 가드가 떠. 각 탭별로 수정한 게 바로 반영되게 가능해?」* — 10-02 「옛 폼 저장 거부」(지문 대조)는
+옳게 동작한 것이다. 문제는 **최신인지 확인하는 시점이 「저장할 때」뿐**이라 사용자는 다 입력한 뒤에야 안다는 것.
+고침 = 가드는 그대로, **신호를 먼저 보낸다**: 같은 브라우저 = `BroadcastChannel`(즉시, 서버 0) · 다른 사용자 = 30초 하트비트에 지문 대조.
+안 건드린 탭은 조용히 다시 열고, **입력 중인 탭은 배너 + 저장 차단(입력 보존)**. 조용히 덮는 것은 고치려는 사고보다 크다.
+
+- 🔑 **「이번 요청이 DB 에 썼나」는 이미 있던 판정을 재사용** — 섬 렌더용 `DB::listen` 플래그(§8 #109). 메서드마다 `dispatch` 를 손으로 붙이면
+  일괄기입·토글이 빠진다(§8 #38). ⚠️ 그 dispatch 를 `dehydrate()` 훅에 두면 **사라진다** — `SupportEvents` 가 `SupportLifecycleHooks` 보다
+  먼저 등록돼(`LivewireServiceProvider:204,209`) 이벤트 수집이 컴포넌트 `dehydrate()` 보다 앞서 끝난다. **`rendered()` 훅**에 둔다.
+- 🔑 **dirty 판정은 서버에서 된다** — `wire:model`(deferred 포함) 갱신은 **모든 커밋에 실린다**(`livewire.esm.js` `getUpdates = diff(canonical, ephemeral)`,
+  wire:poll 도 커밋이다). 그래서 `updated($name)` 훅이 폴 요청에서도 선다. 목록 필터·정렬 프로퍼티는 빼야 한다(안 빼면 배너만 더 뜬다 — 안전한 쪽).
+- ⚠️ **테스트 함정 = `editFingerprint()` 는 `updated_at` 초 단위** — 「다른 탭이 저장했다」를 같은 초의 `update()` 로 흉내 내면 지문이 안 바뀌어
+  테스트가 **헛통과**한다. `updated_at` 을 1분 밀어 재현. 가드 = `VehicleTabSyncTest`(깨뜨리기 4종 확인).
+- 📏 빌드 CSS 존재 검사는 **`manifest.json` 이 가리키는 시트**를 봐야 한다 — `app-*.css` 글롭은 JS 청크의 작은 CSS 를 먼저 집어 전부 0 이 나왔다.
