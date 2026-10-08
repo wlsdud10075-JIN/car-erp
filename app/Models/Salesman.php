@@ -35,7 +35,21 @@ class Salesman extends Model
     public const TYPES = [
         'employee' => '사내직원',
         'freelance' => '프리랜서',
+        // 월정산 v3 (jin 2026-10-08) — 검차직원: 계정 없이 이름만 등록, 정산·판매 없음, 급여 지급합계만 월정산에.
+        //   🚨 DB enum 과 같은 커밋(마이그 2026_10_09_000002) — 가드 SalesmanTypeEnumTest.
+        'inspector' => '검차직원',
     ];
+
+    /** 영업을 하는 사람만(검차직원 제외) — 차량 담당자 드롭다운·필터·대시보드 랭킹은 이 스코프를 쓴다. */
+    public function scopeSales($query)
+    {
+        return $query->where('type', '!=', 'inspector');
+    }
+
+    public function isInspector(): bool
+    {
+        return $this->type === 'inspector';
+    }
 
     /** 정산 type 자동 매핑: employee → per_unit, freelance → ratio. */
     public function defaultSettlementType(): string
@@ -96,6 +110,12 @@ class Salesman extends Model
     public function settlements(): HasMany
     {
         return $this->hasMany(Settlement::class);
+    }
+
+    /** 💴 급여 항목(귀속월별) — 월정산 v3. 합계는 PayrollEntry::totalFor(). */
+    public function payrollEntries(): HasMany
+    {
+        return $this->hasMany(PayrollEntry::class);
     }
 
     public function carryoverClearances(): HasMany

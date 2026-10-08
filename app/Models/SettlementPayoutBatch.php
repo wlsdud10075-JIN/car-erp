@@ -95,8 +95,13 @@ class SettlementPayoutBatch extends Model
      *
      * @param  array<int, int>|null  $cancelVehicleIds
      */
-    public function addAdjustment(User $by, int $salesmanId, int $amount, string $reason, ?array $cancelVehicleIds = null): SettlementPayoutAdjustment
+    public function addAdjustment(User $by, int $salesmanId, int $amount, string $reason, ?array $cancelVehicleIds = null, ?string $kind = null): SettlementPayoutAdjustment
     {
+        // 종류(v3) — 손실 차감은 cancel_vehicle_ids 로 자명하므로 생략 가능. 그 외 기본 manual.
+        $kind ??= $cancelVehicleIds ? SettlementPayoutAdjustment::KIND_LOSS : SettlementPayoutAdjustment::KIND_MANUAL;
+        if (! in_array($kind, SettlementPayoutAdjustment::KINDS, true)) {
+            throw new \DomainException('알 수 없는 조정 종류입니다.');
+        }
         if ($this->status !== self::STATUS_PENDING) {
             throw new \DomainException('승인 대기 중인 배치에만 조정을 추가할 수 있습니다.');
         }
@@ -111,10 +116,11 @@ class SettlementPayoutBatch extends Model
             throw new \DomainException('조정 금액은 0이 될 수 없습니다.');
         }
 
-        return DB::transaction(function () use ($by, $salesmanId, $amount, $reason, $cancelVehicleIds) {
+        return DB::transaction(function () use ($by, $salesmanId, $amount, $reason, $cancelVehicleIds, $kind) {
             $adj = $this->adjustments()->create([
                 'salesman_id' => $salesmanId,
                 'amount' => $amount,
+                'kind' => $kind,
                 'reason' => $reason,
                 'cancel_vehicle_ids' => $cancelVehicleIds ?: null,
                 'created_by' => $by->id,
@@ -311,7 +317,7 @@ class SettlementPayoutBatch extends Model
 
             // 💸 미청산 이월 자동 조정 줄 (jin 2026-10-06) — 제출 모달 미리보기와 **같은 함수**로 뽑는다.
             foreach (self::carryoverLinesFor($settlements) as $line) {
-                $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason']);
+                $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason'], null, SettlementPayoutAdjustment::KIND_CARRYOVER);
                 CarryoverClearance::create([
                     'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
                     'amount_krw' => $line['amount'], 'direction' => $line['amount'] > 0 ? 'pay' : 'collect',

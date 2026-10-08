@@ -11,7 +11,24 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class SettlementPayoutAdjustment extends Model
 {
-    protected $fillable = ['batch_id', 'salesman_id', 'amount', 'reason', 'cancel_vehicle_ids', 'created_by'];
+    protected $fillable = ['batch_id', 'salesman_id', 'amount', 'kind', 'reason', 'cancel_vehicle_ids', 'created_by'];
+
+    /**
+     * 조정 종류 (월정산 v3, jin 2026-10-08). 사유 문자열로 갈리던 것을 칸으로.
+     *   manual    수기 조정(정산관리 제출 모달)
+     *   carryover 미청산 이월 자동 반영(carryover_clearances 와 짝)
+     *   loss      매입취소 손실 차감(cancel_vehicle_ids 보유)
+     *   incentive 추가 인센티브 — 사람당 N건, 결재 중 수정 가능, 카드·결재 내역에 따로 표시
+     */
+    public const KINDS = ['manual', 'carryover', 'loss', 'incentive'];
+
+    public const KIND_MANUAL = 'manual';
+
+    public const KIND_CARRYOVER = 'carryover';
+
+    public const KIND_LOSS = 'loss';
+
+    public const KIND_INCENTIVE = 'incentive';
 
     protected $casts = [
         'amount' => 'integer',

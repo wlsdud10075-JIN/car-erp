@@ -55,10 +55,12 @@ return [
     'type' => [
         'employee' => 'Employee',
         'freelance' => 'Freelancer',
+        'inspector' => 'Inspector',
     ],
     'type_suffix' => [
         'employee' => '(per-unit)',
         'freelance' => '(ratio)',
+        'inspector' => '(payroll only)',
     ],
     'handover' => [
         'button' => 'Hand over',
