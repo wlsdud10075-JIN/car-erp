@@ -10,6 +10,7 @@ return [
     'margin_after_pay' => 'Margin after pay',
     'excess_ratio' => 'Excess vs pay',
     'contribution' => 'Company contribution',
+    'contribution_actual' => 'Company contribution (actually kept by the company)',
     'payout' => 'Take-home',
     'payroll_total' => 'Payroll total',
     'share' => 'Share',

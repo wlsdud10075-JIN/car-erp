@@ -12,6 +12,7 @@ return [
     'margin_after_pay' => '급여공제후 마진',
     'excess_ratio' => '급여 대비 초과 배율',
     'contribution' => '회사 기여',
+    'contribution_actual' => '회사 기여 (실제로 회사에 남긴 돈)',
     'payout' => '실지급액',
     'payroll_total' => '지급합계',
     'share' => '지분율',

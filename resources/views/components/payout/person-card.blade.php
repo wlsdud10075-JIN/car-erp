@@ -29,6 +29,8 @@
             @if($t === 'employee' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.margin_after_pay') }} <b class="font-mono {{ $cls($p['margin_after_pay']) }}" data-margin-after-pay>{{ $signed($p['margin_after_pay']) }}</b></span>
             <span class="text-gray-500">{{ __('payout_card.excess_ratio') }} <b class="font-mono {{ $cls($p['excess_ratio']) }}" data-excess-ratio>{{ $ratioText }}</b></span>
+            {{-- 실제로 회사에 남긴 돈도 접힌 줄에(jin 2026-10-09 「실제 사내직원으로 벌어들인 돈은 모르는 거 아닌가」) --}}
+            <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
             @elseif($t === 'freelance' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}">{{ $signed($p['company_contribution']) }}</b></span>
             @endif
@@ -84,8 +86,9 @@
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payout']) }}</span></div>
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold {{ $p['margin_after_pay'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' }}"><span>{{ __('payout_card.margin_after_pay') }}</span><span class="font-mono">{{ $signed($p['margin_after_pay']) }}</span></div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.excess_ratio') }}</span><span class="font-mono {{ $cls($p['excess_ratio']) }}">{{ $ratioText }}</span></div>
-            <div class="border-t border-dashed border-gray-100 px-2 py-1 text-[10px] text-gray-400">
-                {{ __('payout_card.contribution_formula') }}: {{ $fmt($p['total_margin']) }} − {{ $fmt($p['payout']) }} − {{ $fmt($p['shipping']) }} = <b class="{{ $cls($p['company_contribution']) }}">{{ $signed($p['company_contribution']) }}</b>@if($shareText !== null) · {{ __('payout_card.share') }} {{ $shareText }}@endif
+            <div class="flex justify-between border-t border-gray-200 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-sky-800' }}" title="{{ __('payout_card.contribution_formula') }}"><span>{{ __('payout_card.contribution_actual') }}</span><span class="font-mono">{{ $signed($p['company_contribution']) }}</span></div>
+            <div class="px-2 py-1 text-[10px] text-gray-400">
+                {{ __('payout_card.contribution_formula') }}: {{ $fmt($p['total_margin']) }} − {{ $fmt($p['payout']) }} − {{ $fmt($p['shipping']) }}@if($shareText !== null) · {{ __('payout_card.share') }} {{ $shareText }}@endif
             </div>
         </div>
         {{-- 오른쪽: 담당자 지급 --}}
