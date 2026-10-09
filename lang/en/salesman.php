@@ -2,11 +2,11 @@
 
 // i18n — Salesman management (erp/salesmen/index). Shared in common.php.
 return [
-    'title' => 'Salesmen',
+    'title' => 'Staff',
     'total' => ':count people',
-    'create_btn' => 'Add Salesman',
+    'create_btn' => 'Add person',
     'search_ph' => 'Name · email · phone',
-    'empty' => 'No salesmen.',
+    'empty' => 'No people registered.',
     'cashflow' => 'Cashflow',
     'cashflow_view' => 'View cashflow',
     'carryover_badge' => 'Unconsumed carryover',
@@ -14,8 +14,8 @@ return [
     'delete_confirm_simple' => 'Delete this salesperson? This cannot be undone.',
     'saved' => 'Salesman saved.',
     'deleted' => 'Salesman deleted.',
-    'edit_title' => 'Edit Salesman',
-    'create_title' => 'Add Salesman',
+    'edit_title' => 'Edit person',
+    'create_title' => 'Add person',
 
     'col' => [
         'name' => 'Name',
@@ -46,6 +46,20 @@ return [
         'payout_excluded' => 'Excluded from payouts',
         'payout_excluded_hint' => 'Turn this on for accounts that are not people (a sister company, for example). Settlements for this salesman are still created and listed, but never join a monthly payout batch, so zero-value rows stop piling up. Batches already paid are not changed retroactively.',
         'type_no_account' => 'No login account linked',
+        'create_type' => 'Type',
+        'create_type_hint' => 'Inspectors are registered by name only, without an account. Employees and freelancers are created automatically from User management (role Sales).',
+    ],
+
+    'payroll' => [
+        'title' => 'Payroll items',
+        'month' => 'Month',
+        'hint' => 'By attribution month. Only the chosen month is shown and a new month starts blank. Blank = not entered, 0 = none. The total feeds the monthly settlement take-home (employee = total + settlement + extra incentive, inspector = total).',
+        'not_entered' => 'Nothing entered for this month yet.',
+        'total' => 'Total',
+        'add_row' => '+ Add item',
+        'custom_label_ph' => 'Item name (e.g. holiday bonus)',
+        'amount_ph' => 'blank',
+        'basic_readonly' => 'Name, phone, memo etc. can be edited by managers and above only. Finance enters payroll items.',
     ],
 
     'master_banner' => 'Name/email/settlement type are changed in :link. This screen is for supplementary info (phone/memo/active) only.',

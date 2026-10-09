@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
+use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -66,14 +67,14 @@ class SalesmanDepositBaseSalaryTest extends TestCase
     }
 
     /** 사내직원 → 기본급만. */
-    public function test_an_employee_sees_only_the_base_salary_field(): void
+    public function test_an_employee_sees_the_payroll_section_instead_of_base_salary(): void
     {
         $sm = $this->salesman('employee');
         $this->actingAs($this->manager());
 
         Volt::test('erp.salesmen.index')
             ->call('openEdit', $sm->id)
-            ->assertSee(__('salesman.field.base_salary'))
+            ->assertSee(__('salesman.payroll.title'))->assertDontSee(__('salesman.field.base_salary'))
             ->assertDontSee(__('salesman.field.deposit'));
     }
 
@@ -89,7 +90,7 @@ class SalesmanDepositBaseSalaryTest extends TestCase
         Volt::test('erp.salesmen.index')
             ->call('openEdit', $sm->id)
             ->assertDontSee(__('salesman.field.deposit'))
-            ->assertDontSee(__('salesman.field.base_salary'));
+            ->assertDontSee(__('salesman.field.base_salary'));   // v3: 유형 출처가 salesmen.type(기본 employee)이라 급여 항목은 보인다
     }
 
     /** 돈 직결이라 [관리] 이상만 — tier 와 같은 선(jin 2026-09-18 「관리이상으로 유지」). */
@@ -126,18 +127,21 @@ class SalesmanDepositBaseSalaryTest extends TestCase
         $this->assertSame(10_000_000, $sm->fresh()->deposit_krw, '재저장이 값을 깎았다');
     }
 
-    /** 사내직원도 같다. */
-    public function test_the_base_salary_survives_a_round_trip(): void
+    /** 사내직원도 같다 — v3 부터 기본급 칸은 급여 항목(귀속월별)이다. */
+    public function test_the_payroll_survives_a_round_trip(): void
     {
         $sm = $this->salesman('employee');
         $this->actingAs($this->manager());
 
-        Volt::test('erp.salesmen.index')
-            ->call('openEdit', $sm->id)
-            ->set('base_salary_krw_str', '2740000')
+        $c = Volt::test('erp.salesmen.index')
+            ->call('openEdit', $sm->id)->set('payrollMonth', '2026-10')
+            ->set('payrollItems.0', '2740000')
             ->call('save');
+        $this->assertSame(2_740_000, PayrollEntry::totalFor($sm->id, '2026-10'));
+        $this->assertNull($sm->fresh()->base_salary_krw, 'v3 부터 base_salary_krw 는 화면이 쓰지 않는다');
 
-        $this->assertSame(2_740_000, $sm->fresh()->base_salary_krw);
+        $c->call('openEdit', $sm->id)->set('payrollMonth', '2026-10')->assertSet('payrollItems.0', '2740000')->call('save');
+        $this->assertSame(2_740_000, PayrollEntry::totalFor($sm->id, '2026-10'), '재저장이 값을 깎았다');
     }
 
     /**
@@ -149,12 +153,11 @@ class SalesmanDepositBaseSalaryTest extends TestCase
         $sm = $this->salesman('employee');
         $this->actingAs($this->manager());
 
-        Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->call('save');
-        $this->assertNull($sm->fresh()->base_salary_krw, '빈칸이 0 으로 저장됐다');
+        Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->set('payrollMonth', '2026-10')->call('save');
+        $this->assertNull(PayrollEntry::totalFor($sm->id, '2026-10'), '빈칸이 0 으로 저장됐다');
 
-        Volt::test('erp.salesmen.index')
-            ->call('openEdit', $sm->id)->set('base_salary_krw_str', '0')->call('save');
-        $this->assertSame(0, $sm->fresh()->base_salary_krw);
+        Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->set('payrollMonth', '2026-10')->set('payrollItems.0', '0')->call('save');
+        $this->assertSame(0, PayrollEntry::totalFor($sm->id, '2026-10'));
     }
 
     /**

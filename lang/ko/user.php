@@ -23,6 +23,10 @@ return [
         'last_login' => '마지막 로그인',
     ],
     'field' => [
+        // 월정산 v3 (2026-10-09) — 최고관리자 결재 직급. 비우면 종전(최종 승인자).
+        'approval_title' => '결재 직급 (월정산)',
+        'approval_title_none' => '없음 — 최종 승인자',
+        'approval_title_note' => '월정산 결재선(부장 → 전무 → 대표)에서 고를 수 있는 직급입니다. 비우면 종전처럼 최종 승인자로 동작합니다.',
         'name' => '이름',
         'name_ph' => '홍길동',
         'email_ph' => 'user@car-erp.test',

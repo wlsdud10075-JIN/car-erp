@@ -100,7 +100,7 @@ class VehicleTemplateExporter
 
         $this->buildGuideSheet($ss);
 
-        $salesmen = Salesman::orderBy('name')->pluck('name')->filter()->values()->all();
+        $salesmen = Salesman::query()->sales()->orderBy('name')->pluck('name')->filter()->values()->all();   // 검차직원 제외(월정산 v3)
         if ($salesmen !== []) {
             $this->buildListSheet($ss, $salesmen);
             $this->applySalesmanList($sheet, $map, count($salesmen), $maxRow);

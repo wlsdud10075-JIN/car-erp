@@ -23,6 +23,9 @@ return [
         'last_login' => 'Last Login',
     ],
     'field' => [
+        'approval_title' => 'Approval title (monthly settlement)',
+        'approval_title_none' => 'None — final approver',
+        'approval_title_note' => 'Title used in the monthly settlement approval line (Director → Executive → CEO). Leave blank to act as the final approver as before.',
         'name' => 'Name',
         'name_ph' => 'John Doe',
         'email_ph' => 'user@car-erp.test',

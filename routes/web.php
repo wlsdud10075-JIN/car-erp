@@ -144,6 +144,8 @@ Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')-
 
 // 정산 — settlement role 이상
 Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.')->group(function () {
+    // 사내직원관리(구 영업담당자) — 관리 이상 + 재무(급여 입력). 재무의 권한은 컴포넌트가 다시 좁힌다(월정산 v3, 2026-10-09).
+    Volt::route('salesmen', 'erp.salesmen.index')->name('salesmen.index');
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
 
     // 정산 export (귀속월 기준·영업담당자별 시트) — 화면 필터 그대로 미러. 'export' 리터럴이라 충돌 없음.
@@ -160,9 +162,6 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
 });
 
 // 관리자 — super/admin만 (영업담당자)
-Route::middleware(['auth', 'verified', 'admin'])->prefix('erp')->name('erp.')->group(function () {
-    Volt::route('salesmen', 'erp.salesmen.index')->name('salesmen.index');
-});
 
 // 포워딩사(선적현황) — admin + [관리] (canManageForwarding). mount 가드로 검증 (2026-07-08 jin, 항구와 동일).
 Route::middleware(['auth', 'verified'])->prefix('erp')->name('erp.')->group(function () {

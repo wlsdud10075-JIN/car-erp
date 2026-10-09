@@ -105,7 +105,7 @@ class ImportConsignees extends Command
 
         // 2. lookup 캐시 (countries, salesmen)
         $countryByName = Country::query()->pluck('id', 'name')->all();
-        $salesmanByName = Salesman::query()->pluck('id', 'name')->all();
+        $salesmanByName = Salesman::query()->sales()->pluck('id', 'name')->all();   // 검차직원 제외(월정산 v3)
         $defaultSalesmanId = $this->option('default-salesman')
             ? (int) $this->option('default-salesman') : null;
 

@@ -723,7 +723,7 @@ class AlimtalkRecipients
         //    그래도 끼워 넣으면 「고른 적 없는 사람이 받는」 상태가 된다. 그래서 조건은 **역할 전체**일 때만.
         //    화면이 이 차이를 적어 준다(alimtalk_catalog.rule_sales_orphan_hint).
         if (in_array('영업', self::selectedRoles($code), true)) {
-            $orphans = Salesman::query()
+            $orphans = Salesman::query()->sales()   // 검차직원(계정 없음) 제외 — 월정산 v3
                 ->whereNull('user_id')
                 ->whereNotNull('phone')->where('phone', '!=', '')
                 ->pluck('phone', 'id');

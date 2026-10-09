@@ -180,10 +180,11 @@
                 ],
                 [
                     'label' => __('nav.menu.salesmen'),
-                    'href' => $user->canAccessAdmin() ? route('erp.salesmen.index') : '#',
+                    // 월정산 v3 — 관리 이상 + 재무(급여 입력). 라우트 그룹(settlement)과 같은 판정.
+                    'href' => $user->canAccessSettlement() ? route('erp.salesmen.index') : '#',
                     'icon' => 'briefcase',
                     'active' => request()->routeIs('erp.salesmen.index'),
-                    'show' => $user->canAccessAdmin(),
+                    'show' => $user->canAccessSettlement(),
                 ],
                 // 영업 본인 캐시플로우 — 영업 role 만. car-erp 계정 가진 영업이 자기 현황 보는 진입.
                 [
