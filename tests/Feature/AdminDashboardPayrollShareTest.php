@@ -119,6 +119,35 @@ class AdminDashboardPayrollShareTest extends TestCase
         $this->assertSame(number_format($expected).'원', $vars['회사이익'], '월결산 알림톡 회사이익도 급여·인센티브를 뺀 값(문구는 그대로)');
     }
 
+    /**
+     * 🔒 회사이익 3곳 정합 — 한 달에 승인 배치 1개인 단순한 경우, 대시보드(paid_at 기간) = 월결산 알림톡(귀속월) = 배치 profitStats.
+     *    ⚠️ 모집단은 원래 다르다(대시보드 = 그 기간에 지급된 것 / 알림톡 = 그 귀속월의 confirmed+paid / 배치 = 그 배치) — 확정만 되고
+     *    배치에 안 묶인 정산이 있거나 배치가 두 달에 걸치면 셋이 갈릴 수 있다. 기준은 **배치(BatchPayoutBreakdown)** 다.
+     */
+    public function test_three_company_profit_figures_agree_for_a_single_batch_month(): void
+    {
+        [$admin, , , , $batch] = $this->fixture();
+        $dashboard = $this->cp($admin)['company_net'];
+        $closing = (int) str_replace([',', '원'], '', AlimtalkMonthlyClosing::buildVars('2026-09')['회사이익']);
+        $stats = $batch->fresh()->profitStats()['company_profit_after_payroll'];
+        $this->assertSame($dashboard, $closing, '대시보드 ≠ 월결산 알림톡');
+        $this->assertSame($dashboard, $stats, '대시보드 ≠ 배치 profitStats');
+    }
+
+    /** 배포 전에 끝난 배치(박제 없음)는 처음 그릴 때 박제돼, 그 뒤 급여를 넣어도 카드가 안 바뀐다. */
+    public function test_a_legacy_approved_batch_is_frozen_on_first_render(): void
+    {
+        [$admin, $e, , , $batch] = $this->fixture();
+        $this->assertNull($batch->breakdown_snapshot);
+        $first = $batch->breakdownForDisplay();
+        $this->assertNotNull($batch->fresh()->breakdown_snapshot, '첫 렌더가 박제한다');
+        $payoutBefore = collect($first['people'])->firstWhere('salesman_id', $e->id)['payout'];
+
+        PayrollEntry::replaceFor($e->id, '2026-09', [['label' => '기본급', 'amount' => 9_000_000]]);   // 뒤늦게 급여 변경
+        $again = $batch->fresh()->breakdownForDisplay();
+        $this->assertSame($payoutBefore, collect($again['people'])->firstWhere('salesman_id', $e->id)['payout'], '끝난 배치 카드가 흔들렸다');
+    }
+
     public function test_approval_page_profit_matches_the_batch_breakdown(): void
     {
         [$admin, , , , $batch] = $this->fixture();
