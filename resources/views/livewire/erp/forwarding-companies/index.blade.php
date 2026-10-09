@@ -70,7 +70,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 실측(운영 사본 608건): **HTML 4,429KB · DOM 73,818개**. 게다가 `wire:poll.60s` 라
      * 가만히 있어도 60초마다 그 7만 개를 다시 만들었다.
      *
-     * ⚠️ 대신 펼칠 때 서버 왕복이 한 번 생긴다(CSS 토글은 즉시였다). 월배치 화면에서
+     * ⚠️ 대신 펼칠 때 서버 왕복이 한 번 생긴다(CSS 토글은 즉시였다). 월정산 화면에서
      *    같은 선택을 했다 — 「펼쳤을 때만 계산」.
      *
      * @var list<int>

@@ -14,9 +14,9 @@ use Tests\TestCase;
 /**
  * 정산관리 담당자 카드에 「매입취소 손실 (미반영)」 노출 (jin 2026-08-06).
  *
- * 실무자가 정산관리만 보다가 「월배치 지급」의 손실 요약을 못 봐서 추가했다.
+ * 실무자가 정산관리만 보다가 「월정산 지급」의 손실 요약을 못 봐서 추가했다.
  *
- * 🚨 표시 전용이다 — 실제 차감은 월배치 지급의 담당자 조정 1곳에서만 한다.
+ * 🚨 표시 전용이다 — 실제 차감은 월정산 지급의 담당자 조정 1곳에서만 한다.
  *    여기 정산 합계(actual_payout_sum)에 섞으면 **이중 청구**가 된다. 그 경계를 테스트로 고정한다.
  */
 class SettlementCancelLossCardTest extends TestCase
@@ -77,7 +77,7 @@ class SettlementCancelLossCardTest extends TestCase
             'cancel_status' => Vehicle::CANCEL_CLOSED,
             'cancel_shortfall_krw' => 500_000, 'cancelled_at' => now(),
         ]);
-        // 이미 월배치에 반영됨
+        // 이미 월정산에 반영됨
         $this->makeVehicle($free, [
             'cancel_status' => Vehicle::CANCEL_CLOSED,
             'cancel_shortfall_krw' => 500_000, 'cancelled_at' => now(),
@@ -127,7 +127,7 @@ class SettlementCancelLossCardTest extends TestCase
         $this->assertSame(
             100_000,
             $row['actual_payout_sum'],
-            '매입취소 손실이 정산 지급합계에 섞였다 — 월배치와 이중 청구된다'
+            '매입취소 손실이 정산 지급합계에 섞였다 — 월정산과 이중 청구된다'
         );
     }
 }

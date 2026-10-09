@@ -405,7 +405,7 @@ class DomesticSettlementTest extends TestCase
 
     /**
      * 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 행을 만들지 않는다** (jin 2026-09-08).
-     *    0 원짜리 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
+     *    0 원짜리 행이 담당자 카드·월정산에 쌓이면 확정할 것도 없는 행만 늘어난다.
      */
     public function test_no_settlement_is_created_when_the_domestic_base_is_exactly_zero(): void
     {

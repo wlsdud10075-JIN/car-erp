@@ -185,7 +185,7 @@ class PurchaseCancelTest extends TestCase
     /**
      * 미반영 매입취소 손실 집계 — 프리랜서만, 부족분의 절반.
      *
-     * 🔀 2026-08-06 (jin) — 집계 위치가 월배치 화면 computed 에서 `Vehicle::unsettledCancelLossBySalesman()`
+     * 🔀 2026-08-06 (jin) — 집계 위치가 월정산 화면 computed 에서 `Vehicle::unsettledCancelLossBySalesman()`
      *   단일 출처로 옮겨졌다(정산관리 카드 + 제출 모달 공용). 「반영 표시」 수동 버튼은 사라지고
      *   배치 최종 승인 시 자동으로 찍힌다 — 상세 = SettlementBatchSubmitModalTest.
      */

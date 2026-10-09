@@ -438,7 +438,7 @@ return [
         'forwarding_invoice_unpaid' => '운임 청산 취소',
         'payment_type_converted' => '결제 유형 변경',
         'payout_adjustment_added' => '정산 지급액 조정 추가',
-        'payout_request_resent' => '월배치 승인요청 재전송',
+        'payout_request_resent' => '월정산 승인요청 재전송',
         'payout_adjustment_removed' => '정산 지급액 조정 취소',
         'payout_approved_via_link' => '정산 지급 승인(카톡)',
         'payout_rejected_via_link' => '정산 지급 반려(카톡)',

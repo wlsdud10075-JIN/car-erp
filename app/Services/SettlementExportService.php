@@ -31,7 +31,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  *  - PII 없음 — 소유자·RRN·주소는 컬럼에 아예 포함하지 않는다(정산 대조에 불필요).
  *
  * ⚠️ 실지급액은 **행 단위 현재 계산값**이다. pending 이면 확정 전 미리보기이고,
- *    월배치 조정(예: 2026-06 −729,250)은 **배치 단위**라 행에 표현되지 않는다 → 라벨에 (예정) 명시.
+ *    월정산 조정(예: 2026-06 −729,250)은 **배치 단위**라 행에 표현되지 않는다 → 라벨에 (예정) 명시.
  */
 class SettlementExportService
 {
@@ -56,7 +56,7 @@ class SettlementExportService
             // 귀속·상태
             'attributed_month' => ['귀속월', 'str', fn (Settlement $s) => $s->attributed_month?->format('Y-m')],
             'settlement_status' => ['정산상태', 'str', fn (Settlement $s) => $s->settlement_status],
-            'payout_batch' => ['월배치', 'str', fn (Settlement $s) => $s->payout_batch_id ? '#'.$s->payout_batch_id : ''],
+            'payout_batch' => ['월정산', 'str', fn (Settlement $s) => $s->payout_batch_id ? '#'.$s->payout_batch_id : ''],
             'confirmed_at' => ['확정일', 'date', fn (Settlement $s) => $s->confirmed_at],
             'paid_at' => ['지급일', 'date', fn (Settlement $s) => $s->paid_at],
             // 차량 회계 근거 — 마진이 왜 그 값인지 대조용
@@ -186,7 +186,7 @@ class SettlementExportService
         $sheet->setTitle('요약');
         // 🔢 시트마다 1부터 — 요약 시트도 같다(jin 2026-09-18 「응 시트마다 그래야지」).
         // 💴 미청산 이월·미반영 매입취소 손실 (jin 2026-10-06 「엑셀 미청산 이월, 매입취소 손실 엑셀 반영」) — 둘 다 **담당자별 잔액**이라
-        //    명세 행이 아니라 요약 시트에 둔다. 「실지급액(예정)」엔 섞지 않는다 — 손실은 월배치 조정에서 한 번만 차감하므로
+        //    명세 행이 아니라 요약 시트에 둔다. 「실지급액(예정)」엔 섞지 않는다 — 손실은 월정산 조정에서 한 번만 차감하므로
         //    여기 더하면 이중 청구(Vehicle::unsettledCancelLossBySalesman docblock). 화면 담당자 카드와 같은 출처.
         $head = ['No.', '영업담당자', '대수', '총마진', '마진율', '정산액', '실지급액(예정)', '미청산 이월', '미반영 매입취소 손실'];
         foreach ($head as $i => $label) {

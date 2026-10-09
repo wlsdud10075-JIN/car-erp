@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * 대표 월 결산 알림톡 (erp_monthly_closing) — 전월(귀속월) 결산.
  *
- * 🚨 발송 시점 = **월배치 정산이 최종 승인된 때** (jin 2026-07-31).
+ * 🚨 발송 시점 = **월정산 정산이 최종 승인된 때** (jin 2026-07-31).
  *   종전엔 익월 첫 영업일에 무조건 나갔는데, 그 시점엔 전월 정산이 아직 확정 전이라
  *   총마진·지급총액·회사이익이 통째로 과소보고됐다("정산 전부 완료되기 전에는 나갈 수 없다" — jin).
  *   이제 스케줄 추측 대신 **확정 신호**(SettlementPayoutBatch::isMonthClosed)를 쓴다.
@@ -37,7 +37,7 @@ class AlimtalkMonthlyClosing extends Command
 {
     protected $signature = 'alimtalk:monthly-closing {month? : 귀속월 YYYY-MM (기본 = 지난달)}';
 
-    protected $description = '대표 월 결산 알림톡 — 월배치 정산이 최종 승인된 달만 발송.';
+    protected $description = '대표 월 결산 알림톡 — 월정산 정산이 최종 승인된 달만 발송.';
 
     /** 이 달 결산을 이미 보냈는지 기록하는 Setting 키. */
     public static function sentKey(string $month): string
@@ -117,12 +117,12 @@ class AlimtalkMonthlyClosing extends Command
         if (! SettlementPayoutBatch::isMonthClosed($month)) {
             // 마냥 기다리다 영영 안 나가는 걸 막는다 — 늦어지면 사람이 알아채게 올린다.
             if (now()->day >= self::ESCALATE_DAY && now()->format('Y-m') !== $month) {
-                Log::error('alimtalk:monthly-closing — 월배치 정산이 아직 마감되지 않아 결산 보고가 지연되고 있습니다.', [
+                Log::error('alimtalk:monthly-closing — 월정산 정산이 아직 마감되지 않아 결산 보고가 지연되고 있습니다.', [
                     'month' => $month,
                 ]);
             }
 
-            return "{$month} 월배치 정산이 아직 최종 승인되지 않아 대기 중";
+            return "{$month} 월정산 정산이 아직 최종 승인되지 않아 대기 중";
         }
 
         if (self::settlementsFor($month)->isEmpty()) {

@@ -1807,7 +1807,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /**
      * 매입취소 미수 마감 (jin 2026-07-18) — 위약금 수금 포기 확정.
      * cancelled → cancelled_closed + 부족분(미수 KRW @판매환율) 동결(cancel_shortfall_krw).
-     * 프리랜서 부담 몫(부족분/2)은 월배치 손실요약에서 담당자별 소계로 노출 → 재무가 월배치 조정에 수기 입력.
+     * 프리랜서 부담 몫(부족분/2)은 월정산 손실요약에서 담당자별 소계로 노출 → 재무가 월정산 조정에 수기 입력.
      * 권한 = canConfirmFinance(재무·관리·업무관리자·admin) + canScopeVehicle 재인가(IDOR #26). payout 영향.
      */
     public function closePurchaseCancelUnpaid(): void

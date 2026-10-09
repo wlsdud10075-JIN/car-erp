@@ -127,7 +127,7 @@
 
     @if($batch->adjustments->isNotEmpty())
     <div class="card">
-        <div class="sub" style="margin-bottom:8px;">월배치 조정</div>
+        <div class="sub" style="margin-bottom:8px;">월정산 조정</div>
         @foreach($batch->adjustments as $adj)
         <div class="row bd">
             <span class="k">{{ $adj->salesman?->name ?? '-' }} · {{ $adj->reason }}</span>

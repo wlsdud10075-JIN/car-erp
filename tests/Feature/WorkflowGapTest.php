@@ -1663,7 +1663,7 @@ class WorkflowGapTest extends TestCase
             'confirmed_at' => now(),
         ]);
         // 정산 락 개편(2026-07-24) — 소급 수정 잠금은 2차 마감(closed) 후. flag 우회 검증 위해 closed 셋업.
-        //   finance 컨텍스트라 paid 전환 승인 가드를 $allowBatchPayout 로 우회(월배치 패턴).
+        //   finance 컨텍스트라 paid 전환 승인 가드를 $allowBatchPayout 로 우회(월정산 패턴).
         Settlement::$allowBatchPayout = true;
         try {
             Settlement::create([

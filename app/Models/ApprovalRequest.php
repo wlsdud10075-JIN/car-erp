@@ -224,12 +224,12 @@ class ApprovalRequest extends Model
             throw new \DomainException('정산 상태가 confirmed가 아닙니다 (현재: '.$settlement->settlement_status.').');
         }
         // Phase 2 (jin 2026-07-07) — 개별 지급 승인의 최종 실행도 대표(admin/super)만.
-        //   manager·[관리] 승인으로는 paid 불가(월배치로 유도) → 대표 미경유 지급(이중경로) 차단.
+        //   manager·[관리] 승인으로는 paid 불가(월정산으로 유도) → 대표 미경유 지급(이중경로) 차단.
         //   레거시 pending 개별요청은 대표 승인 시에만 실행. decide()가 예외를 롤백·토스트 처리.
         if (auth()->check() && ! auth()->user()->isAdmin()) {
-            throw new \DomainException('정산 지급은 대표(최고관리자) 승인 또는 월배치 승인으로만 가능합니다.');
+            throw new \DomainException('정산 지급은 대표(최고관리자) 승인 또는 월정산 승인으로만 가능합니다.');
         }
-        // 🚪 지급보류(미수) — 월배치는 처음부터 봤는데 **개별 승인만 안 보고 있었다**(jin 2026-09-12 확인).
+        // 🚪 지급보류(미수) — 월정산은 처음부터 봤는데 **개별 승인만 안 보고 있었다**(jin 2026-09-12 확인).
         //    같은 술어를 여기서도 물린다. 예외가 걸린 정산은 그대로 통과한다.
         //    🚫 조건을 옮겨 적지 말 것 — `isPayoutHeldByUnpaid()` 단일 출처(§8 #44·#81).
         if ($settlement->isPayoutHeldByUnpaid()) {

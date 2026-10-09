@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * 월배치 수동 조정 (jin 2026-07-08) — 정산 공식 밖의 담당자별 +/− 조정.
+ * 월정산 수동 조정 (jin 2026-07-08) — 정산 공식 밖의 담당자별 +/− 조정.
  * 배치(SettlementPayoutBatch) 총액에만 반영. 개별 정산 무손상. pending 배치에서만 편집.
  */
 class SettlementPayoutAdjustment extends Model

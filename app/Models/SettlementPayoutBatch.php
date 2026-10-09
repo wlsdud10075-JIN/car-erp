@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
 
 /**
- * Phase 2 (jin 2026-07-07) — 월배치 정산지급 승인 사다리.
+ * Phase 2 (jin 2026-07-07) — 월정산 정산지급 승인 사다리.
  *
  * [관리](rank1)/업무관리자(rank2) 제출 → 제출자보다 위 계단이 순서대로 서명(current_level 정확 일치) →
  * 대표(admin, rank3=TOP) 최종 승인 시 배치 전 confirmed 정산 일괄 paid(상태만). super(4)=override 즉시 완료.
@@ -231,7 +231,7 @@ class SettlementPayoutBatch extends Model
         return BatchPayoutBreakdown::forBatch($this);
     }
 
-    /** 월배치 수동 조정 (jin 2026-07-08) — 담당자별 +/− 조정, 배치 총액에만 반영. */
+    /** 월정산 수동 조정 (jin 2026-07-08) — 담당자별 +/− 조정, 배치 총액에만 반영. */
     public function adjustments(): HasMany
     {
         return $this->hasMany(SettlementPayoutAdjustment::class, 'batch_id');
@@ -249,7 +249,7 @@ class SettlementPayoutBatch extends Model
     /**
      * 조정 추가 — pending 배치 + 관리 권한. 사유 필수. 총액 재계산 + 감사로그.
      *
-     * 2026-08-06 (jin) — 입력 경로는 **정산관리 제출 모달 하나**다(월배치 화면의 조정 UI 제거).
+     * 2026-08-06 (jin) — 입력 경로는 **정산관리 제출 모달 하나**다(월정산 화면의 조정 UI 제거).
      * `$cancelVehicleIds` 가 있으면 매입취소 손실 차감이라는 뜻이고, 배치 최종 승인 시
      * 그 차량들의 `cancel_loss_settled_at` 이 자동으로 찍힌다.
      *
@@ -375,10 +375,10 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 월배치 제출 — 배치 + 조정을 **한 트랜잭션**으로 만들고, 그 합계로 알림톡을 보낸다.
+     * 월정산 제출 — 배치 + 조정을 **한 트랜잭션**으로 만들고, 그 합계로 알림톡을 보낸다.
      *
      * 🔀 2026-08-06 (jin) — 조정을 제출 시점으로 앞당겼다.
-     *   구: 제출 → 카톡 발송 → 그제서야 월배치 화면에서 조정. 조정은 pending 동안만 가능한데
+     *   구: 제출 → 카톡 발송 → 그제서야 월정산 화면에서 조정. 조정은 pending 동안만 가능한데
      *       카톡은 이미 나간 뒤라 **승인자가 본 총액과 실제 지급액이 어긋났다**. 승인자가 바로
      *       승인해버리면 조정 기회 자체가 사라졌고, 매입취소 손실은 사람이 기억해서 넣어야 했다.
      *   신: 정산관리의 제출 확인 모달에서 차감을 확정하고 넘긴다 → 카톡 총액이 정확하다.
@@ -440,7 +440,7 @@ class SettlementPayoutBatch extends Model
     public static function submitForMonth(User $submitter, string $month, array $adjustments = [], array $line = []): self
     {
         if (! $submitter->canSubmitPayoutBatch()) {
-            throw new \DomainException('월배치 제출 권한이 없습니다.');
+            throw new \DomainException('월정산 제출 권한이 없습니다.');
         }
         // 월당 진행중(pending) 배치 1개 — 동시 제출로 정산이 재지목돼 phantom 배치가 되는 것 방지.
         if (self::where('month', $month)->where('status', self::STATUS_PENDING)->exists()) {
@@ -492,7 +492,7 @@ class SettlementPayoutBatch extends Model
                 CarryoverClearance::create([
                     'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
                     'amount_krw' => $line['amount'], 'direction' => $line['amount'] > 0 ? 'pay' : 'collect',
-                    'cleared_by' => $submitter->id, 'note' => '월배치 #'.$batch->id.' 자동 흡수',
+                    'cleared_by' => $submitter->id, 'note' => '월정산 #'.$batch->id.' 자동 흡수',
                 ]);
             }
 
@@ -621,7 +621,7 @@ class SettlementPayoutBatch extends Model
     /**
      * 최종 승인 시 — 이 배치의 매입취소 손실 조정이 덮는 차량에 반영 도장을 찍는다 (jin 2026-08-06).
      *
-     * 구: 월배치 화면의 「반영 표시」 버튼을 사람이 눌렀다. **반려된 배치에 잘못 누르면 차감하지도
+     * 구: 월정산 화면의 「반영 표시」 버튼을 사람이 눌렀다. **반려된 배치에 잘못 누르면 차감하지도
      *     않은 손실이 반영됨으로 사라져 영영 청구가 안 됐고**, 안 누르면 다음 달에 또 청구됐다.
      * 신: 최종 승인(=실제로 그 금액이 나간 시점)에만 자동으로 찍는다. 반려되면 안 찍힌다.
      *
@@ -747,7 +747,7 @@ class SettlementPayoutBatch extends Model
         $settlements ??= $this->relationLoaded('settlements')
             ? $this->settlements
             : $this->settlements()->with('salesman')->get();
-        // 이미 읽어둔 관계가 있으면 그걸 쓴다 — 월배치 화면은 배치 60개를 한 번에 그린다.
+        // 이미 읽어둔 관계가 있으면 그걸 쓴다 — 월정산 화면은 배치 60개를 한 번에 그린다.
         $adjustments = $this->relationLoaded('adjustments')
             ? $this->adjustments
             : $this->adjustments()->with('salesman')->get();
@@ -766,7 +766,7 @@ class SettlementPayoutBatch extends Model
      * 💴 **정산도 조정도 없는데 이달 월급은 나가는 직원** (jin 2026-10-06
      * *「정산이 0명인 사람은 월급만 나올 수 있게 변경이 되어야 해」*).
      *
-     * 월배치 드릴다운·승인 breakdown 이 이 목록으로 「기본급만」 줄을 그리고, `baseSalaryTotal` 이 같은
+     * 월정산 드릴다운·승인 breakdown 이 이 목록으로 「기본급만」 줄을 그리고, `baseSalaryTotal` 이 같은
      * 목록을 합한다 — **세 곳이 같은 메서드를 부르므로** 줄의 합과 합계가 어긋나지 않는다.
      * 대상 조건은 `Salesman::salariedForBatch()` 한 곳. 배치에 이미 있는 사람은 **id 로** 뺀다
      * (이름 키로 빼면 동명이인이 사라진다).
@@ -815,7 +815,7 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 재전송할 수 있는 사람 — **관리 · 업무관리자만**(= 월배치 제출 권한 `canSubmitPayoutBatch()`, rank 1~2).
+     * 재전송할 수 있는 사람 — **관리 · 업무관리자만**(= 월정산 제출 권한 `canSubmitPayoutBatch()`, rank 1~2).
      * jin 2026-10-07: 「제출한 쪽이 승인 쪽을 재촉하는 버튼」. 최고관리자는 받는 사람(자기에게 보내는 버튼이 되고,
      * 폰 승인 화면에서 [승인] 위치가 밀린다), 시스템관리자는 서버에서 직접 보낼 수 있어 뺀다.
      * ⚠️ 「관리 이상 = 넷 전부」 기본값의 **명시적 예외**다(메모리 feedback_manager_and_above).
@@ -882,7 +882,7 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 📨 **승인요청 재전송** (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 월배치 화면에서 다시 보낸다.
+     * 📨 **승인요청 재전송** (jin 2026-10-07) — 대표가 카톡을 놓쳤을 때 제출 권한자가 월정산 화면에서 다시 보낸다.
      * 현재 승인 계단의 사람에게만, 서명 링크를 새로 만들어 보낸다(배치 내용 불변). 연타 방지 10분 · 감사로그.
      */
     public function resendPayoutRequest(User $by): void

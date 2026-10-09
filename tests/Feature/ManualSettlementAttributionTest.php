@@ -20,7 +20,7 @@ use Tests\TestCase;
  * 정산관리 「신규 정산」 폼이 `attributed_month` 와 `is_domestic` 을 **하나도 안 채우고** 있었다.
  * 둘 다 조용히 망가진다 — 예외도 로그도 없고 화면에는 정상으로 보인다:
  *
- *   attributed_month 비었음 → **월배치에 영영 안 잡힌다.** 지급 대상이 아닌 채로 목록에만 남는다.
+ *   attributed_month 비었음 → **월정산에 영영 안 잡힌다.** 지급 대상이 아닌 채로 목록에만 남는다.
  *                             실측 ssancarerp 5건이 그 상태였다(전부 손으로 만든 것).
  *   is_domestic 비었음      → 내수 건이 **수출 공식으로 굳는다.** 생성 시 박제라 나중에
  *                             바이어를 고쳐도 안 바뀐다(부가세마진이 붙어 회사이익이 부푼다).
@@ -84,7 +84,7 @@ class ManualSettlementAttributionTest extends TestCase
         return Settlement::where('vehicle_id', $v->id)->firstOrFail();
     }
 
-    /** 🚨 이번 결함 그 자체 — 귀속월이 비어 월배치에 안 잡히던 것. */
+    /** 🚨 이번 결함 그 자체 — 귀속월이 비어 월정산에 안 잡히던 것. */
     public function test_a_manually_created_settlement_gets_an_attribution_month(): void
     {
         $v = $this->paidVehicle(now()->subDays(3)->toDateString());
@@ -92,7 +92,7 @@ class ManualSettlementAttributionTest extends TestCase
         $s = $this->createManually($v);
 
         $this->assertNotNull($s->attributed_month,
-            '손으로 만든 정산의 귀속월이 비었다 — 월배치에 영영 안 잡힌다');
+            '손으로 만든 정산의 귀속월이 비었다 — 월정산에 영영 안 잡힌다');
         $this->assertSame(
             substr($v->settlementAttributionMonth(), 0, 7),
             substr((string) $s->attributed_month, 0, 7),

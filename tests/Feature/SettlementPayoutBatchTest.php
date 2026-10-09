@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 /**
- * Phase 2 (jin 2026-07-07) — 월배치 정산지급 승인 사다리.
+ * Phase 2 (jin 2026-07-07) — 월정산 정산지급 승인 사다리.
  *
  * [관리](1)→업무관리자(2)→대표(3) 순서 강제. 대표 최종 승인 시 일괄 paid. 직접 paid=대표만.
  */

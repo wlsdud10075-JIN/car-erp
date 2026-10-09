@@ -2,7 +2,7 @@
 
 // Phase 2 — monthly settlement payout batch approval queue i18n.
 return [
-    'title' => 'Monthly Payout Approval',
+    'title' => 'Monthly Settlement Approval',
     'subtitle' => 'Bundle a month of confirmed settlements through the approval ladder (Manager → Representative)',
     'status' => [
         'pending' => 'Pending',

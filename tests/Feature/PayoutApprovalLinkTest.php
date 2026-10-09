@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 /**
- * 월배치 정산지급 — 카카오 알림톡 버튼 서명 링크로 대표 승인/반려 (2026-07-08).
+ * 월정산 정산지급 — 카카오 알림톡 버튼 서명 링크로 대표 승인/반려 (2026-07-08).
  * 로그인 없이 서명 링크가 인가. GET=표시만, POST=처리(1회용·계단·상태 가드).
  */
 class PayoutApprovalLinkTest extends TestCase

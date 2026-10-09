@@ -325,19 +325,19 @@ class E2eSettlementWorkflowTest extends TestCase
 
         // ── 차량 B: 같은 영업담당자 다음 정산 ──
         // 🔀 2026-10-06 (jin) — 새 정산은 더 이상 이월을 **흡수하지 않는다.** A 의 −90,000 은 담당자 미청산 잔액으로 남았다가
-        //    월배치 제출 때 자동 조정 줄로 들어간다(`SettlementPayoutBatch::carryoverLinesFor`). 구: B 의 carryover_in 으로 흡수.
+        //    월정산 제출 때 자동 조정 줄로 들어간다(`SettlementPayoutBatch::carryoverLinesFor`). 구: B 의 carryover_in 으로 흡수.
         $vB = $this->driveToTradeComplete($s, 'KRW', 1.0,
             ['purchase_price' => 10_000_000, 'sale_price' => 13_000_000], 'B');
         $stB = Settlement::where('vehicle_id', $vB->id)->firstOrFail();
 
-        $this->assertNull($stB->carryover_in_krw, 'B 가 A 이월을 흡수했다 — 2026-10-06 부터 흡수는 월배치 줄로');
+        $this->assertNull($stB->carryover_in_krw, 'B 가 A 이월을 흡수했다 — 2026-10-06 부터 흡수는 월정산 줄로');
         // B 1차 손계산(KRW): total_margin=(3,000,000+900,000)×0.9=3,510,000 / settlement_amount=1,755,000 / base=1,705,000
         $this->assertSame(1_705_000, $stB->actual_payout, 'B 실지급은 B 몫 그대로');
         $this->assertSame(-90_000, $s->fresh()->unconsumed_carryover, 'A 비용 변동분이 담당자 미청산으로 남아야 한다');
 
-        // 월배치가 가져가는 줄 — B 지급 1,705,000 이 있으니 −90,000 전액 차감
+        // 월정산이 가져가는 줄 — B 지급 1,705,000 이 있으니 −90,000 전액 차감
         $lines = SettlementPayoutBatch::carryoverLinesFor(collect([$stB]));
         $this->assertCount(1, $lines);
-        $this->assertSame(-90_000, $lines[0]['amount'], 'A 이월이 월배치 조정 줄로 안 나온다');
+        $this->assertSame(-90_000, $lines[0]['amount'], 'A 이월이 월정산 조정 줄로 안 나온다');
     }
 }

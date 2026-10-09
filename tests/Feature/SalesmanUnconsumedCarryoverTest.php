@@ -80,7 +80,7 @@ class SalesmanUnconsumedCarryoverTest extends TestCase
     }
 
     /**
-     * 🔀 2026-10-06 (jin) — 새 정산은 더 이상 이월을 **흡수하지 않는다**. 잔액은 그대로 남고 월배치 제출 때
+     * 🔀 2026-10-06 (jin) — 새 정산은 더 이상 이월을 **흡수하지 않는다**. 잔액은 그대로 남고 월정산 제출 때
      *    자동 조정 줄로 나간다(`SettlementPayoutBatch::carryoverLinesFor`, 가드 = CarryoverAutoBatchLineTest).
      *    구 제목 「다음 정산이 흡수 → 0」은 폐기된 규칙이다.
      */
@@ -110,7 +110,7 @@ class SalesmanUnconsumedCarryoverTest extends TestCase
             'settlement_status' => 'pending',
         ]);
 
-        $this->assertSame(50000, $salesman->fresh()->unconsumed_carryover, '새 정산이 이월을 흡수했다 — 2026-10-06 부터 월배치 줄로');
+        $this->assertSame(50000, $salesman->fresh()->unconsumed_carryover, '새 정산이 이월을 흡수했다 — 2026-10-06 부터 월정산 줄로');
         $this->assertNull(Settlement::where('vehicle_id', $vB->id)->value('carryover_in_krw'));
     }
 }

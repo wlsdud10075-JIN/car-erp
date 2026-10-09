@@ -63,7 +63,7 @@
         ? \App\Models\ApprovalRequest::actionable()->where('status', 'pending')->count()
         : 0;
 
-    // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월배치 지급 대기 건수.
+    // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월정산 지급 대기 건수.
     //   월정산 v3 — steps 모드(결재선)면 「그 칸의 사람」 차례. 판정은 scopeAwaitingDecisionBy 한 곳.
     $pendingPayoutBatches = $user->canApprove()
         ? \App\Models\SettlementPayoutBatch::query()->awaitingDecisionBy($user)->count()
@@ -234,7 +234,7 @@
                 [
                     // 바이어 정산현황 (jin 2026-09-05) — 기획 docs/design/buyer-cash-ledger.md
                     //   🚫 줄여서 「정산」이라고 부르지 말 것. 이 ERP 의 「정산」은 **담당자 지급**이다
-                    //      (정산 처리·정산액·월배치). 가이드·챗봇 카드에도 항상 전체 이름으로 쓴다.
+                    //      (정산 처리·정산액·월정산). 가이드·챗봇 카드에도 항상 전체 이름으로 쓴다.
                     //   토글을 끈 회사엔 메뉴 자체가 안 뜬다 — 화면·게이트가 같은 출처를 본다.
                     'label' => __('nav.menu.buyer_account'),
                     'href' => route('erp.buyer-account.index'),

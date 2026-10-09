@@ -476,8 +476,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ))
             ->get();
 
-        // 미반영 매입취소 손실 (jin 2026-08-06) — 실무자가 정산관리만 보다가 월배치 손실 요약을 놓쳐서 추가.
-        //   ⚠️ 표시 전용. 실제 차감은 「월배치 지급」 조정 1곳에서만 — 여기 합계에 더하면 이중 청구.
+        // 미반영 매입취소 손실 (jin 2026-08-06) — 실무자가 정산관리만 보다가 월정산 손실 요약을 놓쳐서 추가.
+        //   ⚠️ 표시 전용. 실제 차감은 「월정산 지급」 조정 1곳에서만 — 여기 합계에 더하면 이중 청구.
         $cancelLoss = Vehicle::unsettledCancelLossBySalesman();
 
         // 🧾 월정산 v3 사람 카드(미리보기) — 필터 범위의 정산으로 환산·실지급·회사 기여를 미리 본다. 인센티브는 제출 때.
@@ -506,7 +506,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 // 💱 2차 대기 건의 이월 예상 합 (jin 2026-10-06) — 아직 마감 전이라 미청산에 안 잡힌 차액. 필터 범위 안.
                 'pending_carry_preview' => (int) $group->where('secondary_status', 'pending')
                     ->sum(fn (Settlement $s) => (int) ($s->secondaryBreakdown()['total'] ?? 0)),
-                // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월배치에서 차감).
+                // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월정산에서 차감).
                 'cancel_loss' => (int) ($loss['sum'] ?? 0),
                 'cancel_loss_plates' => $loss['plates'] ?? [],
                 'v3' => $v3->get((int) $salesmanId),
@@ -1066,7 +1066,7 @@ new #[Layout('components.layouts.app')] class extends Component
              * 🗓️ **귀속월·내수를 자동 경로와 같은 규칙으로 채운다** (jin 2026-09-16).
              *
              * 이 폼은 둘 다 안 채우고 있었다. 그러면:
-             *   · `attributed_month` 가 비어 **월배치에 영영 안 잡힌다** — 화면엔 있는데 지급 대상이 아니다.
+             *   · `attributed_month` 가 비어 **월정산에 영영 안 잡힌다** — 화면엔 있는데 지급 대상이 아니다.
              *     실측 ssancarerp 5건이 그 상태였다(전부 손으로 만든 것).
              *   · `is_domestic` 이 비어 **내수 건이 수출 공식으로 굳는다**. 이 값은 생성 시 박제라
              *     나중에 바이어를 고쳐도 안 바뀐다.
@@ -1116,10 +1116,10 @@ new #[Layout('components.layouts.app')] class extends Component
      * canApprove user는 직접 paid 변경 가능 (Settlement::saving 가드 통과).
      * 그 외 user는 이 메서드로 ApprovalRequest 생성 → /erp/approvals 큐로 진입.
      */
-    // ── 월배치 제출 확인 모달 (jin 2026-08-06) ────────────────────────────────
+    // ── 월정산 제출 확인 모달 (jin 2026-08-06) ────────────────────────────────
     //   조정을 **제출 전에** 확정한다. 구조상 조정은 배치에 종속(batch_id)이라 예전엔
     //   "제출 → 카톡 → 그제서야 조정" 순서였고, 승인자가 본 총액과 실제 지급액이 어긋났다.
-    //   이제 여기서 차감을 정하고 넘기므로 카톡 총액이 정확하다. 월배치 화면엔 조정 입력이 없다.
+    //   이제 여기서 차감을 정하고 넘기므로 카톡 총액이 정확하다. 월정산 화면엔 조정 입력이 없다.
 
     public bool $showSubmitModal = false;
 
@@ -1278,7 +1278,7 @@ new #[Layout('components.layouts.app')] class extends Component
         unset($this->submitTotals);
     }
 
-    // Phase 2 (jin 2026-07-07) — 선택한 귀속월의 confirmed 정산을 월배치로 제출 → 승인 사다리.
+    // Phase 2 (jin 2026-07-07) — 선택한 귀속월의 confirmed 정산을 월정산으로 제출 → 승인 사다리.
     //   [관리]/업무관리자만. 제출자보다 위 계단(업무관리자→대표) 순서대로 승인 → 대표 최종 시 일괄 paid.
     public function submitPayoutBatch(): void
     {
@@ -1648,7 +1648,7 @@ new #[Layout('components.layouts.app')] class extends Component
     // -- 2차 정산 완료 일괄 (jin 2026-08-26) ---------------------------------
     //   마감은 되돌릴 수 없다(secondary_status='closed' = 회계 락 단일 트리거, 해제는 차량별
     //   [잠금 해제] + 관리 승인). 그래서 wire:confirm 한 줄이 아니라 **무엇이 닫히고 무엇이
-    //   왜 빠지는지** 보여주는 미리보기 모달을 거친다(월배치 제출 모달과 같은 형태).
+    //   왜 빠지는지** 보여주는 미리보기 모달을 거친다(월정산 제출 모달과 같은 형태).
     //   ⚠️ 건너뛴 건을 카운터에 뭉뚱그리지 말 것 — 정작 봐야 할 차(미완납·환율누락)가 숫자에 묻힌다.
 
     public bool $showCloseSecondaryModal = false;
@@ -1950,7 +1950,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
         {{ __('settlement.export_btn') }}
     </button>
-    {{-- jin 2026-07-09 — 선택 월 미확정 정산 일괄 확정 (확정 → 이후 월배치 제출). --}}
+    {{-- jin 2026-07-09 — 선택 월 미확정 정산 일괄 확정 (확정 → 이후 월정산 제출). --}}
     @if(auth()->user()->canConfirmFinance() && $monthFilter !== '')
     <button wire:click="confirmMonth" wire:confirm="{{ __('settlement.batch.confirm_month_prompt', ['month' => $monthFilter]) }}"
             class="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50">
@@ -2053,7 +2053,7 @@ new #[Layout('components.layouts.app')] class extends Component
 </div>
 @endif
 
-{{-- ── 월배치 제출 확인 모달 (jin 2026-08-06) ─────────────────────────────── --}}
+{{-- ── 월정산 제출 확인 모달 (jin 2026-08-06) ─────────────────────────────── --}}
 @if($showSubmitModal)
 @php $pv = $this->submitPreview; $tt = $this->submitTotals; @endphp
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:key="submit-modal">
@@ -2175,7 +2175,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <button type="button" wire:click="addSubmitAdjustment"
                         class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>
             </div>
-            {{-- 사유가 밖으로 나간다는 것을 쓰는 자리에서 알린다 (2026-08-31 board 월배치 미러).
+            {{-- 사유가 밖으로 나간다는 것을 쓰는 자리에서 알린다 (2026-08-31 board 월정산 미러).
                  위험한 건 API 가 아니라 「쓰는 사람이 외부 노출을 모르는 것」이다 — SKILLS §8 #60. --}}
             <p class="mt-1 text-[11px] text-amber-600">{{ __('settlement.batch.adjust_reason_visible') }}</p>
         </div>
@@ -2280,7 +2280,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="font-mono {{ $summary['pending_carry_preview'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ $summary['pending_carry_preview'] > 0 ? '+' : '−' }}{{ number_format(abs($summary['pending_carry_preview'])) }}</span>
                     </div>
                     @endif
-                    {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월배치 지급」 조정에서. --}}
+                    {{-- 미반영 매입취소 손실 (jin 2026-08-06) — 표시 전용. 실제 차감은 「월정산 지급」 조정에서. --}}
                     @if(($summary['cancel_loss'] ?? 0) > 0)
                     <div class="flex items-center justify-between border-t border-gray-100 pt-1"
                          title="{{ __('settlement.summary_cancel_loss_hint', ['plates' => implode(', ', $summary['cancel_loss_plates'] ?? [])]) }}">
@@ -2459,7 +2459,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="badge badge-gray ml-1"
                           title="{{ __('settlement.payout_excluded.tooltip', ['name' => $s->salesman?->name ?? '-']) }}">{{ __('settlement.payout_excluded.badge') }}</span>
                     @endif
-                    {{-- 지급 게이트 (jin 2026-07-08) — 미수 있어 월배치·지급에서 제외되는 확정 정산 표시 --}}
+                    {{-- 지급 게이트 (jin 2026-07-08) — 미수 있어 월정산·지급에서 제외되는 확정 정산 표시 --}}
                     @if($s->isPayoutHeldByUnpaid())
                     <span class="badge badge-red ml-1" title="{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}">{{ __('settlement.held.badge') }}</span>
                     @endif
@@ -2508,7 +2508,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 wire:confirm="{{ __('settlement.confirm_confirm') }}"
                                 class="text-xs font-medium text-emerald-600 hover:text-emerald-800">{{ __('settlement.btn_confirm') }}</button>
                         @endif
-                        {{-- Phase 2 (2026-07-07) — 개별 지급 승인요청 은퇴. [관리]/업무관리자가 '월배치 제출'로 진행.
+                        {{-- Phase 2 (2026-07-07) — 개별 지급 승인요청 은퇴. [관리]/업무관리자가 '월정산 제출'로 진행.
                              (레거시 requestPayApproval 메서드/executeSettlementPay 는 기존 pending 처리용 존치, 대표만 실행) --}}
                         {{-- 회의확장씬 #8 (2026-05-22) — 2차 정산 완료 액션 ([재무]/[관리]/admin) --}}
                         @if($canCloseSecondary)
@@ -3177,7 +3177,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 </span>
             </div>
             {{-- 💱 2차 차액 분해 (jin 2026-10-06) — 「1차 지급액 → 환차분 → 2차 차액(비용) → (기타) → 이월금액(최종)」.
-                 월배치 모달을 띄우기 전에 실무자가 차액이 얼마나 생겼는지 보려는 것. 값은 Settlement::secondaryBreakdown() 단일 출처 —
+                 월정산 모달을 띄우기 전에 실무자가 차액이 얼마나 생겼는지 보려는 것. 값은 Settlement::secondaryBreakdown() 단일 출처 —
                  마감 전엔 「예상」(지금 값 − 지급 스냅샷), 마감 뒤엔 박제값. 지급 전 정산(스냅샷 없음)엔 안 그린다. --}}
             @php
                 $bdSettlement = $editingId ? \App\Models\Settlement::find($editingId) : null;
