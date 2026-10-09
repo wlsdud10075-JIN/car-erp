@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\ExportLog;
+use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
-use App\Services\Payout\BatchPayoutBreakdown;
 use App\Services\SettlementExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -47,7 +47,9 @@ class PayoutApprovalController extends Controller
             'breakdown' => $this->breakdown($batch),
             'profit' => $batch->profitStats(),
             // 🧾 월정산 v3 — 사람 카드·합계(급여 차감 후 회사 순이익). 승인 금액(total_payout)은 종전 그대로.
-            'v3' => BatchPayoutBreakdown::forBatch($batch),
+            'v3' => $batch->breakdownForDisplay(),
+            'changed' => $batch->changedFieldsBySalesman(),
+            'notice' => null,
             'exportUrl' => $this->exportUrl($batch, $user),
             'error' => null,
         ]);
@@ -128,13 +130,48 @@ class PayoutApprovalController extends Controller
                 'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
                 'profit' => $batch->profitStats(),
                 'exportUrl' => $this->exportUrl($batch, $user),
+                'v3' => $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman(), 'notice' => null,
                 'error' => '반려하려면 사유를 입력해 주세요.',
+            ]);
+        }
+
+        // ✏️ 월정산 v3 — 결재 중 인센티브 추가(폰). 포인터는 그대로, 변경 이력만. 승인 페이지로 되돌아가 노란 표시로 보인다.
+        if ($action === 'incentive') {
+            try {
+                if (! SettlementPayoutBatch::canEditAdjustments($user)) {
+                    throw new \DomainException(__('payout_batch.steps.edit_forbidden'));
+                }
+                $amount = (int) preg_replace('/[^\-0-9]/', '', (string) $request->input('amount', ''));
+                $salesmanId = (int) $request->input('salesman_id');
+                if ($salesmanId <= 0 || $amount === 0 || $reason === '') {
+                    throw new \DomainException(__('payout_batch.steps.incentive_invalid'));
+                }
+                $batch->addIncentive($user, $salesmanId, $amount, $reason);
+                AuditLog::create([
+                    'user_id' => $user->id, 'auditable_type' => $batch::class, 'auditable_id' => $batch->id,
+                    'action' => 'payout_incentive_added_via_link', 'column_name' => 'amount', 'new_value' => $amount.' ('.$reason.')', 'ip_address' => $request->ip(),
+                ]);
+                $notice = __('payout_batch.steps.incentive_added', ['name' => Salesman::find($salesmanId)?->name ?? '-', 'amount' => number_format($amount)]);
+                $error = null;
+            } catch (\DomainException $e) {
+                $notice = null;
+                $error = $e->getMessage();
+            }
+            $batch = $batch->fresh();
+            $decideUrl = URL::temporarySignedRoute('payout.approve.decide', now()->addMinutes(60), ['batch' => $batch->id, 'u' => $user->id]);
+
+            return view('payout-approval.show', [
+                'batch' => $batch, 'user' => $user, 'decidable' => $batch->canDecide($user),
+                'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
+                'profit' => $batch->profitStats(), 'exportUrl' => $this->exportUrl($batch, $user),
+                'v3' => $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman(),
+                'error' => $error, 'notice' => $notice,
             ]);
         }
 
         try {
             if ($action === 'approve') {
-                $batch->approveBy($user);
+                $batch->approveBy($user, trim((string) $request->input('note', '')) ?: null);
                 AuditLog::create([
                     'user_id' => $user->id, 'auditable_type' => $batch::class, 'auditable_id' => $batch->id,
                     'action' => 'payout_approved_via_link', 'ip_address' => $request->ip(),

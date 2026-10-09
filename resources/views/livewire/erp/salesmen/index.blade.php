@@ -389,6 +389,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $nowTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
                 if (\App\Models\AuditLog::valuesDiffer($wasTotal, $nowTotal)) {
                     \App\Models\AuditLog::recordChange($sm, 'payroll_'.$this->payrollMonth, $wasTotal, $nowTotal);
+                    // 🪜 그 달 월정산이 결재 중이면 변경 이력에도 남긴다 — 카드가 노란 표시로 결재자에게 알린다(월정산 v3).
+                    \App\Models\SettlementPayoutBatch::where('month', $this->payrollMonth)->where('status', 'pending')->get()
+                        ->each(fn ($b) => $b->recordChange($actor, $sm->id, \App\Models\SettlementPayoutBatchChange::FIELD_PAYROLL, $wasTotal, $nowTotal, '급여 항목 수정'));
                 }
             }
         } else {

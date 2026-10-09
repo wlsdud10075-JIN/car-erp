@@ -165,7 +165,7 @@ class PayoutApprovalStepsTest extends TestCase
         $this->assertSame($before + 300_000, (int) $batch->total_payout);
         $this->assertSame(2, (int) $batch->current_step, '수정해도 멈춘 단계부터 이어서 — 포인터 불변');
         $this->assertSame([$ceo->id], $batch->currentApprovers()->pluck('id')->all());
-        $change = $batch->changes()->first();
+        $change = $batch->batchChanges()->first();
         $this->assertSame('incentive', $change->field);
         $this->assertSame(0, $change->before);
         $this->assertSame(300_000, $change->after);
@@ -173,7 +173,7 @@ class PayoutApprovalStepsTest extends TestCase
 
         $batch->removeIncentive($bu, $adj->id);
         $this->assertSame($before, (int) $batch->fresh()->total_payout);
-        $this->assertSame(2, $batch->changes()->count(), '삭제도 이력');
+        $this->assertSame(2, $batch->batchChanges()->count(), '삭제도 이력');
 
         // 결재선 밖·제출 권한 없는 사람은 못 고친다
         $finance = $this->user('user', '재무');

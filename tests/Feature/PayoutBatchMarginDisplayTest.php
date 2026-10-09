@@ -254,7 +254,8 @@ class PayoutBatchMarginDisplayTest extends TestCase
 
         $this->actingAs($this->manager());
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
-        $this->assertSame(1, substr_count($html, '>'.$employee->name), '같은 직원이 두 줄로 나왔다');
+        // v3: 이름은 인센티브 select 옵션에도 나오므로 **카드 수**로 센다
+        $this->assertSame(1, substr_count($html, 'data-person-card="'.$employee->id.'"'), '같은 직원이 카드 두 장으로 나왔다');
         $this->assertStringNotContainsString('data-salary-only', $html);
     }
 

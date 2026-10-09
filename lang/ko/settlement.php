@@ -31,6 +31,16 @@ return [
         'adjust_reason_visible' => '⚠️ 사유는 해당 영업담당자에게 포털에서 그대로 보입니다 — 다른 사람 이름이나 사건은 적지 마세요.',
         'adjust_add' => '추가',
         'adjust_invalid' => '담당자·금액·사유를 모두 입력하세요 (금액 0 불가).',
+        // 월정산 v3 (2026-10-09)
+        'adjust_kind_manual' => '수기 조정',
+        'adjust_kind_incentive' => '추가 인센티브',
+        'line_title' => '결재선',
+        'line_hint' => '직급별 결재권자를 고릅니다. 비워 두면 그 직급은 건너뜁니다. 대표는 필수이며, 각 결재자는 자기 차례가 될 때 알림톡을 받습니다.',
+        'line_none' => '건너뜀',
+        'line_no_phone' => '전화번호가 없어 알림톡이 가지 않습니다',
+        'payroll_missing_title' => '급여가 아직 입력되지 않은 사람이 :count명 있습니다',
+        'payroll_missing_hint' => '사내직원관리 → :month 칸이 비어 있습니다. 그대로 제출하면 급여 0원으로 계산됩니다.',
+        'transfer_total' => '송금 총액 (급여 포함)',
 
         // 2차 정산 완료 일괄 (jin 2026-08-26)
         'close_secondary' => '이 달 2차 일괄 마감 (:count)',
