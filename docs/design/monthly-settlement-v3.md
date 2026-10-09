@@ -185,6 +185,7 @@
 | 1 | `fe0fd0bf` | payroll_entries · salesmen.type inspector(MySQL ALTER + SQLite change — **SQLite 도 enum 을 CHECK 로 강제한다**, 「미강제」 메모는 틀렸다) · users.approval_title · adjustments.kind(+백필) | 결재선·변경이력·박제·앱내알림 표는 6~7일차에 |
 | 2 | `f2608c85` | 사내직원관리 개명·탭·검차 등록·급여 드로어(월별 18항목+N행) · 접근 관리 이상+재무 · 결재 직급 select · 업무관리자 생성 버그 · `Salesman::sales()` 12곳 | 로컬 MySQL 꺼져 있어 8001 에 마이그 미적용(`php artisan migrate` 필요) |
 | 3 | `dc547af9` | `Settlement::freelanceEquivalentPayout/totalMarginAt/secondaryDeltas` · `PersonPayoutBreakdown` · `BatchPayoutBreakdown` · 가드 6 | 화면 미연결 |
+| 5 | `f03d0214` | 사람 카드 컴포넌트 `components/payout/person-card` + 합계 띠 `totals` → 월정산 드릴다운 · 폰 승인 링크 · 정산관리 담당자별 합계(미리보기) 3곳에 같은 카드. lang `payout_card` ko/en | 결재선·변경 색(6~7일차)에서 `changed` 키를 채운다 |
 | 4 | — | 운영 9월분 실데이터 대조표(아래, 읽기 전용 probe — 운영엔 v3 메서드가 없어 같은 식을 스크립트에 조립) | jin 확인 대기: 예시 21,560,612 가 「판매환율」 기준인지 「실효」 기준인지 |
 
 ### 4일차 대조표 — 2026-09 귀속 (2026-10-09 실측, 이월·2차 가상분 제외, 발송비 전원 0)
