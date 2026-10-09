@@ -110,7 +110,9 @@
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payout']) }}</span></div>
+            @if($p['shipping'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['shipping']) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' }}"><span>{{ __('payout_card.contribution') }}</span><span class="font-mono">{{ $signed($p['company_contribution']) }}</span></div>
             @if($shareText !== null)<div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.share') }}</span><span class="font-mono {{ $cls($p['share']) }}">{{ $shareText }}</span></div>@endif
             <div class="border-t border-dashed border-gray-100 px-2 py-1 text-[10px] text-gray-400">{{ __('payout_card.freelance_note') }}</div>
@@ -146,7 +148,7 @@
                 @foreach($p['vehicles'] as $v)
                 <div class="flex items-center justify-between text-[11px] text-gray-500">
                     <span>{{ $v['vehicle_number'] }} <span class="ml-1 text-gray-400">{{ __('payout_card.total_margin') }} {{ number_format($v['total_margin']) }} · {{ \App\Models\Settlement::formatMarginRate($v['margin_rate']) }}@if(!empty($v['type_label'])) · {{ $v['type_label'] }}@endif</span></span>
-                    <span class="font-mono">₩{{ number_format($v['actual_payout']) }}</span>
+                    <span class="font-mono {{ $v['actual_payout'] < 0 ? 'text-red-600' : '' }}">{{ $v['actual_payout'] < 0 ? '−' : '' }}₩{{ number_format(abs($v['actual_payout'])) }}</span>
                 </div>
                 @endforeach
             </div>
