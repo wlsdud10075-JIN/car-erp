@@ -16,15 +16,16 @@
 @endphp
 <details class="rounded-lg border border-gray-200 bg-white" data-person-card="{{ $p['salesman_id'] }}" data-person-type="{{ $t }}" @if($open) open @endif>
     <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left" title="{{ __('payout_card.open_hint') }}">
-        <span class="flex min-w-0 flex-1 items-center gap-1.5">
-            <span class="truncate text-xs font-semibold text-gray-800">{{ $p['name'] }}</span>
-            <span class="badge {{ $typeBadge }} text-[10px]">{{ __('salesman.type.'.$t) }}</span>
-            @if($t !== 'inspector')<span class="pill-count">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>
+        {{-- 이름 묶음은 줄어들지 않는다(shrink-0) — 오른쪽 숫자가 길면 이름이 0px 로 눌려 뱃지가 세로로 서던 것(jin 2026-10-09 스크린샷). 숫자 쪽이 줄바꿈한다. --}}
+        <span class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+            <span class="text-xs font-semibold text-gray-800">{{ $p['name'] }}</span>
+            <span class="badge {{ $typeBadge }} text-[10px] whitespace-nowrap">{{ __('salesman.type.'.$t) }}</span>
+            @if($t !== 'inspector')<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>
             @if(array_key_exists('margin_rate', $p))<span class="text-[10px] text-gray-400">{{ __('payout_batch.margin.label') }} {{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</span>@endif
             @endif
             @if(!empty($changed))<span class="badge badge-amber text-[10px]" data-changed>{{ __('payout_card.changed') }}</span>@endif
         </span>
-        <span class="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
+        <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
             @if($t === 'employee' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.margin_after_pay') }} <b class="font-mono {{ $cls($p['margin_after_pay']) }}" data-margin-after-pay>{{ $signed($p['margin_after_pay']) }}</b></span>
             <span class="text-gray-500">{{ __('payout_card.excess_ratio') }} <b class="font-mono {{ $cls($p['excess_ratio']) }}" data-excess-ratio>{{ $ratioText }}</b></span>
