@@ -97,6 +97,8 @@ return [
     'contrib_th_count' => 'Sold',
     'contrib_th_contribution' => 'Contribution (margin − take-home − shipping)',
     'contrib_th_share' => 'Share',
+    'contrib_th_ratio' => 'Excess vs pay',
+    'contrib_ratio_na' => 'freelancer',
     'common_labor' => 'Common labor (inspector payroll) −₩:amount — excluded from shares',
 
     'salesman_count_title' => 'Sales count by salesman (top 10)',

@@ -101,6 +101,8 @@ return [
     'contrib_th_count' => '판매',
     'contrib_th_contribution' => '회사 기여 (총마진 − 받아 간 돈 − 발송비)',
     'contrib_th_share' => '지분율',
+    'contrib_th_ratio' => '급여 대비 초과 배율',
+    'contrib_ratio_na' => '프리랜서',
     'common_labor' => '공통 인건비(검차직원 급여) −₩:amount — 지분율 계산에서는 제외',
 
     // 담당자 성과

@@ -649,11 +649,16 @@ new #[Layout('components.layouts.app')] class extends Component
 
                     if ($id = $s->salesman_id) {
                         if (! isset($byPerson[$id])) {
-                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0, 'equiv' => 0, 'employee' => false];
                         }
                         $byPerson[$id]['contribution'] += $share;
                         $byPerson[$id]['payout'] += $payout;
                         $byPerson[$id]['count']++;
+                        // 📐 사내직원 초과 배율용 — 「프리랜서였다면」 환산(실효환율). 이월·수기 조정은 빼고 본다(대시보드는 기간 집계).
+                        if ($s->settlement_type !== 'ratio') {
+                            $byPerson[$id]['employee'] = true;
+                            $byPerson[$id]['equiv'] += (int) $s->freelanceEquivalentPayout();
+                        }
                     }
                 }
             });
@@ -688,7 +693,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
                     if ($id = $adj->salesman_id) {
                         if (! isset($byPerson[$id])) {
-                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0, 'equiv' => 0, 'employee' => false];
                         }
                         $byPerson[$id]['contribution'] -= $amount;
                         $byPerson[$id]['payout'] += $amount;
@@ -721,7 +726,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 $payoutSum += $t;
                 $companyNet -= $t;
                 if (! isset($byPerson[$sid])) {
-                    $byPerson[$sid] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
+                    $byPerson[$sid] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0, 'equiv' => 0, 'employee' => true];
                 }
                 $byPerson[$sid]['contribution'] -= $t;
                 $byPerson[$sid]['payout'] += $t;
@@ -744,6 +749,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 'payout' => (int) $byPerson[$id]['payout'],
                 // 지분율 = 기여 ÷ |기여 합| (음수 그대로) — BatchPayoutBreakdown 과 같은 정의
                 'share' => $contributionSum !== 0 ? round($byPerson[$id]['contribution'] / abs($contributionSum) * 100, 1) : null,
+                // 급여 대비 초과 배율(사내직원만) = (환산 − 받아 간 돈) ÷ 받아 간 돈. 프리랜서는 환산 = 지급이라 없음(null)
+                'excess_ratio' => ($byPerson[$id]['employee'] ?? false) && (int) $byPerson[$id]['payout'] > 0
+                    ? round(((int) $byPerson[$id]['equiv'] - (int) $byPerson[$id]['payout']) / (int) $byPerson[$id]['payout'], 1) : null,
                 // 🔗 이름 클릭 → 정산관리 그 담당자 카드(펼친 상태). 월 = 이 기간에 지급된 마지막 귀속월.
                 'link' => route('erp.settlements.index', array_filter(['salesmanFilter' => (int) $id, 'monthFilter' => $lastMonth, 'focus' => (int) $id])),
             ];
@@ -1574,6 +1582,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_th_count') }}</th>
                         <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_payout') }}</th>
                         <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_th_contribution') }}</th>
+                        <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_th_ratio') }}</th>
                         <th class="py-1 text-right font-medium">{{ __('admin_dash.contrib_th_share') }}</th>
                     </tr>
                 </thead>
@@ -1586,6 +1595,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td class="py-2 pr-2 text-right text-[11px] text-gray-400">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</td>
                     <td class="py-2 pr-2 text-right font-mono text-gray-700">@krw($row['payout'] ?? 0)</td>
                     <td class="py-2 pr-2 text-right font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</td>
+                    <td class="py-2 pr-2 text-right font-mono {{ ($row['excess_ratio'] ?? 0) < 0 ? 'text-red-600' : 'text-gray-700' }}" data-excess-ratio>@if(($row['excess_ratio'] ?? null) !== null){{ $row['excess_ratio'] < 0 ? '−' : '+' }}{{ number_format(abs($row['excess_ratio']), 1) }}{{ __('payout_card.times') }}@else<span class="text-[10px] text-gray-400">{{ __('admin_dash.contrib_ratio_na') }}</span>@endif</td>
                     <td class="py-2 text-right font-mono {{ ($row['share'] ?? 0) < 0 ? 'text-red-600' : 'text-gray-700' }}" data-share>@if(($row['share'] ?? null) !== null){{ $row['share'] < 0 ? '−' : '' }}{{ number_format(abs($row['share']), 1) }}%@else—@endif</td>
                 </tr>
                 @endforeach
