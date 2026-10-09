@@ -24,8 +24,8 @@ return [
     ],
     'field' => [
         'approval_title' => 'Approval title (monthly settlement)',
-        'approval_title_none' => 'None — final approver',
-        'approval_title_note' => 'Title used in the monthly settlement approval line (Director → Executive → CEO). Leave blank to act as the final approver as before.',
+        'approval_title_none' => 'Not set — not in the approval line (legacy approver)',
+        'approval_title_note' => 'The approval line is Submit → Director → Executive → CEO. Pick where this person sits. "Not set" keeps them out of the line; only companies with no titles fall back to the legacy ladder (Manager → Administrator).',
         'name' => 'Name',
         'name_ph' => 'John Doe',
         'email_ph' => 'user@car-erp.test',

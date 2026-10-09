@@ -1564,26 +1564,34 @@ new #[Layout('components.layouts.app')] class extends Component
             @if(count($cp['ranking']) === 0)
             <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.company_contrib_empty') }}</p>
             @else
-            <ul class="mt-3 divide-y divide-gray-100">
+            {{-- 표 머리 (jin 2026-10-09 「항목이 뭘 뜻하는지 TH 가 있어야」) · 게이지 없음 --}}
+            <div class="mt-3 overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-[11px] text-gray-500">
+                        <th class="py-1 pr-2 text-left font-medium">{{ __('admin_dash.contrib_th_rank') }}</th>
+                        <th class="py-1 pr-2 text-left font-medium">{{ __('admin_dash.contrib_th_name') }}</th>
+                        <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_th_count') }}</th>
+                        <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_payout') }}</th>
+                        <th class="py-1 pr-2 text-right font-medium">{{ __('admin_dash.contrib_th_contribution') }}</th>
+                        <th class="py-1 text-right font-medium">{{ __('admin_dash.contrib_th_share') }}</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
                 @foreach($cp['ranking'] as $i => $row)
-                <li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2" data-contrib-row="{{ $row['salesman_id'] ?? '' }}">
-                    <span class="flex items-center gap-2 text-sm text-gray-700">
-                        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-700">{{ $i + 1 }}</span>
-                        {{-- 🔗 이름 → 정산관리 그 담당자 카드 (jin 2026-10-08 「앵커를 달아달란거지」) --}}
-                        @if(!empty($row['link']))<a href="{{ $row['link'] }}" wire:navigate class="font-medium hover:text-violet-700 hover:underline">{{ $row['name'] }}</a>@else{{ $row['name'] }}@endif
-                        <span class="text-[11px] text-gray-400">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</span>
-                    </span>
-                    <span class="flex items-center gap-3 text-[11px] text-gray-500">
-                        <span>{{ __('admin_dash.contrib_payout') }} <span class="font-mono text-gray-700">@krw($row['payout'] ?? 0)</span></span>
-                        <span class="font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</span>
-                        @if(($row['share'] ?? null) !== null)
-                        <span class="flex items-center gap-1 font-mono {{ $row['share'] < 0 ? 'text-red-600' : 'text-gray-700' }}" data-share>{{ $row['share'] < 0 ? '−' : '' }}{{ number_format(abs($row['share']), 1) }}%
-                            <span class="inline-block h-1.5 w-14 overflow-hidden rounded bg-gray-100"><span class="block h-full {{ $row['share'] < 0 ? 'bg-red-400' : 'bg-teal-500' }}" style="width: {{ min(100, abs($row['share'])) }}%"></span></span></span>
-                        @endif
-                    </span>
-                </li>
+                <tr data-contrib-row="{{ $row['salesman_id'] ?? '' }}">
+                    <td class="py-2 pr-2"><span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-700">{{ $i + 1 }}</span></td>
+                    {{-- 🔗 이름 → 정산관리 그 담당자 카드 (jin 2026-10-08 「앵커를 달아달란거지」) --}}
+                    <td class="py-2 pr-2 text-gray-700">@if(!empty($row['link']))<a href="{{ $row['link'] }}" wire:navigate class="font-medium hover:text-violet-700 hover:underline">{{ $row['name'] }}</a>@else{{ $row['name'] }}@endif</td>
+                    <td class="py-2 pr-2 text-right text-[11px] text-gray-400">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</td>
+                    <td class="py-2 pr-2 text-right font-mono text-gray-700">@krw($row['payout'] ?? 0)</td>
+                    <td class="py-2 pr-2 text-right font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</td>
+                    <td class="py-2 text-right font-mono {{ ($row['share'] ?? 0) < 0 ? 'text-red-600' : 'text-gray-700' }}" data-share>@if(($row['share'] ?? null) !== null){{ $row['share'] < 0 ? '−' : '' }}{{ number_format(abs($row['share']), 1) }}%@else—@endif</td>
+                </tr>
                 @endforeach
-            </ul>
+                </tbody>
+            </table>
+            </div>
             @endif
             @if(($cp['common_labor'] ?? 0) !== 0)
             <p class="mt-2 text-[11px] text-gray-500" data-common-labor>{{ __('admin_dash.common_labor', ['amount' => number_format($cp['common_labor'])]) }}</p>
