@@ -83,7 +83,7 @@ class SettlementPayoutBatch extends Model
         return $this->hasMany(SettlementPayoutBatchStep::class, 'batch_id')->orderBy('seq');
     }
 
-    public function changes(): HasMany
+    public function batchChanges(): HasMany   // ⚠️ `changes` 는 Eloquent 가 쓰는 속성 이름(getChanges)이라 관계 이름으로 못 쓴다
     {
         return $this->hasMany(SettlementPayoutBatchChange::class, 'batch_id')->orderBy('id');
     }
@@ -176,7 +176,7 @@ class SettlementPayoutBatch extends Model
     /** 상신 뒤 바뀐 칸 — salesman_id => [field, …]. 카드가 노란 표시에 쓴다. */
     public function changedFieldsBySalesman(): array
     {
-        $changes = $this->relationLoaded('changes') ? $this->changes : $this->changes()->get();
+        $changes = $this->relationLoaded('batchChanges') ? $this->batchChanges : $this->batchChanges()->get();
 
         return $changes->whereNotNull('salesman_id')->groupBy('salesman_id')
             ->map(fn ($g) => $g->pluck('field')->unique()->values()->all())->all();
@@ -184,7 +184,7 @@ class SettlementPayoutBatch extends Model
 
     public function recordChange(User $by, ?int $salesmanId, string $field, ?int $before, ?int $after, ?string $note = null): SettlementPayoutBatchChange
     {
-        return $this->changes()->create([
+        return $this->batchChanges()->create([
             'user_id' => $by->id, 'salesman_id' => $salesmanId, 'field' => $field,
             'before' => $before, 'after' => $after, 'note' => $note !== null ? mb_substr($note, 0, 200) : null, 'created_at' => now(),
         ]);

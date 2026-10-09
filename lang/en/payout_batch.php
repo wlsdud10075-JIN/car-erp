@@ -49,6 +49,29 @@ return [
     ],
 
     // Margin rate / base salary / monthly take-home (jin 2026-09-18) — display only.
+    'steps' => [
+        'title' => 'Approval line',
+        'next' => 'Next: :who',
+        'submitted' => 'Submitted',
+        'pending' => 'Pending',
+        'approved' => 'Approved',
+        'rejected' => 'Rejected',
+        'note_ph' => 'One-line note (kept in the approval log)',
+        'log_title' => 'Approval log',
+        'change_incentive' => 'Extra incentive',
+        'change_adjustment' => 'Adjustment',
+        'change_payroll' => 'Payroll',
+        'changed_hint' => 'Yellow = changed after submission. Approval continues from the current step. Amounts in already-sent messages are as of that time.',
+        'rejected_kept' => 'This monthly settlement was rejected — the submitted content is kept as it was. Settlements went back to the list; resubmitting creates a new one.',
+        'incentive_title' => 'Extra incentive (edit during approval)',
+        'incentive_add' => 'Add incentive',
+        'incentive_added' => 'Added an incentive of :amount to :name. Approval continues from the current step.',
+        'incentive_removed' => 'Incentive removed.',
+        'incentive_invalid' => 'Enter person, amount and reason (amount cannot be 0).',
+        'edit_forbidden' => 'No permission to edit amounts during approval (submitters and administrators only).',
+        'approve_note' => 'Note',
+    ],
+
     'margin' => [
         'label' => 'Margin rate',
         'batch_total' => 'Whole batch',

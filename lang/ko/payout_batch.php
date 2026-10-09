@@ -52,6 +52,30 @@ return [
 
     // 📊 마진율 · 기본급 · 월수령액 (jin 2026-09-18) — 전부 **표시 전용**.
     //    🚫 지급 총액·회사이익은 바뀌지 않는다. 기본급은 급여라 정산이 아니다.
+    // 🪜 월정산 v3 결재선 (2026-10-09)
+    'steps' => [
+        'title' => '결재선',
+        'next' => '다음 결재: :who',
+        'submitted' => '상신',
+        'pending' => '대기',
+        'approved' => '결재',
+        'rejected' => '반려',
+        'note_ph' => '의견 한 줄 (결재 내역에 남습니다)',
+        'log_title' => '결재 내역',
+        'change_incentive' => '추가 인센티브',
+        'change_adjustment' => '조정',
+        'change_payroll' => '급여 항목',
+        'changed_hint' => '노란색 = 상신 뒤 바뀐 칸. 결재는 멈춘 단계부터 이어집니다. 이미 나간 알림톡의 총액은 그 시점 값입니다.',
+        'rejected_kept' => '반려된 월정산입니다 — 제출 당시 내용을 그대로 보존합니다. 정산은 정산관리로 돌아갔고, 다시 올리면 새 월정산이 됩니다.',
+        'incentive_title' => '추가 인센티브 (결재 중 수정)',
+        'incentive_add' => '인센티브 추가',
+        'incentive_added' => ':name 에게 인센티브 :amount원을 더했습니다. 결재는 지금 단계부터 이어집니다.',
+        'incentive_removed' => '인센티브를 삭제했습니다.',
+        'incentive_invalid' => '담당자·금액·사유를 모두 입력하세요 (금액 0 불가).',
+        'edit_forbidden' => '결재 중 금액 수정 권한이 없습니다 (제출 권한자·최고관리자).',
+        'approve_note' => '의견',
+    ],
+
     'margin' => [
         'label' => '마진율',
         'batch_total' => '이 배치 전체',

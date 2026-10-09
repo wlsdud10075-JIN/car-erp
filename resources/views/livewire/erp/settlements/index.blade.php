@@ -1126,6 +1126,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $newAdjReason = '';
 
+    // 월정산 v3 — 조정 종류(수기/추가 인센티브) · 결재선(title => user_id 문자열)
+    public string $newAdjKind = 'manual';
+
+    public array $submitLine = [];
+
     public function openSubmitModal(): void
     {
         if (! auth()->user()->canSubmitPayoutBatch()) {
@@ -1157,6 +1162,14 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->newAdjSalesmanId = '';
         $this->newAdjAmount = '';
         $this->newAdjReason = '';
+        $this->newAdjKind = 'manual';
+        // 🪜 결재선 기본값 = 지난번 선택, 없으면 그 직급에 한 명뿐이면 그 사람. 직급이 아무도 없으면 빈 배열(종전 사다리).
+        $last = \App\Models\SettlementPayoutBatch::lastStepsLine();
+        $this->submitLine = [];
+        foreach (\App\Models\SettlementPayoutBatch::approvalLineOptions() as $title => $users) {
+            $pick = $last[$title] ?? ($users->count() === 1 ? (int) $users->first()->id : null);
+            $this->submitLine[$title] = $pick ? (string) $pick : '';
+        }
         $this->showSubmitModal = true;
     }
 
@@ -1203,6 +1216,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'losses' => $losses,
             // 💸 미청산 이월 자동 줄 (jin 2026-10-06) — 제출이 부르는 **같은 함수**. 체크칸 없이 자동으로 들어간다.
             'carryovers' => \App\Models\SettlementPayoutBatch::carryoverLinesFor($settlements),
+            // 🧾 월정산 v3 — 급여 미입력 경고(제출은 막지 않는다, jin). 명부는 카드와 같은 BatchPayoutBreakdown 에서.
+            'payroll_missing' => collect(\App\Services\Payout\BatchPayoutBreakdown::forMonthPreview($this->monthFilter, $settlements)['people'])
+                ->filter(fn ($p) => $p['type'] !== 'freelance' && $p['payroll'] === null)->pluck('name')->values()->all(),
         ];
     }
 
@@ -1238,6 +1254,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'salesman_id' => (int) $this->newAdjSalesmanId,
             'amount' => $amount,
             'reason' => trim($this->newAdjReason),
+            'kind' => $this->newAdjKind === 'incentive' ? 'incentive' : 'manual',
         ];
         $this->newAdjSalesmanId = '';
         $this->newAdjAmount = '';
@@ -1286,11 +1303,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 'salesman_id' => (int) $a['salesman_id'],
                 'amount' => (int) $a['amount'],
                 'reason' => (string) $a['reason'],
+                'kind' => (string) ($a['kind'] ?? 'manual'),
             ];
         }
+        $line = array_map(fn ($v) => (int) $v, $this->submitLine);
 
         try {
-            $batch = \App\Models\SettlementPayoutBatch::submitForMonth(auth()->user(), $this->monthFilter, $adjustments);
+            $batch = \App\Models\SettlementPayoutBatch::submitForMonth(auth()->user(), $this->monthFilter, $adjustments, $line);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
 
@@ -2041,6 +2060,37 @@ new #[Layout('components.layouts.app')] class extends Component
             <span class="font-mono font-semibold text-gray-800">₩{{ number_format($pv['payout_sum']) }}</span>
         </div>
 
+        {{-- 🪜 결재선 (월정산 v3) — 직급별 최고관리자. 직급이 아무도 없으면 이 절은 안 그려지고 종전 사다리로 돈다. --}}
+        @php $lineOpts = \App\Models\SettlementPayoutBatch::approvalLineOptions(); @endphp
+        @if(!empty($lineOpts))
+        <div class="mt-3" data-approval-line>
+            <div class="section-header"><span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('settlement.batch.line_title') }}</span></div>
+            <div class="mt-1 grid gap-1.5 sm:grid-cols-3">
+                @foreach($lineOpts as $title => $users)
+                <div class="text-xs">
+                    <label class="label-base">{{ $title }}</label>
+                    <select wire:model="submitLine.{{ $title }}" class="input-base text-xs text-gray-800">
+                        <option value="">{{ __('settlement.batch.line_none') }}</option>
+                        @foreach($users as $u)
+                        <option value="{{ $u->id }}">{{ $u->name }}@if(trim((string) $u->phone) === '') — {{ __('settlement.batch.line_no_phone') }}@endif</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endforeach
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.line_hint') }}</p>
+        </div>
+        @endif
+
+        {{-- 💴 급여 미입력 경고 — 모달로 경고만, 제출은 막지 않는다(jin 2026-10-08) --}}
+        @if(!empty($pv['payroll_missing']))
+        <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-payroll-missing-warn>
+            <div class="font-semibold">{{ __('settlement.batch.payroll_missing_title', ['count' => count($pv['payroll_missing'])]) }}</div>
+            <div class="mt-0.5">{{ implode(' · ', $pv['payroll_missing']) }} — {{ __('settlement.batch.payroll_missing_hint', ['month' => $monthFilter]) }}</div>
+        </div>
+        @endif
+
         {{-- 매입취소 손실 차감 --}}
         @if(!empty($pv['losses']))
         <div class="mt-3">
@@ -2093,6 +2143,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @foreach($submitAdjustments as $i => $adj)
             <div wire:key="adj-{{ $i }}" class="flex items-center gap-2 px-1.5 py-1 text-xs">
                 <span class="font-medium text-gray-700">{{ $this->salesmen->firstWhere('id', $adj['salesman_id'])?->name }}</span>
+                <span class="badge {{ ($adj['kind'] ?? 'manual') === 'incentive' ? 'badge-amber' : 'badge-gray' }} text-[10px]">{{ ($adj['kind'] ?? 'manual') === 'incentive' ? __('settlement.batch.adjust_kind_incentive') : __('settlement.batch.adjust_kind_manual') }}</span>
                 <span class="flex-1 text-gray-400">{{ $adj['reason'] }}</span>
                 <span class="font-mono {{ $adj['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">
                     {{ $adj['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($adj['amount'])) }}</span>
@@ -2105,6 +2156,10 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach($this->salesmen as $sm)
                         <option value="{{ $sm->id }}">{{ $sm->name }}</option>
                     @endforeach
+                </select>
+                <select wire:model="newAdjKind" class="input-base w-28 text-xs text-gray-800" data-adj-kind>
+                    <option value="manual">{{ __('settlement.batch.adjust_kind_manual') }}</option>
+                    <option value="incentive">{{ __('settlement.batch.adjust_kind_incentive') }}</option>
                 </select>
                 <input type="text" wire:model="newAdjAmount" data-money data-money-signed placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
                 <input type="text" wire:model="newAdjReason" placeholder="{{ __('settlement.batch.adjust_reason') }}" class="input-base flex-1 text-xs" />
