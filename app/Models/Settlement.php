@@ -84,12 +84,12 @@ class Settlement extends Model
         'closed' => '최종 마무리',
     ];
 
-    // Phase 2 — 월배치 execute() 가 paid 일괄 전환 시 saving 가드 우회 플래그(try/finally).
+    // Phase 2 — 월정산 execute() 가 paid 일괄 전환 시 saving 가드 우회 플래그(try/finally).
     //   직접 paid 는 대표(admin/super)만, manager·[관리] 는 배치로만 → 이 플래그가 유일한 배치 통로.
     public static bool $allowBatchPayout = false;
 
     /**
-     * 구 「새 정산이 미청산 이월을 흡수」 훅 스위치 — 2026-10-06 부터 기본 OFF(월배치 조정 줄이 대신한다).
+     * 구 「새 정산이 미청산 이월을 흡수」 훅 스위치 — 2026-10-06 부터 기본 OFF(월정산 조정 줄이 대신한다).
      * 옛 동작을 재현해야 하는 테스트·마이그 검증용으로만 켠다. 🚫 운영 코드에서 켜지 말 것(이중 지급).
      */
     public static bool $absorbCarryoverOnCreate = false;
@@ -109,7 +109,7 @@ class Settlement extends Model
         //            - Σ(영업담당자 settlement.carryover_in_krw)  (자기 자신 제외)
         // 명시적으로 set 된 경우 (테스트·migrate 등) 우회.
         static::creating(function (Settlement $s) {
-            // 🔀 2026-10-06 (jin 「너 추천으로 하자」) — **새 정산이 이월을 흡수하지 않는다.** 미청산 이월은 월배치 제출 때
+            // 🔀 2026-10-06 (jin 「너 추천으로 하자」) — **새 정산이 이월을 흡수하지 않는다.** 미청산 이월은 월정산 제출 때
             //    담당자별 조정 한 줄로 들어간다(`SettlementPayoutBatch::carryoverLinesFor` + 청산 기록). 둘 다 두면 두 번 지급이라 끈다.
             //    구: 다음 새 정산이 흡수 — 새 차가 없으면 영영 미청산(ssancarerp 6명 −460,679 가 그 상태였다).
             //    기존 행의 carryover_in_krw 는 역사라 그대로 두고 actual_payout 도 종전대로 더한다.
@@ -190,13 +190,13 @@ class Settlement extends Model
         });
 
         static::saving(function (Settlement $s) {
-            // Phase 2 (jin 2026-07-07) — paid 직접 전환은 대표(admin/super)만. manager·[관리]는 월배치 승인으로만.
+            // Phase 2 (jin 2026-07-07) — paid 직접 전환은 대표(admin/super)만. manager·[관리]는 월정산 승인으로만.
             //   배치 execute()는 $allowBatchPayout 플래그로 통과(대표 최종 승인 결과). auth 미존재(시드·artisan) 우회.
             $becamePaid = $s->settlement_status === 'paid'
                 && $s->getOriginal('settlement_status') !== 'paid';
             if ($becamePaid && ! self::$allowBatchPayout && auth()->check() && ! auth()->user()->isAdmin()) {
                 throw ValidationException::withMessages([
-                    'settlement_status' => '정산 지급(paid)은 대표(최고관리자) 직접 또는 월배치 승인으로만 가능합니다.',
+                    'settlement_status' => '정산 지급(paid)은 대표(최고관리자) 직접 또는 월정산 승인으로만 가능합니다.',
                 ]);
             }
 
@@ -333,7 +333,7 @@ class Settlement extends Model
     }
 
     /**
-     * 지급보류 — confirmed 인데 차량에 미수(받을 돈)가 남아 월배치·지급에서 제외되는 상태.
+     * 지급보류 — confirmed 인데 차량에 미수(받을 돈)가 남아 월정산·지급에서 제외되는 상태.
      * (jin 2026-07-08: 받을 돈 다 못 받았으면 영업 정산 지급 보류 — 회사 리스크·수금 동기.)
      * 완납되면 자동 해소돼 다음 배치에 재진입.
      *
@@ -355,7 +355,7 @@ class Settlement extends Model
      * 🚪 **지급 대상이 아닌 담당자의 정산인가** (jin 2026-09-16).
      *
      * 「헤이맨」처럼 **사람이 아닌 계정**(자매 회사)이 담당자로 들어간 건들이 있다. 기록으로만
-     * 남기고 실지급이 0 원인데, 확정하면 월배치 대상에 **0 원 줄로 올라온다**
+     * 남기고 실지급이 0 원인데, 확정하면 월정산 대상에 **0 원 줄로 올라온다**
      * (실측 ssancarerp 2026-08 대상 15건이 전부 그것 — 지급 합계 0원).
      *
      * 🚫 금액(0원)으로 가르지 말 것 — 0원 정산 58건 중 39건은 **진짜 사람의 정산**이다
@@ -393,7 +393,7 @@ class Settlement extends Model
      * 💱 **2차 차액의 분해** — 드로어·행·담당자 카드·엑셀이 전부 이 하나를 그린다.
      *
      * jin: *「1차 정산에서 실지급액 준 거 대비 +,- 가 되어서 차액이 표시되는 행이 보여지면 좋겠고,
-     *      결국은 환차, 2차 차액, 이월금액(최종) 이렇게 되는 그림」* — 월배치 모달을 띄우기 전에
+     *      결국은 환차, 2차 차액, 이월금액(최종) 이렇게 되는 그림」* — 월정산 모달을 띄우기 전에
      *      실무자가 차액이 얼마나 생겼는지 알고 싶어서다.
      *
      * 기준 = 지급 스냅샷(`confirmed_snapshot`). 없으면 null(옛 적재분 — 화면은 「—」, `closeOne` 도 이월 0).
@@ -688,7 +688,7 @@ class Settlement extends Model
         });
     }
 
-    // Phase 2 — 소속 월배치(정산지급 승인).
+    // Phase 2 — 소속 월정산(정산지급 승인).
     public function payoutBatch(): BelongsTo
     {
         return $this->belongsTo(SettlementPayoutBatch::class, 'payout_batch_id');
@@ -857,7 +857,7 @@ class Settlement extends Model
 
             // ⚡ 분모를 **먼저** 구하고 그것으로 null 을 판정한다. `margin_rate` 를 불러 null 을
             //    확인한 뒤 분자·분모를 다시 구하면 같은 값을 세 번 계산하게 된다
-            //    (실측 560건 924ms → 이 형태 500ms대). 정산 화면·월배치가 한 번에 수백 건을 돈다.
+            //    (실측 560건 924ms → 이 형태 500ms대). 정산 화면·월정산이 한 번에 수백 건을 돈다.
             if ($karaba) {
                 $v = $s->vehicle;
                 $base = (float) ($v?->sale_price ?? 0) * (float) ($v?->exchange_rate ?? 0);
@@ -952,7 +952,7 @@ class Settlement extends Model
     /**
      * 🖨️ **마진율 한 줄 표기 — 화면·엑셀 공용.** null 이면 「—」.
      *    🚫 `number_format($r * 100)` 을 화면마다 옮겨 적지 말 것 — 자릿수가 갈리면
-     *       「월배치 3.6% ↔ 엑셀 3.59%」가 되어 사람이 다른 숫자로 읽는다.
+     *       「월정산 3.6% ↔ 엑셀 3.59%」가 되어 사람이 다른 숫자로 읽는다.
      */
     public static function formatMarginRate(?float $rate): string
     {
@@ -1213,9 +1213,9 @@ class Settlement extends Model
      *    회사 장부에서는 나갔다 들어온 것이라 순증이 0 이어야 한다. 빼는 쪽만 반영하면
      *    받은 적 없는 수익이 생긴다(2026-08-06 환차 때 겪은 그 형태 — SKILLS §8 #38).
      *
-     * 🧹 이 공식은 **3곳**에 복제돼 있었다(관리자 대시보드 · 월결산 알림톡 · 월배치 승인화면).
+     * 🧹 이 공식은 **3곳**에 복제돼 있었다(관리자 대시보드 · 월결산 알림톡 · 월정산 승인화면).
      *    하나만 고치면 대표가 보는 화면만 틀린다 — 반드시 이 accessor 를 쓸 것(SKILLS §8 #45).
-     *    ⚠️ 월배치 수동 조정은 정산 행이 아니라 배치에 달려 있어 여기 안 들어온다(호출부가 따로 더한다).
+     *    ⚠️ 월정산 수동 조정은 정산 행이 아니라 배치에 달려 있어 여기 안 들어온다(호출부가 따로 더한다).
      */
     public function getCompanyNetAttribute(): int
     {

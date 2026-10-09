@@ -468,7 +468,7 @@ class AlimtalkTriggerTest extends TestCase
         }
     }
 
-    /** 월배치 정산지급 — 제출→계단 전진→최종 승인마다 상대측에 알림톡. */
+    /** 월정산 정산지급 — 제출→계단 전진→최종 승인마다 상대측에 알림톡. */
     public function test_payout_batch_flow_notifies_each_party(): void
     {
         $submitter = User::factory()->create(['permission' => 'user', 'role' => '관리', 'name' => '김제출', 'phone' => '010-1000-0000', 'email_verified_at' => now()]);

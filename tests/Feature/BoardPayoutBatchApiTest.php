@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 use Tests\TestCase;
 
 /**
- * `GET /api/internal/board/payout-batches` — 영업 본인 월배치 미러 (2026-08-31 board 인계).
+ * `GET /api/internal/board/payout-batches` — 영업 본인 월정산 미러 (2026-08-31 board 인계).
  *
  * 이 엔드포인트의 위험은 성능이 아니라 **남의 돈이 보이는 것**이다. 배치 행에는
  * `total_payout`·`settlement_count` 라는 **전 영업 합계 스냅샷**이 붙어 있고, 무심코 모델을

@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class CarryoverClearance extends Model
 {
-    // 2026-10-06 jin — 월배치 자동 흡수분은 payout_batch_id 를 단다(반려 시 되돌리기). 사람이 누른 퇴사자 청산은 NULL.
+    // 2026-10-06 jin — 월정산 자동 흡수분은 payout_batch_id 를 단다(반려 시 되돌리기). 사람이 누른 퇴사자 청산은 NULL.
     protected $fillable = ['salesman_id', 'payout_batch_id', 'amount_krw', 'direction', 'cleared_by', 'note'];
 
     protected $casts = ['amount_krw' => 'integer'];

@@ -20,7 +20,7 @@ use Tests\TestCase;
  * > "월 결산요약이 정산이 컨펌나고 나서 나가야 할 것 같은데? 정산 전부 완료되기 전에는 나갈 수 없지 않나?"
  *
  * 종전엔 익월 첫 영업일에 무조건 나가서, 아직 확정 전인 정산이 통째로 빠진 채 보고됐다.
- * 이제 월배치 정산이 **최종 승인된 달만** 나간다.
+ * 이제 월정산 정산이 **최종 승인된 달만** 나간다.
  */
 class MonthlyClosingTriggerTest extends TestCase
 {
@@ -37,7 +37,7 @@ class MonthlyClosingTriggerTest extends TestCase
         $this->admin = User::factory()->create(['permission' => 'admin', 'phone' => '01011112222', 'email_verified_at' => now()]);
     }
 
-    /** 승인 완료된 월배치 — 마감 신호. */
+    /** 승인 완료된 월정산 — 마감 신호. */
     private function approvedBatch(int $count = 1, int $payout = 100_000): SettlementPayoutBatch
     {
         return SettlementPayoutBatch::create([

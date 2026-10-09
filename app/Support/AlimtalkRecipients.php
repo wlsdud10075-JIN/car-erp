@@ -779,7 +779,7 @@ class AlimtalkRecipients
     // 승인 사다리와 함께 폐기돼 호출처 0인 죽은 코드로 남아 있었다.
 
     /**
-     * 월배치 정산지급 승인 사다리 — 특정 계단(current_level)의 승인자 번호.
+     * 월정산 정산지급 승인 사다리 — 특정 계단(current_level)의 승인자 번호.
      * level 2 = 업무관리자(manager) / level 3 = 대표(admin). super(4)는 업무알림 제외.
      */
     public static function payoutApprovers(int $level): array

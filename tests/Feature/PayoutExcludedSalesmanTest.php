@@ -14,10 +14,10 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 🚪 **지급 대상이 아닌 담당자는 월배치에 안 들어간다** (jin 2026-09-16).
+ * 🚪 **지급 대상이 아닌 담당자는 월정산에 안 들어간다** (jin 2026-09-16).
  *
  * 「헤이맨」처럼 **사람이 아닌 계정**(자매 회사)이 담당자로 들어간 건들이 있다.
- * 기록으로만 남기고 실지급이 0 원인데, 확정하면 월배치 대상에 **0 원 줄로 올라온다**.
+ * 기록으로만 남기고 실지급이 0 원인데, 확정하면 월정산 대상에 **0 원 줄로 올라온다**.
  * 실측 ssancarerp 2026-08 배치 대상 **15건이 전부 그것**이었다(지급 합계 0원).
  *
  * 🚫 **금액(0원)으로 가르지 않았다** — 3사 0원 정산 58건 중 **39건은 진짜 사람의 정산**이다
@@ -73,7 +73,7 @@ class PayoutExcludedSalesmanTest extends TestCase
         return $s->fresh();
     }
 
-    /** 🚨 이번 결함 그 자체 — 0원 줄이 월배치에 올라오던 것. */
+    /** 🚨 이번 결함 그 자체 — 0원 줄이 월정산에 올라오던 것. */
     public function test_an_excluded_salesman_never_reaches_the_monthly_batch(): void
     {
         $excluded = $this->confirmedSettlement(excluded: true);
@@ -83,7 +83,7 @@ class PayoutExcludedSalesmanTest extends TestCase
 
         $this->assertTrue($ids->contains($normal->id), '전제가 안 선다 — 평범한 정산은 배치 대상이어야 한다');
         $this->assertFalse($ids->contains($excluded->id),
-            '지급 대상 아닌 담당자의 정산이 월배치에 들어갔다');
+            '지급 대상 아닌 담당자의 정산이 월정산에 들어갔다');
     }
 
     /**
@@ -173,9 +173,9 @@ class PayoutExcludedSalesmanTest extends TestCase
         $src = file_get_contents(base_path('app/Models/SettlementPayoutBatch.php'));
 
         $this->assertTrue(str_contains($src, 'isPayoutExcludedBySalesman()'),
-            '월배치가 단일 출처를 안 쓴다');
+            '월정산이 단일 출처를 안 쓴다');
         $this->assertFalse(str_contains($src, "where('payout_excluded'"),
-            '월배치가 조건을 옮겨 적고 있다 — 뱃지와 갈린다');
+            '월정산이 조건을 옮겨 적고 있다 — 뱃지와 갈린다');
 
         // SQL 스코프도 같은 답을 해야 한다.
         $excluded = $this->confirmedSettlement(excluded: true);

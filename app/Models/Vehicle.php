@@ -115,7 +115,7 @@ class Vehicle extends Model
 
     /**
      * 미수 마감 시 담당자(프리랜서) 부담 몫 = 동결 부족분(cancel_shortfall_krw)의 절반.
-     * 사내직원(employee) / 미마감 / 미동결 = 0 (회사 전액 부담). 월배치 조정 입력 기준값.
+     * 사내직원(employee) / 미마감 / 미동결 = 0 (회사 전액 부담). 월정산 조정 입력 기준값.
      */
     public function getCancelFreelancerLossKrwAttribute(): int
     {
@@ -130,13 +130,13 @@ class Vehicle extends Model
      * 미반영 매입취소 손실 — 담당자별 프리랜서 부담 몫 (jin 2026-08-06).
      *
      * 정산관리 담당자 카드에 "필터 무관 현재 잔액"으로 노출한다(unconsumed_carryover 와 같은 성격).
-     * 실무자가 정산관리만 보고 있어서 월배치 지급 화면의 손실 요약을 놓친다는 제보에서 나왔다.
+     * 실무자가 정산관리만 보고 있어서 월정산 지급 화면의 손실 요약을 놓친다는 제보에서 나왔다.
      *
-     * ⚠️ **표시 전용이다.** 실제 차감은 「월배치 지급」의 담당자 조정에서 한 번만 하고,
+     * ⚠️ **표시 전용이다.** 실제 차감은 「월정산 지급」의 담당자 조정에서 한 번만 하고,
      *    거기서 「반영 표시」를 누르면 cancel_loss_settled_at 이 찍혀 이 목록에서 빠진다.
-     *    정산 합계(actual_payout_sum)에 더하면 월배치와 **이중 청구**가 된다.
+     *    정산 합계(actual_payout_sum)에 더하면 월정산과 **이중 청구**가 된다.
      *
-     * 기간 필터를 받지 않는다 — 월배치 쪽은 cancelled_at 기간(지급 실행 축)으로 거르지만,
+     * 기간 필터를 받지 않는다 — 월정산 쪽은 cancelled_at 기간(지급 실행 축)으로 거르지만,
      * 여기는 "지금 남아 있는 미반영 잔액"이 알고 싶은 값이라 축이 다르다.
      *
      * ⚠️ `vehicle_ids` 를 함께 준다 — 호출부가 차량번호로 id 를 되찾으면 안 된다.
@@ -1615,7 +1615,7 @@ class Vehicle extends Model
             $blockers[] = 'freight_unconfirmed';  // 운임 미확정 — 인코텀즈/운임비 확정 시 재트리거
         }
         // 🔑 내수는 「본전」이 기본이다 — 차액이 0 이면 **정산 자체를 만들지 않는다** (jin 2026-09-08).
-        //    0 원짜리 정산 행이 담당자 카드·월배치에 쌓이면 확정할 것도 없는 행만 늘어난다.
+        //    0 원짜리 정산 행이 담당자 카드·월정산에 쌓이면 확정할 것도 없는 행만 늘어난다.
         //    ⚠️ 나중에 비용이 정정돼 차액이 생기면 그때 Vehicle::saved 가 다시 여기로 와서 만든다.
         if ($this->isDomesticSettlement() && $this->domestic_margin === 0) {
             $blockers[] = 'domestic_zero';
@@ -1843,7 +1843,7 @@ class Vehicle extends Model
     {
         // 🚗 매입취소 차는 정산 행이 아니라 **손실 반영 도장**으로 본다 (jin 2026-10-06 「매입취소된 거 드로어에
         //    정산됨으로 바로 표시되던데, 정산처리 되기까지는 정산대기 똑같이 되고 정산되면 정산처리로」).
-        //    미수마감(손실 확정) = 월배치 손실 조정에 반영(`cancel_loss_settled_at`)돼야 끝난 것이고,
+        //    미수마감(손실 확정) = 월정산 손실 조정에 반영(`cancel_loss_settled_at`)돼야 끝난 것이고,
         //    매입취소 진행중 = 위약금 미수가 남아 있으면 대기, 다 받았으면(취소완료) 더 정산할 게 없다.
         if ($this->isPurchaseCancelled()) {
             if ($this->cancel_status === self::CANCEL_CLOSED) {

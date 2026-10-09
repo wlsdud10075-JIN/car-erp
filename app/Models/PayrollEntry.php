@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * - 행 없음 = 미입력 · amount 0 = 「없음」 명시. 금액은 부호 있음(전월소급 등).
  * - 지급합계 = 그 달 행의 Σamount. **실지급액 = 지급합계 + 정산금 + 추가 인센티브**(사내직원) / 검차직원은 지급합계만.
  * - 저장은 `replaceFor()` 한 곳 — (salesman, month) 를 지우고 다시 넣는다(한 트랜잭션).
- * 🚫 `salesmen.base_salary_krw` 는 v3 배포 뒤 비운다(10/10 월배치 「기본급만」 줄이 아직 읽는다).
+ * 🚫 `salesmen.base_salary_krw` 는 v3 배포 뒤 비운다(10/10 월정산 「기본급만」 줄이 아직 읽는다).
  */
 class PayrollEntry extends Model
 {

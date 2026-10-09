@@ -24,7 +24,7 @@ class User extends Authenticatable
 
     // item 1 (jin 2026-07-07) — 권한 등급. super > admin(대표) > manager(업무관리자) > user.
     //   manager = admin 등가 권한에서 [기능설정·단계강제·super/admin 계정관리]만 제외.
-    //   Phase 2 정산지급 월배치 승인 사다리의 중간 계단([관리]→manager→대표).
+    //   Phase 2 정산지급 월정산 승인 사다리의 중간 계단([관리]→manager→대표).
     public const PERMISSIONS = ['super', 'admin', 'manager', 'user'];
 
     /**
@@ -299,7 +299,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Phase 2 — 월배치 정산지급 승인 사다리 순위.
+     * Phase 2 — 월정산 정산지급 승인 사다리 순위.
      *   super(4) > 대표=admin(3) > 업무관리자=manager(2) > [관리]=role관리(1) > 그 외(0).
      *   제출자보다 위 계단이 순서대로 서명(current_level 정확 일치). 대표(3)=고객사 사다리 최상단.
      */
@@ -313,7 +313,7 @@ class User extends Authenticatable
         };
     }
 
-    /** 월배치 정산지급 제출 권한 — [관리](1)·업무관리자(2). 재무·영업·통관·대표는 제출자 아님. */
+    /** 월정산 정산지급 제출 권한 — [관리](1)·업무관리자(2). 재무·영업·통관·대표는 제출자 아님. */
     public function canSubmitPayoutBatch(): bool
     {
         return in_array($this->approvalRank(), [1, 2], true);

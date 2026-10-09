@@ -284,7 +284,7 @@ class InternalPortalController extends Controller
     }
 
     /**
-     * 월배치 미러 — 영업 본인이 「그 달에 실제로 받은 금액」 (2026-08-31 board 인계).
+     * 월정산 미러 — 영업 본인이 「그 달에 실제로 받은 금액」 (2026-08-31 board 인계).
      *
      * 왜 배치인가: `settlement_payout_adjustments` 는 **개별 차량 정산은 무손상, 배치 총액에만 반영**한다.
      * 환수(−)·특별지급(+)이 있던 달은 차량별 `actual_payout` 을 정확히 합해도 통장 금액과 다르다.

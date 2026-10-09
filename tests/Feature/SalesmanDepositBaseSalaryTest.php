@@ -218,7 +218,7 @@ class SalesmanDepositBaseSalaryTest extends TestCase
 
     /**
      * 💴 **월수령액 = 기본급 + 정산.** 🚫 이름을 「실지급액」으로 쓰지 말 것 —
-     *    ERP 에서 실지급액은 `Settlement::actual_payout` 이고 정산관리·월배치·엑셀 3곳이 이미 쓴다.
+     *    ERP 에서 실지급액은 `Settlement::actual_payout` 이고 정산관리·월정산·엑셀 3곳이 이미 쓴다.
      */
     public function test_monthly_take_home_adds_the_base_salary(): void
     {

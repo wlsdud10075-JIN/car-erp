@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Phase 2 — 월배치 정산지급 단계별 승인/반려 감사 로그.
+ * Phase 2 — 월정산 정산지급 단계별 승인/반려 감사 로그.
  */
 class SettlementPayoutApproval extends Model
 {

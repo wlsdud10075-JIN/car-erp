@@ -135,7 +135,7 @@ class VehicleSettlementStageColumnTest extends TestCase
         ]);
         $this->assertSame(Vehicle::SETTLEMENT_STAGE_WAITING, $v->fresh()->settlementStage(), '손실 미반영인데 정산됨으로 떴다');
 
-        // 월배치 손실 조정에 반영(도장) → 정산됨
+        // 월정산 손실 조정에 반영(도장) → 정산됨
         Vehicle::whereKey($v->id)->update(['cancel_loss_settled_at' => now()]);
         $this->assertSame(Vehicle::SETTLEMENT_STAGE_DONE, $v->fresh()->settlementStage());
 

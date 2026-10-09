@@ -15,11 +15,11 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 📊 **월배치 화면 + 대표 승인 페이지** — 마진율 · 기본급 · 월수령액 (jin 2026-09-18).
+ * 📊 **월정산 화면 + 대표 승인 페이지** — 마진율 · 기본급 · 월수령액 (jin 2026-09-18).
  *
  * 🔑 **대표는 `/erp/payout-batches` 가 아니라 카톡 링크로 열리는 승인 페이지에서 승인한다.**
  *    두 화면이 사람별 내역을 **각자 따로 묶기** 때문에, 숫자를 만드는 식이 갈리면
- *    «월배치 3.6% ↔ 승인화면 3.7%» 가 된다. 묶는 루프는 달라도 **숫자는 한 출처**여야 한다(§8 #44·#45).
+ *    «월정산 3.6% ↔ 승인화면 3.7%» 가 된다. 묶는 루프는 달라도 **숫자는 한 출처**여야 한다(§8 #44·#45).
  *
  * 🚫 **금액은 하나도 안 바뀐다** — 지급 총액·회사이익·대표 알림톡 총액 전부 종전 그대로.
  *    기본급은 급여라 정산이 아니다(§8 #72 의 그 형태).
@@ -35,7 +35,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
         return User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
     }
 
-    /** 월배치 제출 권한 = approvalRank 1~2 ([관리] / 업무관리자). admin 은 승인자라 제출은 못 한다. */
+    /** 월정산 제출 권한 = approvalRank 1~2 ([관리] / 업무관리자). admin 은 승인자라 제출은 못 한다. */
     private function submitter(): User
     {
         return User::factory()->create([
@@ -92,7 +92,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
     // ── 두 화면이 같은 숫자를 말한다 ────────────────────────────────────
 
     /**
-     * 🚨 **이 테스트가 이 기능의 핵심이다** — 월배치 화면과 대표 승인 페이지가
+     * 🚨 **이 테스트가 이 기능의 핵심이다** — 월정산 화면과 대표 승인 페이지가
      *    사람별 마진율을 **각자 계산**하므로, 같은 값이 나오는지 직접 비교한다.
      */
     public function test_both_screens_report_the_same_margin_rate(): void
@@ -104,7 +104,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
             ->filter(fn (Settlement $s) => $s->salesman_id === $employee->id);
         $expected = Settlement::formatMarginRate(Settlement::marginRateOf($rows));
 
-        // ① 월배치 화면 (펼친 상태)
+        // ① 월정산 화면 (펼친 상태)
         Volt::test('erp.payout-batches.index')
             ->call('toggle', $batch->id)
             ->assertSee($employee->name)
@@ -119,7 +119,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $html = $this->get($url)->assertOk()->getContent();
 
         $this->assertStringContainsString($expected, $html,
-            '승인 페이지가 월배치 화면과 다른 마진율을 말한다');
+            '승인 페이지가 월정산 화면과 다른 마진율을 말한다');
     }
 
     /** v3 — 사내직원 카드: 「급여공제후 마진」 과 실지급(급여 미입력이면 정산금만, 「미입력」 표시). */
@@ -193,7 +193,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
         PayrollEntry::replaceFor($idle->id, '2026-05', [['label' => '기본급', 'amount' => 5_000_000]]);
         $payoutBefore = (int) $batch->total_payout;
 
-        // ① 월배치 화면
+        // ① 월정산 화면
         $this->actingAs($this->manager());
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
         $this->assertMatchesRegularExpression('/data-person-card="'.$idle->id.'"[\s\S]{0,800}?'.preg_quote($idle->name, '/').'[\s\S]{0,2500}?data-payout>₩5,000,000/u', $html, '월정산 화면에 급여만 나가는 직원 카드가 없다');
@@ -236,7 +236,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $this->actingAs($this->manager());
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
         foreach (array_keys($outsiders) as $name) {
-            $this->assertStringNotContainsString($name, $html, "「{$name}」이 월배치 화면에 올라왔다");
+            $this->assertStringNotContainsString($name, $html, "「{$name}」이 월정산 화면에 올라왔다");
         }
         $this->assertStringNotContainsString('data-salary-only', $html);
     }

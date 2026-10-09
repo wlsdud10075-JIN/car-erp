@@ -238,7 +238,7 @@ class SettlementGateOverrideTest extends TestCase
             ->createWithOverride($v, auth()->user(), '미수 1,312 EUR — 운임비와 동일합니다.');
         $s->forceFill(['settlement_status' => 'confirmed', 'confirmed_at' => now()])->save();
 
-        // ① 술어 ② SQL 스코프 ③ 월배치 대상 — 셋이 같은 답을 내야 한다.
+        // ① 술어 ② SQL 스코프 ③ 월정산 대상 — 셋이 같은 답을 내야 한다.
         $this->assertFalse($s->fresh()->isPayoutHeldByUnpaid());
         $this->assertFalse(Settlement::payoutHeldByUnpaid()->whereKey($s->id)->exists());
         $this->assertContains(
@@ -270,7 +270,7 @@ class SettlementGateOverrideTest extends TestCase
         $admin = $this->admin();
         $this->actingAs($admin);
 
-        // 예외가 없으면 막힌다 — 이 가드는 2026-09-12 에 새로 생겼다(월배치만 보던 비대칭).
+        // 예외가 없으면 막힌다 — 이 가드는 2026-09-12 에 새로 생겼다(월정산만 보던 비대칭).
         $req = ApprovalRequest::create([
             'action_type' => ApprovalRequest::TYPE_SETTLEMENT_PAY,
             'target_type' => Settlement::class, 'target_id' => $s->id,

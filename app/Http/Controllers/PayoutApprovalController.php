@@ -15,7 +15,7 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * 월배치 정산지급 — 대표가 카카오 알림톡 버튼으로 바로 승인/반려 (2026-07-08, jin).
+ * 월정산 정산지급 — 대표가 카카오 알림톡 버튼으로 바로 승인/반려 (2026-07-08, jin).
  *
  * 인가 = URL 서명(`signed` 미들웨어). 로그인 없음 — 서명 링크가 (배치 id + 승인자 u + 5일 만료)로
  *   바인딩돼 인가를 대신한다. 링크는 그 배치·그 승인자 1건만 처리 가능.
@@ -201,7 +201,7 @@ class PayoutApprovalController extends Controller
      * 담당자별 드릴다운(표시용) — ERP 정산지급 승인큐 화면과 같은 구조 (jin 2026-08-03).
      *   [담당자 => ['count','payout','adjust','net','vehicles'=>[['number','amount'], ...]]]
      *
-     * ⚠️ 조정(월배치 +/−)을 반드시 함께 반영한다. `total_payout` 은 recomputeTotal 이 조정을 더한 값이라,
+     * ⚠️ 조정(월정산 +/−)을 반드시 함께 반영한다. `total_payout` 은 recomputeTotal 이 조정을 더한 값이라,
      *    정산 합만 보여주면 **담당자별을 다 더해도 지급 총액과 안 맞는다**(2026-06 배치에 −729,250 선례).
      *    조정만 있고 정산이 없는 담당자도 행으로 남겨야 합계가 닫힌다.
      * computed actual_payout 이 vehicle 을 참조하므로 vehicle 까지 eager load(N+1 방지).
@@ -247,7 +247,7 @@ class PayoutApprovalController extends Controller
             }
         }
 
-        // 💴 정산도 조정도 없는 사내직원 — 「기본급만」 행 (jin 2026-10-06). 월배치 화면과 **같은 명부**
+        // 💴 정산도 조정도 없는 사내직원 — 「기본급만」 행 (jin 2026-10-06). 월정산 화면과 **같은 명부**
         //    (`salaryOnlyPeople`)라 두 화면의 사람 수가 같고, `profitStats()['base_salary']` 와도 닫힌다.
         //    🚫 지급 총액엔 안 들어간다 — net 0 이라 아래 정렬에서 맨 뒤로 간다.
         foreach ($batch->salaryOnlyPeople($settlements, $adjustments) as $person) {
@@ -263,8 +263,8 @@ class PayoutApprovalController extends Controller
             $rows[$name]['count'] = count($row['vehicles']);
             $rows[$name]['net'] = $row['payout'] + $row['adjust'];
             // 📊 그 사람의 총 마진율 — Σ총마진 / Σ판매금원화 (평균 아니다).
-            //    🔑 **월배치 화면과 같은 메서드를 부른다** — 묶는 루프는 여기 따로 있지만
-            //       숫자를 만드는 식은 한 곳이라야 «월배치 3.6% ↔ 승인화면 3.7%» 가 안 생긴다.
+            //    🔑 **월정산 화면과 같은 메서드를 부른다** — 묶는 루프는 여기 따로 있지만
+            //       숫자를 만드는 식은 한 곳이라야 «월정산 3.6% ↔ 승인화면 3.7%» 가 안 생긴다.
             $rows[$name]['margin_rate'] = Settlement::formatMarginRate(
                 Settlement::marginRateOf(collect($row['settlements']))
             );

@@ -13,7 +13,7 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * Phase 2 UI — 월배치 제출(정산화면) + 승인큐(승인/반려).
+ * Phase 2 UI — 월정산 제출(정산화면) + 승인큐(승인/반려).
  */
 class PayoutBatchUiTest extends TestCase
 {

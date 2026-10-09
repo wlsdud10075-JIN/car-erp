@@ -70,7 +70,7 @@ final class PersonPayoutBreakdown
             'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry,
             'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 표시만(지급액 무관)
             'tier' => (bool) $sm->per_unit_tier_enabled,
-            'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월배치·승인 두 화면이 같은 식
+            'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월정산·승인 두 화면이 같은 식
             'unsupported' => false,
         ];
 

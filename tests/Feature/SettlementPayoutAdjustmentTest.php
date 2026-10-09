@@ -13,7 +13,7 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 월배치 수동 조정란 (jin 2026-07-08) — 정산 공식 밖의 담당자별 +/− 조정.
+ * 월정산 수동 조정란 (jin 2026-07-08) — 정산 공식 밖의 담당자별 +/− 조정.
  * 배치 총액에만 반영, 개별 정산 무손상, pending에서만 편집, 사유 필수, 감사로그.
  */
 class SettlementPayoutAdjustmentTest extends TestCase
@@ -141,7 +141,7 @@ class SettlementPayoutAdjustmentTest extends TestCase
 
     /**
      * 조정 입력은 **정산관리 제출 모달** 하나다 (jin 2026-08-06).
-     * 월배치 화면엔 입력 UI가 없다 — 있으면 카톡 발송 뒤에 총액이 바뀌어 승인자가 본 숫자와 어긋난다.
+     * 월정산 화면엔 입력 UI가 없다 — 있으면 카톡 발송 뒤에 총액이 바뀌어 승인자가 본 숫자와 어긋난다.
      */
     public function test_payout_batch_screen_has_no_adjustment_input(): void
     {
@@ -153,7 +153,7 @@ class SettlementPayoutAdjustmentTest extends TestCase
         foreach (['startAdjust', 'addAdjustment', 'removeAdjustment', 'prefillCancelLoss', 'markCancelLossSettled'] as $method) {
             $this->assertFalse(
                 method_exists($component->instance(), $method),
-                "월배치 화면에 조정 입력 경로가 남아 있다: {$method}()"
+                "월정산 화면에 조정 입력 경로가 남아 있다: {$method}()"
             );
         }
     }

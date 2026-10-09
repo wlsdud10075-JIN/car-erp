@@ -605,7 +605,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $payoutSum = 0;
         $fxAbsorbed = 0;   // 사내직원 정산건의 실현 환차 — 전액 회사 귀속 (정보용. company_net 에 이미 포함)
         $shippingSum = 0;  // 서류 발송비(EMS·DHL) — 회사가 먼저 치르고 지급에서 되받는 돈
-        $batchIds = [];    // 이 기간에 지급된 정산이 속한 월배치 — 아래에서 수동 조정을 마저 더한다.
+        $batchIds = [];    // 이 기간에 지급된 정산이 속한 월정산 — 아래에서 수동 조정을 마저 더한다.
         $byPerson = [];
 
         Settlement::query()
@@ -658,7 +658,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 }
             });
 
-        // 🚨 월배치 **수동 조정**을 마저 반영한다 (jin 2026-08-21).
+        // 🚨 월정산 **수동 조정**을 마저 반영한다 (jin 2026-08-21).
         //
         // 조정은 `settlements` 행이 아니라 **배치**에 달려 있어서 위 루프가 못 본다. 안 더하면
         // 지급은 나갔는데 회사이익에선 빠진 채로 남아 **대표가 보는 숫자만 틀린다**
