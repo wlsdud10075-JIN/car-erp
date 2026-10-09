@@ -155,7 +155,7 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function salesmen()
     {
-        $q = Salesman::where('is_active', true)->orderBy('name');
+        $q = Salesman::where('is_active', true)->sales()->orderBy('name');   // sales() = 검차직원 제외(월정산 v3)
         $user = auth()->user();
         if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $q->whereIn('id', $user->getSubordinateSalesmanIds());

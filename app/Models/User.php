@@ -366,6 +366,15 @@ class User extends Authenticatable
     }
 
     /**
+     * 💴 급여 항목(사내직원관리)을 적을 수 있는 사람 = **관리 이상 + 재무** (월정산 v3, jin 2026-10-08
+     * «재무가 들어와서 기입»). 재무는 급여·예치금만 — 계정 연결·지급 제외·승계·삭제는 종전대로 canApprove().
+     */
+    public function canEditPayroll(): bool
+    {
+        return $this->canApprove() || $this->role === '재무';
+    }
+
+    /**
      * 운영 로그 열람 권한 (jin 2026-07-28) — 문서접근로그 / 감사로그 / 메일발송로그.
      * 허용: 시스템관리자 · 최고관리자 · 업무관리자 · role='관리' (= "[관리] 이상").
      *

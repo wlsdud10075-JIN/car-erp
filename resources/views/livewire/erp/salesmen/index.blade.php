@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Support\SearchTerm;
@@ -54,7 +55,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 2026-09-18 jin — 예치금(프리랜서) / 기본급(사내직원). 금액칸이라 문자열로 받는다
     //   (콤마 포매터 data-money 가 붙는다 — SKILLS §14). 빈 문자열 = 미입력(null 저장).
     public string $deposit_krw_str     = '';
-    public string $base_salary_krw_str = '';
+    public string $base_salary_krw_str = '';   // ⚠️ v3 부터 화면에서 빼고 급여 항목(PayrollEntry)이 대신한다. 저장하지 않는다.
+
+    // 월정산 v3 (jin 2026-10-08) — 등록 유형(등록 모드만). 검차직원 = 계정 없이 이름만. 사내직원·프리랜서는 /admin/users 가 원본.
+    public string $create_type = 'inspector';
+
+    // 💴 급여 항목 — 귀속월별(PayrollEntry). 고정 18(ITEMS 순서, 인덱스로 바인딩) + 직접 추가 행.
+    //   금액은 문자열(콤마 포매터 data-money-signed — 전월소급 등 음수). '' = 미입력.
+    public string $payrollMonth = '';
+    /** @var array<int, string> ITEMS 인덱스 => 금액 문자열 */
+    public array $payrollItems = [];
+    /** @var array<int, array{label: string, amount: string}> */
+    public array $payrollCustom = [];
+    public bool $payrollEntered = false;   // 그 달에 저장된 행이 하나라도 있나(「입력 전」 안내)
 
     #[Computed]
     public function salesmen()
@@ -159,13 +172,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function handoverCandidates()
     {
-        return Salesman::where('is_active', true)
+        return Salesman::where('is_active', true)->sales()   // 검차직원에게 차량·바이어를 넘기지 않는다(월정산 v3)
             ->when($this->handoverFromId, fn ($q) => $q->where('id', '!=', $this->handoverFromId))
             ->orderBy('name')->get();
     }
 
     public function runHandover(): void
     {
+        abort_unless(auth()->user()?->canApprove(), 403);   // 서비스가 다시 검사하지만 재무가 들어오는 화면이라 입구에서도 막는다
         $from = Salesman::find($this->handoverFromId);
         $to = Salesman::find((int) $this->handoverToId);
         if (! $from || ! $to) {
@@ -204,7 +218,98 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->payout_excluded = (bool) $sm->payout_excluded;
         $this->deposit_krw_str     = $sm->deposit_krw     === null ? '' : (string) $sm->deposit_krw;
         $this->base_salary_krw_str = $sm->base_salary_krw === null ? '' : (string) $sm->base_salary_krw;
+        if (! PayrollEntry::isMonth($this->payrollMonth)) {
+            $this->payrollMonth = now()->format('Y-m');
+        }
+        $this->loadPayroll($id);
         $this->showPanel   = true;
+    }
+
+    // ── 💴 급여 항목 (월정산 v3) ──────────────────────────────────────────
+
+    /** 귀속월 선택지 — 지난 2달 · 이번 달 · 다음 달(11/10 전에 10월분을 적는다). 고른 값이 밖이면 그것도 포함. */
+    public function payrollMonthOptions(): array
+    {
+        $opts = [];
+        for ($d = -2; $d <= 1; $d++) {
+            $opts[] = now()->startOfMonth()->addMonths($d)->format('Y-m');
+        }
+        if ($this->payrollMonth !== '' && ! in_array($this->payrollMonth, $opts, true)) {
+            $opts[] = $this->payrollMonth;
+            sort($opts);
+        }
+
+        return $opts;
+    }
+
+    private function loadPayroll(int $salesmanId): void
+    {
+        $rows = PayrollEntry::where('salesman_id', $salesmanId)->forMonth($this->payrollMonth)->orderBy('sort')->orderBy('id')->get();
+        $this->payrollItems = array_fill(0, count(PayrollEntry::ITEMS), '');
+        $this->payrollCustom = [];
+        foreach ($rows as $r) {
+            $idx = $r->is_custom ? false : array_search($r->label, PayrollEntry::ITEMS, true);
+            if ($idx === false) {
+                $this->payrollCustom[] = ['label' => $r->label, 'amount' => (string) $r->amount];
+            } else {
+                $this->payrollItems[$idx] = (string) $r->amount;
+            }
+        }
+        $this->payrollEntered = $rows->isNotEmpty();
+    }
+
+    public function updatedPayrollMonth(): void
+    {
+        if (! PayrollEntry::isMonth($this->payrollMonth)) {
+            $this->payrollMonth = now()->format('Y-m');
+        }
+        if ($this->editingId) {
+            $this->loadPayroll($this->editingId);
+        }
+    }
+
+    public function addPayrollRow(): void
+    {
+        $this->payrollCustom[] = ['label' => '', 'amount' => ''];
+    }
+
+    public function removePayrollRow(int $i): void
+    {
+        unset($this->payrollCustom[$i]);
+        $this->payrollCustom = array_values($this->payrollCustom);
+    }
+
+    /** 부호 있는 금액 문자열 → 정수 또는 null(빈칸). 콤마·공백은 걷어낸다. */
+    private function signedMoneyOrNull(string $raw): ?int
+    {
+        $t = trim($raw);
+        if ($t === '' || $t === '-') {
+            return null;
+        }
+        $neg = str_starts_with($t, '-');
+        $digits = preg_replace('/[^0-9]/', '', $t) ?? '';
+
+        return $digits === '' ? null : ($neg ? -1 : 1) * (int) $digits;
+    }
+
+    /** 화면 입력 → PayrollEntry::replaceFor 행. 순서 = 고정 ITEMS → 직접 추가. */
+    private function payrollRows(): array
+    {
+        $rows = [];
+        foreach (PayrollEntry::ITEMS as $i => $label) {
+            $rows[] = ['label' => $label, 'amount' => $this->signedMoneyOrNull((string) ($this->payrollItems[$i] ?? ''))];
+        }
+        foreach ($this->payrollCustom as $row) {
+            $rows[] = ['label' => trim((string) ($row['label'] ?? '')), 'amount' => $this->signedMoneyOrNull((string) ($row['amount'] ?? '')), 'is_custom' => true];
+        }
+
+        return $rows;
+    }
+
+    /** 지금 입력된 값의 지급합계 — 저장 전 미리보기(화면 「지급합계」). */
+    public function payrollTotal(): int
+    {
+        return (int) array_sum(array_map(fn ($r) => (int) ($r['amount'] ?? 0), $this->payrollRows()));
     }
 
     /** 금액칸 → 정수 또는 null. 빈칸·콤마·기타 문자를 걷어낸다(0 과 미입력을 구분해야 하므로 null 유지). */
@@ -229,15 +334,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->editingId) {
             $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
             $sm = Salesman::findOrFail($this->editingId);
+            $actor = auth()->user();
+            // 월정산 v3 — 재무도 이 화면에 들어온다(급여 입력). 보충 필드·tier·제외·예치금은 종전대로 **관리 이상만**,
+            //   재무가 보내온 값은 저장 시점에 버린다(§8 #26 — 화면에서 disabled 한 것과 별개).
+            $canApprove = (bool) $actor?->canApprove();
             // 보충 필드만 update — name/email/user_id/type 은 손대지 않음 (User 마스터 보호).
-            $data = [
+            $data = $canApprove ? [
                 'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
                 'phone'     => $this->phone ?: null,
                 'memo'      => $this->memo  ?: null,
                 'is_active' => $this->is_active,
-            ];
+            ] : [];
             // tier 는 정산 금액을 바꾸므로 화면 노출과 별개로 저장 시점에 재인가한다 (SKILLS §8 #26).
-            if (auth()->user()?->canApprove()) {
+            if ($canApprove) {
                 $data['per_unit_tier_enabled'] = $this->per_unit_tier_enabled;
                 // 🚪 지급 대상 제외도 돈이 나가고 안 나가고를 가르므로 tier 와 같은 무게로 재인가한다.
                 $data['payout_excluded'] = $this->payout_excluded;
@@ -248,11 +357,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   ⚠️ 유형이 바뀌면 반대쪽 칸의 옛 값은 **지우지 않는다**(기록). 화면이 안 보여줄 뿐이다.
             //   🚨 화면에서 숨긴 것과 **별개로** 저장 시점에 권한을 다시 본다(§8 #26) —
             //      프로퍼티는 클라이언트가 직접 주입할 수 있다. 테스트가 실제로 이 구멍을 잡았다.
-            $linkedType = auth()->user()?->canApprove() ? $sm->user?->type : null;
+            //   🔀 v3 (2026-10-09): 유형의 출처 = `salesmen.type`(user.type 의 미러 + 계정 없는 검차직원). 기본급 칸은
+            //      급여 항목(PayrollEntry, 귀속월별)이 대신한다 — `base_salary_krw` 는 더 이상 쓰지 않는다(10/10 뒤 비움).
+            $linkedType = $canApprove ? $sm->type : null;
             if ($linkedType === 'freelance') {
                 $data['deposit_krw'] = $this->moneyOrNull($this->deposit_krw_str);
-            } elseif ($linkedType === 'employee') {
-                $data['base_salary_krw'] = $this->moneyOrNull($this->base_salary_krw_str);
             }
 
             $before = [
@@ -261,7 +370,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'deposit_krw' => $sm->deposit_krw,
                 'base_salary_krw' => $sm->base_salary_krw,
             ];
-            $sm->update($data);
+            if ($data !== []) {
+                $sm->update($data);
+            }
             // 돈을 바꾸는 스위치라 누가 언제 켰는지 남긴다 (Salesman 엔 감사 훅이 없어 여기서 직접).
             //   🔑 비교는 `AuditLog::valuesDiffer()` — `!==` 로 하면 «3000000» ↔ 3000000 처럼
             //      표기만 다른 값이 변경으로 잡혀 소음이 쌓인다(§8 #108).
@@ -270,22 +381,39 @@ new #[Layout('components.layouts.app')] class extends Component {
                     \App\Models\AuditLog::recordChange($sm, $col, $was, $data[$col]);
                 }
             }
+
+            // 💴 급여 항목 — 사내직원·검차직원, 관리 이상 + 재무. 그 달을 통째로 교체하고 지급합계 변화를 감사로그 1줄로.
+            if (in_array($sm->type, ['employee', 'inspector'], true) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+                $wasTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
+                PayrollEntry::replaceFor($sm->id, $this->payrollMonth, $this->payrollRows());
+                $nowTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
+                if (\App\Models\AuditLog::valuesDiffer($wasTotal, $nowTotal)) {
+                    \App\Models\AuditLog::recordChange($sm, 'payroll_'.$this->payrollMonth, $wasTotal, $nowTotal);
+                }
+            }
         } else {
-            // 예외 경로 — User 없이 영업담당자만 만들 때 (지원 종료 예정, 가급적 안 씀).
-            $this->validate(['name' => 'required|string|max:100'], [], ['name' => __('salesman.field.name')]);
+            // 등록 — 월정산 v3: **검차직원은 여기서 이름만** 등록한다(계정 없음). 사내직원·프리랜서는 /admin/users 가 원본
+            //   (예외 경로로 남겨 둔다). 재무는 등록하지 않는다(관리 이상만).
+            abort_unless(auth()->user()?->canApprove(), 403);
+            $this->validate([
+                'name' => 'required|string|max:100',
+                'create_type' => 'required|in:'.implode(',', array_keys(Salesman::TYPES)),
+            ], [], ['name' => __('salesman.field.name'), 'create_type' => __('salesman.field.create_type')]);
+            $isInspector = $this->create_type === 'inspector';
             $data = [
                 'name'      => $this->name,
                 'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
-                'user_id'   => $this->user_id_str !== '' ? (int) $this->user_id_str : null,
+                'user_id'   => ! $isInspector && $this->user_id_str !== '' ? (int) $this->user_id_str : null,
                 'phone'     => $this->phone ?: null,
                 'email'     => $this->email ?: null,
                 'memo'      => $this->memo  ?: null,
                 'is_active' => $this->is_active,
+                'type'      => $this->create_type,
             ];
-            if ($this->user_id_str !== '') {
-                $user = User::find((int) $this->user_id_str);
+            if ($data['user_id'] !== null) {
+                $user = User::find($data['user_id']);
                 if ($user && $user->type) {
-                    $data['type'] = $user->type;
+                    $data['type'] = $user->type;   // 계정이 연결되면 계정 유형이 이긴다(미러 규칙)
                 }
             }
             Salesman::create($data);
@@ -299,6 +427,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function delete(int $id): void
     {
+        abort_unless(auth()->user()?->canApprove(), 403);   // 재무는 급여만 — 삭제는 관리 이상(§8 #26)
         Salesman::findOrFail($id)->delete();
         unset($this->salesmen);
         session()->flash('success', __('salesman.deleted'));
@@ -313,6 +442,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->initials = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
         $this->is_active = true;
+        $this->create_type = 'inspector';
+        $this->payrollItems = [];
+        $this->payrollCustom = [];
+        $this->payrollEntered = false;
     }
 }; ?>
 
@@ -339,10 +472,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="50">{{ __('common.per_page', ['count' => 50]) }}</option>
             <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
+        @if(auth()->user()?->canApprove())
         <button wire:click="openCreate" class="btn-primary">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             {{ __('salesman.create_btn') }}
         </button>
+        @endif
     </div>
 </div>
 
@@ -387,7 +522,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </td>
                 <td class="py-3 pr-4">
-                    <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : 'badge-blue' }}">{{ $sm->type_label }}</span>
+                    <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : ($sm->type === 'inspector' ? 'badge-amber' : 'badge-blue') }}">{{ $sm->type_label }}</span>
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->user?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
@@ -406,9 +541,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <button wire:click.stop="openHandover({{ $sm->id }})"
                                 class="text-xs text-amber-600 hover:underline">{{ __('salesman.handover.button') }}</button>
                         @endif
+                        @if(auth()->user()?->canApprove())
                         <button wire:click.stop="delete({{ $sm->id }})"
                                 wire:confirm="{{ __('salesman.delete_confirm', ['name' => $sm->name]) }}"
                                 class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
+                        @endif
                     </div>
                 </td>
             </tr>
@@ -435,7 +572,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
             </div>
             <div class="flex items-center gap-2">
-                <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : 'badge-blue' }}">{{ $sm->type_label }}</span>
+                <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : ($sm->type === 'inspector' ? 'badge-amber' : 'badge-blue') }}">{{ $sm->type_label }}</span>
                 <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? __('common.active') : __('common.inactive') }}</span>
                 <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                    class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
@@ -465,7 +602,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     {{-- 폼 --}}
+    @php $canApproveHere = (bool) auth()->user()?->canApprove(); @endphp
     <div class="flex-1 overflow-y-auto px-5 py-5 space-y-3">
+        {{-- 월정산 v3 — 재무는 급여 항목만. 나머지 칸은 보이되 잠근다(서버도 버린다). --}}
+        @if($editingId && ! $canApproveHere)
+        <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('salesman.payroll.basic_readonly') }}</div>
+        @endif
         {{-- 2026-05-21 — 편집 시 사용자 마스터 안내 배너 --}}
         @if($editingId)
         <div class="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-700">
@@ -481,12 +623,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             @endif
         </div>
+        {{-- 월정산 v3 — 등록 유형. 검차직원(기본)은 계정 없이 이름만. --}}
+        @if(! $editingId)
+        <div>
+            <label class="label-base">{{ __('salesman.field.create_type') }}</label>
+            <select wire:model.live="create_type" class="input-base text-gray-800">
+                @foreach(\App\Models\Salesman::TYPES as $tKey => $tLabel)
+                <option value="{{ $tKey }}">{{ $tLabel }}</option>
+                @endforeach
+            </select>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.field.create_type_hint') }}</p>
+            @error('create_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+        @endif
         {{-- 영업담당자 이니셜 (item 7) — Proforma Invoice No. 접두 {이니셜}MU{차대번호숫자} --}}
         <div>
             <label class="label-base">{{ __('salesman.field.initials') }} <span class="text-xs text-gray-400">{{ __('common.optional') }}</span></label>
-            <input wire:model="initials" type="text" maxlength="10" class="input-base uppercase" placeholder="{{ __('salesman.field.initials_ph') }}" />
+            <input wire:model="initials" type="text" maxlength="10" class="input-base uppercase" placeholder="{{ __('salesman.field.initials_ph') }}" @disabled(! $canApproveHere) />
             <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.field.initials_note') }}</p>
         </div>
+        @if($editingId || $create_type !== 'inspector')
         <div>
             <label class="label-base">{{ __('salesman.field.account') }} @if(! $editingId)<span class="text-xs text-gray-400">{{ __('common.optional') }}</span>@endif</label>
             @if($editingId)
@@ -503,6 +659,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
             @endif
         </div>
+        @endif
         <div class="grid grid-cols-2 gap-3">
             {{-- 2026-05-21 — Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
             <div>
@@ -510,7 +667,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="phone" type="tel" class="input-base"
                        placeholder="01012345678"
                        maxlength="13"
-                       x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" />
+                       x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" @disabled(! $canApproveHere) />
             </div>
             <div>
                 <label class="label-base">{{ __('common.email') }}</label>
@@ -525,8 +682,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         @if($editingId)
         @php
             $editingSalesman = \App\Models\Salesman::with('user')->find($editingId);
-            $linkedUserType  = $editingSalesman?->user?->type;
+            // 월정산 v3 — 유형의 출처는 salesmen.type (user.type 의 미러 + 계정 없는 검차직원). 사용자 관리에서 바꾸면 따라온다.
+            $linkedUserType  = $editingSalesman?->type;
             $typeLabel       = $linkedUserType ? __('salesman.type.'.$linkedUserType) : null;
+            $canEditPayroll  = (bool) auth()->user()?->canEditPayroll();
         @endphp
         <div>
             <label class="label-base">{{ __('salesman.field.settlement_type') }}</label>
@@ -569,15 +728,48 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.deposit_hint') }}</p>
         </div>
-        @elseif($linkedUserType === 'employee' && auth()->user()?->canApprove())
-        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
-            <label class="label-base">{{ __('salesman.field.base_salary') }}</label>
-            <div class="flex items-center gap-1">
-                <input wire:model="base_salary_krw_str" data-money type="text" inputmode="numeric"
-                       class="input-base flex-1 text-right tabular-nums" placeholder="{{ __('salesman.field.money_ph') }}" />
-                <span class="text-sm text-gray-600">{{ __('common.won') }}</span>
+        @elseif(in_array($linkedUserType, ['employee', 'inspector'], true) && $canEditPayroll)
+        {{-- 💴 급여 항목 (월정산 v3, jin 2026-10-08) — 귀속월별 18항목 + 직접 추가. 매달 빈칸. 관리 이상 + 재무.
+             구 「기본급」 한 칸을 대신한다. 금액은 data-money-signed(전월소급 등 음수). --}}
+        {{-- 금액칸은 deferred(wire:model) — 치는 동안 서버에 안 간다(SearchRequiresButtonTest). 합계 미리보기는 Alpine 이 칸을 더한다. --}}
+        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-payroll
+             x-data="{ tick: 0, total() { let t = 0; this.$root.querySelectorAll('[data-pay-amount]').forEach((el) => { const s = String(el.value || '').trim(); const n = parseInt(s.replace(/[^0-9]/g, ''), 10) || 0; t += s.startsWith('-') ? -n : n; }); return t.toLocaleString('en-US'); } }"
+             @input="tick++">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.title') }}</span>
+                <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
+                    @foreach($this->payrollMonthOptions() as $m)
+                    <option value="{{ $m }}">{{ $m }}</option>
+                    @endforeach
+                </select>
             </div>
-            <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.base_salary_hint') }}</p>
+            <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.payroll.hint') }}</p>
+            @if(! $payrollEntered)
+            <p class="mt-1 text-[11px] font-medium text-amber-700" data-payroll-not-entered>{{ __('salesman.payroll.not_entered') }}</p>
+            @endif
+            <div class="mt-2 space-y-1">
+                @foreach(\App\Models\PayrollEntry::ITEMS as $i => $item)
+                <div class="flex items-center gap-2">
+                    <label class="w-28 shrink-0 text-xs text-gray-700">{{ $item }}</label>
+                    <input wire:model="payrollItems.{{ $i }}" data-money data-money-signed data-pay-amount type="text" inputmode="numeric"
+                           class="input-base h-9 sm:h-7 flex-1 text-right text-xs tabular-nums" placeholder="{{ __('salesman.payroll.amount_ph') }}" />
+                </div>
+                @endforeach
+                @foreach($payrollCustom as $ci => $row)
+                <div class="flex items-center gap-2" wire:key="payroll-custom-{{ $ci }}">
+                    <input wire:model="payrollCustom.{{ $ci }}.label" type="text" maxlength="40"
+                           class="input-base h-9 sm:h-7 w-28 shrink-0 text-xs" placeholder="{{ __('salesman.payroll.custom_label_ph') }}" />
+                    <input wire:model="payrollCustom.{{ $ci }}.amount" data-money data-money-signed data-pay-amount type="text" inputmode="numeric"
+                           class="input-base h-9 sm:h-7 flex-1 text-right text-xs tabular-nums" placeholder="{{ __('salesman.payroll.amount_ph') }}" />
+                    <button type="button" wire:click="removePayrollRow({{ $ci }})" aria-label="{{ __('common.delete') }}"
+                            class="h-9 w-9 sm:h-7 sm:w-7 shrink-0 rounded text-gray-400 hover:text-red-500">&times;</button>
+                </div>
+                @endforeach
+            </div>
+            <div class="mt-2 flex items-center justify-between">
+                <button type="button" wire:click="addPayrollRow" class="h-9 sm:h-7 text-xs text-violet-700 hover:underline">{{ __('salesman.payroll.add_row') }}</button>
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.total') }} <span class="tabular-nums" data-payroll-total x-text="(tick, '₩' + total())">₩{{ number_format($this->payrollTotal()) }}</span></span>
+            </div>
         </div>
         @endif
         {{-- 🚪 지급 대상 제외 (jin 2026-09-16) — 「헤이맨」처럼 사람이 아닌 계정(자매 회사)용.
@@ -598,11 +790,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
         <div>
             <label class="label-base">{{ __('common.memo') }}</label>
-            <textarea wire:model="memo" class="input-base" rows="2"></textarea>
+            <textarea wire:model="memo" class="input-base" rows="2" @disabled(! $canApproveHere)></textarea>
         </div>
         <div>
             <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
+                <input wire:model="is_active" type="checkbox" class="rounded" @disabled(! $canApproveHere) /> {{ __('common.active') }}
             </label>
         </div>
         @if($editingId)
@@ -631,11 +823,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{ __('salesman.handover.button') }}
             </button>
             @endif
+            @if($canApproveHere)
             <button wire:click="delete({{ $editingId }})"
                     wire:confirm="{{ __('salesman.delete_confirm_simple') }}"
                     class="rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50">
                 {{ __('common.delete') }}
             </button>
+            @endif
         </div>
         @endif
         <button wire:click="close" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>

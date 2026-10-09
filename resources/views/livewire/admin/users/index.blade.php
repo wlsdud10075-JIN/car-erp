@@ -44,6 +44,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정. role='영업' 일 때만 의미.
     // 2026-06-30 — 영업 1명을 여러 [관리]가 담당(다대다). 선택된 [관리] user id 배열.
     public array $manager_user_ids = [];
+    // 월정산 v3 (2026-10-09) — 최고관리자 결재 직급(부장/전무/대표). 빈값 = 종전(최종 승인자).
+    public string $approval_title = '';
 
     #[Computed]
     public function users()
@@ -98,6 +100,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = $user->permission ?? 'user';
         $this->role       = $user->role       ?? '영업';
         $this->type       = $user->type       ?? '';
+        $this->approval_title = $user->approval_title ?? '';
         $this->manager_user_ids = $user->managers()->pluck('users.id')->map(fn ($i) => (string) $i)->all();
         $this->showPanel  = true;
     }
@@ -128,6 +131,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->role = '영업';
         }
 
+        // 🐛 업무관리자·최고관리자를 **바로** 만들 수 없던 원인 (jin 2026-10-08 제보, 월정산 v3 에 묶어 수정) —
+        //   폼 기본값이 role='영업'·type='' 이라 권한만 바꾸면 역할·정산유형 칸은 숨겨지는데 검증(type required_if:role,영업)은
+        //   그대로 걸려 저장이 멈췄고, 에러는 숨은 칸 안에 그려졌다. 「일반사용자(관리)로 먼저 바꾸면 된다」가 그 우회였다.
+        //   권한이 일반사용자가 아니면 역할·정산유형·담당 배정을 정리한다 — 영업 role 로 저장되면 Salesman 행까지 생길 뻔했다.
+        if ($this->permission !== 'user') {
+            $this->role = '관리';
+            $this->type = '';
+            $this->manager_user_ids = [];
+        }
+        if ($this->permission !== 'admin') {
+            $this->approval_title = '';
+        }
+
         $rules = [
             'name'       => 'required|string|max:100',
             'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
@@ -141,6 +157,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 2026-06-30 — 다중 관리 배정 (role='영업' 외엔 비움). pivot sync.
             'manager_user_ids' => 'array',
             'manager_user_ids.*' => 'integer|exists:users,id',
+            'approval_title' => 'nullable|in:'.implode(',', \App\Models\User::APPROVAL_TITLES),
         ];
 
         if (! $this->editingId) {
@@ -183,6 +200,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'permission'        => $this->permission,
             'role'              => $this->role,
             'type'              => $typeValue,
+            'approval_title'    => $this->permission === 'admin' && $this->approval_title !== '' ? $this->approval_title : null,
             'manager_user_id'   => $managerValue,
             'email_verified_at' => now(),
         ];
@@ -262,6 +280,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->permission = 'user';
         $this->role = '영업';
         $this->type = '';
+        $this->approval_title = '';
         $this->manager_user_ids = [];
     }
 
@@ -631,6 +650,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </select>
                 @error('permission')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            {{-- 월정산 v3 — 최고관리자만 결재 직급. 비우면 종전(최종 승인자). --}}
+            @if($permission === 'admin')
+            <div>
+                <label class="label-base">{{ __('user.field.approval_title') }}</label>
+                <select wire:model="approval_title" class="input-base text-gray-800">
+                    <option value="">{{ __('user.field.approval_title_none') }}</option>
+                    @foreach(App\Models\User::APPROVAL_TITLES as $t)
+                    <option value="{{ $t }}">{{ $t }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-xs text-gray-400">{{ __('user.field.approval_title_note') }}</p>
+                @error('approval_title')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            </div>
+            @endif
             @endif
             @if($permission === 'user')
             @if(auth()->user()->canAccessAdmin())

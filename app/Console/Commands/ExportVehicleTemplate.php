@@ -35,7 +35,7 @@ class ExportVehicleTemplate extends Command
         (new Xlsx($ss))->save($path);
 
         $this->info('✅ 표준 양식 생성: '.$path);
-        $this->line('  데이터 컬럼 '.count(ImportVehicles::MAP).'개 · 입력행 '.max(1, $rows).' · 담당자 드롭다운 '.Salesman::count().'명');
+        $this->line('  데이터 컬럼 '.count(ImportVehicles::MAP).'개 · 입력행 '.max(1, $rows).' · 담당자 드롭다운 '.Salesman::query()->sales()->count().'명');
         $this->line('  채운 뒤: php artisan vehicles:import "'.$path.'" --dry-run');
 
         return self::SUCCESS;

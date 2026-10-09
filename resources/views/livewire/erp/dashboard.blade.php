@@ -194,7 +194,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function salesmen()
     {
-        $q = Salesman::where('is_active', true)->orderBy('name');
+        $q = Salesman::where('is_active', true)->sales()->orderBy('name');   // sales() = 검차직원 제외(월정산 v3)
 
         // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업만 select 옵션 노출.
         $user = auth()->user();

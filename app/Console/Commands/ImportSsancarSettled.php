@@ -564,7 +564,7 @@ class ImportSsancarSettled extends Command
 
         // 담당자 매칭 — 파일에만 있고 서버에 없는 이름은 적재 전에 만들어야 한다.
         $names = array_unique(array_filter(array_column($rows, '_salesman')));
-        $known = Salesman::pluck('id', 'name')->all();
+        $known = Salesman::query()->sales()->pluck('id', 'name')->all();
         $missing = array_values(array_diff($names, array_keys($known)));
         $this->newLine();
         $this->info('── 담당자 ──');
@@ -608,7 +608,7 @@ class ImportSsancarSettled extends Command
     private function import(array $rows): int
     {
         $unsettled = (bool) $this->option('unsettled');
-        $salesmen = Salesman::pluck('id', 'name')->all();
+        $salesmen = Salesman::query()->sales()->pluck('id', 'name')->all();
 
         // 이니셜 — **비어 있는 담당자에만** 채운다(운영에서 손으로 넣은 값을 덮지 않는다).
         $iniSet = 0;

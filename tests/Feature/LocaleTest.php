@@ -173,8 +173,8 @@ class LocaleTest extends TestCase
         $this->actingAs($this->localeUser('en'))
             ->get(route('erp.salesmen.index'))
             ->assertOk()
-            ->assertSee('Add Salesman')
-            ->assertDontSee('담당자 등록');
+            ->assertSee('Add person')
+            ->assertDontSee('인원 등록');
     }
 
     public function test_cashflow_translates_to_english(): void

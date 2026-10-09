@@ -233,7 +233,7 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function salesmen()
     {
-        return Salesman::orderBy('name')->get(['id', 'name']);
+        return Salesman::query()->sales()->orderBy('name')->get(['id', 'name']);   // sales() = 검차직원 제외(월정산 v3) — 급여는 PayrollEntry 로, 조정 줄 대상이 아니다
     }
 
     /** 지급보류(미수)만 보기 토글 — 재무 대시보드 딥링크와 동일 필터. */

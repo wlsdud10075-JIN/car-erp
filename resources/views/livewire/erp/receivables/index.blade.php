@@ -379,7 +379,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function salesmen()
     {
-        return Salesman::where('is_active', true)->orderBy('name')->get();
+        return Salesman::where('is_active', true)->sales()->orderBy('name')->get();   // sales() = 검차직원 제외(월정산 v3)
     }
 
     #[Computed]

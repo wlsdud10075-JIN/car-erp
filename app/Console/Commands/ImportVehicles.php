@@ -199,7 +199,7 @@ class ImportVehicles extends Command
         $this->printReport($report);
 
         // 담당자 미등록 차단 (사용자가 type 직접 지정해 먼저 생성)
-        $salesmanByName = Salesman::query()->pluck('id', 'name')->all();
+        $salesmanByName = Salesman::query()->sales()->pluck('id', 'name')->all();   // 검차직원 제외(월정산 v3)
         $missingSalesmen = array_values(array_unique(array_filter(
             array_map(fn ($r) => $r['salesman'] ?? '', $rows),
             fn ($n) => $n !== '' && ! isset($salesmanByName[$n])
@@ -536,7 +536,7 @@ class ImportVehicles extends Command
 
         $existingPlates = Vehicle::withTrashed()->pluck('vehicle_number')->flip()->all();
         $existingVins = Vehicle::withTrashed()->whereNotNull('nice_reg_vin')->pluck('nice_reg_vin')->flip()->all();
-        $salesmanByName = Salesman::query()->pluck('id', 'name')->all();
+        $salesmanByName = Salesman::query()->sales()->pluck('id', 'name')->all();   // 검차직원 제외(월정산 v3)
         $buyerByName = Buyer::query()->pluck('id', 'name')->all();
 
         $seenPlates = [];
