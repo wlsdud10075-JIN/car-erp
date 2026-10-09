@@ -224,11 +224,18 @@ class SettlementPayoutBatch extends Model
     /** 카드 데이터 — 끝난 배치(승인·반려)는 박제, 진행 중은 지금 값. 반려돼도 내용이 그대로 보인다(jin). */
     public function breakdownForDisplay(): array
     {
-        if ($this->status !== self::STATUS_PENDING && is_array($this->breakdown_snapshot) && isset($this->breakdown_snapshot['people'])) {
+        if ($this->status === self::STATUS_PENDING) {
+            return BatchPayoutBreakdown::forBatch($this);
+        }
+        if (is_array($this->breakdown_snapshot) && isset($this->breakdown_snapshot['people'])) {
             return $this->breakdown_snapshot;
         }
+        // 🧾 배포 전에 끝난 배치(박제 없음)는 **처음 그릴 때 박제**한다 — 안 하면 뒤에 들어온 급여·2차 마감이 지난달 카드를 바꾼다.
+        //    ⚠️ 반려 배치는 정산이 이미 풀려 있어 사람 카드가 비어 있을 수 있다(그 시점엔 되돌릴 자료가 없다) — 그래도 박제해 더는 흔들리지 않게.
+        $bd = BatchPayoutBreakdown::forBatch($this);
+        $this->forceFill(['breakdown_snapshot' => $bd])->saveQuietly();
 
-        return BatchPayoutBreakdown::forBatch($this);
+        return $bd;
     }
 
     /** 월정산 수동 조정 (jin 2026-07-08) — 담당자별 +/− 조정, 배치 총액에만 반영. */
