@@ -65,67 +65,28 @@
         <div class="row total"><span class="k">지급 총액</span><span class="v">{{ number_format($batch->total_payout) }}원</span></div>
         {{-- 💰 기본급은 지급 총액 밖이다 — 승인하는 숫자는 위의 「지급 총액」 그대로고,
              아래는 통장에서 나갈 돈을 한 번에 보기 위한 참고치다. --}}
-        @if(!empty($profit['base_salary']))
-        <div class="row"><span class="k">+ 기본급 합계</span><span class="v">{{ number_format($profit['base_salary']) }}원</span></div>
-        <div class="row"><span class="k">이달 송금 예상</span><span class="v">{{ number_format($batch->total_payout + $profit['base_salary']) }}원</span></div>
-        @endif
+        {{-- 🧾 월정산 v3 — 급여까지 포함한 송금 총액과 급여 차감 후 회사 순이익. 승인하는 숫자는 위 「지급 총액」 그대로. --}}
+        @isset($v3)
+        <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v">{{ number_format($v3['totals']['transfer_total']) }}원</span></div>
+        <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
+        @endisset
     </div>
 
-    @if(!empty($breakdown))
+    @isset($v3)
     <div class="card">
-        <div class="sub" style="margin-bottom:8px;">담당자별 실지급 <span style="color:#9ca3af;font-weight:400;">— 이름을 누르면 차량 내역</span></div>
-        @foreach($breakdown as $name => $row)
-        <details class="drill">
-            <summary>
-                <span class="k">{{ $name }}
-                    @if(!empty($row['salary_only']))
-                    {{-- 💴 정산도 조정도 없는 사내직원 — 기본급만 (jin 2026-10-06) --}}
-                    <span class="rate">기본급만</span>
-                    @else
-                    <span class="rate">마진율 {{ $row['margin_rate'] }}</span>
-                    @endif
-                </span>
-                <span class="v">
-                    {{ number_format($row['count']) }}건 · {{ number_format($row['net']) }}원
-                    @if($row['adjust'] !== 0)
-                    <span class="adj {{ $row['adjust'] < 0 ? 'minus' : 'plus' }}">{{ $row['adjust'] < 0 ? '−' : '+' }}{{ number_format(abs($row['adjust'])) }} 조정</span>
-                    @endif
-                </span>
-            </summary>
-            {{-- 사내직원은 「기본급 + 정산 = 월수령액」 (jin 2026-09-18).
-                 지급 총액은 정산만이다 — 급여는 여기 표시만 된다. --}}
-            @if(($row['base_salary'] ?? 0) > 0)
-            <div class="pay">
-                <div class="row"><span class="k">기본급</span><span class="v">{{ number_format($row['base_salary']) }}원</span></div>
-                <div class="row"><span class="k">정산</span><span class="v">{{ number_format($row['net']) }}원</span></div>
-                <div class="row sum"><span class="k">월수령액</span><span class="v">{{ number_format($row['take_home']) }}원</span></div>
-            </div>
-            @elseif(($row['deposit'] ?? null) !== null)
-            <div class="pay"><div class="row"><span class="k">예치금 보유</span><span class="v">{{ number_format($row['deposit']) }}원</span></div></div>
-            @endif
-            <div class="veh">
-                @forelse($row['vehicles'] as $v)
-                <div class="row bd">
-                    <span class="k">
-                        {{ $v['number'] }}
-                        {{-- 승인 판단용 3항목 (jin 2026-08-04) — 총마진·정산방식·실지급액 --}}
-                        <span class="meta">총마진 {{ number_format($v['margin']) }} · 마진율 {{ $v['margin_rate'] }} · {{ $v['type'] }}</span>
-                    </span>
-                    <span class="v">{{ number_format($v['amount']) }}원</span>
-                </div>
-                @empty
-                {{-- 정산 줄이 없는 두 경우를 가른다 — 조정만 있는 사람 / 기본급만 나가는 직원(jin 2026-10-06) --}}
-                <div class="row bd"><span class="k">{{ !empty($row['salary_only']) ? '정산 없음 · 기본급만' : '정산 없음 (조정만)' }}</span><span class="v">-</span></div>
-                @endforelse
-            </div>
-        </details>
-        @endforeach
+        <div class="sub" style="margin-bottom:8px;">담당자별 실지급 <span style="color:#9ca3af;font-weight:400;">— 이름을 누르면 계산 단계</span></div>
+        {{-- 🧾 월정산 v3 — ERP 월정산 화면과 **같은 카드**(components/payout/person-card). JS 없이 <details> 로 펼친다. --}}
+        <div style="display:grid;gap:8px;">
+            @foreach($v3['people'] as $person)
+            <x-payout.person-card :person="$person" mode="batch" />
+            @endforeach
+        </div>
         {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
         @isset($exportUrl)
         <a class="xlsx" href="{{ $exportUrl }}">📄 전체 내역 엑셀 내려받기</a>
         @endisset
     </div>
-    @endif
+    @endisset
 
     @if($batch->adjustments->isNotEmpty())
     <div class="card">
@@ -151,6 +112,9 @@
         <div class="row"><span class="k">환차</span><span class="v">{{ $profit['fx'] >= 0 ? '+' : '−' }} {{ number_format(abs($profit['fx'])) }}원</span></div>
         @endif
         <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>
+        @isset($v3)
+        <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
+        @endisset
         <div class="cap">총마진에서 직원 실지급{{ $profit['fx'] !== 0 ? '·환차' : '' }}을(를) 뺀 회사 몫입니다.</div>
     </div>
     @endisset

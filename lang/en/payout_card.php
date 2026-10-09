@@ -1,0 +1,67 @@
+<?php
+
+// i18n — monthly settlement person card (components/payout/person-card · totals). v3 (2026-10-09).
+return [
+    'count' => ':n cars',
+    'changed' => 'Changed',
+    'times' => 'x',
+    'open_hint' => 'Tap to expand the calculation',
+
+    'margin_after_pay' => 'Margin after pay',
+    'excess_ratio' => 'Excess vs pay',
+    'contribution' => 'Company contribution',
+    'payout' => 'Take-home',
+    'payroll_total' => 'Payroll total',
+    'share' => 'Share',
+
+    'ledger_company' => 'Company profit',
+    'equiv_sale_rate' => 'Freelance-formula settlement (sale rate)',
+    'fx_primary' => '① Primary FX (actual receipt rate)',
+    'carry_employee' => 'Carryover / secondary close (as a freelancer)',
+    'carry_freelance' => 'Carryover / secondary close',
+    'fx_secondary' => 'of which ② secondary FX',
+    'adj_manual' => 'Manual adjustment',
+    'adj_loss' => 'Purchase-cancel loss',
+    'equiv_total' => 'Freelance-equivalent total',
+    'minus_payout' => '− Take-home',
+    'total_margin' => 'Total margin',
+    'minus_shipping' => '− Shipping (company-paid)',
+    'contribution_formula' => 'Contribution = total margin − take-home − shipping',
+    'freelance_note' => 'For a freelancer the equivalent equals the pay, so the company contribution is shown instead of margin after pay.',
+
+    'ledger_person' => 'Pay to person',
+    'payroll' => 'Payroll total',
+    'payroll_missing' => 'not entered',
+    'payroll_missing_hint' => 'Enter this month\'s payroll items in Staff. Blank counts as 0.',
+    'settlement_pay' => 'Settlement',
+    'settlement_pay_per_unit' => 'per unit',
+    'settlement_pay_tier' => 'tiered',
+    'adj_carry' => 'Carryover adjustment',
+    'incentive' => 'Extra incentive',
+    'incentive_preview' => 'entered on submission',
+    'deposit' => 'Deposit held',
+    'deposit_hint' => 'display only',
+    'vehicles' => 'By vehicle',
+
+    'inspector_only' => 'payroll only',
+    'inspector_in_transfer' => 'Transfer total',
+    'inspector_in_transfer_v' => 'included',
+    'inspector_in_net' => 'Company net',
+    'inspector_in_net_v' => 'deducted as common labor',
+    'inspector_in_share' => 'Share',
+    'inspector_in_share_v' => 'excluded',
+    'where_reflected' => 'Reflected in',
+
+    'unsupported' => 'This company\'s settlement formula (tiers) is not supported by the equivalent card yet — only settlement, payroll, incentive and take-home are shown.',
+
+    'totals' => [
+        'company_net' => 'Company net (after payroll)',
+        'vehicles' => 'Vehicles sold',
+        'equiv_sum' => 'Freelance-equivalent total',
+        'transfer_total' => 'Transfer total (incl. payroll)',
+        'settlement_total' => 'Settlement + adjustments (approved amount)',
+        'common_labor' => 'Common labor (inspectors)',
+        'contribution_sum' => 'Sum of contributions',
+        'hint' => 'Company net = Σ(total margin − take-home − shipping) − common labor. The approved amount is still the settlement + adjustments total.',
+    ],
+];

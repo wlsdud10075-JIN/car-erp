@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\Payout\BatchPayoutBreakdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\URL;
 use Livewire\Volt\Volt;
@@ -120,8 +122,8 @@ class PayoutBatchMarginDisplayTest extends TestCase
             '승인 페이지가 월배치 화면과 다른 마진율을 말한다');
     }
 
-    /** 사내직원 소계는 「기본급 + 정산 = 월수령액」 3줄. */
-    public function test_an_employee_row_shows_base_salary_and_take_home(): void
+    /** v3 — 사내직원 카드: 「급여공제후 마진」 과 실지급(급여 미입력이면 정산금만, 「미입력」 표시). */
+    public function test_an_employee_row_shows_the_v3_card(): void
     {
         [$batch, $employee] = $this->batch();
         $this->actingAs($this->manager());
@@ -129,10 +131,10 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $net = (int) $batch->settlements()->where('salesman_id', $employee->id)->get()
             ->sum(fn (Settlement $s) => (int) $s->actual_payout);
 
-        Volt::test('erp.payout-batches.index')
-            ->call('toggle', $batch->id)
-            ->assertSee(number_format(2_740_000))
-            ->assertSee(number_format(2_740_000 + $net));   // 월수령액
+        $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,1500}?'.preg_quote(__('payout_card.margin_after_pay'), '/').'/u', $html);
+        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,2500}?data-payout>₩'.preg_quote(number_format($net), '/').'/u', $html, '급여 미입력이면 실지급 = 정산금');
+        $this->assertStringContainsString('data-payroll-missing', $html, '급여 미입력 표시가 없다');
     }
 
     /** 프리랜서는 예치금 보유액만 — 지급액에 더하지 않는다(jin 「그냥 보유하면되고」). */
@@ -182,53 +184,32 @@ class PayoutBatchMarginDisplayTest extends TestCase
     // ── 정산 없는 월급 직원 (jin 2026-10-06 「정산이 0명인 사람은 월급만 나올 수 있게」) ──────
 
     /**
-     * 💴 **그 달 정산이 0건인 재직 사내직원도 「기본급만」 줄로 두 화면에 오르고, 기본급 합계에 들어간다.**
-     *    구(09-18)는 「배치에 이름이 있는 사람만」이라 그 직원의 월급이 송금 예상에서 조용히 빠졌다.
-     *
-     * ⚠️ 정산 0 이면 기본급 = 월수령액이라 숫자만으로는 못 가른다(§8 #107) — 이름·라벨 옆에서 본다.
+     * 💴 **그 달 정산이 0건이어도 급여가 입력된 사내직원은 두 화면에 카드로 오르고 송금 총액에 들어간다.** (v3: 급여 항목)
      */
     public function test_a_salaried_employee_with_no_settlement_appears_on_both_screens(): void
     {
         [$batch] = $this->batch();
-        $idle = Salesman::create([
-            'name' => '이달엔 건이 없는 직원', 'type' => 'employee',
-            'is_active' => true, 'base_salary_krw' => 5_000_000,
-        ]);
+        $idle = Salesman::create(['name' => '이달엔 건이 없는 직원', 'type' => 'employee', 'is_active' => true]);
+        PayrollEntry::replaceFor($idle->id, '2026-05', [['label' => '기본급', 'amount' => 5_000_000]]);
         $payoutBefore = (int) $batch->total_payout;
 
-        // 합계 = 배치 안 직원(2,740,000) + 정산 없는 직원(5,000,000)
-        $this->assertSame(2_740_000 + 5_000_000, $batch->fresh()->baseSalaryTotal(),
-            '정산 없는 직원의 기본급이 합계에 안 들어갔다');
-
-        // ① 월배치 화면 — 그 사람 줄이 「기본급만」 라벨과 함께 뜬다
+        // ① 월배치 화면
         $this->actingAs($this->manager());
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
-        $this->assertMatchesRegularExpression(
-            '/data-salary-only="'.$idle->id.'"[\s\S]{0,600}?'.preg_quote($idle->name, '/').'[\s\S]{0,300}?'
-            .preg_quote(__('payout_batch.margin.pay.salary_only'), '/').'/u',
-            $html, '월배치 화면에 「기본급만」 줄이 없다'
-        );
-        $this->assertStringContainsString(number_format(5_000_000), $html);
+        $this->assertMatchesRegularExpression('/data-person-card="'.$idle->id.'"[\s\S]{0,800}?'.preg_quote($idle->name, '/').'[\s\S]{0,2500}?data-payout>₩5,000,000/u', $html, '월정산 화면에 급여만 나가는 직원 카드가 없다');
 
-        // ② 대표 승인 페이지 — 같은 사람이 「기본급만」으로 보인다
-        $url = URL::temporarySignedRoute(
-            'payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $this->manager()->id]
-        );
+        // ② 대표 승인 페이지 — 같은 카드
+        $url = URL::temporarySignedRoute('payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $this->manager()->id]);
         $page = $this->get($url)->assertOk()->getContent();
-        $this->assertMatchesRegularExpression(
-            '/'.preg_quote($idle->name, '/').'[\s\S]{0,200}?기본급만/u',
-            $page, '승인 페이지에 「기본급만」 사람이 없다'
-        );
-        $this->assertStringContainsString('정산 없음 · 기본급만', $page);
-        $this->assertStringNotContainsString('정산 없음 (조정만)', $page, '기본급만 직원이 「조정만」으로 찍혔다');
-        // 「이달 송금 예상」도 그 사람 몫만큼 커진다
-        $this->assertStringContainsString(
-            number_format($payoutBefore + 2_740_000 + 5_000_000).'원', $page,
-            '이달 송금 예상에 정산 없는 직원의 기본급이 안 들어갔다'
-        );
+        $this->assertMatchesRegularExpression('/data-person-card="'.$idle->id.'"[\s\S]{0,800}?'.preg_quote($idle->name, '/').'/u', $page, '승인 페이지에 그 직원 카드가 없다');
+        $this->assertStringContainsString('송금 총액 (급여 포함)', $page);
+        $bd = BatchPayoutBreakdown::forBatch($batch->fresh());
+        $this->assertSame($payoutBefore + 5_000_000, $bd['totals']['transfer_total'], '송금 총액 = 정산·조정 + 급여');
+        $this->assertStringContainsString(number_format($bd['totals']['transfer_total']).'원', $page);
 
         // 🚫 지급 총액은 그대로 — 급여는 정산이 아니다
-        $this->assertSame($payoutBefore, (int) $batch->fresh()->total_payout, '지급 총액이 움직였다');
+        $this->assertSame($payoutBefore, (int) $batch->fresh()->total_payout);
+        $this->assertStringContainsString(number_format($payoutBefore).'원', $page);
     }
 
     /**
@@ -303,46 +284,20 @@ class PayoutBatchMarginDisplayTest extends TestCase
     }
 
     /**
-     * 🚨 **승인 페이지는 대표가 실제로 보는 화면이다** — 마진율만 대조하면 절반이다.
-     *    기본급 3줄 · 「+ 기본급 합계 / 이달 송금 예상」 · 차량 줄 마진율까지 실제 렌더로 확인한다.
-     *    (그 블록들은 월배치 화면과 **다른 코드**라 한쪽만 고쳐져도 아무 테스트가 안 빨개졌다.)
+     * 🚨 **승인 페이지는 대표가 실제로 보는 화면이다** — v3 카드(사내직원 급여공제후 마진·프리랜서 예치금)와
+     *    송금 총액·회사 순이익이 실제 렌더로 보여야 한다. 승인 금액(지급 총액)은 그대로다.
      */
-    public function test_the_approval_page_shows_the_pay_block_and_the_expected_transfer(): void
+    public function test_the_approval_page_shows_the_v3_cards_and_totals(): void
     {
         [$batch, $employee, $freelancer] = $this->batch();
 
-        $approver = $this->manager();
-        $url = URL::temporarySignedRoute(
-            'payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $approver->id]
-        );
+        $url = URL::temporarySignedRoute('payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $this->manager()->id]);
         $html = $this->get($url)->assertOk()->getContent();
 
-        // ① 사내직원 3줄 — 기본급 / 정산 / 월수령액
-        $net = (int) $batch->settlements()->where('salesman_id', $employee->id)->get()
-            ->sum(fn (Settlement $s) => (int) $s->actual_payout);
-        $this->assertStringContainsString('월수령액', $html, '승인 페이지에 월수령액 줄이 없다');
-        $this->assertStringContainsString(number_format((int) $employee->base_salary_krw), $html);
-        $this->assertStringContainsString(number_format((int) $employee->base_salary_krw + $net), $html,
-            '월수령액 = 기본급 + 정산 이 안 찍혔다');
-
-        // ② 프리랜서는 예치금 보유만
-        $this->assertStringContainsString('예치금 보유', $html);
-        $this->assertStringContainsString(number_format((int) $freelancer->deposit_krw), $html);
-
-        // ③ 지급 총액 카드 — 승인 금액은 그대로이고 그 아래에 참고 두 줄
-        $this->assertStringContainsString('이달 송금 예상', $html, '송금 예상 줄이 없다');
-        $this->assertStringContainsString(
-            number_format((int) $batch->total_payout + $batch->baseSalaryTotal()).'원', $html,
-            '이달 송금 예상 = 지급 총액 + 기본급 합계 가 안 맞는다'
-        );
-        $this->assertStringContainsString(number_format((int) $batch->total_payout).'원', $html,
-            '승인 금액(지급 총액)이 기본급까지 더한 값으로 바뀌었다');
-
-        // ④ 차량 줄에도 마진율
-        $s = $batch->settlements()->with('vehicle')->first();
-        $this->assertStringContainsString(
-            '마진율 '.Settlement::formatMarginRate($s->margin_rate), $html,
-            '차량 줄에 마진율이 없다'
-        );
+        $this->assertStringContainsString(__('payout_card.margin_after_pay'), $html, '사내직원 카드에 급여공제후 마진이 없다');
+        $this->assertMatchesRegularExpression('/data-person-card="'.$freelancer->id.'"[\s\S]{0,9000}?'.preg_quote(__('payout_card.deposit'), '/').' '.preg_quote(number_format((int) $freelancer->deposit_krw), '/').'/u', $html, '프리랜서 예치금 표시가 없다');
+        $this->assertStringContainsString('송금 총액 (급여 포함)', $html);
+        $this->assertStringContainsString('회사 순이익 (급여 차감 후)', $html);
+        $this->assertStringContainsString(number_format((int) $batch->total_payout).'원', $html, '승인 금액(지급 총액)이 사라졌다');
     }
 }

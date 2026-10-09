@@ -7,6 +7,7 @@ use App\Models\ExportLog;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
+use App\Services\Payout\BatchPayoutBreakdown;
 use App\Services\SettlementExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
@@ -45,6 +46,8 @@ class PayoutApprovalController extends Controller
             'decideUrl' => $decideUrl,
             'breakdown' => $this->breakdown($batch),
             'profit' => $batch->profitStats(),
+            // 🧾 월정산 v3 — 사람 카드·합계(급여 차감 후 회사 순이익). 승인 금액(total_payout)은 종전 그대로.
+            'v3' => BatchPayoutBreakdown::forBatch($batch),
             'exportUrl' => $this->exportUrl($batch, $user),
             'error' => null,
         ]);
