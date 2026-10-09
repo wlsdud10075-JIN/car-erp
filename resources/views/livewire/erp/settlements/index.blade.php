@@ -471,7 +471,11 @@ new #[Layout('components.layouts.app')] class extends Component
         //   ⚠️ 표시 전용. 실제 차감은 「월배치 지급」 조정 1곳에서만 — 여기 합계에 더하면 이중 청구.
         $cancelLoss = Vehicle::unsettledCancelLossBySalesman();
 
-        return $all->groupBy('salesman_id')->map(function ($group, $salesmanId) use ($cancelLoss) {
+        // 🧾 월정산 v3 사람 카드(미리보기) — 필터 범위의 정산으로 환산·실지급·회사 기여를 미리 본다. 인센티브는 제출 때.
+        $v3Month = $this->monthFilter !== '' ? $this->monthFilter : now()->format('Y-m');
+        $v3 = collect(\App\Services\Payout\BatchPayoutBreakdown::forMonthPreview($v3Month, $all)['people'])->keyBy('salesman_id');
+
+        return $all->groupBy('salesman_id')->map(function ($group, $salesmanId) use ($cancelLoss, $v3) {
             $first = $group->first();
             $loss = $cancelLoss[(int) $salesmanId] ?? null;
 
@@ -496,6 +500,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 // 미반영 매입취소 손실 — 필터 무관 현재 잔액. 합계에는 미포함(월배치에서 차감).
                 'cancel_loss' => (int) ($loss['sum'] ?? 0),
                 'cancel_loss_plates' => $loss['plates'] ?? [],
+                'v3' => $v3->get((int) $salesmanId),
             ];
         })->sortByDesc('actual_payout_sum')->values()->toArray();
     }
@@ -2192,6 +2197,10 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="text-violet-700">{{ __('settlement.summary_actual_payout') }}</span>
                         <span class="font-mono font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                     </div>
+                    {{-- 🧾 월정산 v3 사람 카드(미리보기, jin 2026-10-08 「정산관리 담당자별 합계 카드에 계산 단계」) --}}
+                    @if(!empty($summary['v3']))
+                    <div class="mt-2" data-v3-preview><x-payout.person-card :person="$summary['v3']" mode="preview" /></div>
+                    @endif
                     @if(($summary['unconsumed_carryover'] ?? 0) != 0)
                     <div class="flex items-center justify-between border-t border-gray-100 pt-1">
                         <span class="{{ $summary['unconsumed_carryover'] > 0 ? 'text-emerald-600' : 'text-red-500' }}">{{ __('settlement.summary_carryover') }}</span>

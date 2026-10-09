@@ -59,6 +59,8 @@ final class PersonPayoutBreakdown
             'total_margin' => (int) $s->total_margin,
             'margin_rate' => $s->margin_rate,
             'is_domestic' => (bool) $s->is_domestic,
+            // 승인 판단용 — 정산방식(승인 페이지가 종전부터 보여 주던 것)
+            'type_label' => $s->settlement_type === 'ratio' ? __('payout_batch.type_ratio', ['ratio' => $s->effective_ratio]) : __('payout_batch.type_per_unit'),
         ])->values()->all();
 
         $base = [
@@ -66,6 +68,9 @@ final class PersonPayoutBreakdown
             'count' => $settlements->count(), 'vehicles' => $vehicles,
             'payroll' => $type === 'freelance' ? null : $payrollTotal,
             'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry,
+            'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 표시만(지급액 무관)
+            'tier' => (bool) $sm->per_unit_tier_enabled,
+            'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월배치·승인 두 화면이 같은 식
             'unsupported' => false,
         ];
 

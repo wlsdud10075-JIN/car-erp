@@ -133,9 +133,10 @@ class SettlementPayoutAdjustmentTest extends TestCase
 
         Volt::test('erp.payout-batches.index')
             ->call('toggle', $batch->id)                       // 드릴다운 펼침
-            ->assertSee('150,000')                             // 개인 소계 = net (20만 − 5만)
-            ->assertSee(__('payout_batch.adjust.reflected'))   // 조정 반영 표식
-            ->assertDontSee('200,000');                        // 더 이상 gross 소계 아님
+            // v3 카드: 실지급 = 정산금 200,000 + 수기 조정 −50,000 = 150,000. 정산금·조정 줄이 각각 보인다.
+            ->assertSeeHtml('data-payout>₩150,000')
+            ->assertSee(__('payout_card.adj_manual'))
+            ->assertSee('−50,000');
     }
 
     /**
