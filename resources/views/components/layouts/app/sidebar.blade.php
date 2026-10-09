@@ -64,10 +64,9 @@
         : 0;
 
     // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월배치 지급 대기 건수.
+    //   월정산 v3 — steps 모드(결재선)면 「그 칸의 사람」 차례. 판정은 scopeAwaitingDecisionBy 한 곳.
     $pendingPayoutBatches = $user->canApprove()
-        ? \App\Models\SettlementPayoutBatch::where('status', 'pending')
-            ->when(! $user->isSuperAdmin(), fn ($q) => $q->where('current_level', $user->approvalRank()))
-            ->count()
+        ? \App\Models\SettlementPayoutBatch::query()->awaitingDecisionBy($user)->count()
         : 0;
 
     // 2026-05-20 #1 피드백 — 수출통관 사이드바 카운트는 통관 후보 차량 (말소 대기 + 통관 준비 합집합).

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\BizmAlimtalkService;
+use App\Services\Payout\BatchPayoutBreakdown;
 use App\Support\AlimtalkRecipients;
 use App\Support\SettlementCkBatch;
 use Illuminate\Database\Eloquent\Model;
@@ -34,7 +35,8 @@ class SettlementPayoutBatch extends Model
     public const STATUS_CANCELLED = 'cancelled';
 
     protected $fillable = [
-        'month', 'submitter_id', 'submitter_rank', 'current_level', 'status',
+        'month', 'submitter_id', 'submitter_rank', 'current_level', 'current_step', 'status',
+        'breakdown_snapshot',
         'total_payout', 'settlement_count', 'submitted_at', 'decided_at', 'reject_reason',
         // 2026-10-07 jin — 승인요청 마지막 발송 시각(재전송 연타 방지 · 발송 결과 표시). 마이그레이션 주석 참조.
         'request_notified_at',
@@ -44,6 +46,7 @@ class SettlementPayoutBatch extends Model
         'submitted_at' => 'datetime',
         'decided_at' => 'datetime',
         'request_notified_at' => 'datetime',
+        'breakdown_snapshot' => 'array',
     ];
 
     /**
@@ -69,6 +72,163 @@ class SettlementPayoutBatch extends Model
     public function settlements(): HasMany
     {
         return $this->hasMany(Settlement::class, 'payout_batch_id');
+    }
+
+    // ── 월정산 v3 결재선 (jin 2026-10-08) ──────────────────────────────────────
+    //   행이 있으면 **steps 모드**(상신 때 고른 부장 → 전무 → 대표, 건너뛴 직급은 행 없음), 없으면 종전 사다리(current_level).
+    //   모드는 **배치 단위**다 — 직급을 아무도 안 넣은 회사(또는 배포 전에 올라간 배치)는 행이 0개라 종전과 똑같이 돈다.
+
+    public function steps(): HasMany
+    {
+        return $this->hasMany(SettlementPayoutBatchStep::class, 'batch_id')->orderBy('seq');
+    }
+
+    public function changes(): HasMany
+    {
+        return $this->hasMany(SettlementPayoutBatchChange::class, 'batch_id')->orderBy('id');
+    }
+
+    public function isStepsMode(): bool
+    {
+        return $this->relationLoaded('steps') ? $this->steps->isNotEmpty() : $this->steps()->exists();
+    }
+
+    /** 지금 결재 차례인 칸(steps 모드). */
+    public function currentStep(): ?SettlementPayoutBatchStep
+    {
+        if ($this->current_step === null) {
+            return null;
+        }
+        $steps = $this->relationLoaded('steps') ? $this->steps : $this->steps()->get();
+
+        return $steps->firstWhere('seq', (int) $this->current_step);
+    }
+
+    /**
+     * 지금 결재할 사람들 — steps 모드 = 그 칸의 한 사람 / 종전 = 그 계단 전원(permission). 알림톡 수신자·화면 라벨이 이것만 본다.
+     *
+     * @return Collection<int, User>
+     */
+    public function currentApprovers(): Collection
+    {
+        if ($this->isStepsMode()) {
+            $u = $this->currentStep()?->approver;
+
+            return $u ? collect([$u]) : collect();
+        }
+
+        return AlimtalkRecipients::payoutApproverUsers((int) $this->current_level);
+    }
+
+    /** 화면 라벨 — steps 모드 「부장 박부장」 / 종전은 호출부가 levelLabel(current_level). */
+    public function currentStepLabel(): ?string
+    {
+        $step = $this->currentStep();
+
+        return $step ? $step->title.' '.($step->approver?->name ?? '-') : null;
+    }
+
+    /** 승인 대기 중이고 이 사람 차례인 배치 — 사이드바 뱃지·목록이 같은 판정을 쓴다. */
+    public function scopeAwaitingDecisionBy($q, User $u)
+    {
+        $q->where('status', self::STATUS_PENDING);
+        if ($u->isSuperAdmin()) {
+            return $q;
+        }
+
+        return $q->where(function ($w) use ($u) {
+            $w->where(fn ($legacy) => $legacy->whereDoesntHave('steps')->where('current_level', $u->approvalRank()))
+                ->orWhereHas('steps', fn ($st) => $st->whereColumn('seq', 'settlement_payout_batches.current_step')
+                    ->where('approver_user_id', $u->id)->where('status', 'pending'));
+        });
+    }
+
+    /**
+     * 결재선 선택지 — 직급(부장/전무/대표)별 최고관리자. 비어 있으면 그 회사는 종전 사다리로만 돈다.
+     *
+     * @return array<string, Collection<int, User>> title => users
+     */
+    public static function approvalLineOptions(): array
+    {
+        $users = User::query()->where('permission', 'admin')->whereIn('approval_title', User::APPROVAL_TITLES)->orderBy('name')->get();
+        $out = [];
+        foreach (User::APPROVAL_TITLES as $title) {
+            $picked = $users->where('approval_title', $title)->values();
+            if ($picked->isNotEmpty()) {
+                $out[$title] = $picked;
+            }
+        }
+
+        return $out;
+    }
+
+    /** 지난번 steps 모드 배치의 결재선(title => user_id) — 제출 모달 기본값. */
+    public static function lastStepsLine(): array
+    {
+        $last = self::query()->whereHas('steps')->orderByDesc('id')->with('steps')->first();
+        if (! $last) {
+            return [];
+        }
+
+        return $last->steps->mapWithKeys(fn ($st) => [$st->title => (int) $st->approver_user_id])->all();
+    }
+
+    /** 상신 뒤 바뀐 칸 — salesman_id => [field, …]. 카드가 노란 표시에 쓴다. */
+    public function changedFieldsBySalesman(): array
+    {
+        $changes = $this->relationLoaded('changes') ? $this->changes : $this->changes()->get();
+
+        return $changes->whereNotNull('salesman_id')->groupBy('salesman_id')
+            ->map(fn ($g) => $g->pluck('field')->unique()->values()->all())->all();
+    }
+
+    public function recordChange(User $by, ?int $salesmanId, string $field, ?int $before, ?int $after, ?string $note = null): SettlementPayoutBatchChange
+    {
+        return $this->changes()->create([
+            'user_id' => $by->id, 'salesman_id' => $salesmanId, 'field' => $field,
+            'before' => $before, 'after' => $after, 'note' => $note !== null ? mb_substr($note, 0, 200) : null, 'created_at' => now(),
+        ]);
+    }
+
+    /** 조정·인센티브를 손댈 수 있는 사람 — 제출 권한자 + 최고관리자(결재자 전원, jin «기존 최고관리자와 동일 권한 + 금액 고칠 수 있게»). */
+    public static function canEditAdjustments(User $u): bool
+    {
+        return $u->canSubmitPayoutBatch() || $u->isAdmin();
+    }
+
+    /**
+     * 결재 중 추가 인센티브(사람당 N건). 결재는 **멈춘 단계부터 이어서** — step 포인터를 건드리지 않고 변경 이력만 남긴다.
+     * ⚠️ 이미 나간 알림톡의 「총액」은 그 시점 값이다(재발송 안 함 — 카드가 노란 표시로 알린다).
+     */
+    public function addIncentive(User $by, int $salesmanId, int $amount, string $reason): SettlementPayoutAdjustment
+    {
+        $before = (int) $this->adjustments()->where('salesman_id', $salesmanId)->where('kind', SettlementPayoutAdjustment::KIND_INCENTIVE)->sum('amount');
+        $adj = $this->addAdjustment($by, $salesmanId, $amount, $reason, null, SettlementPayoutAdjustment::KIND_INCENTIVE);
+        $this->recordChange($by, $salesmanId, SettlementPayoutBatchChange::FIELD_INCENTIVE, $before, $before + $amount, $reason);
+
+        return $adj;
+    }
+
+    public function removeIncentive(User $by, int $adjustmentId): void
+    {
+        $adj = $this->adjustments()->find($adjustmentId);
+        if (! $adj) {
+            return;
+        }
+        $before = (int) $this->adjustments()->where('salesman_id', $adj->salesman_id)->where('kind', $adj->kind)->sum('amount');
+        $this->removeAdjustment($by, $adjustmentId);
+        $field = $adj->kind === SettlementPayoutAdjustment::KIND_INCENTIVE ? SettlementPayoutBatchChange::FIELD_INCENTIVE : SettlementPayoutBatchChange::FIELD_ADJUSTMENT;
+        $this->recordChange($by, (int) $adj->salesman_id, $field, $before, $before - (int) $adj->amount, '삭제: '.$adj->reason);
+    }
+
+    /** 카드 데이터 — 끝난 배치(승인·반려)는 박제, 진행 중은 지금 값. 반려돼도 내용이 그대로 보인다(jin). */
+    public function breakdownForDisplay(): array
+    {
+        if ($this->status !== self::STATUS_PENDING && is_array($this->breakdown_snapshot) && isset($this->breakdown_snapshot['people'])) {
+            return $this->breakdown_snapshot;
+        }
+
+        return BatchPayoutBreakdown::forBatch($this);
     }
 
     /** 월배치 수동 조정 (jin 2026-07-08) — 담당자별 +/− 조정, 배치 총액에만 반영. */
@@ -105,7 +265,7 @@ class SettlementPayoutBatch extends Model
         if ($this->status !== self::STATUS_PENDING) {
             throw new \DomainException('승인 대기 중인 배치에만 조정을 추가할 수 있습니다.');
         }
-        if (! $by->canSubmitPayoutBatch()) {
+        if (! self::canEditAdjustments($by)) {
             throw new \DomainException('조정 입력 권한이 없습니다.');
         }
         $reason = trim($reason);
@@ -144,7 +304,7 @@ class SettlementPayoutBatch extends Model
         if ($this->status !== self::STATUS_PENDING) {
             throw new \DomainException('승인 대기 중인 배치에서만 조정을 삭제할 수 있습니다.');
         }
-        if (! $by->canSubmitPayoutBatch()) {
+        if (! self::canEditAdjustments($by)) {
             throw new \DomainException('조정 삭제 권한이 없습니다.');
         }
         $adj = $this->adjustments()->find($adjustmentId);
@@ -273,7 +433,11 @@ class SettlementPayoutBatch extends Model
         return $lines;
     }
 
-    public static function submitForMonth(User $submitter, string $month, array $adjustments = []): self
+    /**
+     * @param  array<string, int|null>  $line  결재선 title => user_id (steps 모드). 비면 종전 사다리.
+     *                                         ⚠️ 하나라도 고르면 **대표가 있어야** 한다 — 최종 승인자가 없는 결재선은 영영 안 끝난다.
+     */
+    public static function submitForMonth(User $submitter, string $month, array $adjustments = [], array $line = []): self
     {
         if (! $submitter->canSubmitPayoutBatch()) {
             throw new \DomainException('월배치 제출 권한이 없습니다.');
@@ -289,22 +453,28 @@ class SettlementPayoutBatch extends Model
         }
 
         $rank = $submitter->approvalRank();
+        $steps = self::normalizeLine($line);
 
-        $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids, $adjustments) {
+        $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids, $adjustments, $steps) {
             $settlements = Settlement::whereIn('id', $ids)->get();
             $batch = self::create([
                 'month' => $month,
                 'submitter_id' => $submitter->id,
                 'submitter_rank' => $rank,
-                'current_level' => $rank + 1,
+                // steps 모드면 current_level 은 TOP_RANK 로 둔다 — 종전 소비자(board API·뱃지·라벨)가 null 을 안 보게.
+                'current_level' => $steps === [] ? $rank + 1 : self::TOP_RANK,
+                'current_step' => $steps === [] ? null : 1,
                 'status' => self::STATUS_PENDING,
                 'total_payout' => (int) $settlements->sum(fn ($s) => $s->actual_payout),
                 'settlement_count' => $settlements->count(),
                 'submitted_at' => now(),
             ]);
             Settlement::whereIn('id', $ids)->update(['payout_batch_id' => $batch->id]);
+            foreach ($steps as $i => $st) {
+                $batch->steps()->create(['seq' => $i + 1, 'title' => $st['title'], 'approver_user_id' => $st['user_id'], 'status' => 'pending']);
+            }
 
-            // 조정은 감사 경로(addAdjustment)를 그대로 탄다 — 총액 재계산·AuditLog 포함.
+            // 조정은 감사 경로(addAdjustment)를 그대로 탄다 — 총액 재계산·AuditLog 포함. kind(수기/인센티브)는 그대로 넘긴다.
             foreach ($adjustments as $a) {
                 $batch->addAdjustment(
                     $submitter,
@@ -312,6 +482,7 @@ class SettlementPayoutBatch extends Model
                     (int) $a['amount'],
                     (string) $a['reason'],
                     $a['cancel_vehicle_ids'] ?? null,
+                    $a['kind'] ?? null,
                 );
             }
 
@@ -335,10 +506,46 @@ class SettlementPayoutBatch extends Model
     }
 
     /** 현재 단계에서 이 사용자가 승인/반려할 수 있나 — rank 정확 일치 또는 super override. */
+    /**
+     * 결재선 정리 — APPROVAL_TITLES 순서로, 고른 사람이 실제 그 직급의 최고관리자일 때만 칸이 된다.
+     * 비어 있으면 [] (종전 사다리). 하나라도 있는데 대표가 없으면 예외.
+     *
+     * @return array<int, array{title: string, user_id: int}>
+     */
+    public static function normalizeLine(array $line): array
+    {
+        $out = [];
+        foreach (User::APPROVAL_TITLES as $title) {
+            $id = (int) ($line[$title] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $u = User::find($id);
+            if (! $u || $u->permission !== 'admin' || $u->approval_title !== $title) {
+                throw new \DomainException("{$title} 결재권자가 올바르지 않습니다.");
+            }
+            $out[] = ['title' => $title, 'user_id' => $id];
+        }
+        if ($out !== [] && ! collect($out)->contains('title', '대표')) {
+            throw new \DomainException('결재선에 대표(최종 승인자)가 없습니다.');
+        }
+
+        return $out;
+    }
+
     public function canDecide(User $u): bool
     {
-        return $this->status === self::STATUS_PENDING
-            && ($u->isSuperAdmin() || $u->approvalRank() === $this->current_level);
+        if ($this->status !== self::STATUS_PENDING) {
+            return false;
+        }
+        if ($u->isSuperAdmin()) {
+            return true;
+        }
+        if ($this->isStepsMode()) {
+            return (int) ($this->currentStep()?->approver_user_id ?? 0) === (int) $u->id;
+        }
+
+        return $u->approvalRank() === $this->current_level;
     }
 
     public function approveBy(User $u, ?string $note = null): void
@@ -354,14 +561,36 @@ class SettlementPayoutBatch extends Model
                 'action' => 'approved', 'note' => $note ?: null, 'created_at' => now(),
             ]);
 
-            // 대표(TOP) 서명 또는 super override → 완료 + 일괄 paid. 아니면 다음 계단으로.
-            if ($u->isSuperAdmin() || $this->current_level >= self::TOP_RANK) {
+            if ($this->isStepsMode()) {
+                // steps 모드 — 이 칸에 서명하고 다음 pending 칸으로. 다음이 없으면 최종(대표 또는 super override).
+                $step = $this->currentStep();
+                if ($step && ! $u->isSuperAdmin()) {
+                    $step->update(['status' => 'approved', 'acted_at' => now(), 'note' => $note ?: null]);
+                } elseif ($step) {
+                    $step->update(['status' => 'approved', 'acted_at' => now(), 'note' => ($note ?: '').' (시스템관리자 대행)']);
+                }
+                $this->unsetRelation('steps');
+                $next = $u->isSuperAdmin() ? null : $this->steps()->where('status', 'pending')->orderBy('seq')->first();
+                $final = $next === null;
+            } else {
+                // 대표(TOP) 서명 또는 super override → 완료 + 일괄 paid. 아니면 다음 계단으로.
+                $final = $u->isSuperAdmin() || $this->current_level >= self::TOP_RANK;
+                $next = null;
+            }
+
+            if ($final) {
+                // 🧾 박제 — 최종 승인 시점의 사람별 카드(급여·2차 마감이 뒤에 바뀌어도 역사는 그대로). execute 전에 찍는다.
+                $this->breakdown_snapshot = BatchPayoutBreakdown::forBatch($this);
                 $this->status = self::STATUS_APPROVED;
                 $this->decided_at = now();
+                $this->current_step = null;
                 $this->save();
                 $this->execute();
                 $this->markCancelLossesSettled();
                 $becameFinal = true;
+            } elseif ($next !== null) {
+                $this->current_step = (int) $next->seq;
+                $this->save();
             } else {
                 $this->current_level++;
                 $this->save();
@@ -430,9 +659,13 @@ class SettlementPayoutBatch extends Model
                 'approver_id' => $u->id, 'approver_rank' => $u->approvalRank(),
                 'action' => 'rejected', 'note' => $reason, 'created_at' => now(),
             ]);
+            // 🧾 박제 — 정산을 풀기 **전에** 찍는다. 안 찍으면 반려된 배치는 정산이 0건이라 카드가 비어 혼동을 부른다(jin 2026-10-07).
+            $this->breakdown_snapshot = BatchPayoutBreakdown::forBatch($this);
+            $this->currentStep()?->update(['status' => 'rejected', 'acted_at' => now(), 'note' => $reason]);
             $this->status = self::STATUS_REJECTED;
             $this->decided_at = now();
             $this->reject_reason = $reason;
+            $this->current_step = null;
             $this->save();
 
             // 멤버 정산 배치 해제 → 재배치 가능 (settlement_status=confirmed 유지)
@@ -568,7 +801,8 @@ class SettlementPayoutBatch extends Model
             '회사이익' => number_format($this->profitStats()['company_profit']).'원',
             '제출자' => $this->submitter?->name ?? '-',
         ];
-        foreach (AlimtalkRecipients::payoutApproverUsers($this->current_level) as $user) {
+        // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·전무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.
+        foreach ($this->currentApprovers()->filter(fn (User $u) => trim((string) $u->phone) !== '') as $user) {
             $url = $this->approvalLinkFor($user);
             $svc->send('erp_payout_request', (string) $user->phone, $vars, ['user_id' => $user->id], [
                 ['name' => '승인/반려 바로가기', 'url' => $url],
