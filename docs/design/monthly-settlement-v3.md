@@ -227,3 +227,11 @@
 
 - jin 예시(2026-10-07)의 사람 = 임윤태로 보인다: 기본급 2,740,000 · 정산금 3,100,000 일치, 환산(실효) 21,687,094 ≈ 예시 21,560,612, ① −92,669 ≈ 예시 −91,431.
 - ⚠️ heymanerp 무사백: 9월 총마진 **−9,072,763** · ① −19,558,803 — 데이터(환율·미수) 문제인지 jin 확인 필요(v3 공식 문제 아님 — 같은 `total_margin` accessor).
+
+### 10일차 배포 전 확인 (2026-10-09 advisor 지적 → 조치)
+
+1. **회사이익 3곳 정합** — 가드 `test_three_company_profit_figures_agree_for_a_single_batch_month`. ⚠️ 모집단은 원래 다르다(대시보드 = 그 기간에 지급된 것 / 월결산 알림톡 = 귀속월 confirmed+paid / 배치 = 그 배치). 확정만 되고 배치에 안 묶인 정산·두 달에 걸친 배치가 있으면 갈릴 수 있다 — **기준은 배치(BatchPayoutBreakdown)**.
+2. **박제 없는 옛 배치**(배포 전 승인·반려, 10/10 배치 포함) — `breakdownForDisplay()` 가 **처음 그릴 때 박제**한다(가드 `test_a_legacy_approved_batch_is_frozen_on_first_render`). 반려 배치는 정산이 이미 풀려 카드가 빌 수 있다(되돌릴 자료 없음 — 그대로 박제).
+3. **`adjustments.kind` 백필 실측(읽기 전용, 10-09)** — ssancarerp 49건 = 손실 3 · 이월 6 · **수기 40**(그중 「대표승인 추가 인센티브」·「본사RT직원 추가인센」 등 인센티브 성격 ~5건이 수기로 분류됨 — 과거 배치라 카드엔 「수기 추가정산」으로 보인다, 금액 무변경) · heymanerp 1건 수기. 백필 뒤 kind 를 손으로 고칠 필요 없음(jin 원하면 SQL 한 줄).
+4. `payroll:clear-legacy-base-salary --apply` — v3 카드는 `base_salary_krw` 를 **안 읽는다**(PayrollEntry 만) → 지워도 카드 불변. 배포 뒤 아무 때나.
+5. 엑셀(정산 내보내기) 열 헤더 「월배치」 → 「월정산」 — 재무가 필터로 쓰던 열 이름이 바뀐다.
