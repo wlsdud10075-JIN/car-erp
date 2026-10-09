@@ -1360,4 +1360,64 @@ class Settlement extends Model
 
         return $base;
     }
+
+    // ── 월정산 v3 (2026-10-09) — 프리랜서 환산 · 2차 변동 원자료 ───────────────────────────
+    //   소비자는 App\Services\Payout\PersonPayoutBreakdown 하나. 여기엔 「한 정산의 숫자」만 둔다.
+
+    /** 판매금원화를 주어진 환율로 — null 이면 정산환율(실효). 내수는 환율과 무관. getSalesAmountKrwAttribute 와 같은 식. */
+    public function salesAmountKrwAt(?float $rate = null): int
+    {
+        $v = $this->vehicle;
+        if (! $v) {
+            return 0;
+        }
+        if ($this->is_domestic) {
+            return (int) round($v->sale_total_amount);
+        }
+        $base = (float) ($v->sale_price ?? 0) + (float) ($v->commission ?? 0) + (float) ($v->auto_loading ?? 0) - (float) ($v->tax_dc ?? 0);
+
+        return (int) ($base * ($rate ?? $v->settlement_exchange_rate));
+    }
+
+    /** 총마진을 주어진 환율로 — getTotalMarginAttribute 와 같은 식(내수는 domestic_margin). */
+    public function totalMarginAt(?float $rate = null): int
+    {
+        if ($this->is_domestic) {
+            return $this->domestic_margin;
+        }
+        $v = $this->vehicle;
+        $salesMargin = $this->salesAmountKrwAt($rate) - (int) ($v?->cost_total ?? 0) - ((int) ($v?->purchase_price ?? 0) + (int) ($v?->selling_fee ?? 0));
+
+        return (int) (($salesMargin + $this->vat_margin) * (100 - self::param('settlement_total_margin_vat_deduct')) / 100);
+    }
+
+    /**
+     * 💡 **프리랜서 공식으로 환산한 지급액** = 총마진 × 비율 − 서류비 − 발송비 − 기타공제 (이월 제외).
+     * 사내직원 정산에도 적용한다(「프리랜서였다면」) — 비율은 effective_ratio(사내직원 = 설정 기본 50).
+     * ⚠️ document_fee accessor 는 사내직원이면 0 이라 여기선 param 을 직접 쓴다. karaba 공식은 다루지 않는다.
+     */
+    public function freelanceEquivalentPayout(?float $rate = null): int
+    {
+        return (int) ($this->totalMarginAt($rate) * ($this->effective_ratio / 100))
+            - self::param('settlement_freelance_document_fee') - $this->shipping_fee - (int) ($this->other_deduction ?? 0);
+    }
+
+    /**
+     * 2차 변동 원자료 — 스냅샷(paid 시점) 대비 ['fx' => Δ판매금원화×0.9, 'cost' => −Δ비용×0.9, 'all' => Δ총마진] (float).
+     * computeSecondaryBreakdown 과 같은 Δ 정의. 스냅샷 없으면 null(옛 적재분).
+     */
+    public function secondaryDeltas(): ?array
+    {
+        $snap = $this->confirmed_snapshot;
+        if (! is_array($snap) || ! array_key_exists('total_margin', $snap)) {
+            return null;
+        }
+        $costNow = (float) ($this->vehicle?->cost_total ?? 0);
+
+        return [
+            'fx' => ((float) $this->sales_amount_krw - (float) ($snap['sales_amount_krw'] ?? $this->sales_amount_krw)) * 0.9,
+            'cost' => -($costNow - (float) ($snap['cost_total'] ?? $costNow)) * 0.9,
+            'all' => (float) $this->total_margin - (float) $snap['total_margin'],
+        ];
+    }
 }
