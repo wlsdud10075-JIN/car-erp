@@ -91,7 +91,12 @@ return [
     'company_contrib_title' => 'Company contribution by person (top 10)',
     'company_contrib_empty' => 'No paid settlements in this period.',
     'company_contrib_note' => 'Contribution = total margin − take-home (incl. payroll & incentives) − shipping. Share = contribution ÷ sum (negatives stay negative). Click a name to open that person\'s card in Settlements.',
-    'contrib_payout' => 'Take-home',
+    'contrib_payout' => 'Take-home (payroll · settlement · incentive)',
+    'contrib_th_rank' => '#',
+    'contrib_th_name' => 'Person',
+    'contrib_th_count' => 'Sold',
+    'contrib_th_contribution' => 'Contribution (margin − take-home − shipping)',
+    'contrib_th_share' => 'Share',
     'common_labor' => 'Common labor (inspector payroll) −₩:amount — excluded from shares',
 
     'salesman_count_title' => 'Sales count by salesman (top 10)',

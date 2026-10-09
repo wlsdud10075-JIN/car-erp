@@ -2227,6 +2227,11 @@ new #[Layout('components.layouts.app')] class extends Component
                             class="min-w-0 flex-1 truncate text-left text-xs font-medium text-gray-700 hover:text-violet-700">
                         {{ $summary['salesman_name'] }}
                     </button>
+                    {{-- 월정산 v3 — 사내직원은 접힌 줄에도 「급여 대비 초과 배율」(jin 2026-10-09 「몇배를 벌어왔는지」) --}}
+                    @php $v3r = $summary['v3']['excess_ratio'] ?? null; @endphp
+                    @if(($summary['v3']['type'] ?? '') === 'employee' && $v3r !== null)
+                    <span class="shrink-0 font-mono text-[11px] {{ $v3r < 0 ? 'text-red-600' : 'text-emerald-600' }}" title="{{ __('payout_card.excess_ratio') }}" data-summary-ratio>{{ $v3r < 0 ? '−' : '+' }}{{ number_format(abs($v3r), 1) }}{{ __('payout_card.times') }}</span>
+                    @endif
                     <span class="shrink-0 font-mono text-xs font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                     <button type="button" @click="open = !open"
                             class="shrink-0 text-[11px] text-gray-400 hover:text-violet-700"

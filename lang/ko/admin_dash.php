@@ -95,7 +95,12 @@ return [
     'company_contrib_title' => '인원별 회사기여 (상위 10명)',
     'company_contrib_empty' => '기간 내 지급완료 정산이 없습니다.',
     'company_contrib_note' => '회사 기여 = 총마진 − 실지급(급여·인센티브 포함) − 발송비. 지분율 = 기여 ÷ 기여 합(음수는 음수로). 이름을 누르면 정산관리의 그 담당자 카드로 갑니다.',
-    'contrib_payout' => '받아 간 돈',
+    'contrib_payout' => '받아 간 돈 (급여·정산·인센티브)',
+    'contrib_th_rank' => '순위',
+    'contrib_th_name' => '담당자',
+    'contrib_th_count' => '판매',
+    'contrib_th_contribution' => '회사 기여 (총마진 − 받아 간 돈 − 발송비)',
+    'contrib_th_share' => '지분율',
     'common_labor' => '공통 인건비(검차직원 급여) −₩:amount — 지분율 계산에서는 제외',
 
     // 담당자 성과
