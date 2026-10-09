@@ -177,3 +177,10 @@
 | 8 | 대시보드 지분율 + 공통 인건비 + 회사이익 3곳 정합 |
 | 9 | 「월배치」→「월정산」 라벨 + 가이드·카드 |
 | 10 | 전체 테스트 · 운영 사본 검증 · 배포(업무시간 외, 10/10 지급 끝난 뒤) |
+
+## 7. 진행 로그 (착수 2026-10-09)
+
+| 일 | 커밋 | 한 일 | 남은 것·메모 |
+|---|---|---|---|
+| 1 | `fe0fd0bf` | payroll_entries · salesmen.type inspector(MySQL ALTER + SQLite change — **SQLite 도 enum 을 CHECK 로 강제한다**, 「미강제」 메모는 틀렸다) · users.approval_title · adjustments.kind(+백필) | 결재선·변경이력·박제·앱내알림 표는 6~7일차에 |
+| 2 | (다음 커밋) | 사내직원관리 개명·탭·검차 등록·급여 드로어(월별 18항목+N행) · 접근 관리 이상+재무 · 결재 직급 select · 업무관리자 생성 버그 · `Salesman::sales()` 12곳 | 로컬 MySQL 꺼져 있어 8001 에 마이그 미적용(`php artisan migrate` 필요) |
