@@ -74,6 +74,10 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Url(as: 'sum')]
     public bool $showSummaries = false;
 
+    // 🔗 관리자 대시보드 「인원별 회사기여」 이름 클릭 → 그 담당자 카드가 펼쳐진 채 열린다 (월정산 v3, jin 2026-10-08)
+    #[Url(as: 'focus')]
+    public int $focusSalesmanId = 0;
+
     // ── 슬라이드 패널 ─────────────────────────────────────────────
     public bool $showPanel = false;
 
@@ -170,6 +174,11 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(): void
     {
+        // 🔗 대시보드 앵커 — 담당자별 합계를 펼친 채 들어온다(월은 URL 의 month 가 이긴다 — #[Url] 이 mount 전에 채운다).
+        if ($this->focusSalesmanId > 0) {
+            $this->showSummaries = true;
+        }
+
         // 재무 대시보드 '미수로 지급보류' 딥링크(?held=1) 진입 시 = 전체담당자 + 지급보류만.
         //
         // ⚠️ 딥링크엔 **월 기본값을 걸지 않는다** — 지급보류는 달과 무관한 「잔액」이라
@@ -2209,8 +2218,10 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
             @foreach($this->salesmanSummaries as $summary)
             {{-- 접힌 카드 = 이름 + 실지급액. 자세히는 개별 펼치기(값은 이미 계산돼 있어 Alpine 으로 충분). --}}
-            <div x-data="{ open: false }"
-                 class="card {{ $salesmanFilter == $summary['salesman_id'] ? 'border-violet-400 bg-violet-50/40' : '' }}">
+            @php $focused = $focusSalesmanId > 0 && (int) $summary['salesman_id'] === $focusSalesmanId; @endphp
+            <div x-data="{ open: {{ $focused ? 'true' : 'false' }} }" id="salesman-summary-{{ $summary['salesman_id'] }}" data-summary-card="{{ $summary['salesman_id'] }}"
+                 @if($focused) x-init="$nextTick(() => $el.scrollIntoView({ block: 'center' }))" @endif
+                 class="card {{ $salesmanFilter == $summary['salesman_id'] || $focused ? 'border-violet-400 bg-violet-50/40' : '' }}">
                 <div class="flex items-center gap-2">
                     <button type="button" wire:click="setSalesmanFilter({{ $summary['salesman_id'] ?? 0 }})"
                             class="min-w-0 flex-1 truncate text-left text-xs font-medium text-gray-700 hover:text-violet-700">
@@ -2254,7 +2265,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     </div>
                     {{-- 🧾 월정산 v3 사람 카드(미리보기, jin 2026-10-08 「정산관리 담당자별 합계 카드에 계산 단계」) --}}
                     @if(!empty($summary['v3']))
-                    <div class="mt-2" data-v3-preview><x-payout.person-card :person="$summary['v3']" mode="preview" /></div>
+                    <div class="mt-2" data-v3-preview><x-payout.person-card :person="$summary['v3']" mode="preview" :open="$focused" /></div>
                     @endif
                     @if(($summary['unconsumed_carryover'] ?? 0) != 0)
                     <div class="flex items-center justify-between border-t border-gray-100 pt-1">

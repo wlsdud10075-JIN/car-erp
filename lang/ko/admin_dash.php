@@ -89,11 +89,14 @@ return [
     'inventory_split' => '재고 2분류 (원가)',
     'inv_general' => '일반재고',
     'inv_preship' => '선적전',
-    'company_net_breakdown' => '총마진 ₩:margin − 영업 실지급 ₩:payout (+ 사내직원 환차)',
+    // 월정산 v3 (2026-10-09) — 급여·인센티브까지 뺀 회사 순이익. 옛 「+ 사내직원 환차」 문구는 08-06 공식 변경 뒤 코드와 어긋나 있었다.
+    'company_net_breakdown' => '총마진 ₩:margin − 실지급 ₩:payout(급여·인센티브 포함) − 발송비 ₩:shipping − 공통 인건비 ₩:labor',
     'company_fx_absorbed' => '사내직원 환차 회사 흡수: ₩:fx',
     'company_contrib_title' => '인원별 회사기여 (상위 10명)',
     'company_contrib_empty' => '기간 내 지급완료 정산이 없습니다.',
-    'company_contrib_note' => '회사몫 = 총마진 − 실지급 + 환차. 프리랜서는 환차 상쇄(회사 무영향), 사내직원은 회사가 환차 흡수.',
+    'company_contrib_note' => '회사 기여 = 총마진 − 실지급(급여·인센티브 포함) − 발송비. 지분율 = 기여 ÷ 기여 합(음수는 음수로). 이름을 누르면 정산관리의 그 담당자 카드로 갑니다.',
+    'contrib_payout' => '받아 간 돈',
+    'common_labor' => '공통 인건비(검차직원 급여) −₩:amount — 지분율 계산에서는 제외',
 
     // 담당자 성과
     'salesman_count_title' => '담당자별 판매 대수 (상위 10명)',

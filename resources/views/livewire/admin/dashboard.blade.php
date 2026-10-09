@@ -649,9 +649,10 @@ new #[Layout('components.layouts.app')] class extends Component
 
                     if ($id = $s->salesman_id) {
                         if (! isset($byPerson[$id])) {
-                            $byPerson[$id] = ['contribution' => 0, 'count' => 0];
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
                         }
                         $byPerson[$id]['contribution'] += $share;
+                        $byPerson[$id]['payout'] += $payout;
                         $byPerson[$id]['count']++;
                     }
                 }
@@ -687,12 +688,48 @@ new #[Layout('components.layouts.app')] class extends Component
 
                     if ($id = $adj->salesman_id) {
                         if (! isset($byPerson[$id])) {
-                            $byPerson[$id] = ['contribution' => 0, 'count' => 0];
+                            $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
                         }
                         $byPerson[$id]['contribution'] -= $amount;
+                        $byPerson[$id]['payout'] += $amount;
                     }
                 });
         }
+
+        // 💴 급여(월정산 v3, jin 2026-10-08) — 이 기간에 지급된 배치의 귀속월 급여를 뺀다.
+        //    사내직원 급여는 그 사람의 기여에서, 검차직원(차량 없음)은 「공통 인건비」로 회사 순이익에서만.
+        //    🔑 숫자의 정의는 BatchPayoutBreakdown 과 같다(회사 기여 = 총마진 − 실지급(급여 포함) − 발송비).
+        $payrollSum = 0;
+        $commonLabor = 0;
+        $payrollMonths = $batchIds !== []
+            ? \App\Models\SettlementPayoutBatch::query()->whereIn('id', array_keys($batchIds))->pluck('month')->unique()->values()
+            : collect();
+        if ($payrollMonths->isNotEmpty()) {
+            $payroll = \App\Models\PayrollEntry::query()->whereIn('month', $payrollMonths)
+                ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+                ->selectRaw('salesman_id, SUM(amount) as t')->groupBy('salesman_id')->pluck('t', 'salesman_id');
+            $inspectorIds = $payroll->isEmpty() ? collect() : Salesman::query()->whereIn('id', $payroll->keys())->where('type', 'inspector')->pluck('id');
+            foreach ($payroll as $sid => $t) {
+                $t = (int) $t;
+                if ($inspectorIds->contains((int) $sid)) {
+                    $commonLabor += $t;
+                    $companyNet -= $t;
+
+                    continue;
+                }
+                $payrollSum += $t;
+                $payoutSum += $t;
+                $companyNet -= $t;
+                if (! isset($byPerson[$sid])) {
+                    $byPerson[$sid] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0];
+                }
+                $byPerson[$sid]['contribution'] -= $t;
+                $byPerson[$sid]['payout'] += $t;
+                $byPerson[$sid]['payroll'] = $t;
+            }
+        }
+        $contributionSum = (int) array_sum(array_column($byPerson, 'contribution'));
+        $lastMonth = $payrollMonths->sort()->last();
 
         uasort($byPerson, fn ($a, $b) => $b['contribution'] <=> $a['contribution']);
         $topIds = array_slice(array_keys($byPerson), 0, 10);
@@ -700,9 +737,15 @@ new #[Layout('components.layouts.app')] class extends Component
         $ranking = [];
         foreach ($topIds as $id) {
             $ranking[] = [
+                'salesman_id' => (int) $id,
                 'name' => $names[$id] ?? __('admin_dash.salesman_fallback', ['id' => $id]),
                 'contribution' => $byPerson[$id]['contribution'],
                 'count' => $byPerson[$id]['count'],
+                'payout' => (int) $byPerson[$id]['payout'],
+                // 지분율 = 기여 ÷ |기여 합| (음수 그대로) — BatchPayoutBreakdown 과 같은 정의
+                'share' => $contributionSum !== 0 ? round($byPerson[$id]['contribution'] / abs($contributionSum) * 100, 1) : null,
+                // 🔗 이름 클릭 → 정산관리 그 담당자 카드(펼친 상태). 월 = 이 기간에 지급된 마지막 귀속월.
+                'link' => route('erp.settlements.index', array_filter(['salesmanFilter' => (int) $id, 'monthFilter' => $lastMonth, 'focus' => (int) $id])),
             ];
         }
 
@@ -712,6 +755,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'payout_sum' => $payoutSum,
             'shipping_sum' => $shippingSum,
             'fx_absorbed' => $fxAbsorbed,
+            'payroll_sum' => $payrollSum,
+            'common_labor' => $commonLabor,
+            'contribution_sum' => $contributionSum,
             'ranking' => $ranking,
         ];
     }
@@ -1478,7 +1524,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     @krw($cp['company_net'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
                 </div>
                 <p class="mt-1 text-[11px] text-gray-400">
-                    {{ __('admin_dash.company_net_breakdown', ['margin' => number_format($cp['margin_sum']), 'payout' => number_format($cp['payout_sum'])]) }}
+                    {{ __('admin_dash.company_net_breakdown', ['margin' => number_format($cp['margin_sum']), 'payout' => number_format($cp['payout_sum']), 'shipping' => number_format($cp['shipping_sum']), 'labor' => number_format($cp['common_labor'] ?? 0)]) }}
                 </p>
                 @if($cp['fx_absorbed'] !== 0)
                 <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
@@ -1509,7 +1555,7 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
         </div>
 
-        {{-- 인원별 회사기여 랭킹 (회사몫 = 총마진 − 실지급 + 환차) --}}
+        {{-- 인원별 회사기여 랭킹 (회사 기여 = 총마진 − 실지급(급여·인센티브 포함) − 발송비 · 지분율 = 기여 ÷ |기여 합|, 월정산 v3) --}}
         <div class="card">
             <div class="section-header">
                 <span class="section-dot bg-teal-500"></span>
@@ -1520,16 +1566,27 @@ new #[Layout('components.layouts.app')] class extends Component
             @else
             <ul class="mt-3 divide-y divide-gray-100">
                 @foreach($cp['ranking'] as $i => $row)
-                <li class="flex items-center justify-between py-2">
+                <li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2" data-contrib-row="{{ $row['salesman_id'] ?? '' }}">
                     <span class="flex items-center gap-2 text-sm text-gray-700">
                         <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-teal-50 text-[11px] font-semibold text-teal-700">{{ $i + 1 }}</span>
-                        {{ $row['name'] }}
+                        {{-- 🔗 이름 → 정산관리 그 담당자 카드 (jin 2026-10-08 「앵커를 달아달란거지」) --}}
+                        @if(!empty($row['link']))<a href="{{ $row['link'] }}" wire:navigate class="font-medium hover:text-violet-700 hover:underline">{{ $row['name'] }}</a>@else{{ $row['name'] }}@endif
                         <span class="text-[11px] text-gray-400">{{ $row['count'] }}{{ __('admin_dash.unit_count') }}</span>
                     </span>
-                    <span class="font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</span>
+                    <span class="flex items-center gap-3 text-[11px] text-gray-500">
+                        <span>{{ __('admin_dash.contrib_payout') }} <span class="font-mono text-gray-700">@krw($row['payout'] ?? 0)</span></span>
+                        <span class="font-mono font-semibold {{ $row['contribution'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}">@krw($row['contribution'])</span>
+                        @if(($row['share'] ?? null) !== null)
+                        <span class="flex items-center gap-1 font-mono {{ $row['share'] < 0 ? 'text-red-600' : 'text-gray-700' }}" data-share>{{ $row['share'] < 0 ? '−' : '' }}{{ number_format(abs($row['share']), 1) }}%
+                            <span class="inline-block h-1.5 w-14 overflow-hidden rounded bg-gray-100"><span class="block h-full {{ $row['share'] < 0 ? 'bg-red-400' : 'bg-teal-500' }}" style="width: {{ min(100, abs($row['share'])) }}%"></span></span></span>
+                        @endif
+                    </span>
                 </li>
                 @endforeach
             </ul>
+            @endif
+            @if(($cp['common_labor'] ?? 0) !== 0)
+            <p class="mt-2 text-[11px] text-gray-500" data-common-labor>{{ __('admin_dash.common_labor', ['amount' => number_format($cp['common_labor'])]) }}</p>
             @endif
             <p class="mt-2 text-[11px] text-gray-400">{{ __('admin_dash.company_contrib_note') }}</p>
         </div>
