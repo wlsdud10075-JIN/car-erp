@@ -2231,6 +2231,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     @php $v3r = $summary['v3']['excess_ratio'] ?? null; @endphp
                     @if(($summary['v3']['type'] ?? '') === 'employee' && $v3r !== null)
                     <span class="shrink-0 font-mono text-[11px] {{ $v3r < 0 ? 'text-red-600' : 'text-emerald-600' }}" title="{{ __('payout_card.excess_ratio') }}" data-summary-ratio>{{ $v3r < 0 ? '−' : '+' }}{{ number_format(abs($v3r), 1) }}{{ __('payout_card.times') }}</span>
+                    @elseif(($summary['v3']['type'] ?? '') === 'freelance')
+                    <span class="shrink-0 text-[10px] text-gray-400" title="{{ __('payout_card.freelance_note') }}">{{ __('salesman.type.freelance') }}</span>
                     @endif
                     <span class="shrink-0 font-mono text-xs font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                     <button type="button" @click="open = !open"

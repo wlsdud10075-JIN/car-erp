@@ -86,6 +86,9 @@ class AdminDashboardPayrollShareTest extends TestCase
         $sum = $rows[$e->id]['contribution'] + $rows[$f->id]['contribution'];
         $this->assertSame(round($rows[$e->id]['contribution'] / $sum * 100, 1), $rows[$e->id]['share']);
         $this->assertStringContainsString('focus='.$e->id, $rows[$e->id]['link'], '이름 클릭 → 정산관리 앵커');
+        // 초과 배율(사내직원만) = (환산 − 받아 간 돈) ÷ 받아 간 돈. 환산 = 17,010,000 × 50% − 50,000 = 8,455,000
+        $this->assertSame(round((8_455_000 - 3_340_000) / 3_340_000, 1), $rows[$e->id]['excess_ratio']);
+        $this->assertNull($rows[$f->id]['excess_ratio'], '프리랜서는 배율 없음');
         $this->assertStringContainsString('monthFilter=2026-09', $rows[$e->id]['link']);
     }
 
