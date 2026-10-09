@@ -57,6 +57,14 @@
 </head>
 <body>
 <div class="wrap">
+    @if(!empty($notice))
+    {{-- ✅ 인센티브 반영 안내 — 폼 POST 뒤 다시 그려지는 페이지라 **맨 위**에 둔다(아래 결재 카드에만 두면 안 보인다, jin 2026-10-09) --}}
+    <div class="card" style="background:#ecfdf5;border-color:#a7f3d0;" data-incentive-notice>
+        <div style="font-size:16px;font-weight:700;color:#047857;">✅ 반영되었습니다</div>
+        <div style="margin-top:4px;color:#065f46;font-size:14px;">{{ $notice }}</div>
+        <div style="margin-top:4px;color:#6b7280;font-size:12px;">아래 카드에 노란색으로 표시되고, 결재 내역에 남았습니다. 이 화면에서 바로 결재를 이어가면 됩니다.</div>
+    </div>
+    @endif
     <div class="card">
         <h1>정산 지급 승인 요청</h1>
         <p class="sub">{{ $batch->month }} 귀속 · 제출: {{ $batch->submitter?->name ?? '-' }}</p>
@@ -158,7 +166,6 @@
 
     @if($decidable && $decideUrl)
     <div class="card">
-        @if(!empty($notice))<div class="notice" style="background:#ecfdf5;color:#047857;margin-bottom:10px;" data-incentive-notice>{{ $notice }}</div>@endif
         @if($error)<div class="err">{{ $error }}</div>@endif
         {{-- ✏️ 결재 중 인센티브 추가 (월정산 v3) — 서명 링크 그대로, action=incentive. 포인터는 그대로. --}}
         @if(\App\Models\SettlementPayoutBatch::canEditAdjustments($user) && isset($v3))
@@ -175,7 +182,9 @@
                 <input type="text" name="amount" inputmode="numeric" placeholder="{{ __('settlement.batch.adjust_amount') }}" style="border:1px solid #d1d5db;border-radius:8px;padding:9px;font-size:14px;">
             </div>
             <input type="text" name="reason" placeholder="{{ __('settlement.batch.adjust_reason') }}" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:9px;font-size:14px;margin-top:6px;">
-            <button type="submit" class="btn" style="background:#d97706;color:#fff;">{{ __('payout_batch.steps.incentive_add') }}</button>
+            <button type="submit" class="btn" style="background:#d97706;color:#fff;"
+                    onclick="var f=this.form; var n=f.salesman_id.options[f.salesman_id.selectedIndex].text; return f.salesman_id.value && f.amount.value && f.reason.value ? confirm(n+' 에게 추가 인센티브 '+f.amount.value+'원을 반영할까요?
+결재는 지금 단계부터 그대로 이어집니다.') : true;">{{ __('payout_batch.steps.incentive_add') }}</button>
         </form>
         @endif
         <form method="POST" action="{{ $decideUrl }}">
