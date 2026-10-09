@@ -718,6 +718,8 @@ class SettlementPayoutBatch extends Model
             'fx' => $fx,
             'shipping' => $shipping,
             'company_profit' => $totalMargin - $payout - $shipping,
+            // 💴 월정산 v3 — 급여(사내·검차)까지 뺀 회사 순이익. 승인 알림톡 「회사이익」 변수와 승인 화면이 이것을 쓴다(문구 무변경, 숫자만).
+            'company_profit_after_payroll' => BatchPayoutBreakdown::forBatch($this)['totals']['company_net'],
             // 📊 배치 전체 마진율 (jin 2026-09-18) — Σ총마진 / Σ판매금원화. 내수는 양쪽에서 빠진다.
             'margin_rate' => Settlement::marginRateOf($settlements),
             // 💰 기본급 합계 — **표시 전용**. 회사이익·지급총액 어디에도 안 들어간다.
@@ -798,7 +800,7 @@ class SettlementPayoutBatch extends Model
             '귀속월' => $this->month,
             '건수' => (string) $this->settlement_count,
             '총액' => number_format($this->total_payout).'원',
-            '회사이익' => number_format($this->profitStats()['company_profit']).'원',
+            '회사이익' => number_format($this->profitStats()['company_profit_after_payroll']).'원',
             '제출자' => $this->submitter?->name ?? '-',
         ];
         // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·전무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.

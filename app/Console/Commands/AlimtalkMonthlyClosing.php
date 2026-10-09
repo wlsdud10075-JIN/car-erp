@@ -3,8 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Models\AlimtalkLog;
+use App\Models\PayrollEntry;
 use App\Models\Setting;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
@@ -185,6 +187,12 @@ class AlimtalkMonthlyClosing extends Command
         //   먼저 치른 돈이라, 빼는 쪽만 반영하면 받은 적 없는 수익이 생긴다.
         //   단일 출처 = Settlement::company_net (이 공식은 3곳에 복제돼 있다 — 같이 고칠 것).
         $companyProfit = (int) $settlements->sum(fn (Settlement $s) => (int) $s->company_net);
+        // 💴 월정산 v3 (jin 2026-10-08 «알림톡 문구는 그대로, 숫자만») — 그 달 급여(사내·검차)와 월정산 조정(인센티브 포함)을 뺀 회사 순이익.
+        //    정의는 BatchPayoutBreakdown totals.company_net 과 같다. 3곳(대시보드·여기·승인화면)이 같은 뜻이어야 한다(§8 #72).
+        $companyProfit -= (int) PayrollEntry::query()->where('month', $month)->sum('amount');
+        $companyProfit -= (int) SettlementPayoutAdjustment::query()
+            ->whereIn('batch_id', SettlementPayoutBatch::query()->where('month', $month)->where('status', 'approved')->pluck('id'))
+            ->sum('amount');
 
         $perSalesman = $settlements->groupBy(fn (Settlement $s) => $s->salesman?->name ?? '미지정')
             ->map(fn ($g) => (int) $g->sum(fn (Settlement $s) => (int) $s->actual_payout))
