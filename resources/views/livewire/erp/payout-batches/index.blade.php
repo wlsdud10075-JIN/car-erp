@@ -61,6 +61,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $approveNote = '';
 
+    /** 인센티브 반영 뒤 배너(닫기 전까지 유지) — 토스트만으론 「아무 반응 없다」로 보였다(jin 2026-10-09). */
+    public ?string $incentiveNotice = null;
+
     public function addIncentive(int $batchId): void
     {
         $batch = SettlementPayoutBatch::findOrFail($batchId);
@@ -80,7 +83,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $name = \App\Models\Salesman::find((int) $this->incSalesmanId)?->name ?? '-';
         $this->incSalesmanId = $this->incAmount = $this->incReason = '';
         unset($this->batches);
-        $this->dispatch('notify', message: __('payout_batch.steps.incentive_added', ['name' => $name, 'amount' => number_format($amount)]), type: 'success');
+        $this->incentiveNotice = __('payout_batch.steps.incentive_added', ['name' => $name, 'amount' => number_format($amount)]);
+        $this->dispatch('notify', message: $this->incentiveNotice, type: 'success');
     }
 
     public function removeIncentive(int $batchId, int $adjustmentId): void
@@ -94,7 +98,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         unset($this->batches);
-        $this->dispatch('notify', message: __('payout_batch.steps.incentive_removed'), type: 'success');
+        $this->incentiveNotice = __('payout_batch.steps.incentive_removed');
+        $this->dispatch('notify', message: $this->incentiveNotice, type: 'success');
     }
 
     public function approve(int $id): void
@@ -248,6 +253,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{-- 🧾 월정산 v3 (jin 2026-10-08) — 합계 띠 + 사람별 카드(접기/펼치기). 숫자는 BatchPayoutBreakdown/PersonPayoutBreakdown 한 곳.
                          ⚠️ **펼쳤을 때만 계산한다** — 배치의 전 정산을 훑는다(§8 #96-C). 접힌 카드 목록은 최대 60개다. --}}
                     @php $bd = $b->breakdownForDisplay(); $changed = $b->changedFieldsBySalesman(); @endphp
+                    @if($incentiveNotice && $b->status === 'pending')
+                    <div class="flex items-start justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-incentive-notice>
+                        <span><b>✅ 반영되었습니다.</b> {{ $incentiveNotice }} — {{ __('payout_batch.steps.changed_hint') }}</span>
+                        <button type="button" wire:click="$set('incentiveNotice', null)" class="shrink-0 text-emerald-700 hover:text-emerald-900" aria-label="닫기">&times;</button>
+                    </div>
+                    @endif
                     @if($b->status === 'rejected')
                     <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700" data-rejected-kept>{{ __('payout_batch.steps.rejected_kept') }}</div>
                     @endif
@@ -313,7 +324,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </select>
                             <input type="text" wire:model="incAmount" data-money data-money-signed placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
                             <input type="text" wire:model="incReason" placeholder="{{ __('settlement.batch.adjust_reason') }}" class="input-base flex-1 text-xs" />
-                            <button type="button" wire:click="addIncentive({{ $b->id }})" class="rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">{{ __('payout_batch.steps.incentive_add') }}</button>
+                            <button type="button" wire:click="addIncentive({{ $b->id }})" wire:confirm="{{ __('payout_batch.steps.incentive_confirm') }}" class="rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700">{{ __('payout_batch.steps.incentive_add') }}</button>
                         </div>
                     </div>
                     @endif

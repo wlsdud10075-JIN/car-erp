@@ -69,6 +69,7 @@ return [
         'rejected_kept' => '반려된 월정산입니다 — 제출 당시 내용을 그대로 보존합니다. 정산은 정산관리로 돌아갔고, 다시 올리면 새 월정산이 됩니다.',
         'incentive_title' => '추가 인센티브 (결재 중 수정)',
         'incentive_add' => '인센티브 추가',
+        'incentive_confirm' => '이 인센티브를 반영할까요? 결재는 지금 단계부터 그대로 이어지고, 바뀐 칸은 노란색으로 표시됩니다.',
         'incentive_added' => ':name 에게 인센티브 :amount원을 더했습니다. 결재는 지금 단계부터 이어집니다.',
         'incentive_removed' => '인센티브를 삭제했습니다.',
         'incentive_invalid' => '담당자·금액·사유를 모두 입력하세요 (금액 0 불가).',

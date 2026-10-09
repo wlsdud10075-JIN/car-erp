@@ -65,6 +65,7 @@ return [
         'rejected_kept' => 'This monthly settlement was rejected — the submitted content is kept as it was. Settlements went back to the list; resubmitting creates a new one.',
         'incentive_title' => 'Extra incentive (edit during approval)',
         'incentive_add' => 'Add incentive',
+        'incentive_confirm' => 'Apply this incentive? Approval continues from the current step and the changed field is highlighted.',
         'incentive_added' => 'Added an incentive of :amount to :name. Approval continues from the current step.',
         'incentive_removed' => 'Incentive removed.',
         'incentive_invalid' => 'Enter person, amount and reason (amount cannot be 0).',
