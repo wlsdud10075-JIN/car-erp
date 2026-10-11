@@ -24,7 +24,7 @@ echo "sent ", $b->fresh()->request_notified_at, "\n";
 EOF
 php /tmp/rs.php; rm -f /tmp/rs.php'
 ```
-- **한 번호에만**(확인용)은 이번 세션 scratch 스크립트 `sendjin.php` 형태 — `BizmAlimtalkService::active()->send('erp_payout_request', $phone, $vars, ['user_id'=>$u->id], [['name'=>'승인/반려 바로가기','url'=>$b->approvalLinkFor($u)]])`. 2026-10-11 jin 번호로 ssancar(#5 pending)·heyman(#4 approved) 각 1건 발송함.
+- **한 번호에만**(확인용)은 이번 세션 scratch 스크립트 `sendjin.php` 형태 — `BizmAlimtalkService::active()->send('erp_payout_request', $phone, $vars, ['user_id'=>$u->id], [['name'=>'승인/반려 바로가기','url'=>$b->approvalLinkFor($u)]])`. ⚠️ 2026-10-11 실수: 「최고관리자」 계정(#2) 번호로 먼저 보냈다(전달됨 — jin 번호가 아니었다). **jin 계정 = #1 시스템관리자(wlsdud10074@naver.com)**. 단건 확인용은 **수신 번호를 jin 에게 먼저 확인**하고 보낼 것. 정정 발송 = ssancar #5·heyman #4 각 1건(#1 번호).
 - 발송 결과는 월정산 카드의 「발송성공/발송실패」 뱃지와 `alimtalk_logs` 로 확인.
 
 ## 전제
