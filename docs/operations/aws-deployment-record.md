@@ -609,3 +609,11 @@ cherry-pick(.md 제외). 마이그 없음.
 - **내용**: 서버 `rendered()` 훅이 「이번 요청에 DB 쓰기」(섬 렌더 `DB::listen` 플래그)면 `vehicles-changed` 발행 → `app.js` BroadcastChannel `car-erp-vehicles` 로 같은 브라우저 다른 탭 → `Livewire.dispatch` → 차량관리(지문 대조: 안 건드렸으면 조용히 재오픈 / `formDirty` 면 배너+저장 차단+[최신으로 다시 열기])·재고관리(재렌더). visibilitychange 1회 대조. 하트비트(30초)에도 지문 대조 → 다른 사용자 저장 30초 내. 「옛 폼 저장 거부」 가드 그대로. lang ko/en `vehicle.remote.*`. 가드 `VehicleTabSyncTest` 6(깨뜨리기 4종 확인). cherry-pick 1(`13316ab3`). SKILLS §8 #113.
 - **검증**: deploy 런 `37720430255` 잡 5개 success(11:57→12:04 KST) · 3사 sha `9e73d73b` · 3사 빌드 JS 에 `car-erp-vehicles` 존재 · login 200 ×3. 로컬 전체 3,212건 중 실패 = GD 7 만.
 - ⚠️ **브라우저 2탭 실측은 배포 시점에 미실시** — jin 또는 다음 세션이 확인: 탭1 패널에서 칸 하나 입력 → 탭2에서 같은 차량 저장 → 탭1 에 파란 배너·저장 차단·[최신으로 다시 열기]. 안 건드린 탭은 토스트와 함께 조용히 재오픈. 열린 탭은 `Ctrl+Shift+R` 필요(JS 변경).
+
+## 2026-10-11 — 월정산 v3 `e5ff8165` (3사 동시, 코드 커밋 15개 cherry-pick)
+
+- **내용**: 사내직원관리(구 영업담당자·급여 항목 월별 18항목·검차직원·관리 이상+재무) · 결재 직급(부장/전무/대표) · 업무관리자 바로 생성 버그 · 계산 단일 출처 `PersonPayoutBreakdown`/`BatchPayoutBreakdown` · 사람 카드 3화면(월정산·폰 승인·정산관리) · 결재선(steps 모드, 배치 단위) · 결재 중 인센티브 수정+변경 이력+박제 · 대시보드 급여 반영·지분율·배율·앵커 · 「월배치」→「월정산」(알림톡 승인 문구 3종 제외) · `payroll:clear-legacy-base-salary`. 마이그 5개(`2026_10_09_00000[1-5]`).
+  cherry-pick: `fe0fd0bf f2608c85 dc547af9 f03d0214 6dd82a3a aef29bc2 a3766d50 d61a62ab(NotionGuideAudienceTest 는 master 에 없어 삭제 유지) 5125ac2e ebc0b16e 3586a0ad 1aeb18fe 6bbd362d 54b865f2 e102d190`.
+- **검증**: deploy 런 `38111890886` 잡 5개 success(13:32→13:38 KST) · 3사 sha `e5ff8165` · 마이그 5개 Ran ×3 · login 200 ×3. 로컬 전체 3,258건 중 실패 = GD 7(+병렬 뷰캐시 flake 2건, 순차 재실행 통과).
+- **배포 뒤 상태**: ssancarerp 9월 월정산 #5 = 승인 대기(종전 사다리, steps 없음) → 새 카드로 그대로 보임. `payroll:clear-legacy-base-salary` dry-run = ssancarerp 21명(구 기본급 보유) · heyman 0 · karaba 0 — **`--apply` 는 jin 지시 대기**(v3 카드는 그 칸을 안 읽는다).
+- **다음**: 재무 10월 급여 입력(사내직원관리 → 귀속월 2026-10) · 사용자관리에서 부장/전무/대표 직급 지정(지정해야 결재선 모드) · Notion 가이드 발행(Codex, `--verify`).
