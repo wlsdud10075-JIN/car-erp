@@ -1648,3 +1648,10 @@ jin: *「탭3에서 수정하고 탭1에서 다른 걸 쓰면 가드가 떠. 각
 - ⚠️ **테스트 함정 = `editFingerprint()` 는 `updated_at` 초 단위** — 「다른 탭이 저장했다」를 같은 초의 `update()` 로 흉내 내면 지문이 안 바뀌어
   테스트가 **헛통과**한다. `updated_at` 을 1분 밀어 재현. 가드 = `VehicleTabSyncTest`(깨뜨리기 4종 확인).
 - 📏 빌드 CSS 존재 검사는 **`manifest.json` 이 가리키는 시트**를 봐야 한다 — `app-*.css` 글롭은 JS 청크의 작은 CSS 를 먼저 집어 전부 0 이 나왔다.
+
+### 114. 🧾 **월정산 v3 10일 작업에서 걸린 함정 4개** (2026-10-09~11)
+
+- 🧬 **Eloquent 모델의 관계 이름으로 `changes` 를 쓰지 말 것** — `$this->changes` 는 `HasAttributes::$changes`(배열)라 관계가 아니라 **배열이 돌아온다**(`whereNotNull() on array`). `batchChanges` 로. 같은 부류: `attributes`·`original`·`casts`·`hidden`·`appends`·`touches`.
+- 🧺 **Eloquent Collection 이 비어 있으면 `map()` 이 base 로 안 바뀐다** — 비어 있는 `$batch->approvals->map(fn => 배열)` 에 `->merge()` 하면 `getDictionary → getKey() on array` 로 죽는다. 배열로 바꿀 땐 `->toBase()->map()`. 첫 테스트는 approvals 가 비어 있지 않아 통과했고, 결재 전 배치에서만 터졌다.
+- 🗄️ **SQLite 도 enum 을 강제한다**(Laravel 이 CHECK 제약으로 만든다) — §8 #36 의 「SQLite 는 enum 미강제」는 **틀렸다**. 그래서 운영 MySQL 은 `ALTER … MODIFY ENUM`, 그 외 드라이버는 `->enum([...])->change()`(테이블 재생성) 둘 다 필요하다. `SalesmanTypeEnumTest` 가 상수 ↔ 마이그 문자열을 본다.
+- 🔁 **폼 POST 로 다시 그려지는 페이지(승인 링크)는 안내를 맨 위에** — 결재 카드(아래)에만 두면 「아무 반응 없다」로 보인다. Livewire 쪽은 토스트 + 닫기 전까지 남는 배너. 그리고 **일괄 개명(치환)은 조사를 깨뜨린다** — 「월배치는」→「월정산는」. 치환 뒤 조사 표를 한 번 더 돌릴 것.
