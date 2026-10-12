@@ -26,12 +26,14 @@
         <span class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             <span class="text-xs font-semibold text-gray-800">{{ $p['name'] }}</span>
             <span class="badge {{ $typeBadge }} text-[10px] whitespace-nowrap">{{ __('salesman.type.'.$t) }}</span>
-            @if($t !== 'inspector')<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>
-            @if(array_key_exists('margin_rate', $p))<span class="text-[10px] text-gray-400">{{ __('payout_batch.margin.label') }} {{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</span>@endif
-            @endif
+            @if($t !== 'inspector')<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>@endif
             @if(!empty($changed))<span class="badge badge-amber text-[10px]" data-changed>{{ __('payout_card.changed') }}</span>@endif
         </span>
         <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
+            {{-- 마진율 — 지분율과 같은 모양(jin 2026-10-12 「지분율과 마찬가지의 폰트와 색상」): 회색 라벨 + 굵은 고정폭, 음수면 빨강 --}}
+            @if($t !== 'inspector' && array_key_exists('margin_rate', $p))
+            <span class="text-gray-500">{{ __('payout_batch.margin.label') }} <b class="font-mono {{ $cls($p['margin_rate']) }}" data-margin-rate>{{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</b></span>
+            @endif
             @if($t === 'employee' && ! $p['unsupported'])
             {{-- 🔀 2026-10-12 jin — 「급여공제후 마진·초과 배율」(프리랜서 환산 계열)은 뺐다. 회사이익 = 회사 기여, 배율 = 회사이익 ÷ 가져간 돈. --}}
             <span class="text-gray-500">{{ __('payout_card.company_profit') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
