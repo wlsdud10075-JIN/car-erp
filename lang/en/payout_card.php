@@ -9,6 +9,8 @@ return [
 
     'margin_after_pay' => 'Margin after pay',
     'excess_ratio' => 'Excess vs pay',
+    'company_profit' => 'Company profit',
+    'contribution_ratio' => 'Company profit vs take-home',
     'contribution' => 'Company contribution',
     'contribution_actual' => 'Company contribution (actually kept by the company)',
     'payout' => 'Take-home',
@@ -28,7 +30,13 @@ return [
     'total_margin' => 'Total margin',
     'minus_shipping' => '− Shipping (company-paid)',
     'contribution_formula' => 'Contribution = total margin − take-home − shipping',
-    'freelance_note' => 'For a freelancer the equivalent equals the pay, so the company contribution is shown instead of margin after pay.',
+    'company_profit_formula' => 'Company profit = total margin − (payroll + settlement + incentive) − shipping',
+    'minus_payroll' => '− Payroll total',
+    'minus_settlement_pay' => '− Settlement pay',
+    'minus_adj_manual' => '− Manual adjustment',
+    'minus_adj_carry' => '− Carryover adjustment',
+    'minus_incentive' => '− Incentive',
+    'freelance_note' => 'For a freelancer the equivalent equals the pay, so the company contribution is shown.',
 
     'ledger_person' => 'Pay to person',
     'payroll' => 'Payroll total',

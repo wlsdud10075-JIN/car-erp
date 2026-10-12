@@ -17,8 +17,11 @@ use Illuminate\Support\Collection;
  * 사내직원(employee)
  *   환산 합계   = 당월 프리랜서 공식 정산(판매환율) + ① 1차 환차 + 이월(가상) + 수기 추가정산          … 「프리랜서였다면 벌어 갔을 돈」
  *   실지급액    = 급여 지급합계 + 정산금(건당·차등, Σactual_payout) + 수기 조정 + 추가 인센티브
- *   급여공제후 마진 = 환산 합계 − 실지급액                                                        … 성과 판단(jin)
+ *   급여공제후 마진 = 환산 합계 − 실지급액                                                        … 성과 판단(jin 10-07)
  *   초과 배율   = (환산 합계 − 실지급액) ÷ 실지급액  (부호 항상, 0 = 본전)
+ *   🔀 2026-10-12 (jin) — 위 두 값은 **사내직원 카드에서 뺐다**(「환차니 뭐니 너무 복잡」). 값은 계속 계산한다(합계 띠의
+ *      「프리랜서 환산 합계」와 옛 박제가 읽는다). 카드가 보여 주는 것 = 회사이익(=회사 기여) 과 **회사이익 배율**:
+ *   회사이익 배율 = 회사 기여 ÷ 실지급액 (「가져간 돈 대비 회사에 남긴 돈이 몇 배」, 1자리, 실지급 ≤ 0 이면 null)
  *   ① 1차 환차 = Σ[환산(실효환율) − 환산(판매환율)] — 08-06 부터 1차 정산에 녹아 있는 몫을 따로 떼어 보여 준다
  *   이월(가상) = 이 달에 2차 마감된 이 사람의 정산에서 「프리랜서였다면 받았을 차액」 = Σ(Δ총마진 × 비율). ② 2차 환차는 그중 환차분(정보).
  *   🚫 수기 조정(manual·loss)은 **실제로 나간 돈**이라 지급 쪽에도 넣는다 — 환산 쪽에만 넣으면 실지급이 배치 총액과 어긋난다.
@@ -132,7 +135,22 @@ final class PersonPayoutBreakdown
             'company_contribution' => $totalMargin - $payout - $shipping,
             'margin_after_pay' => $marginAfterPay,
             'excess_ratio' => $payout > 0 ? round($marginAfterPay / $payout, 1) : null,
+            'contribution_ratio' => self::contributionRatio($totalMargin - $payout - $shipping, $payout),
         ];
+    }
+
+    /**
+     * 회사이익 배율 = 회사 기여 ÷ 실지급액 (jin 2026-10-12 「사내직원이 가져간 돈에서 회사이익이 몇 배 차이나는지」).
+     * 분모는 **실지급 전체**(급여 + 정산금 + 인센티브 + 조정) — 월 카드라 급여까지 넣는다. 실지급 ≤ 0 이면 null(「—」).
+     * 🔑 카드·정산관리 요약·관리자 대시보드가 전부 이걸 부른다. 옛 박제(`breakdown_snapshot`)엔 이 키가 없어 카드가 여기로 되살린다.
+     */
+    public static function contributionRatio(?int $contribution, ?int $payout): ?float
+    {
+        if ($contribution === null || $payout === null || $payout <= 0) {
+            return null;
+        }
+
+        return round($contribution / $payout, 1);
     }
 
     /**
