@@ -97,7 +97,7 @@ return [
     'contrib_th_count' => 'Sold',
     'contrib_th_contribution' => 'Contribution (margin − take-home − shipping)',
     'contrib_th_share' => 'Share',
-    'contrib_th_ratio' => 'Company profit vs take-home',
+    'contrib_th_ratio' => 'Profit multiple',
     'contrib_ratio_na' => 'freelancer',
     'common_labor' => 'Common labor (inspector payroll) −₩:amount — excluded from shares',
 

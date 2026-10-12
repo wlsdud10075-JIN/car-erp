@@ -132,7 +132,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
             ->sum(fn (Settlement $s) => (int) $s->actual_payout);
 
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
-        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,1500}?'.preg_quote(__('payout_card.contribution_ratio'), '/').'/u', $html);
+        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,1500}?'.preg_quote(__('payout_card.profit_multiple'), '/').'/u', $html);
         $this->assertStringNotContainsString('급여공제후 마진', $html, '사내직원 카드에 급여공제후 마진이 다시 보인다(jin 2026-10-12 제거)');
         $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,2500}?data-payout>₩'.preg_quote(number_format($net), '/').'/u', $html, '급여 미입력이면 실지급 = 정산금');
         $this->assertStringContainsString('data-payroll-missing', $html, '급여 미입력 표시가 없다');
@@ -296,7 +296,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
         $url = URL::temporarySignedRoute('payout.approve.show', now()->addDay(), ['batch' => $batch->id, 'u' => $this->manager()->id]);
         $html = $this->get($url)->assertOk()->getContent();
 
-        $this->assertStringContainsString(__('payout_card.contribution_ratio'), $html, '사내직원 카드에 회사이익 배율이 없다');
+        $this->assertStringContainsString(__('payout_card.profit_multiple'), $html, '사내직원 카드에 이익배수가 없다');
         $this->assertStringNotContainsString('급여공제후 마진', $html, '급여공제후 마진이 다시 보인다');
         $this->assertStringContainsString('회사이익 (급여 차감 후)', $html, '승인 페이지 하단 회사이익이 급여 차감 후 숫자여야 한다');
         $this->assertStringNotContainsString('·환차', $html, '환차를 뺀다는 옛 캡션이 남아 있다');
