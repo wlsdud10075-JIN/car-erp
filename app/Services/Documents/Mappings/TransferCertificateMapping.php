@@ -39,8 +39,8 @@ class TransferCertificateMapping
      *    그 칸은 기입 전에 비워지기만 하고 아무도 안 채운다.
      */
     public const CELLS = [
-        'owner_name' => 'L5',      // 양도인(갑) 성명(명칭)
-        'owner_addr' => 'L7',      // 양도인(갑) 주소
+        'owner_name' => 'J5',      // 양도인(갑) 성명(명칭) — 🔀 2026-10-12 jin 수정 파일: 라벨 G:I 로 좁히고 값 J:P 로 넓힘(구 L5)
+        'owner_addr' => 'J7',      // 양도인(갑) 주소 (구 L7 — 긴 주소가 잘리던 칸)
         'plate' => 'F13',          // 자동차등록번호
         'mileage' => 'Y13',        // 주행거리
         'form_year' => 'F14',      // 차종 (차종명 + 연식)

@@ -20,6 +20,8 @@ class StampSlots
         'seal' => '직인',
         'signature' => '서명',
         'logo' => '로고',
+        'seal2' => '직인2',        // 2026-10-12 — 양도증명서 전용 명판+대표이사 도장(큰 이미지)
+        'round_seal' => '도장',    // 2026-10-12 — 양도증명서 양수인 칸의 작은 원형 도장
     ];
 
     /** 서류 type → 한글 라벨 (UI). */
@@ -127,9 +129,16 @@ class StampSlots
             //      43~45행에 걸치게 하면 서명줄 위에 자연스럽게 앉는다.
             //   🚫 `exact` 금지(비율 안 맞는 도장이 찌그러진다). 미세조정은 배포 없이 기능설정에서.
             //   baked drawing 이 없어 `clearAnchors` 불필요(백지 생성이라 0건).
+            // 🔀 2026-10-12 jin — 양도증명서는 **직인2(명판+대표이사 도장, 큰 이미지)** 와 **도장(작은 원형)** 을 따로 쓴다.
+            //    기본 직인(`seal`)은 이 서류에 못 쓴다(jin). 위치·크기 = jin 수정 파일(양도증명서_384나6183_20261012)의 그림 앵커 실측:
+            //      직인2  M8  (col 12 +2px, row 7 +3px) 200×84 — 매매업자 칸 「[직인]」 위
+            //      도장   AK4 (+16px, +10px) 55×52      — 양수인 성명 「(서명 또는 인)」
+            //      도장   AK43(+6px, +12px)  55×52      — 하단 양수인 서명줄(43~45행에 걸침, 45행만으론 유의사항 상자를 파고든다)
+            //    업로드 전엔 아무것도 안 찍힌다(폴백 없음 — 옛 `seal` 을 여기 올리면 jin 이 말한 「쓸 수 없는 직인」이 찍힌다).
             'transfer_certificate' => [
-                ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
-                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC43', 'width' => 90, 'height' => 44],
+                ['key' => 'dealer_seal2', 'role' => 'seal2', 'sheet' => '3.양도증명서', 'anchor' => 'M8', 'dx' => 2, 'dy' => 3, 'width' => 200, 'height' => 84],
+                ['key' => 'assignee_stamp_top', 'role' => 'round_seal', 'sheet' => '3.양도증명서', 'anchor' => 'AK4', 'dx' => 16, 'dy' => 10, 'width' => 55, 'height' => 52],
+                ['key' => 'assignee_stamp_bottom', 'role' => 'round_seal', 'sheet' => '3.양도증명서', 'anchor' => 'AK43', 'dx' => 6, 'dy' => 12, 'width' => 55, 'height' => 52],
             ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.
@@ -192,9 +201,16 @@ class StampSlots
             ],
             // 🚨 `defaultSlots()` 와 **같은 내용을 여기에도** 둬야 한다 — 이 메서드는 전량 복사본이라
             //    default 에만 넣으면 heyman 만 도장이 안 찍힌다(위 :59-60 주석의 그 위험).
+            // 🔀 2026-10-12 jin — 양도증명서는 **직인2(명판+대표이사 도장, 큰 이미지)** 와 **도장(작은 원형)** 을 따로 쓴다.
+            //    기본 직인(`seal`)은 이 서류에 못 쓴다(jin). 위치·크기 = jin 수정 파일(양도증명서_384나6183_20261012)의 그림 앵커 실측:
+            //      직인2  M8  (col 12 +2px, row 7 +3px) 200×84 — 매매업자 칸 「[직인]」 위
+            //      도장   AK4 (+16px, +10px) 55×52      — 양수인 성명 「(서명 또는 인)」
+            //      도장   AK43(+6px, +12px)  55×52      — 하단 양수인 서명줄(43~45행에 걸침, 45행만으론 유의사항 상자를 파고든다)
+            //    업로드 전엔 아무것도 안 찍힌다(폴백 없음 — 옛 `seal` 을 여기 올리면 jin 이 말한 「쓸 수 없는 직인」이 찍힌다).
             'transfer_certificate' => [
-                ['key' => 'dealer_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AF8', 'width' => 120, 'height' => 60],
-                ['key' => 'assignee_seal', 'role' => 'seal', 'sheet' => '3.양도증명서', 'anchor' => 'AC43', 'width' => 90, 'height' => 44],
+                ['key' => 'dealer_seal2', 'role' => 'seal2', 'sheet' => '3.양도증명서', 'anchor' => 'M8', 'dx' => 2, 'dy' => 3, 'width' => 200, 'height' => 84],
+                ['key' => 'assignee_stamp_top', 'role' => 'round_seal', 'sheet' => '3.양도증명서', 'anchor' => 'AK4', 'dx' => 16, 'dy' => 10, 'width' => 55, 'height' => 52],
+                ['key' => 'assignee_stamp_bottom', 'role' => 'round_seal', 'sheet' => '3.양도증명서', 'anchor' => 'AK43', 'dx' => 6, 'dy' => 12, 'width' => 55, 'height' => 52],
             ],
             'invoice' => [
                 // 2026-07-31 다중차량 전환으로 슬롯이 30행 늘어 baked 직인이 B36 → B65 로 밀렸다.

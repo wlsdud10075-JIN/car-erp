@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\VehicleDocumentController;
 use App\Models\PurchaseBalancePayment;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
 use App\Services\Documents\Mappings\TransferCertificateMapping;
 use App\Services\Documents\StampSlots;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -81,7 +83,7 @@ class TransferCertificateDocumentTest extends TestCase
             $co = self::COMPANY[$set];
 
             // 양수인(을) = 회사. 갑이 아니다 — 방향이 뒤집히면 서류가 통째로 틀린다.
-            $this->assertSame($co['name'], trim((string) $sh->getCell('AD5')->getValue()), "{$set} 양수인 상호");
+            $this->assertSame($co['name'], trim((string) $sh->getCell('AB5')->getValue()), "{$set} 양수인 상호");   // 🔀 10-12 AD5 → AB5
             $this->assertSame($co['name'], trim((string) $sh->getCell('X8')->getValue()), "{$set} 매매업자 상호");
             $this->assertSame($co['dealer'], trim((string) $sh->getCell('H8')->getValue()), "{$set} 매매업자 등록번호");
             $this->assertSame($co['ceo'], trim((string) $sh->getCell('H9')->getValue()), "{$set} 대표자");
@@ -151,8 +153,8 @@ class TransferCertificateDocumentTest extends TestCase
 
         $sh = $this->sheetFor('system', $v->fresh());
 
-        $this->assertSame('박영록', $sh->getCell('L5')->getValue());
-        $this->assertSame('경기도 평택시 현신3길 33-37, 206호(용이동)', $sh->getCell('L7')->getValue());
+        $this->assertSame('박영록', $sh->getCell('J5')->getValue());   // 🔀 2026-10-12 L5 → J5 (값 칸 넓힘)
+        $this->assertSame('경기도 평택시 현신3길 33-37, 206호(용이동)', $sh->getCell('J7')->getValue());
         $this->assertSame('19더9065', $sh->getCell('F13')->getValue());
         $this->assertSame(33816, $sh->getCell('Y13')->getValue());
         $this->assertSame('A6 50 TDI quattro', $sh->getCell('Y14')->getValue());
@@ -270,7 +272,10 @@ class TransferCertificateDocumentTest extends TestCase
         foreach (self::SETS as $set) {
             $slots = StampSlots::for(self::TYPE, $set);
             $this->assertNotEmpty($slots, "{$set} 에 양도증명서 도장 슬롯이 없다");
-            $this->assertSame(['dealer_seal', 'assignee_seal'], array_column($slots, 'key'), "{$set} 슬롯 구성");
+            // 🔀 2026-10-12 jin — 직인2(명판+대표이사 도장) 1곳 + 도장(원형) 2곳. 기본 `seal` 은 이 서류에 안 쓴다.
+            $this->assertSame(['dealer_seal2', 'assignee_stamp_top', 'assignee_stamp_bottom'], array_column($slots, 'key'), "{$set} 슬롯 구성");
+            $this->assertSame(['seal2', 'round_seal', 'round_seal'], array_column($slots, 'role'), "{$set} 슬롯 역할");
+            $this->assertSame(['M8', 'AK4', 'AK43'], array_column($slots, 'anchor'), "{$set} 앵커 — jin 수정 파일의 그림 위치");
 
             foreach ($slots as $slot) {
                 $this->assertSame(self::SHEET, $slot['sheet'], "{$set} 슬롯 시트명");
@@ -287,6 +292,32 @@ class TransferCertificateDocumentTest extends TestCase
             // 업로드 전 — 백지 양식이라 baked 도장이 없다.
             $sh = $this->sheetFor($set, $this->vehicle());
             $this->assertSame(0, $sh->getDrawingCollection()->count(), "{$set} 도장 없이 그림이 생겼다");
+        }
+    }
+
+    /**
+     * 🔀 2026-10-12 — 직인2 + 도장을 올리면 세 자리에 찍힌다. 기본 직인(`seal`)만 있으면 **아무것도 안 찍힌다**
+     *    (jin «기본 직인 이미지로는 쓸 수 없다» — 폴백 없음). 옛 `seal` 슬롯 자리(AF8·AC43)에 그림이 남으면 회귀다.
+     */
+    public function test_seal2_and_round_seal_land_on_jins_anchors(): void
+    {
+        config(['filesystems.vehicle_docs_disk' => 'local']);
+        Storage::fake('local');
+        $png = fn () => (string) UploadedFile::fake()->image('s.png', 120, 50)->get();
+
+        foreach (self::SETS as $set) {
+            Setting::updateOrCreate(['key' => "stamp_{$set}_seal"], ['value' => 'stamps/old-seal.png', 'type' => 'string']);
+            Storage::disk('local')->put('stamps/old-seal.png', $png());
+            $sh = $this->sheetFor($set, $this->vehicle());
+            $this->assertSame(0, $sh->getDrawingCollection()->count(), "{$set} 기본 직인만으로 양도증명서에 그림이 찍혔다(폴백 금지)");
+
+            Storage::disk('local')->put('stamps/seal2.png', $png());
+            Storage::disk('local')->put('stamps/round.png', $png());
+            Setting::updateOrCreate(['key' => "stamp_{$set}_seal2"], ['value' => 'stamps/seal2.png', 'type' => 'string']);
+            Setting::updateOrCreate(['key' => "stamp_{$set}_round_seal"], ['value' => 'stamps/round.png', 'type' => 'string']);
+            $sh = $this->sheetFor($set, $this->vehicle());
+            $anchors = collect(iterator_to_array($sh->getDrawingCollection()))->map(fn ($d) => $d->getCoordinates())->sort()->values()->all();
+            $this->assertSame(['AK4', 'AK43', 'M8'], $anchors, "{$set} 직인2·도장 위치");
         }
     }
 
