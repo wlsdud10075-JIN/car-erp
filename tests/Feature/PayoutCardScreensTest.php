@@ -107,5 +107,9 @@ class PayoutCardScreensTest extends TestCase
         // (1,200,000 − 2,600,000 − 200,000) ÷ 2,800,000 = −1,600,000 ÷ 2,800,000 = −0.6배
         $this->assertStringContainsString('−0.6'.__('payout_card.times'), $negative, '마이너스 배율은 「−」 로 보인다(색만으로 가르지 않는다)');
         $this->assertStringContainsString('−2.3%', $negative, '마이너스 지분율도 「−」');
+        // 총마진이 음수면 그 줄도 회사이익처럼 빨간 배경(jin 2026-10-12) — 양수는 초록
+        $this->assertMatchesRegularExpression('/bg-red-50 text-red-700" data-total-margin>/', view('components.payout.person-card', ['person' => ['type' => 'employee', 'payout' => 2_800_000, 'company_contribution' => -11_872_763,
+            'payroll' => null, 'settlement_pay' => 2_800_000, 'total_margin' => -9_072_763, 'count' => 49] + $base, 'mode' => 'batch', 'open' => true, 'changed' => []])->render(), '음수 총마진 줄이 빨강이 아니다');
+        $this->assertMatchesRegularExpression('/bg-emerald-50 text-emerald-800" data-total-margin>/', $employee, '양수 총마진 줄은 초록');
     }
 }

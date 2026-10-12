@@ -84,7 +84,7 @@
              발송비는 0 이 아닐 때만 한 줄(없으면 산수가 안 닫힌다, §8 #64). 🚫 프리랜서 환산 계열은 안 그린다(값은 PersonPayoutBreakdown 이 계속 계산). --}}
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
-            <div class="flex justify-between bg-emerald-50 px-2 py-1.5 text-xs font-bold text-emerald-800" data-total-margin><span>{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
+            <div class="flex justify-between px-2 py-1.5 text-xs font-bold {{ $p['total_margin'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800' }}" data-total-margin><span>{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">{{ $minus($p['payout']) }}</span></div>
             @if($p['shipping'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">{{ $minus($p['shipping']) }}</span></div>
