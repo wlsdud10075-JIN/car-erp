@@ -112,13 +112,18 @@ new #[Layout('components.layouts.app')] class extends Component
     public string $overdraftLimit = '';
 
     // 도장/서명/로고 역할 3종 — signature(서명), seal(직인), logo(상호 로고). 회사당 1장씩, 슬롯에 재사용.
-    public array $stampRoles = ['signature', 'seal', 'logo'];
+    // 2026-10-12 — seal2(직인2)·round_seal(도장)은 양도증명서 전용. StampSlots::ROLE_LABELS 와 같은 목록.
+    public array $stampRoles = ['signature', 'seal', 'logo', 'seal2', 'round_seal'];
 
     public $signatureUpload = null;
 
     public $sealUpload = null;
 
     public $logoUpload = null;
+
+    public $seal2Upload = null;
+
+    public $roundSealUpload = null;
 
     public array $stampPaths = [];   // role => 저장 경로|null
 
@@ -572,6 +577,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ['role' => 'signature', 'prop' => 'signatureUpload', 'label' => __('feature_settings.stamp_signature_label'), 'sub' => __('feature_settings.stamp_signature_sub')],
             ['role' => 'seal', 'prop' => 'sealUpload', 'label' => __('feature_settings.stamp_seal_label'), 'sub' => __('feature_settings.stamp_seal_sub')],
             ['role' => 'logo', 'prop' => 'logoUpload', 'label' => __('feature_settings.stamp_logo_label'), 'sub' => __('feature_settings.stamp_logo_sub')],
+            ['role' => 'seal2', 'prop' => 'seal2Upload', 'label' => __('feature_settings.stamp_seal2_label'), 'sub' => __('feature_settings.stamp_seal2_sub')],
+            ['role' => 'round_seal', 'prop' => 'roundSealUpload', 'label' => __('feature_settings.stamp_round_seal_label'), 'sub' => __('feature_settings.stamp_round_seal_sub')],
         ];
     }
 
@@ -805,6 +812,26 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->validate(['logoUpload' => 'image|mimes:png,jpg,jpeg|max:2048'], ['logoUpload' => __('feature_settings.stamp_invalid')]);
         $this->storeStamp('logo', $this->logoUpload);
         $this->logoUpload = null;
+    }
+
+    public function updatedSeal2Upload(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate(['seal2Upload' => 'image|mimes:png,jpg,jpeg|max:2048'], ['seal2Upload' => __('feature_settings.stamp_invalid')]);
+        $this->storeStamp('seal2', $this->seal2Upload);
+        $this->seal2Upload = null;
+    }
+
+    public function updatedRoundSealUpload(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate(['roundSealUpload' => 'image|mimes:png,jpg,jpeg|max:2048'], ['roundSealUpload' => __('feature_settings.stamp_invalid')]);
+        $this->storeStamp('round_seal', $this->roundSealUpload);
+        $this->roundSealUpload = null;
     }
 
     public function removeStamp(string $role): void

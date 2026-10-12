@@ -67,6 +67,13 @@ const CLAUSE_LH = 9.2;
 const CLAUSE_UNITS = 132;
 
 /**
+ * 🔀 2026-10-12 jin 수정 파일(양도증명서_384나6183_20261012) — «A4 용지를 가득 채우려면 행 높이를 조금씩 높이는 수밖에».
+ * 조항 21~30행의 **의도한** 높이. 줄 수 × CLAUSE_LH 보다 크면 이 값을 쓴다(작으면 줄 수가 이긴다 — 잘림 방지).
+ * 24·25·26행은 jin 파일에서도 사실상 그대로(9.15·18.45·36.75 = 엑셀의 0.75pt 반올림 흔적)라 적지 않는다.
+ */
+const CLAUSE_ROW_MIN = [21 => 15.0, 22 => 33.6, 23 => 24.6, 27 => 22.8, 28 => 21.0, 29 => 12.0, 30 => 14.4];
+
+/**
  * 🖨️ **A4 채움 배율** — 열 너비와 글자 예산에 **함께** 곱한다.
  *
  * 처음 만들 때(2026-09-12) 세로만 맞춰서 **가로를 34% 남긴 채** 끝났다.
@@ -301,22 +308,23 @@ function buildParties(Worksheet $sh, array $co): void
     put($sh, 'V5:X7', "양수인\n(을)", ['align' => 'center', 'wrap' => true, 'size' => 9]);
 
     // 갑 = 차주. 성명 행만 우측에 (서명 또는 인).
-    put($sh, 'G5:K5', ' 성명(명칭)', ['size' => 8]);
-    put($sh, 'L5:P5', '', ['size' => 10, 'indent' => 1]);                                  // 🟡 owner_name
+    // 🔀 2026-10-12 jin 수정 파일 — 라벨을 3열(G:I / Y:AA)로 좁히고 값 칸을 J·AB 부터 넓혔다(긴 성명·주소가 잘리던 것).
+    put($sh, 'G5:I5', ' 성명(명칭)', ['size' => 8]);
+    put($sh, 'J5:P5', '', ['size' => 10, 'indent' => 1]);                                  // 🟡 owner_name
     put($sh, 'Q5:U5', '(서명 또는 인) ', ['size' => 7, 'align' => 'right']);
-    put($sh, 'G6:K6', ' 전화번호', ['size' => 8]);
-    put($sh, 'L6:U6', '', ['size' => 10, 'indent' => 1]);                                  // 공란 — ERP 에 차주 연락처 컬럼이 없다
-    put($sh, 'G7:K7', ' 주소', ['size' => 8]);
-    put($sh, 'L7:U7', '', ['size' => 9, 'indent' => 1]);                                   // 🟡 owner_addr
+    put($sh, 'G6:I6', ' 전화번호', ['size' => 8]);
+    put($sh, 'J6:U6', '', ['size' => 10, 'indent' => 1]);                                  // 공란 — ERP 에 차주 연락처 컬럼이 없다
+    put($sh, 'G7:I7', ' 주소', ['size' => 8]);
+    put($sh, 'J7:U7', '', ['size' => 9, 'indent' => 1]);                                   // 🟡 owner_addr
 
     // 을 = 회사. 양식 셀에 박는다(매핑 아님 — `config/company.php` 는 dead, SKILLS §12).
-    put($sh, 'Y5:AC5', ' 성명(명칭)', ['size' => 8]);
-    put($sh, 'AD5:AH5', $co['name'], ['size' => 10, 'indent' => 1]);
+    put($sh, 'Y5:AA5', ' 성명(명칭)', ['size' => 8]);
+    put($sh, 'AB5:AH5', $co['name'], ['size' => 10, 'indent' => 1]);
     put($sh, 'AI5:AN5', '(서명 또는 인) ', ['size' => 7, 'align' => 'right']);
-    put($sh, 'Y6:AC6', ' 전화번호', ['size' => 8]);
-    put($sh, 'AD6:AN6', $co['phone'], ['size' => 10, 'indent' => 1]);
-    put($sh, 'Y7:AC7', ' 주소', ['size' => 8]);
-    put($sh, 'AD7:AN7', $co['addr'], ['size' => 8, 'indent' => 1]);
+    put($sh, 'Y6:AA6', ' 전화번호', ['size' => 8]);
+    put($sh, 'AB6:AN6', $co['phone'], ['size' => 10, 'indent' => 1]);
+    put($sh, 'Y7:AA7', ' 주소', ['size' => 8]);
+    put($sh, 'AB7:AN7', $co['addr'], ['size' => 8, 'indent' => 1]);
 
     box($sh, 'A5:C7');
     box($sh, 'D5:F7');
@@ -449,7 +457,8 @@ function buildClauses(Worksheet $sh): void
         $wrapped = reflow($text, units(CLAUSE_UNITS));
         $lines = substr_count($wrapped, "\n") + 1;
         put($sh, "A$r:AN$r", $wrapped, ['size' => CLAUSE_PT, 'wrap' => true, 'valign' => 'top']);
-        $sh->getRowDimension($r)->setRowHeight($lines * CLAUSE_LH);
+        // 줄 수 × 행간이 **최소**다(잘림 방지). jin 이 A4 를 채우려고 키운 행은 그보다 크면 그 값(CLAUSE_ROW_MIN).
+        $sh->getRowDimension($r)->setRowHeight(max($lines * CLAUSE_LH, CLAUSE_ROW_MIN[$r] ?? 0));
         $r++;
     }
     // 🚫 조항 영역엔 **자기 상자가 없다** — 원본도 그렇다.
@@ -617,8 +626,10 @@ function pageSetup(Worksheet $sh): void
     //    **0.45pt**(엑셀이 행 높이를 화면 픽셀 배수로 올림한 뒤의 값) 넘겨 45행에서 갈라졌다 —
     //    fitToPage 가 가려 줘서 엑셀에선 1장이었지만, 그걸 안 보는 뷰어·프린터에선 2장이 됐다.
     //    세로 여백을 줄여 **100% 에서도** 한 장에 들어가게 둔다(fitToPage 는 안전망으로만).
+    // 🔀 2026-10-12 jin 수정 파일 — 위 0.39 / 아래 0 (합은 0.40 → 0.39 로 거의 같다. 내용이 0.15in 아래로 내려온다).
+    //    jin 파일은 fitToHeight=0(너비만 맞춤)이었지만 엑셀이 계산한 배율(89%)은 너비가 정하므로 1/1 안전망과 인쇄 결과가 같다.
     $m = $sh->getPageMargins();
-    $m->setTop(0.24)->setBottom(0.16)->setLeft(0.28)->setRight(0.28)->setHeader(0)->setFooter(0);
+    $m->setTop(0.39)->setBottom(0)->setLeft(0.28)->setRight(0.28)->setHeader(0)->setFooter(0);
 }
 
 // ── 셀 헬퍼 ────────────────────────────────────────────────────────────
@@ -717,7 +728,7 @@ function verify(string $templateDir): void
 
         // 회사정보 — 「대상 목록」이 아니라 **값 비교**로 확인한다(SKILLS §8 #71-D).
         foreach ([
-            'AD5' => $co['name'], 'AD6' => $co['phone'], 'AD7' => $co['addr'],
+            'AB5' => $co['name'], 'AB6' => $co['phone'], 'AB7' => $co['addr'],
             'H8' => '  '.$co['dealer_no'], 'X8' => '  '.$co['name'],
             'H9' => '  '.$co['ceo'], 'H10' => '  '.$co['agent'],
         ] as $coord => $want) {
