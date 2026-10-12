@@ -631,3 +631,11 @@ cherry-pick(.md 제외). 마이그 없음.
 - 고침 = `Vehicle::storedDocumentPath($column)`(슬래시 포함 값만 경로) 하나를 목록 `has_bl/export/deregistration` + `/files` 가 같이 쓴다. 🚫 데이터 무변경(`bl_document` = v4 cascade 거래완료 근거). jin 결정(ssancar 세션 경유 → 이 세션에서 재확인): 적재분 재업로드 안 함, 앞으로 진행되는 차만 다운로드.
 - 배포 전 3사 실측: 슬래시 없는 값 = heymanerp B/L 76 뿐(export·deregistration 3사 0, ssancar·karaba B/L 0). 로컬 전체 = GD 7 + Livewire 컴파일 캐시 rename 경합 1(순차 재실행 pass).
 - deploy 런 38201606521 잡 5개 success. heymanerp 서버 `f9ed75f`, `/login` 200. 포털 반영은 다음 미러 적재(6h) — ssancar 세션이 vehicle 19 「Preparing」 확인 예정.
+
+## 2026-10-12 — 사내직원 월정산 카드 단순화 + 이익배수 + 차량별 정렬 표 `c73aeb42` (3사 동시, 코드 커밋 10개 cherry-pick)
+
+- dev `66c0722e`·`c360d66b`·`2fd15c84`·`a3520a02`·`8da92845`·`fe64ca1e`·`a9e7f2b6`·`2e3c8c67`·`ac7d87af`·`6dc0ed40` → master `c5eacc76`~`c73aeb42`. cherry-pick 중 dev 전용 파일(`scripts/notion-*`·`NotionGuideAudienceTest`) modify/delete 충돌 3회 → 삭제 유지로 해소.
+- 내용: 사내직원 카드 = 접힌 줄 「총마진 / 실지급액 / 회사이익 / 마진율 / 이익배수」 · 펼침 왼쪽 「총마진 − 실지급액 = 회사이익」(총마진·회사이익·실지급액 초록, 음수 빨강) + 이익배수·지분율 · 이익배수 = 인센티브 전 회사이익 ÷ (급여+정산금)(`PersonPayoutBreakdown::profitMultiple`, 대시보드·정산관리 칩 공유) · 차량별 보기 = 머리글 정렬 표(순수 JS) · 폰 승인 하단 회사이익 = 급여 차감 후. 마이그 없음.
+- 배포 전 로컬 전체 = GD 7 실패만. deploy 런 38208596892 잡 5개 success. heymanerp 서버 `c73aeb4`, 빌드 CSS 2개, `/login` 200.
+- 옛 박제(승인·지급 완료 배치)는 새 키 없이 카드가 되살림 — 운영 heymanerp #4(10-07 승인) 그대로 표시됨(로컬 확인은 그 박제를 복사해 했다).
+- 미배포 앱코드 = `NotifySend.php`(`93e5099d`) 1건 그대로.
