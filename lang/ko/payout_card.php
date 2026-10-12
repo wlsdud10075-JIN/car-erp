@@ -13,8 +13,8 @@ return [
     'company_profit' => '회사이익',                    // 사내직원 카드의 회사 기여 표기(jin 2026-10-12 「회사이익」) — 최종(인센티브 뺀 뒤)
     'profit_multiple' => '이익배수',                   // 인센티브 전 회사이익 ÷ (급여 + 정산금) — jin 2026-10-12 용어 「이익배수」
     'profit_multiple_formula' => '이익배수 = 인센티브 전 회사이익 ÷ (급여 + 정산금). 추가 인센티브를 정하는 근거라 인센티브를 줘도 안 움직입니다.',
-    'contribution' => '회사 기여',
-    'contribution_actual' => '회사 기여 (실제로 회사에 남긴 돈)',
+    'contribution' => '회사이익',                      // 🔀 2026-10-12 jin — 프리랜서도 「회사이익」으로 명칭 통일(구 「회사 기여」)
+    'contribution_actual' => '회사이익 (실제로 회사에 남긴 돈)',
     'payout' => '실지급액',
     'payroll_total' => '지급합계',
     'share' => '지분율',
@@ -32,9 +32,9 @@ return [
     'minus_payout' => '− 실지급액',
     'total_margin' => '총마진',
     'minus_shipping' => '− 발송비 (회사 선지출)',
-    'contribution_formula' => '회사 기여 = 총마진 − 실지급액 − 발송비',
+    'contribution_formula' => '회사이익 = 총마진 − 실지급액 − 발송비',
     'company_profit_formula' => '회사이익 = 총마진 − 실지급액(급여 + 정산금 + 조정 + 추가 인센티브) − 발송비',
-    'freelance_note' => '프리랜서는 환산액이 곧 지급액이라 회사 기여를 봅니다.',
+    'freelance_note' => '프리랜서는 환산액이 곧 지급액이라 회사이익을 봅니다.',
 
     // 오른쪽 — 담당자 지급
     'ledger_person' => '담당자 지급',
@@ -74,7 +74,7 @@ return [
         'transfer_total' => '송금 총액 (급여 포함)',
         'settlement_total' => '정산·조정 총액 (승인 금액)',
         'common_labor' => '공통 인건비 (검차직원)',
-        'contribution_sum' => '개인 회사 기여 합',
+        'contribution_sum' => '개인 회사이익 합',
         'hint' => '회사 순이익 = Σ(총마진 − 실지급 − 발송비) − 공통 인건비. 승인하는 금액은 종전처럼 「정산·조정 총액」입니다.',
     ],
 ];
