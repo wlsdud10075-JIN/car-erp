@@ -105,7 +105,7 @@ ssancar 가 그걸 질문(Q18 — *"화면에 뭐라고 쓸까"*)으로 받았�
 > ```
 > GET internal/portal/vehicles                     ← 서류함 필드 5개 추가
 > GET internal/portal/vehicles/{id}/clearance-set  ← 통관 SET xlsx 스트림(생성물)
-> GET internal/portal/vehicles/{id}/files          ← 저장물 서명 URL 발급(수출신고서·선적사진 · **B/L 2026-10-12 추가** `bill_of_lading` {url,ext,mime}|null)
+> GET internal/portal/vehicles/{id}/files          ← 저장물 서명 URL 발급(수출신고서·선적사진 · **B/L 2026-10-12 추가** `bill_of_lading` {url,ext,mime}|null · **has_* 와 같은 술어 `storedDocumentPath`**)
 > ```
 > **통로가 둘인 축 = 생성물이냐 저장물이냐.** 통관 SET 은 저장하면 낡는다(차량을 고치면 내용이 바뀐다) →
 > 스트림. 그 대신 **서빙 시점 게이트 재판정·감사·throttle** 을 그대로 얻는다.
@@ -692,5 +692,6 @@ FOB 도 여기 묶여 있다 — ~~*"Q2(FOB)가 가장 급하다"*~~ **철회됨
 | 2026-08-25 | 🚢 **포워딩사 화물추적 링크 배포** — 포털에 넘길 재료가 생겼다(§3). `Vehicle::tracking_url` 이 열 수 없으면 `null` 이라 **사이트는 판정하지 않는다**. 화주명(`HAY MAN LTD`)이 응답에 들어가는데 **노출은 새롭지 않고**(인보이스·B/L 에 이미 있다) 문제는 **Phase 1 원천이 heymanerp 뿐이라 이름이 다르게 보이는 것**이다 |
 | 2026-08-25 | 🔗 **실연결 + C-1·C-3 배포** (회신 = 정본 **v1.12 §18**). ssancar 가 SSH→HTTP 교체·261대 적재·**두 경로 대조 불일치 0건**. C-1 = **(a) 차량 단위** 채택하되 **「4항」도 짧아** **★닫힘 항등식★** 으로 계약을 바꿨다(실제 항 8개). C-3 = `fully_paid`. 🚫 **C-2 는 「발행 안 함」으로 닫았다**(Q12 결론 + 우회 69행). 🔴 남은 것 = **JIN 답 2건**(Q16 화주명 사실관계 · Q17 손실처리액 표시) |
 | 2026-08-25 | **v1.3~v1.9 를 반영해 갱신**(정본이 §0 에서 *"이 문서 §6·§7 이 낡았다"* 고 지목한 것을 해소). 🔀 **ssancar 측 코드 착수** — 「양측 코드 0줄」 전제를 걷어냈다(ERP 는 여전히 0줄, jin 전달 패킷 대기). §3 에 **발행 규칙 6~11 신설**(진행 6단계 평가 순서 · 미수 양수만 · `bl_number`≠`bl_document` · 적립금 정본 조회 · 응답 봉투 · dead-man 13h) · **「무엇을 세는가」 규칙**(재사용 사고 5건) · **선행 개발 3건** 표. §6 을 **결정 현황 + 다음 차례(ERP v1.10 — Q15·잔액 미러 적재)** 로 교체 |
+| 2026-10-12 | 🧾 **`has_*` 플래그 = 저장 경로형 값만** `f9ed75fe` — heymanerp 적재분 76대가 `bl_document` 에 **B/L 번호**를 들고 있어(파일 없음) 포털에서 「Issued·Open → 502」. 단일 술어 `Vehicle::storedDocumentPath()`(슬래시 포함) 를 목록 has_bl/export/deregistration + `/files` 가 공유. 데이터 무변경(거래완료 근거). jin: 적재분 재업로드 안 함 → 그 70대는 포털에 「거래완료 + B/L Preparing」으로 남는다(사실 그대로). 3사 실측: 다른 회사·다른 서류는 0건 |
 | 2026-10-12 | 📄 **`/files` 에 `bill_of_lading` 키 추가(dev)** — jin 이 ssancar 세션에서 «통관SET·수출신고서·선적사진·B/L 열자». 앞 3종은 이미 열려 있어 실변경은 B/L 실물 하나. 게이트 = `portalDocumentsBlocker` 그대로(별도 조건 0) · 파일 없으면 `null` · 발급 시점 감사 `bill_of_lading`. 🚫 선적(묶음) 단위 엔드포인트 안 만듦(B/L 하나가 25대 — 같은 파일을 받는 게 맞다) · 말소등록증·체크빌 범위 밖. **배포 순서 = ERP 먼저 → ssancar**(키 없으면 포털 B/L 「Open」이 502). 정본 = ssancar 가 v1.19 작성. 가드 = `PortalDocumentApiTest` B/L 2건 |
 | 2026-10-01 | 🔁 **v1.18 (ssancar 작성)** — 바이어 payload `salesman_type`(`salesmen.type` employee·freelance·null) + 차량 payload `cancel_status`(DB `none`→null · `cancelled` · `cancelled_closed`). jin 승인. ERP dev 구현 완료(가드 `PortalBuyerApiTest`·`PortalVehicleApiTest`) → master 배포는 jin 직접 승인 뒤, 순서 = ERP 먼저 → ssancar 스키마·적재기. `deposit_paid_at` 은 보류(가능은 확인). 같은 날 포털 vehicles 엔드포인트를 300대 묶음으로 바꿔 배포(`9ee425e6`, 5,129대 통째 로드가 128MB 초과로 09-30 15:03 UTC 부터 500 — 계약 무변경). ⚠️ 바이어 `salesman:id,name` 부분 select 에 `type` 을 안 넣으면 조용히 null(§8 #83) |

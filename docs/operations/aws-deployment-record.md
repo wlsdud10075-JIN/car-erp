@@ -624,3 +624,10 @@ cherry-pick(.md 제외). 마이그 없음.
 - 배포 전 로컬 전체(`--parallel`) = 알려진 GD 7 실패 + **오류 4(AdminDashboard* — 병렬 워커의 Livewire 컴파일 캐시 rename 충돌, Windows 파일 잠금)**. 같은 4파일 순차 재실행 35 pass → 코드 무관.
 - deploy 런 38198202087 잡 5개 success. ssancarerp 서버 `git log -1` = `4fa594c7`, `/login` 200.
 - 순서 = **ERP 먼저 → ssancar**(키 없으면 포털 B/L Open 502). ssancar 쪽 4파일 배포는 jin 지시 때. 정본 = `ERP_연동_통합정리_v1.19.md` §24(ssancar 작성).
+
+## 2026-10-12 — 포털 서류함 `has_*` 플래그 = 저장 경로형 값만 `f9ed75fe` (3사 동시)
+
+- dev `797ac2ba` 1커밋 cherry-pick. 같은 날 `4fa594c7` 배포 뒤 ssancar 운영 확인에서 heymanerp 차량 19 「B/L Issued·Open → 502」 → 실측: `bl_document` filled 186 중 **76 이 B/L 번호 문자열**(2026-06 적재분이 번호를 문서 칸에 넣음), 서류함 열린 차 70대.
+- 고침 = `Vehicle::storedDocumentPath($column)`(슬래시 포함 값만 경로) 하나를 목록 `has_bl/export/deregistration` + `/files` 가 같이 쓴다. 🚫 데이터 무변경(`bl_document` = v4 cascade 거래완료 근거). jin 결정(ssancar 세션 경유 → 이 세션에서 재확인): 적재분 재업로드 안 함, 앞으로 진행되는 차만 다운로드.
+- 배포 전 3사 실측: 슬래시 없는 값 = heymanerp B/L 76 뿐(export·deregistration 3사 0, ssancar·karaba B/L 0). 로컬 전체 = GD 7 + Livewire 컴파일 캐시 rename 경합 1(순차 재실행 pass).
+- deploy 런 38201606521 잡 5개 success. heymanerp 서버 `f9ed75f`, `/login` 200. 포털 반영은 다음 미러 적재(6h) — ssancar 세션이 vehicle 19 「Preparing」 확인 예정.
