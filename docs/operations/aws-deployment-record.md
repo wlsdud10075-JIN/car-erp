@@ -644,3 +644,10 @@ cherry-pick(.md 제외). 마이그 없음.
 
 - dev `14d17bc3` cherry-pick(lang ko/en 2파일 · 가이드 소스는 dev 전용이라 충돌 → 삭제 유지). 전체 테스트 GD 7 외 실패 0. deploy 런 38211222969 잡 5개 success. ssancarerp 서버 `bdb121d3`, `/login` 200.
 - 관리자 대시보드 「인원별 회사기여」 표 제목은 그대로(월정산 화면 밖 — jin 원하면 추가).
+
+## 2026-10-12 — 양도증명서 「직인2」·「도장」 + jin 수정 양식 `436c5679` (3사 동시, 코드 2커밋)
+
+- dev `f539553e`(기능·양식·슬롯·테스트) + `4817bf58`(phpunit `COMPANY_TEMPLATE_SET=system`) cherry-pick → master `3c4b09de`·`436c5679`. `cards.json` modify/delete 충돌 1회 → 삭제 유지. 마이그 없음.
+- 전체 테스트 **3,263 / 0 실패**(옛 「GD 7」 오진 해소 뒤 첫 배포). deploy 런 38214665244 잡 5개 success. karabaerp 서버 `436c567`, 양식 md5 `6b544c7a…` = 로컬 일치, `/login` 200.
+- jin 결정 A: 폴백 없음 — 직인2·도장을 올린 회사만 양도증명서에 찍힌다. **배포 뒤 할 일**: ①heymanerp super 가 기능설정 → 도장·서명에 Downloads 의 `직인2_헤이맨_명판.png`·`도장_헤이맨_원형.png` 업로드 ②karabaerp 도 올리기 전까지 양도증명서 도장 0(최근 30일 1건) ③ssancarerp 는 사용 0.
+- 양식 변경: 당사자 칸 값 J/AB 부터(매핑 J5·J7·AB5~7) · 조항 21~30행 높이 · 여백 위 0.39/아래 0. 옛 `stamp_pos_*_transfer_certificate_dealer_seal/assignee_seal` 설정은 고아(무해).
