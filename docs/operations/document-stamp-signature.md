@@ -91,3 +91,15 @@ wb.save(p)
 
 매입 3종 양식의 "좌우 정렬 흐트러짐"은 별개 문제로 `scripts/strip-phantom-columns.py` 가 해결(2026-06-22).
 그 청소는 `<cols>` 만 건드려 이미지는 byte-동일 보존 → 도장에 영향 없음.
+
+## 2026-10-12 — 양도증명서 전용 「직인2」·「도장」 (jin 수정 파일 반영)
+
+> ⚠️ 위 「Mapping 의 'stamps' 배열」 서술은 낡았다 — 현행 좌표·크기의 단일 출처는 `app/Services/Documents/StampSlots.php`,
+> 업로드는 기능설정 → 「도장·서명」(`stamp_{set}_{role}` Setting + `stamps/{set}/{role}.*` 파일), 합성은 `DocumentFiller::applyStamps`.
+
+- 역할 2개 추가: `seal2`(직인2 = 사업자 명판 + 대표이사 도장이 합쳐진 큰 이미지) · `round_seal`(도장 = 작은 원형). **양도증명서만** 쓴다.
+- 양도증명서 슬롯(3사 공통): 직인2 `M8`(+2,+3) 200×84 · 도장 `AK4`(+16,+10) 55×52 · 도장 `AK43`(+6,+12) 55×52 — jin 파일 「양도증명서_384나6183_20261012_JIN수정파일.xlsx」의 그림 앵커 실측.
+  구 `seal` 슬롯(AF8·AC43)은 제거. **폴백 없음** — 직인2·도장을 안 올린 회사는 양도증명서에 아무 도장도 안 찍힌다(jin «기본 직인 이미지로는 쓸 수 없다»).
+- 양식(빌더 `scripts/build-transfer-certificate-template.php --apply`): 당사자 칸 라벨 3열·값 J/AB 부터(매핑 `owner_name` J5 · `owner_addr` J7, 회사 AB5~AB7) · 조항 21~30행 높이 `CLAUSE_ROW_MIN` · 여백 위 0.39 / 아래 0.
+- 운영 절차: 배포 뒤 **회사마다** super 가 기능설정에서 직인2·도장을 올린다(heymanerp 는 jin 파일의 두 이미지 — 도장은 명판 이미지의 오른쪽 원형 부분을 잘라낸 PNG). 위치 미세조정은 「도장 슬롯 위치/크기」.
+- 옛 `stamp_pos_*_transfer_certificate_dealer_seal/assignee_seal` 설정값은 고아가 된다(무해).
