@@ -74,13 +74,14 @@ class PayoutCardScreensTest extends TestCase
         // 이익배수 = (총마진 46,000,000 − 급여 2,740,000 − 정산금 3,100,000 − 발송비 0) ÷ (2,740,000 + 3,100,000) = 40,160,000 ÷ 5,840,000 = +6.9배.
         //   배열에 profit_multiple 키가 **없다** = 옛 박제 모양 → 카드가 payroll·settlement_pay·total_margin·shipping 으로 되살린다.
         $this->assertStringContainsString('+6.9'.__('payout_card.times'), $employee, '배수는 부호를 항상 붙인다(옛 박제 폴백)');
-        $this->assertStringContainsString('data-profit-before>+40,160,000', $employee, '인센티브 전 회사이익 줄');
+        $this->assertStringContainsString('data-total-margin', $employee, '총마진 줄이 강조돼야 한다');
+        $this->assertStringContainsString('data-payout-expanded', $employee, '실지급액 줄이 강조돼야 한다');
         $this->assertStringNotContainsString('+2.7'.__('payout_card.times'), $employee, '구 초과 배율(환산 기준)이 다시 그려졌다');
         $this->assertStringContainsString('58.4%', $employee);
         $this->assertStringContainsString('data-changed', $employee, '바뀐 칸이 있으면 「변경됨」 뱃지');
         $this->assertStringNotContainsString('−91,431', $employee, '사내직원 카드에 ① 1차 환차가 다시 보인다');
-        $this->assertStringContainsString('−2,740,000', $employee, '급여 차감 줄');
-        $this->assertStringContainsString('−3,100,000', $employee, '정산금 차감 줄');
+        $this->assertStringContainsString('−5,840,000', $employee, '왼쪽은 총마진 − 실지급액 한 줄');
+        $this->assertStringNotContainsString('−2,740,000', $employee, '급여를 왼쪽에서 따로 빼지 않는다(jin 3차 «총마진 − 실지급액 = 회사이익 이렇게만»)');
 
         // 「− 항목」 줄은 부호가 하나다 — 수기 +3,600,000(무사백 10월 추가금 모양)은 「−3,600,000」, 음수 이월 −200,000 은 「+200,000」.
         //   🔑 조정·인센티브를 넣어도 이익배수는 그대로 +6.9배 — 인센티브를 정하는 근거라 결과에 따라 움직이면 안 된다(jin 2026-10-12).
@@ -88,8 +89,9 @@ class PayoutCardScreensTest extends TestCase
             'payroll' => 2_740_000, 'settlement_pay' => 3_100_000, 'adj_manual' => 3_600_000, 'adj_carry' => -200_000, 'incentive' => 300_000, 'total_margin' => 46_000_000, 'count' => 31] + $base,
             'mode' => 'batch', 'open' => true, 'changed' => []])->render();
         $this->assertStringContainsString('+6.9'.__('payout_card.times'), $adjusted, '인센티브·조정을 줘도 이익배수는 안 움직인다');
-        $this->assertStringContainsString('−3,600,000', $adjusted, '수기 조정 차감 줄');
-        $this->assertStringContainsString('+200,000', $adjusted, '음수 이월은 더하는 줄로');
+        $this->assertStringContainsString('−9,540,000', $adjusted, '실지급 차감 줄(조정·인센티브 포함)');
+        $this->assertStringContainsString('+3,600,000', $adjusted, '수기 조정은 오른쪽 지급 내역에');
+        $this->assertStringContainsString('−200,000', $adjusted, '음수 이월은 오른쪽 지급 내역에');
         $this->assertStringNotContainsString('−+', $adjusted, '부호가 두 개 찍혔다');
         $this->assertStringNotContainsString('−−', $adjusted, '부호가 두 개 찍혔다');
         $this->assertStringNotContainsString('−-', $adjusted, '부호가 두 개 찍혔다');

@@ -79,31 +79,20 @@
         </div>
 
         @elseif($t === 'employee')
-        {{-- 사내직원 — 왼쪽: 회사이익 산출 (jin 2026-10-12 「총마진 − (기본급 + 정산 + 추가인센티브) = 회사이익 이렇게 간단히」).
-             두 단계다: ①총마진 − 급여 − 정산금 − 발송비 = **인센티브 전 회사이익** → 이익배수(이걸 보고 인센티브를 정한다)
-                        ②− 수기·이월 조정 − 추가 인센티브 = **회사이익**(최종). 인센티브를 줘도 ①·배수는 안 움직인다.
-             🚫 프리랜서 환산(① 환차·가상 이월·환산 합계)은 여기서 안 그린다 — 값은 PersonPayoutBreakdown 이 계속 계산한다(합계 띠·옛 박제).
-             닫힘: 실지급 = 급여 + 정산금 + 수기 + 이월 + 인센티브 → 조정이 0 이 아니면 그 줄도 보인다(§8 #64 — 화면 산수가 맞아야 한다). --}}
+        {{-- 사내직원 — 왼쪽: 회사 손익 산출 (jin 2026-10-12 3차 «총마진 − 실지급액 = 회사이익 이렇게만. 딱 봐도 이해되게»).
+             총마진·회사이익(왼쪽)과 실지급액(오른쪽)만 초록 배경. 이익배수·지분율은 상세 줄로 색만 유지.
+             발송비는 0 이 아닐 때만 한 줄(없으면 산수가 안 닫힌다, §8 #64). 🚫 프리랜서 환산 계열은 안 그린다(값은 PersonPayoutBreakdown 이 계속 계산). --}}
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.minus_payroll') }}</span><span class="font-mono text-red-600">{{ $minus($p['payroll']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_settlement_pay') }}</span><span class="font-mono text-red-600">{{ $minus($p['settlement_pay']) }}</span></div>
+            <div class="flex justify-between bg-emerald-50 px-2 py-1.5 text-xs font-bold text-emerald-800" data-total-margin><span>{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">{{ $minus($p['payout']) }}</span></div>
             @if($p['shipping'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">{{ $minus($p['shipping']) }}</span></div>
             @endif
-            <div class="flex justify-between border-t border-gray-100 bg-gray-50 px-2 py-1 text-[11px] font-semibold {{ $profitBefore < 0 ? 'text-red-700' : 'text-gray-800' }}"><span>{{ __('payout_card.profit_before_incentive') }}</span><span class="font-mono" data-profit-before>{{ $signed($profitBefore) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]" title="{{ __('payout_card.profit_multiple_formula') }}"><span class="text-gray-500">{{ __('payout_card.profit_multiple') }}</span><span class="font-mono {{ $cls($ratioVal) }}">{{ $ratioText }}</span></div>
-            @if($p['adj_manual'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.minus_adj_manual') }}</span><span class="font-mono text-red-600">{{ $minus($p['adj_manual']) }}</span></div>
-            @endif
-            @if($p['adj_carry'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_adj_carry') }}</span><span class="font-mono text-red-600">{{ $minus($p['adj_carry']) }}</span></div>
-            @endif
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.minus_incentive') }}</span><span class="font-mono text-red-600">{{ $minus($p['incentive']) }}</span></div>
-            <div class="flex justify-between border-t border-gray-200 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-sky-800' }}" title="{{ __('payout_card.company_profit_formula') }}"><span>{{ __('payout_card.company_profit') }}</span><span class="font-mono" data-contribution-expanded>{{ $signed($p['company_contribution']) }}</span></div>
+            <div class="flex justify-between border-t border-gray-200 px-2 py-1.5 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' }}" title="{{ __('payout_card.company_profit_formula') }}"><span>{{ __('payout_card.company_profit') }}</span><span class="font-mono" data-contribution-expanded>{{ $signed($p['company_contribution']) }}</span></div>
+            {{-- 상세 — 이익배수(인센티브 전 기준, 툴팁에 식)·지분율 --}}
+            <div class="flex justify-between border-t border-dashed border-gray-100 px-2 py-1 text-[11px]" title="{{ __('payout_card.profit_multiple_formula') }}: {{ $signed($profitBefore) }} ÷ {{ $fmt($basePay) }}"><span class="text-gray-500">{{ __('payout_card.profit_multiple') }}</span><span class="font-mono {{ $cls($ratioVal) }}">{{ $ratioText }}</span></div>
             @if($shareText !== null)<div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.share') }}</span><span class="font-mono {{ $cls($p['share']) }}">{{ $shareText }}</span></div>@endif
-            <div class="border-t border-dashed border-gray-100 px-2 py-1 text-[10px] text-gray-400">{{ __('payout_card.company_profit_formula') }}</div>
         </div>
         {{-- 오른쪽: 담당자 지급 --}}
         <div class="rounded border border-gray-100">
@@ -119,7 +108,7 @@
             @endif
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.incentive') }}</span>
                 <span class="font-mono">@if($mode === 'preview' && $p['incentive'] === 0)<span class="text-gray-400">{{ __('payout_card.incentive_preview') }}</span>@else{{ $signed($p['incentive']) }}@endif</span></div>
-            <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold"><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
+            <div class="flex justify-between border-t border-gray-100 bg-emerald-50 px-2 py-1.5 text-xs font-bold text-emerald-800" data-payout-expanded><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
         </div>
 
         @else

@@ -12,7 +12,6 @@ return [
     // 🔀 2026-10-12 — 'margin_after_pay'(급여공제후 마진)·'excess_ratio'(급여 대비 초과 배율) 키 삭제. 사내직원 카드에서 뺐고 읽는 화면이 0 이다.
     'company_profit' => '회사이익',                    // 사내직원 카드의 회사 기여 표기(jin 2026-10-12 「회사이익」) — 최종(인센티브 뺀 뒤)
     'profit_multiple' => '이익배수',                   // 인센티브 전 회사이익 ÷ (급여 + 정산금) — jin 2026-10-12 용어 「이익배수」
-    'profit_before_incentive' => '인센티브 전 회사이익',
     'profit_multiple_formula' => '이익배수 = 인센티브 전 회사이익 ÷ (급여 + 정산금). 추가 인센티브를 정하는 근거라 인센티브를 줘도 안 움직입니다.',
     'contribution' => '회사 기여',
     'contribution_actual' => '회사 기여 (실제로 회사에 남긴 돈)',
@@ -34,12 +33,7 @@ return [
     'total_margin' => '총마진',
     'minus_shipping' => '− 발송비 (회사 선지출)',
     'contribution_formula' => '회사 기여 = 총마진 − 실지급액 − 발송비',
-    'company_profit_formula' => '회사이익 = 총마진 − (급여 + 정산금) − 발송비 − 추가 인센티브(·조정)',
-    'minus_payroll' => '− 급여 지급합계',
-    'minus_settlement_pay' => '− 정산금',
-    'minus_adj_manual' => '− 수기 추가정산',
-    'minus_adj_carry' => '− 이월 조정',
-    'minus_incentive' => '− 추가 인센티브',
+    'company_profit_formula' => '회사이익 = 총마진 − 실지급액(급여 + 정산금 + 조정 + 추가 인센티브) − 발송비',
     'freelance_note' => '프리랜서는 환산액이 곧 지급액이라 회사 기여를 봅니다.',
 
     // 오른쪽 — 담당자 지급

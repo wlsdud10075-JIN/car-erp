@@ -9,7 +9,6 @@ return [
 
     'company_profit' => 'Company profit',
     'profit_multiple' => 'Profit multiple',
-    'profit_before_incentive' => 'Company profit before incentive',
     'profit_multiple_formula' => 'Profit multiple = company profit before incentive ÷ (payroll + settlement). It is the basis for the incentive, so the incentive does not move it.',
     'contribution' => 'Company contribution',
     'contribution_actual' => 'Company contribution (actually kept by the company)',
@@ -30,12 +29,7 @@ return [
     'total_margin' => 'Total margin',
     'minus_shipping' => '− Shipping (company-paid)',
     'contribution_formula' => 'Contribution = total margin − take-home − shipping',
-    'company_profit_formula' => 'Company profit = total margin − (payroll + settlement) − shipping − incentive (and adjustments)',
-    'minus_payroll' => '− Payroll total',
-    'minus_settlement_pay' => '− Settlement pay',
-    'minus_adj_manual' => '− Manual adjustment',
-    'minus_adj_carry' => '− Carryover adjustment',
-    'minus_incentive' => '− Incentive',
+    'company_profit_formula' => 'Company profit = total margin − take-home (payroll + settlement + adjustments + incentive) − shipping',
     'freelance_note' => 'For a freelancer the equivalent equals the pay, so the company contribution is shown.',
 
     'ledger_person' => 'Pay to person',
