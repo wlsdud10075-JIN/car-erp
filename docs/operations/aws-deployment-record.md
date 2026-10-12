@@ -617,3 +617,10 @@ cherry-pick(.md 제외). 마이그 없음.
 - **검증**: deploy 런 `38111890886` 잡 5개 success(13:32→13:38 KST) · 3사 sha `e5ff8165` · 마이그 5개 Ran ×3 · login 200 ×3. 로컬 전체 3,258건 중 실패 = GD 7(+병렬 뷰캐시 flake 2건, 순차 재실행 통과).
 - **배포 뒤 상태**: ssancarerp 9월 월정산 #5 = 승인 대기(종전 사다리, steps 없음) → 새 카드로 그대로 보임. `payroll:clear-legacy-base-salary` dry-run = ssancarerp 21명(구 기본급 보유) · heyman 0 · karaba 0 — **`--apply` 는 jin 지시 대기**(v3 카드는 그 칸을 안 읽는다).
 - **다음**: 재무 10월 급여 입력(사내직원관리 → 귀속월 2026-10) · 사용자관리에서 부장/전무/대표 직급 지정(지정해야 결재선 모드) · Notion 가이드 발행(Codex, `--verify`).
+
+## 2026-10-12 — 포털 `/files` 에 B/L 실물 `bill_of_lading` 추가 `4fa594c7` (3사 동시)
+
+- dev `ddf87f55` 1커밋 cherry-pick. jin 이 ssancar 세션에서 «통관SET·수출신고서·선적사진·B/L 열자» → 앞 3종은 이미 열려 있어 실변경 = B/L 서명 URL 키 하나. 게이트·목록 응답 무변경, 마이그 없음.
+- 배포 전 로컬 전체(`--parallel`) = 알려진 GD 7 실패 + **오류 4(AdminDashboard* — 병렬 워커의 Livewire 컴파일 캐시 rename 충돌, Windows 파일 잠금)**. 같은 4파일 순차 재실행 35 pass → 코드 무관.
+- deploy 런 38198202087 잡 5개 success. ssancarerp 서버 `git log -1` = `4fa594c7`, `/login` 200.
+- 순서 = **ERP 먼저 → ssancar**(키 없으면 포털 B/L Open 502). ssancar 쪽 4파일 배포는 jin 지시 때. 정본 = `ERP_연동_통합정리_v1.19.md` §24(ssancar 작성).
