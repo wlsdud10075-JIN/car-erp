@@ -49,9 +49,7 @@
             @if($t === 'employee' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.profit_multiple') }} <b class="font-mono {{ $cls($ratioVal) }}" data-profit-multiple>{{ $ratioText }}</b></span>
             @endif
-            @if($shareText !== null)
-            <span class="text-gray-500">{{ __('payout_card.share') }} <b class="font-mono {{ $cls($p['share']) }}" data-share>{{ $shareText }}</b></span>
-            @endif
+            {{-- 지분율은 접힌 줄에서 뺐다(jin 2026-10-12) — 펼침 상세에만 --}}
         </span>
     </summary>
 
@@ -97,7 +95,7 @@
             <div class="flex justify-between border-t border-gray-200 px-2 py-1.5 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' }}" title="{{ __('payout_card.company_profit_formula') }}"><span>{{ __('payout_card.company_profit') }}</span><span class="font-mono" data-contribution-expanded>{{ $signed($p['company_contribution']) }}</span></div>
             {{-- 상세 — 이익배수(인센티브 전 기준, 툴팁에 식)·지분율 --}}
             <div class="flex justify-between border-t border-dashed border-gray-100 px-2 py-1 text-[11px]" title="{{ __('payout_card.profit_multiple_formula') }}: {{ $signed($profitBefore) }} ÷ {{ $fmt($basePay) }}"><span class="text-gray-500">{{ __('payout_card.profit_multiple') }}</span><span class="font-mono {{ $cls($ratioVal) }}">{{ $ratioText }}</span></div>
-            @if($shareText !== null)<div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.share') }}</span><span class="font-mono {{ $cls($p['share']) }}">{{ $shareText }}</span></div>@endif
+            @if($shareText !== null)<div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.share') }}</span><span class="font-mono {{ $cls($p['share']) }}" data-share>{{ $shareText }}</span></div>@endif
         </div>
         {{-- 오른쪽: 담당자 지급 --}}
         <div class="rounded border border-gray-100">
