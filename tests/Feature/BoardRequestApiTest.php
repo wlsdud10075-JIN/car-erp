@@ -466,6 +466,9 @@ class BoardRequestApiTest extends TestCase
 
         $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all', 'since' => '2026-10-05T09:00:00+09:00'])
             ->assertOk()->assertJsonCount(2, 'requests');   // 포함 경계 — mid 가 들어온다
+        // 같은 순간을 Z 로 보내도 같은 결과(서버가 app.timezone 으로 맞춘다) — 2026-10-05T09:00+09:00 = 2026-10-05T00:00Z
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all', 'since' => '2026-10-05T00:00:00Z'])
+            ->assertOk()->assertJsonCount(2, 'requests');
         $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all'])
             ->assertOk()->assertJsonCount(3, 'requests');   // since 없으면 전량(구 board)
         $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all', 'since' => 'yesterday-ish'])

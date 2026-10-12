@@ -289,7 +289,8 @@ class BoardRequestController extends Controller
         $since = null;
         if (($raw = (string) $request->query('since', '')) !== '') {
             try {
-                $since = Carbon::parse($raw);
+                // 어떤 오프셋(Z 포함)으로 보내도 되게 — DB 는 app.timezone 으로 저장되고 바인딩은 객체의 tz 로 포맷되므로 맞춰 둔다.
+                $since = Carbon::parse($raw)->setTimezone(config('app.timezone'));
             } catch (\Throwable) {
                 return response()->json(['error' => 'since_invalid', 'message' => 'since must be ISO8601'], 422);
             }
