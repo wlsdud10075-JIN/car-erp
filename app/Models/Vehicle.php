@@ -2817,6 +2817,23 @@ class Vehicle extends Model
     }
 
     /**
+     * 포털 서류함 — **저장된 파일 경로**로 볼 수 있는 값만 돌려준다(아니면 null). (2026-10-12 jin)
+     *
+     * 🔑 목록 플래그(`has_*`)와 실물 발급(`/files`)이 **같은 술어**를 쓴다 — 갈리면 「Issued·Open 이 뜨는데
+     *    누르면 502」가 된다(SKILLS §8 #44). 실측 heymanerp 2026-10-12: `bl_document` filled 186 중 **76 이
+     *    `CIGSINDU2603HY01` 같은 B/L 번호 문자열**(2026-06 엑셀 적재분이 번호를 문서 칸에 넣었다) — S3 에 없다.
+     *    진짜 업로드는 전부 `vehicles/…` 다. 🚫 데이터는 안 고친다 — `bl_document` 는 v4 cascade 1번(거래완료)
+     *    근거라 비우면 진행상태가 바뀐다. jin: *「그건 업로드 안 할 거니까. 앞으로 진행되는 것만 올라가서 다운이 된다」*.
+     *    ⇒ 「슬래시가 있나」로 가른다. 존재 여부(`exists()`)는 발급 시점에만 본다(목록은 S3 를 안 두드린다).
+     */
+    public function storedDocumentPath(string $column): ?string
+    {
+        $value = $this->{$column};
+
+        return (is_string($value) && str_contains($value, '/')) ? $value : null;
+    }
+
+    /**
      * ssancar.com 바이어 포털 — **서류함이 열렸나.** 열렸으면 null, 아니면 그 사유.
      *
      * 🔑 jin 2026-08-27: *"운항중 뱃지가 달리면 서류작업이 B/L 빼고 전부 완료"*
