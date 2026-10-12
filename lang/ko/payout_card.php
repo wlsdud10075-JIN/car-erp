@@ -50,6 +50,9 @@ return [
     'deposit' => '예치금 보유',
     'deposit_hint' => '지급액과 무관, 표시만',
     'vehicles' => '차량별 보기',
+    'vh_vehicle' => '차량번호',       // 차량별 보기 표 머리글(클릭 정렬, jin 2026-10-12)
+    'vh_type' => '직책',
+    'vh_payout' => '건당금액',
 
     // 검차직원
     'inspector_only' => '급여만',
