@@ -158,24 +158,25 @@
         <details class="sm:col-span-2">
             <summary class="cursor-pointer text-[11px] text-gray-500 hover:text-violet-700">{{ __('payout_card.vehicles') }} ({{ count($p['vehicles']) }})</summary>
             <div class="mt-1 overflow-x-auto">
+                {{-- 모든 열 가운데 정렬(jin 2026-10-12 「문자든 숫자든 좌우 쏠림 없이」) --}}
                 <table class="w-full min-w-[420px] text-[11px]" data-vehicle-table>
                     <thead>
                         <tr class="border-b border-gray-200 text-gray-500">
-                            <th class="py-1 pr-2 text-left font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="vehicle_number" data-sort-type="text">{{ __('payout_card.vh_vehicle') }}<span data-sort-mark></span></button></th>
-                            <th class="py-1 pr-2 text-right font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="total_margin" data-sort-type="num">{{ __('payout_card.total_margin') }}<span data-sort-mark></span></button></th>
-                            <th class="py-1 pr-2 text-right font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="margin_rate" data-sort-type="num">{{ __('payout_batch.margin.label') }}<span data-sort-mark></span></button></th>
-                            <th class="py-1 pr-2 text-left font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="type_label" data-sort-type="text">{{ __('payout_card.vh_type') }}<span data-sort-mark></span></button></th>
-                            <th class="py-1 text-right font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="actual_payout" data-sort-type="num">{{ __('payout_card.vh_payout') }}<span data-sort-mark></span></button></th>
+                            <th class="py-1 px-1 text-center font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="vehicle_number" data-sort-type="text">{{ __('payout_card.vh_vehicle') }}<span data-sort-mark></span></button></th>
+                            <th class="py-1 px-1 text-center font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="total_margin" data-sort-type="num">{{ __('payout_card.total_margin') }}<span data-sort-mark></span></button></th>
+                            <th class="py-1 px-1 text-center font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="margin_rate" data-sort-type="num">{{ __('payout_batch.margin.label') }}<span data-sort-mark></span></button></th>
+                            <th class="py-1 px-1 text-center font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="type_label" data-sort-type="text">{{ __('payout_card.vh_type') }}<span data-sort-mark></span></button></th>
+                            <th class="py-1 px-1 text-center font-medium"><button type="button" class="hover:text-violet-700" data-vehicle-sort="actual_payout" data-sort-type="num">{{ __('payout_card.vh_payout') }}<span data-sort-mark></span></button></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($p['vehicles'] as $v)
                         <tr class="text-gray-600" data-vehicle-number="{{ $v['vehicle_number'] }}" data-total_margin="{{ (int) $v['total_margin'] }}" data-margin_rate="{{ $v['margin_rate'] === null ? '' : (float) $v['margin_rate'] }}" data-type_label="{{ $v['type_label'] ?? '' }}" data-actual_payout="{{ (int) $v['actual_payout'] }}">
-                            <td class="py-1 pr-2 font-medium text-gray-700">{{ $v['vehicle_number'] }}</td>
-                            <td class="py-1 pr-2 text-right font-mono {{ $v['total_margin'] < 0 ? 'text-red-600' : '' }}">{{ number_format($v['total_margin']) }}</td>
-                            <td class="py-1 pr-2 text-right font-mono {{ ($v['margin_rate'] ?? 0) < 0 ? 'text-red-600' : '' }}">{{ \App\Models\Settlement::formatMarginRate($v['margin_rate']) }}</td>
-                            <td class="py-1 pr-2 text-gray-500">{{ $v['type_label'] ?? '' }}</td>
-                            <td class="py-1 text-right font-mono {{ $v['actual_payout'] < 0 ? 'text-red-600' : '' }}">{{ $v['actual_payout'] < 0 ? '−' : '' }}₩{{ number_format(abs($v['actual_payout'])) }}</td>
+                            <td class="py-1 px-1 text-center font-medium text-gray-700">{{ $v['vehicle_number'] }}</td>
+                            <td class="py-1 px-1 text-center font-mono {{ $v['total_margin'] < 0 ? 'text-red-600' : '' }}">{{ number_format($v['total_margin']) }}</td>
+                            <td class="py-1 px-1 text-center font-mono {{ ($v['margin_rate'] ?? 0) < 0 ? 'text-red-600' : '' }}">{{ \App\Models\Settlement::formatMarginRate($v['margin_rate']) }}</td>
+                            <td class="py-1 px-1 text-center text-gray-500">{{ $v['type_label'] ?? '' }}</td>
+                            <td class="py-1 px-1 text-center font-mono {{ $v['actual_payout'] < 0 ? 'text-red-600' : '' }}">{{ $v['actual_payout'] < 0 ? '−' : '' }}₩{{ number_format(abs($v['actual_payout'])) }}</td>
                         </tr>
                         @endforeach
                     </tbody>

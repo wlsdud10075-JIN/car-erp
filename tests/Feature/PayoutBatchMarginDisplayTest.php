@@ -132,7 +132,7 @@ class PayoutBatchMarginDisplayTest extends TestCase
             ->sum(fn (Settlement $s) => (int) $s->actual_payout);
 
         $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
-        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,1500}?'.preg_quote(__('payout_card.profit_multiple'), '/').'/u', $html);
+        $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,3000}?'.preg_quote(__('payout_card.profit_multiple'), '/').'/u', $html);
         $this->assertStringNotContainsString('급여공제후 마진', $html, '사내직원 카드에 급여공제후 마진이 다시 보인다(jin 2026-10-12 제거)');
         $this->assertMatchesRegularExpression('/data-person-card="'.$employee->id.'"[\s\S]{0,2500}?data-payout>₩'.preg_quote(number_format($net), '/').'/u', $html, '급여 미입력이면 실지급 = 정산금');
         $this->assertStringContainsString('data-payroll-missing', $html, '급여 미입력 표시가 없다');
