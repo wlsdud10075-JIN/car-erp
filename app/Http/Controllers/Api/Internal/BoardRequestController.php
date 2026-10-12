@@ -10,6 +10,7 @@ use App\Services\SalesmanResolver;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -282,15 +283,31 @@ class BoardRequestController extends Controller
         $salesman = $this->salesman($request);
         $status = (string) $request->query('status', 'open');
 
+        // ⏱️ `since=`(ISO8601, 2026-10-12) — board 가 30초 폴링 + 1분 웹푸시 스케줄러로 부르면서 전체 이력을 매번
+        //    끌어가던 것을 증분으로. `updated_at >= since`(포함 — 중복은 무해, 누락은 사고). status 와 독립.
+        //    없으면 종전대로 전량(구 board 호환). 파싱 실패는 422 — 조용히 전량을 주면 「증분이 안 된다」를 못 찾는다.
+        $since = null;
+        if (($raw = (string) $request->query('since', '')) !== '') {
+            try {
+                $since = Carbon::parse($raw);
+            } catch (\Throwable) {
+                return response()->json(['error' => 'since_invalid', 'message' => 'since must be ISO8601'], 422);
+            }
+        }
+
         $rows = BoardRequest::query()
             ->whereHas('vehicle', fn ($q) => $q->where('salesman_id', $salesman->id))
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
-            ->with(['vehicle:id,vehicle_number', 'buyer:id,name'])
+            ->when($since !== null, fn ($q) => $q->where('updated_at', '>=', $since))
+            ->with(['vehicle:id,vehicle_number', 'buyer:id,name', 'confirmedBy:id,name', 'rejectedBy:id,name'])
             ->orderByDesc('id')
             ->get();
 
         $data = $rows->groupBy('batch_id')->map(function ($lines) {
             $head = $lines->first();
+            // 처리 정보(확인·거절 공통) — 묶음 레벨은 「가장 늦게 처리된 라인」 기준. 매입 신호는 1대=1묶음이라 그 한 줄.
+            $resolved = $lines->filter(fn (BoardRequest $r) => $r->resolvedAt() !== null)->sortByDesc(fn (BoardRequest $r) => $r->resolvedAt())->first();
+            $rejected = $lines->first(fn (BoardRequest $r) => $r->status === BoardRequest::STATUS_REJECTED);
 
             return [
                 'batch_id' => $head->batch_id,
@@ -301,11 +318,17 @@ class BoardRequestController extends Controller
                 // 라인에도 같은 값을 싣는다 — board 가 어느 쪽을 읽든 같은 숫자가 나오게.
                 'amount_krw' => $head->amount_krw,
                 'requested_at' => $head->requested_at?->toIso8601String(),
+                'resolved_at' => $resolved?->resolvedAt()?->toIso8601String(),
+                'resolved_by' => $resolved?->resolvedByName(),
+                'reject_reason' => $rejected?->reject_reason,
                 'vehicles' => $lines->map(fn (BoardRequest $r) => [
                     'vehicle_number' => $r->vehicle?->vehicle_number,
                     'status' => $r->status,
                     'amount_krw' => $r->amount_krw,
-                    'confirmed_at' => $r->confirmed_at?->toIso8601String(),
+                    'confirmed_at' => $r->confirmed_at?->toIso8601String(),   // 구 board 가 읽는 키 — 거절 라인은 null 유지
+                    'resolved_at' => $r->resolvedAt()?->toIso8601String(),
+                    'resolved_by' => $r->resolvedByName(),
+                    'reject_reason' => $r->reject_reason,
                 ])->values(),
             ];
         })->values();

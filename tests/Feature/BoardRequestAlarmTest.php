@@ -79,6 +79,19 @@ class BoardRequestAlarmTest extends TestCase
         $this->assertSame('auto_resolved', TaskAlarm::where('vehicle_id', $v->id)->value('resolved_reason'));
     }
 
+    /** 거절(2026-10-12)로 닫혀도 알람은 같이 닫힌다 — 사유는 'rejected'. */
+    public function test_alarm_closes_when_request_is_rejected(): void
+    {
+        $v = $this->vehicle();
+        $req = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com');
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+
+        $req->markRejected($user, '바이어 입금 전');
+
+        $this->assertSame(0, TaskAlarm::where('vehicle_id', $v->id)->open()->count(), '거절했는데 알람이 남았다');
+        $this->assertSame('rejected', TaskAlarm::where('vehicle_id', $v->id)->value('resolved_reason'));
+    }
+
     /** 자동 해소(매입 미지급 0)로 닫힐 때도 알람이 같이 닫혀야 한다. */
     public function test_alarm_closes_on_auto_resolution(): void
     {

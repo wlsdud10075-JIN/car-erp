@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -84,7 +85,13 @@ class BoardRequest extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
-    public const STATUSES = [self::STATUS_OPEN, self::STATUS_DONE, self::STATUS_CANCELLED];
+    /** 거절 (jin 2026-10-12) — ERP 사용자가 사유를 적어 돌려보낸 라인. 알림톡 없음(board 웹푸시). 거절 뒤 같은 차 재요청은 허용(hasOpenFor 는 open 만 본다). */
+    public const STATUS_REJECTED = 'rejected';
+
+    public const STATUSES = [self::STATUS_OPEN, self::STATUS_DONE, self::STATUS_CANCELLED, self::STATUS_REJECTED];
+
+    /** 거절 사유 상한 — board 요청 메모(note)와 같은 200자. 사유는 note 에 안 쓴다(note 는 board 가 보낸 요청 메모라 덮어쓰면 안 된다). */
+    public const REJECT_REASON_MAX = 200;
 
     /**
      * type 별 성격 — **단일 출처**. 새 type 을 늘리려면 여기 한 줄만 추가한다.
@@ -180,11 +187,13 @@ class BoardRequest extends Model
     protected $fillable = [
         'batch_id', 'type', 'vehicle_id', 'buyer_id', 'amount_krw', 'status',
         'requested_by_email', 'requested_at', 'confirmed_by_id', 'confirmed_at', 'note',
+        'reject_reason', 'rejected_by_id', 'rejected_at',
     ];
 
     protected $casts = [
         'requested_at' => 'datetime',
         'confirmed_at' => 'datetime',
+        'rejected_at' => 'datetime',
         'amount_krw' => 'integer',
     ];
 
@@ -230,6 +239,23 @@ class BoardRequest extends Model
     public function confirmedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'confirmed_by_id');
+    }
+
+    public function rejectedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by_id');
+    }
+
+    /** 처리 시각 — 확인·거절 공통(board 응답 `resolved_at`). 열린 라인은 null. */
+    public function resolvedAt(): ?Carbon
+    {
+        return $this->confirmed_at ?? $this->rejected_at;
+    }
+
+    /** 처리자 표시 이름 — 확인·거절 공통(board 응답 `resolved_by`). 자동 해소는 null. 관계는 미리 로드할 것(confirmedBy·rejectedBy). */
+    public function resolvedByName(): ?string
+    {
+        return $this->confirmedBy?->name ?? $this->rejectedBy?->name;
     }
 
     public function scopeOpen(Builder $q): Builder
@@ -396,8 +422,35 @@ class BoardRequest extends Model
     }
 
     /**
-     * 묶음 집계 상태 — board 칩(3/5)·erp 카드 헤더 공용 단일 출처.
-     * 전부 done = done / 일부 done = partial / 하나도 안 됐으면 open / 남은 게 없으면 cancelled.
+     * 거절 처리 (jin 2026-10-12) — open 일 때만. 사유 필수(200자). 알람은 'rejected' 로 닫는다.
+     * confirmed_* 는 건드리지 않는다(구 board 가 confirmed_at 을 「확인됨」으로 읽는다). 알림톡 없음.
+     * 일방향(markDone 과 같다) — 다시 필요하면 board 가 재요청한다(hasOpenFor 는 open 만 보므로 통과).
+     */
+    public function markRejected(User $user, string $reason): void
+    {
+        if ($this->status !== self::STATUS_OPEN) {
+            return;
+        }
+
+        $this->update([
+            'status' => self::STATUS_REJECTED,
+            'reject_reason' => mb_substr(trim($reason), 0, self::REJECT_REASON_MAX),
+            'rejected_by_id' => $user->id,
+            'rejected_at' => now(),
+        ]);
+
+        $this->resolveTaskAlarm('rejected');
+    }
+
+    /**
+     * 묶음 집계 상태 — board 칩(3/5)·erp 카드 헤더 공용 단일 출처. board 는 재계산 없이 이 값을 그대로 그린다(계약).
+     *
+     *   live = cancelled 가 아닌 라인
+     *   live 없음                      → cancelled
+     *   live 전부 rejected             → rejected      (2026-10-12)
+     *   live 전부 done                 → done
+     *   done 도 rejected 도 0          → open
+     *   그 외(done·rejected·open 섞임) → partial
      *
      * @param  Collection<int, self>  $lines
      */
@@ -409,10 +462,18 @@ class BoardRequest extends Model
         }
 
         $done = $live->where('status', self::STATUS_DONE)->count();
-        if ($done === 0) {
+        $rejected = $live->where('status', self::STATUS_REJECTED)->count();
+        $n = $live->count();
+        if ($rejected === $n) {
+            return self::STATUS_REJECTED;
+        }
+        if ($done === $n) {
+            return self::STATUS_DONE;
+        }
+        if ($done === 0 && $rejected === 0) {
             return self::STATUS_OPEN;
         }
 
-        return $done === $live->count() ? self::STATUS_DONE : 'partial';
+        return 'partial';
     }
 }
