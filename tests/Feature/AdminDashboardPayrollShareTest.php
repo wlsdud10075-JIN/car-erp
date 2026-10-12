@@ -86,10 +86,11 @@ class AdminDashboardPayrollShareTest extends TestCase
         $sum = $rows[$e->id]['contribution'] + $rows[$f->id]['contribution'];
         $this->assertSame(round($rows[$e->id]['contribution'] / $sum * 100, 1), $rows[$e->id]['share']);
         $this->assertStringContainsString('focus='.$e->id, $rows[$e->id]['link'], '이름 클릭 → 정산관리 앵커');
-        // 회사이익 배율(사내직원만) = 회사 기여 ÷ 받아 간 돈 — 카드와 같은 식(🔀 2026-10-12, 구 환산 기준 초과 배율 폐기)
-        $this->assertSame(round($rows[$e->id]['contribution'] / 3_340_000, 1), $rows[$e->id]['contribution_ratio']);
+        // 이익배수(사내직원만) = 인센티브 전 회사이익 ÷ (급여 + 정산금) — 카드와 같은 식(🔀 2026-10-12, 구 환산 기준 초과 배율 폐기)
+        //   = (17,010,000 − 2,740,000 − 100,000) ÷ (2,740,000 + 100,000) — 인센티브 500,000 은 분자·분모 어디에도 없다
+        $this->assertSame(round((17_010_000 - 2_840_000) / 2_840_000, 1), $rows[$e->id]['profit_multiple']);
         $this->assertArrayNotHasKey('excess_ratio', $rows[$e->id], '구 초과 배율 키가 남아 있다');
-        $this->assertNull($rows[$f->id]['contribution_ratio'], '프리랜서는 배율 없음');
+        $this->assertNull($rows[$f->id]['profit_multiple'], '프리랜서는 배수 없음');
         $this->assertStringContainsString('monthFilter=2026-09', $rows[$e->id]['link']);
     }
 
