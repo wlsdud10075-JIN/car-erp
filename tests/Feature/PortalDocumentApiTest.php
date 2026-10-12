@@ -314,6 +314,27 @@ class PortalDocumentApiTest extends TestCase
         $this->assertSame(0, DocumentAccessLog::where('vehicle_id', $v->id)->where('document_type', 'bill_of_lading')->count());
     }
 
+    /**
+     * 🧾 적재분은 B/L **번호**가 문서 칸에 들어 있다(heymanerp 실측 76대, 2026-10-12) — 파일이 아니다.
+     *    목록이 「있다」고 하면 포털에 Issued·Open 이 뜨고 누르면 502 다. 목록과 /files 가 같은 술어를 쓴다.
+     */
+    public function test_bl_number_stored_in_the_document_column_is_not_a_document(): void
+    {
+        $this->fakeSignedDocsDisk();
+        $v = $this->seedDownloadable(['bl_document' => 'CIGSINDU2603HY01', 'bl_number' => 'CIGSINDU2603HY01']);
+
+        $body = $this->signed('/api/internal/portal/vehicles')->assertOk()->getContent();
+        $row = collect(json_decode($body, true)['data'])->firstWhere('id', $v->id);
+        $this->assertFalse($row['has_bl_document'], '번호 문자열을 파일로 주장했다');
+        $this->assertSame('CIGSINDU2603HY01', $row['bl_number'], '번호 자체는 그대로 나간다');
+
+        $res = $this->signed('/api/internal/portal/vehicles/'.$v->id.'/files', ['buyer_id' => $v->buyer_id])->assertOk();
+        $this->assertNull($res->json('bill_of_lading'));
+
+        // 🚫 데이터는 안 고친다 — 거래완료 근거라 비우면 진행상태가 바뀐다.
+        $this->assertSame('거래완료', $v->fresh()->progress_status);
+    }
+
     /** 서명 URL 을 내는 가짜 문서 디스크 — 운영 s3 의 `temporaryUrl` 을 콜백으로 흉내 낸다. */
     private function fakeSignedDocsDisk(): FilesystemAdapter
     {

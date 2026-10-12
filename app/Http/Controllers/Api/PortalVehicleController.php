@@ -168,7 +168,8 @@ class PortalVehicleController extends Controller
 
             // 🔑 번호와 문서는 뜻이 다르다 — 번호만 있고 문서가 없는 차가 실측 14대.
             //    「발급됨」 판정은 **문서**로 건다(v1.2 §7-B 3).
-            'has_bl_document' => filled($v->bl_document),
+            //    ⚠️ 「파일」= 저장 경로형 값만(`storedDocumentPath`) — 적재분은 번호가 이 칸에 들어 있다(2026-10-12).
+            'has_bl_document' => $v->storedDocumentPath('bl_document') !== null,
             'bl_number' => $v->bl_number,
             'bl_issue_date' => $this->date($v->bl_issue_date),
 
@@ -204,8 +205,9 @@ class PortalVehicleController extends Controller
             //    아래 `has_*` 는 「그 파일이 존재하나」라는 사실일 뿐이라 매입 단계에도 true 가 된다.
             //    이 플래그 없이 `has_*` 만 그리면 아직 안 떠난 차의 서류함이 열린다.
             'documents_open' => $open,
-            'has_export_declaration_document' => filled($v->export_declaration_document),
-            'has_deregistration_document' => filled($v->deregistration_document),
+            //    🔑 셋 다 `storedDocumentPath` 한 술어 — `/files` 와 같은 기준이다(§8 #44).
+            'has_export_declaration_document' => $v->storedDocumentPath('export_declaration_document') !== null,
+            'has_deregistration_document' => $v->storedDocumentPath('deregistration_document') !== null,
             'shipping_photo_count' => (int) ($v->shipping_photo_count ?? 0),
             'can_download_clearance_set' => $blocker === null,
             // 왜 못 받는지 — **화면에 그대로 쓰라는 게 아니다**(관통 원칙: 화면은 설명하지 않는다).

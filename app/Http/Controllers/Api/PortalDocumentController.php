@@ -113,8 +113,10 @@ class PortalDocumentController extends Controller
             'shipping_photos' => [],
         ];
 
-        if (filled($vehicle->export_declaration_document) && $disk->exists($vehicle->export_declaration_document)) {
-            $out['export_declaration'] = $this->fileEntry($disk, $vehicle->export_declaration_document, $expiresAt);
+        // 🔑 목록 `has_*` 와 같은 술어(`storedDocumentPath`) + 발급 시점에만 `exists()`.
+        $exportPath = $vehicle->storedDocumentPath('export_declaration_document');
+        if ($exportPath !== null && $disk->exists($exportPath)) {
+            $out['export_declaration'] = $this->fileEntry($disk, $exportPath, $expiresAt);
             $this->recordAccess($vehicle, 'export_declaration', $request);
         }
 
@@ -122,8 +124,9 @@ class PortalDocumentController extends Controller
         // 게이트는 서류함 하나(`portalDocumentsBlocker`)뿐 — B/L 별도 조건 없음. 파일이 없으면 null 이 답이다.
         // ⚠️ B/L 은 묶음 단위다(실측 R.S.H: B/L 하나가 25대) — 같은 묶음 차들이 같은 파일을 받는다. 다운로드 용도로는 그게 맞다.
         //    🚫 선적(묶음) 단위 엔드포인트를 만들지 말 것. 🚫 체크빌은 안 낸다(B/L 발급 전 draft → 「B/L 두 개」).
-        if (filled($vehicle->bl_document) && $disk->exists($vehicle->bl_document)) {
-            $out['bill_of_lading'] = $this->fileEntry($disk, $vehicle->bl_document, $expiresAt);
+        $blPath = $vehicle->storedDocumentPath('bl_document');
+        if ($blPath !== null && $disk->exists($blPath)) {
+            $out['bill_of_lading'] = $this->fileEntry($disk, $blPath, $expiresAt);
             $this->recordAccess($vehicle, 'bill_of_lading', $request);
         }
 
