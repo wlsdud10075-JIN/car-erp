@@ -32,18 +32,23 @@
             @if(!empty($changed))<span class="badge badge-amber text-[10px]" data-changed>{{ __('payout_card.changed') }}</span>@endif
         </span>
         <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
-            {{-- 마진율 — 지분율과 같은 모양(jin 2026-10-12 「지분율과 마찬가지의 폰트와 색상」): 회색 라벨 + 굵은 고정폭, 음수면 빨강 --}}
-            @if($t !== 'inspector' && array_key_exists('margin_rate', $p))
-            <span class="text-gray-500">{{ __('payout_batch.margin.label') }} <b class="font-mono {{ $cls($p['margin_rate']) }}" data-margin-rate>{{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</b></span>
+            {{-- 접힌 줄 순서(jin 2026-10-12): 총마진 / 실지급액 / 회사이익 / 마진율 / 이익배수 / 지분율. 전부 지분율과 같은 모양(회색 라벨 + 굵은 고정폭, 음수 빨강). --}}
+            @if($t !== 'inspector' && ! $p['unsupported'])
+            <span class="text-gray-500">{{ __('payout_card.total_margin') }} <b class="font-mono {{ $cls($p['total_margin']) }}" data-total-margin-head>{{ $signed($p['total_margin']) }}</b></span>
             @endif
+            <span class="text-gray-500">{{ $t === 'inspector' ? __('payout_card.payroll_total') : __('payout_card.payout') }} <b class="font-mono text-gray-800" data-payout>₩{{ $fmt($p['payout']) }}</b></span>
             @if($t === 'employee' && ! $p['unsupported'])
             {{-- 🔀 2026-10-12 jin — 「급여공제후 마진·초과 배율」(프리랜서 환산 계열)은 뺐다. 이익배수 = 인센티브 전 회사이익 ÷ (급여+정산금) · 회사이익 = 최종(인센티브 뺀 뒤). --}}
-            <span class="text-gray-500">{{ __('payout_card.profit_multiple') }} <b class="font-mono {{ $cls($ratioVal) }}" data-profit-multiple>{{ $ratioText }}</b></span>
             <span class="text-gray-500">{{ __('payout_card.company_profit') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
             @elseif($t === 'freelance' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}">{{ $signed($p['company_contribution']) }}</b></span>
             @endif
-            <span class="text-gray-500">{{ $t === 'inspector' ? __('payout_card.payroll_total') : __('payout_card.payout') }} <b class="font-mono text-gray-800" data-payout>₩{{ $fmt($p['payout']) }}</b></span>
+            @if($t !== 'inspector' && array_key_exists('margin_rate', $p))
+            <span class="text-gray-500">{{ __('payout_batch.margin.label') }} <b class="font-mono {{ $cls($p['margin_rate']) }}" data-margin-rate>{{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</b></span>
+            @endif
+            @if($t === 'employee' && ! $p['unsupported'])
+            <span class="text-gray-500">{{ __('payout_card.profit_multiple') }} <b class="font-mono {{ $cls($ratioVal) }}" data-profit-multiple>{{ $ratioText }}</b></span>
+            @endif
             @if($shareText !== null)
             <span class="text-gray-500">{{ __('payout_card.share') }} <b class="font-mono {{ $cls($p['share']) }}" data-share>{{ $shareText }}</b></span>
             @endif
