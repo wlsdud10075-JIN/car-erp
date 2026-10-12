@@ -76,7 +76,9 @@ class PayoutCardScreensTest extends TestCase
         $this->assertStringContainsString('+6.9'.__('payout_card.times'), $employee, '배수는 부호를 항상 붙인다(옛 박제 폴백)');
         $this->assertStringContainsString('data-total-margin', $employee, '총마진 줄이 강조돼야 한다');
         // 접힌 줄 순서(jin 2026-10-12): 총마진 → 실지급액 → 회사이익 → 마진율 → 이익배수 → 지분율
-        $this->assertMatchesRegularExpression('/data-total-margin-head>[\s\S]*?data-payout>[\s\S]*?data-contribution>[\s\S]*?data-margin-rate>[\s\S]*?data-profit-multiple>[\s\S]*?data-share>/u', $employee, '접힌 줄 순서가 다르다');
+        $this->assertMatchesRegularExpression('/data-total-margin-head>[\s\S]*?data-payout>[\s\S]*?data-contribution>[\s\S]*?data-margin-rate>[\s\S]*?data-profit-multiple>[\s\S]*?<\/summary>/u', $employee, '접힌 줄 순서가 다르다');
+        $this->assertDoesNotMatchRegularExpression('/<summary[\s\S]*?data-share>[\s\S]*?<\/summary>/u', $employee, '지분율은 접힌 줄에서 뺐다(jin 2026-10-12) — 펼침 상세에만');
+        $this->assertStringContainsString('data-share>58.4%', $employee, '지분율은 펼침 상세에 남는다');
         $this->assertStringContainsString('data-payout-expanded', $employee, '실지급액 줄이 강조돼야 한다');
         $this->assertStringNotContainsString('+2.7'.__('payout_card.times'), $employee, '구 초과 배율(환산 기준)이 다시 그려졌다');
         $this->assertStringContainsString('58.4%', $employee);
