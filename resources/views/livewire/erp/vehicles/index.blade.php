@@ -1301,6 +1301,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 큐 19-E — 이체 취소(void) 요청 모달 상태
     public bool $showTransferVoidModal = false;
 
+    // board 요청 「거절」 모달 (jin 2026-10-12) — 섬 안. 사유 필수(200자). 권한·대상 가드는 confirmBoardRequest 와 같다.
+    public bool $showBoardRejectModal = false;
+
+    public ?int $boardRejectId = null;
+
+    public string $boardRejectReason = '';
+
     public ?int $voidTransferId = null;
 
     public string $voidReason = '';
@@ -3191,6 +3198,92 @@ new #[Layout('components.layouts.app')] class extends Component {
         $line->markDone($user);
         unset($this->boardRequestsForPanel, $this->vehicles);
         $this->dispatch('notify', message: __('vehicle.board_confirm_done'), type: 'success');
+    }
+
+    /** 거절 대상 조회 — confirmBoardRequest 와 **같은 가드 사슬**(권한 → 이 차 → manual_confirm → open). 갈리면 IDOR 가 한쪽만 뚫린다. */
+    private function rejectableBoardRequest(int $id): ?\App\Models\BoardRequest
+    {
+        return \App\Models\BoardRequest::query()
+            ->where('vehicle_id', $this->editingId)
+            ->whereIn('type', \App\Models\BoardRequest::typesWith('manual_confirm'))
+            ->open()
+            ->find($id);
+    }
+
+    public function openBoardRejectModal(int $id): void
+    {
+        if (! auth()->user()?->canConfirmFinance()) {
+            $this->dispatch('notify', message: __('vehicle.board_no_permission'), type: 'warning');
+
+            return;
+        }
+        if (! $this->rejectableBoardRequest($id)) {
+            $this->dispatch('notify', message: __('vehicle.board_confirm_gone'), type: 'warning');
+
+            return;
+        }
+        $this->boardRejectId = $id;
+        $this->boardRejectReason = '';
+        $this->resetErrorBag('boardRejectReason');
+        $this->showBoardRejectModal = true;
+    }
+
+    public function closeBoardRejectModal(): void
+    {
+        $this->showBoardRejectModal = false;
+        $this->boardRejectId = null;
+        $this->boardRejectReason = '';
+        $this->resetErrorBag('boardRejectReason');
+    }
+
+    /**
+     * board 요청 거절 (jin 2026-10-12) — 「입금 확인」의 반대 회신. 예: 잔금 요청이 왔는데 바이어 돈이 아직 안 들어와 못 보낼 때.
+     * 이 차 1대만(묶음 통째가 아니라 라인별 — jin «건당이니까»). 알림톡 없음(board 웹푸시). 감사로그에 사유를 남긴다.
+     */
+    public function submitBoardReject(): void
+    {
+        $user = auth()->user();
+        if (! $user?->canConfirmFinance()) {
+            $this->dispatch('notify', message: __('vehicle.board_no_permission'), type: 'warning');
+
+            return;
+        }
+        if ($this->boardRejectId === null) {
+            return;
+        }
+        $this->validate([
+            'boardRejectReason' => ['required', 'string', 'max:'.\App\Models\BoardRequest::REJECT_REASON_MAX],
+        ], [
+            'boardRejectReason.required' => __('vehicle.board_reject_reason_required'),
+            'boardRejectReason.max' => __('vehicle.board_reject_reason_max', ['max' => \App\Models\BoardRequest::REJECT_REASON_MAX]),
+        ]);
+        $reason = trim($this->boardRejectReason);
+        if ($reason === '') {
+            $this->addError('boardRejectReason', __('vehicle.board_reject_reason_required'));
+
+            return;
+        }
+
+        $line = $this->rejectableBoardRequest($this->boardRejectId);
+        if (! $line) {
+            $this->closeBoardRejectModal();
+            $this->dispatch('notify', message: __('vehicle.board_confirm_gone'), type: 'warning');
+
+            return;
+        }
+
+        $line->markRejected($user, $reason);
+        \App\Models\AuditLog::create([
+            'user_id' => $user->id,
+            'auditable_type' => \App\Models\BoardRequest::class, 'auditable_id' => $line->id,
+            'action' => 'board_request_rejected', 'column_name' => 'reject_reason',
+            'old_value' => $line->type, 'new_value' => $reason,
+            'ip_address' => request()?->ip(),
+        ]);
+
+        $this->closeBoardRejectModal();
+        unset($this->boardRequestsForPanel, $this->vehicles);
+        $this->dispatch('notify', message: __('vehicle.board_reject_done'), type: 'success');
     }
 
     #[Computed]
@@ -8366,10 +8459,17 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             </span>
                         </span>
                         @if(($brqMeta['manual_confirm'] ?? false) && auth()->user()?->canConfirmFinance())
-                            <button type="button" wire:click="confirmBoardRequest({{ $brq->id }})"
-                                    class="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-white {{ $isPurple ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700' }}">
-                                {{ __('vehicle.board_confirm_btn') }}
-                            </button>
+                            <span class="flex shrink-0 items-center gap-1">
+                                <button type="button" wire:click="confirmBoardRequest({{ $brq->id }})"
+                                        class="rounded px-2 py-1 text-[11px] font-medium text-white {{ $isPurple ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700' }}">
+                                    {{ __('vehicle.board_confirm_btn') }}
+                                </button>
+                                {{-- 거절 (jin 2026-10-12) — 사유를 적어 board 영업에게 돌려보낸다(예: 바이어 돈이 안 들어와 잔금을 못 보낼 때) --}}
+                                <button type="button" wire:click="openBoardRejectModal({{ $brq->id }})"
+                                        class="rounded border border-red-300 bg-white px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-50">
+                                    {{ __('vehicle.board_reject_btn') }}
+                                </button>
+                            </span>
                         @endif
                     </div>
                     @endforeach
@@ -11231,6 +11331,47 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     wire:loading.attr="disabled"
                     class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
                 {{ __('vehicle.modal.void_send') }}
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- board 요청 거절 모달 (jin 2026-10-12) — 섬 안(패널 액션이 연다, §8 #109). 사유 필수. --}}
+@if($showBoardRejectModal && $boardRejectId)
+@php
+    $rejectTarget = \App\Models\BoardRequest::find($boardRejectId);
+    $rejectMeta = $rejectTarget ? \App\Models\BoardRequest::meta($rejectTarget->type) : [];
+@endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3"
+     wire:click.self="closeBoardRejectModal"
+     wire:key="board-reject-modal">
+    <div class="card max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
+        <h3 class="text-base font-semibold text-red-700">{{ __('vehicle.board_reject_title') }}</h3>
+        <p class="mt-1 text-xs text-gray-500">{{ __('vehicle.board_reject_desc') }}</p>
+
+        @if($rejectTarget)
+        <div class="mt-3 rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-900 space-y-0.5">
+            <div><span class="font-bold">{{ isset($rejectMeta['badge']) ? __($rejectMeta['badge']) : $rejectTarget->type }}</span>
+                @if($rejectTarget->amount_krw !== null) <span class="font-bold tabular-nums">{{ number_format($rejectTarget->amount_krw) }}{{ __('vehicle.board_amount_unit') }}</span>@endif</div>
+            <div>{{ __('vehicle.board_requested_by', ['email' => $rejectTarget->requested_by_email, 'date' => $rejectTarget->requested_at?->format('m-d')]) }}</div>
+        </div>
+        @endif
+
+        <div class="mt-3">
+            <label class="label-base">{{ __('vehicle.board_reject_reason_label') }} <span class="text-red-500">*</span></label>
+            <textarea wire:model="boardRejectReason" rows="3" maxlength="{{ \App\Models\BoardRequest::REJECT_REASON_MAX }}" class="input-base"
+                      placeholder="{{ __('vehicle.board_reject_reason_ph') }}"></textarea>
+            @error('boardRejectReason')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+            <button type="button" wire:click="closeBoardRejectModal"
+                    class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.modal.cancel') }}</button>
+            <button type="button" wire:click="submitBoardReject"
+                    wire:loading.attr="disabled"
+                    class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+                {{ __('vehicle.board_reject_send') }}
             </button>
         </div>
     </div>

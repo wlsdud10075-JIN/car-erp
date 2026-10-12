@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\BoardRequest;
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -423,6 +424,52 @@ class BoardRequestApiTest extends TestCase
         foreach (['margin', 'rrn', 'purchase_price', 'sale_price'] as $leak) {
             $this->assertStringNotContainsString($leak, $flat, "응답에 {$leak} 가 샜다(§3 화이트리스트)");
         }
+    }
+
+    /** 거절(2026-10-12) — 라인·묶음에 reject_reason·resolved_at·resolved_by 가 실리고, confirmed_at 은 null 그대로. status=rejected 로 걸러진다. */
+    public function test_index_exposes_rejection_fields(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $user = User::factory()->create(['permission' => 'admin', 'name' => '재무담당', 'email_verified_at' => now()]);
+        $v = $this->vehicle($sm->id, '11가1111');
+        $r = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 2_000_000);
+        $r->markRejected($user, '바이어 입금 전');
+
+        $res = $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all']);
+        $res->assertOk()
+            ->assertJsonPath('requests.0.status', 'rejected')
+            ->assertJsonPath('requests.0.reject_reason', '바이어 입금 전')
+            ->assertJsonPath('requests.0.resolved_by', '재무담당')
+            ->assertJsonPath('requests.0.vehicles.0.status', 'rejected')
+            ->assertJsonPath('requests.0.vehicles.0.reject_reason', '바이어 입금 전')
+            ->assertJsonPath('requests.0.vehicles.0.confirmed_at', null);
+        $this->assertNotNull($res->json('requests.0.resolved_at'));
+        $this->assertSame($res->json('requests.0.resolved_at'), $res->json('requests.0.vehicles.0.resolved_at'));
+
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'rejected'])
+            ->assertOk()->assertJsonCount(1, 'requests');
+        // 기본(open) 폴링엔 안 보인다 — 라인 단위 필터(종전 동작). board 는 status=all 로 받는다.
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com'])
+            ->assertOk()->assertJsonCount(0, 'requests');
+    }
+
+    /** since=(ISO8601, updated_at >= since, 포함) — status 와 독립. 없으면 전량. 깨진 값은 422. */
+    public function test_index_since_filters_by_updated_at(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $old = BoardRequest::raise($this->vehicle($sm->id, '11가1111')->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 1);
+        $mid = BoardRequest::raise($this->vehicle($sm->id, '22나2222')->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 1);
+        $new = BoardRequest::raise($this->vehicle($sm->id, '33다3333')->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 1);
+        BoardRequest::whereKey($old->id)->update(['updated_at' => '2026-10-01 09:00:00']);
+        BoardRequest::whereKey($mid->id)->update(['updated_at' => '2026-10-05 09:00:00']);
+        BoardRequest::whereKey($new->id)->update(['updated_at' => '2026-10-10 09:00:00']);
+
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all', 'since' => '2026-10-05T09:00:00+09:00'])
+            ->assertOk()->assertJsonCount(2, 'requests');   // 포함 경계 — mid 가 들어온다
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all'])
+            ->assertOk()->assertJsonCount(3, 'requests');   // since 없으면 전량(구 board)
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'all', 'since' => 'yesterday-ish'])
+            ->assertStatus(422)->assertJsonPath('error', 'since_invalid');
     }
 
     public function test_index_is_scoped_to_own_vehicles(): void

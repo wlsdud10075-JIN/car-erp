@@ -201,6 +201,64 @@ class BoardRequestModelTest extends TestCase
         $this->assertSame(3, BoardRequest::where('batch_id', $batch)->count());
     }
 
+    /**
+     * 거절 (jin 2026-10-12) — open 만, 사유·거절자·시각이 남고 confirmed_* 는 비어 있어야 한다(구 board 가 confirmed_at 을 확인으로 읽는다).
+     * 거절 뒤 같은 차 재요청은 허용(멱등 가드는 open 만 본다 — 영업이 고쳐서 다시 보낼 수 있어야 한다).
+     */
+    public function test_mark_rejected_records_reason_and_allows_reopen(): void
+    {
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $v = $this->vehicle();
+        $r = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 1_000_000);
+
+        $r->markRejected($user, '  바이어 입금 전이라 잔금 송금 불가  ');
+        $r->refresh();
+        $this->assertSame(BoardRequest::STATUS_REJECTED, $r->status);
+        $this->assertSame('바이어 입금 전이라 잔금 송금 불가', $r->reject_reason, '사유는 trim 해서 남는다');
+        $this->assertSame($user->id, $r->rejected_by_id);
+        $this->assertNotNull($r->rejected_at);
+        $this->assertNull($r->confirmed_at, '거절 라인의 confirmed_at 은 null — 구 board 가 확인으로 읽으면 안 된다');
+        $this->assertNull($r->confirmed_by_id);
+        $this->assertSame($r->rejected_at->toIso8601String(), $r->resolvedAt()->toIso8601String());
+        $this->assertSame($user->name, $r->fresh()->resolvedByName());
+
+        // 일방향 — 거절된 라인은 다시 확인·거절되지 않는다
+        $r->markDone($user);
+        $this->assertSame(BoardRequest::STATUS_REJECTED, $r->fresh()->status);
+
+        // 재요청 허용
+        $this->assertFalse(BoardRequest::hasOpenFor($v->id, BoardRequest::TYPE_PURCHASE_BALANCE));
+        $again = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'a@ex.com', amountKrw: 900_000);
+        $this->assertNotNull($again, '거절 뒤 같은 차 재요청이 막혔다');
+        $this->assertSame(BoardRequest::STATUS_OPEN, $again->status);
+    }
+
+    /** 집계 규칙표(2026-10-12): 전부 rejected → rejected · done+rejected 섞임 → partial · open+rejected 섞임 → partial. */
+    public function test_batch_status_with_rejected_lines(): void
+    {
+        $user = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $buyer = Buyer::create(['name' => 'BRQ BUYER R', 'is_active' => true]);
+        $mk = fn (string $batch) => collect(range(1, 2))->map(fn () => BoardRequest::raise($this->vehicle()->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'a@ex.com', $buyer->id, $batch));
+
+        $all = $mk('b-rej-all');
+        $all->each(fn ($l) => $l->markRejected($user, '사유'));
+        $this->assertSame('rejected', BoardRequest::batchStatus($all->map->fresh()));
+
+        $mix = $mk('b-rej-mix');
+        $mix[0]->markDone($user);
+        $mix[1]->markRejected($user, '사유');
+        $this->assertSame('partial', BoardRequest::batchStatus($mix->map->fresh()), 'done + rejected = partial');
+
+        $half = $mk('b-rej-half');
+        $half[0]->markRejected($user, '사유');
+        $this->assertSame('partial', BoardRequest::batchStatus($half->map->fresh()), 'open + rejected = partial (전부 거절이 아니다)');
+
+        $cancelledAndRejected = $mk('b-rej-cancel');
+        $cancelledAndRejected[0]->update(['status' => BoardRequest::STATUS_CANCELLED]);
+        $cancelledAndRejected[1]->markRejected($user, '사유');
+        $this->assertSame('rejected', BoardRequest::batchStatus($cancelledAndRejected->map->fresh()), '취소는 집계에서 빠진다');
+    }
+
     /** 취소된 라인은 집계에서 빠진다 — 취소 3대 중 2대만 남으면 그 2대로 판정. */
     public function test_cancelled_lines_are_excluded_from_batch_status(): void
     {

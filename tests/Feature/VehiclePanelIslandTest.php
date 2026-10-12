@@ -157,7 +157,7 @@ class VehiclePanelIslandTest extends TestCase
         $flags = [
             'showPanel', 'showMailModal', 'showWonbuModal', 'showDocCheckModal', 'showFutureDateModal',
             'showSaveConfirmModal', 'showTransferRequestModal', 'showTransferVoidModal', 'quickAddOpen',
-            'showPurchaseGate', 'showDeleteGate', 'showSignModal', 'remoteChanged',
+            'showPurchaseGate', 'showDeleteGate', 'showSignModal', 'remoteChanged', 'showBoardRejectModal',
         ];
         $outside = [];
         foreach ($flags as $flag) {

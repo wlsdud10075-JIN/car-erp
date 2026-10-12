@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\BoardRequest;
 use App\Models\Buyer;
 use App\Models\Salesman;
@@ -201,6 +202,63 @@ class BoardRequestVehicleBadgeTest extends TestCase
         $deposit->refresh();
         $this->assertSame(BoardRequest::STATUS_DONE, $deposit->status, '계약금 확인 버튼이 아무 일도 하지 않았다');
         $this->assertSame($user->id, $deposit->confirmed_by_id);
+    }
+
+    /** 거절 (jin 2026-10-12) — 드로어에서 사유를 적어 돌려보낸다. 빈 사유는 거부. 감사로그에 사유가 남는다. */
+    public function test_drawer_rejects_with_reason(): void
+    {
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($buyer->id);
+        $line = BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 1_500_000);
+
+        $user = $this->admin();
+        $component = Volt::actingAs($user)->test('erp.vehicles.index')->call('openEdit', $v->id);
+        $component->assertSee(__('vehicle.board_reject_btn'));
+
+        $component->call('openBoardRejectModal', $line->id)
+            ->assertSet('showBoardRejectModal', true)
+            ->set('boardRejectReason', '   ')
+            ->call('submitBoardReject')
+            ->assertHasErrors('boardRejectReason');
+        $this->assertSame(BoardRequest::STATUS_OPEN, $line->fresh()->status, '빈 사유로 거절되면 안 된다');
+
+        $component->set('boardRejectReason', '바이어 입금 전이라 잔금 송금 불가')
+            ->call('submitBoardReject')
+            ->assertHasNoErrors()
+            ->assertSet('showBoardRejectModal', false);
+
+        $line->refresh();
+        $this->assertSame(BoardRequest::STATUS_REJECTED, $line->status);
+        $this->assertSame('바이어 입금 전이라 잔금 송금 불가', $line->reject_reason);
+        $this->assertSame($user->id, $line->rejected_by_id);
+        $this->assertNull($line->confirmed_at);
+        $this->assertSame(1, AuditLog::where('auditable_type', BoardRequest::class)->where('auditable_id', $line->id)
+            ->where('action', 'board_request_rejected')->where('new_value', '바이어 입금 전이라 잔금 송금 불가')->count(), '거절 사유가 감사로그에 남아야 한다');
+    }
+
+    /** 다른 차량의 신호 id 를 주입해도 거절되지 않는다 — 확인과 같은 가드 사슬. 권한 없는 사용자도 막힌다. */
+    public function test_cannot_reject_request_of_another_vehicle_or_without_permission(): void
+    {
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $opened = $this->vehicle($buyer->id);
+        $other = $this->vehicle($buyer->id);
+        $otherLine = BoardRequest::raise($other->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-9');
+
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $opened->id)
+            ->call('openBoardRejectModal', $otherLine->id)
+            ->assertSet('showBoardRejectModal', false)
+            ->set('boardRejectId', $otherLine->id)->set('boardRejectReason', '주입')
+            ->call('submitBoardReject');
+        $this->assertSame(BoardRequest::STATUS_OPEN, $otherLine->fresh()->status);
+
+        $clerk = User::factory()->create(['permission' => 'user', 'role' => '수출통관', 'email_verified_at' => now()]);
+        $mine = BoardRequest::raise($opened->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-10');
+        Volt::actingAs($clerk)->test('erp.vehicles.index')
+            ->call('openEdit', $opened->id)
+            ->set('boardRejectId', $mine->id)->set('boardRejectReason', '권한 없음')
+            ->call('submitBoardReject');
+        $this->assertSame(BoardRequest::STATUS_OPEN, $mine->fresh()->status, 'canConfirmFinance 가 없으면 거절도 못 한다');
     }
 
     /** 다른 차량의 신호 id 를 주입해도 안 닫힌다 — 패널에 연 차량으로 한정(IDOR). */
