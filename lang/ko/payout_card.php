@@ -9,8 +9,7 @@ return [
     'open_hint' => '눌러서 계산 단계 펼치기',
 
     // 접힌 줄
-    'margin_after_pay' => '급여공제후 마진',          // 🔀 2026-10-12 사내직원 카드에서 뺌(값은 남아 있음)
-    'excess_ratio' => '급여 대비 초과 배율',          // 🔀 2026-10-12 사내직원 카드에서 뺌 → contribution_ratio
+    // 🔀 2026-10-12 — 'margin_after_pay'(급여공제후 마진)·'excess_ratio'(급여 대비 초과 배율) 키 삭제. 사내직원 카드에서 뺐고 읽는 화면이 0 이다.
     'company_profit' => '회사이익',                    // 사내직원 카드의 회사 기여 표기(jin 2026-10-12 「회사이익」)
     'contribution_ratio' => '가져간 돈 대비 회사이익', // 회사이익 ÷ 실지급(급여 포함) — 「몇 배」
     'contribution' => '회사 기여',

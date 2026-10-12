@@ -53,7 +53,7 @@ class PayoutCardScreensTest extends TestCase
         $this->assertStringContainsString(__('payout_card.contribution_ratio'), $html, '회사이익 배율이 없다');
         $this->assertStringContainsString('data-contribution-ratio>', $html);
         $this->assertStringNotContainsString('data-equiv-total', $html, '사내직원 카드에 프리랜서 환산 합계가 다시 들어갔다');
-        $this->assertStringNotContainsString(__('payout_card.margin_after_pay'), $html, '급여공제후 마진이 다시 보인다');
+        $this->assertStringNotContainsString('급여공제후 마진', $html, '급여공제후 마진이 다시 보인다');
     }
 
     public function test_card_component_renders_each_type_from_a_breakdown_array(): void
@@ -79,6 +79,16 @@ class PayoutCardScreensTest extends TestCase
         $this->assertStringNotContainsString('−91,431', $employee, '사내직원 카드에 ① 1차 환차가 다시 보인다');
         $this->assertStringContainsString('−2,740,000', $employee, '급여 차감 줄');
         $this->assertStringContainsString('−3,100,000', $employee, '정산금 차감 줄');
+
+        // 「− 항목」 줄은 부호가 하나다 — 수기 +3,600,000(무사백 10월 추가금 모양)은 「−3,600,000」, 음수 이월 −200,000 은 「+200,000」.
+        $adjusted = view('components.payout.person-card', ['person' => ['type' => 'employee', 'payout' => 9_240_000, 'company_contribution' => 36_760_000,
+            'payroll' => 2_740_000, 'settlement_pay' => 3_100_000, 'adj_manual' => 3_600_000, 'adj_carry' => -200_000, 'incentive' => 0, 'total_margin' => 46_000_000, 'count' => 31] + $base,
+            'mode' => 'batch', 'open' => true, 'changed' => []])->render();
+        $this->assertStringContainsString('−3,600,000', $adjusted, '수기 조정 차감 줄');
+        $this->assertStringContainsString('+200,000', $adjusted, '음수 이월은 더하는 줄로');
+        $this->assertStringNotContainsString('−+', $adjusted, '부호가 두 개 찍혔다');
+        $this->assertStringNotContainsString('−−', $adjusted, '부호가 두 개 찍혔다');
+        $this->assertStringNotContainsString('−-', $adjusted, '부호가 두 개 찍혔다');
 
         // 키가 있으면 서비스 값이 우선(박제된 새 배치).
         $keyed = view('components.payout.person-card', ['person' => ['type' => 'employee', 'payout' => 5_840_000, 'contribution_ratio' => 9.9, 'company_contribution' => 40_000_000,

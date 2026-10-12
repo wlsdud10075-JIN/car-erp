@@ -8,6 +8,8 @@
     $fmt = fn ($v) => $v === null ? '—' : number_format($v);
     $signed = fn ($v) => $v === null ? '—' : (($v < 0 ? '−' : '+').number_format(abs($v)));
     $cls = fn ($v) => $v === null ? 'text-gray-400' : ($v < 0 ? 'text-red-600' : 'text-emerald-600');
+    // 「− 항목」 줄 전용 — 값이 음수면 빼는 게 더하는 것이라 「+」로 뒤집는다(−+3,600,000 / −−500,000 방지). null 은 0.
+    $minus = fn ($v) => ((($v ?? 0) < 0) ? '+' : '−').number_format(abs($v ?? 0));
     $typeBadge = ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber'][$t] ?? 'badge-gray';
     $chg = fn (string $k) => in_array($k, $changed, true) ? ' bg-amber-50' : '';
     // 회사이익 배율 = 회사 기여 ÷ 실지급 (jin 2026-10-12). 옛 박제엔 키가 없다 → 같은 식으로 되살린다(단일 출처 = PersonPayoutBreakdown::contributionRatio).
@@ -79,17 +81,17 @@
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.minus_payroll') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payroll'] ?? 0) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_settlement_pay') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['settlement_pay']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.minus_payroll') }}</span><span class="font-mono text-red-600">{{ $minus($p['payroll']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_settlement_pay') }}</span><span class="font-mono text-red-600">{{ $minus($p['settlement_pay']) }}</span></div>
             @if($p['adj_manual'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.minus_adj_manual') }}</span><span class="font-mono text-red-600">−{{ $signed($p['adj_manual']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.minus_adj_manual') }}</span><span class="font-mono text-red-600">{{ $minus($p['adj_manual']) }}</span></div>
             @endif
             @if($p['adj_carry'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_adj_carry') }}</span><span class="font-mono text-red-600">−{{ $signed($p['adj_carry']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_adj_carry') }}</span><span class="font-mono text-red-600">{{ $minus($p['adj_carry']) }}</span></div>
             @endif
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.minus_incentive') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['incentive']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.minus_incentive') }}</span><span class="font-mono text-red-600">{{ $minus($p['incentive']) }}</span></div>
             @if($p['shipping'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['shipping']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">{{ $minus($p['shipping']) }}</span></div>
             @endif
             <div class="flex justify-between border-t border-gray-200 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-sky-800' }}" title="{{ __('payout_card.company_profit_formula') }}"><span>{{ __('payout_card.company_profit') }}</span><span class="font-mono" data-contribution-expanded>{{ $signed($p['company_contribution']) }}</span></div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.contribution_ratio') }}</span><span class="font-mono {{ $cls($ratioVal) }}">{{ $ratioText }}</span></div>

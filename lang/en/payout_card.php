@@ -7,8 +7,6 @@ return [
     'times' => 'x',
     'open_hint' => 'Tap to expand the calculation',
 
-    'margin_after_pay' => 'Margin after pay',
-    'excess_ratio' => 'Excess vs pay',
     'company_profit' => 'Company profit',
     'contribution_ratio' => 'Company profit vs take-home',
     'contribution' => 'Company contribution',
