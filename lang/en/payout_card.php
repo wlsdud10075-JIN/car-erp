@@ -45,6 +45,9 @@ return [
     'deposit' => 'Deposit held',
     'deposit_hint' => 'display only',
     'vehicles' => 'By vehicle',
+    'vh_vehicle' => 'Vehicle',
+    'vh_type' => 'Role',
+    'vh_payout' => 'Per-vehicle pay',
 
     'inspector_only' => 'payroll only',
     'inspector_in_transfer' => 'Transfer total',

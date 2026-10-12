@@ -96,6 +96,18 @@ class PayoutCardScreensTest extends TestCase
         $this->assertStringNotContainsString('−−', $adjusted, '부호가 두 개 찍혔다');
         $this->assertStringNotContainsString('−-', $adjusted, '부호가 두 개 찍혔다');
 
+        // 차량별 보기 = 머리글 정렬 표(jin 2026-10-12): 차량번호 / 총마진 / 마진율 / 직책 / 건당금액. 행에 정렬 키가 data- 로 박힌다.
+        $withVehicles = view('components.payout.person-card', ['person' => ['type' => 'employee', 'payout' => 2_840_000, 'company_contribution' => 1_000_000,
+            'payroll' => 2_740_000, 'settlement_pay' => 100_000, 'total_margin' => 3_840_000, 'count' => 1,
+            'vehicles' => [['id' => 1, 'vehicle_number' => '12가3456', 'actual_payout' => 100_000, 'total_margin' => 3_840_000, 'margin_rate' => 0.21, 'is_domestic' => false, 'type_label' => '사내직원 건당']]] + $base,
+            'mode' => 'batch', 'open' => true, 'changed' => []])->render();
+        foreach (['vh_vehicle', 'total_margin', 'vh_type', 'vh_payout'] as $k) {
+            $this->assertStringContainsString(__('payout_card.'.$k), $withVehicles, "차량별 보기 머리글 $k 가 없다");
+        }
+        $this->assertStringContainsString('data-vehicle-sort="total_margin"', $withVehicles, '총마진 머리글이 정렬 버튼이어야 한다');
+        $this->assertStringContainsString('data-total_margin="3840000"', $withVehicles, '행에 정렬 키 값이 박혀야 한다');
+        $this->assertStringContainsString('사내직원 건당', $withVehicles);
+
         // 키가 있으면 서비스 값이 우선(박제된 새 배치).
         $keyed = view('components.payout.person-card', ['person' => ['type' => 'employee', 'payout' => 5_840_000, 'profit_multiple' => 9.9, 'company_contribution' => 40_000_000,
             'payroll' => 2_740_000, 'settlement_pay' => 3_100_000, 'total_margin' => 46_000_000, 'count' => 31] + $base, 'mode' => 'batch', 'open' => true, 'changed' => []])->render();
