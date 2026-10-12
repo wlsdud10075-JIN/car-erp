@@ -419,9 +419,8 @@ board가 "발송됨/열람됨/서명완료"를 영업 화면에 표시할 때 �
 > 계약금 행 자체가 「보냈다」는 기록이라 잔금 전에 닫혀도 거짓 신호가 아니다. 「입금 확인」은 탈출구로 남는다.
 > board 쪽 변경 없음 — 닫힘은 종전 `markDone` 경로 그대로(폴링이 `done` 을 본다).
 >
-> 🔒 **구 `purchase_payment` 는 계속 수신한다 — 화이트리스트에서 빼지 말 것.** 신규 생성 UI 경로는
-> 없지만, board 운영이 신버전을 싣기 전까지는 그게 board 의 **유일한 입금요청 경로**다.
-> 여기서 422 를 내면 조용히 "전송 불가"가 되고 대체 경로가 없다. board master 배포 후 별도 커밋으로 제거.
+> ~~🔒 구 `purchase_payment` 는 계속 수신한다~~ → **2026-10-12 정정: 코드는 이미 422 `type_retired` 로 거부한다**
+> (`BoardRequestController::store` :56-61, `TYPES` 화이트리스트 4종). board 신버전 배포 뒤 제거된 상태. 이 문단은 역사 기록.
 >
 > 🧩 **멱등키가 `(vehicle_id, type)` 이라 반드시 별개 type 이어야 한다.** 하나의 type 에 하위구분
 > (`subtype`)을 얹는 설계는 작동하지 않는다 — 계약금이 열려 있으면 잔금 요청이 `already_open` 으로
@@ -509,7 +508,12 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
 
 #### `GET /requests` — 상태 폴링 (칩 갱신)
 
-`?salesman_email=…&status=open|all` (기본 `open`)
+`?salesman_email=…&status=open|all|done|rejected|cancelled&since=<ISO8601>` (기본 `status=open`)
+
+- ⚠️ `status` 는 **라인 단위** 필터다(종전 동작) — `open` 이면 묶음 안의 open 라인만 남아 `partial`·`rejected` 가 보이지 않는다.
+  **거절·확인 결과를 보려면 `status=all`**(또는 `rejected`)로 부른다. 묶음 단위 필터로 바꾸는 건 별건(2026-10-12 보류).
+- `since=`(2026-10-12) = `updated_at >= since`(**포함** — 중복은 무해, 누락은 사고). `status` 와 독립. 없으면 전량(구 board 호환).
+  파싱 실패는 `422 since_invalid`. 확인·거절·취소·금액 갱신이 전부 `updated_at` 을 움직인다.
 
 ```jsonc
 {
@@ -517,19 +521,37 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
   "requests": [{
     "batch_id": "9f1c…",
     "type": "sale_payment_confirm",
-    "status": "partial",                   // open | partial | done | cancelled
+    "status": "partial",                   // open | partial | done | rejected | cancelled
     "buyer_name": "ABC TRADING",
     "amount_krw": null,                    // 매입 신호면 요청 금액, 판매대금확인이면 null
     "requested_at": "2026-08-07T10:00:00+09:00",
+    "resolved_at": "2026-08-07T14:20:00+09:00",   // 확인·거절 공통 처리 시각 — 묶음은 가장 늦게 처리된 라인 (2026-10-12)
+    "resolved_by": "재무담당",                     // 처리자 표시 이름(자동 해소면 null)
+    "reject_reason": null,                        // 묶음 안 첫 거절 라인의 사유
     "vehicles": [
-      { "vehicle_number": "18누0304", "status": "done", "amount_krw": null, "confirmed_at": "2026-08-07T14:20:00+09:00" },
-      { "vehicle_number": "22가1111", "status": "open", "amount_krw": null, "confirmed_at": null }
+      { "vehicle_number": "18누0304", "status": "done", "amount_krw": null, "confirmed_at": "2026-08-07T14:20:00+09:00",
+        "resolved_at": "2026-08-07T14:20:00+09:00", "resolved_by": "재무담당", "reject_reason": null },
+      { "vehicle_number": "22가1111", "status": "rejected", "amount_krw": null, "confirmed_at": null,
+        "resolved_at": "2026-08-07T15:00:00+09:00", "resolved_by": "재무담당", "reject_reason": "바이어 입금 전이라 잔금 송금 불가" }
     ]
   }]
 }
 ```
 
-- `status` 는 라인 집계 — 전부 done = `done` / 일부 done = `partial` / 하나도 안 됐으면 `open`.
+- `status` 집계 규칙(단일 출처 `BoardRequest::batchStatus`, board 는 재계산 없이 그대로 그린다):
+
+  | live(= cancelled 제외) 라인 | 묶음 status |
+  |---|---|
+  | 없음 | `cancelled` |
+  | 전부 `rejected` | `rejected` (2026-10-12) |
+  | 전부 `done` | `done` |
+  | done 도 rejected 도 0 | `open` |
+  | 그 외(done·rejected·open 섞임) | `partial` |
+
+- 🚫 **거절(`rejected`, jin 2026-10-12)** — ERP 사용자가 드로어에서 「거절」+사유(필수, 200자). 라인별(판매대금확인 N대도 차량별).
+  권한 = 입금 확인과 같은 `canConfirmFinance`. 알림톡 없음(board 웹푸시). **`confirmed_at` 은 거절 라인에서 null** —
+  구 board 가 그 키를 「확인됨」으로 읽기 때문에 처리 시각은 `resolved_at` 로 따로 준다. 거절 뒤 같은 차 재요청은 허용(멱등 가드는 open 만).
+  감사로그 `board_request_rejected`(new_value = 사유).
 - **마진·PII 없음**(§3 화이트리스트 유지). 차량번호·상태·시각 + **요청 금액**뿐.
 - `amount_krw` 는 묶음·라인 **양쪽에** 실린다(매입 신호는 1대=1묶음이라 같은 값). board 는 어느 쪽을 읽어도 된다.
 
