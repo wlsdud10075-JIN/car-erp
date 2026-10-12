@@ -431,7 +431,7 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
 **현재 상태 (2026-08-27)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`0275f15`), **미배포 기능코드 0**. 테스트 **2169 pass**(로컬 7 fail = Windows GD 差, CI 가 권위 — 메모리 `reference_local_test_failures_gd`).
+앱코드 master(`0275f15`), **미배포 기능코드 0**. 테스트 **3,263 pass · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
 ⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 
