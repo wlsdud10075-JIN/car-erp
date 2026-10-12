@@ -10,6 +10,9 @@ param([switch]$SendTelegram, [switch]$SkipPull)
 
 $ErrorActionPreference = 'Continue'
 $base   = "$env:USERPROFILE\nightly"
+# 2026-10-12 jin «텔레그램도 켜줘» — 스케줄러 인수 변경은 PC 암호 입력이 필요해 SSH 로 못 바꾼다.
+# 대신 플래그 파일 `$base\telegram.on` 이 있으면 전송한다(끄려면 그 파일을 지운다). -SendTelegram 인수도 그대로 동작.
+if (Test-Path "$base\telegram.on") { $SendTelegram = $true }
 $repo   = 'C:\xampp\htdocs\car-erp'
 $board  = 'C:\xampp\htdocs\board'
 $memDir = "$env:USERPROFILE\.claude\projects"
