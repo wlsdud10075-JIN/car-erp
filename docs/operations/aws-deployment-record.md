@@ -651,3 +651,9 @@ cherry-pick(.md 제외). 마이그 없음.
 - 전체 테스트 **3,263 / 0 실패**(옛 「GD 7」 오진 해소 뒤 첫 배포). deploy 런 38214665244 잡 5개 success. karabaerp 서버 `436c567`, 양식 md5 `6b544c7a…` = 로컬 일치, `/login` 200.
 - jin 결정 A: 폴백 없음 — 직인2·도장을 올린 회사만 양도증명서에 찍힌다. **배포 뒤 할 일**: ①heymanerp super 가 기능설정 → 도장·서명에 Downloads 의 `직인2_헤이맨_명판.png`·`도장_헤이맨_원형.png` 업로드 ②karabaerp 도 올리기 전까지 양도증명서 도장 0(최근 30일 1건) ③ssancarerp 는 사용 0.
 - 양식 변경: 당사자 칸 값 J/AB 부터(매핑 J5·J7·AB5~7) · 조항 21~30행 높이 · 여백 위 0.39/아래 0. 옛 `stamp_pos_*_transfer_certificate_dealer_seal/assignee_seal` 설정은 고아(무해).
+
+## 2026-10-12 — `notify:send` 배포 `cdc9857c` + 야간 조사 텔레그램 켬 (3사 동시, 코드 1커밋)
+
+- dev `93e5099d`(2026-09-28 작성, 10-07 보류분) cherry-pick. 전체 테스트 3,263 / 0 실패. deploy 런 38216995071 잡 5개 success. heymanerp `cdc9857` · `notify:send` 등록 확인 · 테스트 1통 「텔레그램 연결 확인」 발송(발송 OK).
+- 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
+- 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
