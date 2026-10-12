@@ -152,15 +152,17 @@
         @isset($profit['margin_rate'])
         <div class="row"><span class="k">마진율</span><span class="v">{{ \App\Models\Settlement::formatMarginRate($profit['margin_rate']) }}</span></div>
         @endisset
-        <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
-        @if($profit['fx'] !== 0)
-        <div class="row"><span class="k">환차</span><span class="v">{{ $profit['fx'] >= 0 ? '+' : '−' }} {{ number_format(abs($profit['fx'])) }}원</span></div>
-        @endif
-        <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>
+        {{-- 🔀 2026-10-12 — 급여를 안 뺀 옛 「회사이익」(profitStats.company_profit)과 「환차」 줄을 뺐다. 같은 화면 위의
+             「회사 순이익 (급여 차감 후)」와 다른 숫자가 나란히 떠서 헷갈렸고, 환차는 실제로 안 빼는데 캡션이 뺀다고 적혀 있었다. --}}
         @isset($v3)
-        <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
+        <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v">− {{ number_format($v3['totals']['transfer_total'] ?? $profit['payout']) }}원</span></div>
+        <div class="row big"><span class="k">회사이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
+        <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(검차직원).</div>
+        @else
+        <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
+        <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>
+        <div class="cap">총마진에서 직원 실지급을 뺀 회사 몫입니다.</div>
         @endisset
-        <div class="cap">총마진에서 직원 실지급{{ $profit['fx'] !== 0 ? '·환차' : '' }}을(를) 뺀 회사 몫입니다.</div>
     </div>
     @endisset
 

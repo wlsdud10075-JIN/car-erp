@@ -9,8 +9,10 @@ return [
     'open_hint' => '눌러서 계산 단계 펼치기',
 
     // 접힌 줄
-    'margin_after_pay' => '급여공제후 마진',
-    'excess_ratio' => '급여 대비 초과 배율',
+    'margin_after_pay' => '급여공제후 마진',          // 🔀 2026-10-12 사내직원 카드에서 뺌(값은 남아 있음)
+    'excess_ratio' => '급여 대비 초과 배율',          // 🔀 2026-10-12 사내직원 카드에서 뺌 → contribution_ratio
+    'company_profit' => '회사이익',                    // 사내직원 카드의 회사 기여 표기(jin 2026-10-12 「회사이익」)
+    'contribution_ratio' => '가져간 돈 대비 회사이익', // 회사이익 ÷ 실지급(급여 포함) — 「몇 배」
     'contribution' => '회사 기여',
     'contribution_actual' => '회사 기여 (실제로 회사에 남긴 돈)',
     'payout' => '실지급액',
@@ -31,7 +33,13 @@ return [
     'total_margin' => '총마진',
     'minus_shipping' => '− 발송비 (회사 선지출)',
     'contribution_formula' => '회사 기여 = 총마진 − 실지급액 − 발송비',
-    'freelance_note' => '프리랜서는 환산액이 곧 지급액이라 「급여공제후 마진」 대신 회사 기여를 봅니다.',
+    'company_profit_formula' => '회사이익 = 총마진 − (급여 + 정산금 + 추가 인센티브) − 발송비',
+    'minus_payroll' => '− 급여 지급합계',
+    'minus_settlement_pay' => '− 정산금',
+    'minus_adj_manual' => '− 수기 추가정산',
+    'minus_adj_carry' => '− 이월 조정',
+    'minus_incentive' => '− 추가 인센티브',
+    'freelance_note' => '프리랜서는 환산액이 곧 지급액이라 회사 기여를 봅니다.',
 
     // 오른쪽 — 담당자 지급
     'ledger_person' => '담당자 지급',

@@ -95,6 +95,16 @@ class PersonPayoutBreakdownTest extends TestCase
         $this->assertSame(19_110_000, $r['margin_after_pay'], '급여공제후 마진 = 환산 합계 − 실지급');
         $this->assertSame(5.7, $r['excess_ratio'], '초과 배율 = (환산 − 실지급) ÷ 실지급');
         $this->assertSame(41_660_000, $r['company_contribution'], '회사 기여 = 총마진 − 실지급 − 발송비');
+        $this->assertSame(12.5, $r['contribution_ratio'], '회사이익 배율 = 회사 기여 ÷ 실지급(급여 포함) = 41,660,000 ÷ 3,340,000');
+    }
+
+    /** 회사이익 배율 — 실지급 0 이하면 null, 음수 기여는 음수 배율(jin 2026-10-12). */
+    public function test_contribution_ratio_helper(): void
+    {
+        $this->assertSame(3.0, PersonPayoutBreakdown::contributionRatio(300_000, 100_000), '예시: 10만 가져가고 30만 남으면 3배');
+        $this->assertSame(-0.6, PersonPayoutBreakdown::contributionRatio(-1_620_000, 2_800_000));
+        $this->assertNull(PersonPayoutBreakdown::contributionRatio(300_000, 0));
+        $this->assertNull(PersonPayoutBreakdown::contributionRatio(null, 100_000));
     }
 
     public function test_freelancer_equiv_total_equals_actual_payout_plus_adjustments(): void

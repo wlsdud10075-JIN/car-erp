@@ -10,7 +10,11 @@
     $cls = fn ($v) => $v === null ? 'text-gray-400' : ($v < 0 ? 'text-red-600' : 'text-emerald-600');
     $typeBadge = ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber'][$t] ?? 'badge-gray';
     $chg = fn (string $k) => in_array($k, $changed, true) ? ' bg-amber-50' : '';
-    $ratioText = $p['excess_ratio'] === null ? '—' : (($p['excess_ratio'] < 0 ? '−' : '+').number_format(abs($p['excess_ratio']), 1).__('payout_card.times'));
+    // 회사이익 배율 = 회사 기여 ÷ 실지급 (jin 2026-10-12). 옛 박제엔 키가 없다 → 같은 식으로 되살린다(단일 출처 = PersonPayoutBreakdown::contributionRatio).
+    $ratioVal = array_key_exists('contribution_ratio', $p)
+        ? $p['contribution_ratio']
+        : \App\Services\Payout\PersonPayoutBreakdown::contributionRatio($p['company_contribution'] ?? null, $p['payout'] ?? null);
+    $ratioText = $ratioVal === null ? '—' : (($ratioVal < 0 ? '−' : '+').number_format(abs($ratioVal), 1).__('payout_card.times'));
     $shareText = ! array_key_exists('share', $p) || $p['share'] === null ? null : (($p['share'] < 0 ? '−' : '').number_format(abs($p['share']), 1).'%');
     $payrollMissing = $t !== 'freelance' && $p['payroll'] === null;
 @endphp
@@ -27,10 +31,9 @@
         </span>
         <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
             @if($t === 'employee' && ! $p['unsupported'])
-            <span class="text-gray-500">{{ __('payout_card.margin_after_pay') }} <b class="font-mono {{ $cls($p['margin_after_pay']) }}" data-margin-after-pay>{{ $signed($p['margin_after_pay']) }}</b></span>
-            <span class="text-gray-500">{{ __('payout_card.excess_ratio') }} <b class="font-mono {{ $cls($p['excess_ratio']) }}" data-excess-ratio>{{ $ratioText }}</b></span>
-            {{-- 실제로 회사에 남긴 돈도 접힌 줄에(jin 2026-10-09 「실제 사내직원으로 벌어들인 돈은 모르는 거 아닌가」) --}}
-            <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
+            {{-- 🔀 2026-10-12 jin — 「급여공제후 마진·초과 배율」(프리랜서 환산 계열)은 뺐다. 회사이익 = 회사 기여, 배율 = 회사이익 ÷ 가져간 돈. --}}
+            <span class="text-gray-500">{{ __('payout_card.company_profit') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
+            <span class="text-gray-500">{{ __('payout_card.contribution_ratio') }} <b class="font-mono {{ $cls($ratioVal) }}" data-contribution-ratio>{{ $ratioText }}</b></span>
             @elseif($t === 'freelance' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}">{{ $signed($p['company_contribution']) }}</b></span>
             @endif
@@ -70,26 +73,28 @@
         </div>
 
         @elseif($t === 'employee')
-        {{-- 사내직원 — 왼쪽: 회사 손익 산출 --}}
+        {{-- 사내직원 — 왼쪽: 회사이익 산출 (jin 2026-10-12 「총마진 − (기본급 + 정산 + 추가인센티브) = 회사이익 이렇게 간단히」).
+             🚫 프리랜서 환산(① 환차·가상 이월·환산 합계)은 여기서 안 그린다 — 값은 PersonPayoutBreakdown 이 계속 계산한다(합계 띠·옛 박제).
+             닫힘: 실지급 = 급여 + 정산금 + 수기 + 이월 + 인센티브 → 조정이 0 이 아니면 그 줄도 보인다(§8 #64 — 화면 산수가 맞아야 한다). --}}
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.equiv_sale_rate') }}</span><span class="font-mono">{{ $signed($p['equiv_sale_rate']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.fx_primary') }}</span><span class="font-mono {{ $cls($p['fx_primary']) }}">{{ $signed($p['fx_primary']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.carry_employee') }}</span><span class="font-mono {{ $cls($p['carry']) }}">{{ $signed($p['carry']) }}</span></div>
-            @if(($p['fx_secondary'] ?? 0) !== 0)
-            <div class="flex justify-between px-2 py-0.5 pl-5 text-[10px] text-gray-400"><span>{{ __('payout_card.fx_secondary') }}</span><span class="font-mono">{{ $signed($p['fx_secondary']) }}</span></div>
-            @endif
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.minus_payroll') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payroll'] ?? 0) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_settlement_pay') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['settlement_pay']) }}</span></div>
             @if($p['adj_manual'] !== 0)
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.adj_manual') }}</span><span class="font-mono">{{ $signed($p['adj_manual']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.minus_adj_manual') }}</span><span class="font-mono text-red-600">−{{ $signed($p['adj_manual']) }}</span></div>
             @endif
-            <div class="flex justify-between bg-gray-50 px-2 py-1 text-[11px] font-semibold"><span>{{ __('payout_card.equiv_total') }}</span><span class="font-mono" data-equiv-total>{{ $fmt($p['equiv_total']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payout']) }}</span></div>
-            <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold {{ $p['margin_after_pay'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700' }}"><span>{{ __('payout_card.margin_after_pay') }}</span><span class="font-mono">{{ $signed($p['margin_after_pay']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.excess_ratio') }}</span><span class="font-mono {{ $cls($p['excess_ratio']) }}">{{ $ratioText }}</span></div>
-            <div class="flex justify-between border-t border-gray-200 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-sky-800' }}" title="{{ __('payout_card.contribution_formula') }}"><span>{{ __('payout_card.contribution_actual') }}</span><span class="font-mono">{{ $signed($p['company_contribution']) }}</span></div>
-            <div class="px-2 py-1 text-[10px] text-gray-400">
-                {{ __('payout_card.contribution_formula') }}: {{ $fmt($p['total_margin']) }} − {{ $fmt($p['payout']) }} − {{ $fmt($p['shipping']) }}@if($shareText !== null) · {{ __('payout_card.share') }} {{ $shareText }}@endif
-            </div>
+            @if($p['adj_carry'] !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_adj_carry') }}</span><span class="font-mono text-red-600">−{{ $signed($p['adj_carry']) }}</span></div>
+            @endif
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.minus_incentive') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['incentive']) }}</span></div>
+            @if($p['shipping'] !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['shipping']) }}</span></div>
+            @endif
+            <div class="flex justify-between border-t border-gray-200 px-2 py-1 text-xs font-bold {{ $p['company_contribution'] < 0 ? 'bg-red-50 text-red-700' : 'bg-sky-50 text-sky-800' }}" title="{{ __('payout_card.company_profit_formula') }}"><span>{{ __('payout_card.company_profit') }}</span><span class="font-mono" data-contribution-expanded>{{ $signed($p['company_contribution']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.contribution_ratio') }}</span><span class="font-mono {{ $cls($ratioVal) }}">{{ $ratioText }}</span></div>
+            @if($shareText !== null)<div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.share') }}</span><span class="font-mono {{ $cls($p['share']) }}">{{ $shareText }}</span></div>@endif
+            <div class="border-t border-dashed border-gray-100 px-2 py-1 text-[10px] text-gray-400">{{ __('payout_card.company_profit_formula') }}</div>
         </div>
         {{-- 오른쪽: 담당자 지급 --}}
         <div class="rounded border border-gray-100">
