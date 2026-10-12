@@ -9,8 +9,10 @@ use App\Models\Salesman;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
 use App\Services\Documents\DocumentFiller;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -270,6 +272,56 @@ class PortalDocumentApiTest extends TestCase
 
         $this->signed('/api/internal/portal/vehicles/'.$v->id.'/files', ['buyer_id' => $v->buyer_id])
             ->assertStatus(422);
+    }
+
+    /**
+     * B/L 실물 (2026-10-12) — 경로 없이 url/ext/mime 로만 나간다. 게이트는 서류함 하나뿐이다.
+     * 서명 URL 은 fake 디스크에 콜백을 꽂아 흉내 낸다 — 실 S3 없이 `providesTemporaryUrls()` 가 참이 된다.
+     */
+    public function test_files_publishes_the_bill_of_lading_without_paths(): void
+    {
+        $disk = $this->fakeSignedDocsDisk();
+        $disk->put('vehicles/9/bl.pdf', '%PDF-1.4 bl');
+        $v = $this->seedDownloadable(['bl_document' => 'vehicles/9/bl.pdf']);
+
+        $res = $this->signed('/api/internal/portal/vehicles/'.$v->id.'/files', ['buyer_id' => $v->buyer_id])->assertOk();
+        $body = $res->getContent();
+        $bl = $res->json('bill_of_lading');
+
+        $this->assertSame(['url', 'ext', 'mime'], array_keys($bl));
+        $this->assertSame('pdf', $bl['ext']);
+        $this->assertStringStartsWith('https://signed.test/', $bl['url']);
+        $this->assertStringNotContainsString('vehicles/9/bl.pdf', $body, 'ERP 파일 경로가 포털로 샜다');
+
+        // 기존 키는 모양 그대로다 — 사이트가 읽는 순서·이름을 바꾸지 않는다.
+        $this->assertSame(['expires_in', 'export_declaration', 'bill_of_lading', 'shipping_photos'], array_keys($res->json()));
+
+        $log = DocumentAccessLog::where('vehicle_id', $v->id)->where('document_type', 'bill_of_lading')->first();
+        $this->assertNotNull($log, 'B/L 발급이 감사에 안 남았다');
+        $this->assertSame('buyer:'.$v->buyer_id, $log->actor_email);
+    }
+
+    /** 파일이 없으면 null 이 답이다 — 별도 조건도, 별도 사유도 없다. 감사도 안 남는다. */
+    public function test_files_gives_null_bill_of_lading_when_there_is_no_file(): void
+    {
+        $this->fakeSignedDocsDisk();
+        $v = $this->seedDownloadable(['bl_document' => null]);
+
+        $res = $this->signed('/api/internal/portal/vehicles/'.$v->id.'/files', ['buyer_id' => $v->buyer_id])->assertOk();
+
+        $this->assertArrayHasKey('bill_of_lading', $res->json());
+        $this->assertNull($res->json('bill_of_lading'));
+        $this->assertSame(0, DocumentAccessLog::where('vehicle_id', $v->id)->where('document_type', 'bill_of_lading')->count());
+    }
+
+    /** 서명 URL 을 내는 가짜 문서 디스크 — 운영 s3 의 `temporaryUrl` 을 콜백으로 흉내 낸다. */
+    private function fakeSignedDocsDisk(): FilesystemAdapter
+    {
+        config(['filesystems.vehicle_docs_disk' => 'portal_docs_fake']);
+        $disk = Storage::fake('portal_docs_fake');
+        $disk->buildTemporaryUrlsUsing(fn (string $path) => 'https://signed.test/'.sha1($path));
+
+        return $disk;
     }
 
     // ── 목록 응답 ────────────────────────────────────────────────────────

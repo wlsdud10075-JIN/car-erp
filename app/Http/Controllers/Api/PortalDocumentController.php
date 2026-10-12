@@ -21,7 +21,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *   ① 통관 SET  = **매번 생성**한다 → HMAC 스트림(`clearanceSet`). board 와 같은 모양.
  *                 저장하지 않는 이유: ERP 가 오늘 저장하는 서류 칸은 **전부 외부 원본 스캔**이고,
  *                 통관 SET 은 차량 데이터를 다시 읽어 만드는 살아있는 파일이라 저장하면 낡는다.
- *   ② 수출신고서·선적사진 = **저장된 원본** → 짧은 만료 서명 URL(`files`).
+ *   ② 수출신고서·B/L·선적사진 = **저장된 원본** → 짧은 만료 서명 URL(`files`).
  *                 바이어 브라우저가 S3 에서 직접 받는다. 사이트가 파일을 복사해 두지 않는다(ssancar 요구).
  *
  * 🔑 **게이트 판정은 `Vehicle` 한 곳뿐이다**(`portalDocumentsBlocker` / `clearanceSetBlocker`).
@@ -74,7 +74,7 @@ class PortalDocumentController extends Controller
     }
 
     /**
-     * ② 저장된 실물 — 수출신고서 + 선적 사진의 **짧은 만료 서명 URL**.
+     * ② 저장된 실물 — 수출신고서 + B/L + 선적 사진의 **짧은 만료 서명 URL**.
      *
      * 사진은 `vehicle_photos.id` 로 식별한다 — **경로를 URL 에 싣지 않는다**(경로 조작 차단.
      * `BuyerDocumentController` 가 (차량 + 고정 문서종류)만 서명하는 것과 같은 성질).
@@ -106,11 +106,25 @@ class PortalDocumentController extends Controller
         }
 
         $expiresAt = now()->addSeconds(self::LINK_TTL_SECONDS);
-        $out = ['expires_in' => self::LINK_TTL_SECONDS, 'export_declaration' => null, 'shipping_photos' => []];
+        $out = [
+            'expires_in' => self::LINK_TTL_SECONDS,
+            'export_declaration' => null,
+            'bill_of_lading' => null,
+            'shipping_photos' => [],
+        ];
 
         if (filled($vehicle->export_declaration_document) && $disk->exists($vehicle->export_declaration_document)) {
             $out['export_declaration'] = $this->fileEntry($disk, $vehicle->export_declaration_document, $expiresAt);
             $this->recordAccess($vehicle, 'export_declaration', $request);
+        }
+
+        // B/L 실물 (2026-10-12 jin — ssancar 세션 경유 «통관SET·수출신고서·선적사진·B/L 열자»; 앞 3종은 이미 열려 있었다).
+        // 게이트는 서류함 하나(`portalDocumentsBlocker`)뿐 — B/L 별도 조건 없음. 파일이 없으면 null 이 답이다.
+        // ⚠️ B/L 은 묶음 단위다(실측 R.S.H: B/L 하나가 25대) — 같은 묶음 차들이 같은 파일을 받는다. 다운로드 용도로는 그게 맞다.
+        //    🚫 선적(묶음) 단위 엔드포인트를 만들지 말 것. 🚫 체크빌은 안 낸다(B/L 발급 전 draft → 「B/L 두 개」).
+        if (filled($vehicle->bl_document) && $disk->exists($vehicle->bl_document)) {
+            $out['bill_of_lading'] = $this->fileEntry($disk, $vehicle->bl_document, $expiresAt);
+            $this->recordAccess($vehicle, 'bill_of_lading', $request);
         }
 
         $photos = VehiclePhoto::where('vehicle_id', $vehicle->id)
