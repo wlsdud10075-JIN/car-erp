@@ -29,6 +29,8 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
+        <!-- 2026-10-12 — 로컬 .env 의 COMPANY_TEMPLATE_SET=heyman 이 StampOverlay 류 7건을 늘 빨갛게 만들었다(「GD 차이」가 아니었다). CI 와 같은 system 으로 고정. -->
+        <env name="COMPANY_TEMPLATE_SET" value="system"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>
