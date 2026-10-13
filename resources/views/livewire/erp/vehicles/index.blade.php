@@ -8672,11 +8672,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <div><label class="label-base">{{ __('vehicle.field.fuel_type') }}</label><input wire:model="nice_reg_fuel_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.fuel_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.use_type') }}</label><input wire:model="nice_reg_use_type" type="text" class="input-base" placeholder="{{ __('vehicle.ph.use_type') }}" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.vehicle_form') }}</label><input wire:model="nice_reg_vehicle_form" type="text" class="input-base" /></div>
+                {{-- 배치(jin 2026-10-13): [최초등록일 · 검사시작일 · 검사종료일] / [승차인원 · 소유자명 · 등록일] / [최대적재량 · 소유자 주민(법인)번호 · 소유자주소] — sm 이상 3열 기준 --}}
                 <div><label class="label-base">{{ __('vehicle.field.first_date') }}</label><input wire:model="nice_reg_first_date" type="text" data-date class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
                 {{-- 검사 유효기간 — NICE resValidPeriod 를 조회 때 둘로 나눠 넣는다(통관 SET I10·I11). 2026-10-02 --}}
                 <div><label class="label-base">{{ __('vehicle.field.inspection_start') }}</label><input wire:model="nice_inspection_start" type="text" data-date class="input-base" /></div>
                 <div><label class="label-base">{{ __('vehicle.field.inspection_end') }}</label><input wire:model="nice_inspection_end" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.passengers') }}</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.owner_name') }}</label>
                     <input wire:model="nice_reg_owner_name" type="text" class="input-base" autocomplete="off" data-1p-ignore data-lpignore="true" />
@@ -8692,6 +8693,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         <p class="mt-1 text-[11px] leading-tight text-gray-400">{{ __('vehicle.panel.lookup_edit_hint') }}</p>
                     @endif
                 </div>
+                <div><label class="label-base">{{ __('vehicle.field.reg_date') }}</label><input wire:model="nice_reg_date" type="text" data-date class="input-base" /></div>
+                <div><label class="label-base">{{ __('vehicle.field.max_load') }}</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
                 <div x-data="{ show: false }">
                     <label class="label-base">{{ __('vehicle.field.owner_rrn') }}</label>
                     <div class="relative">
@@ -8713,8 +8716,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         </button>
                     </div>
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.max_load') }}</label><input wire:model="nice_reg_max_load_str" type="number" class="input-base" /></div>
-                <div><label class="label-base">{{ __('vehicle.field.passengers') }}</label><input wire:model="nice_reg_passengers_str" type="number" class="input-base" /></div>
                 <div class="col-span-2 sm:col-span-1"><label class="label-base">{{ __('vehicle.field.owner_addr') }}</label><input wire:model="nice_reg_owner_addr" type="text" class="input-base" /></div>
             </div>
 
