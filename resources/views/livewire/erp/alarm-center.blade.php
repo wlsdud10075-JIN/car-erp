@@ -105,10 +105,10 @@ new class extends Component
              }"
              class="fixed bottom-4 right-4 z-40 print:hidden">
 
-            {{-- 접힌 상태: 벨 pill --}}
-            <button x-show="!open" x-cloak @click="open = true"
-                    class="flex items-center gap-2 rounded-full bg-gray-700 px-4 py-2.5 text-sm font-semibold text-white shadow-xl hover:bg-gray-800">
-                🔔 {{ __('alarm.bell_title') }}
+            {{-- 접힌 상태: 폰(sm 미만)은 벨 아이콘 + 건수 배지만, sm 이상은 종전 「🔔 통관서류 알람 N」 pill (jin 2026-10-13). --}}
+            <button x-show="!open" x-cloak @click="open = true" title="{{ __('alarm.bell_title') }}"
+                    class="flex items-center gap-2 rounded-full bg-gray-700 px-3 py-2.5 text-sm font-semibold text-white shadow-xl hover:bg-gray-800 sm:px-4">
+                <span class="text-base leading-none sm:text-sm">🔔</span><span class="hidden sm:inline">{{ __('alarm.bell_title') }}</span>
                 <span class="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold">{{ $unreadCount }}</span>
             </button>
 

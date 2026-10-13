@@ -26,4 +26,17 @@ class AlarmCardPhoneCollapsedTest extends TestCase
         $this->assertStringContainsString("matchMedia('(min-width: 640px)')", $init, 'sm(640px) 분기가 없다 — 폰에서 카드가 자동으로 펼쳐진다');
         $this->assertMatchesRegularExpression('/this\.open = wide && /', $init, '자동 펼침이 폰 분기와 AND 로 묶여 있지 않다');
     }
+
+    /** 접힌 벨 — 폰에서는 글자(통관서류 알람) 없이 아이콘 + 건수 배지만 (jin «그냥 벨 아이콘으로»). */
+    public function test_collapsed_pill_hides_its_label_on_phone(): void
+    {
+        $blade = file_get_contents(base_path(self::BLADE));
+
+        $this->assertSame(1, preg_match('/<button x-show="!open"[\s\S]*?<\/button>/', $blade, $m), '접힌 벨 버튼을 못 찾았다');
+        $pill = $m[0];
+
+        $this->assertMatchesRegularExpression('/<span class="hidden sm:inline">\{\{ __\(\'alarm\.bell_title\'\) \}\}<\/span>/', $pill, '벨 글자가 폰에서 숨겨지지 않는다');
+        $this->assertStringContainsString('🔔', $pill);
+        $this->assertStringContainsString('{{ $unreadCount }}', $pill, '건수 배지가 사라졌다');
+    }
 }
