@@ -658,6 +658,15 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-13 — 모바일: 자금추이 스파크라인 DPR 자기증식 + 폰 줄바꿈 6곳 + 알람 카드 벨 아이콘 `62638f24` (3사 동시, 코드 4커밋, 마이그 0)
+
+- jin «모바일에서 관리자대시보드 그래프 깨지던데». 원인 = `app.js drawCapitalTrend` 가 캔버스 자신의 clientWidth 를 재서 `width = w×dpr` 로만 키우고 CSS 크기를 안 잡아, 다음 측정이 그 값을 읽어 30초 폴링·resize 마다 배로 커짐(Playwright 실측 DPR 3: 900→2700→8100px, DPR 2: 600→1200→2400). 데스크탑 DPR 1 은 무증상. 고침 = 부모 폭 측정 + `cv.style.width/height` 고정 + canvas `block w-full`. 가드 `CapitalTrendCanvasSizingTest`(정적, 깨뜨려 확인). SKILLS §8 #116.
+- 폰 390px 로 22개 화면 전수 캡처(`playwright-core` + 설치된 Chrome, 스크래치패드): main 가로 넘침 = 차량관리 하단 도구줄(459)·선적요청 액션 묶음(485) 2곳, 글자 세로 쪼개짐 = 월정산 승인줄 [반려]·정산관리 제목/[예외 대상]·회사이익 순위표·자금현황 머리줄. 전부 `flex-wrap`/`whitespace-nowrap`/`min-w-[560px]` 로, 데스크탑은 `sm:` 로 종전 유지. 도구줄 nowrap 은 컨테이너가 아니라 버튼 5개에(팝오버 상속 차단, advisor 지적). 재스캔 넘침 0.
+- 통관서류 알람 고정 카드(330px) = jin A안: 폰(sm 미만)은 새 알람이 있어도 접힌 벨로 시작, 글자 없이 🔔 + 건수 배지만(jin «그냥 벨 아이콘으로»). 데스크탑 자동 펼침 그대로. 가드 `AlarmCardPhoneCollapsedTest`.
+- 재무탭 「인원별 정산지급액」 빈 차트는 fullPage 캡처 도구 영향 — 탭 전환·새 진입 모두 정상(2번째 버그 아님).
+- dev `3647830e`·`0c096117`·`d9339257`·`abbf5787` → master `9e5abaaa`·`ab9d9bff`·`e0a43f99`·`62638f24`(충돌 0). 로컬 전체 3,274 pass(병렬, 실패 0). deploy 런 38340231717 잡 5개 success. 3사 서버 `62638f24`, 번들 `app-BgGEadUn.js` 에 `parentElement.clientWidth` 1·`style.width=…+"px"` 2 확인.
+- 실기기 확인 = heymanerp 관리자 대시보드 자금현황(실데이터)에서 폰으로. 로컬 샘플 DB 에 재현용 통장 마감잔액 3건(10-08·10-10·10-13) 추가됨. 가이드 소스 `notion-guide-publish.php` 통관서류 알람 callout 에 폰 한 줄 추가(dev `154a449e`, Notion 발행은 Codex). 미배포 앱코드 = **0건**.
+
 ## 2026-10-13 — board 요청 「거절」 씬 + 기본정보탭 등록정보 배치 `46627df1` (3사 동시, 코드 4커밋, 마이그 1)
 
 - dev `508b6b2a`(거절 씬) · `2463fd40`(since tz) · `0c86e032`(감사로그 한글 라벨) · `408c0dea`(기본정보 배치) → master `3bb5d887`·`9d4bb6ef`·`53322e66`·`46627df1`. `cards.json` 충돌 → 삭제 유지.
