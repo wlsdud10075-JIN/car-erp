@@ -8254,7 +8254,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
         우하단 [통관서류 알람] 카드와 겹친다. 공용 뷰의 가운데 정렬도 그 안에선 안 먹는다.
         재고·채권 화면처럼 **아래 독립 블록**으로 둔다(jin 2026-08-27). --}}
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    <div class="flex items-center gap-2">
+    {{-- flex-wrap + whitespace-nowrap(상속) — 폰에서 버튼 5개가 한 줄에 눌려 「적/재/양/식」처럼 글자가 세로로 쪼개졌다(2026-10-13). --}}
+    <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
         @if(auth()->user()->canAccessAdmin())
         {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin 마이그레이션 도구). 데이터 없는 빈 양식이라 PII·회계 0. --}}
         <a href="{{ route('erp.vehicles.import-template') }}"

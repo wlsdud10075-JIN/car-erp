@@ -623,13 +623,19 @@ function drawCapitalTrend(id) {
     }
     if (!data || data.length < 2) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = cv.clientWidth || (cv.parentElement && cv.parentElement.clientWidth) || 0;
+    // 🚨 폭은 **부모**에서 잰다 — 캔버스 자신의 clientWidth 를 읽으면 아래서 키운 백킹 크기(w×dpr)가
+    //    다음 측정값이 되어 폴링·resize 마다 배로 커진다(폰 DPR 3 실측 900→2700→8100px, jin 2026-10-13
+    //    «모바일에서 그래프 깨진다»). 데스크탑 DPR 1 에선 1배라 안 보였다. SKILLS §8 #116.
+    const w = (cv.parentElement && cv.parentElement.clientWidth) || 0;
     const h = 90;
     if (w <= 0) {
         // 레이아웃 미안착(폭 0, 탭 전환·morph 직후) → 다음 프레임 재시도
         requestAnimationFrame(() => drawCapitalTrend(id));
         return;
     }
+    // CSS 크기를 먼저 못 박고(화면 px), 백킹 스토어만 dpr 배로 — 둘을 분리해야 선명하면서 안 커진다.
+    cv.style.width = w + 'px';
+    cv.style.height = h + 'px';
     cv.width = w * dpr;
     cv.height = h * dpr;
     const ctx = cv.getContext('2d');

@@ -1847,12 +1847,13 @@ new #[Layout('components.layouts.app')] class extends Component
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
 {{-- 헤더 --}}
-<div class="flex items-center justify-between">
+{{-- flex-wrap — 폰에서 제목이 「정산 관/리」로 쪼개지고 [예외 대상]이 두 줄이 됐다(2026-10-13). 넓은 화면은 종전과 같다. --}}
+<div class="flex flex-wrap items-center justify-between gap-2">
     <div>
-        <h1 class="text-xl font-bold text-gray-800">{{ __('settlement.title') }}</h1>
+        <h1 class="whitespace-nowrap text-xl font-bold text-gray-800">{{ __('settlement.title') }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">{{ __('settlement.total', ['count' => $this->settlements->total()]) }}</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
         <select wire:model.live="perPage" class="input-filter">
             <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
             <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>

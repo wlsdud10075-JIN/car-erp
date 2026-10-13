@@ -185,7 +185,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- 헤더 --}}
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <button type="button" wire:click="toggle({{ $b->id }})" class="flex flex-1 items-center gap-2 text-left">
-                        <span class="font-semibold text-gray-800">{{ $b->month }}</span>
+                        <span class="whitespace-nowrap font-semibold text-gray-800">{{ $b->month }}</span>
                         <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
                         <span class="pill-count">{{ __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>
@@ -216,11 +216,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </button>
                     @endif
                     @if($b->status === 'pending' && $canDecide)
-                    <div class="flex items-center gap-2">
-                        <input type="text" wire:model="approveNote" placeholder="{{ __('payout_batch.steps.note_ph') }}" class="input-base h-9 sm:h-7 w-48 text-xs" />
+                    {{-- 폰: 의견칸은 한 줄 통째, 승인·반려는 줄바꿈 금지(「반/려」 세로 쪼개짐, 2026-10-13). sm 이상은 종전과 같다. --}}
+                    <div class="flex flex-wrap items-center gap-2">
+                        <input type="text" wire:model="approveNote" placeholder="{{ __('payout_batch.steps.note_ph') }}" class="input-base h-9 sm:h-7 w-full sm:w-48 text-xs" />
                         <button wire:click="approve({{ $b->id }})" wire:confirm="{{ __('payout_batch.confirm_approve') }}"
-                                class="btn-primary text-xs">{{ __('payout_batch.approve') }}</button>
-                        <button wire:click="startReject({{ $b->id }})" class="text-xs text-red-500 hover:text-red-700">{{ __('payout_batch.reject') }}</button>
+                                class="btn-primary whitespace-nowrap text-xs">{{ __('payout_batch.approve') }}</button>
+                        <button wire:click="startReject({{ $b->id }})" class="whitespace-nowrap text-xs text-red-500 hover:text-red-700">{{ __('payout_batch.reject') }}</button>
                     </div>
                     @endif
                 </div>

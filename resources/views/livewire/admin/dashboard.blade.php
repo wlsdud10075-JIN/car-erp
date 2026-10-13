@@ -1179,7 +1179,8 @@ new #[Layout('components.layouts.app')] class extends Component
         };
     @endphp
     <div class="card">
-        <div class="mb-3 flex items-center justify-between">
+        {{-- flex-wrap — 폰에서 「자금 현/황」·「보고서 링/크」로 쪼개졌다(2026-10-13). 넓은 화면은 종전과 같다. --}}
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2 whitespace-nowrap">
             <div class="flex items-center gap-2">
                 <span class="section-dot bg-violet-500"></span>
                 <span class="text-sm font-bold text-gray-800">{{ __('cash.widget_title') }}</span>
@@ -1351,7 +1352,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
             </div>
             @if(count($trend) >= 2)
-                <canvas id="capitalTrendChart" height="90" data-trend='@json($trend)'></canvas>
+                {{-- block w-full — CSS 폭을 카드에 고정. 그리기(app.js drawCapitalTrend)는 부모 폭으로 재고 백킹만 dpr 배. --}}
+                <canvas id="capitalTrendChart" height="90" class="block w-full" data-trend='@json($trend)'></canvas>
                 <p class="mt-1 text-[11px] text-gray-500">
                     {{ __('cash.liquidation') }} <span class="font-semibold text-gray-700">{{ $eok($latest) }}</span>
                     <span class="text-gray-400">· {{ __('cash.trend_range') }} {{ $eok($minV) }}~{{ $eok($maxV) }} · {{ $firstLabel }}~{{ $lastLabel }} ({{ count($trend) }})</span>
@@ -1577,8 +1579,9 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="mt-3 text-sm text-gray-400">{{ __('admin_dash.company_contrib_empty') }}</p>
             @else
             {{-- 표 머리 (jin 2026-10-09 「항목이 뭘 뜻하는지 TH 가 있어야」) · 게이지 없음 --}}
+            {{-- 폰: 열 7개가 390px 에 눌려 「프리랜서」가 세로로 쪼개졌다 → 최소폭을 주고 가로 스크롤(2026-10-13). --}}
             <div class="mt-3 overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full min-w-[560px] whitespace-nowrap text-sm">
                 <thead>
                     <tr class="text-[11px] text-gray-500">
                         <th class="py-1 pr-2 text-left font-medium">{{ __('admin_dash.contrib_th_rank') }}</th>
