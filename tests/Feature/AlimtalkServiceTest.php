@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\AlimtalkLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkTemplates;
@@ -85,6 +87,99 @@ class AlimtalkServiceTest extends TestCase
         Http::assertSent(fn ($req) => $req->hasHeader('userid', 'heyman')
             && $req->data()[0]['tmplId'] === 'TMPL_erp_daily_summary'
             && $req->data()[0]['profile'] === 'PROFILE_KEY');
+    }
+
+    /**
+     * 🔁 연결 실패는 재시도한다 (2026-10-13) — 10-01 09:00 BizM 경로가 3분 막혀 ssancarerp 17건이 단발 실패로 끝났다.
+     * 첫 시도 연결 실패 → 두 번째 성공 = sent 1건, 요청 2회.
+     */
+    public function test_connection_failure_is_retried_and_then_sent(): void
+    {
+        $this->configure();
+        Http::fakeSequence()
+            ->pushFailedConnection('cURL error 28: SSL connection timeout')
+            ->push([['code' => 'success', 'data' => ['msgid' => 'BIZM-RETRY'], 'message' => 'K000']], 200);
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-1234-5678', ['날짜' => '2026-10-01']);
+
+        $this->assertSame('sent', $log->status);
+        $this->assertSame('BIZM-RETRY', $log->msgid);
+        Http::assertSentCount(2);
+    }
+
+    /** 재시도를 다 써도 실패하면 종전처럼 failed 로 기록된다(호출측 안 깨짐). */
+    public function test_exhausted_retries_are_logged_as_failed(): void
+    {
+        $this->configure();
+        Http::fakeSequence()
+            ->pushFailedConnection('cURL error 28: SSL connection timeout')
+            ->pushFailedConnection('cURL error 28: SSL connection timeout')
+            ->pushFailedConnection('cURL error 28: SSL connection timeout');
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-1234-5678', ['날짜' => '2026-10-01']);
+
+        $this->assertSame('failed', $log->status);
+        $this->assertStringContainsString('cURL error 28', (string) $log->error);
+        Http::assertSentCount(3);
+    }
+
+    /** HTTP 응답이 온 실패(K108 반려 등)는 재시도하지 않는다 — 같은 반려를 세 번 받을 뿐이다. */
+    public function test_rejected_response_is_not_retried(): void
+    {
+        $this->configure();
+        Http::fake(['*' => Http::response([['code' => 'fail', 'data' => ['msgid' => 'X'], 'message' => 'K108:NoMatchedTemplateButtonException']], 200)]);
+
+        $log = BizmAlimtalkService::active()->send('erp_daily_summary', '010-1234-5678', ['날짜' => '2026-10-01']);
+
+        $this->assertSame('failed', $log->status);
+        Http::assertSentCount(1);
+    }
+
+    /**
+     * 🔁 `once_per_day` — 09:30 따라잡기가 같은 코드·번호로 오늘 이미 보낸 건을 다시 보내지 않고 **로그도 남기지 않는다**.
+     * failed 는 처리 안 된 것이라 다시 간다. 차량(픽업형)이 다르면 별건.
+     */
+    public function test_once_per_day_skips_what_was_sent_today_without_logging(): void
+    {
+        $this->configure();
+        Http::fake(['*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'M1'], 'message' => 'K000']], 200)]);
+        $svc = BizmAlimtalkService::active();
+
+        $first = $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd'], ['once_per_day' => true]);
+        $again = $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd'], ['once_per_day' => true]);
+
+        $this->assertSame('sent', $first->status);
+        $this->assertSame('skipped', $again->status);
+        $this->assertFalse($again->exists, '따라잡기 생략은 로그를 남기지 않는다');
+        $this->assertSame(1, AlimtalkLog::count());
+        Http::assertSentCount(1);
+
+        // 다른 번호·다른 차량(픽업형은 차량마다 1통)은 별건
+        $vehicleId = Vehicle::query()->create(['vehicle_number' => '11가1111'])->id;
+        $svc->send('erp_daily_summary', '010-9999-9999', ['날짜' => 'd'], ['once_per_day' => true]);
+        $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd'], ['once_per_day' => true, 'vehicle_id' => $vehicleId]);
+        $this->assertSame(3, AlimtalkLog::count());
+        $this->assertSame('skipped', $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd'], ['once_per_day' => true, 'vehicle_id' => $vehicleId])->status);
+        $this->assertSame(3, AlimtalkLog::count());
+
+        // 어제 보낸 건 오늘 다시 간다 · 플래그 없는 호출은 종전대로 매번 간다
+        AlimtalkLog::query()->update(['created_at' => now()->subDay()]);
+        $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd'], ['once_per_day' => true]);
+        $svc->send('erp_daily_summary', '010-1234-5678', ['날짜' => 'd']);
+        $this->assertSame(5, AlimtalkLog::count());
+    }
+
+    /** failed 는 「처리됨」이 아니다 — 따라잡기에서 한 번 더 간다. */
+    public function test_once_per_day_retries_a_failed_send(): void
+    {
+        $this->configure();
+        Http::fakeSequence()
+            ->pushFailedConnection('x')->pushFailedConnection('x')->pushFailedConnection('x')
+            ->push([['code' => 'success', 'data' => ['msgid' => 'M2'], 'message' => 'K000']], 200);
+        $svc = BizmAlimtalkService::active();
+
+        $this->assertSame('failed', $svc->send('erp_daily_summary', '01012345678', ['날짜' => 'd'], ['once_per_day' => true])->status);
+        $this->assertSame('sent', $svc->send('erp_daily_summary', '01012345678', ['날짜' => 'd'], ['once_per_day' => true])->status);
     }
 
     public function test_button_sent_in_bizmsg_button1_schema(): void

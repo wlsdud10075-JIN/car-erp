@@ -77,7 +77,7 @@ class AlimtalkPickup extends Command
                         '미지급금액' => number_format((int) $v->purchase_unpaid_amount).'원',
                         '매입일' => optional($v->purchase_date)->format('Y-m-d') ?? '-',
                         '경과일' => (string) $elapsed,
-                    ], ['vehicle_id' => $v->id]);
+                    ], ['vehicle_id' => $v->id, 'once_per_day' => true]);
                     $sent++;
                 }
             }

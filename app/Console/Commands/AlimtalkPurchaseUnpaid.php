@@ -43,7 +43,7 @@ class AlimtalkPurchaseUnpaid extends Command
                 $svc->send('erp_purchase_unpaid', $phone, [
                     '건수' => number_format($mine->count()),
                     '총액' => number_format((int) $mine->sum(fn (Vehicle $v) => $v->purchase_unpaid_amount)).'원',
-                ]);
+                ], ['once_per_day' => true]);
             }
             $this->info("purchase-unpaid: {$count}건, ".count($targets).'명 발송 시도.');
 

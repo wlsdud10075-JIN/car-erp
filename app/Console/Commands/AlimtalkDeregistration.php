@@ -102,7 +102,7 @@ class AlimtalkDeregistration extends Command
                     '최장차량' => $this->oneLine($sorted->first()),
                     '최근차량' => $this->oneLine($sorted->last()),
                     '말소목록' => $this->listOf($sorted),
-                ]);
+                ], ['once_per_day' => true]);
                 $sent++;
             }
             $this->info("deregistration: {$rows->count()}대 → {$sent}명 발송 시도.");
