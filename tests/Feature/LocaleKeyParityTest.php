@@ -158,6 +158,44 @@ class LocaleKeyParityTest extends TestCase
     }
 
     /** @return array<string,mixed> */
+    /**
+     * 🇰🇷 반대 방향 — 프레임워크 기본 문구가 ko 에 없으면 **한글 사용자에게 영어**가 샌다 (2026-10-13 실측:
+     * 모든 목록 하단 「« Previous / Next »」, 로그인 실패 문구, 비밀번호 재설정 결과). vendor 의 en 으로 폴백되기 때문.
+     */
+    public function test_framework_default_groups_exist_in_korean(): void
+    {
+        foreach (['auth', 'pagination', 'passwords', 'validation'] as $group) {
+            $path = lang_path("ko/{$group}.php");
+            $this->assertFileExists($path, "lang/ko/{$group}.php 이 없다 — 한글 사용자가 영어 문구를 본다");
+            $vendor = base_path("vendor/laravel/framework/src/Illuminate/Translation/lang/en/{$group}.php");
+            if ($group !== 'validation' && is_file($vendor)) {
+                $missing = array_diff_key(require $vendor, require $path);
+                $this->assertSame([], array_keys($missing), "lang/ko/{$group}.php 에 프레임워크 키가 빠졌다");
+            }
+        }
+    }
+
+    /**
+     * 뷰가 `__('Log Out')` 처럼 **문장 자체를 키**로 쓰는 곳은 `lang/ko.json` 에 있어야 한글이 된다
+     * (설정·인증·페이지네이션 화면). 그룹 파일 대조(위 테스트)는 이 키들을 못 본다.
+     */
+    public function test_sentence_keys_used_in_views_exist_in_korean_json(): void
+    {
+        $json = json_decode((string) file_get_contents(lang_path('ko.json')), true, 512, JSON_THROW_ON_ERROR);
+        $missing = [];
+
+        foreach (glob(resource_path('views/{,**/,**/**/,**/**/**/}*.blade.php'), GLOB_BRACE) as $file) {
+            preg_match_all('/__\(\s*([\'"])([^\'".]+)\1\s*[,)]/', (string) file_get_contents($file), $m);
+            foreach (array_unique($m[2]) as $key) {
+                if (! array_key_exists($key, $json)) {
+                    $missing[] = str_replace(resource_path('views').DIRECTORY_SEPARATOR, '', $file).": {$key}";
+                }
+            }
+        }
+
+        $this->assertSame([], $missing, "lang/ko.json 에 없는 문장 키 — 한글 사용자에게 영어로 찍힌다:\n".implode("\n", $missing));
+    }
+
     private function flatten(array $rows, string $prefix = ''): array
     {
         $out = [];
