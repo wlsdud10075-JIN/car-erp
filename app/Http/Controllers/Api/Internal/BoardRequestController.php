@@ -199,7 +199,9 @@ class BoardRequestController extends Controller
                 return;
             }
 
-            $label = __(BoardRequest::meta($type)['badge'] ?? '') ?: $type;
+            // 🇰🇷 라벨은 ko 고정 — API 그룹은 SetLocale 을 안 타서 `.env APP_LOCALE` 을 따르는데, 운영 heymanerp·ssancarerp 가
+            //    `en` 이라 카톡에 「Balance / Deposit / Pay req.」 로 나갔다(2026-10-13 실측). 요청 전체 locale 은 건드리지 않는다.
+            $label = __(BoardRequest::meta($type)['badge'] ?? '', [], 'ko') ?: $type;
             $total = array_sum(array_map(fn (BoardRequest $r) => (int) $r->amount_krw, $rows));
             $numbers = array_values(array_filter(array_map(fn (BoardRequest $r) => $r->vehicle?->vehicle_number, $rows)));
 
