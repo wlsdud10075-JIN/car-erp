@@ -86,6 +86,23 @@ class AlimtalkLog extends Model
      *       · 순수 성공코드(K000/M000/R000 등, ':' 없음) → delivered.
      * (BizM 명세 예제 실측: 성공코드엔 ':' 가 없고 실패코드엔 항상 ':ErrorName' 이 붙는다.)
      */
+    /**
+     * 🔁 오늘 이미 처리됐나 — 09:30 따라잡기(`once_per_day`)의 중복 방지 키 = 코드 + 번호 + 차량(픽업형은 차량마다 1통).
+     *   「처리됨」 = sent, 또는 토글 off 로 skipped(그걸 빼면 따라잡기마다 skipped 행이 또 쌓인다).
+     *   failed 는 처리 안 된 것 — 따라잡기에서 한 번 더 간다. (2026-10-13)
+     */
+    public static function alreadyHandledToday(string $code, string $phone, ?int $vehicleId = null): bool
+    {
+        return static::query()
+            ->where('template_code', $code)
+            ->where('phone', $phone)
+            ->when($vehicleId !== null, fn (Builder $q) => $q->where('vehicle_id', $vehicleId), fn (Builder $q) => $q->whereNull('vehicle_id'))
+            ->whereDate('created_at', now()->toDateString())
+            ->where(fn (Builder $q) => $q->where('status', 'sent')
+                ->orWhere(fn (Builder $q2) => $q2->where('status', 'skipped')->where('error', 'disabled_or_unconfigured')))
+            ->exists();
+    }
+
     public static function classifyReport(?array $body): ?string
     {
         if (! is_array($body) || ($body['code'] ?? null) !== 'success') {

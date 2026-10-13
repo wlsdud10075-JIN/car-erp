@@ -6,6 +6,7 @@ use App\Models\AlimtalkLog;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkTemplates;
 use App\Support\AlimtalkTestVars;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -71,6 +72,13 @@ class BizmAlimtalkService
         if ($phone === '') {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'no_phone']);
         }
+        // 🔁 하루 한 번(2026-10-13) — 09:00 일간 발송의 09:30 따라잡기용. 같은 코드·번호(·차량)로 오늘 이미
+        //    sent 이거나 토글 off 로 skipped 됐으면 다시 보내지 않는다. failed 는 제외 → 따라잡기에서 한 번 더.
+        //    🚫 로그를 남기지 않는다 — 따라잡기마다 수신자 수만큼 skipped 행이 쌓인다(ssancarerp 30일 skipped 15,662행).
+        //    실측 배경: heymanerp 09-23 09:00 서버 정지로 일간 5종 결손, ssancarerp 10-01 09:00 BizM 타임아웃 17건.
+        if (($context['once_per_day'] ?? false) && AlimtalkLog::alreadyHandledToday($code, $phone, $base['vehicle_id'])) {
+            return new AlimtalkLog($base + ['status' => 'skipped', 'error' => '오늘 이미 발송됨 — 따라잡기 생략']);
+        }
         if (! $this->config->canSend($code)) {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'disabled_or_unconfigured']);
         }
@@ -130,7 +138,11 @@ class BizmAlimtalkService
                 ];
             }
 
+            // 🔁 연결 실패(cURL 28 SSL/connect timeout)만 2초 간격 최대 3회 — 2026-10-01 09:00 BizM 경로가 3분 막혀
+            //    ssancarerp 17건·heymanerp 대표 건이 단발 실패로 끝났다(09-01 도 같은 패턴). HTTP 응답이 온 실패(K108 등)는
+            //    재시도하지 않는다 — 같은 반려를 세 번 받을 뿐이다. 소진되면 종전처럼 catch 에서 failed 로 기록.
             $response = Http::timeout(15)
+                ->retry(3, 2000, fn ($e) => $e instanceof ConnectionException)
                 ->withHeaders(['userid' => $this->config->userid])
                 ->post(self::SEND_URL, [$item]);
 

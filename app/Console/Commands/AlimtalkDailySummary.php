@@ -47,7 +47,7 @@ class AlimtalkDailySummary extends Command
             $code = AlimtalkTemplates::activeCode('erp_daily_summary');
             $buttons = AlimtalkTemplates::linkButtons($code);
             foreach ($recipients as $phone) {
-                $svc->send($code, $phone, $vars, [], $buttons);
+                $svc->send($code, $phone, $vars, ['once_per_day' => true], $buttons);
             }
             $this->info('daily-summary: '.count($recipients).'명 발송 시도.');
 

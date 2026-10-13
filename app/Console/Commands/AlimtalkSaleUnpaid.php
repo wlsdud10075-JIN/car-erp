@@ -47,7 +47,7 @@ class AlimtalkSaleUnpaid extends Command
 
             $svc = BizmAlimtalkService::active();
             foreach ($targets as $phone => $mine) {
-                $svc->send('erp_sale_unpaid', $phone, ['미입금목록' => $listOf($mine)]);
+                $svc->send('erp_sale_unpaid', $phone, ['미입금목록' => $listOf($mine)], ['once_per_day' => true]);
             }
             $this->info("sale-unpaid: {$rows->count()}대 → ".count($targets).'명 발송 시도.');
 

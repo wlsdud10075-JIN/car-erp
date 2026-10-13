@@ -101,7 +101,7 @@ class AlimtalkDepositCash extends Command
                 $targets = AlimtalkRecipients::scopedFor('erp_deposit_cash_due', $due->map(fn ($x) => $x[0]));
                 foreach ($targets as $phone => $mine) {
                     $list = $listOf($mine->map(fn ($v) => [$v, $daysById[$v->id]])->all(), true);
-                    $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $list]);
+                    $svc->send('erp_deposit_cash_due', $phone, ['보증금목록' => $list], ['once_per_day' => true]);
                     $sent++;
                 }
             }
@@ -110,7 +110,7 @@ class AlimtalkDepositCash extends Command
             if ($overdue->isNotEmpty()) {
                 $ovList = $listOf($overdue->all(), false);
                 foreach (AlimtalkRecipients::forBroadcast('erp_deposit_cash_overdue') as $phone) {
-                    $svc->send('erp_deposit_cash_overdue', $phone, ['초과목록' => $ovList]);
+                    $svc->send('erp_deposit_cash_overdue', $phone, ['초과목록' => $ovList], ['once_per_day' => true]);
                     $sent++;
                 }
             }

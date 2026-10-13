@@ -70,7 +70,7 @@ class AlimtalkShippingDue extends Command
 
             $svc = BizmAlimtalkService::active();
             foreach ($targets as $phone => $mine) {
-                $svc->send('erp_shipping_due', $phone, ['선적미수목록' => $listOf($mine)]);
+                $svc->send('erp_shipping_due', $phone, ['선적미수목록' => $listOf($mine)], ['once_per_day' => true]);
             }
             $this->info("shipping-due: {$rows->count()}대, ".count($targets).'명 발송 시도.');
 

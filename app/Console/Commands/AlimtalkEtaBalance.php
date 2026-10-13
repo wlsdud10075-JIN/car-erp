@@ -62,7 +62,7 @@ class AlimtalkEtaBalance extends Command
 
             $svc = BizmAlimtalkService::active();
             foreach ($targets as $phone => $mine) {
-                $svc->send('erp_eta_balance_due', $phone, ['잔금목록' => $listOf($mine)]);
+                $svc->send('erp_eta_balance_due', $phone, ['잔금목록' => $listOf($mine)], ['once_per_day' => true]);
             }
             $this->info("eta-balance: {$rows->count()}대 → ".count($targets).'명 발송 시도.');
 

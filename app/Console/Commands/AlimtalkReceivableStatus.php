@@ -42,7 +42,7 @@ class AlimtalkReceivableStatus extends Command
             $code = AlimtalkTemplates::activeCode('erp_receivable_status');
             $buttons = AlimtalkTemplates::linkButtons($code);
             foreach ($recipients as $phone) {
-                $svc->send($code, $phone, $vars, [], $buttons);
+                $svc->send($code, $phone, $vars, ['once_per_day' => true], $buttons);
             }
             $this->info('receivable-status: '.count($recipients).'명 발송 시도.');
 

@@ -38,6 +38,14 @@ Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->weekdays()->without
 Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:deposit-cash')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->weekdays()->withoutOverlapping();
+// 🔁 09:30 따라잡기 (2026-10-13) — 09:00 에 서버가 없거나(정지·점검모드·09시 배포) BizM 이 잠깐 막히면 그날 치가
+//    영영 안 갔다(실측 heymanerp 09-23 정지 → 일간 5종 결손 · ssancarerp 10-01 09:00 타임아웃 17건). 같은 커맨드를
+//    30분 뒤 한 번 더 돌리되, 발송 자체는 `once_per_day`(BizmAlimtalkService) 가 코드·번호·차량 단위로 오늘 보낸 건을
+//    건너뛴다 — 09:00 에 일부만 실패했어도 그 사람들만 다시 간다. 🚫 여기에 조건(when)을 달지 말 것: 명령 단위로 걸면
+//    「한 명이라도 보냈으면 전원 생략」이 된다. receivable-status 도 아래 같은 묶음.
+foreach (['pickup', 'deregistration', 'purchase-unpaid', 'sale-unpaid', 'eta-balance', 'shipping-due', 'deposit-cash', 'daily-summary', 'receivable-status'] as $daily) {
+    Schedule::command("alimtalk:{$daily}")->dailyAt('09:30')->weekdays()->withoutOverlapping();
+}
 // 대표 채권 현황 (jin 2026-08-20) — 일일요약에서 돈 이야기를 분리한 신규 알림톡. 일일과 같은 시각.
 //   미설정(tmplId 없음)이면 BizmAlimtalkService 가 내부 skip 하므로 승인 전에 배포해도 무해하다.
 Schedule::command('alimtalk:receivable-status')->dailyAt('09:00')->weekdays()->withoutOverlapping();
