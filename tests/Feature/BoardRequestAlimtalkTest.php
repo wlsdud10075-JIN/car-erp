@@ -119,6 +119,31 @@ class BoardRequestAlimtalkTest extends TestCase
     }
 
     /**
+     * 🇰🇷 구분 라벨은 앱 locale 과 무관하게 한글 (2026-10-13) — API 그룹은 SetLocale 을 안 타서 `.env APP_LOCALE` 을
+     * 따르는데 운영 heymanerp·ssancarerp 가 `en` 이라 「Balance / Deposit / Pay req.」 로 나갔다.
+     */
+    public function test_badge_label_in_alimtalk_is_korean_even_when_app_locale_is_english(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm->id);
+        app()->setLocale('en');
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_BALANCE,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 1_500_000,
+        ])->assertStatus(201);
+
+        $sent = Http::recorded()[0][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString(__('vehicle.board_badge_balance', [], 'ko'), $sent);
+        $this->assertStringNotContainsString(__('vehicle.board_badge_balance', [], 'en'), $sent);
+        $this->assertSame('en', app()->getLocale(), '요청 전체 locale 을 바꾸면 안 된다');
+    }
+
+    /**
      * 🔒 계좌번호는 **보낼 땐 실려도 로그엔 안 남는다.** `purchase_seller_account` 는 DB 에 암호화
      * 저장되고 감사로그에서도 마스킹되는 컬럼이다 — alimtalk_logs 에 평문으로 박으면 한쪽 문만 잠근 셈.
      */
