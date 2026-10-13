@@ -93,7 +93,10 @@ new class extends Component
                 open: false,
                 init() {
                     const seen = parseInt(localStorage.getItem('alarmSeenId') || '0');
-                    this.open = parseInt(this.$el.dataset.maxId) > seen;
+                    // 📱 폰(sm 미만)에서는 새 알람이 있어도 접힌 벨로 시작 — 330px 카드가 390px 화면의 절반을 덮는다
+                    //    (jin 2026-10-13 A안). 건수 배지는 벨에 남는다. 데스크탑은 종전대로 자동으로 펼친다.
+                    const wide = window.matchMedia('(min-width: 640px)').matches;
+                    this.open = wide && parseInt(this.$el.dataset.maxId) > seen;
                 },
                 dismiss() {
                     localStorage.setItem('alarmSeenId', this.$el.dataset.maxId);
