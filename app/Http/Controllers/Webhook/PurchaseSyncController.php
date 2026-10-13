@@ -248,6 +248,25 @@ class PurchaseSyncController extends Controller
             'new_value' => $data['c_no'] ?? null,
             'ip_address' => $request->ip(),
         ]);
+        // 🔎 board 가 실어 보낸 판매 pre-fill·바이어도 같은 행 형식으로 남긴다 (jin 2026-10-13).
+        //   `created` 이벤트는 값을 안 적어서, 59오5691 처럼 「판매가 5,900 EUR 는 누가 넣었나」를 ERP 감사로그로는
+        //   답할 수 없었다(board 까지 뒤져야 했다). 값이 들어간 칸만 — 빈 칸까지 적으면 소음이다.
+        foreach (['sale_price', 'currency', 'exchange_rate', 'sale_date', 'buyer_id', 'consignee_id'] as $col) {
+            $val = $vehicle->{$col};
+            if ($val === null || $val === '' || $val === 0 || $val === 0.0 || $val === '0' || $val === '0.00') {
+                continue;
+            }
+            AuditLog::create([
+                'user_id' => null,
+                'auditable_type' => Vehicle::class,
+                'auditable_id' => $vehicle->id,
+                'action' => 'inbound_purchase_sync',
+                'column_name' => $col,
+                'old_value' => null,
+                'new_value' => $val instanceof \DateTimeInterface ? $val->format('Y-m-d') : (string) $val,
+                'ip_address' => $request->ip(),
+            ]);
+        }
 
         $attachmentsAdded = $this->syncAttachments($vehicle, $data['attachments'] ?? []);
 

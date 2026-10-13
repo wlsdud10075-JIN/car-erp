@@ -783,6 +783,9 @@ class Vehicle extends Model
         'cost_shoring', 'cost_insurance', 'cost_transfer', 'cost_extra1', 'cost_extra2',
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising', 'purchase_vat_amount',
         'buyer_id', 'salesman_id',
+        // 2026-10-13 (jin) — 판매일·통화. 59오5691 「판매가 누가 넣었나」를 물었을 때 ERP 로그만으로 답이 안 됐다
+        //   (판매가는 있었지만 판매일·통화 변경은 기록이 없고, board 연동 생성분은 값이 아예 안 남았다).
+        'sale_date', 'currency',
         // 2026-08-09 (jin) — 바이어 미정 매입(투기). 미수 통제를 우회하는 명시적 예외라 누가 켰는지 추적한다.
         'buyer_undecided',
         // 2026-05-19 풀회의 P0-3 — 말소 처리 actor 책임 추적 (4 role 누구나 처리 시 감사 필수).

@@ -557,6 +557,24 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame(1350.0, (float) $v->exchange_rate);
         $this->assertNotNull($v->sale_date);   // chk_sale_required 충족
         $this->assertSame('판매중', $v->progress_status);
+
+        // 🔎 (jin 2026-10-13) board 가 실어 보낸 판매 값이 감사로그에 남는다 — 「판매가 누가 넣었나」를 ERP 에서 답하기 위해.
+        $logged = AuditLog::where('auditable_id', $v->id)->where('action', 'inbound_purchase_sync')
+            ->pluck('new_value', 'column_name')->all();
+        $this->assertSame('5000', (string) (float) $logged['sale_price']);
+        $this->assertSame('USD', $logged['currency']);
+        $this->assertSame('1350', (string) (float) $logged['exchange_rate']);
+        $this->assertSame($v->sale_date->format('Y-m-d'), $logged['sale_date']);
+        $this->assertArrayNotHasKey('buyer_id', $logged, '바이어가 안 왔으면 행도 없다(빈 칸은 소음)');
+    }
+
+    /** 바이어 없이 생성된 차는 판매 pre-fill 행이 하나도 안 남는다 — 「값이 들어간 칸만」. */
+    public function test_sync_without_sale_prefill_logs_no_sale_rows(): void
+    {
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '64마6400']));
+        $res->assertStatus(201);
+        $cols = AuditLog::where('auditable_id', $res->json('vehicle_id'))->where('action', 'inbound_purchase_sync')->pluck('column_name')->all();
+        $this->assertSame(['c_no'], $cols);
     }
 
     public function test_v3_sale_prefill_without_rate_is_held(): void
