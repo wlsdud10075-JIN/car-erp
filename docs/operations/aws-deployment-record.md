@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-13(저녁) — 알림톡 재시도·09:30 따라잡기 + ko 누수 + board 라벨 ko + 연동 판매값 감사 `12f9e720` (3사 동시, 코드 4커밋, 마이그 0)
+
+- jin «지금 바로 올릴 건들 추려봐, BizM 만 빼고». dev `987321ea`(알림톡 ConnectionException 3회 재시도 + 일간 9종 09:30 재스케줄, `once_per_day` 코드·번호·차량 단위 중복 방지, 로그 안 남김) · `f92a482f`(lang/ko auth·pagination·passwords + ko.json + 설정/인증 화면 `__()`, 가드 2건) · `560509ef`(board 요청 알림톡 라벨 `__(…,'ko')` — 운영 heymanerp·ssancarerp `.env APP_LOCALE=en` 실측, `.env.example` ko) · `4fa56225`(AUDITED_COLUMNS sale_date·currency + 연동 생성 시 sale_price/currency/exchange_rate/sale_date/buyer_id/consignee_id 값 있는 칸만 inbound_purchase_sync 행) → master `f13a784a`·`a9d9d84d`·`8808b6d0`·`12f9e720`.
+- 건너뜀: `13bbf6a8`(scripts/nightly ps1 BOM — master 에 그 폴더 없음, 회사 PC 사본은 직접 교체됨) · `d22a9a36`+`8b45da57`(자금보고 손익 아이템 줄 — **BizM 재승인 전 배포 금지**, dev 대기).
+- 로컬 전체(master 조합) 3,278건: 병렬 rename 경합 7 Error → 7개 클래스 순차 59 pass, 실패 0. deploy 런 잡 5개 success. 3사 `12f9e720`, `lang/ko/pagination.php` 존재, 09:30 스케줄 반영.
+- 효과 시점: 한글 누수·감사로그 = 즉시. 알림톡 재시도 = 다음 발송부터. 09:30 따라잡기 = 10-14 평일부터. board 라벨 = 다음 board 요청부터.
+
 ## 2026-10-13 — 모바일: 자금추이 스파크라인 DPR 자기증식 + 폰 줄바꿈 6곳 + 알람 카드 벨 아이콘 `62638f24` (3사 동시, 코드 4커밋, 마이그 0)
 
 - jin «모바일에서 관리자대시보드 그래프 깨지던데». 원인 = `app.js drawCapitalTrend` 가 캔버스 자신의 clientWidth 를 재서 `width = w×dpr` 로만 키우고 CSS 크기를 안 잡아, 다음 측정이 그 값을 읽어 30초 폴링·resize 마다 배로 커짐(Playwright 실측 DPR 3: 900→2700→8100px, DPR 2: 600→1200→2400). 데스크탑 DPR 1 은 무증상. 고침 = 부모 폭 측정 + `cv.style.width/height` 고정 + canvas `block w-full`. 가드 `CapitalTrendCanvasSizingTest`(정적, 깨뜨려 확인). SKILLS §8 #116.
