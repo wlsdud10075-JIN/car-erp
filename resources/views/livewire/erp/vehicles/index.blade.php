@@ -8254,12 +8254,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
         우하단 [통관서류 알람] 카드와 겹친다. 공용 뷰의 가운데 정렬도 그 안에선 안 먹는다.
         재고·채권 화면처럼 **아래 독립 블록**으로 둔다(jin 2026-08-27). --}}
 <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-    {{-- flex-wrap + whitespace-nowrap(상속) — 폰에서 버튼 5개가 한 줄에 눌려 「적/재/양/식」처럼 글자가 세로로 쪼개졌다(2026-10-13). --}}
-    <div class="flex flex-wrap items-center gap-2 whitespace-nowrap">
+    {{-- flex-wrap + 버튼마다 whitespace-nowrap(컨테이너에 두면 안의 내려받기 팝오버까지 상속된다) — 폰에서 버튼 5개가 한 줄에 눌려 「적/재/양/식」처럼 글자가 세로로 쪼개졌다(2026-10-13). --}}
+    <div class="flex flex-wrap items-center gap-2">
         @if(auth()->user()->canAccessAdmin())
         {{-- 차량 일괄적재 빈 양식 다운로드 (super/admin 마이그레이션 도구). 데이터 없는 빈 양식이라 PII·회계 0. --}}
         <a href="{{ route('erp.vehicles.import-template') }}"
-           class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+           class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
             {{ __('vehicle.import_template_btn') }}
         </a>
@@ -8267,7 +8267,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         @if(auth()->user()->canAccessClearance())
         {{-- 선적일·ETA 일괄 지정 (jin 2026-07-28) — 한 선박에 실린 차량을 필터로 추린 뒤 날짜를 한 번에. --}}
         <button type="button" wire:click="openBulkDate"
-                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             {{ __('vehicle.bulk_date.btn') }}
         </button>
@@ -8307,7 +8307,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 }
              }">
             <button type="button" @click="open = !open"
-                    class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                    class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
                 {{ __('vehicle.export_btn') }}
                 <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -8353,13 +8353,13 @@ function vehicleColumnsToggle(columns, serverKnows) {
         {{-- 탁송비 명세서 일괄 기입 (건바이건 비용 — 관리/admin, 전체 차량). 면허비는 묶음화면. --}}
         @if(auth()->user()?->canApprove())
         <button type="button" wire:click="openCostImport"
-                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
             {{ __('vehicle.cost_import.btn') }}
         </button>
         {{-- EMS/DHL 발송 일괄 기입 (jin 2026-08-31) — 「명세서 기입」과 같은 자리·같은 권한. --}}
         <button type="button" wire:click="openShipmentBulk"
-                class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+                class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <span class="text-base leading-none">📮</span>
             {{ __('vehicle.ship_import.btn') }}
         </button>
