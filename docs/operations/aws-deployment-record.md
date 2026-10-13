@@ -657,3 +657,11 @@ cherry-pick(.md 제외). 마이그 없음.
 - dev `93e5099d`(2026-09-28 작성, 10-07 보류분) cherry-pick. 전체 테스트 3,263 / 0 실패. deploy 런 38216995071 잡 5개 success. heymanerp `cdc9857` · `notify:send` 등록 확인 · 테스트 1통 「텔레그램 연결 확인」 발송(발송 OK).
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
+
+## 2026-10-13 — board 요청 「거절」 씬 + 기본정보탭 등록정보 배치 `46627df1` (3사 동시, 코드 4커밋, 마이그 1)
+
+- dev `508b6b2a`(거절 씬) · `2463fd40`(since tz) · `0c86e032`(감사로그 한글 라벨) · `408c0dea`(기본정보 배치) → master `3bb5d887`·`9d4bb6ef`·`53322e66`·`46627df1`. `cards.json` 충돌 → 삭제 유지.
+- 1차 push `53322e66` 은 **CI `tests/ci` 실패로 3사 배포 skipped**(게이트 정상 작동) — `BuyerAccountScreenTest::test_cash_usage_is_capped_and_pages`(「더 보기」 뒤 R3 미표시). 로컬 전체 2회 통과·코드 무관, 재실행 대신 배치 커밋을 얹어 다시 push → 같은 테스트 포함 전부 success ⇒ **flaky**(원인 미확정 — 재발하면 그 테스트의 `set('buyerId')` 뒤 렌더 타이밍을 볼 것).
+- 배포 전 로컬 전체: GD 7 오진 해소 뒤라 실패 0(병렬 rename 경합 1 → 순차 통과). deploy 런 38332091561 잡 5개 success. 3사 서버 `46627df1`, `add_reject_to_board_requests` Ran, `reject_reason` 컬럼 존재.
+- board 쪽: 칩 수정 `42c92be` 가 10-13 10:02 선배포(거절 → 빨간 「거절」+사유). ERP 가 뒤따름(순서 준수). 웹푸시는 board VAPID 미설정이라 아직 no-op.
+- 거절 흐름 운영 확인 = 첫 실제 거절 건이 생기면 board 칩까지 이어지는지 본다(heymanerp open 요청 현황은 위 open= 값).
