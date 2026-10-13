@@ -274,6 +274,14 @@ return [
         'is_active' => '활성 상태',
     ],
 
+    // ─── board_requests (board 요청·확인 신호) ──────────────────────────
+    'board_requests' => [
+        'status' => '요청 상태',
+        'reject_reason' => '거절 사유',    // 2026-10-12 거절 씬 — 감사로그 board_request_rejected 가 쓴다
+        'amount_krw' => '요청 금액',
+        'note' => '요청 메모',
+    ],
+
     // ─── approval_requests ──────────────────────────────────────────────
     'approval_requests' => [
         'action_type' => '액션 유형',
@@ -464,6 +472,8 @@ return [
         // 2026-08-07 — 휴가 대리 위임(담당 영업 스코프). 켜고 끄는 건 본인.
         'delegation_activated' => '담당 영업 위임 시작',
         'delegation_deactivated' => '담당 영업 위임 종료',
+        // 2026-10-12 — board 요청 거절(드로어 「거절」+사유). new_value = 사유.
+        'board_request_rejected' => 'board 요청 거절',
     ],
 
     /*
