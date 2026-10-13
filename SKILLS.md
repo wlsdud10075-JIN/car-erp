@@ -1668,3 +1668,23 @@ jin: *「탭3에서 수정하고 탭1에서 다른 걸 쓰면 가드가 떠. 각
   이번엔 같은 7개 파일이라 들키지 않았지만, 그중 하나가 진짜 회귀로 바뀌어도 숫자는 7 이다.
 - 🔎 기준선을 적을 땐 **그 실패를 한 번은 고쳐 보거나(환경 바꿔 재실행) 원인을 파일:줄로 박는다.** 「환경 차이」라는 말은 원인이 아니다.
 - 🚫 기준선이 생겼으면 **그걸 없애는 일을 백로그에 둔다** — 7월에 jin 이 «기억하고 있으면 상관없어» 라고 해서 접었고, 그 뒤 아무도 안 봤다.
+
+### 116. 🖼️ **캔버스에 CSS 크기 없이 `width = w × dpr` 를 넣으면 다음 측정이 그 값을 읽어 배로 커진다** (2026-10-13)
+
+jin: *「모바일에서 관리자대시보드 그래프 깨지던데」*. 자금추이 스파크라인(`app.js drawCapitalTrend`)이
+`cv.clientWidth` 를 재서 `cv.width = w*dpr; cv.height = h*dpr` 로 백킹 스토어만 키웠다 — **CSS 크기를 안 잡으면
+그 백킹 크기가 곧 화면 크기**다. 다음 그리기(30초 폴링 morph · resize · 폰의 주소창 접힘)가 그 값을 다시 읽는다 ⇒
+폰(DPR 3) 실측 **900 → 2700 → 8100px**, DPR 2 는 600 → 1200 → 2400. **데스크탑 DPR 1 은 ×1 이라 영원히 안 보였다.**
+Windows 125% 배율 노트북도 같은 식으로 천천히 자란다.
+
+⇒ ① 폭은 **부모**(`parentElement.clientWidth`)에서 잰다 — 자기 자신을 읽는 측정은 자기 증식이다.
+   ② `cv.style.width/height` 를 화면 px 로 먼저 못 박고, `cv.width/height` 는 dpr 배로. 둘을 분리해야 선명하면서 안 커진다.
+   ③ blade 의 `<canvas>` 에 `block w-full`.
+🔎 **폰 전용 증상이 아니라 DPR 전용 증상**이다 — 「모바일에서만」 제보면 먼저 `devicePixelRatio` 를 의심할 것.
+가드 = `CapitalTrendCanvasSizingTest`(정적 — 그리기는 브라우저 JS 라 기능 테스트로 못 잡는다, §8 #98 부류).
+재현 도구 = Playwright(`playwright-core` + 설치된 Chrome, 스크래치패드) 로 `deviceScaleFactor: 3` 컨텍스트에서
+`window.dispatchEvent(new Event('resize'))` 두 번 → `getBoundingClientRect().width` 가 그대로면 통과.
+
+🧭 곁다리 — 같은 날 폰 너비(390px) 로 22개 화면을 전부 찍어 본 결과, 가로 넘침은 **차량관리 하단 도구줄·선적요청 액션 묶음** 둘뿐이었고
+나머지는 「글자가 세로로 쪼개지는」 종류(정산관리 제목·월정산 [반려]·회사이익 순위표)였다. 원인은 전부 **`flex` 한 줄에 `shrink-0`/고정폭
+항목을 두고 `flex-wrap` 이 없는 것** — 고침은 `flex-wrap` + `whitespace-nowrap`(상속되니 컨테이너에), 데스크탑은 `sm:` 로 되돌린다(§8 #98).
