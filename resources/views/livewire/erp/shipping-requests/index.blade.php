@@ -925,7 +925,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
                         {{-- 상태 전환 액션 --}}
                         @php $idsCsv = implode(',', array_column($b['vehicles'], 'id')); @endphp
-                        <div class="flex shrink-0 flex-wrap gap-1.5">
+                        {{-- shrink-0 은 sm 이상에서만 — 폰에서 버튼 묶음이 456px 로 버텨 화면이 가로로 밀렸다(2026-10-13). --}}
+                        <div class="flex flex-wrap gap-1.5 sm:shrink-0">
                             @if ($b['status'] === 'requested' && $b['entry_bundle_blocked'])
                                 {{-- 🔒 착수 불가 — 묶음 총 입금률 50% 미만(aggregate, jin 2026-07-20). 착수불가 + 차량관리에서 보기 + 취소만. --}}
                                 <span title="{{ __('shipping.action.entry_locked_tip_aggregate', ['pct' => $b['entry_unpaid_pct'], 'req' => $b['entry_required_pct']]) }}"
