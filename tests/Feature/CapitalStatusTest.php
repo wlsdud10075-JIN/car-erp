@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Console\Commands\AlimtalkCapitalWeekly;
 use App\Models\AdvanceReceipt;
-use App\Models\AlimtalkLog;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\CashSnapshot;
@@ -14,6 +13,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
+use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -517,18 +517,17 @@ class CapitalStatusTest extends TestCase
         // 카톡에 그것만 찍히면 매주 큰 마이너스가 와서 실제 상태를 오해한다(jin 2026-07-31).
         $this->assertGreaterThan(0, (int) $d['net_profit_krw'], '미수 2천만이 있으므로 정상 회수 기준은 양수');
         $this->assertLessThan(0, (int) $d['profit_krw'], '청산 기준은 여전히 음수여야 한다(대비 확인)');
-        // 🚨 요약정보 규격 — 숫자·쉼표·'원' 만. 한글('억')·부호는 K140 반려(2026-07-31 실측).
-        $this->assertMatchesRegularExpression('/^[\d,]+원$/u', $vars['손익'],
-            "요약정보 description 은 금액 표기만 허용된다. 받은 값: {$vars['손익']}");
+        // 🔀 2026-10-13 — 손익은 요약정보가 아니라 **아이템 줄**로 간다(부호·한글 허용). 다른 항목과 같은 억 단위.
+        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', $vars['손익'], "이익은 부호 없이 억 단위. 받은 값: {$vars['손익']}");
         $this->assertArrayHasKey('굴리는자금', $vars);
         $this->assertArrayHasKey('미지급', $vars);
     }
 
     /**
-     * 손실 주에 절대값만 보내면 대표에게 **손실이 이익으로** 보고된다.
-     * 요약정보는 부호를 못 싣는 규격이라(2026-07-31 실측), 그 경우 아예 보내지 않는 게 맞다.
+     * 🔀 2026-10-13 (jin) — 손실 주에도 보낸다. 손익이 요약정보(음수 불가, 실측 7종 K140)에서 **아이템 줄**로
+     * 옮겨져 '-' 부호가 통과한다(실측 '-5.99억' sent). 옛 「보류」 분기는 ssancarerp 를 6주 침묵시켰다.
      */
-    public function test_alimtalk_capital_weekly_holds_back_when_profit_is_negative(): void
+    public function test_alimtalk_capital_weekly_sends_a_loss_with_a_minus_sign(): void
     {
         $this->seedErp();
         $svc = app(CapitalStatusService::class);
@@ -538,27 +537,25 @@ class CapitalStatusTest extends TestCase
         Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '99000000000', 'type' => 'integer']);
         $this->assertLessThan(0, (int) $svc->derive($svc->latest())['net_profit_krw']);
 
-        $this->assertEmpty(AlimtalkCapitalWeekly::buildVars(), '손실이면 발송하지 않아야 한다');
+        $vars = AlimtalkCapitalWeekly::buildVars();
+        $this->assertMatchesRegularExpression('/^-\d+(\.\d+)?억$/u', $vars['손익'] ?? '', '손실은 - 부호 + 억 단위');
 
-        // 🚨 보류 사실이 **알림톡 로그 화면**에 남아야 한다. laravel.log 에만 남기면 대표 보고가
-        //    조용히 멈춘 걸 아무도 모른다(SKILLS §8 #38 의 반복 사고 형태).
-        User::factory()->create(['permission' => 'admin', 'phone' => '01011112222', 'email_verified_at' => now()]);
-        $this->artisan('alimtalk:capital-weekly')->assertExitCode(0);
-
-        $log = AlimtalkLog::where('template_code', 'erp_capital_weekly')->latest('id')->first();
-        $this->assertNotNull($log, '보류해도 로그 행은 남겨야 한다');
-        $this->assertSame('skipped', $log->status);
-        $this->assertStringContainsString('마이너스', (string) $log->error, '사유는 한글로 — 화면에 그대로 찍힌다');
+        // 카드 규격: 손익은 아이템 5번째, 요약정보 없음(요약정보로 되돌리면 손실 주에 K140 으로 전량 반려).
+        $card = AlimtalkTemplates::ITEMLIST['erp_capital_weekly'];
+        $this->assertArrayNotHasKey('summary', $card);
+        $this->assertSame(['title' => '원금대비손익', 'description' => '#{손익}'], end($card['items']));
+        $this->assertLessThanOrEqual(6, mb_strlen('원금대비손익'));
     }
 
-    /** 원금 미설정이면 손익 칸이 비므로 발송하지 않는다(옛 코드의 '원금 미설정' 한글은 규격 위반이라 반려됐다). */
-    public function test_alimtalk_capital_weekly_holds_back_without_principal(): void
+    /** 원금 미설정이면 손익 줄에 '원금 미설정' 을 그대로 싣는다 — 아이템 줄은 한글이 된다. */
+    public function test_alimtalk_capital_weekly_says_principal_unset_instead_of_holding_back(): void
     {
         $this->seedErp();
         app(CapitalStatusService::class)->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
         Setting::where('key', CapitalStatusService::PRINCIPAL_KEY)->delete();
 
-        $this->assertEmpty(AlimtalkCapitalWeekly::buildVars(), '원금 미설정이면 발송하지 않아야 한다');
+        $vars = AlimtalkCapitalWeekly::buildVars();
+        $this->assertSame('원금 미설정', $vars['손익'] ?? null);
     }
 
     public function test_alimtalk_capital_weekly_empty_and_inert_without_snapshot(): void

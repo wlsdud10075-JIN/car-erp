@@ -98,35 +98,16 @@ class AlimtalkCapitalWeekly extends Command
 
         $eok = fn ($n) => $n === null ? '—'
             : (abs($n / 1e8) >= 10 ? number_format($n / 1e8, 1) : number_format($n / 1e8, 2)).'억';
-        // 🚨 아이템 '요약정보' description 은 **금액 표기만** 허용된다 — 숫자·쉼표·'원' 뿐.
-        //    한글('억'·'원금 미설정')·부호('+'·'−'·'-')·괄호·△ 는 전부 K140 로 발송 반려된다(2026-07-31 실측 6종).
-        //    items 의 description 은 한글이 되지만 summary 만 다르다 — 여기만 원 단위로 보낸다.
-        $summaryMoney = fn (int $n) => number_format(abs($n)).'원';
         // 「원금 대비 손익」은 **정상 회수 기준**으로 보낸다 (jin 2026-07-31).
         //   청산 기준(profit_krw)은 "바이어가 한 명도 안 갚는다"는 파산 가정이라, 카톡에 그 값만 찍히면
         //   매주 큰 마이너스가 와서 실제 상태를 오해하게 된다. 구 스냅샷은 청산 기준으로 폴백.
         $profit = $d['net_profit_krw'] ?? $d['profit_krw'];
 
-        // 원금 미설정(null)이면 손익 칸에 넣을 값이 없다. 옛 코드는 '원금 미설정' 이라는 한글을 넣었는데
-        // 그건 요약정보 규격 위반이라 **발송 자체가 반려**된다 → 애초에 보내지 않고 이유를 남긴다.
-        if ($profit === null) {
-            Log::warning('alimtalk:capital-weekly — 투입원금 미설정으로 손익을 보고할 수 없어 발송하지 않음.');
-            self::$lastSkipReason = '투입원금 미설정 — 손익을 계산할 수 없음';
-
-            return [];
-        }
-
-        // 🚨 손실(음수)은 요약정보에 **표기할 방법이 없다** — 부호·괄호·△·한글 전부 반려(2026-07-31 실측).
-        //    절대값만 보내면 대표에게 손실이 이익으로 보고되므로, 조용히 틀리게 보내느니 보내지 않는다.
-        //    해소책 = BizM 등록본에서 요약정보를 없애고 손익을 아이템 줄(한글·부호 자유)로 옮기는 재승인.
-        if ($profit < 0) {
-            Log::error('alimtalk:capital-weekly — 손익이 음수라 요약정보 규격상 표기 불가. 오보고 방지로 발송 보류.', [
-                'net_profit_krw' => $profit,
-            ]);
-            self::$lastSkipReason = '손익이 마이너스 — 카카오 요약정보에 음수를 넣을 수 없어 보류(등록본 수정 필요)';
-
-            return [];
-        }
+        // 🔀 2026-10-13 (jin) — 손익이 요약정보 칸에서 **아이템 줄**로 옮겨졌다(AlimtalkTemplates::ITEMLIST 주석).
+        //    요약정보는 숫자·통화단위·쉼표·마침표만 허용이라 손실(음수)과 '원금 미설정'을 표기할 수 없어
+        //    2026-09-14~10-12 ssancarerp 6주 연속 보류였다. 아이템 줄은 부호·한글이 통과하므로(실측 '-5.99억' sent)
+        //    이제 다른 항목과 같은 억 단위로, 손실은 '-' 를 붙여 보낸다. 보류 분기는 제거.
+        //    ⚠️ 3사 BizM 등록본이 아이템 5줄로 재승인된 뒤에야 나간다 — 구 등록본(요약정보 있음)엔 K108/K140.
 
         return [
             '기준일' => Carbon::parse($d['date'])->format('Y-m-d'),
@@ -138,7 +119,8 @@ class AlimtalkCapitalWeekly extends Command
             '미수' => $eok($d['receivable_krw']),
             '미지급' => $eok($d['payable_krw']),
             '굴리는자금' => $eok($d['working_capital_krw']),
-            '손익' => $summaryMoney($profit),
+            // 아이템 description 은 20자 컷(AlimtalkTemplates::ITEM_DESC_MAX) — '-12.3억' 은 넉넉하다.
+            '손익' => $profit === null ? '원금 미설정' : (($profit < 0 ? '-' : '').$eok(abs((int) $profit))),
         ];
     }
 }
