@@ -226,6 +226,27 @@ class BoardPayoutBatchApiTest extends TestCase
         $this->assertStringNotContainsString('44라4444', $res->getContent(), '미지급 정산이 섞였다');
     }
 
+    /** 📊 마진율(margin_rate)만 실린다 — 배치 settlements[]·unbatched_paid[] 모두. null 은 null 그대로. 마진 raw 는 여전히 없다 (board 요청 2026-10-14, jin 승인). */
+    public function test_rows_carry_margin_rate_only_and_never_raw_margin(): void
+    {
+        $me = $this->salesman('me@t.test');
+        $b = $this->batch('2026-07', 'approved');
+        $in = $this->settlement($me, '11가1111', 1_000_000, $b);
+        $out = $this->settlement($me, '33다3333', 800_000, null);
+
+        $res = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk();
+
+        $row = $res->json('data.0.settlements.0');
+        $this->assertArrayHasKey('margin_rate', $row);
+        $this->assertEquals($in->fresh()->margin_rate, $row['margin_rate'], 'ERP 승인 카드 「차량별 보기」와 같은 accessor 값');
+        $un = $res->json('unbatched_paid.0');
+        $this->assertArrayHasKey('margin_rate', $un);
+        $this->assertEquals($out->fresh()->margin_rate, $un['margin_rate']);
+        foreach (['total_margin', 'sales_margin', 'vat_margin', 'sales_amount_krw'] as $raw) {
+            $this->assertStringNotContainsString('"'.$raw.'"', $res->getContent(), "마진 raw {$raw} 가 새면 안 된다");
+        }
+    }
+
     // ── 빈 배치 제외 · 삭제 차량 번호 보존 ────────────────────────────
 
     public function test_batch_without_my_rows_is_excluded(): void
